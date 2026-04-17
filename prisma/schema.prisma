@@ -1,0 +1,70 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model McpServer {
+  id           String   @id @default(cuid())
+  name         String
+  slug         String   @unique
+  description  String
+  iconUrl      String?  @map("icon_url")
+  category     String
+  websiteUrl   String?  @map("website_url")
+  docsUrl      String?  @map("docs_url")
+  isDefault    Boolean  @default(false) @map("is_default")
+  isCustom     Boolean  @default(false) @map("is_custom")
+  configSchema Json?    @map("config_schema") // JSON schema for required config fields
+  color        String?  // accent color hex
+  createdAt    DateTime @default(now())      @map("created_at")
+  updatedAt    DateTime @updatedAt           @map("updated_at")
+
+  chatServers ChatServer[]
+
+  @@map("mcp_servers")
+}
+
+model Chat {
+  id        String   @id @default(cuid())
+  title     String   @default("New Chat")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt      @map("updated_at")
+
+  messages    Message[]
+  chatServers ChatServer[]
+
+  @@map("chats")
+}
+
+model ChatServer {
+  id       String @id @default(cuid())
+  chatId   String @map("chat_id")
+  serverId String @map("server_id")
+  config   Json?  // Runtime config for this server in this chat
+
+  chat   Chat      @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  server McpServer @relation(fields: [serverId], references: [id])
+
+  @@unique([chatId, serverId])
+  @@map("chat_servers")
+}
+
+model Message {
+  id        String   @id @default(cuid())
+  chatId    String   @map("chat_id")
+  role      String   // 'user' | 'assistant' | 'system' | 'tool'
+  content   String
+  toolCalls Json?    @map("tool_calls") // Any tool calls made
+  createdAt DateTime @default(now()) @map("created_at")
+
+  chat Chat @relation(fields: [chatId], references: [id], onDelete: Cascade)
+
+  @@map("messages")
+}
