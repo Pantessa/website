@@ -2,15 +2,15 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { MessageSquare, Server, Plus, Zap, Settings } from 'lucide-react'
+import { MessageSquare, Server, Plus, Zap } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useYeetfulStore } from '@/lib/store'
+import ConnectWallet from '@/components/ConnectWallet'
 
 const navItems = [
   { href: '/', label: 'Servers', icon: Server },
   { href: '/chat', label: 'Chat', icon: MessageSquare },
   { href: '/servers', label: 'Add MCP', icon: Plus },
-  { href: '/setup', label: 'Setup', icon: Settings },
 ]
 
 export default function Navigation() {
@@ -58,17 +58,18 @@ export default function Navigation() {
             })}
           </div>
 
-          {/* Active servers badge */}
-          {activeServerIds.length > 0 && (
-            <div className="flex items-center gap-2">
+          {/* Right side: active-servers badge + wallet */}
+          <div className="flex items-center gap-2">
+            {activeServerIds.length > 0 && (
               <div className="hidden md:flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/5 border border-white/10">
                 <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
                 <span className="text-xs text-zinc-300 font-medium">
                   {activeServerIds.length} server{activeServerIds.length > 1 ? 's' : ''} active
                 </span>
               </div>
-            </div>
-          )}
+            )}
+            <ConnectWallet />
+          </div>
         </div>
       </div>
     </nav>

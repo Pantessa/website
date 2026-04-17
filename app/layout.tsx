@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from 'next'
 import './globals.css'
 import Navigation from '@/components/Navigation'
+import Providers from '@/components/Providers'
 
 export const metadata: Metadata = {
   title: 'Yeetful — MCP Power Chat',
@@ -33,8 +34,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         />
       </head>
       <body className="bg-zinc-950 text-white min-h-screen antialiased">
-        <Navigation />
-        {children}
+        <Providers>
+          <Navigation />
+          {children}
+        </Providers>
       </body>
     </html>
   )
