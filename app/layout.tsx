@@ -40,6 +40,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <Navigation />
           {children}
         </Providers>
+        <Analytics />
       </body>
     </html>
   )
