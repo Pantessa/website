@@ -1,7 +1,7 @@
 'use client'
 
 import { motion, AnimatePresence } from 'framer-motion'
-import { MessageSquare, Plus, Trash2, ChevronLeft, ChevronRight } from 'lucide-react'
+import { MessageSquare, Plus, Trash2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useYeetfulStore } from '@/lib/store'
 
@@ -13,23 +13,10 @@ export default function ChatSidebar() {
     createChat,
     deleteChat,
     sidebarOpen,
-    setSidebarOpen,
   } = useYeetfulStore()
 
   return (
     <>
-      {/* Toggle button */}
-      <button
-        onClick={() => setSidebarOpen(!sidebarOpen)}
-        className="absolute top-4 -right-3 z-20 w-6 h-6 rounded-full bg-[var(--surf-2)] border border-[var(--line-2)] flex items-center justify-center text-[color:var(--muted)] hover:text-white transition-all"
-      >
-        {sidebarOpen ? (
-          <ChevronLeft className="w-3.5 h-3.5" />
-        ) : (
-          <ChevronRight className="w-3.5 h-3.5" />
-        )}
-      </button>
-
       <AnimatePresence initial={false}>
         {sidebarOpen && (
           <motion.aside

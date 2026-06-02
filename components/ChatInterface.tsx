@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Send, Zap, Check, Plus, Loader2, Bot, User } from 'lucide-react'
+import { Send, Zap, Check, Plus, Loader2, Bot, User, PanelLeft, PanelLeftClose } from 'lucide-react'
 import { useAccount, useSignTypedData } from 'wagmi'
 import { cn } from '@/lib/utils'
 import { useYeetfulStore } from '@/lib/store'
@@ -39,6 +39,8 @@ export default function ChatInterface() {
     currentChatId,
     createChat,
     addMessage,
+    sidebarOpen,
+    setSidebarOpen,
   } = useYeetfulStore()
 
   const [input, setInput] = useState('')
@@ -161,13 +163,20 @@ export default function ChatInterface() {
 
   return (
     <div className="flex flex-col h-full">
-      {/* Agent picker — toggle which x402 MCPs are active, right from chat */}
-      {servers.length > 0 && (
-        <div className="flex-shrink-0 px-4 py-2.5 border-b border-[var(--line)] bg-black/40">
-          <div className="flex items-center gap-2 overflow-x-auto scrollbar-none">
-            <span className="text-[11px] text-[color:var(--muted-2)] whitespace-nowrap font-medium mono">
-              AGENTS · {activeServers.length}
-            </span>
+      {/* Toolbar: sidebar toggle + agent picker (toggle x402 MCPs from chat) */}
+      <div className="flex-shrink-0 px-3 py-2.5 border-b border-[var(--line)] bg-black/40">
+        <div className="flex items-center gap-2 overflow-x-auto scrollbar-none">
+          <button
+            onClick={() => setSidebarOpen(!sidebarOpen)}
+            aria-label={sidebarOpen ? 'Collapse chats sidebar' : 'Expand chats sidebar'}
+            title={sidebarOpen ? 'Collapse chats' : 'Show chats'}
+            className="flex-shrink-0 w-8 h-8 grid place-items-center rounded-lg border border-[var(--line)] bg-[var(--surf-1)] text-[color:var(--muted)] hover:text-white hover:border-[var(--line-2)] transition-colors"
+          >
+            {sidebarOpen ? <PanelLeftClose className="w-4 h-4" /> : <PanelLeft className="w-4 h-4" />}
+          </button>
+          <span className="text-[11px] text-[color:var(--muted-2)] whitespace-nowrap font-medium mono pl-1">
+            AGENTS · {activeServers.length}
+          </span>
             {servers.map((server) => {
               const active = activeServerIds.includes(server.id)
               return (
@@ -196,7 +205,6 @@ export default function ChatInterface() {
             })}
           </div>
         </div>
-      )}
 
       {/* Messages area */}
       <div className="flex-1 overflow-y-auto px-4 py-6 space-y-4">
