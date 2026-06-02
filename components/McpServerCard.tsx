@@ -49,14 +49,9 @@ export default function McpServerCard({ server }: McpServerCardProps) {
               <span className="badge__dot" style={{ background: ACCENT }} />
               On
             </span>
-          ) : server.callable ? (
-            <span className="badge badge--live" style={{ color: ACCENT, borderColor: ACCENT }}>
-              <span className="badge__dot" style={{ background: ACCENT }} />
-              Live
-            </span>
-          ) : (
+          ) : !server.callable ? (
             <span className="badge badge--dir mono">Directory</span>
-          )}
+          ) : null}
         </div>
         {server.websiteUrl && (
           <a
