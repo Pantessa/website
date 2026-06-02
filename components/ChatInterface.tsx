@@ -278,7 +278,7 @@ export default function ChatInterface() {
 
       {/* Input area */}
       <div className="flex-shrink-0 p-4 border-t border-[var(--line)]">
-        <div className="flex items-end gap-3 p-3 rounded-2xl border border-[var(--line)] bg-[var(--surf-1)] focus-within:border-[var(--line-2)] transition-colors">
+        <div className="flex items-end gap-3 p-3 rounded-2xl border border-[var(--line)] bg-[var(--surf-1)] transition-[border-color,box-shadow] duration-200 focus-within:border-white/25 focus-within:shadow-[0_0_0_4px_rgba(255,255,255,0.05)]">
           <textarea
             ref={textareaRef}
             value={input}
@@ -290,8 +290,8 @@ export default function ChatInterface() {
                 : 'Type a message...'
             }
             rows={1}
-            className="flex-1 bg-transparent text-sm text-white placeholder:text-[color:var(--muted-2)] resize-none outline-none max-h-40 overflow-y-auto leading-relaxed"
-            style={{ minHeight: '24px' }}
+            className="flex-1 bg-transparent text-sm text-white placeholder:text-[color:var(--muted-2)] resize-none border-0 focus:outline-none focus-visible:outline-none max-h-40 overflow-y-auto leading-relaxed"
+            style={{ minHeight: '24px', outline: 'none', boxShadow: 'none' }}
           />
           <button
             onClick={handleSend}
