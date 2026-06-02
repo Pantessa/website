@@ -21,7 +21,7 @@ export default function ChatSidebar() {
       {/* Toggle button */}
       <button
         onClick={() => setSidebarOpen(!sidebarOpen)}
-        className="absolute top-4 -right-3 z-20 w-6 h-6 rounded-full bg-zinc-800 border border-zinc-700 flex items-center justify-center text-zinc-400 hover:text-white hover:bg-zinc-700 transition-all"
+        className="absolute top-4 -right-3 z-20 w-6 h-6 rounded-full bg-[var(--surf-2)] border border-[var(--line-2)] flex items-center justify-center text-[color:var(--muted)] hover:text-white transition-all"
       >
         {sidebarOpen ? (
           <ChevronLeft className="w-3.5 h-3.5" />
@@ -37,13 +37,13 @@ export default function ChatSidebar() {
             animate={{ width: 240, opacity: 1 }}
             exit={{ width: 0, opacity: 0 }}
             transition={{ duration: 0.25, ease: 'easeInOut' }}
-            className="flex-shrink-0 border-r border-zinc-800/60 bg-zinc-950/80 overflow-hidden h-full"
+            className="flex-shrink-0 border-r border-[var(--line)] bg-black/40 overflow-hidden h-full"
           >
             <div className="w-60 flex flex-col h-full">
-              <div className="p-3 border-b border-zinc-800/60">
+              <div className="p-3 border-b border-[var(--line)]">
                 <button
                   onClick={() => createChat()}
-                  className="w-full flex items-center gap-2 px-3 py-2 rounded-xl bg-white/8 border border-white/10 text-zinc-300 hover:text-white hover:bg-white/12 transition-all text-sm font-medium"
+                  className="w-full flex items-center gap-2 px-3 py-2 rounded-xl bg-[var(--surf-2)] border border-[var(--line)] text-[color:var(--muted)] hover:text-white hover:border-[var(--line-2)] transition-all text-sm font-medium"
                 >
                   <Plus className="w-4 h-4" />
                   New Chat
@@ -52,8 +52,8 @@ export default function ChatSidebar() {
 
               <div className="flex-1 overflow-y-auto p-2 space-y-1">
                 {chats.length === 0 && (
-                  <p className="text-xs text-zinc-600 text-center py-6 px-3">
-                    No chats yet. Start one by selecting servers and clicking Chat.
+                  <p className="text-xs text-[color:var(--muted-2)] text-center py-6 px-3">
+                    No chats yet. Add agents from the directory, then start one here.
                   </p>
                 )}
                 {chats.map((chat) => (
@@ -62,8 +62,8 @@ export default function ChatSidebar() {
                     className={cn(
                       'group flex items-center gap-2 px-3 py-2 rounded-xl cursor-pointer transition-all',
                       currentChatId === chat.id
-                        ? 'bg-white/10 text-white'
-                        : 'text-zinc-400 hover:text-zinc-200 hover:bg-white/5'
+                        ? 'bg-[var(--surf-2)] text-white'
+                        : 'text-[color:var(--muted)] hover:text-white hover:bg-[var(--surf-1)]'
                     )}
                     onClick={() => setCurrentChatId(chat.id)}
                   >
