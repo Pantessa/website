@@ -1,3 +1,4 @@
+import '@/lib/indexeddb-polyfill' // server-only IndexedDB shim (must load before wagmi)
 import type { Metadata, Viewport } from 'next'
 import './globals.css'
 import './x402-design.css'
