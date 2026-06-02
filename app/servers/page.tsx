@@ -17,20 +17,7 @@ import { cn } from '@/lib/utils'
 import { useYeetfulStore, McpServer } from '@/lib/store'
 import { CATEGORY_ICONS } from '@/lib/mcp-data'
 
-const CATEGORIES = [
-  'Development',
-  'Communication',
-  'Productivity',
-  'Project Management',
-  'Storage',
-  'Payments',
-  'Database',
-  'Design',
-  'CRM',
-  'E-Commerce',
-  'Cloud',
-  'Custom',
-]
+const CATEGORIES = ['Inference', 'Data', 'Custom']
 
 interface FormState {
   name: string

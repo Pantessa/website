@@ -2,8 +2,8 @@
 
 import { useState } from 'react'
 import Image from 'next/image'
-import { Check, Plus, Minus, ExternalLink, ChevronDown, ChevronUp } from 'lucide-react'
-import { motion, AnimatePresence } from 'framer-motion'
+import { Check, Plus, ExternalLink, Zap } from 'lucide-react'
+import { motion } from 'framer-motion'
 import { cn } from '@/lib/utils'
 import { McpServer, useYeetfulStore } from '@/lib/store'
 import { CATEGORY_ICONS } from '@/lib/mcp-data'
@@ -15,7 +15,6 @@ interface McpServerCardProps {
 
 export default function McpServerCard({ server, index }: McpServerCardProps) {
   const { activeServerIds, toggleServer } = useYeetfulStore()
-  const [expanded, setExpanded] = useState(false)
   const [imgError, setImgError] = useState(false)
 
   const isActive = activeServerIds.includes(server.id)
@@ -112,75 +111,44 @@ export default function McpServerCard({ server, index }: McpServerCardProps) {
         {/* Footer */}
         <div className="mt-3 flex items-center justify-between">
           <div className="flex items-center gap-2">
-            {server.isCustom && (
-              <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-400 border border-amber-500/20 font-medium">
-                Custom
+            {/* Price per call */}
+            {server.priceUsd && (
+              <span className="text-[10px] px-2 py-0.5 rounded-full bg-zinc-800/80 text-zinc-300 border border-zinc-700/60 font-medium font-mono">
+                ${server.priceUsd}/call
+              </span>
+            )}
+            {/* Live = chat can pay+call it now; otherwise directory-only */}
+            {server.callable ? (
+              <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/20 font-medium flex items-center gap-1">
+                <Zap className="w-2.5 h-2.5" />
+                Live
+              </span>
+            ) : (
+              <span className="text-[10px] px-2 py-0.5 rounded-full bg-zinc-800/60 text-zinc-500 border border-zinc-700/40 font-medium">
+                Directory
               </span>
             )}
             {isActive && (
-              <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/20 font-medium flex items-center gap-1">
-                <span className="w-1 h-1 rounded-full bg-emerald-400 inline-block" />
+              <span className="text-[10px] px-2 py-0.5 rounded-full bg-white/10 text-white border border-white/15 font-medium flex items-center gap-1">
+                <span className="w-1 h-1 rounded-full bg-white inline-block" />
                 Active
               </span>
             )}
           </div>
 
-          <div className="flex items-center gap-1">
-            {server.websiteUrl && (
-              <a
-                href={server.websiteUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                onClick={(e) => e.stopPropagation()}
-                className="p-1 text-zinc-600 hover:text-zinc-300 transition-colors rounded"
-              >
-                <ExternalLink className="w-3 h-3" />
-              </a>
-            )}
-            {server.configSchema && (
-              <button
-                onClick={(e) => {
-                  e.stopPropagation()
-                  setExpanded(!expanded)
-                }}
-                className="p-1 text-zinc-600 hover:text-zinc-300 transition-colors rounded"
-              >
-                {expanded ? (
-                  <ChevronUp className="w-3 h-3" />
-                ) : (
-                  <ChevronDown className="w-3 h-3" />
-                )}
-              </button>
-            )}
-          </div>
-        </div>
-
-        {/* Config fields expansion */}
-        <AnimatePresence>
-          {expanded && server.configSchema && (
-            <motion.div
-              initial={{ height: 0, opacity: 0 }}
-              animate={{ height: 'auto', opacity: 1 }}
-              exit={{ height: 0, opacity: 0 }}
-              transition={{ duration: 0.2 }}
-              className="overflow-hidden"
+          {server.websiteUrl && (
+            <a
+              href={server.websiteUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={(e) => e.stopPropagation()}
+              className="p-1 text-zinc-600 hover:text-zinc-300 transition-colors rounded"
+              title="View on agentic.market"
             >
-              <div className="mt-3 pt-3 border-t border-zinc-800/60 space-y-2">
-                <p className="text-[10px] text-zinc-600 font-medium uppercase tracking-wider">
-                  Config Required
-                </p>
-                {Object.entries(server.configSchema).map(([key, field]) => (
-                  <div key={key} className="flex items-center justify-between">
-                    <span className="text-xs text-zinc-400">{field.label}</span>
-                    {field.required && (
-                      <span className="text-[10px] text-red-400/70">required</span>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </motion.div>
+              <ExternalLink className="w-3 h-3" />
+            </a>
           )}
-        </AnimatePresence>
+        </div>
       </div>
     </motion.div>
   )

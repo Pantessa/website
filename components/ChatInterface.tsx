@@ -54,6 +54,8 @@ export default function ChatInterface() {
           message: userMsg,
           chatId,
           activeServerIds,
+          // Full objects so the server knows each x402 endpoint/protocol/price.
+          activeServers,
         }),
       })
 

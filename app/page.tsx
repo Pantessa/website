@@ -8,28 +8,12 @@ import McpServerCard from '@/components/McpServerCard'
 import ActiveServerBar from '@/components/ActiveServerBar'
 import { useYeetfulStore, McpServer } from '@/lib/store'
 import { cn } from '@/lib/utils'
-import { CATEGORY_ICONS, CATEGORY_COLORS } from '@/lib/mcp-data'
+import { CATEGORY_ICONS, CATEGORY_COLORS, CATALOG } from '@/lib/mcp-data'
 
 const ALL_CATEGORIES = 'All'
 
-// Fallback static data while DB loads
-const STATIC_SERVERS: McpServer[] = [
-  { id: 'github', name: 'GitHub', slug: 'github', description: 'Access repositories, issues, PRs, and code search across GitHub', iconUrl: 'https://github.githubassets.com/images/modules/logos_page/GitHub-Mark.png', category: 'Development', websiteUrl: 'https://github.com', color: '#6e40c9', isDefault: true, isCustom: false, configSchema: null },
-  { id: 'slack', name: 'Slack', slug: 'slack', description: 'Send messages, search channels, and manage your workspace', iconUrl: null, category: 'Communication', websiteUrl: 'https://slack.com', color: '#4A154B', isDefault: true, isCustom: false, configSchema: null },
-  { id: 'notion', name: 'Notion', slug: 'notion', description: 'Read and write to your Notion workspace, pages, and databases', iconUrl: null, category: 'Productivity', websiteUrl: 'https://notion.so', color: '#000000', isDefault: true, isCustom: false, configSchema: null },
-  { id: 'linear', name: 'Linear', slug: 'linear', description: 'Manage issues, projects, and sprints in your Linear workspace', iconUrl: null, category: 'Project Management', websiteUrl: 'https://linear.app', color: '#5E6AD2', isDefault: true, isCustom: false, configSchema: null },
-  { id: 'google-drive', name: 'Google Drive', slug: 'google-drive', description: 'Browse, read, and search your Google Drive files and folders', iconUrl: null, category: 'Storage', websiteUrl: 'https://drive.google.com', color: '#1fa463', isDefault: true, isCustom: false, configSchema: null },
-  { id: 'stripe', name: 'Stripe', slug: 'stripe', description: 'Query payments, customers, subscriptions, and financial data', iconUrl: null, category: 'Payments', websiteUrl: 'https://stripe.com', color: '#635BFF', isDefault: true, isCustom: false, configSchema: null },
-  { id: 'airtable', name: 'Airtable', slug: 'airtable', description: 'Read and update records in your Airtable bases and tables', iconUrl: null, category: 'Database', websiteUrl: 'https://airtable.com', color: '#FCB400', isDefault: true, isCustom: false, configSchema: null },
-  { id: 'figma', name: 'Figma', slug: 'figma', description: 'Access design files, components, and assets from Figma', iconUrl: null, category: 'Design', websiteUrl: 'https://figma.com', color: '#F24E1E', isDefault: true, isCustom: false, configSchema: null },
-  { id: 'jira', name: 'Jira', slug: 'jira', description: 'Manage Jira issues, sprints, boards, and project workflows', iconUrl: null, category: 'Project Management', websiteUrl: 'https://atlassian.com', color: '#0052CC', isDefault: true, isCustom: false, configSchema: null },
-  { id: 'hubspot', name: 'HubSpot', slug: 'hubspot', description: 'Access CRM data, contacts, deals, and marketing campaigns', iconUrl: null, category: 'CRM', websiteUrl: 'https://hubspot.com', color: '#FF7A59', isDefault: true, isCustom: false, configSchema: null },
-  { id: 'shopify', name: 'Shopify', slug: 'shopify', description: 'Query products, orders, customers, and store analytics', iconUrl: null, category: 'E-Commerce', websiteUrl: 'https://shopify.com', color: '#96BF48', isDefault: true, isCustom: false, configSchema: null },
-  { id: 'asana', name: 'Asana', slug: 'asana', description: 'Manage tasks, projects, teams, and timelines in Asana', iconUrl: null, category: 'Project Management', websiteUrl: 'https://asana.com', color: '#F06A6A', isDefault: true, isCustom: false, configSchema: null },
-  { id: 'postgresql', name: 'PostgreSQL', slug: 'postgresql', description: 'Query and manage your PostgreSQL databases with natural language', iconUrl: null, category: 'Database', websiteUrl: 'https://postgresql.org', color: '#336791', isDefault: true, isCustom: false, configSchema: null },
-  { id: 'aws', name: 'AWS', slug: 'aws', description: 'Manage S3, Lambda, EC2, and other AWS services via natural language', iconUrl: null, category: 'Cloud', websiteUrl: 'https://aws.amazon.com', color: '#FF9900', isDefault: true, isCustom: false, configSchema: null },
-  { id: 'twilio', name: 'Twilio', slug: 'twilio', description: 'Send SMS, make calls, and manage communications programmatically', iconUrl: null, category: 'Communication', websiteUrl: 'https://twilio.com', color: '#F22F46', isDefault: true, isCustom: false, configSchema: null },
-]
+// Fallback static data while DB loads — the curated x402 catalog.
+const STATIC_SERVERS: McpServer[] = CATALOG
 
 export default function HomePage() {
   const { servers, setServers, activeServerIds } = useYeetfulStore()

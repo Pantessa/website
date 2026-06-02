@@ -15,6 +15,16 @@ export interface McpServer {
   isDefault: boolean
   isCustom: boolean
   configSchema: Record<string, { type: string; label: string; required: boolean }> | null
+
+  // x402 fields (optional for back-compat with custom servers)
+  kind?: 'inference' | 'data'
+  protocol?: 'mcp' | 'http' | null
+  endpoint?: string | null
+  tool?: string | null
+  queryParam?: string | null
+  priceUsd?: string | null
+  network?: string | null
+  callable?: boolean
 }
 
 export interface Message {

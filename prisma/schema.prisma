@@ -23,6 +23,17 @@ model McpServer {
   isCustom     Boolean  @default(false) @map("is_custom")
   configSchema Json?    @map("config_schema") // JSON schema for required config fields
   color        String?  // accent color hex
+
+  // x402 fields
+  kind       String?  // 'inference' | 'data'
+  protocol   String?  // 'mcp' | 'http'
+  endpoint   String?  // x402-gated endpoint URL
+  tool       String?  // MCP tool name (inference)
+  queryParam String?  @map("query_param") // primary query param (http data)
+  priceUsd   String?  @map("price_usd")   // price per call, e.g. "0.01"
+  network    String?  // e.g. "base"
+  callable   Boolean  @default(false)     // chat can pay+call it today
+
   createdAt    DateTime @default(now())      @map("created_at")
   updatedAt    DateTime @updatedAt           @map("updated_at")
 
