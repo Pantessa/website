@@ -1,148 +1,120 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { motion, AnimatePresence } from 'framer-motion'
-import { Search, Filter, LayoutGrid, List, Sparkles } from 'lucide-react'
-import ParticleHeader from '@/components/ParticleHeader'
+import { useYeetfulStore, McpServer } from '@/lib/store'
+import { CATALOG } from '@/lib/mcp-data'
+import Hero from '@/components/Hero'
 import McpServerCard from '@/components/McpServerCard'
 import ActiveServerBar from '@/components/ActiveServerBar'
-import { useYeetfulStore, McpServer } from '@/lib/store'
-import { cn } from '@/lib/utils'
-import { CATEGORY_ICONS, CATEGORY_COLORS, CATALOG } from '@/lib/mcp-data'
+import Footer from '@/components/Footer'
 
-const ALL_CATEGORIES = 'All'
-
-// Fallback static data while DB loads — the curated x402 catalog.
+const ALL = 'All'
 const STATIC_SERVERS: McpServer[] = CATALOG
+
+const STEPS = [
+  { n: '01', t: 'Pick your agents', d: 'Browse the directory and add inference and data agents to your runner — one at a time, as many as you need.' },
+  { n: '02', t: 'Connect one wallet', d: 'A single USDC wallet on Base funds everything. No per-service keys, no plans, no invoices.' },
+  { n: '03', t: 'Agents pay on their own', d: 'Each call settles over x402 — a 402 challenge, an instant micro-payment, a 200 response. Fully autonomous.' },
+]
 
 export default function HomePage() {
   const { servers, setServers, activeServerIds } = useYeetfulStore()
   const [search, setSearch] = useState('')
-  const [activeCategory, setActiveCategory] = useState(ALL_CATEGORIES)
-  const [loading, setLoading] = useState(true)
+  const [cat, setCat] = useState(ALL)
 
   useEffect(() => {
-    // Load from API, fall back to static
     fetch('/api/servers')
       .then((r) => r.json())
-      .then((data: McpServer[]) => {
-        if (data.length > 0) {
-          setServers(data)
-        } else {
-          setServers(STATIC_SERVERS)
-        }
-      })
+      .then((data: McpServer[]) => setServers(data.length > 0 ? data : STATIC_SERVERS))
       .catch(() => setServers(STATIC_SERVERS))
-      .finally(() => setLoading(false))
   }, [setServers])
 
   const displayServers = servers.length > 0 ? servers : STATIC_SERVERS
+  const agents = displayServers.filter((s) => activeServerIds.includes(s.id))
 
-  const categories = [
-    ALL_CATEGORIES,
-    ...Array.from(new Set(displayServers.map((s) => s.category))).sort(),
-  ]
-
+  const cats = [ALL, ...Array.from(new Set(displayServers.map((s) => s.category))).sort()]
   const filtered = displayServers.filter((s) => {
-    const matchesSearch =
-      search === '' ||
-      s.name.toLowerCase().includes(search.toLowerCase()) ||
-      s.description.toLowerCase().includes(search.toLowerCase()) ||
-      s.category.toLowerCase().includes(search.toLowerCase())
-    const matchesCategory = activeCategory === ALL_CATEGORIES || s.category === activeCategory
-    return matchesSearch && matchesCategory
+    const q = search.toLowerCase().trim()
+    const mS = !q || s.name.toLowerCase().includes(q) || s.description.toLowerCase().includes(q) || s.category.toLowerCase().includes(q)
+    const mC = cat === ALL || s.category === cat
+    return mS && mC
   })
 
-  const activeServersCount = activeServerIds.length
-
   return (
-    <div className="min-h-screen pb-32">
-      {/* Hero particle header */}
-      <ParticleHeader />
+    <>
+      <main className="x-main">
+        <Hero agents={agents} catalog={displayServers} />
 
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8">
-        {/* Stats row */}
-        <div className="flex items-center gap-6 mb-8">
-          <div className="flex items-center gap-2">
-            <div className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-            <span className="text-sm text-zinc-400">
-              <span className="text-white font-semibold">{displayServers.length}</span> servers available
-            </span>
+        {/* Directory */}
+        <div className="dir" id="directory">
+          <div className="dir__statbar">
+            <div className="dir__stat">
+              <span className="dir__statnum mono">{displayServers.length}</span>
+              <span className="dir__statlbl">agents available</span>
+            </div>
+            <span className="dir__sep">/</span>
+            <div className="dir__stat">
+              <span className="dir__statnum mono">{activeServerIds.length}</span>
+              <span className="dir__statlbl">in your runner</span>
+            </div>
           </div>
-          {activeServersCount > 0 && (
-            <div className="flex items-center gap-2">
-              <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-              <span className="text-sm text-zinc-400">
-                <span className="text-white font-semibold">{activeServersCount}</span> active
-              </span>
+
+          <div className="dir__controls">
+            <div className="search">
+              <svg className="search__icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="11" cy="11" r="8" />
+                <line x1="21" y1="21" x2="16.65" y2="16.65" />
+              </svg>
+              <input
+                className="search__input"
+                type="text"
+                placeholder="Search x402 agents…"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+              />
+            </div>
+            <div className="pills">
+              {cats.map((c) => (
+                <button key={c} className={`pill ${cat === c ? 'is-on' : ''}`} onClick={() => setCat(c)}>
+                  {c}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {filtered.length === 0 ? (
+            <div className="dir__empty">
+              <p>No agents match “{search}”.</p>
+            </div>
+          ) : (
+            <div className="x-grid">
+              {filtered.map((s) => (
+                <McpServerCard key={s.id} server={s} />
+              ))}
             </div>
           )}
         </div>
 
-        {/* Search + filters */}
-        <div className="flex flex-col sm:flex-row gap-3 mb-6">
-          <div className="relative flex-1">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-600" />
-            <input
-              type="text"
-              placeholder="Search MCP servers..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="w-full pl-9 pr-4 py-2.5 rounded-xl bg-zinc-900/80 border border-zinc-800/60 text-white placeholder-zinc-600 text-sm focus:outline-none focus:border-zinc-600 transition-colors"
-            />
+        {/* Explainer */}
+        <section className="explain">
+          <div className="explain__head">
+            <span className="explain__eyebrow mono">HOW THE NEW ECONOMY RUNS</span>
+            <h2 className="explain__h2">One wallet. Every agent. They settle the rest.</h2>
           </div>
-        </div>
-
-        {/* Category pills */}
-        <div className="flex items-center gap-2 overflow-x-auto scrollbar-none pb-2 mb-6">
-          {categories.map((cat) => {
-            const isActive = activeCategory === cat
-            const icon = cat === ALL_CATEGORIES ? '⚡' : CATEGORY_ICONS[cat] || '📦'
-            return (
-              <button
-                key={cat}
-                onClick={() => setActiveCategory(cat)}
-                className={cn(
-                  'flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all duration-200 whitespace-nowrap',
-                  isActive
-                    ? 'bg-white text-zinc-950'
-                    : 'bg-zinc-900/80 text-zinc-400 border border-zinc-800/60 hover:border-zinc-700 hover:text-zinc-200'
-                )}
-              >
-                <span>{icon}</span>
-                {cat}
-              </button>
-            )
-          })}
-        </div>
-
-        {/* Server grid */}
-        {loading ? (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-            {Array.from({ length: 12 }).map((_, i) => (
-              <div
-                key={i}
-                className="rounded-2xl border border-zinc-800/60 bg-zinc-900/40 h-40 animate-pulse"
-              />
+          <div className="explain__steps">
+            {STEPS.map((s) => (
+              <div className="step" key={s.n}>
+                <span className="step__n mono">{s.n}</span>
+                <h3 className="step__t">{s.t}</h3>
+                <p className="step__d">{s.d}</p>
+              </div>
             ))}
           </div>
-        ) : filtered.length === 0 ? (
-          <div className="text-center py-20">
-            <p className="text-zinc-500">No servers match your search.</p>
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-            {filtered.map((server, i) => (
-              <McpServerCard key={server.id} server={server} index={i} />
-            ))}
-          </div>
-        )}
-      </div>
+        </section>
+      </main>
 
-      {/* Floating active bar */}
-      <AnimatePresence>
-        {activeServersCount > 0 && <ActiveServerBar />}
-      </AnimatePresence>
-    </div>
+      <Footer />
+      <ActiveServerBar />
+    </>
   )
 }
