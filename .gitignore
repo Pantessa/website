@@ -37,3 +37,8 @@ next-env.d.ts
 
 # prisma
 /prisma/migrations/
+
+# x402 design handoff bundle (reference only)
+design/design_handoff_x402_runner/
+design/*.zip
+**/.DS_Store

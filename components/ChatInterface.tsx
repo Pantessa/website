@@ -2,12 +2,11 @@
 
 import { useState, useRef, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Send, Zap, Server, X, Loader2, Bot, User } from 'lucide-react'
-import Image from 'next/image'
+import { Send, Zap, Check, Plus, Loader2, Bot, User, PanelLeft, PanelLeftClose } from 'lucide-react'
 import { useAccount, useSignTypedData } from 'wagmi'
 import { cn } from '@/lib/utils'
 import { useYeetfulStore } from '@/lib/store'
-import { CATEGORY_ICONS } from '@/lib/mcp-data'
+import BrandIcon from '@/components/BrandIcon'
 
 // Typed-data signing request shipped from the server for the wallet to sign.
 interface SigningRequest {
@@ -40,12 +39,13 @@ export default function ChatInterface() {
     currentChatId,
     createChat,
     addMessage,
+    sidebarOpen,
+    setSidebarOpen,
   } = useYeetfulStore()
 
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
   const [status, setStatus] = useState<string | null>(null)
-  const [imgErrors, setImgErrors] = useState<Record<string, boolean>>({})
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
@@ -163,51 +163,48 @@ export default function ChatInterface() {
 
   return (
     <div className="flex flex-col h-full">
-      {/* Active servers strip */}
-      {activeServers.length > 0 && (
-        <div className="flex-shrink-0 px-4 py-2 border-b border-zinc-800/60 bg-zinc-950/50">
-          <div className="flex items-center gap-2 overflow-x-auto scrollbar-none">
-            <span className="text-[11px] text-zinc-600 whitespace-nowrap font-medium">
-              Active:
-            </span>
-            {activeServers.map((server) => {
-              const catIcon = CATEGORY_ICONS[server.category] || '⚡'
-              const hasErr = imgErrors[server.id]
+      {/* Toolbar: sidebar toggle + agent picker (toggle x402 MCPs from chat) */}
+      <div className="flex-shrink-0 px-3 py-2.5 border-b border-[var(--line)] bg-black/40">
+        <div className="flex items-center gap-2 overflow-x-auto scrollbar-none">
+          <button
+            onClick={() => setSidebarOpen(!sidebarOpen)}
+            aria-label={sidebarOpen ? 'Collapse chats sidebar' : 'Expand chats sidebar'}
+            title={sidebarOpen ? 'Collapse chats' : 'Show chats'}
+            className="flex-shrink-0 w-8 h-8 grid place-items-center rounded-lg border border-[var(--line)] bg-[var(--surf-1)] text-[color:var(--muted)] hover:text-white hover:border-[var(--line-2)] transition-colors"
+          >
+            {sidebarOpen ? <PanelLeftClose className="w-4 h-4" /> : <PanelLeft className="w-4 h-4" />}
+          </button>
+          <span className="text-[11px] text-[color:var(--muted-2)] whitespace-nowrap font-medium mono pl-1">
+            AGENTS · {activeServers.length}
+          </span>
+            {servers.map((server) => {
+              const active = activeServerIds.includes(server.id)
               return (
-                <div
+                <button
                   key={server.id}
-                  className="flex-shrink-0 flex items-center gap-1.5 px-2 py-1 rounded-lg bg-white/6 border border-white/8"
+                  onClick={() => toggleServer(server.id)}
+                  aria-pressed={active}
+                  className={cn(
+                    'flex-shrink-0 flex items-center gap-1.5 px-2.5 py-1 rounded-lg border transition-colors',
+                    active
+                      ? 'bg-[var(--surf-2)] border-white/40 text-white'
+                      : 'bg-[var(--surf-1)] border-[var(--line)] text-[color:var(--muted)] hover:border-[var(--line-2)] hover:text-white'
+                  )}
                 >
-                  <div className="w-3.5 h-3.5 flex items-center justify-center">
-                    {server.iconUrl && !hasErr ? (
-                      <Image
-                        src={server.iconUrl}
-                        alt={server.name}
-                        width={14}
-                        height={14}
-                        className="object-contain rounded-sm"
-                        onError={() => setImgErrors((p) => ({ ...p, [server.id]: true }))}
-                        unoptimized
-                      />
-                    ) : (
-                      <span className="text-[10px]">{catIcon}</span>
-                    )}
-                  </div>
-                  <span className="text-[11px] text-zinc-300 whitespace-nowrap">
-                    {server.name}
+                  <span className="w-3.5 h-3.5 grid place-items-center opacity-90">
+                    <BrandIcon server={server} size={13} />
                   </span>
-                  <button
-                    onClick={() => toggleServer(server.id)}
-                    className="text-zinc-600 hover:text-zinc-400 transition-colors"
-                  >
-                    <X className="w-2.5 h-2.5" />
-                  </button>
-                </div>
+                  <span className="text-[11px] whitespace-nowrap">{server.name}</span>
+                  {active ? (
+                    <Check className="w-2.5 h-2.5 flex-shrink-0" strokeWidth={3} style={{ color: 'var(--accent)' }} />
+                  ) : (
+                    <Plus className="w-2.5 h-2.5 flex-shrink-0 opacity-70" strokeWidth={2.5} />
+                  )}
+                </button>
               )
             })}
           </div>
         </div>
-      )}
 
       {/* Messages area */}
       <div className="flex-1 overflow-y-auto px-4 py-6 space-y-4">
@@ -232,8 +229,8 @@ export default function ChatInterface() {
                     className={cn(
                       'flex-shrink-0 w-8 h-8 rounded-xl flex items-center justify-center',
                       msg.role === 'user'
-                        ? 'bg-white text-zinc-950'
-                        : 'bg-zinc-800 text-zinc-400'
+                        ? 'bg-white text-black'
+                        : 'bg-[var(--surf-2)] border border-[var(--line)] text-[color:var(--muted)]'
                     )}
                   >
                     {msg.role === 'user' ? (
@@ -248,8 +245,8 @@ export default function ChatInterface() {
                     className={cn(
                       'max-w-[80%] px-4 py-3 rounded-2xl text-sm leading-relaxed',
                       msg.role === 'user'
-                        ? 'bg-white text-zinc-950 rounded-tr-sm'
-                        : 'bg-zinc-900 text-zinc-200 border border-zinc-800/60 rounded-tl-sm'
+                        ? 'bg-white text-black rounded-tr-sm'
+                        : 'bg-[var(--surf-1)] text-[color:var(--fg)] border border-[var(--line)] rounded-tl-sm'
                     )}
                   >
                     <pre className="whitespace-pre-wrap font-sans">{msg.content}</pre>
@@ -264,12 +261,12 @@ export default function ChatInterface() {
                 animate={{ opacity: 1, y: 0 }}
                 className="flex gap-3"
               >
-                <div className="w-8 h-8 rounded-xl bg-zinc-800 flex items-center justify-center">
-                  <Bot className="w-4 h-4 text-zinc-400" />
+                <div className="w-8 h-8 rounded-xl bg-[var(--surf-2)] border border-[var(--line)] flex items-center justify-center">
+                  <Bot className="w-4 h-4 text-[color:var(--muted)]" />
                 </div>
-                <div className="px-4 py-3 rounded-2xl rounded-tl-sm bg-zinc-900 border border-zinc-800/60 flex items-center gap-2">
-                  <Loader2 className="w-4 h-4 text-zinc-400 animate-spin flex-shrink-0" />
-                  {status && <span className="text-xs text-zinc-400">{status}</span>}
+                <div className="px-4 py-3 rounded-2xl rounded-tl-sm bg-[var(--surf-1)] border border-[var(--line)] flex items-center gap-2">
+                  <Loader2 className="w-4 h-4 text-[color:var(--muted)] animate-spin flex-shrink-0" />
+                  {status && <span className="text-xs text-[color:var(--muted)]">{status}</span>}
                 </div>
               </motion.div>
             )}
@@ -280,8 +277,8 @@ export default function ChatInterface() {
       </div>
 
       {/* Input area */}
-      <div className="flex-shrink-0 p-4 border-t border-zinc-800/60">
-        <div className="flex items-end gap-3 p-3 rounded-2xl border border-zinc-700/60 bg-zinc-900/80 focus-within:border-zinc-600 transition-colors">
+      <div className="flex-shrink-0 p-4 border-t border-[var(--line)]">
+        <div className="flex items-end gap-3 p-3 rounded-2xl border border-[var(--line)] bg-[var(--surf-1)] transition-[border-color,box-shadow] duration-200 focus-within:border-white/25 focus-within:shadow-[0_0_0_4px_rgba(255,255,255,0.05)]">
           <textarea
             ref={textareaRef}
             value={input}
@@ -293,8 +290,8 @@ export default function ChatInterface() {
                 : 'Type a message...'
             }
             rows={1}
-            className="flex-1 bg-transparent text-sm text-white placeholder-zinc-600 resize-none outline-none max-h-40 overflow-y-auto leading-relaxed"
-            style={{ minHeight: '24px' }}
+            className="flex-1 bg-transparent text-sm text-white placeholder:text-[color:var(--muted-2)] resize-none border-0 focus:outline-none focus-visible:outline-none max-h-40 overflow-y-auto leading-relaxed"
+            style={{ minHeight: '24px', outline: 'none', boxShadow: 'none' }}
           />
           <button
             onClick={handleSend}
@@ -302,8 +299,8 @@ export default function ChatInterface() {
             className={cn(
               'flex-shrink-0 w-8 h-8 rounded-xl flex items-center justify-center transition-all duration-200',
               input.trim() && !loading
-                ? 'bg-white text-zinc-950 hover:bg-zinc-200 scale-100'
-                : 'bg-zinc-800 text-zinc-600 cursor-not-allowed scale-95'
+                ? 'bg-white text-black hover:bg-zinc-200 scale-100'
+                : 'bg-[var(--surf-2)] text-[color:var(--muted-2)] cursor-not-allowed scale-95'
             )}
           >
             {loading ? (
@@ -313,7 +310,7 @@ export default function ChatInterface() {
             )}
           </button>
         </div>
-        <p className="text-[11px] text-zinc-700 mt-2 text-center">
+        <p className="text-[11px] text-[color:var(--muted-2)] mt-2 text-center mono">
           Enter to send · Shift+Enter for newline
         </p>
       </div>
@@ -324,23 +321,23 @@ export default function ChatInterface() {
 function EmptyState({ activeCount }: { activeCount: number }) {
   return (
     <div className="flex flex-col items-center justify-center h-full text-center py-20">
-      <div className="w-16 h-16 rounded-2xl bg-zinc-900 border border-zinc-800 flex items-center justify-center mb-6">
-        <Zap className="w-8 h-8 text-zinc-600" />
+      <div className="w-16 h-16 rounded-2xl bg-[var(--surf-1)] border border-[var(--line)] flex items-center justify-center mb-6">
+        <Zap className="w-8 h-8 text-[color:var(--muted-2)]" />
       </div>
       {activeCount === 0 ? (
         <>
-          <h3 className="text-zinc-300 font-semibold mb-2">No servers selected</h3>
-          <p className="text-zinc-600 text-sm max-w-xs">
-            Go to the Servers page and add some MCP servers to power up your chat.
+          <h3 className="text-white font-semibold mb-2">No agents selected</h3>
+          <p className="text-[color:var(--muted)] text-sm max-w-xs">
+            Pick x402 agents from the bar above (or the directory) to power up your chat.
           </p>
         </>
       ) : (
         <>
-          <h3 className="text-zinc-300 font-semibold mb-2">
-            {activeCount} server{activeCount > 1 ? 's' : ''} ready
+          <h3 className="text-white font-semibold mb-2">
+            {activeCount} agent{activeCount > 1 ? 's' : ''} ready
           </h3>
-          <p className="text-zinc-600 text-sm max-w-xs">
-            Start chatting! Your message will be powered by the active MCP servers.
+          <p className="text-[color:var(--muted)] text-sm max-w-xs">
+            Start chatting — your message is paid for and answered over x402.
           </p>
         </>
       )}

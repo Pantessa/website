@@ -24,7 +24,7 @@ export default function ChatPage() {
   }, [servers.length, setServers])
 
   return (
-    <div className="h-[calc(100vh-3.5rem)] flex">
+    <div className="h-[calc(100vh-4rem)] flex">
       {/* Sidebar */}
       <div className="relative flex-shrink-0">
         <ChatSidebar />
