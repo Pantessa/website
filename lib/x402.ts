@@ -118,12 +118,51 @@ async function readChallenge(res: Response): Promise<Challenge> {
   throw new Error("402 received but no x402 challenge could be parsed.");
 }
 
-interface BuiltPayment {
-  headerName: string; // "PAYMENT-SIGNATURE" (v2) or "X-PAYMENT" (v1)
-  value: string; // base64-encoded PaymentPayload
+/**
+ * EIP-712 typed data the payer must sign. Sent to the browser when the user's
+ * connected wallet is paying; values are strings for JSON transport (the client
+ * converts the uint256 fields to bigint before signing).
+ */
+export interface SigningRequest {
+  domain: { name: string; version: string; chainId: number; verifyingContract: string };
+  types: typeof TRANSFER_WITH_AUTHORIZATION_TYPES;
+  primaryType: "TransferWithAuthorization";
+  message: {
+    from: string;
+    to: string;
+    value: string;
+    validAfter: string;
+    validBefore: string;
+    nonce: string;
+  };
 }
 
-async function buildPayment(account: PrivateKeyAccount, challenge: Challenge): Promise<BuiltPayment> {
+/**
+ * An unsigned payment: the header template (with a null signature slot) plus the
+ * typed data to sign. Either the burner signs it locally, or it's shipped to the
+ * browser for the connected wallet to sign.
+ */
+export interface PreparedPayment {
+  headerName: string; // "PAYMENT-SIGNATURE" (v2) or "X-PAYMENT" (v1)
+  payloadTemplate: Record<string, unknown>; // payload.signature is null until finalized
+  signing: SigningRequest;
+}
+
+/** Fetch once; return the parsed challenge if it's a 402, else null. */
+export async function getChallenge(input: string, init?: RequestInit): Promise<Challenge | null> {
+  const res = await fetch(input, init);
+  if (res.status !== 402) {
+    await res.arrayBuffer().catch(() => {}); // drain to free the socket
+    return null;
+  }
+  return readChallenge(res);
+}
+
+/**
+ * Derive an unsigned payment (header template + typed data) for a given payer
+ * address — without signing. Works for both x402 v1 and v2 challenges.
+ */
+export function derivePayment(challenge: Challenge, fromAddress: string): PreparedPayment {
   const entry = pickEvmAccepts(challenge.accepts ?? []);
   const chainId = chainIdForNetwork(entry.network);
   const usdc = USDC_BY_CHAIN[chainId];
@@ -139,63 +178,73 @@ async function buildPayment(account: PrivateKeyAccount, challenge: Challenge): P
   if (!name || !version) throw new Error("Cannot resolve the USDC EIP-712 domain for signing.");
 
   const now = Math.floor(Date.now() / 1000);
-  const from = account.address;
-  const to = getAddress(entry.payTo);
-  const validAfter = now - 600; // tolerate clock skew
-  const validBefore = now + (entry.maxTimeoutSeconds ?? 300);
-  const nonce = toHex(crypto.getRandomValues(new Uint8Array(32)));
-
-  const signature = await account.signTypedData({
-    domain: { name, version, chainId, verifyingContract: getAddress(asset) },
-    types: TRANSFER_WITH_AUTHORIZATION_TYPES,
-    primaryType: "TransferWithAuthorization",
-    message: {
-      from,
-      to,
-      value: BigInt(value),
-      validAfter: BigInt(validAfter),
-      validBefore: BigInt(validBefore),
-      nonce,
-    },
-  });
-
   const authorization = {
-    from,
-    to,
+    from: getAddress(fromAddress),
+    to: getAddress(entry.payTo),
     value,
-    validAfter: String(validAfter),
-    validBefore: String(validBefore),
-    nonce,
+    validAfter: String(now - 600), // tolerate clock skew
+    validBefore: String(now + (entry.maxTimeoutSeconds ?? 300)),
+    nonce: toHex(crypto.getRandomValues(new Uint8Array(32))),
   };
 
+  const domain = { name, version, chainId, verifyingContract: getAddress(asset) };
   const x402Version = challenge.x402Version ?? 1;
 
+  let headerName: string;
+  let payloadTemplate: Record<string, unknown>;
   if (x402Version >= 2) {
     // v2: PAYMENT-SIGNATURE header, chosen requirement wrapped in `accepted`.
-    const payload = {
+    headerName = "PAYMENT-SIGNATURE";
+    payloadTemplate = {
       x402Version,
       resource: challenge.resource,
       accepted: entry,
-      payload: { signature, authorization },
+      payload: { signature: null, authorization },
       extensions: challenge.extensions ?? {},
     };
-    return { headerName: "PAYMENT-SIGNATURE", value: base64Encode(JSON.stringify(payload)) };
+  } else {
+    // v1: X-PAYMENT header, flat scheme/network.
+    headerName = "X-PAYMENT";
+    payloadTemplate = {
+      x402Version,
+      scheme: "exact",
+      network: entry.network,
+      payload: { signature: null, authorization },
+    };
   }
 
-  // v1: X-PAYMENT header, flat scheme/network.
-  const payload = {
-    x402Version,
-    scheme: "exact",
-    network: entry.network,
-    payload: { signature, authorization },
+  return {
+    headerName,
+    payloadTemplate,
+    signing: { domain, types: TRANSFER_WITH_AUTHORIZATION_TYPES, primaryType: "TransferWithAuthorization", message: authorization },
   };
-  return { headerName: "X-PAYMENT", value: base64Encode(JSON.stringify(payload)) };
+}
+
+/** Insert a signature into a prepared payment and base64-encode the header value. */
+export function finalizePaymentHeader(
+  prepared: PreparedPayment,
+  signature: string,
+): { name: string; value: string } {
+  const tpl = prepared.payloadTemplate as { payload: { signature: string | null } };
+  tpl.payload.signature = signature;
+  return { name: prepared.headerName, value: base64Encode(JSON.stringify(prepared.payloadTemplate)) };
+}
+
+/** Retry a request with a finalized payment header attached. */
+export function fetchWithPaymentHeader(
+  input: string,
+  init: RequestInit | undefined,
+  header: { name: string; value: string },
+): Promise<Response> {
+  const headers = new Headers(init?.headers);
+  headers.set(header.name, header.value);
+  return fetch(input, { ...init, headers });
 }
 
 /**
  * `fetch`, but it transparently answers any x402 `402 Payment Required`
- * challenge (v1 or v2) by signing an EIP-3009 authorization, attaching it in
- * the correct header, and retrying once.
+ * challenge (v1 or v2) by signing an EIP-3009 authorization with the burner
+ * account, attaching it in the correct header, and retrying once.
  */
 export async function payAndFetch(
   account: PrivateKeyAccount,
@@ -206,12 +255,24 @@ export async function payAndFetch(
   if (first.status !== 402) return first;
 
   const challenge = await readChallenge(first);
-  const payment = await buildPayment(account, challenge);
+  const prepared = derivePayment(challenge, account.address);
+  const m = prepared.signing.message;
+  const d = prepared.signing.domain;
+  const signature = await account.signTypedData({
+    domain: { ...d, verifyingContract: d.verifyingContract as `0x${string}` },
+    types: prepared.signing.types,
+    primaryType: prepared.signing.primaryType,
+    message: {
+      from: m.from as `0x${string}`,
+      to: m.to as `0x${string}`,
+      value: BigInt(m.value),
+      validAfter: BigInt(m.validAfter),
+      validBefore: BigInt(m.validBefore),
+      nonce: m.nonce as `0x${string}`,
+    },
+  });
 
-  const headers = new Headers(init?.headers);
-  headers.set(payment.headerName, payment.value);
-
-  return fetch(input, { ...init, headers });
+  return fetchWithPaymentHeader(input, init, finalizePaymentHeader(prepared, signature));
 }
 
 /**

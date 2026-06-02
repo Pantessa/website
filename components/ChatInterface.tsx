@@ -4,9 +4,32 @@ import { useState, useRef, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Send, Zap, Server, X, Loader2, Bot, User } from 'lucide-react'
 import Image from 'next/image'
+import { useAccount, useSignTypedData } from 'wagmi'
 import { cn } from '@/lib/utils'
 import { useYeetfulStore } from '@/lib/store'
 import { CATEGORY_ICONS } from '@/lib/mcp-data'
+
+// Typed-data signing request shipped from the server for the wallet to sign.
+interface SigningRequest {
+  domain: { name: string; version: string; chainId: number; verifyingContract: `0x${string}` }
+  types: Record<string, { name: string; type: string }[]>
+  primaryType: string
+  message: {
+    from: `0x${string}`
+    to: `0x${string}`
+    value: string
+    validAfter: string
+    validBefore: string
+    nonce: `0x${string}`
+  }
+}
+interface PaymentToSign {
+  id: string
+  name: string
+  host: string
+  priceUsd: string
+  signing: SigningRequest
+}
 
 export default function ChatInterface() {
   const {
@@ -21,9 +44,13 @@ export default function ChatInterface() {
 
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
+  const [status, setStatus] = useState<string | null>(null)
   const [imgErrors, setImgErrors] = useState<Record<string, boolean>>({})
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+
+  const { address, isConnected } = useAccount()
+  const { signTypedDataAsync } = useSignTypedData()
 
   const currentChat = chats.find((c) => c.id === currentChatId)
   const activeServers = servers.filter((s) => activeServerIds.includes(s.id))
@@ -47,6 +74,9 @@ export default function ChatInterface() {
     addMessage(chatId, { role: 'user', content: userMsg })
 
     try {
+      // Phase 1 — plan. If a wallet is connected, the server returns the
+      // payments to sign; otherwise it pays with the house wallet and replies.
+      setStatus(isConnected ? 'Planning x402 calls…' : null)
       const res = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -54,24 +84,74 @@ export default function ChatInterface() {
           message: userMsg,
           chatId,
           activeServerIds,
-          // Full objects so the server knows each x402 endpoint/protocol/price.
-          activeServers,
+          activeServers, // full objects: endpoint/protocol/price per server
+          walletAddress: isConnected ? address : undefined,
         }),
       })
-
       const data = await res.json()
+
+      if (data.phase === 'awaiting-signatures') {
+        const reply = await payWithWalletThenAnswer(userMsg, data)
+        addMessage(chatId, { role: 'assistant', content: reply })
+      } else {
+        addMessage(chatId, {
+          role: 'assistant',
+          content: data.reply || data.error || 'No response.',
+        })
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : ''
       addMessage(chatId, {
         role: 'assistant',
-        content: data.reply || data.error || 'No response.',
-      })
-    } catch {
-      addMessage(chatId, {
-        role: 'assistant',
-        content: '⚠️ Failed to reach the server. Make sure your API key is configured.',
+        content: /rejected|denied|User rejected/i.test(msg)
+          ? '🚫 Payment signature rejected — nothing was charged.'
+          : '⚠️ Failed to complete the request. ' + (msg || 'Try again.'),
       })
     } finally {
       setLoading(false)
+      setStatus(null)
     }
+  }
+
+  /** Sign each x402 payment with the connected wallet, then run the calls. */
+  const payWithWalletThenAnswer = async (
+    userMsg: string,
+    data: { plan: unknown; payments: PaymentToSign[]; listedOnly: unknown },
+  ): Promise<string> => {
+    const signatures: Record<string, string> = {}
+    let i = 0
+    for (const p of data.payments) {
+      i += 1
+      setStatus(`Sign payment ${i}/${data.payments.length} in your wallet — ${p.name} ($${p.priceUsd})`)
+      signatures[p.id] = await signTypedDataAsync({
+        domain: p.signing.domain,
+        types: p.signing.types,
+        primaryType: p.signing.primaryType,
+        message: {
+          from: p.signing.message.from,
+          to: p.signing.message.to,
+          value: BigInt(p.signing.message.value),
+          validAfter: BigInt(p.signing.message.validAfter),
+          validBefore: BigInt(p.signing.message.validBefore),
+          nonce: p.signing.message.nonce,
+        },
+      })
+    }
+
+    setStatus('Settling payments and fetching results…')
+    const res = await fetch('/api/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        phase: 'execute',
+        message: userMsg,
+        plan: data.plan,
+        signatures,
+        listedOnly: data.listedOnly,
+      }),
+    })
+    const out = await res.json()
+    return out.reply || out.error || 'No response.'
   }
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -187,8 +267,9 @@ export default function ChatInterface() {
                 <div className="w-8 h-8 rounded-xl bg-zinc-800 flex items-center justify-center">
                   <Bot className="w-4 h-4 text-zinc-400" />
                 </div>
-                <div className="px-4 py-3 rounded-2xl rounded-tl-sm bg-zinc-900 border border-zinc-800/60">
-                  <Loader2 className="w-4 h-4 text-zinc-400 animate-spin" />
+                <div className="px-4 py-3 rounded-2xl rounded-tl-sm bg-zinc-900 border border-zinc-800/60 flex items-center gap-2">
+                  <Loader2 className="w-4 h-4 text-zinc-400 animate-spin flex-shrink-0" />
+                  {status && <span className="text-xs text-zinc-400">{status}</span>}
                 </div>
               </motion.div>
             )}
