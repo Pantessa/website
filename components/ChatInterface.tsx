@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Send, Zap, X, Loader2, Bot, User } from 'lucide-react'
+import { Send, Zap, Check, Plus, Loader2, Bot, User } from 'lucide-react'
 import { useAccount, useSignTypedData } from 'wagmi'
 import { cn } from '@/lib/utils'
 import { useYeetfulStore } from '@/lib/store'
@@ -161,30 +161,39 @@ export default function ChatInterface() {
 
   return (
     <div className="flex flex-col h-full">
-      {/* Active servers strip */}
-      {activeServers.length > 0 && (
-        <div className="flex-shrink-0 px-4 py-2 border-b border-[var(--line)] bg-black/40">
+      {/* Agent picker — toggle which x402 MCPs are active, right from chat */}
+      {servers.length > 0 && (
+        <div className="flex-shrink-0 px-4 py-2.5 border-b border-[var(--line)] bg-black/40">
           <div className="flex items-center gap-2 overflow-x-auto scrollbar-none">
             <span className="text-[11px] text-[color:var(--muted-2)] whitespace-nowrap font-medium mono">
-              ACTIVE
+              AGENTS · {activeServers.length}
             </span>
-            {activeServers.map((server) => (
-              <div
-                key={server.id}
-                className="flex-shrink-0 flex items-center gap-1.5 px-2 py-1 rounded-lg bg-[var(--surf-2)] border border-[var(--line)]"
-              >
-                <span className="w-3.5 h-3.5 grid place-items-center opacity-80">
-                  <BrandIcon server={server} size={13} />
-                </span>
-                <span className="text-[11px] text-[color:var(--muted)] whitespace-nowrap">{server.name}</span>
+            {servers.map((server) => {
+              const active = activeServerIds.includes(server.id)
+              return (
                 <button
+                  key={server.id}
                   onClick={() => toggleServer(server.id)}
-                  className="text-[color:var(--muted-2)] hover:text-white transition-colors"
+                  aria-pressed={active}
+                  className={cn(
+                    'flex-shrink-0 flex items-center gap-1.5 px-2.5 py-1 rounded-lg border transition-colors',
+                    active
+                      ? 'bg-[var(--surf-2)] border-white/40 text-white'
+                      : 'bg-[var(--surf-1)] border-[var(--line)] text-[color:var(--muted)] hover:border-[var(--line-2)] hover:text-white'
+                  )}
                 >
-                  <X className="w-2.5 h-2.5" />
+                  <span className="w-3.5 h-3.5 grid place-items-center opacity-90">
+                    <BrandIcon server={server} size={13} />
+                  </span>
+                  <span className="text-[11px] whitespace-nowrap">{server.name}</span>
+                  {active ? (
+                    <Check className="w-2.5 h-2.5 flex-shrink-0" strokeWidth={3} style={{ color: 'var(--accent)' }} />
+                  ) : (
+                    <Plus className="w-2.5 h-2.5 flex-shrink-0 opacity-70" strokeWidth={2.5} />
+                  )}
                 </button>
-              </div>
-            ))}
+              )
+            })}
           </div>
         </div>
       )}
@@ -311,7 +320,7 @@ function EmptyState({ activeCount }: { activeCount: number }) {
         <>
           <h3 className="text-white font-semibold mb-2">No agents selected</h3>
           <p className="text-[color:var(--muted)] text-sm max-w-xs">
-            Go to the directory and add x402 agents to power up your chat.
+            Pick x402 agents from the bar above (or the directory) to power up your chat.
           </p>
         </>
       ) : (
