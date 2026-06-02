@@ -2,9 +2,9 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { Zap } from 'lucide-react'
 import { useYeetfulStore } from '@/lib/store'
 import ConnectWallet from '@/components/ConnectWallet'
+import { YeetfulMark } from '@/components/Logo'
 
 export default function Navigation() {
   const pathname = usePathname()
@@ -14,9 +14,7 @@ export default function Navigation() {
     <header className="nav">
       <div className="nav__inner">
         <Link className="logo" href="/">
-          <span className="logo__mark">
-            <Zap width={15} height={15} strokeWidth={2.5} />
-          </span>
+          <YeetfulMark size={24} />
           <span className="logo__word">yeetful</span>
         </Link>
 
