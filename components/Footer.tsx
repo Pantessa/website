@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import { Zap } from 'lucide-react'
+import { YeetfulMark } from '@/components/Logo'
 
 const FOOTER_LINKS = {
   x: 'https://x.com/yeetfuly',
@@ -13,9 +13,7 @@ export default function Footer() {
       <div className="footer__top">
         <div className="footer__brand">
           <Link className="logo" href="/">
-            <span className="logo__mark">
-              <Zap width={15} height={15} strokeWidth={2.5} />
-            </span>
+            <YeetfulMark size={20} />
             <span className="logo__word">yeetful</span>
           </Link>
           <p className="footer__tag">
