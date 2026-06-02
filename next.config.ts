@@ -6,9 +6,8 @@ const nextConfig: NextConfig = {
       { protocol: 'https', hostname: '**' },
     ],
   },
-  experimental: {
-    serverComponentsExternalPackages: ['@prisma/client', 'prisma'],
-  },
+  // Renamed from experimental.serverComponentsExternalPackages in Next 15+.
+  serverExternalPackages: ['@prisma/client', 'prisma'],
 }
 
 export default nextConfig
