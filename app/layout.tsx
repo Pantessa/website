@@ -12,7 +12,8 @@ export const metadata: Metadata = {
   description: 'Combine multiple MCP servers into a single, supercharged AI chat experience.',
   keywords: ['MCP', 'Model Context Protocol', 'AI Chat', 'Yeetful'],
   authors: [{ name: 'Yeetful' }],
-  icons: { icon: '/favicon.ico' },
+  // Icons are file-based: app/icon.svg, app/icon.png, app/apple-icon.png —
+  // Next App Router auto-generates the <link> tags, so no metadata.icons needed.
   openGraph: {
     title: 'Yeetful — MCP Power Chat',
     description: 'Combine multiple MCP servers into a supercharged AI chat.',
