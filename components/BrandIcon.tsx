@@ -25,7 +25,8 @@ const ICON_SLUG: Record<string, string> = {
 
 export default function BrandIcon({ server, size = 22 }: { server: McpServer; size?: number }) {
   const [failed, setFailed] = useState(false)
-  const slug = ICON_SLUG[server.slug] ?? ICON_SLUG[server.id]
+  // Prefer the DB-provided Simple Icons slug, then the local map, then lettermark.
+  const slug = server.iconSlug ?? ICON_SLUG[server.slug] ?? ICON_SLUG[server.id]
   const letter = server.name.replace(/[^A-Za-z]/g, '').charAt(0).toUpperCase() || '?'
 
   if (!slug || failed) {

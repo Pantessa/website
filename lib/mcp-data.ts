@@ -34,6 +34,14 @@ export interface McpServerData {
 export const CATEGORY_ICONS: Record<string, string> = {
   Inference: '🧠',
   Data: '📊',
+  Search: '🔍',
+  Media: '🎬',
+  Social: '💬',
+  Trading: '📈',
+  Infra: '🛠️',
+  Storage: '🗄️',
+  Travel: '🧭',
+  Other: '⚡',
   Custom: '⚡',
 }
 

@@ -8,23 +8,30 @@ export interface McpServer {
   name: string
   slug: string
   description: string
-  iconUrl: string | null
   category: string
   websiteUrl: string | null
-  color: string
-  isDefault: boolean
-  isCustom: boolean
-  configSchema: Record<string, { type: string; label: string; required: boolean }> | null
+  color: string | null
 
-  // x402 fields (optional for back-compat with custom servers)
+  // x402 fields
   kind?: 'inference' | 'data'
   protocol?: 'mcp' | 'http' | null
   endpoint?: string | null
   tool?: string | null
   queryParam?: string | null
   priceUsd?: string | null
-  network?: string | null
+  networks?: string[]
   callable?: boolean
+
+  // presentation / provenance (DB-backed directory)
+  iconSlug?: string | null
+  source?: string
+  featured?: boolean
+
+  // legacy/static-only fields (optional — DB rows don't carry these)
+  iconUrl?: string | null
+  isDefault?: boolean
+  isCustom?: boolean
+  configSchema?: Record<string, { type: string; label: string; required: boolean }> | null
 }
 
 export interface Message {

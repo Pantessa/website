@@ -43,7 +43,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <Navigation />
           {children}
         </Providers>
-        <Analytics />
+        {/* Vercel Analytics only ships events when deployed on Vercel; mounting
+            it in dev just logs "Failed to fetch" against the missing endpoint. */}
+        {process.env.NODE_ENV === 'production' && <Analytics />}
       </body>
     </html>
   )
