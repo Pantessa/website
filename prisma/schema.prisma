@@ -1,4 +1,4 @@
-// This is your Prisma schema file,
+// Yeetful — x402 MCP directory.
 // learn more about it in the docs: https://pris.ly/d/prisma-schema
 
 generator client {
@@ -10,72 +10,41 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+/// A featured x402 agent/MCP. Ingested from agentic.market (see
+/// scripts/ingest-agentic.ts) and enriched for the verified, callable ones.
 model McpServer {
-  id           String   @id @default(cuid())
-  name         String
-  slug         String   @unique
-  description  String
-  iconUrl      String?  @map("icon_url")
-  category     String
-  websiteUrl   String?  @map("website_url")
-  docsUrl      String?  @map("docs_url")
-  isDefault    Boolean  @default(false) @map("is_default")
-  isCustom     Boolean  @default(false) @map("is_custom")
-  configSchema Json?    @map("config_schema") // JSON schema for required config fields
-  color        String?  // accent color hex
+  id          String   @id @default(cuid())
+  slug        String   @unique
+  name        String
+  description String
 
-  // x402 fields
-  kind       String?  // 'inference' | 'data'
-  protocol   String?  // 'mcp' | 'http'
-  endpoint   String?  // x402-gated endpoint URL
-  tool       String?  // MCP tool name (inference)
-  queryParam String?  @map("query_param") // primary query param (http data)
-  priceUsd   String?  @map("price_usd")   // price per call, e.g. "0.01"
-  network    String?  // e.g. "base"
-  callable   Boolean  @default(false)     // chat can pay+call it today
+  category String // Inference | Data | Search | Media | Social | Trading | Infra | Storage | Travel | Other
+  kind     String // 'inference' | 'data' — drives chat orchestration
 
-  createdAt    DateTime @default(now())      @map("created_at")
-  updatedAt    DateTime @updatedAt           @map("updated_at")
+  // Pricing + chains (from agentic.market)
+  priceUsd String?  @map("price_usd") // min price per call, e.g. "0.001"
+  networks String[] // e.g. ["Base","Solana"] or ["eip155:8453"]
 
-  chatServers ChatServer[]
+  // x402 call wiring — only set for callable (verified) services
+  callable   Boolean @default(false)
+  endpoint   String?
+  protocol   String? // 'mcp' | 'http'
+  tool       String? // MCP tool name (inference)
+  queryParam String? @map("query_param") // primary query param (http data)
 
+  // Presentation
+  iconSlug   String? @map("icon_slug") // Simple Icons brand slug for the glyph
+  color      String?
+  websiteUrl String? @map("website_url") // agentic.market service page
+
+  // Provenance
+  source     String   @default("agentic.market")
+  featured   Boolean  @default(true)
+  lastSeenAt DateTime @default(now()) @map("last_seen_at")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  @@index([category])
+  @@index([callable])
   @@map("mcp_servers")
-}
-
-model Chat {
-  id        String   @id @default(cuid())
-  title     String   @default("New Chat")
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt      @map("updated_at")
-
-  messages    Message[]
-  chatServers ChatServer[]
-
-  @@map("chats")
-}
-
-model ChatServer {
-  id       String @id @default(cuid())
-  chatId   String @map("chat_id")
-  serverId String @map("server_id")
-  config   Json?  // Runtime config for this server in this chat
-
-  chat   Chat      @relation(fields: [chatId], references: [id], onDelete: Cascade)
-  server McpServer @relation(fields: [serverId], references: [id])
-
-  @@unique([chatId, serverId])
-  @@map("chat_servers")
-}
-
-model Message {
-  id        String   @id @default(cuid())
-  chatId    String   @map("chat_id")
-  role      String   // 'user' | 'assistant' | 'system' | 'tool'
-  content   String
-  toolCalls Json?    @map("tool_calls") // Any tool calls made
-  createdAt DateTime @default(now()) @map("created_at")
-
-  chat Chat @relation(fields: [chatId], references: [id], onDelete: Cascade)
-
-  @@map("messages")
 }

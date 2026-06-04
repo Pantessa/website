@@ -10,8 +10,10 @@
     "db:generate": "prisma generate",
     "db:push": "prisma db push",
     "db:migrate": "prisma migrate dev",
-    "db:seed": "tsx prisma/seed.ts",
-    "db:studio": "prisma studio"
+    "db:seed": "tsx scripts/ingest-agentic.ts",
+    "db:studio": "prisma studio",
+    "db:ingest": "tsx scripts/ingest-agentic.ts",
+    "db:reset": "prisma db push --force-reset --accept-data-loss"
   },
   "dependencies": {
     "@prisma/client": "^5.22.0",
