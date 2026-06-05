@@ -48,3 +48,44 @@ model McpServer {
   @@index([callable])
   @@map("mcp_servers")
 }
+
+/// A chat owned by a wallet address (verified via SIWE — see lib/auth.ts).
+/// Private by default; the owner can opt in to a public, unlisted share link
+/// (publicSlug). The sharing UI lands in a later branch — the schema is ready.
+model Chat {
+  id           String  @id @default(cuid())
+  title        String  @default("New chat")
+  ownerAddress String  @map("owner_address") // lowercased, SIWE-verified
+
+  // Selected x402 agents for this chat (slugs/ids), so a reopened chat
+  // restores its active set.
+  activeServerIds String[] @map("active_server_ids")
+
+  // Opt-in public sharing. isPublic flips it on; publicSlug is the unguessable
+  // id used in the share URL (/p/<publicSlug>); publicAt is when it was shared.
+  isPublic   Boolean   @default(false) @map("is_public")
+  publicSlug String?   @unique @map("public_slug")
+  publicAt   DateTime? @map("public_at")
+
+  messages  Message[]
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+
+  @@index([ownerAddress])
+  @@map("chats")
+}
+
+model Message {
+  id      String  @id @default(cuid())
+  chatId  String  @map("chat_id")
+  role    String // 'user' | 'assistant'
+  content String
+  /// optional per-turn metadata (e.g. x402 payment receipts)
+  meta    Json?
+
+  chat      Chat     @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([chatId])
+  @@map("messages")
+}
