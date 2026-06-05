@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "build": "prisma generate && next build",
     "start": "next start",
     "lint": "next lint",
     "db:generate": "prisma generate",
@@ -13,7 +13,9 @@
     "db:seed": "tsx scripts/ingest-agentic.ts",
     "db:studio": "prisma studio",
     "db:ingest": "tsx scripts/ingest-agentic.ts",
-    "db:reset": "prisma db push --force-reset --accept-data-loss"
+    "db:reset": "prisma db push --force-reset --accept-data-loss",
+    "test:auth": "tsx scripts/test-auth.ts",
+    "postinstall": "prisma generate"
   },
   "dependencies": {
     "@prisma/client": "^5.22.0",
@@ -23,6 +25,7 @@
     "clsx": "^2.1.1",
     "fake-indexeddb": "^6.2.5",
     "framer-motion": "^11.13.1",
+    "jose": "^6.2.3",
     "lucide-react": "^0.468.0",
     "next": "16.2.7",
     "react": "^19.0.0",
