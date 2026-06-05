@@ -44,9 +44,41 @@ model McpServer {
   createdAt  DateTime @default(now()) @map("created_at")
   updatedAt  DateTime @updatedAt @map("updated_at")
 
+  // The full x402 endpoint surface (one service → many endpoints). The flat
+  // endpoint/protocol/tool/queryParam above is the single *wired* call used by
+  // the chat orchestrator for callable services; this is the browsable catalog.
+  endpoints McpEndpoint[]
+
   @@index([category])
   @@index([callable])
   @@map("mcp_servers")
+}
+
+/// One callable x402 endpoint of a service (e.g. Claude's POST /v1/messages via
+/// Bankr). Descriptive catalog data for the service detail page — services stay
+/// the unit of selection in chat; endpoints are never individually selectable.
+model McpEndpoint {
+  id          String  @id @default(cuid())
+  serverId    String  @map("server_id")
+  method      String // GET | POST | …
+  url         String
+  description String?
+
+  // Pricing (USDC). For 'upto' schemes priceUsd is the min and maxPriceUsd the
+  // ceiling (e.g. $0.001 – $10.00); for 'exact', priceUsd is the flat amount.
+  priceUsd    String? @map("price_usd")
+  maxPriceUsd String? @map("max_price_usd")
+  scheme      String? // 'exact' | 'upto'
+  network     String?
+  provider    String? // gateway that serves it (providerName: Venice, Bankr, …)
+  position    Int     @default(0) // display order within the service
+
+  server    McpServer @relation(fields: [serverId], references: [id], onDelete: Cascade)
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  @@unique([serverId, method, url])
+  @@index([serverId])
+  @@map("mcp_endpoints")
 }
 
 /// A chat owned by a wallet address (verified via SIWE — see lib/auth.ts).
