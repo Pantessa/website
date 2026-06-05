@@ -121,3 +121,57 @@ model Message {
   @@index([chatId])
   @@map("messages")
 }
+
+/// An "agent expense account": a scoped, wallet-owned authorization to pay x402
+/// endpoints up to a budget. It's POLICY, not custody — Yeetful enforces the
+/// caps + allowlist and ledgers every decision; the funds move from the payer
+/// (today the house burner; later a Coinbase Spend Permission / session key
+/// scoped to this grant) straight to the seller. See lib/spend-grant.ts.
+model SpendGrant {
+  id           String @id @default(cuid())
+  ownerAddress String @map("owner_address") // lowercased, SIWE-verified
+  label        String @default("Agent expense account")
+
+  /// Exact hostnames this grant may pay (e.g. "tripadvisor.x402.paysponge.com").
+  allow String[]
+
+  /// Caps in USD. perDay resets at local midnight (UTC); total is a lifetime cap.
+  perCallUsd Float  @map("per_call_usd")
+  perDayUsd  Float  @map("per_day_usd")
+  totalUsd   Float? @map("total_usd")
+
+  expiresAt DateTime @map("expires_at")
+  status    String   @default("active") // active | revoked | expired
+
+  /// EIP-712 signature of the grant terms. Null while grants are SIWE-session
+  /// gated; populated once wallet-signed approvals are wired (then this is the
+  /// portable authorization artifact / precursor to an on-chain Spend Permission).
+  signature String?
+
+  ledger    SpendLedgerEntry[]
+  createdAt DateTime           @default(now()) @map("created_at")
+  updatedAt DateTime           @updatedAt @map("updated_at")
+
+  @@index([ownerAddress])
+  @@index([status])
+  @@map("spend_grants")
+}
+
+/// Append-only record of every authorization decision under a grant — the audit
+/// trail, the budget data, and the x402 payment receipts in one table.
+model SpendLedgerEntry {
+  id        String  @id @default(cuid())
+  grantId   String  @map("grant_id")
+  host      String
+  amountUsd Float   @map("amount_usd")
+  ok        Boolean
+  txHash    String? @map("tx_hash")
+  note      String? // "settled" | "dry-run" | a GrantViolation code
+
+  grant     SpendGrant @relation(fields: [grantId], references: [id], onDelete: Cascade)
+  createdAt DateTime   @default(now()) @map("created_at")
+
+  @@index([grantId])
+  @@index([grantId, ok, createdAt])
+  @@map("spend_ledger")
+}
