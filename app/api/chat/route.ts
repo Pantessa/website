@@ -12,6 +12,15 @@ import {
   type SigningRequest,
 } from '@/lib/x402'
 import type { McpServer } from '@/lib/store'
+import { getSessionAddress } from '@/lib/auth'
+import { grantViolation, type GrantPolicy } from '@/lib/spend-grant'
+import {
+  getActiveGrant,
+  spentTodayUsd,
+  spentTotalUsd,
+  recordLedger,
+  toPolicy,
+} from '@/lib/grant-store'
 
 // x402 signing + paid fetch need the Node runtime.
 export const runtime = 'nodejs'
@@ -243,21 +252,73 @@ async function runWithBurner(
   const receipts: Receipt[] = []
   const contextBlocks: string[] = []
 
+  // Load the signed-in owner's active spend grant. When one exists, every
+  // burner payment is gated by it (expiry → allowlist → per-call → per-day) and
+  // ledgered; when absent, behavior is unchanged (no enforcement, no ledger).
+  const owner = await getSessionAddress()
+  const grant = owner ? await getActiveGrant(owner) : null
+  const policy: GrantPolicy | null = grant ? toPolicy(grant) : null
+  let spentToday = grant ? await spentTodayUsd(grant.id) : 0
+  let spentTotal = grant ? await spentTotalUsd(grant.id) : 0
+  const blocked: string[] = []
+
   for (const ds of dataServers) {
+    const host = hostOf(ds.endpoint!)
+    const price = Number(ds.priceUsd ?? '0.01')
+
+    if (policy && grant) {
+      const violation = grantViolation(policy, host, price, spentToday, spentTotal)
+      if (violation) {
+        await recordLedger({ grantId: grant.id, host, amountUsd: 0, ok: false, note: violation })
+        receipts.push({ name: ds.name, endpoint: host, priceUsd: ds.priceUsd ?? '0.01', ok: false, note: `blocked: ${violation}` })
+        blocked.push(`${ds.name} (${violation})`)
+        continue
+      }
+    }
+
     try {
       const { json, txHash } = await paidGet(ds.endpoint!, ds.queryParam ?? 'q', message)
       contextBlocks.push(`### ${ds.name}\n${truncate(JSON.stringify(json), 1500)}`)
-      receipts.push({ name: ds.name, endpoint: hostOf(ds.endpoint!), priceUsd: ds.priceUsd ?? '0.01', txHash, ok: true })
+      receipts.push({ name: ds.name, endpoint: host, priceUsd: ds.priceUsd ?? '0.01', txHash, ok: true })
+      if (grant) {
+        await recordLedger({ grantId: grant.id, host, amountUsd: price, ok: true, txHash, note: 'settled' })
+        spentToday += price
+        spentTotal += price
+      }
     } catch (err) {
-      receipts.push({ name: ds.name, endpoint: hostOf(ds.endpoint!), priceUsd: ds.priceUsd ?? '0.01', ok: false, note: err instanceof Error ? err.message : 'call failed' })
+      receipts.push({ name: ds.name, endpoint: host, priceUsd: ds.priceUsd ?? '0.01', ok: false, note: err instanceof Error ? err.message : 'call failed' })
+    }
+  }
+
+  // Inference is the call that actually answers — if the grant blocks it, stop.
+  const infHost = hostOf(inference.endpoint!)
+  const infPrice = Number(inference.priceUsd ?? '0.01')
+  if (policy && grant) {
+    const violation = grantViolation(policy, infHost, infPrice, spentToday, spentTotal)
+    if (violation) {
+      await recordLedger({ grantId: grant.id, host: infHost, amountUsd: 0, ok: false, note: violation })
+      const also = blocked.length ? ` Also blocked: ${blocked.join(', ')}.` : ''
+      return NextResponse.json({
+        reply: `🚫 Your spend grant blocked the inference call (${inference.name}: ${violation}).${also} Adjust the grant's allowlist or caps and try again.`,
+        receipts,
+        blocked: true,
+      })
     }
   }
 
   const prompt = buildPrompt(message, contextBlocks)
   const { text, txHash } = await askClaude(inference.endpoint!, inference.tool ?? 'ask_claude', prompt)
-  receipts.push({ name: inference.name, endpoint: hostOf(inference.endpoint!), priceUsd: inference.priceUsd ?? '0.01', txHash, ok: true })
+  receipts.push({ name: inference.name, endpoint: infHost, priceUsd: inference.priceUsd ?? '0.01', txHash, ok: true })
+  if (grant) {
+    await recordLedger({ grantId: grant.id, host: infHost, amountUsd: infPrice, ok: true, txHash, note: 'settled' })
+    spentToday += infPrice
+  }
 
-  const reply = text + paymentsFooter(receipts, listedOnly, 'the house wallet')
+  let reply = text + paymentsFooter(receipts, listedOnly, 'the house wallet')
+  if (grant && policy) {
+    reply += `\n\n— spend grant “${grant.label}”: $${spentToday.toFixed(2)}/$${policy.perDayUsd} today`
+    if (blocked.length) reply += ` · blocked ${blocked.join(', ')}`
+  }
   return NextResponse.json({ reply, receipts })
 }
 
