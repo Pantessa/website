@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useYeetfulStore } from '@/lib/store'
 import ConnectWallet from '@/components/ConnectWallet'
+import AuthButton from '@/components/AuthButton'
 import { YeetfulMark } from '@/components/Logo'
 
 export default function Navigation() {
@@ -33,6 +34,7 @@ export default function Navigation() {
             <span className="nav__statusdot" />
             <span className="mono">{activeCount} active</span>
           </span>
+          <AuthButton />
           <ConnectWallet />
         </div>
       </div>

@@ -7,6 +7,7 @@ import { useAccount, useSignTypedData } from 'wagmi'
 import { cn } from '@/lib/utils'
 import { useYeetfulStore } from '@/lib/store'
 import BrandIcon from '@/components/BrandIcon'
+import ShareButton from '@/components/ShareButton'
 
 // Typed-data signing request shipped from the server for the wallet to sign.
 interface SigningRequest {
@@ -34,7 +35,8 @@ export default function ChatInterface() {
   const {
     servers,
     activeServerIds,
-    toggleServer,
+    setActiveServerIds,
+    updateChatServers,
     chats,
     currentChatId,
     createChat,
@@ -42,6 +44,15 @@ export default function ChatInterface() {
     sidebarOpen,
     setSidebarOpen,
   } = useYeetfulStore()
+
+  // Toggle an agent for this chat; persist the set to the open chat (and DB).
+  const handleToggleServer = (id: string) => {
+    const next = activeServerIds.includes(id)
+      ? activeServerIds.filter((x) => x !== id)
+      : [...activeServerIds, id]
+    setActiveServerIds(next)
+    if (currentChatId) updateChatServers(currentChatId, next)
+  }
 
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
@@ -64,7 +75,10 @@ export default function ChatInterface() {
 
     let chatId = currentChatId
     if (!chatId) {
-      chatId = createChat(input.slice(0, 40) + (input.length > 40 ? '...' : ''))
+      chatId = await createChat(input.slice(0, 40) + (input.length > 40 ? '...' : ''))
+      // Reflect the new chat in the URL without a remount (which would refetch
+      // an empty message list and clobber the optimistic messages below).
+      window.history.replaceState(null, '', `/chat/${chatId}`)
     }
 
     const userMsg = input.trim()
@@ -164,8 +178,8 @@ export default function ChatInterface() {
   return (
     <div className="flex flex-col h-full">
       {/* Toolbar: sidebar toggle + agent picker (toggle x402 MCPs from chat) */}
-      <div className="flex-shrink-0 px-3 py-2.5 border-b border-[var(--line)] bg-black/40">
-        <div className="flex items-center gap-2 overflow-x-auto scrollbar-none">
+      <div className="flex-shrink-0 px-3 py-2.5 border-b border-[var(--line)] bg-black/40 flex items-center gap-2">
+        <div className="flex items-center gap-2 overflow-x-auto scrollbar-none flex-1 min-w-0">
           <button
             onClick={() => setSidebarOpen(!sidebarOpen)}
             aria-label={sidebarOpen ? 'Collapse chats sidebar' : 'Expand chats sidebar'}
@@ -182,7 +196,7 @@ export default function ChatInterface() {
               return (
                 <button
                   key={server.id}
-                  onClick={() => toggleServer(server.id)}
+                  onClick={() => handleToggleServer(server.id)}
                   aria-pressed={active}
                   className={cn(
                     'flex-shrink-0 flex items-center gap-1.5 px-2.5 py-1 rounded-lg border transition-colors',
@@ -204,6 +218,7 @@ export default function ChatInterface() {
               )
             })}
           </div>
+          <ShareButton />
         </div>
 
       {/* Messages area */}
