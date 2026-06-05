@@ -6,6 +6,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { RainbowKitProvider, darkTheme } from '@rainbow-me/rainbowkit'
 import '@rainbow-me/rainbowkit/styles.css'
 import { wagmiConfig } from '@/lib/wagmi'
+import { SessionProvider } from '@/lib/session'
 
 export default function Providers({ children }: { children: ReactNode }) {
   // one QueryClient per mount; useState ensures it isn't recreated on re-renders
@@ -33,7 +34,7 @@ export default function Providers({ children }: { children: ReactNode }) {
           })}
           modalSize="compact"
         >
-          {children}
+          <SessionProvider>{children}</SessionProvider>
         </RainbowKitProvider>
       </QueryClientProvider>
     </WagmiProvider>
