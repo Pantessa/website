@@ -1,20 +1,28 @@
 #!/usr/bin/env tsx
 /**
- * Ingest the featured x402 agent directory from agentic.market into Postgres.
+ * Ingest the x402 agent directory from agentic.market into Postgres.
  *
- *   npm run db:ingest -- --dry   # parse + preview, NO DB writes
- *   npm run db:ingest            # upsert into the DB (DATABASE_URL)
+ *   npm run db:ingest -- --dry      # fetch + preview, NO DB writes
+ *   npm run db:ingest               # upsert into the DB (DATABASE_URL)
+ *   npm run db:ingest -- --prune    # also delete agentic.market rows not seen this run
  *
- * Source: https://agentic.market/api/markdown — the featured listing as
- * category tables (Inference, Data, Search, Media, …). We parse name,
- * description, min price, networks, and category for each, then enrich the
- * three verified/callable services with their real x402 endpoints.
+ * Source: https://api.agentic.market/v1/services — the JSON directory API
+ * (paginated, ~1100 services). Each service carries name, description, category,
+ * networks, per-endpoint USDC pricing, and provider. The markdown feed used
+ * previously had no endpoint/price wiring; this API does.
+ *
+ * NOTE: a service is only marked `callable: true` (wired into the chat
+ * orchestrator) when it appears in CALLABLE below. Each callable needs the one
+ * right endpoint + query param (http) or tool name (mcp) chosen by hand — the
+ * API lists ~26 endpoints per service (GET/POST/path-params) and doesn't say
+ * which param carries a free-text query, so callability can't be auto-derived.
  */
 import { PrismaClient } from '@prisma/client'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
-const MARKDOWN_URL = 'https://agentic.market/api/markdown'
+const API_BASE = 'https://api.agentic.market/v1/services'
+const PAGE_SIZE = 50
 
 // Simple Icons brand slugs for recognizable services → monochrome glyph.
 const ICON_SLUG: Record<string, string> = {
@@ -33,7 +41,10 @@ const CATEGORY_COLOR: Record<string, string> = {
   Travel: '#34E0A1', Other: '#8B8B8B',
 }
 
-// The verified, callable services — enriched with real x402 wiring.
+// The verified, callable services — enriched with real x402 wiring. These are
+// keyed by slug (slugify(name)); the API's names slugify to the same values
+// (Tripadvisor → tripadvisor, Wolfram|Alpha → wolfram-alpha), so the override
+// lands on the matching row.
 const CALLABLE: Record<string, Partial<ParsedService> & { endpoint: string }> = {
   'yeetful-claude': {
     name: 'Yeetful · Claude', category: 'Inference', kind: 'inference',
@@ -70,50 +81,121 @@ interface ParsedService {
   websiteUrl: string | null
 }
 
+// ── agentic.market JSON API shapes (only the fields we read) ─────────────────
+interface ApiEndpoint {
+  url: string
+  method: string
+  description: string
+  pricing?: { amount?: string; currency?: string; network?: string }
+}
+interface ApiService {
+  id: string
+  name: string
+  description: string
+  category: string
+  networks?: string[]
+  endpoints?: ApiEndpoint[]
+  enriched?: boolean
+  priceSummary?: { minAmount?: string; maxAmount?: string; currency?: string }
+}
+interface ApiPage {
+  services: ApiService[]
+  total: number
+  limit: number
+  offset: number
+}
+
 function slugify(name: string): string {
   return name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '')
 }
 
-function minPrice(priceStr: string): string | null {
-  const nums = [...priceStr.matchAll(/\$([0-9]+(?:\.[0-9]+)?)/g)].map((m) => Number(m[1]))
-  return nums.length ? String(Math.min(...nums)) : null
+// A bare provider domain (e.g. "orbisapi.com", "wolframalpha.x402.paysponge.com")
+// — lowercase, no spaces, ends in a TLD. agentic.market lists ~1000 of these
+// raw endpoints alongside the branded services; we skip the ones it hasn't
+// enriched or categorized (see toService), keeping the directory brand-quality.
+function looksLikeDomain(name: string): boolean {
+  const n = name.trim()
+  return n === n.toLowerCase() && !/\s/.test(n) && /^[a-z0-9][a-z0-9.-]*\.[a-z]{2,}$/.test(n)
 }
 
-// A bare hostname row (e.g. "api.exa.ai") — a provider detail, not a brand. Skip.
-function isHostnameRow(name: string): boolean {
-  return name === name.toLowerCase() && (name.match(/\./g)?.length ?? 0) >= 2
+// Friendly network labels: the API mixes "Base" with chain-id forms
+// (eip155:8453, solana:<genesis>). Normalize + dedupe.
+function normalizeNetwork(n: string): string {
+  if (n === 'eip155:8453') return 'Base'
+  if (n.startsWith('solana:')) return 'Solana'
+  if (n.startsWith('eip155:')) return n // unknown EVM chain — keep as-is
+  return n.charAt(0).toUpperCase() + n.slice(1) // "base" → "Base"
+}
+function normalizeNetworks(nets: string[] = []): string[] {
+  return [...new Set(nets.map(normalizeNetwork).filter(Boolean))]
 }
 
-function parse(md: string): ParsedService[] {
+// Cheapest USDC price across a service's endpoints (priceSummary first).
+function minPrice(s: ApiService): string | null {
+  const summary = s.priceSummary?.minAmount
+  if (summary && summary.trim()) return summary.trim()
+  const amounts = (s.endpoints ?? [])
+    .map((e) => Number(e.pricing?.amount))
+    .filter((n) => Number.isFinite(n) && n > 0)
+  return amounts.length ? String(Math.min(...amounts)) : null
+}
+
+function toService(api: ApiService): ParsedService | null {
+  const name = api.name?.trim()
+  if (!name) return null
+  // Skip unbranded provider domains that agentic.market hasn't enriched or
+  // categorized — not directory-quality. Enriched/categorized domain brands
+  // (e.g. fal.ai) still pass.
+  if (looksLikeDomain(name) && !api.enriched && !(api.category ?? '').trim()) return null
+  const slug = slugify(name)
+  if (!slug) return null
+  const category = api.category?.trim() || 'Other'
+  return {
+    slug,
+    name,
+    description: api.description?.trim() || `${name} — x402 agent on agentic.market.`,
+    category,
+    kind: category === 'Inference' ? 'inference' : 'data',
+    priceUsd: minPrice(api),
+    networks: normalizeNetworks(api.networks),
+    callable: false,
+    endpoint: null,
+    protocol: null,
+    tool: null,
+    queryParam: null,
+    iconSlug: ICON_SLUG[slug] ?? null,
+    color: CATEGORY_COLOR[category] ?? CATEGORY_COLOR.Other,
+    // The API `id` is the canonical service-page slug on agentic.market.
+    websiteUrl: `https://agentic.market/services/${api.id}`,
+  }
+}
+
+async function fetchAll(): Promise<ApiService[]> {
+  const out: ApiService[] = []
+  let offset = 0
+  let total = Infinity
+  while (offset < total) {
+    const url = `${API_BASE}?limit=${PAGE_SIZE}&offset=${offset}`
+    const res = await fetch(url, { headers: { Accept: 'application/json' } })
+    if (!res.ok) throw new Error(`agentic.market API ${res.status} at offset ${offset}`)
+    const page = (await res.json()) as ApiPage
+    const services = page.services ?? []
+    out.push(...services)
+    total = Number.isFinite(page.total) ? page.total : out.length
+    if (services.length === 0) break
+    offset += PAGE_SIZE
+    process.stdout.write(`\r  fetched ${out.length}/${total}…`)
+  }
+  process.stdout.write('\n')
+  return out
+}
+
+function build(apiServices: ApiService[]): ParsedService[] {
   const bySlug = new Map<string, ParsedService>()
-  let category: string | null = null
-  for (const line of md.split('\n')) {
-    const cat = line.match(/^###\s+(.+?)\s*$/)
-    if (cat) {
-      category = cat[1].trim()
-      continue
-    }
-    if (!category) continue
-    const row = line.match(/^\|\s*\*\*(.+?)\*\*\s*\|\s*(.*?)\s*\|\s*(.*?)\s*\|\s*(.*?)\s*\|\s*$/)
-    if (!row) continue
-    const name = row[1].trim()
-    if (isHostnameRow(name)) continue
-    const slug = slugify(name)
-    if (!slug || bySlug.has(slug)) continue
-
-    const description = row[2].trim() || `${name} — x402 agent on agentic.market.`
-    const networks = row[4].split(',').map((s) => s.trim()).filter((s) => s && s !== '—')
-    const kind = category === 'Inference' ? 'inference' : 'data'
-
-    bySlug.set(slug, {
-      slug, name, description, category, kind,
-      priceUsd: minPrice(row[3]),
-      networks,
-      callable: false, endpoint: null, protocol: null, tool: null, queryParam: null,
-      iconSlug: ICON_SLUG[slug] ?? null,
-      color: CATEGORY_COLOR[category] ?? null,
-      websiteUrl: `https://agentic.market/services/${slug}`,
-    })
+  for (const api of apiServices) {
+    const svc = toService(api)
+    if (!svc || bySlug.has(svc.slug)) continue
+    bySlug.set(svc.slug, svc)
   }
 
   // Enrich the verified callable services (add yeetful-claude if absent).
@@ -132,17 +214,17 @@ function parse(md: string): ParsedService[] {
 
 async function main() {
   const dry = process.argv.includes('--dry')
-  // load DATABASE_URL from .env.local for live runs
-  if (!dry) loadEnv()
+  const prune = process.argv.includes('--prune')
+  if (!dry) loadEnv() // load DATABASE_URL from .env.local for live runs
 
-  console.log(`Fetching ${MARKDOWN_URL} …`)
-  const md = await fetch(MARKDOWN_URL).then((r) => r.text())
-  const services = parse(md)
+  console.log(`Fetching ${API_BASE} …`)
+  const apiServices = await fetchAll()
+  const services = build(apiServices)
 
   const callable = services.filter((s) => s.callable)
   const byCat = services.reduce<Record<string, number>>((a, s) => ((a[s.category] = (a[s.category] ?? 0) + 1), a), {})
 
-  console.log(`\nParsed ${services.length} services`)
+  console.log(`\nParsed ${services.length} services (from ${apiServices.length} API rows)`)
   console.log('By category:', byCat)
   console.log('Callable (wired):', callable.map((s) => s.name).join(', '))
   console.log('\nSample:')
@@ -156,6 +238,7 @@ async function main() {
   }
 
   const prisma = new PrismaClient()
+  const runStart = new Date()
   console.log('\nUpserting into DB…')
   let n = 0
   for (const s of services) {
@@ -166,8 +249,17 @@ async function main() {
     })
     n++
   }
-  await prisma.$disconnect()
   console.log(`✅ Upserted ${n} services.`)
+
+  if (prune) {
+    // Drop agentic.market rows not refreshed this run (stale listings).
+    const { count } = await prisma.mcpServer.deleteMany({
+      where: { source: 'agentic.market', lastSeenAt: { lt: runStart } },
+    })
+    console.log(`🧹 Pruned ${count} stale services.`)
+  }
+
+  await prisma.$disconnect()
 }
 
 function loadEnv() {
