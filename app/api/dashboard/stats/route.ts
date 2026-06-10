@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import prisma from '@/lib/db'
 import { getSessionAddress } from '@/lib/auth'
 import { spentTodayUsd, spentTotalUsd } from '@/lib/grant-store'
+import { ensureGrant } from '@/lib/approvals'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -14,6 +15,10 @@ export const dynamic = 'force-dynamic'
 export async function GET() {
   const addr = await getSessionAddress()
   if (!addr) return NextResponse.json({ error: 'Not signed in.' }, { status: 401 })
+
+  // Mint the expense account on first visit — from here on, every chat
+  // payment is enforced against the (default-empty) allowlist AND ledgered.
+  await ensureGrant(addr)
 
   const grants = await prisma.spendGrant.findMany({
     where: { ownerAddress: addr },

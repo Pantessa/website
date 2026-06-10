@@ -1,11 +1,16 @@
 // ─────────────────────────────────────────────────────────────────────────
 //  Agent approvals — the dashboard's per-agent on/off switches.
 //
-//  Semantics: agents default to APPROVED (the expense account starts
-//  permissive so chat works out of the box); a toggle to off is an explicit
-//  veto. Every change re-derives the owner's active SpendGrant allowlist from
-//  the approved set — the grant's host allowlist is what the chat enforcement
-//  actually checks, so a toggle here is real policy, not UI state.
+//  Semantics: agents default to OFF — an expense account pays nothing until
+//  its owner explicitly approves an agent. Every change re-derives the owner's
+//  active SpendGrant allowlist from the explicitly-approved set — the grant's
+//  host allowlist is what the chat enforcement actually checks, so a toggle
+//  here is real policy, not UI state.
+//
+//  Until a grant exists, chat is UNENFORCED (and unledgered) — so the grant is
+//  minted on the owner's first dashboard visit (see ensureGrant), not lazily
+//  on first toggle. From that moment: nothing is payable until approved, and
+//  everything is ledgered.
 //
 //  Hosts of a service = its wired flat endpoint (callable services) plus every
 //  host in its mcp_endpoints surface (what the smart planner may call).
@@ -65,7 +70,7 @@ export async function listApprovals(ownerAddress: string): Promise<ApprovalRow[]
     priceUsd: s.priceUsd,
     iconSlug: s.iconSlug,
     color: s.color,
-    approved: byServer.get(s.id) ?? true,
+    approved: byServer.get(s.id) ?? false, // default OFF — approval is explicit
   }))
 }
 
@@ -80,21 +85,23 @@ export async function setApproval(ownerAddress: string, serverId: string, approv
 }
 
 /**
- * Re-derive the active grant's `allow` hosts from the approved agent set.
- * Creates the default expense account if the owner doesn't have one yet.
+ * Re-derive the active grant's `allow` hosts from the EXPLICITLY approved
+ * agent set (default off). Creates the expense account if none exists.
  */
 export async function syncGrantAllowlist(ownerAddress: string) {
-  const vetoed = await prisma.agentApproval.findMany({
-    where: { ownerAddress, approved: false },
+  const approvedRows = await prisma.agentApproval.findMany({
+    where: { ownerAddress, approved: true },
     select: { serverId: true },
   })
-  const vetoedIds = vetoed.map((v) => v.serverId)
+  const approvedIds = approvedRows.map((a) => a.serverId)
 
-  // Hosts of every NON-vetoed service: wired endpoint + endpoint-surface hosts.
-  const approvedServers = await prisma.mcpServer.findMany({
-    where: { id: { notIn: vetoedIds } },
-    select: { endpoint: true, endpoints: { select: { url: true } } },
-  })
+  // Hosts of explicitly approved services: wired endpoint + endpoint surface.
+  const approvedServers = approvedIds.length
+    ? await prisma.mcpServer.findMany({
+        where: { id: { in: approvedIds } },
+        select: { endpoint: true, endpoints: { select: { url: true } } },
+      })
+    : []
   const allow = [
     ...new Set(
       approvedServers.flatMap((s) => [
@@ -122,4 +129,17 @@ export async function syncGrantAllowlist(ownerAddress: string) {
       expiresAt: new Date(Date.now() + DEFAULT_GRANT.expiresInDays * 24 * 60 * 60 * 1000),
     },
   })
+}
+
+/**
+ * Mint the expense account on first dashboard visit so ledgering starts
+ * immediately (no grant = no receipts = an empty dashboard, which is exactly
+ * the "ran a query, saw nothing" trap). Returns the active grant either way.
+ */
+export async function ensureGrant(ownerAddress: string) {
+  const existing = await prisma.spendGrant.findFirst({
+    where: { ownerAddress, status: 'active', expiresAt: { gt: new Date() } },
+    orderBy: { createdAt: 'desc' },
+  })
+  return existing ?? syncGrantAllowlist(ownerAddress)
 }

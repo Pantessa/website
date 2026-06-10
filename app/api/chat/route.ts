@@ -505,7 +505,7 @@ async function runWithBurner(
       await recordLedger({ grantId: grant.id, host: infHost, serviceName: inference.name, amountUsd: 0, ok: false, note: violation })
       const also = blocked.length ? ` Also blocked: ${blocked.join(', ')}.` : ''
       return NextResponse.json({
-        reply: `🚫 Your spend grant blocked the inference call (${inference.name}: ${violation}).${also} Adjust the grant's allowlist or caps and try again.`,
+        reply: `🚫 Your spend grant blocked the inference call (${inference.name}: ${violation}).${also} Approve the agent on your **Dashboard** (or raise the caps) and try again.`,
         receipts,
         blocked: true,
       })
