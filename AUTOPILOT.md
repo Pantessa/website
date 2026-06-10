@@ -56,7 +56,7 @@ item becomes a PR into the `autopilot` branch for human review.
   the existing detail API: header (icon, category, price, networks, callable
   badge), endpoint list (method chip, path, description, price, provider,
   params), link from directory cards. Preview-verified with screenshots.
-- [ ] **4. Cost-at-volume warnings** — on the service detail page: implied
+- [x] **4. Cost-at-volume warnings** — on the service detail page: implied
   cost at 1 call/min and 1 call/sec from the endpoint price ("$0.01/call ≈
   $864/day at 1 call/sec"), amber styling past a threshold. Tiny, honest UX
   for the per-call pricing critique. Preview-verified.
@@ -95,3 +95,9 @@ _(autopilot appends here — branch, PR, verification evidence, caveats)_
 - **What**: server-rendered endpoint browser over the directory DB — header (brand tile, category/price/networks, green "Callable in chat" badge, agentic.market link), endpoint rows (method chip, path, provider/host, flat or metered price, description, zero-JS `<details>` param schemas). Directory card names now link to it (stopPropagation keeps the add/remove toggle intact). Unknown slug / DB down → 404.
 - **Verification**: preview at 1440px — tripadvisor (callable, 5 eps), exa (params expanded), blockrun-ai (122 eps); card-link navigation; zero console errors; 404 path; tsc + build ✓. Screenshots committed under `docs/autopilot/` on the PR branch (raw links in PR body; folder can be dropped at merge).
 - **Caveats**: preview-tool screenshots came back black when scrolled, so captures were re-done with headless Chrome. `yeetful-claude` has no mcp_endpoints rows in the DB → its page shows the empty state (ingest content gap, noted in PR).
+
+### Iteration 4 — Item 4: Cost-at-volume warnings ✅
+- **Branch/PR**: `autopilot-cost-warnings` → [Yeetful/website#29](https://github.com/Yeetful/website/pull/29) (base `autopilot`). **Stacked on `autopilot-service-detail` by necessity** — the item annotates item 3's page; PR body says merge #28 first (then #29 is a +42-line delta) and warns against merging into the side branch.
+- **What**: per-endpoint "AT VOLUME ≈ $X/day @ 1 call/min · ≈ $Y/day @ 1 call/sec" computed from the per-call price; amber at ≥$500/day; metered (upto) endpoints prefixed "from" (only the floor is known); unpriced endpoints show nothing. Zero client JS.
+- **Verification**: math reproduces the queue's example ($0.01 → $864/day amber); preview at 1440px on exa (muted + amber-metered) and tripadvisor (all amber); console errors unchanged from baseline (pre-existing Coinbase-SDK COOP noise, present on home page too); tsc + build ✓. Screenshots in `docs/autopilot/` on the branch.
+- **Interruption note**: owner messaged twice mid-run (caffeinate/sleep questions) — run paused per stop rule and resumed by owner re-invoking /loop both times.
