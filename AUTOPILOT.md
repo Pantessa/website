@@ -46,7 +46,7 @@ item becomes a PR into the `autopilot` branch for human review.
   script (mint → authed request → ledger row → cleanup). Then wire the
   `yeetful` SDK (../sdk repo, own branch + PR): `yeetful/agent` accepts
   `{ apiKey, ledgerUrl }` and ships an onReceipt-based hosted-ledger sync.
-- [ ] **2. EIP-712 grant signing (server side)** — typed-data schema for grant
+- [x] **2. EIP-712 grant signing (server side)** — typed-data schema for grant
   terms (allow/caps/expiry), `PUT /api/grants/[id]/signature` verifying the
   signature recovers the owner (viem `verifyTypedData`), persist to the
   existing `signature` column; expose `signed: boolean` in grant reads. Verify
@@ -83,3 +83,9 @@ _(autopilot appends here — branch, PR, verification evidence, caveats)_
 - **SDK**: `yeetful({ apiKey, ledgerUrl })` → ordered best-effort receipt sync (settlements AND denials) to the hosted ledger with Bearer auth; `pay.flushLedger()`; README section.
 - **Verification**: temp script (deleted before commit) vs dev server + real Neon — SIWE mint → Bearer CRUD → ledger row (host normalized, spentTodayUsd correct) → cross-wallet 404 → revoked key 401 → full cleanup, **17/17 green**; `tsc --noEmit` + `npm run build` ✓. SDK: **10/10 vitest** (4 new sync tests), typecheck + tsup ✓, secrets grep clean before push.
 - **Caveats**: live SDK↔prod sync untestable until #26 deploys (flagged in sdk#2). No dashboard UI for key management (not in scope). Key minting deliberately stays SIWE-only.
+
+### Iteration 2 — Item 2: EIP-712 grant signing (server side) ✅
+- **Branch/PR**: `autopilot-eip712-grants` → [Yeetful/website#27](https://github.com/Yeetful/website/pull/27) (base `autopilot`; independent of #26 — route uses `getSessionAddress`, switch to `getAuthAddress` after both merge).
+- **What**: `lib/grant-typed-data.ts` (canonical SpendGrant struct — Base chainId, sorted lowercased allow, USD as 1e6 micros, unix-seconds expiry; always built from the stored row), `GET`+`PUT /api/grants/[id]/signature` (verify via `publicClient.verifyTypedData` — EOA + ERC-1271/6492 — persist to existing `signature` column), `signed: boolean` in grant reads, signature voided when terms change (PATCH caps, approval-toggle allowlist re-derivation).
+- **Verification**: temp script (deleted) vs dev + Neon — throwaway-key sign → persisted; foreign/malformed sig → 400; cap change voids; re-sign from GET payload; anon 401/foreign 404; cleanup. **12/12 green**; tsc + build ✓. No schema change.
+- **Flagged**: wallet UI "Sign grant" button is a follow-up; wallet-popup + smart-wallet signing can't be verified headlessly (EOA path script-proven).
