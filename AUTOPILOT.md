@@ -58,7 +58,7 @@ at the bottom; its full log lives in git history of this file.
   (never the real secret — it's unrecoverable post-mint), linking to
   github.com/Yeetful/example-agent and the npm package. Pure presentational
   component → unit-verifiable; placement on dashboard flagged manual.
-- [ ] **3. "Sign grant" wallet button** — on the dashboard budget/grant card:
+- [x] **3. "Sign grant" wallet button** — on the dashboard budget/grant card:
   fetch `GET /api/grants/[id]/signature`, sign via wagmi
   `signTypedDataAsync`, `PUT` the result; show a signed/unsigned badge from
   `signed`, and a "re-sign" nudge when a terms change voided it. BigInt
@@ -110,6 +110,12 @@ _(autopilot appends here — branch, PR, verification evidence, caveats)_
 - **What**: `ConnectAgentCard` shows once a key + grant exist — preloaded `yeetful/agent` snippet (owner's grant id, deployment ledger URL, ALWAYS the `process.env.YEETFUL_API_KEY` placeholder), copy button, links to example-agent + npm. `ApiKeysPanel` gains `onKeysChange`.
 - **Verification**: static-render unit script (deleted) — 9/9 incl. "no secret-shaped string possible" and hidden-state checks; tsc + build ✓.
 - **Flagged**: live placement glance (rule 6).
+
+### Iteration 3 — Item 3: "Sign grant" wallet button ✅
+- **Branch/PR**: `autopilot-sign-grant` → [Yeetful/website#36](https://github.com/Yeetful/website/pull/36) (base `autopilot`; independent — budget-meter card region).
+- **What**: self-contained `SignGrantButton` — GET typed data + signed flag, pure exported `toSignable()` (uint256s from the served types), wagmi sign, PUT; emerald Signed badge / outline Sign button / amber "terms changed — re-sign" nudge (refreshKey wired to approval toggles).
+- **Verification**: temp script (deleted) replayed the exact component data path with a throwaway key — GET → convert (BigInts asserted) → sign → PUT 200 signed:true → cap-change void → re-sign — **7/7 green**; tsc + build ✓.
+- **Flagged**: wallet popup + visuals manual (rule 6); EOA path script-proven.
 
 ---
 
