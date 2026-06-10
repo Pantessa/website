@@ -44,9 +44,41 @@ model McpServer {
   createdAt  DateTime @default(now()) @map("created_at")
   updatedAt  DateTime @updatedAt @map("updated_at")
 
+  // The full x402 endpoint surface (one service → many endpoints). The flat
+  // endpoint/protocol/tool/queryParam above is the single *wired* call used by
+  // the chat orchestrator for callable services; this is the browsable catalog.
+  endpoints McpEndpoint[]
+
   @@index([category])
   @@index([callable])
   @@map("mcp_servers")
+}
+
+/// One callable x402 endpoint of a service (e.g. Claude's POST /v1/messages via
+/// Bankr). Descriptive catalog data for the service detail page — services stay
+/// the unit of selection in chat; endpoints are never individually selectable.
+model McpEndpoint {
+  id          String  @id @default(cuid())
+  serverId    String  @map("server_id")
+  method      String // GET | POST | …
+  url         String
+  description String?
+
+  // Pricing (USDC). For 'upto' schemes priceUsd is the min and maxPriceUsd the
+  // ceiling (e.g. $0.001 – $10.00); for 'exact', priceUsd is the flat amount.
+  priceUsd    String? @map("price_usd")
+  maxPriceUsd String? @map("max_price_usd")
+  scheme      String? // 'exact' | 'upto'
+  network     String?
+  provider    String? // gateway that serves it (providerName: Venice, Bankr, …)
+  position    Int     @default(0) // display order within the service
+
+  server    McpServer @relation(fields: [serverId], references: [id], onDelete: Cascade)
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  @@unique([serverId, method, url])
+  @@index([serverId])
+  @@map("mcp_endpoints")
 }
 
 /// A chat owned by a wallet address (verified via SIWE — see lib/auth.ts).
@@ -88,4 +120,58 @@ model Message {
 
   @@index([chatId])
   @@map("messages")
+}
+
+/// An "agent expense account": a scoped, wallet-owned authorization to pay x402
+/// endpoints up to a budget. It's POLICY, not custody — Yeetful enforces the
+/// caps + allowlist and ledgers every decision; the funds move from the payer
+/// (today the house burner; later a Coinbase Spend Permission / session key
+/// scoped to this grant) straight to the seller. See lib/spend-grant.ts.
+model SpendGrant {
+  id           String @id @default(cuid())
+  ownerAddress String @map("owner_address") // lowercased, SIWE-verified
+  label        String @default("Agent expense account")
+
+  /// Exact hostnames this grant may pay (e.g. "tripadvisor.x402.paysponge.com").
+  allow String[]
+
+  /// Caps in USD. perDay resets at local midnight (UTC); total is a lifetime cap.
+  perCallUsd Float  @map("per_call_usd")
+  perDayUsd  Float  @map("per_day_usd")
+  totalUsd   Float? @map("total_usd")
+
+  expiresAt DateTime @map("expires_at")
+  status    String   @default("active") // active | revoked | expired
+
+  /// EIP-712 signature of the grant terms. Null while grants are SIWE-session
+  /// gated; populated once wallet-signed approvals are wired (then this is the
+  /// portable authorization artifact / precursor to an on-chain Spend Permission).
+  signature String?
+
+  ledger    SpendLedgerEntry[]
+  createdAt DateTime           @default(now()) @map("created_at")
+  updatedAt DateTime           @updatedAt @map("updated_at")
+
+  @@index([ownerAddress])
+  @@index([status])
+  @@map("spend_grants")
+}
+
+/// Append-only record of every authorization decision under a grant — the audit
+/// trail, the budget data, and the x402 payment receipts in one table.
+model SpendLedgerEntry {
+  id        String  @id @default(cuid())
+  grantId   String  @map("grant_id")
+  host      String
+  amountUsd Float   @map("amount_usd")
+  ok        Boolean
+  txHash    String? @map("tx_hash")
+  note      String? // "settled" | "dry-run" | a GrantViolation code
+
+  grant     SpendGrant @relation(fields: [grantId], references: [id], onDelete: Cascade)
+  createdAt DateTime   @default(now()) @map("created_at")
+
+  @@index([grantId])
+  @@index([grantId, ok, createdAt])
+  @@map("spend_ledger")
 }

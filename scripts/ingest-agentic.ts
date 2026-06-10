@@ -81,12 +81,33 @@ interface ParsedService {
   websiteUrl: string | null
 }
 
+// One row of the mcp_endpoints child table (the full endpoint surface).
+interface ParsedEndpoint {
+  method: string
+  url: string
+  description: string | null
+  priceUsd: string | null
+  maxPriceUsd: string | null
+  scheme: string | null
+  network: string | null
+  provider: string | null
+  position: number
+}
+
 // ── agentic.market JSON API shapes (only the fields we read) ─────────────────
 interface ApiEndpoint {
   url: string
   method: string
   description: string
-  pricing?: { amount?: string; currency?: string; network?: string }
+  providerName?: string
+  pricing?: {
+    amount?: string
+    currency?: string
+    network?: string
+    scheme?: string
+    minAmount?: string
+    maxAmount?: string
+  }
 }
 interface ApiService {
   id: string
@@ -170,6 +191,36 @@ function toService(api: ApiService): ParsedService | null {
   }
 }
 
+// Normalize a service's endpoint list, deduped by (method, url) so it satisfies
+// the mcp_endpoints unique constraint.
+function toEndpoints(api: ApiService): ParsedEndpoint[] {
+  const out: ParsedEndpoint[] = []
+  const seen = new Set<string>()
+  let i = 0
+  for (const e of api.endpoints ?? []) {
+    const url = e.url?.trim()
+    if (!url) continue
+    const method = (e.method || '').split(',')[0].trim().toUpperCase() || 'GET'
+    const key = `${method} ${url}`
+    if (seen.has(key)) continue
+    seen.add(key)
+    const p = e.pricing ?? {}
+    const amount = p.amount?.trim() || p.minAmount?.trim() || null
+    out.push({
+      method,
+      url,
+      description: e.description?.trim() || null,
+      priceUsd: amount,
+      maxPriceUsd: p.maxAmount?.trim() || null,
+      scheme: p.scheme?.trim() || null,
+      network: p.network ? normalizeNetwork(p.network) : null,
+      provider: e.providerName?.trim() || null,
+      position: i++,
+    })
+  }
+  return out
+}
+
 async function fetchAll(): Promise<ApiService[]> {
   const out: ApiService[] = []
   let offset = 0
@@ -190,12 +241,17 @@ async function fetchAll(): Promise<ApiService[]> {
   return out
 }
 
-function build(apiServices: ApiService[]): ParsedService[] {
+function build(apiServices: ApiService[]): {
+  services: ParsedService[]
+  endpoints: Map<string, ParsedEndpoint[]>
+} {
   const bySlug = new Map<string, ParsedService>()
+  const endpoints = new Map<string, ParsedEndpoint[]>()
   for (const api of apiServices) {
     const svc = toService(api)
     if (!svc || bySlug.has(svc.slug)) continue
     bySlug.set(svc.slug, svc)
+    endpoints.set(svc.slug, toEndpoints(api))
   }
 
   // Enrich the verified callable services (add yeetful-claude if absent).
@@ -209,7 +265,7 @@ function build(apiServices: ApiService[]): ParsedService[] {
     bySlug.set(slug, { ...base, ...over, callable: true })
   }
 
-  return [...bySlug.values()]
+  return { services: [...bySlug.values()], endpoints }
 }
 
 async function main() {
@@ -219,17 +275,19 @@ async function main() {
 
   console.log(`Fetching ${API_BASE} …`)
   const apiServices = await fetchAll()
-  const services = build(apiServices)
+  const { services, endpoints } = build(apiServices)
 
   const callable = services.filter((s) => s.callable)
   const byCat = services.reduce<Record<string, number>>((a, s) => ((a[s.category] = (a[s.category] ?? 0) + 1), a), {})
+  const totalEndpoints = [...endpoints.values()].reduce((a, e) => a + e.length, 0)
 
-  console.log(`\nParsed ${services.length} services (from ${apiServices.length} API rows)`)
+  console.log(`\nParsed ${services.length} services (from ${apiServices.length} API rows), ${totalEndpoints} endpoints`)
   console.log('By category:', byCat)
   console.log('Callable (wired):', callable.map((s) => s.name).join(', '))
   console.log('\nSample:')
   for (const s of services.slice(0, 6)) {
-    console.log(`  • ${s.name} [${s.category}] $${s.priceUsd ?? '—'} ${s.networks.join('/')}${s.callable ? ' ⚡callable' : ''}`)
+    const ep = endpoints.get(s.slug)?.length ?? 0
+    console.log(`  • ${s.name} [${s.category}] $${s.priceUsd ?? '—'} ${s.networks.join('/')} · ${ep} endpoints${s.callable ? ' ⚡callable' : ''}`)
   }
 
   if (dry) {
@@ -241,15 +299,26 @@ async function main() {
   const runStart = new Date()
   console.log('\nUpserting into DB…')
   let n = 0
+  let epWritten = 0
   for (const s of services) {
-    await prisma.mcpServer.upsert({
+    const saved = await prisma.mcpServer.upsert({
       where: { slug: s.slug },
       update: { ...s, lastSeenAt: new Date() },
       create: s,
     })
     n++
+    // Replace this service's endpoint surface (cascade-owned child rows).
+    const eps = endpoints.get(s.slug) ?? []
+    await prisma.mcpEndpoint.deleteMany({ where: { serverId: saved.id } })
+    if (eps.length) {
+      await prisma.mcpEndpoint.createMany({
+        data: eps.map((e) => ({ ...e, serverId: saved.id })),
+        skipDuplicates: true,
+      })
+      epWritten += eps.length
+    }
   }
-  console.log(`✅ Upserted ${n} services.`)
+  console.log(`✅ Upserted ${n} services, ${epWritten} endpoints.`)
 
   if (prune) {
     // Drop agentic.market rows not refreshed this run (stale listings).

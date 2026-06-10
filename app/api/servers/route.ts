@@ -22,6 +22,8 @@ export async function GET() {
     const servers = await prisma.mcpServer.findMany({
       // Callable (wired) first, then by category, then alphabetical.
       orderBy: [{ callable: 'desc' }, { category: 'asc' }, { name: 'asc' }],
+      // Endpoint count for the card badge (full list loads on the detail route).
+      include: { _count: { select: { endpoints: true } } },
     })
     if (servers.length === 0) return NextResponse.json(CATALOG)
     return NextResponse.json(servers)
