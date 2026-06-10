@@ -17,7 +17,7 @@ export async function GET(req: NextRequest) {
     orderBy: { createdAt: 'desc' },
     include: { _count: { select: { ledger: true } } },
   })
-  return NextResponse.json(grants)
+  return NextResponse.json(grants.map((g) => ({ ...g, signed: !!g.signature })))
 }
 
 const MAX_PER_CALL = 100 // sanity ceilings so a typo can't authorize a fortune
