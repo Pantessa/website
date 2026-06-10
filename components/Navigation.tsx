@@ -43,6 +43,12 @@ export default function Navigation() {
               Dashboard
             </Link>
           )}
+          <Link
+            href="/developers"
+            className={`nav__tab ${pathname === '/developers' ? 'is-on' : ''}`}
+          >
+            Developers
+          </Link>
         </nav>
 
         <div className="nav__right">
