@@ -165,8 +165,13 @@ export default function DashboardPage() {
                 <p className="text-xs text-[color:var(--muted-2)] mt-0.5">
                   {g
                     ? `$${g.perCallUsd} per call max · ${g.allowCount} approved hosts · expires ${new Date(g.expiresAt).toLocaleDateString()}`
-                    : 'Toggle any agent below to mint one — default caps $0.05/call, $5/day.'}
+                    : 'Your account mints automatically — default caps $0.05/call, $5/day.'}
                 </p>
+                {g && g.allowCount === 0 && (
+                  <p className="text-xs text-amber-400/90 mt-1">
+                    Nothing approved yet — your account refuses all payments. Toggle on the agents you trust below.
+                  </p>
+                )}
               </div>
               {g && (
                 <span className="mono text-xs text-[color:var(--muted)]">
