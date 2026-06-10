@@ -8,6 +8,7 @@ import { Loader2, ShieldCheck, Wallet, CheckCircle2, XCircle, ArrowUpRight } fro
 import { cn } from '@/lib/utils'
 import { useSession } from '@/lib/session'
 import { SpendByAgent, SpendOverTime } from '@/components/DashboardCharts'
+import SignGrantButton from '@/components/SignGrantButton'
 
 // ── API shapes ───────────────────────────────────────────────────────────────
 interface Stats {
@@ -175,8 +176,16 @@ export default function DashboardPage() {
                 )}
               </div>
               {g && (
-                <span className="mono text-xs text-[color:var(--muted)]">
-                  ${g.spentTodayUsd.toFixed(4)} / ${g.perDayUsd.toFixed(2)} today
+                <span className="flex items-center gap-3 flex-wrap">
+                  {/* Approval toggles re-derive the allowlist and void a stale
+                      signature server-side — refreshKey re-checks after them. */}
+                  <SignGrantButton
+                    grantId={g.id}
+                    refreshKey={approvals?.map((a) => `${a.serverId}:${a.approved}`).join(',')}
+                  />
+                  <span className="mono text-xs text-[color:var(--muted)]">
+                    ${g.spentTodayUsd.toFixed(4)} / ${g.perDayUsd.toFixed(2)} today
+                  </span>
                 </span>
               )}
             </div>
