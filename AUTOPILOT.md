@@ -46,7 +46,7 @@ at the bottom; its full log lives in git history of this file.
 
 ## Queue (ordered; one per iteration)
 
-- [ ] **1. API-key management UI** — dashboard panel over the existing
+- [x] **1. API-key management UI** — dashboard panel over the existing
   `/api/keys*` routes: list keys (prefix, label, lastUsedAt, createdAt),
   mint with a label → modal showing the plaintext `yf_…` ONCE with a copy
   button + "you won't see this again", revoke with confirm. Empty state
@@ -98,6 +98,12 @@ at the bottom; its full log lives in git history of this file.
 ## Progress log — Run 2
 
 _(autopilot appends here — branch, PR, verification evidence, caveats)_
+
+### Iteration 1 — Item 1: API-key management UI ✅
+- **Branch/PR**: `autopilot-key-ui` → [Yeetful/website#34](https://github.com/Yeetful/website/pull/34) (base `autopilot`).
+- **What**: `ApiKeysPanel` on `/dashboard` (between approvals and activity feed) — mint with label → show-once `yf_…` secret in an emerald reveal block (copy + explicit dismiss), key list (prefix/label/used/created), two-step revoke with optimistic removal, explanatory empty state. No server changes — sits on Run-1 routes.
+- **Verification**: temp script (deleted) replayed the panel's exact call sequence vs dev + Neon — mint w/ and w/o label, list shows prefixes never secrets, revoke, zero rows left — **5/5 green**; tsc + build ✓.
+- **Flagged**: rendered panel needs one manual glance (wallet+SIWE gate, rule 6).
 
 ---
 
