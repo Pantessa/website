@@ -38,7 +38,7 @@ item becomes a PR into the `autopilot` branch for human review.
 
 ## Queue (ordered; one per iteration)
 
-- [ ] **1. API keys for headless agents** — `ApiKey` model (sha256-hashed
+- [x] **1. API keys for headless agents** — `ApiKey` model (sha256-hashed
   secret, owner, label, lastUsedAt; plaintext shown once at mint). SIWE-gated
   `/api/keys` CRUD. Accept `Authorization: Bearer yf_…` as an auth alternative
   on `/api/grants*`, plus new `POST /api/grants/[id]/ledger` so the `yeetful`
@@ -75,3 +75,11 @@ item becomes a PR into the `autopilot` branch for human review.
 ## Progress log
 
 _(autopilot appends here — branch, PR, verification evidence, caveats)_
+
+### Iteration 1 — Item 1: API keys for headless agents ✅
+- **Branches/PRs**: website `autopilot-api-keys` → [Yeetful/website#26](https://github.com/Yeetful/website/pull/26) (base `autopilot`); sdk `hosted-ledger-sync` → [Yeetful/sdk#2](https://github.com/Yeetful/sdk/pull/2) (base `main` — that repo has no `autopilot` branch; PR is marked review-only/no-merge, and merging would imply an npm publish autopilot can't do).
+- **Naming deviation**: constitution says `autopilot/<slug>`, but git refuses `autopilot/*` refs while the `autopilot` branch exists → using `autopilot-<slug>`.
+- **Website**: `ApiKey` model (sha256 hash, prefix, lastUsedAt; plaintext `yf_…` shown once at mint), SIWE-gated `/api/keys` + `/api/keys/[id]`, Bearer-or-SIWE `getAuthAddress()` on all `/api/grants*`, new `POST /api/grants/[id]/ledger` for SDK receipt sync. Additive `prisma db push` applied to Neon (`api_keys` table).
+- **SDK**: `yeetful({ apiKey, ledgerUrl })` → ordered best-effort receipt sync (settlements AND denials) to the hosted ledger with Bearer auth; `pay.flushLedger()`; README section.
+- **Verification**: temp script (deleted before commit) vs dev server + real Neon — SIWE mint → Bearer CRUD → ledger row (host normalized, spentTodayUsd correct) → cross-wallet 404 → revoked key 401 → full cleanup, **17/17 green**; `tsc --noEmit` + `npm run build` ✓. SDK: **10/10 vitest** (4 new sync tests), typecheck + tsup ✓, secrets grep clean before push.
+- **Caveats**: live SDK↔prod sync untestable until #26 deploys (flagged in sdk#2). No dashboard UI for key management (not in scope). Key minting deliberately stays SIWE-only.
