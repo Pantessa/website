@@ -52,7 +52,7 @@ at the bottom; its full log lives in git history of this file.
   button + "you won't see this again", revoke with confirm. Empty state
   explains what keys are for. Logic verified by API script; gated visuals
   flagged manual per rule 6.
-- [ ] **2. "Connect an agent" onboarding card** — after a key exists, the
+- [x] **2. "Connect an agent" onboarding card** — after a key exists, the
   dashboard shows a copy-paste `yeetful/agent` snippet preloaded with the
   user's active grant id, ledger URL, and a `YEETFUL_API_KEY` placeholder
   (never the real secret — it's unrecoverable post-mint), linking to
@@ -104,6 +104,12 @@ _(autopilot appends here — branch, PR, verification evidence, caveats)_
 - **What**: `ApiKeysPanel` on `/dashboard` (between approvals and activity feed) — mint with label → show-once `yf_…` secret in an emerald reveal block (copy + explicit dismiss), key list (prefix/label/used/created), two-step revoke with optimistic removal, explanatory empty state. No server changes — sits on Run-1 routes.
 - **Verification**: temp script (deleted) replayed the panel's exact call sequence vs dev + Neon — mint w/ and w/o label, list shows prefixes never secrets, revoke, zero rows left — **5/5 green**; tsc + build ✓.
 - **Flagged**: rendered panel needs one manual glance (wallet+SIWE gate, rule 6).
+
+### Iteration 2 — Item 2: "Connect an agent" onboarding card ✅
+- **Branch/PR**: `autopilot-connect-card` → [Yeetful/website#35](https://github.com/Yeetful/website/pull/35) (base `autopilot`; **stacked on #34** per rule 1's escape hatch — same dashboard region + key-state composition; merge #34 first).
+- **What**: `ConnectAgentCard` shows once a key + grant exist — preloaded `yeetful/agent` snippet (owner's grant id, deployment ledger URL, ALWAYS the `process.env.YEETFUL_API_KEY` placeholder), copy button, links to example-agent + npm. `ApiKeysPanel` gains `onKeysChange`.
+- **Verification**: static-render unit script (deleted) — 9/9 incl. "no secret-shaped string possible" and hidden-state checks; tsc + build ✓.
+- **Flagged**: live placement glance (rule 6).
 
 ---
 
