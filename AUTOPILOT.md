@@ -67,7 +67,7 @@ item becomes a PR into the `autopilot` branch for human review.
   endpoints — the "how an app adds this" artifact. README with the 3-line
   pitch. `.env.example` only; run the secrets grep before EVERY push. Also
   refresh `../demo` to consume the same flow where it overlaps.
-- [ ] **6. Receipts → `Message.meta`** — chat client persists the receipts
+- [x] **6. Receipts → `Message.meta`** — chat client persists the receipts
   array into `Message.meta` on save; `/chat/[id]` renders a compact receipt
   footnote under assistant messages from stored meta. API path verifiable
   (meta already accepted); rendered state needs SIWE → flag manual.
@@ -107,3 +107,36 @@ _(autopilot appends here — branch, PR, verification evidence, caveats)_
 - **What**: standalone Node script on the published `yeetful@0.2.0` — `yeetful({ wallet, grant })` expense account with allowlist + caps; free-by-default demo (throwaway key: allowlisted free call receipted at $0, off-allowlist call denied pre-network with receipt); `LIVE=1` + `PRIVATE_KEY` documented for one real $0.01 TripAdvisor call (NOT run — no spending). README has the 3-line pitch + dashboard-sync section (notes `apiKey`/`grant.id` sync activates with yeetful ≥ 0.3 / sdk#2 — 0.2.x ignores it harmlessly). `.env.example` only.
 - **Verification**: `npm start` demo run green (receipts + denial as designed, $0 spent). **Secrets grep before push: zero hits**, no `.env` in tree.
 - **Caveat — demo/ refresh SKIPPED**: `demo/` has no git repository (checked: no `.git`, not nested in any repo), so the constitution's required branch+PR workflow is impossible there, and unversioned edits would be unrevertable. Left untouched; owner may want to `git init` demo/ first.
+
+### Iteration 6 — Item 6: Receipts → Message.meta ✅
+- **Branch/PR**: `autopilot-chat-receipts` → [Yeetful/website#30](https://github.com/Yeetful/website/pull/30) (base `autopilot`; independent of the other PRs).
+- **What**: chat client attaches `/api/chat`'s receipts to the assistant message on both payment paths and persists via the existing `Message.meta` column (server unchanged); `meta` round-trips on load; new `MessageReceipts` footnote (✓ name/price/Basescan link; ✗ note) rendered in `/chat/[id]` AND `/p/[slug]` from one component.
+- **Verification**: temp script (deleted) — meta round-trip + rendered footnote proven via the public share page HTML, 8/8 green; cleanup verified; tsc + build ✓. Screenshot on the branch.
+- **Flagged**: live wallet-paid `/chat/[id]` end-to-end needs one manual run (SIWE + wallet popup). Possible follow-up: drop the duplicate text `paymentsFooter` now that receipts render structurally.
+
+---
+
+## Run summary (2026-06-10)
+
+**Queue: 6/6 complete.** Zero failed iterations. Nothing merged, nothing deployed, no spending, no force-pushes. All website PRs target `autopilot`.
+
+| # | Item | Deliverable |
+|---|------|-------------|
+| 1 | API keys for headless agents | [website#26](https://github.com/Yeetful/website/pull/26) + [sdk#2](https://github.com/Yeetful/sdk/pull/2) |
+| 2 | EIP-712 grant signing | [website#27](https://github.com/Yeetful/website/pull/27) |
+| 3 | Service detail page | [website#28](https://github.com/Yeetful/website/pull/28) |
+| 4 | Cost-at-volume warnings | [website#29](https://github.com/Yeetful/website/pull/29) — stacked on #28, merge #28 first |
+| 5 | Example integration | [Yeetful/example-agent](https://github.com/Yeetful/example-agent) (public) |
+| 6 | Receipts → Message.meta | [website#30](https://github.com/Yeetful/website/pull/30) |
+
+**Suggested merge order**: #26 → #27 → #28 → #29 → #30, then sdk#2 (publish 0.3 when ready). After #26+#27 both land, switch the signature route to `getAuthAddress` (one-line, noted in #27).
+
+**Deviations & flags for the owner**
+- Branch naming: `autopilot-<slug>` instead of `autopilot/<slug>` (git refuses `autopilot/*` while branch `autopilot` exists).
+- #29 stacks on #28 (item 4 annotates item 3's page — unavoidable).
+- sdk#2 is based on that repo's `main` (no autopilot branch there) — review-only, do not merge without intending a 0.3 publish.
+- example-agent's initial commit went to its own fresh `main` (no base branch exists to PR against in a new repo).
+- `demo/` refresh SKIPPED: demo has no git repo, so the required branch+PR flow is impossible and edits would be unrevertable. `git init` it if wanted.
+- DB: one additive change all run (`api_keys` table via plain `db push`). Neon untouched otherwise; every test row verified cleaned.
+- Manual passes needed: wallet "Sign grant" button UX (#27), live wallet-paid chat receipt end-to-end (#30), SDK↔prod ledger sync after #26 deploys (sdk#2).
+- `docs/autopilot/` on PR branches holds review screenshots — delete at merge if unwanted.
