@@ -230,6 +230,14 @@
   .badge--live { border: 1px solid; background: transparent; font-family: 'Geist', sans-serif; }
   .badge__dot { width: 5px; height: 5px; border-radius: 50%; }
   .badge--dir { background: transparent; border: 1px solid var(--line); color: var(--muted-2); }
+  .card__links { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+  .card__more {
+    display: inline-flex; align-items: center; gap: 3px;
+    font-size: 11px; padding: 3px 9px; border-radius: 999px;
+    border: 1px solid var(--line); color: var(--muted);
+    transition: color .15s, border-color .15s;
+  }
+  .card__more:hover { color: var(--fg); border-color: var(--line-2); }
   .card__ext { color: var(--muted-2); padding: 4px; border-radius: 6px; transition: color .15s; flex-shrink: 0; }
   .card__ext:hover { color: var(--fg); }
   .dir__empty { text-align: center; padding: 80px 0; color: var(--muted-2); }

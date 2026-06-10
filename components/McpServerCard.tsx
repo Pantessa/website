@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { Check, Plus, ExternalLink } from 'lucide-react'
+import { Check, Plus, ExternalLink, ArrowUpRight } from 'lucide-react'
 import { McpServer, useYeetfulStore } from '@/lib/store'
 import BrandIcon from '@/components/BrandIcon'
 
@@ -64,18 +64,29 @@ export default function McpServerCard({ server }: McpServerCardProps) {
             <span className="badge badge--dir mono">Directory</span>
           ) : null}
         </div>
-        {server.websiteUrl && (
-          <a
-            className="card__ext"
-            href={server.websiteUrl}
-            target="_blank"
-            rel="noopener noreferrer"
+        <div className="card__links">
+          <Link
+            className="card__more mono"
+            href={`/servers/${server.slug}`}
             onClick={(e) => e.stopPropagation()}
-            title="View on agentic.market"
+            title="Endpoints & pricing"
           >
-            <ExternalLink width={13} height={13} />
-          </a>
-        )}
+            Details
+            <ArrowUpRight width={11} height={11} />
+          </Link>
+          {server.websiteUrl && (
+            <a
+              className="card__ext"
+              href={server.websiteUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={(e) => e.stopPropagation()}
+              title="View on agentic.market"
+            >
+              <ExternalLink width={13} height={13} />
+            </a>
+          )}
+        </div>
       </div>
     </div>
   )
