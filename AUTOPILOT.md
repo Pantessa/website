@@ -88,7 +88,7 @@ at the bottom; its full log lives in git history of this file.
   lines, Details chips), plus the dashboard grid where tsc-checkable. Fix
   overflow/wrap issues in `x402-design.css`. Headless-Chrome screenshots at
   both widths in the PR.
-- [ ] **7. `/developers` page** — public, server-rendered: the expense-account
+- [x] **7. `/developers` page** — public, server-rendered: the expense-account
   pitch (3-liner from example-agent), a quickstart (install `yeetful`, mint a
   key on the dashboard, snippet with grant + apiKey), reference tables for
   Bearer auth on `/api/grants*` and the ledger-sync endpoint, links to npm /
@@ -134,6 +134,36 @@ _(autopilot appends here — branch, PR, verification evidence, caveats)_
 - **What**: one real fix — ≤600px detail header stacks (52px tile, full-width badge rows, outlink on own row, tighter ep padding). Audited clean with no changes: 768 detail, 375 directory cards, endpoint/volume wrapping. CSS scoped to the ≤600px query.
 - **Verification**: emulated preview at 375/768 — programmatic overflow scan (scrollWidth==clientWidth, zero elements past right edge) + visual; tsc + build ✓.
 - **Tooling note for future runs**: headless-Chrome captures lay out ~15px wider than --window-size (old AND new headless) → right-edge clipping in mobile screenshots is a camera artifact; declare it and rely on the programmatic scan. The preview tool's emulated screenshots are accurate but can't be exported to files.
+
+### Iteration 7 — Item 7: /developers page ✅
+- **Branch/PR**: `autopilot-developers-page` → [Yeetful/website#40](https://github.com/Yeetful/website/pull/40) (base `autopilot`).
+- **What**: public server-rendered quickstart — brand-voice hero, install→mint→snippet steps, all-8-routes grants API reference with method chips, receipt-sync field reference, links to npm/example-agent/demo, Developers nav tab + footer link. Existing design system; small `dev__` CSS section.
+- **Verification**: preview at 1440px (public page — fully verifiable), screenshots in PR; armed console hook proved zero NEW errors (pre-existing duplicate-key noise in the session buffer comes from earlier pages — possible future look at the home runner feed). tsc + build ✓.
+
+---
+
+## Run 2 summary (2026-06-10 evening)
+
+**Queue: 7/7 complete.** Zero failed iterations. Nothing merged, no deploys, no spending. All PRs target `autopilot`.
+
+| # | Item | PR |
+|---|------|----|
+| 1 | API-key management UI | [#34](https://github.com/Yeetful/website/pull/34) |
+| 2 | "Connect an agent" card | [#35](https://github.com/Yeetful/website/pull/35) — stacked on #34, merge #34 first |
+| 3 | "Sign grant" wallet button | [#36](https://github.com/Yeetful/website/pull/36) |
+| 4 | Chat payments-footer dedup | [#37](https://github.com/Yeetful/website/pull/37) |
+| 5 | Directory refresh + Claude seed (prod DB) | [#38](https://github.com/Yeetful/website/pull/38) — DB changes already live |
+| 6 | Responsive pass | [#39](https://github.com/Yeetful/website/pull/39) |
+| 7 | /developers page | [#40](https://github.com/Yeetful/website/pull/40) |
+
+**Suggested merge order**: #34 → #35 → #36 → #37 → #38 → #39 → #40. All independent except #35 (stacks on #34). NOTE: #33 (inference providers, targets main) shares files with #36/#37/#38 — merge autopilot→main AFTER #33, or vice versa; the ingest-map hunk in #38 is identical to #33's so it merges clean.
+
+**Manual passes for the owner** (most fold into one wallet session):
+- Dashboard glance: key panel (mint→reveal→copy→revoke), connect-agent card, sign-grant button + one wallet signature.
+- One live paid chat turn (~$0.001–0.01): covers #30/#33/#37 receipts end-to-end.
+- demo repo: `npm run grant -- --live`.
+
+**Deviations/notes**: #35 stacking declared per rule 1's escape hatch; #38's safety catch (ingest map predated #33 — would have unwired prod inference providers; fixed before running); headless-Chrome mobile captures clip ~15px (camera artifact, programmatic overflow scan is authoritative); mcp_endpoints has no `source` column so hand-seed provenance lives in the description + committed script.
 
 ---
 
