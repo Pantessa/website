@@ -25,6 +25,7 @@ export async function GET(_req: NextRequest, { params }: Params) {
   const [today, total] = await Promise.all([spentTodayUsd(id), spentTotalUsd(id)])
   return NextResponse.json({
     ...grant,
+    signed: !!grant.signature,
     spentTodayUsd: today,
     spentTotalUsd: total,
     remainingTodayUsd: Math.max(0, grant.perDayUsd - today),
@@ -49,8 +50,14 @@ export async function PATCH(req: NextRequest, { params }: Params) {
   if (Number(body.perDayUsd) > 0) data.perDayUsd = Number(body.perDayUsd)
   if (Number(body.perCallUsd) > 0) data.perCallUsd = Number(body.perCallUsd)
 
+  // Changing caps changes the signed terms — a prior EIP-712 signature no
+  // longer attests to this grant, so it's voided (re-sign to restore).
+  if (grant.signature && (data.perDayUsd !== undefined || data.perCallUsd !== undefined)) {
+    data.signature = null
+  }
+
   const updated = await prisma.spendGrant.update({ where: { id }, data })
-  return NextResponse.json(updated)
+  return NextResponse.json({ ...updated, signed: !!updated.signature })
 }
 
 // Delete a grant (and its ledger via cascade). Owner only.

@@ -117,7 +117,15 @@ export async function syncGrantAllowlist(ownerAddress: string) {
   })
 
   if (existing) {
-    return prisma.spendGrant.update({ where: { id: existing.id }, data: { allow } })
+    // A different allowlist = different signed terms: void any EIP-712
+    // signature unless the host set is actually unchanged.
+    const sameAllow =
+      existing.allow.length === allow.length &&
+      [...existing.allow].sort().join() === [...allow].sort().join()
+    return prisma.spendGrant.update({
+      where: { id: existing.id },
+      data: { allow, ...(existing.signature && !sameAllow ? { signature: null } : {}) },
+    })
   }
   return prisma.spendGrant.create({
     data: {
