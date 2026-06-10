@@ -1,142 +1,118 @@
-# Autopilot run — 2026-06-10
+# Autopilot — Run 2 (staged 2026-06-10, owner-approved queue; start via /loop)
 
-Unattended build experiment. Claude works through the queue below, one item per
-iteration, while the owner is away. **Nothing here merges to `main`** — every
-item becomes a PR into the `autopilot` branch for human review.
+Unattended build run. Claude works the queue below, one item per iteration.
+**Nothing merges to `main`** — every item becomes a PR into `autopilot` for
+human review. Run 1 (6/6 complete, all merged to main same day) is summarized
+at the bottom; its full log lives in git history of this file.
 
 ## Rules (constitution — apply to every iteration)
 
-1. **Branching**: each item gets its own branch `autopilot/<slug>` cut from
-   `autopilot`. PRs target `autopilot`, never `main`. Items are independent —
-   never stack one item's branch on another's.
-2. **Never**: merge any PR, push to `main`, force-push, deploy, publish,
-   or make live paid x402 calls. No spending of any kind.
-3. **DB (owner-expanded 2026-06-10)**: schema may be rearranged — add, alter,
-   drop, rename — PROVIDED the system keeps working end-to-end (code migrated
-   in the same branch, verification proves the affected routes still work).
-   Never destroy user data (grants, ledger, chats, approvals) without a
-   migration path; `--force-reset` remains forbidden. Test rows always cleaned.
-4. **New repos (owner-authorized)**: may create a new directory under
-   /Users/nategeier/yeetful and a new PUBLIC repo under the Yeetful org for
-   the example integration. HARD RULE before any push to a public repo: grep
-   the tree for secrets (sk-, key, PRIVATE, token, 0x[64 hex], .env) — only
-   .env.example ships, never .env. The demo/ directory and the sdk/ repo may
-   also be modified on branches per the same PR rules.
-5. **Verify before PR**: `npx tsc --noEmit` + `npm run build` minimum. UI items
-   need preview screenshots at 1440px in the PR body. Server-logic items need a
-   temp verification script against Neon (test rows under a `0x…dead/beef/feed`
-   owner, ALWAYS cleaned up, script deleted before commit).
-6. **Honesty**: anything unverifiable headlessly (wallet signatures, SIWE-gated
-   UI states) is flagged "needs manual pass" in the PR — never claimed as done.
-7. **Logging**: after each item, update the Progress log below on the
-   `autopilot` branch and push. If an item fails verification twice, log it,
-   close its branch, move on. Two consecutive failed items → stop the run.
-8. **Isolation**: work in this session's worktree only. Don't touch other
-   branches, other sessions' work, or open PRs from earlier today.
-9. **Stop conditions**: queue exhausted, two consecutive failures, or owner
-   sends any message. Final iteration writes a run summary below.
+1. **Branching**: each item gets its own branch `autopilot-<slug>` cut from
+   `autopilot` (git refuses `autopilot/*` refs while the `autopilot` branch
+   exists). PRs target `autopilot`, never `main`. Items are independent —
+   never stack one item's branch on another's; if stacking is truly
+   unavoidable (an item amends another's surface), say so in the PR body and
+   instruct which merges first.
+2. **Never**: merge any PR, push to `main`, force-push, deploy, publish to
+   npm, or make live paid x402 calls. No spending of any kind.
+3. **DB**: additive changes OK (plain `db push`, never `--force-reset`).
+   Never destroy user data (grants, ledger, chats, approvals, api_keys).
+   Test rows under throwaway wallets, ALWAYS cleaned, verified zero left.
+   Item 5 has extra guardrails — see the item.
+4. **Public repos** (`website` is private; `demo`, `sdk`, `example-agent` are
+   PUBLIC): secrets grep before EVERY push — `sk-`, `0x[64 hex]`,
+   `api_key/token = <value>`, env files; check `git ls-files` for tracked env
+   files, only `.env.example` ships. Review every hit; don't pipe the grep
+   through anything that masks its exit code.
+5. **Verify before PR**: `npx tsc --noEmit` + `npm run build` minimum.
+   Server-logic items: temp verification script vs dev server + real Neon
+   (throwaway SIWE wallets, cleanup verified, script deleted before commit).
+   UI items: preview at 1440px; screenshots via **headless Chrome** (the
+   preview tool renders black when scrolled), committed under
+   `docs/autopilot/` on the PR branch and referenced by raw link in the PR
+   body (folder is stripped before anything lands on main).
+6. **Wallet/SIWE-gated UI** (dashboard etc.) can't be exercised headlessly:
+   verify the logic via API scripts + tsc/build, verify any presentational
+   component through a publicly rendered surface if one exists, and flag the
+   gated visuals "needs manual pass" — never claimed as done.
+7. **Honesty**: anything unverifiable is flagged in the PR, not claimed.
+8. **Logging**: after each item, update the Progress log below on `autopilot`
+   and push. An item failing verification twice → log it, close its branch,
+   move on. Two consecutive failed items → stop the run.
+9. **Isolation**: this session's worktree only; don't touch other branches or
+   open PRs you didn't create this run.
+10. **Stop conditions**: queue exhausted, two consecutive failures, or the
+    owner sends any message. Final iteration appends a run summary.
 
 ## Queue (ordered; one per iteration)
 
-- [x] **1. API keys for headless agents** — `ApiKey` model (sha256-hashed
-  secret, owner, label, lastUsedAt; plaintext shown once at mint). SIWE-gated
-  `/api/keys` CRUD. Accept `Authorization: Bearer yf_…` as an auth alternative
-  on `/api/grants*`, plus new `POST /api/grants/[id]/ledger` so the `yeetful`
-  SDK's `onReceipt` can sync receipts into the dashboard. Verify with a Neon
-  script (mint → authed request → ledger row → cleanup). Then wire the
-  `yeetful` SDK (../sdk repo, own branch + PR): `yeetful/agent` accepts
-  `{ apiKey, ledgerUrl }` and ships an onReceipt-based hosted-ledger sync.
-- [x] **2. EIP-712 grant signing (server side)** — typed-data schema for grant
-  terms (allow/caps/expiry), `PUT /api/grants/[id]/signature` verifying the
-  signature recovers the owner (viem `verifyTypedData`), persist to the
-  existing `signature` column; expose `signed: boolean` in grant reads. Verify
-  by signing with a throwaway key in a script. Wallet UI button = follow-up,
-  flagged.
-- [x] **3. Service detail page `/servers/[slug]`** — endpoint browser UI over
-  the existing detail API: header (icon, category, price, networks, callable
-  badge), endpoint list (method chip, path, description, price, provider,
-  params), link from directory cards. Preview-verified with screenshots.
-- [x] **4. Cost-at-volume warnings** — on the service detail page: implied
-  cost at 1 call/min and 1 call/sec from the endpoint price ("$0.01/call ≈
-  $864/day at 1 call/sec"), amber styling past a threshold. Tiny, honest UX
-  for the per-call pricing critique. Preview-verified.
-- [x] **5. Example integration (public repo)** — new directory
-  `/Users/nategeier/yeetful/example-agent` + public repo `Yeetful/example-agent`:
-  a small standalone Node script that uses the published `yeetful` SDK with a
-  spend grant (and, if item 1 landed, API-key ledger sync) to call x402
-  endpoints — the "how an app adds this" artifact. README with the 3-line
-  pitch. `.env.example` only; run the secrets grep before EVERY push. Also
-  refresh `../demo` to consume the same flow where it overlaps.
-- [x] **6. Receipts → `Message.meta`** — chat client persists the receipts
-  array into `Message.meta` on save; `/chat/[id]` renders a compact receipt
-  footnote under assistant messages from stored meta. API path verifiable
-  (meta already accepted); rendered state needs SIWE → flag manual.
+- [ ] **1. API-key management UI** — dashboard panel over the existing
+  `/api/keys*` routes: list keys (prefix, label, lastUsedAt, createdAt),
+  mint with a label → modal showing the plaintext `yf_…` ONCE with a copy
+  button + "you won't see this again", revoke with confirm. Empty state
+  explains what keys are for. Logic verified by API script; gated visuals
+  flagged manual per rule 6.
+- [ ] **2. "Connect an agent" onboarding card** — after a key exists, the
+  dashboard shows a copy-paste `yeetful/agent` snippet preloaded with the
+  user's active grant id, ledger URL, and a `YEETFUL_API_KEY` placeholder
+  (never the real secret — it's unrecoverable post-mint), linking to
+  github.com/Yeetful/example-agent and the npm package. Pure presentational
+  component → unit-verifiable; placement on dashboard flagged manual.
+- [ ] **3. "Sign grant" wallet button** — on the dashboard budget/grant card:
+  fetch `GET /api/grants/[id]/signature`, sign via wagmi
+  `signTypedDataAsync`, `PUT` the result; show a signed/unsigned badge from
+  `signed`, and a "re-sign" nudge when a terms change voided it. BigInt
+  conversion from the JSON payload (micros/expiry) — see the
+  verify-eip712 pattern in Run 1. Wallet popup = manual pass; everything up
+  to the signature request script-verified.
+- [ ] **4. Dedup the chat payments footer** — `/api/chat` replies still embed
+  the text `paymentsFooter` AND receipts now render as structured footnotes
+  from `Message.meta` (both burner and wallet paths, guests included via the
+  ephemeral store). Strip the text footer from the reply, keep the meta.
+  Verify via API script: reply text clean, receipts array intact; guest
+  (no-SIWE) path covered since meta lives in the in-memory store.
+- [ ] **5. Directory endpoint data refresh (PROD DB — owner-approved)** —
+  `yeetful-claude` and other callable services have no `mcp_endpoints` rows,
+  so their detail pages show the empty state. Run `npm run db:ingest`
+  **additive only — never `--prune`**; if agentic.market doesn't carry
+  Yeetful·Claude's surface, hand-seed its known endpoints (Venice/Bankr/
+  BlockRun.AI providers; correct $0.005 pricing) with `source` marking them
+  hand-seeded. Guardrails: record row counts before/after in the PR; verify
+  after ingest that the 3 callable services' wired `CALLABLE` fields are
+  untouched and `/api/servers` + chat planner inputs still resolve; any
+  anomaly → stop, document, don't retry destructively. This item commits a
+  script if hand-seeding (idempotent, committed, NOT deleted — it's a
+  fixture, not a test).
+- [ ] **6. Responsive pass on the new surfaces** — `/servers/[slug]` and the
+  directory cards at 375px and 768px (header wrap, endpoint rows, volume
+  lines, Details chips), plus the dashboard grid where tsc-checkable. Fix
+  overflow/wrap issues in `x402-design.css`. Headless-Chrome screenshots at
+  both widths in the PR.
+- [ ] **7. `/developers` page** — public, server-rendered: the expense-account
+  pitch (3-liner from example-agent), a quickstart (install `yeetful`, mint a
+  key on the dashboard, snippet with grant + apiKey), reference tables for
+  Bearer auth on `/api/grants*` and the ledger-sync endpoint, links to npm /
+  example-agent / demo repos. Footer/nav link where the design allows.
+  Preview-verified with screenshots (public page — fully verifiable).
 
-## Progress log
+## Progress log — Run 2
 
 _(autopilot appends here — branch, PR, verification evidence, caveats)_
 
-### Iteration 1 — Item 1: API keys for headless agents ✅
-- **Branches/PRs**: website `autopilot-api-keys` → [Yeetful/website#26](https://github.com/Yeetful/website/pull/26) (base `autopilot`); sdk `hosted-ledger-sync` → [Yeetful/sdk#2](https://github.com/Yeetful/sdk/pull/2) (base `main` — that repo has no `autopilot` branch; PR is marked review-only/no-merge, and merging would imply an npm publish autopilot can't do).
-- **Naming deviation**: constitution says `autopilot/<slug>`, but git refuses `autopilot/*` refs while the `autopilot` branch exists → using `autopilot-<slug>`.
-- **Website**: `ApiKey` model (sha256 hash, prefix, lastUsedAt; plaintext `yf_…` shown once at mint), SIWE-gated `/api/keys` + `/api/keys/[id]`, Bearer-or-SIWE `getAuthAddress()` on all `/api/grants*`, new `POST /api/grants/[id]/ledger` for SDK receipt sync. Additive `prisma db push` applied to Neon (`api_keys` table).
-- **SDK**: `yeetful({ apiKey, ledgerUrl })` → ordered best-effort receipt sync (settlements AND denials) to the hosted ledger with Bearer auth; `pay.flushLedger()`; README section.
-- **Verification**: temp script (deleted before commit) vs dev server + real Neon — SIWE mint → Bearer CRUD → ledger row (host normalized, spentTodayUsd correct) → cross-wallet 404 → revoked key 401 → full cleanup, **17/17 green**; `tsc --noEmit` + `npm run build` ✓. SDK: **10/10 vitest** (4 new sync tests), typecheck + tsup ✓, secrets grep clean before push.
-- **Caveats**: live SDK↔prod sync untestable until #26 deploys (flagged in sdk#2). No dashboard UI for key management (not in scope). Key minting deliberately stays SIWE-only.
-
-### Iteration 2 — Item 2: EIP-712 grant signing (server side) ✅
-- **Branch/PR**: `autopilot-eip712-grants` → [Yeetful/website#27](https://github.com/Yeetful/website/pull/27) (base `autopilot`; independent of #26 — route uses `getSessionAddress`, switch to `getAuthAddress` after both merge).
-- **What**: `lib/grant-typed-data.ts` (canonical SpendGrant struct — Base chainId, sorted lowercased allow, USD as 1e6 micros, unix-seconds expiry; always built from the stored row), `GET`+`PUT /api/grants/[id]/signature` (verify via `publicClient.verifyTypedData` — EOA + ERC-1271/6492 — persist to existing `signature` column), `signed: boolean` in grant reads, signature voided when terms change (PATCH caps, approval-toggle allowlist re-derivation).
-- **Verification**: temp script (deleted) vs dev + Neon — throwaway-key sign → persisted; foreign/malformed sig → 400; cap change voids; re-sign from GET payload; anon 401/foreign 404; cleanup. **12/12 green**; tsc + build ✓. No schema change.
-- **Flagged**: wallet UI "Sign grant" button is a follow-up; wallet-popup + smart-wallet signing can't be verified headlessly (EOA path script-proven).
-
-### Iteration 3 — Item 3: Service detail page /servers/[slug] ✅
-- **Branch/PR**: `autopilot-service-detail` → [Yeetful/website#28](https://github.com/Yeetful/website/pull/28) (base `autopilot`).
-- **What**: server-rendered endpoint browser over the directory DB — header (brand tile, category/price/networks, green "Callable in chat" badge, agentic.market link), endpoint rows (method chip, path, provider/host, flat or metered price, description, zero-JS `<details>` param schemas). Directory card names now link to it (stopPropagation keeps the add/remove toggle intact). Unknown slug / DB down → 404.
-- **Verification**: preview at 1440px — tripadvisor (callable, 5 eps), exa (params expanded), blockrun-ai (122 eps); card-link navigation; zero console errors; 404 path; tsc + build ✓. Screenshots committed under `docs/autopilot/` on the PR branch (raw links in PR body; folder can be dropped at merge).
-- **Caveats**: preview-tool screenshots came back black when scrolled, so captures were re-done with headless Chrome. `yeetful-claude` has no mcp_endpoints rows in the DB → its page shows the empty state (ingest content gap, noted in PR).
-
-### Iteration 4 — Item 4: Cost-at-volume warnings ✅
-- **Branch/PR**: `autopilot-cost-warnings` → [Yeetful/website#29](https://github.com/Yeetful/website/pull/29) (base `autopilot`). **Stacked on `autopilot-service-detail` by necessity** — the item annotates item 3's page; PR body says merge #28 first (then #29 is a +42-line delta) and warns against merging into the side branch.
-- **What**: per-endpoint "AT VOLUME ≈ $X/day @ 1 call/min · ≈ $Y/day @ 1 call/sec" computed from the per-call price; amber at ≥$500/day; metered (upto) endpoints prefixed "from" (only the floor is known); unpriced endpoints show nothing. Zero client JS.
-- **Verification**: math reproduces the queue's example ($0.01 → $864/day amber); preview at 1440px on exa (muted + amber-metered) and tripadvisor (all amber); console errors unchanged from baseline (pre-existing Coinbase-SDK COOP noise, present on home page too); tsc + build ✓. Screenshots in `docs/autopilot/` on the branch.
-- **Interruption note**: owner messaged twice mid-run (caffeinate/sleep questions) — run paused per stop rule and resumed by owner re-invoking /loop both times.
-
-### Iteration 5 — Item 5: Example integration (public repo) ✅ (demo refresh skipped — see caveat)
-- **Repo**: [Yeetful/example-agent](https://github.com/Yeetful/example-agent) (PUBLIC), new dir `/Users/nategeier/yeetful/example-agent`. Initial commit pushed to its `main` — unavoidable for a brand-new repo (no base branch to PR against); this is the owner-authorized "create the repo" act, not a push to website/sdk main.
-- **What**: standalone Node script on the published `yeetful@0.2.0` — `yeetful({ wallet, grant })` expense account with allowlist + caps; free-by-default demo (throwaway key: allowlisted free call receipted at $0, off-allowlist call denied pre-network with receipt); `LIVE=1` + `PRIVATE_KEY` documented for one real $0.01 TripAdvisor call (NOT run — no spending). README has the 3-line pitch + dashboard-sync section (notes `apiKey`/`grant.id` sync activates with yeetful ≥ 0.3 / sdk#2 — 0.2.x ignores it harmlessly). `.env.example` only.
-- **Verification**: `npm start` demo run green (receipts + denial as designed, $0 spent). **Secrets grep before push: zero hits**, no `.env` in tree.
-- **Caveat — demo/ refresh SKIPPED**: `demo/` has no git repository (checked: no `.git`, not nested in any repo), so the constitution's required branch+PR workflow is impossible there, and unversioned edits would be unrevertable. Left untouched; owner may want to `git init` demo/ first.
-
-### Iteration 6 — Item 6: Receipts → Message.meta ✅
-- **Branch/PR**: `autopilot-chat-receipts` → [Yeetful/website#30](https://github.com/Yeetful/website/pull/30) (base `autopilot`; independent of the other PRs).
-- **What**: chat client attaches `/api/chat`'s receipts to the assistant message on both payment paths and persists via the existing `Message.meta` column (server unchanged); `meta` round-trips on load; new `MessageReceipts` footnote (✓ name/price/Basescan link; ✗ note) rendered in `/chat/[id]` AND `/p/[slug]` from one component.
-- **Verification**: temp script (deleted) — meta round-trip + rendered footnote proven via the public share page HTML, 8/8 green; cleanup verified; tsc + build ✓. Screenshot on the branch.
-- **Flagged**: live wallet-paid `/chat/[id]` end-to-end needs one manual run (SIWE + wallet popup). Possible follow-up: drop the duplicate text `paymentsFooter` now that receipts render structurally.
-
 ---
 
-## Run summary (2026-06-10)
+## Run 1 (2026-06-10) — COMPLETE, 6/6, all merged to main
 
-**Queue: 6/6 complete.** Zero failed iterations. Nothing merged, nothing deployed, no spending, no force-pushes. All website PRs target `autopilot`.
+| # | Item | PR |
+|---|------|----|
+| 1 | API keys for headless agents | website#26 + sdk#2 |
+| 2 | EIP-712 grant signing (server) | website#27 |
+| 3 | Service detail page /servers/[slug] | website#28 |
+| 4 | Cost-at-volume warnings | website#29 |
+| 5 | Example integration | github.com/Yeetful/example-agent |
+| 6 | Receipts → Message.meta + footnotes | website#30 |
 
-| # | Item | Deliverable |
-|---|------|-------------|
-| 1 | API keys for headless agents | [website#26](https://github.com/Yeetful/website/pull/26) + [sdk#2](https://github.com/Yeetful/sdk/pull/2) |
-| 2 | EIP-712 grant signing | [website#27](https://github.com/Yeetful/website/pull/27) |
-| 3 | Service detail page | [website#28](https://github.com/Yeetful/website/pull/28) |
-| 4 | Cost-at-volume warnings | [website#29](https://github.com/Yeetful/website/pull/29) — stacked on #28, merge #28 first |
-| 5 | Example integration | [Yeetful/example-agent](https://github.com/Yeetful/example-agent) (public) |
-| 6 | Receipts → Message.meta | [website#30](https://github.com/Yeetful/website/pull/30) |
-
-**Suggested merge order**: #26 → #27 → #28 → #29 → #30, then sdk#2 (publish 0.3 when ready). After #26+#27 both land, switch the signature route to `getAuthAddress` (one-line, noted in #27).
-
-**Deviations & flags for the owner**
-- Branch naming: `autopilot-<slug>` instead of `autopilot/<slug>` (git refuses `autopilot/*` while branch `autopilot` exists).
-- #29 stacks on #28 (item 4 annotates item 3's page — unavoidable).
-- sdk#2 is based on that repo's `main` (no autopilot branch there) — review-only, do not merge without intending a 0.3 publish.
-- example-agent's initial commit went to its own fresh `main` (no base branch exists to PR against in a new repo).
-- `demo/` refresh SKIPPED: demo has no git repo, so the required branch+PR flow is impossible and edits would be unrevertable. `git init` it if wanted.
-- DB: one additive change all run (`api_keys` table via plain `db push`). Neon untouched otherwise; every test row verified cleaned.
-- Manual passes needed: wallet "Sign grant" button UX (#27), live wallet-paid chat receipt end-to-end (#30), SDK↔prod ledger sync after #26 deploys (sdk#2).
-- `docs/autopilot/` on PR branches holds review screenshots — delete at merge if unwanted.
+Follow-ups merged same day: #31 (Details links), #32 (autopilot→main),
+demo#1 (live mode via published SDK). Manual passes still pending from Run 1:
+wallet-paid chat turn, demo `--live`, SDK↔prod sync, dashboard visuals.
+Full iteration log: `git log --follow AUTOPILOT.md` (pre-Run-2 revisions).
