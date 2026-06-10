@@ -8,6 +8,7 @@ import { Loader2, ShieldCheck, Wallet, CheckCircle2, XCircle, ArrowUpRight } fro
 import { cn } from '@/lib/utils'
 import { useSession } from '@/lib/session'
 import { SpendByAgent, SpendOverTime } from '@/components/DashboardCharts'
+import ApiKeysPanel from '@/components/ApiKeysPanel'
 
 // ── API shapes ───────────────────────────────────────────────────────────────
 interface Stats {
@@ -270,6 +271,9 @@ export default function DashboardPage() {
               </div>
             )}
           </Card>
+
+          {/* API keys for headless agents */}
+          <ApiKeysPanel />
 
           {/* Activity feed */}
           <Card>
