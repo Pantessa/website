@@ -60,7 +60,7 @@ item becomes a PR into the `autopilot` branch for human review.
   cost at 1 call/min and 1 call/sec from the endpoint price ("$0.01/call ≈
   $864/day at 1 call/sec"), amber styling past a threshold. Tiny, honest UX
   for the per-call pricing critique. Preview-verified.
-- [ ] **5. Example integration (public repo)** — new directory
+- [x] **5. Example integration (public repo)** — new directory
   `/Users/nategeier/yeetful/example-agent` + public repo `Yeetful/example-agent`:
   a small standalone Node script that uses the published `yeetful` SDK with a
   spend grant (and, if item 1 landed, API-key ledger sync) to call x402
@@ -101,3 +101,9 @@ _(autopilot appends here — branch, PR, verification evidence, caveats)_
 - **What**: per-endpoint "AT VOLUME ≈ $X/day @ 1 call/min · ≈ $Y/day @ 1 call/sec" computed from the per-call price; amber at ≥$500/day; metered (upto) endpoints prefixed "from" (only the floor is known); unpriced endpoints show nothing. Zero client JS.
 - **Verification**: math reproduces the queue's example ($0.01 → $864/day amber); preview at 1440px on exa (muted + amber-metered) and tripadvisor (all amber); console errors unchanged from baseline (pre-existing Coinbase-SDK COOP noise, present on home page too); tsc + build ✓. Screenshots in `docs/autopilot/` on the branch.
 - **Interruption note**: owner messaged twice mid-run (caffeinate/sleep questions) — run paused per stop rule and resumed by owner re-invoking /loop both times.
+
+### Iteration 5 — Item 5: Example integration (public repo) ✅ (demo refresh skipped — see caveat)
+- **Repo**: [Yeetful/example-agent](https://github.com/Yeetful/example-agent) (PUBLIC), new dir `/Users/nategeier/yeetful/example-agent`. Initial commit pushed to its `main` — unavoidable for a brand-new repo (no base branch to PR against); this is the owner-authorized "create the repo" act, not a push to website/sdk main.
+- **What**: standalone Node script on the published `yeetful@0.2.0` — `yeetful({ wallet, grant })` expense account with allowlist + caps; free-by-default demo (throwaway key: allowlisted free call receipted at $0, off-allowlist call denied pre-network with receipt); `LIVE=1` + `PRIVATE_KEY` documented for one real $0.01 TripAdvisor call (NOT run — no spending). README has the 3-line pitch + dashboard-sync section (notes `apiKey`/`grant.id` sync activates with yeetful ≥ 0.3 / sdk#2 — 0.2.x ignores it harmlessly). `.env.example` only.
+- **Verification**: `npm start` demo run green (receipts + denial as designed, $0 spent). **Secrets grep before push: zero hits**, no `.env` in tree.
+- **Caveat — demo/ refresh SKIPPED**: `demo/` has no git repository (checked: no `.git`, not nested in any repo), so the constitution's required branch+PR workflow is impossible there, and unversioned edits would be unrevertable. Left untouched; owner may want to `git init` demo/ first.
