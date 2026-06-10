@@ -83,7 +83,7 @@ at the bottom; its full log lives in git history of this file.
   anomaly → stop, document, don't retry destructively. This item commits a
   script if hand-seeding (idempotent, committed, NOT deleted — it's a
   fixture, not a test).
-- [ ] **6. Responsive pass on the new surfaces** — `/servers/[slug]` and the
+- [x] **6. Responsive pass on the new surfaces** — `/servers/[slug]` and the
   directory cards at 375px and 768px (header wrap, endpoint rows, volume
   lines, Details chips), plus the dashboard grid where tsc-checkable. Fix
   overflow/wrap issues in `x402-design.css`. Headless-Chrome screenshots at
@@ -128,6 +128,12 @@ _(autopilot appends here — branch, PR, verification evidence, caveats)_
 - **Counts**: servers 71→71; endpoints 1768→1770 (ingest) →1771 (seed); yeetful-claude eps 0→1. All 7 callable services' wiring verified intact post-run.
 - **Safety catch**: this branch's ingest CALLABLE map predated #33 — running naively would have UNWIRED the four BlockRun inference providers in prod. Map updated first (duplicates #33's hunk, declared in PR).
 - **Hand-seed**: committed idempotent fixture `scripts/seed-yeetful-claude-endpoints.ts` (double-run proven) — POST anthropic.yeetful.com/api/mcp/mcp, $0.005 exact; provenance in description + script (mcp_endpoints has no source column — noted deviation). Detail page renders the endpoint (screenshot on branch); no anomalies.
+
+### Iteration 6 — Item 6: Responsive pass ✅
+- **Branch/PR**: `autopilot-responsive` → [Yeetful/website#39](https://github.com/Yeetful/website/pull/39) (base `autopilot`).
+- **What**: one real fix — ≤600px detail header stacks (52px tile, full-width badge rows, outlink on own row, tighter ep padding). Audited clean with no changes: 768 detail, 375 directory cards, endpoint/volume wrapping. CSS scoped to the ≤600px query.
+- **Verification**: emulated preview at 375/768 — programmatic overflow scan (scrollWidth==clientWidth, zero elements past right edge) + visual; tsc + build ✓.
+- **Tooling note for future runs**: headless-Chrome captures lay out ~15px wider than --window-size (old AND new headless) → right-edge clipping in mobile screenshots is a camera artifact; declare it and rely on the programmatic scan. The preview tool's emulated screenshots are accurate but can't be exported to files.
 
 ---
 
