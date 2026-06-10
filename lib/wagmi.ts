@@ -7,7 +7,7 @@ import {
   injectedWallet,
 } from '@rainbow-me/rainbowkit/wallets'
 import { createConfig, http } from 'wagmi'
-import { mainnet, polygon, optimism, arbitrum, base } from 'wagmi/chains'
+import { mainnet, base } from 'wagmi/chains'
 
 // WalletConnect Cloud project ID — create one at https://cloud.reown.com and
 // add it to .env.local as NEXT_PUBLIC_WC_PROJECT_ID (needed for the
@@ -62,13 +62,14 @@ const connectors = connectorsForWallets(
 
 export const wagmiConfig = createConfig({
   connectors,
-  chains: [mainnet, polygon, optimism, arbitrum, base],
+  // Base is the only chain we transact on (x402 payments). Mainnet is included
+  // solely so RainbowKit can resolve ENS names/avatars — but its default RPC
+  // (eth.merkle.io) rejects browser CORS preflights, which spammed the console
+  // with retried ENS lookups, so pin it to a CORS-friendly public endpoint.
+  chains: [base, mainnet],
   transports: {
-    [mainnet.id]: http(),
-    [polygon.id]: http(),
-    [optimism.id]: http(),
-    [arbitrum.id]: http(),
     [base.id]: http(),
+    [mainnet.id]: http('https://ethereum-rpc.publicnode.com'),
   },
   ssr: true,
 })
