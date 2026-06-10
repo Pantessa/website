@@ -74,5 +74,5 @@ export async function POST(req: NextRequest) {
   const grant = await prisma.spendGrant.create({
     data: { ownerAddress: addr, label, allow, perCallUsd, perDayUsd, totalUsd, expiresAt },
   })
-  return NextResponse.json(grant, { status: 201 })
+  return NextResponse.json({ ...grant, signed: false }, { status: 201 })
 }

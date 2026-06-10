@@ -1,9 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import prisma from '@/lib/db'
-// NOTE: SIWE-only here. The Bearer-API-key alternative (lib/api-key.ts) lands
-// in the independent autopilot-api-keys branch; whichever merges second can
-// switch this to getAuthAddress.
-import { publicClient, getSessionAddress } from '@/lib/auth'
+import { publicClient } from '@/lib/auth'
+import { getAuthAddress } from '@/lib/api-key'
 import { grantTypedData, grantTypedDataJson } from '@/lib/grant-typed-data'
 
 export const runtime = 'nodejs'
@@ -13,10 +11,10 @@ type Params = { params: Promise<{ id: string }> }
 
 // The exact EIP-712 payload the owner wallet should sign for this grant —
 // built from the STORED row, so what gets signed is what gets enforced.
-// Auth: SIWE session cookie. Owner only.
-export async function GET(_req: NextRequest, { params }: Params) {
+// Auth: SIWE session cookie OR `Authorization: Bearer yf_…`. Owner only.
+export async function GET(req: NextRequest, { params }: Params) {
   const { id } = await params
-  const addr = await getSessionAddress()
+  const addr = await getAuthAddress(req)
   if (!addr) return NextResponse.json({ error: 'Not signed in.' }, { status: 401 })
 
   const grant = await prisma.spendGrant.findUnique({ where: { id } })
@@ -31,7 +29,7 @@ export async function GET(_req: NextRequest, { params }: Params) {
 // same trust path as SIWE sign-in. Owner only.
 export async function PUT(req: NextRequest, { params }: Params) {
   const { id } = await params
-  const addr = await getSessionAddress()
+  const addr = await getAuthAddress(req)
   if (!addr) return NextResponse.json({ error: 'Not signed in.' }, { status: 401 })
 
   const grant = await prisma.spendGrant.findUnique({ where: { id } })
