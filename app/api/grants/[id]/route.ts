@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import prisma from '@/lib/db'
-import { getSessionAddress } from '@/lib/auth'
+import { getAuthAddress } from '@/lib/api-key'
 import { spentTodayUsd, spentTotalUsd } from '@/lib/grant-store'
 
 export const runtime = 'nodejs'
@@ -9,9 +9,10 @@ export const dynamic = 'force-dynamic'
 type Params = { params: Promise<{ id: string }> }
 
 // Read a grant + recent ledger + spend totals. Owner only.
-export async function GET(_req: NextRequest, { params }: Params) {
+// Auth: SIWE session cookie OR `Authorization: Bearer yf_…` (headless agents).
+export async function GET(req: NextRequest, { params }: Params) {
   const { id } = await params
-  const addr = await getSessionAddress()
+  const addr = await getAuthAddress(req)
   if (!addr) return NextResponse.json({ error: 'Not signed in.' }, { status: 401 })
 
   const grant = await prisma.spendGrant.findUnique({
@@ -25,6 +26,7 @@ export async function GET(_req: NextRequest, { params }: Params) {
   const [today, total] = await Promise.all([spentTodayUsd(id), spentTotalUsd(id)])
   return NextResponse.json({
     ...grant,
+    signed: !!grant.signature,
     spentTodayUsd: today,
     spentTotalUsd: total,
     remainingTodayUsd: Math.max(0, grant.perDayUsd - today),
@@ -34,7 +36,7 @@ export async function GET(_req: NextRequest, { params }: Params) {
 // Update a grant — revoke it, or adjust label/caps/allowlist. Owner only.
 export async function PATCH(req: NextRequest, { params }: Params) {
   const { id } = await params
-  const addr = await getSessionAddress()
+  const addr = await getAuthAddress(req)
   if (!addr) return NextResponse.json({ error: 'Not signed in.' }, { status: 401 })
 
   const grant = await prisma.spendGrant.findUnique({ where: { id } })
@@ -49,14 +51,20 @@ export async function PATCH(req: NextRequest, { params }: Params) {
   if (Number(body.perDayUsd) > 0) data.perDayUsd = Number(body.perDayUsd)
   if (Number(body.perCallUsd) > 0) data.perCallUsd = Number(body.perCallUsd)
 
+  // Changing caps changes the signed terms — a prior EIP-712 signature no
+  // longer attests to this grant, so it's voided (re-sign to restore).
+  if (grant.signature && (data.perDayUsd !== undefined || data.perCallUsd !== undefined)) {
+    data.signature = null
+  }
+
   const updated = await prisma.spendGrant.update({ where: { id }, data })
-  return NextResponse.json(updated)
+  return NextResponse.json({ ...updated, signed: !!updated.signature })
 }
 
 // Delete a grant (and its ledger via cascade). Owner only.
-export async function DELETE(_req: NextRequest, { params }: Params) {
+export async function DELETE(req: NextRequest, { params }: Params) {
   const { id } = await params
-  const addr = await getSessionAddress()
+  const addr = await getAuthAddress(req)
   if (!addr) return NextResponse.json({ error: 'Not signed in.' }, { status: 401 })
 
   const grant = await prisma.spendGrant.findUnique({ where: { id } })

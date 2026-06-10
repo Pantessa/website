@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { Send, Zap, Check, Plus, Loader2, Bot, User, PanelLeft, PanelLeftClose } from 'lucide-react'
 import { useAccount, useSignTypedData } from 'wagmi'
 import { cn } from '@/lib/utils'
+import MessageReceipts from '@/components/MessageReceipts'
 import { useYeetfulStore } from '@/lib/store'
 import BrandIcon from '@/components/BrandIcon'
 import ShareButton from '@/components/ShareButton'
@@ -105,12 +106,17 @@ export default function ChatInterface() {
       const data = await res.json()
 
       if (data.phase === 'awaiting-signatures') {
-        const reply = await payWithWalletThenAnswer(userMsg, data)
-        addMessage(chatId, { role: 'assistant', content: reply })
+        const out = await payWithWalletThenAnswer(userMsg, data)
+        addMessage(chatId, {
+          role: 'assistant',
+          content: out.reply,
+          meta: out.receipts?.length ? { receipts: out.receipts } : undefined,
+        })
       } else {
         addMessage(chatId, {
           role: 'assistant',
           content: data.reply || data.error || 'No response.',
+          meta: Array.isArray(data.receipts) && data.receipts.length ? { receipts: data.receipts } : undefined,
         })
       }
     } catch (err) {
@@ -131,7 +137,7 @@ export default function ChatInterface() {
   const payWithWalletThenAnswer = async (
     userMsg: string,
     data: { plan: unknown; payments: PaymentToSign[]; listedOnly: unknown; notes?: unknown },
-  ): Promise<string> => {
+  ): Promise<{ reply: string; receipts?: unknown[] }> => {
     const signatures: Record<string, string> = {}
     let i = 0
     for (const p of data.payments) {
@@ -166,7 +172,10 @@ export default function ChatInterface() {
       }),
     })
     const out = await res.json()
-    return out.reply || out.error || 'No response.'
+    return {
+      reply: out.reply || out.error || 'No response.',
+      receipts: Array.isArray(out.receipts) ? out.receipts : undefined,
+    }
   }
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -266,6 +275,7 @@ export default function ChatInterface() {
                     )}
                   >
                     <pre className="whitespace-pre-wrap font-sans">{msg.content}</pre>
+                    {msg.role === 'assistant' && <MessageReceipts meta={msg.meta} />}
                   </div>
                 </motion.div>
               ))}

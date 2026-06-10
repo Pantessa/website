@@ -3,7 +3,8 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useAccount } from 'wagmi'
 import { useConnectModal } from '@rainbow-me/rainbowkit'
-import { Loader2, ShieldCheck, Wallet, CheckCircle2, XCircle } from 'lucide-react'
+import Link from 'next/link'
+import { Loader2, ShieldCheck, Wallet, CheckCircle2, XCircle, ArrowUpRight } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useSession } from '@/lib/session'
 import { SpendByAgent, SpendOverTime } from '@/components/DashboardCharts'
@@ -212,11 +213,21 @@ export default function DashboardPage() {
             ) : (
               <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-2">
                 {approvals.map((a) => (
-                  <button
+                  // Row click toggles approval; div (not button) so the nested
+                  // detail link stays valid HTML.
+                  <div
                     key={a.serverId}
+                    role="button"
+                    tabIndex={0}
                     onClick={() => toggle(a.serverId, !a.approved)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault()
+                        toggle(a.serverId, !a.approved)
+                      }
+                    }}
                     className={cn(
-                      'flex items-center justify-between gap-2 px-3 py-2 rounded-xl border text-left transition-colors',
+                      'flex items-center justify-between gap-2 px-3 py-2 rounded-xl border text-left transition-colors cursor-pointer',
                       a.approved
                         ? 'bg-[var(--surf-1)] border-[var(--line)] hover:border-[var(--line-2)]'
                         : 'bg-black/30 border-[var(--line)] opacity-55 hover:opacity-80',
@@ -231,6 +242,14 @@ export default function DashboardPage() {
                         {a.category}{a.priceUsd ? ` · $${a.priceUsd}/call` : ''}
                       </span>
                     </span>
+                    <Link
+                      href={`/servers/${a.slug}`}
+                      onClick={(e) => e.stopPropagation()}
+                      className="flex-shrink-0 p-1 rounded-md text-[color:var(--muted-2)] hover:text-white transition-colors"
+                      title={`${a.name} — endpoints & pricing`}
+                    >
+                      <ArrowUpRight className="w-3.5 h-3.5" />
+                    </Link>
                     <span
                       role="switch"
                       aria-checked={a.approved}
@@ -246,7 +265,7 @@ export default function DashboardPage() {
                         )}
                       />
                     </span>
-                  </button>
+                  </div>
                 ))}
               </div>
             )}

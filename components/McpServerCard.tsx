@@ -1,6 +1,7 @@
 'use client'
 
-import { Check, Plus, ExternalLink } from 'lucide-react'
+import Link from 'next/link'
+import { Check, Plus, ExternalLink, ArrowUpRight } from 'lucide-react'
 import { McpServer, useYeetfulStore } from '@/lib/store'
 import BrandIcon from '@/components/BrandIcon'
 
@@ -23,7 +24,17 @@ export default function McpServerCard({ server }: McpServerCardProps) {
             <BrandIcon server={server} size={22} />
           </div>
           <div className="card__name">
-            <h3>{server.name}</h3>
+            <h3>
+              {/* Card click toggles selection; the name links to the detail page. */}
+              <Link
+                href={`/servers/${server.slug}`}
+                className="card__link"
+                onClick={(e) => e.stopPropagation()}
+                title={`${server.name} — endpoints & pricing`}
+              >
+                {server.name}
+              </Link>
+            </h3>
             <span className="card__cat mono">{server.category}</span>
           </div>
         </div>
@@ -53,18 +64,29 @@ export default function McpServerCard({ server }: McpServerCardProps) {
             <span className="badge badge--dir mono">Directory</span>
           ) : null}
         </div>
-        {server.websiteUrl && (
-          <a
-            className="card__ext"
-            href={server.websiteUrl}
-            target="_blank"
-            rel="noopener noreferrer"
+        <div className="card__links">
+          <Link
+            className="card__more mono"
+            href={`/servers/${server.slug}`}
             onClick={(e) => e.stopPropagation()}
-            title="View on agentic.market"
+            title="Endpoints & pricing"
           >
-            <ExternalLink width={13} height={13} />
-          </a>
-        )}
+            Details
+            <ArrowUpRight width={11} height={11} />
+          </Link>
+          {server.websiteUrl && (
+            <a
+              className="card__ext"
+              href={server.websiteUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={(e) => e.stopPropagation()}
+              title="View on agentic.market"
+            >
+              <ExternalLink width={13} height={13} />
+            </a>
+          )}
+        </div>
       </div>
     </div>
   )

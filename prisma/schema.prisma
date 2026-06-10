@@ -186,6 +186,26 @@ model SpendLedgerEntry {
   @@map("spend_ledger")
 }
 
+/// A bearer credential for headless agents (the `yeetful` SDK, scripts, CI).
+/// The plaintext secret (`yf_…`) is shown ONCE at mint and only its sha256 is
+/// stored; presenting it as `Authorization: Bearer yf_…` authenticates the
+/// owner wallet on /api/grants* the same way a SIWE session cookie does.
+model ApiKey {
+  id           String    @id @default(cuid())
+  ownerAddress String    @map("owner_address") // lowercased, SIWE-verified at mint
+  label        String    @default("API key")
+  /// sha256 hex digest of the full plaintext secret.
+  hash         String    @unique
+  /// Display handle: the first 11 chars of the secret ("yf_" + 8), so the
+  /// dashboard can say "yf_a1b2c3d4…" without storing anything recoverable.
+  prefix       String
+  lastUsedAt   DateTime? @map("last_used_at")
+  createdAt    DateTime  @default(now()) @map("created_at")
+
+  @@index([ownerAddress])
+  @@map("api_keys")
+}
+
 /// Per-wallet agent approval — the dashboard's "which agents may my account
 /// pay" spec. Toggling syncs the owner's active SpendGrant allowlist (the
 /// hosts of the approved services), so a toggle IS enforcement, not décor.
