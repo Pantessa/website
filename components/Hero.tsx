@@ -22,13 +22,15 @@ export default function Hero({ agents, catalog }: { agents: McpServer[]; catalog
       <div className="hero__left">
         <div className="hero__eyebrow mono">THE x402 STANDARD · PAY-PER-CALL · USDC ON BASE</div>
         <h1 className="hero__h1">
-          Stack agents.
+          Agent
           <br />
-          Pay <span className="hero__em">per call</span>.
+          <span className="hero__em">expense</span>
+          <br />
+          <span className="hero__em">accounts</span>.
         </h1>
         <p className="hero__sub">
-          Pick your x402 agents, connect one wallet, and let them pay for every service they need —
-          autonomously, per call, with no API keys and no subscriptions.
+          Pick your x402 agents, set a budget and an allowlist, and let them pay for every service
+          they need — per call, with receipts. No API keys, no subscriptions, no surprise bills.
         </p>
         <div className="hero__ctas">
           <button className="btn btn--solid" onClick={() => scrollToId('directory')}>
