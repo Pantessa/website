@@ -52,6 +52,27 @@ function priceLabel(ep: { priceUsd: string | null; maxPriceUsd: string | null; s
   return min
 }
 
+// ── Cost at volume ──────────────────────────────────────────────────────────
+// Per-call pricing compounds fast in agent loops — surface the implied daily
+// cost honestly instead of letting "$0.01/call" read as negligible.
+
+/** Amber once a sustained rate implies at least this much per day. */
+const VOLUME_WARN_PER_DAY_USD = 500
+
+function fmtUsd(n: number): string {
+  if (n >= 100) return `$${Math.round(n).toLocaleString('en-US')}`
+  return `$${n.toFixed(2)}`
+}
+
+/**
+ * Implied daily cost at a sustained calls/minute rate, from the per-call price.
+ * Returns the label + whether it crosses the warning threshold.
+ */
+function costAtVolume(priceUsd: string, perMinute: number): { perDay: number; label: string } {
+  const perDay = Number(priceUsd) * perMinute * 60 * 24
+  return { perDay, label: fmtUsd(perDay) }
+}
+
 /** Path + query of an endpoint URL (host shown separately per provider). */
 function pathOf(url: string): string {
   try {
@@ -175,6 +196,23 @@ export default async function ServiceDetailPage({ params }: Params) {
                         <span className="ep__host mono">{hostOf(ep.url)}</span>
                         {ep.scheme === 'upto' && <span className="ep__scheme mono">metered</span>}
                       </div>
+                      {ep.priceUsd && Number(ep.priceUsd) > 0 && (() => {
+                        const perMin = costAtVolume(ep.priceUsd, 1)
+                        const perSec = costAtVolume(ep.priceUsd, 60)
+                        const from = ep.scheme === 'upto' ? 'from ' : ''
+                        return (
+                          <p className="ep__volume mono">
+                            <span className="ep__volumelbl">at volume</span>
+                            <span className={perMin.perDay >= VOLUME_WARN_PER_DAY_USD ? 'ep__volume--warn' : ''}>
+                              ≈ {from}{perMin.label}/day @ 1 call/min
+                            </span>
+                            <span className="ep__volumesep">·</span>
+                            <span className={perSec.perDay >= VOLUME_WARN_PER_DAY_USD ? 'ep__volume--warn' : ''}>
+                              ≈ {from}{perSec.label}/day @ 1 call/sec
+                            </span>
+                          </p>
+                        )
+                      })()}
                       {ep.description && <p className="ep__desc">{ep.description}</p>}
                       {eparams.length > 0 && (
                         <details className="ep__params">
