@@ -94,6 +94,7 @@ export async function POST(req: NextRequest) {
         Array.isArray(body.plan) ? (body.plan as PlannedCall[]) : [],
         (body.signatures ?? {}) as Record<string, string>,
         Array.isArray(body.listedOnly) ? (body.listedOnly as McpServer[]) : [],
+        Array.isArray(body.notes) ? (body.notes as string[]).filter((n) => typeof n === 'string').slice(0, 8) : [],
       )
     }
 
@@ -127,17 +128,37 @@ export async function POST(req: NextRequest) {
 
     // Auto-callable endpoints for selected services that aren't hand-wired.
     // Planning costs one extra inference call, paid by the house wallet — so
-    // smart calls need the burner even in wallet mode.
-    const smart = hasAgentWallet() ? await loadSmartEndpoints(listedOnly) : []
+    // smart calls need the burner even in wallet mode. Every reason a service
+    // can't be auto-called lands in `notes` so the reply can say WHY.
+    const notes: string[] = []
+    let smart: PlannableEndpoint[] = []
+    if (listedOnly.length > 0) {
+      if (!hasAgentWallet()) {
+        notes.push(
+          'Auto-calling is offline: no house wallet on the server (PRIVATE_KEY unset). The planner that wires directory services into a chat turn is house-paid, so these services can only be listed.',
+        )
+      } else if (process.env.USE_DB !== 'true' || !process.env.DATABASE_URL) {
+        notes.push('Auto-calling is offline: the endpoint directory DB is disabled (USE_DB / DATABASE_URL).')
+      } else {
+        smart = await loadSmartEndpoints(listedOnly)
+        const plannable = new Set(smart.map((e) => e.serverSlug))
+        const unplannable = listedOnly.filter((s) => !plannable.has(s.slug))
+        if (unplannable.length > 0) {
+          notes.push(
+            `No machine-readable parameter schemas published for: ${unplannable.map((s) => s.name).join(', ')} — calls can't be constructed safely, so they stay listed-only.`,
+          )
+        }
+      }
+    }
 
     // ── Phase 1 (wallet): plan + return signing requests ─────────────────────
     if (walletAddress) {
-      return await planWalletPayments(message, inference, dataServers, listedOnly, walletAddress, smart)
+      return await planWalletPayments(message, inference, dataServers, listedOnly, walletAddress, smart, notes)
     }
 
     // ── Burner mode: the server's agent wallet pays everything in one shot ────
     if (hasAgentWallet()) {
-      return await runWithBurner(message, inference, dataServers, listedOnly, smart)
+      return await runWithBurner(message, inference, dataServers, listedOnly, smart, notes)
     }
 
     // ── Demo mode: nothing can pay ───────────────────────────────────────────
@@ -159,6 +180,7 @@ async function planWalletPayments(
   listedOnly: McpServer[],
   walletAddress: string,
   smart: PlannableEndpoint[],
+  notes: string[],
 ) {
   const plan: PlannedCall[] = []
 
@@ -187,11 +209,18 @@ async function planWalletPayments(
   if (smart.length > 0) {
     try {
       const { picks } = await planSmartPicks(inference, message, smart)
+      if (picks.length === 0) {
+        const considered = [...new Set(smart.map((e) => e.serverName))].join(', ')
+        notes.push(`The planner reviewed ${considered} but judged none of their endpoints relevant to this message.`)
+      }
       const byId = new Map(smart.map((e) => [e.id, e]))
       for (const pick of picks) {
         const ep = byId.get(pick.endpointId)!
         const built = buildSmartRequest(ep, pick.params)
-        if ('error' in built) continue
+        if ('error' in built) {
+          notes.push(`${ep.serverName}: planned call skipped — ${built.error}.`)
+          continue
+        }
         const { request } = built
         const challenge = await getChallenge(request.url, {
           method: request.method,
@@ -213,7 +242,9 @@ async function planWalletPayments(
         })
       }
     } catch (err) {
-      console.warn('smart planning failed (continuing without):', err instanceof Error ? err.message : err)
+      const msg = err instanceof Error ? err.message : 'unknown error'
+      console.warn('smart planning failed (continuing without):', msg)
+      notes.push(`Endpoint planning failed (${truncate(msg, 120)}) — directory services skipped this turn.`)
     }
   }
   const stillListedOnly = listedOnly.filter((s) => !smartServed.has(s.slug))
@@ -252,6 +283,7 @@ async function planWalletPayments(
     plan,
     payments,
     listedOnly: stillListedOnly,
+    notes,
   })
 }
 
@@ -261,6 +293,7 @@ async function executeWithSignatures(
   plan: PlannedCall[],
   signatures: Record<string, string>,
   listedOnly: McpServer[],
+  notes: string[] = [],
 ) {
   if (!message.trim()) return NextResponse.json({ error: 'message is required' }, { status: 400 })
 
@@ -315,7 +348,7 @@ async function executeWithSignatures(
   const text = parseClaudeText(res.headers.get('content-type') ?? '', await res.text())
   receipts.push({ name: inferenceCall.name, endpoint: inferenceCall.host, priceUsd: inferenceCall.priceUsd, txHash: decodeSettlement(res)?.transaction, ok: true })
 
-  const reply = text + paymentsFooter(receipts, listedOnly, 'your wallet')
+  const reply = text + paymentsFooter(receipts, listedOnly, 'your wallet', notes)
   return NextResponse.json({ reply, receipts })
 }
 
@@ -335,6 +368,7 @@ async function runWithBurner(
   dataServers: McpServer[],
   listedOnly: McpServer[],
   smart: PlannableEndpoint[] = [],
+  notes: string[] = [],
 ) {
   const receipts: Receipt[] = []
   const contextBlocks: string[] = []
@@ -394,6 +428,10 @@ async function runWithBurner(
           spentToday += infPrice
           spentTotal += infPrice
         }
+        if (picks.length === 0) {
+          const considered = [...new Set(smart.map((e) => e.serverName))].join(', ')
+          notes.push(`The planner reviewed ${considered} but judged none of their endpoints relevant to this message.`)
+        }
         const byId = new Map(smart.map((e) => [e.id, e]))
         for (const pick of picks) {
           const ep = byId.get(pick.endpointId)!
@@ -429,7 +467,9 @@ async function runWithBurner(
           }
         }
       } catch (err) {
-        console.warn('smart planning failed (continuing without):', err instanceof Error ? err.message : err)
+        const msg = err instanceof Error ? err.message : 'unknown error'
+        console.warn('smart planning failed (continuing without):', msg)
+        notes.push(`Endpoint planning failed (${truncate(msg, 120)}) — directory services skipped this turn.`)
       }
     }
   }
@@ -456,7 +496,7 @@ async function runWithBurner(
     spentToday += infPrice
   }
 
-  let reply = text + paymentsFooter(receipts, listedOnly.filter((s) => !smartServed.has(s.slug)), 'the house wallet')
+  let reply = text + paymentsFooter(receipts, listedOnly.filter((s) => !smartServed.has(s.slug)), 'the house wallet', notes)
   if (grant && policy) {
     reply += `\n\n— spend grant “${grant.label}”: $${spentToday.toFixed(2)}/$${policy.perDayUsd} today`
     if (blocked.length) reply += ` · blocked ${blocked.join(', ')}`
@@ -548,7 +588,12 @@ function buildPrompt(message: string, contextBlocks: string[]): string {
   ].join('\n')
 }
 
-function paymentsFooter(receipts: Receipt[], listedOnly: McpServer[], payer: string): string {
+function paymentsFooter(
+  receipts: Receipt[],
+  listedOnly: McpServer[],
+  payer: string,
+  notes: string[] = [],
+): string {
   const paid = receipts.filter((r) => r.ok)
   const spent = paid.reduce((sum, r) => sum + Number(r.priceUsd || 0), 0)
   const lines = receipts.map(
@@ -561,7 +606,10 @@ function paymentsFooter(receipts: Receipt[], listedOnly: McpServer[], payer: str
     paid.length === 1 ? '' : 's'
   } on Base\n${lines.join('\n')}`
   if (listedOnly.length > 0) {
-    footer += `\n\nℹ️ Directory-only (not wired for live calls yet): ${listedOnly.map((s) => s.name).join(', ')}`
+    footer += `\n\nℹ️ Not called this turn: ${listedOnly.map((s) => s.name).join(', ')}`
+  }
+  if (notes.length > 0) {
+    footer += `\n\n⚙️ Diagnostics:\n${notes.map((n) => `· ${n}`).join('\n')}`
   }
   return footer
 }

@@ -49,7 +49,7 @@ const CALLABLE: Record<string, Partial<ParsedService> & { endpoint: string }> = 
   'yeetful-claude': {
     name: 'Yeetful · Claude', category: 'Inference', kind: 'inference',
     endpoint: 'https://anthropic.yeetful.com/api/mcp/mcp', protocol: 'mcp', tool: 'ask_claude',
-    priceUsd: '0.01', iconSlug: 'anthropic', color: '#D97757',
+    priceUsd: '0.005', iconSlug: 'anthropic', color: '#D97757',
     description: 'Anthropic Claude Haiku 4.5 over MCP Streamable HTTP. Pay-per-call, no API key — the default inference engine.',
     websiteUrl: 'https://agentic.market/services/anthropic-yeetful-com',
   },
