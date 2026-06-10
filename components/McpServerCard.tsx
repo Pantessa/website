@@ -1,5 +1,6 @@
 'use client'
 
+import Link from 'next/link'
 import { Check, Plus, ExternalLink } from 'lucide-react'
 import { McpServer, useYeetfulStore } from '@/lib/store'
 import BrandIcon from '@/components/BrandIcon'
@@ -23,7 +24,17 @@ export default function McpServerCard({ server }: McpServerCardProps) {
             <BrandIcon server={server} size={22} />
           </div>
           <div className="card__name">
-            <h3>{server.name}</h3>
+            <h3>
+              {/* Card click toggles selection; the name links to the detail page. */}
+              <Link
+                href={`/servers/${server.slug}`}
+                className="card__link"
+                onClick={(e) => e.stopPropagation()}
+                title={`${server.name} — endpoints & pricing`}
+              >
+                {server.name}
+              </Link>
+            </h3>
             <span className="card__cat mono">{server.category}</span>
           </div>
         </div>
