@@ -38,6 +38,8 @@ export interface Message {
   id: string
   role: 'user' | 'assistant' | 'system'
   content: string
+  /** Per-turn metadata persisted to the DB — e.g. { receipts: [...] } (x402 payments). */
+  meta?: unknown
   createdAt: string
 }
 
@@ -64,7 +66,7 @@ interface ApiChat {
   publicSlug?: string | null
   createdAt?: string
   updatedAt?: string
-  messages?: { id: string; role: string; content: string; createdAt: string }[]
+  messages?: { id: string; role: string; content: string; meta?: unknown; createdAt: string }[]
 }
 
 function fromApiChat(c: ApiChat, existing?: Chat): Chat {
@@ -77,6 +79,7 @@ function fromApiChat(c: ApiChat, existing?: Chat): Chat {
           id: m.id,
           role: m.role as Message['role'],
           content: m.content,
+          meta: m.meta ?? undefined,
           createdAt: m.createdAt,
         }))
       : existing?.messages ?? [],
@@ -205,7 +208,11 @@ export const useYeetfulStore = create<YeetfulStore>()(
           void fetch(`/api/chats/${chatId}/messages`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ role: message.role, content: message.content }),
+            body: JSON.stringify({
+              role: message.role,
+              content: message.content,
+              meta: message.meta,
+            }),
           }).catch(() => {})
         }
       },
