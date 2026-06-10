@@ -92,14 +92,26 @@ interface ParsedEndpoint {
   network: string | null
   provider: string | null
   position: number
+  parameters: ApiParameter[] | null
 }
 
 // ── agentic.market JSON API shapes (only the fields we read) ─────────────────
+interface ApiParameter {
+  group?: string // 'query' | 'path' | 'body'
+  name?: string
+  type?: string
+  description?: string
+  example?: unknown
+  required?: boolean
+  enumValues?: unknown[]
+  default?: unknown
+}
 interface ApiEndpoint {
   url: string
   method: string
   description: string
   providerName?: string
+  parameters?: ApiParameter[]
   pricing?: {
     amount?: string
     currency?: string
@@ -216,9 +228,18 @@ function toEndpoints(api: ApiService): ParsedEndpoint[] {
       network: p.network ? normalizeNetwork(p.network) : null,
       provider: e.providerName?.trim() || null,
       position: i++,
+      parameters: cleanParameters(e.parameters),
     })
   }
   return out
+}
+
+// Keep only well-formed params (a name + a group we know how to place).
+function cleanParameters(params: ApiParameter[] | undefined): ApiParameter[] | null {
+  const ok = (params ?? []).filter(
+    (p) => p?.name && ['query', 'path', 'body'].includes(p.group ?? ''),
+  )
+  return ok.length > 0 ? ok : null
 }
 
 async function fetchAll(): Promise<ApiService[]> {
@@ -312,7 +333,12 @@ async function main() {
     await prisma.mcpEndpoint.deleteMany({ where: { serverId: saved.id } })
     if (eps.length) {
       await prisma.mcpEndpoint.createMany({
-        data: eps.map((e) => ({ ...e, serverId: saved.id })),
+        // Json? fields reject plain null — omit `parameters` for DB NULL.
+        data: eps.map(({ parameters, ...e }) => ({
+          ...e,
+          serverId: saved.id,
+          ...(parameters ? { parameters: parameters as object[] } : {}),
+        })),
         skipDuplicates: true,
       })
       epWritten += eps.length
