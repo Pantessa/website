@@ -71,7 +71,7 @@ at the bottom; its full log lives in git history of this file.
   ephemeral store). Strip the text footer from the reply, keep the meta.
   Verify via API script: reply text clean, receipts array intact; guest
   (no-SIWE) path covered since meta lives in the in-memory store.
-- [ ] **5. Directory endpoint data refresh (PROD DB — owner-approved)** —
+- [x] **5. Directory endpoint data refresh (PROD DB — owner-approved)** —
   `yeetful-claude` and other callable services have no `mcp_endpoints` rows,
   so their detail pages show the empty state. Run `npm run db:ingest`
   **additive only — never `--prune`**; if agentic.market doesn't carry
@@ -122,6 +122,12 @@ _(autopilot appends here — branch, PR, verification evidence, caveats)_
 - **What**: `paymentsFooter` → `infoFooter` (reply keeps only listed-only + diagnostics + the burner grant-status line); 💸 paid-total moved into the structured footnote — `/api/chat` returns `payer`, client persists it in meta, `MessageReceipts` renders the total/payer summary above receipt rows. Orphaned `short()` removed.
 - **Verification**: temp scripts (deleted) — meta.payer round-trip; shared page renders total + payer + rows, zero old footer markers; tsc + build ✓. (Repeat lesson: strip React's `<!-- -->` text-node comments before HTML assertions.)
 - **Flagged**: one live paid turn (shared with the #30/#33 manual pass — no extra spend).
+
+### Iteration 5 — Item 5: Directory endpoint data refresh (prod DB) ✅
+- **Branch/PR**: `autopilot-directory-refresh` → [Yeetful/website#38](https://github.com/Yeetful/website/pull/38) (base `autopilot`).
+- **Counts**: servers 71→71; endpoints 1768→1770 (ingest) →1771 (seed); yeetful-claude eps 0→1. All 7 callable services' wiring verified intact post-run.
+- **Safety catch**: this branch's ingest CALLABLE map predated #33 — running naively would have UNWIRED the four BlockRun inference providers in prod. Map updated first (duplicates #33's hunk, declared in PR).
+- **Hand-seed**: committed idempotent fixture `scripts/seed-yeetful-claude-endpoints.ts` (double-run proven) — POST anthropic.yeetful.com/api/mcp/mcp, $0.005 exact; provenance in description + script (mcp_endpoints has no source column — noted deviation). Detail page renders the endpoint (screenshot on branch); no anomalies.
 
 ---
 
