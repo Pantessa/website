@@ -44,6 +44,7 @@ export async function spentTotalUsd(grantId: string): Promise<number> {
 export async function recordLedger(entry: {
   grantId: string
   host: string
+  serviceName?: string
   amountUsd: number
   ok: boolean
   txHash?: string
