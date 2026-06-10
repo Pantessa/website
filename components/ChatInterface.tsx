@@ -130,7 +130,7 @@ export default function ChatInterface() {
   /** Sign each x402 payment with the connected wallet, then run the calls. */
   const payWithWalletThenAnswer = async (
     userMsg: string,
-    data: { plan: unknown; payments: PaymentToSign[]; listedOnly: unknown },
+    data: { plan: unknown; payments: PaymentToSign[]; listedOnly: unknown; notes?: unknown },
   ): Promise<string> => {
     const signatures: Record<string, string> = {}
     let i = 0
@@ -162,6 +162,7 @@ export default function ChatInterface() {
         plan: data.plan,
         signatures,
         listedOnly: data.listedOnly,
+        notes: data.notes, // plan-time diagnostics, echoed into the final reply
       }),
     })
     const out = await res.json()
