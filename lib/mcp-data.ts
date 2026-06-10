@@ -72,7 +72,7 @@ export const CATALOG: McpServerData[] = [
     protocol: 'mcp',
     endpoint: 'https://anthropic.yeetful.com/api/mcp/mcp',
     tool: 'ask_claude',
-    priceUsd: '0.01',
+    priceUsd: '0.005',
     network: 'base',
     callable: true,
   },
