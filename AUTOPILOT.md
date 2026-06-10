@@ -65,7 +65,7 @@ at the bottom; its full log lives in git history of this file.
   conversion from the JSON payload (micros/expiry) — see the
   verify-eip712 pattern in Run 1. Wallet popup = manual pass; everything up
   to the signature request script-verified.
-- [ ] **4. Dedup the chat payments footer** — `/api/chat` replies still embed
+- [x] **4. Dedup the chat payments footer** — `/api/chat` replies still embed
   the text `paymentsFooter` AND receipts now render as structured footnotes
   from `Message.meta` (both burner and wallet paths, guests included via the
   ephemeral store). Strip the text footer from the reply, keep the meta.
@@ -116,6 +116,12 @@ _(autopilot appends here — branch, PR, verification evidence, caveats)_
 - **What**: self-contained `SignGrantButton` — GET typed data + signed flag, pure exported `toSignable()` (uint256s from the served types), wagmi sign, PUT; emerald Signed badge / outline Sign button / amber "terms changed — re-sign" nudge (refreshKey wired to approval toggles).
 - **Verification**: temp script (deleted) replayed the exact component data path with a throwaway key — GET → convert (BigInts asserted) → sign → PUT 200 signed:true → cap-change void → re-sign — **7/7 green**; tsc + build ✓.
 - **Flagged**: wallet popup + visuals manual (rule 6); EOA path script-proven.
+
+### Iteration 4 — Item 4: Chat payments-footer dedup ✅
+- **Branch/PR**: `autopilot-footer-dedup` → [Yeetful/website#37](https://github.com/Yeetful/website/pull/37) (base `autopilot`; independent).
+- **What**: `paymentsFooter` → `infoFooter` (reply keeps only listed-only + diagnostics + the burner grant-status line); 💸 paid-total moved into the structured footnote — `/api/chat` returns `payer`, client persists it in meta, `MessageReceipts` renders the total/payer summary above receipt rows. Orphaned `short()` removed.
+- **Verification**: temp scripts (deleted) — meta.payer round-trip; shared page renders total + payer + rows, zero old footer markers; tsc + build ✓. (Repeat lesson: strip React's `<!-- -->` text-node comments before HTML assertions.)
+- **Flagged**: one live paid turn (shared with the #30/#33 manual pass — no extra spend).
 
 ---
 
