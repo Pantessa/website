@@ -52,7 +52,7 @@ item becomes a PR into the `autopilot` branch for human review.
   existing `signature` column; expose `signed: boolean` in grant reads. Verify
   by signing with a throwaway key in a script. Wallet UI button = follow-up,
   flagged.
-- [ ] **3. Service detail page `/servers/[slug]`** — endpoint browser UI over
+- [x] **3. Service detail page `/servers/[slug]`** — endpoint browser UI over
   the existing detail API: header (icon, category, price, networks, callable
   badge), endpoint list (method chip, path, description, price, provider,
   params), link from directory cards. Preview-verified with screenshots.
@@ -89,3 +89,9 @@ _(autopilot appends here — branch, PR, verification evidence, caveats)_
 - **What**: `lib/grant-typed-data.ts` (canonical SpendGrant struct — Base chainId, sorted lowercased allow, USD as 1e6 micros, unix-seconds expiry; always built from the stored row), `GET`+`PUT /api/grants/[id]/signature` (verify via `publicClient.verifyTypedData` — EOA + ERC-1271/6492 — persist to existing `signature` column), `signed: boolean` in grant reads, signature voided when terms change (PATCH caps, approval-toggle allowlist re-derivation).
 - **Verification**: temp script (deleted) vs dev + Neon — throwaway-key sign → persisted; foreign/malformed sig → 400; cap change voids; re-sign from GET payload; anon 401/foreign 404; cleanup. **12/12 green**; tsc + build ✓. No schema change.
 - **Flagged**: wallet UI "Sign grant" button is a follow-up; wallet-popup + smart-wallet signing can't be verified headlessly (EOA path script-proven).
+
+### Iteration 3 — Item 3: Service detail page /servers/[slug] ✅
+- **Branch/PR**: `autopilot-service-detail` → [Yeetful/website#28](https://github.com/Yeetful/website/pull/28) (base `autopilot`).
+- **What**: server-rendered endpoint browser over the directory DB — header (brand tile, category/price/networks, green "Callable in chat" badge, agentic.market link), endpoint rows (method chip, path, provider/host, flat or metered price, description, zero-JS `<details>` param schemas). Directory card names now link to it (stopPropagation keeps the add/remove toggle intact). Unknown slug / DB down → 404.
+- **Verification**: preview at 1440px — tripadvisor (callable, 5 eps), exa (params expanded), blockrun-ai (122 eps); card-link navigation; zero console errors; 404 path; tsc + build ✓. Screenshots committed under `docs/autopilot/` on the PR branch (raw links in PR body; folder can be dropped at merge).
+- **Caveats**: preview-tool screenshots came back black when scrolled, so captures were re-done with headless Chrome. `yeetful-claude` has no mcp_endpoints rows in the DB → its page shows the empty state (ingest content gap, noted in PR).
