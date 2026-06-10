@@ -48,6 +48,7 @@ model McpServer {
   // endpoint/protocol/tool/queryParam above is the single *wired* call used by
   // the chat orchestrator for callable services; this is the browsable catalog.
   endpoints McpEndpoint[]
+  approvals AgentApproval[]
 
   @@index([category])
   @@index([callable])
@@ -169,6 +170,9 @@ model SpendLedgerEntry {
   id        String  @id @default(cuid())
   grantId   String  @map("grant_id")
   host      String
+  /// Directory service the call belonged to (e.g. "Yeetful · Claude") — lets
+  /// the dashboard chart per-agent without reverse-mapping hosts.
+  serviceName String? @map("service_name")
   amountUsd Float   @map("amount_usd")
   ok        Boolean
   txHash    String? @map("tx_hash")
@@ -180,4 +184,22 @@ model SpendLedgerEntry {
   @@index([grantId])
   @@index([grantId, ok, createdAt])
   @@map("spend_ledger")
+}
+
+/// Per-wallet agent approval — the dashboard's "which agents may my account
+/// pay" spec. Toggling syncs the owner's active SpendGrant allowlist (the
+/// hosts of the approved services), so a toggle IS enforcement, not décor.
+model AgentApproval {
+  id           String  @id @default(cuid())
+  ownerAddress String  @map("owner_address") // lowercased, SIWE-verified
+  serverId     String  @map("server_id")
+  approved     Boolean @default(true)
+
+  server    McpServer @relation(fields: [serverId], references: [id], onDelete: Cascade)
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+
+  @@unique([ownerAddress, serverId])
+  @@index([ownerAddress])
+  @@map("agent_approvals")
 }
