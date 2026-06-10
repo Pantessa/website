@@ -1,14 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server'
 import prisma from '@/lib/db'
-import { getSessionAddress } from '@/lib/auth'
+import { getAuthAddress } from '@/lib/api-key'
 import { hostOf } from '@/lib/spend-grant'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
-// List the signed-in wallet's spend grants (newest first), with today's spend.
-export async function GET() {
-  const addr = await getSessionAddress()
+// List the caller's spend grants (newest first), with today's spend.
+// Auth: SIWE session cookie OR `Authorization: Bearer yf_…` (headless agents).
+export async function GET(req: NextRequest) {
+  const addr = await getAuthAddress(req)
   if (!addr) return NextResponse.json({ error: 'Not signed in.' }, { status: 401 })
 
   const grants = await prisma.spendGrant.findMany({
@@ -22,9 +23,9 @@ export async function GET() {
 const MAX_PER_CALL = 100 // sanity ceilings so a typo can't authorize a fortune
 const MAX_PER_DAY = 10_000
 
-// Create a spend grant owned by the signed-in wallet (SIWE-session gated).
+// Create a spend grant owned by the caller (SIWE session or API key).
 export async function POST(req: NextRequest) {
-  const addr = await getSessionAddress()
+  const addr = await getAuthAddress(req)
   if (!addr) return NextResponse.json({ error: 'Not signed in.' }, { status: 401 })
 
   const body = await req.json().catch(() => ({} as Record<string, unknown>))
