@@ -20,13 +20,13 @@ export default function Hero({ agents, catalog }: { agents: McpServer[]; catalog
   return (
     <section className="hero hero--manifesto">
       <div className="hero__left">
-        <div className="hero__eyebrow mono">AGENT EXPENSE ACCOUNTS · x402 · USDC ON BASE</div>
+        <div className="hero__eyebrow mono">THE x402 STANDARD · PAY-PER-CALL · USDC ON BASE</div>
         <h1 className="hero__h1">
-          Give agents
+          Agent
           <br />
-          an <span className="hero__em">expense</span>
+          <span className="hero__em">expense</span>
           <br />
-          <span className="hero__em">account</span>.
+          <span className="hero__em">accounts</span>.
         </h1>
         <p className="hero__sub">
           Pick your x402 agents, set a budget and an allowlist, and let them pay for every service
