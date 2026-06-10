@@ -73,6 +73,12 @@ model McpEndpoint {
   provider    String? // gateway that serves it (providerName: Venice, Bankr, …)
   position    Int     @default(0) // display order within the service
 
+  /// Structured parameter schemas from agentic.market, when published:
+  /// [{ group: 'query'|'path'|'body', name, type, description, example,
+  ///    required, enumValues, default }]. Drives the chat planner — an
+  /// endpoint with params is auto-callable; without, it's display-only.
+  parameters Json?
+
   server    McpServer @relation(fields: [serverId], references: [id], onDelete: Cascade)
   createdAt DateTime  @default(now()) @map("created_at")
 
