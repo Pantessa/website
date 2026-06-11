@@ -52,9 +52,16 @@ product), and a Claude-authored first post. One item per iteration; PRs into
   date, tags, cover when present) + `/blog/[slug]` (markdown via
   react-markdown + remark-gfm, NO raw HTML; cover, date, tags; 404 for
   drafts/unknown). Existing dark design system (svc/ep-style classes or a
-  small `blog__` section). Nav tab + footer link. generateMetadata per post
-  (title/description/OG). Preview screenshots incl. a seeded-then-cleaned
-  sample post at 1440px and 375px.
+  small `blog__` section). Nav tab + footer link. **SEO is a first-class
+  requirement (owner directive)**: server-rendered, semantic HTML
+  (`<article>`, `<time dateTime>`, one `<h1>`), per-post `generateMetadata`
+  with title/description/canonical + OpenGraph (type article,
+  publishedTime, cover image) + Twitter card, and **JSON-LD `BlogPosting`**
+  structured data (headline, datePublished, author Organization, image).
+  Index page gets its own metadata + JSON-LD `Blog`. Verified by asserting
+  the rendered HTML contains canonical, og:*, and the JSON-LD block.
+  Preview screenshots incl. a seeded-then-cleaned sample post at 1440px and
+  375px.
 - [ ] **3. Image uploads (Vercel Blob)** — `POST /api/blog/upload` (admin
   only): multipart/byte upload to @vercel/blob, returns the public URL for
   use as coverImageUrl or inline markdown image. Graceful 503 with a clear
@@ -62,10 +69,12 @@ product), and a Claude-authored first post. One item per iteration; PRs into
   for after the owner adds it; verify the 503 path + auth gating in
   test:api; mock-level verification of the success path only if feasible
   without the token, otherwise flagged).
-- [ ] **4. RSS + sitemap** — `/blog/rss.xml` (published posts, proper
-  pubDate/guid) and a `/sitemap.xml` covering /, /developers, /servers/[slug]
-  (callable few) + blog posts. Verified by fetching + parsing both routes in
-  test:api or a script assertion (well-formed XML, post present).
+- [ ] **4. RSS + sitemap + robots (SEO)** — `/blog/rss.xml` (published
+  posts, pubDate/guid, full <link>), `/sitemap.xml` via the Next metadata
+  convention covering /, /developers, /blog, blog posts (lastModified from
+  updatedAt) + the callable /servers/[slug] pages, and `/robots.txt`
+  pointing at the sitemap. Verified by fetching + parsing all three routes
+  (well-formed XML, post present, robots references sitemap).
 - [ ] **5. First post (Claude-authored)** — written in the yeetful brand
   voice (dry, precise, one wink): "An agent shipped this blog" — the story of
   the autopilot runs (constitution → queue → PRs → guardrails catching real
