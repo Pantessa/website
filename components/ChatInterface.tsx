@@ -110,13 +110,16 @@ export default function ChatInterface() {
         addMessage(chatId, {
           role: 'assistant',
           content: out.reply,
-          meta: out.receipts?.length ? { receipts: out.receipts } : undefined,
+          meta: out.receipts?.length ? { receipts: out.receipts, payer: out.payer } : undefined,
         })
       } else {
         addMessage(chatId, {
           role: 'assistant',
           content: data.reply || data.error || 'No response.',
-          meta: Array.isArray(data.receipts) && data.receipts.length ? { receipts: data.receipts } : undefined,
+          meta:
+            Array.isArray(data.receipts) && data.receipts.length
+              ? { receipts: data.receipts, payer: typeof data.payer === 'string' ? data.payer : undefined }
+              : undefined,
         })
       }
     } catch (err) {
@@ -137,7 +140,7 @@ export default function ChatInterface() {
   const payWithWalletThenAnswer = async (
     userMsg: string,
     data: { plan: unknown; payments: PaymentToSign[]; listedOnly: unknown; notes?: unknown },
-  ): Promise<{ reply: string; receipts?: unknown[] }> => {
+  ): Promise<{ reply: string; receipts?: unknown[]; payer?: string }> => {
     const signatures: Record<string, string> = {}
     let i = 0
     for (const p of data.payments) {
@@ -175,6 +178,7 @@ export default function ChatInterface() {
     return {
       reply: out.reply || out.error || 'No response.',
       receipts: Array.isArray(out.receipts) ? out.receipts : undefined,
+      payer: typeof out.payer === 'string' ? out.payer : undefined,
     }
   }
 

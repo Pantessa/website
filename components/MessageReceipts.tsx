@@ -23,12 +23,30 @@ export function receiptsOf(meta: unknown): ChatReceipt[] {
   )
 }
 
+/** Who funded the calls ("your wallet" | "the house wallet"), when recorded. */
+export function payerOf(meta: unknown): string | null {
+  if (!meta || typeof meta !== 'object') return null
+  const p = (meta as { payer?: unknown }).payer
+  return typeof p === 'string' && p.trim() ? p : null
+}
+
 export default function MessageReceipts({ meta }: { meta: unknown }) {
   const receipts = receiptsOf(meta)
   if (receipts.length === 0) return null
+  const payer = payerOf(meta)
+  const paid = receipts.filter((r) => r.ok)
+  const total = paid.reduce((sum, r) => sum + (Number(r.priceUsd) || 0), 0)
 
   return (
     <div className="mt-2.5 pt-2 border-t border-[var(--line)] space-y-1">
+      {/* The paid-total summary that used to be the text footer's 💸 line. */}
+      {paid.length > 0 && (
+        <div className="text-[11px] mono text-[color:var(--muted)]">
+          💸 ${total.toFixed(total < 0.01 ? 4 : 2)} over {paid.length} x402 call
+          {paid.length === 1 ? '' : 's'}
+          {payer ? ` · ${payer}` : ''}
+        </div>
+      )}
       {receipts.map((r, i) => (
         <div
           key={`${r.name}-${i}`}
