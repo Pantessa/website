@@ -43,7 +43,7 @@ never `main`. Runs 1–2 are summarized at the bottom; full logs in git history.
   404, receipts→Message.meta round-trip + share-page render. Mirrors
   test-auth.ts style (check/pass/fail counters, exit code). Run it green
   twice; it becomes the standing verification tool for later items.
-- [ ] **2. Fix the duplicate React key warning** — the home page console
+- [x] **2. Fix the duplicate React key warning** — the home page console
   spams "two children with the same key, `235`" from the runner demo feed
   (numeric keys repeat as the feed cycles). Find the keyed list in
   components/RunnerDemo.tsx (or Hero), key by a monotonic id, verify the
@@ -87,6 +87,11 @@ _(autopilot appends here — branch, PR, verification evidence, caveats)_
 - **Branch/PR**: `autopilot-test-harness` → [Yeetful/website#42](https://github.com/Yeetful/website/pull/42).
 - **What**: `scripts/test-api.ts` + `npm run test:api` — 25 checks across auth, keys (show-once/Bearer/revocation), grants (validation/scoping), EIP-712 (sign/void/re-sign), ledger sync, chat-receipt meta + share render, verified cleanup.
 - **Verification**: green twice back-to-back vs dev + Neon; tsc + build ✓. Later items extend this harness per rule 5.
+
+### Iteration 2 — Item 2: Duplicate React key fix ✅
+- **Branch/PR**: `autopilot-feed-keys` → [Yeetful/website#43](https://github.com/Yeetful/website/pull/43).
+- **What**: RunnerDemo's auto-fund path ran `seq.current += 1` + nested `setLog` inside the `setBalance` updater (double-invoked in dev → corrupted keys). Refill decision moved into `tick()` with a `balanceRef` mirror; all updaters pure; one monotonic key source.
+- **Verification**: armed console hook over ~105 feed ticks (24-entry window cycled 4×) — zero same-key errors; tsc + build ✓. Caveat in PR: original trigger was timing-dependent, but the removed pattern was the only numeric-keyed list and a known hazard.
 
 ---
 
