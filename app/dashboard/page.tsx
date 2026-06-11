@@ -54,7 +54,10 @@ export default function DashboardOverviewPage() {
             <p className="text-xs text-[color:var(--muted-2)] mt-0.5">
               {g
                 ? `$${g.perCallUsd} per call max · ${g.allowCount} approved hosts · expires ${new Date(g.expiresAt).toLocaleDateString()}`
-                : 'Your account mints automatically — default caps $0.05/call, $5/day.'}
+                : 'Your account mints automatically — default caps $0.05/call, $5/day.'}{' '}
+              <Link href="/dashboard/keys" className="underline underline-offset-2 decoration-dotted hover:text-white">
+                Mint an API key →
+              </Link>
             </p>
             {g && g.allowCount === 0 && (
               <p className="text-xs text-amber-400/90 mt-1">

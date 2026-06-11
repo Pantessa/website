@@ -67,7 +67,7 @@ export default function DevelopersPage() {
             pays for what it uses and can&apos;t spend what you didn&apos;t approve.
           </p>
           <div className="hero__ctas">
-            <Link href="/dashboard#api-keys" className="btn btn--solid">
+            <Link href="/dashboard/keys" className="btn btn--solid">
               Mint a key
             </Link>
             <a href="#quickstart" className="btn btn--ghost">
@@ -114,12 +114,15 @@ export default function DevelopersPage() {
                 <code className="mono dev__code">npm install yeetful</code>
               </li>
               <li>
-                <span className="mono dev__stepnum">02</span> On your{' '}
-                <Link href="/dashboard" className="dev__link">
-                  dashboard
+                <span className="mono dev__stepnum">02</span> Mint a key on your{' '}
+                <Link href="/dashboard/keys" className="dev__link">
+                  keys page
+                </Link>{' '}
+                and approve the agents you trust under{' '}
+                <Link href="/dashboard/approvals" className="dev__link">
+                  approvals
                 </Link>
-                , approve the agents you trust and mint an API key. The secret shows once —
-                that&apos;s the point.
+                . The secret shows once — that&apos;s the point.
               </li>
               <li>
                 <span className="mono dev__stepnum">03</span> Wrap your agent&apos;s fetch:
