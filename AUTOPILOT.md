@@ -62,7 +62,7 @@ product), and a Claude-authored first post. One item per iteration; PRs into
   the rendered HTML contains canonical, og:*, and the JSON-LD block.
   Preview screenshots incl. a seeded-then-cleaned sample post at 1440px and
   375px.
-- [ ] **3. Image uploads (Vercel Blob)** — `POST /api/blog/upload` (admin
+- [x] **3. Image uploads (Vercel Blob)** — `POST /api/blog/upload` (admin
   only): multipart/byte upload to @vercel/blob, returns the public URL for
   use as coverImageUrl or inline markdown image. Graceful 503 with a clear
   message when BLOB_READ_WRITE_TOKEN is unset (it currently is — flag manual
@@ -99,6 +99,11 @@ _(autopilot appends here — branch, PR, verification evidence, caveats)_
 - **Branch/PR**: `autopilot-blog-ui` → [Yeetful/website#47](https://github.com/Yeetful/website/pull/47) (**stacked**: merge #42 → #46 → #47).
 - **What**: /blog cards + /blog/[slug] article in the house style; react-markdown+gfm with raw HTML neutralized (injection renders as inert text — browser-parse proven); canonical/OG-article/Twitter/JSON-LD BlogPosting+Blog/semantic article+time; nav tab + footer link.
 - **Verification**: seeded-then-deleted sample post — 10 rendered-HTML assertions green; 1440+375 screenshots; tsc + build ✓.
+
+### Iteration 3 — Item 3: Image uploads (Vercel Blob) ✅
+- **Branch/PR**: `autopilot-blog-upload` → [Yeetful/website#48](https://github.com/Yeetful/website/pull/48) (stacked: #42→#46→#47→#48).
+- **What**: POST /api/blog/upload — admin-gated (auth before config), 503 naming BLOB_READ_WRITE_TOKEN when unconfigured (currently is), image-only + 8MB + random-suffix when configured. Harness +2 (environment-aware check self-upgrades once the token exists) — **37/37**.
+- **Flagged**: real upload manual until the owner creates a Blob store + token.
 
 ---
 
