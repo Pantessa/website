@@ -343,6 +343,19 @@ async function main() {
     const anonNow = await fetch(`${BASE}/api/blog/${draft.slug}`)
     check('published post is public', anonNow.status === 200)
 
+    // Upload route: auth gate + unconfigured-Blob 503 (success path needs
+    // BLOB_READ_WRITE_TOKEN — flagged manual until the owner creates a store).
+    const upAnon = await fetch(`${BASE}/api/blog/upload`, { method: 'POST' })
+    const upNonAdmin = await fetch(`${BASE}/api/blog/upload`, { method: 'POST', headers: C })
+    check('upload: anon + non-admin → 403', upAnon.status === 403 && upNonAdmin.status === 403)
+    const upAdmin = await fetch(`${BASE}/api/blog/upload`, { method: 'POST', headers: { cookie: adminSession } })
+    const upBody = await upAdmin.json()
+    if (process.env.BLOB_READ_WRITE_TOKEN) {
+      check('upload: admin reaches form validation (token set)', upAdmin.status === 400)
+    } else {
+      check('upload: admin → 503 naming BLOB_READ_WRITE_TOKEN', upAdmin.status === 503 && String(upBody.error).includes('BLOB_READ_WRITE_TOKEN'))
+    }
+
     const delPost = await fetch(`${BASE}/api/blog/${draft.slug}`, { method: 'DELETE', headers: { cookie: adminSession } })
     const delKey = await fetch(`${BASE}/api/keys/${adminKey.id}`, { method: 'DELETE', headers: { cookie: adminSession } })
     const anonAfter = await (await fetch(`${BASE}/api/blog`)).json()
