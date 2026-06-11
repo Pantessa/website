@@ -56,6 +56,9 @@ export default function RunnerDemo({ agents, catalog }: { agents: McpServer[]; c
   const [spent, setSpent] = useState(0)
   const [log, setLog] = useState<LogEntry[]>([])
   const seq = useRef(0)
+  // Mirrors `balance` so the interval can compute refills without side effects
+  // inside a state updater (see tick).
+  const balanceRef = useRef(50)
 
   // Keep latest agents/catalog in refs so the interval always sees fresh data.
   const agentsRef = useRef(agents)
@@ -82,20 +85,24 @@ export default function RunnerDemo({ agents, catalog }: { agents: McpServer[]; c
         action: actionFor(target),
         price,
       }
-      setLog((l) => [entry, ...l].slice(0, 24))
+
+      // Decide the refill HERE, not inside a state updater: updaters must be
+      // pure (React double-invokes them in dev), and the old in-updater
+      // `seq.current += 1` + nested setLog produced duplicate feed keys.
+      const next = +(balanceRef.current - price).toFixed(4)
+      const refill = next < 0.5
+      const entries: LogEntry[] = refill
+        ? [
+            { key: (seq.current += 1), t: clock(), system: true, msg: 'wallet auto-funded  +$50.0000 USDC' },
+            entry,
+          ]
+        : [entry]
+
+      setLog((l) => [...entries, ...l].slice(0, 24))
       setCalls((c) => c + 1)
       setSpent((s) => +(s + price).toFixed(4))
-      setBalance((b) => {
-        const next = +(b - price).toFixed(4)
-        if (next < 0.5) {
-          seq.current += 1
-          setLog((l) =>
-            [{ key: seq.current, t: clock(), system: true, msg: 'wallet auto-funded  +$50.0000 USDC' }, ...l].slice(0, 24),
-          )
-          return +(next + 50).toFixed(4)
-        }
-        return next
-      })
+      balanceRef.current = refill ? +(next + 50).toFixed(4) : next
+      setBalance(balanceRef.current)
     }
     const iv = setInterval(tick, 850)
     return () => clearInterval(iv)
