@@ -48,7 +48,7 @@ product), and a Claude-authored first post. One item per iteration; PRs into
   Claude-publishes flow. Slug auto-derived from title when omitted; publishing
   sets publishedAt once. Extend test:api with a blog section (admin CRUD,
   non-admin 403, anon sees only published, draft flow, cleanup).
-- [ ] **2. Public blog UI** — `/blog` index (post cards: title, description,
+- [x] **2. Public blog UI** — `/blog` index (post cards: title, description,
   date, tags, cover when present) + `/blog/[slug]` (markdown via
   react-markdown + remark-gfm, NO raw HTML; cover, date, tags; 404 for
   drafts/unknown). Existing dark design system (svc/ep-style classes or a
@@ -94,6 +94,11 @@ _(autopilot appends here — branch, PR, verification evidence, caveats)_
 - **What**: BlogPost model (description ≤160 enforced = meta description; coverImageAlt column; publishedAt set once → stable datePublished) + admin CRUD routes (drafts undisclosed to non-admins; ADMIN_WALLETS ∩ SIWE-or-Bearer — the Bearer path is the headless Claude-publish flow). Additive push done.
 - **Verification**: test:api +10 blog checks (throwaway admin via env injection) — **35/35 green**; tsc + build ✓.
 - **Owner**: set ADMIN_WALLETS locally + Vercel to publish.
+
+### Iteration 2 — Item 2: Public blog UI (SEO first-class) ✅
+- **Branch/PR**: `autopilot-blog-ui` → [Yeetful/website#47](https://github.com/Yeetful/website/pull/47) (**stacked**: merge #42 → #46 → #47).
+- **What**: /blog cards + /blog/[slug] article in the house style; react-markdown+gfm with raw HTML neutralized (injection renders as inert text — browser-parse proven); canonical/OG-article/Twitter/JSON-LD BlogPosting+Blog/semantic article+time; nav tab + footer link.
+- **Verification**: seeded-then-deleted sample post — 10 rendered-HTML assertions green; 1440+375 screenshots; tsc + build ✓.
 
 ---
 
