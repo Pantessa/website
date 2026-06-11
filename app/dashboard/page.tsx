@@ -8,6 +8,9 @@ import { Loader2, ShieldCheck, Wallet, CheckCircle2, XCircle, ArrowUpRight } fro
 import { cn } from '@/lib/utils'
 import { useSession } from '@/lib/session'
 import { SpendByAgent, SpendOverTime } from '@/components/DashboardCharts'
+import SignGrantButton from '@/components/SignGrantButton'
+import ApiKeysPanel from '@/components/ApiKeysPanel'
+import ConnectAgentCard from '@/components/ConnectAgentCard'
 
 // ── API shapes ───────────────────────────────────────────────────────────────
 interface Stats {
@@ -60,6 +63,7 @@ export default function DashboardPage() {
 
   const [stats, setStats] = useState<Stats | null>(null)
   const [approvals, setApprovals] = useState<Approval[] | null>(null)
+  const [keyCount, setKeyCount] = useState(0)
   const [loading, setLoading] = useState(false)
   const [mounted, setMounted] = useState(false)
   useEffect(() => setMounted(true), [])
@@ -175,8 +179,16 @@ export default function DashboardPage() {
                 )}
               </div>
               {g && (
-                <span className="mono text-xs text-[color:var(--muted)]">
-                  ${g.spentTodayUsd.toFixed(4)} / ${g.perDayUsd.toFixed(2)} today
+                <span className="flex items-center gap-3 flex-wrap">
+                  {/* Approval toggles re-derive the allowlist and void a stale
+                      signature server-side — refreshKey re-checks after them. */}
+                  <SignGrantButton
+                    grantId={g.id}
+                    refreshKey={approvals?.map((a) => `${a.serverId}:${a.approved}`).join(',')}
+                  />
+                  <span className="mono text-xs text-[color:var(--muted)]">
+                    ${g.spentTodayUsd.toFixed(4)} / ${g.perDayUsd.toFixed(2)} today
+                  </span>
                 </span>
               )}
             </div>
@@ -270,6 +282,16 @@ export default function DashboardPage() {
               </div>
             )}
           </Card>
+
+          {/* API keys for headless agents */}
+          <ApiKeysPanel onKeysChange={setKeyCount} />
+
+          {/* Copy-paste SDK onboarding (shows once a key + grant exist) */}
+          <ConnectAgentCard
+            grantId={stats?.grant?.id ?? null}
+            hasKeys={keyCount > 0}
+            ledgerUrl={typeof window !== 'undefined' ? window.location.origin : undefined}
+          />
 
           {/* Activity feed */}
           <Card>

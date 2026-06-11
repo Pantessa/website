@@ -377,8 +377,8 @@ async function executeWithSignatures(
   receipts.push({ name: inferenceCall.name, endpoint: inferenceCall.host, priceUsd: inferenceCall.priceUsd, txHash: infTx, ok: true })
   ledger(inferenceCall, true, infTx)
 
-  const reply = text + paymentsFooter(receipts, listedOnly, 'your wallet', notes)
-  return NextResponse.json({ reply, receipts })
+  const reply = text + infoFooter(listedOnly, notes)
+  return NextResponse.json({ reply, receipts, payer: 'your wallet' })
 }
 
 /** Build the payment header for a planned call from its client signature. */
@@ -525,12 +525,12 @@ async function runWithBurner(
     spentToday += infPrice
   }
 
-  let reply = text + paymentsFooter(receipts, listedOnly.filter((s) => !smartServed.has(s.slug)), 'the house wallet', notes)
+  let reply = text + infoFooter(listedOnly.filter((s) => !smartServed.has(s.slug)), notes)
   if (grant && policy) {
     reply += `\n\n— spend grant “${grant.label}”: $${spentToday.toFixed(2)}/$${policy.perDayUsd} today`
     if (blocked.length) reply += ` · blocked ${blocked.join(', ')}`
   }
-  return NextResponse.json({ reply, receipts })
+  return NextResponse.json({ reply, receipts, payer: 'the house wallet' })
 }
 
 async function paidGet(endpoint: string, queryParam: string, value: string) {
@@ -672,23 +672,14 @@ function buildPrompt(message: string, contextBlocks: string[]): string {
   ].join('\n')
 }
 
-function paymentsFooter(
-  receipts: Receipt[],
-  listedOnly: McpServer[],
-  payer: string,
-  notes: string[] = [],
-): string {
-  const paid = receipts.filter((r) => r.ok)
-  const spent = paid.reduce((sum, r) => sum + Number(r.priceUsd || 0), 0)
-  const lines = receipts.map(
-    (r) =>
-      `${r.ok ? '✓' : '✗'} ${r.name} · $${r.priceUsd}${r.txHash ? ` · tx ${short(r.txHash)}` : ''}${
-        r.note ? ` · ${r.note}` : ''
-      }`,
-  )
-  let footer = `\n\n———\n💸 Paid ~$${spent.toFixed(2)} from ${payer} over ${paid.length} x402 call${
-    paid.length === 1 ? '' : 's'
-  } on Base\n${lines.join('\n')}`
+/**
+ * Per-receipt lines and the paid-total used to be embedded here as text; they
+ * now render structurally from Message.meta (receipts + payer) — see
+ * components/MessageReceipts. Only information with no structured home stays
+ * in the reply: listed-only services and planner diagnostics.
+ */
+function infoFooter(listedOnly: McpServer[], notes: string[] = []): string {
+  let footer = ''
   if (listedOnly.length > 0) {
     footer += `\n\nℹ️ Not called this turn: ${listedOnly.map((s) => s.name).join(', ')}`
   }
@@ -700,9 +691,6 @@ function paymentsFooter(
 
 function truncate(s: string, n: number): string {
   return s.length > n ? s.slice(0, n) + '…' : s
-}
-function short(tx: string): string {
-  return tx.length > 14 ? `${tx.slice(0, 8)}…${tx.slice(-4)}` : tx
 }
 function hostOf(url: string): string {
   try {
