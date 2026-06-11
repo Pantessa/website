@@ -61,7 +61,9 @@ export function CardTitle({ children }: { children: React.ReactNode }) {
 
 export function Kpi({ label, value, sub, small }: { label: string; value: string; sub?: string; small?: boolean }) {
   return (
-    <div className="rounded-2xl border border-[var(--line)] bg-[var(--surf-1)] p-4">
+    // min-w-0: a long value (agent slug) must truncate inside the 2-col
+    // phone grid instead of flooring its 1fr track wider than the viewport.
+    <div className="min-w-0 rounded-2xl border border-[var(--line)] bg-[var(--surf-1)] p-4">
       <p className="text-[10px] uppercase tracking-[0.14em] text-[color:var(--muted-2)] mono">{label}</p>
       <p className={cn('text-white font-semibold mt-1 truncate', small ? 'text-base' : 'text-2xl')}>{value}</p>
       {sub && <p className="text-[11px] text-[color:var(--muted-2)] mt-0.5">{sub}</p>}

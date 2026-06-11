@@ -129,7 +129,7 @@ export default function SignGrantButton({
       <button
         onClick={() => void sign()}
         disabled={signing || !typedData}
-        className="inline-flex items-center gap-1.5 text-[11px] font-medium px-2.5 py-1 rounded-full border border-[var(--line-2)] text-[color:var(--muted)] hover:text-white hover:border-white disabled:opacity-50 transition-colors"
+        className="inline-flex items-center gap-1.5 text-[11px] font-medium px-2.5 py-1 max-lg:min-h-10 max-lg:px-3.5 rounded-full border border-[var(--line-2)] text-[color:var(--muted)] hover:text-white hover:border-white disabled:opacity-50 transition-colors"
         title="Wallet-sign your caps + allowlist (EIP-712) — makes the grant a portable, attested authorization"
       >
         {signing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <PenLine className="w-3.5 h-3.5" />}
