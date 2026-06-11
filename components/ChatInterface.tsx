@@ -198,7 +198,7 @@ export default function ChatInterface() {
             onClick={() => setSidebarOpen(!sidebarOpen)}
             aria-label={sidebarOpen ? 'Collapse chats sidebar' : 'Expand chats sidebar'}
             title={sidebarOpen ? 'Collapse chats' : 'Show chats'}
-            className="flex-shrink-0 w-8 h-8 grid place-items-center rounded-lg border border-[var(--line)] bg-[var(--surf-1)] text-[color:var(--muted)] hover:text-white hover:border-[var(--line-2)] transition-colors"
+            className="flex-shrink-0 w-10 h-10 md:w-8 md:h-8 grid place-items-center rounded-lg border border-[var(--line)] bg-[var(--surf-1)] text-[color:var(--muted)] hover:text-white hover:border-[var(--line-2)] transition-colors"
           >
             {sidebarOpen ? <PanelLeftClose className="w-4 h-4" /> : <PanelLeft className="w-4 h-4" />}
           </button>
@@ -213,7 +213,7 @@ export default function ChatInterface() {
                   onClick={() => handleToggleServer(server.id)}
                   aria-pressed={active}
                   className={cn(
-                    'flex-shrink-0 flex items-center gap-1.5 px-2.5 py-1 rounded-lg border transition-colors',
+                    'flex-shrink-0 flex items-center gap-1.5 px-2.5 py-1 min-h-[40px] md:min-h-0 rounded-lg border transition-colors',
                     active
                       ? 'bg-[var(--surf-2)] border-white/40 text-white'
                       : 'bg-[var(--surf-1)] border-[var(--line)] text-[color:var(--muted)] hover:border-[var(--line-2)] hover:text-white'
@@ -327,7 +327,7 @@ export default function ChatInterface() {
             onClick={handleSend}
             disabled={!input.trim() || loading}
             className={cn(
-              'flex-shrink-0 w-8 h-8 rounded-xl flex items-center justify-center transition-all duration-200',
+              'flex-shrink-0 w-11 h-11 md:w-8 md:h-8 rounded-xl flex items-center justify-center transition-all duration-200',
               input.trim() && !loading
                 ? 'bg-white text-black hover:bg-zinc-200 scale-100'
                 : 'bg-[var(--surf-2)] text-[color:var(--muted-2)] cursor-not-allowed scale-95'
