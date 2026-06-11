@@ -10,6 +10,8 @@
  *   • EIP-712 grant signing: GET payload → sign → PUT, voiding on terms change
  *   • Hosted-ledger sync: POST receipts, cross-wallet 404, spend totals
  *   • Chat receipts: Message.meta round-trip + public share-page render
+ *   • Blog: admin-gated CRUD + draft/publish flow (set BLOG_ADMIN_PK and start
+ *     the dev server with ADMIN_WALLETS=<its address>; skipped when unset)
  *
  * Every row is created under throwaway wallets and deleted at the end; the
  * final checks verify zero rows remain.
@@ -270,6 +272,82 @@ async function main() {
     'share page renders footnote (total · payer · denial)',
     html.includes('💸') && html.includes('$0.01 over 1 x402 call') && html.includes('· your wallet') && html.includes('blocked: NOT_ALLOWED'),
   )
+
+  // ── Blog (requires BLOG_ADMIN_PK + matching ADMIN_WALLETS on the server) ──
+  const adminPk = process.env.BLOG_ADMIN_PK
+  if (!adminPk) {
+    console.log('— blog: SKIPPED (set BLOG_ADMIN_PK and start dev with ADMIN_WALLETS=<address>)')
+  } else {
+    console.log('— blog')
+    const adminAcct = privateKeyToAccount(adminPk as `0x${string}`)
+    const adminSession = await signIn(adminAcct)
+    const AJ = { 'content-type': 'application/json', cookie: adminSession }
+
+    const nonAdmin = await fetch(`${BASE}/api/blog`, {
+      method: 'POST',
+      headers: CJ, // owner wallet is NOT in ADMIN_WALLETS
+      body: JSON.stringify({ title: 'x', description: 'x', content: 'x' }),
+    })
+    check('non-admin wallet → 403', nonAdmin.status === 403)
+
+    const longDesc = await fetch(`${BASE}/api/blog`, {
+      method: 'POST',
+      headers: AJ,
+      body: JSON.stringify({ title: 'x', description: 'y'.repeat(161), content: 'x' }),
+    })
+    check('meta description >160 chars → 400 (SEO line held)', longDesc.status === 400)
+
+    const draftRes = await fetch(`${BASE}/api/blog`, {
+      method: 'POST',
+      headers: AJ,
+      body: JSON.stringify({
+        title: 'Harness Post: Agents & SEO!',
+        description: 'A throwaway harness post.',
+        content: '# Hello\n\nBody **markdown**.',
+        tags: ['test'],
+      }),
+    })
+    const draft = await draftRes.json()
+    check('admin creates draft, slug auto-derived', draftRes.status === 201 && draft.slug === 'harness-post-agents-seo' && draft.published === false)
+
+    const dupe = await fetch(`${BASE}/api/blog`, {
+      method: 'POST',
+      headers: AJ,
+      body: JSON.stringify({ title: 'Harness Post: Agents & SEO!', description: 'd', content: 'c' }),
+    })
+    check('duplicate slug → 409', dupe.status === 409)
+
+    const anonList = await (await fetch(`${BASE}/api/blog`)).json()
+    const anonRead = await fetch(`${BASE}/api/blog/${draft.slug}`)
+    check('anon sees no draft (list + 404 read)', !anonList.some((q: { slug: string }) => q.slug === draft.slug) && anonRead.status === 404)
+
+    const adminDrafts = await (await fetch(`${BASE}/api/blog?drafts=1`, { headers: { cookie: adminSession } })).json()
+    check('admin ?drafts=1 lists the draft', adminDrafts.some((q: { slug: string }) => q.slug === draft.slug))
+
+    // Headless publish via Bearer key (the Claude-publishes path).
+    const adminKey = await (
+      await fetch(`${BASE}/api/keys`, { method: 'POST', headers: AJ, body: JSON.stringify({ label: 'blog harness' }) })
+    ).json()
+    const pub = await fetch(`${BASE}/api/blog/${draft.slug}`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${adminKey.secret}` },
+      body: JSON.stringify({ published: true }),
+    })
+    const pubBody = await pub.json()
+    check('Bearer-key admin publishes (headless path)', pub.status === 200 && pubBody.published === true && !!pubBody.publishedAt)
+
+    const unpub = await (await fetch(`${BASE}/api/blog/${draft.slug}`, { method: 'PATCH', headers: AJ, body: JSON.stringify({ published: false }) })).json()
+    const repub = await (await fetch(`${BASE}/api/blog/${draft.slug}`, { method: 'PATCH', headers: AJ, body: JSON.stringify({ published: true }) })).json()
+    check('publishedAt set exactly once (SEO datePublished stable)', unpub.publishedAt === pubBody.publishedAt && repub.publishedAt === pubBody.publishedAt)
+
+    const anonNow = await fetch(`${BASE}/api/blog/${draft.slug}`)
+    check('published post is public', anonNow.status === 200)
+
+    const delPost = await fetch(`${BASE}/api/blog/${draft.slug}`, { method: 'DELETE', headers: { cookie: adminSession } })
+    const delKey = await fetch(`${BASE}/api/keys/${adminKey.id}`, { method: 'DELETE', headers: { cookie: adminSession } })
+    const anonAfter = await (await fetch(`${BASE}/api/blog`)).json()
+    check('blog cleanup: post + key deleted', delPost.status === 200 && delKey.status === 200 && !anonAfter.some((q: { slug: string }) => q.slug === draft.slug))
+  }
 
   // ── Cleanup (verified) ────────────────────────────────────────────────────
   console.log('— cleanup')
