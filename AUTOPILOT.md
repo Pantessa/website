@@ -58,7 +58,7 @@ iteration; PRs into `autopilot`, never `main`.
   clean at 375px (it's public — screenshot it). Overflow scan on all four
   dashboard routes at 375px via the gate screen + static renders; gated
   content flagged manual.
-- [ ] **4. Key-page links** — point everything at `/dashboard/keys`: the
+- [x] **4. Key-page links** — point everything at `/dashboard/keys`: the
   /developers "Mint a key" CTA (drop the #api-keys anchor hack + the
   scroll-mt), the ConnectAgentCard "mint above" copy, and add a "Keys" quick
   link on the dashboard Overview empty/onboarding states. Verify the
@@ -87,6 +87,11 @@ _(autopilot appends here)_
 - **Branch/PR**: `autopilot-dash-mobile` → [Yeetful/website#54](https://github.com/Yeetful/website/pull/54) (merges #52+#53 chains; merge #52 → #53 → #54).
 - **What**: sticky horizontal section bar (<900px) with active-into-view + edge fade, ≥44px targets; 375 gate clean (real-browser overflow scan = 0 on all four routes).
 - **LESSON**: headless Chrome --window-size ≠ mobile viewport (wide layout, cropped shot) — earlier "clipped" gate shots were artifacts; preview-browser programmatic scans are authoritative for mobile.
+
+### Iteration 4 — Item 4: Key-page links ✅
+- **Branch/PR**: `autopilot-key-links` → [Yeetful/website#55](https://github.com/Yeetful/website/pull/55) (stacked: #52→#53→#54→#55).
+- **What**: /developers CTA + step copy → /dashboard/keys (+approvals link); anchor hack deleted; Overview gains a keys quick link. (One silent-replace miss caught by the occurrence count — fixed with an exact Edit.)
+- **Verification**: preview click-through (CTA → /dashboard/keys), link counts asserted; test:api 37/37; tsc + build ✓.
 
 ---
 
