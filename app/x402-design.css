@@ -341,6 +341,41 @@
     .dev__links { grid-template-columns: 1fr; }
   }
 
+  /* ── BLOG ────────────────────────────────────────── */
+  .blog__grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; margin-top: 40px; }
+  .blog__card { border: 1px solid var(--line); background: var(--surf-1); border-radius: 14px; overflow: hidden; transition: border-color .18s, background .18s; }
+  .blog__card:hover { border-color: var(--line-2); background: var(--surf-2); }
+  .blog__cardlink { display: block; padding: 20px; }
+  .blog__cover { width: 100%; height: auto; border-radius: 10px; border: 1px solid var(--line); display: block; margin-bottom: 14px; }
+  .blog__cover--hero { margin: 26px 0 0; }
+  .blog__cardtitle { font-family: 'Archivo', sans-serif; font-weight: 700; font-size: 19px; letter-spacing: -0.02em; line-height: 1.25; }
+  .blog__carddesc { font-size: 13.5px; color: var(--muted); line-height: 1.5; margin-top: 8px; }
+  .blog__cardmeta { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 12px; font-size: 11.5px; color: var(--muted-2); }
+  .blog__tag { border: 1px solid var(--line); border-radius: 999px; padding: 1px 9px; font-size: 10.5px; }
+  .blog__post { max-width: 760px; }
+  .blog__title { font-family: 'Archivo', sans-serif; font-weight: 800; font-size: clamp(1.9rem, 3.4vw, 2.6rem); letter-spacing: -0.03em; line-height: 1.1; }
+  .blog__body { margin-top: 30px; font-size: 16px; line-height: 1.7; color: var(--muted); }
+  .blog__body h2 { font-family: 'Archivo', sans-serif; font-weight: 700; font-size: 22px; letter-spacing: -0.02em; color: var(--fg); margin: 36px 0 12px; }
+  .blog__body h3 { font-family: 'Archivo', sans-serif; font-weight: 700; font-size: 17px; color: var(--fg); margin: 28px 0 10px; }
+  .blog__body p { margin: 14px 0; }
+  .blog__body a { color: var(--fg); text-decoration: underline; text-underline-offset: 3px; text-decoration-style: dotted; }
+  .blog__body a:hover { text-decoration-style: solid; }
+  .blog__body strong { color: var(--fg); }
+  .blog__body ul, .blog__body ol { margin: 14px 0; padding-left: 26px; }
+  .blog__body li { margin: 6px 0; }
+  .blog__body code { font-family: 'Geist Mono', ui-monospace, monospace; font-size: 0.88em; background: var(--surf-2); border: 1px solid var(--line); border-radius: 5px; padding: 1px 6px; color: var(--fg); }
+  .blog__body pre { background: var(--surf-1); border: 1px solid var(--line); border-radius: 12px; padding: 16px; overflow-x: auto; margin: 18px 0; }
+  .blog__body pre code { background: none; border: none; padding: 0; font-size: 12.5px; line-height: 1.6; color: var(--muted); }
+  .blog__body blockquote { border-left: 2px solid var(--line-2); padding-left: 16px; margin: 18px 0; color: var(--muted-2); }
+  .blog__body img { max-width: 100%; border-radius: 12px; border: 1px solid var(--line); }
+  .blog__body table { border-collapse: collapse; margin: 18px 0; font-size: 13.5px; }
+  .blog__body th, .blog__body td { border: 1px solid var(--line); padding: 7px 12px; text-align: left; }
+  .blog__body th { color: var(--fg); }
+  .blog__body hr { border: none; border-top: 1px solid var(--line); margin: 28px 0; }
+  @media (max-width: 768px) {
+    .blog__grid { grid-template-columns: 1fr; }
+  }
+
   /* ── ACTIVE BAR ──────────────────────────────────── */
   .activebar {
     position: fixed; bottom: 22px; left: 50%; transform: translateX(-50%); z-index: 35;
