@@ -1,103 +1,80 @@
-# Autopilot — Run 5: mobile nav + dashboard shell (staged 2026-06-11; start via /loop)
+# Autopilot — Run 6: mobile-first, every page (staged 2026-06-11; start via /loop)
 
-Owner directives: (1) mobile navigation is broken — the nav tabs are
-`display:none` under 900px with NO replacement; build a slick hamburger/drawer.
-(2) The signed-in dashboard should feel like Vercel's: a full persistent left
-sidebar with sections, not one long scroll. (3) API-key creation gets its own
-directly-linkable page (no more scrolling/#anchor). ~2 hours; one item per
-iteration; PRs into `autopilot`, never `main`.
+Owner report with screenshot: the AUTHED dashboard bleeds horizontally on
+mobile (KPI cards, budget card, and the spend chart run past the viewport) —
+the gated surface previous runs could only flag. This run makes every page
+genuinely mobile-first and adds the tooling to verify gated pages.
 
 ## Rules (constitution)
 
-1. **Branching**: `autopilot-<slug>` from `autopilot`; PRs target `autopilot`,
-   never `main`. Stacking allowed where items share the dashboard shell —
-   declare it + merge order (queue order).
-2. **Never**: merge PRs, push main, force-push, deploy, publish, pay anything.
-3. **DB**: no schema changes expected this run; if one becomes necessary,
-   additive only, harness-verified.
-4. **Verify before PR**: `npx tsc --noEmit` + `npm run build` minimum. Public
-   UI: preview + headless-Chrome screenshots (375/768/1440 where relevant)
-   under `docs/autopilot/` on the PR branch. Run `npm run test:api` (with the
-   throwaway-admin env) after any item touching routes/layouts — it must stay
-   37/37. Programmatic overflow scan (scrollWidth vs innerWidth) on touched
-   pages at 375px.
-5. **Wallet/SIWE-gated UI** (dashboard shell): verify structure via tsc/build
-   + static renders of presentational components where possible; gated visuals
-   flagged "needs manual pass". The hamburger + public pages are fully
-   verifiable — verify them completely (tap targets actually navigate).
-6. **Honesty**: unverifiable → flagged, not claimed.
-7. **Logging**: progress log per item on `autopilot`; two consecutive failures
-   → stop. Owner message → stop.
-8. Final iteration appends a run summary.
+1. `autopilot-<slug>` from `autopilot`; PRs → `autopilot`, never `main`;
+   stacking declared with merge order (queue order).
+2. Never merge/push-main/force-push/deploy/publish/pay.
+3. **Gated-page verification (new tool)**: build a TEMPORARY mock-data
+   preview page (e.g. app/__preview/dash/page.tsx) that renders the gated
+   page's CONTENT components with realistic fixture data and no auth. Verify
+   in the preview browser at 375/390 (rect-based scan: any element whose
+   getBoundingClientRect().right exceeds the viewport +2px counts — NOT
+   scrollWidth, which overflow-x:hidden defeats). Screenshot evidence from
+   the preview browser. DELETE the temp page before commit — it must never
+   ship (grep the diff for __preview before pushing).
+4. Mobile-first specifics to enforce everywhere: no horizontal bleed at
+   375/390; primary tap targets ≥44px (40 acceptable for dense secondary);
+   inputs ≥16px font (iOS zoom); long mono strings (hashes/urls) truncate or
+   scroll within their box, never push it; charts/tables get their own
+   overflow-x scroll containers; fixed/floating elements respect
+   env(safe-area-inset-*).
+5. `npx tsc --noEmit` + `npm run build` minimum; `npm run test:api` (with
+   throwaway-admin env) must stay 37/37 after any item touching routes or
+   shared components.
+6. Honesty: anything unverifiable flagged, not claimed. Real-wallet visuals
+   remain the owner's glance, but with the mock harness the LAYOUT is ours
+   to verify — "gated" no longer excuses bleed.
+7. Progress log per item; two consecutive failures → stop; owner message →
+   stop; final iteration appends a run summary.
 
 ## Queue (ordered; one per iteration)
 
-- [x] **1. Mobile hamburger nav** — replace the `display:none` cliff: a
-  hamburger button in the nav under 900px opening a slide-in drawer (right
-  side, full-height, backdrop): Servers / Chat (badge) / Dashboard (when
-  connected) / Developers / Blog + the Connect Wallet button. Closes on
-  navigation, backdrop tap, and Escape; body scroll locked while open;
-  aria-expanded/label on the trigger. House style (surf/line tokens, mono
-  labels). Verify at 375px in preview: drawer opens, each link NAVIGATES
-  (click-through asserted), scroll lock works; screenshots open+closed;
-  overflow scan clean; desktop ≥900px unchanged (screenshot).
-- [x] **2. Dashboard shell: Vercel-style left sidebar + route split** — turn
-  /dashboard into a layout with a persistent left sidebar (sections:
-  Overview, API Keys, Approvals, Activity) and nested routes:
-  `/dashboard` = Overview (KPI tiles, budget meter + SignGrantButton, charts)
-  · `/dashboard/keys` = ApiKeysPanel + ConnectAgentCard (the directly-linkable
-  key page the owner asked for) · `/dashboard/approvals` = the agent toggles
-  grid · `/dashboard/activity` = the ledger feed. Shared client layout keeps
-  the connect/sign-in gate (gate once, in the layout); sidebar shows active
-  section; data fetching split per page (stats where needed). No server/API
-  changes. tsc/build + static-render the sidebar component (links/active
-  logic); gated visuals flagged manual.
-- [x] **3. Dashboard mobile** — under 900px the sidebar becomes a horizontal
-  scrollable section bar (sticky, under the main nav) — same component,
-  responsive CSS; tap targets ≥44px. The connect-wallet gate screen must be
-  clean at 375px (it's public — screenshot it). Overflow scan on all four
-  dashboard routes at 375px via the gate screen + static renders; gated
-  content flagged manual.
-- [x] **4. Key-page links** — point everything at `/dashboard/keys`: the
-  /developers "Mint a key" CTA (drop the #api-keys anchor hack + the
-  scroll-mt), the ConnectAgentCard "mint above" copy, and add a "Keys" quick
-  link on the dashboard Overview empty/onboarding states. Verify the
-  /developers CTA href + navigation in preview (public page).
-- [x] **5. Site-wide 375px audit** — programmatic overflow scan + screenshots
-  of /, /developers, /blog, /blog/[slug] (seed+clean a sample), /servers/
-  [slug], /chat (guest view): fix anything that scrolls horizontally or has
-  sub-44px primary tap targets (known suspects: chat agents bar, runner feed,
-  hero CTAs). Screenshots before/after for anything fixed.
+- [ ] **1. Dashboard Overview mobile bleed (the screenshot)** — mock-harness
+  the Overview content (Kpi grid, budget meter + SignGrantButton, both
+  DashboardCharts with ~10 days of fixture data). Find and fix every bleed
+  source — prime suspects: Recharts containers (must be ResponsiveContainer
+  inside a min-width:0 parent, wrapped in an overflow guard), the KPI grid
+  at 2-col/375, the budget card's mono spend line, `.dash`/`.dash__main`
+  min-content. Rect-scan 375 + 390 clean; before/after screenshots from the
+  preview browser; harness deleted.
+- [ ] **2. Dashboard Keys/Approvals/Activity mobile** — same harness pattern
+  per page: keys (secret reveal block's break-all, ConnectAgentCard's
+  <pre> scroll container, list rows with long prefixes), approvals (3→2→1
+  column grid comfort, switch tap size), activity (long hosts/hashes
+  truncate; row wraps to two lines on phones instead of pushing). Rect-scan
+  clean; screenshots; harness deleted.
+- [ ] **3. Chat mobile-first** — at 375/390: sidebar must overlay (not
+  squeeze) or collapse cleanly; composer sticky-bottom with safe-area
+  padding and 16px input font; message bubbles ≤85vw with long-word
+  breaking; agents toolbar scroll behavior; receipts footnote wrapping.
+  Public page — verify everything live in preview incl. guest send box
+  focus (no iOS zoom: input font-size ≥16px).
+- [ ] **4. Home + directory mobile-first polish** — hero type scale and
+  spacing at 375 (eyebrow wrapping is fixed; tune sizes), runner card
+  internals (stats row, feed line density), search + pills (44px), card
+  grid single-column rhythm, ActiveServerBar safe-area + width on phones.
+  Rect-scan + screenshots (public).
+- [ ] **5. Developers + blog + servers detail mobile polish** — dev page:
+  snippet <pre> scroll, capability cards stack spacing, ep rows (method
+  chip + path truncation) at 375; blog: post typography measure, code
+  blocks scroll, index cards; servers detail: header badge wrap, volume
+  lines wrap. Rect-scan + screenshots (public).
+- [ ] **6. Global mobile foundation sweep** — verify viewport meta is
+  emitted on every route; 16px minimum on ALL text inputs; safe-area
+  insets on fixed elements (activebar, drawer); `-webkit-tap-highlight`
+  sanity; a final all-pages rect-scan table (375 + 390) in the PR covering
+  /, /developers, /blog, /blog/[slug], /servers/[slug], /chat, dashboard
+  gate + mock-harnessed authed pages. This is the run's exit criteria.
 
-## Progress log — Run 5
+## Progress log — Run 6
 
 _(autopilot appends here)_
-
-### Iteration 1 — Item 1: Mobile hamburger nav ✅
-- **Branch/PR**: `autopilot-mobile-nav` → [Yeetful/website#52](https://github.com/Yeetful/website/pull/52).
-- **What**: 44px burger → portaled full-height drawer (all tabs 48px+, wallet/auth in footer); closes on nav/backdrop/Escape; scroll lock; aria. Desktop unchanged. **CSS trap found**: the nav's backdrop-filter made the sticky header the containing block for fixed descendants — drawer portaled to body.
-- **Verification**: programmatic at 375px (open, click-through navigation + auto-close, backdrop, Escape, scroll lock, zero overflow) + desktop computed-styles; test:api 37/37; tsc + build ✓.
-
-### Iteration 2 — Item 2: Dashboard shell (sidebar + route split) ✅
-- **Branch/PR**: `autopilot-dash-shell` → [Yeetful/website#53](https://github.com/Yeetful/website/pull/53) (merge #52 first — gate view at 375 inherits old-nav overflow until then).
-- **What**: layout-level gate; left rail (Overview/Keys/Approvals/Activity); four routes — /dashboard/keys is the directly-linkable key page; shared lib/dashboard-ui; presentational DashboardSidebar (static-render tested); survivable mobile section bar (item 3 polishes).
-- **Verification**: sidebar render checks ✓; routes 200; test:api 37/37; tsc + build ✓; gated visuals flagged manual.
-
-### Iteration 3 — Item 3: Dashboard mobile ✅
-- **Branch/PR**: `autopilot-dash-mobile` → [Yeetful/website#54](https://github.com/Yeetful/website/pull/54) (merges #52+#53 chains; merge #52 → #53 → #54).
-- **What**: sticky horizontal section bar (<900px) with active-into-view + edge fade, ≥44px targets; 375 gate clean (real-browser overflow scan = 0 on all four routes).
-- **LESSON**: headless Chrome --window-size ≠ mobile viewport (wide layout, cropped shot) — earlier "clipped" gate shots were artifacts; preview-browser programmatic scans are authoritative for mobile.
-
-### Iteration 4 — Item 4: Key-page links ✅
-- **Branch/PR**: `autopilot-key-links` → [Yeetful/website#55](https://github.com/Yeetful/website/pull/55) (stacked: #52→#53→#54→#55).
-- **What**: /developers CTA + step copy → /dashboard/keys (+approvals link); anchor hack deleted; Overview gains a keys quick link. (One silent-replace miss caught by the occurrence count — fixed with an exact Edit.)
-- **Verification**: preview click-through (CTA → /dashboard/keys), link counts asserted; test:api 37/37; tsc + build ✓.
-
-### Iteration 5 — Item 5: Site-wide 375px audit ✅
-- **Branch/PR**: `autopilot-mobile-audit` → [Yeetful/website#56](https://github.com/Yeetful/website/pull/56).
-- **Real find**: scrollWidth scans miss clipping under body's overflow-x:hidden — a rect-based pass caught the home hero clipping at 375 (runner feed's nowrap lines → grid min-content ~500px). Fixed with min-width:0 on grid items; feed code chip hidden ≤600. Clipped elements 21→2 (cosmetic).
-- **Tap targets** ≥40px on phones: chat chips (were 25px!), send, sidebar toggle, New chat, card add-buttons, runner pause.
-- **Verification**: rect-based audit table across 6 pages all clean; test:api 37/37; tsc + build ✓.
 
 ---
 
