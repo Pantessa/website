@@ -37,7 +37,7 @@ product), and a Claude-authored first post. One item per iteration; PRs into
 
 ## Queue (ordered; one per iteration)
 
-- [ ] **1. BlogPost model + publish API** — Prisma `BlogPost` (slug unique,
+- [x] **1. BlogPost model + publish API** — Prisma `BlogPost` (slug unique,
   title, description, content markdown, coverImageUrl?, tags String[],
   published Boolean default false, publishedAt?, authorAddress, timestamps;
   additive db push). Routes: `GET /api/blog` (public: published only, newest
@@ -88,6 +88,12 @@ product), and a Claude-authored first post. One item per iteration; PRs into
 ## Progress log — Run 4
 
 _(autopilot appends here — branch, PR, verification evidence, caveats)_
+
+### Iteration 1 — Item 1: BlogPost model + publish API ✅
+- **Branch/PR**: `autopilot-blog-api` → [Yeetful/website#46](https://github.com/Yeetful/website/pull/46) (**stacked on #42** — extends test:api; merge #42 first).
+- **What**: BlogPost model (description ≤160 enforced = meta description; coverImageAlt column; publishedAt set once → stable datePublished) + admin CRUD routes (drafts undisclosed to non-admins; ADMIN_WALLETS ∩ SIWE-or-Bearer — the Bearer path is the headless Claude-publish flow). Additive push done.
+- **Verification**: test:api +10 blog checks (throwaway admin via env injection) — **35/35 green**; tsc + build ✓.
+- **Owner**: set ADMIN_WALLETS locally + Vercel to publish.
 
 ---
 
