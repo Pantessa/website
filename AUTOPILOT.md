@@ -1,112 +1,84 @@
-# Autopilot — Run 3 (staged 2026-06-11, owner-approved queue; start via /loop)
+# Autopilot — Run 4: the blog (staged 2026-06-11, owner-approved; start via /loop)
 
-Unattended build run, ~1 hour. One item per iteration; PRs into `autopilot`,
-never `main`. Runs 1–2 are summarized at the bottom; full logs in git history.
+DB-backed blog on the website: Neon for post metadata, Vercel Blob for images,
+the existing Bearer-key auth as the headless publish path (dogfooding the
+product), and a Claude-authored first post. One item per iteration; PRs into
+`autopilot`, never `main`. Prior runs summarized at the bottom.
 
 ## Rules (constitution — apply to every iteration)
 
 1. **Branching**: `autopilot-<slug>` cut from `autopilot`. PRs target
-   `autopilot`, never `main`. Items independent; unavoidable stacking must be
-   declared in the PR with merge order.
+   `autopilot`, never `main`. Items independent; unavoidable stacking
+   declared in the PR with merge order. (Items 2–5 build on item 1's schema/
+   API by nature — stack on the prior item's branch when files overlap and
+   declare it; merge order is queue order.)
 2. **Never**: merge any PR, push to `main`, force-push, deploy, publish to
    npm, or make live paid x402 calls. No spending of any kind.
 3. **DB**: additive only (plain `db push`, never `--force-reset`); never
-   destroy user data. Test rows under throwaway wallets, ALWAYS cleaned,
-   verified zero left. Items 4–5 carry extra guardrails — see the items.
-4. **Public repos** (`demo`, `sdk`, `example-agent` are PUBLIC): secrets grep
-   before EVERY push — `sk-`, `0x[64 hex]`, `key/token = <value>`, env files;
-   `git ls-files` check for tracked env files; review every hit; never pipe
-   the grep through anything that masks its exit code.
+   destroy user data. Test rows under throwaway wallets, cleaned + verified.
+   The first-post seed (item 5) is deliberate content, not test data — it
+   stays, and its full text ships in the PR for review.
+4. **Security**: blog markdown renders WITHOUT raw HTML (escaped, no
+   rehype-raw / dangerouslySetInnerHTML) — publish access is wallet-gated but
+   stored content must still never XSS readers. Admin = wallets listed in the
+   `ADMIN_WALLETS` env (comma-separated, lowercased); unset → publish routes
+   refuse with a clear error. Verification injects a throwaway admin via env.
 5. **Verify before PR**: `npx tsc --noEmit` + `npm run build` minimum.
-   Server-logic: temp script vs dev + real Neon (or the new test:api harness
-   once item 1 lands — prefer extending it over new temp scripts). UI:
-   preview at 1440px, headless-Chrome screenshots under `docs/autopilot/` on
-   the PR branch (stripped before main).
-6. **Wallet/SIWE-gated UI**: verify logic via scripts + tsc/build; flag gated
-   visuals "needs manual pass" — never claimed.
-7. **Honesty**: anything unverifiable is flagged, not claimed.
-8. **Logging**: update the Progress log on `autopilot` after each item. One
-   item failing twice → log, close branch, move on. Two consecutive failures
-   → stop the run.
-9. **Isolation**: this session's worktree only; don't touch PRs you didn't
-   open this run.
-10. **Stop conditions**: queue exhausted, two consecutive failures, or owner
-    message. Final iteration appends a run summary.
+   Server logic: extend `npm run test:api` (preferred) — a blog section with
+   throwaway admin + non-admin wallets. UI: preview at 1440px +
+   headless-Chrome screenshots under `docs/autopilot/` on the PR branch.
+6. **Honesty**: anything unverifiable is flagged, not claimed (e.g. Vercel
+   Blob uploads until BLOB_READ_WRITE_TOKEN exists).
+7. **Logging**: Progress log updated on `autopilot` after each item; one item
+   failing twice → log + move on; two consecutive failures → stop.
+8. **Isolation**: this session's worktree; don't touch PRs from other runs.
+9. **Stop conditions**: queue exhausted, two consecutive failures, or owner
+   message. Final iteration appends a run summary.
 
 ## Queue (ordered; one per iteration)
 
-- [x] **1. Committed API test harness** — consolidate the Run-1/2 throwaway
-  verification patterns into `scripts/test-api.ts` + `npm run test:api`
-  (runs vs a dev server + Neon, throwaway SIWE wallets, full cleanup):
-  auth nonce/verify, keys mint/list/revoke + Bearer auth, grants CRUD +
-  caps validation, EIP-712 GET/PUT/void/re-sign, ledger sync + cross-wallet
-  404, receipts→Message.meta round-trip + share-page render. Mirrors
-  test-auth.ts style (check/pass/fail counters, exit code). Run it green
-  twice; it becomes the standing verification tool for later items.
-- [x] **2. Fix the duplicate React key warning** — the home page console
-  spams "two children with the same key, `235`" from the runner demo feed
-  (numeric keys repeat as the feed cycles). Find the keyed list in
-  components/RunnerDemo.tsx (or Hero), key by a monotonic id, verify the
-  warning is gone in preview console after letting the feed cycle. Tiny,
-  preview-verifiable.
-- [x] **3. SDK 0.3 ripple (published!)** — `yeetful@0.3.0` is live on npm:
-  bump `example-agent` and `demo` to `^0.3.0` (their repos, own branches +
-  PRs, secrets grep before push), re-run their offline checks (`npm start`
-  demo mode / `npm run grant` dry-run — NO --live), and delete the
-  "activates with yeetful ≥ 0.3 / ignored by 0.2.x" caveats from
-  example-agent README, website `/developers` page, `ConnectAgentCard`,
-  and the sdk README if present. Also drop example-agent's runtime
-  `typeof pay.flushLedger === 'function'` guard — 0.3 always has it.
-- [x] **4. Ingest auto-wire probe for inference providers (PROD DB)** —
-  extend `scripts/ingest-agentic.ts`: after building services, for each
-  kind=inference service NOT already in the CALLABLE map that exposes an
-  OpenAI-compatible `chat/completions` endpoint, probe it (free request →
-  402): wire it (callable, protocol http, endpoint, default model from a
-  curated per-brand map or the gateway's cheapest, priceUsd from the
-  challenge) ONLY if the challenge parses, scheme is `exact`, and price ≤
-  $0.05; metered/keyed/dead → listed-only with the reason logged. Probes
-  are free GETs/POSTs that never pay. Guardrails: `--dry` prints decisions
-  without writing; run --dry first and put the decision table in the PR;
-  then a live run with before/after counts; existing CALLABLE entries are
-  never overridden; the 4 BlockRun providers + yeetful-claude/tripadvisor/
-  wolfram wiring verified intact after.
-- [x] **5. Stale endpoint URL fix-up (PROD DB)** — directory mcp_endpoints
-  rows for BlockRun gateways point at `blockrun.ai/v1/*`, which 404s (the
-  live path is `blockrun.ai/api/v1/*` — probed in Run 2). Committed
-  idempotent script: for each distinct stale URL, probe both forms (free
-  request; 402/200 = alive, HTML 404 = dead) and rewrite rows to the
-  verified-alive form; rows where neither form responds stay untouched and
-  are listed in the PR. Before/after counts + per-URL probe evidence table
-  in the PR. Detail pages re-screenshotted for one affected service.
+- [ ] **1. BlogPost model + publish API** — Prisma `BlogPost` (slug unique,
+  title, description, content markdown, coverImageUrl?, tags String[],
+  published Boolean default false, publishedAt?, authorAddress, timestamps;
+  additive db push). Routes: `GET /api/blog` (public: published only, newest
+  first; admin sees drafts with `?drafts=1`), `POST /api/blog` (admin only),
+  `GET/PATCH/DELETE /api/blog/[slug]` (GET public when published, admin
+  otherwise). Admin auth = `getAuthAddress` (SIWE or Bearer `yf_…` key) ∩
+  `ADMIN_WALLETS` env allowlist — the Bearer path IS the headless
+  Claude-publishes flow. Slug auto-derived from title when omitted; publishing
+  sets publishedAt once. Extend test:api with a blog section (admin CRUD,
+  non-admin 403, anon sees only published, draft flow, cleanup).
+- [ ] **2. Public blog UI** — `/blog` index (post cards: title, description,
+  date, tags, cover when present) + `/blog/[slug]` (markdown via
+  react-markdown + remark-gfm, NO raw HTML; cover, date, tags; 404 for
+  drafts/unknown). Existing dark design system (svc/ep-style classes or a
+  small `blog__` section). Nav tab + footer link. generateMetadata per post
+  (title/description/OG). Preview screenshots incl. a seeded-then-cleaned
+  sample post at 1440px and 375px.
+- [ ] **3. Image uploads (Vercel Blob)** — `POST /api/blog/upload` (admin
+  only): multipart/byte upload to @vercel/blob, returns the public URL for
+  use as coverImageUrl or inline markdown image. Graceful 503 with a clear
+  message when BLOB_READ_WRITE_TOKEN is unset (it currently is — flag manual
+  for after the owner adds it; verify the 503 path + auth gating in
+  test:api; mock-level verification of the success path only if feasible
+  without the token, otherwise flagged).
+- [ ] **4. RSS + sitemap** — `/blog/rss.xml` (published posts, proper
+  pubDate/guid) and a `/sitemap.xml` covering /, /developers, /servers/[slug]
+  (callable few) + blog posts. Verified by fetching + parsing both routes in
+  test:api or a script assertion (well-formed XML, post present).
+- [ ] **5. First post (Claude-authored)** — written in the yeetful brand
+  voice (dry, precise, one wink): "An agent shipped this blog" — the story of
+  the autopilot runs (constitution → queue → PRs → guardrails catching real
+  bugs: the wipe-on-empty incident, Venice's exact-$10 challenge), what the
+  expense-account product is, and that this very post was published through
+  the Bearer-key API the post describes. ~600–900 words, honest, no hype
+  words. Committed seed script (idempotent, full text in the PR body for
+  review); seeded as published=true (invisible in prod until the blog
+  deploys). Rendered-page screenshot in the PR.
 
-## Progress log — Run 3
+## Progress log — Run 4
 
 _(autopilot appends here — branch, PR, verification evidence, caveats)_
-
-### Iteration 1 — Item 1: Committed API test harness ✅
-- **Branch/PR**: `autopilot-test-harness` → [Yeetful/website#42](https://github.com/Yeetful/website/pull/42).
-- **What**: `scripts/test-api.ts` + `npm run test:api` — 25 checks across auth, keys (show-once/Bearer/revocation), grants (validation/scoping), EIP-712 (sign/void/re-sign), ledger sync, chat-receipt meta + share render, verified cleanup.
-- **Verification**: green twice back-to-back vs dev + Neon; tsc + build ✓. Later items extend this harness per rule 5.
-
-### Iteration 2 — Item 2: Duplicate React key fix ✅
-- **Branch/PR**: `autopilot-feed-keys` → [Yeetful/website#43](https://github.com/Yeetful/website/pull/43).
-- **What**: RunnerDemo's auto-fund path ran `seq.current += 1` + nested `setLog` inside the `setBalance` updater (double-invoked in dev → corrupted keys). Refill decision moved into `tick()` with a `balanceRef` mirror; all updaters pure; one monotonic key source.
-- **Verification**: armed console hook over ~105 feed ticks (24-entry window cycled 4×) — zero same-key errors; tsc + build ✓. Caveat in PR: original trigger was timing-dependent, but the removed pattern was the only numeric-keyed list and a known hazard.
-
-### Iteration 3 — Item 3: SDK 0.3 ripple ✅
-- **PRs**: [example-agent#1](https://github.com/Yeetful/example-agent/pull/1) (^0.3.0, unguarded flushLedger, all ≥0.3 caveats deleted; free demo re-run on the published package, zero spend) · [demo#2](https://github.com/Yeetful/demo/pull/2) (^0.3.0; dry-run re-verified, tsc clean). Both public repos: secrets grep + tracked-env checks clean.
-- **Website**: grep found NO ≥0.3 caveats on /developers or ConnectAgentCard (the queue item over-assumed) — no website change needed; sdk README also clean.
-- **Flagged**: demo `--live` still the owner's manual pass (spends).
-
-### Iteration 4 — Item 4: Ingest auto-wire probe (prod DB) ✅
-- **Branch/PR**: `autopilot-auto-wire` → [Yeetful/website#44](https://github.com/Yeetful/website/pull/44).
-- **What**: free-402-probe pass in the ingest — wires unwired inference services only when exact-priced ≤ $0.05 and live; `--dry` decision table. Today: **zero qualified** (venice demands exact $10/call!, groq/blockrun-ai URLs stale, hyperbolic no 402, questflow no chat endpoint) — future qualifying providers light up codelessly.
-- **Incident caught + fixed**: live ingest deleted yeetful-claude's hand-seeded endpoint (deleteMany on empty source). Surface now replaced only when the source carries one; seed re-applied and proven to survive a fresh ingest.
-- **Counts**: servers 71→71, callable 7→7 (wiring spot-checked), endpoints 1771→1774. tsc + build ✓.
-
-### Iteration 5 — Item 5: Stale endpoint URL fix-up (prod DB) ✅
-- **Branch/PR**: `autopilot-url-fixup` → [Yeetful/website#45](https://github.com/Yeetful/website/pull/45).
-- **What**: committed idempotent `scripts/fix-stale-endpoint-urls.ts` — probes both URL forms free, rewrites only dead-stale→alive-corrected. **13 rewritten** (models/chat/images, all 402-alive at /api/v1/), **3 honestly untouched** (/x/* dead at both forms), 0 on re-run, endpoint total unchanged. /servers/chatgpt renders zero dead links (screenshot on branch).
 
 ---
 
