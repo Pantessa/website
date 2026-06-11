@@ -369,6 +369,42 @@
     .dev__links { grid-template-columns: 1fr; }
   }
 
+  /* ── DASHBOARD SHELL ─────────────────────────────── */
+  .dash {
+    max-width: var(--maxw); margin: 0 auto; padding: 0 28px;
+    display: grid; grid-template-columns: 210px 1fr; gap: 36px;
+    align-items: start; min-height: calc(100vh - 64px);
+  }
+  .dash__rail {
+    position: sticky; top: 88px; padding: 24px 0 24px;
+    display: flex; flex-direction: column; gap: 18px;
+  }
+  .dash__who { font-size: 11px; color: var(--muted-2); padding: 0 12px; }
+  .dash__side { display: flex; flex-direction: column; gap: 2px; }
+  .dash__link {
+    display: flex; align-items: center; gap: 10px;
+    padding: 10px 12px; border-radius: 10px; font-size: 13px;
+    color: var(--muted); transition: color .15s, background .15s;
+    min-height: 40px;
+  }
+  .dash__link:hover { color: var(--fg); background: var(--surf-1); }
+  .dash__link.is-on { color: var(--fg); background: var(--surf-2); }
+  .dash__main { padding: 24px 0 64px; min-width: 0; }
+  .dash__h1 { font-family: 'Archivo', sans-serif; font-weight: 800; font-size: 24px; letter-spacing: -0.02em; margin-bottom: 6px; }
+  .dash__sub { font-size: 13px; color: var(--muted-2); margin-bottom: 20px; max-width: 64ch; line-height: 1.5; }
+  /* Survivable mobile fallback (item 3 turns this into the section bar):
+     rail becomes a horizontal scroll row above the content. */
+  @media (max-width: 900px) {
+    .dash { grid-template-columns: 1fr; gap: 0; padding: 0 18px; }
+    .dash__rail { position: sticky; top: 64px; z-index: 30; flex-direction: row; align-items: center;
+      gap: 12px; padding: 10px 0; background: rgba(0,0,0,0.85); backdrop-filter: blur(10px);
+      border-bottom: 1px solid var(--line); }
+    .dash__who { display: none; }
+    .dash__side { flex-direction: row; gap: 4px; overflow-x: auto; scrollbar-width: none; }
+    .dash__side::-webkit-scrollbar { display: none; }
+    .dash__link { white-space: nowrap; min-height: 44px; }
+  }
+
   /* ── BLOG ────────────────────────────────────────── */
   .blog__grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; margin-top: 40px; }
   .blog__card { border: 1px solid var(--line); background: var(--surf-1); border-radius: 14px; overflow: hidden; transition: border-color .18s, background .18s; }
