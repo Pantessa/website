@@ -42,6 +42,7 @@ export default function ConnectAgentCard({
   ledgerUrl = 'https://yeetful.com',
 }: ConnectAgentCardProps) {
   const [copied, setCopied] = useState(false)
+  const [idCopied, setIdCopied] = useState(false)
   if (!hasKeys || !grantId) return null
 
   const snippet = agentSnippet(grantId, ledgerUrl)
@@ -52,6 +53,15 @@ export default function ConnectAgentCard({
       setTimeout(() => setCopied(false), 2000)
     } catch {
       /* snippet is selectable below */
+    }
+  }
+  const copyId = async () => {
+    try {
+      await navigator.clipboard.writeText(grantId)
+      setIdCopied(true)
+      setTimeout(() => setIdCopied(false), 2000)
+    } catch {
+      /* the id is selectable in the row */
     }
   }
 
@@ -71,6 +81,26 @@ export default function ConnectAgentCard({
         >
           {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
           {copied ? 'Copied' : 'Copy snippet'}
+        </button>
+      </div>
+      {/* The grant id as a standalone copyable value — the example-agent flow
+          asks for it as YEETFUL_GRANT_ID in .env, where digging it out of the
+          code snippet below is a papercut. */}
+      <div className="mt-3 flex items-center gap-x-2 gap-y-1 flex-wrap">
+        <span className="text-[11px] text-[color:var(--muted-2)]">
+          Your expense account · <code className="mono">YEETFUL_GRANT_ID</code>
+        </span>
+        <button
+          onClick={copyId}
+          title="Copy your grant id"
+          className="flex items-center gap-1.5 min-w-0 max-w-full max-lg:min-h-10 text-[11px] mono px-2.5 py-1 rounded-lg border border-[var(--line)] bg-black/40 text-[color:var(--muted)] hover:text-white hover:border-[var(--line-2)] transition-colors"
+        >
+          <span className="truncate">{grantId}</span>
+          {idCopied ? (
+            <Check className="w-3.5 h-3.5 flex-shrink-0 text-emerald-400" />
+          ) : (
+            <Copy className="w-3.5 h-3.5 flex-shrink-0" />
+          )}
         </button>
       </div>
       <pre className="mt-3 text-[11px] leading-relaxed mono text-[color:var(--muted)] bg-black/40 border border-[var(--line)] rounded-xl p-3 overflow-x-auto select-all">
