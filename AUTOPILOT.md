@@ -63,7 +63,7 @@ iteration; PRs into `autopilot`, never `main`.
   scroll-mt), the ConnectAgentCard "mint above" copy, and add a "Keys" quick
   link on the dashboard Overview empty/onboarding states. Verify the
   /developers CTA href + navigation in preview (public page).
-- [ ] **5. Site-wide 375px audit** — programmatic overflow scan + screenshots
+- [x] **5. Site-wide 375px audit** — programmatic overflow scan + screenshots
   of /, /developers, /blog, /blog/[slug] (seed+clean a sample), /servers/
   [slug], /chat (guest view): fix anything that scrolls horizontally or has
   sub-44px primary tap targets (known suspects: chat agents bar, runner feed,
@@ -92,6 +92,32 @@ _(autopilot appends here)_
 - **Branch/PR**: `autopilot-key-links` → [Yeetful/website#55](https://github.com/Yeetful/website/pull/55) (stacked: #52→#53→#54→#55).
 - **What**: /developers CTA + step copy → /dashboard/keys (+approvals link); anchor hack deleted; Overview gains a keys quick link. (One silent-replace miss caught by the occurrence count — fixed with an exact Edit.)
 - **Verification**: preview click-through (CTA → /dashboard/keys), link counts asserted; test:api 37/37; tsc + build ✓.
+
+### Iteration 5 — Item 5: Site-wide 375px audit ✅
+- **Branch/PR**: `autopilot-mobile-audit` → [Yeetful/website#56](https://github.com/Yeetful/website/pull/56).
+- **Real find**: scrollWidth scans miss clipping under body's overflow-x:hidden — a rect-based pass caught the home hero clipping at 375 (runner feed's nowrap lines → grid min-content ~500px). Fixed with min-width:0 on grid items; feed code chip hidden ≤600. Clipped elements 21→2 (cosmetic).
+- **Tap targets** ≥40px on phones: chat chips (were 25px!), send, sidebar toggle, New chat, card add-buttons, runner pause.
+- **Verification**: rect-based audit table across 6 pages all clean; test:api 37/37; tsc + build ✓.
+
+---
+
+## Run 5 summary (2026-06-11)
+
+**Queue: 5/5 complete.** Zero failed iterations. Mobile navigation exists, the dashboard is a Vercel-style shell, and every public page passes a real-viewport 375px audit.
+
+| # | Item | PR |
+|---|------|----|
+| 1 | Mobile hamburger nav (portaled drawer) | [#52](https://github.com/Yeetful/website/pull/52) |
+| 2 | Dashboard sidebar + route split (incl. /dashboard/keys) | [#53](https://github.com/Yeetful/website/pull/53) |
+| 3 | Dashboard mobile section bar | [#54](https://github.com/Yeetful/website/pull/54) |
+| 4 | Key-page links (/dashboard/keys canonical) | [#55](https://github.com/Yeetful/website/pull/55) |
+| 5 | 375px audit (hero grid fix + tap targets) | [#56](https://github.com/Yeetful/website/pull/56) |
+
+**Merge order: #52 → #53 → #54 → #55 → #56** (one stacked chain; each contains the previous).
+
+**Bugs found by the run's own checks**: the nav's backdrop-filter trapping fixed-position descendants (drawer portaled); the grid min-content hero clipping that scrollWidth scans can't see (rect-based scanning is the new standard); headless-Chrome --window-size ≠ mobile viewport (screenshot artifacts, preview browser authoritative).
+
+**Owner manual passes**: authed dashboard glance on a phone (rail → section bar, keys page, approvals toggles) + the usual wallet flows.
 
 ---
 
