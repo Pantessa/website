@@ -41,7 +41,7 @@ iteration; PRs into `autopilot`, never `main`.
   labels). Verify at 375px in preview: drawer opens, each link NAVIGATES
   (click-through asserted), scroll lock works; screenshots open+closed;
   overflow scan clean; desktop ≥900px unchanged (screenshot).
-- [ ] **2. Dashboard shell: Vercel-style left sidebar + route split** — turn
+- [x] **2. Dashboard shell: Vercel-style left sidebar + route split** — turn
   /dashboard into a layout with a persistent left sidebar (sections:
   Overview, API Keys, Approvals, Activity) and nested routes:
   `/dashboard` = Overview (KPI tiles, budget meter + SignGrantButton, charts)
@@ -77,6 +77,11 @@ _(autopilot appends here)_
 - **Branch/PR**: `autopilot-mobile-nav` → [Yeetful/website#52](https://github.com/Yeetful/website/pull/52).
 - **What**: 44px burger → portaled full-height drawer (all tabs 48px+, wallet/auth in footer); closes on nav/backdrop/Escape; scroll lock; aria. Desktop unchanged. **CSS trap found**: the nav's backdrop-filter made the sticky header the containing block for fixed descendants — drawer portaled to body.
 - **Verification**: programmatic at 375px (open, click-through navigation + auto-close, backdrop, Escape, scroll lock, zero overflow) + desktop computed-styles; test:api 37/37; tsc + build ✓.
+
+### Iteration 2 — Item 2: Dashboard shell (sidebar + route split) ✅
+- **Branch/PR**: `autopilot-dash-shell` → [Yeetful/website#53](https://github.com/Yeetful/website/pull/53) (merge #52 first — gate view at 375 inherits old-nav overflow until then).
+- **What**: layout-level gate; left rail (Overview/Keys/Approvals/Activity); four routes — /dashboard/keys is the directly-linkable key page; shared lib/dashboard-ui; presentational DashboardSidebar (static-render tested); survivable mobile section bar (item 3 polishes).
+- **Verification**: sidebar render checks ✓; routes 200; test:api 37/37; tsc + build ✓; gated visuals flagged manual.
 
 ---
 
