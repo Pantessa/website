@@ -24,7 +24,12 @@ function fmtDate(iso: string | null): string {
   return isNaN(d.getTime()) ? 'never' : d.toLocaleDateString()
 }
 
-export default function ApiKeysPanel() {
+export default function ApiKeysPanel({
+  onKeysChange,
+}: {
+  /** Notifies the parent how many keys exist (drives the connect-agent card). */
+  onKeysChange?: (count: number) => void
+}) {
   const [keys, setKeys] = useState<ApiKeyRow[] | null>(null)
   const [label, setLabel] = useState('')
   const [minting, setMinting] = useState(false)
@@ -36,12 +41,14 @@ export default function ApiKeysPanel() {
   const load = useCallback(async () => {
     try {
       const res = await fetch('/api/keys', { cache: 'no-store' })
-      if (res.ok) setKeys(await res.json())
-      else setKeys([])
+      const rows: ApiKeyRow[] = res.ok ? await res.json() : []
+      setKeys(rows)
+      onKeysChange?.(rows.length)
     } catch {
       setKeys([])
+      onKeysChange?.(0)
     }
-  }, [])
+  }, [onKeysChange])
 
   useEffect(() => {
     void load()

@@ -9,6 +9,7 @@ import { cn } from '@/lib/utils'
 import { useSession } from '@/lib/session'
 import { SpendByAgent, SpendOverTime } from '@/components/DashboardCharts'
 import ApiKeysPanel from '@/components/ApiKeysPanel'
+import ConnectAgentCard from '@/components/ConnectAgentCard'
 
 // ── API shapes ───────────────────────────────────────────────────────────────
 interface Stats {
@@ -61,6 +62,7 @@ export default function DashboardPage() {
 
   const [stats, setStats] = useState<Stats | null>(null)
   const [approvals, setApprovals] = useState<Approval[] | null>(null)
+  const [keyCount, setKeyCount] = useState(0)
   const [loading, setLoading] = useState(false)
   const [mounted, setMounted] = useState(false)
   useEffect(() => setMounted(true), [])
@@ -273,7 +275,14 @@ export default function DashboardPage() {
           </Card>
 
           {/* API keys for headless agents */}
-          <ApiKeysPanel />
+          <ApiKeysPanel onKeysChange={setKeyCount} />
+
+          {/* Copy-paste SDK onboarding (shows once a key + grant exist) */}
+          <ConnectAgentCard
+            grantId={stats?.grant?.id ?? null}
+            hasKeys={keyCount > 0}
+            ledgerUrl={typeof window !== 'undefined' ? window.location.origin : undefined}
+          />
 
           {/* Activity feed */}
           <Card>
