@@ -69,7 +69,7 @@ product), and a Claude-authored first post. One item per iteration; PRs into
   for after the owner adds it; verify the 503 path + auth gating in
   test:api; mock-level verification of the success path only if feasible
   without the token, otherwise flagged).
-- [ ] **4. RSS + sitemap + robots (SEO)** — `/blog/rss.xml` (published
+- [x] **4. RSS + sitemap + robots (SEO)** — `/blog/rss.xml` (published
   posts, pubDate/guid, full <link>), `/sitemap.xml` via the Next metadata
   convention covering /, /developers, /blog, blog posts (lastModified from
   updatedAt) + the callable /servers/[slug] pages, and `/robots.txt`
@@ -104,6 +104,11 @@ _(autopilot appends here — branch, PR, verification evidence, caveats)_
 - **Branch/PR**: `autopilot-blog-upload` → [Yeetful/website#48](https://github.com/Yeetful/website/pull/48) (stacked: #42→#46→#47→#48).
 - **What**: POST /api/blog/upload — admin-gated (auth before config), 503 naming BLOB_READ_WRITE_TOKEN when unconfigured (currently is), image-only + 8MB + random-suffix when configured. Harness +2 (environment-aware check self-upgrades once the token exists) — **37/37**.
 - **Flagged**: real upload manual until the owner creates a Blob store + token.
+
+### Iteration 4 — Item 4: RSS + sitemap + robots ✅
+- **Branch/PR**: `autopilot-blog-feeds` → [Yeetful/website#49](https://github.com/Yeetful/website/pull/49) (stacked: #42→#46→#47→#48→#49).
+- **What**: RSS 2.0 (permalink guid, pubDate, escaping, empty-feed-over-500), sitemap (static + posts + callable services, lastModified), robots (sitemap ref, app surfaces disallowed).
+- **Verification**: seeded post with XML booby traps — fetched + PARSED all three routes, **9/9**; cleanup verified; tsc + build ✓.
 
 ---
 
