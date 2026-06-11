@@ -37,7 +37,7 @@ export function SpendOverTime({ daily }: { daily: { day: string; spent: number; 
     return <EmptyChart label="No spend yet — payments will chart here." />
   }
   return (
-    <ResponsiveContainer width="100%" height={220}>
+    <ChartBox height={220}>
       <AreaChart data={daily} margin={{ top: 8, right: 8, left: -18, bottom: 0 }}>
         <defs>
           <linearGradient id="spendFill" x1="0" y1="0" x2="0" y2="1">
@@ -69,7 +69,7 @@ export function SpendOverTime({ daily }: { daily: { day: string; spent: number; 
         />
         <Area type="monotone" dataKey="spent" stroke={ACCENT} strokeWidth={2} fill="url(#spendFill)" />
       </AreaChart>
-    </ResponsiveContainer>
+    </ChartBox>
   )
 }
 
@@ -80,7 +80,7 @@ export function SpendByAgent({ perAgent }: { perAgent: { service: string; spent:
   }
   const height = Math.max(160, perAgent.length * 34)
   return (
-    <ResponsiveContainer width="100%" height={height}>
+    <ChartBox height={height}>
       <BarChart data={perAgent} layout="vertical" margin={{ top: 4, right: 16, left: 8, bottom: 0 }}>
         <CartesianGrid stroke={GRID} horizontal={false} />
         <XAxis
@@ -110,7 +110,24 @@ export function SpendByAgent({ perAgent }: { perAgent: { service: string; spent:
           ))}
         </Bar>
       </BarChart>
-    </ResponsiveContainer>
+    </ChartBox>
+  )
+}
+
+/**
+ * Overflow guard for ResponsiveContainer: recharts pins the measured width as
+ * inline px on .recharts-wrapper, so a chart measured while the column was
+ * transiently wide can hold the layout open on phones. min-width:0 lets the
+ * box shrink inside grid/flex parents; overflow-hidden keeps the stale px
+ * width from widening the page while the resize observer catches up.
+ */
+function ChartBox({ height, children }: { height: number; children: React.ReactElement }) {
+  return (
+    <div className="min-w-0 overflow-hidden">
+      <ResponsiveContainer width="100%" height={height}>
+        {children}
+      </ResponsiveContainer>
+    </div>
   )
 }
 

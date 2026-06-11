@@ -35,7 +35,7 @@ genuinely mobile-first and adds the tooling to verify gated pages.
 
 ## Queue (ordered; one per iteration)
 
-- [ ] **1. Dashboard Overview mobile bleed (the screenshot)** — mock-harness
+- [x] **1. Dashboard Overview mobile bleed (the screenshot)** — mock-harness
   the Overview content (Kpi grid, budget meter + SignGrantButton, both
   DashboardCharts with ~10 days of fixture data). Find and fix every bleed
   source — prime suspects: Recharts containers (must be ResponsiveContainer
@@ -75,6 +75,43 @@ genuinely mobile-first and adds the tooling to verify gated pages.
 ## Progress log — Run 6
 
 _(autopilot appends here)_
+
+### Item 1 — Dashboard Overview mobile bleed ✅ (2026-06-11)
+
+**Root cause was NOT the charts.** Mock-harness + element-deletion bisection in
+the preview browser proved the driver is `.dash__rail`: at ≤900px its four
+`white-space: nowrap` section links sum to ~465px, and as a grid item with
+default `min-width:auto` the rail sets the shared 1fr track's minimum.
+`.dash__main` already had `min-width:0` — the rail never got it. Track inflated
+to 465px at a 375px viewport (scrollWidth 483) and every child — KPIs, budget
+card, charts — rode along. The chart's pinned 431px inline width was downstream
+(recharts measured an already-inflated container).
+
+Fixes: `min-width:0` on `.dash__rail` (one line, kills the bleed); plus the
+queue's belt-and-braces — charts grid `grid-cols-1` explicit + `min-w-0` cards,
+ResponsiveContainer wrapped in a `min-w-0 overflow-hidden` ChartBox (a stale
+pinned px width can never hold the page open again), `min-w-0` on Kpi tiles
+(long agent slugs truncate instead of flooring the 2-col track), and the Sign
+grant pill bumped to a 40px tap target under lg (25px before; desktop
+unchanged).
+
+Verified: rect-scan (scroll-container-aware) clean at 375 + 390, scrollWidth
+375/390 exactly; desktop 1280 unchanged (4 KPI cols, 25px pill). tsc + build +
+test:api 37/37 (throwaway-admin env). Before/after at true 375 viewport:
+`docs/autopilot/dash-overview-375-{before,after}.png` (before's full-page
+canvas is 483px wide — the bleed made visible). Harness deleted; `grep -ri
+preview` over the diff clean.
+
+Deviations/lessons: (1) rule 3's suggested `app/__preview/` path can't work —
+underscore-prefixed folders are private in the app router (no route); harness
+lived at `app/preview/dash` instead. (2) Headless Chrome `--window-size` is
+NOT a 375 viewport even with a clean profile (it still laid out the inflated
+track post-fix) — `npx playwright-core screenshot --channel=chrome
+--viewport-size=375,812` against the dev server is the reliable way to get
+mobile screenshot FILES; the preview browser stays authoritative for scans.
+(3) Harness pattern that worked: patch `window.fetch` for the page's API
+routes in the temp page and render the REAL gated page component + shell —
+zero changes to shipped code for testability.
 
 ---
 

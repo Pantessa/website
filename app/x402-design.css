@@ -381,6 +381,9 @@
   .dash__rail {
     position: sticky; top: 88px; padding: 24px 0 24px;
     display: flex; flex-direction: column; gap: 18px;
+    /* A grid item defaults to min-width:auto, so the nowrap section links
+       set the whole 1fr track's minimum (= the mobile bleed). Floor it. */
+    min-width: 0;
   }
   .dash__who { font-size: 11px; color: var(--muted-2); padding: 0 12px; }
   .dash__side { display: flex; flex-direction: column; gap: 2px; }

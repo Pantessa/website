@@ -92,12 +92,14 @@ export default function DashboardOverviewPage() {
         )}
       </Card>
 
-      <div className="grid lg:grid-cols-2 gap-4">
-        <Card>
+      {/* grid-cols-1 (not the implicit auto track) + min-w-0 so a chart's
+          transient fixed-px width can never inflate the column on phones. */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <Card className="min-w-0">
           <CardTitle>Spend · last 30 days</CardTitle>
           <SpendOverTime daily={stats.daily ?? []} />
         </Card>
-        <Card>
+        <Card className="min-w-0">
           <CardTitle>Spend by agent</CardTitle>
           <SpendByAgent perAgent={stats.perAgent ?? []} />
         </Card>
