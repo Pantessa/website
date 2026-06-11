@@ -75,7 +75,7 @@ product), and a Claude-authored first post. One item per iteration; PRs into
   updatedAt) + the callable /servers/[slug] pages, and `/robots.txt`
   pointing at the sitemap. Verified by fetching + parsing all three routes
   (well-formed XML, post present, robots references sitemap).
-- [ ] **5. First post (Claude-authored)** — written in the yeetful brand
+- [x] **5. First post (Claude-authored)** — written in the yeetful brand
   voice (dry, precise, one wink): "An agent shipped this blog" — the story of
   the autopilot runs (constitution → queue → PRs → guardrails catching real
   bugs: the wipe-on-empty incident, Venice's exact-$10 challenge), what the
@@ -109,6 +109,30 @@ _(autopilot appends here — branch, PR, verification evidence, caveats)_
 - **Branch/PR**: `autopilot-blog-feeds` → [Yeetful/website#49](https://github.com/Yeetful/website/pull/49) (stacked: #42→#46→#47→#48→#49).
 - **What**: RSS 2.0 (permalink guid, pubDate, escaping, empty-feed-over-500), sitemap (static + posts + callable services, lastModified), robots (sitemap ref, app surfaces disallowed).
 - **Verification**: seeded post with XML booby traps — fetched + PARSED all three routes, **9/9**; cleanup verified; tsc + build ✓.
+
+### Iteration 5 — Item 5: First post ✅
+- **Branch/PR**: `autopilot-first-post` → [Yeetful/website#50](https://github.com/Yeetful/website/pull/50) (full text in the PR body for review).
+- **What**: "An agent shipped this blog. Here's the receipt." — ~700 words, brand voice, published THROUGH a freshly minted Bearer key (then revoked); committed idempotent seed (update path proven, publishedAt stable); RSS + sitemap pick it up; live in Neon, invisible until deploy.
+
+---
+
+## Run 4 summary (2026-06-11)
+
+**Queue: 5/5 complete.** Zero failed iterations. The blog exists end-to-end: schema → admin API (Bearer = headless publish) → public UI with full SEO → uploads (token-pending) → feeds → a published launch post.
+
+| # | Item | PR |
+|---|------|----|
+| 1 | BlogPost model + publish API | [#46](https://github.com/Yeetful/website/pull/46) |
+| 2 | Public /blog UI (SEO first-class) | [#47](https://github.com/Yeetful/website/pull/47) |
+| 3 | Vercel Blob uploads | [#48](https://github.com/Yeetful/website/pull/48) |
+| 4 | RSS + sitemap + robots | [#49](https://github.com/Yeetful/website/pull/49) |
+| 5 | First post | [#50](https://github.com/Yeetful/website/pull/50) |
+
+**Merge order (one stacked chain)**: #42 (Run 3 harness — prerequisite) → #46 → #47 → #48 → #49 → #50. Run 3's #43–#45 remain open and independent.
+
+**Owner setup**: `ADMIN_WALLETS=0x<you>` (local + Vercel) to publish; create a Vercel Blob store + `BLOB_READ_WRITE_TOKEN` for photos (the harness check self-upgrades when it appears); `NEXT_PUBLIC_SITE_URL` optional (defaults to https://yeetful.com).
+
+**Notes**: SEO directive landed at every layer (schema-enforced ≤160 descriptions + alt column, canonical/OG/JSON-LD, stable publishedAt, RSS/sitemap/robots, XML-escaping proven with booby-trapped titles). test:api grew 25→37 checks. The launch post's claims are all literally true, including its own publish mechanism.
 
 ---
 
