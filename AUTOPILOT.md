@@ -49,7 +49,7 @@ never `main`. Runs 1–2 are summarized at the bottom; full logs in git history.
   components/RunnerDemo.tsx (or Hero), key by a monotonic id, verify the
   warning is gone in preview console after letting the feed cycle. Tiny,
   preview-verifiable.
-- [ ] **3. SDK 0.3 ripple (published!)** — `yeetful@0.3.0` is live on npm:
+- [x] **3. SDK 0.3 ripple (published!)** — `yeetful@0.3.0` is live on npm:
   bump `example-agent` and `demo` to `^0.3.0` (their repos, own branches +
   PRs, secrets grep before push), re-run their offline checks (`npm start`
   demo mode / `npm run grant` dry-run — NO --live), and delete the
@@ -92,6 +92,11 @@ _(autopilot appends here — branch, PR, verification evidence, caveats)_
 - **Branch/PR**: `autopilot-feed-keys` → [Yeetful/website#43](https://github.com/Yeetful/website/pull/43).
 - **What**: RunnerDemo's auto-fund path ran `seq.current += 1` + nested `setLog` inside the `setBalance` updater (double-invoked in dev → corrupted keys). Refill decision moved into `tick()` with a `balanceRef` mirror; all updaters pure; one monotonic key source.
 - **Verification**: armed console hook over ~105 feed ticks (24-entry window cycled 4×) — zero same-key errors; tsc + build ✓. Caveat in PR: original trigger was timing-dependent, but the removed pattern was the only numeric-keyed list and a known hazard.
+
+### Iteration 3 — Item 3: SDK 0.3 ripple ✅
+- **PRs**: [example-agent#1](https://github.com/Yeetful/example-agent/pull/1) (^0.3.0, unguarded flushLedger, all ≥0.3 caveats deleted; free demo re-run on the published package, zero spend) · [demo#2](https://github.com/Yeetful/demo/pull/2) (^0.3.0; dry-run re-verified, tsc clean). Both public repos: secrets grep + tracked-env checks clean.
+- **Website**: grep found NO ≥0.3 caveats on /developers or ConnectAgentCard (the queue item over-assumed) — no website change needed; sdk README also clean.
+- **Flagged**: demo `--live` still the owner's manual pass (spends).
 
 ---
 
