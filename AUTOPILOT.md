@@ -58,20 +58,20 @@ at the bottom; its full log lives in git history of this file.
   (never the real secret — it's unrecoverable post-mint), linking to
   github.com/Yeetful/example-agent and the npm package. Pure presentational
   component → unit-verifiable; placement on dashboard flagged manual.
-- [ ] **3. "Sign grant" wallet button** — on the dashboard budget/grant card:
+- [x] **3. "Sign grant" wallet button** — on the dashboard budget/grant card:
   fetch `GET /api/grants/[id]/signature`, sign via wagmi
   `signTypedDataAsync`, `PUT` the result; show a signed/unsigned badge from
   `signed`, and a "re-sign" nudge when a terms change voided it. BigInt
   conversion from the JSON payload (micros/expiry) — see the
   verify-eip712 pattern in Run 1. Wallet popup = manual pass; everything up
   to the signature request script-verified.
-- [ ] **4. Dedup the chat payments footer** — `/api/chat` replies still embed
+- [x] **4. Dedup the chat payments footer** — `/api/chat` replies still embed
   the text `paymentsFooter` AND receipts now render as structured footnotes
   from `Message.meta` (both burner and wallet paths, guests included via the
   ephemeral store). Strip the text footer from the reply, keep the meta.
   Verify via API script: reply text clean, receipts array intact; guest
   (no-SIWE) path covered since meta lives in the in-memory store.
-- [ ] **5. Directory endpoint data refresh (PROD DB — owner-approved)** —
+- [x] **5. Directory endpoint data refresh (PROD DB — owner-approved)** —
   `yeetful-claude` and other callable services have no `mcp_endpoints` rows,
   so their detail pages show the empty state. Run `npm run db:ingest`
   **additive only — never `--prune`**; if agentic.market doesn't carry
@@ -83,12 +83,12 @@ at the bottom; its full log lives in git history of this file.
   anomaly → stop, document, don't retry destructively. This item commits a
   script if hand-seeding (idempotent, committed, NOT deleted — it's a
   fixture, not a test).
-- [ ] **6. Responsive pass on the new surfaces** — `/servers/[slug]` and the
+- [x] **6. Responsive pass on the new surfaces** — `/servers/[slug]` and the
   directory cards at 375px and 768px (header wrap, endpoint rows, volume
   lines, Details chips), plus the dashboard grid where tsc-checkable. Fix
   overflow/wrap issues in `x402-design.css`. Headless-Chrome screenshots at
   both widths in the PR.
-- [ ] **7. `/developers` page** — public, server-rendered: the expense-account
+- [x] **7. `/developers` page** — public, server-rendered: the expense-account
   pitch (3-liner from example-agent), a quickstart (install `yeetful`, mint a
   key on the dashboard, snippet with grant + apiKey), reference tables for
   Bearer auth on `/api/grants*` and the ledger-sync endpoint, links to npm /
@@ -110,6 +110,60 @@ _(autopilot appends here — branch, PR, verification evidence, caveats)_
 - **What**: `ConnectAgentCard` shows once a key + grant exist — preloaded `yeetful/agent` snippet (owner's grant id, deployment ledger URL, ALWAYS the `process.env.YEETFUL_API_KEY` placeholder), copy button, links to example-agent + npm. `ApiKeysPanel` gains `onKeysChange`.
 - **Verification**: static-render unit script (deleted) — 9/9 incl. "no secret-shaped string possible" and hidden-state checks; tsc + build ✓.
 - **Flagged**: live placement glance (rule 6).
+
+### Iteration 3 — Item 3: "Sign grant" wallet button ✅
+- **Branch/PR**: `autopilot-sign-grant` → [Yeetful/website#36](https://github.com/Yeetful/website/pull/36) (base `autopilot`; independent — budget-meter card region).
+- **What**: self-contained `SignGrantButton` — GET typed data + signed flag, pure exported `toSignable()` (uint256s from the served types), wagmi sign, PUT; emerald Signed badge / outline Sign button / amber "terms changed — re-sign" nudge (refreshKey wired to approval toggles).
+- **Verification**: temp script (deleted) replayed the exact component data path with a throwaway key — GET → convert (BigInts asserted) → sign → PUT 200 signed:true → cap-change void → re-sign — **7/7 green**; tsc + build ✓.
+- **Flagged**: wallet popup + visuals manual (rule 6); EOA path script-proven.
+
+### Iteration 4 — Item 4: Chat payments-footer dedup ✅
+- **Branch/PR**: `autopilot-footer-dedup` → [Yeetful/website#37](https://github.com/Yeetful/website/pull/37) (base `autopilot`; independent).
+- **What**: `paymentsFooter` → `infoFooter` (reply keeps only listed-only + diagnostics + the burner grant-status line); 💸 paid-total moved into the structured footnote — `/api/chat` returns `payer`, client persists it in meta, `MessageReceipts` renders the total/payer summary above receipt rows. Orphaned `short()` removed.
+- **Verification**: temp scripts (deleted) — meta.payer round-trip; shared page renders total + payer + rows, zero old footer markers; tsc + build ✓. (Repeat lesson: strip React's `<!-- -->` text-node comments before HTML assertions.)
+- **Flagged**: one live paid turn (shared with the #30/#33 manual pass — no extra spend).
+
+### Iteration 5 — Item 5: Directory endpoint data refresh (prod DB) ✅
+- **Branch/PR**: `autopilot-directory-refresh` → [Yeetful/website#38](https://github.com/Yeetful/website/pull/38) (base `autopilot`).
+- **Counts**: servers 71→71; endpoints 1768→1770 (ingest) →1771 (seed); yeetful-claude eps 0→1. All 7 callable services' wiring verified intact post-run.
+- **Safety catch**: this branch's ingest CALLABLE map predated #33 — running naively would have UNWIRED the four BlockRun inference providers in prod. Map updated first (duplicates #33's hunk, declared in PR).
+- **Hand-seed**: committed idempotent fixture `scripts/seed-yeetful-claude-endpoints.ts` (double-run proven) — POST anthropic.yeetful.com/api/mcp/mcp, $0.005 exact; provenance in description + script (mcp_endpoints has no source column — noted deviation). Detail page renders the endpoint (screenshot on branch); no anomalies.
+
+### Iteration 6 — Item 6: Responsive pass ✅
+- **Branch/PR**: `autopilot-responsive` → [Yeetful/website#39](https://github.com/Yeetful/website/pull/39) (base `autopilot`).
+- **What**: one real fix — ≤600px detail header stacks (52px tile, full-width badge rows, outlink on own row, tighter ep padding). Audited clean with no changes: 768 detail, 375 directory cards, endpoint/volume wrapping. CSS scoped to the ≤600px query.
+- **Verification**: emulated preview at 375/768 — programmatic overflow scan (scrollWidth==clientWidth, zero elements past right edge) + visual; tsc + build ✓.
+- **Tooling note for future runs**: headless-Chrome captures lay out ~15px wider than --window-size (old AND new headless) → right-edge clipping in mobile screenshots is a camera artifact; declare it and rely on the programmatic scan. The preview tool's emulated screenshots are accurate but can't be exported to files.
+
+### Iteration 7 — Item 7: /developers page ✅
+- **Branch/PR**: `autopilot-developers-page` → [Yeetful/website#40](https://github.com/Yeetful/website/pull/40) (base `autopilot`).
+- **What**: public server-rendered quickstart — brand-voice hero, install→mint→snippet steps, all-8-routes grants API reference with method chips, receipt-sync field reference, links to npm/example-agent/demo, Developers nav tab + footer link. Existing design system; small `dev__` CSS section.
+- **Verification**: preview at 1440px (public page — fully verifiable), screenshots in PR; armed console hook proved zero NEW errors (pre-existing duplicate-key noise in the session buffer comes from earlier pages — possible future look at the home runner feed). tsc + build ✓.
+
+---
+
+## Run 2 summary (2026-06-10 evening)
+
+**Queue: 7/7 complete.** Zero failed iterations. Nothing merged, no deploys, no spending. All PRs target `autopilot`.
+
+| # | Item | PR |
+|---|------|----|
+| 1 | API-key management UI | [#34](https://github.com/Yeetful/website/pull/34) |
+| 2 | "Connect an agent" card | [#35](https://github.com/Yeetful/website/pull/35) — stacked on #34, merge #34 first |
+| 3 | "Sign grant" wallet button | [#36](https://github.com/Yeetful/website/pull/36) |
+| 4 | Chat payments-footer dedup | [#37](https://github.com/Yeetful/website/pull/37) |
+| 5 | Directory refresh + Claude seed (prod DB) | [#38](https://github.com/Yeetful/website/pull/38) — DB changes already live |
+| 6 | Responsive pass | [#39](https://github.com/Yeetful/website/pull/39) |
+| 7 | /developers page | [#40](https://github.com/Yeetful/website/pull/40) |
+
+**Suggested merge order**: #34 → #35 → #36 → #37 → #38 → #39 → #40. All independent except #35 (stacks on #34). NOTE: #33 (inference providers, targets main) shares files with #36/#37/#38 — merge autopilot→main AFTER #33, or vice versa; the ingest-map hunk in #38 is identical to #33's so it merges clean.
+
+**Manual passes for the owner** (most fold into one wallet session):
+- Dashboard glance: key panel (mint→reveal→copy→revoke), connect-agent card, sign-grant button + one wallet signature.
+- One live paid chat turn (~$0.001–0.01): covers #30/#33/#37 receipts end-to-end.
+- demo repo: `npm run grant -- --live`.
+
+**Deviations/notes**: #35 stacking declared per rule 1's escape hatch; #38's safety catch (ingest map predated #33 — would have unwired prod inference providers; fixed before running); headless-Chrome mobile captures clip ~15px (camera artifact, programmatic overflow scan is authoritative); mcp_endpoints has no `source` column so hand-seed provenance lives in the description + committed script.
 
 ---
 
