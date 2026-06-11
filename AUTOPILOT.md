@@ -32,7 +32,7 @@ iteration; PRs into `autopilot`, never `main`.
 
 ## Queue (ordered; one per iteration)
 
-- [ ] **1. Mobile hamburger nav** — replace the `display:none` cliff: a
+- [x] **1. Mobile hamburger nav** — replace the `display:none` cliff: a
   hamburger button in the nav under 900px opening a slide-in drawer (right
   side, full-height, backdrop): Servers / Chat (badge) / Dashboard (when
   connected) / Developers / Blog + the Connect Wallet button. Closes on
@@ -72,6 +72,11 @@ iteration; PRs into `autopilot`, never `main`.
 ## Progress log — Run 5
 
 _(autopilot appends here)_
+
+### Iteration 1 — Item 1: Mobile hamburger nav ✅
+- **Branch/PR**: `autopilot-mobile-nav` → [Yeetful/website#52](https://github.com/Yeetful/website/pull/52).
+- **What**: 44px burger → portaled full-height drawer (all tabs 48px+, wallet/auth in footer); closes on nav/backdrop/Escape; scroll lock; aria. Desktop unchanged. **CSS trap found**: the nav's backdrop-filter made the sticky header the containing block for fixed descendants — drawer portaled to body.
+- **Verification**: programmatic at 375px (open, click-through navigation + auto-close, backdrop, Escape, scroll lock, zero overflow) + desktop computed-styles; test:api 37/37; tsc + build ✓.
 
 ---
 
