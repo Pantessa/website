@@ -52,7 +52,7 @@ iteration; PRs into `autopilot`, never `main`.
   section; data fetching split per page (stats where needed). No server/API
   changes. tsc/build + static-render the sidebar component (links/active
   logic); gated visuals flagged manual.
-- [ ] **3. Dashboard mobile** — under 900px the sidebar becomes a horizontal
+- [x] **3. Dashboard mobile** — under 900px the sidebar becomes a horizontal
   scrollable section bar (sticky, under the main nav) — same component,
   responsive CSS; tap targets ≥44px. The connect-wallet gate screen must be
   clean at 375px (it's public — screenshot it). Overflow scan on all four
@@ -82,6 +82,11 @@ _(autopilot appends here)_
 - **Branch/PR**: `autopilot-dash-shell` → [Yeetful/website#53](https://github.com/Yeetful/website/pull/53) (merge #52 first — gate view at 375 inherits old-nav overflow until then).
 - **What**: layout-level gate; left rail (Overview/Keys/Approvals/Activity); four routes — /dashboard/keys is the directly-linkable key page; shared lib/dashboard-ui; presentational DashboardSidebar (static-render tested); survivable mobile section bar (item 3 polishes).
 - **Verification**: sidebar render checks ✓; routes 200; test:api 37/37; tsc + build ✓; gated visuals flagged manual.
+
+### Iteration 3 — Item 3: Dashboard mobile ✅
+- **Branch/PR**: `autopilot-dash-mobile` → [Yeetful/website#54](https://github.com/Yeetful/website/pull/54) (merges #52+#53 chains; merge #52 → #53 → #54).
+- **What**: sticky horizontal section bar (<900px) with active-into-view + edge fade, ≥44px targets; 375 gate clean (real-browser overflow scan = 0 on all four routes).
+- **LESSON**: headless Chrome --window-size ≠ mobile viewport (wide layout, cropped shot) — earlier "clipped" gate shots were artifacts; preview-browser programmatic scans are authoritative for mobile.
 
 ---
 
