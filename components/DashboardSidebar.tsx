@@ -1,8 +1,11 @@
+'use client'
+
 // The dashboard's left rail (Vercel-style): section links with active state.
-// Presentational — pathname comes in as a prop, which keeps it static-render
-// testable despite the wallet gate around the real dashboard.
+// Pathname comes in as a prop, which keeps the markup static-render testable
+// despite the wallet gate (effects don't run under renderToStaticMarkup).
 
 import Link from 'next/link'
+import { useEffect, useRef } from 'react'
 import { LayoutDashboard, KeyRound, ToggleRight, Activity } from 'lucide-react'
 
 export const DASH_SECTIONS = [
@@ -17,8 +20,16 @@ export function isSectionActive(pathname: string, href: string, exact: boolean):
 }
 
 export default function DashboardSidebar({ pathname }: { pathname: string }) {
+  const nav = useRef<HTMLElement>(null)
+  // On the mobile horizontal bar, keep the active section in view.
+  useEffect(() => {
+    nav.current
+      ?.querySelector('.is-on')
+      ?.scrollIntoView({ block: 'nearest', inline: 'center', behavior: 'instant' as ScrollBehavior })
+  }, [pathname])
+
   return (
-    <nav className="dash__side" aria-label="Dashboard sections">
+    <nav className="dash__side" aria-label="Dashboard sections" ref={nav}>
       {DASH_SECTIONS.map(({ href, label, icon: Icon, exact }) => (
         <Link
           key={href}

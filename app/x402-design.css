@@ -400,7 +400,9 @@
       gap: 12px; padding: 10px 0; background: rgba(0,0,0,0.85); backdrop-filter: blur(10px);
       border-bottom: 1px solid var(--line); }
     .dash__who { display: none; }
-    .dash__side { flex-direction: row; gap: 4px; overflow-x: auto; scrollbar-width: none; }
+    .dash__side { flex-direction: row; gap: 4px; overflow-x: auto; scrollbar-width: none;
+      -webkit-mask-image: linear-gradient(to right, #000 92%, transparent);
+              mask-image: linear-gradient(to right, #000 92%, transparent); }
     .dash__side::-webkit-scrollbar { display: none; }
     .dash__link { white-space: nowrap; min-height: 44px; }
   }
