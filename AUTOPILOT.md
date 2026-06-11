@@ -1,144 +1,158 @@
-# Autopilot — Run 2 (staged 2026-06-10, owner-approved queue; start via /loop)
+# Autopilot — Run 4: the blog (staged 2026-06-11, owner-approved; start via /loop)
 
-Unattended build run. Claude works the queue below, one item per iteration.
-**Nothing merges to `main`** — every item becomes a PR into `autopilot` for
-human review. Run 1 (6/6 complete, all merged to main same day) is summarized
-at the bottom; its full log lives in git history of this file.
+DB-backed blog on the website: Neon for post metadata, Vercel Blob for images,
+the existing Bearer-key auth as the headless publish path (dogfooding the
+product), and a Claude-authored first post. One item per iteration; PRs into
+`autopilot`, never `main`. Prior runs summarized at the bottom.
 
 ## Rules (constitution — apply to every iteration)
 
-1. **Branching**: each item gets its own branch `autopilot-<slug>` cut from
-   `autopilot` (git refuses `autopilot/*` refs while the `autopilot` branch
-   exists). PRs target `autopilot`, never `main`. Items are independent —
-   never stack one item's branch on another's; if stacking is truly
-   unavoidable (an item amends another's surface), say so in the PR body and
-   instruct which merges first.
+1. **Branching**: `autopilot-<slug>` cut from `autopilot`. PRs target
+   `autopilot`, never `main`. Items independent; unavoidable stacking
+   declared in the PR with merge order. (Items 2–5 build on item 1's schema/
+   API by nature — stack on the prior item's branch when files overlap and
+   declare it; merge order is queue order.)
 2. **Never**: merge any PR, push to `main`, force-push, deploy, publish to
    npm, or make live paid x402 calls. No spending of any kind.
-3. **DB**: additive changes OK (plain `db push`, never `--force-reset`).
-   Never destroy user data (grants, ledger, chats, approvals, api_keys).
-   Test rows under throwaway wallets, ALWAYS cleaned, verified zero left.
-   Item 5 has extra guardrails — see the item.
-4. **Public repos** (`website` is private; `demo`, `sdk`, `example-agent` are
-   PUBLIC): secrets grep before EVERY push — `sk-`, `0x[64 hex]`,
-   `api_key/token = <value>`, env files; check `git ls-files` for tracked env
-   files, only `.env.example` ships. Review every hit; don't pipe the grep
-   through anything that masks its exit code.
+3. **DB**: additive only (plain `db push`, never `--force-reset`); never
+   destroy user data. Test rows under throwaway wallets, cleaned + verified.
+   The first-post seed (item 5) is deliberate content, not test data — it
+   stays, and its full text ships in the PR for review.
+4. **Security**: blog markdown renders WITHOUT raw HTML (escaped, no
+   rehype-raw / dangerouslySetInnerHTML) — publish access is wallet-gated but
+   stored content must still never XSS readers. Admin = wallets listed in the
+   `ADMIN_WALLETS` env (comma-separated, lowercased); unset → publish routes
+   refuse with a clear error. Verification injects a throwaway admin via env.
 5. **Verify before PR**: `npx tsc --noEmit` + `npm run build` minimum.
-   Server-logic items: temp verification script vs dev server + real Neon
-   (throwaway SIWE wallets, cleanup verified, script deleted before commit).
-   UI items: preview at 1440px; screenshots via **headless Chrome** (the
-   preview tool renders black when scrolled), committed under
-   `docs/autopilot/` on the PR branch and referenced by raw link in the PR
-   body (folder is stripped before anything lands on main).
-6. **Wallet/SIWE-gated UI** (dashboard etc.) can't be exercised headlessly:
-   verify the logic via API scripts + tsc/build, verify any presentational
-   component through a publicly rendered surface if one exists, and flag the
-   gated visuals "needs manual pass" — never claimed as done.
-7. **Honesty**: anything unverifiable is flagged in the PR, not claimed.
-8. **Logging**: after each item, update the Progress log below on `autopilot`
-   and push. An item failing verification twice → log it, close its branch,
-   move on. Two consecutive failed items → stop the run.
-9. **Isolation**: this session's worktree only; don't touch other branches or
-   open PRs you didn't create this run.
-10. **Stop conditions**: queue exhausted, two consecutive failures, or the
-    owner sends any message. Final iteration appends a run summary.
+   Server logic: extend `npm run test:api` (preferred) — a blog section with
+   throwaway admin + non-admin wallets. UI: preview at 1440px +
+   headless-Chrome screenshots under `docs/autopilot/` on the PR branch.
+6. **Honesty**: anything unverifiable is flagged, not claimed (e.g. Vercel
+   Blob uploads until BLOB_READ_WRITE_TOKEN exists).
+7. **Logging**: Progress log updated on `autopilot` after each item; one item
+   failing twice → log + move on; two consecutive failures → stop.
+8. **Isolation**: this session's worktree; don't touch PRs from other runs.
+9. **Stop conditions**: queue exhausted, two consecutive failures, or owner
+   message. Final iteration appends a run summary.
 
 ## Queue (ordered; one per iteration)
 
-- [x] **1. API-key management UI** — dashboard panel over the existing
-  `/api/keys*` routes: list keys (prefix, label, lastUsedAt, createdAt),
-  mint with a label → modal showing the plaintext `yf_…` ONCE with a copy
-  button + "you won't see this again", revoke with confirm. Empty state
-  explains what keys are for. Logic verified by API script; gated visuals
-  flagged manual per rule 6.
-- [x] **2. "Connect an agent" onboarding card** — after a key exists, the
-  dashboard shows a copy-paste `yeetful/agent` snippet preloaded with the
-  user's active grant id, ledger URL, and a `YEETFUL_API_KEY` placeholder
-  (never the real secret — it's unrecoverable post-mint), linking to
-  github.com/Yeetful/example-agent and the npm package. Pure presentational
-  component → unit-verifiable; placement on dashboard flagged manual.
-- [x] **3. "Sign grant" wallet button** — on the dashboard budget/grant card:
-  fetch `GET /api/grants/[id]/signature`, sign via wagmi
-  `signTypedDataAsync`, `PUT` the result; show a signed/unsigned badge from
-  `signed`, and a "re-sign" nudge when a terms change voided it. BigInt
-  conversion from the JSON payload (micros/expiry) — see the
-  verify-eip712 pattern in Run 1. Wallet popup = manual pass; everything up
-  to the signature request script-verified.
-- [x] **4. Dedup the chat payments footer** — `/api/chat` replies still embed
-  the text `paymentsFooter` AND receipts now render as structured footnotes
-  from `Message.meta` (both burner and wallet paths, guests included via the
-  ephemeral store). Strip the text footer from the reply, keep the meta.
-  Verify via API script: reply text clean, receipts array intact; guest
-  (no-SIWE) path covered since meta lives in the in-memory store.
-- [x] **5. Directory endpoint data refresh (PROD DB — owner-approved)** —
-  `yeetful-claude` and other callable services have no `mcp_endpoints` rows,
-  so their detail pages show the empty state. Run `npm run db:ingest`
-  **additive only — never `--prune`**; if agentic.market doesn't carry
-  Yeetful·Claude's surface, hand-seed its known endpoints (Venice/Bankr/
-  BlockRun.AI providers; correct $0.005 pricing) with `source` marking them
-  hand-seeded. Guardrails: record row counts before/after in the PR; verify
-  after ingest that the 3 callable services' wired `CALLABLE` fields are
-  untouched and `/api/servers` + chat planner inputs still resolve; any
-  anomaly → stop, document, don't retry destructively. This item commits a
-  script if hand-seeding (idempotent, committed, NOT deleted — it's a
-  fixture, not a test).
-- [x] **6. Responsive pass on the new surfaces** — `/servers/[slug]` and the
-  directory cards at 375px and 768px (header wrap, endpoint rows, volume
-  lines, Details chips), plus the dashboard grid where tsc-checkable. Fix
-  overflow/wrap issues in `x402-design.css`. Headless-Chrome screenshots at
-  both widths in the PR.
-- [x] **7. `/developers` page** — public, server-rendered: the expense-account
-  pitch (3-liner from example-agent), a quickstart (install `yeetful`, mint a
-  key on the dashboard, snippet with grant + apiKey), reference tables for
-  Bearer auth on `/api/grants*` and the ledger-sync endpoint, links to npm /
-  example-agent / demo repos. Footer/nav link where the design allows.
-  Preview-verified with screenshots (public page — fully verifiable).
+- [x] **1. BlogPost model + publish API** — Prisma `BlogPost` (slug unique,
+  title, description, content markdown, coverImageUrl?, tags String[],
+  published Boolean default false, publishedAt?, authorAddress, timestamps;
+  additive db push). Routes: `GET /api/blog` (public: published only, newest
+  first; admin sees drafts with `?drafts=1`), `POST /api/blog` (admin only),
+  `GET/PATCH/DELETE /api/blog/[slug]` (GET public when published, admin
+  otherwise). Admin auth = `getAuthAddress` (SIWE or Bearer `yf_…` key) ∩
+  `ADMIN_WALLETS` env allowlist — the Bearer path IS the headless
+  Claude-publishes flow. Slug auto-derived from title when omitted; publishing
+  sets publishedAt once. Extend test:api with a blog section (admin CRUD,
+  non-admin 403, anon sees only published, draft flow, cleanup).
+- [x] **2. Public blog UI** — `/blog` index (post cards: title, description,
+  date, tags, cover when present) + `/blog/[slug]` (markdown via
+  react-markdown + remark-gfm, NO raw HTML; cover, date, tags; 404 for
+  drafts/unknown). Existing dark design system (svc/ep-style classes or a
+  small `blog__` section). Nav tab + footer link. **SEO is a first-class
+  requirement (owner directive)**: server-rendered, semantic HTML
+  (`<article>`, `<time dateTime>`, one `<h1>`), per-post `generateMetadata`
+  with title/description/canonical + OpenGraph (type article,
+  publishedTime, cover image) + Twitter card, and **JSON-LD `BlogPosting`**
+  structured data (headline, datePublished, author Organization, image).
+  Index page gets its own metadata + JSON-LD `Blog`. Verified by asserting
+  the rendered HTML contains canonical, og:*, and the JSON-LD block.
+  Preview screenshots incl. a seeded-then-cleaned sample post at 1440px and
+  375px.
+- [x] **3. Image uploads (Vercel Blob)** — `POST /api/blog/upload` (admin
+  only): multipart/byte upload to @vercel/blob, returns the public URL for
+  use as coverImageUrl or inline markdown image. Graceful 503 with a clear
+  message when BLOB_READ_WRITE_TOKEN is unset (it currently is — flag manual
+  for after the owner adds it; verify the 503 path + auth gating in
+  test:api; mock-level verification of the success path only if feasible
+  without the token, otherwise flagged).
+- [x] **4. RSS + sitemap + robots (SEO)** — `/blog/rss.xml` (published
+  posts, pubDate/guid, full <link>), `/sitemap.xml` via the Next metadata
+  convention covering /, /developers, /blog, blog posts (lastModified from
+  updatedAt) + the callable /servers/[slug] pages, and `/robots.txt`
+  pointing at the sitemap. Verified by fetching + parsing all three routes
+  (well-formed XML, post present, robots references sitemap).
+- [x] **5. First post (Claude-authored)** — written in the yeetful brand
+  voice (dry, precise, one wink): "An agent shipped this blog" — the story of
+  the autopilot runs (constitution → queue → PRs → guardrails catching real
+  bugs: the wipe-on-empty incident, Venice's exact-$10 challenge), what the
+  expense-account product is, and that this very post was published through
+  the Bearer-key API the post describes. ~600–900 words, honest, no hype
+  words. Committed seed script (idempotent, full text in the PR body for
+  review); seeded as published=true (invisible in prod until the blog
+  deploys). Rendered-page screenshot in the PR.
 
-## Progress log — Run 2
+## Progress log — Run 4
 
 _(autopilot appends here — branch, PR, verification evidence, caveats)_
 
-### Iteration 1 — Item 1: API-key management UI ✅
-- **Branch/PR**: `autopilot-key-ui` → [Yeetful/website#34](https://github.com/Yeetful/website/pull/34) (base `autopilot`).
-- **What**: `ApiKeysPanel` on `/dashboard` (between approvals and activity feed) — mint with label → show-once `yf_…` secret in an emerald reveal block (copy + explicit dismiss), key list (prefix/label/used/created), two-step revoke with optimistic removal, explanatory empty state. No server changes — sits on Run-1 routes.
-- **Verification**: temp script (deleted) replayed the panel's exact call sequence vs dev + Neon — mint w/ and w/o label, list shows prefixes never secrets, revoke, zero rows left — **5/5 green**; tsc + build ✓.
-- **Flagged**: rendered panel needs one manual glance (wallet+SIWE gate, rule 6).
+### Iteration 1 — Item 1: BlogPost model + publish API ✅
+- **Branch/PR**: `autopilot-blog-api` → [Yeetful/website#46](https://github.com/Yeetful/website/pull/46) (**stacked on #42** — extends test:api; merge #42 first).
+- **What**: BlogPost model (description ≤160 enforced = meta description; coverImageAlt column; publishedAt set once → stable datePublished) + admin CRUD routes (drafts undisclosed to non-admins; ADMIN_WALLETS ∩ SIWE-or-Bearer — the Bearer path is the headless Claude-publish flow). Additive push done.
+- **Verification**: test:api +10 blog checks (throwaway admin via env injection) — **35/35 green**; tsc + build ✓.
+- **Owner**: set ADMIN_WALLETS locally + Vercel to publish.
 
-### Iteration 2 — Item 2: "Connect an agent" onboarding card ✅
-- **Branch/PR**: `autopilot-connect-card` → [Yeetful/website#35](https://github.com/Yeetful/website/pull/35) (base `autopilot`; **stacked on #34** per rule 1's escape hatch — same dashboard region + key-state composition; merge #34 first).
-- **What**: `ConnectAgentCard` shows once a key + grant exist — preloaded `yeetful/agent` snippet (owner's grant id, deployment ledger URL, ALWAYS the `process.env.YEETFUL_API_KEY` placeholder), copy button, links to example-agent + npm. `ApiKeysPanel` gains `onKeysChange`.
-- **Verification**: static-render unit script (deleted) — 9/9 incl. "no secret-shaped string possible" and hidden-state checks; tsc + build ✓.
-- **Flagged**: live placement glance (rule 6).
+### Iteration 2 — Item 2: Public blog UI (SEO first-class) ✅
+- **Branch/PR**: `autopilot-blog-ui` → [Yeetful/website#47](https://github.com/Yeetful/website/pull/47) (**stacked**: merge #42 → #46 → #47).
+- **What**: /blog cards + /blog/[slug] article in the house style; react-markdown+gfm with raw HTML neutralized (injection renders as inert text — browser-parse proven); canonical/OG-article/Twitter/JSON-LD BlogPosting+Blog/semantic article+time; nav tab + footer link.
+- **Verification**: seeded-then-deleted sample post — 10 rendered-HTML assertions green; 1440+375 screenshots; tsc + build ✓.
 
-### Iteration 3 — Item 3: "Sign grant" wallet button ✅
-- **Branch/PR**: `autopilot-sign-grant` → [Yeetful/website#36](https://github.com/Yeetful/website/pull/36) (base `autopilot`; independent — budget-meter card region).
-- **What**: self-contained `SignGrantButton` — GET typed data + signed flag, pure exported `toSignable()` (uint256s from the served types), wagmi sign, PUT; emerald Signed badge / outline Sign button / amber "terms changed — re-sign" nudge (refreshKey wired to approval toggles).
-- **Verification**: temp script (deleted) replayed the exact component data path with a throwaway key — GET → convert (BigInts asserted) → sign → PUT 200 signed:true → cap-change void → re-sign — **7/7 green**; tsc + build ✓.
-- **Flagged**: wallet popup + visuals manual (rule 6); EOA path script-proven.
+### Iteration 3 — Item 3: Image uploads (Vercel Blob) ✅
+- **Branch/PR**: `autopilot-blog-upload` → [Yeetful/website#48](https://github.com/Yeetful/website/pull/48) (stacked: #42→#46→#47→#48).
+- **What**: POST /api/blog/upload — admin-gated (auth before config), 503 naming BLOB_READ_WRITE_TOKEN when unconfigured (currently is), image-only + 8MB + random-suffix when configured. Harness +2 (environment-aware check self-upgrades once the token exists) — **37/37**.
+- **Flagged**: real upload manual until the owner creates a Blob store + token.
 
-### Iteration 4 — Item 4: Chat payments-footer dedup ✅
-- **Branch/PR**: `autopilot-footer-dedup` → [Yeetful/website#37](https://github.com/Yeetful/website/pull/37) (base `autopilot`; independent).
-- **What**: `paymentsFooter` → `infoFooter` (reply keeps only listed-only + diagnostics + the burner grant-status line); 💸 paid-total moved into the structured footnote — `/api/chat` returns `payer`, client persists it in meta, `MessageReceipts` renders the total/payer summary above receipt rows. Orphaned `short()` removed.
-- **Verification**: temp scripts (deleted) — meta.payer round-trip; shared page renders total + payer + rows, zero old footer markers; tsc + build ✓. (Repeat lesson: strip React's `<!-- -->` text-node comments before HTML assertions.)
-- **Flagged**: one live paid turn (shared with the #30/#33 manual pass — no extra spend).
+### Iteration 4 — Item 4: RSS + sitemap + robots ✅
+- **Branch/PR**: `autopilot-blog-feeds` → [Yeetful/website#49](https://github.com/Yeetful/website/pull/49) (stacked: #42→#46→#47→#48→#49).
+- **What**: RSS 2.0 (permalink guid, pubDate, escaping, empty-feed-over-500), sitemap (static + posts + callable services, lastModified), robots (sitemap ref, app surfaces disallowed).
+- **Verification**: seeded post with XML booby traps — fetched + PARSED all three routes, **9/9**; cleanup verified; tsc + build ✓.
 
-### Iteration 5 — Item 5: Directory endpoint data refresh (prod DB) ✅
-- **Branch/PR**: `autopilot-directory-refresh` → [Yeetful/website#38](https://github.com/Yeetful/website/pull/38) (base `autopilot`).
-- **Counts**: servers 71→71; endpoints 1768→1770 (ingest) →1771 (seed); yeetful-claude eps 0→1. All 7 callable services' wiring verified intact post-run.
-- **Safety catch**: this branch's ingest CALLABLE map predated #33 — running naively would have UNWIRED the four BlockRun inference providers in prod. Map updated first (duplicates #33's hunk, declared in PR).
-- **Hand-seed**: committed idempotent fixture `scripts/seed-yeetful-claude-endpoints.ts` (double-run proven) — POST anthropic.yeetful.com/api/mcp/mcp, $0.005 exact; provenance in description + script (mcp_endpoints has no source column — noted deviation). Detail page renders the endpoint (screenshot on branch); no anomalies.
+### Iteration 5 — Item 5: First post ✅
+- **Branch/PR**: `autopilot-first-post` → [Yeetful/website#50](https://github.com/Yeetful/website/pull/50) (full text in the PR body for review).
+- **What**: "An agent shipped this blog. Here's the receipt." — ~700 words, brand voice, published THROUGH a freshly minted Bearer key (then revoked); committed idempotent seed (update path proven, publishedAt stable); RSS + sitemap pick it up; live in Neon, invisible until deploy.
 
-### Iteration 6 — Item 6: Responsive pass ✅
-- **Branch/PR**: `autopilot-responsive` → [Yeetful/website#39](https://github.com/Yeetful/website/pull/39) (base `autopilot`).
-- **What**: one real fix — ≤600px detail header stacks (52px tile, full-width badge rows, outlink on own row, tighter ep padding). Audited clean with no changes: 768 detail, 375 directory cards, endpoint/volume wrapping. CSS scoped to the ≤600px query.
-- **Verification**: emulated preview at 375/768 — programmatic overflow scan (scrollWidth==clientWidth, zero elements past right edge) + visual; tsc + build ✓.
-- **Tooling note for future runs**: headless-Chrome captures lay out ~15px wider than --window-size (old AND new headless) → right-edge clipping in mobile screenshots is a camera artifact; declare it and rely on the programmatic scan. The preview tool's emulated screenshots are accurate but can't be exported to files.
+---
 
-### Iteration 7 — Item 7: /developers page ✅
-- **Branch/PR**: `autopilot-developers-page` → [Yeetful/website#40](https://github.com/Yeetful/website/pull/40) (base `autopilot`).
-- **What**: public server-rendered quickstart — brand-voice hero, install→mint→snippet steps, all-8-routes grants API reference with method chips, receipt-sync field reference, links to npm/example-agent/demo, Developers nav tab + footer link. Existing design system; small `dev__` CSS section.
-- **Verification**: preview at 1440px (public page — fully verifiable), screenshots in PR; armed console hook proved zero NEW errors (pre-existing duplicate-key noise in the session buffer comes from earlier pages — possible future look at the home runner feed). tsc + build ✓.
+## Run 4 summary (2026-06-11)
+
+**Queue: 5/5 complete.** Zero failed iterations. The blog exists end-to-end: schema → admin API (Bearer = headless publish) → public UI with full SEO → uploads (token-pending) → feeds → a published launch post.
+
+| # | Item | PR |
+|---|------|----|
+| 1 | BlogPost model + publish API | [#46](https://github.com/Yeetful/website/pull/46) |
+| 2 | Public /blog UI (SEO first-class) | [#47](https://github.com/Yeetful/website/pull/47) |
+| 3 | Vercel Blob uploads | [#48](https://github.com/Yeetful/website/pull/48) |
+| 4 | RSS + sitemap + robots | [#49](https://github.com/Yeetful/website/pull/49) |
+| 5 | First post | [#50](https://github.com/Yeetful/website/pull/50) |
+
+**Merge order (one stacked chain)**: #42 (Run 3 harness — prerequisite) → #46 → #47 → #48 → #49 → #50. Run 3's #43–#45 remain open and independent.
+
+**Owner setup**: `ADMIN_WALLETS=0x<you>` (local + Vercel) to publish; create a Vercel Blob store + `BLOB_READ_WRITE_TOKEN` for photos (the harness check self-upgrades when it appears); `NEXT_PUBLIC_SITE_URL` optional (defaults to https://yeetful.com).
+
+**Notes**: SEO directive landed at every layer (schema-enforced ≤160 descriptions + alt column, canonical/OG/JSON-LD, stable publishedAt, RSS/sitemap/robots, XML-escaping proven with booby-trapped titles). test:api grew 25→37 checks. The launch post's claims are all literally true, including its own publish mechanism.
+
+---
+
+## Run 3 summary (2026-06-11)
+
+**Queue: 5/5 complete.** Zero failed iterations. Nothing merged, no deploys, no spending; prod-DB items executed within guardrails. All website PRs target `autopilot`.
+
+| # | Item | PR |
+|---|------|----|
+| 1 | test:api harness (25 checks) | [#42](https://github.com/Yeetful/website/pull/42) |
+| 2 | Runner-feed duplicate-key fix | [#43](https://github.com/Yeetful/website/pull/43) |
+| 3 | SDK 0.3 ripple | [example-agent#1](https://github.com/Yeetful/example-agent/pull/1) · [demo#2](https://github.com/Yeetful/demo/pull/2) |
+| 4 | Ingest auto-wire probe + wipe-on-empty fix | [#44](https://github.com/Yeetful/website/pull/44) |
+| 5 | Stale BlockRun URL fix-up | [#45](https://github.com/Yeetful/website/pull/45) |
+
+**Merge order**: #42 → #43 → #44 → #45 (all independent); example-agent#1 + demo#2 any time.
+
+**Notable**: item 4's integrity check caught the ingest deleting yeetful-claude's hand-seeded endpoint (wipe-on-empty) — fixed + seed survival proven. Venice's gateway demands an exact $10 authorization per call (probe evidence — vindicates the auto-wire cap). Item 3 found the website needed no caveat removal (queue over-assumed). DB net effect this run: 13 URL rewrites, +3 upstream endpoints, wiring 7/7 intact throughout.
+
+**Owner manual passes**: unchanged from Run 2 (one wallet session) + demo `--live` on 0.3.0.
 
 ---
 

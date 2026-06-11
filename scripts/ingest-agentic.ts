@@ -20,6 +20,7 @@
 import { PrismaClient } from '@prisma/client'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { getChallenge } from '../lib/x402'
 
 const API_BASE = 'https://api.agentic.market/v1/services'
 const PAGE_SIZE = 50
@@ -308,6 +309,83 @@ function build(apiServices: ApiService[]): {
   return { services: [...bySlug.values()], endpoints }
 }
 
+// ── Auto-wire probe ──────────────────────────────────────────────────────────
+// Inference services NOT hand-wired in CALLABLE get their OpenAI-compatible
+// chat/completions endpoint probed (a free request that elicits the 402
+// challenge — nothing is ever paid). A service is auto-wired only when the
+// challenge parses, the scheme is `exact`, and the per-call price fits the
+// default grant cap; metered (`upto`), keyed, dead, or expensive gateways stay
+// listed-only with the reason recorded. Hand-wired entries are never touched.
+
+const AUTO_WIRE_MAX_PER_CALL_USD = 0.05
+/** Probe/wire model per service slug; generic fallback elsewhere (most
+ *  gateways answer the 402 before validating the model). */
+const PROBE_MODELS: Record<string, string> = {
+  'blockrun-ai': 'openai/gpt-4o-mini',
+}
+const PROBE_FALLBACK_MODEL = 'gpt-4o-mini'
+
+interface WireDecision {
+  slug: string
+  url: string
+  decision: 'wired' | 'listed-only'
+  reason: string
+}
+
+async function autoWireInference(
+  services: ParsedService[],
+  endpoints: Map<string, ParsedEndpoint[]>,
+): Promise<WireDecision[]> {
+  const decisions: WireDecision[] = []
+  for (const svc of services) {
+    if (svc.kind !== 'inference' || svc.callable || CALLABLE[svc.slug]) continue
+    const candidates = (endpoints.get(svc.slug) ?? []).filter(
+      (e) => e.method === 'POST' && /\/chat\/completions\/?$/.test(e.url),
+    )
+    if (candidates.length === 0) {
+      decisions.push({ slug: svc.slug, url: '—', decision: 'listed-only', reason: 'no OpenAI-compatible chat/completions endpoint' })
+      continue
+    }
+    let wired = false
+    for (const ep of candidates) {
+      if (wired) break
+      const model = PROBE_MODELS[svc.slug] ?? PROBE_FALLBACK_MODEL
+      try {
+        const challenge = await getChallenge(ep.url, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ model, messages: [{ role: 'user', content: 'probe' }], max_tokens: 16 }),
+        })
+        if (!challenge) {
+          decisions.push({ slug: svc.slug, url: ep.url, decision: 'listed-only', reason: 'no 402 challenge (dead, free, or API-key gated)' })
+          continue
+        }
+        const acc = challenge.accepts?.[0]
+        const raw = acc?.amount ?? acc?.maxAmountRequired
+        const price = raw ? Number(raw) / 1e6 : NaN
+        if (acc?.scheme !== 'exact') {
+          decisions.push({ slug: svc.slug, url: ep.url, decision: 'listed-only', reason: `scheme '${acc?.scheme ?? '?'}' — metered pricing is unsafe to auto-authorize` })
+          continue
+        }
+        if (!(price > 0) || price > AUTO_WIRE_MAX_PER_CALL_USD) {
+          decisions.push({ slug: svc.slug, url: ep.url, decision: 'listed-only', reason: `exact $${isNaN(price) ? '?' : price} exceeds the $${AUTO_WIRE_MAX_PER_CALL_USD} auto-wire cap` })
+          continue
+        }
+        svc.callable = true
+        svc.endpoint = ep.url
+        svc.protocol = 'http'
+        svc.tool = model
+        svc.priceUsd = String(price)
+        decisions.push({ slug: svc.slug, url: ep.url, decision: 'wired', reason: `exact $${price} ≤ $${AUTO_WIRE_MAX_PER_CALL_USD} (model ${model})` })
+        wired = true
+      } catch (err) {
+        decisions.push({ slug: svc.slug, url: ep.url, decision: 'listed-only', reason: `probe failed: ${err instanceof Error ? err.message.slice(0, 80) : 'error'}` })
+      }
+    }
+  }
+  return decisions
+}
+
 async function main() {
   const dry = process.argv.includes('--dry')
   const prune = process.argv.includes('--prune')
@@ -316,6 +394,13 @@ async function main() {
   console.log(`Fetching ${API_BASE} …`)
   const apiServices = await fetchAll()
   const { services, endpoints } = build(apiServices)
+
+  console.log('\nAuto-wire probe (inference, free 402 probes — nothing is paid):')
+  const wireDecisions = await autoWireInference(services, endpoints)
+  for (const d of wireDecisions) {
+    console.log(`  ${d.decision === 'wired' ? '⚡' : '·'} ${d.slug.padEnd(16)} ${d.decision.padEnd(12)} ${d.reason}${d.url !== '—' ? `  [${d.url}]` : ''}`)
+  }
+  if (wireDecisions.length === 0) console.log('  (no unwired inference candidates)')
 
   const callable = services.filter((s) => s.callable)
   const byCat = services.reduce<Record<string, number>>((a, s) => ((a[s.category] = (a[s.category] ?? 0) + 1), a), {})
@@ -349,8 +434,11 @@ async function main() {
     n++
     // Replace this service's endpoint surface (cascade-owned child rows).
     const eps = endpoints.get(s.slug) ?? []
-    await prisma.mcpEndpoint.deleteMany({ where: { serverId: saved.id } })
+    // Replace the endpoint surface only when the source actually carries one —
+    // wiping on empty would destroy hand-seeded rows (e.g. yeetful-claude's MCP
+    // endpoint, which agentic.market doesn't list). Deliberate cleanup = --prune.
     if (eps.length) {
+      await prisma.mcpEndpoint.deleteMany({ where: { serverId: saved.id } })
       await prisma.mcpEndpoint.createMany({
         // Json? fields reject plain null — omit `parameters` for DB NULL.
         data: eps.map(({ parameters, ...e }) => ({
