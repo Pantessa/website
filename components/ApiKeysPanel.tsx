@@ -101,8 +101,7 @@ export default function ApiKeysPanel({
   }
 
   return (
-    // id anchors the /developers "Mint a key" deep link (scroll-mt clears the sticky nav)
-    <div id="api-keys" className="scroll-mt-20 rounded-2xl border border-[var(--line)] bg-[var(--surf-1)] p-4 mb-6">
+    <div className="rounded-2xl border border-[var(--line)] bg-[var(--surf-1)] p-4 mb-6">
       <h2 className="text-sm font-semibold text-white mb-1">
         API keys
         <span className="font-normal text-[color:var(--muted-2)]">
