@@ -56,8 +56,6 @@ const CALLABLE: Record<string, Partial<ParsedService> & { endpoint: string }> = 
   // OpenAI-compatible inference via the BlockRun x402 gateway. `tool` carries
   // the gateway model id; exact-priced $0.001/call at chat-sized prompts
   // (probed 2026-06-10: flat to ~2.4K input tokens, 256-token output cap).
-  // NOTE: duplicates the wire-inference-providers hunk (PR #33 to main) so an
-  // ingest run from this branch can't unwire the four live providers.
   chatgpt: {
     kind: 'inference', endpoint: 'https://blockrun.ai/api/v1/chat/completions',
     protocol: 'http', tool: 'openai/gpt-4o-mini', priceUsd: '0.001',

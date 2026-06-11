@@ -54,7 +54,8 @@ interface PlannedCall {
   url?: string // data url (with query)
   method?: string // data call method (default GET); smart POSTs carry a body
   body?: string // JSON body for smart POST calls
-  tool?: string // inference tool name
+  tool?: string // inference tool name (mcp) or gateway model id (http)
+  protocol?: 'mcp' | 'http' // inference transport (default mcp)
   prepared: PreparedPayment | null // null = endpoint didn't require payment
 }
 
@@ -75,11 +76,7 @@ async function planSmartPicks(
   message: string,
   smart: PlannableEndpoint[],
 ): Promise<{ picks: PlannedPick[]; txHash?: string }> {
-  const { text, txHash } = await askClaude(
-    inference.endpoint!,
-    inference.tool ?? 'ask_claude',
-    plannerPrompt(message, smart),
-  )
+  const { text, txHash } = await callInference(inference, plannerPrompt(message, smart))
   return { picks: parsePlannerPicks(text, smart), txHash }
 }
 
@@ -110,7 +107,11 @@ export async function POST(req: NextRequest) {
     }
 
     const inference = activeServers.find(
-      (s) => s.kind === 'inference' && s.callable && s.endpoint && s.protocol === 'mcp',
+      (s) =>
+        s.kind === 'inference' &&
+        s.callable &&
+        s.endpoint &&
+        (s.protocol === 'mcp' || s.protocol === 'http'),
     )
     const dataServers = activeServers.filter(
       (s) => s.kind === 'data' && s.callable && s.endpoint && s.protocol === 'http',
@@ -121,8 +122,8 @@ export async function POST(req: NextRequest) {
     if (!inference) {
       const picked = activeServers.find((s) => s.kind === 'inference')
       const hint = picked
-        ? `“${picked.name}” isn't wired for live x402 yet. Add **Yeetful · Claude** — it's the live inference provider.`
-        : 'Add an **Inference** server (e.g. **Yeetful · Claude**) so I can answer.'
+        ? `“${picked.name}” isn't wired for live x402 yet. Try **Yeetful · Claude**, **ChatGPT**, **DeepSeek**, or **Google Gemini** — they're live.`
+        : 'Add an **Inference** agent (e.g. **Yeetful · Claude** or **ChatGPT**) so I can answer.'
       return NextResponse.json({ reply: `⚡ ${hint}` })
     }
 
@@ -249,11 +250,15 @@ async function planWalletPayments(
   }
   const stillListedOnly = listedOnly.filter((s) => !smartServed.has(s.slug))
 
-  // Inference: the 402 gate is body-independent, so probe with a tiny dummy body.
+  // Inference 402 probe. MCP gateways price flat (body-independent); http
+  // gateways price by request size, so the probe carries the real model and
+  // the execute-time prompt is capped into the same flat tier (see capPrompt).
+  const infProtocol = inferenceProtocolOf(inference)
+  const infTool = inference.tool ?? (infProtocol === 'http' ? 'openai/gpt-4o-mini' : 'ask_claude')
   const infChallenge = await getChallenge(inference.endpoint!, {
     method: 'POST',
     headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream' },
-    body: dummyMcpBody(inference.tool ?? 'ask_claude'),
+    body: infProtocol === 'http' ? inferenceBody('http', infTool, 'probe') : dummyMcpBody(infTool),
   })
   plan.push({
     id: `inference:${inference.slug}`,
@@ -262,7 +267,8 @@ async function planWalletPayments(
     host: hostOf(inference.endpoint!),
     priceUsd: inference.priceUsd ?? '0.01',
     endpoint: inference.endpoint!,
-    tool: inference.tool ?? 'ask_claude',
+    tool: infTool,
+    protocol: infProtocol,
     prepared: infChallenge ? derivePayment(infChallenge, walletAddress) : null,
   })
 
@@ -349,25 +355,24 @@ async function executeWithSignatures(
     return NextResponse.json({ error: 'No inference call in plan.' }, { status: 400 })
   }
 
-  // Inference with the real prompt (signed authorization is body-independent).
-  const prompt = buildPrompt(message, contextBlocks)
+  // Inference with the real prompt. MCP authorizations are body-independent;
+  // http prompts are capped into the plan-time price tier (capPrompt).
+  const execProtocol: 'mcp' | 'http' = inferenceCall.protocol === 'http' ? 'http' : 'mcp'
+  const execTool =
+    inferenceCall.tool ?? (execProtocol === 'http' ? 'openai/gpt-4o-mini' : 'ask_claude')
+  const prompt = capPrompt(execProtocol, buildPrompt(message, contextBlocks))
   const header = paymentHeaderFor(inferenceCall, signatures)
   const res = await fetchWithPaymentHeader(
     inferenceCall.endpoint,
     {
       method: 'POST',
       headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream' },
-      body: JSON.stringify({
-        jsonrpc: '2.0',
-        id: 1,
-        method: 'tools/call',
-        params: { name: inferenceCall.tool ?? 'ask_claude', arguments: { prompt } },
-      }),
+      body: inferenceBody(execProtocol, execTool, prompt),
     },
     header,
   )
   if (!res.ok) throw new Error(await failureReason(res))
-  const text = parseClaudeText(res.headers.get('content-type') ?? '', await res.text())
+  const text = parseInferenceText(execProtocol, res.headers.get('content-type') ?? '', await res.text())
   const infTx = decodeSettlement(res)?.transaction
   receipts.push({ name: inferenceCall.name, endpoint: inferenceCall.host, priceUsd: inferenceCall.priceUsd, txHash: infTx, ok: true })
   ledger(inferenceCall, true, infTx)
@@ -513,7 +518,7 @@ async function runWithBurner(
   }
 
   const prompt = buildPrompt(message, contextBlocks)
-  const { text, txHash } = await askClaude(inference.endpoint!, inference.tool ?? 'ask_claude', prompt)
+  const { text, txHash } = await callInference(inference, prompt)
   receipts.push({ name: inference.name, endpoint: infHost, priceUsd: inference.priceUsd ?? '0.01', txHash, ok: true })
   if (grant) {
     await recordLedger({ grantId: grant.id, host: infHost, serviceName: inference.name, amountUsd: infPrice, ok: true, txHash, note: 'settled' })
@@ -547,14 +552,69 @@ async function paidCall(request: { url: string; method: string; headers: Record<
   return { json: await res.json(), txHash: decodeSettlement(res)?.transaction }
 }
 
-async function askClaude(endpoint: string, tool: string, prompt: string) {
-  const res = await getPaidFetch()(endpoint, {
+/**
+ * Inference request body for either transport. `http` = an OpenAI-compatible
+ * x402 gateway (BlockRun): `tool` carries the gateway model id, output capped
+ * at 256 tokens to match the flat per-call price tier.
+ */
+function inferenceBody(protocol: 'mcp' | 'http', tool: string, prompt: string): string {
+  if (protocol === 'http') {
+    return JSON.stringify({
+      model: tool,
+      messages: [{ role: 'user', content: prompt }],
+      max_tokens: 256,
+    })
+  }
+  return JSON.stringify({
+    jsonrpc: '2.0',
+    id: 1,
+    method: 'tools/call',
+    params: { name: tool, arguments: { prompt } },
+  })
+}
+
+function parseInferenceText(protocol: 'mcp' | 'http', contentType: string, raw: string): string {
+  if (protocol === 'http') {
+    try {
+      const json = JSON.parse(raw) as { choices?: { message?: { content?: string } }[] }
+      const text = json.choices?.[0]?.message?.content
+      if (typeof text === 'string' && text.trim()) return text.trim()
+    } catch {
+      /* fall through */
+    }
+    throw new Error('Gateway returned no completion text.')
+  }
+  return parseClaudeText(contentType, raw)
+}
+
+function inferenceProtocolOf(s: { protocol?: string | null }): 'mcp' | 'http' {
+  return s.protocol === 'http' ? 'http' : 'mcp'
+}
+
+/**
+ * BlockRun prices per request size: flat $0.001 up to ~2.4K input tokens, then
+ * it grows. The wallet flow signs the plan-time amount, so the execute-time
+ * prompt must stay inside the same (flat) price tier — cap http prompts well
+ * under the threshold. MCP (Yeetful · Claude) is flat-priced; no cap needed.
+ */
+const HTTP_PROMPT_MAX_CHARS = 4000
+function capPrompt(protocol: 'mcp' | 'http', prompt: string): string {
+  return protocol === 'http' ? truncate(prompt, HTTP_PROMPT_MAX_CHARS) : prompt
+}
+
+async function callInference(
+  inference: Pick<McpServer, 'endpoint' | 'tool' | 'protocol'>,
+  prompt: string,
+) {
+  const protocol = inferenceProtocolOf(inference)
+  const tool = inference.tool ?? (protocol === 'http' ? 'openai/gpt-4o-mini' : 'ask_claude')
+  const res = await getPaidFetch()(inference.endpoint!, {
     method: 'POST',
     headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream' },
-    body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: tool, arguments: { prompt } } }),
+    body: inferenceBody(protocol, tool, capPrompt(protocol, prompt)),
   })
   if (!res.ok) throw new Error(await failureReason(res))
-  const text = parseClaudeText(res.headers.get('content-type') ?? '', await res.text())
+  const text = parseInferenceText(protocol, res.headers.get('content-type') ?? '', await res.text())
   return { text, txHash: decodeSettlement(res)?.transaction }
 }
 
