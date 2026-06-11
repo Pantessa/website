@@ -70,7 +70,7 @@ never `main`. Runs 1–2 are summarized at the bottom; full logs in git history.
   then a live run with before/after counts; existing CALLABLE entries are
   never overridden; the 4 BlockRun providers + yeetful-claude/tripadvisor/
   wolfram wiring verified intact after.
-- [ ] **5. Stale endpoint URL fix-up (PROD DB)** — directory mcp_endpoints
+- [x] **5. Stale endpoint URL fix-up (PROD DB)** — directory mcp_endpoints
   rows for BlockRun gateways point at `blockrun.ai/v1/*`, which 404s (the
   live path is `blockrun.ai/api/v1/*` — probed in Run 2). Committed
   idempotent script: for each distinct stale URL, probe both forms (free
@@ -103,6 +103,30 @@ _(autopilot appends here — branch, PR, verification evidence, caveats)_
 - **What**: free-402-probe pass in the ingest — wires unwired inference services only when exact-priced ≤ $0.05 and live; `--dry` decision table. Today: **zero qualified** (venice demands exact $10/call!, groq/blockrun-ai URLs stale, hyperbolic no 402, questflow no chat endpoint) — future qualifying providers light up codelessly.
 - **Incident caught + fixed**: live ingest deleted yeetful-claude's hand-seeded endpoint (deleteMany on empty source). Surface now replaced only when the source carries one; seed re-applied and proven to survive a fresh ingest.
 - **Counts**: servers 71→71, callable 7→7 (wiring spot-checked), endpoints 1771→1774. tsc + build ✓.
+
+### Iteration 5 — Item 5: Stale endpoint URL fix-up (prod DB) ✅
+- **Branch/PR**: `autopilot-url-fixup` → [Yeetful/website#45](https://github.com/Yeetful/website/pull/45).
+- **What**: committed idempotent `scripts/fix-stale-endpoint-urls.ts` — probes both URL forms free, rewrites only dead-stale→alive-corrected. **13 rewritten** (models/chat/images, all 402-alive at /api/v1/), **3 honestly untouched** (/x/* dead at both forms), 0 on re-run, endpoint total unchanged. /servers/chatgpt renders zero dead links (screenshot on branch).
+
+---
+
+## Run 3 summary (2026-06-11)
+
+**Queue: 5/5 complete.** Zero failed iterations. Nothing merged, no deploys, no spending; prod-DB items executed within guardrails. All website PRs target `autopilot`.
+
+| # | Item | PR |
+|---|------|----|
+| 1 | test:api harness (25 checks) | [#42](https://github.com/Yeetful/website/pull/42) |
+| 2 | Runner-feed duplicate-key fix | [#43](https://github.com/Yeetful/website/pull/43) |
+| 3 | SDK 0.3 ripple | [example-agent#1](https://github.com/Yeetful/example-agent/pull/1) · [demo#2](https://github.com/Yeetful/demo/pull/2) |
+| 4 | Ingest auto-wire probe + wipe-on-empty fix | [#44](https://github.com/Yeetful/website/pull/44) |
+| 5 | Stale BlockRun URL fix-up | [#45](https://github.com/Yeetful/website/pull/45) |
+
+**Merge order**: #42 → #43 → #44 → #45 (all independent); example-agent#1 + demo#2 any time.
+
+**Notable**: item 4's integrity check caught the ingest deleting yeetful-claude's hand-seeded endpoint (wipe-on-empty) — fixed + seed survival proven. Venice's gateway demands an exact $10 authorization per call (probe evidence — vindicates the auto-wire cap). Item 3 found the website needed no caveat removal (queue over-assumed). DB net effect this run: 13 URL rewrites, +3 upstream endpoints, wiring 7/7 intact throughout.
+
+**Owner manual passes**: unchanged from Run 2 (one wallet session) + demo `--live` on 0.3.0.
 
 ---
 
