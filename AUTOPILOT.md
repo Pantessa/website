@@ -57,7 +57,7 @@ never `main`. Runs 1–2 are summarized at the bottom; full logs in git history.
   example-agent README, website `/developers` page, `ConnectAgentCard`,
   and the sdk README if present. Also drop example-agent's runtime
   `typeof pay.flushLedger === 'function'` guard — 0.3 always has it.
-- [ ] **4. Ingest auto-wire probe for inference providers (PROD DB)** —
+- [x] **4. Ingest auto-wire probe for inference providers (PROD DB)** —
   extend `scripts/ingest-agentic.ts`: after building services, for each
   kind=inference service NOT already in the CALLABLE map that exposes an
   OpenAI-compatible `chat/completions` endpoint, probe it (free request →
@@ -97,6 +97,12 @@ _(autopilot appends here — branch, PR, verification evidence, caveats)_
 - **PRs**: [example-agent#1](https://github.com/Yeetful/example-agent/pull/1) (^0.3.0, unguarded flushLedger, all ≥0.3 caveats deleted; free demo re-run on the published package, zero spend) · [demo#2](https://github.com/Yeetful/demo/pull/2) (^0.3.0; dry-run re-verified, tsc clean). Both public repos: secrets grep + tracked-env checks clean.
 - **Website**: grep found NO ≥0.3 caveats on /developers or ConnectAgentCard (the queue item over-assumed) — no website change needed; sdk README also clean.
 - **Flagged**: demo `--live` still the owner's manual pass (spends).
+
+### Iteration 4 — Item 4: Ingest auto-wire probe (prod DB) ✅
+- **Branch/PR**: `autopilot-auto-wire` → [Yeetful/website#44](https://github.com/Yeetful/website/pull/44).
+- **What**: free-402-probe pass in the ingest — wires unwired inference services only when exact-priced ≤ $0.05 and live; `--dry` decision table. Today: **zero qualified** (venice demands exact $10/call!, groq/blockrun-ai URLs stale, hyperbolic no 402, questflow no chat endpoint) — future qualifying providers light up codelessly.
+- **Incident caught + fixed**: live ingest deleted yeetful-claude's hand-seeded endpoint (deleteMany on empty source). Surface now replaced only when the source carries one; seed re-applied and proven to survive a fresh ingest.
+- **Counts**: servers 71→71, callable 7→7 (wiring spot-checked), endpoints 1771→1774. tsc + build ✓.
 
 ---
 
