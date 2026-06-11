@@ -35,7 +35,7 @@ never `main`. Runs 1–2 are summarized at the bottom; full logs in git history.
 
 ## Queue (ordered; one per iteration)
 
-- [ ] **1. Committed API test harness** — consolidate the Run-1/2 throwaway
+- [x] **1. Committed API test harness** — consolidate the Run-1/2 throwaway
   verification patterns into `scripts/test-api.ts` + `npm run test:api`
   (runs vs a dev server + Neon, throwaway SIWE wallets, full cleanup):
   auth nonce/verify, keys mint/list/revoke + Bearer auth, grants CRUD +
@@ -82,6 +82,11 @@ never `main`. Runs 1–2 are summarized at the bottom; full logs in git history.
 ## Progress log — Run 3
 
 _(autopilot appends here — branch, PR, verification evidence, caveats)_
+
+### Iteration 1 — Item 1: Committed API test harness ✅
+- **Branch/PR**: `autopilot-test-harness` → [Yeetful/website#42](https://github.com/Yeetful/website/pull/42).
+- **What**: `scripts/test-api.ts` + `npm run test:api` — 25 checks across auth, keys (show-once/Bearer/revocation), grants (validation/scoping), EIP-712 (sign/void/re-sign), ledger sync, chat-receipt meta + share render, verified cleanup.
+- **Verification**: green twice back-to-back vs dev + Neon; tsc + build ✓. Later items extend this harness per rule 5.
 
 ---
 
