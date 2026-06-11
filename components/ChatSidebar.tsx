@@ -37,7 +37,7 @@ export default function ChatSidebar() {
             <div className="p-3 border-b border-[var(--line)]">
               <button
                 onClick={() => router.push('/chat')}
-                className="w-full flex items-center gap-2 px-3 py-2 rounded-xl bg-[var(--surf-2)] border border-[var(--line)] text-[color:var(--muted)] hover:text-white hover:border-[var(--line-2)] transition-all text-sm font-medium"
+                className="w-full flex items-center gap-2 px-3 py-2 min-h-[44px] md:min-h-0 rounded-xl bg-[var(--surf-2)] border border-[var(--line)] text-[color:var(--muted)] hover:text-white hover:border-[var(--line-2)] transition-all text-sm font-medium"
               >
                 <Plus className="w-4 h-4" />
                 New Chat

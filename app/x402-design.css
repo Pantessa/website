@@ -116,8 +116,11 @@
   }
   .hero__ctas { margin-top: 34px; display: flex; flex-wrap: wrap; gap: 12px; }
 
-  /* manifesto: split */
+  /* manifesto: split. min-width:0 on items — the runner feed's nowrap lines
+     otherwise set a ~500px min-content width and blow out narrow viewports
+     (body's overflow-x:hidden then CLIPS text instead of wrapping it). */
   .hero--manifesto { display: grid; grid-template-columns: 1.05fr 0.95fr; gap: 56px; align-items: center; }
+  .hero--manifesto > * { min-width: 0; }
   /* centered */
   .hero--centered { text-align: center; padding-bottom: 56px; }
   .hero--centered .hero__center { display: flex; flex-direction: column; align-items: center; }
@@ -498,6 +501,10 @@
   }
   @media (max-width: 600px) {
     .x-main { padding: 0 18px; }
+    /* comfortable touch targets on phones */
+    .card__btn { width: 44px; height: 44px; }
+    .card__more { padding: 8px 12px; }
+    .runner__toggle { min-height: 44px; padding: 10px 16px; }
     .nav__inner { padding: 0 18px; }
     .x-grid { grid-template-columns: 1fr; }
     .nav__status { display: none; }
@@ -505,6 +512,7 @@
     .activebar__chips { display: none; }
     .runner__feed { font-size: 11px; }
     .runner__action { display: none; }
+    .runner__code { display: none; } /* keep the price visible — it's the point */
 
     /* Service detail: stack the header so the badge row gets full width
        (otherwise badges wrap one-per-line beside the tile + outlink). */
