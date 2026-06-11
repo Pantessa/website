@@ -66,9 +66,45 @@ export default function DevelopersPage() {
             signed. A receipt for every decision — settlements and refusals alike. Your agent
             pays for what it uses and can&apos;t spend what you didn&apos;t approve.
           </p>
+          <div className="hero__ctas">
+            <Link href="/dashboard#api-keys" className="btn btn--solid">
+              Mint a key
+            </Link>
+            <a href="#quickstart" className="btn btn--ghost">
+              Read the quickstart
+            </a>
+          </div>
+
+          {/* What you can do */}
+          <div className="explain__steps dev__caps">
+            <div className="step">
+              <span className="step__n mono">SPEND CONTROL</span>
+              <h3 className="step__t">Budgets your agent can&apos;t exceed</h3>
+              <p className="step__d">
+                Allowlist + per-call and per-day caps, checked before any payment is signed.
+                Runaway loops and injected tool calls hit the wall, not your wallet.
+              </p>
+            </div>
+            <div className="step">
+              <span className="step__n mono">RECEIPTS EVERYWHERE</span>
+              <h3 className="step__t">Every decision, ledgered</h3>
+              <p className="step__d">
+                Settlements and refusals land in your dashboard — charts, budgets, and Basescan
+                links per call. Headless agents sync via API key.
+              </p>
+            </div>
+            <div className="step">
+              <span className="step__n mono">SIGNED GRANTS</span>
+              <h3 className="step__t">Terms your wallet attested</h3>
+              <p className="step__d">
+                EIP-712-sign your grant so the authorization is portable — the precursor to
+                on-chain spend permissions. Change the terms, re-sign, done.
+              </p>
+            </div>
+          </div>
 
           {/* ── Quickstart ── */}
-          <div className="svc__section">
+          <div className="svc__section" id="quickstart">
             <div className="svc__sectionhead">
               <h2 className="svc__h2">Quickstart</h2>
             </div>
