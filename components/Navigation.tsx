@@ -47,6 +47,9 @@ export default function Navigation() {
         Chat
         {activeCount > 0 && <span className="nav__badge mono">{activeCount}</span>}
       </Link>
+      <Link href="/activity" className={`nav__tab ${pathname === '/activity' ? 'is-on' : ''}`}>
+        Activity
+      </Link>
       {mounted && isConnected && (
         <Link
           href="/dashboard"

@@ -1,4 +1,346 @@
-# Autopilot — Run 6: mobile-first, every page (staged 2026-06-11; start via /loop)
+# Autopilot — Run 8 DRAFT: Coinbase Spend Permission example (staged 2026-06-12, awaiting owner review — do NOT start until approved)
+
+The strategic wedge from CLAUDE.md: back the (signable) SpendGrant with a
+real on-chain Coinbase Spend Permission so the agent never holds funds.
+CDP research (2026-06-11): Agentic Wallets = Server Wallet v2 accounts (MPC
+in AWS Nitro Enclave); Spend Permissions API maps ~1:1 onto SpendGrant
+(grantor smart account / spender / token "usdc" / allowance / periodInDays);
+contract 0xf85210B21cC50302F477BA56686d2019dC9b67Ad on Base; spender may be
+any onchain account; gas via Coinbase paymaster. CAVEAT to verify first:
+permission creation is documented as CDP-Smart-Account-only.
+
+## Rules (Run 6/7 constitution applies; additions)
+
+R1. TESTNET FIRST (Base Sepolia) — no mainnet funds until the owner's
+    explicit go. Never store CDP API secrets in any repo; .env only.
+R2. The example repo is PUBLIC from birth (Yeetful/coinbase-example) —
+    secrets grep before every push.
+R3. Spending real money (even $0.01 mainnet) = owner manual step, never
+    autopilot.
+
+## Queue (draft — owner may reorder/trim)
+
+- [ ] **1. Spike: verify the CDP API surface** — create a CDP project
+  (owner provides API key id/secret in .env), Server Wallet v2 + Smart
+  Account on Base Sepolia, createSpendPermission with SpendGrant-shaped
+  caps, spender.useSpendPermission() pulls testnet USDC. Probe-style
+  evidence; document the Smart-Account-only caveat's real shape.
+- [ ] **2. Yeetful/coinbase-example repo** — owner-setup.ts (one-time:
+  create + sign the permission mirroring a yeetful.com grant) + agent.ts
+  (yeetful() pay loop; spender auto-pulls via the permission when its
+  balance runs low) + README. Testnet by default per R1.
+- [ ] **3. Website: grant ↔ permission linkage** — store the permission
+  hash on SpendGrant (additive column), surface a "backed on-chain" badge
+  on the dashboard + signature payload alignment so the EIP-712 grant and
+  the Spend Permission share terms.
+- [ ] **4. SDK: spender adapter** — optional `spendPermission` option on
+  yeetful(): auto-pull before payment when balance < price; receipts note
+  the pull tx. Tests with a mocked CDP client.
+- [ ] **5. Blog post draft** — "Your agent has an expense account, not a
+  wallet" (publish = owner step per constitution).
+
+_(Run 8 starts only when the owner says go — likely needs: CDP account +
+API key, testnet faucet funds.)_
+
+---
+
+# Run 7 (COMPLETE 8/8): public network activity + stats (staged 2026-06-11 evening)
+
+Owner directive: a public page showing all transactions on the network with
+overall stats. The receipts we already write (spend_ledger) become the
+public proof-of-life surface: live paid calls, totals, and a
+"blocked by policy" counter that doubles as the control-plane pitch.
+Run 6 items 2–6 (mobile) carry over after the activity items.
+
+## Rules (constitution — Run 6 rules apply verbatim, plus privacy)
+
+P1. **Public payloads NEVER contain**: full wallet addresses (truncate
+    server-side to 0xab…cd), grant ids, API-key material, or chat content.
+    The test harness must PROVE anonymization (seed a row, assert the full
+    address is absent from the public JSON).
+P2. **Denials are aggregate-only in public**: a blocked-calls stat is the
+    control-plane flex, but denial ROWS (who tried what and got refused)
+    never appear in the public feed.
+P3. The endpoint is unauthenticated read-only; no user-controlled params may
+    reach other tables. DB changes additive only (plain `db push`, never
+    --force-reset).
+
+## Queue (ordered; one per iteration)
+
+- [x] **1. Public activity API** — `GET /api/activity` (no auth): `stats`
+  (settled USD total, settled calls, calls today, blocked count, distinct
+  active accounts), `daily` 30-day series, `top` services by spend, `recent`
+  ≤50 SETTLED rows (serviceName, host, amountUsd, txHash, truncated owner,
+  createdAt). Additive `@@index([ok, createdAt])` on spend_ledger + plain
+  `db push` (the global feed can't ride the grant-scoped index). Cache
+  `s-maxage=30, stale-while-revalidate=120`. EXTEND `npm run test:api`
+  (don't write temp scripts): shape checks, P1 anonymization proof, P2
+  denial-row absence, cache header present. 37 checks must stay green and
+  grow.
+- [x] **2. /activity page** — public, SEO'd (title/desc/OG), nav link. Stat
+  tiles (settled total, calls, active accounts, blocked-by-policy), reuse
+  DashboardCharts SpendOverTime for the 30-day series + per-service bars,
+  live feed with Basescan links on tx hashes (https://basescan.org/tx/…),
+  ~30s polling, honest empty states (young network ≠ broken page).
+  Mobile-first per Run 6 standards: rect-scan clean 375/390 (public page —
+  no harness needed), tap targets ≥40px, feed rows wrap not bleed.
+- [x] **3. Home tie-in + perf pass** — surface the network stats on the home
+  page (small live counter strip sourced from the same API; no second
+  query path), verify payload size sane (≤50 rows, no over-fetch), confirm
+  the new index is used (EXPLAIN via Neon MCP), lighthouse-glance the page
+  weight. Anything unverifiable: flagged, not claimed.
+- [x] **4. (Run 6 #2) Dashboard Keys/Approvals/Activity mobile** — mock-harness
+  pattern per page: keys (secret reveal break-all, ConnectAgentCard <pre>
+  scroll, long prefixes), approvals (3→2→1 grid, switch tap size), activity
+  (long hosts/hashes truncate; rows wrap to two lines). Rect-scan clean;
+  screenshots; harness deleted.
+- [x] **5. (Run 6 #3) Chat mobile-first** — sidebar overlays or collapses at
+  375/390; composer sticky-bottom with safe-area + 16px input font; bubbles
+  ≤85vw with long-word breaking; agents toolbar scroll; receipts footnote
+  wrapping; guest send box no-iOS-zoom.
+- [x] **6. (Run 6 #4) Home + directory mobile polish** — hero type scale at
+  375, runner card internals, search + pills 44px, card grid rhythm,
+  ActiveServerBar safe-area. Rect-scan + screenshots.
+- [x] **7. (Run 6 #5) Developers + blog + servers detail mobile polish** —
+  snippet <pre> scroll, capability cards, ep rows at 375; blog measure +
+  code blocks; servers header badge wrap. Rect-scan + screenshots.
+- [x] **8. (Run 6 #6) Global mobile foundation sweep** — viewport meta on
+  every route, 16px inputs everywhere, safe-area on fixed elements, final
+  all-pages rect-scan table (375 + 390) incl. /activity. Exit criteria.
+
+## Progress log — Run 7
+
+_(autopilot appends here)_
+
+### Item 8 — Global mobile foundation sweep ✅ (2026-06-12) — EXIT CRITERIA MET
+
+Foundation: viewport meta verified emitted on all 8 route classes (curl);
+`-webkit-tap-highlight-color: transparent` added to the html base; nav
+drawer bottom padding now includes env(safe-area-inset-bottom).
+
+**The sweep caught one more real bug**: /servers (the add-custom-server
+page — never previously audited) bled to scrollWidth 412 at 375. The color
+hex input (`flex-1`, min-width:auto) forced its grid-cols-2 column wide.
+Fix: `min-w-0` + the category/color row stacks at phone widths; that input,
+its 3 siblings, and the category <select> all get 16px under lg (selects
+zoom on iOS focus too).
+
+**Final all-pages table** (iframe-viewport scan, both widths; offenders =
+rect right > vw+2, excluding scroll containers and overflow-hidden non-body
+boxes; smallInputs = visible input/textarea/select under 16px):
+
+| Page | 375 off/inputs | 390 off/inputs |
+|---|---|---|
+| / | 0 / 0 | 0 / 0 |
+| /activity | 0 / 0 | 0 / 0 |
+| /developers | 0 / 0 | 0 / 0 |
+| /blog | 0 / 0 | 0 / 0 |
+| /blog/[slug] | 0 / 0 | 0 / 0 |
+| /servers | 0 / 0 | 0 / 0 |
+| /servers/[slug] (tripadvisor) | 0 / 0 | 0 / 0 |
+| /chat | 0 / 0 | 0 / 0 |
+| /dashboard (gate) | 0 / 0 | 0 / 0 |
+| dash Overview (harness) | 0 / 0 | 0 / 0 |
+| dash Keys (harness) | 0 / 0 | 0 / 0 |
+| dash Approvals (harness) | 0 / 0 | 0 / 0 |
+| dash Activity (harness) | 0 / 0 | 0 / 0 |
+
+**26/26 clean.** Method note: pages loaded in a sized same-origin iframe
+(its own viewport — media queries + dvh respond correctly), which made the
+26-combo sweep tractable in two scans. Safe-area insets remain
+preview-unverifiable (env() = 0) — flagged; owner's phone glance covers it.
+tsc + build + test:api 43/43; harnesses deleted.
+
+---
+
+## Run 7 summary (2026-06-12)
+
+**Queue: 8/8 complete.** Zero failed iterations. The spend ledger is now a
+public surface (API + page + home pulse) and every page of the site passes
+a 26-combo mobile exit sweep.
+
+| # | Item | PR |
+|---|------|----|
+| 1 | Public activity API (privacy-proofed) | [#61](https://github.com/Yeetful/website/pull/61) |
+| 2 | /activity page + nav tab | [#62](https://github.com/Yeetful/website/pull/62) |
+| 3 | Home network pulse + perf pass | [#63](https://github.com/Yeetful/website/pull/63) |
+| 4 | Dashboard sub-pages mobile | [#64](https://github.com/Yeetful/website/pull/64) |
+| 5 | Chat mobile-first (overlay sidebar) | [#65](https://github.com/Yeetful/website/pull/65) |
+| 6 | Home + directory polish | [#66](https://github.com/Yeetful/website/pull/66) |
+| 7 | Dev/blog/servers audit (no code needed) | [#67](https://github.com/Yeetful/website/pull/67) |
+| 8 | Foundation sweep + exit table | [#68](https://github.com/Yeetful/website/pull/68) |
+
+**Merge order**: #61→#62→#63 (stacked chain, merged mid-run), #64, #65
+(merged mid-run), then #66→#67→#68 (stacked).
+
+**Bugs the run's own checks caught**: the implicit-grid-track bleed pattern
+(twice: Approvals grid, /servers color row — base `grid` with only
+sm:/lg: cols sizes the phone track to max-content); chat's 21px composer
+(squeeze ≠ bleed — rect scans can't see it); the persisted-preference trap
+(mobile auto-close almost permanently collapsed the desktop sidebar);
+framer-motion orphaning AnimatePresence children closed mid-hydration;
+fetch dropping auth headers on cross-origin redirects (found via the
+example-agent's 401s — fixed in sdk 0.3.1/0.3.2 work, same session).
+
+**test:api 37 → 43** (activity shape, cache header, P1 anonymization proof,
+P2 denial-row absence). New standing tools: the fetch-patch harness pattern
+for gated pages, the iframe-viewport sweep for all-pages tables.
+
+**Owner manual passes**: phone glance for safe-area insets (env() invisible
+in preview); the usual wallet flows.
+
+### Item 7 — Developers + blog + servers detail mobile ✅ (2026-06-12, no code)
+
+The queue over-assumed (like Run 3 item 3): a full live audit found NOTHING
+to fix. All four surfaces rect-scan 0 offenders with exact scrollWidth at
+BOTH 375 and 390:
+- /developers — snippet <pre> scrolls (666px content in a 339px box,
+  overflow-x auto), no sub-16px inputs, capability cards stack clean
+- /servers/yeetful-claude AND /servers/tripadvisor (61 endpoint elements,
+  the long-path stress case) — header badges wrap to two rows, method
+  chips + paths fit, volume lines wrap
+- /blog — single-column grid at phone widths
+- /blog/an-agent-shipped-this-blog — 16px body measure, code block
+  scrolls (overflow auto), zero inline-code overflows
+
+These pages were all built/refreshed AFTER the mobile standards landed
+(Runs 4–5), which is why they hold. Zero diff per rule 6 — no fixes
+invented to look busy. Item 8's all-pages table will re-verify them as
+part of the exit sweep.
+### Item 6 — Home + directory mobile polish ✅ (2026-06-12)
+
+Live audit at 375 found the page already in good shape (Run 5's audit held:
+hero type/wrapping clean at 54px, runner card stats + feed density right,
+CTAs side-by-side). Three real gaps, fixed in one mobile-only CSS block:
+- `.search__input` 15→16px under lg (iOS zoom)
+- `.pill` 40→46px (queue asks 44 for the primary directory filter)
+- `.activebar`: bottom floats above `env(safe-area-inset-bottom)`, gutter
+  tightened to 24px total, Start-chat CTA 40→46px (Clear too)
+
+Verified live: pills 46px, search 16px, activebar 229px wide / 14px above
+the viewport bottom with an agent in the runner (env() inset is 0 in the
+preview — real devices add it; flagged, not claimable in preview).
+Rect-scan 0 offenders at 375 + 390 (scanner now also whitelists
+overflow-hidden non-body boxes per item 3's note — the runner feed's mask).
+Desktop 1280 unchanged (40px pills, 15px search). CSS-only diff: test:api
+not run (no routes/shared components); tsc + build green.
+
+### Item 5 — Chat mobile-first ✅ (2026-06-12)
+
+The before-state was unusable, not just ugly: the 240px sidebar SQUEEZED the
+chat at 375 — the composer textarea measured **21px wide**. No rect bleed, so
+scrollWidth scans would never catch it; squeeze is a distinct failure mode.
+
+- **Sidebar = overlay below lg** (absolute, opaque, shadow), chat keeps full
+  width while open (textarea 261px). Defaults CLOSED on phones, closes on
+  chat-navigation taps.
+- **State model matters**: first cut wrote the mobile auto-close into the
+  PERSISTED sidebarOpen — one phone visit would permanently collapse the
+  desktop sidebar. Split into transient `mobileSidebarOpen` (never persisted)
+  vs the persisted desktop pref; verified the pref survives a full mobile
+  session untouched.
+- **framer-motion gotcha**: closing the AnimatePresence child mid-hydration
+  orphans it (panel stuck at width:240 with the store closed). Mount-gate the
+  sidebar render until the client knows the breakpoint.
+- Composer: 16px font under lg (iOS zoom), safe-area bottom padding,
+  workspace height 100dvh (URL-bar-proof) — pinned exactly at viewport
+  bottom (813 ≈ 812+border).
+- Bubbles: 85vw cap on phones + overflow-wrap:anywhere — verified live with
+  a 90-char unbroken hash (wraps, right edge 342 < 375).
+- Receipts footnote: verified by inspection only (truncate within min-w-0
+  rows — guest demo produces no live receipts); flagged per rule 6.
+
+Rect-scan 0 offenders at 375 + 390; toolbar already scrolled (Run 5 work
+held). Desktop 1280: sidebar inline/open, 14px composer — unchanged.
+tsc + build green; test:api 37/37.
+### Item 4 — Dashboard Keys/Approvals/Activity mobile ✅ (2026-06-12)
+
+Mock-harnessed all three gated pages (fetch-patch pattern, real components in
+the real shell). Found + fixed:
+- **Approvals BLED at 375** (scrollWidth 386, all 9 rows past the viewport):
+  `grid sm:grid-cols-2…` leaves the base track implicit → max-content; the
+  long agent name set the track. Same trap as Run 6 item 1's charts grid.
+  Fix: explicit `grid-cols-1` + `min-w-0` rows. Detail-arrow 22→40px on
+  phones (padding, not layout).
+- **Keys**: mint input was 12px (iOS zoom) → 16px under lg; Copy/Mint/Revoke
+  32→40px touch heights; minted-secret reveal verified live in harness
+  (mocked POST → break-all renders, no bleed).
+- **Activity**: rows now wrap to two lines on phones; Basescan links 16→40px
+  touch height (padding trick, rows stay visually dense).
+
+Rect-scan 0 offenders + exact scrollWidth at 375 AND 390 on all three pages;
+desktop verified unchanged (3-col approvals, compact controls — all fixes
+are max-lg). After-screenshots (true 375 viewport via playwright) in
+docs/autopilot/dash-{keys,approvals,activity}-375-after.png; the approvals
+before-state is recorded numerically above (no screenshot — bleed was found
+and fixed in the same harness session). test:api 37/37 (= full pass on this
+branch; the 43-check version is on the unmerged item-1 branch). Harnesses
+deleted; diff greps clean.
+### Item 3 — Home tie-in + perf pass ✅ (2026-06-12)
+
+NetworkPulse on the home directory statbar: "$X settled on-network →" linking
+to /activity, same /api/activity payload (one query path; component renders
+nothing until data arrives so the bar never flashes zeros, and hides when
+settledCalls=0). Statbar now flex-wraps; the pulse drops to its own line at
+375 with a 40px tap target (was 33 — caught and fixed in preview).
+
+Perf findings, honest ledger:
+- Index: planner uses Seq Scan at n=9 rows (correct); with enable_seqscan
+  off the feed query uses **Index Scan Backward on
+  spend_ledger_ok_created_at_idx** — proven viable for growth, not yet
+  preferred. Re-check via EXPLAIN when the table is real-sized.
+- Payload: 2,589 bytes total (8 recent / 2 daily / 7 top) — well under any
+  concern at the 50-row cap.
+- Page weight: **Next 16 build no longer prints first-load JS per route** —
+  flagged as unverified rather than claimed; /activity reuses the
+  recharts/DashboardCharts chunks the dashboard already ships.
+- Rect-scan home 375: 0 real offenders. Two `runner__price` rects extend
+  past the viewport INSIDE the runner feed's masked overflow:hidden box —
+  by-design clipping (fade mask), zero scrollWidth impact. Item 8's
+  all-pages scanner should also whitelist overflow-hidden non-body
+  containers to encode this.
+- test:api skipped this item (no route/server code touched — CSS + home
+  page + new client component only); tsc + build green.
+
+### Item 2 — /activity page ✅ (2026-06-12)
+
+Public page + nav tab (between Chat and Dashboard). Server shell owns SEO
+(title/description/OG); client ActivityBoard polls /api/activity every 30s
+(matching the API's s-maxage so faster polling would be noise). Stat tiles
+(Settled / Calls today / **Blocked by policy** / Active accounts), both
+DashboardCharts reused (with the Run 6 ChartBox + min-w-0 guards — no new
+chart plumbing), 50-row feed with Basescan links (40px touch height via
+padding, not row bloat), honest empty/error states ("the network is young"
+vs "unavailable — refresh"), and a privacy footnote stating the
+truncation/aggregate rules out loud.
+
+Verified: real prod data end-to-end in preview (8 settled calls, truncated
+0x5eaa…55a0, tx links); rect-scan 0 offenders at 375 AND 390, scrollWidth
+exact; feed rows wrap to two lines on phones (service+account+amount /
+tx+time); desktop + mobile screenshots reviewed in preview. tsc + build
+green (/activity prerenders ○, the API stays ƒ); test:api 43/43 (nav is a
+shared component). Stacked on item 1's branch — merge #61 first.
+
+### Item 1 — Public activity API ✅ (2026-06-12)
+
+`GET /api/activity` (no auth, `force-dynamic` so Next can't freeze a build-time
+snapshot, CDN cache via `s-maxage=30, stale-while-revalidate=120`): stats
+(settled USD/calls, callsToday UTC, blockedCalls, distinct activeAccounts),
+30-day daily series, top-10 services, 50 most-recent SETTLED rows with
+owner truncated server-side (P1) and denial rows excluded (P2 — aggregate
+only). Additive `@@index([ok, createdAt])` pushed to Neon (plain db push;
+verified in pg_indexes — the global feed can't ride the grant-scoped index).
+
+test:api grew 37 → **43** (denial-seed probe, shape, cache header, truncated
+account visible, P1 full-address-absent over the raw payload text, P2
+denial-row absence). All 43 green; tsc + build green. Real-payload sanity:
+the owner's lisbon receipts render with truncated `0x5eaa…55a0` + Basescan-able
+tx hashes; `callsToday: 0` verified correct (UTC midnight had passed — DB
+now() cross-checked, not assumed).
+
+---
+
+# Run 6: mobile-first, every page — 1/6 done, items 2–6 carried into Run 7
 
 Owner report with screenshot: the AUTHED dashboard bleeds horizontally on
 mobile (KPI cards, budget card, and the spend chart run past the viewport) —

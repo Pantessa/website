@@ -126,6 +126,10 @@ interface YeetfulStore {
   // UI state
   sidebarOpen: boolean
   setSidebarOpen: (open: boolean) => void
+  /** Phone-overlay visibility — intentionally NOT persisted, so a phone
+   *  visit can never collapse the desktop sidebar preference. */
+  mobileSidebarOpen: boolean
+  setMobileSidebarOpen: (open: boolean) => void
 }
 
 const localId = () => Math.random().toString(36).slice(2)
@@ -301,6 +305,8 @@ export const useYeetfulStore = create<YeetfulStore>()(
 
       sidebarOpen: true,
       setSidebarOpen: (open) => set({ sidebarOpen: open }),
+      mobileSidebarOpen: false,
+      setMobileSidebarOpen: (open) => set({ mobileSidebarOpen: open }),
     }),
     {
       name: 'yeetful-store',

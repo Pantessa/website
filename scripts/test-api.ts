@@ -9,6 +9,8 @@
  *   • Grants: CRUD, cap validation, owner scoping
  *   • EIP-712 grant signing: GET payload → sign → PUT, voiding on terms change
  *   • Hosted-ledger sync: POST receipts, cross-wallet 404, spend totals
+ *   • Public activity feed: shape + caching, P1 anonymization (full wallet
+ *     absent), P2 denial rows aggregate-only
  *   • Chat receipts: Message.meta round-trip + public share-page render
  *   • Blog: admin-gated CRUD + draft/publish flow (set BLOG_ADMIN_PK and start
  *     the dev server with ADMIN_WALLETS=<its address>; skipped when unset)
@@ -222,6 +224,54 @@ async function main() {
   check(
     'grant read shows synced spend',
     detail.spentTodayUsd === 0.01 && detail.ledger.some((e: { id: string }) => e.id === entry.id),
+  )
+
+  // ── Public activity feed (Run 7: anonymized network proof-of-life) ───────
+  console.log('— public activity')
+  // Seed a DENIAL receipt too — the public feed must aggregate it, not list it.
+  const denialSync = await fetch(`${BASE}/api/grants/${grant.id}/ledger`, {
+    method: 'POST',
+    headers: BJ,
+    body: JSON.stringify({
+      host: 'denied.example.test',
+      amountUsd: 0,
+      ok: false,
+      note: 'NOT_ALLOWED',
+    }),
+  })
+  check('denial receipt synced for the P2 probe', denialSync.status === 201)
+
+  const actRes = await fetch(`${BASE}/api/activity`)
+  const actText = await actRes.text()
+  const act = JSON.parse(actText) as {
+    stats: { settledUsd: number; settledCalls: number; callsToday: number; blockedCalls: number; activeAccounts: number }
+    daily: unknown[]
+    top: { service: string }[]
+    recent: { host: string; account: string; amountUsd: number }[]
+  }
+  check(
+    'activity: public 200 with stats/daily/top/recent',
+    actRes.status === 200 &&
+      typeof act.stats?.settledUsd === 'number' &&
+      typeof act.stats?.blockedCalls === 'number' &&
+      Array.isArray(act.daily) && Array.isArray(act.top) && Array.isArray(act.recent),
+  )
+  check('activity: cache header set', /s-maxage/.test(actRes.headers.get('cache-control') ?? ''))
+
+  const ours = act.recent.find((r) => r.host === 'a.example.test')
+  check(
+    'activity: settled receipt visible with truncated account',
+    !!ours && /^0x[0-9a-fA-F]{4}…[0-9a-fA-F]{4}$/.test(ours.account),
+  )
+  // P1: the throwaway owner is a fresh random wallet — its full address
+  // appearing ANYWHERE in the public payload would be an anonymization leak.
+  check(
+    'activity: P1 — full wallet address absent from public payload',
+    !actText.toLowerCase().includes(owner.address.toLowerCase()),
+  )
+  check(
+    'activity: P2 — denial rows absent from public feed (aggregate only)',
+    !act.recent.some((r) => r.host === 'denied.example.test') && act.stats.blockedCalls >= 1,
   )
 
   // ── Key revocation (after Bearer use, before cleanup) ─────────────────────
