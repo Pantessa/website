@@ -11,7 +11,7 @@
     --maxw: 1280px;
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  html { -webkit-text-size-adjust: 100%; }
+  html { -webkit-text-size-adjust: 100%; -webkit-tap-highlight-color: transparent; }
   body {
     background: var(--bg);
     color: var(--fg);
@@ -73,7 +73,7 @@
   .drawer__panel {
     position: absolute; top: 0; right: 0; bottom: 0; width: min(320px, 84vw);
     background: var(--surf-1); border-left: 1px solid var(--line);
-    display: flex; flex-direction: column; padding: 76px 16px 24px;
+    display: flex; flex-direction: column; padding: 76px 16px calc(24px + env(safe-area-inset-bottom));
     animation: drawerin .2s ease;
   }
   @keyframes drawerin { from { transform: translateX(24px); opacity: 0; } to { transform: none; opacity: 1; } }
