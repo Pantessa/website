@@ -7,10 +7,16 @@ import Footer from '@/components/Footer'
 // rendered, no data dependencies; copy follows the brand voice (dry, precise,
 // one wink max) on the site's existing dark design system.
 
+const SITE = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://yeetful.com'
+const TITLE = 'Developers — give your agent an expense account · Yeetful'
+const DESCRIPTION =
+  'Connect an agent in 3 steps: mint a key, wire the yeetful SDK, set its daily budget. Allowlist + caps enforced before any x402 payment is signed.'
+
 export const metadata: Metadata = {
-  title: 'Developers — give your agent an expense account · Yeetful',
-  description:
-    'Spend-controlled x402 payments for AI agents: an allowlist + per-call/per-day budget enforced before any payment is signed, with a receipt for every decision.',
+  title: TITLE,
+  description: DESCRIPTION,
+  alternates: { canonical: `${SITE}/developers` },
+  openGraph: { title: TITLE, description: DESCRIPTION, url: `${SITE}/developers`, type: 'website' },
 }
 
 const SNIPPET = `import { yeetful } from 'yeetful/agent'
@@ -18,18 +24,31 @@ const SNIPPET = `import { yeetful } from 'yeetful/agent'
 const pay = yeetful({
   wallet, // a viem WalletClient (small funded burner)
   grant: {
-    id: 'your-grant-id', // from yeetful.com/dashboard
+    id: 'your-grant-id', // from yeetful.com/dashboard/keys
     allow: ['tripadvisor.x402.paysponge.com'],
     perCallUsd: 0.05,
     perDayUsd: 5,
   },
-  apiKey: process.env.YEETFUL_API_KEY, // yf_… — receipts sync to your dashboard
+  apiKey: process.env.YEETFUL_API_KEY, // yf_… — this key IS the agent
+  ledgerUrl: 'https://www.yeetful.com', // receipts + denials land on your dashboard
 })
 
 // 402 challenge → grant check → USDC payment signed → 200 + receipt
 const res = await pay(
   'https://tripadvisor.x402.paysponge.com/api/v1/location/search?searchQuery=tokyo',
 )`
+
+const POLICY_SNIPPET = `GET /api/agent/policy
+Authorization: Bearer yf_…
+
+{
+  "agent": {
+    "keyId": "cmq…", "label": "travel-agent",
+    "perDayUsd": 5, "spentTodayUsd": 1.23,
+    "remainingTodayUsd": 3.77, "overBudget": false
+  },
+  "grant": { "allow": […], "perCallUsd": 0.05, … }
+}`
 
 const GRANT_ROUTES = [
   { method: 'GET', path: '/api/grants', what: 'List your grants with spend totals' },
@@ -70,9 +89,94 @@ export default function DevelopersPage() {
             <Link href="/dashboard/keys" className="btn btn--solid">
               Mint a key
             </Link>
-            <a href="#quickstart" className="btn btn--ghost">
-              Read the quickstart
+            <a href="#connect" className="btn btn--ghost">
+              Connect an agent
             </a>
+          </div>
+
+          {/* ── Connect an agent — the 3-step funnel the hero CTA lands on ── */}
+          <div className="svc__section" id="connect">
+            <div className="svc__sectionhead">
+              <h2 className="svc__h2">Connect an agent</h2>
+              <span className="svc__count mono">3 steps</span>
+            </div>
+            <ol className="dev__steps">
+              <li>
+                <span className="mono dev__stepnum">01</span> Mint a key at{' '}
+                <Link href="/dashboard/keys" className="dev__link">
+                  /dashboard/keys
+                </Link>
+                . The key <em>is</em> the agent — its identity, its ledger attribution, and the
+                thing you revoke. The <code className="mono dev__code">yf_…</code>{' '}secret shows
+                once; that&apos;s the point.
+              </li>
+              <li>
+                <span className="mono dev__stepnum">02</span>{' '}
+                <code className="mono dev__code">npm install yeetful</code>, then wire it around
+                your agent&apos;s paid calls — wallet, grant, key, and the ledger receipts land
+                on:
+              </li>
+            </ol>
+            <pre className="dev__snippet mono">{SNIPPET}</pre>
+            <ol className="dev__steps" start={3}>
+              <li>
+                <span className="mono dev__stepnum">03</span> Set its budget at{' '}
+                <Link href="/dashboard/agents" className="dev__link">
+                  /dashboard/agents
+                </Link>{' '}
+                — a per-day USD cap with a spent-today meter — and toggle the services money may
+                flow to under{' '}
+                <Link href="/dashboard/approvals" className="dev__link">
+                  approvals
+                </Link>
+                .
+              </li>
+            </ol>
+            <p className="dev__after mono">
+              throws GrantError(&apos;NOT_ALLOWED&apos; | &apos;OVER_PER_CALL&apos; |
+              &apos;BUDGET_EXCEEDED&apos; | &apos;EXPIRED&apos; | &apos;REVOKED&apos;) — denied
+              before any network I/O.
+            </p>
+            <div className="dev__links">
+              <a className="dev__biglink" href="/docs/quickstart">
+                /docs/quickstart <ArrowUpRight width={14} height={14} />
+                <span>install → grant → first paid call, ~20 lines</span>
+              </a>
+              <a className="dev__biglink" href="/docs/agents">
+                /docs/agents <ArrowUpRight width={14} height={14} />
+                <span>budgets, the policy endpoint, and the agent model</span>
+              </a>
+              <a className="dev__biglink" href="/docs/claude-code">
+                /docs/claude-code <ArrowUpRight width={14} height={14} />
+                <span>or paste one prompt and let Claude wire it</span>
+              </a>
+            </div>
+          </div>
+
+          {/* ── Policy endpoint callout ── */}
+          <div className="svc__section">
+            <div className="svc__sectionhead">
+              <h2 className="svc__h2">The agent&apos;s standing orders</h2>
+              <span className="svc__count mono">GET /api/agent/policy</span>
+            </div>
+            <p className="dev__note">
+              One Bearer-only endpoint answers the SDK&apos;s pre-flight question — &quot;may I
+              still pay, and how much?&quot; — with the key&apos;s budget and the owner&apos;s
+              grant in a single response:
+            </p>
+            <pre className="dev__snippet mono">{POLICY_SNIPPET}</pre>
+            <p className="dev__note">
+              SDK 0.4 (merged, not yet on npm) fetches this at startup, refuses with{' '}
+              <code className="mono dev__code">GrantError(&apos;OVER_AGENT_BUDGET&apos;)</code>{' '}
+              once the key is over budget, and keeps the snapshot fresh from every receipt-sync
+              response. Budgets are enforced by the SDK — the agent pays from its own wallet, so
+              the rails can&apos;t block it; hard enforcement arrives with Coinbase Spend
+              Permissions. See{' '}
+              <Link href="/docs/agents" className="dev__link">
+                Agents &amp; budgets
+              </Link>
+              .
+            </p>
           </div>
 
           {/* What you can do */}
@@ -101,39 +205,6 @@ export default function DevelopersPage() {
                 on-chain spend permissions. Change the terms, re-sign, done.
               </p>
             </div>
-          </div>
-
-          {/* ── Quickstart ── */}
-          <div className="svc__section" id="quickstart">
-            <div className="svc__sectionhead">
-              <h2 className="svc__h2">Quickstart</h2>
-            </div>
-            <ol className="dev__steps">
-              <li>
-                <span className="mono dev__stepnum">01</span> Install the SDK:{' '}
-                <code className="mono dev__code">npm install yeetful</code>
-              </li>
-              <li>
-                <span className="mono dev__stepnum">02</span> Mint a key on your{' '}
-                <Link href="/dashboard/keys" className="dev__link">
-                  keys page
-                </Link>{' '}
-                and approve the agents you trust under{' '}
-                <Link href="/dashboard/approvals" className="dev__link">
-                  approvals
-                </Link>
-                . The secret shows once — that&apos;s the point.
-              </li>
-              <li>
-                <span className="mono dev__stepnum">03</span> Wrap your agent&apos;s fetch:
-              </li>
-            </ol>
-            <pre className="dev__snippet mono">{SNIPPET}</pre>
-            <p className="dev__after mono">
-              throws GrantError(&apos;NOT_ALLOWED&apos; | &apos;OVER_PER_CALL&apos; |
-              &apos;BUDGET_EXCEEDED&apos; | &apos;EXPIRED&apos; | &apos;REVOKED&apos;) — denied
-              before any network I/O.
-            </p>
           </div>
 
           {/* ── API reference ── */}
