@@ -177,12 +177,18 @@ model SpendLedgerEntry {
   ok        Boolean
   txHash    String? @map("tx_hash")
   note      String? // "settled" | "dry-run" | a GrantViolation code
+  /// Which connected agent (API key) synced this receipt — set when the entry
+  /// arrives via Bearer auth, so spend is attributable per agent.
+  apiKeyId  String? @map("api_key_id")
 
   grant     SpendGrant @relation(fields: [grantId], references: [id], onDelete: Cascade)
+  apiKey    ApiKey?    @relation(fields: [apiKeyId], references: [id], onDelete: SetNull)
   createdAt DateTime   @default(now()) @map("created_at")
 
   @@index([grantId])
   @@index([grantId, ok, createdAt])
+  // Per-agent spent-today (the Agents tab + /api/agent/policy).
+  @@index([apiKeyId, ok, createdAt])
   // Global public feed (/api/activity) scans newest-first across ALL grants.
   @@index([ok, createdAt])
   @@map("spend_ledger")
@@ -201,8 +207,15 @@ model ApiKey {
   /// Display handle: the first 11 chars of the secret ("yf_" + 8), so the
   /// dashboard can say "yf_a1b2c3d4…" without storing anything recoverable.
   prefix       String
+  /// Per-agent daily budget in USD. A key IS a connected agent (an app using
+  /// the yeetful SDK); null = no agent-level budget, the grant alone governs.
+  /// Advisory at the rails (the agent pays from its own wallet) — enforced by
+  /// the SDK via /api/agent/policy and flagged on over-budget receipt syncs.
+  perDayUsd    Float?    @map("per_day_usd")
   lastUsedAt   DateTime? @map("last_used_at")
   createdAt    DateTime  @default(now()) @map("created_at")
+
+  ledger SpendLedgerEntry[]
 
   @@index([ownerAddress])
   @@map("api_keys")

@@ -226,6 +226,65 @@ async function main() {
     detail.spentTodayUsd === 0.01 && detail.ledger.some((e: { id: string }) => e.id === entry.id),
   )
 
+  // ── Connected agents (a key IS an agent: budget + attributed spend) ───────
+  console.log('— connected agents')
+  const selfRaise = await fetch(`${BASE}/api/keys/${minted.id}`, {
+    method: 'PATCH',
+    headers: BJ, // the agent's own key must NOT set its own budget
+    body: JSON.stringify({ perDayUsd: 100 }),
+  })
+  check("agent can't raise its own budget (Bearer PATCH → 401)", selfRaise.status === 401)
+
+  const badBudget = await fetch(`${BASE}/api/keys/${minted.id}`, {
+    method: 'PATCH',
+    headers: CJ,
+    body: JSON.stringify({ perDayUsd: -1 }),
+  })
+  check('negative budget rejected', badBudget.status === 400)
+
+  const setBudget = await fetch(`${BASE}/api/keys/${minted.id}`, {
+    method: 'PATCH',
+    headers: CJ,
+    body: JSON.stringify({ perDayUsd: 0.05 }),
+  })
+  check('owner sets agent budget (SIWE)', setBudget.status === 200 && (await setBudget.json()).perDayUsd === 0.05)
+
+  // The 0.01 receipt above arrived via Bearer — it must be attributed to the key.
+  const agentRows = await (await fetch(`${BASE}/api/keys`, { headers: C })).json()
+  const agentRow = agentRows.find((k: { id: string }) => k.id === minted.id)
+  check(
+    'key list carries budget + attributed spent-today',
+    agentRow?.perDayUsd === 0.05 && agentRow?.spentTodayUsd === 0.01,
+  )
+
+  const anonPolicy = await fetch(`${BASE}/api/agent/policy`)
+  check('policy endpoint without key → 401', anonPolicy.status === 401)
+
+  const policyRes = await fetch(`${BASE}/api/agent/policy`, { headers: B })
+  const policy = await policyRes.json()
+  check(
+    'agent policy: budget, spend, remaining, grant terms',
+    policyRes.status === 200 &&
+      policy.agent?.perDayUsd === 0.05 &&
+      policy.agent?.spentTodayUsd === 0.01 &&
+      Math.abs(policy.agent?.remainingTodayUsd - 0.04) < 1e-9 &&
+      policy.agent?.overBudget === false &&
+      policy.grant?.id === grant.id,
+  )
+
+  // Push the agent to its budget: the receipt response must flag overBudget so
+  // the SDK knows to stop paying.
+  const capSync = await fetch(`${BASE}/api/grants/${grant.id}/ledger`, {
+    method: 'POST',
+    headers: BJ,
+    body: JSON.stringify({ host: 'agent.example.test', amountUsd: 0.04, ok: true, serviceName: 'Harness' }),
+  })
+  const capped = await capSync.json()
+  check(
+    'receipt sync reports agent budget status (overBudget at the cap)',
+    capSync.status === 201 && capped.agent?.spentTodayUsd === 0.05 && capped.agent?.overBudget === true,
+  )
+
   // ── Public activity feed (Run 7: anonymized network proof-of-life) ───────
   console.log('— public activity')
   // Seed a DENIAL receipt too — the public feed must aggregate it, not list it.

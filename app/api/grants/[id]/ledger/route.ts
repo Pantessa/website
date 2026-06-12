@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import prisma from '@/lib/db'
-import { getAuthAddress } from '@/lib/api-key'
+import { getBearerKey } from '@/lib/api-key'
+import { getSessionAddress } from '@/lib/auth'
 import { hostOf } from '@/lib/spend-grant'
-import { recordLedger } from '@/lib/grant-store'
+import { agentSpentTodayUsd, recordLedger } from '@/lib/grant-store'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -17,7 +18,11 @@ const MAX_AMOUNT_USD = 1_000 // a synced receipt is a record, not a payment — 
 // Auth: SIWE session cookie OR `Authorization: Bearer yf_…`. Owner only.
 export async function POST(req: NextRequest, { params }: Params) {
   const { id } = await params
-  const addr = await getAuthAddress(req)
+  // Bearer receipts are attributed to the key — a key IS a connected agent,
+  // and per-agent spend on the Agents tab comes from this attribution.
+  const session = await getSessionAddress()
+  const key = session ? null : await getBearerKey(req)
+  const addr = session ?? key?.ownerAddress ?? null
   if (!addr) return NextResponse.json({ error: 'Not signed in.' }, { status: 401 })
 
   const grant = await prisma.spendGrant.findUnique({ where: { id } })
@@ -47,6 +52,25 @@ export async function POST(req: NextRequest, { params }: Params) {
     ok,
     txHash: typeof body.txHash === 'string' ? body.txHash.slice(0, 120) : undefined,
     note: typeof body.note === 'string' ? body.note.slice(0, 200) : 'sdk-sync',
+    apiKeyId: key?.id,
   })
+
+  // Tell the agent where it stands against its daily budget on every sync.
+  // Advisory by design: the agent pays from its own wallet, so the SDK is the
+  // enforcement point — overBudget is its signal to stop paying.
+  if (key) {
+    const spentTodayUsd = await agentSpentTodayUsd(key.id)
+    return NextResponse.json(
+      {
+        ...entry,
+        agent: {
+          perDayUsd: key.perDayUsd,
+          spentTodayUsd,
+          overBudget: key.perDayUsd != null && spentTodayUsd >= key.perDayUsd,
+        },
+      },
+      { status: 201 },
+    )
+  }
   return NextResponse.json(entry, { status: 201 })
 }

@@ -20,11 +20,19 @@ export function generateKey(): { secret: string; hash: string; prefix: string } 
   return { secret, hash: hashKey(secret), prefix: secret.slice(0, KEY_PREFIX.length + 8) }
 }
 
+/** The authenticated key itself — a key IS a connected agent. */
+export interface BearerKey {
+  id: string
+  ownerAddress: string
+  label: string
+  perDayUsd: number | null
+}
+
 /**
- * Resolve `Authorization: Bearer yf_…` to the key's owner address (lowercased),
- * or null. Touches lastUsedAt on success.
+ * Resolve `Authorization: Bearer yf_…` to the key row, or null. Touches
+ * lastUsedAt on success.
  */
-export async function getBearerAddress(req: NextRequest): Promise<string | null> {
+export async function getBearerKey(req: NextRequest): Promise<BearerKey | null> {
   const header = req.headers.get('authorization') ?? ''
   const match = /^Bearer\s+(yf_[0-9a-f]{64})$/i.exec(header.trim())
   if (!match) return null
@@ -40,7 +48,20 @@ export async function getBearerAddress(req: NextRequest): Promise<string | null>
     .update({ where: { id: key.id }, data: { lastUsedAt: new Date() } })
     .catch(() => {}) // telemetry only — never fail the request over it
 
-  return key.ownerAddress.toLowerCase()
+  return {
+    id: key.id,
+    ownerAddress: key.ownerAddress.toLowerCase(),
+    label: key.label,
+    perDayUsd: key.perDayUsd,
+  }
+}
+
+/**
+ * Resolve `Authorization: Bearer yf_…` to the key's owner address (lowercased),
+ * or null. Touches lastUsedAt on success.
+ */
+export async function getBearerAddress(req: NextRequest): Promise<string | null> {
+  return (await getBearerKey(req))?.ownerAddress ?? null
 }
 
 /**
