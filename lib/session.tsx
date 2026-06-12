@@ -20,7 +20,7 @@ import {
   useState,
   type ReactNode,
 } from 'react'
-import { useAccount, useChainId, useSignMessage } from 'wagmi'
+import { useAccount, useChainId, useDisconnect, useSignMessage } from 'wagmi'
 import { createSiweMessage } from 'viem/siwe'
 import { getAddress } from 'viem'
 import { useYeetfulStore } from '@/lib/store'
@@ -44,9 +44,10 @@ interface SessionValue {
 const SessionContext = createContext<SessionValue | null>(null)
 
 export function SessionProvider({ children }: { children: ReactNode }) {
-  const { address: walletAddress, isConnected } = useAccount()
+  const { address: walletAddress, isConnected, status: walletStatus } = useAccount()
   const chainId = useChainId()
   const { signMessageAsync } = useSignMessage()
+  const { disconnect } = useDisconnect()
 
   const [address, setAddress] = useState<string | null>(null)
   const [status, setStatus] = useState<Status>('loading')
@@ -126,10 +127,25 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     try {
       await fetch('/api/auth/logout', { method: 'POST' })
     } finally {
+      // Sign-out means GONE: drop the wallet connection too, so the UI
+      // returns to the exact state a brand-new visitor sees.
+      disconnect()
       setAddress(null)
       setStatus('guest')
     }
-  }, [])
+  }, [disconnect])
+
+  // A SIWE session without a wallet behind it is an orphan — every authed
+  // surface re-gates on the wallet anyway, so the only thing it can do is
+  // strand the UI in portal mode (Dashboard tab + / redirect) after a
+  // disconnect. End it. wagmi reports 'connecting'/'reconnecting' during
+  // page-load auto-reconnect, so this only fires once the wallet state has
+  // settled on truly disconnected.
+  useEffect(() => {
+    if (status === 'authed' && walletStatus === 'disconnected') {
+      void signOut()
+    }
+  }, [status, walletStatus, signOut])
 
   const needsSignIn = status === 'guest' && isConnected && !!walletAddress
   const sessionMatchesWallet =
