@@ -66,6 +66,23 @@ P3. The endpoint is unauthenticated read-only; no user-controlled params may
 
 _(autopilot appends here)_
 
+### Item 1 — Public activity API ✅ (2026-06-12)
+
+`GET /api/activity` (no auth, `force-dynamic` so Next can't freeze a build-time
+snapshot, CDN cache via `s-maxage=30, stale-while-revalidate=120`): stats
+(settled USD/calls, callsToday UTC, blockedCalls, distinct activeAccounts),
+30-day daily series, top-10 services, 50 most-recent SETTLED rows with
+owner truncated server-side (P1) and denial rows excluded (P2 — aggregate
+only). Additive `@@index([ok, createdAt])` pushed to Neon (plain db push;
+verified in pg_indexes — the global feed can't ride the grant-scoped index).
+
+test:api grew 37 → **43** (denial-seed probe, shape, cache header, truncated
+account visible, P1 full-address-absent over the raw payload text, P2
+denial-row absence). All 43 green; tsc + build green. Real-payload sanity:
+the owner's lisbon receipts render with truncated `0x5eaa…55a0` + Basescan-able
+tx hashes; `callsToday: 0` verified correct (UTC midnight had passed — DB
+now() cross-checked, not assumed).
+
 ---
 
 # Run 6: mobile-first, every page — 1/6 done, items 2–6 carried into Run 7
