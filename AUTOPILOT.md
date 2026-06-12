@@ -66,6 +66,32 @@ P3. The endpoint is unauthenticated read-only; no user-controlled params may
 
 _(autopilot appends here)_
 
+### Item 3 — Home tie-in + perf pass ✅ (2026-06-12)
+
+NetworkPulse on the home directory statbar: "$X settled on-network →" linking
+to /activity, same /api/activity payload (one query path; component renders
+nothing until data arrives so the bar never flashes zeros, and hides when
+settledCalls=0). Statbar now flex-wraps; the pulse drops to its own line at
+375 with a 40px tap target (was 33 — caught and fixed in preview).
+
+Perf findings, honest ledger:
+- Index: planner uses Seq Scan at n=9 rows (correct); with enable_seqscan
+  off the feed query uses **Index Scan Backward on
+  spend_ledger_ok_created_at_idx** — proven viable for growth, not yet
+  preferred. Re-check via EXPLAIN when the table is real-sized.
+- Payload: 2,589 bytes total (8 recent / 2 daily / 7 top) — well under any
+  concern at the 50-row cap.
+- Page weight: **Next 16 build no longer prints first-load JS per route** —
+  flagged as unverified rather than claimed; /activity reuses the
+  recharts/DashboardCharts chunks the dashboard already ships.
+- Rect-scan home 375: 0 real offenders. Two `runner__price` rects extend
+  past the viewport INSIDE the runner feed's masked overflow:hidden box —
+  by-design clipping (fade mask), zero scrollWidth impact. Item 8's
+  all-pages scanner should also whitelist overflow-hidden non-body
+  containers to encode this.
+- test:api skipped this item (no route/server code touched — CSS + home
+  page + new client component only); tsc + build green.
+
 ### Item 2 — /activity page ✅ (2026-06-12)
 
 Public page + nav tab (between Chat and Dashboard). Server shell owns SEO
