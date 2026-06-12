@@ -77,7 +77,7 @@ E6. **Log per item**: append a progress entry under "Progress log — Run
   api_key-attributed ledger rows), linking to /dashboard/agents. Extend
   /api/dashboard/stats (and test:api if the response shape grows).
   Mock-harness the visual check like prior dashboard sweeps.
-- [ ] **5. Launch-post draft — "Give your agent an allowance"** (website,
+- [x] **5. Launch-post draft — "Give your agent an allowance"** (website,
   publish-blocked): write the blog post announcing agent budgets as a
   seed script `scripts/seed-agents-post.ts` (same pattern as
   seed-first-post.ts), description ≤160, draft status. ADMIN_WALLETS is
@@ -91,6 +91,19 @@ E6. **Log per item**: append a progress entry under "Progress log — Run
 ## Progress log — Run 10
 
 _(autopilot appends here, newest first; push after every item)_
+
+### Item 5 — Launch-post draft ✅ (2026-06-12) — PR #92
+
+Branch `agents-launch-post` off main. scripts/seed-agents-post.ts — the
+seed-first-post pattern, but DRAFT semantics: published:false on create,
+re-runs never touch publish status. Post: two-sided model, key-as-agent,
+SIWE-only allowance edits ("an agent that could raise its own allowance
+wouldn't have one"), policy pre-flight + OVER_AGENT_BUDGET, E3 honesty,
+3-step funnel; links into /docs/agents + /developers + /dashboard/agents.
+Desc 149ch. One-command publish documented in the script header (admin
+Bearer PATCH {published:true} — after 0.4 hits npm, since the post
+presents 0.4 as available). tsc clean; NOT seeded to Neon (compile-only
+per the queue; the owner seeds + publishes together).
 
 ### Item 4 — Dashboard connected-agents tile ✅ (2026-06-12) — PR #91
 
