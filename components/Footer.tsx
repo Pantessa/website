@@ -2,8 +2,8 @@ import Link from 'next/link'
 import { YeetfulMark } from '@/components/Logo'
 
 const FOOTER_LINKS = {
-  x: 'https://x.com/yeetfuly',
-  telegram: '#', // placeholder — supply real URL
+  x: 'https://x.com/yeetful_ai',
+  telegram: 'https://t.me/yeetful',
   site: 'https://yeetful.com',
 }
 
