@@ -42,7 +42,7 @@ export default function ChatWorkspace({ chatId }: { chatId?: string }) {
   }, [chatId, setCurrentChatId, loadChat, setActiveServerIds])
 
   return (
-    <div className="h-[calc(100vh-4rem)] flex">
+    <div className="h-[calc(100dvh-4rem)] flex">
       <div className="relative flex-shrink-0">
         <ChatSidebar />
       </div>

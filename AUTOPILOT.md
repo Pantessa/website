@@ -66,6 +66,35 @@ P3. The endpoint is unauthenticated read-only; no user-controlled params may
 
 _(autopilot appends here)_
 
+### Item 5 — Chat mobile-first ✅ (2026-06-12)
+
+The before-state was unusable, not just ugly: the 240px sidebar SQUEEZED the
+chat at 375 — the composer textarea measured **21px wide**. No rect bleed, so
+scrollWidth scans would never catch it; squeeze is a distinct failure mode.
+
+- **Sidebar = overlay below lg** (absolute, opaque, shadow), chat keeps full
+  width while open (textarea 261px). Defaults CLOSED on phones, closes on
+  chat-navigation taps.
+- **State model matters**: first cut wrote the mobile auto-close into the
+  PERSISTED sidebarOpen — one phone visit would permanently collapse the
+  desktop sidebar. Split into transient `mobileSidebarOpen` (never persisted)
+  vs the persisted desktop pref; verified the pref survives a full mobile
+  session untouched.
+- **framer-motion gotcha**: closing the AnimatePresence child mid-hydration
+  orphans it (panel stuck at width:240 with the store closed). Mount-gate the
+  sidebar render until the client knows the breakpoint.
+- Composer: 16px font under lg (iOS zoom), safe-area bottom padding,
+  workspace height 100dvh (URL-bar-proof) — pinned exactly at viewport
+  bottom (813 ≈ 812+border).
+- Bubbles: 85vw cap on phones + overflow-wrap:anywhere — verified live with
+  a 90-char unbroken hash (wraps, right edge 342 < 375).
+- Receipts footnote: verified by inspection only (truncate within min-w-0
+  rows — guest demo produces no live receipts); flagged per rule 6.
+
+Rect-scan 0 offenders at 375 + 390; toolbar already scrolled (Run 5 work
+held). Desktop 1280: sidebar inline/open, 14px composer — unchanged.
+tsc + build green; test:api 37/37.
+
 ---
 
 # Run 6: mobile-first, every page — 1/6 done, items 2–6 carried into Run 7
