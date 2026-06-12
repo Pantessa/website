@@ -1,4 +1,222 @@
-# Autopilot — Run 8 DRAFT: Coinbase Spend Permission example (staged 2026-06-12, awaiting owner review — do NOT start until approved)
+# Autopilot — Run 8: docs + Claude Code onboarding + signed-in app shell (staged 2026-06-12, started via /loop)
+
+Owner directive: (a) a real `/docs` section explaining SDK integration —
+SEO first-class, sub-pages, FULL-WIDTH layout; (b) a Claude Code page: a
+copy-paste prompt that lets someone building a Coinbase Developer Portal
+agent add Yeetful in one shot — the prompt instructs Claude to wire the SDK
+and walk the human to the exact yeetful.com pages for API keys + grant id;
+(c) GitHub-style signed-in experience: once authed, skip the marketing
+landing page (/ → dashboard) and use the full viewport width in the portal.
+
+## Rules (Run 6/7 constitution applies; additions)
+
+D1. **Docs accuracy**: every code sample must match the SHIPPED yeetful
+    0.3.1 surface — copy from sdk/README.md, sdk/src, example-agent; never
+    invent APIs. Prices/links match prod (keys live at /dashboard/keys).
+D2. **SEO checklist per docs page**: title ≤60 chars, description ≤160,
+    canonical, OG, JSON-LD (TechArticle + BreadcrumbList), in sitemap.xml,
+    crawlable server-rendered content (no client-only copy).
+D3. **Full-width**: docs + authed portal surfaces use the full viewport
+    (fluid with sane gutters); marketing pages keep --maxw for guests.
+D4. The / → dashboard redirect applies ONLY with a verified SIWE session
+    (not mere wallet connection), client-side (auth is client-known), with
+    an escape hatch (?home=1 or a "view site" link) so the marketing page
+    stays reachable.
+
+## Queue (ordered; one per iteration)
+
+- [x] **1. Docs foundation** — /docs route group with its own FULL-WIDTH
+  layout (left sidebar nav, content region, right "on this page" rail at
+  xl), shared DocsPage scaffolding (breadcrumbs + JSON-LD helpers), and the
+  /docs landing page (what Yeetful is for builders + cards to sub-pages).
+  Server-rendered content, D2 SEO on the landing. Mobile: sidebar collapses
+  to a top scroll-row (Run 6/7 standards apply — rect-scan).
+- [x] **2. Core SDK sub-pages** — /docs/quickstart (install → grant →
+  first paid call, from sdk README), /docs/expense-account (allowlist,
+  caps, receipts, GrantError — the concepts page), /docs/ledger-sync
+  (API keys, YEETFUL_GRANT_ID, ledgerUrl + the canonical-origin/auth-header
+  gotcha we hit live), /docs/x402 (v1/v2 differences the SDK absorbs).
+  D1+D2 on every page.
+- [x] **3. Claude Code page** — /docs/claude-code: "add Yeetful to your
+  Coinbase agent in one prompt". A prominent copy button on a prebuilt
+  prompt that tells Claude Code to: npm i yeetful, wrap the agent's paid
+  calls in yeetful(), add env handling, and INTERACTIVELY walk the human
+  through minting a key at https://yeetful.com/dashboard/keys (copy yf_
+  secret + YEETFUL_GRANT_ID from the connect card) with direct links/
+  buttons. Mention CDP wallets work as the signer (viem account). D2 SEO;
+  this page is the funnel target.
+- [x] **4. Wire-up + SEO plumbing** — nav "Docs" tab + footer + /developers
+  cross-links into docs; sitemap.xml gains all docs URLs; robots fine;
+  RSS untouched. Verify every docs page's head tags server-side (curl).
+- [x] **5. Signed-in shell** — / redirects to /dashboard when a SIWE
+  session exists (D4, mount-gated, no flash for guests); portal surfaces
+  (dashboard shell, /activity when authed? NO — dashboard only) go fluid
+  full-width with gutters; nav reflects portal mode (Dashboard first).
+  Careful with hydration + the existing mount-gates.
+- [x] **6. Exit verification** — all-pages sweep table updated incl. the
+  new /docs pages (375/390 via the iframe method), desktop 1280+1680
+  full-width screenshots of docs + dashboard, head-tag table for docs
+  pages, tsc/build/test:api. Run summary.
+
+## Progress log — Run 8
+
+_(autopilot appends here)_
+
+### Item 6 — Exit verification ✅ (2026-06-12) — RUN COMPLETE
+
+**30/30 combos clean**: 15 pages (the 9 public surfaces from Run 7's table
++ all 6 /docs pages) × {375, 390} — 0 offenders, 0 sub-16px inputs,
+scrollWidth ≤ viewport everywhere, swept on the full run state (incl. the
+unmerged #75). The four mock-harnessed dashboard pages carry over from Run
+7's 26/26 (their mobile CSS is untouched this run — the .dash change is
+desktop-only and the mobile media query overrides it).
+
+Head-tag table: item 4's six-page verification stands (titles 47–59ch,
+descriptions 139–154ch, canonical + TechArticle + BreadcrumbList on all).
+Desktop evidence in docs/autopilot/: docs-1280, docs-claude-1680, and
+portal-redirect-1680 (mocked SIWE landing on /dashboard with the fluid
+Dashboard-first nav). The authed .dash full-width visual remains the
+owner's glance (needs a real wallet+SIWE pair). tsc + build + test:api
+43/43 on the exit branch.
+
+---
+
+## Run 8 summary (2026-06-12)
+
+**Queue: 6/6 complete.** Zero failed iterations. Yeetful has real docs,
+a Claude Code onboarding funnel, and a GitHub-style signed-in portal.
+
+| # | Item | PR |
+|---|------|----|
+| 1 | Docs foundation (full-width shell + registry) | [#71](https://github.com/Yeetful/website/pull/71) |
+| 2 | Core SDK pages (quickstart/grants/ledger/x402) | [#72](https://github.com/Yeetful/website/pull/72) |
+| 3 | Claude Code onboarding page + prompt | [#73](https://github.com/Yeetful/website/pull/73) |
+| 4 | Nav/footer/sitemap wire-up | [#74](https://github.com/Yeetful/website/pull/74) |
+| 5 | Signed-in portal shell (/ → dashboard, fluid) | [#75](https://github.com/Yeetful/website/pull/75) |
+| 6 | Exit verification + summary | [#76](https://github.com/Yeetful/website/pull/76) |
+
+**Merge order**: #71→#74 merged mid-run; remaining #75 → #76.
+
+**Decisions worth keeping**: lib/docs.ts as the single registry (page flips
+`ready` → sidebar/cards/sitemap all update); docs content sourced ONLY from
+the shipped 0.3.1 surface (D1) with this week's live debugging encoded as
+the ledger-sync gotchas section and inside the Claude prompt itself
+(www ledgerUrl, show-once secret, no-spend verification); portal mode keyed
+strictly on SIWE (D4) with ?home=1 as the escape hatch the nav carries.
+
+**Tooling finds**: Next 16 allows ONE dev server per project (.next/dev
+lock) — harness servers now use `next start` on the prod build; the
+preview MCP can't start while the owner's dev server holds the configured
+port — playwright-core (channel: chrome) against the owner's server is the
+working substitute, temp devDep reverted each time.
+
+**Owner manual passes**: the authed full-width dashboard glance; paste the
+/docs/claude-code prompt into a real scratch repo and feel the two
+dashboard steps; the usual wallet flows.
+
+### Item 5 — Signed-in shell ✅ (2026-06-12)
+
+GitHub-style portal mode, keyed STRICTLY on the SIWE session (useSession
+address — wallet connection alone never triggers it, per D4):
+- / → router.replace('/dashboard') for authed visitors; ?home=1 escapes
+  (read via window.location inside the effect — avoids the useSearchParams
+  Suspense requirement). Guests render home instantly, no gate.
+- Nav portal mode: Dashboard tab FIRST, header goes nav--fluid (full
+  viewport, 32px gutters), and the Servers tab carries /?home=1 so the
+  marketing page stays reachable without fighting the redirect.
+- .dash sheds its --maxw cap (max-width: none, 32px gutters) — the
+  dashboard now uses the whole window like the GitHub app shell.
+
+Verified via playwright with /api/auth/me intercepted (mock SIWE):
+guest / → stays, nav 1280 capped; authed / → lands on /dashboard, nav
+1680 fluid, first tab Dashboard, Servers href /?home=1; authed /?home=1
+→ stays. The .dash full-width VISUAL needs a real wallet+SIWE pair
+(wagmi gate) — CSS rule shipped, flagged for the owner's glance per
+rule 6. tsc + build green; test:api 43/43 (nav + home are shared).
+
+### Item 4 — Wire-up + SEO plumbing ✅ (2026-06-12)
+
+Docs is now reachable from everywhere: nav tab (Developers · Docs · Blog,
+startsWith-active so sub-pages highlight; desktop tabs + mobile drawer share
+the block), footer link first among product links, and /developers' "rest
+of the stack" grid leads with a docs biglink. sitemap.xml maps the registry
+— all six /docs URLs emitted (plus /activity, which item 3 of Run 7 forgot
+to add; fixed here). Head-tag table verified server-side on all six pages:
+titles 47–59ch, descriptions 139–154ch, canonical + TechArticle +
+BreadcrumbList everywhere.
+
+Tooling find: Next 16 dev refuses a SECOND dev server for the same project
+(lock under .next/dev — "Run kill <pid> to stop it"), so the throwaway-
+admin harness server can't be a dev server while the owner's runs. `next
+start` (prod build) has no such lock — harness now runs against the prod
+server: test:api 43/43. tsc + build green.
+
+### Item 3 — Claude Code page ✅ (2026-06-12)
+
+/docs/claude-code is live: a 3,026-char self-contained prompt (server-
+rendered as a prop into a dumb CopyBlock client shell, so it's crawlable)
+that instructs Claude Code to install yeetful, create one shared pay() —
+using an existing CDP wallet as the signer when present — replace paid
+fetches, set up env + .env.example + gitignore, then INTERACTIVELY walk
+the human through the two dashboard clicks (mint at /dashboard/keys with
+the show-once warning; copy YEETFUL_GRANT_ID + flip approvals) one step at
+a time, and finish with a NO-SPEND verification (free allowlisted call →
+$0 receipt + sync check; paid calls only on explicit say-so). The prompt
+bakes in this week's lessons: ledgerUrl pinned to the www origin (redirect
+auth-header gotcha), small default caps, never print secrets.
+
+Page sections: what-it-sets-up, the two dashboard clicks as link cards,
+and "why route a Coinbase agent through Yeetful" (CDP signs / Yeetful
+decides; Spend Permissions as the direction of travel). D2 proven via
+curl; scans clean 375 + 1680; copy button 40px on phones; tsc + build
+green. claude-code flipped ready — all six pages now in the sidebar.
+
+### Item 2 — Core SDK sub-pages ✅ (2026-06-12)
+
+Four pages live, all flipped `ready` in the registry (sidebar/cards/sitemap
+pick them up automatically): /docs/quickstart (install → wallet → grant →
+paid call, code verbatim from sdk README 0.3.1 incl. the CDP-wallets-work
+note), /docs/expense-account (grant fields, ordered checks, the 5 GrantError
+codes as a table, receipts incl. denials, the local-vs-hard-enforcement
+honesty paragraph), /docs/ledger-sync (mint → env → flushLedger, plus a
+"gotchas we hit" section encoding THIS WEEK's live findings: the
+redirect/auth-header 401, prefix-vs-secret, owner-scoping 404, enforcement-
+stays-local), /docs/x402 (flow, the v1/v2 wire table, network resolution,
+the sell-side primitives).
+
+The sweep caught a constitution violation in my own work: the v1/v2
+comparison TABLE pushed /docs/x402 to scrollWidth 390 at 375 (offender scan
+missed it — tables overflow the BODY, not a flagged element; noted for the
+exit sweep). Fixed globally: .docs__prose tables are display:block +
+overflow-x:auto. Re-scanned both table pages clean.
+
+D2 proven via curl on all four (title/canonical/TechArticle); scans clean
+at 375 + 1680; tsc + build green (all four prerender ○). All five live
+docs pages show in the sidebar.
+
+### Item 1 — Docs foundation ✅ (2026-06-12)
+
+`/docs` shell is FULL-WIDTH per D3 (verified docsW == viewport at 375/390/
+1280/1680 — no --maxw cap): sticky 240px rail + fluid content, prose measure
+capped at 80ch for readability while code runs to 96ch. Mobile rail = the
+proven top scroll-row pattern. `lib/docs.ts` is the single registry driving
+sidebar, landing cards, breadcrumbs, JSON-LD, and (item 4) the sitemap —
+pages hidden until `ready` so mid-run links never 404. Landing page live
+with the five-line SDK pitch (copy matches sdk/README 0.3.1 per D1).
+
+D2 verified server-side via curl: title 52ch, description 154ch, canonical,
+OG, TechArticle + BreadcrumbList JSON-LD, prose crawlable in the HTML.
+Rect-scan 0 offenders at all four widths.
+
+Tooling note: the owner's dev server held :3000 and the preview MCP refuses
+to start while the configured port is occupied (autoPort didn't help) —
+verified against the owner's server instead via curl + a temporary
+playwright-core script (devDep added, used, reverted). launch.json base
+port moved to 3010 for the rest of the run.
+
+---
+
+# Run 9 DRAFT: Coinbase Spend Permission example (awaiting owner review — do NOT start until approved)
 
 The strategic wedge from CLAUDE.md: back the (signable) SpendGrant with a
 real on-chain Coinbase Spend Permission so the agent never holds funds.

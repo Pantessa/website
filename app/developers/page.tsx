@@ -192,6 +192,10 @@ export default function DevelopersPage() {
               <h2 className="svc__h2">The rest of the stack</h2>
             </div>
             <div className="dev__links">
+              <a className="dev__biglink" href="/docs">
+                the docs <ArrowUpRight width={14} height={14} />
+                <span>quickstart, spend grants, ledger sync, x402, Claude Code onboarding</span>
+              </a>
               <a
                 className="dev__biglink"
                 href="https://www.npmjs.com/package/yeetful"

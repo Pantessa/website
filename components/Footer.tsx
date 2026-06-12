@@ -21,6 +21,7 @@ export default function Footer() {
           </p>
         </div>
         <div className="footer__links">
+          <Link href="/docs">Docs</Link>
           <Link href="/developers">Developers</Link>
           <Link href="/blog">Blog</Link>
           <a href={FOOTER_LINKS.x} target="_blank" rel="noopener noreferrer">
