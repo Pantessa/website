@@ -185,7 +185,33 @@ async function planWalletPayments(
 ) {
   const plan: PlannedCall[] = []
 
+  // Policy gate at PLAN time: never ask the wallet to sign a payment the
+  // grant forbids. (Until now wallet mode relied purely on the human signing
+  // each payment — the dashboard toggles only gated burner mode. Denials are
+  // ledgered so the audit trail shows them.)
+  const owner = await getSessionAddress()
+  const grant = owner ? await getActiveGrant(owner) : null
+  const policy: GrantPolicy | null = grant ? toPolicy(grant) : null
+  const spentToday = grant ? await spentTodayUsd(grant.id) : 0
+  const spentTotal = grant ? await spentTotalUsd(grant.id) : 0
+  let plannedUsd = 0
+  const planGate = async (name: string, host: string, price: number): Promise<string | null> => {
+    if (!policy || !grant) return null
+    const violation = grantViolation(policy, host, price, spentToday + plannedUsd, spentTotal + plannedUsd)
+    if (violation) {
+      await recordLedger({ grantId: grant.id, host, serviceName: name, amountUsd: 0, ok: false, note: violation })
+      return violation
+    }
+    plannedUsd += price
+    return null
+  }
+
   for (const ds of dataServers) {
+    const dsViolation = await planGate(ds.name, hostOf(ds.endpoint!), Number(ds.priceUsd ?? '0.01'))
+    if (dsViolation) {
+      notes.push(`${ds.name} was blocked by your spend policy (${dsViolation}) — manage it on the Dashboard.`)
+      continue
+    }
     const url = new URL(ds.endpoint!)
     url.searchParams.set(ds.queryParam ?? 'q', message)
     const challenge = await getChallenge(url.toString(), {
@@ -223,6 +249,11 @@ async function planWalletPayments(
           continue
         }
         const { request } = built
+        const smartViolation = await planGate(ep.serverName, hostOf(request.url), Number(ep.priceUsd))
+        if (smartViolation) {
+          notes.push(`${ep.serverName} was blocked by your spend policy (${smartViolation}) — manage it on the Dashboard.`)
+          continue
+        }
         const challenge = await getChallenge(request.url, {
           method: request.method,
           headers: request.headers,
@@ -253,6 +284,18 @@ async function planWalletPayments(
   // Inference 402 probe. MCP gateways price flat (body-independent); http
   // gateways price by request size, so the probe carries the real model and
   // the execute-time prompt is capped into the same flat tier (see capPrompt).
+  const infViolation = await planGate(
+    inference.name,
+    hostOf(inference.endpoint!),
+    Number(inference.priceUsd ?? '0.01'),
+  )
+  if (infViolation) {
+    return NextResponse.json({
+      reply: `🚫 Your spend policy blocked the inference call (${inference.name}: ${infViolation}). Adjust it on your **Dashboard** and try again.`,
+      blocked: true,
+      notes,
+    })
+  }
   const infProtocol = inferenceProtocolOf(inference)
   const infTool = inference.tool ?? (infProtocol === 'http' ? 'openai/gpt-4o-mini' : 'ask_claude')
   const infChallenge = await getChallenge(inference.endpoint!, {
