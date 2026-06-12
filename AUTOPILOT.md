@@ -65,7 +65,7 @@ E6. **Log per item**: append a progress entry under "Progress log — Run
   Registry flip in lib/docs.ts (sidebar/cards/sitemap auto-update), D2
   SEO, cross-links: /docs/ledger-sync ↔ this page, /dashboard/agents
   empty state → this page, ConnectAgentCard → this page.
-- [ ] **3. /developers refresh** (website): it's now the hero's "Connect
+- [x] **3. /developers refresh** (website): it's now the hero's "Connect
   Agent" CTA target — make it land. Lead with the 3-step connect-an-agent
   flow (mint a key at /dashboard/keys → wire `yeetful({wallet, grant,
   apiKey, ledgerUrl})` → set its budget at /dashboard/agents), a policy-
@@ -91,6 +91,26 @@ E6. **Log per item**: append a progress entry under "Progress log — Run
 ## Progress log — Run 10
 
 _(autopilot appends here, newest first; push after every item)_
+
+### Item 3 — /developers refresh ✅ (2026-06-12) — PR #90
+
+Branch `developers-refresh` off main. Hero ghost CTA → #connect: the
+3-step funnel (mint at /dashboard/keys → npm install + yeetful({wallet,
+grant, apiKey, ledgerUrl}) → budget at /dashboard/agents), docs trio
+(quickstart/agents/claude-code) as dev__biglinks under the steps, new
+"standing orders" section = GET /api/agent/policy callout (response
+shape, 0.4 labeled merged-not-published, E3 honesty line). Snippet gains
+ledgerUrl on the canonical www origin. Old Quickstart section removed
+(superseded). Metadata: canonical + OG added, desc rewritten 145ch.
+One more entity-space joint (`</code>secret`) caught by the scan + fixed.
+All existing sections (Grants API / receipt sync / stack links) and CSS
+classes reused — zero new CSS.
+
+Verified: tsc + build clean, test:api 42/42 on next start :3210, joint
+scan clean, 375+390 rect-scans 0 offenders, mobile screenshot good.
+TOOLING WARNING for later items: `pkill -f next-server` killed the
+owner's/preview dev server on :3000 too (restarted via preview MCP) —
+kill ONLY the harness server: `pkill -f "next start -p 3210"`.
 
 ### Item 2 — /docs/agents ✅ (2026-06-12) — PR #89
 
