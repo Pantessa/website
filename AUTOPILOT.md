@@ -255,7 +255,7 @@ A5. The pure gate logic must be unit-coverable from test:api (import it
   cap changes void the signature (A3); /api/dashboard/stats perAgent rows
   gain spentTodayUsd + the caps so meters render. test:api: validation +
   void-on-cap-change checks.
-- [ ] **3. The Agents tab** — /dashboard/approvals becomes /dashboard/
+- [x] **3. The Agents tab** — /dashboard/approvals becomes /dashboard/
   agents (old route redirects): per row = toggle + per-call/per-day cap
   inputs (inherit placeholder when null) + spent-today meter vs cap +
   detail link. Sidebar label "Agents". Mock-harness verification per the
@@ -270,6 +270,22 @@ A5. The pure gate logic must be unit-coverable from test:api (import it
 ## Progress log — Run 9
 
 _(autopilot appends here)_
+
+### Item 3 — The Agents tab ✅ (2026-06-12)
+
+/dashboard/agents replaces Approvals (old route server-redirects; sidebar
+says "Agents"). Each row: identity + live badge, /call + /day cap inputs
+(empty = inherit, placeholder shows the grant's default; commit on
+blur/Enter with optimistic update + rollback on 400), the approval switch
+(44×26 on phones, 32×18 desktop), detail arrow, and a spent-today meter
+vs the EFFECTIVE day cap (own ?? grant) that goes red past 85%. The old
+page's approvalToggled analytics event moved over.
+
+Harness-verified (fixtures incl. an at-cap agent and a near-cap one):
+0 offenders + exact scrollWidth at 375/390, 16px inputs + 40px targets on
+phones, desktop dense at 1680; cap-commit and toggle interactions exercised
+against the mocked PUT with zero error states. tsc + build green
+(/dashboard/agents prerenders, approvals→redirect); test:api 57/57.
 
 ### Item 2 — API surface ✅ (2026-06-12)
 

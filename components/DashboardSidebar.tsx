@@ -11,7 +11,7 @@ import { LayoutDashboard, KeyRound, ToggleRight, Activity } from 'lucide-react'
 export const DASH_SECTIONS = [
   { href: '/dashboard', label: 'Overview', icon: LayoutDashboard, exact: true },
   { href: '/dashboard/keys', label: 'API Keys', icon: KeyRound, exact: false },
-  { href: '/dashboard/approvals', label: 'Approvals', icon: ToggleRight, exact: false },
+  { href: '/dashboard/agents', label: 'Agents', icon: ToggleRight, exact: false },
   { href: '/dashboard/activity', label: 'Activity', icon: Activity, exact: false },
 ] as const
 
