@@ -7,6 +7,8 @@ import Hero from '@/components/Hero'
 import McpServerCard from '@/components/McpServerCard'
 import ActiveServerBar from '@/components/ActiveServerBar'
 import NetworkPulse from '@/components/NetworkPulse'
+import { useRouter } from 'next/navigation'
+import { useSession } from '@/lib/session'
 import Footer from '@/components/Footer'
 
 const ALL = 'All'
@@ -19,6 +21,19 @@ const STEPS = [
 ]
 
 export default function HomePage() {
+  const router = useRouter()
+  const { address } = useSession()
+
+  // GitHub-style portal entry: a verified SIWE session lands on the
+  // dashboard, not the marketing page. ?home=1 is the escape hatch (the
+  // nav's Servers tab uses it when signed in). Wallet connection alone
+  // never redirects (D4).
+  useEffect(() => {
+    if (address && !new URLSearchParams(window.location.search).has('home')) {
+      router.replace('/dashboard')
+    }
+  }, [address, router])
+
   const { servers, setServers, activeServerIds } = useYeetfulStore()
   const [search, setSearch] = useState('')
   const [cat, setCat] = useState(ALL)
