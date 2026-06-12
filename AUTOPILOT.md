@@ -37,7 +37,7 @@ D4. The / → dashboard redirect applies ONLY with a verified SIWE session
   (API keys, YEETFUL_GRANT_ID, ledgerUrl + the canonical-origin/auth-header
   gotcha we hit live), /docs/x402 (v1/v2 differences the SDK absorbs).
   D1+D2 on every page.
-- [ ] **3. Claude Code page** — /docs/claude-code: "add Yeetful to your
+- [x] **3. Claude Code page** — /docs/claude-code: "add Yeetful to your
   Coinbase agent in one prompt". A prominent copy button on a prebuilt
   prompt that tells Claude Code to: npm i yeetful, wrap the agent's paid
   calls in yeetful(), add env handling, and INTERACTIVELY walk the human
@@ -61,6 +61,26 @@ D4. The / → dashboard redirect applies ONLY with a verified SIWE session
 ## Progress log — Run 8
 
 _(autopilot appends here)_
+
+### Item 3 — Claude Code page ✅ (2026-06-12)
+
+/docs/claude-code is live: a 3,026-char self-contained prompt (server-
+rendered as a prop into a dumb CopyBlock client shell, so it's crawlable)
+that instructs Claude Code to install yeetful, create one shared pay() —
+using an existing CDP wallet as the signer when present — replace paid
+fetches, set up env + .env.example + gitignore, then INTERACTIVELY walk
+the human through the two dashboard clicks (mint at /dashboard/keys with
+the show-once warning; copy YEETFUL_GRANT_ID + flip approvals) one step at
+a time, and finish with a NO-SPEND verification (free allowlisted call →
+$0 receipt + sync check; paid calls only on explicit say-so). The prompt
+bakes in this week's lessons: ledgerUrl pinned to the www origin (redirect
+auth-header gotcha), small default caps, never print secrets.
+
+Page sections: what-it-sets-up, the two dashboard clicks as link cards,
+and "why route a Coinbase agent through Yeetful" (CDP signs / Yeetful
+decides; Spend Permissions as the direction of travel). D2 proven via
+curl; scans clean 375 + 1680; copy button 40px on phones; tsc + build
+green. claude-code flipped ready — all six pages now in the sidebar.
 
 ### Item 2 — Core SDK sub-pages ✅ (2026-06-12)
 
