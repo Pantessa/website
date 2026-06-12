@@ -1,3 +1,252 @@
+# Autopilot — Run 10: budgets everywhere — SDK 0.4 + the agents funnel (staged 2026-06-12)
+
+Owner directive: a 6-hour unattended run building whatever makes the most
+sense across the npm SDK, the website, and examples. Context for a fresh
+session: Run 9 (per-SERVICE caps) was closed unmerged — WRONG MODEL; the
+corrected model shipped on main 2026-06-12 (PRs #85/#86): **an agent IS an
+API key**, `api_keys.per_day_usd` budgets, ledger `api_key_id` attribution,
+`GET /api/agent/policy` (Bearer) as the SDK's pre-flight, receipt-sync
+responses carrying `{agent:{…, overBudget}}`, and the /dashboard/agents
+tab. Also on main: the Settlement Rail hero (#87) whose ghost CTA "Connect
+Agent" → /developers. OPEN: PR #88 (auth flow) — do not touch
+lib/session.tsx / AuthButton / the / redirect this run. Read CLAUDE.md
+(repo root ../CLAUDE.md) before starting.
+
+This run makes the budgets model REAL end-to-end: the SDK enforces it, the
+docs explain it, the funnel sells it, and the dashboard surfaces it.
+
+## Rules (Run 6/7 constitution + Run 8 D-rules apply; additions)
+
+E1. **Two repos.** Website work branches off `main` in this repo; SDK work
+    happens in `../sdk` (repo Yeetful/sdk) branching off ITS main. One
+    branch + PR per item, independent, never stacked, targeting each
+    repo's main. NEVER merge PRs (owner reviews), NEVER `npm publish`
+    (owner publishes), NEVER spend real money — zero-spend smokes only.
+E2. **Verify against `next start`** (never the dev server; `pkill` matches
+    `next-server`, the process name). Website items: tsc + build +
+    `npm run test:api` (42 checks on main — extend, don't fork). SDK
+    items: the sdk repo's own test suite (extend it).
+E3. **Budget honesty.** Every doc/copy surface must say budgets are
+    enforced by the SDK (advisory at the rails — the agent pays from its
+    own wallet); hard enforcement arrives with Coinbase Spend Permissions.
+    Never imply Yeetful can block an agent's wallet.
+E4. **Docs accuracy (D1) + SEO checklist (D2)** apply to every new docs/
+    developers surface. SDK snippets for 0.4 features must match the PR'd
+    code exactly and be labeled as 0.4 (unpublished) until npm has it.
+E5. **Mobile constitution**: base grid-cols-1 + min-w-0; rect-based scans
+    at 375/390 on every changed surface; tap targets ≥40px.
+E6. **Log per item**: append a progress entry under "Progress log — Run
+    10" (newest first), commit AUTOPILOT.md to the `autopilot` branch and
+    push after EVERY item — the log is the context save.
+
+## Queue (ordered; one per iteration)
+
+- [x] **1. SDK 0.4.0 — per-agent budgets** (../sdk, the big one): when
+  constructed with `{ apiKey, ledgerUrl }`, fetch GET /api/agent/policy at
+  startup (non-fatal if unreachable — log + proceed unenforced); refuse a
+  paid call when the agent is overBudget or the call's price would exceed
+  remainingTodayUsd → new denial code `OVER_AGENT_BUDGET`, receipted like
+  other denials and synced to the hosted ledger; refresh local budget
+  state from the `{agent}` echo on every receipt-sync response and from
+  flushLedger; expose `pay.agentBudget()` (current snapshot) for callers.
+  Tests mirror the existing suite (mock fetch for policy + sync echoes;
+  cover: under budget passes, at budget refuses, policy-fetch failure
+  degrades open, echo updates state). README section "Per-agent budgets".
+  Version bump to 0.4.0 in the PR; DO NOT publish. Note: check sdk repo
+  state first — if sdk#4 (0.3.2 ledger-redirect hint) is still an open PR,
+  base off main anyway and note the relationship in the PR body.
+- [x] **2. /docs/agents — "Agents & budgets"** (website): the two-sided
+  model page. Approvals = which SERVICES money flows to; Agents = which
+  APPS spend on your behalf (an agent IS an API key). Document: per-day
+  budgets + the SIWE-only PATCH (an agent can't raise its own budget),
+  ledger attribution, GET /api/agent/policy request/response (verbatim
+  from app/api/agent/policy/route.ts), the `{agent}` echo on receipt
+  sync, and the E3 honesty paragraph. SDK 0.4 snippet labeled upcoming.
+  Registry flip in lib/docs.ts (sidebar/cards/sitemap auto-update), D2
+  SEO, cross-links: /docs/ledger-sync ↔ this page, /dashboard/agents
+  empty state → this page, ConnectAgentCard → this page.
+- [x] **3. /developers refresh** (website): it's now the hero's "Connect
+  Agent" CTA target — make it land. Lead with the 3-step connect-an-agent
+  flow (mint a key at /dashboard/keys → wire `yeetful({wallet, grant,
+  apiKey, ledgerUrl})` → set its budget at /dashboard/agents), a policy-
+  endpoint callout, and prominent links to /docs/quickstart +
+  /docs/agents + /docs/claude-code. Keep existing SEO standards; sweep
+  375/390.
+- [x] **4. Dashboard Overview: connected-agents tile** (website): KPI tile
+  on /dashboard — connected agents count + top agent by spend today (from
+  api_key-attributed ledger rows), linking to /dashboard/agents. Extend
+  /api/dashboard/stats (and test:api if the response shape grows).
+  Mock-harness the visual check like prior dashboard sweeps.
+- [x] **5. Launch-post draft — "Give your agent an allowance"** (website,
+  publish-blocked): write the blog post announcing agent budgets as a
+  seed script `scripts/seed-agents-post.ts` (same pattern as
+  seed-first-post.ts), description ≤160, draft status. ADMIN_WALLETS is
+  unset so it CANNOT be published — verify the script compiles (tsc) and
+  document the one-command publish for the owner. Skip if time is short.
+- [x] **6. Exit verification** — tsc + build + test:api against `next
+  start`; 375/390 rect-scans of every changed surface (docs page,
+  developers, dashboard tile); sdk suite green; run summary in this file;
+  update ../CLAUDE.md top section; push `autopilot`.
+
+## Progress log — Run 10
+
+_(autopilot appends here, newest first; push after every item)_
+
+### Item 6 — Exit verification ✅ (2026-06-12) — RUN COMPLETE
+
+Combined exit state (local merge of #89+#90+#91+#92 onto main — zero file
+overlaps, trivial merge; branch deleted after, no PR needed): tsc clean,
+build clean, **test:api 43/43** against `next start` :3210, sdk suite
+**22/22** on sdk main. Fresh-load 375 rect-scans re-confirmed clean on
+the combined state for /docs/agents and /developers (390 + desktop
+covered per-item; dashboard tile carried from item 4's mock harness — no
+overlapping files between PRs, so per-item results stand).
+
+**Site-wide entity-space joint sweep** (the item-2 follow-up): all 12
+public surfaces (home, activity, developers, blog index + the live post,
+servers index + tripadvisor detail, all 7 docs pages) — ZERO
+`</em|strong|a|code|b|i>letter` joints. The bug class is dead on prod
+surfaces; the detection one-liner is in the item-2 entry for future runs.
+
+---
+
+## Run 10 summary (2026-06-12)
+
+**Queue: 6/6.** Zero failed iterations. The budgets model is now real
+end-to-end: SDK enforces it (0.4 merged), docs explain it, /developers
+sells it, the dashboard surfaces it, and the launch post is drafted.
+
+| # | Item | PR |
+|---|------|----|
+| 1 | SDK 0.4.0 per-agent budgets | [sdk#5](https://github.com/Yeetful/sdk/pull/5) (pre-completed, MERGED) |
+| 2 | /docs/agents — Agents & budgets | [#89](https://github.com/Yeetful/website/pull/89) |
+| 3 | /developers refresh (Connect Agent funnel) | [#90](https://github.com/Yeetful/website/pull/90) |
+| 4 | Dashboard connected-agents KPI tile | [#91](https://github.com/Yeetful/website/pull/91) |
+| 5 | Launch-post draft (seed script) | [#92](https://github.com/Yeetful/website/pull/92) |
+| 6 | Exit verification + summary | (this entry — no code PR) |
+
+**Merge notes**: #89–#92 are independent, no shared files, any order.
+test:api goes 42→43 when #91 lands (the agents-block check).
+
+**Discoveries worth keeping**:
+- **JSX entity-space bug class**: a text node that follows an inline
+  element AND contains an HTML entity loses its leading space at compile
+  (SWC). 7 joints fixed across docs + ConnectAgentCard (#89, #90); whole
+  site now sweeps clean. Detector:
+  `curl page | grep -oE '</(em|strong|a|code)>[a-zA-Z]'`. Fix idiom:
+  explicit {' '} after the element.
+- **App Router private folders**: `_`-prefixed app/ dirs never route —
+  temp harness routes must not start with underscore.
+- **Recharts + preview_resize**: resize-without-reload leaves stale
+  fixed widths that flood rect-scans — reload before scanning.
+- **pkill discipline**: `pkill -f next-server` kills the owner's dev
+  server too; match the harness command exactly
+  (`pkill -f "next start -p 3210"`).
+
+**Owner manual passes queued**: signed-in glance at /dashboard (new tile)
++ /dashboard/agents; seed + publish the launch post AFTER `yeetful` 0.4
+ships to npm (one-command publish in scripts/seed-agents-post.ts header);
+the usual wallet flows. Env still outstanding: ADMIN_WALLETS,
+BLOB_READ_WRITE_TOKEN, PRIVATE_KEY.
+
+### Item 5 — Launch-post draft ✅ (2026-06-12) — PR #92
+
+Branch `agents-launch-post` off main. scripts/seed-agents-post.ts — the
+seed-first-post pattern, but DRAFT semantics: published:false on create,
+re-runs never touch publish status. Post: two-sided model, key-as-agent,
+SIWE-only allowance edits ("an agent that could raise its own allowance
+wouldn't have one"), policy pre-flight + OVER_AGENT_BUDGET, E3 honesty,
+3-step funnel; links into /docs/agents + /developers + /dashboard/agents.
+Desc 149ch. One-command publish documented in the script header (admin
+Bearer PATCH {published:true} — after 0.4 hits npm, since the post
+presents 0.4 as available). tsc clean; NOT seeded to Neon (compile-only
+per the queue; the owner seeds + publishes together).
+
+### Item 4 — Dashboard connected-agents tile ✅ (2026-06-12) — PR #91
+
+Branch `dashboard-agents-tile` off main. /api/dashboard/stats grows an
+`agents` block ({connected, topToday:{label, spentTodayUsd}|null} — count
+from api_keys, top from key-attributed settled rows via the existing
+agentSpentTodayByKey; returned on both response paths). Overview's 4th
+KPI is now the Connected agents tile (Link → /dashboard/agents, label
+clamped 24ch); the displaced "Top agent" was really top SERVICE all-time
+— still in the chart below, retitled "Spend by service" (vocabulary fix).
+test:api +1 check (agents block asserted off the harness's Bearer-synced
+receipts) → 43 checks.
+
+Verified: tsc + build clean, test:api 43/43 on :3210. Visual via temp
+mock harness (stats fetch intercepted; the wagmi isConnected gate can't
+be faked by fetch mocks — direct component render instead): desktop 1280
+grid good, 375+390 fresh-load scans 0 offenders incl. a long-label
+stress. Lessons: (1) `_`/`__`-prefixed app/ folders are PRIVATE in the
+App Router — a temp harness route must NOT start with underscore (404s);
+(2) resize-without-reload leaves Recharts at the old fixed width and
+floods a naive rect-scan — always reload after preview_resize before
+scanning.
+
+### Item 3 — /developers refresh ✅ (2026-06-12) — PR #90
+
+Branch `developers-refresh` off main. Hero ghost CTA → #connect: the
+3-step funnel (mint at /dashboard/keys → npm install + yeetful({wallet,
+grant, apiKey, ledgerUrl}) → budget at /dashboard/agents), docs trio
+(quickstart/agents/claude-code) as dev__biglinks under the steps, new
+"standing orders" section = GET /api/agent/policy callout (response
+shape, 0.4 labeled merged-not-published, E3 honesty line). Snippet gains
+ledgerUrl on the canonical www origin. Old Quickstart section removed
+(superseded). Metadata: canonical + OG added, desc rewritten 145ch.
+One more entity-space joint (`</code>secret`) caught by the scan + fixed.
+All existing sections (Grants API / receipt sync / stack links) and CSS
+classes reused — zero new CSS.
+
+Verified: tsc + build clean, test:api 42/42 on next start :3210, joint
+scan clean, 375+390 rect-scans 0 offenders, mobile screenshot good.
+TOOLING WARNING for later items: `pkill -f next-server` killed the
+owner's/preview dev server on :3000 too (restarted via preview MCP) —
+kill ONLY the harness server: `pkill -f "next start -p 3210"`.
+
+### Item 2 — /docs/agents ✅ (2026-06-12) — PR #89
+
+Branch `docs-agents` off main (which now includes the merged #88 — its
+files untouched). New page off the lib/docs.ts registry: two-sided model
+(Approvals = services, Agents = apps; an agent IS an API key), SIWE-only
+budget PATCH, policy endpoint verbatim from the route, the slim `{agent}`
+sync echo, E3 honesty paragraph, SDK snippet labeled 0.4/unpublished.
+Cross-links wired all three ways (ledger-sync ↔ agents, AgentsPanel empty
+state → docs, ConnectAgentCard footer → docs).
+
+**Bug found + fixed (constitution-worthy):** a JSX text node that follows
+an inline element AND contains an HTML entity (&apos;/&quot;) loses its
+leading space at compile (SWC) — prod was rendering `services</em>money`
+joints. Rendered-HTML scan found 5 PRE-EXISTING joints on quickstart/
+expense-account/ledger-sync + 1 in ConnectAgentCard; all 7 fixed with an
+explicit {' '} after the element. Detection one-liner:
+`curl page | grep -oE '</(em|strong|a|code)>[a-zA-Z]'` — run on any new
+prose surface. NOTE for item 6: sweep the REST of the site (home, servers,
+blog, activity) for this joint class.
+
+Verified per E2 on `next start` (port 3210; owner's dev server holds
+3000): tsc + build clean, test:api 42/42, head tags via curl (title 54ch,
+desc 149ch, canonical/OG/TechArticle/BreadcrumbList, sitemap via
+registry), rect-scans 375+390 clean (0 real offenders; scroll-container
+children — the docs sidebar scroll-row, pre blocks — false-positive in a
+naive scan and must be excluded by ancestor overflow check).
+
+### Item 1 — SDK 0.4.0 per-agent budgets ✅ (2026-06-12, pre-completed)
+
+Found ALREADY DONE at run start: [sdk#5](https://github.com/Yeetful/sdk/pull/5)
+(branch `agent-key-budgets`) was opened by the prior session and MERGED to
+sdk main before this run launched. Scope matches the queue item exactly:
+policy pre-flight at construction (degrades open on fetch failure),
+`OVER_AGENT_BUDGET` denials receipted + synced, budget state refreshed from
+`{agent}` echoes on receipt-sync and flushLedger, `pay.agentBudget()`
+snapshot, README "Per-agent budgets" section, version bumped to 0.4.0
+(NOT published — npm still has 0.3.1). Re-verified on merged sdk main this
+session: `npm test` 22/22 green. Also noted: PR #88 (auth/logout flow) has
+since MERGED to website main — its files (lib/session.tsx, AuthButton, the
+/ redirect) remain off-limits this run per the directive.
+
+---
+
 # Autopilot — Run 8: docs + Claude Code onboarding + signed-in app shell (staged 2026-06-12, started via /loop)
 
 Owner directive: (a) a real `/docs` section explaining SDK integration —
@@ -216,7 +465,7 @@ port moved to 3010 for the rest of the run.
 
 ---
 
-# Run 9 DRAFT: Coinbase Spend Permission example (awaiting owner review — do NOT start until approved)
+# Run 11 DRAFT (was "Run 9 DRAFT"): Coinbase Spend Permission example (awaiting owner review + CDP API key + Base Sepolia funds — do NOT start until approved)
 
 The strategic wedge from CLAUDE.md: back the (signable) SpendGrant with a
 real on-chain Coinbase Spend Permission so the agent never holds funds.
