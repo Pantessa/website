@@ -176,6 +176,18 @@ export async function POST(req: NextRequest) {
 // ── Wallet mode ──────────────────────────────────────────────────────────────
 
 /** Probe every endpoint, derive an unsigned payment for the user's wallet. */
+
+/** Human copy for a policy denial, pointing at the right dashboard surface. */
+function denialNote(name: string, violation: string): string {
+  if (violation === 'OVER_AGENT_CAP') {
+    return `${name} hit its per-agent spend cap (OVER_AGENT_CAP) — raise or clear its cap on the **Agents** tab of your dashboard.`
+  }
+  if (violation === 'NOT_ALLOWED') {
+    return `${name} isn't approved — flip it on in the **Agents** tab of your dashboard.`
+  }
+  return `${name} was blocked by your spend policy (${violation}) — manage it on the **Agents** tab of your dashboard.`
+}
+
 async function planWalletPayments(
   message: string,
   inference: McpServer,
@@ -216,7 +228,7 @@ async function planWalletPayments(
   for (const ds of dataServers) {
     const dsViolation = await planGate(ds.name, hostOf(ds.endpoint!), Number(ds.priceUsd ?? '0.01'))
     if (dsViolation) {
-      notes.push(`${ds.name} was blocked by your spend policy (${dsViolation}) — manage it on the Dashboard.`)
+      notes.push(denialNote(ds.name, dsViolation))
       continue
     }
     const url = new URL(ds.endpoint!)
@@ -258,7 +270,7 @@ async function planWalletPayments(
         const { request } = built
         const smartViolation = await planGate(ep.serverName, hostOf(request.url), Number(ep.priceUsd))
         if (smartViolation) {
-          notes.push(`${ep.serverName} was blocked by your spend policy (${smartViolation}) — manage it on the Dashboard.`)
+          notes.push(denialNote(ep.serverName, smartViolation))
           continue
         }
         const challenge = await getChallenge(request.url, {
@@ -298,7 +310,7 @@ async function planWalletPayments(
   )
   if (infViolation) {
     return NextResponse.json({
-      reply: `🚫 Your spend policy blocked the inference call (${inference.name}: ${infViolation}). Adjust it on your **Dashboard** and try again.`,
+      reply: `🚫 ${denialNote(inference.name, infViolation)}`,
       blocked: true,
       notes,
     })
@@ -570,7 +582,7 @@ async function runWithBurner(
       await recordLedger({ grantId: grant.id, host: infHost, serviceName: inference.name, amountUsd: 0, ok: false, note: violation })
       const also = blocked.length ? ` Also blocked: ${blocked.join(', ')}.` : ''
       return NextResponse.json({
-        reply: `🚫 Your spend grant blocked the inference call (${inference.name}: ${violation}).${also} Approve the agent on your **Dashboard** (or raise the caps) and try again.`,
+        reply: `🚫 ${denialNote(inference.name, violation)}${also}`,
         receipts,
         blocked: true,
       })

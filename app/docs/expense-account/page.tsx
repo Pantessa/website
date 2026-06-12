@@ -109,6 +109,25 @@ export default function ExpenseAccountPage() {
           <code>pay.remainingTodayUsd()</code>, <code>pay.spentTotalUsd()</code>.
         </p>
 
+        <h2>Per-agent caps</h2>
+        <p>
+          The grant bounds the whole account; <strong>per-agent caps</strong> bound each
+          counterparty inside it — &quot;Claude can spend $1/day, that new data agent gets
+          $0.05 until it earns trust.&quot; Set them on the{' '}
+          <Link href="/dashboard/agents">Agents tab</Link>: empty inherits the grant&apos;s
+          defaults, and a cap can only further restrict (the API rejects anything above the
+          grant&apos;s own limit). Yeetful.com enforces them server-side on every chat payment —
+          both house-paid and wallet-signed turns — and a breach refuses with{' '}
+          <code>OVER_AGENT_CAP</code> before anything is signed, receipted like every other
+          denial.
+        </p>
+        <p>
+          In the SDK, <code>grant.allow</code> stays a flat hostname list in 0.3.x — per-host
+          caps in <code>yeetful/agent</code> are a 0.4 design question. Until then, run one{' '}
+          <code>yeetful()</code> instance per trust tier if your agent needs different budgets
+          per service.
+        </p>
+
         <h2>Local vs. hard enforcement</h2>
         <p>
           The SDK enforces the grant in-process — instant, free, and ideal for governing{' '}

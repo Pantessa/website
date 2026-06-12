@@ -260,7 +260,7 @@ A5. The pure gate logic must be unit-coverable from test:api (import it
   inputs (inherit placeholder when null) + spent-today meter vs cap +
   detail link. Sidebar label "Agents". Mock-harness verification per the
   gated-page rules (375/390 rect-scan, 16px inputs, 40px targets).
-- [ ] **4. Docs + chat surfacing** — /docs/expense-account gains the
+- [x] **4. Docs + chat surfacing** — /docs/expense-account gains the
   per-agent caps section (server enforcement vs SDK-local note per A4);
   chat denial copy for OVER_AGENT_CAP says which agent hit its cap and
   links the Agents tab.
@@ -270,6 +270,22 @@ A5. The pure gate logic must be unit-coverable from test:api (import it
 ## Progress log — Run 9
 
 _(autopilot appends here)_
+
+### Item 4 — Docs + chat surfacing ✅ (2026-06-12)
+
+/docs/expense-account gains the "Per-agent caps" section: what they bound,
+empty-inherits, the only-restrict rule, server-side enforcement on both
+chat payment paths, OVER_AGENT_CAP receipting — plus the honest A4 note
+(SDK stays flat in 0.3.x; per-host caps are a 0.4 design question; run one
+yeetful() per trust tier meanwhile). Verified SSR on the prod build.
+
+Chat denial copy: a single denialNote() helper now writes all four refusal
+surfaces — OVER_AGENT_CAP names the capped agent and points at the AGENTS
+tab; NOT_ALLOWED says "flip it on"; everything else names the violation.
+
+Note: the owner's dev server 500'd on the docs page from stale .next (dev
++ build share the dir) — prod build renders 200 with the section; a dev
+restart clears it. tsc + build green; test:api 57/57.
 
 ### Item 3 — The Agents tab ✅ (2026-06-12)
 
