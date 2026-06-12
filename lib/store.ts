@@ -1,5 +1,6 @@
 'use client'
 
+import { analytics } from '@/lib/analytics'
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 
@@ -143,12 +144,17 @@ export const useYeetfulStore = create<YeetfulStore>()(
       removeServer: (id) => set((s) => ({ servers: s.servers.filter((sv) => sv.id !== id) })),
 
       activeServerIds: [],
-      toggleServer: (id) =>
+      toggleServer: (id) => {
+        const st = get()
+        const nowActive = !st.activeServerIds.includes(id)
+        const slug = st.servers.find((sv) => sv.id === id)?.slug ?? id
+        analytics.agentToggled(slug, nowActive)
         set((s) => ({
           activeServerIds: s.activeServerIds.includes(id)
             ? s.activeServerIds.filter((sid) => sid !== id)
             : [...s.activeServerIds, id],
-        })),
+        }))
+      },
       setActiveServerIds: (ids) => set({ activeServerIds: ids }),
       clearActiveServers: () => set({ activeServerIds: [] }),
 

@@ -3,6 +3,7 @@
 // Dashboard · Approvals — the per-agent on/off switches. A toggle re-derives
 // the grant allowlist server-side (and voids a stale EIP-712 signature).
 
+import { analytics } from '@/lib/analytics'
 import Link from 'next/link'
 import { useEffect, useState } from 'react'
 import { ArrowUpRight } from 'lucide-react'
@@ -19,6 +20,10 @@ export default function DashboardApprovalsPage() {
   }, [])
 
   const toggle = async (serverId: string, approved: boolean) => {
+    analytics.approvalToggled(
+      approvals?.find((a) => a.serverId === serverId)?.slug ?? serverId,
+      approved,
+    )
     setApprovals((prev) => prev?.map((a) => (a.serverId === serverId ? { ...a, approved } : a)) ?? prev)
     const res = await fetch('/api/approvals', {
       method: 'PUT',

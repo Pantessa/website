@@ -1,5 +1,6 @@
 'use client'
 
+import { analytics } from '@/lib/analytics'
 import { useState, useRef, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Send, Zap, Check, Plus, Loader2, Bot, User, PanelLeft, PanelLeftClose } from 'lucide-react'
@@ -30,6 +31,19 @@ interface PaymentToSign {
   host: string
   priceUsd: string
   signing: SigningRequest
+}
+
+
+/** Sum settled receipts into one chat_paid event (no-op when nothing paid). */
+function trackPaidReceipts(receipts: unknown) {
+  if (!Array.isArray(receipts)) return
+  const paid = receipts.filter(
+    (r): r is { ok: boolean; name?: string; priceUsd?: string } =>
+      !!r && typeof r === 'object' && (r as { ok?: unknown }).ok === true,
+  )
+  if (paid.length === 0) return
+  const totalUsd = paid.reduce((sum, r) => sum + (Number(r.priceUsd) || 0), 0)
+  analytics.chatPaid(totalUsd, paid.length, paid.map((r) => r.name ?? '?').join(','))
 }
 
 export default function ChatInterface() {
@@ -75,6 +89,7 @@ export default function ChatInterface() {
 
   const handleSend = async () => {
     if (!input.trim() || loading) return
+    analytics.chatMessage(activeServers.length, isConnected)
 
     let chatId = currentChatId
     if (!chatId) {
@@ -109,12 +124,14 @@ export default function ChatInterface() {
 
       if (data.phase === 'awaiting-signatures') {
         const out = await payWithWalletThenAnswer(userMsg, data)
+        trackPaidReceipts(out.receipts)
         addMessage(chatId, {
           role: 'assistant',
           content: out.reply,
           meta: out.receipts?.length ? { receipts: out.receipts, payer: out.payer } : undefined,
         })
       } else {
+        trackPaidReceipts(data.receipts)
         addMessage(chatId, {
           role: 'assistant',
           content: data.reply || data.error || 'No response.',

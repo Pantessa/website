@@ -11,6 +11,7 @@
 //  the client. This context exposes that session to the UI.
 // ─────────────────────────────────────────────────────────────────────────
 
+import { analytics } from '@/lib/analytics'
 import {
   createContext,
   useCallback,
@@ -107,6 +108,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ message, signature }),
       })
+      if (verifyRes.ok && walletAddress) analytics.signedIn(walletAddress.toLowerCase())
       if (!verifyRes.ok) {
         const body = await verifyRes.json().catch(() => ({}))
         throw new Error(body.error || 'Sign-in verification failed.')

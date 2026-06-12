@@ -2,6 +2,7 @@
 
 import { useState, type ReactNode } from 'react'
 import { WagmiProvider } from 'wagmi'
+import TrackWallet from '@/components/TrackWallet'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { RainbowKitProvider, darkTheme } from '@rainbow-me/rainbowkit'
 import '@rainbow-me/rainbowkit/styles.css'
@@ -34,7 +35,10 @@ export default function Providers({ children }: { children: ReactNode }) {
           })}
           modalSize="compact"
         >
-          <SessionProvider>{children}</SessionProvider>
+          <SessionProvider>
+            <TrackWallet />
+            {children}
+          </SessionProvider>
         </RainbowKitProvider>
       </QueryClientProvider>
     </WagmiProvider>

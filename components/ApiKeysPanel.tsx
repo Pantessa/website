@@ -6,6 +6,7 @@
 // owner confirms they've saved it. Revocation is immediate (every Bearer
 // request re-resolves the hash).
 
+import { analytics } from '@/lib/analytics'
 import { useCallback, useEffect, useState } from 'react'
 import { Copy, Check, KeyRound, Loader2, Plus, Trash2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -66,6 +67,7 @@ export default function ApiKeysPanel({
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Mint failed.')
       setMinted({ secret: data.secret, label: data.label })
+      analytics.apiKeyMinted()
       setCopied(false)
       setLabel('')
       await load()

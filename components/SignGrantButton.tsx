@@ -8,6 +8,7 @@
 // terms change (cap edits, approval toggles) — `refreshKey` makes this
 // component re-check after such actions and nudge a re-sign.
 
+import { analytics } from '@/lib/analytics'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useSignTypedData } from 'wagmi'
 import { Loader2, PenLine, ShieldCheck } from 'lucide-react'
@@ -97,6 +98,7 @@ export default function SignGrantButton({
       })
       if (!res.ok) throw new Error((await res.json()).error || 'Signature rejected.')
       setSigned(true)
+      analytics.grantSigned(grantId)
       wasSigned.current = true
       setVoided(false)
     } catch (e) {
