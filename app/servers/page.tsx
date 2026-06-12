@@ -215,7 +215,7 @@ export default function AddServerPage() {
                   placeholder="https://your-mcp-server.com"
                   value={form.websiteUrl}
                   onChange={(e) => setForm((f) => ({ ...f, websiteUrl: e.target.value }))}
-                  className="w-full pl-9 pr-4 py-2.5 rounded-xl bg-zinc-900 border border-zinc-800/60 text-white placeholder-zinc-600 text-sm focus:outline-none focus:border-zinc-600 transition-colors"
+                  className="w-full pl-9 pr-4 py-2.5 rounded-xl bg-zinc-900 border border-zinc-800/60 text-white placeholder-zinc-600 text-sm max-lg:text-base focus:outline-none focus:border-zinc-600 transition-colors"
                 />
               </div>
               <button
@@ -249,7 +249,7 @@ export default function AddServerPage() {
                 placeholder="My Custom Server"
                 value={form.name}
                 onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-                className="w-full px-3 py-2.5 rounded-xl bg-zinc-900 border border-zinc-800/60 text-white placeholder-zinc-600 text-sm focus:outline-none focus:border-zinc-600 transition-colors"
+                className="w-full px-3 py-2.5 rounded-xl bg-zinc-900 border border-zinc-800/60 text-white placeholder-zinc-600 text-sm max-lg:text-base focus:outline-none focus:border-zinc-600 transition-colors"
               />
             </div>
 
@@ -264,7 +264,7 @@ export default function AddServerPage() {
                 placeholder="What does this MCP server do?"
                 value={form.description}
                 onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
-                className="w-full px-3 py-2.5 rounded-xl bg-zinc-900 border border-zinc-800/60 text-white placeholder-zinc-600 text-sm focus:outline-none focus:border-zinc-600 transition-colors resize-none"
+                className="w-full px-3 py-2.5 rounded-xl bg-zinc-900 border border-zinc-800/60 text-white placeholder-zinc-600 text-sm max-lg:text-base focus:outline-none focus:border-zinc-600 transition-colors resize-none"
               />
             </div>
 
@@ -334,7 +334,7 @@ export default function AddServerPage() {
                     setImgError(false)
                     setForm((f) => ({ ...f, iconUrl: e.target.value }))
                   }}
-                  className="flex-1 px-3 py-2.5 rounded-xl bg-zinc-900 border border-zinc-800/60 text-white placeholder-zinc-600 text-sm focus:outline-none focus:border-zinc-600 transition-colors"
+                  className="flex-1 px-3 py-2.5 rounded-xl bg-zinc-900 border border-zinc-800/60 text-white placeholder-zinc-600 text-sm max-lg:text-base focus:outline-none focus:border-zinc-600 transition-colors"
                 />
               </div>
             </div>
