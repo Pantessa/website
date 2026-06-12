@@ -30,6 +30,7 @@ export default function DashboardOverviewPage() {
 
   const k = stats.kpis
   const g = stats.grant
+  const a = stats.agents
   const todayPct = g && g.perDayUsd > 0 ? Math.min(100, (g.spentTodayUsd / g.perDayUsd) * 100) : 0
 
   return (
@@ -44,7 +45,19 @@ export default function DashboardOverviewPage() {
           value={`$${(g?.spentTodayUsd ?? k?.spentTodayUsd ?? 0).toFixed(4)}`}
           sub={g ? `of $${g.perDayUsd.toFixed(2)} daily cap` : 'no cap set'}
         />
-        <Kpi label="Top agent" value={k?.topAgent ?? '—'} small />
+        {/* A key IS an agent — count from api_keys, top by key-attributed
+            settled spend today. Links through to the Agents tab. */}
+        <Link href="/dashboard/agents" className="block min-w-0 transition-opacity hover:opacity-85">
+          <Kpi
+            label="Connected agents"
+            value={String(a?.connected ?? 0)}
+            sub={
+              a?.topToday
+                ? `top today: ${a.topToday.label.length > 24 ? `${a.topToday.label.slice(0, 24)}…` : a.topToday.label} · $${a.topToday.spentTodayUsd.toFixed(2)}`
+                : 'apps paying via the SDK →'
+            }
+          />
+        </Link>
       </div>
 
       <Card className="mb-6">
@@ -100,7 +113,9 @@ export default function DashboardOverviewPage() {
           <SpendOverTime daily={stats.daily ?? []} />
         </Card>
         <Card className="min-w-0">
-          <CardTitle>Spend by agent</CardTitle>
+          {/* Renamed from "by agent": in the corrected model agents are KEYS;
+              these groups are service_name rows — services money flowed to. */}
+          <CardTitle>Spend by service</CardTitle>
           <SpendByAgent perAgent={stats.perAgent ?? []} />
         </Card>
       </div>

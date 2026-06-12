@@ -23,6 +23,11 @@ export interface Stats {
     successRate: number | null
     topAgent: string | null
   }
+  /** Connected agents (a key IS an agent): count + top key by settled spend today. */
+  agents: {
+    connected: number
+    topToday: { label: string; spentTodayUsd: number } | null
+  }
   daily: { day: string; spent: number; calls: number }[]
   perAgent: { service: string; spent: number; calls: number }[]
   recent: {
