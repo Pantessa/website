@@ -1,4 +1,74 @@
-# Autopilot — Run 6: mobile-first, every page (staged 2026-06-11; start via /loop)
+# Autopilot — Run 7: public network activity + stats (staged 2026-06-11 evening)
+
+Owner directive: a public page showing all transactions on the network with
+overall stats. The receipts we already write (spend_ledger) become the
+public proof-of-life surface: live paid calls, totals, and a
+"blocked by policy" counter that doubles as the control-plane pitch.
+Run 6 items 2–6 (mobile) carry over after the activity items.
+
+## Rules (constitution — Run 6 rules apply verbatim, plus privacy)
+
+P1. **Public payloads NEVER contain**: full wallet addresses (truncate
+    server-side to 0xab…cd), grant ids, API-key material, or chat content.
+    The test harness must PROVE anonymization (seed a row, assert the full
+    address is absent from the public JSON).
+P2. **Denials are aggregate-only in public**: a blocked-calls stat is the
+    control-plane flex, but denial ROWS (who tried what and got refused)
+    never appear in the public feed.
+P3. The endpoint is unauthenticated read-only; no user-controlled params may
+    reach other tables. DB changes additive only (plain `db push`, never
+    --force-reset).
+
+## Queue (ordered; one per iteration)
+
+- [ ] **1. Public activity API** — `GET /api/activity` (no auth): `stats`
+  (settled USD total, settled calls, calls today, blocked count, distinct
+  active accounts), `daily` 30-day series, `top` services by spend, `recent`
+  ≤50 SETTLED rows (serviceName, host, amountUsd, txHash, truncated owner,
+  createdAt). Additive `@@index([ok, createdAt])` on spend_ledger + plain
+  `db push` (the global feed can't ride the grant-scoped index). Cache
+  `s-maxage=30, stale-while-revalidate=120`. EXTEND `npm run test:api`
+  (don't write temp scripts): shape checks, P1 anonymization proof, P2
+  denial-row absence, cache header present. 37 checks must stay green and
+  grow.
+- [ ] **2. /activity page** — public, SEO'd (title/desc/OG), nav link. Stat
+  tiles (settled total, calls, active accounts, blocked-by-policy), reuse
+  DashboardCharts SpendOverTime for the 30-day series + per-service bars,
+  live feed with Basescan links on tx hashes (https://basescan.org/tx/…),
+  ~30s polling, honest empty states (young network ≠ broken page).
+  Mobile-first per Run 6 standards: rect-scan clean 375/390 (public page —
+  no harness needed), tap targets ≥40px, feed rows wrap not bleed.
+- [ ] **3. Home tie-in + perf pass** — surface the network stats on the home
+  page (small live counter strip sourced from the same API; no second
+  query path), verify payload size sane (≤50 rows, no over-fetch), confirm
+  the new index is used (EXPLAIN via Neon MCP), lighthouse-glance the page
+  weight. Anything unverifiable: flagged, not claimed.
+- [ ] **4. (Run 6 #2) Dashboard Keys/Approvals/Activity mobile** — mock-harness
+  pattern per page: keys (secret reveal break-all, ConnectAgentCard <pre>
+  scroll, long prefixes), approvals (3→2→1 grid, switch tap size), activity
+  (long hosts/hashes truncate; rows wrap to two lines). Rect-scan clean;
+  screenshots; harness deleted.
+- [ ] **5. (Run 6 #3) Chat mobile-first** — sidebar overlays or collapses at
+  375/390; composer sticky-bottom with safe-area + 16px input font; bubbles
+  ≤85vw with long-word breaking; agents toolbar scroll; receipts footnote
+  wrapping; guest send box no-iOS-zoom.
+- [ ] **6. (Run 6 #4) Home + directory mobile polish** — hero type scale at
+  375, runner card internals, search + pills 44px, card grid rhythm,
+  ActiveServerBar safe-area. Rect-scan + screenshots.
+- [ ] **7. (Run 6 #5) Developers + blog + servers detail mobile polish** —
+  snippet <pre> scroll, capability cards, ep rows at 375; blog measure +
+  code blocks; servers header badge wrap. Rect-scan + screenshots.
+- [ ] **8. (Run 6 #6) Global mobile foundation sweep** — viewport meta on
+  every route, 16px inputs everywhere, safe-area on fixed elements, final
+  all-pages rect-scan table (375 + 390) incl. /activity. Exit criteria.
+
+## Progress log — Run 7
+
+_(autopilot appends here)_
+
+---
+
+# Run 6: mobile-first, every page — 1/6 done, items 2–6 carried into Run 7
 
 Owner report with screenshot: the AUTHED dashboard bleeds horizontally on
 mobile (KPI cards, budget card, and the spend chart run past the viewport) —
