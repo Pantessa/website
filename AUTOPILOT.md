@@ -72,7 +72,7 @@ E6. **Log per item**: append a progress entry under "Progress log — Run
   endpoint callout, and prominent links to /docs/quickstart +
   /docs/agents + /docs/claude-code. Keep existing SEO standards; sweep
   375/390.
-- [ ] **4. Dashboard Overview: connected-agents tile** (website): KPI tile
+- [x] **4. Dashboard Overview: connected-agents tile** (website): KPI tile
   on /dashboard — connected agents count + top agent by spend today (from
   api_key-attributed ledger rows), linking to /dashboard/agents. Extend
   /api/dashboard/stats (and test:api if the response shape grows).
@@ -91,6 +91,28 @@ E6. **Log per item**: append a progress entry under "Progress log — Run
 ## Progress log — Run 10
 
 _(autopilot appends here, newest first; push after every item)_
+
+### Item 4 — Dashboard connected-agents tile ✅ (2026-06-12) — PR #91
+
+Branch `dashboard-agents-tile` off main. /api/dashboard/stats grows an
+`agents` block ({connected, topToday:{label, spentTodayUsd}|null} — count
+from api_keys, top from key-attributed settled rows via the existing
+agentSpentTodayByKey; returned on both response paths). Overview's 4th
+KPI is now the Connected agents tile (Link → /dashboard/agents, label
+clamped 24ch); the displaced "Top agent" was really top SERVICE all-time
+— still in the chart below, retitled "Spend by service" (vocabulary fix).
+test:api +1 check (agents block asserted off the harness's Bearer-synced
+receipts) → 43 checks.
+
+Verified: tsc + build clean, test:api 43/43 on :3210. Visual via temp
+mock harness (stats fetch intercepted; the wagmi isConnected gate can't
+be faked by fetch mocks — direct component render instead): desktop 1280
+grid good, 375+390 fresh-load scans 0 offenders incl. a long-label
+stress. Lessons: (1) `_`/`__`-prefixed app/ folders are PRIVATE in the
+App Router — a temp harness route must NOT start with underscore (404s);
+(2) resize-without-reload leaves Recharts at the old fixed width and
+floods a naive rect-scan — always reload after preview_resize before
+scanning.
 
 ### Item 3 — /developers refresh ✅ (2026-06-12) — PR #90
 
