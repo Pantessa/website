@@ -55,7 +55,7 @@ P3. The endpoint is unauthenticated read-only; no user-controlled params may
 - [ ] **6. (Run 6 #4) Home + directory mobile polish** — hero type scale at
   375, runner card internals, search + pills 44px, card grid rhythm,
   ActiveServerBar safe-area. Rect-scan + screenshots.
-- [ ] **7. (Run 6 #5) Developers + blog + servers detail mobile polish** —
+- [x] **7. (Run 6 #5) Developers + blog + servers detail mobile polish** —
   snippet <pre> scroll, capability cards, ep rows at 375; blog measure +
   code blocks; servers header badge wrap. Rect-scan + screenshots.
 - [ ] **8. (Run 6 #6) Global mobile foundation sweep** — viewport meta on
@@ -65,6 +65,25 @@ P3. The endpoint is unauthenticated read-only; no user-controlled params may
 ## Progress log — Run 7
 
 _(autopilot appends here)_
+
+### Item 7 — Developers + blog + servers detail mobile ✅ (2026-06-12, no code)
+
+The queue over-assumed (like Run 3 item 3): a full live audit found NOTHING
+to fix. All four surfaces rect-scan 0 offenders with exact scrollWidth at
+BOTH 375 and 390:
+- /developers — snippet <pre> scrolls (666px content in a 339px box,
+  overflow-x auto), no sub-16px inputs, capability cards stack clean
+- /servers/yeetful-claude AND /servers/tripadvisor (61 endpoint elements,
+  the long-path stress case) — header badges wrap to two rows, method
+  chips + paths fit, volume lines wrap
+- /blog — single-column grid at phone widths
+- /blog/an-agent-shipped-this-blog — 16px body measure, code block
+  scrolls (overflow auto), zero inline-code overflows
+
+These pages were all built/refreshed AFTER the mobile standards landed
+(Runs 4–5), which is why they hold. Zero diff per rule 6 — no fixes
+invented to look busy. Item 8's all-pages table will re-verify them as
+part of the exit sweep.
 
 ### Item 5 — Chat mobile-first ✅ (2026-06-12)
 
