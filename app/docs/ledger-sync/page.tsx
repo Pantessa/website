@@ -59,7 +59,7 @@ await pay.flushLedger() // drain pending syncs before a short-lived script exits
         </pre>
         <p>
           Sync is an ordered, best-effort chain: it never blocks and never fails a payment. A
-          denial syncs too, as <code>ok: false</code> with the violation code — the dashboard&apos;s
+          denial syncs too, as <code>ok: false</code>{' '}with the violation code — the dashboard&apos;s
           &quot;blocked by policy&quot; numbers come from exactly these rows.
         </p>
 
@@ -68,7 +68,7 @@ await pay.flushLedger() // drain pending syncs before a short-lived script exits
           <li>
             <strong>Use the canonical origin.</strong> <code>fetch</code> silently drops the{' '}
             <code>Authorization</code> header when it follows a cross-origin redirect (e.g. apex →
-            www). If every sync logs a 401 with a valid key, point <code>ledgerUrl</code> at the
+            www). If every sync logs a 401 with a valid key, point <code>ledgerUrl</code>{' '}at the
             origin that doesn&apos;t redirect. Since 0.3.2 the failure log names the redirect
             origin outright.
           </li>
@@ -78,7 +78,7 @@ await pay.flushLedger() // drain pending syncs before a short-lived script exits
             — the full secret exists only in the mint-time reveal.
           </li>
           <li>
-            <strong>Key and grant must share a wallet.</strong> The ledger route is owner-scoped:
+            <strong>Key and grant must share a wallet.</strong>{' '}The ledger route is owner-scoped:
             a key from one wallet posting to another wallet&apos;s grant gets a 404 by design.
           </li>
           <li>
@@ -93,6 +93,11 @@ await pay.flushLedger() // drain pending syncs before a short-lived script exits
           Each receipt becomes a ledger row: host, service, amount, settlement tx hash (linked to
           Basescan), and the decision. The <Link href="/activity">public network feed</Link>{' '}
           shows the anonymized settled side; your dashboard shows everything, including refusals.
+        </p>
+        <p>
+          Bearer-synced rows are also <strong>attributed to the key that sent them</strong> — and
+          since an agent <em>is</em> an API key, that attribution powers per-agent spend meters
+          and daily budgets. See <Link href="/docs/agents">Agents &amp; budgets</Link>.
         </p>
       </div>
     </>
