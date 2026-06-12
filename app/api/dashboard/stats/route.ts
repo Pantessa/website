@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import prisma from '@/lib/db'
 import { getSessionAddress } from '@/lib/auth'
-import { spentTodayUsd, spentTotalUsd } from '@/lib/grant-store'
+import { agentSpentTodayByKey, spentTodayUsd, spentTotalUsd } from '@/lib/grant-store'
 import { ensureGrant } from '@/lib/approvals'
 
 export const runtime = 'nodejs'
@@ -28,10 +28,26 @@ export async function GET() {
   const grantIds = grants.map((g) => g.id)
   const active = grants.find((g) => g.status === 'active' && g.expiresAt > new Date()) ?? null
 
+  // Connected agents: a key IS an agent, so the count comes from api_keys and
+  // "top today" from key-attributed settled rows (Bearer-synced receipts).
+  const keys = await prisma.apiKey.findMany({
+    where: { ownerAddress: addr },
+    select: { id: true, label: true },
+  })
+  const spentByKey = await agentSpentTodayByKey(keys.map((k) => k.id))
+  const topKey = keys
+    .map((k) => ({ label: k.label, spentTodayUsd: spentByKey[k.id] ?? 0 }))
+    .sort((a, b) => b.spentTodayUsd - a.spentTodayUsd)[0]
+  const agents = {
+    connected: keys.length,
+    topToday: topKey && topKey.spentTodayUsd > 0 ? topKey : null,
+  }
+
   if (grantIds.length === 0) {
     return NextResponse.json({
       grant: null,
       kpis: { spentTotalUsd: 0, spentTodayUsd: 0, calls: 0, deniedCalls: 0, successRate: null, topAgent: null },
+      agents,
       daily: [],
       perAgent: [],
       recent: [],
@@ -98,6 +114,7 @@ export async function GET() {
       successRate,
       topAgent,
     },
+    agents,
     daily: daily.map((d) => ({ day: d.day, spent: d.spent, calls: Number(d.calls) })),
     perAgent: perAgent.map((p) => ({ service: p.service, spent: p.spent, calls: Number(p.calls) })),
     recent,
