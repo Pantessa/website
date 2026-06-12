@@ -8,6 +8,7 @@ import McpServerCard from '@/components/McpServerCard'
 import ActiveServerBar from '@/components/ActiveServerBar'
 import NetworkPulse from '@/components/NetworkPulse'
 import { useRouter } from 'next/navigation'
+import { useAccount } from 'wagmi'
 import { useSession } from '@/lib/session'
 import Footer from '@/components/Footer'
 
@@ -23,16 +24,20 @@ const STEPS = [
 export default function HomePage() {
   const router = useRouter()
   const { address } = useSession()
+  const { isConnected } = useAccount()
 
   // GitHub-style portal entry: a verified SIWE session lands on the
   // dashboard, not the marketing page. ?home=1 is the escape hatch (the
   // nav's Servers tab uses it when signed in). Wallet connection alone
-  // never redirects (D4).
+  // never redirects (D4) — and neither does a session alone: an orphaned
+  // cookie with no wallet behind it is being auto-signed-out by the
+  // session provider, and redirecting first would strand the visitor on
+  // the dashboard's connect gate.
   useEffect(() => {
-    if (address && !new URLSearchParams(window.location.search).has('home')) {
+    if (address && isConnected && !new URLSearchParams(window.location.search).has('home')) {
       router.replace('/dashboard')
     }
-  }, [address, router])
+  }, [address, isConnected, router])
 
   const { servers, setServers, activeServerIds } = useYeetfulStore()
   const [search, setSearch] = useState('')
