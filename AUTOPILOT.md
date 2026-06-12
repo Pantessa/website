@@ -1,3 +1,99 @@
+# Autopilot — Run 10: budgets everywhere — SDK 0.4 + the agents funnel (staged 2026-06-12)
+
+Owner directive: a 6-hour unattended run building whatever makes the most
+sense across the npm SDK, the website, and examples. Context for a fresh
+session: Run 9 (per-SERVICE caps) was closed unmerged — WRONG MODEL; the
+corrected model shipped on main 2026-06-12 (PRs #85/#86): **an agent IS an
+API key**, `api_keys.per_day_usd` budgets, ledger `api_key_id` attribution,
+`GET /api/agent/policy` (Bearer) as the SDK's pre-flight, receipt-sync
+responses carrying `{agent:{…, overBudget}}`, and the /dashboard/agents
+tab. Also on main: the Settlement Rail hero (#87) whose ghost CTA "Connect
+Agent" → /developers. OPEN: PR #88 (auth flow) — do not touch
+lib/session.tsx / AuthButton / the / redirect this run. Read CLAUDE.md
+(repo root ../CLAUDE.md) before starting.
+
+This run makes the budgets model REAL end-to-end: the SDK enforces it, the
+docs explain it, the funnel sells it, and the dashboard surfaces it.
+
+## Rules (Run 6/7 constitution + Run 8 D-rules apply; additions)
+
+E1. **Two repos.** Website work branches off `main` in this repo; SDK work
+    happens in `../sdk` (repo Yeetful/sdk) branching off ITS main. One
+    branch + PR per item, independent, never stacked, targeting each
+    repo's main. NEVER merge PRs (owner reviews), NEVER `npm publish`
+    (owner publishes), NEVER spend real money — zero-spend smokes only.
+E2. **Verify against `next start`** (never the dev server; `pkill` matches
+    `next-server`, the process name). Website items: tsc + build +
+    `npm run test:api` (42 checks on main — extend, don't fork). SDK
+    items: the sdk repo's own test suite (extend it).
+E3. **Budget honesty.** Every doc/copy surface must say budgets are
+    enforced by the SDK (advisory at the rails — the agent pays from its
+    own wallet); hard enforcement arrives with Coinbase Spend Permissions.
+    Never imply Yeetful can block an agent's wallet.
+E4. **Docs accuracy (D1) + SEO checklist (D2)** apply to every new docs/
+    developers surface. SDK snippets for 0.4 features must match the PR'd
+    code exactly and be labeled as 0.4 (unpublished) until npm has it.
+E5. **Mobile constitution**: base grid-cols-1 + min-w-0; rect-based scans
+    at 375/390 on every changed surface; tap targets ≥40px.
+E6. **Log per item**: append a progress entry under "Progress log — Run
+    10" (newest first), commit AUTOPILOT.md to the `autopilot` branch and
+    push after EVERY item — the log is the context save.
+
+## Queue (ordered; one per iteration)
+
+- [ ] **1. SDK 0.4.0 — per-agent budgets** (../sdk, the big one): when
+  constructed with `{ apiKey, ledgerUrl }`, fetch GET /api/agent/policy at
+  startup (non-fatal if unreachable — log + proceed unenforced); refuse a
+  paid call when the agent is overBudget or the call's price would exceed
+  remainingTodayUsd → new denial code `OVER_AGENT_BUDGET`, receipted like
+  other denials and synced to the hosted ledger; refresh local budget
+  state from the `{agent}` echo on every receipt-sync response and from
+  flushLedger; expose `pay.agentBudget()` (current snapshot) for callers.
+  Tests mirror the existing suite (mock fetch for policy + sync echoes;
+  cover: under budget passes, at budget refuses, policy-fetch failure
+  degrades open, echo updates state). README section "Per-agent budgets".
+  Version bump to 0.4.0 in the PR; DO NOT publish. Note: check sdk repo
+  state first — if sdk#4 (0.3.2 ledger-redirect hint) is still an open PR,
+  base off main anyway and note the relationship in the PR body.
+- [ ] **2. /docs/agents — "Agents & budgets"** (website): the two-sided
+  model page. Approvals = which SERVICES money flows to; Agents = which
+  APPS spend on your behalf (an agent IS an API key). Document: per-day
+  budgets + the SIWE-only PATCH (an agent can't raise its own budget),
+  ledger attribution, GET /api/agent/policy request/response (verbatim
+  from app/api/agent/policy/route.ts), the `{agent}` echo on receipt
+  sync, and the E3 honesty paragraph. SDK 0.4 snippet labeled upcoming.
+  Registry flip in lib/docs.ts (sidebar/cards/sitemap auto-update), D2
+  SEO, cross-links: /docs/ledger-sync ↔ this page, /dashboard/agents
+  empty state → this page, ConnectAgentCard → this page.
+- [ ] **3. /developers refresh** (website): it's now the hero's "Connect
+  Agent" CTA target — make it land. Lead with the 3-step connect-an-agent
+  flow (mint a key at /dashboard/keys → wire `yeetful({wallet, grant,
+  apiKey, ledgerUrl})` → set its budget at /dashboard/agents), a policy-
+  endpoint callout, and prominent links to /docs/quickstart +
+  /docs/agents + /docs/claude-code. Keep existing SEO standards; sweep
+  375/390.
+- [ ] **4. Dashboard Overview: connected-agents tile** (website): KPI tile
+  on /dashboard — connected agents count + top agent by spend today (from
+  api_key-attributed ledger rows), linking to /dashboard/agents. Extend
+  /api/dashboard/stats (and test:api if the response shape grows).
+  Mock-harness the visual check like prior dashboard sweeps.
+- [ ] **5. Launch-post draft — "Give your agent an allowance"** (website,
+  publish-blocked): write the blog post announcing agent budgets as a
+  seed script `scripts/seed-agents-post.ts` (same pattern as
+  seed-first-post.ts), description ≤160, draft status. ADMIN_WALLETS is
+  unset so it CANNOT be published — verify the script compiles (tsc) and
+  document the one-command publish for the owner. Skip if time is short.
+- [ ] **6. Exit verification** — tsc + build + test:api against `next
+  start`; 375/390 rect-scans of every changed surface (docs page,
+  developers, dashboard tile); sdk suite green; run summary in this file;
+  update ../CLAUDE.md top section; push `autopilot`.
+
+## Progress log — Run 10
+
+_(autopilot appends here, newest first; push after every item)_
+
+---
+
 # Autopilot — Run 8: docs + Claude Code onboarding + signed-in app shell (staged 2026-06-12, started via /loop)
 
 Owner directive: (a) a real `/docs` section explaining SDK integration —
@@ -216,7 +312,7 @@ port moved to 3010 for the rest of the run.
 
 ---
 
-# Run 9 DRAFT: Coinbase Spend Permission example (awaiting owner review — do NOT start until approved)
+# Run 11 DRAFT (was "Run 9 DRAFT"): Coinbase Spend Permission example (awaiting owner review + CDP API key + Base Sepolia funds — do NOT start until approved)
 
 The strategic wedge from CLAUDE.md: back the (signable) SpendGrant with a
 real on-chain Coinbase Spend Permission so the agent never holds funds.
