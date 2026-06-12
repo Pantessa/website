@@ -1,9 +1,9 @@
 'use client'
 
-import { useConnectModal } from '@rainbow-me/rainbowkit'
-import { useAccount } from 'wagmi'
+import Link from 'next/link'
 import type { McpServer } from '@/lib/store'
 import RunnerDemo from '@/components/RunnerDemo'
+import SettlementRail from '@/components/SettlementRail'
 
 function scrollToId(id: string) {
   const el = document.getElementById(id)
@@ -12,35 +12,31 @@ function scrollToId(id: string) {
   window.scrollTo({ top: y, behavior: 'smooth' })
 }
 
-/** Hero — "manifesto" layout: headline left, live x402 Runner right. */
+/** Hero — "manifesto" layout over the Settlement Rail field: every filament
+ * is an agent's API call; the rail is the payment rail; the accent pulse is a
+ * settlement. Copy left, live x402 Runner right, real settled-volume meter. */
 export default function Hero({ agents, catalog }: { agents: McpServer[]; catalog: McpServer[] }) {
-  const { openConnectModal } = useConnectModal()
-  const { isConnected } = useAccount()
-
   return (
     <section className="hero hero--manifesto">
+      <SettlementRail />
       <div className="hero__left">
-        <div className="hero__eyebrow mono">THE x402 STANDARD · PAY-PER-CALL · USDC ON BASE</div>
+        <div className="hero__eyebrow mono">AGENTIC PAYMENTS · USDC ON BASE</div>
         <h1 className="hero__h1">
-          Agent
+          Set a budget.
           <br />
-          <span className="hero__em">expense</span>
-          <br />
-          <span className="hero__em">accounts</span>.
+          Let them spend.
         </h1>
         <p className="hero__sub">
-          Pick your x402 agents, set a budget and an allowlist, and let them pay for every service
-          they need — per call, with receipts. No API keys, no subscriptions, no surprise bills.
+          Per-call USDC payments for the agents in your stack — budgets, allowlists, receipts. You
+          set the terms. They handle the spending.
         </p>
         <div className="hero__ctas">
           <button className="btn btn--solid" onClick={() => scrollToId('directory')}>
             Browse agents
           </button>
-          {!isConnected && (
-            <button className="btn btn--ghost" onClick={() => openConnectModal?.()}>
-              Connect Wallet
-            </button>
-          )}
+          <Link className="btn btn--ghost" href="/activity">
+            Watch it live
+          </Link>
         </div>
       </div>
       <div className="hero__right">

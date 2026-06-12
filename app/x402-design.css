@@ -121,8 +121,18 @@
   /* manifesto: split. min-width:0 on items — the runner feed's nowrap lines
      otherwise set a ~500px min-content width and blow out narrow viewports
      (body's overflow-x:hidden then CLIPS text instead of wrapping it). */
-  .hero--manifesto { display: grid; grid-template-columns: 1.05fr 0.95fr; gap: 56px; align-items: center; }
+  .hero--manifesto { display: grid; grid-template-columns: 1.05fr 0.95fr; gap: 56px; align-items: center; position: relative; }
   .hero--manifesto > * { min-width: 0; }
+  .hero--manifesto .hero__left, .hero--manifesto .hero__right { position: relative; z-index: 1; }
+  /* the Settlement Rail field — full-bleed canvas behind the columns (the
+     container is centered, so 50% - 50vw reaches the viewport edge; body's
+     overflow-x:hidden absorbs the scrollbar-width overshoot) */
+  .hero__field { position: absolute; top: 0; bottom: 0; left: calc(50% - 50vw); width: 100vw; z-index: 0; pointer-events: none; }
+  .hero__field canvas { width: 100%; height: 100%; display: block; }
+  .hero__meter { position: absolute; left: 0; bottom: 56px; display: flex; flex-direction: column; gap: 3px; }
+  .hero__meter-usd { font-size: 13px; font-weight: 500; color: var(--fg); }
+  .hero__meter-usd span { color: var(--accent); }
+  .hero__meter-cap { font-size: 11px; color: var(--muted-2); }
   /* centered */
   .hero--centered { text-align: center; padding-bottom: 56px; }
   .hero--centered .hero__center { display: flex; flex-direction: column; align-items: center; }
