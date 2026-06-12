@@ -44,6 +44,8 @@ export default function ChatInterface() {
     addMessage,
     sidebarOpen,
     setSidebarOpen,
+    mobileSidebarOpen,
+    setMobileSidebarOpen,
   } = useYeetfulStore()
 
   // Toggle an agent for this chat; persist the set to the open chat (and DB).
@@ -195,9 +197,13 @@ export default function ChatInterface() {
       <div className="flex-shrink-0 px-3 py-2.5 border-b border-[var(--line)] bg-black/40 flex items-center gap-2">
         <div className="flex items-center gap-2 overflow-x-auto scrollbar-none flex-1 min-w-0">
           <button
-            onClick={() => setSidebarOpen(!sidebarOpen)}
-            aria-label={sidebarOpen ? 'Collapse chats sidebar' : 'Expand chats sidebar'}
-            title={sidebarOpen ? 'Collapse chats' : 'Show chats'}
+            onClick={() =>
+              window.matchMedia('(max-width: 1023px)').matches
+                ? setMobileSidebarOpen(!mobileSidebarOpen)
+                : setSidebarOpen(!sidebarOpen)
+            }
+            aria-label={sidebarOpen || mobileSidebarOpen ? 'Collapse chats sidebar' : 'Expand chats sidebar'}
+            title={sidebarOpen || mobileSidebarOpen ? 'Collapse chats' : 'Show chats'}
             className="flex-shrink-0 w-10 h-10 md:w-8 md:h-8 grid place-items-center rounded-lg border border-[var(--line)] bg-[var(--surf-1)] text-[color:var(--muted)] hover:text-white hover:border-[var(--line-2)] transition-colors"
           >
             {sidebarOpen ? <PanelLeftClose className="w-4 h-4" /> : <PanelLeft className="w-4 h-4" />}
@@ -272,13 +278,13 @@ export default function ChatInterface() {
                   {/* Bubble */}
                   <div
                     className={cn(
-                      'max-w-[80%] px-4 py-3 rounded-2xl text-sm leading-relaxed',
+                      'max-w-[85vw] lg:max-w-[80%] px-4 py-3 rounded-2xl text-sm leading-relaxed',
                       msg.role === 'user'
                         ? 'bg-white text-black rounded-tr-sm'
                         : 'bg-[var(--surf-1)] text-[color:var(--fg)] border border-[var(--line)] rounded-tl-sm'
                     )}
                   >
-                    <pre className="whitespace-pre-wrap font-sans">{msg.content}</pre>
+                    <pre className="whitespace-pre-wrap font-sans [overflow-wrap:anywhere]">{msg.content}</pre>
                     {msg.role === 'assistant' && <MessageReceipts meta={msg.meta} />}
                   </div>
                 </motion.div>
@@ -307,7 +313,7 @@ export default function ChatInterface() {
       </div>
 
       {/* Input area */}
-      <div className="flex-shrink-0 p-4 border-t border-[var(--line)]">
+      <div className="flex-shrink-0 p-4 max-lg:pb-[max(1rem,env(safe-area-inset-bottom))] border-t border-[var(--line)]">
         <div className="flex items-end gap-3 p-3 rounded-2xl border border-[var(--line)] bg-[var(--surf-1)] transition-[border-color,box-shadow] duration-200 focus-within:border-white/25 focus-within:shadow-[0_0_0_4px_rgba(255,255,255,0.05)]">
           <textarea
             ref={textareaRef}
@@ -320,7 +326,7 @@ export default function ChatInterface() {
                 : 'Type a message...'
             }
             rows={1}
-            className="flex-1 bg-transparent text-sm text-white placeholder:text-[color:var(--muted-2)] resize-none border-0 focus:outline-none focus-visible:outline-none max-h-40 overflow-y-auto leading-relaxed"
+            className="flex-1 bg-transparent text-sm max-lg:text-base text-white placeholder:text-[color:var(--muted-2)] resize-none border-0 focus:outline-none focus-visible:outline-none max-h-40 overflow-y-auto leading-relaxed"
             style={{ minHeight: '24px', outline: 'none', boxShadow: 'none' }}
           />
           <button
