@@ -264,12 +264,55 @@ A5. The pure gate logic must be unit-coverable from test:api (import it
   per-agent caps section (server enforcement vs SDK-local note per A4);
   chat denial copy for OVER_AGENT_CAP says which agent hit its cap and
   links the Agents tab.
-- [ ] **5. Exit verification** — sweep incl. the new tab (harness), the
+- [x] **5. Exit verification** — sweep incl. the new tab (harness), the
   full test:api count, run summary; CLAUDE.md handoff refresh.
 
 ## Progress log — Run 9
 
 _(autopilot appends here)_
+
+### Item 5 — Exit verification ✅ (2026-06-12) — RUN COMPLETE
+
+Sweep of the run's changed surfaces (the Agents tab via harness +
+/docs/expense-account) at 375/390: 0 offenders, exact scrollWidth, 0
+sub-16px inputs on all four combos. tsc + build green; test:api 57/57.
+Tooling note for future runs: sweep against `next start`, NOT the dev
+server — dev's live-reload churn destroyed evaluation contexts repeatedly
+(three null sweeps before switching). Harness + temp script deleted,
+playwright-core devDep reverted.
+
+---
+
+## Run 9 summary (2026-06-12)
+
+**Queue: 5/5 complete.** Zero failed iterations. Approvals grew into a
+real per-agent spend policy, and the run closed a real enforcement hole.
+
+| # | Item | PR |
+|---|------|----|
+| 1 | Schema + enforcement engine (OVER_AGENT_CAP) | [#80](https://github.com/Yeetful/website/pull/80) |
+| 2 | Approvals API: caps, validation, DELETE reset | [#81](https://github.com/Yeetful/website/pull/81) |
+| 3 | The Agents tab (caps UI + spent-today meters) | [#82](https://github.com/Yeetful/website/pull/82) |
+| 4 | Docs section + chat denial copy | [#83](https://github.com/Yeetful/website/pull/83) |
+| 5 | Exit verification + summary | [#84](https://github.com/Yeetful/website/pull/84) |
+
+**Merge order**: one stacked chain — #80 → #81 → #82 → #83 → #84.
+
+**The run's discovery**: wallet mode had ZERO policy enforcement — the
+dashboard's "toggles are enforcement" only ever gated burner mode; wallet
+users were asked to sign whatever the planner produced. planWalletPayments
+now refuses to request signatures for violating calls and ledgers the
+denials.
+
+**Decisions worth keeping**: per-agent caps are nullable (null inherits;
+caps only further restrict — the API rejects above-grant values); cap
+changes void the EIP-712 signature like toggles; meters read from
+/api/approvals (one surface, declared deviation from the stats-route plan);
+the SDK stays flat in 0.3.x (A4 — per-host caps are a 0.4 design question).
+
+**test:api 43 → 57** (pure-gate units + API surface). Owner manual passes:
+set a tiny cap on the Agents tab and watch a chat turn refuse past it; the
+usual wallet flows.
 
 ### Item 4 — Docs + chat surfacing ✅ (2026-06-12)
 
