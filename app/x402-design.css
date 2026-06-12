@@ -221,6 +221,12 @@
   }
   .pill:hover { color: var(--fg); border-color: var(--line-2); }
   .pill.is-on { background: var(--fg); color: #000; border-color: var(--fg); }
+  @media (max-width: 1023px) {
+    /* iOS zooms any focused input under 16px. */
+    .search__input { font-size: 16px; }
+    /* Category pills are the primary directory filter on phones — 44px. */
+    .pill { padding: 12px 18px; min-height: 44px; }
+  }
 
   .x-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
   .card {
@@ -471,6 +477,16 @@
   .activebar__clear:hover { color: var(--fg); }
   .activebar__go { font-size: 13.5px; font-weight: 600; padding: 10px 18px; border-radius: 11px; background: var(--fg); color: #000; }
   .activebar__go:hover { background: oklch(0.88 0 0); }
+  @media (max-width: 1023px) {
+    /* Home-indicator phones: float the bar above the inset; tighter gutter. */
+    .activebar {
+      bottom: calc(14px + env(safe-area-inset-bottom));
+      max-width: calc(100vw - 24px);
+      gap: 10px; padding: 10px 10px 10px 16px;
+    }
+    .activebar__go { padding: 13px 18px; }
+    .activebar__clear { padding: 13px 12px; }
+  }
 
   /* ── FOOTER ──────────────────────────────────────── */
   .footer { border-top: 1px solid var(--line); margin-top: 0; }
