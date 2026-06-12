@@ -66,6 +66,25 @@ P3. The endpoint is unauthenticated read-only; no user-controlled params may
 
 _(autopilot appends here)_
 
+### Item 2 — /activity page ✅ (2026-06-12)
+
+Public page + nav tab (between Chat and Dashboard). Server shell owns SEO
+(title/description/OG); client ActivityBoard polls /api/activity every 30s
+(matching the API's s-maxage so faster polling would be noise). Stat tiles
+(Settled / Calls today / **Blocked by policy** / Active accounts), both
+DashboardCharts reused (with the Run 6 ChartBox + min-w-0 guards — no new
+chart plumbing), 50-row feed with Basescan links (40px touch height via
+padding, not row bloat), honest empty/error states ("the network is young"
+vs "unavailable — refresh"), and a privacy footnote stating the
+truncation/aggregate rules out loud.
+
+Verified: real prod data end-to-end in preview (8 settled calls, truncated
+0x5eaa…55a0, tx links); rect-scan 0 offenders at 375 AND 390, scrollWidth
+exact; feed rows wrap to two lines on phones (service+account+amount /
+tx+time); desktop + mobile screenshots reviewed in preview. tsc + build
+green (/activity prerenders ○, the API stays ƒ); test:api 43/43 (nav is a
+shared component). Stacked on item 1's branch — merge #61 first.
+
 ### Item 1 — Public activity API ✅ (2026-06-12)
 
 `GET /api/activity` (no auth, `force-dynamic` so Next can't freeze a build-time
