@@ -1,4 +1,50 @@
-# Autopilot — Run 7: public network activity + stats (staged 2026-06-11 evening)
+# Autopilot — Run 8 DRAFT: Coinbase Spend Permission example (staged 2026-06-12, awaiting owner review — do NOT start until approved)
+
+The strategic wedge from CLAUDE.md: back the (signable) SpendGrant with a
+real on-chain Coinbase Spend Permission so the agent never holds funds.
+CDP research (2026-06-11): Agentic Wallets = Server Wallet v2 accounts (MPC
+in AWS Nitro Enclave); Spend Permissions API maps ~1:1 onto SpendGrant
+(grantor smart account / spender / token "usdc" / allowance / periodInDays);
+contract 0xf85210B21cC50302F477BA56686d2019dC9b67Ad on Base; spender may be
+any onchain account; gas via Coinbase paymaster. CAVEAT to verify first:
+permission creation is documented as CDP-Smart-Account-only.
+
+## Rules (Run 6/7 constitution applies; additions)
+
+R1. TESTNET FIRST (Base Sepolia) — no mainnet funds until the owner's
+    explicit go. Never store CDP API secrets in any repo; .env only.
+R2. The example repo is PUBLIC from birth (Yeetful/coinbase-example) —
+    secrets grep before every push.
+R3. Spending real money (even $0.01 mainnet) = owner manual step, never
+    autopilot.
+
+## Queue (draft — owner may reorder/trim)
+
+- [ ] **1. Spike: verify the CDP API surface** — create a CDP project
+  (owner provides API key id/secret in .env), Server Wallet v2 + Smart
+  Account on Base Sepolia, createSpendPermission with SpendGrant-shaped
+  caps, spender.useSpendPermission() pulls testnet USDC. Probe-style
+  evidence; document the Smart-Account-only caveat's real shape.
+- [ ] **2. Yeetful/coinbase-example repo** — owner-setup.ts (one-time:
+  create + sign the permission mirroring a yeetful.com grant) + agent.ts
+  (yeetful() pay loop; spender auto-pulls via the permission when its
+  balance runs low) + README. Testnet by default per R1.
+- [ ] **3. Website: grant ↔ permission linkage** — store the permission
+  hash on SpendGrant (additive column), surface a "backed on-chain" badge
+  on the dashboard + signature payload alignment so the EIP-712 grant and
+  the Spend Permission share terms.
+- [ ] **4. SDK: spender adapter** — optional `spendPermission` option on
+  yeetful(): auto-pull before payment when balance < price; receipts note
+  the pull tx. Tests with a mocked CDP client.
+- [ ] **5. Blog post draft** — "Your agent has an expense account, not a
+  wallet" (publish = owner step per constitution).
+
+_(Run 8 starts only when the owner says go — likely needs: CDP account +
+API key, testnet faucet funds.)_
+
+---
+
+# Run 7 (COMPLETE 8/8): public network activity + stats (staged 2026-06-11 evening)
 
 Owner directive: a public page showing all transactions on the network with
 overall stats. The receipts we already write (spend_ledger) become the
