@@ -52,7 +52,7 @@ P3. The endpoint is unauthenticated read-only; no user-controlled params may
   375/390; composer sticky-bottom with safe-area + 16px input font; bubbles
   ≤85vw with long-word breaking; agents toolbar scroll; receipts footnote
   wrapping; guest send box no-iOS-zoom.
-- [ ] **6. (Run 6 #4) Home + directory mobile polish** — hero type scale at
+- [x] **6. (Run 6 #4) Home + directory mobile polish** — hero type scale at
   375, runner card internals, search + pills 44px, card grid rhythm,
   ActiveServerBar safe-area. Rect-scan + screenshots.
 - [ ] **7. (Run 6 #5) Developers + blog + servers detail mobile polish** —
@@ -65,6 +65,24 @@ P3. The endpoint is unauthenticated read-only; no user-controlled params may
 ## Progress log — Run 7
 
 _(autopilot appends here)_
+
+### Item 6 — Home + directory mobile polish ✅ (2026-06-12)
+
+Live audit at 375 found the page already in good shape (Run 5's audit held:
+hero type/wrapping clean at 54px, runner card stats + feed density right,
+CTAs side-by-side). Three real gaps, fixed in one mobile-only CSS block:
+- `.search__input` 15→16px under lg (iOS zoom)
+- `.pill` 40→46px (queue asks 44 for the primary directory filter)
+- `.activebar`: bottom floats above `env(safe-area-inset-bottom)`, gutter
+  tightened to 24px total, Start-chat CTA 40→46px (Clear too)
+
+Verified live: pills 46px, search 16px, activebar 229px wide / 14px above
+the viewport bottom with an agent in the runner (env() inset is 0 in the
+preview — real devices add it; flagged, not claimable in preview).
+Rect-scan 0 offenders at 375 + 390 (scanner now also whitelists
+overflow-hidden non-body boxes per item 3's note — the runner feed's mask).
+Desktop 1280 unchanged (40px pills, 15px search). CSS-only diff: test:api
+not run (no routes/shared components); tsc + build green.
 
 ### Item 5 — Chat mobile-first ✅ (2026-06-12)
 
