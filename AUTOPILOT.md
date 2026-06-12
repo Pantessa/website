@@ -21,7 +21,7 @@ P3. The endpoint is unauthenticated read-only; no user-controlled params may
 
 ## Queue (ordered; one per iteration)
 
-- [ ] **1. Public activity API** — `GET /api/activity` (no auth): `stats`
+- [x] **1. Public activity API** — `GET /api/activity` (no auth): `stats`
   (settled USD total, settled calls, calls today, blocked count, distinct
   active accounts), `daily` 30-day series, `top` services by spend, `recent`
   ≤50 SETTLED rows (serviceName, host, amountUsd, txHash, truncated owner,
@@ -31,19 +31,19 @@ P3. The endpoint is unauthenticated read-only; no user-controlled params may
   (don't write temp scripts): shape checks, P1 anonymization proof, P2
   denial-row absence, cache header present. 37 checks must stay green and
   grow.
-- [ ] **2. /activity page** — public, SEO'd (title/desc/OG), nav link. Stat
+- [x] **2. /activity page** — public, SEO'd (title/desc/OG), nav link. Stat
   tiles (settled total, calls, active accounts, blocked-by-policy), reuse
   DashboardCharts SpendOverTime for the 30-day series + per-service bars,
   live feed with Basescan links on tx hashes (https://basescan.org/tx/…),
   ~30s polling, honest empty states (young network ≠ broken page).
   Mobile-first per Run 6 standards: rect-scan clean 375/390 (public page —
   no harness needed), tap targets ≥40px, feed rows wrap not bleed.
-- [ ] **3. Home tie-in + perf pass** — surface the network stats on the home
+- [x] **3. Home tie-in + perf pass** — surface the network stats on the home
   page (small live counter strip sourced from the same API; no second
   query path), verify payload size sane (≤50 rows, no over-fetch), confirm
   the new index is used (EXPLAIN via Neon MCP), lighthouse-glance the page
   weight. Anything unverifiable: flagged, not claimed.
-- [ ] **4. (Run 6 #2) Dashboard Keys/Approvals/Activity mobile** — mock-harness
+- [x] **4. (Run 6 #2) Dashboard Keys/Approvals/Activity mobile** — mock-harness
   pattern per page: keys (secret reveal break-all, ConnectAgentCard <pre>
   scroll, long prefixes), approvals (3→2→1 grid, switch tap size), activity
   (long hosts/hashes truncate; rows wrap to two lines). Rect-scan clean;
@@ -88,9 +88,69 @@ docs/autopilot/dash-{keys,approvals,activity}-375-after.png; the approvals
 before-state is recorded numerically above (no screenshot — bleed was found
 and fixed in the same harness session). test:api 37/37 (= full pass on this
 branch; the 43-check version is on the unmerged item-1 branch). Harnesses
-deleted; diff greps clean. NOTE for merge: this progress entry will collide
-trivially with items 1–3's entries when the stacked chain lands — keep both
-(append, don't replace).
+deleted; diff greps clean.
+### Item 3 — Home tie-in + perf pass ✅ (2026-06-12)
+
+NetworkPulse on the home directory statbar: "$X settled on-network →" linking
+to /activity, same /api/activity payload (one query path; component renders
+nothing until data arrives so the bar never flashes zeros, and hides when
+settledCalls=0). Statbar now flex-wraps; the pulse drops to its own line at
+375 with a 40px tap target (was 33 — caught and fixed in preview).
+
+Perf findings, honest ledger:
+- Index: planner uses Seq Scan at n=9 rows (correct); with enable_seqscan
+  off the feed query uses **Index Scan Backward on
+  spend_ledger_ok_created_at_idx** — proven viable for growth, not yet
+  preferred. Re-check via EXPLAIN when the table is real-sized.
+- Payload: 2,589 bytes total (8 recent / 2 daily / 7 top) — well under any
+  concern at the 50-row cap.
+- Page weight: **Next 16 build no longer prints first-load JS per route** —
+  flagged as unverified rather than claimed; /activity reuses the
+  recharts/DashboardCharts chunks the dashboard already ships.
+- Rect-scan home 375: 0 real offenders. Two `runner__price` rects extend
+  past the viewport INSIDE the runner feed's masked overflow:hidden box —
+  by-design clipping (fade mask), zero scrollWidth impact. Item 8's
+  all-pages scanner should also whitelist overflow-hidden non-body
+  containers to encode this.
+- test:api skipped this item (no route/server code touched — CSS + home
+  page + new client component only); tsc + build green.
+
+### Item 2 — /activity page ✅ (2026-06-12)
+
+Public page + nav tab (between Chat and Dashboard). Server shell owns SEO
+(title/description/OG); client ActivityBoard polls /api/activity every 30s
+(matching the API's s-maxage so faster polling would be noise). Stat tiles
+(Settled / Calls today / **Blocked by policy** / Active accounts), both
+DashboardCharts reused (with the Run 6 ChartBox + min-w-0 guards — no new
+chart plumbing), 50-row feed with Basescan links (40px touch height via
+padding, not row bloat), honest empty/error states ("the network is young"
+vs "unavailable — refresh"), and a privacy footnote stating the
+truncation/aggregate rules out loud.
+
+Verified: real prod data end-to-end in preview (8 settled calls, truncated
+0x5eaa…55a0, tx links); rect-scan 0 offenders at 375 AND 390, scrollWidth
+exact; feed rows wrap to two lines on phones (service+account+amount /
+tx+time); desktop + mobile screenshots reviewed in preview. tsc + build
+green (/activity prerenders ○, the API stays ƒ); test:api 43/43 (nav is a
+shared component). Stacked on item 1's branch — merge #61 first.
+
+### Item 1 — Public activity API ✅ (2026-06-12)
+
+`GET /api/activity` (no auth, `force-dynamic` so Next can't freeze a build-time
+snapshot, CDN cache via `s-maxage=30, stale-while-revalidate=120`): stats
+(settled USD/calls, callsToday UTC, blockedCalls, distinct activeAccounts),
+30-day daily series, top-10 services, 50 most-recent SETTLED rows with
+owner truncated server-side (P1) and denial rows excluded (P2 — aggregate
+only). Additive `@@index([ok, createdAt])` pushed to Neon (plain db push;
+verified in pg_indexes — the global feed can't ride the grant-scoped index).
+
+test:api grew 37 → **43** (denial-seed probe, shape, cache header, truncated
+account visible, P1 full-address-absent over the raw payload text, P2
+denial-row absence). All 43 green; tsc + build green. Real-payload sanity:
+the owner's lisbon receipts render with truncated `0x5eaa…55a0` + Basescan-able
+tx hashes; `callsToday: 0` verified correct (UTC midnight had passed — DB
+now() cross-checked, not assumed).
+>>>>>>> origin/autopilot
 
 ---
 
