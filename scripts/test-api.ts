@@ -274,6 +274,67 @@ async function main() {
     !act.recent.some((r) => r.host === 'denied.example.test') && act.stats.blockedCalls >= 1,
   )
 
+  // ── Wallet-mode plan gate (policy enforced BEFORE signature requests) ─────
+  console.log('— wallet plan gate')
+  const fakeInference = {
+    slug: 'fake-inf',
+    name: 'Fake Inference',
+    kind: 'inference',
+    callable: true,
+    endpoint: 'https://evil-inf.example.test/api',
+    protocol: 'http',
+    priceUsd: '0.01',
+  }
+  const fakeData = {
+    slug: 'fake-data',
+    name: 'Fake Data',
+    kind: 'data',
+    callable: true,
+    endpoint: 'https://evil-data.example.test/q',
+    protocol: 'http',
+    queryParam: 'q',
+    priceUsd: '0.01',
+  }
+  // Neither host is in the grant's allowlist: the plan must be refused without
+  // a single network probe (the gate runs before getChallenge).
+  const gated = await fetch(`${BASE}/api/chat`, {
+    method: 'POST',
+    headers: CJ,
+    body: JSON.stringify({
+      message: 'plan gate probe',
+      walletAddress: owner.address,
+      activeServers: [fakeInference, fakeData],
+    }),
+  })
+  const gatedBody = await gated.json()
+  check(
+    'wallet plan: disallowed inference blocked, never asked to sign',
+    gated.status === 200 && gatedBody.blocked === true && /NOT_ALLOWED/.test(gatedBody.reply ?? ''),
+  )
+  check(
+    'wallet plan: disallowed data service blocked with a policy note',
+    Array.isArray(gatedBody.notes) && gatedBody.notes.some((n: string) => n.includes('Fake Data') && n.includes('NOT_ALLOWED')),
+  )
+  const detail2 = await (await fetch(`${BASE}/api/grants/${grant.id}`, { headers: C })).json()
+  check(
+    'wallet plan: denials ledgered ($0, audit trail)',
+    detail2.ledger.some((e: { host: string }) => e.host === 'evil-inf.example.test') &&
+      detail2.ledger.some((e: { host: string }) => e.host === 'evil-data.example.test'),
+  )
+  // Positive control: an ALLOWED host passes the gate and reaches the 402
+  // probe. The host doesn't resolve, so the probe's fetch throws → 502 —
+  // which is exactly the proof that the gate let it through.
+  const ungated = await fetch(`${BASE}/api/chat`, {
+    method: 'POST',
+    headers: CJ,
+    body: JSON.stringify({
+      message: 'plan gate positive control',
+      walletAddress: owner.address,
+      activeServers: [{ ...fakeInference, endpoint: 'https://a.example.test/api' }],
+    }),
+  })
+  check('wallet plan: allowed host passes the gate (reaches network probe)', ungated.status === 502)
+
   // ── Key revocation (after Bearer use, before cleanup) ─────────────────────
   console.log('— revocation')
   const del = await fetch(`${BASE}/api/keys/${minted.id}`, { method: 'DELETE', headers: C })
