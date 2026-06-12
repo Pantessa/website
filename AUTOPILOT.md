@@ -66,6 +66,32 @@ P3. The endpoint is unauthenticated read-only; no user-controlled params may
 
 _(autopilot appends here)_
 
+### Item 4 — Dashboard Keys/Approvals/Activity mobile ✅ (2026-06-12)
+
+Mock-harnessed all three gated pages (fetch-patch pattern, real components in
+the real shell). Found + fixed:
+- **Approvals BLED at 375** (scrollWidth 386, all 9 rows past the viewport):
+  `grid sm:grid-cols-2…` leaves the base track implicit → max-content; the
+  long agent name set the track. Same trap as Run 6 item 1's charts grid.
+  Fix: explicit `grid-cols-1` + `min-w-0` rows. Detail-arrow 22→40px on
+  phones (padding, not layout).
+- **Keys**: mint input was 12px (iOS zoom) → 16px under lg; Copy/Mint/Revoke
+  32→40px touch heights; minted-secret reveal verified live in harness
+  (mocked POST → break-all renders, no bleed).
+- **Activity**: rows now wrap to two lines on phones; Basescan links 16→40px
+  touch height (padding trick, rows stay visually dense).
+
+Rect-scan 0 offenders + exact scrollWidth at 375 AND 390 on all three pages;
+desktop verified unchanged (3-col approvals, compact controls — all fixes
+are max-lg). After-screenshots (true 375 viewport via playwright) in
+docs/autopilot/dash-{keys,approvals,activity}-375-after.png; the approvals
+before-state is recorded numerically above (no screenshot — bleed was found
+and fixed in the same harness session). test:api 37/37 (= full pass on this
+branch; the 43-check version is on the unmerged item-1 branch). Harnesses
+deleted; diff greps clean. NOTE for merge: this progress entry will collide
+trivially with items 1–3's entries when the stacked chain lands — keep both
+(append, don't replace).
+
 ---
 
 # Run 6: mobile-first, every page — 1/6 done, items 2–6 carried into Run 7

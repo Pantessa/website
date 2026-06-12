@@ -122,7 +122,7 @@ export default function ApiKeysPanel({
             </code>
             <button
               onClick={copySecret}
-              className="flex-shrink-0 flex items-center gap-1.5 text-xs font-medium px-3 py-2 rounded-lg bg-white text-zinc-950 hover:bg-zinc-200 transition-colors"
+              className="flex-shrink-0 flex items-center gap-1.5 text-xs font-medium px-3 py-2 max-lg:min-h-10 rounded-lg bg-white text-zinc-950 hover:bg-zinc-200 transition-colors"
             >
               {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
               {copied ? 'Copied' : 'Copy'}
@@ -147,12 +147,12 @@ export default function ApiKeysPanel({
             if (e.key === 'Enter' && !minting) void mint()
           }}
           placeholder="Label (e.g. travel-agent prod)"
-          className="flex-1 min-w-0 px-3 py-2 rounded-lg bg-black/30 border border-[var(--line)] text-white placeholder-[color:var(--muted-2)] text-xs focus:outline-none focus:border-[var(--line-2)] transition-colors"
+          className="flex-1 min-w-0 px-3 py-2 max-lg:min-h-10 max-lg:text-base rounded-lg bg-black/30 border border-[var(--line)] text-white placeholder-[color:var(--muted-2)] text-xs focus:outline-none focus:border-[var(--line-2)] transition-colors"
         />
         <button
           onClick={() => void mint()}
           disabled={minting}
-          className="flex-shrink-0 flex items-center gap-1.5 text-xs font-medium px-3 py-2 rounded-lg bg-white text-zinc-950 hover:bg-zinc-200 disabled:opacity-50 transition-colors"
+          className="flex-shrink-0 flex items-center gap-1.5 text-xs font-medium px-3 py-2 max-lg:min-h-10 rounded-lg bg-white text-zinc-950 hover:bg-zinc-200 disabled:opacity-50 transition-colors"
         >
           {minting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />}
           Mint key
@@ -190,7 +190,7 @@ export default function ApiKeysPanel({
                 onClick={() => void revoke(k.id)}
                 onBlur={() => setConfirmRevoke((c) => (c === k.id ? null : c))}
                 className={cn(
-                  'flex-shrink-0 flex items-center gap-1 text-[11px] px-2 py-1 rounded-md transition-colors',
+                  'flex-shrink-0 flex items-center gap-1 text-[11px] px-2 py-1 max-lg:min-h-10 rounded-md transition-colors',
                   confirmRevoke === k.id
                     ? 'bg-red-500/15 text-red-400 border border-red-500/30'
                     : 'text-[color:var(--muted-2)] hover:text-red-400',
