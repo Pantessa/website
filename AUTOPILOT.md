@@ -55,7 +55,7 @@ E6. **Log per item**: append a progress entry under "Progress log — Run
   Version bump to 0.4.0 in the PR; DO NOT publish. Note: check sdk repo
   state first — if sdk#4 (0.3.2 ledger-redirect hint) is still an open PR,
   base off main anyway and note the relationship in the PR body.
-- [ ] **2. /docs/agents — "Agents & budgets"** (website): the two-sided
+- [x] **2. /docs/agents — "Agents & budgets"** (website): the two-sided
   model page. Approvals = which SERVICES money flows to; Agents = which
   APPS spend on your behalf (an agent IS an API key). Document: per-day
   budgets + the SIWE-only PATCH (an agent can't raise its own budget),
@@ -91,6 +91,33 @@ E6. **Log per item**: append a progress entry under "Progress log — Run
 ## Progress log — Run 10
 
 _(autopilot appends here, newest first; push after every item)_
+
+### Item 2 — /docs/agents ✅ (2026-06-12) — PR #89
+
+Branch `docs-agents` off main (which now includes the merged #88 — its
+files untouched). New page off the lib/docs.ts registry: two-sided model
+(Approvals = services, Agents = apps; an agent IS an API key), SIWE-only
+budget PATCH, policy endpoint verbatim from the route, the slim `{agent}`
+sync echo, E3 honesty paragraph, SDK snippet labeled 0.4/unpublished.
+Cross-links wired all three ways (ledger-sync ↔ agents, AgentsPanel empty
+state → docs, ConnectAgentCard footer → docs).
+
+**Bug found + fixed (constitution-worthy):** a JSX text node that follows
+an inline element AND contains an HTML entity (&apos;/&quot;) loses its
+leading space at compile (SWC) — prod was rendering `services</em>money`
+joints. Rendered-HTML scan found 5 PRE-EXISTING joints on quickstart/
+expense-account/ledger-sync + 1 in ConnectAgentCard; all 7 fixed with an
+explicit {' '} after the element. Detection one-liner:
+`curl page | grep -oE '</(em|strong|a|code)>[a-zA-Z]'` — run on any new
+prose surface. NOTE for item 6: sweep the REST of the site (home, servers,
+blog, activity) for this joint class.
+
+Verified per E2 on `next start` (port 3210; owner's dev server holds
+3000): tsc + build clean, test:api 42/42, head tags via curl (title 54ch,
+desc 149ch, canonical/OG/TechArticle/BreadcrumbList, sitemap via
+registry), rect-scans 375+390 clean (0 real offenders; scroll-container
+children — the docs sidebar scroll-row, pre blocks — false-positive in a
+naive scan and must be excluded by ancestor overflow check).
 
 ### Item 1 — SDK 0.4.0 per-agent budgets ✅ (2026-06-12, pre-completed)
 
