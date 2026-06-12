@@ -6,6 +6,7 @@ import { CATALOG } from '@/lib/mcp-data'
 import Hero from '@/components/Hero'
 import McpServerCard from '@/components/McpServerCard'
 import ActiveServerBar from '@/components/ActiveServerBar'
+import NetworkPulse from '@/components/NetworkPulse'
 import Footer from '@/components/Footer'
 
 const ALL = 'All'
@@ -57,6 +58,7 @@ export default function HomePage() {
               <span className="dir__statnum mono">{activeServerIds.length}</span>
               <span className="dir__statlbl">in your runner</span>
             </div>
+            <NetworkPulse />
           </div>
 
           <div className="dir__controls">
