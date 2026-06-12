@@ -17,7 +17,7 @@ const P = {
   SPEED_MIN: 0.6,
   SPEED_MAX: 1.6,
   FIELD_DRIFT: 0.16, // how fast the flow field evolves
-  RAIL_FROM_BOTTOM: 44, // rail position in px above the section's bottom edge
+  RAIL_FROM_BOTTOM: 10, // rail sits at the hero's bottom edge — it IS the section divider (the .dir border-top was removed so the lines don't double up)
   CAPTURE_BAND: 220, // px above the rail where the pull is felt
   CAPTURE_PULL: 0.012,
   RAIL_SNAP: 12, // px — inside this, a particle is "on the rail"
