@@ -49,8 +49,31 @@ export async function recordLedger(entry: {
   ok: boolean
   txHash?: string
   note?: string
+  apiKeyId?: string
 }) {
   return prisma.spendLedgerEntry.create({ data: entry })
+}
+
+/** USD a connected agent (API key) settled since UTC midnight. */
+export async function agentSpentTodayUsd(apiKeyId: string): Promise<number> {
+  const agg = await prisma.spendLedgerEntry.aggregate({
+    where: { apiKeyId, ok: true, createdAt: { gte: utcMidnight() } },
+    _sum: { amountUsd: true },
+  })
+  return agg._sum.amountUsd ?? 0
+}
+
+/** Settled USD since UTC midnight for many agents at once (the Agents tab). */
+export async function agentSpentTodayByKey(apiKeyIds: string[]): Promise<Record<string, number>> {
+  if (apiKeyIds.length === 0) return {}
+  const rows = await prisma.spendLedgerEntry.groupBy({
+    by: ['apiKeyId'],
+    where: { apiKeyId: { in: apiKeyIds }, ok: true, createdAt: { gte: utcMidnight() } },
+    _sum: { amountUsd: true },
+  })
+  const out: Record<string, number> = {}
+  for (const r of rows) if (r.apiKeyId) out[r.apiKeyId] = r._sum.amountUsd ?? 0
+  return out
 }
 
 /** Narrow a SpendGrant row to the fields the policy checks need. */

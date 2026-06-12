@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import prisma from '@/lib/db'
 import { getSessionAddress } from '@/lib/auth'
 import { generateKey } from '@/lib/api-key'
+import { agentSpentTodayByKey } from '@/lib/grant-store'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -17,9 +18,10 @@ export async function GET() {
   const keys = await prisma.apiKey.findMany({
     where: { ownerAddress: addr },
     orderBy: { createdAt: 'desc' },
-    select: { id: true, label: true, prefix: true, lastUsedAt: true, createdAt: true },
+    select: { id: true, label: true, prefix: true, perDayUsd: true, lastUsedAt: true, createdAt: true },
   })
-  return NextResponse.json(keys)
+  const spent = await agentSpentTodayByKey(keys.map((k) => k.id))
+  return NextResponse.json(keys.map((k) => ({ ...k, spentTodayUsd: spent[k.id] ?? 0 })))
 }
 
 // Mint a key. SIWE-gated: only a wallet that proved itself in the browser can
