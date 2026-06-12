@@ -32,8 +32,10 @@
     backdrop-filter: blur(14px);
     border-bottom: 1px solid var(--line);
   }
+  /* Full-width shell: the nav tracks the viewport with the same edge padding
+     as the hero copy, so the logo and the H1 share a left edge. */
   .nav__inner {
-    max-width: var(--maxw); margin: 0 auto; padding: 0 28px;
+    padding: 0 clamp(24px, 4vw, 64px);
     height: 64px; display: flex; align-items: center; justify-content: space-between; gap: 18px;
   }
   .logo { display: inline-flex; align-items: center; gap: 9px; }
@@ -101,6 +103,8 @@
   .btn--ghost:hover { border-color: var(--fg); }
 
   .x-main { max-width: var(--maxw); margin: 0 auto; padding: 0 28px; }
+  /* landing page: full-bleed to match the hero (other pages keep the column) */
+  .x-main--fluid { max-width: none; padding: 0 clamp(24px, 4vw, 64px); }
 
   /* ── HERO (shared) ───────────────────────────────── */
   .hero { padding: 84px 0 64px; }
@@ -118,21 +122,6 @@
   }
   .hero__ctas { margin-top: 34px; display: flex; flex-wrap: wrap; gap: 12px; }
 
-  /* manifesto: split. min-width:0 on items — the runner feed's nowrap lines
-     otherwise set a ~500px min-content width and blow out narrow viewports
-     (body's overflow-x:hidden then CLIPS text instead of wrapping it). */
-  .hero--manifesto { display: grid; grid-template-columns: 1.05fr 0.95fr; gap: 56px; align-items: center; position: relative; }
-  .hero--manifesto > * { min-width: 0; }
-  .hero--manifesto .hero__left, .hero--manifesto .hero__right { position: relative; z-index: 1; }
-  /* the Settlement Rail field — full-bleed canvas behind the columns (the
-     container is centered, so 50% - 50vw reaches the viewport edge; body's
-     overflow-x:hidden absorbs the scrollbar-width overshoot) */
-  .hero__field { position: absolute; top: 0; bottom: 0; left: calc(50% - 50vw); width: 100vw; z-index: 0; pointer-events: none; }
-  .hero__field canvas { width: 100%; height: 100%; display: block; }
-  .hero__meter { position: absolute; left: 0; bottom: 32px; display: flex; flex-direction: column; gap: 3px; }
-  .hero__meter-usd { font-size: 13px; font-weight: 500; color: var(--fg); }
-  .hero__meter-usd span { color: var(--accent); }
-  .hero__meter-cap { font-size: 11px; color: var(--muted-2); }
   /* centered */
   .hero--centered { text-align: center; padding-bottom: 56px; }
   .hero--centered .hero__center { display: flex; flex-direction: column; align-items: center; }
@@ -144,55 +133,121 @@
   .hero--terminal .hero__termtext { display: flex; flex-direction: column; }
   .hero--terminal .hero__ctas { margin-top: 24px; }
 
-  /* ── RUNNER DEMO ─────────────────────────────────── */
-  .runner {
-    border: 1px solid var(--line); background: var(--surf-1); border-radius: 16px; overflow: hidden;
+  /* ── HERO: PAYMENT WEB ("Agent Expense Accounts") ──
+     Full-bleed section under the 64px nav (the container is centered, so
+     50% - 50vw reaches the viewport edge; body's overflow-x:hidden absorbs
+     the scrollbar-width overshoot). Tokens are scoped from the hero design
+     package — emerald = approved/settled, red = blocked/over-cap. */
+  .heroweb {
+    --hbg: #08090a; --hink: #f4f5f3; --hmuted: #8b9088; --hfaint: #5c6159;
+    --hline: rgba(255,255,255,.10); --haccent: #34e3a0; --hok: #5ef0a8; --hred: #ff5d5d;
+    position: relative; isolation: isolate; overflow: hidden;
+    width: 100vw; margin-left: calc(50% - 50vw);
+    min-height: calc(100svh - 64px);
+    display: flex; flex-direction: column;
+    background: var(--hbg);
   }
-  .runner__head {
-    display: flex; align-items: center; justify-content: space-between;
-    padding: 14px 18px; border-bottom: 1px solid var(--line);
+  .heroweb__particles { position: absolute; inset: 0; z-index: 0; overflow: hidden; pointer-events: none; }
+  .pw-pt {
+    position: absolute; top: 100%; border-radius: 50%; background: rgba(198,212,204,.6);
+    will-change: transform; animation: pw-floatup linear infinite;
   }
-  .runner__title { display: flex; align-items: center; gap: 10px; }
-  .runner__dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted-2); transition: background .2s; }
-  .runner__dot.is-live { background: var(--accent); animation: pulse 1.4s ease-in-out infinite; }
-  @keyframes pulse { 0%,100% { box-shadow: 0 0 0 0 color-mix(in oklch, var(--accent) 45%, transparent); } 50% { box-shadow: 0 0 0 5px transparent; } }
-  .runner__label { font-size: 11px; letter-spacing: 0.18em; color: var(--muted); }
-  .runner__toggle {
-    font-size: 12px; font-weight: 600; padding: 6px 14px; border-radius: 8px;
-    border: 1px solid var(--line-2); color: var(--fg); transition: background .15s, border-color .15s;
+  @keyframes pw-floatup { 0% { transform: translate(0,0); } 100% { transform: translate(var(--drift,0px),-118vh); } }
+  .heroweb__net { position: absolute; inset: 0; z-index: 1; width: 100%; height: 100%; display: block; }
+  .pw-g { transition: transform .5s cubic-bezier(.2,.7,.2,1); }
+  .pw-edge { stroke: rgba(255,255,255,.10); stroke-width: 1; transition: stroke .25s, opacity .25s; }
+  .pw-edge.is-hot { stroke: var(--haccent); stroke-width: 1.7; opacity: 1; }
+  .pw-edge.is-capped { stroke: rgba(255,93,93,.22); stroke-dasharray: 3 6; }
+  .pw-hubring { fill: none; stroke: var(--haccent); stroke-width: 1.4; animation: pw-breathe 3.6s ease-out infinite; }
+  .pw-hubring--b { animation-delay: 1.8s; }
+  @keyframes pw-breathe { 0% { r: 18px; opacity: .55; } 100% { r: 74px; opacity: 0; } }
+  .pw-hubcore { fill: var(--hbg); stroke: var(--haccent); stroke-width: 2; filter: drop-shadow(0 0 10px var(--haccent)); }
+  .pw-hubdot { fill: var(--haccent); }
+  .pw-hubname { fill: var(--hink); font-family: 'Geist Mono', ui-monospace, monospace; font-weight: 700; font-size: 12px; letter-spacing: 1px; text-anchor: middle; }
+  .pw-hubsub { fill: var(--haccent); font-family: 'Geist Mono', ui-monospace, monospace; font-size: 10px; text-anchor: middle; }
+  .pw-node text { font-family: 'Geist Mono', ui-monospace, monospace; dominant-baseline: central; }
+  .pw-node .pw-body { fill: #0d1011; stroke: rgba(255,255,255,.24); stroke-width: 1.2; transition: stroke .25s, fill .25s; }
+  .pw-node .pw-halo { fill: var(--haccent); opacity: 0; transform-box: fill-box; transform-origin: center; }
+  .pw-gly { fill: rgba(255,255,255,.72); text-anchor: middle; }
+  .pw-nm { fill: rgba(244,245,243,.82); font-weight: 500; }
+  .pw-pr { fill: var(--haccent); opacity: .72; }
+  .pw-capt { fill: var(--hred); opacity: .92; }
+  .pw-rcpt { fill: var(--hok); font-weight: 500; text-anchor: middle; opacity: 0; transform-box: fill-box; transform-origin: center; }
+  .pw-rdecl { fill: var(--hred); font-weight: 600; text-anchor: middle; opacity: 0; transform-box: fill-box; transform-origin: center; }
+  .pw-node.is-blocked .pw-body { stroke: rgba(255,93,93,.7); fill: #160e0e; }
+  .pw-node.is-blocked .pw-gly { fill: rgba(255,150,150,.85); }
+  .pw-node.is-settle .pw-body { stroke: var(--hok); fill: #0f1714; }
+  .pw-node.is-settle .pw-halo { animation: pw-halo 1.1s ease-out; }
+  .pw-node.is-settle .pw-rcpt { animation: pw-rcpt 1.5s ease-out; }
+  .pw-node.is-declined .pw-body { stroke: var(--hred); fill: #1a0e0e; }
+  .pw-node.is-declined .pw-halo { fill: var(--hred); animation: pw-halo 1.1s ease-out; }
+  .pw-node.is-declined .pw-rdecl { animation: pw-rcpt 1.5s ease-out; }
+  @keyframes pw-halo { 0% { opacity: .30; transform: scale(1); } 100% { opacity: 0; transform: scale(2.2); } }
+  @keyframes pw-rcpt { 0% { opacity: 0; transform: translateY(2px); } 20% { opacity: 1; } 100% { opacity: 0; transform: translateY(-16px); } }
+  .pw-beam { fill: var(--haccent); filter: drop-shadow(0 0 6px var(--haccent)); }
+  .pw-beam.is-red { fill: var(--hred); filter: drop-shadow(0 0 6px var(--hred)); }
+  .pw-barrier { fill: none; stroke: var(--hred); stroke-width: 1.6; }
+  /* readability veils — over the network, under the copy. Don't skip these:
+     they keep the left column legible over a busy animated background. */
+  .heroweb__veil { position: absolute; inset: 0; z-index: 2; pointer-events: none; }
+  .heroweb__veil--left { background: linear-gradient(100deg, var(--hbg) 0%, rgba(8,9,10,.94) 20%, rgba(8,9,10,.5) 40%, rgba(8,9,10,0) 58%); }
+  .heroweb__veil--frame { background: radial-gradient(120% 85% at 62% 42%, rgba(8,9,10,0) 56%, rgba(8,9,10,.5) 100%), linear-gradient(to bottom, rgba(8,9,10,.6) 0%, rgba(8,9,10,0) 16%, rgba(8,9,10,0) 76%, rgba(8,9,10,.8) 100%); }
+
+  .heroweb__stage { position: relative; z-index: 3; flex: 1; display: flex; align-items: center; padding: 48px clamp(24px, 4vw, 64px); }
+  .heroweb__copy { max-width: 600px; }
+  .heroweb__eyebrow { font-size: 13px; letter-spacing: .22em; color: var(--hfaint); text-transform: uppercase; margin-bottom: 30px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .heroweb__eyebrow b { color: var(--haccent); font-weight: 500; }
+  /* width: max-content lets "Agent Expense" escape the 600px copy column at
+     wide viewports instead of wrapping to three lines — the design's H1 is
+     exactly two: "Agent Expense" / "Accounts." */
+  .heroweb__h1 { font-family: 'Newsreader', Georgia, serif; font-weight: 500; font-size: clamp(54px, 7.4vw, 116px); line-height: .94; letter-spacing: -.022em; margin-bottom: 30px; width: max-content; max-width: calc(100vw - 2 * clamp(24px, 4vw, 64px)); }
+  .heroweb__em { font-style: italic; }
+  .heroweb__grad { color: transparent; background: linear-gradient(180deg, #fff 30%, #cbd3cb); -webkit-background-clip: text; background-clip: text; }
+  .heroweb__dim { color: transparent; background: linear-gradient(180deg, #838a80 16%, #4f554e); -webkit-background-clip: text; background-clip: text; }
+  .heroweb__lede { font-size: clamp(17px, 1.45vw, 21px); line-height: 1.55; color: #b8bdb4; max-width: 30em; text-wrap: pretty; }
+  .heroweb__lede strong { color: var(--hink); font-weight: 600; }
+  .heroweb__nokey { color: var(--haccent); font-weight: 600; }
+  .heroweb__ctas { display: flex; align-items: center; gap: 14px; margin-top: 40px; flex-wrap: wrap; }
+  .heroweb .btn--solid, .heroweb .btn--ghost { height: 54px; padding: 0 26px; border-radius: 13px; font-size: 16px; }
+  .heroweb .btn--ghost { border-color: var(--hline); background: rgba(255,255,255,.02); }
+  .heroweb .btn--ghost:hover { border-color: rgba(255,255,255,.3); background: rgba(255,255,255,.05); }
+  .heroweb__proof { display: flex; align-items: center; gap: 26px; margin-top: 46px; flex-wrap: wrap; }
+  .heroweb__pitem { display: flex; flex-direction: column; gap: 3px; }
+  .heroweb__pnum { font-size: 21px; font-weight: 500; color: var(--hink); letter-spacing: -.01em; }
+  .heroweb__pnum--red { color: var(--hred); }
+  .heroweb__pu { color: var(--haccent); }
+  .heroweb__plbl { font-size: 11.5px; letter-spacing: .12em; text-transform: uppercase; color: var(--hfaint); }
+  .heroweb__psep { width: 1px; height: 30px; background: var(--hline); }
+
+  /* live runner HUD — bottom-right glass card (hidden ≤1080px) */
+  .heroweb__hud {
+    position: absolute; right: clamp(20px, 3.4vw, 52px); bottom: clamp(22px, 3.4vw, 46px); z-index: 4;
+    width: 312px; border: 1px solid var(--hline); border-radius: 16px;
+    background: rgba(12,13,15,.66); backdrop-filter: blur(14px); padding: 16px 17px 14px;
+    font-family: 'Geist Mono', ui-monospace, monospace;
   }
-  .runner__toggle:hover { background: var(--surf-2); }
-  .runner__wallet { padding: 22px 18px 18px; border-bottom: 1px solid var(--line); }
-  .runner__walletlabel { font-size: 10.5px; letter-spacing: 0.14em; color: var(--muted-2); }
-  .runner__balance { display: flex; align-items: baseline; gap: 10px; margin-top: 10px; }
-  .runner__bal-num {
-    font-family: 'Archivo', sans-serif; font-weight: 800; font-size: clamp(2.4rem, 4vw, 3.4rem);
-    letter-spacing: -0.04em; line-height: 1; font-variant-numeric: tabular-nums;
+  .pw-hudtop { display: flex; align-items: center; justify-content: space-between; margin-bottom: 13px; }
+  .pw-hudlive { display: flex; align-items: center; gap: 8px; font-size: 12px; letter-spacing: .12em; color: var(--hmuted); }
+  .pw-hudlive i { width: 7px; height: 7px; border-radius: 50%; background: var(--haccent); box-shadow: 0 0 8px var(--haccent); animation: pw-blink 1.8s infinite; }
+  @keyframes pw-blink { 0%, 70% { opacity: 1; } 85% { opacity: .25; } 100% { opacity: 1; } }
+  .pw-hudcap { font-size: 10.5px; letter-spacing: .14em; text-transform: uppercase; color: var(--hfaint); }
+  .pw-hudbal { display: flex; align-items: baseline; gap: 7px; margin: 4px 0 14px; }
+  .pw-hudbal b { font-size: 33px; font-weight: 500; letter-spacing: -.01em; color: var(--hink); }
+  .pw-hudbal span { font-size: 12px; color: var(--hmuted); }
+  .pw-hudrow { display: flex; gap: 18px; padding-bottom: 13px; border-bottom: 1px solid var(--hline); margin-bottom: 11px; }
+  .pw-hudv { font-size: 17px; color: var(--hink); }
+  .pw-hudv--red { color: var(--hred); }
+  .pw-hudk { font-size: 10.5px; letter-spacing: .1em; text-transform: uppercase; color: var(--hfaint); margin-top: 2px; }
+  .pw-hudlast { font-size: 12px; line-height: 1.5; color: var(--hmuted); min-height: 34px; }
+  .pw-srv { color: var(--hink); }
+  .pw-ok { color: var(--hok); }
+  .pw-decl { color: var(--hred); }
+  .pw-amt { color: var(--hok); float: right; }
+  .pw-amt--red { color: var(--hred); }
+  @media (prefers-reduced-motion: reduce) {
+    .pw-hubring { animation: none; }
+    .pw-pt { animation: none; }
   }
-  .runner__bal-cur { font-size: 14px; color: var(--muted); }
-  .runner__stats { display: flex; gap: 36px; margin-top: 20px; }
-  .runner__stat-num { font-size: 17px; font-weight: 600; }
-  .runner__stat-lbl { font-size: 11.5px; color: var(--muted-2); margin-top: 3px; }
-  .runner__feed {
-    padding: 8px 0; height: 248px; overflow: hidden; font-size: 12px;
-    -webkit-mask-image: linear-gradient(to bottom, #000 78%, transparent);
-            mask-image: linear-gradient(to bottom, #000 78%, transparent);
-  }
-  .runner__empty { padding: 16px 18px; color: var(--muted-2); }
-  .runner__line {
-    display: flex; align-items: center; gap: 10px; padding: 5px 18px; white-space: nowrap;
-    animation: feedin .3s ease;
-  }
-  @keyframes feedin { from { transform: translateY(-5px); opacity: 0.2; } to { transform: none; opacity: 1; } }
-  .runner__t { color: var(--muted-2); flex-shrink: 0; }
-  .runner__caller { color: var(--fg); font-weight: 500; flex-shrink: 0; }
-  .runner__arrow { color: var(--muted-2); flex-shrink: 0; }
-  .runner__target { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); flex-shrink: 0; }
-  .runner__glyph { width: 14px; height: 14px; display: grid; place-items: center; opacity: 0.85; }
-  .runner__action { color: var(--muted-2); flex: 1; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
-  .runner__code { color: var(--accent); flex-shrink: 0; opacity: 0.85; }
-  .runner__price { font-weight: 600; flex-shrink: 0; }
-  .runner__line--sys .runner__sys { color: var(--muted); }
 
   /* ── EXPLAINER ───────────────────────────────────── */
   .explain { padding: 56px 0; border-top: 1px solid var(--line); }
@@ -208,7 +263,7 @@
   .step__d { font-size: 14.5px; color: var(--muted); margin-top: 10px; line-height: 1.55; text-wrap: pretty; }
 
   /* ── DIRECTORY ───────────────────────────────────── */
-  /* no border-top: the hero's settlement rail is the divider above this section */
+  /* no border-top: the hero's bottom vignette is the divider above this section */
   .dir { padding: 56px 0 110px; }
   /* wrap so the network-pulse stat drops to its own line on phones */
   .dir__statbar { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 16px; margin-bottom: 28px; }
@@ -242,6 +297,8 @@
   }
 
   .x-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
+  /* the directory is full-width now — add columns instead of letting cards sprawl */
+  @media (min-width: 1800px) { .x-grid { grid-template-columns: repeat(5, 1fr); } }
   .card {
     border: 1px solid var(--line); background: var(--surf-1); border-radius: 14px; padding: 18px;
     cursor: pointer; transition: border-color .18s, background .18s, transform .18s;
@@ -569,7 +626,7 @@
   /* ── FOOTER ──────────────────────────────────────── */
   .footer { border-top: 1px solid var(--line); margin-top: 0; }
   .footer__top {
-    max-width: var(--maxw); margin: 0 auto; padding: 56px 28px 40px;
+    padding: 56px clamp(24px, 4vw, 64px) 40px;
     display: flex; justify-content: space-between; gap: 40px; flex-wrap: wrap;
   }
   .footer__brand { max-width: 38ch; }
@@ -578,7 +635,7 @@
   .footer__links a { font-size: 15px; color: var(--muted); transition: color .15s; }
   .footer__links a:hover { color: var(--fg); }
   .footer__bottom {
-    max-width: var(--maxw); margin: 0 auto; padding: 22px 28px;
+    padding: 22px clamp(24px, 4vw, 64px);
     border-top: 1px solid var(--line); display: flex; justify-content: space-between; gap: 16px;
     font-size: 11px; letter-spacing: 0.12em; color: var(--muted-2);
   }
@@ -586,9 +643,12 @@
   /* ── RESPONSIVE ──────────────────────────────────── */
   @media (max-width: 1080px) {
     .x-grid { grid-template-columns: repeat(3, 1fr); }
+    /* hide the HUD; the left veil becomes a vertical gradient so the copy
+       stays legible with the network behind it */
+    .heroweb__hud { display: none; }
+    .heroweb__veil--left { background: linear-gradient(180deg, rgba(8,9,10,.4), rgba(8,9,10,.82)); }
   }
   @media (max-width: 900px) {
-    .hero--manifesto { grid-template-columns: 1fr; gap: 40px; }
     .hero { padding: 56px 0 48px; }
     .x-grid { grid-template-columns: repeat(2, 1fr); }
     .explain__steps { grid-template-columns: 1fr; }
@@ -602,15 +662,12 @@
     /* comfortable touch targets on phones */
     .card__btn { width: 44px; height: 44px; }
     .card__more { padding: 8px 12px; }
-    .runner__toggle { min-height: 44px; padding: 10px 16px; }
     .nav__inner { padding: 0 18px; }
     .x-grid { grid-template-columns: 1fr; }
     .nav__status { display: none; }
     .footer__links { align-items: flex-start; }
     .activebar__chips { display: none; }
-    .runner__feed { font-size: 11px; }
-    .runner__action { display: none; }
-    .runner__code { display: none; } /* keep the price visible — it's the point */
+    .heroweb__h1 { font-size: clamp(46px, 15vw, 72px); }
 
     /* Service detail: stack the header so the badge row gets full width
        (otherwise badges wrap one-per-line beside the tile + outlink). */

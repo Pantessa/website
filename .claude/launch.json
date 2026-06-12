@@ -7,6 +7,13 @@
       "runtimeArgs": ["run", "dev"],
       "port": 3010,
       "autoPort": true
+    },
+    {
+      "name": "web-prod",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["next", "start"],
+      "port": 3210,
+      "autoPort": true
     }
   ]
 }

@@ -51,7 +51,6 @@ export default function HomePage() {
   }, [setServers])
 
   const displayServers = servers.length > 0 ? servers : STATIC_SERVERS
-  const agents = displayServers.filter((s) => activeServerIds.includes(s.id))
 
   const cats = [ALL, ...Array.from(new Set(displayServers.map((s) => s.category))).sort()]
   const filtered = displayServers.filter((s) => {
@@ -63,8 +62,8 @@ export default function HomePage() {
 
   return (
     <>
-      <main className="x-main">
-        <Hero agents={agents} catalog={displayServers} />
+      <main className="x-main x-main--fluid">
+        <Hero catalog={displayServers} />
 
         {/* Directory */}
         <div className="dir" id="directory">
