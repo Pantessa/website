@@ -150,7 +150,6 @@ denial-row absence). All 43 green; tsc + build green. Real-payload sanity:
 the owner's lisbon receipts render with truncated `0x5eaa…55a0` + Basescan-able
 tx hashes; `callsToday: 0` verified correct (UTC midnight had passed — DB
 now() cross-checked, not assumed).
->>>>>>> origin/autopilot
 
 ---
 
