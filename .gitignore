@@ -42,3 +42,6 @@ next-env.d.ts
 design/design_handoff_x402_runner/
 design/*.zip
 **/.DS_Store
+
+# Brand kit stays local (logo sources, app icons) — see CLAUDE.md
+/design/yeetful_brand_install/
