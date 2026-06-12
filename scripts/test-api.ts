@@ -285,6 +285,17 @@ async function main() {
     capSync.status === 201 && capped.agent?.spentTodayUsd === 0.05 && capped.agent?.overBudget === true,
   )
 
+  // The Overview tile's data: connected-agents count + top key by spend today.
+  const statsRes = await fetch(`${BASE}/api/dashboard/stats`, { headers: C })
+  const stats = await statsRes.json()
+  check(
+    'dashboard stats: connected-agents block (count + top-today attribution)',
+    statsRes.status === 200 &&
+      stats.agents?.connected === 1 &&
+      stats.agents?.topToday?.label === 'test:api harness' &&
+      stats.agents?.topToday?.spentTodayUsd === 0.05,
+  )
+
   // ── Public activity feed (Run 7: anonymized network proof-of-life) ───────
   console.log('— public activity')
   // Seed a DENIAL receipt too — the public feed must aggregate it, not list it.

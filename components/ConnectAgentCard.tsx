@@ -7,6 +7,7 @@
 // depend on having one). Pure presentational: all inputs via props.
 
 import { useState } from 'react'
+import Link from 'next/link'
 import { Copy, Check, Cable } from 'lucide-react'
 
 export interface ConnectAgentCardProps {
@@ -108,8 +109,14 @@ export default function ConnectAgentCard({
       </pre>
       <p className="text-[11px] text-[color:var(--muted-2)] mt-2.5">
         <code className="mono">npm install yeetful</code> · set{' '}
-        <code className="mono">YEETFUL_API_KEY</code> in your agent&apos;s env (mint above) ·
-        full example:{' '}
+        <code className="mono">YEETFUL_API_KEY</code>{' '}in your agent&apos;s env (mint above) ·{' '}
+        <Link
+          href="/docs/agents"
+          className="underline decoration-dotted underline-offset-2 hover:text-white transition-colors"
+        >
+          budgets &amp; the agent model
+        </Link>{' '}
+        · full example:{' '}
         <a
           href="https://github.com/Yeetful/example-agent"
           target="_blank"

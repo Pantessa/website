@@ -1,6 +1,7 @@
 'use client'
 
 import { LogIn, LogOut, Loader2, ShieldCheck } from 'lucide-react'
+import { useRouter } from 'next/navigation'
 import { useAccount } from 'wagmi'
 import { cn } from '@/lib/utils'
 import { useSession } from '@/lib/session'
@@ -12,6 +13,7 @@ import { useSession } from '@/lib/session'
  * - signed in            → a "Signed in" chip whose click signs out
  */
 export default function AuthButton() {
+  const router = useRouter()
   const { isConnected } = useAccount()
   const { address, signingIn, signIn, signOut } = useSession()
 
@@ -20,7 +22,7 @@ export default function AuthButton() {
   if (address) {
     return (
       <button
-        onClick={() => signOut()}
+        onClick={() => signOut().then(() => router.push('/'))}
         type="button"
         title="Signed in with Ethereum — click to sign out"
         className={cn(

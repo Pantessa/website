@@ -36,7 +36,7 @@ export default function QuickstartPage() {
 
         <h2>2. A wallet</h2>
         <p>
-          Any viem <code>WalletClient</code> works — a small dedicated burner for development, or
+          Any viem <code>WalletClient</code>{' '}works — a small dedicated burner for development, or
           a Coinbase Developer Platform wallet in production (CDP accounts satisfy viem&apos;s
           account interface, so they drop straight in). Fund it with a few dollars of USDC on
           Base; payments are gasless EIP-3009 authorizations, so no ETH is needed.
