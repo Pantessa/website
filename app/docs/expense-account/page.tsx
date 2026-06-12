@@ -21,7 +21,7 @@ export default function ExpenseAccountPage() {
       <h1 className="docs__h1">The expense account</h1>
       <p className="docs__lead">
         A spend grant is policy, not custody: an allowlist of hosts plus USD caps, enforced
-        in-process <strong>before</strong> any payment is signed. It&apos;s the guardrail against
+        in-process <strong>before</strong>{' '}any payment is signed. It&apos;s the guardrail against
         runaway loops, bugs, and prompt-injected tool calls — one grant authorizes many
         endpoints.
       </p>

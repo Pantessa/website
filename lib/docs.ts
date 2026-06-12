@@ -49,6 +49,14 @@ export const DOCS_PAGES: DocsPage[] = [
     ready: true,
   },
   {
+    slug: 'agents',
+    title: 'Agents & budgets',
+    seoTitle: 'Agents & budgets — a daily cap for every connected app',
+    description:
+      'On Yeetful an agent IS an API key: give each connected app a per-day USD budget the SDK pre-flights via /api/agent/policy and enforces before paying.',
+    ready: true,
+  },
+  {
     slug: 'x402',
     title: 'x402 v1 + v2',
     seoTitle: 'x402 protocol — what the SDK handles for you',
