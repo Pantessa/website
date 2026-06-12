@@ -1,4 +1,70 @@
-# Autopilot — Run 8 DRAFT: Coinbase Spend Permission example (staged 2026-06-12, awaiting owner review — do NOT start until approved)
+# Autopilot — Run 8: docs + Claude Code onboarding + signed-in app shell (staged 2026-06-12, started via /loop)
+
+Owner directive: (a) a real `/docs` section explaining SDK integration —
+SEO first-class, sub-pages, FULL-WIDTH layout; (b) a Claude Code page: a
+copy-paste prompt that lets someone building a Coinbase Developer Portal
+agent add Yeetful in one shot — the prompt instructs Claude to wire the SDK
+and walk the human to the exact yeetful.com pages for API keys + grant id;
+(c) GitHub-style signed-in experience: once authed, skip the marketing
+landing page (/ → dashboard) and use the full viewport width in the portal.
+
+## Rules (Run 6/7 constitution applies; additions)
+
+D1. **Docs accuracy**: every code sample must match the SHIPPED yeetful
+    0.3.1 surface — copy from sdk/README.md, sdk/src, example-agent; never
+    invent APIs. Prices/links match prod (keys live at /dashboard/keys).
+D2. **SEO checklist per docs page**: title ≤60 chars, description ≤160,
+    canonical, OG, JSON-LD (TechArticle + BreadcrumbList), in sitemap.xml,
+    crawlable server-rendered content (no client-only copy).
+D3. **Full-width**: docs + authed portal surfaces use the full viewport
+    (fluid with sane gutters); marketing pages keep --maxw for guests.
+D4. The / → dashboard redirect applies ONLY with a verified SIWE session
+    (not mere wallet connection), client-side (auth is client-known), with
+    an escape hatch (?home=1 or a "view site" link) so the marketing page
+    stays reachable.
+
+## Queue (ordered; one per iteration)
+
+- [ ] **1. Docs foundation** — /docs route group with its own FULL-WIDTH
+  layout (left sidebar nav, content region, right "on this page" rail at
+  xl), shared DocsPage scaffolding (breadcrumbs + JSON-LD helpers), and the
+  /docs landing page (what Yeetful is for builders + cards to sub-pages).
+  Server-rendered content, D2 SEO on the landing. Mobile: sidebar collapses
+  to a top scroll-row (Run 6/7 standards apply — rect-scan).
+- [ ] **2. Core SDK sub-pages** — /docs/quickstart (install → grant →
+  first paid call, from sdk README), /docs/expense-account (allowlist,
+  caps, receipts, GrantError — the concepts page), /docs/ledger-sync
+  (API keys, YEETFUL_GRANT_ID, ledgerUrl + the canonical-origin/auth-header
+  gotcha we hit live), /docs/x402 (v1/v2 differences the SDK absorbs).
+  D1+D2 on every page.
+- [ ] **3. Claude Code page** — /docs/claude-code: "add Yeetful to your
+  Coinbase agent in one prompt". A prominent copy button on a prebuilt
+  prompt that tells Claude Code to: npm i yeetful, wrap the agent's paid
+  calls in yeetful(), add env handling, and INTERACTIVELY walk the human
+  through minting a key at https://yeetful.com/dashboard/keys (copy yf_
+  secret + YEETFUL_GRANT_ID from the connect card) with direct links/
+  buttons. Mention CDP wallets work as the signer (viem account). D2 SEO;
+  this page is the funnel target.
+- [ ] **4. Wire-up + SEO plumbing** — nav "Docs" tab + footer + /developers
+  cross-links into docs; sitemap.xml gains all docs URLs; robots fine;
+  RSS untouched. Verify every docs page's head tags server-side (curl).
+- [ ] **5. Signed-in shell** — / redirects to /dashboard when a SIWE
+  session exists (D4, mount-gated, no flash for guests); portal surfaces
+  (dashboard shell, /activity when authed? NO — dashboard only) go fluid
+  full-width with gutters; nav reflects portal mode (Dashboard first).
+  Careful with hydration + the existing mount-gates.
+- [ ] **6. Exit verification** — all-pages sweep table updated incl. the
+  new /docs pages (375/390 via the iframe method), desktop 1280+1680
+  full-width screenshots of docs + dashboard, head-tag table for docs
+  pages, tsc/build/test:api. Run summary.
+
+## Progress log — Run 8
+
+_(autopilot appends here)_
+
+---
+
+# Run 9 DRAFT: Coinbase Spend Permission example (awaiting owner review — do NOT start until approved)
 
 The strategic wedge from CLAUDE.md: back the (signable) SpendGrant with a
 real on-chain Coinbase Spend Permission so the agent never holds funds.
