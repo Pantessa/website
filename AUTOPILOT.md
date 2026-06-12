@@ -241,7 +241,7 @@ A5. The pure gate logic must be unit-coverable from test:api (import it
 
 ## Queue (ordered; one per iteration)
 
-- [ ] **1. Schema + enforcement engine** — additive `per_call_usd` +
+- [x] **1. Schema + enforcement engine** — additive `per_call_usd` +
   `per_day_usd` (nullable Float) on agent_approvals + db push (verify in
   pg_indexes/information_schema). Pure gate fn (lib/spend-grant.ts
   neighborhood): given grant, approval caps, per-service spent-today, and
@@ -270,6 +270,29 @@ A5. The pure gate logic must be unit-coverable from test:api (import it
 ## Progress log — Run 9
 
 _(autopilot appends here)_
+
+### Item 1 — Schema + enforcement engine ✅ (2026-06-12)
+
+Additive nullable `per_call_usd`/`per_day_usd` on agent_approvals, pushed
+to Neon (null = inherit the grant — caps only ever further restrict).
+`checkAgentCaps`/`agentCapViolation` in lib/spend-grant.ts (pure, new
+OVER_AGENT_CAP violation), layered AFTER checkGrant. lib/grant-store
+gains `agentSpentTodayByService` (one groupBy) + `agentCapsByName`.
+
+**Wired into BOTH chat paths.** Burner: a single `gate(name, host, price)`
++ `settle()` pair replaced the four hand-rolled check sites (per-agent
+spend tracked in-turn too). Wallet: **plan-time gating that did not exist
+at all** — discovery of the run: wallet mode previously had ZERO policy
+enforcement (the human signing each payment was the only gate; dashboard
+toggles only governed burner mode). planWalletPayments now loads the
+grant + caps and refuses to even REQUEST a signature for a violating
+call; denials are ledgered (OVER_AGENT_CAP / the grant codes) and the
+reply's notes say which agent was blocked and why. A blocked inference
+call returns the blocked reply at plan time.
+
+test:api 43 → **48** (pure-gate unit section per A5: inherit-on-null,
+per-call, per-day-counts-today, at-cap-allowed boundary, grant-allows/
+agent-denies layering). tsc + build green; prod-server harness.
 
 ---
 

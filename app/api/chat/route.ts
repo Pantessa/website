@@ -13,9 +13,11 @@ import {
 } from '@/lib/x402'
 import type { McpServer } from '@/lib/store'
 import { getSessionAddress } from '@/lib/auth'
-import { grantViolation, type GrantPolicy } from '@/lib/spend-grant'
+import { agentCapViolation, grantViolation, type AgentCaps, type GrantPolicy } from '@/lib/spend-grant'
 import {
   getActiveGrant,
+  agentCapsByName,
+  agentSpentTodayByService,
   spentTodayUsd,
   spentTotalUsd,
   recordLedger,
@@ -185,7 +187,38 @@ async function planWalletPayments(
 ) {
   const plan: PlannedCall[] = []
 
+  // Policy gate at PLAN time: never ask the wallet to sign a payment the
+  // grant or a per-agent cap forbids. (Until now wallet mode relied purely
+  // on the human signing each payment — the dashboard toggles only gated
+  // burner mode. Denials are ledgered so the audit trail shows them.)
+  const owner = await getSessionAddress()
+  const grant = owner ? await getActiveGrant(owner) : null
+  const policy: GrantPolicy | null = grant ? toPolicy(grant) : null
+  const spentToday = grant ? await spentTodayUsd(grant.id) : 0
+  const spentTotal = grant ? await spentTotalUsd(grant.id) : 0
+  const agentCaps: Record<string, AgentCaps> = owner ? await agentCapsByName(owner) : {}
+  const agentSpent: Record<string, number> = grant ? await agentSpentTodayByService(grant.id) : {}
+  let plannedUsd = 0
+  const planGate = async (name: string, host: string, price: number): Promise<string | null> => {
+    if (!policy || !grant) return null
+    const violation =
+      grantViolation(policy, host, price, spentToday + plannedUsd, spentTotal + plannedUsd) ??
+      agentCapViolation(agentCaps[name], name, price, agentSpent[name] ?? 0)
+    if (violation) {
+      await recordLedger({ grantId: grant.id, host, serviceName: name, amountUsd: 0, ok: false, note: violation })
+      return violation
+    }
+    plannedUsd += price
+    agentSpent[name] = (agentSpent[name] ?? 0) + price
+    return null
+  }
+
   for (const ds of dataServers) {
+    const dsViolation = await planGate(ds.name, hostOf(ds.endpoint!), Number(ds.priceUsd ?? '0.01'))
+    if (dsViolation) {
+      notes.push(`${ds.name} was blocked by your spend policy (${dsViolation}) — manage it on the Dashboard.`)
+      continue
+    }
     const url = new URL(ds.endpoint!)
     url.searchParams.set(ds.queryParam ?? 'q', message)
     const challenge = await getChallenge(url.toString(), {
@@ -223,6 +256,11 @@ async function planWalletPayments(
           continue
         }
         const { request } = built
+        const smartViolation = await planGate(ep.serverName, hostOf(request.url), Number(ep.priceUsd))
+        if (smartViolation) {
+          notes.push(`${ep.serverName} was blocked by your spend policy (${smartViolation}) — manage it on the Dashboard.`)
+          continue
+        }
         const challenge = await getChallenge(request.url, {
           method: request.method,
           headers: request.headers,
@@ -253,6 +291,18 @@ async function planWalletPayments(
   // Inference 402 probe. MCP gateways price flat (body-independent); http
   // gateways price by request size, so the probe carries the real model and
   // the execute-time prompt is capped into the same flat tier (see capPrompt).
+  const infViolation = await planGate(
+    inference.name,
+    hostOf(inference.endpoint!),
+    Number(inference.priceUsd ?? '0.01'),
+  )
+  if (infViolation) {
+    return NextResponse.json({
+      reply: `🚫 Your spend policy blocked the inference call (${inference.name}: ${infViolation}). Adjust it on your **Dashboard** and try again.`,
+      blocked: true,
+      notes,
+    })
+  }
   const infProtocol = inferenceProtocolOf(inference)
   const infTool = inference.tool ?? (infProtocol === 'http' ? 'openai/gpt-4o-mini' : 'ask_claude')
   const infChallenge = await getChallenge(inference.endpoint!, {
@@ -410,15 +460,28 @@ async function runWithBurner(
   const policy: GrantPolicy | null = grant ? toPolicy(grant) : null
   let spentToday = grant ? await spentTodayUsd(grant.id) : 0
   let spentTotal = grant ? await spentTotalUsd(grant.id) : 0
+  // Per-agent caps (agent_approvals) + each service's settled spend today.
+  const agentCaps: Record<string, AgentCaps> = owner ? await agentCapsByName(owner) : {}
+  const agentSpent: Record<string, number> = grant ? await agentSpentTodayByService(grant.id) : {}
+  const gate = (name: string, host: string, price: number) =>
+    (policy && grant
+      ? (grantViolation(policy, host, price, spentToday, spentTotal) ??
+        agentCapViolation(agentCaps[name], name, price, agentSpent[name] ?? 0))
+      : null)
+  const settle = (name: string, price: number) => {
+    spentToday += price
+    spentTotal += price
+    agentSpent[name] = (agentSpent[name] ?? 0) + price
+  }
   const blocked: string[] = []
 
   for (const ds of dataServers) {
     const host = hostOf(ds.endpoint!)
     const price = Number(ds.priceUsd ?? '0.01')
 
-    if (policy && grant) {
-      const violation = grantViolation(policy, host, price, spentToday, spentTotal)
-      if (violation) {
+    {
+      const violation = gate(ds.name, host, price)
+      if (violation && grant) {
         await recordLedger({ grantId: grant.id, host, serviceName: ds.name, amountUsd: 0, ok: false, note: violation })
         receipts.push({ name: ds.name, endpoint: host, priceUsd: ds.priceUsd ?? '0.01', ok: false, note: `blocked: ${violation}` })
         blocked.push(`${ds.name} (${violation})`)
@@ -432,8 +495,7 @@ async function runWithBurner(
       receipts.push({ name: ds.name, endpoint: host, priceUsd: ds.priceUsd ?? '0.01', txHash, ok: true })
       if (grant) {
         await recordLedger({ grantId: grant.id, host, serviceName: ds.name, amountUsd: price, ok: true, txHash, note: 'settled' })
-        spentToday += price
-        spentTotal += price
+        settle(ds.name, price)
       }
     } catch (err) {
       receipts.push({ name: ds.name, endpoint: host, priceUsd: ds.priceUsd ?? '0.01', ok: false, note: err instanceof Error ? err.message : 'call failed' })
@@ -446,7 +508,7 @@ async function runWithBurner(
   const smartServed = new Set<string>()
   if (smart.length > 0) {
     // The planning call is an extra inference payment — gate it like one.
-    const plannerViolation = policy && grant ? grantViolation(policy, infHost, infPrice, spentToday, spentTotal) : null
+    const plannerViolation = gate(inference.name, infHost, infPrice)
     if (plannerViolation) {
       blocked.push(`endpoint planner (${plannerViolation})`)
     } else {
@@ -454,8 +516,7 @@ async function runWithBurner(
         const { picks, txHash } = await planSmartPicks(inference, message, smart)
         if (grant) {
           await recordLedger({ grantId: grant.id, host: infHost, serviceName: inference.name, amountUsd: infPrice, ok: true, txHash, note: 'settled' })
-          spentToday += infPrice
-          spentTotal += infPrice
+          settle(inference.name, infPrice)
         }
         if (picks.length === 0) {
           const considered = [...new Set(smart.map((e) => e.serverName))].join(', ')
@@ -472,9 +533,9 @@ async function runWithBurner(
           const { request } = built
           const host = hostOf(request.url)
           const price = Number(ep.priceUsd)
-          if (policy && grant) {
-            const violation = grantViolation(policy, host, price, spentToday, spentTotal)
-            if (violation) {
+          {
+            const violation = gate(ep.serverName, host, price)
+            if (violation && grant) {
               await recordLedger({ grantId: grant.id, host, serviceName: ep.serverName, amountUsd: 0, ok: false, note: violation })
               receipts.push({ name: ep.serverName, endpoint: host, priceUsd: ep.priceUsd, ok: false, note: `blocked: ${violation}` })
               blocked.push(`${ep.serverName} (${violation})`)
@@ -488,8 +549,7 @@ async function runWithBurner(
             smartServed.add(ep.serverSlug)
             if (grant) {
               await recordLedger({ grantId: grant.id, host, serviceName: ep.serverName, amountUsd: price, ok: true, txHash: dataTx, note: 'settled' })
-              spentToday += price
-              spentTotal += price
+              settle(ep.serverName, price)
             }
           } catch (err) {
             receipts.push({ name: ep.serverName, endpoint: host, priceUsd: ep.priceUsd, ok: false, note: err instanceof Error ? err.message : 'call failed' })
@@ -505,7 +565,7 @@ async function runWithBurner(
 
   // Inference is the call that actually answers — if the grant blocks it, stop.
   if (policy && grant) {
-    const violation = grantViolation(policy, infHost, infPrice, spentToday, spentTotal)
+    const violation = gate(inference.name, infHost, infPrice)
     if (violation) {
       await recordLedger({ grantId: grant.id, host: infHost, serviceName: inference.name, amountUsd: 0, ok: false, note: violation })
       const also = blocked.length ? ` Also blocked: ${blocked.join(', ')}.` : ''

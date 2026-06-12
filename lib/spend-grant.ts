@@ -21,6 +21,7 @@ export type GrantViolation =
   | 'NOT_ALLOWED'
   | 'OVER_PER_CALL'
   | 'BUDGET_EXCEEDED'
+  | 'OVER_AGENT_CAP'
 
 export class GrantError extends Error {
   constructor(public code: GrantViolation, message: string) {
@@ -105,6 +106,54 @@ export function grantViolation(
 ): GrantViolation | null {
   try {
     checkGrant(grant, host, priceUsd, spentTodayUsd, spentTotalUsd)
+    return null
+  } catch (e) {
+    return e instanceof GrantError ? e.code : null
+  }
+}
+
+/** Per-agent caps from agent_approvals. Null fields inherit the grant. */
+export interface AgentCaps {
+  perCallUsd: number | null
+  perDayUsd: number | null
+}
+
+/**
+ * Per-agent gate, layered AFTER checkGrant: an agent's caps can only further
+ * restrict — a null field means "no agent-specific limit" and the grant's own
+ * caps (already checked) govern. Pure: the caller supplies the agent's
+ * settled spend for the UTC day.
+ */
+export function checkAgentCaps(
+  caps: AgentCaps | undefined | null,
+  agentName: string,
+  priceUsd: number,
+  agentSpentTodayUsd: number,
+): void {
+  if (!caps) return
+  if (caps.perCallUsd != null && priceUsd > caps.perCallUsd) {
+    throw new GrantError(
+      'OVER_AGENT_CAP',
+      `$${priceUsd.toFixed(4)} exceeds ${agentName}'s per-call cap of $${caps.perCallUsd}.`,
+    )
+  }
+  if (caps.perDayUsd != null && agentSpentTodayUsd + priceUsd > caps.perDayUsd) {
+    throw new GrantError(
+      'OVER_AGENT_CAP',
+      `$${(agentSpentTodayUsd + priceUsd).toFixed(2)} would exceed ${agentName}'s daily cap of $${caps.perDayUsd} (already spent $${agentSpentTodayUsd.toFixed(2)} today).`,
+    )
+  }
+}
+
+/** Convenience mirror of grantViolation for the per-agent layer. */
+export function agentCapViolation(
+  caps: AgentCaps | undefined | null,
+  agentName: string,
+  priceUsd: number,
+  agentSpentTodayUsd: number,
+): GrantViolation | null {
+  try {
+    checkAgentCaps(caps, agentName, priceUsd, agentSpentTodayUsd)
     return null
   } catch (e) {
     return e instanceof GrantError ? e.code : null

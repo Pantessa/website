@@ -24,6 +24,7 @@
 import { generatePrivateKey, privateKeyToAccount, type PrivateKeyAccount } from 'viem/accounts'
 import { createSiweMessage } from 'viem/siwe'
 import { grantTypedData } from '../lib/grant-typed-data'
+import { agentCapViolation, grantViolation } from '../lib/spend-grant'
 
 const BASE = process.env.BASE ?? 'http://localhost:3000'
 const DOMAIN = new URL(BASE).host
@@ -272,6 +273,32 @@ async function main() {
   check(
     'activity: P2 — denial rows absent from public feed (aggregate only)',
     !act.recent.some((r) => r.host === 'denied.example.test') && act.stats.blockedCalls >= 1,
+  )
+
+  // ── Per-agent caps: the pure gate (rule A5 — payments can't be exercised
+  //    without funds, the LOGIC is provable anyway) ───────────────────────────
+  console.log('— per-agent caps (pure gate)')
+  check('null caps inherit the grant (no violation)', agentCapViolation(null, 'X', 0.04, 99) === null)
+  check(
+    'per-call agent cap denies below the grant cap',
+    agentCapViolation({ perCallUsd: 0.01, perDayUsd: null }, 'X', 0.02, 0) === 'OVER_AGENT_CAP',
+  )
+  check(
+    'per-day agent cap counts the day so far',
+    agentCapViolation({ perCallUsd: null, perDayUsd: 0.05 }, 'X', 0.02, 0.04) === 'OVER_AGENT_CAP',
+  )
+  check(
+    'exactly-at-cap is allowed (caps are ceilings, not strict bounds)',
+    agentCapViolation({ perCallUsd: null, perDayUsd: 0.05 }, 'X', 0.02, 0.03) === null,
+  )
+  const layeredGrant = {
+    id: 'g', allow: ['api.example.test'], perCallUsd: 0.05, perDayUsd: 5,
+    totalUsd: null, expiresAt: new Date(Date.now() + 86_400_000), status: 'active',
+  }
+  check(
+    'layering: grant allows, agent cap still denies',
+    grantViolation(layeredGrant, 'api.example.test', 0.02, 0) === null &&
+      agentCapViolation({ perCallUsd: 0.01, perDayUsd: null }, 'X', 0.02, 0) === 'OVER_AGENT_CAP',
   )
 
   // ── Key revocation (after Bearer use, before cleanup) ─────────────────────

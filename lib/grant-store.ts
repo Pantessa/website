@@ -73,3 +73,33 @@ export function toPolicy(grant: {
     status: grant.status,
   }
 }
+
+/** Settled spend per service for the UTC day — feeds the per-agent caps. */
+export async function agentSpentTodayByService(grantId: string): Promise<Record<string, number>> {
+  const midnight = new Date()
+  midnight.setUTCHours(0, 0, 0, 0)
+  const rows = await prisma.spendLedgerEntry.groupBy({
+    by: ['serviceName'],
+    where: { grantId, ok: true, createdAt: { gte: midnight } },
+    _sum: { amountUsd: true },
+  })
+  const out: Record<string, number> = {}
+  for (const r of rows) if (r.serviceName) out[r.serviceName] = r._sum.amountUsd ?? 0
+  return out
+}
+
+/** Per-agent caps keyed by SERVER NAME (the key the chat path + ledger use). */
+export async function agentCapsByName(
+  ownerAddress: string,
+): Promise<Record<string, { perCallUsd: number | null; perDayUsd: number | null }>> {
+  const rows = await prisma.agentApproval.findMany({
+    where: {
+      ownerAddress: ownerAddress.toLowerCase(),
+      OR: [{ perCallUsd: { not: null } }, { perDayUsd: { not: null } }],
+    },
+    select: { perCallUsd: true, perDayUsd: true, server: { select: { name: true } } },
+  })
+  const out: Record<string, { perCallUsd: number | null; perDayUsd: number | null }> = {}
+  for (const r of rows) out[r.server.name] = { perCallUsd: r.perCallUsd, perDayUsd: r.perDayUsd }
+  return out
+}

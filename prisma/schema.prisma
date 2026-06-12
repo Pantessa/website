@@ -217,6 +217,11 @@ model AgentApproval {
   serverId     String  @map("server_id")
   approved     Boolean @default(true)
 
+  /// Per-agent spend caps (USD). Null = inherit the grant's defaults — the
+  /// agent is only further restricted, never loosened past the grant.
+  perCallUsd Float? @map("per_call_usd")
+  perDayUsd  Float? @map("per_day_usd")
+
   server    McpServer @relation(fields: [serverId], references: [id], onDelete: Cascade)
   createdAt DateTime  @default(now()) @map("created_at")
   updatedAt DateTime  @updatedAt @map("updated_at")
