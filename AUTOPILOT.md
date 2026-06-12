@@ -83,7 +83,7 @@ E6. **Log per item**: append a progress entry under "Progress log — Run
   seed-first-post.ts), description ≤160, draft status. ADMIN_WALLETS is
   unset so it CANNOT be published — verify the script compiles (tsc) and
   document the one-command publish for the owner. Skip if time is short.
-- [ ] **6. Exit verification** — tsc + build + test:api against `next
+- [x] **6. Exit verification** — tsc + build + test:api against `next
   start`; 375/390 rect-scans of every changed surface (docs page,
   developers, dashboard tile); sdk suite green; run summary in this file;
   update ../CLAUDE.md top section; push `autopilot`.
@@ -91,6 +91,63 @@ E6. **Log per item**: append a progress entry under "Progress log — Run
 ## Progress log — Run 10
 
 _(autopilot appends here, newest first; push after every item)_
+
+### Item 6 — Exit verification ✅ (2026-06-12) — RUN COMPLETE
+
+Combined exit state (local merge of #89+#90+#91+#92 onto main — zero file
+overlaps, trivial merge; branch deleted after, no PR needed): tsc clean,
+build clean, **test:api 43/43** against `next start` :3210, sdk suite
+**22/22** on sdk main. Fresh-load 375 rect-scans re-confirmed clean on
+the combined state for /docs/agents and /developers (390 + desktop
+covered per-item; dashboard tile carried from item 4's mock harness — no
+overlapping files between PRs, so per-item results stand).
+
+**Site-wide entity-space joint sweep** (the item-2 follow-up): all 12
+public surfaces (home, activity, developers, blog index + the live post,
+servers index + tripadvisor detail, all 7 docs pages) — ZERO
+`</em|strong|a|code|b|i>letter` joints. The bug class is dead on prod
+surfaces; the detection one-liner is in the item-2 entry for future runs.
+
+---
+
+## Run 10 summary (2026-06-12)
+
+**Queue: 6/6.** Zero failed iterations. The budgets model is now real
+end-to-end: SDK enforces it (0.4 merged), docs explain it, /developers
+sells it, the dashboard surfaces it, and the launch post is drafted.
+
+| # | Item | PR |
+|---|------|----|
+| 1 | SDK 0.4.0 per-agent budgets | [sdk#5](https://github.com/Yeetful/sdk/pull/5) (pre-completed, MERGED) |
+| 2 | /docs/agents — Agents & budgets | [#89](https://github.com/Yeetful/website/pull/89) |
+| 3 | /developers refresh (Connect Agent funnel) | [#90](https://github.com/Yeetful/website/pull/90) |
+| 4 | Dashboard connected-agents KPI tile | [#91](https://github.com/Yeetful/website/pull/91) |
+| 5 | Launch-post draft (seed script) | [#92](https://github.com/Yeetful/website/pull/92) |
+| 6 | Exit verification + summary | (this entry — no code PR) |
+
+**Merge notes**: #89–#92 are independent, no shared files, any order.
+test:api goes 42→43 when #91 lands (the agents-block check).
+
+**Discoveries worth keeping**:
+- **JSX entity-space bug class**: a text node that follows an inline
+  element AND contains an HTML entity loses its leading space at compile
+  (SWC). 7 joints fixed across docs + ConnectAgentCard (#89, #90); whole
+  site now sweeps clean. Detector:
+  `curl page | grep -oE '</(em|strong|a|code)>[a-zA-Z]'`. Fix idiom:
+  explicit {' '} after the element.
+- **App Router private folders**: `_`-prefixed app/ dirs never route —
+  temp harness routes must not start with underscore.
+- **Recharts + preview_resize**: resize-without-reload leaves stale
+  fixed widths that flood rect-scans — reload before scanning.
+- **pkill discipline**: `pkill -f next-server` kills the owner's dev
+  server too; match the harness command exactly
+  (`pkill -f "next start -p 3210"`).
+
+**Owner manual passes queued**: signed-in glance at /dashboard (new tile)
++ /dashboard/agents; seed + publish the launch post AFTER `yeetful` 0.4
+ships to npm (one-command publish in scripts/seed-agents-post.ts header);
+the usual wallet flows. Env still outstanding: ADMIN_WALLETS,
+BLOB_READ_WRITE_TOKEN, PRIVATE_KEY.
 
 ### Item 5 — Launch-post draft ✅ (2026-06-12) — PR #92
 
