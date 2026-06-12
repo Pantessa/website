@@ -5,6 +5,7 @@ import { usePathname } from 'next/navigation'
 import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useAccount } from 'wagmi'
+import { useSession } from '@/lib/session'
 import { Menu, X } from 'lucide-react'
 import { useYeetfulStore } from '@/lib/store'
 import ConnectWallet from '@/components/ConnectWallet'
@@ -38,9 +39,22 @@ export default function Navigation() {
     }
   }, [open])
 
+  // Verified SIWE session = portal mode: Dashboard leads, the nav goes
+  // full-width, and Servers carries ?home=1 so it can escape the / redirect.
+  const { address: sessionAddress } = useSession()
+  const portal = mounted && !!sessionAddress
+
   const tabs = (
     <>
-      <Link href="/" className={`nav__tab ${pathname === '/' ? 'is-on' : ''}`}>
+      {portal && (
+        <Link
+          href="/dashboard"
+          className={`nav__tab ${pathname.startsWith('/dashboard') ? 'is-on' : ''}`}
+        >
+          Dashboard
+        </Link>
+      )}
+      <Link href={portal ? '/?home=1' : '/'} className={`nav__tab ${pathname === '/' ? 'is-on' : ''}`}>
         Servers
       </Link>
       <Link href="/chat" className={`nav__tab ${pathname === '/chat' ? 'is-on' : ''}`}>
@@ -50,7 +64,7 @@ export default function Navigation() {
       <Link href="/activity" className={`nav__tab ${pathname === '/activity' ? 'is-on' : ''}`}>
         Activity
       </Link>
-      {mounted && isConnected && (
+      {mounted && isConnected && !portal && (
         <Link
           href="/dashboard"
           className={`nav__tab ${pathname.startsWith('/dashboard') ? 'is-on' : ''}`}
@@ -74,7 +88,7 @@ export default function Navigation() {
   )
 
   return (
-    <header className="nav">
+    <header className={`nav ${portal ? 'nav--fluid' : ''}`}>
       <div className="nav__inner">
         <Link className="logo" href="/">
           <YeetfulMark size={24} />

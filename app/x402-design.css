@@ -62,6 +62,8 @@
     color: var(--fg); transition: background .15s;
   }
   .nav__burger:hover { background: var(--surf-2); }
+  /* Signed-in (portal) mode: the header tracks the full viewport too. */
+  .nav--fluid .nav__inner { max-width: none; padding: 0 32px; }
 
   /* ── MOBILE DRAWER ───────────────────────────────── */
   .drawer { position: fixed; inset: 0; z-index: 50; }
@@ -381,7 +383,8 @@
 
   /* ── DASHBOARD SHELL ─────────────────────────────── */
   .dash {
-    max-width: var(--maxw); margin: 0 auto; padding: 0 28px;
+    /* Portal surfaces use the full viewport (D3) — gutters, no maxw cap. */
+    max-width: none; margin: 0 auto; padding: 0 32px;
     display: grid; grid-template-columns: 210px 1fr; gap: 36px;
     align-items: start; min-height: calc(100vh - 64px);
   }

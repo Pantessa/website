@@ -48,7 +48,7 @@ D4. The / → dashboard redirect applies ONLY with a verified SIWE session
 - [x] **4. Wire-up + SEO plumbing** — nav "Docs" tab + footer + /developers
   cross-links into docs; sitemap.xml gains all docs URLs; robots fine;
   RSS untouched. Verify every docs page's head tags server-side (curl).
-- [ ] **5. Signed-in shell** — / redirects to /dashboard when a SIWE
+- [x] **5. Signed-in shell** — / redirects to /dashboard when a SIWE
   session exists (D4, mount-gated, no flash for guests); portal surfaces
   (dashboard shell, /activity when authed? NO — dashboard only) go fluid
   full-width with gutters; nav reflects portal mode (Dashboard first).
@@ -61,6 +61,26 @@ D4. The / → dashboard redirect applies ONLY with a verified SIWE session
 ## Progress log — Run 8
 
 _(autopilot appends here)_
+
+### Item 5 — Signed-in shell ✅ (2026-06-12)
+
+GitHub-style portal mode, keyed STRICTLY on the SIWE session (useSession
+address — wallet connection alone never triggers it, per D4):
+- / → router.replace('/dashboard') for authed visitors; ?home=1 escapes
+  (read via window.location inside the effect — avoids the useSearchParams
+  Suspense requirement). Guests render home instantly, no gate.
+- Nav portal mode: Dashboard tab FIRST, header goes nav--fluid (full
+  viewport, 32px gutters), and the Servers tab carries /?home=1 so the
+  marketing page stays reachable without fighting the redirect.
+- .dash sheds its --maxw cap (max-width: none, 32px gutters) — the
+  dashboard now uses the whole window like the GitHub app shell.
+
+Verified via playwright with /api/auth/me intercepted (mock SIWE):
+guest / → stays, nav 1280 capped; authed / → lands on /dashboard, nav
+1680 fluid, first tab Dashboard, Servers href /?home=1; authed /?home=1
+→ stays. The .dash full-width VISUAL needs a real wallet+SIWE pair
+(wagmi gate) — CSS rule shipped, flagged for the owner's glance per
+rule 6. tsc + build green; test:api 43/43 (nav + home are shared).
 
 ### Item 4 — Wire-up + SEO plumbing ✅ (2026-06-12)
 
