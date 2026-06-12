@@ -17,6 +17,7 @@
 // ─────────────────────────────────────────────────────────────────────────
 
 import prisma from '@/lib/db'
+import { agentSpentTodayByService, getActiveGrant } from '@/lib/grant-store'
 import { hostOf } from '@/lib/spend-grant'
 
 /** Default expense account minted on first toggle, when none exists. */
@@ -38,6 +39,11 @@ export interface ApprovalRow {
   iconSlug: string | null
   color: string | null
   approved: boolean
+  /** Per-agent caps (null = inherit the grant's defaults). */
+  perCallUsd: number | null
+  perDayUsd: number | null
+  /** This agent's settled spend for the UTC day (meters on the Agents tab). */
+  spentTodayUsd: number
 }
 
 /** All directory agents joined with the owner's approval state (default: on). */
@@ -59,19 +65,28 @@ export async function listApprovals(ownerAddress: string): Promise<ApprovalRow[]
     }),
     prisma.agentApproval.findMany({ where: { ownerAddress } }),
   ])
-  const byServer = new Map(approvals.map((a) => [a.serverId, a.approved]))
-  return servers.map((s) => ({
-    serverId: s.id,
-    slug: s.slug,
-    name: s.name,
-    category: s.category,
-    kind: s.kind,
-    callable: s.callable,
-    priceUsd: s.priceUsd,
-    iconSlug: s.iconSlug,
-    color: s.color,
-    approved: byServer.get(s.id) ?? false, // default OFF — approval is explicit
-  }))
+  // Per-service settled spend today, for the Agents tab meters.
+  const grant = await getActiveGrant(ownerAddress)
+  const spentByName = grant ? await agentSpentTodayByService(grant.id) : {}
+  const byServer = new Map(approvals.map((a) => [a.serverId, a]))
+  return servers.map((s) => {
+    const a = byServer.get(s.id)
+    return {
+      serverId: s.id,
+      slug: s.slug,
+      name: s.name,
+      category: s.category,
+      kind: s.kind,
+      callable: s.callable,
+      priceUsd: s.priceUsd,
+      iconSlug: s.iconSlug,
+      color: s.color,
+      approved: a?.approved ?? false, // default OFF — approval is explicit
+      perCallUsd: a?.perCallUsd ?? null,
+      perDayUsd: a?.perDayUsd ?? null,
+      spentTodayUsd: spentByName[s.name] ?? 0,
+    }
+  })
 }
 
 /** Upsert one approval, then re-sync the owner's grant allowlist. */
@@ -150,4 +165,32 @@ export async function ensureGrant(ownerAddress: string) {
     orderBy: { createdAt: 'desc' },
   })
   return existing ?? syncGrantAllowlist(ownerAddress)
+}
+
+/**
+ * Set (or clear, with nulls) one agent's spend caps. Caps are policy terms:
+ * any change voids the grant's EIP-712 signature (rule A3 — same as
+ * approval toggles), so the owner re-signs the terms they now enforce.
+ */
+export async function setAgentCaps(
+  ownerAddress: string,
+  serverId: string,
+  caps: { perCallUsd?: number | null; perDayUsd?: number | null },
+) {
+  await prisma.agentApproval.upsert({
+    where: { ownerAddress_serverId: { ownerAddress, serverId } },
+    update: caps,
+    create: { ownerAddress, serverId, approved: false, ...caps },
+  })
+  const grant = await ensureGrant(ownerAddress)
+  if (grant.signature) {
+    await prisma.spendGrant.update({ where: { id: grant.id }, data: { signature: null } })
+  }
+  return prisma.spendGrant.findUniqueOrThrow({ where: { id: grant.id } })
+}
+
+/** Reset one agent to defaults: drop the approval row entirely, resync. */
+export async function resetApproval(ownerAddress: string, serverId: string) {
+  await prisma.agentApproval.deleteMany({ where: { ownerAddress, serverId } })
+  return syncGrantAllowlist(ownerAddress)
 }

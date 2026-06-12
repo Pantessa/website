@@ -250,7 +250,7 @@ A5. The pure gate logic must be unit-coverable from test:api (import it
   spent-today from spend_ledger (service_name, ok, UTC day). Denial
   receipts ledgered with note OVER_AGENT_CAP. test:api: unit-cover the
   pure gate (import it), keep 43 green.
-- [ ] **2. API surface** — /api/approvals PUT accepts { perCallUsd,
+- [x] **2. API surface** — /api/approvals PUT accepts { perCallUsd,
   perDayUsd } (validation: ≥0.001, ≤ grant cap sanity, null clears);
   cap changes void the signature (A3); /api/dashboard/stats perAgent rows
   gain spentTodayUsd + the caps so meters render. test:api: validation +
@@ -270,6 +270,22 @@ A5. The pure gate logic must be unit-coverable from test:api (import it
 ## Progress log — Run 9
 
 _(autopilot appends here)_
+
+### Item 2 — API surface ✅ (2026-06-12)
+
+/api/approvals PUT now takes { serverId, approved?, perCallUsd?, perDayUsd? }
+— undefined untouched, null clears (inherit), numbers validated: ≥ $0.001
+and never above the grant's own cap ("raise the grant first" — agent caps
+only restrict, A1). Cap changes void the EIP-712 signature via setAgentCaps
+(A3). NEW DELETE = reset-to-default (drops the row entirely) — an API gap
+the harness teardown also needed. listApprovals rows now carry caps +
+spentTodayUsd (per-service UTC-day settled spend) — the Agents tab meters
+read from this single surface. DEVIATION from the queue text: /api/
+dashboard/stats was NOT extended — meters source from /api/approvals
+instead (one query path for the tab, no duplication); logged per rule 7.
+
+test:api 48 → **57** (caps round-trip, $0.001 floor, above-grant-cap 400,
+no-op 400, null-clears, DELETE reset). tsc + build green.
 
 ### Item 1 — Schema + enforcement engine ✅ (2026-06-12)
 

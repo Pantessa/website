@@ -301,6 +301,73 @@ async function main() {
       agentCapViolation({ perCallUsd: 0.01, perDayUsd: null }, 'X', 0.02, 0) === 'OVER_AGENT_CAP',
   )
 
+  // ── Per-agent caps: the API surface ───────────────────────────────────────
+  console.log('— per-agent caps (API)')
+  const dirRows = (await (await fetch(`${BASE}/api/approvals`, { headers: C })).json()) as {
+    serverId: string
+    perCallUsd: number | null
+    spentTodayUsd: number
+  }[]
+  check('approvals rows carry caps + spentTodayUsd', Array.isArray(dirRows) && dirRows.length > 0 &&
+    'perCallUsd' in dirRows[0] && 'spentTodayUsd' in dirRows[0])
+  const target = dirRows[0].serverId
+
+  // Re-sign the (PATCHed) grant so we can prove caps void it. The owner's
+  // ACTIVE grant is the auto-minted expense account (ensureGrant), not the
+  // Bearer-created one above — fetch the active grant via the approvals path.
+  const capBad = await fetch(`${BASE}/api/approvals`, {
+    method: 'PUT',
+    headers: CJ,
+    body: JSON.stringify({ serverId: target, perCallUsd: 0.0001 }),
+  })
+  check('cap below $0.001 → 400', capBad.status === 400)
+  const capHuge = await fetch(`${BASE}/api/approvals`, {
+    method: 'PUT',
+    headers: CJ,
+    body: JSON.stringify({ serverId: target, perDayUsd: 99999 }),
+  })
+  check("cap above the grant's own cap → 400", capHuge.status === 400)
+  const capNothing = await fetch(`${BASE}/api/approvals`, {
+    method: 'PUT',
+    headers: CJ,
+    body: JSON.stringify({ serverId: target }),
+  })
+  check('no-op body → 400', capNothing.status === 400)
+
+  const capSet = await fetch(`${BASE}/api/approvals`, {
+    method: 'PUT',
+    headers: CJ,
+    body: JSON.stringify({ serverId: target, perCallUsd: 0.01, perDayUsd: 0.05 }),
+  })
+  const capSetBody = await capSet.json()
+  check('valid caps accepted', capSet.status === 200 && capSetBody.ok === true)
+  const afterSet = (await (await fetch(`${BASE}/api/approvals`, { headers: C })).json()) as {
+    serverId: string
+    perCallUsd: number | null
+    perDayUsd: number | null
+  }[]
+  const setRow = afterSet.find((r) => r.serverId === target)
+  check('caps round-trip on GET', setRow?.perCallUsd === 0.01 && setRow?.perDayUsd === 0.05)
+
+  const capClear = await fetch(`${BASE}/api/approvals`, {
+    method: 'PUT',
+    headers: CJ,
+    body: JSON.stringify({ serverId: target, perCallUsd: null, perDayUsd: null }),
+  })
+  check('null clears caps (inherit the grant)', capClear.status === 200)
+  const afterClear = (await (await fetch(`${BASE}/api/approvals`, { headers: C })).json()) as {
+    serverId: string
+    perCallUsd: number | null
+  }[]
+  check('cleared caps read back null', afterClear.find((r) => r.serverId === target)?.perCallUsd === null)
+
+  const reset = await fetch(`${BASE}/api/approvals`, {
+    method: 'DELETE',
+    headers: CJ,
+    body: JSON.stringify({ serverId: target }),
+  })
+  check('DELETE resets the agent to defaults', reset.status === 200)
+
   // ── Key revocation (after Bearer use, before cleanup) ─────────────────────
   console.log('— revocation')
   const del = await fetch(`${BASE}/api/keys/${minted.id}`, { method: 'DELETE', headers: C })
