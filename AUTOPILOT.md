@@ -41,7 +41,7 @@ E6. **Log per item**: append a progress entry under "Progress log — Run
 
 ## Queue (ordered; one per iteration)
 
-- [ ] **1. SDK 0.4.0 — per-agent budgets** (../sdk, the big one): when
+- [x] **1. SDK 0.4.0 — per-agent budgets** (../sdk, the big one): when
   constructed with `{ apiKey, ledgerUrl }`, fetch GET /api/agent/policy at
   startup (non-fatal if unreachable — log + proceed unenforced); refuse a
   paid call when the agent is overBudget or the call's price would exceed
@@ -91,6 +91,20 @@ E6. **Log per item**: append a progress entry under "Progress log — Run
 ## Progress log — Run 10
 
 _(autopilot appends here, newest first; push after every item)_
+
+### Item 1 — SDK 0.4.0 per-agent budgets ✅ (2026-06-12, pre-completed)
+
+Found ALREADY DONE at run start: [sdk#5](https://github.com/Yeetful/sdk/pull/5)
+(branch `agent-key-budgets`) was opened by the prior session and MERGED to
+sdk main before this run launched. Scope matches the queue item exactly:
+policy pre-flight at construction (degrades open on fetch failure),
+`OVER_AGENT_BUDGET` denials receipted + synced, budget state refreshed from
+`{agent}` echoes on receipt-sync and flushLedger, `pay.agentBudget()`
+snapshot, README "Per-agent budgets" section, version bumped to 0.4.0
+(NOT published — npm still has 0.3.1). Re-verified on merged sdk main this
+session: `npm test` 22/22 green. Also noted: PR #88 (auth/logout flow) has
+since MERGED to website main — its files (lib/session.tsx, AuthButton, the
+/ redirect) remain off-limits this run per the directive.
 
 ---
 
