@@ -22,9 +22,9 @@ export default function Hero({ agents, catalog }: { agents: McpServer[]; catalog
       <div className="hero__left">
         <div className="hero__eyebrow mono">AGENTIC PAYMENTS · USDC ON BASE</div>
         <h1 className="hero__h1">
-          Set a budget.
+          Approve Budgets
           <br />
-          Let them spend.
+          Let Agents Rage.
         </h1>
         <p className="hero__sub">
           Per-call USDC payments for the agents in your stack — budgets, allowlists, receipts. You
