@@ -30,7 +30,7 @@ export const DOCS_PAGES: DocsPage[] = [
     seoTitle: 'Quickstart — first paid x402 call with the yeetful SDK',
     description:
       'Install the yeetful SDK, define a spend grant, and make your first pay-per-call x402 request in USDC on Base — about twenty lines of TypeScript.',
-    ready: false,
+    ready: true,
   },
   {
     slug: 'expense-account',
@@ -38,7 +38,7 @@ export const DOCS_PAGES: DocsPage[] = [
     seoTitle: 'Spend grants — allowlists, budgets, and receipts',
     description:
       'How yeetful spend grants work: host allowlists, per-call/per-day/lifetime USD caps, typed GrantError denials, and a receipt for every decision.',
-    ready: false,
+    ready: true,
   },
   {
     slug: 'ledger-sync',
@@ -46,7 +46,7 @@ export const DOCS_PAGES: DocsPage[] = [
     seoTitle: 'Ledger sync — agent receipts on your Yeetful dashboard',
     description:
       'Mint a yf_ API key, set YEETFUL_GRANT_ID, and every settlement and denial your agent makes lands in your yeetful.com dashboard audit feed.',
-    ready: false,
+    ready: true,
   },
   {
     slug: 'x402',
@@ -54,7 +54,7 @@ export const DOCS_PAGES: DocsPage[] = [
     seoTitle: 'x402 protocol — what the SDK handles for you',
     description:
       'The x402 402-challenge flow, and the v1/v2 wire differences (amount fields, CAIP-2 networks, payment headers) the yeetful client absorbs automatically.',
-    ready: false,
+    ready: true,
   },
   {
     slug: 'claude-code',

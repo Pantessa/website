@@ -31,7 +31,7 @@ D4. The / → dashboard redirect applies ONLY with a verified SIWE session
   /docs landing page (what Yeetful is for builders + cards to sub-pages).
   Server-rendered content, D2 SEO on the landing. Mobile: sidebar collapses
   to a top scroll-row (Run 6/7 standards apply — rect-scan).
-- [ ] **2. Core SDK sub-pages** — /docs/quickstart (install → grant →
+- [x] **2. Core SDK sub-pages** — /docs/quickstart (install → grant →
   first paid call, from sdk README), /docs/expense-account (allowlist,
   caps, receipts, GrantError — the concepts page), /docs/ledger-sync
   (API keys, YEETFUL_GRANT_ID, ledgerUrl + the canonical-origin/auth-header
@@ -61,6 +61,29 @@ D4. The / → dashboard redirect applies ONLY with a verified SIWE session
 ## Progress log — Run 8
 
 _(autopilot appends here)_
+
+### Item 2 — Core SDK sub-pages ✅ (2026-06-12)
+
+Four pages live, all flipped `ready` in the registry (sidebar/cards/sitemap
+pick them up automatically): /docs/quickstart (install → wallet → grant →
+paid call, code verbatim from sdk README 0.3.1 incl. the CDP-wallets-work
+note), /docs/expense-account (grant fields, ordered checks, the 5 GrantError
+codes as a table, receipts incl. denials, the local-vs-hard-enforcement
+honesty paragraph), /docs/ledger-sync (mint → env → flushLedger, plus a
+"gotchas we hit" section encoding THIS WEEK's live findings: the
+redirect/auth-header 401, prefix-vs-secret, owner-scoping 404, enforcement-
+stays-local), /docs/x402 (flow, the v1/v2 wire table, network resolution,
+the sell-side primitives).
+
+The sweep caught a constitution violation in my own work: the v1/v2
+comparison TABLE pushed /docs/x402 to scrollWidth 390 at 375 (offender scan
+missed it — tables overflow the BODY, not a flagged element; noted for the
+exit sweep). Fixed globally: .docs__prose tables are display:block +
+overflow-x:auto. Re-scanned both table pages clean.
+
+D2 proven via curl on all four (title/canonical/TechArticle); scans clean
+at 375 + 1680; tsc + build green (all four prerender ○). All five live
+docs pages show in the sidebar.
 
 ### Item 1 — Docs foundation ✅ (2026-06-12)
 

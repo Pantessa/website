@@ -457,7 +457,9 @@
   .docs__prose code { font-family: 'Geist Mono', ui-monospace, monospace; font-size: 0.88em; background: var(--surf-2); border: 1px solid var(--line); border-radius: 5px; padding: 1px 6px; color: var(--fg); }
   .docs__prose pre { background: var(--surf-1); border: 1px solid var(--line); border-radius: 12px; padding: 16px; overflow-x: auto; margin: 16px 0; max-width: 96ch; }
   .docs__prose pre code { background: none; border: none; padding: 0; font-size: 12.5px; line-height: 1.6; color: var(--muted); }
-  .docs__prose table { border-collapse: collapse; margin: 16px 0; font-size: 13.5px; }
+  /* display:block + overflow scrolls wide tables inside their own box
+     (constitution: tables never push the page). */
+  .docs__prose table { display: block; overflow-x: auto; border-collapse: collapse; margin: 16px 0; font-size: 13.5px; max-width: 96ch; }
   .docs__prose th, .docs__prose td { border: 1px solid var(--line); padding: 8px 12px; text-align: left; }
   .docs__prose th { color: var(--fg); background: var(--surf-1); }
   .docs__cards { margin-top: 36px; display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 14px; }
