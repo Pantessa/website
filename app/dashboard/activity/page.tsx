@@ -27,7 +27,7 @@ export default function DashboardActivityPage() {
         ) : (
           <div className="divide-y divide-white/5">
             {stats.recent.map((r) => (
-              <div key={r.id} className="flex items-center gap-3 py-2 text-xs">
+              <div key={r.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 py-2 text-xs min-h-10">
                 {r.ok ? (
                   <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 flex-shrink-0" />
                 ) : (
@@ -43,7 +43,7 @@ export default function DashboardActivityPage() {
                     href={`https://basescan.org/tx/${r.txHash}`}
                     target="_blank"
                     rel="noreferrer"
-                    className="mono text-[color:var(--muted-2)] hover:text-white flex-shrink-0"
+                    className="mono text-[color:var(--muted-2)] hover:text-white flex-shrink-0 inline-flex items-center max-lg:min-h-10 max-lg:-my-2"
                   >
                     {short(r.txHash)}
                   </a>

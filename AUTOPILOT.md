@@ -21,7 +21,7 @@ P3. The endpoint is unauthenticated read-only; no user-controlled params may
 
 ## Queue (ordered; one per iteration)
 
-- [ ] **1. Public activity API** — `GET /api/activity` (no auth): `stats`
+- [x] **1. Public activity API** — `GET /api/activity` (no auth): `stats`
   (settled USD total, settled calls, calls today, blocked count, distinct
   active accounts), `daily` 30-day series, `top` services by spend, `recent`
   ≤50 SETTLED rows (serviceName, host, amountUsd, txHash, truncated owner,
@@ -31,19 +31,19 @@ P3. The endpoint is unauthenticated read-only; no user-controlled params may
   (don't write temp scripts): shape checks, P1 anonymization proof, P2
   denial-row absence, cache header present. 37 checks must stay green and
   grow.
-- [ ] **2. /activity page** — public, SEO'd (title/desc/OG), nav link. Stat
+- [x] **2. /activity page** — public, SEO'd (title/desc/OG), nav link. Stat
   tiles (settled total, calls, active accounts, blocked-by-policy), reuse
   DashboardCharts SpendOverTime for the 30-day series + per-service bars,
   live feed with Basescan links on tx hashes (https://basescan.org/tx/…),
   ~30s polling, honest empty states (young network ≠ broken page).
   Mobile-first per Run 6 standards: rect-scan clean 375/390 (public page —
   no harness needed), tap targets ≥40px, feed rows wrap not bleed.
-- [ ] **3. Home tie-in + perf pass** — surface the network stats on the home
+- [x] **3. Home tie-in + perf pass** — surface the network stats on the home
   page (small live counter strip sourced from the same API; no second
   query path), verify payload size sane (≤50 rows, no over-fetch), confirm
   the new index is used (EXPLAIN via Neon MCP), lighthouse-glance the page
   weight. Anything unverifiable: flagged, not claimed.
-- [ ] **4. (Run 6 #2) Dashboard Keys/Approvals/Activity mobile** — mock-harness
+- [x] **4. (Run 6 #2) Dashboard Keys/Approvals/Activity mobile** — mock-harness
   pattern per page: keys (secret reveal break-all, ConnectAgentCard <pre>
   scroll, long prefixes), approvals (3→2→1 grid, switch tap size), activity
   (long hosts/hashes truncate; rows wrap to two lines). Rect-scan clean;
@@ -66,6 +66,29 @@ P3. The endpoint is unauthenticated read-only; no user-controlled params may
 
 _(autopilot appends here)_
 
+### Item 4 — Dashboard Keys/Approvals/Activity mobile ✅ (2026-06-12)
+
+Mock-harnessed all three gated pages (fetch-patch pattern, real components in
+the real shell). Found + fixed:
+- **Approvals BLED at 375** (scrollWidth 386, all 9 rows past the viewport):
+  `grid sm:grid-cols-2…` leaves the base track implicit → max-content; the
+  long agent name set the track. Same trap as Run 6 item 1's charts grid.
+  Fix: explicit `grid-cols-1` + `min-w-0` rows. Detail-arrow 22→40px on
+  phones (padding, not layout).
+- **Keys**: mint input was 12px (iOS zoom) → 16px under lg; Copy/Mint/Revoke
+  32→40px touch heights; minted-secret reveal verified live in harness
+  (mocked POST → break-all renders, no bleed).
+- **Activity**: rows now wrap to two lines on phones; Basescan links 16→40px
+  touch height (padding trick, rows stay visually dense).
+
+Rect-scan 0 offenders + exact scrollWidth at 375 AND 390 on all three pages;
+desktop verified unchanged (3-col approvals, compact controls — all fixes
+are max-lg). After-screenshots (true 375 viewport via playwright) in
+docs/autopilot/dash-{keys,approvals,activity}-375-after.png; the approvals
+before-state is recorded numerically above (no screenshot — bleed was found
+and fixed in the same harness session). test:api 37/37 (= full pass on this
+branch; the 43-check version is on the unmerged item-1 branch). Harnesses
+deleted; diff greps clean.
 ### Item 3 — Home tie-in + perf pass ✅ (2026-06-12)
 
 NetworkPulse on the home directory statbar: "$X settled on-network →" linking

@@ -42,7 +42,7 @@ export default function DashboardApprovalsPage() {
         {!approvals ? (
           <p className="text-xs text-[color:var(--muted-2)] py-4">Loading agents…</p>
         ) : (
-          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-2">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
             {approvals.map((a) => (
               <div
                 key={a.serverId}
@@ -56,7 +56,7 @@ export default function DashboardApprovalsPage() {
                   }
                 }}
                 className={cn(
-                  'flex items-center justify-between gap-2 px-3 py-2 rounded-xl border text-left transition-colors cursor-pointer min-h-[44px]',
+                  'flex items-center justify-between gap-2 px-3 py-2 rounded-xl border text-left transition-colors cursor-pointer min-h-[44px] min-w-0',
                   a.approved
                     ? 'bg-[var(--surf-1)] border-[var(--line)] hover:border-[var(--line-2)]'
                     : 'bg-black/30 border-[var(--line)] opacity-55 hover:opacity-80',
@@ -75,7 +75,7 @@ export default function DashboardApprovalsPage() {
                 <Link
                   href={`/servers/${a.slug}`}
                   onClick={(e) => e.stopPropagation()}
-                  className="flex-shrink-0 p-1 rounded-md text-[color:var(--muted-2)] hover:text-white transition-colors"
+                  className="flex-shrink-0 p-1 max-lg:p-[13px] max-lg:-my-2 rounded-md text-[color:var(--muted-2)] hover:text-white transition-colors"
                   title={`${a.name} — endpoints & pricing`}
                 >
                   <ArrowUpRight className="w-3.5 h-3.5" />
