@@ -25,7 +25,7 @@ D4. The / → dashboard redirect applies ONLY with a verified SIWE session
 
 ## Queue (ordered; one per iteration)
 
-- [ ] **1. Docs foundation** — /docs route group with its own FULL-WIDTH
+- [x] **1. Docs foundation** — /docs route group with its own FULL-WIDTH
   layout (left sidebar nav, content region, right "on this page" rail at
   xl), shared DocsPage scaffolding (breadcrumbs + JSON-LD helpers), and the
   /docs landing page (what Yeetful is for builders + cards to sub-pages).
@@ -61,6 +61,26 @@ D4. The / → dashboard redirect applies ONLY with a verified SIWE session
 ## Progress log — Run 8
 
 _(autopilot appends here)_
+
+### Item 1 — Docs foundation ✅ (2026-06-12)
+
+`/docs` shell is FULL-WIDTH per D3 (verified docsW == viewport at 375/390/
+1280/1680 — no --maxw cap): sticky 240px rail + fluid content, prose measure
+capped at 80ch for readability while code runs to 96ch. Mobile rail = the
+proven top scroll-row pattern. `lib/docs.ts` is the single registry driving
+sidebar, landing cards, breadcrumbs, JSON-LD, and (item 4) the sitemap —
+pages hidden until `ready` so mid-run links never 404. Landing page live
+with the five-line SDK pitch (copy matches sdk/README 0.3.1 per D1).
+
+D2 verified server-side via curl: title 52ch, description 154ch, canonical,
+OG, TechArticle + BreadcrumbList JSON-LD, prose crawlable in the HTML.
+Rect-scan 0 offenders at all four widths.
+
+Tooling note: the owner's dev server held :3000 and the preview MCP refuses
+to start while the configured port is occupied (autoPort didn't help) —
+verified against the owner's server instead via curl + a temporary
+playwright-core script (devDep added, used, reverted). launch.json base
+port moved to 3010 for the rest of the run.
 
 ---
 
