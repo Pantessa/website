@@ -53,7 +53,7 @@ D4. The / → dashboard redirect applies ONLY with a verified SIWE session
   (dashboard shell, /activity when authed? NO — dashboard only) go fluid
   full-width with gutters; nav reflects portal mode (Dashboard first).
   Careful with hydration + the existing mount-gates.
-- [ ] **6. Exit verification** — all-pages sweep table updated incl. the
+- [x] **6. Exit verification** — all-pages sweep table updated incl. the
   new /docs pages (375/390 via the iframe method), desktop 1280+1680
   full-width screenshots of docs + dashboard, head-tag table for docs
   pages, tsc/build/test:api. Run summary.
@@ -61,6 +61,58 @@ D4. The / → dashboard redirect applies ONLY with a verified SIWE session
 ## Progress log — Run 8
 
 _(autopilot appends here)_
+
+### Item 6 — Exit verification ✅ (2026-06-12) — RUN COMPLETE
+
+**30/30 combos clean**: 15 pages (the 9 public surfaces from Run 7's table
++ all 6 /docs pages) × {375, 390} — 0 offenders, 0 sub-16px inputs,
+scrollWidth ≤ viewport everywhere, swept on the full run state (incl. the
+unmerged #75). The four mock-harnessed dashboard pages carry over from Run
+7's 26/26 (their mobile CSS is untouched this run — the .dash change is
+desktop-only and the mobile media query overrides it).
+
+Head-tag table: item 4's six-page verification stands (titles 47–59ch,
+descriptions 139–154ch, canonical + TechArticle + BreadcrumbList on all).
+Desktop evidence in docs/autopilot/: docs-1280, docs-claude-1680, and
+portal-redirect-1680 (mocked SIWE landing on /dashboard with the fluid
+Dashboard-first nav). The authed .dash full-width visual remains the
+owner's glance (needs a real wallet+SIWE pair). tsc + build + test:api
+43/43 on the exit branch.
+
+---
+
+## Run 8 summary (2026-06-12)
+
+**Queue: 6/6 complete.** Zero failed iterations. Yeetful has real docs,
+a Claude Code onboarding funnel, and a GitHub-style signed-in portal.
+
+| # | Item | PR |
+|---|------|----|
+| 1 | Docs foundation (full-width shell + registry) | [#71](https://github.com/Yeetful/website/pull/71) |
+| 2 | Core SDK pages (quickstart/grants/ledger/x402) | [#72](https://github.com/Yeetful/website/pull/72) |
+| 3 | Claude Code onboarding page + prompt | [#73](https://github.com/Yeetful/website/pull/73) |
+| 4 | Nav/footer/sitemap wire-up | [#74](https://github.com/Yeetful/website/pull/74) |
+| 5 | Signed-in portal shell (/ → dashboard, fluid) | [#75](https://github.com/Yeetful/website/pull/75) |
+| 6 | Exit verification + summary | [#76](https://github.com/Yeetful/website/pull/76) |
+
+**Merge order**: #71→#74 merged mid-run; remaining #75 → #76.
+
+**Decisions worth keeping**: lib/docs.ts as the single registry (page flips
+`ready` → sidebar/cards/sitemap all update); docs content sourced ONLY from
+the shipped 0.3.1 surface (D1) with this week's live debugging encoded as
+the ledger-sync gotchas section and inside the Claude prompt itself
+(www ledgerUrl, show-once secret, no-spend verification); portal mode keyed
+strictly on SIWE (D4) with ?home=1 as the escape hatch the nav carries.
+
+**Tooling finds**: Next 16 allows ONE dev server per project (.next/dev
+lock) — harness servers now use `next start` on the prod build; the
+preview MCP can't start while the owner's dev server holds the configured
+port — playwright-core (channel: chrome) against the owner's server is the
+working substitute, temp devDep reverted each time.
+
+**Owner manual passes**: the authed full-width dashboard glance; paste the
+/docs/claude-code prompt into a real scratch repo and feel the two
+dashboard steps; the usual wallet flows.
 
 ### Item 5 — Signed-in shell ✅ (2026-06-12)
 
