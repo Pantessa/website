@@ -269,7 +269,7 @@ export default function AddServerPage() {
             </div>
 
             {/* Category + Color */}
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <label className="block text-xs text-zinc-400 mb-1.5 font-medium">
                   Category <span className="text-red-400">*</span>
@@ -277,7 +277,7 @@ export default function AddServerPage() {
                 <select
                   value={form.category}
                   onChange={(e) => setForm((f) => ({ ...f, category: e.target.value }))}
-                  className="w-full px-3 py-2.5 rounded-xl bg-zinc-900 border border-zinc-800/60 text-white text-sm focus:outline-none focus:border-zinc-600 transition-colors"
+                  className="w-full px-3 py-2.5 rounded-xl bg-zinc-900 border border-zinc-800/60 text-white text-sm max-lg:text-base focus:outline-none focus:border-zinc-600 transition-colors"
                 >
                   {CATEGORIES.map((c) => (
                     <option key={c} value={c}>
@@ -301,7 +301,7 @@ export default function AddServerPage() {
                     type="text"
                     value={form.color}
                     onChange={(e) => setForm((f) => ({ ...f, color: e.target.value }))}
-                    className="flex-1 px-3 py-2.5 rounded-xl bg-zinc-900 border border-zinc-800/60 text-white text-sm font-mono focus:outline-none focus:border-zinc-600"
+                    className="flex-1 min-w-0 px-3 py-2.5 rounded-xl bg-zinc-900 border border-zinc-800/60 text-white text-sm max-lg:text-base font-mono focus:outline-none focus:border-zinc-600"
                   />
                 </div>
               </div>

@@ -58,13 +58,90 @@ P3. The endpoint is unauthenticated read-only; no user-controlled params may
 - [x] **7. (Run 6 #5) Developers + blog + servers detail mobile polish** —
   snippet <pre> scroll, capability cards, ep rows at 375; blog measure +
   code blocks; servers header badge wrap. Rect-scan + screenshots.
-- [ ] **8. (Run 6 #6) Global mobile foundation sweep** — viewport meta on
+- [x] **8. (Run 6 #6) Global mobile foundation sweep** — viewport meta on
   every route, 16px inputs everywhere, safe-area on fixed elements, final
   all-pages rect-scan table (375 + 390) incl. /activity. Exit criteria.
 
 ## Progress log — Run 7
 
 _(autopilot appends here)_
+
+### Item 8 — Global mobile foundation sweep ✅ (2026-06-12) — EXIT CRITERIA MET
+
+Foundation: viewport meta verified emitted on all 8 route classes (curl);
+`-webkit-tap-highlight-color: transparent` added to the html base; nav
+drawer bottom padding now includes env(safe-area-inset-bottom).
+
+**The sweep caught one more real bug**: /servers (the add-custom-server
+page — never previously audited) bled to scrollWidth 412 at 375. The color
+hex input (`flex-1`, min-width:auto) forced its grid-cols-2 column wide.
+Fix: `min-w-0` + the category/color row stacks at phone widths; that input,
+its 3 siblings, and the category <select> all get 16px under lg (selects
+zoom on iOS focus too).
+
+**Final all-pages table** (iframe-viewport scan, both widths; offenders =
+rect right > vw+2, excluding scroll containers and overflow-hidden non-body
+boxes; smallInputs = visible input/textarea/select under 16px):
+
+| Page | 375 off/inputs | 390 off/inputs |
+|---|---|---|
+| / | 0 / 0 | 0 / 0 |
+| /activity | 0 / 0 | 0 / 0 |
+| /developers | 0 / 0 | 0 / 0 |
+| /blog | 0 / 0 | 0 / 0 |
+| /blog/[slug] | 0 / 0 | 0 / 0 |
+| /servers | 0 / 0 | 0 / 0 |
+| /servers/[slug] (tripadvisor) | 0 / 0 | 0 / 0 |
+| /chat | 0 / 0 | 0 / 0 |
+| /dashboard (gate) | 0 / 0 | 0 / 0 |
+| dash Overview (harness) | 0 / 0 | 0 / 0 |
+| dash Keys (harness) | 0 / 0 | 0 / 0 |
+| dash Approvals (harness) | 0 / 0 | 0 / 0 |
+| dash Activity (harness) | 0 / 0 | 0 / 0 |
+
+**26/26 clean.** Method note: pages loaded in a sized same-origin iframe
+(its own viewport — media queries + dvh respond correctly), which made the
+26-combo sweep tractable in two scans. Safe-area insets remain
+preview-unverifiable (env() = 0) — flagged; owner's phone glance covers it.
+tsc + build + test:api 43/43; harnesses deleted.
+
+---
+
+## Run 7 summary (2026-06-12)
+
+**Queue: 8/8 complete.** Zero failed iterations. The spend ledger is now a
+public surface (API + page + home pulse) and every page of the site passes
+a 26-combo mobile exit sweep.
+
+| # | Item | PR |
+|---|------|----|
+| 1 | Public activity API (privacy-proofed) | [#61](https://github.com/Yeetful/website/pull/61) |
+| 2 | /activity page + nav tab | [#62](https://github.com/Yeetful/website/pull/62) |
+| 3 | Home network pulse + perf pass | [#63](https://github.com/Yeetful/website/pull/63) |
+| 4 | Dashboard sub-pages mobile | [#64](https://github.com/Yeetful/website/pull/64) |
+| 5 | Chat mobile-first (overlay sidebar) | [#65](https://github.com/Yeetful/website/pull/65) |
+| 6 | Home + directory polish | [#66](https://github.com/Yeetful/website/pull/66) |
+| 7 | Dev/blog/servers audit (no code needed) | [#67](https://github.com/Yeetful/website/pull/67) |
+| 8 | Foundation sweep + exit table | [#68](https://github.com/Yeetful/website/pull/68) |
+
+**Merge order**: #61→#62→#63 (stacked chain, merged mid-run), #64, #65
+(merged mid-run), then #66→#67→#68 (stacked).
+
+**Bugs the run's own checks caught**: the implicit-grid-track bleed pattern
+(twice: Approvals grid, /servers color row — base `grid` with only
+sm:/lg: cols sizes the phone track to max-content); chat's 21px composer
+(squeeze ≠ bleed — rect scans can't see it); the persisted-preference trap
+(mobile auto-close almost permanently collapsed the desktop sidebar);
+framer-motion orphaning AnimatePresence children closed mid-hydration;
+fetch dropping auth headers on cross-origin redirects (found via the
+example-agent's 401s — fixed in sdk 0.3.1/0.3.2 work, same session).
+
+**test:api 37 → 43** (activity shape, cache header, P1 anonymization proof,
+P2 denial-row absence). New standing tools: the fetch-patch harness pattern
+for gated pages, the iframe-viewport sweep for all-pages tables.
+
+**Owner manual passes**: phone glance for safe-area insets (env() invisible
+in preview); the usual wallet flows.
 
 ### Item 7 — Developers + blog + servers detail mobile ✅ (2026-06-12, no code)
 
