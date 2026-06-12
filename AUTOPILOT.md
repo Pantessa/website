@@ -216,7 +216,64 @@ port moved to 3010 for the rest of the run.
 
 ---
 
-# Run 9 DRAFT: Coinbase Spend Permission example (awaiting owner review — do NOT start until approved)
+# Autopilot — Run 9: per-agent spend caps + the Agents tab (staged 2026-06-12, started via /loop)
+
+Owner directive: approvals are binary today — an approved agent can drain
+the whole daily budget. Add per-agent spend caps ("Claude $1/day,
+TripAdvisor $0.25") and upgrade Approvals into a real Agents tab. This is
+the control-plane thesis deepening, and it pre-shapes the Coinbase
+session-key mapping (max spend per counterparty) for the CDP run.
+
+## Rules (Run 6/7/8 constitution applies; additions)
+
+A1. DB changes additive only (plain db push). Per-agent caps are NULLABLE
+    on agent_approvals — null = inherit the grant's defaults. No backfill.
+A2. Enforcement is SERVER-SIDE in the chat payment paths (burner + wallet),
+    priced against the ledger's per-service spent-today. Denials are
+    receipted with note OVER_AGENT_CAP — the audit trail shows refusals.
+A3. Cap changes void the EIP-712 grant signature (same rule as approval
+    toggles — terms changed, re-sign).
+A4. SDK stays 0.3.x-flat (allow: string[]) — per-host caps in the SDK is a
+    0.4 design question, logged as follow-up, NOT built in this run.
+A5. The pure gate logic must be unit-coverable from test:api (import it
+    like grantTypedData) — payments can't be exercised without funds, the
+    LOGIC must be provable anyway.
+
+## Queue (ordered; one per iteration)
+
+- [ ] **1. Schema + enforcement engine** — additive `per_call_usd` +
+  `per_day_usd` (nullable Float) on agent_approvals + db push (verify in
+  pg_indexes/information_schema). Pure gate fn (lib/spend-grant.ts
+  neighborhood): given grant, approval caps, per-service spent-today, and
+  the quoted price → allow | OVER_AGENT_CAP | existing violations.
+  Wire into BOTH chat payment paths before signing; per-service
+  spent-today from spend_ledger (service_name, ok, UTC day). Denial
+  receipts ledgered with note OVER_AGENT_CAP. test:api: unit-cover the
+  pure gate (import it), keep 43 green.
+- [ ] **2. API surface** — /api/approvals PUT accepts { perCallUsd,
+  perDayUsd } (validation: ≥0.001, ≤ grant cap sanity, null clears);
+  cap changes void the signature (A3); /api/dashboard/stats perAgent rows
+  gain spentTodayUsd + the caps so meters render. test:api: validation +
+  void-on-cap-change checks.
+- [ ] **3. The Agents tab** — /dashboard/approvals becomes /dashboard/
+  agents (old route redirects): per row = toggle + per-call/per-day cap
+  inputs (inherit placeholder when null) + spent-today meter vs cap +
+  detail link. Sidebar label "Agents". Mock-harness verification per the
+  gated-page rules (375/390 rect-scan, 16px inputs, 40px targets).
+- [ ] **4. Docs + chat surfacing** — /docs/expense-account gains the
+  per-agent caps section (server enforcement vs SDK-local note per A4);
+  chat denial copy for OVER_AGENT_CAP says which agent hit its cap and
+  links the Agents tab.
+- [ ] **5. Exit verification** — sweep incl. the new tab (harness), the
+  full test:api count, run summary; CLAUDE.md handoff refresh.
+
+## Progress log — Run 9
+
+_(autopilot appends here)_
+
+---
+
+# Run 10 DRAFT: Coinbase Spend Permission example (awaiting owner review — do NOT start until approved)
 
 The strategic wedge from CLAUDE.md: back the (signable) SpendGrant with a
 real on-chain Coinbase Spend Permission so the agent never holds funds.
@@ -257,8 +314,8 @@ R3. Spending real money (even $0.01 mainnet) = owner manual step, never
 - [ ] **5. Blog post draft** — "Your agent has an expense account, not a
   wallet" (publish = owner step per constitution).
 
-_(Run 8 starts only when the owner says go — likely needs: CDP account +
-API key, testnet faucet funds.)_
+_(Run 10 starts only when the owner says go — needs: CDP account + API key,
+testnet faucet funds.)_
 
 ---
 
