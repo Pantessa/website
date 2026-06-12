@@ -62,7 +62,7 @@ export const DOCS_PAGES: DocsPage[] = [
     seoTitle: 'Add Yeetful to your Coinbase agent with one Claude prompt',
     description:
       'Paste one prompt into Claude Code and it wires the yeetful SDK into your Coinbase Developer Platform agent, then walks you through keys and grant setup.',
-    ready: false,
+    ready: true,
   },
 ]
 
