@@ -64,6 +64,9 @@ export default function Navigation() {
       >
         Developers
       </Link>
+      <Link href="/docs" className={`nav__tab ${pathname.startsWith('/docs') ? 'is-on' : ''}`}>
+        Docs
+      </Link>
       <Link href="/blog" className={`nav__tab ${pathname.startsWith('/blog') ? 'is-on' : ''}`}>
         Blog
       </Link>

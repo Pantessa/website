@@ -45,7 +45,7 @@ D4. The / → dashboard redirect applies ONLY with a verified SIWE session
   secret + YEETFUL_GRANT_ID from the connect card) with direct links/
   buttons. Mention CDP wallets work as the signer (viem account). D2 SEO;
   this page is the funnel target.
-- [ ] **4. Wire-up + SEO plumbing** — nav "Docs" tab + footer + /developers
+- [x] **4. Wire-up + SEO plumbing** — nav "Docs" tab + footer + /developers
   cross-links into docs; sitemap.xml gains all docs URLs; robots fine;
   RSS untouched. Verify every docs page's head tags server-side (curl).
 - [ ] **5. Signed-in shell** — / redirects to /dashboard when a SIWE
@@ -61,6 +61,23 @@ D4. The / → dashboard redirect applies ONLY with a verified SIWE session
 ## Progress log — Run 8
 
 _(autopilot appends here)_
+
+### Item 4 — Wire-up + SEO plumbing ✅ (2026-06-12)
+
+Docs is now reachable from everywhere: nav tab (Developers · Docs · Blog,
+startsWith-active so sub-pages highlight; desktop tabs + mobile drawer share
+the block), footer link first among product links, and /developers' "rest
+of the stack" grid leads with a docs biglink. sitemap.xml maps the registry
+— all six /docs URLs emitted (plus /activity, which item 3 of Run 7 forgot
+to add; fixed here). Head-tag table verified server-side on all six pages:
+titles 47–59ch, descriptions 139–154ch, canonical + TechArticle +
+BreadcrumbList everywhere.
+
+Tooling find: Next 16 dev refuses a SECOND dev server for the same project
+(lock under .next/dev — "Run kill <pid> to stop it"), so the throwaway-
+admin harness server can't be a dev server while the owner's runs. `next
+start` (prod build) has no such lock — harness now runs against the prod
+server: test:api 43/43. tsc + build green.
 
 ### Item 3 — Claude Code page ✅ (2026-06-12)
 
