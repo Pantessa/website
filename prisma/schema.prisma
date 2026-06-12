@@ -183,6 +183,8 @@ model SpendLedgerEntry {
 
   @@index([grantId])
   @@index([grantId, ok, createdAt])
+  // Global public feed (/api/activity) scans newest-first across ALL grants.
+  @@index([ok, createdAt])
   @@map("spend_ledger")
 }
 
