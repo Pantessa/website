@@ -1,5 +1,6 @@
 import type { MetadataRoute } from 'next'
 import prisma from '@/lib/db'
+import { readyPages } from '@/lib/docs'
 
 const SITE = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://yeetful.com'
 
@@ -9,6 +10,13 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const entries: MetadataRoute.Sitemap = [
     { url: SITE, changeFrequency: 'weekly', priority: 1 },
     { url: `${SITE}/developers`, changeFrequency: 'monthly', priority: 0.8 },
+    { url: `${SITE}/activity`, changeFrequency: 'daily', priority: 0.7 },
+    // Docs come from the registry — a page flips `ready` and it's indexed.
+    ...readyPages().map((p) => ({
+      url: p.slug ? `${SITE}/docs/${p.slug}` : `${SITE}/docs`,
+      changeFrequency: 'monthly' as const,
+      priority: p.slug === '' ? 0.9 : 0.8,
+    })),
     { url: `${SITE}/blog`, changeFrequency: 'weekly', priority: 0.8 },
   ]
 
