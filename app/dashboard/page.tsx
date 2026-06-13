@@ -5,20 +5,25 @@
 
 import Link from 'next/link'
 import { useEffect, useState } from 'react'
-import { Loader2 } from 'lucide-react'
+import { Building2, Loader2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { SpendByAgent, SpendOverTime } from '@/components/DashboardCharts'
 import SignGrantButton from '@/components/SignGrantButton'
 import { Card, CardTitle, Kpi, type Stats } from '@/lib/dashboard-ui'
+import { useOrgStore } from '@/lib/org-store'
 
 export default function DashboardOverviewPage() {
+  const { activeOrgId } = useOrgStore()
   const [stats, setStats] = useState<Stats | null>(null)
 
+  // Keyed on the active org (F3): the rail switcher flips this page between
+  // the personal and the org expense account.
   useEffect(() => {
-    void fetch('/api/dashboard/stats', { cache: 'no-store' })
+    setStats(null)
+    void fetch(`/api/dashboard/stats${activeOrgId ? `?org=${activeOrgId}` : ''}`, { cache: 'no-store' })
       .then((r) => (r.ok ? r.json() : null))
       .then((s) => s && setStats(s))
-  }, [])
+  }, [activeOrgId])
 
   if (!stats) {
     return (
@@ -31,11 +36,50 @@ export default function DashboardOverviewPage() {
   const k = stats.kpis
   const g = stats.grant
   const a = stats.agents
+  const o = stats.org
   const todayPct = g && g.perDayUsd > 0 ? Math.min(100, (g.spentTodayUsd / g.perDayUsd) * 100) : 0
+  const orgPct = o?.perDayUsd ? Math.min(100, (o.spentTodayUsd / o.perDayUsd) * 100) : 0
 
   return (
     <>
-      <h1 className="dash__h1">Overview</h1>
+      <h1 className="dash__h1">{o ? `Overview · ${o.name}` : 'Overview'}</h1>
+
+      {/* The org level of the two-level budget: the daily cap across ALL the
+          org's agent keys, above the grant + per-key meters. SDK-enforced via
+          /api/agent/policy — advisory at the rails until Spend Permissions. */}
+      {o && (
+        <Card className="mb-3">
+          <div className="flex items-center justify-between gap-4 flex-wrap min-w-0">
+            <span className="flex items-center gap-2.5 min-w-0">
+              <Building2 className="w-4 h-4 flex-shrink-0 text-[color:var(--muted-2)]" />
+              <span className="min-w-0">
+                <p className="text-sm font-semibold text-white truncate">Org daily budget</p>
+                <p className="text-xs text-[color:var(--muted-2)] mt-0.5">
+                  {o.perDayUsd != null
+                    ? `every agent key in ${o.name} draws from this cap`
+                    : 'no org cap set — per-key budgets alone govern'}{' '}
+                  <Link href="/dashboard/org" className="underline underline-offset-2 decoration-dotted hover:text-white">
+                    {o.role === 'member' ? 'View org →' : 'Org settings →'}
+                  </Link>
+                </p>
+              </span>
+            </span>
+            <span className={cn('mono text-xs', o.overBudget ? 'text-red-400' : 'text-[color:var(--muted)]')}>
+              ${o.spentTodayUsd.toFixed(4)}
+              {o.perDayUsd != null ? ` / $${o.perDayUsd.toFixed(2)} today` : ' today'}
+              {o.overBudget ? ' — over budget' : ''}
+            </span>
+          </div>
+          {o.perDayUsd != null && (
+            <div className="mt-3 h-2 rounded-full bg-white/5 overflow-hidden">
+              <div
+                className={cn('h-full rounded-full transition-all', o.overBudget || orgPct > 85 ? 'bg-red-400' : 'bg-emerald-400')}
+                style={{ width: `${orgPct}%` }}
+              />
+            </div>
+          )}
+        </Card>
+      )}
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
         <Kpi label="Total spent" value={`$${(k?.spentTotalUsd ?? 0).toFixed(4)}`} />

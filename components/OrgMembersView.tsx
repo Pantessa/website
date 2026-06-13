@@ -7,7 +7,7 @@
 // role changes + transfer + delete = owner, leave = any non-owner.
 
 import { useState } from 'react'
-import { Building2, LogOut, ShieldAlert, Trash2, UserPlus } from 'lucide-react'
+import { Building2, LogOut, PiggyBank, ShieldAlert, Trash2, UserPlus } from 'lucide-react'
 import { Card, CardTitle, short, timeAgo } from '@/lib/dashboard-ui'
 
 export interface OrgDetail {
@@ -38,6 +38,7 @@ export default function OrgMembersView({
   const [busy, setBusy] = useState(false)
   const [renaming, setRenaming] = useState(false)
   const [newName, setNewName] = useState(org.name)
+  const [cap, setCap] = useState(org.perDayUsd == null ? '' : String(org.perDayUsd))
 
   const isOwner = org.role === 'owner'
   const isAdmin = org.role === 'owner' || org.role === 'admin'
@@ -99,6 +100,18 @@ export default function OrgMembersView({
     }
     if (await call(`/api/orgs/${org.id}`, { method: 'PATCH', body: JSON.stringify({ name }) })) {
       setRenaming(false)
+      await onChanged()
+    }
+  }
+
+  const saveCap = async () => {
+    const trimmed = cap.trim()
+    const perDayUsd = trimmed === '' ? null : Number(trimmed)
+    if (perDayUsd != null && (!(perDayUsd > 0) || isNaN(perDayUsd))) {
+      setError('Cap must be a positive number — or empty for no org cap.')
+      return
+    }
+    if (await call(`/api/orgs/${org.id}`, { method: 'PATCH', body: JSON.stringify({ perDayUsd }) })) {
       await onChanged()
     }
   }
@@ -252,6 +265,46 @@ export default function OrgMembersView({
             </button>
           </form>
         )}
+      </Card>
+
+      {/* The org level of the two-level budget. Admin+ may set it; the SDK
+          enforces it via /api/agent/policy — advisory at the rails (F5). */}
+      <Card className="mb-4">
+        <CardTitle>Org daily budget</CardTitle>
+        <div className="flex flex-wrap items-center gap-3">
+          <PiggyBank className="w-4 h-4 text-[color:var(--muted-2)] shrink-0" />
+          <p className="text-xs text-[color:var(--muted-2)] max-w-[44ch] leading-relaxed flex-1 min-w-[200px]">
+            A daily USD cap across <em>all</em> of {org.name}&apos;s agent keys — the level above
+            each key&apos;s own budget. The SDK reads it and stops paying when the org is over;
+            empty means per-key budgets alone govern.
+          </p>
+          {isAdmin ? (
+            <form
+              className="flex items-center gap-2"
+              onSubmit={(e) => {
+                e.preventDefault()
+                void saveCap()
+              }}
+            >
+              <span className="text-[11px] text-[color:var(--muted)]">$/day</span>
+              <input
+                type="text"
+                inputMode="decimal"
+                className="w-24 px-2 py-2 min-h-[40px] rounded-md bg-black/30 border border-[var(--line)] text-white text-xs mono focus:outline-none focus:border-[var(--line-2)]"
+                placeholder="no cap"
+                value={cap}
+                onChange={(e) => setCap(e.target.value)}
+              />
+              <button className="btn btn--solid !px-4 !py-2 text-sm" type="submit" disabled={busy}>
+                Save
+              </button>
+            </form>
+          ) : (
+            <span className="mono text-xs text-[color:var(--muted)]">
+              {org.perDayUsd != null ? `$${org.perDayUsd.toFixed(2)}/day` : 'no cap set'}
+            </span>
+          )}
+        </div>
       </Card>
 
       {isOwner && (
