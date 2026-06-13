@@ -1,3 +1,273 @@
+# Autopilot — Run 11: Organizations — the org-grade expense account (STAGED 2026-06-13)
+
+Owner directive: a ~5-hour unattended run. Theme chosen by the owner from a
+roadmap fork: **Organizations/Teams** — the strategy is "agent expense
+account, sold to companies," but today every table (api_keys, spend_grants,
+agent_approvals, spend_ledger, Chat) is keyed to ONE wallet. This run adds
+the company: orgs, members, roles, org-scoped agents/keys, a two-level
+budget (org daily cap above per-key caps), and the expense report. Context
+for a fresh session: read ../CLAUDE.md first (root). On main as of
+2026-06-13: the payment-web hero (#93, full-bleed shell), agents-tab budgets
+(#85/#86), SDK 0.4 per-key budgets (sdk#5, merged; npm still has 0.3.1).
+
+## Rules (Run 6/7 constitution + Run 8 D-rules + Run 10 E-rules apply; additions)
+
+F1. **Additive schema ONLY.** Plain `prisma db push` with inline
+    DATABASE_URL (never --force-reset — it wipes the directory). New
+    `org_id` columns are NULLABLE everywhere; **NULL = personal scope** and
+    existing rows keep working unchanged — back-compat is the contract.
+    Existing test:api checks must stay green untouched.
+F2. **Server-side role checks in every org route.** One role matrix in
+    lib/org.ts (owner > admin > member); never trust a client-supplied
+    orgId without a membership lookup. An agent key NEVER manages org
+    membership (Bearer ≠ SIWE for org admin actions — same split as
+    budgets: an agent can't raise its own allowance, a key can't add
+    members to its org).
+F3. **Don't touch the SIWE flow.** No changes to lib/session.tsx,
+    AuthButton, or the / redirect (post-#88 owner work lives on
+    logout-clean-state). Active-org is NOT session state: client store
+    (zustand, persisted) + explicit `orgId` param on APIs, membership
+    re-checked server-side every call.
+F4. **Don't touch the new hero** (components/PaymentWeb.tsx, Hero.tsx,
+    .heroweb styles) — just merged, owner-tuned.
+F5. **Budget honesty (E3) extends to orgs**: org caps are enforced by the
+    SDK/ledger layer (advisory at the rails) until Coinbase Spend
+    Permissions; never imply Yeetful blocks a wallet.
+
+## Queue (ordered; one per iteration)
+
+- [x] **1. Schema + org core** (the foundation): `Organization` (id, name,
+  slug, createdBy) + `OrgMember` (orgId, address, role owner|admin|member,
+  unique(orgId,address)); nullable `org_id` on api_keys, spend_grants,
+  agent_approvals, spend_ledger. lib/org.ts: getMembership / requireRole /
+  resolveScope(address, orgId?) → personal-or-org scope used by every
+  later item. /api/orgs CRUD + member add/remove/role-change (SIWE only;
+  add-by-wallet-address IS the invite — membership is live on the
+  invitee's next sign-in, no email machinery). Extend test:api with the
+  basic auth matrix (non-member 403s, member can read, admin can manage
+  keys, only owner deletes org / transfers ownership).
+- [x] **2. Org-scoped spending objects**: mint/list/revoke keys under an
+  org (admin+); approvals + the auto-minted grant per-org (ensureGrant
+  grows an org variant); ledger rows carry org_id end-to-end (both
+  payment paths + Bearer receipt-sync). GET /api/agent/policy gains an
+  `org` block ({perDayUsd, spentTodayUsd, overBudget} — org spend = sum
+  over the org's keys today); receipt-sync `{agent}` echo gains the same.
+  SDK consumes it in 0.5 — website-side only this run (F5 wording).
+- [x] **3. Dashboard: org switcher + members**: switcher in the dashboard
+  sidebar (Personal + each org; persisted client-side per F3), "New
+  organization" flow, /dashboard/org members page (list, add by address,
+  role change, remove, leave; owner-only danger zone). Mobile constitution
+  (E5) on every new surface.
+- [x] **4. Dashboard: org agents + two-level budget**: agents/keys/
+  approvals tabs honor the active org scope; org settings get the org
+  daily cap (SIWE PATCH, admin+); Overview shows the org budget meter
+  (org spent-today vs cap) above the existing per-agent meters; stats
+  route grows an org block when scoped (extend test:api if the shape
+  grows).
+- [x] **5. The expense report + /docs/teams**: GET /api/orgs/[id]/report
+  ?from&to → totals + per-member, per-agent, per-service breakdowns;
+  dashboard table + CSV download (client-side blob is fine). /docs/teams
+  in the lib/docs.ts registry (flip `ready`; D2 SEO; cross-link
+  /docs/agents ↔ teams): the org model, roles, invites-are-addresses,
+  two-level budgets, the F5 honesty paragraph.
+- [x] **6. Exit verification** — tsc + build + full test:api against
+  `next start` (E2; pkill matches `next-server`); 375/390 rect-scans of
+  every changed dashboard/docs surface; run summary in this file; update
+  ../CLAUDE.md top section; push `autopilot`.
+
+## Progress log — Run 11
+
+_(autopilot appends here, newest first; push after every item)_
+
+### Item 6 — Exit verification ✅ (2026-06-13) — RUN COMPLETE
+
+The chain is LINEAR (#94→#95→#96→#97→#98, each branch contains all prior),
+so `org-report` IS the combined state. Fresh pass on that tip: tsc clean,
+build clean, **test:api 80/80** against `next start :3210` (server killed
+by PID — never pkill next-server). 390px scroller-aware rect-scan of
+/docs/teams (the real route): zero offenders, scrollWidth 390; dashboard
+surfaces were verified per-item via mock harnesses at 1280+375 (the
+wallet gate makes them headless-unreachable — owner glance still wanted).
+
+---
+
+## Run 11 summary (2026-06-13)
+
+**Queue: 6/6. Zero failed iterations.** Yeetful has organizations: the
+"agent expense account, sold to companies" wedge now exists in the data
+model, the APIs, the dashboard, and the docs.
+
+| # | Item | PR |
+|---|------|----|
+| 1 | Schema + org core (roles, SIWE-only CRUD) | [#94](https://github.com/Yeetful/website/pull/94) |
+| 2 | Org-scoped spending + two-level budget API | [#95](https://github.com/Yeetful/website/pull/95) |
+| 3 | Dashboard org switcher + members page | [#96](https://github.com/Yeetful/website/pull/96) |
+| 4 | Org-scoped tabs + budget meter/editor UI | [#97](https://github.com/Yeetful/website/pull/97) |
+| 5 | Expense report + /docs/teams | [#98](https://github.com/Yeetful/website/pull/98) |
+| 6 | Exit verification | (this entry — no code PR) |
+
+**Merge notes — THE CHAIN IS STACKED, land in order #94 → #95 → #96 →
+#97 → #98**; each PR targets its base branch and auto-retargets as bases
+merge+delete. test:api: 43 on main → 61 (#94) → 76 (#95) → 78 (#97) →
+80 (#98). The schema is ALREADY on Neon (additive push, item 1) — rows
+only get written once #94+ land, so merging later is safe.
+
+**Decisions worth keeping**:
+- **Scope keys**: org grant/approval rows carry ownerAddress =
+  `org:<orgId>` + a real orgId column → zero unique-constraint surgery,
+  scope isolation by construction. The pattern generalizes to any future
+  shared-ownership rows.
+- **Trust splits repeat**: a Bearer key never manages its org, never
+  edits the policy it spends under, never syncs to its minter's personal
+  grant. Same shape as "an agent can't raise its own budget".
+- **Non-member = 404** (existence hidden), insufficient role = 403.
+- **Report attribution is honest**: per-agent = key ground truth;
+  per-member = key minter; key-less rows = explicit `unattributed`.
+- Rect-scans should EXCLUDE elements inside overflow-x:auto ancestors
+  (docs sidebar/code blocks false-positive otherwise).
+
+**Owner passes open**: signed-in dashboard glance (switcher, org page,
+org-scoped tabs, report card + CSV download); decide whether /api/activity
+should label org rows better than `org:cu…xxxx`. **Follow-ups queued for
+future runs**: SDK 0.5 consumes the policy `org` block (refuse locally on
+org overBudget); Spend Permissions (Run 12, needs owner CDP creds);
+alerts/kill-switch now have an org to hang off.
+
+### Item 5 — The expense report + /docs/teams ✅ (2026-06-13) — [#98](https://github.com/Yeetful/website/pull/98), STACKED on #97
+
+Branch `org-report` off `org-tabs`. Merge chain: #94 → #95 → #96 → #97 → #98.
+
+Shipped: GET /api/orgs/[id]/report?from&to (member+, ≤366d, default 30d)
+— totals + by-agent/by-member/by-service. ATTRIBUTION DECISION (from the
+item-4 note): key-based and honest — per-agent is ground truth, per-member
+= the wallet that MINTED each key, key-less rows go to an explicit
+`unattributed` bucket (never guessed). components/OrgReport.tsx on
+/dashboard/org: 7d/30d/90d pills, three breakdown columns (top 8 + "more
+in the CSV"), client-side CSV (one file, section column). /docs/teams:
+registry flip (sidebar/cards/sitemap auto), D2 SEO + JSON-LD, the org
+model + invite-is-an-address + role matrix + two-level budget w/ the
+policy org block verbatim + F5 honesty; cross-linked from /docs/agents.
+
+Verified: tsc + build clean; **test:api 78 → 80, 80/80** vs next start
+:3210; /docs/teams renders w/ SEO title + in sitemap.xml; report card
+screenshots (harness deleted) at 1280 + 375 — zero true offenders (docs
+page flags are inside intentional overflow-x scrollers; scrollWidth 375
+— note for future sweeps: exclude elements inside overflow-x:auto
+ancestors from the rect scan).
+
+### Item 4 — Dashboard org scope + two-level budget UI ✅ (2026-06-13) — [#97](https://github.com/Yeetful/website/pull/97), STACKED on #96
+
+Branch `org-tabs` off `org-dashboard`. Merge chain: #94 → #95 → #96 → #97.
+
+Shipped: /api/dashboard/stats?org= (member+) — whole payload flips to the
+org scope (org grant via scope key, org keys, org ledger) + an `org`
+block {perDayUsd, spentTodayUsd, remainingTodayUsd, overBudget, role,
+name}; personal responses carry org:null and now EXCLUDE org keys from
+the agents count. Overview/Agents/Keys/Approvals all key fetches on
+activeOrgId (per the item-3 note) and pass ?org=/orgId on reads AND
+writes. Overview renders the ORG DAILY BUDGET meter above the grant card
+when scoped (green→red, explicit over-budget); /dashboard/org gains the
+cap editor (admin+ $/day form → the #95 PATCH; members read-only).
+
+Verified: tsc + build clean; **test:api 76 → 78, 78/78** vs next start
+:3210 (member reads the org stats block; personal stats stay org-free);
+harness screenshots (deleted): both meter states + cap editor at 1280 +
+375 — zero rect-scan offenders. Note for item 5: the report endpoint can
+reuse the `[orgId, ok, createdAt]` ledger index; per-member attribution
+needs apiKeyId→key→mintedBy OR ledger rows synced by SIWE members (no
+key) — decide attribution semantics there (key-based is honest:
+"per-agent" is the org truth; "per-member" = who MINTED the key).
+
+### Item 3 — Dashboard: org switcher + members ✅ (2026-06-13) — [#96](https://github.com/Yeetful/website/pull/96), STACKED on #95
+
+Branch `org-dashboard` off `org-spend`. Merge chain: #94 → #95 → #96
+(each PR targets its base branch and auto-retargets as bases land).
+
+Shipped: lib/org-store.ts (persisted zustand `activeOrgId`, F3 — never
+session state; APIs re-check membership per call); OrgSwitcher in the
+dash rail (Personal + orgs w/ role, inline create flow, self-heals to
+Personal when membership disappears; 160px pill on the ≤900px horizontal
+bar, menu floats at 240px); /dashboard/org + "Organization" sidebar link
+— OrgMembersView renders the matrix FROM THE API'S ROLE ECHO (rename
+admin+, invite-by-address w/ owner-only admin option, role select w/
+confirm-gated ownership transfer, remove guards, Leave on own row,
+owner danger zone); Personal scope = create-org card, not an error.
+Split page/view so the visual harness can mock-render (the established
+pattern; harness deleted pre-commit).
+
+Verified: tsc + build clean; test:api still 76/76 vs next start :3210
+(UI-only); screenshots of owner view / member view / switcher menu at
+1280 + 375 — ZERO rect-scan offenders, taps ≥40px. Item 4 note: the
+agents/keys/approvals pages still fetch UNSCOPED — they read the store
+and pass ?org= next; OrgSwitcher calls router.refresh() on pick which
+does NOT refetch client useEffect fetches — item 4 pages should key
+their fetch effects on activeOrgId instead.
+
+### Item 2 — Org-scoped spending objects ✅ (2026-06-13) — [#95](https://github.com/Yeetful/website/pull/95), STACKED on #94
+
+Branch `org-spend` off `org-core` (item 2 needs item 1's schema/lib —
+PR #95 targets the org-core branch and auto-retargets to main when #94
+merges; LAND #94 FIRST, never merge #95 into a side branch).
+
+THE DESIGN CALL: **scope keys** — org grant/approval rows carry
+ownerAddress = `org:<orgId>` (lib/org.ts orgScopeKey) + the real orgId
+column. Item 1's flagged AgentApproval unique-widening proved UNNECESSARY:
+personal vs org toggles are different scope keys by construction, zero
+constraint surgery, and scope isolation (org rows never in personal lists)
+falls out for free — test-asserted both ways.
+
+Shipped: org keys (mint admin+, list member+ w/ mintedBy, managed by any
+org admin — the key is the ORG's credential; BearerKey carries orgId);
+org grants + approvals (?org= / orgId params; org policy writes SIWE
+admin+ ONLY — a Bearer key never edits the policy it spends under);
+ledger org_id end-to-end (sync route + all 9 chat recordLedger sites —
+used perl -pi on `grantId: grant.id,` — and an org key CANNOT sync to its
+minter's personal grant); two-level budget (PATCH /api/orgs/[id]
+perDayUsd pulled FORWARD from item 4 — item 4 is UI-only for the cap now;
+policy + sync echo carry org {perDayUsd, spentTodayUsd, remainingTodayUsd,
+overBudget}; an org key's grant = the ORG grant via
+getActiveGrant(orgScopeKey)).
+
+Verified: tsc + build clean; **test:api 61 → 76, 76/76** against
+`next start :3210`. Notes for item 3/4: /api/keys GET now returns
+`mintedBy` only in org scope; /api/activity shortAddress renders org rows
+as `org:cu…xxxx` (acceptable, but consider a friendlier label when a
+public org row first appears). SDK 0.5 follow-up: consume the org block
+(refuse locally when org overBudget).
+
+### Item 1 — Schema + org core ✅ (2026-06-13) — [#94](https://github.com/Yeetful/website/pull/94)
+
+Branch `org-core`. Schema PUSHED TO NEON (additive; re-push says "already
+in sync", zero loss warnings): `organizations` (incl. `per_day_usd` — the
+item-4 org cap, added now so item 2's policy block needs no second push) +
+`org_members` (unique orgId+address, role owner|admin|member, addedBy);
+nullable `org_id` + indexes on api_keys / spend_grants / agent_approvals /
+spend_ledger (ledger gets `[orgId, ok, createdAt]` for rollups; ledger
+org_id is FK-less denormalized attribution, the other three cascade on org
+delete — precedent: grant delete cascades its ledger today).
+
+lib/org.ts = the single permission surface (F2): getMembership /
+requireRole / resolveScope + uniqueOrgSlug. Convention decided: NON-MEMBERS
+GET 404 (org existence hidden, matching cross-wallet grant reads); 403 is
+member-with-insufficient-role only — the queue's "non-member 403s" phrasing
+is implemented as 404 by design. Routes all SIWE-only (Bearer → 401):
+/api/orgs (list+create, 10-org cap), /api/orgs/[id] (read member+ / rename
+admin+ / delete owner-only), /api/orgs/[id]/members (add = THE invite;
+admin+ adds members, only owner adds admins, 100-member cap, 409 dupes),
+/api/orgs/[id]/members/[address] (role change owner-only incl. ATOMIC
+ownership transfer target↑owner+caller↓admin; remove: admins can't remove
+admins, owner irremovable, self-delete = leave).
+
+Verified: tsc + build clean; **test:api 43 → 61, 61/61** against
+`next start :3210` (server killed by PID, not pkill). ⚠️ For item 2:
+AgentApproval's `@@unique([ownerAddress, serverId])` MUST widen to include
+orgId before org approvals are written (a member's personal toggle would
+collide with their org toggle for the same server) — schema comment marks
+it. Also note for items 2–5: re-run `npx prisma generate` after checking
+out a branch that lacks/has the schema or tsc sees a stale client.
+
+---
+
 # Autopilot — Run 10: budgets everywhere — SDK 0.4 + the agents funnel (staged 2026-06-12)
 
 Owner directive: a 6-hour unattended run building whatever makes the most
