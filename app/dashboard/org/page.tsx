@@ -8,6 +8,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useOrgStore } from '@/lib/org-store'
 import OrgMembersView, { type OrgDetail } from '@/components/OrgMembersView'
+import OrgReport from '@/components/OrgReport'
 import { useSession } from '@/lib/session'
 import { Building2 } from 'lucide-react'
 
@@ -101,11 +102,14 @@ export default function DashboardOrgPage() {
   }
 
   return (
-    <OrgMembersView
-      org={org}
-      myAddress={(address ?? '').toLowerCase()}
-      onChanged={load}
-      onGone={() => setActiveOrg(null)}
-    />
+    <>
+      <OrgMembersView
+        org={org}
+        myAddress={(address ?? '').toLowerCase()}
+        onChanged={load}
+        onGone={() => setActiveOrg(null)}
+      />
+      <OrgReport orgId={org.id} />
+    </>
   )
 }

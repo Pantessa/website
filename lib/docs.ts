@@ -57,6 +57,14 @@ export const DOCS_PAGES: DocsPage[] = [
     ready: true,
   },
   {
+    slug: 'teams',
+    title: 'Teams & organizations',
+    seoTitle: 'Teams — a shared expense account for your whole org',
+    description:
+      'Yeetful organizations: invite teammates by wallet address, share agent keys, set a two-level budget (org daily cap over per-key budgets), export the report.',
+    ready: true,
+  },
+  {
     slug: 'x402',
     title: 'x402 v1 + v2',
     seoTitle: 'x402 protocol — what the SDK handles for you',
