@@ -148,6 +148,11 @@ pay.agentBudget() // { keyId, label, perDayUsd, spentTodayUsd, remainingTodayUsd
           answer &quot;who spent what, where, and was it allowed?&quot; for every call your agents
           make.
         </p>
+        <p>
+          Working with a team? <Link href="/docs/teams">Organizations</Link> put shared agent
+          keys, approvals, and an org-level daily cap above these per-key budgets — one expense
+          account for the whole company.
+        </p>
       </div>
     </>
   )

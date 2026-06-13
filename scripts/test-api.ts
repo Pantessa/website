@@ -578,6 +578,27 @@ async function main() {
     personalStats.org === null && personalStats.grant?.id !== orgGrantId,
   )
 
+  // The expense report — totals + three breakdowns, member-readable.
+  const reportRes = await fetch(`${BASE}/api/orgs/${spendOrg.id}/report`, { headers: { cookie: mallorySession } })
+  const report = await reportRes.json()
+  check(
+    'expense report: totals + per-agent/member/service breakdowns (member+)',
+    reportRes.status === 200 &&
+      Math.abs(report.totals?.spentUsd - 0.05) < 1e-9 &&
+      report.totals?.calls === 2 &&
+      report.perAgent?.[0]?.label === 'org runner' &&
+      report.perMember?.[0]?.address === owner.address.toLowerCase() &&
+      report.perService?.[0]?.service === 'OrgHarness',
+  )
+  const reportOutsider = await fetch(`${BASE}/api/orgs/${spendOrg.id}/report`, { headers: B })
+  const reportBadRange = await fetch(`${BASE}/api/orgs/${spendOrg.id}/report?from=2026-01-02&to=2026-01-01`, {
+    headers: C,
+  })
+  check(
+    'expense report: Bearer 401, inverted range 400',
+    reportOutsider.status === 401 && reportBadRange.status === 400,
+  )
+
   const crossSync = await fetch(`${BASE}/api/grants/${grant.id}/ledger`, {
     method: 'POST',
     headers: OBJ,
