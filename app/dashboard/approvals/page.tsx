@@ -9,15 +9,20 @@ import { useEffect, useState } from 'react'
 import { ArrowUpRight } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Card, type Approval } from '@/lib/dashboard-ui'
+import { useOrgStore } from '@/lib/org-store'
 
 export default function DashboardApprovalsPage() {
+  const { activeOrgId } = useOrgStore()
   const [approvals, setApprovals] = useState<Approval[] | null>(null)
 
+  // Keyed on the active org (F3): switching scope reloads the org's shared
+  // approval set; toggles carry the orgId and are admin-gated server-side.
   useEffect(() => {
-    void fetch('/api/approvals', { cache: 'no-store' })
+    setApprovals(null)
+    void fetch(`/api/approvals${activeOrgId ? `?org=${activeOrgId}` : ''}`, { cache: 'no-store' })
       .then((r) => (r.ok ? r.json() : null))
       .then((a) => a && setApprovals(a))
-  }, [])
+  }, [activeOrgId])
 
   const toggle = async (serverId: string, approved: boolean) => {
     analytics.approvalToggled(
@@ -28,7 +33,7 @@ export default function DashboardApprovalsPage() {
     const res = await fetch('/api/approvals', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ serverId, approved }),
+      body: JSON.stringify({ serverId, approved, orgId: activeOrgId || undefined }),
     })
     if (!res.ok) {
       setApprovals((prev) => prev?.map((a) => (a.serverId === serverId ? { ...a, approved: !approved } : a)) ?? prev)

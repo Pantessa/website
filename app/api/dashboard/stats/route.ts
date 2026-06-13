@@ -1,27 +1,52 @@
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import prisma from '@/lib/db'
 import { getSessionAddress } from '@/lib/auth'
-import { agentSpentTodayByKey, spentTodayUsd, spentTotalUsd } from '@/lib/grant-store'
+import { agentSpentTodayByKey, orgSpentTodayUsd, spentTodayUsd, spentTotalUsd } from '@/lib/grant-store'
 import { ensureGrant } from '@/lib/approvals'
+import { orgScopeKey, requireRole } from '@/lib/org'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
 /**
- * Dashboard aggregates for the signed-in wallet, derived from the spend
- * ledger of ALL their grants (current + past): KPIs, a 30-day daily spend
- * series, per-agent totals, and the recent activity feed.
+ * Dashboard aggregates for the signed-in wallet — or, with `?org=<id>`
+ * (member+), for the org's shared expense account. Derived from the spend
+ * ledger of ALL the scope's grants (current + past): KPIs, a 30-day daily
+ * spend series, per-agent totals, and the recent activity feed. Org scope
+ * adds an `org` block — the org level of the two-level budget.
  */
-export async function GET() {
+export async function GET(req: NextRequest) {
   const addr = await getSessionAddress()
   if (!addr) return NextResponse.json({ error: 'Not signed in.' }, { status: 401 })
 
+  const orgId = req.nextUrl.searchParams.get('org')
+  let org: Record<string, unknown> | null = null
+  if (orgId) {
+    const gate = await requireRole(orgId, addr, 'member')
+    if (!gate.ok) return NextResponse.json({ error: 'Not found.' }, { status: gate.status })
+    const [orgRow, orgSpent] = await Promise.all([
+      prisma.organization.findUnique({ where: { id: orgId }, select: { id: true, name: true, perDayUsd: true } }),
+      orgSpentTodayUsd(orgId),
+    ])
+    if (!orgRow) return NextResponse.json({ error: 'Not found.' }, { status: 404 })
+    org = {
+      id: orgRow.id,
+      name: orgRow.name,
+      role: gate.role,
+      perDayUsd: orgRow.perDayUsd,
+      spentTodayUsd: orgSpent,
+      remainingTodayUsd: orgRow.perDayUsd == null ? null : Math.max(0, orgRow.perDayUsd - orgSpent),
+      overBudget: orgRow.perDayUsd != null && orgSpent >= orgRow.perDayUsd,
+    }
+  }
+  const scopeOwner = orgId ? orgScopeKey(orgId) : addr
+
   // Mint the expense account on first visit — from here on, every chat
   // payment is enforced against the (default-empty) allowlist AND ledgered.
-  await ensureGrant(addr)
+  await ensureGrant(scopeOwner, orgId ?? undefined)
 
   const grants = await prisma.spendGrant.findMany({
-    where: { ownerAddress: addr },
+    where: { ownerAddress: scopeOwner },
     select: { id: true, label: true, perCallUsd: true, perDayUsd: true, allow: true, status: true, expiresAt: true, createdAt: true },
     orderBy: { createdAt: 'desc' },
   })
@@ -31,7 +56,7 @@ export async function GET() {
   // Connected agents: a key IS an agent, so the count comes from api_keys and
   // "top today" from key-attributed settled rows (Bearer-synced receipts).
   const keys = await prisma.apiKey.findMany({
-    where: { ownerAddress: addr },
+    where: orgId ? { orgId } : { ownerAddress: addr, orgId: null },
     select: { id: true, label: true },
   })
   const spentByKey = await agentSpentTodayByKey(keys.map((k) => k.id))
@@ -48,6 +73,7 @@ export async function GET() {
       grant: null,
       kpis: { spentTotalUsd: 0, spentTodayUsd: 0, calls: 0, deniedCalls: 0, successRate: null, topAgent: null },
       agents,
+      org,
       daily: [],
       perAgent: [],
       recent: [],
@@ -115,6 +141,7 @@ export async function GET() {
       topAgent,
     },
     agents,
+    org,
     daily: daily.map((d) => ({ day: d.day, spent: d.spent, calls: Number(d.calls) })),
     perAgent: perAgent.map((p) => ({ service: p.service, spent: p.spent, calls: Number(p.calls) })),
     recent,

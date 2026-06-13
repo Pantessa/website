@@ -559,6 +559,25 @@ async function main() {
   })
   check('org cap reached → org overBudget on the sync echo', ((await orgSync2.json()).org?.overBudget) === true)
 
+  // Org-scoped dashboard stats: the org block + the org's grant, member+.
+  const orgStats = await (
+    await fetch(`${BASE}/api/dashboard/stats?org=${spendOrg.id}`, { headers: { cookie: mallorySession } })
+  ).json()
+  check(
+    'org stats: org budget block + the org grant, readable by a member',
+    orgStats.org?.perDayUsd === 0.05 &&
+      orgStats.org?.spentTodayUsd === 0.05 &&
+      orgStats.org?.overBudget === true &&
+      orgStats.org?.role === 'member' &&
+      orgStats.grant?.id === orgGrantId &&
+      orgStats.agents?.connected === 1,
+  )
+  const personalStats = await (await fetch(`${BASE}/api/dashboard/stats`, { headers: C })).json()
+  check(
+    'personal stats: org-free (org null, org keys/grants absent)',
+    personalStats.org === null && personalStats.grant?.id !== orgGrantId,
+  )
+
   const crossSync = await fetch(`${BASE}/api/grants/${grant.id}/ledger`, {
     method: 'POST',
     headers: OBJ,

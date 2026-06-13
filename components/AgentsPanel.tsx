@@ -37,21 +37,24 @@ function fmtLastUsed(iso: string | null): string {
   return `active ${d.toLocaleDateString()}`
 }
 
-export default function AgentsPanel() {
+export default function AgentsPanel({ orgId }: { orgId?: string | null }) {
   const [agents, setAgents] = useState<AgentRow[] | null>(null)
   const [editing, setEditing] = useState<string | null>(null)
   const [draft, setDraft] = useState('')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
 
+  // Keyed on the active org (F3): switching scope refetches; the server
+  // re-checks membership on every call.
   const load = useCallback(async () => {
+    setAgents(null)
     try {
-      const res = await fetch('/api/keys', { cache: 'no-store' })
+      const res = await fetch(`/api/keys${orgId ? `?org=${orgId}` : ''}`, { cache: 'no-store' })
       setAgents(res.ok ? await res.json() : [])
     } catch {
       setAgents([])
     }
-  }, [])
+  }, [orgId])
 
   useEffect(() => {
     void load()

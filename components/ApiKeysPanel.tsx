@@ -27,9 +27,12 @@ function fmtDate(iso: string | null): string {
 
 export default function ApiKeysPanel({
   onKeysChange,
+  orgId,
 }: {
   /** Notifies the parent how many keys exist (drives the connect-agent card). */
   onKeysChange?: (count: number) => void
+  /** Org scope: list/mint the org's shared keys (mint is admin+, server-checked). */
+  orgId?: string | null
 }) {
   const [keys, setKeys] = useState<ApiKeyRow[] | null>(null)
   const [label, setLabel] = useState('')
@@ -41,7 +44,7 @@ export default function ApiKeysPanel({
 
   const load = useCallback(async () => {
     try {
-      const res = await fetch('/api/keys', { cache: 'no-store' })
+      const res = await fetch(`/api/keys${orgId ? `?org=${orgId}` : ''}`, { cache: 'no-store' })
       const rows: ApiKeyRow[] = res.ok ? await res.json() : []
       setKeys(rows)
       onKeysChange?.(rows.length)
@@ -49,7 +52,7 @@ export default function ApiKeysPanel({
       setKeys([])
       onKeysChange?.(0)
     }
-  }, [onKeysChange])
+  }, [onKeysChange, orgId])
 
   useEffect(() => {
     void load()
@@ -62,7 +65,7 @@ export default function ApiKeysPanel({
       const res = await fetch('/api/keys', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ label: label.trim() || undefined }),
+        body: JSON.stringify({ label: label.trim() || undefined, orgId: orgId || undefined }),
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Mint failed.')

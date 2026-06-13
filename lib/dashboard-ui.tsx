@@ -28,6 +28,17 @@ export interface Stats {
     connected: number
     topToday: { label: string; spentTodayUsd: number } | null
   }
+  /** Present when the stats are org-scoped (?org=): the org level of the
+   *  two-level budget — daily cap across ALL the org's keys. */
+  org: {
+    id: string
+    name: string
+    role: 'owner' | 'admin' | 'member'
+    perDayUsd: number | null
+    spentTodayUsd: number
+    remainingTodayUsd: number | null
+    overBudget: boolean
+  } | null
   daily: { day: string; spent: number; calls: number }[]
   perAgent: { service: string; spent: number; calls: number }[]
   recent: {
