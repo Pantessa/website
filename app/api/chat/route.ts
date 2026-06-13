@@ -199,7 +199,7 @@ async function planWalletPayments(
     if (!policy || !grant) return null
     const violation = grantViolation(policy, host, price, spentToday + plannedUsd, spentTotal + plannedUsd)
     if (violation) {
-      await recordLedger({ grantId: grant.id, host, serviceName: name, amountUsd: 0, ok: false, note: violation })
+      await recordLedger({ grantId: grant.id, orgId: grant.orgId ?? undefined, host, serviceName: name, amountUsd: 0, ok: false, note: violation })
       return violation
     }
     plannedUsd += price
@@ -358,7 +358,7 @@ async function executeWithSignatures(
   const ledger = (c: PlannedCall, ok: boolean, txHash?: string, note?: string) => {
     if (!grant) return
     void recordLedger({
-      grantId: grant.id,
+      grantId: grant.id, orgId: grant.orgId ?? undefined,
       host: c.host,
       serviceName: c.name,
       amountUsd: ok ? Number(c.priceUsd) || 0 : 0,
@@ -462,7 +462,7 @@ async function runWithBurner(
     if (policy && grant) {
       const violation = grantViolation(policy, host, price, spentToday, spentTotal)
       if (violation) {
-        await recordLedger({ grantId: grant.id, host, serviceName: ds.name, amountUsd: 0, ok: false, note: violation })
+        await recordLedger({ grantId: grant.id, orgId: grant.orgId ?? undefined, host, serviceName: ds.name, amountUsd: 0, ok: false, note: violation })
         receipts.push({ name: ds.name, endpoint: host, priceUsd: ds.priceUsd ?? '0.01', ok: false, note: `blocked: ${violation}` })
         blocked.push(`${ds.name} (${violation})`)
         continue
@@ -474,7 +474,7 @@ async function runWithBurner(
       contextBlocks.push(`### ${ds.name}\n${truncate(JSON.stringify(json), 1500)}`)
       receipts.push({ name: ds.name, endpoint: host, priceUsd: ds.priceUsd ?? '0.01', txHash, ok: true })
       if (grant) {
-        await recordLedger({ grantId: grant.id, host, serviceName: ds.name, amountUsd: price, ok: true, txHash, note: 'settled' })
+        await recordLedger({ grantId: grant.id, orgId: grant.orgId ?? undefined, host, serviceName: ds.name, amountUsd: price, ok: true, txHash, note: 'settled' })
         spentToday += price
         spentTotal += price
       }
@@ -496,7 +496,7 @@ async function runWithBurner(
       try {
         const { picks, txHash } = await planSmartPicks(inference, message, smart)
         if (grant) {
-          await recordLedger({ grantId: grant.id, host: infHost, serviceName: inference.name, amountUsd: infPrice, ok: true, txHash, note: 'settled' })
+          await recordLedger({ grantId: grant.id, orgId: grant.orgId ?? undefined, host: infHost, serviceName: inference.name, amountUsd: infPrice, ok: true, txHash, note: 'settled' })
           spentToday += infPrice
           spentTotal += infPrice
         }
@@ -518,7 +518,7 @@ async function runWithBurner(
           if (policy && grant) {
             const violation = grantViolation(policy, host, price, spentToday, spentTotal)
             if (violation) {
-              await recordLedger({ grantId: grant.id, host, serviceName: ep.serverName, amountUsd: 0, ok: false, note: violation })
+              await recordLedger({ grantId: grant.id, orgId: grant.orgId ?? undefined, host, serviceName: ep.serverName, amountUsd: 0, ok: false, note: violation })
               receipts.push({ name: ep.serverName, endpoint: host, priceUsd: ep.priceUsd, ok: false, note: `blocked: ${violation}` })
               blocked.push(`${ep.serverName} (${violation})`)
               continue
@@ -530,7 +530,7 @@ async function runWithBurner(
             receipts.push({ name: ep.serverName, endpoint: host, priceUsd: ep.priceUsd, txHash: dataTx, ok: true })
             smartServed.add(ep.serverSlug)
             if (grant) {
-              await recordLedger({ grantId: grant.id, host, serviceName: ep.serverName, amountUsd: price, ok: true, txHash: dataTx, note: 'settled' })
+              await recordLedger({ grantId: grant.id, orgId: grant.orgId ?? undefined, host, serviceName: ep.serverName, amountUsd: price, ok: true, txHash: dataTx, note: 'settled' })
               spentToday += price
               spentTotal += price
             }
@@ -550,7 +550,7 @@ async function runWithBurner(
   if (policy && grant) {
     const violation = grantViolation(policy, infHost, infPrice, spentToday, spentTotal)
     if (violation) {
-      await recordLedger({ grantId: grant.id, host: infHost, serviceName: inference.name, amountUsd: 0, ok: false, note: violation })
+      await recordLedger({ grantId: grant.id, orgId: grant.orgId ?? undefined, host: infHost, serviceName: inference.name, amountUsd: 0, ok: false, note: violation })
       const also = blocked.length ? ` Also blocked: ${blocked.join(', ')}.` : ''
       return NextResponse.json({
         reply: `🚫 Your spend grant blocked the inference call (${inference.name}: ${violation}).${also} Approve the agent on your **Dashboard** (or raise the caps) and try again.`,
@@ -564,7 +564,7 @@ async function runWithBurner(
   const { text, txHash } = await callInference(inference, prompt)
   receipts.push({ name: inference.name, endpoint: infHost, priceUsd: inference.priceUsd ?? '0.01', txHash, ok: true })
   if (grant) {
-    await recordLedger({ grantId: grant.id, host: infHost, serviceName: inference.name, amountUsd: infPrice, ok: true, txHash, note: 'settled' })
+    await recordLedger({ grantId: grant.id, orgId: grant.orgId ?? undefined, host: infHost, serviceName: inference.name, amountUsd: infPrice, ok: true, txHash, note: 'settled' })
     spentToday += infPrice
   }
 

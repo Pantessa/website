@@ -1,12 +1,27 @@
 import { NextRequest, NextResponse } from 'next/server'
 import prisma from '@/lib/db'
 import { getAuthAddress } from '@/lib/api-key'
+import { getSessionAddress } from '@/lib/auth'
 import { spentTodayUsd, spentTotalUsd } from '@/lib/grant-store'
+import { requireRole, type OrgRole } from '@/lib/org'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
 type Params = { params: Promise<{ id: string }> }
+
+/** Personal grants: the owner via SIWE or Bearer. Org grants: SIWE members
+ *  at `minRole` (a Bearer key never writes its org's policy). */
+async function canAccessGrant(
+  grant: { ownerAddress: string; orgId: string | null },
+  addr: string,
+  minRole: OrgRole,
+): Promise<boolean> {
+  if (!grant.orgId) return grant.ownerAddress === addr
+  const session = await getSessionAddress()
+  if (!session) return false
+  return (await requireRole(grant.orgId, session, minRole)).ok
+}
 
 // Read a grant + recent ledger + spend totals. Owner only.
 // Auth: SIWE session cookie OR `Authorization: Bearer yf_…` (headless agents).
@@ -19,7 +34,7 @@ export async function GET(req: NextRequest, { params }: Params) {
     where: { id },
     include: { ledger: { orderBy: { createdAt: 'desc' }, take: 100 } },
   })
-  if (!grant || grant.ownerAddress !== addr) {
+  if (!grant || !(await canAccessGrant(grant, addr, 'member'))) {
     return NextResponse.json({ error: 'Not found.' }, { status: 404 })
   }
 
@@ -40,7 +55,7 @@ export async function PATCH(req: NextRequest, { params }: Params) {
   if (!addr) return NextResponse.json({ error: 'Not signed in.' }, { status: 401 })
 
   const grant = await prisma.spendGrant.findUnique({ where: { id } })
-  if (!grant || grant.ownerAddress !== addr) {
+  if (!grant || !(await canAccessGrant(grant, addr, 'admin'))) {
     return NextResponse.json({ error: 'Not found.' }, { status: 404 })
   }
 
@@ -68,7 +83,7 @@ export async function DELETE(req: NextRequest, { params }: Params) {
   if (!addr) return NextResponse.json({ error: 'Not signed in.' }, { status: 401 })
 
   const grant = await prisma.spendGrant.findUnique({ where: { id } })
-  if (!grant || grant.ownerAddress !== addr) {
+  if (!grant || !(await canAccessGrant(grant, addr, 'admin'))) {
     return NextResponse.json({ error: 'Not found.' }, { status: 404 })
   }
   await prisma.spendGrant.delete({ where: { id } })

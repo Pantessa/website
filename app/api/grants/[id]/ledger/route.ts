@@ -3,7 +3,8 @@ import prisma from '@/lib/db'
 import { getBearerKey } from '@/lib/api-key'
 import { getSessionAddress } from '@/lib/auth'
 import { hostOf } from '@/lib/spend-grant'
-import { agentSpentTodayUsd, recordLedger } from '@/lib/grant-store'
+import { agentSpentTodayUsd, orgSpentTodayUsd, recordLedger } from '@/lib/grant-store'
+import { requireRole } from '@/lib/org'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -26,7 +27,18 @@ export async function POST(req: NextRequest, { params }: Params) {
   if (!addr) return NextResponse.json({ error: 'Not signed in.' }, { status: 401 })
 
   const grant = await prisma.spendGrant.findUnique({ where: { id } })
-  if (!grant || grant.ownerAddress !== addr) {
+  if (!grant) return NextResponse.json({ error: 'Not found.' }, { status: 404 })
+  if (grant.orgId) {
+    // Org grant: synced by the org's own keys, or any member via SIWE.
+    const allowed = key
+      ? key.orgId === grant.orgId
+      : session
+        ? (await requireRole(grant.orgId, session, 'member')).ok
+        : false
+    if (!allowed) return NextResponse.json({ error: 'Not found.' }, { status: 404 })
+  } else if (grant.ownerAddress !== addr || key?.orgId) {
+    // Personal grant: owner only — and an ORG key never syncs to its minter's
+    // personal account (it's the org's credential; attribution would lie).
     return NextResponse.json({ error: 'Not found.' }, { status: 404 })
   }
 
@@ -53,13 +65,28 @@ export async function POST(req: NextRequest, { params }: Params) {
     txHash: typeof body.txHash === 'string' ? body.txHash.slice(0, 120) : undefined,
     note: typeof body.note === 'string' ? body.note.slice(0, 200) : 'sdk-sync',
     apiKeyId: key?.id,
+    orgId: grant.orgId ?? undefined,
   })
 
   // Tell the agent where it stands against its daily budget on every sync.
   // Advisory by design: the agent pays from its own wallet, so the SDK is the
-  // enforcement point — overBudget is its signal to stop paying.
+  // enforcement point — overBudget is its signal to stop paying. Org keys get
+  // BOTH levels: their own cap and the org's daily cap (over either = stop).
   if (key) {
     const spentTodayUsd = await agentSpentTodayUsd(key.id)
+    let org = null
+    if (key.orgId) {
+      const [orgRow, orgSpent] = await Promise.all([
+        prisma.organization.findUnique({ where: { id: key.orgId }, select: { perDayUsd: true } }),
+        orgSpentTodayUsd(key.orgId),
+      ])
+      org = {
+        id: key.orgId,
+        perDayUsd: orgRow?.perDayUsd ?? null,
+        spentTodayUsd: orgSpent,
+        overBudget: orgRow?.perDayUsd != null && orgSpent >= orgRow.perDayUsd,
+      }
+    }
     return NextResponse.json(
       {
         ...entry,
@@ -68,6 +95,7 @@ export async function POST(req: NextRequest, { params }: Params) {
           spentTodayUsd,
           overBudget: key.perDayUsd != null && spentTodayUsd >= key.perDayUsd,
         },
+        org,
       },
       { status: 201 },
     )

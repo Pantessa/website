@@ -467,6 +467,109 @@ async function main() {
     delOrg.status === 200 && Array.isArray(orgsAfter) && !orgsAfter.some((o: { id: string }) => o.id === org.id),
   )
 
+  // ── Org spending: org keys, org grants, the two-level budget ──────────────
+  console.log('— org spending')
+  const spendOrg = await (
+    await fetch(`${BASE}/api/orgs`, { method: 'POST', headers: CJ, body: JSON.stringify({ name: 'Spend Co' }) })
+  ).json()
+  await fetch(`${BASE}/api/orgs/${spendOrg.id}/members`, {
+    method: 'POST',
+    headers: CJ,
+    body: JSON.stringify({ address: mallory.address }),
+  })
+
+  const memberMint = await fetch(`${BASE}/api/keys`, {
+    method: 'POST',
+    headers: MJ,
+    body: JSON.stringify({ label: 'rogue', orgId: spendOrg.id }),
+  })
+  check('member cannot mint an org key (admin+) → 403', memberMint.status === 403)
+
+  const orgKeyRes = await fetch(`${BASE}/api/keys`, {
+    method: 'POST',
+    headers: CJ,
+    body: JSON.stringify({ label: 'org runner', orgId: spendOrg.id }),
+  })
+  const orgKey = await orgKeyRes.json()
+  check('admin mints an org key', orgKeyRes.status === 201 && orgKey.orgId === spendOrg.id && /^yf_/.test(orgKey.secret ?? ''))
+  const OB = { authorization: `Bearer ${orgKey.secret}` }
+  const OBJ = { 'content-type': 'application/json', ...OB }
+
+  const orgKeysAsMember = await (await fetch(`${BASE}/api/keys?org=${spendOrg.id}`, { headers: { cookie: mallorySession } })).json()
+  check('member lists org keys (with mintedBy)', orgKeysAsMember.length === 1 && orgKeysAsMember[0].mintedBy === owner.address.toLowerCase())
+  const personalKeys = await (await fetch(`${BASE}/api/keys`, { headers: C })).json()
+  check('org key absent from the personal key list (scope isolation)', !personalKeys.some((k: { id: string }) => k.id === orgKey.id))
+
+  const memberToggle = await fetch(`${BASE}/api/approvals`, {
+    method: 'PUT',
+    headers: MJ,
+    body: JSON.stringify({ serverId: 'whatever', approved: true, orgId: spendOrg.id }),
+  })
+  check('member cannot toggle org approvals (admin+) → 403', memberToggle.status === 403)
+
+  const dirServers = await (await fetch(`${BASE}/api/servers`)).json()
+  const dirSrv = dirServers.find((s: { callable: boolean }) => s.callable) ?? dirServers[0]
+  const orgToggle = await fetch(`${BASE}/api/approvals`, {
+    method: 'PUT',
+    headers: CJ,
+    body: JSON.stringify({ serverId: dirSrv.id, approved: true, orgId: spendOrg.id }),
+  })
+  const orgToggleBody = await orgToggle.json()
+  check('admin org-toggle mints the org expense account', orgToggle.status === 200 && !!orgToggleBody.grant?.id)
+  const orgGrantId = orgToggleBody.grant.id as string
+
+  const orgGrants = await (await fetch(`${BASE}/api/grants?org=${spendOrg.id}`, { headers: { cookie: mallorySession } })).json()
+  check(
+    'member lists org grants; orgId attributed',
+    Array.isArray(orgGrants) && orgGrants.some((g: { id: string; orgId: string }) => g.id === orgGrantId && g.orgId === spendOrg.id),
+  )
+  const personalGrants = await (await fetch(`${BASE}/api/grants`, { headers: C })).json()
+  check('org grant absent from the personal grant list (scope isolation)', !personalGrants.some((g: { id: string }) => g.id === orgGrantId))
+
+  const capSet = await fetch(`${BASE}/api/orgs/${spendOrg.id}`, {
+    method: 'PATCH',
+    headers: CJ,
+    body: JSON.stringify({ perDayUsd: 0.05 }),
+  })
+  check('admin sets the org daily cap', capSet.status === 200 && (await capSet.json()).perDayUsd === 0.05)
+
+  const orgSync1 = await fetch(`${BASE}/api/grants/${orgGrantId}/ledger`, {
+    method: 'POST',
+    headers: OBJ,
+    body: JSON.stringify({ host: 'org.example.test', amountUsd: 0.03, ok: true, serviceName: 'OrgHarness' }),
+  })
+  const orgSync1Body = await orgSync1.json()
+  check(
+    'org key syncs to the org grant; echo carries BOTH budget levels',
+    orgSync1.status === 201 && orgSync1Body.org?.spentTodayUsd === 0.03 && orgSync1Body.org?.overBudget === false,
+  )
+
+  const orgPolicy = await (await fetch(`${BASE}/api/agent/policy`, { headers: OB })).json()
+  check(
+    "org key's policy = the ORG's standing orders (org grant + org block)",
+    orgPolicy.grant?.id === orgGrantId && orgPolicy.org?.perDayUsd === 0.05 && orgPolicy.org?.spentTodayUsd === 0.03,
+  )
+  const personalPolicy = await (await fetch(`${BASE}/api/agent/policy`, { headers: B })).json()
+  check('personal key policy has no org block', personalPolicy.org === null)
+
+  const orgSync2 = await fetch(`${BASE}/api/grants/${orgGrantId}/ledger`, {
+    method: 'POST',
+    headers: OBJ,
+    body: JSON.stringify({ host: 'org.example.test', amountUsd: 0.02, ok: true, serviceName: 'OrgHarness' }),
+  })
+  check('org cap reached → org overBudget on the sync echo', ((await orgSync2.json()).org?.overBudget) === true)
+
+  const crossSync = await fetch(`${BASE}/api/grants/${grant.id}/ledger`, {
+    method: 'POST',
+    headers: OBJ,
+    body: JSON.stringify({ host: 'sneaky.example.test', amountUsd: 0.01, ok: true }),
+  })
+  check("org key can't sync to a PERSONAL grant (attribution can't lie)", crossSync.status === 404)
+
+  const delSpendOrg = await fetch(`${BASE}/api/orgs/${spendOrg.id}`, { method: 'DELETE', headers: C })
+  const orgKeyAfter = await fetch(`${BASE}/api/grants`, { headers: OB })
+  check('org delete cascades its keys (org Bearer → 401)', delSpendOrg.status === 200 && orgKeyAfter.status === 401)
+
   // ── Wallet-mode plan gate (policy enforced BEFORE signature requests) ─────
   console.log('— wallet plan gate')
   const fakeInference = {

@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
+import prisma from '@/lib/db'
 import { getBearerKey } from '@/lib/api-key'
-import { agentSpentTodayUsd, getActiveGrant, spentTodayUsd, spentTotalUsd } from '@/lib/grant-store'
+import { agentSpentTodayUsd, getActiveGrant, orgSpentTodayUsd, spentTodayUsd, spentTotalUsd } from '@/lib/grant-store'
+import { orgScopeKey } from '@/lib/org'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -15,10 +17,35 @@ export async function GET(req: NextRequest) {
   const key = await getBearerKey(req)
   if (!key) return NextResponse.json({ error: 'Bearer yf_… key required.' }, { status: 401 })
 
+  // An org key's standing orders are the ORG's: its grant is the org grant
+  // and its spend rolls up to the org daily cap (the level above its own).
   const spentTodayByAgent = await agentSpentTodayUsd(key.id)
-  const grant = await getActiveGrant(key.ownerAddress)
+  const grant = await getActiveGrant(key.orgId ? orgScopeKey(key.orgId) : key.ownerAddress)
+
+  let org = null
+  if (key.orgId) {
+    const [orgRow, orgSpent] = await Promise.all([
+      prisma.organization.findUnique({
+        where: { id: key.orgId },
+        select: { id: true, name: true, perDayUsd: true },
+      }),
+      orgSpentTodayUsd(key.orgId),
+    ])
+    if (orgRow) {
+      org = {
+        id: orgRow.id,
+        name: orgRow.name,
+        perDayUsd: orgRow.perDayUsd,
+        spentTodayUsd: orgSpent,
+        remainingTodayUsd:
+          orgRow.perDayUsd == null ? null : Math.max(0, orgRow.perDayUsd - orgSpent),
+        overBudget: orgRow.perDayUsd != null && orgSpent >= orgRow.perDayUsd,
+      }
+    }
+  }
 
   return NextResponse.json({
+    org,
     agent: {
       keyId: key.id,
       label: key.label,

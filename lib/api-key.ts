@@ -26,6 +26,9 @@ export interface BearerKey {
   ownerAddress: string
   label: string
   perDayUsd: number | null
+  /** Set when this is an org key: the agent spends under the org's grant
+   *  and rolls up to the org's daily cap. Null = a personal key. */
+  orgId: string | null
 }
 
 /**
@@ -53,6 +56,7 @@ export async function getBearerKey(req: NextRequest): Promise<BearerKey | null> 
     ownerAddress: key.ownerAddress.toLowerCase(),
     label: key.label,
     perDayUsd: key.perDayUsd,
+    orgId: key.orgId,
   }
 }
 
