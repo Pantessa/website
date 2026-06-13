@@ -476,6 +476,38 @@
   .dash__main { padding: 24px 0 64px; min-width: 0; }
   .dash__h1 { font-family: 'Archivo', sans-serif; font-weight: 800; font-size: 24px; letter-spacing: -0.02em; margin-bottom: 6px; }
   .dash__sub { font-size: 13px; color: var(--muted-2); margin-bottom: 20px; max-width: 64ch; line-height: 1.5; }
+
+  /* org scope switcher (rail) — selection is client state; APIs re-check */
+  .orgsw { position: relative; padding: 0 6px 10px; }
+  .orgsw__btn {
+    display: flex; align-items: center; gap: 8px; width: 100%; padding: 9px 10px; min-height: 40px;
+    border: 1px solid var(--line); border-radius: 10px; background: var(--surf-1);
+    color: var(--fg); font-size: 12.5px; font-weight: 600; transition: border-color .15s;
+  }
+  .orgsw__btn:hover { border-color: var(--line-2); }
+  .orgsw__name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; }
+  .orgsw__chev { color: var(--muted-2); flex-shrink: 0; }
+  .orgsw__menu {
+    position: absolute; left: 6px; right: 6px; top: calc(100% - 4px); z-index: 40;
+    background: var(--surf-1); border: 1px solid var(--line); border-radius: 12px; padding: 5px;
+    box-shadow: 0 16px 48px rgba(0,0,0,.5);
+  }
+  .orgsw__item {
+    display: flex; align-items: center; gap: 8px; width: 100%; padding: 9px; min-height: 40px;
+    border-radius: 8px; font-size: 12.5px; color: var(--muted); transition: background .12s, color .12s;
+  }
+  .orgsw__item:hover { background: var(--surf-2); color: var(--fg); }
+  .orgsw__role { font-size: 10px; color: var(--muted-2); flex-shrink: 0; }
+  .orgsw__check { color: var(--accent); flex-shrink: 0; }
+  .orgsw__sep { height: 1px; background: var(--line); margin: 5px 4px; }
+  .orgsw__new { display: flex; gap: 6px; padding: 4px; }
+  .orgsw__input {
+    flex: 1; min-width: 0; background: var(--surf-2); border: 1px solid var(--line);
+    border-radius: 8px; padding: 8px 10px; font-size: 12.5px; color: var(--fg); font-family: inherit;
+  }
+  .orgsw__input:focus { outline: none; border-color: var(--line-2); }
+  .orgsw__go { font-size: 12px; font-weight: 600; padding: 0 12px; border-radius: 8px; background: var(--fg); color: #000; min-height: 36px; }
+  .orgsw__go:disabled { opacity: .5; }
   /* Survivable mobile fallback (item 3 turns this into the section bar):
      rail becomes a horizontal scroll row above the content. */
   @media (max-width: 900px) {
@@ -484,6 +516,9 @@
       gap: 12px; padding: 10px 0; background: rgba(0,0,0,0.85); backdrop-filter: blur(10px);
       border-bottom: 1px solid var(--line); }
     .dash__who { display: none; }
+    /* the switcher rides the horizontal bar: fixed width, menu floats */
+    .orgsw { padding: 0; width: 160px; flex-shrink: 0; }
+    .orgsw__menu { left: 0; right: auto; width: 240px; }
     .dash__side { flex-direction: row; gap: 4px; overflow-x: auto; scrollbar-width: none;
       -webkit-mask-image: linear-gradient(to right, #000 92%, transparent);
               mask-image: linear-gradient(to right, #000 92%, transparent); }

@@ -6,7 +6,7 @@
 
 import Link from 'next/link'
 import { useEffect, useRef } from 'react'
-import { LayoutDashboard, KeyRound, Bot, ToggleRight, Activity } from 'lucide-react'
+import { LayoutDashboard, KeyRound, Bot, ToggleRight, Activity, Building2 } from 'lucide-react'
 
 export const DASH_SECTIONS = [
   { href: '/dashboard', label: 'Overview', icon: LayoutDashboard, exact: true },
@@ -14,6 +14,7 @@ export const DASH_SECTIONS = [
   { href: '/dashboard/keys', label: 'API Keys', icon: KeyRound, exact: false },
   { href: '/dashboard/approvals', label: 'Approvals', icon: ToggleRight, exact: false },
   { href: '/dashboard/activity', label: 'Activity', icon: Activity, exact: false },
+  { href: '/dashboard/org', label: 'Organization', icon: Building2, exact: false },
 ] as const
 
 export function isSectionActive(pathname: string, href: string, exact: boolean): boolean {

@@ -12,6 +12,7 @@ import { useConnectModal } from '@rainbow-me/rainbowkit'
 import { ShieldCheck, Wallet } from 'lucide-react'
 import { useSession } from '@/lib/session'
 import DashboardSidebar from '@/components/DashboardSidebar'
+import OrgSwitcher from '@/components/OrgSwitcher'
 import { short } from '@/lib/dashboard-ui'
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
@@ -52,6 +53,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   return (
     <div className="dash">
       <aside className="dash__rail">
+        <OrgSwitcher />
         <div className="dash__who mono">{short(address)}</div>
         <DashboardSidebar pathname={pathname} />
       </aside>
