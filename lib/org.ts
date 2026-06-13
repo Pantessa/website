@@ -82,6 +82,16 @@ export async function resolveScope(address: string, orgId?: string | null): Prom
   return m ? { kind: 'org', orgId, address: addr, role: m.role } : null
 }
 
+/** The ownerAddress value org-scoped grant/approval rows carry: a sentinel,
+ *  not a wallet. This keeps every existing (ownerAddress, …) unique and query
+ *  working with ZERO constraint surgery — e.g. a member's personal approval
+ *  of a server never collides with their org's approval of the same server.
+ *  The real attribution lives in the row's orgId column; `org:` can never
+ *  collide with a wallet (those are 0x-hex). */
+export function orgScopeKey(orgId: string): string {
+  return `org:${orgId}`
+}
+
 /** Derive a unique org slug from the name (blog-style, with a suffix on
  *  collision so creates never 409 on a popular name). */
 export async function uniqueOrgSlug(name: string): Promise<string> {

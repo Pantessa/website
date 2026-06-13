@@ -40,7 +40,9 @@ export async function spentTotalUsd(grantId: string): Promise<number> {
   return agg._sum.amountUsd ?? 0
 }
 
-/** Append one authorization decision to the ledger (audit trail + receipt). */
+/** Append one authorization decision to the ledger (audit trail + receipt).
+ *  orgId = the grant's org (denormalized so org rollups never join) — pass
+ *  `grant.orgId ?? undefined` wherever the grant row is in hand. */
 export async function recordLedger(entry: {
   grantId: string
   host: string
@@ -50,8 +52,19 @@ export async function recordLedger(entry: {
   txHash?: string
   note?: string
   apiKeyId?: string
+  orgId?: string
 }) {
   return prisma.spendLedgerEntry.create({ data: entry })
+}
+
+/** USD an org settled since UTC midnight, across ALL its keys and grants —
+ *  the org level of the two-level budget. */
+export async function orgSpentTodayUsd(orgId: string): Promise<number> {
+  const agg = await prisma.spendLedgerEntry.aggregate({
+    where: { orgId, ok: true, createdAt: { gte: utcMidnight() } },
+    _sum: { amountUsd: true },
+  })
+  return agg._sum.amountUsd ?? 0
 }
 
 /** USD a connected agent (API key) settled since UTC midnight. */

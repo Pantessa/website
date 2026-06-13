@@ -36,7 +36,9 @@ export async function GET(_req: NextRequest, { params }: Params) {
   return NextResponse.json({ ...org, role: gate.role })
 }
 
-// Rename. Admin+.
+// Rename and/or set the org daily cap (USD across ALL the org's agent keys —
+// the level above per-key budgets; null clears it). Admin+. The cap is
+// SDK-enforced via /api/agent/policy — advisory at the rails (F5).
 export async function PATCH(req: NextRequest, { params }: Params) {
   const { id } = await params
   const addr = await getSessionAddress()
@@ -51,12 +53,34 @@ export async function PATCH(req: NextRequest, { params }: Params) {
   }
 
   const body = await req.json().catch(() => ({}) as Record<string, unknown>)
-  const name = typeof body.name === 'string' ? body.name.trim().slice(0, 64) : ''
-  if (!name) return NextResponse.json({ error: 'name is required.' }, { status: 400 })
+  const data: { name?: string; perDayUsd?: number | null } = {}
+
+  if ('name' in body) {
+    const name = typeof body.name === 'string' ? body.name.trim().slice(0, 64) : ''
+    if (!name) return NextResponse.json({ error: 'name must be non-empty.' }, { status: 400 })
+    data.name = name
+  }
+  if ('perDayUsd' in body) {
+    if (body.perDayUsd === null) {
+      data.perDayUsd = null
+    } else {
+      const perDayUsd = Number(body.perDayUsd)
+      if (!(perDayUsd > 0) || perDayUsd > 100_000) {
+        return NextResponse.json(
+          { error: 'perDayUsd must be a positive number (or null to clear).' },
+          { status: 400 },
+        )
+      }
+      data.perDayUsd = perDayUsd
+    }
+  }
+  if (Object.keys(data).length === 0) {
+    return NextResponse.json({ error: 'Nothing to update.' }, { status: 400 })
+  }
 
   const org = await prisma.organization.update({
     where: { id },
-    data: { name },
+    data,
     select: { id: true, name: true, slug: true, perDayUsd: true },
   })
   return NextResponse.json({ ...org, role: gate.role })

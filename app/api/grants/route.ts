@@ -1,14 +1,33 @@
 import { NextRequest, NextResponse } from 'next/server'
 import prisma from '@/lib/db'
 import { getAuthAddress } from '@/lib/api-key'
+import { getSessionAddress } from '@/lib/auth'
 import { hostOf } from '@/lib/spend-grant'
+import { orgScopeKey, requireRole } from '@/lib/org'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
 // List the caller's spend grants (newest first), with today's spend.
 // Auth: SIWE session cookie OR `Authorization: Bearer yf_…` (headless agents).
+// `?org=<id>` lists the org's grants instead (SIWE member+ — org policy is a
+// human surface; org rows carry the org: scope key so they never appear in a
+// wallet's personal list).
 export async function GET(req: NextRequest) {
+  const orgId = req.nextUrl.searchParams.get('org')
+  if (orgId) {
+    const session = await getSessionAddress()
+    if (!session) return NextResponse.json({ error: 'Not signed in.' }, { status: 401 })
+    const gate = await requireRole(orgId, session, 'member')
+    if (!gate.ok) return NextResponse.json({ error: 'Not found.' }, { status: gate.status })
+    const grants = await prisma.spendGrant.findMany({
+      where: { orgId },
+      orderBy: { createdAt: 'desc' },
+      include: { _count: { select: { ledger: true } } },
+    })
+    return NextResponse.json(grants.map((g) => ({ ...g, signed: !!g.signature })))
+  }
+
   const addr = await getAuthAddress(req)
   if (!addr) return NextResponse.json({ error: 'Not signed in.' }, { status: 401 })
 
@@ -23,12 +42,29 @@ export async function GET(req: NextRequest) {
 const MAX_PER_CALL = 100 // sanity ceilings so a typo can't authorize a fortune
 const MAX_PER_DAY = 10_000
 
-// Create a spend grant owned by the caller (SIWE session or API key).
+// Create a spend grant owned by the caller (SIWE session or API key). Pass
+// `orgId` to create an ORG grant instead — SIWE admin+ only (a Bearer key
+// can't write its org's policy, same split as budgets).
 export async function POST(req: NextRequest) {
   const addr = await getAuthAddress(req)
   if (!addr) return NextResponse.json({ error: 'Not signed in.' }, { status: 401 })
 
   const body = await req.json().catch(() => ({} as Record<string, unknown>))
+
+  const orgId = typeof body.orgId === 'string' && body.orgId ? body.orgId : null
+  if (orgId) {
+    const session = await getSessionAddress()
+    if (!session) {
+      return NextResponse.json({ error: 'Org grants require a SIWE session.' }, { status: 401 })
+    }
+    const gate = await requireRole(orgId, session, 'admin')
+    if (!gate.ok) {
+      return NextResponse.json(
+        { error: gate.status === 404 ? 'Not found.' : 'Requires the admin role.' },
+        { status: gate.status },
+      )
+    }
+  }
 
   // Allowlist: accept hostnames or full URLs; normalize to bare lowercased hosts.
   const rawAllow: unknown[] = Array.isArray(body.allow) ? body.allow : []
@@ -72,7 +108,16 @@ export async function POST(req: NextRequest) {
       : 'Agent expense account'
 
   const grant = await prisma.spendGrant.create({
-    data: { ownerAddress: addr, label, allow, perCallUsd, perDayUsd, totalUsd, expiresAt },
+    data: {
+      ownerAddress: orgId ? orgScopeKey(orgId) : addr,
+      orgId,
+      label,
+      allow,
+      perCallUsd,
+      perDayUsd,
+      totalUsd,
+      expiresAt,
+    },
   })
   return NextResponse.json({ ...grant, signed: false }, { status: 201 })
 }

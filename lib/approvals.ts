@@ -40,6 +40,11 @@ export interface ApprovalRow {
   approved: boolean
 }
 
+// Scoping: `ownerAddress` here is a SCOPE KEY — a wallet for personal rows,
+// or lib/org.ts orgScopeKey(orgId) ("org:<id>") for an org's shared rows.
+// `orgId` is passed alongside for org scope so created rows carry the real
+// attribution column; the sentinel keeps every existing unique/query intact.
+
 /** All directory agents joined with the owner's approval state (default: on). */
 export async function listApprovals(ownerAddress: string): Promise<ApprovalRow[]> {
   const [servers, approvals] = await Promise.all([
@@ -75,20 +80,25 @@ export async function listApprovals(ownerAddress: string): Promise<ApprovalRow[]
 }
 
 /** Upsert one approval, then re-sync the owner's grant allowlist. */
-export async function setApproval(ownerAddress: string, serverId: string, approved: boolean) {
+export async function setApproval(
+  ownerAddress: string,
+  serverId: string,
+  approved: boolean,
+  orgId?: string,
+) {
   await prisma.agentApproval.upsert({
     where: { ownerAddress_serverId: { ownerAddress, serverId } },
     update: { approved },
-    create: { ownerAddress, serverId, approved },
+    create: { ownerAddress, serverId, approved, orgId },
   })
-  return syncGrantAllowlist(ownerAddress)
+  return syncGrantAllowlist(ownerAddress, orgId)
 }
 
 /**
  * Re-derive the active grant's `allow` hosts from the EXPLICITLY approved
  * agent set (default off). Creates the expense account if none exists.
  */
-export async function syncGrantAllowlist(ownerAddress: string) {
+export async function syncGrantAllowlist(ownerAddress: string, orgId?: string) {
   const approvedRows = await prisma.agentApproval.findMany({
     where: { ownerAddress, approved: true },
     select: { serverId: true },
@@ -130,7 +140,8 @@ export async function syncGrantAllowlist(ownerAddress: string) {
   return prisma.spendGrant.create({
     data: {
       ownerAddress,
-      label: DEFAULT_GRANT.label,
+      orgId,
+      label: orgId ? 'Org expense account' : DEFAULT_GRANT.label,
       allow,
       perCallUsd: DEFAULT_GRANT.perCallUsd,
       perDayUsd: DEFAULT_GRANT.perDayUsd,
@@ -144,10 +155,10 @@ export async function syncGrantAllowlist(ownerAddress: string) {
  * immediately (no grant = no receipts = an empty dashboard, which is exactly
  * the "ran a query, saw nothing" trap). Returns the active grant either way.
  */
-export async function ensureGrant(ownerAddress: string) {
+export async function ensureGrant(ownerAddress: string, orgId?: string) {
   const existing = await prisma.spendGrant.findFirst({
     where: { ownerAddress, status: 'active', expiresAt: { gt: new Date() } },
     orderBy: { createdAt: 'desc' },
   })
-  return existing ?? syncGrantAllowlist(ownerAddress)
+  return existing ?? syncGrantAllowlist(ownerAddress, orgId)
 }
