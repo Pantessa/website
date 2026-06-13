@@ -129,6 +129,52 @@ model Message {
   @@map("messages")
 }
 
+/// A company workspace: shared agents, keys, budgets, and ledger under one
+/// roof. Membership is wallet-native — adding an address IS the invite (it
+/// takes effect on the invitee's next SIWE sign-in; no email machinery).
+/// Org-scoped rows on the spending tables carry org_id; NULL = personal
+/// scope, so every pre-org row keeps working unchanged.
+model Organization {
+  id        String @id @default(cuid())
+  name      String
+  slug      String @unique
+  createdBy String @map("created_by") // lowercased wallet of the founder
+
+  /// Org-level daily cap (USD) across ALL the org's agent keys — the level
+  /// above per-key budgets. Null = no org cap. Advisory at the rails
+  /// (SDK-enforced via /api/agent/policy) until Coinbase Spend Permissions.
+  perDayUsd Float? @map("per_day_usd")
+
+  members   OrgMember[]
+  apiKeys   ApiKey[]
+  grants    SpendGrant[]
+  approvals AgentApproval[]
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("organizations")
+}
+
+/// One wallet's membership in an org. Roles: owner > admin > member —
+/// the matrix lives in lib/org.ts (requireRole), enforced server-side in
+/// every org route; a Bearer key can NEVER manage membership (SIWE only).
+model OrgMember {
+  id      String  @id @default(cuid())
+  orgId   String  @map("org_id")
+  address String // lowercased wallet
+  role    String  @default("member") // owner | admin | member
+  addedBy String? @map("added_by") // lowercased wallet that sent the invite
+
+  org       Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  createdAt DateTime     @default(now()) @map("created_at")
+  updatedAt DateTime     @updatedAt @map("updated_at")
+
+  @@unique([orgId, address])
+  @@index([address])
+  @@map("org_members")
+}
+
 /// An "agent expense account": a scoped, wallet-owned authorization to pay x402
 /// endpoints up to a budget. It's POLICY, not custody — Yeetful enforces the
 /// caps + allowlist and ledgers every decision; the funds move from the payer
@@ -137,6 +183,9 @@ model Message {
 model SpendGrant {
   id           String @id @default(cuid())
   ownerAddress String @map("owner_address") // lowercased, SIWE-verified
+  /// Org scope; NULL = the owner's personal expense account (pre-org rows
+  /// all have NULL — back-compat by construction).
+  orgId        String? @map("org_id")
   label        String @default("Agent expense account")
 
   /// Exact hostnames this grant may pay (e.g. "tripadvisor.x402.paysponge.com").
@@ -155,11 +204,13 @@ model SpendGrant {
   /// portable authorization artifact / precursor to an on-chain Spend Permission).
   signature String?
 
+  org       Organization?      @relation(fields: [orgId], references: [id], onDelete: Cascade)
   ledger    SpendLedgerEntry[]
   createdAt DateTime           @default(now()) @map("created_at")
   updatedAt DateTime           @updatedAt @map("updated_at")
 
   @@index([ownerAddress])
+  @@index([orgId])
   @@index([status])
   @@map("spend_grants")
 }
@@ -180,6 +231,9 @@ model SpendLedgerEntry {
   /// Which connected agent (API key) synced this receipt — set when the entry
   /// arrives via Bearer auth, so spend is attributable per agent.
   apiKeyId  String? @map("api_key_id")
+  /// Denormalized org attribution (no FK — audit rows must outlive nothing;
+  /// the grant relation already cascades them). NULL = personal spend.
+  orgId     String? @map("org_id")
 
   grant     SpendGrant @relation(fields: [grantId], references: [id], onDelete: Cascade)
   apiKey    ApiKey?    @relation(fields: [apiKeyId], references: [id], onDelete: SetNull)
@@ -189,6 +243,8 @@ model SpendLedgerEntry {
   @@index([grantId, ok, createdAt])
   // Per-agent spent-today (the Agents tab + /api/agent/policy).
   @@index([apiKeyId, ok, createdAt])
+  // Org spent-today (the two-level budget + the expense report).
+  @@index([orgId, ok, createdAt])
   // Global public feed (/api/activity) scans newest-first across ALL grants.
   @@index([ok, createdAt])
   @@map("spend_ledger")
@@ -201,6 +257,9 @@ model SpendLedgerEntry {
 model ApiKey {
   id           String    @id @default(cuid())
   ownerAddress String    @map("owner_address") // lowercased, SIWE-verified at mint
+  /// Org scope; NULL = a personal key. Org keys are minted/managed by org
+  /// admins and their spend rolls up to the org's daily cap.
+  orgId        String?   @map("org_id")
   label        String    @default("API key")
   /// sha256 hex digest of the full plaintext secret.
   hash         String    @unique
@@ -215,9 +274,11 @@ model ApiKey {
   lastUsedAt   DateTime? @map("last_used_at")
   createdAt    DateTime  @default(now()) @map("created_at")
 
+  org    Organization?      @relation(fields: [orgId], references: [id], onDelete: Cascade)
   ledger SpendLedgerEntry[]
 
   @@index([ownerAddress])
+  @@index([orgId])
   @@map("api_keys")
 }
 
@@ -227,15 +288,23 @@ model ApiKey {
 model AgentApproval {
   id           String  @id @default(cuid())
   ownerAddress String  @map("owner_address") // lowercased, SIWE-verified
+  /// Org scope; NULL = personal. NOTE for item 2 (org-scoped approvals):
+  /// the @@unique below must widen to [ownerAddress, serverId, orgId] when
+  /// org approvals land, or a member's personal toggle collides with their
+  /// org toggle for the same server. Left untouched here — item 1 is
+  /// column-additive only.
+  orgId        String? @map("org_id")
   serverId     String  @map("server_id")
   approved     Boolean @default(true)
 
-  server    McpServer @relation(fields: [serverId], references: [id], onDelete: Cascade)
-  createdAt DateTime  @default(now()) @map("created_at")
-  updatedAt DateTime  @updatedAt @map("updated_at")
+  server    McpServer     @relation(fields: [serverId], references: [id], onDelete: Cascade)
+  org       Organization? @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  createdAt DateTime      @default(now()) @map("created_at")
+  updatedAt DateTime      @updatedAt @map("updated_at")
 
   @@unique([ownerAddress, serverId])
   @@index([ownerAddress])
+  @@index([orgId])
   @@map("agent_approvals")
 }
 
