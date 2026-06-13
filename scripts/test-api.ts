@@ -344,6 +344,129 @@ async function main() {
     !act.recent.some((r) => r.host === 'denied.example.test') && act.stats.blockedCalls >= 1,
   )
 
+  // ── Organizations (SIWE-only org core + the role matrix) ──────────────────
+  console.log('— organizations')
+  const MJ = { 'content-type': 'application/json', cookie: mallorySession }
+
+  const bearerOrg = await fetch(`${BASE}/api/orgs`, {
+    method: 'POST',
+    headers: BJ, // a Bearer key must NOT manage orgs (F2 — SIWE only)
+    body: JSON.stringify({ name: 'Bearer Co' }),
+  })
+  check('Bearer key cannot create an org (SIWE only)', bearerOrg.status === 401)
+
+  const orgRes = await fetch(`${BASE}/api/orgs`, {
+    method: 'POST',
+    headers: CJ,
+    body: JSON.stringify({ name: 'Test:API Harness Co' }),
+  })
+  const org = await orgRes.json()
+  check(
+    'org created; creator is owner; slug derived',
+    orgRes.status === 201 && org.role === 'owner' && /^test-api-harness-co/.test(org.slug ?? ''),
+  )
+
+  const myOrgs = await (await fetch(`${BASE}/api/orgs`, { headers: C })).json()
+  check(
+    'org list carries role + member count',
+    myOrgs.some((o: { id: string; role: string; memberCount: number }) => o.id === org.id && o.role === 'owner' && o.memberCount === 1),
+  )
+
+  const outsiderRead = await fetch(`${BASE}/api/orgs/${org.id}`, { headers: { cookie: mallorySession } })
+  check('non-member read → 404 (existence hidden)', outsiderRead.status === 404)
+  const outsiderAdd = await fetch(`${BASE}/api/orgs/${org.id}/members`, {
+    method: 'POST',
+    headers: MJ,
+    body: JSON.stringify({ address: mallory.address }),
+  })
+  check('non-member cannot add members (404)', outsiderAdd.status === 404)
+
+  const badAddr = await fetch(`${BASE}/api/orgs/${org.id}/members`, {
+    method: 'POST',
+    headers: CJ,
+    body: JSON.stringify({ address: 'not-a-wallet' }),
+  })
+  check('invite validates the wallet address', badAddr.status === 400)
+
+  const invite = await fetch(`${BASE}/api/orgs/${org.id}/members`, {
+    method: 'POST',
+    headers: CJ,
+    body: JSON.stringify({ address: mallory.address }),
+  })
+  check('adding an address IS the invite (lands as member)', invite.status === 201 && (await invite.json()).role === 'member')
+  const dupeInvite = await fetch(`${BASE}/api/orgs/${org.id}/members`, {
+    method: 'POST',
+    headers: CJ,
+    body: JSON.stringify({ address: mallory.address }),
+  })
+  check('double-invite → 409', dupeInvite.status === 409)
+
+  const memberRead = await (await fetch(`${BASE}/api/orgs/${org.id}`, { headers: { cookie: mallorySession } })).json()
+  check(
+    'member reads org detail + member list',
+    memberRead.id === org.id && memberRead.role === 'member' && memberRead.members?.length === 2,
+  )
+
+  const third = privateKeyToAccount(generatePrivateKey())
+  const memberAdd = await fetch(`${BASE}/api/orgs/${org.id}/members`, {
+    method: 'POST',
+    headers: MJ,
+    body: JSON.stringify({ address: third.address }),
+  })
+  check('member cannot invite (admin+) → 403', memberAdd.status === 403)
+  const memberRename = await fetch(`${BASE}/api/orgs/${org.id}`, {
+    method: 'PATCH',
+    headers: MJ,
+    body: JSON.stringify({ name: 'Hijacked' }),
+  })
+  check('member cannot rename (admin+) → 403', memberRename.status === 403)
+  const selfPromote = await fetch(`${BASE}/api/orgs/${org.id}/members/${mallory.address}`, {
+    method: 'PATCH',
+    headers: MJ,
+    body: JSON.stringify({ role: 'admin' }),
+  })
+  check('member cannot change roles (owner only) → 403', selfPromote.status === 403)
+
+  const promote = await fetch(`${BASE}/api/orgs/${org.id}/members/${mallory.address}`, {
+    method: 'PATCH',
+    headers: CJ,
+    body: JSON.stringify({ role: 'admin' }),
+  })
+  check('owner promotes member → admin', promote.status === 200 && (await promote.json()).role === 'admin')
+
+  const adminRename = await fetch(`${BASE}/api/orgs/${org.id}`, {
+    method: 'PATCH',
+    headers: MJ,
+    body: JSON.stringify({ name: 'Harness Co (renamed)' }),
+  })
+  check('admin renames the org', adminRename.status === 200 && (await adminRename.json()).name === 'Harness Co (renamed)')
+
+  const adminDelete = await fetch(`${BASE}/api/orgs/${org.id}`, { method: 'DELETE', headers: { cookie: mallorySession } })
+  check('admin cannot delete the org (owner only) → 403', adminDelete.status === 403)
+
+  const transfer = await fetch(`${BASE}/api/orgs/${org.id}/members/${mallory.address}`, {
+    method: 'PATCH',
+    headers: CJ,
+    body: JSON.stringify({ role: 'owner' }),
+  })
+  const afterTransfer = await (await fetch(`${BASE}/api/orgs/${org.id}`, { headers: { cookie: mallorySession } })).json()
+  check(
+    'ownership transfer swaps roles atomically',
+    transfer.status === 200 &&
+      afterTransfer.role === 'owner' &&
+      afterTransfer.members.find((m: { address: string }) => m.address === owner.address.toLowerCase())?.role === 'admin',
+  )
+
+  const leave = await fetch(`${BASE}/api/orgs/${org.id}/members/${owner.address}`, { method: 'DELETE', headers: C })
+  check('a non-owner can leave (self-removal)', leave.status === 200)
+
+  const delOrg = await fetch(`${BASE}/api/orgs/${org.id}`, { method: 'DELETE', headers: { cookie: mallorySession } })
+  const orgsAfter = await (await fetch(`${BASE}/api/orgs`, { headers: { cookie: mallorySession } })).json()
+  check(
+    'owner deletes the org; lists are empty again',
+    delOrg.status === 200 && Array.isArray(orgsAfter) && !orgsAfter.some((o: { id: string }) => o.id === org.id),
+  )
+
   // ── Wallet-mode plan gate (policy enforced BEFORE signature requests) ─────
   console.log('— wallet plan gate')
   const fakeInference = {
@@ -551,9 +674,10 @@ async function main() {
     (await fetch(`${BASE}/api/keys`, { headers: C })).json(),
     (await fetch(`${BASE}/api/grants`, { headers: C })).json(),
     (await fetch(`${BASE}/api/chats`, { headers: C })).json(),
+    (await fetch(`${BASE}/api/orgs`, { headers: C })).json(),
   ])
   check(
-    'all rows cleaned (keys, grants+ledger, chats)',
+    'all rows cleaned (keys, grants+ledger, chats, orgs)',
     delChat.status === 200 && delGrant.status === 200 && left.every((l) => Array.isArray(l) && l.length === 0),
   )
 
