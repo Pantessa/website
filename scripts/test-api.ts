@@ -285,6 +285,38 @@ async function main() {
     capSync.status === 201 && capped.agent?.spentTodayUsd === 0.05 && capped.agent?.overBudget === true,
   )
 
+  // ── Kill switch: reversible agent pause (Run 12) ─────────────────────────
+  const bearerPause = await fetch(`${BASE}/api/keys/${minted.id}`, {
+    method: 'PATCH',
+    headers: BJ, // an agent must not be able to un/freeze itself
+    body: JSON.stringify({ paused: true }),
+  })
+  check("agent can't pause itself (Bearer PATCH → 401)", bearerPause.status === 401)
+
+  const pauseRes = await fetch(`${BASE}/api/keys/${minted.id}`, {
+    method: 'PATCH',
+    headers: CJ,
+    body: JSON.stringify({ paused: true }),
+  })
+  check('owner pauses the agent (SIWE)', pauseRes.status === 200 && (await pauseRes.json()).paused === true)
+
+  const pausedPolicy = await (await fetch(`${BASE}/api/agent/policy`, { headers: B })).json()
+  check(
+    'paused agent: policy halted=AGENT_PAUSED',
+    pausedPolicy.halted === true && pausedPolicy.haltReason === 'AGENT_PAUSED' && pausedPolicy.agent?.paused === true,
+  )
+
+  const resumeRes = await fetch(`${BASE}/api/keys/${minted.id}`, {
+    method: 'PATCH',
+    headers: CJ,
+    body: JSON.stringify({ paused: false }),
+  })
+  const resumedPolicy = await (await fetch(`${BASE}/api/agent/policy`, { headers: B })).json()
+  check(
+    'resume clears the halt (reversible — history intact)',
+    resumeRes.status === 200 && resumedPolicy.halted === false && resumedPolicy.haltReason === null,
+  )
+
   // The Overview tile's data: connected-agents count + top key by spend today.
   const statsRes = await fetch(`${BASE}/api/dashboard/stats`, { headers: C })
   const stats = await statsRes.json()
@@ -500,6 +532,26 @@ async function main() {
   const personalKeys = await (await fetch(`${BASE}/api/keys`, { headers: C })).json()
   check('org key absent from the personal key list (scope isolation)', !personalKeys.some((k: { id: string }) => k.id === orgKey.id))
 
+  // Kill switch on an org key: a member can't pause it (admin+ only); the admin
+  // can, and the org key's policy then reports the halt. Resume to leave it live.
+  const memberPause = await fetch(`${BASE}/api/keys/${orgKey.id}`, {
+    method: 'PATCH',
+    headers: MJ,
+    body: JSON.stringify({ paused: true }),
+  })
+  check('member cannot pause an org key (admin+) → 404', memberPause.status === 404)
+  const adminPause = await fetch(`${BASE}/api/keys/${orgKey.id}`, {
+    method: 'PATCH',
+    headers: CJ,
+    body: JSON.stringify({ paused: true }),
+  })
+  const orgKeyHalted = await (await fetch(`${BASE}/api/agent/policy`, { headers: OB })).json()
+  check(
+    'admin pauses an org key → its policy halts (AGENT_PAUSED)',
+    adminPause.status === 200 && orgKeyHalted.halted === true && orgKeyHalted.haltReason === 'AGENT_PAUSED',
+  )
+  await fetch(`${BASE}/api/keys/${orgKey.id}`, { method: 'PATCH', headers: CJ, body: JSON.stringify({ paused: false }) })
+
   const memberToggle = await fetch(`${BASE}/api/approvals`, {
     method: 'PUT',
     headers: MJ,
@@ -670,6 +722,31 @@ async function main() {
     }),
   })
   check('wallet plan: allowed host passes the gate (reaches network probe)', ungated.status === 502)
+
+  // Kill switch HARD enforcement: freeze the account, and the SAME allowed host
+  // is now refused server-side (not advisory) — Yeetful executes this rail, so
+  // it can actually stop it. Then unfreeze (resume restores the rail).
+  await fetch(`${BASE}/api/grants/${grant.id}`, { method: 'PATCH', headers: CJ, body: JSON.stringify({ paused: true }) })
+  const frozen = await fetch(`${BASE}/api/chat`, {
+    method: 'POST',
+    headers: CJ,
+    body: JSON.stringify({
+      message: 'frozen account probe',
+      walletAddress: owner.address,
+      activeServers: [{ ...fakeInference, endpoint: 'https://a.example.test/api' }],
+    }),
+  })
+  const frozenBody = await frozen.json()
+  check(
+    'frozen account: allowed host HARD-refused server-side (ACCOUNT_FROZEN)',
+    frozen.status === 200 && frozenBody.blocked === true && /ACCOUNT_FROZEN/.test(frozenBody.reply ?? ''),
+  )
+  const unfreeze = await fetch(`${BASE}/api/grants/${grant.id}`, { method: 'PATCH', headers: CJ, body: JSON.stringify({ paused: false }) })
+  const thawed = await (await fetch(`${BASE}/api/agent/policy`, { headers: B })).json()
+  check(
+    'unfreeze restores the rail (grant.paused false, halt clear)',
+    (await unfreeze.json()).paused === false && thawed.halted === false,
+  )
 
   // ── Key revocation (after Bearer use, before cleanup) ─────────────────────
   console.log('— revocation')

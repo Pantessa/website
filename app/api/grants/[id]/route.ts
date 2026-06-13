@@ -62,6 +62,8 @@ export async function PATCH(req: NextRequest, { params }: Params) {
   const body = await req.json().catch(() => ({} as Record<string, unknown>))
   const data: Record<string, unknown> = {}
   if (body.status === 'revoked' || body.status === 'active') data.status = body.status
+  // Kill switch: reversible freeze of the whole account (distinct from revoke).
+  if (typeof body.paused === 'boolean') data.paused = body.paused
   if (typeof body.label === 'string') data.label = body.label.trim().slice(0, 80)
   if (Number(body.perDayUsd) > 0) data.perDayUsd = Number(body.perDayUsd)
   if (Number(body.perCallUsd) > 0) data.perCallUsd = Number(body.perCallUsd)

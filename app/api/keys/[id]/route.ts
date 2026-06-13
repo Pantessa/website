@@ -30,7 +30,15 @@ export async function PATCH(req: NextRequest, { params }: Params) {
   }
 
   const body = await req.json().catch(() => ({}) as Record<string, unknown>)
-  const data: { perDayUsd?: number | null; label?: string } = {}
+  const data: { perDayUsd?: number | null; label?: string; paused?: boolean } = {}
+
+  // Kill switch: reversible freeze of this agent (distinct from DELETE/revoke).
+  if ('paused' in body) {
+    if (typeof body.paused !== 'boolean') {
+      return NextResponse.json({ error: 'paused must be a boolean.' }, { status: 400 })
+    }
+    data.paused = body.paused
+  }
 
   if ('perDayUsd' in body) {
     if (body.perDayUsd === null) {
@@ -53,7 +61,7 @@ export async function PATCH(req: NextRequest, { params }: Params) {
   const updated = await prisma.apiKey.update({
     where: { id },
     data,
-    select: { id: true, label: true, prefix: true, perDayUsd: true, lastUsedAt: true, createdAt: true },
+    select: { id: true, label: true, prefix: true, perDayUsd: true, paused: true, lastUsedAt: true, createdAt: true },
   })
   return NextResponse.json(updated)
 }

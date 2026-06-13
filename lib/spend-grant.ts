@@ -18,6 +18,7 @@
 export type GrantViolation =
   | 'EXPIRED'
   | 'REVOKED'
+  | 'ACCOUNT_FROZEN'
   | 'NOT_ALLOWED'
   | 'OVER_PER_CALL'
   | 'BUDGET_EXCEEDED'
@@ -38,6 +39,7 @@ export interface GrantPolicy {
   totalUsd?: number | null
   expiresAt: Date
   status: string // 'active' | 'revoked' | 'expired'
+  paused?: boolean // kill switch — a reversible freeze of the whole account
 }
 
 /** The host of an x402 endpoint URL, lowercased (the unit the allowlist matches). */
@@ -68,6 +70,9 @@ export function checkGrant(
 ): void {
   if (grant.status === 'revoked') {
     throw new GrantError('REVOKED', `Grant ${grant.id} has been revoked.`)
+  }
+  if (grant.paused) {
+    throw new GrantError('ACCOUNT_FROZEN', `Grant ${grant.id} is frozen (paused).`)
   }
   if (Date.now() > grant.expiresAt.getTime()) {
     throw new GrantError('EXPIRED', `Grant ${grant.id} has expired.`)

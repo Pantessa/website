@@ -98,6 +98,7 @@ export function toPolicy(grant: {
   totalUsd: number | null
   expiresAt: Date
   status: string
+  paused?: boolean
 }): GrantPolicy {
   return {
     id: grant.id,
@@ -107,5 +108,6 @@ export function toPolicy(grant: {
     totalUsd: grant.totalUsd,
     expiresAt: grant.expiresAt,
     status: grant.status,
+    paused: grant.paused ?? false,
   }
 }

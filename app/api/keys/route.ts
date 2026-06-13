@@ -27,7 +27,7 @@ export async function GET(req: NextRequest) {
   const keys = await prisma.apiKey.findMany({
     where: orgId ? { orgId } : { ownerAddress: addr, orgId: null },
     orderBy: { createdAt: 'desc' },
-    select: { id: true, label: true, prefix: true, perDayUsd: true, orgId: true, ownerAddress: true, lastUsedAt: true, createdAt: true },
+    select: { id: true, label: true, prefix: true, perDayUsd: true, paused: true, orgId: true, ownerAddress: true, lastUsedAt: true, createdAt: true },
   })
   const spent = await agentSpentTodayByKey(keys.map((k) => k.id))
   return NextResponse.json(
