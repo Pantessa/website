@@ -11,6 +11,7 @@ export interface Stats {
     perDayUsd: number
     allowCount: number
     expiresAt: string
+    paused: boolean
     spentTodayUsd: number
     spentTotalUsd: number
     remainingTodayUsd: number
