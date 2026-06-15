@@ -56,6 +56,7 @@ interface PlannedCall {
   body?: string // JSON body for smart POST calls
   tool?: string // inference tool name (mcp) or gateway model id (http)
   protocol?: 'mcp' | 'http' // inference transport (default mcp)
+  mcp?: boolean // data call is an MCP tools/call (parse the JSON-RPC result)
   prepared: PreparedPayment | null // null = endpoint didn't require payment
 }
 
@@ -116,6 +117,12 @@ export async function POST(req: NextRequest) {
     const dataServers = activeServers.filter(
       (s) => s.kind === 'data' && s.callable && s.endpoint && s.protocol === 'http',
     )
+    // MCP *data* services (e.g. Yeetful · Nansen): callable over MCP, their wired
+    // `tool` takes structured args (toolArgs) rather than the free-text prompt the
+    // inference path sends. Handled by a dedicated tools/call path.
+    const mcpDataServers = activeServers.filter(
+      (s) => s.kind === 'data' && s.callable && s.endpoint && s.protocol === 'mcp' && s.tool,
+    )
     const listedOnly = activeServers.filter((s) => !s.callable)
 
     // Need a live inference provider to phrase an answer.
@@ -154,12 +161,12 @@ export async function POST(req: NextRequest) {
 
     // ── Phase 1 (wallet): plan + return signing requests ─────────────────────
     if (walletAddress) {
-      return await planWalletPayments(message, inference, dataServers, listedOnly, walletAddress, smart, notes)
+      return await planWalletPayments(message, inference, dataServers, mcpDataServers, listedOnly, walletAddress, smart, notes)
     }
 
     // ── Burner mode: the server's agent wallet pays everything in one shot ────
     if (hasAgentWallet()) {
-      return await runWithBurner(message, inference, dataServers, listedOnly, smart, notes)
+      return await runWithBurner(message, inference, dataServers, mcpDataServers, listedOnly, smart, notes)
     }
 
     // ── Demo mode: nothing can pay ───────────────────────────────────────────
@@ -178,6 +185,7 @@ async function planWalletPayments(
   message: string,
   inference: McpServer,
   dataServers: McpServer[],
+  mcpDataServers: McpServer[],
   listedOnly: McpServer[],
   walletAddress: string,
   smart: PlannableEndpoint[],
@@ -226,6 +234,35 @@ async function planWalletPayments(
       priceUsd: ds.priceUsd ?? '0.01',
       endpoint: ds.endpoint!,
       url: url.toString(),
+      prepared: challenge ? derivePayment(challenge, walletAddress) : null,
+    })
+  }
+
+  // MCP data services: an x402-gated tools/call POST (flat-priced, like the MCP
+  // inference path, so the plan-time body matches the execute-time body).
+  for (const ds of mcpDataServers) {
+    const dsViolation = await planGate(ds.name, hostOf(ds.endpoint!), Number(ds.priceUsd ?? '0.01'))
+    if (dsViolation) {
+      notes.push(`${ds.name} was blocked by your spend policy (${dsViolation}) — manage it on the Dashboard.`)
+      continue
+    }
+    const reqd = mcpDataRequest(ds)
+    const challenge = await getChallenge(reqd.url, {
+      method: reqd.method,
+      headers: reqd.headers,
+      body: reqd.body,
+    })
+    plan.push({
+      id: `mcpdata:${ds.slug}`,
+      role: 'data',
+      name: ds.name,
+      host: hostOf(ds.endpoint!),
+      priceUsd: ds.priceUsd ?? '0.01',
+      endpoint: ds.endpoint!,
+      url: reqd.url,
+      method: reqd.method,
+      body: reqd.body,
+      mcp: true,
       prepared: challenge ? derivePayment(challenge, walletAddress) : null,
     })
   }
@@ -375,15 +412,17 @@ async function executeWithSignatures(
       const init: RequestInit = {
         method: c.method ?? 'GET',
         headers: {
-          accept: 'application/json',
+          accept: c.mcp ? 'application/json, text/event-stream' : 'application/json',
           ...(c.body ? { 'content-type': 'application/json' } : {}),
         },
         ...(c.body ? { body: c.body } : {}),
       }
       const res = await fetchWithPaymentHeader(c.url!, init, header)
       if (!res.ok) throw new Error(await failureReason(res))
-      const json = await res.json()
-      contextBlocks.push(`### ${c.name}\n${truncate(JSON.stringify(json), 1500)}`)
+      const data = c.mcp
+        ? parseMcpDataResult(res.headers.get('content-type') ?? '', await res.text())
+        : await res.json()
+      contextBlocks.push(`### ${c.name}\n${truncate(JSON.stringify(data), 1500)}`)
       const txHash = decodeSettlement(res)?.transaction
       receipts.push({ name: c.name, endpoint: c.host, priceUsd: c.priceUsd, txHash, ok: true })
       ledger(c, true, txHash)
@@ -438,6 +477,7 @@ async function runWithBurner(
   message: string,
   inference: McpServer,
   dataServers: McpServer[],
+  mcpDataServers: McpServer[],
   listedOnly: McpServer[],
   smart: PlannableEndpoint[] = [],
   notes: string[] = [],
@@ -472,6 +512,39 @@ async function runWithBurner(
     try {
       const { json, txHash } = await paidGet(ds.endpoint!, ds.queryParam ?? 'q', message)
       contextBlocks.push(`### ${ds.name}\n${truncate(JSON.stringify(json), 1500)}`)
+      receipts.push({ name: ds.name, endpoint: host, priceUsd: ds.priceUsd ?? '0.01', txHash, ok: true })
+      if (grant) {
+        await recordLedger({ grantId: grant.id, orgId: grant.orgId ?? undefined, host, serviceName: ds.name, amountUsd: price, ok: true, txHash, note: 'settled' })
+        spentToday += price
+        spentTotal += price
+      }
+    } catch (err) {
+      receipts.push({ name: ds.name, endpoint: host, priceUsd: ds.priceUsd ?? '0.01', ok: false, note: err instanceof Error ? err.message : 'call failed' })
+    }
+  }
+
+  // ── MCP data services: pay + tools/call with structured args ──────────────
+  for (const ds of mcpDataServers) {
+    const host = hostOf(ds.endpoint!)
+    const price = Number(ds.priceUsd ?? '0.01')
+
+    if (policy && grant) {
+      const violation = grantViolation(policy, host, price, spentToday, spentTotal)
+      if (violation) {
+        await recordLedger({ grantId: grant.id, orgId: grant.orgId ?? undefined, host, serviceName: ds.name, amountUsd: 0, ok: false, note: violation })
+        receipts.push({ name: ds.name, endpoint: host, priceUsd: ds.priceUsd ?? '0.01', ok: false, note: `blocked: ${violation}` })
+        blocked.push(`${ds.name} (${violation})`)
+        continue
+      }
+    }
+
+    try {
+      const reqd = mcpDataRequest(ds)
+      const res = await getPaidFetch()(reqd.url, { method: reqd.method, headers: reqd.headers, body: reqd.body })
+      if (!res.ok) throw new Error(await failureReason(res))
+      const data = parseMcpDataResult(res.headers.get('content-type') ?? '', await res.text())
+      const txHash = decodeSettlement(res)?.transaction
+      contextBlocks.push(`### ${ds.name}\n${truncate(JSON.stringify(data), 1500)}`)
       receipts.push({ name: ds.name, endpoint: host, priceUsd: ds.priceUsd ?? '0.01', txHash, ok: true })
       if (grant) {
         await recordLedger({ grantId: grant.id, orgId: grant.orgId ?? undefined, host, serviceName: ds.name, amountUsd: price, ok: true, txHash, note: 'settled' })
@@ -696,6 +769,52 @@ function parseMcpBody(contentType: string, raw: string): JsonRpcResult {
 
 function dummyMcpBody(tool: string): string {
   return JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: tool, arguments: { prompt: 'ping' } } })
+}
+
+// ── MCP data services ──────────────────────────────────────────────────────────
+// An MCP *data* service's wired `tool` takes structured args (from `toolArgs`),
+// not a free-text prompt. A single tools/call POST works — mcp-handler is
+// stateless, same as the inference path. (v1: args are the stored defaults; the
+// user's message shapes the LLM's answer, not yet the query — a planner that
+// fills MCP args from the message is a follow-up.)
+function mcpDataRequest(server: McpServer): {
+  url: string
+  method: 'POST'
+  headers: Record<string, string>
+  body: string
+} {
+  const args = server.toolArgs && typeof server.toolArgs === 'object' ? server.toolArgs : {}
+  return {
+    url: server.endpoint!,
+    method: 'POST',
+    headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream' },
+    body: JSON.stringify({
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'tools/call',
+      params: { name: server.tool, arguments: args },
+    }),
+  }
+}
+
+/** Parse an MCP data tool result — the data arrives as a JSON string inside
+ *  result.content[].text. Throws on transport/tool errors. */
+function parseMcpDataResult(contentType: string, raw: string): unknown {
+  const parsed = parseMcpBody(contentType, raw)
+  if (parsed.error) throw new Error(parsed.error.message)
+  const text =
+    parsed.result?.content
+      ?.filter((c) => c.type === 'text')
+      .map((c) => c.text ?? '')
+      .join('\n')
+      .trim() ?? ''
+  if (parsed.result?.isError) throw new Error(text || 'MCP tool returned an error')
+  if (!text) throw new Error('MCP tool returned no content')
+  try {
+    return JSON.parse(text)
+  } catch {
+    return text
+  }
 }
 
 // ── helpers ──────────────────────────────────────────────────────────────────

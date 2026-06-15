@@ -19,6 +19,7 @@ export interface McpServer {
   endpoint?: string | null
   tool?: string | null
   queryParam?: string | null
+  toolArgs?: Record<string, unknown> | null // structured args for an MCP data tool
   priceUsd?: string | null
   networks?: string[]
   callable?: boolean
