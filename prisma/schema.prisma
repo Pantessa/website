@@ -29,8 +29,12 @@ model McpServer {
   callable   Boolean @default(false)
   endpoint   String?
   protocol   String? // 'mcp' | 'http'
-  tool       String? // MCP tool name (inference)
+  tool       String? // MCP tool name (inference) or wired data tool (mcp data)
   queryParam String? @map("query_param") // primary query param (http data)
+  // Default JSON arguments for the wired MCP data `tool`, e.g. {"chains":["ethereum","base"]}.
+  // Used by the chat orchestrator to call an MCP *data* service's tool (which
+  // takes structured args, not a free-text prompt). Null for inference/http.
+  toolArgs   Json?   @map("tool_args")
 
   // Presentation
   iconSlug   String? @map("icon_slug") // Simple Icons brand slug for the glyph
