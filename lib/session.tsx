@@ -17,7 +17,6 @@ import {
   useCallback,
   useContext,
   useEffect,
-  useRef,
   useState,
   type ReactNode,
 } from 'react'
@@ -147,24 +146,6 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       void signOut()
     }
   }, [status, walletStatus, signOut])
-
-  // One action, not two: a user-initiated connect flows straight into the
-  // SIWE signature instead of parking on a second "Sign in" click. The
-  // transition guard matters — 'connecting' → 'connected' is a clicked
-  // connect; page-load auto-reconnect reports 'reconnecting' and never
-  // springs an unprompted signature popup. Declining the signature simply
-  // leaves the Sign in button (signIn swallows rejections); no retry loop,
-  // since the transition only happens once per connect.
-  const prevWalletStatus = useRef(walletStatus)
-  useEffect(() => {
-    const was = prevWalletStatus.current
-    prevWalletStatus.current = walletStatus
-    const sessionCoversWallet =
-      status === 'authed' && !!address && !!walletAddress && walletAddress.toLowerCase() === address
-    if (was === 'connecting' && walletStatus === 'connected' && !signingIn && !sessionCoversWallet) {
-      void signIn()
-    }
-  }, [walletStatus, status, address, walletAddress, signingIn, signIn])
 
   const needsSignIn = status === 'guest' && isConnected && !!walletAddress
   const sessionMatchesWallet =
