@@ -1,3 +1,214 @@
+# Autopilot — Run 12: The kill switch + SDK 0.5 (org budgets & remote pause) (STAGED 2026-06-13)
+
+Owner directive: build BOTH the agent kill switch (website) AND SDK 0.5 (the
+org-budget + remote-pause enforcement that finishes Run 11's loop). Context
+for a fresh session: read ../CLAUDE.md first (root). On main as of 2026-06-13:
+Run 11 ORGS fully merged (#94→#98) — orgs/members/roles (lib/org.ts),
+org-scoped keys/grants/approvals via the `org:<id>` scope-key, two-level
+budget surfaced in GET /api/agent/policy as an `org` block + on receipt-sync
+echoes, the expense report, /docs/teams. Also: payment-web hero (#93). **SDK
+is 0.4.0, PUBLISHED to npm** (per-key budgets live; the policy `org` block is
+NOT yet consumed by any SDK — that's this run's item 3). test:api is 80/80 on
+main.
+
+The two halves interlock: the kill switch defines a new HALT signal in
+/api/agent/policy + the sync echo; SDK 0.5 consumes BOTH that halt signal AND
+the Run-11 org block in one release. So item 1 (website) defines the contract;
+item 3 (SDK) mocks exactly those shapes. Build website-first.
+
+## Rules (Run 6/7 constitution + Run 8 D-rules + Run 10 E-rules + Run 11 F-rules apply; additions)
+
+G1. **Additive schema ONLY** (E1/F1): `paused Boolean @default(false)` on
+    api_keys + spend_grants; plain `prisma db push` with inline DATABASE_URL
+    (NEVER --force-reset — wipes the directory). default false = nothing
+    paused, full back-compat; existing test:api checks stay green.
+G2. **Pause is as HARD as the rail allows, honest about where it isn't.**
+    For the chat paths Yeetful itself executes (burner + the wallet-plan
+    gate), a paused/frozen grant is a SERVER-SIDE hard refusal (ledger the
+    denial). For external SDK agents paying from their own wallet, pause is
+    advisory — surfaced in /api/agent/policy, enforced by the SDK locally
+    (same trust split as budgets, E3/F5). Docs MUST state this split; never
+    imply Yeetful can freeze an agent's own wallet.
+G3. **Pause is REVERSIBLE and distinct from revoke.** Key DELETE and grant
+    status:revoked are unchanged; `paused` is a separate, toggle-on/off flag
+    that loses no history. Management is SIWE only — owner for personal,
+    org admin+ for org keys/grants (reuse Run 11 canManageKey / requireRole /
+    canAccessGrant). A Bearer key can NEVER pause/resume itself.
+G4. **The policy contract is the bridge** (E2 sync rule): define the new
+    fields on the WEBSITE side (item 1) and mock EXACTLY those shapes in the
+    SDK tests (item 3). Proposed shape — keep or refine, but keep them in
+    lockstep: policy gains `agent.paused`, `grant.paused` (account frozen),
+    a top-level `halted: boolean` + `haltReason: 'AGENT_PAUSED' |
+    'ACCOUNT_FROZEN' | null`; the org block from Run 11 stays. Receipt-sync
+    echo carries the same halt fields.
+G5. **Two repos** (E1): website off `main` in this repo; SDK in ../sdk off
+    ITS main (npm has 0.4.0). One PR per repo, NEVER stacked across repos.
+    NEVER merge PRs, NEVER npm publish, NEVER spend real money — zero-spend
+    smokes only. Verify against `next start` (E2; pkill matches the process
+    name `next-server`, never the dev server). Mobile constitution (E5) +
+    docs/SEO (E4) on every changed surface. Log per item to the autopilot
+    branch (E6), push after EVERY item.
+
+## Queue (ordered; one per iteration)
+
+- [x] **1. Kill switch — backend** (website, branch `kill-switch` off main):
+  schema `paused` on api_keys + spend_grants (additive push to Neon).
+  Pause/resume: PATCH /api/keys/[id] accepts `{paused}` (SIWE; personal owner
+  or org admin+ via canManageKey); grant freeze via PATCH /api/grants/[id]
+  `{paused}` (SIWE owner / org admin+ via canAccessGrant). GET
+  /api/agent/policy gains `agent.paused`, `grant.paused`, top-level `halted`
+  + `haltReason` (G4); the receipt-sync `{agent}`/echo gains the same.
+  **Hard enforcement** in /api/chat: when the owner's active grant is paused,
+  the burner + wallet-plan paths refuse and ledger an `ACCOUNT_FROZEN`
+  denial (G2). Extend test:api: pause key → policy halted/AGENT_PAUSED;
+  resume clears; freeze grant → chat plan HARD-refuses + policy
+  ACCOUNT_FROZEN; Bearer can't pause itself (401); org admin pauses an org
+  key, a member can't (403).
+- [x] **2. Kill switch — dashboard + docs** (SAME `kill-switch` branch — one
+  PR, extend it, do NOT stack a second PR): Agents tab gets a Pause/Resume
+  toggle per agent (visually distinct from Revoke; paused = idle/amber),
+  org-scoped; Overview grant card gets a reversible "Freeze account" control
+  + a frozen banner. /docs: a "Pause & freeze" section (extend /docs/agents
+  or a short new registry page) stating the hard-vs-advisory split (G2);
+  cross-link. Mobile constitution; mock-harness the wallet-gated surfaces
+  like prior dashboard sweeps.
+- [x] **3. SDK 0.5 — org budgets + remote pause** (../sdk off its main):
+  consume the policy `org` block → refuse `OVER_ORG_BUDGET` (org overBudget,
+  or call price > org remainingTodayUsd), receipted; consume the halt flags →
+  refuse `AGENT_PAUSED` / `ACCOUNT_FROZEN`, receipted; refresh org + halt
+  state from the sync echo on every flush and re-fetch policy on
+  flushLedger(); expose the org snapshot on pay.agentBudget() (or pay.status()
+  for halt). Tests mirror the suite (mock policy + echoes): org under cap
+  passes, at cap refuses, paused halts, frozen halts, state clears on the next
+  refresh, policy-fetch failure degrades open. README "Org budgets & remote
+  pause". Version 0.4.0 → 0.5.0 in the PR. DO NOT publish.
+- [x] **4. Exit verification** — website branch: tsc + build + full test:api
+  against `next start`; sdk repo: its suite green; 375/390 rect-scans of every
+  changed dashboard/docs surface (exclude elements inside overflow-x:auto
+  ancestors — the Run 11 false-positive lesson); run summary in this file;
+  update ../CLAUDE.md top section; push `autopilot`.
+
+## Progress log — Run 12
+
+_(autopilot appends here, newest first; push after every item)_
+
+### Item 4 — Exit verification ✅ (2026-06-13) — RUN COMPLETE
+
+Re-verified both PR tips fresh: website `kill-switch` (#99) — tsc + build
+clean, **test:api 88/88** vs `next start :3210` (PID-killed, never pkill);
+sdk `sdk-0.5-org-pause` (sdk#6) — **vitest 30/30**. 375/390 dashboard+docs
+sweeps carried from item 2 (zero offenders; no UI changed since). Both PRs
+are INDEPENDENT (website off main, sdk off its main — no stacked chain this
+run); merge in either order. The kill-switch ⇄ SDK contract lines up once
+both are live; the SDK degrades open if the deployed API predates the
+halt/org fields, so order doesn't matter.
+
+---
+
+## Run 12 summary (2026-06-13)
+
+**Queue: 4/4. Zero failed iterations.** The kill switch — the "stop it now"
+control verb — is live end to end, and SDK 0.5 makes both the org budget
+(Run 11) and the kill switch enforced SDK-side.
+
+| # | Item | PR |
+|---|------|----|
+| 1+2 | Kill switch: reversible agent pause + account freeze (backend + dashboard + docs) | [#99](https://github.com/Yeetful/website/pull/99) |
+| 3 | SDK 0.5 — org budgets + remote pause enforcement | [sdk#6](https://github.com/Yeetful/sdk/pull/6) |
+| 4 | Exit verification | (this entry — no code PR) |
+
+**Merge notes**: #99 and sdk#6 are INDEPENDENT (no stacked chain — the
+Run-11 lesson applied). #99: additive `paused` schema ALREADY on Neon;
+test:api 80 → 88. sdk#6: 0.4.0 → 0.5.0, NOT published (owner publishes npm).
+
+**Design decisions worth keeping**:
+- **The freeze rides the existing gate**: `paused` on GrantPolicy + an
+  `ACCOUNT_FROZEN` throw at the top of checkGrant → both chat paths
+  hard-refuse server-side with zero new gate code. Pattern: when a new
+  blanket denial is needed, add it to the shared pure gate, not each caller.
+- **Pause is as hard as the rail allows**: server-side hard stop for chats
+  Yeetful executes (burner + wallet-plan), advisory (SDK-enforced) for
+  external agents paying their own wallet. Stated honestly in /docs/agents.
+- **AGENT_PAUSED > ACCOUNT_FROZEN** in haltReason precedence (the more
+  specific signal for the operator).
+- SDK 0.5 mirrored the 0.4 per-key budget pattern exactly for the org block
+  (unsynced bucket, echo refresh, daily roll) — low-risk by construction.
+
+**Owner passes / follow-ups**:
+- **Review #99 before merge** — the one live-payments touch is the
+  checkGrant ACCOUNT_FROZEN throw (first in the gate). Worth a human read.
+- **Publish yeetful 0.5.0** to npm after merging sdk#6 (npm has 0.4.0).
+- Signed-in dashboard glance: pause toggle on Agents, Freeze on Overview.
+- Tooling reminder logged in item 2: `next start` serves the PREBUILT
+  output — harness pages added post-build 404; use the preview `web` dev
+  config (compiles on demand) or rebuild.
+
+### Item 3 — SDK 0.5: org budgets + remote pause ✅ (2026-06-13) — [sdk#6](https://github.com/Yeetful/sdk/pull/6)
+
+Branch `sdk-0.5-org-pause` off SDK main (separate repo — npm has 0.4.0).
+Mirrors the proven 0.4 per-key pattern for two new policy fields: the `org`
+block (Run 11) → `OVER_ORG_BUDGET` (org overBudget pre-flight, or price >
+org remaining in the hook), with its own unsynced-spend bucket + daily roll +
+sync-echo refresh; and the halt flags (#99) → `AGENT_PAUSED` / `ACCOUNT_FROZEN`
+refused in the pre-flight BEFORE any network, clearing on the next refresh.
+Renamed refreshAgentBudget → refreshPolicy (pulls agent + org + halt). New
+pay.orgBudget() + pay.status(); exported OrgBudget/HaltStatus/HaltReason.
+README "Org budgets & remote pause" + CHANGELOG; 0.4.0 → 0.5.0; NOT published.
+
+Verified: tsc + tsup build clean; **vitest 22 → 30** (org under/over cap,
+price-hook breach, unsynced org spend, both halt reasons no-network, resume
+clears, degrade-open). Mocks match #99's exact shapes ({halted, haltReason,
+org, agent} on policy + echo) — so when #99 + sdk#6 are both live the contract
+lines up. Both PRs merge independently; SDK degrades open if the deployed API
+predates the fields.
+
+### Item 2 — Kill switch dashboard + docs ✅ (2026-06-13) — [#99](https://github.com/Yeetful/website/pull/99) (kill-switch PR, items 1+2)
+
+Same `kill-switch` branch as item 1 → ONE PR (#99, base main, independent —
+the SDK half is item 3 in ../sdk). Agents tab: per-agent Pause/Resume toggle
+(amber border + "paused" pill + idle label, distinct from Revoke), optimistic,
+org-scoped (inherits the ?org= AgentsPanel). Overview: reversible "Freeze
+account" button + frozen banner + amber full bar; stats route + Stats type
+carry grant.paused. /docs/agents gained "The kill switch: pause & freeze"
+(hard-vs-advisory split per G2; cross-links /docs/teams) — zero entity-space
+joints in rendered HTML.
+
+Verified: tsc + build clean; test:api still 88/88 (no API contract change
+beyond item 1); hand-rolled mock harness (deleted) screenshotted both
+paused-row + frozen-account states at 1280; 375 scroller-aware rect-scan zero
+offenders. Tooling note: `next start` serves the PREBUILT output — a harness
+page added after the build 404s; either rebuild or use the preview `web` (dev)
+config, which compiles on demand (used the dev server here, port 3000 was free).
+PR #99 review flag: the one live-payments touch is the checkGrant ACCOUNT_FROZEN
+throw (first in the gate) — human-read lib/spend-grant.ts + chat behavior.
+
+### Item 1 — Kill switch backend ✅ (2026-06-13) — branch `kill-switch` (PR opens after item 2 extends it)
+
+Branch `kill-switch` off main (item 2 EXTENDS this same branch → ONE PR, do
+NOT stack). Schema pushed to Neon (additive): `paused Boolean @default(false)`
+on api_keys + spend_grants. THE ELEGANT BIT: the freeze rides the existing
+shared gate — added `paused` to GrantPolicy + an `ACCOUNT_FROZEN` throw at
+the top of checkGrant (toPolicy carries it), so BOTH chat paths (burner +
+wallet-plan gate, which already call grantViolation) HARD-refuse a frozen
+account server-side with zero new gate code. Agent-level pause is the key's
+own `paused` flag. Policy contract (G4, the bridge to SDK 0.5): GET
+/api/agent/policy now returns `halted` + `haltReason`
+('AGENT_PAUSED'|'ACCOUNT_FROZEN'|null — AGENT_PAUSED wins), plus `agent.paused`
++ `grant.paused`; the receipt-sync echo carries the same so an agent halts on
+its next sync. Pause/resume = PATCH {paused} on /api/keys/[id] (SIWE; personal
+owner or org admin+ via canManageKey — Bearer 401) and /api/grants/[id] (SIWE
+owner/admin via canAccessGrant). BearerKey + /api/keys list now carry paused.
+
+GOTCHA for item 3 (SDK mocks): member-pauses-org-key returns **404** (the key
+route does 404 on !canManageKey, not 403 — the existence-hiding convention).
+test:api 80 → 88 (Bearer-can't-pause-self, pause→halted, resume clears,
+member-can't-pause-org-key 404, admin pauses org key, FROZEN account
+hard-refuses an allowed host server-side, unfreeze restores), green vs next
+start :3210. SDK 0.5 (item 3) mocks: policy `{halted, haltReason, agent:{…,
+paused}, grant:{…, paused}, org:{…}}` and the same on sync echo.
+
+---
+
 # Autopilot — Run 11: Organizations — the org-grade expense account (STAGED 2026-06-13)
 
 Owner directive: a ~5-hour unattended run. Theme chosen by the owner from a
