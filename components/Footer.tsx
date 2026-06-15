@@ -2,6 +2,7 @@ import Link from 'next/link'
 import { YeetfulMark } from '@/components/Logo'
 
 const FOOTER_LINKS = {
+  github: 'https://github.com/Yeetful',
   x: 'https://x.com/yeetful_ai',
   telegram: 'https://t.me/yeetful',
   site: 'https://yeetful.com',
@@ -24,6 +25,9 @@ export default function Footer() {
           <Link href="/docs">Docs</Link>
           <Link href="/developers">Developers</Link>
           <Link href="/blog">Blog</Link>
+          <a href={FOOTER_LINKS.github} target="_blank" rel="noopener noreferrer">
+            GitHub
+          </a>
           <a href={FOOTER_LINKS.x} target="_blank" rel="noopener noreferrer">
             X / Twitter
           </a>
