@@ -269,6 +269,15 @@ export default function DevelopersPage() {
               </a>
               <a
                 className="dev__biglink"
+                href="https://github.com/Yeetful"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                Yeetful on GitHub <ArrowUpRight width={14} height={14} />
+                <span>the SDK, example agent, demos, and the rest — open source</span>
+              </a>
+              <a
+                className="dev__biglink"
                 href="https://www.npmjs.com/package/yeetful"
                 target="_blank"
                 rel="noopener noreferrer"
