@@ -47,7 +47,7 @@ export async function GET(req: NextRequest) {
 
   const grants = await prisma.spendGrant.findMany({
     where: { ownerAddress: scopeOwner },
-    select: { id: true, label: true, perCallUsd: true, perDayUsd: true, allow: true, status: true, expiresAt: true, createdAt: true },
+    select: { id: true, label: true, perCallUsd: true, perDayUsd: true, allow: true, status: true, paused: true, expiresAt: true, createdAt: true },
     orderBy: { createdAt: 'desc' },
   })
   const grantIds = grants.map((g) => g.id)
@@ -127,6 +127,7 @@ export async function GET(req: NextRequest) {
           perDayUsd: active.perDayUsd,
           allowCount: active.allow.length,
           expiresAt: active.expiresAt,
+          paused: active.paused,
           spentTodayUsd: today,
           spentTotalUsd: totalActive,
           remainingTodayUsd: Math.max(0, active.perDayUsd - today),

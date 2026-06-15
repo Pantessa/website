@@ -44,7 +44,16 @@ export async function GET(req: NextRequest) {
     }
   }
 
+  // Kill switch (Run 12): the agent's key, or its whole expense account, can
+  // be frozen. The SDK checks `halted` and refuses ALL payments — a hard stop
+  // above any budget arithmetic. AGENT_PAUSED takes precedence over an account
+  // freeze in the reason (the more specific signal for the operator).
+  const accountFrozen = !!grant?.paused
+  const haltReason = key.paused ? 'AGENT_PAUSED' : accountFrozen ? 'ACCOUNT_FROZEN' : null
+
   return NextResponse.json({
+    halted: haltReason != null,
+    haltReason,
     org,
     agent: {
       keyId: key.id,
@@ -54,6 +63,7 @@ export async function GET(req: NextRequest) {
       remainingTodayUsd:
         key.perDayUsd == null ? null : Math.max(0, key.perDayUsd - spentTodayByAgent),
       overBudget: key.perDayUsd != null && spentTodayByAgent >= key.perDayUsd,
+      paused: key.paused,
     },
     grant: grant
       ? {
@@ -66,6 +76,7 @@ export async function GET(req: NextRequest) {
           spentTodayUsd: await spentTodayUsd(grant.id),
           spentTotalUsd: await spentTotalUsd(grant.id),
           expiresAt: grant.expiresAt,
+          paused: grant.paused,
           signed: !!grant.signature,
         }
       : null,

@@ -29,6 +29,9 @@ export interface BearerKey {
   /** Set when this is an org key: the agent spends under the org's grant
    *  and rolls up to the org's daily cap. Null = a personal key. */
   orgId: string | null
+  /** Kill switch: the agent is frozen (reversible). The SDK refuses all
+   *  payments when true; surfaced as halted=AGENT_PAUSED on the policy. */
+  paused: boolean
 }
 
 /**
@@ -57,6 +60,7 @@ export async function getBearerKey(req: NextRequest): Promise<BearerKey | null> 
     label: key.label,
     perDayUsd: key.perDayUsd,
     orgId: key.orgId,
+    paused: key.paused,
   }
 }
 

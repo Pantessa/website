@@ -87,13 +87,19 @@ export async function POST(req: NextRequest, { params }: Params) {
         overBudget: orgRow?.perDayUsd != null && orgSpent >= orgRow.perDayUsd,
       }
     }
+    // Kill switch echo: the agent learns it (or its account) was frozen on the
+    // very next receipt it syncs, so it stops without waiting for a re-fetch.
+    const haltReason = key.paused ? 'AGENT_PAUSED' : grant.paused ? 'ACCOUNT_FROZEN' : null
     return NextResponse.json(
       {
         ...entry,
+        halted: haltReason != null,
+        haltReason,
         agent: {
           perDayUsd: key.perDayUsd,
           spentTodayUsd,
           overBudget: key.perDayUsd != null && spentTodayUsd >= key.perDayUsd,
+          paused: key.paused,
         },
         org,
       },

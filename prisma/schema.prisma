@@ -198,6 +198,12 @@ model SpendGrant {
 
   expiresAt DateTime @map("expires_at")
   status    String   @default("active") // active | revoked | expired
+  /// Kill switch: a reversible freeze of the whole expense account (distinct
+  /// from status:revoked, which is permanent and drops the grant from
+  /// getActiveGrant). When true, every chat path Yeetful executes HARD-refuses
+  /// with ACCOUNT_FROZEN and /api/agent/policy reports halted; the SDK refuses
+  /// too. Toggled SIWE-only (owner / org admin).
+  paused    Boolean  @default(false) @map("paused")
 
   /// EIP-712 signature of the grant terms. Null while grants are SIWE-session
   /// gated; populated once wallet-signed approvals are wired (then this is the
@@ -271,6 +277,10 @@ model ApiKey {
   /// Advisory at the rails (the agent pays from its own wallet) — enforced by
   /// the SDK via /api/agent/policy and flagged on over-budget receipt syncs.
   perDayUsd    Float?    @map("per_day_usd")
+  /// Kill switch: a reversible freeze (distinct from revoke = DELETE). When
+  /// true, /api/agent/policy reports halted=AGENT_PAUSED and the SDK refuses
+  /// all payments. Toggled SIWE-only (owner / org admin) — never by the key.
+  paused       Boolean   @default(false)
   lastUsedAt   DateTime? @map("last_used_at")
   createdAt    DateTime  @default(now()) @map("created_at")
 

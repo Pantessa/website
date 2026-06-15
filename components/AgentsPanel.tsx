@@ -9,7 +9,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
-import { Bot, Check, Loader2, Pencil, X } from 'lucide-react'
+import { Bot, Check, Loader2, Pause, Pencil, Play, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 interface AgentRow {
@@ -18,6 +18,7 @@ interface AgentRow {
   prefix: string
   perDayUsd: number | null
   spentTodayUsd: number
+  paused: boolean
   lastUsedAt: string | null
   createdAt: string
 }
@@ -64,6 +65,25 @@ export default function AgentsPanel({ orgId }: { orgId?: string | null }) {
     setEditing(a.id)
     setDraft(a.perDayUsd == null ? '' : String(a.perDayUsd))
     setError('')
+  }
+
+  // The kill switch: a reversible freeze (distinct from Revoke, which deletes
+  // the key). Optimistic — flip locally, reconcile from the reload.
+  const togglePause = async (a: AgentRow) => {
+    setError('')
+    setAgents((prev) => prev?.map((x) => (x.id === a.id ? { ...x, paused: !a.paused } : x)) ?? prev)
+    try {
+      const res = await fetch(`/api/keys/${a.id}`, {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ paused: !a.paused }),
+      })
+      if (!res.ok) throw new Error((await res.json()).error || 'Update failed.')
+      await load()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Update failed.')
+      await load()
+    }
   }
 
   const saveBudget = async (id: string) => {
@@ -126,10 +146,23 @@ export default function AgentsPanel({ orgId }: { orgId?: string | null }) {
             const pct = a.perDayUsd ? Math.min(100, (a.spentTodayUsd / a.perDayUsd) * 100) : 0
             const over = a.perDayUsd != null && a.spentTodayUsd >= a.perDayUsd
             return (
-              <li key={a.id} className="px-3 py-2.5 rounded-xl border border-[var(--line)] bg-black/20">
+              <li
+                key={a.id}
+                className={cn(
+                  'px-3 py-2.5 rounded-xl border bg-black/20 transition-colors',
+                  a.paused ? 'border-amber-500/40 bg-amber-500/[0.04]' : 'border-[var(--line)]',
+                )}
+              >
                 <div className="flex items-center gap-3">
-                  <Bot className="w-4 h-4 flex-shrink-0 text-[color:var(--muted-2)]" />
-                  <span className="text-xs text-white font-medium truncate min-w-0">{a.label}</span>
+                  <Bot className={cn('w-4 h-4 flex-shrink-0', a.paused ? 'text-amber-400/80' : 'text-[color:var(--muted-2)]')} />
+                  <span className={cn('text-xs font-medium truncate min-w-0', a.paused ? 'text-[color:var(--muted)]' : 'text-white')}>
+                    {a.label}
+                  </span>
+                  {a.paused && (
+                    <span className="mono text-[9px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-400 flex-shrink-0">
+                      paused
+                    </span>
+                  )}
                   <span className="mono text-[10px] text-[color:var(--muted-2)] flex-shrink-0">{a.prefix}…</span>
                   <span className="text-[10px] text-[color:var(--muted-2)] mono flex-shrink-0 ml-auto hidden sm:inline">
                     {fmtLastUsed(a.lastUsedAt)}
@@ -199,6 +232,19 @@ export default function AgentsPanel({ orgId }: { orgId?: string | null }) {
                       >
                         <Pencil className="w-3 h-3" />
                         {a.perDayUsd != null ? 'Edit budget' : 'Set budget'}
+                      </button>
+                      <button
+                        onClick={() => void togglePause(a)}
+                        className={cn(
+                          'flex-shrink-0 flex items-center gap-1 text-[11px] px-2 py-1 max-lg:min-h-10 rounded-md transition-colors',
+                          a.paused
+                            ? 'text-amber-400 hover:text-amber-300'
+                            : 'text-[color:var(--muted-2)] hover:text-white',
+                        )}
+                        title={a.paused ? 'Resume this agent' : 'Pause this agent (reversible — not a revoke)'}
+                      >
+                        {a.paused ? <Play className="w-3 h-3" /> : <Pause className="w-3 h-3" />}
+                        {a.paused ? 'Resume' : 'Pause'}
                       </button>
                     </>
                   )}

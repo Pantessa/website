@@ -4,8 +4,8 @@
 // the spend charts. The layout above guarantees a signed-in session.
 
 import Link from 'next/link'
-import { useEffect, useState } from 'react'
-import { Building2, Loader2 } from 'lucide-react'
+import { useCallback, useEffect, useState } from 'react'
+import { Building2, Loader2, Pause, Play } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { SpendByAgent, SpendOverTime } from '@/components/DashboardCharts'
 import SignGrantButton from '@/components/SignGrantButton'
@@ -15,15 +15,35 @@ import { useOrgStore } from '@/lib/org-store'
 export default function DashboardOverviewPage() {
   const { activeOrgId } = useOrgStore()
   const [stats, setStats] = useState<Stats | null>(null)
+  const [freezing, setFreezing] = useState(false)
 
   // Keyed on the active org (F3): the rail switcher flips this page between
   // the personal and the org expense account.
+  const load = useCallback(async () => {
+    const r = await fetch(`/api/dashboard/stats${activeOrgId ? `?org=${activeOrgId}` : ''}`, { cache: 'no-store' })
+    if (r.ok) setStats(await r.json())
+  }, [activeOrgId])
+
   useEffect(() => {
     setStats(null)
-    void fetch(`/api/dashboard/stats${activeOrgId ? `?org=${activeOrgId}` : ''}`, { cache: 'no-store' })
-      .then((r) => (r.ok ? r.json() : null))
-      .then((s) => s && setStats(s))
-  }, [activeOrgId])
+    void load()
+  }, [load])
+
+  // The account-level kill switch: freeze every payment under this grant
+  // (reversible). Hard-enforced on the chat rails Yeetful executes.
+  const toggleFreeze = async (grantId: string, paused: boolean) => {
+    setFreezing(true)
+    try {
+      await fetch(`/api/grants/${grantId}`, {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ paused }),
+      })
+      await load()
+    } finally {
+      setFreezing(false)
+    }
+  }
 
   if (!stats) {
     return (
@@ -133,17 +153,38 @@ export default function DashboardOverviewPage() {
                   toggles (which void signatures server-side) live on their own
                   page now, so navigation back here refreshes the badge. */}
               <SignGrantButton grantId={g.id} />
+              <button
+                onClick={() => void toggleFreeze(g.id, !g.paused)}
+                disabled={freezing}
+                className={cn(
+                  'flex items-center gap-1.5 text-xs font-medium px-3 py-2 max-lg:min-h-10 rounded-lg border transition-colors disabled:opacity-50',
+                  g.paused
+                    ? 'border-amber-500/40 text-amber-400 hover:bg-amber-500/10'
+                    : 'border-[var(--line-2)] text-[color:var(--muted)] hover:text-white hover:border-white',
+                )}
+                title={g.paused ? 'Resume — unfreeze the account' : 'Freeze — stop all payments under this account (reversible)'}
+              >
+                {freezing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : g.paused ? <Play className="w-3.5 h-3.5" /> : <Pause className="w-3.5 h-3.5" />}
+                {g.paused ? 'Resume account' : 'Freeze account'}
+              </button>
               <span className="mono text-xs text-[color:var(--muted)]">
                 ${g.spentTodayUsd.toFixed(4)} / ${g.perDayUsd.toFixed(2)} today
               </span>
             </span>
           )}
         </div>
+        {g?.paused && (
+          <p className="mt-2 text-xs text-amber-400 flex items-center gap-1.5">
+            <Pause className="w-3.5 h-3.5 flex-shrink-0" /> Account frozen — every payment under it is
+            refused until you resume. Chats Yeetful runs are hard-stopped; external SDK agents stop on
+            their next policy check.
+          </p>
+        )}
         {g && (
           <div className="mt-3 h-2 rounded-full bg-white/5 overflow-hidden">
             <div
-              className={cn('h-full rounded-full transition-all', todayPct > 85 ? 'bg-red-400' : 'bg-emerald-400')}
-              style={{ width: `${todayPct}%` }}
+              className={cn('h-full rounded-full transition-all', g.paused ? 'bg-amber-400' : todayPct > 85 ? 'bg-red-400' : 'bg-emerald-400')}
+              style={{ width: `${g.paused ? 100 : todayPct}%` }}
             />
           </div>
         )}

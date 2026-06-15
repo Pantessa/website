@@ -131,6 +131,39 @@ pay.agentBudget() // { keyId, label, perDayUsd, spentTodayUsd, remainingTodayUsd
           the SDK does.
         </p>
 
+        <h2>The kill switch: pause &amp; freeze</h2>
+        <p>
+          Budgets throttle; the <strong>kill switch</strong> stops. Two reversible controls, both
+          distinct from revoking a key (which deletes it):
+        </p>
+        <ul>
+          <li>
+            <strong>Pause an agent</strong> (<Link href="/dashboard/agents">Agents tab</Link>):
+            freezes one key. Its policy reports <code>halted: true</code> with{' '}
+            <code>haltReason: &quot;AGENT_PAUSED&quot;</code>; flip it back on anytime — no history lost.
+          </li>
+          <li>
+            <strong>Freeze the account</strong> (<Link href="/dashboard">Overview</Link>): freezes
+            the whole expense account — every agent under it. Policy reports{' '}
+            <code>haltReason: &quot;ACCOUNT_FROZEN&quot;</code>.
+          </li>
+        </ul>
+        <p>
+          The freeze is <strong>as hard as the rail allows</strong>. For chats Yeetful itself
+          executes (the burner and the wallet-plan gate), a frozen account is a{' '}
+          <strong>server-side hard refusal</strong> — the payment is blocked and the denial
+          ledgered, because Yeetful controls that rail. For external SDK agents paying from their
+          own wallet it&apos;s advisory, exactly like budgets: the policy carries the halt and the
+          SDK refuses locally (<Link href="/docs/teams">SDK 0.5+</Link>). Pausing is the &quot;stop
+          this now&quot; you reach for when an agent misbehaves; the on-chain hard stop for
+          adversarial cases still arrives with Coinbase Spend Permissions.
+        </p>
+        <pre>
+          <code>{`GET /api/agent/policy → { "halted": true, "haltReason": "AGENT_PAUSED", … }
+// SDK 0.5+ throws GrantError('AGENT_PAUSED' | 'ACCOUNT_FROZEN') before paying;
+// the receipt-sync echo carries the same halt so a busy agent stops at once.`}</code>
+        </pre>
+
         <h2>Approvals vs. agents, side by side</h2>
         <ul>
           <li>
