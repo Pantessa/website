@@ -55,7 +55,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       <aside className="dash__rail">
         <OrgSwitcher />
         <div className="dash__who mono">{short(address)}</div>
-        <DashboardSidebar pathname={pathname} />
+        <DashboardSidebar pathname={pathname} address={address} />
       </aside>
       <main className="dash__main">{children}</main>
     </div>

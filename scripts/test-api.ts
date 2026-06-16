@@ -886,6 +886,35 @@ async function main() {
     check('blog cleanup: post + key deleted', delPost.status === 200 && delKey.status === 200 && !anonAfter.some((q: { slug: string }) => q.slug === draft.slug))
   }
 
+  // ── Admin adoption overview (negatives always; 200 path needs an admin PK) ──
+  console.log('— admin overview')
+  const ovAnon = await fetch(`${BASE}/api/admin/overview`)
+  check('overview: no auth → 401', ovAnon.status === 401)
+  const ovNonAdmin = await fetch(`${BASE}/api/admin/overview`, { headers: C })
+  check('overview: non-admin wallet → 403', ovNonAdmin.status === 403)
+
+  const ovAdminPk = process.env.ADMIN_PK ?? process.env.BLOG_ADMIN_PK
+  if (!ovAdminPk) {
+    console.log('  ↳ admin 200 path SKIPPED (set ADMIN_PK and start dev with ADMIN_WALLETS=<its address>)')
+  } else {
+    const ovSession = await signIn(privateKeyToAccount(ovAdminPk as `0x${string}`))
+    const ov = await fetch(`${BASE}/api/admin/overview`, { headers: { cookie: ovSession } })
+    const o = await ov.json()
+    check(
+      'overview: admin → 200 with tiles + funnel + roster',
+      ov.status === 200 && !!o.tiles && Array.isArray(o.funnel) && Array.isArray(o.roster),
+    )
+    const f = Object.fromEntries((o.funnel ?? []).map((s: { key: string; value: number }) => [s.key, s.value]))
+    check(
+      'overview: funnel invariants hold (signedIn ≥ activated/paid ≥ repeat)',
+      f.signedIn >= f.activated && f.signedIn >= f.paid && f.paid >= f.repeat,
+    )
+    const ovExcl = await (
+      await fetch(`${BASE}/api/admin/overview?excludeOwners=1`, { headers: { cookie: ovSession } })
+    ).json()
+    check('overview: ?excludeOwners=1 echoes the flag', ovExcl.excludeOwners === true)
+  }
+
   // ── Cleanup (verified) ────────────────────────────────────────────────────
   console.log('— cleanup')
   const delChat = await fetch(`${BASE}/api/chats/${chat.id}`, { method: 'DELETE', headers: C })
