@@ -910,8 +910,12 @@ async function main() {
       ov.status === 200 && !!o.tiles && Array.isArray(o.funnel) && Array.isArray(o.roster),
     )
     check(
-      'overview: v2 blocks present (activation + recentArrivals + cohorts)',
-      !!o.activation && typeof o.activation.count === 'number' && Array.isArray(o.recentArrivals) && Array.isArray(o.cohorts),
+      'overview: v2 blocks present (activation + recentArrivals + cohorts + recentSignups)',
+      !!o.activation &&
+        typeof o.activation.count === 'number' &&
+        Array.isArray(o.recentArrivals) &&
+        Array.isArray(o.cohorts) &&
+        Array.isArray(o.recentSignups),
     )
     const f = Object.fromEntries((o.funnel ?? []).map((s: { key: string; value: number }) => [s.key, s.value]))
     check(

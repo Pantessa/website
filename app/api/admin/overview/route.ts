@@ -41,7 +41,7 @@ export async function GET(req: NextRequest) {
   const excludeOwners = req.nextUrl.searchParams.get('excludeOwners') === '1'
   const excl = excludeOwners ? Array.from(OWNERS_LC) : ['']
 
-  const [funnel, newDaily, activeDaily, revDaily, byService, roster, orgs, supply, activation, recentArrivals, cohorts] =
+  const [funnel, newDaily, activeDaily, revDaily, byService, roster, orgs, supply, activation, recentArrivals, cohorts, signups] =
     await Promise.all([
     // Tiles + funnel counts. ::int casts keep COUNT out of bigint (JSON-unsafe).
     prisma.$queryRaw<FunnelRow[]>(Prisma.sql`
@@ -212,6 +212,14 @@ export async function GET(req: NextRequest) {
       WHERE fs.first_seen >= now() - interval '8 weeks'
       GROUP BY 1 ORDER BY 1
     `),
+    // Landing-page email signups (the "stay up to date" form), newest first.
+    // No wallet attached, so `?excludeOwners` doesn't apply — always company-wide.
+    prisma.$queryRaw<SignupRow[]>(Prisma.sql`
+      SELECT email, status, created_at, verified_at
+      FROM subscribers
+      ORDER BY created_at DESC
+      LIMIT 50
+    `),
   ])
 
   const f = funnel[0]
@@ -281,6 +289,12 @@ export async function GET(req: NextRequest) {
       returned: r.returned,
       paid: r.paid,
     })),
+    recentSignups: signups.map((r) => ({
+      email: r.email,
+      status: r.status,
+      createdAt: r.created_at.toISOString(),
+      verifiedAt: r.verified_at ? r.verified_at.toISOString() : null,
+    })),
   })
 }
 
@@ -335,4 +349,10 @@ interface CohortRow {
   size: number
   returned: number
   paid: number
+}
+interface SignupRow {
+  email: string
+  status: string
+  created_at: Date
+  verified_at: Date | null
 }
