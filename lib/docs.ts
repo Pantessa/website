@@ -80,6 +80,14 @@ export const DOCS_PAGES: DocsPage[] = [
       'Paste one prompt into Claude Code and it wires the yeetful SDK into your Coinbase Developer Platform agent, then walks you through keys and grant setup.',
     ready: true,
   },
+  {
+    slug: 'snapshot',
+    title: 'Snapshot DAO voting',
+    seoTitle: 'Snapshot voting — browse proposals and vote from chat',
+    description:
+      'Browse live Snapshot DAO proposals in the Yeetful chat and cast a vote your own wallet signs (EIP-712) — pay-per-call over x402 on Base, no API key.',
+    ready: true,
+  },
 ]
 
 export const readyPages = () => DOCS_PAGES.filter((p) => p.ready)
