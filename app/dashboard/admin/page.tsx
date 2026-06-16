@@ -7,7 +7,7 @@
 // instead of a failed fetch.
 
 import { useCallback, useEffect, useState } from 'react'
-import { Download, Loader2, ShieldAlert } from 'lucide-react'
+import { Download, Loader2, Mail, ShieldAlert } from 'lucide-react'
 import { useSession } from '@/lib/session'
 import { isAdminAddress } from '@/lib/admin'
 import { Card, CardTitle, Kpi, short, timeAgo } from '@/lib/dashboard-ui'
@@ -45,6 +45,7 @@ interface Overview {
   activation: { count: number; medianHours: number | null; p25Hours: number | null; p75Hours: number | null }
   recentArrivals: { address: string; firstSeen: string; chats: number; keys: number; okCalls: number; settled: number }[]
   cohorts: { week: string; size: number; returned: number; paid: number }[]
+  recentSignups: { email: string; status: string; createdAt: string; verifiedAt: string | null }[]
 }
 
 const usd = (n: number) => `$${n.toFixed(n < 1 ? 4 : 2)}`
@@ -288,6 +289,50 @@ export default function AdminPage() {
           )}
         </Card>
       </div>
+
+      {/* Email signups — the landing "stay up to date" list, with one-click outreach */}
+      <Card className="mt-3">
+        <CardTitle>Email signups ({data.recentSignups.length})</CardTitle>
+        {data.recentSignups.length === 0 ? (
+          <p className="text-xs text-[color:var(--muted-2)] py-4">No email signups yet.</p>
+        ) : (
+          <div className="overflow-x-auto -mx-1 px-1">
+            <table className="w-full text-sm min-w-[480px]">
+              <thead>
+                <tr className="text-left text-[11px] uppercase tracking-wider text-[color:var(--muted-2)] mono">
+                  <th className="py-2 pr-3 font-medium">Email</th>
+                  <th className="py-2 pr-3 font-medium">Status</th>
+                  <th className="py-2 pr-3 font-medium">Signed up</th>
+                  <th className="py-2 pr-3 font-medium text-right">Reach out</th>
+                </tr>
+              </thead>
+              <tbody className="text-[color:var(--muted)]">
+                {data.recentSignups.map((s) => (
+                  <tr key={s.email} className="border-t border-[var(--line)]">
+                    <td className="py-2 pr-3 text-white break-all">{s.email}</td>
+                    <td className="py-2 pr-3 whitespace-nowrap">
+                      {s.status === 'verified' ? (
+                        <span className="text-[color:var(--accent,#34E0A1)]">Verified</span>
+                      ) : (
+                        <span className="text-[color:var(--muted-2)]">Pending</span>
+                      )}
+                    </td>
+                    <td className="py-2 pr-3 whitespace-nowrap">{timeAgo(s.createdAt)}</td>
+                    <td className="py-2 pr-3 text-right">
+                      <a
+                        href={`mailto:${s.email}`}
+                        className="inline-flex items-center gap-1.5 text-[11px] px-3 py-1.5 rounded-md bg-white text-zinc-950 hover:bg-zinc-200 transition-colors"
+                      >
+                        <Mail className="w-3.5 h-3.5" /> Email
+                      </a>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Card>
 
       {/* Wallet roster */}
       <Card className="mt-3">
