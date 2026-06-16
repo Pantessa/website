@@ -5,6 +5,7 @@ import { ArrowLeft, ExternalLink } from 'lucide-react'
 import prisma from '@/lib/db'
 import BrandIcon from '@/components/BrandIcon'
 import Footer from '@/components/Footer'
+import ServerApproveToggle from '@/components/ServerApproveToggle'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -160,6 +161,10 @@ export default async function ServiceDetailPage({ params }: Params) {
               </a>
             )}
           </header>
+
+          {/* Approve this agent for your expense account, inline (chat deep-links
+              here via /servers/<slug>#approve when a turn is blocked). */}
+          <ServerApproveToggle serverId={server.id} serverName={server.name} />
 
           <p className="svc__desc">{server.description}</p>
 
