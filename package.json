@@ -17,6 +17,7 @@
     "test:auth": "tsx scripts/test-auth.ts",
     "test:api": "tsx scripts/test-api.ts",
     "test:vote": "tsx scripts/test-snapshot-vote.ts",
+    "email:test": "tsx scripts/send-test-email.ts",
     "postinstall": "prisma generate"
   },
   "dependencies": {
