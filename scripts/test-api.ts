@@ -924,6 +924,25 @@ async function main() {
     check('overview: ?excludeOwners=1 echoes the flag', ovExcl.excludeOwners === true)
   }
 
+  // ── Email signup (double opt-in) ──────────────────────────────────────────
+  console.log('— subscribe')
+  // .invalid domain → stored but never emailed (isUndeliverable guard), and the
+  // fixed address upserts so re-runs never accumulate rows.
+  const subEmail = 'harness-subscribe@yeetful-test.invalid'
+  const SJ = { 'content-type': 'application/json' }
+  const subBad = await fetch(`${BASE}/api/subscribe`, { method: 'POST', headers: SJ, body: JSON.stringify({ email: 'not-an-email' }) })
+  check('subscribe: invalid email → 400', subBad.status === 400)
+  const subRes = await fetch(`${BASE}/api/subscribe`, { method: 'POST', headers: SJ, body: JSON.stringify({ email: subEmail }) })
+  const subBody = await subRes.json().catch(() => ({}))
+  check('subscribe: valid email → 201 pending', subRes.status === 201 && subBody.status === 'pending' && subBody.emailSent === false)
+  const subDup = await fetch(`${BASE}/api/subscribe`, { method: 'POST', headers: SJ, body: JSON.stringify({ email: subEmail }) })
+  check('subscribe: idempotent on email (re-issues token, no 409)', subDup.status === 201)
+  const verBad = await fetch(`${BASE}/api/subscribe/verify?token=bogus-token`, { redirect: 'manual' })
+  check(
+    'verify: bad token → redirect ?subscribed=invalid',
+    verBad.status >= 300 && verBad.status < 400 && (verBad.headers.get('location') ?? '').includes('subscribed=invalid'),
+  )
+
   // ── Cleanup (verified) ────────────────────────────────────────────────────
   console.log('— cleanup')
   const delChat = await fetch(`${BASE}/api/chats/${chat.id}`, { method: 'DELETE', headers: C })

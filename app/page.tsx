@@ -11,6 +11,7 @@ import { useRouter } from 'next/navigation'
 import { useAccount } from 'wagmi'
 import { useSession } from '@/lib/session'
 import Footer from '@/components/Footer'
+import StayUpToDate from '@/components/StayUpToDate'
 
 const ALL = 'All'
 const STATIC_SERVERS: McpServer[] = CATALOG
@@ -132,6 +133,8 @@ export default function HomePage() {
             ))}
           </div>
         </section>
+
+        <StayUpToDate />
       </main>
 
       <Footer />
