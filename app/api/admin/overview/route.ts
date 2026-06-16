@@ -82,7 +82,7 @@ export async function GET(req: NextRequest) {
     // Active wallets per day (acted = created a chat or settled a call), 30 days.
     prisma.$queryRaw<DayN[]>(Prisma.sql`
       WITH acts AS (
-        SELECT lower(owner_address) a, date_trunc('day', created_at) day FROM chats WHERE owner_address IS NOT NULL
+        SELECT lower(owner_address) AS a, date_trunc('day', created_at) AS day FROM chats WHERE owner_address IS NOT NULL
         UNION ALL
         SELECT lower(g.owner_address), date_trunc('day', l.created_at)
           FROM spend_ledger l JOIN spend_grants g ON g.id = l.grant_id WHERE g.owner_address NOT LIKE 'org:%'

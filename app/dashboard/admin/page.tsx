@@ -52,13 +52,24 @@ export default function AdminPage() {
   const [data, setData] = useState<Overview | null>(null)
   const [excludeOwners, setExcludeOwners] = useState(false)
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
-    const r = await fetch(`/api/admin/overview${excludeOwners ? '?excludeOwners=1' : ''}`, { cache: 'no-store' })
-    if (r.ok) setData(await r.json())
-    else setData(null)
-    setLoading(false)
+    setError(null)
+    try {
+      const r = await fetch(`/api/admin/overview${excludeOwners ? '?excludeOwners=1' : ''}`, { cache: 'no-store' })
+      if (r.ok) setData(await r.json())
+      else {
+        setData(null)
+        setError(`The adoption API returned ${r.status}. ${r.status === 403 ? 'This wallet is not an admin.' : 'Check the server logs.'}`)
+      }
+    } catch {
+      setData(null)
+      setError('Could not reach the adoption API.')
+    } finally {
+      setLoading(false)
+    }
   }, [excludeOwners])
 
   useEffect(() => {
@@ -74,6 +85,21 @@ export default function AdminPage() {
         </div>
         <h1 className="text-xl font-semibold text-white mb-2">Not authorized</h1>
         <p className="text-sm text-[color:var(--muted)]">The adoption dashboard is limited to Yeetful admins.</p>
+      </div>
+    )
+  }
+
+  if (error && !data) {
+    return (
+      <div className="max-w-md mx-auto px-6 py-24 text-center">
+        <div className="w-14 h-14 mx-auto rounded-2xl bg-[var(--surf-1)] border border-[var(--line)] grid place-items-center text-[color:var(--muted)] mb-5">
+          <ShieldAlert className="w-7 h-7" />
+        </div>
+        <h1 className="text-xl font-semibold text-white mb-2">Couldn’t load adoption data</h1>
+        <p className="text-sm text-[color:var(--muted)] mb-6">{error}</p>
+        <button className="btn btn--solid" onClick={() => void load()}>
+          Retry
+        </button>
       </div>
     )
   }
