@@ -15,25 +15,33 @@ const CHOICE_WORDS =
 
 export function parseVoteIntent(message: string): VoteIntent {
   const text = message.trim()
-  if (!VOTE_VERB.test(text)) return { isVote: false }
+  const hasVerb = VOTE_VERB.test(text)
 
   const proposalId = text.match(/0x[a-fA-F0-9]{64}/)?.[0]
   const spaceHint = text.match(/\b([a-z0-9][a-z0-9-]*\.eth)\b/i)?.[1]?.toLowerCase()
 
-  // Choice: "vote [to] <word>", or an explicit "option/choice N".
+  // Choice: an explicit "option/choice N" (verb-free — it's a direct answer to a
+  // choice prompt), or a choice WORD which only counts WITH the verb (so "approve
+  // this" / "I'm for it" don't falsely read as a vote).
   let choiceText: string | undefined
   const optionMatch = text.match(/\b(?:option|choice)\s+(\d+)\b/i)
   if (optionMatch) {
     choiceText = `option ${optionMatch[1]}`
-  } else {
-    const wordMatch = text.match(new RegExp(`\\bvote\\s+(?:to\\s+)?(${CHOICE_WORDS})\\b`, 'i'))
-    const looseMatch = wordMatch ?? text.match(new RegExp(`\\b(${CHOICE_WORDS})\\b`, 'i'))
-    if (looseMatch) choiceText = normalizeChoiceWord(looseMatch[1].toLowerCase())
+  } else if (hasVerb) {
+    const wordMatch =
+      text.match(new RegExp(`\\bvote\\s+(?:to\\s+)?(${CHOICE_WORDS})\\b`, 'i')) ??
+      text.match(new RegExp(`\\b(${CHOICE_WORDS})\\b`, 'i'))
+    if (wordMatch) choiceText = normalizeChoiceWord(wordMatch[1].toLowerCase())
   }
 
-  // A vote intent needs a verb plus either a choice or an explicit proposal —
-  // otherwise "I'll vote later" or "where do I vote?" would falsely trigger.
-  const isVote = !!choiceText || !!proposalId
+  // A vote intent is: the verb + (a choice or a proposal), OR an UNAMBIGUOUS
+  // continuation even without the verb — a bare proposal id, or an explicit
+  // "option/choice N". The route is stateless (no chat history), so when the
+  // clarifying reply asks the user to "paste the proposal id" or pick an option,
+  // that follow-up must still route to the vote flow instead of looping in
+  // generic MCP planning (the repeating-questions bug). A bare choice word or a
+  // lone DAO name stays NOT a vote — too ambiguous without history.
+  const isVote = (hasVerb && (!!choiceText || !!proposalId)) || !!proposalId || !!optionMatch
   return { isVote, proposalId, choiceText, spaceHint }
 }
 
