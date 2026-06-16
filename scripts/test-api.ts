@@ -904,6 +904,10 @@ async function main() {
       'overview: admin → 200 with tiles + funnel + roster',
       ov.status === 200 && !!o.tiles && Array.isArray(o.funnel) && Array.isArray(o.roster),
     )
+    check(
+      'overview: v2 blocks present (activation + recentArrivals + cohorts)',
+      !!o.activation && typeof o.activation.count === 'number' && Array.isArray(o.recentArrivals) && Array.isArray(o.cohorts),
+    )
     const f = Object.fromEntries((o.funnel ?? []).map((s: { key: string; value: number }) => [s.key, s.value]))
     check(
       'overview: funnel invariants hold (signedIn ≥ activated/paid ≥ repeat)',

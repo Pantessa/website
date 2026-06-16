@@ -41,7 +41,8 @@ export async function GET(req: NextRequest) {
   const excludeOwners = req.nextUrl.searchParams.get('excludeOwners') === '1'
   const excl = excludeOwners ? Array.from(OWNERS_LC) : ['']
 
-  const [funnel, newDaily, activeDaily, revDaily, byService, roster, orgs, supply] = await Promise.all([
+  const [funnel, newDaily, activeDaily, revDaily, byService, roster, orgs, supply, activation, recentArrivals, cohorts] =
+    await Promise.all([
     // Tiles + funnel counts. ::int casts keep COUNT out of bigint (JSON-unsafe).
     prisma.$queryRaw<FunnelRow[]>(Prisma.sql`
       WITH addrs AS (${ADDRS}),
@@ -144,6 +145,73 @@ export async function GET(req: NextRequest) {
     prisma.$queryRaw<{ callable: number; servers: number }[]>(Prisma.sql`
       SELECT count(*) FILTER (WHERE callable)::int AS callable, count(*)::int AS servers FROM mcp_servers
     `),
+    // Activation latency: hours from a wallet's first-seen to its first settled call.
+    prisma.$queryRaw<ActivationRow[]>(Prisma.sql`
+      WITH addrs AS (${ADDRS}),
+      fs AS (SELECT a, min(created_at) AS first_seen FROM addrs WHERE a <> ALL(${excl}) GROUP BY a),
+      firstpay AS (
+        SELECT lower(g.owner_address) a, min(l.created_at) FILTER (WHERE l.ok) AS first_paid
+        FROM spend_ledger l JOIN spend_grants g ON g.id = l.grant_id
+        WHERE g.owner_address NOT LIKE 'org:%' GROUP BY 1
+      ),
+      lat AS (
+        SELECT extract(epoch FROM (fp.first_paid - fs.first_seen)) / 3600.0 AS hours
+        FROM fs JOIN firstpay fp ON fp.a = fs.a
+        WHERE fp.first_paid IS NOT NULL AND fp.first_paid >= fs.first_seen
+      )
+      SELECT count(*)::int AS n,
+             percentile_cont(0.5)  WITHIN GROUP (ORDER BY hours)::float AS p50,
+             percentile_cont(0.25) WITHIN GROUP (ORDER BY hours)::float AS p25,
+             percentile_cont(0.75) WITHIN GROUP (ORDER BY hours)::float AS p75
+      FROM lat
+    `),
+    // Recent arrivals: wallets first-seen in the last 14 days, newest first.
+    prisma.$queryRaw<ArrivalRow[]>(Prisma.sql`
+      WITH addrs AS (${ADDRS}),
+      fs AS (SELECT a, min(created_at) AS first_seen FROM addrs WHERE a <> ALL(${excl}) GROUP BY a),
+      ch AS (SELECT lower(owner_address) a, count(*)::int chats FROM chats WHERE owner_address IS NOT NULL GROUP BY 1),
+      ky AS (SELECT lower(owner_address) a, count(*)::int keys FROM api_keys GROUP BY 1),
+      pd AS (SELECT lower(g.owner_address) a,
+                    count(*) FILTER (WHERE l.ok)::int ok_calls,
+                    coalesce(sum(l.amount_usd) FILTER (WHERE l.ok), 0)::float settled
+               FROM spend_ledger l JOIN spend_grants g ON g.id = l.grant_id
+               WHERE g.owner_address NOT LIKE 'org:%' GROUP BY 1)
+      SELECT fs.a AS address, fs.first_seen,
+             coalesce(ch.chats, 0) AS chats, coalesce(ky.keys, 0) AS keys,
+             coalesce(pd.ok_calls, 0) AS ok_calls, coalesce(pd.settled, 0) AS settled
+      FROM fs LEFT JOIN ch ON ch.a = fs.a LEFT JOIN ky ON ky.a = fs.a LEFT JOIN pd ON pd.a = fs.a
+      WHERE fs.first_seen >= now() - interval '14 days'
+      ORDER BY fs.first_seen DESC LIMIT 15
+    `),
+    // Weekly signup cohorts: size, how many returned (acted in a later week), how many paid.
+    prisma.$queryRaw<CohortRow[]>(Prisma.sql`
+      WITH addrs AS (${ADDRS}),
+      fs AS (SELECT a, min(created_at) AS first_seen FROM addrs WHERE a <> ALL(${excl}) GROUP BY a),
+      acts AS (
+        SELECT lower(owner_address) a, created_at AS ts FROM chats WHERE owner_address IS NOT NULL
+        UNION ALL
+        SELECT lower(g.owner_address), l.created_at
+          FROM spend_ledger l JOIN spend_grants g ON g.id = l.grant_id
+          WHERE g.owner_address NOT LIKE 'org:%' AND l.ok
+      ),
+      paid AS (
+        SELECT lower(g.owner_address) a, min(l.created_at) FILTER (WHERE l.ok) AS fp
+        FROM spend_ledger l JOIN spend_grants g ON g.id = l.grant_id
+        WHERE g.owner_address NOT LIKE 'org:%' GROUP BY 1
+      ),
+      ret AS (
+        SELECT fs.a,
+               bool_or(act.ts >= date_trunc('week', fs.first_seen) + interval '1 week') AS returned
+        FROM fs LEFT JOIN acts act ON act.a = fs.a GROUP BY fs.a
+      )
+      SELECT date_trunc('week', fs.first_seen) AS week,
+             count(*)::int AS size,
+             count(*) FILTER (WHERE ret.returned)::int AS returned,
+             count(*) FILTER (WHERE paid.fp IS NOT NULL)::int AS paid
+      FROM fs LEFT JOIN ret ON ret.a = fs.a LEFT JOIN paid ON paid.a = fs.a
+      WHERE fs.first_seen >= now() - interval '8 weeks'
+      GROUP BY 1 ORDER BY 1
+    `),
   ])
 
   const f = funnel[0]
@@ -193,6 +261,26 @@ export async function GET(req: NextRequest) {
     })),
     orgs: orgs[0],
     supply: supply[0],
+    activation: {
+      count: activation[0].n,
+      medianHours: activation[0].p50,
+      p25Hours: activation[0].p25,
+      p75Hours: activation[0].p75,
+    },
+    recentArrivals: recentArrivals.map((r) => ({
+      address: r.address,
+      firstSeen: r.first_seen.toISOString(),
+      chats: r.chats,
+      keys: r.keys,
+      okCalls: r.ok_calls,
+      settled: r.settled,
+    })),
+    cohorts: cohorts.map((r) => ({
+      week: r.week.toISOString(),
+      size: r.size,
+      returned: r.returned,
+      paid: r.paid,
+    })),
   })
 }
 
@@ -227,4 +315,24 @@ interface RosterRow {
   settled: number
   ok_calls: number
   orgs: number
+}
+interface ActivationRow {
+  n: number
+  p50: number | null
+  p25: number | null
+  p75: number | null
+}
+interface ArrivalRow {
+  address: string
+  first_seen: Date
+  chats: number
+  keys: number
+  ok_calls: number
+  settled: number
+}
+interface CohortRow {
+  week: Date
+  size: number
+  returned: number
+  paid: number
 }
