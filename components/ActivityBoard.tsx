@@ -7,7 +7,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { CheckCircle2, Loader2, ShieldOff } from 'lucide-react'
-import { SpendByAgent, SpendOverTime } from '@/components/DashboardCharts'
+import { SpendByAgent, SpendOverTime } from '@/components/LazyCharts'
 import { Card, CardTitle, Kpi, short, timeAgo } from '@/lib/dashboard-ui'
 
 const POLL_MS = 30_000
