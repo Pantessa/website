@@ -91,12 +91,13 @@ export default function ClaudeCodePage() {
       <p className="docs__crumbs mono">
         <Link href="/docs">DOCS</Link> <span>/</span> ADD WITH CLAUDE CODE
       </p>
-      <h1 className="docs__h1">Add Yeetful to your Coinbase agent with one prompt</h1>
+      <h1 className="docs__h1">Add Yeetful to your agent with one prompt</h1>
       <p className="docs__lead">
-        Building an agent on the Coinbase Developer Platform? Paste the prompt below into Claude
-        Code (or any capable coding agent) in your project. It wires the SDK in, then walks{' '}
-        <em>you</em> through the two dashboard clicks — minting an API key and copying your grant
-        id — at the right moment, with the right links.
+        Paste the prompt below into Claude Code (or any capable coding agent) in your project. It
+        wires the SDK in — working with whatever wallet your agent already uses, including a
+        Coinbase Developer Platform account — then walks <em>you</em> through the two dashboard
+        clicks — minting an API key and copying your grant id — at the right moment, with the right
+        links.
       </p>
 
       <div className="docs__prose">

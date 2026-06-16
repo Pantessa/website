@@ -568,6 +568,15 @@
   .docs__prose table { display: block; overflow-x: auto; border-collapse: collapse; margin: 16px 0; font-size: 13.5px; max-width: 96ch; }
   .docs__prose th, .docs__prose td { border: 1px solid var(--line); padding: 8px 12px; text-align: left; }
   .docs__prose th { color: var(--fg); background: var(--surf-1); }
+  .docs__callout {
+    margin-top: 24px; padding: 14px 18px; max-width: 80ch;
+    border: 1px solid var(--line); border-left: 3px solid var(--accent, var(--fg));
+    border-radius: 10px; background: var(--surf-1);
+  }
+  .docs__callout p { margin: 0; font-size: 14px; line-height: 1.6; color: var(--muted); }
+  .docs__callout strong { color: var(--fg); }
+  .docs__callout a { color: var(--fg); text-decoration: underline; text-underline-offset: 3px; text-decoration-style: dotted; }
+  .docs__callout code { font-family: 'Geist Mono', ui-monospace, monospace; font-size: 0.88em; background: var(--surf-2); border: 1px solid var(--line); border-radius: 5px; padding: 1px 6px; color: var(--fg); }
   .docs__cards { margin-top: 36px; display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 14px; }
   .docs__card {
     display: flex; flex-direction: column; gap: 8px; padding: 18px;
