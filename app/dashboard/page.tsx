@@ -5,7 +5,7 @@
 
 import Link from 'next/link'
 import { useCallback, useEffect, useState } from 'react'
-import { Building2, Loader2, Pause, Play, ShieldCheck } from 'lucide-react'
+import { Building2, Loader2, Pause, Play, ShieldCheck, ShieldPlus } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { SpendByAgent, SpendOverTime } from '@/components/LazyCharts'
 import SignGrantButton from '@/components/SignGrantButton'
@@ -16,6 +16,8 @@ export default function DashboardOverviewPage() {
   const { activeOrgId } = useOrgStore()
   const [stats, setStats] = useState<Stats | null>(null)
   const [freezing, setFreezing] = useState(false)
+  const [backing, setBacking] = useState(false)
+  const [backErr, setBackErr] = useState<string | null>(null)
 
   // Keyed on the active org (F3): the rail switcher flips this page between
   // the personal and the org expense account.
@@ -28,6 +30,25 @@ export default function DashboardOverviewPage() {
     setStats(null)
     void load()
   }, [load])
+
+  // Back the account on-chain with a Coinbase Spend Permission mirroring the
+  // grant's per-day cap — the hard stop above the SDK-advisory budget. Defaults
+  // to Base Sepolia server-side until a mainnet Smart Account is funded.
+  const backOnChain = async (grantId: string) => {
+    setBacking(true)
+    setBackErr(null)
+    try {
+      const r = await fetch(`/api/grants/${grantId}/spend-permission`, { method: 'POST' })
+      if (!r.ok) {
+        const b = await r.json().catch(() => ({}))
+        setBackErr(b.detail || b.error || `Failed (${r.status})`)
+        return
+      }
+      await load()
+    } finally {
+      setBacking(false)
+    }
+  }
 
   // The account-level kill switch: freeze every payment under this grant
   // (reversible). Hard-enforced on the chat rails Yeetful executes.
@@ -162,6 +183,17 @@ export default function DashboardOverviewPage() {
                   Backed on-chain
                 </span>
               )}
+              {!g.backedOnChain && (
+                <button
+                  onClick={() => void backOnChain(g.id)}
+                  disabled={backing}
+                  className="flex items-center gap-1.5 text-xs font-medium px-3 py-2 max-lg:min-h-10 rounded-lg border border-[var(--line-2)] text-[color:var(--muted)] hover:text-white hover:border-white transition-colors disabled:opacity-50"
+                  title="Back this account on-chain with a Coinbase Spend Permission mirroring your daily cap — a hard stop above the SDK-advisory budget."
+                >
+                  {backing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ShieldPlus className="w-3.5 h-3.5" />}
+                  Back on-chain
+                </button>
+              )}
               <button
                 onClick={() => void toggleFreeze(g.id, !g.paused)}
                 disabled={freezing}
@@ -182,6 +214,9 @@ export default function DashboardOverviewPage() {
             </span>
           )}
         </div>
+        {backErr && (
+          <p className="mt-2 text-xs text-red-400">On-chain backing failed: {backErr}</p>
+        )}
         {g?.paused && (
           <p className="mt-2 text-xs text-amber-400 flex items-center gap-1.5">
             <Pause className="w-3.5 h-3.5 flex-shrink-0" /> Account frozen — every payment under it is

@@ -242,14 +242,13 @@ async function main() {
       sp.terms.manager === '0xf85210B21cC50302F477BA56686d2019dC9b67Ad',
   )
 
-  // POST backs the grant on-chain — owner-gated, and 503 until CDP is
-  // provisioned (CDP_WALLET_SECRET + a funded Smart Account).
-  const spPost = await fetch(`${BASE}/api/grants/${grant.id}/spend-permission`, { method: 'POST', headers: C })
-  const spPostBody = await spPost.json().catch(() => ({}))
-  check(
-    'spend-permission create gated until CDP provisioned (→ 503 with steps, or 501 when configured)',
-    (spPost.status === 503 && Array.isArray(spPostBody.need)) || spPost.status === 501,
-  )
+  // POST creates a REAL on-chain permission when CDP is configured, so the
+  // standing suite only exercises the gate (unauthed → 401) — it never triggers
+  // a create. The live create is covered by scripts/verify-cdp-spend-permission.ts
+  // (Base Sepolia, run manually). When CDP is unprovisioned the authed POST 503s
+  // with the steps; we don't assert that here to avoid env-dependent flakiness.
+  const spPostNoAuth = await fetch(`${BASE}/api/grants/${grant.id}/spend-permission`, { method: 'POST' })
+  check('spend-permission create requires auth (→ 401)', spPostNoAuth.status === 401)
 
   // ── Connected agents (a key IS an agent: budget + attributed spend) ───────
   console.log('— connected agents')
