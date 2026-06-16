@@ -12,7 +12,9 @@ import {
   type SigningRequest,
 } from '@/lib/x402'
 import type { McpServer } from '@/lib/store'
-import { voteRequestFromToolResult, type VoteRequest } from '@/lib/snapshot-vote'
+import { voteRequestFromToolResult, friendlyVoteError, type VoteRequest } from '@/lib/snapshot-vote'
+import { parseVoteIntent, type VoteIntent } from '@/lib/vote-intent'
+import { resolveProposal } from '@/lib/snapshot-read'
 import { getSessionAddress } from '@/lib/auth'
 import { grantViolation, type GrantPolicy } from '@/lib/spend-grant'
 import {
@@ -42,6 +44,9 @@ interface Receipt {
   txHash?: string
   ok: boolean
   note?: string
+  /** Set only on NOT_ALLOWED (no-approval) blocks → the UI deep-links to
+   *  /servers/<slug>#approve so the user can approve in one click. */
+  slug?: string
 }
 
 /** A planned paid call — round-tripped to the browser so the wallet can sign it. */
@@ -126,6 +131,24 @@ export async function POST(req: NextRequest) {
     )
     const listedOnly = activeServers.filter((s) => !s.callable)
 
+    // ── Vote intent: build a Snapshot vote for the user to sign ───────────────
+    // Detected before the inference check — preparing a vote doesn't need an
+    // inference agent. Gated on a snapshot MCP service being active.
+    const snapshotSvc = activeServers.find(
+      (s) =>
+        s.kind === 'data' &&
+        s.protocol === 'mcp' &&
+        s.callable &&
+        !!s.endpoint &&
+        /snapshot/i.test(`${s.slug} ${s.endpoint}`),
+    )
+    if (snapshotSvc) {
+      const intent = parseVoteIntent(message)
+      if (intent.isVote) {
+        return await prepareVoteTurn(intent, snapshotSvc, walletAddress)
+      }
+    }
+
     // Need a live inference provider to phrase an answer.
     if (!inference) {
       const picked = activeServers.find((s) => s.kind === 'inference')
@@ -176,6 +199,95 @@ export async function POST(req: NextRequest) {
     const msg = error instanceof Error ? error.message : 'Chat request failed'
     console.error('Chat error:', error)
     return NextResponse.json({ error: msg }, { status: 502 })
+  }
+}
+
+// ── Vote intent ───────────────────────────────────────────────────────────────
+
+/**
+ * Resolve a vote intent into a signable Snapshot vote. Reads (proposal lookup)
+ * are free; only the typed-data construction (prepare_vote) is paid, by the
+ * house wallet — the user just signs the result. Returns a friendly clarifying
+ * reply when the proposal or choice can't be pinned down.
+ */
+async function prepareVoteTurn(
+  intent: VoteIntent,
+  snapshotSvc: McpServer,
+  walletAddress: string | undefined,
+) {
+  if (!walletAddress) {
+    return NextResponse.json({
+      reply:
+        '🗳️ Connect your wallet to vote — Snapshot voting power is tied to your address, so you sign the vote yourself.',
+    })
+  }
+  if (!intent.choiceText) {
+    return NextResponse.json({
+      reply: '🗳️ Which way? Say e.g. “vote For”, “vote against”, or “vote option 2”.',
+    })
+  }
+  if (!hasAgentWallet()) {
+    return NextResponse.json({
+      reply:
+        '🗳️ Voting needs the house wallet to prepare the signed message (x402), which isn’t configured here.',
+    })
+  }
+
+  let resolved: Awaited<ReturnType<typeof resolveProposal>>
+  try {
+    resolved = await resolveProposal({ proposalId: intent.proposalId, spaceHint: intent.spaceHint })
+  } catch (e) {
+    return NextResponse.json({
+      reply: `🗳️ Couldn’t reach Snapshot to find the proposal: ${e instanceof Error ? e.message : 'error'}.`,
+    })
+  }
+  if (!('id' in resolved)) {
+    const list = resolved.candidates
+    if (list.length === 0) {
+      return NextResponse.json({
+        reply: intent.spaceHint
+          ? `🗳️ No active proposals in ${intent.spaceHint} right now.`
+          : '🗳️ No active proposals found. Name a DAO (e.g. aave.eth) or paste a proposal id.',
+      })
+    }
+    const lines = list
+      .slice(0, 6)
+      .map((p) => `· ${p.title} — ${p.space.id} (\`${p.id.slice(0, 12)}…\`)`)
+      .join('\n')
+    return NextResponse.json({
+      reply: `🗳️ Which proposal? A few active ones:\n${lines}\n\nRe-ask naming the DAO/space or pasting the proposal id.`,
+    })
+  }
+
+  const host = hostOf(snapshotSvc.endpoint!)
+  const receipts: Receipt[] = []
+  try {
+    const body = JSON.stringify({
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'tools/call',
+      params: {
+        name: 'prepare_vote',
+        arguments: { proposal: resolved.id, from: walletAddress, choiceText: intent.choiceText },
+      },
+    })
+    const res = await getPaidFetch()(snapshotSvc.endpoint!, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream' },
+      body,
+    })
+    if (!res.ok) throw new Error(await failureReason(res))
+    const data = parseMcpDataResult(res.headers.get('content-type') ?? '', await res.text())
+    const txHash = decodeSettlement(res)?.transaction
+    receipts.push({ name: snapshotSvc.name, endpoint: host, priceUsd: snapshotSvc.priceUsd ?? '0.01', txHash, ok: true })
+    const vote = voteRequestFromToolResult(data)
+    if (!vote) {
+      const note = typeof data === 'string' ? data : JSON.stringify(data)
+      return NextResponse.json({ reply: `🗳️ ${friendlyVoteError(note)}`, receipts, payer: 'the house wallet' })
+    }
+    return NextResponse.json({ reply: `🗳️ ${vote.summary}`, receipts, payer: 'the house wallet', voteRequest: vote })
+  } catch (err) {
+    return NextResponse.json({ reply: `🗳️ ${friendlyVoteError(err)}`, receipts })
   }
 }
 
@@ -508,7 +620,7 @@ async function runWithBurner(
       const violation = grantViolation(policy, host, price, spentToday, spentTotal)
       if (violation) {
         await recordLedger({ grantId: grant.id, orgId: grant.orgId ?? undefined, host, serviceName: ds.name, amountUsd: 0, ok: false, note: violation })
-        receipts.push({ name: ds.name, endpoint: host, priceUsd: ds.priceUsd ?? '0.01', ok: false, note: `blocked: ${violation}` })
+        receipts.push({ name: ds.name, endpoint: host, priceUsd: ds.priceUsd ?? '0.01', ok: false, note: `blocked: ${violation}`, slug: violation === 'NOT_ALLOWED' ? ds.slug : undefined })
         blocked.push(`${ds.name} (${violation})`)
         continue
       }
@@ -537,7 +649,7 @@ async function runWithBurner(
       const violation = grantViolation(policy, host, price, spentToday, spentTotal)
       if (violation) {
         await recordLedger({ grantId: grant.id, orgId: grant.orgId ?? undefined, host, serviceName: ds.name, amountUsd: 0, ok: false, note: violation })
-        receipts.push({ name: ds.name, endpoint: host, priceUsd: ds.priceUsd ?? '0.01', ok: false, note: `blocked: ${violation}` })
+        receipts.push({ name: ds.name, endpoint: host, priceUsd: ds.priceUsd ?? '0.01', ok: false, note: `blocked: ${violation}`, slug: violation === 'NOT_ALLOWED' ? ds.slug : undefined })
         blocked.push(`${ds.name} (${violation})`)
         continue
       }
@@ -605,7 +717,7 @@ async function runWithBurner(
             const violation = grantViolation(policy, host, price, spentToday, spentTotal)
             if (violation) {
               await recordLedger({ grantId: grant.id, orgId: grant.orgId ?? undefined, host, serviceName: ep.serverName, amountUsd: 0, ok: false, note: violation })
-              receipts.push({ name: ep.serverName, endpoint: host, priceUsd: ep.priceUsd, ok: false, note: `blocked: ${violation}` })
+              receipts.push({ name: ep.serverName, endpoint: host, priceUsd: ep.priceUsd, ok: false, note: `blocked: ${violation}`, slug: violation === 'NOT_ALLOWED' ? ep.serverSlug : undefined })
               blocked.push(`${ep.serverName} (${violation})`)
               continue
             }

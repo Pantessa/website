@@ -775,6 +775,7 @@ async function main() {
           receipts: [
             { name: 'Alpha', priceUsd: '0.01', txHash: '0x' + 'ab'.repeat(32), ok: true },
             { name: 'Beta', priceUsd: '0.01', ok: false, note: 'blocked: NOT_ALLOWED' },
+            { name: 'Gamma', priceUsd: '0.01', ok: false, note: 'blocked: NOT_ALLOWED', slug: 'gamma-svc' },
           ],
         },
       }),
@@ -782,7 +783,7 @@ async function main() {
   ).json()
   const loaded = await (await fetch(`${BASE}/api/chats/${chat.id}`, { headers: C })).json()
   const loadedMsg = loaded.messages?.find((m: { id: string }) => m.id === msg.id)
-  check('meta.receipts + payer round-trip', loadedMsg?.meta?.payer === 'your wallet' && loadedMsg.meta.receipts.length === 2)
+  check('meta.receipts + payer round-trip', loadedMsg?.meta?.payer === 'your wallet' && loadedMsg.meta.receipts.length === 3)
 
   const shared = await (
     await fetch(`${BASE}/api/chats/${chat.id}`, {
@@ -795,6 +796,10 @@ async function main() {
   check(
     'share page renders footnote (total · payer · denial)',
     html.includes('💸') && html.includes('$0.01 over 1 x402 call') && html.includes('· your wallet') && html.includes('blocked: NOT_ALLOWED'),
+  )
+  check(
+    'blocked-for-approval receipt links to /servers/<slug>#approve',
+    html.includes('/servers/gamma-svc#approve'),
   )
 
   // ── Blog (requires BLOG_ADMIN_PK + matching ADMIN_WALLETS on the server) ──
@@ -904,6 +909,10 @@ async function main() {
       'overview: admin → 200 with tiles + funnel + roster',
       ov.status === 200 && !!o.tiles && Array.isArray(o.funnel) && Array.isArray(o.roster),
     )
+    check(
+      'overview: v2 blocks present (activation + recentArrivals + cohorts)',
+      !!o.activation && typeof o.activation.count === 'number' && Array.isArray(o.recentArrivals) && Array.isArray(o.cohorts),
+    )
     const f = Object.fromEntries((o.funnel ?? []).map((s: { key: string; value: number }) => [s.key, s.value]))
     check(
       'overview: funnel invariants hold (signedIn ≥ activated/paid ≥ repeat)',
@@ -914,6 +923,25 @@ async function main() {
     ).json()
     check('overview: ?excludeOwners=1 echoes the flag', ovExcl.excludeOwners === true)
   }
+
+  // ── Email signup (double opt-in) ──────────────────────────────────────────
+  console.log('— subscribe')
+  // .invalid domain → stored but never emailed (isUndeliverable guard), and the
+  // fixed address upserts so re-runs never accumulate rows.
+  const subEmail = 'harness-subscribe@yeetful-test.invalid'
+  const SJ = { 'content-type': 'application/json' }
+  const subBad = await fetch(`${BASE}/api/subscribe`, { method: 'POST', headers: SJ, body: JSON.stringify({ email: 'not-an-email' }) })
+  check('subscribe: invalid email → 400', subBad.status === 400)
+  const subRes = await fetch(`${BASE}/api/subscribe`, { method: 'POST', headers: SJ, body: JSON.stringify({ email: subEmail }) })
+  const subBody = await subRes.json().catch(() => ({}))
+  check('subscribe: valid email → 201 pending', subRes.status === 201 && subBody.status === 'pending' && subBody.emailSent === false)
+  const subDup = await fetch(`${BASE}/api/subscribe`, { method: 'POST', headers: SJ, body: JSON.stringify({ email: subEmail }) })
+  check('subscribe: idempotent on email (re-issues token, no 409)', subDup.status === 201)
+  const verBad = await fetch(`${BASE}/api/subscribe/verify?token=bogus-token`, { redirect: 'manual' })
+  check(
+    'verify: bad token → redirect ?subscribed=invalid',
+    verBad.status >= 300 && verBad.status < 400 && (verBad.headers.get('location') ?? '').includes('subscribed=invalid'),
+  )
 
   // ── Cleanup (verified) ────────────────────────────────────────────────────
   console.log('— cleanup')

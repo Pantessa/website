@@ -43,9 +43,27 @@ interface Overview {
   }[]
   orgs: { orgs: number; members: number; org_settled: number }
   supply: { callable: number; servers: number }
+  activation: { count: number; medianHours: number | null; p25Hours: number | null; p75Hours: number | null }
+  recentArrivals: { address: string; firstSeen: string; chats: number; keys: number; okCalls: number; settled: number }[]
+  cohorts: { week: string; size: number; returned: number; paid: number }[]
 }
 
 const usd = (n: number) => `$${n.toFixed(n < 1 ? 4 : 2)}`
+
+/** Human-friendly duration: hours under 2 days, else days. */
+function fmtHours(h: number | null): string {
+  if (h == null) return '—'
+  if (h < 1) return `${Math.round(h * 60)}m`
+  if (h < 48) return `${h.toFixed(1)}h`
+  return `${(h / 24).toFixed(1)}d`
+}
+
+function weekLabel(iso: string): string {
+  const d = new Date(iso)
+  return `${d.getUTCMonth() + 1}/${d.getUTCDate()}`
+}
+
+const pct = (num: number, den: number) => (den > 0 ? `${Math.round((num / den) * 100)}%` : '—')
 
 function csvEscape(v: string | number): string {
   const s = String(v)
@@ -191,6 +209,84 @@ export default function AdminPage() {
         <Card className="lg:col-span-2">
           <CardTitle>Revenue by service</CardTitle>
           <SpendByAgent perAgent={data.byService} />
+        </Card>
+      </div>
+
+      {/* Activation & retention */}
+      <div className="grid lg:grid-cols-2 gap-3 mt-3">
+        <Card>
+          <CardTitle>Recent arrivals · last 14 days</CardTitle>
+          {data.recentArrivals.length === 0 ? (
+            <p className="text-xs text-[color:var(--muted-2)] py-4">No new wallets in the last 14 days.</p>
+          ) : (
+            <div className="overflow-x-auto -mx-1 px-1">
+              <table className="w-full text-sm min-w-[420px]">
+                <thead>
+                  <tr className="text-left text-[11px] uppercase tracking-wider text-[color:var(--muted-2)] mono">
+                    <th className="py-2 pr-3 font-medium">Wallet</th>
+                    <th className="py-2 pr-3 font-medium">Arrived</th>
+                    <th className="py-2 pr-3 font-medium text-right">Chats</th>
+                    <th className="py-2 pr-3 font-medium text-right">Keys</th>
+                    <th className="py-2 pr-3 font-medium text-right">Paid</th>
+                  </tr>
+                </thead>
+                <tbody className="text-[color:var(--muted)]">
+                  {data.recentArrivals.map((r) => (
+                    <tr key={r.address} className="border-t border-[var(--line)]">
+                      <td className="py-2 pr-3 mono text-white">{short(r.address)}</td>
+                      <td className="py-2 pr-3 whitespace-nowrap">{timeAgo(r.firstSeen)}</td>
+                      <td className="py-2 pr-3 text-right tabular-nums">{r.chats}</td>
+                      <td className="py-2 pr-3 text-right tabular-nums">{r.keys}</td>
+                      <td className="py-2 pr-3 text-right tabular-nums text-white">{r.okCalls || '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </Card>
+
+        <Card>
+          <CardTitle>Activation &amp; weekly cohorts</CardTitle>
+          <div className="mb-4">
+            <p className="text-[10px] uppercase tracking-[0.14em] text-[color:var(--muted-2)] mono">
+              Median time to first payment
+            </p>
+            <p className="text-2xl font-semibold text-white mt-1">{fmtHours(data.activation.medianHours)}</p>
+            <p className="text-[11px] text-[color:var(--muted-2)] mt-0.5">
+              {data.activation.count} activated
+              {data.activation.medianHours != null &&
+                ` · p25–p75 ${fmtHours(data.activation.p25Hours)}–${fmtHours(data.activation.p75Hours)}`}
+            </p>
+          </div>
+          {data.cohorts.length === 0 ? (
+            <p className="text-xs text-[color:var(--muted-2)]">No signup cohorts yet.</p>
+          ) : (
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-[11px] uppercase tracking-wider text-[color:var(--muted-2)] mono">
+                  <th className="py-2 pr-3 font-medium">Week of</th>
+                  <th className="py-2 pr-3 font-medium text-right">Signups</th>
+                  <th className="py-2 pr-3 font-medium text-right">Returned</th>
+                  <th className="py-2 pr-3 font-medium text-right">Paid</th>
+                </tr>
+              </thead>
+              <tbody className="text-[color:var(--muted)]">
+                {data.cohorts.map((c) => (
+                  <tr key={c.week} className="border-t border-[var(--line)]">
+                    <td className="py-2 pr-3 whitespace-nowrap mono text-white">{weekLabel(c.week)}</td>
+                    <td className="py-2 pr-3 text-right tabular-nums">{c.size}</td>
+                    <td className="py-2 pr-3 text-right tabular-nums">
+                      {c.returned} <span className="text-[color:var(--muted-2)]">({pct(c.returned, c.size)})</span>
+                    </td>
+                    <td className="py-2 pr-3 text-right tabular-nums text-white">
+                      {c.paid} <span className="text-[color:var(--muted-2)]">({pct(c.paid, c.size)})</span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
         </Card>
       </div>
 

@@ -37,7 +37,6 @@
     "react-markdown": "^10.1.0",
     "recharts": "^3.8.1",
     "remark-gfm": "^4.0.1",
-    "resend": "^6.12.4",
     "tailwind-merge": "^2.5.5",
     "viem": "^2.21.40",
     "wagmi": "^2.14.0",

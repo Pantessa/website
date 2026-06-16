@@ -3,8 +3,10 @@ import {
   toSignable,
   voteRequestFromToolResult,
   voteRequestOf,
+  friendlyVoteError,
   type VoteTypedData,
 } from '../lib/snapshot-vote'
+import { parseVoteIntent } from '../lib/vote-intent'
 
 let passed = 0
 let failed = 0
@@ -93,6 +95,64 @@ console.log('voteRequestOf(meta):')
   check('extracts voteRequest from meta', voteRequestOf({ voteRequest: vr }) !== null)
   check('null on receipts-only meta', voteRequestOf({ receipts: [] }) === null)
   check('null on undefined meta', voteRequestOf(undefined) === null)
+}
+
+console.log('parseVoteIntent:')
+{
+  const a = parseVoteIntent('vote For on the aave.eth proposal')
+  check('detects vote + choice For', a.isVote && a.choiceText === 'for')
+  check('captures space hint', a.spaceHint === 'aave.eth')
+
+  const b = parseVoteIntent('cast my vote against 0x' + 'a'.repeat(64))
+  check('detects against + proposal id', b.isVote && b.choiceText === 'against' && b.proposalId === '0x' + 'a'.repeat(64))
+
+  const c = parseVoteIntent('vote option 2')
+  check('parses option N', c.isVote && c.choiceText === 'option 2')
+
+  const d = parseVoteIntent('vote yes')
+  check('yes is a choice', d.isVote && d.choiceText === 'yes')
+
+  const e = parseVoteIntent('I want to approve this')
+  check('normalizes approve→approve (no verb → not a vote)', e.isVote === false)
+
+  const f = parseVoteIntent('vote to approve it')
+  check('vote to approve → approve', f.isVote && f.choiceText === 'approve')
+
+  const g = parseVoteIntent('where do I vote?')
+  check('bare vote verb is not an intent', g.isVote === false)
+
+  const h = parseVoteIntent('what are the latest proposals?')
+  check('non-vote message ignored', h.isVote === false)
+
+  // Continuation turns (route is stateless): the clarifying reply tells the user
+  // to paste the proposal id or pick an option — those must re-enter the vote
+  // flow even without the word "vote", or the chat loops (repeating-questions bug).
+  const i = parseVoteIntent('0x' + 'b'.repeat(64))
+  check('bare proposal id → vote intent (verb-free continuation)', i.isVote && i.proposalId === '0x' + 'b'.repeat(64))
+
+  const j = parseVoteIntent('option 2')
+  check('bare "option 2" → vote intent', j.isVote && j.choiceText === 'option 2')
+
+  // Still conservative: a lone choice word or a lone DAO name is NOT a vote
+  // (too ambiguous without chat history — left to the history-based follow-up).
+  const k = parseVoteIntent('for')
+  check('bare choice word (no verb) → not a vote', k.isVote === false)
+
+  const l = parseVoteIntent('tell me about aave.eth')
+  check('lone DAO name → not a vote (space captured, intent false)', l.isVote === false && l.spaceHint === 'aave.eth')
+}
+
+console.log('friendlyVoteError:')
+{
+  check('no voting power', /no voting power/i.test(friendlyVoteError('failed; no voting power')))
+  check('closed proposal', /closed/i.test(friendlyVoteError('Proposal is "closed", not active — voting is closed.')))
+  check('already voted', /already voted/i.test(friendlyVoteError('oops: already voted')))
+  check('expired timestamp', /expired/i.test(friendlyVoteError('vote timestamp too old')))
+  check('bad signature', /sign again/i.test(friendlyVoteError('invalid signature, could not recover')))
+  check('declined', /declined/i.test(friendlyVoteError(new Error('User rejected the request'))))
+  check('not found', /couldn’t be found/i.test(friendlyVoteError('proposal not found')))
+  check('unknown passes through (clipped)', friendlyVoteError('weird upstream blip') === 'weird upstream blip')
+  check('empty → generic', friendlyVoteError('') === 'Voting failed.')
 }
 
 console.log(`\n${passed} passed, ${failed} failed`)
