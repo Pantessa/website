@@ -226,6 +226,31 @@ async function main() {
     detail.spentTodayUsd === 0.01 && detail.ledger.some((e: { id: string }) => e.id === entry.id),
   )
 
+  // ── On-chain backing: Coinbase Spend Permission (slice 1) ─────────────────
+  console.log('— spend permission')
+  const spNoAuth = await fetch(`${BASE}/api/grants/${grant.id}/spend-permission`)
+  check('spend-permission read requires auth (→ 401)', spNoAuth.status === 401)
+
+  const sp = await (await fetch(`${BASE}/api/grants/${grant.id}/spend-permission`, { headers: C })).json()
+  check(
+    'spend-permission read: not backed yet, maps the per-day cap on-chain',
+    sp.backed === false &&
+      sp.spendPermissionId == null &&
+      typeof sp.terms?.allowanceAtomic === 'string' &&
+      BigInt(sp.terms.allowanceAtomic) === BigInt(Math.round(detail.perDayUsd * 1_000_000)) &&
+      sp.terms.periodSeconds === 86_400 &&
+      sp.terms.manager === '0xf85210B21cC50302F477BA56686d2019dC9b67Ad',
+  )
+
+  // POST backs the grant on-chain — owner-gated, and 503 until CDP is
+  // provisioned (CDP_WALLET_SECRET + a funded Smart Account).
+  const spPost = await fetch(`${BASE}/api/grants/${grant.id}/spend-permission`, { method: 'POST', headers: C })
+  const spPostBody = await spPost.json().catch(() => ({}))
+  check(
+    'spend-permission create gated until CDP provisioned (→ 503 with steps, or 501 when configured)',
+    (spPost.status === 503 && Array.isArray(spPostBody.need)) || spPost.status === 501,
+  )
+
   // ── Connected agents (a key IS an agent: budget + attributed spend) ───────
   console.log('— connected agents')
   const selfRaise = await fetch(`${BASE}/api/keys/${minted.id}`, {

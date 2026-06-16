@@ -12,6 +12,9 @@ export interface Stats {
     allowCount: number
     expiresAt: string
     paused: boolean
+    /** True when a Coinbase Spend Permission caps this account on-chain. */
+    backedOnChain: boolean
+    spendPermissionNetwork: string | null
     spentTodayUsd: number
     spentTotalUsd: number
     remainingTodayUsd: number
