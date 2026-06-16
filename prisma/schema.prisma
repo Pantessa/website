@@ -345,3 +345,17 @@ model BlogPost {
   @@index([published, publishedAt])
   @@map("blog_posts")
 }
+
+// Landing-page "stay up to date" signups. Double opt-in: a row starts `pending`
+// with a verification token emailed to the address; clicking the link flips it
+// to `verified` (that's how we confirm the email is real).
+model Subscriber {
+  id         String    @id @default(cuid())
+  email      String    @unique
+  status     String    @default("pending") // 'pending' | 'verified'
+  token      String    @unique // single-use verification token
+  verifiedAt DateTime? @map("verified_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
+
+  @@map("subscribers")
+}
