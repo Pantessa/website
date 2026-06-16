@@ -8,7 +8,7 @@
 import { useState } from 'react'
 import { useAccount, useSignTypedData } from 'wagmi'
 import { Loader2, PenLine, CheckCircle2, ExternalLink } from 'lucide-react'
-import { toSignable, type VoteRequest } from '@/lib/snapshot-vote'
+import { toSignable, friendlyVoteError, type VoteRequest } from '@/lib/snapshot-vote'
 
 type Status = 'idle' | 'signing' | 'relaying' | 'done' | 'error'
 
@@ -55,8 +55,7 @@ export default function SignVoteButton({ vote }: { vote: VoteRequest }) {
       setReceiptId(id)
       setStatus('done')
     } catch (e) {
-      const msg = e instanceof Error ? e.message : ''
-      setError(/rejected|denied/i.test(msg) ? 'Signature request declined.' : msg || 'Voting failed.')
+      setError(friendlyVoteError(e))
       setStatus('error')
     }
   }

@@ -12,7 +12,7 @@ import {
   type SigningRequest,
 } from '@/lib/x402'
 import type { McpServer } from '@/lib/store'
-import { voteRequestFromToolResult, type VoteRequest } from '@/lib/snapshot-vote'
+import { voteRequestFromToolResult, friendlyVoteError, type VoteRequest } from '@/lib/snapshot-vote'
 import { parseVoteIntent, type VoteIntent } from '@/lib/vote-intent'
 import { resolveProposal } from '@/lib/snapshot-read'
 import { getSessionAddress } from '@/lib/auth'
@@ -280,12 +280,11 @@ async function prepareVoteTurn(
     const vote = voteRequestFromToolResult(data)
     if (!vote) {
       const note = typeof data === 'string' ? data : JSON.stringify(data)
-      return NextResponse.json({ reply: `🗳️ ${note}`, receipts, payer: 'the house wallet' })
+      return NextResponse.json({ reply: `🗳️ ${friendlyVoteError(note)}`, receipts, payer: 'the house wallet' })
     }
     return NextResponse.json({ reply: `🗳️ ${vote.summary}`, receipts, payer: 'the house wallet', voteRequest: vote })
   } catch (err) {
-    const msg = err instanceof Error ? err.message : 'vote preparation failed'
-    return NextResponse.json({ reply: `🗳️ Couldn’t prepare the vote: ${msg}`, receipts })
+    return NextResponse.json({ reply: `🗳️ ${friendlyVoteError(err)}`, receipts })
   }
 }
 

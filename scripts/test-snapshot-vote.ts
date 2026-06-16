@@ -3,6 +3,7 @@ import {
   toSignable,
   voteRequestFromToolResult,
   voteRequestOf,
+  friendlyVoteError,
   type VoteTypedData,
 } from '../lib/snapshot-vote'
 import { parseVoteIntent } from '../lib/vote-intent'
@@ -122,6 +123,19 @@ console.log('parseVoteIntent:')
 
   const h = parseVoteIntent('what are the latest proposals?')
   check('non-vote message ignored', h.isVote === false)
+}
+
+console.log('friendlyVoteError:')
+{
+  check('no voting power', /no voting power/i.test(friendlyVoteError('failed; no voting power')))
+  check('closed proposal', /closed/i.test(friendlyVoteError('Proposal is "closed", not active — voting is closed.')))
+  check('already voted', /already voted/i.test(friendlyVoteError('oops: already voted')))
+  check('expired timestamp', /expired/i.test(friendlyVoteError('vote timestamp too old')))
+  check('bad signature', /sign again/i.test(friendlyVoteError('invalid signature, could not recover')))
+  check('declined', /declined/i.test(friendlyVoteError(new Error('User rejected the request'))))
+  check('not found', /couldn’t be found/i.test(friendlyVoteError('proposal not found')))
+  check('unknown passes through (clipped)', friendlyVoteError('weird upstream blip') === 'weird upstream blip')
+  check('empty → generic', friendlyVoteError('') === 'Voting failed.')
 }
 
 console.log(`\n${passed} passed, ${failed} failed`)

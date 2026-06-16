@@ -58,6 +58,35 @@ export function voteRequestOf(meta: unknown): VoteRequest | null {
 }
 
 /**
+ * Map a raw Snapshot/relay failure into a clear, human sentence. Pure + tested.
+ * Snapshot's sequencer and the prepare_vote tool return terse, sometimes cryptic
+ * strings ("failed", "no voting power", a JSON blob); this turns the common ones
+ * into something a chat user can act on. Unknown errors pass through trimmed.
+ */
+export function friendlyVoteError(raw: unknown): string {
+  const msg = (typeof raw === 'string' ? raw : raw instanceof Error ? raw.message : String(raw ?? '')).trim()
+  const m = msg.toLowerCase()
+  if (/voting power|vp is 0|0 voting power|no\s+vp\b/.test(m))
+    return 'This wallet has no voting power on this proposal — Snapshot counts votes by your token/strategy balance at the proposal’s snapshot block.'
+  if (/already voted|duplicate/.test(m))
+    return 'This wallet has already voted on this proposal.'
+  if (/closed|not active|ended|finished/.test(m))
+    return 'Voting on this proposal has closed.'
+  if (/not started|pending/.test(m))
+    return 'Voting on this proposal hasn’t opened yet.'
+  if (/not found|unknown proposal/.test(m))
+    return 'That proposal couldn’t be found — check the id or ask for active proposals.'
+  if (/expired|timestamp|too old|future/.test(m))
+    return 'This vote expired before it was submitted — start the vote again so it’s freshly timestamped.'
+  if (/signature|invalid sig|unauthorized|recover/.test(m))
+    return 'The signature didn’t verify — sign again with the wallet that holds the voting power.'
+  if (/rejected|denied|user rejected/.test(m))
+    return 'Signature request declined.'
+  // Unknown — surface the raw text (clipped) rather than a vague catch-all.
+  return msg ? (msg.length > 160 ? msg.slice(0, 160) + '…' : msg) : 'Voting failed.'
+}
+
+/**
  * Convert the JSON typed data into the exact shape viem/wagmi `signTypedData`
  * hashes: integer (uint*) fields become BigInt. Pure — exported for tests.
  * Snapshot's domain carries only name+version (no chainId/verifyingContract),
