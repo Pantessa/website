@@ -6,7 +6,8 @@
 
 import Link from 'next/link'
 import { useEffect, useRef } from 'react'
-import { LayoutDashboard, KeyRound, Bot, ToggleRight, Activity, Building2 } from 'lucide-react'
+import { LayoutDashboard, KeyRound, Bot, ToggleRight, Activity, Building2, LineChart } from 'lucide-react'
+import { isAdminAddress } from '@/lib/admin'
 
 export const DASH_SECTIONS = [
   { href: '/dashboard', label: 'Overview', icon: LayoutDashboard, exact: true },
@@ -17,11 +18,15 @@ export const DASH_SECTIONS = [
   { href: '/dashboard/org', label: 'Organization', icon: Building2, exact: false },
 ] as const
 
+// Admin-only section, appended when the connected wallet is on the allowlist
+// (server-enforced by /api/admin/overview; this is just nav visibility).
+const ADMIN_SECTION = { href: '/dashboard/admin', label: 'Adoption', icon: LineChart, exact: false } as const
+
 export function isSectionActive(pathname: string, href: string, exact: boolean): boolean {
   return exact ? pathname === href : pathname.startsWith(href)
 }
 
-export default function DashboardSidebar({ pathname }: { pathname: string }) {
+export default function DashboardSidebar({ pathname, address }: { pathname: string; address?: string | null }) {
   const nav = useRef<HTMLElement>(null)
   // On the mobile horizontal bar, keep the active section in view.
   useEffect(() => {
@@ -30,9 +35,11 @@ export default function DashboardSidebar({ pathname }: { pathname: string }) {
       ?.scrollIntoView({ block: 'nearest', inline: 'center', behavior: 'instant' as ScrollBehavior })
   }, [pathname])
 
+  const sections = isAdminAddress(address) ? [...DASH_SECTIONS, ADMIN_SECTION] : DASH_SECTIONS
+
   return (
     <nav className="dash__side" aria-label="Dashboard sections" ref={nav}>
-      {DASH_SECTIONS.map(({ href, label, icon: Icon, exact }) => (
+      {sections.map(({ href, label, icon: Icon, exact }) => (
         <Link
           key={href}
           href={href}
