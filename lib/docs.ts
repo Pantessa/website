@@ -33,6 +33,14 @@ export const DOCS_PAGES: DocsPage[] = [
     ready: true,
   },
   {
+    slug: 'claude-code',
+    title: 'Add with Claude Code',
+    seoTitle: 'Add Yeetful to your agent with one Claude prompt',
+    description:
+      'Paste one prompt into Claude Code and it wires the yeetful SDK into your agent, then walks you through minting an API key and copying your grant id.',
+    ready: true,
+  },
+  {
     slug: 'expense-account',
     title: 'The expense account',
     seoTitle: 'Spend grants — allowlists, budgets, and receipts',
@@ -70,14 +78,6 @@ export const DOCS_PAGES: DocsPage[] = [
     seoTitle: 'x402 protocol — what the SDK handles for you',
     description:
       'The x402 402-challenge flow, and the v1/v2 wire differences (amount fields, CAIP-2 networks, payment headers) the yeetful client absorbs automatically.',
-    ready: true,
-  },
-  {
-    slug: 'claude-code',
-    title: 'Add with Claude Code',
-    seoTitle: 'Add Yeetful to your Coinbase agent with one Claude prompt',
-    description:
-      'Paste one prompt into Claude Code and it wires the yeetful SDK into your Coinbase Developer Platform agent, then walks you through keys and grant setup.',
     ready: true,
   },
   {

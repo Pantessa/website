@@ -24,6 +24,15 @@ export default function QuickstartPage() {
         to the services you call — payment is USDC on Base via the x402 protocol.
       </p>
 
+      <div className="docs__callout">
+        <p>
+          <strong>Fastest path — let Claude wire it in.</strong> Paste{' '}
+          <Link href="/docs/claude-code">one prompt</Link> into Claude Code (or any capable coding
+          agent) in your project and it installs the SDK, adds a shared <code>pay()</code>, and
+          walks you through the dashboard clicks. Prefer to do it by hand? Read on.
+        </p>
+      </div>
+
       <div className="docs__prose">
         <h2>1. Install</h2>
         <pre>
@@ -89,6 +98,10 @@ const pay = yeetful({
 
         <h2>Next</h2>
         <ul>
+          <li>
+            <Link href="/docs/claude-code">Add with Claude Code</Link> — skip the manual wiring:
+            one prompt installs the SDK and sets up <code>pay()</code> for you
+          </li>
           <li>
             <Link href="/docs/expense-account">The expense account</Link> — what grants enforce
             and what receipts contain
