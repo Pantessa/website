@@ -44,6 +44,9 @@ interface Receipt {
   txHash?: string
   ok: boolean
   note?: string
+  /** Set only on NOT_ALLOWED (no-approval) blocks → the UI deep-links to
+   *  /servers/<slug>#approve so the user can approve in one click. */
+  slug?: string
 }
 
 /** A planned paid call — round-tripped to the browser so the wallet can sign it. */
@@ -617,7 +620,7 @@ async function runWithBurner(
       const violation = grantViolation(policy, host, price, spentToday, spentTotal)
       if (violation) {
         await recordLedger({ grantId: grant.id, orgId: grant.orgId ?? undefined, host, serviceName: ds.name, amountUsd: 0, ok: false, note: violation })
-        receipts.push({ name: ds.name, endpoint: host, priceUsd: ds.priceUsd ?? '0.01', ok: false, note: `blocked: ${violation}` })
+        receipts.push({ name: ds.name, endpoint: host, priceUsd: ds.priceUsd ?? '0.01', ok: false, note: `blocked: ${violation}`, slug: violation === 'NOT_ALLOWED' ? ds.slug : undefined })
         blocked.push(`${ds.name} (${violation})`)
         continue
       }
@@ -646,7 +649,7 @@ async function runWithBurner(
       const violation = grantViolation(policy, host, price, spentToday, spentTotal)
       if (violation) {
         await recordLedger({ grantId: grant.id, orgId: grant.orgId ?? undefined, host, serviceName: ds.name, amountUsd: 0, ok: false, note: violation })
-        receipts.push({ name: ds.name, endpoint: host, priceUsd: ds.priceUsd ?? '0.01', ok: false, note: `blocked: ${violation}` })
+        receipts.push({ name: ds.name, endpoint: host, priceUsd: ds.priceUsd ?? '0.01', ok: false, note: `blocked: ${violation}`, slug: violation === 'NOT_ALLOWED' ? ds.slug : undefined })
         blocked.push(`${ds.name} (${violation})`)
         continue
       }
@@ -714,7 +717,7 @@ async function runWithBurner(
             const violation = grantViolation(policy, host, price, spentToday, spentTotal)
             if (violation) {
               await recordLedger({ grantId: grant.id, orgId: grant.orgId ?? undefined, host, serviceName: ep.serverName, amountUsd: 0, ok: false, note: violation })
-              receipts.push({ name: ep.serverName, endpoint: host, priceUsd: ep.priceUsd, ok: false, note: `blocked: ${violation}` })
+              receipts.push({ name: ep.serverName, endpoint: host, priceUsd: ep.priceUsd, ok: false, note: `blocked: ${violation}`, slug: violation === 'NOT_ALLOWED' ? ep.serverSlug : undefined })
               blocked.push(`${ep.serverName} (${violation})`)
               continue
             }

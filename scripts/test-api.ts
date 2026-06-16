@@ -775,6 +775,7 @@ async function main() {
           receipts: [
             { name: 'Alpha', priceUsd: '0.01', txHash: '0x' + 'ab'.repeat(32), ok: true },
             { name: 'Beta', priceUsd: '0.01', ok: false, note: 'blocked: NOT_ALLOWED' },
+            { name: 'Gamma', priceUsd: '0.01', ok: false, note: 'blocked: NOT_ALLOWED', slug: 'gamma-svc' },
           ],
         },
       }),
@@ -782,7 +783,7 @@ async function main() {
   ).json()
   const loaded = await (await fetch(`${BASE}/api/chats/${chat.id}`, { headers: C })).json()
   const loadedMsg = loaded.messages?.find((m: { id: string }) => m.id === msg.id)
-  check('meta.receipts + payer round-trip', loadedMsg?.meta?.payer === 'your wallet' && loadedMsg.meta.receipts.length === 2)
+  check('meta.receipts + payer round-trip', loadedMsg?.meta?.payer === 'your wallet' && loadedMsg.meta.receipts.length === 3)
 
   const shared = await (
     await fetch(`${BASE}/api/chats/${chat.id}`, {
@@ -795,6 +796,10 @@ async function main() {
   check(
     'share page renders footnote (total · payer · denial)',
     html.includes('💸') && html.includes('$0.01 over 1 x402 call') && html.includes('· your wallet') && html.includes('blocked: NOT_ALLOWED'),
+  )
+  check(
+    'blocked-for-approval receipt links to /servers/<slug>#approve',
+    html.includes('/servers/gamma-svc#approve'),
   )
 
   // ── Blog (requires BLOG_ADMIN_PK + matching ADMIN_WALLETS on the server) ──
