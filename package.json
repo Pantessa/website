@@ -16,6 +16,7 @@
     "db:reset": "prisma db push --force-reset --accept-data-loss",
     "test:auth": "tsx scripts/test-auth.ts",
     "test:api": "tsx scripts/test-api.ts",
+    "test:vote": "tsx scripts/test-snapshot-vote.ts",
     "postinstall": "prisma generate"
   },
   "dependencies": {
