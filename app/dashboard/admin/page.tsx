@@ -11,8 +11,7 @@ import { Download, Loader2, ShieldAlert } from 'lucide-react'
 import { useSession } from '@/lib/session'
 import { isAdminAddress } from '@/lib/admin'
 import { Card, CardTitle, Kpi, short, timeAgo } from '@/lib/dashboard-ui'
-import { SpendByAgent, SpendOverTime } from '@/components/DashboardCharts'
-import { ActiveWallets, Funnel, WalletsOverTime } from '@/components/AdminCharts'
+import { ActiveWallets, Funnel, SpendByAgent, SpendOverTime, WalletsOverTime } from '@/components/LazyCharts'
 
 interface Overview {
   excludeOwners: boolean
