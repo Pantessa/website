@@ -214,6 +214,15 @@ model SpendGrant {
   /// portable authorization artifact / precursor to an on-chain Spend Permission).
   signature String?
 
+  /// Coinbase Spend Permission backing this grant on-chain — the hard stop the
+  /// advisory pause/budget points at. Null = SDK-advisory only. When set, the
+  /// grant's per-day cap is mirrored by an on-chain SpendPermission (allowance
+  /// over a 1-day period) on a CDP Smart Account, so the wallet contract caps
+  /// spend regardless of the SDK. `Id` = the CDP permission id / userOp hash;
+  /// `Network` = 'base' | 'base-sepolia'. Drives the "Backed on-chain" badge.
+  spendPermissionId      String? @map("spend_permission_id")
+  spendPermissionNetwork String? @map("spend_permission_network")
+
   org       Organization?      @relation(fields: [orgId], references: [id], onDelete: Cascade)
   ledger    SpendLedgerEntry[]
   createdAt DateTime           @default(now()) @map("created_at")

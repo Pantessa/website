@@ -5,7 +5,7 @@
 
 import Link from 'next/link'
 import { useCallback, useEffect, useState } from 'react'
-import { Building2, Loader2, Pause, Play } from 'lucide-react'
+import { Building2, Loader2, Pause, Play, ShieldCheck } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { SpendByAgent, SpendOverTime } from '@/components/LazyCharts'
 import SignGrantButton from '@/components/SignGrantButton'
@@ -153,6 +153,15 @@ export default function DashboardOverviewPage() {
                   toggles (which void signatures server-side) live on their own
                   page now, so navigation back here refreshes the badge. */}
               <SignGrantButton grantId={g.id} />
+              {g.backedOnChain && (
+                <span
+                  className="flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-lg border border-emerald-500/40 text-emerald-400 bg-emerald-500/[0.06]"
+                  title={`Backed on-chain — a Coinbase Spend Permission caps this account in the wallet contract${g.spendPermissionNetwork ? ` (${g.spendPermissionNetwork})` : ''}, a hard stop above the SDK-advisory budget.`}
+                >
+                  <ShieldCheck className="w-3.5 h-3.5 flex-shrink-0" />
+                  Backed on-chain
+                </span>
+              )}
               <button
                 onClick={() => void toggleFreeze(g.id, !g.paused)}
                 disabled={freezing}

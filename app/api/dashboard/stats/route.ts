@@ -47,7 +47,7 @@ export async function GET(req: NextRequest) {
 
   const grants = await prisma.spendGrant.findMany({
     where: { ownerAddress: scopeOwner },
-    select: { id: true, label: true, perCallUsd: true, perDayUsd: true, allow: true, status: true, paused: true, expiresAt: true, createdAt: true },
+    select: { id: true, label: true, perCallUsd: true, perDayUsd: true, allow: true, status: true, paused: true, expiresAt: true, createdAt: true, spendPermissionId: true, spendPermissionNetwork: true },
     orderBy: { createdAt: 'desc' },
   })
   const grantIds = grants.map((g) => g.id)
@@ -128,6 +128,10 @@ export async function GET(req: NextRequest) {
           allowCount: active.allow.length,
           expiresAt: active.expiresAt,
           paused: active.paused,
+          // On-chain backing (Coinbase Spend Permission) — drives the
+          // "Backed on-chain" badge. Null until a permission is created.
+          backedOnChain: !!active.spendPermissionId,
+          spendPermissionNetwork: active.spendPermissionNetwork,
           spentTodayUsd: today,
           spentTotalUsd: totalActive,
           remainingTodayUsd: Math.max(0, active.perDayUsd - today),
