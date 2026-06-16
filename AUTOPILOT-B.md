@@ -73,6 +73,30 @@ n=4 and at n=10,000.
   the 2 owner wallets) so early owner-testing noise can be filtered from the
   real adoption picture.
 
+### Done
+- **B1–B5 + fix** — shipped in PR #105 (admin gate, /api/admin/overview, the
+  CEO page, sidebar, test:api). Post-merge fix: an unaliased `day` column alias
+  (`date_trunc('day', …) day`) is a Postgres syntax error (42601) → the endpoint
+  500'd → the page hung on "Loading…". Fixed (`AS day`) + added a real error
+  state (Retry) + the test:api admin-200 path (via ADMIN_PK) that now exercises
+  the success SQL. **Lesson: always `AS`-alias `date_trunc(...) AS day`, and
+  verify the 200 path, not just the gate.** 93/93 with ADMIN_PK.
+- **B6 — Roster CSV export.** Client-side download of the wallet roster
+  (address, first/last seen, chats, keys, calls, settled, orgs) mirroring the
+  OrgReport `csvEscape` pattern — a CEO pulling the adoption list into a sheet.
+  No new endpoint (the roster is already in the overview JSON).
+
+### Theme 2 findings (checked, no churn shipped)
+- **O3 (indexes): ALREADY SATISFIED.** spend_ledger already has `[ok,createdAt]`,
+  `[grantId,ok,createdAt]`, `[apiKeyId,ok,createdAt]`, `[orgId,ok,createdAt]`;
+  chats/api_keys/agent_approvals/spend_grants/org_members all have their
+  ownerAddress/address indexes. The admin aggregations hit those composites or
+  do inherent full-table union scans (no index helps). Adding indexes would be
+  cargo-cult — skipped.
+- **O4 (SEO/privacy): ALREADY SATISFIED.** robots.ts disallows `/dashboard`
+  (covers `/dashboard/admin`), `/api/`, `/chat/`; sitemap omits dashboard. No
+  change needed.
+
 ## Theme 2 — Website optimization (SECONDARY, fill between B-items)
 - O1 — Lighthouse/perf pass on `/` and `/dashboard` (LCP, CLS, unused JS).
 - O2 — Image/font audit (Newsreader + Geist already; check no layout shift).

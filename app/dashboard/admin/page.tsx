@@ -7,7 +7,7 @@
 // instead of a failed fetch.
 
 import { useCallback, useEffect, useState } from 'react'
-import { Loader2, ShieldAlert } from 'lucide-react'
+import { Download, Loader2, ShieldAlert } from 'lucide-react'
 import { useSession } from '@/lib/session'
 import { isAdminAddress } from '@/lib/admin'
 import { Card, CardTitle, Kpi, short, timeAgo } from '@/lib/dashboard-ui'
@@ -46,6 +46,27 @@ interface Overview {
 }
 
 const usd = (n: number) => `$${n.toFixed(n < 1 ? 4 : 2)}`
+
+function csvEscape(v: string | number): string {
+  const s = String(v)
+  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
+}
+
+/** The wallet roster as a CSV a CEO can drop into a spreadsheet. */
+function rosterToCsv(roster: Overview['roster']): string {
+  const head = ['address', 'first_seen', 'last_active', 'chats', 'keys', 'settled_calls', 'settled_usd', 'orgs']
+  const rows = roster.map((r) => [
+    r.address,
+    r.firstSeen,
+    r.lastActive,
+    r.chats,
+    r.keys,
+    r.okCalls,
+    r.settled.toFixed(6),
+    r.orgs,
+  ])
+  return [head, ...rows].map((row) => row.map(csvEscape).join(',')).join('\n')
+}
 
 export default function AdminPage() {
   const { address } = useSession()
@@ -175,7 +196,23 @@ export default function AdminPage() {
 
       {/* Wallet roster */}
       <Card className="mt-3">
-        <CardTitle>Wallets ({data.roster.length})</CardTitle>
+        <div className="flex items-center justify-between gap-3 mb-3">
+          <CardTitle>Wallets ({data.roster.length})</CardTitle>
+          <button
+            className="flex items-center gap-1.5 text-[11px] px-3 rounded-md min-h-[36px] bg-white text-zinc-950 hover:bg-zinc-200 disabled:opacity-50 transition-colors"
+            onClick={() => {
+              const blob = new Blob([rosterToCsv(data.roster)], { type: 'text/csv;charset=utf-8' })
+              const a = document.createElement('a')
+              a.href = URL.createObjectURL(blob)
+              a.download = `yeetful-wallets-${new Date().toISOString().slice(0, 10)}.csv`
+              a.click()
+              URL.revokeObjectURL(a.href)
+            }}
+            disabled={data.roster.length === 0}
+          >
+            <Download className="w-3.5 h-3.5" /> CSV
+          </button>
+        </div>
         <div className="overflow-x-auto -mx-1 px-1">
           <table className="w-full text-sm min-w-[640px]">
             <thead>
