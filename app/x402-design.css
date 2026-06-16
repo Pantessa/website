@@ -595,8 +595,11 @@
   .blog__card { border: 1px solid var(--line); background: var(--surf-1); border-radius: 14px; overflow: hidden; transition: border-color .18s, background .18s; }
   .blog__card:hover { border-color: var(--line-2); background: var(--surf-2); }
   .blog__cardlink { display: block; padding: 20px; }
-  .blog__cover { width: 100%; height: auto; border-radius: 10px; border: 1px solid var(--line); display: block; margin-bottom: 14px; }
-  .blog__cover--hero { margin: 26px 0 0; }
+  /* aspect-ratio reserves the box height before the (dynamic, dimension-less)
+     cover image loads → no layout shift (CLS) on blog list + post. object-fit
+     keeps it from distorting. */
+  .blog__cover { width: 100%; aspect-ratio: 16 / 9; object-fit: cover; border-radius: 10px; border: 1px solid var(--line); display: block; margin-bottom: 14px; }
+  .blog__cover--hero { aspect-ratio: 2 / 1; margin: 26px 0 0; }
   .blog__cardtitle { font-family: 'Archivo', sans-serif; font-weight: 700; font-size: 19px; letter-spacing: -0.02em; line-height: 1.25; }
   .blog__carddesc { font-size: 13.5px; color: var(--muted); line-height: 1.5; margin-top: 8px; }
   .blog__cardmeta { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 12px; font-size: 11.5px; color: var(--muted-2); }
