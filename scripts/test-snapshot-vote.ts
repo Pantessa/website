@@ -123,6 +123,23 @@ console.log('parseVoteIntent:')
 
   const h = parseVoteIntent('what are the latest proposals?')
   check('non-vote message ignored', h.isVote === false)
+
+  // Continuation turns (route is stateless): the clarifying reply tells the user
+  // to paste the proposal id or pick an option — those must re-enter the vote
+  // flow even without the word "vote", or the chat loops (repeating-questions bug).
+  const i = parseVoteIntent('0x' + 'b'.repeat(64))
+  check('bare proposal id → vote intent (verb-free continuation)', i.isVote && i.proposalId === '0x' + 'b'.repeat(64))
+
+  const j = parseVoteIntent('option 2')
+  check('bare "option 2" → vote intent', j.isVote && j.choiceText === 'option 2')
+
+  // Still conservative: a lone choice word or a lone DAO name is NOT a vote
+  // (too ambiguous without chat history — left to the history-based follow-up).
+  const k = parseVoteIntent('for')
+  check('bare choice word (no verb) → not a vote', k.isVote === false)
+
+  const l = parseVoteIntent('tell me about aave.eth')
+  check('lone DAO name → not a vote (space captured, intent false)', l.isVote === false && l.spaceHint === 'aave.eth')
 }
 
 console.log('friendlyVoteError:')
