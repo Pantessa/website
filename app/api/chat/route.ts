@@ -12,6 +12,7 @@ import {
   type SigningRequest,
 } from '@/lib/x402'
 import type { McpServer } from '@/lib/store'
+import { voteRequestFromToolResult, type VoteRequest } from '@/lib/snapshot-vote'
 import { getSessionAddress } from '@/lib/auth'
 import { grantViolation, type GrantPolicy } from '@/lib/spend-grant'
 import {
@@ -484,6 +485,10 @@ async function runWithBurner(
 ) {
   const receipts: Receipt[] = []
   const contextBlocks: string[] = []
+  // A vote built by the snapshot MCP's prepare_vote tool, hoisted out of the
+  // tool result so the chat can render a Sign-vote button instead of dumping
+  // the EIP-712 typed data into the inference prompt.
+  let voteRequest: VoteRequest | null = null
 
   // Load the signed-in owner's active spend grant. When one exists, every
   // burner payment is gated by it (expiry → allowlist → per-call → per-day) and
@@ -544,7 +549,15 @@ async function runWithBurner(
       if (!res.ok) throw new Error(await failureReason(res))
       const data = parseMcpDataResult(res.headers.get('content-type') ?? '', await res.text())
       const txHash = decodeSettlement(res)?.transaction
-      contextBlocks.push(`### ${ds.name}\n${truncate(JSON.stringify(data), 1500)}`)
+      // prepare_vote returns a sign_vote payload — surface it as a button rather
+      // than feeding the raw typed data to the model.
+      const vote = voteRequestFromToolResult(data)
+      if (vote) {
+        voteRequest = vote
+        contextBlocks.push(`### ${ds.name}\nPrepared a vote for the user to sign: ${vote.summary}`)
+      } else {
+        contextBlocks.push(`### ${ds.name}\n${truncate(JSON.stringify(data), 1500)}`)
+      }
       receipts.push({ name: ds.name, endpoint: host, priceUsd: ds.priceUsd ?? '0.01', txHash, ok: true })
       if (grant) {
         await recordLedger({ grantId: grant.id, orgId: grant.orgId ?? undefined, host, serviceName: ds.name, amountUsd: price, ok: true, txHash, note: 'settled' })
@@ -646,7 +659,7 @@ async function runWithBurner(
     reply += `\n\n— spend grant “${grant.label}”: $${spentToday.toFixed(2)}/$${policy.perDayUsd} today`
     if (blocked.length) reply += ` · blocked ${blocked.join(', ')}`
   }
-  return NextResponse.json({ reply, receipts, payer: 'the house wallet' })
+  return NextResponse.json({ reply, receipts, payer: 'the house wallet', voteRequest: voteRequest ?? undefined })
 }
 
 async function paidGet(endpoint: string, queryParam: string, value: string) {

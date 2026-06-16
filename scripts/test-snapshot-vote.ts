@@ -1,0 +1,99 @@
+// Unit checks for the Snapshot vote helpers (no network). Run: npx tsx scripts/test-snapshot-vote.ts
+import {
+  toSignable,
+  voteRequestFromToolResult,
+  voteRequestOf,
+  type VoteTypedData,
+} from '../lib/snapshot-vote'
+
+let passed = 0
+let failed = 0
+function check(name: string, cond: boolean) {
+  if (cond) {
+    passed++
+    console.log(`  ✓ ${name}`)
+  } else {
+    failed++
+    console.error(`  ✗ ${name}`)
+  }
+}
+
+function tdOf(choiceType: string, choice: unknown): VoteTypedData {
+  return {
+    domain: { name: 'snapshot', version: '0.1.4' },
+    types: {
+      Vote: [
+        { name: 'from', type: 'address' },
+        { name: 'space', type: 'string' },
+        { name: 'timestamp', type: 'uint64' },
+        { name: 'proposal', type: 'bytes32' },
+        { name: 'choice', type: choiceType },
+        { name: 'reason', type: 'string' },
+        { name: 'app', type: 'string' },
+        { name: 'metadata', type: 'string' },
+      ],
+    },
+    primaryType: 'Vote',
+    message: {
+      from: '0x1111111111111111111111111111111111111111',
+      space: 'aave.eth',
+      timestamp: 1_700_000_000,
+      proposal: '0x' + 'a'.repeat(64),
+      choice: choice as never,
+      reason: '',
+      app: 'yeetful',
+      metadata: '{}',
+    },
+  }
+}
+
+console.log('toSignable — uint fields → BigInt:')
+{
+  const s = toSignable(tdOf('uint32', 2))
+  check('timestamp → bigint', typeof s.message.timestamp === 'bigint' && s.message.timestamp === BigInt(1700000000))
+  check('uint32 choice → bigint', s.message.choice === BigInt(2))
+  check('string proposal stays string', s.message.proposal === '0x' + 'a'.repeat(64))
+}
+{
+  const s = toSignable(tdOf('uint32[]', [1, 3]))
+  const c = s.message.choice as bigint[]
+  check('uint32[] choice → bigint[]', Array.isArray(c) && c[0] === BigInt(1) && c[1] === BigInt(3))
+}
+{
+  const s = toSignable(tdOf('string', '{"1":1,"2":2}'))
+  check('string choice stays string', s.message.choice === '{"1":1,"2":2}')
+}
+
+console.log('voteRequestFromToolResult:')
+{
+  const td = tdOf('uint32', 1)
+  const valid = voteRequestFromToolResult({
+    action: 'sign_vote',
+    proposal: { id: td.message.proposal, title: 'Test', type: 'basic', choices: ['For', 'Against'], space: 'aave.eth' },
+    choice: 1,
+    choiceLabels: ['For'],
+    summary: 'Vote on Test',
+    typedData: td,
+  })
+  check('parses a valid sign_vote payload', valid !== null && valid.proposal.id === td.message.proposal)
+  check('carries choiceLabels', valid?.choiceLabels?.[0] === 'For')
+  check('rejects non-sign_vote', voteRequestFromToolResult({ foo: 'bar' }) === null)
+  check('rejects missing typedData', voteRequestFromToolResult({ action: 'sign_vote', proposal: { id: '0x1' } }) === null)
+}
+
+console.log('voteRequestOf(meta):')
+{
+  const td = tdOf('uint32', 1)
+  const vr = {
+    proposal: { id: td.message.proposal, title: 'T', type: 'basic', choices: ['For'], space: 'x.eth' },
+    choice: 1,
+    summary: 's',
+    typedData: td,
+  }
+  check('extracts voteRequest from meta', voteRequestOf({ voteRequest: vr }) !== null)
+  check('null on receipts-only meta', voteRequestOf({ receipts: [] }) === null)
+  check('null on undefined meta', voteRequestOf(undefined) === null)
+}
+
+console.log(`\n${passed} passed, ${failed} failed`)
+process.exit(failed === 0 ? 0 : 1)

@@ -7,6 +7,8 @@ import { Send, Zap, Check, Plus, Loader2, Bot, User, PanelLeft, PanelLeftClose }
 import { useAccount, useSignTypedData } from 'wagmi'
 import { cn } from '@/lib/utils'
 import MessageReceipts from '@/components/MessageReceipts'
+import SignVoteButton from '@/components/SignVoteButton'
+import { voteRequestOf } from '@/lib/snapshot-vote'
 import { useYeetfulStore } from '@/lib/store'
 import BrandIcon from '@/components/BrandIcon'
 import ShareButton from '@/components/ShareButton'
@@ -33,6 +35,17 @@ interface PaymentToSign {
   signing: SigningRequest
 }
 
+
+/** Build the assistant message meta from receipts + an optional vote request. */
+function buildMeta(receipts: unknown, payer: unknown, voteRequest: unknown) {
+  const meta: Record<string, unknown> = {}
+  if (Array.isArray(receipts) && receipts.length) {
+    meta.receipts = receipts
+    if (typeof payer === 'string') meta.payer = payer
+  }
+  if (voteRequest && typeof voteRequest === 'object') meta.voteRequest = voteRequest
+  return Object.keys(meta).length ? meta : undefined
+}
 
 /** Sum settled receipts into one chat_paid event (no-op when nothing paid). */
 function trackPaidReceipts(receipts: unknown) {
@@ -128,17 +141,15 @@ export default function ChatInterface() {
         addMessage(chatId, {
           role: 'assistant',
           content: out.reply,
-          meta: out.receipts?.length ? { receipts: out.receipts, payer: out.payer } : undefined,
+          // voteRequest is produced by the burner path; wallet mode has none yet.
+          meta: buildMeta(out.receipts, out.payer, undefined),
         })
       } else {
         trackPaidReceipts(data.receipts)
         addMessage(chatId, {
           role: 'assistant',
           content: data.reply || data.error || 'No response.',
-          meta:
-            Array.isArray(data.receipts) && data.receipts.length
-              ? { receipts: data.receipts, payer: typeof data.payer === 'string' ? data.payer : undefined }
-              : undefined,
+          meta: buildMeta(data.receipts, data.payer, data.voteRequest),
         })
       }
     } catch (err) {
@@ -303,6 +314,11 @@ export default function ChatInterface() {
                   >
                     <pre className="whitespace-pre-wrap font-sans [overflow-wrap:anywhere]">{msg.content}</pre>
                     {msg.role === 'assistant' && <MessageReceipts meta={msg.meta} />}
+                    {msg.role === 'assistant' &&
+                      (() => {
+                        const vote = voteRequestOf(msg.meta)
+                        return vote ? <SignVoteButton vote={vote} /> : null
+                      })()}
                   </div>
                 </motion.div>
               ))}
