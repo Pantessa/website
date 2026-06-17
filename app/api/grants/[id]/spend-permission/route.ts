@@ -4,6 +4,7 @@ import { getAuthAddress } from '@/lib/api-key'
 import { getSessionAddress } from '@/lib/auth'
 import { requireRole, type OrgRole } from '@/lib/org'
 import { spendPermissionSummary } from '@/lib/spend-permission'
+import { isCdpConfigured, createGrantSpendPermission } from '@/lib/cdp'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -22,15 +23,6 @@ async function canAccessGrant(
   const session = await getSessionAddress()
   if (!session) return false
   return (await requireRole(grant.orgId, session, minRole)).ok
-}
-
-/** Is the CDP server-wallet flow provisioned? Creating a Spend Permission needs
- *  the wallet secret (POST/sign auth) on top of the API key — see lib/cdp.ts
- *  (slice 2). The API key id/secret alone are NOT enough. */
-function isCdpConfigured(): boolean {
-  return Boolean(
-    process.env.CDP_API_KEY_ID && process.env.CDP_API_KEY_SECRET && process.env.CDP_WALLET_SECRET,
-  )
 }
 
 // Read the on-chain backing status for a grant + the exact terms its per-day cap
@@ -57,13 +49,11 @@ export async function GET(req: NextRequest, { params }: Params) {
 }
 
 // Back this grant on-chain with a Coinbase Spend Permission. SIWE admin only
-// (a Bearer key never provisions its own on-chain cap).
-//
-// Slice 1: the live create (CdpClient.createSpendPermission on a funded Smart
-// Account) is owner-gated — it needs CDP_WALLET_SECRET + a funded CDP Smart
-// Account + the paymaster. Until those are set this returns 503 with the exact
-// missing steps, so the dashboard control is wired and honest. Slice 2 fills in
-// lib/cdp.ts and writes spendPermissionId/Network back onto the grant.
+// (a Bearer key never provisions its own on-chain cap). Creates the permission
+// via CDP (lib/cdp.ts) mirroring the grant's per-day cap, then persists
+// spendPermissionId + network on the grant. Returns 503 with the exact missing
+// steps when CDP isn't provisioned. Defaults to Base Sepolia until a mainnet
+// Smart Account is funded (CDP_SPEND_NETWORK=base).
 export async function POST(req: NextRequest, { params }: Params) {
   const { id } = await params
   const addr = await getAuthAddress(req)
@@ -88,11 +78,41 @@ export async function POST(req: NextRequest, { params }: Params) {
     )
   }
 
-  // Slice 2 wires the live create here (lib/cdp.ts):
-  //   createSpendPermission(grantToSpendPermission(grant, { account, spender }))
-  //   → persist spendPermissionId + spendPermissionNetwork on the grant.
-  return NextResponse.json(
-    { error: 'Live Spend Permission create lands in the next slice.' },
-    { status: 501 },
-  )
+  // Already backed? Idempotent — return the existing permission.
+  if (grant.spendPermissionId) {
+    return NextResponse.json({
+      backed: true,
+      spendPermissionId: grant.spendPermissionId,
+      network: grant.spendPermissionNetwork,
+      alreadyBacked: true,
+    })
+  }
+
+  try {
+    const created = await createGrantSpendPermission({
+      perDayUsd: grant.perDayUsd,
+      createdAt: grant.createdAt,
+      expiresAt: grant.expiresAt,
+    })
+    const updated = await prisma.spendGrant.update({
+      where: { id },
+      data: { spendPermissionId: created.id, spendPermissionNetwork: created.network },
+      select: { spendPermissionId: true, spendPermissionNetwork: true },
+    })
+    return NextResponse.json({
+      backed: true,
+      spendPermissionId: updated.spendPermissionId,
+      network: updated.spendPermissionNetwork,
+      account: created.account,
+      spender: created.spender,
+      allowanceAtomic: created.allowanceAtomic,
+    })
+  } catch (e) {
+    // Surface the CDP error so the dashboard shows something actionable
+    // (e.g. unfunded account / paymaster not enabled) rather than a bare 500.
+    return NextResponse.json(
+      { error: 'CDP create failed', detail: e instanceof Error ? e.message : String(e) },
+      { status: 502 },
+    )
+  }
 }
