@@ -1,24 +1,8 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
-import CopyBlock from '@/components/CopyBlock'
 import { DOCS_PAGES, docsJsonLd, docsUrl } from '@/lib/docs'
 
 const PAGE = DOCS_PAGES.find((p) => p.slug === 'launchpad')!
-
-// Paste into Claude Code (or any coding agent) inside your MCP repo — it asks
-// for your address and writes the proof file for you, no manual steps.
-const CLAIM_PROMPT = `I'm claiming this MCP on Yeetful's launchpad, which verifies ownership by reading a file from this repo.
-
-Please:
-1. Ask me for my Ethereum wallet address (the one I'll claim with).
-2. Create a file at .well-known/yeetful-claim.txt in the repo root containing exactly one line:
-
-   yeetful-claim <MY_ADDRESS>
-
-   (substitute the address I give you — nothing else on the line).
-3. Commit and push it to the default branch.
-
-Then tell me to finish claiming at yeetful.com/servers/<my-mcp-slug>.`
 
 export const metadata: Metadata = {
   title: PAGE.seoTitle,
@@ -36,10 +20,10 @@ export default function LaunchpadDocsPage() {
       </p>
       <h1 className="docs__h1">Launchpad: claim &amp; launch</h1>
       <p className="docs__lead">
-        Own a piece of an MCP. Its operator <strong>claims</strong> it by proving control of the
-        GitHub repo behind it, <strong>launches</strong> a token on a bonding curve, and from then
-        on a share of <em>every paid call</em> flows to whoever stakes the token — in USDC, as the
-        agents work. The better the MCP does, the more value flows.
+        Own a piece of an MCP. Its operator <strong>claims</strong>{' '}it by signing in with the
+        wallet it&apos;s paid to, <strong>launches</strong> a token on a bonding curve, and from then on a
+        share of <em>every paid call</em> flows to whoever stakes the token — in USDC, as the agents
+        work. The better the MCP does, the more value flows.
       </p>
 
       <div className="docs__prose">
@@ -60,41 +44,31 @@ export default function LaunchpadDocsPage() {
 
         <h2>Step 1 — Claim your MCP</h2>
         <p>
-          Claiming proves you operate the MCP, by proving you control its GitHub repo. It binds the
-          MCP to your wallet — the creator-of-record for its token.
+          Claiming binds the MCP to your wallet — the creator-of-record for its token. You prove you
+          operate it by signing in with the wallet it&apos;s <strong>paid to</strong>: the x402{' '}
+          <code>payTo</code>{' '}receiver in your MCP&apos;s own config. Yeetful reads that address
+          straight from your MCP&apos;s 402 challenge — so only whoever collects its revenue can
+          claim it. No file, no DNS, no deploy.
         </p>
-
-        <h3>The easy way — let Claude Code do it</h3>
-        <p>
-          Paste this into Claude Code (or any coding agent) <em>inside your MCP&apos;s repo</em>. It
-          asks for your wallet address and writes the proof file for you — no manual steps.
-        </p>
-        <CopyBlock text={CLAIM_PROMPT} label="Copy prompt" />
-
-        <h3>Or do it by hand</h3>
-        <p>
-          Commit a file at <code>.well-known/yeetful-claim.txt</code> in the repo root containing one
-          line — your wallet address, nothing else:
-        </p>
-        <pre>
-          <code>{`yeetful-claim 0xYourWalletAddress`}</code>
-        </pre>
-
-        <h3>Then finish on your service page</h3>
         <ol>
           <li>
-            Open your service page at <code>yeetful.com/servers/&lt;your-mcp&gt;</code>, find the{' '}
-            <strong>Token</strong> panel, connect your wallet, and sign in.
+            Open your service page at <code>yeetful.com/servers/&lt;your-mcp&gt;</code> and find the{' '}
+            <strong>Token</strong> panel.
           </li>
+          <li>Connect the wallet your MCP is paid to (its x402 receiver) and sign in.</li>
           <li>
-            Enter the repo as <code>owner/name</code> and click <strong>Claim</strong>. Yeetful
-            reads the file back and, if it names your wallet, records the claim.
+            Click <strong>Claim</strong>. Yeetful checks your wallet against the <code>payTo</code>{' '}
+            the MCP itself returns — match, and it&apos;s yours.
           </li>
         </ol>
         <p>
-          Under the hood that&apos;s <code>POST /api/mcp/&lt;slug&gt;/claim</code> with{' '}
-          <code>{`{ repo }`}</code>, gated by your SIWE session. You can release a claim from the
-          same panel. Write access to the repo <em>is</em> the proof — no OAuth app, no secrets.
+          That&apos;s <code>POST /api/mcp/&lt;slug&gt;/claim</code>, gated by your SIWE session. You
+          can release the claim from the same panel.
+        </p>
+        <p className="mono" style={{ color: 'var(--smoke)' }}>
+          Don&apos;t control the payee wallet — e.g. your MCP runs behind a shared gateway whose
+          address you don&apos;t hold? It needs <strong>admin verification</strong>; reach out and
+          Yeetful will verify it.
         </p>
 
         <h2>Step 2 — Launch the token</h2>
