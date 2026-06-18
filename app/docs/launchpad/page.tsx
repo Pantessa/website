@@ -1,8 +1,24 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
+import CopyBlock from '@/components/CopyBlock'
 import { DOCS_PAGES, docsJsonLd, docsUrl } from '@/lib/docs'
 
 const PAGE = DOCS_PAGES.find((p) => p.slug === 'launchpad')!
+
+// Paste into Claude Code (or any coding agent) inside your MCP repo — it asks
+// for your address and writes the proof file for you, no manual steps.
+const CLAIM_PROMPT = `I'm claiming this MCP on Yeetful's launchpad, which verifies ownership by reading a file from this repo.
+
+Please:
+1. Ask me for my Ethereum wallet address (the one I'll claim with).
+2. Create a file at .well-known/yeetful-claim.txt in the repo root containing exactly one line:
+
+   yeetful-claim <MY_ADDRESS>
+
+   (substitute the address I give you — nothing else on the line).
+3. Commit and push it to the default branch.
+
+Then tell me to finish claiming at yeetful.com/servers/<my-mcp-slug>.`
 
 export const metadata: Metadata = {
   title: PAGE.seoTitle,
@@ -47,16 +63,25 @@ export default function LaunchpadDocsPage() {
           Claiming proves you operate the MCP, by proving you control its GitHub repo. It binds the
           MCP to your wallet — the creator-of-record for its token.
         </p>
-        <ol>
-          <li>
-            In the repo that backs your MCP, commit a file at{' '}
-            <code>.well-known/yeetful-claim.txt</code> containing one line:
-          </li>
-        </ol>
+
+        <h3>The easy way — let Claude Code do it</h3>
+        <p>
+          Paste this into Claude Code (or any coding agent) <em>inside your MCP&apos;s repo</em>. It
+          asks for your wallet address and writes the proof file for you — no manual steps.
+        </p>
+        <CopyBlock text={CLAIM_PROMPT} label="Copy prompt" />
+
+        <h3>Or do it by hand</h3>
+        <p>
+          Commit a file at <code>.well-known/yeetful-claim.txt</code> in the repo root containing one
+          line — your wallet address, nothing else:
+        </p>
         <pre>
           <code>{`yeetful-claim 0xYourWalletAddress`}</code>
         </pre>
-        <ol start={2}>
+
+        <h3>Then finish on your service page</h3>
+        <ol>
           <li>
             Open your service page at <code>yeetful.com/servers/&lt;your-mcp&gt;</code>, find the{' '}
             <strong>Token</strong> panel, connect your wallet, and sign in.

@@ -94,9 +94,9 @@ export const DOCS_PAGES: DocsPage[] = [
     seoTitle: 'Yeetful launchpad — claim your MCP and launch its token',
     description:
       'Own a piece of an MCP. Claim it by proving control of its GitHub repo, launch a token, and earn a share of every paid call in USDC as agents use it.',
-    // Internal/testnet for now — reachable at /docs/launchpad but not yet in the
-    // public nav/sitemap (pending mainnet + counsel). Flip to true to publish.
-    ready: false,
+    // Testnet, but listed in the nav so operators can find the claim/launch
+    // walk-through. (The page itself states the testnet/mainnet status.)
+    ready: true,
   },
 ]
 
