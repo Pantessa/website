@@ -59,7 +59,10 @@ export default async function TokenPanel({
             {panel.owner && (
               <span>
                 <span style={labelStyle}>creator </span>
-                {panel.owner.githubLogin ?? shortAddr(panel.owner.ownerAddress)}
+                {shortAddr(panel.owner.ownerAddress)}{' '}
+                <span style={{ color: 'var(--accent)' }} title={`Verified via ${panel.owner.verifiedVia}`}>
+                  ✓
+                </span>
               </span>
             )}
           </div>
@@ -78,9 +81,15 @@ export default async function TokenPanel({
       {panel.state === 'claimed' && (
         <div style={boxStyle}>
           <p style={{ margin: 0 }}>
-            Claimed by{' '}
-            <strong>{panel.owner?.githubLogin ?? shortAddr(panel.owner?.ownerAddress ?? '')}</strong>
-            {panel.owner?.repo ? ` (${panel.owner.repo})` : ''}. Token not launched yet.
+            Claimed by <strong>{shortAddr(panel.owner?.ownerAddress ?? '')}</strong>{' '}
+            <span
+              className="mono"
+              title={`Verified via ${panel.owner?.verifiedVia}`}
+              style={{ color: 'var(--accent)', fontSize: 13 }}
+            >
+              ✓ verified
+            </span>
+            . Token not launched yet.
           </p>
           <p className="mono" style={{ margin: 0, fontSize: 14, ...labelStyle }}>
             Once a token launches, {pct}% of every paid call settles to stakers.
@@ -97,7 +106,7 @@ export default async function TokenPanel({
             value flows.
           </p>
           <p className="mono" style={{ margin: 0, fontSize: 14, ...labelStyle }}>
-            Operate this MCP? Claim it by proving control of its GitHub repo.
+            Operate this MCP? Claim it by signing in with the wallet it&apos;s paid to.
           </p>
           <ClaimMcp slug={slug} ownerAddress={null} />
         </div>

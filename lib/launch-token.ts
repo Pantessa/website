@@ -20,7 +20,7 @@ function chainCfg() {
 
 export type TokenPanelData = {
   state: 'unclaimed' | 'claimed' | 'launched'
-  owner: { ownerAddress: string; repo: string; githubLogin: string | null } | null
+  owner: { ownerAddress: string; verifiedVia: string } | null
   token: { address: string; staking: string; totalStaked: string; explorerUrl: string } | null
   /** Maker-side take rate routed to stakers, in basis points (default 10%). */
   feeShareBps: number
@@ -33,7 +33,7 @@ export async function getTokenPanel(server: {
 }): Promise<TokenPanelData> {
   const ownerRow = await prisma.mcpOwner.findUnique({ where: { mcpSlug: server.slug } }).catch(() => null)
   const owner = ownerRow
-    ? { ownerAddress: ownerRow.ownerAddress, repo: ownerRow.repo, githubLogin: ownerRow.githubLogin }
+    ? { ownerAddress: ownerRow.ownerAddress, verifiedVia: ownerRow.verifiedVia }
     : null
   const feeShareBps = Number(process.env.LAUNCH_FEE_SHARE_BPS ?? '1000')
 

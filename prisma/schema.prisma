@@ -110,8 +110,15 @@ model McpOwner {
   id           String   @id @default(cuid())
   mcpSlug      String   @unique @map("mcp_slug") // the claimed McpServer.slug
   ownerAddress String   @map("owner_address") // lowercased, SIWE-verified
-  repo         String // "owner/name" on GitHub
-  githubLogin  String?  @map("github_login") // repo owner login (display)
+  /// How ownership was proven. 'receiver' = signed in with the wallet the MCP's
+  /// x402 `payTo` is set to (read from its own 402 challenge — proves control of
+  /// the account that collects the MCP's revenue). 'admin' = a Yeetful admin
+  /// verified it (endpoint unreadable / shared-gateway payee / Yeetful's own).
+  verifiedVia  String   @default("receiver") @map("verified_via")
+  /// The endpoint host ownership was checked against (e.g. anthropic.yeetful.com).
+  verifiedHost String?  @map("verified_host")
+  repo         String?  // optional: link to the MCP's source repo (display only, NOT the proof)
+  githubLogin  String?  @map("github_login")
   claimedAt    DateTime @default(now()) @map("claimed_at")
   updatedAt    DateTime @updatedAt @map("updated_at")
 
