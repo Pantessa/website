@@ -363,6 +363,27 @@ async function main() {
     mineRes.status === 200 && Array.isArray(mine) && mine.length === 0,
   )
 
+  // Earn side: receipt ingestion (POST /api/mcp/receipts) + earnings rollup.
+  const recNoAuth = await fetch(`${BASE}/api/mcp/receipts`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ mcp: 'yeetful-claude', amountUsd: 0.01 }),
+  })
+  check('earn receipts: no auth → 401', recNoAuth.status === 401)
+  // The harness wallet hasn't claimed anything → can't report for any MCP.
+  const recUnowned = await fetch(`${BASE}/api/mcp/receipts`, {
+    method: 'POST',
+    headers: CJ,
+    body: JSON.stringify({ mcp: 'yeetful-claude', amountUsd: 0.01 }),
+  })
+  check('earn receipts: reporting an MCP you do not own → 403/404', [403, 404].includes(recUnowned.status))
+  const earnRes = await fetch(`${BASE}/api/dashboard/earnings`, { headers: C })
+  const earn = await earnRes.json()
+  check(
+    'earnings rollup: authed → kpis shape (zero for a fresh wallet)',
+    earnRes.status === 200 && earn.kpis?.callsServed === 0 && Array.isArray(earn.byMcp) && earn.series30d?.length === 30,
+  )
+
   // ── Public activity feed (Run 7: anonymized network proof-of-life) ───────
   console.log('— public activity')
   // Seed a DENIAL receipt too — the public feed must aggregate it, not list it.
