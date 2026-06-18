@@ -3,6 +3,7 @@
 
 import prisma from '@/lib/db'
 import type { GrantPolicy } from '@/lib/spend-grant'
+import { routeSettledFee } from '@/lib/launch-fees'
 
 /** UTC midnight — the per-day budget window boundary. */
 function utcMidnight(): Date {
@@ -54,7 +55,13 @@ export async function recordLedger(entry: {
   apiKeyId?: string
   orgId?: string
 }) {
-  return prisma.spendLedgerEntry.create({ data: entry })
+  const created = await prisma.spendLedgerEntry.create({ data: entry })
+  // Launchpad (M4b): on a real settlement, route a cut to the MCP's stakers.
+  // Gated + fire-and-forget — a no-op until the launchpad is deployed/configured.
+  if (entry.ok && entry.note === 'settled' && entry.serviceName && entry.amountUsd > 0) {
+    void routeSettledFee(entry.serviceName, entry.amountUsd)
+  }
+  return created
 }
 
 /** USD an org settled since UTC midnight, across ALL its keys and grants —
