@@ -98,6 +98,14 @@ export const DOCS_PAGES: DocsPage[] = [
     // walk-through. (The page itself states the testnet/mainnet status.)
     ready: true,
   },
+  {
+    slug: 'earn',
+    title: 'Track MCP earnings',
+    seoTitle: 'Track MCP earnings — report paid calls to your dashboard',
+    description:
+      'Add one async, non-blocking call to your MCP and every paid request shows up on your Yeetful dashboard: total earned, last 30 days, calls served, and paying agents.',
+    ready: true,
+  },
 ]
 
 export const readyPages = () => DOCS_PAGES.filter((p) => p.ready)

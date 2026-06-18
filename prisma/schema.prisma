@@ -133,6 +133,29 @@ model McpOwner {
   @@map("mcp_owners")
 }
 
+/// Earn-side ledger: one row per paid call an MCP *served* (the payee side of the
+/// control plane, mirroring SpendLedgerEntry on the payer side). Reported by the
+/// MCP itself via POST /api/mcp/receipts (Bearer key → must own the slug), so it's
+/// self-reported telemetry for rich/real-time analytics — on-chain receiver
+/// activity is the trust layer. ownerAddress is denormalized (lowercased) so
+/// earnings are queryable per wallet and survive a re-claim.
+model McpReceipt {
+  id           String   @id @default(cuid())
+  mcpSlug      String   @map("mcp_slug") // the McpServer.slug that served the call
+  ownerAddress String   @map("owner_address") // payee wallet at report time (lowercased)
+  payer        String?  // the paying agent's wallet (lowercased), if the MCP reports it
+  amountUsd    Float    @map("amount_usd")
+  tool         String?  // MCP tool / resource the call hit (display)
+  network      String?  // e.g. "base"
+  txHash       String?  @map("tx_hash")
+  apiKeyId     String?  @map("api_key_id") // which key reported it
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  @@index([mcpSlug, createdAt])
+  @@index([ownerAddress, createdAt])
+  @@map("mcp_receipts")
+}
+
 /// A chat owned by a wallet address (verified via SIWE — see lib/auth.ts).
 /// Private by default; the owner can opt in to a public, unlisted share link
 /// (publicSlug). The sharing UI lands in a later branch — the schema is ready.

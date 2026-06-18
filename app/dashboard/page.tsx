@@ -10,6 +10,7 @@ import { cn } from '@/lib/utils'
 import { SpendByAgent, SpendOverTime } from '@/components/LazyCharts'
 import SignGrantButton from '@/components/SignGrantButton'
 import { Card, CardTitle, Kpi, type Stats } from '@/lib/dashboard-ui'
+import EarnPanel from '@/components/EarnPanel'
 import { useOrgStore } from '@/lib/org-store'
 
 export default function DashboardOverviewPage() {
@@ -247,6 +248,12 @@ export default function DashboardOverviewPage() {
           <CardTitle>Spend by service</CardTitle>
           <SpendByAgent perAgent={stats.perAgent ?? []} />
         </Card>
+      </div>
+
+      {/* The earn side: revenue from MCPs this wallet operates. Self-hides until
+          a claimed server reports its first paid call. */}
+      <div className="mt-6">
+        <EarnPanel />
       </div>
     </>
   )
