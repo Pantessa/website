@@ -2,6 +2,13 @@ import Link from 'next/link'
 import { ExternalLink } from 'lucide-react'
 import { getTokenPanel, feeSharePct, shortAddr } from '@/lib/launch-token'
 import ClaimMcp from '@/components/ClaimMcp'
+import LaunchToken from '@/components/LaunchToken'
+
+/** A reasonable default ticker from the MCP name/slug (the owner can edit it). */
+function defaultTicker(name: string, slug: string): string {
+  const fromName = (name.match(/[A-Za-z0-9]+/g) ?? []).join('')
+  return (fromName || slug.replace(/[^A-Za-z0-9]/g, '')).slice(0, 6).toUpperCase() || 'MCP'
+}
 
 /**
  * Per-MCP token panel on the service page (x402-launch M6). Read-only: shows the
@@ -10,10 +17,12 @@ import ClaimMcp from '@/components/ClaimMcp'
  */
 export default async function TokenPanel({
   slug,
+  name,
   tokenAddress,
   stakingAddress,
 }: {
   slug: string
+  name: string
   tokenAddress: string | null
   stakingAddress: string | null
 }) {
@@ -94,6 +103,12 @@ export default async function TokenPanel({
           <p className="mono" style={{ margin: 0, fontSize: 14, ...labelStyle }}>
             Once a token launches, {pct}% of every paid call settles to stakers.
           </p>
+          <LaunchToken
+            slug={slug}
+            name={name}
+            defaultSymbol={defaultTicker(name, slug)}
+            ownerAddress={panel.owner?.ownerAddress ?? ''}
+          />
           <ClaimMcp slug={slug} ownerAddress={panel.owner?.ownerAddress ?? null} />
         </div>
       )}

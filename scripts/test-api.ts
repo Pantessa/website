@@ -995,6 +995,17 @@ async function main() {
     check('claim a real MCP as a non-payee wallet → rejected (400)', notPayee.status === 400)
   }
 
+  // ── Launch token (link an on-chain launch to the directory) ───────────────
+  console.log('— launch token')
+  const launchAnon = await fetch(`${BASE}/api/mcp/__nope__/launch`, { method: 'POST' })
+  check('launch without session → 401', launchAnon.status === 401)
+  const launchUnknown = await fetch(`${BASE}/api/mcp/__nope__/launch`, { method: 'POST', headers: C })
+  check('launch signed-in, unknown MCP → 404', launchUnknown.status === 404)
+  if (someSlug) {
+    const launchUnclaimed = await fetch(`${BASE}/api/mcp/${someSlug}/launch`, { method: 'POST', headers: C })
+    check('launch an unclaimed MCP → 403 (claim first)', launchUnclaimed.status === 403)
+  }
+
   // ── Cleanup (verified) ────────────────────────────────────────────────────
   console.log('— cleanup')
   const delChat = await fetch(`${BASE}/api/chats/${chat.id}`, { method: 'DELETE', headers: C })

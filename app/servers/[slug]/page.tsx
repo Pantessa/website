@@ -170,7 +170,12 @@ export default async function ServiceDetailPage({ params }: Params) {
           <p className="svc__desc">{server.description}</p>
 
           {/* ── Launchpad token (own a piece, earn as the agent works) ── */}
-          <TokenPanel slug={server.slug} tokenAddress={server.tokenAddress} stakingAddress={server.stakingAddress} />
+          <TokenPanel
+            slug={server.slug}
+            name={server.name}
+            tokenAddress={server.tokenAddress}
+            stakingAddress={server.stakingAddress}
+          />
 
           {/* ── Endpoints ── */}
           <div className="svc__section">
