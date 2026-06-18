@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import { ExternalLink } from 'lucide-react'
 import { getTokenPanel, feeSharePct, shortAddr } from '@/lib/launch-token'
+import ClaimMcp from '@/components/ClaimMcp'
 
 /**
  * Per-MCP token panel on the service page (x402-launch M6). Read-only: shows the
@@ -84,6 +85,7 @@ export default async function TokenPanel({
           <p className="mono" style={{ margin: 0, fontSize: 14, ...labelStyle }}>
             Once a token launches, {pct}% of every paid call settles to stakers.
           </p>
+          <ClaimMcp slug={slug} ownerAddress={panel.owner?.ownerAddress ?? null} />
         </div>
       )}
 
@@ -97,13 +99,7 @@ export default async function TokenPanel({
           <p className="mono" style={{ margin: 0, fontSize: 14, ...labelStyle }}>
             Operate this MCP? Claim it by proving control of its GitHub repo.
           </p>
-          <Link
-            href="/docs/agents"
-            className="svc__ext mono"
-            style={{ display: 'inline-flex', alignItems: 'center', gap: 6, width: 'max-content' }}
-          >
-            How the launchpad works
-          </Link>
+          <ClaimMcp slug={slug} ownerAddress={null} />
         </div>
       )}
     </div>
