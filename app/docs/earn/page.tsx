@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
+import CopyBlock from '@/components/CopyBlock'
 import { DOCS_PAGES, docsJsonLd, docsUrl } from '@/lib/docs'
 
 const PAGE = DOCS_PAGES.find((p) => p.slug === 'earn')!
@@ -118,9 +119,7 @@ reportUsage({
           Paste this into Claude Code from your MCP&apos;s repo — it wires the report into your
           settlement path for you.
         </p>
-        <pre>
-          <code>{CLAUDE_PROMPT}</code>
-        </pre>
+        <CopyBlock text={CLAUDE_PROMPT} label="Copy prompt" />
 
         <h2>What the dashboard shows</h2>
         <p>
