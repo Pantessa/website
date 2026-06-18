@@ -14,27 +14,47 @@ export const metadata: Metadata = {
 
 const CLAUDE_PROMPT = `Add Yeetful earn-tracking to this MCP server.
 
-After each PAID request settles, fire a non-blocking report to Yeetful so my
-earnings show up on my dashboard. It must NOT slow down or block the response —
-fire and forget, swallow all errors.
+Goal: after each PAID request settles, report it to Yeetful (fire-and-forget) so
+my earnings show up on my dashboard. The report must NEVER slow down, block, or
+break the response — it runs off the hot path and swallows all of its own errors.
 
+WHERE TO PUT IT
+- Find the exact point where an x402 payment is verified and SETTLES for a
+  request (often payment middleware/proxy; sometimes a per-route payment wrapper
+  or handler). Fire the report immediately after a SUCCESSFUL settlement.
+- Do NOT await it inline. On serverless/edge, hand the promise to the platform's
+  background primitive (e.g. \`waitUntil\` on the request/fetch event) so it
+  survives after the response is sent; otherwise just leave it un-awaited.
+- Put the logic in a small helper (e.g. \`reportEarning\`) so the call site is one
+  line and it's testable.
+
+THE CALL
 POST https://www.yeetful.com/api/mcp/receipts
   Headers: Authorization: Bearer \${YEETFUL_API_KEY}, content-type: application/json
   Body JSON: { mcp, amountUsd, payer?, tool?, network?, txHash? }
-    mcp       = process.env.YEETFUL_MCP_SLUG   // my server's slug on yeetful.com
-    amountUsd = the price of the call (number)
-    payer     = the paying agent's wallet, if known
-    tool      = the tool/route that was called
-    network   = "base"
 
-Read YEETFUL_API_KEY and YEETFUL_MCP_SLUG from env (put them in .env, don't commit):
-  • API key — mint at https://www.yeetful.com/dashboard/keys (the yf_… secret shows once)
-  • Slug — on your dashboard under "My MCP servers" (there's a copy button), or the
-    last path segment of your https://www.yeetful.com/servers/<slug> URL
+FIELD SOURCES
+- mcp       = process.env.YEETFUL_MCP_SLUG  (required — my server's slug on yeetful.com)
+- amountUsd = the call's price in US dollars as a NUMBER, e.g. 0.005 (your
+              configured price — NOT on-chain atomic/USDC base units)
+- payer     = the paying agent's wallet address, if the settlement exposes it
+- tool      = the tool/route that was called, if determinable (for MCP, the
+              JSON-RPC params.name). If you must read the request body to get it,
+              read a CLONE so you don't consume the body the handler needs.
+- network   = the chain you actually settled on, e.g. "base" (human name, not a
+              CAIP-2 id)
+- txHash    = the settlement transaction hash, if available
 
-Put the call right after payment settlement, wrapped so a failed/slow report can
-never affect the user's response (don't await it on the hot path; on serverless,
-hand the promise to waitUntil).`
+CONFIG (read from env; put in .env, never commit)
+- YEETFUL_API_KEY  — mint at https://www.yeetful.com/dashboard/keys (the yf_…
+                     secret is shown once)
+- YEETFUL_MCP_SLUG — copy from your dashboard's "My MCP servers", or the last
+                     path segment of https://www.yeetful.com/servers/<slug>
+If either is missing, the helper must no-op (no crash) so the server still runs
+un-tracked.
+
+FINISH BY: documenting both vars in .env.example, then running the project's
+typecheck/build (and tests, if present) to confirm nothing broke.`
 
 export default function EarnPage() {
   return (
