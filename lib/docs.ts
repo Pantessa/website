@@ -88,6 +88,16 @@ export const DOCS_PAGES: DocsPage[] = [
       'Browse live Snapshot DAO proposals in the Yeetful chat and cast a vote your own wallet signs (EIP-712) — pay-per-call over x402 on Base, no API key.',
     ready: true,
   },
+  {
+    slug: 'launchpad',
+    title: 'Launchpad: claim & launch',
+    seoTitle: 'Yeetful launchpad — claim your MCP and launch its token',
+    description:
+      'Own a piece of an MCP. Claim it by proving control of its GitHub repo, launch a token, and earn a share of every paid call in USDC as agents use it.',
+    // Testnet, but listed in the nav so operators can find the claim/launch
+    // walk-through. (The page itself states the testnet/mainnet status.)
+    ready: true,
+  },
 ]
 
 export const readyPages = () => DOCS_PAGES.filter((p) => p.ready)
