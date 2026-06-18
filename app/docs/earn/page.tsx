@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
+import CopyBlock from '@/components/CopyBlock'
 import { DOCS_PAGES, docsJsonLd, docsUrl } from '@/lib/docs'
 
 const PAGE = DOCS_PAGES.find((p) => p.slug === 'earn')!
@@ -20,15 +21,20 @@ fire and forget, swallow all errors.
 POST https://www.yeetful.com/api/mcp/receipts
   Headers: Authorization: Bearer \${YEETFUL_API_KEY}, content-type: application/json
   Body JSON: { mcp, amountUsd, payer?, tool?, network?, txHash? }
-    mcp       = "<MY_YEETFUL_SLUG>"   // the server's slug on yeetful.com
+    mcp       = process.env.YEETFUL_MCP_SLUG   // my server's slug on yeetful.com
     amountUsd = the price of the call (number)
     payer     = the paying agent's wallet, if known
     tool      = the tool/route that was called
     network   = "base"
 
-Read YEETFUL_API_KEY and the slug from env. Put the call right after payment
-settlement, wrapped so a failed/slow report can never affect the user's response
-(don't await it on the hot path; on serverless, hand the promise to waitUntil).`
+Read YEETFUL_API_KEY and YEETFUL_MCP_SLUG from env (put them in .env, don't commit):
+  • API key — mint at https://www.yeetful.com/dashboard/keys (the yf_… secret shows once)
+  • Slug — on your dashboard under "My MCP servers" (there's a copy button), or the
+    last path segment of your https://www.yeetful.com/servers/<slug> URL
+
+Put the call right after payment settlement, wrapped so a failed/slow report can
+never affect the user's response (don't await it on the hot path; on serverless,
+hand the promise to waitUntil).`
 
 export default function EarnPage() {
   return (
@@ -58,7 +64,7 @@ export default function EarnPage() {
         <pre>
           <code>{`# .env — never commit this
 YEETFUL_API_KEY=yf_…
-YEETFUL_MCP=your-server-slug   # the slug on yeetful.com/servers/<slug>`}</code>
+YEETFUL_MCP_SLUG=your-server-slug   # dashboard › My MCP servers (copy), or the /servers/<slug> URL`}</code>
         </pre>
 
         <h2>2. Report each paid call — non-blocking</h2>
@@ -78,7 +84,7 @@ YEETFUL_MCP=your-server-slug   # the slug on yeetful.com/servers/<slug>`}</code>
       authorization: \`Bearer \${process.env.YEETFUL_API_KEY}\`,
       'content-type': 'application/json',
     },
-    body: JSON.stringify({ mcp: process.env.YEETFUL_MCP, ...fields }),
+    body: JSON.stringify({ mcp: process.env.YEETFUL_MCP_SLUG, ...fields }),
   }).catch(() => {}) // earnings telemetry — never affect the user
 }
 
@@ -101,7 +107,7 @@ reportEarning({ amountUsd: 0.01, payer, tool: 'list_proposals', network: 'base' 
 // after gate().settle():
 reportUsage({
   apiKey: process.env.YEETFUL_API_KEY,
-  mcp: process.env.YEETFUL_MCP,
+  mcp: process.env.YEETFUL_MCP_SLUG,
   amountUsd: 0.01,
   payer,            // the paying agent's wallet, if known
   tool: 'list_proposals',
@@ -113,9 +119,7 @@ reportUsage({
           Paste this into Claude Code from your MCP&apos;s repo — it wires the report into your
           settlement path for you.
         </p>
-        <pre>
-          <code>{CLAUDE_PROMPT}</code>
-        </pre>
+        <CopyBlock text={CLAUDE_PROMPT} label="Copy prompt" />
 
         <h2>What the dashboard shows</h2>
         <p>
@@ -128,7 +132,7 @@ reportUsage({
 
       <div className="docs__callout">
         <p>
-          Reported receipts are <strong>self-reported telemetry</strong> for rich, real-time
+          Reported receipts are <strong>self-reported telemetry</strong>{' '}for rich, real-time
           analytics. The authoritative revenue number is on-chain — the USDC settled to your
           server&apos;s <code>payTo</code> address on Base.
         </p>

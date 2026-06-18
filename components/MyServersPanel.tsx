@@ -8,7 +8,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
-import { Server, ArrowUpRight, BadgeCheck, Loader2, AlertCircle } from 'lucide-react'
+import { Server, ArrowUpRight, BadgeCheck, Loader2, AlertCircle, Copy, Check } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 interface ServerRow {
@@ -31,7 +31,14 @@ function fmtPrice(p: string | null): string | null {
 export default function MyServersPanel() {
   const [servers, setServers] = useState<ServerRow[] | null>(null)
   const [claiming, setClaiming] = useState<string | null>(null)
+  const [copied, setCopied] = useState<string | null>(null)
   const [error, setError] = useState('')
+
+  const copySlug = (slug: string) => {
+    void navigator.clipboard?.writeText(slug)
+    setCopied(slug)
+    setTimeout(() => setCopied((c) => (c === slug ? null : c)), 1500)
+  }
 
   const load = useCallback(async () => {
     try {
@@ -142,10 +149,24 @@ export default function MyServersPanel() {
                   </div>
                 </div>
 
-                <div className="flex items-center gap-2 mt-2 text-[10px] mono text-[color:var(--muted-2)]">
+                <div className="flex items-center gap-2 mt-2 text-[10px] mono text-[color:var(--muted-2)] flex-wrap">
                   <span className="px-1.5 py-0.5 rounded bg-white/5 text-[color:var(--muted)]">{s.category}</span>
                   {price && <span>{price}</span>}
                   {s.host && <span className="truncate min-w-0">· {s.host}</span>}
+                  {/* Copyable slug — for YEETFUL_MCP_SLUG when wiring up earn reporting. */}
+                  <button
+                    type="button"
+                    onClick={() => copySlug(s.slug)}
+                    title="Copy slug (YEETFUL_MCP_SLUG)"
+                    className="ml-auto inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-white/5 hover:bg-white/10 text-[color:var(--muted)] transition-colors"
+                  >
+                    slug: {s.slug}
+                    {copied === s.slug ? (
+                      <Check className="w-2.5 h-2.5 text-emerald-400" />
+                    ) : (
+                      <Copy className="w-2.5 h-2.5" />
+                    )}
+                  </button>
                 </div>
               </li>
             )
