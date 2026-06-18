@@ -971,6 +971,40 @@ async function main() {
     verBad.status >= 300 && verBad.status < 400 && (verBad.headers.get('location') ?? '').includes('subscribed=invalid'),
   )
 
+  // ── MCP ownership claim (M5) ──────────────────────────────────────────────
+  // Deterministic paths only (no GitHub network / seed coupling): the happy
+  // path needs a real repo with .well-known/yeetful-claim.txt and is verified
+  // manually. Here: routing, SIWE gate, and slug validation.
+  console.log('— mcp ownership claim')
+  const claimNoSlug = await fetch(`${BASE}/api/mcp/__nope__/claim`)
+  check('claim status: unknown MCP → 404', claimNoSlug.status === 404)
+
+  const claimAnon = await fetch(`${BASE}/api/mcp/__nope__/claim`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ repo: 'a/b' }),
+  })
+  check('claim without session → 401', claimAnon.status === 401)
+
+  const claimUnknown = await fetch(`${BASE}/api/mcp/__nope__/claim`, {
+    method: 'POST',
+    headers: CJ,
+    body: JSON.stringify({ repo: 'a/b' }),
+  })
+  check('claim signed-in, unknown MCP → 404 (session accepted, no GitHub call)', claimUnknown.status === 404)
+
+  // If the directory has any service, prove repo-format validation (offline, no claim created).
+  const someServers = (await (await fetch(`${BASE}/api/servers`)).json().catch(() => [])) as { slug?: string }[]
+  const someSlug = Array.isArray(someServers) ? someServers.find((s) => s.slug)?.slug : undefined
+  if (someSlug) {
+    const claimBadRepo = await fetch(`${BASE}/api/mcp/${someSlug}/claim`, {
+      method: 'POST',
+      headers: CJ,
+      body: JSON.stringify({ repo: 'not-a-valid-repo' }),
+    })
+    check('claim with bad repo format → 400', claimBadRepo.status === 400)
+  }
+
   // ── Cleanup (verified) ────────────────────────────────────────────────────
   console.log('— cleanup')
   const delChat = await fetch(`${BASE}/api/chats/${chat.id}`, { method: 'DELETE', headers: C })
