@@ -7,7 +7,7 @@ import {
   injectedWallet,
 } from '@rainbow-me/rainbowkit/wallets'
 import { createConfig, http } from 'wagmi'
-import { mainnet, base } from 'wagmi/chains'
+import { mainnet, base, baseSepolia } from 'wagmi/chains'
 
 // WalletConnect Cloud project ID — create one at https://cloud.reown.com and
 // add it to .env.local as NEXT_PUBLIC_WC_PROJECT_ID (needed for the
@@ -66,9 +66,12 @@ export const wagmiConfig = createConfig({
   // solely so RainbowKit can resolve ENS names/avatars — but its default RPC
   // (eth.merkle.io) rejects browser CORS preflights, which spammed the console
   // with retried ENS lookups, so pin it to a CORS-friendly public endpoint.
-  chains: [base, mainnet],
+  // base.sepolia is included for the launchpad (testnet) — launching a token +
+  // staking happen there until mainnet. Mainnet (ENS only) keeps its CORS-safe RPC.
+  chains: [base, baseSepolia, mainnet],
   transports: {
     [base.id]: http(),
+    [baseSepolia.id]: http(),
     [mainnet.id]: http('https://ethereum-rpc.publicnode.com'),
   },
   ssr: true,
