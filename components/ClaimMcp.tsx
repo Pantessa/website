@@ -1,9 +1,10 @@
 'use client'
 
-// Interactive claim control for the launchpad token panel (M6b). Lets an MCP's
-// operator claim it: connect → SIWE → enter the backing GitHub repo. We show the
-// exact proof file to commit; the POST verifies it (lib/mcp-claim) and binds the
-// MCP to the wallet. If the viewer already owns it, offers a release.
+// Interactive claim control for the launchpad token panel (M6b, payTo-anchored).
+// Claiming proves you operate the MCP by signing in with the wallet the MCP is
+// PAID TO — its x402 payTo, read from its own endpoint. So the whole flow is:
+// connect that wallet → sign in → Claim. If the viewer already owns it, offers
+// a release.
 
 import { useCallback, useEffect, useState } from 'react'
 import { useAccount } from 'wagmi'
@@ -22,6 +23,7 @@ const btn = {
 } as const
 
 const ghost = { ...btn, background: 'transparent', color: 'var(--ink)', border: '1px solid var(--mist)' } as const
+const note = { margin: 0, fontSize: 13, color: 'var(--smoke)' } as const
 
 export default function ClaimMcp({ slug, ownerAddress }: { slug: string; ownerAddress: string | null }) {
   const { isConnected } = useAccount()
@@ -31,31 +33,43 @@ export default function ClaimMcp({ slug, ownerAddress }: { slug: string; ownerAd
   const [mounted, setMounted] = useState(false)
   useEffect(() => setMounted(true), [])
 
-  const [repo, setRepo] = useState('')
+  const [requiredWallet, setRequiredWallet] = useState<string | null | undefined>(undefined) // undefined = loading
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [done, setDone] = useState(false)
+
+  // Once signed in (and unclaimed), find which wallet this MCP is paid to.
+  useEffect(() => {
+    if (ownerAddress || !address) return
+    let live = true
+    fetch(`/api/mcp/${slug}/claim`)
+      .then((r) => r.json())
+      .then((d) => {
+        if (live) setRequiredWallet(d.requiredWallet ?? null)
+      })
+      .catch(() => live && setRequiredWallet(null))
+    return () => {
+      live = false
+    }
+  }, [slug, address, ownerAddress])
 
   const claim = useCallback(async () => {
     setBusy(true)
     setError(null)
     try {
-      const r = await fetch(`/api/mcp/${slug}/claim`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ repo: repo.trim() }),
-      })
-      const data = (await r.json().catch(() => ({}))) as { error?: string }
+      const r = await fetch(`/api/mcp/${slug}/claim`, { method: 'POST' })
+      const data = (await r.json().catch(() => ({}))) as { error?: string; requiredWallet?: string }
       if (r.ok) {
         setDone(true)
         setTimeout(() => location.reload(), 900)
       } else {
         setError(data.error ?? 'Claim failed.')
+        if (data.requiredWallet) setRequiredWallet(data.requiredWallet)
       }
     } finally {
       setBusy(false)
     }
-  }, [slug, repo])
+  }, [slug])
 
   const release = useCallback(async () => {
     setBusy(true)
@@ -65,7 +79,7 @@ export default function ClaimMcp({ slug, ownerAddress }: { slug: string; ownerAd
 
   if (!mounted) return null
 
-  // Already claimed: only the owner sees a control (release); others see nothing here.
+  // Already claimed: only the owner sees a control (release).
   if (ownerAddress) {
     if (address && address === ownerAddress.toLowerCase()) {
       return (
@@ -79,12 +93,14 @@ export default function ClaimMcp({ slug, ownerAddress }: { slug: string; ownerAd
 
   if (done) return <p style={{ margin: 0, color: 'var(--accent)' }}>Claimed ✓</p>
 
-  // Not connected / not signed in.
   if (!isConnected) {
     return (
-      <button style={btn} onClick={() => openConnectModal?.()} className="mono">
-        Connect wallet to claim
-      </button>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        <p style={note}>Claim by signing in with the wallet this MCP is paid to.</p>
+        <button style={btn} onClick={() => openConnectModal?.()} className="mono">
+          Connect wallet to claim
+        </button>
+      </div>
     )
   }
   if (!address) {
@@ -95,53 +111,26 @@ export default function ClaimMcp({ slug, ownerAddress }: { slug: string; ownerAd
     )
   }
 
-  // Signed in: show the proof + the repo form.
+  // Signed in.
+  if (requiredWallet === undefined) return <p style={note}>Checking the MCP&apos;s payee…</p>
+  if (requiredWallet === null) {
+    return <p style={note}>This MCP can&apos;t be self-verified — it needs admin verification. Contact Yeetful.</p>
+  }
+
+  const matches = address === requiredWallet.toLowerCase()
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-      <p className="mono" style={{ margin: 0, fontSize: 13, color: 'var(--smoke)' }}>
-        1. In the repo that backs this MCP, commit{' '}
-        <code>.well-known/yeetful-claim.txt</code> containing:
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      <p className="mono" style={{ ...note, wordBreak: 'break-all' }}>
+        Paid to {requiredWallet}
       </p>
-      <code
-        style={{
-          display: 'block',
-          background: 'var(--fog)',
-          borderRadius: 8,
-          padding: '8px 10px',
-          fontSize: 13,
-          wordBreak: 'break-all',
-        }}
-      >
-        yeetful-claim {address}
-      </code>
-      <p className="mono" style={{ margin: 0, fontSize: 13, color: 'var(--smoke)' }}>
-        2. Enter the repo and claim:
-      </p>
-      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-        <input
-          value={repo}
-          onChange={(e) => setRepo(e.target.value)}
-          placeholder="owner/repo"
-          className="mono"
-          style={{
-            flex: '1 1 200px',
-            minWidth: 0,
-            border: '1px solid var(--mist)',
-            borderRadius: 10,
-            padding: '9px 12px',
-            background: 'var(--paper)',
-            color: 'var(--ink)',
-          }}
-        />
-        <button style={btn} onClick={() => void claim()} disabled={busy || !repo.trim()} className="mono">
-          {busy ? 'Verifying…' : 'Claim'}
+      {matches ? (
+        <button style={btn} onClick={() => void claim()} disabled={busy} className="mono">
+          {busy ? 'Claiming…' : 'Claim this MCP'}
         </button>
-      </div>
-      {error && (
-        <p className="mono" style={{ margin: 0, fontSize: 13, color: 'var(--error, #C0392B)' }}>
-          {error}
-        </p>
+      ) : (
+        <p style={note}>Switch to that wallet (it&apos;s the one this MCP is paid to), then claim.</p>
       )}
+      {error && <p className="mono" style={{ ...note, color: 'var(--error, #C0392B)' }}>{error}</p>}
     </div>
   )
 }

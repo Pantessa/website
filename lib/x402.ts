@@ -159,6 +159,22 @@ export async function getChallenge(input: string, init?: RequestInit): Promise<C
 }
 
 /**
+ * The on-chain account an x402 endpoint is paid to (`payTo`), read straight from
+ * its 402 challenge. This is the receiver in the MCP's OWN config — whoever
+ * controls it collects the MCP's revenue. Returns null if the endpoint isn't a
+ * readable x402 402. Used to verify MCP ownership (sign in with this wallet).
+ */
+export async function getReceiver(input: string, init?: RequestInit): Promise<string | null> {
+  try {
+    const challenge = await getChallenge(input, init);
+    if (!challenge?.accepts?.length) return null;
+    return getAddress(pickEvmAccepts(challenge.accepts).payTo);
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Derive an unsigned payment (header template + typed data) for a given payer
  * address — without signing. Works for both x402 v1 and v2 challenges.
  */
