@@ -3,6 +3,8 @@ import { ExternalLink } from 'lucide-react'
 import { getTokenPanel, feeSharePct, shortAddr } from '@/lib/launch-token'
 import ClaimMcp from '@/components/ClaimMcp'
 import LaunchToken from '@/components/LaunchToken'
+import StakeToken from '@/components/StakeToken'
+import Stakers from '@/components/Stakers'
 
 /** A reasonable default ticker from the MCP name/slug (the owner can edit it). */
 function defaultTicker(name: string, slug: string): string {
@@ -120,17 +122,15 @@ export default async function TokenPanel({
             </p>
           </div>
 
-          {/* How to participate. */}
+          {/* Participate — stake to earn the rev share, claim USDC any time. */}
           <div>
-            <p className="mono" style={{ margin: '0 0 4px', fontSize: 13, ...labelStyle }}>
-              How to participate
+            <p className="mono" style={{ margin: '0 0 8px', fontSize: 13, ...labelStyle }}>
+              Stake to earn — {pct}% of every paid call, in USDC
             </p>
-            <p style={{ margin: 0, fontSize: 14 }}>
-              Buy the token on its pool, then <strong>stake</strong> it here to earn {pct}% of every
-              paid call in USDC — claimable any time. No stakers yet? Fees escrow to the creator.
-              In-panel buy &amp; stake are coming next.
-            </p>
+            <StakeToken token={panel.token.address} staking={panel.token.staking} />
           </div>
+
+          <Stakers slug={slug} explorer={panel.token.explorer} />
 
           <Link
             href={`${panel.token.explorer}/token/${panel.token.address}`}
