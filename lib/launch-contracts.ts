@@ -58,3 +58,32 @@ export async function readLaunch(mcpId: string): Promise<{ token: Address; staki
   if (!token || token === zeroAddress) return null
   return { token: getAddress(token), staking: getAddress(staking), creator: getAddress(creator) }
 }
+
+/** YeetfulStaking — stake the MCP token, earn USDC. (repo x402-launch) */
+export const STAKING_ABI = [
+  { type: 'function', name: 'stake', stateMutability: 'nonpayable', inputs: [{ name: 'amount', type: 'uint256' }], outputs: [] },
+  { type: 'function', name: 'unstake', stateMutability: 'nonpayable', inputs: [{ name: 'amount', type: 'uint256' }], outputs: [] },
+  { type: 'function', name: 'claim', stateMutability: 'nonpayable', inputs: [], outputs: [{ name: 'owed', type: 'uint256' }] },
+  { type: 'function', name: 'earned', stateMutability: 'view', inputs: [{ name: 'user', type: 'address' }], outputs: [{ name: '', type: 'uint256' }] },
+  { type: 'function', name: 'stakedOf', stateMutability: 'view', inputs: [{ name: '', type: 'address' }], outputs: [{ name: '', type: 'uint256' }] },
+  { type: 'function', name: 'totalStaked', stateMutability: 'view', inputs: [], outputs: [{ name: '', type: 'uint256' }] },
+  {
+    type: 'event',
+    name: 'Staked',
+    inputs: [
+      { name: 'staker', type: 'address', indexed: true },
+      { name: 'amount', type: 'uint256', indexed: false },
+    ],
+  },
+] as const
+
+/** Minimal ERC-20 surface for staking (approve the MCP token to the vault). */
+export const ERC20_ABI = [
+  { type: 'function', name: 'balanceOf', stateMutability: 'view', inputs: [{ name: '', type: 'address' }], outputs: [{ name: '', type: 'uint256' }] },
+  { type: 'function', name: 'allowance', stateMutability: 'view', inputs: [{ name: 'owner', type: 'address' }, { name: 'spender', type: 'address' }], outputs: [{ name: '', type: 'uint256' }] },
+  { type: 'function', name: 'approve', stateMutability: 'nonpayable', inputs: [{ name: 'spender', type: 'address' }, { name: 'amount', type: 'uint256' }], outputs: [{ name: '', type: 'bool' }] },
+] as const
+
+/** USDC has 6 decimals; the MCP token (Flaunch memecoin) has 18. */
+export const USDC_DECIMALS = 6
+export const TOKEN_DECIMALS = 18
