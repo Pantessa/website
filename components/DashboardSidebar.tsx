@@ -6,16 +6,19 @@
 
 import Link from 'next/link'
 import { useEffect, useRef } from 'react'
-import { LayoutDashboard, KeyRound, Bot, ToggleRight, Activity, Building2, LineChart } from 'lucide-react'
+import { LayoutDashboard, KeyRound, Bot, ToggleRight, Activity, Building2, LineChart, Server, MessageSquare, BookOpen } from 'lucide-react'
 import { isAdminAddress } from '@/lib/admin'
 
 export const DASH_SECTIONS = [
   { href: '/dashboard', label: 'Overview', icon: LayoutDashboard, exact: true },
+  { href: '/dashboard/servers', label: 'Servers', icon: Server, exact: false },
+  { href: '/chat', label: 'Chat', icon: MessageSquare, exact: false },
   { href: '/dashboard/agents', label: 'Agents', icon: Bot, exact: false },
   { href: '/dashboard/keys', label: 'API Keys', icon: KeyRound, exact: false },
   { href: '/dashboard/approvals', label: 'Approvals', icon: ToggleRight, exact: false },
   { href: '/dashboard/activity', label: 'Activity', icon: Activity, exact: false },
   { href: '/dashboard/org', label: 'Organization', icon: Building2, exact: false },
+  { href: '/docs', label: 'Docs', icon: BookOpen, exact: false },
 ] as const
 
 // Admin-only section, appended when the connected wallet is on the allowlist
