@@ -36,6 +36,13 @@ model McpServer {
   // takes structured args, not a free-text prompt). Null for inference/http.
   toolArgs   Json?   @map("tool_args")
 
+  // Launchpad (x402-launch): the MCP's token + YeetfulStaking vault, set once a
+  // token is launched on the bonding curve. Null = not launched yet. The on-chain
+  // YeetfulLaunchFactory is the source of truth; these mirror it for fast reads
+  // (fee routing + the per-service token chart). See repo `x402-launch`.
+  tokenAddress   String? @map("token_address")
+  stakingAddress String? @map("staking_address")
+
   // Presentation
   iconSlug   String? @map("icon_slug") // Simple Icons brand slug for the glyph
   color      String?
