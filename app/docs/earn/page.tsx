@@ -12,46 +12,47 @@ export const metadata: Metadata = {
   openGraph: { title: PAGE.seoTitle, description: PAGE.description, url: docsUrl(PAGE.slug), type: 'article' },
 }
 
-const CLAUDE_PROMPT = `Add Yeetful earn-tracking to this MCP server.
+const CLAUDE_PROMPT = `Add Yeetful earn-tracking to this MCP server using the yeetful SDK.
 
-Goal: after each PAID request settles, report it to Yeetful (fire-and-forget) so
-my earnings show up on my dashboard. The report must NEVER slow down, block, or
-break the response — it runs off the hot path and swallows all of its own errors.
+Goal: after each PAID request settles, report it to Yeetful so my earnings show
+up on my dashboard. It must NEVER slow down, block, or break the response.
 
-WHERE TO PUT IT
-- Find the exact point where an x402 payment is verified and SETTLES for a
-  request (often payment middleware/proxy; sometimes a per-route payment wrapper
-  or handler). Fire the report immediately after a SUCCESSFUL settlement.
-- Do NOT await it inline. On serverless/edge, hand the promise to the platform's
-  background primitive (e.g. \`waitUntil\` on the request/fetch event) so it
-  survives after the response is sent; otherwise just leave it un-awaited.
-- Put the logic in a small helper (e.g. \`reportEarning\`) so the call site is one
-  line and it's testable.
+1) INSTALL THE SDK
+   - npm i yeetful   (or the project's package manager)
+   - import { reportUsage } from 'yeetful/server'
+   reportUsage is fire-and-forget by design: it never throws, has a built-in
+   timeout, and resolves false on any failure — so it can't slow or break the
+   response. Don't hand-roll an HTTP call; use this.
 
-THE CALL
-POST https://www.yeetful.com/api/mcp/receipts
-  Headers: Authorization: Bearer \${YEETFUL_API_KEY}, content-type: application/json
-  Body JSON: { mcp, amountUsd, payer?, tool?, network?, txHash? }
+2) WHERE TO CALL IT
+   - Find the exact point where an x402 payment is verified and SETTLES (payment
+     middleware/proxy, a per-route wrapper, or a payment hook). Call reportUsage
+     right after a SUCCESSFUL settlement.
+   - Do NOT await it on the hot path. On serverless/edge, hand the promise to the
+     platform's background primitive, e.g. ctx.waitUntil(reportUsage({...}));
+     otherwise just leave it un-awaited.
 
-FIELD SOURCES
-- mcp       = process.env.YEETFUL_MCP_SLUG  (required — my server's slug on yeetful.com)
-- amountUsd = the call's price in US dollars as a NUMBER, e.g. 0.005 (your
-              configured price — NOT on-chain atomic/USDC base units)
-- payer     = the paying agent's wallet address, if the settlement exposes it
-- tool      = the tool/route that was called, if determinable (for MCP, the
-              JSON-RPC params.name). If you must read the request body to get it,
-              read a CLONE so you don't consume the body the handler needs.
-- network   = the chain you actually settled on, e.g. "base" (human name, not a
-              CAIP-2 id)
-- txHash    = the settlement transaction hash, if available
+3) THE CALL
+   reportUsage({
+     apiKey: process.env.YEETFUL_API_KEY,    // required
+     mcp: process.env.YEETFUL_MCP_SLUG,      // required — my server's slug on yeetful.com
+     amountUsd,   // the call's price in US dollars as a NUMBER, e.g. 0.005
+                  //   (your configured price — NOT on-chain atomic/USDC base units)
+     payer,       // the paying agent's wallet address, if the settlement exposes it
+     tool,        // the tool/route called — for MCP, the JSON-RPC params.name. If you
+                  //   read the request body to get it, read a CLONE so the handler's
+                  //   body isn't consumed.
+     network: 'base',   // the chain you settled on (human name, not a CAIP-2 id)
+     txHash,      // the settlement tx hash, if available
+   })
+   - Only call it when YEETFUL_API_KEY and YEETFUL_MCP_SLUG are both set; if either
+     is missing, skip the report so the server still runs un-tracked.
 
-CONFIG (read from env; put in .env, never commit)
-- YEETFUL_API_KEY  — mint at https://www.yeetful.com/dashboard/keys (the yf_…
-                     secret is shown once)
-- YEETFUL_MCP_SLUG — copy from your dashboard's "My MCP servers", or the last
-                     path segment of https://www.yeetful.com/servers/<slug>
-If either is missing, the helper must no-op (no crash) so the server still runs
-un-tracked.
+4) CONFIG (read from env; put in .env, never commit)
+   - YEETFUL_API_KEY  — mint at https://www.yeetful.com/dashboard/keys (the yf_…
+                        secret is shown once)
+   - YEETFUL_MCP_SLUG — copy from your dashboard's "My MCP servers", or the last
+                        path segment of https://www.yeetful.com/servers/<slug>
 
 FINISH BY: documenting both vars in .env.example, then running the project's
 typecheck/build (and tests, if present) to confirm nothing broke.`
@@ -94,7 +95,32 @@ YEETFUL_MCP_SLUG=your-server-slug   # dashboard › My MCP servers (copy), or th
           it to <code>waitUntil</code> on serverless). It swallows its own errors.
         </p>
 
-        <h3>The raw call — works today, zero dependencies</h3>
+        <h3>Install the SDK and report</h3>
+        <p>
+          Add <code>yeetful</code> and call <code>reportUsage()</code>{' '}after settlement. It&apos;s
+          fire-and-forget — never throws, built-in timeout — so don&apos;t await it on the hot path
+          (on serverless, hand it to <code>waitUntil</code>).
+        </p>
+        <pre>
+          <code>{`npm i yeetful
+
+import { reportUsage } from 'yeetful/server'
+
+// right after the x402 payment settles, in your handler:
+reportUsage({
+  apiKey: process.env.YEETFUL_API_KEY,
+  mcp: process.env.YEETFUL_MCP_SLUG,
+  amountUsd: 0.005,   // dollars, NOT on-chain atomic/USDC units
+  payer,              // the paying agent's wallet, if known
+  tool: 'list_proposals',
+  network: 'base',
+})
+// on Vercel/serverless, keep it alive past the response:
+//   ctx.waitUntil(reportUsage({ … }))`}</code>
+        </pre>
+
+        <h3>No SDK? The raw call</h3>
+        <p>Same thing with zero dependencies — POST to the receipts endpoint and swallow errors.</p>
         <pre>
           <code>{`function reportEarning(fields) {
   // fire-and-forget: never throws, never blocks the response
@@ -108,30 +134,8 @@ YEETFUL_MCP_SLUG=your-server-slug   # dashboard › My MCP servers (copy), or th
   }).catch(() => {}) // earnings telemetry — never affect the user
 }
 
-// …right after the payment settles, inside your handler:
-reportEarning({ amountUsd: 0.01, payer, tool: 'list_proposals', network: 'base' })
-// on Vercel/serverless, keep it alive past the response:
-//   context.waitUntil(reportEarning({ … }))`}</code>
-        </pre>
-
-        <h3>
-          Or with the <code>yeetful</code> SDK
-        </h3>
-        <p>
-          If you already use the SDK&apos;s server helpers, <code>reportUsage()</code> is the typed
-          version of the same call — fire-and-forget, never throws.
-        </p>
-        <pre>
-          <code>{`import { reportUsage } from 'yeetful/server'
-
-// after gate().settle():
-reportUsage({
-  apiKey: process.env.YEETFUL_API_KEY,
-  mcp: process.env.YEETFUL_MCP_SLUG,
-  amountUsd: 0.01,
-  payer,            // the paying agent's wallet, if known
-  tool: 'list_proposals',
-})`}</code>
+// …right after the payment settles:
+reportEarning({ amountUsd: 0.005, payer, tool: 'list_proposals', network: 'base' })`}</code>
         </pre>
 
         <h2>Add it with Claude Code</h2>
