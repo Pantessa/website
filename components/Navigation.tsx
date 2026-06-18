@@ -99,7 +99,9 @@ export default function Navigation() {
   return (
     <header className={`nav ${inDashboard ? 'nav--fluid' : ''}`}>
       <div className="nav__inner">
-        <Link className="logo" href="/">
+        {/* Logged in, the logo leads back into the app; otherwise to the
+            brochure. mounted-gated (via showDashboardCta) keeps SSR at "/". */}
+        <Link className="logo" href={showDashboardCta ? '/dashboard' : '/'}>
           <YeetfulMark size={24} />
           <span className="logo__word">yeetful</span>
         </Link>
