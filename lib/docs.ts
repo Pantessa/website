@@ -93,7 +93,7 @@ export const DOCS_PAGES: DocsPage[] = [
     title: 'Launchpad: claim & launch',
     seoTitle: 'Yeetful launchpad — claim your MCP and launch its token',
     description:
-      'Own a piece of an MCP. Claim it by proving control of its GitHub repo, launch a token, and earn a share of every paid call in USDC as agents use it.',
+      'Own a piece of an MCP. Claim it by signing in with the wallet it is paid to, launch a token, and earn a share of every paid call in USDC as agents use it.',
     // Testnet, but listed in the nav so operators can find the claim/launch
     // walk-through. (The page itself states the testnet/mainnet status.)
     ready: true,
