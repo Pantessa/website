@@ -10,6 +10,27 @@ function defaultTicker(name: string, slug: string): string {
   return (fromName || slug.replace(/[^A-Za-z0-9]/g, '')).slice(0, 6).toUpperCase() || 'MCP'
 }
 
+/** A labelled, full (untruncated) address linking to the block explorer. */
+function AddrRow({ label, addr, href, badge }: { label: string; addr: string; href: string; badge?: string }) {
+  return (
+    <div style={{ display: 'flex', gap: 10, alignItems: 'baseline', flexWrap: 'wrap' }}>
+      <span className="mono" style={{ color: 'var(--smoke)', fontSize: 13, minWidth: 96 }}>
+        {label}
+      </span>
+      <a
+        href={href}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="mono"
+        style={{ fontSize: 13, wordBreak: 'break-all', textDecoration: 'underline', textDecorationColor: 'var(--mist)' }}
+      >
+        {addr}
+      </a>
+      {badge && <span style={{ color: 'var(--accent)', fontSize: 13 }}>{badge}</span>}
+    </div>
+  )
+}
+
 /**
  * Per-MCP token panel on the service page (x402-launch M6). Read-only: shows the
  * launchpad state (unclaimed → claimed → launched) + live staking. Wallet actions
@@ -52,11 +73,30 @@ export default async function TokenPanel({
             <strong>Earn as the agent works.</strong> Stake this MCP&rsquo;s token to receive{' '}
             <strong style={{ color: 'var(--accent)' }}>{pct}%</strong> of every paid call, in USDC.
           </p>
-          <div className="mono" style={{ display: 'flex', flexWrap: 'wrap', gap: '14px 28px', fontSize: 14 }}>
-            <span>
-              <span style={labelStyle}>token </span>
-              {shortAddr(panel.token.address)}
-            </span>
+
+          {/* Full addresses, each linking to the block explorer. */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <AddrRow
+              label="Token"
+              addr={panel.token.address}
+              href={`${panel.token.explorer}/token/${panel.token.address}`}
+            />
+            <AddrRow
+              label="Staking vault"
+              addr={panel.token.staking}
+              href={`${panel.token.explorer}/address/${panel.token.staking}`}
+            />
+            {panel.owner && (
+              <AddrRow
+                label="Creator"
+                addr={panel.owner.ownerAddress}
+                href={`${panel.token.explorer}/address/${panel.owner.ownerAddress}`}
+                badge={`✓ verified (${panel.owner.verifiedVia})`}
+              />
+            )}
+          </div>
+
+          <div className="mono" style={{ display: 'flex', flexWrap: 'wrap', gap: '6px 28px', fontSize: 14 }}>
             <span>
               <span style={labelStyle}>staked </span>
               {Number(panel.token.totalStaked).toLocaleString(undefined, { maximumFractionDigits: 2 })}
@@ -65,24 +105,41 @@ export default async function TokenPanel({
               <span style={labelStyle}>rev share </span>
               {pct}%
             </span>
-            {panel.owner && (
-              <span>
-                <span style={labelStyle}>creator </span>
-                {shortAddr(panel.owner.ownerAddress)}{' '}
-                <span style={{ color: 'var(--accent)' }} title={`Verified via ${panel.owner.verifiedVia}`}>
-                  ✓
-                </span>
-              </span>
-            )}
           </div>
+
+          {/* How it trades — Flaunch puts the token on a Uniswap v4 pool at launch. */}
+          <div>
+            <p className="mono" style={{ margin: '0 0 4px', fontSize: 13, ...labelStyle }}>
+              How it trades
+            </p>
+            <p style={{ margin: 0, fontSize: 14 }}>
+              Live on a Uniswap&nbsp;v4 pool from launch — no graduation step. The first ~30 minutes
+              is a fixed-price <strong>fair launch</strong> (buys only, everyone the same price),
+              then open trading. A <strong>Progressive Bid Wall</strong> turns trading fees into
+              rising buy-side support for the price.
+            </p>
+          </div>
+
+          {/* How to participate. */}
+          <div>
+            <p className="mono" style={{ margin: '0 0 4px', fontSize: 13, ...labelStyle }}>
+              How to participate
+            </p>
+            <p style={{ margin: 0, fontSize: 14 }}>
+              Buy the token on its pool, then <strong>stake</strong> it here to earn {pct}% of every
+              paid call in USDC — claimable any time. No stakers yet? Fees escrow to the creator.
+              In-panel buy &amp; stake are coming next.
+            </p>
+          </div>
+
           <Link
-            href={panel.token.explorerUrl}
+            href={`${panel.token.explorer}/token/${panel.token.address}`}
             target="_blank"
             rel="noopener noreferrer"
             className="svc__ext mono"
             style={{ display: 'inline-flex', alignItems: 'center', gap: 6, width: 'max-content' }}
           >
-            View token <ExternalLink size={13} />
+            View on Basescan <ExternalLink size={13} />
           </Link>
         </div>
       )}
