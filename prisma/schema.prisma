@@ -36,6 +36,13 @@ model McpServer {
   // takes structured args, not a free-text prompt). Null for inference/http.
   toolArgs   Json?   @map("tool_args")
 
+  // The x402 `payTo` receiver read from this server's wired `endpoint` (lowercased).
+  // Whoever controls this wallet operates the server and collects its revenue, so
+  // it's the address that can self-claim ownership (see lib/mcp-claim.ts). Backfilled
+  // from the live 402 challenge by `npm run db:receivers`; null = unread/unreachable.
+  receiver          String?   @map("receiver")
+  receiverCheckedAt DateTime? @map("receiver_checked_at")
+
   // Launchpad (x402-launch): the MCP's token + YeetfulStaking vault, set once a
   // token is launched on the bonding curve. Null = not launched yet. The on-chain
   // YeetfulLaunchFactory is the source of truth; these mirror it for fast reads
