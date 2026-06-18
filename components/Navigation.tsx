@@ -1,10 +1,10 @@
 'use client'
 
 import Link from 'next/link'
-import { usePathname } from 'next/navigation'
+import { usePathname, useRouter } from 'next/navigation'
 import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { useAccount } from 'wagmi'
+import { useAccount, useAccountEffect } from 'wagmi'
 import { useSession } from '@/lib/session'
 import { Menu, X } from 'lucide-react'
 import { useYeetfulStore } from '@/lib/store'
@@ -14,8 +14,24 @@ import { YeetfulMark } from '@/components/Logo'
 
 export default function Navigation() {
   const pathname = usePathname()
+  const router = useRouter()
   const activeCount = useYeetfulStore((s) => s.activeServerIds.length)
   const { isConnected } = useAccount()
+
+  // A fresh, user-initiated wallet connect enters the app (→ /dashboard).
+  // isReconnected guards against auto-reconnect on page reload, which would
+  // otherwise yank a returning visitor off the brochure on every load. We
+  // also stay put on /chat (connecting there is to pay a turn, not to leave)
+  // and inside /dashboard (already there). Read the live pathname to avoid a
+  // stale closure.
+  useAccountEffect({
+    onConnect({ isReconnected }) {
+      if (isReconnected) return
+      const path = window.location.pathname
+      if (path.startsWith('/dashboard') || path.startsWith('/chat')) return
+      router.push('/dashboard')
+    },
+  })
 
   // Wallet state only exists client-side — gate the Dashboard tab on mount to
   // keep the server-rendered nav hydration-safe.
