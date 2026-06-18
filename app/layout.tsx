@@ -29,13 +29,13 @@ export const metadata: Metadata = {
     type: 'website',
     url: SITE,
     siteName: 'Yeetful',
-    images: [{ url: '/new-yeetful.png', width: 1200, height: 630, alt: 'Yeetful — Agent Expense Accounts' }],
+    images: [{ url: '/og.png', width: 1200, height: 630, alt: 'Yeetful — Agent Expense Accounts' }],
   },
   twitter: {
     card: 'summary_large_image',
     title: TITLE,
     description: DESCRIPTION,
-    images: ['/new-yeetful.png'],
+    images: ['/og.png'],
   },
 }
 
