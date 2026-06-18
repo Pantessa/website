@@ -21,7 +21,7 @@ function chainCfg() {
 export type TokenPanelData = {
   state: 'unclaimed' | 'claimed' | 'launched'
   owner: { ownerAddress: string; verifiedVia: string } | null
-  token: { address: string; staking: string; totalStaked: string; explorerUrl: string } | null
+  token: { address: string; staking: string; totalStaked: string; explorer: string } | null
   /** Maker-side take rate routed to stakers, in basis points (default 10%). */
   feeShareBps: number
 }
@@ -58,7 +58,7 @@ export async function getTokenPanel(server: {
         address: server.tokenAddress,
         staking: server.stakingAddress,
         totalStaked,
-        explorerUrl: `${explorer}/address/${server.tokenAddress}`,
+        explorer,
       },
       feeShareBps,
     }
