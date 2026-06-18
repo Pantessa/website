@@ -44,6 +44,7 @@ export default function LaunchToken({
 
   const [mounted, setMounted] = useState(false)
   useEffect(() => setMounted(true), [])
+  const [tokenName, setTokenName] = useState(name)
   const [symbol, setSymbol] = useState(defaultSymbol)
   const [phase, setPhase] = useState<Phase>('idle')
   const [error, setError] = useState<string | null>(null)
@@ -60,6 +61,7 @@ export default function LaunchToken({
     if (!wallet) return
     setError(null)
     const sym = symbol.trim().toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 11) || defaultSymbol
+    const nm = tokenName.trim().slice(0, 64) || name
     try {
       await switchChainAsync({ chainId: LAUNCH_CHAIN.id }).catch(() => {})
       setPhase('signing')
@@ -67,7 +69,7 @@ export default function LaunchToken({
         address: LAUNCH_FACTORY,
         abi: FACTORY_ABI,
         functionName: 'launch',
-        args: [slug, name, sym, wallet],
+        args: [slug, nm, sym, wallet],
         chainId: LAUNCH_CHAIN.id,
       })
 
@@ -92,7 +94,7 @@ export default function LaunchToken({
       const msg = e instanceof Error ? e.message : 'Launch failed.'
       setError(/rejected|denied|User /i.test(msg) ? 'Cancelled.' : msg)
     }
-  }, [wallet, slug, name, symbol, defaultSymbol, switchChainAsync, writeContractAsync])
+  }, [wallet, slug, name, tokenName, symbol, defaultSymbol, switchChainAsync, writeContractAsync])
 
   // Only the claimed owner can launch (and only once connected as that wallet).
   if (!mounted) return null
@@ -108,6 +110,24 @@ export default function LaunchToken({
         stakers earn a cut of every paid call.
       </p>
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+        <label className="mono" style={{ ...note, display: 'flex', alignItems: 'center', gap: 6 }}>
+          name
+          <input
+            value={tokenName}
+            onChange={(e) => setTokenName(e.target.value)}
+            maxLength={64}
+            disabled={busy}
+            className="mono"
+            style={{
+              width: 200,
+              border: '1px solid var(--mist)',
+              borderRadius: 8,
+              padding: '6px 9px',
+              background: 'var(--paper)',
+              color: 'var(--ink)',
+            }}
+          />
+        </label>
         <label className="mono" style={{ ...note, display: 'flex', alignItems: 'center', gap: 6 }}>
           ticker
           <input
