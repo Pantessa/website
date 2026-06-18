@@ -6,6 +6,7 @@ import prisma from '@/lib/db'
 import BrandIcon from '@/components/BrandIcon'
 import Footer from '@/components/Footer'
 import ServerApproveToggle from '@/components/ServerApproveToggle'
+import TokenPanel from '@/components/TokenPanel'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -167,6 +168,9 @@ export default async function ServiceDetailPage({ params }: Params) {
           <ServerApproveToggle serverId={server.id} serverName={server.name} />
 
           <p className="svc__desc">{server.description}</p>
+
+          {/* ── Launchpad token (own a piece, earn as the agent works) ── */}
+          <TokenPanel slug={server.slug} tokenAddress={server.tokenAddress} stakingAddress={server.stakingAddress} />
 
           {/* ── Endpoints ── */}
           <div className="svc__section">
