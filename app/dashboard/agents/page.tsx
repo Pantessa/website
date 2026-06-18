@@ -7,6 +7,7 @@
 
 import Link from 'next/link'
 import AgentsPanel from '@/components/AgentsPanel'
+import MyServersPanel from '@/components/MyServersPanel'
 import { useOrgStore } from '@/lib/org-store'
 
 export default function DashboardAgentsPage() {
@@ -15,14 +16,30 @@ export default function DashboardAgentsPage() {
     <>
       <h1 className="dash__h1">Agents</h1>
       <p className="dash__sub">
-        Apps connected through the <span className="mono">yeetful</span> SDK. Each holds one of
-        {activeOrgId ? " the org's " : ' your '}
-        <Link href="/dashboard/keys" className="underline underline-offset-2 decoration-dotted">API keys</Link>,
-        syncs its receipts here, and gets a daily budget — separate from the per-service{' '}
-        <Link href="/dashboard/approvals" className="underline underline-offset-2 decoration-dotted">approvals</Link>,
-        which control where the money may go.
+        The two sides of your account: <strong className="text-white font-medium">Payers</strong> are apps
+        connected through the <span className="mono">yeetful</span> SDK that spend{activeOrgId ? " the org's " : ' your '}
+        funds; <strong className="text-white font-medium">Payees</strong> are the MCP servers you operate and
+        collect on. Budgets are set here; where money may go is governed by{' '}
+        <Link href="/dashboard/approvals" className="underline underline-offset-2 decoration-dotted">approvals</Link>.
       </p>
-      <AgentsPanel orgId={activeOrgId} />
+
+      {/* Two-sided ledger: payers (spenders) | payees (claimed servers).
+          Single column on small screens; min-w-0 so the grid tracks shrink
+          instead of sizing to max-content. */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-x-6 min-w-0">
+        <section className="min-w-0">
+          <h2 className="mono text-[11px] uppercase tracking-wider text-[color:var(--muted-2)] mb-2">
+            Payers · your agents
+          </h2>
+          <AgentsPanel orgId={activeOrgId} />
+        </section>
+        <section className="min-w-0">
+          <h2 className="mono text-[11px] uppercase tracking-wider text-[color:var(--muted-2)] mb-2">
+            Payees · your MCP servers
+          </h2>
+          <MyServersPanel />
+        </section>
+      </div>
     </>
   )
 }

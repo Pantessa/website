@@ -352,6 +352,17 @@ async function main() {
       stats.agents?.topToday?.spentTodayUsd === 0.05,
   )
 
+  // Payees: the wallet's claimed MCP servers (dashboard Agents → My MCP servers).
+  // SIWE-only; a fresh wallet has claimed nothing, so an empty array.
+  const mineNoAuth = await fetch(`${BASE}/api/mcp/mine`)
+  check('claimed servers (/api/mcp/mine) requires auth → 401', mineNoAuth.status === 401)
+  const mineRes = await fetch(`${BASE}/api/mcp/mine`, { headers: C })
+  const mine = await mineRes.json()
+  check(
+    'claimed servers: authed → array (empty for a fresh wallet)',
+    mineRes.status === 200 && Array.isArray(mine) && mine.length === 0,
+  )
+
   // ── Public activity feed (Run 7: anonymized network proof-of-life) ───────
   console.log('— public activity')
   // Seed a DENIAL receipt too — the public feed must aggregate it, not list it.
