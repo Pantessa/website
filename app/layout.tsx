@@ -7,17 +7,35 @@ import Providers from '@/components/Providers'
 import { Analytics } from "@vercel/analytics/next"
 
 
+// Matches the SITE convention used by robots.ts / sitemap.ts / blog.
+const SITE = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://yeetful.com'
+
+const TITLE = 'Yeetful — Agent Expense Accounts'
+const DESCRIPTION =
+  'A spending account for every AI agent — fund it in USDC, set hard budgets and allowlists, and let it pay any MCP server per call, no API key. Agentic payments over x402 on Base.'
+
 export const metadata: Metadata = {
-  title: 'Yeetful — MCP Power Chat',
-  description: 'Combine multiple MCP servers into a single, supercharged AI chat experience.',
-  keywords: ['MCP', 'Model Context Protocol', 'AI Chat', 'Yeetful'],
+  // Required for OG/Twitter image URLs to resolve to absolute URLs.
+  metadataBase: new URL(SITE),
+  title: TITLE,
+  description: DESCRIPTION,
+  keywords: ['MCP', 'Model Context Protocol', 'x402', 'agentic payments', 'USDC', 'Base', 'AI agents', 'Yeetful'],
   authors: [{ name: 'Yeetful' }],
   // Icons are file-based: app/icon.svg, app/icon.png, app/apple-icon.png —
   // Next App Router auto-generates the <link> tags, so no metadata.icons needed.
   openGraph: {
-    title: 'Yeetful — MCP Power Chat',
-    description: 'Combine multiple MCP servers into a supercharged AI chat.',
+    title: TITLE,
+    description: DESCRIPTION,
     type: 'website',
+    url: SITE,
+    siteName: 'Yeetful',
+    images: [{ url: '/new-yeetful.png', width: 1200, height: 630, alt: 'Yeetful — Agent Expense Accounts' }],
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: TITLE,
+    description: DESCRIPTION,
+    images: ['/new-yeetful.png'],
   },
 }
 
