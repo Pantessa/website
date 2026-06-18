@@ -99,6 +99,26 @@ model McpEndpoint {
   @@map("mcp_endpoints")
 }
 
+/// Who owns/operates an MCP, for the launchpad (repo x402-launch). The claimant
+/// proves control of the MCP's backing GitHub repo by committing
+/// `.well-known/yeetful-claim.txt` containing their wallet address, and proves
+/// the wallet via SIWE. One owner per MCP. This owner is the creator-of-record
+/// for the MCP's token (the on-chain creator/treasury) and, once a token
+/// launches, the recipient of the creator fee split. Until claimed, that cut
+/// escrows on-chain (YeetfulStaking.treasury).
+model McpOwner {
+  id           String   @id @default(cuid())
+  mcpSlug      String   @unique @map("mcp_slug") // the claimed McpServer.slug
+  ownerAddress String   @map("owner_address") // lowercased, SIWE-verified
+  repo         String // "owner/name" on GitHub
+  githubLogin  String?  @map("github_login") // repo owner login (display)
+  claimedAt    DateTime @default(now()) @map("claimed_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  @@index([ownerAddress])
+  @@map("mcp_owners")
+}
+
 /// A chat owned by a wallet address (verified via SIWE — see lib/auth.ts).
 /// Private by default; the owner can opt in to a public, unlisted share link
 /// (publicSlug). The sharing UI lands in a later branch — the schema is ready.
