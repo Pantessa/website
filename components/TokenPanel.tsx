@@ -1,21 +1,13 @@
 import Link from 'next/link'
 import { ExternalLink } from 'lucide-react'
 import { getTokenPanel, feeSharePct, shortAddr } from '@/lib/launch-token'
+import { usdCompact } from '@/lib/format'
 import ClaimMcp from '@/components/ClaimMcp'
 import LaunchToken from '@/components/LaunchToken'
 import TradeToken from '@/components/TradeToken'
 import TokenPriceChart from '@/components/TokenPriceChart'
 import StakeToken from '@/components/StakeToken'
 import Stakers from '@/components/Stakers'
-
-/** USD formatter that spans memecoin ranges: tiny prices keep sig figs, caps compact. */
-function usd(v: number): string {
-  if (!isFinite(v) || v <= 0) return '—'
-  if (v >= 1_000_000) return `$${(v / 1_000_000).toFixed(2)}M`
-  if (v >= 1_000) return `$${(v / 1_000).toFixed(1)}K`
-  if (v >= 1) return `$${v.toLocaleString(undefined, { maximumFractionDigits: 2 })}`
-  return `$${v.toPrecision(3)}`
-}
 
 /** A reasonable default ticker from the MCP name/slug (the owner can edit it). */
 function defaultTicker(name: string, slug: string): string {
@@ -44,10 +36,21 @@ function AddrRow({ label, addr, href, badge }: { label: string; addr: string; hr
   )
 }
 
+/** One cell of the Hyperliquid-style market strip. */
+function Stat({ label, value, accent }: { label: string; value: string; accent?: boolean }) {
+  return (
+    <span className="tok__stat">
+      <span className="tok__statlbl">{label}</span>
+      <span className={`tok__statval${accent ? ' tok__statval--accent' : ''}`}>{value}</span>
+    </span>
+  )
+}
+
 /**
- * Per-MCP token panel on the service page (x402-launch M6). Read-only: shows the
- * launchpad state (unclaimed → claimed → launched) + live staking. Wallet actions
- * (claim / buy / stake / claim-fees) land in a follow-up (M6b).
+ * Per-MCP token panel on the service page (x402-launch M6). Read-only state
+ * (unclaimed → claimed → launched) plus live staking + in-panel trade/stake for
+ * launched tokens. The launched layout is a market strip + two-column shell
+ * (chart/detail left, sticky trade·earn ticket right; one column ≤1080px).
  */
 export default async function TokenPanel({
   slug,
@@ -81,106 +84,96 @@ export default async function TokenPanel({
       </div>
 
       {panel.state === 'launched' && panel.token && (
-        <div style={boxStyle}>
-          <p style={{ margin: 0 }}>
-            <strong>Earn as the agent works.</strong> Stake this MCP&rsquo;s token to receive{' '}
-            <strong style={{ color: 'var(--accent)' }}>{pct}%</strong> of every paid call, in USDC.
-          </p>
-
-          {/* Full addresses, each linking to the block explorer. */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            <AddrRow
-              label="Token"
-              addr={panel.token.address}
-              href={`${panel.token.explorer}/token/${panel.token.address}`}
-            />
-            <AddrRow
-              label="Staking vault"
-              addr={panel.token.staking}
-              href={`${panel.token.explorer}/address/${panel.token.staking}`}
-            />
-            {panel.owner && (
-              <AddrRow
-                label="Creator"
-                addr={panel.owner.ownerAddress}
-                href={`${panel.token.explorer}/address/${panel.owner.ownerAddress}`}
-                badge={`✓ verified (${panel.owner.verifiedVia})`}
-              />
-            )}
-          </div>
-
-          <div className="mono" style={{ display: 'flex', flexWrap: 'wrap', gap: '6px 28px', fontSize: 14 }}>
+        <>
+          {/* Market strip — the dense, tabular at-a-glance readout. */}
+          <div className="tok__strip">
             {panel.token.market && (
               <>
-                <span>
-                  <span style={labelStyle}>price </span>
-                  {usd(panel.token.market.priceUsd)}
-                </span>
-                <span>
-                  <span style={labelStyle}>market cap </span>
-                  {usd(panel.token.market.marketCapUsd)}
-                </span>
+                <Stat label="price" value={usdCompact(panel.token.market.priceUsd)} />
+                <Stat label="market cap" value={usdCompact(panel.token.market.marketCapUsd)} />
               </>
             )}
-            <span>
-              <span style={labelStyle}>staked </span>
-              {Number(panel.token.totalStaked).toLocaleString(undefined, { maximumFractionDigits: 2 })}
-            </span>
-            <span>
-              <span style={labelStyle}>rev share </span>
-              {pct}%
-            </span>
+            <Stat
+              label="staked"
+              value={Number(panel.token.totalStaked).toLocaleString(undefined, { maximumFractionDigits: 2 })}
+            />
+            <Stat label="rev share" value={`${pct}%`} accent />
           </div>
 
-          {/* How it trades — Flaunch puts the token on a Uniswap v4 pool at launch. */}
-          <div>
-            <p className="mono" style={{ margin: '0 0 4px', fontSize: 13, ...labelStyle }}>
-              How it trades
-            </p>
-            <p style={{ margin: 0, fontSize: 14 }}>
-              Live on a Uniswap&nbsp;v4 pool from launch — no graduation step. The first ~30 minutes
-              is a fixed-price <strong>fair launch</strong> (buys only, everyone the same price),
-              then open trading. A <strong>Progressive Bid Wall</strong> turns trading fees into
-              rising buy-side support for the price.
-            </p>
+          {/* Two-column shell: chart + detail left, sticky trade·earn ticket right. */}
+          <div className="tok__grid">
+            <div className="tok__main">
+              <p className="tok__prose">
+                <strong>Earn as the agent works.</strong> Stake this MCP&rsquo;s token to receive{' '}
+                <strong style={{ color: 'var(--accent)' }}>{pct}%</strong> of every paid call, in USDC.
+              </p>
+
+              {/* Price — hero spot + 24h chip + history sampled from the v4 pool. */}
+              <div className="tok__card">
+                <TokenPriceChart slug={slug} />
+              </div>
+
+              {/* How it trades — Flaunch puts the token on a Uniswap v4 pool at launch. */}
+              <div className="tok__card">
+                <p className="tok__cardhead">How it trades</p>
+                <p className="tok__prose">
+                  Live on a Uniswap&nbsp;v4 pool from launch — no graduation step. The first ~30
+                  minutes is a fixed-price <strong>fair launch</strong> (buys only, everyone the same
+                  price), then open trading. A <strong>Progressive Bid Wall</strong> turns trading
+                  fees into rising buy-side support for the price.
+                </p>
+              </div>
+
+              {/* Contract — full addresses, each linking to the block explorer. */}
+              <div className="tok__card">
+                <p className="tok__cardhead">Contract</p>
+                <AddrRow
+                  label="Token"
+                  addr={panel.token.address}
+                  href={`${panel.token.explorer}/token/${panel.token.address}`}
+                />
+                <AddrRow
+                  label="Staking vault"
+                  addr={panel.token.staking}
+                  href={`${panel.token.explorer}/address/${panel.token.staking}`}
+                />
+                {panel.owner && (
+                  <AddrRow
+                    label="Creator"
+                    addr={panel.owner.ownerAddress}
+                    href={`${panel.token.explorer}/address/${panel.owner.ownerAddress}`}
+                    badge={`✓ verified (${panel.owner.verifiedVia})`}
+                  />
+                )}
+                <Link
+                  href={`${panel.token.explorer}/token/${panel.token.address}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="svc__ext mono"
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: 6, width: 'max-content' }}
+                >
+                  View on Basescan <ExternalLink size={13} />
+                </Link>
+              </div>
+
+              <Stakers slug={slug} explorer={panel.token.explorer} />
+            </div>
+
+            <div className="tok__rail">
+              {/* Trade — buy with ETH or sell for ETH through the v4 pool. */}
+              <div className="tok__card tok__card--rail">
+                <p className="tok__cardhead">Trade the token</p>
+                <TradeToken token={panel.token.address} />
+              </div>
+
+              {/* Participate — stake to earn the rev share, claim USDC any time. */}
+              <div className="tok__card tok__card--rail">
+                <p className="tok__cardhead">Stake to earn — {pct}% of every paid call, in USDC</p>
+                <StakeToken token={panel.token.address} staking={panel.token.staking} />
+              </div>
+            </div>
           </div>
-
-          {/* Price — USD spot + history sampled from the v4 pool. */}
-          <div>
-            <p className="mono" style={{ margin: '0 0 8px', fontSize: 13, ...labelStyle }}>
-              Price
-            </p>
-            <TokenPriceChart slug={slug} />
-          </div>
-
-          {/* Trade — buy with ETH or sell for ETH through the v4 pool. */}
-          <div>
-            <p className="mono" style={{ margin: '0 0 8px', fontSize: 13, ...labelStyle }}>
-              Trade the token
-            </p>
-            <TradeToken token={panel.token.address} />
-          </div>
-
-          {/* Participate — stake to earn the rev share, claim USDC any time. */}
-          <div>
-            <p className="mono" style={{ margin: '0 0 8px', fontSize: 13, ...labelStyle }}>
-              Stake to earn — {pct}% of every paid call, in USDC
-            </p>
-            <StakeToken token={panel.token.address} staking={panel.token.staking} />
-          </div>
-
-          <Stakers slug={slug} explorer={panel.token.explorer} />
-
-          <Link
-            href={`${panel.token.explorer}/token/${panel.token.address}`}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="svc__ext mono"
-            style={{ display: 'inline-flex', alignItems: 'center', gap: 6, width: 'max-content' }}
-          >
-            View on Basescan <ExternalLink size={13} />
-          </Link>
-        </div>
+        </>
       )}
 
       {panel.state === 'claimed' && (
