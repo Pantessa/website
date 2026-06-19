@@ -16,22 +16,13 @@ function defaultTicker(name: string, slug: string): string {
 }
 
 /** A labelled, full (untruncated) address linking to the block explorer. */
-function AddrRow({ label, addr, href, badge }: { label: string; addr: string; href: string; badge?: string }) {
+function AddrRow({ label, addr, href }: { label: string; addr: string; href: string }) {
   return (
-    <div style={{ display: 'flex', gap: 10, alignItems: 'baseline', flexWrap: 'wrap' }}>
-      <span className="mono" style={{ color: 'var(--smoke)', fontSize: 13, minWidth: 96 }}>
-        {label}
-      </span>
-      <a
-        href={href}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="mono"
-        style={{ fontSize: 13, wordBreak: 'break-all', textDecoration: 'underline', textDecorationColor: 'var(--mist)' }}
-      >
+    <div className="tok__addr">
+      <span className="tok__addrlbl mono">{label}</span>
+      <a href={href} target="_blank" rel="noopener noreferrer" className="tok__addrval mono">
         {addr}
       </a>
-      {badge && <span style={{ color: 'var(--accent)', fontSize: 13 }}>{badge}</span>}
     </div>
   )
 }
@@ -100,19 +91,20 @@ export default async function TokenPanel({
             <Stat label="rev share" value={`${pct}%`} accent />
           </div>
 
-          {/* Two-column shell: chart + detail left, sticky trade·earn ticket right. */}
+          <p className="tok__prose tok__lede">
+            <strong>Earn as the agent works.</strong> Stake this MCP&rsquo;s token to receive{' '}
+            <strong style={{ color: 'var(--accent)' }}>{pct}%</strong> of every paid call, in USDC.
+          </p>
+
+          {/* Shell: chart top-left, sticky trade·earn ticket right, detail below.
+              On mobile it restacks chart → ticket → detail (see .tok__grid areas). */}
           <div className="tok__grid">
+            {/* Price — hero spot + 24h chip + history sampled from the v4 pool. */}
+            <div className="tok__chartslot tok__card">
+              <TokenPriceChart slug={slug} />
+            </div>
+
             <div className="tok__main">
-              <p className="tok__prose">
-                <strong>Earn as the agent works.</strong> Stake this MCP&rsquo;s token to receive{' '}
-                <strong style={{ color: 'var(--accent)' }}>{pct}%</strong> of every paid call, in USDC.
-              </p>
-
-              {/* Price — hero spot + 24h chip + history sampled from the v4 pool. */}
-              <div className="tok__card">
-                <TokenPriceChart slug={slug} />
-              </div>
-
               {/* How it trades — Flaunch puts the token on a Uniswap v4 pool at launch. */}
               <div className="tok__card">
                 <p className="tok__cardhead">How it trades</p>

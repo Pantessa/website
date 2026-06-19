@@ -176,8 +176,8 @@ export default function StakeToken({ token, staking }: { token: string; staking:
       </div>
 
       <div className="tkt__tabs">
-        <button className={`tkt__tab tkt__tab--buy mono${staking_ ? ' is-active' : ''}`} disabled={!!busy} onClick={() => { setMode('stake'); setAmount(''); setError(null) }}>Stake</button>
-        <button className={`tkt__tab tkt__tab--neutral mono${!staking_ ? ' is-active' : ''}`} disabled={!!busy} onClick={() => { setMode('unstake'); setAmount(''); setError(null) }}>Unstake</button>
+        <button className={`tkt__tab tkt__tab--buy mono${staking_ ? ' is-active' : ''}`} aria-pressed={staking_} disabled={!!busy} onClick={() => { setMode('stake'); setAmount(''); setError(null) }}>Stake</button>
+        <button className={`tkt__tab tkt__tab--neutral mono${!staking_ ? ' is-active' : ''}`} aria-pressed={!staking_} disabled={!!busy} onClick={() => { setMode('unstake'); setAmount(''); setError(null) }}>Unstake</button>
       </div>
 
       <div className="tkt__field">

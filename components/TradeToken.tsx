@@ -178,8 +178,8 @@ export default function TradeToken({ token }: { token: string }) {
   return (
     <div className="tkt">
       <div className="tkt__tabs">
-        <button className={`tkt__tab tkt__tab--buy mono${buying ? ' is-active' : ''}`} disabled={!!busy} onClick={() => reset('buy')}>Buy</button>
-        <button className={`tkt__tab tkt__tab--sell mono${!buying ? ' is-active' : ''}`} disabled={!!busy} onClick={() => reset('sell')}>Sell</button>
+        <button className={`tkt__tab tkt__tab--buy mono${buying ? ' is-active' : ''}`} aria-pressed={buying} disabled={!!busy} onClick={() => reset('buy')}>Buy</button>
+        <button className={`tkt__tab tkt__tab--sell mono${!buying ? ' is-active' : ''}`} aria-pressed={!buying} disabled={!!busy} onClick={() => reset('sell')}>Sell</button>
       </div>
 
       <div className="tkt__bal mono">

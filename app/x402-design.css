@@ -452,9 +452,22 @@
   .tok__statval { color: var(--fg); font-variant-numeric: tabular-nums; }
   .tok__statval--accent { color: var(--accent); }
 
-  .tok__grid { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 28px; align-items: start; }
-  .tok__main { min-width: 0; display: flex; flex-direction: column; gap: 22px; }
-  .tok__rail { position: sticky; top: 88px; display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+  .tok__lede { margin: 0 0 22px; }
+  /* grid areas put the chart top-left and the ticket in a sticky right rail on
+     desktop; on mobile they restack chart → ticket → detail so the primary
+     action isn't buried below the secondary content. */
+  .tok__grid {
+    display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 22px 28px; align-items: start;
+    grid-template-areas: "chart rail" "detail rail";
+  }
+  .tok__chartslot { grid-area: chart; min-width: 0; }
+  .tok__main { grid-area: detail; min-width: 0; display: flex; flex-direction: column; gap: 22px; }
+  .tok__rail { grid-area: rail; position: sticky; top: 88px; display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+
+  .tok__addr { display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; }
+  .tok__addrlbl { color: var(--muted); font-size: 13px; min-width: 96px; }
+  .tok__addrval { font-size: 13px; word-break: break-all; text-decoration: underline; text-decoration-color: var(--line); transition: text-decoration-color .15s; }
+  .tok__addrval:hover { text-decoration-color: var(--accent); }
 
   /* A bordered detail block — the styled successor to TokenPanel's inline boxStyle. */
   .tok__card {
@@ -467,7 +480,7 @@
   .tok__prose strong { color: var(--fg); }
 
   @media (max-width: 1080px) {
-    .tok__grid { grid-template-columns: 1fr; }
+    .tok__grid { grid-template-columns: 1fr; grid-template-areas: "chart" "rail" "detail"; }
     .tok__rail { position: static; }
   }
 
