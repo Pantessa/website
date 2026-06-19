@@ -39,6 +39,10 @@ export interface PlannableEndpoint {
   description: string | null
   priceUsd: string
   parameters: EndpointParam[]
+  /** Settlement history for this endpoint's host (the engine's feedback signal):
+   *  how many paid calls it has actually settled, and whether recently. Absent =
+   *  no history (unproven, NOT penalized — see plannerPrompt). */
+  reliability?: { settled: number; recent: boolean }
 }
 
 export interface PlannedPick {
@@ -87,7 +91,54 @@ export async function loadPlannableEndpoints(slugs: string[]): Promise<Plannable
       parameters: params,
     })
   }
+  await attachReliability(out)
   return out
+}
+
+const RELIABILITY_WINDOW_MS = 30 * 86_400_000
+const RECENT_MS = 7 * 86_400_000
+
+/** Normalize a URL or bare host to a hostname for matching against the ledger. */
+function hostnameOf(s: string): string {
+  try {
+    return new URL(s.includes('://') ? s : `https://${s}`).hostname
+  } catch {
+    return s
+  }
+}
+
+/**
+ * Attach each endpoint's settlement history from the spend ledger — the routing
+ * engine's feedback loop. A host that has actually settled paid calls (ok=true)
+ * recently is "proven"; the planner is told to prefer proven endpoints only when
+ * choices are otherwise equal, so newly-surfaced services aren't starved (they
+ * stay selectable when they're the best fit and earn a track record by being used).
+ */
+async function attachReliability(endpoints: PlannableEndpoint[]): Promise<void> {
+  if (endpoints.length === 0) return
+  try {
+    const since = new Date(Date.now() - RELIABILITY_WINDOW_MS)
+    const rows = await prisma.spendLedgerEntry.groupBy({
+      by: ['host'],
+      where: { ok: true, amountUsd: { gt: 0 }, createdAt: { gte: since } },
+      _count: { _all: true },
+      _max: { createdAt: true },
+    })
+    const byHost = new Map<string, { settled: number; recent: boolean }>()
+    for (const r of rows) {
+      const last = r._max.createdAt
+      byHost.set(hostnameOf(r.host), {
+        settled: r._count._all,
+        recent: !!last && Date.now() - last.getTime() <= RECENT_MS,
+      })
+    }
+    for (const e of endpoints) {
+      const rel = byHost.get(hostnameOf(e.url))
+      if (rel) e.reliability = rel
+    }
+  } catch {
+    // Reliability is advisory — never block planning on a ledger read.
+  }
 }
 
 /**
@@ -132,7 +183,10 @@ export function plannerPrompt(message: string, endpoints: PlannableEndpoint[]): 
             return `${p.name}(${p.group}${p.required ? ',required' : ''}:${p.type ?? 'string'}${ex})`
           })
           .join(', ')
-        return `  - id=${e.id} ${e.method} ${e.url} — ${e.description ?? 'no description'} [$${e.priceUsd}] params: ${params}`
+        const proven = e.reliability && e.reliability.settled > 0
+          ? ` ✓proven(${e.reliability.settled} settled${e.reliability.recent ? ', recent' : ''})`
+          : ''
+        return `  - id=${e.id} ${e.method} ${e.url} — ${e.description ?? 'no description'} [$${e.priceUsd}]${proven} params: ${params}`
       })
       return `service ${slug} (${eps[0].serverName}):\n${lines.join('\n')}`
     })
@@ -140,7 +194,7 @@ export function plannerPrompt(message: string, endpoints: PlannableEndpoint[]): 
 
   return [
     `You are an API-call planner. A user asked:\n"""${message}"""`,
-    `Below are paid API endpoints, grouped by service, each tagged with its price in [$…]. Pick AT MOST ONE endpoint per service — only if calling it would genuinely help answer the user. When two endpoints of a service would both answer the need, pick the cheaper one. Fill in parameter values derived from the user's message (use sensible values; respect types; include every required param; skip optional params you can't infer). If no endpoint of a service helps, skip that service entirely.`,
+    `Below are paid API endpoints, grouped by service, each tagged with its price in [$…]; some are tagged ✓proven (they have successfully settled paid calls before). Pick AT MOST ONE endpoint per service — only if calling it would genuinely help answer the user. When two endpoints would both answer the need equally well, prefer the ✓proven one, and then the cheaper one — but still pick an un-proven endpoint when it is clearly the better fit for the request. Fill in parameter values derived from the user's message (use sensible values; respect types; include every required param; skip optional params you can't infer). If no endpoint of a service helps, skip that service entirely.`,
     menu,
     `Respond with ONLY this JSON, no prose, no code fences:`,
     `{"picks":[{"endpointId":"<id>","params":{"<name>":"<value>"}}]}`,
