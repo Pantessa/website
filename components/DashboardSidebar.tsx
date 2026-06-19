@@ -6,7 +6,7 @@
 
 import Link from 'next/link'
 import { useEffect, useRef } from 'react'
-import { LayoutDashboard, KeyRound, Bot, ToggleRight, Activity, Building2, LineChart, Server, MessageSquare, BookOpen } from 'lucide-react'
+import { LayoutDashboard, KeyRound, Bot, ToggleRight, Activity, ReceiptText, Building2, LineChart, Server, MessageSquare, BookOpen } from 'lucide-react'
 import { isAdminAddress } from '@/lib/admin'
 
 export const DASH_SECTIONS = [
@@ -17,6 +17,7 @@ export const DASH_SECTIONS = [
   { href: '/dashboard/keys', label: 'API Keys', icon: KeyRound, exact: false },
   { href: '/dashboard/approvals', label: 'Approvals', icon: ToggleRight, exact: false },
   { href: '/dashboard/activity', label: 'Activity', icon: Activity, exact: false },
+  { href: '/dashboard/receipts', label: 'Earnings', icon: ReceiptText, exact: false },
   { href: '/dashboard/org', label: 'Organization', icon: Building2, exact: false },
   { href: '/docs', label: 'Docs', icon: BookOpen, exact: false },
 ] as const
