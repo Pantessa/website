@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import prisma from '@/lib/db'
+import { getLaunchpadSummary } from '@/lib/launchpad-summary'
 
 export const runtime = 'nodejs'
 // Never build-time-prerendered (the handler reads no request, so Next would
@@ -21,7 +22,7 @@ export async function GET() {
   const utcMidnight = new Date()
   utcMidnight.setUTCHours(0, 0, 0, 0)
 
-  const [totals, blocked, today, activeAccounts, daily, top, recent] = await Promise.all([
+  const [totals, blocked, today, activeAccounts, daily, top, recent, launchpad] = await Promise.all([
     prisma.spendLedgerEntry.aggregate({
       where: { ok: true },
       _sum: { amountUsd: true },
@@ -62,6 +63,8 @@ export async function GET() {
         grant: { select: { ownerAddress: true } },
       },
     }),
+    // Launchpad: USDC directed to stakers + per-token staked (null on any failure).
+    getLaunchpadSummary(),
   ])
 
   const payload = {
@@ -84,6 +87,7 @@ export async function GET() {
       account: shortAddress(r.grant.ownerAddress),
       createdAt: r.createdAt,
     })),
+    launchpad,
   }
 
   return NextResponse.json(payload, {
