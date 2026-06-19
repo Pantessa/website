@@ -516,6 +516,21 @@
   .tkt__msg { font-size: 13px; margin: 0; }
   .tkt__msg--ok { color: var(--accent); }
   .tkt__msg--err { color: var(--sell); }
+  .tkt__tab--neutral.is-active { background: var(--line-2); color: var(--fg); }
+
+  /* Earn / staking — claimable USDC as the hero number. */
+  .tkt__earn {
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    padding: 11px 13px; border: 1px solid var(--line); border-radius: 12px; background: var(--surf-2);
+  }
+  .tkt__earnlbl { font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted-2); }
+  .tkt__earnval { font-family: 'Geist Mono', ui-monospace, monospace; font-size: 19px; font-weight: 700; color: var(--accent); font-variant-numeric: tabular-nums; }
+  .tkt__claim {
+    border: 1px solid var(--accent); border-radius: 10px; padding: 7px 14px; font-size: 13px; font-weight: 600;
+    color: var(--accent); background: transparent; transition: background .15s, color .15s, border-color .15s;
+  }
+  .tkt__claim:hover:not(:disabled) { background: var(--accent); color: var(--ink); }
+  .tkt__claim:disabled { opacity: .5; border-color: var(--line); color: var(--muted-2); cursor: default; }
 
   /* Price chart hero (TokenPriceChart) — big spot + 24h chip + timeframe toggles. */
   .tok__chart { display: flex; flex-direction: column; gap: 10px; }

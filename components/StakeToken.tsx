@@ -4,6 +4,10 @@
 // token into its YeetfulStaking vault to earn the maker-side rev share (USDC),
 // claimable any time. Reads the connected wallet's balance / staked / earned via
 // wagmi; writes approve → stake, unstake, and claim. Base Sepolia (LAUNCH_CHAIN).
+//
+// Presentation is an "earn" card matching the trade ticket: claimable USDC is the
+// hero number (with its own Claim button), then a Stake/Unstake segmented control
+// over a shared amount field with % chips.
 
 import { useCallback, useEffect, useState } from 'react'
 import { useAccount, useReadContract, useSwitchChain, useWriteContract } from 'wagmi'
@@ -18,17 +22,7 @@ import {
 } from '@/lib/launch-contracts'
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
-const btn = {
-  background: 'var(--accent)',
-  color: 'var(--ink)',
-  border: 'none',
-  borderRadius: 12,
-  padding: '8px 14px',
-  fontWeight: 600,
-  cursor: 'pointer',
-} as const
-const ghost = { ...btn, background: 'transparent', color: 'var(--ink)', border: '1px solid var(--mist)' } as const
-const note = { margin: 0, fontSize: 13, color: 'var(--smoke)' } as const
+const PCTS = [25, 50, 75, 100] as const
 const fmt = (v: bigint | undefined, dec: number, max = 4) =>
   v === undefined ? '—' : Number(formatUnits(v, dec)).toLocaleString(undefined, { maximumFractionDigits: max })
 
@@ -40,6 +34,7 @@ export default function StakeToken({ token, staking }: { token: string; staking:
 
   const [mounted, setMounted] = useState(false)
   useEffect(() => setMounted(true), [])
+  const [mode, setMode] = useState<'stake' | 'unstake'>('stake')
   const [amount, setAmount] = useState('')
   const [busy, setBusy] = useState<null | string>(null)
   const [error, setError] = useState<string | null>(null)
@@ -101,12 +96,13 @@ export default function StakeToken({ token, staking }: { token: string; staking:
   if (!mounted) return null
   if (!isConnected) {
     return (
-      <button style={btn} className="mono" onClick={() => openConnectModal?.()}>
+      <button className="tkt__cta mono" onClick={() => openConnectModal?.()}>
         Connect wallet to stake
       </button>
     )
   }
 
+  const staking_ = mode === 'stake'
   const earnedUsd = (earned.data as bigint | undefined) ?? BigInt(0)
   const canClaim = earnedUsd > BigInt(0)
 
@@ -126,46 +122,91 @@ export default function StakeToken({ token, staking }: { token: string; staking:
   const noBalance = bal !== undefined && bal === BigInt(0)
   const stakeTooMuch = amt > BigInt(0) && bal !== undefined && amt > bal
   const unstakeTooMuch = amt > BigInt(0) && stk !== undefined && amt > stk
-  const stakeBlocked = !!busy || noBalance || stakeTooMuch
-  const unstakeBlocked = !!busy || (stk !== undefined && stk === BigInt(0)) || unstakeTooMuch
-  const hint = noBalance
-    ? `You hold 0 ${ticker}. Stake the MCP token, not USDC — acquire ${ticker} from its pool first (USDC is what you earn).`
-    : stakeTooMuch
-      ? `Not enough ${ticker} — you hold ${fmt(bal, TOKEN_DECIMALS)}.`
-      : unstakeTooMuch
-        ? `You only have ${fmt(stk, TOKEN_DECIMALS)} ${ticker} staked.`
+  const noStake = stk !== undefined && stk === BigInt(0)
+  const ctaBlocked = staking_ ? (!!busy || noBalance || stakeTooMuch) : (!!busy || noStake || unstakeTooMuch)
+  const chipsDisabled = !!busy || (staking_ ? (bal === undefined || bal === BigInt(0)) : (stk === undefined || stk === BigInt(0)))
+
+  const onAmount = (v: string) => {
+    const cleaned = v.replace(/[^0-9.]/g, '')
+    const parts = cleaned.split('.')
+    setAmount(parts.length > 2 ? `${parts[0]}.${parts.slice(1).join('')}` : cleaned)
+  }
+  const setPct = (pct: number) => {
+    const src = staking_ ? bal : stk
+    if (src === undefined) return
+    setAmount(formatUnits((src * BigInt(pct)) / BigInt(100), TOKEN_DECIMALS))
+  }
+
+  const hint = staking_
+    ? noBalance
+      ? `You hold 0 ${ticker}. Stake the MCP token, not USDC — acquire ${ticker} from its pool first (USDC is what you earn).`
+      : stakeTooMuch
+        ? `Not enough ${ticker} — you hold ${fmt(bal, TOKEN_DECIMALS)}.`
         : null
+    : unstakeTooMuch
+      ? `You only have ${fmt(stk, TOKEN_DECIMALS)} ${ticker} staked.`
+      : null
+
+  const ctaLabel =
+    busy === 'approve' ? 'Approving…'
+    : busy === 'stake' ? 'Staking…'
+    : busy === 'unstake' ? 'Unstaking…'
+    : staking_ ? 'Stake' : 'Unstake'
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-      <div className="mono" style={{ display: 'flex', flexWrap: 'wrap', gap: '6px 28px', fontSize: 14 }}>
-        <span><span style={{ color: 'var(--smoke)' }}>your balance </span>{fmt(balance.data as bigint, TOKEN_DECIMALS)}</span>
-        <span><span style={{ color: 'var(--smoke)' }}>you staked </span>{fmt(staked.data as bigint, TOKEN_DECIMALS)}</span>
-        <span><span style={{ color: 'var(--smoke)' }}>claimable </span>${fmt(earnedUsd, USDC_DECIMALS, 4)}</span>
-      </div>
-
-      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-        <input
-          value={amount}
-          onChange={(e) => setAmount(e.target.value.replace(/[^0-9.]/g, ''))}
-          placeholder={`amount in ${ticker}`}
-          inputMode="decimal"
-          disabled={!!busy}
-          className="mono"
-          style={{ width: 150, minWidth: 0, border: '1px solid var(--mist)', borderRadius: 10, padding: '8px 11px', background: 'var(--paper)', color: 'var(--ink)' }}
-        />
-        <button style={btn} className="mono" disabled={stakeBlocked} onClick={() => void run('stake')}>
-          {busy === 'approve' ? 'Approving…' : busy === 'stake' ? 'Staking…' : 'Stake'}
-        </button>
-        <button style={ghost} className="mono" disabled={unstakeBlocked} onClick={() => void run('unstake')}>
-          {busy === 'unstake' ? 'Unstaking…' : 'Unstake'}
-        </button>
-        <button style={canClaim ? btn : ghost} className="mono" disabled={!!busy || !canClaim} onClick={() => void run('claim')}>
+    <div className="tkt">
+      {/* Claimable USDC — the payoff, front and centre. */}
+      <div className="tkt__earn">
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+          <span className="tkt__earnlbl mono">claimable</span>
+          <span className="tkt__earnval">${fmt(earnedUsd, USDC_DECIMALS, 4)}</span>
+        </div>
+        <button className="tkt__claim mono" disabled={!!busy || !canClaim} onClick={() => void run('claim')}>
           {busy === 'claim' ? 'Claiming…' : 'Claim USDC'}
         </button>
       </div>
-      {hint && !error && <p className="mono" style={note}>{hint}</p>}
-      {error && <p className="mono" style={{ ...note, color: 'var(--error, #C0392B)' }}>{error}</p>}
+
+      <div className="tkt__bal mono">
+        <span className="tkt__ballbl">your {ticker}</span>
+        <span className="tkt__balval">{fmt(bal, TOKEN_DECIMALS)}</span>
+      </div>
+      <div className="tkt__bal mono">
+        <span className="tkt__ballbl">you staked</span>
+        <span className="tkt__balval">{fmt(stk, TOKEN_DECIMALS)}</span>
+      </div>
+
+      <div className="tkt__tabs">
+        <button className={`tkt__tab tkt__tab--buy mono${staking_ ? ' is-active' : ''}`} disabled={!!busy} onClick={() => { setMode('stake'); setAmount(''); setError(null) }}>Stake</button>
+        <button className={`tkt__tab tkt__tab--neutral mono${!staking_ ? ' is-active' : ''}`} disabled={!!busy} onClick={() => { setMode('unstake'); setAmount(''); setError(null) }}>Unstake</button>
+      </div>
+
+      <div className="tkt__field">
+        <input
+          className="tkt__input"
+          value={amount}
+          onChange={(e) => onAmount(e.target.value)}
+          placeholder={staking_ ? `${ticker} to stake` : `${ticker} to unstake`}
+          inputMode="decimal"
+          disabled={!!busy}
+          aria-label={staking_ ? `${ticker} to stake` : `${ticker} to unstake`}
+        />
+        <span className="tkt__suffix mono">{ticker}</span>
+      </div>
+
+      <div className="tkt__chips">
+        {PCTS.map((p) => (
+          <button key={p} className="tkt__chip mono" disabled={chipsDisabled} onClick={() => setPct(p)}>
+            {p === 100 ? 'Max' : `${p}%`}
+          </button>
+        ))}
+      </div>
+
+      <button className="tkt__cta mono" disabled={ctaBlocked || !amount} onClick={() => void run(mode)}>
+        {ctaLabel}
+      </button>
+
+      {hint && !error && <p className="tkt__note mono">{hint}</p>}
+      {error && <p className="tkt__msg tkt__msg--err mono">{error}</p>}
     </div>
   )
 }
