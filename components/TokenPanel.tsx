@@ -3,6 +3,7 @@ import { ExternalLink } from 'lucide-react'
 import { getTokenPanel, feeSharePct, shortAddr } from '@/lib/launch-token'
 import ClaimMcp from '@/components/ClaimMcp'
 import LaunchToken from '@/components/LaunchToken'
+import BuyToken from '@/components/BuyToken'
 import StakeToken from '@/components/StakeToken'
 import Stakers from '@/components/Stakers'
 
@@ -120,6 +121,14 @@ export default async function TokenPanel({
               then open trading. A <strong>Progressive Bid Wall</strong> turns trading fees into
               rising buy-side support for the price.
             </p>
+          </div>
+
+          {/* Buy — acquire the token with ETH through its v4 pool, then stake below. */}
+          <div>
+            <p className="mono" style={{ margin: '0 0 8px', fontSize: 13, ...labelStyle }}>
+              Buy the token
+            </p>
+            <BuyToken token={panel.token.address} />
           </div>
 
           {/* Participate — stake to earn the rev share, claim USDC any time. */}
