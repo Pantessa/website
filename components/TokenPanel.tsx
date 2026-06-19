@@ -4,6 +4,7 @@ import { getTokenPanel, feeSharePct, shortAddr } from '@/lib/launch-token'
 import ClaimMcp from '@/components/ClaimMcp'
 import LaunchToken from '@/components/LaunchToken'
 import TradeToken from '@/components/TradeToken'
+import TokenPriceChart from '@/components/TokenPriceChart'
 import StakeToken from '@/components/StakeToken'
 import Stakers from '@/components/Stakers'
 
@@ -142,6 +143,14 @@ export default async function TokenPanel({
               then open trading. A <strong>Progressive Bid Wall</strong> turns trading fees into
               rising buy-side support for the price.
             </p>
+          </div>
+
+          {/* Price — USD spot + history sampled from the v4 pool. */}
+          <div>
+            <p className="mono" style={{ margin: '0 0 8px', fontSize: 13, ...labelStyle }}>
+              Price
+            </p>
+            <TokenPriceChart slug={slug} />
           </div>
 
           {/* Trade — buy with ETH or sell for ETH through the v4 pool. */}

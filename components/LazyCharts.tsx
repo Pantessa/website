@@ -39,3 +39,7 @@ export const Funnel = dynamic(() => import('./AdminCharts').then((m) => m.Funnel
   ssr: false,
   loading: skeleton(120),
 })
+export const PriceChart = dynamic(() => import('./DashboardCharts').then((m) => m.PriceChart), {
+  ssr: false,
+  loading: skeleton(200),
+})

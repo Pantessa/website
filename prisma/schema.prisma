@@ -432,3 +432,19 @@ model Subscriber {
 
   @@map("subscribers")
 }
+
+// Price history for a launched MCP token's chart. There's no on-chain price
+// history and Flaunch's OHLC API is unreliable, so we sample the v4-pool spot
+// price ourselves (Flaunch SDK) and append a point — throttled — when the price
+// endpoint is read. The chart reads this series.
+model TokenPriceSample {
+  id           String   @id @default(cuid())
+  mcpSlug      String   @map("mcp_slug") // the launched McpServer.slug
+  priceEth     String   @map("price_eth") // full-precision spot price (token in ETH)
+  priceUsd     Float    @map("price_usd")
+  marketCapUsd Float    @map("market_cap_usd")
+  at           DateTime @default(now())
+
+  @@index([mcpSlug, at])
+  @@map("token_price_samples")
+}
