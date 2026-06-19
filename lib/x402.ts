@@ -33,7 +33,7 @@ const NETWORK_NAME_TO_CHAIN_ID: Record<string, number> = {
   "sei-testnet": 1328,
 };
 
-const USDC_BY_CHAIN: Record<number, { address: string; name: string; version: string }> = {
+export const USDC_BY_CHAIN: Record<number, { address: string; name: string; version: string }> = {
   8453: { address: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913", name: "USD Coin", version: "2" },
   84532: { address: "0x036CbD53842c5426634e7929541eC2318f3dCF7e", name: "USDC", version: "2" },
   137: { address: "0x3c499c542cef5e3811e1192ce70d8cc03d5c3359", name: "USD Coin", version: "2" },
