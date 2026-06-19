@@ -452,9 +452,22 @@
   .tok__statval { color: var(--fg); font-variant-numeric: tabular-nums; }
   .tok__statval--accent { color: var(--accent); }
 
-  .tok__grid { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 28px; align-items: start; }
-  .tok__main { min-width: 0; display: flex; flex-direction: column; gap: 22px; }
-  .tok__rail { position: sticky; top: 88px; display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+  .tok__lede { margin: 0 0 22px; }
+  /* grid areas put the chart top-left and the ticket in a sticky right rail on
+     desktop; on mobile they restack chart → ticket → detail so the primary
+     action isn't buried below the secondary content. */
+  .tok__grid {
+    display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 22px 28px; align-items: start;
+    grid-template-areas: "chart rail" "detail rail";
+  }
+  .tok__chartslot { grid-area: chart; min-width: 0; }
+  .tok__main { grid-area: detail; min-width: 0; display: flex; flex-direction: column; gap: 22px; }
+  .tok__rail { grid-area: rail; position: sticky; top: 88px; display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+
+  .tok__addr { display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; }
+  .tok__addrlbl { color: var(--muted); font-size: 13px; min-width: 96px; }
+  .tok__addrval { font-size: 13px; word-break: break-all; text-decoration: underline; text-decoration-color: var(--line); transition: text-decoration-color .15s; }
+  .tok__addrval:hover { text-decoration-color: var(--accent); }
 
   /* A bordered detail block — the styled successor to TokenPanel's inline boxStyle. */
   .tok__card {
@@ -467,7 +480,7 @@
   .tok__prose strong { color: var(--fg); }
 
   @media (max-width: 1080px) {
-    .tok__grid { grid-template-columns: 1fr; }
+    .tok__grid { grid-template-columns: 1fr; grid-template-areas: "chart" "rail" "detail"; }
     .tok__rail { position: static; }
   }
 
@@ -548,6 +561,31 @@
   }
   .tok__tfbtn:hover:not(.is-active) { color: var(--fg); border-color: var(--line-2); }
   .tok__tfbtn.is-active { color: var(--ink); background: var(--accent); border-color: var(--accent); }
+
+  /* Collapsible contract details — verified badge stays visible, hashes fold away. */
+  .tok__details { border: 1px solid var(--line); background: var(--surf-1); border-radius: 14px; overflow: hidden; }
+  .tok__details > summary {
+    list-style: none; cursor: pointer; user-select: none; display: flex; align-items: center; gap: 9px;
+    padding: 14px 18px; font-family: 'Geist Mono', ui-monospace, monospace; font-size: 13px; color: var(--muted);
+    transition: color .15s;
+  }
+  .tok__details > summary::-webkit-details-marker { display: none; }
+  .tok__details > summary:hover { color: var(--fg); }
+  .tok__details[open] > summary { border-bottom: 1px solid var(--line); }
+  .tok__chev { flex-shrink: 0; transition: transform .15s; }
+  .tok__details[open] .tok__chev { transform: rotate(90deg); }
+  .tok__verified { margin-left: auto; color: var(--accent); font-size: 12px; }
+  .tok__detailsbody { padding: 14px 18px; display: flex; flex-direction: column; gap: 10px; }
+
+  /* Stakers — a tidy address · staked table (the .eps row idiom). */
+  .tok__stakers { display: flex; flex-direction: column; gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+  .tok__stakerrow {
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    background: var(--surf-1); padding: 10px 14px; font-family: 'Geist Mono', ui-monospace, monospace; font-size: 13px;
+  }
+  .tok__stakeraddr { color: var(--fg); transition: color .15s; }
+  .tok__stakeraddr:hover { color: var(--accent); }
+  .tok__stakerstk { color: var(--muted); font-variant-numeric: tabular-nums; flex-shrink: 0; }
 
   /* ── DEVELOPERS PAGE ─────────────────────────────── */
   .dev__caps { margin-top: 44px; }

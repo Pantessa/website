@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import { ExternalLink } from 'lucide-react'
+import { ChevronRight, ExternalLink } from 'lucide-react'
 import { getTokenPanel, feeSharePct, shortAddr } from '@/lib/launch-token'
 import { usdCompact } from '@/lib/format'
 import ClaimMcp from '@/components/ClaimMcp'
@@ -16,22 +16,13 @@ function defaultTicker(name: string, slug: string): string {
 }
 
 /** A labelled, full (untruncated) address linking to the block explorer. */
-function AddrRow({ label, addr, href, badge }: { label: string; addr: string; href: string; badge?: string }) {
+function AddrRow({ label, addr, href }: { label: string; addr: string; href: string }) {
   return (
-    <div style={{ display: 'flex', gap: 10, alignItems: 'baseline', flexWrap: 'wrap' }}>
-      <span className="mono" style={{ color: 'var(--smoke)', fontSize: 13, minWidth: 96 }}>
-        {label}
-      </span>
-      <a
-        href={href}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="mono"
-        style={{ fontSize: 13, wordBreak: 'break-all', textDecoration: 'underline', textDecorationColor: 'var(--mist)' }}
-      >
+    <div className="tok__addr">
+      <span className="tok__addrlbl mono">{label}</span>
+      <a href={href} target="_blank" rel="noopener noreferrer" className="tok__addrval mono">
         {addr}
       </a>
-      {badge && <span style={{ color: 'var(--accent)', fontSize: 13 }}>{badge}</span>}
     </div>
   )
 }
@@ -100,19 +91,20 @@ export default async function TokenPanel({
             <Stat label="rev share" value={`${pct}%`} accent />
           </div>
 
-          {/* Two-column shell: chart + detail left, sticky trade·earn ticket right. */}
+          <p className="tok__prose tok__lede">
+            <strong>Earn as the agent works.</strong> Stake this MCP&rsquo;s token to receive{' '}
+            <strong style={{ color: 'var(--accent)' }}>{pct}%</strong> of every paid call, in USDC.
+          </p>
+
+          {/* Shell: chart top-left, sticky trade·earn ticket right, detail below.
+              On mobile it restacks chart → ticket → detail (see .tok__grid areas). */}
           <div className="tok__grid">
+            {/* Price — hero spot + 24h chip + history sampled from the v4 pool. */}
+            <div className="tok__chartslot tok__card">
+              <TokenPriceChart slug={slug} />
+            </div>
+
             <div className="tok__main">
-              <p className="tok__prose">
-                <strong>Earn as the agent works.</strong> Stake this MCP&rsquo;s token to receive{' '}
-                <strong style={{ color: 'var(--accent)' }}>{pct}%</strong> of every paid call, in USDC.
-              </p>
-
-              {/* Price — hero spot + 24h chip + history sampled from the v4 pool. */}
-              <div className="tok__card">
-                <TokenPriceChart slug={slug} />
-              </div>
-
               {/* How it trades — Flaunch puts the token on a Uniswap v4 pool at launch. */}
               <div className="tok__card">
                 <p className="tok__cardhead">How it trades</p>
@@ -124,37 +116,44 @@ export default async function TokenPanel({
                 </p>
               </div>
 
-              {/* Contract — full addresses, each linking to the block explorer. */}
-              <div className="tok__card">
-                <p className="tok__cardhead">Contract</p>
-                <AddrRow
-                  label="Token"
-                  addr={panel.token.address}
-                  href={`${panel.token.explorer}/token/${panel.token.address}`}
-                />
-                <AddrRow
-                  label="Staking vault"
-                  addr={panel.token.staking}
-                  href={`${panel.token.explorer}/address/${panel.token.staking}`}
-                />
-                {panel.owner && (
+              {/* Contract — full addresses fold away; the verified badge stays visible. */}
+              <details className="tok__details">
+                <summary>
+                  <ChevronRight className="tok__chev" size={14} />
+                  Contract details
+                  {panel.owner && (
+                    <span className="tok__verified mono">✓ verified ({panel.owner.verifiedVia})</span>
+                  )}
+                </summary>
+                <div className="tok__detailsbody">
                   <AddrRow
-                    label="Creator"
-                    addr={panel.owner.ownerAddress}
-                    href={`${panel.token.explorer}/address/${panel.owner.ownerAddress}`}
-                    badge={`✓ verified (${panel.owner.verifiedVia})`}
+                    label="Token"
+                    addr={panel.token.address}
+                    href={`${panel.token.explorer}/token/${panel.token.address}`}
                   />
-                )}
-                <Link
-                  href={`${panel.token.explorer}/token/${panel.token.address}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="svc__ext mono"
-                  style={{ display: 'inline-flex', alignItems: 'center', gap: 6, width: 'max-content' }}
-                >
-                  View on Basescan <ExternalLink size={13} />
-                </Link>
-              </div>
+                  <AddrRow
+                    label="Staking vault"
+                    addr={panel.token.staking}
+                    href={`${panel.token.explorer}/address/${panel.token.staking}`}
+                  />
+                  {panel.owner && (
+                    <AddrRow
+                      label="Creator"
+                      addr={panel.owner.ownerAddress}
+                      href={`${panel.token.explorer}/address/${panel.owner.ownerAddress}`}
+                    />
+                  )}
+                  <Link
+                    href={`${panel.token.explorer}/token/${panel.token.address}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="svc__ext mono"
+                    style={{ display: 'inline-flex', alignItems: 'center', gap: 6, width: 'max-content' }}
+                  >
+                    View on Basescan <ExternalLink size={13} />
+                  </Link>
+                </div>
+              </details>
 
               <Stakers slug={slug} explorer={panel.token.explorer} />
             </div>
