@@ -42,7 +42,8 @@
     "tailwind-merge": "^2.5.5",
     "viem": "^2.21.40",
     "wagmi": "^2.14.0",
-    "zustand": "^5.0.2"
+    "zustand": "^5.0.2",
+    "@flaunch/sdk": "0.9.20"
   },
   "devDependencies": {
     "@types/node": "^22",
