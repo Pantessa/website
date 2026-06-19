@@ -1,6 +1,24 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import { DOCS_PAGES, docsJsonLd, docsUrl } from '@/lib/docs'
+import CopyBlock from '@/components/CopyBlock'
+
+// A copy-paste Claude Code prompt: it installs the yeetful SDK into the
+// operator's MCP and wires the earnings-tracking sync, so every settled call
+// shows up on their dashboard with one paste. Kept here (not inline JSX) so the
+// text streams into the SSR HTML and stays crawlable.
+const TRACK_EARNINGS_PROMPT = `Install the yeetful SDK in this MCP server and wire it up so I can track its
+earnings on my Yeetful dashboard:
+
+1. Run: npm install yeetful
+2. Wrap the x402-paid handler with yeetful's server helper so every settled
+   call is reported to the hosted ledger.
+3. Read YEETFUL_API_KEY and YEETFUL_GRANT_ID from the environment and pass them
+   as { apiKey, ledgerUrl: 'https://www.yeetful.com' } so receipts sync.
+4. Print a one-line confirmation showing the server is reporting earnings.
+
+I'll mint the yf_ API key at yeetful.com/dashboard/keys and claim this MCP at
+its service page first.`
 
 const PAGE = DOCS_PAGES.find((p) => p.slug === 'launchpad')!
 
@@ -99,6 +117,21 @@ export default function LaunchpadDocsPage() {
         <p className="mono" style={{ color: 'var(--smoke)' }}>
           Note: launch is honest about itself — until real routing volume exists, the yield is
           small. The token is a claim on the MCP&apos;s actual usage, not a promise.
+        </p>
+
+        <h2>Track your earnings — wire the SDK with one paste</h2>
+        <p>
+          Once your MCP is claimed, drop the <code>yeetful</code> SDK into it and every settled call
+          syncs to your dashboard, where the payTo agents you operate show up under{' '}
+          <strong>Track your agents&apos; earnings</strong>. Paste this into{' '}
+          <Link href="/docs/claude-code">Claude Code</Link> from your MCP&apos;s repo and it does the
+          install + wiring for you:
+        </p>
+        <CopyBlock text={TRACK_EARNINGS_PROMPT} label="Copy prompt" />
+        <p>
+          Prefer to do it by hand? It&apos;s one dependency — <code>npm install yeetful</code> — then
+          report each paid call to the hosted ledger with your <code>yf_</code> key. See{' '}
+          <Link href="/docs/ledger-sync">Dashboard ledger sync</Link> for the full wiring.
         </p>
 
         <h2>What&apos;s coming</h2>

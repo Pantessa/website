@@ -11,6 +11,7 @@ import { SpendByAgent, SpendOverTime } from '@/components/LazyCharts'
 import SignGrantButton from '@/components/SignGrantButton'
 import { Card, CardTitle, Kpi, type Stats } from '@/lib/dashboard-ui'
 import EarnPanel from '@/components/EarnPanel'
+import PayToAgentsCard from '@/components/PayToAgentsCard'
 import { useOrgStore } from '@/lib/org-store'
 
 export default function DashboardOverviewPage() {
@@ -255,6 +256,12 @@ export default function DashboardOverviewPage() {
       <div className="mt-6">
         <EarnPanel />
       </div>
+
+      {/* The payee roster: MCP servers paid TO this wallet (its payTo agents),
+          with Claim + a "how to track earnings" link. Self-hides for pure
+          payers — only operators with servers see it. Complements EarnPanel,
+          which shows the revenue numbers once receipts flow. */}
+      <PayToAgentsCard />
     </>
   )
 }
