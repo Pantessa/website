@@ -9,6 +9,7 @@ import { cn } from '@/lib/utils'
 import MessageReceipts from '@/components/MessageReceipts'
 import SignVoteButton from '@/components/SignVoteButton'
 import VoteCandidates from '@/components/VoteCandidates'
+import PaymentConfirm from '@/components/PaymentConfirm'
 import { voteRequestOf, voteCandidatesOf } from '@/lib/snapshot-vote'
 import { useYeetfulStore } from '@/lib/store'
 import BrandIcon from '@/components/BrandIcon'
@@ -90,6 +91,13 @@ export default function ChatInterface() {
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
   const [status, setStatus] = useState<string | null>(null)
+  // A planned wallet-mode turn awaiting the user's OK before the wallet pops —
+  // so they see the real $ amount (not the wallet's raw base-units value) first.
+  const [pendingPayment, setPendingPayment] = useState<{
+    userMsg: string
+    chatId: string
+    data: { plan: unknown; payments: PaymentToSign[]; listedOnly: unknown; notes?: unknown }
+  } | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
@@ -107,7 +115,7 @@ export default function ChatInterface() {
     // textOverride lets UI affordances (e.g. a vote-candidate chip) submit a
     // composed message without going through the input box.
     const raw = typeof textOverride === 'string' ? textOverride : input
-    if (!raw.trim() || loading) return
+    if (!raw.trim() || loading || pendingPayment) return
     analytics.chatMessage(activeServers.length, isConnected)
 
     let chatId = currentChatId
@@ -142,14 +150,9 @@ export default function ChatInterface() {
       const data = await res.json()
 
       if (data.phase === 'awaiting-signatures') {
-        const out = await payWithWalletThenAnswer(userMsg, data)
-        trackPaidReceipts(out.receipts)
-        addMessage(chatId, {
-          role: 'assistant',
-          content: out.reply,
-          // voteRequest is produced by the burner path; wallet mode has none yet.
-          meta: buildMeta(out.receipts, out.payer, undefined),
-        })
+        // Don't pop the wallet yet — show the $ amount + warning heads-up first,
+        // then sign on the user's explicit OK (see confirmPayment).
+        setPendingPayment({ userMsg, chatId, data })
       } else {
         trackPaidReceipts(data.receipts)
         addMessage(chatId, {
@@ -216,6 +219,41 @@ export default function ChatInterface() {
       receipts: Array.isArray(out.receipts) ? out.receipts : undefined,
       payer: typeof out.payer === 'string' ? out.payer : undefined,
     }
+  }
+
+  /** User confirmed the amount → pop the wallet, sign, run the calls. */
+  const confirmPayment = async () => {
+    if (!pendingPayment) return
+    const { userMsg, chatId, data } = pendingPayment
+    setPendingPayment(null)
+    setLoading(true)
+    try {
+      const out = await payWithWalletThenAnswer(userMsg, data)
+      trackPaidReceipts(out.receipts)
+      addMessage(chatId, {
+        role: 'assistant',
+        content: out.reply,
+        // voteRequest is produced by the burner path; wallet mode has none yet.
+        meta: buildMeta(out.receipts, out.payer, undefined),
+      })
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : ''
+      addMessage(chatId, {
+        role: 'assistant',
+        content: /rejected|denied|User rejected/i.test(msg)
+          ? '🚫 Payment signature rejected — nothing was charged.'
+          : '⚠️ Failed to complete the request. ' + (msg || 'Try again.'),
+      })
+    } finally {
+      setLoading(false)
+      setStatus(null)
+    }
+  }
+
+  const cancelPayment = () => {
+    if (!pendingPayment) return
+    addMessage(pendingPayment.chatId, { role: 'assistant', content: '🚫 Payment cancelled — nothing was charged.' })
+    setPendingPayment(null)
   }
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -357,6 +395,23 @@ export default function ChatInterface() {
               </motion.div>
             )}
 
+            {pendingPayment && !loading && (
+              <motion.div
+                initial={{ opacity: 0, y: 12 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="flex gap-3"
+              >
+                <div className="w-8 h-8 rounded-xl bg-[var(--surf-2)] border border-[var(--line)] flex items-center justify-center flex-shrink-0">
+                  <Bot className="w-4 h-4 text-[color:var(--muted)]" />
+                </div>
+                <PaymentConfirm
+                  payments={pendingPayment.data.payments}
+                  onConfirm={() => void confirmPayment()}
+                  onCancel={cancelPayment}
+                />
+              </motion.div>
+            )}
+
             <div ref={messagesEndRef} />
           </>
         )}
@@ -381,7 +436,7 @@ export default function ChatInterface() {
           />
           <button
             onClick={() => void handleSend()}
-            disabled={!input.trim() || loading}
+            disabled={!input.trim() || loading || !!pendingPayment}
             className={cn(
               'flex-shrink-0 w-11 h-11 md:w-8 md:h-8 rounded-xl flex items-center justify-center transition-all duration-200',
               input.trim() && !loading
