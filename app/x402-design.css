@@ -549,6 +549,31 @@
   .tok__tfbtn:hover:not(.is-active) { color: var(--fg); border-color: var(--line-2); }
   .tok__tfbtn.is-active { color: var(--ink); background: var(--accent); border-color: var(--accent); }
 
+  /* Collapsible contract details — verified badge stays visible, hashes fold away. */
+  .tok__details { border: 1px solid var(--line); background: var(--surf-1); border-radius: 14px; overflow: hidden; }
+  .tok__details > summary {
+    list-style: none; cursor: pointer; user-select: none; display: flex; align-items: center; gap: 9px;
+    padding: 14px 18px; font-family: 'Geist Mono', ui-monospace, monospace; font-size: 13px; color: var(--muted);
+    transition: color .15s;
+  }
+  .tok__details > summary::-webkit-details-marker { display: none; }
+  .tok__details > summary:hover { color: var(--fg); }
+  .tok__details[open] > summary { border-bottom: 1px solid var(--line); }
+  .tok__chev { flex-shrink: 0; transition: transform .15s; }
+  .tok__details[open] .tok__chev { transform: rotate(90deg); }
+  .tok__verified { margin-left: auto; color: var(--accent); font-size: 12px; }
+  .tok__detailsbody { padding: 14px 18px; display: flex; flex-direction: column; gap: 10px; }
+
+  /* Stakers — a tidy address · staked table (the .eps row idiom). */
+  .tok__stakers { display: flex; flex-direction: column; gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+  .tok__stakerrow {
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    background: var(--surf-1); padding: 10px 14px; font-family: 'Geist Mono', ui-monospace, monospace; font-size: 13px;
+  }
+  .tok__stakeraddr { color: var(--fg); transition: color .15s; }
+  .tok__stakeraddr:hover { color: var(--accent); }
+  .tok__stakerstk { color: var(--muted); font-variant-numeric: tabular-nums; flex-shrink: 0; }
+
   /* ── DEVELOPERS PAGE ─────────────────────────────── */
   .dev__caps { margin-top: 44px; }
   #quickstart { scroll-margin-top: 80px; }

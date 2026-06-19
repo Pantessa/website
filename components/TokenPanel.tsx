@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import { ExternalLink } from 'lucide-react'
+import { ChevronRight, ExternalLink } from 'lucide-react'
 import { getTokenPanel, feeSharePct, shortAddr } from '@/lib/launch-token'
 import { usdCompact } from '@/lib/format'
 import ClaimMcp from '@/components/ClaimMcp'
@@ -124,37 +124,44 @@ export default async function TokenPanel({
                 </p>
               </div>
 
-              {/* Contract — full addresses, each linking to the block explorer. */}
-              <div className="tok__card">
-                <p className="tok__cardhead">Contract</p>
-                <AddrRow
-                  label="Token"
-                  addr={panel.token.address}
-                  href={`${panel.token.explorer}/token/${panel.token.address}`}
-                />
-                <AddrRow
-                  label="Staking vault"
-                  addr={panel.token.staking}
-                  href={`${panel.token.explorer}/address/${panel.token.staking}`}
-                />
-                {panel.owner && (
+              {/* Contract — full addresses fold away; the verified badge stays visible. */}
+              <details className="tok__details">
+                <summary>
+                  <ChevronRight className="tok__chev" size={14} />
+                  Contract details
+                  {panel.owner && (
+                    <span className="tok__verified mono">✓ verified ({panel.owner.verifiedVia})</span>
+                  )}
+                </summary>
+                <div className="tok__detailsbody">
                   <AddrRow
-                    label="Creator"
-                    addr={panel.owner.ownerAddress}
-                    href={`${panel.token.explorer}/address/${panel.owner.ownerAddress}`}
-                    badge={`✓ verified (${panel.owner.verifiedVia})`}
+                    label="Token"
+                    addr={panel.token.address}
+                    href={`${panel.token.explorer}/token/${panel.token.address}`}
                   />
-                )}
-                <Link
-                  href={`${panel.token.explorer}/token/${panel.token.address}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="svc__ext mono"
-                  style={{ display: 'inline-flex', alignItems: 'center', gap: 6, width: 'max-content' }}
-                >
-                  View on Basescan <ExternalLink size={13} />
-                </Link>
-              </div>
+                  <AddrRow
+                    label="Staking vault"
+                    addr={panel.token.staking}
+                    href={`${panel.token.explorer}/address/${panel.token.staking}`}
+                  />
+                  {panel.owner && (
+                    <AddrRow
+                      label="Creator"
+                      addr={panel.owner.ownerAddress}
+                      href={`${panel.token.explorer}/address/${panel.owner.ownerAddress}`}
+                    />
+                  )}
+                  <Link
+                    href={`${panel.token.explorer}/token/${panel.token.address}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="svc__ext mono"
+                    style={{ display: 'inline-flex', alignItems: 'center', gap: 6, width: 'max-content' }}
+                  >
+                    View on Basescan <ExternalLink size={13} />
+                  </Link>
+                </div>
+              </details>
 
               <Stakers slug={slug} explorer={panel.token.explorer} />
             </div>

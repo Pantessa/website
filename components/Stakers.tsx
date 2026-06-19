@@ -8,6 +8,8 @@ import { useEffect, useState } from 'react'
 
 type Staker = { address: string; staked: string }
 
+const short = (a: string) => (a.length > 12 ? `${a.slice(0, 6)}…${a.slice(-4)}` : a)
+
 export default function Stakers({ slug, explorer }: { slug: string; explorer: string }) {
   const [stakers, setStakers] = useState<Staker[] | null>(null)
 
@@ -25,23 +27,21 @@ export default function Stakers({ slug, explorer }: { slug: string; explorer: st
   if (!stakers || stakers.length === 0) return null
 
   return (
-    <div>
-      <p className="mono" style={{ margin: '0 0 8px', fontSize: 13, color: 'var(--smoke)' }}>
-        Participating ({stakers.length})
-      </p>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+    <div className="tok__card">
+      <p className="tok__cardhead">Participating ({stakers.length})</p>
+      <div className="tok__stakers">
         {stakers.map((s) => (
-          <div key={s.address} style={{ display: 'flex', gap: 10, alignItems: 'baseline', flexWrap: 'wrap' }}>
+          <div key={s.address} className="tok__stakerrow">
             <a
               href={`${explorer}/address/${s.address}`}
               target="_blank"
               rel="noopener noreferrer"
-              className="mono"
-              style={{ fontSize: 13, wordBreak: 'break-all', textDecoration: 'underline', textDecorationColor: 'var(--mist)' }}
+              className="tok__stakeraddr"
+              title={s.address}
             >
-              {s.address}
+              {short(s.address)}
             </a>
-            <span className="mono" style={{ fontSize: 13, color: 'var(--smoke)' }}>
+            <span className="tok__stakerstk">
               {Number(s.staked).toLocaleString(undefined, { maximumFractionDigits: 2 })} staked
             </span>
           </div>
