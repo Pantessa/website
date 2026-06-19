@@ -7,6 +7,8 @@ import BrandIcon from '@/components/BrandIcon'
 import Footer from '@/components/Footer'
 import ServerApproveToggle from '@/components/ServerApproveToggle'
 import TokenPanel from '@/components/TokenPanel'
+import Description from '@/components/Description'
+import { getTokenPanel } from '@/lib/launch-token'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -101,17 +103,17 @@ export default async function ServiceDetailPage({ params }: Params) {
   const paramsOf = (ep: { parameters: unknown }): EndpointParam[] =>
     Array.isArray(ep.parameters) ? (ep.parameters as EndpointParam[]) : []
 
-  return (
-    <>
-      <main className="x-main">
-        <div className="svc">
-          <Link href="/#directory" className="svc__back mono">
-            <ArrowLeft width={14} height={14} />
-            Directory
-          </Link>
+  const panel = await getTokenPanel({
+    slug: server.slug,
+    tokenAddress: server.tokenAddress,
+    stakingAddress: server.stakingAddress,
+  })
+  // Launched tokens get the pump.fun-style split (sticky trade rail top-right);
+  // unlaunched ones stay a simple single column.
+  const launched = panel.state === 'launched' && !!panel.token
 
-          {/* ── Header ── */}
-          <header className="svc__head">
+  const header = (
+    <header className="svc__head">
             <div className="svc__tile">
               {/* BrandIcon reads id/slug/name/iconSlug — narrow to the store type's shape. */}
               <BrandIcon
@@ -161,24 +163,11 @@ export default async function ServiceDetailPage({ params }: Params) {
                 <ExternalLink width={13} height={13} />
               </a>
             )}
-          </header>
+    </header>
+  )
 
-          {/* Approve this agent for your expense account, inline (chat deep-links
-              here via /servers/<slug>#approve when a turn is blocked). */}
-          <ServerApproveToggle serverId={server.id} serverName={server.name} />
-
-          <p className="svc__desc">{server.description}</p>
-
-          {/* ── Launchpad token (own a piece, earn as the agent works) ── */}
-          <TokenPanel
-            slug={server.slug}
-            name={server.name}
-            tokenAddress={server.tokenAddress}
-            stakingAddress={server.stakingAddress}
-          />
-
-          {/* ── Endpoints ── */}
-          <div className="svc__section">
+  const endpoints = (
+    <div className="svc__section svc__eps">
             <div className="svc__sectionhead">
               <h2 className="svc__h2">x402 endpoints</h2>
               <span className="svc__count mono">{server.endpoints.length}</span>
@@ -253,7 +242,28 @@ export default async function ServiceDetailPage({ params }: Params) {
                 })}
               </ul>
             )}
-          </div>
+    </div>
+  )
+
+  const body = (
+    <>
+      {header}
+      <ServerApproveToggle serverId={server.id} serverName={server.name} />
+      <Description text={server.description} />
+      <TokenPanel panel={panel} slug={server.slug} name={server.name} />
+      {endpoints}
+    </>
+  )
+
+  return (
+    <>
+      <main className="x-main x-main--fluid">
+        <div className="svc">
+          <Link href="/#directory" className="svc__back mono">
+            <ArrowLeft width={14} height={14} />
+            Directory
+          </Link>
+          {launched ? <div className="svc__split">{body}</div> : body}
         </div>
       </main>
       <Footer />

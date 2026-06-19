@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import { ChevronRight, ExternalLink } from 'lucide-react'
-import { getTokenPanel, feeSharePct, shortAddr } from '@/lib/launch-token'
+import { feeSharePct, shortAddr, type TokenPanelData } from '@/lib/launch-token'
 import { usdCompact } from '@/lib/format'
 import ClaimMcp from '@/components/ClaimMcp'
 import LaunchToken from '@/components/LaunchToken'
@@ -38,55 +38,40 @@ function Stat({ label, value, accent }: { label: string; value: string; accent?:
 }
 
 /**
- * Per-MCP token panel on the service page (x402-launch M6). Read-only state
- * (unclaimed → claimed → launched) plus live staking + in-panel trade/stake for
- * launched tokens. The launched layout is a market strip + two-column shell
- * (chart/detail left, sticky trade·earn ticket right; one column ≤1080px).
+ * Per-MCP token panel on the service page (x402-launch M6). Takes the already-
+ * fetched panel (the page owns the fetch so it can lay the page out). The
+ * launched state returns three grid areas as a fragment — `lead` (market strip +
+ * chart), `detail` (how-it-trades / contract / stakers), and a sticky `rail`
+ * (trade + earn) — that the page drops into its pump.fun-style split grid.
+ * claimed / unclaimed return a single self-contained section.
  */
-export default async function TokenPanel({
+export default function TokenPanel({
+  panel,
   slug,
   name,
-  tokenAddress,
-  stakingAddress,
 }: {
+  panel: TokenPanelData
   slug: string
   name: string
-  tokenAddress: string | null
-  stakingAddress: string | null
 }) {
-  const panel = await getTokenPanel({ slug, tokenAddress, stakingAddress })
   const pct = feeSharePct(panel.feeShareBps)
 
-  const labelStyle = { color: 'var(--smoke)' } as const
-  const boxStyle = {
-    border: '1px solid var(--mist)',
-    borderRadius: 12,
-    padding: '16px 18px',
-    display: 'flex',
-    flexDirection: 'column' as const,
-    gap: 10,
-  }
-
-  return (
-    <div className="svc__section">
-      <div className="svc__sectionhead">
-        <h2 className="svc__h2">Token</h2>
-        <span className="svc__count mono">own a piece</span>
-      </div>
-
-      {panel.state === 'launched' && panel.token && (
-        <>
+  if (panel.state === 'launched' && panel.token) {
+    const token = panel.token
+    return (
+      <>
+        <div className="svc__lead">
           {/* Market strip — the dense, tabular at-a-glance readout. */}
           <div className="tok__strip">
-            {panel.token.market && (
+            {token.market && (
               <>
-                <Stat label="price" value={usdCompact(panel.token.market.priceUsd)} />
-                <Stat label="market cap" value={usdCompact(panel.token.market.marketCapUsd)} />
+                <Stat label="price" value={usdCompact(token.market.priceUsd)} />
+                <Stat label="market cap" value={usdCompact(token.market.marketCapUsd)} />
               </>
             )}
             <Stat
               label="staked"
-              value={Number(panel.token.totalStaked).toLocaleString(undefined, { maximumFractionDigits: 2 })}
+              value={Number(token.totalStaked).toLocaleString(undefined, { maximumFractionDigits: 2 })}
             />
             <Stat label="rev share" value={`${pct}%`} accent />
           </div>
@@ -96,84 +81,92 @@ export default async function TokenPanel({
             <strong style={{ color: 'var(--accent)' }}>{pct}%</strong> of every paid call, in USDC.
           </p>
 
-          {/* Shell: chart top-left, sticky trade·earn ticket right, detail below.
-              On mobile it restacks chart → ticket → detail (see .tok__grid areas). */}
-          <div className="tok__grid">
-            {/* Price — hero spot + 24h chip + history sampled from the v4 pool. */}
-            <div className="tok__chartslot tok__card">
-              <TokenPriceChart slug={slug} />
-            </div>
-
-            <div className="tok__main">
-              {/* How it trades — Flaunch puts the token on a Uniswap v4 pool at launch. */}
-              <div className="tok__card">
-                <p className="tok__cardhead">How it trades</p>
-                <p className="tok__prose">
-                  Live on a Uniswap&nbsp;v4 pool from launch — no graduation step. The first ~30
-                  minutes is a fixed-price <strong>fair launch</strong> (buys only, everyone the same
-                  price), then open trading. A <strong>Progressive Bid Wall</strong> turns trading
-                  fees into rising buy-side support for the price.
-                </p>
-              </div>
-
-              {/* Contract — full addresses fold away; the verified badge stays visible. */}
-              <details className="tok__details">
-                <summary>
-                  <ChevronRight className="tok__chev" size={14} />
-                  Contract details
-                  {panel.owner && (
-                    <span className="tok__verified mono">✓ verified ({panel.owner.verifiedVia})</span>
-                  )}
-                </summary>
-                <div className="tok__detailsbody">
-                  <AddrRow
-                    label="Token"
-                    addr={panel.token.address}
-                    href={`${panel.token.explorer}/token/${panel.token.address}`}
-                  />
-                  <AddrRow
-                    label="Staking vault"
-                    addr={panel.token.staking}
-                    href={`${panel.token.explorer}/address/${panel.token.staking}`}
-                  />
-                  {panel.owner && (
-                    <AddrRow
-                      label="Creator"
-                      addr={panel.owner.ownerAddress}
-                      href={`${panel.token.explorer}/address/${panel.owner.ownerAddress}`}
-                    />
-                  )}
-                  <Link
-                    href={`${panel.token.explorer}/token/${panel.token.address}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="svc__ext mono"
-                    style={{ display: 'inline-flex', alignItems: 'center', gap: 6, width: 'max-content' }}
-                  >
-                    View on Basescan <ExternalLink size={13} />
-                  </Link>
-                </div>
-              </details>
-
-              <Stakers slug={slug} explorer={panel.token.explorer} />
-            </div>
-
-            <div className="tok__rail">
-              {/* Trade — buy with ETH or sell for ETH through the v4 pool. */}
-              <div className="tok__card tok__card--rail">
-                <p className="tok__cardhead">Trade the token</p>
-                <TradeToken token={panel.token.address} />
-              </div>
-
-              {/* Participate — stake to earn the rev share, claim USDC any time. */}
-              <div className="tok__card tok__card--rail">
-                <p className="tok__cardhead">Stake to earn — {pct}% of every paid call, in USDC</p>
-                <StakeToken token={panel.token.address} staking={panel.token.staking} />
-              </div>
-            </div>
+          {/* Price — hero spot + 24h chip + history sampled from the v4 pool. */}
+          <div className="tok__card">
+            <TokenPriceChart slug={slug} />
           </div>
-        </>
-      )}
+        </div>
+
+        <div className="svc__detail">
+          {/* How it trades — Flaunch puts the token on a Uniswap v4 pool at launch. */}
+          <div className="tok__card">
+            <p className="tok__cardhead">How it trades</p>
+            <p className="tok__prose">
+              Live on a Uniswap&nbsp;v4 pool from launch — no graduation step. The first ~30 minutes
+              is a fixed-price <strong>fair launch</strong> (buys only, everyone the same price), then
+              open trading. A <strong>Progressive Bid Wall</strong> turns trading fees into rising
+              buy-side support for the price.
+            </p>
+          </div>
+
+          {/* Contract — full addresses fold away; the verified badge stays visible. */}
+          <details className="tok__details">
+            <summary>
+              <ChevronRight className="tok__chev" size={14} />
+              Contract details
+              {panel.owner && (
+                <span className="tok__verified mono">✓ verified ({panel.owner.verifiedVia})</span>
+              )}
+            </summary>
+            <div className="tok__detailsbody">
+              <AddrRow label="Token" addr={token.address} href={`${token.explorer}/token/${token.address}`} />
+              <AddrRow label="Staking vault" addr={token.staking} href={`${token.explorer}/address/${token.staking}`} />
+              {panel.owner && (
+                <AddrRow
+                  label="Creator"
+                  addr={panel.owner.ownerAddress}
+                  href={`${token.explorer}/address/${panel.owner.ownerAddress}`}
+                />
+              )}
+              <Link
+                href={`${token.explorer}/token/${token.address}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="svc__ext mono"
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 6, width: 'max-content' }}
+              >
+                View on Basescan <ExternalLink size={13} />
+              </Link>
+            </div>
+          </details>
+
+          <Stakers slug={slug} explorer={token.explorer} />
+        </div>
+
+        <aside className="svc__rail">
+          {/* Trade — buy with ETH or sell for ETH through the v4 pool. */}
+          <div className="tok__card tok__card--rail">
+            <p className="tok__cardhead">Trade the token</p>
+            <TradeToken token={token.address} />
+          </div>
+
+          {/* Participate — stake to earn the rev share, claim USDC any time. */}
+          <div className="tok__card tok__card--rail">
+            <p className="tok__cardhead">Stake to earn — {pct}% of every paid call, in USDC</p>
+            <StakeToken token={token.address} staking={token.staking} />
+          </div>
+        </aside>
+      </>
+    )
+  }
+
+  // ── Not launched: a single self-contained section (claimed / unclaimed). ──
+  const boxStyle = {
+    border: '1px solid var(--mist)',
+    borderRadius: 12,
+    padding: '16px 18px',
+    display: 'flex',
+    flexDirection: 'column' as const,
+    gap: 10,
+  }
+  const labelStyle = { color: 'var(--smoke)' } as const
+
+  return (
+    <div className="svc__section">
+      <div className="svc__sectionhead">
+        <h2 className="svc__h2">Token</h2>
+        <span className="svc__count mono">own a piece</span>
+      </div>
 
       {panel.state === 'claimed' && (
         <div style={boxStyle}>

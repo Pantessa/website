@@ -97,13 +97,13 @@ export default function ServerApproveToggle({
       id="approve"
       ref={ref}
       className={cn(
-        'mt-4 flex items-center justify-between gap-3 rounded-xl border px-4 py-3 bg-[var(--surf-1)] transition-colors scroll-mt-24',
+        'svc__approve flex items-center justify-between gap-3 rounded-lg border px-3.5 py-2 bg-[var(--surf-1)] transition-colors scroll-mt-24',
         flash ? 'border-[var(--accent)]' : 'border-[var(--line)]',
       )}
     >
       <div className="min-w-0">
-        <p className="text-sm text-white font-medium">Approve for your expense account</p>
-        <p className="text-[12px] text-[color:var(--muted-2)]">{sub}</p>
+        <p className="text-[13px] text-white font-medium leading-tight">Approve for your expense account</p>
+        <p className="text-[11px] text-[color:var(--muted-2)] truncate">{sub}</p>
       </div>
       {cta ? (
         <button className="btn btn--solid flex-shrink-0" onClick={cta.onClick}>
