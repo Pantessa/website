@@ -21,7 +21,7 @@ export const metadata: Metadata = {
 export default function ActivityPage() {
   return (
     <>
-      <main className="x-main">
+      <main className="x-main x-main--fluid">
         <header className="hero" style={{ paddingBottom: 28 }}>
           <p className="hero__eyebrow">NETWORK ACTIVITY</p>
           <h1 className="hero__h1 hero__h1--sm">

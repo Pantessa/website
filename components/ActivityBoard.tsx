@@ -6,9 +6,11 @@
 // All privacy filtering happens server-side; this component only renders.
 
 import { useEffect, useRef, useState } from 'react'
-import { CheckCircle2, Loader2, ShieldOff } from 'lucide-react'
+import { CheckCircle2, Coins, ExternalLink, Loader2, ShieldOff } from 'lucide-react'
+import Link from 'next/link'
 import { SpendByAgent, SpendOverTime } from '@/components/LazyCharts'
 import { Card, CardTitle, Kpi, short, timeAgo } from '@/lib/dashboard-ui'
+import type { LaunchpadSummary } from '@/lib/launchpad-summary'
 
 const POLL_MS = 30_000
 
@@ -31,6 +33,7 @@ export interface NetworkActivity {
     account: string
     createdAt: string
   }[]
+  launchpad: LaunchpadSummary | null
 }
 
 export default function ActivityBoard() {
@@ -69,9 +72,14 @@ export default function ActivityBoard() {
   }
 
   const s = data.stats
+  const lp = data.launchpad
+  const showStakerRewards = !!lp && lp.tokensLive > 0
+  const pct = lp ? (lp.feeShareBps / 100).toFixed(lp.feeShareBps % 100 === 0 ? 0 : 1) : '0'
   return (
     <div className="pb-16">
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
+      <div
+        className={`grid grid-cols-2 gap-3 mb-6 ${showStakerRewards ? 'md:grid-cols-3 lg:grid-cols-5' : 'lg:grid-cols-4'}`}
+      >
         <Kpi label="Settled" value={`$${s.settledUsd.toFixed(4)}`} sub={`${s.settledCalls} paid calls`} />
         <Kpi label="Calls today" value={String(s.callsToday)} sub="UTC day" />
         <Kpi
@@ -80,6 +88,13 @@ export default function ActivityBoard() {
           sub="refused before any payment"
         />
         <Kpi label="Active accounts" value={String(s.activeAccounts)} sub="wallets with receipts" />
+        {showStakerRewards && (
+          <Kpi
+            label="Staker rewards"
+            value={`$${lp!.stakerRewardsUsd.toFixed(4)}`}
+            sub={`${pct}% of paid calls · ${lp!.tokensLive} token${lp!.tokensLive === 1 ? '' : 's'} live`}
+          />
+        )}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
@@ -92,6 +107,39 @@ export default function ActivityBoard() {
           <SpendByAgent perAgent={data.top} />
         </Card>
       </div>
+
+      {lp && lp.tokens.length > 0 && (
+        <Card className="mb-6">
+          <CardTitle>Staked by token</CardTitle>
+          <p className="text-[11px] text-[color:var(--muted-2)] mb-3">
+            Each MCP token stakes on its own — amounts are per token, not summed. Stakers earn {pct}% of
+            every paid call to that MCP in USDC.
+          </p>
+          <div className="divide-y divide-white/5">
+            {lp.tokens.map((t) => (
+              <div key={t.tokenAddress} className="flex flex-wrap items-center gap-x-3 gap-y-1 py-2.5 text-xs min-h-10">
+                <Coins className="w-3.5 h-3.5 text-emerald-400 flex-shrink-0" />
+                <Link href={`/servers/${t.slug}`} className="text-white hover:underline truncate max-w-[40vw] lg:max-w-none">
+                  {t.name}
+                </Link>
+                {t.symbol && <span className="mono text-[color:var(--muted-2)]">{t.symbol}</span>}
+                <span className="ml-auto mono text-[color:var(--muted)] flex-shrink-0">
+                  {Number(t.totalStaked).toLocaleString(undefined, { maximumFractionDigits: 2 })} staked
+                </span>
+                <a
+                  href={`${t.explorer}/address/${t.stakingAddress}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  title="View the staking vault on the block explorer"
+                  className="text-[color:var(--muted-2)] hover:text-white flex-shrink-0 inline-flex items-center min-h-10 -my-2.5"
+                >
+                  <ExternalLink className="w-3.5 h-3.5" />
+                </a>
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
 
       <Card>
         <CardTitle>Latest settled calls</CardTitle>
