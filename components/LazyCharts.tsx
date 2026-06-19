@@ -43,3 +43,7 @@ export const PriceChart = dynamic(() => import('./DashboardCharts').then((m) => 
   ssr: false,
   loading: skeleton(200),
 })
+export const UsageChart = dynamic(() => import('./DashboardCharts').then((m) => m.UsageChart), {
+  ssr: false,
+  loading: skeleton(160),
+})

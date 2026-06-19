@@ -174,3 +174,27 @@ export function PriceChart({ samples, height = 200 }: { samples: { at: string; p
     </ChartBox>
   )
 }
+
+/** Paid calls served per day — an MCP's usage over time. */
+export function UsageChart({ data, height = 160 }: { data: { date: string; calls: number }[]; height?: number }) {
+  if (!data.some((d) => d.calls > 0)) {
+    return <EmptyChart label="Usage fills in as the MCP serves paid calls." />
+  }
+  return (
+    <ChartBox height={height}>
+      <AreaChart data={data} margin={{ top: 8, right: 8, left: -18, bottom: 0 }}>
+        <defs>
+          <linearGradient id="usageFill" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor={ACCENT} stopOpacity={0.35} />
+            <stop offset="100%" stopColor={ACCENT} stopOpacity={0.02} />
+          </linearGradient>
+        </defs>
+        <CartesianGrid stroke={GRID} vertical={false} />
+        <XAxis dataKey="date" tickFormatter={dayLabel} tick={{ fill: MUTED, fontSize: 11 }} axisLine={false} tickLine={false} minTickGap={40} />
+        <YAxis allowDecimals={false} tick={{ fill: MUTED, fontSize: 11 }} axisLine={false} tickLine={false} width={32} />
+        <Tooltip contentStyle={tooltipStyle} labelFormatter={(l) => dayLabel(l as string)} formatter={(v) => [String(v), 'calls']} />
+        <Area type="monotone" dataKey="calls" stroke={ACCENT} strokeWidth={2} fill="url(#usageFill)" />
+      </AreaChart>
+    </ChartBox>
+  )
+}

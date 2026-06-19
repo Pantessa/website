@@ -623,6 +623,37 @@
   .tok__stakeraddr:hover { color: var(--accent); }
   .tok__stakerstk { color: var(--muted); font-variant-numeric: tabular-nums; flex-shrink: 0; }
 
+  /* MCP performance (McpStats): metric cards, usage chart, verified tx list. */
+  .tok__perfhead { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+  .tok__vbadge {
+    font-size: 11px; color: var(--accent); border: 1px solid color-mix(in oklch, var(--accent) 45%, transparent);
+    border-radius: 999px; padding: 2px 9px;
+  }
+  .tok__metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(132px, 1fr)); gap: 10px; }
+  .tok__metric {
+    display: flex; flex-direction: column; gap: 4px; padding: 11px 13px;
+    background: var(--surf-2); border-radius: 10px; min-width: 0;
+  }
+  .tok__metriclbl { font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted-2); }
+  .tok__metricval { font-size: 20px; font-weight: 700; letter-spacing: -0.01em; font-variant-numeric: tabular-nums; }
+  .tok__metricsub { font-size: 10.5px; color: var(--muted-2); }
+  .tok__perfblock { display: flex; flex-direction: column; gap: 8px; }
+
+  .tok__txs { display: flex; flex-direction: column; gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+  .tok__tx {
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    background: var(--surf-1); padding: 10px 14px; font-size: 12.5px;
+  }
+  .tok__txamt { color: var(--fg); font-weight: 600; font-variant-numeric: tabular-nums; }
+  .tok__txmeta { color: var(--muted); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+  .tok__txtime { color: var(--muted-2); flex-shrink: 0; }
+  .tok__txok { color: var(--accent); flex-shrink: 0; }
+  .tok__txflag { color: var(--sell); flex-shrink: 0; }
+  .tok__txpending { color: var(--muted-2); flex-shrink: 0; }
+  .tok__txlink { color: var(--muted); flex-shrink: 0; transition: color .15s; }
+  .tok__txlink:hover { color: var(--accent); }
+  .tok__txlink--none { color: var(--muted-2); pointer-events: none; }
+
   /* ── DEVELOPERS PAGE ─────────────────────────────── */
   .dev__caps { margin-top: 44px; }
   #quickstart { scroll-margin-top: 80px; }
