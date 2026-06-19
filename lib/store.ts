@@ -23,6 +23,9 @@ export interface McpServer {
   priceUsd?: string | null
   networks?: string[]
   callable?: boolean
+  /** Auto-callable via the endpoint planner (has ≥1 plannable endpoint), even
+   *  without being hand-wired. Derived in /api/servers. */
+  autoCallable?: boolean
 
   // presentation / provenance (DB-backed directory)
   iconSlug?: string | null

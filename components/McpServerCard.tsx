@@ -60,9 +60,12 @@ export default function McpServerCard({ server }: McpServerCardProps) {
               <span className="badge__dot" style={{ background: ACCENT }} />
               On
             </span>
-          ) : !server.callable ? (
+          ) : server.callable || server.autoCallable ? (
+            // Wired or planner-auto-callable: it works the moment you select it.
+            null
+          ) : (
             <span className="badge badge--dir mono">Directory</span>
-          ) : null}
+          )}
         </div>
         <div className="card__links">
           <Link

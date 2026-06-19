@@ -90,6 +90,32 @@ export async function loadPlannableEndpoints(slugs: string[]): Promise<Plannable
   return out
 }
 
+/**
+ * Server IDs that have ≥1 planner-eligible endpoint — i.e. the service is
+ * auto-callable in chat the moment a user selects it, no hand-wiring needed.
+ * Same per-endpoint predicate as loadPlannableEndpoints, expressed service-wide
+ * so the directory can surface "this works" instead of mislabeling it Directory.
+ * Price is parsed in code (priceUsd is a String column).
+ */
+export async function autoCallableServerIds(): Promise<Set<string>> {
+  const rows = await prisma.mcpEndpoint.findMany({
+    where: {
+      NOT: { parameters: { equals: Prisma.DbNull } },
+      method: { in: ['GET', 'POST'] },
+    },
+    select: { serverId: true, priceUsd: true, scheme: true, parameters: true },
+  })
+  const ids = new Set<string>()
+  for (const r of rows) {
+    if (r.scheme === 'upto') continue
+    const price = Number(r.priceUsd)
+    if (!Number.isFinite(price) || price <= 0 || price > SMART_MAX_PER_CALL_USD) continue
+    if (((r.parameters as unknown[] | null) ?? []).length === 0) continue
+    ids.add(r.serverId)
+  }
+  return ids
+}
+
 /** The planner instruction the inference model answers with strict JSON. */
 export function plannerPrompt(message: string, endpoints: PlannableEndpoint[]): string {
   const byService = new Map<string, PlannableEndpoint[]>()
@@ -114,7 +140,7 @@ export function plannerPrompt(message: string, endpoints: PlannableEndpoint[]): 
 
   return [
     `You are an API-call planner. A user asked:\n"""${message}"""`,
-    `Below are paid API endpoints, grouped by service. Pick AT MOST ONE endpoint per service — only if calling it would genuinely help answer the user. Fill in parameter values derived from the user's message (use sensible values; respect types; include every required param; skip optional params you can't infer). If no endpoint of a service helps, skip that service entirely.`,
+    `Below are paid API endpoints, grouped by service, each tagged with its price in [$…]. Pick AT MOST ONE endpoint per service — only if calling it would genuinely help answer the user. When two endpoints of a service would both answer the need, pick the cheaper one. Fill in parameter values derived from the user's message (use sensible values; respect types; include every required param; skip optional params you can't infer). If no endpoint of a service helps, skip that service entirely.`,
     menu,
     `Respond with ONLY this JSON, no prose, no code fences:`,
     `{"picks":[{"endpointId":"<id>","params":{"<name>":"<value>"}}]}`,
