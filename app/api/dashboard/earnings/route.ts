@@ -17,7 +17,7 @@ export async function GET() {
 
   const since30 = new Date(Date.now() - 30 * DAY)
 
-  const [allTime, last30, byMcpAll, byMcp30, recent, distinctPayers] = await Promise.all([
+  const [allTime, last30, byMcpAll, byMcp30, recent, distinctPayers, verifiedAgg, flaggedCalls] = await Promise.all([
     prisma.mcpReceipt.aggregate({ where: { ownerAddress: addr }, _sum: { amountUsd: true }, _count: true }),
     prisma.mcpReceipt.aggregate({
       where: { ownerAddress: addr, createdAt: { gte: since30 } },
@@ -45,6 +45,13 @@ export async function GET() {
       select: { payer: true },
       distinct: ['payer'],
     }),
+    // On-chain-confirmed earnings (the trust layer) + count of flagged reports.
+    prisma.mcpReceipt.aggregate({
+      where: { ownerAddress: addr, verified: true },
+      _sum: { amountUsd: true },
+      _count: true,
+    }),
+    prisma.mcpReceipt.count({ where: { ownerAddress: addr, verified: false } }),
   ])
 
   // Names for the per-MCP breakdown.
@@ -86,6 +93,12 @@ export async function GET() {
       payers: distinctPayers.length,
       topMcp: byMcp[0] ? { slug: byMcp[0].slug, name: byMcp[0].name, earnedUsd: byMcp[0].earnedUsd } : null,
       mcpCount: byMcp.length,
+      // On-chain verification (the trust layer): how much of the self-reported
+      // earnings is actually backed by a settlement tx, and how many reports the
+      // chain contradicted.
+      verifiedEarnedUsd: verifiedAgg._sum.amountUsd ?? 0,
+      verifiedCalls: verifiedAgg._count,
+      flaggedCalls,
     },
     byMcp,
     series30d,

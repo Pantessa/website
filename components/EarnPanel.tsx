@@ -18,6 +18,9 @@ interface Earnings {
     payers: number
     topMcp: { slug: string; name: string; earnedUsd: number } | null
     mcpCount: number
+    verifiedEarnedUsd: number
+    verifiedCalls: number
+    flaggedCalls: number
   }
   byMcp: { slug: string; name: string; earnedUsd: number; earned30dUsd: number; calls: number }[]
   series30d: { date: string; usd: number }[]
@@ -49,8 +52,21 @@ export default function EarnPanel() {
         Earn · your MCP servers
       </h2>
 
+      {/* Honesty line: reported numbers are self-reported telemetry; the trust
+          layer is how much we confirmed against an on-chain settlement. */}
+      <p className="text-[11px] text-[color:var(--muted-2)] mb-2">
+        Self-reported by your MCPs · <span className="text-emerald-400">{usd(k.verifiedEarnedUsd)} verified on-chain</span>
+        {k.flaggedCalls > 0 && (
+          <span className="text-amber-400"> · {k.flaggedCalls} report{k.flaggedCalls === 1 ? '' : 's'} not backed by a settlement tx</span>
+        )}
+      </p>
+
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-3 min-w-0">
-        <Kpi label="Total earned" value={usd(k.totalEarnedUsd)} />
+        <Kpi
+          label="Total earned"
+          value={usd(k.totalEarnedUsd)}
+          sub={k.verifiedCalls ? `${usd(k.verifiedEarnedUsd)} on-chain verified` : 'unverified'}
+        />
         <Kpi label="Earned · 30 days" value={usd(k.earned30dUsd)} />
         <Kpi
           label="Calls served"

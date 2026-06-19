@@ -147,9 +147,15 @@ model McpReceipt {
   amountUsd    Float    @map("amount_usd")
   tool         String?  // MCP tool / resource the call hit (display)
   network      String?  // e.g. "base"
-  txHash       String?  @map("tx_hash")
+  txHash       String?  @unique @map("tx_hash") // unique ⇒ a settlement tx is counted once
   apiKeyId     String?  @map("api_key_id") // which key reported it
-  createdAt    DateTime @default(now()) @map("created_at")
+  /// On-chain verification (the trust layer). null = not checked / no txHash to
+  /// check; true = a USDC transfer to the MCP's payTo backing ≥ the claimed
+  /// amount was found on-chain; false = a txHash was given but contradicts the
+  /// claim (a red flag — self-report not backed by settlement).
+  verified     Boolean?  @map("verified")
+  verifiedAt   DateTime? @map("verified_at")
+  createdAt    DateTime  @default(now()) @map("created_at")
 
   @@index([mcpSlug, createdAt])
   @@index([ownerAddress, createdAt])

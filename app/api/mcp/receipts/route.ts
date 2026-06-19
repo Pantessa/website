@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import prisma from '@/lib/db'
 import { getBearerKey } from '@/lib/api-key'
 import { getSessionAddress } from '@/lib/auth'
+import { verifyReceipt } from '@/lib/receipt-verify'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -49,19 +50,34 @@ export async function POST(req: NextRequest) {
     return t ? t.slice(0, max) : null
   }
 
-  const receipt = await prisma.mcpReceipt.create({
-    data: {
-      mcpSlug: mcp,
-      ownerAddress: addr,
-      payer: str(body.payer)?.toLowerCase() ?? null,
-      amountUsd,
-      tool: str(body.tool),
-      network: str(body.network, 40),
-      txHash: str(body.txHash, 80),
-      apiKeyId: key?.id ?? null,
-    },
-    select: { id: true, createdAt: true },
-  })
+  const txHash = str(body.txHash, 80)
+
+  let receipt
+  try {
+    receipt = await prisma.mcpReceipt.create({
+      data: {
+        mcpSlug: mcp,
+        ownerAddress: addr,
+        payer: str(body.payer)?.toLowerCase() ?? null,
+        amountUsd,
+        tool: str(body.tool),
+        network: str(body.network, 40),
+        txHash,
+        apiKeyId: key?.id ?? null,
+      },
+      select: { id: true, createdAt: true },
+    })
+  } catch (e) {
+    // Unique txHash ⇒ a settlement is counted once. A repeat report is a no-op,
+    // not an error (reportUsage is fire-and-forget and may retry).
+    if ((e as { code?: string }).code === 'P2002') {
+      return NextResponse.json({ ok: true, deduped: true, note: 'This settlement tx was already recorded.' }, { status: 200 })
+    }
+    throw e
+  }
+
+  // Verify against the chain in the background — never block ingestion on RPC.
+  if (txHash) void verifyReceipt(receipt.id)
 
   return NextResponse.json({ ok: true, id: receipt.id, recordedAt: receipt.createdAt }, { status: 201 })
 }
