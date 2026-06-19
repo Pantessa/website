@@ -138,3 +138,39 @@ function EmptyChart({ label }: { label: string }) {
     </div>
   )
 }
+
+/** USD price label that keeps sig figs on sub-$1 (memecoin) prices. */
+function priceLabel(v: number): string {
+  if (!isFinite(v) || v <= 0) return '$0'
+  if (v >= 1) return `$${v.toLocaleString(undefined, { maximumFractionDigits: 2 })}`
+  return `$${v.toPrecision(2)}`
+}
+function timeLabel(iso: string): string {
+  const d = new Date(iso)
+  const p = (n: number) => String(n).padStart(2, '0')
+  return `${d.getUTCMonth() + 1}/${d.getUTCDate()} ${p(d.getUTCHours())}:${p(d.getUTCMinutes())}`
+}
+
+/** A launched token's USD price over time — sampled from the v4 pool. */
+export function PriceChart({ samples }: { samples: { at: string; priceUsd: number }[] }) {
+  if (samples.length < 2) {
+    return <EmptyChart label="Price history builds as the token trades." />
+  }
+  return (
+    <ChartBox height={200}>
+      <AreaChart data={samples} margin={{ top: 8, right: 8, left: -6, bottom: 0 }}>
+        <defs>
+          <linearGradient id="priceFill" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor={ACCENT} stopOpacity={0.35} />
+            <stop offset="100%" stopColor={ACCENT} stopOpacity={0.02} />
+          </linearGradient>
+        </defs>
+        <CartesianGrid stroke={GRID} vertical={false} />
+        <XAxis dataKey="at" tickFormatter={timeLabel} tick={{ fill: MUTED, fontSize: 11 }} axisLine={false} tickLine={false} minTickGap={48} />
+        <YAxis tickFormatter={priceLabel} tick={{ fill: MUTED, fontSize: 11 }} axisLine={false} tickLine={false} width={72} domain={['auto', 'auto']} />
+        <Tooltip contentStyle={tooltipStyle} labelFormatter={(l) => timeLabel(l as string)} formatter={(v) => [priceLabel(Number(v)), 'price']} />
+        <Area type="monotone" dataKey="priceUsd" stroke={ACCENT} strokeWidth={2} fill="url(#priceFill)" />
+      </AreaChart>
+    </ChartBox>
+  )
+}
