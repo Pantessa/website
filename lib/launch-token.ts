@@ -21,7 +21,14 @@ function chainCfg() {
 export type TokenPanelData = {
   state: 'unclaimed' | 'claimed' | 'launched'
   owner: { ownerAddress: string; verifiedVia: string } | null
-  token: { address: string; staking: string; totalStaked: string; explorer: string } | null
+  token: {
+    address: string
+    staking: string
+    totalStaked: string
+    explorer: string
+    /** Live spot price + market cap from the Flaunch v4 pool; null if the feed is unavailable. */
+    market: { priceEth: string; priceUsd: number; marketCapUsd: number } | null
+  } | null
   /** Maker-side take rate routed to stakers, in basis points (default 10%). */
   feeShareBps: number
 }
@@ -51,6 +58,27 @@ export async function getTokenPanel(server: {
     } catch {
       /* chain unavailable → show 0 rather than crash the page */
     }
+
+    // Live spot price + market cap from the v4 pool (Flaunch SDK). Separate try so
+    // a price-feed hiccup never blanks the staking stats above.
+    let market: { priceEth: string; priceUsd: number; marketCapUsd: number } | null = null
+    try {
+      const { createFlaunch } = await import('@flaunch/sdk')
+      // Cast the arg to the SDK's own param type — it bundles a separate viem, so
+      // our PublicClient is structurally identical but nominally "unrelated".
+      const sdk = createFlaunch({ publicClient: createPublicClient({ chain, transport: http(rpcUrl) }) as never }) as {
+        coinPriceInETH: (a: Address) => Promise<string>
+        getETHUSDCPrice: () => Promise<number>
+        getCoinInfo: (a: Address) => Promise<{ formattedTotalSupplyInDecimals: number }>
+      }
+      const coin = server.tokenAddress as Address
+      const [priceEth, ethUsd, info] = await Promise.all([sdk.coinPriceInETH(coin), sdk.getETHUSDCPrice(), sdk.getCoinInfo(coin)])
+      const priceUsd = Number(priceEth) * Number(ethUsd)
+      market = { priceEth: String(priceEth), priceUsd, marketCapUsd: priceUsd * Number(info.formattedTotalSupplyInDecimals) }
+    } catch {
+      /* price feed unavailable → omit market, keep the panel */
+    }
+
     return {
       state: 'launched',
       owner,
@@ -59,6 +87,7 @@ export async function getTokenPanel(server: {
         staking: server.stakingAddress,
         totalStaked,
         explorer,
+        market,
       },
       feeShareBps,
     }
