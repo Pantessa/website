@@ -3,9 +3,18 @@ import { ExternalLink } from 'lucide-react'
 import { getTokenPanel, feeSharePct, shortAddr } from '@/lib/launch-token'
 import ClaimMcp from '@/components/ClaimMcp'
 import LaunchToken from '@/components/LaunchToken'
-import BuyToken from '@/components/BuyToken'
+import TradeToken from '@/components/TradeToken'
 import StakeToken from '@/components/StakeToken'
 import Stakers from '@/components/Stakers'
+
+/** USD formatter that spans memecoin ranges: tiny prices keep sig figs, caps compact. */
+function usd(v: number): string {
+  if (!isFinite(v) || v <= 0) return '—'
+  if (v >= 1_000_000) return `$${(v / 1_000_000).toFixed(2)}M`
+  if (v >= 1_000) return `$${(v / 1_000).toFixed(1)}K`
+  if (v >= 1) return `$${v.toLocaleString(undefined, { maximumFractionDigits: 2 })}`
+  return `$${v.toPrecision(3)}`
+}
 
 /** A reasonable default ticker from the MCP name/slug (the owner can edit it). */
 function defaultTicker(name: string, slug: string): string {
@@ -100,6 +109,18 @@ export default async function TokenPanel({
           </div>
 
           <div className="mono" style={{ display: 'flex', flexWrap: 'wrap', gap: '6px 28px', fontSize: 14 }}>
+            {panel.token.market && (
+              <>
+                <span>
+                  <span style={labelStyle}>price </span>
+                  {usd(panel.token.market.priceUsd)}
+                </span>
+                <span>
+                  <span style={labelStyle}>market cap </span>
+                  {usd(panel.token.market.marketCapUsd)}
+                </span>
+              </>
+            )}
             <span>
               <span style={labelStyle}>staked </span>
               {Number(panel.token.totalStaked).toLocaleString(undefined, { maximumFractionDigits: 2 })}
@@ -123,12 +144,12 @@ export default async function TokenPanel({
             </p>
           </div>
 
-          {/* Buy — acquire the token with ETH through its v4 pool, then stake below. */}
+          {/* Trade — buy with ETH or sell for ETH through the v4 pool. */}
           <div>
             <p className="mono" style={{ margin: '0 0 8px', fontSize: 13, ...labelStyle }}>
-              Buy the token
+              Trade the token
             </p>
-            <BuyToken token={panel.token.address} />
+            <TradeToken token={panel.token.address} />
           </div>
 
           {/* Participate — stake to earn the rev share, claim USDC any time. */}
