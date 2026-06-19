@@ -45,6 +45,7 @@ export default function StakeToken({ token, staking }: { token: string; staking:
   const [error, setError] = useState<string | null>(null)
 
   const q = { enabled: !!address } as const
+  const symbol = useReadContract({ address: token as Address, abi: ERC20_ABI, functionName: 'symbol', chainId: LAUNCH_CHAIN.id })
   const balance = useReadContract({ address: token as Address, abi: ERC20_ABI, functionName: 'balanceOf', args: [address as Address], chainId: LAUNCH_CHAIN.id, query: q })
   const staked = useReadContract({ address: staking as Address, abi: STAKING_ABI, functionName: 'stakedOf', args: [address as Address], chainId: LAUNCH_CHAIN.id, query: q })
   const earned = useReadContract({ address: staking as Address, abi: STAKING_ABI, functionName: 'earned', args: [address as Address], chainId: LAUNCH_CHAIN.id, query: q })
@@ -108,6 +109,33 @@ export default function StakeToken({ token, staking }: { token: string; staking:
 
   const earnedUsd = (earned.data as bigint | undefined) ?? BigInt(0)
   const canClaim = earnedUsd > BigInt(0)
+
+  // Guard the doomed transactions: you stake the MCP TOKEN (not USDC — that's the
+  // reward). If the wallet holds none, or you ask for more than you hold/staked,
+  // the on-chain transferFrom reverts and the wallet shows a cryptic "not enough
+  // funds / can't estimate fee". Catch it here and say what's actually wrong.
+  const ticker = (symbol.data as string | undefined) || 'tokens'
+  const bal = balance.data as bigint | undefined
+  const stk = staked.data as bigint | undefined
+  let amt = BigInt(0)
+  try {
+    amt = parseUnits((amount || '0').trim() || '0', TOKEN_DECIMALS)
+  } catch {
+    /* mid-typing (e.g. "0.") — treat as 0 */
+  }
+  const noBalance = bal !== undefined && bal === BigInt(0)
+  const stakeTooMuch = amt > BigInt(0) && bal !== undefined && amt > bal
+  const unstakeTooMuch = amt > BigInt(0) && stk !== undefined && amt > stk
+  const stakeBlocked = !!busy || noBalance || stakeTooMuch
+  const unstakeBlocked = !!busy || (stk !== undefined && stk === BigInt(0)) || unstakeTooMuch
+  const hint = noBalance
+    ? `You hold 0 ${ticker}. Stake the MCP token, not USDC — acquire ${ticker} from its pool first (USDC is what you earn).`
+    : stakeTooMuch
+      ? `Not enough ${ticker} — you hold ${fmt(bal, TOKEN_DECIMALS)}.`
+      : unstakeTooMuch
+        ? `You only have ${fmt(stk, TOKEN_DECIMALS)} ${ticker} staked.`
+        : null
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
       <div className="mono" style={{ display: 'flex', flexWrap: 'wrap', gap: '6px 28px', fontSize: 14 }}>
@@ -120,22 +148,23 @@ export default function StakeToken({ token, staking }: { token: string; staking:
         <input
           value={amount}
           onChange={(e) => setAmount(e.target.value.replace(/[^0-9.]/g, ''))}
-          placeholder="amount"
+          placeholder={`amount in ${ticker}`}
           inputMode="decimal"
           disabled={!!busy}
           className="mono"
-          style={{ width: 130, minWidth: 0, border: '1px solid var(--mist)', borderRadius: 10, padding: '8px 11px', background: 'var(--paper)', color: 'var(--ink)' }}
+          style={{ width: 150, minWidth: 0, border: '1px solid var(--mist)', borderRadius: 10, padding: '8px 11px', background: 'var(--paper)', color: 'var(--ink)' }}
         />
-        <button style={btn} className="mono" disabled={!!busy} onClick={() => void run('stake')}>
+        <button style={btn} className="mono" disabled={stakeBlocked} onClick={() => void run('stake')}>
           {busy === 'approve' ? 'Approving…' : busy === 'stake' ? 'Staking…' : 'Stake'}
         </button>
-        <button style={ghost} className="mono" disabled={!!busy} onClick={() => void run('unstake')}>
+        <button style={ghost} className="mono" disabled={unstakeBlocked} onClick={() => void run('unstake')}>
           {busy === 'unstake' ? 'Unstaking…' : 'Unstake'}
         </button>
         <button style={canClaim ? btn : ghost} className="mono" disabled={!!busy || !canClaim} onClick={() => void run('claim')}>
           {busy === 'claim' ? 'Claiming…' : 'Claim USDC'}
         </button>
       </div>
+      {hint && !error && <p className="mono" style={note}>{hint}</p>}
       {error && <p className="mono" style={{ ...note, color: 'var(--error, #C0392B)' }}>{error}</p>}
     </div>
   )
