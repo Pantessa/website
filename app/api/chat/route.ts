@@ -250,12 +250,13 @@ async function prepareVoteTurn(
           : '🗳️ No active proposals found. Name a DAO (e.g. aave.eth) or paste a proposal id.',
       })
     }
-    const lines = list
-      .slice(0, 6)
-      .map((p) => `· ${p.title} — ${p.space.id} (\`${p.id.slice(0, 12)}…\`)`)
-      .join('\n')
+    // Offer the candidates as clickable chips (full ids retained in meta) so the
+    // user picks one instead of pasting a 64-hex id they can only see truncated.
+    const items = list.slice(0, 6).map((p) => ({ id: p.id, title: p.title, space: p.space.id }))
+    const lines = items.map((p) => `· ${p.title} — ${p.space}`).join('\n')
     return NextResponse.json({
-      reply: `🗳️ Which proposal? A few active ones:\n${lines}\n\nRe-ask naming the DAO/space or pasting the proposal id.`,
+      reply: `🗳️ Which proposal? Pick one to vote ${intent.choiceText} on — or name the DAO/space:\n${lines}`,
+      voteCandidates: { choiceText: intent.choiceText, items },
     })
   }
 

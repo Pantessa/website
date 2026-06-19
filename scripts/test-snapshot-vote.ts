@@ -3,6 +3,7 @@ import {
   toSignable,
   voteRequestFromToolResult,
   voteRequestOf,
+  voteCandidatesOf,
   friendlyVoteError,
   type VoteTypedData,
 } from '../lib/snapshot-vote'
@@ -140,6 +141,30 @@ console.log('parseVoteIntent:')
 
   const l = parseVoteIntent('tell me about aave.eth')
   check('lone DAO name → not a vote (space captured, intent false)', l.isVote === false && l.spaceHint === 'aave.eth')
+}
+
+console.log('voteCandidatesOf(meta):')
+{
+  const id1 = '0x' + 'a'.repeat(64)
+  const id2 = '0x' + 'b'.repeat(64)
+  const meta = { voteCandidates: { choiceText: 'for', items: [{ id: id1, title: 'P1', space: 'x.eth' }, { id: id2, title: 'P2', space: 'y.eth' }] } }
+  const vc = voteCandidatesOf(meta)
+  check('extracts candidates', vc !== null && vc.items.length === 2 && vc.choiceText === 'for')
+  check('null on receipts-only meta', voteCandidatesOf({ receipts: [] }) === null)
+  check('null on undefined', voteCandidatesOf(undefined) === null)
+  check('drops items without a full 64-hex id', voteCandidatesOf({ voteCandidates: { choiceText: 'for', items: [{ id: '0xabc', title: 'short', space: 'x.eth' }] } }) === null)
+}
+
+// The fix's core contract: clicking a candidate composes "vote <choice> on
+// <full-id>", which must re-parse into a complete vote intent (verb + choice +
+// proposal id) so it routes straight back to prepare_vote — no dead-end.
+console.log('candidate click → re-parse round-trip:')
+{
+  const id = '0x' + 'c'.repeat(64)
+  for (const choice of ['for', 'against', 'abstain', 'yes', 'option 2']) {
+    const r = parseVoteIntent(`vote ${choice} on ${id}`)
+    check(`"${choice}" → isVote + id + choice`, r.isVote && r.proposalId === id && !!r.choiceText)
+  }
 }
 
 console.log('friendlyVoteError:')

@@ -47,6 +47,38 @@ export function voteRequestFromToolResult(data: unknown): VoteRequest | null {
   }
 }
 
+/**
+ * Ambiguous-proposal clarification: the chat couldn't pin one proposal, so it
+ * offers a few to pick from. Each carries the FULL id (the chat reply truncates
+ * it for display, but the click needs the whole thing) plus the choice the user
+ * already stated, so a click re-submits "vote <choice> on <full-id>" — which
+ * parseVoteIntent routes straight back into the vote flow. Beats asking the user
+ * to paste a 64-hex id they can only see truncated.
+ */
+export interface VoteCandidate {
+  id: string
+  title: string
+  space: string
+}
+export interface VoteCandidates {
+  choiceText: string
+  items: VoteCandidate[]
+}
+
+/** Defensive extraction of meta.voteCandidates (meta is user-era JSON). */
+export function voteCandidatesOf(meta: unknown): VoteCandidates | null {
+  if (!meta || typeof meta !== 'object') return null
+  const vc = (meta as { voteCandidates?: unknown }).voteCandidates
+  if (!vc || typeof vc !== 'object') return null
+  const v = vc as VoteCandidates
+  if (!Array.isArray(v.items) || v.items.length === 0) return null
+  const items = v.items.filter(
+    (i) => i && typeof i.id === 'string' && /^0x[a-fA-F0-9]{64}$/.test(i.id) && typeof i.title === 'string',
+  )
+  if (items.length === 0) return null
+  return { choiceText: typeof v.choiceText === 'string' ? v.choiceText : '', items }
+}
+
 /** Defensive extraction of meta.voteRequest (meta is user-era JSON). */
 export function voteRequestOf(meta: unknown): VoteRequest | null {
   if (!meta || typeof meta !== 'object') return null

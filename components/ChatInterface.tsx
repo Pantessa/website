@@ -8,7 +8,8 @@ import { useAccount, useSignTypedData } from 'wagmi'
 import { cn } from '@/lib/utils'
 import MessageReceipts from '@/components/MessageReceipts'
 import SignVoteButton from '@/components/SignVoteButton'
-import { voteRequestOf } from '@/lib/snapshot-vote'
+import VoteCandidates from '@/components/VoteCandidates'
+import { voteRequestOf, voteCandidatesOf } from '@/lib/snapshot-vote'
 import { useYeetfulStore } from '@/lib/store'
 import BrandIcon from '@/components/BrandIcon'
 import ShareButton from '@/components/ShareButton'
@@ -36,14 +37,16 @@ interface PaymentToSign {
 }
 
 
-/** Build the assistant message meta from receipts + an optional vote request. */
-function buildMeta(receipts: unknown, payer: unknown, voteRequest: unknown) {
+/** Build the assistant message meta from receipts + an optional vote request /
+ *  ambiguous-proposal candidates. */
+function buildMeta(receipts: unknown, payer: unknown, voteRequest: unknown, voteCandidates?: unknown) {
   const meta: Record<string, unknown> = {}
   if (Array.isArray(receipts) && receipts.length) {
     meta.receipts = receipts
     if (typeof payer === 'string') meta.payer = payer
   }
   if (voteRequest && typeof voteRequest === 'object') meta.voteRequest = voteRequest
+  if (voteCandidates && typeof voteCandidates === 'object') meta.voteCandidates = voteCandidates
   return Object.keys(meta).length ? meta : undefined
 }
 
@@ -100,8 +103,11 @@ export default function ChatInterface() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [currentChat?.messages])
 
-  const handleSend = async () => {
-    if (!input.trim() || loading) return
+  const handleSend = async (textOverride?: string) => {
+    // textOverride lets UI affordances (e.g. a vote-candidate chip) submit a
+    // composed message without going through the input box.
+    const raw = typeof textOverride === 'string' ? textOverride : input
+    if (!raw.trim() || loading) return
     analytics.chatMessage(activeServers.length, isConnected)
 
     let chatId = currentChatId
@@ -112,8 +118,8 @@ export default function ChatInterface() {
       window.history.replaceState(null, '', `/chat/${chatId}`)
     }
 
-    const userMsg = input.trim()
-    setInput('')
+    const userMsg = raw.trim()
+    if (typeof textOverride !== 'string') setInput('')
     setLoading(true)
 
     addMessage(chatId, { role: 'user', content: userMsg })
@@ -149,7 +155,7 @@ export default function ChatInterface() {
         addMessage(chatId, {
           role: 'assistant',
           content: data.reply || data.error || 'No response.',
-          meta: buildMeta(data.receipts, data.payer, data.voteRequest),
+          meta: buildMeta(data.receipts, data.payer, data.voteRequest, data.voteCandidates),
         })
       }
     } catch (err) {
@@ -319,6 +325,17 @@ export default function ChatInterface() {
                         const vote = voteRequestOf(msg.meta)
                         return vote ? <SignVoteButton vote={vote} /> : null
                       })()}
+                    {msg.role === 'assistant' &&
+                      (() => {
+                        const cands = voteCandidatesOf(msg.meta)
+                        return cands ? (
+                          <VoteCandidates
+                            data={cands}
+                            disabled={loading}
+                            onPick={(id) => void handleSend(`vote ${cands.choiceText} on ${id}`)}
+                          />
+                        ) : null
+                      })()}
                   </div>
                 </motion.div>
               ))}
@@ -363,7 +380,7 @@ export default function ChatInterface() {
             style={{ minHeight: '24px', outline: 'none', boxShadow: 'none' }}
           />
           <button
-            onClick={handleSend}
+            onClick={() => void handleSend()}
             disabled={!input.trim() || loading}
             className={cn(
               'flex-shrink-0 w-11 h-11 md:w-8 md:h-8 rounded-xl flex items-center justify-center transition-all duration-200',
