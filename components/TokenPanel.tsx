@@ -1,21 +1,13 @@
 import Link from 'next/link'
 import { ExternalLink } from 'lucide-react'
 import { getTokenPanel, feeSharePct, shortAddr } from '@/lib/launch-token'
+import { usdCompact } from '@/lib/format'
 import ClaimMcp from '@/components/ClaimMcp'
 import LaunchToken from '@/components/LaunchToken'
 import TradeToken from '@/components/TradeToken'
 import TokenPriceChart from '@/components/TokenPriceChart'
 import StakeToken from '@/components/StakeToken'
 import Stakers from '@/components/Stakers'
-
-/** USD formatter that spans memecoin ranges: tiny prices keep sig figs, caps compact. */
-function usd(v: number): string {
-  if (!isFinite(v) || v <= 0) return '—'
-  if (v >= 1_000_000) return `$${(v / 1_000_000).toFixed(2)}M`
-  if (v >= 1_000) return `$${(v / 1_000).toFixed(1)}K`
-  if (v >= 1) return `$${v.toLocaleString(undefined, { maximumFractionDigits: 2 })}`
-  return `$${v.toPrecision(3)}`
-}
 
 /** A reasonable default ticker from the MCP name/slug (the owner can edit it). */
 function defaultTicker(name: string, slug: string): string {
@@ -97,8 +89,8 @@ export default async function TokenPanel({
           <div className="tok__strip">
             {panel.token.market && (
               <>
-                <Stat label="price" value={usd(panel.token.market.priceUsd)} />
-                <Stat label="market cap" value={usd(panel.token.market.marketCapUsd)} />
+                <Stat label="price" value={usdCompact(panel.token.market.priceUsd)} />
+                <Stat label="market cap" value={usdCompact(panel.token.market.marketCapUsd)} />
               </>
             )}
             <Stat
@@ -116,9 +108,8 @@ export default async function TokenPanel({
                 <strong style={{ color: 'var(--accent)' }}>{pct}%</strong> of every paid call, in USDC.
               </p>
 
-              {/* Price — USD spot + history sampled from the v4 pool. */}
+              {/* Price — hero spot + 24h chip + history sampled from the v4 pool. */}
               <div className="tok__card">
-                <p className="tok__cardhead">Price</p>
                 <TokenPriceChart slug={slug} />
               </div>
 

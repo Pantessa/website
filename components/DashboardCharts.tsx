@@ -152,12 +152,12 @@ function timeLabel(iso: string): string {
 }
 
 /** A launched token's USD price over time — sampled from the v4 pool. */
-export function PriceChart({ samples }: { samples: { at: string; priceUsd: number }[] }) {
+export function PriceChart({ samples, height = 200 }: { samples: { at: string; priceUsd: number }[]; height?: number }) {
   if (samples.length < 2) {
     return <EmptyChart label="Price history builds as the token trades." />
   }
   return (
-    <ChartBox height={200}>
+    <ChartBox height={height}>
       <AreaChart data={samples} margin={{ top: 8, right: 8, left: -6, bottom: 0 }}>
         <defs>
           <linearGradient id="priceFill" x1="0" y1="0" x2="0" y2="1">
