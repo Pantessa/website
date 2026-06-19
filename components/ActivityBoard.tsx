@@ -14,6 +14,14 @@ import type { LaunchpadSummary } from '@/lib/launchpad-summary'
 
 const POLL_MS = 30_000
 
+// Token amounts span a huge range (supplies are billions; a stake can be a
+// fraction). Show enough precision that a small but real stake never rounds to
+// "0" — the caller renders a distinct "no stake yet" for an actual zero.
+function fmtStaked(v: string): string {
+  const n = Number(v)
+  return n.toLocaleString(undefined, { maximumFractionDigits: n < 1 ? 6 : 2 })
+}
+
 export interface NetworkActivity {
   stats: {
     settledUsd: number
@@ -123,9 +131,13 @@ export default function ActivityBoard() {
                   {t.name}
                 </Link>
                 {t.symbol && <span className="mono text-[color:var(--muted-2)]">{t.symbol}</span>}
-                <span className="ml-auto mono text-[color:var(--muted)] flex-shrink-0">
-                  {Number(t.totalStaked).toLocaleString(undefined, { maximumFractionDigits: 2 })} staked
-                </span>
+                {Number(t.totalStaked) > 0 ? (
+                  <span className="ml-auto mono text-[color:var(--muted)] flex-shrink-0">
+                    {fmtStaked(t.totalStaked)} staked
+                  </span>
+                ) : (
+                  <span className="ml-auto mono text-[color:var(--muted-2)] flex-shrink-0">no stake yet</span>
+                )}
                 <a
                   href={`${t.explorer}/address/${t.stakingAddress}`}
                   target="_blank"
