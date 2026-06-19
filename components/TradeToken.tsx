@@ -7,6 +7,10 @@
 // + the sellCoin tx, no ERC20 approve. After buying, stake below to earn the rev
 // share. Base Sepolia (LAUNCH_CHAIN). One-sign USDC→token→stake zap is the
 // planned follow-up.
+//
+// Presentation is an exchange-style "ticket" (.tkt): segmented Buy/Sell, balance
+// readout, big amount field with % chips, a debounced live "you receive ≈" quote
+// from the Flaunch read SDK, and a full-width primary CTA.
 
 import { useCallback, useEffect, useState } from 'react'
 import { useAccount, useBalance, usePublicClient, useReadContract, useSwitchChain, useWalletClient } from 'wagmi'
@@ -16,18 +20,11 @@ import type { ReadWriteFlaunchSDK } from '@flaunch/sdk'
 import { ERC20_ABI, LAUNCH_CHAIN, TOKEN_DECIMALS } from '@/lib/launch-contracts'
 
 const SLIPPAGE = 15 // testnet pools are thin
-const tab = (active: boolean) =>
-  ({
-    background: active ? 'var(--accent)' : 'transparent',
-    color: active ? 'var(--ink)' : 'var(--smoke)',
-    border: active ? 'none' : '1px solid var(--mist)',
-    borderRadius: 10,
-    padding: '6px 16px',
-    fontWeight: 600,
-    cursor: 'pointer',
-  }) as const
-const btn = { background: 'var(--accent)', color: 'var(--ink)', border: 'none', borderRadius: 12, padding: '8px 14px', fontWeight: 600, cursor: 'pointer' } as const
-const note = { margin: 0, fontSize: 13, color: 'var(--smoke)' } as const
+const GAS_RESERVE = parseEther('0.0005') // leave headroom for gas on a "Max" buy
+const QUOTE_DEBOUNCE_MS = 350
+const PCTS = [25, 50, 75, 100] as const
+
+const fmt = (v: number, max: number) => v.toLocaleString(undefined, { maximumFractionDigits: max })
 
 export default function TradeToken({ token }: { token: string }) {
   const { address, isConnected } = useAccount()
@@ -47,6 +44,58 @@ export default function TradeToken({ token }: { token: string }) {
   const [busy, setBusy] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [done, setDone] = useState<string | null>(null)
+  const [quote, setQuote] = useState<string | null>(null)
+
+  const buying = mode === 'buy'
+  const ethBal = eth.data?.value
+  const tokBal = tokenBal.data as bigint | undefined
+
+  const reset = (m: 'buy' | 'sell') => { setMode(m); setAmount(''); setError(null); setDone(null); setQuote(null) }
+
+  const onAmount = (v: string) => {
+    const cleaned = v.replace(/[^0-9.]/g, '')
+    const parts = cleaned.split('.')
+    setAmount(parts.length > 2 ? `${parts[0]}.${parts.slice(1).join('')}` : cleaned)
+    setDone(null)
+  }
+
+  // % chips compute off the relevant balance — buy leaves gas headroom on Max.
+  const setPct = (pct: number) => {
+    const frac = BigInt(pct)
+    if (buying) {
+      if (!ethBal) return
+      const avail = ethBal > GAS_RESERVE ? ethBal - GAS_RESERVE : BigInt(0)
+      setAmount(formatEther((avail * frac) / BigInt(100)))
+    } else {
+      if (tokBal === undefined) return
+      setAmount(formatUnits((tokBal * frac) / BigInt(100), TOKEN_DECIMALS))
+    }
+    setDone(null)
+  }
+
+  // Debounced live quote: ETH in → coins out (buy) / coins in → ETH out (sell).
+  useEffect(() => {
+    setQuote(null)
+    const a = amount.trim()
+    if (!a || !publicClient || !(Number(a) > 0)) return
+    let live = true
+    const t = setTimeout(async () => {
+      try {
+        const { createFlaunch } = await import('@flaunch/sdk')
+        const sdk = createFlaunch({ publicClient: publicClient as never })
+        if (buying) {
+          const out = await sdk.getBuyQuoteExactInput({ coinAddress: token as Address, amountIn: parseEther(a) })
+          if (live) setQuote(`${fmt(Number(formatUnits(out, TOKEN_DECIMALS)), 2)} ${ticker}`)
+        } else {
+          const out = await sdk.getSellQuoteExactInput({ coinAddress: token as Address, amountIn: parseUnits(a, TOKEN_DECIMALS) })
+          if (live) setQuote(`${fmt(Number(formatEther(out)), 6)} ETH`)
+        }
+      } catch {
+        if (live) setQuote(null)
+      }
+    }, QUOTE_DEBOUNCE_MS)
+    return () => { live = false; clearTimeout(t) }
+  }, [amount, buying, publicClient, token, ticker])
 
   const trade = useCallback(async () => {
     setError(null)
@@ -62,7 +111,7 @@ export default function TradeToken({ token }: { token: string }) {
       if (mode === 'buy') {
         const wei = parseEther((amount || '0').trim() || '0')
         if (wei <= BigInt(0)) throw new Error('Enter an ETH amount.')
-        if (eth.data && wei + parseEther('0.0005') > eth.data.value) throw new Error('Not enough ETH for the buy + gas.')
+        if (eth.data && wei + GAS_RESERVE > eth.data.value) throw new Error('Not enough ETH for the buy + gas.')
         setBusy('buy')
         const hash = await sdk.buyCoin({ coinAddress: token as Address, slippagePercent: SLIPPAGE, swapType: 'EXACT_IN', amountIn: wei })
         await publicClient.waitForTransactionReceipt({ hash })
@@ -70,8 +119,7 @@ export default function TradeToken({ token }: { token: string }) {
       } else {
         const wei = parseUnits((amount || '0').trim() || '0', TOKEN_DECIMALS)
         if (wei <= BigInt(0)) throw new Error(`Enter a ${ticker} amount.`)
-        const bal = tokenBal.data as bigint | undefined
-        if (bal !== undefined && wei > bal) throw new Error(`You only hold ${formatUnits(bal, TOKEN_DECIMALS)} ${ticker}.`)
+        if (tokBal !== undefined && wei > tokBal) throw new Error(`You only hold ${formatUnits(tokBal, TOKEN_DECIMALS)} ${ticker}.`)
         // Flaunch coins are auto-approved to Permit2 — only sign a permit when the
         // Permit2 allowance is short; then sell.
         const { allowance } = await sdk.getPermit2AllowanceAndNonce(token as Address)
@@ -99,6 +147,7 @@ export default function TradeToken({ token }: { token: string }) {
         setDone(`Sold ${ticker} for ETH.`)
       }
       setAmount('')
+      setQuote(null)
       void eth.refetch()
       void tokenBal.refetch()
     } catch (e) {
@@ -107,50 +156,76 @@ export default function TradeToken({ token }: { token: string }) {
     } finally {
       setBusy(null)
     }
-  }, [mode, amount, eth, tokenBal, walletClient, publicClient, address, token, ticker, switchChainAsync])
+  }, [mode, amount, eth, tokBal, tokenBal, walletClient, publicClient, address, token, ticker, switchChainAsync])
 
   if (!mounted) return null
   if (!isConnected) {
     return (
-      <button style={btn} className="mono" onClick={() => openConnectModal?.()}>
+      <button className="tkt__cta mono" onClick={() => openConnectModal?.()}>
         Connect wallet to trade
       </button>
     )
   }
 
-  const buying = mode === 'buy'
+  const ctaLabel =
+    busy === 'buy' ? 'Buying…'
+    : busy === 'permit' ? 'Sign permit…'
+    : busy === 'sell' ? 'Selling…'
+    : buying ? `Buy ${ticker}` : `Sell ${ticker}`
+
+  const balDisabled = buying ? !ethBal : tokBal === undefined
+
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-      <div style={{ display: 'flex', gap: 6 }}>
-        <button style={tab(buying)} className="mono" disabled={!!busy} onClick={() => { setMode('buy'); setAmount(''); setError(null); setDone(null) }}>Buy</button>
-        <button style={tab(!buying)} className="mono" disabled={!!busy} onClick={() => { setMode('sell'); setAmount(''); setError(null); setDone(null) }}>Sell</button>
+    <div className="tkt">
+      <div className="tkt__tabs">
+        <button className={`tkt__tab tkt__tab--buy mono${buying ? ' is-active' : ''}`} disabled={!!busy} onClick={() => reset('buy')}>Buy</button>
+        <button className={`tkt__tab tkt__tab--sell mono${!buying ? ' is-active' : ''}`} disabled={!!busy} onClick={() => reset('sell')}>Sell</button>
       </div>
-      <div className="mono" style={{ fontSize: 14 }}>
-        {buying ? (
-          <><span style={{ color: 'var(--smoke)' }}>your ETH </span>{eth.data ? Number(formatEther(eth.data.value)).toLocaleString(undefined, { maximumFractionDigits: 5 }) : '—'}</>
-        ) : (
-          <><span style={{ color: 'var(--smoke)' }}>your {ticker} </span>{tokenBal.data !== undefined ? Number(formatUnits(tokenBal.data as bigint, TOKEN_DECIMALS)).toLocaleString(undefined, { maximumFractionDigits: 2 }) : '—'}</>
-        )}
+
+      <div className="tkt__bal mono">
+        <span className="tkt__ballbl">{buying ? 'your ETH' : `your ${ticker}`}</span>
+        <span className="tkt__balval">
+          {buying
+            ? (eth.data ? fmt(Number(formatEther(eth.data.value)), 5) : '—')
+            : (tokBal !== undefined ? fmt(Number(formatUnits(tokBal, TOKEN_DECIMALS)), 2) : '—')}
+        </span>
       </div>
-      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+
+      <div className="tkt__field">
         <input
+          className="tkt__input"
           value={amount}
-          onChange={(e) => setAmount(e.target.value.replace(/[^0-9.]/g, ''))}
+          onChange={(e) => onAmount(e.target.value)}
           placeholder={buying ? 'ETH to spend' : `${ticker} to sell`}
           inputMode="decimal"
           disabled={!!busy}
-          className="mono"
-          style={{ width: 150, minWidth: 0, border: '1px solid var(--mist)', borderRadius: 10, padding: '8px 11px', background: 'var(--paper)', color: 'var(--ink)' }}
+          aria-label={buying ? 'ETH to spend' : `${ticker} to sell`}
         />
-        <button style={btn} className="mono" disabled={!!busy || !amount} onClick={() => void trade()}>
-          {busy === 'buy' ? 'Buying…' : busy === 'permit' ? 'Sign permit…' : busy === 'sell' ? 'Selling…' : buying ? `Buy ${ticker}` : `Sell ${ticker}`}
-        </button>
+        <span className="tkt__suffix mono">{buying ? 'ETH' : ticker}</span>
       </div>
-      <p className="mono" style={note}>
+
+      <div className="tkt__chips">
+        {PCTS.map((p) => (
+          <button key={p} className="tkt__chip mono" disabled={!!busy || balDisabled} onClick={() => setPct(p)}>
+            {p === 100 ? 'Max' : `${p}%`}
+          </button>
+        ))}
+      </div>
+
+      <div className="tkt__quote mono">
+        <span className="tkt__quotelbl">you receive ≈</span>
+        <span className="tkt__quoteval">{quote ?? '—'}</span>
+      </div>
+
+      <button className={`tkt__cta mono${buying ? '' : ' tkt__cta--sell'}`} disabled={!!busy || !amount} onClick={() => void trade()}>
+        {ctaLabel}
+      </button>
+
+      <p className="tkt__note mono">
         {buying ? 'ETH' : ticker} → {buying ? ticker : 'ETH'} through the token&rsquo;s Uniswap&nbsp;v4 pool (~{SLIPPAGE}% slippage — testnet pools are thin).
       </p>
-      {done && !error && <p className="mono" style={{ ...note, color: 'var(--accent)' }}>{done}</p>}
-      {error && <p className="mono" style={{ ...note, color: 'var(--error, #C0392B)' }}>{error}</p>}
+      {done && !error && <p className="tkt__msg tkt__msg--ok mono">{done}</p>}
+      {error && <p className="tkt__msg tkt__msg--err mono">{error}</p>}
     </div>
   )
 }

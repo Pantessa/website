@@ -16,6 +16,7 @@
     --paper: var(--surf-1); /* input / field background */
     --mist: var(--line);    /* hairline borders */
     --smoke: var(--muted);  /* muted label text */
+    --sell: #E5484D;        /* sell-side / destructive accent */
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   html { -webkit-text-size-adjust: 100%; -webkit-tap-highlight-color: transparent; }
@@ -469,6 +470,52 @@
     .tok__grid { grid-template-columns: 1fr; }
     .tok__rail { position: static; }
   }
+
+  /* Trade ticket (TradeToken) — exchange-style order form. */
+  .tkt { display: flex; flex-direction: column; gap: 12px; }
+  .tkt__tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; padding: 4px; background: var(--surf-2); border-radius: 12px; }
+  .tkt__tab {
+    border: none; border-radius: 9px; padding: 8px 0; font-size: 13px; font-weight: 600;
+    color: var(--muted); background: transparent; transition: background .15s, color .15s;
+  }
+  .tkt__tab:hover:not(.is-active) { color: var(--fg); }
+  .tkt__tab--buy.is-active { background: var(--accent); color: var(--ink); }
+  .tkt__tab--sell.is-active { background: var(--sell); color: #fff; }
+  .tkt__bal { display: flex; justify-content: space-between; align-items: baseline; font-size: 12.5px; }
+  .tkt__ballbl { color: var(--muted-2); }
+  .tkt__balval { color: var(--fg); font-variant-numeric: tabular-nums; }
+  .tkt__field {
+    display: flex; align-items: center; gap: 8px; padding: 10px 12px;
+    border: 1px solid var(--line); border-radius: 12px; background: var(--paper); transition: border-color .15s;
+  }
+  .tkt__field:focus-within { border-color: var(--line-2); }
+  .tkt__input {
+    flex: 1; min-width: 0; border: none; outline: none; background: transparent; color: var(--fg);
+    font-size: 20px; font-family: 'Geist Mono', ui-monospace, monospace;
+  }
+  .tkt__input::placeholder { color: var(--muted-2); font-size: 15px; }
+  .tkt__suffix { font-size: 13px; color: var(--muted); flex-shrink: 0; }
+  .tkt__chips { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+  .tkt__chip {
+    border: 1px solid var(--line); border-radius: 8px; padding: 6px 0; font-size: 12px;
+    color: var(--muted); background: transparent; transition: border-color .15s, color .15s;
+  }
+  .tkt__chip:hover:not(:disabled) { color: var(--fg); border-color: var(--line-2); }
+  .tkt__chip:disabled { opacity: .4; cursor: default; }
+  .tkt__quote { display: flex; justify-content: space-between; align-items: baseline; font-size: 13px; min-height: 18px; }
+  .tkt__quotelbl { color: var(--muted-2); }
+  .tkt__quoteval { color: var(--fg); font-variant-numeric: tabular-nums; }
+  .tkt__cta {
+    width: 100%; border: none; border-radius: 12px; padding: 12px 0; font-size: 14px; font-weight: 600;
+    background: var(--accent); color: var(--ink); transition: opacity .15s;
+  }
+  .tkt__cta--sell { background: var(--sell); color: #fff; }
+  .tkt__cta:hover:not(:disabled) { opacity: .9; }
+  .tkt__cta:disabled { opacity: .45; cursor: default; }
+  .tkt__note { font-size: 12px; color: var(--muted-2); line-height: 1.45; margin: 0; }
+  .tkt__msg { font-size: 13px; margin: 0; }
+  .tkt__msg--ok { color: var(--accent); }
+  .tkt__msg--err { color: var(--sell); }
 
   /* ── DEVELOPERS PAGE ─────────────────────────────── */
   .dev__caps { margin-top: 44px; }
