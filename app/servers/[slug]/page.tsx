@@ -257,7 +257,7 @@ export default async function ServiceDetailPage({ params }: Params) {
 
   return (
     <>
-      <main className="x-main x-main--fluid">
+      <main className={launched ? 'x-main x-main--fluid' : 'x-main'}>
         <div className="svc">
           <Link href="/#directory" className="svc__back mono">
             <ArrowLeft width={14} height={14} />

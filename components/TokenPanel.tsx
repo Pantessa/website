@@ -154,17 +154,7 @@ export default function TokenPanel({
     )
   }
 
-  // ── Not launched: a single self-contained section (claimed / unclaimed). ──
-  const boxStyle = {
-    border: '1px solid var(--mist)',
-    borderRadius: 12,
-    padding: '16px 18px',
-    display: 'flex',
-    flexDirection: 'column' as const,
-    gap: 10,
-  }
-  const labelStyle = { color: 'var(--smoke)' } as const
-
+  // ── Not launched: a focused, self-contained card (claimed / unclaimed). ──
   return (
     <div className="svc__section">
       <div className="svc__sectionhead">
@@ -173,42 +163,41 @@ export default function TokenPanel({
       </div>
 
       {panel.state === 'claimed' && (
-        <div style={boxStyle}>
-          <p style={{ margin: 0 }}>
+        <div className="tok__claim">
+          <p className="tok__claimlede">
             Claimed by <strong>{shortAddr(panel.owner?.ownerAddress ?? '')}</strong>{' '}
-            <span
-              className="mono"
-              title={`Verified via ${panel.owner?.verifiedVia}`}
-              style={{ color: 'var(--accent)', fontSize: 13 }}
-            >
+            <span className="tok__verified mono" title={`Verified via ${panel.owner?.verifiedVia}`}>
               ✓ verified
             </span>
-            . Token not launched yet.
           </p>
-          <p className="mono" style={{ margin: 0, fontSize: 14, ...labelStyle }}>
-            Once a token launches, {pct}% of every paid call settles to stakers.
+          <p className="tok__claimnote mono">
+            Token not launched yet — once it launches, {pct}% of every paid call settles to stakers.
           </p>
-          <LaunchToken
-            slug={slug}
-            name={name}
-            defaultSymbol={defaultTicker(name, slug)}
-            ownerAddress={panel.owner?.ownerAddress ?? ''}
-          />
+          <div className="tok__claimaction">
+            <p className="tok__cardhead">Launch the token</p>
+            <LaunchToken
+              slug={slug}
+              name={name}
+              defaultSymbol={defaultTicker(name, slug)}
+              ownerAddress={panel.owner?.ownerAddress ?? ''}
+            />
+          </div>
           <ClaimMcp slug={slug} ownerAddress={panel.owner?.ownerAddress ?? null} />
         </div>
       )}
 
       {panel.state === 'unclaimed' && (
-        <div style={boxStyle}>
-          <p style={{ margin: 0 }}>
-            <strong>Own a piece of this MCP.</strong> Its operator can launch a token, and{' '}
-            {pct}% of every paid call flows to whoever stakes it — the better the MCP does, the more
-            value flows.
+        <div className="tok__claim">
+          <p className="tok__claimlede">
+            <strong>Own a piece of this MCP.</strong> Its operator can launch a token, and {pct}% of
+            every paid call flows to whoever stakes it — the better the MCP does, the more value flows.
           </p>
-          <p className="mono" style={{ margin: 0, fontSize: 14, ...labelStyle }}>
+          <p className="tok__claimnote mono">
             Operate this MCP? Claim it by signing in with the wallet it&apos;s paid to.
           </p>
-          <ClaimMcp slug={slug} ownerAddress={null} />
+          <div className="tok__claimaction">
+            <ClaimMcp slug={slug} ownerAddress={null} />
+          </div>
         </div>
       )}
     </div>
