@@ -515,6 +515,22 @@
   .tok__prose { font-size: 14px; line-height: 1.55; color: var(--muted); margin: 0; text-wrap: pretty; }
   .tok__prose strong { color: var(--fg); }
 
+  /* Not-launched token card (claim / launch) — a focused action card, not a
+     full-bleed banner. Capped width so it reads as intentional on wide screens. */
+  .tok__claim {
+    border: 1px solid var(--line); background: var(--surf-1); border-radius: 16px;
+    padding: 22px 24px; display: flex; flex-direction: column; gap: 14px;
+    max-width: 620px; align-items: flex-start;
+  }
+  .tok__claimlede { margin: 0; font-size: 15px; line-height: 1.55; color: var(--muted); text-wrap: pretty; }
+  .tok__claimlede strong { color: var(--fg); }
+  .tok__claim .tok__verified { margin-left: 0; }
+  .tok__claimnote { margin: 0; font-size: 13px; line-height: 1.5; color: var(--muted-2); }
+  .tok__claimaction {
+    align-self: stretch; background: var(--surf-2); border: 1px solid var(--line);
+    border-radius: 12px; padding: 14px 16px; display: flex; flex-direction: column; gap: 10px;
+  }
+
   @media (max-width: 1080px) {
     .tok__grid { grid-template-columns: 1fr; grid-template-areas: "chart" "rail" "detail"; }
     .tok__rail { position: static; }
