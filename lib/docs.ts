@@ -25,6 +25,14 @@ export const DOCS_PAGES: DocsPage[] = [
     ready: true,
   },
   {
+    slug: 'switchboard',
+    title: 'Switchboard: the router',
+    seoTitle: 'Switchboard — route MCP calls by plain-English ask',
+    description:
+      'Switchboard is Yeetful’s MCP routing engine: ask in plain English, it weighs every route, picks the cheapest proven one under your cap, and pays per call.',
+    ready: true,
+  },
+  {
     slug: 'quickstart',
     title: 'Quickstart',
     seoTitle: 'Quickstart — first paid x402 call with the yeetful SDK',
