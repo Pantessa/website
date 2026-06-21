@@ -432,6 +432,63 @@ async function main() {
     !act.recent.some((r) => r.host === 'denied.example.test') && act.stats.blockedCalls >= 1,
   )
 
+  // ── Switchboard route preview (public, read-only, no spend) ───────────────
+  // Guards the routing lever the /switchboard "try a route" demo renders: the
+  // contract shape, the $0.05 ceiling, and the proven-gate invariant — the pick
+  // is the cheapest PROVEN route (so the demo never "picks" a probe-dead one).
+  console.log('— switchboard route preview')
+  const rpRes = await fetch(`${BASE}/api/route/preview`)
+  const rp = await rpRes.json()
+  check(
+    'route/preview: 200 with cap + categories[]',
+    rpRes.status === 200 && rp.cap === 0.05 && Array.isArray(rp.categories),
+  )
+  check('route/preview: cache header set', /s-maxage/.test(rpRes.headers.get('cache-control') ?? ''))
+
+  type RPCand = { slug: string; service: string; price: number; proven: number }
+  type RPCat = { category: string; candidates: RPCand[]; pick: string; pickProven: boolean; saved: number }
+  const cats: RPCat[] = Array.isArray(rp.categories) ? rp.categories : []
+  // Real catalog should expose at least one plannable category against Neon.
+  check('route/preview: at least one plannable category', cats.length > 0, `${cats.length} categories`)
+
+  const inRange = (c: RPCat) => c.candidates.every((x) => x.price > 0 && x.price <= rp.cap)
+  const pickValid = (c: RPCat) => c.candidates.some((x) => x.slug === c.pick)
+  const provenGated = (c: RPCat) => {
+    const pick = c.candidates.find((x) => x.slug === c.pick)
+    if (!pick) return false
+    const pool = c.candidates.some((x) => x.proven > 0) ? c.candidates.filter((x) => x.proven > 0) : c.candidates
+    const cheapestInPool = Math.min(...pool.map((x) => x.price))
+    // pickProven must reflect reality; the pick must be the cheapest of the pool
+    // it was drawn from; and if any proven route exists, the pick must be proven.
+    return (
+      c.pickProven === pick.proven > 0 &&
+      pick.price === cheapestInPool &&
+      c.pickProven === c.candidates.some((x) => x.proven > 0)
+    )
+    // (relational > binds tighter than ===, so the first line reads as
+    //  c.pickProven === (pick.proven > 0) — the pick's own proven flag matches)
+  }
+  if (cats.length > 0) {
+    check('route/preview: every candidate price in (0, cap]', cats.every(inRange))
+    check('route/preview: pick is always one of the candidates', cats.every(pickValid))
+    check('route/preview: proven-gate — pick is the cheapest proven route', cats.every(provenGated))
+  }
+
+  // ── Switchboard page SEO (the flagship product page must be indexable) ────
+  console.log('— switchboard SEO')
+  const swHtml = flat(await (await fetch(`${BASE}/switchboard`)).text())
+  check(
+    'switchboard: canonical → /switchboard',
+    /<link[^>]+rel="canonical"[^>]+href="[^"]*\/switchboard"/.test(swHtml),
+  )
+  check('switchboard: og:image present (social card)', /<meta[^>]+property="og:image"/.test(swHtml))
+  check(
+    'switchboard: descriptive <title> (not the root default)',
+    /<title>[^<]*Switchboard[^<]*<\/title>/.test(swHtml),
+  )
+  const sitemapXml = await (await fetch(`${BASE}/sitemap.xml`)).text()
+  check('sitemap: /switchboard is listed', sitemapXml.includes('/switchboard'))
+
   // ── Organizations (SIWE-only org core + the role matrix) ──────────────────
   console.log('— organizations')
   const MJ = { 'content-type': 'application/json', cookie: mallorySession }

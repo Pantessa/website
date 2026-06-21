@@ -74,6 +74,12 @@ export default function Navigation() {
       <Link href="/" className={`nav__tab ${pathname === '/' ? 'is-on' : ''}`}>
         Servers
       </Link>
+      <Link
+        href="/switchboard"
+        className={`nav__tab ${pathname === '/switchboard' ? 'is-on' : ''}`}
+      >
+        Switchboard
+      </Link>
       <Link href="/chat" className={`nav__tab ${pathname === '/chat' ? 'is-on' : ''}`}>
         Chat
         {activeCount > 0 && <span className="nav__badge mono">{activeCount}</span>}
