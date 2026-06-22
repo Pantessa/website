@@ -445,7 +445,8 @@ async function main() {
   )
   check('route/preview: cache header set', /s-maxage/.test(rpRes.headers.get('cache-control') ?? ''))
 
-  type RPCand = { slug: string; service: string; price: number; proven: number }
+  type RPCall = { method: string; url: string; params: unknown[] }
+  type RPCand = { slug: string; service: string; price: number; proven: number; call: RPCall }
   type RPCat = { category: string; candidates: RPCand[]; pick: string; pickProven: boolean; saved: number }
   const cats: RPCat[] = Array.isArray(rp.categories) ? rp.categories : []
   // Real catalog should expose at least one plannable category against Neon.
@@ -468,10 +469,19 @@ async function main() {
     // (relational > binds tighter than ===, so the first line reads as
     //  c.pickProven === (pick.proven > 0) — the pick's own proven flag matches)
   }
+  const hasCall = (c: RPCat) =>
+    c.candidates.every(
+      (x) =>
+        x.call &&
+        typeof x.call.method === 'string' &&
+        /^https?:\/\//.test(x.call.url) &&
+        Array.isArray(x.call.params),
+    )
   if (cats.length > 0) {
     check('route/preview: every candidate price in (0, cap]', cats.every(inRange))
     check('route/preview: pick is always one of the candidates', cats.every(pickValid))
     check('route/preview: proven-gate — pick is the cheapest proven route', cats.every(provenGated))
+    check('route/preview: every candidate carries its call (method + url + params)', cats.every(hasCall))
   }
 
   // ── Switchboard page SEO (the flagship product page must be indexable) ────
