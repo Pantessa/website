@@ -60,8 +60,11 @@ export async function loadPlannableEndpoints(slugs: string[]): Promise<Plannable
   const rows = await prisma.mcpEndpoint.findMany({
     where: {
       server: { slug: { in: slugs } },
-      NOT: { parameters: { equals: Prisma.DbNull } },
       method: { in: ['GET', 'POST'] },
+      // Either a published param schema, OR a GET we can fetch with no params
+      // (a "list all" endpoint like /mlb/players). Param-less GETs are filtered
+      // again below to drop any with an unresolved :path token.
+      OR: [{ NOT: { parameters: { equals: Prisma.DbNull } } }, { method: 'GET' }],
     },
     include: { server: { select: { slug: true, name: true } } },
     orderBy: { position: 'asc' },
@@ -76,7 +79,20 @@ export async function loadPlannableEndpoints(slugs: string[]): Promise<Plannable
     if (r.scheme === 'upto') continue
     if (!Number.isFinite(price) || price <= 0 || price > SMART_MAX_PER_CALL_USD) continue
     const params = (r.parameters as EndpointParam[] | null) ?? []
-    if (params.length === 0) continue
+    // A param-less endpoint is still callable when it's a GET with no path
+    // token to fill — a plain fetch (e.g. "list all teams"). buildSmartRequest
+    // already builds these (empty query/body). Anything that needs a value we
+    // can't supply — a POST body or an unresolved :path/{path} token — stays
+    // out. Test the PATHNAME (not the raw url, whose "://" contains a colon).
+    if (params.length === 0) {
+      let pathname: string
+      try {
+        pathname = new URL(r.url).pathname
+      } catch {
+        continue
+      }
+      if (r.method !== 'GET' || /[:{]/.test(pathname)) continue
+    }
     const n = perService.get(r.server.slug) ?? 0
     if (n >= MENU_CAP_PER_SERVICE) continue
     perService.set(r.server.slug, n + 1)
