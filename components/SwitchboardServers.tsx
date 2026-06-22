@@ -1,0 +1,48 @@
+'use client'
+
+// Home preview of the agent directory — two rows of MCP cards + a link to the
+// full list at /servers. Reuses the directory card; fetches /api/servers and
+// falls back to the static catalog. Callable agents lead.
+
+import { useEffect, useState } from 'react'
+import Link from 'next/link'
+import { useYeetfulStore, McpServer } from '@/lib/store'
+import { CATALOG } from '@/lib/mcp-data'
+import McpServerCard from '@/components/McpServerCard'
+
+const STATIC: McpServer[] = CATALOG
+const PREVIEW = 8 // two rows on the 4-col grid
+
+export default function SwitchboardServers() {
+  const { servers, setServers } = useYeetfulStore()
+
+  useEffect(() => {
+    if (servers.length > 0) return
+    fetch('/api/servers')
+      .then((r) => r.json())
+      .then((data: McpServer[]) => setServers(data.length > 0 ? data : STATIC))
+      .catch(() => setServers(STATIC))
+  }, [servers.length, setServers])
+
+  const all = servers.length > 0 ? servers : STATIC
+  const preview = [...all].sort((a, b) => Number(!!b.callable) - Number(!!a.callable)).slice(0, PREVIEW)
+
+  return (
+    <section className="swsrv">
+      <div className="swsrv__head">
+        <div>
+          <span className="swsrv__eyebrow mono">THE AGENTS</span>
+          <h2 className="swsrv__h2">Every model and data source. One key.</h2>
+        </div>
+        <Link href="/servers" className="swsrv__all mono">
+          See all {all.length} servers →
+        </Link>
+      </div>
+      <div className="x-grid">
+        {preview.map((s) => (
+          <McpServerCard key={s.id} server={s} />
+        ))}
+      </div>
+    </section>
+  )
+}

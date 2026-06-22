@@ -394,6 +394,21 @@
     .swproof__list { grid-template-columns: 1fr; }
   }
 
+  /* ── SWITCHBOARD SERVERS PREVIEW (2 rows + see all) ── */
+  .swsrv { padding: 56px 0; border-top: 1px solid var(--line); }
+  .swsrv__head { display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; flex-wrap: wrap; margin-bottom: 26px; }
+  .swsrv__eyebrow { font-size: 12px; letter-spacing: 0.18em; color: var(--muted-2); }
+  .swsrv__h2 { font-size: clamp(26px, 3.4vw, 38px); font-weight: 600; letter-spacing: -0.02em; margin-top: 10px; color: var(--fg); }
+  .swsrv__all { font-size: 14px; color: var(--accent); text-decoration: none; white-space: nowrap; }
+  .swsrv__all:hover { text-decoration: underline; }
+
+  /* ── /servers DIRECTORY PAGE ──────────────────────── */
+  .srvpage { padding: 40px 0 56px; }
+  .srvpage__head { display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; flex-wrap: wrap; margin-bottom: 28px; }
+  .srvpage__eyebrow { font-size: 12px; letter-spacing: 0.18em; color: var(--muted-2); }
+  .srvpage__h1 { font-size: clamp(30px, 4vw, 46px); font-weight: 600; letter-spacing: -0.02em; margin-top: 10px; color: var(--fg); }
+  .srvpage__add { display: inline-flex; align-items: center; gap: 8px; height: 44px; }
+
   /* ── EXPLAINER ───────────────────────────────────── */
   .explain { padding: 56px 0; border-top: 1px solid var(--line); }
   .explain__eyebrow { font-size: 12px; letter-spacing: 0.18em; color: var(--muted-2); }
