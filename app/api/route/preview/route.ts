@@ -41,17 +41,32 @@ export async function GET() {
   const provenByName = new Map<string, number>()
   for (const p of proven) if (p.serviceName) provenByName.set(p.serviceName, p._count)
 
-  // cheapest plannable endpoint per service
+  // The exact call we'd construct for this route (what the accordion reveals).
+  interface ParamHint {
+    name: string
+    in: string // 'query' | 'path' | 'body'
+    required: boolean
+    type?: string
+  }
+  interface RouteCall {
+    method: string
+    url: string
+    provider: string | null
+    description: string | null
+    params: ParamHint[]
+  }
+
+  // cheapest plannable endpoint per service (carrying its call details)
   const cheapestPerService = new Map<
     string,
-    { slug: string; service: string; category: string; price: number }
+    { slug: string; service: string; category: string; price: number; call: RouteCall }
   >()
   for (const r of rows) {
     if (r.scheme === 'upto') continue
     const price = Number(r.priceUsd)
     if (!Number.isFinite(price) || price <= 0 || price > cap) continue
-    const params = (r.parameters as unknown[] | null) ?? []
-    if (params.length === 0) continue
+    const rawParams = (r.parameters as { group?: string; name?: string; required?: boolean; type?: string }[] | null) ?? []
+    if (rawParams.length === 0) continue
     const cur = cheapestPerService.get(r.server.slug)
     if (!cur || price < cur.price) {
       cheapestPerService.set(r.server.slug, {
@@ -59,6 +74,16 @@ export async function GET() {
         service: r.server.name,
         category: r.server.category,
         price,
+        call: {
+          method: r.method,
+          url: r.url,
+          provider: r.provider,
+          description: r.description,
+          params: rawParams
+            .filter((p) => p?.name)
+            .slice(0, 8)
+            .map((p) => ({ name: p.name!, in: p.group ?? 'query', required: !!p.required, type: p.type })),
+        },
       })
     }
   }
@@ -66,11 +91,17 @@ export async function GET() {
   // group services by category
   const byCat = new Map<
     string,
-    { slug: string; service: string; price: number; proven: number }[]
+    { slug: string; service: string; price: number; proven: number; call: RouteCall }[]
   >()
   for (const s of cheapestPerService.values()) {
     const list = byCat.get(s.category) ?? []
-    list.push({ slug: s.slug, service: s.service, price: s.price, proven: provenByName.get(s.service) ?? 0 })
+    list.push({
+      slug: s.slug,
+      service: s.service,
+      price: s.price,
+      proven: provenByName.get(s.service) ?? 0,
+      call: s.call,
+    })
     byCat.set(s.category, list)
   }
 
