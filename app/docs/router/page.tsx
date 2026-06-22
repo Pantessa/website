@@ -2,7 +2,7 @@ import type { Metadata } from 'next'
 import Link from 'next/link'
 import { DOCS_PAGES, docsJsonLd, docsUrl } from '@/lib/docs'
 
-const PAGE = DOCS_PAGES.find((p) => p.slug === 'switchboard')!
+const PAGE = DOCS_PAGES.find((p) => p.slug === 'router')!
 
 export const metadata: Metadata = {
   title: PAGE.seoTitle,
@@ -11,20 +11,20 @@ export const metadata: Metadata = {
   openGraph: { title: PAGE.seoTitle, description: PAGE.description, url: docsUrl(PAGE.slug), type: 'article' },
 }
 
-export default function SwitchboardDocsPage() {
+export default function RouterDocsPage() {
   return (
     <>
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: docsJsonLd(PAGE) }} />
       <p className="docs__crumbs mono">
-        <Link href="/docs">DOCS</Link> <span>/</span> SWITCHBOARD
+        <Link href="/docs">DOCS</Link> <span>/</span> ROUTER
       </p>
-      <h1 className="docs__h1">Switchboard: the router</h1>
+      <h1 className="docs__h1">Router: the routing engine</h1>
       <p className="docs__lead">
-        Switchboard is Yeetful&apos;s routing engine. You ask for something in plain English; it
+        Router is Yeetful&apos;s routing engine. You ask for something in plain English; it
         weighs every MCP route that can answer, picks the <strong>cheapest proven route under your
-        cap</strong>, patches the call, and pays for it per call in USDC on Base —{' '}
-        <strong>no keys, no per-service integrations</strong>. See it move on the{' '}
-        <Link href="/switchboard">Switchboard page</Link>.
+        cap</strong>, sends the call, and your agent pays for it per call in USDC on Base —{' '}
+        <strong>one key, no per-provider accounts</strong>. See it move on the{' '}
+        <Link href="/">home page</Link>.
       </p>
 
       <div className="docs__prose">
@@ -34,12 +34,12 @@ export default function SwitchboardDocsPage() {
           <em>&quot;live ETH price&quot;</em>, <em>&quot;scrape this pricing page&quot;</em>,{' '}
           <em>&quot;cheapest flight SFO→JFK&quot;</em> — from the{' '}
           <Link href="/chat">Yeetful chat</Link> or through the{' '}
-          <code>yeetful</code> SDK. Switchboard does the rest.
+          <code>yeetful</code> SDK. Router does the rest.
         </p>
 
         <h2>How it weighs routes</h2>
         <p>
-          A directory service exposes many x402 endpoints. Switchboard only considers the ones it
+          A directory service exposes many x402 endpoints. Router only considers the ones it
           can actually construct a valid, bounded call for — an endpoint is <strong>plannable</strong>{' '}
           when it has a published parameter schema, an exact (non-<code>upto</code>) price, and that
           price sits at or under the <strong>$0.05 auto-call ceiling</strong>. From the plannable set
@@ -59,10 +59,10 @@ export default function SwitchboardDocsPage() {
 
         <h2>The pick: cheapest proven route under your cap</h2>
         <p>
-          Switchboard&apos;s choice is the <strong>cheapest route with a settlement history</strong>,
+          Router&apos;s choice is the <strong>cheapest route with a settlement history</strong>,
           falling back to the cheapest overall only when nothing in that category has been proven yet
           (a cold-start guard, so new routes still get a chance). You can preview exactly this on the{' '}
-          <Link href="/switchboard">Switchboard page</Link> — pick a need and watch the candidate
+          <Link href="/">home page</Link> — pick a need and watch the candidate
           routes rank, with the winner marked <code>PICK</code>.
         </p>
 
@@ -70,7 +70,7 @@ export default function SwitchboardDocsPage() {
         <p>
           Your <Link href="/docs/expense-account">expense account</Link> sets the budget — an
           allowlist plus per-call, per-day, and lifetime USD caps. If the best route for a request
-          is still priced over your cap, Switchboard <strong>drops the call</strong>: it is refused
+          is still priced over your cap, Router <strong>drops the call</strong>: it is refused
           before any payment is signed, $0 is spent, and the denial is recorded. The guardrail saves
           money by <em>not</em> spending it. For chats Yeetful runs, this is a server-side hard
           refusal; for SDK agents paying their own wallet it is enforced in the SDK.
@@ -82,7 +82,7 @@ export default function SwitchboardDocsPage() {
           <Link href="/docs/ledger-sync">hosted ledger</Link> — the service, the amount, and the
           on-chain <code>txHash</code>. Routed spend is <strong>witnessed on Base</strong>, not
           self-reported: the public <Link href="/activity">activity feed</Link> and the
-          &quot;engine at work&quot; strip on the Switchboard page link every settled call straight
+          &quot;proof, in the open&quot; strip on the home page link every settled call straight
           to Basescan.
         </p>
 

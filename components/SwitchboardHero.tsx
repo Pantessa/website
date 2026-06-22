@@ -35,7 +35,7 @@ export default function SwitchboardHero() {
             <span className="heroweb__dim">Layer.</span>
           </h1>
           <p className="heroweb__lede">
-            <strong>One key</strong>, every model and data source. Switchboard routes each request —{' '}
+            <strong>One key</strong>, every model and data source. Router sends each request —{' '}
             <span className="heroweb__nokey">LLM inference or live data</span> — to the{' '}
             <strong>best-priced MCP under your cap</strong>; your agent pays per call in USDC.
           </p>

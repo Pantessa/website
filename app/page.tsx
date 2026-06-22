@@ -14,7 +14,7 @@ import Footer from '@/components/Footer'
 
 const TITLE = 'Yeetful — Agentic payments & routing layer'
 const DESCRIPTION =
-  'One key for every model and data source. Switchboard routes each request — inference or live data — to the best-priced MCP; your agent pays per call in USDC.'
+  'One key for every model and data source. Router sends each request — inference or live data — to the best-priced MCP; your agent pays per call in USDC.'
 
 export const metadata: Metadata = {
   title: TITLE,
@@ -35,10 +35,10 @@ const JSON_LD = JSON.stringify([
   {
     '@context': 'https://schema.org',
     '@type': 'Service',
-    name: 'Switchboard',
+    name: 'Router',
     serviceType: 'MCP routing engine',
     description:
-      'Smart routing and payments for agents: one key for every model and data source. Switchboard weighs every MCP that can answer, picks the best-priced route under your budget cap, and the agent pays per call in USDC on Base over x402.',
+      'Smart routing and payments for agents: one key for every model and data source. Router weighs every MCP that can answer, picks the best-priced route under your budget cap, and the agent pays per call in USDC on Base over x402.',
     provider: { '@type': 'Organization', name: 'Yeetful', url: SITE },
     areaServed: 'Worldwide',
   },
@@ -52,7 +52,7 @@ const STEPS = [
   },
   {
     n: '02',
-    t: 'Switchboard weighs the routes',
+    t: 'Router weighs the routes',
     d: 'It scores every MCP that can answer — on price, proven settlement history, and your budget cap — and picks the best one.',
   },
   {
@@ -85,7 +85,7 @@ export default function HomePage() {
         <section className="explain">
           <div className="explain__head">
             <span className="explain__eyebrow mono">HOW THE OPERATOR WORKS</span>
-            <h2 className="explain__h2">You bring the question. Switchboard brings the route.</h2>
+            <h2 className="explain__h2">You bring the question. Router brings the route.</h2>
           </div>
           <div className="explain__steps">
             {STEPS.map((s) => (

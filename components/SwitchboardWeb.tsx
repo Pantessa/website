@@ -392,7 +392,7 @@ export default function SwitchboardWeb({
           <circle className="pw-hubcore" cx={CORE.x} cy={CORE.y} r={21} />
           <circle className="pw-hubdot" cx={CORE.x} cy={CORE.y} r={6} />
           <text className="pw-hubname" x={CORE.x} y={CORE.y + 42}>
-            SWITCHBOARD
+            ROUTER
           </text>
           <text className="pw-hubsub" x={CORE.x} y={CORE.y + 58}>
             picks the best-priced route
@@ -407,7 +407,7 @@ export default function SwitchboardWeb({
       <div className="heroweb__hud" aria-hidden="true">
         <div className="pw-hudtop">
           <div className="pw-hudlive">
-            <i /> switchboard
+            <i /> router
           </div>
           <div className="pw-hudcap">routing</div>
         </div>
