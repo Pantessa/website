@@ -184,7 +184,23 @@ export async function autoCallableServerIds(): Promise<Set<string>> {
 }
 
 /** The planner instruction the inference model answers with strict JSON. */
-export function plannerPrompt(message: string, endpoints: PlannableEndpoint[]): string {
+/** A recent chat turn, threaded into prompts so follow-ups keep context. */
+export interface ConversationTurn {
+  role: 'user' | 'assistant'
+  content: string
+}
+
+function conversationBlock(history: ConversationTurn[]): string {
+  if (history.length === 0) return ''
+  const lines = history.map((h) => `${h.role === 'assistant' ? 'Assistant' : 'User'}: ${h.content}`)
+  return `Conversation so far (the user's newest message is separate, below):\n${lines.join('\n')}`
+}
+
+export function plannerPrompt(
+  message: string,
+  endpoints: PlannableEndpoint[],
+  history: ConversationTurn[] = [],
+): string {
   const byService = new Map<string, PlannableEndpoint[]>()
   for (const e of endpoints) {
     byService.set(e.serverSlug, [...(byService.get(e.serverSlug) ?? []), e])
@@ -208,9 +224,12 @@ export function plannerPrompt(message: string, endpoints: PlannableEndpoint[]): 
     })
     .join('\n\n')
 
+  const convo = conversationBlock(history)
   return [
-    `You are an API-call planner. A user asked:\n"""${message}"""`,
-    `Below are paid API endpoints, grouped by service, each tagged with its price in [$…]; some are tagged ✓proven (they have successfully settled paid calls before). Pick AT MOST ONE endpoint per service — only if calling it would genuinely help answer the user. When two endpoints would both answer the need equally well, prefer the ✓proven one, and then the cheaper one — but still pick an un-proven endpoint when it is clearly the better fit for the request. Fill in parameter values derived from the user's message (use sensible values; respect types; include every required param; skip optional params you can't infer). If no endpoint of a service helps, skip that service entirely.`,
+    `You are an API-call planner.`,
+    ...(convo ? [convo] : []),
+    `A user asked${history.length ? ' (interpret it in the context of the conversation above — a terse follow-up like "baseball" continues the previous question)' : ''}:\n"""${message}"""`,
+    `Below are paid API endpoints, grouped by service, each tagged with its price in [$…]; some are tagged ✓proven (they have successfully settled paid calls before). Pick AT MOST ONE endpoint per service — only if calling it would genuinely help answer the user. When two endpoints would both answer the need equally well, prefer the ✓proven one, and then the cheaper one — but still pick an un-proven endpoint when it is clearly the better fit for the request. Fill in parameter values derived from the user's message and the conversation (use sensible values; respect types; include every required param; skip optional params you can't infer). If no endpoint of a service helps, skip that service entirely.`,
     menu,
     `Respond with ONLY this JSON, no prose, no code fences:`,
     `{"picks":[{"endpointId":"<id>","params":{"<name>":"<value>"}}]}`,
