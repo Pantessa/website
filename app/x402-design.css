@@ -217,7 +217,7 @@
   /* width: max-content lets "Agent Expense" escape the 600px copy column at
      wide viewports instead of wrapping to three lines — the design's H1 is
      exactly two: "Agent Expense" / "Accounts." */
-  .heroweb__h1 { font-family: 'Newsreader', Georgia, serif; font-weight: 500; font-size: clamp(54px, 7.4vw, 116px); line-height: .94; letter-spacing: -.022em; margin-bottom: 30px; width: max-content; max-width: calc(100vw - 2 * clamp(24px, 4vw, 64px)); }
+  .heroweb__h1 { font-family: 'Newsreader', Georgia, serif; font-weight: 500; font-size: clamp(46px, 5.4vw, 84px); line-height: .98; letter-spacing: -.025em; margin-bottom: 30px; width: max-content; max-width: calc(100vw - 2 * clamp(24px, 4vw, 64px)); }
   .heroweb__em { font-style: italic; }
   .heroweb__grad { color: transparent; background: linear-gradient(180deg, #fff 30%, #cbd3cb); -webkit-background-clip: text; background-clip: text; }
   .heroweb__dim { color: transparent; background: linear-gradient(180deg, #838a80 16%, #4f554e); -webkit-background-clip: text; background-clip: text; }

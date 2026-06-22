@@ -28,8 +28,9 @@ export default function SwitchboardHero() {
             MCP routing engine <span>·</span> USDC on Base <span>·</span> <b>x402</b>
           </div>
           <h1 className="heroweb__h1">
-            <span className="heroweb__grad">Agentic Payments &amp;</span>
+            <span className="heroweb__grad">Agentic Payments</span>
             <br />
+            <span className="heroweb__grad">&amp;</span>{' '}
             <span className="heroweb__grad heroweb__em">Routing</span>{' '}
             <span className="heroweb__dim">Layer.</span>
           </h1>
