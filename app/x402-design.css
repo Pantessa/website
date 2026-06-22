@@ -402,6 +402,9 @@
   .swsrv__all { font-size: 14px; color: var(--accent); text-decoration: none; white-space: nowrap; }
   .swsrv__all:hover { text-decoration: underline; }
   .swsrv__pills { margin: -8px 0 24px; }
+  /* Fill full rows: render 10 cards, trim as the grid loses columns. */
+  @media (max-width: 1799px) { .swsrv .x-grid > :nth-child(n+9) { display: none; } } /* 4-col → 8 */
+  @media (max-width: 1080px) { .swsrv .x-grid > :nth-child(n+7) { display: none; } } /* 3/2/1-col → 6 */
 
   /* ── /servers DIRECTORY PAGE ──────────────────────── */
   .srvpage { padding: 40px 0 56px; }

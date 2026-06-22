@@ -11,7 +11,9 @@ import { CATALOG } from '@/lib/mcp-data'
 import McpServerCard from '@/components/McpServerCard'
 
 const STATIC: McpServer[] = CATALOG
-const PREVIEW = 8 // two rows on the 4-col grid
+// Render the widest case (5-col × 2 rows); CSS trims to full rows as the grid
+// drops columns: 10 (≥1800) → 8 (4-col) → 6 (≤1080, incl. phone).
+const PREVIEW = 10
 
 export default function SwitchboardServers() {
   const { servers, setServers } = useYeetfulStore()
