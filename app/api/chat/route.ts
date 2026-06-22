@@ -31,6 +31,7 @@ import {
   buildSmartRequest,
   type PlannableEndpoint,
   type PlannedPick,
+  type ConversationTurn,
 } from '@/lib/endpoint-planner'
 
 // x402 signing + paid fetch need the Node runtime.
@@ -77,13 +78,44 @@ async function loadSmartEndpoints(listedOnly: McpServer[]): Promise<PlannableEnd
   }
 }
 
+/** Max prior turns + per-turn chars threaded into prompts (keeps cost bounded). */
+const HISTORY_TURNS = 6
+const HISTORY_CHARS = 600
+
+/**
+ * Sanitize client-supplied conversation history: keep only well-formed
+ * user/assistant turns, strip our own footers/diagnostics from assistant
+ * messages (they're UI scaffolding, not content), trim, and cap to the last
+ * few turns so the planner + answer have context without unbounded prompt cost.
+ */
+function sanitizeHistory(raw: unknown): ConversationTurn[] {
+  if (!Array.isArray(raw)) return []
+  const out: ConversationTurn[] = []
+  for (const m of raw) {
+    const role = (m as { role?: unknown }).role
+    const content = (m as { content?: unknown }).content
+    if ((role !== 'user' && role !== 'assistant') || typeof content !== 'string') continue
+    // Drop the appended "ℹ️ Not called…", "⚙️ Diagnostics…", "💸 …" scaffolding.
+    const clean = content.split(/\n\n(?:ℹ️|⚙️|💸)/)[0].trim()
+    if (clean) out.push({ role, content: clean.slice(0, HISTORY_CHARS) })
+  }
+  return out.slice(-HISTORY_TURNS)
+}
+
+/** Recent conversation rendered for the answer prompt. */
+function answerHistoryBlock(history: ConversationTurn[]): string {
+  if (history.length === 0) return ''
+  return history.map((h) => `${h.role === 'assistant' ? 'Assistant' : 'User'}: ${h.content}`).join('\n')
+}
+
 /** Ask the inference model to pick endpoints + params for the user message. */
 async function planSmartPicks(
   inference: McpServer,
   message: string,
   smart: PlannableEndpoint[],
+  history: ConversationTurn[] = [],
 ): Promise<{ picks: PlannedPick[]; txHash?: string }> {
-  const { text, txHash } = await callInference(inference, plannerPrompt(message, smart))
+  const { text, txHash } = await callInference(inference, plannerPrompt(message, smart, history))
   return { picks: parsePlannerPicks(text, smart), txHash }
 }
 
@@ -99,10 +131,12 @@ export async function POST(req: NextRequest) {
         (body.signatures ?? {}) as Record<string, string>,
         Array.isArray(body.listedOnly) ? (body.listedOnly as McpServer[]) : [],
         Array.isArray(body.notes) ? (body.notes as string[]).filter((n) => typeof n === 'string').slice(0, 8) : [],
+        sanitizeHistory(body.history),
       )
     }
 
     const message: string = body.message ?? ''
+    const history = sanitizeHistory(body.history)
     const activeServers: McpServer[] = Array.isArray(body.activeServers) ? body.activeServers : []
     const walletAddress: string | undefined =
       typeof body.walletAddress === 'string' && isAddress(body.walletAddress)
@@ -185,12 +219,12 @@ export async function POST(req: NextRequest) {
 
     // ── Phase 1 (wallet): plan + return signing requests ─────────────────────
     if (walletAddress) {
-      return await planWalletPayments(message, inference, dataServers, mcpDataServers, listedOnly, walletAddress, smart, notes)
+      return await planWalletPayments(message, inference, dataServers, mcpDataServers, listedOnly, walletAddress, smart, notes, history)
     }
 
     // ── Burner mode: the server's agent wallet pays everything in one shot ────
     if (hasAgentWallet()) {
-      return await runWithBurner(message, inference, dataServers, mcpDataServers, listedOnly, smart, notes)
+      return await runWithBurner(message, inference, dataServers, mcpDataServers, listedOnly, smart, notes, history)
     }
 
     // ── Demo mode: nothing can pay ───────────────────────────────────────────
@@ -304,6 +338,7 @@ async function planWalletPayments(
   walletAddress: string,
   smart: PlannableEndpoint[],
   notes: string[],
+  history: ConversationTurn[] = [],
 ) {
   const plan: PlannedCall[] = []
 
@@ -386,7 +421,7 @@ async function planWalletPayments(
   const smartServed = new Set<string>()
   if (smart.length > 0) {
     try {
-      const { picks } = await planSmartPicks(inference, message, smart)
+      const { picks } = await planSmartPicks(inference, message, smart, history)
       if (picks.length === 0) {
         const considered = [...new Set(smart.map((e) => e.serverName))].join(', ')
         notes.push(`The planner reviewed ${considered} but judged none of their endpoints relevant to this message.`)
@@ -494,6 +529,7 @@ async function executeWithSignatures(
   signatures: Record<string, string>,
   listedOnly: McpServer[],
   notes: string[] = [],
+  history: ConversationTurn[] = [],
 ) {
   if (!message.trim()) return NextResponse.json({ error: 'message is required' }, { status: 400 })
 
@@ -556,7 +592,7 @@ async function executeWithSignatures(
   const execProtocol: 'mcp' | 'http' = inferenceCall.protocol === 'http' ? 'http' : 'mcp'
   const execTool =
     inferenceCall.tool ?? (execProtocol === 'http' ? 'openai/gpt-4o-mini' : 'ask_claude')
-  const prompt = capPrompt(execProtocol, buildPrompt(message, contextBlocks))
+  const prompt = capPrompt(execProtocol, buildPrompt(message, contextBlocks, history))
   const header = paymentHeaderFor(inferenceCall, signatures)
   const res = await fetchWithPaymentHeader(
     inferenceCall.endpoint,
@@ -595,6 +631,7 @@ async function runWithBurner(
   listedOnly: McpServer[],
   smart: PlannableEndpoint[] = [],
   notes: string[] = [],
+  history: ConversationTurn[] = [],
 ) {
   const receipts: Receipt[] = []
   const contextBlocks: string[] = []
@@ -693,7 +730,7 @@ async function runWithBurner(
       blocked.push(`endpoint planner (${plannerViolation})`)
     } else {
       try {
-        const { picks, txHash } = await planSmartPicks(inference, message, smart)
+        const { picks, txHash } = await planSmartPicks(inference, message, smart, history)
         if (grant) {
           await recordLedger({ grantId: grant.id, orgId: grant.orgId ?? undefined, host: infHost, serviceName: inference.name, amountUsd: infPrice, ok: true, txHash, note: 'settled' })
           spentToday += infPrice
@@ -759,7 +796,7 @@ async function runWithBurner(
     }
   }
 
-  const prompt = buildPrompt(message, contextBlocks)
+  const prompt = buildPrompt(message, contextBlocks, history)
   const { text, txHash } = await callInference(inference, prompt)
   receipts.push({ name: inference.name, endpoint: infHost, priceUsd: inference.priceUsd ?? '0.01', txHash, ok: true })
   if (grant) {
@@ -945,13 +982,16 @@ function parseMcpDataResult(contentType: string, raw: string): unknown {
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
-function buildPrompt(message: string, contextBlocks: string[]): string {
+function buildPrompt(message: string, contextBlocks: string[], history: ConversationTurn[] = []): string {
+  const convo = answerHistoryBlock(history)
   if (contextBlocks.length === 0) {
-    return `You are Yeetful, a concise assistant. Answer the user directly.\n\nUser: ${message}`
+    const convoBlock = convo ? `Conversation so far:\n${convo}\n\n` : ''
+    return `You are Yeetful, a concise assistant. Continue the conversation and answer the user's latest message directly, using the earlier turns for context.\n\n${convoBlock}User: ${message}`
   }
   return [
     `You are Yeetful, a concise assistant. Use the live data below (fetched and paid for over x402) to answer.`,
     `Cite specifics from the data. If the data doesn't cover it, say so briefly.`,
+    ...(convo ? [``, `Conversation so far:`, convo] : []),
     ``,
     `DATA:`,
     contextBlocks.join('\n\n'),

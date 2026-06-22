@@ -97,6 +97,7 @@ export default function ChatInterface() {
     userMsg: string
     chatId: string
     data: { plan: unknown; payments: PaymentToSign[]; listedOnly: unknown; notes?: unknown }
+    history: { role: string; content: string }[]
   } | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
@@ -127,6 +128,9 @@ export default function ChatInterface() {
     }
 
     const userMsg = raw.trim()
+    // Prior turns (before this message is added) → sent so the server can keep
+    // conversational context in the planner + the answer. Capped server-side.
+    const history = (currentChat?.messages ?? []).map((m) => ({ role: m.role, content: m.content }))
     if (typeof textOverride !== 'string') setInput('')
     setLoading(true)
 
@@ -145,6 +149,7 @@ export default function ChatInterface() {
           activeServerIds,
           activeServers, // full objects: endpoint/protocol/price per server
           walletAddress: isConnected ? address : undefined,
+          history,
         }),
       })
       const data = await res.json()
@@ -152,7 +157,7 @@ export default function ChatInterface() {
       if (data.phase === 'awaiting-signatures') {
         // Don't pop the wallet yet — show the $ amount + warning heads-up first,
         // then sign on the user's explicit OK (see confirmPayment).
-        setPendingPayment({ userMsg, chatId, data })
+        setPendingPayment({ userMsg, chatId, data, history })
       } else {
         trackPaidReceipts(data.receipts)
         addMessage(chatId, {
@@ -179,6 +184,7 @@ export default function ChatInterface() {
   const payWithWalletThenAnswer = async (
     userMsg: string,
     data: { plan: unknown; payments: PaymentToSign[]; listedOnly: unknown; notes?: unknown },
+    history: { role: string; content: string }[] = [],
   ): Promise<{ reply: string; receipts?: unknown[]; payer?: string }> => {
     const signatures: Record<string, string> = {}
     let i = 0
@@ -211,6 +217,7 @@ export default function ChatInterface() {
         signatures,
         listedOnly: data.listedOnly,
         notes: data.notes, // plan-time diagnostics, echoed into the final reply
+        history,
       }),
     })
     const out = await res.json()
@@ -224,11 +231,11 @@ export default function ChatInterface() {
   /** User confirmed the amount → pop the wallet, sign, run the calls. */
   const confirmPayment = async () => {
     if (!pendingPayment) return
-    const { userMsg, chatId, data } = pendingPayment
+    const { userMsg, chatId, data, history } = pendingPayment
     setPendingPayment(null)
     setLoading(true)
     try {
-      const out = await payWithWalletThenAnswer(userMsg, data)
+      const out = await payWithWalletThenAnswer(userMsg, data, history)
       trackPaidReceipts(out.receipts)
       addMessage(chatId, {
         role: 'assistant',
