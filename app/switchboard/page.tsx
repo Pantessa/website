@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import { SITE } from '@/lib/docs'
 import SwitchboardHero from '@/components/SwitchboardHero'
 import SwitchboardTry from '@/components/SwitchboardTry'
+import SwitchboardProof from '@/components/SwitchboardProof'
 import SwitchboardLive from '@/components/SwitchboardLive'
 import Footer from '@/components/Footer'
 
@@ -73,6 +74,9 @@ export default function SwitchboardPage() {
 
         {/* Interactive: pick a need, watch the engine rank + pick a route */}
         <SwitchboardTry />
+
+        {/* Proof: real routed turns — prompt, answer, on-chain tx */}
+        <SwitchboardProof />
 
         {/* Real settled routes — the engine at work */}
         <SwitchboardLive />

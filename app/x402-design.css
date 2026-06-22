@@ -373,6 +373,27 @@
     .swlive__time { display: none; }
   }
 
+  /* ── SWITCHBOARD PROOF (real routed turns, in the open) ── */
+  .swproof { padding: 56px 0; border-top: 1px solid var(--line); }
+  .swproof__eyebrow { font-size: 12px; letter-spacing: 0.18em; color: var(--muted-2); }
+  .swproof__h2 { font-size: clamp(26px, 3.4vw, 38px); font-weight: 600; letter-spacing: -0.02em; margin-top: 10px; color: var(--fg); }
+  .swproof__sub { margin-top: 14px; max-width: 56ch; font-size: 15px; line-height: 1.55; color: var(--muted); text-wrap: pretty; }
+  .swproof__list { margin-top: 28px; display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; }
+  .swproof__card { border: 1px solid var(--line); border-radius: 14px; padding: 18px; background: var(--surf-1); display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+  .swproof__q { font-size: 13.5px; color: var(--fg); line-height: 1.45; }
+  .swproof__qmark { color: var(--accent); }
+  .swproof__a { margin: 0; font-size: 13.5px; line-height: 1.55; color: var(--muted); text-wrap: pretty; }
+  .swproof__calls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: auto; padding-top: 4px; }
+  .swproof__call { display: inline-flex; align-items: center; gap: 8px; padding: 5px 10px; border: 1px solid var(--line); border-radius: 999px; font-size: 12px; text-decoration: none; color: var(--muted); transition: border-color .15s, color .15s; }
+  .swproof__call:hover { border-color: var(--line-2); color: var(--fg); }
+  .swproof__svc { color: var(--fg); }
+  .swproof__amt { color: var(--accent); }
+  .swproof__tx { color: var(--accent); }
+  .swproof__time { font-size: 11.5px; color: var(--muted-2); margin-left: auto; }
+  @media (max-width: 760px) {
+    .swproof__list { grid-template-columns: 1fr; }
+  }
+
   /* ── EXPLAINER ───────────────────────────────────── */
   .explain { padding: 56px 0; border-top: 1px solid var(--line); }
   .explain__eyebrow { font-size: 12px; letter-spacing: 0.18em; color: var(--muted-2); }
