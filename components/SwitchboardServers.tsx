@@ -26,6 +26,7 @@ export default function SwitchboardServers() {
 
   const all = servers.length > 0 ? servers : STATIC
   const preview = [...all].sort((a, b) => Number(!!b.callable) - Number(!!a.callable)).slice(0, PREVIEW)
+  const cats = ['All', ...Array.from(new Set(all.map((s) => s.category))).sort()]
 
   return (
     <section className="swsrv">
@@ -37,6 +38,17 @@ export default function SwitchboardServers() {
         <Link href="/servers" className="swsrv__all mono">
           See all {all.length} servers →
         </Link>
+      </div>
+      <div className="pills swsrv__pills">
+        {cats.map((c) => (
+          <Link
+            key={c}
+            href={c === 'All' ? '/servers' : `/servers?category=${encodeURIComponent(c)}`}
+            className="pill"
+          >
+            {c}
+          </Link>
+        ))}
       </div>
       <div className="x-grid">
         {preview.map((s) => (

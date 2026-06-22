@@ -401,6 +401,7 @@
   .swsrv__h2 { font-size: clamp(26px, 3.4vw, 38px); font-weight: 600; letter-spacing: -0.02em; margin-top: 10px; color: var(--fg); }
   .swsrv__all { font-size: 14px; color: var(--accent); text-decoration: none; white-space: nowrap; }
   .swsrv__all:hover { text-decoration: underline; }
+  .swsrv__pills { margin: -8px 0 24px; }
 
   /* ── /servers DIRECTORY PAGE ──────────────────────── */
   .srvpage { padding: 40px 0 56px; }

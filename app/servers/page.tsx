@@ -1,6 +1,8 @@
 'use client'
 
+import { Suspense } from 'react'
 import Link from 'next/link'
+import { useSearchParams } from 'next/navigation'
 import { Plus } from 'lucide-react'
 import ServerDirectory from '@/components/ServerDirectory'
 import ActiveServerBar from '@/components/ActiveServerBar'
@@ -8,7 +10,13 @@ import Footer from '@/components/Footer'
 
 /** /servers — the full agent directory (search + category filter over the
  * grid). The marketing landing now lives at / (Switchboard); this is the
- * "See all servers" destination. Custom-server creation is at /servers/add. */
+ * "See all servers" destination. A ?category= param (e.g. set by the landing
+ * pills) pre-selects a filter. Custom-server creation is at /servers/add. */
+function Directory() {
+  const category = useSearchParams().get('category') ?? undefined
+  return <ServerDirectory initialCategory={category} />
+}
+
 export default function ServersPage() {
   return (
     <>
@@ -23,7 +31,9 @@ export default function ServersPage() {
               <Plus width={16} height={16} /> Add a server
             </Link>
           </div>
-          <ServerDirectory />
+          <Suspense fallback={null}>
+            <Directory />
+          </Suspense>
         </section>
       </main>
       <Footer />
