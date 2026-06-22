@@ -138,9 +138,9 @@ export default function DevelopersPage() {
               before any network I/O.
             </p>
             <div className="dev__links">
-              <a className="dev__biglink" href="/switchboard">
-                /switchboard <ArrowUpRight width={14} height={14} />
-                <span>watch the router pick the best-priced MCP, live</span>
+              <a className="dev__biglink" href="/">
+                the Router <ArrowUpRight width={14} height={14} />
+                <span>watch it pick the best-priced MCP, live</span>
               </a>
               <a className="dev__biglink" href="/docs/quickstart">
                 /docs/quickstart <ArrowUpRight width={14} height={14} />

@@ -14,10 +14,10 @@ import NetworkPulse from '@/components/NetworkPulse'
 const ALL = 'All'
 const STATIC_SERVERS: McpServer[] = CATALOG
 
-export default function ServerDirectory() {
+export default function ServerDirectory({ initialCategory = ALL }: { initialCategory?: string }) {
   const { servers, setServers, activeServerIds } = useYeetfulStore()
   const [search, setSearch] = useState('')
-  const [cat, setCat] = useState(ALL)
+  const [cat, setCat] = useState(initialCategory)
 
   useEffect(() => {
     fetch('/api/servers')

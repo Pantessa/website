@@ -1,50 +1,91 @@
-'use client'
-
-import { useEffect } from 'react'
-import { useYeetfulStore, McpServer } from '@/lib/store'
-import { CATALOG } from '@/lib/mcp-data'
-import Hero from '@/components/Hero'
-import ServerDirectory from '@/components/ServerDirectory'
-import ActiveServerBar from '@/components/ActiveServerBar'
-import Footer from '@/components/Footer'
+import type { Metadata } from 'next'
+import { SITE } from '@/lib/docs'
+import SwitchboardHero from '@/components/SwitchboardHero'
+import SwitchboardServers from '@/components/SwitchboardServers'
+import SwitchboardTry from '@/components/SwitchboardTry'
+import SwitchboardProof from '@/components/SwitchboardProof'
+import SwitchboardLive from '@/components/SwitchboardLive'
 import StayUpToDate from '@/components/StayUpToDate'
+import Footer from '@/components/Footer'
 
-const STATIC_SERVERS: McpServer[] = CATALOG
+/** / — the landing page IS Switchboard, the routing engine. Server component so
+ * it can export metadata + JSON-LD (the interactive pieces are client children).
+ * The full agent directory lives at /servers. */
+
+const TITLE = 'Yeetful — Agentic payments & routing layer'
+const DESCRIPTION =
+  'One key for every model and data source. Router sends each request — inference or live data — to the best-priced MCP; your agent pays per call in USDC.'
+
+export const metadata: Metadata = {
+  title: TITLE,
+  description: DESCRIPTION,
+  alternates: { canonical: SITE },
+  openGraph: { title: TITLE, description: DESCRIPTION, url: SITE, type: 'website' },
+  twitter: { card: 'summary_large_image', title: TITLE, description: DESCRIPTION },
+}
+
+const JSON_LD = JSON.stringify([
+  {
+    '@context': 'https://schema.org',
+    '@type': 'WebSite',
+    name: 'Yeetful',
+    url: SITE,
+    description: DESCRIPTION,
+  },
+  {
+    '@context': 'https://schema.org',
+    '@type': 'Service',
+    name: 'Router',
+    serviceType: 'MCP routing engine',
+    description:
+      'Smart routing and payments for agents: one key for every model and data source. Router weighs every MCP that can answer, picks the best-priced route under your budget cap, and the agent pays per call in USDC on Base over x402.',
+    provider: { '@type': 'Organization', name: 'Yeetful', url: SITE },
+    areaServed: 'Worldwide',
+  },
+])
 
 const STEPS = [
-  { n: '01', t: 'Pick your agents', d: 'Browse the directory and add inference and data agents to your runner — one at a time, as many as you need.' },
-  { n: '02', t: 'Connect one wallet', d: 'A single USDC wallet on Base funds everything. No per-service keys, no plans, no invoices.' },
-  { n: '03', t: 'Agents pay on their own', d: 'Each call settles over x402 — a 402 challenge, an instant micro-payment, a 200 response. Fully autonomous.' },
+  {
+    n: '01',
+    t: 'Ask in plain English',
+    d: 'Send a request the way you’d say it out loud. No endpoint names, no params, no docs to read first.',
+  },
+  {
+    n: '02',
+    t: 'Router weighs the routes',
+    d: 'It scores every MCP that can answer — on price, proven settlement history, and your budget cap — and picks the best one.',
+  },
+  {
+    n: '03',
+    t: 'The agent pays the call',
+    d: 'The winning route settles over x402 in USDC from your agent’s own wallet. Over-cap routes get dropped, not paid. You get a receipt with the tx.',
+  },
 ]
 
 export default function HomePage() {
-  // yeetful.com is always the brochure. Signed-in visitors are NOT redirected
-  // to the dashboard (Stripe-style) — the nav surfaces a "Dashboard" button
-  // instead, so the marketing page stays reachable at the apex.
-  const { servers, setServers } = useYeetfulStore()
-
-  useEffect(() => {
-    fetch('/api/servers')
-      .then((r) => r.json())
-      .then((data: McpServer[]) => setServers(data.length > 0 ? data : STATIC_SERVERS))
-      .catch(() => setServers(STATIC_SERVERS))
-  }, [setServers])
-
-  const displayServers = servers.length > 0 ? servers : STATIC_SERVERS
-
   return (
     <>
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON_LD }} />
       <main className="x-main x-main--fluid">
-        <Hero catalog={displayServers} />
+        <SwitchboardHero />
 
-        {/* Directory */}
-        <ServerDirectory />
+        {/* Breadth: every model + data source, one key */}
+        <SwitchboardServers />
 
-        {/* Explainer */}
+        {/* Interactive: pick a need, watch the engine rank + pick a route */}
+        <SwitchboardTry />
+
+        {/* Proof: real routed turns — prompt, answer, on-chain tx */}
+        <SwitchboardProof />
+
+        {/* Real settled routes — the engine at work */}
+        <SwitchboardLive />
+
+        {/* How routing works */}
         <section className="explain">
           <div className="explain__head">
-            <span className="explain__eyebrow mono">HOW THE NEW ECONOMY RUNS</span>
-            <h2 className="explain__h2">One wallet. Every agent. They settle the rest.</h2>
+            <span className="explain__eyebrow mono">HOW THE OPERATOR WORKS</span>
+            <h2 className="explain__h2">You bring the question. Router brings the route.</h2>
           </div>
           <div className="explain__steps">
             {STEPS.map((s) => (
@@ -61,7 +102,6 @@ export default function HomePage() {
       </main>
 
       <Footer />
-      <ActiveServerBar />
     </>
   )
 }

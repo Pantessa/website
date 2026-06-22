@@ -72,13 +72,10 @@ export default function Navigation() {
   const tabs = (
     <>
       <Link href="/" className={`nav__tab ${pathname === '/' ? 'is-on' : ''}`}>
-        Servers
+        Router
       </Link>
-      <Link
-        href="/switchboard"
-        className={`nav__tab ${pathname === '/switchboard' ? 'is-on' : ''}`}
-      >
-        Switchboard
+      <Link href="/servers" className={`nav__tab ${pathname.startsWith('/servers') ? 'is-on' : ''}`}>
+        Servers
       </Link>
       <Link href="/chat" className={`nav__tab ${pathname === '/chat' ? 'is-on' : ''}`}>
         Chat

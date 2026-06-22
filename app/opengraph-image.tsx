@@ -1,10 +1,10 @@
 import { ImageResponse } from 'next/og'
 
-// S2 — social card for /switchboard. Next file convention: this renders the
+// Social card for the home (/). Next file convention: this renders the
 // og:image (and twitter image) for the page. Dark hero palette, no external
 // fonts (ImageResponse's default sans keeps it dependency-free).
 
-export const alt = 'Switchboard — Yeetful’s MCP routing engine'
+export const alt = 'Router — Yeetful’s agentic payments & routing layer'
 export const size = { width: 1200, height: 630 }
 export const contentType = 'image/png'
 
@@ -41,15 +41,15 @@ export default function Image() {
 
         {/* headline */}
         <div style={{ display: 'flex', flexDirection: 'column' }}>
-          <div style={{ display: 'flex', fontSize: 96, fontWeight: 600, letterSpacing: -2, lineHeight: 1.02 }}>
-            <span style={{ color: INK }}>Ask in plain</span>
-            <span style={{ color: ACCENT, fontStyle: 'italic' }}>{' English.'}</span>
+          <div style={{ display: 'flex', fontSize: 90, fontWeight: 600, letterSpacing: -2, lineHeight: 1.04 }}>
+            <span style={{ color: INK }}>Agentic Payments &amp;</span>
           </div>
-          <div style={{ display: 'flex', fontSize: 96, fontWeight: 600, letterSpacing: -2, color: DIM, lineHeight: 1.02 }}>
-            We patch the call.
+          <div style={{ display: 'flex', fontSize: 90, fontWeight: 600, letterSpacing: -2, lineHeight: 1.04 }}>
+            <span style={{ color: ACCENT, fontStyle: 'italic' }}>Routing</span>
+            <span style={{ color: DIM }}>{' Layer.'}</span>
           </div>
-          <div style={{ display: 'flex', marginTop: 26, fontSize: 30, color: '#b8bdb4', maxWidth: 880, lineHeight: 1.4 }}>
-            Switchboard picks the best-priced MCP route under your cap and pays per call — no keys.
+          <div style={{ display: 'flex', marginTop: 26, fontSize: 30, color: '#b8bdb4', maxWidth: 920, lineHeight: 1.4 }}>
+            One key for every model and data source. Router sends each request to the best-priced MCP — paid per call.
           </div>
         </div>
 
@@ -59,7 +59,7 @@ export default function Image() {
             <div style={{ display: 'flex', width: 16, height: 16, borderRadius: 8, background: ACCENT }} />
             <span style={{ color: INK, fontSize: 30, fontWeight: 600 }}>yeetful</span>
           </div>
-          <span style={{ color: FAINT, fontSize: 26 }}>yeetful.com/switchboard</span>
+          <span style={{ color: FAINT, fontSize: 26 }}>yeetful.com</span>
         </div>
       </div>
     ),

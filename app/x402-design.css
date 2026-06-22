@@ -217,7 +217,7 @@
   /* width: max-content lets "Agent Expense" escape the 600px copy column at
      wide viewports instead of wrapping to three lines — the design's H1 is
      exactly two: "Agent Expense" / "Accounts." */
-  .heroweb__h1 { font-family: 'Newsreader', Georgia, serif; font-weight: 500; font-size: clamp(54px, 7.4vw, 116px); line-height: .94; letter-spacing: -.022em; margin-bottom: 30px; width: max-content; max-width: calc(100vw - 2 * clamp(24px, 4vw, 64px)); }
+  .heroweb__h1 { font-family: 'Newsreader', Georgia, serif; font-weight: 500; font-size: clamp(46px, 5.4vw, 84px); line-height: .98; letter-spacing: -.025em; margin-bottom: 30px; width: max-content; max-width: calc(100vw - 2 * clamp(24px, 4vw, 64px)); }
   .heroweb__em { font-style: italic; }
   .heroweb__grad { color: transparent; background: linear-gradient(180deg, #fff 30%, #cbd3cb); -webkit-background-clip: text; background-clip: text; }
   .heroweb__dim { color: transparent; background: linear-gradient(180deg, #838a80 16%, #4f554e); -webkit-background-clip: text; background-clip: text; }
@@ -393,6 +393,25 @@
   @media (max-width: 760px) {
     .swproof__list { grid-template-columns: 1fr; }
   }
+
+  /* ── SWITCHBOARD SERVERS PREVIEW (2 rows + see all) ── */
+  .swsrv { padding: 56px 0; border-top: 1px solid var(--line); }
+  .swsrv__head { display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; flex-wrap: wrap; margin-bottom: 26px; }
+  .swsrv__eyebrow { font-size: 12px; letter-spacing: 0.18em; color: var(--muted-2); }
+  .swsrv__h2 { font-size: clamp(26px, 3.4vw, 38px); font-weight: 600; letter-spacing: -0.02em; margin-top: 10px; color: var(--fg); }
+  .swsrv__all { font-size: 14px; color: var(--accent); text-decoration: none; white-space: nowrap; }
+  .swsrv__all:hover { text-decoration: underline; }
+  .swsrv__pills { margin: -8px 0 24px; }
+  /* Fill full rows: render 10 cards, trim as the grid loses columns. */
+  @media (max-width: 1799px) { .swsrv .x-grid > :nth-child(n+9) { display: none; } } /* 4-col → 8 */
+  @media (max-width: 1080px) { .swsrv .x-grid > :nth-child(n+7) { display: none; } } /* 3/2/1-col → 6 */
+
+  /* ── /servers DIRECTORY PAGE ──────────────────────── */
+  .srvpage { padding: 40px 0 56px; }
+  .srvpage__head { display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; flex-wrap: wrap; margin-bottom: 28px; }
+  .srvpage__eyebrow { font-size: 12px; letter-spacing: 0.18em; color: var(--muted-2); }
+  .srvpage__h1 { font-size: clamp(30px, 4vw, 46px); font-weight: 600; letter-spacing: -0.02em; margin-top: 10px; color: var(--fg); }
+  .srvpage__add { display: inline-flex; align-items: center; gap: 8px; height: 44px; }
 
   /* ── EXPLAINER ───────────────────────────────────── */
   .explain { padding: 56px 0; border-top: 1px solid var(--line); }

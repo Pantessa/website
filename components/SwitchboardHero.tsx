@@ -28,16 +28,16 @@ export default function SwitchboardHero() {
             MCP routing engine <span>·</span> USDC on Base <span>·</span> <b>x402</b>
           </div>
           <h1 className="heroweb__h1">
-            <span className="heroweb__grad">Ask in plain </span>
-            <span className="heroweb__grad heroweb__em">English.</span>
+            <span className="heroweb__grad">Agentic Payments</span>
             <br />
-            <span className="heroweb__dim">We patch the call.</span>
+            <span className="heroweb__grad">&amp;</span>{' '}
+            <span className="heroweb__grad heroweb__em">Routing</span>{' '}
+            <span className="heroweb__dim">Layer.</span>
           </h1>
           <p className="heroweb__lede">
-            Tell Switchboard what you need. It weighs every MCP that can answer, picks the{' '}
-            <strong>best-priced route under your cap</strong>, patches the call, and pays per call in USDC —{' '}
-            <span className="heroweb__nokey">no keys, no integrations</span>. Over-budget routes get dropped,
-            not paid.
+            <strong>One key</strong>, every model and data source. Router sends each request —{' '}
+            <span className="heroweb__nokey">LLM inference or live data</span> — to the{' '}
+            <strong>best-priced MCP under your cap</strong>; your agent pays per call in USDC.
           </p>
           <div className="heroweb__ctas">
             <button
@@ -61,7 +61,7 @@ export default function SwitchboardHero() {
                 <span className="heroweb__pu">$</span>
                 <span ref={proofRoutedRef}>0.00</span>
               </div>
-              <div className="heroweb__plbl">routed · no keys</div>
+              <div className="heroweb__plbl">routed · one key</div>
             </div>
             <div className="heroweb__psep" />
             <div className="heroweb__pitem">
