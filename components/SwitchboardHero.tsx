@@ -28,17 +28,15 @@ export default function SwitchboardHero() {
             MCP routing engine <span>·</span> USDC on Base <span>·</span> <b>x402</b>
           </div>
           <h1 className="heroweb__h1">
-            <span className="heroweb__grad">Smart routing and </span>
-            <span className="heroweb__grad heroweb__em">payments</span>
+            <span className="heroweb__grad">Agentic Payments &amp;</span>
             <br />
-            <span className="heroweb__dim">for agents.</span>
+            <span className="heroweb__grad heroweb__em">Routing</span>{' '}
+            <span className="heroweb__dim">Layer.</span>
           </h1>
           <p className="heroweb__lede">
-            <strong>One key</strong> plugs your agent into every model and data source —{' '}
-            <span className="heroweb__nokey">no per-provider accounts, no integrations</span>. Tell Switchboard
-            what you need; it weighs every MCP that can answer, picks the{' '}
-            <strong>best-priced route under your cap</strong>, and your agent pays per call in USDC.
-            Over-budget routes get dropped, not paid.
+            <strong>One key</strong>, every model and data source. Switchboard routes each request —{' '}
+            <span className="heroweb__nokey">LLM inference or live data</span> — to the{' '}
+            <strong>best-priced MCP under your cap</strong>; your agent pays per call in USDC.
           </p>
           <div className="heroweb__ctas">
             <button

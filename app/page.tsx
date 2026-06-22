@@ -12,9 +12,9 @@ import Footer from '@/components/Footer'
  * it can export metadata + JSON-LD (the interactive pieces are client children).
  * The full agent directory lives at /servers. */
 
-const TITLE = 'Yeetful — Smart routing and payments for agents'
+const TITLE = 'Yeetful — Agentic payments & routing layer'
 const DESCRIPTION =
-  'One key plugs your agent into every model and data source. Switchboard picks the best-priced route under your cap; your agent pays per call in USDC — no per-provider keys.'
+  'One key for every model and data source. Switchboard routes each request — inference or live data — to the best-priced MCP; your agent pays per call in USDC.'
 
 export const metadata: Metadata = {
   title: TITLE,
