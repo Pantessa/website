@@ -1204,3 +1204,18 @@
   .ca__spin { animation: ca-spin 1s linear infinite; }
   .ca__spin--lg { color: var(--accent); }
   @keyframes ca-spin { to { transform: rotate(360deg); } }
+
+  /* Keyboard focus — accent rings on the custom-styled interactive controls.
+     globals.css has a faint white :focus-visible fallback; these make the key
+     controls clearly visible and on-brand for keyboard users. */
+  .nav__tab:focus-visible,
+  .nav__dash:focus-visible,
+  .nav__burger:focus-visible,
+  .btn:focus-visible,
+  .pill:focus-visible,
+  .dash__link:focus-visible,
+  .svc__ext:focus-visible,
+  .swtry__chip:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }

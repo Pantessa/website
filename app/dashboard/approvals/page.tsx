@@ -112,6 +112,7 @@ export default function DashboardApprovalsPage() {
                 }}
                 className={cn(
                   'flex items-center justify-between gap-2 px-3 py-2 rounded-xl border text-left transition-colors cursor-pointer min-h-[44px] min-w-0',
+                  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 focus-visible:ring-offset-2 focus-visible:ring-offset-black',
                   a.approved
                     ? 'bg-[var(--surf-1)] border-[var(--line)] hover:border-[var(--line-2)]'
                     : 'bg-black/30 border-[var(--line)] opacity-55 hover:opacity-80',
