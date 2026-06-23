@@ -24,7 +24,7 @@
 import { generatePrivateKey, privateKeyToAccount, type PrivateKeyAccount } from 'viem/accounts'
 import { createSiweMessage } from 'viem/siwe'
 import { grantTypedData } from '../lib/grant-typed-data'
-import { routerPrompt, parseRouterDecision, selectInferenceProvider } from '../lib/router'
+import { routerPrompt, parseRouterDecision, selectInferenceProvider, routeMessage } from '../lib/router'
 import { buildSmartRequest, type PlannableEndpoint } from '../lib/endpoint-planner'
 
 const BASE = process.env.BASE ?? 'http://localhost:3000'
@@ -1243,6 +1243,49 @@ async function main() {
     'router build: schema-less POST routes inferred param into the body',
     'request' in builtPost && !builtPost.request.url.includes('symbol=') && (builtPost.request.body ?? '').includes('ETH'),
   )
+
+  // B7 — multi-step resolver loop: the engine resolves an id with a lookup, sees
+  // the result, then makes the data call with it — chaining across steps. Driven
+  // by a scripted inference + a stub executeCall (no DB / no spend).
+  const loopEndpoints: PlannableEndpoint[] = [
+    { id: 'ep-dao-search', serverSlug: 'gov', serverName: 'Gov', method: 'GET', url: 'https://gov.test/search', description: 'find a DAO by name', priceUsd: '0.01', parameters: [{ group: 'query', name: 'q', required: true }] },
+    { id: 'ep-dao-proposals', serverSlug: 'gov', serverName: 'Gov', method: 'GET', url: 'https://gov.test/proposals', description: 'list proposals for a DAO id', priceUsd: '0.01', parameters: [{ group: 'query', name: 'daoId', required: true }] },
+  ]
+  const claudeSrv = { slug: 'yeetful-claude', name: 'Yeetful · Claude', kind: 'inference', callable: true, endpoint: 'https://c.test', protocol: 'mcp', priceUsd: '0.005' } as unknown as Parameters<typeof selectInferenceProvider>[0][number]
+  const scripts = [
+    JSON.stringify({ intent: 'open proposals on Nate DAO', needs: ['DAO id', 'proposals'], picks: [{ endpointId: 'ep-dao-search', params: { q: 'Nate' }, reason: 'resolve the DAO id first', score: 0.9 }] }),
+    JSON.stringify({ intent: '', needs: [], picks: [{ endpointId: 'ep-dao-proposals', params: { daoId: 'nate.eth' }, reason: 'list with the resolved id', score: 0.95 }] }),
+    JSON.stringify({ intent: '', needs: [], picks: [] }),
+  ]
+  let infCall = 0
+  const stubInference = async () => ({ text: scripts[Math.min(infCall++, scripts.length - 1)] })
+  const executed: string[] = []
+  const stubExecute = async (pick: { endpointId: string }) => {
+    executed.push(pick.endpointId)
+    return pick.endpointId === 'ep-dao-search' ? { data: { daoId: 'nate.eth' } } : { data: { proposals: ['p1', 'p2'] } }
+  }
+  const loopDec = await routeMessage({
+    message: 'what are the open proposals on Nate DAO',
+    catalog: [claudeSrv],
+    endpoints: loopEndpoints,
+    runInference: stubInference,
+    executeCall: stubExecute,
+  })
+  check('router loop: chains resolve→fetch (2 calls, in order)', executed.length === 2 && executed[0] === 'ep-dao-search' && executed[1] === 'ep-dao-proposals')
+  check('router loop: gathers context from each successful step', loopDec.context.length === 2 && loopDec.context.some((c) => c.includes('proposals')))
+
+  // Dedup + cap guard: a model that keeps re-picking the same call must not loop
+  // forever — the same endpoint is only executed once, then the loop ends.
+  const repeatExecuted: string[] = []
+  const repeatDec = await routeMessage({
+    message: 'spin',
+    catalog: [claudeSrv],
+    endpoints: loopEndpoints,
+    maxSteps: 5,
+    runInference: async () => ({ text: JSON.stringify({ intent: 'x', needs: [], picks: [{ endpointId: 'ep-dao-search', params: { q: 'a' }, reason: 'r', score: 1 }] }) }),
+    executeCall: async (pick: { endpointId: string }) => { repeatExecuted.push(pick.endpointId); return { data: { ok: true } } },
+  })
+  check('router loop: dedups repeated picks (no runaway)', repeatExecuted.length === 1 && repeatDec.context.length === 1)
 
   // ── Cleanup (verified) ────────────────────────────────────────────────────
   console.log('— cleanup')
