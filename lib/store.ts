@@ -54,7 +54,7 @@ export interface Message {
 export type RouterTraceEvent =
   | { type: 'status'; label: string }
   | { type: 'analyze'; intent: string; needs: string[] }
-  | { type: 'candidate'; service: string; endpoint?: string; priceUsd?: string; score: number; reason: string }
+  | { type: 'candidate'; service: string; endpoint?: string; priceUsd?: string; score: number; reason: string; proven?: number }
   | { type: 'select'; service: string; endpoint?: string; priceUsd?: string; reason: string }
   | { type: 'pay'; service: string; host: string; priceUsd: string }
   | { type: 'receipt'; receipt: { name: string; endpoint?: string; priceUsd?: string; txHash?: string; ok: boolean; note?: string } }

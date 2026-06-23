@@ -36,7 +36,7 @@ import {
 export type TraceStep =
   | { type: 'status'; label: string }
   | { type: 'analyze'; intent: string; needs: string[] }
-  | { type: 'candidate'; service: string; endpoint?: string; priceUsd?: string; score: number; reason: string }
+  | { type: 'candidate'; service: string; endpoint?: string; priceUsd?: string; score: number; reason: string; proven?: number }
   | { type: 'select'; service: string; endpoint?: string; priceUsd?: string; reason: string }
 
 // ── Picks ─────────────────────────────────────────────────────────────────
@@ -270,6 +270,7 @@ export async function routeMessage(opts: RouteOptions): Promise<RouterDecision> 
         priceUsd: ep.priceUsd,
         score: pick.score,
         reason: pick.reason || 'relevant to the request',
+        proven: ep.reliability?.settled,
       })
       const built = buildSmartRequest(ep, pick.params)
       if ('error' in built) {

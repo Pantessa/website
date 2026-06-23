@@ -147,6 +147,9 @@ function TraceLine({ event }: { event: RouterTraceEvent }) {
           <span className="text-[color:var(--muted-2)]">·</span> {event.service}
           {event.endpoint ? <span className="text-[color:var(--muted-2)]"> {shortEndpoint(event.endpoint)}</span> : null}
           {event.priceUsd ? <span className="text-[color:var(--muted-2)]"> ${event.priceUsd}</span> : null}
+          {event.proven && event.proven > 0 ? (
+            <span style={{ color: 'var(--accent)' }}> ✓proven({event.proven})</span>
+          ) : null}
           <span className="text-[color:var(--muted-2)]"> ({Math.round(event.score * 100)}%)</span>
           {event.reason ? ` — ${event.reason}` : ''}
         </p>

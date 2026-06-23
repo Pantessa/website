@@ -153,7 +153,7 @@ export async function POST(req: NextRequest) {
     //    streams its reasoning + the answer (burner mode; wallet is B5). The
     //    manual path below is untouched. ───────────────────────────────────
     if (body.autoRouter === true) {
-      return streamAutoRouter(message, history)
+      return streamAutoRouter(message, history, walletAddress)
     }
 
     const inference = activeServers.find(
@@ -848,7 +848,7 @@ async function paidCall(request: { url: string; method: string; headers: Record<
 // engine window renders by `type`): the four TraceStep shapes from lib/router
 // (status / analyze / candidate / select), plus over-the-wire `pay`, `receipt`,
 // `reply`, `error`, `done`. Grant gating + ledgering match burner mode exactly.
-function streamAutoRouter(message: string, history: ConversationTurn[]): Response {
+function streamAutoRouter(message: string, history: ConversationTurn[], walletAddress?: string): Response {
   const encoder = new TextEncoder()
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
@@ -924,7 +924,11 @@ function streamAutoRouter(message: string, history: ConversationTurn[]): Respons
           onStep: (step) => send(step),
           runInference: async (inf, prompt) => {
             const r = await callInference(inf, prompt)
-            if (grant) {
+            // The routing/planning call is house-paid. In burner mode it counts
+            // against the grant (like the manual planner); in wallet mode the
+            // house eats it (the manual planner isn't ledgered there either), so
+            // it must NOT inflate the user's spend or gate their own payments.
+            if (grant && !walletAddress) {
               await recordLedger({ grantId: grant.id, orgId: grant.orgId ?? undefined, host: infHost, serviceName: inference.name, amountUsd: infPrice, ok: true, txHash: r.txHash, note: 'settled (routing)' })
               spentToday += infPrice
               spentTotal += infPrice
@@ -932,6 +936,49 @@ function streamAutoRouter(message: string, history: ConversationTurn[]): Respons
             return r
           },
         })
+
+        // ── Wallet mode: routing is done (house-paid, like the manual planner);
+        //    hand the data + answer payments to the user's wallet to sign via
+        //    the existing two-phase execute path. Emit one `plan` event. ──────
+        if (walletAddress) {
+          const wPlan: PlannedCall[] = []
+          let plannedUsd = 0
+          const planGate = async (name: string, h: string, price: number): Promise<string | null> => {
+            if (!policy || !grant) return null
+            const v = grantViolation(policy, h, price, spentToday + plannedUsd, spentTotal + plannedUsd)
+            if (v) {
+              await recordLedger({ grantId: grant.id, orgId: grant.orgId ?? undefined, host: h, serviceName: name, amountUsd: 0, ok: false, note: v })
+              return v
+            }
+            plannedUsd += price
+            return null
+          }
+          for (const pick of decision.smartPicks) {
+            const host = hostOf(pick.request.url)
+            const violation = await planGate(pick.serverName, host, Number(pick.priceUsd))
+            if (violation) {
+              const r: Receipt = { name: pick.serverName, endpoint: host, priceUsd: pick.priceUsd, ok: false, note: `blocked: ${violation}`, slug: violation === 'NOT_ALLOWED' ? pick.serverSlug : undefined }
+              receipts.push(r)
+              send({ type: 'receipt', receipt: r })
+              continue
+            }
+            const challenge = await getChallenge(pick.request.url, { method: pick.request.method, headers: pick.request.headers, body: pick.request.body })
+            wPlan.push({ id: `smart:${pick.endpointId}`, role: 'data', name: pick.serverName, host, priceUsd: pick.priceUsd, endpoint: pick.endpointUrl, url: pick.request.url, method: pick.request.method, body: pick.request.body, prepared: challenge ? derivePayment(challenge, walletAddress) : null })
+          }
+          const infProtocol = inferenceProtocolOf(inference)
+          const infTool = inference.tool ?? (infProtocol === 'http' ? 'openai/gpt-4o-mini' : 'ask_claude')
+          const infChallenge = await getChallenge(inference.endpoint!, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream' },
+            body: infProtocol === 'http' ? inferenceBody('http', infTool, 'probe') : dummyMcpBody(infTool),
+          })
+          wPlan.push({ id: `inference:${inference.slug}`, role: 'inference', name: inference.name, host: infHost, priceUsd: inference.priceUsd ?? '0.01', endpoint: inference.endpoint!, tool: infTool, protocol: infProtocol, prepared: infChallenge ? derivePayment(infChallenge, walletAddress) : null })
+          const payments = wPlan
+            .filter((c) => c.prepared)
+            .map((c) => ({ id: c.id, name: c.name, host: c.host, priceUsd: c.priceUsd, signing: c.prepared!.signing as SigningRequest }))
+          send({ type: 'plan', plan: wPlan, payments, listedOnly: [], notes: decision.notes })
+          return finish()
+        }
 
         // Execute the chosen live-data calls.
         for (const pick of decision.smartPicks) {

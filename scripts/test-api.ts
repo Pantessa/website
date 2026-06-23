@@ -896,6 +896,26 @@ async function main() {
   )
   check('auto-router: stream terminates with a done event', arEvents.some((e) => e.type === 'done'))
 
+  // B5 — wallet-mode auto-router is gated the same way: a forbidden engine is
+  // refused with NO plan + NO signature requests (nothing to sign, no spend).
+  const arwRes = await fetch(`${BASE}/api/chat`, {
+    method: 'POST',
+    headers: CJ,
+    body: JSON.stringify({ message: 'find hotels in Tokyo', autoRouter: true, history: [], walletAddress: owner.address }),
+  })
+  const arwEvents = (await arwRes.text())
+    .split('\n\n')
+    .map((b) => b.trim())
+    .filter((b) => b.startsWith('data:'))
+    .map((b) => JSON.parse(b.slice(5).trim()) as { type: string; blocked?: boolean; content?: string })
+  const arwReply = arwEvents.find((e) => e.type === 'reply')
+  check(
+    'auto-router (wallet): policy-forbidden engine → reply blocked, no plan emitted',
+    !!arwReply &&
+      (arwReply.blocked === true || /No live inference/.test(String(arwReply.content))) &&
+      !arwEvents.some((e) => e.type === 'plan'),
+  )
+
   // ── Key revocation (after Bearer use, before cleanup) ─────────────────────
   console.log('— revocation')
   const del = await fetch(`${BASE}/api/keys/${minted.id}`, { method: 'DELETE', headers: C })

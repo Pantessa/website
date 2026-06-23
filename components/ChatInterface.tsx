@@ -147,13 +147,19 @@ export default function ChatInterface() {
       //    agent selection; the server picks across the whole directory). ──
       if (autoRouter) {
         setStatus('Routing…')
-        const reply = await runAutoRouter(chatId, userMsg, history)
-        trackPaidReceipts(reply.receipts)
-        addMessage(chatId, {
-          role: 'assistant',
-          content: reply.content,
-          meta: buildMeta(reply.receipts, reply.payer, undefined),
-        })
+        const out = await runAutoRouter(chatId, userMsg, history)
+        if (out.kind === 'plan') {
+          // Wallet mode: the engine routed; now confirm + sign the payments
+          // (reuses the heads-up confirm → execute flow from manual mode).
+          setPendingPayment({ userMsg, chatId, data: out.data, history })
+        } else {
+          trackPaidReceipts(out.receipts)
+          addMessage(chatId, {
+            role: 'assistant',
+            content: out.content,
+            meta: buildMeta(out.receipts, out.payer, undefined),
+          })
+        }
         return
       }
 
@@ -206,22 +212,33 @@ export default function ChatInterface() {
     chatId: string,
     userMsg: string,
     history: { role: string; content: string }[],
-  ): Promise<{ content: string; receipts?: unknown; payer?: string }> => {
+  ): Promise<
+    | { kind: 'reply'; content: string; receipts?: unknown; payer?: string }
+    | { kind: 'plan'; data: { plan: unknown; payments: PaymentToSign[]; listedOnly: unknown; notes?: unknown } }
+  > => {
     clearRouterTrace()
     setEngineWindowOpen(true) // show the engine working as soon as a turn starts
     const res = await fetch('/api/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message: userMsg, chatId, autoRouter: true, history }),
+      body: JSON.stringify({
+        message: userMsg,
+        chatId,
+        autoRouter: true,
+        history,
+        // Wallet connected → the engine streams its routing, then hands the
+        // data + answer payments back for the wallet to sign (B5).
+        walletAddress: isConnected ? address : undefined,
+      }),
     })
     if (!res.body) {
       const data = await res.json().catch(() => ({}))
-      return { content: data.reply || data.error || 'No response.', receipts: data.receipts, payer: data.payer }
+      return { kind: 'reply', content: data.reply || data.error || 'No response.', receipts: data.receipts, payer: data.payer }
     }
     const reader = res.body.getReader()
     const decoder = new TextDecoder()
     let buf = ''
-    let reply: { content: string; receipts?: unknown; payer?: string } | null = null
+    let reply: { kind: 'reply'; content: string; receipts?: unknown; payer?: string } | null = null
     for (;;) {
       const { done, value } = await reader.read()
       if (done) break
@@ -237,8 +254,21 @@ export default function ChatInterface() {
         } catch {
           continue
         }
-        if (event.type === 'reply') {
+        if (event.type === 'plan') {
+          // Wallet mode: routing is done; the wallet signs the payments next
+          // (handed to the existing confirm → execute flow).
+          return {
+            kind: 'plan',
+            data: {
+              plan: event.plan,
+              payments: (event.payments as PaymentToSign[]) ?? [],
+              listedOnly: event.listedOnly ?? [],
+              notes: event.notes,
+            },
+          }
+        } else if (event.type === 'reply') {
           reply = {
+            kind: 'reply',
             content: String(event.content ?? 'No response.'),
             receipts: event.receipts,
             payer: typeof event.payer === 'string' ? event.payer : undefined,
@@ -250,7 +280,7 @@ export default function ChatInterface() {
         }
       }
     }
-    return reply ?? { content: 'No response.' }
+    return reply ?? { kind: 'reply', content: 'No response.' }
   }
 
   /** Sign each x402 payment with the connected wallet, then run the calls. */
