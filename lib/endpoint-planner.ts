@@ -71,6 +71,7 @@ export async function loadPlannableEndpoints(slugs: string[]): Promise<Plannable
   })
 
   const perService = new Map<string, number>()
+  const seenShape = new Set<string>()
   const out: PlannableEndpoint[] = []
   for (const r of rows) {
     const price = Number(r.priceUsd)
@@ -93,6 +94,14 @@ export async function loadPlannableEndpoints(slugs: string[]): Promise<Plannable
       }
       if (r.method !== 'GET' || /[:{]/.test(pathname)) continue
     }
+    // De-dup near-identical endpoints: agentic.market lists many rows that
+    // differ only by a baked-in path value (e.g. CoinGecko's ~20
+    // token_price/<address> variants — same method, description, param set).
+    // Collapse to one representative per shape so the menu surfaces distinct
+    // capabilities, not 20 copies — BEFORE the per-service cap consumes slots.
+    const shape = `${r.server.slug}|${r.method}|${(r.description ?? '').slice(0, 60)}|${params.map((p) => p.name).sort().join(',')}`
+    if (seenShape.has(shape)) continue
+    seenShape.add(shape)
     const n = perService.get(r.server.slug) ?? 0
     if (n >= MENU_CAP_PER_SERVICE) continue
     perService.set(r.server.slug, n + 1)
@@ -306,19 +315,38 @@ export function buildSmartRequest(
   const u = new URL(url)
   // Any unresolved :token or {token} left in the path → guaranteed 404. Skip.
   if (/[:{]/.test(u.pathname)) return { error: 'unresolved path parameter' }
+
+  const pathNames = new Set(byGroup.path.map((p) => p.name))
+  const queryNames = new Set(byGroup.query.map((p) => p.name))
+  const bodyNames = new Set(byGroup.body.map((p) => p.name))
+
+  // Schema query params.
   for (const p of byGroup.query) {
     const v = params[p.name]
     if (v !== undefined) u.searchParams.set(p.name, String(v))
   }
 
   const headers: Record<string, string> = { accept: 'application/json' }
+  const bodyObj: Record<string, unknown> = {}
+  for (const p of byGroup.body) {
+    const v = params[p.name]
+    if (v !== undefined) bodyObj[p.name] = v
+  }
+
+  // Inferred (schema-less) params: agentic.market often publishes no parameter
+  // schema for an endpoint that clearly takes one (e.g. CoinMarketCap
+  // quotes/latest needs ?symbol=ETH). When the planner supplies a param the
+  // schema doesn't mention, route it by method — GET → query, POST → body — so
+  // schema-poor endpoints become usable instead of dead-ends. Still guarded by
+  // the caller's GET/POST + price-cap + grant gates.
+  for (const [k, v] of Object.entries(params)) {
+    if (pathNames.has(k) || queryNames.has(k) || bodyNames.has(k)) continue
+    if (ep.method === 'POST') bodyObj[k] = v
+    else u.searchParams.set(k, String(v))
+  }
+
   let body: string | undefined
   if (ep.method === 'POST') {
-    const bodyObj: Record<string, unknown> = {}
-    for (const p of byGroup.body) {
-      const v = params[p.name]
-      if (v !== undefined) bodyObj[p.name] = v
-    }
     body = JSON.stringify(bodyObj)
     headers['content-type'] = 'application/json'
   }

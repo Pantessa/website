@@ -25,8 +25,9 @@ import { generatePrivateKey, privateKeyToAccount, type PrivateKeyAccount } from 
 import { createSiweMessage } from 'viem/siwe'
 import { grantTypedData } from '../lib/grant-typed-data'
 import { grantViolation, type GrantPolicy } from '../lib/spend-grant'
-import { routerPrompt, parseRouterDecision, selectInferenceProvider } from '../lib/router'
-import type { PlannableEndpoint } from '../lib/endpoint-planner'
+import { routerPrompt, parseRouterDecision, selectInferenceProvider, routeMessage } from '../lib/router'
+import { buildSmartRequest, type PlannableEndpoint } from '../lib/endpoint-planner'
+import { buildSignableArtifact, isActionIntent } from '../lib/transaction-layer'
 
 const BASE = process.env.BASE ?? 'http://localhost:3000'
 const DOMAIN = new URL(BASE).host
@@ -1266,6 +1267,102 @@ async function main() {
   check('router select: prefers Yeetful · Claude as the answer engine', selectInferenceProvider([gpt, claude])?.slug === 'yeetful-claude')
   check('router select: falls back to cheapest inference (no Claude)', selectInferenceProvider([pricey, gpt])?.slug === 'chatgpt')
   check('router select: no callable inference → null', selectInferenceProvider([dataOnly]) === null)
+
+  // B6 — schema-less query params: a planner-supplied param the endpoint doesn't
+  // list (e.g. CoinMarketCap quotes/latest has no schema) must still be routed
+  // into the GET query, so schema-poor endpoints become usable (?symbol=ETH).
+  const schemaLessEp: PlannableEndpoint = {
+    id: 'ep-cmc-quotes', serverSlug: 'coinmarketcap', serverName: 'CoinMarketCap', method: 'GET',
+    url: 'https://pro-api.coinmarketcap.com/x402/v3/cryptocurrency/quotes/latest',
+    description: 'Latest cryptocurrency quote data', priceUsd: '0.01', parameters: [],
+  }
+  const builtSchemaLess = buildSmartRequest(schemaLessEp, { symbol: 'ETH' })
+  check(
+    'router build: schema-less GET routes inferred param into the query (?symbol=ETH)',
+    'request' in builtSchemaLess && builtSchemaLess.request.url.includes('symbol=ETH'),
+  )
+  // A POST routes an inferred param into the JSON body, not the query.
+  const builtPost = buildSmartRequest({ ...schemaLessEp, method: 'POST' }, { symbol: 'ETH' })
+  check(
+    'router build: schema-less POST routes inferred param into the body',
+    'request' in builtPost && !builtPost.request.url.includes('symbol=') && (builtPost.request.body ?? '').includes('ETH'),
+  )
+
+  // B7 — multi-step resolver loop: the engine resolves an id with a lookup, sees
+  // the result, then makes the data call with it — chaining across steps. Driven
+  // by a scripted inference + a stub executeCall (no DB / no spend).
+  const loopEndpoints: PlannableEndpoint[] = [
+    { id: 'ep-dao-search', serverSlug: 'gov', serverName: 'Gov', method: 'GET', url: 'https://gov.test/search', description: 'find a DAO by name', priceUsd: '0.01', parameters: [{ group: 'query', name: 'q', required: true }] },
+    { id: 'ep-dao-proposals', serverSlug: 'gov', serverName: 'Gov', method: 'GET', url: 'https://gov.test/proposals', description: 'list proposals for a DAO id', priceUsd: '0.01', parameters: [{ group: 'query', name: 'daoId', required: true }] },
+  ]
+  const claudeSrv = { slug: 'yeetful-claude', name: 'Yeetful · Claude', kind: 'inference', callable: true, endpoint: 'https://c.test', protocol: 'mcp', priceUsd: '0.005' } as unknown as Parameters<typeof selectInferenceProvider>[0][number]
+  const scripts = [
+    JSON.stringify({ intent: 'open proposals on Nate DAO', needs: ['DAO id', 'proposals'], picks: [{ endpointId: 'ep-dao-search', params: { q: 'Nate' }, reason: 'resolve the DAO id first', score: 0.9 }] }),
+    JSON.stringify({ intent: '', needs: [], picks: [{ endpointId: 'ep-dao-proposals', params: { daoId: 'nate.eth' }, reason: 'list with the resolved id', score: 0.95 }] }),
+    JSON.stringify({ intent: '', needs: [], picks: [] }),
+  ]
+  let infCall = 0
+  const stubInference = async () => ({ text: scripts[Math.min(infCall++, scripts.length - 1)] })
+  const executed: string[] = []
+  const stubExecute = async (pick: { endpointId: string }) => {
+    executed.push(pick.endpointId)
+    return pick.endpointId === 'ep-dao-search' ? { data: { daoId: 'nate.eth' } } : { data: { proposals: ['p1', 'p2'] } }
+  }
+  const loopDec = await routeMessage({
+    message: 'what are the open proposals on Nate DAO',
+    catalog: [claudeSrv],
+    endpoints: loopEndpoints,
+    runInference: stubInference,
+    executeCall: stubExecute,
+  })
+  check('router loop: chains resolve→fetch (2 calls, in order)', executed.length === 2 && executed[0] === 'ep-dao-search' && executed[1] === 'ep-dao-proposals')
+  check('router loop: gathers context from each successful step', loopDec.context.length === 2 && loopDec.context.some((c) => c.includes('proposals')))
+
+  // Dedup + cap guard: a model that keeps re-picking the same call must not loop
+  // forever — the same endpoint is only executed once, then the loop ends.
+  const repeatExecuted: string[] = []
+  const repeatDec = await routeMessage({
+    message: 'spin',
+    catalog: [claudeSrv],
+    endpoints: loopEndpoints,
+    maxSteps: 5,
+    runInference: async () => ({ text: JSON.stringify({ intent: 'x', needs: [], picks: [{ endpointId: 'ep-dao-search', params: { q: 'a' }, reason: 'r', score: 1 }] }) }),
+    executeCall: async (pick: { endpointId: string }) => { repeatExecuted.push(pick.endpointId); return { data: { ok: true } } },
+  })
+  check('router loop: dedups repeated picks (no runaway)', repeatExecuted.length === 1 && repeatDec.context.length === 1)
+
+  // B8 — transaction layer: a tool's return becomes a signable artifact (the
+  // action half). Vote (EIP-712) is wired; a raw EVM tx is structured.
+  const voteResult = {
+    action: 'sign_vote',
+    summary: 'Vote For on Test Proposal',
+    proposal: { id: '0x' + 'a'.repeat(64), title: 'Test Proposal', type: 'single-choice', choices: ['For', 'Against'], space: 'test.eth' },
+    choice: 1,
+    typedData: {
+      domain: { name: 'snapshot', version: '0.1.4' },
+      types: { Vote: [{ name: 'choice', type: 'uint32' }] },
+      message: { from: '0x0', space: 'test.eth', timestamp: 1, proposal: '0x' + 'a'.repeat(64), choice: 1, reason: '', app: '', metadata: '' },
+    },
+  }
+  const voteArt = buildSignableArtifact(voteResult)
+  check('tx layer: sign_vote → eip712-vote artifact', voteArt?.kind === 'eip712-vote' && voteArt.vote.proposal.title === 'Test Proposal')
+  const txArt = buildSignableArtifact({ action: 'send_transaction', label: 'swap', summary: 'Swap 1 ETH→USDC', tx: { to: '0xabc', data: '0xdead', value: '1000000000000000000', chainId: 8453 } })
+  check('tx layer: send_transaction → evm-tx artifact', txArt?.kind === 'evm-tx' && txArt.tx.to === '0xabc' && txArt.tx.action === 'swap')
+  check('tx layer: plain data → no artifact', buildSignableArtifact({ price: 3000 }) === null)
+  check(
+    'tx layer: isActionIntent flags actions, not reads',
+    isActionIntent('vote For on this') && isActionIntent('swap 1 ETH to USDC') && !isActionIntent('what is the price of ETH'),
+  )
+
+  // The loop surfaces a tool-returned vote as a signable artifact (and stops).
+  const artDec = await routeMessage({
+    message: 'vote For on proposal X',
+    catalog: [claudeSrv],
+    endpoints: [{ id: 'ep-vote', serverSlug: 'snap', serverName: 'Snapshot', method: 'POST', url: 'https://snap.test/vote', description: 'prepare a vote', priceUsd: '0.01', parameters: [{ group: 'body', name: 'choice', required: true }] }],
+    runInference: async () => ({ text: JSON.stringify({ intent: 'vote', needs: [], picks: [{ endpointId: 'ep-vote', params: { choice: 1 }, reason: 'prepare the vote', score: 0.9 }] }) }),
+    executeCall: async () => ({ data: voteResult }),
+  })
+  check('router loop: a tool-returned vote becomes decision.artifact', artDec.artifact?.kind === 'eip712-vote')
 
   // ── Cleanup (verified) ────────────────────────────────────────────────────
   console.log('— cleanup')

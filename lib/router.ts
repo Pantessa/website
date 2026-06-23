@@ -27,6 +27,7 @@ import {
   type ConversationTurn,
   type SmartRequest,
 } from '@/lib/endpoint-planner'
+import { buildSignableArtifact, type SignableArtifact } from '@/lib/transaction-layer'
 
 // ── Canonical trace contract ────────────────────────────────────────────────
 // One ordered list of these IS the "engine window" content. The streaming chat
@@ -38,6 +39,8 @@ export type TraceStep =
   | { type: 'analyze'; intent: string; needs: string[] }
   | { type: 'candidate'; service: string; endpoint?: string; priceUsd?: string; score: number; reason: string; proven?: number }
   | { type: 'select'; service: string; endpoint?: string; priceUsd?: string; reason: string }
+  // Diagnostics surfaced in the engine window so misses/errors are explained, not silent.
+  | { type: 'note'; level: 'info' | 'warn'; label: string }
 
 // ── Picks ─────────────────────────────────────────────────────────────────
 /** A live-data call the engine chose to make (a planned, ready-to-pay request). */
@@ -71,6 +74,21 @@ export interface RouterDecision {
   trace: TraceStep[]
   /** Honest diagnostics (why a service was skipped, directory offline, …). */
   notes: string[]
+  /** Gathered live-data context blocks (LOOP mode only — what `executeCall`
+   *  returned across steps). The caller feeds these to the answer prompt.
+   *  Empty in single-pass (plan) mode, where the caller executes the picks. */
+  context: string[]
+  /** A signable action (vote / on-chain tx) a tool returned for the user to
+   *  approve — the transaction layer's output. Present only when a routed call
+   *  yielded one (LOOP mode). The caller surfaces it for signing. */
+  artifact?: SignableArtifact
+}
+
+/** Result of executing one chosen call: the data to observe, or an error to
+ *  feed back for a repair attempt. The caller owns payment + gating. */
+export interface ExecuteResult {
+  data?: unknown
+  error?: string
 }
 
 export interface RouteOptions {
@@ -80,6 +98,20 @@ export interface RouteOptions {
   catalog: McpServer[]
   /** House-paid inference call, injected so this module stays pure/testable. */
   runInference: (inference: McpServer, prompt: string) => Promise<{ text: string; txHash?: string }>
+  /**
+   * Execute a chosen data call (pay + gate is the caller's job). When provided,
+   * routeMessage runs the MULTI-STEP reason→act→observe LOOP: it can call a
+   * lookup to resolve an id, observe the result, then make the data call —
+   * feeding each result back into the next step. When omitted, it does a single
+   * planning pass and returns the picks unexecuted (wallet plan→sign→execute).
+   */
+  executeCall?: (pick: SmartPick) => Promise<ExecuteResult>
+  /** Max tool calls in the loop (default 3). Hard cap against runaway loops. */
+  maxSteps?: number
+  /** Pre-loaded candidate endpoints. When omitted they're loaded from the DB
+   *  (loadPlannableEndpoints over the catalog). Injecting them keeps the module
+   *  unit-testable with no DB. */
+  endpoints?: PlannableEndpoint[]
   /** Live trace hook — called as each step is produced (for streaming). */
   onStep?: (step: TraceStep) => void
 }
@@ -123,6 +155,7 @@ export function routerPrompt(
   message: string,
   endpoints: PlannableEndpoint[],
   history: ConversationTurn[] = [],
+  observations: string[] = [],
 ): string {
   const byService = new Map<string, PlannableEndpoint[]>()
   for (const e of endpoints) byService.set(e.serverSlug, [...(byService.get(e.serverSlug) ?? []), e])
@@ -149,12 +182,20 @@ export function routerPrompt(
     })
     .join('\n\n')
 
+  // Loop mode: what earlier steps already fetched, so the model resolves an id
+  // first and then makes the data call (and stops once it has enough).
+  const observed = observations.length
+    ? `You have ALREADY gathered this in earlier steps:\n${observations.join('\n')}\n\nIf that is enough to answer the user, return {"picks":[]} (done). Otherwise pick the NEXT single call — e.g. use an id/address you just resolved above to fill a parameter. Do NOT repeat a call you already made.`
+    : ''
+
   const convo = conversationBlock(history)
   return [
-    `You are Yeetful's routing engine. You decide which paid MCP/x402 endpoints (if any) to call to best answer a user, then explain the choice.`,
+    `You are Yeetful's routing engine. You decide which paid MCP/x402 endpoints (if any) to call to best answer a user, then explain the choice. You may work in STEPS: if a call needs an id/address/code you don't have (e.g. a DAO id, a token contract, an airport code), first call a lookup/search endpoint to resolve it, then on the next step call the data endpoint with the resolved value.`,
     ...(convo ? [convo] : []),
     `The user asked${history.length ? ' (interpret it in the context of the conversation above)' : ''}:\n"""${message}"""`,
-    `Below are paid API endpoints, grouped by service, each tagged with its price in [$…]; some are tagged ✓proven (they have successfully settled paid calls before). Pick AT MOST ONE endpoint per service — only if calling it would genuinely help answer the user. When two endpoints answer the need equally well, prefer the ✓proven one, then the cheaper one — but still pick an un-proven endpoint when it is clearly the better fit. Fill parameter values from the user's message and conversation (respect types; include every required param; skip optional params you can't infer). If a question needs no live data (general knowledge, chit-chat), pick nothing.`,
+    ...(observed ? [observed] : []),
+    `Below are paid API endpoints, grouped by service, each tagged with its price in [$…]; some are tagged ✓proven (they have successfully settled paid calls before). Pick AT MOST ONE endpoint per service — only if calling it would genuinely help answer the user. Anything the user asks that needs LIVE or REAL-TIME data — a price, a quote, weather, scores, listings, search results, on-chain or market data — should route to a relevant endpoint here rather than be answered from memory. When two endpoints answer the need equally well, prefer the ✓proven one, then the cheaper one — but still pick an un-proven endpoint when it is clearly the better fit.`,
+    `Fill parameter values from the user's message and conversation (respect types; include every required param; skip optional params you can't infer). You MAY include query parameters even for an endpoint that lists no params, when it clearly needs one to answer — infer the obvious key/value (e.g. for a "latest quote" endpoint, "symbol":"ETH"; for a search endpoint, "query":"…"). Only pick nothing when the question genuinely needs no live data (general knowledge, chit-chat).`,
     menu || '(no endpoints available)',
     `Respond with ONLY this JSON, no prose, no code fences:`,
     `{"intent":"<one short sentence: what the user wants>","needs":["<live data this requires, if any>"],"picks":[{"endpointId":"<id>","params":{"<name>":"<value>"},"reason":"<why this endpoint, one short clause>","score":<0..1 confidence>}]}`,
@@ -219,86 +260,143 @@ export async function routeMessage(opts: RouteOptions): Promise<RouterDecision> 
     trace.push(s)
     opts.onStep?.(s)
   }
+  // A diagnostic the user should SEE: recorded for the reply footer AND streamed
+  // into the engine window as a note line (so a miss is explained, not silent).
+  const addNote = (label: string, level: 'info' | 'warn' = 'info') => {
+    notes.push(label)
+    emit({ type: 'note', level, label })
+  }
 
   emit({ type: 'status', label: 'Reading your question…' })
 
   const inference = selectInferenceProvider(catalog)
   if (!inference) {
-    notes.push('No live inference engine is available — connect or enable one (e.g. Yeetful · Claude).')
     emit({ type: 'status', label: 'No inference engine available.' })
-    return { inference: null, smartPicks: [], picks: [], trace, notes }
+    addNote('No live inference engine is available — connect or enable one (e.g. Yeetful · Claude).', 'warn')
+    return { inference: null, smartPicks: [], picks: [], trace, notes, context: [] }
   }
 
   emit({ type: 'status', label: `Scanning the MCP directory (${catalog.length} services)…` })
-  let endpoints: PlannableEndpoint[] = []
-  try {
-    endpoints = await loadPlannableEndpoints(catalog.map((s) => s.slug).filter(Boolean))
-  } catch (err) {
-    notes.push(`The endpoint directory is unavailable (${err instanceof Error ? err.message : 'error'}); answering from the inference engine alone.`)
+  let endpoints: PlannableEndpoint[] = opts.endpoints ?? []
+  if (!opts.endpoints) {
+    try {
+      endpoints = await loadPlannableEndpoints(catalog.map((s) => s.slug).filter(Boolean))
+    } catch (err) {
+      addNote(`The endpoint directory is unavailable (${err instanceof Error ? err.message : 'error'}); answering from the inference engine alone.`, 'warn')
+    }
   }
 
   const smartPicks: SmartPick[] = []
+  const context: string[] = []
+  let artifact: SignableArtifact | undefined
+  const byId = new Map(endpoints.map((e) => [e.id, e]))
+
+  // Build one SmartPick + emit candidate→select; null if the call can't be built.
+  const planPick = (pick: RouterModelDecision['picks'][number]): SmartPick | null => {
+    const ep = byId.get(pick.endpointId)
+    if (!ep) return null
+    emit({
+      type: 'candidate',
+      service: ep.serverName,
+      endpoint: ep.url,
+      priceUsd: ep.priceUsd,
+      score: pick.score,
+      reason: pick.reason || 'relevant to the request',
+      proven: ep.reliability?.settled,
+    })
+    const built = buildSmartRequest(ep, pick.params)
+    if ('error' in built) {
+      addNote(`${ep.serverName}: planned call skipped — ${built.error}.`, 'warn')
+      return null
+    }
+    emit({ type: 'select', service: ep.serverName, endpoint: ep.url, priceUsd: ep.priceUsd, reason: pick.reason || 'best fit for the request' })
+    return {
+      role: 'smart',
+      endpointId: ep.id,
+      serverSlug: ep.serverSlug,
+      serverName: ep.serverName,
+      endpointUrl: ep.url,
+      request: built.request,
+      priceUsd: ep.priceUsd,
+      reason: pick.reason || 'best fit for the request',
+    }
+  }
 
   if (endpoints.length === 0) {
     // Nothing routable — answer directly, honestly narrated (no model call).
     emit({ type: 'analyze', intent: 'General question — no live MCP data required.', needs: [] })
     emit({ type: 'status', label: 'No paid MCP needed — answering directly.' })
-  } else {
+  } else if (!opts.executeCall) {
+    // ── SINGLE-PASS (plan) mode: one routing call, return picks UNEXECUTED so
+    //    the caller (wallet) can sign + execute them. ────────────────────────
     emit({ type: 'status', label: `Choosing among ${endpoints.length} candidate endpoints…` })
     let decision: RouterModelDecision = { intent: '', needs: [], picks: [] }
+    let routingFailed = false
     try {
       const { text } = await opts.runInference(inference, routerPrompt(message, endpoints, history))
       decision = parseRouterDecision(text, endpoints)
     } catch (err) {
-      notes.push(`Routing failed (${err instanceof Error ? err.message : 'error'}); answering from the inference engine alone.`)
+      routingFailed = true
+      addNote(`Routing call failed (${err instanceof Error ? err.message : 'error'}); answering from the inference engine alone.`, 'warn')
     }
-
-    emit({
-      type: 'analyze',
-      intent: decision.intent || 'Answering the question.',
-      needs: decision.needs,
-    })
-
-    const byId = new Map(endpoints.map((e) => [e.id, e]))
+    emit({ type: 'analyze', intent: decision.intent || 'Answering the question.', needs: decision.needs })
     for (const pick of decision.picks) {
-      const ep = byId.get(pick.endpointId)
-      if (!ep) continue
-      emit({
-        type: 'candidate',
-        service: ep.serverName,
-        endpoint: ep.url,
-        priceUsd: ep.priceUsd,
-        score: pick.score,
-        reason: pick.reason || 'relevant to the request',
-        proven: ep.reliability?.settled,
-      })
-      const built = buildSmartRequest(ep, pick.params)
-      if ('error' in built) {
-        notes.push(`${ep.serverName}: planned call skipped — ${built.error}.`)
-        continue
+      const sp = planPick(pick)
+      if (sp) smartPicks.push(sp)
+    }
+    if (smartPicks.length === 0 && !routingFailed) emitConsideredNone(endpoints, addNote, emit)
+  } else {
+    // ── LOOP mode: bounded reason→act→observe. Resolve ids with a lookup, see
+    //    the result, then make the data call — up to maxSteps. ───────────────
+    const maxSteps = opts.maxSteps ?? 3
+    const observations: string[] = []
+    const calledIds = new Set<string>()
+    let firstAnalyze = true
+    for (let step = 0; step < maxSteps; step++) {
+      emit({ type: 'status', label: step === 0 ? `Choosing among ${endpoints.length} candidate endpoints…` : `Refining (step ${step + 1}/${maxSteps})…` })
+      let decision: RouterModelDecision = { intent: '', needs: [], picks: [] }
+      try {
+        const { text } = await opts.runInference(inference, routerPrompt(message, endpoints, history, observations))
+        decision = parseRouterDecision(text, endpoints)
+      } catch (err) {
+        addNote(`Routing call failed (${err instanceof Error ? err.message : 'error'}); answering with what's gathered.`, 'warn')
+        break
       }
-      emit({
-        type: 'select',
-        service: ep.serverName,
-        endpoint: ep.url,
-        priceUsd: ep.priceUsd,
-        reason: pick.reason || 'best fit for the request',
-      })
-      smartPicks.push({
-        role: 'smart',
-        endpointId: ep.id,
-        serverSlug: ep.serverSlug,
-        serverName: ep.serverName,
-        endpointUrl: ep.url,
-        request: built.request,
-        priceUsd: ep.priceUsd,
-        reason: pick.reason || 'best fit for the request',
-      })
+      if (firstAnalyze) {
+        emit({ type: 'analyze', intent: decision.intent || 'Answering the question.', needs: decision.needs })
+        firstAnalyze = false
+      }
+      const fresh = decision.picks.filter((p) => !calledIds.has(p.endpointId))
+      if (fresh.length === 0) break // model has enough (or only repeats) → done
+      let progressed = false
+      for (const pick of fresh) {
+        calledIds.add(pick.endpointId)
+        const sp = planPick(pick)
+        if (!sp) continue
+        const res = await opts.executeCall(sp)
+        if (res.error) {
+          // Feed the failure back so the next step can repair (try a different call).
+          observations.push(`${sp.serverName} ${shortUrl(sp.endpointUrl)} → ERROR: ${truncate(res.error, 200)}`)
+        } else {
+          smartPicks.push(sp)
+          const dataStr = typeof res.data === 'string' ? res.data : JSON.stringify(res.data ?? '')
+          context.push(`### ${sp.serverName}\n${truncate(dataStr, 1500)}`)
+          observations.push(`${sp.serverName} ${shortUrl(sp.endpointUrl)} → ${truncate(dataStr, 500)}`)
+          progressed = true
+          // Transaction layer: a tool that returned a signable action (a vote /
+          // on-chain tx) short-circuits the loop — we have something to sign, not
+          // synthesize. The caller surfaces it for explicit approval.
+          const art = buildSignableArtifact(res.data)
+          if (art) {
+            artifact = art
+            addNote(`Prepared a signable ${art.kind === 'eip712-vote' ? 'vote' : 'transaction'} for you to approve.`)
+            break
+          }
+        }
+      }
+      if (artifact || !progressed) break // signable action ready, or nothing progressed → stop
     }
-
-    if (smartPicks.length === 0) {
-      emit({ type: 'status', label: 'No live data needed — answering directly.' })
-    }
+    if (smartPicks.length === 0 && !artifact) emitConsideredNone(endpoints, addNote, emit)
   }
 
   // The inference engine always answers last.
@@ -322,5 +420,34 @@ export async function routeMessage(opts: RouteOptions): Promise<RouterDecision> 
     picks: [...smartPicks, inferencePick],
     trace,
     notes,
+    context,
+    artifact,
   }
+}
+
+// ── helpers ─────────────────────────────────────────────────────────────────
+
+function truncate(s: string, n: number): string {
+  return s.length > n ? s.slice(0, n) + '…' : s
+}
+
+function shortUrl(url: string): string {
+  try {
+    const u = new URL(url)
+    return u.host + (u.pathname === '/' ? '' : u.pathname)
+  } catch {
+    return url
+  }
+}
+
+/** Emit the honest "I looked but couldn't build a call" diagnostic. */
+function emitConsideredNone(
+  endpoints: PlannableEndpoint[],
+  addNote: (label: string, level?: 'info' | 'warn') => void,
+  emit: (step: TraceStep) => void,
+): void {
+  const services = [...new Set(endpoints.map((e) => e.serverName))]
+  const considered = services.slice(0, 8).join(', ') + (services.length > 8 ? `, +${services.length - 8} more` : '')
+  addNote(`Considered ${services.length} service${services.length === 1 ? '' : 's'} (${considered}) — none had an endpoint I could build a call for here, so answering directly.`)
+  emit({ type: 'status', label: 'No usable live-data call — answering directly.' })
 }

@@ -160,7 +160,7 @@ export default function ChatInterface() {
           addMessage(chatId, {
             role: 'assistant',
             content: out.content,
-            meta: buildMeta(out.receipts, out.payer, undefined),
+            meta: buildMeta(out.receipts, out.payer, out.voteRequest),
           })
         }
         return
@@ -216,7 +216,7 @@ export default function ChatInterface() {
     userMsg: string,
     history: { role: string; content: string }[],
   ): Promise<
-    | { kind: 'reply'; content: string; receipts?: unknown; payer?: string }
+    | { kind: 'reply'; content: string; receipts?: unknown; payer?: string; voteRequest?: unknown }
     | { kind: 'plan'; data: { plan: unknown; payments: PaymentToSign[]; listedOnly: unknown; notes?: unknown } }
   > => {
     clearRouterTrace()
@@ -241,7 +241,7 @@ export default function ChatInterface() {
     const reader = res.body.getReader()
     const decoder = new TextDecoder()
     let buf = ''
-    let reply: { kind: 'reply'; content: string; receipts?: unknown; payer?: string } | null = null
+    let reply: { kind: 'reply'; content: string; receipts?: unknown; payer?: string; voteRequest?: unknown } | null = null
     for (;;) {
       const { done, value } = await reader.read()
       if (done) break
@@ -275,9 +275,12 @@ export default function ChatInterface() {
             content: String(event.content ?? 'No response.'),
             receipts: event.receipts,
             payer: typeof event.payer === 'string' ? event.payer : undefined,
+            voteRequest: event.voteRequest,
           }
         } else if (event.type === 'error') {
-          throw new Error(typeof event.message === 'string' ? event.message : 'Auto-router failed')
+          const message = typeof event.message === 'string' ? event.message : 'Auto-router failed'
+          pushRouterTrace({ type: 'error', message }) // show it in the engine window too
+          throw new Error(message)
         } else if (event.type !== 'done') {
           pushRouterTrace(event as RouterTraceEvent)
         }

@@ -34,7 +34,7 @@ import {
   type ConversationTurn,
 } from '@/lib/endpoint-planner'
 import { loadCatalog } from '@/lib/catalog'
-import { routeMessage, selectInferenceProvider, type TraceStep } from '@/lib/router'
+import { routeMessage, selectInferenceProvider, type TraceStep, type SmartPick } from '@/lib/router'
 
 // x402 signing + paid fetch need the Node runtime.
 export const runtime = 'nodejs'
@@ -913,34 +913,23 @@ function streamAutoRouter(message: string, history: ConversationTurn[], walletAd
           }
         }
 
-        const contextBlocks: string[] = []
+        // The routing/planning inference is house-paid. In burner mode it counts
+        // against the grant (like the manual planner); in wallet mode the house
+        // eats it (so it never inflates the user's own spend or gate).
+        const runRoutingInference = async (inf: McpServer, prompt: string) => {
+          const r = await callInference(inf, prompt)
+          if (grant && !walletAddress) {
+            await recordLedger({ grantId: grant.id, orgId: grant.orgId ?? undefined, host: infHost, serviceName: inference.name, amountUsd: infPrice, ok: true, txHash: r.txHash, note: 'settled (routing)' })
+            spentToday += infPrice
+            spentTotal += infPrice
+          }
+          return r
+        }
 
-        // Route — narrates live; the routing inference call is house-paid +
-        // ledgered (no separate receipt, mirroring the manual planner path).
-        const decision = await routeMessage({
-          message,
-          history,
-          catalog,
-          onStep: (step) => send(step),
-          runInference: async (inf, prompt) => {
-            const r = await callInference(inf, prompt)
-            // The routing/planning call is house-paid. In burner mode it counts
-            // against the grant (like the manual planner); in wallet mode the
-            // house eats it (the manual planner isn't ledgered there either), so
-            // it must NOT inflate the user's spend or gate their own payments.
-            if (grant && !walletAddress) {
-              await recordLedger({ grantId: grant.id, orgId: grant.orgId ?? undefined, host: infHost, serviceName: inference.name, amountUsd: infPrice, ok: true, txHash: r.txHash, note: 'settled (routing)' })
-              spentToday += infPrice
-              spentTotal += infPrice
-            }
-            return r
-          },
-        })
-
-        // ── Wallet mode: routing is done (house-paid, like the manual planner);
-        //    hand the data + answer payments to the user's wallet to sign via
-        //    the existing two-phase execute path. Emit one `plan` event. ──────
+        // ── Wallet mode: single planning pass (no executeCall) → hand the data +
+        //    answer payments to the wallet to sign via the two-phase execute path.
         if (walletAddress) {
+          const decision = await routeMessage({ message, history, catalog, onStep: (s) => send(s), runInference: runRoutingInference })
           const wPlan: PlannedCall[] = []
           let plannedUsd = 0
           const planGate = async (name: string, h: string, price: number): Promise<string | null> => {
@@ -980,8 +969,10 @@ function streamAutoRouter(message: string, history: ConversationTurn[], walletAd
           return finish()
         }
 
-        // Execute the chosen live-data calls.
-        for (const pick of decision.smartPicks) {
+        // ── Burner mode: multi-step loop. executeCall pays + gates + ledgers +
+        //    streams each chosen call; routeMessage chains resolve→fetch and
+        //    feeds results back, returning the gathered context to answer with.
+        const executeCall = async (pick: SmartPick): Promise<{ data?: unknown; error?: string }> => {
           const host = hostOf(pick.request.url)
           const price = Number(pick.priceUsd)
           if (policy && grant) {
@@ -991,13 +982,12 @@ function streamAutoRouter(message: string, history: ConversationTurn[], walletAd
               const r: Receipt = { name: pick.serverName, endpoint: host, priceUsd: pick.priceUsd, ok: false, note: `blocked: ${violation}`, slug: violation === 'NOT_ALLOWED' ? pick.serverSlug : undefined }
               receipts.push(r)
               send({ type: 'receipt', receipt: r })
-              continue
+              return { error: `blocked: ${violation}` }
             }
           }
           send({ type: 'pay', service: pick.serverName, host, priceUsd: pick.priceUsd })
           try {
             const { json, txHash } = await paidCall(pick.request)
-            contextBlocks.push(`### ${pick.serverName}\n${truncate(JSON.stringify(json), 1500)}`)
             const r: Receipt = { name: pick.serverName, endpoint: host, priceUsd: pick.priceUsd, txHash, ok: true }
             receipts.push(r)
             send({ type: 'receipt', receipt: r })
@@ -1006,11 +996,28 @@ function streamAutoRouter(message: string, history: ConversationTurn[], walletAd
               spentToday += price
               spentTotal += price
             }
+            return { data: json }
           } catch (err) {
-            const r: Receipt = { name: pick.serverName, endpoint: host, priceUsd: pick.priceUsd, ok: false, note: err instanceof Error ? err.message : 'call failed' }
+            const note = err instanceof Error ? err.message : 'call failed'
+            const r: Receipt = { name: pick.serverName, endpoint: host, priceUsd: pick.priceUsd, ok: false, note }
             receipts.push(r)
             send({ type: 'receipt', receipt: r })
+            return { error: note }
           }
+        }
+
+        const decision = await routeMessage({ message, history, catalog, onStep: (s) => send(s), runInference: runRoutingInference, executeCall })
+
+        // Transaction layer: a routed tool returned a signable action — surface
+        // it for explicit approval instead of synthesizing an answer. Votes reuse
+        // the existing SignVoteButton (voteRequest meta); a raw tx rides txRequest.
+        if (decision.artifact) {
+          if (decision.artifact.kind === 'eip712-vote') {
+            send({ type: 'reply', content: `🗳️ ${decision.artifact.summary}`, receipts, payer: 'the house wallet', voteRequest: decision.artifact.vote })
+          } else {
+            send({ type: 'reply', content: `🔏 ${decision.artifact.summary}`, receipts, payer: 'the house wallet', txRequest: decision.artifact.tx })
+          }
+          return finish()
         }
 
         // Re-gate the answer call against the now-higher running total.
@@ -1030,7 +1037,7 @@ function streamAutoRouter(message: string, history: ConversationTurn[], walletAd
         }
 
         send({ type: 'status', label: 'Synthesizing the answer…' } satisfies TraceStep)
-        const { text, txHash } = await callInference(inference, buildPrompt(message, contextBlocks, history))
+        const { text, txHash } = await callInference(inference, buildPrompt(message, decision.context, history))
         const r: Receipt = { name: inference.name, endpoint: infHost, priceUsd: inference.priceUsd ?? '0.01', txHash, ok: true }
         receipts.push(r)
         send({ type: 'receipt', receipt: r })
