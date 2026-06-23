@@ -57,6 +57,14 @@ export const DOCS_PAGES: DocsPage[] = [
     ready: true,
   },
   {
+    slug: 'spend-policy',
+    title: 'The spend-policy switch',
+    seoTitle: 'Spend policy — the on/off master switch for caps',
+    description:
+      'The master switch on your Yeetful account: off means unrestricted (trial mode), on enforces your allowlist and budgets. Toggling it preserves per-agent approvals.',
+    ready: true,
+  },
+  {
     slug: 'ledger-sync',
     title: 'Dashboard ledger sync',
     seoTitle: 'Ledger sync — agent receipts on your Yeetful dashboard',
