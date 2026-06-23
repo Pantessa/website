@@ -830,10 +830,17 @@ async function paidGet(endpoint: string, queryParam: string, value: string) {
 }
 
 /** Pay + execute a planner-built request (GET with query or POST with body). */
+// Resilience: a single hanging MCP must never stall a routed turn. Each paid
+// data call is bounded; on timeout it throws → the engine records a failed
+// observation and fails over to the next-best shortlisted provider.
+const DATA_CALL_TIMEOUT_MS = 12_000
+const INFERENCE_TIMEOUT_MS = 30_000
+
 async function paidCall(request: { url: string; method: string; headers: Record<string, string>; body?: string }) {
   const res = await getPaidFetch()(request.url, {
     method: request.method,
     headers: request.headers,
+    signal: AbortSignal.timeout(DATA_CALL_TIMEOUT_MS),
     ...(request.body ? { body: request.body } : {}),
   })
   if (!res.ok) throw new Error(await failureReason(res))
@@ -1140,6 +1147,7 @@ async function callInference(
     method: 'POST',
     headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream' },
     body: inferenceBody(protocol, tool, capPrompt(protocol, prompt)),
+    signal: AbortSignal.timeout(INFERENCE_TIMEOUT_MS),
   })
   if (!res.ok) throw new Error(await failureReason(res))
   const text = parseInferenceText(protocol, res.headers.get('content-type') ?? '', await res.text())

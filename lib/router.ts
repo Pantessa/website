@@ -110,6 +110,10 @@ export interface RouteOptions {
   executeCall?: (pick: SmartPick) => Promise<ExecuteResult>
   /** Max tool calls in the loop (default 3). Hard cap against runaway loops. */
   maxSteps?: number
+  /** Hard ceiling on total DATA spend in one turn (USD). When the next call
+   *  would exceed it, the loop stops + notes it — so a multi-step turn can't
+   *  overspend regardless of the model. Default 0.05. */
+  maxTurnUsd?: number
   /** Pre-loaded candidate endpoints. When omitted they're loaded from the DB
    *  (loadPlannableEndpoints over the catalog). Injecting them keeps the module
    *  unit-testable with no DB. */
@@ -407,8 +411,11 @@ export async function routeMessage(opts: RouteOptions): Promise<RouterDecision> 
     // ── LOOP mode: bounded reason→act→observe. Resolve ids with a lookup, see
     //    the result, then make the data call — up to maxSteps. ───────────────
     const maxSteps = opts.maxSteps ?? 3
+    const maxTurnUsd = opts.maxTurnUsd ?? 0.05
     const observations: string[] = []
     const calledIds = new Set<string>()
+    let spentThisTurn = 0
+    let ceilingHit = false
     let firstAnalyze = true
     emit({ type: 'shortlist', candidates: shortlisted.map((e) => ({ service: e.serverName, endpoint: e.url, priceUsd: e.priceUsd })) })
     for (let step = 0; step < maxSteps; step++) {
@@ -432,6 +439,13 @@ export async function routeMessage(opts: RouteOptions): Promise<RouterDecision> 
         calledIds.add(pick.endpointId)
         const sp = planPick(pick)
         if (!sp) continue
+        // Per-turn cost ceiling: never let a multi-step turn overspend.
+        const price = Number(sp.priceUsd) || 0
+        if (spentThisTurn + price > maxTurnUsd) {
+          addNote(`Stopped at the per-turn budget ($${maxTurnUsd}) — skipped ${sp.serverName} ($${sp.priceUsd}).`, 'warn')
+          ceilingHit = true
+          break
+        }
         const res = await opts.executeCall(sp)
         if (res.error) {
           // Feed the failure back so the next step can repair (try a different call).
@@ -441,6 +455,7 @@ export async function routeMessage(opts: RouteOptions): Promise<RouterDecision> 
           const dataStr = typeof res.data === 'string' ? res.data : JSON.stringify(res.data ?? '')
           context.push(`### ${sp.serverName}\n${truncate(dataStr, 1500)}`)
           observations.push(`${sp.serverName} ${shortUrl(sp.endpointUrl)} → ${truncate(dataStr, 500)}`)
+          spentThisTurn += price
           progressed = true
           // Transaction layer: a tool that returned a signable action (a vote /
           // on-chain tx) short-circuits the loop — we have something to sign, not
@@ -453,7 +468,7 @@ export async function routeMessage(opts: RouteOptions): Promise<RouterDecision> 
           }
         }
       }
-      if (artifact || !progressed) break // signable action ready, or nothing progressed → stop
+      if (artifact || ceilingHit || !progressed) break // action ready, budget hit, or no progress → stop
     }
     if (smartPicks.length === 0 && !artifact) emitConsideredNone(shortlisted, addNote, emit)
   }

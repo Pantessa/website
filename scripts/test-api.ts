@@ -1462,6 +1462,25 @@ async function main() {
     routerPrompt('x', routerEps).includes('NEVER call two services that return the SAME'),
   )
 
+  // B12 — per-turn cost ceiling: a multi-pick turn can't overspend. Two $0.01
+  // picks under a $0.015 ceiling → first runs, second is skipped + noted.
+  let ceilExec = 0
+  const ceilDec = await routeMessage({
+    message: 'price and news for ETH',
+    catalog: [claudeSrv],
+    endpoints: multiEndpoints,
+    maxTurnUsd: 0.015,
+    runInference: async () => ({ text: JSON.stringify({ intent: 'x', needs: [], picks: [
+      { endpointId: 'ep-price', params: { symbol: 'ETH' }, reason: 'p', score: 0.9 },
+      { endpointId: 'ep-news', params: { q: 'ETH' }, reason: 'n', score: 0.8 },
+    ] }) }),
+    executeCall: async () => { ceilExec++; return { data: { ok: true } } },
+  })
+  check(
+    'router: per-turn cost ceiling stops overspend (1 of 2 runs, rest noted)',
+    ceilExec === 1 && ceilDec.context.length === 1 && ceilDec.notes.some((n) => /per-turn budget/.test(n)),
+  )
+
   // ── Cleanup (verified) ────────────────────────────────────────────────────
   console.log('— cleanup')
   const delChat = await fetch(`${BASE}/api/chats/${chat.id}`, { method: 'DELETE', headers: C })
