@@ -127,6 +127,9 @@ interface YeetfulStore {
   routerTrace: RouterTraceEvent[]
   pushRouterTrace: (event: RouterTraceEvent) => void
   clearRouterTrace: () => void
+  /** Engine-window visibility (the live routing terminal). Persisted. */
+  engineWindowOpen: boolean
+  setEngineWindowOpen: (open: boolean) => void
 
   // Session — set by SessionProvider so store actions know whether to hit the DB.
   authedAddress: string | null
@@ -186,6 +189,8 @@ export const useYeetfulStore = create<YeetfulStore>()(
       routerTrace: [],
       pushRouterTrace: (event) => set((s) => ({ routerTrace: [...s.routerTrace, event] })),
       clearRouterTrace: () => set({ routerTrace: [] }),
+      engineWindowOpen: false,
+      setEngineWindowOpen: (open) => set({ engineWindowOpen: open }),
 
       authedAddress: null,
       setAuthedAddress: (address) => set({ authedAddress: address }),
@@ -352,6 +357,7 @@ export const useYeetfulStore = create<YeetfulStore>()(
         activeServerIds: state.activeServerIds,
         sidebarOpen: state.sidebarOpen,
         autoRouter: state.autoRouter,
+        engineWindowOpen: state.engineWindowOpen,
       }),
     }
   )

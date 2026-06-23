@@ -3,7 +3,7 @@
 import { analytics } from '@/lib/analytics'
 import { useState, useRef, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Send, Zap, Check, Plus, Loader2, Bot, User, PanelLeft, PanelLeftClose, Sparkles } from 'lucide-react'
+import { Send, Zap, Check, Plus, Loader2, Bot, User, PanelLeft, PanelLeftClose, PanelRight, Sparkles } from 'lucide-react'
 import { useAccount, useSignTypedData } from 'wagmi'
 import { cn } from '@/lib/utils'
 import MessageReceipts from '@/components/MessageReceipts'
@@ -81,6 +81,8 @@ export default function ChatInterface() {
     setAutoRouter,
     pushRouterTrace,
     clearRouterTrace,
+    engineWindowOpen,
+    setEngineWindowOpen,
   } = useYeetfulStore()
 
   // Toggle an agent for this chat; persist the set to the open chat (and DB).
@@ -206,6 +208,7 @@ export default function ChatInterface() {
     history: { role: string; content: string }[],
   ): Promise<{ content: string; receipts?: unknown; payer?: string }> => {
     clearRouterTrace()
+    setEngineWindowOpen(true) // show the engine working as soon as a turn starts
     const res = await fetch('/api/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -415,6 +418,21 @@ export default function ChatInterface() {
             </>
           )}
           </div>
+          {autoRouter && (
+            <button
+              onClick={() => setEngineWindowOpen(!engineWindowOpen)}
+              aria-pressed={engineWindowOpen}
+              title={engineWindowOpen ? 'Hide the routing engine' : 'Show the routing engine'}
+              className={cn(
+                'flex-shrink-0 w-10 h-10 md:w-8 md:h-8 grid place-items-center rounded-lg border transition-colors',
+                engineWindowOpen
+                  ? 'bg-[var(--surf-2)] border-white/30 text-white'
+                  : 'bg-[var(--surf-1)] border-[var(--line)] text-[color:var(--muted)] hover:text-white hover:border-[var(--line-2)]',
+              )}
+            >
+              <PanelRight className="w-4 h-4" />
+            </button>
+          )}
           <ShareButton />
         </div>
 
