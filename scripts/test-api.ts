@@ -486,20 +486,31 @@ async function main() {
     check('route/preview: every candidate carries its call (method + url + params)', cats.every(hasCall))
   }
 
-  // ── Switchboard page SEO (the flagship product page must be indexable) ────
-  console.log('— switchboard SEO')
-  const swHtml = flat(await (await fetch(`${BASE}/switchboard`)).text())
+  // ── Router (flagship) page SEO (the routing engine must be indexable) ─────
+  // Switchboard → Router (PR #171): the routing engine IS the landing page (`/`).
+  // `/router` is the brand slug that permanent-redirects to it, so the canonical
+  // + the sitemap entry are the site root, not a `/router` path.
+  console.log('— router SEO')
+  const routerRedirect = await fetch(`${BASE}/router`, { redirect: 'manual' })
+  const routerLoc = routerRedirect.headers.get('location') ?? ''
   check(
-    'switchboard: canonical → /switchboard',
-    /<link[^>]+rel="canonical"[^>]+href="[^"]*\/switchboard"/.test(swHtml),
+    'router: /router redirects to the home flagship',
+    routerRedirect.status >= 300 &&
+      routerRedirect.status < 400 &&
+      new URL(routerLoc, BASE).pathname === '/',
   )
-  check('switchboard: og:image present (social card)', /<meta[^>]+property="og:image"/.test(swHtml))
+  const homeHtml = flat(await (await fetch(`${BASE}/`)).text())
   check(
-    'switchboard: descriptive <title> (not the root default)',
-    /<title>[^<]*Switchboard[^<]*<\/title>/.test(swHtml),
+    'router: canonical → site root',
+    /<link[^>]+rel="canonical"[^>]+href="https?:\/\/[^"/]+\/?"/.test(homeHtml),
+  )
+  check('router: og:image present (social card)', /<meta[^>]+property="og:image"/.test(homeHtml))
+  check(
+    'router: descriptive <title> (the routing-engine flagship)',
+    /<title>[^<]*routing[^<]*<\/title>/.test(homeHtml),
   )
   const sitemapXml = await (await fetch(`${BASE}/sitemap.xml`)).text()
-  check('sitemap: /switchboard is listed', sitemapXml.includes('/switchboard'))
+  check('sitemap: site root is listed', /<loc>https?:\/\/[^</]+\/?<\/loc>/.test(sitemapXml))
 
   // ── Organizations (SIWE-only org core + the role matrix) ──────────────────
   console.log('— organizations')
