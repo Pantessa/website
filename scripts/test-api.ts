@@ -971,6 +971,48 @@ async function main() {
       !arwEvents.some((e) => e.type === 'plan'),
   )
 
+  // ── Engine-as-service (B9a): the routing engine exposed to API keys ───────
+  console.log('— engine-as-service (/api/route)')
+  const routeNoAuth = await fetch(`${BASE}/api/route`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ message: 'hi' }),
+  })
+  check('engine: /api/route without Bearer → 401', routeNoAuth.status === 401)
+
+  // `minted` sits at its per-key daily budget (0.05/0.05 from the agent tests) →
+  // the per-key pre-gate refuses before any spend.
+  const routeOverBudget = await fetch(`${BASE}/api/route`, {
+    method: 'POST',
+    headers: BJ,
+    body: JSON.stringify({ message: 'what is the price of ETH' }),
+  })
+  check('engine: /api/route over the per-key budget → 402', routeOverBudget.status === 402 && (await routeOverBudget.json()).overBudget === true)
+
+  // A fresh, no-budget key for the same owner streams the engine — but the
+  // owner's grant allowlist excludes the inference host, so it's refused with
+  // NO spend (same gate as the chat), proving Bearer→engine end to end.
+  const routeKey = await (
+    await fetch(`${BASE}/api/keys`, { method: 'POST', headers: CJ, body: JSON.stringify({ label: 'route harness' }) })
+  ).json()
+  const routeStream = await fetch(`${BASE}/api/route`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', authorization: `Bearer ${routeKey.secret}` },
+    body: JSON.stringify({ message: 'what is the price of ETH', history: [] }),
+  })
+  check('engine: /api/route streams text/event-stream', (routeStream.headers.get('content-type') ?? '').includes('text/event-stream'))
+  const routeEvents = (await routeStream.text())
+    .split('\n\n')
+    .map((b) => b.trim())
+    .filter((b) => b.startsWith('data:'))
+    .map((b) => JSON.parse(b.slice(5).trim()) as { type: string; blocked?: boolean; content?: string })
+  const routeReply = routeEvents.find((e) => e.type === 'reply')
+  check(
+    'engine: /api/route ends with a reply (policy-blocked, no spend)',
+    !!routeReply && (routeReply.blocked === true || /No live inference/.test(String(routeReply.content))),
+  )
+  await fetch(`${BASE}/api/keys/${routeKey.id}`, { method: 'DELETE', headers: C })
+
   // ── Key revocation (after Bearer use, before cleanup) ─────────────────────
   console.log('— revocation')
   const del = await fetch(`${BASE}/api/keys/${minted.id}`, { method: 'DELETE', headers: C })
