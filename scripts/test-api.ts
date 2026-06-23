@@ -473,6 +473,29 @@ async function main() {
     !act.recent.some((r) => r.host === 'denied.example.test') && act.stats.blockedCalls >= 1,
   )
 
+  // ── Route metrics (B14: observable routing telemetry, aggregate + public) ──
+  console.log('— route metrics')
+  const rmRes = await fetch(`${BASE}/api/route/metrics`)
+  const rmText = await rmRes.text()
+  const rm = JSON.parse(rmText) as {
+    turns: number; avgCostUsd: number; totalSavedUsd: number; cacheHitRate: number
+    avgShortlisted: number; blockedRate: number; latencyMs: { p50: number; p95: number }
+    services: { service: string; settleRate: number }[]
+  }
+  check(
+    'route metrics: 200 with the aggregate shape',
+    rmRes.status === 200 &&
+      typeof rm.turns === 'number' &&
+      typeof rm.avgCostUsd === 'number' &&
+      typeof rm.totalSavedUsd === 'number' &&
+      typeof rm.cacheHitRate === 'number' &&
+      typeof rm.latencyMs?.p50 === 'number' &&
+      typeof rm.latencyMs?.p95 === 'number' &&
+      Array.isArray(rm.services),
+  )
+  check('route metrics: cache header set', /s-maxage/.test(rmRes.headers.get('cache-control') ?? ''))
+  check('route metrics: P1 — no full wallet address in the payload', !rmText.toLowerCase().includes(owner.address.toLowerCase()))
+
   // ── Switchboard route preview (public, read-only, no spend) ───────────────
   // Guards the routing lever the /switchboard "try a route" demo renders: the
   // contract shape, the $0.05 ceiling, and the proven-gate invariant — the pick

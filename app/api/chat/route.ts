@@ -37,6 +37,8 @@ import { loadCatalog } from '@/lib/catalog'
 import { routeMessage, selectInferenceProvider, type TraceStep, type SmartPick } from '@/lib/router'
 import { buildSignableArtifact } from '@/lib/transaction-layer'
 import { isCacheable, routeCacheKey, getCached, setCached } from '@/lib/route-cache'
+import { recordRouteEvent } from '@/lib/route-telemetry'
+import type { RouterDecision } from '@/lib/router'
 
 // x402 signing + paid fetch need the Node runtime.
 export const runtime = 'nodejs'
@@ -870,10 +872,22 @@ export function streamAutoRouter(
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
       const send = (event: unknown) => controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`))
+      const startMs = Date.now()
       const finish = () => {
         send({ type: 'done' })
         controller.close()
       }
+      // Routing telemetry helpers (B14): derive turn metrics from the decision +
+      // the receipts collected so far. Privacy: service slugs + intent only.
+      const shortlistedOf = (d: RouterDecision) => {
+        const s = d.trace.find((x) => x.type === 'shortlist')
+        return s && s.type === 'shortlist' ? s.candidates.length : 0
+      }
+      const intentOf = (d: RouterDecision) => {
+        const a = d.trace.find((x) => x.type === 'analyze')
+        return a && a.type === 'analyze' ? a.intent : undefined
+      }
+      const picksOf = (d: RouterDecision) => d.smartPicks.map((p) => ({ service: p.serverName, endpoint: p.endpointUrl, priceUsd: p.priceUsd }))
       try {
         send({ type: 'status', label: 'Starting the routing engine…' } satisfies TraceStep)
 
@@ -886,6 +900,7 @@ export function streamAutoRouter(
             receipts: [],
             payer: 'none',
           })
+          recordRouteEvent({ blocked: true, payer: 'none', latencyMs: Date.now() - startMs })
           return finish()
         }
 
@@ -898,6 +913,7 @@ export function streamAutoRouter(
             receipts: [],
             payer: 'none',
           })
+          recordRouteEvent({ blocked: true, payer: 'none', latencyMs: Date.now() - startMs })
           return finish()
         }
 
@@ -912,6 +928,19 @@ export function streamAutoRouter(
         const infHost = hostOf(inference.endpoint!)
         const infPrice = Number(inference.priceUsd ?? '0.01')
         const receipts: Receipt[] = []
+        let savedUsd = 0 // accumulated cache savings this turn
+
+        // Persist one route event from the receipts gathered so far + overrides.
+        const recordTurn = (o: { blocked?: boolean; payer?: string; shortlisted?: number; picks?: { service: string; endpoint?: string; priceUsd?: string }[]; intent?: string }) =>
+          recordRouteEvent({
+            latencyMs: Date.now() - startMs,
+            settledCount: receipts.filter((r) => r.ok && r.note !== 'cached').length,
+            failedCount: receipts.filter((r) => !r.ok).length,
+            cachedCount: receipts.filter((r) => r.note === 'cached').length,
+            totalCostUsd: receipts.filter((r) => r.ok).reduce((a, r) => a + (Number(r.priceUsd) || 0), 0),
+            savedUsd,
+            ...o,
+          })
 
         // The routing call AND the answer both hit the inference host — if the
         // grant forbids it, stop before spending a cent.
@@ -927,6 +956,7 @@ export function streamAutoRouter(
               payer: 'the house wallet',
               blocked: true,
             })
+            recordTurn({ blocked: true, payer: 'the house wallet' })
             return finish()
           }
         }
@@ -984,6 +1014,7 @@ export function streamAutoRouter(
             .filter((c) => c.prepared)
             .map((c) => ({ id: c.id, name: c.name, host: c.host, priceUsd: c.priceUsd, signing: c.prepared!.signing as SigningRequest }))
           send({ type: 'plan', plan: wPlan, payments, listedOnly: [], notes: decision.notes })
+          recordTurn({ payer: 'your wallet', shortlisted: shortlistedOf(decision), picks: picksOf(decision), intent: intentOf(decision) })
           return finish()
         }
 
@@ -1004,6 +1035,7 @@ export function streamAutoRouter(
               const r: Receipt = { name: pick.serverName, endpoint: host, priceUsd: '0.00', ok: true, note: 'cached' }
               receipts.push(r)
               send({ type: 'receipt', receipt: r })
+              savedUsd += Number(pick.priceUsd) || 0 // a re-pay avoided
               return { data: hit }
             }
           }
@@ -1052,6 +1084,7 @@ export function streamAutoRouter(
           } else {
             send({ type: 'reply', content: `🔏 ${decision.artifact.summary}`, receipts, payer: 'the house wallet', txRequest: decision.artifact.tx })
           }
+          recordTurn({ payer: 'the house wallet', shortlisted: shortlistedOf(decision), picks: picksOf(decision), intent: intentOf(decision) })
           return finish()
         }
 
@@ -1067,6 +1100,7 @@ export function streamAutoRouter(
               payer: 'the house wallet',
               blocked: true,
             })
+            recordTurn({ blocked: true, payer: 'the house wallet', shortlisted: shortlistedOf(decision), picks: picksOf(decision), intent: intentOf(decision) })
             return finish()
           }
         }
@@ -1086,6 +1120,7 @@ export function streamAutoRouter(
           receipts,
           payer: 'the house wallet',
         })
+        recordTurn({ payer: 'the house wallet', shortlisted: shortlistedOf(decision), picks: picksOf(decision), intent: intentOf(decision) })
         finish()
       } catch (err) {
         send({ type: 'error', message: err instanceof Error ? err.message : 'auto-router failed' })
