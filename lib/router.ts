@@ -39,7 +39,7 @@ export type TraceStep =
   | { type: 'analyze'; intent: string; needs: string[] }
   // The relevant tools the engine narrowed to before choosing — the "what it's weighing" view.
   | { type: 'shortlist'; candidates: { service: string; endpoint?: string; priceUsd?: string }[] }
-  | { type: 'candidate'; service: string; endpoint?: string; priceUsd?: string; score: number; reason: string; proven?: number }
+  | { type: 'candidate'; service: string; endpoint?: string; priceUsd?: string; score: number; reason: string; proven?: number; successRate?: number }
   | { type: 'select'; service: string; endpoint?: string; priceUsd?: string; reason: string }
   // Diagnostics surfaced in the engine window so misses/errors are explained, not silent.
   | { type: 'note'; level: 'info' | 'warn'; label: string }
@@ -110,6 +110,10 @@ export interface RouteOptions {
   executeCall?: (pick: SmartPick) => Promise<ExecuteResult>
   /** Max tool calls in the loop (default 3). Hard cap against runaway loops. */
   maxSteps?: number
+  /** Hard ceiling on total DATA spend in one turn (USD). When the next call
+   *  would exceed it, the loop stops + notes it — so a multi-step turn can't
+   *  overspend regardless of the model. Default 0.05. */
+  maxTurnUsd?: number
   /** Pre-loaded candidate endpoints. When omitted they're loaded from the DB
    *  (loadPlannableEndpoints over the catalog). Injecting them keeps the module
    *  unit-testable with no DB. */
@@ -160,7 +164,9 @@ export function shortlistEndpoints(message: string, endpoints: PlannableEndpoint
     }
     let s = 0
     for (const t of tokens) if (hay.includes(t)) s += 1
-    if (ep.reliability && ep.reliability.settled > 0) s += 0.5
+    // Reputation bonus: a higher-rated MCP (proven settle rate + volume) ranks
+    // above an equivalent un-rated one, so the engine converges on the best.
+    s += (ep.reliability?.rating ?? 0) * 1.5
     return s
   }
   const ranked = endpoints
@@ -222,7 +228,7 @@ export function routerPrompt(
           .join(', ')
         const proven =
           e.reliability && e.reliability.settled > 0
-            ? ` ✓proven(${e.reliability.settled} settled${e.reliability.recent ? ', recent' : ''})`
+            ? ` ✓proven(${e.reliability.settled} settled, ${Math.round((e.reliability.successRate ?? 1) * 100)}% ok${e.reliability.recent ? ', recent' : ''})`
             : ''
         return `  - id=${e.id} ${e.method} ${e.url} — ${e.description ?? 'no description'} [$${e.priceUsd}]${proven} params: ${params}`
       })
@@ -242,7 +248,7 @@ export function routerPrompt(
     ...(convo ? [convo] : []),
     `The user asked${history.length ? ' (interpret it in the context of the conversation above)' : ''}:\n"""${message}"""`,
     ...(observed ? [observed] : []),
-    `Below are paid API endpoints, grouped by service, each tagged with its price in [$…]; some are tagged ✓proven (they have successfully settled paid calls before). Pick AT MOST ONE endpoint per service — but pick from MULTIPLE services when the question spans them (e.g. a price from one service and news from another); a single inference call will then synthesize all the results into one answer. Only call an endpoint if it would genuinely help. Anything the user asks that needs LIVE or REAL-TIME data — a price, a quote, weather, scores, listings, search results, on-chain or market data — should route to a relevant endpoint here rather than be answered from memory. When two endpoints answer the need equally well, prefer the ✓proven one, then the cheaper one — but still pick an un-proven endpoint when it is clearly the better fit.`,
+    `Below are paid API endpoints, grouped by service, each tagged with its price in [$…]; some are tagged ✓proven with a settle rate (the higher, the more reliable). Pick AT MOST ONE endpoint per service. Pick MULTIPLE services ONLY when the question spans DISTINCT needs (e.g. a price AND news) — NEVER call two services that return the SAME kind of data (e.g. two crypto-price sources): that just double-charges the user. When several services provide the same thing, choose the SINGLE best — highest ✓proven settle rate, then cheapest. A single inference call then synthesizes everything into one answer. Only call an endpoint if it would genuinely help. Anything needing LIVE or REAL-TIME data — a price, quote, weather, scores, listings, search, on-chain or market data — should route to a relevant endpoint rather than be answered from memory. Still pick an un-proven endpoint when it is clearly the best (or only) fit.`,
     `Fill parameter values from the user's message and conversation (respect types; include every required param; skip optional params you can't infer). You MAY include query parameters even for an endpoint that lists no params, when it clearly needs one to answer — infer the obvious key/value (e.g. for a "latest quote" endpoint, "symbol":"ETH"; for a search endpoint, "query":"…"). Only pick nothing when the question genuinely needs no live data (general knowledge, chit-chat).`,
     menu || '(no endpoints available)',
     `Respond with ONLY this JSON, no prose, no code fences:`,
@@ -356,6 +362,7 @@ export async function routeMessage(opts: RouteOptions): Promise<RouterDecision> 
       score: pick.score,
       reason: pick.reason || 'relevant to the request',
       proven: ep.reliability?.settled,
+      successRate: ep.reliability?.successRate,
     })
     const built = buildSmartRequest(ep, pick.params)
     if ('error' in built) {
@@ -404,8 +411,11 @@ export async function routeMessage(opts: RouteOptions): Promise<RouterDecision> 
     // ── LOOP mode: bounded reason→act→observe. Resolve ids with a lookup, see
     //    the result, then make the data call — up to maxSteps. ───────────────
     const maxSteps = opts.maxSteps ?? 3
+    const maxTurnUsd = opts.maxTurnUsd ?? 0.05
     const observations: string[] = []
     const calledIds = new Set<string>()
+    let spentThisTurn = 0
+    let ceilingHit = false
     let firstAnalyze = true
     emit({ type: 'shortlist', candidates: shortlisted.map((e) => ({ service: e.serverName, endpoint: e.url, priceUsd: e.priceUsd })) })
     for (let step = 0; step < maxSteps; step++) {
@@ -429,6 +439,13 @@ export async function routeMessage(opts: RouteOptions): Promise<RouterDecision> 
         calledIds.add(pick.endpointId)
         const sp = planPick(pick)
         if (!sp) continue
+        // Per-turn cost ceiling: never let a multi-step turn overspend.
+        const price = Number(sp.priceUsd) || 0
+        if (spentThisTurn + price > maxTurnUsd) {
+          addNote(`Stopped at the per-turn budget ($${maxTurnUsd}) — skipped ${sp.serverName} ($${sp.priceUsd}).`, 'warn')
+          ceilingHit = true
+          break
+        }
         const res = await opts.executeCall(sp)
         if (res.error) {
           // Feed the failure back so the next step can repair (try a different call).
@@ -438,6 +455,7 @@ export async function routeMessage(opts: RouteOptions): Promise<RouterDecision> 
           const dataStr = typeof res.data === 'string' ? res.data : JSON.stringify(res.data ?? '')
           context.push(`### ${sp.serverName}\n${truncate(dataStr, 1500)}`)
           observations.push(`${sp.serverName} ${shortUrl(sp.endpointUrl)} → ${truncate(dataStr, 500)}`)
+          spentThisTurn += price
           progressed = true
           // Transaction layer: a tool that returned a signable action (a vote /
           // on-chain tx) short-circuits the loop — we have something to sign, not
@@ -450,7 +468,7 @@ export async function routeMessage(opts: RouteOptions): Promise<RouterDecision> 
           }
         }
       }
-      if (artifact || !progressed) break // signable action ready, or nothing progressed → stop
+      if (artifact || ceilingHit || !progressed) break // action ready, budget hit, or no progress → stop
     }
     if (smartPicks.length === 0 && !artifact) emitConsideredNone(shortlisted, addNote, emit)
   }

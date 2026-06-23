@@ -35,6 +35,10 @@ import {
 } from '@/lib/endpoint-planner'
 import { loadCatalog } from '@/lib/catalog'
 import { routeMessage, selectInferenceProvider, type TraceStep, type SmartPick } from '@/lib/router'
+import { buildSignableArtifact } from '@/lib/transaction-layer'
+import { isCacheable, routeCacheKey, getCached, setCached } from '@/lib/route-cache'
+import { recordRouteEvent, routeSavings } from '@/lib/route-telemetry'
+import type { RouterDecision } from '@/lib/router'
 
 // x402 signing + paid fetch need the Node runtime.
 export const runtime = 'nodejs'
@@ -830,10 +834,17 @@ async function paidGet(endpoint: string, queryParam: string, value: string) {
 }
 
 /** Pay + execute a planner-built request (GET with query or POST with body). */
+// Resilience: a single hanging MCP must never stall a routed turn. Each paid
+// data call is bounded; on timeout it throws → the engine records a failed
+// observation and fails over to the next-best shortlisted provider.
+const DATA_CALL_TIMEOUT_MS = 12_000
+const INFERENCE_TIMEOUT_MS = 30_000
+
 async function paidCall(request: { url: string; method: string; headers: Record<string, string>; body?: string }) {
   const res = await getPaidFetch()(request.url, {
     method: request.method,
     headers: request.headers,
+    signal: AbortSignal.timeout(DATA_CALL_TIMEOUT_MS),
     ...(request.body ? { body: request.body } : {}),
   })
   if (!res.ok) throw new Error(await failureReason(res))
@@ -860,11 +871,34 @@ export function streamAutoRouter(
   const encoder = new TextEncoder()
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
-      const send = (event: unknown) => controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`))
+      // Accumulate the trace-type events as they stream so the turn's reasoning
+      // can be persisted to Message.meta + replayed later (B16). No PII (service
+      // slugs / intent / public tx hashes only); capped to keep meta small.
+      const traceLog: unknown[] = []
+      const TRACE_TYPES = new Set(['status', 'analyze', 'shortlist', 'candidate', 'select', 'note', 'pay', 'receipt'])
+      const trace = () => traceLog.slice(-60)
+      const send = (event: unknown) => {
+        if (event && typeof event === 'object' && TRACE_TYPES.has((event as { type?: string }).type ?? '') && traceLog.length < 300) {
+          traceLog.push(event)
+        }
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`))
+      }
+      const startMs = Date.now()
       const finish = () => {
         send({ type: 'done' })
         controller.close()
       }
+      // Routing telemetry helpers (B14): derive turn metrics from the decision +
+      // the receipts collected so far. Privacy: service slugs + intent only.
+      const shortlistedOf = (d: RouterDecision) => {
+        const s = d.trace.find((x) => x.type === 'shortlist')
+        return s && s.type === 'shortlist' ? s.candidates.length : 0
+      }
+      const intentOf = (d: RouterDecision) => {
+        const a = d.trace.find((x) => x.type === 'analyze')
+        return a && a.type === 'analyze' ? a.intent : undefined
+      }
+      const picksOf = (d: RouterDecision) => d.smartPicks.map((p) => ({ service: p.serverName, endpoint: p.endpointUrl, priceUsd: p.priceUsd }))
       try {
         send({ type: 'status', label: 'Starting the routing engine…' } satisfies TraceStep)
 
@@ -877,6 +911,7 @@ export function streamAutoRouter(
             receipts: [],
             payer: 'none',
           })
+          recordRouteEvent({ blocked: true, payer: 'none', latencyMs: Date.now() - startMs })
           return finish()
         }
 
@@ -889,6 +924,7 @@ export function streamAutoRouter(
             receipts: [],
             payer: 'none',
           })
+          recordRouteEvent({ blocked: true, payer: 'none', latencyMs: Date.now() - startMs })
           return finish()
         }
 
@@ -903,6 +939,19 @@ export function streamAutoRouter(
         const infHost = hostOf(inference.endpoint!)
         const infPrice = Number(inference.priceUsd ?? '0.01')
         const receipts: Receipt[] = []
+        let savedUsd = 0 // accumulated cache savings this turn
+
+        // Persist one route event from the receipts gathered so far + overrides.
+        const recordTurn = (o: { blocked?: boolean; payer?: string; shortlisted?: number; picks?: { service: string; endpoint?: string; priceUsd?: string }[]; intent?: string }) =>
+          recordRouteEvent({
+            latencyMs: Date.now() - startMs,
+            settledCount: receipts.filter((r) => r.ok && r.note !== 'cached').length,
+            failedCount: receipts.filter((r) => !r.ok).length,
+            cachedCount: receipts.filter((r) => r.note === 'cached').length,
+            totalCostUsd: receipts.filter((r) => r.ok).reduce((a, r) => a + (Number(r.priceUsd) || 0), 0),
+            savedUsd,
+            ...o,
+          })
 
         // The routing call AND the answer both hit the inference host — if the
         // grant forbids it, stop before spending a cent.
@@ -918,6 +967,7 @@ export function streamAutoRouter(
               payer: 'the house wallet',
               blocked: true,
             })
+            recordTurn({ blocked: true, payer: 'the house wallet' })
             return finish()
           }
         }
@@ -975,6 +1025,7 @@ export function streamAutoRouter(
             .filter((c) => c.prepared)
             .map((c) => ({ id: c.id, name: c.name, host: c.host, priceUsd: c.priceUsd, signing: c.prepared!.signing as SigningRequest }))
           send({ type: 'plan', plan: wPlan, payments, listedOnly: [], notes: decision.notes })
+          recordTurn({ payer: 'your wallet', shortlisted: shortlistedOf(decision), picks: picksOf(decision), intent: intentOf(decision) })
           return finish()
         }
 
@@ -984,6 +1035,21 @@ export function streamAutoRouter(
         const executeCall = async (pick: SmartPick): Promise<{ data?: unknown; error?: string }> => {
           const host = hostOf(pick.request.url)
           const price = Number(pick.priceUsd)
+          // Cache: an identical recent GET read is served for $0.00, no payment,
+          // no gate (there's nothing to spend). Reads only; never actions/fails.
+          const cacheable = isCacheable(pick.request)
+          const cacheKey = cacheable ? routeCacheKey(pick.request) : ''
+          if (cacheable) {
+            const hit = getCached(cacheKey)
+            if (hit !== undefined) {
+              send({ type: 'note', level: 'info', label: `↺ ${pick.serverName}: served from cache ($0.00)` })
+              const r: Receipt = { name: pick.serverName, endpoint: host, priceUsd: '0.00', ok: true, note: 'cached' }
+              receipts.push(r)
+              send({ type: 'receipt', receipt: r })
+              savedUsd += Number(pick.priceUsd) || 0 // a re-pay avoided
+              return { data: hit }
+            }
+          }
           if (policy && grant) {
             const violation = grantViolation(policy, host, price, spentToday, spentTotal)
             if (violation) {
@@ -1005,6 +1071,9 @@ export function streamAutoRouter(
               spentToday += price
               spentTotal += price
             }
+            // Cache a successful read — but NEVER a signable action (votes/txns
+            // are time-sensitive + per-user) and never a non-GET.
+            if (cacheable && !buildSignableArtifact(json)) setCached(cacheKey, json)
             return { data: json }
           } catch (err) {
             const note = err instanceof Error ? err.message : 'call failed'
@@ -1022,10 +1091,11 @@ export function streamAutoRouter(
         // the existing SignVoteButton (voteRequest meta); a raw tx rides txRequest.
         if (decision.artifact) {
           if (decision.artifact.kind === 'eip712-vote') {
-            send({ type: 'reply', content: `🗳️ ${decision.artifact.summary}`, receipts, payer: 'the house wallet', voteRequest: decision.artifact.vote })
+            send({ type: 'reply', content: `🗳️ ${decision.artifact.summary}`, receipts, payer: 'the house wallet', voteRequest: decision.artifact.vote, trace: trace() })
           } else {
-            send({ type: 'reply', content: `🔏 ${decision.artifact.summary}`, receipts, payer: 'the house wallet', txRequest: decision.artifact.tx })
+            send({ type: 'reply', content: `🔏 ${decision.artifact.summary}`, receipts, payer: 'the house wallet', txRequest: decision.artifact.tx, trace: trace() })
           }
+          recordTurn({ payer: 'the house wallet', shortlisted: shortlistedOf(decision), picks: picksOf(decision), intent: intentOf(decision) })
           return finish()
         }
 
@@ -1041,6 +1111,7 @@ export function streamAutoRouter(
               payer: 'the house wallet',
               blocked: true,
             })
+            recordTurn({ blocked: true, payer: 'the house wallet', shortlisted: shortlistedOf(decision), picks: picksOf(decision), intent: intentOf(decision) })
             return finish()
           }
         }
@@ -1054,12 +1125,26 @@ export function streamAutoRouter(
           await recordLedger({ grantId: grant.id, orgId: grant.orgId ?? undefined, host: infHost, serviceName: inference.name, amountUsd: infPrice, ok: true, txHash, note: 'settled' })
         }
 
+        // Value proof (B15): what smart routing saved this turn vs naive routing.
+        const shortlistStep = decision.trace.find((s) => s.type === 'shortlist')
+        const shortlistPrices = shortlistStep && shortlistStep.type === 'shortlist' ? shortlistStep.candidates.map((c) => Number(c.priceUsd) || 0) : []
+        const sv = routeSavings({ shortlistPrices, pickPrices: decision.smartPicks.map((p) => Number(p.priceUsd) || 0), cacheSavedUsd: savedUsd })
+        const routeReport = {
+          considered: shortlistedOf(decision),
+          picked: decision.smartPicks.map((p) => p.serverName),
+          spentUsd: receipts.filter((r) => r.ok).reduce((a, r) => a + (Number(r.priceUsd) || 0), 0),
+          cacheSavedUsd: sv.cacheSavedUsd,
+          savedVsPriciestUsd: sv.savedVsPriciestUsd,
+        }
         send({
           type: 'reply',
           content: text + infoFooter([], decision.notes),
           receipts,
           payer: 'the house wallet',
+          routeReport,
+          trace: trace(),
         })
+        recordTurn({ payer: 'the house wallet', shortlisted: shortlistedOf(decision), picks: picksOf(decision), intent: intentOf(decision) })
         finish()
       } catch (err) {
         send({ type: 'error', message: err instanceof Error ? err.message : 'auto-router failed' })
@@ -1140,6 +1225,7 @@ async function callInference(
     method: 'POST',
     headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream' },
     body: inferenceBody(protocol, tool, capPrompt(protocol, prompt)),
+    signal: AbortSignal.timeout(INFERENCE_TIMEOUT_MS),
   })
   if (!res.ok) throw new Error(await failureReason(res))
   const text = parseInferenceText(protocol, res.headers.get('content-type') ?? '', await res.text())

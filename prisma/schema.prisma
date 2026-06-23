@@ -347,6 +347,29 @@ model SpendLedgerEntry {
   @@map("spend_ledger")
 }
 
+/// One auto-routed turn's decision + outcome — the routing engine's telemetry
+/// (B14), so routing quality is observable over time. Privacy: NO full wallet,
+/// NO raw question — engine-derived intent + service slugs only, mirroring the
+/// /api/activity P1/P2 posture. Aggregated by /api/route/metrics.
+model RouteEvent {
+  id           String   @id @default(cuid())
+  intent       String? // short engine intent, NOT the raw user question
+  shortlisted  Int      @default(0) // candidate tools considered after retrieve→plan
+  picks        Json? // [{ service, endpoint?, priceUsd }] chosen this turn
+  settledCount Int      @default(0) @map("settled_count")
+  failedCount  Int      @default(0) @map("failed_count")
+  cachedCount  Int      @default(0) @map("cached_count")
+  totalCostUsd Float    @default(0) @map("total_cost_usd")
+  savedUsd     Float    @default(0) @map("saved_usd")
+  latencyMs    Int      @default(0) @map("latency_ms")
+  payer        String?
+  blocked      Boolean  @default(false)
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  @@index([createdAt])
+  @@map("route_events")
+}
+
 /// A bearer credential for headless agents (the `yeetful` SDK, scripts, CI).
 /// The plaintext secret (`yf_…`) is shown ONCE at mint and only its sha256 is
 /// stored; presenting it as `Authorization: Bearer yf_…` authenticates the

@@ -26,8 +26,10 @@ import { createSiweMessage } from 'viem/siwe'
 import { grantTypedData } from '../lib/grant-typed-data'
 import { grantViolation, type GrantPolicy } from '../lib/spend-grant'
 import { routerPrompt, parseRouterDecision, selectInferenceProvider, routeMessage, shortlistEndpoints } from '../lib/router'
-import { buildSmartRequest, type PlannableEndpoint } from '../lib/endpoint-planner'
+import { buildSmartRequest, computeRating, type PlannableEndpoint } from '../lib/endpoint-planner'
 import { buildSignableArtifact, isActionIntent } from '../lib/transaction-layer'
+import { isCacheable, routeCacheKey, getCached, setCached, clearRouteCache } from '../lib/route-cache'
+import { routeSavings } from '../lib/route-telemetry'
 
 const BASE = process.env.BASE ?? 'http://localhost:3000'
 const DOMAIN = new URL(BASE).host
@@ -471,6 +473,29 @@ async function main() {
     'activity: P2 — denial rows absent from public feed (aggregate only)',
     !act.recent.some((r) => r.host === 'denied.example.test') && act.stats.blockedCalls >= 1,
   )
+
+  // ── Route metrics (B14: observable routing telemetry, aggregate + public) ──
+  console.log('— route metrics')
+  const rmRes = await fetch(`${BASE}/api/route/metrics`)
+  const rmText = await rmRes.text()
+  const rm = JSON.parse(rmText) as {
+    turns: number; avgCostUsd: number; totalSavedUsd: number; cacheHitRate: number
+    avgShortlisted: number; blockedRate: number; latencyMs: { p50: number; p95: number }
+    services: { service: string; settleRate: number }[]
+  }
+  check(
+    'route metrics: 200 with the aggregate shape',
+    rmRes.status === 200 &&
+      typeof rm.turns === 'number' &&
+      typeof rm.avgCostUsd === 'number' &&
+      typeof rm.totalSavedUsd === 'number' &&
+      typeof rm.cacheHitRate === 'number' &&
+      typeof rm.latencyMs?.p50 === 'number' &&
+      typeof rm.latencyMs?.p95 === 'number' &&
+      Array.isArray(rm.services),
+  )
+  check('route metrics: cache header set', /s-maxage/.test(rmRes.headers.get('cache-control') ?? ''))
+  check('route metrics: P1 — no full wallet address in the payload', !rmText.toLowerCase().includes(owner.address.toLowerCase()))
 
   // ── Switchboard route preview (public, read-only, no spend) ───────────────
   // Guards the routing lever the /switchboard "try a route" demo renders: the
@@ -1042,6 +1067,12 @@ async function main() {
             { name: 'Beta', priceUsd: '0.01', ok: false, note: 'blocked: NOT_ALLOWED' },
             { name: 'Gamma', priceUsd: '0.01', ok: false, note: 'blocked: NOT_ALLOWED', slug: 'gamma-svc' },
           ],
+          routeReport: { considered: 12, picked: ['CoinMarketCap'], spentUsd: 0.01, cacheSavedUsd: 0, savedVsPriciestUsd: 0.04 },
+          routerTrace: [
+            { type: 'shortlist', candidates: [{ service: 'CoinMarketCap', endpoint: 'https://x/quotes', priceUsd: '0.01' }] },
+            { type: 'select', service: 'CoinMarketCap', endpoint: 'https://x/quotes', priceUsd: '0.01', reason: 'spot price' },
+            { type: 'receipt', receipt: { name: 'CoinMarketCap', priceUsd: '0.01', ok: true, txHash: '0xabc' } },
+          ],
         },
       }),
     })
@@ -1049,6 +1080,8 @@ async function main() {
   const loaded = await (await fetch(`${BASE}/api/chats/${chat.id}`, { headers: C })).json()
   const loadedMsg = loaded.messages?.find((m: { id: string }) => m.id === msg.id)
   check('meta.receipts + payer round-trip', loadedMsg?.meta?.payer === 'your wallet' && loadedMsg.meta.receipts.length === 3)
+  check('meta.routeReport (B15 value) round-trips', loadedMsg?.meta?.routeReport?.picked?.[0] === 'CoinMarketCap' && loadedMsg.meta.routeReport.savedVsPriciestUsd === 0.04)
+  check('meta.routerTrace (B16 replay) round-trips', Array.isArray(loadedMsg?.meta?.routerTrace) && loadedMsg.meta.routerTrace.length === 3 && loadedMsg.meta.routerTrace[0].type === 'shortlist')
 
   const shared = await (
     await fetch(`${BASE}/api/chats/${chat.id}`, {
@@ -1446,6 +1479,63 @@ async function main() {
     'router: selects multiple services in one turn (2 data calls), always 1 inference',
     multiExec.length === 2 && multiDec.context.length === 2 && multiDec.picks.filter((p) => p.role === 'inference').length === 1,
   )
+
+  // B11 — reputation rating (usage-driven) + one-provider-per-need.
+  check('rating: higher success rate ranks higher', computeRating({ settled: 10, failed: 0, recent: true }) > computeRating({ settled: 10, failed: 10, recent: true }))
+  check('rating: more volume ranks higher (same success)', computeRating({ settled: 20, failed: 0, recent: true }) > computeRating({ settled: 2, failed: 0, recent: true }))
+  check('rating: recent ranks higher than stale', computeRating({ settled: 10, failed: 0, recent: true }) > computeRating({ settled: 10, failed: 0, recent: false }))
+  check('rating: no history → 0 (cold start not penalized to negative)', computeRating({ settled: 0, failed: 0, recent: false }) === 0)
+
+  const ratedA: PlannableEndpoint = { id: 'a', serverSlug: 'a', serverName: 'A', method: 'GET', url: 'https://a/price', description: 'crypto price by symbol', priceUsd: '0.01', parameters: [{ group: 'query', name: 'symbol', required: true }], reliability: { settled: 50, failed: 0, recent: true, successRate: 1, rating: computeRating({ settled: 50, failed: 0, recent: true }) } }
+  const ratedB: PlannableEndpoint = { id: 'b', serverSlug: 'b', serverName: 'B', method: 'GET', url: 'https://b/price', description: 'crypto price by symbol', priceUsd: '0.01', parameters: [{ group: 'query', name: 'symbol', required: true }], reliability: { settled: 2, failed: 8, recent: false, successRate: 0.2, rating: computeRating({ settled: 2, failed: 8, recent: false }) } }
+  const ratedShort = shortlistEndpoints('crypto price', [ratedB, ratedA], 5)
+  check('shortlist: higher-rated equivalent ranks first', ratedShort[0]?.serverSlug === 'a')
+  check(
+    'router prompt: one-provider-per-need rule present',
+    routerPrompt('x', routerEps).includes('NEVER call two services that return the SAME'),
+  )
+
+  // B12 — per-turn cost ceiling: a multi-pick turn can't overspend. Two $0.01
+  // picks under a $0.015 ceiling → first runs, second is skipped + noted.
+  let ceilExec = 0
+  const ceilDec = await routeMessage({
+    message: 'price and news for ETH',
+    catalog: [claudeSrv],
+    endpoints: multiEndpoints,
+    maxTurnUsd: 0.015,
+    runInference: async () => ({ text: JSON.stringify({ intent: 'x', needs: [], picks: [
+      { endpointId: 'ep-price', params: { symbol: 'ETH' }, reason: 'p', score: 0.9 },
+      { endpointId: 'ep-news', params: { q: 'ETH' }, reason: 'n', score: 0.8 },
+    ] }) }),
+    executeCall: async () => { ceilExec++; return { data: { ok: true } } },
+  })
+  check(
+    'router: per-turn cost ceiling stops overspend (1 of 2 runs, rest noted)',
+    ceilExec === 1 && ceilDec.context.length === 1 && ceilDec.notes.some((n) => /per-turn budget/.test(n)),
+  )
+
+  // B13 — response cache (pure; no DB/spend).
+  clearRouteCache()
+  check(
+    'cache: key ignores query-param order',
+    routeCacheKey({ method: 'GET', url: 'https://x/p?b=2&a=1' }) === routeCacheKey({ method: 'GET', url: 'https://x/p?a=1&b=2' }),
+  )
+  check('cache: GET cacheable, POST not', isCacheable({ method: 'GET' }) && !isCacheable({ method: 'POST' }))
+  const ck = routeCacheKey({ method: 'GET', url: 'https://x/p?a=1' })
+  setCached(ck, { v: 1 })
+  check('cache: hit returns the stored value', (getCached(ck) as { v?: number } | undefined)?.v === 1)
+  check('cache: miss returns undefined', getCached('GET https://nope/') === undefined)
+  setCached('ttlkey', { v: 9 }, 100, 1_000) // expires at 1100
+  check('cache: served within TTL', (getCached('ttlkey', 1_050) as { v?: number } | undefined)?.v === 9)
+  check('cache: expired after TTL → miss', getCached('ttlkey', 1_200) === undefined)
+  clearRouteCache()
+
+  // B15 — value proof: savings vs naive routing (pure).
+  const sv1 = routeSavings({ shortlistPrices: [0.01, 0.05, 0.02], pickPrices: [0.01], cacheSavedUsd: 0 })
+  check('value: saved vs the priciest relevant tool (picked cheaper)', Math.abs(sv1.savedVsPriciestUsd - 0.04) < 1e-9 && Math.abs(sv1.totalUsd - 0.04) < 1e-9)
+  const sv2 = routeSavings({ shortlistPrices: [0.01], pickPrices: [0.01], cacheSavedUsd: 0.01 })
+  check('value: cache savings counted in the total', Math.abs(sv2.cacheSavedUsd - 0.01) < 1e-9 && Math.abs(sv2.totalUsd - 0.01) < 1e-9)
+  check('value: no shortlist → no savings claimed', routeSavings({ shortlistPrices: [], pickPrices: [], cacheSavedUsd: 0 }).totalUsd === 0)
 
   // ── Cleanup (verified) ────────────────────────────────────────────────────
   console.log('— cleanup')
