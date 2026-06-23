@@ -880,7 +880,7 @@
   /* org scope switcher (rail) — selection is client state; APIs re-check */
   .orgsw { position: relative; padding: 0 6px 10px; }
   .orgsw__btn {
-    display: flex; align-items: center; gap: 8px; width: 100%; padding: 9px 10px; min-height: 40px;
+    display: flex; align-items: center; gap: 8px; width: 100%; padding: 9px 10px; min-height: 44px;
     border: 1px solid var(--line); border-radius: 10px; background: var(--surf-1);
     color: var(--fg); font-size: 12.5px; font-weight: 600; transition: border-color .15s;
   }
@@ -893,7 +893,7 @@
     box-shadow: 0 16px 48px rgba(0,0,0,.5);
   }
   .orgsw__item {
-    display: flex; align-items: center; gap: 8px; width: 100%; padding: 9px; min-height: 40px;
+    display: flex; align-items: center; gap: 8px; width: 100%; padding: 9px; min-height: 44px;
     border-radius: 8px; font-size: 12.5px; color: var(--muted); transition: background .12s, color .12s;
   }
   .orgsw__item:hover { background: var(--surf-2); color: var(--fg); }
@@ -906,7 +906,7 @@
     border-radius: 8px; padding: 8px 10px; font-size: 12.5px; color: var(--fg); font-family: inherit;
   }
   .orgsw__input:focus { outline: none; border-color: var(--line-2); }
-  .orgsw__go { font-size: 12px; font-weight: 600; padding: 0 12px; border-radius: 8px; background: var(--fg); color: #000; min-height: 36px; }
+  .orgsw__go { font-size: 12px; font-weight: 600; padding: 0 12px; border-radius: 8px; background: var(--fg); color: #000; min-height: 44px; }
   .orgsw__go:disabled { opacity: .5; }
   /* Survivable mobile fallback (item 3 turns this into the section bar):
      rail becomes a horizontal scroll row above the content. */
@@ -920,6 +920,7 @@
     .orgsw { padding: 0; width: 160px; flex-shrink: 0; }
     .orgsw__menu { left: 0; right: auto; width: 240px; }
     .dash__side { flex-direction: row; gap: 4px; overflow-x: auto; scrollbar-width: none;
+      padding-right: 20px;
       -webkit-mask-image: linear-gradient(to right, #000 92%, transparent);
               mask-image: linear-gradient(to right, #000 92%, transparent); }
     .dash__side::-webkit-scrollbar { display: none; }
