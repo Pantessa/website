@@ -5,17 +5,23 @@
 // component so the page itself can stay a SERVER component and export SEO
 // metadata + JSON-LD (S1).
 
-import { useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useConnectModal } from '@rainbow-me/rainbowkit'
 import { useAccount } from 'wagmi'
 import SwitchboardWeb from '@/components/SwitchboardWeb'
+import CreateAccountButton from '@/components/CreateAccountButton'
+import { cdpEnabled } from '@/lib/cdp-embedded'
 
 export default function SwitchboardHero() {
   const router = useRouter()
   const { openConnectModal } = useConnectModal()
   const { isConnected } = useAccount()
+  // Wallet state is client-only — mount-gate the CTA swap to stay hydration-safe.
+  const [mounted, setMounted] = useState(false)
+  useEffect(() => setMounted(true), [])
+  const showCreate = mounted && cdpEnabled && !isConnected
   const proofRoutedRef = useRef<HTMLSpanElement>(null)
   const proofSavedRef = useRef<HTMLSpanElement>(null)
 
@@ -40,11 +46,14 @@ export default function SwitchboardHero() {
             <strong>best-priced MCP under your cap</strong>; your agent pays per call in USDC.
           </p>
           <div className="heroweb__ctas">
+            {showCreate && (
+              <CreateAccountButton className="btn btn--solid" label="Create an account" />
+            )}
             <button
-              className="btn btn--solid"
+              className={showCreate ? 'btn btn--ghost' : 'btn btn--solid'}
               onClick={() => (isConnected ? router.push('/dashboard') : openConnectModal?.())}
             >
-              Try a route
+              {isConnected ? 'Open dashboard' : 'Try a route'}
             </button>
             <Link className="btn btn--ghost" href="/developers">
               Connect an agent

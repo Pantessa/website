@@ -1124,3 +1124,30 @@
     .ep { padding: 14px; }
     .ep__price { font-size: 11.5px; }
   }
+
+  /* Create-account (CDP embedded wallet) modal */
+  .ca { position: fixed; inset: 0; z-index: 200; display: grid; place-items: center; padding: 20px; }
+  .ca__backdrop { position: absolute; inset: 0; background: rgba(0,0,0,.66); backdrop-filter: blur(4px); border: none; }
+  .ca__panel { position: relative; width: 100%; max-width: 400px; background: var(--surf-1); border: 1px solid var(--line); border-radius: 18px; padding: 28px 26px 22px; box-shadow: 0 24px 60px rgba(0,0,0,.55); }
+  .ca__close { position: absolute; top: 14px; right: 14px; width: 30px; height: 30px; display: grid; place-items: center; border-radius: 8px; color: var(--muted); }
+  .ca__close:hover { background: var(--surf-2); color: var(--fg); }
+  .ca__icon { width: 40px; height: 40px; border-radius: 11px; display: grid; place-items: center; background: color-mix(in oklch, var(--accent) 16%, transparent); color: var(--accent); margin-bottom: 14px; }
+  .ca__title { font-size: 20px; font-weight: 600; letter-spacing: -.01em; }
+  .ca__sub { margin-top: 7px; font-size: 13.5px; line-height: 1.55; color: var(--muted); }
+  .ca__label { display: block; margin-top: 18px; margin-bottom: 7px; font-size: 12px; font-weight: 600; color: var(--muted); }
+  .ca__input { width: 100%; padding: 12px 14px; background: var(--bg); border: 1px solid var(--line); border-radius: 11px; color: var(--fg); font-size: 15px; outline: none; transition: border-color .15s; }
+  .ca__input:focus { border-color: var(--accent); }
+  .ca__input--otp { font-family: 'Geist Mono', ui-monospace, monospace; letter-spacing: .32em; text-align: center; font-size: 20px; }
+  .ca__error { margin-top: 10px; font-size: 12.5px; color: var(--sell); }
+  .ca__submit { width: 100%; margin-top: 16px; padding: 13px; display: inline-flex; align-items: center; justify-content: center; gap: 8px; background: var(--accent); color: var(--ink); border-radius: 11px; font-size: 14.5px; font-weight: 600; transition: filter .15s; }
+  .ca__submit:hover:not(:disabled) { filter: brightness(1.08); }
+  .ca__submit:disabled { opacity: .6; cursor: not-allowed; }
+  .ca__fine { margin-top: 13px; font-size: 11.5px; color: var(--muted-2); text-align: center; }
+  .ca__back { display: inline-flex; align-items: center; gap: 5px; margin-bottom: 12px; font-size: 12.5px; color: var(--muted); }
+  .ca__back:hover { color: var(--fg); }
+  .ca__resend { width: 100%; margin-top: 10px; font-size: 12.5px; color: var(--muted); }
+  .ca__resend:hover:not(:disabled) { color: var(--fg); }
+  .ca__connecting { display: grid; place-items: center; gap: 14px; padding: 26px 0 10px; text-align: center; }
+  .ca__spin { animation: ca-spin 1s linear infinite; }
+  .ca__spin--lg { color: var(--accent); }
+  @keyframes ca-spin { to { transform: rotate(360deg); } }
