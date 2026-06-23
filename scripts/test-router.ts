@@ -9,7 +9,7 @@
  *   npm run test:router
  */
 import { shortlistEndpoints } from '../lib/router'
-import type { PlannableEndpoint } from '../lib/endpoint-planner'
+import { deriveDescription, type PlannableEndpoint } from '../lib/endpoint-planner'
 
 let pass = 0
 let fail = 0
@@ -39,6 +39,9 @@ const CATALOG: PlannableEndpoint[] = [
   ep('snap', 'snapshot', 'Snapshot', 'DAO governance — proposals, votes and spaces'),
   ep('exa', 'exa', 'Exa', 'Web search — find pages, articles and news'),
   ep('nansen', 'nansen', 'Nansen', 'Onchain wallet analytics, smart money and token flows'),
+  // B20 — a thin/empty-description service that must still route via its
+  // category + path signal (as loadPlannableEndpoints would synthesize).
+  { id: 'wx', serverSlug: 'weatherco', serverName: 'WeatherCo', method: 'GET', url: 'https://weatherco.test/x402/v3/forecast/daily', description: null, priceUsd: '0.01', parameters: [{ group: 'query', name: 'q', required: true }], category: 'Weather' },
 ]
 
 interface Case {
@@ -52,6 +55,7 @@ const CASES: Case[] = [
   { q: 'open proposals on aave dao', expect: 'snapshot' },
   { q: 'search the web for x402 news', expect: 'exa' },
   { q: 'smart money wallet flows for USDC', expect: 'nansen' },
+  { q: 'weather forecast for tomorrow', expect: 'weatherco' }, // routes via category + path
   { q: 'write me a haiku about clouds', expect: null },
   { q: 'tell me a joke', expect: null },
 ]
@@ -65,6 +69,11 @@ for (const c of CASES) {
     check(`"${c.q}" → ${c.expect}`, top?.serverSlug === c.expect, top ? `got ${top.serverSlug}` : 'got nothing')
   }
 }
+
+// B20 — deriveDescription synthesizes keywords for thin descriptions, passes good ones through.
+const synth = deriveDescription(null, 'Weather', 'https://w.test/x402/v3/forecast/daily') ?? ''
+check('deriveDescription: thin desc → category + path keywords', /weather/i.test(synth) && /forecast/i.test(synth) && !/x402|v3/i.test(synth))
+check('deriveDescription: good description passes through unchanged', deriveDescription('A detailed travel search API for hotels and restaurants', 'Travel', 'https://t.test/search') === 'A detailed travel search API for hotels and restaurants')
 
 console.log(`\n${pass} passed, ${fail} failed\n`)
 process.exit(fail ? 1 : 0)

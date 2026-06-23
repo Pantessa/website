@@ -48,6 +48,11 @@ const ENDPOINT_HINTS: EndpointHint[] = [
     match: /coinmarketcap\.com\/x402\/v3\/cryptocurrency\/listing\/latest/i,
     description: 'Latest crypto listings — top coins ranked by market cap, with price, volume and 24h change.',
   },
+  {
+    match: /coingecko\.com\/api\/v3\/x402\/onchain\/search/i,
+    description: 'Search crypto tokens, pools and networks by name or symbol (CoinGecko onchain).',
+    addParams: [{ group: 'query', name: 'query', type: 'string', required: true, example: 'ethereum' }],
+  },
 ]
 
 function applyHint(url: string, description: string | null, params: EndpointParam[]): { description: string | null; params: EndpointParam[] } {
@@ -57,6 +62,29 @@ function applyHint(url: string, description: string | null, params: EndpointPara
     ? [...params, ...hint.addParams.filter((ap) => !params.some((p) => p.name === ap.name))]
     : params
   return { description: hint.description ?? description, params: merged }
+}
+
+/**
+ * When a description is missing/thin, synthesize retrieval keywords from the
+ * service category + the URL path segments (dropping noise like v3/x402/api/mcp)
+ * so the shortlist + planner menu still have signal. Good descriptions pass
+ * through untouched. Pure (B20).
+ */
+export function deriveDescription(description: string | null, category: string | null, url: string): string | null {
+  if (description && description.trim().length >= 16) return description
+  let pathWords = ''
+  try {
+    pathWords = new URL(url).pathname
+      .replace(/[^a-zA-Z]+/g, ' ')
+      .replace(/\b(v\d+|x402|api|mcp|latest|onchain)\b/gi, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+  } catch {
+    /* ignore */
+  }
+  const parts = [description?.trim(), category, pathWords].filter((p): p is string => !!p && p.length > 0)
+  const synth = parts.join(' · ').trim()
+  return synth.length ? synth : description
 }
 
 export interface EndpointParam {
@@ -77,6 +105,9 @@ export interface PlannableEndpoint {
   description: string | null
   priceUsd: string
   parameters: EndpointParam[]
+  /** The service's directory category (e.g. Data, Trading, Travel) — extra
+   *  retrieval signal for the shortlist when descriptions are thin (B20). */
+  category?: string | null
   /** Settlement history for this endpoint's host (the engine's feedback signal /
    *  reputation): settled vs failed paid calls, recency, and a 0–1 `rating`
    *  derived from them. Absent = no history (unproven, NOT penalized — the
@@ -120,7 +151,7 @@ export async function loadPlannableEndpoints(slugs: string[]): Promise<Plannable
       // again below to drop any with an unresolved :path token.
       OR: [{ NOT: { parameters: { equals: Prisma.DbNull } } }, { method: 'GET' }],
     },
-    include: { server: { select: { slug: true, name: true } } },
+    include: { server: { select: { slug: true, name: true, category: true } } },
     orderBy: { position: 'asc' },
   })
 
@@ -135,7 +166,10 @@ export async function loadPlannableEndpoints(slugs: string[]): Promise<Plannable
     if (!Number.isFinite(price) || price <= 0 || price > SMART_MAX_PER_CALL_USD) continue
     // Curated enrichment (description + declared params) for thin high-value
     // endpoints, applied first so the filter/shape/menu all see the richer form.
-    const { description, params } = applyHint(r.url, r.description, (r.parameters as EndpointParam[] | null) ?? [])
+    const hinted = applyHint(r.url, r.description, (r.parameters as EndpointParam[] | null) ?? [])
+    const params = hinted.params
+    // Thin/empty descriptions get keyword signal from category + path (B20).
+    const description = deriveDescription(hinted.description, r.server.category, r.url)
     // A param-less endpoint is still callable when it's a GET with no path
     // token to fill — a plain fetch (e.g. "list all teams"). buildSmartRequest
     // already builds these (empty query/body). Anything that needs a value we
@@ -170,6 +204,7 @@ export async function loadPlannableEndpoints(slugs: string[]): Promise<Plannable
       description,
       priceUsd: r.priceUsd!,
       parameters: params,
+      category: r.server.category,
     })
   }
   await attachReliability(out)

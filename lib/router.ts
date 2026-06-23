@@ -156,7 +156,7 @@ const STOPWORDS = new Set([
 export function shortlistEndpoints(message: string, endpoints: PlannableEndpoint[], limit = 14): PlannableEndpoint[] {
   const tokens = new Set((message.toLowerCase().match(/[a-z0-9]{3,}/g) ?? []).filter((t) => !STOPWORDS.has(t)))
   const score = (ep: PlannableEndpoint): number => {
-    let hay = `${ep.serverName} ${ep.serverSlug} ${ep.description ?? ''}`.toLowerCase()
+    let hay = `${ep.serverName} ${ep.serverSlug} ${ep.category ?? ''} ${ep.description ?? ''}`.toLowerCase()
     try {
       hay += ' ' + new URL(ep.url).pathname.toLowerCase().replace(/[^a-z0-9]+/g, ' ')
     } catch {
