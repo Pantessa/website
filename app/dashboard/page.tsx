@@ -11,6 +11,7 @@ import { SpendByAgent, SpendOverTime } from '@/components/LazyCharts'
 import SignGrantButton from '@/components/SignGrantButton'
 import FundAccountCard from '@/components/FundAccountCard'
 import { Card, CardTitle, Kpi, type Stats } from '@/lib/dashboard-ui'
+import { PolicySwitch, BudgetEditor } from '@/components/SpendPolicyControls'
 import EarnPanel from '@/components/EarnPanel'
 import PayToAgentsCard from '@/components/PayToAgentsCard'
 import { useOrgStore } from '@/lib/org-store'
@@ -19,6 +20,7 @@ export default function DashboardOverviewPage() {
   const { activeOrgId } = useOrgStore()
   const [stats, setStats] = useState<Stats | null>(null)
   const [freezing, setFreezing] = useState(false)
+  const [policing, setPolicing] = useState(false)
   const [backing, setBacking] = useState(false)
   const [backErr, setBackErr] = useState<string | null>(null)
 
@@ -50,6 +52,23 @@ export default function DashboardOverviewPage() {
       await load()
     } finally {
       setBacking(false)
+    }
+  }
+
+  // The master power switch: when off, the spend policy is bypassed entirely —
+  // the agent can use any MCP with no caps. Flips one flag; it never touches the
+  // per-agent approvals, so a curated allowlist survives toggling it back on.
+  const togglePolicy = async (grantId: string, spendPolicyEnabled: boolean) => {
+    setPolicing(true)
+    try {
+      await fetch(`/api/grants/${grantId}`, {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ spendPolicyEnabled }),
+      })
+      await load()
+    } finally {
+      setPolicing(false)
     }
   }
 
@@ -173,6 +192,13 @@ export default function DashboardOverviewPage() {
           </div>
           {g && (
             <span className="flex items-center gap-3 flex-wrap">
+              {/* Master power switch — default OFF for new users (unrestricted).
+                  Independent of the per-agent approvals and of the freeze. */}
+              <PolicySwitch
+                enabled={g.spendPolicyEnabled}
+                busy={policing}
+                onChange={(next) => void togglePolicy(g.id, next)}
+              />
               {/* The button re-checks signed state on every mount — approval
                   toggles (which void signatures server-side) live on their own
                   page now, so navigation back here refreshes the badge. */}
@@ -211,12 +237,21 @@ export default function DashboardOverviewPage() {
                 {freezing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : g.paused ? <Play className="w-3.5 h-3.5" /> : <Pause className="w-3.5 h-3.5" />}
                 {g.paused ? 'Resume account' : 'Freeze account'}
               </button>
-              <span className="mono text-xs text-[color:var(--muted)]">
-                ${g.spentTodayUsd.toFixed(4)} / ${g.perDayUsd.toFixed(2)} today
+              <span className="mono text-xs text-[color:var(--muted)] flex items-center gap-1">
+                ${g.spentTodayUsd.toFixed(4)} /{' '}
+                <BudgetEditor grantId={g.id} perDayUsd={g.perDayUsd} onSaved={load} suffix="today" />
               </span>
             </span>
           )}
         </div>
+        {g && !g.spendPolicyEnabled && (
+          <p className="mt-2 text-xs text-[color:var(--muted)] flex items-center gap-1.5">
+            <ShieldCheck className="w-3.5 h-3.5 flex-shrink-0 opacity-60" />
+            Spending policy is <strong className="text-white font-medium">off</strong> — your agent can
+            use any MCP with no caps. Your per-agent approvals are kept; turn the policy on to enforce
+            them again.
+          </p>
+        )}
         {backErr && (
           <p className="mt-2 text-xs text-red-400">On-chain backing failed: {backErr}</p>
         )}

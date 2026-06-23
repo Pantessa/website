@@ -24,6 +24,7 @@
 import { generatePrivateKey, privateKeyToAccount, type PrivateKeyAccount } from 'viem/accounts'
 import { createSiweMessage } from 'viem/siwe'
 import { grantTypedData } from '../lib/grant-typed-data'
+import { grantViolation, type GrantPolicy } from '../lib/spend-grant'
 import { routerPrompt, parseRouterDecision, selectInferenceProvider, routeMessage } from '../lib/router'
 import { buildSmartRequest, type PlannableEndpoint } from '../lib/endpoint-planner'
 import { buildSignableArtifact, isActionIntent } from '../lib/transaction-layer'
@@ -192,6 +193,42 @@ async function main() {
     body: JSON.stringify({ signature: resign }),
   })
   check('re-sign after voiding works', reput.status === 200 && freshTd.message.perDayUsdMicros === '3000000')
+
+  // ── Optional spend policy: the master on/off switch ─────────────────────────
+  console.log('— optional spend policy')
+  // Pure-logic: the gate short-circuits when the policy is off. A call that
+  // violates BOTH the allowlist and the per-call cap is allowed when off, and
+  // blocked when on — proving "off = unrestricted, any host, no caps".
+  const offPolicy: GrantPolicy = {
+    id: 'test', allow: ['only.allowed.test'], perCallUsd: 0.01, perDayUsd: 0.01,
+    totalUsd: null, expiresAt: new Date(Date.now() + 86_400_000), status: 'active',
+    spendPolicyEnabled: false,
+  }
+  check(
+    'policy OFF → off-allowlist + over-cap call is allowed (unrestricted)',
+    grantViolation(offPolicy, 'not.allowed.test', 9.99, 0) === null,
+  )
+  check(
+    'policy ON → the same call is blocked',
+    grantViolation({ ...offPolicy, spendPolicyEnabled: true }, 'not.allowed.test', 9.99, 0) === 'NOT_ALLOWED',
+  )
+  // API plumbing: PATCH the flag; it persists and does NOT void the signature
+  // (it's just a power switch, not a change to the signed terms).
+  const polOn = await (
+    await fetch(`${BASE}/api/grants/${grant.id}`, {
+      method: 'PATCH', headers: CJ, body: JSON.stringify({ spendPolicyEnabled: true }),
+    })
+  ).json()
+  check(
+    'PATCH spendPolicyEnabled persists, signature preserved',
+    polOn.spendPolicyEnabled === true && polOn.signed === true && polOn.signature !== null,
+  )
+  const polOff = await (
+    await fetch(`${BASE}/api/grants/${grant.id}`, {
+      method: 'PATCH', headers: BJ, body: JSON.stringify({ spendPolicyEnabled: false }),
+    })
+  ).json()
+  check('owner can switch the policy back off (Bearer)', polOff.spendPolicyEnabled === false)
 
   // ── Ledger sync ───────────────────────────────────────────────────────────
   console.log('— ledger sync')
@@ -801,6 +838,12 @@ async function main() {
 
   // ── Wallet-mode plan gate (policy enforced BEFORE signature requests) ─────
   console.log('— wallet plan gate')
+  // The spend policy now defaults OFF (unrestricted), so the enforcement tests
+  // below must opt the owner's grant INTO the policy first — otherwise the gate
+  // short-circuits and nothing is blocked (that bypass is covered above).
+  await fetch(`${BASE}/api/grants/${grant.id}`, {
+    method: 'PATCH', headers: CJ, body: JSON.stringify({ spendPolicyEnabled: true }),
+  })
   const fakeInference = {
     slug: 'fake-inf',
     name: 'Fake Inference',

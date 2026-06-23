@@ -12,6 +12,8 @@ export interface Stats {
     allowCount: number
     expiresAt: string
     paused: boolean
+    /** Master power switch — when false the spend policy is off (unrestricted). */
+    spendPolicyEnabled: boolean
     /** True when a Coinbase Spend Permission caps this account on-chain. */
     backedOnChain: boolean
     spendPermissionNetwork: string | null
