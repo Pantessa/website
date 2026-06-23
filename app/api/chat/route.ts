@@ -33,6 +33,8 @@ import {
   type PlannedPick,
   type ConversationTurn,
 } from '@/lib/endpoint-planner'
+import { loadCatalog } from '@/lib/catalog'
+import { routeMessage, selectInferenceProvider, type TraceStep } from '@/lib/router'
 
 // x402 signing + paid fetch need the Node runtime.
 export const runtime = 'nodejs'
@@ -145,6 +147,13 @@ export async function POST(req: NextRequest) {
 
     if (!message.trim()) {
       return NextResponse.json({ error: 'message is required' }, { status: 400 })
+    }
+
+    // ── Auto-Router: the engine picks services across the whole directory and
+    //    streams its reasoning + the answer (burner mode; wallet is B5). The
+    //    manual path below is untouched. ───────────────────────────────────
+    if (body.autoRouter === true) {
+      return streamAutoRouter(message, history)
     }
 
     const inference = activeServers.find(
@@ -829,6 +838,183 @@ async function paidCall(request: { url: string; method: string; headers: Record<
   })
   if (!res.ok) throw new Error(await failureReason(res))
   return { json: await res.json(), txHash: decodeSettlement(res)?.transaction }
+}
+
+// ── Auto-Router (streaming) ─────────────────────────────────────────────────
+//
+// Burner-mode auto-routing with a live SSE trace. The engine (lib/router) picks
+// services across the whole directory; each reasoning step, payment, receipt,
+// and the final answer is streamed as `data: {json}\n\n`. Wire contract (the
+// engine window renders by `type`): the four TraceStep shapes from lib/router
+// (status / analyze / candidate / select), plus over-the-wire `pay`, `receipt`,
+// `reply`, `error`, `done`. Grant gating + ledgering match burner mode exactly.
+function streamAutoRouter(message: string, history: ConversationTurn[]): Response {
+  const encoder = new TextEncoder()
+  const stream = new ReadableStream<Uint8Array>({
+    async start(controller) {
+      const send = (event: unknown) => controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`))
+      const finish = () => {
+        send({ type: 'done' })
+        controller.close()
+      }
+      try {
+        send({ type: 'status', label: 'Starting the routing engine…' } satisfies TraceStep)
+
+        const catalog = await loadCatalog()
+        const inference = selectInferenceProvider(catalog)
+        if (!inference) {
+          send({
+            type: 'reply',
+            content: '⚡ No live inference engine is available. Enable an Inference agent (e.g. **Yeetful · Claude**) so I can answer.',
+            receipts: [],
+            payer: 'none',
+          })
+          return finish()
+        }
+
+        // Auto-Router pays from the house wallet (burner). Wallet-signed routing
+        // is B5; without a house wallet there's nothing to pay with.
+        if (!hasAgentWallet()) {
+          send({
+            type: 'reply',
+            content: '⚡ Auto Router needs the house wallet (PRIVATE_KEY) to pay per call, which isn’t configured here. Turn Auto Router off to pick agents and pay with your own wallet.',
+            receipts: [],
+            payer: 'none',
+          })
+          return finish()
+        }
+
+        // Spend grant (burner): when the signed-in owner has an active grant,
+        // every payment is gated + ledgered; absent → no enforcement, no ledger.
+        const owner = await getSessionAddress()
+        const grant = owner ? await getActiveGrant(owner) : null
+        const policy: GrantPolicy | null = grant ? toPolicy(grant) : null
+        let spentToday = grant ? await spentTodayUsd(grant.id) : 0
+        let spentTotal = grant ? await spentTotalUsd(grant.id) : 0
+        const infHost = hostOf(inference.endpoint!)
+        const infPrice = Number(inference.priceUsd ?? '0.01')
+        const receipts: Receipt[] = []
+
+        // The routing call AND the answer both hit the inference host — if the
+        // grant forbids it, stop before spending a cent.
+        if (policy && grant) {
+          const violation = grantViolation(policy, infHost, infPrice, spentToday, spentTotal)
+          if (violation) {
+            await recordLedger({ grantId: grant.id, orgId: grant.orgId ?? undefined, host: infHost, serviceName: inference.name, amountUsd: 0, ok: false, note: violation })
+            send({ type: 'status', label: `Blocked by your spend policy (${violation}).` } satisfies TraceStep)
+            send({
+              type: 'reply',
+              content: `🚫 Your spend policy blocked ${inference.name} (${violation}). Approve it (or raise the caps) on your **Dashboard** and try again.`,
+              receipts,
+              payer: 'the house wallet',
+              blocked: true,
+            })
+            return finish()
+          }
+        }
+
+        const contextBlocks: string[] = []
+
+        // Route — narrates live; the routing inference call is house-paid +
+        // ledgered (no separate receipt, mirroring the manual planner path).
+        const decision = await routeMessage({
+          message,
+          history,
+          catalog,
+          onStep: (step) => send(step),
+          runInference: async (inf, prompt) => {
+            const r = await callInference(inf, prompt)
+            if (grant) {
+              await recordLedger({ grantId: grant.id, orgId: grant.orgId ?? undefined, host: infHost, serviceName: inference.name, amountUsd: infPrice, ok: true, txHash: r.txHash, note: 'settled (routing)' })
+              spentToday += infPrice
+              spentTotal += infPrice
+            }
+            return r
+          },
+        })
+
+        // Execute the chosen live-data calls.
+        for (const pick of decision.smartPicks) {
+          const host = hostOf(pick.request.url)
+          const price = Number(pick.priceUsd)
+          if (policy && grant) {
+            const violation = grantViolation(policy, host, price, spentToday, spentTotal)
+            if (violation) {
+              await recordLedger({ grantId: grant.id, orgId: grant.orgId ?? undefined, host, serviceName: pick.serverName, amountUsd: 0, ok: false, note: violation })
+              const r: Receipt = { name: pick.serverName, endpoint: host, priceUsd: pick.priceUsd, ok: false, note: `blocked: ${violation}`, slug: violation === 'NOT_ALLOWED' ? pick.serverSlug : undefined }
+              receipts.push(r)
+              send({ type: 'receipt', receipt: r })
+              continue
+            }
+          }
+          send({ type: 'pay', service: pick.serverName, host, priceUsd: pick.priceUsd })
+          try {
+            const { json, txHash } = await paidCall(pick.request)
+            contextBlocks.push(`### ${pick.serverName}\n${truncate(JSON.stringify(json), 1500)}`)
+            const r: Receipt = { name: pick.serverName, endpoint: host, priceUsd: pick.priceUsd, txHash, ok: true }
+            receipts.push(r)
+            send({ type: 'receipt', receipt: r })
+            if (grant) {
+              await recordLedger({ grantId: grant.id, orgId: grant.orgId ?? undefined, host, serviceName: pick.serverName, amountUsd: price, ok: true, txHash, note: 'settled' })
+              spentToday += price
+              spentTotal += price
+            }
+          } catch (err) {
+            const r: Receipt = { name: pick.serverName, endpoint: host, priceUsd: pick.priceUsd, ok: false, note: err instanceof Error ? err.message : 'call failed' }
+            receipts.push(r)
+            send({ type: 'receipt', receipt: r })
+          }
+        }
+
+        // Re-gate the answer call against the now-higher running total.
+        if (policy && grant) {
+          const violation = grantViolation(policy, infHost, infPrice, spentToday, spentTotal)
+          if (violation) {
+            await recordLedger({ grantId: grant.id, orgId: grant.orgId ?? undefined, host: infHost, serviceName: inference.name, amountUsd: 0, ok: false, note: violation })
+            send({
+              type: 'reply',
+              content: `🚫 Your spend policy blocked the answer (${inference.name}: ${violation}). Raise the caps on your **Dashboard**.`,
+              receipts,
+              payer: 'the house wallet',
+              blocked: true,
+            })
+            return finish()
+          }
+        }
+
+        send({ type: 'status', label: 'Synthesizing the answer…' } satisfies TraceStep)
+        const { text, txHash } = await callInference(inference, buildPrompt(message, contextBlocks, history))
+        const r: Receipt = { name: inference.name, endpoint: infHost, priceUsd: inference.priceUsd ?? '0.01', txHash, ok: true }
+        receipts.push(r)
+        send({ type: 'receipt', receipt: r })
+        if (grant) {
+          await recordLedger({ grantId: grant.id, orgId: grant.orgId ?? undefined, host: infHost, serviceName: inference.name, amountUsd: infPrice, ok: true, txHash, note: 'settled' })
+        }
+
+        send({
+          type: 'reply',
+          content: text + infoFooter([], decision.notes),
+          receipts,
+          payer: 'the house wallet',
+        })
+        finish()
+      } catch (err) {
+        send({ type: 'error', message: err instanceof Error ? err.message : 'auto-router failed' })
+        try {
+          controller.close()
+        } catch {
+          /* already closed */
+        }
+      }
+    },
+  })
+  return new Response(stream, {
+    headers: {
+      'content-type': 'text/event-stream; charset=utf-8',
+      'cache-control': 'no-cache, no-transform',
+      connection: 'keep-alive',
+    },
+  })
 }
 
 /**

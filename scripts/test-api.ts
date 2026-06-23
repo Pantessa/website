@@ -873,6 +873,29 @@ async function main() {
     (await unfreeze.json()).paused === false && thawed.halted === false,
   )
 
+  // ── Auto-Router streaming (B2): SSE framing + a trace step + a final reply.
+  //    NO spend: the owner's grant allowlist excludes the inference host, so the
+  //    engine refuses before paying (the same gate the wallet-plan test uses).
+  console.log('— auto-router stream')
+  const arRes = await fetch(`${BASE}/api/chat`, {
+    method: 'POST',
+    headers: CJ,
+    body: JSON.stringify({ message: 'what is the capital of France?', autoRouter: true, history: [] }),
+  })
+  check('auto-router: responds as text/event-stream', (arRes.headers.get('content-type') ?? '').includes('text/event-stream'))
+  const arEvents = (await arRes.text())
+    .split('\n\n')
+    .map((b) => b.trim())
+    .filter((b) => b.startsWith('data:'))
+    .map((b) => JSON.parse(b.slice(5).trim()) as { type: string; blocked?: boolean; content?: string })
+  check('auto-router: emits ≥1 reasoning step', arEvents.some((e) => e.type === 'status'))
+  const arReply = arEvents.find((e) => e.type === 'reply')
+  check(
+    'auto-router: ends with a reply (no spend — policy-blocked or no engine)',
+    !!arReply && (arReply.blocked === true || /No live inference/.test(String(arReply.content))),
+  )
+  check('auto-router: stream terminates with a done event', arEvents.some((e) => e.type === 'done'))
+
   // ── Key revocation (after Bearer use, before cleanup) ─────────────────────
   console.log('— revocation')
   const del = await fetch(`${BASE}/api/keys/${minted.id}`, { method: 'DELETE', headers: C })
