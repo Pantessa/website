@@ -47,7 +47,7 @@ export default function Hero({ catalog }: { catalog: McpServer[] }) {
             >
               Try Now
             </button>
-            <Link className="btn btn--ghost" href="/developers">
+            <Link className="btn btn--ghost" href="/docs">
               Connect Agent
             </Link>
           </div>

@@ -10,7 +10,6 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const entries: MetadataRoute.Sitemap = [
     { url: SITE, changeFrequency: 'weekly', priority: 1 },
     { url: `${SITE}/servers`, changeFrequency: 'weekly', priority: 0.9 },
-    { url: `${SITE}/developers`, changeFrequency: 'monthly', priority: 0.8 },
     { url: `${SITE}/activity`, changeFrequency: 'daily', priority: 0.7 },
     // Docs come from the registry — a page flips `ready` and it's indexed.
     ...readyPages().map((p) => ({
