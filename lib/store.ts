@@ -48,6 +48,17 @@ export interface Message {
   createdAt: string
 }
 
+/** One step of the Auto-Router's live reasoning trace (the engine window's
+ *  content). Mirrors the SSE wire contract from /api/chat (see lib/router
+ *  TraceStep + the streamed pay/receipt events). */
+export type RouterTraceEvent =
+  | { type: 'status'; label: string }
+  | { type: 'analyze'; intent: string; needs: string[] }
+  | { type: 'candidate'; service: string; endpoint?: string; priceUsd?: string; score: number; reason: string }
+  | { type: 'select'; service: string; endpoint?: string; priceUsd?: string; reason: string }
+  | { type: 'pay'; service: string; host: string; priceUsd: string }
+  | { type: 'receipt'; receipt: { name: string; endpoint?: string; priceUsd?: string; txHash?: string; ok: boolean; note?: string } }
+
 export interface Chat {
   id: string
   title: string
@@ -109,6 +120,14 @@ interface YeetfulStore {
   setActiveServerIds: (ids: string[]) => void
   clearActiveServers: () => void
 
+  // Auto-Router — when on, the engine picks services per message (no manual
+  // selection) and streams its reasoning. Persisted; trace buffer is ephemeral.
+  autoRouter: boolean
+  setAutoRouter: (on: boolean) => void
+  routerTrace: RouterTraceEvent[]
+  pushRouterTrace: (event: RouterTraceEvent) => void
+  clearRouterTrace: () => void
+
   // Session — set by SessionProvider so store actions know whether to hit the DB.
   authedAddress: string | null
   setAuthedAddress: (address: string | null) => void
@@ -161,6 +180,12 @@ export const useYeetfulStore = create<YeetfulStore>()(
       },
       setActiveServerIds: (ids) => set({ activeServerIds: ids }),
       clearActiveServers: () => set({ activeServerIds: [] }),
+
+      autoRouter: false,
+      setAutoRouter: (on) => set({ autoRouter: on }),
+      routerTrace: [],
+      pushRouterTrace: (event) => set((s) => ({ routerTrace: [...s.routerTrace, event] })),
+      clearRouterTrace: () => set({ routerTrace: [] }),
 
       authedAddress: null,
       setAuthedAddress: (address) => set({ authedAddress: address }),
@@ -326,6 +351,7 @@ export const useYeetfulStore = create<YeetfulStore>()(
       partialize: (state) => ({
         activeServerIds: state.activeServerIds,
         sidebarOpen: state.sidebarOpen,
+        autoRouter: state.autoRouter,
       }),
     }
   )

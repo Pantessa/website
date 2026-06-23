@@ -3,7 +3,7 @@
 import { analytics } from '@/lib/analytics'
 import { useState, useRef, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Send, Zap, Check, Plus, Loader2, Bot, User, PanelLeft, PanelLeftClose } from 'lucide-react'
+import { Send, Zap, Check, Plus, Loader2, Bot, User, PanelLeft, PanelLeftClose, Sparkles } from 'lucide-react'
 import { useAccount, useSignTypedData } from 'wagmi'
 import { cn } from '@/lib/utils'
 import MessageReceipts from '@/components/MessageReceipts'
@@ -11,7 +11,7 @@ import SignVoteButton from '@/components/SignVoteButton'
 import VoteCandidates from '@/components/VoteCandidates'
 import PaymentConfirm from '@/components/PaymentConfirm'
 import { voteRequestOf, voteCandidatesOf } from '@/lib/snapshot-vote'
-import { useYeetfulStore } from '@/lib/store'
+import { useYeetfulStore, type RouterTraceEvent } from '@/lib/store'
 import BrandIcon from '@/components/BrandIcon'
 import ShareButton from '@/components/ShareButton'
 
@@ -77,6 +77,10 @@ export default function ChatInterface() {
     setSidebarOpen,
     mobileSidebarOpen,
     setMobileSidebarOpen,
+    autoRouter,
+    setAutoRouter,
+    pushRouterTrace,
+    clearRouterTrace,
   } = useYeetfulStore()
 
   // Toggle an agent for this chat; persist the set to the open chat (and DB).
@@ -137,6 +141,20 @@ export default function ChatInterface() {
     addMessage(chatId, { role: 'user', content: userMsg })
 
     try {
+      // ── Auto-Router: stream the engine's reasoning + answer (no manual
+      //    agent selection; the server picks across the whole directory). ──
+      if (autoRouter) {
+        setStatus('Routing…')
+        const reply = await runAutoRouter(chatId, userMsg, history)
+        trackPaidReceipts(reply.receipts)
+        addMessage(chatId, {
+          role: 'assistant',
+          content: reply.content,
+          meta: buildMeta(reply.receipts, reply.payer, undefined),
+        })
+        return
+      }
+
       // Phase 1 — plan. If a wallet is connected, the server returns the
       // payments to sign; otherwise it pays with the house wallet and replies.
       setStatus(isConnected ? 'Planning x402 calls…' : null)
@@ -178,6 +196,58 @@ export default function ChatInterface() {
       setLoading(false)
       setStatus(null)
     }
+  }
+
+  /** Auto-Router: POST the streaming endpoint, buffer each trace event into the
+   *  store (the engine window renders them live), and return the final reply. */
+  const runAutoRouter = async (
+    chatId: string,
+    userMsg: string,
+    history: { role: string; content: string }[],
+  ): Promise<{ content: string; receipts?: unknown; payer?: string }> => {
+    clearRouterTrace()
+    const res = await fetch('/api/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message: userMsg, chatId, autoRouter: true, history }),
+    })
+    if (!res.body) {
+      const data = await res.json().catch(() => ({}))
+      return { content: data.reply || data.error || 'No response.', receipts: data.receipts, payer: data.payer }
+    }
+    const reader = res.body.getReader()
+    const decoder = new TextDecoder()
+    let buf = ''
+    let reply: { content: string; receipts?: unknown; payer?: string } | null = null
+    for (;;) {
+      const { done, value } = await reader.read()
+      if (done) break
+      buf += decoder.decode(value, { stream: true })
+      const parts = buf.split('\n\n')
+      buf = parts.pop() ?? '' // keep the trailing partial frame for the next read
+      for (const part of parts) {
+        const line = part.trim()
+        if (!line.startsWith('data:')) continue
+        let event: { type: string; [k: string]: unknown }
+        try {
+          event = JSON.parse(line.slice(5).trim())
+        } catch {
+          continue
+        }
+        if (event.type === 'reply') {
+          reply = {
+            content: String(event.content ?? 'No response.'),
+            receipts: event.receipts,
+            payer: typeof event.payer === 'string' ? event.payer : undefined,
+          }
+        } else if (event.type === 'error') {
+          throw new Error(typeof event.message === 'string' ? event.message : 'Auto-router failed')
+        } else if (event.type !== 'done') {
+          pushRouterTrace(event as RouterTraceEvent)
+        }
+      }
+    }
+    return reply ?? { content: 'No response.' }
   }
 
   /** Sign each x402 payment with the connected wallet, then run the calls. */
@@ -287,35 +357,63 @@ export default function ChatInterface() {
           >
             {sidebarOpen ? <PanelLeftClose className="w-4 h-4" /> : <PanelLeft className="w-4 h-4" />}
           </button>
-          <span className="text-[11px] text-[color:var(--muted-2)] whitespace-nowrap font-medium mono pl-1">
-            AGENTS · {activeServers.length}
-          </span>
-            {servers.map((server) => {
-              const active = activeServerIds.includes(server.id)
-              return (
-                <button
-                  key={server.id}
-                  onClick={() => handleToggleServer(server.id)}
-                  aria-pressed={active}
-                  className={cn(
-                    'flex-shrink-0 flex items-center gap-1.5 px-2.5 py-1 min-h-[40px] md:min-h-0 rounded-lg border transition-colors',
-                    active
-                      ? 'bg-[var(--surf-2)] border-white/40 text-white'
-                      : 'bg-[var(--surf-1)] border-[var(--line)] text-[color:var(--muted)] hover:border-[var(--line-2)] hover:text-white'
-                  )}
-                >
-                  <span className="w-3.5 h-3.5 grid place-items-center opacity-90">
-                    <BrandIcon server={server} size={13} />
-                  </span>
-                  <span className="text-[11px] whitespace-nowrap">{server.name}</span>
-                  {active ? (
-                    <Check className="w-2.5 h-2.5 flex-shrink-0" strokeWidth={3} style={{ color: 'var(--accent)' }} />
-                  ) : (
-                    <Plus className="w-2.5 h-2.5 flex-shrink-0 opacity-70" strokeWidth={2.5} />
-                  )}
-                </button>
-              )
-            })}
+          {/* Auto Router: when on, the engine picks agents per message. */}
+          <button
+            onClick={() => setAutoRouter(!autoRouter)}
+            aria-pressed={autoRouter}
+            title={
+              autoRouter
+                ? 'Auto Router on — Yeetful picks the best MCP for each message'
+                : 'Auto Router off — pick agents manually'
+            }
+            className={cn(
+              'flex-shrink-0 flex items-center gap-1.5 px-2.5 py-1 min-h-[40px] md:min-h-0 rounded-lg border transition-colors',
+              autoRouter
+                ? 'bg-[var(--accent)]/15 border-[var(--accent)]/60 text-white'
+                : 'bg-[var(--surf-1)] border-[var(--line)] text-[color:var(--muted)] hover:border-[var(--line-2)] hover:text-white'
+            )}
+          >
+            <Sparkles className="w-3.5 h-3.5 flex-shrink-0" style={autoRouter ? { color: 'var(--accent)' } : undefined} />
+            <span className="text-[11px] whitespace-nowrap font-medium">Auto Router · {autoRouter ? 'On' : 'Off'}</span>
+          </button>
+
+          {autoRouter ? (
+            <span className="text-[11px] text-[color:var(--muted-2)] whitespace-nowrap pl-1">
+              Yeetful picks the best MCP for each message
+            </span>
+          ) : (
+            <>
+              <span className="text-[11px] text-[color:var(--muted-2)] whitespace-nowrap font-medium mono pl-1">
+                AGENTS · {activeServers.length}
+              </span>
+              {servers.map((server) => {
+                const active = activeServerIds.includes(server.id)
+                return (
+                  <button
+                    key={server.id}
+                    onClick={() => handleToggleServer(server.id)}
+                    aria-pressed={active}
+                    className={cn(
+                      'flex-shrink-0 flex items-center gap-1.5 px-2.5 py-1 min-h-[40px] md:min-h-0 rounded-lg border transition-colors',
+                      active
+                        ? 'bg-[var(--surf-2)] border-white/40 text-white'
+                        : 'bg-[var(--surf-1)] border-[var(--line)] text-[color:var(--muted)] hover:border-[var(--line-2)] hover:text-white'
+                    )}
+                  >
+                    <span className="w-3.5 h-3.5 grid place-items-center opacity-90">
+                      <BrandIcon server={server} size={13} />
+                    </span>
+                    <span className="text-[11px] whitespace-nowrap">{server.name}</span>
+                    {active ? (
+                      <Check className="w-2.5 h-2.5 flex-shrink-0" strokeWidth={3} style={{ color: 'var(--accent)' }} />
+                    ) : (
+                      <Plus className="w-2.5 h-2.5 flex-shrink-0 opacity-70" strokeWidth={2.5} />
+                    )}
+                  </button>
+                )
+              })}
+            </>
+          )}
           </div>
           <ShareButton />
         </div>
@@ -323,7 +421,7 @@ export default function ChatInterface() {
       {/* Messages area */}
       <div className="flex-1 overflow-y-auto px-4 py-6 space-y-4">
         {!currentChat || currentChat.messages.length === 0 ? (
-          <EmptyState activeCount={activeServers.length} />
+          <EmptyState activeCount={activeServers.length} autoRouter={autoRouter} />
         ) : (
           <>
             <AnimatePresence initial={false}>
@@ -433,9 +531,11 @@ export default function ChatInterface() {
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
             placeholder={
-              activeServers.length > 0
-                ? `Message with ${activeServers.map((s) => s.name).join(', ')}...`
-                : 'Type a message...'
+              autoRouter
+                ? 'Ask anything — Yeetful routes it to the best MCP…'
+                : activeServers.length > 0
+                  ? `Message with ${activeServers.map((s) => s.name).join(', ')}...`
+                  : 'Type a message...'
             }
             rows={1}
             className="flex-1 bg-transparent text-sm max-lg:text-base text-white placeholder:text-[color:var(--muted-2)] resize-none border-0 focus:outline-none focus-visible:outline-none max-h-40 overflow-y-auto leading-relaxed"
@@ -466,7 +566,20 @@ export default function ChatInterface() {
   )
 }
 
-function EmptyState({ activeCount }: { activeCount: number }) {
+function EmptyState({ activeCount, autoRouter }: { activeCount: number; autoRouter: boolean }) {
+  if (autoRouter) {
+    return (
+      <div className="flex flex-col items-center justify-center h-full text-center py-20">
+        <div className="w-16 h-16 rounded-2xl bg-[var(--accent)]/15 border border-[var(--accent)]/50 flex items-center justify-center mb-6">
+          <Sparkles className="w-8 h-8" style={{ color: 'var(--accent)' }} />
+        </div>
+        <h3 className="text-white font-semibold mb-2">Auto Router is on</h3>
+        <p className="text-[color:var(--muted)] text-sm max-w-xs">
+          Just ask — Yeetful picks the best MCP and endpoint for each message, pays per call, and shows its work in the engine window.
+        </p>
+      </div>
+    )
+  }
   return (
     <div className="flex flex-col items-center justify-center h-full text-center py-20">
       <div className="w-16 h-16 rounded-2xl bg-[var(--surf-1)] border border-[var(--line)] flex items-center justify-center mb-6">
