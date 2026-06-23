@@ -9,9 +9,59 @@
 //  • BudgetEditor  — inline editor for grant.perDayUsd; self-contained (it PATCHes
 //    and calls onSaved), since every host wants the same write behavior.
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { Check, Loader2, Pencil, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
+
+/**
+ * Read + toggle the account's spend policy from anywhere (chat, etc.). Loads the
+ * active grant via the dashboard stats route (which mints one if missing), so it
+ * only resolves when the user is signed in. `available` is false for guests.
+ */
+export function useSpendPolicy(active: boolean) {
+  const [grantId, setGrantId] = useState<string | null>(null)
+  const [enabled, setEnabled] = useState<boolean | null>(null)
+  const [busy, setBusy] = useState(false)
+
+  const refresh = useCallback(async () => {
+    if (!active) return
+    try {
+      const r = await fetch('/api/dashboard/stats', { cache: 'no-store' })
+      if (!r.ok) return
+      const s = await r.json()
+      if (s.grant) {
+        setGrantId(s.grant.id)
+        setEnabled(s.grant.spendPolicyEnabled)
+      }
+    } catch {
+      /* chat works without the toggle resolving */
+    }
+  }, [active])
+
+  useEffect(() => {
+    void refresh()
+  }, [refresh])
+
+  const toggle = useCallback(
+    async (next: boolean) => {
+      if (!grantId) return
+      setBusy(true)
+      try {
+        await fetch(`/api/grants/${grantId}`, {
+          method: 'PATCH',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ spendPolicyEnabled: next }),
+        })
+        setEnabled(next)
+      } finally {
+        setBusy(false)
+      }
+    },
+    [grantId],
+  )
+
+  return { grantId, enabled: !!enabled, busy, toggle, refresh, available: grantId !== null }
+}
 
 export function PolicySwitch({
   enabled,
