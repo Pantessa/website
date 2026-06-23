@@ -1008,6 +1008,18 @@ function streamAutoRouter(message: string, history: ConversationTurn[], walletAd
 
         const decision = await routeMessage({ message, history, catalog, onStep: (s) => send(s), runInference: runRoutingInference, executeCall })
 
+        // Transaction layer: a routed tool returned a signable action — surface
+        // it for explicit approval instead of synthesizing an answer. Votes reuse
+        // the existing SignVoteButton (voteRequest meta); a raw tx rides txRequest.
+        if (decision.artifact) {
+          if (decision.artifact.kind === 'eip712-vote') {
+            send({ type: 'reply', content: `🗳️ ${decision.artifact.summary}`, receipts, payer: 'the house wallet', voteRequest: decision.artifact.vote })
+          } else {
+            send({ type: 'reply', content: `🔏 ${decision.artifact.summary}`, receipts, payer: 'the house wallet', txRequest: decision.artifact.tx })
+          }
+          return finish()
+        }
+
         // Re-gate the answer call against the now-higher running total.
         if (policy && grant) {
           const violation = grantViolation(policy, infHost, infPrice, spentToday, spentTotal)

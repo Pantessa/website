@@ -26,6 +26,7 @@ import { createSiweMessage } from 'viem/siwe'
 import { grantTypedData } from '../lib/grant-typed-data'
 import { routerPrompt, parseRouterDecision, selectInferenceProvider, routeMessage } from '../lib/router'
 import { buildSmartRequest, type PlannableEndpoint } from '../lib/endpoint-planner'
+import { buildSignableArtifact, isActionIntent } from '../lib/transaction-layer'
 
 const BASE = process.env.BASE ?? 'http://localhost:3000'
 const DOMAIN = new URL(BASE).host
@@ -1286,6 +1287,39 @@ async function main() {
     executeCall: async (pick: { endpointId: string }) => { repeatExecuted.push(pick.endpointId); return { data: { ok: true } } },
   })
   check('router loop: dedups repeated picks (no runaway)', repeatExecuted.length === 1 && repeatDec.context.length === 1)
+
+  // B8 — transaction layer: a tool's return becomes a signable artifact (the
+  // action half). Vote (EIP-712) is wired; a raw EVM tx is structured.
+  const voteResult = {
+    action: 'sign_vote',
+    summary: 'Vote For on Test Proposal',
+    proposal: { id: '0x' + 'a'.repeat(64), title: 'Test Proposal', type: 'single-choice', choices: ['For', 'Against'], space: 'test.eth' },
+    choice: 1,
+    typedData: {
+      domain: { name: 'snapshot', version: '0.1.4' },
+      types: { Vote: [{ name: 'choice', type: 'uint32' }] },
+      message: { from: '0x0', space: 'test.eth', timestamp: 1, proposal: '0x' + 'a'.repeat(64), choice: 1, reason: '', app: '', metadata: '' },
+    },
+  }
+  const voteArt = buildSignableArtifact(voteResult)
+  check('tx layer: sign_vote → eip712-vote artifact', voteArt?.kind === 'eip712-vote' && voteArt.vote.proposal.title === 'Test Proposal')
+  const txArt = buildSignableArtifact({ action: 'send_transaction', label: 'swap', summary: 'Swap 1 ETH→USDC', tx: { to: '0xabc', data: '0xdead', value: '1000000000000000000', chainId: 8453 } })
+  check('tx layer: send_transaction → evm-tx artifact', txArt?.kind === 'evm-tx' && txArt.tx.to === '0xabc' && txArt.tx.action === 'swap')
+  check('tx layer: plain data → no artifact', buildSignableArtifact({ price: 3000 }) === null)
+  check(
+    'tx layer: isActionIntent flags actions, not reads',
+    isActionIntent('vote For on this') && isActionIntent('swap 1 ETH to USDC') && !isActionIntent('what is the price of ETH'),
+  )
+
+  // The loop surfaces a tool-returned vote as a signable artifact (and stops).
+  const artDec = await routeMessage({
+    message: 'vote For on proposal X',
+    catalog: [claudeSrv],
+    endpoints: [{ id: 'ep-vote', serverSlug: 'snap', serverName: 'Snapshot', method: 'POST', url: 'https://snap.test/vote', description: 'prepare a vote', priceUsd: '0.01', parameters: [{ group: 'body', name: 'choice', required: true }] }],
+    runInference: async () => ({ text: JSON.stringify({ intent: 'vote', needs: [], picks: [{ endpointId: 'ep-vote', params: { choice: 1 }, reason: 'prepare the vote', score: 0.9 }] }) }),
+    executeCall: async () => ({ data: voteResult }),
+  })
+  check('router loop: a tool-returned vote becomes decision.artifact', artDec.artifact?.kind === 'eip712-vote')
 
   // ── Cleanup (verified) ────────────────────────────────────────────────────
   console.log('— cleanup')

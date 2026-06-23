@@ -27,6 +27,7 @@ import {
   type ConversationTurn,
   type SmartRequest,
 } from '@/lib/endpoint-planner'
+import { buildSignableArtifact, type SignableArtifact } from '@/lib/transaction-layer'
 
 // ── Canonical trace contract ────────────────────────────────────────────────
 // One ordered list of these IS the "engine window" content. The streaming chat
@@ -77,6 +78,10 @@ export interface RouterDecision {
    *  returned across steps). The caller feeds these to the answer prompt.
    *  Empty in single-pass (plan) mode, where the caller executes the picks. */
   context: string[]
+  /** A signable action (vote / on-chain tx) a tool returned for the user to
+   *  approve — the transaction layer's output. Present only when a routed call
+   *  yielded one (LOOP mode). The caller surfaces it for signing. */
+  artifact?: SignableArtifact
 }
 
 /** Result of executing one chosen call: the data to observe, or an error to
@@ -283,6 +288,7 @@ export async function routeMessage(opts: RouteOptions): Promise<RouterDecision> 
 
   const smartPicks: SmartPick[] = []
   const context: string[] = []
+  let artifact: SignableArtifact | undefined
   const byId = new Map(endpoints.map((e) => [e.id, e]))
 
   // Build one SmartPick + emit candidate→select; null if the call can't be built.
@@ -377,11 +383,20 @@ export async function routeMessage(opts: RouteOptions): Promise<RouterDecision> 
           context.push(`### ${sp.serverName}\n${truncate(dataStr, 1500)}`)
           observations.push(`${sp.serverName} ${shortUrl(sp.endpointUrl)} → ${truncate(dataStr, 500)}`)
           progressed = true
+          // Transaction layer: a tool that returned a signable action (a vote /
+          // on-chain tx) short-circuits the loop — we have something to sign, not
+          // synthesize. The caller surfaces it for explicit approval.
+          const art = buildSignableArtifact(res.data)
+          if (art) {
+            artifact = art
+            addNote(`Prepared a signable ${art.kind === 'eip712-vote' ? 'vote' : 'transaction'} for you to approve.`)
+            break
+          }
         }
       }
-      if (!progressed) break // nothing succeeded this step → stop (no runaway)
+      if (artifact || !progressed) break // signable action ready, or nothing progressed → stop
     }
-    if (smartPicks.length === 0) emitConsideredNone(endpoints, addNote, emit)
+    if (smartPicks.length === 0 && !artifact) emitConsideredNone(endpoints, addNote, emit)
   }
 
   // The inference engine always answers last.
@@ -406,6 +421,7 @@ export async function routeMessage(opts: RouteOptions): Promise<RouterDecision> 
     trace,
     notes,
     context,
+    artifact,
   }
 }
 
