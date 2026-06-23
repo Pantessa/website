@@ -10,6 +10,8 @@ import { Menu, X } from 'lucide-react'
 import { useYeetfulStore } from '@/lib/store'
 import ConnectWallet from '@/components/ConnectWallet'
 import AuthButton from '@/components/AuthButton'
+import CreateAccountButton from '@/components/CreateAccountButton'
+import { cdpEnabled } from '@/lib/cdp-embedded'
 import { YeetfulMark } from '@/components/Logo'
 
 export default function Navigation() {
@@ -62,6 +64,11 @@ export default function Navigation() {
   const { address: sessionAddress } = useSession()
   const inDashboard = pathname.startsWith('/dashboard')
   const showDashboardCta = mounted && (isConnected || !!sessionAddress)
+  // The "create an account" CTA is the newcomer path — only when no wallet is
+  // connected / signed in, and only if the embedded-wallet SDK is configured.
+  const showCreateAccount = mounted && cdpEnabled && !isConnected && !sessionAddress
+  const createAccountPill =
+    'inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-emerald-400 text-zinc-950 text-xs font-semibold hover:bg-emerald-300 active:scale-[0.98] transition-all'
 
   const dashboardCta = showDashboardCta ? (
     <Link href="/dashboard" className="nav__dash">
@@ -121,6 +128,7 @@ export default function Navigation() {
             </span>
           )}
           {!inDashboard && dashboardCta}
+          {showCreateAccount && <CreateAccountButton className={createAccountPill} />}
           <AuthButton />
           <ConnectWallet />
           {!inDashboard && (
@@ -149,6 +157,7 @@ export default function Navigation() {
               <nav className="drawer__tabs">{tabs}</nav>
               <div className="drawer__foot">
                 {dashboardCta}
+                {showCreateAccount && <CreateAccountButton className={createAccountPill} />}
                 <AuthButton />
                 <ConnectWallet />
               </div>
