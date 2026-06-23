@@ -8,7 +8,7 @@
  *
  *   npm run test:router
  */
-import { shortlistEndpoints } from '../lib/router'
+import { shortlistEndpoints, capabilityOf, dedupeByCapability } from '../lib/router'
 import { deriveDescription, type PlannableEndpoint } from '../lib/endpoint-planner'
 
 let pass = 0
@@ -74,6 +74,23 @@ for (const c of CASES) {
 const synth = deriveDescription(null, 'Weather', 'https://w.test/x402/v3/forecast/daily') ?? ''
 check('deriveDescription: thin desc → category + path keywords', /weather/i.test(synth) && /forecast/i.test(synth) && !/x402|v3/i.test(synth))
 check('deriveDescription: good description passes through unchanged', deriveDescription('A detailed travel search API for hotels and restaurants', 'Travel', 'https://t.test/search') === 'A detailed travel search API for hotels and restaurants')
+
+// B21 — capability tagging + same-need dedup.
+const bySlug = (slug: string) => CATALOG.find((e) => e.serverSlug === slug)!
+check('capability: CoinMarketCap → crypto-price', capabilityOf(bySlug('coinmarketcap')) === 'crypto-price')
+check('capability: CoinGecko → crypto-price (same as CMC)', capabilityOf(bySlug('coingecko')) === 'crypto-price')
+check('capability: TripAdvisor → travel', capabilityOf(bySlug('tripadvisor')) === 'travel')
+check('capability: Exa → web-search', capabilityOf(bySlug('exa')) === 'web-search')
+const dd = dedupeByCapability([
+  { id: 'a', capability: 'crypto-price', rating: 0.9, price: 0.01 },
+  { id: 'b', capability: 'crypto-price', rating: 0.4, price: 0.01 },
+  { id: 'c', capability: 'travel', rating: 0, price: 0.02 },
+  { id: 'd', rating: 0, price: 0.01 }, // untagged → always survives
+])
+check(
+  'dedup: keeps best per capability, untagged survive',
+  dd.kept.length === 3 && dd.kept.some((k) => k.id === 'a') && !dd.kept.some((k) => k.id === 'b') && dd.kept.some((k) => k.id === 'd') && dd.dropped.length === 1 && dd.dropped[0].id === 'b',
+)
 
 console.log(`\n${pass} passed, ${fail} failed\n`)
 process.exit(fail ? 1 : 0)

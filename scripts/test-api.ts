@@ -1523,6 +1523,27 @@ async function main() {
     ceilExec === 1 && ceilDec.context.length === 1 && ceilDec.notes.some((n) => /per-turn budget/.test(n)),
   )
 
+  // B21 — same-capability dedup: two crypto-price picks → only one is paid.
+  const dupEndpoints: PlannableEndpoint[] = [
+    { id: 'cmc2', serverSlug: 'cmc', serverName: 'CMC', method: 'GET', url: 'https://cmc.test/q', description: 'crypto spot price by symbol', priceUsd: '0.01', parameters: [{ group: 'query', name: 'symbol', required: true }] },
+    { id: 'cg2', serverSlug: 'cg', serverName: 'CoinGecko', method: 'GET', url: 'https://cg.test/p', description: 'crypto token price', priceUsd: '0.01', parameters: [{ group: 'query', name: 'symbol', required: true }] },
+  ]
+  const dupExec: string[] = []
+  const dupDec = await routeMessage({
+    message: 'price of ETH',
+    catalog: [claudeSrv],
+    endpoints: dupEndpoints,
+    runInference: async () => ({ text: JSON.stringify({ intent: 'price', needs: [], picks: [
+      { endpointId: 'cmc2', params: { symbol: 'ETH' }, reason: 'p', score: 0.9 },
+      { endpointId: 'cg2', params: { symbol: 'ETH' }, reason: 'p2', score: 0.8 },
+    ] }) }),
+    executeCall: async (p: { serverSlug: string }) => { dupExec.push(p.serverSlug); return { data: {} } },
+  })
+  check(
+    'router: same-capability picks deduped (one provider paid, rest noted)',
+    dupExec.length === 1 && dupExec[0] === 'cmc' && dupDec.notes.some((n) => /same capability/.test(n)),
+  )
+
   // B13 — response cache (pure; no DB/spend).
   clearRouteCache()
   check(
