@@ -59,6 +59,39 @@ export function routeSavings(opts: { shortlistPrices: number[]; pickPrices: numb
   return { cacheSavedUsd: opts.cacheSavedUsd, savedVsPriciestUsd, totalUsd: opts.cacheSavedUsd + savedVsPriciestUsd }
 }
 
+/**
+ * Per-service reputation (B18) for the public directory: settle rate + settled
+ * count from the spend ledger, keyed by serviceName. Aggregate, no PII. Absent
+ * for services with no history (cold start shows nothing, not 0%).
+ */
+export async function serviceReputation(names: string[]): Promise<Map<string, { settled: number; failed: number; settleRate: number }>> {
+  const out = new Map<string, { settled: number; failed: number; settleRate: number }>()
+  if (names.length === 0 || process.env.USE_DB !== 'true' || !process.env.DATABASE_URL) return out
+  try {
+    const rows = await prisma.spendLedgerEntry.groupBy({
+      by: ['serviceName', 'ok'],
+      where: { serviceName: { in: names } },
+      _count: { _all: true },
+    })
+    const acc = new Map<string, { settled: number; failed: number }>()
+    for (const r of rows) {
+      if (!r.serviceName) continue
+      const cur = acc.get(r.serviceName) ?? { settled: 0, failed: 0 }
+      if (r.ok) cur.settled += r._count._all
+      else cur.failed += r._count._all
+      acc.set(r.serviceName, cur)
+    }
+    for (const [name, c] of acc) {
+      const total = c.settled + c.failed
+      if (total === 0) continue
+      out.set(name, { settled: c.settled, failed: c.failed, settleRate: c.settled / total })
+    }
+  } catch {
+    /* reputation is advisory — never block the directory on a ledger read */
+  }
+  return out
+}
+
 const WINDOW_MS = 30 * 86_400_000
 
 export interface RouteMetrics {

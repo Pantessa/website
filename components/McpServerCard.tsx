@@ -55,6 +55,15 @@ export default function McpServerCard({ server }: McpServerCardProps) {
       <div className="card__foot">
         <div className="card__badges">
           <span className="badge badge--price mono">${server.priceUsd}/call</span>
+          {server.reputation && server.reputation.settled > 0 && (
+            <span
+              className="badge mono"
+              style={{ color: ACCENT, borderColor: ACCENT }}
+              title={`${server.reputation.settled} settled paid calls via Yeetful`}
+            >
+              ✓ {Math.round(server.reputation.settleRate * 100)}% · {server.reputation.settled}
+            </span>
+          )}
           {active ? (
             <span className="badge badge--live" style={{ color: ACCENT, borderColor: ACCENT }}>
               <span className="badge__dot" style={{ background: ACCENT }} />

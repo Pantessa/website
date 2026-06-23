@@ -497,6 +497,15 @@ async function main() {
   check('route metrics: cache header set', /s-maxage/.test(rmRes.headers.get('cache-control') ?? ''))
   check('route metrics: P1 — no full wallet address in the payload', !rmText.toLowerCase().includes(owner.address.toLowerCase()))
 
+  // B18 — public MCP reputation enriches the directory (shape-safe; reputation
+  // only appears for services with ledger history).
+  const dir = (await (await fetch(`${BASE}/api/servers`)).json()) as { name: string; reputation?: { settled: number; failed: number; settleRate: number } }[]
+  check('directory: /api/servers returns the server list', Array.isArray(dir) && dir.length > 0)
+  check(
+    'directory: reputation (when present) is well-formed',
+    dir.every((s) => !s.reputation || (typeof s.reputation.settled === 'number' && s.reputation.settleRate >= 0 && s.reputation.settleRate <= 1)),
+  )
+
   // ── Switchboard route preview (public, read-only, no spend) ───────────────
   // Guards the routing lever the /switchboard "try a route" demo renders: the
   // contract shape, the $0.05 ceiling, and the proven-gate invariant — the pick
