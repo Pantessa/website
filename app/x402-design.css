@@ -127,7 +127,7 @@
   .hero { padding: 84px 0 64px; }
   .hero__eyebrow { font-size: 12px; letter-spacing: 0.18em; color: var(--muted-2); margin-bottom: 26px; }
   .hero__h1 {
-    font-family: 'Instrument Serif', Georgia, serif; font-weight: 400;
+    font-family: 'Newsreader', Georgia, serif; font-weight: 500; font-optical-sizing: auto;
     font-size: clamp(3.4rem, 7.4vw, 6.6rem); line-height: 0.98; letter-spacing: -0.015em;
     text-wrap: balance;
   }
@@ -417,7 +417,7 @@
   .explain { padding: 56px 0; border-top: 1px solid var(--line); }
   .explain__eyebrow { font-size: 12px; letter-spacing: 0.18em; color: var(--muted-2); }
   .explain__h2 {
-    font-family: 'Instrument Serif', Georgia, serif; font-weight: 400; letter-spacing: -0.01em;
+    font-family: 'Newsreader', Georgia, serif; font-weight: 500; font-optical-sizing: auto; letter-spacing: -0.01em;
     font-size: clamp(2rem, 3.8vw, 3.1rem); margin-top: 14px; max-width: 22ch; line-height: 1.05;
   }
   .explain__steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px; margin-top: 44px; background: var(--line); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; }
