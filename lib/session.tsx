@@ -24,6 +24,7 @@ import { useAccount, useChainId, useDisconnect, useSignMessage } from 'wagmi'
 import { createSiweMessage } from 'viem/siwe'
 import { getAddress } from 'viem'
 import { useYeetfulStore } from '@/lib/store'
+import { cdpEnabled } from '@/lib/cdp-embedded'
 
 type Status = 'loading' | 'authed' | 'guest'
 
@@ -127,6 +128,19 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     try {
       await fetch('/api/auth/logout', { method: 'POST' })
     } finally {
+      // A CDP embedded-wallet session lives in the CDP SDK, independent of
+      // wagmi — disconnecting the connector alone leaves the user signed into
+      // CDP, so the next "Create an account" silently resumes the old account
+      // and the connector auto-reconnects on reload. Clear it too. Guarded on
+      // cdpEnabled + isSignedIn so it's a no-op for MetaMask/other wallets.
+      if (cdpEnabled) {
+        try {
+          const cdp = await import('@coinbase/cdp-core')
+          if (await cdp.isSignedIn()) await cdp.signOut()
+        } catch {
+          // SDK not initialized / not a CDP account — nothing to clear.
+        }
+      }
       // Sign-out means GONE: drop the wallet connection too, so the UI
       // returns to the exact state a brand-new visitor sees.
       disconnect()
