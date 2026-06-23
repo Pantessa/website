@@ -186,6 +186,17 @@ function TraceLine({ event }: { event: RouterTraceEvent }) {
         </p>
       )
     }
+    case 'note':
+      return (
+        <p
+          className="[overflow-wrap:anywhere]"
+          style={{ color: event.level === 'warn' ? '#f4b740' : 'var(--muted-2)' }}
+        >
+          <span>{event.level === 'warn' ? '⚠' : 'ℹ'}</span> {event.label}
+        </p>
+      )
+    case 'error':
+      return <p className="text-[#ff6b6b] [overflow-wrap:anywhere]">✗ error — {event.message}</p>
     default:
       return null
   }

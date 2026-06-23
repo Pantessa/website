@@ -274,7 +274,9 @@ export default function ChatInterface() {
             payer: typeof event.payer === 'string' ? event.payer : undefined,
           }
         } else if (event.type === 'error') {
-          throw new Error(typeof event.message === 'string' ? event.message : 'Auto-router failed')
+          const message = typeof event.message === 'string' ? event.message : 'Auto-router failed'
+          pushRouterTrace({ type: 'error', message }) // show it in the engine window too
+          throw new Error(message)
         } else if (event.type !== 'done') {
           pushRouterTrace(event as RouterTraceEvent)
         }

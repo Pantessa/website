@@ -58,6 +58,8 @@ export type RouterTraceEvent =
   | { type: 'select'; service: string; endpoint?: string; priceUsd?: string; reason: string }
   | { type: 'pay'; service: string; host: string; priceUsd: string }
   | { type: 'receipt'; receipt: { name: string; endpoint?: string; priceUsd?: string; txHash?: string; ok: boolean; note?: string } }
+  | { type: 'note'; level: 'info' | 'warn'; label: string }
+  | { type: 'error'; message: string }
 
 export interface Chat {
   id: string

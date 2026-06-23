@@ -38,6 +38,8 @@ export type TraceStep =
   | { type: 'analyze'; intent: string; needs: string[] }
   | { type: 'candidate'; service: string; endpoint?: string; priceUsd?: string; score: number; reason: string; proven?: number }
   | { type: 'select'; service: string; endpoint?: string; priceUsd?: string; reason: string }
+  // Diagnostics surfaced in the engine window so misses/errors are explained, not silent.
+  | { type: 'note'; level: 'info' | 'warn'; label: string }
 
 // ── Picks ─────────────────────────────────────────────────────────────────
 /** A live-data call the engine chose to make (a planned, ready-to-pay request). */
@@ -154,7 +156,8 @@ export function routerPrompt(
     `You are Yeetful's routing engine. You decide which paid MCP/x402 endpoints (if any) to call to best answer a user, then explain the choice.`,
     ...(convo ? [convo] : []),
     `The user asked${history.length ? ' (interpret it in the context of the conversation above)' : ''}:\n"""${message}"""`,
-    `Below are paid API endpoints, grouped by service, each tagged with its price in [$…]; some are tagged ✓proven (they have successfully settled paid calls before). Pick AT MOST ONE endpoint per service — only if calling it would genuinely help answer the user. When two endpoints answer the need equally well, prefer the ✓proven one, then the cheaper one — but still pick an un-proven endpoint when it is clearly the better fit. Fill parameter values from the user's message and conversation (respect types; include every required param; skip optional params you can't infer). If a question needs no live data (general knowledge, chit-chat), pick nothing.`,
+    `Below are paid API endpoints, grouped by service, each tagged with its price in [$…]; some are tagged ✓proven (they have successfully settled paid calls before). Pick AT MOST ONE endpoint per service — only if calling it would genuinely help answer the user. Anything the user asks that needs LIVE or REAL-TIME data — a price, a quote, weather, scores, listings, search results, on-chain or market data — should route to a relevant endpoint here rather than be answered from memory. When two endpoints answer the need equally well, prefer the ✓proven one, then the cheaper one — but still pick an un-proven endpoint when it is clearly the better fit.`,
+    `Fill parameter values from the user's message and conversation (respect types; include every required param; skip optional params you can't infer). You MAY include query parameters even for an endpoint that lists no params, when it clearly needs one to answer — infer the obvious key/value (e.g. for a "latest quote" endpoint, "symbol":"ETH"; for a search endpoint, "query":"…"). Only pick nothing when the question genuinely needs no live data (general knowledge, chit-chat).`,
     menu || '(no endpoints available)',
     `Respond with ONLY this JSON, no prose, no code fences:`,
     `{"intent":"<one short sentence: what the user wants>","needs":["<live data this requires, if any>"],"picks":[{"endpointId":"<id>","params":{"<name>":"<value>"},"reason":"<why this endpoint, one short clause>","score":<0..1 confidence>}]}`,
@@ -219,13 +222,19 @@ export async function routeMessage(opts: RouteOptions): Promise<RouterDecision> 
     trace.push(s)
     opts.onStep?.(s)
   }
+  // A diagnostic the user should SEE: recorded for the reply footer AND streamed
+  // into the engine window as a note line (so a miss is explained, not silent).
+  const addNote = (label: string, level: 'info' | 'warn' = 'info') => {
+    notes.push(label)
+    emit({ type: 'note', level, label })
+  }
 
   emit({ type: 'status', label: 'Reading your question…' })
 
   const inference = selectInferenceProvider(catalog)
   if (!inference) {
-    notes.push('No live inference engine is available — connect or enable one (e.g. Yeetful · Claude).')
     emit({ type: 'status', label: 'No inference engine available.' })
+    addNote('No live inference engine is available — connect or enable one (e.g. Yeetful · Claude).', 'warn')
     return { inference: null, smartPicks: [], picks: [], trace, notes }
   }
 
@@ -234,7 +243,7 @@ export async function routeMessage(opts: RouteOptions): Promise<RouterDecision> 
   try {
     endpoints = await loadPlannableEndpoints(catalog.map((s) => s.slug).filter(Boolean))
   } catch (err) {
-    notes.push(`The endpoint directory is unavailable (${err instanceof Error ? err.message : 'error'}); answering from the inference engine alone.`)
+    addNote(`The endpoint directory is unavailable (${err instanceof Error ? err.message : 'error'}); answering from the inference engine alone.`, 'warn')
   }
 
   const smartPicks: SmartPick[] = []
@@ -246,11 +255,13 @@ export async function routeMessage(opts: RouteOptions): Promise<RouterDecision> 
   } else {
     emit({ type: 'status', label: `Choosing among ${endpoints.length} candidate endpoints…` })
     let decision: RouterModelDecision = { intent: '', needs: [], picks: [] }
+    let routingFailed = false
     try {
       const { text } = await opts.runInference(inference, routerPrompt(message, endpoints, history))
       decision = parseRouterDecision(text, endpoints)
     } catch (err) {
-      notes.push(`Routing failed (${err instanceof Error ? err.message : 'error'}); answering from the inference engine alone.`)
+      routingFailed = true
+      addNote(`Routing call failed (${err instanceof Error ? err.message : 'error'}); answering from the inference engine alone.`, 'warn')
     }
 
     emit({
@@ -274,7 +285,7 @@ export async function routeMessage(opts: RouteOptions): Promise<RouterDecision> 
       })
       const built = buildSmartRequest(ep, pick.params)
       if ('error' in built) {
-        notes.push(`${ep.serverName}: planned call skipped — ${built.error}.`)
+        addNote(`${ep.serverName}: planned call skipped — ${built.error}.`, 'warn')
         continue
       }
       emit({
@@ -296,8 +307,13 @@ export async function routeMessage(opts: RouteOptions): Promise<RouterDecision> 
       })
     }
 
-    if (smartPicks.length === 0) {
-      emit({ type: 'status', label: 'No live data needed — answering directly.' })
+    if (smartPicks.length === 0 && !routingFailed) {
+      // Explain WHY nothing was chosen rather than silently answering — the user
+      // should see which services were on the table.
+      const services = [...new Set(endpoints.map((e) => e.serverName))]
+      const considered = services.slice(0, 8).join(', ') + (services.length > 8 ? `, +${services.length - 8} more` : '')
+      addNote(`Considered ${services.length} service${services.length === 1 ? '' : 's'} (${considered}) — none had an endpoint I could build a call for here, so answering directly.`)
+      emit({ type: 'status', label: 'No usable live-data call — answering directly.' })
     }
   }
 

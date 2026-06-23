@@ -25,7 +25,7 @@ import { generatePrivateKey, privateKeyToAccount, type PrivateKeyAccount } from 
 import { createSiweMessage } from 'viem/siwe'
 import { grantTypedData } from '../lib/grant-typed-data'
 import { routerPrompt, parseRouterDecision, selectInferenceProvider } from '../lib/router'
-import type { PlannableEndpoint } from '../lib/endpoint-planner'
+import { buildSmartRequest, type PlannableEndpoint } from '../lib/endpoint-planner'
 
 const BASE = process.env.BASE ?? 'http://localhost:3000'
 const DOMAIN = new URL(BASE).host
@@ -1223,6 +1223,26 @@ async function main() {
   check('router select: prefers Yeetful · Claude as the answer engine', selectInferenceProvider([gpt, claude])?.slug === 'yeetful-claude')
   check('router select: falls back to cheapest inference (no Claude)', selectInferenceProvider([pricey, gpt])?.slug === 'chatgpt')
   check('router select: no callable inference → null', selectInferenceProvider([dataOnly]) === null)
+
+  // B6 — schema-less query params: a planner-supplied param the endpoint doesn't
+  // list (e.g. CoinMarketCap quotes/latest has no schema) must still be routed
+  // into the GET query, so schema-poor endpoints become usable (?symbol=ETH).
+  const schemaLessEp: PlannableEndpoint = {
+    id: 'ep-cmc-quotes', serverSlug: 'coinmarketcap', serverName: 'CoinMarketCap', method: 'GET',
+    url: 'https://pro-api.coinmarketcap.com/x402/v3/cryptocurrency/quotes/latest',
+    description: 'Latest cryptocurrency quote data', priceUsd: '0.01', parameters: [],
+  }
+  const builtSchemaLess = buildSmartRequest(schemaLessEp, { symbol: 'ETH' })
+  check(
+    'router build: schema-less GET routes inferred param into the query (?symbol=ETH)',
+    'request' in builtSchemaLess && builtSchemaLess.request.url.includes('symbol=ETH'),
+  )
+  // A POST routes an inferred param into the JSON body, not the query.
+  const builtPost = buildSmartRequest({ ...schemaLessEp, method: 'POST' }, { symbol: 'ETH' })
+  check(
+    'router build: schema-less POST routes inferred param into the body',
+    'request' in builtPost && !builtPost.request.url.includes('symbol=') && (builtPost.request.body ?? '').includes('ETH'),
+  )
 
   // ── Cleanup (verified) ────────────────────────────────────────────────────
   console.log('— cleanup')
