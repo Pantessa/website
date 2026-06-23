@@ -42,7 +42,7 @@ interface PaymentToSign {
 
 /** Build the assistant message meta from receipts + an optional vote request /
  *  ambiguous-proposal candidates. */
-function buildMeta(receipts: unknown, payer: unknown, voteRequest: unknown, voteCandidates?: unknown, routeReport?: unknown) {
+function buildMeta(receipts: unknown, payer: unknown, voteRequest: unknown, voteCandidates?: unknown, routeReport?: unknown, routerTrace?: unknown) {
   const meta: Record<string, unknown> = {}
   if (Array.isArray(receipts) && receipts.length) {
     meta.receipts = receipts
@@ -51,6 +51,7 @@ function buildMeta(receipts: unknown, payer: unknown, voteRequest: unknown, vote
   if (voteRequest && typeof voteRequest === 'object') meta.voteRequest = voteRequest
   if (voteCandidates && typeof voteCandidates === 'object') meta.voteCandidates = voteCandidates
   if (routeReport && typeof routeReport === 'object') meta.routeReport = routeReport
+  if (Array.isArray(routerTrace) && routerTrace.length) meta.routerTrace = routerTrace
   return Object.keys(meta).length ? meta : undefined
 }
 
@@ -162,7 +163,7 @@ export default function ChatInterface() {
           addMessage(chatId, {
             role: 'assistant',
             content: out.content,
-            meta: buildMeta(out.receipts, out.payer, out.voteRequest, undefined, out.routeReport),
+            meta: buildMeta(out.receipts, out.payer, out.voteRequest, undefined, out.routeReport, out.routerTrace),
           })
         }
         return
@@ -218,7 +219,7 @@ export default function ChatInterface() {
     userMsg: string,
     history: { role: string; content: string }[],
   ): Promise<
-    | { kind: 'reply'; content: string; receipts?: unknown; payer?: string; voteRequest?: unknown; routeReport?: unknown }
+    | { kind: 'reply'; content: string; receipts?: unknown; payer?: string; voteRequest?: unknown; routeReport?: unknown; routerTrace?: unknown }
     | { kind: 'plan'; data: { plan: unknown; payments: PaymentToSign[]; listedOnly: unknown; notes?: unknown } }
   > => {
     clearRouterTrace()
@@ -243,7 +244,7 @@ export default function ChatInterface() {
     const reader = res.body.getReader()
     const decoder = new TextDecoder()
     let buf = ''
-    let reply: { kind: 'reply'; content: string; receipts?: unknown; payer?: string; voteRequest?: unknown; routeReport?: unknown } | null = null
+    let reply: { kind: 'reply'; content: string; receipts?: unknown; payer?: string; voteRequest?: unknown; routeReport?: unknown; routerTrace?: unknown } | null = null
     for (;;) {
       const { done, value } = await reader.read()
       if (done) break
@@ -279,6 +280,7 @@ export default function ChatInterface() {
             payer: typeof event.payer === 'string' ? event.payer : undefined,
             voteRequest: event.voteRequest,
             routeReport: event.routeReport,
+            routerTrace: event.trace,
           }
         } else if (event.type === 'error') {
           const message = typeof event.message === 'string' ? event.message : 'Auto-router failed'
@@ -559,6 +561,24 @@ export default function ChatInterface() {
                     <pre className="whitespace-pre-wrap font-sans [overflow-wrap:anywhere]">{msg.content}</pre>
                     {msg.role === 'assistant' && <MessageReceipts meta={msg.meta} />}
                     {msg.role === 'assistant' && <RouteReport meta={msg.meta} />}
+                    {msg.role === 'assistant' &&
+                      (() => {
+                        const t = (msg.meta as { routerTrace?: unknown } | undefined)?.routerTrace
+                        if (!Array.isArray(t) || t.length === 0) return null
+                        return (
+                          <button
+                            onClick={() => {
+                              clearRouterTrace()
+                              ;(t as RouterTraceEvent[]).forEach((e) => pushRouterTrace(e))
+                              setEngineWindowOpen(true)
+                            }}
+                            className="mt-1 text-[11px] text-[color:var(--muted-2)] hover:text-white mono inline-flex items-center gap-1"
+                            title="Re-open this turn's routing in the engine window"
+                          >
+                            ↻ Replay routing
+                          </button>
+                        )
+                      })()}
                     {msg.role === 'assistant' &&
                       (() => {
                         const vote = voteRequestOf(msg.meta)

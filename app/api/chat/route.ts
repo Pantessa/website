@@ -871,7 +871,18 @@ export function streamAutoRouter(
   const encoder = new TextEncoder()
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
-      const send = (event: unknown) => controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`))
+      // Accumulate the trace-type events as they stream so the turn's reasoning
+      // can be persisted to Message.meta + replayed later (B16). No PII (service
+      // slugs / intent / public tx hashes only); capped to keep meta small.
+      const traceLog: unknown[] = []
+      const TRACE_TYPES = new Set(['status', 'analyze', 'shortlist', 'candidate', 'select', 'note', 'pay', 'receipt'])
+      const trace = () => traceLog.slice(-60)
+      const send = (event: unknown) => {
+        if (event && typeof event === 'object' && TRACE_TYPES.has((event as { type?: string }).type ?? '') && traceLog.length < 300) {
+          traceLog.push(event)
+        }
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`))
+      }
       const startMs = Date.now()
       const finish = () => {
         send({ type: 'done' })
@@ -1080,9 +1091,9 @@ export function streamAutoRouter(
         // the existing SignVoteButton (voteRequest meta); a raw tx rides txRequest.
         if (decision.artifact) {
           if (decision.artifact.kind === 'eip712-vote') {
-            send({ type: 'reply', content: `🗳️ ${decision.artifact.summary}`, receipts, payer: 'the house wallet', voteRequest: decision.artifact.vote })
+            send({ type: 'reply', content: `🗳️ ${decision.artifact.summary}`, receipts, payer: 'the house wallet', voteRequest: decision.artifact.vote, trace: trace() })
           } else {
-            send({ type: 'reply', content: `🔏 ${decision.artifact.summary}`, receipts, payer: 'the house wallet', txRequest: decision.artifact.tx })
+            send({ type: 'reply', content: `🔏 ${decision.artifact.summary}`, receipts, payer: 'the house wallet', txRequest: decision.artifact.tx, trace: trace() })
           }
           recordTurn({ payer: 'the house wallet', shortlisted: shortlistedOf(decision), picks: picksOf(decision), intent: intentOf(decision) })
           return finish()
@@ -1131,6 +1142,7 @@ export function streamAutoRouter(
           receipts,
           payer: 'the house wallet',
           routeReport,
+          trace: trace(),
         })
         recordTurn({ payer: 'the house wallet', shortlisted: shortlistedOf(decision), picks: picksOf(decision), intent: intentOf(decision) })
         finish()
