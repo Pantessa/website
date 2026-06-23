@@ -122,7 +122,7 @@ export default function Navigation() {
             </span>
           )}
           {!inDashboard && dashboardCta}
-          {showCreateAccount && <CreateAccountButton className={createAccountPill} />}
+          {showCreateAccount && <CreateAccountButton className={createAccountPill} label="Sign in" />}
           <AuthButton />
           <ConnectWallet />
           {!inDashboard && (
@@ -151,7 +151,7 @@ export default function Navigation() {
               <nav className="drawer__tabs">{tabs}</nav>
               <div className="drawer__foot">
                 {dashboardCta}
-                {showCreateAccount && <CreateAccountButton className={createAccountPill} />}
+                {showCreateAccount && <CreateAccountButton className={createAccountPill} label="Sign in" />}
                 <AuthButton />
                 <ConnectWallet />
               </div>

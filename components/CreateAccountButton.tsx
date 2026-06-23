@@ -137,7 +137,7 @@ function CreateAccountModal({ onClose }: { onClose: () => void }) {
   return createPortal(
     <div className="ca">
       <button className="ca__backdrop" aria-label="Close" onClick={onClose} />
-      <div className="ca__panel" role="dialog" aria-modal="true" aria-label="Create an account">
+      <div className="ca__panel" role="dialog" aria-modal="true" aria-label="Sign in or create an account">
         <button className="ca__close" aria-label="Close" onClick={onClose}>
           <X width={16} height={16} />
         </button>
@@ -145,10 +145,10 @@ function CreateAccountModal({ onClose }: { onClose: () => void }) {
         {step === 'email' && (
           <form onSubmit={sendCode}>
             <div className="ca__icon"><Mail width={20} height={20} /></div>
-            <h2 className="ca__title">Create an account</h2>
+            <h2 className="ca__title">Sign in or create an account</h2>
             <p className="ca__sub">
-              No wallet or extension needed. Enter your email and we&rsquo;ll send a code —
-              you&rsquo;ll get a secure, non-custodial wallet you fully control.
+              No wallet or extension needed. Enter your email and we&rsquo;ll send a one-time code —
+              new here, we create your secure non-custodial wallet; returning, we sign you back in.
             </p>
             <label className="ca__label" htmlFor="ca-email">Email</label>
             <input
@@ -165,9 +165,9 @@ function CreateAccountModal({ onClose }: { onClose: () => void }) {
             {error && <p className="ca__error">{error}</p>}
             <button type="submit" className="ca__submit" disabled={busy || !isInitialized}>
               {busy ? <Loader2 className="ca__spin" width={16} height={16} /> : null}
-              {!isInitialized ? 'Starting…' : busy ? 'Sending…' : 'Send code'}
+              {!isInitialized ? 'Starting…' : busy ? 'Sending…' : 'Continue with email'}
             </button>
-            <p className="ca__fine">Already have a wallet? Use “Connect Wallet” instead.</p>
+            <p className="ca__fine">Already use a crypto wallet? Use “Connect Wallet” instead.</p>
           </form>
         )}
 
@@ -178,7 +178,7 @@ function CreateAccountModal({ onClose }: { onClose: () => void }) {
             </button>
             <h2 className="ca__title">Enter your code</h2>
             <p className="ca__sub">
-              We sent a 6-digit code to <strong>{email}</strong>. Enter it to create your wallet.
+              We sent a 6-digit code to <strong>{email}</strong>. Enter it to continue.
             </p>
             <label className="ca__label" htmlFor="ca-otp">Verification code</label>
             <input
@@ -196,7 +196,7 @@ function CreateAccountModal({ onClose }: { onClose: () => void }) {
             {error && <p className="ca__error">{error}</p>}
             <button type="submit" className="ca__submit" disabled={busy}>
               {busy ? <Loader2 className="ca__spin" width={16} height={16} /> : null}
-              {busy ? 'Verifying…' : 'Verify & create wallet'}
+              {busy ? 'Verifying…' : 'Verify & continue'}
             </button>
             <button type="button" className="ca__resend" onClick={sendCode} disabled={busy}>
               Resend code
@@ -207,7 +207,7 @@ function CreateAccountModal({ onClose }: { onClose: () => void }) {
         {step === 'connecting' && (
           <div className="ca__connecting">
             <Loader2 className="ca__spin ca__spin--lg" width={28} height={28} />
-            <p className="ca__sub">Creating your wallet…</p>
+            <p className="ca__sub">Setting up your wallet…</p>
           </div>
         )}
       </div>
