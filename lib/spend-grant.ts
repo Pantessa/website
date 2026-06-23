@@ -40,6 +40,12 @@ export interface GrantPolicy {
   expiresAt: Date
   status: string // 'active' | 'revoked' | 'expired'
   paused?: boolean // kill switch — a reversible freeze of the whole account
+  // Master power switch for the whole policy. Default OFF for new users so the
+  // first run is unrestricted (a big trial blocker otherwise). When false, the
+  // gate below short-circuits: no allowlist, no caps — access to any host. The
+  // per-agent approval rows are untouched, so flipping this back on restores the
+  // user's curated allowlist + caps exactly as they were.
+  spendPolicyEnabled?: boolean
 }
 
 /** The host of an x402 endpoint URL, lowercased (the unit the allowlist matches). */
@@ -68,12 +74,18 @@ export function checkGrant(
   spentTodayUsd: number,
   spentTotalUsd = 0,
 ): void {
+  // Kill switches are emergency overrides — they apply even when the policy is
+  // off, so a user in "unrestricted" mode can still freeze a runaway agent.
   if (grant.status === 'revoked') {
     throw new GrantError('REVOKED', `Grant ${grant.id} has been revoked.`)
   }
   if (grant.paused) {
     throw new GrantError('ACCOUNT_FROZEN', `Grant ${grant.id} is frozen (paused).`)
   }
+  // Master switch off → skip the policy itself: no expiry, no allowlist, no
+  // caps — the agent may pay any host. (Default OFF for new users; existing
+  // users are backfilled ON.) The per-agent approval rows are untouched.
+  if (!grant.spendPolicyEnabled) return
   if (Date.now() > grant.expiresAt.getTime()) {
     throw new GrantError('EXPIRED', `Grant ${grant.id} has expired.`)
   }

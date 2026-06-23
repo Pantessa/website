@@ -77,6 +77,9 @@ export async function GET(req: NextRequest) {
           spentTotalUsd: await spentTotalUsd(grant.id),
           expiresAt: grant.expiresAt,
           paused: grant.paused,
+          // Master switch — when false the policy is off (unrestricted). SDKs
+          // can mirror this to skip local enforcement (SDK change is a follow-up).
+          spendPolicyEnabled: grant.spendPolicyEnabled,
           signed: !!grant.signature,
         }
       : null,
