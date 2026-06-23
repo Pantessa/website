@@ -34,11 +34,10 @@ export default function SwitchboardHero() {
             MCP routing engine <span>·</span> USDC on Base <span>·</span> <b>x402</b>
           </div>
           <h1 className="heroweb__h1">
-            <span className="heroweb__grad">Agentic Payments</span>
+            <span className="heroweb__grad">Reason</span>{' '}
+            <span className="heroweb__grad heroweb__em">Router</span>
             <br />
-            <span className="heroweb__grad">&amp;</span>{' '}
-            <span className="heroweb__grad heroweb__em">Routing</span>{' '}
-            <span className="heroweb__dim">Layer.</span>
+            <span className="heroweb__grad">for Paid Agents.</span>
           </h1>
           <p className="heroweb__lede">
             <strong>One key</strong>, every model and data source. Router sends each request —{' '}
