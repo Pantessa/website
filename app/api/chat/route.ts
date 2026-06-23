@@ -37,7 +37,7 @@ import { loadCatalog } from '@/lib/catalog'
 import { routeMessage, selectInferenceProvider, type TraceStep, type SmartPick } from '@/lib/router'
 import { buildSignableArtifact } from '@/lib/transaction-layer'
 import { isCacheable, routeCacheKey, getCached, setCached } from '@/lib/route-cache'
-import { recordRouteEvent } from '@/lib/route-telemetry'
+import { recordRouteEvent, routeSavings } from '@/lib/route-telemetry'
 import type { RouterDecision } from '@/lib/router'
 
 // x402 signing + paid fetch need the Node runtime.
@@ -1114,11 +1114,23 @@ export function streamAutoRouter(
           await recordLedger({ grantId: grant.id, orgId: grant.orgId ?? undefined, host: infHost, serviceName: inference.name, amountUsd: infPrice, ok: true, txHash, note: 'settled' })
         }
 
+        // Value proof (B15): what smart routing saved this turn vs naive routing.
+        const shortlistStep = decision.trace.find((s) => s.type === 'shortlist')
+        const shortlistPrices = shortlistStep && shortlistStep.type === 'shortlist' ? shortlistStep.candidates.map((c) => Number(c.priceUsd) || 0) : []
+        const sv = routeSavings({ shortlistPrices, pickPrices: decision.smartPicks.map((p) => Number(p.priceUsd) || 0), cacheSavedUsd: savedUsd })
+        const routeReport = {
+          considered: shortlistedOf(decision),
+          picked: decision.smartPicks.map((p) => p.serverName),
+          spentUsd: receipts.filter((r) => r.ok).reduce((a, r) => a + (Number(r.priceUsd) || 0), 0),
+          cacheSavedUsd: sv.cacheSavedUsd,
+          savedVsPriciestUsd: sv.savedVsPriciestUsd,
+        }
         send({
           type: 'reply',
           content: text + infoFooter([], decision.notes),
           receipts,
           payer: 'the house wallet',
+          routeReport,
         })
         recordTurn({ payer: 'the house wallet', shortlisted: shortlistedOf(decision), picks: picksOf(decision), intent: intentOf(decision) })
         finish()

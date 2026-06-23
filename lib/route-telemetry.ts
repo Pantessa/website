@@ -43,6 +43,22 @@ export function recordRouteEvent(e: RouteEventInput): void {
     .catch(() => {})
 }
 
+/**
+ * Per-turn value (B15): what smart routing saved vs naive routing. Two honest
+ * components — cache (a re-pay avoided) and "vs priciest" (the engine picked a
+ * cheaper relevant tool than the most expensive one it considered). Pure +
+ * tested. Framed as "vs the priciest relevant option", not an absolute claim.
+ */
+export function routeSavings(opts: { shortlistPrices: number[]; pickPrices: number[]; cacheSavedUsd: number }): {
+  cacheSavedUsd: number
+  savedVsPriciestUsd: number
+  totalUsd: number
+} {
+  const priciest = opts.shortlistPrices.length ? Math.max(0, ...opts.shortlistPrices) : 0
+  const savedVsPriciestUsd = opts.pickPrices.reduce((a, p) => a + Math.max(0, priciest - p), 0)
+  return { cacheSavedUsd: opts.cacheSavedUsd, savedVsPriciestUsd, totalUsd: opts.cacheSavedUsd + savedVsPriciestUsd }
+}
+
 const WINDOW_MS = 30 * 86_400_000
 
 export interface RouteMetrics {

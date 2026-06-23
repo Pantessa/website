@@ -29,6 +29,7 @@ import { routerPrompt, parseRouterDecision, selectInferenceProvider, routeMessag
 import { buildSmartRequest, computeRating, type PlannableEndpoint } from '../lib/endpoint-planner'
 import { buildSignableArtifact, isActionIntent } from '../lib/transaction-layer'
 import { isCacheable, routeCacheKey, getCached, setCached, clearRouteCache } from '../lib/route-cache'
+import { routeSavings } from '../lib/route-telemetry'
 
 const BASE = process.env.BASE ?? 'http://localhost:3000'
 const DOMAIN = new URL(BASE).host
@@ -1066,6 +1067,7 @@ async function main() {
             { name: 'Beta', priceUsd: '0.01', ok: false, note: 'blocked: NOT_ALLOWED' },
             { name: 'Gamma', priceUsd: '0.01', ok: false, note: 'blocked: NOT_ALLOWED', slug: 'gamma-svc' },
           ],
+          routeReport: { considered: 12, picked: ['CoinMarketCap'], spentUsd: 0.01, cacheSavedUsd: 0, savedVsPriciestUsd: 0.04 },
         },
       }),
     })
@@ -1073,6 +1075,7 @@ async function main() {
   const loaded = await (await fetch(`${BASE}/api/chats/${chat.id}`, { headers: C })).json()
   const loadedMsg = loaded.messages?.find((m: { id: string }) => m.id === msg.id)
   check('meta.receipts + payer round-trip', loadedMsg?.meta?.payer === 'your wallet' && loadedMsg.meta.receipts.length === 3)
+  check('meta.routeReport (B15 value) round-trips', loadedMsg?.meta?.routeReport?.picked?.[0] === 'CoinMarketCap' && loadedMsg.meta.routeReport.savedVsPriciestUsd === 0.04)
 
   const shared = await (
     await fetch(`${BASE}/api/chats/${chat.id}`, {
@@ -1520,6 +1523,13 @@ async function main() {
   check('cache: served within TTL', (getCached('ttlkey', 1_050) as { v?: number } | undefined)?.v === 9)
   check('cache: expired after TTL → miss', getCached('ttlkey', 1_200) === undefined)
   clearRouteCache()
+
+  // B15 — value proof: savings vs naive routing (pure).
+  const sv1 = routeSavings({ shortlistPrices: [0.01, 0.05, 0.02], pickPrices: [0.01], cacheSavedUsd: 0 })
+  check('value: saved vs the priciest relevant tool (picked cheaper)', Math.abs(sv1.savedVsPriciestUsd - 0.04) < 1e-9 && Math.abs(sv1.totalUsd - 0.04) < 1e-9)
+  const sv2 = routeSavings({ shortlistPrices: [0.01], pickPrices: [0.01], cacheSavedUsd: 0.01 })
+  check('value: cache savings counted in the total', Math.abs(sv2.cacheSavedUsd - 0.01) < 1e-9 && Math.abs(sv2.totalUsd - 0.01) < 1e-9)
+  check('value: no shortlist → no savings claimed', routeSavings({ shortlistPrices: [], pickPrices: [], cacheSavedUsd: 0 }).totalUsd === 0)
 
   // ── Cleanup (verified) ────────────────────────────────────────────────────
   console.log('— cleanup')
