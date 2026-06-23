@@ -1,6 +1,6 @@
 import { createCDPEmbeddedWalletConnector } from '@coinbase/cdp-wagmi'
 import type { Config as CdpConfig } from '@coinbase/cdp-hooks'
-import { http } from 'wagmi'
+import { http, type CreateConnectorFn } from 'wagmi'
 import { base, baseSepolia } from 'wagmi/chains'
 
 /**
@@ -32,15 +32,7 @@ export const cdpConfig: CdpConfig = {
   ethereum: { createOnLogin: 'eoa' },
 }
 
-/**
- * The embedded-wallet wagmi connector.
- *
- * `announceProvider: false` keeps it OUT of the EIP-6963 injected-wallet list,
- * so it does not show up as a duplicate "Installed" entry in the RainbowKit
- * modal. We connect it explicitly from a dedicated "Create an account" CTA via
- * `useConnect({ connector })` (card 2), not through the wallet-select modal.
- */
-export const cdpEmbeddedConnector = createCDPEmbeddedWalletConnector({
+const baseCdpConnector = createCDPEmbeddedWalletConnector({
   cdpConfig,
   providerConfig: {
     chains: [base, baseSepolia],
@@ -51,3 +43,26 @@ export const cdpEmbeddedConnector = createCDPEmbeddedWalletConnector({
     announceProvider: false,
   },
 })
+
+/**
+ * The embedded-wallet wagmi connector — driven ONLY by our "Sign in / create
+ * account" CTA via `useConnect({ connector })`, never the wallet-select modal.
+ *
+ * RainbowKit auto-lists ANY wagmi connector it sees as an EIP-6963 wallet when
+ * it has a `name` + `uid` + a `data:image` icon (its `isEIP6963Connector`
+ * check). The CDP connector matches all three, so despite `announceProvider:
+ * false` it leaked into the Connect Wallet modal as a "CDP" tile — clicking it
+ * hung forever waiting on a browser-extension popup that never comes. Stripping
+ * the connector's `icon` drops it below that bar, so RainbowKit no longer treats
+ * it as a wallet. Our flow finds it by `id` (`cdp-embedded-wallet`), not icon,
+ * so nothing we rely on changes.
+ */
+export const cdpEmbeddedConnector: CreateConnectorFn = (config) => {
+  const connector = baseCdpConnector(config)
+  try {
+    delete (connector as unknown as { icon?: string }).icon
+  } catch {
+    /* icon non-configurable — harmless, fall through */
+  }
+  return connector
+}
