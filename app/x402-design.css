@@ -592,6 +592,9 @@
   }
   .ep__method--get { color: var(--accent); border-color: color-mix(in oklch, var(--accent) 45%, transparent); }
   .ep__method--post { color: #8ab4ff; border-color: color-mix(in oklch, #8ab4ff 45%, transparent); }
+  .ep__method--put { color: #d8a657; border-color: color-mix(in oklch, #d8a657 45%, transparent); }
+  .ep__method--patch { color: #e0a86a; border-color: color-mix(in oklch, #e0a86a 45%, transparent); }
+  .ep__method--delete { color: var(--sell); border-color: color-mix(in oklch, var(--sell) 45%, transparent); }
   .ep__path { font-size: 13px; color: var(--fg); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; flex: 1; }
   .ep__price { font-size: 12.5px; font-weight: 600; flex-shrink: 0; }
   .ep__sub { display: flex; align-items: center; gap: 12px; margin-top: 7px; flex-wrap: wrap; }
@@ -994,6 +997,56 @@
               mask-image: linear-gradient(to right, #000 92%, transparent); }
     .docs__side::-webkit-scrollbar { display: none; }
     .docs__link { white-space: nowrap; min-height: 44px; }
+  }
+
+  /* ── DOCS SPLASH (the grand entry at /docs) ──────── */
+  .splash__eyebrow { font-size: 12px; letter-spacing: 0.18em; color: var(--accent); margin-bottom: 16px; }
+  .splash__h1 {
+    font-family: 'Archivo', sans-serif; font-weight: 800;
+    font-size: clamp(2.2rem, 4vw, 3.4rem); letter-spacing: -0.03em; line-height: 1.04;
+    max-width: 16ch;
+  }
+  .splash__lead { margin-top: 18px; font-size: 16.5px; color: var(--muted); line-height: 1.6; max-width: 64ch; }
+  .splash__lead a { color: var(--fg); text-decoration: underline; text-underline-offset: 3px; text-decoration-style: dotted; }
+  .splash__lead strong { color: var(--fg); }
+  .splash__ctas { margin-top: 28px; display: flex; flex-wrap: wrap; gap: 12px; }
+
+  .splash__paths { margin-top: 56px; display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; }
+  .splash__path {
+    min-width: 0; display: flex; flex-direction: column;
+    background: var(--surf-1); border: 1px solid var(--line); border-radius: 16px; padding: 26px;
+  }
+  .splash__kicker { font-size: 11.5px; letter-spacing: 0.14em; color: var(--accent); font-weight: 600; }
+  .splash__pathtitle { font-family: 'Archivo', sans-serif; font-weight: 700; font-size: 22px; letter-spacing: -0.02em; margin-top: 12px; }
+  .splash__pathlead { font-size: 14.5px; color: var(--muted); line-height: 1.55; margin-top: 10px; text-wrap: pretty; }
+  .splash__pathlead strong { color: var(--fg); }
+  .splash__copycap { font-size: 11.5px; color: var(--muted-2); margin: 20px 0 8px; }
+  .splash__copycap:first-of-type { margin-top: 22px; }
+  /* style both the by-hand <pre> and the CopyBlock's inner <pre> uniformly */
+  .splash__path pre, .splash__npm pre {
+    background: var(--bg); border: 1px solid var(--line); border-radius: 12px;
+    padding: 16px; overflow-x: auto; font-size: 12.5px; line-height: 1.6; color: var(--muted);
+    white-space: pre; margin: 0;
+  }
+  .splash__path pre code { color: var(--muted); }
+  .splash__more { margin-top: auto; padding-top: 20px; display: flex; flex-wrap: wrap; gap: 18px; }
+  .splash__more a { display: inline-flex; align-items: center; gap: 5px; font-size: 13px; color: var(--accent); text-decoration: none; }
+  .splash__more a:hover { text-decoration: underline; text-underline-offset: 3px; }
+
+  .splash__npm {
+    margin-top: 16px; display: flex; align-items: center; justify-content: space-between; gap: 24px;
+    background: var(--surf-1); border: 1px solid var(--line); border-radius: 16px; padding: 22px 26px;
+  }
+  .splash__npmlead { font-size: 14.5px; color: var(--muted); line-height: 1.55; margin-top: 8px; max-width: 60ch; }
+  .splash__npmlead code { font-family: 'Geist Mono', ui-monospace, monospace; font-size: 0.88em; background: var(--surf-2); border: 1px solid var(--line); border-radius: 5px; padding: 1px 6px; color: var(--fg); }
+  .splash__npm pre { flex-shrink: 0; white-space: nowrap; }
+
+  @media (max-width: 900px) {
+    .splash__paths { grid-template-columns: 1fr; }
+  }
+  @media (max-width: 600px) {
+    .splash__npm { flex-direction: column; align-items: stretch; gap: 16px; }
+    .splash__npm pre { white-space: pre; }
   }
 
   /* ── BLOG ────────────────────────────────────────── */

@@ -55,7 +55,7 @@ export default function SwitchboardHero() {
             >
               {isConnected ? 'Open dashboard' : 'Try a route'}
             </button>
-            <Link className="btn btn--ghost" href="/developers">
+            <Link className="btn btn--ghost" href="/docs">
               Connect an agent
             </Link>
           </div>

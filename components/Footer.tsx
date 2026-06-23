@@ -23,7 +23,6 @@ export default function Footer() {
         </div>
         <div className="footer__links">
           <Link href="/docs">Docs</Link>
-          <Link href="/developers">Developers</Link>
           <Link href="/blog">Blog</Link>
           <a href={FOOTER_LINKS.github} target="_blank" rel="noopener noreferrer">
             GitHub
