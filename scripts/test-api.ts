@@ -28,6 +28,7 @@ import { grantViolation, type GrantPolicy } from '../lib/spend-grant'
 import { routerPrompt, parseRouterDecision, selectInferenceProvider, routeMessage, shortlistEndpoints } from '../lib/router'
 import { buildSmartRequest, computeRating, type PlannableEndpoint } from '../lib/endpoint-planner'
 import { buildSignableArtifact, isActionIntent } from '../lib/transaction-layer'
+import { isCacheable, routeCacheKey, getCached, setCached, clearRouteCache } from '../lib/route-cache'
 
 const BASE = process.env.BASE ?? 'http://localhost:3000'
 const DOMAIN = new URL(BASE).host
@@ -1480,6 +1481,22 @@ async function main() {
     'router: per-turn cost ceiling stops overspend (1 of 2 runs, rest noted)',
     ceilExec === 1 && ceilDec.context.length === 1 && ceilDec.notes.some((n) => /per-turn budget/.test(n)),
   )
+
+  // B13 — response cache (pure; no DB/spend).
+  clearRouteCache()
+  check(
+    'cache: key ignores query-param order',
+    routeCacheKey({ method: 'GET', url: 'https://x/p?b=2&a=1' }) === routeCacheKey({ method: 'GET', url: 'https://x/p?a=1&b=2' }),
+  )
+  check('cache: GET cacheable, POST not', isCacheable({ method: 'GET' }) && !isCacheable({ method: 'POST' }))
+  const ck = routeCacheKey({ method: 'GET', url: 'https://x/p?a=1' })
+  setCached(ck, { v: 1 })
+  check('cache: hit returns the stored value', (getCached(ck) as { v?: number } | undefined)?.v === 1)
+  check('cache: miss returns undefined', getCached('GET https://nope/') === undefined)
+  setCached('ttlkey', { v: 9 }, 100, 1_000) // expires at 1100
+  check('cache: served within TTL', (getCached('ttlkey', 1_050) as { v?: number } | undefined)?.v === 9)
+  check('cache: expired after TTL → miss', getCached('ttlkey', 1_200) === undefined)
+  clearRouteCache()
 
   // ── Cleanup (verified) ────────────────────────────────────────────────────
   console.log('— cleanup')

@@ -35,6 +35,8 @@ import {
 } from '@/lib/endpoint-planner'
 import { loadCatalog } from '@/lib/catalog'
 import { routeMessage, selectInferenceProvider, type TraceStep, type SmartPick } from '@/lib/router'
+import { buildSignableArtifact } from '@/lib/transaction-layer'
+import { isCacheable, routeCacheKey, getCached, setCached } from '@/lib/route-cache'
 
 // x402 signing + paid fetch need the Node runtime.
 export const runtime = 'nodejs'
@@ -991,6 +993,20 @@ export function streamAutoRouter(
         const executeCall = async (pick: SmartPick): Promise<{ data?: unknown; error?: string }> => {
           const host = hostOf(pick.request.url)
           const price = Number(pick.priceUsd)
+          // Cache: an identical recent GET read is served for $0.00, no payment,
+          // no gate (there's nothing to spend). Reads only; never actions/fails.
+          const cacheable = isCacheable(pick.request)
+          const cacheKey = cacheable ? routeCacheKey(pick.request) : ''
+          if (cacheable) {
+            const hit = getCached(cacheKey)
+            if (hit !== undefined) {
+              send({ type: 'note', level: 'info', label: `↺ ${pick.serverName}: served from cache ($0.00)` })
+              const r: Receipt = { name: pick.serverName, endpoint: host, priceUsd: '0.00', ok: true, note: 'cached' }
+              receipts.push(r)
+              send({ type: 'receipt', receipt: r })
+              return { data: hit }
+            }
+          }
           if (policy && grant) {
             const violation = grantViolation(policy, host, price, spentToday, spentTotal)
             if (violation) {
@@ -1012,6 +1028,9 @@ export function streamAutoRouter(
               spentToday += price
               spentTotal += price
             }
+            // Cache a successful read — but NEVER a signable action (votes/txns
+            // are time-sensitive + per-user) and never a non-GET.
+            if (cacheable && !buildSignableArtifact(json)) setCached(cacheKey, json)
             return { data: json }
           } catch (err) {
             const note = err instanceof Error ? err.message : 'call failed'
