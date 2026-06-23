@@ -106,6 +106,7 @@ export function toPolicy(grant: {
   expiresAt: Date
   status: string
   paused?: boolean
+  spendPolicyEnabled?: boolean
 }): GrantPolicy {
   return {
     id: grant.id,
@@ -116,5 +117,6 @@ export function toPolicy(grant: {
     expiresAt: grant.expiresAt,
     status: grant.status,
     paused: grant.paused ?? false,
+    spendPolicyEnabled: grant.spendPolicyEnabled ?? false,
   }
 }

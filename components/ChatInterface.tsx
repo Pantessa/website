@@ -3,7 +3,7 @@
 import { analytics } from '@/lib/analytics'
 import { useState, useRef, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Send, Zap, Check, Plus, Loader2, Bot, User, PanelLeft, PanelLeftClose, PanelRight, Sparkles } from 'lucide-react'
+import { Send, Zap, Check, Plus, Loader2, Bot, User, PanelLeft, PanelLeftClose, PanelRight, Sparkles, Shield, ShieldOff } from 'lucide-react'
 import { useAccount, useSignTypedData } from 'wagmi'
 import { cn } from '@/lib/utils'
 import MessageReceipts from '@/components/MessageReceipts'
@@ -12,6 +12,7 @@ import VoteCandidates from '@/components/VoteCandidates'
 import PaymentConfirm from '@/components/PaymentConfirm'
 import { voteRequestOf, voteCandidatesOf } from '@/lib/snapshot-vote'
 import { useYeetfulStore, type RouterTraceEvent } from '@/lib/store'
+import { useSpendPolicy } from '@/components/SpendPolicyControls'
 import BrandIcon from '@/components/BrandIcon'
 import ShareButton from '@/components/ShareButton'
 
@@ -109,6 +110,8 @@ export default function ChatInterface() {
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
   const { address, isConnected } = useAccount()
+  // The master spend-policy switch, same account flag as the dashboard Overview.
+  const policy = useSpendPolicy(isConnected)
   const { signTypedDataAsync } = useSignTypedData()
 
   const currentChat = chats.find((c) => c.id === currentChatId)
@@ -409,6 +412,44 @@ export default function ChatInterface() {
             <Sparkles className="w-3.5 h-3.5 flex-shrink-0" style={autoRouter ? { color: 'var(--accent)' } : undefined} />
             <span className="text-[11px] whitespace-nowrap font-medium">Auto Router · {autoRouter ? 'On' : 'Off'}</span>
           </button>
+
+          {/* Spending policy master switch — same account flag as the dashboard
+              Overview. Off = unrestricted (any MCP, no caps). Only shows once a
+              signed-in grant resolves; hidden for guests. */}
+          {policy.available && (
+            <button
+              onClick={() => void policy.toggle(!policy.enabled)}
+              aria-pressed={policy.enabled}
+              disabled={policy.busy}
+              title={
+                policy.enabled
+                  ? 'Spending policy on — allowlist + budgets enforced before any payment'
+                  : 'Spending policy off — unrestricted: any MCP, no caps'
+              }
+              className={cn(
+                'flex-shrink-0 flex items-center gap-1.5 px-2.5 py-1 min-h-[40px] md:min-h-0 rounded-lg border transition-colors disabled:opacity-50',
+                policy.enabled
+                  ? 'bg-emerald-500/15 border-emerald-500/60 text-white'
+                  : 'bg-[var(--surf-1)] border-amber-500/40 text-amber-400 hover:text-white',
+              )}
+            >
+              {policy.busy ? (
+                <Loader2 className="w-3.5 h-3.5 flex-shrink-0 animate-spin" />
+              ) : policy.enabled ? (
+                <Shield className="w-3.5 h-3.5 flex-shrink-0" style={{ color: '#34d399' }} />
+              ) : (
+                <ShieldOff className="w-3.5 h-3.5 flex-shrink-0" />
+              )}
+              <span className="text-[11px] whitespace-nowrap font-medium">
+                Policy · {policy.enabled ? 'On' : 'Off'}
+              </span>
+            </button>
+          )}
+          {policy.available && !policy.enabled && (
+            <span className="flex-shrink-0 text-[11px] text-amber-400/90 whitespace-nowrap pl-0.5">
+              Unrestricted
+            </span>
+          )}
 
           {autoRouter ? (
             <span className="text-[11px] text-[color:var(--muted-2)] whitespace-nowrap pl-1">

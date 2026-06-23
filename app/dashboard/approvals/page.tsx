@@ -5,24 +5,40 @@
 
 import { analytics } from '@/lib/analytics'
 import Link from 'next/link'
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { ArrowUpRight } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Card, type Approval } from '@/lib/dashboard-ui'
+import { BudgetEditor } from '@/components/SpendPolicyControls'
 import { useOrgStore } from '@/lib/org-store'
+
+type GrantBudget = { id: string; perDayUsd: number; spendPolicyEnabled: boolean }
 
 export default function DashboardApprovalsPage() {
   const { activeOrgId } = useOrgStore()
   const [approvals, setApprovals] = useState<Approval[] | null>(null)
+  const [grant, setGrant] = useState<GrantBudget | null>(null)
+
+  // The daily budget lives on the grant; pull it from the stats route (keyed on
+  // org, same as the Overview) so it can be edited here too — for easy access.
+  const loadGrant = useCallback(async () => {
+    const r = await fetch(`/api/dashboard/stats${activeOrgId ? `?org=${activeOrgId}` : ''}`, { cache: 'no-store' })
+    if (r.ok) {
+      const s = await r.json()
+      setGrant(s.grant ? { id: s.grant.id, perDayUsd: s.grant.perDayUsd, spendPolicyEnabled: s.grant.spendPolicyEnabled } : null)
+    }
+  }, [activeOrgId])
 
   // Keyed on the active org (F3): switching scope reloads the org's shared
   // approval set; toggles carry the orgId and are admin-gated server-side.
   useEffect(() => {
     setApprovals(null)
+    setGrant(null)
     void fetch(`/api/approvals${activeOrgId ? `?org=${activeOrgId}` : ''}`, { cache: 'no-store' })
       .then((r) => (r.ok ? r.json() : null))
       .then((a) => a && setApprovals(a))
-  }, [activeOrgId])
+    void loadGrant()
+  }, [activeOrgId, loadGrant])
 
   const toggle = async (serverId: string, approved: boolean) => {
     analytics.approvalToggled(
@@ -48,6 +64,35 @@ export default function DashboardApprovalsPage() {
         décor. Approving an agent allowlists its hosts; it also voids a signed grant until you
         re-sign on the Overview.
       </p>
+
+      {/* The account's daily budget — editable here for easy access (same cap
+          shown on the Overview meter). */}
+      {grant && (
+        <Card className="mb-3">
+          <div className="flex items-center justify-between gap-4 flex-wrap min-w-0">
+            <span className="min-w-0">
+              <p className="text-sm font-semibold text-white">Daily budget</p>
+              <p className="text-xs text-[color:var(--muted-2)] mt-0.5">
+                The most this account can spend per day.{' '}
+                {grant.spendPolicyEnabled ? (
+                  'Spending policy is on — this cap is enforced.'
+                ) : (
+                  <>
+                    Spending policy is <span className="text-amber-400">off</span> — unrestricted until
+                    you switch it on in the{' '}
+                    <Link href="/dashboard" className="underline underline-offset-2 decoration-dotted hover:text-white">
+                      Overview
+                    </Link>
+                    .
+                  </>
+                )}
+              </p>
+            </span>
+            <BudgetEditor grantId={grant.id} perDayUsd={grant.perDayUsd} onSaved={loadGrant} />
+          </div>
+        </Card>
+      )}
+
       <Card>
         {!approvals ? (
           <p className="text-xs text-[color:var(--muted-2)] py-4">Loading agents…</p>
