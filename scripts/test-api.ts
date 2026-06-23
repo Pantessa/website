@@ -1108,6 +1108,11 @@ async function main() {
     'blocked-for-approval receipt links to /servers/<slug>#approve',
     html.includes('/servers/gamma-svc#approve'),
   )
+  // B23 — the stored routing trace (meta.routerTrace) renders read-only on the share page.
+  check(
+    'share page renders the routing trace (B23)',
+    html.includes('Routing trace') && html.includes('shortlisted') && html.includes('selected'),
+  )
 
   // ── Blog (requires BLOG_ADMIN_PK + matching ADMIN_WALLETS on the server) ──
   const adminPk = process.env.BLOG_ADMIN_PK

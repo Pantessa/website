@@ -4,6 +4,7 @@ import { Bot, User, Globe } from 'lucide-react'
 import prisma from '@/lib/db'
 import { YeetfulMark } from '@/components/Logo'
 import MessageReceipts from '@/components/MessageReceipts'
+import RouterTraceLines from '@/components/RouterTraceLines'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -87,6 +88,7 @@ export default async function SharedChatPage({ params }: Params) {
             >
               <pre className="whitespace-pre-wrap font-sans">{msg.content}</pre>
               {msg.role === 'assistant' && <MessageReceipts meta={msg.meta} />}
+              {msg.role === 'assistant' && <RouterTraceLines meta={msg.meta} />}
             </div>
           </div>
         ))}
