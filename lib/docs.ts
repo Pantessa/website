@@ -65,6 +65,14 @@ export const DOCS_PAGES: DocsPage[] = [
     ready: true,
   },
   {
+    slug: 'api',
+    title: 'Grants & policy API',
+    seoTitle: 'Grants & policy API — the REST reference',
+    description:
+      'The REST reference: every /api/grants route (CRUD, EIP-712 signing, receipt sync), the GET /api/agent/policy pre-flight, and the receipt body fields — Bearer or session auth.',
+    ready: true,
+  },
+  {
     slug: 'agents',
     title: 'Agents & budgets',
     seoTitle: 'Agents & budgets — a daily cap for every connected app',
