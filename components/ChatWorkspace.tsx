@@ -3,6 +3,7 @@
 import { useEffect } from 'react'
 import ChatInterface from '@/components/ChatInterface'
 import ChatSidebar from '@/components/ChatSidebar'
+import RouterEngineWindow from '@/components/RouterEngineWindow'
 import { useYeetfulStore, McpServer } from '@/lib/store'
 import { CATALOG } from '@/lib/mcp-data'
 
@@ -49,6 +50,7 @@ export default function ChatWorkspace({ chatId }: { chatId?: string }) {
       <main className="flex-1 min-w-0 flex flex-col">
         <ChatInterface />
       </main>
+      <RouterEngineWindow />
     </div>
   )
 }

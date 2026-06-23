@@ -24,6 +24,8 @@
 import { generatePrivateKey, privateKeyToAccount, type PrivateKeyAccount } from 'viem/accounts'
 import { createSiweMessage } from 'viem/siwe'
 import { grantTypedData } from '../lib/grant-typed-data'
+import { routerPrompt, parseRouterDecision, selectInferenceProvider } from '../lib/router'
+import type { PlannableEndpoint } from '../lib/endpoint-planner'
 
 const BASE = process.env.BASE ?? 'http://localhost:3000'
 const DOMAIN = new URL(BASE).host
@@ -871,6 +873,49 @@ async function main() {
     (await unfreeze.json()).paused === false && thawed.halted === false,
   )
 
+  // ── Auto-Router streaming (B2): SSE framing + a trace step + a final reply.
+  //    NO spend: the owner's grant allowlist excludes the inference host, so the
+  //    engine refuses before paying (the same gate the wallet-plan test uses).
+  console.log('— auto-router stream')
+  const arRes = await fetch(`${BASE}/api/chat`, {
+    method: 'POST',
+    headers: CJ,
+    body: JSON.stringify({ message: 'what is the capital of France?', autoRouter: true, history: [] }),
+  })
+  check('auto-router: responds as text/event-stream', (arRes.headers.get('content-type') ?? '').includes('text/event-stream'))
+  const arEvents = (await arRes.text())
+    .split('\n\n')
+    .map((b) => b.trim())
+    .filter((b) => b.startsWith('data:'))
+    .map((b) => JSON.parse(b.slice(5).trim()) as { type: string; blocked?: boolean; content?: string })
+  check('auto-router: emits ≥1 reasoning step', arEvents.some((e) => e.type === 'status'))
+  const arReply = arEvents.find((e) => e.type === 'reply')
+  check(
+    'auto-router: ends with a reply (no spend — policy-blocked or no engine)',
+    !!arReply && (arReply.blocked === true || /No live inference/.test(String(arReply.content))),
+  )
+  check('auto-router: stream terminates with a done event', arEvents.some((e) => e.type === 'done'))
+
+  // B5 — wallet-mode auto-router is gated the same way: a forbidden engine is
+  // refused with NO plan + NO signature requests (nothing to sign, no spend).
+  const arwRes = await fetch(`${BASE}/api/chat`, {
+    method: 'POST',
+    headers: CJ,
+    body: JSON.stringify({ message: 'find hotels in Tokyo', autoRouter: true, history: [], walletAddress: owner.address }),
+  })
+  const arwEvents = (await arwRes.text())
+    .split('\n\n')
+    .map((b) => b.trim())
+    .filter((b) => b.startsWith('data:'))
+    .map((b) => JSON.parse(b.slice(5).trim()) as { type: string; blocked?: boolean; content?: string })
+  const arwReply = arwEvents.find((e) => e.type === 'reply')
+  check(
+    'auto-router (wallet): policy-forbidden engine → reply blocked, no plan emitted',
+    !!arwReply &&
+      (arwReply.blocked === true || /No live inference/.test(String(arwReply.content))) &&
+      !arwEvents.some((e) => e.type === 'plan'),
+  )
+
   // ── Key revocation (after Bearer use, before cleanup) ─────────────────────
   console.log('— revocation')
   const del = await fetch(`${BASE}/api/keys/${minted.id}`, { method: 'DELETE', headers: C })
@@ -1104,6 +1149,69 @@ async function main() {
     const launchUnclaimed = await fetch(`${BASE}/api/mcp/${someSlug}/launch`, { method: 'POST', headers: C })
     check('launch an unclaimed MCP → 403 (claim first)', launchUnclaimed.status === 403)
   }
+
+  // ── Auto-Router engine (B1): pure routing brain — candidate menu, the
+  //    routing-decision parser, and inference-engine selection. No DB query,
+  //    no real inference, no spend (mirrors how the suite avoids paid calls);
+  //    the live house-paid route is exercised over the streaming endpoint (B2)
+  //    and as a manual owner pass. ───────────────────────────────────────────
+  console.log('— auto-router engine')
+  const routerEps: PlannableEndpoint[] = [
+    {
+      id: 'ep-trip-search', serverSlug: 'tripadvisor', serverName: 'TripAdvisor', method: 'GET',
+      url: 'https://trip.example.test/search', description: 'Search places', priceUsd: '0.01',
+      parameters: [{ group: 'query', name: 'q', type: 'string', required: true }],
+      reliability: { settled: 5, recent: true },
+    },
+    {
+      id: 'ep-trip-detail', serverSlug: 'tripadvisor', serverName: 'TripAdvisor', method: 'GET',
+      url: 'https://trip.example.test/detail/:id', description: 'Place detail', priceUsd: '0.02',
+      parameters: [{ group: 'path', name: 'id', type: 'string', required: true }],
+    },
+    {
+      id: 'ep-wolfram', serverSlug: 'wolfram', serverName: 'Wolfram', method: 'GET',
+      url: 'https://wolfram.example.test/compute', description: 'Compute', priceUsd: '0.005',
+      parameters: [{ group: 'query', name: 'input', type: 'string', required: true }],
+    },
+  ]
+
+  const routerPromptText = routerPrompt('hotels in Paris', routerEps)
+  check(
+    'router prompt: lists candidate ids + prices across services',
+    routerPromptText.includes('ep-trip-search') && routerPromptText.includes('[$0.01]') && routerPromptText.includes('ep-wolfram'),
+  )
+  check(
+    'router prompt: asks for intent/needs/picks JSON',
+    routerPromptText.includes('"intent"') && routerPromptText.includes('"needs"') && routerPromptText.includes('"picks"'),
+  )
+  check('router prompt: surfaces the proven tag to the model', routerPromptText.includes('✓proven'))
+
+  const goodReply = JSON.stringify({
+    intent: 'Find hotels in Paris',
+    needs: ['live travel listings'],
+    picks: [
+      { endpointId: 'ep-trip-search', params: { q: 'Paris hotels' }, reason: 'travel search', score: 0.9 },
+      { endpointId: 'ep-trip-detail', params: { id: '123' }, reason: 'second pick, same service', score: 0.5 },
+      { endpointId: 'ep-does-not-exist', params: {}, reason: 'unknown', score: 1 },
+    ],
+  })
+  const dec = parseRouterDecision(goodReply, routerEps)
+  check('router parse: intent + needs extracted', dec.intent === 'Find hotels in Paris' && dec.needs[0] === 'live travel listings')
+  check(
+    'router parse: ≤1 pick/service + unknown ids dropped',
+    dec.picks.length === 1 && dec.picks[0].endpointId === 'ep-trip-search',
+  )
+  check('router parse: reason + clamped score threaded onto the pick', dec.picks[0].reason === 'travel search' && dec.picks[0].score === 0.9)
+  check('router parse: garbage reply → empty decision', parseRouterDecision('not json', routerEps).picks.length === 0)
+
+  type RouterSrv = Parameters<typeof selectInferenceProvider>[0][number]
+  const claude = { slug: 'yeetful-claude', name: 'Yeetful · Claude', kind: 'inference', callable: true, endpoint: 'https://c.test', protocol: 'mcp', priceUsd: '0.005' } as unknown as RouterSrv
+  const gpt = { slug: 'chatgpt', name: 'ChatGPT', kind: 'inference', callable: true, endpoint: 'https://g.test', protocol: 'http', priceUsd: '0.001' } as unknown as RouterSrv
+  const pricey = { slug: 'pricey', name: 'Pricey', kind: 'inference', callable: true, endpoint: 'https://p.test', protocol: 'http', priceUsd: '0.02' } as unknown as RouterSrv
+  const dataOnly = { slug: 'd', name: 'D', kind: 'data', callable: true, endpoint: 'https://d.test', protocol: 'http', priceUsd: '0.01' } as unknown as RouterSrv
+  check('router select: prefers Yeetful · Claude as the answer engine', selectInferenceProvider([gpt, claude])?.slug === 'yeetful-claude')
+  check('router select: falls back to cheapest inference (no Claude)', selectInferenceProvider([pricey, gpt])?.slug === 'chatgpt')
+  check('router select: no callable inference → null', selectInferenceProvider([dataOnly]) === null)
 
   // ── Cleanup (verified) ────────────────────────────────────────────────────
   console.log('— cleanup')
