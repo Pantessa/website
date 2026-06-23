@@ -90,7 +90,7 @@ const HISTORY_CHARS = 600
  * messages (they're UI scaffolding, not content), trim, and cap to the last
  * few turns so the planner + answer have context without unbounded prompt cost.
  */
-function sanitizeHistory(raw: unknown): ConversationTurn[] {
+export function sanitizeHistory(raw: unknown): ConversationTurn[] {
   if (!Array.isArray(raw)) return []
   const out: ConversationTurn[] = []
   for (const m of raw) {
@@ -848,7 +848,15 @@ async function paidCall(request: { url: string; method: string; headers: Record<
 // engine window renders by `type`): the four TraceStep shapes from lib/router
 // (status / analyze / candidate / select), plus over-the-wire `pay`, `receipt`,
 // `reply`, `error`, `done`. Grant gating + ledgering match burner mode exactly.
-function streamAutoRouter(message: string, history: ConversationTurn[], walletAddress?: string): Response {
+export function streamAutoRouter(
+  message: string,
+  history: ConversationTurn[],
+  walletAddress?: string,
+  /** When set (Bearer-key callers via /api/route), the spend scope is this
+   *  address instead of the SIWE session — so the engine gates the agent's
+   *  own grant. */
+  ownerOverride?: string,
+): Response {
   const encoder = new TextEncoder()
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
@@ -884,9 +892,10 @@ function streamAutoRouter(message: string, history: ConversationTurn[], walletAd
           return finish()
         }
 
-        // Spend grant (burner): when the signed-in owner has an active grant,
-        // every payment is gated + ledgered; absent → no enforcement, no ledger.
-        const owner = await getSessionAddress()
+        // Spend grant (burner): when the owner has an active grant, every
+        // payment is gated + ledgered; absent → no enforcement, no ledger. The
+        // owner is the Bearer key's scope (/api/route) or the SIWE session (chat).
+        const owner = ownerOverride ?? (await getSessionAddress())
         const grant = owner ? await getActiveGrant(owner) : null
         const policy: GrantPolicy | null = grant ? toPolicy(grant) : null
         let spentToday = grant ? await spentTodayUsd(grant.id) : 0
