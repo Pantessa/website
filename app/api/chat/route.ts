@@ -867,6 +867,9 @@ export function streamAutoRouter(
    *  address instead of the SIWE session — so the engine gates the agent's
    *  own grant. */
   ownerOverride?: string,
+  /** The calling API key's id (Bearer via /api/route) — attributes routed spend
+   *  to that agent so per-key budgets + the Agents tab reflect it (B22). */
+  apiKeyId?: string,
 ): Response {
   const encoder = new TextEncoder()
   const stream = new ReadableStream<Uint8Array>({
@@ -978,7 +981,7 @@ export function streamAutoRouter(
         const runRoutingInference = async (inf: McpServer, prompt: string) => {
           const r = await callInference(inf, prompt)
           if (grant && !walletAddress) {
-            await recordLedger({ grantId: grant.id, orgId: grant.orgId ?? undefined, host: infHost, serviceName: inference.name, amountUsd: infPrice, ok: true, txHash: r.txHash, note: 'settled (routing)' })
+            await recordLedger({ grantId: grant.id, orgId: grant.orgId ?? undefined, apiKeyId, host: infHost, serviceName: inference.name, amountUsd: infPrice, ok: true, txHash: r.txHash, note: 'settled (routing)' })
             spentToday += infPrice
             spentTotal += infPrice
           }
@@ -1067,7 +1070,7 @@ export function streamAutoRouter(
             receipts.push(r)
             send({ type: 'receipt', receipt: r })
             if (grant) {
-              await recordLedger({ grantId: grant.id, orgId: grant.orgId ?? undefined, host, serviceName: pick.serverName, amountUsd: price, ok: true, txHash, note: 'settled' })
+              await recordLedger({ grantId: grant.id, orgId: grant.orgId ?? undefined, apiKeyId, host, serviceName: pick.serverName, amountUsd: price, ok: true, txHash, note: 'settled' })
               spentToday += price
               spentTotal += price
             }
@@ -1122,7 +1125,7 @@ export function streamAutoRouter(
         receipts.push(r)
         send({ type: 'receipt', receipt: r })
         if (grant) {
-          await recordLedger({ grantId: grant.id, orgId: grant.orgId ?? undefined, host: infHost, serviceName: inference.name, amountUsd: infPrice, ok: true, txHash, note: 'settled' })
+          await recordLedger({ grantId: grant.id, orgId: grant.orgId ?? undefined, apiKeyId, host: infHost, serviceName: inference.name, amountUsd: infPrice, ok: true, txHash, note: 'settled' })
         }
 
         // Value proof (B15): what smart routing saved this turn vs naive routing.
