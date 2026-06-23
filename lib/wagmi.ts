@@ -8,6 +8,7 @@ import {
 } from '@rainbow-me/rainbowkit/wallets'
 import { createConfig, http } from 'wagmi'
 import { mainnet, base, baseSepolia } from 'wagmi/chains'
+import { cdpEmbeddedConnector, cdpEnabled } from '@/lib/cdp-embedded'
 
 // WalletConnect Cloud project ID — create one at https://cloud.reown.com and
 // add it to .env.local as NEXT_PUBLIC_WC_PROJECT_ID (needed for the
@@ -45,20 +46,26 @@ const wcEnabled = !!process.env.NEXT_PUBLIC_WC_PROJECT_ID && projectId !== 'YOUR
  */
 coinbaseWallet.preference = 'eoaOnly'
 
-const connectors = connectorsForWallets(
-  [
-    {
-      groupName: 'Recommended',
-      wallets: [
-        injectedWallet,
-        metaMaskWallet,
-        coinbaseWallet,
-        ...(wcEnabled ? [rainbowWallet, walletConnectWallet] : []),
-      ],
-    },
-  ],
-  { appName: 'Yeetful', projectId },
-)
+// The CDP embedded-wallet connector ("create an account") is appended as a plain
+// wagmi connector, not a RainbowKit modal entry — it's driven by a dedicated CTA
+// (see lib/cdp-embedded.ts). Only included when NEXT_PUBLIC_CDP_PROJECT_ID is set.
+const connectors = [
+  ...connectorsForWallets(
+    [
+      {
+        groupName: 'Recommended',
+        wallets: [
+          injectedWallet,
+          metaMaskWallet,
+          coinbaseWallet,
+          ...(wcEnabled ? [rainbowWallet, walletConnectWallet] : []),
+        ],
+      },
+    ],
+    { appName: 'Yeetful', projectId },
+  ),
+  ...(cdpEnabled ? [cdpEmbeddedConnector] : []),
+]
 
 export const wagmiConfig = createConfig({
   connectors,

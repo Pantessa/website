@@ -25,7 +25,12 @@
     "postinstall": "prisma generate"
   },
   "dependencies": {
+    "@coinbase/cdp-core": "^0.0.111",
+    "@coinbase/cdp-hooks": "^0.0.111",
+    "@coinbase/cdp-react": "^0.0.111",
     "@coinbase/cdp-sdk": "^1.48.0",
+    "@coinbase/cdp-wagmi": "^0.0.111",
+    "@flaunch/sdk": "0.9.20",
     "@prisma/client": "^5.22.0",
     "@rainbow-me/rainbowkit": "^2.2.0",
     "@tanstack/react-query": "^5.59.0",
@@ -45,8 +50,7 @@
     "tailwind-merge": "^2.5.5",
     "viem": "^2.21.40",
     "wagmi": "^2.14.0",
-    "zustand": "^5.0.2",
-    "@flaunch/sdk": "0.9.20"
+    "zustand": "^5.0.2"
   },
   "devDependencies": {
     "@types/node": "^22",

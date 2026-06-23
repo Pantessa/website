@@ -6,7 +6,9 @@ import TrackWallet from '@/components/TrackWallet'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { RainbowKitProvider, darkTheme } from '@rainbow-me/rainbowkit'
 import '@rainbow-me/rainbowkit/styles.css'
+import { CDPHooksProvider } from '@coinbase/cdp-hooks'
 import { wagmiConfig } from '@/lib/wagmi'
+import { cdpConfig, cdpEnabled } from '@/lib/cdp-embedded'
 import { SessionProvider } from '@/lib/session'
 
 export default function Providers({ children }: { children: ReactNode }) {
@@ -23,7 +25,7 @@ export default function Providers({ children }: { children: ReactNode }) {
       })
   )
 
-  return (
+  const tree = (
     <WagmiProvider config={wagmiConfig}>
       <QueryClientProvider client={queryClient}>
         <RainbowKitProvider
@@ -42,5 +44,14 @@ export default function Providers({ children }: { children: ReactNode }) {
         </RainbowKitProvider>
       </QueryClientProvider>
     </WagmiProvider>
+  )
+
+  // CDP embedded-wallet hooks must wrap WagmiProvider (per the CDP wagmi docs).
+  // Only mount it when the project ID is configured; otherwise the app runs
+  // exactly as before (extension/WalletConnect wallets only).
+  return cdpEnabled ? (
+    <CDPHooksProvider config={cdpConfig}>{tree}</CDPHooksProvider>
+  ) : (
+    tree
   )
 }
