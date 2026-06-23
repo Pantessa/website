@@ -9,6 +9,7 @@ import { Building2, Loader2, Pause, Play, ShieldCheck, ShieldPlus } from 'lucide
 import { cn } from '@/lib/utils'
 import { SpendByAgent, SpendOverTime } from '@/components/LazyCharts'
 import SignGrantButton from '@/components/SignGrantButton'
+import FundAccountCard from '@/components/FundAccountCard'
 import { Card, CardTitle, Kpi, type Stats } from '@/lib/dashboard-ui'
 import EarnPanel from '@/components/EarnPanel'
 import PayToAgentsCard from '@/components/PayToAgentsCard'
@@ -235,6 +236,10 @@ export default function DashboardOverviewPage() {
           </div>
         )}
       </Card>
+
+      {/* Personal account only — the balance is the connected wallet's USDC.
+          Org Overview shows the org budget instead, not a single wallet. */}
+      {!activeOrgId && <FundAccountCard />}
 
       {/* grid-cols-1 (not the implicit auto track) + min-w-0 so a chart's
           transient fixed-px width can never inflate the column on phones. */}
