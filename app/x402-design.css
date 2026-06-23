@@ -1121,7 +1121,7 @@
   }
 
   /* ── FOOTER ──────────────────────────────────────── */
-  .footer { border-top: 1px solid var(--line); margin-top: 0; }
+  .footer { border-top: 1px solid var(--line); margin-top: clamp(48px, 7vw, 96px); }
   .footer__top {
     padding: 56px clamp(24px, 4vw, 64px) 40px;
     display: flex; justify-content: space-between; gap: 40px; flex-wrap: wrap;
