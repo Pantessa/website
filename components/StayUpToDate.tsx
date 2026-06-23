@@ -67,7 +67,7 @@ export default function StayUpToDate() {
             {msg}
           </p>
         ) : (
-          <form className="flex flex-col sm:flex-row gap-2 max-w-sm mx-auto" onSubmit={submit}>
+          <form className="flex flex-col sm:flex-row sm:items-stretch gap-2.5 max-w-sm mx-auto" onSubmit={submit}>
             <input
               type="email"
               required
@@ -76,7 +76,7 @@ export default function StayUpToDate() {
               placeholder="you@example.com"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              className="flex-1 min-w-0 rounded-lg border border-[var(--line)] bg-black/30 px-3 py-2.5 text-sm text-white placeholder:text-[color:var(--muted-2)] outline-none focus:border-[var(--accent,#34E0A1)] mono"
+              className="flex-1 min-w-0 rounded-lg border border-[var(--line)] bg-black/30 px-4 py-3 text-sm text-white placeholder:text-[color:var(--muted-2)] outline-none focus:border-[var(--accent,#34E0A1)] mono"
               aria-label="Email address"
               disabled={state === 'loading'}
             />
