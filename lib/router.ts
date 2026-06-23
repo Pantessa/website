@@ -37,6 +37,8 @@ import { buildSignableArtifact, type SignableArtifact } from '@/lib/transaction-
 export type TraceStep =
   | { type: 'status'; label: string }
   | { type: 'analyze'; intent: string; needs: string[] }
+  // The relevant tools the engine narrowed to before choosing — the "what it's weighing" view.
+  | { type: 'shortlist'; candidates: { service: string; endpoint?: string; priceUsd?: string }[] }
   | { type: 'candidate'; service: string; endpoint?: string; priceUsd?: string; score: number; reason: string; proven?: number }
   | { type: 'select'; service: string; endpoint?: string; priceUsd?: string; reason: string }
   // Diagnostics surfaced in the engine window so misses/errors are explained, not silent.
@@ -132,6 +134,52 @@ export function selectInferenceProvider(catalog: McpServer[]): McpServer | null 
   return inf.slice().sort((a, b) => Number(a.priceUsd ?? '1') - Number(b.priceUsd ?? '1'))[0]
 }
 
+const STOPWORDS = new Set([
+  'the', 'a', 'an', 'and', 'or', 'of', 'for', 'to', 'in', 'on', 'is', 'are', 'what', 'whats', 'how', 'much',
+  'me', 'my', 'i', 'do', 'does', 'can', 'you', 'get', 'give', 'show', 'tell', 'current', 'latest', 'please',
+  'with', 'from', 'about', 'this', 'that', 'it', 'now', 'today',
+])
+
+/**
+ * Retrieve→plan shortlist: narrow the full plannable catalog (often ~200
+ * endpoints) to the handful actually relevant to the query BEFORE the routing
+ * model sees them — a small, legible menu yields reliable picks (and lets it
+ * pick MULTIPLE services when several fit). Cheap + deterministic: keyword
+ * overlap of the query against each endpoint's service name, (enriched)
+ * description and path, plus a nudge for proven endpoints. Diversity-capped so
+ * one chatty service can't crowd out the rest. Pure — exported for tests.
+ */
+export function shortlistEndpoints(message: string, endpoints: PlannableEndpoint[], limit = 14): PlannableEndpoint[] {
+  const tokens = new Set((message.toLowerCase().match(/[a-z0-9]{3,}/g) ?? []).filter((t) => !STOPWORDS.has(t)))
+  const score = (ep: PlannableEndpoint): number => {
+    let hay = `${ep.serverName} ${ep.serverSlug} ${ep.description ?? ''}`.toLowerCase()
+    try {
+      hay += ' ' + new URL(ep.url).pathname.toLowerCase().replace(/[^a-z0-9]+/g, ' ')
+    } catch {
+      /* ignore */
+    }
+    let s = 0
+    for (const t of tokens) if (hay.includes(t)) s += 1
+    if (ep.reliability && ep.reliability.settled > 0) s += 0.5
+    return s
+  }
+  const ranked = endpoints
+    .map((ep) => ({ ep, s: score(ep) }))
+    .filter((x) => x.s > 0)
+    .sort((a, b) => b.s - a.s)
+
+  const perService = new Map<string, number>()
+  const out: PlannableEndpoint[] = []
+  for (const { ep } of ranked) {
+    const n = perService.get(ep.serverSlug) ?? 0
+    if (n >= 3) continue // diversity: ≤3 endpoints per service in the shortlist
+    perService.set(ep.serverSlug, n + 1)
+    out.push(ep)
+    if (out.length >= limit) break
+  }
+  return out
+}
+
 /** What the routing model is asked to return (a planner pick + its reasoning). */
 export interface RouterModelDecision {
   intent: string
@@ -194,7 +242,7 @@ export function routerPrompt(
     ...(convo ? [convo] : []),
     `The user asked${history.length ? ' (interpret it in the context of the conversation above)' : ''}:\n"""${message}"""`,
     ...(observed ? [observed] : []),
-    `Below are paid API endpoints, grouped by service, each tagged with its price in [$…]; some are tagged ✓proven (they have successfully settled paid calls before). Pick AT MOST ONE endpoint per service — only if calling it would genuinely help answer the user. Anything the user asks that needs LIVE or REAL-TIME data — a price, a quote, weather, scores, listings, search results, on-chain or market data — should route to a relevant endpoint here rather than be answered from memory. When two endpoints answer the need equally well, prefer the ✓proven one, then the cheaper one — but still pick an un-proven endpoint when it is clearly the better fit.`,
+    `Below are paid API endpoints, grouped by service, each tagged with its price in [$…]; some are tagged ✓proven (they have successfully settled paid calls before). Pick AT MOST ONE endpoint per service — but pick from MULTIPLE services when the question spans them (e.g. a price from one service and news from another); a single inference call will then synthesize all the results into one answer. Only call an endpoint if it would genuinely help. Anything the user asks that needs LIVE or REAL-TIME data — a price, a quote, weather, scores, listings, search results, on-chain or market data — should route to a relevant endpoint here rather than be answered from memory. When two endpoints answer the need equally well, prefer the ✓proven one, then the cheaper one — but still pick an un-proven endpoint when it is clearly the better fit.`,
     `Fill parameter values from the user's message and conversation (respect types; include every required param; skip optional params you can't infer). You MAY include query parameters even for an endpoint that lists no params, when it clearly needs one to answer — infer the obvious key/value (e.g. for a "latest quote" endpoint, "symbol":"ETH"; for a search endpoint, "query":"…"). Only pick nothing when the question genuinely needs no live data (general knowledge, chit-chat).`,
     menu || '(no endpoints available)',
     `Respond with ONLY this JSON, no prose, no code fences:`,
@@ -286,10 +334,15 @@ export async function routeMessage(opts: RouteOptions): Promise<RouterDecision> 
     }
   }
 
+  // Retrieve→plan: narrow the full catalog to the relevant few BEFORE the model
+  // sees them, so it picks reliably (and can pick several). The shortlist IS the
+  // menu + the byId universe from here on.
+  const shortlisted = endpoints.length ? shortlistEndpoints(message, endpoints) : []
+
   const smartPicks: SmartPick[] = []
   const context: string[] = []
   let artifact: SignableArtifact | undefined
-  const byId = new Map(endpoints.map((e) => [e.id, e]))
+  const byId = new Map(shortlisted.map((e) => [e.id, e]))
 
   // Build one SmartPick + emit candidate→select; null if the call can't be built.
   const planPick = (pick: RouterModelDecision['picks'][number]): SmartPick | null => {
@@ -322,19 +375,21 @@ export async function routeMessage(opts: RouteOptions): Promise<RouterDecision> 
     }
   }
 
-  if (endpoints.length === 0) {
-    // Nothing routable — answer directly, honestly narrated (no model call).
+  if (shortlisted.length === 0) {
+    // No relevant tool (directory empty, or nothing matched the query) — answer
+    // directly, honestly narrated. No model routing call.
     emit({ type: 'analyze', intent: 'General question — no live MCP data required.', needs: [] })
+    if (endpoints.length > 0) addNote(`No directory endpoint matched this question (scanned ${endpoints.length}) — answering directly.`)
     emit({ type: 'status', label: 'No paid MCP needed — answering directly.' })
   } else if (!opts.executeCall) {
     // ── SINGLE-PASS (plan) mode: one routing call, return picks UNEXECUTED so
     //    the caller (wallet) can sign + execute them. ────────────────────────
-    emit({ type: 'status', label: `Choosing among ${endpoints.length} candidate endpoints…` })
+    emit({ type: 'shortlist', candidates: shortlisted.map((e) => ({ service: e.serverName, endpoint: e.url, priceUsd: e.priceUsd })) })
     let decision: RouterModelDecision = { intent: '', needs: [], picks: [] }
     let routingFailed = false
     try {
-      const { text } = await opts.runInference(inference, routerPrompt(message, endpoints, history))
-      decision = parseRouterDecision(text, endpoints)
+      const { text } = await opts.runInference(inference, routerPrompt(message, shortlisted, history))
+      decision = parseRouterDecision(text, shortlisted)
     } catch (err) {
       routingFailed = true
       addNote(`Routing call failed (${err instanceof Error ? err.message : 'error'}); answering from the inference engine alone.`, 'warn')
@@ -344,7 +399,7 @@ export async function routeMessage(opts: RouteOptions): Promise<RouterDecision> 
       const sp = planPick(pick)
       if (sp) smartPicks.push(sp)
     }
-    if (smartPicks.length === 0 && !routingFailed) emitConsideredNone(endpoints, addNote, emit)
+    if (smartPicks.length === 0 && !routingFailed) emitConsideredNone(shortlisted, addNote, emit)
   } else {
     // ── LOOP mode: bounded reason→act→observe. Resolve ids with a lookup, see
     //    the result, then make the data call — up to maxSteps. ───────────────
@@ -352,12 +407,13 @@ export async function routeMessage(opts: RouteOptions): Promise<RouterDecision> 
     const observations: string[] = []
     const calledIds = new Set<string>()
     let firstAnalyze = true
+    emit({ type: 'shortlist', candidates: shortlisted.map((e) => ({ service: e.serverName, endpoint: e.url, priceUsd: e.priceUsd })) })
     for (let step = 0; step < maxSteps; step++) {
-      emit({ type: 'status', label: step === 0 ? `Choosing among ${endpoints.length} candidate endpoints…` : `Refining (step ${step + 1}/${maxSteps})…` })
+      emit({ type: 'status', label: step === 0 ? `Choosing among ${shortlisted.length} shortlisted endpoints…` : `Refining (step ${step + 1}/${maxSteps})…` })
       let decision: RouterModelDecision = { intent: '', needs: [], picks: [] }
       try {
-        const { text } = await opts.runInference(inference, routerPrompt(message, endpoints, history, observations))
-        decision = parseRouterDecision(text, endpoints)
+        const { text } = await opts.runInference(inference, routerPrompt(message, shortlisted, history, observations))
+        decision = parseRouterDecision(text, shortlisted)
       } catch (err) {
         addNote(`Routing call failed (${err instanceof Error ? err.message : 'error'}); answering with what's gathered.`, 'warn')
         break
@@ -396,7 +452,7 @@ export async function routeMessage(opts: RouteOptions): Promise<RouterDecision> 
       }
       if (artifact || !progressed) break // signable action ready, or nothing progressed → stop
     }
-    if (smartPicks.length === 0 && !artifact) emitConsideredNone(endpoints, addNote, emit)
+    if (smartPicks.length === 0 && !artifact) emitConsideredNone(shortlisted, addNote, emit)
   }
 
   // The inference engine always answers last.

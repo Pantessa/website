@@ -25,7 +25,7 @@ import { generatePrivateKey, privateKeyToAccount, type PrivateKeyAccount } from 
 import { createSiweMessage } from 'viem/siwe'
 import { grantTypedData } from '../lib/grant-typed-data'
 import { grantViolation, type GrantPolicy } from '../lib/spend-grant'
-import { routerPrompt, parseRouterDecision, selectInferenceProvider, routeMessage } from '../lib/router'
+import { routerPrompt, parseRouterDecision, selectInferenceProvider, routeMessage, shortlistEndpoints } from '../lib/router'
 import { buildSmartRequest, type PlannableEndpoint } from '../lib/endpoint-planner'
 import { buildSignableArtifact, isActionIntent } from '../lib/transaction-layer'
 
@@ -1364,7 +1364,7 @@ async function main() {
   // forever — the same endpoint is only executed once, then the loop ends.
   const repeatExecuted: string[] = []
   const repeatDec = await routeMessage({
-    message: 'spin',
+    message: 'find a dao and its proposals', // on-topic so the shortlist keeps the fixtures
     catalog: [claudeSrv],
     endpoints: loopEndpoints,
     maxSteps: 5,
@@ -1405,6 +1405,47 @@ async function main() {
     executeCall: async () => ({ data: voteResult }),
   })
   check('router loop: a tool-returned vote becomes decision.artifact', artDec.artifact?.kind === 'eip712-vote')
+
+  // B10 — retrieve→plan shortlist: narrow the catalog by relevance so the model
+  // reliably picks. (Pure ranking, no DB/spend.)
+  const shortlistCatalog: PlannableEndpoint[] = [
+    { id: 'cmc-q', serverSlug: 'coinmarketcap', serverName: 'CoinMarketCap', method: 'GET', url: 'https://x/quotes/latest', description: 'Crypto spot price, value & quote by symbol — current price of ETH, BTC', priceUsd: '0.01', parameters: [{ group: 'query', name: 'symbol', required: true }] },
+    { id: 'trip-s', serverSlug: 'tripadvisor', serverName: 'TripAdvisor', method: 'GET', url: 'https://t/search', description: 'Search hotels, restaurants and attractions', priceUsd: '0.01', parameters: [{ group: 'query', name: 'q', required: true }] },
+    { id: 'wolf-c', serverSlug: 'wolfram', serverName: 'Wolfram', method: 'GET', url: 'https://w/compute', description: 'Compute math and science answers', priceUsd: '0.005', parameters: [{ group: 'query', name: 'input', required: true }] },
+    { id: 'noise', serverSlug: 'misc', serverName: 'Misc', method: 'GET', url: 'https://m/list', description: 'List all teams', priceUsd: '0.01', parameters: [] },
+  ]
+  const priceShort = shortlistEndpoints('what is the current price of ETH', shortlistCatalog, 5)
+  check('shortlist: price query ranks CoinMarketCap first', priceShort[0]?.serverSlug === 'coinmarketcap')
+  const travelShort = shortlistEndpoints('find me hotels in Paris', shortlistCatalog, 5)
+  check('shortlist: travel query ranks TripAdvisor first', travelShort[0]?.serverSlug === 'tripadvisor')
+  check('shortlist: irrelevant question shortlists nothing', shortlistEndpoints('write me a haiku about clouds', shortlistCatalog, 5).length === 0)
+
+  // Multi-select: the engine can call 2+ services in one turn, then ONE inference
+  // synthesizes — driven by a scripted multi-pick (no DB/spend).
+  const multiEndpoints: PlannableEndpoint[] = [
+    { id: 'ep-price', serverSlug: 'cmc', serverName: 'CMC', method: 'GET', url: 'https://x/price', description: 'crypto price by symbol ETH BTC', priceUsd: '0.01', parameters: [{ group: 'query', name: 'symbol', required: true }] },
+    { id: 'ep-news', serverSlug: 'news', serverName: 'News', method: 'GET', url: 'https://n/news', description: 'latest crypto news headlines for a token ETH', priceUsd: '0.01', parameters: [{ group: 'query', name: 'q', required: true }] },
+  ]
+  let mc = 0
+  const multiScripts = [
+    JSON.stringify({ intent: 'price + news for ETH', needs: [], picks: [
+      { endpointId: 'ep-price', params: { symbol: 'ETH' }, reason: 'price', score: 0.9 },
+      { endpointId: 'ep-news', params: { q: 'ETH' }, reason: 'news', score: 0.8 },
+    ] }),
+    JSON.stringify({ intent: '', needs: [], picks: [] }),
+  ]
+  const multiExec: string[] = []
+  const multiDec = await routeMessage({
+    message: 'price and news for ETH',
+    catalog: [claudeSrv],
+    endpoints: multiEndpoints,
+    runInference: async () => ({ text: multiScripts[Math.min(mc++, 1)] }),
+    executeCall: async (p: { serverSlug: string }) => { multiExec.push(p.serverSlug); return { data: { for: p.serverSlug } } },
+  })
+  check(
+    'router: selects multiple services in one turn (2 data calls), always 1 inference',
+    multiExec.length === 2 && multiDec.context.length === 2 && multiDec.picks.filter((p) => p.role === 'inference').length === 1,
+  )
 
   // ── Cleanup (verified) ────────────────────────────────────────────────────
   console.log('— cleanup')

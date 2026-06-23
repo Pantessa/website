@@ -21,6 +21,44 @@ export const SMART_MAX_PER_CALL_USD = 0.05
 /** Cap endpoints listed per service in the planner menu (prompt size control). */
 const MENU_CAP_PER_SERVICE = 12
 
+/**
+ * Curated metadata for a few high-value endpoints whose ingested description /
+ * params are too thin for the router to pick + fill. NOT per-asset hardcoding —
+ * we enrich the DESCRIPTION (so keyword retrieval + the model surface it) and
+ * declare the query PARAM (so the planner fills it, e.g. symbol=ETH); the model
+ * still supplies the value. Matched by URL substring.
+ */
+interface EndpointHint {
+  match: RegExp
+  description?: string
+  addParams?: EndpointParam[]
+}
+const ENDPOINT_HINTS: EndpointHint[] = [
+  {
+    // The canonical crypto spot-price call — keyword-rich so "price of ETH" finds it.
+    match: /coinmarketcap\.com\/x402\/v3\/cryptocurrency\/quotes\/latest/i,
+    description:
+      'Crypto spot price, value & market quote by symbol — current price of ETH, BTC, SOL and any token. Pass symbol; optionally convert currency.',
+    addParams: [
+      { group: 'query', name: 'symbol', type: 'string', required: true, example: 'ETH' },
+      { group: 'query', name: 'convert', type: 'string', required: false, example: 'USD' },
+    ],
+  },
+  {
+    match: /coinmarketcap\.com\/x402\/v3\/cryptocurrency\/listing\/latest/i,
+    description: 'Latest crypto listings — top coins ranked by market cap, with price, volume and 24h change.',
+  },
+]
+
+function applyHint(url: string, description: string | null, params: EndpointParam[]): { description: string | null; params: EndpointParam[] } {
+  const hint = ENDPOINT_HINTS.find((h) => h.match.test(url))
+  if (!hint) return { description, params }
+  const merged = hint.addParams
+    ? [...params, ...hint.addParams.filter((ap) => !params.some((p) => p.name === ap.name))]
+    : params
+  return { description: hint.description ?? description, params: merged }
+}
+
 export interface EndpointParam {
   group: 'query' | 'path' | 'body'
   name: string
@@ -79,7 +117,9 @@ export async function loadPlannableEndpoints(slugs: string[]): Promise<Plannable
     // far more than the listed minimum, so they stay out of auto-planning.
     if (r.scheme === 'upto') continue
     if (!Number.isFinite(price) || price <= 0 || price > SMART_MAX_PER_CALL_USD) continue
-    const params = (r.parameters as EndpointParam[] | null) ?? []
+    // Curated enrichment (description + declared params) for thin high-value
+    // endpoints, applied first so the filter/shape/menu all see the richer form.
+    const { description, params } = applyHint(r.url, r.description, (r.parameters as EndpointParam[] | null) ?? [])
     // A param-less endpoint is still callable when it's a GET with no path
     // token to fill — a plain fetch (e.g. "list all teams"). buildSmartRequest
     // already builds these (empty query/body). Anything that needs a value we
@@ -99,7 +139,7 @@ export async function loadPlannableEndpoints(slugs: string[]): Promise<Plannable
     // token_price/<address> variants — same method, description, param set).
     // Collapse to one representative per shape so the menu surfaces distinct
     // capabilities, not 20 copies — BEFORE the per-service cap consumes slots.
-    const shape = `${r.server.slug}|${r.method}|${(r.description ?? '').slice(0, 60)}|${params.map((p) => p.name).sort().join(',')}`
+    const shape = `${r.server.slug}|${r.method}|${(description ?? '').slice(0, 60)}|${params.map((p) => p.name).sort().join(',')}`
     if (seenShape.has(shape)) continue
     seenShape.add(shape)
     const n = perService.get(r.server.slug) ?? 0
@@ -111,7 +151,7 @@ export async function loadPlannableEndpoints(slugs: string[]): Promise<Plannable
       serverName: r.server.name,
       method: r.method,
       url: r.url,
-      description: r.description,
+      description,
       priceUsd: r.priceUsd!,
       parameters: params,
     })
