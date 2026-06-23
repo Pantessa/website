@@ -26,7 +26,7 @@ import { createSiweMessage } from 'viem/siwe'
 import { grantTypedData } from '../lib/grant-typed-data'
 import { grantViolation, type GrantPolicy } from '../lib/spend-grant'
 import { routerPrompt, parseRouterDecision, selectInferenceProvider, routeMessage, shortlistEndpoints } from '../lib/router'
-import { buildSmartRequest, type PlannableEndpoint } from '../lib/endpoint-planner'
+import { buildSmartRequest, computeRating, type PlannableEndpoint } from '../lib/endpoint-planner'
 import { buildSignableArtifact, isActionIntent } from '../lib/transaction-layer'
 
 const BASE = process.env.BASE ?? 'http://localhost:3000'
@@ -1445,6 +1445,21 @@ async function main() {
   check(
     'router: selects multiple services in one turn (2 data calls), always 1 inference',
     multiExec.length === 2 && multiDec.context.length === 2 && multiDec.picks.filter((p) => p.role === 'inference').length === 1,
+  )
+
+  // B11 — reputation rating (usage-driven) + one-provider-per-need.
+  check('rating: higher success rate ranks higher', computeRating({ settled: 10, failed: 0, recent: true }) > computeRating({ settled: 10, failed: 10, recent: true }))
+  check('rating: more volume ranks higher (same success)', computeRating({ settled: 20, failed: 0, recent: true }) > computeRating({ settled: 2, failed: 0, recent: true }))
+  check('rating: recent ranks higher than stale', computeRating({ settled: 10, failed: 0, recent: true }) > computeRating({ settled: 10, failed: 0, recent: false }))
+  check('rating: no history → 0 (cold start not penalized to negative)', computeRating({ settled: 0, failed: 0, recent: false }) === 0)
+
+  const ratedA: PlannableEndpoint = { id: 'a', serverSlug: 'a', serverName: 'A', method: 'GET', url: 'https://a/price', description: 'crypto price by symbol', priceUsd: '0.01', parameters: [{ group: 'query', name: 'symbol', required: true }], reliability: { settled: 50, failed: 0, recent: true, successRate: 1, rating: computeRating({ settled: 50, failed: 0, recent: true }) } }
+  const ratedB: PlannableEndpoint = { id: 'b', serverSlug: 'b', serverName: 'B', method: 'GET', url: 'https://b/price', description: 'crypto price by symbol', priceUsd: '0.01', parameters: [{ group: 'query', name: 'symbol', required: true }], reliability: { settled: 2, failed: 8, recent: false, successRate: 0.2, rating: computeRating({ settled: 2, failed: 8, recent: false }) } }
+  const ratedShort = shortlistEndpoints('crypto price', [ratedB, ratedA], 5)
+  check('shortlist: higher-rated equivalent ranks first', ratedShort[0]?.serverSlug === 'a')
+  check(
+    'router prompt: one-provider-per-need rule present',
+    routerPrompt('x', routerEps).includes('NEVER call two services that return the SAME'),
   )
 
   // ── Cleanup (verified) ────────────────────────────────────────────────────

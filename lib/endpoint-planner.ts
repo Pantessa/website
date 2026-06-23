@@ -77,10 +77,26 @@ export interface PlannableEndpoint {
   description: string | null
   priceUsd: string
   parameters: EndpointParam[]
-  /** Settlement history for this endpoint's host (the engine's feedback signal):
-   *  how many paid calls it has actually settled, and whether recently. Absent =
-   *  no history (unproven, NOT penalized — see plannerPrompt). */
-  reliability?: { settled: number; recent: boolean }
+  /** Settlement history for this endpoint's host (the engine's feedback signal /
+   *  reputation): settled vs failed paid calls, recency, and a 0–1 `rating`
+   *  derived from them. Absent = no history (unproven, NOT penalized — the
+   *  router still picks it when it's clearly the best fit; rating just ranks
+   *  EQUIVALENT MCPs so the engine converges on the reliable/proven one). */
+  reliability?: { settled: number; recent: boolean; failed?: number; successRate?: number; rating?: number }
+}
+
+/**
+ * Usage-driven MCP reputation, 0–1. Success rate dominates; settled volume and
+ * recency modulate. No history → 0 (ranks below rated peers, but the keyword
+ * shortlist still surfaces it, so cold-start MCPs stay pickable). Pure + tested.
+ */
+export function computeRating(input: { settled: number; failed: number; recent: boolean }): number {
+  const total = input.settled + input.failed
+  if (total === 0) return 0
+  const successRate = input.settled / total
+  const volumeFactor = Math.min(input.settled / 20, 1) // saturates at 20 settled calls
+  const recencyFactor = input.recent ? 1 : 0.6
+  return Math.max(0, Math.min(1, successRate * (0.6 + 0.25 * volumeFactor + 0.15 * recencyFactor)))
 }
 
 export interface PlannedPick {
@@ -183,23 +199,38 @@ async function attachReliability(endpoints: PlannableEndpoint[]): Promise<void> 
   if (endpoints.length === 0) return
   try {
     const since = new Date(Date.now() - RELIABILITY_WINDOW_MS)
+    // Count settled (ok) vs failed (denied/errored) per host so the rating
+    // reflects real reliability, not just volume.
     const rows = await prisma.spendLedgerEntry.groupBy({
-      by: ['host'],
-      where: { ok: true, amountUsd: { gt: 0 }, createdAt: { gte: since } },
+      by: ['host', 'ok'],
+      where: { createdAt: { gte: since } },
       _count: { _all: true },
       _max: { createdAt: true },
     })
-    const byHost = new Map<string, { settled: number; recent: boolean }>()
+    const byHost = new Map<string, { settled: number; failed: number; lastOk: Date | null }>()
     for (const r of rows) {
-      const last = r._max.createdAt
-      byHost.set(hostnameOf(r.host), {
-        settled: r._count._all,
-        recent: !!last && Date.now() - last.getTime() <= RECENT_MS,
-      })
+      const host = hostnameOf(r.host)
+      const cur = byHost.get(host) ?? { settled: 0, failed: 0, lastOk: null }
+      if (r.ok) {
+        cur.settled += r._count._all
+        if (r._max.createdAt && (!cur.lastOk || r._max.createdAt > cur.lastOk)) cur.lastOk = r._max.createdAt
+      } else {
+        cur.failed += r._count._all
+      }
+      byHost.set(host, cur)
     }
     for (const e of endpoints) {
-      const rel = byHost.get(hostnameOf(e.url))
-      if (rel) e.reliability = rel
+      const h = byHost.get(hostnameOf(e.url))
+      if (!h || h.settled + h.failed === 0) continue
+      const recent = !!h.lastOk && Date.now() - h.lastOk.getTime() <= RECENT_MS
+      const total = h.settled + h.failed
+      e.reliability = {
+        settled: h.settled,
+        failed: h.failed,
+        recent,
+        successRate: total > 0 ? h.settled / total : 0,
+        rating: computeRating({ settled: h.settled, failed: h.failed, recent }),
+      }
     }
   } catch {
     // Reliability is advisory — never block planning on a ledger read.
