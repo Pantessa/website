@@ -465,17 +465,17 @@
   @media (min-width: 1800px) { .x-grid { grid-template-columns: repeat(5, 1fr); } }
   .card {
     border: 1px solid var(--line); background: var(--surf-1); border-radius: 14px; padding: 18px;
-    cursor: pointer; transition: border-color .18s, background .18s, transform .18s;
+    cursor: pointer; transition: border-color .15s, background .15s, transform .15s;
     display: flex; flex-direction: column;
   }
-  .card:hover { border-color: var(--line-2); background: var(--surf-2); }
+  .card:hover { border-color: var(--line-2); background: var(--surf-2); transform: translateY(-1px); }
   .card.is-active { border-color: var(--fg); background: var(--surf-2); }
   .card__top { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
   .card__id { display: flex; align-items: center; gap: 12px; min-width: 0; }
   .card__tile {
     width: 44px; height: 44px; border-radius: 11px; flex-shrink: 0;
     background: var(--bg); border: 1px solid var(--line-2);
-    display: grid; place-items: center; color: var(--fg); transition: background .18s, color .18s;
+    display: grid; place-items: center; color: var(--fg); transition: background .15s, color .15s;
   }
   .card.is-active .card__tile { background: var(--fg); color: #000; border-color: var(--fg); }
   .card.is-active .card__tile img { filter: invert(1); }
