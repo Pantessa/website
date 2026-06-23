@@ -141,6 +141,24 @@ function TraceLine({ event }: { event: RouterTraceEvent }) {
           )}
         </div>
       )
+    case 'shortlist':
+      return (
+        <div className="text-[color:var(--muted)]">
+          <p>
+            <span style={{ color: 'var(--accent)' }}>≡ shortlisted</span> {event.candidates.length} relevant{' '}
+            {event.candidates.length === 1 ? 'tool' : 'tools'}:
+          </p>
+          <ul className="mt-0.5 pl-3 [overflow-wrap:anywhere]">
+            {event.candidates.slice(0, 12).map((c, i) => (
+              <li key={i} className="text-[color:var(--muted-2)]">
+                · {c.service}
+                {c.endpoint ? <span> {shortEndpoint(c.endpoint)}</span> : null}
+                {c.priceUsd ? <span> ${c.priceUsd}</span> : null}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )
     case 'candidate':
       return (
         <p className="text-[color:var(--muted)] [overflow-wrap:anywhere]">
