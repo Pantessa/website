@@ -497,6 +497,15 @@ async function main() {
   check('route metrics: cache header set', /s-maxage/.test(rmRes.headers.get('cache-control') ?? ''))
   check('route metrics: P1 — no full wallet address in the payload', !rmText.toLowerCase().includes(owner.address.toLowerCase()))
 
+  // B18 — public MCP reputation enriches the directory (shape-safe; reputation
+  // only appears for services with ledger history).
+  const dir = (await (await fetch(`${BASE}/api/servers`)).json()) as { name: string; reputation?: { settled: number; failed: number; settleRate: number } }[]
+  check('directory: /api/servers returns the server list', Array.isArray(dir) && dir.length > 0)
+  check(
+    'directory: reputation (when present) is well-formed',
+    dir.every((s) => !s.reputation || (typeof s.reputation.settled === 'number' && s.reputation.settleRate >= 0 && s.reputation.settleRate <= 1)),
+  )
+
   // ── Switchboard route preview (public, read-only, no spend) ───────────────
   // Guards the routing lever the /switchboard "try a route" demo renders: the
   // contract shape, the $0.05 ceiling, and the proven-gate invariant — the pick
@@ -1099,6 +1108,11 @@ async function main() {
     'blocked-for-approval receipt links to /servers/<slug>#approve',
     html.includes('/servers/gamma-svc#approve'),
   )
+  // B23 — the stored routing trace (meta.routerTrace) renders read-only on the share page.
+  check(
+    'share page renders the routing trace (B23)',
+    html.includes('Routing trace') && html.includes('shortlisted') && html.includes('selected'),
+  )
 
   // ── Blog (requires BLOG_ADMIN_PK + matching ADMIN_WALLETS on the server) ──
   const adminPk = process.env.BLOG_ADMIN_PK
@@ -1512,6 +1526,27 @@ async function main() {
   check(
     'router: per-turn cost ceiling stops overspend (1 of 2 runs, rest noted)',
     ceilExec === 1 && ceilDec.context.length === 1 && ceilDec.notes.some((n) => /per-turn budget/.test(n)),
+  )
+
+  // B21 — same-capability dedup: two crypto-price picks → only one is paid.
+  const dupEndpoints: PlannableEndpoint[] = [
+    { id: 'cmc2', serverSlug: 'cmc', serverName: 'CMC', method: 'GET', url: 'https://cmc.test/q', description: 'crypto spot price by symbol', priceUsd: '0.01', parameters: [{ group: 'query', name: 'symbol', required: true }] },
+    { id: 'cg2', serverSlug: 'cg', serverName: 'CoinGecko', method: 'GET', url: 'https://cg.test/p', description: 'crypto token price', priceUsd: '0.01', parameters: [{ group: 'query', name: 'symbol', required: true }] },
+  ]
+  const dupExec: string[] = []
+  const dupDec = await routeMessage({
+    message: 'price of ETH',
+    catalog: [claudeSrv],
+    endpoints: dupEndpoints,
+    runInference: async () => ({ text: JSON.stringify({ intent: 'price', needs: [], picks: [
+      { endpointId: 'cmc2', params: { symbol: 'ETH' }, reason: 'p', score: 0.9 },
+      { endpointId: 'cg2', params: { symbol: 'ETH' }, reason: 'p2', score: 0.8 },
+    ] }) }),
+    executeCall: async (p: { serverSlug: string }) => { dupExec.push(p.serverSlug); return { data: {} } },
+  })
+  check(
+    'router: same-capability picks deduped (one provider paid, rest noted)',
+    dupExec.length === 1 && dupExec[0] === 'cmc' && dupDec.notes.some((n) => /same capability/.test(n)),
   )
 
   // B13 — response cache (pure; no DB/spend).

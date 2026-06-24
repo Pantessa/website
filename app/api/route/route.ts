@@ -49,5 +49,6 @@ export async function POST(req: NextRequest) {
   // Spend scope = the org's (org key) or the key owner's. Burner mode (no wallet
   // signing over an API). Returns the streamed Response.
   const owner = key.orgId ? orgScopeKey(key.orgId) : key.ownerAddress
-  return streamAutoRouter(message, sanitizeHistory(body.history), undefined, owner)
+  // Attribute routed spend to THIS key so per-key budgets + the Agents tab see it.
+  return streamAutoRouter(message, sanitizeHistory(body.history), undefined, owner, key.id)
 }

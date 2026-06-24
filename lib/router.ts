@@ -156,7 +156,7 @@ const STOPWORDS = new Set([
 export function shortlistEndpoints(message: string, endpoints: PlannableEndpoint[], limit = 14): PlannableEndpoint[] {
   const tokens = new Set((message.toLowerCase().match(/[a-z0-9]{3,}/g) ?? []).filter((t) => !STOPWORDS.has(t)))
   const score = (ep: PlannableEndpoint): number => {
-    let hay = `${ep.serverName} ${ep.serverSlug} ${ep.description ?? ''}`.toLowerCase()
+    let hay = `${ep.serverName} ${ep.serverSlug} ${ep.category ?? ''} ${ep.description ?? ''}`.toLowerCase()
     try {
       hay += ' ' + new URL(ep.url).pathname.toLowerCase().replace(/[^a-z0-9]+/g, ' ')
     } catch {
@@ -184,6 +184,48 @@ export function shortlistEndpoints(message: string, endpoints: PlannableEndpoint
     if (out.length >= limit) break
   }
   return out
+}
+
+// Capability tags — a lightweight taxonomy so the engine can deterministically
+// refuse to pay two MCPs for the SAME kind of answer (beyond the prompt rule).
+// First match wins; order specific → general. Untagged endpoints are never
+// deduped against (so distinct/unknown capabilities always survive).
+const CAPABILITY_RULES: { tag: string; re: RegExp }[] = [
+  { tag: 'crypto-price', re: /\b(spot price|price by symbol|token price|market quote|quotes? latest|market cap|crypto price)\b/i },
+  { tag: 'web-search', re: /\b(web search|search the web|find pages|search results|article search|news search)\b/i },
+  { tag: 'travel', re: /\b(hotel|restaurant|flight|airfare|attraction|itinerary|trip|travel)\b/i },
+  { tag: 'governance', re: /\b(dao|governance|proposal|snapshot|voting space)\b/i },
+  { tag: 'weather', re: /\b(weather|forecast|temperature|precipitation|humidity)\b/i },
+  { tag: 'onchain-analytics', re: /\b(wallet analytics|smart money|token flows|holder|onchain analytics)\b/i },
+  { tag: 'math', re: /\b(compute|equation|calculus|integral|derivative|math)\b/i },
+]
+
+/** The capability an endpoint serves (or undefined). Pure (B21). */
+export function capabilityOf(ep: PlannableEndpoint): string | undefined {
+  const hay = `${ep.serverName} ${ep.serverSlug} ${ep.category ?? ''} ${ep.description ?? ''}`.toLowerCase()
+  return CAPABILITY_RULES.find((r) => r.re.test(hay))?.tag
+}
+
+/**
+ * Keep ONE provider per capability — the best (higher rating, then cheaper).
+ * Untagged items always survive. Returns kept + dropped. Pure + tested (B21).
+ */
+export function dedupeByCapability<T extends { capability?: string; rating: number; price: number }>(items: T[]): { kept: T[]; dropped: T[] } {
+  const bestIdx = new Map<string, number>()
+  items.forEach((it, i) => {
+    if (!it.capability) return
+    const b = bestIdx.get(it.capability)
+    if (b === undefined || it.rating > items[b].rating || (it.rating === items[b].rating && it.price < items[b].price)) {
+      bestIdx.set(it.capability, i)
+    }
+  })
+  const kept: T[] = []
+  const dropped: T[] = []
+  items.forEach((it, i) => {
+    if (!it.capability || bestIdx.get(it.capability) === i) kept.push(it)
+    else dropped.push(it)
+  })
+  return { kept, dropped }
 }
 
 /** What the routing model is asked to return (a planner pick + its reasoning). */
@@ -402,8 +444,16 @@ export async function routeMessage(opts: RouteOptions): Promise<RouterDecision> 
       addNote(`Routing call failed (${err instanceof Error ? err.message : 'error'}); answering from the inference engine alone.`, 'warn')
     }
     emit({ type: 'analyze', intent: decision.intent || 'Answering the question.', needs: decision.needs })
-    for (const pick of decision.picks) {
-      const sp = planPick(pick)
+    // Capability dedup: never plan two providers for the same capability — keep
+    // the best (higher rating, then cheaper); the rest are dropped + noted.
+    const tagged = decision.picks
+      .map((pick) => ({ pick, ep: byId.get(pick.endpointId) }))
+      .filter((x): x is { pick: typeof x.pick; ep: PlannableEndpoint } => !!x.ep)
+      .map((x) => ({ pick: x.pick, ep: x.ep, capability: capabilityOf(x.ep), rating: x.ep.reliability?.rating ?? 0, price: Number(x.ep.priceUsd) || 0 }))
+    const { kept, dropped } = dedupeByCapability(tagged)
+    for (const d of dropped) addNote(`Skipped ${d.ep.serverName} — same capability (${d.capability}); kept the better-rated/cheaper provider.`)
+    for (const k of kept) {
+      const sp = planPick(k.pick)
       if (sp) smartPicks.push(sp)
     }
     if (smartPicks.length === 0 && !routingFailed) emitConsideredNone(shortlisted, addNote, emit)
@@ -434,8 +484,22 @@ export async function routeMessage(opts: RouteOptions): Promise<RouterDecision> 
       }
       const fresh = decision.picks.filter((p) => !calledIds.has(p.endpointId))
       if (fresh.length === 0) break // model has enough (or only repeats) → done
+      // Within-step capability dedup: if the model picks two providers for the
+      // SAME capability in one step (e.g. CoinGecko + CoinMarketCap for price),
+      // keep the best and don't pay twice. (Across STEPS we don't dedup — a
+      // resolve→fetch chain legitimately reuses a capability.)
+      const freshTagged = fresh
+        .map((pick) => ({ pick, ep: byId.get(pick.endpointId) }))
+        .filter((x): x is { pick: typeof x.pick; ep: PlannableEndpoint } => !!x.ep)
+        .map((x) => ({ pick: x.pick, ep: x.ep, capability: capabilityOf(x.ep), rating: x.ep.reliability?.rating ?? 0, price: Number(x.ep.priceUsd) || 0 }))
+      const deduped = dedupeByCapability(freshTagged)
+      for (const d of deduped.dropped) {
+        calledIds.add(d.pick.endpointId)
+        addNote(`Skipped ${d.ep.serverName} — same capability (${d.capability}) as another pick this step; kept the better-rated/cheaper one.`)
+      }
       let progressed = false
-      for (const pick of fresh) {
+      for (const k of deduped.kept) {
+        const pick = k.pick
         calledIds.add(pick.endpointId)
         const sp = planPick(pick)
         if (!sp) continue

@@ -46,8 +46,17 @@ export interface NetworkActivity {
 
 export default function ActivityBoard() {
   const [data, setData] = useState<NetworkActivity | null>(null)
+  const [routing, setRouting] = useState<{ turns: number; totalSavedUsd: number } | null>(null)
   const [failed, setFailed] = useState(false)
   const timer = useRef<ReturnType<typeof setInterval> | null>(null)
+
+  // Sharp-routing value (B24): aggregate, public, separate from the ledger feed.
+  useEffect(() => {
+    void fetch('/api/route/metrics', { cache: 'no-store' })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((m) => m && setRouting({ turns: m.turns ?? 0, totalSavedUsd: m.totalSavedUsd ?? 0 }))
+      .catch(() => {})
+  }, [])
 
   useEffect(() => {
     const load = () =>
@@ -96,6 +105,13 @@ export default function ActivityBoard() {
           sub="refused before any payment"
         />
         <Kpi label="Active accounts" value={String(s.activeAccounts)} sub="wallets with receipts" />
+        {routing && routing.turns > 0 && (
+          <Kpi
+            label="Saved via sharp routing"
+            value={`$${routing.totalSavedUsd.toFixed(4)}`}
+            sub={`across ${routing.turns} routed turn${routing.turns === 1 ? '' : 's'}`}
+          />
+        )}
         {showStakerRewards && (
           <Kpi
             label="Staker rewards"

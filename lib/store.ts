@@ -26,6 +26,9 @@ export interface McpServer {
   /** Auto-callable via the endpoint planner (has ≥1 plannable endpoint), even
    *  without being hand-wired. Derived in /api/servers. */
   autoCallable?: boolean
+  /** Usage-driven reputation from the spend ledger (B18) — settle rate +
+   *  settled count. Attached in /api/servers; absent when there's no history. */
+  reputation?: { settled: number; failed: number; settleRate: number }
 
   // presentation / provenance (DB-backed directory)
   iconSlug?: string | null
