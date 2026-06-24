@@ -74,7 +74,7 @@ export default function MessageReceipts({ meta }: { meta: unknown }) {
             (r.slug ? (
               <a
                 href={`/servers/${r.slug}#approve`}
-                className="truncate underline decoration-dotted underline-offset-2 text-amber-400 hover:text-amber-300 transition-colors"
+                className="flex-shrink-0 inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md border border-amber-500/40 bg-amber-500/10 text-amber-400 hover:bg-amber-500/15 hover:text-amber-300 transition-colors"
                 title={`Approve ${r.name} for your expense account`}
               >
                 not approved — approve →

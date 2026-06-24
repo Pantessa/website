@@ -611,7 +611,7 @@ export default function ChatInterface() {
                 </div>
                 <div className="px-4 py-3 rounded-2xl rounded-tl-sm bg-[var(--surf-1)] border border-[var(--line)] flex items-center gap-2">
                   <Loader2 className="w-4 h-4 text-[color:var(--muted)] animate-spin flex-shrink-0" />
-                  {status && <span className="text-xs text-[color:var(--muted)]">{status}</span>}
+                  <span className="text-xs text-[color:var(--muted)]">{status ?? 'Thinking…'}</span>
                 </div>
               </motion.div>
             )}

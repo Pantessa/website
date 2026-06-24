@@ -6,7 +6,7 @@
 // = $0.004, which reads alarmingly like "$4000") and gets an honest heads-up
 // about the Blockaid "deceptive request" false-positive on micropayments.
 
-import { Wallet, ShieldAlert } from 'lucide-react'
+import { Wallet, ShieldAlert, Check, Loader2 } from 'lucide-react'
 
 type Payment = { id: string; name: string; priceUsd: string }
 
@@ -66,9 +66,11 @@ export default function PaymentConfirm({
         <button
           onClick={onConfirm}
           disabled={busy}
-          className="inline-flex items-center gap-1.5 text-[13px] font-medium px-4 py-2 max-lg:min-h-10 rounded-full bg-white text-black hover:bg-zinc-200 disabled:opacity-50 transition-colors"
+          aria-busy={busy}
+          className="inline-flex items-center gap-1.5 text-[13px] font-medium px-4 py-2 max-lg:min-h-10 rounded-full bg-emerald-400 text-black hover:bg-emerald-300 disabled:opacity-50 transition-colors"
         >
-          Pay {fmt(total)} &amp; continue
+          {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+          {busy ? 'Confirming…' : `Pay ${fmt(total)} & continue`}
         </button>
         <button
           onClick={onCancel}
