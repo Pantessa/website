@@ -6,7 +6,9 @@
     --line-2: oklch(0.446 0 0);
     --fg: #ffffff;
     --muted: oklch(0.68 0 0);
-    --muted-2: oklch(0.5 0 0);
+    /* Tertiary text/icons. Lifted 0.5 → 0.56 so faint captions clear WCAG AA
+       on the black/surface backgrounds while staying clearly below --muted. */
+    --muted-2: oklch(0.56 0 0);
     --accent: #3ECF8E;
     --maxw: 1280px;
     /* Aliases the launchpad token UI (TokenPanel/TradeToken/StakeToken) was
@@ -443,7 +445,7 @@
     background: var(--surf-1); border: 1px solid var(--line); color: var(--fg);
     font-size: 15px; font-family: inherit; transition: border-color .15s;
   }
-  .search__input::placeholder { color: var(--muted-2); }
+  .search__input::placeholder { color: var(--muted); opacity: 0.75; }
   .search__input:focus { outline: none; border-color: var(--line-2); }
   .pills { display: flex; flex-wrap: wrap; gap: 8px; }
   .pill {
@@ -708,7 +710,7 @@
     flex: 1; min-width: 0; border: none; outline: none; background: transparent; color: var(--fg);
     font-size: 20px; font-family: 'Geist Mono', ui-monospace, monospace;
   }
-  .tkt__input::placeholder { color: var(--muted-2); font-size: 15px; }
+  .tkt__input::placeholder { color: var(--muted); opacity: 0.75; font-size: 15px; }
   .tkt__suffix { font-size: 13px; color: var(--muted); flex-shrink: 0; }
   .tkt__chips { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
   .tkt__chip {
