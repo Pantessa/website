@@ -11,6 +11,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { Copy, Check, KeyRound, Loader2, Plus, Trash2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { EmptyState } from '@/lib/dashboard-ui'
+import { useToast } from '@/lib/toast'
 
 interface ApiKeyRow {
   id: string
@@ -35,6 +36,7 @@ export default function ApiKeysPanel({
   /** Org scope: list/mint the org's shared keys (mint is admin+, server-checked). */
   orgId?: string | null
 }) {
+  const { toast } = useToast()
   const [keys, setKeys] = useState<ApiKeyRow[] | null>(null)
   const [label, setLabel] = useState('')
   const [minting, setMinting] = useState(false)
@@ -75,8 +77,11 @@ export default function ApiKeysPanel({
       setCopied(false)
       setLabel('')
       await load()
+      toast(`“${data.label}” minted — copy the secret now.`, 'success')
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Mint failed.')
+      const msg = e instanceof Error ? e.message : 'Mint failed.'
+      setError(msg)
+      toast(msg, 'error')
     } finally {
       setMinting(false)
     }
@@ -100,7 +105,10 @@ export default function ApiKeysPanel({
     setConfirmRevoke(null)
     setKeys((prev) => prev?.filter((k) => k.id !== id) ?? prev) // optimistic
     try {
-      await fetch(`/api/keys/${id}`, { method: 'DELETE' })
+      const res = await fetch(`/api/keys/${id}`, { method: 'DELETE' })
+      toast(res.ok ? 'API key revoked.' : `Couldn’t revoke the key (${res.status}).`, res.ok ? 'success' : 'error')
+    } catch {
+      toast('Couldn’t revoke the key — network error.', 'error')
     } finally {
       void load()
     }

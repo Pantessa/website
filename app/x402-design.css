@@ -1250,6 +1250,13 @@
     outline-offset: 2px;
   }
 
+  /* Toast entrance — slide up + fade. Neutralized by the reduced-motion guard. */
+  @keyframes toast-in {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  .toast-in { animation: toast-in .18s ease-out; }
+
   /* Global reduced-motion guard — honor the OS setting everywhere. Cosmetic
      transitions/animations (nav, cards, buttons, the routing visual, skeleton
      pulses) collapse to ~instant. The PaymentWeb canvas already checks the same

@@ -12,12 +12,14 @@ import SignGrantButton from '@/components/SignGrantButton'
 import FundAccountCard from '@/components/FundAccountCard'
 import { Card, CardTitle, Kpi, SkeletonKpi, SkeletonCard, Skeleton, type Stats } from '@/lib/dashboard-ui'
 import { PolicySwitch, BudgetEditor } from '@/components/SpendPolicyControls'
+import { useToast } from '@/lib/toast'
 import EarnPanel from '@/components/EarnPanel'
 import PayToAgentsCard from '@/components/PayToAgentsCard'
 import { useOrgStore } from '@/lib/org-store'
 
 export default function DashboardOverviewPage() {
   const { activeOrgId } = useOrgStore()
+  const { toast } = useToast()
   const [stats, setStats] = useState<Stats | null>(null)
   const [freezing, setFreezing] = useState(false)
   const [policing, setPolicing] = useState(false)
@@ -46,10 +48,13 @@ export default function DashboardOverviewPage() {
       const r = await fetch(`/api/grants/${grantId}/spend-permission`, { method: 'POST' })
       if (!r.ok) {
         const b = await r.json().catch(() => ({}))
-        setBackErr(b.detail || b.error || `Failed (${r.status})`)
+        const msg = b.detail || b.error || `Failed (${r.status})`
+        setBackErr(msg)
+        toast(`On-chain backing failed: ${msg}`, 'error')
         return
       }
       await load()
+      toast('Account backed on-chain — Spend Permission active.', 'success')
     } finally {
       setBacking(false)
     }
@@ -61,12 +66,14 @@ export default function DashboardOverviewPage() {
   const togglePolicy = async (grantId: string, spendPolicyEnabled: boolean) => {
     setPolicing(true)
     try {
-      await fetch(`/api/grants/${grantId}`, {
+      const r = await fetch(`/api/grants/${grantId}`, {
         method: 'PATCH',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ spendPolicyEnabled }),
       })
       await load()
+      if (r.ok) toast(spendPolicyEnabled ? 'Spending policy on — caps enforced.' : 'Spending policy off — unrestricted.', 'success')
+      else toast(`Couldn’t update the policy (${r.status}).`, 'error')
     } finally {
       setPolicing(false)
     }
@@ -77,12 +84,14 @@ export default function DashboardOverviewPage() {
   const toggleFreeze = async (grantId: string, paused: boolean) => {
     setFreezing(true)
     try {
-      await fetch(`/api/grants/${grantId}`, {
+      const r = await fetch(`/api/grants/${grantId}`, {
         method: 'PATCH',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ paused }),
       })
       await load()
+      if (r.ok) toast(paused ? 'Account frozen — every payment refused.' : 'Account resumed.', 'success')
+      else toast(`Couldn’t ${paused ? 'freeze' : 'resume'} the account (${r.status}).`, 'error')
     } finally {
       setFreezing(false)
     }
