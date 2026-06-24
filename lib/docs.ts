@@ -41,6 +41,14 @@ export const DOCS_PAGES: DocsPage[] = [
     ready: true,
   },
   {
+    slug: 'funding',
+    title: 'Funding (USDC on Base)',
+    seoTitle: 'Funding — get USDC on Base for x402 calls',
+    description:
+      'How to fund a Yeetful account with USDC on Base: where to get it, how much to keep (EIP-3009 is gasless), mainnet vs Base Sepolia, and what happens if you run dry.',
+    ready: true,
+  },
+  {
     slug: 'claude-code',
     title: 'Add with Claude Code',
     seoTitle: 'Add Yeetful to your agent with one Claude prompt',
@@ -49,11 +57,27 @@ export const DOCS_PAGES: DocsPage[] = [
     ready: true,
   },
   {
+    slug: 'embedded-wallet',
+    title: 'Create an account (email)',
+    seoTitle: 'Create an account — email wallet, no extension',
+    description:
+      'Sign up with just an email: Yeetful creates a Coinbase non-custodial wallet you control, no extension needed. Once connected it works exactly like MetaMask.',
+    ready: true,
+  },
+  {
     slug: 'expense-account',
     title: 'The expense account',
     seoTitle: 'Spend grants — allowlists, budgets, and receipts',
     description:
       'How yeetful spend grants work: host allowlists, per-call/per-day/lifetime USD caps, typed GrantError denials, and a receipt for every decision.',
+    ready: true,
+  },
+  {
+    slug: 'spend-policy',
+    title: 'The spend-policy switch',
+    seoTitle: 'Spend policy — the on/off master switch for caps',
+    description:
+      'The master switch on your Yeetful account: off means unrestricted (trial mode), on enforces your allowlist and budgets. Toggling it preserves per-agent approvals.',
     ready: true,
   },
   {

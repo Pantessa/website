@@ -138,7 +138,7 @@ function CreateAccountModal({ onClose }: { onClose: () => void }) {
     <div className="ca">
       <button className="ca__backdrop" aria-label="Close" onClick={onClose} />
       <div className="ca__panel" role="dialog" aria-modal="true" aria-label="Sign in or create an account">
-        <button className="ca__close" aria-label="Close" onClick={onClose}>
+        <button className="ca__close" aria-label="Dismiss" onClick={onClose}>
           <X width={16} height={16} />
         </button>
 
@@ -162,7 +162,7 @@ function CreateAccountModal({ onClose }: { onClose: () => void }) {
               onChange={(e) => setEmail(e.target.value)}
               className="ca__input"
             />
-            {error && <p className="ca__error">{error}</p>}
+            {error && <p className="ca__error" role="alert">{error}</p>}
             <button type="submit" className="ca__submit" disabled={busy || !isInitialized}>
               {busy ? <Loader2 className="ca__spin" width={16} height={16} /> : null}
               {!isInitialized ? 'Starting…' : busy ? 'Sending…' : 'Continue with email'}
@@ -192,8 +192,10 @@ function CreateAccountModal({ onClose }: { onClose: () => void }) {
               value={otp}
               onChange={(e) => setOtp(e.target.value.replace(/\D/g, ''))}
               className="ca__input ca__input--otp"
+              aria-describedby="ca-otp-hint"
             />
-            {error && <p className="ca__error">{error}</p>}
+            <p id="ca-otp-hint" className="ca__fine">Enter the 6-digit code we emailed you.</p>
+            {error && <p className="ca__error" role="alert">{error}</p>}
             <button type="submit" className="ca__submit" disabled={busy}>
               {busy ? <Loader2 className="ca__spin" width={16} height={16} /> : null}
               {busy ? 'Verifying…' : 'Verify & continue'}
