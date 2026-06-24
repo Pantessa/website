@@ -10,6 +10,7 @@ import { CDPHooksProvider } from '@coinbase/cdp-hooks'
 import { wagmiConfig } from '@/lib/wagmi'
 import { cdpConfig, cdpEnabled } from '@/lib/cdp-embedded'
 import { SessionProvider } from '@/lib/session'
+import { ToastProvider } from '@/lib/toast'
 
 export default function Providers({ children }: { children: ReactNode }) {
   // one QueryClient per mount; useState ensures it isn't recreated on re-renders
@@ -39,7 +40,7 @@ export default function Providers({ children }: { children: ReactNode }) {
         >
           <SessionProvider>
             <TrackWallet />
-            {children}
+            <ToastProvider>{children}</ToastProvider>
           </SessionProvider>
         </RainbowKitProvider>
       </QueryClientProvider>

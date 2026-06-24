@@ -12,6 +12,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Check, Loader2, Pencil, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { useToast } from '@/lib/toast'
 
 /**
  * Read + toggle the account's spend policy from anywhere (chat, etc.). Loads the
@@ -130,6 +131,7 @@ export function BudgetEditor({
   disabled?: boolean
   className?: string
 }) {
+  const { toast } = useToast()
   const [editing, setEditing] = useState(false)
   const [val, setVal] = useState(String(perDayUsd))
   const [saving, setSaving] = useState(false)
@@ -158,12 +160,13 @@ export function BudgetEditor({
     }
     setSaving(true)
     try {
-      await fetch(`/api/grants/${grantId}`, {
+      const r = await fetch(`/api/grants/${grantId}`, {
         method: 'PATCH',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ perDayUsd: rounded }),
       })
       await onSaved?.()
+      toast(r.ok ? `Daily budget set to $${rounded.toFixed(2)}.` : `Couldn’t update the budget (${r.status}).`, r.ok ? 'success' : 'error')
     } finally {
       setSaving(false)
       setEditing(false)
