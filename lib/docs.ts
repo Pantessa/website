@@ -41,6 +41,14 @@ export const DOCS_PAGES: DocsPage[] = [
     ready: true,
   },
   {
+    slug: 'funding',
+    title: 'Funding (USDC on Base)',
+    seoTitle: 'Funding — get USDC on Base for x402 calls',
+    description:
+      'How to fund a Yeetful account with USDC on Base: where to get it, how much to keep (EIP-3009 is gasless), mainnet vs Base Sepolia, and what happens if you run dry.',
+    ready: true,
+  },
+  {
     slug: 'claude-code',
     title: 'Add with Claude Code',
     seoTitle: 'Add Yeetful to your agent with one Claude prompt',
