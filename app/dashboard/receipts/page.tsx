@@ -6,8 +6,8 @@
 // legible proof behind the Overview's "$X verified on-chain" KPI.
 
 import { useEffect, useState } from 'react'
-import { CheckCircle2, XCircle, Clock, HelpCircle } from 'lucide-react'
-import { Card, short, timeAgo } from '@/lib/dashboard-ui'
+import { CheckCircle2, XCircle, Clock, HelpCircle, Coins } from 'lucide-react'
+import { Card, EmptyState, short, timeAgo } from '@/lib/dashboard-ui'
 
 interface Row {
   id: string
@@ -84,10 +84,12 @@ export default function DashboardReceiptsPage() {
 
       <Card>
         {!feed || feed.rows.length === 0 ? (
-          <p className="text-xs text-[color:var(--muted-2)] py-4">
-            No earnings yet — once a claimed MCP reports a paid call (via <span className="mono">reportUsage</span> or{' '}
-            <span className="mono">POST /api/mcp/receipts</span>), it shows up here with its on-chain check.
-          </p>
+          <EmptyState
+            icon={Coins}
+            title="No earnings yet"
+            description="When a claimed MCP reports a paid call (via reportUsage or POST /api/mcp/receipts), it shows up here with its on-chain check."
+            cta={{ href: '/docs/earn', label: 'How earnings work' }}
+          />
         ) : (
           <div className="divide-y divide-white/5">
             {feed.rows.map((r) => {

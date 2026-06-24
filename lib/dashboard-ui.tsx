@@ -1,6 +1,7 @@
 // Shared dashboard primitives + API shapes, extracted from the old
 // single-page dashboard so the sidebar-split routes can reuse them.
 
+import Link from 'next/link'
 import { cn } from '@/lib/utils'
 
 export interface Stats {
@@ -103,4 +104,41 @@ export function timeAgo(iso: string): string {
   if (sec < 3600) return `${Math.floor(sec / 60)}m ago`
   if (sec < 86400) return `${Math.floor(sec / 3600)}h ago`
   return `${Math.floor(sec / 86400)}d ago`
+}
+
+/**
+ * Polished empty state for dashboard surfaces — centered icon, title,
+ * description, and an optional CTA. Replaces ad-hoc muted <p> placeholders so
+ * empty pages read as intentional, not broken.
+ */
+export function EmptyState({
+  icon: Icon,
+  title,
+  description,
+  cta,
+}: {
+  icon?: React.ComponentType<{ className?: string }>
+  title: string
+  description: string
+  cta?: { href: string; label: string }
+}) {
+  return (
+    <div className="flex flex-col items-center text-center gap-1.5 py-10 px-4">
+      {Icon && (
+        <span className="w-10 h-10 mb-1 rounded-xl grid place-items-center bg-white/[0.04] border border-white/10 text-[color:var(--muted)]">
+          <Icon className="w-5 h-5" />
+        </span>
+      )}
+      <p className="text-sm font-medium text-white">{title}</p>
+      <p className="text-xs text-[color:var(--muted-2)] max-w-xs leading-relaxed">{description}</p>
+      {cta && (
+        <Link
+          href={cta.href}
+          className="mt-2 inline-flex items-center text-xs font-medium px-3 py-2 rounded-lg border border-[var(--line-2)] text-[color:var(--muted)] hover:text-white hover:border-white transition-colors"
+        >
+          {cta.label}
+        </Link>
+      )}
+    </div>
+  )
 }
