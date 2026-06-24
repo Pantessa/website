@@ -149,14 +149,27 @@ pay.agentBudget() // { keyId, label, perDayUsd, spentTodayUsd, remainingTodayUsd
           </li>
         </ul>
         <p>
-          The freeze is <strong>as hard as the rail allows</strong>. For chats Yeetful itself
-          executes (the burner and the wallet-plan gate), a frozen account is a{' '}
-          <strong>server-side hard refusal</strong> — the payment is blocked and the denial
-          ledgered, because Yeetful controls that rail. For external SDK agents paying from their
-          own wallet it&apos;s advisory, exactly like budgets: the policy carries the halt and the
-          SDK refuses locally (<Link href="/docs/teams">SDK 0.5+</Link>). Pausing is the &quot;stop
-          this now&quot; you reach for when an agent misbehaves; the on-chain hard stop for
-          adversarial cases still arrives with Coinbase Spend Permissions.
+          The freeze is <strong>as hard as the rail allows</strong>, and that differs by who pays:
+        </p>
+        <ul>
+          <li>
+            <strong>Chats Yeetful executes</strong> (the burner and the wallet-plan gate) —{' '}
+            <strong>hard, server-side refusal</strong>. The payment is blocked before it settles and
+            the denial is ledgered. Takes effect <strong>instantly</strong>, because Yeetful controls
+            that rail.
+          </li>
+          <li>
+            <strong>External SDK agents</strong> paying from their own wallet — <strong>advisory</strong>,
+            exactly like budgets. The halt rides the policy on <code>GET /api/agent/policy</code>, and
+            the SDK (<Link href="/docs/teams">0.5+</Link>) refuses locally on its{' '}
+            <strong>next policy check</strong> — the next call or the receipt-sync echo, whichever
+            comes first. The on-chain hard stop for adversarial cases arrives with Coinbase Spend
+            Permissions.
+          </li>
+        </ul>
+        <p>
+          Freeze is the emergency stop. Whether your caps apply <em>at all</em> is a separate
+          control — the <Link href="/docs/spend-policy">spend-policy switch</Link>.
         </p>
         <pre>
           <code>{`GET /api/agent/policy → { "halted": true, "haltReason": "AGENT_PAUSED", … }
