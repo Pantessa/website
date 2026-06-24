@@ -62,6 +62,8 @@ export type RouterTraceEvent =
   | { type: 'select'; service: string; endpoint?: string; priceUsd?: string; reason: string }
   | { type: 'pay'; service: string; host: string; priceUsd: string }
   | { type: 'receipt'; receipt: { name: string; endpoint?: string; priceUsd?: string; txHash?: string; ok: boolean; note?: string } }
+  | { type: 'tool'; name: string; status: 'run' | 'ok' | 'error'; detail?: string }
+  | { type: 'eip712'; scheme: string; signer: string; summary: string }
   | { type: 'note'; level: 'info' | 'warn'; label: string }
   | { type: 'error'; message: string }
 

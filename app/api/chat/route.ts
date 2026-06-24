@@ -15,6 +15,7 @@ import type { McpServer } from '@/lib/store'
 import { voteRequestFromToolResult, friendlyVoteError, type VoteRequest } from '@/lib/snapshot-vote'
 import { parseVoteIntent, type VoteIntent } from '@/lib/vote-intent'
 import { resolveProposal } from '@/lib/snapshot-read'
+import { detectGovernanceIntent, runGovernanceTurn } from '@/lib/governance'
 import { getSessionAddress } from '@/lib/auth'
 import { grantViolation, type GrantPolicy } from '@/lib/spend-grant'
 import {
@@ -878,7 +879,7 @@ export function streamAutoRouter(
       // can be persisted to Message.meta + replayed later (B16). No PII (service
       // slugs / intent / public tx hashes only); capped to keep meta small.
       const traceLog: unknown[] = []
-      const TRACE_TYPES = new Set(['status', 'analyze', 'shortlist', 'candidate', 'select', 'note', 'pay', 'receipt'])
+      const TRACE_TYPES = new Set(['status', 'analyze', 'shortlist', 'candidate', 'select', 'note', 'pay', 'receipt', 'tool', 'eip712'])
       const trace = () => traceLog.slice(-60)
       const send = (event: unknown) => {
         if (event && typeof event === 'object' && TRACE_TYPES.has((event as { type?: string }).type ?? '') && traceLog.length < 300) {
@@ -904,6 +905,34 @@ export function streamAutoRouter(
       const picksOf = (d: RouterDecision) => d.smartPicks.map((p) => ({ service: p.serverName, endpoint: p.endpointUrl, priceUsd: p.priceUsd }))
       try {
         send({ type: 'status', label: 'Starting the routing engine…' } satisfies TraceStep)
+
+        // ── Governance fast-path: proposals/votes are free Snapshot reads + a
+        //    gasless EIP-712 signature, not paid MCP calls. Run the transaction
+        //    tools (resolve → list → build EIP-712 → sign → relay → results),
+        //    each streamed as a terminal step. ─────────────────────────────────
+        const govIntent = detectGovernanceIntent(message)
+        if (govIntent) {
+          send({
+            type: 'analyze',
+            intent: govIntent.kind === 'vote' ? 'Cast a governance vote' : 'Find open governance proposals',
+            needs: govIntent.spaceQuery ? [`Snapshot space: ${govIntent.spaceQuery}`] : ['active Snapshot proposals'],
+          } satisfies TraceStep)
+          try {
+            const gov = await runGovernanceTurn({ message, intent: govIntent, walletAddress, emit: send })
+            send({
+              type: 'reply',
+              content: gov.reply,
+              receipts: [],
+              payer: gov.cast ? 'your agent' : 'none',
+              trace: trace(),
+              ...(gov.voteRequest ? { voteRequest: gov.voteRequest } : {}),
+            })
+            recordRouteEvent({ payer: gov.cast ? 'agent' : 'none', latencyMs: Date.now() - startMs, intent: govIntent.kind })
+          } catch (e) {
+            send({ type: 'reply', content: `🗳️ Governance routing hit an error: ${e instanceof Error ? e.message : 'unknown error'}.`, receipts: [], payer: 'none' })
+          }
+          return finish()
+        }
 
         const catalog = await loadCatalog()
         const inference = selectInferenceProvider(catalog)
