@@ -516,9 +516,8 @@ export async function routeMessage(opts: RouteOptions): Promise<RouterDecision> 
           observations.push(`${sp.serverName} ${shortUrl(sp.endpointUrl)} → ERROR: ${truncate(res.error, 200)}`)
         } else {
           smartPicks.push(sp)
-          const dataStr = typeof res.data === 'string' ? res.data : JSON.stringify(res.data ?? '')
-          context.push(`### ${sp.serverName}\n${truncate(dataStr, 1500)}`)
-          observations.push(`${sp.serverName} ${shortUrl(sp.endpointUrl)} → ${truncate(dataStr, 500)}`)
+          context.push(`### ${sp.serverName}\n${compactForSynthesis(res.data, 3500)}`)
+          observations.push(`${sp.serverName} ${shortUrl(sp.endpointUrl)} → ${compactForSynthesis(res.data, 600)}`)
           spentThisTurn += price
           progressed = true
           // Transaction layer: a tool that returned a signable action (a vote /
@@ -567,6 +566,37 @@ export async function routeMessage(opts: RouteOptions): Promise<RouterDecision> 
 
 function truncate(s: string, n: number): string {
   return s.length > n ? s.slice(0, n) + '…' : s
+}
+
+// Keys that bloat a tool result without carrying the answer — long tag lists,
+// logos, descriptions, platform metadata. Stripping them keeps the value-bearing
+// fields (price, quote, value, result) inside the synthesis budget instead of
+// being truncated away. Live-check finding: CMC quotes/latest buried
+// `quote.USD.price` behind a ~30-entry `tags` array, past the old 1500-char cut.
+const NOISY_KEYS = new Set([
+  'tags', 'tag_names', 'tag_groups', 'self_reported_tags',
+  'description', 'logo', 'urls', 'notice', 'platform', 'date_added',
+])
+
+function stripNoisy(v: unknown): unknown {
+  if (Array.isArray(v)) return v.map(stripNoisy)
+  if (v && typeof v === 'object') {
+    const out: Record<string, unknown> = {}
+    for (const [k, val] of Object.entries(v as Record<string, unknown>)) {
+      if (NOISY_KEYS.has(k)) continue
+      out[k] = stripNoisy(val)
+    }
+    return out
+  }
+  return v
+}
+
+/** Compact a tool result for the synthesis prompt: drop noisy keys from JSON,
+ *  then cap length. Strings pass through untouched (just capped). */
+function compactForSynthesis(data: unknown, limit: number): string {
+  if (typeof data === 'string') return truncate(data, limit)
+  const s = JSON.stringify(stripNoisy(data) ?? '')
+  return truncate(s, limit)
 }
 
 function shortUrl(url: string): string {
