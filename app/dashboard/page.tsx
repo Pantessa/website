@@ -186,8 +186,8 @@ export default function DashboardOverviewPage() {
       </div>
 
       <Card className="mb-6">
-        <div className="flex items-center justify-between gap-4 flex-wrap">
-          <div>
+        <div className="flex items-start lg:items-center justify-between gap-4 flex-wrap">
+          <div className="min-w-0">
             <p className="text-sm font-semibold text-white">{g?.label ?? 'No expense account yet'}</p>
             <p className="text-xs text-[color:var(--muted-2)] mt-0.5">
               {g
@@ -209,7 +209,7 @@ export default function DashboardOverviewPage() {
             )}
           </div>
           {g && (
-            <span className="flex items-center gap-3 flex-wrap">
+            <span className="flex items-center gap-3 flex-wrap max-lg:w-full">
               {/* Master power switch — default OFF for new users (unrestricted).
                   Independent of the per-agent approvals and of the freeze. */}
               <PolicySwitch
