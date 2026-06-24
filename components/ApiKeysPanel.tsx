@@ -10,6 +10,7 @@ import { analytics } from '@/lib/analytics'
 import { useCallback, useEffect, useState } from 'react'
 import { Copy, Check, KeyRound, Loader2, Plus, Trash2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { EmptyState } from '@/lib/dashboard-ui'
 
 interface ApiKeyRow {
   id: string
@@ -169,14 +170,11 @@ export default function ApiKeysPanel({
       {!keys ? (
         <p className="text-xs text-[color:var(--muted-2)] py-4">Loading keys…</p>
       ) : keys.length === 0 ? (
-        <div className="flex items-start gap-2.5 mt-4 text-[color:var(--muted-2)]">
-          <KeyRound className="w-4 h-4 flex-shrink-0 mt-0.5" />
-          <p className="text-xs leading-relaxed">
-            No keys yet. A key lets a headless agent authenticate as your wallet on the grants
-            API — the <span className="mono">yeetful</span> SDK uses it to sync receipts into
-            this dashboard. The secret is shown once at mint; only its hash is stored.
-          </p>
-        </div>
+        <EmptyState
+          icon={KeyRound}
+          title="No keys yet"
+          description="A key lets a headless agent authenticate as your wallet on the grants API — the yeetful SDK uses it to sync receipts here. The secret shows once at mint; only its hash is stored."
+        />
       ) : (
         <ul className="mt-4 space-y-1.5">
           {keys.map((k) => (
