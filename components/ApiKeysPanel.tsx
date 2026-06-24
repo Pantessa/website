@@ -8,10 +8,11 @@
 
 import { analytics } from '@/lib/analytics'
 import { useCallback, useEffect, useState } from 'react'
-import { Copy, Check, KeyRound, Loader2, Plus, Trash2 } from 'lucide-react'
+import { Copy, Check, KeyRound, Plus, Trash2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { EmptyState } from '@/lib/dashboard-ui'
 import { useToast } from '@/lib/toast'
+import Button from '@/components/Button'
 
 interface ApiKeyRow {
   id: string
@@ -170,15 +171,15 @@ export default function ApiKeysPanel({
               : 'border-[var(--line)] focus:border-[var(--accent)]',
           )}
         />
-        <button
+        <Button
+          variant="primary"
           onClick={() => void mint()}
-          disabled={minting}
-          aria-busy={minting}
-          className="flex-shrink-0 flex items-center gap-1.5 text-xs font-medium px-3 py-2 max-lg:min-h-10 rounded-lg bg-white text-zinc-950 hover:bg-zinc-200 disabled:opacity-50 transition-colors"
+          loading={minting}
+          icon={Plus}
+          className="flex-shrink-0"
         >
-          {minting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />}
           Mint key
-        </button>
+        </Button>
       </div>
       {error && <p className="text-[11px] text-red-400 mt-2" role="alert">{error}</p>}
 
