@@ -1239,3 +1239,17 @@
     outline: 2px solid var(--accent);
     outline-offset: 2px;
   }
+
+  /* Global reduced-motion guard — honor the OS setting everywhere. Cosmetic
+     transitions/animations (nav, cards, buttons, the routing visual, skeleton
+     pulses) collapse to ~instant. The PaymentWeb canvas already checks the same
+     query in JS (PaymentWeb.tsx) and renders a static frame, and the scoped
+     .pw-* guard above stays as belt-and-braces. */
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
