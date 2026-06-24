@@ -446,7 +446,13 @@
     font-size: 15px; font-family: inherit; transition: border-color .15s;
   }
   .search__input::placeholder { color: var(--muted); opacity: 0.75; }
-  .search__input:focus { outline: none; border-color: var(--line-2); }
+  .search__input:focus { outline: none; border-color: var(--accent); }
+  /* Keyboard focus gets the same accent ring the rest of the app uses. */
+  .search__input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  /* Invalid form fields read consistently across the dashboard (set via
+     aria-invalid by the owning component). */
+  .search__input[aria-invalid='true'] { border-color: #ff5d5d; }
+  .search__input[aria-invalid='true']:focus-visible { outline-color: #ff5d5d; }
   .pills { display: flex; flex-wrap: wrap; gap: 8px; }
   .pill {
     padding: 9px 18px; border-radius: 999px; font-size: 13.5px; font-weight: 500;

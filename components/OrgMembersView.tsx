@@ -142,7 +142,7 @@ export default function OrgMembersView({
               maxLength={64}
               onChange={(e) => setNewName(e.target.value)}
             />
-            <button className="btn btn--solid !px-4 !py-2 text-sm" type="submit" disabled={busy}>
+            <button className="btn btn--solid !px-4 !py-2 text-sm" type="submit" disabled={busy} aria-busy={busy}>
               Save
             </button>
           </form>
@@ -170,7 +170,7 @@ export default function OrgMembersView({
       </p>
 
       {error && (
-        <p className="text-xs text-[color:#ff5d5d] mb-3 flex items-center gap-1.5">
+        <p className="text-xs text-[color:#ff5d5d] mb-3 flex items-center gap-1.5" role="alert">
           <ShieldAlert className="w-3.5 h-3.5 shrink-0" /> {error}
         </p>
       )}
@@ -247,6 +247,8 @@ export default function OrgMembersView({
             <input
               className="search__input !py-2.5 text-sm flex-1 min-w-[220px] mono"
               placeholder="0x… wallet address"
+              aria-label="Wallet address to invite"
+              aria-invalid={!!error}
               value={invite}
               onChange={(e) => setInvite(e.target.value)}
             />
@@ -260,7 +262,7 @@ export default function OrgMembersView({
                 <option value="admin">admin</option>
               </select>
             )}
-            <button className="btn btn--solid !px-5" type="submit" disabled={busy || !invite.trim()}>
+            <button className="btn btn--solid !px-5" type="submit" disabled={busy || !invite.trim()} aria-busy={busy}>
               <UserPlus className="w-4 h-4" /> Add
             </button>
           </form>
@@ -295,7 +297,7 @@ export default function OrgMembersView({
                 value={cap}
                 onChange={(e) => setCap(e.target.value)}
               />
-              <button className="btn btn--solid !px-4 !py-2 text-sm" type="submit" disabled={busy}>
+              <button className="btn btn--solid !px-4 !py-2 text-sm" type="submit" disabled={busy} aria-busy={busy}>
                 Save
               </button>
             </form>

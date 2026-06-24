@@ -153,18 +153,26 @@ export default function ApiKeysPanel({
             if (e.key === 'Enter' && !minting) void mint()
           }}
           placeholder="Label (e.g. travel-agent prod)"
-          className="flex-1 min-w-0 px-3 py-2 max-lg:min-h-10 max-lg:text-base rounded-lg bg-black/30 border border-[var(--line)] text-white placeholder-[color:var(--muted-2)] text-xs focus:outline-none focus:border-[var(--line-2)] transition-colors"
+          aria-label="API key label"
+          aria-invalid={!!error}
+          className={cn(
+            'flex-1 min-w-0 px-3 py-2 max-lg:min-h-10 max-lg:text-base rounded-lg bg-black/30 border text-white placeholder-[color:var(--muted)] text-xs focus:outline-none transition-colors',
+            error
+              ? 'border-[#ff5d5d] focus:border-[#ff5d5d]'
+              : 'border-[var(--line)] focus:border-[var(--accent)]',
+          )}
         />
         <button
           onClick={() => void mint()}
           disabled={minting}
+          aria-busy={minting}
           className="flex-shrink-0 flex items-center gap-1.5 text-xs font-medium px-3 py-2 max-lg:min-h-10 rounded-lg bg-white text-zinc-950 hover:bg-zinc-200 disabled:opacity-50 transition-colors"
         >
           {minting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />}
           Mint key
         </button>
       </div>
-      {error && <p className="text-[11px] text-red-400 mt-2">{error}</p>}
+      {error && <p className="text-[11px] text-red-400 mt-2" role="alert">{error}</p>}
 
       {/* List */}
       {!keys ? (
