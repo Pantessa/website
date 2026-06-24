@@ -99,11 +99,8 @@ Authorization: Bearer yf_…
 
         <h2>What the SDK does with it</h2>
         <p>
-          <em>
-            The snippet below is SDK <strong>0.4</strong> — merged, not yet on npm (which has
-            0.3.1). Until it&apos;s published, budgets show on the dashboard but the SDK won&apos;t
-            enforce them.
-          </em>
+          Per-key budgets are enforced by the SDK from <strong>0.4</strong> on — install the latest
+          with <code>npm install yeetful@latest</code> (currently <strong>0.6.0</strong>).
         </p>
         <pre>
           <code>{`const pay = yeetful({ wallet, grant: { id: 'your-grant-id', /* … */ }, apiKey: process.env.YEETFUL_API_KEY })
@@ -115,7 +112,7 @@ pay.agentBudget() // { keyId, label, perDayUsd, spentTodayUsd, remainingTodayUsd
 // and the denial receipt syncs, so the refusal shows in your audit feed.`}</code>
         </pre>
         <p>
-          0.4 fetches the policy once at startup (a failed fetch degrades open — payments proceed
+          The SDK fetches the policy once at startup (a failed fetch degrades open — payments proceed
           under the grant alone), refreshes from the <code>agent</code> echo on every sync, and
           re-fetches on <code>flushLedger()</code> so mid-run dashboard edits get picked up.
         </p>
