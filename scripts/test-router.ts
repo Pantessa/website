@@ -10,6 +10,8 @@
  */
 import { shortlistEndpoints, capabilityOf, dedupeByCapability } from '../lib/router'
 import { deriveDescription, type PlannableEndpoint } from '../lib/endpoint-planner'
+import { detectGovernanceIntent, mapChoiceToIndex, buildVoteTypedData, extractSpaceQuery } from '../lib/governance'
+import { coerceForSigning, describeTypedData } from '../lib/eip712'
 
 let pass = 0
 let fail = 0
@@ -91,6 +93,33 @@ check(
   'dedup: keeps best per capability, untagged survive',
   dd.kept.length === 3 && dd.kept.some((k) => k.id === 'a') && !dd.kept.some((k) => k.id === 'b') && dd.kept.some((k) => k.id === 'd') && dd.dropped.length === 1 && dd.dropped[0].id === 'b',
 )
+
+// ── Governance routing + the general EIP-712 signing tool ───────────────────
+// Intent detection: list vs vote vs none.
+check('gov: "open proposals for Nate DAO" → list', detectGovernanceIntent('Are there any open proposals for Nate DAO?')?.kind === 'list')
+check('gov: "vote For on X" → vote', detectGovernanceIntent('Vote For on "Let my agent vote" in Nate DAO')?.kind === 'vote')
+check('gov: non-governance chit-chat → null', detectGovernanceIntent('write me a haiku about clouds') === null)
+check('gov: agent request detected', detectGovernanceIntent('let my agent vote for on proposal')?.agentRequested === true)
+check('gov: extractSpaceQuery picks the DAO', extractSpaceQuery('open proposals for Nate DAO?') === 'Nate DAO')
+check('gov: extractSpaceQuery picks an .eth id', extractSpaceQuery('proposals on aave.eth') === 'aave.eth')
+
+// Choice mapping against real labels.
+const BASIC = ['For', 'Against', 'Abstain']
+check('gov: "for" → choice 1', mapChoiceToIndex('for', BASIC) === 1)
+check('gov: "against" → choice 2', mapChoiceToIndex('against', BASIC) === 2)
+check('gov: "option 3" → choice 3', mapChoiceToIndex('option 3', BASIC) === 3)
+check('gov: unmatched choice → null', mapChoiceToIndex('banana', BASIC) === null)
+
+// EIP-712 builder + the schema-agnostic signer coercion.
+const vtd = buildVoteTypedData({ from: '0x' + '1'.repeat(40), space: 'nate.eth', proposalId: '0x' + 'a'.repeat(64), choice: 1, reason: 'r' })
+check('eip712: Snapshot Vote schema shape', vtd.primaryType === 'Vote' && vtd.domain.name === 'snapshot' && (vtd.message.choice as number) === 1)
+check('eip712: describeTypedData label', describeTypedData(vtd) === 'snapshot · Vote')
+const coerced = coerceForSigning(vtd)
+check('eip712: coerce uint fields → BigInt', typeof coerced.message.timestamp === 'bigint' && typeof coerced.message.choice === 'bigint')
+check('eip712: non-uint fields untouched', coerced.message.from === vtd.message.from && typeof coerced.message.space === 'string')
+// Generic over any schema (not just Vote): a Permit-like type coerces its own uints.
+const permit = coerceForSigning({ domain: { name: 'X' }, primaryType: 'Permit', types: { Permit: [{ name: 'value', type: 'uint256' }, { name: 'owner', type: 'address' }] }, message: { value: '42', owner: '0x' + '2'.repeat(40) } })
+check('eip712: generic coercion on a non-Vote schema', permit.message.value === BigInt(42) && typeof permit.message.owner === 'string')
 
 console.log(`\n${pass} passed, ${fail} failed\n`)
 process.exit(fail ? 1 : 0)

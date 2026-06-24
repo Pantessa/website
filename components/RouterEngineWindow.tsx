@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useRef } from 'react'
-import { Terminal, X, PanelRightOpen, CircleDollarSign, Check } from 'lucide-react'
+import { Terminal, X, PanelRightOpen, CircleDollarSign, Check, PenLine } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useYeetfulStore, type RouterTraceEvent } from '@/lib/store'
 
@@ -207,6 +207,26 @@ function TraceLine({ event }: { event: RouterTraceEvent }) {
         </p>
       )
     }
+    case 'tool': {
+      const mark = event.status === 'ok' ? '✓' : event.status === 'error' ? '✗' : '⋯'
+      const color = event.status === 'ok' ? 'var(--accent)' : event.status === 'error' ? '#ff6b6b' : 'var(--muted)'
+      return (
+        <p className="[overflow-wrap:anywhere]" style={{ color }}>
+          <span className="text-[color:var(--muted-2)]">⚙</span> {event.name}{' '}
+          <span>{mark}</span>
+          {event.detail ? <span className="text-[color:var(--muted)]"> {event.detail}</span> : null}
+        </p>
+      )
+    }
+    case 'eip712':
+      return (
+        <p className="text-white [overflow-wrap:anywhere]">
+          <PenLine className="inline w-3 h-3 -mt-0.5 mr-0.5" style={{ color: 'var(--accent)' }} />
+          <span style={{ color: 'var(--accent)' }}>sign {event.scheme.toUpperCase()}</span>{' '}
+          <span className="text-[color:var(--muted)]">{event.summary}</span>
+          <span className="text-[color:var(--muted-2)]"> · {event.signer}</span>
+        </p>
+      )
     case 'note':
       return (
         <p

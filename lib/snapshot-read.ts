@@ -24,6 +24,76 @@ async function gql<T>(query: string, variables: Record<string, unknown>): Promis
   return body.data
 }
 
+export interface SpaceRef {
+  id: string
+  name: string
+}
+
+/**
+ * Resolve a DAO/space REFERENCE (a name like "Nate DAO", or an id like
+ * "nategeier.dcl.eth") to a concrete space id. Names are looked up via the hub's
+ * `ranking` search; an input that already looks like an id (has a dot / .eth) is
+ * verified directly. Returns the best match, or null if nothing fits.
+ */
+export async function resolveSpaceByName(query: string): Promise<SpaceRef | null> {
+  const q = query.trim()
+  if (!q) return null
+
+  // Looks like a space id already (ENS-style or has a dot) → verify directly.
+  if (/\.(eth|xyz|io|com|org|dao)$|\w+\.\w+/.test(q)) {
+    try {
+      const data = await gql<{ space: SpaceRef | null }>(
+        `query ($id: String!) { space(id: $id) { id name } }`,
+        { id: q },
+      )
+      if (data.space?.id) return data.space
+    } catch {
+      /* fall through to search */
+    }
+  }
+
+  // Name search via the explore ranking.
+  try {
+    const data = await gql<{ ranking: { items: SpaceRef[] } }>(
+      `query ($search: String) { ranking(first: 8, where: { search: $search }) { items { id name } } }`,
+      { search: q },
+    )
+    const items = data.ranking?.items ?? []
+    if (items.length === 0) return null
+    const needle = q.toLowerCase()
+    // Prefer an exact (case-insensitive) name match, else the top-ranked item.
+    return items.find((s) => s.name?.toLowerCase() === needle) ?? items[0]
+  } catch {
+    return null
+  }
+}
+
+export interface ProposalResults {
+  id: string
+  title: string
+  state: string
+  type: string
+  choices: string[]
+  scores: number[]
+  scoresTotal: number
+}
+
+/** Live tally for one proposal — choices + per-choice scores + total. */
+export async function getProposalResults(id: string): Promise<ProposalResults | null> {
+  const data = await gql<{ proposal: (ProposalResults & { scores_total: number }) | null }>(
+    `query ($id: String!) {
+      proposal(id: $id) { id title state type choices scores scores_total }
+    }`,
+    { id },
+  )
+  const p = data.proposal
+  if (!p) return null
+  return {
+    id: p.id, title: p.title, state: p.state, type: p.type,
+    choices: p.choices ?? [], scores: p.scores ?? [], scoresTotal: p.scores_total ?? 0,
+  }
+}
+
 /** Active proposals, optionally scoped to one space. Most recent first. */
 export async function listActiveProposals(space?: string, first = 20): Promise<ActiveProposal[]> {
   const where: Record<string, unknown> = { state: 'active' }

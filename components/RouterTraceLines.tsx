@@ -72,6 +72,13 @@ function Line({ event }: { event: RouterTraceEvent }) {
         <p className="text-[#ff6b6b]">✗ {r.name} — {r.note ?? 'failed'}</p>
       )
     }
+    case 'tool': {
+      const mark = event.status === 'ok' ? '✓' : event.status === 'error' ? '✗' : '⋯'
+      const color = event.status === 'ok' ? ACCENT : event.status === 'error' ? '#ff6b6b' : 'var(--muted)'
+      return <p style={{ color }}><span className="text-[color:var(--muted-2)]">⚙</span> {event.name} {mark}{event.detail ? <span className="text-[color:var(--muted)]"> {event.detail}</span> : null}</p>
+    }
+    case 'eip712':
+      return <p className="text-white"><span style={{ color: ACCENT }}>✎ sign {event.scheme.toUpperCase()}</span> <span className="text-[color:var(--muted)]">{event.summary}</span><span className="text-[color:var(--muted-2)]"> · {event.signer}</span></p>
     case 'note':
       return <p style={{ color: event.level === 'warn' ? '#f4b740' : 'var(--muted-2)' }}>{event.level === 'warn' ? '⚠' : 'ℹ'} {event.label}</p>
     case 'error':

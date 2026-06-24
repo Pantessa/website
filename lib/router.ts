@@ -41,6 +41,11 @@ export type TraceStep =
   | { type: 'shortlist'; candidates: { service: string; endpoint?: string; priceUsd?: string }[] }
   | { type: 'candidate'; service: string; endpoint?: string; priceUsd?: string; score: number; reason: string; proven?: number; successRate?: number }
   | { type: 'select'; service: string; endpoint?: string; priceUsd?: string; reason: string }
+  // A non-paid TOOL step (resolve an id, list proposals, relay a vote, read
+  // results) — the engine's action/governance tools, shown live in the terminal.
+  | { type: 'tool'; name: string; status: 'run' | 'ok' | 'error'; detail?: string }
+  // The general EIP-712 signing tool: what's being signed + by which signer.
+  | { type: 'eip712'; scheme: string; signer: string; summary: string }
   // Diagnostics surfaced in the engine window so misses/errors are explained, not silent.
   | { type: 'note'; level: 'info' | 'warn'; label: string }
 
