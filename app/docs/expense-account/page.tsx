@@ -117,7 +117,8 @@ export default function ExpenseAccountPage() {
           on-chain Coinbase Spend Permission so the wallet contract caps spend no matter what the
           process does. The <Link href="/dashboard">yeetful.com dashboard</Link> is the control
           plane for both: approvals derive the allowlist, caps are EIP-712-signable, and every
-          receipt lands in the <Link href="/docs/ledger-sync">hosted ledger</Link>.
+          receipt lands in the <Link href="/docs/ledger-sync">hosted ledger</Link>. Whether these
+          caps apply at all is the master <Link href="/docs/spend-policy">spend-policy switch</Link>.
         </p>
       </div>
     </>
