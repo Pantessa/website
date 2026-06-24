@@ -5,7 +5,7 @@
 
 import Link from 'next/link'
 import { useCallback, useEffect, useState } from 'react'
-import { Building2, Loader2, Pause, Play, ShieldCheck, ShieldPlus } from 'lucide-react'
+import { Building2, Pause, Play, ShieldCheck, ShieldPlus } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { SpendByAgent, SpendOverTime } from '@/components/LazyCharts'
 import SignGrantButton from '@/components/SignGrantButton'
@@ -16,6 +16,7 @@ import { useToast } from '@/lib/toast'
 import EarnPanel from '@/components/EarnPanel'
 import PayToAgentsCard from '@/components/PayToAgentsCard'
 import { useOrgStore } from '@/lib/org-store'
+import Button from '@/components/Button'
 
 export default function DashboardOverviewPage() {
   const { activeOrgId } = useOrgStore()
@@ -240,30 +241,25 @@ export default function DashboardOverviewPage() {
                 </span>
               )}
               {!g.backedOnChain && (
-                <button
+                <Button
+                  variant="secondary"
                   onClick={() => void backOnChain(g.id)}
-                  disabled={backing}
-                  className="flex items-center gap-1.5 text-xs font-medium px-3 py-2 max-lg:min-h-10 rounded-lg border border-[var(--line-2)] text-[color:var(--muted)] hover:text-white hover:border-white transition-colors disabled:opacity-50"
+                  loading={backing}
+                  icon={ShieldPlus}
                   title="Back this account on-chain with a Coinbase Spend Permission mirroring your daily cap — a hard stop above the SDK-advisory budget."
                 >
-                  {backing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ShieldPlus className="w-3.5 h-3.5" />}
                   Back on-chain
-                </button>
+                </Button>
               )}
-              <button
+              <Button
+                variant={g.paused ? 'warning' : 'secondary'}
                 onClick={() => void toggleFreeze(g.id, !g.paused)}
-                disabled={freezing}
-                className={cn(
-                  'flex items-center gap-1.5 text-xs font-medium px-3 py-2 max-lg:min-h-10 rounded-lg border transition-colors disabled:opacity-50',
-                  g.paused
-                    ? 'border-amber-500/40 text-amber-400 hover:bg-amber-500/10'
-                    : 'border-[var(--line-2)] text-[color:var(--muted)] hover:text-white hover:border-white',
-                )}
+                loading={freezing}
+                icon={g.paused ? Play : Pause}
                 title={g.paused ? 'Resume — unfreeze the account' : 'Freeze — stop all payments under this account (reversible)'}
               >
-                {freezing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : g.paused ? <Play className="w-3.5 h-3.5" /> : <Pause className="w-3.5 h-3.5" />}
                 {g.paused ? 'Resume account' : 'Freeze account'}
-              </button>
+              </Button>
               <span className="mono text-xs text-[color:var(--muted)] flex items-center gap-1">
                 ${g.spentTodayUsd.toFixed(4)} /{' '}
                 <BudgetEditor grantId={g.id} perDayUsd={g.perDayUsd} onSaved={load} suffix="today" />
