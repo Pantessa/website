@@ -5,19 +5,22 @@
 
 import Link from 'next/link'
 import { useCallback, useEffect, useState } from 'react'
-import { Building2, Loader2, Pause, Play, ShieldCheck, ShieldPlus } from 'lucide-react'
+import { Building2, Pause, Play, ShieldCheck, ShieldPlus } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { SpendByAgent, SpendOverTime } from '@/components/LazyCharts'
 import SignGrantButton from '@/components/SignGrantButton'
 import FundAccountCard from '@/components/FundAccountCard'
-import { Card, CardTitle, Kpi, type Stats } from '@/lib/dashboard-ui'
+import { Card, CardTitle, Kpi, SkeletonKpi, SkeletonCard, Skeleton, type Stats } from '@/lib/dashboard-ui'
 import { PolicySwitch, BudgetEditor } from '@/components/SpendPolicyControls'
+import { useToast } from '@/lib/toast'
 import EarnPanel from '@/components/EarnPanel'
 import PayToAgentsCard from '@/components/PayToAgentsCard'
 import { useOrgStore } from '@/lib/org-store'
+import Button from '@/components/Button'
 
 export default function DashboardOverviewPage() {
   const { activeOrgId } = useOrgStore()
+  const { toast } = useToast()
   const [stats, setStats] = useState<Stats | null>(null)
   const [freezing, setFreezing] = useState(false)
   const [policing, setPolicing] = useState(false)
@@ -46,10 +49,13 @@ export default function DashboardOverviewPage() {
       const r = await fetch(`/api/grants/${grantId}/spend-permission`, { method: 'POST' })
       if (!r.ok) {
         const b = await r.json().catch(() => ({}))
-        setBackErr(b.detail || b.error || `Failed (${r.status})`)
+        const msg = b.detail || b.error || `Failed (${r.status})`
+        setBackErr(msg)
+        toast(`On-chain backing failed: ${msg}`, 'error')
         return
       }
       await load()
+      toast('Account backed on-chain — Spend Permission active.', 'success')
     } finally {
       setBacking(false)
     }
@@ -61,12 +67,14 @@ export default function DashboardOverviewPage() {
   const togglePolicy = async (grantId: string, spendPolicyEnabled: boolean) => {
     setPolicing(true)
     try {
-      await fetch(`/api/grants/${grantId}`, {
+      const r = await fetch(`/api/grants/${grantId}`, {
         method: 'PATCH',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ spendPolicyEnabled }),
       })
       await load()
+      if (r.ok) toast(spendPolicyEnabled ? 'Spending policy on — caps enforced.' : 'Spending policy off — unrestricted.', 'success')
+      else toast(`Couldn’t update the policy (${r.status}).`, 'error')
     } finally {
       setPolicing(false)
     }
@@ -77,22 +85,42 @@ export default function DashboardOverviewPage() {
   const toggleFreeze = async (grantId: string, paused: boolean) => {
     setFreezing(true)
     try {
-      await fetch(`/api/grants/${grantId}`, {
+      const r = await fetch(`/api/grants/${grantId}`, {
         method: 'PATCH',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ paused }),
       })
       await load()
+      if (r.ok) toast(paused ? 'Account frozen — every payment refused.' : 'Account resumed.', 'success')
+      else toast(`Couldn’t ${paused ? 'freeze' : 'resume'} the account (${r.status}).`, 'error')
     } finally {
       setFreezing(false)
     }
   }
 
   if (!stats) {
+    // Skeleton mirrors the real layout (KPI row → expense-account card → two
+    // charts) so the page fills in rather than flashing a spinner.
     return (
-      <div className="flex items-center gap-2 text-sm text-[color:var(--muted)] py-16 justify-center">
-        <Loader2 className="w-4 h-4 animate-spin" /> Loading your spend data…
-      </div>
+      <>
+        <h1 className="dash__h1">Overview</h1>
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
+          <SkeletonKpi />
+          <SkeletonKpi />
+          <SkeletonKpi />
+          <SkeletonKpi />
+        </div>
+        <Card className="mb-6">
+          <Skeleton className="h-4 w-48" />
+          <Skeleton className="h-3 w-72 mt-2" />
+          <Skeleton className="h-2 w-full mt-4 rounded-full" />
+        </Card>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <SkeletonCard bodyClassName="h-48" />
+          <SkeletonCard bodyClassName="h-48" />
+        </div>
+        <span className="sr-only" role="status">Loading your spend data…</span>
+      </>
     )
   }
 
@@ -168,8 +196,8 @@ export default function DashboardOverviewPage() {
       </div>
 
       <Card className="mb-6">
-        <div className="flex items-center justify-between gap-4 flex-wrap">
-          <div>
+        <div className="flex items-start lg:items-center justify-between gap-4 flex-wrap">
+          <div className="min-w-0">
             <p className="text-sm font-semibold text-white">{g?.label ?? 'No expense account yet'}</p>
             <p className="text-xs text-[color:var(--muted-2)] mt-0.5">
               {g
@@ -191,7 +219,7 @@ export default function DashboardOverviewPage() {
             )}
           </div>
           {g && (
-            <span className="flex items-center gap-3 flex-wrap">
+            <span className="flex items-center gap-3 flex-wrap max-lg:w-full">
               {/* Master power switch — default OFF for new users (unrestricted).
                   Independent of the per-agent approvals and of the freeze. */}
               <PolicySwitch
@@ -213,30 +241,25 @@ export default function DashboardOverviewPage() {
                 </span>
               )}
               {!g.backedOnChain && (
-                <button
+                <Button
+                  variant="secondary"
                   onClick={() => void backOnChain(g.id)}
-                  disabled={backing}
-                  className="flex items-center gap-1.5 text-xs font-medium px-3 py-2 max-lg:min-h-10 rounded-lg border border-[var(--line-2)] text-[color:var(--muted)] hover:text-white hover:border-white transition-colors disabled:opacity-50"
+                  loading={backing}
+                  icon={ShieldPlus}
                   title="Back this account on-chain with a Coinbase Spend Permission mirroring your daily cap — a hard stop above the SDK-advisory budget."
                 >
-                  {backing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ShieldPlus className="w-3.5 h-3.5" />}
                   Back on-chain
-                </button>
+                </Button>
               )}
-              <button
+              <Button
+                variant={g.paused ? 'warning' : 'secondary'}
                 onClick={() => void toggleFreeze(g.id, !g.paused)}
-                disabled={freezing}
-                className={cn(
-                  'flex items-center gap-1.5 text-xs font-medium px-3 py-2 max-lg:min-h-10 rounded-lg border transition-colors disabled:opacity-50',
-                  g.paused
-                    ? 'border-amber-500/40 text-amber-400 hover:bg-amber-500/10'
-                    : 'border-[var(--line-2)] text-[color:var(--muted)] hover:text-white hover:border-white',
-                )}
+                loading={freezing}
+                icon={g.paused ? Play : Pause}
                 title={g.paused ? 'Resume — unfreeze the account' : 'Freeze — stop all payments under this account (reversible)'}
               >
-                {freezing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : g.paused ? <Play className="w-3.5 h-3.5" /> : <Pause className="w-3.5 h-3.5" />}
                 {g.paused ? 'Resume account' : 'Freeze account'}
-              </button>
+              </Button>
               <span className="mono text-xs text-[color:var(--muted)] flex items-center gap-1">
                 ${g.spentTodayUsd.toFixed(4)} /{' '}
                 <BudgetEditor grantId={g.id} perDayUsd={g.perDayUsd} onSaved={load} suffix="today" />

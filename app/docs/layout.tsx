@@ -1,5 +1,6 @@
 import Footer from '@/components/Footer'
 import DocsSidebar from '@/components/DocsSidebar'
+import DocsHeadingAnchors from '@/components/DocsHeadingAnchors'
 
 // Docs shell: FULL-WIDTH (no --maxw cap) with a sticky left rail. Content
 // pages are server components — the copy must be crawlable, not hydrated in.
@@ -14,6 +15,7 @@ export default function DocsLayout({ children }: { children: React.ReactNode }) 
         </aside>
         <main className="docs__main">{children}</main>
       </div>
+      <DocsHeadingAnchors />
       <Footer />
     </>
   )

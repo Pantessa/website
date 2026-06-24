@@ -11,6 +11,7 @@ import OrgMembersView, { type OrgDetail } from '@/components/OrgMembersView'
 import OrgReport from '@/components/OrgReport'
 import { useSession } from '@/lib/session'
 import { Building2 } from 'lucide-react'
+import { SkeletonCard } from '@/lib/dashboard-ui'
 
 export default function DashboardOrgPage() {
   const { activeOrgId, setActiveOrg } = useOrgStore()
@@ -19,6 +20,7 @@ export default function DashboardOrgPage() {
   const [loading, setLoading] = useState(false)
   const [name, setName] = useState('')
   const [busy, setBusy] = useState(false)
+  const [createErr, setCreateErr] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     if (!activeOrgId) {
@@ -39,16 +41,25 @@ export default function DashboardOrgPage() {
   const create = async () => {
     if (!name.trim() || busy) return
     setBusy(true)
-    const res = await fetch('/api/orgs', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: name.trim() }),
-    })
-    setBusy(false)
-    if (res.ok) {
-      const created = await res.json()
-      setName('')
-      setActiveOrg(created.id)
+    setCreateErr(null)
+    try {
+      const res = await fetch('/api/orgs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: name.trim() }),
+      })
+      if (res.ok) {
+        const created = await res.json()
+        setName('')
+        setActiveOrg(created.id)
+      } else {
+        const body = await res.json().catch(() => ({}))
+        setCreateErr(body.error || `Couldn’t create the organization (${res.status}).`)
+      }
+    } catch {
+      setCreateErr('Network error — please try again.')
+    } finally {
+      setBusy(false)
     }
   }
 
@@ -81,12 +92,22 @@ export default function DashboardOrgPage() {
               placeholder="Organization name"
               value={name}
               maxLength={64}
-              onChange={(e) => setName(e.target.value)}
+              aria-invalid={!!createErr}
+              aria-label="Organization name"
+              onChange={(e) => {
+                setName(e.target.value)
+                if (createErr) setCreateErr(null)
+              }}
             />
-            <button className="btn btn--solid !px-5" type="submit" disabled={busy || !name.trim()}>
+            <button className="btn btn--solid !px-5" type="submit" disabled={busy || !name.trim()} aria-busy={busy}>
               {busy ? '…' : 'Create'}
             </button>
           </form>
+          {createErr && (
+            <p className="text-xs text-red-400 mt-2" role="alert">
+              {createErr}
+            </p>
+          )}
         </div>
       </>
     )
@@ -96,7 +117,11 @@ export default function DashboardOrgPage() {
     return (
       <>
         <h1 className="dash__h1">Organization</h1>
-        <p className="text-xs text-[color:var(--muted-2)] py-4">Loading organization…</p>
+        <div className="mt-4 grid gap-3">
+          <SkeletonCard bodyClassName="h-24" />
+          <SkeletonCard bodyClassName="h-40" />
+        </div>
+        <span className="sr-only" role="status">Loading organization…</span>
       </>
     )
   }

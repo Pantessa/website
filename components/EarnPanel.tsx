@@ -40,10 +40,47 @@ export default function EarnPanel() {
       .catch(() => setData(null))
   }, [])
 
-  // Nothing reported yet → stay quiet (the Payees panel already nudges claiming).
-  if (!data || data.kpis.callsServed === 0) return null
+  // Still loading or the endpoint errored → stay quiet (avoid a flash).
+  if (!data) return null
 
   const k = data.kpis
+
+  // Nothing reported yet → show the empty earn surface (mirror of the empty
+  // spend KPIs) plus a nudge to connect MCPs, instead of hiding the whole
+  // section. An operator should always see where their earnings will land.
+  if (k.callsServed === 0) {
+    return (
+      <section className="mb-6">
+        <h2 className="mono text-[11px] uppercase tracking-wider text-[color:var(--muted-2)] mb-2">
+          Earn · your MCP servers
+        </h2>
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-3 min-w-0">
+          <Kpi label="Total earned" value="$0.00" sub="no calls served yet" />
+          <Kpi label="Earned · 30 days" value="$0.00" />
+          <Kpi label="Calls served" value="0" />
+          <Kpi label="Paying agents" value="0" />
+        </div>
+        <Card>
+          <div className="flex items-center justify-between gap-4 flex-wrap">
+            <div className="min-w-0">
+              <p className="text-sm font-semibold text-white">Connect your MCPs to start earning</p>
+              <p className="text-xs text-[color:var(--muted-2)] mt-0.5 max-w-md">
+                Run an MCP server? Report each paid call with one async SDK line and your
+                earnings — total, last 30 days, calls served, paying agents — land right here.
+              </p>
+            </div>
+            <Link
+              href="/docs/earn"
+              className="flex items-center gap-1.5 flex-shrink-0 text-xs font-medium px-3 py-2 max-lg:min-h-10 rounded-lg border border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/10 transition-colors"
+            >
+              Connect your MCPs →
+            </Link>
+          </div>
+        </Card>
+      </section>
+    )
+  }
+
   const peak = Math.max(...data.series30d.map((d) => d.usd), 0.0001)
 
   return (
