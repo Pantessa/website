@@ -604,10 +604,12 @@
   .ep__host { font-size: 11.5px; color: var(--muted-2); }
   .ep__scheme { font-size: 10.5px; color: var(--muted-2); border: 1px solid var(--line); border-radius: 999px; padding: 1px 8px; }
   .ep__desc { font-size: 13px; color: var(--muted); line-height: 1.5; margin-top: 8px; max-width: 80ch; }
-  .ep__volume { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 11.5px; color: var(--muted-2); margin-top: 8px; }
-  .ep__volumelbl { font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; border: 1px solid var(--line); border-radius: 999px; padding: 1px 8px; }
+  .ep__volume { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 12px; color: var(--muted-2); margin-top: 8px; }
+  .ep__volumelbl { display: inline-flex; align-items: center; gap: 5px; font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; border: 1px solid var(--line); border-radius: 999px; padding: 2px 9px; }
+  .ep__volumeicon { width: 11px; height: 11px; }
   .ep__volumesep { color: var(--line-2); }
-  .ep__volume--warn { color: #f0b454; }
+  /* Over-cap projections read as a scannable amber chip, not just colored text. */
+  .ep__volume--warn { color: #f0b454; background: rgba(240,180,84,0.1); border-radius: 6px; padding: 1px 7px; }
   .ep__params { margin-top: 10px; }
   .ep__params summary {
     font-size: 11.5px; color: var(--muted); cursor: pointer; user-select: none;

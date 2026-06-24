@@ -1,7 +1,7 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
-import { ArrowLeft, ExternalLink } from 'lucide-react'
+import { ArrowLeft, ExternalLink, TrendingUp } from 'lucide-react'
 import prisma from '@/lib/db'
 import BrandIcon from '@/components/BrandIcon'
 import Footer from '@/components/Footer'
@@ -205,7 +205,9 @@ export default async function ServiceDetailPage({ params }: Params) {
                         const from = ep.scheme === 'upto' ? 'from ' : ''
                         return (
                           <p className="ep__volume mono">
-                            <span className="ep__volumelbl">at volume</span>
+                            <span className="ep__volumelbl">
+                              <TrendingUp className="ep__volumeicon" aria-hidden /> at volume
+                            </span>
                             <span className={perMin.perDay >= VOLUME_WARN_PER_DAY_USD ? 'ep__volume--warn' : ''}>
                               ≈ {from}{perMin.label}/day @ 1 call/min
                             </span>
