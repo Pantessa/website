@@ -11,6 +11,7 @@ import OrgMembersView, { type OrgDetail } from '@/components/OrgMembersView'
 import OrgReport from '@/components/OrgReport'
 import { useSession } from '@/lib/session'
 import { Building2 } from 'lucide-react'
+import { SkeletonCard } from '@/lib/dashboard-ui'
 
 export default function DashboardOrgPage() {
   const { activeOrgId, setActiveOrg } = useOrgStore()
@@ -96,7 +97,11 @@ export default function DashboardOrgPage() {
     return (
       <>
         <h1 className="dash__h1">Organization</h1>
-        <p className="text-xs text-[color:var(--muted-2)] py-4">Loading organization…</p>
+        <div className="mt-4 grid gap-3">
+          <SkeletonCard bodyClassName="h-24" />
+          <SkeletonCard bodyClassName="h-40" />
+        </div>
+        <span className="sr-only" role="status">Loading organization…</span>
       </>
     )
   }
