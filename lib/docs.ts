@@ -49,6 +49,14 @@ export const DOCS_PAGES: DocsPage[] = [
     ready: true,
   },
   {
+    slug: 'embedded-wallet',
+    title: 'Create an account (email)',
+    seoTitle: 'Create an account — email wallet, no extension',
+    description:
+      'Sign up with just an email: Yeetful creates a Coinbase non-custodial wallet you control, no extension needed. Once connected it works exactly like MetaMask.',
+    ready: true,
+  },
+  {
     slug: 'expense-account',
     title: 'The expense account',
     seoTitle: 'Spend grants — allowlists, budgets, and receipts',
