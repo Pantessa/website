@@ -9,7 +9,7 @@
 export interface VoteTypedData {
   domain: { name: string; version: string }
   types: { Vote: { name: string; type: string }[] }
-  primaryType?: string
+  primaryType: string
   message: {
     from: string
     space: string
@@ -28,6 +28,67 @@ export interface VoteRequest {
   choiceLabels?: string[]
   summary: string
   typedData: VoteTypedData
+}
+
+/** A proposal offered for the connected wallet to vote on — the client renders
+ *  one signing button per choice (VoteChoiceButtons). Carried on
+ *  Message.meta.voteProposal. */
+export interface VoteProposal {
+  id: string
+  title: string
+  space: string
+  type: string
+  choices: string[]
+  /** 1-based choice the user already named, if any (highlighted in the UI). */
+  suggestedChoice?: number
+}
+
+/**
+ * Build the canonical Snapshot Vote EIP-712 typed data for a single-choice /
+ * basic proposal. Pure + client/server-shared so the SERVER agent-signer and the
+ * CLIENT wallet buttons produce the IDENTICAL payload. `choice` is 1-based; the
+ * timestamp is stamped at build time (Snapshot rejects stale votes — build right
+ * before signing). Proven against the live sequencer.
+ */
+export function buildVoteTypedData(opts: {
+  from: string; space: string; proposalId: string; choice: number | number[]; reason?: string
+}): VoteTypedData {
+  return {
+    domain: { name: 'snapshot', version: '0.1.4' },
+    types: {
+      Vote: [
+        { name: 'from', type: 'address' },
+        { name: 'space', type: 'string' },
+        { name: 'timestamp', type: 'uint64' },
+        { name: 'proposal', type: 'bytes32' },
+        { name: 'choice', type: Array.isArray(opts.choice) ? 'uint32[]' : 'uint32' },
+        { name: 'reason', type: 'string' },
+        { name: 'app', type: 'string' },
+        { name: 'metadata', type: 'string' },
+      ],
+    },
+    primaryType: 'Vote',
+    message: {
+      from: opts.from,
+      space: opts.space,
+      timestamp: Math.floor(Date.now() / 1000),
+      proposal: opts.proposalId,
+      choice: opts.choice,
+      reason: opts.reason ?? '',
+      app: 'yeetful',
+      metadata: '{}',
+    },
+  }
+}
+
+/** Defensive extraction of meta.voteProposal (meta is user-era JSON). */
+export function voteProposalOf(meta: unknown): VoteProposal | null {
+  if (!meta || typeof meta !== 'object') return null
+  const vp = (meta as { voteProposal?: unknown }).voteProposal
+  if (!vp || typeof vp !== 'object') return null
+  const v = vp as VoteProposal
+  if (typeof v.id !== 'string' || !/^0x[a-fA-F0-9]{64}$/.test(v.id) || !Array.isArray(v.choices) || v.choices.length === 0) return null
+  return v
 }
 
 /** Narrow the raw `sign_vote` payload returned by prepare_vote into a VoteRequest. */
