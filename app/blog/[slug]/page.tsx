@@ -2,10 +2,28 @@ import type { Metadata } from 'next'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { ArrowLeft } from 'lucide-react'
-import ReactMarkdown from 'react-markdown'
+import ReactMarkdown, { type Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import prisma from '@/lib/db'
 import Footer from '@/components/Footer'
+import BlogChart from '@/components/BlogChart'
+
+// A ```chart fenced block renders as an inline SVG chart (BlogChart) instead of
+// a code block. Everything else stays default — raw HTML is still escaped.
+const mdComponents: Components = {
+  pre(props) {
+    const child = Array.isArray(props.children) ? props.children[0] : props.children
+    const cls =
+      (child && typeof child === 'object' && 'props' in child
+        ? ((child as { props?: { className?: string } }).props?.className ?? '')
+        : '') || ''
+    if (cls.includes('language-chart')) {
+      const raw = String((child as { props?: { children?: unknown } }).props?.children ?? '')
+      return <BlogChart raw={raw} />
+    }
+    return <pre>{props.children}</pre>
+  },
+}
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -112,7 +130,9 @@ export default async function BlogPostPage({ params }: Params) {
           {/* react-markdown escapes raw HTML by default (no rehype-raw) — the
               constitution's XSS line. GFM for tables/strikethrough/autolinks. */}
           <div className="blog__body">
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>{post.content}</ReactMarkdown>
+            <ReactMarkdown remarkPlugins={[remarkGfm]} components={mdComponents}>
+              {post.content}
+            </ReactMarkdown>
           </div>
         </article>
       </main>
