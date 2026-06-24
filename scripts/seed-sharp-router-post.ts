@@ -82,9 +82,19 @@ async function main() {
     (process.env.ADMIN_WALLETS ?? '').split(',')[0]?.trim().toLowerCase() ||
     '0x0000000000000000000000000000000000000000'
   const existing = await prisma.blogPost.findUnique({ where: { slug: POST.slug } })
+  // Publish-once: a non-draft run flips an existing draft live and stamps
+  // publishedAt exactly once; an already-published row keeps its date (editing
+  // never games the feed).
+  const publishNow = !draft && !existing?.published
   await prisma.blogPost.upsert({
     where: { slug: POST.slug },
-    update: { title: POST.title, description: POST.description, content: POST.content, tags: POST.tags },
+    update: {
+      title: POST.title,
+      description: POST.description,
+      content: POST.content,
+      tags: POST.tags,
+      ...(publishNow ? { published: true, publishedAt: new Date() } : {}),
+    },
     create: {
       ...POST,
       published: !draft,
@@ -92,9 +102,14 @@ async function main() {
       authorAddress: author,
     },
   })
-  console.log(
-    `  ✓ ${POST.slug} ${existing ? 'updated (publishedAt untouched)' : draft ? 'created as DRAFT' : 'created + published'}`,
-  )
+  const action = !existing
+    ? draft
+      ? 'created as DRAFT'
+      : 'created + published'
+    : publishNow
+      ? 'updated + PUBLISHED'
+      : 'updated (publishedAt untouched)'
+  console.log(`  ✓ ${POST.slug} ${action}`)
   await prisma.$disconnect()
 }
 
