@@ -461,7 +461,7 @@ export default function ChatInterface() {
 
           {autoRouter ? (
             <span className="text-[11px] text-[color:var(--muted-2)] whitespace-nowrap pl-1">
-              Yeetful picks the best MCP for each message
+              Sharp routing — Yeetful picks the best MCP for each message
             </span>
           ) : (
             <>
