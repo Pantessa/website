@@ -6,9 +6,9 @@
 import { analytics } from '@/lib/analytics'
 import Link from 'next/link'
 import { useCallback, useEffect, useState } from 'react'
-import { ArrowUpRight } from 'lucide-react'
+import { ArrowUpRight, ShieldCheck } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { Card, type Approval } from '@/lib/dashboard-ui'
+import { Card, EmptyState, type Approval } from '@/lib/dashboard-ui'
 import { BudgetEditor } from '@/components/SpendPolicyControls'
 import { useOrgStore } from '@/lib/org-store'
 
@@ -96,6 +96,13 @@ export default function DashboardApprovalsPage() {
       <Card>
         {!approvals ? (
           <p className="text-xs text-[color:var(--muted-2)] py-4">Loading agents…</p>
+        ) : approvals.length === 0 ? (
+          <EmptyState
+            icon={ShieldCheck}
+            title="No agents to approve yet"
+            description="As the MCP directory fills in, every agent shows up here with an on/off switch. Browse what's live in the meantime."
+            cta={{ href: '/servers', label: 'Browse the directory' }}
+          />
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
             {approvals.map((a) => (
