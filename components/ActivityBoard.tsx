@@ -6,14 +6,14 @@
 // All privacy filtering happens server-side; this component only renders.
 
 import { useEffect, useRef, useState } from 'react'
-import { CheckCircle2, ChevronLeft, ChevronRight, Coins, ExternalLink, Loader2, ShieldOff } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Coins, ExternalLink, Loader2, ShieldOff } from 'lucide-react'
 import Link from 'next/link'
 import { SpendByAgent, SpendOverTime } from '@/components/LazyCharts'
 import { Card, CardTitle, Kpi, short, timeAgo } from '@/lib/dashboard-ui'
 import type { LaunchpadSummary } from '@/lib/launchpad-summary'
 
 const POLL_MS = 30_000
-const FEED_PAGE_SIZE = 8
+const FEED_PAGE_SIZE = 10
 
 // Public aggregate routing metrics (B14) — mirrors the dashboard Routing tab so
 // the engine is observable on the open page too.
@@ -63,6 +63,7 @@ export default function ActivityBoard() {
   const [routing, setRouting] = useState<RouteMetrics | null>(null)
   const [failed, setFailed] = useState(false)
   const [feedPage, setFeedPage] = useState(0)
+  const [openCall, setOpenCall] = useState<string | null>(null)
   const timer = useRef<ReturnType<typeof setInterval> | null>(null)
 
   // Sharp-routing value (B24): aggregate, public, separate from the ledger feed.
@@ -263,32 +264,53 @@ export default function ActivityBoard() {
                   No payments yet — the network is young. The first settled call will show up here.
                 </p>
               ) : (
-                <div className="divide-y divide-white/5">
-                  {rows.map((r) => (
-              <div key={r.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 py-2.5 text-xs min-h-10">
-                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 flex-shrink-0" />
-                <span className="text-white truncate max-w-[40vw] lg:max-w-none">{r.service}</span>
-                <span className="text-[color:var(--muted-2)] truncate hidden sm:block">{r.host}</span>
-                <span className="mono text-[color:var(--muted-2)]">{r.account}</span>
-                <span className="ml-auto mono text-[color:var(--muted)] flex-shrink-0">
-                  −${r.amountUsd.toFixed(4)}
-                </span>
-                {r.txHash && (
-                  <a
-                    href={`https://basescan.org/tx/${r.txHash}`}
-                    target="_blank"
-                    rel="noreferrer"
-                    title="View the settlement on Basescan"
-                    className="mono text-[color:var(--muted-2)] hover:text-white flex-shrink-0 inline-flex items-center min-h-10 -my-2.5"
-                  >
-                    {short(r.txHash)}
-                  </a>
-                )}
-                <span className="mono text-[color:var(--muted-2)] flex-shrink-0 w-16 text-right">
-                  {timeAgo(r.createdAt)}
-                </span>
-              </div>
-                  ))}
+                // Router-row styling (mimics the landing "Pick a need. Watch it
+                // route." list): each settled call expands to reveal the paid
+                // endpoint, the account, and the on-chain receipt.
+                <div className="swtry__rows swtry--calls mono">
+                  {rows.map((r) => {
+                    const isOpen = openCall === r.id
+                    return (
+                      <div className={`swtry__item ${isOpen ? 'is-open' : ''}`} key={r.id}>
+                        <button
+                          className="swtry__row"
+                          aria-expanded={isOpen}
+                          onClick={() => setOpenCall(isOpen ? null : r.id)}
+                        >
+                          <span className="swtry__chev" aria-hidden="true">›</span>
+                          <span className="swtry__route">{r.service}</span>
+                          <span className="swtry__proven" title="Settled on-chain">✓ settled</span>
+                          <span className="swtry__price">−${r.amountUsd.toFixed(4)}</span>
+                          <span className="swtry__when">{timeAgo(r.createdAt)}</span>
+                        </button>
+
+                        {isOpen && (
+                          <div className="swtry__detail">
+                            <div className="swtry__call">
+                              <span className="swtry__method">PAID</span>
+                              <span className="swtry__url">{r.host}</span>
+                            </div>
+                            <div className="swtry__meta">
+                              <span>{r.account}</span>
+                              <span>−${r.amountUsd.toFixed(4)} · x402 · settled</span>
+                              {r.txHash && (
+                                <a
+                                  href={`https://basescan.org/tx/${r.txHash}`}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  title="View the settlement on Basescan"
+                                  className="hover:text-white transition-colors"
+                                >
+                                  {short(r.txHash)} ↗
+                                </a>
+                              )}
+                              <span>{new Date(r.createdAt).toLocaleString()}</span>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })}
                 </div>
               )}
             </>
