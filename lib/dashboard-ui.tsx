@@ -94,6 +94,37 @@ export function Kpi({ label, value, sub, small }: { label: string; value: string
   )
 }
 
+/**
+ * Loading primitives — shimmer placeholders that mirror the shape of the
+ * content they stand in for, so the dashboard reads as "filling in" rather
+ * than flashing a spinner. The pulse is neutralized under
+ * prefers-reduced-motion (global guard in x402-design.css).
+ */
+export function Skeleton({ className }: { className?: string }) {
+  return <div className={cn('animate-pulse rounded-md bg-white/[0.06]', className)} aria-hidden />
+}
+
+/** A KPI-tile placeholder matching <Kpi/>'s box. */
+export function SkeletonKpi() {
+  return (
+    <div className="min-w-0 rounded-2xl border border-[var(--line)] bg-[var(--surf-1)] p-4">
+      <Skeleton className="h-2.5 w-20" />
+      <Skeleton className="h-7 w-24 mt-2.5" />
+      <Skeleton className="h-2 w-16 mt-2" />
+    </div>
+  )
+}
+
+/** A card placeholder: a title bar + a body block (override the body height). */
+export function SkeletonCard({ className, bodyClassName }: { className?: string; bodyClassName?: string }) {
+  return (
+    <div className={cn('rounded-2xl border border-[var(--line)] bg-[var(--surf-1)] p-4', className)}>
+      <Skeleton className="h-3.5 w-32 mb-4" />
+      <Skeleton className={cn('w-full', bodyClassName ?? 'h-40')} />
+    </div>
+  )
+}
+
 export function short(s: string): string {
   return s.length > 12 ? `${s.slice(0, 6)}…${s.slice(-4)}` : s
 }

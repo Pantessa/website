@@ -10,7 +10,7 @@ import { cn } from '@/lib/utils'
 import { SpendByAgent, SpendOverTime } from '@/components/LazyCharts'
 import SignGrantButton from '@/components/SignGrantButton'
 import FundAccountCard from '@/components/FundAccountCard'
-import { Card, CardTitle, Kpi, type Stats } from '@/lib/dashboard-ui'
+import { Card, CardTitle, Kpi, SkeletonKpi, SkeletonCard, Skeleton, type Stats } from '@/lib/dashboard-ui'
 import { PolicySwitch, BudgetEditor } from '@/components/SpendPolicyControls'
 import EarnPanel from '@/components/EarnPanel'
 import PayToAgentsCard from '@/components/PayToAgentsCard'
@@ -89,10 +89,28 @@ export default function DashboardOverviewPage() {
   }
 
   if (!stats) {
+    // Skeleton mirrors the real layout (KPI row → expense-account card → two
+    // charts) so the page fills in rather than flashing a spinner.
     return (
-      <div className="flex items-center gap-2 text-sm text-[color:var(--muted)] py-16 justify-center">
-        <Loader2 className="w-4 h-4 animate-spin" /> Loading your spend data…
-      </div>
+      <>
+        <h1 className="dash__h1">Overview</h1>
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
+          <SkeletonKpi />
+          <SkeletonKpi />
+          <SkeletonKpi />
+          <SkeletonKpi />
+        </div>
+        <Card className="mb-6">
+          <Skeleton className="h-4 w-48" />
+          <Skeleton className="h-3 w-72 mt-2" />
+          <Skeleton className="h-2 w-full mt-4 rounded-full" />
+        </Card>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <SkeletonCard bodyClassName="h-48" />
+          <SkeletonCard bodyClassName="h-48" />
+        </div>
+        <span className="sr-only" role="status">Loading your spend data…</span>
+      </>
     )
   }
 

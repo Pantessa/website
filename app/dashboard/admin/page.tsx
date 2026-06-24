@@ -7,10 +7,10 @@
 // instead of a failed fetch.
 
 import { useCallback, useEffect, useState } from 'react'
-import { Download, Loader2, Mail, ShieldAlert } from 'lucide-react'
+import { Download, Mail, ShieldAlert } from 'lucide-react'
 import { useSession } from '@/lib/session'
 import { isAdminAddress } from '@/lib/admin'
-import { Card, CardTitle, Kpi, short, timeAgo } from '@/lib/dashboard-ui'
+import { Card, CardTitle, Kpi, SkeletonKpi, SkeletonCard, short, timeAgo } from '@/lib/dashboard-ui'
 import { ActiveWallets, Funnel, SpendByAgent, SpendOverTime, WalletsOverTime } from '@/components/LazyCharts'
 
 interface Overview {
@@ -145,9 +145,20 @@ export default function AdminPage() {
 
   if (loading || !data) {
     return (
-      <div className="flex items-center gap-2 text-sm text-[color:var(--muted)] py-16 justify-center">
-        <Loader2 className="w-4 h-4 animate-spin" /> Loading adoption data…
-      </div>
+      <>
+        <h1 className="dash__h1">Adoption</h1>
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mt-3">
+          <SkeletonKpi />
+          <SkeletonKpi />
+          <SkeletonKpi />
+          <SkeletonKpi />
+        </div>
+        <div className="grid lg:grid-cols-2 gap-3 mt-3">
+          <SkeletonCard bodyClassName="h-40" />
+          <SkeletonCard bodyClassName="h-40" />
+        </div>
+        <span className="sr-only" role="status">Loading adoption data…</span>
+      </>
     )
   }
 
