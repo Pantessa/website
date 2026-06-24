@@ -19,7 +19,7 @@ import {
   resolveSpaceByName, listActiveProposals, getProposalResults,
   type ActiveProposal, type ProposalResults,
 } from './snapshot-read'
-import { friendlyVoteError } from './snapshot-vote'
+import { friendlyVoteError, buildVoteTypedData, type VoteProposal } from './snapshot-vote'
 
 const SEQUENCER = process.env.SNAPSHOT_SEQUENCER_URL ?? 'https://seq.snapshot.org'
 
@@ -102,39 +102,10 @@ export function mapChoiceToIndex(choiceText: string | undefined, choices: string
   return idx >= 0 ? idx + 1 : null
 }
 
-// ── The Snapshot Vote EIP-712 builder (one registered schema) ───────────────
-/** Build the canonical Snapshot Vote typed data for a single-choice/basic
- *  proposal. Proven against the live sequencer. `choice` is 1-based. */
-export function buildVoteTypedData(opts: {
-  from: string; space: string; proposalId: string; choice: number; reason?: string
-}): Eip712TypedData {
-  return {
-    domain: { name: 'snapshot', version: '0.1.4' },
-    types: {
-      Vote: [
-        { name: 'from', type: 'address' },
-        { name: 'space', type: 'string' },
-        { name: 'timestamp', type: 'uint64' },
-        { name: 'proposal', type: 'bytes32' },
-        { name: 'choice', type: 'uint32' },
-        { name: 'reason', type: 'string' },
-        { name: 'app', type: 'string' },
-        { name: 'metadata', type: 'string' },
-      ],
-    },
-    primaryType: 'Vote',
-    message: {
-      from: opts.from,
-      space: opts.space,
-      timestamp: Math.floor(Date.now() / 1000),
-      proposal: opts.proposalId,
-      choice: opts.choice,
-      reason: opts.reason ?? '',
-      app: 'yeetful',
-      metadata: '{}',
-    },
-  }
-}
+// The Snapshot Vote EIP-712 builder lives in lib/snapshot-vote (client/server
+// shared) so the server agent-signer and the client wallet buttons build the
+// identical payload. Re-exported here for callers/tests of the governance tool.
+export { buildVoteTypedData } from './snapshot-vote'
 
 /** Relay a signed vote envelope to the Snapshot sequencer. Returns the receipt
  *  id on success; throws a friendly error otherwise. */
@@ -169,6 +140,9 @@ export interface GovernanceResult {
   /** A vote for the human's wallet to sign (wallet mode). Shape matches
    *  Message.meta.voteRequest so SignVoteButton renders it. */
   voteRequest?: unknown
+  /** A proposal + its choices for the client to render signing buttons
+   *  (wallet mode) — Message.meta.voteProposal → VoteChoiceButtons. */
+  voteProposal?: VoteProposal
   cast?: boolean
 }
 
@@ -252,37 +226,41 @@ export async function runGovernanceTurn(opts: {
     return { reply: `🗳️ Which proposal do you want to vote on?\n${lines}` }
   }
 
-  // Fetch the proposal's choices to map the vote.
+  // Fetch the proposal's choices + the space.
   const results = await getProposalResults(target.id)
   const choices = results?.choices ?? []
-  const choice = mapChoiceToIndex(intent.choiceText, choices)
-  if (!choice) {
-    return { reply: `🗳️ **${target.title}** — which choice? ${choices.map((c, i) => `${i + 1}) ${c}`).join('  ')}` }
-  }
-  const choiceLabel = choices[choice - 1]
+  const space = target.space.id || spaceId || ''
+  const suggested = mapChoiceToIndex(intent.choiceText, choices) ?? undefined
 
-  // Decide signer: agent (server-side) when explicitly asked, or when no wallet
-  // is connected; otherwise hand the typed data to the human's wallet.
-  const agentMode = (intent.agentRequested || !walletAddress) && hasAgentWallet()
-  const from = agentMode ? agentSignerAddress() : walletAddress
-  if (!from) {
-    return { reply: '🗳️ Connect a wallet to sign this vote, or enable the agent key to let your agent cast it.' }
-  }
+  // Signer: when a wallet is CONNECTED the human signs (choice buttons → wallet
+  // popup) — that's the default. Agent server-side signing ("let my agent vote")
+  // is the headless case: no wallet connected + an agent key configured. (We
+  // don't keyword-sniff "agent" from the message — proposal titles contain it.)
+  const agentMode = !walletAddress && hasAgentWallet()
 
-  // Build the EIP-712 (the general signing tool's input).
-  const td = buildVoteTypedData({ from, space: target.space.id || spaceId || '', proposalId: target.id, choice, reason: agentMode ? 'Cast by my Yeetful agent.' : '' })
-  emit({ type: 'eip712', scheme: 'eip712', signer: agentMode ? `agent ${from.slice(0, 6)}…` : `wallet ${from.slice(0, 6)}…`, summary: `${describeTypedData(td)} — ${choiceLabel} on “${target.title}”` })
-
-  // Wallet mode: return the vote for SignVoteButton (no server signature).
+  // ── Wallet mode: hand the proposal to the client so it builds the EIP-712 for
+  //    each choice and the user signs in their own wallet. No server signature. ─
   if (!agentMode) {
-    const voteRequest = {
-      proposal: { id: target.id, title: target.title, type: results?.type ?? 'basic', choices, space: target.space.id || spaceId || '' },
-      choice, choiceLabels: [choiceLabel],
-      summary: `Vote ${choiceLabel} on ${target.title}`,
-      typedData: td,
+    if (!walletAddress) {
+      return { reply: `🗳️ **${target.title}** — connect your wallet to vote (each choice opens your wallet to sign), or say “let my agent vote” to have your agent cast it.` }
     }
-    return { reply: `🗳️ Ready to vote **${choiceLabel}** on **${target.title}** — sign with your wallet to cast it.`, voteRequest }
+    emit({ type: 'eip712', scheme: 'eip712', signer: `wallet ${walletAddress.slice(0, 6)}…`, summary: `Vote on “${target.title}” — pick a choice to sign` })
+    const voteProposal: VoteProposal = { id: target.id, title: target.title, space, type: results?.type ?? 'basic', choices, suggestedChoice: suggested }
+    const hint = suggested ? ` I’ll pre-highlight **${choices[suggested - 1]}**.` : ''
+    return { reply: `🗳️ Ready to vote on **${target.title}** — pick a choice below to sign with your wallet.${hint}`, voteProposal }
   }
+
+  // ── Agent mode (headless): the agent needs a concrete choice to cast. ────────
+  if (!suggested) {
+    return { reply: `🗳️ **${target.title}** — which choice should the agent cast? ${choices.map((c, i) => `${i + 1}) ${c}`).join('  ')}` }
+  }
+  const choice = suggested
+  const choiceLabel = choices[choice - 1]
+  const from = agentSignerAddress()
+
+  // Build the EIP-712 (the general signing tool's input) + sign server-side.
+  const td = buildVoteTypedData({ from, space, proposalId: target.id, choice, reason: 'Cast by my Yeetful agent.' })
+  emit({ type: 'eip712', scheme: 'eip712', signer: `agent ${from.slice(0, 6)}…`, summary: `${describeTypedData(td)} — ${choiceLabel} on “${target.title}”` })
 
   // Agent mode: sign server-side + relay.
   emit({ type: 'tool', name: 'sign_eip712', status: 'run', detail: `agent ${from.slice(0, 6)}…` })

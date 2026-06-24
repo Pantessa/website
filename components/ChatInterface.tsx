@@ -9,9 +9,10 @@ import { cn } from '@/lib/utils'
 import MessageReceipts from '@/components/MessageReceipts'
 import RouteReport from '@/components/RouteReport'
 import SignVoteButton from '@/components/SignVoteButton'
+import VoteChoiceButtons from '@/components/VoteChoiceButtons'
 import VoteCandidates from '@/components/VoteCandidates'
 import PaymentConfirm from '@/components/PaymentConfirm'
-import { voteRequestOf, voteCandidatesOf } from '@/lib/snapshot-vote'
+import { voteRequestOf, voteCandidatesOf, voteProposalOf } from '@/lib/snapshot-vote'
 import { useYeetfulStore, type RouterTraceEvent } from '@/lib/store'
 import { useSpendPolicy } from '@/components/SpendPolicyControls'
 import BrandIcon from '@/components/BrandIcon'
@@ -42,13 +43,14 @@ interface PaymentToSign {
 
 /** Build the assistant message meta from receipts + an optional vote request /
  *  ambiguous-proposal candidates. */
-function buildMeta(receipts: unknown, payer: unknown, voteRequest: unknown, voteCandidates?: unknown, routeReport?: unknown, routerTrace?: unknown) {
+function buildMeta(receipts: unknown, payer: unknown, voteRequest: unknown, voteCandidates?: unknown, routeReport?: unknown, routerTrace?: unknown, voteProposal?: unknown) {
   const meta: Record<string, unknown> = {}
   if (Array.isArray(receipts) && receipts.length) {
     meta.receipts = receipts
     if (typeof payer === 'string') meta.payer = payer
   }
   if (voteRequest && typeof voteRequest === 'object') meta.voteRequest = voteRequest
+  if (voteProposal && typeof voteProposal === 'object') meta.voteProposal = voteProposal
   if (voteCandidates && typeof voteCandidates === 'object') meta.voteCandidates = voteCandidates
   if (routeReport && typeof routeReport === 'object') meta.routeReport = routeReport
   if (Array.isArray(routerTrace) && routerTrace.length) meta.routerTrace = routerTrace
@@ -163,7 +165,7 @@ export default function ChatInterface() {
           addMessage(chatId, {
             role: 'assistant',
             content: out.content,
-            meta: buildMeta(out.receipts, out.payer, out.voteRequest, undefined, out.routeReport, out.routerTrace),
+            meta: buildMeta(out.receipts, out.payer, out.voteRequest, undefined, out.routeReport, out.routerTrace, out.voteProposal),
           })
         }
         return
@@ -219,7 +221,7 @@ export default function ChatInterface() {
     userMsg: string,
     history: { role: string; content: string }[],
   ): Promise<
-    | { kind: 'reply'; content: string; receipts?: unknown; payer?: string; voteRequest?: unknown; routeReport?: unknown; routerTrace?: unknown }
+    | { kind: 'reply'; content: string; receipts?: unknown; payer?: string; voteRequest?: unknown; voteProposal?: unknown; routeReport?: unknown; routerTrace?: unknown }
     | { kind: 'plan'; data: { plan: unknown; payments: PaymentToSign[]; listedOnly: unknown; notes?: unknown } }
   > => {
     clearRouterTrace()
@@ -244,7 +246,7 @@ export default function ChatInterface() {
     const reader = res.body.getReader()
     const decoder = new TextDecoder()
     let buf = ''
-    let reply: { kind: 'reply'; content: string; receipts?: unknown; payer?: string; voteRequest?: unknown; routeReport?: unknown; routerTrace?: unknown } | null = null
+    let reply: { kind: 'reply'; content: string; receipts?: unknown; payer?: string; voteRequest?: unknown; voteProposal?: unknown; routeReport?: unknown; routerTrace?: unknown } | null = null
     for (;;) {
       const { done, value } = await reader.read()
       if (done) break
@@ -279,6 +281,7 @@ export default function ChatInterface() {
             receipts: event.receipts,
             payer: typeof event.payer === 'string' ? event.payer : undefined,
             voteRequest: event.voteRequest,
+            voteProposal: event.voteProposal,
             routeReport: event.routeReport,
             routerTrace: event.trace,
           }
@@ -583,6 +586,11 @@ export default function ChatInterface() {
                       (() => {
                         const vote = voteRequestOf(msg.meta)
                         return vote ? <SignVoteButton vote={vote} /> : null
+                      })()}
+                    {msg.role === 'assistant' &&
+                      (() => {
+                        const vp = voteProposalOf(msg.meta)
+                        return vp ? <VoteChoiceButtons proposal={vp} /> : null
                       })()}
                     {msg.role === 'assistant' &&
                       (() => {

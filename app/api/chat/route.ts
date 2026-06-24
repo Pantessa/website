@@ -926,6 +926,7 @@ export function streamAutoRouter(
               payer: gov.cast ? 'your agent' : 'none',
               trace: trace(),
               ...(gov.voteRequest ? { voteRequest: gov.voteRequest } : {}),
+              ...(gov.voteProposal ? { voteProposal: gov.voteProposal } : {}),
             })
             recordRouteEvent({ payer: gov.cast ? 'agent' : 'none', latencyMs: Date.now() - startMs, intent: govIntent.kind })
           } catch (e) {
