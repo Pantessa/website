@@ -1124,6 +1124,21 @@
   .blog__body th, .blog__body td { border: 1px solid var(--line); padding: 7px 12px; text-align: left; }
   .blog__body th { color: var(--fg); }
   .blog__body hr { border: none; border-top: 1px solid var(--line); margin: 28px 0; }
+
+  /* In-post charts (BlogChart) — rendered from a ```chart fenced block. */
+  .blog__chart { margin: 28px 0; padding: 20px; border: 1px solid var(--line); border-radius: 14px; background: var(--surf-1); }
+  .blog__chart-title { font-family: 'Archivo', sans-serif; font-weight: 700; font-size: 15px; color: var(--fg); margin: 0; }
+  .blog__chart-sub { font-size: 11px; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted-2); margin: 4px 0 0; }
+  .blog__chart-svg { display: block; margin: 14px 0 4px; overflow: visible; }
+  .blog__chart-val { font-family: 'Geist Mono', ui-monospace, monospace; font-size: 14px; font-weight: 600; }
+  .blog__chart-cat { font-family: 'Geist Mono', ui-monospace, monospace; font-size: 12px; }
+  .blog__chart-src { font-size: 10.5px; letter-spacing: 0.04em; color: var(--muted-2); margin: 8px 0 0; }
+  /* Big-number stat callout. */
+  .blog__stat { display: flex; flex-direction: column; gap: 6px; margin: 28px 0; padding: 22px 24px; border: 1px solid var(--line); border-left: 3px solid var(--accent); border-radius: 14px; background: var(--surf-1); }
+  .blog__stat-num { font-family: 'Archivo', sans-serif; font-weight: 800; font-size: clamp(2.2rem, 6vw, 3rem); line-height: 1; letter-spacing: -0.03em; color: var(--accent); }
+  .blog__stat-cap { font-size: 15px; line-height: 1.5; color: var(--fg); max-width: 46ch; }
+  .blog__stat-src { font-size: 10.5px; letter-spacing: 0.04em; color: var(--muted-2); }
+
   @media (max-width: 768px) {
     .blog__grid { grid-template-columns: 1fr; }
   }
