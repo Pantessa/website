@@ -3,8 +3,8 @@
 // Dashboard · Activity — the receipt ledger feed.
 
 import { useEffect, useState } from 'react'
-import { CheckCircle2, XCircle } from 'lucide-react'
-import { Card, short, timeAgo, type Stats } from '@/lib/dashboard-ui'
+import { CheckCircle2, XCircle, Activity } from 'lucide-react'
+import { Card, EmptyState, short, timeAgo, type Stats } from '@/lib/dashboard-ui'
 
 export default function DashboardActivityPage() {
   const [stats, setStats] = useState<Stats | null>(null)
@@ -21,9 +21,12 @@ export default function DashboardActivityPage() {
       <p className="dash__sub">Every authorization decision under your grant — settlements and refusals alike.</p>
       <Card>
         {!stats || stats.recent.length === 0 ? (
-          <p className="text-xs text-[color:var(--muted-2)] py-4">
-            No receipts yet — send a paid chat message and it&apos;ll show up here.
-          </p>
+          <EmptyState
+            icon={Activity}
+            title="No activity yet"
+            description="Every authorization decision under your grant lands here — send a paid chat message to see your first."
+            cta={{ href: '/chat', label: 'Open chat' }}
+          />
         ) : (
           <div className="divide-y divide-white/5">
             {stats.recent.map((r) => (
