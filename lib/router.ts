@@ -593,7 +593,7 @@ function stripNoisy(v: unknown): unknown {
 
 /** Compact a tool result for the synthesis prompt: drop noisy keys from JSON,
  *  then cap length. Strings pass through untouched (just capped). */
-function compactForSynthesis(data: unknown, limit: number): string {
+export function compactForSynthesis(data: unknown, limit: number): string {
   if (typeof data === 'string') return truncate(data, limit)
   const s = JSON.stringify(stripNoisy(data) ?? '')
   return truncate(s, limit)

@@ -34,7 +34,7 @@ import {
   type ConversationTurn,
 } from '@/lib/endpoint-planner'
 import { loadCatalog } from '@/lib/catalog'
-import { routeMessage, selectInferenceProvider, type TraceStep, type SmartPick } from '@/lib/router'
+import { routeMessage, selectInferenceProvider, compactForSynthesis, type TraceStep, type SmartPick } from '@/lib/router'
 import { buildSignableArtifact } from '@/lib/transaction-layer'
 import { isCacheable, routeCacheKey, getCached, setCached } from '@/lib/route-cache'
 import { recordRouteEvent, routeSavings } from '@/lib/route-telemetry'
@@ -585,7 +585,7 @@ async function executeWithSignatures(
       const data = c.mcp
         ? parseMcpDataResult(res.headers.get('content-type') ?? '', await res.text())
         : await res.json()
-      contextBlocks.push(`### ${c.name}\n${truncate(JSON.stringify(data), 1500)}`)
+      contextBlocks.push(`### ${c.name}\n${compactForSynthesis(data, 3500)}`)
       const txHash = decodeSettlement(res)?.transaction
       receipts.push({ name: c.name, endpoint: c.host, priceUsd: c.priceUsd, txHash, ok: true })
       ledger(c, true, txHash)
@@ -679,7 +679,7 @@ async function runWithBurner(
 
     try {
       const { json, txHash } = await paidGet(ds.endpoint!, ds.queryParam ?? 'q', message)
-      contextBlocks.push(`### ${ds.name}\n${truncate(JSON.stringify(json), 1500)}`)
+      contextBlocks.push(`### ${ds.name}\n${compactForSynthesis(json, 3500)}`)
       receipts.push({ name: ds.name, endpoint: host, priceUsd: ds.priceUsd ?? '0.01', txHash, ok: true })
       if (grant) {
         await recordLedger({ grantId: grant.id, orgId: grant.orgId ?? undefined, host, serviceName: ds.name, amountUsd: price, ok: true, txHash, note: 'settled' })
@@ -719,7 +719,7 @@ async function runWithBurner(
         voteRequest = vote
         contextBlocks.push(`### ${ds.name}\nPrepared a vote for the user to sign: ${vote.summary}`)
       } else {
-        contextBlocks.push(`### ${ds.name}\n${truncate(JSON.stringify(data), 1500)}`)
+        contextBlocks.push(`### ${ds.name}\n${compactForSynthesis(data, 3500)}`)
       }
       receipts.push({ name: ds.name, endpoint: host, priceUsd: ds.priceUsd ?? '0.01', txHash, ok: true })
       if (grant) {
@@ -775,7 +775,7 @@ async function runWithBurner(
           }
           try {
             const { json, txHash: dataTx } = await paidCall(request)
-            contextBlocks.push(`### ${ep.serverName}\n${truncate(JSON.stringify(json), 1500)}`)
+            contextBlocks.push(`### ${ep.serverName}\n${compactForSynthesis(json, 3500)}`)
             receipts.push({ name: ep.serverName, endpoint: host, priceUsd: ep.priceUsd, txHash: dataTx, ok: true })
             smartServed.add(ep.serverSlug)
             if (grant) {
