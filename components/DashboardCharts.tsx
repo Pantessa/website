@@ -16,7 +16,6 @@ import {
 const ACCENT = '#34E0A1'
 const GRID = 'rgba(255,255,255,0.06)'
 const MUTED = 'rgba(255,255,255,0.45)'
-const PALETTE = ['#34E0A1', '#6AA8FF', '#D97757', '#F59E0B', '#E84142', '#8DC63F', '#0BA5EC', '#3861FB']
 
 const tooltipStyle = {
   background: '#101012',
@@ -106,7 +105,14 @@ export function SpendByAgent({ perAgent }: { perAgent: { service: string; spent:
         />
         <Bar dataKey="spent" radius={[0, 6, 6, 0]} barSize={16}>
           {perAgent.map((row, i) => (
-            <Cell key={row.service} fill={PALETTE[i % PALETTE.length]} fillOpacity={0.85} />
+            // Monochrome ramp: bars are ranked by spend, so fading white opacity
+            // top→bottom reads as a clean greyscale gradient (sleeker than the
+            // old categorical palette).
+            <Cell
+              key={row.service}
+              fill="#ffffff"
+              fillOpacity={Math.max(0.32, 0.9 - (i / Math.max(1, perAgent.length - 1)) * 0.58)}
+            />
           ))}
         </Bar>
       </BarChart>
