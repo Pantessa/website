@@ -73,9 +73,19 @@ collides with the sharp-router-night dev server in `website/` (:3000).
   serif at a consistent size — the whole page now speaks one serif voice for
   section titles (agent-card names keep Archivo for contrast). Verified.
 
-### ⏳ Remaining ideas (next loop iterations)
-- **Signed-in dashboard polish** — log in via env `PRIVATE_KEY` (SIWE) to
-  screenshot the dashboard/overview/approvals and polish the signed-in views.
-- Servers / docs / leaderboard header typography alignment (optional — these
-  are app-like surfaces; the marketing serif identity is established).
-- Nav + footer micro-polish; hover/focus states sweep.
+### Signed-in view — verified
+Logged the preview browser in as the house wallet (`0x5eaa…55a0`) via the SIWE
+handshake using env `PRIVATE_KEY` (nonce → sign in Node → verify POST from the
+browser so the httpOnly session cookie lands in its jar). The dashboard Overview
+renders with real data. **Decision:** the dashboard is a dense, app-like surface
+where the compact sans reads correctly — the big-serif identity is reserved for
+the marketing surfaces (home, activity, blog), so dashboard typography is left
+as-is. (Re-auth recipe for future iterations is the 3-step flow above.)
+
+### Merge / review
+All batches live on `uiux/night-run` → **PR #260 (base `autopilot`, NOT main)**.
+Merged into `autopilot` for morning review.
+
+### Remaining ideas (optional next iterations)
+- Servers / docs / leaderboard section-header alignment (app-like surfaces).
+- Nav + footer micro-polish; a hover/focus-state sweep.
