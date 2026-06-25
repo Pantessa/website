@@ -21,7 +21,7 @@ export default function CopyBlock({ text, label }: { text: string; label: string
     }
   }
   return (
-    <div className="relative">
+    <div className="relative min-w-0">
       <button
         onClick={copy}
         className="absolute right-3 top-3 z-10 flex items-center gap-1.5 text-xs font-semibold px-3 py-2 max-lg:min-h-10 rounded-lg bg-white text-zinc-950 hover:bg-zinc-200 transition-colors"
@@ -29,7 +29,9 @@ export default function CopyBlock({ text, label }: { text: string; label: string
         {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
         {copied ? 'Copied' : label}
       </button>
-      <pre className="select-all">
+      {/* overflow-x-auto so a long prompt scrolls inside the block instead of
+          widening its card on mobile. */}
+      <pre className="select-all overflow-x-auto max-w-full">
         <code>{text}</code>
       </pre>
     </div>

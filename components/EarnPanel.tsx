@@ -105,7 +105,7 @@ export default function EarnPanel() {
                 </span>
                 <Link
                   href={s.href}
-                  className="flex-shrink-0 inline-flex items-center text-[11px] font-medium px-2.5 py-1 max-lg:min-h-9 rounded-md border border-[var(--line-2)] text-[color:var(--muted)] hover:text-white hover:border-white transition-colors"
+                  className="flex-shrink-0 inline-flex items-center text-[11px] font-medium px-2.5 py-1 max-lg:min-h-11 rounded-md border border-[var(--line-2)] text-[color:var(--muted)] hover:text-white hover:border-white transition-colors"
                 >
                   {s.cta} →
                 </Link>

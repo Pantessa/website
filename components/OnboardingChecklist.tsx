@@ -123,7 +123,7 @@ export default function OnboardingChecklist({ stats }: { stats: Stats }) {
               {isNext && (
                 <Link
                   href={s.href}
-                  className="ml-auto flex-shrink-0 inline-flex items-center text-xs font-medium px-3 py-1.5 max-lg:min-h-9 rounded-lg border border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/10 transition-colors"
+                  className="ml-auto flex-shrink-0 inline-flex items-center text-xs font-medium px-3 py-1.5 max-lg:min-h-11 rounded-lg border border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/10 transition-colors"
                 >
                   {s.cta} →
                 </Link>
