@@ -25,7 +25,8 @@
     "test:live": "tsx scripts/test-live-services.ts",
     "verify:receipts": "tsx scripts/verify-receipts.ts",
     "email:test": "tsx scripts/send-test-email.ts",
-    "postinstall": "prisma generate"
+    "postinstall": "prisma generate",
+    "eval:routing": "tsx scripts/eval-routing.ts"
   },
   "dependencies": {
     "@coinbase/cdp-core": "^0.0.111",

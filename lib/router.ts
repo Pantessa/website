@@ -192,6 +192,11 @@ export function shortlistEndpoints(message: string, endpoints: PlannableEndpoint
     return s
   }
   const ranked = endpoints
+    // Inference gateways (BlockRun, Groq, Venice…) carry chat/completions
+    // endpoints that keyword-match almost anything and crowd the menu — but the
+    // ANSWER engine is chosen separately (selectInferenceProvider). They are
+    // never a DATA answer, so they don't belong in the data shortlist.
+    .filter((ep) => ep.category !== 'Inference')
     .map((ep) => ({ ep, s: score(ep) }))
     .filter((x) => x.s > 0)
     .sort((a, b) => b.s - a.s)
