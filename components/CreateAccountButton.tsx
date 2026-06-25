@@ -18,10 +18,10 @@ import { OAUTH_INTENT_KEY } from '@/components/CdpOAuthReturn'
 
 // Social providers via CDP Embedded Wallets. Enable each + set its OAuth client
 // id/secret and redirect URIs in the CDP Portal; the app needs only the project
-// id (NEXT_PUBLIC_CDP_PROJECT_ID). 'x' is Twitter/X.
+// id (NEXT_PUBLIC_CDP_PROJECT_ID). X/Twitter is parked for now — re-add
+// { id: 'x', label: 'Continue with X' } once it's configured in the portal.
 const OAUTH_PROVIDERS = [
   { id: 'google', label: 'Continue with Google' },
-  { id: 'x', label: 'Continue with X' },
 ] as const
 
 /**
@@ -74,7 +74,7 @@ function CreateAccountModal({ onClose, redirectTo }: { onClose: () => void; redi
 
   // Social sign-in is a full-page redirect to the provider. Persist the intent
   // so CdpOAuthReturn can connect wagmi + route once the browser comes back.
-  function startOAuth(provider: 'google' | 'x') {
+  function startOAuth(provider: 'google') {
     try {
       sessionStorage.setItem(OAUTH_INTENT_KEY, JSON.stringify({ redirectTo }))
     } catch {
@@ -179,7 +179,7 @@ function CreateAccountModal({ onClose, redirectTo }: { onClose: () => void; redi
             <div className="ca__icon"><Mail width={20} height={20} /></div>
             <h2 className="ca__title">Sign in to Yeetful</h2>
             <p className="ca__sub">
-              Continue with Google or X — or use email. New here, we create your secure
+              Continue with Google — or use email. New here, we create your secure
               non-custodial wallet; returning, we sign you back in. Already have a wallet? Connect it
               below.
             </p>
