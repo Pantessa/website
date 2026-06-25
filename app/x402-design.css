@@ -598,6 +598,31 @@
     .svc__split > .svc__rail { position: static; }
   }
 
+  /* Token-not-launched: a contained two-column grid. Service info, reputation
+     and performance stack in the main column; the "own a piece" CTA sits in a
+     sticky rail flush-right; endpoints span full width below. Restacks to one
+     column under 1080px with the rail above the endpoints. */
+  .svc__split2 {
+    display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 22px 32px;
+    align-items: start; margin-top: 24px;
+    grid-template-areas: "main rail" "eps eps";
+  }
+  .svc__split2 > .svc__main { grid-area: main; min-width: 0; }
+  .svc__split2 > .svc__rail {
+    grid-area: rail; position: sticky; top: 88px;
+    display: flex; flex-direction: column; gap: 14px; min-width: 0;
+  }
+  .svc__split2 > .svc__rail > .svc__section { margin-top: 0; }
+  .svc__split2 > .svc__eps { grid-area: eps; margin-top: 22px; }
+  @media (max-width: 1080px) {
+    .svc__split2 {
+      grid-template-columns: 1fr;
+      grid-template-areas: "main" "rail" "eps";
+    }
+    .svc__split2 > .svc__rail { position: static; }
+    .svc__split2 > .svc__eps { margin-top: 0; }
+  }
+
   /* 2-line description with an inline more/less toggle. */
   .svc__descwrap { display: flex; flex-direction: column; align-items: flex-start; margin-top: 16px; }
   .svc__descwrap .svc__desc { margin-top: 0; }

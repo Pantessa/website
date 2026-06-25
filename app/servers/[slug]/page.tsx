@@ -7,6 +7,7 @@ import BrandIcon from '@/components/BrandIcon'
 import Footer from '@/components/Footer'
 import ServerApproveToggle from '@/components/ServerApproveToggle'
 import TokenPanel from '@/components/TokenPanel'
+import McpStats from '@/components/McpStats'
 import Description from '@/components/Description'
 import ReputationPanel from '@/components/ReputationPanel'
 import { getTokenPanel } from '@/lib/launch-token'
@@ -265,7 +266,8 @@ export default async function ServiceDetailPage({ params }: Params) {
     </div>
   )
 
-  const body = (
+  // Launched: pump.fun-style split (TokenPanel emits the lead/detail/rail areas).
+  const launchedBody = (
     <>
       {header}
       <ServerApproveToggle serverId={server.id} serverName={server.name} />
@@ -276,6 +278,27 @@ export default async function ServiceDetailPage({ params }: Params) {
     </>
   )
 
+  // Not launched: a contained two-column grid — service info + reputation +
+  // performance in the main column, the "own a piece" CTA in a sticky rail,
+  // endpoints full width below.
+  const infoBody = (
+    <div className="svc__split2">
+      <div className="svc__main">
+        {header}
+        <ServerApproveToggle serverId={server.id} serverName={server.name} />
+        <Description text={server.description} />
+        <ReputationPanel rep={rep} pings={pings} rating={ratingInitial} slug={server.slug} />
+        <div className="svc__section">
+          <McpStats slug={server.slug} />
+        </div>
+      </div>
+      <aside className="svc__rail">
+        <TokenPanel panel={panel} slug={server.slug} name={server.name} />
+      </aside>
+      {endpoints}
+    </div>
+  )
+
   return (
     <>
       <main className={launched ? 'x-main x-main--fluid' : 'x-main'}>
@@ -284,7 +307,7 @@ export default async function ServiceDetailPage({ params }: Params) {
             <ArrowLeft width={14} height={14} />
             Directory
           </Link>
-          {launched ? <div className="svc__split">{body}</div> : body}
+          {launched ? <div className="svc__split">{launchedBody}</div> : infoBody}
         </div>
       </main>
       <Footer />
