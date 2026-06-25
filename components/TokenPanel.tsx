@@ -8,7 +8,6 @@ import TradeToken from '@/components/TradeToken'
 import TokenPriceChart from '@/components/TokenPriceChart'
 import StakeToken from '@/components/StakeToken'
 import Stakers from '@/components/Stakers'
-import McpStats from '@/components/McpStats'
 
 /** A reasonable default ticker from the MCP name/slug (the owner can edit it). */
 function defaultTicker(name: string, slug: string): string {
@@ -89,8 +88,9 @@ export default function TokenPanel({
         </div>
 
         <div className="svc__detail">
-          {/* Performance — how the MCP is doing (settled, calls, accounts, usage). */}
-          <McpStats slug={slug} />
+          {/* Performance (McpStats) shelved 2026-06-25: nearly no MCPs have wired
+              the Yeetful SDK to report usage, so the card was all zeros. Re-add
+              <McpStats slug={slug} /> here when usage reporting is rethought. */}
 
           {/* How it trades — Flaunch puts the token on a Uniswap v4 pool at launch. */}
           <div className="tok__card">
