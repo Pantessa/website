@@ -14,6 +14,7 @@ import { Card, CardTitle, Kpi, SkeletonKpi, SkeletonCard, Skeleton, type Stats }
 import { PolicySwitch, BudgetEditor } from '@/components/SpendPolicyControls'
 import { useToast } from '@/lib/toast'
 import EarnPanel from '@/components/EarnPanel'
+import OnboardingChecklist from '@/components/OnboardingChecklist'
 import PayToAgentsCard from '@/components/PayToAgentsCard'
 import { useOrgStore } from '@/lib/org-store'
 import Button from '@/components/Button'
@@ -134,6 +135,10 @@ export default function DashboardOverviewPage() {
   return (
     <>
       <h1 className="dash__h1">{o ? `Overview · ${o.name}` : 'Overview'}</h1>
+
+      {/* First-run guided path — self-ticks from live state, hides when done
+          or dismissed. */}
+      <OnboardingChecklist stats={stats} />
 
       {/* The org level of the two-level budget: the daily cap across ALL the
           org's agent keys, above the grant + per-key meters. SDK-enforced via
