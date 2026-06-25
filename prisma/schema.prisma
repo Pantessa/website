@@ -55,6 +55,13 @@ model McpServer {
   color      String?
   websiteUrl String? @map("website_url") // agentic.market service page
 
+  // Capability metadata (R1) — LLM-labeled at ingest (scripts/tag-capabilities.ts)
+  // so routing matches on MEANING, not just keyword overlap. `tags` = controlled
+  // domain vocab (sports, web-search, transcription…); `exampleQueries` = a few
+  // user phrasings this MCP answers. Both folded into the shortlist haystack.
+  tags           String[] @default([])
+  exampleQueries String[] @default([]) @map("example_queries")
+
   // Provenance
   source     String   @default("agentic.market")
   featured   Boolean  @default(true)
