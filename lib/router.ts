@@ -133,11 +133,17 @@ export interface RouteOptions {
  * cheapest callable inference provider. Selection across providers is a
  * follow-up (B5); one good default keeps the routing call cheap and reliable.
  */
-export function selectInferenceProvider(catalog: McpServer[]): McpServer | null {
+export function selectInferenceProvider(catalog: McpServer[], preferSlug?: string): McpServer | null {
   const inf = catalog.filter(
     (s) => s.kind === 'inference' && s.callable && s.endpoint && (s.protocol === 'mcp' || s.protocol === 'http'),
   )
   if (inf.length === 0) return null
+  // Optional explicit pin (e.g. the live-service test rotating engines). Falls
+  // through to the default when the requested slug isn't a callable inference.
+  if (preferSlug) {
+    const pinned = inf.find((s) => s.slug === preferSlug)
+    if (pinned) return pinned
+  }
   const preferred = inf.find((s) => s.slug === 'yeetful-claude')
   if (preferred) return preferred
   return inf.slice().sort((a, b) => Number(a.priceUsd ?? '1') - Number(b.priceUsd ?? '1'))[0]

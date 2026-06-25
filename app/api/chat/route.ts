@@ -159,7 +159,8 @@ export async function POST(req: NextRequest) {
     //    streams its reasoning + the answer (burner mode; wallet is B5). The
     //    manual path below is untouched. ───────────────────────────────────
     if (body.autoRouter === true) {
-      return streamAutoRouter(message, history, walletAddress)
+      const inferenceSlug = typeof body.inferenceSlug === 'string' ? body.inferenceSlug : undefined
+      return streamAutoRouter(message, history, walletAddress, undefined, undefined, inferenceSlug)
     }
 
     const inference = activeServers.find(
@@ -872,6 +873,10 @@ export function streamAutoRouter(
   /** The calling API key's id (Bearer via /api/route) — attributes routed spend
    *  to that agent so per-key budgets + the Agents tab reflect it (B22). */
   apiKeyId?: string,
+  /** Optional inference-engine pin (slug, e.g. 'deepseek' | 'chatgpt' |
+   *  'google-gemini' | 'claude'). Used by the live-service test to rotate
+   *  engines; ignored when the slug isn't a callable inference. */
+  inferenceSlug?: string,
 ): Response {
   const encoder = new TextEncoder()
   const stream = new ReadableStream<Uint8Array>({
@@ -935,7 +940,7 @@ export function streamAutoRouter(
           const synthesize = async (prompt: string): Promise<string | null> => {
             if (!hasAgentWallet()) return null
             const catalog = await loadCatalog()
-            const inference = selectInferenceProvider(catalog)
+            const inference = selectInferenceProvider(catalog, inferenceSlug)
             if (!inference?.endpoint) return null
             const infHost = hostOf(inference.endpoint)
             const infPrice = Number(inference.priceUsd ?? '0.01')
@@ -986,7 +991,7 @@ export function streamAutoRouter(
         }
 
         const catalog = await loadCatalog()
-        const inference = selectInferenceProvider(catalog)
+        const inference = selectInferenceProvider(catalog, inferenceSlug)
         if (!inference) {
           send({
             type: 'reply',
