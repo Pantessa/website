@@ -1,0 +1,65 @@
+<!-- @dsCard group="Overview" -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Yeetful — Design System</title>
+<style>
+  :root { --ink: #0A0A0B; --paper: #FAFAF7; --char: #1C1C1E; --smoke: #6B6B6F; --mist: #C9C9C5; --fog: #EDEDE8; --yeet: #C6FF3D; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--paper); color: var(--ink); font-family: "Geist", Inter, system-ui, sans-serif; -webkit-font-smoothing: antialiased; padding: 56px 48px; }
+  header { display: flex; align-items: center; gap: 14px; margin-bottom: 8px; }
+  header svg { color: var(--ink); }
+  header .word { font-family: "JetBrains Mono", ui-monospace, monospace; font-weight: 500; font-size: 26px; letter-spacing: -.02em; }
+  h1 { font-size: 40px; font-weight: 600; letter-spacing: -.02em; margin: 18px 0 4px; }
+  .sub { color: var(--smoke); font-size: 17px; margin: 0 0 40px; max-width: 60ch; }
+  .section { font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--smoke); margin: 32px 0 14px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 14px; }
+  a.card { display: block; text-decoration: none; color: inherit; border: 1px solid var(--mist); border-radius: 16px; padding: 20px; transition: border-color .15s, background .15s; }
+  a.card:hover { border-color: var(--ink); background: var(--fog); }
+  a.card .name { font-size: 18px; font-weight: 600; letter-spacing: -.01em; }
+  a.card .desc { font-size: 13px; color: var(--smoke); margin-top: 5px; line-height: 1.45; }
+  footer { margin-top: 48px; font-size: 13px; color: var(--smoke); border-top: 1px solid var(--mist); padding-top: 18px; }
+  code { font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 12px; background: var(--fog); padding: 2px 6px; border-radius: 6px; }
+  @media (max-width: 720px) { body { padding: 32px 24px; } }
+</style>
+</head>
+<body>
+  <header>
+    <svg width="36" height="36" viewBox="0 0 40 40" fill="none" role="img" aria-label="Yeetful">
+      <mask id="i"><rect width="40" height="40" fill="#fff"/><circle cx="20" cy="20" r="1.9" fill="#000"/></mask>
+      <g mask="url(#i)" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><line x1="20" y1="20" x2="9" y2="9"/><line x1="20" y1="20" x2="31" y2="9"/><line x1="20" y1="20" x2="20" y2="33"/></g>
+      <g fill="currentColor"><circle cx="9" cy="9" r="4.4"/><circle cx="31" cy="9" r="4.4"/><circle cx="20" cy="33" r="4.4"/></g>
+      <circle cx="20" cy="20" r="3" fill="none" stroke="currentColor" stroke-width="2.2"/>
+    </svg>
+    <span class="word">yeetful</span>
+  </header>
+
+  <h1>Design System</h1>
+  <p class="sub">The brand foundations and core components for Yeetful. One source of truth — served here and mirrored into Claude Design.</p>
+
+  <div class="section">Brand &amp; Foundations</div>
+  <div class="grid">
+    <a class="card" href="./foundations/logo.html"><div class="name">Logo</div><div class="desc">Agent-graph "Y" mark, lock-up, clear space, scale</div></a>
+    <a class="card" href="./foundations/colors.html"><div class="name">Colors</div><div class="desc">Monochrome palette + Yeet-green accent</div></a>
+    <a class="card" href="./foundations/typography.html"><div class="name">Typography</div><div class="desc">Geist + JetBrains Mono, full type scale</div></a>
+  </div>
+
+  <div class="section">Components</div>
+  <div class="grid">
+    <a class="card" href="./components/buttons.html"><div class="name">Buttons</div><div class="desc">Primary / secondary / ghost / destructive</div></a>
+    <a class="card" href="./components/cards.html"><div class="name">Cards</div><div class="desc">Service cards, light + dark</div></a>
+    <a class="card" href="./components/inputs.html"><div class="name">Inputs</div><div class="desc">Default / focused / select / disabled</div></a>
+  </div>
+
+  <div class="section">Assets</div>
+  <div class="grid">
+    <a class="card" href="./assets/yeetful-mark.svg"><div class="name">Mark (SVG)</div><div class="desc">currentColor · white · black variants</div></a>
+    <a class="card" href="./assets/icon.svg"><div class="name">App icon</div><div class="desc">Favicon + Apple touch icon</div></a>
+    <a class="card" href="./assets/Logo.tsx"><div class="name">Logo.tsx</div><div class="desc">Drop-in React component</div></a>
+  </div>
+
+  <footer>Source of truth: <code>website/public/design-system/</code> · mirrored to Claude Design via <code>/design-sync</code>.</footer>
+</body>
+</html>
