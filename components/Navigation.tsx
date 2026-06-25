@@ -1,12 +1,12 @@
 'use client'
 
 import Link from 'next/link'
-import { usePathname, useRouter } from 'next/navigation'
+import { usePathname } from 'next/navigation'
 import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { useAccount, useAccountEffect } from 'wagmi'
+import { useAccount } from 'wagmi'
 import { useSession } from '@/lib/session'
-import { Menu, X } from 'lucide-react'
+import { LogIn, Menu, X } from 'lucide-react'
 import { useYeetfulStore } from '@/lib/store'
 import ConnectWallet from '@/components/ConnectWallet'
 import AuthButton from '@/components/AuthButton'
@@ -16,24 +16,12 @@ import { YeetfulMark } from '@/components/Logo'
 
 export default function Navigation() {
   const pathname = usePathname()
-  const router = useRouter()
   const activeCount = useYeetfulStore((s) => s.activeServerIds.length)
   const { isConnected } = useAccount()
 
-  // A fresh, user-initiated wallet connect enters the app (→ /dashboard).
-  // isReconnected guards against auto-reconnect on page reload, which would
-  // otherwise yank a returning visitor off the brochure on every load. We
-  // also stay put on /chat (connecting there is to pay a turn, not to leave)
-  // and inside /dashboard (already there). Read the live pathname to avoid a
-  // stale closure.
-  useAccountEffect({
-    onConnect({ isReconnected }) {
-      if (isReconnected) return
-      const path = window.location.pathname
-      if (path.startsWith('/dashboard') || path.startsWith('/chat')) return
-      router.push('/dashboard')
-    },
-  })
+  // Post-connect routing is now owned by the sign-in flow itself
+  // (connectAndSignIn → redirect on a successful signature), so a bare wallet
+  // connect (e.g. to pay a chat turn) no longer yanks the user to /dashboard.
 
   // Wallet state only exists client-side — gate the Dashboard tab on mount to
   // keep the server-rendered nav hydration-safe.
@@ -69,6 +57,49 @@ export default function Navigation() {
   const showCreateAccount = mounted && cdpEnabled && !isConnected && !sessionAddress
   const createAccountPill =
     'inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-emerald-400 text-zinc-950 text-xs font-semibold hover:bg-emerald-300 active:scale-[0.98] transition-all'
+
+  // Chat connects a wallet to PAY a turn, not to sign in — keep the plain
+  // Connect Wallet there so paying never forces a SIWE signature.
+  const onChat = pathname.startsWith('/chat')
+  const disconnected = !isConnected && !sessionAddress
+  const signInPill =
+    'inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-white/5 border border-white/15 text-zinc-200 text-xs font-semibold hover:bg-white/10 hover:border-white/25 transition-colors'
+
+  // The auth/connect cluster, shared by the desktop bar + mobile drawer.
+  // Mount-gated by the callers (so SSR stays hydration-safe).
+  // - chat: plain ConnectWallet (+ email option / sign-in chip when relevant).
+  // - disconnected elsewhere: ONE "Sign in". With CDP it opens the unified modal
+  //   (email step up front + "Connect a wallet"); without CDP it's the direct
+  //   wallet connect+sign.
+  // - connected/authed: the Sign-in/Signed-in chip + the account pill.
+  const authCluster = onChat ? (
+    <>
+      {disconnected && showCreateAccount && (
+        <CreateAccountButton className={createAccountPill} label="Create account" />
+      )}
+      <ConnectWallet />
+      {isConnected && <AuthButton />}
+    </>
+  ) : disconnected ? (
+    cdpEnabled ? (
+      <CreateAccountButton
+        className={signInPill}
+        label={
+          <>
+            <LogIn className="w-3.5 h-3.5" strokeWidth={2.5} /> Sign in
+          </>
+        }
+        redirectTo="/dashboard"
+      />
+    ) : (
+      <AuthButton />
+    )
+  ) : (
+    <>
+      <AuthButton />
+      {isConnected && <ConnectWallet />}
+    </>
+  )
 
   const dashboardCta = showDashboardCta ? (
     <Link href="/dashboard" className="nav__dash">
@@ -122,9 +153,7 @@ export default function Navigation() {
             </span>
           )}
           {!inDashboard && dashboardCta}
-          {showCreateAccount && <CreateAccountButton className={createAccountPill} label="Sign in" />}
-          <AuthButton />
-          <ConnectWallet />
+          {mounted && authCluster}
           {!inDashboard && (
             <button
               className="nav__burger"
@@ -151,9 +180,7 @@ export default function Navigation() {
               <nav className="drawer__tabs">{tabs}</nav>
               <div className="drawer__foot">
                 {dashboardCta}
-                {showCreateAccount && <CreateAccountButton className={createAccountPill} label="Sign in" />}
-                <AuthButton />
-                <ConnectWallet />
+                {authCluster}
               </div>
             </div>
           </div>,

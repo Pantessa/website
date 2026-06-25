@@ -3,8 +3,8 @@
 import { useRef } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { useConnectModal } from '@rainbow-me/rainbowkit'
 import { useAccount } from 'wagmi'
+import { useSession } from '@/lib/session'
 import type { McpServer } from '@/lib/store'
 import PaymentWeb from '@/components/PaymentWeb'
 
@@ -15,8 +15,8 @@ import PaymentWeb from '@/components/PaymentWeb'
  * driven by the same simulation the network animates. */
 export default function Hero({ catalog }: { catalog: McpServer[] }) {
   const router = useRouter()
-  const { openConnectModal } = useConnectModal()
   const { isConnected } = useAccount()
+  const { connectAndSignIn } = useSession()
   const proofSpentRef = useRef<HTMLSpanElement>(null)
   const proofBlockedRef = useRef<HTMLSpanElement>(null)
 
@@ -43,7 +43,7 @@ export default function Hero({ catalog }: { catalog: McpServer[] }) {
           <div className="heroweb__ctas">
             <button
               className="btn btn--solid"
-              onClick={() => (isConnected ? router.push('/dashboard') : openConnectModal?.())}
+              onClick={() => (isConnected ? router.push('/dashboard') : connectAndSignIn('/dashboard'))}
             >
               Try Now
             </button>

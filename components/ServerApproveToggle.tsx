@@ -7,8 +7,6 @@
 // (GET/PUT /api/approvals); a PUT mints the default grant on first use.
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { useAccount } from 'wagmi'
-import { useConnectModal } from '@rainbow-me/rainbowkit'
 import { useSession } from '@/lib/session'
 import { cn } from '@/lib/utils'
 import type { Approval } from '@/lib/dashboard-ui'
@@ -20,9 +18,7 @@ export default function ServerApproveToggle({
   serverId: string
   serverName: string
 }) {
-  const { isConnected } = useAccount()
-  const { openConnectModal } = useConnectModal()
-  const { address, signIn, signingIn } = useSession()
+  const { address, connectAndSignIn, signingIn } = useSession()
   const [approved, setApproved] = useState<boolean | null>(null)
   const [busy, setBusy] = useState(false)
   const [flash, setFlash] = useState(false)
@@ -76,12 +72,11 @@ export default function ServerApproveToggle({
 
   if (!mounted) return null
 
-  // Not connected / not signed in → a prompt that enables approving.
-  const cta = !isConnected
-    ? { label: 'Connect wallet to approve', onClick: () => openConnectModal?.() }
-    : !address
-      ? { label: signingIn ? 'Signing in…' : 'Sign in to approve', onClick: () => void signIn() }
-      : null
+  // Not signed in → one button that connects (if needed) AND signs, then leaves
+  // the user right here to flip the toggle (no redirect).
+  const cta = !address
+    ? { label: signingIn ? 'Signing in…' : 'Sign in to approve', onClick: () => connectAndSignIn() }
+    : null
 
   const sub =
     approved === null && address

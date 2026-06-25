@@ -7,9 +7,7 @@
 
 import { usePathname } from 'next/navigation'
 import { useEffect, useState } from 'react'
-import { useAccount } from 'wagmi'
-import { useConnectModal } from '@rainbow-me/rainbowkit'
-import { ShieldCheck, Wallet } from 'lucide-react'
+import { ShieldCheck } from 'lucide-react'
 import { useSession } from '@/lib/session'
 import DashboardSidebar from '@/components/DashboardSidebar'
 import OrgSwitcher from '@/components/OrgSwitcher'
@@ -17,35 +15,25 @@ import { short } from '@/lib/dashboard-ui'
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
-  const { isConnected } = useAccount()
-  const { openConnectModal } = useConnectModal()
-  const { address, needsSignIn, signIn, signingIn, status } = useSession()
+  const { address, connectAndSignIn, signingIn, status } = useSession()
 
   // Wallet state is client-only — render nothing until mounted (hydration-safe).
   const [mounted, setMounted] = useState(false)
   useEffect(() => setMounted(true), [])
   if (!mounted) return null
 
-  if (!isConnected) {
-    return (
-      <Gate
-        icon={<Wallet className="w-7 h-7" />}
-        title="Connect your wallet"
-        body="The dashboard shows your agent expense account — spend, approvals, and receipts — scoped to your wallet."
-        cta="Connect Wallet"
-        onClick={() => openConnectModal?.()}
-      />
-    )
-  }
+  // One combined gate: connect (if needed) + sign in one step. No redirect —
+  // the user is already on /dashboard, so a successful sign just re-renders
+  // this layout with the authed content.
   if (!address) {
     return (
       <Gate
         icon={<ShieldCheck className="w-7 h-7" />}
         title="Sign in to your expense account"
-        body="A quick wallet signature proves ownership — then your spend data and approvals load."
+        body="Connect your wallet and a quick signature proves ownership — then your spend data and approvals load."
         cta={signingIn ? 'Signing in…' : 'Sign in with Ethereum'}
-        onClick={() => signIn()}
-        busy={signingIn || (status === 'loading' && !needsSignIn)}
+        onClick={() => connectAndSignIn()}
+        busy={signingIn || status === 'loading'}
       />
     )
   }
