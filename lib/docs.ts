@@ -13,6 +13,8 @@ export interface DocsPage {
   /** ≤160 chars — meta description. */
   description: string
   ready: boolean
+  /** 'legal' pages render in their own sidebar group, out of the dev-doc cards. */
+  group?: 'guide' | 'legal'
 }
 
 export const DOCS_PAGES: DocsPage[] = [
@@ -146,9 +148,31 @@ export const DOCS_PAGES: DocsPage[] = [
       'Add one async, non-blocking call to your MCP and every paid request shows up on your Yeetful dashboard: total earned, last 30 days, calls served, and paying agents.',
     ready: true,
   },
+  {
+    slug: 'terms',
+    title: 'Terms of Service',
+    seoTitle: 'Terms of Service — Yeetful',
+    description:
+      'The terms for using Yeetful: a non-custodial control plane for agent payments. Acceptable use, crypto risk, third-party services, disclaimers, and liability.',
+    ready: true,
+    group: 'legal',
+  },
+  {
+    slug: 'privacy',
+    title: 'Privacy Policy',
+    seoTitle: 'Privacy Policy — Yeetful',
+    description:
+      'What Yeetful collects and why: wallet addresses, email/social sign-in via Coinbase CDP, usage receipts, and on-chain data. How it is used, shared, and kept.',
+    ready: true,
+    group: 'legal',
+  },
 ]
 
 export const readyPages = () => DOCS_PAGES.filter((p) => p.ready)
+/** Dev/guide docs — the cards on the landing + the main sidebar list. */
+export const guidePages = () => readyPages().filter((p) => (p.group ?? 'guide') === 'guide')
+/** Legal pages — their own sidebar group; excluded from the dev-doc cards. */
+export const legalPages = () => readyPages().filter((p) => p.group === 'legal')
 
 export function docsUrl(slug: string): string {
   return slug ? `${SITE}/docs/${slug}` : `${SITE}/docs`

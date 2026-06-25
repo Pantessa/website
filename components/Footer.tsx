@@ -24,6 +24,8 @@ export default function Footer() {
         <div className="footer__links">
           <Link href="/docs">Docs</Link>
           <Link href="/blog">Blog</Link>
+          <Link href="/docs/terms">Terms</Link>
+          <Link href="/docs/privacy">Privacy</Link>
           <a href={FOOTER_LINKS.github} target="_blank" rel="noopener noreferrer">
             GitHub
           </a>
@@ -39,7 +41,7 @@ export default function Footer() {
         </div>
       </div>
       <div className="footer__bottom">
-        <span className="mono">© 2026 YEETFUL</span>
+        <span className="mono">© 2026 YEETFUL INC.</span>
         <span className="mono">BUILT ON THE x402 STANDARD</span>
       </div>
     </footer>
