@@ -2,22 +2,19 @@
 
 import { LogIn, LogOut, Loader2, ShieldCheck } from 'lucide-react'
 import { useRouter } from 'next/navigation'
-import { useAccount } from 'wagmi'
 import { cn } from '@/lib/utils'
 import { useSession } from '@/lib/session'
 
 /**
- * SIWE sign-in affordance, shown to the left of the wallet pill.
- * - wallet not connected → nothing (ConnectWallet shows "Connect Wallet")
- * - connected, no session → "Sign in" button (triggers the SIWE flow)
- * - signed in            → a "Signed in" chip whose click signs out
+ * Combined sign-in affordance (one button, connect → sign):
+ * - signed in → a "Signed in" chip whose click signs out
+ * - otherwise → "Sign in" that connects the wallet (if needed) and runs SIWE in
+ *   one flow. `redirectTo` defaults to /dashboard (the generic nav entry); pass
+ *   a path for in-page gates that should return the user where they were.
  */
-export default function AuthButton() {
+export default function AuthButton({ redirectTo = '/dashboard' }: { redirectTo?: string }) {
   const router = useRouter()
-  const { isConnected } = useAccount()
-  const { address, signingIn, signIn, signOut } = useSession()
-
-  if (!isConnected) return null
+  const { address, signingIn, connectAndSignIn, signOut } = useSession()
 
   if (address) {
     return (
@@ -41,10 +38,10 @@ export default function AuthButton() {
 
   return (
     <button
-      onClick={() => signIn()}
+      onClick={() => connectAndSignIn(redirectTo)}
       disabled={signingIn}
       type="button"
-      title="Sign in with your wallet to save chats"
+      title="Sign in with your wallet — connect and sign in one step"
       className={cn(
         'flex items-center gap-1.5 px-3 py-1.5 rounded-full',
         'bg-white/5 border border-white/15 text-zinc-200',

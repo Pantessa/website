@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
+import { useRouter } from 'next/navigation'
 import { useConnect } from 'wagmi'
 import { CDP_CONNECTOR_ID } from '@coinbase/cdp-wagmi'
 import {
@@ -49,6 +50,7 @@ export default function CreateAccountButton({
 type Step = 'email' | 'otp' | 'connecting'
 
 function CreateAccountModal({ onClose }: { onClose: () => void }) {
+  const router = useRouter()
   const { isInitialized } = useIsInitialized()
   const { signInWithEmail } = useSignInWithEmail()
   const { verifyEmailOTP } = useVerifyEmailOTP()
@@ -123,7 +125,10 @@ function CreateAccountModal({ onClose }: { onClose: () => void }) {
       const connector = connectors.find((c) => c.id === CDP_CONNECTOR_ID)
       if (!connector) throw new Error('Embedded wallet connector unavailable.')
       await connectAsync({ connector })
-      onClose() // Navigation.useAccountEffect routes the fresh connect → /dashboard
+      // Enter the app. (The old Navigation.useAccountEffect that did this on any
+      // connect was removed — post-auth routing now lives with each entry point.)
+      onClose()
+      router.push('/dashboard')
     } catch (err) {
       setError(messageFrom(err, 'That code did not verify. Try again.'))
       setStep('otp')

@@ -8,16 +8,16 @@
 import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { useConnectModal } from '@rainbow-me/rainbowkit'
 import { useAccount } from 'wagmi'
+import { useSession } from '@/lib/session'
 import SwitchboardWeb from '@/components/SwitchboardWeb'
 import CreateAccountButton from '@/components/CreateAccountButton'
 import { cdpEnabled } from '@/lib/cdp-embedded'
 
 export default function SwitchboardHero() {
   const router = useRouter()
-  const { openConnectModal } = useConnectModal()
   const { isConnected } = useAccount()
+  const { connectAndSignIn } = useSession()
   // Wallet state is client-only — mount-gate the CTA swap to stay hydration-safe.
   const [mounted, setMounted] = useState(false)
   useEffect(() => setMounted(true), [])
@@ -50,7 +50,7 @@ export default function SwitchboardHero() {
             )}
             <button
               className={showCreate ? 'btn btn--ghost' : 'btn btn--solid'}
-              onClick={() => (isConnected ? router.push('/dashboard') : openConnectModal?.())}
+              onClick={() => (isConnected ? router.push('/dashboard') : connectAndSignIn('/dashboard'))}
             >
               {isConnected ? 'Open dashboard' : 'Try a route'}
             </button>
