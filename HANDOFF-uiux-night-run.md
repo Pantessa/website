@@ -39,7 +39,16 @@ collides with the sharp-router-night dev server in `website/` (:3000).
 - Verified desktop + mobile (375px): names truncate cleanly, numbers stay
   mono/right-aligned. Terminal-style LIVE ROUTING feed kept mono on purpose.
 
-### ⏳ Batch 2 — Mobile CTAs (next)
+### ✅ Batch 2 — Mobile CTAs (committed)
+- Hero CTAs (`.heroweb__ctas`) now **stack flat & full-width** on phones
+  (≤600px) instead of uneven floated buttons overlapping the network.
+- New `components/MobileCtaBar.tsx` — a **scroll-triggered, flat, full-bleed
+  sticky bar** that rises from the bottom once the hero scrolls past ~60% of
+  the first viewport. State-aware (Create account → Open dashboard / Try a
+  route), mounted on the landing page. Hidden on desktop (`display:none`,
+  shown only ≤640px). Verified: rises on scroll, docks bottom, desktop/tablet
+  unaffected. (The overlapping "N" at bottom-left is just the Next.js dev
+  indicator — absent in production.)
 ### ⏳ Batch 3 — Landing analytics charts
 ### ⏳ Batch 4 — Blog index + post
 ### ⏳ Batch 5 — General polish

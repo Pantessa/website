@@ -267,6 +267,20 @@
   .heroweb__plbl { font-size: 11.5px; letter-spacing: .12em; text-transform: uppercase; color: var(--hfaint); }
   .heroweb__psep { width: 1px; height: 30px; background: var(--hline); }
 
+  /* ── MOBILE STICKY CTA BAR ───────────────────────────
+     A flat, full-bleed bar that rises from the bottom once the hero scrolls
+     away on a phone (components/MobileCtaBar.tsx). Desktop never sees it. */
+  .mcta {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 45; display: none;
+    padding: 11px clamp(16px, 4vw, 22px) calc(11px + env(safe-area-inset-bottom));
+    background: rgba(8, 9, 10, 0.82); backdrop-filter: blur(16px);
+    border-top: 1px solid var(--line);
+    transform: translateY(130%); transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  .mcta.is-show { transform: none; }
+  .mcta .btn { width: 100%; justify-content: center; height: 52px; border-radius: 12px; font-size: 16px; }
+  @media (max-width: 640px) { .mcta { display: flex; } }
+
   /* live runner HUD — bottom-right glass card (hidden ≤1080px) */
   .heroweb__hud {
     position: absolute; right: clamp(20px, 3.4vw, 52px); bottom: clamp(22px, 3.4vw, 46px); z-index: 4;
@@ -1278,6 +1292,11 @@
     .footer__links { align-items: flex-start; }
     .activebar__chips { display: none; }
     .heroweb__h1 { font-size: clamp(46px, 15vw, 72px); }
+    /* Flat, full-width CTAs on a phone — no more uneven floated buttons
+       overlapping the network. Stack them edge to edge. */
+    .heroweb__ctas { flex-direction: column; align-items: stretch; gap: 10px; margin-top: 32px; }
+    .heroweb__ctas > * { width: 100%; }
+    .heroweb__ctas .btn { width: 100%; justify-content: center; }
 
     /* Service detail: stack the header so the badge row gets full width
        (otherwise badges wrap one-per-line beside the tile + outlink). */

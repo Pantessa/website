@@ -6,6 +6,7 @@ import SwitchboardTry from '@/components/SwitchboardTry'
 import SwitchboardProof from '@/components/SwitchboardProof'
 import SwitchboardLive from '@/components/SwitchboardLive'
 import StayUpToDate from '@/components/StayUpToDate'
+import MobileCtaBar from '@/components/MobileCtaBar'
 import Footer from '@/components/Footer'
 
 /** / — the landing page IS Switchboard, the routing engine. Server component so
@@ -102,6 +103,7 @@ export default function HomePage() {
       </main>
 
       <Footer />
+      <MobileCtaBar />
     </>
   )
 }
