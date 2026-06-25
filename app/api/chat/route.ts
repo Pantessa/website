@@ -880,7 +880,7 @@ export function streamAutoRouter(
       // can be persisted to Message.meta + replayed later (B16). No PII (service
       // slugs / intent / public tx hashes only); capped to keep meta small.
       const traceLog: unknown[] = []
-      const TRACE_TYPES = new Set(['status', 'analyze', 'shortlist', 'candidate', 'select', 'note', 'pay', 'receipt', 'tool', 'eip712'])
+      const TRACE_TYPES = new Set(['status', 'analyze', 'shortlist', 'candidate', 'select', 'note', 'pay', 'receipt', 'tool', 'eip712', 'error'])
       const trace = () => traceLog.slice(-60)
       // Persist the trace to the shared DB so it streams to the public Activity
       // page in real time (local dev + prod share one Neon DB). Fire-and-forget;

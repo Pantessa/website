@@ -107,7 +107,7 @@ export default function LiveRoutingFeed() {
   const totalSpent = settledCalls.reduce((s, c) => s + (Number(c.priceUsd) || 0), 0)
 
   return (
-    <section className="mt-10">
+    <section className="mt-10 mb-12">
       <div className="flex items-center gap-2 mb-3">
         <Radio className="w-4 h-4" style={{ color: live ? 'var(--accent)' : 'var(--muted)' }} />
         <h2 className="text-sm font-medium text-white mono uppercase tracking-wide">Live routing</h2>
@@ -129,7 +129,7 @@ export default function LiveRoutingFeed() {
           <div className="flex items-center gap-2 px-3 h-10 border-b border-[var(--line)]">
             <span className="text-[11px] font-medium text-white mono uppercase tracking-wide">Network calls</span>
           </div>
-          <div className="max-h-[420px] overflow-y-auto divide-y divide-[var(--line)]">
+          <div className="h-[420px] overflow-y-auto divide-y divide-[var(--line)]">
             {calls.length === 0 ? (
               <p className="px-3 py-6 text-[12px] text-[color:var(--muted-2)] mono">
                 Waiting for the next paid call…

@@ -298,16 +298,17 @@ export async function payAndFetch(
  * (fund the wallet with USDC), `invalid_exact_evm_signature`.
  */
 export async function failureReason(res: Response): Promise<string> {
+  const cap = (s: string) => (s.length > 400 ? s.slice(0, 400) + "…" : s);
   const settle = decodeSettlement(res);
   if (settle?.errorReason) return `${res.status} — payment ${settle.errorReason}`;
   try {
     const body = (await res.clone().json()) as { error?: string };
-    if (body?.error) return `${res.status} — ${body.error}`;
+    if (body?.error) return cap(`${res.status} — ${body.error}`);
   } catch {
     /* not JSON */
   }
   const text = await res.text().catch(() => "");
-  return `${res.status} ${res.statusText} ${text}`.trim();
+  return cap(`${res.status} ${res.statusText} ${text}`.trim());
 }
 
 /** Decode the settlement header (v2 `PAYMENT-RESPONSE` or v1 `X-PAYMENT-RESPONSE`). */
