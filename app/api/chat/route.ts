@@ -141,6 +141,7 @@ export async function POST(req: NextRequest) {
         Array.isArray(body.listedOnly) ? (body.listedOnly as McpServer[]) : [],
         Array.isArray(body.notes) ? (body.notes as string[]).filter((n) => typeof n === 'string').slice(0, 8) : [],
         sanitizeHistory(body.history),
+        typeof body.turnId === 'string' ? body.turnId : undefined,
       )
     }
 
@@ -547,12 +548,24 @@ async function executeWithSignatures(
   listedOnly: McpServer[],
   notes: string[] = [],
   history: ConversationTurn[] = [],
+  /** The plan phase's turnId — so wallet settlements persist to the live feed
+   *  under the same turn as the plan trace (grouped). Falls back to a fresh id. */
+  turnId: string = newTurnId(),
 ) {
   if (!message.trim()) return NextResponse.json({ error: 'message is required' }, { status: 400 })
 
   const receipts: Receipt[] = []
   const contextBlocks: string[] = []
   const inferenceCall = plan.find((c) => c.role === 'inference')
+
+  // Persist each wallet-mode receipt to the live routing feed (route_trace_lines)
+  // — the burner path already does this via the SSE chokepoint; wallet mode is a
+  // separate request, so do it here. Fire-and-forget; never fails the turn.
+  let traceSeq = 0
+  const pushReceipt = (r: Receipt) => {
+    receipts.push(r)
+    recordTraceLine(turnId, traceSeq++, { type: 'receipt', receipt: r }, 'wallet')
+  }
 
   // Ledger wallet-mode payments too (the user pays the seller directly; we
   // record the receipt under their active grant so the dashboard sees it).
@@ -591,11 +604,11 @@ async function executeWithSignatures(
         : await res.json()
       contextBlocks.push(`### ${c.name}\n${compactForSynthesis(data, 3500)}`)
       const txHash = decodeSettlement(res)?.transaction
-      receipts.push({ name: c.name, endpoint: c.host, priceUsd: c.priceUsd, txHash, ok: true })
+      pushReceipt({ name: c.name, endpoint: c.host, priceUsd: c.priceUsd, txHash, ok: true })
       ledger(c, true, txHash)
     } catch (err) {
       const note = err instanceof Error ? err.message : 'call failed'
-      receipts.push({ name: c.name, endpoint: c.host, priceUsd: c.priceUsd, ok: false, note })
+      pushReceipt({ name: c.name, endpoint: c.host, priceUsd: c.priceUsd, ok: false, note })
       ledger(c, false, undefined, truncate(note, 120))
     }
   }
@@ -623,7 +636,7 @@ async function executeWithSignatures(
   if (!res.ok) throw new Error(await failureReason(res))
   const text = parseInferenceText(execProtocol, res.headers.get('content-type') ?? '', await res.text())
   const infTx = decodeSettlement(res)?.transaction
-  receipts.push({ name: inferenceCall.name, endpoint: inferenceCall.host, priceUsd: inferenceCall.priceUsd, txHash: infTx, ok: true })
+  pushReceipt({ name: inferenceCall.name, endpoint: inferenceCall.host, priceUsd: inferenceCall.priceUsd, txHash: infTx, ok: true })
   ledger(inferenceCall, true, infTx)
 
   const reply = text + infoFooter(listedOnly, notes)
@@ -1113,7 +1126,10 @@ export function streamAutoRouter(
           const payments = wPlan
             .filter((c) => c.prepared)
             .map((c) => ({ id: c.id, name: c.name, host: c.host, priceUsd: c.priceUsd, signing: c.prepared!.signing as SigningRequest }))
-          send({ type: 'plan', plan: wPlan, payments, listedOnly: [], notes: decision.notes })
+          // Carry the turnId so the wallet's execute phase persists its
+          // settlements under THIS turn → they show in the live feed, grouped
+          // with the plan trace.
+          send({ type: 'plan', plan: wPlan, payments, listedOnly: [], notes: decision.notes, turnId })
           recordTurn({ payer: 'your wallet', shortlisted: shortlistedOf(decision), picks: picksOf(decision), intent: intentOf(decision) })
           return finish()
         }
