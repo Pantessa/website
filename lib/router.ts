@@ -178,6 +178,17 @@ export function shortlistEndpoints(message: string, endpoints: PlannableEndpoint
     // Reputation bonus: a higher-rated MCP (proven settle rate + volume) ranks
     // above an equivalent un-rated one, so the engine converges on the best.
     s += (ep.reliability?.rating ?? 0) * 1.5
+    // Reputation penalty: a host with a real, recent FAILURE record sinks — a
+    // dead gateway (e.g. all-404s) drops out of the shortlist instead of being
+    // picked again. Gated on enough evidence (≥3 attempts) so a transient blip
+    // doesn't bury a good service; graded by failure rate (a 100%-fail host
+    // loses ~5, enough to fall below typical keyword overlap).
+    const rel = ep.reliability
+    if (rel) {
+      const attempts = (rel.settled ?? 0) + (rel.failed ?? 0)
+      const failRate = 1 - (rel.successRate ?? 1)
+      if (attempts >= 3 && failRate > 0.5) s -= failRate * 5
+    }
     return s
   }
   const ranked = endpoints

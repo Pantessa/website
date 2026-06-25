@@ -1168,6 +1168,14 @@ export function streamAutoRouter(
             const r: Receipt = { name: pick.serverName, endpoint: host, priceUsd: pick.priceUsd, ok: false, note }
             receipts.push(r)
             send({ type: 'receipt', receipt: r })
+            // Record the FAILED attempt (no spend) so reputation + failure-aware
+            // routing learn from broken/dead endpoints — without this, a dead
+            // gateway is invisible to the engine and gets picked again forever.
+            // `error:`-prefixed so the public activity "blocked by policy" stat
+            // (policy refusals) doesn't count call failures.
+            if (grant) {
+              await recordLedger({ grantId: grant.id, orgId: grant.orgId ?? undefined, apiKeyId, host, serviceName: pick.serverName, amountUsd: 0, ok: false, note: `error: ${note}`.slice(0, 200) })
+            }
             return { error: note }
           }
         }
