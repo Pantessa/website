@@ -86,6 +86,12 @@ as-is. (Re-auth recipe for future iterations is the 3-step flow above.)
 All batches live on `uiux/night-run` → **PR #260 (base `autopilot`, NOT main)**.
 Merged into `autopilot` for morning review.
 
-### Remaining ideas (optional next iterations)
-- Servers / docs / leaderboard section-header alignment (app-like surfaces).
+### ✅ Batch 6 — Site-wide H1 alignment (committed)
+- `/servers` (`.srvpage__h1`) and `/docs` splash (`.splash__h1`) hero titles
+  were bold-sans (Archivo) while every other public hero (home, activity, blog,
+  leaderboard) is serif. Moved both to the Newsreader serif. **Every public
+  page hero H1 now reads in the same serif voice** — "fonts aligned", site-wide.
+
+### Remaining ideas (optional, for the user to direct)
 - Nav + footer micro-polish; a hover/focus-state sweep.
+- Dashboard page-title treatment (kept compact sans intentionally for now).
