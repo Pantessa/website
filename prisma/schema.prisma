@@ -370,6 +370,31 @@ model RouteEvent {
   @@map("route_events")
 }
 
+/// One line of a routed turn's live reasoning trace — the public, realtime
+/// stream behind the Activity page's routing terminal (and the chat engine
+/// window). Unlike RouteEvent (one aggregate row per turn), this is the raw
+/// line-by-line trace so a viewer can watch the engine think + pay in real time.
+/// Privacy: SAME posture as /api/activity — engine-derived intent, service
+/// slugs, prices, and public tx hashes only; NEVER a wallet or the raw question.
+/// Written fire-and-forget from the chat SSE chokepoint (lib/route-trace.ts).
+/// Local + prod share one Neon DB, so local test turns stream to prod too.
+model RouteTraceLine {
+  // Autoincrement so the public live feed can page with a simple `?since=<n>`
+  // cursor (createdAt has ties within a turn).
+  n         Int      @id @default(autoincrement())
+  turnId    String   @map("turn_id") // groups the lines of one routed turn
+  seq       Int      @default(0) // order within the turn
+  type      String // status|analyze|shortlist|candidate|select|pay|receipt|tool|eip712|note|error
+  event     Json // the RouterTraceEvent payload (matches lib/store RouterTraceEvent)
+  txHash    String?  @map("tx_hash") // settled tx (receipt events) → BaseScan link
+  payer     String? // 'burner' | 'agent' | 'wallet' | null
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([turnId])
+  @@index([createdAt])
+  @@map("route_trace_lines")
+}
+
 /// A bearer credential for headless agents (the `yeetful` SDK, scripts, CI).
 /// The plaintext secret (`yf_…`) is shown ONCE at mint and only its sha256 is
 /// stored; presenting it as `Authorization: Bearer yf_…` authenticates the

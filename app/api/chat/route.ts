@@ -39,6 +39,7 @@ import { routeMessage, selectInferenceProvider, compactForSynthesis, type TraceS
 import { buildSignableArtifact } from '@/lib/transaction-layer'
 import { isCacheable, routeCacheKey, getCached, setCached } from '@/lib/route-cache'
 import { recordRouteEvent, routeSavings } from '@/lib/route-telemetry'
+import { newTurnId, recordTraceLine } from '@/lib/route-trace'
 import type { RouterDecision } from '@/lib/router'
 
 // x402 signing + paid fetch need the Node runtime.
@@ -881,9 +882,17 @@ export function streamAutoRouter(
       const traceLog: unknown[] = []
       const TRACE_TYPES = new Set(['status', 'analyze', 'shortlist', 'candidate', 'select', 'note', 'pay', 'receipt', 'tool', 'eip712'])
       const trace = () => traceLog.slice(-60)
+      // Persist the trace to the shared DB so it streams to the public Activity
+      // page in real time (local dev + prod share one Neon DB). Fire-and-forget;
+      // privacy-filtered in lib/route-trace. Payer: an agent key → 'agent', else
+      // the house burner wallet.
+      const turnId = newTurnId()
+      const tracePayer = apiKeyId ? 'agent' : 'burner'
+      let traceSeq = 0
       const send = (event: unknown) => {
         if (event && typeof event === 'object' && TRACE_TYPES.has((event as { type?: string }).type ?? '') && traceLog.length < 300) {
           traceLog.push(event)
+          recordTraceLine(turnId, traceSeq++, event, tracePayer)
         }
         controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`))
       }

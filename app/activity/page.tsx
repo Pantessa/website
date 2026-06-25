@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import Footer from '@/components/Footer'
 import ActivityBoard from '@/components/ActivityBoard'
+import LiveRoutingFeed from '@/components/LiveRoutingFeed'
 
 // Public network activity — the spend ledger as proof-of-life. Server shell
 // owns the SEO surface; the board polls /api/activity (anonymized by the API,
@@ -32,6 +33,7 @@ export default function ActivityPage() {
             blocked, and the on-chain receipt for each. This is the expense account doing its job.
           </p>
         </header>
+        <LiveRoutingFeed />
         <ActivityBoard />
       </main>
       <Footer />
