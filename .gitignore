@@ -45,3 +45,7 @@ design/*.zip
 
 # Brand kit stays local (logo sources, app icons) — see CLAUDE.md
 /design/yeetful_brand_install/
+
+# self-heal workflow scratch files
+incident.json
+FIX_NOTES.md
