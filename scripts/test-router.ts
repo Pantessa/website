@@ -121,5 +121,17 @@ check('eip712: non-uint fields untouched', coerced.message.from === vtd.message.
 const permit = coerceForSigning({ domain: { name: 'X' }, primaryType: 'Permit', types: { Permit: [{ name: 'value', type: 'uint256' }, { name: 'owner', type: 'address' }] }, message: { value: '42', owner: '0x' + '2'.repeat(40) } })
 check('eip712: generic coercion on a non-Vote schema', permit.message.value === BigInt(42) && typeof permit.message.owner === 'string')
 
+// Snapshot choice types: basic (uint32) · approval/ranked (uint32[]) · weighted (string JSON).
+const choiceType = (td: ReturnType<typeof buildVoteTypedData>) => td.types.Vote.find((f) => f.name === 'choice')!.type
+const basicTd = buildVoteTypedData({ from: '0x' + '1'.repeat(40), space: 's.eth', proposalId: '0x' + 'a'.repeat(64), choice: 1 })
+check('vote-type: basic → uint32', choiceType(basicTd) === 'uint32' && basicTd.message.choice === 1)
+const approvalTd = buildVoteTypedData({ from: '0x' + '1'.repeat(40), space: 's.eth', proposalId: '0x' + 'a'.repeat(64), choice: [1, 3] })
+check('vote-type: approval/ranked → uint32[]', choiceType(approvalTd) === 'uint32[]' && Array.isArray(approvalTd.message.choice))
+const weightedTd = buildVoteTypedData({ from: '0x' + '1'.repeat(40), space: 's.eth', proposalId: '0x' + 'a'.repeat(64), choice: { '1': 2, '2': 1 } })
+check('vote-type: weighted/quadratic → string JSON', choiceType(weightedTd) === 'string' && weightedTd.message.choice === '{"1":2,"2":1}')
+// The signer coerces uint32[] elements to BigInt; the weighted string stays a string.
+check('vote-type: uint32[] coerces to BigInt[]', Array.isArray(coerceForSigning(approvalTd).message.choice) && (coerceForSigning(approvalTd).message.choice as bigint[])[0] === BigInt(1))
+check('vote-type: weighted string not coerced', typeof coerceForSigning(weightedTd).message.choice === 'string')
+
 console.log(`\n${pass} passed, ${fail} failed\n`)
 process.exit(fail ? 1 : 0)

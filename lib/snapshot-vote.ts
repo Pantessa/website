@@ -43,16 +43,31 @@ export interface VoteProposal {
   suggestedChoice?: number
 }
 
+/** A Snapshot vote choice across all proposal types:
+ *  - single-choice / basic → a 1-based index (number)
+ *  - approval / ranked-choice → an array of 1-based indices (number[])
+ *  - weighted / quadratic → a { "1": weight, "2": weight } map (weights object)
+ *  The EIP-712 `choice` field type follows: uint32 · uint32[] · string(JSON). */
+export type VoteChoice = number | number[] | Record<string, number>
+
+/** The EIP-712 type + the message value for a choice, per Snapshot's encoding. */
+function encodeChoice(choice: VoteChoice): { type: string; value: number | number[] | string } {
+  if (Array.isArray(choice)) return { type: 'uint32[]', value: choice } // approval / ranked
+  if (typeof choice === 'object') return { type: 'string', value: JSON.stringify(choice) } // weighted / quadratic
+  return { type: 'uint32', value: choice } // single-choice / basic
+}
+
 /**
- * Build the canonical Snapshot Vote EIP-712 typed data for a single-choice /
- * basic proposal. Pure + client/server-shared so the SERVER agent-signer and the
- * CLIENT wallet buttons produce the IDENTICAL payload. `choice` is 1-based; the
- * timestamp is stamped at build time (Snapshot rejects stale votes — build right
- * before signing). Proven against the live sequencer.
+ * Build the canonical Snapshot Vote EIP-712 typed data for ANY proposal type.
+ * Pure + client/server-shared so the SERVER agent-signer and the CLIENT wallet
+ * buttons produce the IDENTICAL payload. `choice` is 1-based (see VoteChoice);
+ * the timestamp is stamped at build time (Snapshot rejects stale votes — build
+ * right before signing). Proven against the live sequencer.
  */
 export function buildVoteTypedData(opts: {
-  from: string; space: string; proposalId: string; choice: number | number[]; reason?: string
+  from: string; space: string; proposalId: string; choice: VoteChoice; reason?: string
 }): VoteTypedData {
+  const choice = encodeChoice(opts.choice)
   return {
     domain: { name: 'snapshot', version: '0.1.4' },
     types: {
@@ -61,7 +76,7 @@ export function buildVoteTypedData(opts: {
         { name: 'space', type: 'string' },
         { name: 'timestamp', type: 'uint64' },
         { name: 'proposal', type: 'bytes32' },
-        { name: 'choice', type: Array.isArray(opts.choice) ? 'uint32[]' : 'uint32' },
+        { name: 'choice', type: choice.type },
         { name: 'reason', type: 'string' },
         { name: 'app', type: 'string' },
         { name: 'metadata', type: 'string' },
@@ -73,7 +88,7 @@ export function buildVoteTypedData(opts: {
       space: opts.space,
       timestamp: Math.floor(Date.now() / 1000),
       proposal: opts.proposalId,
-      choice: opts.choice,
+      choice: choice.value,
       reason: opts.reason ?? '',
       app: 'yeetful',
       metadata: '{}',
