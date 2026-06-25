@@ -14,6 +14,8 @@ import VoteCandidates from '@/components/VoteCandidates'
 import PaymentConfirm from '@/components/PaymentConfirm'
 import { voteRequestOf, voteCandidatesOf, voteProposalOf } from '@/lib/snapshot-vote'
 import { useYeetfulStore, type RouterTraceEvent } from '@/lib/store'
+import { EXAMPLE_PROMPTS } from '@/lib/examples'
+import SampleCallDemo from '@/components/SampleCallDemo'
 import { useSpendPolicy } from '@/components/SpendPolicyControls'
 import BrandIcon from '@/components/BrandIcon'
 import ShareButton from '@/components/ShareButton'
@@ -122,9 +124,51 @@ export default function ChatInterface() {
   const currentChat = chats.find((c) => c.id === currentChatId)
   const activeServers = servers.filter((s) => activeServerIds.includes(s.id))
 
+  // "What can I do?" example: prefill the input and toggle the mapped agent on
+  // (when it's in the live catalog). We prefill rather than auto-send so the
+  // user reviews before paying for the call.
+  const pickExample = (prompt: string, slug?: string) => {
+    setInput(prompt)
+    if (slug) {
+      const srv = servers.find((s) => s.slug === slug)
+      if (srv && !activeServerIds.includes(srv.id)) {
+        const next = [...activeServerIds, srv.id]
+        setActiveServerIds(next)
+        if (currentChatId) updateChatServers(currentChatId, next)
+      }
+    }
+    textareaRef.current?.focus()
+  }
+
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [currentChat?.messages])
+
+  // Deep-link prefill: /chat?try=<slug> (toggle that agent + prefill its example
+  // ask) or /chat?q=<text> (just prefill). Fires once the catalog has loaded,
+  // then cleans the URL so a refresh doesn't re-trigger.
+  const deepLinkRef = useRef(false)
+  useEffect(() => {
+    if (deepLinkRef.current) return
+    const params = new URLSearchParams(window.location.search)
+    const trySlug = params.get('try')
+    const q = params.get('q')
+    if (!trySlug && !q) {
+      deepLinkRef.current = true
+      return
+    }
+    if (trySlug && servers.length === 0) return // wait for the catalog
+    deepLinkRef.current = true
+    if (trySlug) {
+      const ex = EXAMPLE_PROMPTS.find((e) => e.slug === trySlug)
+      const srv = servers.find((s) => s.slug === trySlug)
+      pickExample(q ?? ex?.prompt ?? `Try ${srv?.name ?? 'this agent'}: `, trySlug)
+    } else if (q) {
+      setInput(q)
+      textareaRef.current?.focus()
+    }
+    window.history.replaceState(null, '', '/chat')
+  }, [servers]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleSend = async (textOverride?: string) => {
     // textOverride lets UI affordances (e.g. a vote-candidate chip) submit a
@@ -521,7 +565,7 @@ export default function ChatInterface() {
       {/* Messages area */}
       <div className="flex-1 overflow-y-auto px-4 py-6 space-y-4">
         {!currentChat || currentChat.messages.length === 0 ? (
-          <EmptyState activeCount={activeServers.length} autoRouter={autoRouter} />
+          <EmptyState activeCount={activeServers.length} autoRouter={autoRouter} onPick={pickExample} />
         ) : (
           <>
             <AnimatePresence initial={false}>
@@ -690,7 +734,41 @@ export default function ChatInterface() {
   )
 }
 
-function EmptyState({ activeCount, autoRouter }: { activeCount: number; autoRouter: boolean }) {
+function ExampleGallery({ onPick }: { onPick: (prompt: string, slug?: string) => void }) {
+  return (
+    <div className="mt-7 w-full max-w-md">
+      <p className="mono text-[11px] uppercase tracking-wider text-[color:var(--muted-2)] mb-2">
+        Try one
+      </p>
+      <div className="flex flex-wrap justify-center gap-2">
+        {EXAMPLE_PROMPTS.map((ex) => (
+          <button
+            key={ex.label}
+            type="button"
+            onClick={() => onPick(ex.prompt, ex.slug)}
+            title={ex.prompt}
+            className="text-xs px-3 py-1.5 rounded-full border border-[var(--line)] text-[color:var(--muted)] hover:text-white hover:border-[var(--line-2)] hover:bg-white/5 transition-colors"
+          >
+            {ex.label}
+          </button>
+        ))}
+      </div>
+      <div className="flex justify-center">
+        <SampleCallDemo />
+      </div>
+    </div>
+  )
+}
+
+function EmptyState({
+  activeCount,
+  autoRouter,
+  onPick,
+}: {
+  activeCount: number
+  autoRouter: boolean
+  onPick: (prompt: string, slug?: string) => void
+}) {
   if (autoRouter) {
     return (
       <div className="flex flex-col items-center justify-center h-full text-center py-20">
@@ -701,6 +779,7 @@ function EmptyState({ activeCount, autoRouter }: { activeCount: number; autoRout
         <p className="text-[color:var(--muted)] text-sm max-w-xs">
           Just ask — Yeetful picks the best MCP and endpoint for each message, pays per call, and shows its work in the engine window.
         </p>
+        <ExampleGallery onPick={onPick} />
       </div>
     )
   }
@@ -726,6 +805,7 @@ function EmptyState({ activeCount, autoRouter }: { activeCount: number; autoRout
           </p>
         </>
       )}
+      <ExampleGallery onPick={onPick} />
     </div>
   )
 }

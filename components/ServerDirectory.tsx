@@ -18,6 +18,7 @@ export default function ServerDirectory({ initialCategory = ALL }: { initialCate
   const { servers, setServers, activeServerIds } = useYeetfulStore()
   const [search, setSearch] = useState('')
   const [cat, setCat] = useState(initialCategory)
+  const [onlyCallable, setOnlyCallable] = useState(false)
 
   useEffect(() => {
     fetch('/api/servers')
@@ -37,8 +38,11 @@ export default function ServerDirectory({ initialCategory = ALL }: { initialCate
       s.description.toLowerCase().includes(q) ||
       s.category.toLowerCase().includes(q)
     const mC = cat === ALL || s.category === cat
-    return mS && mC
+    const mCall = !onlyCallable || s.callable || s.autoCallable
+    return mS && mC && mCall
   })
+
+  const callableCount = displayServers.filter((s) => s.callable || s.autoCallable).length
 
   return (
     <div className="dir" id="directory">
@@ -70,6 +74,16 @@ export default function ServerDirectory({ initialCategory = ALL }: { initialCate
           />
         </div>
         <div className="pills">
+          {/* "Callable now" — surface the agents that work the moment you select
+              them (wired or planner-auto-callable), so newcomers can try one. */}
+          <button
+            className={`pill ${onlyCallable ? 'is-on' : ''}`}
+            onClick={() => setOnlyCallable((v) => !v)}
+            title="Show only agents you can call right now"
+          >
+            Callable now
+            <span className="pill__n mono">{callableCount}</span>
+          </button>
           {cats.map((c) => (
             <button key={c} className={`pill ${cat === c ? 'is-on' : ''}`} onClick={() => setCat(c)}>
               {c}
