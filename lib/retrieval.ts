@@ -55,7 +55,23 @@ export async function hybridShortlist(
   vectorIds.forEach((id, i) => fused.set(id, (fused.get(id) ?? 0) + 1 / (RRF_K + i)))
 
   const byId = new Map(endpoints.map((e) => [e.id, e]))
+
+  // R4 (mega-service crowding, rank#1 lever): a 357-endpoint service gets dozens
+  // of shots at landing one endpoint high in BOTH lists, so it can edge out a
+  // FOCUSED service that's the genuinely-right answer. Apply a GENTLE tiebreaker
+  // down-weight by the service's breadth in this turn's candidate pool — a small
+  // coefficient (≈1.37× swing across the 1→12 cap) so it only breaks near-ties
+  // and never overrides a strong relevance signal (an earlier 3× swing let count
+  // dominate relevance and regressed the eval).
+  const serviceCount = new Map<string, number>()
+  for (const e of endpoints) serviceCount.set(e.serverSlug, (serviceCount.get(e.serverSlug) ?? 0) + 1)
+  const weightFor = (slug: string) => 1 / (1 + 0.15 * Math.log(serviceCount.get(slug) ?? 1))
+
   const ranked = [...fused.entries()]
+    .map(([id, s]): [string, number] => {
+      const ep = byId.get(id)
+      return [id, ep ? s * weightFor(ep.serverSlug) : s]
+    })
     .sort((a, b) => b[1] - a[1])
     .map(([id]) => byId.get(id))
     .filter((e): e is PlannableEndpoint => !!e && e.category !== 'Inference')
