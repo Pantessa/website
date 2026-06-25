@@ -8,11 +8,21 @@ import { CDP_CONNECTOR_ID } from '@coinbase/cdp-wagmi'
 import {
   useSignInWithEmail,
   useVerifyEmailOTP,
+  useSignInWithOAuth,
   useIsInitialized,
 } from '@coinbase/cdp-hooks'
 import { Loader2, Mail, ArrowLeft, X, Wallet } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useSession } from '@/lib/session'
+import { OAUTH_INTENT_KEY } from '@/components/CdpOAuthReturn'
+
+// Social providers via CDP Embedded Wallets. Enable each + set its OAuth client
+// id/secret and redirect URIs in the CDP Portal; the app needs only the project
+// id (NEXT_PUBLIC_CDP_PROJECT_ID). 'x' is Twitter/X.
+const OAUTH_PROVIDERS = [
+  { id: 'google', label: 'Continue with Google' },
+  { id: 'x', label: 'Continue with X' },
+] as const
 
 /**
  * "Create an account" — the dead-simple, no-extension onboarding path.
@@ -59,7 +69,19 @@ function CreateAccountModal({ onClose, redirectTo }: { onClose: () => void; redi
   const { isInitialized } = useIsInitialized()
   const { signInWithEmail } = useSignInWithEmail()
   const { verifyEmailOTP } = useVerifyEmailOTP()
+  const { signInWithOAuth } = useSignInWithOAuth()
   const { connectAsync, connectors } = useConnect()
+
+  // Social sign-in is a full-page redirect to the provider. Persist the intent
+  // so CdpOAuthReturn can connect wagmi + route once the browser comes back.
+  function startOAuth(provider: 'google' | 'x') {
+    try {
+      sessionStorage.setItem(OAUTH_INTENT_KEY, JSON.stringify({ redirectTo }))
+    } catch {
+      /* storage blocked — the return handler just falls back to /dashboard */
+    }
+    void signInWithOAuth(provider)
+  }
 
   const [mounted, setMounted] = useState(false)
   const [step, setStep] = useState<Step>('email')
@@ -157,9 +179,30 @@ function CreateAccountModal({ onClose, redirectTo }: { onClose: () => void; redi
             <div className="ca__icon"><Mail width={20} height={20} /></div>
             <h2 className="ca__title">Sign in to Yeetful</h2>
             <p className="ca__sub">
-              Enter your email for a one-time code — new here, we create your secure non-custodial
-              wallet; returning, we sign you back in. Already have a wallet? Connect it below.
+              Continue with Google or X — or use email. New here, we create your secure
+              non-custodial wallet; returning, we sign you back in. Already have a wallet? Connect it
+              below.
             </p>
+
+            {/* Social sign-in (CDP) — each redirects to the provider. */}
+            <div className="ca__providers">
+              {OAUTH_PROVIDERS.map((p) => (
+                <button
+                  key={p.id}
+                  type="button"
+                  className="ca__oauth"
+                  onClick={() => startOAuth(p.id)}
+                  disabled={!isInitialized}
+                >
+                  {p.label}
+                </button>
+              ))}
+            </div>
+
+            <div className="ca__or" aria-hidden="true">
+              <span />or<span />
+            </div>
+
             <label className="ca__label" htmlFor="ca-email">Email</label>
             <input
               ref={inputRef}
