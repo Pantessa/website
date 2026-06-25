@@ -302,8 +302,15 @@ export async function failureReason(res: Response): Promise<string> {
   const settle = decodeSettlement(res);
   if (settle?.errorReason) return `${res.status} — payment ${settle.errorReason}`;
   try {
-    const body = (await res.clone().json()) as { error?: string };
-    if (body?.error) return cap(`${res.status} — ${body.error}`);
+    const body = (await res.clone().json()) as { error?: unknown; message?: unknown; detail?: unknown; errors?: unknown };
+    // Gateways disagree on the error field; some make it an OBJECT or array
+    // (e.g. JSON:API `errors: [{title, detail}]`) — stringify so we never
+    // surface a useless "[object Object]".
+    const raw = body?.error ?? body?.message ?? body?.detail ?? body?.errors;
+    if (raw !== undefined && raw !== null) {
+      const msg = typeof raw === "string" ? raw : JSON.stringify(raw);
+      return cap(`${res.status} — ${msg}`);
+    }
   } catch {
     /* not JSON */
   }

@@ -411,16 +411,24 @@ export function buildSmartRequest(
     }
   }
 
-  // Path params: replace :name and {name} tokens.
+  // Path params: substitute :name / {name} tokens. Declared path params first,
+  // then ANY provided param — agentic.market frequently bakes a {address}/:id
+  // token into the URL WITHOUT declaring it as a path param (parameters: null),
+  // so without this the token is left in the URL and we pay for a guaranteed 4xx.
   let url = ep.url
-  for (const p of byGroup.path) {
-    const v = params[p.name]
+  const consumed = new Set<string>()
+  for (const [k, v] of Object.entries(params)) {
     if (v === undefined) continue
-    url = url.replace(`:${p.name}`, encodeURIComponent(String(v))).replace(`{${p.name}}`, encodeURIComponent(String(v)))
+    const before = url
+    url = url.split(`{${k}}`).join(encodeURIComponent(String(v))).split(`:${k}`).join(encodeURIComponent(String(v)))
+    if (url !== before) consumed.add(k)
+  }
+  // Refuse on ANY unresolved token, checked on the RAW template BEFORE new URL()
+  // (which percent-encodes "{" → "%7B" and would hide it from a pathname test).
+  if (/\{[^}]+\}/.test(url) || /\/:[A-Za-z_]/.test(url)) {
+    return { error: 'unresolved path parameter' }
   }
   const u = new URL(url)
-  // Any unresolved :token or {token} left in the path → guaranteed 404. Skip.
-  if (/[:{]/.test(u.pathname)) return { error: 'unresolved path parameter' }
 
   const pathNames = new Set(byGroup.path.map((p) => p.name))
   const queryNames = new Set(byGroup.query.map((p) => p.name))
@@ -446,7 +454,7 @@ export function buildSmartRequest(
   // schema-poor endpoints become usable instead of dead-ends. Still guarded by
   // the caller's GET/POST + price-cap + grant gates.
   for (const [k, v] of Object.entries(params)) {
-    if (pathNames.has(k) || queryNames.has(k) || bodyNames.has(k)) continue
+    if (consumed.has(k) || pathNames.has(k) || queryNames.has(k) || bodyNames.has(k)) continue
     if (ep.method === 'POST') bodyObj[k] = v
     else u.searchParams.set(k, String(v))
   }
