@@ -1,0 +1,45 @@
+# UI/UX elegance pass — night run (2026-06-25)
+
+Autonomous overnight run on branch **`uiux/night-run`** (worktree
+`website-uiux/`, based off `origin/autopilot`). Goal: take the site "up a
+note" — more elegant, prettier, better flow — per Nate's brief. **Nothing
+merges to `main`.** Work accumulates on `uiux/night-run` and is folded into the
+local/remote **`autopilot`** branch for morning review.
+
+Preview: dev server runs from this worktree via the `uiux` launch config
+(`/Users/nategeier/yeetful/.claude/launch.json`, port 3400) so it never
+collides with the sharp-router-night dev server in `website/` (:3000).
+
+## Brief (Nate, verbatim intent)
+1. Font alignment — Activity page mixes fonts; **use the big Newsreader serifs
+   for the tables**.
+2. Mobile CTAs are ugly — want **flat, full-width buttons + a scroll-triggered
+   sticky action bar**.
+3. Prettier **blog** index + post layout.
+4. Add **server analytics charts to the landing page** showing we track
+   spending + earning agents (data from /api/activity · Yeetful·Claude /
+   Snapshot).
+5. General elegance / flow polish.
+
+## Batches
+
+### ✅ Batch 1 — Typography alignment (committed)
+- Added a font-family **variable system** to `:root` in `app/x402-design.css`
+  (`--font-sans`/`--font-mono`/`--font-serif`/`--font-display`) as the single
+  source of truth; pointed `body`, `.mono`, `.hero__h1` at it.
+- New reusable classes: `.cardh--serif` (the "nice big serif" table/section
+  title, ~23px Newsreader) and `.u-name-serif` (serif row identity for entity
+  names).
+- `CardTitle` (lib/dashboard-ui.tsx) gained an opt-in `serif` prop — the public
+  /activity surface uses the big serif; the dense dashboard keeps compact sans
+  (no regression there).
+- Applied on `components/ActivityBoard.tsx`: serif titles on Network spend,
+  Spend by service, MCP reliability, Staked by token, Latest settled calls; and
+  serif **names** in the reliability + staked tables (numbers/% stay mono).
+- Verified desktop + mobile (375px): names truncate cleanly, numbers stay
+  mono/right-aligned. Terminal-style LIVE ROUTING feed kept mono on purpose.
+
+### ⏳ Batch 2 — Mobile CTAs (next)
+### ⏳ Batch 3 — Landing analytics charts
+### ⏳ Batch 4 — Blog index + post
+### ⏳ Batch 5 — General polish
