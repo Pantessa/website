@@ -13,6 +13,7 @@
     "db:seed": "tsx scripts/ingest-agentic.ts",
     "db:studio": "prisma studio",
     "db:ingest": "tsx scripts/ingest-agentic.ts",
+    "db:audit": "tsx scripts/audit-agentic.ts",
     "db:receivers": "tsx scripts/backfill-receivers.ts",
     "probe:callable": "tsx scripts/probe-callable.ts",
     "db:reset": "prisma db push --force-reset --accept-data-loss",

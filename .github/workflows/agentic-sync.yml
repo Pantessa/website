@@ -1,0 +1,49 @@
+name: agentic.market sync
+
+# Daily check that our Postgres MCP directory stays in sync with agentic.market.
+#   1. db:ingest  — additive upsert; refreshes endpoint surfaces + re-stamps
+#                   last_seen for every branded service seen this run. Never
+#                   prunes (agentic.market's pagination returns a slightly
+#                   different subset each fetch — auto-pruning would delete live
+#                   rows). Re-stamping is what lets the audit age out genuine
+#                   removals across days.
+#   2. db:audit   — read-only diff + callable-endpoint health probes. Exits
+#                   non-zero on real drift (new/stale/price/category/endpoint)
+#                   or an unhealthy callable endpoint, which fails the job and
+#                   triggers GitHub's failure notification.
+#
+# Required repo secret: DATABASE_URL (Neon pooler URL for the `yeetful` db).
+# Run manually any time via the "Run workflow" button (workflow_dispatch).
+
+on:
+  schedule:
+    - cron: '17 8 * * *' # 08:17 UTC daily
+  workflow_dispatch:
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Generate Prisma client
+        run: pnpm exec prisma generate
+
+      - name: Refresh from agentic.market (additive ingest)
+        run: pnpm run db:ingest
+
+      - name: Audit sync state (fails on drift / unhealthy endpoints)
+        run: pnpm run db:audit -- --json
