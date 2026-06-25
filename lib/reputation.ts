@@ -18,10 +18,13 @@
 import prisma from '@/lib/db'
 
 const WINDOW_MS = 30 * 86_400_000
-/** Min settled+failed calls (or ratings) for a service to qualify for the
- *  leaderboard / earn a letter tier — keeps cold-start services off the top. */
-export const MIN_CALLS_FOR_TIER = 5
-export const MIN_RATINGS_FOR_TIER = 3
+/** Min evidence (calls or ratings) for a service to earn a graded tier. Set to
+ *  1 — any real call/rating gets an A–F grade; gaming a few calls into a top
+ *  rank is already prevented by the adoption (log-volume) dimension in the
+ *  blend, not a hard cutoff. Only genuinely untested services (0 calls, 0
+ *  ratings) stay "Unrated". */
+export const MIN_CALLS_FOR_TIER = 1
+export const MIN_RATINGS_FOR_TIER = 1
 
 export interface SubScores {
   reliability: number
@@ -131,13 +134,15 @@ function userRatingScore(sum: number, count: number, M = 3, prior = 3.2): number
   return clamp((avg / 5) * 100)
 }
 
+// A–F report-card scale. "Unrated" only for services with no evidence at all —
+// an untested service isn't failing, so it's not an F.
 function tierFor(overall: number, qualified: boolean): string {
-  if (!qualified) return 'New'
-  if (overall >= 90) return 'A+'
+  if (!qualified) return 'Unrated'
   if (overall >= 80) return 'A'
   if (overall >= 70) return 'B'
-  if (overall >= 58) return 'C'
-  return 'D'
+  if (overall >= 60) return 'C'
+  if (overall >= 50) return 'D'
+  return 'F'
 }
 
 // Weighted blend over the dimensions that have a value (null dims drop out and

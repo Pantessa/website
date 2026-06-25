@@ -5,7 +5,6 @@ import RateService from '@/components/RateService'
 /** Tier → accent color. Exported for the leaderboard. */
 export function tierColor(tier: string): string {
   switch (tier) {
-    case 'A+':
     case 'A':
       return 'var(--accent)'
     case 'B':
@@ -13,8 +12,10 @@ export function tierColor(tier: string): string {
     case 'C':
       return '#f4b740'
     case 'D':
+      return '#f59e0b'
+    case 'F':
       return '#ff6b6b'
-    default:
+    default: // Unrated
       return 'var(--muted)'
   }
 }
@@ -28,7 +29,7 @@ export function TierBadge({ tier, overall }: { tier: string; overall?: number })
       title={overall != null ? `Reputation ${overall}/100` : undefined}
     >
       {tier}
-      {overall != null && tier !== 'New' ? <span className="text-[color:var(--muted-2)]">{overall}</span> : null}
+      {overall != null && tier !== 'Unrated' ? <span className="text-[color:var(--muted-2)]">{overall}</span> : null}
     </span>
   )
 }
@@ -101,7 +102,7 @@ export default function ReputationPanel({
         <span>{Math.round(rep.settleRate * 100)}% settle · {rep.settled}/{rep.calls} calls</span>
         {rep.medianLatencyMs != null ? <span>~{(rep.medianLatencyMs / 1000).toFixed(1)}s median</span> : null}
         {rep.avgPriceUsd != null ? <span>${rep.avgPriceUsd}/call</span> : null}
-        {!rep.qualified ? <span>· needs ≥5 calls or ≥3 ratings to earn a tier</span> : null}
+        {!rep.qualified ? <span>· unrated — no calls or ratings yet</span> : null}
       </div>
 
       {/* Recent pings — the success/fail timeline */}
