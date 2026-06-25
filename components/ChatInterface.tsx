@@ -143,6 +143,32 @@ export default function ChatInterface() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [currentChat?.messages])
 
+  // Deep-link prefill: /chat?try=<slug> (toggle that agent + prefill its example
+  // ask) or /chat?q=<text> (just prefill). Fires once the catalog has loaded,
+  // then cleans the URL so a refresh doesn't re-trigger.
+  const deepLinkRef = useRef(false)
+  useEffect(() => {
+    if (deepLinkRef.current) return
+    const params = new URLSearchParams(window.location.search)
+    const trySlug = params.get('try')
+    const q = params.get('q')
+    if (!trySlug && !q) {
+      deepLinkRef.current = true
+      return
+    }
+    if (trySlug && servers.length === 0) return // wait for the catalog
+    deepLinkRef.current = true
+    if (trySlug) {
+      const ex = EXAMPLE_PROMPTS.find((e) => e.slug === trySlug)
+      const srv = servers.find((s) => s.slug === trySlug)
+      pickExample(q ?? ex?.prompt ?? `Try ${srv?.name ?? 'this agent'}: `, trySlug)
+    } else if (q) {
+      setInput(q)
+      textareaRef.current?.focus()
+    }
+    window.history.replaceState(null, '', '/chat')
+  }, [servers]) // eslint-disable-line react-hooks/exhaustive-deps
+
   const handleSend = async (textOverride?: string) => {
     // textOverride lets UI affordances (e.g. a vote-candidate chip) submit a
     // composed message without going through the input box.

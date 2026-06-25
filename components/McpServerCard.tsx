@@ -86,6 +86,17 @@ export default function McpServerCard({ server }: McpServerCardProps) {
             Details
             <ArrowUpRight width={11} height={11} />
           </Link>
+          {(server.callable || server.autoCallable) && (
+            <Link
+              className="card__more mono"
+              href={`/chat?try=${server.slug}`}
+              onClick={(e) => e.stopPropagation()}
+              title={`Try ${server.name} in chat`}
+            >
+              Try in chat
+              <ArrowUpRight width={11} height={11} />
+            </Link>
+          )}
           {server.websiteUrl && (
             <a
               className="card__ext"
