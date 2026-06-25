@@ -15,6 +15,7 @@ import PaymentConfirm from '@/components/PaymentConfirm'
 import { voteRequestOf, voteCandidatesOf, voteProposalOf } from '@/lib/snapshot-vote'
 import { useYeetfulStore, type RouterTraceEvent } from '@/lib/store'
 import { EXAMPLE_PROMPTS } from '@/lib/examples'
+import SampleCallDemo from '@/components/SampleCallDemo'
 import { useSpendPolicy } from '@/components/SpendPolicyControls'
 import BrandIcon from '@/components/BrandIcon'
 import ShareButton from '@/components/ShareButton'
@@ -751,6 +752,9 @@ function ExampleGallery({ onPick }: { onPick: (prompt: string, slug?: string) =>
             {ex.label}
           </button>
         ))}
+      </div>
+      <div className="flex justify-center">
+        <SampleCallDemo />
       </div>
     </div>
   )
