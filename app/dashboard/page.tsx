@@ -172,6 +172,9 @@ export default function DashboardOverviewPage() {
         </Card>
       )}
 
+      <h2 className="mono text-[11px] uppercase tracking-wider text-[color:var(--muted-2)] mb-2">
+        Spend · your agents
+      </h2>
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
         <Kpi label="Total spent" value={`$${(k?.spentTotalUsd ?? 0).toFixed(4)}`} />
         <Kpi label="Calls paid" value={String(k?.calls ?? 0)} sub={k?.deniedCalls ? `${k.deniedCalls} blocked/failed` : undefined} />
@@ -299,9 +302,19 @@ export default function DashboardOverviewPage() {
           Org Overview shows the org budget instead, not a single wallet. */}
       {!activeOrgId && <FundAccountCard />}
 
-      {/* grid-cols-1 (not the implicit auto track) + min-w-0 so a chart's
-          transient fixed-px width can never inflate the column on phones. */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      {/* The EARN side, lifted up directly under Spend so the two-sided model
+          is visible without scrolling past the spend charts. EarnPanel shows
+          zeroed KPIs + a "Connect your MCPs" CTA until receipts flow; the payee
+          roster self-hides for pure payers. */}
+      <div className="mt-6">
+        <EarnPanel />
+      </div>
+      <PayToAgentsCard />
+
+      {/* Spend detail charts last. grid-cols-1 (not the implicit auto track) +
+          min-w-0 so a chart's transient fixed-px width can never inflate the
+          column on phones. */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-6">
         <Card className="min-w-0">
           <CardTitle>Spend · last 30 days</CardTitle>
           <SpendOverTime daily={stats.daily ?? []} />
@@ -313,18 +326,6 @@ export default function DashboardOverviewPage() {
           <SpendByAgent perAgent={stats.perAgent ?? []} />
         </Card>
       </div>
-
-      {/* The earn side: revenue from MCPs this wallet operates. Self-hides until
-          a claimed server reports its first paid call. */}
-      <div className="mt-6">
-        <EarnPanel />
-      </div>
-
-      {/* The payee roster: MCP servers paid TO this wallet (its payTo agents),
-          with Claim + a "how to track earnings" link. Self-hides for pure
-          payers — only operators with servers see it. Complements EarnPanel,
-          which shows the revenue numbers once receipts flow. */}
-      <PayToAgentsCard />
     </>
   )
 }
