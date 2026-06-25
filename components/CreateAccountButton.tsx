@@ -236,6 +236,12 @@ function CreateAccountModal({ onClose, redirectTo }: { onClose: () => void; redi
             >
               <Wallet width={16} height={16} /> Connect a wallet
             </button>
+
+            <p className="ca__consent">
+              By continuing you agree to our{' '}
+              <a href="/docs/terms" target="_blank" rel="noopener noreferrer">Terms</a> and{' '}
+              <a href="/docs/privacy" target="_blank" rel="noopener noreferrer">Privacy Policy</a>.
+            </p>
           </form>
         )}
 

@@ -2,7 +2,7 @@ import type { Metadata } from 'next'
 import Link from 'next/link'
 import { ArrowUpRight } from 'lucide-react'
 import CopyBlock from '@/components/CopyBlock'
-import { DOCS_PAGES, docsJsonLd, docsUrl, readyPages } from '@/lib/docs'
+import { DOCS_PAGES, docsJsonLd, docsUrl, guidePages } from '@/lib/docs'
 import { PAYER_CLAUDE_PROMPT, PAYEE_CLAUDE_PROMPT } from '@/lib/prompts'
 
 // The /docs landing — the grand entry to Yeetful. It absorbs what /developers
@@ -39,8 +39,9 @@ reportUsage({
   amountUsd: 0.005, tool: 'search', network: 'base',
 }) // fire-and-forget — never blocks the response`
 
-// The "go deeper" grid: every ready doc except this landing.
-const DEEPER = readyPages().filter((p) => p.slug !== '')
+// The "go deeper" grid: every ready guide except this landing (legal pages live
+// in their own sidebar group, not here).
+const DEEPER = guidePages().filter((p) => p.slug !== '')
 
 const ELSEWHERE = [
   { href: 'https://www.npmjs.com/package/yeetful', label: 'yeetful on npm', sub: 'x402 client/server helpers + the agent expense-account wrapper', ext: true },
