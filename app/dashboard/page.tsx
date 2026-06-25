@@ -15,6 +15,7 @@ import { PolicySwitch, BudgetEditor } from '@/components/SpendPolicyControls'
 import { useToast } from '@/lib/toast'
 import EarnPanel from '@/components/EarnPanel'
 import OnboardingChecklist from '@/components/OnboardingChecklist'
+import WelcomeNudge from '@/components/WelcomeNudge'
 import PayToAgentsCard from '@/components/PayToAgentsCard'
 import { useOrgStore } from '@/lib/org-store'
 import Button from '@/components/Button'
@@ -136,9 +137,15 @@ export default function DashboardOverviewPage() {
     <>
       <h1 className="dash__h1">{o ? `Overview · ${o.name}` : 'Overview'}</h1>
 
+      {/* First-session welcome strip (dismissible, never returns) → points at
+          the checklist anchor just below. */}
+      <WelcomeNudge />
+
       {/* First-run guided path — self-ticks from live state, hides when done
           or dismissed. */}
-      <OnboardingChecklist stats={stats} />
+      <div id="get-started" className="scroll-mt-24">
+        <OnboardingChecklist stats={stats} />
+      </div>
 
       {/* The org level of the two-level budget: the daily cap across ALL the
           org's agent keys, above the grant + per-key meters. SDK-enforced via
