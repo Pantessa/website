@@ -28,6 +28,7 @@ import {
   type SmartRequest,
 } from '@/lib/endpoint-planner'
 import { buildSignableArtifact, type SignableArtifact } from '@/lib/transaction-layer'
+import { hybridShortlist } from '@/lib/retrieval'
 
 // ── Canonical trace contract ────────────────────────────────────────────────
 // One ordered list of these IS the "engine window" content. The streaming chat
@@ -164,10 +165,17 @@ const STOPWORDS = new Set([
  * description and path, plus a nudge for proven endpoints. Diversity-capped so
  * one chatty service can't crowd out the rest. Pure — exported for tests.
  */
-export function shortlistEndpoints(message: string, endpoints: PlannableEndpoint[], limit = 14): PlannableEndpoint[] {
+/** Full keyword ranking (no per-service cap) — the lexical half of retrieval.
+ *  Exported so the hybrid retriever (lib/retrieval) can fuse it with vector
+ *  search. Inference gateways are excluded (the answer engine is separate). */
+export function rankByKeyword(message: string, endpoints: PlannableEndpoint[]): PlannableEndpoint[] {
   const tokens = new Set((message.toLowerCase().match(/[a-z0-9]{3,}/g) ?? []).filter((t) => !STOPWORDS.has(t)))
   const score = (ep: PlannableEndpoint): number => {
-    let hay = `${ep.serverName} ${ep.serverSlug} ${ep.category ?? ''} ${ep.description ?? ''}`.toLowerCase()
+    // Capability tags + example queries (R1) carry the most semantic signal —
+    // they bridge "transcribe audio" → a `transcription` service even with no
+    // keyword overlap in the name/description.
+    const caps = `${(ep.tags ?? []).join(' ')} ${(ep.exampleQueries ?? []).join(' ')}`
+    let hay = `${ep.serverName} ${ep.serverSlug} ${ep.category ?? ''} ${caps} ${ep.description ?? ''}`.toLowerCase()
     try {
       hay += ' ' + new URL(ep.url).pathname.toLowerCase().replace(/[^a-z0-9]+/g, ' ')
     } catch {
@@ -191,7 +199,7 @@ export function shortlistEndpoints(message: string, endpoints: PlannableEndpoint
     }
     return s
   }
-  const ranked = endpoints
+  return endpoints
     // Inference gateways (BlockRun, Groq, Venice…) carry chat/completions
     // endpoints that keyword-match almost anything and crowd the menu — but the
     // ANSWER engine is chosen separately (selectInferenceProvider). They are
@@ -200,10 +208,14 @@ export function shortlistEndpoints(message: string, endpoints: PlannableEndpoint
     .map((ep) => ({ ep, s: score(ep) }))
     .filter((x) => x.s > 0)
     .sort((a, b) => b.s - a.s)
+    .map((x) => x.ep)
+}
 
+/** Cap to ≤3 endpoints/service and `limit` total — the menu the planner sees. */
+export function capShortlist(ranked: PlannableEndpoint[], limit = 14): PlannableEndpoint[] {
   const perService = new Map<string, number>()
   const out: PlannableEndpoint[] = []
-  for (const { ep } of ranked) {
+  for (const ep of ranked) {
     const n = perService.get(ep.serverSlug) ?? 0
     if (n >= 3) continue // diversity: ≤3 endpoints per service in the shortlist
     perService.set(ep.serverSlug, n + 1)
@@ -211,6 +223,12 @@ export function shortlistEndpoints(message: string, endpoints: PlannableEndpoint
     if (out.length >= limit) break
   }
   return out
+}
+
+/** Keyword-only shortlist (the pre-R2 path; kept for the no-embeddings fallback
+ *  and tests). */
+export function shortlistEndpoints(message: string, endpoints: PlannableEndpoint[], limit = 14): PlannableEndpoint[] {
+  return capShortlist(rankByKeyword(message, endpoints), limit)
 }
 
 // Capability tags — a lightweight taxonomy so the engine can deterministically
@@ -411,8 +429,9 @@ export async function routeMessage(opts: RouteOptions): Promise<RouterDecision> 
 
   // Retrieve→plan: narrow the full catalog to the relevant few BEFORE the model
   // sees them, so it picks reliably (and can pick several). The shortlist IS the
-  // menu + the byId universe from here on.
-  const shortlisted = endpoints.length ? shortlistEndpoints(message, endpoints) : []
+  // menu + the byId universe from here on. Hybrid (keyword + semantic vector,
+  // R2) with a keyword-only fallback when embeddings are unavailable.
+  const shortlisted = endpoints.length ? await hybridShortlist(message, endpoints) : []
 
   const smartPicks: SmartPick[] = []
   const context: string[] = []

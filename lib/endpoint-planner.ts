@@ -108,6 +108,11 @@ export interface PlannableEndpoint {
   /** The service's directory category (e.g. Data, Trading, Travel) — extra
    *  retrieval signal for the shortlist when descriptions are thin (B20). */
   category?: string | null
+  /** Capability tags + example queries (R1, LLM-labeled) — semantic retrieval
+   *  signal folded into the shortlist haystack so "transcribe audio" matches a
+   *  `transcription` service even with zero keyword overlap. */
+  tags?: string[]
+  exampleQueries?: string[]
   /** Settlement history for this endpoint's host (the engine's feedback signal /
    *  reputation): settled vs failed paid calls, recency, and a 0–1 `rating`
    *  derived from them. Absent = no history (unproven, NOT penalized — the
@@ -151,7 +156,7 @@ export async function loadPlannableEndpoints(slugs: string[]): Promise<Plannable
       // again below to drop any with an unresolved :path token.
       OR: [{ NOT: { parameters: { equals: Prisma.DbNull } } }, { method: 'GET' }],
     },
-    include: { server: { select: { slug: true, name: true, category: true } } },
+    include: { server: { select: { slug: true, name: true, category: true, tags: true, exampleQueries: true } } },
     orderBy: { position: 'asc' },
   })
 
@@ -205,6 +210,8 @@ export async function loadPlannableEndpoints(slugs: string[]): Promise<Plannable
       priceUsd: r.priceUsd!,
       parameters: params,
       category: r.server.category,
+      tags: r.server.tags,
+      exampleQueries: r.server.exampleQueries,
     })
   }
   await attachReliability(out)
