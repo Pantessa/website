@@ -8,6 +8,8 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { Card, CardTitle, Kpi } from '@/lib/dashboard-ui'
+import CopyBlock from '@/components/CopyBlock'
+import { PAYEE_CLAUDE_PROMPT } from '@/lib/prompts'
 
 interface Earnings {
   kpis: {
@@ -61,21 +63,47 @@ export default function EarnPanel() {
           <Kpi label="Paying agents" value="0" />
         </div>
         <Card>
-          <div className="flex items-center justify-between gap-4 flex-wrap">
-            <div className="min-w-0">
-              <p className="text-sm font-semibold text-white">Connect your MCPs to start earning</p>
-              <p className="text-xs text-[color:var(--muted-2)] mt-0.5 max-w-md">
-                Run an MCP server? Report each paid call with one async SDK line and your
-                earnings — total, last 30 days, calls served, paying agents — land right here.
-              </p>
-            </div>
-            <Link
-              href="/docs/earn"
-              className="flex items-center gap-1.5 flex-shrink-0 text-xs font-medium px-3 py-2 max-lg:min-h-10 rounded-lg border border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/10 transition-colors"
-            >
-              Connect your MCPs →
-            </Link>
-          </div>
+          <p className="text-sm font-semibold text-white">Start earning from your MCP</p>
+          <p className="text-xs text-[color:var(--muted-2)] mt-0.5 max-w-md">
+            Run an MCP server? Three steps and every paid call lands here — total, last 30 days,
+            calls served, paying agents.
+          </p>
+
+          <ol className="mt-3 space-y-2.5">
+            {[
+              { n: 1, label: 'Claim your MCP', hint: 'Open it in the directory and sign in with its payTo wallet.', href: '/dashboard/servers', cta: 'Directory' },
+              { n: 2, label: 'Mint an API key', hint: 'The yf_… secret your server uses to report calls.', href: '/dashboard/keys', cta: 'Mint a key' },
+              { n: 3, label: 'Report each paid call', hint: 'One async, non-blocking SDK line after settlement.', href: '/docs/earn', cta: 'How' },
+            ].map((s) => (
+              <li key={s.n} className="flex items-start gap-3">
+                <span className="flex-shrink-0 mt-0.5 w-5 h-5 grid place-items-center rounded-full bg-emerald-500/15 text-emerald-400 text-[11px] font-semibold mono">
+                  {s.n}
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="text-xs font-medium text-white">{s.label}</span>
+                  <span className="block text-[11px] text-[color:var(--muted-2)] mt-0.5">{s.hint}</span>
+                </span>
+                <Link
+                  href={s.href}
+                  className="flex-shrink-0 inline-flex items-center text-[11px] font-medium px-2.5 py-1 max-lg:min-h-9 rounded-md border border-[var(--line-2)] text-[color:var(--muted)] hover:text-white hover:border-white transition-colors"
+                >
+                  {s.cta} →
+                </Link>
+              </li>
+            ))}
+          </ol>
+
+          <p className="mono text-[11px] text-[color:var(--muted-2)] mt-4 mb-2">
+            Or paste this into Claude Code — it wires the report into your server:
+          </p>
+          <CopyBlock text={PAYEE_CLAUDE_PROMPT} label="Copy payee prompt" />
+
+          <Link
+            href="/docs/earn"
+            className="inline-flex items-center gap-1.5 mt-3 text-xs font-medium text-emerald-400 hover:text-emerald-300 transition-colors"
+          >
+            Full earn guide →
+          </Link>
         </Card>
       </section>
     )
