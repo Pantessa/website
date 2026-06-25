@@ -3,6 +3,7 @@
 import { useState, type ReactNode } from 'react'
 import { WagmiProvider } from 'wagmi'
 import TrackWallet from '@/components/TrackWallet'
+import CdpOAuthReturn from '@/components/CdpOAuthReturn'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { RainbowKitProvider, darkTheme } from '@rainbow-me/rainbowkit'
 import '@rainbow-me/rainbowkit/styles.css'
@@ -40,6 +41,9 @@ export default function Providers({ children }: { children: ReactNode }) {
         >
           <SessionProvider>
             <TrackWallet />
+            {/* Resumes a social (Google/Apple/X) sign-in after the OAuth
+                redirect. CDP-only — it uses CDP hooks. */}
+            {cdpEnabled && <CdpOAuthReturn />}
             <ToastProvider>{children}</ToastProvider>
           </SessionProvider>
         </RainbowKitProvider>
