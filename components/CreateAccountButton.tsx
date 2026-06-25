@@ -10,8 +10,9 @@ import {
   useVerifyEmailOTP,
   useIsInitialized,
 } from '@coinbase/cdp-hooks'
-import { Loader2, Mail, ArrowLeft, X } from 'lucide-react'
+import { Loader2, Mail, ArrowLeft, X, Wallet } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { useSession } from '@/lib/session'
 
 /**
  * "Create an account" — the dead-simple, no-extension onboarding path.
@@ -32,9 +33,12 @@ import { cn } from '@/lib/utils'
 export default function CreateAccountButton({
   className,
   label = 'Create an account',
+  redirectTo = '/dashboard',
 }: {
   className?: string
   label?: ReactNode
+  /** Where to land after a successful sign-in (email or wallet). */
+  redirectTo?: string
 }) {
   const [open, setOpen] = useState(false)
   return (
@@ -42,15 +46,16 @@ export default function CreateAccountButton({
       <button type="button" className={className} onClick={() => setOpen(true)}>
         {label}
       </button>
-      {open && <CreateAccountModal onClose={() => setOpen(false)} />}
+      {open && <CreateAccountModal onClose={() => setOpen(false)} redirectTo={redirectTo} />}
     </>
   )
 }
 
 type Step = 'email' | 'otp' | 'connecting'
 
-function CreateAccountModal({ onClose }: { onClose: () => void }) {
+function CreateAccountModal({ onClose, redirectTo }: { onClose: () => void; redirectTo: string }) {
   const router = useRouter()
+  const { connectAndSignIn } = useSession()
   const { isInitialized } = useIsInitialized()
   const { signInWithEmail } = useSignInWithEmail()
   const { verifyEmailOTP } = useVerifyEmailOTP()
@@ -128,7 +133,7 @@ function CreateAccountModal({ onClose }: { onClose: () => void }) {
       // Enter the app. (The old Navigation.useAccountEffect that did this on any
       // connect was removed — post-auth routing now lives with each entry point.)
       onClose()
-      router.push('/dashboard')
+      router.push(redirectTo)
     } catch (err) {
       setError(messageFrom(err, 'That code did not verify. Try again.'))
       setStep('otp')
@@ -150,10 +155,10 @@ function CreateAccountModal({ onClose }: { onClose: () => void }) {
         {step === 'email' && (
           <form onSubmit={sendCode}>
             <div className="ca__icon"><Mail width={20} height={20} /></div>
-            <h2 className="ca__title">Sign in or create an account</h2>
+            <h2 className="ca__title">Sign in to Yeetful</h2>
             <p className="ca__sub">
-              No wallet or extension needed. Enter your email and we&rsquo;ll send a one-time code —
-              new here, we create your secure non-custodial wallet; returning, we sign you back in.
+              Enter your email for a one-time code — new here, we create your secure non-custodial
+              wallet; returning, we sign you back in. Already have a wallet? Connect it below.
             </p>
             <label className="ca__label" htmlFor="ca-email">Email</label>
             <input
@@ -172,7 +177,22 @@ function CreateAccountModal({ onClose }: { onClose: () => void }) {
               {busy ? <Loader2 className="ca__spin" width={16} height={16} /> : null}
               {!isInitialized ? 'Starting…' : busy ? 'Sending…' : 'Continue with email'}
             </button>
-            <p className="ca__fine">Already use a crypto wallet? Use “Connect Wallet” instead.</p>
+
+            {/* Or hand off to the wallet flow: close this modal, open the wagmi
+                connect modal, and (via connectAndSignIn) sign once connected. */}
+            <div className="ca__or" aria-hidden="true">
+              <span />or<span />
+            </div>
+            <button
+              type="button"
+              className="ca__wallet"
+              onClick={() => {
+                connectAndSignIn(redirectTo)
+                onClose()
+              }}
+            >
+              <Wallet width={16} height={16} /> Connect a wallet
+            </button>
           </form>
         )}
 

@@ -6,7 +6,7 @@ import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useAccount } from 'wagmi'
 import { useSession } from '@/lib/session'
-import { Menu, X } from 'lucide-react'
+import { LogIn, Menu, X } from 'lucide-react'
 import { useYeetfulStore } from '@/lib/store'
 import ConnectWallet from '@/components/ConnectWallet'
 import AuthButton from '@/components/AuthButton'
@@ -59,20 +59,41 @@ export default function Navigation() {
     'inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-emerald-400 text-zinc-950 text-xs font-semibold hover:bg-emerald-300 active:scale-[0.98] transition-all'
 
   // Chat connects a wallet to PAY a turn, not to sign in — keep the plain
-  // Connect Wallet there so paying never forces a SIWE signature. Everywhere
-  // else the disconnected entry is the combined one-click "Sign in".
+  // Connect Wallet there so paying never forces a SIWE signature.
   const onChat = pathname.startsWith('/chat')
+  const disconnected = !isConnected && !sessionAddress
+  const signInPill =
+    'inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-white/5 border border-white/15 text-zinc-200 text-xs font-semibold hover:bg-white/10 hover:border-white/25 transition-colors'
+
   // The auth/connect cluster, shared by the desktop bar + mobile drawer.
-  // - chat: plain ConnectWallet; AuthButton only once connected (optional sign-in)
-  // - elsewhere: combined AuthButton (handles disconnected → connect+sign);
-  //   ConnectWallet renders the account pill once connected.
-  //   When the CDP email path is offered to a newcomer, defer to it (avoid two
-  //   "Sign in" buttons) until a wallet is connected.
+  // Mount-gated by the callers (so SSR stays hydration-safe).
+  // - chat: plain ConnectWallet (+ email option / sign-in chip when relevant).
+  // - disconnected elsewhere: ONE "Sign in". With CDP it opens the unified modal
+  //   (email step up front + "Connect a wallet"); without CDP it's the direct
+  //   wallet connect+sign.
+  // - connected/authed: the Sign-in/Signed-in chip + the account pill.
   const authCluster = onChat ? (
     <>
+      {disconnected && showCreateAccount && (
+        <CreateAccountButton className={createAccountPill} label="Create account" />
+      )}
       <ConnectWallet />
       {isConnected && <AuthButton />}
     </>
+  ) : disconnected ? (
+    cdpEnabled ? (
+      <CreateAccountButton
+        className={signInPill}
+        label={
+          <>
+            <LogIn className="w-3.5 h-3.5" strokeWidth={2.5} /> Sign in
+          </>
+        }
+        redirectTo="/dashboard"
+      />
+    ) : (
+      <AuthButton />
+    )
   ) : (
     <>
       <AuthButton />
@@ -132,8 +153,7 @@ export default function Navigation() {
             </span>
           )}
           {!inDashboard && dashboardCta}
-          {showCreateAccount && <CreateAccountButton className={createAccountPill} label="Create account" />}
-          {authCluster}
+          {mounted && authCluster}
           {!inDashboard && (
             <button
               className="nav__burger"
@@ -160,7 +180,6 @@ export default function Navigation() {
               <nav className="drawer__tabs">{tabs}</nav>
               <div className="drawer__foot">
                 {dashboardCta}
-                {showCreateAccount && <CreateAccountButton className={createAccountPill} label="Create account" />}
                 {authCluster}
               </div>
             </div>
