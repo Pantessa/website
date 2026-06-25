@@ -110,7 +110,7 @@ export default function ChatInterface() {
   const [pendingPayment, setPendingPayment] = useState<{
     userMsg: string
     chatId: string
-    data: { plan: unknown; payments: PaymentToSign[]; listedOnly: unknown; notes?: unknown }
+    data: { plan: unknown; payments: PaymentToSign[]; listedOnly: unknown; notes?: unknown; turnId?: unknown }
     history: { role: string; content: string }[]
   } | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
@@ -266,7 +266,7 @@ export default function ChatInterface() {
     history: { role: string; content: string }[],
   ): Promise<
     | { kind: 'reply'; content: string; receipts?: unknown; payer?: string; voteRequest?: unknown; voteProposal?: unknown; routeReport?: unknown; routerTrace?: unknown }
-    | { kind: 'plan'; data: { plan: unknown; payments: PaymentToSign[]; listedOnly: unknown; notes?: unknown } }
+    | { kind: 'plan'; data: { plan: unknown; payments: PaymentToSign[]; listedOnly: unknown; notes?: unknown; turnId?: unknown } }
   > => {
     clearRouterTrace()
     setEngineWindowOpen(true) // show the engine working as soon as a turn starts
@@ -316,6 +316,7 @@ export default function ChatInterface() {
               payments: (event.payments as PaymentToSign[]) ?? [],
               listedOnly: event.listedOnly ?? [],
               notes: event.notes,
+              turnId: event.turnId, // group the execute-phase receipts with this plan in the live feed
             },
           }
         } else if (event.type === 'reply') {
@@ -344,7 +345,7 @@ export default function ChatInterface() {
   /** Sign each x402 payment with the connected wallet, then run the calls. */
   const payWithWalletThenAnswer = async (
     userMsg: string,
-    data: { plan: unknown; payments: PaymentToSign[]; listedOnly: unknown; notes?: unknown },
+    data: { plan: unknown; payments: PaymentToSign[]; listedOnly: unknown; notes?: unknown; turnId?: unknown },
     history: { role: string; content: string }[] = [],
   ): Promise<{ reply: string; receipts?: unknown[]; payer?: string }> => {
     const signatures: Record<string, string> = {}
@@ -378,6 +379,7 @@ export default function ChatInterface() {
         signatures,
         listedOnly: data.listedOnly,
         notes: data.notes, // plan-time diagnostics, echoed into the final reply
+        turnId: data.turnId, // groups the settlements with the plan in the live feed
         history,
       }),
     })
