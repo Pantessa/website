@@ -49,6 +49,14 @@ collides with the sharp-router-night dev server in `website/` (:3000).
   shown only ≤640px). Verified: rises on scroll, docks bottom, desktop/tablet
   unaffected. (The overlapping "N" at bottom-left is just the Next.js dev
   indicator — absent in production.)
-### ⏳ Batch 3 — Landing analytics charts
+### ✅ Batch 3 — Landing analytics charts (committed)
+- New `components/SwitchboardStats.tsx` landing section: **"Every paying and
+  earning agent, tracked."** Serif heading + serif stat numbers (settled $,
+  routed calls, avg/call, paying agents, paid-to-stakers) + two charts reusing
+  the existing lazy Recharts: **Network spend · last 30 days** (area) and **Top
+  earning agents** (bars — Yeetful·Claude / Yeetful·Snapshot feature). Pulls
+  the public `/api/activity` feed; renders nothing until real settled volume
+  (honesty bar, no zeros). Mounted after the live strip on the landing page;
+  charts stack on ≤760px. Verified desktop + mobile (no overflow).
 ### ⏳ Batch 4 — Blog index + post
 ### ⏳ Batch 5 — General polish

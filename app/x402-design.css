@@ -429,6 +429,34 @@
     .swlive__time { display: none; }
   }
 
+  /* ── LANDING ANALYTICS (we track spending + earning agents) ── */
+  .swstats { padding: 56px 0; border-top: 1px solid var(--line); }
+  .swstats__eyebrow { font-size: 12px; letter-spacing: 0.18em; color: var(--muted-2); }
+  .swstats__h2 {
+    font-family: var(--font-serif); font-weight: 500; font-optical-sizing: auto;
+    font-size: clamp(28px, 3.8vw, 46px); line-height: 1.04; letter-spacing: -0.015em;
+    margin-top: 12px; color: var(--fg); text-wrap: balance;
+  }
+  .swstats__em { font-style: italic; color: var(--muted); }
+  .swstats__sub { margin-top: 16px; max-width: 60ch; font-size: 15.5px; line-height: 1.6; color: var(--muted); text-wrap: pretty; }
+  .swstats__stats {
+    margin-top: 30px; display: flex; flex-wrap: wrap; gap: 14px 40px;
+    padding-bottom: 28px; border-bottom: 1px solid var(--line);
+  }
+  .swstats__stat { display: flex; flex-direction: column; gap: 4px; }
+  .swstats__statnum {
+    font-family: var(--font-serif); font-weight: 500; font-size: clamp(30px, 3.4vw, 40px);
+    line-height: 1; letter-spacing: -0.01em; color: var(--fg);
+  }
+  .swstats__statlbl { font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted-2); }
+  .swstats__charts { margin-top: 28px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+  .swstats__all { display: inline-block; margin-top: 22px; font-size: 13px; color: var(--muted); text-decoration: none; }
+  .swstats__all:hover { color: var(--fg); }
+  @media (max-width: 760px) {
+    .swstats__charts { grid-template-columns: 1fr; }
+    .swstats__stats { gap: 16px 28px; }
+  }
+
   /* ── SWITCHBOARD PROOF (real routed turns, in the open) ── */
   .swproof { padding: 56px 0; border-top: 1px solid var(--line); }
   .swproof__eyebrow { font-size: 12px; letter-spacing: 0.18em; color: var(--muted-2); }
