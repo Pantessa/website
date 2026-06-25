@@ -66,4 +66,16 @@ collides with the sharp-router-night dev server in `website/` (:3000).
   (post.description), meta under a hairline divider; serif `h2` subheads;
   wider line-height + 720px measure for comfortable reading.
 - Verified index + post on desktop + mobile (no overflow, serif throughout).
-### ⏳ Batch 5 — General polish
+### ✅ Batch 5 — Landing header unification (committed)
+- The landing page alternated serif (hero, how-it-works) and sans
+  (servers/try/proof/live section H2s). Unified all four sans section headers
+  (`.swsrv__h2`, `.swtry__h2`, `.swproof__h2`, `.swlive__h2`) to the Newsreader
+  serif at a consistent size — the whole page now speaks one serif voice for
+  section titles (agent-card names keep Archivo for contrast). Verified.
+
+### ⏳ Remaining ideas (next loop iterations)
+- **Signed-in dashboard polish** — log in via env `PRIVATE_KEY` (SIWE) to
+  screenshot the dashboard/overview/approvals and polish the signed-in views.
+- Servers / docs / leaderboard header typography alignment (optional — these
+  are app-like surfaces; the marketing serif identity is established).
+- Nav + footer micro-polish; hover/focus states sweep.

@@ -348,7 +348,7 @@
   /* ── SWITCHBOARD "TRY A ROUTE" (DB-only preview) ──── */
   .swtry { padding: 56px 0; border-top: 1px solid var(--line); }
   .swtry__eyebrow { font-size: 12px; letter-spacing: 0.18em; color: var(--muted-2); }
-  .swtry__h2 { font-size: clamp(26px, 3.4vw, 38px); font-weight: 600; letter-spacing: -0.02em; margin-top: 10px; color: var(--fg); }
+  .swtry__h2 { font-family: var(--font-serif); font-weight: 500; font-optical-sizing: auto; font-size: clamp(28px, 3.6vw, 42px); letter-spacing: -0.012em; line-height: 1.06; margin-top: 12px; color: var(--fg); }
   .swtry__sub { margin-top: 14px; max-width: 56ch; font-size: 15px; line-height: 1.55; color: var(--muted); text-wrap: pretty; }
   .swtry__sub strong { color: var(--fg); font-weight: 600; }
   .swtry__chips { display: flex; flex-wrap: wrap; gap: 9px; margin-top: 26px; }
@@ -406,7 +406,7 @@
   .swlive { padding: 52px 0; border-top: 1px solid var(--line); }
   .swlive__head { display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; flex-wrap: wrap; }
   .swlive__eyebrow { font-size: 12px; letter-spacing: 0.18em; color: var(--muted-2); }
-  .swlive__h2 { font-size: clamp(26px, 3.4vw, 38px); font-weight: 600; letter-spacing: -0.02em; margin-top: 10px; color: var(--fg); }
+  .swlive__h2 { font-family: var(--font-serif); font-weight: 500; font-optical-sizing: auto; font-size: clamp(28px, 3.6vw, 42px); letter-spacing: -0.012em; line-height: 1.06; margin-top: 12px; color: var(--fg); }
   .swlive__stat { text-align: right; }
   .swlive__statnum { font-size: 26px; font-weight: 500; color: var(--accent); letter-spacing: -0.01em; }
   .swlive__statlbl { font-size: 12px; color: var(--muted-2); letter-spacing: 0.04em; margin-top: 2px; }
@@ -460,7 +460,7 @@
   /* ── SWITCHBOARD PROOF (real routed turns, in the open) ── */
   .swproof { padding: 56px 0; border-top: 1px solid var(--line); }
   .swproof__eyebrow { font-size: 12px; letter-spacing: 0.18em; color: var(--muted-2); }
-  .swproof__h2 { font-size: clamp(26px, 3.4vw, 38px); font-weight: 600; letter-spacing: -0.02em; margin-top: 10px; color: var(--fg); }
+  .swproof__h2 { font-family: var(--font-serif); font-weight: 500; font-optical-sizing: auto; font-size: clamp(28px, 3.6vw, 42px); letter-spacing: -0.012em; line-height: 1.06; margin-top: 12px; color: var(--fg); }
   .swproof__sub { margin-top: 14px; max-width: 56ch; font-size: 15px; line-height: 1.55; color: var(--muted); text-wrap: pretty; }
   .swproof__list { margin-top: 28px; display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; }
   .swproof__card { border: 1px solid var(--line); border-radius: 14px; padding: 18px; background: var(--surf-1); display: flex; flex-direction: column; gap: 12px; min-width: 0; }
@@ -482,7 +482,7 @@
   .swsrv { padding: 56px 0; border-top: 1px solid var(--line); }
   .swsrv__head { display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; flex-wrap: wrap; margin-bottom: 26px; }
   .swsrv__eyebrow { font-size: 12px; letter-spacing: 0.18em; color: var(--muted-2); }
-  .swsrv__h2 { font-size: clamp(26px, 3.4vw, 38px); font-weight: 600; letter-spacing: -0.02em; margin-top: 10px; color: var(--fg); }
+  .swsrv__h2 { font-family: var(--font-serif); font-weight: 500; font-optical-sizing: auto; font-size: clamp(28px, 3.6vw, 42px); letter-spacing: -0.012em; line-height: 1.06; margin-top: 12px; color: var(--fg); }
   .swsrv__all { font-size: 14px; color: var(--accent); text-decoration: none; white-space: nowrap; }
   .swsrv__all:hover { text-decoration: underline; }
   .swsrv__pills { margin: -8px 0 24px; }
