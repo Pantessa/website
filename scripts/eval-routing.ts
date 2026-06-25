@@ -112,7 +112,10 @@ const CASES: Case[] = [
   { q: 'what are the top AI agent frameworks in 2026', expect: ['perplexity', 'tavily', 'exa'] },
   { q: 'scrape example.com and summarize the page', expect: ['firecrawl', 'hyperbrowser', 'browserbase'] },
   { q: 'extract the text from this webpage', expect: ['firecrawl', 'hyperbrowser', 'browserbase'] },
-  { q: 'transcribe this audio file to text', expect: ['deepgram'] },
+  // dtelecom-stt is a correct transcription alternate (per handoff); deepgram's
+  // /v1/listen is $1.00 — over the $0.05 auto-pay ceiling, so it's un-routable
+  // and dtelecom-stt is the routable right answer.
+  { q: 'transcribe this audio file to text', expect: ['deepgram', 'dtelecom-stt'] },
   { q: 'find the email address for someone at acme.com', expect: ['hunter'] },
   { q: 'send an SMS text to a phone number', expect: ['stablephone'] },
 ]
