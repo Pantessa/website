@@ -78,8 +78,15 @@ export function Card({ children, className }: { children: React.ReactNode; class
   )
 }
 
-export function CardTitle({ children }: { children: React.ReactNode }) {
-  return <h2 className="text-sm font-semibold text-white mb-3">{children}</h2>
+export function CardTitle({ children, serif }: { children: React.ReactNode; serif?: boolean }) {
+  // serif: the "nice big serif" table/section heading used on the public
+  // network surfaces (/activity) so each table's title matches the page's
+  // serif identity. The dense dashboard keeps the compact sans default.
+  return (
+    <h2 className={serif ? 'cardh--serif text-white mb-3' : 'text-sm font-semibold text-white mb-3'}>
+      {children}
+    </h2>
+  )
 }
 
 export function Kpi({ label, value, sub, small }: { label: string; value: string; sub?: string; small?: boolean }) {
