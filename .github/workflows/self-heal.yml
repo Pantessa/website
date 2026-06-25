@@ -8,13 +8,16 @@ name: self-heal routing
 #
 # Required secrets: ANTHROPIC_API_KEY, DATABASE_URL.
 #
-# Trigger: manual for now (test it, watch the PRs). Once you trust it, uncomment
-# the `schedule` block to let it run on its own.
+# Trigger: once a day (schedule) + on demand (workflow_dispatch). It only acts
+# when there's an OPEN incident, opens at most one PR per run, and never merges.
+# Recommended: do ONE manual run + review the PR before relying on the daily
+# cadence. For instant-on-break instead of daily, add a repository_dispatch from
+# the app (needs a GitHub token) — ask and I'll wire it.
 
 on:
-  workflow_dispatch:
-  # schedule:
-  #   - cron: '23 */3 * * *' # every 3 hours — enable after a successful manual run
+  workflow_dispatch: # manual: Actions → "self-heal routing" → Run workflow
+  schedule:
+    - cron: '23 9 * * *' # once a day at 09:23 UTC — picks up any open incidents
 
 permissions:
   contents: write
