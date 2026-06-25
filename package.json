@@ -27,7 +27,8 @@
     "email:test": "tsx scripts/send-test-email.ts",
     "postinstall": "prisma generate",
     "eval:routing": "tsx scripts/eval-routing.ts",
-    "db:tag": "tsx scripts/tag-capabilities.ts"
+    "db:tag": "tsx scripts/tag-capabilities.ts",
+    "db:embed": "tsx scripts/embed-catalog.ts"
   },
   "dependencies": {
     "@coinbase/cdp-core": "^0.0.111",

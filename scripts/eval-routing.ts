@@ -20,6 +20,7 @@ import { join } from 'node:path'
 import { loadCatalog } from '../lib/catalog'
 import { loadPlannableEndpoints } from '../lib/endpoint-planner'
 import { shortlistEndpoints } from '../lib/router'
+import { hybridShortlist } from '../lib/retrieval'
 
 function loadEnv() {
   for (const file of ['.env.local', '.env']) {
@@ -76,12 +77,16 @@ async function main() {
   const endpoints = await loadPlannableEndpoints(catalog.map((s) => s.slug).filter(Boolean))
   if (!JSON_OUT) console.log(`Catalog: ${catalog.length} services · ${endpoints.length} plannable endpoints · ${CASES.length} eval prompts\n`)
 
-  const results = CASES.map((c) => {
-    const shortlist = shortlistEndpoints(c.q, endpoints) // top ~14
+  // --keyword evaluates the lexical-only path (pre-R2); default = hybrid (R2).
+  const keywordOnly = process.argv.includes('--keyword')
+  const results = []
+  for (const c of CASES) {
+    const shortlist = keywordOnly ? shortlistEndpoints(c.q, endpoints) : await hybridShortlist(c.q, endpoints)
     const slugs = shortlist.map((e) => e.serverSlug)
     const rank = slugs.findIndex((s) => c.expect.includes(s)) // -1 = not surfaced
-    return { ...c, rank, top: slugs.slice(0, 5) }
-  })
+    results.push({ ...c, rank, top: slugs.slice(0, 5) })
+  }
+  if (!JSON_OUT) console.log(`Mode: ${keywordOnly ? 'keyword-only' : 'hybrid (keyword + vector)'}\n`)
 
   const hit = (r: { rank: number }) => r.rank >= 0
   const recallAtK = results.filter(hit).length / results.length
