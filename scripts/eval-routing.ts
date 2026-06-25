@@ -18,7 +18,7 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { loadCatalog } from '../lib/catalog'
-import { loadPlannableEndpoints } from '../lib/endpoint-planner'
+import { loadPlannableEndpoints, plannerPrompt, parsePlannerPicks, type PlannableEndpoint } from '../lib/endpoint-planner'
 import { shortlistEndpoints } from '../lib/router'
 import { hybridShortlist } from '../lib/retrieval'
 
@@ -36,6 +36,51 @@ function loadEnv() {
 }
 loadEnv()
 const JSON_OUT = process.argv.includes('--json')
+const FULL = process.argv.includes('--full') // run the real planner LLM on the shortlist
+
+const PLANNER_MODEL = 'claude-haiku-4-5-20251001'
+
+/**
+ * Full-pick: run the EXACT production planner prompt (lib/endpoint-planner
+ * plannerPrompt → parsePlannerPicks) over the shortlist, but route the inference
+ * through the Anthropic API directly (ANTHROPIC_API_KEY, pennies — same path as
+ * db:tag) instead of the x402-paid callInference, so the eval never spends house
+ * USDC. Returns the distinct services the planner chose to call. This measures
+ * the REAL outcome (did the LLM pick the right MCP from the menu?), the number
+ * the golden rule says actually matters — recall@shortlist only proves the menu
+ * contained it.
+ */
+async function plannerPick(message: string, shortlist: PlannableEndpoint[]): Promise<string[]> {
+  const res = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'x-api-key': process.env.ANTHROPIC_API_KEY ?? '',
+      'anthropic-version': '2023-06-01',
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify({ model: PLANNER_MODEL, max_tokens: 1024, messages: [{ role: 'user', content: plannerPrompt(message, shortlist) }] }),
+  })
+  if (!res.ok) throw new Error(`Anthropic ${res.status}: ${(await res.text()).slice(0, 160)}`)
+  const data = (await res.json()) as { content?: { text?: string }[] }
+  const picks = parsePlannerPicks(data.content?.[0]?.text ?? '', shortlist)
+  const byId = new Map(shortlist.map((e) => [e.id, e.serverSlug]))
+  return [...new Set(picks.map((p) => byId.get(p.endpointId)).filter((s): s is string => !!s))]
+}
+
+/** Run async tasks with a small concurrency cap (keep the API happy + fast). */
+async function mapLimit<T, R>(items: T[], limit: number, fn: (item: T, i: number) => Promise<R>): Promise<R[]> {
+  const out: R[] = new Array(items.length)
+  let next = 0
+  await Promise.all(
+    Array.from({ length: Math.min(limit, items.length) }, async () => {
+      while (next < items.length) {
+        const i = next++
+        out[i] = await fn(items[i], i)
+      }
+    }),
+  )
+  return out
+}
 
 // query → the service slug(s) that SHOULD be able to answer (any-of = a hit).
 interface Case { q: string; expect: string[] }
@@ -109,6 +154,47 @@ async function main() {
   console.log(`  recall@shortlist: ${pct(recallAtK)}  ·  recall@5: ${pct(recallAt5)}  ·  rank#1: ${pct(recallAt1)}  ·  MRR: ${mrr.toFixed(2)}`)
   console.log(`  (recall@shortlist = right MCP is in the menu the planner sees;`)
   console.log(`   rank#1 = it's the top candidate. Misses → retrieval gap (R2/R3).)`)
+  console.log('─'.repeat(60))
+
+  if (FULL) await runFullPick(endpoints, keywordOnly)
+}
+
+/**
+ * FULL-PICK eval — the real outcome. For each case, build the same shortlist the
+ * engine builds, then actually run the planner LLM and check the SELECTED
+ * service(s). Costs ~1 Haiku call/case (Anthropic pennies, NOT house USDC).
+ *   answered  = planner called ≥1 acceptable service (the user's need was met)
+ *   precise   = planner called ONLY acceptable services (no wasted paid calls)
+ *   avg picks = mean services called/query (over-picking signal)
+ */
+async function runFullPick(endpoints: PlannableEndpoint[], keywordOnly: boolean) {
+  if (!process.env.ANTHROPIC_API_KEY) {
+    console.log('\n[--full] ANTHROPIC_API_KEY not set — skipping full-pick eval.')
+    return
+  }
+  console.log(`\n${'─'.repeat(60)}\n  FULL-PICK (real planner LLM: ${PLANNER_MODEL}) — selected-service outcome\n${'─'.repeat(60)}`)
+  const rows = await mapLimit(CASES, 4, async (c) => {
+    const shortlist = keywordOnly ? shortlistEndpoints(c.q, endpoints) : await hybridShortlist(c.q, endpoints)
+    try {
+      const picked = await plannerPick(c.q, shortlist)
+      const answered = picked.some((s) => c.expect.includes(s))
+      const precise = picked.length > 0 && picked.every((s) => c.expect.includes(s))
+      return { ...c, picked, answered, precise, err: '' }
+    } catch (e) {
+      return { ...c, picked: [] as string[], answered: false, precise: false, err: String(e).slice(0, 80) }
+    }
+  })
+  for (const r of rows) {
+    const mark = r.answered ? (r.precise ? '✓' : '~') : '✗'
+    console.log(`${mark} ${r.q}`)
+    if (!r.answered || !r.precise) console.log(`      expect ${r.expect.join('|')} · planner called: ${r.picked.join(', ') || '(nothing)'}${r.err ? ` · ERR ${r.err}` : ''}`)
+  }
+  const answered = rows.filter((r) => r.answered).length / rows.length
+  const precise = rows.filter((r) => r.precise).length / rows.length
+  const avgPicks = rows.reduce((a, r) => a + r.picked.length, 0) / rows.length
+  const pct = (n: number) => `${Math.round(n * 100)}%`
+  console.log(`\n  answered@full: ${pct(answered)}  ·  precise@full: ${pct(precise)}  ·  avg picks/query: ${avgPicks.toFixed(2)}`)
+  console.log(`  (answered = the right MCP actually got called; precise = ONLY right MCPs called.)`)
   console.log('─'.repeat(60))
 }
 
