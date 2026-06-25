@@ -130,6 +130,7 @@ export async function relayVote(address: string, sig: string, td: Eip712TypedDat
 export type GovEmit = (e:
   | { type: 'status'; label: string }
   | { type: 'analyze'; intent: string; needs: string[] }
+  | { type: 'select'; service: string; endpoint?: string; priceUsd?: string; reason: string }
   | { type: 'tool'; name: string; status: 'run' | 'ok' | 'error'; detail?: string }
   | { type: 'eip712'; scheme: string; signer: string; summary: string }
   | { type: 'note'; level: 'info' | 'warn'; label: string }
@@ -166,6 +167,17 @@ export async function runGovernanceTurn(opts: {
 }): Promise<GovernanceResult> {
   const { message, intent, walletAddress, emit } = opts
 
+  // Provider selection: governance routes to Snapshot — and unlike paid data MCPs
+  // it costs nothing. Surface it like any chosen provider so the terminal shows
+  // WHAT we picked and that it's free (public hub reads + a gasless signature).
+  emit({
+    type: 'select',
+    service: 'Snapshot',
+    endpoint: 'hub.snapshot.org',
+    priceUsd: '0.00',
+    reason: 'DAO governance — free hub reads + gasless voting (no x402, no inference)',
+  })
+
   // 1) Resolve the space (name → id) if one was named.
   let spaceId: string | undefined
   let spaceName: string | undefined
@@ -196,6 +208,7 @@ export async function runGovernanceTurn(opts: {
     if (proposals.length === 0) {
       return { reply: spaceName ? `🗳️ No open proposals in **${spaceName}** right now.` : '🗳️ No open proposals found. Name a DAO (e.g. “Nate DAO”).' }
     }
+    emit({ type: 'note', level: 'info', label: 'Free — Snapshot hub reads are public; no x402 payment ($0.00).' })
     const lines = proposals.slice(0, 10).map((p) => `· **${p.title}** — \`${p.id.slice(0, 10)}…\``).join('\n')
     const where = spaceName ? ` in **${spaceName}**` : ''
     return { reply: `🗳️ ${proposals.length} open proposal${proposals.length === 1 ? '' : 's'}${where}:\n${lines}\n\nSay e.g. “vote For on ${proposals[0].title}” and I’ll prepare the EIP-712 signature.` }
@@ -245,6 +258,7 @@ export async function runGovernanceTurn(opts: {
       return { reply: `🗳️ **${target.title}** — connect your wallet to vote (each choice opens your wallet to sign), or say “let my agent vote” to have your agent cast it.` }
     }
     emit({ type: 'eip712', scheme: 'eip712', signer: `wallet ${walletAddress.slice(0, 6)}…`, summary: `Vote on “${target.title}” — pick a choice to sign` })
+    emit({ type: 'note', level: 'info', label: 'Gasless — your wallet signs the vote; no gas, no x402 ($0.00).' })
     const voteProposal: VoteProposal = { id: target.id, title: target.title, space, type: results?.type ?? 'basic', choices, suggestedChoice: suggested }
     const hint = suggested ? ` I’ll pre-highlight **${choices[suggested - 1]}**.` : ''
     return { reply: `🗳️ Ready to vote on **${target.title}** — pick a choice below to sign with your wallet.${hint}`, voteProposal }
@@ -288,6 +302,7 @@ export async function runGovernanceTurn(opts: {
   emit({ type: 'tool', name: 'read_results', status: 'run', detail: target.id.slice(0, 10) + '…' })
   const after = await getProposalResults(target.id)
   emit({ type: 'tool', name: 'read_results', status: 'ok' })
+  emit({ type: 'note', level: 'info', label: 'Free — gasless agent signature relayed to Snapshot; no x402 ($0.00).' })
   const tally = after ? `\n\n**Live results** — ${fmtScores(after)}` : ''
   const link = `https://snapshot.box/#/${target.space.id || spaceId}/proposal/${target.id}`
   return {
