@@ -1,0 +1,53 @@
+<!-- @dsCard group="Components" -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Yeetful — Cards</title>
+<style>
+  :root { --ink: #0A0A0B; --paper: #FAFAF7; --char: #1C1C1E; --smoke: #6B6B6F; --mist: #C9C9C5; --fog: #EDEDE8; --yeet: #C6FF3D; --yeet-soft: #F0FFCC; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--paper); color: var(--ink); font-family: "Geist", Inter, system-ui, sans-serif; -webkit-font-smoothing: antialiased; padding: 48px; }
+  .eyebrow { font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--smoke); margin: 0 0 8px; }
+  h1 { font-size: 40px; font-weight: 600; letter-spacing: -.02em; margin: 0 0 4px; }
+  .sub { color: var(--smoke); font-size: 16px; margin: 0 0 32px; max-width: 60ch; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 20px; }
+  .card { border: 1px solid var(--mist); border-radius: 16px; padding: 22px; background: var(--paper); }
+  .card.dark { background: var(--char); border-color: #2a2a2d; color: var(--paper); }
+  .badge { display: inline-block; font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 11px; padding: 4px 9px; border-radius: 999px; background: var(--yeet-soft); color: #4d5e0a; margin-bottom: 14px; }
+  .card h3 { font-size: 20px; font-weight: 600; letter-spacing: -.01em; margin: 0 0 6px; }
+  .card p { font-size: 14px; line-height: 1.5; color: var(--smoke); margin: 0 0 16px; }
+  .card.dark p { color: var(--mist); }
+  .meta { font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 12px; color: var(--smoke); display: flex; justify-content: space-between; border-top: 1px solid var(--mist); padding-top: 12px; }
+  .card.dark .meta { border-color: #2a2a2d; color: var(--mist); }
+  @media (max-width: 720px) { body { padding: 24px; } }
+</style>
+</head>
+<body>
+  <p class="eyebrow">Components</p>
+  <h1>Cards</h1>
+  <p class="sub">1px Mist border, 16px radius, Paper on light / Char on dark. No drop shadows by default — if elevation is essential, use a darker 1px border instead.</p>
+
+  <div class="grid">
+    <div class="card">
+      <span class="badge">callable</span>
+      <h3>Yeetful · Claude</h3>
+      <p>Haiku 4.5 inference, paid per call in USDC on Base. No API key.</p>
+      <div class="meta"><span>$0.005 / call</span><span>settled</span></div>
+    </div>
+    <div class="card">
+      <span class="badge">data</span>
+      <h3>TripAdvisor</h3>
+      <p>Travel and location data via the x402 gateway. Pay only for what you query.</p>
+      <div class="meta"><span>from $0.01</span><span>x402 v2</span></div>
+    </div>
+    <div class="card dark">
+      <span class="badge">on dark</span>
+      <h3>Wolfram</h3>
+      <p>Computational answers and structured knowledge, metered per request.</p>
+      <div class="meta"><span>from $0.02</span><span>reachable</span></div>
+    </div>
+  </div>
+</body>
+</html>

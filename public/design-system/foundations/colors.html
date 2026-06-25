@@ -1,0 +1,58 @@
+<!-- @dsCard group="Foundations" -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Yeetful — Colors</title>
+<style>
+  :root {
+    --ink: #0A0A0B; --paper: #FAFAF7; --char: #1C1C1E;
+    --smoke: #6B6B6F; --mist: #C9C9C5; --fog: #EDEDE8; --yeet: #C6FF3D;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--paper); color: var(--ink); font-family: "Geist", Inter, system-ui, sans-serif; -webkit-font-smoothing: antialiased; padding: 48px; }
+  .eyebrow { font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--smoke); margin: 0 0 8px; }
+  h1 { font-size: 40px; font-weight: 600; letter-spacing: -.02em; margin: 0 0 4px; }
+  .sub { color: var(--smoke); font-size: 16px; margin: 0 0 32px; max-width: 60ch; }
+  h2 { font-size: 14px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--smoke); margin: 32px 0 14px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 14px; }
+  .chip { border: 1px solid var(--mist); border-radius: 12px; overflow: hidden; }
+  .chip .fill { height: 84px; }
+  .chip .meta { padding: 10px 12px; }
+  .chip .name { font-size: 14px; font-weight: 600; }
+  .chip .hex { font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 12px; color: var(--smoke); margin-top: 2px; }
+  .chip .use { font-size: 12px; color: var(--smoke); margin-top: 6px; line-height: 1.35; }
+  @media (max-width: 720px) { body { padding: 24px; } }
+</style>
+</head>
+<body>
+  <p class="eyebrow">Foundations</p>
+  <h1>Color System</h1>
+  <p class="sub">Modern monochrome with one bold accent. The accent does the heavy lifting; everything else gets out of the way. Default surface is Paper, never pure white. Yeet green is rationed — ≤10% of any screen, never body text.</p>
+
+  <h2>Core palette</h2>
+  <div class="grid">
+    <div class="chip"><div class="fill" style="background:#0A0A0B"></div><div class="meta"><div class="name">Ink</div><div class="hex">#0A0A0B</div><div class="use">Primary text, dark surfaces, logo</div></div></div>
+    <div class="chip"><div class="fill" style="background:#FAFAF7"></div><div class="meta"><div class="name">Paper</div><div class="hex">#FAFAF7</div><div class="use">Default background — warm, never white</div></div></div>
+    <div class="chip"><div class="fill" style="background:#1C1C1E"></div><div class="meta"><div class="name">Char</div><div class="hex">#1C1C1E</div><div class="use">Dark-mode card surface</div></div></div>
+    <div class="chip"><div class="fill" style="background:#6B6B6F"></div><div class="meta"><div class="name">Smoke</div><div class="hex">#6B6B6F</div><div class="use">Secondary text, captions</div></div></div>
+    <div class="chip"><div class="fill" style="background:#C9C9C5"></div><div class="meta"><div class="name">Mist</div><div class="hex">#C9C9C5</div><div class="use">Borders, dividers, disabled</div></div></div>
+    <div class="chip"><div class="fill" style="background:#EDEDE8"></div><div class="meta"><div class="name">Fog</div><div class="hex">#EDEDE8</div><div class="use">Subtle bg, hover, code blocks</div></div></div>
+  </div>
+
+  <h2>Accent — Yeet Green</h2>
+  <div class="grid">
+    <div class="chip"><div class="fill" style="background:#C6FF3D"></div><div class="meta"><div class="name">Yeet</div><div class="hex">#C6FF3D</div><div class="use">THE accent. Primary CTAs, brand moments</div></div></div>
+    <div class="chip"><div class="fill" style="background:#9BCC1F"></div><div class="meta"><div class="name">Yeet Deep</div><div class="hex">#9BCC1F</div><div class="use">Accent hover / pressed</div></div></div>
+    <div class="chip"><div class="fill" style="background:#F0FFCC"></div><div class="meta"><div class="name">Yeet Soft</div><div class="hex">#F0FFCC</div><div class="use">Accent bg, badges, selection</div></div></div>
+  </div>
+
+  <h2>Functional — use sparingly, never as brand</h2>
+  <div class="grid">
+    <div class="chip"><div class="fill" style="background:#1F9D55"></div><div class="meta"><div class="name">Success</div><div class="hex">#1F9D55</div><div class="use">Positive confirmations only</div></div></div>
+    <div class="chip"><div class="fill" style="background:#D97706"></div><div class="meta"><div class="name">Warning</div><div class="hex">#D97706</div><div class="use">Cautions only</div></div></div>
+    <div class="chip"><div class="fill" style="background:#C0392B"></div><div class="meta"><div class="name">Error</div><div class="hex">#C0392B</div><div class="use">Errors only</div></div></div>
+  </div>
+</body>
+</html>

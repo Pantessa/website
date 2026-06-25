@@ -1,0 +1,39 @@
+<!-- @dsCard group="Components" -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Yeetful — Inputs</title>
+<style>
+  :root { --ink: #0A0A0B; --paper: #FAFAF7; --smoke: #6B6B6F; --mist: #C9C9C5; --fog: #EDEDE8; --yeet: #C6FF3D; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--paper); color: var(--ink); font-family: "Geist", Inter, system-ui, sans-serif; -webkit-font-smoothing: antialiased; padding: 48px; }
+  .eyebrow { font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--smoke); margin: 0 0 8px; }
+  h1 { font-size: 40px; font-weight: 600; letter-spacing: -.02em; margin: 0 0 4px; }
+  .sub { color: var(--smoke); font-size: 16px; margin: 0 0 32px; max-width: 60ch; }
+  .stack { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 24px; max-width: 720px; }
+  .field { display: flex; flex-direction: column; gap: 7px; }
+  label { font-size: 13px; font-weight: 600; }
+  .hint { font-size: 12px; color: var(--smoke); }
+  input, select { font-family: inherit; font-size: 15px; color: var(--ink); background: var(--paper); border: 1px solid var(--mist); border-radius: 10px; padding: 11px 13px; outline: none; }
+  input::placeholder { color: var(--smoke); }
+  input:focus, select:focus { border-color: var(--ink); box-shadow: 0 0 0 2px var(--paper), 0 0 0 4px var(--yeet); }
+  .focused { border-color: var(--ink) !important; box-shadow: 0 0 0 2px var(--paper), 0 0 0 4px var(--yeet); }
+  input:disabled { background: var(--fog); color: var(--smoke); cursor: not-allowed; }
+  @media (max-width: 720px) { body { padding: 24px; } }
+</style>
+</head>
+<body>
+  <p class="eyebrow">Components</p>
+  <h1>Inputs</h1>
+  <p class="sub">1px Mist border, 10px radius, Paper background. Focus ring is 2px Yeet at 2px offset — one of the few places the accent appears in interaction.</p>
+
+  <div class="stack">
+    <div class="field"><label>Default</label><input placeholder="agent@yeetful.com" /></div>
+    <div class="field"><label>Focused</label><input class="focused" value="$5.00 daily budget" /><span class="hint">Yeet focus ring, 2px offset</span></div>
+    <div class="field"><label>Select</label><select><option>Yeetful · Claude</option><option>TripAdvisor</option><option>Wolfram</option></select></div>
+    <div class="field"><label>Disabled</label><input disabled value="Locked while account frozen" /></div>
+  </div>
+</body>
+</html>

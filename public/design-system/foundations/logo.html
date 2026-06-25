@@ -1,0 +1,87 @@
+<!-- @dsCard group="Brand" -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Yeetful — Logo</title>
+<style>
+  :root {
+    --ink: #0A0A0B; --paper: #FAFAF7; --char: #1C1C1E;
+    --smoke: #6B6B6F; --mist: #C9C9C5; --fog: #EDEDE8; --yeet: #C6FF3D;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--paper); color: var(--ink);
+    font-family: "Geist", Inter, system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased; padding: 48px;
+  }
+  .eyebrow { font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--smoke); margin: 0 0 8px; }
+  h1 { font-size: 40px; font-weight: 600; letter-spacing: -.02em; margin: 0 0 4px; }
+  .sub { color: var(--smoke); font-size: 16px; margin: 0 0 40px; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+  @media (max-width: 720px) { .grid { grid-template-columns: 1fr; } body { padding: 24px; } }
+  .swatch {
+    border: 1px solid var(--mist); border-radius: 16px; padding: 32px;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 16px; min-height: 200px;
+  }
+  .swatch.dark { background: var(--ink); border-color: #2a2a2d; }
+  .swatch.dark .label { color: var(--mist); }
+  .label { font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 13px; color: var(--smoke); }
+  .lockup { display: inline-flex; align-items: center; gap: .42em; line-height: 1; }
+  .lockup span { font-family: "JetBrains Mono", ui-monospace, monospace; font-weight: 500; letter-spacing: -.02em; }
+  .clearspace { border: 1px dashed var(--mist); border-radius: 12px; padding: 28px; display: inline-flex; }
+  .row { display: flex; align-items: flex-end; gap: 28px; flex-wrap: wrap; justify-content: center; }
+</style>
+</head>
+<body>
+  <p class="eyebrow">Brand</p>
+  <h1>Logo</h1>
+  <p class="sub">Agent-graph "Y" mark — three wallet nodes settling to one hub. Single-color, inherits text color via <code>currentColor</code>.</p>
+
+  <div class="grid">
+    <div class="swatch">
+      <div class="lockup" style="color: var(--ink); font-size: 28px;">
+        <svg width="40" height="40" viewBox="0 0 40 40" fill="none" role="img" aria-label="Yeetful">
+          <mask id="m1"><rect width="40" height="40" fill="#fff"/><circle cx="20" cy="20" r="1.9" fill="#000"/></mask>
+          <g mask="url(#m1)" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><line x1="20" y1="20" x2="9" y2="9"/><line x1="20" y1="20" x2="31" y2="9"/><line x1="20" y1="20" x2="20" y2="33"/></g>
+          <g fill="currentColor"><circle cx="9" cy="9" r="4.4"/><circle cx="31" cy="9" r="4.4"/><circle cx="20" cy="33" r="4.4"/></g>
+          <circle cx="20" cy="20" r="3" fill="none" stroke="currentColor" stroke-width="2.2"/>
+        </svg>
+        <span>yeetful</span>
+      </div>
+      <div class="label">Lock-up · on Paper</div>
+    </div>
+
+    <div class="swatch dark">
+      <div class="lockup" style="color: var(--paper); font-size: 28px;">
+        <svg width="40" height="40" viewBox="0 0 40 40" fill="none" role="img" aria-label="Yeetful">
+          <mask id="m2"><rect width="40" height="40" fill="#fff"/><circle cx="20" cy="20" r="1.9" fill="#000"/></mask>
+          <g mask="url(#m2)" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><line x1="20" y1="20" x2="9" y2="9"/><line x1="20" y1="20" x2="31" y2="9"/><line x1="20" y1="20" x2="20" y2="33"/></g>
+          <g fill="currentColor"><circle cx="9" cy="9" r="4.4"/><circle cx="31" cy="9" r="4.4"/><circle cx="20" cy="33" r="4.4"/></g>
+          <circle cx="20" cy="20" r="3" fill="none" stroke="currentColor" stroke-width="2.2"/>
+        </svg>
+        <span>yeetful</span>
+      </div>
+      <div class="label">Lock-up · on Ink</div>
+    </div>
+
+    <div class="swatch">
+      <div class="row">
+        <svg width="56" height="56" viewBox="0 0 40 40" fill="none" style="color: var(--ink)"><mask id="m3"><rect width="40" height="40" fill="#fff"/><circle cx="20" cy="20" r="1.9" fill="#000"/></mask><g mask="url(#m3)" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><line x1="20" y1="20" x2="9" y2="9"/><line x1="20" y1="20" x2="31" y2="9"/><line x1="20" y1="20" x2="20" y2="33"/></g><g fill="currentColor"><circle cx="9" cy="9" r="4.4"/><circle cx="31" cy="9" r="4.4"/><circle cx="20" cy="33" r="4.4"/></g><circle cx="20" cy="20" r="3" fill="none" stroke="currentColor" stroke-width="2.2"/></svg>
+        <svg width="32" height="32" viewBox="0 0 40 40" fill="none" style="color: var(--ink)"><mask id="m4"><rect width="40" height="40" fill="#fff"/><circle cx="20" cy="20" r="1.9" fill="#000"/></mask><g mask="url(#m4)" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><line x1="20" y1="20" x2="9" y2="9"/><line x1="20" y1="20" x2="31" y2="9"/><line x1="20" y1="20" x2="20" y2="33"/></g><g fill="currentColor"><circle cx="9" cy="9" r="4.4"/><circle cx="31" cy="9" r="4.4"/><circle cx="20" cy="33" r="4.4"/></g><circle cx="20" cy="20" r="3" fill="none" stroke="currentColor" stroke-width="2.2"/></svg>
+        <svg width="20" height="20" viewBox="0 0 40 40" fill="none" style="color: var(--ink)"><mask id="m5"><rect width="40" height="40" fill="#fff"/><circle cx="20" cy="20" r="1.9" fill="#000"/></mask><g mask="url(#m5)" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><line x1="20" y1="20" x2="9" y2="9"/><line x1="20" y1="20" x2="31" y2="9"/><line x1="20" y1="20" x2="20" y2="33"/></g><g fill="currentColor"><circle cx="9" cy="9" r="4.4"/><circle cx="31" cy="9" r="4.4"/><circle cx="20" cy="33" r="4.4"/></g><circle cx="20" cy="20" r="3" fill="none" stroke="currentColor" stroke-width="2.2"/></svg>
+      </div>
+      <div class="label">Mark only · scales to 16px favicon</div>
+    </div>
+
+    <div class="swatch">
+      <div class="clearspace">
+        <svg width="40" height="40" viewBox="0 0 40 40" fill="none" style="color: var(--ink)"><mask id="m6"><rect width="40" height="40" fill="#fff"/><circle cx="20" cy="20" r="1.9" fill="#000"/></mask><g mask="url(#m6)" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><line x1="20" y1="20" x2="9" y2="9"/><line x1="20" y1="20" x2="31" y2="9"/><line x1="20" y1="20" x2="20" y2="33"/></g><g fill="currentColor"><circle cx="9" cy="9" r="4.4"/><circle cx="31" cy="9" r="4.4"/><circle cx="20" cy="33" r="4.4"/></g><circle cx="20" cy="20" r="3" fill="none" stroke="currentColor" stroke-width="2.2"/></svg>
+      </div>
+      <div class="label">Clear space = height of lowercase "e" · min 80px wide</div>
+    </div>
+  </div>
+</body>
+</html>

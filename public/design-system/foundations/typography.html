@@ -1,0 +1,46 @@
+<!-- @dsCard group="Foundations" -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Yeetful — Typography</title>
+<style>
+  :root { --ink: #0A0A0B; --paper: #FAFAF7; --smoke: #6B6B6F; --mist: #C9C9C5; --yeet: #C6FF3D; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--paper); color: var(--ink); font-family: "Geist", Inter, system-ui, sans-serif; -webkit-font-smoothing: antialiased; padding: 48px; }
+  .eyebrow { font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--smoke); margin: 0 0 8px; }
+  h1 { font-size: 40px; font-weight: 600; letter-spacing: -.02em; margin: 0 0 4px; }
+  .sub { color: var(--smoke); font-size: 16px; margin: 0 0 32px; max-width: 60ch; }
+  .families { display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 36px; }
+  .fam { border: 1px solid var(--mist); border-radius: 12px; padding: 18px 22px; flex: 1; min-width: 220px; }
+  .fam .big { font-size: 30px; font-weight: 600; letter-spacing: -.02em; }
+  .fam .mono { font-family: "JetBrains Mono", ui-monospace, monospace; }
+  .fam .tag { font-size: 12px; color: var(--smoke); margin-top: 6px; font-family: "JetBrains Mono", ui-monospace, monospace; }
+  .row { display: grid; grid-template-columns: 130px 1fr; gap: 20px; align-items: baseline; padding: 14px 0; border-top: 1px solid var(--mist); }
+  .row .token { font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 12px; color: var(--smoke); }
+  .sample { letter-spacing: -.02em; }
+  @media (max-width: 720px) { body { padding: 24px; } .row { grid-template-columns: 1fr; gap: 4px; } }
+</style>
+</head>
+<body>
+  <p class="eyebrow">Foundations</p>
+  <h1>Typography</h1>
+  <p class="sub">Two typefaces, both free and web-performant. Tight tracking (-0.02em) on anything ≥40px. Max 2 sizes per UI region — hierarchy through weight and spacing, not size soup.</p>
+
+  <div class="families">
+    <div class="fam"><div class="big">Geist</div><div class="tag">Display &amp; UI · fallback Inter · headings, body, buttons</div></div>
+    <div class="fam"><div class="big mono">JetBrains Mono</div><div class="tag">Mono · code, receipts, version stamps</div></div>
+  </div>
+
+  <div class="row"><span class="token">Display XL · 72 / 600</span><span class="sample" style="font-size:72px;font-weight:600;line-height:1.05">One subscription.</span></div>
+  <div class="row"><span class="token">Display · 56 / 600</span><span class="sample" style="font-size:56px;font-weight:600;line-height:1.1">Every app.</span></div>
+  <div class="row"><span class="token">H1 · 40 / 600</span><span class="sample" style="font-size:40px;font-weight:600;line-height:1.15">Devs keep what they make</span></div>
+  <div class="row"><span class="token">H2 · 28 / 600</span><span class="sample" style="font-size:28px;font-weight:600;line-height:1.25">Plug in. Get paid.</span></div>
+  <div class="row"><span class="token">H3 · 20 / 600</span><span class="sample" style="font-size:20px;font-weight:600;line-height:1.3">Software, under one roof</span></div>
+  <div class="row"><span class="token">Body L · 18 / 400</span><span class="sample" style="font-size:18px;font-weight:400;line-height:1.5;letter-spacing:0">Marketing body copy. Plainspoken over corporate, short sentences, active voice.</span></div>
+  <div class="row"><span class="token">Body · 16 / 400</span><span class="sample" style="font-size:16px;font-weight:400;line-height:1.5;letter-spacing:0">Default body text used across product UI and most surfaces.</span></div>
+  <div class="row"><span class="token">Body S · 14 / 400</span><span class="sample" style="font-size:14px;font-weight:400;line-height:1.45;letter-spacing:0">Captions, secondary UI, metadata.</span></div>
+  <div class="row"><span class="token">Mono · 14 / 500</span><span class="sample" style="font-family:'JetBrains Mono',ui-monospace,monospace;font-size:14px;font-weight:500;line-height:1.4;letter-spacing:0">v0.5.0 · $0.005/call · settled</span></div>
+</body>
+</html>

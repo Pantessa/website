@@ -13,6 +13,11 @@ const nextConfig: NextConfig = {
   async redirects() {
     return [{ source: '/developers', destination: '/docs', permanent: true }]
   },
+  // Design system lives as static files in public/design-system/. Next doesn't
+  // auto-resolve a directory index, so serve the overview at the clean URL.
+  async rewrites() {
+    return [{ source: '/design-system', destination: '/design-system/index.html' }]
+  },
 }
 
 export default nextConfig
