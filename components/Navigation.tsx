@@ -12,7 +12,6 @@ import ConnectWallet from '@/components/ConnectWallet'
 import AuthButton from '@/components/AuthButton'
 import CreateAccountButton from '@/components/CreateAccountButton'
 import { cdpEnabled } from '@/lib/cdp-embedded'
-import { isAdminAddress } from '@/lib/admin'
 import { YeetfulMark } from '@/components/Logo'
 
 export default function Navigation() {
@@ -126,11 +125,6 @@ export default function Navigation() {
       <Link href="/activity" className={`nav__tab ${pathname === '/activity' ? 'is-on' : ''}`}>
         Activity
       </Link>
-      {mounted && isAdminAddress(sessionAddress) && (
-        <Link href="/incidents" className={`nav__tab ${pathname.startsWith('/incidents') ? 'is-on' : ''}`}>
-          Incidents
-        </Link>
-      )}
       <Link href="/docs" className={`nav__tab ${pathname.startsWith('/docs') ? 'is-on' : ''}`}>
         Docs
       </Link>
