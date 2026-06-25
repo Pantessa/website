@@ -1190,23 +1190,54 @@
   }
 
   /* ── BLOG ────────────────────────────────────────── */
-  .blog__grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; margin-top: 40px; }
+  /* Featured (latest) post — the index leads with one thing to read. */
+  .blog__feature {
+    display: block; margin-top: 40px; border: 1px solid var(--line); background: var(--surf-1);
+    border-radius: 18px; overflow: hidden; transition: border-color .18s, background .18s;
+  }
+  .blog__feature:hover { border-color: var(--line-2); background: var(--surf-2); }
+  .blog__feature:hover .blog__featmore { color: var(--fg); }
+  .blog__featcover { width: 100%; aspect-ratio: 2.6 / 1; object-fit: cover; display: block; border-bottom: 1px solid var(--line); }
+  .blog__featbody { padding: clamp(24px, 3vw, 36px); }
+  .blog__featkicker { font-size: 11px; letter-spacing: 0.16em; color: var(--accent); }
+  .blog__feattitle {
+    font-family: var(--font-serif); font-weight: 500; font-optical-sizing: auto;
+    font-size: clamp(28px, 3.6vw, 44px); line-height: 1.05; letter-spacing: -0.015em;
+    margin-top: 12px; color: var(--fg); text-wrap: balance;
+  }
+  .blog__featdesc { margin-top: 14px; max-width: 64ch; font-size: 16px; line-height: 1.6; color: var(--muted); text-wrap: pretty; }
+  .blog__featmore { display: inline-block; margin-top: 20px; font-size: 13.5px; color: var(--accent); transition: color .15s; }
+
+  .blog__grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; margin-top: 16px; }
   .blog__card { border: 1px solid var(--line); background: var(--surf-1); border-radius: 14px; overflow: hidden; transition: border-color .18s, background .18s; }
   .blog__card:hover { border-color: var(--line-2); background: var(--surf-2); }
-  .blog__cardlink { display: block; padding: 20px; }
+  .blog__card:hover .blog__cardmore { color: var(--fg); }
+  .blog__cardlink { display: block; padding: 22px 24px; }
   /* aspect-ratio reserves the box height before the (dynamic, dimension-less)
      cover image loads → no layout shift (CLS) on blog list + post. object-fit
      keeps it from distorting. */
-  .blog__cover { width: 100%; aspect-ratio: 16 / 9; object-fit: cover; border-radius: 10px; border: 1px solid var(--line); display: block; margin-bottom: 14px; }
+  .blog__cover { width: 100%; aspect-ratio: 16 / 9; object-fit: cover; border-radius: 10px; border: 1px solid var(--line); display: block; margin-bottom: 16px; }
   .blog__cover--hero { aspect-ratio: 2 / 1; margin: 26px 0 0; }
-  .blog__cardtitle { font-family: 'Archivo', sans-serif; font-weight: 700; font-size: 19px; letter-spacing: -0.02em; line-height: 1.25; }
-  .blog__carddesc { font-size: 13.5px; color: var(--muted); line-height: 1.5; margin-top: 8px; }
-  .blog__cardmeta { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 12px; font-size: 11.5px; color: var(--muted-2); }
+  .blog__cardtitle {
+    font-family: var(--font-serif); font-weight: 500; font-optical-sizing: auto;
+    font-size: 22px; letter-spacing: -0.01em; line-height: 1.16; color: var(--fg);
+  }
+  .blog__carddesc { font-size: 13.5px; color: var(--muted); line-height: 1.55; margin-top: 9px; }
+  .blog__cardmeta { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 14px; font-size: 11.5px; color: var(--muted-2); }
   .blog__tag { border: 1px solid var(--line); border-radius: 999px; padding: 1px 9px; font-size: 10.5px; }
-  .blog__post { max-width: 760px; }
-  .blog__title { font-family: 'Archivo', sans-serif; font-weight: 800; font-size: clamp(1.9rem, 3.4vw, 2.6rem); letter-spacing: -0.03em; line-height: 1.1; }
-  .blog__body { margin-top: 30px; font-size: 16px; line-height: 1.7; color: var(--muted); }
-  .blog__body h2 { font-family: 'Archivo', sans-serif; font-weight: 700; font-size: 22px; letter-spacing: -0.02em; color: var(--fg); margin: 36px 0 12px; }
+  .blog__cardmore { display: inline-block; margin-top: 16px; font-size: 12.5px; color: var(--muted); transition: color .15s; }
+  .blog__post { max-width: 720px; }
+  .blog__posthead { margin-top: 18px; padding-bottom: 26px; border-bottom: 1px solid var(--line); }
+  .blog__postkicker { font-size: 11px; letter-spacing: 0.16em; color: var(--accent); }
+  .blog__title {
+    font-family: var(--font-serif); font-weight: 500; font-optical-sizing: auto;
+    font-size: clamp(2.2rem, 4vw, 3.2rem); letter-spacing: -0.018em; line-height: 1.06;
+    color: var(--fg); text-wrap: balance; margin-top: 12px;
+  }
+  .blog__lede { margin-top: 16px; font-size: clamp(17px, 1.6vw, 19px); line-height: 1.55; color: var(--muted); max-width: 60ch; text-wrap: pretty; }
+  .blog__posthead .blog__cardmeta { margin-top: 18px; }
+  .blog__body { margin-top: 30px; font-size: 16.5px; line-height: 1.75; color: var(--muted); }
+  .blog__body h2 { font-family: var(--font-serif); font-weight: 500; font-size: 27px; letter-spacing: -0.01em; line-height: 1.18; color: var(--fg); margin: 40px 0 12px; }
   .blog__body h3 { font-family: 'Archivo', sans-serif; font-weight: 700; font-size: 17px; color: var(--fg); margin: 28px 0 10px; }
   .blog__body p { margin: 14px 0; }
   .blog__body a { color: var(--fg); text-decoration: underline; text-underline-offset: 3px; text-decoration-style: dotted; }

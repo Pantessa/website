@@ -98,8 +98,10 @@ export default async function BlogPostPage({ params }: Params) {
             Blog
           </Link>
 
-          <header>
+          <header className="blog__posthead">
+            <span className="blog__postkicker mono">NOTES FROM THE CONTROL PLANE</span>
             <h1 className="blog__title">{post.title}</h1>
+            {post.description && <p className="blog__lede">{post.description}</p>}
             <div className="blog__cardmeta mono">
               {post.publishedAt && (
                 <time dateTime={post.publishedAt.toISOString()}>

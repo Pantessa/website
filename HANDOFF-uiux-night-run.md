@@ -58,5 +58,12 @@ collides with the sharp-router-night dev server in `website/` (:3000).
   the public `/api/activity` feed; renders nothing until real settled volume
   (honesty bar, no zeros). Mounted after the live strip on the landing page;
   charts stack on ≤760px. Verified desktop + mobile (no overflow).
-### ⏳ Batch 4 — Blog index + post
+### ✅ Batch 4 — Blog index + post (committed)
+- **Index**: leads with a **featured "LATEST"** card (big serif title, lede,
+  "Read the post →"); remaining posts in a richer 2-col grid. Card titles now
+  **serif** (Newsreader), more padding, a "Read →" affordance on hover.
+- **Post**: editorial header — accent kicker, big serif title, a **lede**
+  (post.description), meta under a hairline divider; serif `h2` subheads;
+  wider line-height + 720px measure for comfortable reading.
+- Verified index + post on desktop + mobile (no overflow, serif throughout).
 ### ⏳ Batch 5 — General polish
