@@ -1187,6 +1187,9 @@
   @media (max-width: 600px) {
     .splash__npm { flex-direction: column; align-items: stretch; gap: 16px; }
     .splash__npm pre { white-space: pre; }
+    /* Match the hero: flat, full-width CTAs on a phone instead of a cramped row. */
+    .splash__ctas { flex-direction: column; align-items: stretch; gap: 10px; }
+    .splash__ctas .btn { width: 100%; justify-content: center; }
   }
 
   /* ── BLOG ────────────────────────────────────────── */

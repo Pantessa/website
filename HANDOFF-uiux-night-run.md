@@ -92,6 +92,19 @@ Merged into `autopilot` for morning review.
   leaderboard) is serif. Moved both to the Newsreader serif. **Every public
   page hero H1 now reads in the same serif voice** — "fonts aligned", site-wide.
 
-### Remaining ideas (optional, for the user to direct)
+### ✅ Batch 7 — Responsive QA sweep + docs CTA consistency (committed)
+- Swept every touched page at 375px (`/`, `/activity`, `/blog`, a post,
+  `/servers`, `/docs`): **zero horizontal overflow / clipping regressions**
+  (the wide `/docs` tab bar is the intended horizontal-scroll nav; the hero SVG
+  is contained). The batch-1–6 work holds up on mobile.
+- One consistency fix: the `/docs` splash CTAs ("Mint a key" / "Browse the
+  network") were a cramped side-by-side row on phones — now flat & full-width
+  stacked (≤600px), matching the hero treatment from Batch 2. Desktop unchanged.
+
+### Run complete
+Batches 1–7 done + on `autopilot` (PRs #260/#261 merged; this batch's PR too).
+Nothing else clearly-valuable + low-risk remained, so the loop stopped here.
+
+### Optional, for the user to direct (higher subjectivity — not done)
 - Nav + footer micro-polish; a hover/focus-state sweep.
 - Dashboard page-title treatment (kept compact sans intentionally for now).
