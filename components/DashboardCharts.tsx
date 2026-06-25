@@ -1,5 +1,6 @@
 'use client'
 
+import Link from 'next/link'
 import {
   Area,
   AreaChart,
@@ -33,7 +34,7 @@ function dayLabel(iso: string): string {
 /** Daily spend over the last 30 days — area chart. */
 export function SpendOverTime({ daily }: { daily: { day: string; spent: number; calls: number }[] }) {
   if (daily.length === 0) {
-    return <EmptyChart label="No spend yet — payments will chart here." />
+    return <EmptyChart label="No spend yet — payments will chart here." cta={{ href: '/chat', label: 'Run your first call →' }} />
   }
   return (
     <ChartBox height={220}>
@@ -75,7 +76,7 @@ export function SpendOverTime({ daily }: { daily: { day: string; spent: number; 
 /** Per-agent spend — horizontal bars, one color per agent. */
 export function SpendByAgent({ perAgent }: { perAgent: { service: string; spent: number; calls: number }[] }) {
   if (perAgent.length === 0) {
-    return <EmptyChart label="No per-agent data yet." />
+    return <EmptyChart label="No spend yet — services you pay will show here." cta={{ href: '/chat', label: 'Run your first call →' }} />
   }
   const height = Math.max(160, perAgent.length * 34)
   return (
@@ -137,10 +138,18 @@ function ChartBox({ height, children }: { height: number; children: React.ReactE
   )
 }
 
-function EmptyChart({ label }: { label: string }) {
+function EmptyChart({ label, cta }: { label: string; cta?: { href: string; label: string } }) {
   return (
-    <div className="h-[220px] grid place-items-center text-xs text-[color:var(--muted-2)]">
-      {label}
+    <div className="h-[220px] flex flex-col items-center justify-center gap-2.5 text-center px-4">
+      <p className="text-xs text-[color:var(--muted-2)]">{label}</p>
+      {cta && (
+        <Link
+          href={cta.href}
+          className="inline-flex items-center text-xs font-medium px-3 py-1.5 rounded-lg border border-[var(--line-2)] text-[color:var(--muted)] hover:text-white hover:border-white transition-colors"
+        >
+          {cta.label}
+        </Link>
+      )}
     </div>
   )
 }
