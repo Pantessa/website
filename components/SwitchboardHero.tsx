@@ -11,6 +11,7 @@ import { useRouter } from 'next/navigation'
 import { useAccount } from 'wagmi'
 import { useSession } from '@/lib/session'
 import SwitchboardWeb from '@/components/SwitchboardWeb'
+import { EXAMPLE_PROMPTS } from '@/lib/examples'
 import CreateAccountButton from '@/components/CreateAccountButton'
 import { cdpEnabled } from '@/lib/cdp-embedded'
 
@@ -57,6 +58,27 @@ export default function SwitchboardHero() {
             <Link className="btn btn--ghost" href="/docs">
               Connect an agent
             </Link>
+          </div>
+
+          {/* One-tap example asks → open chat prefilled with the prompt + the
+              mapped agent toggled (?try + ?q handled in ChatInterface). Turns
+              curiosity into a first routed call. */}
+          <div className="heroweb__examples">
+            <span className="heroweb__examplbl mono">Try</span>
+            {EXAMPLE_PROMPTS.map((ex) => (
+              <Link
+                key={ex.label}
+                href={
+                  ex.slug
+                    ? `/chat?try=${ex.slug}&q=${encodeURIComponent(ex.prompt)}`
+                    : `/chat?q=${encodeURIComponent(ex.prompt)}`
+                }
+                className="heroweb__examplechip"
+                title={ex.prompt}
+              >
+                {ex.label}
+              </Link>
+            ))}
           </div>
           <div className="heroweb__proof mono">
             <div className="heroweb__pitem">
