@@ -54,6 +54,7 @@ export async function recordLedger(entry: {
   note?: string
   apiKeyId?: string
   orgId?: string
+  latencyMs?: number
 }) {
   const created = await prisma.spendLedgerEntry.create({ data: entry })
   // Launchpad (M4b): on a real settlement, route a cut to the MCP's stakers.

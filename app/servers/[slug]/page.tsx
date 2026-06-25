@@ -8,7 +8,10 @@ import Footer from '@/components/Footer'
 import ServerApproveToggle from '@/components/ServerApproveToggle'
 import TokenPanel from '@/components/TokenPanel'
 import Description from '@/components/Description'
+import ReputationPanel from '@/components/ReputationPanel'
 import { getTokenPanel } from '@/lib/launch-token'
+import { computeReputation, recentPings } from '@/lib/reputation'
+import { getSessionAddress } from '@/lib/auth'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -111,6 +114,21 @@ export default async function ServiceDetailPage({ params }: Params) {
   // Launched tokens get the pump.fun-style split (sticky trade rail top-right);
   // unlaunched ones stay a simple single column.
   const launched = panel.state === 'launched' && !!panel.token
+
+  // Reputation: multi-dimension score + recent-call timeline + the viewer's rating.
+  const [repMap, pings, viewerAddr] = await Promise.all([
+    computeReputation([{ slug: server.slug, name: server.name, category: server.category, priceUsd: server.priceUsd }]),
+    recentPings(server.name),
+    getSessionAddress(),
+  ])
+  const rep = repMap.get(server.slug)!
+  const yourRating = viewerAddr
+    ? (await prisma.mcpRating.findUnique({
+        where: { serviceSlug_ownerAddress: { serviceSlug: server.slug, ownerAddress: viewerAddr.toLowerCase() } },
+        select: { rating: true },
+      }))?.rating ?? null
+    : null
+  const ratingInitial = { average: rep.ratingAvg, count: rep.ratingCount, yourRating }
 
   const header = (
     <header className="svc__head">
@@ -252,6 +270,7 @@ export default async function ServiceDetailPage({ params }: Params) {
       {header}
       <ServerApproveToggle serverId={server.id} serverName={server.name} />
       <Description text={server.description} />
+      <ReputationPanel rep={rep} pings={pings} rating={ratingInitial} slug={server.slug} />
       <TokenPanel panel={panel} slug={server.slug} name={server.name} />
       {endpoints}
     </>

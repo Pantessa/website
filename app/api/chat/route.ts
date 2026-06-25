@@ -1149,13 +1149,15 @@ export function streamAutoRouter(
             }
           }
           send({ type: 'pay', service: pick.serverName, host, priceUsd: pick.priceUsd })
+          const payStart = Date.now()
           try {
             const { json, txHash } = await paidCall(pick.request)
+            const latencyMs = Date.now() - payStart
             const r: Receipt = { name: pick.serverName, endpoint: host, priceUsd: pick.priceUsd, txHash, ok: true }
             receipts.push(r)
             send({ type: 'receipt', receipt: r })
             if (grant) {
-              await recordLedger({ grantId: grant.id, orgId: grant.orgId ?? undefined, apiKeyId, host, serviceName: pick.serverName, amountUsd: price, ok: true, txHash, note: 'settled' })
+              await recordLedger({ grantId: grant.id, orgId: grant.orgId ?? undefined, apiKeyId, host, serviceName: pick.serverName, amountUsd: price, ok: true, txHash, note: 'settled', latencyMs })
               spentToday += price
               spentTotal += price
             }
@@ -1205,12 +1207,14 @@ export function streamAutoRouter(
         }
 
         send({ type: 'status', label: 'Synthesizing the answer…' } satisfies TraceStep)
+        const synthStart = Date.now()
         const { text, txHash } = await callInference(inference, buildPrompt(message, decision.context, history))
+        const synthLatencyMs = Date.now() - synthStart
         const r: Receipt = { name: inference.name, endpoint: infHost, priceUsd: inference.priceUsd ?? '0.01', txHash, ok: true }
         receipts.push(r)
         send({ type: 'receipt', receipt: r })
         if (grant) {
-          await recordLedger({ grantId: grant.id, orgId: grant.orgId ?? undefined, apiKeyId, host: infHost, serviceName: inference.name, amountUsd: infPrice, ok: true, txHash, note: 'settled' })
+          await recordLedger({ grantId: grant.id, orgId: grant.orgId ?? undefined, apiKeyId, host: infHost, serviceName: inference.name, amountUsd: infPrice, ok: true, txHash, note: 'settled', latencyMs: synthLatencyMs })
         }
 
         // Value proof (B15): what smart routing saved this turn vs naive routing.
