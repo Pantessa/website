@@ -917,18 +917,59 @@ export function streamAutoRouter(
             intent: govIntent.kind === 'vote' ? 'Cast a governance vote' : 'Find open governance proposals',
             needs: govIntent.spaceQuery ? [`Snapshot space: ${govIntent.spaceQuery}`] : ['active Snapshot proposals'],
           } satisfies TraceStep)
+
+          // Optional paid summary (item 1): the free Snapshot reads gather the
+          // facts; Yeetful Claude phrases them conversationally. This is a REAL
+          // burner-paid inference call — shown as select → pay → receipt in the
+          // terminal — gated by the spend policy. Free template if unavailable.
+          const govReceipts: Receipt[] = []
+          const synthesize = async (prompt: string): Promise<string | null> => {
+            if (!hasAgentWallet()) return null
+            const catalog = await loadCatalog()
+            const inference = selectInferenceProvider(catalog)
+            if (!inference?.endpoint) return null
+            const infHost = hostOf(inference.endpoint)
+            const infPrice = Number(inference.priceUsd ?? '0.01')
+            const owner = ownerOverride ?? (await getSessionAddress())
+            const grant = owner ? await getActiveGrant(owner) : null
+            if (grant) {
+              const v = grantViolation(toPolicy(grant), infHost, infPrice, await spentTodayUsd(grant.id), await spentTotalUsd(grant.id))
+              if (v) { send({ type: 'note', level: 'warn', label: `Skipped the conversational summary — spend policy (${v}).` }); return null }
+            }
+            send({ type: 'select', service: inference.name, endpoint: inference.endpoint, priceUsd: inference.priceUsd ?? undefined, reason: 'Phrase the Snapshot data conversationally' } satisfies TraceStep)
+            send({ type: 'pay', service: inference.name, host: infHost, priceUsd: String(infPrice) })
+            try {
+              const r = await callInference(inference, prompt)
+              const receipt: Receipt = { name: inference.name, endpoint: infHost, priceUsd: String(infPrice), txHash: r.txHash, ok: true }
+              govReceipts.push(receipt)
+              send({ type: 'receipt', receipt })
+              if (grant) await recordLedger({ grantId: grant.id, orgId: grant.orgId ?? undefined, apiKeyId, host: infHost, serviceName: inference.name, amountUsd: infPrice, ok: true, txHash: r.txHash, note: 'settled (governance summary)' })
+              return r.text?.trim() || null
+            } catch {
+              send({ type: 'note', level: 'warn', label: 'Summary inference failed — showing the raw data.' })
+              return null
+            }
+          }
+
           try {
-            const gov = await runGovernanceTurn({ message, intent: govIntent, walletAddress, emit: send })
+            const gov = await runGovernanceTurn({ message, intent: govIntent, walletAddress, emit: send, synthesize })
+            const paid = govReceipts.length > 0
             send({
               type: 'reply',
               content: gov.reply,
-              receipts: [],
-              payer: gov.cast ? 'your agent' : 'none',
+              receipts: govReceipts,
+              payer: gov.cast ? 'your agent' : paid ? 'the house wallet' : 'none',
               trace: trace(),
               ...(gov.voteRequest ? { voteRequest: gov.voteRequest } : {}),
               ...(gov.voteProposal ? { voteProposal: gov.voteProposal } : {}),
             })
-            recordRouteEvent({ payer: gov.cast ? 'agent' : 'none', latencyMs: Date.now() - startMs, intent: govIntent.kind })
+            recordRouteEvent({
+              payer: gov.cast ? 'agent' : paid ? 'house' : 'none',
+              latencyMs: Date.now() - startMs,
+              intent: govIntent.kind,
+              settledCount: govReceipts.length,
+              totalCostUsd: govReceipts.reduce((a, r) => a + (Number(r.priceUsd) || 0), 0),
+            })
           } catch (e) {
             send({ type: 'reply', content: `🗳️ Governance routing hit an error: ${e instanceof Error ? e.message : 'unknown error'}.`, receipts: [], payer: 'none' })
           }

@@ -164,8 +164,11 @@ export async function runGovernanceTurn(opts: {
   intent: GovernanceIntent
   walletAddress?: string
   emit: GovEmit
+  /** Optional paid summarizer (Yeetful Claude): turns the gathered facts into a
+   *  conversational overview. Returns null when unavailable/blocked → free template. */
+  synthesize?: (prompt: string) => Promise<string | null>
 }): Promise<GovernanceResult> {
-  const { message, intent, walletAddress, emit } = opts
+  const { message, intent, walletAddress, emit, synthesize } = opts
 
   // Provider selection: governance routes to Snapshot — and unlike paid data MCPs
   // it costs nothing. Surface it like any chosen provider so the terminal shows
@@ -211,7 +214,18 @@ export async function runGovernanceTurn(opts: {
     emit({ type: 'note', level: 'info', label: 'Free — Snapshot hub reads are public; no x402 payment ($0.00).' })
     const lines = proposals.slice(0, 10).map((p) => `· **${p.title}** — \`${p.id.slice(0, 10)}…\``).join('\n')
     const where = spaceName ? ` in **${spaceName}**` : ''
-    return { reply: `🗳️ ${proposals.length} open proposal${proposals.length === 1 ? '' : 's'}${where}:\n${lines}\n\nSay e.g. “vote For on ${proposals[0].title}” and I’ll prepare the EIP-712 signature.` }
+    const tail = `Say e.g. “vote For on ${proposals[0].title}” and I’ll prepare the EIP-712 signature.`
+
+    // Conversational overview via Yeetful Claude (paid) when available; the
+    // structured list (titles + ids) is always appended so the user can act.
+    if (synthesize) {
+      const ctx = proposals.slice(0, 10).map((p) => `- ${p.title}`).join('\n')
+      const overview = await synthesize(
+        `You are a DAO governance assistant. In ONE or TWO short sentences, give a conversational overview of what's on the ballot in ${spaceName ?? 'this DAO'} right now. Do NOT list each proposal individually (a list is shown separately). Open proposals:\n${ctx}`,
+      )
+      if (overview) return { reply: `🗳️ ${overview}\n\n${lines}\n\n${tail}` }
+    }
+    return { reply: `🗳️ ${proposals.length} open proposal${proposals.length === 1 ? '' : 's'}${where}:\n${lines}\n\n${tail}` }
   }
 
   // ── VOTE path: pin one proposal, build the EIP-712, sign + cast or hand off. ─
