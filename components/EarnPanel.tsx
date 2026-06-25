@@ -116,7 +116,7 @@ export default function EarnPanel() {
           <p className="mono text-[11px] text-[color:var(--muted-2)] mt-4 mb-2">
             Or paste this into Claude Code — it wires the report into your server:
           </p>
-          <CopyBlock text={PAYEE_CLAUDE_PROMPT} label="Copy payee prompt" />
+          <CopyBlock text={PAYEE_CLAUDE_PROMPT} label="Copy prompt" maxHeightClassName="max-h-56" />
 
           <Link
             href="/docs/earn"
