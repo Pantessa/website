@@ -21,6 +21,7 @@
     "test:router": "tsx scripts/test-router.ts",
     "test:vote": "tsx scripts/test-snapshot-vote.ts",
     "test:verify": "tsx scripts/test-verify.ts",
+    "test:live": "tsx scripts/test-live-services.ts",
     "verify:receipts": "tsx scripts/verify-receipts.ts",
     "email:test": "tsx scripts/send-test-email.ts",
     "postinstall": "prisma generate"
