@@ -1,7 +1,7 @@
 'use client'
 
-import { useEffect, useRef } from 'react'
-import { CircleDollarSign, Check, PenLine } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { CircleDollarSign, Check, PenLine, Copy } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { RouterTraceEvent } from '@/lib/store'
 
@@ -48,6 +48,31 @@ export default function RouteTraceTerminal({
         </div>
       )}
     </div>
+  )
+}
+
+/** A copy-to-clipboard affordance for error lines — so a failure can be grabbed
+ *  verbatim and pasted into a debug thread. */
+function CopyButton({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false)
+  return (
+    <button
+      type="button"
+      onClick={() => {
+        navigator.clipboard?.writeText(text).then(
+          () => {
+            setCopied(true)
+            setTimeout(() => setCopied(false), 1200)
+          },
+          () => {},
+        )
+      }}
+      title="Copy error"
+      aria-label="Copy error"
+      className="ml-1 inline-flex items-center align-middle opacity-60 hover:opacity-100 transition-opacity"
+    >
+      {copied ? <Check className="w-3 h-3" strokeWidth={3} /> : <Copy className="w-3 h-3" />}
+    </button>
   )
 }
 
@@ -162,6 +187,7 @@ export function TraceLine({ event }: { event: RouterTraceEvent }) {
       return (
         <p className="text-[#ff6b6b] [overflow-wrap:anywhere]">
           ✗ {r.name} — {r.note ?? 'failed'}
+          <CopyButton text={`${r.name} — ${r.note ?? 'failed'}`} />
         </p>
       )
     }
@@ -191,7 +217,12 @@ export function TraceLine({ event }: { event: RouterTraceEvent }) {
         </p>
       )
     case 'error':
-      return <p className="text-[#ff6b6b] [overflow-wrap:anywhere]">✗ error — {event.message}</p>
+      return (
+        <p className="text-[#ff6b6b] [overflow-wrap:anywhere]">
+          ✗ error — {event.message}
+          <CopyButton text={`error — ${event.message}`} />
+        </p>
+      )
     default:
       return null
   }
