@@ -48,8 +48,9 @@ export default async function LeaderboardPage() {
             The most <em className="hero__em">trusted</em> agents.
           </h1>
           <p className="hero__sub">
-            Every x402 MCP, scored from real paid calls — reliability, liveness, speed, adoption, value, and
-            user ratings, blended into one reputation score. Services need ≥5 calls or ≥3 ratings to earn a tier.
+            Every x402 MCP, graded A–F from real paid calls — reliability, liveness, speed, adoption, value, and
+            user ratings, blended into one score. A service earns a grade after its first call or rating; volume
+            (adoption) keeps a one-call wonder from topping the board.
           </p>
         </header>
 
