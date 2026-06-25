@@ -494,7 +494,7 @@
   .srvpage { padding: 40px 0 56px; }
   .srvpage__head { display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; flex-wrap: wrap; margin-bottom: 28px; }
   .srvpage__eyebrow { font-size: 12px; letter-spacing: 0.18em; color: var(--muted-2); }
-  .srvpage__h1 { font-size: clamp(30px, 4vw, 46px); font-weight: 600; letter-spacing: -0.02em; margin-top: 10px; color: var(--fg); }
+  .srvpage__h1 { font-family: var(--font-serif); font-weight: 500; font-optical-sizing: auto; font-size: clamp(34px, 4.4vw, 52px); letter-spacing: -0.018em; line-height: 1.04; margin-top: 12px; color: var(--fg); }
   .srvpage__add { display: inline-flex; align-items: center; gap: 8px; height: 44px; }
 
   /* ── EXPLAINER ───────────────────────────────────── */
@@ -1142,8 +1142,8 @@
   /* ── DOCS SPLASH (the grand entry at /docs) ──────── */
   .splash__eyebrow { font-size: 12px; letter-spacing: 0.18em; color: var(--accent); margin-bottom: 16px; }
   .splash__h1 {
-    font-family: 'Archivo', sans-serif; font-weight: 800;
-    font-size: clamp(2.2rem, 4vw, 3.4rem); letter-spacing: -0.03em; line-height: 1.04;
+    font-family: var(--font-serif); font-weight: 500; font-optical-sizing: auto;
+    font-size: clamp(2.4rem, 4.2vw, 3.7rem); letter-spacing: -0.018em; line-height: 1.02;
     max-width: 16ch;
   }
   .splash__lead { margin-top: 18px; font-size: 16.5px; color: var(--muted); line-height: 1.6; max-width: 64ch; }
