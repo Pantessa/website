@@ -392,6 +392,33 @@ model RouteEvent {
   @@map("route_events")
 }
 
+/// A deduplicated routing FAILURE — the self-heal loop's unit of work. Grouped
+/// by `signature` (service + error class, e.g. "heurist-mesh:404") so repeated
+/// failures of the same kind collapse into ONE incident with a count, not N
+/// alerts. The state machine (open → dispatched → pr_open → resolved) is what
+/// stops the autonomous fixer from firing twice for the same bug. `exampleTurnId`
+/// links to the failing turn's full trace (route_trace_lines) — the "what the
+/// user tried + what they got" the fix PR cites.
+model RouteIncident {
+  id           String    @id @default(cuid())
+  signature    String    @unique // "<service-slug>:<errorClass>"
+  service      String? // serviceName/host that failed
+  errorClass   String?   @map("error_class") // "404" | "400" | "unresolved-path" | "settlement" | "timeout" | "error"
+  title        String // human summary
+  status       String    @default("open") // open | dispatched | pr_open | resolved | wontfix
+  count        Int       @default(0)
+  exampleTurnId String?  @map("example_turn_id") // a route_trace_lines turnId to view the trace
+  lastError    String?   @map("last_error") // last error message (capped)
+  prUrl        String?   @map("pr_url")
+  firstSeenAt  DateTime  @default(now()) @map("first_seen_at")
+  lastSeenAt   DateTime  @default(now()) @map("last_seen_at")
+  resolvedAt   DateTime? @map("resolved_at")
+
+  @@index([status])
+  @@index([lastSeenAt])
+  @@map("route_incidents")
+}
+
 /// One line of a routed turn's live reasoning trace — the public, realtime
 /// stream behind the Activity page's routing terminal (and the chat engine
 /// window). Unlike RouteEvent (one aggregate row per turn), this is the raw

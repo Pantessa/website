@@ -104,3 +104,18 @@ export async function readTraceLines(since: number | undefined, limit = 200): Pr
   const cursor = lines.length ? lines[lines.length - 1].n : (since ?? 0)
   return { lines, cursor }
 }
+
+/** The full ordered trace of one turn — for the incident/logs detail view. */
+export async function getTurnTrace(turnId: string): Promise<unknown[]> {
+  if (process.env.USE_DB !== 'true' || !process.env.DATABASE_URL) return []
+  try {
+    const rows = await prisma.routeTraceLine.findMany({
+      where: { turnId },
+      orderBy: { seq: 'asc' },
+      select: { event: true },
+    })
+    return rows.map((r) => r.event)
+  } catch {
+    return []
+  }
+}

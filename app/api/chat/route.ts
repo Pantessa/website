@@ -40,6 +40,7 @@ import { buildSignableArtifact } from '@/lib/transaction-layer'
 import { isCacheable, routeCacheKey, getCached, setCached } from '@/lib/route-cache'
 import { recordRouteEvent, routeSavings } from '@/lib/route-telemetry'
 import { newTurnId, recordTraceLine } from '@/lib/route-trace'
+import { recordIncident } from '@/lib/incidents'
 import type { RouterDecision } from '@/lib/router'
 
 // x402 signing + paid fetch need the Node runtime.
@@ -1178,6 +1179,9 @@ export function streamAutoRouter(
             if (grant) {
               await recordLedger({ grantId: grant.id, orgId: grant.orgId ?? undefined, apiKeyId, host, serviceName: pick.serverName, amountUsd: 0, ok: false, note: `error: ${note}`.slice(0, 200) })
             }
+            // Deduplicated incident for the self-heal loop (groups by service +
+            // error class; links to this turn's trace). Fire-and-forget.
+            recordIncident({ service: pick.serverName, message: note, turnId })
             return { error: note }
           }
         }
