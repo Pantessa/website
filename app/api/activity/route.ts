@@ -28,7 +28,9 @@ export async function GET() {
       _sum: { amountUsd: true },
       _count: true,
     }),
-    prisma.spendLedgerEntry.count({ where: { ok: false } }),
+    // Policy refusals only — exclude `error:`-prefixed rows (endpoint call
+    // failures), which are a reliability signal, not a policy block.
+    prisma.spendLedgerEntry.count({ where: { ok: false, NOT: { note: { startsWith: 'error:' } } } }),
     prisma.spendLedgerEntry.count({ where: { ok: true, createdAt: { gte: utcMidnight } } }),
     // Distinct wallets that have ever produced a receipt (settled or denied).
     prisma.$queryRaw<[{ accounts: bigint }]>`
