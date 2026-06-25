@@ -7,7 +7,7 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { Card, CardTitle, Kpi } from '@/lib/dashboard-ui'
+import { Card, CardTitle, Kpi, SkeletonKpi, SkeletonCard } from '@/lib/dashboard-ui'
 import CopyBlock from '@/components/CopyBlock'
 import { PAYEE_CLAUDE_PROMPT } from '@/lib/prompts'
 
@@ -34,16 +34,36 @@ function usd(n: number): string {
 
 export default function EarnPanel() {
   const [data, setData] = useState<Earnings | null>(null)
+  const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     fetch('/api/dashboard/earnings', { cache: 'no-store' })
       .then((r) => (r.ok ? r.json() : null))
       .then(setData)
       .catch(() => setData(null))
+      .finally(() => setLoading(false))
   }, [])
 
-  // Still loading or the endpoint errored → stay quiet (avoid a flash).
-  if (!data) return null
+  // While the earnings fetch is in flight, render a skeleton matching the earn
+  // layout so the two-sided Overview fills in cleanly. On error (settled, no
+  // data) stay quiet.
+  if (!data) {
+    if (!loading) return null
+    return (
+      <section className="mb-6">
+        <h2 className="mono text-[11px] uppercase tracking-wider text-[color:var(--muted-2)] mb-2">
+          Earn · your MCP servers
+        </h2>
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-3 min-w-0">
+          <SkeletonKpi />
+          <SkeletonKpi />
+          <SkeletonKpi />
+          <SkeletonKpi />
+        </div>
+        <SkeletonCard bodyClassName="h-28" />
+      </section>
+    )
+  }
 
   const k = data.kpis
 
