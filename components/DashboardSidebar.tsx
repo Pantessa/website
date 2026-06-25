@@ -6,7 +6,7 @@
 
 import Link from 'next/link'
 import { useEffect, useRef } from 'react'
-import { LayoutDashboard, KeyRound, Bot, ToggleRight, Activity, ReceiptText, Building2, LineChart, Server, MessageSquare, BookOpen, Sparkles } from 'lucide-react'
+import { LayoutDashboard, KeyRound, Bot, ToggleRight, Activity, ReceiptText, Building2, LineChart, Server, MessageSquare, BookOpen, Sparkles, AlertTriangle } from 'lucide-react'
 import { isAdminAddress } from '@/lib/admin'
 
 export const DASH_SECTIONS = [
@@ -23,9 +23,13 @@ export const DASH_SECTIONS = [
   { href: '/docs', label: 'Docs', icon: BookOpen, exact: false },
 ] as const
 
-// Admin-only section, appended when the connected wallet is on the allowlist
-// (server-enforced by /api/admin/overview; this is just nav visibility).
-const ADMIN_SECTION = { href: '/dashboard/admin', label: 'Adoption', icon: LineChart, exact: false } as const
+// Admin-only sections, appended when the connected wallet is on the allowlist
+// (server-enforced by each page; this is just nav visibility). Incidents =
+// /incidents (the self-heal logs); admins only, page 404s for everyone else.
+const ADMIN_SECTIONS = [
+  { href: '/dashboard/admin', label: 'Adoption', icon: LineChart, exact: false },
+  { href: '/incidents', label: 'Incidents', icon: AlertTriangle, exact: false },
+] as const
 
 export function isSectionActive(pathname: string, href: string, exact: boolean): boolean {
   return exact ? pathname === href : pathname.startsWith(href)
@@ -40,7 +44,7 @@ export default function DashboardSidebar({ pathname, address }: { pathname: stri
       ?.scrollIntoView({ block: 'nearest', inline: 'center', behavior: 'instant' as ScrollBehavior })
   }, [pathname])
 
-  const sections = isAdminAddress(address) ? [...DASH_SECTIONS, ADMIN_SECTION] : DASH_SECTIONS
+  const sections = isAdminAddress(address) ? [...DASH_SECTIONS, ...ADMIN_SECTIONS] : DASH_SECTIONS
 
   return (
     <nav className="dash__side" aria-label="Dashboard sections" ref={nav}>
