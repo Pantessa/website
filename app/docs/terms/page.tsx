@@ -32,7 +32,7 @@ export default function TermsPage() {
         </p>
         <p>
           These Terms of Service (&ldquo;Terms&rdquo;) are a binding agreement between you and{' '}
-          <strong>[Yeetful — legal entity name]</strong> (&ldquo;Yeetful,&rdquo; &ldquo;we,&rdquo;
+          <strong>Yeetful Inc.</strong> (&ldquo;Yeetful,&rdquo; &ldquo;we,&rdquo;
           &ldquo;us&rdquo;), governing your access to and use of the Yeetful website, dashboard,
           SDK, APIs, and related services (together, the &ldquo;Service&rdquo;). If you use the
           Service on behalf of an organization, you represent that you are authorized to bind that
@@ -218,8 +218,8 @@ export default function TermsPage() {
       <div className="docs__callout">
         <p>
           This page is a general template and not legal advice. Have qualified counsel review and
-          complete the bracketed details (legal entity, jurisdiction, venue, contact) before
-          relying on it.
+          complete the remaining bracketed details (jurisdiction, venue, contact) before relying on
+          it.
         </p>
       </div>
     </>

@@ -29,7 +29,7 @@ export default function PrivacyPage() {
           <strong>Last updated:</strong> {UPDATED}
         </p>
         <p>
-          This Privacy Policy describes how <strong>[Yeetful — legal entity name]</strong>{' '}
+          This Privacy Policy describes how <strong>Yeetful Inc.</strong>{' '}
           (&ldquo;Yeetful,&rdquo; &ldquo;we&rdquo;) handles information when you use the Yeetful
           website, dashboard, SDK, and APIs (the &ldquo;Service&rdquo;). By using the Service you
           agree to this policy. It works alongside our <Link href="/docs/terms">Terms of Service</Link>.

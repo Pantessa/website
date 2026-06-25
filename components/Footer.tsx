@@ -41,7 +41,7 @@ export default function Footer() {
         </div>
       </div>
       <div className="footer__bottom">
-        <span className="mono">© 2026 YEETFUL</span>
+        <span className="mono">© 2026 YEETFUL INC.</span>
         <span className="mono">BUILT ON THE x402 STANDARD</span>
       </div>
     </footer>
