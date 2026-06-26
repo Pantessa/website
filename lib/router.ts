@@ -130,10 +130,21 @@ export interface RouteOptions {
 }
 
 /**
+ * Default inference engine the Reason Router uses to phrase answers.
+ * Defaults to ChatGPT (not Yeetful · Claude): the house settlement wallet
+ * (PRIVATE_KEY) is the same address that anthropic.yeetful.com pays out to, so
+ * paying our OWN MCP is a from==to x402 self-transfer that the token rejects —
+ * routing inference to a third-party payTo (ChatGPT) keeps payer ≠ payTo and
+ * lets the call settle. Override with DEFAULT_INFERENCE_SLUG when the payer is
+ * NOT the Yeetful payTo (e.g. prod), to prefer our flat-priced MCP again.
+ */
+const DEFAULT_INFERENCE_SLUG = process.env.DEFAULT_INFERENCE_SLUG || 'chatgpt'
+
+/**
  * Pick the inference engine that phrases the answer. Deterministic, no model
- * call: prefer Yeetful · Claude (our flat-priced, proven MCP), else the
- * cheapest callable inference provider. Selection across providers is a
- * follow-up (B5); one good default keeps the routing call cheap and reliable.
+ * call: prefer DEFAULT_INFERENCE_SLUG, else the cheapest callable inference
+ * provider. Selection across providers is a follow-up (B5); one good default
+ * keeps the routing call cheap and reliable.
  */
 export function selectInferenceProvider(catalog: McpServer[], preferSlug?: string): McpServer | null {
   const inf = catalog.filter(
@@ -146,7 +157,7 @@ export function selectInferenceProvider(catalog: McpServer[], preferSlug?: strin
     const pinned = inf.find((s) => s.slug === preferSlug)
     if (pinned) return pinned
   }
-  const preferred = inf.find((s) => s.slug === 'yeetful-claude')
+  const preferred = inf.find((s) => s.slug === DEFAULT_INFERENCE_SLUG)
   if (preferred) return preferred
   return inf.slice().sort((a, b) => Number(a.priceUsd ?? '1') - Number(b.priceUsd ?? '1'))[0]
 }
