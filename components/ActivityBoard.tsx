@@ -155,11 +155,11 @@ export default function ActivityBoard() {
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
         <Card className="min-w-0">
-          <CardTitle serif>Network spend · last 30 days</CardTitle>
+          <CardTitle serif eyebrow="LAST 30 DAYS">Network spend</CardTitle>
           <SpendOverTime daily={data.daily} />
         </Card>
         <Card className="min-w-0">
-          <CardTitle serif>Spend by service</CardTitle>
+          <CardTitle serif eyebrow="BREAKDOWN">Spend by service</CardTitle>
           <SpendByAgent perAgent={data.top} />
         </Card>
       </div>
@@ -168,14 +168,14 @@ export default function ActivityBoard() {
           service actually settles a routed call. Public aggregate, no PII. */}
       {routing && routing.services.length > 0 && (
         <Card className="mb-6">
-          <CardTitle serif>MCP reliability</CardTitle>
+          <CardTitle serif eyebrow="RELIABILITY">MCP reliability</CardTitle>
           <p className="text-[11px] text-[color:var(--muted-2)] mb-3">
             Settle rate per service across routed calls — how reliably the engine got a paid answer.
           </p>
           <div className="divide-y divide-white/5">
             {routing.services.map((sv) => (
               <div key={sv.service} className="flex items-center gap-3 py-2.5 text-xs min-h-10">
-                <span className="u-name-serif text-white truncate min-w-0">{sv.service}</span>
+                <span className="mono text-white truncate min-w-0">{sv.service}</span>
                 <span className="ml-auto mono text-[color:var(--muted)] flex-shrink-0">
                   {Math.round(sv.settleRate * 100)}% settled
                 </span>
@@ -190,7 +190,7 @@ export default function ActivityBoard() {
 
       {lp && lp.tokens.length > 0 && (
         <Card className="mb-6">
-          <CardTitle serif>Staked by token</CardTitle>
+          <CardTitle serif eyebrow="STAKING">Staked by token</CardTitle>
           <p className="text-[11px] text-[color:var(--muted-2)] mb-3">
             Each MCP token stakes on its own — amounts are per token, not summed. Stakers earn {pct}% of
             every paid call to that MCP in USDC.
@@ -199,7 +199,7 @@ export default function ActivityBoard() {
             {lp.tokens.map((t) => (
               <div key={t.tokenAddress} className="flex flex-wrap items-center gap-x-3 gap-y-1 py-2.5 text-xs min-h-10">
                 <Coins className="w-3.5 h-3.5 text-emerald-400 flex-shrink-0" />
-                <Link href={`/servers/${t.slug}`} className="u-name-serif text-white hover:underline truncate max-w-[40vw] lg:max-w-none">
+                <Link href={`/servers/${t.slug}`} className="mono text-white hover:underline truncate max-w-[40vw] lg:max-w-none">
                   {t.name}
                 </Link>
                 {t.symbol && <span className="mono text-[color:var(--muted-2)]">{t.symbol}</span>}
@@ -234,7 +234,7 @@ export default function ActivityBoard() {
           return (
             <>
               <div className="flex items-center justify-between gap-3 mb-3">
-                <CardTitle serif>Latest settled calls</CardTitle>
+                <CardTitle serif eyebrow="RECEIPTS">Latest settled calls</CardTitle>
                 {data.recent.length > FEED_PAGE_SIZE && (
                   <span className="flex items-center gap-2 flex-shrink-0">
                     <span className="mono text-[11px] text-[color:var(--muted-2)] tabular-nums">

@@ -76,11 +76,11 @@ export default function SwitchboardStats() {
 
       <div className="swstats__charts">
         <Card className="min-w-0">
-          <CardTitle serif>Network spend · last 30 days</CardTitle>
+          <CardTitle serif eyebrow="LAST 30 DAYS">Network spend</CardTitle>
           <SpendOverTime daily={data.daily} />
         </Card>
         <Card className="min-w-0">
-          <CardTitle serif>Top earning agents</CardTitle>
+          <CardTitle serif eyebrow="EARNINGS">Top earning agents</CardTitle>
           <SpendByAgent perAgent={data.top} />
         </Card>
       </div>

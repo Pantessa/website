@@ -63,7 +63,7 @@ export default async function BlogIndexPage() {
   return (
     <>
       <main className="x-main">
-        <div className="svc">
+        <div className="svc blog__index">
           <span className="hero__eyebrow mono">NOTES FROM THE CONTROL PLANE</span>
           <h1 className="hero__h1 hero__h1--sm">Blog</h1>
           <p className="hero__sub">
