@@ -18,11 +18,13 @@ const NODES: [string, string, string, number, number, number, number][] = [
   ['Replicate', 'R', 'Inference', 0.009, 752, 330, 0.8],
   ['BlockRun', 'B', 'Inference', 0.002, 922, 430, 0.92],
   // Data
-  ['Exa', 'E', 'Data', 0.0015, 1126, 152, 0.7],
-  ['Tavily', 'T', 'Data', 0.002, 1288, 212, 0.62],
-  ['CoinGecko', 'G', 'Data', 0.001, 1182, 330, 0.7],
-  ['Firecrawl', 'F', 'Data', 0.004, 1326, 416, 0.58],
-  ['Hunter', 'H', 'Data', 0.03, 1232, 486, 0.6],
+  ['Exa', 'E', 'Data', 0.0015, 1108, 150, 0.7],
+  ['Tavily', 'T', 'Data', 0.002, 1288, 188, 0.62],
+  ['Wolfram', 'Ω', 'Data', 0.004, 1058, 268, 0.72], // Try chip: "Solve with Wolfram"
+  ['CoinGecko', 'G', 'Data', 0.001, 1188, 322, 0.74], // Try chip: "Crypto market data"
+  ['Snapshot', 'S', 'Data', 0.0015, 1244, 236, 0.62], // Try chip: "DAO proposals"
+  ['Firecrawl', 'F', 'Data', 0.004, 1316, 432, 0.56],
+  ['Hunter', 'H', 'Data', 0.03, 1208, 498, 0.58],
   // Infra
   ['Pinata', 'P', 'Infra', 0.001, 1024, 558, 0.8],
   ['Helius', '⬡', 'Infra', 0.0008, 1186, 566, 0.66],
@@ -34,21 +36,16 @@ const NODES: [string, string, string, number, number, number, number][] = [
 
 // Per-call budget cap the operator routes under. Anything pricier is "no route".
 const CAP = 0.02
-// Plain-English asks the operator routes. premium = explicitly needs a tier that
-// only an over-cap service serves → the guardrail drops it (no route within cap).
-const REQUESTS: { q: string; cat: string; premium?: boolean }[] = [
-  { q: 'cheapest flight SFO → JFK', cat: 'Travel' },
-  { q: 'summarize this 40-page PDF', cat: 'Inference' },
-  { q: 'live ETH price', cat: 'Data' },
-  { q: 'scrape this pricing page', cat: 'Data' },
-  { q: 'transcribe a 3-min clip', cat: 'Inference' },
-  { q: 'pin this file to IPFS', cat: 'Infra' },
-  { q: 'classify this image', cat: 'Inference' },
-  { q: 'sentiment on $SOL', cat: 'Data' },
-  { q: 'find this company’s CEO', cat: 'Data', premium: true },
-  { q: 'book a charter jet', cat: 'Travel', premium: true },
-  { q: 'solve this captcha', cat: 'Infra' },
-  { q: 'geocode 221B Baker St', cat: 'Data' },
+// The asks the operator routes — the hero's "Try" chips (lib/examples), each a
+// KNOWN-WORKING prompt tied to the exact MCP it routes to (win = node name). The
+// operator weighs that service's category, settles on it (402→200), and banks
+// the spread vs the priciest fit. Over-cap nodes (FlightAware, Hunter) stay in
+// the graph as the red guardrail backdrop but aren't in the cycle.
+const REQUESTS: { q: string; win: string }[] = [
+  { q: 'ETH price + 24h change', win: 'CoinGecko' },
+  { q: 'active aave.eth proposals', win: 'Snapshot' },
+  { q: 'is flight UA123 on time', win: 'Amadeus' },
+  { q: 'integrate x² · sin(x) dx', win: 'Wolfram' },
 ]
 
 const CORE = { x: 648, y: 418 }
@@ -58,6 +55,7 @@ const START_BAL = 41.882
 
 interface Call {
   reqIdx: number
+  cat: string
   cands: number[]
   winner: number
   decline: boolean
@@ -141,32 +139,25 @@ export default function SwitchboardWeb({
       const layer = beamLayerRef.current
       if (!layer) return null
       const req = REQUESTS[reqSeq++ % REQUESTS.length]
-      const cands = byCat[req.cat] || []
-      if (!cands.length) return null
-      // cheapest candidate overall (what the operator would prefer)
-      const sorted = [...cands].sort((a, b) => NODES[a][3] - NODES[b][3])
-      const cheapest = sorted[0]
-      const dearest = sorted[sorted.length - 1]
-      let winner: number
-      let decline: boolean
-      if (req.premium) {
-        // premium asks resolve to the priciest fit — over the cap → dropped
-        winner = dearest
-        decline = NODES[dearest][3] > CAP
-      } else {
-        winner = cheapest
-        decline = NODES[cheapest][3] > CAP
-      }
-      const saveVsDearest = Math.max(0, NODES[dearest][3] - NODES[winner][3])
+      // Each ask is tied to the exact MCP it routes to (a known-working route),
+      // so the winner is that named service — not the category-cheapest.
+      const winner = NODES.findIndex((n) => n[0] === req.win)
+      if (winner < 0) return null
+      const cat = NODES[winner][2]
+      const cands = byCat[cat] || []
+      // bank the spread vs the priciest fit in the same category.
+      const dearest = [...cands].sort((a, b) => NODES[b][3] - NODES[a][3])[0]
+      const saved = Math.max(0, NODES[dearest][3] - NODES[winner][3])
       const y0 = 250 + Math.random() * 360
       const c = el('circle', { class: 'sw-req', r: 4.2, cx: INLET_X, cy: y0 }) as SVGCircleElement
       layer.appendChild(c)
       return {
         reqIdx: REQUESTS.indexOf(req),
+        cat,
         cands,
         winner,
-        decline,
-        saved: decline ? 0 : saveVsDearest,
+        decline: false,
+        saved,
         phase: 'in',
         t: 0,
         dwell: 0,
@@ -178,7 +169,7 @@ export default function SwitchboardWeb({
     const startAudition = (call: Call) => {
       const req = REQUESTS[call.reqIdx]
       if (askRef.current)
-        askRef.current.innerHTML = `<span class="sw-q">“${req.q}”</span> · weighing ${call.cands.length} ${req.cat.toLowerCase()} routes`
+        askRef.current.innerHTML = `<span class="sw-q">“${req.q}”</span> · weighing ${call.cands.length} ${call.cat.toLowerCase()} routes`
       call.cands.forEach((i) => {
         flash(nodeRefs.current[i], 'is-cand', 720)
         const edge = edgeRefs.current[i]
