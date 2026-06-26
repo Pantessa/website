@@ -18,7 +18,7 @@ export default function ChatSignInGate() {
   if (status !== 'guest') return null
 
   return (
-    <div className="absolute inset-0 z-40 flex items-center justify-center bg-black/85 backdrop-blur-sm px-6">
+    <div className="absolute inset-0 z-40 flex items-center justify-center bg-black/60 backdrop-blur-sm px-6">
       <div className="max-w-md text-center">
         <p className="text-xs font-medium uppercase tracking-[0.2em] text-[color:var(--muted-2)]">
           Sandbox
