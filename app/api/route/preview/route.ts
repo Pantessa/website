@@ -22,7 +22,7 @@ export const dynamic = 'force-dynamic'
 export async function GET() {
   const cap = SMART_MAX_PER_CALL_USD
 
-  const [rows, proven] = await Promise.all([
+  const [rows, proven, txRows] = await Promise.all([
     prisma.mcpEndpoint.findMany({
       where: {
         NOT: { parameters: { equals: Prisma.DbNull } },
@@ -36,10 +36,22 @@ export async function GET() {
       where: { ok: true },
       _count: true,
     }),
+    // The most recent settled, on-chain-witnessed call per service — its txHash
+    // is the Basescan proof we surface on each ranked route ("the right one for
+    // the line"). distinct + createdAt desc = the latest tx per serviceName.
+    prisma.spendLedgerEntry.findMany({
+      where: { ok: true, txHash: { not: null } },
+      select: { serviceName: true, txHash: true },
+      distinct: ['serviceName'],
+      orderBy: { createdAt: 'desc' },
+    }),
   ])
 
   const provenByName = new Map<string, number>()
   for (const p of proven) if (p.serviceName) provenByName.set(p.serviceName, p._count)
+
+  const txByName = new Map<string, string>()
+  for (const t of txRows) if (t.serviceName && t.txHash) txByName.set(t.serviceName, t.txHash)
 
   // The exact call we'd construct for this route (what the accordion reveals).
   interface ParamHint {
@@ -91,7 +103,7 @@ export async function GET() {
   // group services by category
   const byCat = new Map<
     string,
-    { slug: string; service: string; price: number; proven: number; call: RouteCall }[]
+    { slug: string; service: string; price: number; proven: number; txHash: string | null; call: RouteCall }[]
   >()
   for (const s of cheapestPerService.values()) {
     const list = byCat.get(s.category) ?? []
@@ -100,6 +112,7 @@ export async function GET() {
       service: s.service,
       price: s.price,
       proven: provenByName.get(s.service) ?? 0,
+      txHash: txByName.get(s.service) ?? null,
       call: s.call,
     })
     byCat.set(s.category, list)

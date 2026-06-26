@@ -4,7 +4,6 @@ import SwitchboardHero from '@/components/SwitchboardHero'
 import SwitchboardServers from '@/components/SwitchboardServers'
 import SwitchboardTry from '@/components/SwitchboardTry'
 import SwitchboardProof from '@/components/SwitchboardProof'
-import SwitchboardLive from '@/components/SwitchboardLive'
 import SwitchboardStats from '@/components/SwitchboardStats'
 import StayUpToDate from '@/components/StayUpToDate'
 import MobileCtaBar from '@/components/MobileCtaBar'
@@ -79,9 +78,6 @@ export default function HomePage() {
 
         {/* Proof: real routed turns — prompt, answer, on-chain tx */}
         <SwitchboardProof />
-
-        {/* Real settled routes — the engine at work */}
-        <SwitchboardLive />
 
         {/* Aggregate analytics — we track every paying + earning agent */}
         <SwitchboardStats />
