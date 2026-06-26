@@ -121,6 +121,13 @@ export async function syncGrantAllowlist(ownerAddress: string, orgId?: string) {
     ),
   ].filter(Boolean)
 
+  // The spend policy is OFF by default (unrestricted), and turns ON the moment
+  // the owner has manually approved at least one server — at that point they've
+  // curated an allowlist, so the policy should enforce it. Reverting to zero
+  // approvals drops back to unrestricted. The master switch can still be
+  // toggled directly between approval changes (see /api/grants/[id]).
+  const spendPolicyEnabled = approvedIds.length > 0
+
   const existing = await prisma.spendGrant.findFirst({
     where: { ownerAddress, status: 'active', expiresAt: { gt: new Date() } },
     orderBy: { createdAt: 'desc' },
@@ -134,7 +141,11 @@ export async function syncGrantAllowlist(ownerAddress: string, orgId?: string) {
       [...existing.allow].sort().join() === [...allow].sort().join()
     return prisma.spendGrant.update({
       where: { id: existing.id },
-      data: { allow, ...(existing.signature && !sameAllow ? { signature: null } : {}) },
+      data: {
+        allow,
+        spendPolicyEnabled,
+        ...(existing.signature && !sameAllow ? { signature: null } : {}),
+      },
     })
   }
   return prisma.spendGrant.create({
@@ -143,6 +154,7 @@ export async function syncGrantAllowlist(ownerAddress: string, orgId?: string) {
       orgId,
       label: orgId ? 'Org expense account' : DEFAULT_GRANT.label,
       allow,
+      spendPolicyEnabled,
       perCallUsd: DEFAULT_GRANT.perCallUsd,
       perDayUsd: DEFAULT_GRANT.perDayUsd,
       expiresAt: new Date(Date.now() + DEFAULT_GRANT.expiresInDays * 24 * 60 * 60 * 1000),
