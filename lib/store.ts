@@ -192,7 +192,7 @@ export const useYeetfulStore = create<YeetfulStore>()(
       setActiveServerIds: (ids) => set({ activeServerIds: ids }),
       clearActiveServers: () => set({ activeServerIds: [] }),
 
-      autoRouter: false,
+      autoRouter: true, // on by default — auto routing is the headline experience
       setAutoRouter: (on) => set({ autoRouter: on }),
       routerTrace: [],
       pushRouterTrace: (event) => set((s) => ({ routerTrace: [...s.routerTrace, event] })),
@@ -358,6 +358,15 @@ export const useYeetfulStore = create<YeetfulStore>()(
     }),
     {
       name: 'yeetful-store',
+      // v1: auto routing flipped to on by default. Existing clients persisted
+      // the old `autoRouter: false` default, so migrate those legacy states to
+      // on (the value was the old default, not a deliberate opt-out).
+      version: 1,
+      migrate: (persisted, version) => {
+        const s = (persisted ?? {}) as Record<string, unknown>
+        if (version < 1) s.autoRouter = true
+        return s
+      },
       // Persist only UI prefs. Chats are DB-backed (signed in) or ephemeral
       // (guest) — never written to localStorage, so one wallet's chats can't
       // leak into another account or survive a sign-out.
