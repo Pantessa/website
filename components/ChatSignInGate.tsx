@@ -1,0 +1,57 @@
+'use client'
+
+import { LogIn, Loader2 } from 'lucide-react'
+import { useSession } from '@/lib/session'
+
+/**
+ * Sign-in gate for the chat surface. While a visitor is a guest (wallet not
+ * signed in via SIWE) we overlay the whole workspace with a near-opaque scrim —
+ * the chat stays faintly visible behind it, but is non-interactive — explaining
+ * what the chat is and prompting sign-in. Once authed (or while the session is
+ * still hydrating) we render nothing so the chat is fully usable.
+ */
+export default function ChatSignInGate() {
+  const { status, signingIn, connectAndSignIn } = useSession()
+
+  // Only block confirmed guests. During `loading` we stay out of the way to
+  // avoid a flash before the session cookie hydrates; `authed` needs no gate.
+  if (status !== 'guest') return null
+
+  return (
+    <div className="absolute inset-0 z-40 flex items-center justify-center bg-black/60 backdrop-blur-sm px-6">
+      <div className="max-w-md text-center">
+        <p className="text-xs font-medium uppercase tracking-[0.2em] text-[color:var(--muted-2)]">
+          Sandbox
+        </p>
+        <h2
+          className="mt-3 text-4xl sm:text-5xl leading-tight text-white"
+          style={{ fontFamily: 'var(--font-serif)' }}
+        >
+          Router Testing Grounds
+        </h2>
+        <p className="mt-5 text-sm sm:text-base leading-relaxed text-[color:var(--muted)]">
+          This chat is a testing ground for x402 payments — it combines inference
+          and data, paying per call from the USDC and ETH in your connected
+          wallet. Yeetful gives autonomous agents that same routing engine to
+          reach any MCP. Sign in with your wallet to start routing.
+        </p>
+        <div className="mt-7 flex justify-center">
+          <button
+            onClick={() => connectAndSignIn('/chat')}
+            disabled={signingIn}
+            type="button"
+            title="Sign in with your wallet — connect and sign in one step"
+            className="flex items-center gap-2 px-5 py-2.5 rounded-full bg-[var(--accent)] text-black text-sm font-semibold hover:opacity-90 transition-opacity disabled:opacity-60 disabled:cursor-not-allowed"
+          >
+            {signingIn ? (
+              <Loader2 className="w-4 h-4 animate-spin" strokeWidth={2.5} />
+            ) : (
+              <LogIn className="w-4 h-4" strokeWidth={2.5} />
+            )}
+            <span>{signingIn ? 'Signing in…' : 'Sign in to use the chat'}</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
