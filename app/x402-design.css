@@ -55,6 +55,9 @@
     display: block; margin-bottom: 7px; font-size: 11px; letter-spacing: 0.16em;
     text-transform: uppercase; color: var(--muted-2);
   }
+  /* Activity section header — eyebrow + serif title + sub sit OUTSIDE the
+     bordered table, sized like the home landing sections (reuses .swtry__*). */
+  .actsec__head { margin-bottom: 16px; }
   /* Serif row identity — entity names in stat tables (service / token) read in
      the display serif while their numbers stay mono. */
   .u-name-serif {
