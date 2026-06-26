@@ -1089,10 +1089,21 @@ export function streamAutoRouter(
           }
         }
 
-        // The routing/planning inference is house-paid. In burner mode it counts
-        // against the grant (like the manual planner); in wallet mode the house
-        // eats it (so it never inflates the user's own spend or gate).
+        // The routing/planning inference always tries the direct Anthropic API
+        // first (the planner is the product — see planViaAnthropic). That call is
+        // house-paid via the API key, off the x402 rail entirely, so it costs the
+        // grant nothing and can't self-pay. Only when no ANTHROPIC_API_KEY is set
+        // do we fall back to the paid inference MCP, and ONLY then do we ledger
+        // the routing cost (burner: counts against the grant; wallet: house eats).
         const runRoutingInference = async (inf: McpServer, prompt: string) => {
+          const direct = await planViaAnthropic(prompt)
+          if (direct) return { text: direct, txHash: undefined }
+          // Fell back to the paid answer engine for PLANNING — the weak path that
+          // collapses routing. Make it loud (the silent fallback cost a whole
+          // debugging cycle): a server warn + a visible note in the engine window.
+          const why = process.env.ANTHROPIC_API_KEY ? 'Anthropic planner call failed' : 'ANTHROPIC_API_KEY not set'
+          console.warn(`[reason-router] planner fell back to ${inf.name} — ${why}`)
+          send({ type: 'note', level: 'warn', label: `Planner fell back to ${inf.name} (${why}) — routing quality degraded.` })
           const r = await callInference(inf, prompt)
           if (grant && !walletAddress) {
             await recordLedger({ grantId: grant.id, orgId: grant.orgId ?? undefined, apiKeyId, host: infHost, serviceName: inference.name, amountUsd: infPrice, ok: true, txHash: r.txHash, note: 'settled (routing)' })
@@ -1348,6 +1359,32 @@ function inferenceProtocolOf(s: { protocol?: string | null }): 'mcp' | 'http' {
 const HTTP_PROMPT_MAX_CHARS = 4000
 function capPrompt(protocol: 'mcp' | 'http', prompt: string): string {
   return protocol === 'http' ? truncate(prompt, HTTP_PROMPT_MAX_CHARS) : prompt
+}
+
+// The planner is the product, so the routing/SELECTION call always runs on a
+// known-good model via the direct Anthropic API (house key) — decoupled from
+// whichever paid engine ends up ANSWERING. This keeps picks reliable no matter
+// what the answer engine is, and sidesteps the x402 self-pay break (a from==to
+// transfer when the answer engine's payTo is the house burner). Returns null on
+// any failure or when no key is set, so the caller falls back to the paid MCP.
+const PLANNER_MODEL = process.env.PLANNER_MODEL || 'claude-haiku-4-5-20251001'
+async function planViaAnthropic(prompt: string): Promise<string | null> {
+  const key = process.env.ANTHROPIC_API_KEY
+  if (!key) return null
+  try {
+    const res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01' },
+      body: JSON.stringify({ model: PLANNER_MODEL, max_tokens: 1024, messages: [{ role: 'user', content: prompt }] }),
+      signal: AbortSignal.timeout(INFERENCE_TIMEOUT_MS),
+    })
+    if (!res.ok) return null
+    const j = (await res.json()) as { content?: Array<{ type: string; text?: string }> }
+    const text = (j.content ?? []).filter((c) => c.type === 'text').map((c) => c.text ?? '').join('').trim()
+    return text || null
+  } catch {
+    return null
+  }
 }
 
 async function callInference(
