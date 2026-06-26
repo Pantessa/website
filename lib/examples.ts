@@ -25,11 +25,6 @@ export const EXAMPLE_PROMPTS: ExamplePrompt[] = [
     slug: 'yeetful-snapshot',
   },
   {
-    label: 'Flight status',
-    prompt: 'Is flight UA123 on time today?',
-    slug: 'flightaware',
-  },
-  {
     label: 'Solve with Wolfram',
     prompt: 'Wolfram: integrate x^2 * sin(x) dx',
     slug: 'wolfram-alpha',

@@ -44,7 +44,6 @@ const CAP = 0.02
 const REQUESTS: { q: string; win: string }[] = [
   { q: 'ETH price + 24h change', win: 'CoinGecko' },
   { q: 'active aave.eth proposals', win: 'Snapshot' },
-  { q: 'is flight UA123 on time', win: 'Amadeus' },
   { q: 'integrate x² · sin(x) dx', win: 'Wolfram' },
 ]
 
