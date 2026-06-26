@@ -19,7 +19,7 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { loadCatalog } from '../lib/catalog'
 import { loadPlannableEndpoints, plannerPrompt, parsePlannerPicks, type PlannableEndpoint } from '../lib/endpoint-planner'
-import { shortlistEndpoints } from '../lib/router'
+import { shortlistEndpoints, dedupePlannerPicks } from '../lib/router'
 import { hybridShortlist } from '../lib/retrieval'
 
 function loadEnv() {
@@ -62,7 +62,9 @@ async function plannerPick(message: string, shortlist: PlannableEndpoint[]): Pro
   })
   if (!res.ok) throw new Error(`Anthropic ${res.status}: ${(await res.text()).slice(0, 160)}`)
   const data = (await res.json()) as { content?: { text?: string }[] }
-  const picks = parsePlannerPicks(data.content?.[0]?.text ?? '', shortlist)
+  // Mirror the chat route: parse, then drop redundant same-capability picks, so
+  // the eval measures the SAME selection prod does (lib/router dedupePlannerPicks).
+  const { picks } = dedupePlannerPicks(parsePlannerPicks(data.content?.[0]?.text ?? '', shortlist), shortlist)
   const byId = new Map(shortlist.map((e) => [e.id, e.serverSlug]))
   return [...new Set(picks.map((p) => byId.get(p.endpointId)).filter((s): s is string => !!s))]
 }

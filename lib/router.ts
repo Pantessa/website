@@ -24,6 +24,7 @@ import {
   parsePlannerPicks,
   buildSmartRequest,
   type PlannableEndpoint,
+  type PlannedPick,
   type ConversationTurn,
   type SmartRequest,
 } from '@/lib/endpoint-planner'
@@ -291,6 +292,29 @@ export function dedupeByCapability<T extends { capability?: string; rating: numb
     else dropped.push(it)
   })
   return { kept, dropped }
+}
+
+/**
+ * Drop redundant same-capability picks from a planner result, keeping the best
+ * provider per capability (higher reliability, then cheaper). This is the
+ * default chat path's equivalent of the capability dedup the Auto-Router already
+ * applies (routeMessage) — without it, planSmartPicks pays TWO services for the
+ * same kind of answer (e.g. CoinGecko + CoinMarketCap for one price). Returns
+ * the kept picks (input order preserved) + the dropped endpoints (for notes).
+ * Pure; shared by the chat route AND the routing eval so they measure the same
+ * behavior. Untagged picks always survive (distinct/unknown capabilities).
+ */
+export function dedupePlannerPicks(
+  picks: PlannedPick[],
+  offered: PlannableEndpoint[],
+): { picks: PlannedPick[]; dropped: PlannableEndpoint[] } {
+  const byId = new Map(offered.map((e) => [e.id, e]))
+  const tagged = picks
+    .map((pick) => ({ pick, ep: byId.get(pick.endpointId) }))
+    .filter((x): x is { pick: PlannedPick; ep: PlannableEndpoint } => !!x.ep)
+    .map((x) => ({ ...x, capability: capabilityOf(x.ep), rating: x.ep.reliability?.rating ?? 0, price: Number(x.ep.priceUsd) || 0 }))
+  const { kept, dropped } = dedupeByCapability(tagged)
+  return { picks: kept.map((k) => k.pick), dropped: dropped.map((d) => d.ep) }
 }
 
 /** What the routing model is asked to return (a planner pick + its reasoning). */
