@@ -1098,6 +1098,12 @@ export function streamAutoRouter(
         const runRoutingInference = async (inf: McpServer, prompt: string) => {
           const direct = await planViaAnthropic(prompt)
           if (direct) return { text: direct, txHash: undefined }
+          // Fell back to the paid answer engine for PLANNING — the weak path that
+          // collapses routing. Make it loud (the silent fallback cost a whole
+          // debugging cycle): a server warn + a visible note in the engine window.
+          const why = process.env.ANTHROPIC_API_KEY ? 'Anthropic planner call failed' : 'ANTHROPIC_API_KEY not set'
+          console.warn(`[reason-router] planner fell back to ${inf.name} — ${why}`)
+          send({ type: 'note', level: 'warn', label: `Planner fell back to ${inf.name} (${why}) — routing quality degraded.` })
           const r = await callInference(inf, prompt)
           if (grant && !walletAddress) {
             await recordLedger({ grantId: grant.id, orgId: grant.orgId ?? undefined, apiKeyId, host: infHost, serviceName: inference.name, amountUsd: infPrice, ok: true, txHash: r.txHash, note: 'settled (routing)' })
