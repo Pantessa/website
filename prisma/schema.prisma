@@ -107,6 +107,11 @@ model McpEndpoint {
   /// endpoint with params is auto-callable; without, it's display-only.
   parameters Json?
 
+  /// Provenance of `parameters`: null = from agentic.market ingest, 'inferred' =
+  /// LLM-recovered by scripts/infer-params.ts for endpoints agentic.market ships
+  /// no schema for. Reversible: set parameters=NULL where params_source='inferred'.
+  paramsSource String? @map("params_source")
+
   /// Semantic embedding (R2) of "service + tags + examples + description + path",
   /// from OpenAI text-embedding-3-small (1536-dim). Populated by
   /// scripts/embed-catalog.ts; queried via raw SQL (pgvector `<=>` cosine) in
