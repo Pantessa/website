@@ -63,7 +63,7 @@ export default async function BlogIndexPage() {
   return (
     <>
       <main className="x-main">
-        <div className="svc">
+        <div className="svc blog__index">
           <span className="hero__eyebrow mono">NOTES FROM THE CONTROL PLANE</span>
           <h1 className="hero__h1 hero__h1--sm">Blog</h1>
           <p className="hero__sub">
@@ -74,41 +74,76 @@ export default async function BlogIndexPage() {
           {posts.length === 0 ? (
             <p className="svc__empty">Nothing published yet. The autopilot is probably typing.</p>
           ) : (
-            <div className="blog__grid">
-              {posts.map((p) => (
-                <article key={p.slug} className="blog__card">
-                  <Link href={`/blog/${p.slug}`} className="blog__cardlink">
-                    {p.coverImageUrl && (
+            (() => {
+              const [feat, ...rest] = posts
+              const fmt = (d: Date) =>
+                d.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })
+              return (
+                <>
+                  {/* The latest post gets the marquee treatment so the index
+                      leads with something to read instead of an even grid. */}
+                  <Link href={`/blog/${feat.slug}`} className="blog__feature">
+                    {feat.coverImageUrl && (
                       // eslint-disable-next-line @next/next/no-img-element
                       <img
-                        src={p.coverImageUrl}
-                        alt={p.coverImageAlt ?? ''}
-                        className="blog__cover"
-                        loading="lazy"
+                        src={feat.coverImageUrl}
+                        alt={feat.coverImageAlt ?? ''}
+                        className="blog__featcover"
                       />
                     )}
-                    <h2 className="blog__cardtitle">{p.title}</h2>
-                    <p className="blog__carddesc">{p.description}</p>
-                    <div className="blog__cardmeta mono">
-                      {p.publishedAt && (
-                        <time dateTime={p.publishedAt.toISOString()}>
-                          {p.publishedAt.toLocaleDateString('en-US', {
-                            year: 'numeric',
-                            month: 'short',
-                            day: 'numeric',
-                          })}
-                        </time>
-                      )}
-                      {p.tags.map((t) => (
-                        <span key={t} className="blog__tag">
-                          {t}
-                        </span>
-                      ))}
+                    <div className="blog__featbody">
+                      <span className="blog__featkicker mono">LATEST</span>
+                      <h2 className="blog__feattitle">{feat.title}</h2>
+                      <p className="blog__featdesc">{feat.description}</p>
+                      <div className="blog__cardmeta mono">
+                        {feat.publishedAt && (
+                          <time dateTime={feat.publishedAt.toISOString()}>{fmt(feat.publishedAt)}</time>
+                        )}
+                        {feat.tags.map((t) => (
+                          <span key={t} className="blog__tag">
+                            {t}
+                          </span>
+                        ))}
+                      </div>
+                      <span className="blog__featmore">Read the post →</span>
                     </div>
                   </Link>
-                </article>
-              ))}
-            </div>
+
+                  {rest.length > 0 && (
+                    <div className="blog__grid">
+                      {rest.map((p) => (
+                        <article key={p.slug} className="blog__card">
+                          <Link href={`/blog/${p.slug}`} className="blog__cardlink">
+                            {p.coverImageUrl && (
+                              // eslint-disable-next-line @next/next/no-img-element
+                              <img
+                                src={p.coverImageUrl}
+                                alt={p.coverImageAlt ?? ''}
+                                className="blog__cover"
+                                loading="lazy"
+                              />
+                            )}
+                            <h2 className="blog__cardtitle">{p.title}</h2>
+                            <p className="blog__carddesc">{p.description}</p>
+                            <div className="blog__cardmeta mono">
+                              {p.publishedAt && (
+                                <time dateTime={p.publishedAt.toISOString()}>{fmt(p.publishedAt)}</time>
+                              )}
+                              {p.tags.map((t) => (
+                                <span key={t} className="blog__tag">
+                                  {t}
+                                </span>
+                              ))}
+                            </div>
+                            <span className="blog__cardmore">Read →</span>
+                          </Link>
+                        </article>
+                      ))}
+                    </div>
+                  )}
+                </>
+              )
+            })()
           )}
         </div>
       </main>

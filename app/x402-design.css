@@ -19,18 +19,51 @@
     --mist: var(--line);    /* hairline borders */
     --smoke: var(--muted);  /* muted label text */
     --sell: #E5484D;        /* sell-side / destructive accent */
+    /* ── TYPE SYSTEM ──────────────────────────────────
+       Single source of truth for the four families so every surface pulls
+       from the same place (kills the ad-hoc mono/sans drift on /activity).
+       --font-serif (Newsreader) = display + table identity, the "nice big
+       serif"; --font-sans (Geist) = body/UI; --font-mono = tabular figures,
+       receipts, on-chain data; --font-display (Archivo) = wordmark + a few
+       tight bold labels. */
+    --font-sans: 'Geist', system-ui, sans-serif;
+    --font-mono: 'Geist Mono', ui-monospace, monospace;
+    --font-serif: 'Newsreader', Georgia, serif;
+    --font-display: 'Archivo', sans-serif;
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   html { -webkit-text-size-adjust: 100%; -webkit-tap-highlight-color: transparent; }
   body {
     background: var(--bg);
     color: var(--fg);
-    font-family: 'Geist', system-ui, sans-serif;
+    font-family: var(--font-sans);
     -webkit-font-smoothing: antialiased;
     line-height: 1.5;
     overflow-x: hidden;
   }
-  .mono { font-family: 'Geist Mono', ui-monospace, monospace; }
+  .mono { font-family: var(--font-mono); }
+
+  /* Serif card/section heading — the "nice big serif" used to give every
+     table on a serif page a matching, elegant title. */
+  .cardh--serif {
+    font-family: var(--font-serif); font-weight: 500; font-optical-sizing: auto;
+    font-size: clamp(1.35rem, 2.4vw, 1.6rem); line-height: 1.12; letter-spacing: -0.01em;
+  }
+  /* Grey uppercase label above a serif card title — mirrors the section eyebrow
+     ("WITNESSED ON BASE" over "The engine at work."). */
+  .cardh__eyebrow {
+    display: block; margin-bottom: 7px; font-size: 11px; letter-spacing: 0.16em;
+    text-transform: uppercase; color: var(--muted-2);
+  }
+  /* Activity section header — eyebrow + serif title + sub sit OUTSIDE the
+     bordered table, sized like the home landing sections (reuses .swtry__*). */
+  .actsec__head { margin-bottom: 16px; }
+  /* Serif row identity — entity names in stat tables (service / token) read in
+     the display serif while their numbers stay mono. */
+  .u-name-serif {
+    font-family: var(--font-serif); font-weight: 500; font-optical-sizing: auto;
+    font-size: 1.0625rem; letter-spacing: -0.005em;
+  }
   a { color: inherit; text-decoration: none; }
   button { font-family: inherit; cursor: pointer; border: none; background: none; color: inherit; }
   ::selection { background: var(--fg); color: #000; }
@@ -129,7 +162,7 @@
   .hero { padding: 84px 0 64px; }
   .hero__eyebrow { font-size: 12px; letter-spacing: 0.18em; color: var(--muted-2); margin-bottom: 26px; }
   .hero__h1 {
-    font-family: 'Newsreader', Georgia, serif; font-weight: 500; font-optical-sizing: auto;
+    font-family: var(--font-serif); font-weight: 500; font-optical-sizing: auto;
     font-size: clamp(3.4rem, 7.4vw, 6.6rem); line-height: 0.98; letter-spacing: -0.015em;
     text-wrap: balance;
   }
@@ -220,7 +253,9 @@
      wide viewports instead of wrapping to three lines — the design's H1 is
      exactly two: "Agent Expense" / "Accounts." */
   .heroweb__h1 { font-family: 'Newsreader', Georgia, serif; font-weight: 500; font-optical-sizing: auto; font-size: clamp(46px, 5.4vw, 84px); line-height: 1; letter-spacing: -.032em; margin-bottom: 30px; width: max-content; max-width: calc(100vw - 2 * clamp(24px, 4vw, 64px)); color: #FAFAF7; -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; }
-  .heroweb__em { font-style: italic; letter-spacing: -.01em; }
+  /* Emphasis word — italic + "slightly grey", matching .hero__em everywhere
+     else (leaderboard "trusted", activity "per call"). Was white before. */
+  .heroweb__em { font-style: italic; letter-spacing: -.01em; color: var(--muted-2); }
   .heroweb__grad { color: #FAFAF7; }
   .heroweb__dim { color: transparent; background: linear-gradient(180deg, #838a80 16%, #4f554e); -webkit-background-clip: text; background-clip: text; }
   .heroweb__lede { font-size: clamp(17px, 1.45vw, 21px); line-height: 1.55; color: #b8bdb4; max-width: 30em; text-wrap: pretty; }
@@ -242,6 +277,20 @@
   .heroweb__pu { color: var(--haccent); }
   .heroweb__plbl { font-size: 11.5px; letter-spacing: .12em; text-transform: uppercase; color: var(--hfaint); }
   .heroweb__psep { width: 1px; height: 30px; background: var(--hline); }
+
+  /* ── MOBILE STICKY CTA BAR ───────────────────────────
+     A flat, full-bleed bar that rises from the bottom once the hero scrolls
+     away on a phone (components/MobileCtaBar.tsx). Desktop never sees it. */
+  .mcta {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 45; display: none;
+    padding: 11px clamp(16px, 4vw, 22px) calc(11px + env(safe-area-inset-bottom));
+    background: rgba(8, 9, 10, 0.82); backdrop-filter: blur(16px);
+    border-top: 1px solid var(--line);
+    transform: translateY(130%); transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  .mcta.is-show { transform: none; }
+  .mcta .btn { width: 100%; justify-content: center; height: 52px; border-radius: 12px; font-size: 16px; }
+  @media (max-width: 640px) { .mcta { display: flex; } }
 
   /* live runner HUD — bottom-right glass card (hidden ≤1080px) */
   .heroweb__hud {
@@ -310,7 +359,7 @@
   /* ── SWITCHBOARD "TRY A ROUTE" (DB-only preview) ──── */
   .swtry { padding: 56px 0; border-top: 1px solid var(--line); }
   .swtry__eyebrow { font-size: 12px; letter-spacing: 0.18em; color: var(--muted-2); }
-  .swtry__h2 { font-size: clamp(26px, 3.4vw, 38px); font-weight: 600; letter-spacing: -0.02em; margin-top: 10px; color: var(--fg); }
+  .swtry__h2 { font-family: var(--font-serif); font-weight: 500; font-optical-sizing: auto; font-size: clamp(28px, 3.6vw, 42px); letter-spacing: -0.012em; line-height: 1.06; margin-top: 12px; color: var(--fg); }
   .swtry__sub { margin-top: 14px; max-width: 56ch; font-size: 15px; line-height: 1.55; color: var(--muted); text-wrap: pretty; }
   .swtry__sub strong { color: var(--fg); font-weight: 600; }
   .swtry__chips { display: flex; flex-wrap: wrap; gap: 9px; margin-top: 26px; }
@@ -368,7 +417,7 @@
   .swlive { padding: 52px 0; border-top: 1px solid var(--line); }
   .swlive__head { display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; flex-wrap: wrap; }
   .swlive__eyebrow { font-size: 12px; letter-spacing: 0.18em; color: var(--muted-2); }
-  .swlive__h2 { font-size: clamp(26px, 3.4vw, 38px); font-weight: 600; letter-spacing: -0.02em; margin-top: 10px; color: var(--fg); }
+  .swlive__h2 { font-family: var(--font-serif); font-weight: 500; font-optical-sizing: auto; font-size: clamp(28px, 3.6vw, 42px); letter-spacing: -0.012em; line-height: 1.06; margin-top: 12px; color: var(--fg); }
   .swlive__stat { text-align: right; }
   .swlive__statnum { font-size: 26px; font-weight: 500; color: var(--accent); letter-spacing: -0.01em; }
   .swlive__statlbl { font-size: 12px; color: var(--muted-2); letter-spacing: 0.04em; margin-top: 2px; }
@@ -391,10 +440,38 @@
     .swlive__time { display: none; }
   }
 
+  /* ── LANDING ANALYTICS (we track spending + earning agents) ── */
+  .swstats { padding: 56px 0; border-top: 1px solid var(--line); }
+  .swstats__eyebrow { font-size: 12px; letter-spacing: 0.18em; color: var(--muted-2); }
+  .swstats__h2 {
+    font-family: var(--font-serif); font-weight: 500; font-optical-sizing: auto;
+    font-size: clamp(28px, 3.8vw, 46px); line-height: 1.04; letter-spacing: -0.015em;
+    margin-top: 12px; color: var(--fg); text-wrap: balance;
+  }
+  .swstats__em { font-style: italic; color: var(--muted); }
+  .swstats__sub { margin-top: 16px; max-width: 60ch; font-size: 15.5px; line-height: 1.6; color: var(--muted); text-wrap: pretty; }
+  .swstats__stats {
+    margin-top: 30px; display: flex; flex-wrap: wrap; gap: 14px 40px;
+    padding-bottom: 28px; border-bottom: 1px solid var(--line);
+  }
+  .swstats__stat { display: flex; flex-direction: column; gap: 4px; }
+  .swstats__statnum {
+    font-family: var(--font-serif); font-weight: 500; font-size: clamp(30px, 3.4vw, 40px);
+    line-height: 1; letter-spacing: -0.01em; color: var(--fg);
+  }
+  .swstats__statlbl { font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted-2); }
+  .swstats__charts { margin-top: 28px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+  .swstats__all { display: inline-block; margin-top: 22px; font-size: 13px; color: var(--muted); text-decoration: none; }
+  .swstats__all:hover { color: var(--fg); }
+  @media (max-width: 760px) {
+    .swstats__charts { grid-template-columns: 1fr; }
+    .swstats__stats { gap: 16px 28px; }
+  }
+
   /* ── SWITCHBOARD PROOF (real routed turns, in the open) ── */
   .swproof { padding: 56px 0; border-top: 1px solid var(--line); }
   .swproof__eyebrow { font-size: 12px; letter-spacing: 0.18em; color: var(--muted-2); }
-  .swproof__h2 { font-size: clamp(26px, 3.4vw, 38px); font-weight: 600; letter-spacing: -0.02em; margin-top: 10px; color: var(--fg); }
+  .swproof__h2 { font-family: var(--font-serif); font-weight: 500; font-optical-sizing: auto; font-size: clamp(28px, 3.6vw, 42px); letter-spacing: -0.012em; line-height: 1.06; margin-top: 12px; color: var(--fg); }
   .swproof__sub { margin-top: 14px; max-width: 56ch; font-size: 15px; line-height: 1.55; color: var(--muted); text-wrap: pretty; }
   .swproof__list { margin-top: 28px; display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; }
   .swproof__card { border: 1px solid var(--line); border-radius: 14px; padding: 18px; background: var(--surf-1); display: flex; flex-direction: column; gap: 12px; min-width: 0; }
@@ -416,7 +493,7 @@
   .swsrv { padding: 56px 0; border-top: 1px solid var(--line); }
   .swsrv__head { display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; flex-wrap: wrap; margin-bottom: 26px; }
   .swsrv__eyebrow { font-size: 12px; letter-spacing: 0.18em; color: var(--muted-2); }
-  .swsrv__h2 { font-size: clamp(26px, 3.4vw, 38px); font-weight: 600; letter-spacing: -0.02em; margin-top: 10px; color: var(--fg); }
+  .swsrv__h2 { font-family: var(--font-serif); font-weight: 500; font-optical-sizing: auto; font-size: clamp(28px, 3.6vw, 42px); letter-spacing: -0.012em; line-height: 1.06; margin-top: 12px; color: var(--fg); }
   .swsrv__all { font-size: 14px; color: var(--accent); text-decoration: none; white-space: nowrap; }
   .swsrv__all:hover { text-decoration: underline; }
   .swsrv__pills { margin: -8px 0 24px; }
@@ -428,7 +505,8 @@
   .srvpage { padding: 40px 0 56px; }
   .srvpage__head { display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; flex-wrap: wrap; margin-bottom: 28px; }
   .srvpage__eyebrow { font-size: 12px; letter-spacing: 0.18em; color: var(--muted-2); }
-  .srvpage__h1 { font-size: clamp(30px, 4vw, 46px); font-weight: 600; letter-spacing: -0.02em; margin-top: 10px; color: var(--fg); }
+  /* Mirrors the leaderboard hero (.hero__h1--sm): serif, same scale + measure. */
+  .srvpage__h1 { font-family: var(--font-serif); font-weight: 500; font-optical-sizing: auto; font-size: clamp(2.4rem, 4.4vw, 3.8rem); letter-spacing: -0.018em; line-height: 1.02; margin-top: 12px; color: var(--fg); }
   .srvpage__add { display: inline-flex; align-items: center; gap: 8px; height: 44px; }
 
   /* ── EXPLAINER ───────────────────────────────────── */
@@ -1076,8 +1154,8 @@
   /* ── DOCS SPLASH (the grand entry at /docs) ──────── */
   .splash__eyebrow { font-size: 12px; letter-spacing: 0.18em; color: var(--accent); margin-bottom: 16px; }
   .splash__h1 {
-    font-family: 'Archivo', sans-serif; font-weight: 800;
-    font-size: clamp(2.2rem, 4vw, 3.4rem); letter-spacing: -0.03em; line-height: 1.04;
+    font-family: var(--font-serif); font-weight: 500; font-optical-sizing: auto;
+    font-size: clamp(2.4rem, 4.2vw, 3.7rem); letter-spacing: -0.018em; line-height: 1.02;
     max-width: 16ch;
   }
   .splash__lead { margin-top: 18px; font-size: 16.5px; color: var(--muted); line-height: 1.6; max-width: 64ch; }
@@ -1121,26 +1199,63 @@
   @media (max-width: 600px) {
     .splash__npm { flex-direction: column; align-items: stretch; gap: 16px; }
     .splash__npm pre { white-space: pre; }
+    /* Match the hero: flat, full-width CTAs on a phone instead of a cramped row. */
+    .splash__ctas { flex-direction: column; align-items: stretch; gap: 10px; }
+    .splash__ctas .btn { width: 100%; justify-content: center; }
   }
 
   /* ── BLOG ────────────────────────────────────────── */
-  .blog__grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; margin-top: 40px; }
+  /* Index hero: more breathing room between the title and the grey sub. */
+  .blog__index .hero__eyebrow { margin-bottom: 18px; }
+  .blog__index .hero__sub { margin-top: 22px; }
+  /* Featured (latest) post — the index leads with one thing to read. */
+  .blog__feature {
+    display: block; margin-top: 40px; border: 1px solid var(--line); background: var(--surf-1);
+    border-radius: 18px; overflow: hidden; transition: border-color .18s, background .18s;
+  }
+  .blog__feature:hover { border-color: var(--line-2); background: var(--surf-2); }
+  .blog__feature:hover .blog__featmore { color: var(--fg); }
+  .blog__featcover { width: 100%; aspect-ratio: 2.6 / 1; object-fit: cover; display: block; border-bottom: 1px solid var(--line); }
+  .blog__featbody { padding: clamp(24px, 3vw, 36px); }
+  .blog__featkicker { font-size: 11px; letter-spacing: 0.16em; color: var(--accent); }
+  .blog__feattitle {
+    font-family: var(--font-serif); font-weight: 500; font-optical-sizing: auto;
+    font-size: clamp(28px, 3.6vw, 44px); line-height: 1.05; letter-spacing: -0.015em;
+    margin-top: 12px; color: var(--fg); text-wrap: balance;
+  }
+  .blog__featdesc { margin-top: 14px; max-width: 64ch; font-size: 16px; line-height: 1.6; color: var(--muted); text-wrap: pretty; }
+  .blog__featmore { display: inline-block; margin-top: 20px; font-size: 13.5px; color: var(--accent); transition: color .15s; }
+
+  .blog__grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; margin-top: 16px; }
   .blog__card { border: 1px solid var(--line); background: var(--surf-1); border-radius: 14px; overflow: hidden; transition: border-color .18s, background .18s; }
   .blog__card:hover { border-color: var(--line-2); background: var(--surf-2); }
-  .blog__cardlink { display: block; padding: 20px; }
+  .blog__card:hover .blog__cardmore { color: var(--fg); }
+  .blog__cardlink { display: block; padding: 22px 24px; }
   /* aspect-ratio reserves the box height before the (dynamic, dimension-less)
      cover image loads → no layout shift (CLS) on blog list + post. object-fit
      keeps it from distorting. */
-  .blog__cover { width: 100%; aspect-ratio: 16 / 9; object-fit: cover; border-radius: 10px; border: 1px solid var(--line); display: block; margin-bottom: 14px; }
+  .blog__cover { width: 100%; aspect-ratio: 16 / 9; object-fit: cover; border-radius: 10px; border: 1px solid var(--line); display: block; margin-bottom: 16px; }
   .blog__cover--hero { aspect-ratio: 2 / 1; margin: 26px 0 0; }
-  .blog__cardtitle { font-family: 'Archivo', sans-serif; font-weight: 700; font-size: 19px; letter-spacing: -0.02em; line-height: 1.25; }
-  .blog__carddesc { font-size: 13.5px; color: var(--muted); line-height: 1.5; margin-top: 8px; }
-  .blog__cardmeta { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 12px; font-size: 11.5px; color: var(--muted-2); }
+  .blog__cardtitle {
+    font-family: var(--font-serif); font-weight: 500; font-optical-sizing: auto;
+    font-size: 22px; letter-spacing: -0.01em; line-height: 1.16; color: var(--fg);
+  }
+  .blog__carddesc { font-size: 13.5px; color: var(--muted); line-height: 1.55; margin-top: 9px; }
+  .blog__cardmeta { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 14px; font-size: 11.5px; color: var(--muted-2); }
   .blog__tag { border: 1px solid var(--line); border-radius: 999px; padding: 1px 9px; font-size: 10.5px; }
-  .blog__post { max-width: 760px; }
-  .blog__title { font-family: 'Archivo', sans-serif; font-weight: 800; font-size: clamp(1.9rem, 3.4vw, 2.6rem); letter-spacing: -0.03em; line-height: 1.1; }
-  .blog__body { margin-top: 30px; font-size: 16px; line-height: 1.7; color: var(--muted); }
-  .blog__body h2 { font-family: 'Archivo', sans-serif; font-weight: 700; font-size: 22px; letter-spacing: -0.02em; color: var(--fg); margin: 36px 0 12px; }
+  .blog__cardmore { display: inline-block; margin-top: 16px; font-size: 12.5px; color: var(--muted); transition: color .15s; }
+  .blog__post { max-width: 720px; }
+  .blog__posthead { margin-top: 22px; padding-bottom: 30px; border-bottom: 1px solid var(--line); }
+  .blog__postkicker { font-size: 11px; letter-spacing: 0.16em; color: var(--accent); }
+  .blog__title {
+    font-family: var(--font-serif); font-weight: 500; font-optical-sizing: auto;
+    font-size: clamp(2.2rem, 4vw, 3.2rem); letter-spacing: -0.018em; line-height: 1.06;
+    color: var(--fg); text-wrap: balance; margin-top: 18px;
+  }
+  .blog__lede { margin-top: 24px; font-size: clamp(17px, 1.6vw, 19px); line-height: 1.6; color: var(--muted); max-width: 60ch; text-wrap: pretty; }
+  .blog__posthead .blog__cardmeta { margin-top: 22px; }
+  .blog__body { margin-top: 30px; font-size: 16.5px; line-height: 1.75; color: var(--muted); }
+  .blog__body h2 { font-family: var(--font-serif); font-weight: 500; font-size: 27px; letter-spacing: -0.01em; line-height: 1.18; color: var(--fg); margin: 40px 0 12px; }
   .blog__body h3 { font-family: 'Archivo', sans-serif; font-weight: 700; font-size: 17px; color: var(--fg); margin: 28px 0 10px; }
   .blog__body p { margin: 14px 0; }
   .blog__body a { color: var(--fg); text-decoration: underline; text-underline-offset: 3px; text-decoration-style: dotted; }
@@ -1254,6 +1369,16 @@
     .footer__links { align-items: flex-start; }
     .activebar__chips { display: none; }
     .heroweb__h1 { font-size: clamp(46px, 15vw, 72px); }
+    /* Flat, full-width CTAs on a phone — no more uneven floated buttons
+       overlapping the network. Stack them edge to edge. */
+    .heroweb__ctas { flex-direction: column; align-items: stretch; gap: 10px; margin-top: 32px; }
+    .heroweb__ctas > * { width: 100%; }
+    .heroweb__ctas .btn { width: 100%; justify-content: center; }
+    /* The animated network competes with the copy on a small screen — dim it
+       right back so the hero reads clean and elegant on mobile. */
+    .heroweb__net { opacity: 0.4; }
+    .heroweb__particles { opacity: 0.45; }
+    .heroweb__veil--left { background: linear-gradient(180deg, rgba(8,9,10,.5) 0%, rgba(8,9,10,.86) 70%, rgba(8,9,10,.94) 100%); }
 
     /* Service detail: stack the header so the badge row gets full width
        (otherwise badges wrap one-per-line beside the tile + outlink). */

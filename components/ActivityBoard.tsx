@@ -155,11 +155,11 @@ export default function ActivityBoard() {
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
         <Card className="min-w-0">
-          <CardTitle>Network spend · last 30 days</CardTitle>
+          <CardTitle serif eyebrow="LAST 30 DAYS">Network spend</CardTitle>
           <SpendOverTime daily={data.daily} />
         </Card>
         <Card className="min-w-0">
-          <CardTitle>Spend by service</CardTitle>
+          <CardTitle serif eyebrow="BREAKDOWN">Spend by service</CardTitle>
           <SpendByAgent perAgent={data.top} />
         </Card>
       </div>
@@ -167,39 +167,50 @@ export default function ActivityBoard() {
       {/* MCP reliability — mirrors the dashboard Routing tab: how often each
           service actually settles a routed call. Public aggregate, no PII. */}
       {routing && routing.services.length > 0 && (
-        <Card className="mb-6">
-          <CardTitle>MCP reliability</CardTitle>
-          <p className="text-[11px] text-[color:var(--muted-2)] mb-3">
-            Settle rate per service across routed calls — how reliably the engine got a paid answer.
-          </p>
-          <div className="divide-y divide-white/5">
-            {routing.services.map((sv) => (
-              <div key={sv.service} className="flex items-center gap-3 py-2.5 text-xs min-h-10">
-                <span className="text-white truncate min-w-0">{sv.service}</span>
-                <span className="ml-auto mono text-[color:var(--muted)] flex-shrink-0">
-                  {Math.round(sv.settleRate * 100)}% settled
-                </span>
-                <span className="mono text-[color:var(--muted-2)] flex-shrink-0 w-20 text-right">
-                  {sv.settled} call{sv.settled === 1 ? '' : 's'}
-                </span>
-              </div>
-            ))}
+        <section className="mb-10">
+          {/* Section header OUTSIDE the box, sized like the home landing
+              sections (reuses the .swtry__* header classes). */}
+          <div className="actsec__head">
+            <span className="swtry__eyebrow mono">RELIABILITY</span>
+            <h2 className="swtry__h2">MCP reliability</h2>
+            <p className="swtry__sub">
+              Settle rate per service across routed calls — how reliably the engine got a paid answer.
+            </p>
           </div>
-        </Card>
+          <Card>
+            <div className="divide-y divide-white/5">
+              {routing.services.map((sv) => (
+                <div key={sv.service} className="flex items-center gap-3 py-2.5 text-[13px] min-h-10">
+                  <span className="mono text-white truncate min-w-0">{sv.service}</span>
+                  <span className="ml-auto mono text-[color:var(--muted)] flex-shrink-0">
+                    {Math.round(sv.settleRate * 100)}% settled
+                  </span>
+                  <span className="mono text-[color:var(--muted-2)] flex-shrink-0 w-20 text-right">
+                    {sv.settled} call{sv.settled === 1 ? '' : 's'}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </Card>
+        </section>
       )}
 
       {lp && lp.tokens.length > 0 && (
-        <Card className="mb-6">
-          <CardTitle>Staked by token</CardTitle>
-          <p className="text-[11px] text-[color:var(--muted-2)] mb-3">
-            Each MCP token stakes on its own — amounts are per token, not summed. Stakers earn {pct}% of
-            every paid call to that MCP in USDC.
-          </p>
+        <section className="mb-10">
+          <div className="actsec__head">
+            <span className="swtry__eyebrow mono">STAKING</span>
+            <h2 className="swtry__h2">Staked by token</h2>
+            <p className="swtry__sub">
+              Each MCP token stakes on its own — amounts are per token, not summed. Stakers earn {pct}% of
+              every paid call to that MCP in USDC.
+            </p>
+          </div>
+          <Card>
           <div className="divide-y divide-white/5">
             {lp.tokens.map((t) => (
-              <div key={t.tokenAddress} className="flex flex-wrap items-center gap-x-3 gap-y-1 py-2.5 text-xs min-h-10">
+              <div key={t.tokenAddress} className="flex flex-wrap items-center gap-x-3 gap-y-1 py-2.5 text-[13px] min-h-10">
                 <Coins className="w-3.5 h-3.5 text-emerald-400 flex-shrink-0" />
-                <Link href={`/servers/${t.slug}`} className="text-white hover:underline truncate max-w-[40vw] lg:max-w-none">
+                <Link href={`/servers/${t.slug}`} className="mono text-white hover:underline truncate max-w-[40vw] lg:max-w-none">
                   {t.name}
                 </Link>
                 {t.symbol && <span className="mono text-[color:var(--muted-2)]">{t.symbol}</span>}
@@ -222,10 +233,11 @@ export default function ActivityBoard() {
               </div>
             ))}
           </div>
-        </Card>
+          </Card>
+        </section>
       )}
 
-      <Card>
+      <section>
         {(() => {
           const pageCount = Math.max(1, Math.ceil(data.recent.length / FEED_PAGE_SIZE))
           const page = Math.min(feedPage, pageCount - 1)
@@ -233,8 +245,11 @@ export default function ActivityBoard() {
           const rows = data.recent.slice(start, start + FEED_PAGE_SIZE)
           return (
             <>
-              <div className="flex items-center justify-between gap-3 mb-3">
-                <CardTitle>Latest settled calls</CardTitle>
+              <div className="actsec__head flex items-end justify-between gap-3">
+                <div>
+                  <span className="swtry__eyebrow mono">RECEIPTS</span>
+                  <h2 className="swtry__h2">Latest settled calls</h2>
+                </div>
                 {data.recent.length > FEED_PAGE_SIZE && (
                   <span className="flex items-center gap-2 flex-shrink-0">
                     <span className="mono text-[11px] text-[color:var(--muted-2)] tabular-nums">
@@ -259,6 +274,7 @@ export default function ActivityBoard() {
                   </span>
                 )}
               </div>
+              <Card>
               {data.recent.length === 0 ? (
                 <p className="text-xs text-[color:var(--muted-2)] py-4">
                   No payments yet — the network is young. The first settled call will show up here.
@@ -313,10 +329,11 @@ export default function ActivityBoard() {
                   })}
                 </div>
               )}
+              </Card>
             </>
           )
         })()}
-      </Card>
+      </section>
 
       <p className="mt-4 text-[11px] text-[color:var(--muted-2)] flex items-center gap-1.5">
         <ShieldOff className="w-3.5 h-3.5" />

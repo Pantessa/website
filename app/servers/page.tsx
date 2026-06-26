@@ -25,7 +25,11 @@ export default function ServersPage() {
           <div className="srvpage__head">
             <div>
               <span className="srvpage__eyebrow mono">THE DIRECTORY</span>
-              <h1 className="srvpage__h1">Every x402 agent on the network.</h1>
+              <h1 className="srvpage__h1">
+                Every x402 agent
+                <br />
+                on the <em className="hero__em">network</em>.
+              </h1>
             </div>
             <Link href="/servers/add" className="btn btn--ghost srvpage__add">
               <Plus width={16} height={16} /> Add a server

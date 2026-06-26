@@ -78,8 +78,32 @@ export function Card({ children, className }: { children: React.ReactNode; class
   )
 }
 
-export function CardTitle({ children }: { children: React.ReactNode }) {
-  return <h2 className="text-sm font-semibold text-white mb-3">{children}</h2>
+export function CardTitle({
+  children,
+  serif,
+  eyebrow,
+}: {
+  children: React.ReactNode
+  serif?: boolean
+  /** Grey uppercase label rendered ABOVE the title — mirrors the section
+   *  pattern ("WITNESSED ON BASE" over "The engine at work."). */
+  eyebrow?: string
+}) {
+  // serif: the "nice big serif" table/section heading used on the public
+  // network surfaces (/activity) so each table's title matches the page's
+  // serif identity. The dense dashboard keeps the compact sans default.
+  const h = (
+    <h2 className={serif ? 'cardh--serif text-white' : 'text-sm font-semibold text-white'}>
+      {children}
+    </h2>
+  )
+  if (!eyebrow) return <div className="mb-3">{h}</div>
+  return (
+    <div className="mb-3">
+      <span className="cardh__eyebrow mono">{eyebrow}</span>
+      {h}
+    </div>
+  )
 }
 
 export function Kpi({ label, value, sub, small }: { label: string; value: string; sub?: string; small?: boolean }) {
