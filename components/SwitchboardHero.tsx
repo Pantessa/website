@@ -5,24 +5,18 @@
 // component so the page itself can stay a SERVER component and export SEO
 // metadata + JSON-LD (S1).
 
-import { useEffect, useRef, useState } from 'react'
+import { useRef } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useAccount } from 'wagmi'
 import { useSession } from '@/lib/session'
 import SwitchboardWeb from '@/components/SwitchboardWeb'
 import { EXAMPLE_PROMPTS } from '@/lib/examples'
-import CreateAccountButton from '@/components/CreateAccountButton'
-import { cdpEnabled } from '@/lib/cdp-embedded'
 
 export default function SwitchboardHero() {
   const router = useRouter()
   const { isConnected } = useAccount()
   const { connectAndSignIn } = useSession()
-  // Wallet state is client-only — mount-gate the CTA swap to stay hydration-safe.
-  const [mounted, setMounted] = useState(false)
-  useEffect(() => setMounted(true), [])
-  const showCreate = mounted && cdpEnabled && !isConnected
   const proofRoutedRef = useRef<HTMLSpanElement>(null)
   const proofSavedRef = useRef<HTMLSpanElement>(null)
 
@@ -36,7 +30,7 @@ export default function SwitchboardHero() {
           </div>
           <h1 className="heroweb__h1">
             <span className="heroweb__grad">Reason</span>{' '}
-            <span className="heroweb__grad heroweb__em">Router</span>
+            <span className="heroweb__em">Router</span>
             <br />
             <span className="heroweb__grad">for Paid Agents.</span>
           </h1>
@@ -46,11 +40,8 @@ export default function SwitchboardHero() {
             <strong>best-priced MCP under your cap</strong>; your agent pays per call in USDC.
           </p>
           <div className="heroweb__ctas">
-            {showCreate && (
-              <CreateAccountButton className="btn btn--solid" label="Create an account" />
-            )}
             <button
-              className={showCreate ? 'btn btn--ghost' : 'btn btn--solid'}
+              className="btn btn--solid"
               onClick={() => (isConnected ? router.push('/dashboard') : connectAndSignIn('/dashboard'))}
             >
               {isConnected ? 'Open dashboard' : 'Try a route'}
