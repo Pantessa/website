@@ -24,6 +24,9 @@ export interface LeaderboardRowData {
 const stateColor = (s: HealthState): string =>
   s === 'live' ? 'var(--accent)' : s === 'needs' ? '#f4b740' : '#ff6b6b'
 
+const stateLabel = (s: HealthState): string =>
+  s === 'live' ? 'live' : s === 'needs' ? 'needs auth' : 'down'
+
 const cleanUrl = (u: string) => u.replace(/^https?:\/\//, '')
 
 export default function LeaderboardRow({ row }: { row: LeaderboardRowData }) {
@@ -113,59 +116,56 @@ export default function LeaderboardRow({ row }: { row: LeaderboardRowData }) {
       </tr>
 
       {open && hasHealth ? (
-        <tr className="border-b border-[var(--line)] bg-white/[0.01]">
-          <td colSpan={10} className="px-3 py-3">
-            <div className="mb-2 mono text-[11px]">
-              <span style={{ color: 'var(--accent)' }}>{health!.live} live</span>
-              {health!.needs > 0 ? (
-                <span className="text-[color:var(--muted-2)]">
-                  {' · '}
-                  <span style={{ color: '#f4b740' }}>{health!.needs} need params/auth</span>
-                </span>
-              ) : null}
-              {health!.down > 0 ? (
-                <span className="text-[color:var(--muted-2)]">
-                  {' · '}
-                  <span style={{ color: '#ff6b6b' }}>{health!.down} down</span>
-                </span>
-              ) : null}
-              <span className="text-[color:var(--muted-2)]">{` · ${health!.total} endpoints (free x402 probe)`}</span>
-            </div>
-            <div className="overflow-x-auto">
-              <table className="w-full text-[11px] mono">
-                <thead>
-                  <tr className="text-left text-[10px] uppercase text-[color:var(--muted-2)]">
-                    <th className="py-1 pr-2 w-8 text-center">●</th>
-                    <th className="py-1 pr-2 w-12">Method</th>
-                    <th className="py-1 pr-2">Endpoint</th>
-                    <th className="py-1 pr-2 w-20 text-right">Price</th>
-                    <th className="py-1 pl-2 w-20 text-right">Latency</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {health!.endpoints.map((e, idx) => (
-                    <tr key={`${e.method}-${e.url}-${idx}`} className="border-t border-[var(--line)]/40">
-                      <td className="py-1 pr-2 text-center">
+        <tr className="bg-white/[0.01]">
+          <td colSpan={10} className="p-0">
+            <div className="swtry__rows mono" style={{ borderTop: '1px solid var(--line)' }}>
+              <div style={{ padding: '10px 18px 6px', fontSize: 11.5 }}>
+                <span style={{ color: 'var(--accent)' }}>{health!.live} live</span>
+                {health!.needs > 0 ? (
+                  <span style={{ color: 'var(--muted-2)' }}>
+                    {' · '}
+                    <span style={{ color: '#f4b740' }}>{health!.needs} need params/auth</span>
+                  </span>
+                ) : null}
+                {health!.down > 0 ? (
+                  <span style={{ color: 'var(--muted-2)' }}>
+                    {' · '}
+                    <span style={{ color: '#ff6b6b' }}>{health!.down} down</span>
+                  </span>
+                ) : null}
+                <span style={{ color: 'var(--muted-2)' }}>{` · ${health!.total} endpoints · free x402 probe`}</span>
+              </div>
+              {health!.endpoints.map((e, idx) => (
+                <div className="swtry__item" key={`${e.method}-${e.url}-${idx}`}>
+                  <div style={{ padding: '11px 18px', display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    <div className="swtry__call">
+                      <span
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: 6,
+                          fontSize: 12,
+                          color: stateColor(e.state),
+                          whiteSpace: 'nowrap',
+                        }}
+                        title={e.status}
+                      >
                         <span
-                          className="inline-block w-2 h-2 rounded-full"
-                          style={{ background: stateColor(e.state) }}
-                          title={e.status}
+                          style={{ width: 7, height: 7, borderRadius: 999, background: stateColor(e.state), display: 'inline-block' }}
                         />
-                      </td>
-                      <td className="py-1 pr-2 text-[color:var(--muted-2)]">{e.method}</td>
-                      <td className="py-1 pr-2 text-[color:var(--muted)] truncate max-w-[440px]" title={e.url}>
-                        {cleanUrl(e.url)}
-                      </td>
-                      <td className="py-1 pr-2 text-right text-[color:var(--muted-2)]">
-                        {e.priceUsd != null ? `$${e.priceUsd}` : '—'}
-                      </td>
-                      <td className="py-1 pl-2 text-right text-[color:var(--muted-2)]">
-                        {e.latencyMs != null ? `${e.latencyMs}ms` : '—'}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+                        {stateLabel(e.state)}
+                      </span>
+                      <span className="swtry__method">{e.method}</span>
+                      <span className="swtry__url">{cleanUrl(e.url)}</span>
+                    </div>
+                    <div className="swtry__meta">
+                      <span>{e.priceUsd != null ? `$${e.priceUsd.toFixed(4)} / call · x402` : 'price —'}</span>
+                      {e.latencyMs != null ? <span>{e.latencyMs}ms</span> : null}
+                      <span>{e.status}</span>
+                    </div>
+                  </div>
+                </div>
+              ))}
             </div>
           </td>
         </tr>
