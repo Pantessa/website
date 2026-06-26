@@ -39,8 +39,10 @@ export async function resolveSpaceByName(query: string): Promise<SpaceRef | null
   const q = query.trim()
   if (!q) return null
 
+  const idLike = /\.(eth|xyz|io|com|org|dao)$|\w+\.\w+/.test(q)
+
   // Looks like a space id already (ENS-style or has a dot) → verify directly.
-  if (/\.(eth|xyz|io|com|org|dao)$|\w+\.\w+/.test(q)) {
+  if (idLike) {
     try {
       const data = await gql<{ space: SpaceRef | null }>(
         `query ($id: String!) { space(id: $id) { id name } }`,
@@ -52,20 +54,37 @@ export async function resolveSpaceByName(query: string): Promise<SpaceRef | null
     }
   }
 
-  // Name search via the explore ranking.
-  try {
-    const data = await gql<{ ranking: { items: SpaceRef[] } }>(
-      `query ($search: String) { ranking(first: 8, where: { search: $search }) { items { id name } } }`,
-      { search: q },
-    )
-    const items = data.ranking?.items ?? []
-    if (items.length === 0) return null
-    const needle = q.toLowerCase()
-    // Prefer an exact (case-insensitive) name match, else the top-ranked item.
-    return items.find((s) => s.name?.toLowerCase() === needle) ?? items[0]
-  } catch {
-    return null
+  // Name search via the explore ranking. An id-looking input that didn't resolve
+  // directly (e.g. "aave.eth" when the live space is "aavedao.eth") is searched by
+  // its base label too — the ranking search treats the ".eth" suffix literally and
+  // would otherwise return nothing.
+  const base = idLike ? q.split('.')[0] : ''
+  const terms = base && base.toLowerCase() !== q.toLowerCase() ? [q, base] : [q]
+  for (const term of terms) {
+    try {
+      const data = await gql<{ ranking: { items: SpaceRef[] } }>(
+        `query ($search: String) { ranking(first: 8, where: { search: $search }) { items { id name } } }`,
+        { search: term },
+      )
+      const items = data.ranking?.items ?? []
+      if (items.length === 0) continue
+      const needle = q.toLowerCase()
+      const baseNeedle = base.toLowerCase()
+      // Prefer an exact name/id match, then a base-label match, else top-ranked.
+      return (
+        items.find((s) => s.name?.toLowerCase() === needle || s.id?.toLowerCase() === needle) ??
+        (base
+          ? items.find(
+              (s) => s.name?.toLowerCase() === baseNeedle || s.id?.toLowerCase().startsWith(baseNeedle),
+            )
+          : undefined) ??
+        items[0]
+      )
+    } catch {
+      /* try next term */
+    }
   }
+  return null
 }
 
 export interface ProposalResults {
