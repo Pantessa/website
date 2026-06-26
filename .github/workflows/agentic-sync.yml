@@ -13,6 +13,10 @@ name: agentic.market sync
 #                   triggers GitHub's failure notification.
 #
 # Required repo secret: DATABASE_URL (Neon pooler URL for the `yeetful` db).
+# Optional (recommended) secrets: ANTHROPIC_API_KEY (db:tag — capability tags for
+#   NEW services) and OPENAI_API_KEY (db:embed — re-embeds the pgvector surface,
+#   which db:ingest wipes when it recreates a service's endpoints). Without them
+#   those steps skip and new/re-ingested services fall back to keyword retrieval.
 # Run manually any time via the "Run workflow" button (workflow_dispatch).
 
 on:
@@ -25,6 +29,8 @@ jobs:
     runs-on: ubuntu-latest
     env:
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
     steps:
       - uses: actions/checkout@v4
 
@@ -44,6 +50,20 @@ jobs:
 
       - name: Refresh from agentic.market (additive ingest)
         run: pnpm run db:ingest
+
+      # db:ingest deleteMany+createMany's each service's endpoints, which WIPES
+      # their pgvector embeddings (new rows have embedding=NULL) — so prod hybrid
+      # retrieval silently degrades to keyword-only until re-embedded. Tag NEW
+      # services first (db:embed embeds "service (tags). examples. description",
+      # so tags must exist), then re-embed everything missing a vector. Both are
+      # incremental + cheap (pennies); they no-op gracefully if the key is unset.
+      - name: Tag new services (capabilities + example queries)
+        if: ${{ env.ANTHROPIC_API_KEY != '' }}
+        run: pnpm run db:tag
+
+      - name: Embed endpoints missing a vector (re-embeds post-ingest wipe)
+        if: ${{ env.OPENAI_API_KEY != '' }}
+        run: pnpm run db:embed
 
       - name: Audit sync state (fails on drift / unhealthy endpoints)
         run: pnpm run db:audit -- --json

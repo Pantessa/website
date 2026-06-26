@@ -24,6 +24,7 @@ import {
   parsePlannerPicks,
   buildSmartRequest,
   type PlannableEndpoint,
+  type PlannedPick,
   type ConversationTurn,
   type SmartRequest,
 } from '@/lib/endpoint-planner'
@@ -211,16 +212,36 @@ export function rankByKeyword(message: string, endpoints: PlannableEndpoint[]): 
     .map((x) => x.ep)
 }
 
-/** Cap to ≤3 endpoints/service and `limit` total — the menu the planner sees. */
+/** Cap to ≤3 endpoints/service and `limit` total — the menu the planner sees.
+ *
+ * R4 (mega-service crowding): instead of greedily taking a service's first 3
+ * endpoints — which lets a 357-endpoint service (sponge/heurist-mesh) flood the
+ * top slots and bury the genuinely-right MCP below the cut — we ROUND-ROBIN
+ * across services. Each service's best endpoint fills the top slots first, then
+ * second-best, etc. So the top N positions are N DISTINCT services in rank
+ * order. Service order is each service's best-ranked endpoint (Map preserves
+ * insertion order, and `ranked` is already sorted). Same ≤3/service + `limit`
+ * total guarantees; recall@shortlist is unchanged-or-better (more distinct
+ * services fit in `limit`), recall@5 / rank#1 jump (diverse top). */
+const PER_SERVICE = 3
 export function capShortlist(ranked: PlannableEndpoint[], limit = 14): PlannableEndpoint[] {
-  const perService = new Map<string, number>()
-  const out: PlannableEndpoint[] = []
+  const groups = new Map<string, PlannableEndpoint[]>()
   for (const ep of ranked) {
-    const n = perService.get(ep.serverSlug) ?? 0
-    if (n >= 3) continue // diversity: ≤3 endpoints per service in the shortlist
-    perService.set(ep.serverSlug, n + 1)
-    out.push(ep)
-    if (out.length >= limit) break
+    const g = groups.get(ep.serverSlug)
+    if (g) {
+      if (g.length < PER_SERVICE) g.push(ep)
+    } else {
+      groups.set(ep.serverSlug, [ep])
+    }
+  }
+  const services = [...groups.values()] // best-ranked endpoint first
+  const out: PlannableEndpoint[] = []
+  for (let depth = 0; depth < PER_SERVICE && out.length < limit; depth++) {
+    for (const g of services) {
+      if (depth >= g.length) continue
+      out.push(g[depth])
+      if (out.length >= limit) break
+    }
   }
   return out
 }
@@ -271,6 +292,29 @@ export function dedupeByCapability<T extends { capability?: string; rating: numb
     else dropped.push(it)
   })
   return { kept, dropped }
+}
+
+/**
+ * Drop redundant same-capability picks from a planner result, keeping the best
+ * provider per capability (higher reliability, then cheaper). This is the
+ * default chat path's equivalent of the capability dedup the Auto-Router already
+ * applies (routeMessage) — without it, planSmartPicks pays TWO services for the
+ * same kind of answer (e.g. CoinGecko + CoinMarketCap for one price). Returns
+ * the kept picks (input order preserved) + the dropped endpoints (for notes).
+ * Pure; shared by the chat route AND the routing eval so they measure the same
+ * behavior. Untagged picks always survive (distinct/unknown capabilities).
+ */
+export function dedupePlannerPicks(
+  picks: PlannedPick[],
+  offered: PlannableEndpoint[],
+): { picks: PlannedPick[]; dropped: PlannableEndpoint[] } {
+  const byId = new Map(offered.map((e) => [e.id, e]))
+  const tagged = picks
+    .map((pick) => ({ pick, ep: byId.get(pick.endpointId) }))
+    .filter((x): x is { pick: PlannedPick; ep: PlannableEndpoint } => !!x.ep)
+    .map((x) => ({ ...x, capability: capabilityOf(x.ep), rating: x.ep.reliability?.rating ?? 0, price: Number(x.ep.priceUsd) || 0 }))
+  const { kept, dropped } = dedupeByCapability(tagged)
+  return { picks: kept.map((k) => k.pick), dropped: dropped.map((d) => d.ep) }
 }
 
 /** What the routing model is asked to return (a planner pick + its reasoning). */

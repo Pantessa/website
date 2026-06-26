@@ -35,7 +35,7 @@ import {
   type ConversationTurn,
 } from '@/lib/endpoint-planner'
 import { loadCatalog } from '@/lib/catalog'
-import { routeMessage, selectInferenceProvider, compactForSynthesis, type TraceStep, type SmartPick } from '@/lib/router'
+import { routeMessage, selectInferenceProvider, compactForSynthesis, dedupePlannerPicks, type TraceStep, type SmartPick } from '@/lib/router'
 import { buildSignableArtifact } from '@/lib/transaction-layer'
 import { isCacheable, routeCacheKey, getCached, setCached } from '@/lib/route-cache'
 import { recordRouteEvent, routeSavings } from '@/lib/route-telemetry'
@@ -123,9 +123,12 @@ async function planSmartPicks(
   message: string,
   smart: PlannableEndpoint[],
   history: ConversationTurn[] = [],
-): Promise<{ picks: PlannedPick[]; txHash?: string }> {
+): Promise<{ picks: PlannedPick[]; dropped: PlannableEndpoint[]; txHash?: string }> {
   const { text, txHash } = await callInference(inference, plannerPrompt(message, smart, history))
-  return { picks: parsePlannerPicks(text, smart), txHash }
+  // Never pay two services for the same capability — keep the best per
+  // capability (same dedup the Auto-Router applies). dropped → surfaced as notes.
+  const { picks, dropped } = dedupePlannerPicks(parsePlannerPicks(text, smart), smart)
+  return { picks, dropped, txHash }
 }
 
 export async function POST(req: NextRequest) {
@@ -439,7 +442,8 @@ async function planWalletPayments(
   const smartServed = new Set<string>()
   if (smart.length > 0) {
     try {
-      const { picks } = await planSmartPicks(inference, message, smart, history)
+      const { picks, dropped } = await planSmartPicks(inference, message, smart, history)
+      for (const d of dropped) notes.push(`Skipped ${d.serverName} — another picked service covers the same capability; kept the better-rated/cheaper one.`)
       if (picks.length === 0) {
         const considered = [...new Set(smart.map((e) => e.serverName))].join(', ')
         notes.push(`The planner reviewed ${considered} but judged none of their endpoints relevant to this message.`)
@@ -760,7 +764,8 @@ async function runWithBurner(
       blocked.push(`endpoint planner (${plannerViolation})`)
     } else {
       try {
-        const { picks, txHash } = await planSmartPicks(inference, message, smart, history)
+        const { picks, dropped, txHash } = await planSmartPicks(inference, message, smart, history)
+        for (const d of dropped) notes.push(`Skipped ${d.serverName} — another picked service covers the same capability; kept the better-rated/cheaper one.`)
         if (grant) {
           await recordLedger({ grantId: grant.id, orgId: grant.orgId ?? undefined, host: infHost, serviceName: inference.name, amountUsd: infPrice, ok: true, txHash, note: 'settled' })
           spentToday += infPrice
