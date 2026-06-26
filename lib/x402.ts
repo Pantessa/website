@@ -194,12 +194,21 @@ export function derivePayment(challenge: Challenge, fromAddress: string): Prepar
   if (!name || !version) throw new Error("Cannot resolve the USDC EIP-712 domain for signing.");
 
   const now = Math.floor(Date.now() / 1000);
+  // EIP-3009 validity window. `maxTimeoutSeconds` is the gateway's hold hint, but
+  // some gateways set it as low as 30s (e.g. CoinMarketCap) — fine for the burner
+  // (signs + retries in <1s) but far too short for WALLET mode, where the human
+  // reviews and signs in their wallet over several seconds, so the authorization
+  // expires before the retry settles → a bare "402 Payment Required". Floor the
+  // window to a human-friendly minimum; a longer validBefore is strictly more
+  // permissive on-chain (EIP-3009 only checks validAfter < now < validBefore).
+  const SIGN_WINDOW_FLOOR_SECONDS = 600;
+  const window = Math.max(entry.maxTimeoutSeconds ?? 300, SIGN_WINDOW_FLOOR_SECONDS);
   const authorization = {
     from: getAddress(fromAddress),
     to: getAddress(entry.payTo),
     value,
     validAfter: String(now - 600), // tolerate clock skew
-    validBefore: String(now + (entry.maxTimeoutSeconds ?? 300)),
+    validBefore: String(now + window),
     nonce: toHex(crypto.getRandomValues(new Uint8Array(32))),
   };
 
