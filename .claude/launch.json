@@ -14,13 +14,6 @@
       "runtimeArgs": ["next", "start"],
       "port": 3210,
       "autoPort": true
-    },
-    {
-      "name": "uiux",
-      "runtimeExecutable": "bash",
-      "runtimeArgs": ["-lc", "cd /Users/nategeier/yeetful/website-uiux && exec npm run dev -- -p 3400"],
-      "port": 3400,
-      "autoPort": false
     }
   ]
 }
