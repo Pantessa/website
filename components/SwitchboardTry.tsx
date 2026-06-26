@@ -27,6 +27,7 @@ interface Candidate {
   service: string
   price: number
   proven: number
+  txHash: string | null
   call: RouteCall
 }
 interface Cat {
@@ -60,7 +61,7 @@ export default function SwitchboardTry() {
     <section className="swtry">
       <div className="swtry__head">
         <span className="swtry__eyebrow mono">TRY A ROUTE</span>
-        <h2 className="swtry__h2">Pick a need. Watch it route.</h2>
+        <h2 className="swtry__h2">The engine at work.</h2>
         <p className="swtry__sub">
           Every plannable route in the live catalog, ranked the way Switchboard ranks them — the{' '}
           <strong>cheapest proven route wins</strong>. Expand any route to see the exact call it
@@ -104,25 +105,40 @@ export default function SwitchboardTry() {
             const isOpen = open === c.slug
             return (
               <div className={`swtry__item ${isPick ? 'is-pick' : ''} ${isOpen ? 'is-open' : ''}`} key={c.slug}>
-                <button
-                  className="swtry__row"
-                  aria-expanded={isOpen}
-                  onClick={() => setOpen(isOpen ? null : c.slug)}
-                >
-                  <span className="swtry__chev" aria-hidden="true">
-                    ›
-                  </span>
-                  <span className="swtry__route">{c.service}</span>
-                  {c.proven > 0 ? (
-                    <span className="swtry__proven" title={`${c.proven} settled calls on-network`}>
-                      ✓ proven {c.proven}
+                <div className="swtry__rowwrap">
+                  <button
+                    className="swtry__row"
+                    aria-expanded={isOpen}
+                    onClick={() => setOpen(isOpen ? null : c.slug)}
+                  >
+                    <span className="swtry__chev" aria-hidden="true">
+                      ›
                     </span>
+                    <span className="swtry__route">{c.service}</span>
+                    {c.proven > 0 ? (
+                      <span className="swtry__proven" title={`${c.proven} settled calls on-network`}>
+                        ✓ proven {c.proven}
+                      </span>
+                    ) : (
+                      <span className="swtry__unproven">untested</span>
+                    )}
+                    <span className="swtry__price">${c.price.toFixed(4)}</span>
+                    <span className="swtry__tag">{isPick ? 'PICK' : ''}</span>
+                  </button>
+                  {c.txHash ? (
+                    <a
+                      className="swtry__tx"
+                      href={`https://basescan.org/tx/${c.txHash}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      title="View a settlement for this route on Basescan"
+                    >
+                      tx ↗
+                    </a>
                   ) : (
-                    <span className="swtry__unproven">untested</span>
+                    <span className="swtry__tx swtry__tx--none" aria-hidden="true" />
                   )}
-                  <span className="swtry__price">${c.price.toFixed(4)}</span>
-                  <span className="swtry__tag">{isPick ? 'PICK' : ''}</span>
-                </button>
+                </div>
 
                 {isOpen && (
                   <div className="swtry__detail">
