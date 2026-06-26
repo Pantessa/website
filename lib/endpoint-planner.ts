@@ -32,6 +32,10 @@ interface EndpointHint {
   match: RegExp
   description?: string
   addParams?: EndpointParam[]
+  /** Rewrite the URL — used to templatize endpoints that agentic.market ingests
+   *  with a value baked into the path (e.g. flightaware /flights/UAL123) back
+   *  into a parameterizable form (/flights/{ident}) so the planner can fill it. */
+  rewriteUrl?: (url: string) => string
 }
 const ENDPOINT_HINTS: EndpointHint[] = [
   {
@@ -53,15 +57,46 @@ const ENDPOINT_HINTS: EndpointHint[] = [
     description: 'Search crypto tokens, pools and networks by name or symbol (CoinGecko onchain).',
     addParams: [{ group: 'query', name: 'query', type: 'string', required: true, example: 'ethereum' }],
   },
+  {
+    // Wolfram|Alpha endpoints ingest with NO param schema, so the planner only
+    // sometimes supplies the `i` query (the input), and the call 400s with
+    // "Query Parameter i is required" when it doesn't. Declare it required and
+    // describe the result endpoint richly so it's the reliable pick over the
+    // image (/v1/simple) and XML (/v2/query) variants.
+    match: /wolframalpha\.x402\.paysponge\.com\/v1\/result/i,
+    description:
+      'Wolfram|Alpha computational answer — math, integrals, derivatives, equations, unit conversions, statistics & facts. Returns a concise text result. Pass the full natural-language or math query as i.',
+    addParams: [{ group: 'query', name: 'i', type: 'string', required: true, example: 'integrate x^2 sin(x) dx' }],
+  },
+  {
+    // FlightAware "flight by ident" is ingested as concrete sample URLs
+    // (/flights/UAL123, /flights/AA95, …) with the flight baked into the path
+    // and NO {ident} token — so the planner can't query the user's flight and
+    // falls back to the wrong /flights/search/count (which 400s). Templatize it
+    // back to /flights/{ident} and declare `ident` so the planner fills it (the
+    // model supplies the value, e.g. "UA123"). Excludes /flights/search*.
+    match: /stabletravel\.dev\/api\/flightaware\/flights\/(?!search\b)[A-Za-z0-9]+$/i,
+    rewriteUrl: (url) => url.replace(/\/flights\/[A-Za-z0-9]+(\?.*)?$/i, '/flights/{ident}'),
+    description:
+      'Current flight status by ident — on-time, delays, gate, origin & destination for one specific flight. Use the airline code + number (e.g. flight UA123 → ident "UA123", AA95 → "AA95").',
+    addParams: [
+      { group: 'path', name: 'ident', type: 'string', required: true, example: 'UA123' },
+      { group: 'query', name: 'ident_type', type: 'string', required: false, example: 'designator' },
+    ],
+  },
 ]
 
-function applyHint(url: string, description: string | null, params: EndpointParam[]): { description: string | null; params: EndpointParam[] } {
+function applyHint(url: string, description: string | null, params: EndpointParam[]): { url: string; description: string | null; params: EndpointParam[] } {
   const hint = ENDPOINT_HINTS.find((h) => h.match.test(url))
-  if (!hint) return { description, params }
+  if (!hint) return { url, description, params }
   const merged = hint.addParams
     ? [...params, ...hint.addParams.filter((ap) => !params.some((p) => p.name === ap.name))]
     : params
-  return { description: hint.description ?? description, params: merged }
+  return {
+    url: hint.rewriteUrl ? hint.rewriteUrl(url) : url,
+    description: hint.description ?? description,
+    params: merged,
+  }
 }
 
 /**
@@ -160,6 +195,15 @@ export async function loadPlannableEndpoints(slugs: string[]): Promise<Plannable
     orderBy: { position: 'asc' },
   })
 
+  // Curated (hinted) endpoints are the highest-value calls for a service, but
+  // agentic.market often orders them LATE — flightaware's flight-by-ident sits
+  // at position ~60, well past MENU_CAP_PER_SERVICE, so it never reaches the
+  // menu and the planner falls back to a worse endpoint. Float hinted rows to
+  // the front so they always make the cut. Stable sort → position order is
+  // preserved within the hinted and non-hinted groups.
+  const isHinted = (u: string) => ENDPOINT_HINTS.some((h) => h.match.test(u))
+  rows.sort((a, b) => (isHinted(b.url) ? 1 : 0) - (isHinted(a.url) ? 1 : 0))
+
   const perService = new Map<string, number>()
   const seenShape = new Set<string>()
   const out: PlannableEndpoint[] = []
@@ -172,22 +216,25 @@ export async function loadPlannableEndpoints(slugs: string[]): Promise<Plannable
     // Curated enrichment (description + declared params) for thin high-value
     // endpoints, applied first so the filter/shape/menu all see the richer form.
     const hinted = applyHint(r.url, r.description, (r.parameters as EndpointParam[] | null) ?? [])
+    const url = hinted.url
     const params = hinted.params
     // Thin/empty descriptions get keyword signal from category + path (B20).
-    const description = deriveDescription(hinted.description, r.server.category, r.url)
+    const description = deriveDescription(hinted.description, r.server.category, url)
     // A param-less endpoint is still callable when it's a GET with no path
     // token to fill — a plain fetch (e.g. "list all teams"). buildSmartRequest
     // already builds these (empty query/body). Anything that needs a value we
     // can't supply — a POST body or an unresolved :path/{path} token — stays
-    // out. Test the PATHNAME (not the raw url, whose "://" contains a colon).
+    // out (it would only burn a menu slot and resolve to an "unresolved path
+    // parameter" refusal). Test the RAW template, not new URL().pathname, which
+    // percent-encodes "{" → "%7B" and hides the token (the trap
+    // buildSmartRequest documents).
     if (params.length === 0) {
-      let pathname: string
       try {
-        pathname = new URL(r.url).pathname
+        new URL(url)
       } catch {
         continue
       }
-      if (r.method !== 'GET' || /[:{]/.test(pathname)) continue
+      if (r.method !== 'GET' || /\{[^}]+\}/.test(url) || /\/:[A-Za-z_]/.test(url)) continue
     }
     // De-dup near-identical endpoints: agentic.market lists many rows that
     // differ only by a baked-in path value (e.g. CoinGecko's ~20
@@ -205,7 +252,7 @@ export async function loadPlannableEndpoints(slugs: string[]): Promise<Plannable
       serverSlug: r.server.slug,
       serverName: r.server.name,
       method: r.method,
-      url: r.url,
+      url,
       description,
       priceUsd: r.priceUsd!,
       parameters: params,

@@ -614,6 +614,9 @@ async function executeWithSignatures(
       const note = err instanceof Error ? err.message : 'call failed'
       pushReceipt({ name: c.name, endpoint: c.host, priceUsd: c.priceUsd, ok: false, note })
       ledger(c, false, undefined, truncate(note, 120))
+      // Feed the self-heal loop from the wallet path too (deduped by service +
+      // error class; links this turn's trace). Fire-and-forget.
+      recordIncident({ service: c.name, message: note, turnId })
     }
   }
 
@@ -806,7 +809,14 @@ async function runWithBurner(
               spentTotal += price
             }
           } catch (err) {
-            receipts.push({ name: ep.serverName, endpoint: host, priceUsd: ep.priceUsd, ok: false, note: err instanceof Error ? err.message : 'call failed' })
+            const note = err instanceof Error ? err.message : 'call failed'
+            receipts.push({ name: ep.serverName, endpoint: host, priceUsd: ep.priceUsd, ok: false, note })
+            // Record the failed paid call for the self-heal loop — the default
+            // (non-Auto-Router) chat path most users hit. Without this, only the
+            // Auto-Router path fed incidents, so the table stayed empty and the
+            // self-heal workflow had nothing to act on. Fire-and-forget; deduped
+            // by service + error class.
+            recordIncident({ service: ep.serverName, message: note })
           }
         }
       } catch (err) {
