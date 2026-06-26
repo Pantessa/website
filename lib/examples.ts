@@ -34,9 +34,4 @@ export const EXAMPLE_PROMPTS: ExamplePrompt[] = [
     prompt: 'Wolfram: integrate x^2 * sin(x) dx',
     slug: 'wolfram-alpha',
   },
-  {
-    label: 'Plan a trip',
-    prompt: 'Plan a 3-day food-focused trip to Tokyo with top-rated spots.',
-    slug: 'tripadvisor',
-  },
 ]
