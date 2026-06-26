@@ -43,7 +43,7 @@ interface Overview {
   orgs: { orgs: number; members: number; org_settled: number }
   supply: { callable: number; servers: number }
   activation: { count: number; medianHours: number | null; p25Hours: number | null; p75Hours: number | null }
-  recentArrivals: { address: string; firstSeen: string; chats: number; keys: number; okCalls: number; settled: number }[]
+  recentArrivals: { address: string; firstSeen: string; chats: number; keys: number; okCalls: number; settled: number; test: boolean }[]
   cohorts: { week: string; size: number; returned: number; paid: number }[]
   recentSignups: { email: string; status: string; createdAt: string; verifiedAt: string | null }[]
 }
@@ -90,6 +90,7 @@ export default function AdminPage() {
   const { address } = useSession()
   const [data, setData] = useState<Overview | null>(null)
   const [excludeOwners, setExcludeOwners] = useState(false)
+  const [externalOnly, setExternalOnly] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -226,35 +227,61 @@ export default function AdminPage() {
       {/* Activation & retention */}
       <div className="grid lg:grid-cols-2 gap-3 mt-3">
         <Card>
-          <CardTitle>Recent arrivals · last 14 days</CardTitle>
-          {data.recentArrivals.length === 0 ? (
-            <p className="text-xs text-[color:var(--muted-2)] py-4">No new wallets in the last 14 days.</p>
-          ) : (
-            <div className="overflow-x-auto -mx-1 px-1">
-              <table className="w-full text-sm min-w-[420px]">
-                <thead>
-                  <tr className="text-left text-[11px] uppercase tracking-wider text-[color:var(--muted-2)] mono">
-                    <th className="py-2 pr-3 font-medium">Wallet</th>
-                    <th className="py-2 pr-3 font-medium">Arrived</th>
-                    <th className="py-2 pr-3 font-medium text-right">Chats</th>
-                    <th className="py-2 pr-3 font-medium text-right">Keys</th>
-                    <th className="py-2 pr-3 font-medium text-right">Paid</th>
-                  </tr>
-                </thead>
-                <tbody className="text-[color:var(--muted)]">
-                  {data.recentArrivals.map((r) => (
-                    <tr key={r.address} className="border-t border-[var(--line)]">
-                      <td className="py-2 pr-3 mono text-white">{short(r.address)}</td>
-                      <td className="py-2 pr-3 whitespace-nowrap">{timeAgo(r.firstSeen)}</td>
-                      <td className="py-2 pr-3 text-right tabular-nums">{r.chats}</td>
-                      <td className="py-2 pr-3 text-right tabular-nums">{r.keys}</td>
-                      <td className="py-2 pr-3 text-right tabular-nums text-white">{r.okCalls || '—'}</td>
+          <div className="flex items-center justify-between gap-3 flex-wrap mb-1">
+            <CardTitle>Recent arrivals · last 14 days</CardTitle>
+            <label className="flex items-center gap-2 text-xs text-[color:var(--muted)] cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={externalOnly}
+                onChange={(e) => setExternalOnly(e.target.checked)}
+                className="accent-[var(--accent,#34E0A1)]"
+              />
+              External only
+            </label>
+          </div>
+          {(() => {
+            const arrivals = externalOnly ? data.recentArrivals.filter((r) => !r.test) : data.recentArrivals
+            if (arrivals.length === 0) {
+              return (
+                <p className="text-xs text-[color:var(--muted-2)] py-4">
+                  {externalOnly ? 'No external wallets in the last 14 days.' : 'No new wallets in the last 14 days.'}
+                </p>
+              )
+            }
+            return (
+              <div className="overflow-x-auto -mx-1 px-1">
+                <table className="w-full text-sm min-w-[420px]">
+                  <thead>
+                    <tr className="text-left text-[11px] uppercase tracking-wider text-[color:var(--muted-2)] mono">
+                      <th className="py-2 pr-3 font-medium">Wallet</th>
+                      <th className="py-2 pr-3 font-medium">Arrived</th>
+                      <th className="py-2 pr-3 font-medium text-right">Chats</th>
+                      <th className="py-2 pr-3 font-medium text-right">Keys</th>
+                      <th className="py-2 pr-3 font-medium text-right">Paid</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
+                  </thead>
+                  <tbody className="text-[color:var(--muted)]">
+                    {arrivals.map((r) => (
+                      <tr key={r.address} className="border-t border-[var(--line)]">
+                        <td className="py-2 pr-3 mono text-white whitespace-nowrap">
+                          {short(r.address)}
+                          {r.test && (
+                            <span className="ml-2 align-middle text-[9px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-[var(--surf-1)] border border-[var(--line)] text-[color:var(--muted-2)]">
+                              Test
+                            </span>
+                          )}
+                        </td>
+                        <td className="py-2 pr-3 whitespace-nowrap">{timeAgo(r.firstSeen)}</td>
+                        <td className="py-2 pr-3 text-right tabular-nums">{r.chats}</td>
+                        <td className="py-2 pr-3 text-right tabular-nums">{r.keys}</td>
+                        <td className="py-2 pr-3 text-right tabular-nums text-white">{r.okCalls || '—'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )
+          })()}
         </Card>
 
         <Card>
