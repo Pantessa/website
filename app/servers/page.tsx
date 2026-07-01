@@ -6,6 +6,7 @@ import { useSearchParams } from 'next/navigation'
 import { Plus } from 'lucide-react'
 import ServerDirectory from '@/components/ServerDirectory'
 import ActiveServerBar from '@/components/ActiveServerBar'
+import ShortlistBar from '@/components/ShortlistBar'
 import Footer from '@/components/Footer'
 
 /** /servers — the full agent directory (search + category filter over the
@@ -35,6 +36,7 @@ export default function ServersPage() {
               <Plus width={16} height={16} /> Add a server
             </Link>
           </div>
+          <ShortlistBar />
           <Suspense fallback={null}>
             <Directory />
           </Suspense>

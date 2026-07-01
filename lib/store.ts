@@ -128,6 +128,16 @@ interface YeetfulStore {
   setActiveServerIds: (ids: string[]) => void
   clearActiveServers: () => void
 
+  // Saved MCP shortlist — the wallet's curated 1–3 services (the "pick your
+  // tools" default). Persisted per-wallet in the DB (signed in) and locally
+  // (guest). Seeds a new chat's active set. See lib/shortlist.ts + /api/shortlist.
+  shortlistIds: string[]
+  /** Add/remove one service from the shortlist (capped at MAX_SHORTLIST);
+   *  no-op past the cap. Persists. Returns true if the set changed. */
+  toggleShortlist: (id: string) => boolean
+  setShortlist: (ids: string[]) => void
+  loadShortlist: () => Promise<void>
+
   // Auto-Router — when on, the engine picks services per message (no manual
   // selection) and streams its reasoning. Persisted; trace buffer is ephemeral.
   autoRouter: boolean
@@ -169,6 +179,21 @@ interface YeetfulStore {
 
 const localId = () => Math.random().toString(36).slice(2)
 
+// Kept in sync with lib/shortlist.ts MAX_SHORTLIST (can't import it here — that
+// module pulls in Prisma and would bundle into the client).
+const MAX_SHORTLIST = 3
+
+// Write the shortlist through to the DB when signed in (fire-and-forget; guest
+// shortlists live only in the persisted local store).
+function persistShortlist(get: () => YeetfulStore, ids: string[]) {
+  if (!get().authedAddress) return
+  void fetch('/api/shortlist', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ serviceIds: ids }),
+  }).catch(() => {})
+}
+
 export const useYeetfulStore = create<YeetfulStore>()(
   persist(
     (set, get) => ({
@@ -192,6 +217,33 @@ export const useYeetfulStore = create<YeetfulStore>()(
       setActiveServerIds: (ids) => set({ activeServerIds: ids }),
       clearActiveServers: () => set({ activeServerIds: [] }),
 
+      shortlistIds: [],
+      toggleShortlist: (id) => {
+        const cur = get().shortlistIds
+        const has = cur.includes(id)
+        if (!has && cur.length >= MAX_SHORTLIST) return false // at cap — reject add
+        const next = has ? cur.filter((x) => x !== id) : [...cur, id]
+        set({ shortlistIds: next })
+        persistShortlist(get, next)
+        return true
+      },
+      setShortlist: (ids) => {
+        const next = ids.slice(0, MAX_SHORTLIST)
+        set({ shortlistIds: next })
+        persistShortlist(get, next)
+      },
+      loadShortlist: async () => {
+        if (!get().authedAddress) return
+        try {
+          const res = await fetch('/api/shortlist', { cache: 'no-store' })
+          if (!res.ok) return
+          const data = await res.json()
+          if (Array.isArray(data.serviceIds)) set({ shortlistIds: data.serviceIds })
+        } catch {
+          // keep whatever's in memory
+        }
+      },
+
       autoRouter: true, // on by default — auto routing is the headline experience
       setAutoRouter: (on) => set({ autoRouter: on }),
       routerTrace: [],
@@ -209,7 +261,11 @@ export const useYeetfulStore = create<YeetfulStore>()(
       setCurrentChatId: (id) => set({ currentChatId: id }),
 
       createChat: async (title = 'New chat') => {
-        const activeServerIds = get().activeServerIds
+        // A new chat starts from the current working set, or — if none is
+        // selected — the saved shortlist (the "pick your tools" default).
+        // Empty shortlist → empty active set → unchanged whole-catalog behavior.
+        const { activeServerIds: cur, shortlistIds } = get()
+        const activeServerIds = cur.length ? cur : shortlistIds
         // Signed in → create in the DB and use the real cuid.
         if (get().authedAddress) {
           try {
@@ -372,6 +428,7 @@ export const useYeetfulStore = create<YeetfulStore>()(
       // leak into another account or survive a sign-out.
       partialize: (state) => ({
         activeServerIds: state.activeServerIds,
+        shortlistIds: state.shortlistIds,
         sidebarOpen: state.sidebarOpen,
         autoRouter: state.autoRouter,
         engineWindowOpen: state.engineWindowOpen,

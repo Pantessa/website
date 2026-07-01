@@ -224,14 +224,16 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const setAuthedAddress = useYeetfulStore((s) => s.setAuthedAddress)
   const loadChats = useYeetfulStore((s) => s.loadChats)
   const resetChats = useYeetfulStore((s) => s.resetChats)
+  const loadShortlist = useYeetfulStore((s) => s.loadShortlist)
   useEffect(() => {
     setAuthedAddress(effectiveAddress)
     if (effectiveAddress) {
       void loadChats()
+      void loadShortlist() // pull the wallet's saved shortlist from the DB
     } else {
       resetChats()
     }
-  }, [effectiveAddress, setAuthedAddress, loadChats, resetChats])
+  }, [effectiveAddress, setAuthedAddress, loadChats, resetChats, loadShortlist])
 
   const value: SessionValue = {
     address: sessionMatchesWallet ? address : null,

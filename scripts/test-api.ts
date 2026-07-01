@@ -232,6 +232,79 @@ async function main() {
   ).json()
   check('owner can switch the policy back off (Bearer)', polOff.spendPolicyEnabled === false)
 
+  // ── Saved MCP shortlist (pick 1–3) ──────────────────────────────────────────
+  console.log('— shortlist')
+  const slNoAuth = await fetch(`${BASE}/api/shortlist`)
+  check('shortlist read requires auth → 401', slNoAuth.status === 401)
+
+  const slEmpty = await (await fetch(`${BASE}/api/shortlist`, { headers: C })).json()
+  check(
+    'fresh wallet → empty shortlist',
+    Array.isArray(slEmpty.serviceIds) && slEmpty.serviceIds.length === 0,
+  )
+
+  // Real service ids from the directory — the shortlist validates against them.
+  const slDir = await (await fetch(`${BASE}/api/servers`)).json()
+  const svc: string[] = (Array.isArray(slDir) ? slDir : [])
+    .map((s: { id: string }) => s.id)
+    .filter(Boolean)
+  const [s1, s2, s3, s4] = svc
+
+  if (svc.length >= 2) {
+    const saved = await (
+      await fetch(`${BASE}/api/shortlist`, {
+        method: 'PUT', headers: CJ, body: JSON.stringify({ serviceIds: [s1, s2] }),
+      })
+    ).json()
+    check(
+      'save shortlist of 2 persists, order kept',
+      saved.serviceIds?.length === 2 && saved.serviceIds[0] === s1 && saved.serviceIds[1] === s2,
+    )
+
+    const reread = await (await fetch(`${BASE}/api/shortlist`, { headers: C })).json()
+    check('shortlist survives a re-read (DB-backed)', reread.serviceIds?.length === 2)
+
+    // Unknown ids are silently dropped, not stored.
+    const cleaned = await (
+      await fetch(`${BASE}/api/shortlist`, {
+        method: 'PUT', headers: CJ, body: JSON.stringify({ serviceIds: [s1, 'bogus-id-xyz'] }),
+      })
+    ).json()
+    check(
+      'unknown service ids are dropped',
+      cleaned.serviceIds?.length === 1 && cleaned.serviceIds[0] === s1,
+    )
+
+    // Isolation: another wallet has its own (empty) shortlist.
+    const mShortlist = await (
+      await fetch(`${BASE}/api/shortlist`, { headers: { cookie: mallorySession } })
+    ).json()
+    check('shortlist is per-wallet (mallory sees empty)', mShortlist.serviceIds?.length === 0)
+  }
+
+  // >3 valid ids is a 400 — never a silent truncation.
+  if (svc.length >= 4) {
+    const tooMany = await fetch(`${BASE}/api/shortlist`, {
+      method: 'PUT', headers: CJ, body: JSON.stringify({ serviceIds: [s1, s2, s3, s4] }),
+    })
+    check('shortlist > 3 rejected (400)', tooMany.status === 400)
+  }
+
+  // Non-array body → 400; empty array clears it (fallback to whole-catalog).
+  const slBad = await fetch(`${BASE}/api/shortlist`, {
+    method: 'PUT', headers: CJ, body: JSON.stringify({ serviceIds: 'nope' }),
+  })
+  check('shortlist PUT with non-array → 400', slBad.status === 400)
+  const slClear = await (
+    await fetch(`${BASE}/api/shortlist`, {
+      method: 'PUT', headers: CJ, body: JSON.stringify({ serviceIds: [] }),
+    })
+  ).json()
+  check(
+    'empty shortlist clears (fallback to whole-catalog)',
+    Array.isArray(slClear.serviceIds) && slClear.serviceIds.length === 0,
+  )
+
   // ── Ledger sync ───────────────────────────────────────────────────────────
   console.log('— ledger sync')
   const ledgerRes = await fetch(`${BASE}/api/grants/${grant.id}/ledger`, {
