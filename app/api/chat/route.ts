@@ -1236,6 +1236,10 @@ export function streamAutoRouter(
         if (decision.artifact) {
           if (decision.artifact.kind === 'eip712-vote') {
             send({ type: 'reply', content: `🗳️ ${decision.artifact.summary}`, receipts, payer: 'the house wallet', voteRequest: decision.artifact.vote, trace: trace() })
+          } else if (decision.artifact.kind === 'eip712-order') {
+            // Intent-based order (CoW swap / OpenSea): the built order is sent
+            // for signature. Guardrails (A3) gate it; the sign UI is A4.
+            send({ type: 'reply', content: `🔏 ${decision.artifact.summary}`, receipts, payer: 'the house wallet', orderRequest: decision.artifact.order, trace: trace() })
           } else {
             send({ type: 'reply', content: `🔏 ${decision.artifact.summary}`, receipts, payer: 'the house wallet', txRequest: decision.artifact.tx, trace: trace() })
           }

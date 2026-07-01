@@ -28,11 +28,27 @@ export interface EvmTxRequest {
   action?: string
 }
 
+/** A generic EIP-712 order to sign off-chain (intent-based protocols: CoW
+ *  swaps, OpenSea/Seaport listings & offers). Unlike `evm-tx` these settle via
+ *  a solver/relayer after signing, so we carry the full typed-data payload +
+ *  where the signed order is submitted (A4). */
+export interface Eip712OrderRequest {
+  /** Protocol label — 'cow' | 'opensea' | … (drives the submit + UI copy). */
+  protocol: string
+  /** Full EIP-712 typed data: { domain, primaryType, types, message }. */
+  typedData: unknown
+  /** Order-book endpoint the signed order is POSTed to after signing. */
+  submitUrl?: string
+  chainId?: number
+}
+
 /** A signable artifact the engine surfaces for explicit approval. Extensible:
- *  EIP-712 vote today; raw EVM tx reserved for swap/transfer/mint MCPs. */
+ *  EIP-712 vote + raw EVM tx today; `eip712-order` for intent-based swaps
+ *  (CoW) and marketplace orders (OpenSea). */
 export type SignableArtifact =
   | { kind: 'eip712-vote'; summary: string; vote: VoteRequest }
   | { kind: 'evm-tx'; summary: string; tx: EvmTxRequest }
+  | { kind: 'eip712-order'; summary: string; order: Eip712OrderRequest }
 
 const ACTION_RE = /\b(vote|swap|send|transfer|bridge|mint|approve|stake|unstake|delegate)\b/i
 
@@ -54,6 +70,24 @@ export function buildSignableArtifact(toolResult: unknown): SignableArtifact | n
   // Snapshot vote — the existing prototype, now one artifact kind.
   const vote = voteRequestFromToolResult(toolResult)
   if (vote) return { kind: 'eip712-vote', summary: vote.summary, vote }
+
+  // Generic EIP-712 order (CoW swap, OpenSea/Seaport order). The tool returns
+  // `{ action:'sign_order', protocol, typedData, summary, submitUrl?, chainId? }`.
+  if (toolResult && typeof toolResult === 'object') {
+    const d = toolResult as Record<string, unknown>
+    if (d.action === 'sign_order' && d.typedData && typeof d.protocol === 'string') {
+      return {
+        kind: 'eip712-order',
+        summary: typeof d.summary === 'string' ? d.summary : `Sign a ${d.protocol} order`,
+        order: {
+          protocol: d.protocol,
+          typedData: d.typedData,
+          submitUrl: typeof d.submitUrl === 'string' ? d.submitUrl : undefined,
+          chainId: typeof d.chainId === 'number' ? d.chainId : undefined,
+        },
+      }
+    }
+  }
 
   // Generic on-chain transaction template (swap/transfer/mint/approve MCPs).
   if (toolResult && typeof toolResult === 'object') {
