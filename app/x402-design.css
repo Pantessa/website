@@ -441,8 +441,6 @@
   }
   .swstats__statlbl { font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted-2); }
   .swstats__charts { margin-top: 28px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
-  .swstats__all { display: inline-block; margin-top: 22px; font-size: 13px; color: var(--muted); text-decoration: none; }
-  .swstats__all:hover { color: var(--fg); }
   @media (max-width: 760px) {
     .swstats__charts { grid-template-columns: 1fr; }
     .swstats__stats { gap: 16px 28px; }
@@ -474,8 +472,6 @@
   .swsrv__head { display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; flex-wrap: wrap; margin-bottom: 26px; }
   .swsrv__eyebrow { font-size: 12px; letter-spacing: 0.18em; color: var(--muted-2); }
   .swsrv__h2 { font-family: var(--font-serif); font-weight: 500; font-optical-sizing: auto; font-size: clamp(28px, 3.6vw, 42px); letter-spacing: -0.012em; line-height: 1.06; margin-top: 12px; color: var(--fg); }
-  .swsrv__all { font-size: 14px; color: var(--accent); text-decoration: none; white-space: nowrap; }
-  .swsrv__all:hover { text-decoration: underline; }
   .swsrv__pills { margin: -8px 0 24px; }
   /* Fill full rows: render 10 cards, trim as the grid loses columns. */
   @media (max-width: 1799px) { .swsrv .x-grid > :nth-child(n+9) { display: none; } } /* 4-col → 8 */
@@ -1447,3 +1443,49 @@
       scroll-behavior: auto !important;
     }
   }
+
+  /* ── HOME MOTION + SECTION CTAS ─────────────────── */
+  /* Section head row: title block left, deeper-page button right. */
+  .swhead { display: flex; align-items: flex-end; justify-content: space-between; gap: 18px 24px; flex-wrap: wrap; }
+  .swmore {
+    display: inline-flex; align-items: center; gap: 8px; flex-shrink: 0;
+    padding: 9px 16px; border: 1px solid var(--line-2); border-radius: 999px;
+    font-size: 12.5px; color: var(--muted); text-decoration: none; white-space: nowrap;
+    transition: color .15s, border-color .15s, background .15s;
+  }
+  .swmore:hover {
+    color: var(--fg); background: var(--surf-1);
+    border-color: color-mix(in oklch, var(--accent) 55%, var(--line-2));
+  }
+  .swmore__arrow { display: inline-block; transition: transform .18s cubic-bezier(.2, .7, .3, 1); }
+  .swmore:hover .swmore__arrow { transform: translateX(4px); }
+
+  /* Live-data pulse on section eyebrows (matches the nav status dot). */
+  .swdot {
+    display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 9px;
+    background: var(--accent); box-shadow: 0 0 0 3px color-mix(in oklch, var(--accent) 20%, transparent);
+    animation: swblink 2.6s ease-in-out infinite;
+  }
+  .swstats__eyebrow, .swproof__eyebrow { display: inline-flex; align-items: center; }
+  @keyframes swblink { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+
+  /* Scroll reveal (components/Reveal.tsx): rise + fade on first view. The
+     hidden initial state only applies while scripting is enabled, so content
+     is never lost without JS; the global reduced-motion guard above collapses
+     the transition to instant. */
+  .swreveal { transition: opacity .6s cubic-bezier(.2, .7, .3, 1), transform .6s cubic-bezier(.2, .7, .3, 1); }
+  @media (scripting: enabled) {
+    .swreveal:not(.is-in) { opacity: 0; transform: translateY(18px); }
+  }
+  /* Reveal wrappers standing in as grid cells keep the cell constraints. */
+  .swproof__list > .swreveal { min-width: 0; display: flex; }
+  .swproof__list > .swreveal > .swproof__card { flex: 1; }
+
+  /* Hero entrance — the copy column stacks in on load. */
+  .heroweb__copy > * { animation: swrise .65s cubic-bezier(.2, .7, .3, 1) both; }
+  .heroweb__copy > :nth-child(2) { animation-delay: 90ms; }
+  .heroweb__copy > :nth-child(3) { animation-delay: 180ms; }
+  .heroweb__copy > :nth-child(4) { animation-delay: 260ms; }
+  .heroweb__copy > :nth-child(5) { animation-delay: 330ms; }
+  .heroweb__copy > :nth-child(6) { animation-delay: 400ms; }
+  @keyframes swrise { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: none; } }

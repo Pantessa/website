@@ -5,6 +5,8 @@
 // call. Data: /api/route/proof. Renders nothing until real settled calls exist.
 
 import { useEffect, useState } from 'react'
+import Link from 'next/link'
+import Reveal from '@/components/Reveal'
 
 interface Call {
   service: string
@@ -43,18 +45,29 @@ export default function SwitchboardProof() {
 
   return (
     <section className="swproof">
-      <div className="swproof__head">
-        <span className="swproof__eyebrow mono">PROOF, IN THE OPEN</span>
-        <h2 className="swproof__h2">Real questions. Real calls. On-chain.</h2>
-        <p className="swproof__sub">
-          Actual routed turns — what was asked, what Switchboard answered, and the settlement tx for
-          every paid call. Nothing simulated.
-        </p>
-      </div>
+      <Reveal>
+        <div className="swhead">
+          <div className="swproof__head">
+            <span className="swproof__eyebrow mono">
+              <span className="swdot" aria-hidden="true" />
+              PROOF, IN THE OPEN
+            </span>
+            <h2 className="swproof__h2">Real questions. Real calls. On-chain.</h2>
+            <p className="swproof__sub">
+              Actual routed turns — what was asked, what Switchboard answered, and the settlement tx
+              for every paid call. Nothing simulated.
+            </p>
+          </div>
+          <Link href="/activity" className="swmore mono">
+            See the live network <span className="swmore__arrow">→</span>
+          </Link>
+        </div>
+      </Reveal>
 
       <div className="swproof__list">
-        {items.map((it) => (
-          <article className="swproof__card" key={it.id}>
+        {items.map((it, i) => (
+          <Reveal key={it.id} delay={80 + (i % 2) * 70} className="min-w-0">
+            <article className="swproof__card">
             <div className="swproof__q mono">
               <span className="swproof__qmark">›</span> {it.prompt}
             </div>
@@ -76,7 +89,8 @@ export default function SwitchboardProof() {
               ))}
               <span className="swproof__time">{ago(it.createdAt)}</span>
             </div>
-          </article>
+            </article>
+          </Reveal>
         ))}
       </div>
     </section>

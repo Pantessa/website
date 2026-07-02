@@ -23,12 +23,30 @@ const tooltipStyle = {
   border: '1px solid rgba(255,255,255,0.12)',
   borderRadius: 10,
   fontSize: 12,
+  fontFamily: "'Geist Mono', ui-monospace, monospace",
   color: '#fff',
 } as const
+// Recharts' default hover cursor is a bright grey rect — brutal on a dark
+// theme (it reads as a phantom full-width bar). Whisper-quiet instead.
+const barCursor = { fill: 'rgba(255,255,255,0.04)' } as const
+const lineCursor = { stroke: 'rgba(255,255,255,0.18)', strokeDasharray: '3 4' } as const
 
 function dayLabel(iso: string): string {
   const d = new Date(iso)
   return `${d.getUTCMonth() + 1}/${d.getUTCDate()}`
+}
+
+/** Axis-friendly service name: hostnames keep their first label, anything
+ * long gets an ellipsis — the tooltip still carries the full name. Without
+ * this, "tripadvisor.x402.paysponge.com" clips to ".x402.paysponge.com"
+ * inside the fixed-width category axis. */
+function serviceLabel(name: string): string {
+  let s = name
+  if (s.includes('.') && !s.includes(' ')) {
+    const first = s.split('.')[0]
+    if (first.length >= 3) s = first
+  }
+  return s.length > 16 ? `${s.slice(0, 15)}…` : s
 }
 
 /** Daily spend over the last 30 days — area chart. */
@@ -61,6 +79,7 @@ export function SpendOverTime({ daily }: { daily: { day: string; spent: number; 
           width={64}
         />
         <Tooltip
+          cursor={lineCursor}
           contentStyle={tooltipStyle}
           labelFormatter={(l) => new Date(l as string).toUTCString().slice(0, 16)}
           formatter={(value, name) =>
@@ -94,25 +113,26 @@ export function SpendByAgent({ perAgent }: { perAgent: { service: string; spent:
           type="category"
           dataKey="service"
           width={120}
-          tick={{ fill: '#fff', fontSize: 12 }}
+          tickFormatter={serviceLabel}
+          tick={{ fill: MUTED, fontSize: 11.5 }}
           axisLine={false}
           tickLine={false}
         />
         <Tooltip
+          cursor={barCursor}
           contentStyle={tooltipStyle}
           formatter={(value, name) =>
             name === 'spent' ? [`$${Number(value).toFixed(4)}`, 'spent'] : [String(value), 'calls']
           }
         />
-        <Bar dataKey="spent" radius={[0, 6, 6, 0]} barSize={16}>
+        <Bar dataKey="spent" radius={[0, 6, 6, 0]} barSize={14}>
           {perAgent.map((row, i) => (
-            // Monochrome ramp: bars are ranked by spend, so fading white opacity
-            // top→bottom reads as a clean greyscale gradient (sleeker than the
-            // old categorical palette).
+            // Ranked bars: the leader earns the accent, the rest fade down a
+            // greyscale ramp — same treatment as the blog charts.
             <Cell
               key={row.service}
-              fill="#ffffff"
-              fillOpacity={Math.max(0.32, 0.9 - (i / Math.max(1, perAgent.length - 1)) * 0.58)}
+              fill={i === 0 ? ACCENT : '#ffffff'}
+              fillOpacity={i === 0 ? 0.9 : Math.max(0.24, 0.62 - ((i - 1) / Math.max(1, perAgent.length - 2)) * 0.38)}
             />
           ))}
         </Bar>
@@ -183,7 +203,7 @@ export function PriceChart({ samples, height = 200 }: { samples: { at: string; p
         <CartesianGrid stroke={GRID} vertical={false} />
         <XAxis dataKey="at" tickFormatter={timeLabel} tick={{ fill: MUTED, fontSize: 11 }} axisLine={false} tickLine={false} minTickGap={48} />
         <YAxis tickFormatter={priceLabel} tick={{ fill: MUTED, fontSize: 11 }} axisLine={false} tickLine={false} width={72} domain={['auto', 'auto']} />
-        <Tooltip contentStyle={tooltipStyle} labelFormatter={(l) => timeLabel(l as string)} formatter={(v) => [priceLabel(Number(v)), 'price']} />
+        <Tooltip cursor={lineCursor} contentStyle={tooltipStyle} labelFormatter={(l) => timeLabel(l as string)} formatter={(v) => [priceLabel(Number(v)), 'price']} />
         <Area type="monotone" dataKey="priceUsd" stroke={ACCENT} strokeWidth={2} fill="url(#priceFill)" />
       </AreaChart>
     </ChartBox>
@@ -207,7 +227,7 @@ export function UsageChart({ data, height = 160 }: { data: { date: string; calls
         <CartesianGrid stroke={GRID} vertical={false} />
         <XAxis dataKey="date" tickFormatter={dayLabel} tick={{ fill: MUTED, fontSize: 11 }} axisLine={false} tickLine={false} minTickGap={40} />
         <YAxis allowDecimals={false} tick={{ fill: MUTED, fontSize: 11 }} axisLine={false} tickLine={false} width={32} />
-        <Tooltip contentStyle={tooltipStyle} labelFormatter={(l) => dayLabel(l as string)} formatter={(v) => [String(v), 'calls']} />
+        <Tooltip cursor={lineCursor} contentStyle={tooltipStyle} labelFormatter={(l) => dayLabel(l as string)} formatter={(v) => [String(v), 'calls']} />
         <Area type="monotone" dataKey="calls" stroke={ACCENT} strokeWidth={2} fill="url(#usageFill)" />
       </AreaChart>
     </ChartBox>

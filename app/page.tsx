@@ -1,5 +1,7 @@
 import type { Metadata } from 'next'
+import Link from 'next/link'
 import { SITE } from '@/lib/docs'
+import Reveal from '@/components/Reveal'
 import SwitchboardHero from '@/components/SwitchboardHero'
 import SwitchboardServers from '@/components/SwitchboardServers'
 import SwitchboardTry from '@/components/SwitchboardTry'
@@ -84,22 +86,31 @@ export default function HomePage() {
 
         {/* How routing works */}
         <section className="explain">
-          <div className="explain__head">
-            <span className="explain__eyebrow mono">HOW THE OPERATOR WORKS</span>
-            <h2 className="explain__h2">You bring the question. Router brings the route.</h2>
-          </div>
+          <Reveal>
+            <div className="swhead">
+              <div className="explain__head">
+                <span className="explain__eyebrow mono">HOW THE OPERATOR WORKS</span>
+                <h2 className="explain__h2">You bring the question. Router brings the route.</h2>
+              </div>
+              <Link href="/docs" className="swmore mono">
+                Read the docs <span className="swmore__arrow">→</span>
+              </Link>
+            </div>
+          </Reveal>
           <div className="explain__steps">
-            {STEPS.map((s) => (
-              <div className="step" key={s.n}>
+            {STEPS.map((s, i) => (
+              <Reveal key={s.n} delay={90 + i * 90} className="step">
                 <span className="step__n mono">{s.n}</span>
                 <h3 className="step__t">{s.t}</h3>
                 <p className="step__d">{s.d}</p>
-              </div>
+              </Reveal>
             ))}
           </div>
         </section>
 
-        <StayUpToDate />
+        <Reveal>
+          <StayUpToDate />
+        </Reveal>
       </main>
 
       <Footer />

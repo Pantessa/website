@@ -35,9 +35,10 @@ export default function SwitchboardHero() {
             <span className="heroweb__grad">for Paid Agents.</span>
           </h1>
           <p className="heroweb__lede">
-            <strong>One key</strong>, every model and data source. Router sends each request —{' '}
-            <span className="heroweb__nokey">LLM inference or live data</span> — to the{' '}
-            <strong>best-priced MCP under your cap</strong>; your agent pays per call in USDC.
+            <strong>One key</strong>, every model and data source. Router sends each request —
+            inference or live data — to the{' '}
+            <span className="heroweb__nokey">best-priced MCP under your cap</span>; your agent pays
+            per call in USDC.
           </p>
           <div className="heroweb__ctas">
             <button

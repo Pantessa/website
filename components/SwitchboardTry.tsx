@@ -8,6 +8,8 @@
 // inference. Data: /api/route/preview (DB-only).
 
 import { useEffect, useState } from 'react'
+import Link from 'next/link'
+import Reveal from '@/components/Reveal'
 
 interface ParamHint {
   name: string
@@ -59,17 +61,25 @@ export default function SwitchboardTry() {
 
   return (
     <section className="swtry">
-      <div className="swtry__head">
-        <span className="swtry__eyebrow mono">TRY A ROUTE</span>
-        <h2 className="swtry__h2">The engine at work.</h2>
-        <p className="swtry__sub">
-          Every plannable route in the live catalog, ranked the way Switchboard ranks them — the{' '}
-          <strong>cheapest proven route wins</strong>. Expand any route to see the exact call it
-          would run. This is the price lever, no spend; matching your exact words to an endpoint is
-          the live planner’s job.
-        </p>
-      </div>
+      <Reveal>
+        <div className="swhead">
+          <div className="swtry__head">
+            <span className="swtry__eyebrow mono">TRY A ROUTE</span>
+            <h2 className="swtry__h2">The engine at work.</h2>
+            <p className="swtry__sub">
+              Every plannable route in the live catalog, ranked the way Switchboard ranks them — the{' '}
+              <strong>cheapest proven route wins</strong>. Expand any route to see the exact call it
+              would run. This is the price lever, no spend; matching your exact words to an endpoint
+              is the live planner’s job.
+            </p>
+          </div>
+          <Link href="/chat" className="swmore mono">
+            Route a real question <span className="swmore__arrow">→</span>
+          </Link>
+        </div>
+      </Reveal>
 
+      <Reveal delay={90}>
       <div className="swtry__chips mono">
         {cats.map((c, i) => (
           <button
@@ -171,6 +181,7 @@ export default function SwitchboardTry() {
           })}
         </div>
       </div>
+      </Reveal>
     </section>
   )
 }

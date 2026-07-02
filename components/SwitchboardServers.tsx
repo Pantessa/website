@@ -9,6 +9,7 @@ import Link from 'next/link'
 import { useYeetfulStore, McpServer } from '@/lib/store'
 import { CATALOG } from '@/lib/mcp-data'
 import McpServerCard from '@/components/McpServerCard'
+import Reveal from '@/components/Reveal'
 
 const STATIC: McpServer[] = CATALOG
 // Render the widest case (5-col × 2 rows); CSS trims to full rows as the grid
@@ -32,31 +33,35 @@ export default function SwitchboardServers() {
 
   return (
     <section className="swsrv">
-      <div className="swsrv__head">
-        <div>
-          <span className="swsrv__eyebrow mono">THE AGENTS</span>
-          <h2 className="swsrv__h2">Every model and data source. One key.</h2>
-        </div>
-        <Link href="/servers" className="swsrv__all mono">
-          See all {all.length} servers →
-        </Link>
-      </div>
-      <div className="pills swsrv__pills">
-        {cats.map((c) => (
-          <Link
-            key={c}
-            href={c === 'All' ? '/servers' : `/servers?category=${encodeURIComponent(c)}`}
-            className="pill"
-          >
-            {c}
+      <Reveal>
+        <div className="swsrv__head">
+          <div>
+            <span className="swsrv__eyebrow mono">THE AGENTS</span>
+            <h2 className="swsrv__h2">Every model and data source. One key.</h2>
+          </div>
+          <Link href="/servers" className="swmore mono">
+            See all {all.length} servers <span className="swmore__arrow">→</span>
           </Link>
-        ))}
-      </div>
-      <div className="x-grid">
-        {preview.map((s) => (
-          <McpServerCard key={s.id} server={s} />
-        ))}
-      </div>
+        </div>
+      </Reveal>
+      <Reveal delay={80}>
+        <div className="pills swsrv__pills">
+          {cats.map((c) => (
+            <Link
+              key={c}
+              href={c === 'All' ? '/servers' : `/servers?category=${encodeURIComponent(c)}`}
+              className="pill"
+            >
+              {c}
+            </Link>
+          ))}
+        </div>
+        <div className="x-grid">
+          {preview.map((s) => (
+            <McpServerCard key={s.id} server={s} />
+          ))}
+        </div>
+      </Reveal>
     </section>
   )
 }
