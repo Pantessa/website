@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { Prisma } from '@prisma/client'
 import prisma from '@/lib/db'
 import { getAuthAddress } from '@/lib/api-key'
-import { isAdminAddress, OWNER_WALLETS } from '@/lib/admin'
+import { isAdminAddress, isTestWallet, OWNER_WALLETS } from '@/lib/admin'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -282,6 +282,7 @@ export async function GET(req: NextRequest) {
       keys: r.keys,
       okCalls: r.ok_calls,
       settled: r.settled,
+      test: isTestWallet(r.address),
     })),
     cohorts: cohorts.map((r) => ({
       week: r.week.toISOString(),

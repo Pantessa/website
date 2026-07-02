@@ -15,6 +15,33 @@ export const OWNER_WALLETS = [
   '0x66268791b55e1f5fa585d990326519f101407257',
 ] as const
 
+/** Hardcoded internal testing wallets (lowercased). These are Yeetful's own
+ *  test wallets — not real external adopters. The admin dashboard flags them so
+ *  a "TEST" badge (and the External-only filter) can separate our own dogfooding
+ *  noise from genuine external usage. Includes the two OWNER_WALLETS above. */
+export const TEST_WALLETS = [
+  '0x66268791b55e1f5fa585d990326519f101407257',
+  '0xc6d528748da994e1601267141a77f639ac0d4ace',
+  '0x6f93fa8b383e51d59ddfc87988afc964d6ffb5da',
+  '0x2e7c96201fc8d162aa53ded5a5f4c8d4399049d7',
+  '0xfb6b3f49e3d831f162540f13e66dce81f7fa7ad0',
+  '0x5eaabd731d2bc0490c2d47e41858e9b0629455a0',
+  '0x7a7a4036d946d902bee16742b885514b2801b9e4',
+  '0x2055fa9e99565181a8509b81cbd0aa3d73be8d56',
+  '0xe630826c26760f46339cda35621e3aac63736c4a',
+  '0xc917800fa6c9019d4d007302f09abfc16a657c26',
+  '0xc7b4fde9b363514b5e84e2af8a63681aa495ec8c',
+] as const
+
+const TEST_WALLET_SET = new Set<string>(TEST_WALLETS)
+
+/** True for Yeetful's own testing wallets (owner + hardcoded test list). Used
+ *  by the admin dashboard to flag internal dogfooding vs external adopters. */
+export function isTestWallet(addr: string | null | undefined): boolean {
+  if (!addr) return false
+  return TEST_WALLET_SET.has(addr.toLowerCase())
+}
+
 /** Lowercased union of OWNER_WALLETS ∪ the ADMIN_WALLETS env (comma-separated). */
 export function adminWallets(): Set<string> {
   const env = (process.env.ADMIN_WALLETS ?? '')
