@@ -16,6 +16,7 @@ import { voteRequestFromToolResult, friendlyVoteError, type VoteRequest } from '
 import { parseVoteIntent, type VoteIntent } from '@/lib/vote-intent'
 import { parseSwapIntent, type SwapIntent } from '@/lib/swap-intent'
 import { buildGuardrailedOrder } from '@/lib/cow-build'
+import { buildUniswapSwap } from '@/lib/uniswap-venue'
 import { tokenDecimals, humanToAtoms } from '@/lib/cow'
 import { resolveProposal } from '@/lib/snapshot-read'
 import { detectGovernanceIntent, runGovernanceTurn } from '@/lib/governance'
@@ -211,13 +212,21 @@ export async function POST(req: NextRequest) {
     // Swap building is a first-party capability — the core product — not an
     // MCP the user must shortlist (Nate, 2026-07-02: "pull the swap tools out
     // as our own custom yeetful tools"). Any chat can say "swap 100 USDC for
-    // WETH"; Yeetful picks the venue (CoW order book by default — MEV-
-    // protected; Uniswap once its gate is payable). Building is free, the
-    // quote + guardrails (A3) + refusal ledger all run in lib/cow-build, and
-    // the parser is conservative (plain questions fall through to routing).
+    // WETH"; Yeetful picks the VENUE and each venue stays venue-pure:
+    //   · Uniswap — when the user says "uniswap" or has Uniswap active
+    //     without CoW → on-chain SwapRouter02 tx (evm-tx → SendTxButton),
+    //     approval to SwapRouter02.
+    //   · CoW (default otherwise) — MEV-protected order book → EIP-712 order
+    //     (SignOrderButton), approval to the VaultRelayer.
+    // Both run the SAME cross-app guardrails (lib/tx-guardrails); the parser
+    // is conservative (plain questions fall through to routing).
     const swapIntent = parseSwapIntent(message)
     if (swapIntent.isSwap) {
-      return await prepareSwapTurn(swapIntent, walletAddress, message)
+      const uniActive = activeServers.some((s) => s.slug === 'uniswap' || /uniswap/i.test(s.name))
+      const cowActive = activeServers.some((s) => s.slug === 'cow-swap' || /cow[\s·-]?swap/i.test(s.name))
+      const venue: 'uniswap' | 'cow' =
+        /\buni\s?swap\b|\buni\b/i.test(message) || (uniActive && !cowActive) ? 'uniswap' : 'cow'
+      return await prepareSwapTurn(swapIntent, walletAddress, venue)
     }
 
     // Need a live inference provider to phrase an answer.
@@ -365,28 +374,21 @@ async function prepareVoteTurn(
 
 // ── Swap intent ───────────────────────────────────────────────────────────────
 
-/** Which settlement venue should carry this swap? CoW's order book is the
- *  default (MEV-protected, fee-from-surplus limits); an explicit "uniswap"
- *  ask is honored once the Uniswap MCP's payment gate is live (A10). */
-function swapVenueNote(message: string): string {
-  return /\buni\s?swap\b|\buni\b/i.test(message)
-    ? '\n🔀 Built via the CoW order book for now (MEV-protected, same pair) — direct Uniswap routing comes online with the Uniswap MCP deploy.'
-    : ''
-}
-
 /**
- * Resolve a swap intent into a guardrailed, signable order — Yeetful's NATIVE
- * transaction tool (no service needs to be shortlisted). The build is free
- * and deterministic — amounts convert to atoms via the token's real decimals,
- * never model-guessed. Refuses cleanly on unknown tokens/ambiguous asks;
- * guardrail blocks (A3) surface with their reasons and the artifact is
- * withheld. The user signs (A4) — funds never touch Yeetful.
+ * Resolve a swap intent into a guardrailed, signable action — Yeetful's NATIVE
+ * transaction tool (no service needs to be shortlisted). Venue-pure builds:
+ * 'uniswap' → on-chain SwapRouter02 tx (txRequest → SendTxButton, approve to
+ * SwapRouter02 attached when allowance is short); 'cow' → EIP-712 order
+ * (orderRequest → SignOrderButton). Amounts convert to atoms via the token's
+ * real decimals, never model-guessed. Refuses cleanly on unknown tokens or
+ * ambiguous asks; guardrail blocks surface with their reasons and the
+ * artifact is withheld. The user signs — funds never touch Yeetful.
  */
-async function prepareSwapTurn(intent: SwapIntent, walletAddress: string | undefined, message = '') {
+async function prepareSwapTurn(intent: SwapIntent, walletAddress: string | undefined, venue: 'uniswap' | 'cow' = 'cow') {
   if (!walletAddress) {
     return NextResponse.json({
       reply:
-        '🔄 Connect your wallet to swap — you sign the CoW order yourself, so the order has to be built for your address.',
+        '🔄 Connect your wallet to swap — you sign the transaction yourself, so it has to be built for your address.',
     })
   }
   if (intent.problem || !intent.sellToken || !intent.buyToken || !intent.sellAmountHuman) {
@@ -419,6 +421,51 @@ async function prepareSwapTurn(intent: SwapIntent, walletAddress: string | undef
     }
   }
 
+  // ── Uniswap venue: on-chain SwapRouter02 transaction (market swaps only —
+  //    resting limit orders are an order-book feature, so those stay on CoW
+  //    with a note). Uniswap-pure build; cross-app guardrails inside.
+  if (venue === 'uniswap' && (intent.mode ?? 'swap') === 'swap') {
+    try {
+      const uni = await buildUniswapSwap({
+        sellToken: intent.sellToken,
+        buyToken: intent.buyToken,
+        amountHuman: intent.sellAmountHuman,
+        from: walletAddress,
+      })
+      if (uni.blocked) {
+        const reasons = uni.guardrails.checks.filter((c) => !c.ok && c.level === 'block').map((c) => c.note).join(' ')
+        return NextResponse.json({
+          reply: `🚫 Swap built but refused by your guardrails: ${reasons || 'a safety check failed.'}`,
+          guardrails: uni.guardrails,
+          blocked: true,
+        })
+      }
+      const warns = uni.guardrails.checks.filter((c) => !c.ok && c.level === 'warn').map((c) => `⚠️ ${c.note}`)
+      if (uni.approveTx) {
+        // Two-step: the approval broadcasts first; re-send the swap after it
+        // confirms (fresh quote — prices move while approvals mine).
+        return NextResponse.json({
+          reply: `🔏 ${uni.summary}\n1️⃣ Step 1 of 2 — sign the ${intent.sellToken.toUpperCase()} approval to Uniswap's SwapRouter02 below, then send the swap again for step 2.${warns.length ? `\n${warns.join('\n')}` : ''}`,
+          txRequest: uni.approveTx,
+          guardrails: uni.guardrails,
+        })
+      }
+      return NextResponse.json({
+        reply: `🔏 ${uni.summary}${warns.length ? `\n${warns.join('\n')}` : ''}`,
+        txRequest: uni.swapTx,
+        guardrails: uni.guardrails,
+      })
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'quote failed'
+      return NextResponse.json({ reply: `🔄 Couldn't build the Uniswap swap: ${msg}` })
+    }
+  }
+
+  const cowNote =
+    venue === 'uniswap' && intent.mode === 'limit'
+      ? '\n🔀 Resting limit orders run on the CoW order book (fee comes from surplus when filled) — Uniswap v3 has no native limit orders.'
+      : ''
+
   try {
     const built = await buildGuardrailedOrder({
       mode: intent.mode ?? 'swap',
@@ -443,7 +490,7 @@ async function prepareSwapTurn(intent: SwapIntent, walletAddress: string | undef
       .filter((c) => !c.ok && c.level === 'warn')
       .map((c) => `⚠️ ${c.note}`)
     return NextResponse.json({
-      reply: `🔏 ${built.summary}${swapVenueNote(message)}${warns.length ? `\n${warns.join('\n')}` : ''}`,
+      reply: `🔏 ${built.summary}${cowNote}${warns.length ? `\n${warns.join('\n')}` : ''}`,
       orderRequest: built.artifact.order,
       guardrails: built.guardrails,
     })
