@@ -45,7 +45,7 @@ interface PaymentToSign {
 
 /** Build the assistant message meta from receipts + an optional vote request /
  *  ambiguous-proposal candidates. */
-function buildMeta(receipts: unknown, payer: unknown, voteRequest: unknown, voteCandidates?: unknown, routeReport?: unknown, routerTrace?: unknown, voteProposal?: unknown) {
+function buildMeta(receipts: unknown, payer: unknown, voteRequest: unknown, voteCandidates?: unknown, routeReport?: unknown, routerTrace?: unknown, voteProposal?: unknown, orderRequest?: unknown, guardrails?: unknown) {
   const meta: Record<string, unknown> = {}
   if (Array.isArray(receipts) && receipts.length) {
     meta.receipts = receipts
@@ -56,6 +56,10 @@ function buildMeta(receipts: unknown, payer: unknown, voteRequest: unknown, vote
   if (voteCandidates && typeof voteCandidates === 'object') meta.voteCandidates = voteCandidates
   if (routeReport && typeof routeReport === 'object') meta.routeReport = routeReport
   if (Array.isArray(routerTrace) && routerTrace.length) meta.routerTrace = routerTrace
+  // A built CoW/Seaport order awaiting signature (A2c) + its guardrail report
+  // (A3) — SignOrderButton (A4) reads these from the persisted message.
+  if (orderRequest && typeof orderRequest === 'object') meta.orderRequest = orderRequest
+  if (guardrails && typeof guardrails === 'object') meta.guardrails = guardrails
   return Object.keys(meta).length ? meta : undefined
 }
 
@@ -209,7 +213,7 @@ export default function ChatInterface() {
           addMessage(chatId, {
             role: 'assistant',
             content: out.content,
-            meta: buildMeta(out.receipts, out.payer, out.voteRequest, undefined, out.routeReport, out.routerTrace, out.voteProposal),
+            meta: buildMeta(out.receipts, out.payer, out.voteRequest, undefined, out.routeReport, out.routerTrace, out.voteProposal, out.orderRequest),
           })
         }
         return
@@ -241,7 +245,7 @@ export default function ChatInterface() {
         addMessage(chatId, {
           role: 'assistant',
           content: data.reply || data.error || 'No response.',
-          meta: buildMeta(data.receipts, data.payer, data.voteRequest, data.voteCandidates),
+          meta: buildMeta(data.receipts, data.payer, data.voteRequest, data.voteCandidates, undefined, undefined, undefined, data.orderRequest, data.guardrails),
         })
       }
     } catch (err) {
@@ -265,7 +269,7 @@ export default function ChatInterface() {
     userMsg: string,
     history: { role: string; content: string }[],
   ): Promise<
-    | { kind: 'reply'; content: string; receipts?: unknown; payer?: string; voteRequest?: unknown; voteProposal?: unknown; routeReport?: unknown; routerTrace?: unknown }
+    | { kind: 'reply'; content: string; receipts?: unknown; payer?: string; voteRequest?: unknown; voteProposal?: unknown; routeReport?: unknown; routerTrace?: unknown; orderRequest?: unknown }
     | { kind: 'plan'; data: { plan: unknown; payments: PaymentToSign[]; listedOnly: unknown; notes?: unknown; turnId?: unknown } }
   > => {
     clearRouterTrace()
@@ -290,7 +294,7 @@ export default function ChatInterface() {
     const reader = res.body.getReader()
     const decoder = new TextDecoder()
     let buf = ''
-    let reply: { kind: 'reply'; content: string; receipts?: unknown; payer?: string; voteRequest?: unknown; voteProposal?: unknown; routeReport?: unknown; routerTrace?: unknown } | null = null
+    let reply: { kind: 'reply'; content: string; receipts?: unknown; payer?: string; voteRequest?: unknown; voteProposal?: unknown; routeReport?: unknown; routerTrace?: unknown; orderRequest?: unknown } | null = null
     for (;;) {
       const { done, value } = await reader.read()
       if (done) break
@@ -329,6 +333,7 @@ export default function ChatInterface() {
             voteProposal: event.voteProposal,
             routeReport: event.routeReport,
             routerTrace: event.trace,
+            orderRequest: event.orderRequest,
           }
         } else if (event.type === 'error') {
           const message = typeof event.message === 'string' ? event.message : 'Auto-router failed'

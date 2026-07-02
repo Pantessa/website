@@ -95,6 +95,19 @@ export function tokenLabel(input: string, chainId = 8453): string {
   return `${t.slice(0, 6)}…${t.slice(-4)}`
 }
 
+/** Convert a human amount ("100", "0.5") to atoms for a token with known
+ *  decimals. Null on malformed input or more fractional digits than the token
+ *  has (never round money silently). */
+export function humanToAtoms(amount: string, decimals: number): string | null {
+  const m = amount.trim().match(/^(\d+)(?:\.(\d+))?$/)
+  if (!m) return null
+  const [, whole, frac = ''] = m
+  if (frac.length > decimals) return null
+  const atoms = BigInt(whole) * BigInt(10) ** BigInt(decimals) + BigInt(frac.padEnd(decimals, '0') || '0')
+  if (atoms <= BigInt(0)) return null
+  return atoms.toString()
+}
+
 /** Human amount + label: "100 USDC", or "100000000 atoms of 0x1234…abcd" when
  *  the token's decimals are unknown (never silently misrender a magnitude). */
 export function describeAmount(atoms: string, token: string, chainId = 8453): string {
