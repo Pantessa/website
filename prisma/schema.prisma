@@ -521,6 +521,22 @@ model AgentApproval {
   @@map("agent_approvals")
 }
 
+/// A wallet's curated MCP shortlist — the 1–3 services they want to talk to
+/// (the "pick your tools" direction). One row per wallet. Distinct from
+/// AgentApproval (which agents may be *paid*) and from Chat.activeServerIds
+/// (per-chat working set): the shortlist is the saved default that seeds a new
+/// chat's active set. Empty / absent = no shortlist → current whole-catalog
+/// behavior. Enforced ≤3 at the write layer (lib/shortlist.ts).
+model McpShortlist {
+  id           String   @id @default(cuid())
+  ownerAddress String   @unique @map("owner_address") // lowercased, SIWE-verified
+  serviceIds   String[] @map("service_ids") // McpServer ids, ordered, ≤3
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  @@map("mcp_shortlists")
+}
+
 /// A blog post — Neon holds the metadata + markdown; images live in Vercel
 /// Blob (URLs only here). Published via the admin API (SIWE session or Bearer
 /// yf_… key ∩ ADMIN_WALLETS) — the headless path Claude publishes through.

@@ -1,11 +1,12 @@
 'use client'
 
 import Link from 'next/link'
-import { Check, Plus, ExternalLink, ArrowUpRight } from 'lucide-react'
+import { Check, Plus, ExternalLink, ArrowUpRight, Star } from 'lucide-react'
 import { McpServer, useYeetfulStore } from '@/lib/store'
 import BrandIcon from '@/components/BrandIcon'
 
 const ACCENT = '#3ECF8E'
+const MAX_SHORTLIST = 3
 
 interface McpServerCardProps {
   server: McpServer
@@ -13,8 +14,10 @@ interface McpServerCardProps {
 }
 
 export default function McpServerCard({ server }: McpServerCardProps) {
-  const { activeServerIds, toggleServer } = useYeetfulStore()
+  const { activeServerIds, toggleServer, shortlistIds, toggleShortlist } = useYeetfulStore()
   const active = activeServerIds.includes(server.id)
+  const pinned = shortlistIds.includes(server.id)
+  const shortlistFull = shortlistIds.length >= MAX_SHORTLIST
 
   return (
     <div className={`card ${active ? 'is-active' : ''}`} onClick={() => toggleServer(server.id)}>
@@ -38,16 +41,37 @@ export default function McpServerCard({ server }: McpServerCardProps) {
             <span className="card__cat mono">{server.category}</span>
           </div>
         </div>
-        <button
-          className="card__btn"
-          onClick={(e) => {
-            e.stopPropagation()
-            toggleServer(server.id)
-          }}
-          aria-label={active ? 'Remove agent' : 'Add agent'}
-        >
-          {active ? <Check width={13} height={13} strokeWidth={3.5} /> : <Plus width={13} height={13} strokeWidth={3} />}
-        </button>
+        <div className="card__acts">
+          <button
+            className={`card__star ${pinned ? 'is-pinned' : ''}`}
+            onClick={(e) => {
+              e.stopPropagation()
+              toggleShortlist(server.id)
+            }}
+            disabled={!pinned && shortlistFull}
+            aria-pressed={pinned}
+            title={
+              pinned
+                ? 'In your shortlist — click to remove'
+                : shortlistFull
+                  ? `Shortlist is full (max ${MAX_SHORTLIST})`
+                  : 'Add to your shortlist'
+            }
+            aria-label={pinned ? 'Remove from shortlist' : 'Add to shortlist'}
+          >
+            <Star width={13} height={13} strokeWidth={2.5} fill={pinned ? ACCENT : 'none'} />
+          </button>
+          <button
+            className="card__btn"
+            onClick={(e) => {
+              e.stopPropagation()
+              toggleServer(server.id)
+            }}
+            aria-label={active ? 'Remove agent' : 'Add agent'}
+          >
+            {active ? <Check width={13} height={13} strokeWidth={3.5} /> : <Plus width={13} height={13} strokeWidth={3} />}
+          </button>
+        </div>
       </div>
 
       <p className="card__desc">{server.description}</p>
