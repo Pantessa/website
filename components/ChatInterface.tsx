@@ -9,6 +9,8 @@ import { cn } from '@/lib/utils'
 import MessageReceipts from '@/components/MessageReceipts'
 import RouteReport from '@/components/RouteReport'
 import SignVoteButton from '@/components/SignVoteButton'
+import SignOrderButton from '@/components/SignOrderButton'
+import { orderRequestOf } from '@/lib/transaction-layer'
 import VoteChoiceButtons from '@/components/VoteChoiceButtons'
 import VoteCandidates from '@/components/VoteCandidates'
 import PaymentConfirm from '@/components/PaymentConfirm'
@@ -637,6 +639,11 @@ export default function ChatInterface() {
                       (() => {
                         const vote = voteRequestOf(msg.meta)
                         return vote ? <SignVoteButton vote={vote} /> : null
+                      })()}
+                    {msg.role === 'assistant' &&
+                      (() => {
+                        const order = orderRequestOf(msg.meta)
+                        return order ? <SignOrderButton order={order} /> : null
                       })()}
                     {msg.role === 'assistant' &&
                       (() => {

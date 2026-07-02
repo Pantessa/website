@@ -27,8 +27,8 @@ import { grantTypedData } from '../lib/grant-typed-data'
 import { grantViolation, type GrantPolicy } from '../lib/spend-grant'
 import { routerPrompt, parseRouterDecision, selectInferenceProvider, routeMessage, shortlistEndpoints } from '../lib/router'
 import { buildSmartRequest, computeRating, type PlannableEndpoint } from '../lib/endpoint-planner'
-import { buildSignableArtifact, isActionIntent } from '../lib/transaction-layer'
-import { resolveToken, buildCowOrderTypedData, cowOrderAction, buildCowLimitOrder, describeCowOrder, describeAmount, formatAtoms, tokenDecimals, humanToAtoms, applySlippage, COW_APP_DATA_JSON, GPV2_SETTLEMENT, type CowQuoteResult } from '../lib/cow'
+import { buildSignableArtifact, isActionIntent, orderRequestOf } from '../lib/transaction-layer'
+import { resolveToken, buildCowOrderTypedData, cowOrderAction, buildCowLimitOrder, buildCowSubmitBody, describeCowOrder, describeAmount, formatAtoms, tokenDecimals, humanToAtoms, applySlippage, COW_APP_DATA_JSON, GPV2_SETTLEMENT, type CowQuoteResult } from '../lib/cow'
 import { pureChecks, policyCheck, orderValueUsd, buildReport } from '../lib/cow-guardrails'
 import { parseSwapIntent } from '../lib/swap-intent'
 import { keccak256, stringToBytes } from 'viem'
@@ -1657,6 +1657,38 @@ async function main() {
   check('atoms: humanToAtoms whole + fraction', humanToAtoms('100', 6) === '100000000' && humanToAtoms('0.5', 18) === '500000000000000000')
   check('atoms: humanToAtoms refuses excess precision', humanToAtoms('0.1234567', 6) === null)
   check('atoms: humanToAtoms refuses zero + junk', humanToAtoms('0', 6) === null && humanToAtoms('1e5', 6) === null)
+
+  // A4 — sign + submit (wallet path). Pure body builder + meta reader + the
+  // submit route's REFUSAL paths (no signed order is ever placed from tests).
+  const sig132 = '0x' + 'ab'.repeat(65)
+  const submitBody = buildCowSubmitBody(cowFixture.order, sig132, cowFixture.from, COW_APP_DATA_JSON, 42)
+  check(
+    'cow submit: body carries signature, appData JSON + hash, quoteId',
+    submitBody.signature === sig132 && submitBody.appData === COW_APP_DATA_JSON &&
+      submitBody.appDataHash === cowFixture.order.appData && submitBody.quoteId === 42 &&
+      submitBody.signingScheme === 'eip712' && submitBody.from === cowFixture.from,
+  )
+  const metaOrder = orderRequestOf({ orderRequest: { protocol: 'cow', typedData: { domain: {}, message: {} }, chainId: 8453, appDataJson: COW_APP_DATA_JSON, quoteId: 7 } })
+  check('cow submit: orderRequestOf reads persisted meta', metaOrder?.protocol === 'cow' && metaOrder.quoteId === 7)
+  check('cow submit: orderRequestOf rejects junk meta', orderRequestOf({ orderRequest: { typedData: {} } }) === null && orderRequestOf(null) === null)
+  const submitRes1 = await fetch(`${BASE}/api/cow/submit`, {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ order: cowFixture.order, signature: '0xshort', from: cowFixture.from }),
+  })
+  check('cow submit: rejects a malformed signature (400)', submitRes1.status === 400)
+  const submitRes2 = await fetch(`${BASE}/api/cow/submit`, {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      order: { ...cowFixture.order, receiver: '0x2222222222222222222222222222222222222222', validTo: Math.floor(Date.now() / 1000) + 1200 },
+      signature: sig132, from: cowFixture.from,
+    }),
+  })
+  check('cow submit: refuses an order paying someone else (403)', submitRes2.status === 403)
+  const submitRes3 = await fetch(`${BASE}/api/cow/submit`, {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ order: { ...cowFixture.order, validTo: 1000 }, signature: sig132, from: cowFixture.from }),
+  })
+  check('cow submit: refuses an expired order (400)', submitRes3.status === 400)
 
   // The loop surfaces a tool-returned vote as a signable artifact (and stops).
   const artDec = await routeMessage({

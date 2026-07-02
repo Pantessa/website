@@ -352,6 +352,46 @@ export function cowOrderAction(quote: CowQuoteResult, summary: string) {
   }
 }
 
+/** CoW explorer path segment per chain (order pages). */
+export const COW_EXPLORER_CHAIN: Record<number, string> = {
+  8453: 'base',
+  1: 'mainnet',
+  42161: 'arb1',
+}
+
+/**
+ * Build the order-book submission body (POST /api/v1/orders) from a signed
+ * order. Pure — the book validates the signature against `from`. The full
+ * appData JSON must accompany the signed hash or the book rejects the order.
+ */
+export function buildCowSubmitBody(
+  order: CowOrderParameters,
+  signature: string,
+  from: string,
+  appDataJson?: string,
+  quoteId?: number,
+) {
+  return {
+    sellToken: order.sellToken,
+    buyToken: order.buyToken,
+    receiver: order.receiver,
+    sellAmount: order.sellAmount,
+    buyAmount: order.buyAmount,
+    validTo: order.validTo,
+    feeAmount: order.feeAmount,
+    kind: order.kind,
+    partiallyFillable: order.partiallyFillable,
+    sellTokenBalance: order.sellTokenBalance,
+    buyTokenBalance: order.buyTokenBalance,
+    signingScheme: 'eip712' as const,
+    signature,
+    from,
+    appData: appDataJson ?? COW_APP_DATA_JSON,
+    appDataHash: order.appData,
+    ...(quoteId !== undefined ? { quoteId } : {}),
+  }
+}
+
 /** One-line human description of a built order — the exact string the user
  *  approves against, in token units (never atoms). */
 export function describeCowOrder(quote: CowQuoteResult, kind: 'swap' | 'limit'): string {
