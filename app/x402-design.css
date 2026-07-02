@@ -1186,17 +1186,57 @@
 
   /* ── BLOG ────────────────────────────────────────── */
   /* Index hero: more breathing room between the title and the grey sub. */
-  .blog__index .hero__eyebrow { margin-bottom: 18px; }
+  .blog__index .hero__eyebrow { margin-bottom: 18px; display: inline-flex; align-items: center; gap: 9px; }
   .blog__index .hero__sub { margin-top: 22px; }
-  /* Featured (latest) post — the index leads with one thing to read. */
-  .blog__feature {
-    display: block; margin-top: 40px; border: 1px solid var(--line); background: var(--surf-1);
-    border-radius: 18px; overflow: hidden; transition: border-color .18s, background .18s;
+  .blog__livedot {
+    width: 7px; height: 7px; border-radius: 50%; background: var(--accent);
+    box-shadow: 0 0 0 3px color-mix(in oklch, var(--accent) 20%, transparent);
+    animation: blogblink 2.6s ease-in-out infinite;
   }
-  .blog__feature:hover { border-color: var(--line-2); background: var(--surf-2); }
+  /* The route rail: a hairline under the head with one accent packet
+     travelling it — the settlement motif, at whisper volume. */
+  .blog__rail { position: relative; height: 1px; margin-top: 36px; background: var(--line); }
+  .blog__rail::after {
+    content: ''; position: absolute; top: -1px; left: 0; height: 3px; width: 72px;
+    border-radius: 3px; background: linear-gradient(90deg, transparent, var(--accent));
+    animation: blograil 6s cubic-bezier(.45, 0, .55, 1) infinite;
+  }
+
+  /* Entrance: rise + fade, staggered per card via --rise-delay. */
+  .blog__rise { animation: blogrise .55s cubic-bezier(.2, .7, .3, 1) both; animation-delay: var(--rise-delay, 0ms); }
+
+  /* Cover art (BlogCoverArt): dashes flow along the paid route; the settle
+     node pings. Hovering a card runs the route hot. */
+  .blogart__route { animation: blogflow 1.8s linear infinite; }
+  .blogart__ping {
+    transform-box: fill-box; transform-origin: center;
+    animation: blogping 2.4s cubic-bezier(0, 0, .2, 1) infinite;
+  }
+  .blog__card:hover .blogart__route,
+  .blog__feature:hover .blogart__route { animation-duration: .6s; }
+
+  @keyframes blogrise { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: none; } }
+  @keyframes blogflow { to { stroke-dashoffset: -16; } } /* = dasharray 7+9 → seamless loop */
+  @keyframes blogping { 0% { transform: scale(1); opacity: .9; } 70%, 100% { transform: scale(3.4); opacity: 0; } }
+  @keyframes blogblink { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+  @keyframes blograil { 0% { left: 0; } 50% { left: calc(100% - 72px); } 100% { left: 0; } }
+
+  /* Featured (latest) post — a split marquee: words left, the route right. */
+  .blog__feature {
+    display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr); align-items: stretch;
+    margin-top: 44px; border: 1px solid var(--line); background: var(--surf-1);
+    border-radius: 18px; overflow: hidden;
+    transition: border-color .18s, background .18s, box-shadow .3s;
+  }
+  .blog__feature:hover {
+    border-color: color-mix(in oklch, var(--accent) 40%, var(--line));
+    background: var(--surf-2);
+    box-shadow: 0 0 44px color-mix(in oklch, var(--accent) 7%, transparent);
+  }
   .blog__feature:hover .blog__featmore { color: var(--fg); }
-  .blog__featcover { width: 100%; aspect-ratio: 2.6 / 1; object-fit: cover; display: block; border-bottom: 1px solid var(--line); }
-  .blog__featbody { padding: clamp(24px, 3vw, 36px); }
+  .blog__featart { position: relative; min-height: 300px; border-left: 1px solid var(--line); order: 2; }
+  .blog__featcover { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; display: block; }
+  .blog__featbody { padding: clamp(24px, 3vw, 40px); order: 1; }
   .blog__featkicker { font-size: 11px; letter-spacing: 0.16em; color: var(--accent); }
   .blog__feattitle {
     font-family: var(--font-serif); font-weight: 500; font-optical-sizing: auto;
@@ -1205,12 +1245,24 @@
   }
   .blog__featdesc { margin-top: 14px; max-width: 64ch; font-size: 16px; line-height: 1.6; color: var(--muted); text-wrap: pretty; }
   .blog__featmore { display: inline-block; margin-top: 20px; font-size: 13.5px; color: var(--accent); transition: color .15s; }
+  .blog__arrow { display: inline-block; transition: transform .18s cubic-bezier(.2, .7, .3, 1); }
+  .blog__feature:hover .blog__arrow, .blog__card:hover .blog__arrow { transform: translateX(4px); }
 
   .blog__grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; margin-top: 16px; }
-  .blog__card { border: 1px solid var(--line); background: var(--surf-1); border-radius: 14px; overflow: hidden; transition: border-color .18s, background .18s; }
-  .blog__card:hover { border-color: var(--line-2); background: var(--surf-2); }
+  .blog__card {
+    border: 1px solid var(--line); background: var(--surf-1); border-radius: 14px; overflow: hidden;
+    transition: border-color .18s, background .18s, transform .22s cubic-bezier(.2, .7, .3, 1);
+  }
+  .blog__card:hover {
+    border-color: color-mix(in oklch, var(--accent) 35%, var(--line));
+    background: var(--surf-2); transform: translateY(-3px);
+  }
   .blog__card:hover .blog__cardmore { color: var(--fg); }
-  .blog__cardlink { display: block; padding: 22px 24px; }
+  .blog__cardlink { display: block; }
+  /* Full-bleed art strip atop each card; body keeps the old padding. */
+  .blog__cardart { position: relative; aspect-ratio: 2.4 / 1; border-bottom: 1px solid var(--line); overflow: hidden; }
+  .blog__cardart .blog__cover { position: absolute; inset: 0; height: 100%; aspect-ratio: auto; border: none; border-radius: 0; margin: 0; }
+  .blog__cardbody { padding: 20px 24px 22px; }
   /* aspect-ratio reserves the box height before the (dynamic, dimension-less)
      cover image loads → no layout shift (CLS) on blog list + post. object-fit
      keeps it from distorting. */
@@ -1269,6 +1321,19 @@
 
   @media (max-width: 768px) {
     .blog__grid { grid-template-columns: 1fr; }
+    /* Feature stacks: art on top as a wide strip, words below. */
+    .blog__feature { grid-template-columns: 1fr; }
+    .blog__featart { order: 1; min-height: 0; aspect-ratio: 2.2 / 1; border-left: none; border-bottom: 1px solid var(--line); }
+    .blog__featbody { order: 2; }
+    .blog__rail { margin-top: 28px; }
+  }
+
+  /* Motion is decoration here — honor the OS setting wholesale. */
+  @media (prefers-reduced-motion: reduce) {
+    .blog__rise { animation: none; }
+    .blog__rail::after, .blog__livedot, .blogart__route, .blogart__ping { animation: none; }
+    .blogart__ping { opacity: 0; }
+    .blog__card, .blog__card:hover { transform: none; }
   }
 
   /* ── ACTIVE BAR ──────────────────────────────────── */
