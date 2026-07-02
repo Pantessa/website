@@ -215,6 +215,20 @@ export async function fetchCowQuote(params: CowQuoteParams): Promise<CowQuoteRes
   return { chainId, from: data.from ?? params.from, order, quoteId: data.id, appDataJson: COW_APP_DATA_JSON }
 }
 
+/**
+ * Apply slippage tolerance to a quoted SELL order: lower the signed minimum
+ * `buyAmount` by `bps` so the order still fills if the price moves slightly
+ * between quote and settlement. Signing the raw quoted buyAmount = zero
+ * tolerance (may never fill). Returns a new result; never mutates.
+ */
+export function applySlippage(quote: CowQuoteResult, bps: number): CowQuoteResult {
+  if (!Number.isInteger(bps) || bps < 0 || bps > 10_000) {
+    throw new Error(`slippageBps must be an integer between 0 and 10000 (got ${bps}).`)
+  }
+  const buyAmount = ((BigInt(quote.order.buyAmount) * BigInt(10_000 - bps)) / BigInt(10_000)).toString()
+  return { ...quote, order: { ...quote.order, buyAmount } }
+}
+
 // ── Limit orders ────────────────────────────────────────────────────────────
 
 export interface CowLimitOrderParams {

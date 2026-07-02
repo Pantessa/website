@@ -28,7 +28,8 @@ import { grantViolation, type GrantPolicy } from '../lib/spend-grant'
 import { routerPrompt, parseRouterDecision, selectInferenceProvider, routeMessage, shortlistEndpoints } from '../lib/router'
 import { buildSmartRequest, computeRating, type PlannableEndpoint } from '../lib/endpoint-planner'
 import { buildSignableArtifact, isActionIntent } from '../lib/transaction-layer'
-import { resolveToken, buildCowOrderTypedData, cowOrderAction, buildCowLimitOrder, describeCowOrder, describeAmount, formatAtoms, tokenDecimals, COW_APP_DATA_JSON, GPV2_SETTLEMENT, type CowQuoteResult } from '../lib/cow'
+import { resolveToken, buildCowOrderTypedData, cowOrderAction, buildCowLimitOrder, describeCowOrder, describeAmount, formatAtoms, tokenDecimals, applySlippage, COW_APP_DATA_JSON, GPV2_SETTLEMENT, type CowQuoteResult } from '../lib/cow'
+import { pureChecks, policyCheck, orderValueUsd, buildReport } from '../lib/cow-guardrails'
 import { keccak256, stringToBytes } from 'viem'
 import { isCacheable, routeCacheKey, getCached, setCached, clearRouteCache } from '../lib/route-cache'
 import { routeSavings } from '../lib/route-telemetry'
@@ -1593,6 +1594,52 @@ async function main() {
   })())
   const limitTd = buildCowOrderTypedData(limit)
   check('cow: limit order signs with the same GPv2 domain', limitTd.domain.verifyingContract === GPV2_SETTLEMENT && limitTd.types.Order.length === 12)
+
+  // A3 — safe-build guardrails: pure checks + policy gate + slippage (no
+  // network here; chainChecks is covered by the route smoke).
+  const gFrom = '0x1111111111111111111111111111111111111111'
+  const gNow = 1893450000
+  const okChecks = pureChecks({ ...cowFixture, order: { ...cowFixture.order, validTo: gNow + 1200 } }, gFrom, gNow)
+  check('guardrails: clean order passes all block-level checks', buildReport(null, okChecks.filter((c) => c.level === 'block' || c.id === 'fee')).ok)
+  const wrongRecipient = pureChecks(
+    { ...cowFixture, order: { ...cowFixture.order, receiver: '0x2222222222222222222222222222222222222222', validTo: gNow + 1200 } },
+    gFrom, gNow,
+  )
+  check('guardrails: recipient mismatch BLOCKS', !buildReport(null, wrongRecipient).ok && wrongRecipient.find((c) => c.id === 'recipient')?.ok === false)
+  const expired = pureChecks({ ...cowFixture, order: { ...cowFixture.order, validTo: gNow - 10 } }, gFrom, gNow)
+  check('guardrails: expired order BLOCKS', !buildReport(null, expired).ok)
+  const foreverOrder = pureChecks({ ...cowFixture, order: { ...cowFixture.order, validTo: gNow + 400 * 24 * 3600 } }, gFrom, gNow)
+  check('guardrails: never-expiring order BLOCKS', !buildReport(null, foreverOrder).ok)
+  const absurdFee = pureChecks(
+    { ...cowFixture, order: { ...cowFixture.order, feeAmount: '10000000', validTo: gNow + 1200 } }, // 10% of 100 USDC
+    gFrom, gNow,
+  )
+  check('guardrails: >5% fee BLOCKS', !buildReport(null, absurdFee).ok)
+  check(
+    'guardrails: orderValueUsd prices the stable sell side incl. fee',
+    orderValueUsd({ ...cowFixture.order, feeAmount: '250000' }) === 100.25,
+  )
+  check(
+    'guardrails: orderValueUsd null for stable-less pairs',
+    orderValueUsd({ ...cowFixture.order, sellToken: '0x4200000000000000000000000000000000000006', buyToken: '0x2ae3f1ec7f1f5012cfeab0185bfc7aa3cf0dec22' }) === null,
+  )
+  const gPolicy: GrantPolicy = {
+    id: 'g-guard', allow: ['api.cow.fi'], perCallUsd: 50, perDayUsd: 100,
+    expiresAt: new Date(Date.now() + 86400_000), status: 'active', spendPolicyEnabled: true,
+  }
+  check('guardrails: policy over per-call cap BLOCKS', policyCheck(100.25, gPolicy, 0).violation === 'OVER_PER_CALL')
+  check('guardrails: policy within caps passes', policyCheck(10, gPolicy, 0).check.ok && policyCheck(10, gPolicy, 0).violation === null)
+  check('guardrails: unpriceable order under an ON policy BLOCKS', policyCheck(null, gPolicy, 0).violation === 'VALUE_UNKNOWN')
+  check('guardrails: unpriceable order with policy OFF passes', policyCheck(null, { ...gPolicy, spendPolicyEnabled: false }, 0).violation === null)
+  check('guardrails: no grant at all → warn only, not gated', policyCheck(50, null, 0).check.ok)
+  const slipped = applySlippage(cowFixture, 100) // 1%
+  check(
+    'guardrails: applySlippage lowers the signed min-buy by bps',
+    slipped.order.buyAmount === '24750000000000000' && cowFixture.order.buyAmount === '25000000000000000',
+  )
+  check('guardrails: applySlippage rejects out-of-range bps', (() => {
+    try { applySlippage(cowFixture, 20000); return false } catch { return true }
+  })())
 
   // The loop surfaces a tool-returned vote as a signable artifact (and stops).
   const artDec = await routeMessage({
