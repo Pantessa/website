@@ -40,6 +40,10 @@ export interface Eip712OrderRequest {
   /** Order-book endpoint the signed order is POSTed to after signing. */
   submitUrl?: string
   chainId?: number
+  /** Protocol-specific extras submission needs beyond the signature — for CoW
+   *  the full appData JSON (the order signs only its hash) + the quoteId. */
+  appDataJson?: string
+  quoteId?: number
 }
 
 /** A signable artifact the engine surfaces for explicit approval. Extensible:
@@ -84,6 +88,8 @@ export function buildSignableArtifact(toolResult: unknown): SignableArtifact | n
           typedData: d.typedData,
           submitUrl: typeof d.submitUrl === 'string' ? d.submitUrl : undefined,
           chainId: typeof d.chainId === 'number' ? d.chainId : undefined,
+          appDataJson: typeof d.appDataJson === 'string' ? d.appDataJson : undefined,
+          quoteId: typeof d.quoteId === 'number' ? d.quoteId : undefined,
         },
       }
     }

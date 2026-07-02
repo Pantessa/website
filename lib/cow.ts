@@ -12,6 +12,8 @@
 //  submission to the order book = A4. Verified: CoW Swap is live on Base.
 // ─────────────────────────────────────────────────────────────────────────
 
+import { keccak256, stringToBytes } from 'viem'
+
 /** GPv2Settlement — the EIP-712 verifying contract. Same address on every
  *  CoW chain (Base included). */
 export const GPV2_SETTLEMENT = '0x9008D19f58AAbD9eD0D60971565AA8510560ab41'
@@ -25,14 +27,15 @@ export const COW_API_BASE: Record<number, string> = {
 }
 
 /** Well-known Base tokens so a natural-language swap ("USDC → WETH") resolves
- *  to addresses. Raw 0x addresses pass through untouched. */
-const BASE_TOKENS: Record<string, string> = {
-  USDC: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
-  WETH: '0x4200000000000000000000000000000000000006',
-  ETH: '0x4200000000000000000000000000000000000006', // treated as WETH for ERC-20 swaps
-  CBETH: '0x2Ae3F1Ec7F1F5012CFEab0185bfc7aa3cf0DEc22',
-  DAI: '0x50c5725949A6F0c72E6C4a641F24049A917DB0Cb',
-  USDBC: '0xd9aAEc86B65D86f6A7B5B1b0c42FFA531710b6CA',
+ *  to addresses — with decimals, so approval summaries show human units, never
+ *  raw atoms. Raw 0x addresses pass through untouched. */
+const BASE_TOKENS: Record<string, { address: string; decimals: number }> = {
+  USDC: { address: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913', decimals: 6 },
+  WETH: { address: '0x4200000000000000000000000000000000000006', decimals: 18 },
+  ETH: { address: '0x4200000000000000000000000000000000000006', decimals: 18 }, // treated as WETH for ERC-20 swaps
+  CBETH: { address: '0x2Ae3F1Ec7F1F5012CFEab0185bfc7aa3cf0DEc22', decimals: 18 },
+  DAI: { address: '0x50c5725949A6F0c72E6C4a641F24049A917DB0Cb', decimals: 18 },
+  USDBC: { address: '0xd9aAEc86B65D86f6A7B5B1b0c42FFA531710b6CA', decimals: 6 },
 }
 
 /** Resolve a token symbol or address to a checksum-free lowercase address.
@@ -41,10 +44,64 @@ export function resolveToken(input: string, chainId = 8453): string | null {
   const t = input.trim()
   if (/^0x[0-9a-fA-F]{40}$/.test(t)) return t.toLowerCase()
   if (chainId === 8453) {
-    const addr = BASE_TOKENS[t.toUpperCase()]
-    if (addr) return addr.toLowerCase()
+    const info = BASE_TOKENS[t.toUpperCase()]
+    if (info) return info.address.toLowerCase()
   }
   return null
+}
+
+/** Decimals for a known token symbol (or an address that maps to one).
+ *  Null when unknown — callers must fall back to labeling amounts as atoms. */
+export function tokenDecimals(input: string, chainId = 8453): number | null {
+  if (chainId !== 8453) return null
+  const t = input.trim()
+  const bySymbol = BASE_TOKENS[t.toUpperCase()]
+  if (bySymbol) return bySymbol.decimals
+  if (/^0x[0-9a-fA-F]{40}$/.test(t)) {
+    const lower = t.toLowerCase()
+    for (const info of Object.values(BASE_TOKENS)) {
+      if (info.address.toLowerCase() === lower) return info.decimals
+    }
+  }
+  return null
+}
+
+/** Format an atoms amount ("100000000", 6) as a human amount ("100"). Trims
+ *  trailing zeros; caps fractional digits so summaries stay readable. */
+export function formatAtoms(atoms: string, decimals: number, maxFractionDigits = 6): string {
+  if (!/^\d+$/.test(atoms)) return atoms
+  const zero = BigInt(0)
+  const v = BigInt(atoms)
+  const base = BigInt(10) ** BigInt(decimals)
+  const whole = v / base
+  let frac = (v % base).toString().padStart(decimals, '0').slice(0, maxFractionDigits)
+  frac = frac.replace(/0+$/, '')
+  // A tiny-but-nonzero amount must never render as "0" on an approval surface.
+  if (whole === zero && !frac && v > zero) return `<0.${'0'.repeat(Math.max(maxFractionDigits - 1, 0))}1`
+  return frac ? `${whole}.${frac}` : whole.toString()
+}
+
+/** Human label for a token input — the symbol if known, else a shortened
+ *  address. Used to build the exact string the user approves against. */
+export function tokenLabel(input: string, chainId = 8453): string {
+  const t = input.trim()
+  if (!/^0x[0-9a-fA-F]{40}$/.test(t)) return t.toUpperCase()
+  if (chainId === 8453) {
+    const lower = t.toLowerCase()
+    for (const [sym, info] of Object.entries(BASE_TOKENS)) {
+      if (sym !== 'ETH' && info.address.toLowerCase() === lower) return sym
+    }
+  }
+  return `${t.slice(0, 6)}…${t.slice(-4)}`
+}
+
+/** Human amount + label: "100 USDC", or "100000000 atoms of 0x1234…abcd" when
+ *  the token's decimals are unknown (never silently misrender a magnitude). */
+export function describeAmount(atoms: string, token: string, chainId = 8453): string {
+  const dec = tokenDecimals(token, chainId)
+  const label = tokenLabel(token, chainId)
+  if (dec === null) return `${atoms} atoms of ${label}`
+  return `${formatAtoms(atoms, dec)} ${label}`
 }
 
 export interface CowQuoteParams {
@@ -81,7 +138,15 @@ export interface CowQuoteResult {
   order: CowOrderParameters
   /** Raw response id — used later for slippage tracking / submission. */
   quoteId?: number
+  /** Full appData JSON matching order.appData (its keccak-256). Submission
+   *  (A4) must POST this alongside the signed order or the book rejects it. */
+  appDataJson?: string
 }
+
+/** The appData document we attribute orders with (exact string proven live in
+ *  the A2 quote smoke). `order.appData` signs its keccak-256 hash; submission
+ *  carries the full JSON. */
+export const COW_APP_DATA_JSON = '{"version":"1.1.0","appCode":"Yeetful"}'
 
 /**
  * Fetch a live CoW quote for a sell order. Throws with a readable message on a
@@ -112,7 +177,7 @@ export async function fetchCowQuote(params: CowQuoteParams): Promise<CowQuoteRes
     signingScheme: 'eip712' as const,
     onchainOrder: false,
     priceQuality: 'optimal' as const,
-    appData: '{"version":"1.1.0","appCode":"Yeetful"}',
+    appData: COW_APP_DATA_JSON,
   }
 
   const res = await fetch(`${apiBase}/api/v1/quote`, {
@@ -147,7 +212,63 @@ export async function fetchCowQuote(params: CowQuoteParams): Promise<CowQuoteRes
     buyTokenBalance: String(q.buyTokenBalance ?? 'erc20'),
   }
 
-  return { chainId, from: data.from ?? params.from, order, quoteId: data.id }
+  return { chainId, from: data.from ?? params.from, order, quoteId: data.id, appDataJson: COW_APP_DATA_JSON }
+}
+
+// ── Limit orders ────────────────────────────────────────────────────────────
+
+export interface CowLimitOrderParams {
+  chainId?: number
+  sellToken: string // symbol or address
+  buyToken: string // symbol or address
+  /** Exact sell amount in atoms, decimal string. */
+  sellAmount: string
+  /** Minimum buy amount in atoms — the user's limit price, decimal string. */
+  buyAmountAtLeast: string
+  from: string
+  receiver?: string
+  /** Seconds the order stays open (default 7 days — limits wait for price). */
+  validForSec?: number
+  /** Limit orders default to partially fillable (fill-or-kill = false). */
+  partiallyFillable?: boolean
+}
+
+/**
+ * Build a CoW LIMIT order locally — no quote needed, the user names the price.
+ * `feeAmount` is 0: CoW's fee on limit orders comes out of surplus when a
+ * solver fills at-or-better than the limit. Pure (no network); the order-book
+ * POST (A4) validates the pair server-side. Returns the same shape as
+ * fetchCowQuote so the typed-data builder + tx layer treat both identically.
+ */
+export function buildCowLimitOrder(params: CowLimitOrderParams): CowQuoteResult {
+  const chainId = params.chainId ?? 8453
+  if (!COW_API_BASE[chainId]) throw new Error(`CoW is not configured for chain ${chainId}.`)
+  const sellToken = resolveToken(params.sellToken, chainId)
+  const buyToken = resolveToken(params.buyToken, chainId)
+  if (!sellToken) throw new Error(`Unknown sell token: ${params.sellToken}`)
+  if (!buyToken) throw new Error(`Unknown buy token: ${params.buyToken}`)
+  if (sellToken === buyToken) throw new Error('sellToken and buyToken must differ.')
+  for (const [label, v] of [['sellAmount', params.sellAmount], ['buyAmountAtLeast', params.buyAmountAtLeast]] as const) {
+    if (!/^\d+$/.test(v) || v === '0') throw new Error(`${label} must be a positive integer amount (in token atoms).`)
+  }
+  if (!/^0x[0-9a-fA-F]{40}$/.test(params.from)) throw new Error('A valid `from` wallet address is required.')
+
+  const validTo = Math.floor(Date.now() / 1000) + (params.validForSec ?? 7 * 24 * 3600)
+  const order: CowOrderParameters = {
+    sellToken,
+    buyToken,
+    receiver: (params.receiver ?? params.from).toLowerCase(),
+    sellAmount: params.sellAmount,
+    buyAmount: params.buyAmountAtLeast,
+    validTo,
+    appData: keccak256(stringToBytes(COW_APP_DATA_JSON)),
+    feeAmount: '0',
+    kind: 'sell',
+    partiallyFillable: params.partiallyFillable ?? true,
+    sellTokenBalance: 'erc20',
+    buyTokenBalance: 'erc20',
+  }
+  return { chainId, from: params.from.toLowerCase(), order, appDataJson: COW_APP_DATA_JSON }
 }
 
 /** The EIP-712 Order type — the canonical GPv2 order struct. `kind` and the
@@ -197,5 +318,21 @@ export function cowOrderAction(quote: CowQuoteResult, summary: string) {
     chainId: quote.chainId,
     typedData: buildCowOrderTypedData(quote),
     submitUrl: `${COW_API_BASE[quote.chainId]}/api/v1/orders`,
+    // Submission (A4) POSTs the full appData JSON with the signed order —
+    // the book rejects a bare hash it has never seen.
+    appDataJson: quote.appDataJson,
+    quoteId: quote.quoteId,
   }
+}
+
+/** One-line human description of a built order — the exact string the user
+ *  approves against, in token units (never atoms). */
+export function describeCowOrder(quote: CowQuoteResult, kind: 'swap' | 'limit'): string {
+  const { order, chainId } = quote
+  const sell = describeAmount(order.sellAmount, order.sellToken, chainId)
+  const buy = describeAmount(order.buyAmount, order.buyToken, chainId)
+  const chain = chainId === 8453 ? 'Base' : `chain ${chainId}`
+  return kind === 'limit'
+    ? `Limit order via CoW on ${chain}: sell ${sell} for at least ${buy}`
+    : `Swap ${sell} → ~${buy} via CoW on ${chain}`
 }
