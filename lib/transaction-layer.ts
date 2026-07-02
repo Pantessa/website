@@ -54,6 +54,24 @@ export type SignableArtifact =
   | { kind: 'evm-tx'; summary: string; tx: EvmTxRequest }
   | { kind: 'eip712-order'; summary: string; order: Eip712OrderRequest }
 
+/** Narrow a persisted Message.meta into an Eip712OrderRequest, or null. The
+ *  sibling of voteRequestOf — SignOrderButton reads the order from here. */
+export function orderRequestOf(meta: unknown): Eip712OrderRequest | null {
+  if (!meta || typeof meta !== 'object') return null
+  const raw = (meta as Record<string, unknown>).orderRequest
+  if (!raw || typeof raw !== 'object') return null
+  const d = raw as Record<string, unknown>
+  if (typeof d.protocol !== 'string' || !d.typedData || typeof d.typedData !== 'object') return null
+  return {
+    protocol: d.protocol,
+    typedData: d.typedData,
+    submitUrl: typeof d.submitUrl === 'string' ? d.submitUrl : undefined,
+    chainId: typeof d.chainId === 'number' ? d.chainId : undefined,
+    appDataJson: typeof d.appDataJson === 'string' ? d.appDataJson : undefined,
+    quoteId: typeof d.quoteId === 'number' ? d.quoteId : undefined,
+  }
+}
+
 const ACTION_RE = /\b(vote|swap|send|transfer|bridge|mint|approve|stake|unstake|delegate)\b/i
 
 /** Does the message ask to DO something on-chain (not just read)? Cheap gate
