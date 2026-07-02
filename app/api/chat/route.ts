@@ -207,16 +207,17 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // ── Swap intent: build a guardrailed CoW order for the user to sign ──────
-    // Mirrors the vote fast-path (A2c). Gated on the first-party CoW service
-    // being active in this chat; building is free (no x402 call) — the quote,
-    // guardrails (A3) and refusal ledger all run in lib/cow-build.
-    const cowSvc = activeServers.find((s) => s.slug === 'cow-swap' || /cow[\s·-]?swap/i.test(s.name))
-    if (cowSvc) {
-      const swapIntent = parseSwapIntent(message)
-      if (swapIntent.isSwap) {
-        return await prepareSwapTurn(swapIntent, walletAddress)
-      }
+    // ── Swap intent: Yeetful-NATIVE transaction building ──────────────────────
+    // Swap building is a first-party capability — the core product — not an
+    // MCP the user must shortlist (Nate, 2026-07-02: "pull the swap tools out
+    // as our own custom yeetful tools"). Any chat can say "swap 100 USDC for
+    // WETH"; Yeetful picks the venue (CoW order book by default — MEV-
+    // protected; Uniswap once its gate is payable). Building is free, the
+    // quote + guardrails (A3) + refusal ledger all run in lib/cow-build, and
+    // the parser is conservative (plain questions fall through to routing).
+    const swapIntent = parseSwapIntent(message)
+    if (swapIntent.isSwap) {
+      return await prepareSwapTurn(swapIntent, walletAddress, message)
     }
 
     // Need a live inference provider to phrase an answer.
@@ -364,15 +365,24 @@ async function prepareVoteTurn(
 
 // ── Swap intent ───────────────────────────────────────────────────────────────
 
+/** Which settlement venue should carry this swap? CoW's order book is the
+ *  default (MEV-protected, fee-from-surplus limits); an explicit "uniswap"
+ *  ask is honored once the Uniswap MCP's payment gate is live (A10). */
+function swapVenueNote(message: string): string {
+  return /\buni\s?swap\b|\buni\b/i.test(message)
+    ? '\n🔀 Built via the CoW order book for now (MEV-protected, same pair) — direct Uniswap routing comes online with the Uniswap MCP deploy.'
+    : ''
+}
+
 /**
- * Resolve a swap intent into a guardrailed, signable CoW order (A2c). The
- * build is free (public quote API) and deterministic — amounts convert to
- * atoms via the token's real decimals, never model-guessed. Refuses cleanly
- * on unknown tokens/ambiguous asks; guardrail blocks (A3) surface with their
- * reasons and the artifact is withheld. The user signs (A4) — funds never
- * touch Yeetful.
+ * Resolve a swap intent into a guardrailed, signable order — Yeetful's NATIVE
+ * transaction tool (no service needs to be shortlisted). The build is free
+ * and deterministic — amounts convert to atoms via the token's real decimals,
+ * never model-guessed. Refuses cleanly on unknown tokens/ambiguous asks;
+ * guardrail blocks (A3) surface with their reasons and the artifact is
+ * withheld. The user signs (A4) — funds never touch Yeetful.
  */
-async function prepareSwapTurn(intent: SwapIntent, walletAddress: string | undefined) {
+async function prepareSwapTurn(intent: SwapIntent, walletAddress: string | undefined, message = '') {
   if (!walletAddress) {
     return NextResponse.json({
       reply:
@@ -433,7 +443,7 @@ async function prepareSwapTurn(intent: SwapIntent, walletAddress: string | undef
       .filter((c) => !c.ok && c.level === 'warn')
       .map((c) => `⚠️ ${c.note}`)
     return NextResponse.json({
-      reply: `🔏 ${built.summary}${warns.length ? `\n${warns.join('\n')}` : ''}`,
+      reply: `🔏 ${built.summary}${swapVenueNote(message)}${warns.length ? `\n${warns.join('\n')}` : ''}`,
       orderRequest: built.artifact.order,
       guardrails: built.guardrails,
     })
