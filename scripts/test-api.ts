@@ -28,8 +28,9 @@ import { grantViolation, type GrantPolicy } from '../lib/spend-grant'
 import { routerPrompt, parseRouterDecision, selectInferenceProvider, routeMessage, shortlistEndpoints } from '../lib/router'
 import { buildSmartRequest, computeRating, type PlannableEndpoint } from '../lib/endpoint-planner'
 import { buildSignableArtifact, isActionIntent } from '../lib/transaction-layer'
-import { resolveToken, buildCowOrderTypedData, cowOrderAction, buildCowLimitOrder, describeCowOrder, describeAmount, formatAtoms, tokenDecimals, applySlippage, COW_APP_DATA_JSON, GPV2_SETTLEMENT, type CowQuoteResult } from '../lib/cow'
+import { resolveToken, buildCowOrderTypedData, cowOrderAction, buildCowLimitOrder, describeCowOrder, describeAmount, formatAtoms, tokenDecimals, humanToAtoms, applySlippage, COW_APP_DATA_JSON, GPV2_SETTLEMENT, type CowQuoteResult } from '../lib/cow'
 import { pureChecks, policyCheck, orderValueUsd, buildReport } from '../lib/cow-guardrails'
+import { parseSwapIntent } from '../lib/swap-intent'
 import { keccak256, stringToBytes } from 'viem'
 import { isCacheable, routeCacheKey, getCached, setCached, clearRouteCache } from '../lib/route-cache'
 import { routeSavings } from '../lib/route-telemetry'
@@ -1640,6 +1641,22 @@ async function main() {
   check('guardrails: applySlippage rejects out-of-range bps', (() => {
     try { applySlippage(cowFixture, 20000); return false } catch { return true }
   })())
+
+  // A2c — swap intent parsing (pure) + atoms conversion.
+  const si = parseSwapIntent('swap 100 USDC for WETH')
+  check('swap intent: market parse', si.isSwap && si.mode === 'swap' && si.sellAmountHuman === '100' && si.sellToken === 'USDC' && si.buyToken === 'WETH')
+  const si2 = parseSwapIntent('please trade 0.5 weth into usdc now')
+  check('swap intent: trade/into synonyms + decimals', si2.isSwap && si2.mode === 'swap' && si2.sellAmountHuman === '0.5' && si2.sellToken === 'weth')
+  const li = parseSwapIntent('limit order: sell 0.5 WETH for at least 1750 USDC')
+  check('swap intent: limit parse carries the named price', li.isSwap && li.mode === 'limit' && li.buyAmountAtLeastHuman === '1750' && li.buyToken === 'USDC')
+  const li2 = parseSwapIntent('limit: sell 1 WETH when it hits 3500 USDC')
+  check('swap intent: "when it hits" limit phrasing', li2.isSwap && li2.mode === 'limit' && li2.buyAmountAtLeastHuman === '3500')
+  check('swap intent: pair without amount clarifies', parseSwapIntent('swap USDC for WETH').problem !== undefined)
+  check('swap intent: plain question falls through', parseSwapIntent('what is a swap?').isSwap === false)
+  check('swap intent: price question falls through', parseSwapIntent('what is the price of ETH').isSwap === false)
+  check('atoms: humanToAtoms whole + fraction', humanToAtoms('100', 6) === '100000000' && humanToAtoms('0.5', 18) === '500000000000000000')
+  check('atoms: humanToAtoms refuses excess precision', humanToAtoms('0.1234567', 6) === null)
+  check('atoms: humanToAtoms refuses zero + junk', humanToAtoms('0', 6) === null && humanToAtoms('1e5', 6) === null)
 
   // The loop surfaces a tool-returned vote as a signable artifact (and stops).
   const artDec = await routeMessage({

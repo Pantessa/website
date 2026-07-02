@@ -1,22 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
-import {
-  fetchCowQuote,
-  buildCowLimitOrder,
-  cowOrderAction,
-  describeCowOrder,
-  applySlippage,
-} from '@/lib/cow'
-import { buildSignableArtifact } from '@/lib/transaction-layer'
-import {
-  pureChecks,
-  chainChecks,
-  policyCheck,
-  orderValueUsd,
-  buildReport,
-  COW_POLICY_HOST,
-  MAX_SLIPPAGE_BPS,
-} from '@/lib/cow-guardrails'
-import { getActiveGrant, recordLedger, spentTodayUsd, toPolicy } from '@/lib/grant-store'
+import { buildGuardrailedOrder } from '@/lib/cow-build'
+import { MAX_SLIPPAGE_BPS } from '@/lib/cow-guardrails'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -31,6 +15,8 @@ export const dynamic = 'force-dynamic'
 // The artifact is WITHHELD when a block-level guardrail fails — recipient
 // mismatch, bad validity, absurd fee, or the wallet's spend policy. Policy
 // denials are ledgered like any other refusal. Signing/submitting is A4.
+// Build + guardrail logic lives in lib/cow-build (shared with the chat
+// swap fast-path — one code path, no drift).
 export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => ({} as Record<string, unknown>))
   const sellToken = typeof body.sellToken === 'string' ? body.sellToken : ''
@@ -67,49 +53,26 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    let quote =
-      mode === 'limit'
-        ? buildCowLimitOrder({ chainId, sellToken, buyToken, sellAmount, buyAmountAtLeast, from, receiver })
-        : await fetchCowQuote({ chainId, sellToken, buyToken, sellAmountBeforeFee: sellAmount, from, receiver })
-    if (mode === 'swap') quote = applySlippage(quote, slippageBps)
-
-    // ── Guardrails (A3): pure sanity + on-chain reads + the spend-policy gate.
-    const checks = pureChecks(quote, from)
-    checks.push(...(await chainChecks(quote, from)))
-    const valueUsd = orderValueUsd(quote.order, chainId)
-    const grant = await getActiveGrant(from.toLowerCase())
-    const policy = grant ? toPolicy(grant) : null
-    const spentToday = grant ? await spentTodayUsd(grant.id) : 0
-    const { check: polCheck, violation } = policyCheck(valueUsd, policy, spentToday)
-    checks.push(polCheck)
-    const guardrails = buildReport(valueUsd, checks)
-
-    // A refusal is a first-class outcome: ledger it (same trail as chat
-    // payment denials) and withhold the signable artifact.
-    if (violation && grant) {
-      await recordLedger({
-        grantId: grant.id,
-        orgId: grant.orgId ?? undefined,
-        host: COW_POLICY_HOST,
-        serviceName: 'CoW Swap',
-        amountUsd: 0,
-        ok: false,
-        note: `blocked: ${violation} (cow ${mode} order)`,
-      })
-    }
-
-    const summary = describeCowOrder(quote, mode)
-    const artifact = guardrails.ok ? buildSignableArtifact(cowOrderAction(quote, summary)) : null
-
+    const built = await buildGuardrailedOrder({
+      mode,
+      chainId,
+      sellToken,
+      buyToken,
+      sellAmount,
+      buyAmountAtLeast: mode === 'limit' ? buyAmountAtLeast : undefined,
+      from,
+      receiver,
+      slippageBps,
+    })
     return NextResponse.json({
       mode,
-      quote: quote.order,
-      quoteId: quote.quoteId,
-      summary,
-      guardrails,
-      blocked: !guardrails.ok,
+      quote: built.quote.order,
+      quoteId: built.quote.quoteId,
+      summary: built.summary,
+      guardrails: built.guardrails,
+      blocked: built.blocked,
       // The signable payload — withheld when a block-level guardrail failed.
-      artifact,
+      artifact: built.artifact,
     })
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'Quote failed.'

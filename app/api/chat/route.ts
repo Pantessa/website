@@ -14,6 +14,9 @@ import {
 import type { McpServer } from '@/lib/store'
 import { voteRequestFromToolResult, friendlyVoteError, type VoteRequest } from '@/lib/snapshot-vote'
 import { parseVoteIntent, type VoteIntent } from '@/lib/vote-intent'
+import { parseSwapIntent, type SwapIntent } from '@/lib/swap-intent'
+import { buildGuardrailedOrder } from '@/lib/cow-build'
+import { tokenDecimals, humanToAtoms } from '@/lib/cow'
 import { resolveProposal } from '@/lib/snapshot-read'
 import { detectGovernanceIntent, runGovernanceTurn } from '@/lib/governance'
 import { getSessionAddress } from '@/lib/auth'
@@ -204,6 +207,18 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // ── Swap intent: build a guardrailed CoW order for the user to sign ──────
+    // Mirrors the vote fast-path (A2c). Gated on the first-party CoW service
+    // being active in this chat; building is free (no x402 call) — the quote,
+    // guardrails (A3) and refusal ledger all run in lib/cow-build.
+    const cowSvc = activeServers.find((s) => s.slug === 'cow-swap' || /cow[\s·-]?swap/i.test(s.name))
+    if (cowSvc) {
+      const swapIntent = parseSwapIntent(message)
+      if (swapIntent.isSwap) {
+        return await prepareSwapTurn(swapIntent, walletAddress)
+      }
+    }
+
     // Need a live inference provider to phrase an answer.
     if (!inference) {
       const picked = activeServers.find((s) => s.kind === 'inference')
@@ -344,6 +359,87 @@ async function prepareVoteTurn(
     return NextResponse.json({ reply: `🗳️ ${vote.summary}`, receipts, payer: 'the house wallet', voteRequest: vote })
   } catch (err) {
     return NextResponse.json({ reply: `🗳️ ${friendlyVoteError(err)}`, receipts })
+  }
+}
+
+// ── Swap intent ───────────────────────────────────────────────────────────────
+
+/**
+ * Resolve a swap intent into a guardrailed, signable CoW order (A2c). The
+ * build is free (public quote API) and deterministic — amounts convert to
+ * atoms via the token's real decimals, never model-guessed. Refuses cleanly
+ * on unknown tokens/ambiguous asks; guardrail blocks (A3) surface with their
+ * reasons and the artifact is withheld. The user signs (A4) — funds never
+ * touch Yeetful.
+ */
+async function prepareSwapTurn(intent: SwapIntent, walletAddress: string | undefined) {
+  if (!walletAddress) {
+    return NextResponse.json({
+      reply:
+        '🔄 Connect your wallet to swap — you sign the CoW order yourself, so the order has to be built for your address.',
+    })
+  }
+  if (intent.problem || !intent.sellToken || !intent.buyToken || !intent.sellAmountHuman) {
+    return NextResponse.json({ reply: `🔄 ${intent.problem ?? 'Say the amount and pair — e.g. “swap 100 USDC for WETH”.'}` })
+  }
+
+  const sellDec = tokenDecimals(intent.sellToken)
+  if (sellDec === null) {
+    return NextResponse.json({
+      reply: `🔄 I don't know the token “${intent.sellToken}” on Base — use a known symbol (USDC, WETH, DAI, cbETH, USDbC) or a 0x address via the API.`,
+    })
+  }
+  const sellAmount = humanToAtoms(intent.sellAmountHuman, sellDec)
+  if (!sellAmount) {
+    return NextResponse.json({
+      reply: `🔄 “${intent.sellAmountHuman}” has more decimal places than ${intent.sellToken.toUpperCase()} supports (${sellDec}).`,
+    })
+  }
+  let buyAmountAtLeast: string | undefined
+  if (intent.mode === 'limit') {
+    const buyDec = tokenDecimals(intent.buyToken)
+    if (buyDec === null) {
+      return NextResponse.json({
+        reply: `🔄 I don't know the token “${intent.buyToken}” on Base — use a known symbol (USDC, WETH, DAI, cbETH, USDbC).`,
+      })
+    }
+    buyAmountAtLeast = humanToAtoms(intent.buyAmountAtLeastHuman ?? '', buyDec) ?? undefined
+    if (!buyAmountAtLeast) {
+      return NextResponse.json({ reply: `🔄 Couldn't read the limit price “${intent.buyAmountAtLeastHuman}”.` })
+    }
+  }
+
+  try {
+    const built = await buildGuardrailedOrder({
+      mode: intent.mode ?? 'swap',
+      sellToken: intent.sellToken,
+      buyToken: intent.buyToken,
+      sellAmount,
+      buyAmountAtLeast,
+      from: walletAddress,
+    })
+    if (built.blocked || !built.artifact || built.artifact.kind !== 'eip712-order') {
+      const reasons = built.guardrails.checks
+        .filter((c) => !c.ok && c.level === 'block')
+        .map((c) => c.note)
+        .join(' ')
+      return NextResponse.json({
+        reply: `🚫 Order built but refused by your guardrails: ${reasons || 'a safety check failed.'}`,
+        guardrails: built.guardrails,
+        blocked: true,
+      })
+    }
+    const warns = built.guardrails.checks
+      .filter((c) => !c.ok && c.level === 'warn')
+      .map((c) => `⚠️ ${c.note}`)
+    return NextResponse.json({
+      reply: `🔏 ${built.summary}${warns.length ? `\n${warns.join('\n')}` : ''}`,
+      orderRequest: built.artifact.order,
+      guardrails: built.guardrails,
+    })
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'quote failed'
+    return NextResponse.json({ reply: `🔄 Couldn't build the swap: ${msg}` })
   }
 }
 
