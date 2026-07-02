@@ -27,7 +27,7 @@ import { grantTypedData } from '../lib/grant-typed-data'
 import { grantViolation, type GrantPolicy } from '../lib/spend-grant'
 import { routerPrompt, parseRouterDecision, selectInferenceProvider, routeMessage, shortlistEndpoints } from '../lib/router'
 import { buildSmartRequest, computeRating, type PlannableEndpoint } from '../lib/endpoint-planner'
-import { buildSignableArtifact, isActionIntent, orderRequestOf } from '../lib/transaction-layer'
+import { buildSignableArtifact, isActionIntent, orderRequestOf, txRequestOf } from '../lib/transaction-layer'
 import { resolveToken, buildCowOrderTypedData, cowOrderAction, buildCowLimitOrder, buildCowSubmitBody, describeCowOrder, describeAmount, formatAtoms, tokenDecimals, humanToAtoms, applySlippage, COW_APP_DATA_JSON, GPV2_SETTLEMENT, type CowQuoteResult } from '../lib/cow'
 import { pureChecks, policyCheck, orderValueUsd, buildReport } from '../lib/cow-guardrails'
 import { parseSwapIntent } from '../lib/swap-intent'
@@ -1686,6 +1686,9 @@ async function main() {
   const metaOrder = orderRequestOf({ orderRequest: { protocol: 'cow', typedData: { domain: {}, message: {} }, chainId: 8453, appDataJson: COW_APP_DATA_JSON, quoteId: 7 } })
   check('cow submit: orderRequestOf reads persisted meta', metaOrder?.protocol === 'cow' && metaOrder.quoteId === 7)
   check('cow submit: orderRequestOf rejects junk meta', orderRequestOf({ orderRequest: { typedData: {} } }) === null && orderRequestOf(null) === null)
+  const metaTx = txRequestOf({ txRequest: { to: '0x2626664c2603336E57B271c5C0b26F421741e481', data: '0xdead', value: '0', chainId: 8453, action: 'swap' } })
+  check('tx layer: txRequestOf reads a persisted evm-tx', metaTx?.to === '0x2626664c2603336E57B271c5C0b26F421741e481' && metaTx.action === 'swap' && metaTx.chainId === 8453)
+  check('tx layer: txRequestOf rejects junk meta', txRequestOf({ txRequest: { to: 'not-an-address' } }) === null && txRequestOf({}) === null)
   const submitRes1 = await fetch(`${BASE}/api/cow/submit`, {
     method: 'POST', headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ order: cowFixture.order, signature: '0xshort', from: cowFixture.from }),

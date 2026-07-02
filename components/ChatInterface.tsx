@@ -10,7 +10,8 @@ import MessageReceipts from '@/components/MessageReceipts'
 import RouteReport from '@/components/RouteReport'
 import SignVoteButton from '@/components/SignVoteButton'
 import SignOrderButton from '@/components/SignOrderButton'
-import { orderRequestOf } from '@/lib/transaction-layer'
+import SendTxButton from '@/components/SendTxButton'
+import { orderRequestOf, txRequestOf } from '@/lib/transaction-layer'
 import VoteChoiceButtons from '@/components/VoteChoiceButtons'
 import VoteCandidates from '@/components/VoteCandidates'
 import PaymentConfirm from '@/components/PaymentConfirm'
@@ -47,7 +48,7 @@ interface PaymentToSign {
 
 /** Build the assistant message meta from receipts + an optional vote request /
  *  ambiguous-proposal candidates. */
-function buildMeta(receipts: unknown, payer: unknown, voteRequest: unknown, voteCandidates?: unknown, routeReport?: unknown, routerTrace?: unknown, voteProposal?: unknown, orderRequest?: unknown, guardrails?: unknown) {
+function buildMeta(receipts: unknown, payer: unknown, voteRequest: unknown, voteCandidates?: unknown, routeReport?: unknown, routerTrace?: unknown, voteProposal?: unknown, orderRequest?: unknown, guardrails?: unknown, txRequest?: unknown) {
   const meta: Record<string, unknown> = {}
   if (Array.isArray(receipts) && receipts.length) {
     meta.receipts = receipts
@@ -62,6 +63,9 @@ function buildMeta(receipts: unknown, payer: unknown, voteRequest: unknown, vote
   // (A3) — SignOrderButton (A4) reads these from the persisted message.
   if (orderRequest && typeof orderRequest === 'object') meta.orderRequest = orderRequest
   if (guardrails && typeof guardrails === 'object') meta.guardrails = guardrails
+  // A built on-chain transaction awaiting broadcast (evm-tx artifact —
+  // Uniswap swaps, transfers, mints…) — SendTxButton reads this.
+  if (txRequest && typeof txRequest === 'object') meta.txRequest = txRequest
   return Object.keys(meta).length ? meta : undefined
 }
 
@@ -215,7 +219,7 @@ export default function ChatInterface() {
           addMessage(chatId, {
             role: 'assistant',
             content: out.content,
-            meta: buildMeta(out.receipts, out.payer, out.voteRequest, undefined, out.routeReport, out.routerTrace, out.voteProposal, out.orderRequest),
+            meta: buildMeta(out.receipts, out.payer, out.voteRequest, undefined, out.routeReport, out.routerTrace, out.voteProposal, out.orderRequest, undefined, out.txRequest),
           })
         }
         return
@@ -247,7 +251,7 @@ export default function ChatInterface() {
         addMessage(chatId, {
           role: 'assistant',
           content: data.reply || data.error || 'No response.',
-          meta: buildMeta(data.receipts, data.payer, data.voteRequest, data.voteCandidates, undefined, undefined, undefined, data.orderRequest, data.guardrails),
+          meta: buildMeta(data.receipts, data.payer, data.voteRequest, data.voteCandidates, undefined, undefined, undefined, data.orderRequest, data.guardrails, data.txRequest),
         })
       }
     } catch (err) {
@@ -271,7 +275,7 @@ export default function ChatInterface() {
     userMsg: string,
     history: { role: string; content: string }[],
   ): Promise<
-    | { kind: 'reply'; content: string; receipts?: unknown; payer?: string; voteRequest?: unknown; voteProposal?: unknown; routeReport?: unknown; routerTrace?: unknown; orderRequest?: unknown }
+    | { kind: 'reply'; content: string; receipts?: unknown; payer?: string; voteRequest?: unknown; voteProposal?: unknown; routeReport?: unknown; routerTrace?: unknown; orderRequest?: unknown; txRequest?: unknown }
     | { kind: 'plan'; data: { plan: unknown; payments: PaymentToSign[]; listedOnly: unknown; notes?: unknown; turnId?: unknown } }
   > => {
     clearRouterTrace()
@@ -296,7 +300,7 @@ export default function ChatInterface() {
     const reader = res.body.getReader()
     const decoder = new TextDecoder()
     let buf = ''
-    let reply: { kind: 'reply'; content: string; receipts?: unknown; payer?: string; voteRequest?: unknown; voteProposal?: unknown; routeReport?: unknown; routerTrace?: unknown; orderRequest?: unknown } | null = null
+    let reply: { kind: 'reply'; content: string; receipts?: unknown; payer?: string; voteRequest?: unknown; voteProposal?: unknown; routeReport?: unknown; routerTrace?: unknown; orderRequest?: unknown; txRequest?: unknown } | null = null
     for (;;) {
       const { done, value } = await reader.read()
       if (done) break
@@ -336,6 +340,7 @@ export default function ChatInterface() {
             routeReport: event.routeReport,
             routerTrace: event.trace,
             orderRequest: event.orderRequest,
+            txRequest: event.txRequest,
           }
         } else if (event.type === 'error') {
           const message = typeof event.message === 'string' ? event.message : 'Auto-router failed'
@@ -644,6 +649,11 @@ export default function ChatInterface() {
                       (() => {
                         const order = orderRequestOf(msg.meta)
                         return order ? <SignOrderButton order={order} /> : null
+                      })()}
+                    {msg.role === 'assistant' &&
+                      (() => {
+                        const builtTx = txRequestOf(msg.meta)
+                        return builtTx ? <SendTxButton tx={builtTx} /> : null
                       })()}
                     {msg.role === 'assistant' &&
                       (() => {
