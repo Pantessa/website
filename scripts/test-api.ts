@@ -1628,11 +1628,14 @@ async function main() {
     id: 'g-guard', allow: ['api.cow.fi'], perCallUsd: 50, perDayUsd: 100,
     expiresAt: new Date(Date.now() + 86400_000), status: 'active', spendPolicyEnabled: true,
   }
-  check('guardrails: policy over per-call cap BLOCKS', policyCheck(100.25, gPolicy, 0).violation === 'OVER_PER_CALL')
-  check('guardrails: policy within caps passes', policyCheck(10, gPolicy, 0).check.ok && policyCheck(10, gPolicy, 0).violation === null)
-  check('guardrails: unpriceable order under an ON policy BLOCKS', policyCheck(null, gPolicy, 0).violation === 'VALUE_UNKNOWN')
-  check('guardrails: unpriceable order with policy OFF passes', policyCheck(null, { ...gPolicy, spendPolicyEnabled: false }, 0).violation === null)
-  check('guardrails: no grant at all → warn only, not gated', policyCheck(50, null, 0).check.ok)
+  check('guardrails: policy over per-call cap BLOCKS', policyCheck(100.25, gPolicy, 0, 'api.cow.fi').violation === 'OVER_PER_CALL')
+  check('guardrails: policy within caps passes', policyCheck(10, gPolicy, 0, 'api.cow.fi').check.ok && policyCheck(10, gPolicy, 0, 'api.cow.fi').violation === null)
+  check('guardrails: unpriceable order under an ON policy BLOCKS', policyCheck(null, gPolicy, 0, 'api.cow.fi').violation === 'VALUE_UNKNOWN')
+  check('guardrails: unpriceable order with policy OFF passes', policyCheck(null, { ...gPolicy, spendPolicyEnabled: false }, 0, 'api.cow.fi').violation === null)
+  check('guardrails: no grant at all → warn only, not gated', policyCheck(50, null, 0, 'api.cow.fi').check.ok)
+  // The core is venue-neutral: the same gate refuses a host outside the
+  // allowlist — what Uniswap's adapter (A10) plugs into unchanged.
+  check('guardrails: core policyCheck gates by HOST (venue-neutral)', policyCheck(10, gPolicy, 0, 'uniswap.yeetful.com').violation === 'NOT_ALLOWED')
   const slipped = applySlippage(cowFixture, 100) // 1%
   check(
     'guardrails: applySlippage lowers the signed min-buy by bps',
