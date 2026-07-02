@@ -13,7 +13,7 @@
  * flip it on (endpoint/protocol/tool are wired either way). source:'yeetful'
  * keeps it invisible to the agentic.market ingest/audit.
  */
-import { PrismaClient } from '@prisma/client'
+import { Prisma, PrismaClient } from '@prisma/client'
 
 const MCP_URL = 'https://uniswap.yeetful.com/mcp'
 const CALLABLE = process.argv.includes('--callable')
@@ -53,11 +53,19 @@ const ENDPOINTS = [
     network: 'Base',
     provider: 'Yeetful',
     position: 0,
-    parameters: [
-      { group: 'body', name: 'sellToken', type: 'string', required: true, description: 'Base symbol (USDC, WETH, ETH…) or 0x address', example: 'USDC' },
-      { group: 'body', name: 'buyToken', type: 'string', required: true, description: 'Base symbol or 0x address', example: 'WETH' },
-      { group: 'body', name: 'amount', type: 'string', required: true, description: 'Human units of the sell token', example: '100' },
-    ],
+    // ⚠️ Param schemas make an endpoint PLANNER-CALLABLE regardless of the
+    // server's `callable` flag (the planner gates on "has params", learned
+    // the hard way: the router paid a 500ing gate on 2026-07-02). Only
+    // advertise them once the x402 gate actually answers (--callable).
+    // DbNull (not undefined): undefined would SKIP the field on upsert and
+    // leave previously-seeded params live in the planner.
+    parameters: CALLABLE
+      ? [
+          { group: 'body', name: 'sellToken', type: 'string', required: true, description: 'Base symbol (USDC, WETH, ETH…) or 0x address', example: 'USDC' },
+          { group: 'body', name: 'buyToken', type: 'string', required: true, description: 'Base symbol or 0x address', example: 'WETH' },
+          { group: 'body', name: 'amount', type: 'string', required: true, description: 'Human units of the sell token', example: '100' },
+        ]
+      : Prisma.DbNull,
   },
 ]
 
