@@ -72,6 +72,23 @@ export function orderRequestOf(meta: unknown): Eip712OrderRequest | null {
   }
 }
 
+/** Narrow a persisted Message.meta into an EvmTxRequest, or null. The sibling
+ *  of orderRequestOf — SendTxButton reads the built transaction from here. */
+export function txRequestOf(meta: unknown): EvmTxRequest | null {
+  if (!meta || typeof meta !== 'object') return null
+  const raw = (meta as Record<string, unknown>).txRequest
+  if (!raw || typeof raw !== 'object') return null
+  const d = raw as Record<string, unknown>
+  if (typeof d.to !== 'string' || !/^0x[0-9a-fA-F]{40}$/.test(d.to)) return null
+  return {
+    to: d.to,
+    data: typeof d.data === 'string' ? d.data : undefined,
+    value: typeof d.value === 'string' ? d.value : undefined,
+    chainId: typeof d.chainId === 'number' ? d.chainId : undefined,
+    action: typeof d.action === 'string' ? d.action : undefined,
+  }
+}
+
 const ACTION_RE = /\b(vote|swap|send|transfer|bridge|mint|approve|stake|unstake|delegate)\b/i
 
 /** Does the message ask to DO something on-chain (not just read)? Cheap gate

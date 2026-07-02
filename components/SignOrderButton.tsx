@@ -4,14 +4,33 @@
 // carried on Message.meta.orderRequest) into a wallet signature and relays it
 // to the CoW order book via /api/cow/submit. The OWNER signs with their own
 // wallet — the server never signs, and the submit route re-gates the spend
-// policy before relaying. Mirrors SignVoteButton.
+// policy before relaying.
+//
+// Progress is a real stepper: Sign → Place → Open → Filled. After placement we
+// poll the order book's trades endpoint for the solver fill and link the
+// actual Basescan settlement transaction. CoW-specific by design — on-chain
+// `send_transaction` payloads (Uniswap et al.) render via <SendTxButton>.
 
-import { useState } from 'react'
-import { useAccount, useSignTypedData } from 'wagmi'
-import { Loader2, PenLine, CheckCircle2, ExternalLink } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { useAccount, useSignTypedData, useSwitchChain } from 'wagmi'
+import { Loader2, PenLine, CheckCircle2, Circle, ExternalLink } from 'lucide-react'
 import type { Eip712OrderRequest } from '@/lib/transaction-layer'
 
-type Status = 'idle' | 'signing' | 'submitting' | 'done' | 'error'
+type Status = 'idle' | 'signing' | 'placing' | 'open' | 'filled' | 'error'
+
+const STEPS: Array<{ key: Status; label: string }> = [
+  { key: 'signing', label: 'Sign' },
+  { key: 'placing', label: 'Place' },
+  { key: 'open', label: 'On the book' },
+  { key: 'filled', label: 'Filled' },
+]
+const ORDER = ['idle', 'signing', 'placing', 'open', 'filled'] as const
+
+const TX_EXPLORER: Record<number, string> = {
+  8453: 'https://basescan.org/tx/',
+  1: 'https://etherscan.io/tx/',
+  42161: 'https://arbiscan.io/tx/',
+}
 
 interface CowTypedData {
   domain: Record<string, unknown>
@@ -23,12 +42,51 @@ interface CowTypedData {
 export default function SignOrderButton({ order, summary }: { order: Eip712OrderRequest; summary?: string }) {
   const { address, isConnected } = useAccount()
   const { signTypedDataAsync } = useSignTypedData()
+  const { switchChainAsync } = useSwitchChain()
   const [status, setStatus] = useState<Status>('idle')
   const [error, setError] = useState('')
   const [explorerUrl, setExplorerUrl] = useState<string | null>(null)
+  const [orderUid, setOrderUid] = useState<string | null>(null)
+  const [fillTx, setFillTx] = useState<string | null>(null)
+  const pollTimer = useRef<ReturnType<typeof setInterval> | null>(null)
 
-  // Only CoW is submittable today; other protocols render nothing rather
-  // than offering a button that can't finish.
+  const chainId = order.chainId ?? 8453
+  // ".../api/v1/orders" → the API base we poll trades on.
+  const apiBase = order.submitUrl?.replace(/\/api\/v1\/orders\/?$/, '') ?? 'https://api.cow.fi/base'
+
+  // Poll for the solver fill once the order is on the book (5s cadence, ~3min
+  // cap — a limit order legitimately stays open longer; the explorer link
+  // keeps tracking after we stop).
+  useEffect(() => {
+    if (status !== 'open' || !orderUid) return
+    let tries = 0
+    pollTimer.current = setInterval(async () => {
+      tries += 1
+      if (tries > 36 && pollTimer.current) {
+        clearInterval(pollTimer.current)
+        return
+      }
+      try {
+        const res = await fetch(`${apiBase}/api/v1/trades?orderUid=${orderUid}`)
+        if (!res.ok) return
+        const trades = (await res.json()) as Array<{ txHash?: string }>
+        const tx = trades.find((t) => typeof t.txHash === 'string')?.txHash
+        if (tx) {
+          setFillTx(tx)
+          setStatus('filled')
+          if (pollTimer.current) clearInterval(pollTimer.current)
+        }
+      } catch {
+        /* transient poll failure — keep trying */
+      }
+    }, 5000)
+    return () => {
+      if (pollTimer.current) clearInterval(pollTimer.current)
+    }
+  }, [status, orderUid, apiBase])
+
+  // Only CoW is submittable here; other protocols render nothing rather than
+  // offering a button that can't finish.
   if (order.protocol !== 'cow') return null
   const typedData = order.typedData as CowTypedData
   const receiver = typeof typedData?.message?.receiver === 'string' ? typedData.message.receiver : ''
@@ -46,15 +104,20 @@ export default function SignOrderButton({ order, summary }: { order: Eip712Order
     }
     try {
       setStatus('signing')
+      // The order's EIP-712 domain carries chainId — Coinbase Wallet refuses
+      // typed-data signatures when the active network doesn't match (and
+      // reports it as "User rejected"). No-op when already on Base; same
+      // switch-then-act idiom as LaunchToken/StakeToken.
+      await switchChainAsync({ chainId }).catch(() => {})
       const signature = await signTypedDataAsync(
         typedData as unknown as Parameters<typeof signTypedDataAsync>[0],
       )
-      setStatus('submitting')
+      setStatus('placing')
       const res = await fetch('/api/cow/submit', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
-          chainId: order.chainId ?? 8453,
+          chainId,
           order: typedData.message,
           signature,
           from: address,
@@ -66,52 +129,95 @@ export default function SignOrderButton({ order, summary }: { order: Eip712Order
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Order rejected.')
       setExplorerUrl(typeof data.explorerUrl === 'string' ? data.explorerUrl : null)
-      setStatus('done')
+      setOrderUid(typeof data.orderUid === 'string' ? data.orderUid : null)
+      setStatus('open')
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Signing failed.'
-      setError(/rejected|denied/i.test(msg) ? 'Signature rejected — nothing was placed.' : msg)
+      setError(
+        /rejected|denied/i.test(msg)
+          ? 'Signature rejected in the wallet — nothing was placed. (If you didn’t cancel: check the wallet is on Base.)'
+          : msg,
+      )
       setStatus('error')
     }
   }
 
-  if (status === 'done') {
-    return (
-      <div className="mt-2.5 pt-2 border-t border-[var(--line)] flex items-center gap-2 text-[12px]">
-        <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0" />
-        <span className="text-emerald-400 font-medium">Order placed</span>
-        {summary && <span className="text-[color:var(--muted)] truncate">— {summary}</span>}
-        {explorerUrl && (
-          <a
-            href={explorerUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center gap-1 text-[color:var(--muted)] underline decoration-dotted underline-offset-2 hover:text-[color:var(--fg)] flex-shrink-0"
-          >
-            track <ExternalLink className="w-3 h-3" />
-          </a>
-        )}
-      </div>
-    )
+  const stepState = (step: Status): 'done' | 'active' | 'pending' => {
+    if (status === 'filled') return 'done' // terminal — every step completed
+    const cur = ORDER.indexOf(status === 'error' ? 'idle' : (status as (typeof ORDER)[number]))
+    const idx = ORDER.indexOf(step as (typeof ORDER)[number])
+    if (idx < cur) return 'done'
+    if (idx === cur) return 'active'
+    return 'pending'
   }
+
+  const inFlight = status === 'signing' || status === 'placing'
+  const started = status !== 'idle' && status !== 'error'
 
   return (
     <div className="mt-2.5 pt-2 border-t border-[var(--line)] space-y-1.5">
-      <div className="flex items-center gap-2 flex-wrap">
-        <button
-          onClick={() => void sign()}
-          disabled={status === 'signing' || status === 'submitting'}
-          className="inline-flex items-center gap-1.5 text-[12px] font-medium px-3 py-1.5 max-lg:min-h-10 rounded-full border border-[var(--line-2)] text-[color:var(--muted)] hover:text-white hover:border-white disabled:opacity-50 transition-colors"
-          title="Sign this CoW order with your wallet and place it on the order book"
-        >
-          {status === 'signing' || status === 'submitting' ? (
-            <Loader2 className="w-3.5 h-3.5 animate-spin" />
-          ) : (
-            <PenLine className="w-3.5 h-3.5" />
-          )}
-          {status === 'signing' ? 'Sign in wallet…' : status === 'submitting' ? 'Placing order…' : 'Sign & place order'}
-        </button>
-        {error && <span className="text-[12px] text-red-400">{error}</span>}
-      </div>
+      {/* Progress stepper — visible once signing starts */}
+      {started && (
+        <div className="flex items-center gap-1.5 text-[11px] mono flex-wrap">
+          {STEPS.map((s, i) => {
+            const st = stepState(s.key)
+            return (
+              <span key={s.key} className="inline-flex items-center gap-1">
+                {i > 0 && <span className="text-[color:var(--line-2)] px-0.5">—</span>}
+                {st === 'done' ? (
+                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                ) : st === 'active' ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin text-[color:var(--fg)]" />
+                ) : (
+                  <Circle className="w-3 h-3 text-[color:var(--line-2)]" />
+                )}
+                <span className={st === 'pending' ? 'text-[color:var(--muted-2)]' : 'text-[color:var(--fg)]'}>
+                  {s.label}
+                </span>
+                {s.key === 'open' && explorerUrl && st !== 'pending' && (
+                  <a href={explorerUrl} target="_blank" rel="noopener noreferrer" title="Track the order on CoW Explorer"
+                    className="inline-flex items-center text-[color:var(--muted)] hover:text-[color:var(--fg)]">
+                    <ExternalLink className="w-3 h-3" />
+                  </a>
+                )}
+                {s.key === 'filled' && fillTx && (
+                  <a href={`${TX_EXPLORER[chainId] ?? TX_EXPLORER[8453]}${fillTx}`} target="_blank" rel="noopener noreferrer"
+                    title="Settlement transaction on Basescan"
+                    className="inline-flex items-center text-[color:var(--muted)] hover:text-[color:var(--fg)]">
+                    <ExternalLink className="w-3 h-3" />
+                  </a>
+                )}
+              </span>
+            )
+          })}
+        </div>
+      )}
+
+      {status === 'filled' ? (
+        <div className="flex items-center gap-2 text-[12px]">
+          <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0" />
+          <span className="text-emerald-400 font-medium">Swap settled on-chain</span>
+          {summary && <span className="text-[color:var(--muted)] truncate">— {summary}</span>}
+        </div>
+      ) : status === 'open' ? (
+        <div className="flex items-center gap-2 text-[12px] text-[color:var(--muted)]">
+          <Loader2 className="w-3.5 h-3.5 animate-spin flex-shrink-0" />
+          Order is live on the book — waiting for a solver to fill it…
+        </div>
+      ) : (
+        <div className="flex items-center gap-2 flex-wrap">
+          <button
+            onClick={() => void sign()}
+            disabled={inFlight}
+            className="inline-flex items-center gap-1.5 text-[12px] font-medium px-3 py-1.5 max-lg:min-h-10 rounded-full border border-[var(--line-2)] text-[color:var(--muted)] hover:text-white hover:border-white disabled:opacity-50 transition-colors"
+            title="Sign this CoW order with your wallet and place it on the order book"
+          >
+            {inFlight ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <PenLine className="w-3.5 h-3.5" />}
+            {status === 'signing' ? 'Sign in wallet…' : status === 'placing' ? 'Placing order…' : status === 'error' ? 'Retry — sign & place order' : 'Sign & place order'}
+          </button>
+          {error && <span className="text-[12px] text-red-400">{error}</span>}
+        </div>
+      )}
     </div>
   )
 }
