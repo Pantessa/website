@@ -199,6 +199,24 @@
     display: flex; flex-direction: column;
     background: var(--hbg);
   }
+  /* Living blueprint layer: two dot grids panning in opposite diagonals, so
+     the black field reads as engineered paper that's quietly alive. Both
+     layers are compositor-only (background-position) and freeze under the
+     global reduced-motion guard. */
+  .heroweb__grid {
+    position: absolute; inset: 0; z-index: 0; pointer-events: none;
+    background-image:
+      radial-gradient(rgba(255,255,255,.055) 1px, transparent 1.4px),
+      radial-gradient(rgba(52,227,160,.05) 1px, transparent 1.4px);
+    background-size: 26px 26px, 96px 96px;
+    background-position: 0 0, 24px 40px;
+    animation: sw-gridpan 140s linear infinite;
+    -webkit-mask-image: radial-gradient(120% 90% at 60% 45%, #000 30%, transparent 78%);
+    mask-image: radial-gradient(120% 90% at 60% 45%, #000 30%, transparent 78%);
+  }
+  @keyframes sw-gridpan {
+    to { background-position: 520px 260px, -360px 232px; }
+  }
   .heroweb__particles { position: absolute; inset: 0; z-index: 0; overflow: hidden; pointer-events: none; }
   .pw-pt {
     position: absolute; top: 100%; border-radius: 50%; background: rgba(198,212,204,.6);
@@ -325,16 +343,45 @@
   /* ── SWITCHBOARD ROUTING VISUAL (sw-*) ──────────────
      Rides the .heroweb token scope. Story: request in (left) → operator core
      weighs candidate routes → patches the cheapest under cap → settles. */
-  .sw-inlet { stroke: rgba(255,255,255,.12); stroke-width: 1.4; stroke-dasharray: 2 7; }
-  .sw-edge { stroke: rgba(255,255,255,.07); stroke-width: 1; transition: stroke .2s, opacity .2s, stroke-width .2s; }
-  .sw-edge.is-capped { stroke: rgba(255,93,93,.16); stroke-dasharray: 3 6; }
+  .sw-inlet { stroke: rgba(255,255,255,.12); stroke-width: 1.4; stroke-dasharray: 2 7; animation: sw-dashdrift 2.8s linear infinite; }
+  @keyframes sw-dashdrift { to { stroke-dashoffset: -9; } } /* = dasharray 2+7 → seamless */
+  .sw-edge { stroke: rgba(255,255,255,.10); stroke-width: 1; stroke-linecap: round; transition: stroke .2s, opacity .2s, stroke-width .2s; }
+  .sw-edge.is-capped { stroke: rgba(255,93,93,.16); stroke-dasharray: 3 6; animation: none; }
+  /* glint twins — one tiny packet of light drifting core → node per edge.
+     The dash gap outruns the longest edge so at most one glint lives on a
+     line at a time; per-edge negative delays (inline) desync the fleet. */
+  .sw-glint {
+    stroke: var(--haccent); stroke-width: 1.4; stroke-linecap: round;
+    stroke-dasharray: 3 760; opacity: .45;
+    animation: sw-glintflow 9.5s linear infinite;
+  }
+  @keyframes sw-glintflow { to { stroke-dashoffset: -763; } }
+  /* etched node ring — dashed hairline in slow orbit around each MCP */
+  .pw-oring {
+    fill: none; stroke: rgba(255,255,255,.16); stroke-width: 0.8;
+    stroke-dasharray: 2 5.5;
+    transform-box: fill-box; transform-origin: center;
+    animation: sw-orbit 46s linear infinite;
+    transition: stroke .25s;
+  }
+  .sw-node.is-blocked .pw-oring { stroke: rgba(255,93,93,.22); }
+  .sw-node.is-cand .pw-oring { stroke: rgba(255,255,255,.45); }
+  .sw-node.is-picked .pw-oring, .sw-node.is-settle .pw-oring { stroke: color-mix(in oklch, var(--haccent) 70%, transparent); }
+  /* core orbit rings — counter-rotating etched hairlines */
+  .pw-orbit {
+    fill: none; stroke: rgba(52,227,160,.22); stroke-width: 0.9; stroke-dasharray: 2 6;
+    transform-box: fill-box; transform-origin: center;
+    animation: sw-orbit 30s linear infinite;
+  }
+  .pw-orbit--b { stroke: rgba(255,255,255,.10); stroke-dasharray: 1.5 8; animation: sw-orbit 52s linear infinite reverse; }
+  @keyframes sw-orbit { to { transform: rotate(360deg); } }
   .sw-edge.is-cand { stroke: rgba(255,255,255,.42); stroke-width: 1.4; }
   .sw-edge.is-pick { stroke: var(--haccent); stroke-width: 2; opacity: 1; }
   .sw-edge.is-overcap { stroke: var(--hred); stroke-width: 1.8; }
   .sw-edge.is-hot { stroke: var(--haccent); stroke-width: 1.8; opacity: 1; }
 
   .sw-node text { font-family: 'Geist Mono', ui-monospace, monospace; dominant-baseline: central; }
-  .sw-node .pw-body { fill: #0d1011; stroke: rgba(255,255,255,.22); stroke-width: 1.2; transition: stroke .22s, fill .22s; }
+  .sw-node .pw-body { fill: url(#swNodeBody); stroke: rgba(255,255,255,.26); stroke-width: 1.1; transition: stroke .22s, fill .22s; }
   .sw-node .pw-halo { fill: var(--haccent); opacity: 0; transform-box: fill-box; transform-origin: center; }
   .sw-node.is-blocked .pw-body { stroke: rgba(255,93,93,.55); fill: #160e0e; }
   .sw-node.is-blocked .pw-gly { fill: rgba(255,150,150,.85); }
@@ -1546,3 +1593,29 @@
       scroll-behavior: auto !important;
     }
   }
+
+  /* ── EXPLAIN-SECTION MOTION (B3 — blog motion language) ── */
+  /* Scroll reveal (components/Reveal.tsx): rise + fade on first view. The
+     hidden initial state only applies while scripting is enabled, so content
+     is never lost without JS; the global reduced-motion guard above collapses
+     the transition to instant. */
+  .swreveal { transition: opacity .6s cubic-bezier(.2, .7, .3, 1), transform .6s cubic-bezier(.2, .7, .3, 1); }
+  @media (scripting: enabled) {
+    .swreveal:not(.is-in) { opacity: 0; transform: translateY(18px); }
+  }
+
+  /* The route rail from the blog head: a hairline carrying one accent packet. */
+  .swrail { position: relative; height: 1px; margin-top: 34px; background: var(--line); }
+  .swrail::after {
+    content: ''; position: absolute; top: -1px; left: 0; height: 3px; width: 72px;
+    border-radius: 3px; background: linear-gradient(90deg, transparent, var(--accent));
+    animation: sw-rail 6s cubic-bezier(.45, 0, .55, 1) infinite;
+  }
+  @keyframes sw-rail { 0% { left: 0; } 50% { left: calc(100% - 72px); } 100% { left: 0; } }
+
+  /* Step cards: Reveal divs stand in as the grid cells, so they carry the
+     old .step surface; hover warms the cell + its number. */
+  .step { transition: background .2s; }
+  .step:hover { background: var(--surf-1); }
+  .step__n { transition: text-shadow .2s; }
+  .step:hover .step__n { text-shadow: 0 0 12px color-mix(in oklch, var(--accent) 55%, transparent); }

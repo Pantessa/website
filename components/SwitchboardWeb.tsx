@@ -317,8 +317,18 @@ export default function SwitchboardWeb({
 
   return (
     <>
+      {/* slow-panning dot-grid texture — the "living blueprint" layer under
+          the particle field. Compositor-only (background-position). */}
+      <div className="heroweb__grid" aria-hidden="true" />
       <div ref={particlesRef} className="heroweb__particles" aria-hidden="true" />
       <svg className="heroweb__net" viewBox="0 0 1440 900" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+        <defs>
+          {/* Etched node body: a whisper of center light instead of a flat fill. */}
+          <radialGradient id="swNodeBody" cx="50%" cy="42%" r="72%">
+            <stop offset="0%" stopColor="#161b1c" />
+            <stop offset="100%" stopColor="#0b0e0f" />
+          </radialGradient>
+        </defs>
         <g ref={netgRef} className="pw-g">
           {/* inlet rail — where plain-English requests arrive */}
           <line className="sw-inlet" x1={INLET_X} y1={250} x2={INLET_X} y2={610} />
@@ -335,6 +345,22 @@ export default function SwitchboardWeb({
               y2={y}
             />
           ))}
+          {/* glint twins: a tiny packet of light drifting core → node along
+              each routable edge, desynced per edge. Pure CSS dash animation. */}
+          {NODES.map(
+            ([name, , , price, x, y], i) =>
+              price <= CAP && (
+                <line
+                  key={`g-${name}`}
+                  className="sw-glint"
+                  x1={CORE.x}
+                  y1={CORE.y}
+                  x2={x}
+                  y2={y}
+                  style={{ animationDelay: `${(i * -1.9).toFixed(1)}s` }}
+                />
+              ),
+          )}
           {NODES.map(([name, glyph, , price, x, y, z], i) => {
             const r = 12 + 9 * z
             const nf = Math.round(11 + 3 * z)
@@ -350,6 +376,12 @@ export default function SwitchboardWeb({
                 transform={`translate(${x},${y})`}
               >
                 <circle className="pw-halo" r={r + 5} />
+                {/* etched outer ring — dashed hairline in slow orbit */}
+                <circle
+                  className="pw-oring"
+                  r={r + 4.5}
+                  style={{ animationDelay: `${(i * -3.3).toFixed(1)}s` }}
+                />
                 <circle className="pw-body" r={r} />
                 <text className="pw-gly" fontSize={Math.round(9 + 5 * z)}>
                   {glyph}
@@ -379,6 +411,9 @@ export default function SwitchboardWeb({
           {/* operator core — the switchboard */}
           <circle className="pw-hubring" cx={CORE.x} cy={CORE.y} r={18} />
           <circle className="pw-hubring pw-hubring--b" cx={CORE.x} cy={CORE.y} r={18} />
+          {/* etched orbit rings — counter-rotating dashed hairlines */}
+          <circle className="pw-orbit" cx={CORE.x} cy={CORE.y} r={36} />
+          <circle className="pw-orbit pw-orbit--b" cx={CORE.x} cy={CORE.y} r={52} />
           <circle className="pw-hubcore" cx={CORE.x} cy={CORE.y} r={21} />
           <circle className="pw-hubdot" cx={CORE.x} cy={CORE.y} r={6} />
           <text className="pw-hubname" x={CORE.x} y={CORE.y + 42}>

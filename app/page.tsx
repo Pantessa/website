@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import { SITE } from '@/lib/docs'
+import Reveal from '@/components/Reveal'
 import SwitchboardHero from '@/components/SwitchboardHero'
 import SwitchboardServers from '@/components/SwitchboardServers'
 import SwitchboardTry from '@/components/SwitchboardTry'
@@ -82,19 +83,24 @@ export default function HomePage() {
         {/* Aggregate analytics — we track every paying + earning agent */}
         <SwitchboardStats />
 
-        {/* How routing works */}
+        {/* How routing works — rises in with the blog-index motion language:
+            head first, then the steps stagger; the route rail carries one
+            accent packet under the head. */}
         <section className="explain">
-          <div className="explain__head">
-            <span className="explain__eyebrow mono">HOW THE OPERATOR WORKS</span>
-            <h2 className="explain__h2">You bring the question. Router brings the route.</h2>
-          </div>
+          <Reveal>
+            <div className="explain__head">
+              <span className="explain__eyebrow mono">HOW THE OPERATOR WORKS</span>
+              <h2 className="explain__h2">You bring the question. Router brings the route.</h2>
+            </div>
+            <div className="swrail" aria-hidden="true" />
+          </Reveal>
           <div className="explain__steps">
-            {STEPS.map((s) => (
-              <div className="step" key={s.n}>
+            {STEPS.map((s, i) => (
+              <Reveal key={s.n} delay={120 + i * 110} className="step">
                 <span className="step__n mono">{s.n}</span>
                 <h3 className="step__t">{s.t}</h3>
                 <p className="step__d">{s.d}</p>
-              </div>
+              </Reveal>
             ))}
           </div>
         </section>
