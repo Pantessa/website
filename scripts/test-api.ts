@@ -28,6 +28,8 @@ import { grantViolation, type GrantPolicy } from '../lib/spend-grant'
 import { routerPrompt, parseRouterDecision, selectInferenceProvider, routeMessage, shortlistEndpoints } from '../lib/router'
 import { buildSmartRequest, computeRating, type PlannableEndpoint } from '../lib/endpoint-planner'
 import { buildSignableArtifact, isActionIntent } from '../lib/transaction-layer'
+import { resolveToken, buildCowOrderTypedData, cowOrderAction, buildCowLimitOrder, describeCowOrder, describeAmount, formatAtoms, tokenDecimals, COW_APP_DATA_JSON, GPV2_SETTLEMENT, type CowQuoteResult } from '../lib/cow'
+import { keccak256, stringToBytes } from 'viem'
 import { isCacheable, routeCacheKey, getCached, setCached, clearRouteCache } from '../lib/route-cache'
 import { routeSavings } from '../lib/route-telemetry'
 
@@ -1515,6 +1517,82 @@ async function main() {
     'tx layer: isActionIntent flags actions, not reads',
     isActionIntent('vote For on this') && isActionIntent('swap 1 ETH to USDC') && !isActionIntent('what is the price of ETH'),
   )
+
+  // CoW swap → eip712-order artifact (A2). Pure builders; no network here — the
+  // live quote fetch is a manual/route smoke (needs the CoW API).
+  const cowFixture: CowQuoteResult = {
+    chainId: 8453,
+    from: '0x1111111111111111111111111111111111111111',
+    quoteId: 42,
+    order: {
+      sellToken: '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913',
+      buyToken: '0x4200000000000000000000000000000000000006',
+      receiver: '0x1111111111111111111111111111111111111111',
+      sellAmount: '100000000', buyAmount: '25000000000000000',
+      validTo: 1893456000, appData: '0x' + '0'.repeat(64), feeAmount: '250000',
+      kind: 'sell', partiallyFillable: false, sellTokenBalance: 'erc20', buyTokenBalance: 'erc20',
+    },
+  }
+  check('cow: resolveToken maps a Base symbol', resolveToken('USDC') === '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913')
+  check('cow: resolveToken passes 0x addresses through', resolveToken('0xABcd00000000000000000000000000000000abCD') === '0xabcd00000000000000000000000000000000abcd')
+  check('cow: resolveToken rejects nonsense', resolveToken('NOTATOKEN') === null)
+  const td = buildCowOrderTypedData(cowFixture)
+  check(
+    'cow: typed data has the GPv2 domain + Order type',
+    td.domain.name === 'Gnosis Protocol' && td.domain.version === 'v2' &&
+      td.domain.chainId === 8453 && td.domain.verifyingContract === GPV2_SETTLEMENT &&
+      td.primaryType === 'Order' && td.types.Order.length === 12,
+  )
+  check('cow: typed-data message carries the quote order', (td.message as { buyAmount: string }).buyAmount === '25000000000000000')
+  const cowArt = buildSignableArtifact(cowOrderAction({ ...cowFixture, appDataJson: COW_APP_DATA_JSON }, 'Swap 100 USDC → WETH'))
+  check(
+    'tx layer: sign_order → eip712-order artifact (CoW)',
+    cowArt?.kind === 'eip712-order' && cowArt.order.protocol === 'cow' &&
+      cowArt.order.submitUrl === 'https://api.cow.fi/base/api/v1/orders' && cowArt.order.chainId === 8453,
+  )
+  check(
+    'tx layer: eip712-order carries submission extras (appData JSON + quoteId)',
+    cowArt?.kind === 'eip712-order' && cowArt.order.appDataJson === COW_APP_DATA_JSON && cowArt.order.quoteId === 42,
+  )
+
+  // Human formatting — the approval summary must show token units, never atoms.
+  check('cow: formatAtoms 100000000 @6 → 100', formatAtoms('100000000', 6) === '100')
+  check('cow: formatAtoms trims trailing zeros', formatAtoms('63600000000000000', 18) === '0.0636')
+  check('cow: formatAtoms never renders tiny-nonzero as 0', formatAtoms('1', 18) === '<0.000001')
+  check('cow: tokenDecimals via symbol + address', tokenDecimals('usdc') === 6 && tokenDecimals('0x4200000000000000000000000000000000000006') === 18)
+  check('cow: describeAmount labels unknown tokens as atoms', describeAmount('123', '0x9999999999999999999999999999999999999999') === '123 atoms of 0x9999…9999')
+  const swapSummary = describeCowOrder(cowFixture, 'swap')
+  check('cow: describeCowOrder is human-readable (units, not atoms)', swapSummary === 'Swap 100 USDC → ~0.025 WETH via CoW on Base')
+
+  // Limit orders (pure builder — no quote, user names the price).
+  const limit = buildCowLimitOrder({
+    sellToken: 'WETH', buyToken: 'USDC',
+    sellAmount: '500000000000000000', buyAmountAtLeast: '1750000000',
+    from: '0x1111111111111111111111111111111111111111',
+  })
+  check(
+    'cow: limit order — fee 0, partially fillable, sell kind',
+    limit.order.feeAmount === '0' && limit.order.partiallyFillable === true && limit.order.kind === 'sell',
+  )
+  check(
+    'cow: limit order carries the named price + resolves tokens',
+    limit.order.buyAmount === '1750000000' && limit.order.sellToken === '0x4200000000000000000000000000000000000006',
+  )
+  check(
+    'cow: limit order appData hash matches the shipped JSON',
+    limit.order.appData === keccak256(stringToBytes(COW_APP_DATA_JSON)) && limit.appDataJson === COW_APP_DATA_JSON,
+  )
+  check('cow: limit order validTo is in the future', limit.order.validTo > Math.floor(Date.now() / 1000))
+  check(
+    'cow: limit order summary names the floor',
+    describeCowOrder(limit, 'limit') === 'Limit order via CoW on Base: sell 0.5 WETH for at least 1750 USDC',
+  )
+  check('cow: limit order rejects a same-token pair', (() => {
+    try { buildCowLimitOrder({ sellToken: 'ETH', buyToken: 'WETH', sellAmount: '1', buyAmountAtLeast: '1', from: '0x1111111111111111111111111111111111111111' }); return false }
+    catch { return true }
+  })())
+  const limitTd = buildCowOrderTypedData(limit)
+  check('cow: limit order signs with the same GPv2 domain', limitTd.domain.verifyingContract === GPV2_SETTLEMENT && limitTd.types.Order.length === 12)
 
   // The loop surfaces a tool-returned vote as a signable artifact (and stops).
   const artDec = await routeMessage({
