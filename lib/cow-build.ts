@@ -85,7 +85,7 @@ export async function buildGuardrailedOrder(params: GuardrailedOrderParams): Pro
   const grant = await getActiveGrant(params.from.toLowerCase())
   const policy = grant ? toPolicy(grant) : null
   const spentToday = grant ? await spentTodayUsd(grant.id) : 0
-  const { check: polCheck, violation } = policyCheck(valueUsd, policy, spentToday)
+  const { check: polCheck, violation } = policyCheck(valueUsd, policy, spentToday, COW_POLICY_HOST)
   checks.push(polCheck)
   const guardrails = buildReport(valueUsd, checks)
 

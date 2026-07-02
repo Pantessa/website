@@ -1,20 +1,27 @@
 // ─────────────────────────────────────────────────────────────────────────
-//  Safe-build guardrails (A3) — the checks between "order built" and "order
-//  offered for signature". This is the moat: a raw model can fetch a quote;
-//  Yeetful refuses to hand you a signable order that pays someone else, has
-//  an absurd fee, drifted from the market, or violates your spend policy.
-//
-//  CoW orders are OFF-CHAIN intents, so "simulate" here means: recipient/
-//  validity/fee sanity (pure), balance + vault-relayer allowance reads
-//  (on-chain), and the spend-policy gate (lib/spend-grant — reused, not
-//  forked). Levels: 'block' withholds the artifact; 'warn' ships it with a
-//  visible flag (e.g. unfunded wallet — the user may fund before settlement).
+//  CoW venue adapter for the guardrail core (lib/tx-guardrails — the
+//  venue-neutral Yeetful layer). This file owns ONLY what's CoW-specific:
+//  fee-share semantics, the VaultRelayer allowance + balance reads, the
+//  stable-leg USD valuation of a GPv2 order, and the policy host CoW spend
+//  is attributed to. Recipient/validity/policy checks come from the core so
+//  every venue enforces identical safety.
 // ─────────────────────────────────────────────────────────────────────────
 
 import { erc20Abi } from 'viem'
 import { publicClient } from '@/lib/auth'
-import { grantViolation, type GrantPolicy, type GrantViolation } from '@/lib/spend-grant'
+import {
+  buildReport,
+  policyCheck,
+  recipientCheck,
+  validityCheck,
+  type GuardrailCheck,
+  type GuardrailReport,
+} from '@/lib/tx-guardrails'
 import { formatAtoms, tokenLabel, type CowQuoteResult, type CowOrderParameters } from '@/lib/cow'
+
+// Re-export the core's types/builders so existing CoW call sites and tests
+// keep one import surface; new venues import lib/tx-guardrails directly.
+export { buildReport, policyCheck, type GuardrailCheck, type GuardrailReport }
 
 /** GPv2 VaultRelayer — the contract the sell token must be approved to.
  *  Same address on every CoW chain. */
@@ -24,21 +31,6 @@ export const COW_VAULT_RELAYER = '0xC92E8bdf79f0507f65a392b0ab4667716BFE0110'
  *  the grant allowlist gates. */
 export const COW_POLICY_HOST = 'api.cow.fi'
 
-export interface GuardrailCheck {
-  id: string
-  level: 'block' | 'warn'
-  ok: boolean
-  note: string
-}
-
-export interface GuardrailReport {
-  /** True when no block-level check failed — the artifact may be offered. */
-  ok: boolean
-  /** USD value of the order (stable-side heuristic); null when unpriceable. */
-  valueUsd: number | null
-  checks: GuardrailCheck[]
-}
-
 /** Base stables we can price at $1 face value, with decimals. */
 const STABLES: Record<string, number> = {
   '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913': 6, // USDC
@@ -46,9 +38,6 @@ const STABLES: Record<string, number> = {
   '0x50c5725949a6f0c72e6c4a641f24049a917db0cb': 18, // DAI
 }
 
-/** Longest validity we'll offer for signature (limit orders wait, but an
- *  unbounded signed order is a standing liability). */
-const MAX_VALID_SEC = 31 * 24 * 3600
 /** Fee sanity as a share of sellAmount: warn above 1%, block above 5%. */
 const FEE_WARN = 0.01
 const FEE_BLOCK = 0.05
@@ -71,39 +60,12 @@ export function orderValueUsd(order: CowOrderParameters, chainId = 8453): number
   return side(order.buyToken, order.buyAmount)
 }
 
-/** Pure checks — recipient, validity window, fee share. Deterministic and
- *  unit-tested; no network, no clock beyond `nowSec`. */
-export function pureChecks(quote: CowQuoteResult, from: string, nowSec = Math.floor(Date.now() / 1000)): GuardrailCheck[] {
-  const { order } = quote
-  const checks: GuardrailCheck[] = []
-
-  const recipientOk = order.receiver.toLowerCase() === from.toLowerCase()
-  checks.push({
-    id: 'recipient',
-    level: 'block',
-    ok: recipientOk,
-    note: recipientOk
-      ? 'Proceeds return to your wallet.'
-      : `Order pays ${order.receiver} — NOT the requesting wallet ${from}.`,
-  })
-
-  const notExpired = order.validTo > nowSec
-  const notForever = order.validTo <= nowSec + MAX_VALID_SEC
-  checks.push({
-    id: 'validity',
-    level: 'block',
-    ok: notExpired && notForever,
-    note: !notExpired
-      ? 'Order is already expired.'
-      : !notForever
-        ? `Order stays signable for more than ${MAX_VALID_SEC / 86400} days — refuse a standing liability.`
-        : `Valid for ${Math.round((order.validTo - nowSec) / 60)} min.`,
-  })
-
+/** CoW fee sanity — quotes carry a signed fee; limit orders sign fee 0. */
+function feeCheck(order: CowOrderParameters): GuardrailCheck {
   const sell = Number(order.sellAmount)
   const fee = Number(order.feeAmount || '0')
   const feeShare = sell > 0 ? fee / sell : 0
-  checks.push({
+  return {
     id: 'fee',
     level: feeShare > FEE_BLOCK ? 'block' : 'warn',
     ok: feeShare <= FEE_BLOCK ? feeShare <= FEE_WARN : false,
@@ -111,9 +73,13 @@ export function pureChecks(quote: CowQuoteResult, from: string, nowSec = Math.fl
       feeShare === 0
         ? 'No signed fee (limit order — fee comes from surplus).'
         : `Fee is ${(feeShare * 100).toFixed(2)}% of the sell amount${feeShare > FEE_BLOCK ? ' — too high, refusing' : feeShare > FEE_WARN ? ' — unusually high' : ''}.`,
-  })
+  }
+}
 
-  return checks
+/** Pure checks — venue-neutral recipient/validity from the core + CoW fee. */
+export function pureChecks(quote: CowQuoteResult, from: string, nowSec = Math.floor(Date.now() / 1000)): GuardrailCheck[] {
+  const { order } = quote
+  return [recipientCheck(order.receiver, from), validityCheck(order.validTo, nowSec), feeCheck(order)]
 }
 
 /** On-chain reads: does `from` hold the sell amount, and has it approved the
@@ -154,50 +120,4 @@ export async function chainChecks(quote: CowQuoteResult, from: string): Promise<
   } catch {
     return [{ id: 'chain-reads', level: 'warn', ok: true, note: `Couldn't read balance/allowance (RPC) — unchecked (${human(needed)} needed).` }]
   }
-}
-
-/** The spend-policy gate at the point of signing — the SAME gate chat
- *  payments go through (lib/spend-grant), pointed at the order's USD value.
- *  Block-level: an unpriceable order under an enabled policy is refused
- *  (we never bypass a policy because we couldn't price the trade). */
-export function policyCheck(
-  valueUsd: number | null,
-  policy: GrantPolicy | null,
-  spentTodayUsd: number,
-  spentTotalUsd = 0,
-): { check: GuardrailCheck; violation: GrantViolation | 'VALUE_UNKNOWN' | null } {
-  if (!policy) {
-    return { check: { id: 'policy', level: 'warn', ok: true, note: 'No spend policy on this wallet — order not gated.' }, violation: null }
-  }
-  if (valueUsd === null) {
-    if (!policy.spendPolicyEnabled) {
-      return { check: { id: 'policy', level: 'warn', ok: true, note: 'Spend policy is off; order value unpriced.' }, violation: null }
-    }
-    return {
-      check: {
-        id: 'policy',
-        level: 'block',
-        ok: false,
-        note: 'Spend policy is ON but the order has no stable leg to price — refusing rather than bypassing your caps.',
-      },
-      violation: 'VALUE_UNKNOWN',
-    }
-  }
-  const violation = grantViolation(policy, COW_POLICY_HOST, valueUsd, spentTodayUsd, spentTotalUsd)
-  return {
-    check: {
-      id: 'policy',
-      level: 'block',
-      ok: !violation,
-      note: violation
-        ? `Blocked by your spend policy: ${violation} ($${valueUsd.toFixed(2)} order).`
-        : `Within your spend policy ($${valueUsd.toFixed(2)} order).`,
-    },
-    violation,
-  }
-}
-
-/** Assemble the report. `ok` = no failed block-level check. */
-export function buildReport(valueUsd: number | null, checks: GuardrailCheck[]): GuardrailReport {
-  return { ok: checks.every((c) => c.ok || c.level !== 'block'), valueUsd, checks }
 }
