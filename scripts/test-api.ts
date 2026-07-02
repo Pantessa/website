@@ -1654,6 +1654,21 @@ async function main() {
   check('swap intent: pair without amount clarifies', parseSwapIntent('swap USDC for WETH').problem !== undefined)
   check('swap intent: plain question falls through', parseSwapIntent('what is a swap?').isSwap === false)
   check('swap intent: price question falls through', parseSwapIntent('what is the price of ETH').isSwap === false)
+  // Native swap tool: fires with NO service shortlisted (Nate 2026-07-02 —
+  // swap building is Yeetful's own tool, not gated on CoW being active).
+  // Deterministic paths only (clarify + connect-wallet); the live build is a
+  // manual smoke (real CoW quote).
+  const nativeClarify = await fetch(`${BASE}/api/chat`, {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ message: 'swap USDC for WETH', activeServers: [], walletAddress: '0x1111111111111111111111111111111111111111' }),
+  }).then((r) => r.json())
+  check('native swap: clarifies with zero services active', typeof nativeClarify.reply === 'string' && nativeClarify.reply.includes('amount and pair'))
+  const nativeNoWallet = await fetch(`${BASE}/api/chat`, {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ message: 'swap 2 USDC for WETH', activeServers: [] }),
+  }).then((r) => r.json())
+  check('native swap: asks to connect a wallet (not a Claude lecture)', typeof nativeNoWallet.reply === 'string' && /connect your wallet/i.test(nativeNoWallet.reply))
+
   check('atoms: humanToAtoms whole + fraction', humanToAtoms('100', 6) === '100000000' && humanToAtoms('0.5', 18) === '500000000000000000')
   check('atoms: humanToAtoms refuses excess precision', humanToAtoms('0.1234567', 6) === null)
   check('atoms: humanToAtoms refuses zero + junk', humanToAtoms('0', 6) === null && humanToAtoms('1e5', 6) === null)
