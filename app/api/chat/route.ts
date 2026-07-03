@@ -221,11 +221,34 @@ export async function POST(req: NextRequest) {
     // a planner guessing their args produced a failed call the model then
     // narrated as "Vote submitted!" (2026-07-03 live incident). Signables
     // break the loop; only an explicit human signature casts a vote.
-    const govIntent = detectGovernanceIntent(message)
-    if (govIntent && activeServers.some((s) => /snapshot/i.test(`${s.slug} ${s.name}`))) {
+    let govIntent = detectGovernanceIntent(message)
+    const snapshotActive = activeServers.some((s) => /snapshot/i.test(`${s.slug} ${s.name}`))
+    // Conversational follow-up: the last assistant turn offered a vote
+    // ("Ready to vote on **X**" / "vote For on **X**") and the user replies
+    // with just a choice — "For", "yes", "vote for that option", "option 2".
+    // Synthesize the full vote intent so the governance flow (choice buttons,
+    // user-wallet EIP-712) handles it — instead of the planner or the house
+    // model improvising over a bare "For".
+    let govMessage = message
+    const lastAssistant = snapshotActive ? ([...history].reverse().find((t) => t.role === 'assistant')?.content ?? '') : ''
+    if (!govIntent && snapshotActive && message.trim().length <= 60) {
+      const title = lastAssistant.match(/(?:Ready to vote on|vote (?:For|[A-Za-z]+) on) \*\*(.+?)\*\*/)?.[1]
+      const choice = message.match(/\b(for|against|abstain|yes|no|option\s+[1-9]|[1-9])\b/i)?.[1]
+      if (title && choice) {
+        govMessage = `vote ${choice} on "${title}"`
+        govIntent = detectGovernanceIntent(govMessage)
+      }
+    }
+    // "vote For on 1" after a list: the message names no DAO — inherit the
+    // space the previous turn was scoped to ("… in **Nate DAO**").
+    if (govIntent && !govIntent.spaceQuery) {
+      const sp = lastAssistant.match(/(?:proposals?|ballot|voting)[^*\n]{0,40}in \*\*(.+?)\*\*/i)?.[1] ?? lastAssistant.match(/open proposals? in \*\*(.+?)\*\*/i)?.[1]
+      if (sp) govIntent = { ...govIntent, spaceQuery: sp }
+    }
+    if (govIntent && snapshotActive) {
       let govSeq = 0
       const gov = await runGovernanceTurn({
-        message,
+        message: govMessage,
         intent: govIntent,
         walletAddress,
         emit: clientTurnId ? (e) => recordTraceLine(clientTurnId, govSeq++, e, walletAddress ? 'wallet' : 'burner') : () => {},
