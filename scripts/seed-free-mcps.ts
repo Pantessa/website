@@ -168,7 +168,9 @@ async function main() {
       data: s.tools.map((t, i) => ({
         serverId: server.id,
         method: 'POST',
-        url: `${s.base}#${t.name}`,
+        // Path style (`/mcp/<tool>`) — matches the x402 fleet's endpoint
+        // display; buildSmartRequest posts the tools/call to the /mcp base.
+        url: `${s.base}/${t.name}`,
         description: t.description,
         priceUsd: '0',
         scheme: 'exact',
