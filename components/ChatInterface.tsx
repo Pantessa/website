@@ -3,7 +3,7 @@
 import { analytics } from '@/lib/analytics'
 import { useState, useRef, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Send, Zap, Check, Plus, Loader2, Bot, User, PanelLeft, PanelLeftClose, PanelRight, Sparkles, Shield, ShieldOff } from 'lucide-react'
+import { Send, Zap, Check, Plus, Loader2, Bot, User, PanelLeft, PanelLeftClose, PanelRight, Sparkles } from 'lucide-react'
 import { useAccount, useSignTypedData } from 'wagmi'
 import { cn } from '@/lib/utils'
 import MessageReceipts from '@/components/MessageReceipts'
@@ -19,7 +19,6 @@ import { voteRequestOf, voteCandidatesOf, voteProposalOf } from '@/lib/snapshot-
 import { useYeetfulStore, type RouterTraceEvent } from '@/lib/store'
 import { EXAMPLE_PROMPTS } from '@/lib/examples'
 import SampleCallDemo from '@/components/SampleCallDemo'
-import { useSpendPolicy } from '@/components/SpendPolicyControls'
 import BrandIcon from '@/components/BrandIcon'
 import ShareButton from '@/components/ShareButton'
 
@@ -96,7 +95,6 @@ export default function ChatInterface() {
     mobileSidebarOpen,
     setMobileSidebarOpen,
     autoRouter,
-    setAutoRouter,
     pushRouterTrace,
     setRouterTrace,
     clearRouterTrace,
@@ -141,8 +139,6 @@ export default function ChatInterface() {
   const stripRef = useRef<HTMLDivElement>(null)
 
   const { address, isConnected } = useAccount()
-  // The master spend-policy switch, same account flag as the dashboard Overview.
-  const policy = useSpendPolicy(isConnected)
   const { signTypedDataAsync } = useSignTypedData()
 
   const currentChat = chats.find((c) => c.id === currentChatId)
@@ -513,63 +509,10 @@ export default function ChatInterface() {
           >
             {sidebarOpen ? <PanelLeftClose className="w-4 h-4" /> : <PanelLeft className="w-4 h-4" />}
           </button>
-          {/* Auto Router: when on, the engine picks agents per message. */}
-          <button
-            onClick={() => setAutoRouter(!autoRouter)}
-            aria-pressed={autoRouter}
-            title={
-              autoRouter
-                ? 'Auto Router on — Yeetful picks the best MCP for each message'
-                : 'Auto Router off — pick agents manually'
-            }
-            className={cn(
-              'flex-shrink-0 flex items-center gap-1.5 px-2.5 py-1 min-h-[40px] md:min-h-0 rounded-lg border transition-colors',
-              autoRouter
-                ? 'bg-[var(--accent)]/15 border-[var(--accent)]/60 text-white'
-                : 'bg-[var(--surf-1)] border-[var(--line)] text-[color:var(--muted)] hover:border-[var(--line-2)] hover:text-white'
-            )}
-          >
-            <Sparkles className="w-3.5 h-3.5 flex-shrink-0" style={autoRouter ? { color: 'var(--accent)' } : undefined} />
-            <span className="text-[11px] whitespace-nowrap font-medium">Auto Router · {autoRouter ? 'On' : 'Off'}</span>
-          </button>
-
-          {/* Spending policy master switch — same account flag as the dashboard
-              Overview. Off = unrestricted (any MCP, no caps). Only shows once a
-              signed-in grant resolves; hidden for guests. */}
-          {policy.available && (
-            <button
-              onClick={() => void policy.toggle(!policy.enabled)}
-              aria-pressed={policy.enabled}
-              disabled={policy.busy}
-              title={
-                policy.enabled
-                  ? 'Spending policy on — allowlist + budgets enforced before any payment'
-                  : 'Spending policy off — unrestricted: any MCP, no caps'
-              }
-              className={cn(
-                'flex-shrink-0 flex items-center gap-1.5 px-2.5 py-1 min-h-[40px] md:min-h-0 rounded-lg border transition-colors disabled:opacity-50',
-                policy.enabled
-                  ? 'bg-emerald-500/15 border-emerald-500/60 text-white'
-                  : 'bg-[var(--surf-1)] border-amber-500/40 text-amber-400 hover:text-white',
-              )}
-            >
-              {policy.busy ? (
-                <Loader2 className="w-3.5 h-3.5 flex-shrink-0 animate-spin" />
-              ) : policy.enabled ? (
-                <Shield className="w-3.5 h-3.5 flex-shrink-0" style={{ color: '#34d399' }} />
-              ) : (
-                <ShieldOff className="w-3.5 h-3.5 flex-shrink-0" />
-              )}
-              <span className="text-[11px] whitespace-nowrap font-medium">
-                Policy · {policy.enabled ? 'On' : 'Off'}
-              </span>
-            </button>
-          )}
-          {policy.available && !policy.enabled && (
-            <span className="flex-shrink-0 text-[11px] text-amber-400/90 whitespace-nowrap pl-0.5">
-              Unrestricted
-            </span>
-          )}
+          {/* Auto Router + the spending-policy master switch are DISABLED for
+              now — the toggles are hidden and the features behave as if they
+              never existed (Auto Router forced off in the store; policy never
+              read here). The wiring is kept for a later revival. */}
 
           {autoRouter ? (
             <span className="text-[11px] text-[color:var(--muted-2)] whitespace-nowrap pl-1">

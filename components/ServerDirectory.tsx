@@ -19,6 +19,9 @@ export default function ServerDirectory({ initialCategory = ALL }: { initialCate
   const [search, setSearch] = useState('')
   const [cat, setCat] = useState(initialCategory)
   const [onlyCallable, setOnlyCallable] = useState(false)
+  // Pricing filter: OFF (default) shows paid (x402-gated) agents; flip ON to
+  // show only the free (non-gated) MCPs. `gated === false` marks a free row.
+  const [freeOnly, setFreeOnly] = useState(false)
 
   useEffect(() => {
     fetch('/api/servers')
@@ -39,10 +42,13 @@ export default function ServerDirectory({ initialCategory = ALL }: { initialCate
       s.category.toLowerCase().includes(q)
     const mC = cat === ALL || s.category === cat
     const mCall = !onlyCallable || s.callable || s.autoCallable
-    return mS && mC && mCall
+    // Free view shows only non-gated rows; the default (paid) view hides them.
+    const mFree = freeOnly ? s.gated === false : s.gated !== false
+    return mS && mC && mCall && mFree
   })
 
   const callableCount = displayServers.filter((s) => s.callable || s.autoCallable).length
+  const freeCount = displayServers.filter((s) => s.gated === false).length
 
   return (
     <div className="dir" id="directory">
@@ -73,6 +79,25 @@ export default function ServerDirectory({ initialCategory = ALL }: { initialCate
             onChange={(e) => setSearch(e.target.value)}
           />
         </div>
+        {/* Paid ⇄ Free flip switch. Default OFF = paid (x402-gated) agents;
+            flip ON to show only the free MCPs. */}
+        <button
+          role="switch"
+          aria-checked={freeOnly}
+          aria-label="Show free agents only"
+          onClick={() => setFreeOnly((v) => !v)}
+          title={freeOnly ? 'Showing free MCPs — flip off for paid agents' : 'Showing paid agents — flip on for free MCPs'}
+          className="dir__pricing"
+        >
+          <span className={`dir__pricinglbl ${!freeOnly ? 'is-on' : ''}`}>Paid</span>
+          <span className="dir__pricingtrack" data-on={freeOnly || undefined}>
+            <span className="dir__pricingknob" />
+          </span>
+          <span className={`dir__pricinglbl ${freeOnly ? 'is-on' : ''}`}>
+            Free <span className="pill__n mono">{freeCount}</span>
+          </span>
+        </button>
+
         <div className="pills">
           {/* "Callable now" — surface the agents that work the moment you select
               them (wired or planner-auto-callable), so newcomers can try one. */}
