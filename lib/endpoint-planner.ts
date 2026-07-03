@@ -212,7 +212,11 @@ export async function loadPlannableEndpoints(slugs: string[]): Promise<Plannable
     // Only exact, known prices within the ceiling — "upto" schemes can charge
     // far more than the listed minimum, so they stay out of auto-planning.
     if (r.scheme === 'upto') continue
-    if (!Number.isFinite(price) || price <= 0 || price > SMART_MAX_PER_CALL_USD) continue
+    // price 0 is allowed ONLY when explicitly published as "0" (our free,
+    // non-gated MCPs) — a null/absent price also numbers to 0 and must NOT
+    // silently become plannable.
+    const isExplicitlyFree = r.priceUsd === '0'
+    if (!Number.isFinite(price) || (price <= 0 && !isExplicitlyFree) || price > SMART_MAX_PER_CALL_USD) continue
     // Curated enrichment (description + declared params) for thin high-value
     // endpoints, applied first so the filter/shape/menu all see the richer form.
     const hinted = applyHint(r.url, r.description, (r.parameters as EndpointParam[] | null) ?? [])
@@ -445,6 +449,37 @@ export interface SmartRequest {
   method: string
   headers: Record<string, string>
   body?: string
+  /** The call is an MCP tools/call — parse the JSON-RPC/SSE envelope, not raw JSON. */
+  mcp?: boolean
+}
+
+/**
+ * MCP-tool endpoint convention: a row whose url is `<base>/mcp#<toolName>` is
+ * one TOOL on an MCP server (our free, non-gated MCPs are seeded this way).
+ * The fragment names the tool; the request is a JSON-RPC tools/call POST to
+ * `<base>/mcp` with the planner's params as `arguments`.
+ */
+function mcpToolOf(url: string): { base: string; tool: string } | null {
+  const m = url.match(/^(.+\/mcp)#([A-Za-z0-9_]+)$/)
+  return m ? { base: m[1], tool: m[2] } : null
+}
+
+/**
+ * Local-dev override for free MCP hosts — the shared Neon DB carries the PROD
+ * urls, so point specific hosts elsewhere via env (never set in prod):
+ * FREE_MCP_URL_OVERRIDES='{"uniswap-free.yeetful.com":"http://localhost:3261"}'
+ */
+function overrideFreeMcpBase(base: string): string {
+  const raw = process.env.FREE_MCP_URL_OVERRIDES
+  if (!raw) return base
+  try {
+    const map = JSON.parse(raw) as Record<string, string>
+    const u = new URL(base)
+    const target = map[u.host]
+    return target ? `${target.replace(/\/$/, '')}${u.pathname}` : base
+  } catch {
+    return base
+  }
 }
 
 /**
@@ -462,6 +497,24 @@ export function buildSmartRequest(
   for (const p of ep.parameters) {
     if (p.required && params[p.name] === undefined) {
       return { error: `missing required param "${p.name}"` }
+    }
+  }
+
+  // MCP tool endpoints (url = <base>/mcp#<tool>): one JSON-RPC tools/call POST,
+  // params become the tool arguments verbatim. Free MCPs never 402, so the
+  // paid-fetch wrapper passes these through without payment.
+  const mcpTool = mcpToolOf(ep.url)
+  if (mcpTool) {
+    const args: Record<string, unknown> = {}
+    for (const [k, v] of Object.entries(params)) if (v !== undefined) args[k] = v
+    return {
+      request: {
+        url: overrideFreeMcpBase(mcpTool.base),
+        method: 'POST',
+        headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream' },
+        body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: mcpTool.tool, arguments: args } }),
+        mcp: true,
+      },
     }
   }
 

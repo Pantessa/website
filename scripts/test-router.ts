@@ -9,7 +9,7 @@
  *   npm run test:router
  */
 import { shortlistEndpoints, capabilityOf, dedupeByCapability } from '../lib/router'
-import { deriveDescription, type PlannableEndpoint } from '../lib/endpoint-planner'
+import { deriveDescription, buildSmartRequest, type PlannableEndpoint } from '../lib/endpoint-planner'
 import { detectGovernanceIntent, mapChoiceToIndex, buildVoteTypedData, extractSpaceQuery } from '../lib/governance'
 import { coerceForSigning, describeTypedData } from '../lib/eip712'
 
@@ -132,6 +132,39 @@ check('vote-type: weighted/quadratic → string JSON', choiceType(weightedTd) ==
 // The signer coerces uint32[] elements to BigInt; the weighted string stays a string.
 check('vote-type: uint32[] coerces to BigInt[]', Array.isArray(coerceForSigning(approvalTd).message.choice) && (coerceForSigning(approvalTd).message.choice as bigint[])[0] === BigInt(1))
 check('vote-type: weighted string not coerced', typeof coerceForSigning(weightedTd).message.choice === 'string')
+
+// ── Free MCP tool endpoints (url = <base>/mcp#<tool>) → JSON-RPC tools/call ──
+console.log('\nfree MCP tool requests (buildSmartRequest)')
+const mcpEp: PlannableEndpoint = {
+  id: 'uni-quote',
+  serverSlug: 'uniswap-free',
+  serverName: 'Uniswap (Free)',
+  method: 'POST',
+  url: 'https://uniswap-free.yeetful.com/mcp#quote',
+  description: 'Live exact-in swap quote on Base',
+  priceUsd: '0',
+  parameters: [
+    { group: 'body', name: 'sellToken', required: true },
+    { group: 'body', name: 'buyToken', required: true },
+    { group: 'body', name: 'amount', required: true },
+  ],
+}
+const mcpBuilt = buildSmartRequest(mcpEp, { sellToken: 'USDC', buyToken: 'WETH', amount: '100' })
+if ('error' in mcpBuilt) {
+  check('mcp: builds tools/call', false, mcpBuilt.error)
+} else {
+  const body = JSON.parse(mcpBuilt.request.body!) as { method: string; params: { name: string; arguments: Record<string, unknown> } }
+  check('mcp: POSTs to the /mcp base (fragment stripped)', mcpBuilt.request.url === 'https://uniswap-free.yeetful.com/mcp' && mcpBuilt.request.method === 'POST')
+  check('mcp: request flagged mcp for envelope parsing', mcpBuilt.request.mcp === true)
+  check('mcp: jsonrpc tools/call with tool name from fragment', body.method === 'tools/call' && body.params.name === 'quote')
+  check('mcp: planner params become tool arguments', body.params.arguments.sellToken === 'USDC' && body.params.arguments.amount === '100')
+  check('mcp: accepts SSE responses', mcpBuilt.request.headers.accept.includes('text/event-stream'))
+}
+const mcpMissing = buildSmartRequest(mcpEp, { sellToken: 'USDC' })
+check('mcp: refuses on missing required param', 'error' in mcpMissing)
+const plainEp = { ...mcpEp, url: 'https://api.example.com/v1/quote', parameters: [{ group: 'body' as const, name: 'q', required: false }] }
+const plainBuilt = buildSmartRequest(plainEp, { q: 'x' })
+check('mcp: non-fragment urls unaffected (plain HTTP path)', !('error' in plainBuilt) && plainBuilt.request.mcp === undefined)
 
 console.log(`\n${pass} passed, ${fail} failed\n`)
 process.exit(fail ? 1 : 0)

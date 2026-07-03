@@ -78,7 +78,13 @@ export default function McpServerCard({ server }: McpServerCardProps) {
 
       <div className="card__foot">
         <div className="card__badges">
-          <span className="badge badge--price mono">${server.priceUsd}/call</span>
+          {server.gated === false ? (
+            <span className="badge badge--price mono" style={{ color: ACCENT, borderColor: ACCENT }} title="No payment gate — free MCP by Yeetful, rate-limited">
+              FREE
+            </span>
+          ) : (
+            <span className="badge badge--price mono">${server.priceUsd}/call</span>
+          )}
           {server.reputation && server.reputation.settled > 0 && (
             <span
               className="badge mono"

@@ -23,6 +23,8 @@ export interface McpServer {
   priceUsd?: string | null
   networks?: string[]
   callable?: boolean
+  /** false = FREE (non-x402) MCP — no payment gate, rate-limited. Default true (x402-gated). */
+  gated?: boolean
   /** Auto-callable via the endpoint planner (has ≥1 plannable endpoint), even
    *  without being hand-wired. Derived in /api/servers. */
   autoCallable?: boolean

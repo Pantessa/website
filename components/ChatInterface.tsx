@@ -104,12 +104,24 @@ export default function ChatInterface() {
   } = useYeetfulStore()
 
   // Toggle an agent for this chat; persist the set to the open chat (and DB).
+  // Turning one ON pins it to the front of the strip, so scroll home to show
+  // it landing there (a chip toggled far down the catalog would otherwise
+  // slide out of view).
   const handleToggleServer = (id: string) => {
-    const next = activeServerIds.includes(id)
-      ? activeServerIds.filter((x) => x !== id)
-      : [...activeServerIds, id]
+    const activating = !activeServerIds.includes(id)
+    const next = activating ? [...activeServerIds, id] : activeServerIds.filter((x) => x !== id)
     setActiveServerIds(next)
     if (currentChatId) updateChatServers(currentChatId, next)
+    const strip = stripRef.current
+    if (activating && strip && strip.scrollLeft > 0) {
+      const from = strip.scrollLeft
+      strip.scrollTo({ left: 0, behavior: 'smooth' })
+      // Smooth scrolling is a no-op under reduced motion in some browsers —
+      // snap home if it hasn't moved.
+      window.setTimeout(() => {
+        if (strip.scrollLeft >= from) strip.scrollLeft = 0
+      }, 300)
+    }
   }
 
   const [input, setInput] = useState('')
@@ -125,6 +137,7 @@ export default function ChatInterface() {
   } | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const stripRef = useRef<HTMLDivElement>(null)
 
   const { address, isConnected } = useAccount()
   // The master spend-policy switch, same account flag as the dashboard Overview.
@@ -133,6 +146,13 @@ export default function ChatInterface() {
 
   const currentChat = chats.find((c) => c.id === currentChatId)
   const activeServers = servers.filter((s) => activeServerIds.includes(s.id))
+  // Connected agents render first in the chip strip (in the order they were
+  // toggled on) so the chat always shows what it's wired to without scrolling
+  // the whole catalog; the rest keep catalog order.
+  const connectedServers = activeServerIds
+    .map((id) => servers.find((s) => s.id === id))
+    .filter((s): s is (typeof servers)[number] => s !== undefined)
+  const orderedServers = [...connectedServers, ...servers.filter((s) => !activeServerIds.includes(s.id))]
 
   // "What can I do?" example: prefill the input and toggle the mapped agent on
   // (when it's in the live catalog). We prefill rather than auto-send so the
@@ -449,7 +469,7 @@ export default function ChatInterface() {
     <div className="flex flex-col h-full">
       {/* Toolbar: sidebar toggle + agent picker (toggle x402 MCPs from chat) */}
       <div className="flex-shrink-0 px-3 py-2.5 border-b border-[var(--line)] bg-black/40 flex items-center gap-2">
-        <div className="flex items-center gap-2 overflow-x-auto scrollbar-none flex-1 min-w-0">
+        <div ref={stripRef} className="flex items-center gap-2 overflow-x-auto scrollbar-none flex-1 min-w-0">
           <button
             onClick={() =>
               window.matchMedia('(max-width: 1023px)').matches
@@ -529,30 +549,36 @@ export default function ChatInterface() {
               <span className="text-[11px] text-[color:var(--muted-2)] whitespace-nowrap font-medium mono pl-1">
                 AGENTS · {activeServers.length}
               </span>
-              {servers.map((server) => {
+              {orderedServers.map((server, i) => {
                 const active = activeServerIds.includes(server.id)
+                // Thin rule between the connected group and the catalog.
+                const divider = connectedServers.length > 0 && i === connectedServers.length
                 return (
-                  <button
-                    key={server.id}
-                    onClick={() => handleToggleServer(server.id)}
-                    aria-pressed={active}
-                    className={cn(
-                      'flex-shrink-0 flex items-center gap-1.5 px-2.5 py-1 min-h-[40px] md:min-h-0 rounded-lg border transition-colors',
-                      active
-                        ? 'bg-[var(--surf-2)] border-white/40 text-white'
-                        : 'bg-[var(--surf-1)] border-[var(--line)] text-[color:var(--muted)] hover:border-[var(--line-2)] hover:text-white'
-                    )}
-                  >
-                    <span className="w-3.5 h-3.5 grid place-items-center opacity-90">
-                      <BrandIcon server={server} size={13} />
-                    </span>
-                    <span className="text-[11px] whitespace-nowrap">{server.name}</span>
-                    {active ? (
-                      <Check className="w-2.5 h-2.5 flex-shrink-0" strokeWidth={3} style={{ color: 'var(--accent)' }} />
-                    ) : (
-                      <Plus className="w-2.5 h-2.5 flex-shrink-0 opacity-70" strokeWidth={2.5} />
-                    )}
-                  </button>
+                  <div key={server.id} className="flex-shrink-0 flex items-center gap-2">
+                    {divider && <span aria-hidden className="w-px h-5 bg-[var(--line-2)]" />}
+                    <motion.button
+                      layout="position"
+                      transition={{ layout: { duration: 0.25, ease: 'easeOut' } }}
+                      onClick={() => handleToggleServer(server.id)}
+                      aria-pressed={active}
+                      className={cn(
+                        'flex-shrink-0 flex items-center gap-1.5 px-2.5 py-1 min-h-[40px] md:min-h-0 rounded-lg border transition-colors',
+                        active
+                          ? 'bg-[var(--surf-2)] border-white/40 text-white'
+                          : 'bg-[var(--surf-1)] border-[var(--line)] text-[color:var(--muted)] hover:border-[var(--line-2)] hover:text-white'
+                      )}
+                    >
+                      <span className="w-3.5 h-3.5 grid place-items-center opacity-90">
+                        <BrandIcon server={server} size={13} />
+                      </span>
+                      <span className="text-[11px] whitespace-nowrap">{server.name}</span>
+                      {active ? (
+                        <Check className="w-2.5 h-2.5 flex-shrink-0" strokeWidth={3} style={{ color: 'var(--accent)' }} />
+                      ) : (
+                        <Plus className="w-2.5 h-2.5 flex-shrink-0 opacity-70" strokeWidth={2.5} />
+                      )}
+                    </motion.button>
+                  </div>
                 )
               })}
             </>

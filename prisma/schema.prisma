@@ -27,6 +27,10 @@ model McpServer {
   priceUsd String?  @map("price_usd") // min price per call, e.g. "0.001"
   networks String[] // e.g. ["Base","Solana"] or ["eip155:8453"]
 
+  // false = FREE (non-x402) MCP — no payment gate at the endpoint, calls skip
+  // the 402 handshake entirely (still policy-gated + traced + ledgered at $0).
+  gated Boolean @default(true)
+
   // x402 call wiring — only set for callable (verified) services
   callable   Boolean @default(false)
   endpoint   String?
