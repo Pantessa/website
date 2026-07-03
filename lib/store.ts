@@ -146,6 +146,8 @@ interface YeetfulStore {
   setAutoRouter: (on: boolean) => void
   routerTrace: RouterTraceEvent[]
   pushRouterTrace: (event: RouterTraceEvent) => void
+  /** Replace the whole trace (manual-mode polling re-reads the turn). */
+  setRouterTrace: (events: RouterTraceEvent[]) => void
   clearRouterTrace: () => void
   /** Engine-window visibility (the live routing terminal). Persisted. */
   engineWindowOpen: boolean
@@ -250,6 +252,7 @@ export const useYeetfulStore = create<YeetfulStore>()(
       setAutoRouter: (on) => set({ autoRouter: on }),
       routerTrace: [],
       pushRouterTrace: (event) => set((s) => ({ routerTrace: [...s.routerTrace, event] })),
+      setRouterTrace: (events) => set({ routerTrace: events }),
       clearRouterTrace: () => set({ routerTrace: [] }),
       engineWindowOpen: false,
       setEngineWindowOpen: (open) => set({ engineWindowOpen: open }),

@@ -1,21 +1,25 @@
 'use client'
 
-import { Terminal, X, PanelRightOpen } from 'lucide-react'
+import { useState } from 'react'
+import { Terminal, X, PanelRightOpen, Copy, Check } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useYeetfulStore, type RouterTraceEvent } from '@/lib/store'
 import RouteTraceTerminal from '@/components/RouteTraceTerminal'
 
 /**
- * The Auto-Router engine window — a terminal-style panel that renders the
- * routing engine's live reasoning trace (lib/store routerTrace, fed by the SSE
- * stream in ChatInterface.runAutoRouter). Shows the engine analyze the question,
- * shortlist MCPs, score/select an endpoint, pay, and settle — line by line, in
- * real time. Toggle open/closed at will; only present when Auto Router is on.
+ * The routing engine window — a terminal-style panel that renders the router's
+ * live reasoning trace (lib/store routerTrace). Fed two ways: the Auto-Router
+ * SSE stream (ChatInterface.runAutoRouter), or — in MANUAL mode — polling the
+ * turn's server-side trace (/api/chat/trace, recorded by the chat route).
+ * Shows analyze → select → tool/MCP calls → pay → settle, line by line, live.
+ * The Copy button exports the whole trace as text for pasting into a debug
+ * report.
  */
 export default function RouterEngineWindow() {
   const { autoRouter, routerTrace, engineWindowOpen, setEngineWindowOpen } = useYeetfulStore()
 
-  if (!autoRouter) return null
+  // Present when Auto Router is on, OR when a manual turn has produced trace.
+  if (!autoRouter && routerTrace.length === 0) return null
 
   const close = () => setEngineWindowOpen(false)
 
@@ -61,9 +65,22 @@ export default function RouterEngineWindow() {
 }
 
 function EnginePanel({ trace, onClose }: { trace: RouterTraceEvent[]; onClose: () => void }) {
+  const [copied, setCopied] = useState(false)
   // Running tally for the header (settled calls + spend so far this turn).
   const settled = trace.filter((e) => e.type === 'receipt' && e.receipt.ok)
   const spent = settled.reduce((sum, e) => sum + (Number((e as Extract<RouterTraceEvent, { type: 'receipt' }>).receipt.priceUsd) || 0), 0)
+
+  // One-click export: the whole trace as JSON-lines, paste-ready for a bug report.
+  const copyTrace = () => {
+    const text = trace.map((e) => JSON.stringify(e)).join('\n')
+    navigator.clipboard
+      .writeText(text)
+      .then(() => {
+        setCopied(true)
+        setTimeout(() => setCopied(false), 1600)
+      })
+      .catch(() => {})
+  }
 
   return (
     <div className="flex flex-col h-full min-w-0">
@@ -73,6 +90,15 @@ function EnginePanel({ trace, onClose }: { trace: RouterTraceEvent[]; onClose: (
         <span className="ml-auto text-[10px] text-[color:var(--muted-2)] mono whitespace-nowrap">
           {settled.length} call{settled.length === 1 ? '' : 's'} · ${spent.toFixed(3)}
         </span>
+        <button
+          onClick={copyTrace}
+          disabled={trace.length === 0}
+          aria-label="Copy trace"
+          title="Copy the full trace (paste it into a bug report)"
+          className="flex-shrink-0 w-7 h-7 grid place-items-center rounded-md text-[color:var(--muted)] hover:text-white hover:bg-white/5 transition-colors disabled:opacity-40"
+        >
+          {copied ? <Check className="w-3.5 h-3.5" style={{ color: 'var(--accent)' }} /> : <Copy className="w-3.5 h-3.5" />}
+        </button>
         <button
           onClick={onClose}
           aria-label="Close engine window"
