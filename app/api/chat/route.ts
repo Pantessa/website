@@ -208,6 +208,26 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // ── Governance LIST intent (manual mode) ──────────────────────────────────
+    // "are there any open proposals on Nate DAO?" needs NAME → SPACE-ID
+    // resolution (Nate DAO → nategeier.dcl.eth) — the endpoint planner can't
+    // invent the id, so it queried literally and found nothing. The Auto-Router
+    // already routes this through runGovernanceTurn (resolve_space → free hub
+    // reads); manual mode now does too whenever ANY snapshot service is active
+    // — including the free, non-gated one. Free end to end; synthesis via the
+    // house model. Votes keep their existing paths.
+    const govIntent = detectGovernanceIntent(message)
+    if (govIntent?.kind === 'list' && activeServers.some((s) => /snapshot/i.test(`${s.slug} ${s.name}`))) {
+      const gov = await runGovernanceTurn({
+        message,
+        intent: govIntent,
+        walletAddress,
+        emit: () => {},
+        synthesize: (p) => planViaAnthropic(p),
+      })
+      return NextResponse.json({ reply: gov.reply })
+    }
+
     // ── Swap intent: Yeetful-NATIVE transaction building ──────────────────────
     // Swap building is a first-party capability — the core product — not an
     // MCP the user must shortlist (Nate, 2026-07-02: "pull the swap tools out
