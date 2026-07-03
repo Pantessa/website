@@ -3,18 +3,20 @@ import prisma from '@/lib/db'
 import Footer from '@/components/Footer'
 import { computeReputation } from '@/lib/reputation'
 import { getHealthByService } from '@/lib/health'
+import { getYeetfulToolBenchmarks } from '@/lib/tool-benchmarks'
+import ToolBenchmarks from '@/components/ToolBenchmarks'
 import LeaderboardRow, { type LeaderboardRowData } from '@/components/LeaderboardRow'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
 export const metadata: Metadata = {
-  title: 'MCP reputation leaderboard · Yeetful',
+  title: 'Benchmarks · Yeetful',
   description:
-    'The most reputable x402 MCP services on Yeetful — ranked by reliability, liveness, speed, adoption, value, and user ratings from real paid calls.',
+    "How Yeetful's own routing-engine tools are performing — transaction building, governance, and the hosted MCPs — graded on real calls, plus the full x402 MCP reputation ranking.",
   openGraph: {
-    title: 'MCP reputation leaderboard — Yeetful',
-    description: 'Top x402 MCP services ranked by an aggregate reputation score from real paid calls.',
+    title: 'Benchmarks — Yeetful',
+    description: "Yeetful's native tools benchmarked on real calls, alongside the x402 MCP reputation ranking.",
     type: 'website',
   },
 }
@@ -29,8 +31,8 @@ async function getServers() {
   }
 }
 
-export default async function LeaderboardPage() {
-  const servers = await getServers()
+export default async function BenchmarksPage() {
+  const [servers, tools] = await Promise.all([getServers(), getYeetfulToolBenchmarks()])
   const [repMap, healthMap] = await Promise.all([
     computeReputation(servers.map((s) => ({ slug: s.slug, name: s.name, category: s.category, priceUsd: s.priceUsd }))),
     getHealthByService(),
@@ -59,17 +61,37 @@ export default async function LeaderboardPage() {
     <>
       <main className="x-main x-main--fluid">
         <header className="hero" style={{ paddingBottom: 24 }}>
-          <p className="hero__eyebrow">MCP REPUTATION</p>
+          <p className="hero__eyebrow">BENCHMARKS</p>
           <h1 className="hero__h1 hero__h1--sm">
-            The most <em className="hero__em">trusted</em> agents.
+            Are the tools <em className="hero__em">getting the job done?</em>
           </h1>
           <p className="hero__sub">
-            Every x402 MCP, graded A–F from real paid calls — reliability, liveness, speed, adoption, value, and
-            user ratings, blended into one score. The <strong>Live</strong> column is a separate free x402 liveness
-            probe (reachability per endpoint) — expand any row to see each endpoint green or red. Health shows what&apos;s
-            up; the grade is earned from real paid calls.
+            Yeetful&apos;s own routing-engine tools — transaction building, governance, and the hosted MCPs — graded on
+            real calls: success rate, failures, latency, and live incidents. No fabricated numbers; an untested tool
+            reads <strong>Not tested yet</strong>, never a fake green. Below, the full x402 directory ranked by earned
+            reputation.
           </p>
         </header>
+
+        {tools.length > 0 ? (
+          <>
+            <div className="flex items-baseline justify-between gap-3 mb-3">
+              <h2 className="text-[15px] font-medium">Yeetful native tools</h2>
+              <span className="mono text-[11px] text-[color:var(--muted-2)]">{tools.length} tools · 30-day window</span>
+            </div>
+            <ToolBenchmarks tools={tools} />
+          </>
+        ) : null}
+
+        <div className="flex items-baseline justify-between gap-3 mb-3">
+          <h2 className="text-[15px] font-medium">MCP reputation</h2>
+          <span className="mono text-[11px] text-[color:var(--muted-2)]">graded A–F from real paid calls</span>
+        </div>
+        <p className="text-[13px] text-[color:var(--muted)] mb-4 max-w-[70ch]">
+          Every x402 MCP, graded A–F — reliability, liveness, speed, adoption, value, and user ratings, blended into one
+          score. The <strong>Live</strong> column is a separate free x402 liveness probe (reachability per endpoint) —
+          expand any row to see each endpoint green or red.
+        </p>
 
         <div className="overflow-x-auto -mx-1 px-1">
           <table className="w-full border-collapse text-[13px] min-w-[760px]">

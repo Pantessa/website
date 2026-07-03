@@ -61,10 +61,20 @@ export default function SendTxButton({ tx, summary }: { tx: EvmTxRequest; summar
       })
       setHash(txHash)
       setStatus('broadcast')
-      const receipt = await publicClient?.waitForTransactionReceipt({ hash: txHash })
+      // Generous window + retries: smart-wallet bundlers (Coinbase) add
+      // seconds between hash issuance and mining — the default gave up on a
+      // tx that CONFIRMED moments later (2026-07-03, Nate's approve).
+      const receipt = await publicClient?.waitForTransactionReceipt({ hash: txHash, timeout: 120_000, retryCount: 8 })
       setStatus(receipt?.status === 'success' ? 'confirmed' : 'reverted')
     } catch (e) {
       const msg = e instanceof Error ? e.message.split('\n')[0] : 'Transaction failed.'
+      if (/timed out while waiting/i.test(msg)) {
+        // A wait timeout is NOT a failure — the tx is broadcast and usually
+        // mines fine. Don't paint it red; point at the explorer instead.
+        setError('Still confirming — the transaction is broadcast. Check the explorer link; once it confirms, send your message again to continue.')
+        setStatus('broadcast')
+        return
+      }
       setError(
         /rejected|denied/i.test(msg)
           ? 'Rejected in the wallet — nothing was sent. (If you didn’t cancel: check the wallet is on Base.)'

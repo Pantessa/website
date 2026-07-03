@@ -11,7 +11,12 @@ const nextConfig: NextConfig = {
   // /developers folded into /docs (the grand entry). Permanent redirect keeps
   // any inbound/external links alive.
   async redirects() {
-    return [{ source: '/developers', destination: '/docs', permanent: true }]
+    return [
+      { source: '/developers', destination: '/docs', permanent: true },
+      // Leaderboard was renamed to Benchmarks (adds the first-party tool
+      // benchmarks section). Keep inbound/external links alive.
+      { source: '/leaderboard', destination: '/benchmarks', permanent: true },
+    ]
   },
   // Design system lives as static files in public/design-system/. Next doesn't
   // auto-resolve a directory index, so serve the overview at the clean URL.
