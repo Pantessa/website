@@ -229,13 +229,20 @@ export async function POST(req: NextRequest) {
       return await prepareSwapTurn(swapIntent, walletAddress, venue)
     }
 
-    // Need a live inference provider to phrase an answer.
-    if (!inference) {
+    // Need an inference provider to phrase an answer. With none selected, fall
+    // back to the HOUSE model (direct Anthropic, same key as the planner) so
+    // free-MCP turns work end-to-end with zero USDC — instead of refusing.
+    let synthesizer = inference
+    if (!synthesizer) {
       const picked = activeServers.find((s) => s.kind === 'inference')
-      const hint = picked
-        ? `“${picked.name}” isn't wired for live x402 yet. Try **Yeetful · Claude**, **ChatGPT**, **DeepSeek**, or **Google Gemini** — they're live.`
-        : 'Add an **Inference** agent (e.g. **Yeetful · Claude** or **ChatGPT**) so I can answer.'
-      return NextResponse.json({ reply: `⚡ ${hint}` })
+      if (!picked && process.env.ANTHROPIC_API_KEY) {
+        synthesizer = HOUSE_INFERENCE
+      } else {
+        const hint = picked
+          ? `“${picked.name}” isn't wired for live x402 yet. Try **Yeetful · Claude**, **ChatGPT**, **DeepSeek**, or **Google Gemini** — they're live.`
+          : 'Add an **Inference** agent (e.g. **Yeetful · Claude** or **ChatGPT**) so I can answer.'
+        return NextResponse.json({ reply: `⚡ ${hint}` })
+      }
     }
 
     // Auto-callable endpoints for selected services that aren't hand-wired.
@@ -243,6 +250,9 @@ export async function POST(req: NextRequest) {
     // smart calls need the burner even in wallet mode. Every reason a service
     // can't be auto-called lands in `notes` so the reply can say WHY.
     const notes: string[] = []
+    if (isHouseInference(synthesizer)) {
+      notes.push('No inference agent selected — the answer was written by Yeetful’s house model (free). Add **Yeetful · Claude** or **ChatGPT** for a paid, receipted engine.')
+    }
     let smart: PlannableEndpoint[] = []
     if (listedOnly.length > 0) {
       if (!hasAgentWallet()) {
@@ -265,12 +275,14 @@ export async function POST(req: NextRequest) {
 
     // ── Phase 1 (wallet): plan + return signing requests ─────────────────────
     if (walletAddress) {
-      return await planWalletPayments(message, inference, dataServers, mcpDataServers, listedOnly, walletAddress, smart, notes, history)
+      return await planWalletPayments(message, synthesizer, dataServers, mcpDataServers, listedOnly, walletAddress, smart, notes, history)
     }
 
     // ── Burner mode: the server's agent wallet pays everything in one shot ────
-    if (hasAgentWallet()) {
-      return await runWithBurner(message, inference, dataServers, mcpDataServers, listedOnly, smart, notes, history)
+    // House synthesis needs no burner: free data calls + a direct-Anthropic
+    // answer spend zero USDC, so the turn runs even with PRIVATE_KEY unset.
+    if (hasAgentWallet() || isHouseInference(synthesizer)) {
+      return await runWithBurner(message, synthesizer, dataServers, mcpDataServers, listedOnly, smart, notes, history)
     }
 
     // ── Demo mode: nothing can pay ───────────────────────────────────────────
@@ -659,11 +671,14 @@ async function planWalletPayments(
   }
   const infProtocol = inferenceProtocolOf(inference)
   const infTool = inference.tool ?? (infProtocol === 'http' ? 'openai/gpt-4o-mini' : 'ask_claude')
-  const infChallenge = await getChallenge(inference.endpoint!, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream' },
-    body: infProtocol === 'http' ? inferenceBody('http', infTool, 'probe') : dummyMcpBody(infTool),
-  })
+  // House synthesizer never 402s — skip the probe, nothing to sign.
+  const infChallenge = isHouseInference(inference)
+    ? null
+    : await getChallenge(inference.endpoint!, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream' },
+        body: infProtocol === 'http' ? inferenceBody('http', infTool, 'probe') : dummyMcpBody(infTool),
+      })
   plan.push({
     id: `inference:${inference.slug}`,
     role: 'inference',
@@ -1549,10 +1564,42 @@ async function planViaAnthropic(prompt: string): Promise<string | null> {
   }
 }
 
+/**
+ * The HOUSE synthesizer — used when the user selected NO inference agent.
+ * Answers are written by a direct Anthropic call on the planner's API key
+ * (never x402, never the burner), so a free-MCP turn costs zero USDC.
+ * The endpoint is Anthropic's real API host so hostOf()/policy checks see an
+ * honest host; callInference short-circuits on the slug before any fetch.
+ */
+const HOUSE_INFERENCE_SLUG = 'yeetful-house'
+const HOUSE_INFERENCE = {
+  id: HOUSE_INFERENCE_SLUG,
+  slug: HOUSE_INFERENCE_SLUG,
+  name: 'Yeetful · House (free)',
+  description: 'House synthesis on the planner key — free preview when no inference agent is selected.',
+  category: 'Inference',
+  kind: 'inference',
+  callable: true,
+  protocol: 'mcp',
+  tool: 'ask_claude',
+  endpoint: 'https://api.anthropic.com/v1/messages',
+  priceUsd: '0',
+} as McpServer
+
+function isHouseInference(s: Pick<McpServer, 'slug'>): boolean {
+  return s.slug === HOUSE_INFERENCE_SLUG
+}
+
 async function callInference(
-  inference: Pick<McpServer, 'endpoint' | 'tool' | 'protocol'>,
+  inference: Pick<McpServer, 'endpoint' | 'tool' | 'protocol'> & { slug?: string },
   prompt: string,
 ) {
+  // House synthesizer: direct Anthropic on the planner key — no x402, no USDC.
+  if (inference.slug === HOUSE_INFERENCE_SLUG) {
+    const text = await planViaAnthropic(prompt)
+    if (!text) throw new Error('house synthesis unavailable (ANTHROPIC_API_KEY missing or the API call failed)')
+    return { text, txHash: undefined }
+  }
   const protocol = inferenceProtocolOf(inference)
   const tool = inference.tool ?? (protocol === 'http' ? 'openai/gpt-4o-mini' : 'ask_claude')
   const res = await getPaidFetch()(inference.endpoint!, {
