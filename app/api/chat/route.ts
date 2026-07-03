@@ -208,16 +208,17 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // ── Governance LIST intent (manual mode) ──────────────────────────────────
-    // "are there any open proposals on Nate DAO?" needs NAME → SPACE-ID
-    // resolution (Nate DAO → nategeier.dcl.eth) — the endpoint planner can't
-    // invent the id, so it queried literally and found nothing. The Auto-Router
-    // already routes this through runGovernanceTurn (resolve_space → free hub
-    // reads); manual mode now does too whenever ANY snapshot service is active
-    // — including the free, non-gated one. Free end to end; synthesis via the
-    // house model. Votes keep their existing paths.
+    // ── Governance intents (manual mode): list AND vote ───────────────────────
+    // Whenever ANY snapshot service is active (including the free, non-gated
+    // one), governance runs through runGovernanceTurn — name → space-id
+    // resolution, free hub reads, and for votes the EIP-712 built for the
+    // USER's wallet (voteRequest/voteProposal → sign buttons with choices).
+    // NEVER the endpoint planner: prepare_vote/submit_vote are signing tools —
+    // a planner guessing their args produced a failed call the model then
+    // narrated as "Vote submitted!" (2026-07-03 live incident). Signables
+    // break the loop; only an explicit human signature casts a vote.
     const govIntent = detectGovernanceIntent(message)
-    if (govIntent?.kind === 'list' && activeServers.some((s) => /snapshot/i.test(`${s.slug} ${s.name}`))) {
+    if (govIntent && activeServers.some((s) => /snapshot/i.test(`${s.slug} ${s.name}`))) {
       const gov = await runGovernanceTurn({
         message,
         intent: govIntent,
@@ -225,7 +226,11 @@ export async function POST(req: NextRequest) {
         emit: () => {},
         synthesize: (p) => planViaAnthropic(p),
       })
-      return NextResponse.json({ reply: gov.reply })
+      return NextResponse.json({
+        reply: gov.reply,
+        ...(gov.voteRequest ? { voteRequest: gov.voteRequest } : {}),
+        ...(gov.voteProposal ? { voteProposal: gov.voteProposal } : {}),
+      })
     }
 
     // ── Swap intent: Yeetful-NATIVE transaction building ──────────────────────
@@ -813,6 +818,9 @@ async function executeWithSignatures(
       ledger(c, true, txHash)
     } catch (err) {
       const note = err instanceof Error ? err.message : 'call failed'
+      // Failures must be VISIBLE to synthesis — an invisible failure led the
+      // model to narrate "Vote submitted!" over a failed call (2026-07-03).
+      contextBlocks.push(`### ${c.name} — TOOL CALL FAILED\n${truncate(note, 300)}\nThis call did NOT succeed; nothing was executed or submitted. Tell the user it failed — never claim the action happened.`)
       pushReceipt({ name: c.name, endpoint: c.host, priceUsd: c.priceUsd, ok: false, note })
       ledger(c, false, undefined, truncate(note, 120))
       // Feed the self-heal loop from the wallet path too (deduped by service +
@@ -1021,6 +1029,7 @@ async function runWithBurner(
             }
           } catch (err) {
             const note = err instanceof Error ? err.message : 'call failed'
+            contextBlocks.push(`### ${ep.serverName} — TOOL CALL FAILED\n${truncate(note, 300)}\nThis call did NOT succeed; nothing was executed or submitted. Tell the user it failed — never claim the action happened.`)
             receipts.push({ name: ep.serverName, endpoint: host, priceUsd: ep.priceUsd, ok: false, note })
             // Record the failed paid call for the self-heal loop — the default
             // (non-Auto-Router) chat path most users hit. Without this, only the
