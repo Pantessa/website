@@ -102,6 +102,11 @@ check('gov: non-governance chit-chat → null', detectGovernanceIntent('write me
 check('gov: agent request detected', detectGovernanceIntent('let my agent vote for on proposal')?.agentRequested === true)
 check('gov: extractSpaceQuery picks the DAO', extractSpaceQuery('open proposals for Nate DAO?') === 'Nate DAO')
 check('gov: extractSpaceQuery picks an .eth id', extractSpaceQuery('proposals on aave.eth') === 'aave.eth')
+// Case-insensitive — users type lowercase (the live "nate dao" miss, 2026-07-03).
+check('gov: lowercase "nate dao" extracts', extractSpaceQuery('are there any open proposals for nate dao?') === 'nate dao')
+check('gov: lowercase "<name> dao" anywhere', extractSpaceQuery('any votes live in curve dao right now') === 'curve dao')
+check('gov: bare "the DAO" is not a name', extractSpaceQuery('are there open proposals for the DAO?') === undefined)
+check('gov: "in this space" is not a name', extractSpaceQuery('open proposals in this space?') === undefined)
 
 // Choice mapping against real labels.
 const BASIC = ['For', 'Against', 'Abstain']
