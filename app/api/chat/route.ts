@@ -282,6 +282,15 @@ export async function POST(req: NextRequest) {
     // is conservative (plain questions fall through to routing).
     const swapIntent = parseSwapIntent(message)
     if (swapIntent.isSwap) {
+      // Multichain (RR18) is in build: an explicit non-Base chain must get an
+      // HONEST answer — never a silently-wrong Base build. No chain mention →
+      // Base (the connected default), as today.
+      const chainAsk = message.match(/\bon\s+(ethereum|eth\s?mainnet|mainnet|arbitrum|optimism|polygon|gnosis|avalanche|bnb|bsc|solana)\b/i)?.[1]
+      if (chainAsk) {
+        return NextResponse.json({
+          reply: `🔗 Cross-chain swaps are in the works — today Yeetful builds swaps on **Base**. **${chainAsk[0].toUpperCase()}${chainAsk.slice(1)}** support is queued; say the swap without a chain and I’ll build it on Base.`,
+        })
+      }
       const uniActive = activeServers.some((s) => s.slug === 'uniswap' || /uniswap/i.test(s.name))
       const cowActive = activeServers.some((s) => s.slug === 'cow-swap' || /cow[\s·-]?swap/i.test(s.name))
       const venue: 'uniswap' | 'cow' =
