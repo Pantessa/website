@@ -275,6 +275,17 @@ export async function POST(req: NextRequest) {
 
     // ── Phase 1 (wallet): plan + return signing requests ─────────────────────
     if (walletAddress) {
+      // A fully-FREE turn (house synthesizer + only price-0 endpoints) has
+      // nothing for the wallet to sign — skip the two-phase confirm entirely
+      // and answer in one pass ($0.00 sheets are noise + wallets flag them).
+      const fullyFree =
+        isHouseInference(synthesizer) &&
+        dataServers.length === 0 &&
+        mcpDataServers.length === 0 &&
+        smart.every((e) => e.priceUsd === '0')
+      if (fullyFree) {
+        return await runWithBurner(message, synthesizer, dataServers, mcpDataServers, listedOnly, smart, notes, history)
+      }
       return await planWalletPayments(message, synthesizer, dataServers, mcpDataServers, listedOnly, walletAddress, smart, notes, history)
     }
 
@@ -760,7 +771,9 @@ async function executeWithSignatures(
   // Data calls first → gather context. Smart calls carry method/body.
   for (const c of plan.filter((c) => c.role === 'data')) {
     try {
-      const header = paymentHeaderFor(c, signatures)
+      // Free endpoints (our non-gated MCPs) plan with prepared=null — nothing
+      // was signed because nothing 402s. Call them plainly, no payment header.
+      const header = c.prepared ? paymentHeaderFor(c, signatures) : null
       const init: RequestInit = {
         method: c.method ?? 'GET',
         headers: {
@@ -769,7 +782,7 @@ async function executeWithSignatures(
         },
         ...(c.body ? { body: c.body } : {}),
       }
-      const res = await fetchWithPaymentHeader(c.url!, init, header)
+      const res = header ? await fetchWithPaymentHeader(c.url!, init, header) : await fetch(c.url!, init)
       if (!res.ok) throw new Error(await failureReason(res))
       const data = c.mcp
         ? parseMcpDataResult(res.headers.get('content-type') ?? '', await res.text())
@@ -798,19 +811,29 @@ async function executeWithSignatures(
   const execTool =
     inferenceCall.tool ?? (execProtocol === 'http' ? 'openai/gpt-4o-mini' : 'ask_claude')
   const prompt = capPrompt(execProtocol, buildPrompt(message, contextBlocks, history))
-  const header = paymentHeaderFor(inferenceCall, signatures)
-  const res = await fetchWithPaymentHeader(
-    inferenceCall.endpoint,
-    {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream' },
-      body: inferenceBody(execProtocol, execTool, prompt),
-    },
-    header,
-  )
-  if (!res.ok) throw new Error(await failureReason(res))
-  const text = parseInferenceText(execProtocol, res.headers.get('content-type') ?? '', await res.text())
-  const infTx = decodeSettlement(res)?.transaction
+  let text: string
+  let infTx: string | undefined
+  if (inferenceCall.id === `inference:${HOUSE_INFERENCE_SLUG}`) {
+    // House synthesizer: direct Anthropic on the planner key — nothing was
+    // signed at plan time (prepared=null) and nothing is paid here.
+    const t = await planViaAnthropic(prompt)
+    if (!t) throw new Error('house synthesis unavailable (ANTHROPIC_API_KEY missing or the API call failed)')
+    text = t
+  } else {
+    const header = paymentHeaderFor(inferenceCall, signatures)
+    const res = await fetchWithPaymentHeader(
+      inferenceCall.endpoint,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream' },
+        body: inferenceBody(execProtocol, execTool, prompt),
+      },
+      header,
+    )
+    if (!res.ok) throw new Error(await failureReason(res))
+    text = parseInferenceText(execProtocol, res.headers.get('content-type') ?? '', await res.text())
+    infTx = decodeSettlement(res)?.transaction
+  }
   pushReceipt({ name: inferenceCall.name, endpoint: inferenceCall.host, priceUsd: inferenceCall.priceUsd, txHash: infTx, ok: true })
   ledger(inferenceCall, true, infTx)
 

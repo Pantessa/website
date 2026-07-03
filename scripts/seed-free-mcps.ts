@@ -17,6 +17,7 @@ type Param = {
   type: string
   description: string
   required: boolean
+  enumValues?: string[]
 }
 
 const p = (name: string, type: string, description: string, required = false): Param => ({
@@ -105,7 +106,11 @@ const SERVICES = [
       {
         name: 'list_proposals',
         description: "Recent Snapshot governance proposals. Filter by space and/or state. Default (no args) = active proposals across all DAOs — answers 'what DAO votes are live right now'.",
-        params: [p('space', 'string', 'Snapshot space id, e.g. ens.eth.'), p('state', 'string', 'active | closed | pending.'), p('first', 'number', 'Max results.')],
+        params: [
+          p('space', 'string', 'Snapshot space id, e.g. ens.eth.'),
+          { ...p('state', 'string', 'Proposal state filter. Use "active" for open/live votes.'), enumValues: ['active', 'closed', 'pending'] } as Param,
+          p('first', 'number', 'Max results.'),
+        ],
       },
       { name: 'get_proposal', description: 'Full detail for one proposal: choices, scores, state, window.', params: [p('id', 'string', 'Proposal id (0x… hash).', true)] },
       { name: 'list_votes', description: 'Votes cast on a proposal, by voting power.', params: [p('proposal', 'string', 'Proposal id (0x… hash).', true), p('first', 'number', 'Max results.')] },
