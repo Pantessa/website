@@ -9,6 +9,7 @@
 // source:'yeetful' keeps db:ingest/db:audit from pruning or diffing them.
 // Idempotent: upserts by slug, replaces endpoints. Run:
 //   DATABASE_URL=... npx tsx scripts/seed-free-mcps.ts
+import { Prisma } from '@prisma/client'
 import prisma from '../lib/db'
 
 type Param = {
@@ -116,8 +117,13 @@ const SERVICES = [
       { name: 'list_votes', description: 'Votes cast on a proposal, by voting power.', params: [p('proposal', 'string', 'Proposal id (0x… hash).', true), p('first', 'number', 'Max results.')] },
       { name: 'get_space', description: 'DAO space metadata (name, network, proposal/follower counts).', params: [p('id', 'string', 'Space id, e.g. ens.eth.', true)] },
       { name: 'list_spaces', description: 'Browse DAO spaces, most followed first.', params: [p('first', 'number', 'Max results.')] },
+      // ⚠ prepare_vote / submit_vote are SIGNING tools — display-only here
+      // (params: null → not plannable). The planner must never construct
+      // them with guessed args; votes route through runGovernanceTurn, which
+      // builds the EIP-712 for the USER's wallet and renders choice buttons.
       {
         name: 'prepare_vote',
+        plannable: false,
         description: 'Build the EIP-712 typed data for a Snapshot vote, ready for the voter to sign. Provide choice (1-indexed) or choiceText ("For", "yes", "option 2"). Returns typed data + human summary.',
         params: [
           p('proposal', 'string', 'Proposal id (0x… hash) to vote on.', true),
@@ -129,6 +135,7 @@ const SERVICES = [
       },
       {
         name: 'submit_vote',
+        plannable: false,
         description: 'Relay a user-signed EIP-712 vote envelope to the Snapshot sequencer. Requires the signature + the exact typed data from prepare_vote.',
         params: [p('sig', 'string', 'EIP-712 signature of the typed data.', true), p('address', 'string', "Voter's address.", true)],
       },
@@ -177,7 +184,10 @@ async function main() {
         network: 'Base',
         provider: 'Yeetful (free)',
         position: i,
-        parameters: t.params as unknown as object,
+        // plannable:false ⇒ parameters DbNull — the tool stays visible on the
+        // server page but the endpoint planner can never construct it (POSTs
+        // need a param schema). Signing tools must not be planner-callable.
+        parameters: (t as { plannable?: boolean }).plannable === false ? Prisma.DbNull : (t.params as unknown as object),
       })),
     })
     console.log(`✓ ${s.slug}: ${s.tools.length} tool endpoints @ ${s.base}`)
