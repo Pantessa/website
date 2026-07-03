@@ -27,8 +27,9 @@ const p = (name: string, type: string, description: string, required = false): P
   required,
 })
 
-const UNISWAP_BASE = process.env.FREE_UNISWAP_MCP_BASE ?? 'https://uniswap-free.yeetful.com/mcp'
-const SNAPSHOT_BASE = process.env.FREE_SNAPSHOT_MCP_BASE ?? 'https://snapshot-free.yeetful.com/mcp'
+// Deployed 2026-07-03 (Vercel; see free-mcps/DEPLOY.md).
+const UNISWAP_BASE = process.env.FREE_UNISWAP_MCP_BASE ?? 'https://uniswap-mcp.yeetful.com/mcp'
+const SNAPSHOT_BASE = process.env.FREE_SNAPSHOT_MCP_BASE ?? 'https://snapshot-mcp.yeetful.com/mcp'
 
 const token = (which: string, required = true) => p(which === 'token' ? 'token' : which, 'string', `${which} — symbol (USDC, WETH, UNI…) or 0x address on Base.`, required)
 
