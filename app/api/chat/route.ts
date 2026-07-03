@@ -978,7 +978,7 @@ async function paidGet(endpoint: string, queryParam: string, value: string) {
 const DATA_CALL_TIMEOUT_MS = 12_000
 const INFERENCE_TIMEOUT_MS = 30_000
 
-async function paidCall(request: { url: string; method: string; headers: Record<string, string>; body?: string }) {
+async function paidCall(request: { url: string; method: string; headers: Record<string, string>; body?: string; mcp?: boolean }) {
   const res = await getPaidFetch()(request.url, {
     method: request.method,
     headers: request.headers,
@@ -986,6 +986,11 @@ async function paidCall(request: { url: string; method: string; headers: Record<
     ...(request.body ? { body: request.body } : {}),
   })
   if (!res.ok) throw new Error(await failureReason(res))
+  // MCP tools/call (our free MCPs): unwrap the JSON-RPC / SSE envelope. These
+  // endpoints never 402, so the paid fetch passes through without payment.
+  if (request.mcp) {
+    return { json: parseMcpDataResult(res.headers.get('content-type') ?? '', await res.text()), txHash: decodeSettlement(res)?.transaction }
+  }
   return { json: await res.json(), txHash: decodeSettlement(res)?.transaction }
 }
 
