@@ -302,7 +302,7 @@ export default function ChatInterface() {
         addMessage(chatId, {
           role: 'assistant',
           content: data.reply || data.error || 'No response.',
-          meta: buildMeta(data.receipts, data.payer, data.voteRequest, data.voteCandidates, undefined, undefined, undefined, data.orderRequest, data.guardrails, data.txRequest),
+          meta: buildMeta(data.receipts, data.payer, data.voteRequest, data.voteCandidates, undefined, undefined, data.voteProposal, data.orderRequest, data.guardrails, data.txRequest),
         })
       }
     } catch (err) {

@@ -46,7 +46,7 @@ export function extractSpaceQuery(message: string): string | undefined {
   // Words that read as a name slot but aren't one ("proposals in this space",
   // "proposals for the DAO"). Lowercase matching over-captures leading filler,
   // so strip stopwords repeatedly until a real name (or nothing) remains.
-  const STOP = /^(?:the|this|that|a|an|any|my|our|your|are|there|open|active|live|proposals?|votes?|voting|for|in|on|of|from|at)\s+/i
+  const STOP = /^(?:the|this|that|a|an|any|my|our|your|are|there|open|active|live|proposals?|votes?|voting|for|in|on|of|from|at|first|second|third|fourth|fifth|last|one|number)\s+/i
   const strip = (s: string) => {
     let out = s.trim()
     while (STOP.test(out)) out = out.replace(STOP, '')
@@ -229,9 +229,10 @@ export async function runGovernanceTurn(opts: {
       return { reply: spaceName ? `🗳️ No open proposals in **${spaceName}** right now.` : '🗳️ No open proposals found. Name a DAO (e.g. “Nate DAO”).' }
     }
     emit({ type: 'note', level: 'info', label: 'Free — Snapshot hub reads are public; no x402 payment ($0.00).' })
-    const lines = proposals.slice(0, 10).map((p) => `· **${p.title}** — \`${p.id.slice(0, 10)}…\``).join('\n')
+    // Numbered so follow-ups can say "vote For on 1" / "vote on the first one".
+    const lines = proposals.slice(0, 10).map((p, i) => `${i + 1}. **${p.title}** — \`${p.id.slice(0, 10)}…\``).join('\n')
     const where = spaceName ? ` in **${spaceName}**` : ''
-    const tail = `Say e.g. “vote For on ${proposals[0].title}” and I’ll prepare the EIP-712 signature.`
+    const tail = `Say e.g. “vote For on ${proposals[0].title}” — or just “vote For on 1” — and I’ll prepare the EIP-712 signature.`
 
     // Conversational overview via Yeetful Claude (paid) when available; the
     // structured list (titles + ids) is always appended so the user can act.
@@ -265,9 +266,19 @@ export async function runGovernanceTurn(opts: {
       if (hits.length === 1) target = hits[0]
     }
   }
+  // Ordinal reference against the (numbered) list: "vote For on 1",
+  // "vote on the first one", "the last proposal".
   if (!target) {
-    const lines = proposals.slice(0, 8).map((p) => `· **${p.title}**`).join('\n')
-    return { reply: `🗳️ Which proposal do you want to vote on?\n${lines}` }
+    const ord = message.match(/\b(?:the\s+)?(first|second|third|fourth|fifth|last|(?:#|number\s+)?([1-9]\d?))(?:\s+(?:one|proposal))?\b/i)
+    if (ord) {
+      const named: Record<string, number> = { first: 0, second: 1, third: 2, fourth: 3, fifth: 4, last: proposals.length - 1 }
+      const idx = ord[2] ? parseInt(ord[2], 10) - 1 : named[ord[1].toLowerCase()]
+      if (idx !== undefined && idx >= 0 && idx < proposals.length) target = proposals[idx]
+    }
+  }
+  if (!target) {
+    const lines = proposals.slice(0, 8).map((p, i) => `${i + 1}. **${p.title}**`).join('\n')
+    return { reply: `🗳️ Which proposal do you want to vote on? Name it — or say “vote on 1”.\n${lines}` }
   }
 
   // Fetch the proposal's choices + the space.
