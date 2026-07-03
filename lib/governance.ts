@@ -38,16 +38,33 @@ const VOTE_RE = /\b(vote|voting|cast)\b/i
 const AGENT_RE = /\b(my\s+)?agent\b|\bfor\s+me\b|\bon\s+my\s+behalf\b|let\s+my/i
 
 /** Pull the DAO/space the user named — "for Nate DAO", "in aave.eth",
- *  "proposals on X". Returns the raw phrase; resolveSpaceByName resolves it. */
+ *  "proposals on X". Returns the raw phrase; resolveSpaceByName resolves it.
+ *  Case-insensitive: users type "nate dao" as often as "Nate DAO". */
 export function extractSpaceQuery(message: string): string | undefined {
   const id = message.match(/\b([a-z0-9][a-z0-9-]*\.(?:eth|xyz|io|dao))\b/i)?.[1]
   if (id) return id.toLowerCase()
-  // "... (for|in|on|of|from) <Name DAO/space> ..." — capture up to a DAO noun.
-  const m = message.match(/\b(?:for|in|on|of|from|at)\s+(?:the\s+)?([A-Z0-9][\w'&-]*(?:\s+[A-Z0-9][\w'&-]*){0,3}?\s+(?:DAO|dao|space))\b/)
-  if (m) return m[1].trim()
-  // "<Name> DAO" anywhere.
-  const m2 = message.match(/\b([A-Z][\w'&-]*(?:\s+[A-Z][\w'&-]*){0,2}\s+DAO)\b/)
-  return m2?.[1]?.trim()
+  // Words that read as a name slot but aren't one ("proposals in this space",
+  // "proposals for the DAO"). Lowercase matching over-captures leading filler,
+  // so strip stopwords repeatedly until a real name (or nothing) remains.
+  const STOP = /^(?:the|this|that|a|an|any|my|our|your|are|there|open|active|live|proposals?|votes?|voting|for|in|on|of|from|at)\s+/i
+  const strip = (s: string) => {
+    let out = s.trim()
+    while (STOP.test(out)) out = out.replace(STOP, '')
+    return out
+  }
+  // "... (for|in|on|of|from) <name DAO/space> ..." — capture up to a DAO noun.
+  const m = message.match(/\b(?:for|in|on|of|from|at)\s+(?:the\s+)?([A-Za-z0-9][\w'&-]*(?:\s+[A-Za-z0-9][\w'&-]*){0,3}?\s+(?:DAO|space))\b/i)
+  if (m) {
+    const name = strip(m[1])
+    // "in this space" strips to a bare noun — that's not a name to resolve.
+    if (!/^(?:dao|space)$/i.test(name)) return name
+  }
+  // "<name> DAO" anywhere.
+  const m2 = message.match(/\b([A-Za-z][\w'&-]*(?:\s+[A-Za-z][\w'&-]*){0,2}\s+DAO)\b/i)
+  if (!m2) return undefined
+  const name2 = strip(m2[1])
+  // A bare "DAO"/"the DAO" isn't a name — nothing to resolve.
+  return /^dao$/i.test(name2) ? undefined : name2
 }
 
 /** Decide whether (and how) a message is a governance turn. Pure + tested. */
