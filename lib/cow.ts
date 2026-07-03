@@ -11,6 +11,7 @@
 //  typed-data builder. Guardrails (slippage/recipient/simulate) = A3; signing +
 //  submission to the order book = A4. Verified: CoW Swap is live on Base.
 // ─────────────────────────────────────────────────────────────────────────
+import { dynamicTokenBySymbol, dynamicTokenByAddress } from '@/lib/token-list'
 
 import { keccak256, stringToBytes } from 'viem'
 
@@ -46,6 +47,11 @@ export function resolveToken(input: string, chainId = 8453): string | null {
   if (chainId === 8453) {
     const info = BASE_TOKENS[t.toUpperCase()]
     if (info) return info.address.toLowerCase()
+    // Dynamic layer (RR14): the official Uniswap token list filtered to Base,
+    // warmed via ensureBaseTokenList() at the swap entry points — covers
+    // UNI/AAVE/VIRTUAL/… without hand-typing addresses on a money surface.
+    const dyn = dynamicTokenBySymbol(t)
+    if (dyn) return dyn.address
   }
   return null
 }
@@ -62,7 +68,11 @@ export function tokenDecimals(input: string, chainId = 8453): number | null {
     for (const info of Object.values(BASE_TOKENS)) {
       if (info.address.toLowerCase() === lower) return info.decimals
     }
+    const dynAddr = dynamicTokenByAddress(lower)
+    if (dynAddr) return dynAddr.decimals
   }
+  const dyn = dynamicTokenBySymbol(t)
+  if (dyn) return dyn.decimals
   return null
 }
 

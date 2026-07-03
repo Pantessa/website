@@ -18,6 +18,7 @@ import { parseSwapIntent, type SwapIntent } from '@/lib/swap-intent'
 import { buildGuardrailedOrder } from '@/lib/cow-build'
 import { buildUniswapSwap } from '@/lib/uniswap-venue'
 import { tokenDecimals, humanToAtoms } from '@/lib/cow'
+import { ensureBaseTokenList } from '@/lib/token-list'
 import { resolveProposal } from '@/lib/snapshot-read'
 import { detectGovernanceIntent, runGovernanceTurn } from '@/lib/governance'
 import { getSessionAddress } from '@/lib/auth'
@@ -467,6 +468,9 @@ async function prepareVoteTurn(
  * artifact is withheld. The user signs — funds never touch Yeetful.
  */
 async function prepareSwapTurn(intent: SwapIntent, walletAddress: string | undefined, venue: 'uniswap' | 'cow' = 'cow') {
+  // Warm the dynamic Base token map (official Uniswap list) so UNI/AAVE/… ,
+  // resolve — not just the 6 hand-typed tokens (RR14). Cached 24h; never throws.
+  await ensureBaseTokenList()
   if (!walletAddress) {
     return NextResponse.json({
       reply:
