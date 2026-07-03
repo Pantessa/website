@@ -12,7 +12,10 @@
 //  cache; call ensureBaseTokenList() once at the swap entry points to warm it.
 // ─────────────────────────────────────────────────────────────────────────
 
-const LIST_URL = process.env.TOKEN_LIST_URL || 'https://tokens.uniswap.org'
+// Two canonical sources, merged with the FIRST taking precedence on symbol
+// collisions: Uniswap Labs' default list (curated, but thin on Base — no
+// LINK), then Coingecko's per-chain Base list (~2.3k tokens) to fill gaps.
+const LIST_URLS = (process.env.TOKEN_LIST_URLS || 'https://tokens.uniswap.org,https://tokens.coingecko.com/base/all.json').split(',')
 const TTL_MS = 24 * 60 * 60 * 1000
 
 export interface TokenInfo {
@@ -31,30 +34,31 @@ export async function ensureBaseTokenList(): Promise<void> {
   if (Date.now() - loadedAt < TTL_MS && Object.keys(cache).length > 0) return
   if (inflight) return inflight
   inflight = (async () => {
-    try {
-      const res = await fetch(LIST_URL, { headers: { accept: 'application/json' }, signal: AbortSignal.timeout(8000) })
-      if (!res.ok) return
-      const json = (await res.json()) as { tokens?: { chainId: number; address: string; symbol: string; decimals: number }[] }
-      const next: Record<string, TokenInfo> = {}
-      const nextByAddr: Record<string, TokenInfo> = {}
-      for (const t of json.tokens ?? []) {
-        if (t.chainId !== 8453) continue
-        if (!/^0x[0-9a-fA-F]{40}$/.test(t.address) || !Number.isInteger(t.decimals)) continue
-        const info: TokenInfo = { address: t.address.toLowerCase(), decimals: t.decimals, symbol: t.symbol }
-        // First-listed wins on symbol collisions (the list orders canonical first).
-        if (!next[t.symbol.toUpperCase()]) next[t.symbol.toUpperCase()] = info
-        nextByAddr[info.address] = info
+    const next: Record<string, TokenInfo> = {}
+    const nextByAddr: Record<string, TokenInfo> = {}
+    for (const url of LIST_URLS) {
+      try {
+        const res = await fetch(url.trim(), { headers: { accept: 'application/json' }, signal: AbortSignal.timeout(8000) })
+        if (!res.ok) continue
+        const json = (await res.json()) as { tokens?: { chainId: number; address: string; symbol: string; decimals: number }[] }
+        for (const t of json.tokens ?? []) {
+          if (t.chainId !== 8453) continue
+          if (!/^0x[0-9a-fA-F]{40}$/.test(t.address) || !Number.isInteger(t.decimals)) continue
+          const info: TokenInfo = { address: t.address.toLowerCase(), decimals: t.decimals, symbol: t.symbol }
+          // Earlier list wins on symbol collisions (Uniswap official first).
+          if (!next[t.symbol.toUpperCase()]) next[t.symbol.toUpperCase()] = info
+          if (!nextByAddr[info.address]) nextByAddr[info.address] = info
+        }
+      } catch {
+        /* try the next source */
       }
-      if (Object.keys(next).length > 0) {
-        cache = next
-        byAddress = nextByAddr
-        loadedAt = Date.now()
-      }
-    } catch {
-      /* degrade to the static map */
-    } finally {
-      inflight = null
     }
+    if (Object.keys(next).length > 0) {
+      cache = next
+      byAddress = nextByAddr
+      loadedAt = Date.now()
+    }
+    inflight = null
   })()
   return inflight
 }
