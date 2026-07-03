@@ -454,14 +454,23 @@ export interface SmartRequest {
 }
 
 /**
- * MCP-tool endpoint convention: a row whose url is `<base>/mcp#<toolName>` is
- * one TOOL on an MCP server (our free, non-gated MCPs are seeded this way).
- * The fragment names the tool; the request is a JSON-RPC tools/call POST to
- * `<base>/mcp` with the planner's params as `arguments`.
+ * MCP-tool endpoint conventions — a row that is one TOOL on an MCP server;
+ * the request is a JSON-RPC tools/call POST to `<base>/mcp` with the
+ * planner's params as `arguments`:
+ *  - `<base>/mcp#<toolName>`  — fragment style, any row.
+ *  - `<base>/mcp/<toolName>`  — path style (matches the x402 fleet's display
+ *    convention), accepted ONLY for explicitly-free rows (priceUsd '0') so a
+ *    third-party HTTP endpoint that genuinely lives at /mcp/<something>
+ *    can't be misread as a tools/call.
  */
-function mcpToolOf(url: string): { base: string; tool: string } | null {
-  const m = url.match(/^(.+\/mcp)#([A-Za-z0-9_]+)$/)
-  return m ? { base: m[1], tool: m[2] } : null
+function mcpToolOf(url: string, priceUsd?: string): { base: string; tool: string } | null {
+  const frag = url.match(/^(.+\/mcp)#([A-Za-z0-9_]+)$/)
+  if (frag) return { base: frag[1], tool: frag[2] }
+  if (priceUsd === '0') {
+    const path = url.match(/^(.+\/mcp)\/([A-Za-z0-9_]+)$/)
+    if (path) return { base: path[1], tool: path[2] }
+  }
+  return null
 }
 
 /**
@@ -503,7 +512,7 @@ export function buildSmartRequest(
   // MCP tool endpoints (url = <base>/mcp#<tool>): one JSON-RPC tools/call POST,
   // params become the tool arguments verbatim. Free MCPs never 402, so the
   // paid-fetch wrapper passes these through without payment.
-  const mcpTool = mcpToolOf(ep.url)
+  const mcpTool = mcpToolOf(ep.url, ep.priceUsd)
   if (mcpTool) {
     const args: Record<string, unknown> = {}
     for (const [k, v] of Object.entries(params)) if (v !== undefined) args[k] = v

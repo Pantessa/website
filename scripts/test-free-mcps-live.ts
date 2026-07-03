@@ -25,7 +25,7 @@ async function main() {
   console.log(`plannable endpoints loaded: ${eps.length} (expect 14 — price-0 filter admits explicit free)`)
   if (eps.length < 14) throw new Error('free endpoints filtered out — check loadPlannableEndpoints')
 
-  const quote = eps.find((e) => e.url.endsWith('#quote'))!
+  const quote = eps.find((e) => /\/mcp[#/]quote$/.test(e.url))!
   const built = buildSmartRequest(quote, { sellToken: 'USDC', buyToken: 'WETH', amount: '2' })
   if ('error' in built) throw new Error(built.error)
   console.log(`→ ${built.request.url} tools/call quote (mcp=${built.request.mcp})`)
@@ -34,7 +34,7 @@ async function main() {
   const q = parseEnvelope(await r1.text()) as { buy?: { token: string; amount: string } }
   console.log(`✓ LIVE quote (no 402, no payment): 2 USDC → ${q.buy?.amount} ${q.buy?.token}`)
 
-  const props = eps.find((e) => e.url.endsWith('#list_proposals'))!
+  const props = eps.find((e) => /\/mcp[#/]list_proposals$/.test(e.url))!
   const built2 = buildSmartRequest(props, { first: 2 })
   if ('error' in built2) throw new Error(built2.error)
   const r2 = await fetch(built2.request.url, { method: built2.request.method, headers: built2.request.headers, body: built2.request.body })

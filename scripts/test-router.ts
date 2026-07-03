@@ -165,6 +165,18 @@ check('mcp: refuses on missing required param', 'error' in mcpMissing)
 const plainEp = { ...mcpEp, url: 'https://api.example.com/v1/quote', parameters: [{ group: 'body' as const, name: 'q', required: false }] }
 const plainBuilt = buildSmartRequest(plainEp, { q: 'x' })
 check('mcp: non-fragment urls unaffected (plain HTTP path)', !('error' in plainBuilt) && plainBuilt.request.mcp === undefined)
+// Path style `/mcp/<tool>` — the display convention (free rows only).
+const pathEp = { ...mcpEp, url: 'https://snapshot-mcp.yeetful.com/mcp/list_proposals', priceUsd: '0', parameters: [{ group: 'body' as const, name: 'space', required: false }] }
+const pathBuilt = buildSmartRequest(pathEp, { space: 'ens.eth' })
+if ('error' in pathBuilt) {
+  check('mcp: path-style /mcp/<tool> builds tools/call (free rows)', false, pathBuilt.error)
+} else {
+  const pb = JSON.parse(pathBuilt.request.body!) as { params: { name: string } }
+  check('mcp: path-style /mcp/<tool> builds tools/call (free rows)', pathBuilt.request.url === 'https://snapshot-mcp.yeetful.com/mcp' && pb.params.name === 'list_proposals' && pathBuilt.request.mcp === true)
+}
+const paidPathEp = { ...pathEp, priceUsd: '0.01' }
+const paidPathBuilt = buildSmartRequest(paidPathEp, { space: 'ens.eth' })
+check('mcp: path style NOT applied to paid rows (plain HTTP)', !('error' in paidPathBuilt) && paidPathBuilt.request.mcp === undefined)
 
 console.log(`\n${pass} passed, ${fail} failed\n`)
 process.exit(fail ? 1 : 0)
