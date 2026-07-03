@@ -233,7 +233,13 @@ export async function POST(req: NextRequest) {
     const lastAssistant = snapshotActive ? ([...history].reverse().find((t) => t.role === 'assistant')?.content ?? '') : ''
     if (!govIntent && snapshotActive && message.trim().length <= 60) {
       const title = lastAssistant.match(/(?:Ready to vote on|vote (?:For|[A-Za-z]+) on) \*\*(.+?)\*\*/)?.[1]
-      const choice = message.match(/\b(for|against|abstain|yes|no|option\s+[1-9]|[1-9])\b/i)?.[1]
+      // ANCHORED: the whole message must be a choice utterance ("For", "yes",
+      // "I'd like to vote for that option", "option 2") — merely CONTAINING a
+      // choice word must not hijack the turn ("can i swap 1 USDC for UNI"
+      // matched \bfor\b and got answered with a proposals list — 2026-07-03).
+      const choice = message
+        .trim()
+        .match(/^(?:i(?:'d| would)?\s+(?:like|want)\s+to\s+)?(?:vote\s+|go\s+|choose\s+|pick\s+)?(for|against|abstain|yes|no|option\s+[1-9]|[1-9])(?:\s+(?:that|this)(?:\s+(?:option|one|proposal))?)?[.!\s]*$/i)?.[1]
       if (title && choice) {
         govMessage = `vote ${choice} on "${title}"`
         govIntent = detectGovernanceIntent(govMessage)
