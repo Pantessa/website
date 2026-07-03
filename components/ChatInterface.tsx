@@ -98,6 +98,7 @@ export default function ChatInterface() {
     autoRouter,
     setAutoRouter,
     pushRouterTrace,
+    setRouterTrace,
     clearRouterTrace,
     engineWindowOpen,
     setEngineWindowOpen,
@@ -248,19 +249,49 @@ export default function ChatInterface() {
       // Phase 1 — plan. If a wallet is connected, the server returns the
       // payments to sign; otherwise it pays with the house wallet and replies.
       setStatus(isConnected ? 'Planning x402 calls…' : null)
-      const res = await fetch('/api/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          message: userMsg,
-          chatId,
-          activeServerIds,
-          activeServers, // full objects: endpoint/protocol/price per server
-          walletAddress: isConnected ? address : undefined,
-          history,
-        }),
-      })
-      const data = await res.json()
+      // Live engine terminal (manual mode): we mint the turn id CLIENT-side so
+      // we can poll the server-recorded trace WHILE the request is in flight —
+      // the router's thinking (tool picks, MCP calls, receipts) appears in the
+      // engine window in near-realtime instead of after the reply lands.
+      const turnId = globalThis.crypto?.randomUUID?.() ?? `t-${Date.now()}-${Math.floor(Math.random() * 1e6)}`
+      clearRouterTrace()
+      const tracePoll = setInterval(async () => {
+        try {
+          const r = await fetch(`/api/chat/trace?turn=${turnId}`)
+          const j = (await r.json()) as { events?: unknown[] }
+          if (Array.isArray(j.events) && j.events.length) setRouterTrace(j.events as Parameters<typeof setRouterTrace>[0])
+        } catch {
+          /* polling is best-effort */
+        }
+      }, 700)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any — res.json()
+      // was untyped before the trace-poll try/finally wrapped it; keep parity.
+      let data: any
+      try {
+        const res = await fetch('/api/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            message: userMsg,
+            chatId,
+            activeServerIds,
+            activeServers, // full objects: endpoint/protocol/price per server
+            walletAddress: isConnected ? address : undefined,
+            history,
+            turnId,
+          }),
+        })
+        data = await res.json()
+      } finally {
+        clearInterval(tracePoll)
+        // One last read so the terminal has the complete turn.
+        fetch(`/api/chat/trace?turn=${turnId}`)
+          .then((r) => r.json())
+          .then((j: { events?: unknown[] }) => {
+            if (Array.isArray(j.events) && j.events.length) setRouterTrace(j.events as Parameters<typeof setRouterTrace>[0])
+          })
+          .catch(() => {})
+      }
 
       if (data.phase === 'awaiting-signatures') {
         // Don't pop the wallet yet — show the $ amount + warning heads-up first,

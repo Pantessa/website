@@ -155,6 +155,10 @@ export async function POST(req: NextRequest) {
     const message: string = body.message ?? ''
     const history = sanitizeHistory(body.history)
     const activeServers: McpServer[] = Array.isArray(body.activeServers) ? body.activeServers : []
+    // Client-supplied turn id → the manual path records its reasoning to
+    // route_trace_lines so the in-chat engine terminal can poll it live.
+    const clientTurnId: string | undefined =
+      typeof body.turnId === 'string' && /^[A-Za-z0-9-]{8,64}$/.test(body.turnId) ? body.turnId : undefined
     const walletAddress: string | undefined =
       typeof body.walletAddress === 'string' && isAddress(body.walletAddress)
         ? getAddress(body.walletAddress)
@@ -219,11 +223,12 @@ export async function POST(req: NextRequest) {
     // break the loop; only an explicit human signature casts a vote.
     const govIntent = detectGovernanceIntent(message)
     if (govIntent && activeServers.some((s) => /snapshot/i.test(`${s.slug} ${s.name}`))) {
+      let govSeq = 0
       const gov = await runGovernanceTurn({
         message,
         intent: govIntent,
         walletAddress,
-        emit: () => {},
+        emit: clientTurnId ? (e) => recordTraceLine(clientTurnId, govSeq++, e, walletAddress ? 'wallet' : 'burner') : () => {},
         synthesize: (p) => planViaAnthropic(p),
       })
       return NextResponse.json({
@@ -309,7 +314,7 @@ export async function POST(req: NextRequest) {
         mcpDataServers.length === 0 &&
         smart.every((e) => e.priceUsd === '0')
       if (fullyFree) {
-        return await runWithBurner(message, synthesizer, dataServers, mcpDataServers, listedOnly, smart, notes, history)
+        return await runWithBurner(message, synthesizer, dataServers, mcpDataServers, listedOnly, smart, notes, history, clientTurnId)
       }
       return await planWalletPayments(message, synthesizer, dataServers, mcpDataServers, listedOnly, walletAddress, smart, notes, history)
     }
@@ -318,7 +323,7 @@ export async function POST(req: NextRequest) {
     // House synthesis needs no burner: free data calls + a direct-Anthropic
     // answer spend zero USDC, so the turn runs even with PRIVATE_KEY unset.
     if (hasAgentWallet() || isHouseInference(synthesizer)) {
-      return await runWithBurner(message, synthesizer, dataServers, mcpDataServers, listedOnly, smart, notes, history)
+      return await runWithBurner(message, synthesizer, dataServers, mcpDataServers, listedOnly, smart, notes, history, clientTurnId)
     }
 
     // ── Demo mode: nothing can pay ───────────────────────────────────────────
@@ -888,7 +893,13 @@ async function runWithBurner(
   smart: PlannableEndpoint[] = [],
   notes: string[] = [],
   history: ConversationTurn[] = [],
+  /** When set, the turn's reasoning is recorded to route_trace_lines so the
+   *  in-chat engine terminal (and /activity) can watch it live. */
+  turnId?: string,
 ) {
+  let traceSeq = 0
+  const trace = turnId ? (event: unknown) => recordTraceLine(turnId, traceSeq++, event, 'burner') : () => {}
+  trace({ type: 'status', label: 'routing within your selected agents' })
   const receipts: Receipt[] = []
   const contextBlocks: string[] = []
   // A vote built by the snapshot MCP's prepare_vote tool, hoisted out of the
@@ -1008,11 +1019,13 @@ async function runWithBurner(
           const { request } = built
           const host = hostOf(request.url)
           const price = Number(ep.priceUsd)
+          trace({ type: 'select', service: ep.serverName, endpoint: `${host} · ${request.mcp ? 'tools/call' : request.method}`, priceUsd: ep.priceUsd, reason: 'endpoint planner pick' })
           if (policy && grant) {
             const violation = grantViolation(policy, host, price, spentToday, spentTotal)
             if (violation) {
               await recordLedger({ grantId: grant.id, orgId: grant.orgId ?? undefined, host, serviceName: ep.serverName, amountUsd: 0, ok: false, note: violation })
               receipts.push({ name: ep.serverName, endpoint: host, priceUsd: ep.priceUsd, ok: false, note: `blocked: ${violation}`, slug: violation === 'NOT_ALLOWED' ? ep.serverSlug : undefined })
+              trace({ type: 'receipt', receipt: { name: ep.serverName, endpoint: host, priceUsd: ep.priceUsd, ok: false, note: `blocked: ${violation}` } })
               blocked.push(`${ep.serverName} (${violation})`)
               continue
             }
@@ -1021,6 +1034,7 @@ async function runWithBurner(
             const { json, txHash: dataTx } = await paidCall(request)
             contextBlocks.push(`### ${ep.serverName}\n${compactForSynthesis(json, 3500)}`)
             receipts.push({ name: ep.serverName, endpoint: host, priceUsd: ep.priceUsd, txHash: dataTx, ok: true })
+            trace({ type: 'receipt', receipt: { name: ep.serverName, endpoint: host, priceUsd: ep.priceUsd, txHash: dataTx, ok: true } })
             smartServed.add(ep.serverSlug)
             if (grant) {
               await recordLedger({ grantId: grant.id, orgId: grant.orgId ?? undefined, host, serviceName: ep.serverName, amountUsd: price, ok: true, txHash: dataTx, note: 'settled' })
@@ -1031,6 +1045,7 @@ async function runWithBurner(
             const note = err instanceof Error ? err.message : 'call failed'
             contextBlocks.push(`### ${ep.serverName} — TOOL CALL FAILED\n${truncate(note, 300)}\nThis call did NOT succeed; nothing was executed or submitted. Tell the user it failed — never claim the action happened.`)
             receipts.push({ name: ep.serverName, endpoint: host, priceUsd: ep.priceUsd, ok: false, note })
+            trace({ type: 'receipt', receipt: { name: ep.serverName, endpoint: host, priceUsd: ep.priceUsd, ok: false, note: truncate(note, 160) } })
             // Record the failed paid call for the self-heal loop — the default
             // (non-Auto-Router) chat path most users hit. Without this, only the
             // Auto-Router path fed incidents, so the table stayed empty and the
@@ -1062,8 +1077,10 @@ async function runWithBurner(
   }
 
   const prompt = buildPrompt(message, contextBlocks, history)
+  trace({ type: 'status', label: `writing the answer — ${inference.name}` })
   const { text, txHash } = await callInference(inference, prompt)
   receipts.push({ name: inference.name, endpoint: infHost, priceUsd: inference.priceUsd ?? '0.01', txHash, ok: true })
+  trace({ type: 'receipt', receipt: { name: inference.name, endpoint: infHost, priceUsd: inference.priceUsd ?? '0.01', txHash, ok: true } })
   if (grant) {
     await recordLedger({ grantId: grant.id, orgId: grant.orgId ?? undefined, host: infHost, serviceName: inference.name, amountUsd: infPrice, ok: true, txHash, note: 'settled' })
     spentToday += infPrice
