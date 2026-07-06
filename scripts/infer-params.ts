@@ -46,6 +46,13 @@ const has = (k: string) => process.argv.includes(`--${k}`)
 const APPLY = has('apply')
 const LIMIT = arg('limit') ? parseInt(arg('limit')!, 10) : undefined
 const SERVICE = arg('service')
+// RR20: GET endpoints can be schema-less too (wolfram/rentcast — the planner
+// infers keys at runtime, but STORED schemas raise menu quality + the lint
+// schema score). Default stays POST-only; opt into GETs with --methods=GET.
+const METHODS = (arg('methods') ?? 'POST').split(',').map((m) => m.trim().toUpperCase()).filter((m) => m === 'GET' || m === 'POST')
+// Skip the harness-liveness gate for endpoints that have never been probed —
+// use ONLY when liveness was just verified another way (e.g. mcp:lint's probe).
+const NO_HEALTH = has('no-health')
 const CONCURRENCY = arg('concurrency') ? parseInt(arg('concurrency')!, 10) : 5
 const MODEL = 'claude-haiku-4-5-20251001'
 
@@ -63,6 +70,7 @@ interface Param {
 interface Target {
   id: string
   url: string
+  method: string
   service: string
   category: string | null
   svcDesc: string | null
@@ -72,12 +80,17 @@ interface Target {
 const GROUPS = new Set(['body', 'query', 'path'])
 const TYPES = new Set(['string', 'number', 'boolean', 'array', 'object'])
 
+const AUTH_PARAM_RE = /^(api[-_]?key|appid|app[-_]?id|token|secret|auth|key)$/i
+
 function normalize(arr: unknown): Param[] {
   if (!Array.isArray(arr)) return []
   const out: Param[] = []
   for (const p of arr as Record<string, unknown>[]) {
     const name = typeof p?.name === 'string' ? p.name.trim() : ''
     if (!name) continue
+    // Auth params are the gateway's job (the x402 challenge IS the auth) — an
+    // inferred required apikey makes every call unconstructable. Drop them.
+    if (AUTH_PARAM_RE.test(name)) continue
     out.push({
       name,
       type: TYPES.has(p?.type as string) ? (p.type as string) : 'string',
@@ -89,6 +102,14 @@ function normalize(arr: unknown): Param[] {
       description: typeof p?.description === 'string' ? p.description : '',
     })
     if (out.length >= 8) break
+  }
+  // At most ONE required param (the primary input): over-strict required flags
+  // make natural queries UNconstructable — the request builder refuses on any
+  // missing required, so a second "required" param strictly reduces coverage.
+  let seenRequired = false
+  for (const p of out) {
+    if (p.required && seenRequired) p.required = false
+    else if (p.required) seenRequired = true
   }
   return out
 }
@@ -108,15 +129,15 @@ async function infer(t: Target, key: string): Promise<Param[]> {
   const prompt = `You infer the request parameter schema for ONE x402 MCP API endpoint, for a routing engine that will fill the params and call it.
 
 Service: ${t.service}${t.category ? ` (${t.category})` : ''}
-${t.svcDesc ? `Service purpose: ${t.svcDesc}\n` : ''}Endpoint: POST ${t.url}
+${t.svcDesc ? `Service purpose: ${t.svcDesc}\n` : ''}Endpoint: ${t.method} ${t.url}
 Endpoint description: ${t.epDesc || '(none)'}
 
-Output ONLY a JSON array of the parameters this POST endpoint accepts. Each item:
+Output ONLY a JSON array of the parameters this ${t.method} endpoint accepts. Each item:
 {"group":"body"|"query"|"path","name":"<param>","type":"string"|"number"|"boolean"|"array"|"object","required":true|false,"example":<example value>,"description":"<short>"}
 
 Rules:
 - Infer from the URL path, the description, and how comparable x402/MCP services work.
-- Most MCP/agent endpoints take ONE primary BODY input (e.g. "query","input","prompt","message","address","symbol","url"). Mark that primary input required:true.
+- ${t.method === 'GET' ? 'A GET endpoint takes QUERY params (group:"query") — usually ONE primary input (e.g. "i","q","query","address","zipCode","city"). Mark it required:true.' : 'Most MCP/agent endpoints take ONE primary BODY input (e.g. "query","input","prompt","message","address","symbol","url"). Mark that primary input required:true.'}
 - Add a path param for any {token} or :token in the URL (group:"path", required:true).
 - Prefer fewer, correct params over many guesses. Max 8. Give a realistic "example" for each.
 - If you cannot confidently infer ANY parameter, output [].
@@ -159,23 +180,23 @@ async function main() {
       SELECT DISTINCT ON (endpoint_id) endpoint_id, status
       FROM harness_results ORDER BY endpoint_id, probed_at DESC
     )
-    SELECT e.id, e.url, s.name AS service, s.category AS category,
+    SELECT e.id, e.url, e.method AS method, s.name AS service, s.category AS category,
            s.description AS "svcDesc", e.description AS "epDesc"
     FROM mcp_endpoints e
     JOIN mcp_servers s ON s.id = e.server_id
-    JOIN latest l ON l.endpoint_id = e.id
-    WHERE e.method = 'POST' AND e.parameters IS NULL
+    ${NO_HEALTH ? '' : 'JOIN latest l ON l.endpoint_id = e.id'}
+    WHERE e.method IN (${METHODS.map((m) => `'${m}'`).join(',')}) AND e.parameters IS NULL
       AND e.scheme IS DISTINCT FROM 'upto'
       AND e.price_usd ~ '^[0-9]+(\\.[0-9]+)?$'
       AND e.price_usd::numeric > 0 AND e.price_usd::numeric <= 0.05
-      AND l.status = 'alive_402_priced'
+      ${NO_HEALTH ? '' : "AND l.status = 'alive_402_priced'"}
       ${svcFilter}
     ORDER BY s.name, e.url
   `)
 
   let work = targets
   if (LIMIT) work = work.slice(0, LIMIT)
-  console.log(`Inferring params for ${work.length} POST endpoints · model ${MODEL} · apply=${APPLY}\n`)
+  console.log(`Inferring params for ${work.length} ${METHODS.join('/')} endpoints · model ${MODEL} · apply=${APPLY}\n`)
 
   let inferred = 0,
     empty = 0,

@@ -70,7 +70,7 @@ const SERVICES = [
           token('sellToken'),
           token('buyToken'),
           p('amount', 'string', 'Human sell amount.', true),
-          p('from', 'string', "Payer's wallet address (always the recipient).", true),
+          p('from', 'string', 'Payer\'s wallet address (always the recipient) — the USER\'s own address ("$USER_ADDRESS").', true),
           p('slippageBps', 'number', 'Slippage bound in bps (optional).'),
           p('deadlineSec', 'number', 'Tx deadline in seconds, 30–3600 (optional).'),
         ],
@@ -78,12 +78,12 @@ const SERVICES = [
       {
         name: 'build_wrap',
         description: 'Build an ETH → WETH deposit transaction to sign.',
-        params: [p('amount', 'string', 'Human ETH amount.', true), p('from', 'string', "Payer's wallet address.", true)],
+        params: [p('amount', 'string', 'Human ETH amount.', true), p('from', 'string', 'Payer\'s wallet address — the USER\'s own address ("$USER_ADDRESS").', true)],
       },
       {
         name: 'build_unwrap',
         description: 'Build a WETH → ETH withdraw transaction to sign.',
-        params: [p('amount', 'string', 'Human WETH amount.', true), p('from', 'string', "Payer's wallet address.", true)],
+        params: [p('amount', 'string', 'Human WETH amount.', true), p('from', 'string', 'Payer\'s wallet address — the USER\'s own address ("$USER_ADDRESS").', true)],
       },
       {
         name: 'convert_amount',
@@ -117,7 +117,7 @@ const SERVICES = [
       { name: 'get_proposal', description: 'Full detail for one proposal: choices, scores, state, window.', params: [p('id', 'string', 'Proposal id (0x… hash).', true)] },
       { name: 'list_votes', description: 'Votes cast on a proposal, by voting power.', params: [p('proposal', 'string', 'Proposal id (0x… hash).', true), p('first', 'number', 'Max results.')] },
       { name: 'get_space', description: 'DAO space metadata (name, network, proposal/follower counts).', params: [p('id', 'string', 'Space id, e.g. ens.eth.', true)] },
-      { name: 'list_spaces', description: 'Browse DAO spaces, most followed first.', params: [p('first', 'number', 'Max results.')] },
+      { name: 'list_spaces', description: 'Browse and discover DAO governance spaces on Snapshot, most-followed first — which DAOs exist, top DAOs by followers, find a DAO to join or watch.', params: [p('first', 'number', 'Max results.')] },
       // The read-only escape hatch: any hub filter the curated tools don't
       // cover, without a new tool per intent. Guarded server-side (single
       // query op, root-field allowlist, depth/first caps) — see

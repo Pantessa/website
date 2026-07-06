@@ -8,7 +8,7 @@
  *
  *   npm run test:router
  */
-import { shortlistEndpoints, capabilityOf, dedupeByCapability } from '../lib/router'
+import { shortlistEndpoints, capabilityOf, dedupeByCapability, routeMessage, type SmartPick } from '../lib/router'
 import { deriveDescription, buildSmartRequest, type PlannableEndpoint } from '../lib/endpoint-planner'
 import { detectGovernanceIntent, mapChoiceToIndex, buildVoteTypedData, extractSpaceQuery } from '../lib/governance'
 import { coerceForSigning, describeTypedData } from '../lib/eip712'
@@ -289,5 +289,49 @@ check('gated: explicit proposal id passes through untouched', resolveVoteReferen
 check('gated: no ctx → null (stateless resolve is the fallback)', resolveVoteReference('vote yes', bareVote, undefined) === null)
 check('gated: title mention resolves', resolveVoteReference('vote against Fund the treasury', parseVoteIntent('vote against Fund the treasury'), wcListOnly)?.proposalId === wcOffers.items[1].id)
 
-console.log(`\n${pass} passed, ${fail} failed\n`)
-process.exit(fail ? 1 : 0)
+// ── RR19: wallet-mode free multi-hop (defer semantics) ──────────────────────
+// The loop executes FREE ($0) picks live and DEFERS paid ones: the paid pick
+// stays an unexecuted plan pick and the loop stops. Scripted inference, no DB,
+// no network — routeMessage with injected endpoints.
+console.log('\nRR19 — free multi-hop with paid defer:')
+const freeResolve: PlannableEndpoint = {
+  id: 'free-resolve', serverSlug: 'snapshot-free', serverName: 'Snapshot DAO (Free)', method: 'POST',
+  url: 'https://snap.test/mcp#list_spaces', description: 'Browse DAO spaces by name', priceUsd: '0',
+  parameters: [{ group: 'body', name: 'q', required: true }],
+}
+const paidFetch: PlannableEndpoint = {
+  id: 'paid-stats', serverSlug: 'dao-stats', serverName: 'DAO Stats', method: 'GET',
+  url: 'https://stats.test/space/{id}', description: 'Deep DAO statistics for a space id', priceUsd: '0.02',
+  parameters: [{ group: 'path', name: 'id', required: true }],
+}
+const fakeInference = {
+  id: 'inf', slug: 'chatgpt', name: 'ChatGPT', description: 'inference', category: 'Inference',
+  kind: 'inference', callable: true, protocol: 'http', endpoint: 'https://inf.test/v1', priceUsd: '0.001',
+} as unknown as Parameters<typeof routeMessage>[0]['catalog'][number]
+const scripted = [
+  JSON.stringify({ intent: 'resolve the DAO first', needs: ['space id'], picks: [{ endpointId: 'free-resolve', params: { q: 'balancer' }, reason: 'resolve', score: 1 }] }),
+  JSON.stringify({ intent: 'fetch stats', needs: [], picks: [{ endpointId: 'paid-stats', params: { id: 'balancer.eth' }, reason: 'stats', score: 1 }] }),
+]
+const executed: string[] = []
+void (async () => {
+  const decision = await routeMessage({
+    message: 'find the balancer DAO and show its deep stats',
+    catalog: [fakeInference],
+    endpoints: [freeResolve, paidFetch],
+    runInference: async () => ({ text: scripted.shift() ?? JSON.stringify({ intent: 'done', needs: [], picks: [] }) }),
+    executeCall: async (pick: SmartPick) => {
+      executed.push(pick.endpointId)
+      if (pick.priceUsd !== '0') return { defer: true }
+      return { data: { spaces: [{ id: 'balancer.eth', name: 'Balancer' }] } }
+    },
+  })
+  check('RR19: free pick EXECUTED in the loop', executed[0] === 'free-resolve' && decision.context.length === 1)
+  check('RR19: paid pick DEFERRED (kept unexecuted, loop stopped)', executed[1] === 'paid-stats' && decision.smartPicks.some((p) => p.endpointId === 'paid-stats') && decision.context.length === 1)
+  check('RR19: both picks in the plan, free first', decision.smartPicks.map((p) => p.endpointId).join(',') === 'free-resolve,paid-stats')
+  check('RR19: defer noted for the user', decision.notes.some((n) => /wallet to sign/.test(n)))
+  check('RR18 synergy: loop extracted the resolved space entity', decision.entities.some((e) => e.kind === 'space' && e.value === 'balancer.eth'))
+
+  console.log(`\n${pass} passed, ${fail} failed\n`)
+  process.exit(fail ? 1 : 0)
+})()
+

@@ -26,6 +26,20 @@ export interface OfferedItem {
   data?: Record<string, string>
 }
 
+/** A concrete value a tool result RESOLVED this conversation (RR18) — the
+ *  cross-MCP carry: snapshot resolves "Balancer" → balancer.eth + token BAL,
+ *  and the NEXT turn's "swap 1 USDC for its token" plans against the exact
+ *  value on a different MCP. Names are how the user would say it; values are
+ *  what a tool param needs. */
+export interface EntityRef {
+  /** 'proposal' | 'space' | 'token' | 'address' | … */
+  kind: string
+  /** How the user refers to it — "Balancer", "Fee switch pilot", "BAL". */
+  name: string
+  /** The exact param value — space id, proposal id, symbol/address. */
+  value: string
+}
+
 export interface WorkingContext {
   v: 1
   /** Where the conversation is operating — e.g. a resolved Snapshot space.
@@ -35,6 +49,8 @@ export interface WorkingContext {
   offers?: { kind: string; items: OfferedItem[] }
   /** An action offered and awaiting the user (vote ready on X, quote shown). */
   pending?: { kind: string; summary: string; data: Record<string, string> }
+  /** Values tool results resolved this conversation (RR18) — newest first. */
+  entities?: EntityRef[]
   /** Turns since this context was written — computed by the client at send
    *  time (distance from the message that carried it). Sections expire by age. */
   age: number
@@ -46,6 +62,8 @@ export interface WorkingContext {
 const PENDING_MAX_AGE = 2
 const OFFERS_MAX_AGE = 6
 const SCOPE_MAX_AGE = 12
+const ENTITIES_MAX_AGE = 8
+export const MAX_ENTITIES = 12
 
 const MAX_ITEMS = 12
 const MAX_STR = 220
@@ -105,8 +123,83 @@ export function sanitizeWorkingContext(raw: unknown): WorkingContext | undefined
     if (kind && summary) ctx.pending = { kind, summary, data: strMap(pending.data) }
   }
 
-  if (!ctx.scope && !ctx.offers && !ctx.pending) return undefined
+  if (age <= ENTITIES_MAX_AGE && Array.isArray(r.entities)) {
+    const entities: EntityRef[] = []
+    for (const e of (r.entities as unknown[]).slice(0, MAX_ENTITIES)) {
+      if (!e || typeof e !== 'object') continue
+      const o = e as Record<string, unknown>
+      const kind = str(o.kind)
+      const name = str(o.name)
+      const value = str(o.value)
+      if (kind && name && value) entities.push({ kind, name, value })
+    }
+    if (entities.length) ctx.entities = entities
+  }
+
+  if (!ctx.scope && !ctx.offers && !ctx.pending && !ctx.entities) return undefined
   return ctx
+}
+
+// ── Entity extraction (RR18) ────────────────────────────────────────────────
+const PROPOSAL_ID_RE = /^0x[0-9a-fA-F]{64}$/
+const ADDRESS_RE = /^0x[0-9a-fA-F]{40}$/
+const SPACE_ID_RE = /^[a-z0-9][a-z0-9-]*\.(eth|xyz|sol)$/i
+
+/**
+ * Pull carry-worthy entities out of a raw tool RESULT (parsed JSON), merging
+ * with what's already known (new findings first, deduped, capped). Pure and
+ * shape-generic: it recognizes VALUE PATTERNS (proposal hashes, space ids,
+ * token symbol+address pairs) rather than any specific MCP's schema, so a new
+ * blockchain MCP's results carry entities with zero wiring.
+ */
+export function extractEntities(data: unknown, prior: EntityRef[] = []): EntityRef[] {
+  const found: EntityRef[] = []
+  const seen = new Set(prior.map((e) => `${e.kind}:${e.value.toLowerCase()}`))
+  const push = (kind: string, name: string, value: string) => {
+    const key = `${kind}:${value.toLowerCase()}`
+    if (seen.has(key) || found.length >= MAX_ENTITIES) return
+    seen.add(key)
+    found.push({ kind, name: name.slice(0, MAX_STR), value: value.slice(0, MAX_STR) })
+  }
+  const walk = (node: unknown, depth: number) => {
+    if (depth > 6 || found.length >= MAX_ENTITIES) return
+    if (Array.isArray(node)) {
+      for (const item of node.slice(0, 20)) walk(item, depth + 1)
+      return
+    }
+    if (!node || typeof node !== 'object') return
+    const o = node as Record<string, unknown>
+    const id = typeof o.id === 'string' ? o.id : undefined
+    const label = [o.title, o.name, o.symbol].find((x): x is string => typeof x === 'string' && !!x.trim())
+    if (id && label) {
+      if (PROPOSAL_ID_RE.test(id)) push('proposal', label, id)
+      else if (SPACE_ID_RE.test(id)) push('space', label, id)
+      else if (ADDRESS_RE.test(id)) push('token', label, id)
+    }
+    // Token shapes ({symbol, address}) — the value is the SYMBOL: it resolves
+    // on any chain's token tools, while a copied address is chain-specific.
+    if (typeof o.symbol === 'string' && o.symbol.trim() && typeof o.address === 'string' && ADDRESS_RE.test(o.address)) {
+      push('token', o.symbol, o.symbol)
+    }
+    for (const v of Object.values(o)) walk(v, depth + 1)
+  }
+  walk(data, 0)
+  return [...found, ...prior].slice(0, MAX_ENTITIES)
+}
+
+/**
+ * The generic reply-side carry: keep the echoed scope/offers alive (a data
+ * turn between an offer and its follow-up must not erase the offer), fold in
+ * newly extracted entities, and DROP pending (actions expire fast by design —
+ * a generic turn never resurrects a vote/swap awaiting signature).
+ */
+export function carryContext(echoed: WorkingContext | undefined, entities: EntityRef[]): WorkingContext | undefined {
+  const merged = extractEntities([], [...entities, ...(echoed?.entities ?? [])])
+  const out: WorkingContext = { v: 1, age: 0 }
+  if (echoed?.scope) out.scope = echoed.scope
+  if (echoed?.offers) out.offers = echoed.offers
+  if (merged.length) out.entities = merged
+  return out.scope || out.offers || out.entities ? out : undefined
 }
 
 /** Resolve an ordinal reference ("1", "the second one", "last") against the
@@ -150,6 +243,12 @@ export function contextBlockForPlanner(ctx: WorkingContext | undefined): string 
     )
   }
   if (ctx.pending) lines.push(`Pending action awaiting the user: ${ctx.pending.summary}`)
+  if (ctx.entities?.length) {
+    lines.push(
+      `Entities resolved earlier in this conversation — when the user refers to one by name or pronoun ("that token", "its token", "the DAO"), use its EXACT value:`,
+      ...ctx.entities.map((e) => `- ${e.kind} "${e.name}" = ${e.value}`),
+    )
+  }
   return lines.length ? `Conversation working context (structured state from the previous turns):\n${lines.join('\n')}` : ''
 }
 

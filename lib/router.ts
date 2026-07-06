@@ -31,6 +31,8 @@ import {
   type SmartRequest,
 } from '@/lib/endpoint-planner'
 import { buildSignableArtifact, type SignableArtifact } from '@/lib/transaction-layer'
+import { clarifyPromptLine, clarifyOf, type ClarifyRequest } from '@/lib/clarify'
+import { extractEntities, type EntityRef } from '@/lib/working-context'
 import { hybridShortlist } from '@/lib/retrieval'
 
 // ── Canonical trace contract ────────────────────────────────────────────────
@@ -93,6 +95,14 @@ export interface RouterDecision {
    *  approve — the transaction layer's output. Present only when a routed call
    *  yielded one (LOOP mode). The caller surfaces it for signing. */
   artifact?: SignableArtifact
+  /** The model refused to guess an ambiguous money/governance target (RR17).
+   *  Breaks the route like a signable: the caller renders chips; the user's
+   *  pick resumes as a normal next turn. */
+  clarify?: ClarifyRequest
+  /** Entities the LOOP's tool results resolved (RR18) — proposal/space/token
+   *  values the caller folds into the reply's working context so the next
+   *  turn plans against exact values across MCPs. */
+  entities: EntityRef[]
 }
 
 /** Result of executing one chosen call: the data to observe, or an error to
@@ -100,6 +110,11 @@ export interface RouterDecision {
 export interface ExecuteResult {
   data?: unknown
   error?: string
+  /** RR19: this pick can't run inside the loop (it needs a wallet signature —
+   *  a PAID call in wallet mode). The loop keeps it as an UNEXECUTED plan
+   *  pick and stops: free resolve→read hops happened live, the paid terminus
+   *  goes to the wallet's plan→sign→execute phase. */
+  defer?: boolean
 }
 
 export interface RouteOptions {
@@ -339,6 +354,8 @@ export interface RouterModelDecision {
   intent: string
   needs: string[]
   picks: { endpointId: string; params: Record<string, string | number | boolean>; reason: string; score: number }[]
+  /** The model refused to guess a money/governance target — ask the user. */
+  clarify?: ClarifyRequest
 }
 
 function conversationBlock(history: ConversationTurn[]): string {
@@ -399,12 +416,13 @@ export function routerPrompt(
     `The user asked${history.length ? ' (interpret it in the context of the conversation above)' : ''}:\n"""${message}"""`,
     ...(observed ? [observed] : []),
     `Below are paid API endpoints, grouped by service, each tagged with its price in [$…]; some are tagged ✓proven with a settle rate (the higher, the more reliable). Pick AT MOST ONE endpoint per service. Pick MULTIPLE services ONLY when the question spans DISTINCT needs (e.g. a price AND news) — NEVER call two services that return the SAME kind of data (e.g. two crypto-price sources): that just double-charges the user. When several services provide the same thing, choose the SINGLE best — highest ✓proven settle rate, then cheapest. A single inference call then synthesizes everything into one answer. Only call an endpoint if it would genuinely help. Anything needing LIVE or REAL-TIME data — a price, quote, weather, scores, listings, search, on-chain or market data — should route to a relevant endpoint rather than be answered from memory. Still pick an un-proven endpoint when it is clearly the best (or only) fit.`,
-    `Fill parameter values from the user's message and conversation (respect types; include every required param; skip optional params you can't infer). You MAY include query parameters even for an endpoint that lists no params, when it clearly needs one to answer — infer the obvious key/value (e.g. for a "latest quote" endpoint, "symbol":"ETH"; for a search endpoint, "query":"…"). Only pick nothing when the question genuinely needs no live data (general knowledge, chit-chat).`,
+    `Fill parameter values from the user's message and conversation (respect types; include every required param; skip optional params you can't infer). You MAY include query parameters even for an endpoint that lists no params, when it clearly needs one to answer — infer the obvious key/value (e.g. for a "latest quote" endpoint, "symbol":"ETH"; for a search endpoint, "query":"…"). Pass tokens/assets in the FORM the user gave them (a symbol stays a symbol) — NEVER substitute a contract address from memory; addresses differ per chain and a wrong-chain address fails or misroutes. Only pick nothing when the question genuinely needs no live data (general knowledge, chit-chat).`,
     ...(contextVarsLine(planCtx) ? [contextVarsLine(planCtx)] : []),
+    clarifyPromptLine(),
     menu || '(no endpoints available)',
     `Respond with ONLY this JSON, no prose, no code fences:`,
     `{"intent":"<one short sentence: what the user wants>","needs":["<live data this requires, if any>"],"picks":[{"endpointId":"<id>","params":{"<name>":"<value>"},"reason":"<why this endpoint, one short clause>","score":<0..1 confidence>}]}`,
-    `If nothing is needed: {"intent":"<…>","needs":[],"picks":[]}`,
+    `If nothing is needed: {"intent":"<…>","needs":[],"picks":[]}. If the CLARIFY RULE applies: {"intent":"<…>","needs":[],"picks":[],"clarify":{…}}.`,
   ].join('\n\n')
 }
 
@@ -448,7 +466,10 @@ export function parseRouterDecision(text: string, offered: PlannableEndpoint[]):
     const score = Number.isFinite(rawScore) ? Math.max(0, Math.min(1, rawScore)) : 1
     return { endpointId: v.endpointId, params: v.params, reason, score }
   })
-  return { intent, needs, picks }
+  // RR17: the model may ask instead of pick — only honored with ZERO picks
+  // (a clarify alongside picks would be contradictory; picks win).
+  const clarify = picks.length === 0 ? clarifyOf(parsed.clarify) ?? undefined : undefined
+  return { intent, needs, picks, clarify }
 }
 
 /**
@@ -478,7 +499,7 @@ export async function routeMessage(opts: RouteOptions): Promise<RouterDecision> 
   if (!inference) {
     emit({ type: 'status', label: 'No inference engine available.' })
     addNote('No live inference engine is available — connect or enable one (e.g. Yeetful · Claude).', 'warn')
-    return { inference: null, smartPicks: [], picks: [], trace, notes, context: [] }
+    return { inference: null, smartPicks: [], picks: [], trace, notes, context: [], entities: [] }
   }
 
   emit({ type: 'status', label: `Scanning the MCP directory (${catalog.length} services)…` })
@@ -500,6 +521,8 @@ export async function routeMessage(opts: RouteOptions): Promise<RouterDecision> 
   const smartPicks: SmartPick[] = []
   const context: string[] = []
   let artifact: SignableArtifact | undefined
+  let clarifyOut: ClarifyRequest | undefined
+  let entities: EntityRef[] = []
   const byId = new Map(shortlisted.map((e) => [e.id, e]))
 
   // Build one SmartPick + emit candidate→select; null if the call can't be built.
@@ -554,6 +577,12 @@ export async function routeMessage(opts: RouteOptions): Promise<RouterDecision> 
       addNote(`Routing call failed (${err instanceof Error ? err.message : 'error'}); answering from the inference engine alone.`, 'warn')
     }
     emit({ type: 'analyze', intent: decision.intent || 'Answering the question.', needs: decision.needs })
+    // RR17: the model refused to guess a money/governance target — break the
+    // route (like a signable) and surface the question. No picks are planned.
+    if (decision.clarify) {
+      clarifyOut = decision.clarify
+      emit({ type: 'note', level: 'info', label: `Ambiguous target — asking the user: ${decision.clarify.question}` })
+    }
     // Capability dedup: never plan two providers for the same capability — keep
     // the best (higher rating, then cheaper); the rest are dropped + noted.
     const tagged = decision.picks
@@ -566,7 +595,7 @@ export async function routeMessage(opts: RouteOptions): Promise<RouterDecision> 
       const sp = planPick(k.pick)
       if (sp) smartPicks.push(sp)
     }
-    if (smartPicks.length === 0 && !routingFailed) emitConsideredNone(shortlisted, addNote, emit)
+    if (smartPicks.length === 0 && !routingFailed && !clarifyOut) emitConsideredNone(shortlisted, addNote, emit)
   } else {
     // ── LOOP mode: bounded reason→act→observe. Resolve ids with a lookup, see
     //    the result, then make the data call — up to maxSteps. ───────────────
@@ -592,6 +621,12 @@ export async function routeMessage(opts: RouteOptions): Promise<RouterDecision> 
         emit({ type: 'analyze', intent: decision.intent || 'Answering the question.', needs: decision.needs })
         firstAnalyze = false
       }
+      // RR17: the model asked instead of picking — break the loop and surface.
+      if (decision.clarify) {
+        clarifyOut = decision.clarify
+        emit({ type: 'note', level: 'info', label: `Ambiguous target — asking the user: ${decision.clarify.question}` })
+        break
+      }
       const fresh = decision.picks.filter((p) => !calledIds.has(p.endpointId))
       if (fresh.length === 0) break // model has enough (or only repeats) → done
       // Within-step capability dedup: if the model picks two providers for the
@@ -608,6 +643,7 @@ export async function routeMessage(opts: RouteOptions): Promise<RouterDecision> 
         addNote(`Skipped ${d.ep.serverName} — same capability (${d.capability}) as another pick this step; kept the better-rated/cheaper one.`)
       }
       let progressed = false
+      let deferred = false
       for (const k of deduped.kept) {
         const pick = k.pick
         calledIds.add(pick.endpointId)
@@ -621,11 +657,20 @@ export async function routeMessage(opts: RouteOptions): Promise<RouterDecision> 
           break
         }
         const res = await opts.executeCall(sp)
+        if (res.defer) {
+          // RR19: paid pick in wallet mode — planned, not executed. It's the
+          // turn's terminus: keep it for the wallet plan and end the loop.
+          smartPicks.push(sp)
+          addNote(`${sp.serverName} ($${sp.priceUsd}) goes to your wallet to sign — free lookups ran first.`)
+          deferred = true
+          break
+        }
         if (res.error) {
           // Feed the failure back so the next step can repair (try a different call).
           observations.push(`${sp.serverName} ${shortUrl(sp.endpointUrl)} → ERROR: ${truncate(res.error, 200)}`)
         } else {
           smartPicks.push(sp)
+          entities = extractEntities(res.data, entities)
           context.push(`### ${sp.serverName}\n${compactForSynthesis(res.data, 3500)}`)
           observations.push(`${sp.serverName} ${shortUrl(sp.endpointUrl)} → ${compactForSynthesis(res.data, 600)}`)
           spentThisTurn += price
@@ -641,7 +686,7 @@ export async function routeMessage(opts: RouteOptions): Promise<RouterDecision> 
           }
         }
       }
-      if (artifact || ceilingHit || !progressed) break // action ready, budget hit, or no progress → stop
+      if (artifact || ceilingHit || deferred || !progressed) break // action ready, budget hit, deferred to wallet, or no progress → stop
     }
     if (smartPicks.length === 0 && !artifact) emitConsideredNone(shortlisted, addNote, emit)
   }
@@ -669,6 +714,8 @@ export async function routeMessage(opts: RouteOptions): Promise<RouterDecision> 
     notes,
     context,
     artifact,
+    clarify: clarifyOut,
+    entities,
   }
 }
 

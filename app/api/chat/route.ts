@@ -21,7 +21,7 @@ import { tokenDecimals, humanToAtoms } from '@/lib/cow'
 import { ensureBaseTokenList } from '@/lib/token-list'
 import { resolveProposal } from '@/lib/snapshot-read'
 import { detectGovernanceIntent, runGovernanceTurn } from '@/lib/governance'
-import { sanitizeWorkingContext, contextBlockForPlanner, type WorkingContext } from '@/lib/working-context'
+import { sanitizeWorkingContext, contextBlockForPlanner, type WorkingContext, extractEntities, carryContext } from '@/lib/working-context'
 import { getSessionAddress } from '@/lib/auth'
 import { grantViolation, type GrantPolicy } from '@/lib/spend-grant'
 import {
@@ -43,6 +43,8 @@ import {
 import { loadCatalog } from '@/lib/catalog'
 import { routeMessage, selectInferenceProvider, compactForSynthesis, dedupePlannerPicks, type TraceStep, type SmartPick } from '@/lib/router'
 import { buildSignableArtifact } from '@/lib/transaction-layer'
+import { parseClarify, type ClarifyRequest } from '@/lib/clarify'
+import type { EntityRef } from '@/lib/working-context'
 import { isCacheable, routeCacheKey, getCached, setCached } from '@/lib/route-cache'
 import { recordRouteEvent, routeSavings } from '@/lib/route-telemetry'
 import { newTurnId, recordTraceLine } from '@/lib/route-trace'
@@ -132,12 +134,14 @@ async function planSmartPicks(
   ctx?: WorkingContext,
   /** User address for the "$USER_ADDRESS" context token (see PlanContext). */
   userAddress?: string,
-): Promise<{ picks: PlannedPick[]; dropped: PlannableEndpoint[]; txHash?: string }> {
+): Promise<{ picks: PlannedPick[]; dropped: PlannableEndpoint[]; txHash?: string; clarify?: ClarifyRequest }> {
   const { text, txHash } = await callInference(inference, plannerPrompt(message, smart, history, contextBlockForPlanner(ctx), { userAddress }))
   // Never pay two services for the same capability — keep the best per
   // capability (same dedup the Auto-Router applies). dropped → surfaced as notes.
   const { picks, dropped } = dedupePlannerPicks(parsePlannerPicks(text, smart), smart)
-  return { picks, dropped, txHash }
+  // RR17: the planner may ask instead of pick — honored only with zero picks.
+  const clarify = picks.length === 0 ? parseClarify(text) ?? undefined : undefined
+  return { picks, dropped, txHash, clarify }
 }
 
 export async function POST(req: NextRequest) {
@@ -841,7 +845,12 @@ async function planWalletPayments(
   const smartServed = new Set<string>()
   if (smart.length > 0) {
     try {
-      const { picks, dropped } = await planSmartPicks(inference, message, smart, history, workingContext, walletAddress)
+      const { picks, dropped, clarify } = await planSmartPicks(inference, message, smart, history, workingContext, walletAddress)
+      if (clarify) {
+        // RR17: ambiguous money/governance target — ask, don't charge for a
+        // half-understood turn. The pick resumes as a normal next message.
+        return NextResponse.json({ reply: `🤔 ${clarify.question}`, clarify, notes })
+      }
       for (const d of dropped) notes.push(`Skipped ${d.serverName} — another picked service covers the same capability; kept the better-rated/cheaper one.`)
       if (picks.length === 0) {
         const considered = [...new Set(smart.map((e) => e.serverName))].join(', ')
@@ -963,6 +972,7 @@ async function executeWithSignatures(
 
   const receipts: Receipt[] = []
   const contextBlocks: string[] = []
+  let carriedEntities: EntityRef[] = []
   const inferenceCall = plan.find((c) => c.role === 'inference')
 
   // Persist each wallet-mode receipt to the live routing feed (route_trace_lines)
@@ -1011,6 +1021,7 @@ async function executeWithSignatures(
       const data = c.mcp
         ? parseMcpDataResult(res.headers.get('content-type') ?? '', await res.text())
         : await res.json()
+      carriedEntities = extractEntities(data, carriedEntities)
       contextBlocks.push(`### ${c.name}\n${compactForSynthesis(data, 3500)}`)
       const txHash = decodeSettlement(res)?.transaction
       pushReceipt({ name: c.name, endpoint: c.host, priceUsd: c.priceUsd, txHash, ok: true })
@@ -1065,7 +1076,9 @@ async function executeWithSignatures(
   ledger(inferenceCall, true, infTx)
 
   const reply = text + infoFooter(listedOnly, notes)
-  return NextResponse.json({ reply, receipts, payer: 'your wallet' })
+  // RR18: resolved entities ride the reply so the NEXT turn (possibly on a
+  // different MCP) plans against exact values, not prose.
+  return NextResponse.json({ reply, receipts, payer: 'your wallet', workingContext: carryContext(workingContext, carriedEntities) })
 }
 
 /** Build the payment header for a planned call from its client signature. */
@@ -1102,6 +1115,7 @@ async function runWithBurner(
   trace({ type: 'status', label: 'routing within your selected agents' })
   const receipts: Receipt[] = []
   const contextBlocks: string[] = []
+  let carriedEntities: EntityRef[] = []
   // A vote built by the snapshot MCP's prepare_vote tool, hoisted out of the
   // tool result so the chat can render a Sign-vote button instead of dumping
   // the EIP-712 typed data into the inference prompt.
@@ -1133,6 +1147,7 @@ async function runWithBurner(
 
     try {
       const { json, txHash } = await paidGet(ds.endpoint!, ds.queryParam ?? 'q', message)
+      carriedEntities = extractEntities(json, carriedEntities)
       contextBlocks.push(`### ${ds.name}\n${compactForSynthesis(json, 3500)}`)
       receipts.push({ name: ds.name, endpoint: host, priceUsd: ds.priceUsd ?? '0.01', txHash, ok: true })
       if (grant) {
@@ -1173,6 +1188,7 @@ async function runWithBurner(
         voteRequest = vote
         contextBlocks.push(`### ${ds.name}\nPrepared a vote for the user to sign: ${vote.summary}`)
       } else {
+        carriedEntities = extractEntities(data, carriedEntities)
         contextBlocks.push(`### ${ds.name}\n${compactForSynthesis(data, 3500)}`)
       }
       receipts.push({ name: ds.name, endpoint: host, priceUsd: ds.priceUsd ?? '0.01', txHash, ok: true })
@@ -1197,7 +1213,12 @@ async function runWithBurner(
       blocked.push(`endpoint planner (${plannerViolation})`)
     } else {
       try {
-        const { picks, dropped, txHash } = await planSmartPicks(inference, message, smart, history, workingContext, userAddress)
+        const { picks, dropped, txHash, clarify } = await planSmartPicks(inference, message, smart, history, workingContext, userAddress)
+        if (clarify) {
+          // RR17: break the turn on the question — nothing further is paid.
+          trace({ type: 'note', level: 'info', label: `Ambiguous target — asking: ${clarify.question}` })
+          return NextResponse.json({ reply: `🤔 ${clarify.question}`, clarify, receipts, notes })
+        }
         for (const d of dropped) notes.push(`Skipped ${d.serverName} — another picked service covers the same capability; kept the better-rated/cheaper one.`)
         if (grant) {
           await recordLedger({ grantId: grant.id, orgId: grant.orgId ?? undefined, host: infHost, serviceName: inference.name, amountUsd: infPrice, ok: true, txHash, note: 'settled' })
@@ -1232,6 +1253,7 @@ async function runWithBurner(
           }
           try {
             const { json, txHash: dataTx } = await paidCall(request)
+            carriedEntities = extractEntities(json, carriedEntities)
             contextBlocks.push(`### ${ep.serverName}\n${compactForSynthesis(json, 3500)}`)
             receipts.push({ name: ep.serverName, endpoint: host, priceUsd: ep.priceUsd, txHash: dataTx, ok: true })
             trace({ type: 'receipt', receipt: { name: ep.serverName, endpoint: host, priceUsd: ep.priceUsd, txHash: dataTx, ok: true } })
@@ -1291,7 +1313,7 @@ async function runWithBurner(
     reply += `\n\n— spend grant “${grant.label}”: $${spentToday.toFixed(2)}/$${policy.perDayUsd} today`
     if (blocked.length) reply += ` · blocked ${blocked.join(', ')}`
   }
-  return NextResponse.json({ reply, receipts, payer: 'the house wallet', voteRequest: voteRequest ?? undefined })
+  return NextResponse.json({ reply, receipts, payer: 'the house wallet', voteRequest: voteRequest ?? undefined, workingContext: carryContext(workingContext, carriedEntities) })
 }
 
 async function paidGet(endpoint: string, queryParam: string, value: string) {
@@ -1558,57 +1580,7 @@ export function streamAutoRouter(
           return r
         }
 
-        // ── Wallet mode: single planning pass (no executeCall) → hand the data +
-        //    answer payments to the wallet to sign via the two-phase execute path.
-        if (walletAddress) {
-          const decision = await routeMessage({ message, history, catalog, onStep: (s) => send(s), runInference: runRoutingInference, userAddress: walletAddress ?? ownerOverride })
-          const wPlan: PlannedCall[] = []
-          let plannedUsd = 0
-          const planGate = async (name: string, h: string, price: number): Promise<string | null> => {
-            if (!policy || !grant) return null
-            const v = grantViolation(policy, h, price, spentToday + plannedUsd, spentTotal + plannedUsd)
-            if (v) {
-              await recordLedger({ grantId: grant.id, orgId: grant.orgId ?? undefined, host: h, serviceName: name, amountUsd: 0, ok: false, note: v })
-              return v
-            }
-            plannedUsd += price
-            return null
-          }
-          for (const pick of decision.smartPicks) {
-            const host = hostOf(pick.request.url)
-            const violation = await planGate(pick.serverName, host, Number(pick.priceUsd))
-            if (violation) {
-              const r: Receipt = { name: pick.serverName, endpoint: host, priceUsd: pick.priceUsd, ok: false, note: `blocked: ${violation}`, slug: violation === 'NOT_ALLOWED' ? pick.serverSlug : undefined }
-              receipts.push(r)
-              send({ type: 'receipt', receipt: r })
-              continue
-            }
-            const challenge = await getChallenge(pick.request.url, { method: pick.request.method, headers: pick.request.headers, body: pick.request.body })
-            wPlan.push({ id: `smart:${pick.endpointId}`, role: 'data', name: pick.serverName, host, priceUsd: pick.priceUsd, endpoint: pick.endpointUrl, url: pick.request.url, method: pick.request.method, body: pick.request.body, prepared: challenge ? derivePayment(challenge, walletAddress) : null })
-          }
-          const infProtocol = inferenceProtocolOf(inference)
-          const infTool = inference.tool ?? (infProtocol === 'http' ? 'openai/gpt-4o-mini' : 'ask_claude')
-          const infChallenge = await getChallenge(inference.endpoint!, {
-            method: 'POST',
-            headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream' },
-            body: infProtocol === 'http' ? inferenceBody('http', infTool, 'probe') : dummyMcpBody(infTool),
-          })
-          wPlan.push({ id: `inference:${inference.slug}`, role: 'inference', name: inference.name, host: infHost, priceUsd: inference.priceUsd ?? '0.01', endpoint: inference.endpoint!, tool: infTool, protocol: infProtocol, prepared: infChallenge ? derivePayment(infChallenge, walletAddress) : null })
-          const payments = wPlan
-            .filter((c) => c.prepared)
-            .map((c) => ({ id: c.id, name: c.name, host: c.host, priceUsd: c.priceUsd, signing: c.prepared!.signing as SigningRequest }))
-          // Carry the turnId so the wallet's execute phase persists its
-          // settlements under THIS turn → they show in the live feed, grouped
-          // with the plan trace.
-          send({ type: 'plan', plan: wPlan, payments, listedOnly: [], notes: decision.notes, turnId })
-          recordTurn({ payer: 'your wallet', shortlisted: shortlistedOf(decision), picks: picksOf(decision), intent: intentOf(decision) })
-          return finish()
-        }
-
-        // ── Burner mode: multi-step loop. executeCall pays + gates + ledgers +
-        //    streams each chosen call; routeMessage chains resolve→fetch and
-        //    feeds results back, returning the gathered context to answer with.
-        const executeCall = async (pick: SmartPick): Promise<{ data?: unknown; error?: string }> => {
+        const executeCall = async (pick: SmartPick): Promise<{ data?: unknown; error?: string; defer?: boolean }> => {
           const host = hostOf(pick.request.url)
           const price = Number(pick.priceUsd)
           // Cache: an identical recent GET read is served for $0.00, no payment,
@@ -1673,7 +1645,96 @@ export function streamAutoRouter(
           }
         }
 
+        // ── Wallet mode (RR19): the loop RUNS for free ($0) reads — resolve →
+        //    read hops execute live exactly like burner mode — while any PAID
+        //    pick DEFERS: it stays an unexecuted plan pick the wallet signs in
+        //    the two-phase execute path. Multi-hop for the main persona.
+        if (walletAddress) {
+          const decision = await routeMessage({
+            message,
+            history,
+            catalog,
+            onStep: (s) => send(s),
+            runInference: runRoutingInference,
+            userAddress: walletAddress ?? ownerOverride,
+            executeCall: (pick) => (pick.priceUsd === '0' ? executeCall(pick) : Promise.resolve({ defer: true })),
+          })
+          if (decision.clarify) {
+            send({ type: 'reply', content: `🤔 ${decision.clarify.question}`, clarify: decision.clarify, trace: trace() })
+            recordTurn({ payer: 'the house wallet', shortlisted: shortlistedOf(decision), picks: picksOf(decision), intent: intentOf(decision) })
+            return finish()
+          }
+          // RR19: the free loop can yield a SIGNABLE (a $0 build_swap ran live)
+          // — surface it exactly like burner mode; the user signs the ACTION,
+          // no data plan needed. Signables break the loop (invariant 4).
+          if (decision.artifact) {
+            if (decision.artifact.kind === 'eip712-vote') {
+              send({ type: 'reply', content: `🗳️ ${decision.artifact.summary}`, receipts, payer: 'your wallet', voteRequest: decision.artifact.vote, trace: trace(), workingContext: carryContext(workingContext, decision.entities) })
+            } else if (decision.artifact.kind === 'eip712-order') {
+              send({ type: 'reply', content: `🔏 ${decision.artifact.summary}`, receipts, payer: 'your wallet', orderRequest: decision.artifact.order, trace: trace(), workingContext: carryContext(workingContext, decision.entities) })
+            } else if (decision.artifact.kind === 'evm-tx-chain') {
+              send({ type: 'reply', content: `🔏 ${decision.artifact.summary}\n🔗 ${decision.artifact.chain.steps.length} steps in the card below — each appears as the previous confirms.`, receipts, payer: 'your wallet', txChain: decision.artifact.chain, trace: trace(), workingContext: carryContext(workingContext, decision.entities) })
+            } else {
+              send({ type: 'reply', content: `🔏 ${decision.artifact.summary}`, receipts, payer: 'your wallet', txRequest: decision.artifact.tx, trace: trace(), workingContext: carryContext(workingContext, decision.entities) })
+            }
+            recordTurn({ payer: 'your wallet', shortlisted: shortlistedOf(decision), picks: picksOf(decision), intent: intentOf(decision) })
+            return finish()
+          }
+          const wPlan: PlannedCall[] = []
+          let plannedUsd = 0
+          const planGate = async (name: string, h: string, price: number): Promise<string | null> => {
+            if (!policy || !grant) return null
+            const v = grantViolation(policy, h, price, spentToday + plannedUsd, spentTotal + plannedUsd)
+            if (v) {
+              await recordLedger({ grantId: grant.id, orgId: grant.orgId ?? undefined, host: h, serviceName: name, amountUsd: 0, ok: false, note: v })
+              return v
+            }
+            plannedUsd += price
+            return null
+          }
+          for (const pick of decision.smartPicks) {
+            const host = hostOf(pick.request.url)
+            const violation = await planGate(pick.serverName, host, Number(pick.priceUsd))
+            if (violation) {
+              const r: Receipt = { name: pick.serverName, endpoint: host, priceUsd: pick.priceUsd, ok: false, note: `blocked: ${violation}`, slug: violation === 'NOT_ALLOWED' ? pick.serverSlug : undefined }
+              receipts.push(r)
+              send({ type: 'receipt', receipt: r })
+              continue
+            }
+            const challenge = await getChallenge(pick.request.url, { method: pick.request.method, headers: pick.request.headers, body: pick.request.body })
+            wPlan.push({ id: `smart:${pick.endpointId}`, role: 'data', name: pick.serverName, host, priceUsd: pick.priceUsd, endpoint: pick.endpointUrl, url: pick.request.url, method: pick.request.method, body: pick.request.body, mcp: pick.request.mcp, prepared: challenge ? derivePayment(challenge, walletAddress) : null })
+          }
+          const infProtocol = inferenceProtocolOf(inference)
+          const infTool = inference.tool ?? (infProtocol === 'http' ? 'openai/gpt-4o-mini' : 'ask_claude')
+          const infChallenge = await getChallenge(inference.endpoint!, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream' },
+            body: infProtocol === 'http' ? inferenceBody('http', infTool, 'probe') : dummyMcpBody(infTool),
+          })
+          wPlan.push({ id: `inference:${inference.slug}`, role: 'inference', name: inference.name, host: infHost, priceUsd: inference.priceUsd ?? '0.01', endpoint: inference.endpoint!, tool: infTool, protocol: infProtocol, prepared: infChallenge ? derivePayment(infChallenge, walletAddress) : null })
+          const payments = wPlan
+            .filter((c) => c.prepared)
+            .map((c) => ({ id: c.id, name: c.name, host: c.host, priceUsd: c.priceUsd, signing: c.prepared!.signing as SigningRequest }))
+          // Carry the turnId so the wallet's execute phase persists its
+          // settlements under THIS turn → they show in the live feed, grouped
+          // with the plan trace.
+          send({ type: 'plan', plan: wPlan, payments, listedOnly: [], notes: decision.notes, turnId })
+          recordTurn({ payer: 'your wallet', shortlisted: shortlistedOf(decision), picks: picksOf(decision), intent: intentOf(decision) })
+          return finish()
+        }
+
+        // ── Burner mode: multi-step loop. executeCall pays + gates + ledgers +
+        //    streams each chosen call; routeMessage chains resolve→fetch and
+        //    feeds results back, returning the gathered context to answer with.
         const decision = await routeMessage({ message, history, catalog, onStep: (s) => send(s), runInference: runRoutingInference, executeCall, userAddress: walletAddress ?? ownerOverride })
+
+        // RR17: the route broke on an ambiguous money/governance target —
+        // surface the question; the chip's pick arrives as the next turn.
+        if (decision.clarify) {
+          send({ type: 'reply', content: `🤔 ${decision.clarify.question}`, receipts, payer: 'the house wallet', clarify: decision.clarify, trace: trace() })
+          recordTurn({ payer: 'the house wallet', shortlisted: shortlistedOf(decision), picks: picksOf(decision), intent: intentOf(decision) })
+          return finish()
+        }
 
         // Transaction layer: a routed tool returned a signable action — surface
         // it for explicit approval instead of synthesizing an answer. Votes reuse
@@ -1741,6 +1802,9 @@ export function streamAutoRouter(
           payer: 'the house wallet',
           routeReport,
           trace: trace(),
+          // RR18: values the loop's tool results resolved ride the reply so
+          // the next turn plans against exact ids/symbols across MCPs.
+          workingContext: carryContext(workingContext, decision.entities),
         })
         recordTurn({ payer: 'the house wallet', shortlisted: shortlistedOf(decision), picks: picksOf(decision), intent: intentOf(decision) })
         finish()
