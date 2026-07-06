@@ -53,9 +53,11 @@ const SERVICE = {
   priceUsd: '0',
   networks: ['Base'],
   websiteUrl: 'https://github.com/Yeetful/free-mcps',
-  // The wired /mcp base + protocol make the row selectable as a live MCP
-  // service in chat; individual tools are the mcp_endpoints children below.
-  callable: true,
+  // callable:false like snapshot-free/uniswap-free — free MCP rows are
+  // PLANNER-driven: the endpoint planner picks among the mcp_endpoints
+  // children below (a callable data row without a wired `tool` matches none
+  // of the chat orchestrator's dispatch buckets and would go dead).
+  callable: false,
   protocol: 'mcp',
   endpoint: COW_BASE,
   tags: ['trading', 'swap', 'limit-order', 'defi', 'mev-protection', 'transaction-building'],
