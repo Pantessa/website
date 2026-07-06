@@ -7,16 +7,23 @@
 // mcpToolOf). priceUsd '0' = explicitly free; calls skip the 402 handshake
 // but stay policy-gated + ledgered.
 //
+// Tool names + param names below MIRROR the shipped zod schemas in
+// free-mcps/services/cow/lib/tools.ts — the planner sends tools/call
+// arguments by these exact names. Re-align if the service surface changes.
+//
 // source:'yeetful' keeps db:ingest/db:audit from pruning or diffing it.
 // Idempotent: upserts by slug, replaces endpoints.
 //
-// ⚠️ DO NOT RUN YET — this ships for the OWNER to run once the MCP is
+// ⚠️ DO NOT RUN THE SEED YET — it ships for the OWNER to run once the MCP is
 // deployed at cow-mcp.yeetful.com (post-deploy step, same as the other free
-// MCPs). Until then, test locally via the EXTRA_MCP_ROWS env (lib/catalog.ts)
-// without touching the shared Neon DB. Run:
+// MCPs). Run:
 //   DATABASE_URL=... npx tsx scripts/seed-cow-free.ts
+//
+// Until then, test locally WITHOUT touching the shared Neon DB:
+//   npx tsx scripts/seed-cow-free.ts --print-extra-env
+// prints the EXTRA_MCP_ROWS / EXTRA_MCP_ENDPOINTS values (lib/catalog.ts +
+// lib/endpoint-planner.ts overlays) derived from this same tool table.
 import { Prisma } from '@prisma/client'
-import prisma from '../lib/db'
 
 type Param = {
   group: 'body'
@@ -24,7 +31,6 @@ type Param = {
   type: string
   description: string
   required: boolean
-  enumValues?: string[]
 }
 
 const p = (name: string, type: string, description: string, required = false): Param => ({
@@ -37,21 +43,24 @@ const p = (name: string, type: string, description: string, required = false): P
 
 const COW_BASE = process.env.FREE_COW_MCP_BASE ?? 'https://cow-mcp.yeetful.com/mcp'
 
-const token = (which: string, required = true) =>
-  p(which, 'string', `${which} — symbol (USDC, WETH, COW…) or 0x address on Base.`, required)
+const chain = () =>
+  p('chain', 'string', 'Chain: mainnet | gnosis | arbitrum | base | avalanche | polygon | bnb | sepolia (default mainnet).')
 
-const user = (name: string, what: string, required = true) =>
-  p(name, 'string', `${what} — an EVM address; for the user's own wallet use "$USER_ADDRESS".`, required)
+const token = (which: string, required = true) =>
+  p(which, 'string', `${which} token — symbol (USDC, WETH, COW…) or 0x address.`, required)
+
+const owner = (what: string) =>
+  p('owner', 'string', `${what} — an EVM address; for the user's own wallet use "$USER_ADDRESS".`, true)
 
 const SERVICE = {
   slug: 'cow-free',
   name: 'CoW Protocol (Free)',
   description:
-    'CoW Protocol on Base, free and non-gated: live quotes from the CoW order book, MEV-protected swap + limit orders built into the exact EIP-712 order the user signs, plus open orders, trade history, portfolio, and the CoW docs. Builds only — never holds keys, never submits unsigned. Rate-limited. By Yeetful.',
+    'CoW Protocol, free and non-gated: live order-book quotes, MEV-protected swap + limit orders built into the exact EIP-712 order the user signs, open orders, trade history, portfolio, solver competition, and the official CoW docs (bundled, searchable). Mainnet, Gnosis, Arbitrum, Base + more. Builds only — never holds keys, never submits unsigned. Rate-limited. By Yeetful.',
   category: 'Trading',
   kind: 'data',
   priceUsd: '0',
-  networks: ['Base'],
+  networks: ['Ethereum', 'Base', 'Arbitrum', 'Gnosis'],
   websiteUrl: 'https://github.com/Yeetful/free-mcps',
   // callable:false like snapshot-free/uniswap-free — free MCP rows are
   // PLANNER-driven: the endpoint planner picks among the mcp_endpoints
@@ -60,7 +69,7 @@ const SERVICE = {
   callable: false,
   protocol: 'mcp',
   endpoint: COW_BASE,
-  tags: ['trading', 'swap', 'limit-order', 'defi', 'mev-protection', 'transaction-building'],
+  tags: ['trading', 'swap', 'limit-order', 'defi', 'mev-protection', 'transaction-building', 'docs'],
   exampleQueries: [
     'quote 100 USDC to WETH on CoW',
     'show my open CoW orders',
@@ -69,79 +78,157 @@ const SERVICE = {
   source: 'yeetful',
 }
 
-const TOOLS = [
+// `plannable:false` → parameters seeded as DbNull so the endpoint is
+// browsable in the directory but NEVER enters the planner menu (the
+// signature-consuming tools: the planner must not drive signing).
+const TOOLS: Array<{ name: string; description: string; params: Param[]; plannable?: boolean }> = [
   {
     name: 'quote',
     description:
-      'Live CoW Protocol swap quote on Base: sell amount in → buy amount out, fee, and the price the solvers currently offer. No order is created.',
-    params: [token('sellToken'), token('buyToken'), p('amount', 'string', 'Human sell amount, e.g. "100" or "0.05".', true)],
+      'Live CoW Protocol swap quote (no commitment): sell/buy amounts, network fee, and the price solvers currently offer. kind "sell" = amount is what you sell; "buy" = amount is what you receive.',
+    params: [
+      chain(),
+      token('sellToken'),
+      token('buyToken'),
+      p('kind', 'string', '"sell" or "buy".', true),
+      p('amount', 'string', 'Amount in HUMAN units, e.g. "100" for 100 USDC.', true),
+      p('from', 'string', 'Trading wallet — quotes are address-sensitive; use "$USER_ADDRESS" for the connected user.', true),
+    ],
   },
   {
     name: 'build_swap_order',
     description:
-      'Build a signable CoW market-swap order: fresh quote → min-buy with slippage bound → the EIP-712 GPv2 order the user signs. Receiver is always the payer. Nothing is signed or submitted.',
+      'Quote AND build a signable CoW market-swap order in one call: the EIP-712 GPv2 order the user signs (eth_signTypedData_v4) + the vault-relayer approval prerequisite. Nothing is signed or submitted. THE tool for "swap 100 USDC to WETH".',
     params: [
+      chain(),
       token('sellToken'),
       token('buyToken'),
-      p('amount', 'string', 'Human sell amount.', true),
-      user('from', "Payer's wallet address (order owner + receiver)"),
-      p('slippageBps', 'number', 'Slippage bound in bps (optional).'),
+      p('kind', 'string', '"sell" or "buy".', true),
+      p('amount', 'string', 'Amount in HUMAN units.', true),
+      p('from', 'string', 'Order owner + receiver — "$USER_ADDRESS" for the connected user.', true),
+      p('slippageBps', 'number', 'Slippage bound in bps (default 50 = 0.5%).'),
+      p('validFor', 'number', 'Order validity in seconds from now (default 1800).'),
+      p('partiallyFillable', 'boolean', 'Allow partial fills (default false).'),
     ],
   },
   {
     name: 'build_limit_order',
     description:
-      'Build a signable CoW LIMIT order at the user\'s price: sell amount + minimum buy amount → EIP-712 GPv2 order (feeAmount 0, fee from surplus, partially fillable). Nothing is signed or submitted.',
+      'Build a signable CoW LIMIT order at the user\'s price: sellAmount + minimum buyAmount set the limit ("sell 1 WETH at ≥4000 USDC" → sellAmount 1, buyAmount 4000). Gasless, feeAmount 0 (fee from surplus), valid up to 1 year. Returns EIP-712 typed data + approval hint; nothing is signed or submitted.',
     params: [
+      chain(),
       token('sellToken'),
       token('buyToken'),
-      p('sellAmount', 'string', 'Human sell amount.', true),
-      p('buyAmountAtLeast', 'string', 'Minimum human buy amount — the limit price.', true),
-      user('from', "Payer's wallet address (order owner + receiver)"),
-      p('validForSec', 'number', 'Order validity window in seconds (optional).'),
+      p('sellAmount', 'string', 'Amount to sell, HUMAN units.', true),
+      p('buyAmount', 'string', 'MINIMUM amount to receive, HUMAN units — sets the limit price.', true),
+      p('from', 'string', 'Order owner + receiver — "$USER_ADDRESS" for the connected user.', true),
+      p('validFor', 'number', 'Validity in seconds from now (default 7 days, max 1 year).'),
+      p('partiallyFillable', 'boolean', 'Allow partial fills (default false).'),
     ],
+  },
+  {
+    name: 'submit_order',
+    description:
+      'POST an already-signed order to the CoW order book → orderUid + explorer link. Only with a signature from the user\'s own wallet over the build step\'s typed data.',
+    params: [],
+    plannable: false,
+  },
+  {
+    name: 'cancel_orders',
+    description:
+      'Gasless two-phase order cancellation: without signature returns the OrderCancellations EIP-712 typed data; with signature submits it.',
+    params: [],
+    plannable: false,
+  },
+  {
+    name: 'order_status',
+    description:
+      'One CoW order by uid: open/fulfilled/cancelled/expired, fill %, executed amounts, and the explorer link. Answers "did my swap go through?".',
+    params: [chain(), p('uid', 'string', 'CoW order uid (0x…, 56 bytes).', true)],
   },
   {
     name: 'user_orders',
     description:
-      "Open + recent CoW orders for an address on Base ('show my open CoW orders' → address:\"$USER_ADDRESS\"). Status, amounts, fill progress per order.",
-    params: [user('address', "Order owner's wallet address"), p('first', 'number', 'Max results.')],
+      'An address\'s CoW orders, newest first — open + recent, with status and fill % ("show my open CoW orders" → owner:"$USER_ADDRESS").',
+    params: [chain(), owner("Order owner's wallet address"), p('limit', 'number', 'Max results (default 20).')],
   },
   {
     name: 'user_trades',
     description:
-      "Settled CoW trades for an address on Base ('what did I trade on CoW' → address:\"$USER_ADDRESS\"), newest first, with settlement tx hashes.",
-    params: [user('address', "Trader's wallet address"), p('first', 'number', 'Max results.')],
+      'Settled CoW trades for an address, newest first, with settlement tx hashes ("what did I trade on CoW" → owner:"$USER_ADDRESS").',
+    params: [chain(), owner("Trader's wallet address"), p('first', 'number', 'Max results (default 20).')],
   },
   {
     name: 'portfolio',
     description:
-      "Token balances for an address on Base with USD estimates ('what's in my wallet' → address:\"$USER_ADDRESS\").",
-    params: [user('address', "The wallet address to inspect")],
-  },
-  {
-    name: 'order_status',
-    description: 'Status of one CoW order by uid: open/filled/cancelled/expired, fill amounts, and the settlement tx when filled.',
-    params: [p('uid', 'string', 'CoW order uid (0x…, 56 bytes).', true)],
+      'CoW-centric account view across chains, derived from the order book (not on-chain balances): open orders with fill %, recent fills, trade counts, volume per token ("what\'s my CoW activity" → owner:"$USER_ADDRESS").',
+    params: [
+      owner('The wallet address to inspect'),
+      p('chains', 'string', 'Chains to scan, e.g. "mainnet,base" (default mainnet,gnosis,arbitrum,base).'),
+    ],
   },
   {
     name: 'native_price',
-    description: 'Current CoW order-book native price for a token on Base (the price solvers quote against ETH).',
-    params: [token('token')],
+    description:
+      "The order book's price estimate for a token in the chain's native currency — the feed solvers use for fee math.",
+    params: [chain(), token('token')],
+  },
+  {
+    name: 'solver_competition',
+    description:
+      "Which solvers bid on a settlement and who won — latest auction by default, or by settlement tx hash. CoW's MEV-protected batch auction, made visible.",
+    params: [chain(), p('txHash', 'string', 'Settlement tx hash (omit for the latest auction).')],
+  },
+  {
+    name: 'api_get',
+    description:
+      'Escape hatch: GET any allowlisted CoW order-book path (orders, trades, native prices, app_data, solver competition…) for data the other tools don\'t cover. Read-only by construction.',
+    params: [chain(), p('path', 'string', 'Versioned path + query, e.g. "/v1/trades?owner=0x…".', true)],
   },
   {
     name: 'docs_search',
-    description: 'Search the CoW Protocol documentation — how solvers, batch auctions, fees, and MEV protection work.',
-    params: [p('query', 'string', 'Free-text search query, e.g. "how do solvers settle a batch".', true)],
+    description:
+      'Search the official CoW Protocol documentation (docs.cow.fi, bundled) — batch auctions, solvers, MEV protection, order types, fees, signing, appData, CoW AMM, MEV Blocker, COW token, governance.',
+    params: [
+      p('query', 'string', 'What to look up, e.g. "how are solvers ranked".', true),
+      p('first', 'number', 'Results to return (default 5).'),
+    ],
   },
   {
     name: 'docs_page',
-    description: 'Fetch one CoW Protocol docs page by path/id (as returned by docs_search) for the full text.',
-    params: [p('page', 'string', 'Docs page path or id from docs_search results.', true)],
+    description: 'Fetch one bundled CoW docs page (full text) by its corpus path from docs_search results.',
+    params: [p('path', 'string', 'Corpus path from docs_search, e.g. "cow-protocol/reference/core/signing_schemes".', true)],
   },
-] as const
+  {
+    name: 'chains',
+    description:
+      'CoW deployments this service reaches: chainIds, order-book URLs, settlement + vault-relayer contracts, curated token symbols per chain.',
+    params: [],
+    plannable: false, // param-less POST — discovery metadata, not a planner call
+  },
+]
+
+/** Print the local-dev env overlays derived from the SAME tool table (no DB). */
+function printExtraEnv() {
+  const rows = [{ ...SERVICE, gated: false }]
+  const endpoints = TOOLS.filter((t) => t.plannable !== false).map((t) => ({
+    serverSlug: SERVICE.slug,
+    serverName: SERVICE.name,
+    method: 'POST',
+    url: `${COW_BASE}/${t.name}`,
+    description: t.description,
+    priceUsd: '0',
+    parameters: t.params,
+    category: SERVICE.category,
+    tags: SERVICE.tags,
+    exampleQueries: SERVICE.exampleQueries,
+  }))
+  console.log(`EXTRA_MCP_ROWS='${JSON.stringify(rows)}'`)
+  console.log(`EXTRA_MCP_ENDPOINTS='${JSON.stringify(endpoints)}'`)
+}
 
 async function main() {
+  const { default: prisma } = await import('../lib/db')
   const server = await prisma.mcpServer.upsert({
     where: { slug: SERVICE.slug },
     create: { ...SERVICE, gated: false },
@@ -162,14 +249,18 @@ async function main() {
       network: 'Base',
       provider: 'Yeetful (free)',
       position: i,
-      parameters: (t as { plannable?: boolean }).plannable === false ? Prisma.DbNull : (t.params as unknown as object),
+      parameters: t.plannable === false ? Prisma.DbNull : (t.params as unknown as object),
     })),
   })
   console.log(`✓ ${SERVICE.slug}: ${TOOLS.length} tool endpoints @ ${COW_BASE}`)
   await prisma.$disconnect()
 }
 
-main().catch((e) => {
-  console.error(e)
-  process.exit(1)
-})
+if (process.argv.includes('--print-extra-env')) {
+  printExtraEnv()
+} else {
+  main().catch((e) => {
+    console.error(e)
+    process.exit(1)
+  })
+}
