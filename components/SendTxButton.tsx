@@ -30,7 +30,17 @@ const TX_EXPLORER: Record<number, string> = {
   42161: 'https://arbiscan.io/tx/',
 }
 
-export default function SendTxButton({ tx, summary }: { tx: EvmTxRequest; summary?: string }) {
+export default function SendTxButton({
+  tx,
+  summary,
+  onConfirmed,
+}: {
+  tx: EvmTxRequest
+  summary?: string
+  /** Fires once when the receipt lands with status success — SendTxChain
+   *  advances the multi-step card on this. */
+  onConfirmed?: (hash: string) => void
+}) {
   const { address, isConnected } = useAccount()
   const { sendTransactionAsync } = useSendTransaction()
   const { switchChainAsync } = useSwitchChain()
@@ -48,12 +58,13 @@ export default function SendTxButton({ tx, summary }: { tx: EvmTxRequest; summar
       setError('Connect your wallet first.')
       return
     }
+    let txHash: `0x${string}` | null = null
     try {
       setStatus('signing')
       // Match the wallet's network to the built transaction before signing
       // (same idiom as SignOrderButton / LaunchToken).
       await switchChainAsync({ chainId }).catch(() => {})
-      const txHash = await sendTransactionAsync({
+      txHash = await sendTransactionAsync({
         to: tx.to as `0x${string}`,
         data: (tx.data ?? '0x') as `0x${string}`,
         value: tx.value ? BigInt(tx.value) : undefined,
@@ -66,13 +77,32 @@ export default function SendTxButton({ tx, summary }: { tx: EvmTxRequest; summar
       // tx that CONFIRMED moments later (2026-07-03, Nate's approve).
       const receipt = await publicClient?.waitForTransactionReceipt({ hash: txHash, timeout: 120_000, retryCount: 8 })
       setStatus(receipt?.status === 'success' ? 'confirmed' : 'reverted')
+      if (receipt?.status === 'success') onConfirmed?.(txHash)
     } catch (e) {
       const msg = e instanceof Error ? e.message.split('\n')[0] : 'Transaction failed.'
-      if (/timed out while waiting/i.test(msg)) {
+      if (/timed out while waiting/i.test(msg) && txHash) {
         // A wait timeout is NOT a failure — the tx is broadcast and usually
-        // mines fine. Don't paint it red; point at the explorer instead.
-        setError('Still confirming — the transaction is broadcast. Check the explorer link; once it confirms, send your message again to continue.')
+        // mines fine. Don't paint it red; keep watching in the background so
+        // a multi-step chain still advances (never "re-send your message").
+        setError('Still confirming — the transaction is broadcast. This card continues automatically once it lands (explorer link above).')
         setStatus('broadcast')
+        const watched = txHash
+        void (async () => {
+          for (let i = 0; i < 20; i++) {
+            await new Promise((r) => setTimeout(r, 15_000))
+            try {
+              const receipt = await publicClient?.getTransactionReceipt({ hash: watched })
+              if (receipt) {
+                setError('')
+                setStatus(receipt.status === 'success' ? 'confirmed' : 'reverted')
+                if (receipt.status === 'success') onConfirmed?.(watched)
+                return
+              }
+            } catch {
+              /* not mined yet — keep watching */
+            }
+          }
+        })()
         return
       }
       setError(
