@@ -560,11 +560,32 @@
   .pill:hover { color: var(--fg); border-color: var(--line-2); }
   .pill.is-on { background: var(--fg); color: #000; border-color: var(--fg); }
   .pill__n { margin-left: 7px; font-size: 11px; opacity: 0.7; }
+  /* Paid ⇄ Free pricing flip switch (its own row above the category pills). */
+  .dir__pricing {
+    display: inline-flex; align-items: center; gap: 10px; align-self: flex-start;
+    padding: 7px 14px; border-radius: 999px; font-size: 13px;
+    background: var(--surf-1); border: 1px solid var(--line); color: var(--muted);
+    transition: border-color .15s;
+  }
+  .dir__pricing:hover { border-color: var(--line-2); }
+  .dir__pricinglbl { display: inline-flex; align-items: center; font-weight: 500; color: var(--muted); transition: color .15s; }
+  .dir__pricinglbl.is-on { color: var(--fg); }
+  .dir__pricingtrack {
+    position: relative; width: 38px; height: 20px; flex-shrink: 0;
+    border-radius: 999px; background: var(--line-2); transition: background .18s;
+  }
+  .dir__pricingtrack[data-on] { background: var(--accent); }
+  .dir__pricingknob {
+    position: absolute; top: 2px; left: 2px; width: 16px; height: 16px;
+    border-radius: 50%; background: #fff; transition: transform .18s;
+  }
+  .dir__pricingtrack[data-on] .dir__pricingknob { transform: translateX(18px); }
   @media (max-width: 1023px) {
     /* iOS zooms any focused input under 16px. */
     .search__input { font-size: 16px; }
     /* Category pills are the primary directory filter on phones — 44px. */
     .pill { padding: 12px 18px; min-height: 44px; }
+    .dir__pricing { min-height: 44px; }
   }
 
   .x-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }

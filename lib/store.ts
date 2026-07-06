@@ -248,7 +248,11 @@ export const useYeetfulStore = create<YeetfulStore>()(
         }
       },
 
-      autoRouter: true, // on by default — auto routing is the headline experience
+      // Auto Router is DISABLED for now (feature hidden in the UI, code kept for
+      // later — see ChatInterface). Force-off by default; the v2 migration below
+      // also flips anyone who had it persisted on, so it behaves as if the
+      // feature never existed. Flip back to `true` + restore the toggle to revive.
+      autoRouter: false,
       setAutoRouter: (on) => set({ autoRouter: on }),
       routerTrace: [],
       pushRouterTrace: (event) => set((s) => ({ routerTrace: [...s.routerTrace, event] })),
@@ -419,13 +423,13 @@ export const useYeetfulStore = create<YeetfulStore>()(
     }),
     {
       name: 'yeetful-store',
-      // v1: auto routing flipped to on by default. Existing clients persisted
-      // the old `autoRouter: false` default, so migrate those legacy states to
-      // on (the value was the old default, not a deliberate opt-out).
-      version: 1,
+      // v1: auto routing was on by default. v2: Auto Router is disabled for now
+      // (UI hidden, code kept) — force it OFF for EVERY persisted client,
+      // including anyone who had it on, so it's as if the feature never existed.
+      version: 2,
       migrate: (persisted, version) => {
         const s = (persisted ?? {}) as Record<string, unknown>
-        if (version < 1) s.autoRouter = true
+        if (version < 2) s.autoRouter = false
         return s
       },
       // Persist only UI prefs. Chats are DB-backed (signed in) or ephemeral
