@@ -17,7 +17,21 @@ import { cn } from '@/lib/utils'
 import { useYeetfulStore, McpServer } from '@/lib/store'
 import { CATEGORY_ICONS } from '@/lib/mcp-data'
 
-const CATEGORIES = ['Inference', 'Data', 'Custom']
+// Same categories the servers directory filters by (lib schema set), plus
+// Custom as the catch-all default (mapped to "Other" server-side).
+const CATEGORIES = [
+  'Inference',
+  'Data',
+  'Search',
+  'Media',
+  'Social',
+  'Trading',
+  'Infra',
+  'Storage',
+  'Travel',
+  'Other',
+  'Custom',
+]
 
 interface FormState {
   name: string
@@ -27,6 +41,44 @@ interface FormState {
   category: string
   color: string
   configFields: { key: string; label: string; required: boolean }[]
+}
+
+interface DiscoveredParam {
+  group?: string
+  name: string
+  type?: string
+  description?: string
+  required?: boolean
+}
+interface DiscoveredTool {
+  name: string
+  title: string | null
+  description: string | null
+  params: DiscoveredParam[]
+  plannable: boolean
+  url: string
+}
+interface Discovery {
+  base: string
+  tools: DiscoveredTool[]
+}
+
+/** Path + query of an endpoint URL (host shown separately) — mirrors the
+ *  server detail page so the endpoint list looks identical. */
+function pathOf(url: string): string {
+  try {
+    const u = new URL(url)
+    return u.pathname + u.search
+  } catch {
+    return url
+  }
+}
+function hostOf(url: string): string {
+  try {
+    return new URL(url).host
+  } catch {
+    return ''
+  }
 }
 
 export default function AddServerPage() {
@@ -48,28 +100,54 @@ export default function AddServerPage() {
   const [successMsg, setSuccessMsg] = useState('')
   const [error, setError] = useState('')
   const [imgError, setImgError] = useState(false)
+  const [discovered, setDiscovered] = useState<Discovery | null>(null)
+  const [discoverNote, setDiscoverNote] = useState('')
 
   const fetchMeta = async () => {
     if (!form.websiteUrl) return
     setFetching(true)
     setError('')
+    setDiscoverNote('')
+    // Metadata scrape + MCP tool discovery run together off the one URL.
+    const meta = fetch('/api/fetch-meta', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url: form.websiteUrl }),
+    })
+      .then((r) => r.json())
+      .catch(() => null)
+
+    const discover = fetch('/api/servers/discover', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url: form.websiteUrl }),
+    })
+      .then(async (r) => ({ ok: r.ok, data: await r.json().catch(() => null) }))
+      .catch(() => ({ ok: false, data: null }))
+
     try {
-      const res = await fetch('/api/fetch-meta', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url: form.websiteUrl }),
-      })
-      const data = await res.json()
-      setForm((f) => ({
-        ...f,
-        name: f.name || data.title || '',
-        description: f.description || data.description || '',
-        iconUrl: data.iconUrl || f.iconUrl,
-        color: data.color || f.color,
-      }))
-      setImgError(false)
-    } catch {
-      setError('Could not fetch metadata from URL.')
+      const [data, disc] = await Promise.all([meta, discover])
+      if (data) {
+        setForm((f) => ({
+          ...f,
+          name: f.name || data.title || '',
+          description: f.description || data.description || '',
+          iconUrl: data.iconUrl || f.iconUrl,
+          color: data.color || f.color,
+        }))
+        setImgError(false)
+      }
+      if (disc.ok && disc.data?.tools) {
+        setDiscovered(disc.data as Discovery)
+        const n = (disc.data.tools as DiscoveredTool[]).filter((t) => t.plannable).length
+        setDiscoverNote(
+          `${disc.data.tools.length} tool${disc.data.tools.length === 1 ? '' : 's'} found · ${n} callable`
+        )
+      } else {
+        setDiscovered(null)
+        setDiscoverNote(disc.data?.error ? `No MCP tools: ${disc.data.error}` : '')
+      }
+      if (!data && !disc.ok) setError('Could not fetch metadata from URL.')
     } finally {
       setFetching(false)
     }
@@ -118,7 +196,7 @@ export default function AddServerPage() {
           )
         : null
 
-    const resetForm = () =>
+    const resetForm = () => {
       setForm({
         name: '',
         description: '',
@@ -128,6 +206,9 @@ export default function AddServerPage() {
         color: '#6366f1',
         configFields: [],
       })
+      setDiscovered(null)
+      setDiscoverNote('')
+    }
 
     const flashSuccess = (msg: string) => {
       setSuccessMsg(msg)
@@ -260,7 +341,65 @@ export default function AddServerPage() {
                 {fetching ? 'Fetching...' : 'Auto-fill'}
               </button>
             </div>
+            {discoverNote && (
+              <p className="text-xs text-zinc-500">{discoverNote}</p>
+            )}
           </div>
+
+          {/* Discovered endpoints — same look as the server detail page */}
+          {discovered && discovered.tools.length > 0 && (
+            <div className="svc__section svc__eps">
+              <div className="svc__sectionhead">
+                <h2 className="svc__h2">x402 endpoints</h2>
+                <span className="svc__count mono">{discovered.tools.length}</span>
+              </div>
+              <ul className="eps">
+                {discovered.tools.map((t) => (
+                  <li key={t.name} className="ep">
+                    <div className="ep__line">
+                      <span className="ep__method mono ep__method--post">POST</span>
+                      <span className="ep__path mono" title={t.url}>
+                        {pathOf(t.url)}
+                      </span>
+                      <span className="ep__price mono">$0</span>
+                    </div>
+                    <div className="ep__sub">
+                      <span className="ep__provider">via MCP</span>
+                      <span className="ep__host mono">{hostOf(t.url)}</span>
+                      {t.plannable ? (
+                        <span className="ep__scheme mono">callable</span>
+                      ) : (
+                        <span className="ep__scheme mono">display-only</span>
+                      )}
+                    </div>
+                    {(t.description || t.title) && (
+                      <p className="ep__desc">{t.description || t.title}</p>
+                    )}
+                    {t.params.length > 0 && (
+                      <details className="ep__params">
+                        <summary className="mono">
+                          {t.params.length} parameter{t.params.length === 1 ? '' : 's'}
+                        </summary>
+                        <ul className="ep__paramlist">
+                          {t.params.map((p, i) => (
+                            <li key={`${p.name}-${i}`} className="ep__param">
+                              <div className="ep__paramline">
+                                <span className="ep__paramname mono">{p.name}</span>
+                                {p.type && <span className="ep__paramtype mono">{p.type}</span>}
+                                {p.group && <span className="ep__paramgroup mono">{p.group}</span>}
+                                {p.required && <span className="ep__paramreq mono">required</span>}
+                              </div>
+                              {p.description && <p className="ep__paramdesc">{p.description}</p>}
+                            </li>
+                          ))}
+                        </ul>
+                      </details>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
 
           {/* Main fields */}
           <div className="p-5 rounded-2xl border border-zinc-800/60 bg-zinc-900/40 space-y-4">
