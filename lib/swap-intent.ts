@@ -8,6 +8,8 @@
 //  build time via humanToAtoms, where the token is resolved.
 // ─────────────────────────────────────────────────────────────────────────
 
+import type { WorkingContext } from './working-context'
+
 export interface SwapIntent {
   isSwap: boolean
   mode?: 'swap' | 'limit'
@@ -81,4 +83,79 @@ export function parseSwapIntent(message: string): SwapIntent {
     }
   }
   return NOT_SWAP
+}
+
+// ── Working context for swap/order artifacts (invariant #11) ─────────────────
+// A returned artifact is a PENDING action the user is looking at: the next
+// turn's "actually make it 2 USDC" / "cancel that" must resolve against it,
+// not against a re-parse of prose.
+
+/**
+ * The working context a swap/order artifact turn returns. `pending.kind`:
+ * 'order' = a CoW EIP-712 order awaiting SignOrderButton; 'swap' = a Uniswap
+ * transaction awaiting SendTxButton. The prior turn's scope/offers are carried
+ * — building a swap doesn't erase the list the user was just shown.
+ */
+export function swapWorkingContext(intent: SwapIntent, venue: 'uniswap' | 'cow', prior?: WorkingContext): WorkingContext {
+  const mode = intent.mode ?? 'swap'
+  const sellToken = (intent.sellToken ?? '').toUpperCase()
+  const buyToken = (intent.buyToken ?? '').toUpperCase()
+  const amount = intent.sellAmountHuman ?? ''
+  return {
+    v: 1,
+    age: 0,
+    ...(prior?.scope ? { scope: prior.scope } : {}),
+    ...(prior?.offers ? { offers: prior.offers } : {}),
+    pending: {
+      kind: venue === 'cow' ? 'order' : 'swap',
+      summary: `${mode === 'limit' ? 'limit order' : 'swap'} ${amount} ${sellToken} → ${buyToken} on ${venue === 'cow' ? 'CoW' : 'Uniswap'} — awaiting the user's signature`,
+      data: {
+        sellToken,
+        buyToken,
+        amount,
+        venue,
+        mode,
+        ...(intent.buyAmountAtLeastHuman ? { buyAmountAtLeast: intent.buyAmountAtLeastHuman } : {}),
+      },
+    },
+  }
+}
+
+export type SwapFollowUp = { kind: 'cancel' } | { kind: 'amend'; intent: SwapIntent }
+
+const CANCEL_RE =
+  /^(?:no[,.!]?\s*)?(?:cancel|scratch|drop|abandon|abort|forget|nevermind|never\s+mind|don'?t\s+(?:do|send|sign|submit))(?:\s+(?:it|that|this|the))?(?:\s+(?:swap|order|trade|one))?[.!\s]*$/i
+// "actually make it 2 USDC" / "change it to 0.5" / bare "2 USDC". The verb is
+// optional only when a token is named — a lone number is too ambiguous to
+// hijack (it could be answering a numbered list).
+const AMEND_RE = new RegExp(
+  String.raw`^(?:ok(?:ay)?[,.]?\s*)?(?:actually[,.]?\s*)?(?:(make\s+(?:it|that)|change\s+(?:it|that)(?:\s+to)?|let'?s\s+do|how\s+about|do)\s+)?${AMOUNT}\s*([a-zA-Z]{2,10})?(?:\s+instead)?[.!?\s]*$`,
+  'i',
+)
+
+/**
+ * Deterministic follow-up resolution against a pending swap/order artifact.
+ * Conservative: anything not clearly a cancel or an amount amendment returns
+ * null and the message routes normally.
+ */
+export function parseSwapFollowUp(
+  message: string,
+  pending: { kind: string; summary: string; data: Record<string, string> } | undefined,
+): SwapFollowUp | null {
+  if (!pending || (pending.kind !== 'swap' && pending.kind !== 'order')) return null
+  const { sellToken, buyToken, mode } = pending.data
+  if (!sellToken || !buyToken) return null
+  const text = message.trim()
+  if (CANCEL_RE.test(text)) return { kind: 'cancel' }
+  // Amending a LIMIT order's sell amount silently changes its price — too
+  // surprising to do deterministically. Only market swaps amend.
+  if (mode === 'limit') return null
+  const m = text.match(AMEND_RE)
+  if (!m) return null
+  const [, verb, amount, token] = m
+  if (!verb && !token) return null
+  // A named token must be the SELL side — "make it 2 WETH" against a
+  // USDC→WETH order flips the meaning; let it route normally instead.
+  if (token && token.toUpperCase() !== sellToken.toUpperCase()) return null
+  return { kind: 'amend', intent: { isSwap: true, mode: 'swap', sellAmountHuman: amount, sellToken, buyToken } }
 }

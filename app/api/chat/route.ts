@@ -13,8 +13,8 @@ import {
 } from '@/lib/x402'
 import type { McpServer } from '@/lib/store'
 import { voteRequestFromToolResult, friendlyVoteError, type VoteRequest } from '@/lib/snapshot-vote'
-import { parseVoteIntent, type VoteIntent } from '@/lib/vote-intent'
-import { parseSwapIntent, type SwapIntent } from '@/lib/swap-intent'
+import { parseVoteIntent, resolveVoteReference, type VoteIntent } from '@/lib/vote-intent'
+import { parseSwapIntent, parseSwapFollowUp, swapWorkingContext, type SwapIntent } from '@/lib/swap-intent'
 import { buildGuardrailedOrder } from '@/lib/cow-build'
 import { buildUniswapSwap } from '@/lib/uniswap-venue'
 import { tokenDecimals, humanToAtoms } from '@/lib/cow'
@@ -217,7 +217,7 @@ export async function POST(req: NextRequest) {
     if (snapshotSvc) {
       const intent = parseVoteIntent(message)
       if (intent.isVote) {
-        return await prepareVoteTurn(intent, snapshotSvc, walletAddress)
+        return await prepareVoteTurn(message, intent, snapshotSvc, walletAddress, workingContext)
       }
     }
 
@@ -317,6 +317,33 @@ export async function POST(req: NextRequest) {
     //     (SignOrderButton), approval to the VaultRelayer.
     // Both run the SAME cross-app guardrails (lib/tx-guardrails); the parser
     // is conservative (plain questions fall through to routing).
+    //
+    // Follow-ups against a PENDING artifact first (invariant #11): the last
+    // turn returned a swap/order awaiting signature — "actually make it
+    // 2 USDC" rebuilds it with the new amount, "cancel that" abandons it.
+    // Resolved deterministically against what the user saw, never re-parsed.
+    const pendingArtifact =
+      workingContext?.pending && (workingContext.pending.kind === 'swap' || workingContext.pending.kind === 'order')
+        ? workingContext.pending
+        : undefined
+    const swapFollowUp = parseSwapFollowUp(message, pendingArtifact)
+    if (swapFollowUp && pendingArtifact) {
+      if (swapFollowUp.kind === 'cancel') {
+        const p = pendingArtifact.data
+        return NextResponse.json({
+          reply: `👍 Dropped the ${pendingArtifact.kind === 'order' ? 'order' : 'swap'} — ${p.amount} ${p.sellToken} → ${p.buyToken} was never signed, so nothing moved.`,
+          // Clear the pending action; keep the rest of the conversation state.
+          workingContext: {
+            v: 1,
+            age: 0,
+            ...(workingContext?.scope ? { scope: workingContext.scope } : {}),
+            ...(workingContext?.offers ? { offers: workingContext.offers } : {}),
+          } satisfies WorkingContext,
+        })
+      }
+      const pendingVenue: 'uniswap' | 'cow' = pendingArtifact.data.venue === 'uniswap' ? 'uniswap' : 'cow'
+      return await prepareSwapTurn(swapFollowUp.intent, walletAddress, pendingVenue, workingContext)
+    }
     const swapIntent = parseSwapIntent(message)
     if (swapIntent.isSwap) {
       // Multichain (RR18) is in build: an explicit non-Base chain must get an
@@ -332,7 +359,7 @@ export async function POST(req: NextRequest) {
       const cowActive = activeServers.some((s) => s.slug === 'cow-swap' || /cow[\s·-]?swap/i.test(s.name))
       const venue: 'uniswap' | 'cow' =
         /\buni\s?swap\b|\buni\b/i.test(message) || (uniActive && !cowActive) ? 'uniswap' : 'cow'
-      return await prepareSwapTurn(swapIntent, walletAddress, venue)
+      return await prepareSwapTurn(swapIntent, walletAddress, venue, workingContext)
     }
 
     // Need an inference provider to phrase an answer. With none selected, fall
@@ -418,11 +445,19 @@ export async function POST(req: NextRequest) {
  * are free; only the typed-data construction (prepare_vote) is paid, by the
  * house wallet — the user just signs the result. Returns a friendly clarifying
  * reply when the proposal or choice can't be pinned down.
+ *
+ * Invariant #11: the proposal pins against the STRUCTURED working context
+ * first (pending vote → the numbered list the user was shown), exactly like
+ * the free governance path — the stateless resolve is the fallback. And every
+ * offer this path makes (candidate list, vote awaiting signature) WRITES the
+ * context so the next turn's "vote on 2" / bare "For" resolves against it.
  */
 async function prepareVoteTurn(
+  message: string,
   intent: VoteIntent,
   snapshotSvc: McpServer,
   walletAddress: string | undefined,
+  ctx?: WorkingContext,
 ) {
   if (!walletAddress) {
     return NextResponse.json({
@@ -430,9 +465,38 @@ async function prepareVoteTurn(
         '🗳️ Connect your wallet to vote — Snapshot voting power is tied to your address, so you sign the vote yourself.',
     })
   }
-  if (!intent.choiceText) {
+
+  // Pin the proposal from the working context (pure, no fetch). "option N"
+  // after a numbered LIST is a proposal pick, so its choice reading is spent.
+  const ref = resolveVoteReference(message, intent, ctx)
+  const choiceText = ref?.pickedByNumber ? undefined : intent.choiceText
+  const space = ref?.space ?? intent.spaceHint
+  const scope: WorkingContext['scope'] = space
+    ? { server: 'snapshot', label: space, params: { space } }
+    : ctx?.scope
+  const carryOffers = ctx?.offers?.kind === 'proposal' ? ctx.offers : undefined
+  const pendingVoteCtx = (proposalId: string, title?: string, knownSpace?: string): WorkingContext => {
+    const sp = space ?? knownSpace
+    return {
+      v: 1,
+      age: 0,
+      ...(sp ? { scope: { server: 'snapshot', label: sp, params: { space: sp } } } : scope ? { scope } : {}),
+      ...(carryOffers ? { offers: carryOffers } : {}),
+      pending: {
+        kind: 'vote',
+        summary: `vote on “${title ?? `${proposalId.slice(0, 10)}…`}” — awaiting the user's signature/choice`,
+        data: { proposalId, ...(title ? { title } : {}), ...(sp ? { space: sp } : {}) },
+      },
+    }
+  }
+
+  if (!choiceText) {
     return NextResponse.json({
-      reply: '🗳️ Which way? Say e.g. “vote For”, “vote against”, or “vote option 2”.',
+      reply: ref
+        ? `🗳️ Which way on **${ref.title ?? 'that proposal'}**? Say e.g. “vote For”, “vote against”, or “vote option 2”.`
+        : '🗳️ Which way? Say e.g. “vote For”, “vote against”, or “vote option 2”.',
+      // The bare "For" answering this resolves against the pinned pending vote.
+      ...(ref ? { workingContext: pendingVoteCtx(ref.proposalId, ref.title) } : {}),
     })
   }
   if (!hasAgentWallet()) {
@@ -444,7 +508,7 @@ async function prepareVoteTurn(
 
   let resolved: Awaited<ReturnType<typeof resolveProposal>>
   try {
-    resolved = await resolveProposal({ proposalId: intent.proposalId, spaceHint: intent.spaceHint })
+    resolved = await resolveProposal({ proposalId: ref?.proposalId ?? intent.proposalId, spaceHint: intent.spaceHint })
   } catch (e) {
     return NextResponse.json({
       reply: `🗳️ Couldn’t reach Snapshot to find the proposal: ${e instanceof Error ? e.message : 'error'}.`,
@@ -461,11 +525,27 @@ async function prepareVoteTurn(
     }
     // Offer the candidates as clickable chips (full ids retained in meta) so the
     // user picks one instead of pasting a 64-hex id they can only see truncated.
+    // NUMBERED, and the SAME numbering is written to the working context — the
+    // next turn's "vote on 2" resolves against what the user saw (invariant #11).
     const items = list.slice(0, 6).map((p) => ({ id: p.id, title: p.title, space: p.space.id }))
-    const lines = items.map((p) => `· ${p.title} — ${p.space}`).join('\n')
+    const lines = items.map((p, i) => `${i + 1}. **${p.title}** — ${p.space}`).join('\n')
     return NextResponse.json({
-      reply: `🗳️ Which proposal? Pick one to vote ${intent.choiceText} on — or name the DAO/space:\n${lines}`,
-      voteCandidates: { choiceText: intent.choiceText, items },
+      reply: `🗳️ Which proposal? Pick one to vote ${choiceText} on — say “vote on 1” — or name the DAO/space:\n${lines}`,
+      voteCandidates: { choiceText, items },
+      workingContext: {
+        v: 1,
+        age: 0,
+        ...(scope ? { scope } : {}),
+        offers: {
+          kind: 'proposal',
+          items: list.slice(0, 6).map((p, i) => ({
+            n: i + 1,
+            id: p.id,
+            title: p.title,
+            ...(p.space?.id ? { data: { spaceId: p.space.id, spaceName: p.space.name || p.space.id } } : {}),
+          })),
+        },
+      } satisfies WorkingContext,
     })
   }
 
@@ -478,7 +558,7 @@ async function prepareVoteTurn(
       method: 'tools/call',
       params: {
         name: 'prepare_vote',
-        arguments: { proposal: resolved.id, from: walletAddress, choiceText: intent.choiceText },
+        arguments: { proposal: resolved.id, from: walletAddress, choiceText },
       },
     })
     const res = await getPaidFetch()(snapshotSvc.endpoint!, {
@@ -495,7 +575,15 @@ async function prepareVoteTurn(
       const note = typeof data === 'string' ? data : JSON.stringify(data)
       return NextResponse.json({ reply: `🗳️ ${friendlyVoteError(note)}`, receipts, payer: 'the house wallet' })
     }
-    return NextResponse.json({ reply: `🗳️ ${vote.summary}`, receipts, payer: 'the house wallet', voteRequest: vote })
+    return NextResponse.json({
+      reply: `🗳️ ${vote.summary}`,
+      receipts,
+      payer: 'the house wallet',
+      voteRequest: vote,
+      // The vote awaits the user's signature — the same pending-vote write as
+      // the free governance path, so "For"/"option 2" next turn resolves to it.
+      workingContext: pendingVoteCtx(vote.proposal.id, vote.proposal.title, vote.proposal.space),
+    })
   } catch (err) {
     return NextResponse.json({ reply: `🗳️ ${friendlyVoteError(err)}`, receipts })
   }
@@ -513,7 +601,7 @@ async function prepareVoteTurn(
  * ambiguous asks; guardrail blocks surface with their reasons and the
  * artifact is withheld. The user signs — funds never touch Yeetful.
  */
-async function prepareSwapTurn(intent: SwapIntent, walletAddress: string | undefined, venue: 'uniswap' | 'cow' = 'cow') {
+async function prepareSwapTurn(intent: SwapIntent, walletAddress: string | undefined, venue: 'uniswap' | 'cow' = 'cow', ctx?: WorkingContext) {
   // Warm the dynamic Base token map (official Uniswap list) so UNI/AAVE/… ,
   // resolve — not just the 6 hand-typed tokens (RR14). Cached 24h; never throws.
   await ensureBaseTokenList()
@@ -580,12 +668,16 @@ async function prepareSwapTurn(intent: SwapIntent, walletAddress: string | undef
           reply: `🔏 ${uni.summary}\n1️⃣ Step 1 of 2 — sign the ${intent.sellToken.toUpperCase()} approval to Uniswap's SwapRouter02 below, then send the swap again for step 2.${warns.length ? `\n${warns.join('\n')}` : ''}`,
           txRequest: uni.approveTx,
           guardrails: uni.guardrails,
+          // Invariant #11: the artifact is a pending action — "make it 2" /
+          // "cancel that" next turn resolve against this, not re-parsed prose.
+          workingContext: swapWorkingContext(intent, 'uniswap', ctx),
         })
       }
       return NextResponse.json({
         reply: `🔏 ${uni.summary}${warns.length ? `\n${warns.join('\n')}` : ''}`,
         txRequest: uni.swapTx,
         guardrails: uni.guardrails,
+        workingContext: swapWorkingContext(intent, 'uniswap', ctx),
       })
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'quote failed'
@@ -625,6 +717,9 @@ async function prepareSwapTurn(intent: SwapIntent, walletAddress: string | undef
       reply: `🔏 ${built.summary}${cowNote}${warns.length ? `\n${warns.join('\n')}` : ''}`,
       orderRequest: built.artifact.order,
       guardrails: built.guardrails,
+      // Invariant #11: the order awaits SignOrderButton — write it as the
+      // pending action so amount amendments and cancels resolve against it.
+      workingContext: swapWorkingContext(intent, 'cow', ctx),
     })
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'quote failed'
