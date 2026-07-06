@@ -32,6 +32,7 @@ import {
 } from '@/lib/endpoint-planner'
 import { buildSignableArtifact, type SignableArtifact } from '@/lib/transaction-layer'
 import { clarifyPromptLine, clarifyOf, type ClarifyRequest } from '@/lib/clarify'
+import { extractEntities, type EntityRef } from '@/lib/working-context'
 import { hybridShortlist } from '@/lib/retrieval'
 
 // ── Canonical trace contract ────────────────────────────────────────────────
@@ -98,6 +99,10 @@ export interface RouterDecision {
    *  Breaks the route like a signable: the caller renders chips; the user's
    *  pick resumes as a normal next turn. */
   clarify?: ClarifyRequest
+  /** Entities the LOOP's tool results resolved (RR18) — proposal/space/token
+   *  values the caller folds into the reply's working context so the next
+   *  turn plans against exact values across MCPs. */
+  entities: EntityRef[]
 }
 
 /** Result of executing one chosen call: the data to observe, or an error to
@@ -489,7 +494,7 @@ export async function routeMessage(opts: RouteOptions): Promise<RouterDecision> 
   if (!inference) {
     emit({ type: 'status', label: 'No inference engine available.' })
     addNote('No live inference engine is available — connect or enable one (e.g. Yeetful · Claude).', 'warn')
-    return { inference: null, smartPicks: [], picks: [], trace, notes, context: [] }
+    return { inference: null, smartPicks: [], picks: [], trace, notes, context: [], entities: [] }
   }
 
   emit({ type: 'status', label: `Scanning the MCP directory (${catalog.length} services)…` })
@@ -512,6 +517,7 @@ export async function routeMessage(opts: RouteOptions): Promise<RouterDecision> 
   const context: string[] = []
   let artifact: SignableArtifact | undefined
   let clarifyOut: ClarifyRequest | undefined
+  let entities: EntityRef[] = []
   const byId = new Map(shortlisted.map((e) => [e.id, e]))
 
   // Build one SmartPick + emit candidate→select; null if the call can't be built.
@@ -650,6 +656,7 @@ export async function routeMessage(opts: RouteOptions): Promise<RouterDecision> 
           observations.push(`${sp.serverName} ${shortUrl(sp.endpointUrl)} → ERROR: ${truncate(res.error, 200)}`)
         } else {
           smartPicks.push(sp)
+          entities = extractEntities(res.data, entities)
           context.push(`### ${sp.serverName}\n${compactForSynthesis(res.data, 3500)}`)
           observations.push(`${sp.serverName} ${shortUrl(sp.endpointUrl)} → ${compactForSynthesis(res.data, 600)}`)
           spentThisTurn += price
@@ -694,6 +701,7 @@ export async function routeMessage(opts: RouteOptions): Promise<RouterDecision> 
     context,
     artifact,
     clarify: clarifyOut,
+    entities,
   }
 }
 

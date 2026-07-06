@@ -27,6 +27,7 @@ import {
   type ConversationTurn,
 } from '../lib/endpoint-planner'
 import { parseClarify, type ClarifyRequest } from '../lib/clarify'
+import { contextBlockForPlanner, type EntityRef, type WorkingContext } from '../lib/working-context'
 
 const PLANNER_MODEL = process.env.PLANNER_MODEL || 'claude-haiku-4-5-20251001'
 /** The connected wallet the harness simulates ($USER_ADDRESS resolves to it). */
@@ -34,7 +35,7 @@ const TEST_ADDR = '0x1111111111111111111111111111111111111111'
 
 /** Water-sprint features that have LANDED — their pending cases become mandatory.
  *  Flip the flag in the same PR that ships the feature. */
-const UNLOCKED = new Set<string>(['RR17'])
+const UNLOCKED = new Set<string>(['RR17', 'RR18'])
 
 // ── Case model ───────────────────────────────────────────────────────────────
 /** The tool arguments after buildSmartRequest (tools/call args, or query/body). */
@@ -59,6 +60,10 @@ interface Turn {
   /** …or expect the planner to ASK (RR17): returns null when the clarify
    *  payload is right, else the failure reason. */
   expectClarify?: (c: ClarifyRequest) => string | null
+  /** Entities "extracted" from PRIOR turns' tool results (RR18) — scripted
+   *  here exactly as lib/working-context extractEntities would produce them;
+   *  threaded to the planner via contextBlockForPlanner like production. */
+  entities?: EntityRef[]
   /** Water-sprint gate: reported-not-failing until the feature is UNLOCKED. */
   pending?: 'RR17' | 'RR18' | 'RR19'
 }
@@ -262,7 +267,11 @@ const CONVERSATIONS: Conversation[] = [
     turns: [
       {
         user: 'how do UNI and BAL compare on uniswap right now?',
-        assistantNote: 'On Uniswap v3 (Base): UNI ≈ 9.42 USDC, BAL ≈ 4.87 USDC. UNI pools are ~6× deeper.',
+        // Deliberately BALANCED: deeper liquidity vs stronger momentum — so
+        // "the better one" is genuinely undefined, not inferable. (An earlier
+        // fixture said UNI was flatly better; the planner rightly picked it
+        // without asking, which is correct clarify-policy behavior.)
+        assistantNote: 'On Uniswap v3 (Base): UNI ≈ 9.42 USDC with deeper pools; BAL ≈ 4.87 USDC and up 12% today with stronger momentum. Different strengths — depends what you value.',
         // Read-only turn — ANY uniswap read tool is fine; must NOT clarify.
         expect: { service: 'uniswap-free', tool: /\/(price|quote|pool_info)$/ },
       },
@@ -297,9 +306,14 @@ const CONVERSATIONS: Conversation[] = [
       {
         user: 'swap 1 USDC for its token',
         assistantNote: 'Built: 1 USDC → BAL.',
-        // "its token" = BAL, named only in the prior turn's result prose. Prose
-        // carry sometimes works; RR18's resolvedEntities makes it reliable.
+        // "its token" resolves via the carried entities (RR18) — exactly what
+        // extractEntities produces from the prior snapshot result. Mandatory
+        // now that RR18 is UNLOCKED; before entities this turn clarified.
         pending: 'RR18',
+        entities: [
+          { kind: 'space', name: 'Balancer', value: 'balancer.eth' },
+          { kind: 'token', name: 'BAL', value: 'BAL' },
+        ],
         expect: {
           service: 'uniswap-free',
           tool: /build_swap$/,
@@ -377,7 +391,8 @@ async function runConversation(convo: Conversation, endpointCache: Map<string, P
     const record = (ok: boolean, detail: string) =>
       results.push({ conversation: convo.name, turn: i + 1, user: turn.user, ok, pending: pendingTag, detail })
 
-    const prompt = plannerPrompt(turn.user, endpoints, history, '', { userAddress: TEST_ADDR })
+    const ctx: WorkingContext | undefined = turn.entities?.length ? { v: 1, age: 1, entities: turn.entities } : undefined
+    const prompt = plannerPrompt(turn.user, endpoints, history, contextBlockForPlanner(ctx), { userAddress: TEST_ADDR })
     const text = await planner(prompt)
     if (!text) {
       record(false, 'planner call failed (no text)')

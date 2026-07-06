@@ -21,7 +21,7 @@ import { tokenDecimals, humanToAtoms } from '@/lib/cow'
 import { ensureBaseTokenList } from '@/lib/token-list'
 import { resolveProposal } from '@/lib/snapshot-read'
 import { detectGovernanceIntent, runGovernanceTurn } from '@/lib/governance'
-import { sanitizeWorkingContext, contextBlockForPlanner, type WorkingContext } from '@/lib/working-context'
+import { sanitizeWorkingContext, contextBlockForPlanner, type WorkingContext, extractEntities, carryContext } from '@/lib/working-context'
 import { getSessionAddress } from '@/lib/auth'
 import { grantViolation, type GrantPolicy } from '@/lib/spend-grant'
 import {
@@ -44,6 +44,7 @@ import { loadCatalog } from '@/lib/catalog'
 import { routeMessage, selectInferenceProvider, compactForSynthesis, dedupePlannerPicks, type TraceStep, type SmartPick } from '@/lib/router'
 import { buildSignableArtifact } from '@/lib/transaction-layer'
 import { parseClarify, type ClarifyRequest } from '@/lib/clarify'
+import type { EntityRef } from '@/lib/working-context'
 import { isCacheable, routeCacheKey, getCached, setCached } from '@/lib/route-cache'
 import { recordRouteEvent, routeSavings } from '@/lib/route-telemetry'
 import { newTurnId, recordTraceLine } from '@/lib/route-trace'
@@ -971,6 +972,7 @@ async function executeWithSignatures(
 
   const receipts: Receipt[] = []
   const contextBlocks: string[] = []
+  let carriedEntities: EntityRef[] = []
   const inferenceCall = plan.find((c) => c.role === 'inference')
 
   // Persist each wallet-mode receipt to the live routing feed (route_trace_lines)
@@ -1019,6 +1021,7 @@ async function executeWithSignatures(
       const data = c.mcp
         ? parseMcpDataResult(res.headers.get('content-type') ?? '', await res.text())
         : await res.json()
+      carriedEntities = extractEntities(data, carriedEntities)
       contextBlocks.push(`### ${c.name}\n${compactForSynthesis(data, 3500)}`)
       const txHash = decodeSettlement(res)?.transaction
       pushReceipt({ name: c.name, endpoint: c.host, priceUsd: c.priceUsd, txHash, ok: true })
@@ -1073,7 +1076,9 @@ async function executeWithSignatures(
   ledger(inferenceCall, true, infTx)
 
   const reply = text + infoFooter(listedOnly, notes)
-  return NextResponse.json({ reply, receipts, payer: 'your wallet' })
+  // RR18: resolved entities ride the reply so the NEXT turn (possibly on a
+  // different MCP) plans against exact values, not prose.
+  return NextResponse.json({ reply, receipts, payer: 'your wallet', workingContext: carryContext(workingContext, carriedEntities) })
 }
 
 /** Build the payment header for a planned call from its client signature. */
@@ -1110,6 +1115,7 @@ async function runWithBurner(
   trace({ type: 'status', label: 'routing within your selected agents' })
   const receipts: Receipt[] = []
   const contextBlocks: string[] = []
+  let carriedEntities: EntityRef[] = []
   // A vote built by the snapshot MCP's prepare_vote tool, hoisted out of the
   // tool result so the chat can render a Sign-vote button instead of dumping
   // the EIP-712 typed data into the inference prompt.
@@ -1141,6 +1147,7 @@ async function runWithBurner(
 
     try {
       const { json, txHash } = await paidGet(ds.endpoint!, ds.queryParam ?? 'q', message)
+      carriedEntities = extractEntities(json, carriedEntities)
       contextBlocks.push(`### ${ds.name}\n${compactForSynthesis(json, 3500)}`)
       receipts.push({ name: ds.name, endpoint: host, priceUsd: ds.priceUsd ?? '0.01', txHash, ok: true })
       if (grant) {
@@ -1181,6 +1188,7 @@ async function runWithBurner(
         voteRequest = vote
         contextBlocks.push(`### ${ds.name}\nPrepared a vote for the user to sign: ${vote.summary}`)
       } else {
+        carriedEntities = extractEntities(data, carriedEntities)
         contextBlocks.push(`### ${ds.name}\n${compactForSynthesis(data, 3500)}`)
       }
       receipts.push({ name: ds.name, endpoint: host, priceUsd: ds.priceUsd ?? '0.01', txHash, ok: true })
@@ -1245,6 +1253,7 @@ async function runWithBurner(
           }
           try {
             const { json, txHash: dataTx } = await paidCall(request)
+            carriedEntities = extractEntities(json, carriedEntities)
             contextBlocks.push(`### ${ep.serverName}\n${compactForSynthesis(json, 3500)}`)
             receipts.push({ name: ep.serverName, endpoint: host, priceUsd: ep.priceUsd, txHash: dataTx, ok: true })
             trace({ type: 'receipt', receipt: { name: ep.serverName, endpoint: host, priceUsd: ep.priceUsd, txHash: dataTx, ok: true } })
@@ -1304,7 +1313,7 @@ async function runWithBurner(
     reply += `\n\n— spend grant “${grant.label}”: $${spentToday.toFixed(2)}/$${policy.perDayUsd} today`
     if (blocked.length) reply += ` · blocked ${blocked.join(', ')}`
   }
-  return NextResponse.json({ reply, receipts, payer: 'the house wallet', voteRequest: voteRequest ?? undefined })
+  return NextResponse.json({ reply, receipts, payer: 'the house wallet', voteRequest: voteRequest ?? undefined, workingContext: carryContext(workingContext, carriedEntities) })
 }
 
 async function paidGet(endpoint: string, queryParam: string, value: string) {
@@ -1767,6 +1776,9 @@ export function streamAutoRouter(
           payer: 'the house wallet',
           routeReport,
           trace: trace(),
+          // RR18: values the loop's tool results resolved ride the reply so
+          // the next turn plans against exact ids/symbols across MCPs.
+          workingContext: carryContext(workingContext, decision.entities),
         })
         recordTurn({ payer: 'the house wallet', shortlisted: shortlistedOf(decision), picks: picksOf(decision), intent: intentOf(decision) })
         finish()
