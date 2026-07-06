@@ -106,10 +106,11 @@ const SERVICES = [
     tools: [
       {
         name: 'list_proposals',
-        description: "Recent Snapshot governance proposals. Filter by space and/or state. Default (no args) = active proposals across all DAOs — answers 'what DAO votes are live right now'.",
+        description: "Recent Snapshot governance proposals. Filter by space, state, and/or follower (an EVM address — only proposals in spaces that address follows; 'what can I vote on' / 'do I have open proposals' = follower:\"$USER_ADDRESS\" + state:\"active\"). Default (no args) = active proposals across all DAOs — answers 'what DAO votes are live right now'.",
         params: [
           p('space', 'string', 'Snapshot space id, e.g. ens.eth.'),
           { ...p('state', 'string', 'Proposal state filter. Use "active" for open/live votes.'), enumValues: ['active', 'closed', 'pending'] } as Param,
+          p('follower', 'string', "EVM address — scope to the spaces this address follows (the user's own governance feed → \"$USER_ADDRESS\")."),
           p('first', 'number', 'Max results.'),
         ],
       },
@@ -117,6 +118,19 @@ const SERVICES = [
       { name: 'list_votes', description: 'Votes cast on a proposal, by voting power.', params: [p('proposal', 'string', 'Proposal id (0x… hash).', true), p('first', 'number', 'Max results.')] },
       { name: 'get_space', description: 'DAO space metadata (name, network, proposal/follower counts).', params: [p('id', 'string', 'Space id, e.g. ens.eth.', true)] },
       { name: 'list_spaces', description: 'Browse DAO spaces, most followed first.', params: [p('first', 'number', 'Max results.')] },
+      // The read-only escape hatch: any hub filter the curated tools don't
+      // cover, without a new tool per intent. Guarded server-side (single
+      // query op, root-field allowlist, depth/first caps) — see
+      // free-mcps/services/snapshot/lib/graphql-guard.ts.
+      {
+        name: 'graphql_query',
+        description:
+          'Escape hatch — any READ-ONLY GraphQL query against the Snapshot hub when the other tools lack the filter (author, time windows, follows, voting power, vote-by-voter…). Root fields: proposals, votes, spaces, follows, subscriptions, users, vp, ranking, messages, strategies, networks, aliases. Where-filters: proposals(space_in, state, author, title_contains, start_gte/lte, end_gte/lte) · votes(proposal, voter, space_in, vp_gte) · follows(follower, space_in). List args: first(≤100), skip, orderBy("created"|"vp"|…), orderDirection. Put user values in variables; "$USER_ADDRESS" works inside variables for the user\'s own address.',
+        params: [
+          p('query', 'string', 'GraphQL query document — ONE read-only query operation, e.g. query($f:String!){ follows(where:{follower:$f}){ space { id name } } }', true),
+          p('variables', 'string', 'GraphQL variables as a JSON object string, e.g. {"f":"$USER_ADDRESS"}.'),
+        ],
+      },
       // ⚠ prepare_vote / submit_vote are SIGNING tools — display-only here
       // (params: null → not plannable). The planner must never construct
       // them with guessed args; votes route through runGovernanceTurn, which

@@ -130,8 +130,10 @@ async function planSmartPicks(
   smart: PlannableEndpoint[],
   history: ConversationTurn[] = [],
   ctx?: WorkingContext,
+  /** User address for the "$USER_ADDRESS" context token (see PlanContext). */
+  userAddress?: string,
 ): Promise<{ picks: PlannedPick[]; dropped: PlannableEndpoint[]; txHash?: string }> {
-  const { text, txHash } = await callInference(inference, plannerPrompt(message, smart, history, contextBlockForPlanner(ctx)))
+  const { text, txHash } = await callInference(inference, plannerPrompt(message, smart, history, contextBlockForPlanner(ctx), { userAddress }))
   // Never pay two services for the same capability — keep the best per
   // capability (same dedup the Auto-Router applies). dropped → surfaced as notes.
   const { picks, dropped } = dedupePlannerPicks(parsePlannerPicks(text, smart), smart)
@@ -417,7 +419,7 @@ export async function POST(req: NextRequest) {
         mcpDataServers.length === 0 &&
         smart.every((e) => e.priceUsd === '0')
       if (fullyFree) {
-        return await runWithBurner(message, synthesizer, dataServers, mcpDataServers, listedOnly, smart, notes, history, clientTurnId, workingContext)
+        return await runWithBurner(message, synthesizer, dataServers, mcpDataServers, listedOnly, smart, notes, history, clientTurnId, workingContext, walletAddress)
       }
       return await planWalletPayments(message, synthesizer, dataServers, mcpDataServers, listedOnly, walletAddress, smart, notes, history, workingContext)
     }
@@ -426,7 +428,7 @@ export async function POST(req: NextRequest) {
     // House synthesis needs no burner: free data calls + a direct-Anthropic
     // answer spend zero USDC, so the turn runs even with PRIVATE_KEY unset.
     if (hasAgentWallet() || isHouseInference(synthesizer)) {
-      return await runWithBurner(message, synthesizer, dataServers, mcpDataServers, listedOnly, smart, notes, history, clientTurnId, workingContext)
+      return await runWithBurner(message, synthesizer, dataServers, mcpDataServers, listedOnly, smart, notes, history, clientTurnId, workingContext, walletAddress)
     }
 
     // ── Demo mode: nothing can pay ───────────────────────────────────────────
@@ -823,7 +825,7 @@ async function planWalletPayments(
   const smartServed = new Set<string>()
   if (smart.length > 0) {
     try {
-      const { picks, dropped } = await planSmartPicks(inference, message, smart, history, workingContext)
+      const { picks, dropped } = await planSmartPicks(inference, message, smart, history, workingContext, walletAddress)
       for (const d of dropped) notes.push(`Skipped ${d.serverName} — another picked service covers the same capability; kept the better-rated/cheaper one.`)
       if (picks.length === 0) {
         const considered = [...new Set(smart.map((e) => e.serverName))].join(', ')
@@ -832,7 +834,7 @@ async function planWalletPayments(
       const byId = new Map(smart.map((e) => [e.id, e]))
       for (const pick of picks) {
         const ep = byId.get(pick.endpointId)!
-        const built = buildSmartRequest(ep, pick.params)
+        const built = buildSmartRequest(ep, pick.params, { userAddress: walletAddress })
         if ('error' in built) {
           notes.push(`${ep.serverName}: planned call skipped — ${built.error}.`)
           continue
@@ -1073,6 +1075,11 @@ async function runWithBurner(
    *  in-chat engine terminal (and /activity) can watch it live. */
   turnId?: string,
   workingContext?: WorkingContext,
+  /** The user's wallet address, when known. Burner mode pays with the HOUSE
+   *  wallet but the "$USER_ADDRESS" token must still mean the USER — a
+   *  fully-free turn with a connected wallet routes here, and "do I have open
+   *  proposals" needs their address, not the burner's. */
+  userAddress?: string,
 ) {
   let traceSeq = 0
   const trace = turnId ? (event: unknown) => recordTraceLine(turnId, traceSeq++, event, 'burner') : () => {}
@@ -1174,7 +1181,7 @@ async function runWithBurner(
       blocked.push(`endpoint planner (${plannerViolation})`)
     } else {
       try {
-        const { picks, dropped, txHash } = await planSmartPicks(inference, message, smart, history, workingContext)
+        const { picks, dropped, txHash } = await planSmartPicks(inference, message, smart, history, workingContext, userAddress)
         for (const d of dropped) notes.push(`Skipped ${d.serverName} — another picked service covers the same capability; kept the better-rated/cheaper one.`)
         if (grant) {
           await recordLedger({ grantId: grant.id, orgId: grant.orgId ?? undefined, host: infHost, serviceName: inference.name, amountUsd: infPrice, ok: true, txHash, note: 'settled' })
@@ -1188,7 +1195,7 @@ async function runWithBurner(
         const byId = new Map(smart.map((e) => [e.id, e]))
         for (const pick of picks) {
           const ep = byId.get(pick.endpointId)!
-          const built = buildSmartRequest(ep, pick.params)
+          const built = buildSmartRequest(ep, pick.params, { userAddress })
           if ('error' in built) {
             receipts.push({ name: ep.serverName, endpoint: hostOf(ep.url), priceUsd: ep.priceUsd, ok: false, note: `skipped: ${built.error}` })
             continue
@@ -1538,7 +1545,7 @@ export function streamAutoRouter(
         // ── Wallet mode: single planning pass (no executeCall) → hand the data +
         //    answer payments to the wallet to sign via the two-phase execute path.
         if (walletAddress) {
-          const decision = await routeMessage({ message, history, catalog, onStep: (s) => send(s), runInference: runRoutingInference })
+          const decision = await routeMessage({ message, history, catalog, onStep: (s) => send(s), runInference: runRoutingInference, userAddress: walletAddress ?? ownerOverride })
           const wPlan: PlannedCall[] = []
           let plannedUsd = 0
           const planGate = async (name: string, h: string, price: number): Promise<string | null> => {
@@ -1650,7 +1657,7 @@ export function streamAutoRouter(
           }
         }
 
-        const decision = await routeMessage({ message, history, catalog, onStep: (s) => send(s), runInference: runRoutingInference, executeCall })
+        const decision = await routeMessage({ message, history, catalog, onStep: (s) => send(s), runInference: runRoutingInference, executeCall, userAddress: walletAddress ?? ownerOverride })
 
         // Transaction layer: a routed tool returned a signable action — surface
         // it for explicit approval instead of synthesizing an answer. Votes reuse

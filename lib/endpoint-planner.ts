@@ -175,6 +175,50 @@ export interface PlannedPick {
   params: Record<string, string | number | boolean>
 }
 
+// ── Context variables ───────────────────────────────────────────────────────
+// Server-known values the PLANNER may reference by token instead of copying
+// them through its output (a 40-hex address transcribed by a model is a
+// hallucination magnet; a token substituted server-side is deterministic).
+// Substitution happens in buildSmartRequest — the single chokepoint all three
+// arg-building paths (burner loop, wallet plan, Auto-Router) go through.
+
+/** Literal the planner writes where a param needs the user's own address. */
+export const USER_ADDRESS_TOKEN = '$USER_ADDRESS'
+
+/** Server-side values available for token substitution in planned params. */
+export interface PlanContext {
+  /** The user's wallet address (connected wallet, SIWE session, or an agent
+   *  key's owner). Absent for guests — the planner isn't offered the token. */
+  userAddress?: string
+}
+
+/** The prompt line advertising available context variables. Empty when none —
+ *  never offer a token that would fail substitution. */
+export function contextVarsLine(ctx?: PlanContext): string {
+  if (!ctx?.userAddress) return ''
+  return `The user's connected wallet address is known server-side. When a parameter must be the USER'S OWN address — their follows, votes, balances, orders, positions, anything phrased "my …"/"do I …"/"am I …" — pass the literal string "${USER_ADDRESS_TOKEN}" as that value (also inside JSON-string params); it is substituted with the real address after planning. NEVER invent an address or copy one from the conversation for the user themself.`
+}
+
+/** Replace context tokens in planned string params. Errors when the planner
+ *  used a token no context can fill — refuse before paying for a wrong call. */
+export function substituteContextParams(
+  params: Record<string, string | number | boolean>,
+  ctx?: PlanContext,
+): { params: Record<string, string | number | boolean> } | { error: string } {
+  const out: Record<string, string | number | boolean> = {}
+  for (const [k, v] of Object.entries(params)) {
+    if (typeof v === 'string' && v.includes(USER_ADDRESS_TOKEN)) {
+      if (!ctx?.userAddress) {
+        return { error: `param "${k}" needs the user's wallet address (${USER_ADDRESS_TOKEN}) but no wallet is connected — connect a wallet or sign in` }
+      }
+      out[k] = v.split(USER_ADDRESS_TOKEN).join(ctx.userAddress)
+    } else {
+      out[k] = v
+    }
+  }
+  return { params: out }
+}
+
 /**
  * Load the auto-callable endpoints for the given service slugs: parameter
  * schemas present, exact (non-"upto") pricing at or under the ceiling, and a
@@ -376,6 +420,8 @@ export function plannerPrompt(
   /** Structured continuity block (lib/working-context contextBlockForPlanner):
    *  the scope + offered items from prior turns — ids, not prose. */
   contextBlock = '',
+  /** Server-side context vars (user address) the planner may reference. */
+  planCtx?: PlanContext,
 ): string {
   const byService = new Map<string, PlannableEndpoint[]>()
   for (const e of endpoints) {
@@ -401,12 +447,14 @@ export function plannerPrompt(
     .join('\n\n')
 
   const convo = conversationBlock(history)
+  const ctxVars = contextVarsLine(planCtx)
   return [
     `You are an API-call planner.`,
     ...(contextBlock ? [contextBlock] : []),
     ...(convo ? [convo] : []),
     `A user asked${history.length || contextBlock ? ' (interpret it in the context of the conversation above — a terse follow-up like "baseball" continues the previous question, and ordinal references like "the second one" mean the numbered items in the working context)' : ''}:\n"""${message}"""`,
     `Below are paid API endpoints, grouped by service, each tagged with its price in [$…]; some are tagged ✓proven (they have successfully settled paid calls before). Pick AT MOST ONE endpoint per service — only if calling it would genuinely help answer the user. When two endpoints would both answer the need equally well, prefer the ✓proven one, and then the cheaper one — but still pick an un-proven endpoint when it is clearly the better fit for the request. Fill in parameter values derived from the user's message and the conversation (use sensible values; respect types; include every required param; skip optional params you can't infer). If no endpoint of a service helps, skip that service entirely.`,
+    ...(ctxVars ? [ctxVars] : []),
     menu,
     `Respond with ONLY this JSON, no prose, no code fences:`,
     `{"picks":[{"endpointId":"<id>","params":{"<name>":"<value>"}}]}`,
@@ -503,7 +551,14 @@ function overrideFreeMcpBase(base: string): string {
 export function buildSmartRequest(
   ep: PlannableEndpoint,
   params: Record<string, string | number | boolean>,
+  planCtx?: PlanContext,
 ): { request: SmartRequest } | { error: string } {
+  // Context tokens ($USER_ADDRESS) resolve here — the one chokepoint every
+  // planned call passes through — so no path can leak a token to the wire.
+  const substituted = substituteContextParams(params, planCtx)
+  if ('error' in substituted) return substituted
+  params = substituted.params
+
   const byGroup = { query: [] as EndpointParam[], path: [] as EndpointParam[], body: [] as EndpointParam[] }
   for (const p of ep.parameters) byGroup[p.group]?.push(p)
 

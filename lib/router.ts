@@ -23,6 +23,8 @@ import {
   loadPlannableEndpoints,
   parsePlannerPicks,
   buildSmartRequest,
+  contextVarsLine,
+  type PlanContext,
   type PlannableEndpoint,
   type PlannedPick,
   type ConversationTurn,
@@ -117,6 +119,10 @@ export interface RouteOptions {
   executeCall?: (pick: SmartPick) => Promise<ExecuteResult>
   /** Max tool calls in the loop (default 3). Hard cap against runaway loops. */
   maxSteps?: number
+  /** The user's wallet address (connected / SIWE / agent-key owner). Offered
+   *  to the routing model as the "$USER_ADDRESS" context token and substituted
+   *  server-side in planned params — never transcribed by the model. */
+  userAddress?: string
   /** Hard ceiling on total DATA spend in one turn (USD). When the next call
    *  would exceed it, the loop stops + notes it — so a multi-step turn can't
    *  overspend regardless of the model. Default 0.05. */
@@ -352,6 +358,8 @@ export function routerPrompt(
   endpoints: PlannableEndpoint[],
   history: ConversationTurn[] = [],
   observations: string[] = [],
+  /** Server-side context vars (user address) the model may reference. */
+  planCtx?: PlanContext,
 ): string {
   const byService = new Map<string, PlannableEndpoint[]>()
   for (const e of endpoints) byService.set(e.serverSlug, [...(byService.get(e.serverSlug) ?? []), e])
@@ -392,6 +400,7 @@ export function routerPrompt(
     ...(observed ? [observed] : []),
     `Below are paid API endpoints, grouped by service, each tagged with its price in [$…]; some are tagged ✓proven with a settle rate (the higher, the more reliable). Pick AT MOST ONE endpoint per service. Pick MULTIPLE services ONLY when the question spans DISTINCT needs (e.g. a price AND news) — NEVER call two services that return the SAME kind of data (e.g. two crypto-price sources): that just double-charges the user. When several services provide the same thing, choose the SINGLE best — highest ✓proven settle rate, then cheapest. A single inference call then synthesizes everything into one answer. Only call an endpoint if it would genuinely help. Anything needing LIVE or REAL-TIME data — a price, quote, weather, scores, listings, search, on-chain or market data — should route to a relevant endpoint rather than be answered from memory. Still pick an un-proven endpoint when it is clearly the best (or only) fit.`,
     `Fill parameter values from the user's message and conversation (respect types; include every required param; skip optional params you can't infer). You MAY include query parameters even for an endpoint that lists no params, when it clearly needs one to answer — infer the obvious key/value (e.g. for a "latest quote" endpoint, "symbol":"ETH"; for a search endpoint, "query":"…"). Only pick nothing when the question genuinely needs no live data (general knowledge, chit-chat).`,
+    ...(contextVarsLine(planCtx) ? [contextVarsLine(planCtx)] : []),
     menu || '(no endpoints available)',
     `Respond with ONLY this JSON, no prose, no code fences:`,
     `{"intent":"<one short sentence: what the user wants>","needs":["<live data this requires, if any>"],"picks":[{"endpointId":"<id>","params":{"<name>":"<value>"},"reason":"<why this endpoint, one short clause>","score":<0..1 confidence>}]}`,
@@ -507,7 +516,7 @@ export async function routeMessage(opts: RouteOptions): Promise<RouterDecision> 
       proven: ep.reliability?.settled,
       successRate: ep.reliability?.successRate,
     })
-    const built = buildSmartRequest(ep, pick.params)
+    const built = buildSmartRequest(ep, pick.params, { userAddress: opts.userAddress })
     if ('error' in built) {
       addNote(`${ep.serverName}: planned call skipped — ${built.error}.`, 'warn')
       return null
@@ -538,7 +547,7 @@ export async function routeMessage(opts: RouteOptions): Promise<RouterDecision> 
     let decision: RouterModelDecision = { intent: '', needs: [], picks: [] }
     let routingFailed = false
     try {
-      const { text } = await opts.runInference(inference, routerPrompt(message, shortlisted, history))
+      const { text } = await opts.runInference(inference, routerPrompt(message, shortlisted, history, [], { userAddress: opts.userAddress }))
       decision = parseRouterDecision(text, shortlisted)
     } catch (err) {
       routingFailed = true
@@ -573,7 +582,7 @@ export async function routeMessage(opts: RouteOptions): Promise<RouterDecision> 
       emit({ type: 'status', label: step === 0 ? `Choosing among ${shortlisted.length} shortlisted endpoints…` : `Refining (step ${step + 1}/${maxSteps})…` })
       let decision: RouterModelDecision = { intent: '', needs: [], picks: [] }
       try {
-        const { text } = await opts.runInference(inference, routerPrompt(message, shortlisted, history, observations))
+        const { text } = await opts.runInference(inference, routerPrompt(message, shortlisted, history, observations, { userAddress: opts.userAddress }))
         decision = parseRouterDecision(text, shortlisted)
       } catch (err) {
         addNote(`Routing call failed (${err instanceof Error ? err.message : 'error'}); answering with what's gathered.`, 'warn')
