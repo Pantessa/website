@@ -68,6 +68,12 @@ model McpServer {
   tags           String[] @default([])
   exampleQueries String[] @default([]) @map("example_queries")
 
+  // Routability report (RR14) — the mcp:lint grader's latest result: overall
+  // score, per-dimension breakdown, and the concrete fix list. Written by
+  // `npm run mcp:lint -- <slug> --save`; the server page's routability panel
+  // reads it. Null = never linted.
+  routability Json? @map("routability")
+
   // Provenance
   source     String   @default("agentic.market")
   featured   Boolean  @default(true)
