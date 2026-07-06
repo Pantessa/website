@@ -2,6 +2,8 @@
 // "cast my vote against 0xabc…", "vote yes". Pure + unit-tested. The orchestrator
 // uses this to decide whether to resolve a proposal and call prepare_vote.
 
+import { resolveOrdinalFromOffers, resolveTitleFromOffers, type WorkingContext } from './working-context'
+
 export interface VoteIntent {
   isVote: boolean
   proposalId?: string // 0x… 64-hex, when explicit
@@ -43,6 +45,52 @@ export function parseVoteIntent(message: string): VoteIntent {
   // lone DAO name stays NOT a vote — too ambiguous without history.
   const isVote = (hasVerb && (!!choiceText || !!proposalId)) || !!proposalId || !!optionMatch
   return { isVote, proposalId, choiceText, spaceHint }
+}
+
+// ── Working-context resolution (invariant #11) ───────────────────────────────
+
+export interface VoteReference {
+  proposalId: string
+  title?: string
+  space?: string
+  /** The message's number picked a PROPOSAL off the offered list — its
+   *  "option N" reading is spent, so it must not double as choice N. */
+  pickedByNumber?: boolean
+}
+
+/**
+ * Pin the proposal a vote intent refers to against the STRUCTURED working
+ * context — the pending vote, then the numbered list the user was shown
+ * (ordinal → title → sole offer) — exactly like the free governance path
+ * (lib/governance.ts step 1b). Returns null when nothing pins, so the caller
+ * falls back to its stateless resolve. Pure + tested.
+ */
+export function resolveVoteReference(
+  message: string,
+  intent: VoteIntent,
+  ctx: WorkingContext | undefined,
+): VoteReference | null {
+  if (intent.proposalId) return { proposalId: intent.proposalId, space: intent.spaceHint }
+  if (!ctx) return null
+  const pending = ctx.pending?.kind === 'vote' ? ctx.pending : undefined
+  if (pending?.data.proposalId) {
+    return { proposalId: pending.data.proposalId, title: pending.data.title, space: pending.data.space ?? intent.spaceHint }
+  }
+  if (ctx.offers?.kind !== 'proposal') return null
+  const byOrdinal = resolveOrdinalFromOffers(message, ctx)
+  const offered =
+    byOrdinal ??
+    resolveTitleFromOffers(message, ctx) ??
+    // A bare choice ("vote yes") with exactly ONE offered proposal — that's the
+    // one. The user still signs explicitly, so a wrong pick can't move money.
+    (ctx.offers.items.length === 1 && intent.choiceText ? ctx.offers.items[0] : undefined)
+  if (!offered) return null
+  return {
+    proposalId: offered.id,
+    title: offered.title,
+    space: offered.data?.spaceId ?? intent.spaceHint,
+    pickedByNumber: !!byOrdinal && /^option \d+$/i.test(intent.choiceText ?? ''),
+  }
 }
 
 // Collapse inflected synonyms to the canonical word the MCP's resolver knows.

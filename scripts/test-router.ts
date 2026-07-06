@@ -16,6 +16,8 @@ import {
   sanitizeWorkingContext, resolveOrdinalFromOffers, resolveTitleFromOffers,
   contextBlockForPlanner, latestWorkingContext,
 } from '../lib/working-context'
+import { parseSwapIntent, parseSwapFollowUp, swapWorkingContext } from '../lib/swap-intent'
+import { parseVoteIntent, resolveVoteReference } from '../lib/vote-intent'
 
 let pass = 0
 let fail = 0
@@ -238,6 +240,54 @@ check('latest: none present → undefined', latestWorkingContext([{ role: 'assis
 // what pins it to the proposal + space the user was shown.
 const lv = detectGovernanceIntent('lets vote yes')
 check('incident: "lets vote yes" → vote intent, no space, no proposal (ctx must resolve it)', lv?.kind === 'vote' && !lv.spaceQuery && !lv.proposalId && !!lv.choiceText)
+
+// ── Swap/order pending context (invariant #11: artifact turns WRITE the ctx) ─
+console.log('\nswap/order working context (write + follow-up resolution)')
+const swapAsk = parseSwapIntent('swap 1 USDC for WETH')
+const cowCtx = swapWorkingContext(swapAsk, 'cow')
+check('swap ctx: CoW artifact → pending kind "order", venue in data', cowCtx.pending?.kind === 'order' && cowCtx.pending.data.venue === 'cow')
+check('swap ctx: Uniswap artifact → pending kind "swap"', swapWorkingContext(swapAsk, 'uniswap').pending?.kind === 'swap')
+check('swap ctx: data carries pair + amount + mode', cowCtx.pending?.data.sellToken === 'USDC' && cowCtx.pending?.data.buyToken === 'WETH' && cowCtx.pending?.data.amount === '1' && cowCtx.pending?.data.mode === 'swap')
+check('swap ctx: survives the sanitize round-trip', sanitizeWorkingContext(JSON.parse(JSON.stringify(cowCtx)))?.pending?.kind === 'order')
+const carried = swapWorkingContext(swapAsk, 'cow', wc)
+check('swap ctx: prior scope + offers carried through', carried.scope?.label === 'Nate DAO' && carried.offers?.items.length === 2)
+
+const pendingOrder = cowCtx.pending
+check('follow-up: "cancel that" → cancel', parseSwapFollowUp('cancel that', pendingOrder)?.kind === 'cancel')
+check('follow-up: "never mind" → cancel', parseSwapFollowUp('never mind', pendingOrder)?.kind === 'cancel')
+check("follow-up: \"don't sign it\" → cancel", parseSwapFollowUp("don't sign it", pendingOrder)?.kind === 'cancel')
+const amend = parseSwapFollowUp('actually make it 2 USDC', pendingOrder)
+check('follow-up: "actually make it 2 USDC" → amend, pair preserved', !!amend && amend.kind === 'amend' && amend.intent.sellAmountHuman === '2' && amend.intent.buyToken === 'WETH')
+check('follow-up: "make it 2" (verb, no token) → amend', parseSwapFollowUp('make it 2', pendingOrder)?.kind === 'amend')
+check('follow-up: bare "2 USDC" (token, no verb) → amend', parseSwapFollowUp('2 USDC', pendingOrder)?.kind === 'amend')
+check('follow-up: bare "2" too ambiguous → null', parseSwapFollowUp('2', pendingOrder) === null)
+check('follow-up: buy-side token would flip meaning → null', parseSwapFollowUp('make it 2 WETH', pendingOrder) === null)
+check('follow-up: no pending artifact → null', parseSwapFollowUp('cancel that', undefined) === null)
+check('follow-up: vote pending is not a swap pending → null', parseSwapFollowUp('cancel that', wc!.pending) === null)
+check('follow-up: unrelated message → null', parseSwapFollowUp('what is the price of ETH', pendingOrder) === null)
+const limitPending = swapWorkingContext(parseSwapIntent('limit order: sell 0.5 WETH for at least 1750 USDC'), 'cow').pending
+check('follow-up: limit amend refused (price semantics), cancel still works', parseSwapFollowUp('make it 1', limitPending) === null && parseSwapFollowUp('cancel it', limitPending)?.kind === 'cancel')
+
+// ── Gated vote path (prepareVoteTurn): ctx resolution mirrors governance ────
+console.log('\ngated vote path — working-context resolution')
+const bareVote = parseVoteIntent('vote yes')
+check('gated: "vote yes" parses with no proposal (ctx must pin it)', bareVote.isVote && !bareVote.proposalId)
+const refPending = resolveVoteReference('vote yes', bareVote, wc)
+check('gated: pending vote pins the proposal + title', refPending?.proposalId === wcOffers.items[0].id && refPending?.title === wcOffers.items[0].title)
+const wcListOnly = sanitizeWorkingContext({ v: 1, age: 0, scope: wcRaw.scope, offers: wcOffers })
+const refOrdinal = resolveVoteReference('vote yes on 2', parseVoteIntent('vote yes on 2'), wcListOnly)
+check('gated: ordinal resolves off the OFFERED list (space carried)', refOrdinal?.proposalId === wcOffers.items[1].id && refOrdinal?.space === 'nategeier.dcl.eth' && !refOrdinal?.pickedByNumber)
+const optIntent = parseVoteIntent('vote option 2')
+const refPick = resolveVoteReference('vote option 2', optIntent, wcListOnly)
+check('gated: "option 2" after a LIST = proposal pick, choice reading spent', refPick?.proposalId === wcOffers.items[1].id && refPick?.pickedByNumber === true)
+const refChoice = resolveVoteReference('vote option 2', optIntent, wc)
+check('gated: "option 2" with a PENDING vote = choice 2 on it', refChoice?.proposalId === wcOffers.items[0].id && !refChoice?.pickedByNumber)
+const wcSole = sanitizeWorkingContext({ v: 1, age: 0, offers: { kind: 'proposal', items: [wcOffers.items[0]] } })
+check('gated: sole offered proposal + a bare choice → pinned', resolveVoteReference('vote yes', bareVote, wcSole)?.proposalId === wcOffers.items[0].id)
+const explicitId = '0x' + 'c'.repeat(64)
+check('gated: explicit proposal id passes through untouched', resolveVoteReference(`vote yes on ${explicitId}`, parseVoteIntent(`vote yes on ${explicitId}`), wc)?.proposalId === explicitId)
+check('gated: no ctx → null (stateless resolve is the fallback)', resolveVoteReference('vote yes', bareVote, undefined) === null)
+check('gated: title mention resolves', resolveVoteReference('vote against Fund the treasury', parseVoteIntent('vote against Fund the treasury'), wcListOnly)?.proposalId === wcOffers.items[1].id)
 
 console.log(`\n${pass} passed, ${fail} failed\n`)
 process.exit(fail ? 1 : 0)
