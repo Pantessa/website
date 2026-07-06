@@ -19,10 +19,50 @@ export function catalogDbEnabled(): boolean {
 }
 
 /**
+ * Local-dev catalog extension: EXTRA_MCP_ROWS = a JSON array of partial
+ * McpServer-shaped objects (each with a `slug`), merged into the loaded
+ * catalog — matching slugs are overlaid (extras win), new slugs appended.
+ * Lets a not-yet-seeded MCP (e.g. cow-free) be exercised locally without
+ * touching the shared Neon DB. Unset in prod → a no-op.
+ */
+function withExtraRows(catalog: McpServer[]): McpServer[] {
+  const raw = process.env.EXTRA_MCP_ROWS
+  if (!raw) return catalog
+  try {
+    const extras = JSON.parse(raw) as (Partial<McpServer> & { slug: string })[]
+    if (!Array.isArray(extras)) return catalog
+    const out = [...catalog]
+    for (const extra of extras) {
+      if (!extra || typeof extra.slug !== 'string') continue
+      const i = out.findIndex((s) => s.slug === extra.slug)
+      if (i >= 0) out[i] = { ...out[i], ...extra }
+      else
+        out.push({
+          id: `extra-${extra.slug}`,
+          name: extra.slug,
+          description: '',
+          category: 'Other',
+          websiteUrl: null,
+          color: null,
+          ...extra,
+        } as McpServer)
+    }
+    return out
+  } catch {
+    console.warn('catalog: EXTRA_MCP_ROWS is not valid JSON — ignored')
+    return catalog
+  }
+}
+
+/**
  * The full MCP directory: callable/auto-callable services first, then by
  * category. Mirrors what GET /api/servers returns (and is now its source).
  */
 export async function loadCatalog(): Promise<McpServer[]> {
+  return withExtraRows(await loadCatalogBase())
+}
+
+async function loadCatalogBase(): Promise<McpServer[]> {
   if (!catalogDbEnabled()) return CATALOG as unknown as McpServer[]
   try {
     const [servers, autoIds] = await Promise.all([

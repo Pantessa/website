@@ -50,6 +50,11 @@ export default function Navigation() {
   // navigation moves to the dashboard's left rail. A signed-in (or
   // wallet-connected) visitor on the brochure sees a "Dashboard" button.
   const { address: sessionAddress } = useSession()
+
+  // /embed renders inside third-party iframes — no site chrome at all.
+  // (After every hook, so the hook order stays stable across routes.)
+  if (pathname.startsWith('/embed')) return null
+
   const inDashboard = pathname.startsWith('/dashboard')
   const showDashboardCta = mounted && (isConnected || !!sessionAddress)
   // The "create an account" CTA is the newcomer path — only when no wallet is

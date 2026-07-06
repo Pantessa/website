@@ -93,7 +93,25 @@ function trackPaidReceipts(receipts: unknown) {
   analytics.chatPaid(totalUsd, paid.length, paid.map((r) => r.name ?? '?').join(','))
 }
 
-export default function ChatInterface() {
+interface ChatInterfaceProps {
+  /** Embed mode (/embed): hides the workspace toolbar (sidebar toggle, agent
+   *  strip, share) and skips the /chat URL rewrites — the iframe URL carries
+   *  the embed params and must not be clobbered. Default false: the normal
+   *  /chat workspace is unchanged. */
+  embedded?: boolean
+  /** Wallet-address CONTEXT supplied by the embedding page (URL param or
+   *  postMessage). Feeds the walletAddress field of POST /api/chat
+   *  ($USER_ADDRESS in the planner). Context only — signing still requires an
+   *  in-iframe wallet connection. Wins over the connected account. */
+  contextAddress?: `0x${string}`
+  /** Notable embed moments (e.g. 'order-signed') → the postMessage bridge. */
+  onEmbedEvent?: (name: string, data?: Record<string, unknown>) => void
+  /** Host-injected prompt (embed contract v1 `prompt` message): prefill the
+   *  input, or send immediately when `send`. `at` disambiguates repeats. */
+  injectedPrompt?: { text: string; send: boolean; at: number } | null
+}
+
+export default function ChatInterface({ embedded = false, contextAddress, onEmbedEvent, injectedPrompt }: ChatInterfaceProps = {}) {
   const {
     servers,
     activeServerIds,
@@ -154,6 +172,9 @@ export default function ChatInterface() {
 
   const { address, isConnected } = useAccount()
   const { signTypedDataAsync } = useSignTypedData()
+  // Effective wallet context for /api/chat: an embed-provided address wins,
+  // else the connected account. Context alone never signs anything.
+  const effectiveAddress = contextAddress ?? (isConnected ? address : undefined)
 
   const currentChat = chats.find((c) => c.id === currentChatId)
   const activeServers = servers.filter((s) => activeServerIds.includes(s.id))
@@ -191,6 +212,12 @@ export default function ChatInterface() {
   const deepLinkRef = useRef(false)
   useEffect(() => {
     if (deepLinkRef.current) return
+    if (embedded) {
+      // The embed's query string is the contract params (mcps/address/theme/
+      // host), not ?try/?q — and it must never be rewritten.
+      deepLinkRef.current = true
+      return
+    }
     const params = new URLSearchParams(window.location.search)
     const trySlug = params.get('try')
     const q = params.get('q')
@@ -223,7 +250,8 @@ export default function ChatInterface() {
       chatId = await createChat(input.slice(0, 40) + (input.length > 40 ? '...' : ''))
       // Reflect the new chat in the URL without a remount (which would refetch
       // an empty message list and clobber the optimistic messages below).
-      window.history.replaceState(null, '', `/chat/${chatId}`)
+      // Not in the embed: the iframe URL carries the embed params.
+      if (!embedded) window.history.replaceState(null, '', `/chat/${chatId}`)
     }
 
     const userMsg = raw.trim()
@@ -290,7 +318,7 @@ export default function ChatInterface() {
             chatId,
             activeServerIds,
             activeServers, // full objects: endpoint/protocol/price per server
-            walletAddress: isConnected ? address : undefined,
+            walletAddress: effectiveAddress,
             history,
             workingContext,
             turnId,
@@ -334,6 +362,16 @@ export default function ChatInterface() {
     }
   }
 
+  // Host-injected prompt (embed `prompt` message): prefill or send. Keyed on
+  // `at` so the same text can be injected twice.
+  const lastInjectedAt = useRef(0)
+  useEffect(() => {
+    if (!injectedPrompt || injectedPrompt.at === lastInjectedAt.current) return
+    lastInjectedAt.current = injectedPrompt.at
+    if (injectedPrompt.send) void handleSend(injectedPrompt.text)
+    else setInput(injectedPrompt.text)
+  }, [injectedPrompt]) // eslint-disable-line react-hooks/exhaustive-deps
+
   /** Auto-Router: POST the streaming endpoint, buffer each trace event into the
    *  store (the engine window renders them live), and return the final reply. */
   const runAutoRouter = async (
@@ -358,7 +396,7 @@ export default function ChatInterface() {
         workingContext,
         // Wallet connected → the engine streams its routing, then hands the
         // data + answer payments back for the wallet to sign (B5).
-        walletAddress: isConnected ? address : undefined,
+        walletAddress: effectiveAddress,
       }),
     })
     if (!res.body) {
@@ -520,7 +558,9 @@ export default function ChatInterface() {
 
   return (
     <div className="flex flex-col h-full">
-      {/* Toolbar: sidebar toggle + agent picker (toggle x402 MCPs from chat) */}
+      {/* Toolbar: sidebar toggle + agent picker (toggle x402 MCPs from chat).
+          Hidden in the embed — EmbedChat renders its own slim header. */}
+      {!embedded && (
       <div className="flex-shrink-0 px-3 py-2.5 border-b border-[var(--line)] bg-black/40 flex items-center gap-2">
         <div ref={stripRef} className="flex items-center gap-2 overflow-x-auto scrollbar-none flex-1 min-w-0">
           <button
@@ -601,6 +641,7 @@ export default function ChatInterface() {
           )}
           <ShareButton />
         </div>
+      )}
 
       {/* Messages area */}
       <div className="flex-1 overflow-y-auto px-4 py-6 space-y-4">
@@ -674,7 +715,14 @@ export default function ChatInterface() {
                     {msg.role === 'assistant' &&
                       (() => {
                         const order = orderRequestOf(msg.meta)
-                        return order ? <SignOrderButton order={order} /> : null
+                        return order ? (
+                          <SignOrderButton
+                            order={order}
+                            // Embed bridge: surface the placed order as an
+                            // 'order-signed' event on the host page.
+                            onPlaced={onEmbedEvent ? (info) => onEmbedEvent('order-signed', info) : undefined}
+                          />
+                        ) : null
                       })()}
                     {msg.role === 'assistant' &&
                       (() => {

@@ -221,6 +221,41 @@ export function substituteContextParams(
 }
 
 /**
+ * Local-dev planner overlay (pairs with EXTRA_MCP_ROWS in lib/catalog.ts):
+ * EXTRA_MCP_ENDPOINTS = a JSON array of planner-menu rows for an MCP whose
+ * mcp_endpoints children aren't seeded in the shared DB yet. Each entry:
+ * { serverSlug, serverName?, method, url, description?, priceUsd?, parameters? }.
+ * Never set in prod — the seeded rows are the source of truth there.
+ */
+function extraPlannableEndpoints(slugs: string[]): PlannableEndpoint[] {
+  const raw = process.env.EXTRA_MCP_ENDPOINTS
+  if (!raw) return []
+  try {
+    const rows = JSON.parse(raw) as Array<
+      Partial<PlannableEndpoint> & { serverSlug: string; url: string; method: string }
+    >
+    return rows
+      .filter((r) => slugs.includes(r.serverSlug))
+      .map((r, i) => ({
+        id: r.id ?? `extra-${r.serverSlug}-${i}`,
+        serverSlug: r.serverSlug,
+        serverName: r.serverName ?? r.serverSlug,
+        method: r.method,
+        url: r.url,
+        description: r.description ?? null,
+        priceUsd: r.priceUsd ?? '0',
+        parameters: r.parameters ?? [],
+        category: r.category ?? null,
+        tags: r.tags ?? [],
+        exampleQueries: r.exampleQueries ?? [],
+      }))
+  } catch {
+    console.warn('planner: EXTRA_MCP_ENDPOINTS is not valid JSON — ignored')
+    return []
+  }
+}
+
+/**
  * Load the auto-callable endpoints for the given service slugs: parameter
  * schemas present, exact (non-"upto") pricing at or under the ceiling, and a
  * method we can execute. Grouped + capped per service for the planner menu.
@@ -310,6 +345,7 @@ export async function loadPlannableEndpoints(slugs: string[]): Promise<Plannable
       exampleQueries: r.server.exampleQueries,
     })
   }
+  out.push(...extraPlannableEndpoints(slugs))
   await attachReliability(out)
   return out
 }
