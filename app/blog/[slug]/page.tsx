@@ -7,6 +7,7 @@ import remarkGfm from 'remark-gfm'
 import prisma from '@/lib/db'
 import Footer from '@/components/Footer'
 import BlogChart from '@/components/BlogChart'
+import BlogViews from '@/components/BlogViews'
 
 // A ```chart fenced block renders as an inline SVG chart (BlogChart) instead of
 // a code block. Everything else stays default — raw HTML is still escaped.
@@ -112,6 +113,7 @@ export default async function BlogPostPage({ params }: Params) {
                   })}
                 </time>
               )}
+              <BlogViews slug={post.slug} initial={post.views} />
               {post.tags.map((t) => (
                 <span key={t} className="blog__tag">
                   {t}

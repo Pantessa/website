@@ -582,6 +582,7 @@ model BlogPost {
   published     Boolean   @default(false)
   publishedAt   DateTime? @map("published_at")
   authorAddress String    @map("author_address") // lowercased admin wallet
+  views         Int       @default(0) // page loads — bumped by POST /api/blog/[slug]/view
   createdAt     DateTime  @default(now()) @map("created_at")
   updatedAt     DateTime  @updatedAt @map("updated_at")
 
