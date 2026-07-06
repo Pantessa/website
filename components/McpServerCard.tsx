@@ -134,7 +134,7 @@ export default function McpServerCard({ server }: McpServerCardProps) {
               target="_blank"
               rel="noopener noreferrer"
               onClick={(e) => e.stopPropagation()}
-              title="View on agentic.market"
+              title={`See info for ${server.name}`}
             >
               <ExternalLink width={13} height={13} />
             </a>
