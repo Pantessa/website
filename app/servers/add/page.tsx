@@ -45,6 +45,7 @@ export default function AddServerPage() {
   const [fetching, setFetching] = useState(false)
   const [saving, setSaving] = useState(false)
   const [success, setSuccess] = useState(false)
+  const [successMsg, setSuccessMsg] = useState('')
   const [error, setError] = useState('')
   const [imgError, setImgError] = useState(false)
 
@@ -106,6 +107,7 @@ export default function AddServerPage() {
     }
     setSaving(true)
     setError('')
+    setSuccessMsg('')
 
     const configSchema =
       form.configFields.length > 0
@@ -115,6 +117,24 @@ export default function AddServerPage() {
               .map((f) => [f.key, { type: 'string', label: f.label || f.key, required: f.required }])
           )
         : null
+
+    const resetForm = () =>
+      setForm({
+        name: '',
+        description: '',
+        websiteUrl: '',
+        iconUrl: '',
+        category: 'Custom',
+        color: '#6366f1',
+        configFields: [],
+      })
+
+    const flashSuccess = (msg: string) => {
+      setSuccessMsg(msg)
+      setSuccess(true)
+      resetForm()
+      setTimeout(() => setSuccess(false), 4000)
+    }
 
     try {
       const res = await fetch('/api/servers', {
@@ -126,29 +146,43 @@ export default function AddServerPage() {
           iconUrl: form.iconUrl || null,
           category: form.category,
           websiteUrl: form.websiteUrl || null,
+          // The MCP base URL to introspect — every tool is discovered from the
+          // server's own tools/list and wired as a routable endpoint.
+          mcpUrl: form.websiteUrl || null,
           color: form.color,
           configSchema,
         }),
       })
 
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.error || 'Failed to save')
+      const data = await res.json().catch(() => null)
 
-      // Add to local store
-      addServer({ ...data, isCustom: true })
-      setSuccess(true)
-      setForm({
-        name: '',
-        description: '',
-        websiteUrl: '',
-        iconUrl: '',
-        category: 'Custom',
-        color: '#6366f1',
-        configFields: [],
-      })
-      setTimeout(() => setSuccess(false), 3000)
-    } catch (err: unknown) {
-      // If DB not configured, add to local store only
+      if (res.ok && data) {
+        // Persisted to the directory. Add the DB row (real id/slug) to the store.
+        addServer({ ...data, iconUrl: form.iconUrl || null, isCustom: true })
+        const n = data.plannableCount ?? 0
+        flashSuccess(
+          n > 0
+            ? `Added — ${n} callable tool${n === 1 ? '' : 's'} discovered from the MCP server.`
+            : data.discoveryError
+              ? `Added as a listing. No tools discovered (${data.discoveryError}).`
+              : 'Added to the directory.'
+        )
+        return
+      }
+
+      // Real, actionable server errors — surface them instead of faking success.
+      if (res.status === 401) {
+        setError('Sign in to add a server to the shared directory.')
+        return
+      }
+      if (data?.error && res.status < 500) {
+        setError(data.error)
+        return
+      }
+      throw new Error(data?.error || 'Failed to save')
+    } catch {
+      // Network failure or missing endpoint — keep the server locally so the
+      // form still works offline (this row is not persisted to the directory).
       const localServer: McpServer = {
         id: `custom-${Date.now()}`,
         name: form.name,
@@ -163,17 +197,7 @@ export default function AddServerPage() {
         configSchema: configSchema as McpServer['configSchema'],
       }
       addServer(localServer)
-      setSuccess(true)
-      setForm({
-        name: '',
-        description: '',
-        websiteUrl: '',
-        iconUrl: '',
-        category: 'Custom',
-        color: '#6366f1',
-        configFields: [],
-      })
-      setTimeout(() => setSuccess(false), 3000)
+      flashSuccess('Saved locally (directory unreachable).')
     } finally {
       setSaving(false)
     }
@@ -205,7 +229,11 @@ export default function AddServerPage() {
           {/* URL fetch */}
           <div className="p-5 rounded-2xl border border-zinc-800/60 bg-zinc-900/40 space-y-4">
             <p className="text-xs text-zinc-500 font-medium uppercase tracking-wider">
-              Auto-fill from URL
+              MCP server URL
+            </p>
+            <p className="text-xs text-zinc-600 -mt-1">
+              Paste the base URL (e.g. https://cow-mcp.yeetful.com). Auto-fill grabs
+              metadata; on save every tool is discovered from the server and wired up.
             </p>
             <div className="flex gap-2">
               <div className="relative flex-1">
@@ -418,6 +446,18 @@ export default function AddServerPage() {
             >
               <AlertCircle className="w-4 h-4 flex-shrink-0" />
               {error}
+            </motion.div>
+          )}
+
+          {/* Success detail */}
+          {success && successMsg && (
+            <motion.div
+              initial={{ opacity: 0, y: -8 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="flex items-center gap-2 px-4 py-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-sm"
+            >
+              <Check className="w-4 h-4 flex-shrink-0" />
+              {successMsg}
             </motion.div>
           )}
 
