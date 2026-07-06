@@ -15,8 +15,10 @@ import SendTxChain from '@/components/SendTxChain'
 import { orderRequestOf, txRequestOf, txChainOf } from '@/lib/transaction-layer'
 import VoteChoiceButtons from '@/components/VoteChoiceButtons'
 import VoteCandidates from '@/components/VoteCandidates'
+import ClarifyChips from '@/components/ClarifyChips'
 import PaymentConfirm from '@/components/PaymentConfirm'
 import { voteRequestOf, voteCandidatesOf, voteProposalOf } from '@/lib/snapshot-vote'
+import { clarifyRequestOf } from '@/lib/clarify'
 import { useYeetfulStore, type RouterTraceEvent } from '@/lib/store'
 import { latestWorkingContext, type WorkingContext } from '@/lib/working-context'
 import { EXAMPLE_PROMPTS } from '@/lib/examples'
@@ -49,7 +51,7 @@ interface PaymentToSign {
 
 /** Build the assistant message meta from receipts + an optional vote request /
  *  ambiguous-proposal candidates. */
-function buildMeta(receipts: unknown, payer: unknown, voteRequest: unknown, voteCandidates?: unknown, routeReport?: unknown, routerTrace?: unknown, voteProposal?: unknown, orderRequest?: unknown, guardrails?: unknown, txRequest?: unknown, workingContext?: unknown, txChain?: unknown) {
+function buildMeta(receipts: unknown, payer: unknown, voteRequest: unknown, voteCandidates?: unknown, routeReport?: unknown, routerTrace?: unknown, voteProposal?: unknown, orderRequest?: unknown, guardrails?: unknown, txRequest?: unknown, workingContext?: unknown, txChain?: unknown, clarify?: unknown) {
   const meta: Record<string, unknown> = {}
   if (Array.isArray(receipts) && receipts.length) {
     meta.receipts = receipts
@@ -73,6 +75,9 @@ function buildMeta(receipts: unknown, payer: unknown, voteRequest: unknown, vote
   // A multi-step transaction chain (approve → swap) — SendTxChain reads this
   // and self-advances as each step confirms.
   if (txChain && typeof txChain === 'object') meta.txChain = txChain
+  // An ambiguous money/governance target the planner refused to guess (RR17)
+  // — ClarifyChips reads this; a chip's pick is sent as the next message.
+  if (clarify && typeof clarify === 'object') meta.clarify = clarify
   return Object.keys(meta).length ? meta : undefined
 }
 
@@ -249,7 +254,7 @@ export default function ChatInterface() {
           addMessage(chatId, {
             role: 'assistant',
             content: out.content,
-            meta: buildMeta(out.receipts, out.payer, out.voteRequest, undefined, out.routeReport, out.routerTrace, out.voteProposal, out.orderRequest, undefined, out.txRequest, out.workingContext, out.txChain),
+            meta: buildMeta(out.receipts, out.payer, out.voteRequest, undefined, out.routeReport, out.routerTrace, out.voteProposal, out.orderRequest, undefined, out.txRequest, out.workingContext, out.txChain, out.clarify),
           })
         }
         return
@@ -312,7 +317,7 @@ export default function ChatInterface() {
         addMessage(chatId, {
           role: 'assistant',
           content: data.reply || data.error || 'No response.',
-          meta: buildMeta(data.receipts, data.payer, data.voteRequest, data.voteCandidates, undefined, undefined, data.voteProposal, data.orderRequest, data.guardrails, data.txRequest, data.workingContext, data.txChain),
+          meta: buildMeta(data.receipts, data.payer, data.voteRequest, data.voteCandidates, undefined, undefined, data.voteProposal, data.orderRequest, data.guardrails, data.txRequest, data.workingContext, data.txChain, data.clarify),
         })
       }
     } catch (err) {
@@ -337,7 +342,7 @@ export default function ChatInterface() {
     history: { role: string; content: string }[],
     workingContext?: WorkingContext,
   ): Promise<
-    | { kind: 'reply'; content: string; receipts?: unknown; payer?: string; voteRequest?: unknown; voteProposal?: unknown; routeReport?: unknown; routerTrace?: unknown; orderRequest?: unknown; txRequest?: unknown; txChain?: unknown; workingContext?: unknown }
+    | { kind: 'reply'; content: string; receipts?: unknown; payer?: string; voteRequest?: unknown; voteProposal?: unknown; routeReport?: unknown; routerTrace?: unknown; orderRequest?: unknown; txRequest?: unknown; txChain?: unknown; clarify?: unknown; workingContext?: unknown }
     | { kind: 'plan'; data: { plan: unknown; payments: PaymentToSign[]; listedOnly: unknown; notes?: unknown; turnId?: unknown } }
   > => {
     clearRouterTrace()
@@ -363,7 +368,7 @@ export default function ChatInterface() {
     const reader = res.body.getReader()
     const decoder = new TextDecoder()
     let buf = ''
-    let reply: { kind: 'reply'; content: string; receipts?: unknown; payer?: string; voteRequest?: unknown; voteProposal?: unknown; routeReport?: unknown; routerTrace?: unknown; orderRequest?: unknown; txRequest?: unknown; txChain?: unknown; workingContext?: unknown } | null = null
+    let reply: { kind: 'reply'; content: string; receipts?: unknown; payer?: string; voteRequest?: unknown; voteProposal?: unknown; routeReport?: unknown; routerTrace?: unknown; orderRequest?: unknown; txRequest?: unknown; txChain?: unknown; clarify?: unknown; workingContext?: unknown } | null = null
     for (;;) {
       const { done, value } = await reader.read()
       if (done) break
@@ -405,6 +410,7 @@ export default function ChatInterface() {
             orderRequest: event.orderRequest,
             txRequest: event.txRequest,
             txChain: event.txChain,
+            clarify: event.clarify,
             workingContext: event.workingContext,
           }
         } else if (event.type === 'error') {
@@ -694,6 +700,13 @@ export default function ChatInterface() {
                             disabled={loading}
                             onPick={(id) => void handleSend(`vote ${cands.choiceText} on ${id}`)}
                           />
+                        ) : null
+                      })()}
+                    {msg.role === 'assistant' &&
+                      (() => {
+                        const clarify = clarifyRequestOf(msg.meta)
+                        return clarify ? (
+                          <ClarifyChips clarify={clarify} disabled={loading} onPick={(resume) => void handleSend(resume)} />
                         ) : null
                       })()}
                   </div>

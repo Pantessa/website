@@ -26,6 +26,7 @@ import {
   type PlannableEndpoint,
   type ConversationTurn,
 } from '../lib/endpoint-planner'
+import { parseClarify, type ClarifyRequest } from '../lib/clarify'
 
 const PLANNER_MODEL = process.env.PLANNER_MODEL || 'claude-haiku-4-5-20251001'
 /** The connected wallet the harness simulates ($USER_ADDRESS resolves to it). */
@@ -33,7 +34,7 @@ const TEST_ADDR = '0x1111111111111111111111111111111111111111'
 
 /** Water-sprint features that have LANDED — their pending cases become mandatory.
  *  Flip the flag in the same PR that ships the feature. */
-const UNLOCKED = new Set<string>([])
+const UNLOCKED = new Set<string>(['RR17'])
 
 // ── Case model ───────────────────────────────────────────────────────────────
 /** The tool arguments after buildSmartRequest (tools/call args, or query/body). */
@@ -53,7 +54,11 @@ interface Turn {
   /** What the assistant "said" after this turn — scripted, entity-rich, so the
    *  next turn's history reads like a real chat (ids/symbols available in prose). */
   assistantNote: string
-  expect: TurnExpect
+  /** Expect a PICK from this service/tool with these params… */
+  expect?: TurnExpect
+  /** …or expect the planner to ASK (RR17): returns null when the clarify
+   *  payload is right, else the failure reason. */
+  expectClarify?: (c: ClarifyRequest) => string | null
   /** Water-sprint gate: reported-not-failing until the feature is UNLOCKED. */
   pending?: 'RR17' | 'RR18' | 'RR19'
 }
@@ -252,6 +257,32 @@ const CONVERSATIONS: Conversation[] = [
     ],
   },
   {
+    name: 'ambiguous-money asks (RR17 clarify)',
+    shortlist: ['snapshot-free', 'uniswap-free'],
+    turns: [
+      {
+        user: 'how do UNI and BAL compare on uniswap right now?',
+        assistantNote: 'On Uniswap v3 (Base): UNI ≈ 9.42 USDC, BAL ≈ 4.87 USDC. UNI pools are ~6× deeper.',
+        // Read-only turn — ANY uniswap read tool is fine; must NOT clarify.
+        expect: { service: 'uniswap-free', tool: /\/(price|quote|pool_info)$/ },
+      },
+      {
+        user: 'ok swap 5 USDC for the better one',
+        assistantNote: 'Which one should I buy?',
+        // MONEY + ambiguous target ("the better one" — better how?) → the
+        // planner must ASK, not guess. Options must resolve to UNI/BAL swaps.
+        expectClarify: (c) => {
+          if (c.options.length < 2) return `only ${c.options.length} option(s)`
+          const resumes = c.options.map((o) => o.resume.toUpperCase())
+          const coversBoth = resumes.some((r) => r.includes('UNI')) && resumes.some((r) => r.includes('BAL'))
+          if (!coversBoth) return `options do not cover UNI and BAL: ${JSON.stringify(c.options)}`
+          const resumable = c.options.every((o) => /swap/i.test(o.resume) && /5\s*USDC/i.test(o.resume))
+          return resumable ? null : `resume strings are not fully-resolved swap requests: ${JSON.stringify(c.options.map((o) => o.resume))}`
+        },
+      },
+    ],
+  },
+  {
     name: 'entity-carry across MCPs (RR18 target)',
     shortlist: ['snapshot-free', 'uniswap-free'],
     turns: [
@@ -350,24 +381,36 @@ async function runConversation(convo: Conversation, endpointCache: Map<string, P
     const text = await planner(prompt)
     if (!text) {
       record(false, 'planner call failed (no text)')
-    } else {
+    } else if (turn.expectClarify) {
+      const clarify = parseClarify(text)
+      if (!clarify) {
+        const picked = parsePlannerPicks(text, endpoints).length
+        record(false, `expected a clarify question, got ${picked} pick(s) instead`)
+      } else {
+        const reason = turn.expectClarify(clarify)
+        record(reason === null, reason ?? `asked: "${clarify.question}" (${clarify.options.length} options)`)
+      }
+    } else if (turn.expect) {
       const picks = parsePlannerPicks(text, endpoints)
       const byId = new Map(endpoints.map((e) => [e.id, e]))
       const match = picks
         .map((p) => ({ p, ep: byId.get(p.endpointId)! }))
-        .find(({ ep }) => ep.serverSlug === turn.expect.service && turn.expect.tool.test(ep.url))
+        .find(({ ep }) => ep.serverSlug === turn.expect!.service && turn.expect!.tool.test(ep.url))
       if (!match) {
-        const picked = picks.map((p) => byId.get(p.endpointId)?.url.split('/').slice(-2).join('/')).join(', ') || 'nothing'
-        record(false, `expected ${turn.expect.service} ${turn.expect.tool} — planner picked: ${picked}`)
+        const clarified = parseClarify(text)
+        const picked = picks.map((p) => byId.get(p.endpointId)?.url.split('/').slice(-2).join('/')).join(', ') || (clarified ? `a clarify question ("${clarified.question}")` : 'nothing')
+        record(false, `expected ${turn.expect!.service} ${turn.expect!.tool} — planner picked: ${picked}`)
       } else {
         const built = buildSmartRequest(match.ep, match.p.params, { userAddress: TEST_ADDR })
         if ('error' in built) {
           record(false, `picked right tool but request build failed: ${built.error}`)
         } else {
-          const reason = turn.expect.params?.(argsOf(built.request)) ?? null
+          const reason = turn.expect!.params?.(argsOf(built.request)) ?? null
           record(reason === null, reason ?? 'pick + params + construction ok')
         }
       }
+    } else {
+      record(false, 'turn has neither expect nor expectClarify')
     }
     history.push({ role: 'user', content: turn.user })
     history.push({ role: 'assistant', content: turn.assistantNote })

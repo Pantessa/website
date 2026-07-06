@@ -15,6 +15,7 @@
 
 import { Prisma } from '@prisma/client'
 import prisma from '@/lib/db'
+import { clarifyPromptLine } from '@/lib/clarify'
 
 /** Hard ceiling for auto-planned calls — a planner mistake can cost at most this. */
 export const SMART_MAX_PER_CALL_USD = 0.05
@@ -455,10 +456,11 @@ export function plannerPrompt(
     `A user asked${history.length || contextBlock ? ' (interpret it in the context of the conversation above — a terse follow-up like "baseball" continues the previous question, and ordinal references like "the second one" mean the numbered items in the working context)' : ''}:\n"""${message}"""`,
     `Below are paid API endpoints, grouped by service, each tagged with its price in [$…]; some are tagged ✓proven (they have successfully settled paid calls before). Pick AT MOST ONE endpoint per service — only if calling it would genuinely help answer the user. When two endpoints would both answer the need equally well, prefer the ✓proven one, and then the cheaper one — but still pick an un-proven endpoint when it is clearly the better fit for the request. Fill in parameter values derived from the user's message and the conversation (use sensible values; respect types; include every required param; skip optional params you can't infer). Pass tokens/assets in the FORM the user gave them (a symbol stays a symbol) — NEVER substitute a contract address from memory; addresses differ per chain and a wrong-chain address fails or misroutes. If no endpoint of a service helps, skip that service entirely.`,
     ...(ctxVars ? [ctxVars] : []),
+    clarifyPromptLine(),
     menu,
     `Respond with ONLY this JSON, no prose, no code fences:`,
     `{"picks":[{"endpointId":"<id>","params":{"<name>":"<value>"}}]}`,
-    `If nothing helps: {"picks":[]}`,
+    `If nothing helps: {"picks":[]}. If the CLARIFY RULE applies: {"picks":[],"clarify":{…}}.`,
   ].join('\n\n')
 }
 

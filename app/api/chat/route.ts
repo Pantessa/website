@@ -43,6 +43,7 @@ import {
 import { loadCatalog } from '@/lib/catalog'
 import { routeMessage, selectInferenceProvider, compactForSynthesis, dedupePlannerPicks, type TraceStep, type SmartPick } from '@/lib/router'
 import { buildSignableArtifact } from '@/lib/transaction-layer'
+import { parseClarify, type ClarifyRequest } from '@/lib/clarify'
 import { isCacheable, routeCacheKey, getCached, setCached } from '@/lib/route-cache'
 import { recordRouteEvent, routeSavings } from '@/lib/route-telemetry'
 import { newTurnId, recordTraceLine } from '@/lib/route-trace'
@@ -132,12 +133,14 @@ async function planSmartPicks(
   ctx?: WorkingContext,
   /** User address for the "$USER_ADDRESS" context token (see PlanContext). */
   userAddress?: string,
-): Promise<{ picks: PlannedPick[]; dropped: PlannableEndpoint[]; txHash?: string }> {
+): Promise<{ picks: PlannedPick[]; dropped: PlannableEndpoint[]; txHash?: string; clarify?: ClarifyRequest }> {
   const { text, txHash } = await callInference(inference, plannerPrompt(message, smart, history, contextBlockForPlanner(ctx), { userAddress }))
   // Never pay two services for the same capability — keep the best per
   // capability (same dedup the Auto-Router applies). dropped → surfaced as notes.
   const { picks, dropped } = dedupePlannerPicks(parsePlannerPicks(text, smart), smart)
-  return { picks, dropped, txHash }
+  // RR17: the planner may ask instead of pick — honored only with zero picks.
+  const clarify = picks.length === 0 ? parseClarify(text) ?? undefined : undefined
+  return { picks, dropped, txHash, clarify }
 }
 
 export async function POST(req: NextRequest) {
@@ -841,7 +844,12 @@ async function planWalletPayments(
   const smartServed = new Set<string>()
   if (smart.length > 0) {
     try {
-      const { picks, dropped } = await planSmartPicks(inference, message, smart, history, workingContext, walletAddress)
+      const { picks, dropped, clarify } = await planSmartPicks(inference, message, smart, history, workingContext, walletAddress)
+      if (clarify) {
+        // RR17: ambiguous money/governance target — ask, don't charge for a
+        // half-understood turn. The pick resumes as a normal next message.
+        return NextResponse.json({ reply: `🤔 ${clarify.question}`, clarify, notes })
+      }
       for (const d of dropped) notes.push(`Skipped ${d.serverName} — another picked service covers the same capability; kept the better-rated/cheaper one.`)
       if (picks.length === 0) {
         const considered = [...new Set(smart.map((e) => e.serverName))].join(', ')
@@ -1197,7 +1205,12 @@ async function runWithBurner(
       blocked.push(`endpoint planner (${plannerViolation})`)
     } else {
       try {
-        const { picks, dropped, txHash } = await planSmartPicks(inference, message, smart, history, workingContext, userAddress)
+        const { picks, dropped, txHash, clarify } = await planSmartPicks(inference, message, smart, history, workingContext, userAddress)
+        if (clarify) {
+          // RR17: break the turn on the question — nothing further is paid.
+          trace({ type: 'note', level: 'info', label: `Ambiguous target — asking: ${clarify.question}` })
+          return NextResponse.json({ reply: `🤔 ${clarify.question}`, clarify, receipts, notes })
+        }
         for (const d of dropped) notes.push(`Skipped ${d.serverName} — another picked service covers the same capability; kept the better-rated/cheaper one.`)
         if (grant) {
           await recordLedger({ grantId: grant.id, orgId: grant.orgId ?? undefined, host: infHost, serviceName: inference.name, amountUsd: infPrice, ok: true, txHash, note: 'settled' })
@@ -1562,6 +1575,11 @@ export function streamAutoRouter(
         //    answer payments to the wallet to sign via the two-phase execute path.
         if (walletAddress) {
           const decision = await routeMessage({ message, history, catalog, onStep: (s) => send(s), runInference: runRoutingInference, userAddress: walletAddress ?? ownerOverride })
+          if (decision.clarify) {
+            send({ type: 'reply', content: `🤔 ${decision.clarify.question}`, clarify: decision.clarify, trace: trace() })
+            recordTurn({ payer: 'the house wallet', shortlisted: shortlistedOf(decision), picks: picksOf(decision), intent: intentOf(decision) })
+            return finish()
+          }
           const wPlan: PlannedCall[] = []
           let plannedUsd = 0
           const planGate = async (name: string, h: string, price: number): Promise<string | null> => {
@@ -1674,6 +1692,14 @@ export function streamAutoRouter(
         }
 
         const decision = await routeMessage({ message, history, catalog, onStep: (s) => send(s), runInference: runRoutingInference, executeCall, userAddress: walletAddress ?? ownerOverride })
+
+        // RR17: the route broke on an ambiguous money/governance target —
+        // surface the question; the chip's pick arrives as the next turn.
+        if (decision.clarify) {
+          send({ type: 'reply', content: `🤔 ${decision.clarify.question}`, receipts, payer: 'the house wallet', clarify: decision.clarify, trace: trace() })
+          recordTurn({ payer: 'the house wallet', shortlisted: shortlistedOf(decision), picks: picksOf(decision), intent: intentOf(decision) })
+          return finish()
+        }
 
         // Transaction layer: a routed tool returned a signable action — surface
         // it for explicit approval instead of synthesizing an answer. Votes reuse
