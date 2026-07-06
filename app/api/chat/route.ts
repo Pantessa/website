@@ -23,6 +23,7 @@ import { resolveProposal } from '@/lib/snapshot-read'
 import { detectGovernanceIntent, runGovernanceTurn } from '@/lib/governance'
 import { sanitizeWorkingContext, contextBlockForPlanner, type WorkingContext, extractEntities, carryContext } from '@/lib/working-context'
 import { getSessionAddress } from '@/lib/auth'
+import { walletContextLine } from '@/lib/wallet-context'
 import { grantViolation, type GrantPolicy } from '@/lib/spend-grant'
 import {
   getActiveGrant,
@@ -159,6 +160,9 @@ export async function POST(req: NextRequest) {
         sanitizeHistory(body.history),
         typeof body.turnId === 'string' ? body.turnId : undefined,
         sanitizeWorkingContext(body.workingContext),
+        typeof body.walletAddress === 'string' && isAddress(body.walletAddress)
+          ? getAddress(body.walletAddress)
+          : undefined,
       )
     }
 
@@ -967,6 +971,9 @@ async function executeWithSignatures(
    *  under the same turn as the plan trace (grouped). Falls back to a fresh id. */
   turnId: string = newTurnId(),
   workingContext?: WorkingContext,
+  /** The user's connected wallet — answer-prompt context ("my address").
+   *  Falls back to the SIWE session address below. */
+  walletAddress?: string,
 ) {
   if (!message.trim()) return NextResponse.json({ error: 'message is required' }, { status: 400 })
 
@@ -1048,7 +1055,7 @@ async function executeWithSignatures(
   const execProtocol: 'mcp' | 'http' = inferenceCall.protocol === 'http' ? 'http' : 'mcp'
   const execTool =
     inferenceCall.tool ?? (execProtocol === 'http' ? 'openai/gpt-4o-mini' : 'ask_claude')
-  const prompt = capPrompt(execProtocol, buildPrompt(message, contextBlocks, history, workingContext))
+  const prompt = capPrompt(execProtocol, buildPrompt(message, contextBlocks, history, workingContext, walletAddress ?? owner ?? undefined))
   let text: string
   let infTx: string | undefined
   if (inferenceCall.id === `inference:${HOUSE_INFERENCE_SLUG}`) {
@@ -1298,7 +1305,7 @@ async function runWithBurner(
     }
   }
 
-  const prompt = buildPrompt(message, contextBlocks, history, workingContext)
+  const prompt = buildPrompt(message, contextBlocks, history, workingContext, userAddress ?? owner ?? undefined)
   trace({ type: 'status', label: `writing the answer — ${inference.name}` })
   const { text, txHash } = await callInference(inference, prompt)
   receipts.push({ name: inference.name, endpoint: infHost, priceUsd: inference.priceUsd ?? '0.01', txHash, ok: true })
@@ -1775,7 +1782,9 @@ export function streamAutoRouter(
 
         send({ type: 'status', label: 'Synthesizing the answer…' } satisfies TraceStep)
         const synthStart = Date.now()
-        const { text, txHash } = await callInference(inference, buildPrompt(message, decision.context, history))
+        // Same user-address precedence as the planner's $USER_ADDRESS (line
+        // ~1659): the request's wallet, else the Bearer key's owner scope.
+        const { text, txHash } = await callInference(inference, buildPrompt(message, decision.context, history, undefined, walletAddress ?? ownerOverride))
         const synthLatencyMs = Date.now() - synthStart
         const r: Receipt = { name: inference.name, endpoint: infHost, priceUsd: inference.priceUsd ?? '0.01', txHash, ok: true }
         receipts.push(r)
@@ -2037,18 +2046,22 @@ function parseMcpDataResult(contentType: string, raw: string): unknown {
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
-function buildPrompt(message: string, contextBlocks: string[], history: ConversationTurn[] = [], ctx?: WorkingContext): string {
+function buildPrompt(message: string, contextBlocks: string[], history: ConversationTurn[] = [], ctx?: WorkingContext, userAddress?: string): string {
   const convo = answerHistoryBlock(history)
   // Structured continuity (RR2): the scope + offered items from prior turns,
   // so terse follow-ups resolve without scraping prose out of history.
   const ctxBlock = contextBlockForPlanner(ctx)
+  // The connected wallet, so "my address" answers correctly — the planner
+  // already gets this via $USER_ADDRESS; the ANSWER prompts never did.
+  const walletLine = walletContextLine(userAddress)
   if (contextBlocks.length === 0) {
     const convoBlock = convo ? `Conversation so far:\n${convo}\n\n` : ''
-    return `You are Yeetful, a concise assistant. Continue the conversation and answer the user's latest message directly, using the earlier turns for context.\n\n${ctxBlock ? `${ctxBlock}\n\n` : ''}${convoBlock}User: ${message}`
+    return `You are Yeetful, a concise assistant. Continue the conversation and answer the user's latest message directly, using the earlier turns for context.\n\n${walletLine ? `${walletLine}\n\n` : ''}${ctxBlock ? `${ctxBlock}\n\n` : ''}${convoBlock}User: ${message}`
   }
   return [
     `You are Yeetful, a concise assistant. Use the live data below (fetched and paid for over x402) to answer.`,
     `Cite specifics from the data. If the data doesn't cover it, say so briefly.`,
+    ...(walletLine ? [``, walletLine] : []),
     ...(ctxBlock ? [``, ctxBlock] : []),
     ...(convo ? [``, `Conversation so far:`, convo] : []),
     ``,

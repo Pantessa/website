@@ -99,10 +99,12 @@ interface ChatInterfaceProps {
    *  the embed params and must not be clobbered. Default false: the normal
    *  /chat workspace is unchanged. */
   embedded?: boolean
-  /** Wallet-address CONTEXT supplied by the embedding page (URL param or
-   *  postMessage). Feeds the walletAddress field of POST /api/chat
-   *  ($USER_ADDRESS in the planner). Context only — signing still requires an
-   *  in-iframe wallet connection. Wins over the connected account. */
+  /** Wallet-address CONTEXT supplied by the embedding page (bridged host
+   *  wallet, postMessage, or URL param — EmbedChat resolves the precedence).
+   *  Feeds the walletAddress field of POST /api/chat ($USER_ADDRESS in the
+   *  planner). Context alone never signs — signing goes through the wagmi
+   *  connection (which, on a bridged embed, IS the host page's wallet via the
+   *  'yeetfulHost' connector). Wins over the connected account. */
   contextAddress?: `0x${string}`
   /** Notable embed moments (e.g. 'order-signed') → the postMessage bridge. */
   onEmbedEvent?: (name: string, data?: Record<string, unknown>) => void
@@ -504,6 +506,9 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
         turnId: data.turnId, // groups the settlements with the plan in the live feed
         history,
         workingContext,
+        // Answer-prompt context ("my address") — the server falls back to the
+        // SIWE session when absent; the plan phase already validated this shape.
+        walletAddress: effectiveAddress,
       }),
     })
     const out = await res.json()

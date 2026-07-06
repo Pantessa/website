@@ -9,6 +9,7 @@ import {
 import { createConfig, http } from 'wagmi'
 import { mainnet, base, baseSepolia } from 'wagmi/chains'
 import { cdpEmbeddedConnector, cdpEnabled } from '@/lib/cdp-embedded'
+import { hostWalletConnector } from '@/lib/host-wallet'
 
 // WalletConnect Cloud project ID — create one at https://cloud.reown.com and
 // add it to .env.local as NEXT_PUBLIC_WC_PROJECT_ID (needed for the
@@ -65,6 +66,13 @@ const connectors = [
     { appName: 'Yeetful', projectId },
   ),
   ...(cdpEnabled ? [cdpEmbeddedConnector] : []),
+  // Host-wallet bridge connector for /embed (wallet contract v1.1) — registered
+  // globally because there's one wagmi config for the whole app, but inert
+  // outside a bridged iframe: no icon (so RainbowKit never lists it in the
+  // Connect Wallet modal — same isEIP6963Connector bar the CDP connector ducks
+  // under), isAuthorized() false without a host 'wallet' announce, and only
+  // EmbedChat connects it programmatically.
+  hostWalletConnector(),
 ]
 
 export const wagmiConfig = createConfig({
