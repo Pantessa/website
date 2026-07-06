@@ -21,9 +21,11 @@ function parseEnvelope(raw: string): unknown {
 }
 
 async function main() {
+  // 15 seeded tool rows − 2 signing tools (prepare_vote/submit_vote are
+  // plannable:false → DbNull params, display-only by design) = 13 plannable.
   const eps = await loadPlannableEndpoints(['uniswap-free', 'snapshot-free'])
-  console.log(`plannable endpoints loaded: ${eps.length} (expect 14 — price-0 filter admits explicit free)`)
-  if (eps.length < 14) throw new Error('free endpoints filtered out — check loadPlannableEndpoints')
+  console.log(`plannable endpoints loaded: ${eps.length} (expect 13 — price-0 filter admits explicit free; signing tools excluded)`)
+  if (eps.length < 13) throw new Error('free endpoints filtered out — check loadPlannableEndpoints')
 
   const quote = eps.find((e) => /\/mcp[#/]quote$/.test(e.url))!
   const built = buildSmartRequest(quote, { sellToken: 'USDC', buyToken: 'WETH', amount: '2' })
@@ -41,6 +43,20 @@ async function main() {
   if (!r2.ok) throw new Error(`snapshot HTTP ${r2.status}`)
   const pr = parseEnvelope(await r2.text()) as { proposals?: { title: string; space: { id: string } }[] }
   console.log(`✓ LIVE proposals: ${pr.proposals?.map((p) => `${p.space.id}: ${p.title.slice(0, 40)}`).join(' | ')}`)
+
+  // The escape hatch (RR12): a planner-shaped call — JSON-string variables +
+  // the $USER_ADDRESS token substituted by buildSmartRequest — through prod.
+  const gql = eps.find((e) => /\/mcp[#/]graphql_query$/.test(e.url))!
+  const built3 = buildSmartRequest(
+    gql,
+    { query: 'query($f: String!) { follows(first: 2, where: { follower: $f }) { space { id } } }', variables: '{"f":"$USER_ADDRESS"}' },
+    { userAddress: '0xeF8305E140ac520225DAf050e2f71d5fBcC543e7' },
+  )
+  if ('error' in built3) throw new Error(built3.error)
+  const r3 = await fetch(built3.request.url, { method: built3.request.method, headers: built3.request.headers, body: built3.request.body })
+  if (!r3.ok) throw new Error(`snapshot graphql_query HTTP ${r3.status}`)
+  const fl = parseEnvelope(await r3.text()) as { follows?: { space: { id: string } }[] }
+  console.log(`✓ LIVE graphql_query ($USER_ADDRESS substituted): follows → ${fl.follows?.map((f) => f.space.id).join(', ')}`)
 
   const rows = await prisma.mcpServer.findMany({ where: { gated: false }, select: { slug: true, gated: true, priceUsd: true } })
   console.log(`✓ DB gated flag: ${rows.map((r) => `${r.slug} gated=${r.gated} price=${r.priceUsd}`).join(', ')}`)
