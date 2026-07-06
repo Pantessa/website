@@ -430,7 +430,11 @@ export async function autoCallableServerIds(): Promise<Set<string>> {
   for (const r of rows) {
     if (r.scheme === 'upto') continue
     const price = Number(r.priceUsd)
-    if (!Number.isFinite(price) || price <= 0 || price > SMART_MAX_PER_CALL_USD) continue
+    // Mirror loadPlannableEndpoints: price 0 is allowed ONLY when explicitly
+    // published as "0" (our free, non-gated MCPs). Without this, free MCPs are
+    // router-callable but never earn the "Callable now" badge.
+    const isExplicitlyFree = r.priceUsd === '0'
+    if (!Number.isFinite(price) || (price <= 0 && !isExplicitlyFree) || price > SMART_MAX_PER_CALL_USD) continue
     if (((r.parameters as unknown[] | null) ?? []).length === 0) continue
     ids.add(r.serverId)
   }
