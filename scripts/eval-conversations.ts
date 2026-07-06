@@ -314,10 +314,17 @@ const CONVERSATIONS: Conversation[] = [
           { kind: 'space', name: 'Balancer', value: 'balancer.eth' },
           { kind: 'token', name: 'BAL', value: 'BAL' },
         ],
+        // RR18 scores the ENTITY resolution ("its token" → BAL), not the
+        // action-tool choice: quote-first is a legitimate loop step (and real
+        // swap phrasing hits the fast-path before the planner anyway).
         expect: {
           service: 'uniswap-free',
-          tool: /build_swap$/,
-          params: (a) => has(a, 'from', TEST_ADDR) ?? has(a, 'sellToken', 'USDC') ?? has(a, 'buyToken', 'BAL'),
+          tool: /\/(build_swap|quote)$/,
+          params: (a) => {
+            const all = JSON.stringify(a).toUpperCase()
+            if (!all.includes('"BAL"') && !all.includes(':"BAL')) return `entity not carried — BAL missing from args: ${JSON.stringify(a)}`
+            return null
+          },
         },
       },
     ],

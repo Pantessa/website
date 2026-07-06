@@ -196,10 +196,21 @@ async function plannerDimension(server: { name: string; description: string; exa
 // ── affordances + safety (10) ────────────────────────────────────────────────
 function affordancesDimension(server: { description: string }, plannable: PlannableEndpoint[], allDescriptions: string, fixes: string[]): Dimension {
   const checks: Check[] = []
-  const hay = `${server.description}\n${allDescriptions}`.toLowerCase()
+  // Param descriptions BELONG in this haystack — identity guidance
+  // ($USER_ADDRESS) lives on the param, not the endpoint blurb.
+  const paramDescs = plannable.flatMap((e) => e.parameters).map((pm) => `${pm.name} ${pm.description ?? ''}`).join('\n')
+  const hay = `${server.description}\n${allDescriptions}\n${paramDescs}`.toLowerCase()
 
   // Context-var readiness: user-identity params documented for the router.
-  const addressParams = plannable.flatMap((e) => e.parameters).filter((p) => /address|wallet|voter|follower|owner|account|from\b/i.test(`${p.name} ${p.description ?? ''}`))
+  const addressParams = plannable.flatMap((e) => e.parameters).filter((p) => {
+    const hayP = `${p.name} ${p.description ?? ''}`
+    // Wallet-identity params only: "from"/wallet/voter/…, or any param whose
+    // description speaks EVM ("0x…", wallet). A real-estate street `address`
+    // is not user identity — require the wallet context for that name.
+    if (/wallet|voter|follower|owner|account|signer|payer/i.test(hayP)) return true
+    if (/^from$/i.test(p.name)) return true
+    return /\baddress\b/i.test(p.name) && /wallet|evm|0x|signer|payer/i.test(p.description ?? '')
+  })
   const mentionsUserAddress = hay.includes('$user_address') || /user'?s (own |wallet )?address/.test(hay)
   const ctxReady = addressParams.length === 0 || mentionsUserAddress
   checks.push({
