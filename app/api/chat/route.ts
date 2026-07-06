@@ -664,11 +664,27 @@ async function prepareSwapTurn(intent: SwapIntent, walletAddress: string | undef
       }
       const warns = uni.guardrails.checks.filter((c) => !c.ok && c.level === 'warn').map((c) => `⚠️ ${c.note}`)
       if (uni.approveTx) {
-        // Two-step: the approval broadcasts first; re-send the swap after it
-        // confirms (fresh quote — prices move while approvals mine).
+        // Two-step: ONE self-advancing card carries approve AND swap — the
+        // user never re-sends the message (step 1's green "Confirmed" read as
+        // done; first-time users walked away without swapping). The swap step
+        // is re-quoted server-side when the approval confirms (refresh
+        // recipe) — prices move while approvals mine.
+        const sell = intent.sellToken.toUpperCase()
+        const buy = intent.buyToken.toUpperCase()
         return NextResponse.json({
-          reply: `🔏 ${uni.summary}\n1️⃣ Step 1 of 2 — sign the ${intent.sellToken.toUpperCase()} approval to Uniswap's SwapRouter02 below, then send the swap again for step 2.${warns.length ? `\n${warns.join('\n')}` : ''}`,
-          txRequest: uni.approveTx,
+          reply: `🔏 ${uni.summary}\n🔗 Two steps in the card below — sign the ${sell} approval, and the swap appears automatically once it confirms (re-quoted fresh). Nothing to retype.${warns.length ? `\n${warns.join('\n')}` : ''}`,
+          txChain: {
+            summary: uni.summary,
+            steps: [
+              { label: 'approve', title: `Approve ${sell} to Uniswap's SwapRouter02`, tx: uni.approveTx },
+              { label: 'swap', title: `Swap ${intent.sellAmountHuman} ${sell} → ${buy}`, tx: uni.swapTx },
+            ],
+            refresh: {
+              kind: 'uniswap-swap',
+              stepIndex: 1,
+              params: { sellToken: intent.sellToken, buyToken: intent.buyToken, amountHuman: intent.sellAmountHuman },
+            },
+          },
           guardrails: uni.guardrails,
           // Invariant #11: the artifact is a pending action — "make it 2" /
           // "cancel that" next turn resolve against this, not re-parsed prose.
@@ -1669,6 +1685,9 @@ export function streamAutoRouter(
             // Intent-based order (CoW swap / OpenSea): the built order is sent
             // for signature. Guardrails (A3) gate it; the sign UI is A4.
             send({ type: 'reply', content: `🔏 ${decision.artifact.summary}`, receipts, payer: 'the house wallet', orderRequest: decision.artifact.order, trace: trace() })
+          } else if (decision.artifact.kind === 'evm-tx-chain') {
+            // Multi-step build (approve → swap): one self-advancing card.
+            send({ type: 'reply', content: `🔏 ${decision.artifact.summary}\n🔗 ${decision.artifact.chain.steps.length} steps in the card below — each appears as the previous confirms.`, receipts, payer: 'the house wallet', txChain: decision.artifact.chain, trace: trace() })
           } else {
             send({ type: 'reply', content: `🔏 ${decision.artifact.summary}`, receipts, payer: 'the house wallet', txRequest: decision.artifact.tx, trace: trace() })
           }
