@@ -212,6 +212,13 @@ export const useYeetfulStore = create<YeetfulStore>()(
         const nowActive = !st.activeServerIds.includes(id)
         const slug = st.servers.find((sv) => sv.id === id)?.slug ?? id
         analytics.agentToggled(slug, nowActive)
+        // Mirror the toggle into the DB for the admin adoption view (fire-and-
+        // forget; a telemetry failure must never block the toggle).
+        void fetch('/api/agents/toggle', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ slug, active: nowActive }),
+        }).catch(() => {})
         set((s) => ({
           activeServerIds: s.activeServerIds.includes(id)
             ? s.activeServerIds.filter((sid) => sid !== id)

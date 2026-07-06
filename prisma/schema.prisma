@@ -443,6 +443,25 @@ model RouteIncident {
   @@map("route_incidents")
 }
 
+/// One directory toggle: a user flipped an agent into (`active=true`) or out of
+/// (`active=false`) their chat runner. This mirrors the `agent_added` /
+/// `agent_removed` Vercel Analytics events (lib/analytics.ts) into our own DB so
+/// the admin adoption view can rank which agents get picked — data Vercel won't
+/// hand back by slug. Privacy: NO full wallet — `address` is a lowercased wallet
+/// when signed in, else null (guest toggles still count). Fire-and-forget write
+/// (POST /api/agents/toggle); a failure never blocks the toggle.
+model AgentToggleEvent {
+  id        String   @id @default(cuid())
+  slug      String // the McpServer.slug toggled (no FK: guests toggle static-catalog slugs too)
+  active    Boolean // true = added to runner, false = removed
+  address   String? // lowercased wallet if signed in, else null
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([slug])
+  @@index([createdAt])
+  @@map("agent_toggle_events")
+}
+
 /// One line of a routed turn's live reasoning trace — the public, realtime
 /// stream behind the Activity page's routing terminal (and the chat engine
 /// window). Unlike RouteEvent (one aggregate row per turn), this is the raw

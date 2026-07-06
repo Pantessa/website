@@ -41,7 +41,7 @@ export async function GET(req: NextRequest) {
   const excludeOwners = req.nextUrl.searchParams.get('excludeOwners') === '1'
   const excl = excludeOwners ? Array.from(OWNERS_LC) : ['']
 
-  const [funnel, newDaily, activeDaily, revDaily, byService, roster, orgs, supply, activation, recentArrivals, cohorts, signups] =
+  const [funnel, newDaily, activeDaily, revDaily, byService, roster, orgs, supply, activation, recentArrivals, cohorts, signups, agentAdds] =
     await Promise.all([
     // Tiles + funnel counts. ::int casts keep COUNT out of bigint (JSON-unsafe).
     prisma.$queryRaw<FunnelRow[]>(Prisma.sql`
@@ -220,6 +220,26 @@ export async function GET(req: NextRequest) {
       ORDER BY created_at DESC
       LIMIT 50
     `),
+    // Agent runner adoption: how often each agent was toggled into (`added`) vs
+    // out of (`removed`) a chat runner, from agent_toggle_events. Joined to
+    // mcp_servers for the display name + whether a /servers/[slug] link exists
+    // (a slug may be a static-catalog entry with no DB row). `visitors` counts
+    // distinct signed-in wallets; guest toggles (null address) still bump the
+    // add/remove totals but can't be de-duplicated, so visitors is a floor.
+    prisma.$queryRaw<AgentAddRow[]>(Prisma.sql`
+      SELECT e.slug,
+             s.name AS name,
+             (s.slug IS NOT NULL) AS has_page,
+             count(*) FILTER (WHERE e.active)::int AS added,
+             count(*) FILTER (WHERE NOT e.active)::int AS removed,
+             count(DISTINCT e.address)::int AS visitors,
+             max(e.created_at) AS last_at
+      FROM agent_toggle_events e
+      LEFT JOIN mcp_servers s ON s.slug = e.slug
+      GROUP BY e.slug, s.name, s.slug
+      ORDER BY added DESC, removed DESC
+      LIMIT 50
+    `),
   ])
 
   const f = funnel[0]
@@ -296,6 +316,15 @@ export async function GET(req: NextRequest) {
       createdAt: r.created_at.toISOString(),
       verifiedAt: r.verified_at ? r.verified_at.toISOString() : null,
     })),
+    agentAdds: agentAdds.map((r) => ({
+      slug: r.slug,
+      name: r.name ?? r.slug,
+      hasPage: r.has_page,
+      added: r.added,
+      removed: r.removed,
+      visitors: r.visitors,
+      lastAt: r.last_at ? r.last_at.toISOString() : null,
+    })),
   })
 }
 
@@ -356,4 +385,13 @@ interface SignupRow {
   status: string
   created_at: Date
   verified_at: Date | null
+}
+interface AgentAddRow {
+  slug: string
+  name: string | null
+  has_page: boolean
+  added: number
+  removed: number
+  visitors: number
+  last_at: Date | null
 }

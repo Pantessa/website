@@ -7,7 +7,8 @@
 // instead of a failed fetch.
 
 import { useCallback, useEffect, useState } from 'react'
-import { Download, Mail, ShieldAlert } from 'lucide-react'
+import Link from 'next/link'
+import { ArrowUpRight, Download, Mail, ShieldAlert } from 'lucide-react'
 import { useSession } from '@/lib/session'
 import { isAdminAddress } from '@/lib/admin'
 import { Card, CardTitle, Kpi, SkeletonKpi, SkeletonCard, short, timeAgo } from '@/lib/dashboard-ui'
@@ -46,6 +47,15 @@ interface Overview {
   recentArrivals: { address: string; firstSeen: string; chats: number; keys: number; okCalls: number; settled: number; test: boolean }[]
   cohorts: { week: string; size: number; returned: number; paid: number }[]
   recentSignups: { email: string; status: string; createdAt: string; verifiedAt: string | null }[]
+  agentAdds: {
+    slug: string
+    name: string
+    hasPage: boolean
+    added: number
+    removed: number
+    visitors: number
+    lastAt: string | null
+  }[]
 }
 
 const usd = (n: number) => `$${n.toFixed(n < 1 ? 4 : 2)}`
@@ -223,6 +233,72 @@ export default function AdminPage() {
           <SpendByAgent perAgent={data.byService} />
         </Card>
       </div>
+
+      {/* Agent adoption — how often each agent is toggled into vs out of a chat
+          runner (the agent_added / agent_removed events, mirrored into our DB). */}
+      <Card className="mt-3">
+        <CardTitle>Agent adoption · added &amp; removed</CardTitle>
+        <p className="text-xs text-[color:var(--muted-2)] mt-0.5 mb-3">
+          Each time a user toggles an agent into their chat runner it counts as an <em>add</em>; toggling it back out is a{' '}
+          <em>remove</em>. Guest toggles count too, so “Wallets” (distinct signed-in wallets) is a floor.
+        </p>
+        {data.agentAdds.length === 0 ? (
+          <p className="text-xs text-[color:var(--muted-2)] py-4">
+            No agent toggles recorded yet. This fills in as users add agents to their runner.
+          </p>
+        ) : (
+          <div className="overflow-x-auto -mx-1 px-1">
+            <table className="w-full text-sm min-w-[560px]">
+              <thead>
+                <tr className="text-left text-[11px] uppercase tracking-wider text-[color:var(--muted-2)] mono">
+                  <th className="py-2 pr-3 font-medium">Agent</th>
+                  <th className="py-2 pr-3 font-medium text-right">Added</th>
+                  <th className="py-2 pr-3 font-medium text-right">Removed</th>
+                  <th className="py-2 pr-3 font-medium text-right">Net</th>
+                  <th className="py-2 pr-3 font-medium text-right">Wallets</th>
+                  <th className="py-2 pr-3 font-medium text-right">Last</th>
+                </tr>
+              </thead>
+              <tbody className="text-[color:var(--muted)]">
+                {data.agentAdds.map((a) => {
+                  const net = a.added - a.removed
+                  return (
+                    <tr key={a.slug} className="border-t border-[var(--line)]">
+                      <td className="py-2 pr-3 text-white">
+                        {a.hasPage ? (
+                          <Link
+                            href={`/servers/${a.slug}`}
+                            className="inline-flex items-center gap-1 hover:text-[color:var(--accent,#34E0A1)] transition-colors"
+                          >
+                            {a.name}
+                            <ArrowUpRight className="w-3.5 h-3.5 opacity-60" />
+                          </Link>
+                        ) : (
+                          <span className="whitespace-nowrap">
+                            {a.name}
+                            <span className="ml-2 align-middle text-[9px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-[var(--surf-1)] border border-[var(--line)] text-[color:var(--muted-2)]">
+                              No page
+                            </span>
+                          </span>
+                        )}
+                      </td>
+                      <td className="py-2 pr-3 text-right tabular-nums text-white">{a.added}</td>
+                      <td className="py-2 pr-3 text-right tabular-nums">{a.removed || '—'}</td>
+                      <td
+                        className={`py-2 pr-3 text-right tabular-nums ${net > 0 ? 'text-[color:var(--accent,#34E0A1)]' : net < 0 ? 'text-red-400' : ''}`}
+                      >
+                        {net > 0 ? `+${net}` : net}
+                      </td>
+                      <td className="py-2 pr-3 text-right tabular-nums">{a.visitors || '—'}</td>
+                      <td className="py-2 pr-3 text-right whitespace-nowrap">{a.lastAt ? timeAgo(a.lastAt) : '—'}</td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Card>
 
       {/* Activation & retention */}
       <div className="grid lg:grid-cols-2 gap-3 mt-3">
