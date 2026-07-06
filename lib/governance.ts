@@ -20,6 +20,10 @@ import {
   type ActiveProposal, type ProposalResults,
 } from './snapshot-read'
 import { friendlyVoteError, buildVoteTypedData, type VoteProposal } from './snapshot-vote'
+import {
+  resolveOrdinalFromOffers, resolveTitleFromOffers,
+  type WorkingContext, type OfferedItem,
+} from './working-context'
 
 const SEQUENCER = process.env.SNAPSHOT_SEQUENCER_URL ?? 'https://seq.snapshot.org'
 
@@ -162,6 +166,9 @@ export interface GovernanceResult {
    *  (wallet mode) — Message.meta.voteProposal → VoteChoiceButtons. */
   voteProposal?: VoteProposal
   cast?: boolean
+  /** Structured state for the NEXT turn (RR2): the scope this turn operated
+   *  in + the exact list it offered. Follow-ups resolve against this. */
+  workingContext?: WorkingContext
 }
 
 function fmtScores(p: ProposalResults): string {
@@ -184,8 +191,12 @@ export async function runGovernanceTurn(opts: {
   /** Optional paid summarizer (Yeetful Claude): turns the gathered facts into a
    *  conversational overview. Returns null when unavailable/blocked → free template. */
   synthesize?: (prompt: string) => Promise<string | null>
+  /** The previous turns' structured state (RR2) — the space we were operating
+   *  in and the exact numbered list the user was shown. Follow-ups resolve
+   *  here FIRST; prose regexes over history are the legacy fallback. */
+  ctx?: WorkingContext
 }): Promise<GovernanceResult> {
-  const { message, intent, walletAddress, emit, synthesize } = opts
+  const { message, intent, walletAddress, emit, synthesize, ctx } = opts
 
   // Provider selection: governance routes to Snapshot — and unlike paid data MCPs
   // it costs nothing. Surface it like any chosen provider so the terminal shows
@@ -198,7 +209,9 @@ export async function runGovernanceTurn(opts: {
     reason: 'DAO governance — free hub reads + gasless voting (no x402, no inference)',
   })
 
-  // 1) Resolve the space (name → id) if one was named.
+  // 1) Resolve the space (name → id) if one was named — else inherit the
+  //    space the conversation is already scoped to (working context). This is
+  //    what keeps "lets vote yes" inside Nate DAO instead of all of Snapshot.
   let spaceId: string | undefined
   let spaceName: string | undefined
   if (intent.spaceQuery) {
@@ -210,26 +223,88 @@ export async function runGovernanceTurn(opts: {
     }
     spaceId = space.id; spaceName = space.name
     emit({ type: 'tool', name: 'resolve_space', status: 'ok', detail: `${space.name} → ${space.id}` })
+  } else if (ctx?.scope?.server === 'snapshot' && ctx.scope.params.space) {
+    spaceId = ctx.scope.params.space
+    spaceName = ctx.scope.label
+    emit({ type: 'tool', name: 'resolve_space', status: 'ok', detail: `${spaceName} → ${spaceId} (from conversation)` })
   }
 
-  // 2) List active proposals (scoped to the space when known).
-  emit({ type: 'tool', name: 'list_proposals', status: 'run', detail: spaceId ?? 'all active' })
-  let proposals: ActiveProposal[] = []
-  try {
-    proposals = await listActiveProposals(spaceId)
-  } catch (e) {
-    emit({ type: 'tool', name: 'list_proposals', status: 'error', detail: e instanceof Error ? e.message : 'failed' })
-    return { reply: '🗳️ Snapshot’s hub didn’t respond — try again in a moment.' }
+  const scopeCtx: WorkingContext['scope'] = spaceId
+    ? { server: 'snapshot', label: spaceName ?? spaceId, params: { space: spaceId } }
+    : undefined
+  const offersOf = (list: { id: string; title: string; space?: { id: string; name: string } }[]): WorkingContext['offers'] => ({
+    kind: 'proposal',
+    items: list.slice(0, 10).map((p, i): OfferedItem => ({
+      n: i + 1, id: p.id, title: p.title,
+      ...(p.space?.id ? { data: { spaceId: p.space.id, spaceName: p.space.name || p.space.id } } : {}),
+    })),
+  })
+
+  // 1b) VOTE follow-ups resolve against the OFFERED list first — the numbering
+  //     the user actually saw — never a re-fetch that may have reordered.
+  let target: ActiveProposal | undefined
+  if (intent.kind === 'vote' && intent.proposalId && ctx?.pending?.kind === 'vote' && ctx.pending.data.proposalId === intent.proposalId) {
+    // The pending action names this exact proposal — carry its real title/space.
+    target = {
+      id: intent.proposalId, title: ctx.pending.data.title ?? 'proposal',
+      space: { id: ctx.pending.data.space ?? spaceId ?? '', name: spaceName ?? '' },
+    }
+    emit({ type: 'tool', name: 'resolve_reference', status: 'ok', detail: `pending vote → “${target.title.slice(0, 60)}”` })
   }
-  emit({ type: 'tool', name: 'list_proposals', status: 'ok', detail: `${proposals.length} active` })
+  if (!target && intent.kind === 'vote' && ctx?.offers?.kind === 'proposal') {
+    const offered = intent.proposalId
+      ? ctx.offers.items.find((it) => it.id === intent.proposalId)
+      : resolveOrdinalFromOffers(message, ctx) ??
+        resolveTitleFromOffers(message, ctx) ??
+        // A bare choice ("lets vote yes") with exactly ONE offered proposal —
+        // that's the one. Announce the pick (cost-of-being-wrong: the user still
+        // signs explicitly, choice buttons show the title).
+        (ctx.offers.items.length === 1 && intent.choiceText ? ctx.offers.items[0] : undefined)
+    if (offered) {
+      target = {
+        id: offered.id, title: offered.title,
+        space: { id: offered.data?.spaceId ?? spaceId ?? '', name: offered.data?.spaceName ?? spaceName ?? '' },
+      }
+      if (!spaceId && offered.data?.spaceId) { spaceId = offered.data.spaceId; spaceName = offered.data.spaceName }
+      emit({ type: 'tool', name: 'resolve_reference', status: 'ok', detail: `“${message.slice(0, 40)}” → offer #${offered.n} “${offered.title.slice(0, 60)}”` })
+    } else if (!intent.proposalId && ctx.offers.items.length > 1) {
+      // A vote ask that names nothing pinnable: re-ask against the SAME list
+      // (same numbers), not a fresh fetch with new numbering.
+      const lines = ctx.offers.items.map((it) => `${it.n}. **${it.title}**`).join('\n')
+      return {
+        reply: `🗳️ Which proposal do you want to vote on? Name it — or say “vote on 1”.\n${lines}`,
+        workingContext: { v: 1, age: 0, ...(scopeCtx ? { scope: scopeCtx } : {}), offers: ctx.offers },
+      }
+    }
+  }
+
+  // 2) List active proposals (scoped to the space when known) — only when the
+  //    turn still needs the list (browsing, or a vote with no pinned target).
+  let proposals: ActiveProposal[] = []
+  if (!target) {
+    emit({ type: 'tool', name: 'list_proposals', status: 'run', detail: spaceId ?? 'all active' })
+    try {
+      proposals = await listActiveProposals(spaceId)
+    } catch (e) {
+      emit({ type: 'tool', name: 'list_proposals', status: 'error', detail: e instanceof Error ? e.message : 'failed' })
+      return { reply: '🗳️ Snapshot’s hub didn’t respond — try again in a moment.' }
+    }
+    emit({ type: 'tool', name: 'list_proposals', status: 'ok', detail: `${proposals.length} active` })
+  }
 
   // ── LIST path: just show the open proposals. ──────────────────────────────
   if (intent.kind === 'list') {
     if (proposals.length === 0) {
-      return { reply: spaceName ? `🗳️ No open proposals in **${spaceName}** right now.` : '🗳️ No open proposals found. Name a DAO (e.g. “Nate DAO”).' }
+      return {
+        reply: spaceName ? `🗳️ No open proposals in **${spaceName}** right now.` : '🗳️ No open proposals found. Name a DAO (e.g. “Nate DAO”).',
+        ...(scopeCtx ? { workingContext: { v: 1, age: 0, scope: scopeCtx } } : {}),
+      }
     }
     emit({ type: 'note', level: 'info', label: 'Free — Snapshot hub reads are public; no x402 payment ($0.00).' })
     // Numbered so follow-ups can say "vote For on 1" / "vote on the first one".
+    // The SAME numbering is written to the working context — next turn's
+    // ordinals resolve against what the user saw, not a re-fetch.
+    const listCtx: WorkingContext = { v: 1, age: 0, ...(scopeCtx ? { scope: scopeCtx } : {}), offers: offersOf(proposals) }
     const lines = proposals.slice(0, 10).map((p, i) => `${i + 1}. **${p.title}** — \`${p.id.slice(0, 10)}…\``).join('\n')
     const where = spaceName ? ` in **${spaceName}**` : ''
     const tail = `Say e.g. “vote For on ${proposals[0].title}” — or just “vote For on 1” — and I’ll prepare the EIP-712 signature.`
@@ -237,20 +312,20 @@ export async function runGovernanceTurn(opts: {
     // Conversational overview via Yeetful Claude (paid) when available; the
     // structured list (titles + ids) is always appended so the user can act.
     if (synthesize) {
-      const ctx = proposals.slice(0, 10).map((p) => `- ${p.title}`).join('\n')
+      const facts = proposals.slice(0, 10).map((p) => `- ${p.title}`).join('\n')
       const overview = await synthesize(
-        `You are a DAO governance assistant. In ONE or TWO short sentences, give a conversational overview of what's on the ballot in ${spaceName ?? 'this DAO'} right now. Do NOT list each proposal individually (a list is shown separately). Open proposals:\n${ctx}`,
+        `You are a DAO governance assistant. In ONE or TWO short sentences, give a conversational overview of what's on the ballot in ${spaceName ?? 'this DAO'} right now. Do NOT list each proposal individually (a list is shown separately). Open proposals:\n${facts}`,
       )
-      if (overview) return { reply: `🗳️ ${overview}\n\n${lines}\n\n${tail}` }
+      if (overview) return { reply: `🗳️ ${overview}\n\n${lines}\n\n${tail}`, workingContext: listCtx }
     }
-    return { reply: `🗳️ ${proposals.length} open proposal${proposals.length === 1 ? '' : 's'}${where}:\n${lines}\n\n${tail}` }
+    return { reply: `🗳️ ${proposals.length} open proposal${proposals.length === 1 ? '' : 's'}${where}:\n${lines}\n\n${tail}`, workingContext: listCtx }
   }
 
   // ── VOTE path: pin one proposal, build the EIP-712, sign + cast or hand off. ─
-  let target: ActiveProposal | undefined
-  if (intent.proposalId) {
+  //    (target may already be pinned from the working context above.)
+  if (!target && intent.proposalId) {
     target = proposals.find((p) => p.id === intent.proposalId) ?? { id: intent.proposalId, title: 'proposal', space: { id: spaceId ?? '', name: spaceName ?? '' } }
-  } else if (proposals.length === 1) {
+  } else if (!target && proposals.length === 1) {
     target = proposals[0]
   } else if (proposals.length > 1) {
     // Prefer an exact full-title mention (handles quoted titles like
@@ -277,9 +352,20 @@ export async function runGovernanceTurn(opts: {
     }
   }
   if (!target) {
-    const lines = proposals.slice(0, 8).map((p, i) => `${i + 1}. **${p.title}**`).join('\n')
-    return { reply: `🗳️ Which proposal do you want to vote on? Name it — or say “vote on 1”.\n${lines}` }
+    const shown = proposals.slice(0, 8)
+    const lines = shown.map((p, i) => `${i + 1}. **${p.title}**`).join('\n')
+    return {
+      reply: `🗳️ Which proposal do you want to vote on? Name it — or say “vote on 1”.\n${lines}`,
+      workingContext: { v: 1, age: 0, ...(scopeCtx ? { scope: scopeCtx } : {}), ...(shown.length ? { offers: offersOf(shown) } : {}) },
+    }
   }
+
+  // The list the NEXT turn's ordinals/titles should resolve against: what the
+  // user already saw (echoed context) — or this turn's fetch when there is one.
+  const carryOffers = ctx?.offers?.kind === 'proposal' ? ctx.offers : proposals.length ? offersOf(proposals) : undefined
+  const voteScope: WorkingContext['scope'] = scopeCtx ?? (target.space.id
+    ? { server: 'snapshot', label: target.space.name || target.space.id, params: { space: target.space.id } }
+    : undefined)
 
   // Fetch the proposal's choices + the space.
   const results = await getProposalResults(target.id)
@@ -295,20 +381,36 @@ export async function runGovernanceTurn(opts: {
 
   // ── Wallet mode: hand the proposal to the client so it builds the EIP-712 for
   //    each choice and the user signs in their own wallet. No server signature. ─
+  const votePendingCtx: WorkingContext = {
+    v: 1, age: 0,
+    ...(voteScope ? { scope: voteScope } : {}),
+    ...(carryOffers ? { offers: carryOffers } : {}),
+    pending: {
+      kind: 'vote',
+      summary: `vote on “${target.title}” (${target.id.slice(0, 10)}…) — awaiting the user's signature/choice`,
+      data: { proposalId: target.id, title: target.title, space },
+    },
+  }
   if (!agentMode) {
     if (!walletAddress) {
-      return { reply: `🗳️ **${target.title}** — connect your wallet to vote (each choice opens your wallet to sign), or say “let my agent vote” to have your agent cast it.` }
+      return {
+        reply: `🗳️ **${target.title}** — connect your wallet to vote (each choice opens your wallet to sign), or say “let my agent vote” to have your agent cast it.`,
+        workingContext: votePendingCtx,
+      }
     }
     emit({ type: 'eip712', scheme: 'eip712', signer: `wallet ${walletAddress.slice(0, 6)}…`, summary: `Vote on “${target.title}” — pick a choice to sign` })
     emit({ type: 'note', level: 'info', label: 'Gasless — your wallet signs the vote; no gas, no x402 ($0.00).' })
     const voteProposal: VoteProposal = { id: target.id, title: target.title, space, type: results?.type ?? 'basic', choices, suggestedChoice: suggested }
     const hint = suggested ? ` I’ll pre-highlight **${choices[suggested - 1]}**.` : ''
-    return { reply: `🗳️ Ready to vote on **${target.title}** — pick a choice below to sign with your wallet.${hint}`, voteProposal }
+    return { reply: `🗳️ Ready to vote on **${target.title}** — pick a choice below to sign with your wallet.${hint}`, voteProposal, workingContext: votePendingCtx }
   }
 
   // ── Agent mode (headless): the agent needs a concrete choice to cast. ────────
   if (!suggested) {
-    return { reply: `🗳️ **${target.title}** — which choice should the agent cast? ${choices.map((c, i) => `${i + 1}) ${c}`).join('  ')}` }
+    return {
+      reply: `🗳️ **${target.title}** — which choice should the agent cast? ${choices.map((c, i) => `${i + 1}) ${c}`).join('  ')}`,
+      workingContext: votePendingCtx,
+    }
   }
   const choice = suggested
   const choiceLabel = choices[choice - 1]
@@ -350,6 +452,8 @@ export async function runGovernanceTurn(opts: {
   return {
     reply: `🗳️ ✅ Your agent cast **${choiceLabel}** on **${target.title}**.${tally}\n\n[View on Snapshot](${link})`,
     cast: true,
+    // The vote is done: keep the scope for follow-ups, clear offers + pending.
+    ...(voteScope ? { workingContext: { v: 1, age: 0, scope: voteScope } } : {}),
   }
 }
 

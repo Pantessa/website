@@ -21,6 +21,7 @@ import { tokenDecimals, humanToAtoms } from '@/lib/cow'
 import { ensureBaseTokenList } from '@/lib/token-list'
 import { resolveProposal } from '@/lib/snapshot-read'
 import { detectGovernanceIntent, runGovernanceTurn } from '@/lib/governance'
+import { sanitizeWorkingContext, contextBlockForPlanner, type WorkingContext } from '@/lib/working-context'
 import { getSessionAddress } from '@/lib/auth'
 import { grantViolation, type GrantPolicy } from '@/lib/spend-grant'
 import {
@@ -128,8 +129,9 @@ async function planSmartPicks(
   message: string,
   smart: PlannableEndpoint[],
   history: ConversationTurn[] = [],
+  ctx?: WorkingContext,
 ): Promise<{ picks: PlannedPick[]; dropped: PlannableEndpoint[]; txHash?: string }> {
-  const { text, txHash } = await callInference(inference, plannerPrompt(message, smart, history))
+  const { text, txHash } = await callInference(inference, plannerPrompt(message, smart, history, contextBlockForPlanner(ctx)))
   // Never pay two services for the same capability — keep the best per
   // capability (same dedup the Auto-Router applies). dropped → surfaced as notes.
   const { picks, dropped } = dedupePlannerPicks(parsePlannerPicks(text, smart), smart)
@@ -150,11 +152,17 @@ export async function POST(req: NextRequest) {
         Array.isArray(body.notes) ? (body.notes as string[]).filter((n) => typeof n === 'string').slice(0, 8) : [],
         sanitizeHistory(body.history),
         typeof body.turnId === 'string' ? body.turnId : undefined,
+        sanitizeWorkingContext(body.workingContext),
       )
     }
 
     const message: string = body.message ?? ''
     const history = sanitizeHistory(body.history)
+    // Structured state from the previous turns (RR2) — the scope we operated
+    // in + the exact list the user was shown. Client-echoed like `history`,
+    // sanitized + age-expired here. Follow-ups resolve against THIS, not
+    // regexes over the last reply's prose.
+    const workingContext = sanitizeWorkingContext(body.workingContext)
     const activeServers: McpServer[] = Array.isArray(body.activeServers) ? body.activeServers : []
     // Client-supplied turn id → the manual path records its reasoning to
     // route_trace_lines so the in-chat engine terminal can poll it live.
@@ -174,7 +182,7 @@ export async function POST(req: NextRequest) {
     //    manual path below is untouched. ───────────────────────────────────
     if (body.autoRouter === true) {
       const inferenceSlug = typeof body.inferenceSlug === 'string' ? body.inferenceSlug : undefined
-      return streamAutoRouter(message, history, walletAddress, undefined, undefined, inferenceSlug)
+      return streamAutoRouter(message, history, walletAddress, undefined, undefined, inferenceSlug, workingContext)
     }
 
     const inference = activeServers.find(
@@ -232,23 +240,50 @@ export async function POST(req: NextRequest) {
     // model improvising over a bare "For".
     let govMessage = message
     const lastAssistant = snapshotActive ? ([...history].reverse().find((t) => t.role === 'assistant')?.content ?? '') : ''
-    if (!govIntent && snapshotActive && message.trim().length <= 60) {
-      const title = lastAssistant.match(/(?:Ready to vote on|vote (?:For|[A-Za-z]+) on) \*\*(.+?)\*\*/)?.[1]
-      // ANCHORED: the whole message must be a choice utterance ("For", "yes",
-      // "I'd like to vote for that option", "option 2") — merely CONTAINING a
-      // choice word must not hijack the turn ("can i swap 1 USDC for UNI"
-      // matched \bfor\b and got answered with a proposals list — 2026-07-03).
-      const choice = message
-        .trim()
-        .match(/^(?:i(?:'d| would)?\s+(?:like|want)\s+to\s+)?(?:vote\s+|go\s+|choose\s+|pick\s+)?(for|against|abstain|yes|no|option\s+[1-9]|[1-9])(?:\s+(?:that|this)(?:\s+(?:option|one|proposal))?)?[.!\s]*$/i)?.[1]
-      if (title && choice) {
-        govMessage = `vote ${choice} on "${title}"`
-        govIntent = detectGovernanceIntent(govMessage)
+    // ANCHORED choice matcher: the whole message must be a choice utterance
+    // ("For", "yes", "lets vote yes", "option 2") — merely CONTAINING a choice
+    // word must not hijack the turn ("can i swap 1 USDC for UNI" matched
+    // \bfor\b and got answered with a proposals list — 2026-07-03).
+    const anchoredChoice = (m: string) => m
+      .trim()
+      .match(/^(?:i(?:'d| would)?\s+(?:like|want)\s+to\s+)?(?:let'?s\s+)?(?:vote\s+|go\s+|choose\s+|pick\s+)?(for|against|abstain|yes|no|option\s+[1-9]|[1-9])(?:\s+(?:on\s+)?(?:that|this)(?:\s+(?:option|one|proposal))?)?[.!\s]*$/i)?.[1]
+    if (snapshotActive && message.trim().length <= 60) {
+      // 1) STRUCTURED continuity (RR2): a pending vote or a single offered
+      //    proposal from the working context resolves a bare choice reply
+      //    deterministically — no prose scraping.
+      const pendingVote = workingContext?.pending?.kind === 'vote' ? workingContext.pending : undefined
+      const soleOffer = workingContext?.offers?.kind === 'proposal' && workingContext.offers.items.length === 1
+        ? workingContext.offers.items[0] : undefined
+      const choice = (!govIntent || (govIntent.kind === 'vote' && !govIntent.proposalId && !govIntent.spaceQuery)) ? anchoredChoice(message) : undefined
+      const num = choice?.match(/^(?:option\s+)?([1-9])$/i)?.[1]
+      // A bare number after a NUMBERED LIST picks that proposal; with a
+      // pending vote already pinned, a number means choice option N instead.
+      const numberedOffer = num && !pendingVote?.data.proposalId
+        ? workingContext?.offers?.items.find((it) => it.n === Number(num)) : undefined
+      const refId = pendingVote?.data.proposalId ?? numberedOffer?.id ?? soleOffer?.id
+      if (choice && refId) {
+        govIntent = {
+          kind: 'vote',
+          proposalId: refId,
+          choiceText: numberedOffer ? undefined : num ? `option ${num}` : choice,
+          agentRequested: govIntent?.agentRequested ?? false,
+        }
+      } else if (!govIntent) {
+        // 2) LEGACY prose fallback (chats predating the working context): the
+        //    last reply offered a vote ("Ready to vote on **X**") and the user
+        //    answered with a bare choice.
+        const title = lastAssistant.match(/(?:Ready to vote on|vote (?:For|[A-Za-z]+) on) \*\*(.+?)\*\*/)?.[1]
+        const c = anchoredChoice(message)
+        if (title && c) {
+          govMessage = `vote ${c} on "${title}"`
+          govIntent = detectGovernanceIntent(govMessage)
+        }
       }
     }
-    // "vote For on 1" after a list: the message names no DAO — inherit the
-    // space the previous turn was scoped to ("… in **Nate DAO**").
-    if (govIntent && !govIntent.spaceQuery) {
+    // "vote For on 1" after a list: the message names no DAO — the working
+    // context carries the space (handled inside runGovernanceTurn). Prose
+    // fallback for pre-context chats: "… in **Nate DAO**" in the last reply.
+    if (govIntent && !govIntent.spaceQuery && !workingContext?.scope) {
       const sp = lastAssistant.match(/(?:proposals?|ballot|voting)[^*\n]{0,40}in \*\*(.+?)\*\*/i)?.[1] ?? lastAssistant.match(/open proposals? in \*\*(.+?)\*\*/i)?.[1]
       if (sp) govIntent = { ...govIntent, spaceQuery: sp }
     }
@@ -260,11 +295,13 @@ export async function POST(req: NextRequest) {
         walletAddress,
         emit: clientTurnId ? (e) => recordTraceLine(clientTurnId, govSeq++, e, walletAddress ? 'wallet' : 'burner') : () => {},
         synthesize: (p) => planViaAnthropic(p),
+        ctx: workingContext,
       })
       return NextResponse.json({
         reply: gov.reply,
         ...(gov.voteRequest ? { voteRequest: gov.voteRequest } : {}),
         ...(gov.voteProposal ? { voteProposal: gov.voteProposal } : {}),
+        ...(gov.workingContext ? { workingContext: gov.workingContext } : {}),
       })
     }
 
@@ -353,16 +390,16 @@ export async function POST(req: NextRequest) {
         mcpDataServers.length === 0 &&
         smart.every((e) => e.priceUsd === '0')
       if (fullyFree) {
-        return await runWithBurner(message, synthesizer, dataServers, mcpDataServers, listedOnly, smart, notes, history, clientTurnId)
+        return await runWithBurner(message, synthesizer, dataServers, mcpDataServers, listedOnly, smart, notes, history, clientTurnId, workingContext)
       }
-      return await planWalletPayments(message, synthesizer, dataServers, mcpDataServers, listedOnly, walletAddress, smart, notes, history)
+      return await planWalletPayments(message, synthesizer, dataServers, mcpDataServers, listedOnly, walletAddress, smart, notes, history, workingContext)
     }
 
     // ── Burner mode: the server's agent wallet pays everything in one shot ────
     // House synthesis needs no burner: free data calls + a direct-Anthropic
     // answer spend zero USDC, so the turn runs even with PRIVATE_KEY unset.
     if (hasAgentWallet() || isHouseInference(synthesizer)) {
-      return await runWithBurner(message, synthesizer, dataServers, mcpDataServers, listedOnly, smart, notes, history, clientTurnId)
+      return await runWithBurner(message, synthesizer, dataServers, mcpDataServers, listedOnly, smart, notes, history, clientTurnId, workingContext)
     }
 
     // ── Demo mode: nothing can pay ───────────────────────────────────────────
@@ -608,6 +645,7 @@ async function planWalletPayments(
   smart: PlannableEndpoint[],
   notes: string[],
   history: ConversationTurn[] = [],
+  workingContext?: WorkingContext,
 ) {
   const plan: PlannedCall[] = []
 
@@ -690,7 +728,7 @@ async function planWalletPayments(
   const smartServed = new Set<string>()
   if (smart.length > 0) {
     try {
-      const { picks, dropped } = await planSmartPicks(inference, message, smart, history)
+      const { picks, dropped } = await planSmartPicks(inference, message, smart, history, workingContext)
       for (const d of dropped) notes.push(`Skipped ${d.serverName} — another picked service covers the same capability; kept the better-rated/cheaper one.`)
       if (picks.length === 0) {
         const considered = [...new Set(smart.map((e) => e.serverName))].join(', ')
@@ -806,6 +844,7 @@ async function executeWithSignatures(
   /** The plan phase's turnId — so wallet settlements persist to the live feed
    *  under the same turn as the plan trace (grouped). Falls back to a fresh id. */
   turnId: string = newTurnId(),
+  workingContext?: WorkingContext,
 ) {
   if (!message.trim()) return NextResponse.json({ error: 'message is required' }, { status: 400 })
 
@@ -885,7 +924,7 @@ async function executeWithSignatures(
   const execProtocol: 'mcp' | 'http' = inferenceCall.protocol === 'http' ? 'http' : 'mcp'
   const execTool =
     inferenceCall.tool ?? (execProtocol === 'http' ? 'openai/gpt-4o-mini' : 'ask_claude')
-  const prompt = capPrompt(execProtocol, buildPrompt(message, contextBlocks, history))
+  const prompt = capPrompt(execProtocol, buildPrompt(message, contextBlocks, history, workingContext))
   let text: string
   let infTx: string | undefined
   if (inferenceCall.id === `inference:${HOUSE_INFERENCE_SLUG}`) {
@@ -938,6 +977,7 @@ async function runWithBurner(
   /** When set, the turn's reasoning is recorded to route_trace_lines so the
    *  in-chat engine terminal (and /activity) can watch it live. */
   turnId?: string,
+  workingContext?: WorkingContext,
 ) {
   let traceSeq = 0
   const trace = turnId ? (event: unknown) => recordTraceLine(turnId, traceSeq++, event, 'burner') : () => {}
@@ -1039,7 +1079,7 @@ async function runWithBurner(
       blocked.push(`endpoint planner (${plannerViolation})`)
     } else {
       try {
-        const { picks, dropped, txHash } = await planSmartPicks(inference, message, smart, history)
+        const { picks, dropped, txHash } = await planSmartPicks(inference, message, smart, history, workingContext)
         for (const d of dropped) notes.push(`Skipped ${d.serverName} — another picked service covers the same capability; kept the better-rated/cheaper one.`)
         if (grant) {
           await recordLedger({ grantId: grant.id, orgId: grant.orgId ?? undefined, host: infHost, serviceName: inference.name, amountUsd: infPrice, ok: true, txHash, note: 'settled' })
@@ -1118,7 +1158,7 @@ async function runWithBurner(
     }
   }
 
-  const prompt = buildPrompt(message, contextBlocks, history)
+  const prompt = buildPrompt(message, contextBlocks, history, workingContext)
   trace({ type: 'status', label: `writing the answer — ${inference.name}` })
   const { text, txHash } = await callInference(inference, prompt)
   receipts.push({ name: inference.name, endpoint: infHost, priceUsd: inference.priceUsd ?? '0.01', txHash, ok: true })
@@ -1190,6 +1230,8 @@ export function streamAutoRouter(
    *  'google-gemini' | 'claude'). Used by the live-service test to rotate
    *  engines; ignored when the slug isn't a callable inference. */
   inferenceSlug?: string,
+  /** Structured conversation state (RR2) — client-echoed, already sanitized. */
+  workingContext?: WorkingContext,
 ): Response {
   const encoder = new TextEncoder()
   const stream = new ReadableStream<Uint8Array>({
@@ -1279,7 +1321,7 @@ export function streamAutoRouter(
           }
 
           try {
-            const gov = await runGovernanceTurn({ message, intent: govIntent, walletAddress, emit: send, synthesize })
+            const gov = await runGovernanceTurn({ message, intent: govIntent, walletAddress, emit: send, synthesize, ctx: workingContext })
             const paid = govReceipts.length > 0
             send({
               type: 'reply',
@@ -1289,6 +1331,7 @@ export function streamAutoRouter(
               trace: trace(),
               ...(gov.voteRequest ? { voteRequest: gov.voteRequest } : {}),
               ...(gov.voteProposal ? { voteProposal: gov.voteProposal } : {}),
+              ...(gov.workingContext ? { workingContext: gov.workingContext } : {}),
             })
             recordRouteEvent({
               payer: gov.cast ? 'agent' : paid ? 'house' : 'none',
@@ -1809,15 +1852,19 @@ function parseMcpDataResult(contentType: string, raw: string): unknown {
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
-function buildPrompt(message: string, contextBlocks: string[], history: ConversationTurn[] = []): string {
+function buildPrompt(message: string, contextBlocks: string[], history: ConversationTurn[] = [], ctx?: WorkingContext): string {
   const convo = answerHistoryBlock(history)
+  // Structured continuity (RR2): the scope + offered items from prior turns,
+  // so terse follow-ups resolve without scraping prose out of history.
+  const ctxBlock = contextBlockForPlanner(ctx)
   if (contextBlocks.length === 0) {
     const convoBlock = convo ? `Conversation so far:\n${convo}\n\n` : ''
-    return `You are Yeetful, a concise assistant. Continue the conversation and answer the user's latest message directly, using the earlier turns for context.\n\n${convoBlock}User: ${message}`
+    return `You are Yeetful, a concise assistant. Continue the conversation and answer the user's latest message directly, using the earlier turns for context.\n\n${ctxBlock ? `${ctxBlock}\n\n` : ''}${convoBlock}User: ${message}`
   }
   return [
     `You are Yeetful, a concise assistant. Use the live data below (fetched and paid for over x402) to answer.`,
     `Cite specifics from the data. If the data doesn't cover it, say so briefly.`,
+    ...(ctxBlock ? [``, ctxBlock] : []),
     ...(convo ? [``, `Conversation so far:`, convo] : []),
     ``,
     `DATA:`,

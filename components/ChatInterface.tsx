@@ -17,6 +17,7 @@ import VoteCandidates from '@/components/VoteCandidates'
 import PaymentConfirm from '@/components/PaymentConfirm'
 import { voteRequestOf, voteCandidatesOf, voteProposalOf } from '@/lib/snapshot-vote'
 import { useYeetfulStore, type RouterTraceEvent } from '@/lib/store'
+import { latestWorkingContext, type WorkingContext } from '@/lib/working-context'
 import { EXAMPLE_PROMPTS } from '@/lib/examples'
 import SampleCallDemo from '@/components/SampleCallDemo'
 import BrandIcon from '@/components/BrandIcon'
@@ -47,12 +48,15 @@ interface PaymentToSign {
 
 /** Build the assistant message meta from receipts + an optional vote request /
  *  ambiguous-proposal candidates. */
-function buildMeta(receipts: unknown, payer: unknown, voteRequest: unknown, voteCandidates?: unknown, routeReport?: unknown, routerTrace?: unknown, voteProposal?: unknown, orderRequest?: unknown, guardrails?: unknown, txRequest?: unknown) {
+function buildMeta(receipts: unknown, payer: unknown, voteRequest: unknown, voteCandidates?: unknown, routeReport?: unknown, routerTrace?: unknown, voteProposal?: unknown, orderRequest?: unknown, guardrails?: unknown, txRequest?: unknown, workingContext?: unknown) {
   const meta: Record<string, unknown> = {}
   if (Array.isArray(receipts) && receipts.length) {
     meta.receipts = receipts
     if (typeof payer === 'string') meta.payer = payer
   }
+  // Structured conversation state (RR2) — persisted on the message so the NEXT
+  // turn can echo it to the server (latestWorkingContext scans for it).
+  if (workingContext && typeof workingContext === 'object') meta.workingContext = workingContext
   if (voteRequest && typeof voteRequest === 'object') meta.voteRequest = voteRequest
   if (voteProposal && typeof voteProposal === 'object') meta.voteProposal = voteProposal
   if (voteCandidates && typeof voteCandidates === 'object') meta.voteCandidates = voteCandidates
@@ -133,6 +137,7 @@ export default function ChatInterface() {
     chatId: string
     data: { plan: unknown; payments: PaymentToSign[]; listedOnly: unknown; notes?: unknown; turnId?: unknown }
     history: { role: string; content: string }[]
+    workingContext?: WorkingContext
   } | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
@@ -216,6 +221,10 @@ export default function ChatInterface() {
     // Prior turns (before this message is added) → sent so the server can keep
     // conversational context in the planner + the answer. Capped server-side.
     const history = (currentChat?.messages ?? []).map((m) => ({ role: m.role, content: m.content }))
+    // Structured continuity (RR2): the most recent turn's working context —
+    // the scope + numbered list the user was shown — echoed to the server so
+    // follow-ups ("lets vote yes", "the second one") resolve deterministically.
+    const workingContext = latestWorkingContext(currentChat?.messages ?? [])
     if (typeof textOverride !== 'string') setInput('')
     setLoading(true)
 
@@ -226,17 +235,17 @@ export default function ChatInterface() {
       //    agent selection; the server picks across the whole directory). ──
       if (autoRouter) {
         setStatus('Routing…')
-        const out = await runAutoRouter(chatId, userMsg, history)
+        const out = await runAutoRouter(chatId, userMsg, history, workingContext)
         if (out.kind === 'plan') {
           // Wallet mode: the engine routed; now confirm + sign the payments
           // (reuses the heads-up confirm → execute flow from manual mode).
-          setPendingPayment({ userMsg, chatId, data: out.data, history })
+          setPendingPayment({ userMsg, chatId, data: out.data, history, workingContext })
         } else {
           trackPaidReceipts(out.receipts)
           addMessage(chatId, {
             role: 'assistant',
             content: out.content,
-            meta: buildMeta(out.receipts, out.payer, out.voteRequest, undefined, out.routeReport, out.routerTrace, out.voteProposal, out.orderRequest, undefined, out.txRequest),
+            meta: buildMeta(out.receipts, out.payer, out.voteRequest, undefined, out.routeReport, out.routerTrace, out.voteProposal, out.orderRequest, undefined, out.txRequest, out.workingContext),
           })
         }
         return
@@ -274,6 +283,7 @@ export default function ChatInterface() {
             activeServers, // full objects: endpoint/protocol/price per server
             walletAddress: isConnected ? address : undefined,
             history,
+            workingContext,
             turnId,
           }),
         })
@@ -292,13 +302,13 @@ export default function ChatInterface() {
       if (data.phase === 'awaiting-signatures') {
         // Don't pop the wallet yet — show the $ amount + warning heads-up first,
         // then sign on the user's explicit OK (see confirmPayment).
-        setPendingPayment({ userMsg, chatId, data, history })
+        setPendingPayment({ userMsg, chatId, data, history, workingContext })
       } else {
         trackPaidReceipts(data.receipts)
         addMessage(chatId, {
           role: 'assistant',
           content: data.reply || data.error || 'No response.',
-          meta: buildMeta(data.receipts, data.payer, data.voteRequest, data.voteCandidates, undefined, undefined, data.voteProposal, data.orderRequest, data.guardrails, data.txRequest),
+          meta: buildMeta(data.receipts, data.payer, data.voteRequest, data.voteCandidates, undefined, undefined, data.voteProposal, data.orderRequest, data.guardrails, data.txRequest, data.workingContext),
         })
       }
     } catch (err) {
@@ -321,8 +331,9 @@ export default function ChatInterface() {
     chatId: string,
     userMsg: string,
     history: { role: string; content: string }[],
+    workingContext?: WorkingContext,
   ): Promise<
-    | { kind: 'reply'; content: string; receipts?: unknown; payer?: string; voteRequest?: unknown; voteProposal?: unknown; routeReport?: unknown; routerTrace?: unknown; orderRequest?: unknown; txRequest?: unknown }
+    | { kind: 'reply'; content: string; receipts?: unknown; payer?: string; voteRequest?: unknown; voteProposal?: unknown; routeReport?: unknown; routerTrace?: unknown; orderRequest?: unknown; txRequest?: unknown; workingContext?: unknown }
     | { kind: 'plan'; data: { plan: unknown; payments: PaymentToSign[]; listedOnly: unknown; notes?: unknown; turnId?: unknown } }
   > => {
     clearRouterTrace()
@@ -335,6 +346,7 @@ export default function ChatInterface() {
         chatId,
         autoRouter: true,
         history,
+        workingContext,
         // Wallet connected → the engine streams its routing, then hands the
         // data + answer payments back for the wallet to sign (B5).
         walletAddress: isConnected ? address : undefined,
@@ -347,7 +359,7 @@ export default function ChatInterface() {
     const reader = res.body.getReader()
     const decoder = new TextDecoder()
     let buf = ''
-    let reply: { kind: 'reply'; content: string; receipts?: unknown; payer?: string; voteRequest?: unknown; voteProposal?: unknown; routeReport?: unknown; routerTrace?: unknown; orderRequest?: unknown; txRequest?: unknown } | null = null
+    let reply: { kind: 'reply'; content: string; receipts?: unknown; payer?: string; voteRequest?: unknown; voteProposal?: unknown; routeReport?: unknown; routerTrace?: unknown; orderRequest?: unknown; txRequest?: unknown; workingContext?: unknown } | null = null
     for (;;) {
       const { done, value } = await reader.read()
       if (done) break
@@ -388,6 +400,7 @@ export default function ChatInterface() {
             routerTrace: event.trace,
             orderRequest: event.orderRequest,
             txRequest: event.txRequest,
+            workingContext: event.workingContext,
           }
         } else if (event.type === 'error') {
           const message = typeof event.message === 'string' ? event.message : 'Auto-router failed'
@@ -406,6 +419,7 @@ export default function ChatInterface() {
     userMsg: string,
     data: { plan: unknown; payments: PaymentToSign[]; listedOnly: unknown; notes?: unknown; turnId?: unknown },
     history: { role: string; content: string }[] = [],
+    workingContext?: WorkingContext,
   ): Promise<{ reply: string; receipts?: unknown[]; payer?: string }> => {
     const signatures: Record<string, string> = {}
     let i = 0
@@ -440,6 +454,7 @@ export default function ChatInterface() {
         notes: data.notes, // plan-time diagnostics, echoed into the final reply
         turnId: data.turnId, // groups the settlements with the plan in the live feed
         history,
+        workingContext,
       }),
     })
     const out = await res.json()
@@ -453,11 +468,11 @@ export default function ChatInterface() {
   /** User confirmed the amount → pop the wallet, sign, run the calls. */
   const confirmPayment = async () => {
     if (!pendingPayment) return
-    const { userMsg, chatId, data, history } = pendingPayment
+    const { userMsg, chatId, data, history, workingContext } = pendingPayment
     setPendingPayment(null)
     setLoading(true)
     try {
-      const out = await payWithWalletThenAnswer(userMsg, data, history)
+      const out = await payWithWalletThenAnswer(userMsg, data, history, workingContext)
       trackPaidReceipts(out.receipts)
       addMessage(chatId, {
         role: 'assistant',
