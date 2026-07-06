@@ -1580,62 +1580,7 @@ export function streamAutoRouter(
           return r
         }
 
-        // ── Wallet mode: single planning pass (no executeCall) → hand the data +
-        //    answer payments to the wallet to sign via the two-phase execute path.
-        if (walletAddress) {
-          const decision = await routeMessage({ message, history, catalog, onStep: (s) => send(s), runInference: runRoutingInference, userAddress: walletAddress ?? ownerOverride })
-          if (decision.clarify) {
-            send({ type: 'reply', content: `🤔 ${decision.clarify.question}`, clarify: decision.clarify, trace: trace() })
-            recordTurn({ payer: 'the house wallet', shortlisted: shortlistedOf(decision), picks: picksOf(decision), intent: intentOf(decision) })
-            return finish()
-          }
-          const wPlan: PlannedCall[] = []
-          let plannedUsd = 0
-          const planGate = async (name: string, h: string, price: number): Promise<string | null> => {
-            if (!policy || !grant) return null
-            const v = grantViolation(policy, h, price, spentToday + plannedUsd, spentTotal + plannedUsd)
-            if (v) {
-              await recordLedger({ grantId: grant.id, orgId: grant.orgId ?? undefined, host: h, serviceName: name, amountUsd: 0, ok: false, note: v })
-              return v
-            }
-            plannedUsd += price
-            return null
-          }
-          for (const pick of decision.smartPicks) {
-            const host = hostOf(pick.request.url)
-            const violation = await planGate(pick.serverName, host, Number(pick.priceUsd))
-            if (violation) {
-              const r: Receipt = { name: pick.serverName, endpoint: host, priceUsd: pick.priceUsd, ok: false, note: `blocked: ${violation}`, slug: violation === 'NOT_ALLOWED' ? pick.serverSlug : undefined }
-              receipts.push(r)
-              send({ type: 'receipt', receipt: r })
-              continue
-            }
-            const challenge = await getChallenge(pick.request.url, { method: pick.request.method, headers: pick.request.headers, body: pick.request.body })
-            wPlan.push({ id: `smart:${pick.endpointId}`, role: 'data', name: pick.serverName, host, priceUsd: pick.priceUsd, endpoint: pick.endpointUrl, url: pick.request.url, method: pick.request.method, body: pick.request.body, prepared: challenge ? derivePayment(challenge, walletAddress) : null })
-          }
-          const infProtocol = inferenceProtocolOf(inference)
-          const infTool = inference.tool ?? (infProtocol === 'http' ? 'openai/gpt-4o-mini' : 'ask_claude')
-          const infChallenge = await getChallenge(inference.endpoint!, {
-            method: 'POST',
-            headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream' },
-            body: infProtocol === 'http' ? inferenceBody('http', infTool, 'probe') : dummyMcpBody(infTool),
-          })
-          wPlan.push({ id: `inference:${inference.slug}`, role: 'inference', name: inference.name, host: infHost, priceUsd: inference.priceUsd ?? '0.01', endpoint: inference.endpoint!, tool: infTool, protocol: infProtocol, prepared: infChallenge ? derivePayment(infChallenge, walletAddress) : null })
-          const payments = wPlan
-            .filter((c) => c.prepared)
-            .map((c) => ({ id: c.id, name: c.name, host: c.host, priceUsd: c.priceUsd, signing: c.prepared!.signing as SigningRequest }))
-          // Carry the turnId so the wallet's execute phase persists its
-          // settlements under THIS turn → they show in the live feed, grouped
-          // with the plan trace.
-          send({ type: 'plan', plan: wPlan, payments, listedOnly: [], notes: decision.notes, turnId })
-          recordTurn({ payer: 'your wallet', shortlisted: shortlistedOf(decision), picks: picksOf(decision), intent: intentOf(decision) })
-          return finish()
-        }
-
-        // ── Burner mode: multi-step loop. executeCall pays + gates + ledgers +
-        //    streams each chosen call; routeMessage chains resolve→fetch and
-        //    feeds results back, returning the gathered context to answer with.
-        const executeCall = async (pick: SmartPick): Promise<{ data?: unknown; error?: string }> => {
+        const executeCall = async (pick: SmartPick): Promise<{ data?: unknown; error?: string; defer?: boolean }> => {
           const host = hostOf(pick.request.url)
           const price = Number(pick.priceUsd)
           // Cache: an identical recent GET read is served for $0.00, no payment,
@@ -1700,6 +1645,87 @@ export function streamAutoRouter(
           }
         }
 
+        // ── Wallet mode (RR19): the loop RUNS for free ($0) reads — resolve →
+        //    read hops execute live exactly like burner mode — while any PAID
+        //    pick DEFERS: it stays an unexecuted plan pick the wallet signs in
+        //    the two-phase execute path. Multi-hop for the main persona.
+        if (walletAddress) {
+          const decision = await routeMessage({
+            message,
+            history,
+            catalog,
+            onStep: (s) => send(s),
+            runInference: runRoutingInference,
+            userAddress: walletAddress ?? ownerOverride,
+            executeCall: (pick) => (pick.priceUsd === '0' ? executeCall(pick) : Promise.resolve({ defer: true })),
+          })
+          if (decision.clarify) {
+            send({ type: 'reply', content: `🤔 ${decision.clarify.question}`, clarify: decision.clarify, trace: trace() })
+            recordTurn({ payer: 'the house wallet', shortlisted: shortlistedOf(decision), picks: picksOf(decision), intent: intentOf(decision) })
+            return finish()
+          }
+          // RR19: the free loop can yield a SIGNABLE (a $0 build_swap ran live)
+          // — surface it exactly like burner mode; the user signs the ACTION,
+          // no data plan needed. Signables break the loop (invariant 4).
+          if (decision.artifact) {
+            if (decision.artifact.kind === 'eip712-vote') {
+              send({ type: 'reply', content: `🗳️ ${decision.artifact.summary}`, receipts, payer: 'your wallet', voteRequest: decision.artifact.vote, trace: trace(), workingContext: carryContext(workingContext, decision.entities) })
+            } else if (decision.artifact.kind === 'eip712-order') {
+              send({ type: 'reply', content: `🔏 ${decision.artifact.summary}`, receipts, payer: 'your wallet', orderRequest: decision.artifact.order, trace: trace(), workingContext: carryContext(workingContext, decision.entities) })
+            } else if (decision.artifact.kind === 'evm-tx-chain') {
+              send({ type: 'reply', content: `🔏 ${decision.artifact.summary}\n🔗 ${decision.artifact.chain.steps.length} steps in the card below — each appears as the previous confirms.`, receipts, payer: 'your wallet', txChain: decision.artifact.chain, trace: trace(), workingContext: carryContext(workingContext, decision.entities) })
+            } else {
+              send({ type: 'reply', content: `🔏 ${decision.artifact.summary}`, receipts, payer: 'your wallet', txRequest: decision.artifact.tx, trace: trace(), workingContext: carryContext(workingContext, decision.entities) })
+            }
+            recordTurn({ payer: 'your wallet', shortlisted: shortlistedOf(decision), picks: picksOf(decision), intent: intentOf(decision) })
+            return finish()
+          }
+          const wPlan: PlannedCall[] = []
+          let plannedUsd = 0
+          const planGate = async (name: string, h: string, price: number): Promise<string | null> => {
+            if (!policy || !grant) return null
+            const v = grantViolation(policy, h, price, spentToday + plannedUsd, spentTotal + plannedUsd)
+            if (v) {
+              await recordLedger({ grantId: grant.id, orgId: grant.orgId ?? undefined, host: h, serviceName: name, amountUsd: 0, ok: false, note: v })
+              return v
+            }
+            plannedUsd += price
+            return null
+          }
+          for (const pick of decision.smartPicks) {
+            const host = hostOf(pick.request.url)
+            const violation = await planGate(pick.serverName, host, Number(pick.priceUsd))
+            if (violation) {
+              const r: Receipt = { name: pick.serverName, endpoint: host, priceUsd: pick.priceUsd, ok: false, note: `blocked: ${violation}`, slug: violation === 'NOT_ALLOWED' ? pick.serverSlug : undefined }
+              receipts.push(r)
+              send({ type: 'receipt', receipt: r })
+              continue
+            }
+            const challenge = await getChallenge(pick.request.url, { method: pick.request.method, headers: pick.request.headers, body: pick.request.body })
+            wPlan.push({ id: `smart:${pick.endpointId}`, role: 'data', name: pick.serverName, host, priceUsd: pick.priceUsd, endpoint: pick.endpointUrl, url: pick.request.url, method: pick.request.method, body: pick.request.body, mcp: pick.request.mcp, prepared: challenge ? derivePayment(challenge, walletAddress) : null })
+          }
+          const infProtocol = inferenceProtocolOf(inference)
+          const infTool = inference.tool ?? (infProtocol === 'http' ? 'openai/gpt-4o-mini' : 'ask_claude')
+          const infChallenge = await getChallenge(inference.endpoint!, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream' },
+            body: infProtocol === 'http' ? inferenceBody('http', infTool, 'probe') : dummyMcpBody(infTool),
+          })
+          wPlan.push({ id: `inference:${inference.slug}`, role: 'inference', name: inference.name, host: infHost, priceUsd: inference.priceUsd ?? '0.01', endpoint: inference.endpoint!, tool: infTool, protocol: infProtocol, prepared: infChallenge ? derivePayment(infChallenge, walletAddress) : null })
+          const payments = wPlan
+            .filter((c) => c.prepared)
+            .map((c) => ({ id: c.id, name: c.name, host: c.host, priceUsd: c.priceUsd, signing: c.prepared!.signing as SigningRequest }))
+          // Carry the turnId so the wallet's execute phase persists its
+          // settlements under THIS turn → they show in the live feed, grouped
+          // with the plan trace.
+          send({ type: 'plan', plan: wPlan, payments, listedOnly: [], notes: decision.notes, turnId })
+          recordTurn({ payer: 'your wallet', shortlisted: shortlistedOf(decision), picks: picksOf(decision), intent: intentOf(decision) })
+          return finish()
+        }
+
+        // ── Burner mode: multi-step loop. executeCall pays + gates + ledgers +
+        //    streams each chosen call; routeMessage chains resolve→fetch and
+        //    feeds results back, returning the gathered context to answer with.
         const decision = await routeMessage({ message, history, catalog, onStep: (s) => send(s), runInference: runRoutingInference, executeCall, userAddress: walletAddress ?? ownerOverride })
 
         // RR17: the route broke on an ambiguous money/governance target —

@@ -110,6 +110,11 @@ export interface RouterDecision {
 export interface ExecuteResult {
   data?: unknown
   error?: string
+  /** RR19: this pick can't run inside the loop (it needs a wallet signature —
+   *  a PAID call in wallet mode). The loop keeps it as an UNEXECUTED plan
+   *  pick and stops: free resolve→read hops happened live, the paid terminus
+   *  goes to the wallet's plan→sign→execute phase. */
+  defer?: boolean
 }
 
 export interface RouteOptions {
@@ -638,6 +643,7 @@ export async function routeMessage(opts: RouteOptions): Promise<RouterDecision> 
         addNote(`Skipped ${d.ep.serverName} — same capability (${d.capability}) as another pick this step; kept the better-rated/cheaper one.`)
       }
       let progressed = false
+      let deferred = false
       for (const k of deduped.kept) {
         const pick = k.pick
         calledIds.add(pick.endpointId)
@@ -651,6 +657,14 @@ export async function routeMessage(opts: RouteOptions): Promise<RouterDecision> 
           break
         }
         const res = await opts.executeCall(sp)
+        if (res.defer) {
+          // RR19: paid pick in wallet mode — planned, not executed. It's the
+          // turn's terminus: keep it for the wallet plan and end the loop.
+          smartPicks.push(sp)
+          addNote(`${sp.serverName} ($${sp.priceUsd}) goes to your wallet to sign — free lookups ran first.`)
+          deferred = true
+          break
+        }
         if (res.error) {
           // Feed the failure back so the next step can repair (try a different call).
           observations.push(`${sp.serverName} ${shortUrl(sp.endpointUrl)} → ERROR: ${truncate(res.error, 200)}`)
@@ -672,7 +686,7 @@ export async function routeMessage(opts: RouteOptions): Promise<RouterDecision> 
           }
         }
       }
-      if (artifact || ceilingHit || !progressed) break // action ready, budget hit, or no progress → stop
+      if (artifact || ceilingHit || deferred || !progressed) break // action ready, budget hit, deferred to wallet, or no progress → stop
     }
     if (smartPicks.length === 0 && !artifact) emitConsideredNone(shortlisted, addNote, emit)
   }
