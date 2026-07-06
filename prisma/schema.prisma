@@ -136,6 +136,33 @@ model McpEndpoint {
   @@map("mcp_endpoints")
 }
 
+/// Free-probe liveness results (scripts/harness-probe.ts writes, lib/health.ts
+/// reads — both via RAW SQL; the table historically self-bootstrapped outside
+/// this schema, which made `prisma db push` propose DROPPING it (caught
+/// 2026-07-06, 1865 rows). Declared here so push sees it as in-sync; keep the
+/// column shapes matching the bootstrap DDL in harness-probe.ts exactly.
+model HarnessResult {
+  id          String   @id
+  endpointId  String   @map("endpoint_id")
+  service     String?
+  method      String?
+  url         String?
+  httpStatus  Int?     @map("http_status")
+  status      String
+  priceUsd    Float?   @map("price_usd")
+  scheme      String?
+  network     String?
+  payTo       String?  @map("pay_to")
+  x402Version Int?     @map("x402_version")
+  errorReason String?  @map("error_reason")
+  latencyMs   Int?     @map("latency_ms")
+  probedAt    DateTime @default(now()) @map("probed_at") @db.Timestamp(6)
+
+  @@index([endpointId])
+  @@index([status])
+  @@map("harness_results")
+}
+
 /// A user's rating of an MCP service — the human signal in the reputation score
 /// (alongside the automated reliability/liveness/speed/adoption/value metrics).
 /// One rating per wallet per service (upsert to change). Keyed by service SLUG

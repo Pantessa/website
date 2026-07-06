@@ -10,8 +10,10 @@ import TokenPanel from '@/components/TokenPanel'
 import McpStats from '@/components/McpStats'
 import Description from '@/components/Description'
 import ReputationPanel from '@/components/ReputationPanel'
+import RoutabilityPanel from '@/components/RoutabilityPanel'
 import { getTokenPanel } from '@/lib/launch-token'
 import { computeReputation, recentPings } from '@/lib/reputation'
+import type { RoutabilityReport } from '@/lib/mcp-lint-report'
 import { getSessionAddress } from '@/lib/auth'
 
 export const runtime = 'nodejs'
@@ -273,6 +275,7 @@ export default async function ServiceDetailPage({ params }: Params) {
       <ServerApproveToggle serverId={server.id} serverName={server.name} />
       <Description text={server.description} />
       <ReputationPanel rep={rep} pings={pings} rating={ratingInitial} slug={server.slug} />
+      <RoutabilityPanel slug={server.slug} initial={server.routability as unknown as RoutabilityReport | null} />
       <TokenPanel panel={panel} slug={server.slug} name={server.name} />
       {endpoints}
     </>
@@ -288,6 +291,7 @@ export default async function ServiceDetailPage({ params }: Params) {
         <ServerApproveToggle serverId={server.id} serverName={server.name} />
         <Description text={server.description} />
         <ReputationPanel rep={rep} pings={pings} rating={ratingInitial} slug={server.slug} />
+        <RoutabilityPanel slug={server.slug} initial={server.routability as unknown as RoutabilityReport | null} />
         <div className="svc__section">
           <McpStats slug={server.slug} />
         </div>
