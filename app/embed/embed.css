@@ -1,0 +1,36 @@
+/* Embed-scoped styles (/embed only — imported by app/embed/layout.tsx).
+   The embed root paints its own full-viewport background (theme param), so
+   the dark body behind it never shows through on third-party pages. */
+
+/* Light theme: remap the design tokens inside the embed surface only. */
+.embed-root[data-theme='light'] {
+  --bg: #ffffff;
+  --surf-1: #f4f4f5;
+  --surf-2: #e4e4e7;
+  --line: #d4d4d8;
+  --line-2: #a1a1aa;
+  --fg: #09090b;
+  --muted: #3f3f46;
+  --muted-2: #71717a;
+  --paper: var(--surf-1);
+  --mist: var(--line);
+  --smoke: var(--muted);
+  color-scheme: light;
+}
+
+/* The chat surface hard-codes a few dark-theme utility colors (text-white,
+   bg-black/40) — remap them to the token palette inside a light embed. */
+.embed-root[data-theme='light'] .text-white {
+  color: var(--fg);
+}
+.embed-root[data-theme='light'] .bg-black\/40 {
+  background-color: var(--surf-1);
+}
+/* Invert the white-on-dark accents (user bubble, send button): they become
+   dark chips on the light surface, keeping their text/icon contrast. */
+.embed-root[data-theme='light'] .bg-white {
+  background-color: #18181b;
+}
+.embed-root[data-theme='light'] .text-black {
+  color: #fafafa;
+}

@@ -39,7 +39,17 @@ interface CowTypedData {
   message: { receiver?: string; sellAmount?: string; buyAmount?: string; feeAmount?: string } & Record<string, unknown>
 }
 
-export default function SignOrderButton({ order, summary }: { order: Eip712OrderRequest; summary?: string }) {
+export default function SignOrderButton({
+  order,
+  summary,
+  onPlaced,
+}: {
+  order: Eip712OrderRequest
+  summary?: string
+  /** Fires once the signed order lands on the book (status → 'open') — the
+   *  embed bridge relays it to the host page as an 'order-signed' event. */
+  onPlaced?: (info: { orderUid: string | null; explorerUrl: string | null }) => void
+}) {
   const { address, isConnected } = useAccount()
   const { signTypedDataAsync } = useSignTypedData()
   const { switchChainAsync } = useSwitchChain()
@@ -128,9 +138,12 @@ export default function SignOrderButton({ order, summary }: { order: Eip712Order
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Order rejected.')
-      setExplorerUrl(typeof data.explorerUrl === 'string' ? data.explorerUrl : null)
-      setOrderUid(typeof data.orderUid === 'string' ? data.orderUid : null)
+      const placedExplorerUrl = typeof data.explorerUrl === 'string' ? data.explorerUrl : null
+      const placedOrderUid = typeof data.orderUid === 'string' ? data.orderUid : null
+      setExplorerUrl(placedExplorerUrl)
+      setOrderUid(placedOrderUid)
       setStatus('open')
+      onPlaced?.({ orderUid: placedOrderUid, explorerUrl: placedExplorerUrl })
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Signing failed.'
       setError(

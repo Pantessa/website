@@ -23,6 +23,17 @@ const nextConfig: NextConfig = {
   async rewrites() {
     return [{ source: '/design-system', destination: '/design-system/index.html' }]
   },
+  // /embed is the embeddable chat — third-party sites iframe it (embed
+  // contract v1, see /docs/embed). frame-ancestors * allows any parent for
+  // THIS path only; we deliberately never set X-Frame-Options anywhere.
+  async headers() {
+    return [
+      {
+        source: '/embed',
+        headers: [{ key: 'Content-Security-Policy', value: 'frame-ancestors *' }],
+      },
+    ]
+  },
 }
 
 export default nextConfig

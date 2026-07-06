@@ -123,6 +123,14 @@ export const DOCS_PAGES: DocsPage[] = [
     ready: true,
   },
   {
+    slug: 'embed',
+    title: 'Embed the chat',
+    seoTitle: 'Embed the Yeetful chat — an iframe on your own site',
+    description:
+      'Drop the Yeetful chat into any site as an iframe, scoped to the MCPs you pick — swaps, receipts, and signing included. URL params, postMessage API, SDK snippet.',
+    ready: true,
+  },
+  {
     slug: 'snapshot',
     title: 'Snapshot DAO voting',
     seoTitle: 'Snapshot voting — browse proposals and vote from chat',
