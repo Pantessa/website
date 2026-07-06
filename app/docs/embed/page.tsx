@@ -45,8 +45,8 @@ export default function EmbedDocsPage() {
             <strong><code>address</code></strong> — context only: it feeds{' '}
             <code>$USER_ADDRESS</code> in the router (&quot;show <em>my</em> open orders&quot;)
             and shows as a small <code>context: 0x12…ab</code> indicator. It can{' '}
-            <strong>never sign</strong> — signatures always come from a wallet connected inside
-            the iframe.
+            <strong>never sign</strong> — signatures come from a connected wallet: the host
+            page&apos;s wallet over the bridge below, or one connected inside the iframe.
           </li>
           <li>
             <strong><code>host</code></strong> — your page&apos;s origin. postMessage is
@@ -76,6 +76,41 @@ export default function EmbedDocsPage() {
   send: true }                                                             // submit (or prefill w/ send:false)`}</code>
         </pre>
 
+        <h2>Wallet bridge (contract v1.1)</h2>
+        <p>
+          With <code>yeetful/embed</code> ≥ 0.9.0 the SDK can relay your page&apos;s EIP-1193
+          provider into the iframe, so the embedded chat is <em>really</em> wallet-connected —
+          swap orders, transactions, and paid-call payments all sign through the user&apos;s own
+          wallet, <strong>prompting on your page</strong>, never inside the frame. JSON-RPC rides
+          the same origin-pinned postMessage channel:
+        </p>
+        <pre>
+          <code>{`// embed → your page (the SDK answers these)
+{ source: 'yeetful-embed', v: 1, type: 'rpc', id: '…', method: 'eth_requestAccounts', params?: […] }
+
+// your page → embed
+{ source: 'yeetful-embed', v: 1, type: 'rpc:result', id: '…', result: … }
+{ source: 'yeetful-embed', v: 1, type: 'rpc:error',  id: '…', error: { code: 4200, message: '…' } }
+
+// your page → embed: announce the provider (after 'ready', and on
+// accountsChanged / chainChanged / disconnect). Empty accounts = bridge
+// available but not connected — the embed shows a "Connect host wallet"
+// button instead of prompting uninvited.
+{ source: 'yeetful-embed', v: 1, type: 'wallet', accounts: ['0x…'], chainId: '0x2105' | null }`}</code>
+        </pre>
+        <p>
+          The SDK side enforces a <strong>method allowlist</strong> — connection + signing (
+          <code>eth_requestAccounts</code>, <code>personal_sign</code>,{' '}
+          <code>eth_signTypedData_v4</code>, <code>eth_sendTransaction</code>,{' '}
+          <code>wallet_switchEthereumChain</code>/<code>addEthereumChain</code>) plus read-only
+          RPC (<code>eth_call</code>, gas/fee/balance/receipt lookups and the like); anything
+          else is refused with error code <code>4200</code>. Security model: the bridge grants
+          the iframe the <em>same dapp-level access your page already has</em> — nothing more.
+          There are no keys in the frame and no blanket signing authority: every signature and
+          transaction pops the user&apos;s own wallet for explicit approval, exactly as if your
+          page had requested it.
+        </p>
+
         <h2>Or use the SDK</h2>
         <p>
           The <code>yeetful</code> npm package ships an embed helper that builds the iframe,
@@ -87,7 +122,8 @@ export default function EmbedDocsPage() {
 mountYeetfulChat({
   container: document.getElementById('chat')!,
   mcps: ['cow-free', 'snapshot-free'],
-  address: connectedAddress, // optional; update later via the returned handle
+  wallet: 'auto',            // bridge the page's EIP-1193 provider (v1.1);
+                             // or pass a provider / 'off' for address-only context
   mode: 'bubble',            // 'bubble' (floating launcher) | 'inline'
 })`}</code>
         </pre>
@@ -100,8 +136,8 @@ mountYeetfulChat({
           </li>
           <li>
             Guests run in burner mode: Yeetful&apos;s house wallet pays free-tier calls, so the
-            chat answers with zero setup. Paid MCPs and swap/vote signatures use the wallet your
-            visitor connects inside the frame.
+            chat answers with zero setup. Paid MCPs and swap/vote signatures use the bridged
+            host wallet (v1.1) or a wallet your visitor connects inside the frame.
           </li>
         </ul>
       </div>

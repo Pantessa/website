@@ -3,8 +3,10 @@
 // The embeddable chat surface (/embed) — the full Yeetful chat (receipts,
 // guardrails, sign/order/tx buttons) rendered chrome-less inside a
 // cross-origin iframe, scoped to a caller-selected MCP set. Guests chat
-// immediately (burner mode); signing still requires an in-iframe wallet
-// connection (RainbowKit is provided by the root layout's Providers).
+// immediately (burner mode). Signing: with an SDK-0.9 host the HOST page's
+// wallet is bridged in (see below) — signatures pop the user's own wallet on
+// the host page; otherwise an in-iframe wallet connection still works
+// (RainbowKit is provided by the root layout's Providers).
 //
 // ── Embed contract v1 (mirrored by the `yeetful/embed` SDK module) ─────────
 //   {origin}/embed?mcps=<comma slugs>&address=<0x…>&theme=<dark|light>&host=<parent origin>
@@ -17,9 +19,29 @@
 //   Messages are only accepted from / posted to the decoded `host` origin.
 //   With no host param we don't listen, and post only 'ready'/'resize' to '*'
 //   (nothing sensitive in those).
+//
+// ── Wallet bridge (contract v1.1, SDK >= 0.9.0) — lib/host-wallet.ts ───────
+//   child→parent: 'rpc' {id, method, params?}
+//   parent→child: 'rpc:result' {id, result} · 'rpc:error' {id, error:{code,message}}
+//                 · 'wallet' {accounts, chainId} — the host announces its
+//                   EIP-1193 provider (empty accounts = available, not connected)
+//   The bridge's own listener carries the same origin discipline; the
+//   'yeetfulHost' wagmi connector makes the chat REALLY wallet-connected.
+//   Auto-connects when the host announces accounts; when the announce is
+//   empty we show a "Connect host wallet" affordance instead of prompting.
+//   Address-context precedence: bridged account > postMessage 'address' >
+//   URL ?address= > in-iframe wagmi connection.
 // ────────────────────────────────────────────────────────────────────────────
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
+import { useAccount, useConnect } from 'wagmi'
+import {
+  getHostWalletServerState,
+  getHostWalletState,
+  HOST_WALLET_CONNECTOR_ID,
+  initHostWalletBridge,
+  subscribeHostWallet,
+} from '@/lib/host-wallet'
 import ChatInterface from '@/components/ChatInterface'
 import BrandIcon from '@/components/BrandIcon'
 import { YeetfulMark } from '@/components/Logo'
@@ -55,8 +77,23 @@ export default function EmbedChat({
   const [msgAddress, setMsgAddress] = useState<`0x${string}` | null | undefined>(undefined)
   const [injectedPrompt, setInjectedPrompt] = useState<{ text: string; send: boolean; at: number } | null>(null)
 
+  // Host-wallet bridge state (contract v1.1): the announce store + the wagmi
+  // connection it drives. A connection through the 'yeetfulHost' connector IS
+  // the host page's wallet — it supersedes the plain address context.
+  const hostWallet = useSyncExternalStore(subscribeHostWallet, getHostWalletState, getHostWalletServerState)
+  const { address: wagmiAddress, isConnected, connector: activeConnector } = useAccount()
+  const { connectAsync, connectors, isPending: connectPending } = useConnect()
+  const hostConnector = useMemo(
+    () => connectors.find((c) => c.id === HOST_WALLET_CONNECTOR_ID),
+    [connectors],
+  )
+  const bridgedAddress =
+    isConnected && activeConnector?.id === HOST_WALLET_CONNECTOR_ID ? wagmiAddress : undefined
+
   const paramAddress = isHexAddress(address) ? address : undefined
-  const contextAddress = msgAddress === undefined ? paramAddress : msgAddress ?? undefined
+  // Precedence: bridged account > postMessage 'address' > URL param. All
+  // undefined → ChatInterface falls back to the in-iframe wagmi connection.
+  const contextAddress = bridgedAddress ?? (msgAddress === undefined ? paramAddress : msgAddress ?? undefined)
 
   // The one origin we exchange messages with. No (or malformed) host → null.
   const hostOrigin = useMemo(() => {
@@ -108,6 +145,27 @@ export default function EmbedChat({
 
   // Every embed mount is a fresh (ephemeral, guest) chat.
   useEffect(() => setCurrentChatId(null), [setCurrentChatId])
+
+  // Wallet bridge transport: pin it to the host origin BEFORE 'ready' posts
+  // (declared above the ready effect — mount effects run in order) so the
+  // host's initial 'wallet' announce is never missed.
+  useEffect(() => {
+    if (hostOrigin) initHostWalletBridge(hostOrigin)
+  }, [hostOrigin])
+
+  // AUTO-CONNECT once when the host announces already-connected accounts and
+  // wagmi isn't connected. The connector consumes the announced accounts
+  // (silent — no prompt); empty announces never auto-prompt, the header
+  // affordance below covers that.
+  const autoConnectTried = useRef(false)
+  useEffect(() => {
+    if (autoConnectTried.current || isConnected || !hostConnector) return
+    if (!hostWallet.available || hostWallet.accounts.length === 0) return
+    autoConnectTried.current = true
+    connectAsync({ connector: hostConnector }).catch(() => {
+      /* host provider refused — the manual affordance remains */
+    })
+  }, [hostWallet, isConnected, hostConnector, connectAsync])
 
   // child→parent: 'ready' once mounted, 'resize' as the document grows/shrinks.
   useEffect(() => {
@@ -175,14 +233,35 @@ export default function EmbedChat({
             <span className="whitespace-nowrap">{server.name}</span>
           </span>
         ))}
-        {contextAddress && (
-          <span
-            className="ml-auto flex-shrink-0 mono text-[11px] text-[color:var(--muted-2)]"
-            title={`Wallet context from the host page: ${contextAddress}`}
-          >
-            context: {shortAddr(contextAddress)}
-          </span>
-        )}
+        <span className="ml-auto flex-shrink-0 inline-flex items-center gap-2">
+          {hostWallet.available && !isConnected && hostConnector && (
+            <button
+              type="button"
+              disabled={connectPending}
+              onClick={() =>
+                connectAsync({ connector: hostConnector }).catch(() => {
+                  /* user dismissed the host wallet prompt */
+                })
+              }
+              className="flex-shrink-0 inline-flex items-center px-2 py-0.5 rounded-full border border-[var(--line)] bg-[var(--surf-2)] text-[11px] text-[color:var(--fg)] cursor-pointer disabled:opacity-60 disabled:cursor-default hover:border-[var(--accent,#34d399)] transition-colors"
+              title="Connect the wallet from the host page — the approval pops there, not in this frame"
+            >
+              {connectPending ? 'Connecting…' : 'Connect host wallet'}
+            </button>
+          )}
+          {contextAddress && (
+            <span
+              className="flex-shrink-0 mono text-[11px] text-[color:var(--muted-2)]"
+              title={
+                bridgedAddress
+                  ? `Connected via the host page's wallet: ${contextAddress}`
+                  : `Wallet context from the host page: ${contextAddress}`
+              }
+            >
+              {bridgedAddress ? 'wallet' : 'context'}: {shortAddr(contextAddress)}
+            </span>
+          )}
+        </span>
       </header>
       <main className="flex-1 min-h-0 flex flex-col">
         <ChatInterface embedded contextAddress={contextAddress} onEmbedEvent={emitEvent} injectedPrompt={injectedPrompt} />

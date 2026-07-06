@@ -21,6 +21,7 @@
     "db:reset": "prisma db push --force-reset --accept-data-loss",
     "test:auth": "tsx scripts/test-auth.ts",
     "test:api": "tsx scripts/test-api.ts",
+    "test:host-wallet": "tsx scripts/test-host-wallet.ts",
     "test:router": "tsx scripts/test-router.ts",
     "test:vote": "tsx scripts/test-snapshot-vote.ts",
     "test:verify": "tsx scripts/test-verify.ts",
