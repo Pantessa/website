@@ -30,6 +30,7 @@
     "postinstall": "prisma generate",
     "eval:routing": "tsx scripts/eval-routing.ts",
     "eval:full": "tsx scripts/eval-routing.ts --full",
+    "eval:conversations": "tsx scripts/eval-conversations.ts",
     "db:tag": "tsx scripts/tag-capabilities.ts",
     "db:embed": "tsx scripts/embed-catalog.ts"
   },
