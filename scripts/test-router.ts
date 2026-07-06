@@ -12,6 +12,10 @@ import { shortlistEndpoints, capabilityOf, dedupeByCapability } from '../lib/rou
 import { deriveDescription, buildSmartRequest, type PlannableEndpoint } from '../lib/endpoint-planner'
 import { detectGovernanceIntent, mapChoiceToIndex, buildVoteTypedData, extractSpaceQuery } from '../lib/governance'
 import { coerceForSigning, describeTypedData } from '../lib/eip712'
+import {
+  sanitizeWorkingContext, resolveOrdinalFromOffers, resolveTitleFromOffers,
+  contextBlockForPlanner, latestWorkingContext,
+} from '../lib/working-context'
 
 let pass = 0
 let fail = 0
@@ -182,6 +186,58 @@ if ('error' in pathBuilt) {
 const paidPathEp = { ...pathEp, priceUsd: '0.01' }
 const paidPathBuilt = buildSmartRequest(paidPathEp, { space: 'ens.eth' })
 check('mcp: path style NOT applied to paid rows (plain HTTP)', !('error' in paidPathBuilt) && paidPathBuilt.request.mcp === undefined)
+
+// ── Working context (RR2): structured conversation state between turns ──────
+console.log('\nworking context (sanitize / resolve / planner block)')
+const wcOffers = {
+  kind: 'proposal',
+  items: [
+    { n: 1, id: '0x' + 'a'.repeat(64), title: 'Whatr should reason router do', data: { spaceId: 'nategeier.dcl.eth', spaceName: 'Nate DAO' } },
+    { n: 2, id: '0x' + 'b'.repeat(64), title: 'Fund the treasury', data: { spaceId: 'nategeier.dcl.eth', spaceName: 'Nate DAO' } },
+  ],
+}
+const wcRaw = {
+  v: 1, age: 1,
+  scope: { server: 'snapshot', label: 'Nate DAO', params: { space: 'nategeier.dcl.eth' } },
+  offers: wcOffers,
+  pending: { kind: 'vote', summary: 'vote on X', data: { proposalId: '0x' + 'a'.repeat(64), title: 'Whatr should reason router do' } },
+}
+const wc = sanitizeWorkingContext(wcRaw)
+check('sanitize: well-formed context survives', !!wc?.scope && !!wc?.offers && !!wc?.pending && wc.offers!.items.length === 2)
+check('sanitize: garbage → undefined', sanitizeWorkingContext({ v: 2 }) === undefined && sanitizeWorkingContext('x') === undefined && sanitizeWorkingContext(null) === undefined)
+const wcOld = sanitizeWorkingContext({ ...wcRaw, age: 3 })
+check('sanitize: pending expires fast (age 3), offers/scope live on', !!wcOld && !wcOld.pending && !!wcOld.offers && !!wcOld.scope)
+const wcAncient = sanitizeWorkingContext({ ...wcRaw, age: 7 })
+check('sanitize: offers expire at age 7, scope remains', !!wcAncient && !wcAncient.offers && !!wcAncient.scope)
+check('sanitize: everything expired → undefined', sanitizeWorkingContext({ v: 1, age: 13, scope: wcRaw.scope }) === undefined)
+check('sanitize: oversized item list is capped', (sanitizeWorkingContext({ v: 1, age: 0, offers: { kind: 'proposal', items: Array.from({ length: 30 }, (_, i) => ({ n: i + 1, id: `id${i}`, title: `t${i}` })) } })?.offers?.items.length ?? 0) <= 12)
+
+check('ordinal: "vote For on 2" → offer #2', resolveOrdinalFromOffers('vote For on 2', wc)?.id === wcOffers.items[1].id)
+check('ordinal: "vote on the first one" → offer #1', resolveOrdinalFromOffers('vote on the first one', wc)?.n === 1)
+check('ordinal: "the last proposal" → offer #2', resolveOrdinalFromOffers('the last proposal', wc)?.n === 2)
+check('ordinal: no ordinal → undefined', resolveOrdinalFromOffers('lets vote yes', wc) === undefined)
+check('title: full-title mention resolves', resolveTitleFromOffers('vote against Fund the treasury', wc)?.n === 2)
+check('title: no mention → undefined', resolveTitleFromOffers('vote yes', wc) === undefined)
+
+const wcBlock = contextBlockForPlanner(wc)
+check('planner block: names scope + numbered items + pending', /Nate DAO/.test(wcBlock) && /1\. Whatr should reason router do/.test(wcBlock) && /Pending action/.test(wcBlock))
+check('planner block: empty ctx → empty string', contextBlockForPlanner(undefined) === '')
+
+const wcMsgs = [
+  { role: 'user' },
+  { role: 'assistant', meta: { workingContext: { ...wcRaw, age: 0 } } },
+  { role: 'user' },
+  { role: 'assistant' },
+  { role: 'user' },
+]
+check('latest: age = assistant turns since carrier', latestWorkingContext(wcMsgs)?.age === 1)
+check('latest: none present → undefined', latestWorkingContext([{ role: 'assistant' }, { role: 'user' }]) === undefined)
+
+// The original incident, end to end at the intent layer: "lets vote yes" IS a
+// vote intent with a choice but no space/proposal — the working context is
+// what pins it to the proposal + space the user was shown.
+const lv = detectGovernanceIntent('lets vote yes')
+check('incident: "lets vote yes" → vote intent, no space, no proposal (ctx must resolve it)', lv?.kind === 'vote' && !lv.spaceQuery && !lv.proposalId && !!lv.choiceText)
 
 console.log(`\n${pass} passed, ${fail} failed\n`)
 process.exit(fail ? 1 : 0)

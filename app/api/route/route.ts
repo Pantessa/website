@@ -3,6 +3,7 @@ import { getBearerKey } from '@/lib/api-key'
 import { orgScopeKey } from '@/lib/org'
 import { agentSpentTodayUsd } from '@/lib/grant-store'
 import { streamAutoRouter, sanitizeHistory } from '@/app/api/chat/route'
+import { sanitizeWorkingContext } from '@/lib/working-context'
 
 // x402 signing + paid fetch (inside the engine) need the Node runtime.
 export const runtime = 'nodejs'
@@ -27,7 +28,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'This agent is paused.', halted: 'AGENT_PAUSED' }, { status: 403 })
   }
 
-  let body: { message?: unknown; history?: unknown }
+  let body: { message?: unknown; history?: unknown; workingContext?: unknown }
   try {
     body = await req.json()
   } catch {
@@ -50,5 +51,7 @@ export async function POST(req: NextRequest) {
   // signing over an API). Returns the streamed Response.
   const owner = key.orgId ? orgScopeKey(key.orgId) : key.ownerAddress
   // Attribute routed spend to THIS key so per-key budgets + the Agents tab see it.
-  return streamAutoRouter(message, sanitizeHistory(body.history), undefined, owner, key.id)
+  // workingContext: the agent echoes the previous reply's context (RR2) so
+  // follow-ups resolve against what it was shown — same contract as the chat.
+  return streamAutoRouter(message, sanitizeHistory(body.history), undefined, owner, key.id, undefined, sanitizeWorkingContext(body.workingContext))
 }

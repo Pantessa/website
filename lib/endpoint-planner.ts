@@ -373,6 +373,9 @@ export function plannerPrompt(
   message: string,
   endpoints: PlannableEndpoint[],
   history: ConversationTurn[] = [],
+  /** Structured continuity block (lib/working-context contextBlockForPlanner):
+   *  the scope + offered items from prior turns — ids, not prose. */
+  contextBlock = '',
 ): string {
   const byService = new Map<string, PlannableEndpoint[]>()
   for (const e of endpoints) {
@@ -400,8 +403,9 @@ export function plannerPrompt(
   const convo = conversationBlock(history)
   return [
     `You are an API-call planner.`,
+    ...(contextBlock ? [contextBlock] : []),
     ...(convo ? [convo] : []),
-    `A user asked${history.length ? ' (interpret it in the context of the conversation above — a terse follow-up like "baseball" continues the previous question)' : ''}:\n"""${message}"""`,
+    `A user asked${history.length || contextBlock ? ' (interpret it in the context of the conversation above — a terse follow-up like "baseball" continues the previous question, and ordinal references like "the second one" mean the numbered items in the working context)' : ''}:\n"""${message}"""`,
     `Below are paid API endpoints, grouped by service, each tagged with its price in [$…]; some are tagged ✓proven (they have successfully settled paid calls before). Pick AT MOST ONE endpoint per service — only if calling it would genuinely help answer the user. When two endpoints would both answer the need equally well, prefer the ✓proven one, and then the cheaper one — but still pick an un-proven endpoint when it is clearly the better fit for the request. Fill in parameter values derived from the user's message and the conversation (use sensible values; respect types; include every required param; skip optional params you can't infer). If no endpoint of a service helps, skip that service entirely.`,
     menu,
     `Respond with ONLY this JSON, no prose, no code fences:`,
