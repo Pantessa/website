@@ -11,6 +11,9 @@
 //   All postMessage payloads: { source:'yeetful-embed', v:1, type, ... }
 //   child→parent: 'ready' (once mounted) · 'resize' {height} · 'event' {name,data?}
 //   parent→child: 'address' {address:string|null} · 'theme' {theme}
+//                 · 'prompt' {text, send?} — prefill the input, or (send:true)
+//                   submit it as the user's message (host CTAs like cowswap's
+//                   "ask about this order")
 //   Messages are only accepted from / posted to the decoded `host` origin.
 //   With no host param we don't listen, and post only 'ready'/'resize' to '*'
 //   (nothing sensitive in those).
@@ -50,6 +53,7 @@ export default function EmbedChat({
   // undefined = no 'address' message received yet (param applies);
   // null = parent explicitly cleared the context (fall back to the connected wallet).
   const [msgAddress, setMsgAddress] = useState<`0x${string}` | null | undefined>(undefined)
+  const [injectedPrompt, setInjectedPrompt] = useState<{ text: string; send: boolean; at: number } | null>(null)
 
   const paramAddress = isHexAddress(address) ? address : undefined
   const contextAddress = msgAddress === undefined ? paramAddress : msgAddress ?? undefined
@@ -127,10 +131,12 @@ export default function EmbedChat({
     if (!hostOrigin) return
     const onMessage = (e: MessageEvent) => {
       if (e.origin !== hostOrigin) return
-      const d = e.data as { source?: unknown; v?: unknown; type?: unknown; address?: unknown; theme?: unknown } | null
+      const d = e.data as { source?: unknown; v?: unknown; type?: unknown; address?: unknown; theme?: unknown; text?: unknown; send?: unknown } | null
       if (!d || d.source !== SOURCE || d.v !== V) return
       if (d.type === 'address') setMsgAddress(isHexAddress(d.address) ? d.address : null)
       else if (d.type === 'theme' && (d.theme === 'dark' || d.theme === 'light')) setTheme(d.theme)
+      else if (d.type === 'prompt' && typeof d.text === 'string' && d.text.trim() && d.text.length <= 2000)
+        setInjectedPrompt({ text: d.text, send: d.send === true, at: Date.now() })
     }
     window.addEventListener('message', onMessage)
     return () => window.removeEventListener('message', onMessage)
@@ -179,7 +185,7 @@ export default function EmbedChat({
         )}
       </header>
       <main className="flex-1 min-h-0 flex flex-col">
-        <ChatInterface embedded contextAddress={contextAddress} onEmbedEvent={emitEvent} />
+        <ChatInterface embedded contextAddress={contextAddress} onEmbedEvent={emitEvent} injectedPrompt={injectedPrompt} />
       </main>
     </div>
   )

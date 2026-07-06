@@ -71,7 +71,9 @@ export default function EmbedDocsPage() {
         <p>Your page → embed (send to the iframe&apos;s contentWindow, targeting the Yeetful origin):</p>
         <pre>
           <code>{`{ source: 'yeetful-embed', v: 1, type: 'address', address: '0x…' | null } // update wallet context
-{ source: 'yeetful-embed', v: 1, type: 'theme', theme: 'dark' | 'light' }`}</code>
+{ source: 'yeetful-embed', v: 1, type: 'theme', theme: 'dark' | 'light' }
+{ source: 'yeetful-embed', v: 1, type: 'prompt', text: 'quote 100 USDC…',  // host CTA → chat:
+  send: true }                                                             // submit (or prefill w/ send:false)`}</code>
         </pre>
 
         <h2>Or use the SDK</h2>

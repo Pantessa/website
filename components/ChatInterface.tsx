@@ -101,9 +101,12 @@ interface ChatInterfaceProps {
   contextAddress?: `0x${string}`
   /** Notable embed moments (e.g. 'order-signed') → the postMessage bridge. */
   onEmbedEvent?: (name: string, data?: Record<string, unknown>) => void
+  /** Host-injected prompt (embed contract v1 `prompt` message): prefill the
+   *  input, or send immediately when `send`. `at` disambiguates repeats. */
+  injectedPrompt?: { text: string; send: boolean; at: number } | null
 }
 
-export default function ChatInterface({ embedded = false, contextAddress, onEmbedEvent }: ChatInterfaceProps = {}) {
+export default function ChatInterface({ embedded = false, contextAddress, onEmbedEvent, injectedPrompt }: ChatInterfaceProps = {}) {
   const {
     servers,
     activeServerIds,
@@ -353,6 +356,16 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
       setStatus(null)
     }
   }
+
+  // Host-injected prompt (embed `prompt` message): prefill or send. Keyed on
+  // `at` so the same text can be injected twice.
+  const lastInjectedAt = useRef(0)
+  useEffect(() => {
+    if (!injectedPrompt || injectedPrompt.at === lastInjectedAt.current) return
+    lastInjectedAt.current = injectedPrompt.at
+    if (injectedPrompt.send) void handleSend(injectedPrompt.text)
+    else setInput(injectedPrompt.text)
+  }, [injectedPrompt]) // eslint-disable-line react-hooks/exhaustive-deps
 
   /** Auto-Router: POST the streaming endpoint, buffer each trace event into the
    *  store (the engine window renders them live), and return the final reply. */
