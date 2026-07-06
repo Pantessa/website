@@ -178,7 +178,7 @@ export default async function ServiceDetailPage({ params }: Params) {
                 target="_blank"
                 rel="noopener noreferrer"
               >
-                agentic.market
+                See Info
                 <ExternalLink width={13} height={13} />
               </a>
             )}
