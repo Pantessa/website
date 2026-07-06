@@ -506,6 +506,9 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
         turnId: data.turnId, // groups the settlements with the plan in the live feed
         history,
         workingContext,
+        // Answer-prompt context ("my address") — the server falls back to the
+        // SIWE session when absent; the plan phase already validated this shape.
+        walletAddress: effectiveAddress,
       }),
     })
     const out = await res.json()
