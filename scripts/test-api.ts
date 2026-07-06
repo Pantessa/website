@@ -1238,6 +1238,8 @@ async function main() {
     const anonList = await (await fetch(`${BASE}/api/blog`)).json()
     const anonRead = await fetch(`${BASE}/api/blog/${draft.slug}`)
     check('anon sees no draft (list + 404 read)', !anonList.some((q: { slug: string }) => q.slug === draft.slug) && anonRead.status === 404)
+    const draftView = await fetch(`${BASE}/api/blog/${draft.slug}/view`, { method: 'POST' })
+    check('view beacon on a draft → 404 (existence undisclosed)', draftView.status === 404)
 
     const adminDrafts = await (await fetch(`${BASE}/api/blog?drafts=1`, { headers: { cookie: adminSession } })).json()
     check('admin ?drafts=1 lists the draft', adminDrafts.some((q: { slug: string }) => q.slug === draft.slug))
@@ -1260,6 +1262,20 @@ async function main() {
 
     const anonNow = await fetch(`${BASE}/api/blog/${draft.slug}`)
     check('published post is public', anonNow.status === 200)
+
+    // View beacon: anonymous POST increments, twice means +2, and the bump must
+    // NOT touch updated_at (that's the SEO dateModified — a view is not an edit).
+    const preViews = await (await fetch(`${BASE}/api/blog/${draft.slug}`)).json()
+    const v1 = await (await fetch(`${BASE}/api/blog/${draft.slug}/view`, { method: 'POST' })).json()
+    const v2 = await (await fetch(`${BASE}/api/blog/${draft.slug}/view`, { method: 'POST' })).json()
+    const postViews = await (await fetch(`${BASE}/api/blog/${draft.slug}`)).json()
+    check(
+      'view beacon increments views',
+      v1.views === preViews.views + 1 && v2.views === preViews.views + 2 && postViews.views === preViews.views + 2,
+    )
+    check('view beacon leaves updated_at alone (SEO dateModified)', postViews.updatedAt === preViews.updatedAt)
+    const vMissing = await fetch(`${BASE}/api/blog/no-such-post-xyz/view`, { method: 'POST' })
+    check('view beacon on unknown slug → 404', vMissing.status === 404)
 
     // Upload route: auth gate + unconfigured-Blob 503 (success path needs
     // BLOB_READ_WRITE_TOKEN — flagged manual until the owner creates a store).
