@@ -56,6 +56,15 @@ interface Overview {
     visitors: number
     lastAt: string | null
   }[]
+  embedders: {
+    origin: string
+    pageUrl: string | null
+    turns: number
+    owner: string | null
+    keyed: boolean
+    firstSeen: string
+    lastSeen: string
+  }[]
 }
 
 const usd = (n: number) => `$${n.toFixed(n < 1 ? 4 : 2)}`
@@ -233,6 +242,60 @@ export default function AdminPage() {
           <SpendByAgent perAgent={data.byService} />
         </Card>
       </div>
+
+      {/* Embedders — every site that has mounted the embedded chat (the
+          embed_sites ledger: sight beacon on mount + a bump per chat turn).
+          Keyed rows carry the owning wallet; keyless are anonymous origins. */}
+      <Card className="mt-3">
+        <CardTitle>Embedders · sites running the chat</CardTitle>
+        <p className="text-xs text-[color:var(--muted-2)] mt-0.5 mb-3">
+          Origins that mounted <span className="mono">/embed</span>, from the sight beacon +
+          per-turn attribution. <em>Keyed</em> rows bill the owner&rsquo;s plan; anonymous rows are
+          keyless embeds (origin only, referrer-policy permitting).
+        </p>
+        {(data.embedders?.length ?? 0) === 0 ? (
+          <p className="text-xs text-[color:var(--muted-2)] py-4">
+            No embeds sighted yet. This fills in the moment a site mounts the chat.
+          </p>
+        ) : (
+          <div className="overflow-x-auto -mx-1 px-1">
+            <table className="w-full text-sm min-w-[560px]">
+              <thead>
+                <tr className="text-left text-[11px] uppercase tracking-wider text-[color:var(--muted-2)] mono">
+                  <th className="py-2 pr-3 font-medium">Origin</th>
+                  <th className="py-2 pr-3 font-medium">Owner</th>
+                  <th className="py-2 pr-3 font-medium text-right">Turns</th>
+                  <th className="py-2 pr-3 font-medium text-right">First seen</th>
+                  <th className="py-2 pr-3 font-medium text-right">Last</th>
+                </tr>
+              </thead>
+              <tbody className="text-[color:var(--muted)]">
+                {data.embedders.map((e) => (
+                  <tr key={`${e.keyed}-${e.origin}`} className="border-t border-[var(--line)]">
+                    <td className="py-2 pr-3 text-white">
+                      <a
+                        href={e.pageUrl ?? e.origin}
+                        target="_blank"
+                        rel="noreferrer"
+                        title={e.pageUrl ?? e.origin}
+                        className="hover:text-[color:var(--accent,#34E0A1)] transition-colors"
+                      >
+                        {e.origin.replace(/^https?:\/\//, '')}
+                      </a>
+                    </td>
+                    <td className="py-2 pr-3 mono text-xs">
+                      {e.keyed && e.owner ? short(e.owner) : <span className="text-[color:var(--muted-2)]">anonymous</span>}
+                    </td>
+                    <td className="py-2 pr-3 text-right mono">{e.turns}</td>
+                    <td className="py-2 pr-3 text-right text-xs text-[color:var(--muted-2)]">{timeAgo(e.firstSeen)}</td>
+                    <td className="py-2 pr-3 text-right text-xs text-[color:var(--muted-2)]">{timeAgo(e.lastSeen)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Card>
 
       {/* Agent adoption — how often each agent is toggled into vs out of a chat
           runner (the agent_added / agent_removed events, mirrored into our DB). */}

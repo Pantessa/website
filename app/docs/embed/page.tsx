@@ -31,11 +31,22 @@ export default function EmbedDocsPage() {
         <pre>
           <code>{`https://www.yeetful.com/embed
   ?mcps=cow-free,snapshot-free     # comma-separated directory slugs (max 4)
+  &key=yfe_…                       # your PUBLIC embed key (dashboard → Overview)
   &address=0xYourUsersWallet       # optional wallet-address context
   &theme=dark                      # dark (default) | light
-  &host=https%3A%2F%2Fyour.app     # URL-encoded parent origin (enables messaging)`}</code>
+  &host=https%3A%2F%2Fyour.app     # URL-encoded parent origin (enables messaging)
+  &page=https%3A%2F%2Fyour.app%2Fswap  # URL-encoded page URL (embed analytics)`}</code>
         </pre>
         <ul>
+          <li>
+            <strong><code>key</code></strong> — a <em>publishable</em> embed key (<code>yfe_…</code>),
+            minted on the <Link href="/dashboard">dashboard</Link>. It&apos;s safe in page source
+            (it can read nothing and spend nothing that isn&apos;t already yours): it attributes
+            the embed to your account, lists the site under <em>Your embeds</em>, and bills
+            house-model answers to <strong>your plan&apos;s YEET credits</strong>{' '}instead of each
+            visitor&apos;s free tier. Keyless embeds still work — tracked anonymously by origin,
+            metered per visitor.
+          </li>
           <li>
             <strong><code>mcps</code></strong> — directory slugs resolved against{' '}
             <Link href="/servers">the catalog</Link>; unknown slugs are dropped, capped at 4.
@@ -43,14 +54,14 @@ export default function EmbedDocsPage() {
           </li>
           <li>
             <strong><code>address</code></strong> — context only: it feeds{' '}
-            <code>$USER_ADDRESS</code> in the router (&quot;show <em>my</em> open orders&quot;)
+            <code>$USER_ADDRESS</code> in the router (&quot;show <em>my</em>{' '}open orders&quot;)
             and shows as a small <code>context: 0x12…ab</code> indicator. It can{' '}
             <strong>never sign</strong> — signatures come from a connected wallet: the host
             page&apos;s wallet over the bridge below, or one connected inside the iframe.
           </li>
           <li>
             <strong><code>host</code></strong> — your page&apos;s origin. postMessage is
-            exchanged <em>only</em> with this origin; without it the embed doesn&apos;t listen
+            exchanged <em>only</em>{' '}with this origin; without it the embed doesn&apos;t listen
             at all and only posts <code>ready</code>/<code>resize</code> (nothing sensitive)
             with a <code>*</code> target.
           </li>
@@ -79,7 +90,7 @@ export default function EmbedDocsPage() {
         <h2>Wallet bridge (contract v1.1)</h2>
         <p>
           With <code>yeetful/embed</code> ≥ 0.9.0 the SDK can relay your page&apos;s EIP-1193
-          provider into the iframe, so the embedded chat is <em>really</em> wallet-connected —
+          provider into the iframe, so the embedded chat is <em>really</em>{' '}wallet-connected —
           swap orders, transactions, and paid-call payments all sign through the user&apos;s own
           wallet, <strong>prompting on your page</strong>, never inside the frame. JSON-RPC rides
           the same origin-pinned postMessage channel:
@@ -121,12 +132,26 @@ export default function EmbedDocsPage() {
 
 mountYeetfulChat({
   container: document.getElementById('chat')!,
+  key: 'yfe_…',              // your public embed key (>= 0.10; optional)
   mcps: ['cow-free', 'snapshot-free'],
   wallet: 'auto',            // bridge the page's EIP-1193 provider (v1.1);
                              // or pass a provider / 'off' for address-only context
   mode: 'bubble',            // 'bubble' (floating launcher) | 'inline'
 })`}</code>
         </pre>
+        <p>
+          SDK ≥ 0.10 also reports the page URL (<code>page=</code>) so your dashboard&apos;s{' '}
+          <em>Your embeds</em> list shows exactly which pages run the chat.
+        </p>
+
+        <h2>Install with Claude</h2>
+        <p>
+          The fastest path: sign in, and the{' '}
+          <Link href="/dashboard">dashboard&apos;s embed card</Link>{' '}generates a copy-paste
+          prompt — with your key baked in — that you hand to Claude Code inside your app&apos;s
+          repo. It installs the SDK, mounts the chat, patches your CSP if needed, and tells you
+          how to verify. One paste, live chat.
+        </p>
 
         <h2>Notes</h2>
         <ul>

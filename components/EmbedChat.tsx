@@ -63,11 +63,20 @@ export default function EmbedChat({
   address,
   theme: themeParam,
   host,
+  embedKey,
+  page,
 }: {
   mcps: string[]
   address?: string
   theme?: string
   host?: string
+  /** Public `yfe_…` embed key (?key=) — attributes this embed + its YEET
+   *  credit spend to the owning account's plan. Optional; keyless embeds
+   *  run on the visitor's own (free-tier) metering. */
+  embedKey?: string
+  /** Full parent-page URL, passed by SDK >= 0.10 (?page=). Falls back to
+   *  document.referrer, which the host's referrer policy may trim to origin. */
+  page?: string
 }) {
   const { setServers, setActiveServerIds, setCurrentChatId } = useYeetfulStore()
   const [resolved, setResolved] = useState<McpServer[]>([])
@@ -145,6 +154,31 @@ export default function EmbedChat({
 
   // Every embed mount is a fresh (ephemeral, guest) chat.
   useEffect(() => setCurrentChatId(null), [setCurrentChatId])
+
+  // Where this embed lives: the SDK-reported page URL first, else the
+  // referrer (the embedding page — trimmed to origin under the default
+  // referrer policy), else the host param. Drives the sighting beacon and
+  // per-turn attribution.
+  const embedPage = page || (typeof document !== 'undefined' ? document.referrer : '') || host || ''
+  const embedOrigin = useMemo(() => {
+    try {
+      return embedPage ? new URL(embedPage).origin : undefined
+    } catch {
+      return undefined
+    }
+  }, [embedPage])
+
+  // Sighting beacon — once per mount: "this origin embedded the chat (under
+  // this key)". Powers the dashboard embeds list + the adoption surface.
+  useEffect(() => {
+    if (!embedPage && !embedKey) return
+    void fetch('/api/embed/sight', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ key: embedKey || undefined, page: embedPage || undefined }),
+    }).catch(() => {})
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   // Wallet bridge transport: pin it to the host origin BEFORE 'ready' posts
   // (declared above the ready effect — mount effects run in order) so the
@@ -264,7 +298,14 @@ export default function EmbedChat({
         </span>
       </header>
       <main className="flex-1 min-h-0 flex flex-col">
-        <ChatInterface embedded contextAddress={contextAddress} onEmbedEvent={emitEvent} injectedPrompt={injectedPrompt} />
+        <ChatInterface
+          embedded
+          contextAddress={contextAddress}
+          onEmbedEvent={emitEvent}
+          injectedPrompt={injectedPrompt}
+          embedKey={embedKey}
+          embedOrigin={embedOrigin}
+        />
       </main>
     </div>
   )

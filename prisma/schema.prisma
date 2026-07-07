@@ -685,3 +685,40 @@ model CreditLedgerEntry {
   @@index([ownerAddress, createdAt])
   @@map("credit_ledger")
 }
+
+/// A PUBLIC embed key (`yfe_…`) — safe to ship in a host page's source, like
+/// a Stripe publishable key. It does ONE thing: attributes embedded-chat
+/// traffic (sites + YEET credit spend) to the owning account's plan. It is
+/// NOT a bearer credential — it can read nothing and spend nothing beyond
+/// metering the owner's own allowance. Minted/revoked from the dashboard.
+model EmbedKey {
+  id           String   @id @default(cuid())
+  key          String   @unique // yfe_ + hex, stored plaintext (public by design)
+  ownerAddress String   @map("owner_address")
+  label        String   @default("")
+  revoked      Boolean  @default(false)
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  @@index([ownerAddress])
+  @@map("embed_keys")
+}
+
+/// One row per (embed key, origin) that has mounted the chat — the "who has
+/// embedded us where" ledger. Keyless embeds land under embedKeyId '' so the
+/// adoption surface still sees anonymous origins. `pageUrl` keeps the most
+/// recent full URL the SDK reported (referrer policy permitting); `turns`
+/// counts chat messages sent from that origin.
+model EmbedSite {
+  id           String   @id @default(cuid())
+  embedKeyId   String   @default("") @map("embed_key_id") // '' = keyless
+  ownerAddress String?  @map("owner_address") // denormalized from the key
+  origin       String
+  pageUrl      String?  @map("page_url")
+  turns        Int      @default(0)
+  firstSeen    DateTime @default(now()) @map("first_seen")
+  lastSeen     DateTime @default(now()) @map("last_seen")
+
+  @@unique([embedKeyId, origin])
+  @@index([ownerAddress])
+  @@map("embed_sites")
+}

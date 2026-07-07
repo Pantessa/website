@@ -15,5 +15,14 @@ export default async function EmbedPage({
     .split(',')
     .map((s) => s.trim())
     .filter(Boolean)
-  return <EmbedChat mcps={mcps} address={one(sp.address)} theme={one(sp.theme)} host={one(sp.host)} />
+  return (
+    <EmbedChat
+      mcps={mcps}
+      address={one(sp.address)}
+      theme={one(sp.theme)}
+      host={one(sp.host)}
+      embedKey={one(sp.key)}
+      page={one(sp.page)}
+    />
+  )
 }

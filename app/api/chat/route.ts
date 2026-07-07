@@ -24,6 +24,7 @@ import { detectGovernanceIntent, runGovernanceTurn } from '@/lib/governance'
 import { sanitizeWorkingContext, contextBlockForPlanner, type WorkingContext, extractEntities, carryContext } from '@/lib/working-context'
 import { getSessionAddress } from '@/lib/auth'
 import { spendCredits } from '@/lib/billing'
+import { recordEmbedSighting, resolveEmbedKey } from '@/lib/embed-key'
 import { walletContextLine } from '@/lib/wallet-context'
 import { grantViolation, type GrantPolicy } from '@/lib/spend-grant'
 import {
@@ -186,6 +187,24 @@ export async function POST(req: NextRequest) {
 
     if (!message.trim()) {
       return NextResponse.json({ error: 'message is required' }, { status: 400 })
+    }
+
+    // ── Embed attribution: which key + host origin this turn came from ──────
+    // A valid `yfe_` key bills the KEY OWNER's plan for house answers (the
+    // host pays for their visitors); with or without a key, the turn bumps
+    // the (key, origin) row in the embeds ledger. Self-reported telemetry —
+    // fire-and-forget, never blocks the turn.
+    const embedBill =
+      typeof body.embedKey === 'string' ? await resolveEmbedKey(body.embedKey) : null
+    const embedOrigin =
+      typeof body.embedOrigin === 'string' && body.embedOrigin ? body.embedOrigin.slice(0, 200) : undefined
+    if (embedOrigin) {
+      void recordEmbedSighting({
+        embedKeyId: embedBill?.id ?? '',
+        ownerAddress: embedBill?.ownerAddress ?? null,
+        origin: embedOrigin,
+        bumpTurn: true,
+      })
     }
 
     // ── Auto-Router: the engine picks services across the whole directory and
@@ -425,16 +444,20 @@ export async function POST(req: NextRequest) {
     // burner limits; paid inference engines are x402-receipted, not credits.
     // spendCredits fails OPEN — a billing-store hiccup never blocks chat.
     if (isHouseInference(synthesizer)) {
-      const billTo = (await getSessionAddress()) ?? walletAddress
+      // Bill precedence: a valid embed key (the HOST pays for their site's
+      // visitors) > the SIWE session > the wallet in context.
+      const billTo = embedBill?.ownerAddress ?? (await getSessionAddress()) ?? walletAddress
       if (billTo) {
-        const credit = await spendCredits(billTo, 'house-inference')
+        const credit = await spendCredits(billTo, embedBill ? 'embed-house-inference' : 'house-inference')
         if (!credit.ok) {
           return NextResponse.json({
-            reply: `🪙 You’ve used all **${credit.allowance.toLocaleString()} YEET credits** on the ${credit.planName} plan this month. Upgrade at **yeetful.com/pricing** for more — or add a paid engine like **Yeetful · Claude** and keep going pay-per-call from your wallet.`,
+            reply: embedBill
+              ? `🪙 This site’s Yeetful plan is out of included answers for the month. The chat resumes when the plan renews or the site upgrades — or connect a paid engine and pay per call from your own wallet.`
+              : `🪙 You’ve used all **${credit.allowance.toLocaleString()} YEET credits** on the ${credit.planName} plan this month. Upgrade at **yeetful.com/pricing** for more — or add a paid engine like **Yeetful · Claude** and keep going pay-per-call from your wallet.`,
             planGate: { plan: credit.plan, upgradeUrl: '/pricing' },
           })
         }
-        if (credit.remaining <= Math.max(25, Math.ceil(credit.allowance * 0.1))) {
+        if (!embedBill && credit.remaining <= Math.max(25, Math.ceil(credit.allowance * 0.1))) {
           notes.push(
             `YEET credits running low — ${credit.remaining.toLocaleString()} left this month on the ${credit.planName} plan. Upgrade at yeetful.com/pricing.`,
           )
