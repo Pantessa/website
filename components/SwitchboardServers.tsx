@@ -34,8 +34,8 @@ export default function SwitchboardServers() {
     <section className="swsrv">
       <div className="swsrv__head">
         <div>
-          <span className="swsrv__eyebrow mono">THE AGENTS</span>
-          <h2 className="swsrv__h2">Every model and data source. One key.</h2>
+          <span className="swsrv__eyebrow mono">THE CATALOG</span>
+          <h2 className="swsrv__h2">Compose from every model and data source.</h2>
         </div>
         <Link href="/servers" className="swsrv__all mono">
           See all {all.length} servers →

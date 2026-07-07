@@ -32,7 +32,7 @@ export default function MobileCtaBar() {
         tabIndex={show ? 0 : -1}
         onClick={() => (isConnected ? router.push('/dashboard') : connectAndSignIn('/dashboard'))}
       >
-        {isConnected ? 'Open dashboard' : 'Try a route'}
+        {isConnected ? 'Open dashboard' : 'Try the chat'}
       </button>
     </div>
   )
