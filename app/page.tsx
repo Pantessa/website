@@ -1,6 +1,6 @@
 import type { Metadata } from 'next'
 import { SITE } from '@/lib/docs'
-import HomeHero from '@/components/HomeHero'
+import HomeHeroFusion from '@/components/HomeHeroFusion'
 import ComposeSet from '@/components/ComposeSet'
 import EngineInside from '@/components/EngineInside'
 import TxPipeline from '@/components/TxPipeline'
@@ -57,8 +57,8 @@ export default function HomePage() {
     <>
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON_LD }} />
       <main className="x-main x-main--fluid">
-        {/* The claim + the merge stage (replay → live /embed on click) */}
-        <HomeHero />
+        {/* The claim + the fusion artwork (live /embed summoned on demand) */}
+        <HomeHeroFusion />
 
         {/* Recipes: what a composed set unlocks */}
         <ComposeSet />
