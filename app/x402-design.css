@@ -1734,20 +1734,141 @@
   }
 
   /* ── FOOTER ──────────────────────────────────────── */
-  .footer { border-top: 1px solid var(--line); margin-top: clamp(48px, 7vw, 96px); }
-  .footer__top {
-    padding: 56px clamp(24px, 4vw, 64px) 40px;
-    display: flex; justify-content: space-between; gap: 40px; flex-wrap: wrap;
+  .footer {
+    position: relative;
+    isolation: isolate;
+    overflow: hidden;
+    border-top: 1px solid var(--line);
+    margin-top: clamp(48px, 7vw, 96px);
+    padding-bottom: 0;
+    background: linear-gradient(180deg, transparent, color-mix(in oklch, var(--accent) 5%, transparent) 120%);
   }
-  .footer__brand { max-width: 38ch; }
-  .footer__tag { color: var(--muted); font-size: 14px; margin-top: 16px; line-height: 1.5; }
-  .footer__links { display: flex; flex-direction: column; gap: 12px; align-items: flex-end; }
-  .footer__links a { font-size: 15px; color: var(--muted); transition: color .15s; }
-  .footer__links a:hover { color: var(--fg); }
+
+  /* Full-bleed living texture: emerald aurora drifting over a fading grid */
+  .footer__texture {
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    overflow: hidden;
+  }
+  .footer__aurora {
+    position: absolute;
+    inset: -40% -20% -20%;
+    background:
+      radial-gradient(38% 55% at 18% 30%, color-mix(in oklch, var(--accent) 26%, transparent), transparent 70%),
+      radial-gradient(32% 48% at 78% 20%, color-mix(in oklch, var(--accent) 16%, transparent), transparent 72%),
+      radial-gradient(45% 60% at 55% 90%, color-mix(in oklch, var(--accent) 20%, transparent), transparent 70%);
+    filter: blur(18px);
+    opacity: 0.5;
+    animation: footerAurora 26s ease-in-out infinite alternate;
+    will-change: transform;
+  }
+  .footer__grid {
+    position: absolute;
+    inset: -2px;
+    background-image:
+      linear-gradient(to right, color-mix(in oklch, var(--fg) 7%, transparent) 1px, transparent 1px),
+      linear-gradient(to bottom, color-mix(in oklch, var(--fg) 7%, transparent) 1px, transparent 1px);
+    background-size: 46px 46px;
+    background-position: center;
+    -webkit-mask-image: radial-gradient(120% 90% at 50% 0%, #000 0%, transparent 78%);
+    mask-image: radial-gradient(120% 90% at 50% 0%, #000 0%, transparent 78%);
+    opacity: 0.6;
+    animation: footerGridDrift 40s linear infinite;
+  }
+  @keyframes footerAurora {
+    0%   { transform: translate3d(-3%, 0, 0) scale(1); }
+    50%  { transform: translate3d(4%, -2%, 0) scale(1.08); }
+    100% { transform: translate3d(-2%, 2%, 0) scale(1.03); }
+  }
+  @keyframes footerGridDrift {
+    from { background-position: 0 0; }
+    to   { background-position: 46px 46px; }
+  }
+
+  .footer__inner {
+    position: relative;
+    z-index: 1;
+    max-width: 1280px;
+    margin: 0 auto;
+  }
+  .footer__cols {
+    padding: clamp(48px, 6vw, 72px) clamp(24px, 4vw, 64px) 40px;
+    display: grid;
+    grid-template-columns: 1.5fr 1fr 1fr 1.15fr;
+    gap: clamp(28px, 4vw, 56px);
+  }
+  .footer__brand { max-width: 40ch; }
+  .footer__tag { color: var(--muted); font-size: 14px; margin-top: 18px; line-height: 1.55; text-wrap: pretty; }
+  .footer__socials { display: flex; gap: 10px; margin-top: 22px; }
+  .footer__social {
+    width: 36px; height: 36px; border-radius: 9px;
+    display: inline-grid; place-items: center;
+    border: 1px solid var(--line); color: var(--muted);
+    transition: color .15s, border-color .15s, background .15s, transform .15s;
+  }
+  .footer__social:hover {
+    color: var(--accent); border-color: color-mix(in oklch, var(--accent) 50%, var(--line));
+    background: color-mix(in oklch, var(--accent) 8%, transparent);
+    transform: translateY(-2px);
+  }
+
+  .footer__grouptitle {
+    font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase;
+    color: var(--muted-2); font-weight: 600; margin-bottom: 18px;
+  }
+  .footer__grouplinks { display: flex; flex-direction: column; gap: 13px; }
+  .footer__grouplinks a {
+    font-size: 15px; color: var(--muted); transition: color .15s; width: fit-content;
+  }
+  .footer__grouplinks a:hover { color: var(--fg); }
+
   .footer__bottom {
     padding: 22px clamp(24px, 4vw, 64px);
     border-top: 1px solid var(--line); display: flex; justify-content: space-between; gap: 16px;
     font-size: 11px; letter-spacing: 0.12em; color: var(--muted-2);
+  }
+
+  /* Oversized wordmark: a clipped outline band bleeding off the bottom edge.
+     In normal flow BELOW the copyright divider, so it never sits on top of
+     the copy — an architectural watermark, not a muddy fill. */
+  .footer__wordmark {
+    position: relative;
+    z-index: 0;
+    height: clamp(74px, 10vw, 158px);
+    margin-top: clamp(14px, 2.4vw, 34px);
+    overflow: hidden;
+    -webkit-mask-image: linear-gradient(180deg, #000 40%, transparent 100%);
+    mask-image: linear-gradient(180deg, #000 40%, transparent 100%);
+  }
+  .footer__wordmark span {
+    position: absolute;
+    top: -0.06em;
+    left: 50%;
+    transform: translateX(-50%);
+    font-family: var(--font-sans);
+    font-weight: 700;
+    font-size: clamp(120px, 25vw, 400px);
+    line-height: 1;
+    letter-spacing: -0.055em;
+    white-space: nowrap;
+    user-select: none;
+    /* faint emerald fill + subtle stroke = presence without muddiness */
+    background: linear-gradient(
+      180deg,
+      color-mix(in oklch, var(--accent) 12%, transparent) 0%,
+      color-mix(in oklch, var(--accent) 4%, transparent) 100%
+    );
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    color: transparent;
+    -webkit-text-stroke: 1.5px color-mix(in oklch, var(--accent) 30%, transparent);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .footer__aurora, .footer__grid { animation: none; }
   }
 
   /* ── RESPONSIVE ──────────────────────────────────── */
@@ -1766,6 +1887,9 @@
     .nav__burger { display: inline-flex; }
     /* the drawer carries auth/wallet on mobile — slim the bar itself */
     .nav__right > :not(.nav__burger) { display: none; }
+    /* footer: brand spans the top row, the three groups sit below it */
+    .footer__cols { grid-template-columns: 1fr 1fr; }
+    .footer__brand { grid-column: 1 / -1; max-width: 52ch; }
   }
   @media (max-width: 600px) {
     .x-main { padding: 0 18px; }
@@ -1775,7 +1899,10 @@
     .card__more { padding: 8px 12px; }
     .nav__inner { padding: 0 18px; }
     .x-grid { grid-template-columns: 1fr; }
-    .footer__links { align-items: flex-start; }
+    .footer__cols { grid-template-columns: 1fr; gap: 32px; }
+    .footer__bottom { flex-direction: column; gap: 8px; }
+    .footer__wordmark { height: clamp(52px, 16vw, 90px); }
+    .footer__wordmark span { font-size: clamp(96px, 34vw, 200px); }
     .activebar__chips { display: none; }
     .heroweb__h1 { font-size: clamp(46px, 15vw, 72px); }
     /* Flat, full-width CTAs on a phone — no more uneven floated buttons

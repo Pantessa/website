@@ -14,6 +14,13 @@
       "runtimeArgs": ["next", "start"],
       "port": 3210,
       "autoPort": true
+    },
+    {
+      "name": "web-footer",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev", "--", "-p", "3229"],
+      "port": 3229,
+      "autoPort": true
     }
   ]
 }
