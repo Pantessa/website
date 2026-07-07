@@ -5,6 +5,7 @@ import prisma from '@/lib/db'
 import { YeetfulMark } from '@/components/Logo'
 import MessageReceipts from '@/components/MessageReceipts'
 import RouterTraceLines from '@/components/RouterTraceLines'
+import ChatMarkdown from '@/components/ChatMarkdown'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -86,7 +87,11 @@ export default async function SharedChatPage({ params }: Params) {
                   : 'bg-[var(--surf-1)] text-[color:var(--fg)] border border-[var(--line)] rounded-tl-sm'
               }`}
             >
-              <pre className="whitespace-pre-wrap font-sans">{msg.content}</pre>
+              {msg.role === 'assistant' ? (
+                <ChatMarkdown content={msg.content} />
+              ) : (
+                <pre className="whitespace-pre-wrap font-sans">{msg.content}</pre>
+              )}
               {msg.role === 'assistant' && <MessageReceipts meta={msg.meta} />}
               {msg.role === 'assistant' && <RouterTraceLines meta={msg.meta} />}
             </div>

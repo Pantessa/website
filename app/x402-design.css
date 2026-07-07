@@ -1375,6 +1375,160 @@
   .blog__stat-cap { font-size: 15px; line-height: 1.5; color: var(--fg); max-width: 46ch; }
   .blog__stat-src { font-size: 10.5px; letter-spacing: 0.04em; color: var(--muted-2); }
 
+  /* ── CHAT MARKDOWN ────────────────────────────────────
+     Editorial typography for assistant replies (ChatMarkdown.tsx). Headings are
+     Newsreader serif; h4–h6 render as mono small-caps "markings" with a leading
+     hairline (the Passalacqua eyebrow); rules, lists and tables get the
+     newspaper treatment. Lives on both the live chat bubble and /p/[slug]. */
+  .chat-md {
+    font-family: var(--font-sans);
+    font-size: 14.5px;
+    line-height: 1.72;
+    color: oklch(0.9 0 0);
+    overflow-wrap: break-word;
+    text-wrap: pretty;
+  }
+  .chat-md > :first-child { margin-top: 0; }
+  .chat-md > :last-child { margin-bottom: 0; }
+  .chat-md p { margin: 0.75em 0; }
+
+  /* Serif display headings */
+  .chat-md h1, .chat-md h2, .chat-md h3 {
+    font-family: var(--font-serif);
+    font-weight: 500;
+    font-optical-sizing: auto;
+    color: var(--fg);
+    letter-spacing: -0.014em;
+    line-height: 1.16;
+    text-wrap: balance;
+  }
+  .chat-md h1 { font-size: 1.62rem; margin: 0.9em 0 0.4em; }
+  .chat-md h2 { font-size: 1.32rem; margin: 1em 0 0.35em; }
+  .chat-md h3 { font-size: 1.12rem; margin: 0.95em 0 0.3em; }
+  .chat-md h1:first-child, .chat-md h2:first-child, .chat-md h3:first-child { margin-top: 0; }
+
+  /* Mono small-caps "markings" with a leading hairline (h4–h6) */
+  .chat-md h4, .chat-md h5, .chat-md h6 {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    font-family: var(--font-mono);
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.16em;
+    font-size: 0.7rem;
+    color: var(--muted);
+    margin: 1.4em 0 0.55em;
+  }
+  .chat-md h4::before {
+    content: '';
+    flex: 0 0 auto;
+    width: 26px;
+    height: 1px;
+    background: var(--line-2);
+  }
+  .chat-md h4:first-child, .chat-md h5:first-child, .chat-md h6:first-child { margin-top: 0; }
+
+  /* Emphasis */
+  .chat-md strong { color: var(--fg); font-weight: 600; }
+  .chat-md em { font-style: italic; }
+  .chat-md a {
+    color: inherit;
+    text-decoration: underline;
+    text-decoration-style: dotted;
+    text-underline-offset: 3px;
+    transition: color 0.15s ease;
+  }
+  .chat-md a:hover { color: var(--accent); text-decoration-style: solid; }
+
+  /* Lists — em-dash bullets, mono ordinals */
+  .chat-md ul { list-style: none; margin: 0.7em 0; padding-left: 1.1em; }
+  .chat-md ul > li { position: relative; padding-left: 1em; margin: 0.32em 0; }
+  .chat-md ul > li::before {
+    content: '—';
+    position: absolute;
+    left: -0.15em;
+    color: var(--accent);
+  }
+  .chat-md ol { margin: 0.7em 0; padding-left: 1.5em; }
+  .chat-md ol > li { margin: 0.32em 0; padding-left: 0.15em; }
+  .chat-md ol > li::marker { font-family: var(--font-mono); font-size: 0.85em; color: var(--muted); }
+  .chat-md li > ul, .chat-md li > ol { margin: 0.2em 0; }
+
+  /* Editorial pull-quote */
+  .chat-md blockquote {
+    margin: 1em 0;
+    padding: 0.15em 0 0.15em 1.1em;
+    border-left: 2px solid var(--accent);
+    font-family: var(--font-serif);
+    font-style: italic;
+    font-size: 1.1rem;
+    line-height: 1.5;
+    color: var(--muted);
+  }
+  .chat-md blockquote p { margin: 0.3em 0; }
+
+  /* Code */
+  .chat-md :not(pre) > code {
+    font-family: var(--font-mono);
+    font-size: 0.85em;
+    background: var(--surf-2);
+    border: 1px solid var(--line);
+    border-radius: 5px;
+    padding: 0.05em 0.35em;
+    color: var(--fg);
+    overflow-wrap: anywhere;
+  }
+  .chat-md pre {
+    background: var(--bg);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 14px 16px;
+    overflow-x: auto;
+    margin: 1em 0;
+  }
+  .chat-md pre code {
+    font-family: var(--font-mono);
+    font-size: 12.5px;
+    line-height: 1.6;
+    color: var(--muted);
+    background: none;
+    border: none;
+    padding: 0;
+  }
+  .chat-md pre code[data-lang]::before {
+    content: attr(data-lang);
+    display: block;
+    font-size: 9.5px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--muted-2);
+    margin-bottom: 9px;
+  }
+
+  /* Gradient hairline divider */
+  .chat-md hr {
+    border: none;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--line-2), transparent);
+    margin: 1.6em 0;
+  }
+
+  /* Newspaper table */
+  .chat-md table { border-collapse: collapse; width: 100%; margin: 1em 0; font-size: 0.9em; }
+  .chat-md th, .chat-md td { padding: 7px 12px; text-align: left; border-bottom: 1px solid var(--line); }
+  .chat-md th {
+    font-family: var(--font-mono);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    font-size: 0.72em;
+    font-weight: 500;
+    color: var(--muted);
+    border-bottom-color: var(--line-2);
+  }
+  .chat-md tbody tr:last-child td { border-bottom: none; }
+  .chat-md img { max-width: 100%; border-radius: 10px; border: 1px solid var(--line); }
+
   @media (max-width: 768px) {
     .blog__grid { grid-template-columns: 1fr; }
     /* Feature stacks: art on top as a wide strip, words below. */
