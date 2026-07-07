@@ -27,28 +27,34 @@ analytics into "how well is this MCP working" and an actionable improvement loop
   `::before` + serif H1 + pill `.btn` + mono eyebrows). Applied on the homepage;
   NOT on `/docs`, `/pricing`, `/benchmarks`, `/tools`, dashboard headers.
 
-## Backlog (priority order)
+## Backlog (priority order) — ✅ = done this run
 
-### EPIC B — Routable-MCP docs + unified upgrade prompt  (do first: dependency)
-- [ ] B1 `/docs/routable-mcp` canonical spec page (conventions + 5 lint dims + mcp-kit), register in `lib/docs.ts`.
-- [ ] B2 Unify prompt generators → `lib/upgrade-prompt.ts`, cite the spec URL + mcp-kit. Used by RoutabilityPanel + EmbedInsights.
+### EPIC B — Routable-MCP docs + unified upgrade prompt
+- [x] B1 `/docs/routable-mcp` canonical spec page (conventions + 5 lint dims + mcp-kit), registered in `lib/docs.ts`. `lib/routable-mcp.ts` = single source.
+- [x] B2 Both prompt generators (routability panel `buildUpgradePrompt` + embed `upgradePrompt`) now cite the shared conventions + spec URL.
 
 ### EPIC A — Self-heal from usage & analytics  (TOP PRIORITY)
-- [ ] A1 Bridge: cluster embed_turns dead-ends per MCP into deduped health signals (new table + `lib/embed-heal.ts` + `scripts/embed-heal-scan.ts`).
-- [ ] A2 Unified **MCP health** score (routability + reputation + embed dead-end rate) — `lib/mcp-health.ts`, shown on server pages + a dashboard health view.
-- [ ] A3 Feed the loop: health signals surface as an improvement backlog with an auto-generated, ask-grounded Claude Code prompt (reuses B2).
+- [x] A2 Unified **MCP health** — `lib/mcp-health.ts` fuses reputation (usage) + routability + unresolved route_incidents → score/status/headline. `McpHealthPanel` on every server page.
+- [x] A3 `/health` cockpit ranks the whole fleet worst-first; attention MCPs get a one-click, health-grounded `buildHealthUpgradePrompt`. Nav + sitemap.
+- [ ] A1 (DEFERRED) embed_turns dead-ends → route_incidents bridge. Blocker: embed_turns has no per-MCP attribution + the autonomous fixer targets the monorepo, not third-party MCP repos. Needs the routing trace's serviceName threaded into embed telemetry. Noted for a follow-up.
 
 ### EPIC C — Onboarding
-- [ ] C1 Reconcile onboarding to embed-first (rework OnboardingChecklist + WelcomeNudge): mount chat → get key → watch analytics → improve MCPs.
-- [ ] C2 Homepage → a real "get a key" path, not just docs.
+- [x] C1 OnboardingChecklist + WelcomeNudge reframed to the embed-first pivot with a self-heal step (mount → watch asks → improve MCPs → optional SDK payer). Ticks off live embed insights.
+- [x] C2 EmbedAnywhere gains a "Mint your embed key" CTA → /dashboard.
 
 ### EPIC D — SDK integration
-- [ ] D1 Kill SDK version drift (single source constant).
-- [ ] D2 Polish the "Install with Claude" prompt; align to routable-mcp doc.
+- [x] D1 `lib/sdk.ts` single-sources the SDK version; EmbedsPanel + EmbedAnywhere interpolate it (was v0.9 vs >=0.10).
+- [ ] D2 (optional) further "Install with Claude" prompt polish.
 
 ### EPIC E — UI/UX vibe propagation
-- [ ] E1 /docs pages → hero vibe.   [ ] E2 /pricing.   [ ] E3 /benchmarks + /tools.
-- [ ] E4 dashboard headers.          [ ] E5 /servers, /activity, /blog polish.
+- [x] E (core) `.hero__em` + `.pricing__em` upgraded to the hero emerald→gold gradient → lifts docs/benchmarks/tools/activity/servers/pricing at once. /health + /docs/routable-mcp built in-vibe.
+- [ ] E4 dashboard headers (mono eyebrows).   [ ] E5 deeper /servers, /activity, /blog polish.
+
+### Verify status
+tsc clean throughout; dev server on 3240; new routes /health + /docs/routable-mcp
+return 200 with real Neon data; server-page health panels show real signals
+(snapshot-free/uniswap-free "Watch" w/ real failures). Chrome extension offline
+this run → no screenshots captured (curl content-verified instead).
 
 ## Gotchas
 - Neon DB is `yeetful` (pass databaseName:'yeetful' to run_sql). Additive schema
