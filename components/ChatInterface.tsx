@@ -25,6 +25,7 @@ import { useYeetfulStore, type RouterTraceEvent } from '@/lib/store'
 import { latestWorkingContext, type WorkingContext } from '@/lib/working-context'
 import { EXAMPLE_PROMPTS } from '@/lib/examples'
 import SampleCallDemo from '@/components/SampleCallDemo'
+import { SplashDashboard } from '@/components/SplashDashboard'
 import BrandIcon from '@/components/BrandIcon'
 import ShareButton from '@/components/ShareButton'
 import ChatMarkdown from '@/components/ChatMarkdown'
@@ -206,6 +207,9 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
   const [status, setStatus] = useState<string | null>(null)
+  // Splash dashboard: tile count the scan resolved (null = not yet), so the
+  // normal empty state only shows when the splash finds nothing.
+  const [splashCount, setSplashCount] = useState<number | null>(null)
   // A planned wallet-mode turn awaiting the user's OK before the wallet pops —
   // so they see the real $ amount (not the wallet's raw base-units value) first.
   const [pendingPayment, setPendingPayment] = useState<{
@@ -227,6 +231,10 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
 
   const currentChat = chats.find((c) => c.id === currentChatId)
   const activeServers = servers.filter((s) => activeServerIds.includes(s.id))
+  // Show the connected-wallet splash when we have a wallet + a MCP that can
+  // paint a dashboard tile (Uniswap portfolio / Snapshot proposals / …).
+  const splashEligible =
+    !!effectiveAddress && !autoRouter && activeServers.some((s) => /uniswap|snapshot/i.test(`${s.slug} ${s.name}`))
   // Connected agents render first in the chip strip (in the order they were
   // toggled on) so the chat always shows what it's wired to without scrolling
   // the whole catalog; the rest keep catalog order.
@@ -795,7 +803,22 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
       {/* Messages area */}
       <div className="flex-1 overflow-y-auto px-4 py-6 space-y-4">
         {!currentChat || currentChat.messages.length === 0 ? (
-          <EmptyState activeCount={activeServers.length} autoRouter={autoRouter} onPick={pickExample} />
+          splashEligible ? (
+            <>
+              <SplashDashboard
+                address={effectiveAddress}
+                servers={activeServers}
+                onPick={pickExample}
+                dismissed={input.trim().length > 0}
+                onResolve={setSplashCount}
+              />
+              {splashCount === 0 && (
+                <EmptyState activeCount={activeServers.length} autoRouter={autoRouter} onPick={pickExample} />
+              )}
+            </>
+          ) : (
+            <EmptyState activeCount={activeServers.length} autoRouter={autoRouter} onPick={pickExample} />
+          )
         ) : (
           <>
             <AnimatePresence initial={false}>
