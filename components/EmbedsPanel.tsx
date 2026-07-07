@@ -15,6 +15,7 @@ import { Check, Copy, Globe, Plus, Trash2 } from 'lucide-react'
 import { Card, CardTitle, SkeletonCard, timeAgo } from '@/lib/dashboard-ui'
 import { useToast } from '@/lib/toast'
 import Button from '@/components/Button'
+import { SDK_PKG, SDK_MIN, SDK_EMBED_ESM } from '@/lib/sdk'
 
 interface EmbedSite {
   origin: string
@@ -50,7 +51,7 @@ mountYeetfulChat({
 function claudePromptFor(key: string): string {
   return `Install the Yeetful embeddable chat (an agent that composes MCPs — swaps, DAO votes, live data — and signs with the user's own wallet) into this app.
 
-1. Install the SDK: \`npm i yeetful\` (needs yeetful >= 0.10).
+1. Install the SDK: \`npm i ${SDK_PKG}\` (needs ${SDK_PKG} >= ${SDK_MIN}).
 2. Mount it once wherever the app initializes client-side:
 
    import { mountYeetfulChat } from 'yeetful/embed'
@@ -64,7 +65,7 @@ function claudePromptFor(key: string): string {
 
    No bundler? Use a module script instead:
    <script type="module">
-     import { mountYeetfulChat } from 'https://esm.sh/yeetful@^0.10/embed'
+     import { mountYeetfulChat } from '${SDK_EMBED_ESM}'
      mountYeetfulChat({ mode: 'bubble', key: '${key}', mcps: ${DEFAULT_MCPS}, wallet: 'auto' })
    </script>
 

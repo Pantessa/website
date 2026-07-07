@@ -1,9 +1,10 @@
-// Embed anywhere — the distribution story. The real 5-line install (SDK 0.9,
-// wallet:'auto' = the HOST page's wallet signs), plus the two live fork
+// Embed anywhere — the distribution story. The real 5-line install
+// (wallet:'auto' = the HOST page's wallet signs), plus the two live fork
 // demos. The demos are proof-of-concept forks of open-source interfaces —
 // label them clearly as test cases: no partnership, no endorsement.
 
 import Link from 'next/link'
+import { SDK_PKG, SDK_MIN } from '@/lib/sdk'
 
 const SNIPPET = `import { mountYeetfulChat } from 'yeetful/embed'
 
@@ -45,8 +46,8 @@ export default function EmbedAnywhere() {
       <div className="embeda__grid">
         <div className="embeda__snippet">
           <div className="embeda__snipbar mono">
-            <span>npm i yeetful</span>
-            <span className="embeda__snipver">v0.9</span>
+            <span>npm i {SDK_PKG}</span>
+            <span className="embeda__snipver">v{SDK_MIN}</span>
           </div>
           <pre className="embeda__pre mono">
             <code>{SNIPPET}</code>
