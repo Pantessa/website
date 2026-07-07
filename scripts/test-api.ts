@@ -309,6 +309,40 @@ async function main() {
     Array.isArray(slClear.serviceIds) && slClear.serviceIds.length === 0,
   )
 
+  // ── Billing: plans + YEET credits (read-only — no rows to clean up) ────────
+  console.log('— billing')
+  const planNoAuth = await fetch(`${BASE}/api/billing/plan`)
+  check('billing plan read requires auth → 401', planNoAuth.status === 401)
+  const planRes = await fetch(`${BASE}/api/billing/plan`, { headers: C })
+  const planBody = await planRes.json()
+  check(
+    'fresh wallet is on the free tier with the full allowance',
+    planRes.status === 200 &&
+      planBody.usage?.plan === 'free' &&
+      planBody.usage?.allowance === 2500 &&
+      planBody.usage?.used === 0 &&
+      planBody.usage?.remaining === 2500,
+    `plan=${planBody.usage?.plan} used=${planBody.usage?.used}`,
+  )
+  check(
+    'plan config ships 3 plans (free/growth/scale)',
+    Array.isArray(planBody.plans) &&
+      planBody.plans.length === 3 &&
+      planBody.plans.some((p: { id: string; priceUsd: number }) => p.id === 'free' && p.priceUsd === 0),
+  )
+  const coNoAuth = await fetch(`${BASE}/api/billing/checkout`, {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ plan: 'growth' }),
+  })
+  check('checkout requires a SIWE session → 401', coNoAuth.status === 401)
+  const coBadPlan = await fetch(`${BASE}/api/billing/checkout`, {
+    method: 'POST', headers: CJ, body: JSON.stringify({ plan: 'free' }),
+  })
+  // Without STRIPE_SECRET_KEY the route answers 503 before validating the
+  // plan id; with a key configured a free plan must 400.
+  check('checkout refuses the free plan (400) or reports Stripe unconfigured (503)', coBadPlan.status === 400 || coBadPlan.status === 503)
+  const whUnsigned = await fetch(`${BASE}/api/billing/webhook`, { method: 'POST', body: '{}' })
+  check('webhook without signature/config → 400 or 503', whUnsigned.status === 400 || whUnsigned.status === 503)
+
   // ── Ledger sync ───────────────────────────────────────────────────────────
   console.log('— ledger sync')
   const ledgerRes = await fetch(`${BASE}/api/grants/${grant.id}/ledger`, {
@@ -654,9 +688,11 @@ async function main() {
     /<link[^>]+rel="canonical"[^>]+href="https?:\/\/[^"/]+\/?"/.test(homeHtml),
   )
   check('router: og:image present (social card)', /<meta[^>]+property="og:image"/.test(homeHtml))
+  // The pivot (2026-07-07, website#326) retold the homepage: compose MCPs →
+  // one embeddable agent. The old expectation ("routing") is the pre-pivot story.
   check(
-    'router: descriptive <title> (the routing-engine flagship)',
-    /<title>[^<]*routing[^<]*<\/title>/.test(homeHtml),
+    'router: descriptive <title> (the pivot story: compose + embed)',
+    /<title>[^<]*(embeddable|[Cc]ompose)[^<]*<\/title>/.test(homeHtml),
   )
   const sitemapXml = await (await fetch(`${BASE}/sitemap.xml`)).text()
   check('sitemap: site root is listed', /<loc>https?:\/\/[^</]+\/?<\/loc>/.test(sitemapXml))

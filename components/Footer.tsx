@@ -22,6 +22,7 @@ export default function Footer() {
           </p>
         </div>
         <div className="footer__links">
+          <Link href="/pricing">Pricing</Link>
           <Link href="/docs">Docs</Link>
           <Link href="/blog">Blog</Link>
           <Link href="/docs/terms">Terms</Link>

@@ -133,6 +133,9 @@ export default function Navigation() {
       <Link href="/activity" className={`nav__tab ${pathname === '/activity' ? 'is-on' : ''}`}>
         Activity
       </Link>
+      <Link href="/pricing" className={`nav__tab ${pathname.startsWith('/pricing') ? 'is-on' : ''}`}>
+        Pricing
+      </Link>
       <Link href="/docs" className={`nav__tab ${pathname.startsWith('/docs') ? 'is-on' : ''}`}>
         Docs
       </Link>

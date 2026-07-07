@@ -1791,3 +1791,88 @@
   .trust__link:hover { text-decoration: underline; }
   @media (max-width: 1280px) { .trust__grid { grid-template-columns: repeat(2, 1fr); } }
   @media (max-width: 640px) { .trust__grid { grid-template-columns: 1fr; } }
+
+  /* ══ PRICING (/pricing) + PLAN METER (dashboard) ═══════════════════════
+     The business model surface: three plan cards (Growth accented) over the
+     standard section pattern, the YEET token strip, mini-FAQ, and the
+     dashboard usage meter (.planmeter). Same tokens as everything else. */
+  .pricing { padding: 72px 0 90px; }
+  .pricing__head { max-width: 760px; }
+  .pricing__eyebrow { font-size: 12px; letter-spacing: 0.18em; color: var(--muted-2); }
+  .pricing__h1 {
+    font-family: var(--font-serif); font-weight: 500; font-optical-sizing: auto;
+    font-size: clamp(2.6rem, 5vw, 4.4rem); line-height: 1.02; letter-spacing: -0.018em;
+    margin-top: 14px; color: var(--fg); text-wrap: balance;
+  }
+  .pricing__em { font-style: italic; color: var(--muted-2); }
+  .pricing__sub { margin-top: 18px; font-size: 15.5px; line-height: 1.6; color: var(--muted); text-wrap: pretty; }
+  .pricing__sub strong { color: var(--fg); font-weight: 600; }
+
+  .pricing__grid { margin-top: 40px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; align-items: stretch; }
+  .pricing__card {
+    position: relative; display: flex; flex-direction: column; gap: 0;
+    border: 1px solid var(--line); border-radius: 16px; background: var(--surf-1);
+    padding: 26px 24px; min-width: 0; transition: border-color .15s, transform .15s;
+  }
+  .pricing__card:hover { border-color: var(--line-2); transform: translateY(-2px); }
+  .pricing__card--pop { border-color: color-mix(in oklch, var(--accent) 55%, var(--line)); background: color-mix(in oklch, var(--accent) 4%, var(--surf-1)); }
+  .pricing__card--pop:hover { border-color: var(--accent); }
+  .pricing__pop {
+    position: absolute; top: -11px; left: 22px; font-size: 10px; letter-spacing: .14em;
+    padding: 4px 10px; border-radius: 999px; background: var(--accent); color: #000; font-weight: 600;
+  }
+  .pricing__name { font-family: 'Archivo', sans-serif; font-weight: 700; font-size: 19px; letter-spacing: -.02em; }
+  .pricing__tagline { font-size: 13px; color: var(--muted-2); margin-top: 4px; }
+  .pricing__price { display: flex; align-items: baseline; gap: 8px; margin-top: 20px; }
+  .pricing__amount {
+    font-family: var(--font-serif); font-weight: 500; font-optical-sizing: auto;
+    font-size: 44px; line-height: 1; letter-spacing: -.01em; color: var(--fg);
+  }
+  .pricing__per { font-size: 12px; letter-spacing: .08em; color: var(--muted-2); }
+  .pricing__credits {
+    margin-top: 14px; padding: 9px 13px; border-radius: 10px; font-size: 13.5px;
+    border: 1px solid color-mix(in oklch, var(--accent) 30%, transparent);
+    background: color-mix(in oklch, var(--accent) 7%, transparent); color: var(--accent);
+  }
+  .pricing__credits span { color: color-mix(in oklch, var(--accent) 70%, var(--muted)); font-size: 11.5px; letter-spacing: .06em; }
+  .pricing__feats { list-style: none; margin: 18px 0 22px; display: flex; flex-direction: column; gap: 9px; flex: 1; }
+  .pricing__feats li { font-size: 13.5px; color: var(--muted); line-height: 1.45; padding-left: 20px; position: relative; }
+  .pricing__feats li::before { content: '✓'; position: absolute; left: 0; color: var(--accent); font-size: 12px; }
+  .pricing__cta { justify-content: center; width: 100%; }
+  .pricing__cta:disabled { opacity: .55; cursor: default; }
+  .pricing__note { margin-top: 16px; font-size: 12.5px; color: #ffb86b; }
+
+  .pricing__token {
+    margin-top: 40px; display: flex; gap: 16px; align-items: flex-start;
+    border: 1px dashed color-mix(in oklch, var(--accent) 40%, var(--line)); border-radius: 14px;
+    padding: 18px 20px; background: color-mix(in oklch, var(--accent) 3%, transparent);
+  }
+  .pricing__tokenbadge {
+    flex-shrink: 0; font-size: 12px; letter-spacing: .12em; font-weight: 600;
+    padding: 6px 12px; border-radius: 999px; background: var(--accent); color: #000;
+  }
+  .pricing__token p { font-size: 13.5px; color: var(--muted); line-height: 1.6; max-width: 80ch; }
+
+  .pricing__faq { margin-top: 36px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+  .pricing__faqitem { border: 1px solid var(--line); border-radius: 14px; padding: 18px; background: var(--surf-1); min-width: 0; }
+  .pricing__faqq { font-family: 'Archivo', sans-serif; font-weight: 700; font-size: 14.5px; letter-spacing: -.01em; }
+  .pricing__faqa { font-size: 13px; color: var(--muted); line-height: 1.55; margin-top: 8px; }
+  .pricing__enterprise { margin-top: 28px; font-size: 13.5px; color: var(--muted-2); }
+  .pricing__enterprise a { color: var(--accent); }
+  .pricing__enterprise a:hover { text-decoration: underline; }
+
+  @media (max-width: 1023px) {
+    .pricing__grid { grid-template-columns: 1fr; max-width: 460px; }
+    .pricing__faq { grid-template-columns: 1fr; }
+  }
+
+  /* dashboard usage meter */
+  .planmeter {
+    margin-top: 16px; height: 10px; border-radius: 999px; overflow: hidden;
+    background: var(--surf-2); border: 1px solid var(--line);
+  }
+  .planmeter__fill {
+    height: 100%; border-radius: 999px; background: var(--accent);
+    transition: width .6s cubic-bezier(.2,.7,.2,1); min-width: 2px;
+  }
+  .planmeter__fill--low { background: #ffb86b; }
