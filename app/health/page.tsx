@@ -153,6 +153,12 @@ export default async function HealthPage() {
               ))}
             </div>
 
+            <p className="mono text-[11px] text-[color:var(--muted-2)] mb-6 [overflow-wrap:anywhere]">
+              Each row: the fused <span className="text-[color:var(--fg)]">health score</span> ·
+              usage tier + settle rate · <span className="text-[color:var(--fg)]">R:</span>
+              routability grade · <span style={{ color: '#ff6b6b' }}>✕</span> unresolved failures.
+            </p>
+
             {attention.length > 0 && (
               <section className="mb-8">
                 <h2 className="mono text-[11px] uppercase tracking-wide text-[color:var(--muted-2)] mb-2">
