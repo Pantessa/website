@@ -2,7 +2,9 @@ import type { Metadata } from 'next'
 import Link from 'next/link'
 import { ArrowUpRight } from 'lucide-react'
 import Footer from '@/components/Footer'
+import CopyTextButton from '@/components/CopyTextButton'
 import { loadFleetHealth, HEALTH_STATUS_META, type McpHealth, type HealthStatus } from '@/lib/mcp-health'
+import { buildHealthUpgradePrompt } from '@/lib/routable-mcp'
 import { SITE } from '@/lib/docs'
 
 export const runtime = 'nodejs'
@@ -69,6 +71,40 @@ function HealthRow({ h }: { h: McpHealth }) {
   )
 }
 
+/** An attention-grade MCP: the fused signals + a copy-paste fix prompt built
+ *  from its live health — the self-heal loop, one click. */
+function AttentionCard({ h }: { h: McpHealth }) {
+  const prompt = buildHealthUpgradePrompt({
+    name: h.name,
+    health: h.health,
+    status: h.status,
+    headline: h.headline,
+    incidents: h.incidents,
+    routabilityGrade: h.routability?.grade ?? null,
+  })
+  return (
+    <div className="rounded-xl border p-4 min-w-0" style={{ borderColor: '#ff6b6b55', background: 'var(--surf-1)' }}>
+      <div className="flex items-center gap-3 flex-wrap">
+        <span className="u-name-serif text-[26px] leading-none" style={{ color: '#ff6b6b' }}>
+          {h.health ?? '—'}
+        </span>
+        <span className="text-[15px] text-[color:var(--fg)] font-medium">{h.name}</span>
+        <StatusPill status={h.status} />
+        <span className="mono text-[11px] text-[color:var(--muted-2)] ml-auto">
+          {h.routability ? `R:${h.routability.grade}` : 'R:—'} · {h.incidents.open > 0 ? `${h.incidents.occurrences}✕` : '0✕'}
+        </span>
+      </div>
+      <p className="text-[13px] text-[color:var(--muted)] mt-2">{h.headline}</p>
+      <div className="flex items-center gap-3 mt-3 flex-wrap">
+        <CopyTextButton text={prompt} label="Copy fix prompt" event={`health-fix:${h.slug}`} />
+        <Link href={`/servers/${h.slug}`} className="text-[12.5px] text-[color:var(--muted)] underline decoration-dotted underline-offset-4 inline-flex items-center gap-1">
+          Open server page <ArrowUpRight className="w-3.5 h-3.5" />
+        </Link>
+      </div>
+    </div>
+  )
+}
+
 export default async function HealthPage() {
   const fleet = await loadFleetHealth()
   const counts = fleet.reduce(
@@ -124,7 +160,7 @@ export default async function HealthPage() {
                 </h2>
                 <div className="flex flex-col gap-2">
                   {attention.map((h) => (
-                    <HealthRow key={h.slug} h={h} />
+                    <AttentionCard key={h.slug} h={h} />
                   ))}
                 </div>
               </section>

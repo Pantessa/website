@@ -110,6 +110,36 @@ export function conventionsAsPromptLines(): string[] {
   return ROUTABLE_MCP_CONVENTIONS.map((c) => `- **${c.title}**: ${c.body}`)
 }
 
+/** A health-grounded upgrade prompt for the /health cockpit — carries the
+ *  MCP's live health signals (score, weakest lever, unresolved failures) so the
+ *  fix targets what analytics say is actually broken, then the conventions. */
+export function buildHealthUpgradePrompt(input: {
+  name: string
+  health: number | null
+  status: string
+  headline: string
+  incidents: { open: number; occurrences: number; topTitle: string | null }
+  routabilityGrade?: string | null
+}): string {
+  const inc = input.incidents
+  const incLine =
+    inc.open > 0
+      ? `Live traffic shows ${inc.occurrences} unresolved failure${inc.occurrences === 1 ? '' : 's'} across ${inc.open} incident${inc.open === 1 ? '' : 's'}${inc.topTitle ? ` (worst: ${inc.topTitle})` : ''}.`
+      : 'No hard failures logged — the gap is discovery/construction, not crashes.'
+  return [
+    `Improve the MCP service "${input.name}". Yeetful scores its health ${input.health ?? '—'}/100 (${input.status})${input.routabilityGrade ? `, routability grade ${input.routabilityGrade}` : ''}.`,
+    `Weakest lever: ${input.headline}. ${incLine}`,
+    '',
+    `Make it routable so an AI agent router can discover, choose, and call its tools. Full spec: ${ROUTABLE_MCP_DOC_URL}`,
+    '',
+    'Audit this codebase against the conventions below and fix the weakest lever first:',
+    '',
+    ...conventionsAsPromptLines(),
+    '',
+    'After each change, restate which convention it satisfies and whether it addresses the weakest lever above.',
+  ].join('\n')
+}
+
 /** A self-contained, report-free Claude Code prompt to make ANY MCP routable —
  *  the /docs/routable-mcp copy button. When a lint report or live analytics
  *  exist, lib/upgrade-prompt.ts prepends the concrete findings to this. */
