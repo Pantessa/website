@@ -10,8 +10,9 @@ import { useEffect, useState } from 'react'
 import { ShieldCheck } from 'lucide-react'
 import { useSession } from '@/lib/session'
 import DashboardSidebar from '@/components/DashboardSidebar'
+import DashboardMobileNav from '@/components/DashboardMobileNav'
+import DashboardAccount from '@/components/DashboardAccount'
 import OrgSwitcher from '@/components/OrgSwitcher'
-import { short } from '@/lib/dashboard-ui'
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
@@ -40,11 +41,17 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   return (
     <div className="dash">
+      {/* Desktop: persistent left rail — sections up top, account pinned to the
+          bottom (wallet + sign out). Hidden below 900px. */}
       <aside className="dash__rail">
         <OrgSwitcher />
-        <div className="dash__who mono">{short(address)}</div>
         <DashboardSidebar pathname={pathname} address={address} />
+        <div className="dash__acct">
+          <DashboardAccount address={address} />
+        </div>
       </aside>
+      {/* Mobile: compact bar + hamburger drawer (replaces the horizontal row). */}
+      <DashboardMobileNav pathname={pathname} address={address} />
       <main className="dash__main">{children}</main>
     </div>
   )

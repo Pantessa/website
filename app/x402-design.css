@@ -1177,12 +1177,68 @@
   .dash__rail {
     position: sticky; top: 88px; padding: 24px 0 24px;
     display: flex; flex-direction: column; gap: 18px;
+    /* Full column height so the account control can pin to the bottom. */
+    min-height: calc(100vh - 88px);
     /* A grid item defaults to min-width:auto, so the nowrap section links
        set the whole 1fr track's minimum (= the mobile bleed). Floor it. */
     min-width: 0;
   }
-  .dash__who { font-size: 11px; color: var(--muted-2); padding: 0 12px; }
   .dash__side { display: flex; flex-direction: column; gap: 2px; }
+  /* Account footer: pushed to the bottom of the rail (wallet + sign out). */
+  .dash__acct { margin-top: auto; padding-top: 14px; border-top: 1px solid var(--line); }
+
+  /* ── DASHBOARD ACCOUNT CONTROL (rail bottom + mobile drawer) ── */
+  .dashacct { position: relative; }
+  .dashacct__btn {
+    display: flex; align-items: center; gap: 8px; width: 100%;
+    padding: 9px 10px; min-height: 44px; border-radius: 10px;
+    border: 1px solid var(--line); background: var(--surf-1);
+    color: var(--fg); font-size: 12.5px; transition: border-color .15s, background .15s;
+  }
+  .dashacct__btn:hover, .dashacct__btn.is-active { border-color: var(--line-2); background: var(--surf-2); }
+  .dashacct__dot { width: 7px; height: 7px; border-radius: 999px; background: var(--accent); flex-shrink: 0; }
+  .dashacct__addr { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; }
+  .dashacct__chev { color: var(--muted-2); flex-shrink: 0; }
+  .dashacct__menu {
+    position: absolute; left: 0; right: 0; bottom: calc(100% + 6px); z-index: 40;
+    background: var(--surf-1); border: 1px solid var(--line); border-radius: 12px; padding: 5px;
+    box-shadow: 0 16px 48px rgba(0,0,0,.5);
+  }
+  .dashacct__item {
+    display: flex; align-items: center; gap: 9px; width: 100%; padding: 10px; min-height: 44px;
+    border-radius: 8px; font-size: 12.5px; color: var(--muted); transition: background .12s, color .12s;
+  }
+  .dashacct__item:hover { background: var(--surf-2); color: var(--fg); }
+  .dashacct__item--danger { color: #f87171; }
+  .dashacct__item--danger:hover { background: rgba(248,113,113,.12); color: #fca5a5; }
+
+  /* ── DASHBOARD MOBILE NAV (bar + hamburger drawer) ── */
+  .dashnav { display: none; }        /* desktop: rail owns navigation */
+  .dashnav__bar {
+    position: sticky; top: 64px; z-index: 30;
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    padding: 10px 0; background: rgba(0,0,0,0.85); backdrop-filter: blur(10px);
+    border-bottom: 1px solid var(--line);
+  }
+  .dashnav__crumb { font-size: 14px; font-weight: 600; color: var(--fg); }
+  .dashnav__burger {
+    display: inline-flex; align-items: center; gap: 6px; min-height: 40px; padding: 0 12px;
+    border: 1px solid var(--line); border-radius: 10px; background: var(--surf-1);
+    color: var(--fg); font-size: 12.5px; font-weight: 600;
+  }
+  .dashnav__burger:hover { border-color: var(--line-2); background: var(--surf-2); }
+  .dashnav__drawer { position: fixed; inset: 0; z-index: 80; }
+  .dashnav__backdrop { position: absolute; inset: 0; background: rgba(0,0,0,.6); backdrop-filter: blur(2px); border: 0; }
+  .dashnav__panel {
+    position: absolute; top: 0; right: 0; bottom: 0; width: min(300px, 86vw);
+    display: flex; flex-direction: column; gap: 14px; padding: 18px 16px calc(18px + env(safe-area-inset-bottom));
+    background: var(--bg); border-left: 1px solid var(--line); overflow-y: auto;
+  }
+  .dashnav__panel .dash__side { flex-direction: column; }
+  .dashnav__panel .dashacct { margin-top: auto; padding-top: 14px; border-top: 1px solid var(--line); }
+  /* In the drawer the switcher is full-width (not the rail's fixed pill). */
+  .dashnav__panel .orgsw { padding: 0; width: auto; }
+  .dashnav__panel .orgsw__menu { left: 0; right: 0; width: auto; }
   .dash__link {
     display: flex; align-items: center; gap: 10px;
     padding: 10px 12px; border-radius: 10px; font-size: 13px;
@@ -1226,23 +1282,12 @@
   .orgsw__input:focus { outline: none; border-color: var(--line-2); }
   .orgsw__go { font-size: 12px; font-weight: 600; padding: 0 12px; border-radius: 8px; background: var(--fg); color: #000; min-height: 44px; }
   .orgsw__go:disabled { opacity: .5; }
-  /* Survivable mobile fallback (item 3 turns this into the section bar):
-     rail becomes a horizontal scroll row above the content. */
+  /* Mobile: the vertical rail is replaced by a compact bar + hamburger drawer
+     (DashboardMobileNav) — no more horizontal-scroll section row. */
   @media (max-width: 900px) {
     .dash { grid-template-columns: 1fr; gap: 0; padding: 0 18px; }
-    .dash__rail { position: sticky; top: 64px; z-index: 30; flex-direction: row; align-items: center;
-      gap: 12px; padding: 10px 0; background: rgba(0,0,0,0.85); backdrop-filter: blur(10px);
-      border-bottom: 1px solid var(--line); }
-    .dash__who { display: none; }
-    /* the switcher rides the horizontal bar: fixed width, menu floats */
-    .orgsw { padding: 0; width: 160px; flex-shrink: 0; }
-    .orgsw__menu { left: 0; right: auto; width: 240px; }
-    .dash__side { flex-direction: row; gap: 4px; overflow-x: auto; scrollbar-width: none;
-      padding-right: 20px;
-      -webkit-mask-image: linear-gradient(to right, #000 92%, transparent);
-              mask-image: linear-gradient(to right, #000 92%, transparent); }
-    .dash__side::-webkit-scrollbar { display: none; }
-    .dash__link { white-space: nowrap; min-height: 44px; }
+    .dash__rail { display: none; }
+    .dashnav { display: block; }
   }
 
   /* ── DOCS (full-width shell) ─────────────────────── */
