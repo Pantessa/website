@@ -35,7 +35,7 @@ export default function TrustStrip() {
     <section className="trust">
       <div className="trust__head">
         <span className="trust__eyebrow mono">THE TRUST LAYER</span>
-        <h2 className="trust__h2">Why hosts embed it. Why users sign.</h2>
+        <h2 className="trust__h2">Why hosts embed it. Why users <span className="x-grad">sign.</span></h2>
       </div>
       <div className="trust__grid">
         {TILES.map((x) => (

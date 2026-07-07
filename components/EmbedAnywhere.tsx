@@ -33,7 +33,7 @@ export default function EmbedAnywhere() {
     <section className="embeda">
       <div className="embeda__head">
         <span className="embeda__eyebrow mono">EMBED ANYWHERE</span>
-        <h2 className="embeda__h2">Five lines. Any site. Mega apps in minutes.</h2>
+        <h2 className="embeda__h2">Five lines. Any site. <span className="x-grad">Mega apps</span> in minutes.</h2>
         <p className="embeda__sub">
           <code className="embeda__code">yeetful/embed</code> mounts the full chat — receipts,
           guardrails, signing — as a bubble or inline. With <code className="embeda__code">wallet:
