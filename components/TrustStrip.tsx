@@ -64,7 +64,8 @@ function Thumb({ kind }: { kind: string }) {
             <line className="tt-gate" x1="128" y1="20" x2="128" y2="66" />
             <path className="tt-deflect" d="M118 40 L126 56 L120 72" />
             <circle className="tt-red" cx="118" cy="40" r="3" />
-            <text className="tt-label tt-label--red" x="112" y="16">over-cap ⊘ dropped</text>
+            <text className="tt-label tt-label--red" x="138" y="34">over-cap ⊘</text>
+            <text className="tt-label tt-label--red" x="138" y="46">dropped, not built</text>
           </g>
         )}
         {kind === 'receipt' && (
