@@ -2,17 +2,17 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "web",
+      "name": "web-selfheal",
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev"],
-      "port": 3010,
+      "port": 3240,
       "autoPort": true
     },
     {
-      "name": "web-prod",
+      "name": "web-selfheal-prod",
       "runtimeExecutable": "npx",
-      "runtimeArgs": ["next", "start"],
-      "port": 3210,
+      "runtimeArgs": ["next", "start", "-p", "3241"],
+      "port": 3241,
       "autoPort": true
     }
   ]
