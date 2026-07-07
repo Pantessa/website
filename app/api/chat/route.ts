@@ -23,6 +23,7 @@ import { resolveProposal } from '@/lib/snapshot-read'
 import { detectGovernanceIntent, runGovernanceTurn } from '@/lib/governance'
 import { sanitizeWorkingContext, contextBlockForPlanner, type WorkingContext, extractEntities, carryContext } from '@/lib/working-context'
 import { getSessionAddress } from '@/lib/auth'
+import { spendCredits } from '@/lib/billing'
 import { walletContextLine } from '@/lib/wallet-context'
 import { grantViolation, type GrantPolicy } from '@/lib/spend-grant'
 import {
@@ -411,6 +412,31 @@ export async function POST(req: NextRequest) {
         if (unplannable.length > 0) {
           notes.push(
             `No machine-readable parameter schemas published for: ${unplannable.map((s) => s.name).join(', ')} — calls can't be constructed safely, so they stay listed-only.`,
+          )
+        }
+      }
+    }
+
+    // ── Plan gate (billing): house-model answers are metered in YEET credits.
+    // Attributable turns (SIWE session first, else the wallet in context)
+    // debit ONE credit per house-synthesized turn, checked here — the single
+    // choke point both burner and wallet phase-1 pass through (phase-2
+    // executes an already-debited turn). Anonymous guests keep the existing
+    // burner limits; paid inference engines are x402-receipted, not credits.
+    // spendCredits fails OPEN — a billing-store hiccup never blocks chat.
+    if (isHouseInference(synthesizer)) {
+      const billTo = (await getSessionAddress()) ?? walletAddress
+      if (billTo) {
+        const credit = await spendCredits(billTo, 'house-inference')
+        if (!credit.ok) {
+          return NextResponse.json({
+            reply: `🪙 You’ve used all **${credit.allowance.toLocaleString()} YEET credits** on the ${credit.planName} plan this month. Upgrade at **yeetful.com/pricing** for more — or add a paid engine like **Yeetful · Claude** and keep going pay-per-call from your wallet.`,
+            planGate: { plan: credit.plan, upgradeUrl: '/pricing' },
+          })
+        }
+        if (credit.remaining <= Math.max(25, Math.ceil(credit.allowance * 0.1))) {
+          notes.push(
+            `YEET credits running low — ${credit.remaining.toLocaleString()} left this month on the ${credit.planName} plan. Upgrade at yeetful.com/pricing.`,
           )
         }
       }

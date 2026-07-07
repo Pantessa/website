@@ -652,3 +652,36 @@ model TokenPriceSample {
   @@index([mcpSlug, at])
   @@map("token_price_samples")
 }
+
+/// A wallet's paid plan (Stripe monthly billing). One row per owner address;
+/// no row = the free tier. Stripe is the source of truth — rows are written
+/// by the checkout/webhook flow (app/api/billing/*), never by hand.
+model Subscription {
+  id                   String    @id @default(cuid())
+  ownerAddress         String    @unique @map("owner_address")
+  plan                 String    @default("free") // PlanId: 'free' | 'growth' | 'scale'
+  status               String    @default("active") // Stripe subscription status
+  stripeCustomerId     String?   @unique @map("stripe_customer_id")
+  stripeSubscriptionId String?   @unique @map("stripe_subscription_id")
+  currentPeriodEnd     DateTime? @map("current_period_end")
+  createdAt            DateTime  @default(now()) @map("created_at")
+  updatedAt            DateTime  @updatedAt @map("updated_at")
+
+  @@map("subscriptions")
+}
+
+/// YEET credit movements — the inference token, ledgered off-chain today and
+/// intended to become an ERC-20. Negative delta = spend (one house-model
+/// answer), positive = a grant/top-up. The monthly plan allowance is NOT
+/// ledgered: usage for a period is the sum of that period's debits, so the
+/// allowance resets by construction each calendar month (UTC).
+model CreditLedgerEntry {
+  id           String   @id @default(cuid())
+  ownerAddress String   @map("owner_address")
+  delta        Int
+  reason       String
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  @@index([ownerAddress, createdAt])
+  @@map("credit_ledger")
+}
