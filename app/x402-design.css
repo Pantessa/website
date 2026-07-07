@@ -2209,3 +2209,38 @@
     .txp__grid { grid-template-columns: 1fr; }
     .txp__visual { max-width: 460px; }
   }
+
+
+  /* ── trust-tile thumbs: blog-constellation micro-stories ─────────────── */
+  .trust__thumb {
+    margin: -18px -18px 14px; height: 76px; overflow: hidden;
+    border-bottom: 1px solid rgba(255,255,255,.05);
+    background: radial-gradient(80% 120% at 70% 0%, rgba(52,227,160,.05), transparent 70%);
+  }
+  .trust__thumb svg { width: 100%; height: 100%; display: block; }
+  .tt-field circle { fill: rgba(255,255,255,.22); }
+  .tt-field path { fill: none; stroke: rgba(255,255,255,.08); stroke-width: 1; }
+  .tt-route {
+    fill: none; stroke: var(--accent); stroke-width: 1.3; opacity: .85;
+    stroke-dasharray: 4 5; animation: tt-dash 2.6s linear infinite;
+  }
+  @keyframes tt-dash { to { stroke-dashoffset: -18; } }
+  .tt-label { font-family: var(--font-mono); font-size: 8.5px; letter-spacing: .08em; fill: var(--accent); }
+  .tt-label--red { fill: #ff5d5d; }
+  .tt-label--amber { fill: #ffb86b; }
+  .tt-node { fill: #0f1714; stroke: var(--accent); stroke-width: 1.6; }
+  .tt-glow { fill: var(--accent); opacity: .14; animation: tt-pulse 2.8s ease-in-out infinite; }
+  @keyframes tt-pulse { 0%, 100% { opacity: .1; } 50% { opacity: .26; } }
+  /* guardrails: the gate holds, the hop deflects, the red dot blinks */
+  .tt-gate { stroke: rgba(255,93,93,.55); stroke-width: 1.4; stroke-dasharray: 2 4; }
+  .tt-deflect { fill: none; stroke: rgba(255,93,93,.5); stroke-width: 1.1; stroke-dasharray: 3 4; animation: tt-dash 2.2s linear infinite reverse; }
+  .tt-red { fill: #ff5d5d; animation: tt-blink 1.9s infinite; }
+  @keyframes tt-blink { 0%, 68% { opacity: 1; } 84% { opacity: .25; } 100% { opacity: 1; } }
+  /* kill switch: the route beyond the pause ring goes cold */
+  .tt-pausering { fill: none; stroke: #ffb86b; stroke-width: 1.3; animation: tt-pulse 2.4s ease-in-out infinite; opacity: .8; }
+  .tt-pausebar { stroke: #ffb86b; stroke-width: 1.6; stroke-linecap: round; }
+  .tt-after { fill: none; stroke: rgba(255,255,255,.12); stroke-width: 1.1; stroke-dasharray: 2 5; }
+  /* reputation: waypoints shimmer up toward the proven node */
+  .tt-riser { fill: var(--accent); opacity: .35; animation: tt-rise 3.2s ease-in-out infinite; }
+  .tt-riser:nth-of-type(2) { animation-delay: -1.6s; }
+  @keyframes tt-rise { 0%, 100% { opacity: .2; transform: translateY(0); } 50% { opacity: .7; transform: translateY(-3px); } }

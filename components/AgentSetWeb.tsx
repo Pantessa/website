@@ -15,20 +15,20 @@ import { useEffect, useRef } from 'react'
 // [tool, glyph, mcp, x, y, depth-scale]
 const NODES: [string, string, 'uniswap' | 'snapshot', number, number, number][] = [
   // uniswap-free — the swap venue
-  ['quote', '◇', 'uniswap', 952, 190, 0.9],
-  ['build_swap', '⇄', 'uniswap', 1128, 232, 0.95],
-  ['pools', '◎', 'uniswap', 972, 302, 0.76],
-  ['token_info', 'T', 'uniswap', 1146, 344, 0.68],
+  ['quote', '◇', 'uniswap', 952, 258, 0.9],
+  ['build_swap', '⇄', 'uniswap', 1128, 300, 0.95],
+  ['pools', '◎', 'uniswap', 972, 364, 0.76],
+  ['token_info', 'T', 'uniswap', 1146, 410, 0.68],
   // snapshot-free — the governance surface (kept left of the HUD card)
-  ['proposals', '▤', 'snapshot', 842, 486, 0.9],
-  ['vote', '✓', 'snapshot', 992, 522, 0.95],
-  ['spaces', '◈', 'snapshot', 856, 588, 0.74],
-  ['results', 'Σ', 'snapshot', 980, 652, 0.68],
+  ['proposals', '▤', 'snapshot', 842, 524, 0.9],
+  ['vote', '✓', 'snapshot', 992, 562, 0.95],
+  ['spaces', '◈', 'snapshot', 856, 628, 0.74],
+  ['results', 'Σ', 'snapshot', 980, 686, 0.68],
 ]
 
 const HULLS: { mcp: 'uniswap' | 'snapshot'; label: string; x: number; y: number; w: number; h: number }[] = [
-  { mcp: 'uniswap', label: 'UNISWAP · FREE MCP', x: 878, y: 128, w: 356, h: 268 },
-  { mcp: 'snapshot', label: 'SNAPSHOT · FREE MCP', x: 762, y: 430, w: 338, h: 244 },
+  { mcp: 'uniswap', label: 'UNISWAP · FREE MCP', x: 878, y: 200, w: 356, h: 264 },
+  { mcp: 'snapshot', label: 'SNAPSHOT · FREE MCP', x: 762, y: 472, w: 338, h: 248 },
 ]
 
 // The asks the agent handles — reads answer for $0, money asks hand a built
