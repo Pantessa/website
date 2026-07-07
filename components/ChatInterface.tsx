@@ -171,7 +171,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
   const [pendingPayment, setPendingPayment] = useState<{
     userMsg: string
     chatId: string
-    data: { plan: unknown; payments: PaymentToSign[]; listedOnly: unknown; notes?: unknown; turnId?: unknown }
+    data: { plan: unknown; payments: PaymentToSign[]; listedOnly: unknown; notes?: unknown; turnId?: unknown; capabilities?: unknown }
     history: { role: string; content: string }[]
     workingContext?: WorkingContext
   } | null>(null)
@@ -392,7 +392,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
     workingContext?: WorkingContext,
   ): Promise<
     | { kind: 'reply'; content: string; receipts?: unknown; payer?: string; voteRequest?: unknown; voteProposal?: unknown; routeReport?: unknown; routerTrace?: unknown; orderRequest?: unknown; txRequest?: unknown; txChain?: unknown; clarify?: unknown; workingContext?: unknown }
-    | { kind: 'plan'; data: { plan: unknown; payments: PaymentToSign[]; listedOnly: unknown; notes?: unknown; turnId?: unknown } }
+    | { kind: 'plan'; data: { plan: unknown; payments: PaymentToSign[]; listedOnly: unknown; notes?: unknown; turnId?: unknown; capabilities?: unknown } }
   > => {
     clearRouterTrace()
     setEngineWindowOpen(true) // show the engine working as soon as a turn starts
@@ -479,7 +479,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
   /** Sign each x402 payment with the connected wallet, then run the calls. */
   const payWithWalletThenAnswer = async (
     userMsg: string,
-    data: { plan: unknown; payments: PaymentToSign[]; listedOnly: unknown; notes?: unknown; turnId?: unknown },
+    data: { plan: unknown; payments: PaymentToSign[]; listedOnly: unknown; notes?: unknown; turnId?: unknown; capabilities?: unknown },
     history: { role: string; content: string }[] = [],
     workingContext?: WorkingContext,
   ): Promise<{ reply: string; receipts?: unknown[]; payer?: string }> => {
@@ -514,6 +514,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
         signatures,
         listedOnly: data.listedOnly,
         notes: data.notes, // plan-time diagnostics, echoed into the final reply
+        capabilities: data.capabilities, // connected-agent summary → grounds meta-questions in phase 2
         turnId: data.turnId, // groups the settlements with the plan in the live feed
         history,
         workingContext,

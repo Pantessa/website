@@ -165,6 +165,7 @@ export async function POST(req: NextRequest) {
         typeof body.walletAddress === 'string' && isAddress(body.walletAddress)
           ? getAddress(body.walletAddress)
           : undefined,
+        typeof body.capabilities === 'string' ? body.capabilities.slice(0, 4000) : '',
       )
     }
 
@@ -1005,6 +1006,9 @@ async function planWalletPayments(
     payments,
     listedOnly: stillListedOnly,
     notes,
+    // Grounds "what can I do?" in the connected set when synthesis runs in
+    // phase 2 (executeWithSignatures). Echoed back by the client, like `notes`.
+    capabilities: capabilitiesBlock([inference, ...dataServers, ...mcpDataServers, ...listedOnly], smart),
   })
 }
 
@@ -1023,6 +1027,9 @@ async function executeWithSignatures(
   /** The user's connected wallet — answer-prompt context ("my address").
    *  Falls back to the SIWE session address below. */
   walletAddress?: string,
+  /** Connected-agent capability summary from phase 1, so meta-questions
+   *  ("what can I do here?") stay grounded when the answer is synthesized here. */
+  capabilities = '',
 ) {
   if (!message.trim()) return NextResponse.json({ error: 'message is required' }, { status: 400 })
 
@@ -1104,7 +1111,7 @@ async function executeWithSignatures(
   const execProtocol: 'mcp' | 'http' = inferenceCall.protocol === 'http' ? 'http' : 'mcp'
   const execTool =
     inferenceCall.tool ?? (execProtocol === 'http' ? 'openai/gpt-4o-mini' : 'ask_claude')
-  const prompt = capPrompt(execProtocol, buildPrompt(message, contextBlocks, history, workingContext, walletAddress ?? owner ?? undefined))
+  const prompt = capPrompt(execProtocol, buildPrompt(message, contextBlocks, history, workingContext, walletAddress ?? owner ?? undefined, capabilities))
   let text: string
   let infTx: string | undefined
   if (inferenceCall.id === `inference:${HOUSE_INFERENCE_SLUG}`) {
@@ -1354,7 +1361,8 @@ async function runWithBurner(
     }
   }
 
-  const prompt = buildPrompt(message, contextBlocks, history, workingContext, userAddress ?? owner ?? undefined)
+  const capabilities = capabilitiesBlock([inference, ...dataServers, ...mcpDataServers, ...listedOnly], smart)
+  const prompt = buildPrompt(message, contextBlocks, history, workingContext, userAddress ?? owner ?? undefined, capabilities)
   trace({ type: 'status', label: `writing the answer — ${inference.name}` })
   const { text, txHash } = await callInference(inference, prompt)
   receipts.push({ name: inference.name, endpoint: infHost, priceUsd: inference.priceUsd ?? '0.01', txHash, ok: true })
@@ -2095,7 +2103,52 @@ function parseMcpDataResult(contentType: string, raw: string): unknown {
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
-function buildPrompt(message: string, contextBlocks: string[], history: ConversationTurn[] = [], ctx?: WorkingContext, userAddress?: string): string {
+/**
+ * A compact, grounded description of what each connected agent/MCP can do —
+ * fed into the synthesis prompt so meta-questions ("what can I do here?",
+ * "what is this?", "what's available?") are answered from the ACTUAL connected
+ * set instead of the model improvising generic wallet features. (2026-07-07: a
+ * Hyperliquid-only turn answered "check your wallet / send / receive / swap /
+ * stake / view NFTs" — none of which the connected MCP provides.)
+ *
+ * Tool-level detail comes from the plannable endpoints (`smart`) when present —
+ * the richest signal, one line per tool; otherwise the service's own one-line
+ * description. Works for 1, 2, or 3+ connected agents. The house inference
+ * engine is skipped (it writes the answer; it isn't a capability to advertise).
+ */
+function capabilitiesBlock(servers: McpServer[], smart: PlannableEndpoint[] = []): string {
+  // Per-service tool descriptions from the planner menu (deduped, capped).
+  const toolsBySlug = new Map<string, string[]>()
+  for (const e of smart) {
+    const d = e.description?.trim()
+    if (!d) continue
+    const arr = toolsBySlug.get(e.serverSlug) ?? []
+    if (!arr.includes(d)) arr.push(d)
+    toolsBySlug.set(e.serverSlug, arr)
+  }
+  const seen = new Set<string>()
+  const lines: string[] = []
+  for (const s of servers) {
+    if (!s || isHouseInference(s) || seen.has(s.slug)) continue
+    seen.add(s.slug)
+    const tools = toolsBySlug.get(s.slug) ?? []
+    const detail = tools.length
+      ? '\n' + tools.slice(0, 8).map((t) => `    · ${truncate(t, 140)}`).join('\n')
+      : s.description
+        ? `\n    ${truncate(s.description, 200)}`
+        : ''
+    const tag = s.kind === 'inference' ? ' — inference engine (writes the answers)' : ''
+    lines.push(`- **${s.name}**${tag}${detail}`)
+  }
+  if (lines.length === 0) return ''
+  const count = lines.length
+  return [
+    `The user has ${count} agent${count === 1 ? '' : 's'}/MCP${count === 1 ? '' : 's'} connected this turn. This is the COMPLETE set of what you can help with here — do NOT claim capabilities beyond these (no generic "check your wallet / send / swap / stake / view NFTs" unless a connected agent below actually provides it):`,
+    ...lines,
+  ].join('\n')
+}
+
+function buildPrompt(message: string, contextBlocks: string[], history: ConversationTurn[] = [], ctx?: WorkingContext, userAddress?: string, capabilities = ''): string {
   const convo = answerHistoryBlock(history)
   // Structured continuity (RR2): the scope + offered items from prior turns,
   // so terse follow-ups resolve without scraping prose out of history.
@@ -2105,11 +2158,22 @@ function buildPrompt(message: string, contextBlocks: string[], history: Conversa
   const walletLine = walletContextLine(userAddress)
   if (contextBlocks.length === 0) {
     const convoBlock = convo ? `Conversation so far:\n${convo}\n\n` : ''
-    return `You are Yeetful, a concise assistant. Continue the conversation and answer the user's latest message directly, using the earlier turns for context.\n\n${walletLine ? `${walletLine}\n\n` : ''}${ctxBlock ? `${ctxBlock}\n\n` : ''}${convoBlock}User: ${message}`
+    // Ground the answer in the connected agents. The instruction fires only for
+    // capability/meta asks; ordinary follow-ups just gain honest grounding.
+    const capBlock = capabilities
+      ? `${capabilities}\n\nIf the user asks what they can do, what this is, what's available, or how to use it, answer by naming the connected agents above and summarizing what each can do — concisely, one short line per agent. Never pad the list with capabilities no connected agent provides.\n\n`
+      : ''
+    return `You are Yeetful, a concise assistant. Continue the conversation and answer the user's latest message directly, using the earlier turns for context.\n\n${capBlock}${walletLine ? `${walletLine}\n\n` : ''}${ctxBlock ? `${ctxBlock}\n\n` : ''}${convoBlock}User: ${message}`
   }
   return [
     `You are Yeetful, a concise assistant. Use the live data below (fetched and paid for over x402) to answer.`,
     `Cite specifics from the data. If the data doesn't cover it, say so briefly.`,
+    // Even with data in hand, a capability/meta ask ("what can I do here?") must
+    // describe ALL connected agents — not just whichever one the planner happened
+    // to call. So the capability block travels into the data branch too.
+    ...(capabilities
+      ? [``, capabilities, ``, `If the user is asking what they can do / what's available / how to use this, name every connected agent above and what each can do — not only the one the data below came from.`]
+      : []),
     ...(walletLine ? [``, walletLine] : []),
     ...(ctxBlock ? [``, ctxBlock] : []),
     ...(convo ? [``, `Conversation so far:`, convo] : []),
