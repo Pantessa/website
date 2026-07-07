@@ -11,8 +11,10 @@ import McpStats from '@/components/McpStats'
 import Description from '@/components/Description'
 import ReputationPanel from '@/components/ReputationPanel'
 import RoutabilityPanel from '@/components/RoutabilityPanel'
+import McpHealthPanel from '@/components/McpHealthPanel'
 import { getTokenPanel } from '@/lib/launch-token'
 import { computeReputation, recentPings } from '@/lib/reputation'
+import { computeHealth, incidentsForService } from '@/lib/mcp-health'
 import type { RoutabilityReport } from '@/lib/mcp-lint-report'
 import { getSessionAddress } from '@/lib/auth'
 
@@ -132,6 +134,16 @@ export default async function ServiceDetailPage({ params }: Params) {
       }))?.rating ?? null
     : null
   const ratingInitial = { average: rep.ratingAvg, count: rep.ratingCount, yourRating }
+
+  // Fuse usage + routability + unresolved failures into one health verdict.
+  const routabilityReport = server.routability as unknown as RoutabilityReport | null
+  const health = computeHealth({
+    slug: server.slug,
+    name: server.name,
+    reputation: rep,
+    routability: routabilityReport,
+    incidents: await incidentsForService(server.name),
+  })
 
   const header = (
     <header className="svc__head">
@@ -274,8 +286,9 @@ export default async function ServiceDetailPage({ params }: Params) {
       {header}
       <ServerApproveToggle serverId={server.id} serverName={server.name} />
       <Description text={server.description} />
+      <McpHealthPanel health={health} />
       <ReputationPanel rep={rep} pings={pings} rating={ratingInitial} slug={server.slug} />
-      <RoutabilityPanel slug={server.slug} initial={server.routability as unknown as RoutabilityReport | null} />
+      <RoutabilityPanel slug={server.slug} initial={routabilityReport} />
       <TokenPanel panel={panel} slug={server.slug} name={server.name} />
       {endpoints}
     </>
@@ -290,8 +303,9 @@ export default async function ServiceDetailPage({ params }: Params) {
         {header}
         <ServerApproveToggle serverId={server.id} serverName={server.name} />
         <Description text={server.description} />
+        <McpHealthPanel health={health} />
         <ReputationPanel rep={rep} pings={pings} rating={ratingInitial} slug={server.slug} />
-        <RoutabilityPanel slug={server.slug} initial={server.routability as unknown as RoutabilityReport | null} />
+        <RoutabilityPanel slug={server.slug} initial={routabilityReport} />
         <div className="svc__section">
           <McpStats slug={server.slug} />
         </div>
