@@ -1876,3 +1876,104 @@
     transition: width .6s cubic-bezier(.2,.7,.2,1); min-width: 2px;
   }
   .planmeter__fill--low { background: #ffb86b; }
+
+  /* ══ FUSION HERO (2026-07 hero remake) ═══════════════
+     Alkemy-inspired: centered serif over a living artwork — protocol
+     particle rivers fusing into one core that periodically "transmutes"
+     into a signed transaction (ring pulse + the mono caption). Replaces
+     the browser-frame hero; the live /embed chat is summoned as an
+     overlay by "Try it live" instead of being mocked in-page. */
+  .fhero {
+    --fbg: #050708; --haccent: #34e3a0;
+    position: relative; isolation: isolate; overflow: hidden;
+    width: 100vw; margin-left: calc(50% - 50vw);
+    min-height: calc(100svh - 64px);
+    display: flex; align-items: center; justify-content: center;
+    background:
+      radial-gradient(90% 70% at 50% 42%, rgba(52,227,160,.05), transparent 65%),
+      var(--fbg);
+    padding: 64px clamp(24px, 4vw, 64px) 84px;
+  }
+  .fhero__canvas { position: absolute; inset: 0; z-index: 0; width: 100%; height: 100%; display: block; }
+  /* damp the core glow directly behind the copy so serif edges stay crisp */
+  .fhero__veil { position: absolute; inset: 0; z-index: 1; pointer-events: none;
+    background: radial-gradient(46% 34% at 50% 47%, rgba(5,7,8,.55), transparent 75%); }
+
+  .fhero__stage { position: relative; z-index: 2; text-align: center; max-width: 880px; display: flex; flex-direction: column; align-items: center; }
+  .fhero__eyebrow { font-size: 12.5px; letter-spacing: .26em; text-transform: uppercase; color: #5c6159; margin-bottom: 30px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; justify-content: center; }
+  .fhero__eyebrow b { color: var(--haccent); font-weight: 500; }
+  .fhero__h1 {
+    font-family: var(--font-serif); font-weight: 500; font-optical-sizing: auto;
+    font-size: clamp(56px, 8vw, 124px); line-height: .96; letter-spacing: -.03em;
+    color: #FAFAF7; text-wrap: balance;
+    text-shadow: 0 2px 40px rgba(5,7,8,.8);
+  }
+  .fhero__em {
+    font-style: italic; letter-spacing: -.012em;
+    color: transparent;
+    background: linear-gradient(92deg, #7df0bd 6%, var(--haccent) 46%, #ffd25e 108%);
+    -webkit-background-clip: text; background-clip: text;
+  }
+  .fhero__lede { margin-top: 30px; font-size: clamp(16.5px, 1.5vw, 20px); line-height: 1.6; color: #aeb4ab; max-width: 58ch; text-wrap: pretty; }
+  .fhero__lede strong { color: #f4f5f3; font-weight: 600; }
+  .fhero__ctas { display: flex; align-items: center; justify-content: center; gap: 14px; margin-top: 38px; flex-wrap: wrap; }
+  .fhero .btn--solid, .fhero .btn--ghost { height: 54px; padding: 0 30px; border-radius: 999px; font-size: 16px; }
+  .fhero .btn--ghost { border-color: rgba(255,255,255,.14); background: rgba(255,255,255,.02); }
+  .fhero .btn--ghost:hover { border-color: rgba(255,255,255,.34); background: rgba(255,255,255,.05); }
+  /* the transmutation readout — one quiet line, faded in per cycle */
+  .fhero__caption {
+    margin-top: 34px; font-size: 12px; letter-spacing: .08em; color: #7e857b;
+    min-height: 18px; animation: fh-cap .8s ease;
+  }
+  @keyframes fh-cap { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+
+  /* protocol sources — labeled medallions at the stream anchors */
+  .fhero__chips { position: absolute; inset: 0; z-index: 2; pointer-events: none; }
+  .fhero__chip {
+    position: absolute; transform: translate(-50%, -50%);
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 8px 14px; border-radius: 999px;
+    border: 1px solid color-mix(in srgb, var(--pc) 35%, transparent);
+    background: color-mix(in srgb, var(--pc) 7%, rgba(5,7,8,.72));
+    color: #cfd4cb; font-size: 12.5px; white-space: nowrap;
+    box-shadow: 0 0 24px color-mix(in srgb, var(--pc) 18%, transparent);
+    animation: fh-float 8s ease-in-out infinite;
+  }
+  .fhero__chip i { font-style: normal; font-weight: 700; color: var(--pc); }
+  .fhero__chip:nth-child(2) { animation-delay: -2s; }
+  .fhero__chip:nth-child(3) { animation-delay: -4s; }
+  .fhero__chip:nth-child(4) { animation-delay: -6s; }
+  .fhero__chip--dashed { border-style: dashed; }
+  @keyframes fh-float { 0%, 100% { transform: translate(-50%, -50%); } 50% { transform: translate(-50%, calc(-50% - 7px)); } }
+  .fhero__chiprow { display: none; }
+
+  /* the summoned live chat */
+  .fhero__livewrap {
+    position: fixed; right: 22px; bottom: 22px; z-index: 60;
+    width: min(410px, calc(100vw - 28px)); height: min(640px, calc(100svh - 90px));
+    display: flex; flex-direction: column; border-radius: 18px; overflow: hidden;
+    border: 1px solid rgba(52,227,160,.3); background: #0a0c0d;
+    box-shadow: 0 24px 80px rgba(0,0,0,.6), 0 0 48px rgba(52,227,160,.12);
+    animation: fh-live .28s cubic-bezier(.2,.7,.2,1);
+  }
+  @keyframes fh-live { from { opacity: 0; transform: translateY(14px) scale(.98); } to { opacity: 1; transform: none; } }
+  .fhero__livebar {
+    display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    padding: 10px 14px; border-bottom: 1px solid rgba(255,255,255,.09); background: rgba(255,255,255,.02);
+  }
+  .fhero__livebar span { display: inline-flex; align-items: center; gap: 8px; font-size: 11.5px; letter-spacing: .06em; color: var(--haccent); }
+  .fhero__livebar i { width: 6px; height: 6px; border-radius: 50%; background: var(--haccent); box-shadow: 0 0 8px var(--haccent); animation: pw-blink 1.8s infinite; }
+  .fhero__liveclose { color: var(--muted); font-size: 14px; padding: 4px 8px; border-radius: 8px; transition: color .15s, background .15s; }
+  .fhero__liveclose:hover { color: #fff; background: rgba(255,255,255,.07); }
+  .fhero__liveframe { flex: 1; width: 100%; border: 0; background: transparent; }
+
+  @media (max-width: 900px) {
+    .fhero { padding: 48px 20px 64px; }
+    .fhero__chips { display: none; }
+    .fhero__chiprow {
+      display: flex; flex-wrap: wrap; justify-content: center; gap: 8px;
+      position: absolute; left: 16px; right: 16px; bottom: 22px; z-index: 2;
+    }
+    .fhero__chip--flow { position: static; transform: none; animation: none; font-size: 11.5px; padding: 7px 11px; }
+    .fhero__caption { font-size: 11px; }
+  }
