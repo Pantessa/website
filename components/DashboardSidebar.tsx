@@ -37,23 +37,49 @@ export function isSectionActive(pathname: string, href: string, exact: boolean):
   return exact ? pathname === href : pathname.startsWith(href)
 }
 
-export default function DashboardSidebar({ pathname, address }: { pathname: string; address?: string | null }) {
+/** All sections visible to this wallet (admin rows appended on the allowlist). */
+export function sectionsFor(address?: string | null) {
+  return isAdminAddress(address) ? [...DASH_SECTIONS, ...ADMIN_SECTIONS] : DASH_SECTIONS
+}
+
+/**
+ * The label of the section the current path sits under — used by the mobile
+ * bar so "you are here" is always legible (the old horizontal-scroll row
+ * buried it). Picks the most specific match (longest matching href).
+ */
+export function currentSectionLabel(pathname: string, address?: string | null): string {
+  const match = sectionsFor(address)
+    .filter((s) => isSectionActive(pathname, s.href, s.exact))
+    .sort((a, b) => b.href.length - a.href.length)[0]
+  return match?.label ?? 'Dashboard'
+}
+
+export default function DashboardSidebar({
+  pathname,
+  address,
+  onNavigate,
+}: {
+  pathname: string
+  address?: string | null
+  /** Fired when a section link is tapped — the mobile drawer uses it to close. */
+  onNavigate?: () => void
+}) {
   const nav = useRef<HTMLElement>(null)
-  // On the mobile horizontal bar, keep the active section in view.
+  // Keep the active section in view (harmless on the vertical rail; matters
+  // when this list renders inside a scrollable mobile drawer).
   useEffect(() => {
     nav.current
       ?.querySelector('.is-on')
-      ?.scrollIntoView({ block: 'nearest', inline: 'center', behavior: 'instant' as ScrollBehavior })
+      ?.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'instant' as ScrollBehavior })
   }, [pathname])
-
-  const sections = isAdminAddress(address) ? [...DASH_SECTIONS, ...ADMIN_SECTIONS] : DASH_SECTIONS
 
   return (
     <nav className="dash__side" aria-label="Dashboard sections" ref={nav}>
-      {sections.map(({ href, label, icon: Icon, exact }) => (
+      {sectionsFor(address).map(({ href, label, icon: Icon, exact }) => (
         <Link
           key={href}
           href={href}
+          onClick={onNavigate}
           className={`dash__link mono ${isSectionActive(pathname, href, exact) ? 'is-on' : ''}`}
         >
           <Icon width={15} height={15} />
