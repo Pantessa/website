@@ -64,8 +64,8 @@ function Thumb({ kind }: { kind: string }) {
             <line className="tt-gate" x1="128" y1="20" x2="128" y2="66" />
             <path className="tt-deflect" d="M118 40 L126 56 L120 72" />
             <circle className="tt-red" cx="118" cy="40" r="3" />
-            <text className="tt-label tt-label--red" x="138" y="34">over-cap ⊘</text>
-            <text className="tt-label tt-label--red" x="138" y="46">dropped, not built</text>
+            <text className="tt-label tt-label--red" x="212" y="34" textAnchor="end">over-cap ⊘</text>
+            <text className="tt-label tt-label--red" x="212" y="46" textAnchor="end">dropped, not built</text>
           </g>
         )}
         {kind === 'receipt' && (
@@ -84,7 +84,7 @@ function Thumb({ kind }: { kind: string }) {
             <line className="tt-pausebar" x1="115" y1="36" x2="115" y2="44" />
             <line className="tt-pausebar" x1="121" y1="36" x2="121" y2="44" />
             <path className="tt-after" d="M134 38 L168 30 L196 34" />
-            <text className="tt-label tt-label--amber" x="106" y="66">paused · reversible</text>
+            <text className="tt-label tt-label--amber" x="212" y="66" textAnchor="end">paused · reversible</text>
           </g>
         )}
         {kind === 'rep' && (
@@ -95,7 +95,7 @@ function Thumb({ kind }: { kind: string }) {
             <circle className="tt-node" cx="142" cy="22" r="4.5" />
             <circle className="tt-riser" cx="96" cy="52" r="2.4" />
             <circle className="tt-riser" cx="54" cy="62" r="2.4" />
-            <text className="tt-label" x="152" y="40">proven ↑</text>
+            <text className="tt-label" x="212" y="44" textAnchor="end">proven ↑</text>
           </g>
         )}
       </svg>
