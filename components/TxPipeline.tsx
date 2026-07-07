@@ -47,22 +47,22 @@ export default function TxPipeline() {
               <span className="txp__vmark mono" style={{ ['--pc' as string]: '#FF6BAF' }}>
                 <i>U</i> Uniswap
               </span>
-              <span className="txp__vmark mono" style={{ ['--pc' as string]: '#7AA7FF' }}>
-                <i>C</i> CoW
+              <span className="txp__vmark mono" style={{ ['--pc' as string]: '#FFC94D' }}>
+                <i>⚡</i> Snapshot
               </span>
             </span>
           </div>
           <div className="txp__vbody">
-            <div className="txp__vuser">Swap 100 USDC → WETH, best price</div>
+            <div className="txp__vuser">Swap 100 USDC → WETH, then vote FOR the proposal</div>
             <div className="txp__vcard">
               <div className="txp__vrow mono">
-                <span className="txp__vkind">⇄ CoW order built</span>
+                <span className="txp__vkind">⇄ swap built on Uniswap</span>
                 <span className="txp__vamt">min 0.0521 WETH</span>
               </div>
               <div className="txp__vguard mono">✓ guardrails · under your $5/day cap</div>
               <span className="txp__vsign">✍ Sign in your wallet</span>
             </div>
-            <div className="txp__vreceipt mono">✓ receipted · tx 0x9f2e…41c7 · Basescan ↗</div>
+            <div className="txp__vreceipt mono">🗳 vote cast on Snapshot · ✓ receipted · tx 0x9f2e…41c7 ↗</div>
           </div>
         </div>
       </div>

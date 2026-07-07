@@ -42,12 +42,12 @@ const TILES: { kind: 'guard' | 'receipt' | 'kill' | 'rep'; t: string; d: string;
 function Field() {
   return (
     <g className="tt-field">
-      <circle cx="24" cy="44" r="2" />
-      <circle cx="62" cy="18" r="2" />
-      <circle cx="104" cy="38" r="2" />
-      <circle cx="148" cy="14" r="2" />
-      <circle cx="182" cy="42" r="2" />
-      <path d="M24 44 L62 18 L104 38 L148 14 L182 42" />
+      <circle cx="24" cy="58" r="2" />
+      <circle cx="62" cy="24" r="2" />
+      <circle cx="104" cy="50" r="2" />
+      <circle cx="148" cy="18" r="2" />
+      <circle cx="182" cy="56" r="2" />
+      <path d="M24 58 L62 24 L104 50 L148 18 L182 56" />
     </g>
   )
 }
@@ -55,46 +55,46 @@ function Field() {
 function Thumb({ kind }: { kind: string }) {
   return (
     <div className="trust__thumb" aria-hidden="true">
-      <svg viewBox="0 0 220 64" preserveAspectRatio="xMidYMid slice">
+      <svg viewBox="0 0 220 88" preserveAspectRatio="xMidYMid slice">
         <Field />
         {kind === 'guard' && (
           <g>
             {/* the route runs at the gate — and gets dropped, not built */}
-            <path className="tt-route" d="M10 46 L70 40 L118 30" />
-            <line className="tt-gate" x1="128" y1="14" x2="128" y2="50" />
-            <path className="tt-deflect" d="M118 30 L126 44 L120 56" />
-            <circle className="tt-red" cx="118" cy="30" r="3" />
-            <text className="tt-label tt-label--red" x="136" y="24">over-cap ⊘ dropped</text>
+            <path className="tt-route" d="M10 62 L70 54 L118 40" />
+            <line className="tt-gate" x1="128" y1="20" x2="128" y2="66" />
+            <path className="tt-deflect" d="M118 40 L126 56 L120 72" />
+            <circle className="tt-red" cx="118" cy="40" r="3" />
+            <text className="tt-label tt-label--red" x="112" y="16">over-cap ⊘ dropped</text>
           </g>
         )}
         {kind === 'receipt' && (
           <g>
-            <path className="tt-route" d="M10 50 L58 44 L102 46 L156 18" />
-            <circle className="tt-glow" cx="156" cy="18" r="10" />
-            <circle className="tt-node" cx="156" cy="18" r="4.5" />
-            <text className="tt-label" x="132" y="40">402 → 200</text>
+            <path className="tt-route" d="M10 66 L58 58 L102 62 L156 26" />
+            <circle className="tt-glow" cx="156" cy="26" r="11" />
+            <circle className="tt-node" cx="156" cy="26" r="4.5" />
+            <text className="tt-label" x="128" y="50">402 → 200</text>
           </g>
         )}
         {kind === 'kill' && (
           <g>
             {/* a live route, frozen mid-flight — reversibly */}
-            <path className="tt-route" d="M10 44 L64 38 L104 32" />
-            <circle className="tt-pausering" cx="118" cy="30" r="9" />
-            <line className="tt-pausebar" x1="115" y1="26" x2="115" y2="34" />
-            <line className="tt-pausebar" x1="121" y1="26" x2="121" y2="34" />
-            <path className="tt-after" d="M132 28 L168 22 L196 26" />
-            <text className="tt-label tt-label--amber" x="132" y="48">paused · reversible</text>
+            <path className="tt-route" d="M10 58 L64 50 L104 42" />
+            <circle className="tt-pausering" cx="118" cy="40" r="10" />
+            <line className="tt-pausebar" x1="115" y1="36" x2="115" y2="44" />
+            <line className="tt-pausebar" x1="121" y1="36" x2="121" y2="44" />
+            <path className="tt-after" d="M134 38 L168 30 L196 34" />
+            <text className="tt-label tt-label--amber" x="106" y="66">paused · reversible</text>
           </g>
         )}
         {kind === 'rep' && (
           <g>
             {/* the proven route rises above the field */}
-            <path className="tt-route" d="M10 52 L54 48 L96 40 L142 16" />
-            <circle className="tt-glow" cx="142" cy="16" r="10" />
-            <circle className="tt-node" cx="142" cy="16" r="4.5" />
-            <circle className="tt-riser" cx="96" cy="40" r="2.4" />
-            <circle className="tt-riser" cx="54" cy="48" r="2.4" />
-            <text className="tt-label" x="152" y="30">proven ↑</text>
+            <path className="tt-route" d="M10 68 L54 62 L96 52 L142 22" />
+            <circle className="tt-glow" cx="142" cy="22" r="11" />
+            <circle className="tt-node" cx="142" cy="22" r="4.5" />
+            <circle className="tt-riser" cx="96" cy="52" r="2.4" />
+            <circle className="tt-riser" cx="54" cy="62" r="2.4" />
+            <text className="tt-label" x="152" y="40">proven ↑</text>
           </g>
         )}
       </svg>

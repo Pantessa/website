@@ -2174,7 +2174,7 @@
   }
 
   /* ── TX layer: split copy | embed still ───────────── */
-  .txp__grid { display: grid; grid-template-columns: minmax(0, 7fr) minmax(0, 5fr); gap: clamp(32px, 5vw, 80px); align-items: center; }
+  .txp__grid { display: grid; grid-template-columns: minmax(0, 7fr) minmax(0, 5fr); gap: clamp(32px, 4vw, 64px); align-items: center; max-width: 1220px; }
   .txp__steps { list-style: none; margin-top: 34px; display: flex; flex-direction: column; }
   .txp__step { display: flex; align-items: baseline; gap: 16px; padding: 13px 0; border-bottom: 1px dashed rgba(255,255,255,.07); }
   .txp__step:last-child { border-bottom: 0; }
@@ -2213,7 +2213,7 @@
 
   /* ── trust-tile thumbs: blog-constellation micro-stories ─────────────── */
   .trust__thumb {
-    margin: -18px -18px 14px; height: 76px; overflow: hidden;
+    margin: -18px -18px 14px; height: 116px; overflow: hidden;
     border-bottom: 1px solid rgba(255,255,255,.05);
     background: radial-gradient(80% 120% at 70% 0%, rgba(52,227,160,.05), transparent 70%);
   }
