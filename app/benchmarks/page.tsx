@@ -1,4 +1,5 @@
 import type { Metadata } from 'next'
+import Link from 'next/link'
 import prisma from '@/lib/db'
 import Footer from '@/components/Footer'
 import { computeReputation } from '@/lib/reputation'
@@ -69,7 +70,8 @@ export default async function BenchmarksPage() {
             Yeetful&apos;s own routing-engine tools — transaction building, governance, and the hosted MCPs — graded on
             real calls: success rate, failures, latency, and live incidents. No fabricated numbers; an untested tool
             reads <strong>Not tested yet</strong>, never a fake green. Below, the full x402 directory ranked by earned
-            reputation.
+            reputation. For usage, routability, and unresolved failures fused into one score, see{' '}
+            <Link href="/health">MCP Health</Link>.
           </p>
         </header>
 
