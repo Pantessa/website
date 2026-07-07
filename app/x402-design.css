@@ -2174,7 +2174,21 @@
   }
 
   /* ── TX layer: split copy | embed still ───────────── */
-  .txp__grid { display: grid; grid-template-columns: minmax(0, 7fr) minmax(0, 5fr); gap: clamp(32px, 4vw, 64px); align-items: center; max-width: 1220px; }
+  .txp__grid { display: grid; grid-template-columns: minmax(0, 7fr) minmax(0, 5fr); gap: clamp(32px, 4vw, 64px); align-items: center; max-width: 1220px; margin: 0 auto; }
+  /* the learning loop under the still — usage → suggestion → back to the top */
+  .txp__loopline { width: 1px; height: 26px; margin-left: 34px; background: linear-gradient(to bottom, rgba(52,227,160,.4), rgba(52,227,160,.08)); }
+  .txp__loop {
+    border: 1px dashed color-mix(in oklch, var(--accent) 32%, var(--line)); border-radius: 14px;
+    padding: 14px 16px; background: color-mix(in oklch, var(--accent) 3%, transparent);
+    display: flex; flex-direction: column; gap: 7px;
+  }
+  .txp__loophead { display: flex; align-items: center; justify-content: space-between; font-size: 10px; letter-spacing: .16em; color: var(--accent); }
+  .txp__loopback { font-size: 14px; letter-spacing: 0; animation: tt-pulse 2.8s ease-in-out infinite; }
+  .txp__looprow { font-size: 11.5px; line-height: 1.5; }
+  .txp__loopdead { color: #ffb86b; }
+  .txp__loopfix { color: var(--fg); }
+  .txp__loopfix b { color: var(--accent); }
+  .txp__loopcta { font-size: 10.5px; letter-spacing: .06em; color: var(--muted-2); }
   .txp__steps { list-style: none; margin-top: 34px; display: flex; flex-direction: column; }
   .txp__step { display: flex; align-items: baseline; gap: 16px; padding: 13px 0; border-bottom: 1px dashed rgba(255,255,255,.07); }
   .txp__step:last-child { border-bottom: 0; }

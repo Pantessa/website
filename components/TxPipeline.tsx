@@ -9,6 +9,7 @@ const STOPS: { t: string; d: string }[] = [
   { t: 'Guardrails', d: 'Re-fired per step. Over-cap gets dropped, not built.' },
   { t: 'Sign', d: 'Your wallet pops. We never hold keys.' },
   { t: 'Receipt', d: 'Tx hash on every settlement, in a public ledger.' },
+  { t: 'Learn', d: 'Every dead-end conversation becomes an upgrade suggestion for your MCPs.' },
 ]
 
 export default function TxPipeline() {
@@ -22,8 +23,9 @@ export default function TxPipeline() {
             transaction.
           </h2>
           <p className="txp__sub">
-            An agent that moves money should have to show its work. This one does — every step,
-            every time, on every site it&rsquo;s embedded in.
+            An agent that moves money should show its work — and learn from it. Every step
+            receipted on every site it&rsquo;s embedded in; every miss studied, so your set gets
+            sharper the more people use it.
           </p>
           <ol className="txp__steps">
             {STOPS.map((s, i) => (
@@ -63,6 +65,23 @@ export default function TxPipeline() {
               <span className="txp__vsign">✍ Sign in your wallet</span>
             </div>
             <div className="txp__vreceipt mono">🗳 vote cast on Snapshot · ✓ receipted · tx 0x9f2e…41c7 ↗</div>
+          </div>
+
+          {/* the loop closes: usage feeds the owner's analytics, analytics
+              feed upgrade suggestions, upgrades feed more signed txs */}
+          <div className="txp__loopline" />
+          <div className="txp__loop">
+            <div className="txp__loophead mono">
+              <span>IT LEARNS FROM YOUR USERS</span>
+              <span className="txp__loopback" aria-hidden="true">⟲</span>
+            </div>
+            <div className="txp__looprow mono">
+              <span className="txp__loopdead">dead end · &ldquo;what&rsquo;s my balance on Base?&rdquo;</span>
+            </div>
+            <div className="txp__looprow mono">
+              <span className="txp__loopfix">→ suggested: add a <b>balances</b> tool to your MCP</span>
+            </div>
+            <span className="txp__loopcta mono">Deep analytics &amp; MCP upgrade prompts → your dashboard</span>
           </div>
         </div>
       </div>
