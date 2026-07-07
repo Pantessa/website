@@ -321,7 +321,15 @@
     text-wrap: balance;
   }
   .hero__h1--sm { font-size: clamp(2.4rem, 4.4vw, 3.8rem); line-height: 1.02; max-width: 15ch; }
-  .hero__em { color: var(--muted-2); font-style: italic; }
+  /* Emphasis word — the hero's emerald→gold gradient, kept italic, so every
+     secondary page (benchmarks, tools, docs, activity, servers) speaks the
+     landing's visual language. Was grey. */
+  .hero__em {
+    font-style: italic;
+    color: transparent;
+    background: linear-gradient(92deg, #7df0bd 6%, #34e3a0 46%, #ffd25e 108%);
+    -webkit-background-clip: text; background-clip: text;
+  }
   .hero__sub {
     margin-top: 26px; font-size: clamp(1rem, 1.4vw, 1.18rem); color: var(--muted);
     max-width: 46ch; line-height: 1.55; text-wrap: pretty;
@@ -2125,7 +2133,12 @@
     font-size: clamp(2.6rem, 5vw, 4.4rem); line-height: 1.02; letter-spacing: -0.018em;
     margin-top: 14px; color: var(--fg); text-wrap: balance;
   }
-  .pricing__em { font-style: italic; color: var(--muted-2); }
+  .pricing__em {
+    font-style: italic;
+    color: transparent;
+    background: linear-gradient(92deg, #7df0bd 6%, #34e3a0 46%, #ffd25e 108%);
+    -webkit-background-clip: text; background-clip: text;
+  }
   .pricing__sub { margin-top: 18px; font-size: 15.5px; line-height: 1.6; color: var(--muted); text-wrap: pretty; }
   .pricing__sub strong { color: var(--fg); font-weight: 600; }
 
