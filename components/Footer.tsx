@@ -131,7 +131,7 @@ export default function Footer() {
 
       {/* Oversized wordmark bleeding off the bottom edge */}
       <div className="footer__wordmark" aria-hidden>
-        yeetful
+        <span>yeetful</span>
       </div>
     </footer>
   )

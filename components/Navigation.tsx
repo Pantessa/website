@@ -11,6 +11,8 @@ import { useYeetfulStore } from '@/lib/store'
 import ConnectWallet from '@/components/ConnectWallet'
 import AuthButton from '@/components/AuthButton'
 import CreateAccountButton from '@/components/CreateAccountButton'
+import NavResearch, { RESEARCH_ITEMS } from '@/components/NavResearch'
+import NavAccount from '@/components/NavAccount'
 import { cdpEnabled } from '@/lib/cdp-embedded'
 import { YeetfulMark } from '@/components/Logo'
 
@@ -48,7 +50,7 @@ export default function Navigation() {
   // Stripe-style portal split: the marketing shell (brochure tabs) lives on
   // yeetful.com; once inside /dashboard the top nav drops the brochure tabs —
   // navigation moves to the dashboard's left rail. A signed-in (or
-  // wallet-connected) visitor on the brochure sees a "Dashboard" button.
+  // wallet-connected) visitor on the brochure sees the account control.
   const { address: sessionAddress } = useSession()
 
   // /embed renders inside third-party iframes — no site chrome at all.
@@ -70,14 +72,28 @@ export default function Navigation() {
   const signInPill =
     'inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-white/5 border border-white/15 text-zinc-200 text-xs font-semibold hover:bg-white/10 hover:border-white/25 transition-colors'
 
-  // The auth/connect cluster, shared by the desktop bar + mobile drawer.
-  // Mount-gated by the callers (so SSR stays hydration-safe).
-  // - chat: plain ConnectWallet (+ email option / sign-in chip when relevant).
-  // - disconnected elsewhere: ONE "Sign in". With CDP it opens the unified modal
-  //   (email step up front + "Connect a wallet"); without CDP it's the direct
-  //   wallet connect+sign.
-  // - connected/authed: the Sign-in/Signed-in chip + the account pill.
-  const authCluster = onChat ? (
+  // The disconnected sign-in affordance (one control) — shared everywhere.
+  const disconnectedCta = cdpEnabled ? (
+    <CreateAccountButton
+      className={signInPill}
+      label={
+        <>
+          <LogIn className="w-3.5 h-3.5" strokeWidth={2.5} /> Sign in
+        </>
+      }
+      redirectTo="/dashboard"
+    />
+  ) : (
+    <AuthButton />
+  )
+
+  // DESKTOP account cluster (top bar):
+  // - chat: plain ConnectWallet (+ sign-in chip) — paying, not identity.
+  // - disconnected: one "Sign in" / "Create account".
+  // - connected / signed in: ONE consolidated account pill (NavAccount) that
+  //   folds Dashboard + wallet + sign-out into a single dropdown. This kills
+  //   the old "Signed in chip + separate wallet pill + Dashboard button" triple.
+  const desktopAccount = onChat ? (
     <>
       {disconnected && showCreateAccount && (
         <CreateAccountButton className={createAccountPill} label="Create account" />
@@ -86,19 +102,23 @@ export default function Navigation() {
       {isConnected && <AuthButton />}
     </>
   ) : disconnected ? (
-    cdpEnabled ? (
-      <CreateAccountButton
-        className={signInPill}
-        label={
-          <>
-            <LogIn className="w-3.5 h-3.5" strokeWidth={2.5} /> Sign in
-          </>
-        }
-        redirectTo="/dashboard"
-      />
-    ) : (
-      <AuthButton />
-    )
+    disconnectedCta
+  ) : (
+    <NavAccount />
+  )
+
+  // MOBILE drawer account cluster — the drawer has room, so it stays explicit
+  // (Dashboard link + auth + wallet) rather than the collapsed desktop pill.
+  const drawerAccount = onChat ? (
+    <>
+      {disconnected && showCreateAccount && (
+        <CreateAccountButton className={createAccountPill} label="Create account" />
+      )}
+      <ConnectWallet />
+      {isConnected && <AuthButton />}
+    </>
+  ) : disconnected ? (
+    disconnectedCta
   ) : (
     <>
       <AuthButton />
@@ -112,7 +132,9 @@ export default function Navigation() {
     </Link>
   ) : null
 
-  const tabs = (
+  // Desktop primary tabs — the three "engine, examined" surfaces (Benchmarks,
+  // Tools, Activity) collapse into the Research mega-menu.
+  const desktopTabs = (
     <>
       <Link href="/" className={`nav__tab ${pathname === '/' ? 'is-on' : ''}`}>
         Router
@@ -120,19 +142,11 @@ export default function Navigation() {
       <Link href="/servers" className={`nav__tab ${pathname.startsWith('/servers') ? 'is-on' : ''}`}>
         Servers
       </Link>
-      <Link href="/benchmarks" className={`nav__tab ${pathname.startsWith('/benchmarks') ? 'is-on' : ''}`}>
-        Benchmarks
-      </Link>
-      <Link href="/tools" className={`nav__tab ${pathname.startsWith('/tools') ? 'is-on' : ''}`}>
-        Tools
-      </Link>
       <Link href="/chat" className={`nav__tab ${pathname === '/chat' ? 'is-on' : ''}`}>
         Chat
         {activeCount > 0 && <span className="nav__badge mono">{activeCount}</span>}
       </Link>
-      <Link href="/activity" className={`nav__tab ${pathname === '/activity' ? 'is-on' : ''}`}>
-        Activity
-      </Link>
+      <NavResearch />
       <Link href="/pricing" className={`nav__tab ${pathname.startsWith('/pricing') ? 'is-on' : ''}`}>
         Pricing
       </Link>
@@ -140,6 +154,43 @@ export default function Navigation() {
         Docs
       </Link>
       <Link href="/blog" className={`nav__tab ${pathname.startsWith('/blog') ? 'is-on' : ''}`}>
+        Blog
+      </Link>
+    </>
+  )
+
+  // Drawer tabs — same destinations, but Research expands into a labeled group
+  // so every surface stays one tap away on mobile.
+  const drawerTabs = (
+    <>
+      <Link href="/" className={`nav__tab ${pathname === '/' ? 'is-on' : ''}`}>
+        Router
+      </Link>
+      <Link href="/servers" className={`nav__tab ${pathname.startsWith('/servers') ? 'is-on' : ''}`}>
+        Servers
+      </Link>
+      <Link href="/chat" className={`nav__tab ${pathname === '/chat' ? 'is-on' : ''}`}>
+        Chat
+        {activeCount > 0 && <span className="nav__badge mono">{activeCount}</span>}
+      </Link>
+      <span className="drawer__group mono">Research</span>
+      {RESEARCH_ITEMS.map(({ href, label }) => (
+        <Link
+          key={href}
+          href={href}
+          className={`nav__tab drawer__sub ${pathname.startsWith(href) ? 'is-on' : ''}`}
+        >
+          {label}
+        </Link>
+      ))}
+      <span className="drawer__group mono">More</span>
+      <Link href="/pricing" className={`nav__tab drawer__sub ${pathname.startsWith('/pricing') ? 'is-on' : ''}`}>
+        Pricing
+      </Link>
+      <Link href="/docs" className={`nav__tab drawer__sub ${pathname.startsWith('/docs') ? 'is-on' : ''}`}>
+        Docs
+      </Link>
+      <Link href="/blog" className={`nav__tab drawer__sub ${pathname.startsWith('/blog') ? 'is-on' : ''}`}>
         Blog
       </Link>
     </>
@@ -157,17 +208,10 @@ export default function Navigation() {
 
         {/* Brochure tabs only outside the dashboard — inside, the left rail
             owns navigation (Stripe-style). */}
-        {!inDashboard && <nav className="nav__tabs">{tabs}</nav>}
+        {!inDashboard && <nav className="nav__tabs">{desktopTabs}</nav>}
 
         <div className="nav__right">
-          {!inDashboard && (
-            <span className="nav__status">
-              <span className="nav__statusdot" />
-              <span className="mono">{activeCount} active</span>
-            </span>
-          )}
-          {!inDashboard && dashboardCta}
-          {mounted && authCluster}
+          {!inDashboard && mounted && desktopAccount}
           {!inDashboard && (
             <button
               className="nav__burger"
@@ -191,10 +235,10 @@ export default function Navigation() {
           <div className="drawer">
             <button className="drawer__backdrop" aria-label="Close menu" onClick={() => setOpen(false)} />
             <div className="drawer__panel" role="dialog" aria-label="Navigation">
-              <nav className="drawer__tabs">{tabs}</nav>
+              <nav className="drawer__tabs">{drawerTabs}</nav>
               <div className="drawer__foot">
                 {dashboardCta}
-                {authCluster}
+                {drawerAccount}
               </div>
             </div>
           </div>,
