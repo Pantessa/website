@@ -421,7 +421,7 @@
   }
 
   /* ── LANDING ANALYTICS (we track spending + earning agents) ── */
-  .swstats { padding: 56px 0; border-top: 1px solid var(--line); }
+  .swstats { padding: clamp(88px, 11vh, 132px) 0 72px; }
   .swstats__eyebrow { font-size: 12px; letter-spacing: 0.18em; color: var(--muted-2); }
   .swstats__h2 {
     font-family: var(--font-serif); font-weight: 500; font-optical-sizing: auto;
@@ -449,7 +449,7 @@
   }
 
   /* ── SWITCHBOARD PROOF (real routed turns, in the open) ── */
-  .swproof { padding: 56px 0; border-top: 1px solid var(--line); }
+  .swproof { padding: clamp(88px, 11vh, 132px) 0 72px; }
   .swproof__eyebrow { font-size: 12px; letter-spacing: 0.18em; color: var(--muted-2); }
   .swproof__h2 { font-family: var(--font-serif); font-weight: 500; font-optical-sizing: auto; font-size: clamp(28px, 3.6vw, 42px); letter-spacing: -0.012em; line-height: 1.06; margin-top: 12px; color: var(--fg); }
   .swproof__sub { margin-top: 14px; max-width: 56ch; font-size: 15px; line-height: 1.55; color: var(--muted); text-wrap: pretty; }
@@ -470,7 +470,7 @@
   }
 
   /* ── SWITCHBOARD SERVERS PREVIEW (2 rows + see all) ── */
-  .swsrv { padding: 56px 0; border-top: 1px solid var(--line); }
+  .swsrv { padding: clamp(88px, 11vh, 132px) 0 72px; }
   .swsrv__head { display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; flex-wrap: wrap; margin-bottom: 26px; }
   .swsrv__eyebrow { font-size: 12px; letter-spacing: 0.18em; color: var(--muted-2); }
   .swsrv__h2 { font-family: var(--font-serif); font-weight: 500; font-optical-sizing: auto; font-size: clamp(28px, 3.6vw, 42px); letter-spacing: -0.012em; line-height: 1.06; margin-top: 12px; color: var(--fg); }
@@ -1868,7 +1868,7 @@
   .asw-set span { font-size: 11px; padding: 3px 9px; border-radius: 999px; border: 1px solid rgba(52,227,160,.25); color: var(--haccent); background: rgba(52,227,160,.05); }
 
   /* ── COMPOSE YOUR SET (recipes) ─────────────────── */
-  .compose { padding: 64px 0 56px; }
+  .compose { padding: clamp(88px, 11vh, 132px) 0 72px; }
   .compose__eyebrow { font-size: 12px; letter-spacing: 0.18em; color: var(--muted-2); }
   .compose__h2 { font-family: var(--font-serif); font-weight: 500; font-optical-sizing: auto; font-size: clamp(28px, 3.6vw, 42px); letter-spacing: -0.012em; line-height: 1.06; margin-top: 12px; color: var(--fg); }
   .compose__sub { margin-top: 14px; max-width: 58ch; font-size: 15px; line-height: 1.55; color: var(--muted); text-wrap: pretty; }
@@ -1894,7 +1894,7 @@
   @media (max-width: 640px) { .compose__grid { grid-template-columns: 1fr; } }
 
   /* ── TX PIPELINE (the edge) ─────────────────────── */
-  .txp { padding: 56px 0; border-top: 1px solid var(--line); }
+  .txp { padding: clamp(88px, 11vh, 132px) 0 72px; }
   .txp__eyebrow { font-size: 12px; letter-spacing: 0.18em; color: var(--muted-2); }
   .txp__h2 { font-family: var(--font-serif); font-weight: 500; font-optical-sizing: auto; font-size: clamp(28px, 3.6vw, 42px); letter-spacing: -0.012em; line-height: 1.06; margin-top: 12px; color: var(--fg); max-width: 24ch; }
   .txp__sub { margin-top: 14px; max-width: 56ch; font-size: 15px; line-height: 1.55; color: var(--muted); text-wrap: pretty; }
@@ -1906,7 +1906,7 @@
   @media (max-width: 1080px) { .txp__rail { grid-template-columns: 1fr; } }
 
   /* ── EMBED ANYWHERE ─────────────────────────────── */
-  .embeda { padding: 56px 0; border-top: 1px solid var(--line); }
+  .embeda { padding: clamp(88px, 11vh, 132px) 0 72px; }
   .embeda__eyebrow { font-size: 12px; letter-spacing: 0.18em; color: var(--muted-2); }
   .embeda__h2 { font-family: var(--font-serif); font-weight: 500; font-optical-sizing: auto; font-size: clamp(28px, 3.6vw, 42px); letter-spacing: -0.012em; line-height: 1.06; margin-top: 12px; color: var(--fg); }
   .embeda__sub { margin-top: 14px; max-width: 62ch; font-size: 15px; line-height: 1.6; color: var(--muted); text-wrap: pretty; }
@@ -1934,7 +1934,7 @@
   @media (max-width: 1023px) { .embeda__grid { grid-template-columns: 1fr; } }
 
   /* ── TRUST LAYER ────────────────────────────────── */
-  .trust { padding: 56px 0; border-top: 1px solid var(--line); }
+  .trust { padding: clamp(88px, 11vh, 132px) 0 72px; }
   .trust__eyebrow { font-size: 12px; letter-spacing: 0.18em; color: var(--muted-2); }
   .trust__h2 { font-family: var(--font-serif); font-weight: 500; font-optical-sizing: auto; font-size: clamp(28px, 3.6vw, 42px); letter-spacing: -0.012em; line-height: 1.06; margin-top: 12px; color: var(--fg); }
   .trust__grid { margin-top: 30px; display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
@@ -2148,3 +2148,113 @@
     .fhero__chip--flow { position: static; transform: none; animation: none; font-size: 11.5px; padding: 7px 11px; }
     .fhero__caption { font-size: 11px; }
   }
+
+
+  /* ══ LANDING AUDIT (2026-07) — gradient thread, breath, texture ═══════
+     The hero's emerald→gold gradient recurs on one key word per section
+     (.x-grad); hairline dividers are gone in favor of a faint mist at each
+     section's top edge; sections breathe (~2x vertical rhythm). */
+  .x-grad {
+    color: transparent;
+    background: linear-gradient(92deg, #7df0bd 6%, #34e3a0 46%, #ffd25e 108%);
+    -webkit-background-clip: text; background-clip: text;
+  }
+  /* texture break: a soft emerald mist + a whisper of dotted field where a
+     border-top used to be — visible only as a change in air, not a line */
+  .compose, .txp, .embeda, .trust, .swsrv, .swproof, .swstats { position: relative; }
+  .compose::before, .txp::before, .embeda::before, .trust::before, .swsrv::before, .swproof::before, .swstats::before {
+    content: ''; position: absolute; top: 0; left: 50%; transform: translateX(-50%);
+    width: min(100%, 1100px); height: 120px; pointer-events: none;
+    background:
+      radial-gradient(60% 100% at 50% 0, rgba(52,227,160,.05), transparent 75%),
+      radial-gradient(1.5px 1.5px at 20% 30%, rgba(255,255,255,.09), transparent 100%),
+      radial-gradient(1px 1px at 65% 55%, rgba(52,227,160,.14), transparent 100%),
+      radial-gradient(1.2px 1.2px at 84% 22%, rgba(255,210,94,.12), transparent 100%),
+      radial-gradient(1px 1px at 42% 70%, rgba(255,255,255,.07), transparent 100%);
+  }
+
+  /* ── TX layer: split copy | embed still ───────────── */
+  .txp__grid { display: grid; grid-template-columns: minmax(0, 7fr) minmax(0, 5fr); gap: clamp(32px, 4vw, 64px); align-items: center; max-width: 1220px; margin: 0 auto; }
+  /* the learning loop under the still — usage → suggestion → back to the top */
+  .txp__loopline { width: 1px; height: 26px; margin-left: 34px; background: linear-gradient(to bottom, rgba(52,227,160,.4), rgba(52,227,160,.08)); }
+  .txp__loop {
+    border: 1px dashed color-mix(in oklch, var(--accent) 32%, var(--line)); border-radius: 14px;
+    padding: 14px 16px; background: color-mix(in oklch, var(--accent) 3%, transparent);
+    display: flex; flex-direction: column; gap: 7px;
+  }
+  .txp__loophead { display: flex; align-items: center; justify-content: space-between; font-size: 10px; letter-spacing: .16em; color: var(--accent); }
+  .txp__loopback { font-size: 14px; letter-spacing: 0; animation: tt-pulse 2.8s ease-in-out infinite; }
+  .txp__looprow { font-size: 11.5px; line-height: 1.5; }
+  .txp__loopdead { color: #ffb86b; }
+  .txp__loopfix { color: var(--fg); }
+  .txp__loopfix b { color: var(--accent); }
+  .txp__loopcta { font-size: 10.5px; letter-spacing: .06em; color: var(--muted-2); }
+  .txp__steps { list-style: none; margin-top: 34px; display: flex; flex-direction: column; }
+  .txp__step { display: flex; align-items: baseline; gap: 16px; padding: 13px 0; border-bottom: 1px dashed rgba(255,255,255,.07); }
+  .txp__step:last-child { border-bottom: 0; }
+  .txp__stepbody { font-size: 14.5px; line-height: 1.5; color: var(--muted); text-wrap: pretty; }
+  .txp__stepbody strong { color: var(--fg); font-weight: 600; margin-right: 8px; font-family: 'Archivo', sans-serif; letter-spacing: -.01em; }
+
+  .txp__visual {
+    border: 1px solid rgba(255,255,255,.09); border-radius: 20px; overflow: hidden;
+    background: linear-gradient(165deg, rgba(52,227,160,.05), rgba(10,12,13,.9) 40%);
+    box-shadow: 0 28px 80px rgba(0,0,0,.5), 0 0 44px rgba(52,227,160,.07);
+  }
+  .txp__vhead { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 12px 16px; border-bottom: 1px solid rgba(255,255,255,.07); flex-wrap: wrap; }
+  .txp__vbrand { display: inline-flex; align-items: center; gap: 8px; font-size: 11.5px; letter-spacing: .06em; color: var(--accent); }
+  .txp__vbrand i { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 8px var(--accent); animation: pw-blink 1.8s infinite; }
+  .txp__vmarks { display: inline-flex; gap: 7px; }
+  .txp__vmark {
+    display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px;
+    font-size: 11px; color: #cfd4cb;
+    border: 1px solid color-mix(in srgb, var(--pc) 35%, transparent);
+    background: color-mix(in srgb, var(--pc) 8%, transparent);
+  }
+  .txp__vmark i { font-style: normal; font-weight: 700; color: var(--pc); }
+  .txp__vbody { padding: 18px 16px 20px; display: flex; flex-direction: column; gap: 12px; }
+  .txp__vuser { align-self: flex-end; max-width: 85%; padding: 9px 14px; border-radius: 14px 14px 4px 14px; background: rgba(52,227,160,.85); color: #04110b; font-size: 13.5px; font-weight: 500; }
+  .txp__vcard { border: 1px solid rgba(255,255,255,.09); border-radius: 14px; padding: 13px 14px; background: rgba(255,255,255,.02); display: flex; flex-direction: column; gap: 9px; }
+  .txp__vrow { display: flex; justify-content: space-between; gap: 10px; font-size: 12.5px; color: var(--fg); flex-wrap: wrap; }
+  .txp__vamt { color: var(--accent); }
+  .txp__vguard { font-size: 11px; color: #ffd98a; letter-spacing: .04em; }
+  .txp__vsign { align-self: flex-start; padding: 8px 16px; border-radius: 999px; background: var(--accent); color: #04110b; font-size: 12.5px; font-weight: 600; box-shadow: 0 0 18px rgba(52,227,160,.3); }
+  .txp__vreceipt { font-size: 11px; color: var(--muted-2); letter-spacing: .05em; }
+  @media (max-width: 1023px) {
+    .txp__grid { grid-template-columns: 1fr; }
+    .txp__visual { max-width: 460px; }
+  }
+
+
+  /* ── trust-tile thumbs: blog-constellation micro-stories ─────────────── */
+  .trust__thumb {
+    margin: -18px -18px 14px; height: 116px; overflow: hidden;
+    border-bottom: 1px solid rgba(255,255,255,.05);
+    background: radial-gradient(80% 120% at 70% 0%, rgba(52,227,160,.05), transparent 70%);
+  }
+  .trust__thumb svg { width: 100%; height: 100%; display: block; }
+  .tt-field circle { fill: rgba(255,255,255,.22); }
+  .tt-field path { fill: none; stroke: rgba(255,255,255,.08); stroke-width: 1; }
+  .tt-route {
+    fill: none; stroke: var(--accent); stroke-width: 1.3; opacity: .85;
+    stroke-dasharray: 4 5; animation: tt-dash 2.6s linear infinite;
+  }
+  @keyframes tt-dash { to { stroke-dashoffset: -18; } }
+  .tt-label { font-family: var(--font-mono); font-size: 8.5px; letter-spacing: .08em; fill: var(--accent); }
+  .tt-label--red { fill: #ff5d5d; }
+  .tt-label--amber { fill: #ffb86b; }
+  .tt-node { fill: #0f1714; stroke: var(--accent); stroke-width: 1.6; }
+  .tt-glow { fill: var(--accent); opacity: .14; animation: tt-pulse 2.8s ease-in-out infinite; }
+  @keyframes tt-pulse { 0%, 100% { opacity: .1; } 50% { opacity: .26; } }
+  /* guardrails: the gate holds, the hop deflects, the red dot blinks */
+  .tt-gate { stroke: rgba(255,93,93,.55); stroke-width: 1.4; stroke-dasharray: 2 4; }
+  .tt-deflect { fill: none; stroke: rgba(255,93,93,.5); stroke-width: 1.1; stroke-dasharray: 3 4; animation: tt-dash 2.2s linear infinite reverse; }
+  .tt-red { fill: #ff5d5d; animation: tt-blink 1.9s infinite; }
+  @keyframes tt-blink { 0%, 68% { opacity: 1; } 84% { opacity: .25; } 100% { opacity: 1; } }
+  /* kill switch: the route beyond the pause ring goes cold */
+  .tt-pausering { fill: none; stroke: #ffb86b; stroke-width: 1.3; animation: tt-pulse 2.4s ease-in-out infinite; opacity: .8; }
+  .tt-pausebar { stroke: #ffb86b; stroke-width: 1.6; stroke-linecap: round; }
+  .tt-after { fill: none; stroke: rgba(255,255,255,.12); stroke-width: 1.1; stroke-dasharray: 2 5; }
+  /* reputation: waypoints shimmer up toward the proven node */
+  .tt-riser { fill: var(--accent); opacity: .35; animation: tt-rise 3.2s ease-in-out infinite; }
+  .tt-riser:nth-of-type(2) { animation-delay: -1.6s; }
+  @keyframes tt-rise { 0%, 100% { opacity: .2; transform: translateY(0); } 50% { opacity: .7; transform: translateY(-3px); } }

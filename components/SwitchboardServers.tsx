@@ -35,7 +35,7 @@ export default function SwitchboardServers() {
       <div className="swsrv__head">
         <div>
           <span className="swsrv__eyebrow mono">THE CATALOG</span>
-          <h2 className="swsrv__h2">Compose from every model and data source.</h2>
+          <h2 className="swsrv__h2">Compose from <span className="x-grad">every model</span> and data source.</h2>
         </div>
         <Link href="/servers" className="swsrv__all mono">
           See all {all.length} servers →
