@@ -452,8 +452,8 @@ export default function HomeHeroFusion() {
           <button className="btn btn--solid" onClick={() => setLive(true)}>
             Try it live
           </button>
-          <Link className="btn btn--ghost" href="/docs/embed">
-            Get the embed
+          <Link className="btn btn--ghost" href="/dashboard">
+            Get started
           </Link>
         </div>
         {/* the transmutation readout — written by the burst: each character
