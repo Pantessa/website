@@ -12,6 +12,7 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { ArrowUpRight, Check, Copy, Globe, TriangleAlert, Wrench } from 'lucide-react'
 import { Card, CardTitle, Kpi, SkeletonCard, SkeletonKpi, timeAgo } from '@/lib/dashboard-ui'
+import { conventionsAsPromptLines, ROUTABLE_MCP_DOC_URL } from '@/lib/routable-mcp'
 
 interface TurnLite {
   prompt: string
@@ -130,10 +131,13 @@ ${frictions.length ? frictions.map((f) => `- ${f}`).join('\n') : '- (none record
 ${abandoned > 0 ? `\nAlso: ${abandoned} sessions built a transaction the visitor never signed — check whether the summaries/guardrail cards explain the transaction clearly enough.\n` : ''}
 Do this:
 1. Group the dead-end asks: which are MISSING TOOLS on my MCP (an ask my API could answer but no tool exposes), which are missing PARAMS/schemas, which are docs questions my corpus doesn't cover, and which need an MCP I haven't added to my set.
-2. For missing tools/params: implement them on my MCP server. Every tool needs a machine-readable input schema and a one-line description a router can rank — run \`npm run mcp:lint\` from the Yeetful website repo against my MCP and fix everything it flags below an A.
+2. For missing tools/params: implement them on my MCP server so it satisfies the routable-MCP conventions below. Every tool needs a machine-readable input schema and a one-line description a router can rank. If my server is listed on Yeetful, the server page's routability panel (${ROUTABLE_MCP_DOC_URL}) grades this and generates a fix list.
 3. For docs gaps: add the missing pages to my docs corpus and rebuild it.
 4. For set gaps: tell me which Yeetful directory MCPs (https://www.yeetful.com/servers) to add to my embed's mcps=[...] list.
-5. Re-run mcp:lint and give me a before/after routability score.`
+5. Restate which convention each change satisfies, then give me a before/after of how many of the dead-end asks would now resolve.
+
+The conventions to build to (full spec: ${ROUTABLE_MCP_DOC_URL}):
+${conventionsAsPromptLines().join('\n')}`
 }
 
 export default function EmbedInsights() {

@@ -157,6 +157,14 @@ export const DOCS_PAGES: DocsPage[] = [
     ready: true,
   },
   {
+    slug: 'routable-mcp',
+    title: 'Make your MCP routable',
+    seoTitle: 'Routable MCP spec — make an AI router pick your tools',
+    description:
+      'The conventions a Yeetful router needs to discover, choose, and call your MCP’s tools — the five things mcp:lint grades, and a copy-paste Claude Code prompt that fixes them.',
+    ready: true,
+  },
+  {
     slug: 'terms',
     title: 'Terms of Service',
     seoTitle: 'Terms of Service — Yeetful',

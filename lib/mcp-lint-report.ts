@@ -2,6 +2,12 @@
 // the Claude Code upgrade-prompt builder. NO server imports — the panel
 // component renders these in the browser; lib/mcp-lint.ts (server) does
 // the actual linting and re-exports these for callers that have both.
+//
+// The "conventions to build to" now live in lib/routable-mcp.ts (the single
+// source shared with /docs/routable-mcp and the embed self-heal card) so the
+// contract never drifts between the score panel and the analytics prompt.
+
+import { conventionsAsPromptLines, ROUTABLE_MCP_DOC_URL } from '@/lib/routable-mcp'
 
 export interface Check {
   ok: boolean
@@ -50,14 +56,8 @@ export function buildUpgradePrompt(report: RoutabilityReport): string {
     '## Fixes, in priority order',
     ...report.fixes.map((f, i) => `${i + 1}. ${f}`),
     '',
-    '## The conventions to build to (what the router needs)',
-    '- **Param schemas on every tool/endpoint**: name, type, required-vs-optional, and a description per param. A router refuses to construct calls it cannot validate — schema-less endpoints are invisible.',
-    "- **Descriptions that carry user intent**: write what a USER would ask ('crypto spot price by symbol — price of ETH, BTC…'), never what the URL is. Include 2–3 example queries.",
-    "- **One guarded escape hatch instead of endless params**: if the backend has a native query language (GraphQL/SQL), expose ONE read-only general-query tool with strict guardrails (single read-only operation, allowlisted root fields, depth + page-size caps, response truncation) and a compact schema card in the tool description (root fields + useful filters + one example). Long-tail intents then need no new endpoints.",
-    "- **Declare user-identity params**: any param that should be the CALLER's own address (their votes, follows, balances, orders) must say so in its description ('the user's own wallet address') so routers can inject identity server-side instead of guessing.",
-    '- **Server-side joins for the headline intent**: if answering the #1 user question takes two chained calls (e.g. resolve follows → filter proposals), add one param that does the join server-side.',
-    "- **Build, don't execute**: anything signable returns an UNSIGNED payload (typed data / tx template) for the user's own wallet. Never hold keys, never sign, never submit on the user's behalf.",
-    '- **Free tiers still need rate limiting**: no payment gate means no natural throttle.',
+    `## The conventions to build to (what the router needs) — full spec: ${ROUTABLE_MCP_DOC_URL}`,
+    ...conventionsAsPromptLines(),
     '',
     'Start by reading the tool/endpoint definitions and their input schemas, then apply the fixes smallest-first. After each change, restate which failing check it clears.',
   ].join('\n')

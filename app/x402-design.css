@@ -1325,6 +1325,17 @@
   .docs__card:hover { border-color: var(--line-2); background: var(--surf-2); }
   .docs__cardtitle { font-size: 15px; font-weight: 600; color: var(--fg); }
   .docs__carddesc { font-size: 13px; color: var(--muted-2); line-height: 1.5; }
+
+  /* Routable-MCP spec page — the five graded dimensions as cards. */
+  .rmcp-dims { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; margin: 18px 0 8px; max-width: 96ch; }
+  .rmcp-dim { min-width: 0; padding: 16px; border: 1px solid var(--line); border-radius: 14px; background: var(--surf-1); }
+  .rmcp-dim__head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+  .rmcp-dim__title { font-size: 17px; color: var(--fg); }
+  .rmcp-dim__weight { font-size: 12px; color: var(--accent); border: 1px solid var(--line); border-radius: 999px; padding: 1px 8px; }
+  .rmcp-dim__q { margin: 8px 0 6px; font-size: 13px; color: var(--fg); font-weight: 500; }
+  .rmcp-dim__detail { margin: 0; font-size: 12.5px; line-height: 1.55; color: var(--muted-2); }
+  .rmcp-conv { max-width: 84ch; }
+  .rmcp-conv li { margin: 9px 0; }
   @media (max-width: 1023px) {
     .docs { grid-template-columns: 1fr; gap: 0; padding: 0 18px; }
     .docs__rail { position: sticky; top: 64px; z-index: 30; flex-direction: row; align-items: center;
