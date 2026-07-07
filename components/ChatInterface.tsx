@@ -3,7 +3,7 @@
 import { analytics } from '@/lib/analytics'
 import { useState, useRef, useEffect, useSyncExternalStore } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Send, Zap, Check, Plus, Loader2, Bot, User, PanelLeft, PanelLeftClose, PanelRight, Sparkles } from 'lucide-react'
+import { Send, Zap, Check, Plus, Loader2, Bot, User, PanelLeft, PanelLeftClose, PanelRight, Sparkles, Copy } from 'lucide-react'
 import { useAccount, useSignTypedData, useConnect } from 'wagmi'
 import { useConnectModal } from '@rainbow-me/rainbowkit'
 import { getHostWalletServerState, getHostWalletState, HOST_WALLET_CONNECTOR_ID, subscribeHostWallet } from '@/lib/host-wallet'
@@ -54,6 +54,34 @@ interface PaymentToSign {
 
 /** Build the assistant message meta from receipts + an optional vote request /
  *  ambiguous-proposal candidates. */
+/** Hover copy affordance on every turn — appears top-right of the bubble,
+ * flashes a check on success. Flat, no chrome until you want it. */
+function CopyTurn({ text, dark }: { text: string; dark?: boolean }) {
+  const [done, setDone] = useState(false)
+  return (
+    <button
+      type="button"
+      aria-label="Copy message"
+      title="Copy"
+      onClick={() => {
+        void navigator.clipboard.writeText(text).then(() => {
+          setDone(true)
+          setTimeout(() => setDone(false), 1400)
+        })
+      }}
+      className={cn(
+        'absolute -top-2.5 -right-2.5 w-7 h-7 rounded-full grid place-items-center border backdrop-blur-md',
+        'opacity-0 group-hover/bubble:opacity-100 focus-visible:opacity-100 transition-opacity duration-150',
+        dark
+          ? 'bg-black/70 border-black/30 text-white'
+          : 'bg-[var(--surf-2)]/90 border-[var(--line)] text-[color:var(--muted)] hover:text-white',
+      )}
+    >
+      {done ? <Check className="w-3.5 h-3.5 text-[color:var(--accent)]" /> : <Copy className="w-3.5 h-3.5" />}
+    </button>
+  )
+}
+
 function buildMeta(receipts: unknown, payer: unknown, voteRequest: unknown, voteCandidates?: unknown, routeReport?: unknown, routerTrace?: unknown, voteProposal?: unknown, orderRequest?: unknown, guardrails?: unknown, txRequest?: unknown, workingContext?: unknown, txChain?: unknown, clarify?: unknown, connectWallet?: unknown, connectAsk?: string) {
   const meta: Record<string, unknown> = {}
   if (Array.isArray(receipts) && receipts.length) {
@@ -801,12 +829,13 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
                   {/* Bubble */}
                   <div
                     className={cn(
-                      'max-w-[85vw] lg:max-w-[80%] px-4 py-3 rounded-2xl text-sm leading-relaxed',
+                      'group/bubble relative max-w-[85vw] lg:max-w-[80%] px-4 py-3 rounded-2xl text-sm leading-relaxed',
                       msg.role === 'user'
-                        ? 'bg-white text-black rounded-tr-sm'
-                        : 'bg-[var(--surf-1)] text-[color:var(--fg)] border border-[var(--line)] rounded-tl-sm'
+                        ? 'bg-[color:var(--accent)]/90 text-black rounded-br-sm'
+                        : 'bg-[var(--surf-1)]/70 text-[color:var(--fg)] border border-white/[0.06] rounded-tl-sm'
                     )}
                   >
+                    <CopyTurn text={msg.content} dark={msg.role === 'user'} />
                     {msg.role === 'assistant' ? (
                       <ChatMarkdown content={msg.content} />
                     ) : (
@@ -965,7 +994,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
 
       {/* Input area */}
       <div className="flex-shrink-0 p-4 max-lg:pb-[max(1rem,env(safe-area-inset-bottom))] border-t border-[var(--line)]">
-        <div className="flex items-end gap-3 p-3 rounded-2xl border border-[var(--line)] bg-[var(--surf-1)] transition-[border-color,box-shadow] duration-200 focus-within:border-white/25 focus-within:shadow-[0_0_0_4px_rgba(255,255,255,0.05)]">
+        <div className="flex items-center gap-3 py-2 pl-4 pr-2 rounded-full border border-[var(--line)] bg-[var(--surf-1)]/80 backdrop-blur-md transition-[border-color,box-shadow] duration-200 focus-within:border-[color:var(--accent)]/45 focus-within:shadow-[0_0_0_4px_rgba(52,227,160,0.07),0_0_24px_rgba(52,227,160,0.06)]">
           <textarea
             ref={textareaRef}
             value={input}
@@ -974,21 +1003,23 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
             placeholder={
               autoRouter
                 ? 'Ask anything — Yeetful routes it to the best MCP…'
-                : activeServers.length > 0
-                  ? `Message with ${activeServers.map((s) => s.name).join(', ')}...`
-                  : 'Type a message...'
+                : activeServers.length > 1
+                  ? `Ask your ${activeServers.length} agents anything…`
+                  : activeServers.length === 1
+                    ? `Message ${activeServers[0].name}…`
+                    : 'Type a message…'
             }
             rows={1}
-            className="flex-1 bg-transparent text-sm max-lg:text-base text-white placeholder:text-[color:var(--muted-2)] resize-none border-0 focus:outline-none focus-visible:outline-none max-h-40 overflow-y-auto leading-relaxed"
+            className="flex-1 self-center bg-transparent text-sm max-lg:text-base text-white placeholder:text-[color:var(--muted-2)] resize-none border-0 focus:outline-none focus-visible:outline-none max-h-40 overflow-y-auto leading-6"
             style={{ minHeight: '24px', outline: 'none', boxShadow: 'none' }}
           />
           <button
             onClick={() => void handleSend()}
             disabled={!input.trim() || loading || !!pendingPayment}
             className={cn(
-              'flex-shrink-0 w-11 h-11 md:w-8 md:h-8 rounded-xl flex items-center justify-center transition-all duration-200',
+              'flex-shrink-0 w-11 h-11 md:w-9 md:h-9 rounded-full flex items-center justify-center transition-all duration-200',
               input.trim() && !loading
-                ? 'bg-white text-black hover:bg-zinc-200 scale-100'
+                ? 'bg-[color:var(--accent)] text-black hover:brightness-110 scale-100 shadow-[0_0_18px_rgba(52,227,160,0.35)]'
                 : 'bg-[var(--surf-2)] text-[color:var(--muted-2)] cursor-not-allowed scale-95'
             )}
           >
