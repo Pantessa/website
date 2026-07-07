@@ -85,6 +85,13 @@ export default function EmbedChat({
   // null = parent explicitly cleared the context (fall back to the connected wallet).
   const [msgAddress, setMsgAddress] = useState<`0x${string}` | null | undefined>(undefined)
   const [injectedPrompt, setInjectedPrompt] = useState<{ text: string; send: boolean; at: number } | null>(null)
+  // One session per mount — groups this visit's turns in the owner's embed
+  // telemetry so dead-end conversations are computable.
+  const [embedSession] = useState(() =>
+    typeof crypto !== 'undefined' && 'randomUUID' in crypto
+      ? crypto.randomUUID()
+      : `s-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
+  )
 
   // Host-wallet bridge state (contract v1.1): the announce store + the wagmi
   // connection it drives. A connection through the 'yeetfulHost' connector IS
@@ -305,6 +312,7 @@ export default function EmbedChat({
           injectedPrompt={injectedPrompt}
           embedKey={embedKey}
           embedOrigin={embedOrigin}
+          embedSession={embedSession}
         />
       </main>
     </div>

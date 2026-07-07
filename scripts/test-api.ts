@@ -373,11 +373,44 @@ async function main() {
     'embeds list shows the sighted origin under the key',
     !!ekMine && ekMine.sites.some((s: { origin: string }) => s.origin === 'https://harness-embed.test'),
   )
+  // ── Embed turn telemetry + owner insights ─────────────────────────────────
+  // Two turns in one session: a dead-end shape (refused, no tx) so the
+  // insights rollup has something real to classify.
+  const tele1 = await fetch(`${BASE}/api/embed/telemetry`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      key: ek.key, sessionId: 'harness-session-1', page: 'https://harness-embed.test/swap',
+      prompt: 'swap 5 USDC to WETH on my chain', outcome: 'refused', detail: 'no route for that chain',
+    }),
+  })
+  check('telemetry records a keyed turn', tele1.status === 200 && (await tele1.json()).ok === true)
+  const teleBadKey = await fetch(`${BASE}/api/embed/telemetry`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ key: 'yfe_000000000000000000000000', sessionId: 'harness-session-1', page: 'https://x.test/', prompt: 'hi', outcome: 'answered' }),
+  })
+  check('telemetry drops an unknown key (202)', teleBadKey.status === 202)
+  const insNoAuth = await fetch(`${BASE}/api/embeds/insights`)
+  check('insights require auth → 401', insNoAuth.status === 401)
+  const ins = await (await fetch(`${BASE}/api/embeds/insights`, { headers: C })).json()
+  check(
+    'insights: the refused turn lands as a dead-end session with the verbatim ask',
+    ins.totals?.turns === 1 &&
+      ins.totals?.deadEndSessions === 1 &&
+      Array.isArray(ins.deadEnds) &&
+      ins.deadEnds[0]?.turns?.[0]?.prompt === 'swap 5 USDC to WETH on my chain',
+    `turns=${ins.totals?.turns} deadEnds=${ins.totals?.deadEndSessions}`,
+  )
+
   const ekGone = await fetch(`${BASE}/api/embed-keys/${ek.id}?purge=1`, { method: 'DELETE', headers: C })
   const ekAfter = await (await fetch(`${BASE}/api/embed-keys`, { headers: C })).json()
+  const insAfter = await (await fetch(`${BASE}/api/embeds/insights`, { headers: C })).json()
   check(
-    'purge-revoke removes the key + its sites',
-    ekGone.status === 200 && !(ekAfter.keys as { key: string }[]).some((k) => k.key === ek.key),
+    'purge-revoke removes the key + its sites + its turns',
+    ekGone.status === 200 &&
+      !(ekAfter.keys as { key: string }[]).some((k) => k.key === ek.key) &&
+      insAfter.totals?.turns === 0,
   )
 
   // ── Ledger sync ───────────────────────────────────────────────────────────

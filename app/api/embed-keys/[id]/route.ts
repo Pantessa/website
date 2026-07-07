@@ -20,6 +20,7 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
     const { count } = await prisma.embedKey.deleteMany({ where: { id, ownerAddress: addr } })
     if (count === 0) return NextResponse.json({ error: 'Not found.' }, { status: 404 })
     await prisma.embedSite.deleteMany({ where: { embedKeyId: id } })
+    await prisma.embedTurn.deleteMany({ where: { embedKeyId: id } })
     return NextResponse.json({ revoked: true, purged: true })
   }
 

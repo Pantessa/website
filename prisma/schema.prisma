@@ -722,3 +722,31 @@ model EmbedSite {
   @@index([ownerAddress])
   @@map("embed_sites")
 }
+
+/// One row per KEYED embedded-chat turn — the observability spine for the
+/// self-healing loop. Records what visitors asked on a host site, what the
+/// agent did about it (outcome), any transaction artifact it built, and the
+/// explorer link once something was signed. Sessions (one id per embed
+/// mount) make dead-end conversations computable: a session whose goal was
+/// a transaction but that never reached tx-built/signed is the signal that
+/// feeds "upgrade your MCP" suggestions. Keyless embeds record nothing —
+/// telemetry is a feature OF the key.
+model EmbedTurn {
+  id           String   @id @default(cuid())
+  embedKeyId   String   @map("embed_key_id")
+  ownerAddress String?  @map("owner_address")
+  origin       String
+  sessionId    String   @map("session_id")
+  prompt       String   @default("") // the visitor's ask, capped client+server side
+  outcome      String // answered | clarify | tx-built | signed | refused | credit-gate | error
+  artifact     String? // cow-order | tx | tx-chain | vote
+  chain        String? // 'base' | 'ethereum' | a hex chainId — best-effort from the artifact
+  detail       String? // short refusal/error text, or a human label for the artifact
+  txUrl        String?  @map("tx_url") // explorer link once signed/placed
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  @@index([ownerAddress, createdAt])
+  @@index([embedKeyId, createdAt])
+  @@index([sessionId, createdAt])
+  @@map("embed_turns")
+}

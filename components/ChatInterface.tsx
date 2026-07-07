@@ -118,9 +118,12 @@ interface ChatInterfaceProps {
   /** Origin of the page hosting the embed (from the SDK's page URL /
    *  referrer) — per-turn attribution for the embeds ledger. */
   embedOrigin?: string
+  /** One id per embed mount (EmbedChat mints it) — groups turns into a
+   *  conversation so the owner dashboard can spot dead-end sessions. */
+  embedSession?: string
 }
 
-export default function ChatInterface({ embedded = false, contextAddress, onEmbedEvent, injectedPrompt, embedKey, embedOrigin }: ChatInterfaceProps = {}) {
+export default function ChatInterface({ embedded = false, contextAddress, onEmbedEvent, injectedPrompt, embedKey, embedOrigin, embedSession }: ChatInterfaceProps = {}) {
   const {
     servers,
     activeServerIds,
@@ -293,6 +296,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
             content: out.content,
             meta: buildMeta(out.receipts, out.payer, out.voteRequest, undefined, out.routeReport, out.routerTrace, out.voteProposal, out.orderRequest, undefined, out.txRequest, out.workingContext, out.txChain, out.clarify),
           })
+          reportEmbedTurn(userMsg, { ...out, reply: out.content })
         }
         return
       }
@@ -358,6 +362,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
           content: data.reply || data.error || 'No response.',
           meta: buildMeta(data.receipts, data.payer, data.voteRequest, data.voteCandidates, undefined, undefined, data.voteProposal, data.orderRequest, data.guardrails, data.txRequest, data.workingContext, data.txChain, data.clarify),
         })
+        reportEmbedTurn(userMsg, data as Record<string, unknown>)
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : ''
@@ -367,10 +372,69 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
           ? '🚫 Payment signature rejected — nothing was charged.'
           : '⚠️ Failed to complete the request. ' + (msg || 'Try again.'),
       })
+      reportEmbedTurn(userMsg, null, msg || 'request failed')
     } finally {
       setLoading(false)
       setStatus(null)
     }
+  }
+
+  // ── Embed telemetry (keyed embeds only) ──────────────────────────────────
+  // One compact beacon per turn → /api/embed/telemetry, so the owner
+  // dashboard can render asks → outcomes → transactions and detect dead-end
+  // sessions. Classified from exactly what the UI received; fire-and-forget.
+  const chainLabel = (id: unknown): string | undefined => {
+    const n = typeof id === 'string' ? parseInt(id, 16) || Number(id) : typeof id === 'number' ? id : NaN
+    if (Number.isNaN(n)) return undefined
+    return { 1: 'ethereum', 100: 'gnosis', 8453: 'base', 42161: 'arbitrum' }[n] ?? String(n)
+  }
+  const postEmbedTelemetry = (payload: Record<string, unknown>) => {
+    if (!embedKey || !embedSession) return
+    void fetch('/api/embed/telemetry', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ key: embedKey, sessionId: embedSession, page: embedOrigin, ...payload }),
+    }).catch(() => {})
+  }
+  const reportEmbedTurn = (prompt: string, data: Record<string, unknown> | null, error?: string) => {
+    if (!embedKey || !embedSession) return
+    let outcome = 'answered'
+    let artifact: string | undefined
+    let chain: string | undefined
+    let detail: string | undefined
+    if (error || !data) {
+      outcome = 'error'
+      detail = error?.slice(0, 200)
+    } else if (data.orderRequest) {
+      outcome = 'tx-built'
+      artifact = 'cow-order'
+      chain = chainLabel((data.orderRequest as { chainId?: unknown }).chainId) ?? 'ethereum'
+    } else if (data.txChain) {
+      outcome = 'tx-built'
+      artifact = 'tx-chain'
+      chain = chainLabel((data.txChain as { chainId?: unknown }).chainId) ?? 'base'
+    } else if (data.txRequest) {
+      outcome = 'tx-built'
+      artifact = 'tx'
+      chain = chainLabel((data.txRequest as { chainId?: unknown }).chainId) ?? 'base'
+    } else if (data.voteRequest || data.voteProposal) {
+      outcome = 'tx-built'
+      artifact = 'vote'
+    } else if (data.clarify) {
+      outcome = 'clarify'
+    } else if (data.planGate) {
+      outcome = 'credit-gate'
+    } else if (typeof data.reply === 'string' && /^(⚡|🚫|⚠️|🪙|🗳️ .*(isn’t|isn't|needs))/u.test(data.reply)) {
+      outcome = 'refused'
+      detail = (data.reply as string).slice(0, 200)
+    } else if (!data.reply && data.error) {
+      outcome = 'error'
+      detail = String(data.error).slice(0, 200)
+    }
+    postEmbedTelemetry({ prompt: prompt.slice(0, 280), outcome, artifact, chain, detail })
+  }
+  const reportEmbedSigned = (info: { artifact: string; chain?: string; txUrl?: string; detail?: string }) => {
+    postEmbedTelemetry({ outcome: 'signed', ...info })
   }
 
   // Host-injected prompt (embed `prompt` message): prefill or send. Keyed on
@@ -546,6 +610,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
         // voteRequest is produced by the burner path; wallet mode has none yet.
         meta: buildMeta(out.receipts, out.payer, undefined),
       })
+      reportEmbedTurn(userMsg, { reply: out.reply })
     } catch (err) {
       const msg = err instanceof Error ? err.message : ''
       addMessage(chatId, {
@@ -736,15 +801,35 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
                           <SignOrderButton
                             order={order}
                             // Embed bridge: surface the placed order as an
-                            // 'order-signed' event on the host page.
-                            onPlaced={onEmbedEvent ? (info) => onEmbedEvent('order-signed', info) : undefined}
+                            // 'order-signed' event on the host page, and log
+                            // the SIGNED outcome to the owner's telemetry.
+                            onPlaced={(info) => {
+                              onEmbedEvent?.('order-signed', info)
+                              reportEmbedSigned({
+                                artifact: 'cow-order',
+                                chain: 'ethereum',
+                                txUrl: (info as { explorerUrl?: string }).explorerUrl,
+                                detail: (info as { orderUid?: string }).orderUid?.slice(0, 60),
+                              })
+                            }}
                           />
                         ) : null
                       })()}
                     {msg.role === 'assistant' &&
                       (() => {
                         const builtTx = txRequestOf(msg.meta)
-                        return builtTx ? <SendTxButton tx={builtTx} /> : null
+                        return builtTx ? (
+                          <SendTxButton
+                            tx={builtTx}
+                            onConfirmed={(hash) => {
+                              const chainId = builtTx.chainId ?? 8453
+                              const explorer =
+                                { 1: 'https://etherscan.io/tx/', 8453: 'https://basescan.org/tx/', 42161: 'https://arbiscan.io/tx/' }[chainId] ??
+                                'https://basescan.org/tx/'
+                              reportEmbedSigned({ artifact: 'tx', chain: chainLabel(chainId), txUrl: `${explorer}${hash}` })
+                            }}
+                          />
+                        ) : null
                       })()}
                     {msg.role === 'assistant' &&
                       (() => {
