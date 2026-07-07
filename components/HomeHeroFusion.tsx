@@ -49,8 +49,24 @@ interface Burst {
   vy: number
   life: number
 }
+/** A "writer" — a burst particle that flies from the core to the caption and
+ * delivers the transmutation line (the text reveals as these arrive). */
+interface Writer {
+  t: number
+  speed: number
+  ox: number
+  oy: number
+  jitter: number
+}
 
-function FusionCanvas({ pulseRef }: { pulseRef: React.MutableRefObject<number> }) {
+function FusionCanvas({
+  pulseRef,
+  captionAnchorRef,
+}: {
+  pulseRef: React.MutableRefObject<number>
+  /** Caption center in section-local px — where writer particles land. */
+  captionAnchorRef: React.MutableRefObject<{ x: number; y: number } | null>
+}) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
 
   useEffect(() => {
@@ -103,16 +119,34 @@ function FusionCanvas({ pulseRef }: { pulseRef: React.MutableRefObject<number> }
 
     const particles: Particle[] = []
     const bursts: Burst[] = []
+    const writers: Writer[] = []
     let rings: { r: number; a: number }[] = []
     let lastPulse = pulseRef.current
 
+    // Cursor lens — the rivers bend around the pointer. Smoothed so the
+    // field flexes instead of snapping; influence decays to zero when the
+    // pointer leaves the hero.
+    const mouse = { x: 0, y: 0, tx: 0, ty: 0, k: 0, tk: 0 }
+    const onMove = (e: MouseEvent) => {
+      const r = canvas.getBoundingClientRect()
+      mouse.tx = e.clientX - r.left
+      mouse.ty = e.clientY - r.top
+      mouse.tk = 1
+    }
+    const onLeave = () => {
+      mouse.tk = 0
+    }
+    window.addEventListener('mousemove', onMove)
+    document.addEventListener('mouseleave', onLeave)
+
     const spawn = () => {
-      if (particles.length > (w < 760 ? 90 : 170)) return
+      if (particles.length > (w < 760 ? 110 : 230)) return
       const src = Math.floor(Math.random() * SOURCES.length)
       particles.push({
         src,
         t: 0,
-        speed: 0.0022 + Math.random() * 0.0028,
+        // unhurried: a river droplet takes ~2–3.5s edge → core
+        speed: 0.00028 + Math.random() * 0.00026,
         size: 0.8 + Math.random() * 1.7,
         drift: Math.random() * Math.PI * 2,
       })
@@ -165,6 +199,8 @@ function FusionCanvas({ pulseRef }: { pulseRef: React.MutableRefObject<number> }
       return () => {
         window.removeEventListener('resize', onR)
         window.removeEventListener('resize', resize)
+        window.removeEventListener('mousemove', onMove)
+        document.removeEventListener('mouseleave', onLeave)
       }
     }
 
@@ -175,7 +211,13 @@ function FusionCanvas({ pulseRef }: { pulseRef: React.MutableRefObject<number> }
       const dt = Math.min(50, now - last)
       last = now
       if (!document.hidden) {
-        for (let i = 0; i < 3; i++) spawn()
+        for (let i = 0; i < 2; i++) spawn()
+
+        // ease the cursor lens toward its target
+        mouse.x += (mouse.tx - mouse.x) * Math.min(1, dt / 160)
+        mouse.y += (mouse.ty - mouse.y) * Math.min(1, dt / 160)
+        mouse.k += (mouse.tk - mouse.k) * Math.min(1, dt / 300)
+        const LENS_R2 = 2 * 170 * 170
 
         // a transmutation was requested by the caption cycler
         if (pulseRef.current !== lastPulse) {
@@ -184,10 +226,20 @@ function FusionCanvas({ pulseRef }: { pulseRef: React.MutableRefObject<number> }
           flash = 1
           const cx = px(CORE.x)
           const cy = py(CORE.y)
-          for (let i = 0; i < 14; i++) {
+          for (let i = 0; i < 10; i++) {
             const ang = Math.random() * Math.PI * 2
             const v = 0.02 + Math.random() * 0.05
             bursts.push({ x: cx, y: cy, vx: Math.cos(ang) * v, vy: Math.sin(ang) * v, life: 1 })
+          }
+          // the writers — they carry the line from the core to the caption
+          for (let i = 0; i < 16; i++) {
+            writers.push({
+              t: 0,
+              speed: 0.0012 + Math.random() * 0.0009,
+              ox: (Math.random() - 0.5) * 120,
+              oy: (Math.random() - 0.5) * 60,
+              jitter: Math.random() * Math.PI * 2,
+            })
           }
         }
         flash = Math.max(0, flash - dt / 900)
@@ -195,7 +247,7 @@ function FusionCanvas({ pulseRef }: { pulseRef: React.MutableRefObject<number> }
         ctx.clearRect(0, 0, w, h)
         ctx.globalCompositeOperation = 'lighter'
 
-        // rivers
+        // rivers (bent by the cursor lens)
         for (let i = particles.length - 1; i >= 0; i--) {
           const p = particles[i]
           p.t += p.speed * dt
@@ -205,11 +257,42 @@ function FusionCanvas({ pulseRef }: { pulseRef: React.MutableRefObject<number> }
           }
           const pos = point(p.src, p.t)
           const wob = Math.sin(p.t * 10 + p.drift) * 6 * (1 - p.t)
+          let x = pos.x + wob
+          let y = pos.y + wob * 0.6
+          if (mouse.k > 0.01) {
+            const dx = mouse.x - x
+            const dy = mouse.y - y
+            const pull = 0.34 * mouse.k * Math.exp(-(dx * dx + dy * dy) / LENS_R2)
+            x += dx * pull
+            y += dy * pull
+          }
           const alpha = Math.sin(Math.PI * p.t) * 0.85
           ctx.fillStyle = SOURCES[p.src].color
           ctx.globalAlpha = alpha
           ctx.beginPath()
-          ctx.arc(pos.x + wob, pos.y + wob * 0.6, p.size * (0.6 + 0.6 * (1 - p.t)), 0, Math.PI * 2)
+          ctx.arc(x, y, p.size * (0.6 + 0.6 * (1 - p.t)), 0, Math.PI * 2)
+          ctx.fill()
+        }
+        ctx.globalAlpha = 1
+
+        // writers: core → caption, easing in, delivering the text
+        const anchor = captionAnchorRef.current
+        for (let i = writers.length - 1; i >= 0; i--) {
+          const wr = writers[i]
+          wr.t += wr.speed * dt
+          if (wr.t >= 1 || !anchor) {
+            writers.splice(i, 1)
+            continue
+          }
+          const e = 1 - Math.pow(1 - wr.t, 3) // ease-out cubic
+          const cx = px(CORE.x)
+          const cy = py(CORE.y)
+          const x = cx + (anchor.x - cx) * e + wr.ox * Math.sin(Math.PI * wr.t)
+          const y = cy + (anchor.y - cy) * e + wr.oy * Math.sin(Math.PI * wr.t) + Math.sin(wr.t * 14 + wr.jitter) * 3
+          ctx.globalAlpha = Math.sin(Math.PI * wr.t) * 0.9
+          ctx.fillStyle = wr.jitter > Math.PI ? '#8effc9' : '#ffd98a'
+          ctx.beginPath()
+          ctx.arc(x, y, 1.5, 0, Math.PI * 2)
           ctx.fill()
         }
         ctx.globalAlpha = 1
@@ -254,30 +337,49 @@ function FusionCanvas({ pulseRef }: { pulseRef: React.MutableRefObject<number> }
     return () => {
       cancelAnimationFrame(raf)
       window.removeEventListener('resize', resize)
+      window.removeEventListener('mousemove', onMove)
+      document.removeEventListener('mouseleave', onLeave)
     }
-  }, [pulseRef])
+  }, [pulseRef, captionAnchorRef])
 
   return <canvas ref={canvasRef} className="fhero__canvas" aria-hidden="true" />
 }
 
 export default function HomeHeroFusion() {
   const pulseRef = useRef(0)
+  const sectionRef = useRef<HTMLElement>(null)
+  const captionRef = useRef<HTMLParagraphElement>(null)
+  const captionAnchorRef = useRef<{ x: number; y: number } | null>(null)
   const [captionIdx, setCaptionIdx] = useState(0)
   const [live, setLive] = useState(false)
 
   // The transmutation clock: rotate the caption and ask the canvas for a
-  // ring pulse on the same beat.
+  // ring pulse + writer burst on the same beat.
   useEffect(() => {
     const id = setInterval(() => {
       setCaptionIdx((i) => (i + 1) % TRANSMUTATIONS.length)
       pulseRef.current++
-    }, 3800)
+    }, 4600)
     return () => clearInterval(id)
   }, [])
 
+  // Where the writers land: the caption's center, in section-local px
+  // (the canvas fills the section, so section-local == canvas-local).
+  useEffect(() => {
+    const measure = () => {
+      const sec = sectionRef.current?.getBoundingClientRect()
+      const cap = captionRef.current?.getBoundingClientRect()
+      captionAnchorRef.current =
+        sec && cap ? { x: cap.left + cap.width / 2 - sec.left, y: cap.top + cap.height / 2 - sec.top } : null
+    }
+    measure()
+    window.addEventListener('resize', measure)
+    return () => window.removeEventListener('resize', measure)
+  }, [captionIdx])
+
   return (
-    <section className="fhero">
-      <FusionCanvas pulseRef={pulseRef} />
+    <section className="fhero" ref={sectionRef}>
+      <FusionCanvas pulseRef={pulseRef} captionAnchorRef={captionAnchorRef} />
 
       {/* labeled sources — the protocols feeding the core (desktop) */}
       <div className="fhero__chips" aria-hidden="true">
@@ -316,8 +418,14 @@ export default function HomeHeroFusion() {
             Get the embed
           </Link>
         </div>
-        <p className="fhero__caption mono" key={captionIdx}>
-          {TRANSMUTATIONS[captionIdx]}
+        {/* the transmutation readout — written by the burst: each character
+            materializes as the writer particles arrive from the core */}
+        <p className="fhero__caption mono" key={captionIdx} ref={captionRef}>
+          {[...TRANSMUTATIONS[captionIdx]].map((ch, i) => (
+            <span className="fhero__char" style={{ animationDelay: `${340 + i * 13}ms` }} key={i}>
+              {ch === ' ' ? ' ' : ch}
+            </span>
+          ))}
         </p>
       </div>
 

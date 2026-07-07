@@ -1923,9 +1923,19 @@
   /* the transmutation readout — one quiet line, faded in per cycle */
   .fhero__caption {
     margin-top: 34px; font-size: 12px; letter-spacing: .08em; color: #7e857b;
-    min-height: 18px; animation: fh-cap .8s ease;
+    min-height: 18px;
   }
-  @keyframes fh-cap { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+  /* each character materializes as the writer particles arrive — blur +
+     lift + a brief emerald glow that settles into the resting grey */
+  .fhero__char {
+    display: inline-block; white-space: pre; opacity: 0;
+    animation: fh-char .55s cubic-bezier(.2,.7,.2,1) forwards;
+  }
+  @keyframes fh-char {
+    0% { opacity: 0; transform: translateY(7px); filter: blur(5px); color: #8effc9; }
+    55% { opacity: 1; filter: blur(0); color: #b9f5d9; }
+    100% { opacity: 1; transform: none; filter: none; color: #7e857b; }
+  }
 
   /* protocol sources — labeled medallions at the stream anchors */
   .fhero__chips { position: absolute; inset: 0; z-index: 2; pointer-events: none; }
