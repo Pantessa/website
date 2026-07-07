@@ -228,9 +228,14 @@ export default function EmbedsPanel() {
       {/* the roster — appears once a first mount/prompt has been sighted */}
       {primary && (
         <Card>
-          <CardTitle serif eyebrow="YOUR EMBEDS">
-            Connected sites
-          </CardTitle>
+          <div className="flex items-start justify-between gap-3 flex-wrap">
+            <CardTitle serif eyebrow="YOUR EMBEDS">
+              Connected sites
+            </CardTitle>
+            <Link href="/dashboard/embeds" className="mono text-[12px] text-[color:var(--accent)] hover:underline underline-offset-2">
+              Open analytics →
+            </Link>
+          </div>
           {sites.length === 0 ? (
             <p className="text-[13px] text-[color:var(--muted-2)] mt-2">
               Nothing sighted yet — this list fills in the moment your embed mounts and the first
