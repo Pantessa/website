@@ -4,7 +4,7 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { Activity, ChevronDown, Gauge, Route } from 'lucide-react'
+import { Activity, ChevronDown, Gauge, HeartPulse, Route } from 'lucide-react'
 
 /**
  * The "Research" mega-menu — a single top-level tab that reveals the three
@@ -24,6 +24,12 @@ export const RESEARCH_ITEMS = [
     label: 'Benchmarks',
     icon: Gauge,
     blurb: 'Routability grades for every MCP — A to F, scored live.',
+  },
+  {
+    href: '/health',
+    label: 'MCP Health',
+    icon: HeartPulse,
+    blurb: 'How well each MCP works — usage, routability, and failures fused.',
   },
   {
     href: '/tools',
