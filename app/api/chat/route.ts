@@ -523,6 +523,9 @@ async function prepareVoteTurn(
     return NextResponse.json({
       reply:
         '🗳️ Connect your wallet to vote — Snapshot voting power is tied to your address, so you sign the vote yourself.',
+      // The client renders a Connect-wallet button and re-runs this ask
+      // once a wallet lands (chat page: RainbowKit; embed: the host bridge).
+      connectWallet: true,
     })
   }
 
@@ -669,6 +672,7 @@ async function prepareSwapTurn(intent: SwapIntent, walletAddress: string | undef
     return NextResponse.json({
       reply:
         '🔄 Connect your wallet to swap — you sign the transaction yourself, so it has to be built for your address.',
+      connectWallet: true,
     })
   }
   if (intent.problem || !intent.sellToken || !intent.buyToken || !intent.sellAmountHuman) {

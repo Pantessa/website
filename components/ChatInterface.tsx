@@ -1,10 +1,12 @@
 'use client'
 
 import { analytics } from '@/lib/analytics'
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useSyncExternalStore } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Send, Zap, Check, Plus, Loader2, Bot, User, PanelLeft, PanelLeftClose, PanelRight, Sparkles } from 'lucide-react'
-import { useAccount, useSignTypedData } from 'wagmi'
+import { useAccount, useSignTypedData, useConnect } from 'wagmi'
+import { useConnectModal } from '@rainbow-me/rainbowkit'
+import { getHostWalletServerState, getHostWalletState, HOST_WALLET_CONNECTOR_ID, subscribeHostWallet } from '@/lib/host-wallet'
 import { cn } from '@/lib/utils'
 import MessageReceipts from '@/components/MessageReceipts'
 import RouteReport from '@/components/RouteReport'
@@ -51,7 +53,7 @@ interface PaymentToSign {
 
 /** Build the assistant message meta from receipts + an optional vote request /
  *  ambiguous-proposal candidates. */
-function buildMeta(receipts: unknown, payer: unknown, voteRequest: unknown, voteCandidates?: unknown, routeReport?: unknown, routerTrace?: unknown, voteProposal?: unknown, orderRequest?: unknown, guardrails?: unknown, txRequest?: unknown, workingContext?: unknown, txChain?: unknown, clarify?: unknown) {
+function buildMeta(receipts: unknown, payer: unknown, voteRequest: unknown, voteCandidates?: unknown, routeReport?: unknown, routerTrace?: unknown, voteProposal?: unknown, orderRequest?: unknown, guardrails?: unknown, txRequest?: unknown, workingContext?: unknown, txChain?: unknown, clarify?: unknown, connectWallet?: unknown, connectAsk?: string) {
   const meta: Record<string, unknown> = {}
   if (Array.isArray(receipts) && receipts.length) {
     meta.receipts = receipts
@@ -78,6 +80,12 @@ function buildMeta(receipts: unknown, payer: unknown, voteRequest: unknown, vote
   // An ambiguous money/governance target the planner refused to guess (RR17)
   // — ClarifyChips reads this; a chip's pick is sent as the next message.
   if (clarify && typeof clarify === 'object') meta.clarify = clarify
+  // The ask needs a transaction but no wallet is connected — the client
+  // renders a Connect-wallet button and re-runs `connectAsk` once one lands.
+  if (connectWallet === true) {
+    meta.connectWallet = true
+    if (connectAsk) meta.connectAsk = connectAsk
+  }
   return Object.keys(meta).length ? meta : undefined
 }
 
@@ -360,7 +368,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
         addMessage(chatId, {
           role: 'assistant',
           content: data.reply || data.error || 'No response.',
-          meta: buildMeta(data.receipts, data.payer, data.voteRequest, data.voteCandidates, undefined, undefined, data.voteProposal, data.orderRequest, data.guardrails, data.txRequest, data.workingContext, data.txChain, data.clarify),
+          meta: buildMeta(data.receipts, data.payer, data.voteRequest, data.voteCandidates, undefined, undefined, data.voteProposal, data.orderRequest, data.guardrails, data.txRequest, data.workingContext, data.txChain, data.clarify, data.connectWallet, userMsg),
         })
         reportEmbedTurn(userMsg, data as Record<string, unknown>)
       }
@@ -397,7 +405,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
     }).catch(() => {})
   }
   const reportEmbedTurn = (prompt: string, data: Record<string, unknown> | null, error?: string) => {
-    if (!embedKey || !embedSession) return
+    if (!embedded) return
     let outcome = 'answered'
     let artifact: string | undefined
     let chain: string | undefined
@@ -431,11 +439,41 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
       outcome = 'error'
       detail = String(data.error).slice(0, 200)
     }
+    // the host page hears every turn (the fusion hero reacts to these);
+    // durable telemetry still requires a key
+    onEmbedEvent?.('turn', { outcome, artifact })
     postEmbedTelemetry({ prompt: prompt.slice(0, 280), outcome, artifact, chain, detail })
   }
   const reportEmbedSigned = (info: { artifact: string; chain?: string; txUrl?: string; detail?: string }) => {
+    onEmbedEvent?.('turn', { outcome: 'signed', artifact: info.artifact })
     postEmbedTelemetry({ outcome: 'signed', ...info })
   }
+
+  // ── Connect-wallet-to-continue (transactional ask, no wallet) ───────────
+  // The server flags connectWallet on swap/vote asks that arrived without a
+  // wallet. The button below the reply connects one — the host-page bridge
+  // when this is an embed with a bridged provider, else the RainbowKit
+  // modal — and the original ask re-runs the moment an address lands.
+  const { openConnectModal } = useConnectModal()
+  const { connectAsync: connectForTx, connectors: txConnectors } = useConnect()
+  const hostBridge = useSyncExternalStore(subscribeHostWallet, getHostWalletState, getHostWalletServerState)
+  const [pendingConnectAsk, setPendingConnectAsk] = useState<string | null>(null)
+  const connectForAsk = (ask: string) => {
+    setPendingConnectAsk(ask)
+    const hostConnector = txConnectors.find((c) => c.id === HOST_WALLET_CONNECTOR_ID)
+    if (embedded && hostBridge.available && hostConnector) {
+      connectForTx({ connector: hostConnector }).catch(() => setPendingConnectAsk(null))
+    } else if (openConnectModal) {
+      openConnectModal()
+    }
+  }
+  useEffect(() => {
+    if (!pendingConnectAsk || !effectiveAddress) return
+    const ask = pendingConnectAsk
+    setPendingConnectAsk(null)
+    void handleSend(ask)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingConnectAsk, effectiveAddress])
 
   // Host-injected prompt (embed `prompt` message): prefill or send. Keyed on
   // `at` so the same text can be injected twice.
@@ -859,6 +897,24 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
                           <ClarifyChips clarify={clarify} disabled={loading} onPick={(resume) => void handleSend(resume)} />
                         ) : null
                       })()}
+                    {/* Transactional ask, no wallet → one-click connect, then the
+                        ask re-runs by itself. Hidden once a wallet is present. */}
+                    {msg.role === 'assistant' &&
+                      (msg.meta as { connectWallet?: boolean } | undefined)?.connectWallet === true &&
+                      !effectiveAddress && (
+                        <button
+                          className="mt-2 inline-flex items-center gap-2 px-4 h-10 rounded-full bg-[color:var(--accent)] text-black text-[13.5px] font-semibold hover:opacity-90 transition-opacity"
+                          disabled={loading || pendingConnectAsk !== null}
+                          onClick={() =>
+                            connectForAsk(
+                              (msg.meta as { connectAsk?: string } | undefined)?.connectAsk ?? '',
+                            )
+                          }
+                        >
+                          <Zap className="w-3.5 h-3.5" />
+                          {pendingConnectAsk !== null ? 'Connecting…' : 'Connect wallet to continue'}
+                        </button>
+                      )}
                   </div>
                 </motion.div>
               ))}

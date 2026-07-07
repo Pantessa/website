@@ -345,6 +345,15 @@ function FusionCanvas({
   return <canvas ref={canvasRef} className="fhero__canvas" aria-hidden="true" />
 }
 
+/** What a REAL turn in the summoned chat renders as — actual outcomes drive
+ * the transmutation, so the art and the product become the same object. */
+const LIVE_LINES: Record<string, string> = {
+  answered: '✓ answered live · $0.00 · receipted',
+  clarify: '… the agent asked a clarifying question — live',
+  'tx-built': '⇄ transaction built live — waiting for a signature in the chat',
+  signed: '✍ signed — receipted on-chain, just now',
+}
+
 export default function HomeHeroFusion() {
   const pulseRef = useRef(0)
   const sectionRef = useRef<HTMLElement>(null)
@@ -352,15 +361,44 @@ export default function HomeHeroFusion() {
   const captionAnchorRef = useRef<{ x: number; y: number } | null>(null)
   const [captionIdx, setCaptionIdx] = useState(0)
   const [live, setLive] = useState(false)
+  const [liveLine, setLiveLine] = useState<string | null>(null)
+  const liveAtRef = useRef(0)
+  const [embedSrc, setEmbedSrc] = useState(EMBED_SRC)
+
+  // Pin the embed to this origin so its postMessage events reach us.
+  useEffect(() => {
+    setEmbedSrc(`${EMBED_SRC}&host=${encodeURIComponent(window.location.origin)}`)
+  }, [])
 
   // The transmutation clock: rotate the caption and ask the canvas for a
-  // ring pulse + writer burst on the same beat.
+  // ring pulse + writer burst on the same beat — unless a REAL turn just
+  // happened (the live line holds the stage for ~9s).
   useEffect(() => {
     const id = setInterval(() => {
+      if (Date.now() - liveAtRef.current < 9000) return
+      setLiveLine(null)
       setCaptionIdx((i) => (i + 1) % TRANSMUTATIONS.length)
       pulseRef.current++
     }, 4600)
     return () => clearInterval(id)
+  }, [])
+
+  // REAL transmutations: the summoned chat reports each turn (embed contract
+  // 'event' messages) — actual outcomes drive the art, no script.
+  useEffect(() => {
+    const onMessage = (e: MessageEvent) => {
+      if (e.origin !== window.location.origin) return
+      const d = e.data as { source?: string; type?: string; name?: string; data?: { outcome?: string } } | null
+      if (!d || d.source !== 'yeetful-embed' || d.type !== 'event') return
+      const outcome = d.name === 'order-signed' ? 'signed' : d.name === 'turn' ? d.data?.outcome : undefined
+      const line = outcome ? LIVE_LINES[outcome] : undefined
+      if (!line) return
+      setLiveLine(line)
+      liveAtRef.current = Date.now()
+      pulseRef.current++
+    }
+    window.addEventListener('message', onMessage)
+    return () => window.removeEventListener('message', onMessage)
   }, [])
 
   // Where the writers land: the caption's center, in section-local px
@@ -420,8 +458,9 @@ export default function HomeHeroFusion() {
         </div>
         {/* the transmutation readout — written by the burst: each character
             materializes as the writer particles arrive from the core */}
-        <p className="fhero__caption mono" key={captionIdx} ref={captionRef}>
-          {[...TRANSMUTATIONS[captionIdx]].map((ch, i) => (
+        <p className={`fhero__caption mono${liveLine ? ' fhero__caption--live' : ''}`} key={liveLine ?? captionIdx} ref={captionRef}>
+          {liveLine && <span className="fhero__livedot" aria-hidden="true" />}
+          {[...(liveLine ?? TRANSMUTATIONS[captionIdx])].map((ch, i) => (
             <span className="fhero__char" style={{ animationDelay: `${340 + i * 13}ms` }} key={i}>
               {ch === ' ' ? ' ' : ch}
             </span>
@@ -449,7 +488,7 @@ export default function HomeHeroFusion() {
               ✕
             </button>
           </div>
-          <iframe className="fhero__liveframe" src={EMBED_SRC} title="Yeetful chat — live" allow="clipboard-write" />
+          <iframe className="fhero__liveframe" src={embedSrc} title="Yeetful chat — live" allow="clipboard-write" />
         </div>
       )}
     </section>
