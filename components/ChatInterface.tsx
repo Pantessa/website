@@ -25,6 +25,7 @@ import { EXAMPLE_PROMPTS } from '@/lib/examples'
 import SampleCallDemo from '@/components/SampleCallDemo'
 import BrandIcon from '@/components/BrandIcon'
 import ShareButton from '@/components/ShareButton'
+import ChatMarkdown from '@/components/ChatMarkdown'
 
 // Typed-data signing request shipped from the server for the wallet to sign.
 interface SigningRequest {
@@ -768,7 +769,11 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
                         : 'bg-[var(--surf-1)] text-[color:var(--fg)] border border-[var(--line)] rounded-tl-sm'
                     )}
                   >
-                    <pre className="whitespace-pre-wrap font-sans [overflow-wrap:anywhere]">{msg.content}</pre>
+                    {msg.role === 'assistant' ? (
+                      <ChatMarkdown content={msg.content} />
+                    ) : (
+                      <pre className="whitespace-pre-wrap font-sans [overflow-wrap:anywhere]">{msg.content}</pre>
+                    )}
                     {msg.role === 'assistant' && <MessageReceipts meta={msg.meta} />}
                     {msg.role === 'assistant' && <RouteReport meta={msg.meta} />}
                     {msg.role === 'assistant' &&
