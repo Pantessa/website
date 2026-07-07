@@ -111,9 +111,16 @@ interface ChatInterfaceProps {
   /** Host-injected prompt (embed contract v1 `prompt` message): prefill the
    *  input, or send immediately when `send`. `at` disambiguates repeats. */
   injectedPrompt?: { text: string; send: boolean; at: number } | null
+  /** Public embed key (`yfe_…`) from the embed params — rides every
+   *  /api/chat body so house-model credits bill the KEY OWNER's plan and the
+   *  turn counts toward that site's embed stats. */
+  embedKey?: string
+  /** Origin of the page hosting the embed (from the SDK's page URL /
+   *  referrer) — per-turn attribution for the embeds ledger. */
+  embedOrigin?: string
 }
 
-export default function ChatInterface({ embedded = false, contextAddress, onEmbedEvent, injectedPrompt }: ChatInterfaceProps = {}) {
+export default function ChatInterface({ embedded = false, contextAddress, onEmbedEvent, injectedPrompt, embedKey, embedOrigin }: ChatInterfaceProps = {}) {
   const {
     servers,
     activeServerIds,
@@ -324,6 +331,8 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
             history,
             workingContext,
             turnId,
+            embedKey,
+            embedOrigin,
           }),
         })
         data = await res.json()
@@ -399,6 +408,8 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
         // Wallet connected → the engine streams its routing, then hands the
         // data + answer payments back for the wallet to sign (B5).
         walletAddress: effectiveAddress,
+        embedKey,
+        embedOrigin,
       }),
     })
     if (!res.body) {

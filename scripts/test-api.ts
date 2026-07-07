@@ -343,6 +343,43 @@ async function main() {
   const whUnsigned = await fetch(`${BASE}/api/billing/webhook`, { method: 'POST', body: '{}' })
   check('webhook without signature/config → 400 or 503', whUnsigned.status === 400 || whUnsigned.status === 503)
 
+  // ── Embed keys: public attribution keys + the sites ledger ────────────────
+  console.log('— embed keys')
+  const ekNoAuth = await fetch(`${BASE}/api/embed-keys`)
+  check('embed-keys list requires auth → 401', ekNoAuth.status === 401)
+  const ekMint = await fetch(`${BASE}/api/embed-keys`, {
+    method: 'POST', headers: CJ, body: JSON.stringify({ label: 'harness site' }),
+  })
+  const ek = await ekMint.json()
+  check(
+    'mint returns a public yfe_ key',
+    ekMint.status === 201 && typeof ek.key === 'string' && /^yfe_[0-9a-f]{24}$/.test(ek.key),
+    ek.key,
+  )
+  // The sight beacon is public (it runs on strangers' sites) — a mount under
+  // the key + a page URL lands as an attributed site row.
+  const sight = await fetch(`${BASE}/api/embed/sight`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ key: ek.key, page: 'https://harness-embed.test/swap' }),
+  })
+  const sightBody = await sight.json()
+  check('sight beacon attributes a keyed mount', sight.status === 200 && sightBody.attributed === true)
+  const ekList = await (await fetch(`${BASE}/api/embed-keys`, { headers: C })).json()
+  const ekMine = (ekList.keys as { id: string; key: string; sites: { origin: string }[] }[]).find(
+    (k) => k.key === ek.key,
+  )
+  check(
+    'embeds list shows the sighted origin under the key',
+    !!ekMine && ekMine.sites.some((s: { origin: string }) => s.origin === 'https://harness-embed.test'),
+  )
+  const ekGone = await fetch(`${BASE}/api/embed-keys/${ek.id}?purge=1`, { method: 'DELETE', headers: C })
+  const ekAfter = await (await fetch(`${BASE}/api/embed-keys`, { headers: C })).json()
+  check(
+    'purge-revoke removes the key + its sites',
+    ekGone.status === 200 && !(ekAfter.keys as { key: string }[]).some((k) => k.key === ek.key),
+  )
+
   // ── Ledger sync ───────────────────────────────────────────────────────────
   console.log('— ledger sync')
   const ledgerRes = await fetch(`${BASE}/api/grants/${grant.id}/ledger`, {

@@ -247,6 +247,24 @@ export async function GET(req: NextRequest) {
   const declined = f.declined_calls
   const declineRate = paidCalls + declined > 0 ? declined / (paidCalls + declined) : null
 
+  // Embedders — every (embed key, origin) that has mounted the chat, keyed
+  // rows first. Small table (one row per site), so a plain findMany is fine.
+  const embedSites = await prisma.embedSite
+    .findMany({
+      orderBy: [{ turns: 'desc' }, { lastSeen: 'desc' }],
+      take: 100,
+      select: {
+        origin: true,
+        pageUrl: true,
+        turns: true,
+        ownerAddress: true,
+        embedKeyId: true,
+        firstSeen: true,
+        lastSeen: true,
+      },
+    })
+    .catch(() => [])
+
   return NextResponse.json({
     excludeOwners,
     tiles: {
@@ -267,6 +285,15 @@ export async function GET(req: NextRequest) {
       { key: 'paid', label: 'Paid (≥1 call)', value: f.paid },
       { key: 'repeat', label: 'Repeat (≥2 calls)', value: f.repeat },
     ],
+    embedders: embedSites.map((s) => ({
+      origin: s.origin,
+      pageUrl: s.pageUrl,
+      turns: s.turns,
+      owner: s.ownerAddress,
+      keyed: s.embedKeyId !== '',
+      firstSeen: s.firstSeen.toISOString(),
+      lastSeen: s.lastSeen.toISOString(),
+    })),
     newWalletsDaily: newDaily.map((r) => ({ day: r.day.toISOString(), n: r.n })),
     activeWalletsDaily: activeDaily.map((r) => ({ day: r.day.toISOString(), n: r.n })),
     revenueDaily: revDaily.map((r) => ({
