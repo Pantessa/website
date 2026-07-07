@@ -52,9 +52,14 @@ export default function EmbedAnywhere() {
           <pre className="embeda__pre mono">
             <code>{SNIPPET}</code>
           </pre>
-          <Link href="/docs/embed" className="embeda__docs mono">
-            Read the embed docs →
-          </Link>
+          <div className="embeda__ctas">
+            <Link href="/dashboard" className="embeda__cta mono">
+              Mint your embed key →
+            </Link>
+            <Link href="/docs/embed" className="embeda__docs mono">
+              Read the embed docs →
+            </Link>
+          </div>
         </div>
 
         <div className="embeda__demos">

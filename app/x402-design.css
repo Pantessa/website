@@ -2080,7 +2080,10 @@
   .embeda__snipbar { display: flex; justify-content: space-between; gap: 10px; padding: 10px 16px; border-bottom: 1px solid var(--line); font-size: 12px; color: var(--muted); }
   .embeda__snipver { color: var(--accent); }
   .embeda__pre { padding: 18px 16px; font-size: 13px; line-height: 1.7; overflow-x: auto; color: #c9cec6; }
-  .embeda__docs { display: block; padding: 12px 16px; border-top: 1px solid var(--line); font-size: 13px; color: var(--accent); }
+  .embeda__ctas { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 20px; padding: 12px 16px; border-top: 1px solid var(--line); }
+  .embeda__cta { font-size: 13px; font-weight: 600; color: var(--bg); background: var(--accent); border-radius: 999px; padding: 7px 14px; }
+  .embeda__cta:hover { filter: brightness(1.08); }
+  .embeda__docs { display: block; font-size: 13px; color: var(--accent); }
   .embeda__docs:hover { text-decoration: underline; }
   .embeda__demos { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
   .embeda__demo {

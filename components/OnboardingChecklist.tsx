@@ -13,8 +13,14 @@ import { Card, type Stats } from '@/lib/dashboard-ui'
 
 const DISMISS_KEY = 'yf_onboarding_dismissed'
 
+interface EmbedSignal {
+  keys: number
+  turns: number
+  deadEnds: number
+}
+
 export default function OnboardingChecklist({ stats }: { stats: Stats }) {
-  const [earnCalls, setEarnCalls] = useState<number | null>(null)
+  const [embed, setEmbed] = useState<EmbedSignal | null>(null)
   const [dismissed, setDismissed] = useState(false)
 
   useEffect(() => {
@@ -25,41 +31,50 @@ export default function OnboardingChecklist({ stats }: { stats: Stats }) {
     }
   }, [])
 
+  // The pivot journey ticks off live embed analytics: minted a key → the chat
+  // took real turns → you acted on the dead-ends (self-heal).
   useEffect(() => {
-    fetch('/api/dashboard/earnings', { cache: 'no-store' })
+    fetch('/api/embeds/insights', { cache: 'no-store' })
       .then((r) => (r.ok ? r.json() : null))
-      .then((d) => setEarnCalls(d?.kpis?.callsServed ?? 0))
-      .catch(() => setEarnCalls(0))
+      .then((d) =>
+        setEmbed({
+          keys: d?.keys?.length ?? 0,
+          turns: d?.totals?.turns ?? 0,
+          deadEnds: d?.totals?.deadEndSessions ?? 0,
+        }),
+      )
+      .catch(() => setEmbed({ keys: 0, turns: 0, deadEnds: 0 }))
   }, [])
 
+  const e = embed ?? { keys: 0, turns: 0, deadEnds: 0 }
   const steps = [
     {
-      label: 'Approve an agent',
-      hint: 'Pick the MCP services your wallet is allowed to pay.',
-      done: (stats.grant?.allowCount ?? 0) > 0,
-      href: '/dashboard/approvals',
-      cta: 'Approve',
+      label: 'Mount the chat on your site',
+      hint: 'Mint an embed key above, drop in five lines, and compose a few MCPs.',
+      done: e.keys > 0,
+      href: '/docs/embed',
+      cta: 'Get the snippet',
     },
     {
-      label: 'Connect an agent',
-      hint: 'Mint an API key — that key is your agent.',
+      label: 'See what your visitors ask',
+      hint: 'Every turn is recorded — asks, outcomes, the transactions it built.',
+      done: e.turns > 0,
+      href: '/dashboard/embeds',
+      cta: 'View insights',
+    },
+    {
+      label: 'Improve your MCPs from real asks',
+      hint: 'Dead-end asks become a Claude Code upgrade prompt — the self-heal loop.',
+      done: e.turns > 0 && e.deadEnds === 0,
+      href: '/health',
+      cta: 'Check MCP health',
+    },
+    {
+      label: 'Let your own agent pay (optional)',
+      hint: 'Wire the yeetful SDK so an agent can pay per call under a spend cap.',
       done: (stats.agents?.connected ?? 0) > 0,
-      href: '/dashboard/keys',
-      cta: 'Mint a key',
-    },
-    {
-      label: 'Run your first paid call',
-      hint: 'Fund your wallet, then ask the router anything.',
-      done: (stats.kpis?.calls ?? 0) > 0,
-      href: '/chat',
-      cta: 'Open chat',
-    },
-    {
-      label: 'Connect an MCP to earn',
-      hint: 'Report paid calls from your own MCP and earn per call.',
-      done: (earnCalls ?? 0) > 0,
-      href: '/docs/earn',
-      cta: 'Start earning',
+      href: '/docs/quickstart',
+      cta: 'Read quickstart',
     },
   ]
 
@@ -84,8 +99,8 @@ export default function OnboardingChecklist({ stats }: { stats: Stats }) {
         <div className="min-w-0">
           <p className="text-sm font-semibold text-white">Get started</p>
           <p className="text-xs text-[color:var(--muted-2)] mt-0.5">
-            {completed} of {steps.length} done — a few steps to your first paid call and first
-            earnings.
+            {completed} of {steps.length} done — from mounting the chat to healing your MCPs from
+            real usage.
           </p>
         </div>
         <button
