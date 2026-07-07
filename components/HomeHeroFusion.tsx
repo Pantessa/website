@@ -488,7 +488,7 @@ export default function HomeHeroFusion() {
               ✕
             </button>
           </div>
-          <iframe className="fhero__liveframe" src={embedSrc} title="Yeetful chat — live" allow="clipboard-write" />
+          <iframe className="fhero__liveframe" src={embedSrc} title="Yeetful chat — live" allow="clipboard-write; fullscreen" allowFullScreen />
         </div>
       )}
     </section>

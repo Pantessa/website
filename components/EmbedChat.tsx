@@ -34,6 +34,7 @@
 // ────────────────────────────────────────────────────────────────────────────
 
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
+import { Maximize2, Minimize2 } from 'lucide-react'
 import { useAccount, useConnect } from 'wagmi'
 import {
   getHostWalletServerState,
@@ -85,6 +86,12 @@ export default function EmbedChat({
   // null = parent explicitly cleared the context (fall back to the connected wallet).
   const [msgAddress, setMsgAddress] = useState<`0x${string}` | null | undefined>(undefined)
   const [injectedPrompt, setInjectedPrompt] = useState<{ text: string; send: boolean; at: number } | null>(null)
+  const [isFull, setIsFull] = useState(false)
+  useEffect(() => {
+    const onFs = () => setIsFull(!!document.fullscreenElement)
+    document.addEventListener('fullscreenchange', onFs)
+    return () => document.removeEventListener('fullscreenchange', onFs)
+  }, [])
   // One session per mount — groups this visit's turns in the owner's embed
   // telemetry so dead-end conversations are computable.
   const [embedSession] = useState(() =>
@@ -249,7 +256,7 @@ export default function EmbedChat({
   return (
     <div className="embed-root flex flex-col h-dvh" data-theme={theme} style={{ background: 'var(--bg)', color: 'var(--fg)' }}>
       {/* Slim header: wordmark + the resolved MCP scope + the address context */}
-      <header className="flex-shrink-0 flex items-center gap-2 px-3 py-2 border-b border-[var(--line)] bg-[var(--surf-1)] overflow-x-auto scrollbar-none">
+      <header className="flex-shrink-0 flex items-center gap-2 px-3 py-2 border-b border-white/[0.07] bg-[var(--surf-1)]/70 backdrop-blur-md overflow-x-auto scrollbar-none">
         <a
           href="/chat"
           target="_blank"
@@ -275,6 +282,21 @@ export default function EmbedChat({
           </span>
         ))}
         <span className="ml-auto flex-shrink-0 inline-flex items-center gap-2">
+          {/* Fullscreen — works inside host iframes that grant the fullscreen
+              permission (the SDK + our own surfaces do); fails silently and
+              hides itself where the host forbids it. */}
+          <button
+            type="button"
+            aria-label={isFull ? 'Exit fullscreen' : 'Fullscreen'}
+            title={isFull ? 'Exit fullscreen' : 'Fullscreen'}
+            onClick={() => {
+              if (document.fullscreenElement) void document.exitFullscreen().catch(() => {})
+              else void document.documentElement.requestFullscreen().catch(() => {})
+            }}
+            className="flex-shrink-0 grid place-items-center w-6 h-6 rounded-md text-[color:var(--muted-2)] hover:text-[color:var(--fg)] transition-colors"
+          >
+            {isFull ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
+          </button>
           {hostWallet.available && !isConnected && hostConnector && (
             <button
               type="button"
