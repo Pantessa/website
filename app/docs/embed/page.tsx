@@ -50,7 +50,9 @@ export default function EmbedDocsPage() {
           <li>
             <strong><code>mcps</code></strong> — directory slugs resolved against{' '}
             <Link href="/servers">the catalog</Link>; unknown slugs are dropped, capped at 4.
-            If none resolve, the chat falls back to its normal default set.
+            If none resolve, the chat falls back to its normal default set. Composing your own
+            MCP? <Link href="/docs/routable-mcp">Make it routable</Link> so the agent reliably
+            picks it.
           </li>
           <li>
             <strong><code>address</code></strong> — context only: it feeds{' '}

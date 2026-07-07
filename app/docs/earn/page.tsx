@@ -27,7 +27,9 @@ export default function EarnPage() {
         they <strong>spend</strong>, your MCP reports what it <strong>earns</strong>. Add one
         async, non-blocking call after each paid request and your{' '}
         <Link href="/dashboard">dashboard</Link> shows total earned, last 30 days, calls served,
-        and paying agents — per server.
+        and paying agents — per server. To earn, your MCP has to get <em>picked</em> first:{' '}
+        <Link href="/docs/routable-mcp">make it routable</Link> and watch its{' '}
+        <Link href="/health">health score</Link>.
       </p>
 
       <div className="docs__prose">
