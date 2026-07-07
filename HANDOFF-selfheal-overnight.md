@@ -48,13 +48,14 @@ analytics into "how well is this MCP working" and an actionable improvement loop
 
 ### EPIC E — UI/UX vibe propagation
 - [x] E (core) `.hero__em` + `.pricing__em` upgraded to the hero emerald→gold gradient → lifts docs/benchmarks/tools/activity/servers/pricing at once. /health + /docs/routable-mcp built in-vibe.
-- [ ] E4 dashboard headers (mono eyebrows).   [ ] E5 deeper /servers, /activity, /blog polish.
+- [x] Docs interlink pass: /docs/earn + /docs/embed point into /docs/routable-mcp + /health; /health cockpit legend.
+- [x] Health added to the #338 "Research" nav mega-menu (rebased onto main's nav redesign).
+- [~] E4 dashboard headers + directory health dots + screenshots — BLOCKED: dashboard is client-gated (headers not in SSR) and the Chrome extension is offline this whole run, so these client-visual changes have NO verification path. Left rather than ship blind churn. /activity is already in-vibe (uses `.hero__em`).
 
-### Verify status
-tsc clean throughout; dev server on 3240; new routes /health + /docs/routable-mcp
-return 200 with real Neon data; server-page health panels show real signals
-(snapshot-free/uniswap-free "Watch" w/ real failures). Chrome extension offline
-this run → no screenshots captured (curl content-verified instead).
+### Final verify status (rebased onto main @ #338)
+tsc clean · `npm run build` ✓ (14.8s, /health + /docs/routable-mcp in manifest) ·
+`test:api` 261 pass / 2 pre-existing failures · runtime smoke green · PR #337
+MERGEABLE. Chrome offline all run → screenshots deferred (curl content-verified).
 
 ## Gotchas
 - Neon DB is `yeetful` (pass databaseName:'yeetful' to run_sql). Additive schema
