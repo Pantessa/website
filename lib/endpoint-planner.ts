@@ -572,7 +572,7 @@ function mcpToolOf(url: string, priceUsd?: string): { base: string; tool: string
  * urls, so point specific hosts elsewhere via env (never set in prod):
  * FREE_MCP_URL_OVERRIDES='{"uniswap-free.yeetful.com":"http://localhost:3261"}'
  */
-function overrideFreeMcpBase(base: string): string {
+export function overrideFreeMcpBase(base: string): string {
   const raw = process.env.FREE_MCP_URL_OVERRIDES
   if (!raw) return base
   try {
