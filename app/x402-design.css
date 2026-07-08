@@ -1251,6 +1251,68 @@
   .dash__h1 { font-family: 'Archivo', sans-serif; font-weight: 800; font-size: 24px; letter-spacing: -0.02em; margin-bottom: 6px; }
   .dash__sub { font-size: 13px; color: var(--muted-2); margin-bottom: 20px; max-width: 64ch; line-height: 1.5; }
 
+  /* ── APP SHELL (logged-in: top-nav removed, collapsible rail) ── */
+  /* Rail header (ChatGPT-style): collapse toggle + home-to-dashboard mark. */
+  .apprail__head { display: flex; align-items: center; gap: 6px; padding: 0 4px 2px; }
+  .apprail__toggle {
+    flex-shrink: 0; width: 34px; height: 34px; display: grid; place-items: center;
+    border-radius: 9px; color: var(--muted); transition: color .15s, background .15s;
+  }
+  .apprail__toggle:hover { color: var(--fg); background: var(--surf-1); }
+  .apprail__home { display: flex; align-items: center; gap: 8px; padding: 0 4px; color: var(--fg); }
+  .apprail__word { font-family: 'Archivo', sans-serif; font-weight: 800; font-size: 16px; letter-spacing: -0.01em; }
+  .apprail__home:hover { opacity: .85; }
+  /* Floating reopen control (rail collapsed) — pinned top-left over content. */
+  .apprail__reopen {
+    position: fixed; top: 14px; left: 16px; z-index: 60;
+    display: flex; align-items: center; gap: 4px; padding: 4px;
+    background: rgba(0,0,0,0.6); backdrop-filter: blur(10px);
+    border: 1px solid var(--line); border-radius: 12px;
+    animation: apprailReopenIn .22s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  @keyframes apprailReopenIn {
+    from { opacity: 0; transform: translateX(-8px); }
+    to   { opacity: 1; transform: none; }
+  }
+  /* Chat toolbar reopen group (sidebar collapsed) — same easing as the rail. */
+  .chatreopen { animation: apprailReopenIn .2s cubic-bezier(0.4, 0, 0.2, 1); }
+  .apprail__homeicon { display: grid; place-items: center; width: 34px; height: 34px; border-radius: 9px; }
+  .apprail__homeicon:hover { background: var(--surf-1); }
+
+  /* With the top nav gone, app surfaces own the full viewport height. */
+  :root[data-app-shell] .dash { min-height: 100vh; }
+  :root[data-app-shell] .dash__rail { top: 20px; min-height: calc(100vh - 20px); }
+  :root[data-app-shell] .docs { min-height: 100vh; }
+  :root[data-app-shell] .docs__rail { top: 20px; }
+  :root[data-app-shell] .dashnav__bar { top: 0; }
+
+  /* Collapse is animated: the rail's grid track slides from its width to 0
+     (grid-template-columns is animatable) instead of snapping via display:none.
+     overflow/pointer-events only clamp WHILE collapsed so the rail's popovers
+     (org switcher, account) are never clipped when the rail is open. */
+  :root[data-app-shell] .dash,
+  :root[data-app-shell] .docs {
+    transition: grid-template-columns .28s cubic-bezier(0.4, 0, 0.2, 1), gap .28s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  :root[data-app-shell] .dash__rail,
+  :root[data-app-shell] .docs__rail { transition: opacity .2s ease; }
+  :root[data-rail-collapsed] .dash { grid-template-columns: 0px 1fr; gap: 0; }
+  :root[data-rail-collapsed] .docs { grid-template-columns: 0px minmax(0, 1fr); gap: 0; }
+  :root[data-rail-collapsed] .dash__rail,
+  :root[data-rail-collapsed] .docs__rail { overflow: hidden; pointer-events: none; opacity: 0; }
+  /* Give the content a little top breathing room for the floating toggle. */
+  :root[data-rail-collapsed] .dash__main,
+  :root[data-rail-collapsed] .docs__main { padding-top: 56px; }
+
+  /* Collapse is a DESKTOP affordance: on phones the dashboard hamburger bar and
+     the docs scroll-rail own navigation, so the rail header + floating reopen
+     (and the collapsed top-padding) are suppressed to avoid a double nav. */
+  @media (max-width: 900px) {
+    .apprail__head, .apprail__reopen { display: none; }
+    :root[data-rail-collapsed] .dash__main,
+    :root[data-rail-collapsed] .docs__main { padding-top: 0; }
+  }
+
   /* org scope switcher (rail) — selection is client state; APIs re-check */
   .orgsw { position: relative; padding: 0 6px 10px; }
   .orgsw__btn {

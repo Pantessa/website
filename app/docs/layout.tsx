@@ -1,6 +1,7 @@
 import Footer from '@/components/Footer'
 import DocsSidebar from '@/components/DocsSidebar'
 import DocsHeadingAnchors from '@/components/DocsHeadingAnchors'
+import { AppRailHeader } from '@/components/AppShell'
 
 // Docs shell: FULL-WIDTH (no --maxw cap) with a sticky left rail. Content
 // pages are server components — the copy must be crawlable, not hydrated in.
@@ -10,6 +11,7 @@ export default function DocsLayout({ children }: { children: React.ReactNode }) 
     <>
       <div className="docs">
         <aside className="docs__rail">
+          <AppRailHeader />
           <p className="docs__railtitle mono">DOCS</p>
           <DocsSidebar />
         </aside>

@@ -13,6 +13,7 @@ import DashboardSidebar from '@/components/DashboardSidebar'
 import DashboardMobileNav from '@/components/DashboardMobileNav'
 import DashboardAccount from '@/components/DashboardAccount'
 import OrgSwitcher from '@/components/OrgSwitcher'
+import { AppRailHeader } from '@/components/AppShell'
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
@@ -44,6 +45,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       {/* Desktop: persistent left rail — sections up top, account pinned to the
           bottom (wallet + sign out). Hidden below 900px. */}
       <aside className="dash__rail">
+        <AppRailHeader />
         <OrgSwitcher />
         <DashboardSidebar pathname={pathname} address={address} />
         <div className="dash__acct">

@@ -3,7 +3,7 @@
 import { analytics } from '@/lib/analytics'
 import { useState, useRef, useEffect, useSyncExternalStore } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Send, Zap, Check, Plus, Loader2, Bot, User, PanelLeft, PanelLeftClose, PanelRight, Sparkles, Copy } from 'lucide-react'
+import { Send, Zap, Check, Plus, Loader2, Bot, User, PanelLeft, PanelRight, Sparkles, Copy } from 'lucide-react'
 import { useAccount, useSignTypedData, useConnect } from 'wagmi'
 import { useConnectModal } from '@rainbow-me/rainbowkit'
 import { getHostWalletServerState, getHostWalletState, HOST_WALLET_CONNECTOR_ID, subscribeHostWallet } from '@/lib/host-wallet'
@@ -28,6 +28,10 @@ import SampleCallDemo from '@/components/SampleCallDemo'
 import { SplashDashboard } from '@/components/SplashDashboard'
 import BrandIcon from '@/components/BrandIcon'
 import ShareButton from '@/components/ShareButton'
+import Link from 'next/link'
+import ConnectWallet from '@/components/ConnectWallet'
+import { YeetfulMark } from '@/components/Logo'
+import { useAppShellMode } from '@/components/AppShell'
 import ChatMarkdown from '@/components/ChatMarkdown'
 
 // Typed-data signing request shipped from the server for the wallet to sign.
@@ -182,6 +186,26 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
     engineWindowOpen,
     setEngineWindowOpen,
   } = useYeetfulStore()
+
+  // Logged in, the top nav is removed — the chat toolbar carries the home
+  // (back to dashboard) mark and the pay-wallet control instead. Never in embed.
+  const { chrome: appChrome } = useAppShellMode()
+  const showAppChrome = appChrome && !embedded
+
+  // Reactive rail-open state so the toolbar can surface the reopen control only
+  // when the conversation sidebar is tucked away (the collapse toggle + home
+  // otherwise live at the TOP of the sidebar, above "New Chat" — like docs).
+  const [isNarrow, setIsNarrow] = useState(false)
+  useEffect(() => {
+    const mql = window.matchMedia('(max-width: 1023px)')
+    const on = (e: MediaQueryListEvent) => setIsNarrow(e.matches)
+    setIsNarrow(mql.matches)
+    mql.addEventListener('change', on)
+    return () => mql.removeEventListener('change', on)
+  }, [])
+  const railOpen = isNarrow ? mobileSidebarOpen : sidebarOpen
+  const toggleChatRail = () =>
+    isNarrow ? setMobileSidebarOpen(!mobileSidebarOpen) : setSidebarOpen(!sidebarOpen)
 
   // Toggle an agent for this chat; persist the set to the open chat (and DB).
   // Turning one ON pins it to the front of the strip, so scroll home to show
@@ -719,19 +743,31 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
           Hidden in the embed — EmbedChat renders its own slim header. */}
       {!embedded && (
       <div className="flex-shrink-0 px-3 py-2.5 border-b border-[var(--line)] bg-black/40 flex items-center gap-2">
+        {/* Reopen group — appears (with the home mark) only while the sidebar is
+            collapsed; the collapse toggle otherwise lives atop the sidebar. */}
+        {!railOpen && (
+          <div key="chat-reopen" className="chatreopen flex-shrink-0 flex items-center gap-2">
+            <button
+              onClick={toggleChatRail}
+              aria-label="Show chats"
+              title="Show chats"
+              className="flex-shrink-0 w-10 h-10 md:w-8 md:h-8 grid place-items-center rounded-lg border border-[var(--line)] bg-[var(--surf-1)] text-[color:var(--muted)] hover:text-white hover:border-[var(--line-2)] transition-colors"
+            >
+              <PanelLeft className="w-4 h-4" />
+            </button>
+            {showAppChrome && (
+              <Link
+                href="/dashboard"
+                aria-label="Dashboard home"
+                title="Back to dashboard"
+                className="flex-shrink-0 grid place-items-center w-10 h-10 md:w-8 md:h-8 rounded-lg text-white hover:bg-[var(--surf-1)] transition-colors"
+              >
+                <YeetfulMark size={20} />
+              </Link>
+            )}
+          </div>
+        )}
         <div ref={stripRef} className="flex items-center gap-2 overflow-x-auto scrollbar-none flex-1 min-w-0">
-          <button
-            onClick={() =>
-              window.matchMedia('(max-width: 1023px)').matches
-                ? setMobileSidebarOpen(!mobileSidebarOpen)
-                : setSidebarOpen(!sidebarOpen)
-            }
-            aria-label={sidebarOpen || mobileSidebarOpen ? 'Collapse chats sidebar' : 'Expand chats sidebar'}
-            title={sidebarOpen || mobileSidebarOpen ? 'Collapse chats' : 'Show chats'}
-            className="flex-shrink-0 w-10 h-10 md:w-8 md:h-8 grid place-items-center rounded-lg border border-[var(--line)] bg-[var(--surf-1)] text-[color:var(--muted)] hover:text-white hover:border-[var(--line-2)] transition-colors"
-          >
-            {sidebarOpen ? <PanelLeftClose className="w-4 h-4" /> : <PanelLeft className="w-4 h-4" />}
-          </button>
           {/* Auto Router + the spending-policy master switch are DISABLED for
               now — the toggles are hidden and the features behave as if they
               never existed (Auto Router forced off in the store; policy never
@@ -797,6 +833,11 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
             </button>
           )}
           <ShareButton />
+          {showAppChrome && (
+            <div className="flex-shrink-0 pl-1">
+              <ConnectWallet />
+            </div>
+          )}
         </div>
       )}
 
