@@ -1268,7 +1268,14 @@
     display: flex; align-items: center; gap: 4px; padding: 4px;
     background: rgba(0,0,0,0.6); backdrop-filter: blur(10px);
     border: 1px solid var(--line); border-radius: 12px;
+    animation: apprailReopenIn .22s cubic-bezier(0.4, 0, 0.2, 1);
   }
+  @keyframes apprailReopenIn {
+    from { opacity: 0; transform: translateX(-8px); }
+    to   { opacity: 1; transform: none; }
+  }
+  /* Chat toolbar reopen group (sidebar collapsed) — same easing as the rail. */
+  .chatreopen { animation: apprailReopenIn .2s cubic-bezier(0.4, 0, 0.2, 1); }
   .apprail__homeicon { display: grid; place-items: center; width: 34px; height: 34px; border-radius: 9px; }
   .apprail__homeicon:hover { background: var(--surf-1); }
 
@@ -1279,11 +1286,20 @@
   :root[data-app-shell] .docs__rail { top: 20px; }
   :root[data-app-shell] .dashnav__bar { top: 0; }
 
-  /* Collapsed: tuck the rail away, content spans the full width. */
-  :root[data-rail-collapsed] .dash { grid-template-columns: 1fr; }
-  :root[data-rail-collapsed] .dash__rail { display: none; }
-  :root[data-rail-collapsed] .docs { grid-template-columns: 1fr; }
-  :root[data-rail-collapsed] .docs__rail { display: none; }
+  /* Collapse is animated: the rail's grid track slides from its width to 0
+     (grid-template-columns is animatable) instead of snapping via display:none.
+     overflow/pointer-events only clamp WHILE collapsed so the rail's popovers
+     (org switcher, account) are never clipped when the rail is open. */
+  :root[data-app-shell] .dash,
+  :root[data-app-shell] .docs {
+    transition: grid-template-columns .28s cubic-bezier(0.4, 0, 0.2, 1), gap .28s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  :root[data-app-shell] .dash__rail,
+  :root[data-app-shell] .docs__rail { transition: opacity .2s ease; }
+  :root[data-rail-collapsed] .dash { grid-template-columns: 0px 1fr; gap: 0; }
+  :root[data-rail-collapsed] .docs { grid-template-columns: 0px minmax(0, 1fr); gap: 0; }
+  :root[data-rail-collapsed] .dash__rail,
+  :root[data-rail-collapsed] .docs__rail { overflow: hidden; pointer-events: none; opacity: 0; }
   /* Give the content a little top breathing room for the floating toggle. */
   :root[data-rail-collapsed] .dash__main,
   :root[data-rail-collapsed] .docs__main { padding-top: 56px; }

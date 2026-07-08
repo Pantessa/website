@@ -1,12 +1,15 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import Link from 'next/link'
 import { motion, AnimatePresence } from 'framer-motion'
-import { MessageSquare, Plus, Trash2, Globe, Loader2 } from 'lucide-react'
+import { MessageSquare, Plus, Trash2, Globe, Loader2, PanelLeftClose } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { cn } from '@/lib/utils'
 import { useYeetfulStore } from '@/lib/store'
 import { useSession } from '@/lib/session'
+import { useAppShellMode } from '@/components/AppShell'
+import { YeetfulMark } from '@/components/Logo'
 
 export default function ChatSidebar() {
   const router = useRouter()
@@ -16,10 +19,12 @@ export default function ChatSidebar() {
     deleteChat,
     chatsLoading,
     sidebarOpen,
+    setSidebarOpen,
     mobileSidebarOpen,
     setMobileSidebarOpen,
   } = useYeetfulStore()
   const { address, needsSignIn, signIn, signingIn } = useSession()
+  const { chrome: appChrome } = useAppShellMode()
 
   const handleDelete = (id: string) => {
     deleteChat(id)
@@ -62,6 +67,25 @@ export default function ChatSidebar() {
           className="flex-shrink-0 border-r border-[var(--line)] bg-black/40 overflow-hidden h-full max-lg:absolute max-lg:inset-y-0 max-lg:left-0 max-lg:z-40 max-lg:bg-[#0b0b0c] max-lg:shadow-[8px_0_32px_rgba(0,0,0,0.55)]"
         >
           <div className="w-60 flex flex-col h-full">
+            {/* Rail header (matches docs/dashboard): collapse toggle + home. */}
+            <div className="px-2 pt-3">
+              <div className="apprail__head">
+                <button
+                  className="apprail__toggle"
+                  onClick={() => (isMobile ? setMobileSidebarOpen(false) : setSidebarOpen(false))}
+                  aria-label="Collapse sidebar"
+                  title="Collapse sidebar"
+                >
+                  <PanelLeftClose width={17} height={17} />
+                </button>
+                {appChrome && (
+                  <Link href="/dashboard" className="apprail__home" aria-label="Dashboard home">
+                    <YeetfulMark size={20} />
+                    <span className="apprail__word">yeetful</span>
+                  </Link>
+                )}
+              </div>
+            </div>
             <div className="p-3 border-b border-[var(--line)]">
               <button
                 onClick={() => { closeOnMobile(); router.push('/chat') }}
