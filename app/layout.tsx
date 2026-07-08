@@ -11,13 +11,13 @@ import { Analytics } from "@vercel/analytics/next"
 // Matches the SITE convention used by robots.ts / sitemap.ts / blog.
 const SITE = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://yeetful.com'
 
-const TITLE = 'Yeetful — Agent Expense Accounts'
+const TITLE = 'Yeetful — Every dapp. One chat.'
 // Meta description (Google truncates ~150–160 chars).
 const DESCRIPTION =
-  'A spending account for every AI agent — fund it in USDC, set hard budgets and allowlists, and let it pay any MCP server per call. No API key.'
+  'Compose free MCPs — Uniswap, Snapshot, CoW, Hyperliquid — or your own into one agent that swaps, votes, and answers. Your wallet signs. Every call receipted.'
 // Shorter copy for social cards (previews truncate ~125 chars, esp. on mobile).
 const SOCIAL_DESCRIPTION =
-  'An expense account for AI agents — fund it in USDC, set budgets and allowlists, pay any MCP server per call. No API key.'
+  'Free first-party MCPs + your own, composed into one agent. Swaps, votes, answers — your wallet signs, every call receipted.'
 
 export const metadata: Metadata = {
   // Required for OG/Twitter image URLs to resolve to absolute URLs.

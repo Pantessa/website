@@ -1,19 +1,22 @@
 'use client'
 
-// Home preview of the agent directory — two rows of MCP cards + a link to the
-// full list at /servers. Reuses the directory card; fetches /api/servers and
-// falls back to the static catalog. Callable agents lead.
+// Home working-set section — the first-party FREE fleet (uniswap-free,
+// snapshot-free, cow-free, hyperliquid-free) plus a bring-your-own tile.
+// Fetches /api/servers for the live rows (reputation, autoCallable) and
+// falls back to the static fleet; the paid x402 catalog stays on /servers
+// behind the directory link.
 
-import { useEffect, useState } from 'react'
+import { useEffect } from 'react'
 import Link from 'next/link'
+import { Plus } from 'lucide-react'
 import { useYeetfulStore, McpServer } from '@/lib/store'
 import { CATALOG } from '@/lib/mcp-data'
+import { FREE_FLEET_SLUGS, FREE_FLEET_FALLBACK } from '@/lib/free-fleet'
 import McpServerCard from '@/components/McpServerCard'
 
-const STATIC: McpServer[] = CATALOG
-// Render the widest case (5-col × 2 rows); CSS trims to full rows as the grid
-// drops columns: 10 (≥1800) → 8 (4-col) → 6 (≤1080, incl. phone).
-const PREVIEW = 10
+// Static fallback: the free fleet leads, the x402 catalog follows — so the
+// store never regresses to a paid-only list when /api/servers is down.
+const STATIC: McpServer[] = [...FREE_FLEET_FALLBACK, ...CATALOG]
 
 export default function SwitchboardServers() {
   const { servers, setServers } = useYeetfulStore()
@@ -27,35 +30,53 @@ export default function SwitchboardServers() {
   }, [servers.length, setServers])
 
   const all = servers.length > 0 ? servers : STATIC
-  const preview = [...all].sort((a, b) => Number(!!b.callable) - Number(!!a.callable)).slice(0, PREVIEW)
-  const cats = ['All', ...Array.from(new Set(all.map((s) => s.category))).sort()]
+  const bySlug = new Map(all.map((s) => [s.slug, s]))
+  // The canonical fleet, in order — per-slug fallback so a missing DB row
+  // still renders a card.
+  const fleet = FREE_FLEET_SLUGS.map(
+    (slug) => bySlug.get(slug) ?? FREE_FLEET_FALLBACK.find((f) => f.slug === slug)!,
+  )
 
   return (
     <section className="swsrv">
       <div className="swsrv__head">
         <div>
-          <span className="swsrv__eyebrow mono">THE CATALOG</span>
-          <h2 className="swsrv__h2">Compose from <span className="x-grad">every model</span> and data source.</h2>
+          <span className="swsrv__eyebrow mono">THE WORKING SET</span>
+          <h2 className="swsrv__h2">Start from MCPs that <span className="x-grad">already work.</span></h2>
         </div>
         <Link href="/servers" className="swsrv__all mono">
-          See all {all.length} servers →
+          Browse the full directory →
         </Link>
       </div>
-      <div className="pills swsrv__pills">
-        {cats.map((c) => (
-          <Link
-            key={c}
-            href={c === 'All' ? '/servers' : `/servers?category=${encodeURIComponent(c)}`}
-            className="pill"
-          >
-            {c}
-          </Link>
-        ))}
-      </div>
+      <p className="swsrv__sub">
+        Our free first-party fleet — swaps, governance, MEV-protected orders, live positions —
+        is non-gated, rate-limited, and proven in the live chat. Select a couple, ask for a swap
+        or a vote, then bring your own MCP alongside.
+      </p>
       <div className="x-grid">
-        {preview.map((s) => (
-          <McpServerCard key={s.id} server={s} />
+        {fleet.map((s) => (
+          <McpServerCard key={s.slug} server={s} />
         ))}
+        <Link href="/servers/add" className="card card--byo">
+          <div className="card__top">
+            <div className="card__id">
+              <div className="card__tile">
+                <Plus width={20} height={20} strokeWidth={2} />
+              </div>
+              <div className="card__name">
+                <h3>Your MCP</h3>
+                <span className="card__cat mono">BRING YOUR OWN</span>
+              </div>
+            </div>
+          </div>
+          <p className="card__desc">
+            Paste a URL — we discover the tools, grade routability, and your MCP joins the set
+            right next to ours.
+          </p>
+          <div className="card__foot">
+            <span className="card__more mono">Add your MCP →</span>
+          </div>
+        </Link>
       </div>
     </section>
   )

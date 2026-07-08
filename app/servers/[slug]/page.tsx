@@ -49,14 +49,16 @@ export async function generateMetadata({ params }: Params): Promise<Metadata> {
   const server = await getServer(slug)
   if (!server) return { title: 'Service not found — Yeetful' }
   return {
-    title: `${server.name} — x402 agent on Yeetful`,
+    title: server.gated === false ? `${server.name} — free MCP on Yeetful` : `${server.name} — x402 agent on Yeetful`,
     description: server.description,
   }
 }
 
-/** "$0.001" or "$0.001 – $10.00" for upto schemes; null when unpriced. */
+/** "$0.001" or "$0.001 – $10.00" for upto schemes; null when unpriced.
+ * Explicitly-free tools (priceUsd '0') show no chip — the FREE badge in the
+ * header already says it. */
 function priceLabel(ep: { priceUsd: string | null; maxPriceUsd: string | null; scheme: string | null }) {
-  if (!ep.priceUsd) return null
+  if (!ep.priceUsd || Number(ep.priceUsd) === 0) return null
   const min = `$${ep.priceUsd}`
   if (ep.scheme === 'upto' && ep.maxPriceUsd) return `${min} – $${ep.maxPriceUsd}`
   return min
@@ -155,13 +157,23 @@ export default async function ServiceDetailPage({ params }: Params) {
               <h1 className="svc__name">{server.name}</h1>
               <div className="svc__meta">
                 <span className="badge badge--dir mono">{server.category}</span>
-                {server.priceUsd && (
-                  <span className="badge badge--price mono">from ${server.priceUsd}/call</span>
+                {server.gated === false ? (
+                  <span
+                    className="badge badge--price mono"
+                    style={{ color: 'var(--accent)', borderColor: 'var(--accent)' }}
+                    title="No payment gate — free MCP, rate-limited"
+                  >
+                    FREE
+                  </span>
+                ) : (
+                  server.priceUsd && <span className="badge badge--price mono">from ${server.priceUsd}/call</span>
                 )}
-                {server.callable ? (
+                {server.callable || server.gated === false ? (
+                  // Free rows are planner-driven — they route in chat the
+                  // moment they're selected, same promise as hand-wired rows.
                   <span className="badge badge--live" style={{ color: 'var(--accent)', borderColor: 'var(--accent)' }}>
                     <span className="badge__dot" style={{ background: 'var(--accent)' }} />
-                    Callable in chat
+                    {server.callable ? 'Callable in chat' : 'Routes in chat'}
                   </span>
                 ) : (
                   <span className="badge badge--dir mono">Listed</span>
@@ -173,24 +185,32 @@ export default async function ServiceDetailPage({ params }: Params) {
                 ))}
               </div>
             </div>
-            {server.websiteUrl && (
-              <a
-                className="svc__ext"
-                href={server.websiteUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                See Info
-                <ExternalLink width={13} height={13} />
-              </a>
-            )}
+            <div className="svc__headlinks">
+              {(server.callable || server.gated === false) && (
+                <Link className="svc__ext svc__ext--accent" href={`/chat?try=${server.slug}`}>
+                  Try in chat
+                  <ExternalLink width={13} height={13} />
+                </Link>
+              )}
+              {server.websiteUrl && (
+                <a
+                  className="svc__ext"
+                  href={server.websiteUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  See Info
+                  <ExternalLink width={13} height={13} />
+                </a>
+              )}
+            </div>
     </header>
   )
 
   const endpoints = (
     <div className="svc__section svc__eps">
             <div className="svc__sectionhead">
-              <h2 className="svc__h2">x402 endpoints</h2>
+              <h2 className="svc__h2">{server.gated === false ? 'Tools' : 'x402 endpoints'}</h2>
               <span className="svc__count mono">{server.endpoints.length}</span>
             </div>
 
@@ -307,7 +327,7 @@ export default async function ServiceDetailPage({ params }: Params) {
     <>
       <main className={launched ? 'x-main x-main--fluid' : 'x-main'}>
         <div className="svc">
-          <Link href="/#directory" className="svc__back mono">
+          <Link href="/servers" className="svc__back mono">
             <ArrowLeft width={14} height={14} />
             Directory
           </Link>

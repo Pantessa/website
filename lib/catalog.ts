@@ -11,8 +11,14 @@
 
 import prisma from '@/lib/db'
 import { CATALOG } from '@/lib/mcp-data'
+import { FREE_FLEET_FALLBACK } from '@/lib/free-fleet'
 import { autoCallableServerIds } from '@/lib/endpoint-planner'
 import type { McpServer } from '@/lib/store'
+
+// No-DB fallback: the free first-party fleet leads (it's the default
+// directory view — a paid-only fallback would render it empty), then the
+// static x402 catalog.
+const STATIC_CATALOG = [...FREE_FLEET_FALLBACK, ...(CATALOG as unknown as McpServer[])]
 
 export function catalogDbEnabled(): boolean {
   return process.env.USE_DB === 'true' && !!process.env.DATABASE_URL
@@ -63,7 +69,7 @@ export async function loadCatalog(): Promise<McpServer[]> {
 }
 
 async function loadCatalogBase(): Promise<McpServer[]> {
-  if (!catalogDbEnabled()) return CATALOG as unknown as McpServer[]
+  if (!catalogDbEnabled()) return STATIC_CATALOG
   try {
     const [servers, autoIds] = await Promise.all([
       prisma.mcpServer.findMany({
@@ -72,12 +78,12 @@ async function loadCatalogBase(): Promise<McpServer[]> {
       }),
       autoCallableServerIds(),
     ])
-    if (servers.length === 0) return CATALOG as unknown as McpServer[]
+    if (servers.length === 0) return STATIC_CATALOG
     const enriched = servers.map((s) => ({ ...s, autoCallable: autoIds.has(s.id) }))
     enriched.sort((a, b) => Number(b.callable || b.autoCallable) - Number(a.callable || a.autoCallable))
     return enriched as unknown as McpServer[]
   } catch (error) {
     console.warn('catalog: DB query failed, using static catalog:', error instanceof Error ? error.message : error)
-    return CATALOG as unknown as McpServer[]
+    return STATIC_CATALOG
   }
 }

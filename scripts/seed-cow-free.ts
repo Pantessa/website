@@ -14,12 +14,11 @@
 // source:'yeetful' keeps db:ingest/db:audit from pruning or diffing it.
 // Idempotent: upserts by slug, replaces endpoints.
 //
-// ⚠️ DO NOT RUN THE SEED YET — it ships for the OWNER to run once the MCP is
-// deployed at cow-mcp.yeetful.com (post-deploy step, same as the other free
-// MCPs). Run:
+// SEEDED 2026-07-08 (the MCP is live at cow-mcp.yeetful.com). Idempotent —
+// edit + re-run to revise:
 //   DATABASE_URL=... npx tsx scripts/seed-cow-free.ts
 //
-// Until then, test locally WITHOUT touching the shared Neon DB:
+// Test locally WITHOUT touching the shared Neon DB:
 //   npx tsx scripts/seed-cow-free.ts --print-extra-env
 // prints the EXTRA_MCP_ROWS / EXTRA_MCP_ENDPOINTS values (lib/catalog.ts +
 // lib/endpoint-planner.ts overlays) derived from this same tool table.

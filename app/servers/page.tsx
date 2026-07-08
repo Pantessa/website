@@ -9,10 +9,10 @@ import ActiveServerBar from '@/components/ActiveServerBar'
 import ShortlistBar from '@/components/ShortlistBar'
 import Footer from '@/components/Footer'
 
-/** /servers — the full agent directory (search + category filter over the
- * grid). The marketing landing now lives at / (Switchboard); this is the
- * "See all servers" destination. A ?category= param (e.g. set by the landing
- * pills) pre-selects a filter. Custom-server creation is at /servers/add. */
+/** /servers — the MCP directory, free-first: the free working set is the
+ * default view, the paid x402 catalog sits behind the flip. A ?category=
+ * param deep-links a paid-catalog filter. Bring-your-own lives at
+ * /servers/add. */
 function Directory() {
   const category = useSearchParams().get('category') ?? undefined
   return <ServerDirectory initialCategory={category} />
@@ -27,13 +27,13 @@ export default function ServersPage() {
             <div>
               <span className="srvpage__eyebrow mono">THE DIRECTORY</span>
               <h1 className="srvpage__h1">
-                Every x402 agent
+                Free MCPs first.
                 <br />
-                on the <em className="hero__em">network</em>.
+                Bring your <em className="hero__em">own</em>.
               </h1>
             </div>
             <Link href="/servers/add" className="btn btn--ghost srvpage__add">
-              <Plus width={16} height={16} /> Add a server
+              <Plus width={16} height={16} /> Add your MCP
             </Link>
           </div>
           <ShortlistBar />
