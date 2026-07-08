@@ -3,7 +3,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Clock, Vote, Wallet } from 'lucide-react'
 import type { McpServer } from '@/lib/store'
-import type { HoldingsTile, ProposalsTile, SplashTile, SuggestedPrompt } from '@/lib/splash/types'
+import { splashCapable } from '@/lib/splash/types'
+import type { HoldingsTile, ProposalsTile, RowsTile, SplashTile, SuggestedPrompt } from '@/lib/splash/types'
 
 /**
  * The connected-wallet splash: when someone jumps into the chat with a wallet
@@ -32,10 +33,7 @@ export function SplashDashboard({
   const [loading, setLoading] = useState(false)
 
   // Only sources that can contribute — avoids a fetch when nothing matches.
-  const relevant = useMemo(
-    () => servers.filter((s) => /uniswap|snapshot/i.test(`${s.slug} ${s.name}`)),
-    [servers],
-  )
+  const relevant = useMemo(() => servers.filter(splashCapable), [servers])
   // A stable string key so the scan re-runs only when the wallet or the set of
   // dashboard-capable MCPs actually changes — not on every render (relevant is
   // a fresh array each time). Depending on the string (not the array) also
@@ -120,8 +118,9 @@ export function SplashDashboard({
 }
 
 // ── Tile router ──────────────────────────────────────────────────────────────
+// Exported: the per-MCP action window (McpActionPanel) renders the same tiles.
 
-function TileCard({ tile, onPick }: { tile: SplashTile; onPick: (p: string, slug?: string) => void }) {
+export function TileCard({ tile, onPick }: { tile: SplashTile; onPick: (p: string, slug?: string) => void }) {
   return (
     <div className="flex flex-col rounded-2xl border border-[var(--line)] bg-[var(--surf-1)] p-4 text-left">
       <div className="mb-3 flex items-baseline justify-between gap-2">
@@ -130,8 +129,47 @@ function TileCard({ tile, onPick }: { tile: SplashTile; onPick: (p: string, slug
       </div>
       {tile.render === 'holdings' && <HoldingsBody tile={tile} />}
       {tile.render === 'proposals' && <ProposalsBody tile={tile} />}
+      {tile.render === 'rows' && <RowsBody tile={tile} />}
       {tile.render === 'empty' && <p className="text-xs text-[color:var(--muted)]">{tile.message}</p>}
       <PromptChips prompts={tile.prompts} slug={tile.mcpSlug} onPick={onPick} />
+    </div>
+  )
+}
+
+// ── Rows (generic account-state list: positions, orders, fills) ─────────────
+
+function RowsBody({ tile }: { tile: RowsTile }) {
+  return (
+    <div className="flex-1">
+      {tile.headline && (
+        <div className="mb-3">
+          <span className="text-2xl font-semibold tracking-tight text-white">{tile.headline.value}</span>
+          <span className="ml-2 text-[11px] text-[color:var(--muted-2)]">{tile.headline.caption}</span>
+        </div>
+      )}
+      <div className="space-y-1.5">
+        {tile.rows.map((r, i) => (
+          <div key={`${r.label}-${i}`} className="flex items-center justify-between gap-2 text-xs">
+            <div className="min-w-0">
+              <div className="truncate font-medium text-white">{r.label}</div>
+              {r.sub && <div className="text-[10px] text-[color:var(--muted-2)]">{r.sub}</div>}
+            </div>
+            {r.value && (
+              <span
+                className={
+                  r.tone === 'pos'
+                    ? 'text-[color:var(--accent)]'
+                    : r.tone === 'neg'
+                      ? 'text-red-400'
+                      : 'text-white'
+                }
+              >
+                {r.value}
+              </span>
+            )}
+          </div>
+        ))}
+      </div>
     </div>
   )
 }
@@ -263,7 +301,7 @@ function Avatar({ url, label, size }: { url: string; label: string; size: number
   )
 }
 
-function SkeletonTiles({ count }: { count: number }) {
+export function SkeletonTiles({ count }: { count: number }) {
   return (
     <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
       {Array.from({ length: Math.max(1, Math.min(count, 2)) }).map((_, i) => (
