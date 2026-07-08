@@ -7,7 +7,6 @@ import BrandIcon from '@/components/BrandIcon'
 import Footer from '@/components/Footer'
 import ServerApproveToggle from '@/components/ServerApproveToggle'
 import TokenPanel from '@/components/TokenPanel'
-import McpStats from '@/components/McpStats'
 import Description from '@/components/Description'
 import ReputationPanel from '@/components/ReputationPanel'
 import RoutabilityPanel from '@/components/RoutabilityPanel'
@@ -312,9 +311,6 @@ export default async function ServiceDetailPage({ params }: Params) {
         <Description text={server.description} />
         <ReputationPanel rep={rep} pings={pings} rating={ratingInitial} slug={server.slug} />
         <RoutabilityPanel slug={server.slug} initial={server.routability as unknown as RoutabilityReport | null} />
-        <div className="svc__section">
-          <McpStats slug={server.slug} />
-        </div>
       </div>
       <aside className="svc__rail">
         <TokenPanel panel={panel} slug={server.slug} name={server.name} />
