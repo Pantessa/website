@@ -11,6 +11,7 @@ import Description from '@/components/Description'
 import ReputationPanel from '@/components/ReputationPanel'
 import RoutabilityPanel from '@/components/RoutabilityPanel'
 import EndpointFeatureStar from '@/components/EndpointFeatureStar'
+import DeleteServerButton from '@/components/DeleteServerButton'
 import { getTokenPanel } from '@/lib/launch-token'
 import { computeReputation, recentPings } from '@/lib/reputation'
 import type { RoutabilityReport } from '@/lib/mcp-lint-report'
@@ -345,6 +346,7 @@ export default async function ServiceDetailPage({ params }: Params) {
             Directory
           </Link>
           {launched ? <div className="svc__split">{launchedBody}</div> : infoBody}
+          <DeleteServerButton slug={server.slug} name={server.name} />
         </div>
       </main>
       <Footer />
