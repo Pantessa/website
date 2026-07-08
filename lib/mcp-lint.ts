@@ -11,6 +11,7 @@ import {
   parsePlannerPicks,
   buildSmartRequest,
   deriveDescription,
+  isEscapeHatchEndpoint,
   type PlannableEndpoint,
 } from '@/lib/endpoint-planner'
 
@@ -220,7 +221,7 @@ function affordancesDimension(server: { description: string }, plannable: Planna
   if (!ctxReady) fixes.push('Document identity params for the router ("the user\'s own wallet address — $USER_ADDRESS") so "my/do I…" questions fill them automatically instead of guessing.')
 
   // Escape hatch: one general query tool (tiered surface, §1c).
-  const escapeHatch = plannable.some((e) => /graphql|\bsql\b|raw.*query|query.*escape|escape hatch/i.test(`${e.url} ${e.description ?? ''}`))
+  const escapeHatch = plannable.some((e) => isEscapeHatchEndpoint(e.url, e.description))
   checks.push({ ok: escapeHatch, note: escapeHatch ? 'general query escape hatch present' : 'no escape-hatch tool — every uncovered filter needs a new endpoint (whack-a-mole)' })
   if (!escapeHatch) fixes.push('Consider ONE guarded general-query tool exposing the backend\'s native query language (see snapshot-free graphql_query) so long-tail intents need no new endpoints.')
 
