@@ -28,6 +28,13 @@
       "runtimeArgs": ["run", "dev", "--", "-p", "3227"],
       "port": 3227,
       "autoPort": true
+    },
+    {
+      "name": "web-free-first",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["next", "start", "-p", "3228"],
+      "port": 3228,
+      "autoPort": false
     }
   ]
 }

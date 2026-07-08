@@ -42,14 +42,14 @@ export default function Image() {
         {/* headline */}
         <div style={{ display: 'flex', flexDirection: 'column' }}>
           <div style={{ display: 'flex', fontSize: 90, fontWeight: 600, letterSpacing: -2, lineHeight: 1.04 }}>
-            <span style={{ color: INK }}>Agentic Payments &amp;</span>
+            <span style={{ color: INK }}>Every dapp.</span>
           </div>
           <div style={{ display: 'flex', fontSize: 90, fontWeight: 600, letterSpacing: -2, lineHeight: 1.04 }}>
-            <span style={{ color: ACCENT, fontStyle: 'italic' }}>Routing</span>
-            <span style={{ color: DIM }}>{' Layer.'}</span>
+            <span style={{ color: ACCENT, fontStyle: 'italic' }}>One</span>
+            <span style={{ color: DIM }}>{' chat.'}</span>
           </div>
           <div style={{ display: 'flex', marginTop: 26, fontSize: 30, color: '#b8bdb4', maxWidth: 920, lineHeight: 1.4 }}>
-            One key for every model and data source. Router sends each request to the best-priced MCP — paid per call.
+            Free first-party MCPs — Uniswap, Snapshot, CoW, Hyperliquid — plus your own, fused into one agent. Guardrails, your wallet signs, every call receipted.
           </div>
         </div>
 

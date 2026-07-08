@@ -46,7 +46,7 @@ const JSON_LD = JSON.stringify([
     applicationCategory: 'FinanceApplication',
     operatingSystem: 'Web',
     description:
-      'An embeddable chat that composes multiple MCP servers into one agent for agentic finance: it quotes and builds on-chain transactions (swaps, DAO votes) with per-step guardrails, signs with the user’s own wallet via the host page, and receipts every settled call in USDC on Base over x402.',
+      'An embeddable chat that composes multiple MCP servers into one agent for agentic finance: free first-party MCPs (Uniswap, Snapshot, CoW Protocol, Hyperliquid) plus your own. It quotes and builds on-chain transactions (swaps, DAO votes) with per-step guardrails, signs with the user’s own wallet via the host page, and receipts every call.',
     offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD' },
     provider: { '@type': 'Organization', name: 'Yeetful', url: SITE },
   },
@@ -75,7 +75,7 @@ export default function HomePage() {
         {/* Why hosts embed it / why users sign */}
         <TrustStrip />
 
-        {/* Breadth: the directory to compose from */}
+        {/* The working set: the free first-party fleet + bring your own */}
         <SwitchboardServers />
 
         {/* Proof: real turns — prompt, answer, on-chain tx */}

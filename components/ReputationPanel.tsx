@@ -101,7 +101,9 @@ export default function ReputationPanel({
       <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-[color:var(--muted-2)] mono">
         <span>{Math.round(rep.settleRate * 100)}% settle · {rep.settled}/{rep.calls} calls</span>
         {rep.medianLatencyMs != null ? <span>~{(rep.medianLatencyMs / 1000).toFixed(1)}s median</span> : null}
-        {rep.avgPriceUsd != null ? <span>${rep.avgPriceUsd}/call</span> : null}
+        {rep.avgPriceUsd != null ? (
+          <span>{Number(rep.avgPriceUsd) === 0 ? 'free' : `$${rep.avgPriceUsd}/call`}</span>
+        ) : null}
         {!rep.qualified ? <span>· unrated — no calls or ratings yet</span> : null}
       </div>
 

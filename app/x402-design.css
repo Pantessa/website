@@ -663,6 +663,11 @@
   .swsrv__all { font-size: 14px; color: var(--accent); text-decoration: none; white-space: nowrap; }
   .swsrv__all:hover { text-decoration: underline; }
   .swsrv__pills { margin: -8px 0 24px; }
+  .swsrv__sub { max-width: 640px; color: var(--muted); font-size: 15px; line-height: 1.6; margin: 10px 0 26px; }
+  .card--byo { border-style: dashed; background: transparent; text-decoration: none; color: inherit; }
+  .card--byo:hover { border-color: var(--accent); }
+  .card--byo .card__tile { border-style: dashed; background: transparent; color: var(--muted); }
+  .card--byo .card__foot { margin-top: auto; }
   /* Fill full rows: render 10 cards, trim as the grid loses columns. */
   @media (max-width: 1799px) { .swsrv .x-grid > :nth-child(n+9) { display: none; } } /* 4-col → 8 */
   @media (max-width: 1080px) { .swsrv .x-grid > :nth-child(n+7) { display: none; } } /* 3/2/1-col → 6 */
@@ -774,9 +779,9 @@
     .dir__pricing { min-height: 44px; }
   }
 
-  .x-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
+  .x-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; }
   /* the directory is full-width now — add columns instead of letting cards sprawl */
-  @media (min-width: 1800px) { .x-grid { grid-template-columns: repeat(5, 1fr); } }
+  @media (min-width: 1800px) { .x-grid { grid-template-columns: repeat(5, minmax(0, 1fr)); } }
   .card {
     border: 1px solid var(--line); background: var(--surf-1); border-radius: 14px; padding: 18px;
     cursor: pointer; transition: border-color .15s, background .15s, transform .15s;
@@ -815,7 +820,7 @@
   .card__star:disabled { opacity: .35; cursor: not-allowed; }
   .card__desc { font-size: 13px; color: var(--muted); line-height: 1.5; margin-top: 16px; flex: 1;
     display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
-  .card__foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 16px; }
+  .card__foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 16px; flex-wrap: wrap; }
   .card__badges { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
   .badge {
     font-size: 11px; padding: 3px 9px; border-radius: 999px; font-weight: 500;
@@ -863,6 +868,9 @@
     border: 1px solid var(--line); transition: color .15s, border-color .15s;
   }
   .svc__ext:hover { color: var(--fg); border-color: var(--line-2); }
+  .svc__headlinks { display: flex; align-items: center; gap: 8px; flex-shrink: 0; flex-wrap: wrap; }
+  .svc__ext--accent { color: var(--accent); border-color: color-mix(in oklch, var(--accent) 45%, transparent); }
+  .svc__ext--accent:hover { color: var(--accent); border-color: var(--accent); }
   .svc__desc { font-size: 15.5px; color: var(--muted); line-height: 1.6; max-width: 70ch; margin-top: 22px; text-wrap: pretty; }
   .svc__section { margin-top: 44px; }
   .svc__sectionhead { display: flex; align-items: baseline; gap: 10px; margin-bottom: 16px; }
@@ -2012,7 +2020,7 @@
 
   /* ── RESPONSIVE ──────────────────────────────────── */
   @media (max-width: 1080px) {
-    .x-grid { grid-template-columns: repeat(3, 1fr); }
+    .x-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
     /* hide the HUD; the left veil becomes a vertical gradient so the copy
        stays legible with the network behind it */
     .heroweb__hud { display: none; }
@@ -2020,7 +2028,7 @@
   }
   @media (max-width: 900px) {
     .hero { padding: 56px 0 48px; }
-    .x-grid { grid-template-columns: repeat(2, 1fr); }
+    .x-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     .explain__steps { grid-template-columns: 1fr; }
     .nav__tabs { display: none; }
     .nav__burger { display: inline-flex; }
@@ -2037,7 +2045,7 @@
     .card__star { width: 44px; height: 44px; }
     .card__more { padding: 8px 12px; }
     .nav__inner { padding: 0 18px; }
-    .x-grid { grid-template-columns: 1fr; }
+    .x-grid { grid-template-columns: minmax(0, 1fr); }
     .footer__cols { grid-template-columns: 1fr; gap: 32px; }
     .footer__bottom { flex-direction: column; gap: 8px; }
     .footer__wordmark { height: clamp(52px, 16vw, 90px); }
@@ -2062,7 +2070,7 @@
     .svc__tile { width: 52px; height: 52px; border-radius: 13px; }
     .svc__title { flex-basis: calc(100% - 66px); }
     .svc__meta { margin-top: 10px; }
-    .svc__ext { order: 3; }
+    .svc__headlinks { order: 3; }
     .ep { padding: 14px; }
     .ep__price { font-size: 11.5px; }
   }

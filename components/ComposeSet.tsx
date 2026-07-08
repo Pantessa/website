@@ -23,10 +23,10 @@ const RECIPES: {
     unlocks: 'Live quotes next to answers pulled from the protocol’s own docs. Ship your docs with your MCP and the agent answers from the latest push.',
   },
   {
-    chips: ['Hyperliquid', 'CoinGecko'],
-    title: 'Positions + market',
-    ask: '“How are my open orders doing vs spot?”',
-    unlocks: 'Your fills and funding from one MCP, market context from another — read-only, $0, receipted.',
+    chips: ['Hyperliquid', 'Uniswap'],
+    title: 'Positions + trade',
+    ask: '“How’s my ETH perp doing — and swap 500 USDC to ETH on Base.”',
+    unlocks: 'Positions and funding from one MCP, a built-to-sign swap from another — read-only is $0, you sign the rest.',
   },
 ]
 
@@ -66,8 +66,8 @@ export default function ComposeSet() {
             Any MCP that speaks tools can join a set. We grade routability — schemas, params,
             docs — and tell you exactly what to fix so agents can actually drive it.
           </p>
-          <Link href="/servers" className="compose__link mono">
-            Browse the directory →
+          <Link href="/servers/add" className="compose__link mono">
+            Add your MCP →
           </Link>
         </article>
       </div>
