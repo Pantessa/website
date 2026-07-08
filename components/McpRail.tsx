@@ -11,12 +11,14 @@
 // (persisted preference), fixed overlay below lg (transient).
 
 import { useEffect, useMemo, useState } from 'react'
+import Link from 'next/link'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Check, PanelLeftClose, Plus } from 'lucide-react'
+import { Check, Info, PanelLeftClose, Plus } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useYeetfulStore } from '@/lib/store'
 import { fleetRank } from '@/lib/free-fleet'
 import BrandIcon from '@/components/BrandIcon'
+import AddMcpModal from '@/components/AddMcpModal'
 
 export default function McpRail() {
   const {
@@ -34,6 +36,8 @@ export default function McpRail() {
 
   // Free (default) vs the paid x402 catalog.
   const [freeView, setFreeView] = useState(true)
+  // "Add your own MCP" modal (portaled — the rail clips fixed children).
+  const [addOpen, setAddOpen] = useState(false)
 
   // Mount gate + breakpoint — same rationale as ChatSidebar: the breakpoint is
   // unknowable server-side, and toggling an AnimatePresence child
@@ -119,6 +123,18 @@ export default function McpRail() {
           )}
         </span>
       </span>
+      {/* Server page in a new tab — hover affordance so the row stays clean.
+          stopPropagation: the row click adds/opens, the ⓘ only informs. */}
+      <Link
+        href={`/servers/${server.slug}`}
+        target="_blank"
+        onClick={(e) => e.stopPropagation()}
+        aria-label={`About ${server.name} — tools, pricing, reputation`}
+        title={`About ${server.name}`}
+        className="flex-shrink-0 w-6 h-6 grid place-items-center rounded-md text-[color:var(--muted-2)] opacity-0 group-hover:opacity-100 focus-visible:opacity-100 hover:text-white hover:bg-white/5 transition-all"
+      >
+        <Info className="w-3.5 h-3.5" />
+      </Link>
       {isActive ? (
         <button
           onClick={(e) => {
@@ -138,6 +154,7 @@ export default function McpRail() {
   )
 
   return (
+    <>
     <AnimatePresence initial={false}>
       {open && (
         <motion.aside
@@ -189,6 +206,16 @@ export default function McpRail() {
                   Paid
                 </button>
               </div>
+              {/* Bring-your-own — the modal discovers tools from the server and
+                  lets the user star what a new account should ping first. */}
+              <button
+                type="button"
+                onClick={() => setAddOpen(true)}
+                className="mt-2 w-full flex items-center justify-center gap-1.5 rounded-xl border border-dashed border-[var(--line-2)] px-2 py-2 text-[11px] font-medium text-[color:var(--muted)] hover:text-white hover:border-[var(--muted-2)] hover:bg-white/[0.03] transition-colors"
+              >
+                <Plus className="w-3.5 h-3.5" strokeWidth={2.5} />
+                Add your own MCP
+              </button>
             </div>
 
             {/* The scrolling list: actives pinned on top, then the view */}
@@ -218,5 +245,8 @@ export default function McpRail() {
         </motion.aside>
       )}
     </AnimatePresence>
+    {/* Portaled — lives outside the width-animated aside so it never clips. */}
+    <AddMcpModal open={addOpen} onClose={() => setAddOpen(false)} />
+    </>
   )
 }

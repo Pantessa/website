@@ -71,15 +71,20 @@ export async function loadCatalog(): Promise<McpServer[]> {
 async function loadCatalogBase(): Promise<McpServer[]> {
   if (!catalogDbEnabled()) return STATIC_CATALOG
   try {
-    const [servers, autoIds] = await Promise.all([
+    const [servers, autoIds, featuredIds] = await Promise.all([
       prisma.mcpServer.findMany({
         orderBy: [{ callable: 'desc' }, { category: 'asc' }, { name: 'asc' }],
         include: { _count: { select: { endpoints: true } } },
       }),
       autoCallableServerIds(),
+      // Servers with ≥1 featured ("ping first") endpoint can paint the generic
+      // connect-time quick view — surfaced to the client as `splashReady`.
+      prisma.mcpEndpoint
+        .findMany({ where: { featured: true }, select: { serverId: true }, distinct: ['serverId'] })
+        .then((rows) => new Set(rows.map((r) => r.serverId))),
     ])
     if (servers.length === 0) return STATIC_CATALOG
-    const enriched = servers.map((s) => ({ ...s, autoCallable: autoIds.has(s.id) }))
+    const enriched = servers.map((s) => ({ ...s, autoCallable: autoIds.has(s.id), splashReady: featuredIds.has(s.id) }))
     enriched.sort((a, b) => Number(b.callable || b.autoCallable) - Number(a.callable || a.autoCallable))
     return enriched as unknown as McpServer[]
   } catch (error) {

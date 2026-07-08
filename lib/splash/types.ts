@@ -102,7 +102,9 @@ export interface SplashResponse {
 
 /** Which servers can paint a splash/action tile — mirror of the source
  *  matchers in lib/splash/sources.ts, importable from client components
- *  (sources.ts itself is server-only: it pulls in the MCP caller). */
-export function splashCapable(s: { slug: string; name: string }): boolean {
-  return /uniswap|snapshot|cow|hyperliquid/i.test(`${s.slug} ${s.name}`)
+ *  (sources.ts itself is server-only: it pulls in the MCP caller). Servers
+ *  outside the hand-coded set still qualify when they carry featured ("ping
+ *  first") endpoints — `splashReady`, derived server-side in lib/catalog. */
+export function splashCapable(s: { slug: string; name: string; splashReady?: boolean }): boolean {
+  return !!s.splashReady || /uniswap|snapshot|cow|hyperliquid/i.test(`${s.slug} ${s.name}`)
 }

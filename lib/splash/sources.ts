@@ -319,20 +319,151 @@ const hyperliquidSource: SplashSource = {
 /** All registered splash sources. Exported for tests; a new MCP appends here. */
 export const SPLASH_SOURCES: SplashSource[] = [uniswapSource, snapshotSource, cowSource, hyperliquidSource]
 
+// ── Generic featured-endpoint source (any MCP, zero hand-coding) ─────────────
+// An MCP with no dedicated source above still gets a connect-time quick view
+// when its owner flagged featured ("ping first") endpoints — the add-MCP modal
+// and the admin star on /servers/[slug] both set mcp_endpoints.featured. We
+// call up to two featured tools with the connected address filled into their
+// address-shaped params and summarize whatever comes back into a rows tile.
+// This is also the learning loop: which flagged endpoints produce a useful
+// first paint tells us what "important" means per MCP.
+
+/** A featured endpoint row as the splash route loads it from mcp_endpoints. */
+export interface FeaturedEndpoint {
+  url: string
+  description: string | null
+  parameters: { name?: string; description?: string; required?: boolean; type?: string }[] | null
+}
+
+/** A server plus its featured endpoints (the splash route attaches them). */
+export type SplashServer = McpServer & { featuredEndpoints?: FeaturedEndpoint[] }
+
+/** Param names that mean "the user's own address" — same intent as the
+ *  planner's $USER_ADDRESS guidance, matched structurally here. */
+const ADDRESS_PARAM_RE = /^(owner|user|address|wallet|account|follower|voter|holder|trader)$/i
+
+/** Tool name from the stored url convention `<base>/mcp#tool` or `…/mcp/tool`. */
+function toolNameOf(url: string): string | null {
+  const m = url.match(/\/mcp[#/]([^#/?]+)$/)
+  return m ? m[1] : null
+}
+
+/** Fill a featured tool's params: connected address into address-shaped ones;
+ *  null when a required param exists we can't supply (the call would fail). */
+function fillFeaturedArgs(ep: FeaturedEndpoint, address: string): Record<string, unknown> | null {
+  const args: Record<string, unknown> = {}
+  for (const p of ep.parameters ?? []) {
+    if (!p.name) continue
+    const wantsAddress = ADDRESS_PARAM_RE.test(p.name) || /\$USER_ADDRESS/.test(p.description ?? '')
+    if (wantsAddress) args[p.name] = address
+    else if (p.required) return null
+  }
+  return args
+}
+
+/** Summarize an arbitrary tool payload into ≤5 StatRows — scalars become
+ *  label/value rows, arrays become counts (with a peek at the first entry). */
+function summarizedRows(data: unknown): StatRow[] {
+  const rows: StatRow[] = []
+  const push = (label: string, value: string, sub?: string) => {
+    if (rows.length < 5) rows.push({ label, value, sub })
+  }
+  const preview = (v: unknown): string => {
+    if (v === null || v === undefined) return ''
+    if (typeof v === 'object') {
+      const s = Object.values(v as Record<string, unknown>).find((x) => typeof x === 'string' && x.length < 48)
+      return typeof s === 'string' ? s : ''
+    }
+    return String(v).slice(0, 48)
+  }
+  if (Array.isArray(data)) {
+    push('entries', String(data.length), preview(data[0]) || undefined)
+    return rows
+  }
+  if (data && typeof data === 'object') {
+    for (const [k, v] of Object.entries(data as Record<string, unknown>)) {
+      if (v === null || v === undefined) continue
+      if (Array.isArray(v)) push(k, `${v.length} ${v.length === 1 ? 'item' : 'items'}`, preview(v[0]) || undefined)
+      else if (typeof v === 'object') {
+        const inner = summarizedRows(v)
+        if (inner[0]) push(k, inner[0].value ?? '', inner[0].label)
+      } else push(k, String(v).slice(0, 64))
+    }
+    return rows
+  }
+  if (typeof data === 'string' && data.trim()) push('result', data.slice(0, 64))
+  return rows
+}
+
+/** Build the generic quick-view tile from a server's featured endpoints. */
+async function buildFeaturedTile(
+  call: McpCaller,
+  address: string,
+  server: SplashServer,
+): Promise<SplashTile | null> {
+  const eps = (server.featuredEndpoints ?? []).slice(0, 2)
+  const base = { id: `${server.slug}-featured`, mcpSlug: server.slug, mcpName: server.name }
+  const rows: StatRow[] = []
+  let usedTool: string | null = null
+  for (const ep of eps) {
+    const tool = toolNameOf(ep.url)
+    if (!tool) continue
+    const args = fillFeaturedArgs(ep, address)
+    if (args === null) continue
+    try {
+      const data = await call(tool, args)
+      // Drop input echoes (the address we just sent) and repeated labels —
+      // "user: 0x…" twice tells the user nothing about their account.
+      const seen = new Set(rows.map((r) => r.label))
+      const got = summarizedRows(data).filter(
+        (r) => r.value?.toLowerCase() !== address.toLowerCase() && !seen.has(r.label),
+      )
+      if (got.length > 0) {
+        usedTool ??= tool
+        rows.push(...got.slice(0, 5 - rows.length))
+      }
+      if (rows.length >= 5) break
+    } catch {
+      // A dead featured tool contributes nothing — the other one may still land.
+    }
+  }
+  if (rows.length === 0 || !usedTool) return null
+  const prompts: SuggestedPrompt[] = (server.exampleQueries ?? [])
+    .slice(0, 2)
+    .map((q) => ({ label: truncate(q, 32), prompt: q }))
+  if (prompts.length === 0) {
+    prompts.push({ label: `What can ${server.name} do?`, prompt: `What can ${server.name} do for my account right now?` })
+  }
+  return {
+    ...base,
+    render: 'rows',
+    title: `Your ${server.name} view`,
+    subtitle: `via ${usedTool}`,
+    rows,
+    prompts,
+  }
+}
+
 /**
  * Build the splash tiles for a connected wallet across the connected MCP set.
  * Runs every matching source in parallel; a source that throws or times out
- * is dropped so one bad MCP can't blank the dashboard.
+ * is dropped so one bad MCP can't blank the dashboard. Servers no dedicated
+ * source claims fall through to the generic featured-endpoint tile.
  */
-export async function buildSplash(address: string, servers: McpServer[]): Promise<SplashTile[]> {
+export async function buildSplash(address: string, servers: SplashServer[]): Promise<SplashTile[]> {
   const jobs: Promise<SplashTile | null>[] = []
   for (const server of servers) {
     if (!server.endpoint) continue
     const endpoint = overrideFreeMcpBase(server.endpoint)
+    const call: McpCaller = (name, args) => callMcpTool(endpoint, name, args)
+    let matched = false
     for (const source of SPLASH_SOURCES) {
       if (!source.match(server)) continue
-      const call: McpCaller = (name, args) => callMcpTool(endpoint, name, args)
+      matched = true
       jobs.push(source.build(call, address, server).catch(() => null))
+    }
+    if (!matched && (server.featuredEndpoints?.length ?? 0) > 0) {
+      jobs.push(buildFeaturedTile(call, address, server).catch(() => null))
     }
   }
   const tiles = await Promise.all(jobs)

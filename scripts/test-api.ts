@@ -687,6 +687,34 @@ async function main() {
     dir.every((s) => !s.reputation || (typeof s.reputation.settled === 'number' && s.reputation.settleRate >= 0 && s.reputation.settleRate <= 1)),
   )
 
+  // ── Featured ("start here") endpoints ──────────────────────────────────────
+  // The curated routing signal: mcp_endpoints.featured is set by the add-MCP
+  // modal (featuredTools) or the admin star on /servers/[slug]; the planner
+  // floats them as starting hints and the connect-time quick view pings them
+  // first. Directory rows with ≥1 featured endpoint surface splashReady.
+  console.log('— featured endpoints')
+  {
+    const dirF = dir as unknown as { slug?: string; splashReady?: boolean }[]
+    // The fleet seed (scripts/seed-featured-endpoints.ts) flags cow-free's
+    // portfolio — the flag should surface through the catalog as splashReady.
+    const cow = dirF.find((s) => s.slug === 'cow-free')
+    check('featured: cow-free is splashReady via its featured endpoints', !cow || cow.splashReady === true, cow ? '' : 'cow-free not in directory (skipped)')
+    // Admin curation is gated: no session → 401.
+    const anonStar = await fetch(`${BASE}/api/servers/cow-free/featured`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ endpointId: 'x', featured: true }),
+    })
+    check('featured: PATCH without session → 401', anonStar.status === 401)
+    // A signed-in non-admin wallet → 403 (the test wallets are never admins).
+    const nonAdminStar = await fetch(`${BASE}/api/servers/cow-free/featured`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json', cookie: session },
+      body: JSON.stringify({ endpointId: 'x', featured: true }),
+    })
+    check('featured: PATCH as non-admin → 403', nonAdminStar.status === 403)
+  }
+
   // ── Switchboard route preview (public, read-only, no spend) ───────────────
   // Guards the routing lever the /switchboard "try a route" demo renders: the
   // contract shape, the $0.05 ceiling, and the proven-gate invariant — the pick

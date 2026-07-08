@@ -78,6 +78,15 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Invalid JSON body.' }, { status: 400 })
   }
 
+  // Tool names the submitter flagged as "ping first" — a new connected account's
+  // quick view calls these first, and the endpoint planner reads them as the
+  // service's starting hints. Marked featured on the endpoint rows below.
+  const featuredTools = new Set(
+    Array.isArray(body.featuredTools)
+      ? (body.featuredTools as unknown[]).filter((t): t is string => typeof t === 'string')
+      : [],
+  )
+
   const name = typeof body.name === 'string' ? body.name.trim() : ''
   const description = typeof body.description === 'string' ? body.description.trim() : ''
   const category = typeof body.category === 'string' ? body.category.trim() : ''
@@ -149,6 +158,7 @@ export async function POST(req: NextRequest) {
         // Display-only tools (param-less / signing) get DbNull params so the
         // planner never constructs them.
         parameters: t.plannable ? (t.params as unknown as Prisma.InputJsonValue) : Prisma.DbNull,
+        featured: featuredTools.has(t.name),
       })),
     })
   }
@@ -160,6 +170,9 @@ export async function POST(req: NextRequest) {
     mcpBase: base,
     discoveredTools: tools.map((t) => t.name),
     discoveryError,
+    // Lets the freshly added row paint the connect-time quick view immediately
+    // (the catalog derives the same flag from mcp_endpoints.featured).
+    splashReady: tools.some((t) => featuredTools.has(t.name)),
   })
 }
 

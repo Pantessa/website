@@ -155,6 +155,11 @@ export interface PlannableEndpoint {
    *  router still picks it when it's clearly the best fit; rating just ranks
    *  EQUIVALENT MCPs so the engine converges on the reliable/proven one). */
   reliability?: { settled: number; recent: boolean; failed?: number; successRate?: number; rating?: number }
+  /** Owner/admin-flagged "start here" endpoint (mcp_endpoints.featured) — the
+   *  service's own signal for which call best represents it. Floated to the
+   *  front of the menu and tagged so the planner prefers it when an ask is
+   *  broad or several endpoints of the service would fit. */
+  featured?: boolean
 }
 
 /**
@@ -248,6 +253,7 @@ function extraPlannableEndpoints(slugs: string[]): PlannableEndpoint[] {
         category: r.category ?? null,
         tags: r.tags ?? [],
         exampleQueries: r.exampleQueries ?? [],
+        featured: r.featured ?? false,
       }))
   } catch {
     console.warn('planner: EXTRA_MCP_ENDPOINTS is not valid JSON — ignored')
@@ -282,7 +288,11 @@ export async function loadPlannableEndpoints(slugs: string[]): Promise<Plannable
   // the front so they always make the cut. Stable sort → position order is
   // preserved within the hinted and non-hinted groups.
   const isHinted = (u: string) => ENDPOINT_HINTS.some((h) => h.match.test(u))
-  rows.sort((a, b) => (isHinted(b.url) ? 1 : 0) - (isHinted(a.url) ? 1 : 0))
+  // Featured (owner/admin-starred) rows float even ahead of hinted ones — the
+  // service's own "start here" flag outranks our curated overlay, and floating
+  // guarantees a featured endpoint can never be truncated by the cap.
+  const rank = (r: { url: string; featured: boolean }) => (r.featured ? 2 : 0) + (isHinted(r.url) ? 1 : 0)
+  rows.sort((a, b) => rank(b) - rank(a))
 
   const perService = new Map<string, number>()
   const seenShape = new Set<string>()
@@ -343,6 +353,7 @@ export async function loadPlannableEndpoints(slugs: string[]): Promise<Plannable
       category: r.server.category,
       tags: r.server.tags,
       exampleQueries: r.server.exampleQueries,
+      featured: r.featured,
     })
   }
   out.push(...extraPlannableEndpoints(slugs))
@@ -481,7 +492,8 @@ export function plannerPrompt(
         const proven = e.reliability && e.reliability.settled > 0
           ? ` ✓proven(${e.reliability.settled} settled${e.reliability.recent ? ', recent' : ''})`
           : ''
-        return `  - id=${e.id} ${e.method} ${e.url} — ${e.description ?? 'no description'} [$${e.priceUsd}]${proven} params: ${params}`
+        const start = e.featured ? ' ★start-here' : ''
+        return `  - id=${e.id} ${e.method} ${e.url} — ${e.description ?? 'no description'} [$${e.priceUsd}]${proven}${start} params: ${params}`
       })
       return `service ${slug} (${eps[0].serverName}):\n${lines.join('\n')}`
     })
@@ -494,7 +506,7 @@ export function plannerPrompt(
     ...(contextBlock ? [contextBlock] : []),
     ...(convo ? [convo] : []),
     `A user asked${history.length || contextBlock ? ' (interpret it in the context of the conversation above — a terse follow-up like "baseball" continues the previous question, and ordinal references like "the second one" mean the numbered items in the working context)' : ''}:\n"""${message}"""`,
-    `Below are paid API endpoints, grouped by service, each tagged with its price in [$…]; some are tagged ✓proven (they have successfully settled paid calls before). Pick AT MOST ONE endpoint per service — only if calling it would genuinely help answer the user. When two endpoints would both answer the need equally well, prefer the ✓proven one, and then the cheaper one — but still pick an un-proven endpoint when it is clearly the better fit for the request. Fill in parameter values derived from the user's message and the conversation (use sensible values; respect types; include every required param; skip optional params you can't infer). Pass tokens/assets in the FORM the user gave them (a symbol stays a symbol) — NEVER substitute a contract address from memory; addresses differ per chain and a wrong-chain address fails or misroutes. If no endpoint of a service helps, skip that service entirely.`,
+    `Below are paid API endpoints, grouped by service, each tagged with its price in [$…]; some are tagged ✓proven (they have successfully settled paid calls before) and some ★start-here (the service owner flagged them as the best entry point into what the service does). Pick AT MOST ONE endpoint per service — only if calling it would genuinely help answer the user. When two endpoints would both answer the need equally well, prefer the ✓proven one, and then the cheaper one — but still pick an un-proven endpoint when it is clearly the better fit for the request. When the ask is broad or you are unsure where to start within a service, start with its ★start-here endpoint. Fill in parameter values derived from the user's message and the conversation (use sensible values; respect types; include every required param; skip optional params you can't infer). Pass tokens/assets in the FORM the user gave them (a symbol stays a symbol) — NEVER substitute a contract address from memory; addresses differ per chain and a wrong-chain address fails or misroutes. If no endpoint of a service helps, skip that service entirely.`,
     ...(ctxVars ? [ctxVars] : []),
     clarifyPromptLine(),
     menu,

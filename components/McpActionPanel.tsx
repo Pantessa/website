@@ -10,8 +10,9 @@
 // the moment the user starts typing (ChatInterface clears mcpActionSlug).
 
 import { useEffect, useState } from 'react'
+import Link from 'next/link'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Wallet, X } from 'lucide-react'
+import { ArrowUpRight, Wallet, X } from 'lucide-react'
 import type { McpServer } from '@/lib/store'
 import type { SplashTile } from '@/lib/splash/types'
 import { splashCapable } from '@/lib/splash/types'
@@ -92,7 +93,19 @@ export default function McpActionPanel({
             <BrandIcon server={server} size={16} />
           </span>
           <div className="flex-1 min-w-0">
-            <div className="text-sm font-semibold text-white truncate">{server.name}</div>
+            {/* The name IS the way in — server page (tools, pricing, reputation)
+                in a new tab so the chat stays put. */}
+            <Link
+              href={`/servers/${server.slug}`}
+              target="_blank"
+              title={`${server.name} — server details`}
+              className="group/link inline-flex items-center gap-1 max-w-full text-sm font-semibold text-white"
+            >
+              <span className="truncate underline-offset-4 decoration-[color:var(--muted-2)] group-hover/link:underline">
+                {server.name}
+              </span>
+              <ArrowUpRight className="w-3.5 h-3.5 flex-shrink-0 text-[color:var(--muted-2)] opacity-0 group-hover/link:opacity-100 transition-opacity" />
+            </Link>
             <div className="mono text-[10px] text-[color:var(--muted-2)]">
               {server.gated === false ? <span style={{ color: 'var(--accent)' }}>FREE</span> : `$${server.priceUsd}/call`}
               {' · in your set'}

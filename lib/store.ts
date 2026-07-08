@@ -31,6 +31,10 @@ export interface McpServer {
   /** Auto-callable via the endpoint planner (has ≥1 plannable endpoint), even
    *  without being hand-wired. Derived in /api/servers. */
   autoCallable?: boolean
+  /** Has ≥1 featured ("ping first") endpoint, so the generic connect-time
+   *  quick view can paint for it even without a hand-coded splash source.
+   *  Derived in lib/catalog; splashCapable() reads it. */
+  splashReady?: boolean
   /** Usage-driven reputation from the spend ledger (B18) — settle rate +
    *  settled count. Attached in /api/servers; absent when there's no history. */
   reputation?: { settled: number; failed: number; settleRate: number }

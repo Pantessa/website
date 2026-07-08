@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { isAddress } from 'viem'
 import prisma from '@/lib/db'
 import type { McpServer } from '@/lib/store'
-import { buildSplash } from '@/lib/splash/sources'
+import { buildSplash, type FeaturedEndpoint, type SplashServer } from '@/lib/splash/sources'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -53,16 +53,40 @@ export async function POST(req: Request) {
         slug: true,
         name: true,
         endpoint: true,
+        exampleQueries: true,
         endpoints: { select: { url: true }, take: 1 },
       },
     })
+    // Featured ("ping first") endpoints drive the generic quick-view tile for
+    // MCPs with no hand-coded splash source.
+    const featuredRows = await prisma.mcpEndpoint.findMany({
+      where: { server: { slug: { in: slugs } }, featured: true },
+      select: { serverId: true, url: true, description: true, parameters: true },
+      orderBy: { position: 'asc' },
+    })
+    const featuredByServer = new Map<string, typeof featuredRows>()
+    for (const f of featuredRows) {
+      featuredByServer.set(f.serverId, [...(featuredByServer.get(f.serverId) ?? []), f])
+    }
     // Resolve each to a minimal server carrying the MCP base URL for buildSplash.
-    const resolved: McpServer[] = rows
+    const resolved: SplashServer[] = rows
       .map((r) => {
         const base = mcpBaseOf(r.endpoint, r.endpoints[0]?.url ?? null)
-        return base ? ({ id: r.id, slug: r.slug, name: r.name, endpoint: base } as McpServer) : null
+        if (!base) return null
+        return {
+          id: r.id,
+          slug: r.slug,
+          name: r.name,
+          endpoint: base,
+          exampleQueries: r.exampleQueries,
+          featuredEndpoints: (featuredByServer.get(r.id) ?? []).map((f) => ({
+            url: f.url,
+            description: f.description,
+            parameters: Array.isArray(f.parameters) ? (f.parameters as FeaturedEndpoint['parameters']) : null,
+          })),
+        } as SplashServer
       })
-      .filter((s): s is McpServer => s !== null)
+      .filter((s): s is SplashServer => s !== null)
 
     const tiles = await buildSplash(address, resolved)
     return NextResponse.json({ address, tiles })

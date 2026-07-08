@@ -10,10 +10,12 @@ import TokenPanel from '@/components/TokenPanel'
 import Description from '@/components/Description'
 import ReputationPanel from '@/components/ReputationPanel'
 import RoutabilityPanel from '@/components/RoutabilityPanel'
+import EndpointFeatureStar from '@/components/EndpointFeatureStar'
 import { getTokenPanel } from '@/lib/launch-token'
 import { computeReputation, recentPings } from '@/lib/reputation'
 import type { RoutabilityReport } from '@/lib/mcp-lint-report'
 import { getSessionAddress } from '@/lib/auth'
+import { isAdminAddress } from '@/lib/admin'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -36,7 +38,9 @@ async function getServer(slug: string) {
   try {
     return await prisma.mcpServer.findUnique({
       where: { slug },
-      include: { endpoints: { orderBy: { position: 'asc' } } },
+      // Featured ("start here") endpoints lead the list — the page mirrors the
+      // planner-menu order so what you read is what the router sees.
+      include: { endpoints: { orderBy: [{ featured: 'desc' }, { position: 'asc' }] } },
     })
   } catch {
     return null // DB unavailable → 404 rather than a crash
@@ -133,6 +137,8 @@ export default async function ServiceDetailPage({ params }: Params) {
       }))?.rating ?? null
     : null
   const ratingInitial = { average: rep.ratingAvg, count: rep.ratingCount, yourRating }
+  // Admins curate the featured ("start here") endpoints inline on the tool list.
+  const canCurate = isAdminAddress(viewerAddr)
 
   const header = (
     <header className="svc__head">
@@ -211,6 +217,11 @@ export default async function ServiceDetailPage({ params }: Params) {
             <div className="svc__sectionhead">
               <h2 className="svc__h2">{server.gated === false ? 'Tools' : 'x402 endpoints'}</h2>
               <span className="svc__count mono">{server.endpoints.length}</span>
+              {canCurate && (
+                <span className="svc__curate mono">
+                  admin · star the “start here” endpoints — the router and new-account quick view lead with them
+                </span>
+              )}
             </div>
 
             {server.endpoints.length === 0 ? (
@@ -232,6 +243,12 @@ export default async function ServiceDetailPage({ params }: Params) {
                         <span className="ep__path mono" title={ep.url}>
                           {pathOf(ep.url)}
                         </span>
+                        <EndpointFeatureStar
+                          slug={server.slug}
+                          endpointId={ep.id}
+                          initial={ep.featured}
+                          canCurate={canCurate}
+                        />
                         {price && <span className="ep__price mono">{price}</span>}
                       </div>
                       <div className="ep__sub">
