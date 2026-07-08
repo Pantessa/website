@@ -4,43 +4,83 @@
     {
       "name": "web",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev"],
+      "runtimeArgs": [
+        "run",
+        "dev"
+      ],
       "port": 3010,
       "autoPort": true
     },
     {
       "name": "web-prod",
       "runtimeExecutable": "npx",
-      "runtimeArgs": ["next", "start"],
+      "runtimeArgs": [
+        "next",
+        "start"
+      ],
       "port": 3210,
       "autoPort": true
     },
     {
       "name": "web-footer",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev", "--", "-p", "3229"],
+      "runtimeArgs": [
+        "run",
+        "dev",
+        "--",
+        "-p",
+        "3229"
+      ],
       "port": 3229,
       "autoPort": true
     },
     {
       "name": "web-nav-clean",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev", "--", "-p", "3227"],
+      "runtimeArgs": [
+        "run",
+        "dev",
+        "--",
+        "-p",
+        "3227"
+      ],
       "port": 3227,
       "autoPort": true
     },
     {
       "name": "web-free-first",
       "runtimeExecutable": "npx",
-      "runtimeArgs": ["next", "start", "-p", "3228"],
+      "runtimeArgs": [
+        "next",
+        "start",
+        "-p",
+        "3228"
+      ],
       "port": 3228,
       "autoPort": false
     },
     {
       "name": "web-featured",
       "runtimeExecutable": "npx",
-      "runtimeArgs": ["next", "start", "-p", "3234"],
+      "runtimeArgs": [
+        "next",
+        "start",
+        "-p",
+        "3234"
+      ],
       "port": 3234,
+      "autoPort": false
+    },
+    {
+      "name": "web-embed-cta",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": [
+        "next",
+        "start",
+        "-p",
+        "3236"
+      ],
+      "port": 3236,
       "autoPort": false
     }
   ]
