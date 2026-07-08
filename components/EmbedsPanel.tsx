@@ -31,47 +31,9 @@ interface EmbedKeyRow {
   sites: EmbedSite[]
 }
 
-const DEFAULT_MCPS = "['uniswap-free', 'snapshot-free']"
-
-function snippetFor(key: string): string {
-  return `import { mountYeetfulChat } from 'yeetful/embed'
-
-mountYeetfulChat({
-  mode: 'bubble',
-  key: '${key}',
-  mcps: ${DEFAULT_MCPS},
-  wallet: 'auto', // the host page's wallet signs
-})`
-}
-
-/** The copy-paste "Install with Claude" prompt — hand it to Claude Code (or
- * any coding agent) inside the host app's repo and it does the whole
- * integration. Self-contained on purpose: key, CSP note, verify step. */
-function claudePromptFor(key: string): string {
-  return `Install the Yeetful embeddable chat (an agent that composes MCPs — swaps, DAO votes, live data — and signs with the user's own wallet) into this app.
-
-1. Install the SDK: \`npm i yeetful\` (needs yeetful >= 0.10).
-2. Mount it once wherever the app initializes client-side:
-
-   import { mountYeetfulChat } from 'yeetful/embed'
-
-   mountYeetfulChat({
-     mode: 'bubble',            // or 'inline' with { container }
-     key: '${key}',  // public embed key — attributes usage to our account
-     mcps: ${DEFAULT_MCPS},  // swap for slugs from https://www.yeetful.com/servers
-     wallet: 'auto',            // bridges the page's connected wallet; signatures pop in the user's own wallet
-   })
-
-   No bundler? Use a module script instead:
-   <script type="module">
-     import { mountYeetfulChat } from 'https://esm.sh/yeetful@^0.10/embed'
-     mountYeetfulChat({ mode: 'bubble', key: '${key}', mcps: ${DEFAULT_MCPS}, wallet: 'auto' })
-   </script>
-
-3. If the app ships a Content-Security-Policy, add https://www.yeetful.com to frame-src (the chat runs in an iframe on that origin).
-4. Do not move the key to an env secret — it is a publishable identifier, safe in page source.
-5. Verify: run the app, open the chat bubble, and ask "what is WETH trading at?" — the answer should include a $0 receipt line. Docs: https://www.yeetful.com/docs/embed`
-}
+// Prompt + snippet builders live in lib/embed-snippets (shared with the chat
+// toolbar's "Embed this chat" popover, which bakes in the live MCP set).
+import { embedClaudePrompt, embedSnippet } from '@/lib/embed-snippets'
 
 function CopyButton({ text, label, solid }: { text: string; label: string; solid?: boolean }) {
   const [copied, setCopied] = useState(false)
@@ -198,12 +160,12 @@ export default function EmbedsPanel() {
                   INSTALL WITH CLAUDE — PASTE THIS INTO CLAUDE CODE IN YOUR APP&rsquo;S REPO
                 </span>
                 <span className="flex items-center gap-2">
-                  <CopyButton solid text={claudePromptFor(primary.key)} label="Copy Claude prompt" />
-                  <CopyButton text={snippetFor(primary.key)} label="Copy snippet" />
+                  <CopyButton solid text={embedClaudePrompt(primary.key)} label="Copy Claude prompt" />
+                  <CopyButton text={embedSnippet(primary.key)} label="Copy snippet" />
                 </span>
               </div>
               <pre className="px-4 py-3 mono text-[12px] leading-relaxed text-[color:var(--muted)] overflow-x-auto max-h-44">
-                {claudePromptFor(primary.key)}
+                {embedClaudePrompt(primary.key)}
               </pre>
             </div>
             <p className="mt-2 text-[12.5px] text-[color:var(--muted-2)]">

@@ -29,6 +29,7 @@ import { SplashDashboard } from '@/components/SplashDashboard'
 import McpActionPanel from '@/components/McpActionPanel'
 import { splashCapable } from '@/lib/splash/types'
 import ShareButton from '@/components/ShareButton'
+import EmbedThisChat from '@/components/EmbedThisChat'
 import Link from 'next/link'
 import ConnectWallet from '@/components/ConnectWallet'
 import { YeetfulMark } from '@/components/Logo'
@@ -806,6 +807,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
               <PanelRight className="w-4 h-4" />
             </button>
           )}
+          <EmbedThisChat slugs={activeServers.map((s) => s.slug)} />
           <ShareButton />
           {showAppChrome && (
             <div className="flex-shrink-0 pl-1">
