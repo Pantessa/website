@@ -5,13 +5,13 @@ import { usePathname, useRouter } from 'next/navigation'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { ConnectButton } from '@rainbow-me/rainbowkit'
 import {
-  ChevronDown,
   LayoutDashboard,
   LogIn,
   LogOut,
   ShieldCheck,
   Wallet,
 } from 'lucide-react'
+import Caret from '@/components/Caret'
 import { cn } from '@/lib/utils'
 import { useSession } from '@/lib/session'
 
@@ -96,7 +96,7 @@ export default function NavAccount() {
             >
               <span className={`navacct__dot ${authed ? 'is-authed' : ''}`} aria-hidden />
               <span className="navacct__addr mono">{label}</span>
-              <ChevronDown className="navacct__chev" width={14} height={14} strokeWidth={2.5} />
+              <Caret className="navacct__chev" />
             </button>
 
             <div className={`navacct__menu ${open ? 'is-open' : ''}`} role="menu">

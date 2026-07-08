@@ -69,11 +69,16 @@
   ::selection { background: var(--fg); color: #000; }
 
   /* ── NAV ─────────────────────────────────────────── */
+  /* Borderless bar: separation from the page comes from the blur + a barely-
+     there falloff shadow, not a hairline. The nav's one accent is the rainbow
+     underline on the active tab (echoed by the mega-menu's opening edge). */
+  :root {
+    --nav-rainbow: linear-gradient(90deg, #8b7cf8, #5aa7f7 26%, #3ECF8E 52%, #e8c468 78%, #f0876f);
+  }
   .nav {
     position: sticky; top: 0; z-index: 40;
     background: rgba(0,0,0,0.72);
     backdrop-filter: blur(14px);
-    border-bottom: 1px solid var(--line);
   }
   /* Full-width shell: the nav tracks the viewport with the same edge padding
      as the hero copy, so the logo and the H1 share a left edge. */
@@ -89,12 +94,31 @@
   .logo__word { font-family: 'Archivo', sans-serif; font-weight: 800; font-size: 19px; letter-spacing: -0.03em; }
   .nav__tabs { display: flex; align-items: center; gap: 4px; }
   .nav__tab {
+    position: relative;
     display: inline-flex; align-items: center; gap: 7px;
     padding: 8px 14px; border-radius: 9px; font-size: 14px; font-weight: 500;
     color: var(--muted); transition: color .15s, background .15s;
   }
   .nav__tab:hover { color: var(--fg); }
-  .nav__tab.is-on { color: var(--fg); background: var(--surf-2); }
+  .nav__tab.is-on { color: var(--fg); }
+  /* Active-page marker: a short rainbow filament under the label — ::after is
+     the crisp line, ::before the same line blurred into a soft glow. Scoped to
+     the desktop tab row; the mobile drawer keeps its pill (below). */
+  .nav__tabs .nav__tab::before,
+  .nav__tabs .nav__tab::after {
+    content: ''; position: absolute; left: 14px; right: 14px; bottom: 2px; height: 2px;
+    border-radius: 999px; background: var(--nav-rainbow);
+    opacity: 0; transform: scaleX(0.4); transform-origin: center;
+    transition: opacity .25s ease, transform .34s cubic-bezier(.16,1,.3,1);
+    pointer-events: none;
+  }
+  .nav__tabs .nav__tab::before { filter: blur(5px); }
+  .nav__tabs .nav__tab.is-on::after { opacity: .95; transform: none; }
+  .nav__tabs .nav__tab.is-on::before { opacity: .55; transform: none; }
+  /* Hover affordance on inactive tabs: the same filament, neutral + faint. */
+  .nav__tabs .nav__tab:not(.is-on):hover::after {
+    background: rgba(255,255,255,0.22); opacity: 1; transform: none;
+  }
   .nav__tab--add { color: var(--muted); }
   .nav__badge {
     font-size: 11px; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 5px;
@@ -127,6 +151,8 @@
   @keyframes drawerfade { from { opacity: 0; } to { opacity: 1; } }
   .drawer__tabs { display: flex; flex-direction: column; gap: 4px; }
   .drawer__tabs .nav__tab { padding: 14px 16px; font-size: 16px; border-radius: 12px; min-height: 48px; }
+  /* Full-width drawer rows read better as pills than underlines. */
+  .drawer__tabs .nav__tab.is-on { background: var(--surf-2); }
   .drawer__foot {
     margin-top: auto; display: flex; flex-direction: column; gap: 10px;
     border-top: 1px solid var(--line); padding-top: 18px;
@@ -147,9 +173,11 @@
      under the 64px bar. */
   .navm { display: inline-flex; }
   .navm__trigger { cursor: pointer; }
-  .navm__chev { margin-left: 1px; opacity: .7; transition: transform .22s cubic-bezier(.16,1,.3,1), opacity .15s; }
+  /* Fine hand-drawn caret (see NavResearch) — smaller + thinner than the old
+     lucide chevron so the tab reads as type, not UI chrome. */
+  .navm__chev { margin-left: 2px; opacity: .55; transition: transform .22s cubic-bezier(.16,1,.3,1), opacity .15s; }
   .navm__trigger:hover .navm__chev { opacity: 1; }
-  .navm__trigger.is-active { color: var(--fg); background: var(--surf-2); }
+  .navm__trigger.is-active { color: var(--fg); }
   .navm__trigger.is-active .navm__chev { transform: rotate(180deg); opacity: 1; }
 
   /* Scrim — dims the page beneath the dropping sheet; also the outside-click
@@ -166,8 +194,7 @@
   .navm__panel {
     position: fixed; top: 64px; left: 0; right: 0; z-index: 41;
     background: rgba(9,9,11,0.86); backdrop-filter: blur(18px) saturate(1.3);
-    border-bottom: 1px solid var(--line);
-    box-shadow: 0 24px 60px -24px rgba(0,0,0,0.75);
+    box-shadow: 0 32px 80px -20px rgba(0,0,0,0.85);
     opacity: 0; transform: translateY(-10px); pointer-events: none;
     clip-path: inset(0 0 100% 0);
     transition: opacity .2s ease, transform .28s cubic-bezier(.16,1,.3,1),
@@ -177,13 +204,18 @@
     opacity: 1; transform: none; pointer-events: auto;
     clip-path: inset(0 0 -40% 0);
   }
-  /* Emerald hairline that draws across the very top edge as it opens. */
+  /* Rainbow filament that draws across the top edge as the sheet opens —
+     the same gradient as the active-tab underline, so the nav has one accent
+     language instead of borders. Edges fade out via mask so it never reads
+     as a bar. */
   .navm__panel::before {
-    content: ''; position: absolute; top: 0; left: 0; height: 1px;
-    width: 0; background: linear-gradient(90deg, transparent, var(--accent), transparent);
+    content: ''; position: absolute; top: 0; left: 0; height: 1.5px;
+    width: 0; background: var(--nav-rainbow);
+    -webkit-mask: linear-gradient(90deg, transparent, #000 15%, #000 85%, transparent);
+    mask: linear-gradient(90deg, transparent, #000 15%, #000 85%, transparent);
     opacity: 0; transition: width .5s ease .05s, opacity .3s ease;
   }
-  .navm__panel.is-open::before { width: 100%; opacity: .8; }
+  .navm__panel.is-open::before { width: 100%; opacity: .7; }
   .navm__inner {
     padding: 22px clamp(24px, 4vw, 64px) 26px;
     max-width: 1180px; margin: 0 auto;

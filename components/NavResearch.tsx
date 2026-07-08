@@ -4,7 +4,8 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { Activity, ChevronDown, Gauge, Route } from 'lucide-react'
+import { Activity, Gauge, Route } from 'lucide-react'
+import Caret from '@/components/Caret'
 
 /**
  * The "Research" mega-menu — a single top-level tab that reveals the three
@@ -112,7 +113,7 @@ export default function NavResearch() {
         onClick={() => (open ? closeNow() : (clearTimers(), setOpen(true)))}
       >
         Research
-        <ChevronDown className="navm__chev" width={15} height={15} strokeWidth={2.5} />
+        <Caret className="navm__chev" />
       </button>
 
       {mounted &&
