@@ -12,6 +12,7 @@
 // static frame under prefers-reduced-motion.
 
 import { useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import Link from 'next/link'
 
 const EMBED_SRC = '/embed?mcps=uniswap-free,snapshot-free&theme=dark'
@@ -477,20 +478,26 @@ export default function HomeHeroFusion() {
         ))}
       </div>
 
-      {/* Try it live — the REAL /embed chat, summoned instead of mocked */}
-      {live && (
-        <div className="fhero__livewrap" role="dialog" aria-label="Yeetful chat — live">
-          <div className="fhero__livebar">
-            <span className="mono">
-              <i /> Yeetful chat · live — Uniswap + Snapshot, one agent
-            </span>
-            <button className="fhero__liveclose" onClick={() => setLive(false)} aria-label="Close live chat">
-              ✕
-            </button>
-          </div>
-          <iframe className="fhero__liveframe" src={embedSrc} title="Yeetful chat — live" allow="clipboard-write; fullscreen" allowFullScreen />
-        </div>
-      )}
+      {/* Try it live — the REAL /embed chat, summoned instead of mocked.
+          Portaled to <body> so its fixed positioning escapes the hero's
+          `isolation: isolate` stacking context — otherwise later page
+          sections paint over it on scroll. */}
+      {live &&
+        typeof document !== 'undefined' &&
+        createPortal(
+          <div className="fhero__livewrap" role="dialog" aria-label="Yeetful chat — live">
+            <div className="fhero__livebar">
+              <span className="mono">
+                <i /> Yeetful chat · live — Uniswap + Snapshot, one agent
+              </span>
+              <button className="fhero__liveclose" onClick={() => setLive(false)} aria-label="Close live chat">
+                ✕
+              </button>
+            </div>
+            <iframe className="fhero__liveframe" src={embedSrc} title="Yeetful chat — live" allow="clipboard-write; fullscreen" allowFullScreen />
+          </div>,
+          document.body,
+        )}
     </section>
   )
 }
