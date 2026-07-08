@@ -18,6 +18,12 @@
   color-scheme: light;
 }
 
+/* Body copy in assistant replies is a soft near-white on dark; on a light
+   embed that needs to become a dark ink or it disappears against white. */
+.embed-root[data-theme='light'] .chat-md {
+  --chat-fg: #1c1c22;
+}
+
 /* The chat surface hard-codes a few dark-theme utility colors (text-white,
    bg-black/40) — remap them to the token palette inside a light embed. */
 .embed-root[data-theme='light'] .text-white {

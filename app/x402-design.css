@@ -26,10 +26,14 @@
        serif"; --font-sans (Geist) = body/UI; --font-mono = tabular figures,
        receipts, on-chain data; --font-display (Archivo) = wordmark + a few
        tight bold labels. */
-    --font-sans: 'Geist', system-ui, sans-serif;
-    --font-mono: 'Geist Mono', ui-monospace, monospace;
-    --font-serif: 'Newsreader', Georgia, serif;
-    --font-display: 'Archivo', sans-serif;
+    /* Each family carries a deep, machine-native fallback chain so the chat and
+       embeds stay readable even when the webfonts don't load (blocked CDN,
+       offline, slow first paint, strict host page). The lead face is the elegant
+       one we ship; everything after it is already on virtually every OS. */
+    --font-sans: 'Geist', system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    --font-mono: 'Geist Mono', ui-monospace, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace;
+    --font-serif: 'Newsreader', 'Iowan Old Style', 'Palatino Linotype', Palatino, Georgia, 'Times New Roman', serif;
+    --font-display: 'Archivo', system-ui, 'Segoe UI', sans-serif;
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   html { -webkit-text-size-adjust: 100%; -webkit-tap-highlight-color: transparent; }
@@ -1683,9 +1687,14 @@
      newspaper treatment. Lives on both the live chat bubble and /p/[slug]. */
   .chat-md {
     font-family: var(--font-sans);
-    font-size: 14.5px;
+    font-size: 15px;
     line-height: 1.72;
-    color: oklch(0.9 0 0);
+    /* Token-driven so it inverts correctly on a light-theme embed (was a
+       hard-coded light grey — near-invisible on white). --chat-fg is a hair
+       softer than pure --fg on dark to take the glare off a wall of body copy;
+       the light embed overrides it to a dark ink in embed.css. */
+    --chat-fg: oklch(0.94 0 0);
+    color: var(--chat-fg);
     overflow-wrap: break-word;
     text-wrap: pretty;
   }
@@ -1693,19 +1702,22 @@
   .chat-md > :last-child { margin-bottom: 0; }
   .chat-md p { margin: 0.75em 0; }
 
-  /* Serif display headings */
+  /* Serif display headings. Weight 600 (was 500) so Newsreader carries real
+     presence on a dark bubble instead of reading thin — the webfont now ships
+     the 600 master (see the font <link> in app/layout.tsx), so this is a true
+     weight, not a synthesised faux-bold. */
   .chat-md h1, .chat-md h2, .chat-md h3 {
     font-family: var(--font-serif);
-    font-weight: 500;
+    font-weight: 600;
     font-optical-sizing: auto;
     color: var(--fg);
-    letter-spacing: -0.014em;
-    line-height: 1.16;
+    letter-spacing: -0.011em;
+    line-height: 1.2;
     text-wrap: balance;
   }
-  .chat-md h1 { font-size: 1.62rem; margin: 0.9em 0 0.4em; }
-  .chat-md h2 { font-size: 1.32rem; margin: 1em 0 0.35em; }
-  .chat-md h3 { font-size: 1.12rem; margin: 0.95em 0 0.3em; }
+  .chat-md h1 { font-size: 1.7rem; margin: 0.9em 0 0.4em; }
+  .chat-md h2 { font-size: 1.36rem; margin: 1.1em 0 0.4em; }
+  .chat-md h3 { font-size: 1.14rem; margin: 0.95em 0 0.3em; }
   .chat-md h1:first-child, .chat-md h2:first-child, .chat-md h3:first-child { margin-top: 0; }
 
   /* Mono small-caps "markings" with a leading hairline (h4–h6) */
@@ -1714,11 +1726,11 @@
     align-items: center;
     gap: 12px;
     font-family: var(--font-mono);
-    font-weight: 500;
+    font-weight: 600;
     text-transform: uppercase;
-    letter-spacing: 0.16em;
-    font-size: 0.7rem;
-    color: var(--muted);
+    letter-spacing: 0.13em;
+    font-size: 0.74rem;
+    color: var(--fg);
     margin: 1.4em 0 0.55em;
   }
   .chat-md h4::before {
