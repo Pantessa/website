@@ -14,7 +14,7 @@ import { Card, CardTitle, Kpi, SkeletonKpi, SkeletonCard, Skeleton, type Stats }
 import { PolicySwitch, BudgetEditor } from '@/components/SpendPolicyControls'
 import { useToast } from '@/lib/toast'
 import EarnPanel from '@/components/EarnPanel'
-import EmbedsPanel from '@/components/EmbedsPanel'
+import EmbedsSummaryCard from '@/components/EmbedsSummaryCard'
 import OnboardingChecklist from '@/components/OnboardingChecklist'
 import WelcomeNudge from '@/components/WelcomeNudge'
 import PayToAgentsCard from '@/components/PayToAgentsCard'
@@ -142,10 +142,11 @@ export default function DashboardOverviewPage() {
           the checklist anchor just below. */}
       <WelcomeNudge />
 
-      {/* THE pivot onboarding: embed the chat → pick MCPs → bring your own.
+      {/* THE pivot onboarding, slimmed: the pitch (or the numbers) plus links —
+          embed-key management moved to /dashboard/keys with the API keys.
           Personal account only — an embed key belongs to a wallet, and the
           org view keeps its budget-first layout. */}
-      {!activeOrgId && <EmbedsPanel />}
+      {!activeOrgId && <EmbedsSummaryCard />}
 
       {/* First-run guided path — self-ticks from live state, hides when done
           or dismissed. */}

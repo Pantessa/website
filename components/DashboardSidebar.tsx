@@ -15,7 +15,7 @@ export const DASH_SECTIONS = [
   { href: '/dashboard/servers', label: 'Servers', icon: Server, exact: false },
   { href: '/chat', label: 'Chat', icon: MessageSquare, exact: false },
   { href: '/dashboard/agents', label: 'Agents', icon: Bot, exact: false },
-  { href: '/dashboard/keys', label: 'API Keys', icon: KeyRound, exact: false },
+  { href: '/dashboard/keys', label: 'Keys', icon: KeyRound, exact: false },
   { href: '/dashboard/approvals', label: 'Approvals', icon: ToggleRight, exact: false },
   { href: '/dashboard/plan', label: 'Plan', icon: CreditCard, exact: false },
   { href: '/dashboard/activity', label: 'Activity', icon: Activity, exact: false },

@@ -181,8 +181,8 @@ export default function EmbedInsights() {
         <p className="text-[13.5px] text-[color:var(--muted)] mt-2 max-w-[70ch] leading-relaxed">
           {data.sites.length > 0
             ? `${data.sites.length} site${data.sites.length === 1 ? ' has' : 's have'} mounted your embed — analytics fill in the moment a visitor sends a prompt.`
-            : 'No sites are running your embed yet. Grab your key + the install prompt from the Overview page.'}{' '}
-          <Link href="/dashboard" className="underline underline-offset-2 decoration-dotted hover:text-white">
+            : 'No sites are running your embed yet. Grab your key + the install prompt from the Keys page.'}{' '}
+          <Link href="/dashboard/keys#embed-keys" className="underline underline-offset-2 decoration-dotted hover:text-white">
             Embed setup →
           </Link>
         </p>
