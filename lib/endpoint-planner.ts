@@ -23,6 +23,20 @@ export const SMART_MAX_PER_CALL_USD = 0.05
 const MENU_CAP_PER_SERVICE = 12
 
 /**
+ * A general-query "escape hatch" tool (snapshot's `graphql_query`, hyperliquid's
+ * `info_query`) is the catch-all that keeps long-tail intents from each needing a
+ * new endpoint. Services register it LAST — exactly where MENU_CAP_PER_SERVICE
+ * bites — so a service with more than the cap's worth of tools silently loses the
+ * one endpoint that covers everything else. It must never be the tool truncated;
+ * `loadPlannableEndpoints` admits it past the cap. Same signal the routability
+ * linter's affordances check reads, so router + lint agree on what qualifies.
+ */
+const ESCAPE_HATCH_RE = /graphql|\bsql\b|raw.*query|query.*escape|escape hatch/i
+export function isEscapeHatchEndpoint(url: string, description?: string | null): boolean {
+  return ESCAPE_HATCH_RE.test(`${url} ${description ?? ''}`)
+}
+
+/**
  * Curated metadata for a few high-value endpoints whose ingested description /
  * params are too thin for the router to pick + fill. NOT per-asset hardcoding —
  * we enrich the DESCRIPTION (so keyword retrieval + the model surface it) and
@@ -339,7 +353,9 @@ export async function loadPlannableEndpoints(slugs: string[]): Promise<Plannable
     if (seenShape.has(shape)) continue
     seenShape.add(shape)
     const n = perService.get(r.server.slug) ?? 0
-    if (n >= MENU_CAP_PER_SERVICE) continue
+    // The escape hatch is cap-exempt — it's the catch-all that stops long-tail
+    // intents from each needing a new endpoint, so it must always reach the menu.
+    if (n >= MENU_CAP_PER_SERVICE && !isEscapeHatchEndpoint(url, description)) continue
     perService.set(r.server.slug, n + 1)
     out.push({
       id: r.id,

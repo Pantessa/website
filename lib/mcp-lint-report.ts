@@ -60,5 +60,7 @@ export function buildUpgradePrompt(report: RoutabilityReport): string {
     '- **Free tiers still need rate limiting**: no payment gate means no natural throttle.',
     '',
     'Start by reading the tool/endpoint definitions and their input schemas, then apply the fixes smallest-first. After each change, restate which failing check it clears.',
+    '',
+    "Audit before you build: if a fix describes a capability the service ALREADY provides (e.g. an escape hatch or identity param that exists but the grader missed), do NOT duplicate it — say so, skip it, and note it back as a likely router-side scoring gap on Yeetful rather than an MCP deficiency. Only change what this service actually controls.",
   ].join('\n')
 }
