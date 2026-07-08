@@ -3,7 +3,7 @@
 import { analytics } from '@/lib/analytics'
 import { useState, useRef, useEffect, useSyncExternalStore } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Send, Zap, Check, Plus, Loader2, Bot, User, PanelLeft, PanelRight, Sparkles, Copy } from 'lucide-react'
+import { Send, Zap, Check, Loader2, Bot, User, Boxes, PanelLeft, PanelRight, Sparkles, Copy } from 'lucide-react'
 import { useAccount, useSignTypedData, useConnect } from 'wagmi'
 import { useConnectModal } from '@rainbow-me/rainbowkit'
 import { getHostWalletServerState, getHostWalletState, HOST_WALLET_CONNECTOR_ID, subscribeHostWallet } from '@/lib/host-wallet'
@@ -26,7 +26,8 @@ import { latestWorkingContext, type WorkingContext } from '@/lib/working-context
 import { EXAMPLE_PROMPTS } from '@/lib/examples'
 import SampleCallDemo from '@/components/SampleCallDemo'
 import { SplashDashboard } from '@/components/SplashDashboard'
-import BrandIcon from '@/components/BrandIcon'
+import McpActionPanel from '@/components/McpActionPanel'
+import { splashCapable } from '@/lib/splash/types'
 import ShareButton from '@/components/ShareButton'
 import Link from 'next/link'
 import ConnectWallet from '@/components/ConnectWallet'
@@ -185,6 +186,12 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
     clearRouterTrace,
     engineWindowOpen,
     setEngineWindowOpen,
+    mcpRailOpen,
+    setMcpRailOpen,
+    mobileMcpRailOpen,
+    setMobileMcpRailOpen,
+    mcpActionSlug,
+    setMcpActionSlug,
   } = useYeetfulStore()
 
   // Logged in, the top nav is removed — the chat toolbar carries the home
@@ -206,31 +213,20 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
   const railOpen = isNarrow ? mobileSidebarOpen : sidebarOpen
   const toggleChatRail = () =>
     isNarrow ? setMobileSidebarOpen(!mobileSidebarOpen) : setSidebarOpen(!sidebarOpen)
-
-  // Toggle an agent for this chat; persist the set to the open chat (and DB).
-  // Turning one ON pins it to the front of the strip, so scroll home to show
-  // it landing there (a chip toggled far down the catalog would otherwise
-  // slide out of view).
-  const handleToggleServer = (id: string) => {
-    const activating = !activeServerIds.includes(id)
-    const next = activating ? [...activeServerIds, id] : activeServerIds.filter((x) => x !== id)
-    setActiveServerIds(next)
-    if (currentChatId) updateChatServers(currentChatId, next)
-    const strip = stripRef.current
-    if (activating && strip && strip.scrollLeft > 0) {
-      const from = strip.scrollLeft
-      strip.scrollTo({ left: 0, behavior: 'smooth' })
-      // Smooth scrolling is a no-op under reduced motion in some browsers —
-      // snap home if it hasn't moved.
-      window.setTimeout(() => {
-        if (strip.scrollLeft >= from) strip.scrollLeft = 0
-      }, 300)
-    }
-  }
+  // The MCP rail (vertical tool column) — agent selection lives THERE now,
+  // not in a horizontal strip up here.
+  const mcpRailVisible = isNarrow ? mobileMcpRailOpen : mcpRailOpen
+  const toggleMcpRail = () =>
+    isNarrow ? setMobileMcpRailOpen(!mobileMcpRailOpen) : setMcpRailOpen(!mcpRailOpen)
 
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
   const [status, setStatus] = useState<string | null>(null)
+  // Typing dissolves the per-MCP action window (same contract as the splash).
+  useEffect(() => {
+    if (input.trim().length > 0 && mcpActionSlug) setMcpActionSlug(null)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [input])
   // Splash dashboard: tile count the scan resolved (null = not yet), so the
   // normal empty state only shows when the splash finds nothing.
   const [splashCount, setSplashCount] = useState<number | null>(null)
@@ -245,7 +241,6 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
   } | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
-  const stripRef = useRef<HTMLDivElement>(null)
 
   const { address, isConnected } = useAccount()
   const { signTypedDataAsync } = useSignTypedData()
@@ -256,16 +251,11 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
   const currentChat = chats.find((c) => c.id === currentChatId)
   const activeServers = servers.filter((s) => activeServerIds.includes(s.id))
   // Show the connected-wallet splash when we have a wallet + a MCP that can
-  // paint a dashboard tile (Uniswap portfolio / Snapshot proposals / …).
-  const splashEligible =
-    !!effectiveAddress && !autoRouter && activeServers.some((s) => /uniswap|snapshot/i.test(`${s.slug} ${s.name}`))
-  // Connected agents render first in the chip strip (in the order they were
-  // toggled on) so the chat always shows what it's wired to without scrolling
-  // the whole catalog; the rest keep catalog order.
-  const connectedServers = activeServerIds
-    .map((id) => servers.find((s) => s.id === id))
-    .filter((s): s is (typeof servers)[number] => s !== undefined)
-  const orderedServers = [...connectedServers, ...servers.filter((s) => !activeServerIds.includes(s.id))]
+  // paint a dashboard tile (Uniswap portfolio / Snapshot proposals / CoW
+  // orders / Hyperliquid positions / …).
+  const splashEligible = !!effectiveAddress && !autoRouter && activeServers.some(splashCapable)
+  // The MCP whose action window is open (set by the rail).
+  const actionServer = mcpActionSlug ? servers.find((s) => s.slug === mcpActionSlug) ?? null : null
 
   // "What can I do?" example: prefill the input and toggle the mapped agent on
   // (when it's in the live catalog). We prefill rather than auto-send so the
@@ -738,9 +728,10 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
   }
 
   return (
-    <div className="flex flex-col h-full">
-      {/* Toolbar: sidebar toggle + agent picker (toggle x402 MCPs from chat).
-          Hidden in the embed — EmbedChat renders its own slim header. */}
+    <div className="relative flex flex-col h-full">
+      {/* Toolbar: sidebar + MCP-rail toggles (agent selection lives in the
+          vertical MCP rail now). Hidden in the embed — EmbedChat renders its
+          own slim header. */}
       {!embedded && (
       <div className="flex-shrink-0 px-3 py-2.5 border-b border-[var(--line)] bg-black/40 flex items-center gap-2">
         {/* Reopen group — appears (with the home mark) only while the sidebar is
@@ -767,54 +758,37 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
             )}
           </div>
         )}
-        <div ref={stripRef} className="flex items-center gap-2 overflow-x-auto scrollbar-none flex-1 min-w-0">
+        {/* MCP rail toggle — always available; shows the active-set count. */}
+        <button
+          onClick={toggleMcpRail}
+          aria-pressed={mcpRailVisible}
+          aria-label={mcpRailVisible ? 'Hide the MCP rail' : 'Show the MCP rail'}
+          title={mcpRailVisible ? 'Hide MCPs' : 'Show MCPs'}
+          className={cn(
+            'flex-shrink-0 flex items-center gap-1.5 px-2.5 min-h-[40px] md:min-h-[32px] rounded-lg border transition-colors',
+            mcpRailVisible
+              ? 'bg-[var(--surf-2)] border-white/30 text-white'
+              : 'bg-[var(--surf-1)] border-[var(--line)] text-[color:var(--muted)] hover:text-white hover:border-[var(--line-2)]',
+          )}
+        >
+          <Boxes className="w-4 h-4" />
+          <span className="text-[11px] whitespace-nowrap font-medium mono">MCPS · {activeServers.length}</span>
+        </button>
+        <div className="flex-1 min-w-0 flex items-center">
           {/* Auto Router + the spending-policy master switch are DISABLED for
               now — the toggles are hidden and the features behave as if they
               never existed (Auto Router forced off in the store; policy never
               read here). The wiring is kept for a later revival. */}
-
           {autoRouter ? (
             <span className="text-[11px] text-[color:var(--muted-2)] whitespace-nowrap pl-1">
               Sharp routing — Yeetful picks the best MCP for each message
             </span>
           ) : (
-            <>
-              <span className="text-[11px] text-[color:var(--muted-2)] whitespace-nowrap font-medium mono pl-1">
-                AGENTS · {activeServers.length}
+            activeServers.length > 0 && (
+              <span className="text-[11px] text-[color:var(--muted-2)] truncate pl-1">
+                {activeServers.map((s) => s.name).join(' · ')}
               </span>
-              {orderedServers.map((server, i) => {
-                const active = activeServerIds.includes(server.id)
-                // Thin rule between the connected group and the catalog.
-                const divider = connectedServers.length > 0 && i === connectedServers.length
-                return (
-                  <div key={server.id} className="flex-shrink-0 flex items-center gap-2">
-                    {divider && <span aria-hidden className="w-px h-5 bg-[var(--line-2)]" />}
-                    <motion.button
-                      layout="position"
-                      transition={{ layout: { duration: 0.25, ease: 'easeOut' } }}
-                      onClick={() => handleToggleServer(server.id)}
-                      aria-pressed={active}
-                      className={cn(
-                        'flex-shrink-0 flex items-center gap-1.5 px-2.5 py-1 min-h-[40px] md:min-h-0 rounded-lg border transition-colors',
-                        active
-                          ? 'bg-[var(--surf-2)] border-white/40 text-white'
-                          : 'bg-[var(--surf-1)] border-[var(--line)] text-[color:var(--muted)] hover:border-[var(--line-2)] hover:text-white'
-                      )}
-                    >
-                      <span className="w-3.5 h-3.5 grid place-items-center opacity-90">
-                        <BrandIcon server={server} size={13} />
-                      </span>
-                      <span className="text-[11px] whitespace-nowrap">{server.name}</span>
-                      {active ? (
-                        <Check className="w-2.5 h-2.5 flex-shrink-0" strokeWidth={3} style={{ color: 'var(--accent)' }} />
-                      ) : (
-                        <Plus className="w-2.5 h-2.5 flex-shrink-0 opacity-70" strokeWidth={2.5} />
-                      )}
-                    </motion.button>
-                  </div>
-                )
-              })}
-            </>
+            )
           )}
           </div>
           {autoRouter && (
@@ -839,6 +813,21 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
             </div>
           )}
         </div>
+      )}
+
+      {/* Per-MCP action window — opened by clicking an MCP in the rail; shows
+          what the connected account can do there (portfolio, orders,
+          proposals) + ready prompts. Fades the moment the user types. */}
+      {!embedded && actionServer && (
+        <McpActionPanel
+          server={actionServer}
+          address={effectiveAddress}
+          onPick={(prompt, slug) => {
+            setMcpActionSlug(null)
+            pickExample(prompt, slug)
+          }}
+          onClose={() => setMcpActionSlug(null)}
+        />
       )}
 
       {/* Messages area */}

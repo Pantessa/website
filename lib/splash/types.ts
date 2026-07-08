@@ -73,9 +73,36 @@ export type ProposalsTile = TileBase & {
 /** A source that resolved but has nothing to show (empty wallet, no follows). */
 export type EmptyTile = TileBase & { render: 'empty'; message: string }
 
-export type SplashTile = HoldingsTile | ProposalsTile | EmptyTile
+export interface StatRow {
+  /** Left column — what the row is (e.g. "ETH long 2.5x", "WETH → USDC"). */
+  label: string
+  /** Right column — the headline value (e.g. "$1,204", "62% filled"). */
+  value?: string
+  /** Small print under the label (e.g. "entry $2,410 · liq $1,980"). */
+  sub?: string
+  /** Tint the value (PnL green/red). */
+  tone?: 'pos' | 'neg'
+}
+
+/** A generic label/value list — positions, open orders, fills; any MCP whose
+ *  overview is "a few rows of account state" reuses this with zero new UI. */
+export type RowsTile = TileBase & {
+  render: 'rows'
+  /** Optional headline stat above the rows (e.g. account value). */
+  headline?: { value: string; caption: string }
+  rows: StatRow[]
+}
+
+export type SplashTile = HoldingsTile | ProposalsTile | RowsTile | EmptyTile
 
 export interface SplashResponse {
   address: string
   tiles: SplashTile[]
+}
+
+/** Which servers can paint a splash/action tile — mirror of the source
+ *  matchers in lib/splash/sources.ts, importable from client components
+ *  (sources.ts itself is server-only: it pulls in the MCP caller). */
+export function splashCapable(s: { slug: string; name: string }): boolean {
+  return /uniswap|snapshot|cow|hyperliquid/i.test(`${s.slug} ${s.name}`)
 }

@@ -3,6 +3,9 @@
 import { analytics } from '@/lib/analytics'
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
+// Type-only the other way (free-fleet imports `type McpServer` from here), so
+// this runtime import is not circular.
+import { FREE_FLEET_SLUGS } from '@/lib/free-fleet'
 
 export interface McpServer {
   id: string
@@ -36,6 +39,8 @@ export interface McpServer {
   iconSlug?: string | null
   source?: string
   featured?: boolean
+  /** Example user asks (seeded per MCP) — the action window's fallback chips. */
+  exampleQueries?: string[]
 
   // legacy/static-only fields (optional — DB rows don't carry these)
   iconUrl?: string | null
@@ -179,6 +184,15 @@ interface YeetfulStore {
    *  visit can never collapse the desktop sidebar preference. */
   mobileSidebarOpen: boolean
   setMobileSidebarOpen: (open: boolean) => void
+  /** The vertical MCP rail (chat's left tool column) — desktop preference. */
+  mcpRailOpen: boolean
+  setMcpRailOpen: (open: boolean) => void
+  /** Phone-overlay visibility for the MCP rail — transient, not persisted. */
+  mobileMcpRailOpen: boolean
+  setMobileMcpRailOpen: (open: boolean) => void
+  /** Slug of the MCP whose action window (per-MCP splash) is open, if any. */
+  mcpActionSlug: string | null
+  setMcpActionSlug: (slug: string | null) => void
 }
 
 const localId = () => Math.random().toString(36).slice(2)
@@ -278,10 +292,14 @@ export const useYeetfulStore = create<YeetfulStore>()(
 
       createChat: async (title = 'New chat') => {
         // A new chat starts from the current working set, or — if none is
-        // selected — the saved shortlist (the "pick your tools" default).
-        // Empty shortlist → empty active set → unchanged whole-catalog behavior.
-        const { activeServerIds: cur, shortlistIds } = get()
-        const activeServerIds = cur.length ? cur : shortlistIds
+        // selected — the saved shortlist (the "pick your tools" default), or
+        // finally the FREE first-party fleet: a brand-new user gets a working
+        // set that actually works, not whole-catalog roulette.
+        const { activeServerIds: cur, shortlistIds, servers } = get()
+        const fleetIds = FREE_FLEET_SLUGS
+          .map((slug) => servers.find((s) => s.slug === slug)?.id)
+          .filter((id): id is string => !!id)
+        const activeServerIds = cur.length ? cur : shortlistIds.length ? shortlistIds : fleetIds
         // Signed in → create in the DB and use the real cuid.
         if (get().authedAddress) {
           try {
@@ -423,20 +441,32 @@ export const useYeetfulStore = create<YeetfulStore>()(
         }
       },
 
-      sidebarOpen: true,
+      // Chat history is secondary — closed by default; the MCP rail is the
+      // primary left column.
+      sidebarOpen: false,
       setSidebarOpen: (open) => set({ sidebarOpen: open }),
       mobileSidebarOpen: false,
       setMobileSidebarOpen: (open) => set({ mobileSidebarOpen: open }),
+      mcpRailOpen: true,
+      setMcpRailOpen: (open) => set({ mcpRailOpen: open }),
+      mobileMcpRailOpen: false,
+      setMobileMcpRailOpen: (open) => set({ mobileMcpRailOpen: open }),
+      mcpActionSlug: null,
+      setMcpActionSlug: (slug) => set({ mcpActionSlug: slug }),
     }),
     {
       name: 'yeetful-store',
       // v1: auto routing was on by default. v2: Auto Router is disabled for now
       // (UI hidden, code kept) — force it OFF for EVERY persisted client,
       // including anyone who had it on, so it's as if the feature never existed.
-      version: 2,
+      // v3: chat history rail closed by default — apply the new default once
+      // to every persisted client (they can reopen; the choice persists again
+      // from there).
+      version: 3,
       migrate: (persisted, version) => {
         const s = (persisted ?? {}) as Record<string, unknown>
         if (version < 2) s.autoRouter = false
+        if (version < 3) s.sidebarOpen = false
         return s
       },
       // Persist only UI prefs. Chats are DB-backed (signed in) or ephemeral
@@ -446,6 +476,7 @@ export const useYeetfulStore = create<YeetfulStore>()(
         activeServerIds: state.activeServerIds,
         shortlistIds: state.shortlistIds,
         sidebarOpen: state.sidebarOpen,
+        mcpRailOpen: state.mcpRailOpen,
         autoRouter: state.autoRouter,
         engineWindowOpen: state.engineWindowOpen,
       }),

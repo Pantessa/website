@@ -4,12 +4,16 @@ import { useEffect } from 'react'
 import ChatInterface from '@/components/ChatInterface'
 import ChatSidebar from '@/components/ChatSidebar'
 import ChatSignInGate from '@/components/ChatSignInGate'
+import McpRail from '@/components/McpRail'
 import RouterEngineWindow from '@/components/RouterEngineWindow'
 import { useAppShellMode } from '@/components/AppShell'
 import { useYeetfulStore, McpServer } from '@/lib/store'
 import { CATALOG } from '@/lib/mcp-data'
+import { FREE_FLEET_FALLBACK } from '@/lib/free-fleet'
 
-const STATIC_SERVERS: McpServer[] = CATALOG
+// Free fleet leads the static fallback so the MCP rail's default (free) view
+// is never empty when /api/servers is down.
+const STATIC_SERVERS: McpServer[] = [...FREE_FLEET_FALLBACK, ...CATALOG]
 
 /**
  * The chat workspace shell (sidebar + interface), shared by /chat and
@@ -52,6 +56,11 @@ export default function ChatWorkspace({ chatId }: { chatId?: string }) {
     <div className={`relative flex ${chrome ? 'h-dvh' : 'h-[calc(100dvh-4rem)]'}`}>
       <div className="relative flex-shrink-0">
         <ChatSidebar />
+      </div>
+      {/* The MCP rail — chat's primary left column (history stays secondary
+          and closed by default). */}
+      <div className="relative flex-shrink-0">
+        <McpRail />
       </div>
       <main className="flex-1 min-w-0 flex flex-col">
         <ChatInterface />

@@ -10,7 +10,7 @@
 import type { McpServer } from '@/lib/store'
 import { callMcpTool } from '@/lib/mcp-call'
 import { overrideFreeMcpBase } from '@/lib/endpoint-planner'
-import type { HoldingRow, ProposalRow, SpaceRow, SplashTile, SuggestedPrompt } from './types'
+import type { HoldingRow, ProposalRow, SpaceRow, SplashTile, StatRow, SuggestedPrompt } from './types'
 
 /** Snapshot's stamp service resolves a space logo from its id — always
  *  available, no IPFS gateway flakiness. */
@@ -153,8 +153,171 @@ function truncate(s: string, n: number): string {
   return s.length > n ? s.slice(0, n - 1).trimEnd() + '…' : s
 }
 
+// ── CoW Protocol → open orders + recent fills (rows) ─────────────────────────
+
+interface CowChainView {
+  chain: string
+  error?: string
+  openOrders?: {
+    pair: string
+    kind: string
+    status: string
+    filledPct: number | null
+    validTo: number
+  }[]
+  tradeCount?: number
+  recentFills?: { pair: string; txHash: string }[]
+}
+
+// The order book returns raw addresses for tokens outside the service's
+// curated symbol list — shorten them (and map the native-ETH sentinel).
+const prettyToken = (t: string) => {
+  if (/^0xe{40}$/i.test(t)) return 'ETH'
+  return /^0x[0-9a-fA-F]{40}$/.test(t) ? `${t.slice(0, 6)}…${t.slice(-4)}` : t
+}
+const prettyPair = (pair: string) =>
+  pair
+    .split('→')
+    .map((s) => prettyToken(s.trim()))
+    .join(' → ')
+
+const cowSource: SplashSource = {
+  id: 'cow',
+  match: (s) => /(^|\b)cow(\b|-)/i.test(`${s.slug} ${s.name}`),
+  build: async (call, address, server) => {
+    // Two chains keeps the scan snappy (the full default is four).
+    const data = (await call('portfolio', { owner: address, chains: 'mainnet,base' })) as {
+      chains?: CowChainView[]
+    }
+    const chains = Array.isArray(data.chains) ? data.chains.filter((c) => !c.error) : []
+    const open = chains.flatMap((c) => (c.openOrders ?? []).map((o) => ({ ...o, chain: c.chain })))
+    const fills = chains.flatMap((c) => (c.recentFills ?? []).map((f) => ({ ...f, chain: c.chain })))
+    const trades = chains.reduce((n, c) => n + (c.tradeCount ?? 0), 0)
+    const base = { id: 'cow-activity', mcpSlug: server.slug, mcpName: server.name }
+
+    if (open.length === 0 && fills.length === 0) {
+      return {
+        ...base,
+        render: 'empty',
+        title: 'CoW Protocol',
+        message: 'No CoW orders or trades for this wallet yet — MEV-protected swaps start here.',
+        prompts: [
+          { label: 'Quote a swap', prompt: 'Quote swapping 100 USDC to WETH on CoW' },
+          { label: 'Place a limit order', prompt: 'Build a limit order selling 1 WETH at 4000 USDC on CoW' },
+        ],
+      }
+    }
+
+    const rows: StatRow[] = [
+      ...open.slice(0, 4).map((o) => ({
+        label: `${prettyPair(o.pair)} · ${o.kind}`,
+        value: o.filledPct != null ? `${Math.round(o.filledPct)}% filled` : o.status,
+        sub: `open on ${o.chain}`,
+      })),
+      ...fills.slice(0, Math.max(0, 4 - Math.min(open.length, 4))).map((f) => ({
+        label: prettyPair(f.pair),
+        value: 'filled',
+        sub: `recent trade on ${f.chain}`,
+        tone: 'pos' as const,
+      })),
+    ]
+    const prompts: SuggestedPrompt[] = open.length
+      ? [
+          { label: 'Check my open orders', prompt: 'Show my open CoW orders — are any close to filling?' },
+          { label: 'Cancel an order', prompt: 'Help me cancel one of my open CoW orders' },
+        ]
+      : [
+          { label: 'Trade again', prompt: 'Quote my last CoW pair again at today’s price' },
+          { label: 'Quote a swap', prompt: 'Quote swapping 100 USDC to WETH on CoW' },
+        ]
+    return {
+      ...base,
+      render: 'rows',
+      title: 'Your CoW activity',
+      subtitle: `${open.length} open · ${trades} trades`,
+      rows,
+      prompts,
+    }
+  },
+}
+
+// ── Hyperliquid → positions + account value (rows) ───────────────────────────
+
+interface HlPosition {
+  coin?: string
+  szi?: string
+  entryPx?: string
+  positionValue?: string
+  unrealizedPnl?: string
+  liquidationPx?: string | null
+  leverage?: { value?: number }
+}
+
+const hyperliquidSource: SplashSource = {
+  id: 'hyperliquid',
+  match: (s) => /hyperliquid/i.test(`${s.slug} ${s.name}`),
+  build: async (call, address, server) => {
+    const data = (await call('portfolio', { user: address })) as {
+      perp?: {
+        accountValueUsd?: string | null
+        withdrawableUsd?: string | null
+        positions?: HlPosition[]
+      }
+      pnl?: Record<string, { pnl: string | null }> | null
+    }
+    const positions = Array.isArray(data.perp?.positions) ? data.perp!.positions! : []
+    const accountValue = Number(data.perp?.accountValueUsd ?? 0)
+    const base = { id: 'hyperliquid-positions', mcpSlug: server.slug, mcpName: server.name }
+
+    if (positions.length === 0 && accountValue === 0) {
+      return {
+        ...base,
+        render: 'empty',
+        title: 'Hyperliquid',
+        message: 'No Hyperliquid account activity for this wallet.',
+        prompts: [
+          { label: 'Market snapshot', prompt: "What's trading on Hyperliquid right now — top markets by volume?" },
+          { label: 'BTC funding', prompt: "What's the BTC funding rate on Hyperliquid?" },
+        ],
+      }
+    }
+
+    const rows: StatRow[] = positions.slice(0, 5).map((p) => {
+      const size = Number(p.szi ?? 0)
+      const pnl = Number(p.unrealizedPnl ?? 0)
+      const lev = p.leverage?.value
+      return {
+        label: `${p.coin} ${size >= 0 ? 'long' : 'short'}${lev ? ` ${lev}x` : ''}`,
+        value: `${pnl >= 0 ? '+' : ''}$${Math.abs(pnl).toFixed(2)} PnL`,
+        sub: `entry $${p.entryPx ?? '—'}${p.liquidationPx ? ` · liq $${p.liquidationPx}` : ''}`,
+        tone: pnl >= 0 ? ('pos' as const) : ('neg' as const),
+      }
+    })
+    const dayPnl = Number(data.pnl?.day?.pnl ?? NaN)
+    const prompts: SuggestedPrompt[] = [
+      { label: 'How am I doing?', prompt: 'Summarize my Hyperliquid positions — PnL, risk, anything near liquidation?' },
+      { label: 'My open orders', prompt: 'What orders do I have resting on Hyperliquid?' },
+    ]
+    if (Number.isFinite(dayPnl) && dayPnl < 0) {
+      prompts.push({ label: 'What went wrong today?', prompt: 'My Hyperliquid PnL is down today — which position is dragging?' })
+    }
+    return {
+      ...base,
+      render: 'rows',
+      title: 'Your Hyperliquid account',
+      subtitle: `${positions.length} open ${positions.length === 1 ? 'position' : 'positions'}`,
+      headline:
+        accountValue > 0
+          ? { value: `$${accountValue.toLocaleString('en-US', { maximumFractionDigits: 2 })}`, caption: 'account value' }
+          : undefined,
+      rows,
+      prompts,
+    }
+  },
+}
+
 /** All registered splash sources. Exported for tests; a new MCP appends here. */
-export const SPLASH_SOURCES: SplashSource[] = [uniswapSource, snapshotSource]
+export const SPLASH_SOURCES: SplashSource[] = [uniswapSource, snapshotSource, cowSource, hyperliquidSource]
 
 /**
  * Build the splash tiles for a connected wallet across the connected MCP set.
