@@ -450,9 +450,12 @@ export default function HomeHeroFusion() {
           Compose it in minutes. Embed it in five lines.
         </p>
         <div className="fhero__ctas">
-          <button className="btn btn--solid" onClick={() => setLive(true)}>
+          {/* Try it live → drop the user into /chat with the free Uniswap +
+              Snapshot working set preselected, so the MCP cards auto-load.
+              (The /embed overlay below is kept for later, just not shown.) */}
+          <Link className="btn btn--solid" href="/chat?mcps=uniswap-free,snapshot-free">
             Try it live
-          </button>
+          </Link>
           <Link className="btn btn--ghost" href="/dashboard">
             Get started
           </Link>
