@@ -2110,6 +2110,7 @@
   .ca__or span { flex: 1; height: 1px; background: var(--line); }
   .ca__wallet { width: 100%; padding: 12px; display: inline-flex; align-items: center; justify-content: center; gap: 8px; border: 1px solid var(--line-2); border-radius: 11px; font-size: 14px; font-weight: 600; color: var(--fg); transition: background .15s, border-color .15s; }
   .ca__wallet:hover { background: var(--surf-2); border-color: var(--fg); }
+  .ca__wallet--lead { margin-top: 18px; }
   /* Social (Google/Apple/X) buttons in the unified sign-in modal. */
   .ca__providers { display: flex; flex-direction: column; gap: 8px; margin-top: 16px; }
   .ca__oauth { width: 100%; padding: 12px; display: inline-flex; align-items: center; justify-content: center; gap: 8px; border: 1px solid var(--line-2); border-radius: 11px; font-size: 14px; font-weight: 600; color: var(--fg); transition: background .15s, border-color .15s; }
