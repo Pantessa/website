@@ -5,6 +5,7 @@ import ChatInterface from '@/components/ChatInterface'
 import ChatSidebar from '@/components/ChatSidebar'
 import ChatSignInGate from '@/components/ChatSignInGate'
 import RouterEngineWindow from '@/components/RouterEngineWindow'
+import { useAppShellMode } from '@/components/AppShell'
 import { useYeetfulStore, McpServer } from '@/lib/store'
 import { CATALOG } from '@/lib/mcp-data'
 
@@ -43,8 +44,12 @@ export default function ChatWorkspace({ chatId }: { chatId?: string }) {
     }
   }, [chatId, setCurrentChatId, loadChat, setActiveServerIds])
 
+  // Logged in, the top nav is gone (AppShell) — reclaim its 4rem so chat fills
+  // the whole viewport.
+  const { chrome } = useAppShellMode()
+
   return (
-    <div className="relative h-[calc(100dvh-4rem)] flex">
+    <div className={`relative flex ${chrome ? 'h-dvh' : 'h-[calc(100dvh-4rem)]'}`}>
       <div className="relative flex-shrink-0">
         <ChatSidebar />
       </div>

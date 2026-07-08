@@ -3,6 +3,7 @@ import type { Metadata, Viewport } from 'next'
 import './globals.css'
 import './x402-design.css'
 import Navigation from '@/components/Navigation'
+import { AppShellMount } from '@/components/AppShell'
 import Providers from '@/components/Providers'
 import { Analytics } from "@vercel/analytics/next"
 
@@ -63,6 +64,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body className="text-white min-h-screen antialiased">
         <Providers>
           <Navigation />
+          <AppShellMount />
           {children}
         </Providers>
         {/* Vercel Analytics only ships events when deployed on Vercel; mounting

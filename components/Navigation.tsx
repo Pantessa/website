@@ -57,6 +57,14 @@ export default function Navigation() {
   // (After every hook, so the hook order stays stable across routes.)
   if (pathname.startsWith('/embed')) return null
 
+  // When a signed-in user is on an app surface (dashboard / chat / docs) the
+  // brochure top-nav is removed entirely — the app shell (left rail + its
+  // collapse/home toggle) owns the viewport. Logged-out visitors still get the
+  // full brochure nav everywhere. mounted-gated so SSR keeps the nav.
+  const onAppSurface =
+    pathname.startsWith('/dashboard') || pathname.startsWith('/chat') || pathname.startsWith('/docs')
+  if (mounted && !!sessionAddress && onAppSurface) return null
+
   const inDashboard = pathname.startsWith('/dashboard')
   const showDashboardCta = mounted && (isConnected || !!sessionAddress)
   // The "create an account" CTA is the newcomer path — only when no wallet is

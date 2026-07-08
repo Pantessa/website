@@ -28,6 +28,10 @@ import SampleCallDemo from '@/components/SampleCallDemo'
 import { SplashDashboard } from '@/components/SplashDashboard'
 import BrandIcon from '@/components/BrandIcon'
 import ShareButton from '@/components/ShareButton'
+import Link from 'next/link'
+import ConnectWallet from '@/components/ConnectWallet'
+import { YeetfulMark } from '@/components/Logo'
+import { useAppShellMode } from '@/components/AppShell'
 import ChatMarkdown from '@/components/ChatMarkdown'
 
 // Typed-data signing request shipped from the server for the wallet to sign.
@@ -182,6 +186,11 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
     engineWindowOpen,
     setEngineWindowOpen,
   } = useYeetfulStore()
+
+  // Logged in, the top nav is removed — the chat toolbar carries the home
+  // (back to dashboard) mark and the pay-wallet control instead. Never in embed.
+  const { chrome: appChrome } = useAppShellMode()
+  const showAppChrome = appChrome && !embedded
 
   // Toggle an agent for this chat; persist the set to the open chat (and DB).
   // Turning one ON pins it to the front of the strip, so scroll home to show
@@ -719,6 +728,16 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
           Hidden in the embed — EmbedChat renders its own slim header. */}
       {!embedded && (
       <div className="flex-shrink-0 px-3 py-2.5 border-b border-[var(--line)] bg-black/40 flex items-center gap-2">
+        {showAppChrome && (
+          <Link
+            href="/dashboard"
+            aria-label="Dashboard home"
+            title="Back to dashboard"
+            className="flex-shrink-0 grid place-items-center w-10 h-10 md:w-8 md:h-8 rounded-lg text-white hover:bg-[var(--surf-1)] transition-colors"
+          >
+            <YeetfulMark size={20} />
+          </Link>
+        )}
         <div ref={stripRef} className="flex items-center gap-2 overflow-x-auto scrollbar-none flex-1 min-w-0">
           <button
             onClick={() =>
@@ -797,6 +816,11 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
             </button>
           )}
           <ShareButton />
+          {showAppChrome && (
+            <div className="flex-shrink-0 pl-1">
+              <ConnectWallet />
+            </div>
+          )}
         </div>
       )}
 
