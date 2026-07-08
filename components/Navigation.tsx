@@ -7,7 +7,6 @@ import { createPortal } from 'react-dom'
 import { useAccount } from 'wagmi'
 import { useSession } from '@/lib/session'
 import { LogIn, Menu, X } from 'lucide-react'
-import { useYeetfulStore } from '@/lib/store'
 import ConnectWallet from '@/components/ConnectWallet'
 import AuthButton from '@/components/AuthButton'
 import CreateAccountButton from '@/components/CreateAccountButton'
@@ -18,7 +17,6 @@ import { YeetfulMark } from '@/components/Logo'
 
 export default function Navigation() {
   const pathname = usePathname()
-  const activeCount = useYeetfulStore((s) => s.activeServerIds.length)
   const { isConnected } = useAccount()
 
   // Post-connect routing is now owned by the sign-in flow itself
@@ -152,7 +150,6 @@ export default function Navigation() {
       </Link>
       <Link href="/chat" className={`nav__tab ${pathname === '/chat' ? 'is-on' : ''}`}>
         Chat
-        {activeCount > 0 && <span className="nav__badge mono">{activeCount}</span>}
       </Link>
       <NavResearch />
       <Link href="/pricing" className={`nav__tab ${pathname.startsWith('/pricing') ? 'is-on' : ''}`}>
@@ -179,7 +176,6 @@ export default function Navigation() {
       </Link>
       <Link href="/chat" className={`nav__tab ${pathname === '/chat' ? 'is-on' : ''}`}>
         Chat
-        {activeCount > 0 && <span className="nav__badge mono">{activeCount}</span>}
       </Link>
       <span className="drawer__group mono">Research</span>
       {RESEARCH_ITEMS.map(({ href, label }) => (
