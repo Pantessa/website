@@ -122,6 +122,15 @@ model McpEndpoint {
   /// no schema for. Reversible: set parameters=NULL where params_source='inferred'.
   paramsSource String? @map("params_source")
 
+  /// Owner/admin-flagged "start here" endpoint. Two consumers: the connect-time
+  /// quick view pings featured endpoints first for a newly connected wallet
+  /// (the generic splash tile for MCPs with no hand-coded source), and the
+  /// endpoint planner floats them to the front of its menu as starting hints
+  /// when an ask is broad. Set from the add-MCP modal (featuredTools) or the
+  /// admin star on /servers/[slug]. Column applied via raw SQL — never
+  /// `db push` (drifted harness_results table would be dropped).
+  featured Boolean @default(false)
+
   /// Semantic embedding (R2) of "service + tags + examples + description + path",
   /// from OpenAI text-embedding-3-small (1536-dim). Populated by
   /// scripts/embed-catalog.ts; queried via raw SQL (pgvector `<=>` cosine) in

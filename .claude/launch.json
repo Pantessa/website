@@ -35,6 +35,13 @@
       "runtimeArgs": ["next", "start", "-p", "3228"],
       "port": 3228,
       "autoPort": false
+    },
+    {
+      "name": "web-featured",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["next", "start", "-p", "3234"],
+      "port": 3234,
+      "autoPort": false
     }
   ]
 }
