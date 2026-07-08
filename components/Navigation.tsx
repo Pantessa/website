@@ -65,14 +65,10 @@ export default function Navigation() {
 
   const inDashboard = pathname.startsWith('/dashboard')
   const showDashboardCta = mounted && (isConnected || !!sessionAddress)
-  // The "create an account" CTA is the newcomer path — only when no wallet is
-  // connected / signed in, and only if the embedded-wallet SDK is configured.
-  const showCreateAccount = mounted && cdpEnabled && !isConnected && !sessionAddress
-  const createAccountPill =
-    'inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-emerald-400 text-zinc-950 text-xs font-semibold hover:bg-emerald-300 active:scale-[0.98] transition-all'
 
-  // Chat connects a wallet to PAY a turn, not to sign in — keep the plain
-  // Connect Wallet there so paying never forces a SIWE signature.
+  // Chat connects a wallet to PAY a turn, not to sign in — so once a wallet is
+  // connected we keep the plain Connect Wallet / auth controls there. When
+  // logged out, a single "Sign in" opens the modal (wallet / Google / email).
   const onChat = pathname.startsWith('/chat')
   const disconnected = !isConnected && !sessionAddress
   const signInPill =
@@ -100,13 +96,16 @@ export default function Navigation() {
   //   folds Dashboard + wallet + sign-out into a single dropdown. This kills
   //   the old "Signed in chip + separate wallet pill + Dashboard button" triple.
   const desktopAccount = onChat ? (
-    <>
-      {disconnected && showCreateAccount && (
-        <CreateAccountButton className={createAccountPill} label="Create account" />
-      )}
-      <ConnectWallet />
-      {isConnected && <AuthButton />}
-    </>
+    disconnected ? (
+      // Logged out on chat: one "Sign in" control that opens the modal (which
+      // itself offers wallet / Google / email) — no separate Connect Wallet.
+      disconnectedCta
+    ) : (
+      <>
+        <ConnectWallet />
+        {isConnected && <AuthButton />}
+      </>
+    )
   ) : disconnected ? (
     disconnectedCta
   ) : (
@@ -116,13 +115,14 @@ export default function Navigation() {
   // MOBILE drawer account cluster — the drawer has room, so it stays explicit
   // (Dashboard link + auth + wallet) rather than the collapsed desktop pill.
   const drawerAccount = onChat ? (
-    <>
-      {disconnected && showCreateAccount && (
-        <CreateAccountButton className={createAccountPill} label="Create account" />
-      )}
-      <ConnectWallet />
-      {isConnected && <AuthButton />}
-    </>
+    disconnected ? (
+      disconnectedCta
+    ) : (
+      <>
+        <ConnectWallet />
+        {isConnected && <AuthButton />}
+      </>
+    )
   ) : disconnected ? (
     disconnectedCta
   ) : (
