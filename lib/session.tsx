@@ -23,7 +23,8 @@ import {
 } from 'react'
 import { useRouter } from 'next/navigation'
 import { useConnectModal } from '@rainbow-me/rainbowkit'
-import { useAccount, useChainId, useDisconnect, useSignMessage } from 'wagmi'
+import { useAccount, useChainId, useConfig, useSignMessage } from 'wagmi'
+import { disconnect as wagmiDisconnect, getConnections } from 'wagmi/actions'
 import { createSiweMessage } from 'viem/siwe'
 import { getAddress } from 'viem'
 import { useYeetfulStore } from '@/lib/store'
@@ -60,7 +61,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const { address: walletAddress, isConnected, status: walletStatus } = useAccount()
   const chainId = useChainId()
   const { signMessageAsync } = useSignMessage()
-  const { disconnect } = useDisconnect()
+  const config = useConfig()
   const { openConnectModal } = useConnectModal()
   const router = useRouter()
 
@@ -196,11 +197,27 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       }
       // Sign-out means GONE: drop the wallet connection too, so the UI
       // returns to the exact state a brand-new visitor sees.
-      disconnect()
+      //
+      // Do it deterministically. The old fire-and-forget disconnect() (followed
+      // by an immediate router.push) could be interrupted before wagmi finished
+      // clearing its active-connection state, leaving `state.current` set. The
+      // next sign-in then tripped ConnectorAlreadyConnectedError deep in wagmi's
+      // connect action — which RainbowKit's modal swallows silently — so
+      // reconnecting MetaMask appeared to do nothing until a full page reload
+      // rebuilt wagmi from scratch. Await a full teardown of EVERY connection so
+      // the next connect always starts from a clean, truly-disconnected state.
+      try {
+        for (const connection of getConnections(config)) {
+          await wagmiDisconnect(config, { connector: connection.connector })
+        }
+      } catch {
+        // A connector (e.g. injected MetaMask) can reject on disconnect; the app
+        // session is cleared regardless, and we tore down what we could.
+      }
       setAddress(null)
       setStatus('guest')
     }
-  }, [disconnect])
+  }, [config])
 
   // A SIWE session without a wallet behind it is an orphan — every authed
   // surface re-gates on the wallet anyway, so the only thing it can do is
