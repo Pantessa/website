@@ -82,6 +82,18 @@
       ],
       "port": 3236,
       "autoPort": false
+    },
+    {
+      "name": "web-docs-embed",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": [
+        "next",
+        "start",
+        "-p",
+        "3242"
+      ],
+      "port": 3242,
+      "autoPort": false
     }
   ]
 }

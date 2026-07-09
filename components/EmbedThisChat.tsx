@@ -2,15 +2,11 @@
 
 import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
-import { Check, Code2, Copy } from 'lucide-react'
+import { Code2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useSession } from '@/lib/session'
-import {
-  DEFAULT_EMBED_MCPS,
-  MAX_EMBED_MCPS,
-  embedClaudePrompt,
-  embedSnippet,
-} from '@/lib/embed-snippets'
+import EmbedInstall from '@/components/EmbedInstall'
+import { DEFAULT_EMBED_MCPS, MAX_EMBED_MCPS } from '@/lib/embed-snippets'
 
 /**
  * "Embed this chat" — chat-toolbar popover proving the point that the chat
@@ -24,7 +20,6 @@ export default function EmbedThisChat({ slugs }: { slugs: string[] }) {
   const [open, setOpen] = useState(false)
   const [embedKey, setEmbedKey] = useState<string | null>(null)
   const [keyChecked, setKeyChecked] = useState(false)
-  const [copied, setCopied] = useState<'prompt' | 'snippet' | null>(null)
   const popRef = useRef<HTMLDivElement>(null)
 
   // Close the popover on outside click.
@@ -52,20 +47,6 @@ export default function EmbedThisChat({ slugs }: { slugs: string[] }) {
   const usingDefaults = slugs.length === 0
   const effective = (usingDefaults ? DEFAULT_EMBED_MCPS : slugs).slice(0, MAX_EMBED_MCPS)
   const trimmed = slugs.length > MAX_EMBED_MCPS
-
-  const copy = (kind: 'prompt' | 'snippet') => {
-    const text =
-      kind === 'prompt' ? embedClaudePrompt(embedKey, effective) : embedSnippet(embedKey, effective)
-    void navigator.clipboard
-      .writeText(text)
-      .then(() => {
-        setCopied(kind)
-        setTimeout(() => setCopied(null), 1600)
-      })
-      .catch(() => {
-        /* clipboard blocked — user can select from the snippet preview */
-      })
-  }
 
   return (
     <div className="relative flex-shrink-0" ref={popRef}>
@@ -115,26 +96,8 @@ export default function EmbedThisChat({ slugs }: { slugs: string[] }) {
             )}
           </div>
 
-          <pre className="mono text-[10.5px] leading-relaxed text-[color:var(--muted)] rounded-lg border border-[var(--line)] bg-black/40 px-2.5 py-2 overflow-x-auto max-h-32 overflow-y-auto">
-            {embedSnippet(embedKey, effective)}
-          </pre>
-
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => copy('prompt')}
-              className="flex-1 flex items-center justify-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-medium bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/15 transition-colors"
-            >
-              {copied === 'prompt' ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-              {copied === 'prompt' ? 'Copied' : 'Copy Claude Code prompt'}
-            </button>
-            <button
-              onClick={() => copy('snippet')}
-              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] border border-[var(--line)] bg-[var(--surf-2)] text-[color:var(--muted)] hover:text-white hover:border-[var(--line-2)] transition-colors"
-            >
-              {copied === 'snippet' ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-              Snippet
-            </button>
-          </div>
+          {/* the shared install card (compact) — live MCP set + key baked in */}
+          <EmbedInstall variant="compact" embedKey={embedKey} mcps={effective} />
 
           <p className="text-[10.5px] text-[color:var(--muted-2)] leading-snug">
             {embedKey ? (
