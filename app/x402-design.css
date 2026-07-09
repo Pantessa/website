@@ -2380,20 +2380,28 @@
   .embeda__pre { padding: 18px 16px; font-size: 13px; line-height: 1.7; overflow-x: auto; color: #c9cec6; }
   .embeda__docs { display: block; padding: 12px 16px; border-top: 1px solid var(--line); font-size: 13px; color: var(--accent); }
   .embeda__docs:hover { text-decoration: underline; }
-  .embeda__demos { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+  .embeda__demos { margin-top: 20px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
   .embeda__demo {
     border: 1px solid var(--line); border-radius: 14px; padding: 18px; background: var(--surf-1);
-    display: flex; flex-direction: column; gap: 9px; transition: border-color .15s, transform .15s;
+    display: flex; flex-direction: column; gap: 9px; min-width: 0; transition: border-color .15s, transform .15s;
   }
   .embeda__demo:hover { border-color: var(--accent); transform: translateY(-1px); }
-  .embeda__demotop { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+  .embeda__demotop { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .embeda__demoid { display: flex; align-items: center; gap: 10px; min-width: 0; }
+  .embeda__demologo {
+    flex-shrink: 0; width: 36px; height: 36px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .embeda__demologo--uni { background: #fce8f4; color: #ff007a; }
+  .embeda__demologo--cow { background: #052b65; color: #65d9ff; }
   .embeda__demoname { font-family: 'Archivo', sans-serif; font-weight: 700; font-size: 15.5px; letter-spacing: -.01em; }
   .embeda__demohost { font-size: 12px; color: var(--accent); white-space: nowrap; }
-  .embeda__demoblurb { font-size: 13px; color: var(--muted); line-height: 1.55; }
+  .embeda__demoblurb { font-size: 13px; color: var(--muted); line-height: 1.55; flex: 1; }
   .embeda__demotag { align-self: flex-start; font-size: 10px; letter-spacing: .14em; padding: 3px 9px; border-radius: 999px; border: 1px solid color-mix(in oklch, var(--accent) 40%, transparent); color: var(--accent); }
-  .embeda__disclaimer { font-size: 12px; color: var(--muted-2); line-height: 1.55; max-width: 70ch; }
-  .embeda__next { font-size: 11.5px; letter-spacing: .06em; color: var(--muted-2); }
+  .embeda__disclaimer { margin-top: 16px; font-size: 12px; color: var(--muted-2); line-height: 1.55; max-width: 70ch; }
+  .embeda__next { margin-top: 8px; font-size: 11.5px; letter-spacing: .06em; color: var(--muted-2); }
   @media (max-width: 1023px) { .embeda__grid { grid-template-columns: 1fr; } }
+  @media (max-width: 767px) { .embeda__demos { grid-template-columns: 1fr; } }
 
   /* ── TRUST LAYER ────────────────────────────────── */
   .trust { padding: clamp(88px, 11vh, 132px) 0 72px; }
