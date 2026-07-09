@@ -92,6 +92,27 @@
       ],
       "port": 3244,
       "autoPort": true
+    },
+    {
+      "name": "web-getstarted",
+      "runtimeExecutable": "bash",
+      "runtimeArgs": [
+        "-lc",
+        "cd /Users/nategeier/yeetful/website-getstarted && exec npx next start -p 3240"
+      ],
+      "port": 3240
+    },
+    {
+      "name": "web-docs-embed",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": [
+        "next",
+        "start",
+        "-p",
+        "3242"
+      ],
+      "port": 3242,
+      "autoPort": false
     }
   ]
 }
