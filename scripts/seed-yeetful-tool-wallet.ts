@@ -1,6 +1,7 @@
 #!/usr/bin/env tsx
-// Seed the FREE (non-gated) first-party multichain Wallet MCP — `wallet-free`
-// (repo Yeetful/free-mcps, service `wallet`) — as a directory row with one
+// Seed the FREE (non-gated) first-party multichain Wallet MCP —
+// `yeetful-tool-wallet` (repo Yeetful/free-mcps, service `yeetful-tool-wallet`;
+// the yeetful-tool-* prefix marks internal Yeetful utility MCPs) — as a directory row with one
 // mcp_endpoints child per TOOL, mirroring seed-hyperliquid-free.ts exactly.
 // priceUsd '0' = explicitly free; calls skip the 402 handshake but stay
 // policy-gated + ledgered.
@@ -11,9 +12,9 @@
 //
 // source:'yeetful' keeps db:ingest/db:audit from pruning or diffing it.
 // Idempotent: upserts by slug, replaces endpoints. Run:
-//   DATABASE_URL=... npx tsx scripts/seed-wallet-free.ts
+//   DATABASE_URL=... npx tsx scripts/seed-yeetful-tool-wallet.ts
 // Local-dev overlay without touching Neon:
-//   npx tsx scripts/seed-wallet-free.ts --print-extra-env
+//   npx tsx scripts/seed-yeetful-tool-wallet.ts --print-extra-env
 import { Prisma } from '@prisma/client'
 
 type Param = {
@@ -50,8 +51,8 @@ const chains = () =>
   )
 
 const SERVICE = {
-  slug: 'wallet-free',
-  name: 'Wallet (Free)',
+  slug: 'yeetful-tool-wallet',
+  name: 'Yeetful Wallet',
   description:
     'Multichain wallet reads, free and non-gated: USD-priced whole-wallet portfolios across 9 top EVM chains (Ethereum, Base, Arbitrum, Optimism, Polygon, BNB, Avalanche, Scroll, Gnosis), native gas balances, precise per-token balances, recent transfers with scam-symbol flagging, and transaction confirmation status. The fresh-data layer after any swap or transfer settles. Read-only by construction. Rate-limited. By Yeetful.',
   category: 'Wallets',
