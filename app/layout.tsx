@@ -28,19 +28,19 @@ export const metadata: Metadata = {
   authors: [{ name: 'Yeetful' }],
   // Icons are file-based: app/icon.svg, app/icon.png, app/apple-icon.png —
   // Next App Router auto-generates the <link> tags, so no metadata.icons needed.
+  // Card images are file-based too: app/opengraph-image.tsx + app/twitter-image.tsx
+  // render the "Mega dapps are here" card — no images entries needed here.
   openGraph: {
     title: TITLE,
     description: SOCIAL_DESCRIPTION,
     type: 'website',
     url: SITE,
     siteName: 'Yeetful',
-    images: [{ url: '/og.png', width: 1200, height: 630, alt: 'Yeetful — Agent Expense Accounts' }],
   },
   twitter: {
     card: 'summary_large_image',
     title: TITLE,
     description: SOCIAL_DESCRIPTION,
-    images: ['/og.png'],
   },
 }
 
