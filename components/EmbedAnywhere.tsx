@@ -71,36 +71,38 @@ export default function EmbedAnywhere() {
       </div>
 
       <div className="embeda__grid">
-        <div className="embeda__snippet">
-          <div className="embeda__snipbar mono">
-            <span>npm i yeetful</span>
-            <span className="embeda__snipver">v0.9</span>
+        <div className="embeda__left">
+          <div className="embeda__snippet">
+            <div className="embeda__snipbar mono">
+              <span>npm i yeetful</span>
+              <span className="embeda__snipver">v0.9</span>
+            </div>
+            <pre className="embeda__pre mono">
+              <code>{SNIPPET}</code>
+            </pre>
+            <Link href="/docs/embed" className="embeda__docs mono">
+              Read the embed docs →
+            </Link>
           </div>
-          <pre className="embeda__pre mono">
-            <code>{SNIPPET}</code>
-          </pre>
-          <Link href="/docs/embed" className="embeda__docs mono">
-            Read the embed docs →
-          </Link>
+
+          <div className="embeda__demos">
+            {DEMOS.map((d) => (
+              <a className="embeda__demo" href={d.url} target="_blank" rel="noreferrer" key={d.url}>
+                <div className="embeda__demotop">
+                  <span className="embeda__demoid">
+                    <span className={`embeda__demologo ${d.logoClass}`}>{d.logo}</span>
+                    <span className="embeda__demoname">{d.name}</span>
+                  </span>
+                  <span className="embeda__demohost mono">{d.host} ↗</span>
+                </div>
+                <p className="embeda__demoblurb">{d.blurb}</p>
+                <span className="embeda__demotag mono">LIVE DEMO</span>
+              </a>
+            ))}
+          </div>
         </div>
 
         <EmbedDemo />
-      </div>
-
-      <div className="embeda__demos">
-        {DEMOS.map((d) => (
-          <a className="embeda__demo" href={d.url} target="_blank" rel="noreferrer" key={d.url}>
-            <div className="embeda__demotop">
-              <span className="embeda__demoid">
-                <span className={`embeda__demologo ${d.logoClass}`}>{d.logo}</span>
-                <span className="embeda__demoname">{d.name}</span>
-              </span>
-              <span className="embeda__demohost mono">{d.host} ↗</span>
-            </div>
-            <p className="embeda__demoblurb">{d.blurb}</p>
-            <span className="embeda__demotag mono">LIVE DEMO</span>
-          </a>
-        ))}
       </div>
 
       <p className="embeda__disclaimer">
