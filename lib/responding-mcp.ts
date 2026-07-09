@@ -32,30 +32,50 @@ export function receiptsOf(meta: unknown): ReceiptLike[] {
  * slug (present on not-approved blocks), then exact display name, then host.
  * Returns null when the turn used no MCP or the server isn't in the catalog.
  */
-export function respondingServer(meta: unknown, servers: McpServer[]): McpServer | null {
-  const receipts = receiptsOf(meta)
-  if (receipts.length === 0) return null
-  const primary =
-    receipts.find((r) => r && r.ok !== false && r.name) ??
-    receipts.find((r) => r && r.name)
-  if (!primary) return null
-
-  if (primary.slug) {
-    const s = servers.find((s) => s.slug === primary.slug)
+function resolveReceipt(r: ReceiptLike, servers: McpServer[]): McpServer | null {
+  if (r.slug) {
+    const s = servers.find((s) => s.slug === r.slug)
     if (s) return s
   }
-  if (primary.name) {
-    const s = servers.find((s) => s.name === primary.name)
+  if (r.name) {
+    const s = servers.find((s) => s.name === r.name)
     if (s) return s
   }
-  if (primary.endpoint) {
-    const host = hostOf(primary.endpoint)
+  if (r.endpoint) {
+    const host = hostOf(r.endpoint)
     if (host) {
       const s = servers.find((s) => hostOf(s.endpoint) === host)
       if (s) return s
     }
   }
   return null
+}
+
+/**
+ * Every MCP that took part in an assistant turn, in receipt order (settled
+ * calls first), deduped — a multi-MCP turn (swap quote + proposal read) gets
+ * its avatars stacked like coins. Inference-engine receipts ("Yeetful ·
+ * House") aren't catalog servers, so they drop out naturally. A turn with no
+ * resolvable receipts falls back to `fallback` (the active working set): when
+ * you're talking TO an agent, its mark shows even on a pure-inference turn.
+ */
+export function respondingServers(
+  meta: unknown,
+  servers: McpServer[],
+  fallback: McpServer[] = [],
+): McpServer[] {
+  const receipts = receiptsOf(meta)
+  const ordered = [
+    ...receipts.filter((r) => r && r.ok !== false && r.name),
+    ...receipts.filter((r) => r && r.ok === false && r.name),
+  ]
+  const out: McpServer[] = []
+  for (const r of ordered) {
+    const s = resolveReceipt(r, servers)
+    if (s && !out.some((o) => o.slug === s.slug)) out.push(s)
+  }
+  if (out.length > 0) return out
+  return fallback
 }
 
 /**

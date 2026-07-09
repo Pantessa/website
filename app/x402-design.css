@@ -1718,6 +1718,17 @@
      body copy; h4–h6 render as mono "markings" with an accent hairline (the
      Passalacqua eyebrow); rules, lists and tables get the newspaper
      treatment. Lives on both the live chat bubble and /p/[slug]. */
+  /* User bubble — solid accent chip with a deep-green ink. Replaces the old
+     `bg-[color:var(--accent)]/90 text-black` utilities: Tailwind can't put an
+     opacity modifier on a CSS-var color, so that background silently compiled
+     to TRANSPARENT and the black text vanished into the dark page. Plain CSS,
+     token-driven, and out of reach of the embed's .text-black light remap. */
+  .chat-bubble--user {
+    background: color-mix(in oklch, var(--accent) 94%, var(--bg));
+    color: #04231a;
+    font-family: var(--font-chat-body);
+  }
+
   .chat-md {
     font-family: var(--font-chat-body);
     font-size: 15.5px;
