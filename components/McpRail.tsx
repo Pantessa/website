@@ -110,18 +110,16 @@ export default function McpRail() {
           : 'text-[color:var(--muted)] hover:text-white hover:bg-[var(--surf-1)]',
       )}
     >
-      <span className="w-6 h-6 grid place-items-center flex-shrink-0 rounded-lg bg-black/30 border border-[var(--line)]">
-        <BrandIcon server={server} size={14} />
+      <span className="w-9 h-9 grid place-items-center flex-shrink-0 rounded-lg bg-black/30 border border-[var(--line)]">
+        <BrandIcon server={server} size={22} />
       </span>
       <span className="flex-1 min-w-0">
         <span className="block text-xs font-medium truncate">{server.name}</span>
-        <span className="block text-[10px] mono text-[color:var(--muted-2)]">
-          {server.gated === false ? (
-            <span style={{ color: 'var(--accent)' }}>FREE</span>
-          ) : (
-            `$${server.priceUsd}/call`
-          )}
-        </span>
+        {server.gated !== false && (
+          <span className="block text-[10px] mono text-[color:var(--muted-2)]">
+            {`$${server.priceUsd}/call`}
+          </span>
+        )}
       </span>
       {/* Server page in a new tab — hover affordance so the row stays clean.
           stopPropagation: the row click adds/opens, the ⓘ only informs. */}
