@@ -14,6 +14,10 @@
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import Link from 'next/link'
+import { useAccount } from 'wagmi'
+import { useSession } from '@/lib/session'
+import { cdpEnabled } from '@/lib/cdp-embedded'
+import CreateAccountButton from '@/components/CreateAccountButton'
 
 const EMBED_SRC = '/embed?mcps=uniswap-free,snapshot-free&theme=dark'
 
@@ -366,6 +370,16 @@ export default function HomeHeroFusion() {
   const liveAtRef = useRef(0)
   const [embedSrc, setEmbedSrc] = useState(EMBED_SRC)
 
+  // "Get started" opens the sign-in modal for newcomers instead of dumping
+  // them on the SIWE-gated dashboard. Signed-in / connected visitors skip the
+  // modal and go straight to /dashboard. mounted-gated so SSR and the first
+  // client render agree (wagmi state only exists post-hydration).
+  const { isConnected } = useAccount()
+  const { address: sessionAddress } = useSession()
+  const [mounted, setMounted] = useState(false)
+  useEffect(() => setMounted(true), [])
+  const showSignInModal = mounted && cdpEnabled && !isConnected && !sessionAddress
+
   // Pin the embed to this origin so its postMessage events reach us.
   useEffect(() => {
     setEmbedSrc(`${EMBED_SRC}&host=${encodeURIComponent(window.location.origin)}`)
@@ -456,9 +470,13 @@ export default function HomeHeroFusion() {
           <Link className="btn btn--solid" href="/chat?mcps=uniswap-free,snapshot-free">
             Try it live
           </Link>
-          <Link className="btn btn--ghost" href="/dashboard">
-            Get started
-          </Link>
+          {showSignInModal ? (
+            <CreateAccountButton className="btn btn--ghost" label="Get started" redirectTo="/dashboard" />
+          ) : (
+            <Link className="btn btn--ghost" href="/dashboard">
+              Get started
+            </Link>
+          )}
         </div>
         {/* the transmutation readout — written by the burst: each character
             materializes as the writer particles arrive from the core */}
