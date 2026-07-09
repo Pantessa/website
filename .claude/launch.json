@@ -113,6 +113,15 @@
       ],
       "port": 3242,
       "autoPort": false
+    },
+    {
+      "name": "web-home-embed",
+      "runtimeExecutable": "bash",
+      "runtimeArgs": [
+        "-lc",
+        "exec npx next start -p 3246"
+      ],
+      "port": 3246
     }
   ]
 }
