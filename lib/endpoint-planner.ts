@@ -216,7 +216,7 @@ export interface PlanContext {
  *  never offer a token that would fail substitution. */
 export function contextVarsLine(ctx?: PlanContext): string {
   if (!ctx?.userAddress) return ''
-  return `The user's connected wallet address is known server-side. When a parameter must be the USER'S OWN address — their follows, votes, balances, orders, positions, anything phrased "my …"/"do I …"/"am I …" — pass the literal string "${USER_ADDRESS_TOKEN}" as that value (also inside JSON-string params); it is substituted with the real address after planning. NEVER invent an address or copy one from the conversation for the user themself.`
+  return `The user's connected wallet address is known server-side. When a parameter must be the USER'S OWN address — their follows, votes, balances, orders, positions, the payer/sender of something they asked to do (\`from\`, \`owner\`, \`user\`, \`refundTo\`, …), anything phrased "my …"/"do I …"/"am I …" or implied by them asking for the action — pass the literal string "${USER_ADDRESS_TOKEN}" as that value (also inside JSON-string params); it is substituted with the real address after planning. NEVER invent an address, NEVER pass an empty string for a required address param, and NEVER copy an address from the conversation for the user themself.`
 }
 
 /** Replace context tokens in planned string params. Errors when the planner
@@ -502,7 +502,15 @@ export function plannerPrompt(
         const params = e.parameters
           .map((p) => {
             const ex = p.example !== undefined && p.example !== null && p.example !== '' ? ` e.g. ${JSON.stringify(p.example)}` : ''
-            return `${p.name}(${p.group}${p.required ? ',required' : ''}:${p.type ?? 'string'}${ex})`
+            // Param descriptions are normally elided (menu size), EXCEPT when
+            // they carry the $USER_ADDRESS contract — without it the model
+            // can't know `from`/`owner` means the user's wallet and invents a
+            // value ("" seen live 2026-07-09 on a required address param).
+            const hint =
+              p.description && p.description.includes(USER_ADDRESS_TOKEN)
+                ? ` — ${p.description.length > 110 ? `${p.description.slice(0, 110)}…` : p.description}`
+                : ''
+            return `${p.name}(${p.group}${p.required ? ',required' : ''}:${p.type ?? 'string'}${ex}${hint})`
           })
           .join(', ')
         const proven = e.reliability && e.reliability.settled > 0

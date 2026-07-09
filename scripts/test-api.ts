@@ -35,6 +35,7 @@ import { keccak256, stringToBytes } from 'viem'
 import { isCacheable, routeCacheKey, getCached, setCached, clearRouteCache } from '../lib/route-cache'
 import { routeSavings } from '../lib/route-telemetry'
 import { portfolioFromToolResult, portfolioOf } from '../lib/portfolio-display'
+import { detectCrossChain } from '../lib/swap-intent'
 
 const BASE = process.env.BASE ?? 'http://localhost:3000'
 const DOMAIN = new URL(BASE).host
@@ -2008,6 +2009,15 @@ async function main() {
   check('portfolio: malformed holdings rejected', portfolioFromToolResult({ ...goodPortfolio, holdings: [{ nope: true }] }) === null)
   check('portfolio: meta round-trip (portfolioOf reads what buildMeta stores)', portfolioOf({ portfolio: detected })?.owner === goodPortfolio.owner)
   check('portfolio: empty meta → null', portfolioOf({}) === null && portfolioOf(undefined) === null)
+
+  // Cross-chain swap detection — the native Base-only venue layer must never
+  // hijack these (they route to a cross-chain agent instead). Pure.
+  check('cross-chain: "from base to arbitum" detected (live typo)', detectCrossChain('can I swap 1 USDC from base to arbitum').crossChain === true)
+  check('cross-chain: chains named in order', JSON.stringify(detectCrossChain('swap 1 USDC from base to arbitrum').chains) === '["base","arbitrum"]')
+  check('cross-chain: plain Base swap NOT flagged', detectCrossChain('swap 100 USDC for WETH').crossChain === false)
+  check('cross-chain: "a ton of" is not the TON chain', detectCrossChain('swap a ton of USDC for WETH on base').crossChain === false)
+  check('cross-chain: bridge verb + one chain counts', detectCrossChain('bridge 5 USDC to solana').crossChain === true)
+  check('cross-chain: explicit phrase counts', detectCrossChain('do a cross-chain swap of 2 USDC').crossChain === true)
 
   // ── Cleanup (verified) ────────────────────────────────────────────────────
   console.log('— cleanup')
