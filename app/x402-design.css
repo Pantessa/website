@@ -34,6 +34,15 @@
     --font-mono: 'Geist Mono', ui-monospace, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace;
     --font-serif: 'Newsreader', 'Iowan Old Style', 'Palatino Linotype', Palatino, Georgia, 'Times New Roman', serif;
     --font-display: 'Archivo', system-ui, 'Segoe UI', sans-serif;
+    /* Chat voice — the conversation surface gets its own two faces so replies
+       read editorial, not like UI chrome. Fraunces (optical-size serif with
+       real display character) carries headings/quotes/emphasis; Hanken Grotesk
+       (soft humanist grotesque) carries body copy. Both degrade through faces
+       we already ship (Newsreader / Geist) and then straight to system stacks,
+       so an embed on a host page that blocks Google Fonts still renders a
+       deliberate, readable hierarchy. */
+    --font-chat-display: 'Fraunces', 'Newsreader', 'Iowan Old Style', 'Palatino Linotype', Palatino, Georgia, 'Times New Roman', serif;
+    --font-chat-body: 'Hanken Grotesk', 'Geist', system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   html { -webkit-text-size-adjust: 100%; -webkit-tap-highlight-color: transparent; }
@@ -1703,19 +1712,24 @@
   .blog__stat-src { font-size: 10.5px; letter-spacing: 0.04em; color: var(--muted-2); }
 
   /* ── CHAT MARKDOWN ────────────────────────────────────
-     Editorial typography for assistant replies (ChatMarkdown.tsx). Headings are
-     Newsreader serif; h4–h6 render as mono small-caps "markings" with a leading
-     hairline (the Passalacqua eyebrow); rules, lists and tables get the
-     newspaper treatment. Lives on both the live chat bubble and /p/[slug]. */
+     Editorial typography for assistant replies (ChatMarkdown.tsx). The chat
+     carries its own two-face voice: Fraunces (optical serif) for display —
+     h1/h2 roman, h3 italic, pull-quotes, inline em — and Hanken Grotesk for
+     body copy; h4–h6 render as mono "markings" with an accent hairline (the
+     Passalacqua eyebrow); rules, lists and tables get the newspaper
+     treatment. Lives on both the live chat bubble and /p/[slug]. */
   .chat-md {
-    font-family: var(--font-sans);
-    font-size: 15px;
-    line-height: 1.72;
-    /* Token-driven so it inverts correctly on a light-theme embed (was a
-       hard-coded light grey — near-invisible on white). --chat-fg is a hair
-       softer than pure --fg on dark to take the glare off a wall of body copy;
-       the light embed overrides it to a dark ink in embed.css. */
-    --chat-fg: oklch(0.94 0 0);
+    font-family: var(--font-chat-body);
+    font-size: 15.5px;
+    line-height: 1.7;
+    /* Chat-local grey scale, token-driven so a light-theme embed can invert it
+       (see embed.css). Three steps of ink: headings sit at full --fg, body
+       copy a hair under it (kills the glare of a white wall of text on black),
+       strong splits the difference — bold lead-ins lift out of the grey
+       without shouting. The lede is the muted editorial step under body. */
+    --chat-fg: oklch(0.9 0 0);
+    --chat-strong: oklch(0.985 0 0);
+    --chat-lede: oklch(0.78 0 0);
     color: var(--chat-fg);
     overflow-wrap: break-word;
     text-wrap: pretty;
@@ -1724,82 +1738,106 @@
   .chat-md > :last-child { margin-bottom: 0; }
   .chat-md p { margin: 0.75em 0; }
 
-  /* Serif display headings. Weight 600 (was 500) so Newsreader carries real
-     presence on a dark bubble instead of reading thin — the webfont now ships
-     the 600 master (see the font <link> in app/layout.tsx), so this is a true
-     weight, not a synthesised faux-bold. */
+  /* Fraunces display headings. Optical sizing does the elegance: at h1 scale
+     the face tightens and sharpens on its own. Roman for h1/h2; h3 drops to
+     the italic — a true subhead voice instead of a smaller h2. */
   .chat-md h1, .chat-md h2, .chat-md h3 {
-    font-family: var(--font-serif);
+    font-family: var(--font-chat-display);
     font-weight: 600;
     font-optical-sizing: auto;
     color: var(--fg);
-    letter-spacing: -0.011em;
-    line-height: 1.2;
+    line-height: 1.14;
     text-wrap: balance;
   }
-  .chat-md h1 { font-size: 1.7rem; margin: 0.9em 0 0.4em; }
-  .chat-md h2 { font-size: 1.36rem; margin: 1.1em 0 0.4em; }
-  .chat-md h3 { font-size: 1.14rem; margin: 0.95em 0 0.3em; }
+  .chat-md h1 { font-size: 2.05rem; letter-spacing: -0.024em; line-height: 1.08; margin: 1em 0 0.4em; }
+  .chat-md h2 { font-size: 1.5rem; letter-spacing: -0.016em; margin: 1.3em 0 0.4em; }
+  .chat-md h3 {
+    font-style: italic;
+    font-weight: 500;
+    font-size: 1.24rem;
+    letter-spacing: -0.006em;
+    margin: 1.1em 0 0.32em;
+  }
   .chat-md h1:first-child, .chat-md h2:first-child, .chat-md h3:first-child { margin-top: 0; }
 
-  /* Mono small-caps "markings" with a leading hairline (h4–h6) */
+  /* Editorial lede — the opening paragraph under a display heading reads a
+     step larger and a step quieter, like a standfirst under a headline. */
+  .chat-md h1 + p, .chat-md h2 + p {
+    font-size: 1.055em;
+    line-height: 1.62;
+    color: var(--chat-lede);
+  }
+
+  /* Mono small-caps "markings" with a leading accent hairline (h4–h6) */
   .chat-md h4, .chat-md h5, .chat-md h6 {
     display: flex;
     align-items: center;
     gap: 12px;
     font-family: var(--font-mono);
-    font-weight: 600;
+    font-weight: 500;
     text-transform: uppercase;
-    letter-spacing: 0.13em;
-    font-size: 0.74rem;
-    color: var(--fg);
-    margin: 1.4em 0 0.55em;
+    letter-spacing: 0.15em;
+    font-size: 0.72rem;
+    color: var(--muted);
+    margin: 1.5em 0 0.55em;
   }
   .chat-md h4::before {
     content: '';
     flex: 0 0 auto;
-    width: 26px;
+    width: 28px;
     height: 1px;
-    background: var(--line-2);
+    background: linear-gradient(90deg, var(--accent), color-mix(in oklch, var(--accent) 25%, transparent));
   }
   .chat-md h4:first-child, .chat-md h5:first-child, .chat-md h6:first-child { margin-top: 0; }
 
-  /* Emphasis */
-  .chat-md strong { color: var(--fg); font-weight: 600; }
-  .chat-md em { font-style: italic; }
+  /* Emphasis — strong lifts to near-white semibold; em borrows the display
+     italic (a nudge larger so Fraunces' x-height matches the grotesque). */
+  .chat-md strong { color: var(--chat-strong); font-weight: 600; }
+  .chat-md em {
+    font-family: var(--font-chat-display);
+    font-style: italic;
+    font-size: 1.06em;
+    line-height: 1;
+  }
   .chat-md a {
     color: inherit;
     text-decoration: underline;
     text-decoration-style: dotted;
+    text-decoration-color: color-mix(in oklch, var(--accent) 65%, transparent);
     text-underline-offset: 3px;
     transition: color 0.15s ease;
   }
   .chat-md a:hover { color: var(--accent); text-decoration-style: solid; }
 
-  /* Lists — em-dash bullets, mono ordinals */
+  /* Lists — em-dash bullets in the accent, middots for nesting, mono accent
+     ordinals. Bold lead-ins ("**Check live pool rates** — …") pop white out
+     of the grey body by the strong rule above. */
   .chat-md ul { list-style: none; margin: 0.7em 0; padding-left: 1.1em; }
-  .chat-md ul > li { position: relative; padding-left: 1em; margin: 0.32em 0; }
+  .chat-md ul > li { position: relative; padding-left: 1.3em; margin: 0.38em 0; }
   .chat-md ul > li::before {
     content: '—';
     position: absolute;
     left: -0.15em;
     color: var(--accent);
+    opacity: 0.9;
   }
-  .chat-md ol { margin: 0.7em 0; padding-left: 1.5em; }
-  .chat-md ol > li { margin: 0.32em 0; padding-left: 0.15em; }
-  .chat-md ol > li::marker { font-family: var(--font-mono); font-size: 0.85em; color: var(--muted); }
+  .chat-md ul ul > li::before { content: '·'; left: 0.3em; color: var(--muted-2); opacity: 1; }
+  .chat-md ol { list-style: decimal; margin: 0.7em 0; padding-left: 1.5em; }
+  .chat-md ol > li { margin: 0.38em 0; padding-left: 0.15em; }
+  .chat-md ol > li::marker { font-family: var(--font-mono); font-size: 0.82em; color: var(--accent); }
   .chat-md li > ul, .chat-md li > ol { margin: 0.2em 0; }
 
   /* Editorial pull-quote */
   .chat-md blockquote {
-    margin: 1em 0;
-    padding: 0.15em 0 0.15em 1.1em;
+    margin: 1.1em 0;
+    padding: 0.15em 0 0.15em 1.2em;
     border-left: 2px solid var(--accent);
-    font-family: var(--font-serif);
+    font-family: var(--font-chat-display);
     font-style: italic;
-    font-size: 1.1rem;
-    line-height: 1.5;
-    color: var(--muted);
+    font-weight: 450;
+    font-size: 1.18rem;
+    line-height: 1.48;
+    color: color-mix(in oklch, var(--chat-fg) 78%, var(--muted));
   }
   .chat-md blockquote p { margin: 0.3em 0; }
 
@@ -1863,6 +1901,15 @@
   }
   .chat-md tbody tr:last-child td { border-bottom: none; }
   .chat-md img { max-width: 100%; border-radius: 10px; border: 1px solid var(--line); }
+
+  /* Narrow bubbles (phones, skinny embeds): pull the display scale in a step
+     so an h1 doesn't eat three lines of a 340px-wide iframe. */
+  @media (max-width: 640px) {
+    .chat-md { font-size: 15px; }
+    .chat-md h1 { font-size: 1.62rem; }
+    .chat-md h2 { font-size: 1.32rem; }
+    .chat-md h3 { font-size: 1.16rem; }
+  }
 
   @media (max-width: 768px) {
     .blog__grid { grid-template-columns: 1fr; }
