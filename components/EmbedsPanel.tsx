@@ -11,10 +11,13 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
-import { Check, Copy, Globe, Plus, Trash2 } from 'lucide-react'
+import { Globe, Plus, Trash2 } from 'lucide-react'
 import { Card, CardTitle, SkeletonCard, timeAgo } from '@/lib/dashboard-ui'
 import { useToast } from '@/lib/toast'
 import Button from '@/components/Button'
+// The shared install card (snippet + Claude-prompt copy) — lib/embed-snippets
+// strings presented by components/EmbedInstall, same surface as the docs.
+import EmbedInstall from '@/components/EmbedInstall'
 
 interface EmbedSite {
   origin: string
@@ -29,28 +32,6 @@ interface EmbedKeyRow {
   label: string
   createdAt: string
   sites: EmbedSite[]
-}
-
-// Prompt + snippet builders live in lib/embed-snippets (shared with the chat
-// toolbar's "Embed this chat" popover, which bakes in the live MCP set).
-import { embedClaudePrompt, embedSnippet } from '@/lib/embed-snippets'
-
-function CopyButton({ text, label, solid }: { text: string; label: string; solid?: boolean }) {
-  const [copied, setCopied] = useState(false)
-  return (
-    <Button
-      variant={solid ? 'primary' : 'secondary'}
-      icon={copied ? Check : Copy}
-      onClick={() => {
-        void navigator.clipboard.writeText(text).then(() => {
-          setCopied(true)
-          setTimeout(() => setCopied(false), 1600)
-        })
-      }}
-    >
-      {copied ? 'Copied' : label}
-    </Button>
-  )
 }
 
 export default function EmbedsPanel() {
@@ -153,21 +134,8 @@ export default function EmbedsPanel() {
               ))}
             </ul>
 
-            {/* install block — Claude prompt first (the easy path), raw snippet second */}
-            <div className="mt-4 rounded-xl border border-[color:var(--line)] bg-[color:var(--bg)] overflow-hidden">
-              <div className="flex items-center justify-between gap-3 px-4 py-2.5 border-b border-[color:var(--line)] flex-wrap">
-                <span className="mono text-[11px] tracking-wider text-[color:var(--muted-2)]">
-                  INSTALL WITH CLAUDE — PASTE THIS INTO CLAUDE CODE IN YOUR APP&rsquo;S REPO
-                </span>
-                <span className="flex items-center gap-2">
-                  <CopyButton solid text={embedClaudePrompt(primary.key)} label="Copy Claude prompt" />
-                  <CopyButton text={embedSnippet(primary.key)} label="Copy snippet" />
-                </span>
-              </div>
-              <pre className="px-4 py-3 mono text-[12px] leading-relaxed text-[color:var(--muted)] overflow-x-auto max-h-44">
-                {embedClaudePrompt(primary.key)}
-              </pre>
-            </div>
+            {/* the shared install card — the primary key baked in */}
+            <EmbedInstall embedKey={primary.key} className="mt-4" />
             <p className="mt-2 text-[12.5px] text-[color:var(--muted-2)]">
               Then{' '}
               <Link href="/servers" className="underline underline-offset-2 decoration-dotted hover:text-white">

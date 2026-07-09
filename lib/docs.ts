@@ -21,9 +21,9 @@ export const DOCS_PAGES: DocsPage[] = [
   {
     slug: '',
     title: 'Overview',
-    seoTitle: 'Yeetful docs — spend-controlled x402 payments for agents',
+    seoTitle: 'Yeetful docs — combine MCPs, embed one chat on your site',
     description:
-      'Give your AI agent an expense account: an allowlist plus per-call and per-day USDC budgets, enforced before any x402 payment is signed. Integration docs.',
+      'Combine MCPs — swaps, DAO votes, live data, your own server — into one agent and embed it on your site in five lines. Users sign with their own wallet.',
     ready: true,
   },
   {
