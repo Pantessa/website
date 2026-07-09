@@ -11,18 +11,22 @@ export const FREE_FLEET_SLUGS = [
   'snapshot-free',
   'cow-free',
   'hyperliquid-free',
+  'yeetful-tool-wallet',
 ] as const
 
 // The default working set a brand-new visitor lands on in chat: Uniswap +
-// Snapshot + Hyperliquid. These three each carry a connected-wallet splash
-// source (portfolio / proposals / positions), so a fresh view with a wallet
-// immediately renders the dashboard building itself — the first-run "aha".
-// CoW is in the browsable fleet but left out of the auto-on set to keep the
-// splash focused on three distinct dashboards.
+// Snapshot + Hyperliquid (each carries a connected-wallet splash source, so a
+// fresh view with a wallet immediately renders the dashboard building itself)
+// PLUS Yeetful Wallet, the internal tool (yeetful-tool-*) that answers "show
+// my portfolio" and re-reads fresh balances after a swap settles. CoW is in
+// the browsable fleet but left out of the auto-on set to keep the splash
+// focused. NOTE: /embed caps its working set at 4 (EmbedChat MAX_MCPS) —
+// this default set must stay ≤4.
 export const DEFAULT_CHAT_FLEET_SLUGS = [
   'uniswap-free',
   'snapshot-free',
   'hyperliquid-free',
+  'yeetful-tool-wallet',
 ] as const
 
 /** Sort key: fleet rows first (in fleet order), then everything else. */
@@ -95,6 +99,23 @@ export const FREE_FLEET_FALLBACK: McpServer[] = [
     kind: 'data',
     priceUsd: '0',
     networks: ['Hyperliquid'],
+    callable: false,
+    gated: false,
+    autoCallable: true,
+    source: 'yeetful',
+  },
+  {
+    id: 'yeetful-tool-wallet',
+    slug: 'yeetful-tool-wallet',
+    name: 'Yeetful Wallet',
+    description:
+      'Multichain wallet reads — an internal Yeetful tool: USD-priced whole-wallet portfolios across 9 top EVM chains (rendered as a rich card in chat), gas balances, precise token balances, recent transfers with scam-symbol flagging, and transaction confirmation status. The fresh-data layer after any swap or transfer settles. Read-only by construction. Rate-limited. By Yeetful.',
+    category: 'Wallets',
+    websiteUrl: 'https://github.com/Yeetful/free-mcps',
+    color: null,
+    kind: 'data',
+    priceUsd: '0',
+    networks: ['Ethereum', 'Base', 'Arbitrum', 'Optimism', 'Polygon', 'BNB Chain', 'Avalanche', 'Scroll', 'Gnosis'],
     callable: false,
     gated: false,
     autoCallable: true,

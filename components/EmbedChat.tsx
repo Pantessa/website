@@ -47,6 +47,7 @@ import ChatInterface from '@/components/ChatInterface'
 import BrandIcon from '@/components/BrandIcon'
 import { YeetfulMark } from '@/components/Logo'
 import { useYeetfulStore, type McpServer } from '@/lib/store'
+import { DEFAULT_CHAT_FLEET_SLUGS } from '@/lib/free-fleet'
 import { CATALOG } from '@/lib/mcp-data'
 
 const SOURCE = 'yeetful-embed'
@@ -140,9 +141,11 @@ export default function EmbedChat({
   )
 
   // Directory scope: fetch the catalog, resolve the caller's slugs (unknown
-  // dropped, capped), and pin them as the active set. None resolve → empty
-  // active set, exactly what a fresh guest /chat starts with (house model +
-  // native tx tools still work).
+  // dropped, capped), and pin them as the active set. No ?mcps= at all →
+  // the DEFAULT free fleet (same set a fresh /chat starts with), so a bare
+  // 5-line embed still answers swaps, governance, and portfolio asks out of
+  // the box. Slugs given but none resolving → empty set (explicit choice is
+  // respected — house model + native tx tools still work).
   const mcpsKey = mcps.join(',')
   useEffect(() => {
     let cancelled = false
@@ -150,7 +153,9 @@ export default function EmbedChat({
       if (cancelled) return
       setServers(catalog)
       const bySlug = new Map(catalog.map((s) => [s.slug, s]))
-      const picked = [...new Set(mcpsKey.split(',').filter(Boolean))]
+      const asked = [...new Set(mcpsKey.split(',').filter(Boolean))]
+      const slugs = asked.length > 0 ? asked : [...DEFAULT_CHAT_FLEET_SLUGS]
+      const picked = slugs
         .map((slug) => bySlug.get(slug))
         .filter((s): s is McpServer => !!s)
         .slice(0, MAX_MCPS)
