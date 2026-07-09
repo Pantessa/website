@@ -18,18 +18,27 @@ import { useAccount } from 'wagmi'
 import { useSession } from '@/lib/session'
 import { cdpEnabled } from '@/lib/cdp-embedded'
 import CreateAccountButton from '@/components/CreateAccountButton'
+import { getProtocolMark } from '@/components/protocol-marks'
 
 const EMBED_SRC = '/embed?mcps=uniswap-free,snapshot-free&theme=dark'
 
 /** Stream sources — normalized anchors, protocol hue, and the chip label.
  * Desktop shows labeled medallions at these anchors; phones tuck the streams
- * into the corners and show a plain chip row instead. */
+ * into the corners and show a plain chip row instead. The medallion shows the
+ * protocol's real mark (resolved from the shared registry) in its brand hue,
+ * falling back to `glyph` for "your MCP". */
 const SOURCES = [
   { x: 0.09, y: 0.3, color: '#FF6BAF', name: 'Uniswap', glyph: 'U', dashed: false },
   { x: 0.91, y: 0.27, color: '#FFC94D', name: 'Snapshot', glyph: '⚡', dashed: false },
   { x: 0.11, y: 0.76, color: '#7AA7FF', name: 'CoW', glyph: 'C', dashed: false },
   { x: 0.89, y: 0.78, color: '#34e3a0', name: 'your MCP', glyph: '+', dashed: true },
 ]
+
+/** The mark for a source's `<i>` glyph slot — real logo when we have one. */
+function SourceGlyph({ name, glyph }: { name: string; glyph: string }) {
+  const Mark = getProtocolMark(name)
+  return <i>{Mark ? <Mark size={13} /> : glyph}</i>
+}
 const CORE = { x: 0.5, y: 0.47 }
 
 /** What the fusion produces — cycled under the CTAs, ring-pulsed in the art. */
@@ -442,7 +451,7 @@ export default function HomeHeroFusion() {
             className={`fhero__chip mono${s.dashed ? ' fhero__chip--dashed' : ''}`}
             style={{ left: `${s.x * 100}%`, top: `${s.y * 100}%`, ['--pc' as string]: s.color }}
           >
-            <i>{s.glyph}</i> {s.name}
+            <SourceGlyph name={s.name} glyph={s.glyph} /> {s.name}
           </span>
         ))}
       </div>
@@ -494,7 +503,7 @@ export default function HomeHeroFusion() {
       <div className="fhero__chiprow" aria-hidden="true">
         {SOURCES.map((s) => (
           <span key={s.name} className={`fhero__chip fhero__chip--flow mono${s.dashed ? ' fhero__chip--dashed' : ''}`} style={{ ['--pc' as string]: s.color }}>
-            <i>{s.glyph}</i> {s.name}
+            <SourceGlyph name={s.name} glyph={s.glyph} /> {s.name}
           </span>
         ))}
       </div>
