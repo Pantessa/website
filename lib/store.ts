@@ -5,7 +5,7 @@ import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 // Type-only the other way (free-fleet imports `type McpServer` from here), so
 // this runtime import is not circular.
-import { FREE_FLEET_SLUGS } from '@/lib/free-fleet'
+import { DEFAULT_CHAT_FLEET_SLUGS } from '@/lib/free-fleet'
 
 export interface McpServer {
   id: string
@@ -300,7 +300,7 @@ export const useYeetfulStore = create<YeetfulStore>()(
         // finally the FREE first-party fleet: a brand-new user gets a working
         // set that actually works, not whole-catalog roulette.
         const { activeServerIds: cur, shortlistIds, servers } = get()
-        const fleetIds = FREE_FLEET_SLUGS
+        const fleetIds = DEFAULT_CHAT_FLEET_SLUGS
           .map((slug) => servers.find((s) => s.slug === slug)?.id)
           .filter((id): id is string => !!id)
         const activeServerIds = cur.length ? cur : shortlistIds.length ? shortlistIds : fleetIds
