@@ -34,6 +34,7 @@ import { parseSwapIntent } from '../lib/swap-intent'
 import { keccak256, stringToBytes } from 'viem'
 import { isCacheable, routeCacheKey, getCached, setCached, clearRouteCache } from '../lib/route-cache'
 import { routeSavings } from '../lib/route-telemetry'
+import { portfolioFromToolResult, portfolioOf } from '../lib/portfolio-display'
 
 const BASE = process.env.BASE ?? 'http://localhost:3000'
 const DOMAIN = new URL(BASE).host
@@ -1989,6 +1990,24 @@ async function main() {
   const sv2 = routeSavings({ shortlistPrices: [0.01], pickPrices: [0.01], cacheSavedUsd: 0.01 })
   check('value: cache savings counted in the total', Math.abs(sv2.cacheSavedUsd - 0.01) < 1e-9 && Math.abs(sv2.totalUsd - 0.01) < 1e-9)
   check('value: no shortlist → no savings claimed', routeSavings({ shortlistPrices: [], pickPrices: [], cacheSavedUsd: 0 }).totalUsd === 0)
+
+  // Display layer — portfolio card detection + meta narrowing (pure).
+  const goodPortfolio = {
+    kind: 'portfolio',
+    owner: '0x5EaaBd731d2Bc0490C2D47e41858e9b0629455a0',
+    totalUsd: 7.45,
+    chains: [{ chain: 'Base', usd: 6.91, holdings: 3 }],
+    holdings: [{ symbol: 'USDC', chain: 'Base', balance: '4.86', priceUsd: 1, valueUsd: 4.86, address: '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913' }],
+    hiddenDust: 2,
+    updatedAt: '2026-07-09T00:00:00.000Z',
+  }
+  const detected = portfolioFromToolResult(goodPortfolio)
+  check('portfolio: wallet-MCP shape detected', detected !== null && detected.totalUsd === 7.45 && detected.holdings[0].symbol === 'USDC')
+  check('portfolio: hiddenDust + chains survive', detected?.hiddenDust === 2 && detected?.chains[0].chain === 'Base')
+  check('portfolio: non-portfolio tool results ignored', portfolioFromToolResult({ kind: 'activity', owner: '0x', holdings: [] }) === null && portfolioFromToolResult('a string result') === null)
+  check('portfolio: malformed holdings rejected', portfolioFromToolResult({ ...goodPortfolio, holdings: [{ nope: true }] }) === null)
+  check('portfolio: meta round-trip (portfolioOf reads what buildMeta stores)', portfolioOf({ portfolio: detected })?.owner === goodPortfolio.owner)
+  check('portfolio: empty meta → null', portfolioOf({}) === null && portfolioOf(undefined) === null)
 
   // ── Cleanup (verified) ────────────────────────────────────────────────────
   console.log('— cleanup')

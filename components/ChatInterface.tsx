@@ -15,6 +15,8 @@ import SignOrderButton from '@/components/SignOrderButton'
 import SendTxButton from '@/components/SendTxButton'
 import SendTxChain from '@/components/SendTxChain'
 import { orderRequestOf, txRequestOf, txChainOf } from '@/lib/transaction-layer'
+import { portfolioOf } from '@/lib/portfolio-display'
+import PortfolioCard from '@/components/PortfolioCard'
 import VoteChoiceButtons from '@/components/VoteChoiceButtons'
 import VoteCandidates from '@/components/VoteCandidates'
 import ClarifyChips from '@/components/ClarifyChips'
@@ -91,7 +93,7 @@ function CopyTurn({ text, dark }: { text: string; dark?: boolean }) {
   )
 }
 
-function buildMeta(receipts: unknown, payer: unknown, voteRequest: unknown, voteCandidates?: unknown, routeReport?: unknown, routerTrace?: unknown, voteProposal?: unknown, orderRequest?: unknown, guardrails?: unknown, txRequest?: unknown, workingContext?: unknown, txChain?: unknown, clarify?: unknown, connectWallet?: unknown, connectAsk?: string) {
+function buildMeta(receipts: unknown, payer: unknown, voteRequest: unknown, voteCandidates?: unknown, routeReport?: unknown, routerTrace?: unknown, voteProposal?: unknown, orderRequest?: unknown, guardrails?: unknown, txRequest?: unknown, workingContext?: unknown, txChain?: unknown, clarify?: unknown, connectWallet?: unknown, connectAsk?: string, portfolio?: unknown) {
   const meta: Record<string, unknown> = {}
   if (Array.isArray(receipts) && receipts.length) {
     meta.receipts = receipts
@@ -118,6 +120,9 @@ function buildMeta(receipts: unknown, payer: unknown, voteRequest: unknown, vote
   // An ambiguous money/governance target the planner refused to guess (RR17)
   // — ClarifyChips reads this; a chip's pick is sent as the next message.
   if (clarify && typeof clarify === 'object') meta.clarify = clarify
+  // A portfolio-shaped tool return (wallet MCP) — PortfolioCard renders it as
+  // a rich card under the reply text instead of leaving balances as prose.
+  if (portfolio && typeof portfolio === 'object') meta.portfolio = portfolio
   // The ask needs a transaction but no wallet is connected — the client
   // renders a Connect-wallet button and re-runs `connectAsk` once one lands.
   if (connectWallet === true) {
@@ -356,7 +361,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
           addMessage(chatId, {
             role: 'assistant',
             content: out.content,
-            meta: buildMeta(out.receipts, out.payer, out.voteRequest, undefined, out.routeReport, out.routerTrace, out.voteProposal, out.orderRequest, undefined, out.txRequest, out.workingContext, out.txChain, out.clarify),
+            meta: buildMeta(out.receipts, out.payer, out.voteRequest, undefined, out.routeReport, out.routerTrace, out.voteProposal, out.orderRequest, undefined, out.txRequest, out.workingContext, out.txChain, out.clarify, undefined, undefined, out.portfolio),
           })
           reportEmbedTurn(userMsg, { ...out, reply: out.content })
         }
@@ -422,7 +427,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
         addMessage(chatId, {
           role: 'assistant',
           content: data.reply || data.error || 'No response.',
-          meta: buildMeta(data.receipts, data.payer, data.voteRequest, data.voteCandidates, undefined, undefined, data.voteProposal, data.orderRequest, data.guardrails, data.txRequest, data.workingContext, data.txChain, data.clarify, data.connectWallet, userMsg),
+          meta: buildMeta(data.receipts, data.payer, data.voteRequest, data.voteCandidates, undefined, undefined, data.voteProposal, data.orderRequest, data.guardrails, data.txRequest, data.workingContext, data.txChain, data.clarify, data.connectWallet, userMsg, data.portfolio),
         })
         reportEmbedTurn(userMsg, data as Record<string, unknown>)
       }
@@ -547,7 +552,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
     history: { role: string; content: string }[],
     workingContext?: WorkingContext,
   ): Promise<
-    | { kind: 'reply'; content: string; receipts?: unknown; payer?: string; voteRequest?: unknown; voteProposal?: unknown; routeReport?: unknown; routerTrace?: unknown; orderRequest?: unknown; txRequest?: unknown; txChain?: unknown; clarify?: unknown; workingContext?: unknown }
+    | { kind: 'reply'; content: string; receipts?: unknown; payer?: string; voteRequest?: unknown; voteProposal?: unknown; routeReport?: unknown; routerTrace?: unknown; orderRequest?: unknown; txRequest?: unknown; txChain?: unknown; clarify?: unknown; workingContext?: unknown; portfolio?: unknown }
     | { kind: 'plan'; data: { plan: unknown; payments: PaymentToSign[]; listedOnly: unknown; notes?: unknown; turnId?: unknown; capabilities?: unknown } }
   > => {
     clearRouterTrace()
@@ -575,7 +580,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
     const reader = res.body.getReader()
     const decoder = new TextDecoder()
     let buf = ''
-    let reply: { kind: 'reply'; content: string; receipts?: unknown; payer?: string; voteRequest?: unknown; voteProposal?: unknown; routeReport?: unknown; routerTrace?: unknown; orderRequest?: unknown; txRequest?: unknown; txChain?: unknown; clarify?: unknown; workingContext?: unknown } | null = null
+    let reply: { kind: 'reply'; content: string; receipts?: unknown; payer?: string; voteRequest?: unknown; voteProposal?: unknown; routeReport?: unknown; routerTrace?: unknown; orderRequest?: unknown; txRequest?: unknown; txChain?: unknown; clarify?: unknown; workingContext?: unknown; portfolio?: unknown } | null = null
     for (;;) {
       const { done, value } = await reader.read()
       if (done) break
@@ -619,6 +624,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
             txChain: event.txChain,
             clarify: event.clarify,
             workingContext: event.workingContext,
+            portfolio: event.portfolio,
           }
         } else if (event.type === 'error') {
           const message = typeof event.message === 'string' ? event.message : 'Auto-router failed'
@@ -638,7 +644,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
     data: { plan: unknown; payments: PaymentToSign[]; listedOnly: unknown; notes?: unknown; turnId?: unknown; capabilities?: unknown },
     history: { role: string; content: string }[] = [],
     workingContext?: WorkingContext,
-  ): Promise<{ reply: string; receipts?: unknown[]; payer?: string }> => {
+  ): Promise<{ reply: string; receipts?: unknown[]; payer?: string; portfolio?: unknown }> => {
     const signatures: Record<string, string> = {}
     let i = 0
     for (const p of data.payments) {
@@ -684,6 +690,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
       reply: out.reply || out.error || 'No response.',
       receipts: Array.isArray(out.receipts) ? out.receipts : undefined,
       payer: typeof out.payer === 'string' ? out.payer : undefined,
+      portfolio: out.portfolio,
     }
   }
 
@@ -700,7 +707,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
         role: 'assistant',
         content: out.reply,
         // voteRequest is produced by the burner path; wallet mode has none yet.
-        meta: buildMeta(out.receipts, out.payer, undefined),
+        meta: buildMeta(out.receipts, out.payer, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, out.portfolio),
       })
       reportEmbedTurn(userMsg, { reply: out.reply })
     } catch (err) {
@@ -935,6 +942,13 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
                     ) : (
                       <pre className="whitespace-pre-wrap [font-family:var(--font-chat-body)] [overflow-wrap:anywhere]">{msg.content}</pre>
                     )}
+                    {msg.role === 'assistant' &&
+                      (() => {
+                        // Display layer: a portfolio-shaped tool return renders
+                        // as a rich card under the reply text (never prose-only).
+                        const p = portfolioOf(msg.meta)
+                        return p ? <PortfolioCard data={p} /> : null
+                      })()}
                     {msg.role === 'assistant' && <MessageReceipts meta={msg.meta} />}
                     {msg.role === 'assistant' && <RouteReport meta={msg.meta} />}
                     {msg.role === 'assistant' &&

@@ -46,6 +46,7 @@ import {
 import { loadCatalog } from '@/lib/catalog'
 import { routeMessage, selectInferenceProvider, compactForSynthesis, dedupePlannerPicks, type TraceStep, type SmartPick } from '@/lib/router'
 import { buildSignableArtifact } from '@/lib/transaction-layer'
+import { portfolioFromToolResult, type PortfolioDisplay } from '@/lib/portfolio-display'
 import { parseClarify, type ClarifyRequest } from '@/lib/clarify'
 import type { EntityRef } from '@/lib/working-context'
 import { isCacheable, routeCacheKey, getCached, setCached } from '@/lib/route-cache'
@@ -1040,6 +1041,7 @@ async function executeWithSignatures(
   const receipts: Receipt[] = []
   const contextBlocks: string[] = []
   let carriedEntities: EntityRef[] = []
+  let portfolioCard: PortfolioDisplay | undefined
   const inferenceCall = plan.find((c) => c.role === 'inference')
 
   // Persist each wallet-mode receipt to the live routing feed (route_trace_lines)
@@ -1089,7 +1091,12 @@ async function executeWithSignatures(
         ? parseMcpDataResult(res.headers.get('content-type') ?? '', await res.text())
         : await res.json()
       carriedEntities = extractEntities(data, carriedEntities)
+      // Display layer: a portfolio-shaped return renders as a rich card next
+      // to the synthesized text (latest read wins — freshest data).
+      const card = portfolioFromToolResult(data)
+      if (card) portfolioCard = card
       contextBlocks.push(`### ${c.name}\n${compactForSynthesis(data, 3500)}`)
+      if (card) contextBlocks.push('NOTE: this portfolio is ALSO rendered as a rich visual card right below your reply — write ONE short summary sentence (total + notable point); do NOT repeat the holdings/table in text.')
       const txHash = decodeSettlement(res)?.transaction
       pushReceipt({ name: c.name, endpoint: c.host, priceUsd: c.priceUsd, txHash, ok: true })
       ledger(c, true, txHash)
@@ -1145,7 +1152,7 @@ async function executeWithSignatures(
   const reply = text + infoFooter(listedOnly, notes)
   // RR18: resolved entities ride the reply so the NEXT turn (possibly on a
   // different MCP) plans against exact values, not prose.
-  return NextResponse.json({ reply, receipts, payer: 'your wallet', workingContext: carryContext(workingContext, carriedEntities) })
+  return NextResponse.json({ reply, receipts, payer: 'your wallet', portfolio: portfolioCard, workingContext: carryContext(workingContext, carriedEntities) })
 }
 
 /** Build the payment header for a planned call from its client signature. */
@@ -1187,6 +1194,9 @@ async function runWithBurner(
   // tool result so the chat can render a Sign-vote button instead of dumping
   // the EIP-712 typed data into the inference prompt.
   let voteRequest: VoteRequest | null = null
+  // A portfolio-shaped tool return, hoisted so the chat renders a rich card
+  // next to the synthesized text (display layer — presentation only).
+  let portfolioCard: PortfolioDisplay | undefined
 
   // Load the signed-in owner's active spend grant. When one exists, every
   // burner payment is gated by it (expiry → allowlist → per-call → per-day) and
@@ -1256,7 +1266,10 @@ async function runWithBurner(
         contextBlocks.push(`### ${ds.name}\nPrepared a vote for the user to sign: ${vote.summary}`)
       } else {
         carriedEntities = extractEntities(data, carriedEntities)
+        const card = portfolioFromToolResult(data)
+        if (card) portfolioCard = card
         contextBlocks.push(`### ${ds.name}\n${compactForSynthesis(data, 3500)}`)
+        if (card) contextBlocks.push('NOTE: this portfolio is ALSO rendered as a rich visual card right below your reply — write ONE short summary sentence (total + notable point); do NOT repeat the holdings/table in text.')
       }
       receipts.push({ name: ds.name, endpoint: host, priceUsd: ds.priceUsd ?? '0.01', txHash, ok: true })
       if (grant) {
@@ -1321,7 +1334,12 @@ async function runWithBurner(
           try {
             const { json, txHash: dataTx } = await paidCall(request)
             carriedEntities = extractEntities(json, carriedEntities)
+            // Display layer: a portfolio-shaped return renders as a rich card
+            // next to the synthesized text (latest read wins — freshest).
+            const card = portfolioFromToolResult(json)
+            if (card) portfolioCard = card
             contextBlocks.push(`### ${ep.serverName}\n${compactForSynthesis(json, 3500)}`)
+            if (card) contextBlocks.push('NOTE: this portfolio is ALSO rendered as a rich visual card right below your reply — write ONE short summary sentence (total + notable point); do NOT repeat the holdings/table in text.')
             receipts.push({ name: ep.serverName, endpoint: host, priceUsd: ep.priceUsd, txHash: dataTx, ok: true })
             trace({ type: 'receipt', receipt: { name: ep.serverName, endpoint: host, priceUsd: ep.priceUsd, txHash: dataTx, ok: true } })
             smartServed.add(ep.serverSlug)
@@ -1381,7 +1399,7 @@ async function runWithBurner(
     reply += `\n\n— spend grant “${grant.label}”: $${spentToday.toFixed(2)}/$${policy.perDayUsd} today`
     if (blocked.length) reply += ` · blocked ${blocked.join(', ')}`
   }
-  return NextResponse.json({ reply, receipts, payer: 'the house wallet', voteRequest: voteRequest ?? undefined, workingContext: carryContext(workingContext, carriedEntities) })
+  return NextResponse.json({ reply, receipts, payer: 'the house wallet', voteRequest: voteRequest ?? undefined, portfolio: portfolioCard, workingContext: carryContext(workingContext, carriedEntities) })
 }
 
 async function paidGet(endpoint: string, queryParam: string, value: string) {
@@ -1871,6 +1889,9 @@ export function streamAutoRouter(
           receipts,
           payer: 'the house wallet',
           routeReport,
+          // Display layer: a portfolio-shaped tool return rides the reply so
+          // the chat renders it as a rich card under the synthesized text.
+          portfolio: decision.portfolio,
           trace: trace(),
           // RR18: values the loop's tool results resolved ride the reply so
           // the next turn plans against exact ids/symbols across MCPs.

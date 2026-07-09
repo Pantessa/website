@@ -31,6 +31,7 @@ import {
   type SmartRequest,
 } from '@/lib/endpoint-planner'
 import { buildSignableArtifact, type SignableArtifact } from '@/lib/transaction-layer'
+import { portfolioFromToolResult, type PortfolioDisplay } from '@/lib/portfolio-display'
 import { clarifyPromptLine, clarifyOf, type ClarifyRequest } from '@/lib/clarify'
 import { extractEntities, type EntityRef } from '@/lib/working-context'
 import { hybridShortlist } from '@/lib/retrieval'
@@ -95,6 +96,10 @@ export interface RouterDecision {
    *  approve — the transaction layer's output. Present only when a routed call
    *  yielded one (LOOP mode). The caller surfaces it for signing. */
   artifact?: SignableArtifact
+  /** A rich DISPLAY payload a tool returned (wallet-MCP portfolio) — rendered
+   *  as a card alongside the synthesized text. Unlike `artifact` it never
+   *  breaks the loop: it's presentation, not control flow. */
+  portfolio?: PortfolioDisplay
   /** The model refused to guess an ambiguous money/governance target (RR17).
    *  Breaks the route like a signable: the caller renders chips; the user's
    *  pick resumes as a normal next turn. */
@@ -521,6 +526,7 @@ export async function routeMessage(opts: RouteOptions): Promise<RouterDecision> 
   const smartPicks: SmartPick[] = []
   const context: string[] = []
   let artifact: SignableArtifact | undefined
+  let portfolio: PortfolioDisplay | undefined
   let clarifyOut: ClarifyRequest | undefined
   let entities: EntityRef[] = []
   const byId = new Map(shortlisted.map((e) => [e.id, e]))
@@ -671,7 +677,12 @@ export async function routeMessage(opts: RouteOptions): Promise<RouterDecision> 
         } else {
           smartPicks.push(sp)
           entities = extractEntities(res.data, entities)
+          // Display layer: a portfolio-shaped return also renders as a rich
+          // card next to the synthesized text (latest read wins — freshest).
+          const card = portfolioFromToolResult(res.data)
+          if (card) portfolio = card
           context.push(`### ${sp.serverName}\n${compactForSynthesis(res.data, 3500)}`)
+          if (card) context.push('NOTE: this portfolio is ALSO rendered as a rich visual card right below your reply — write ONE short summary sentence (total + notable point); do NOT repeat the holdings/table in text.')
           observations.push(`${sp.serverName} ${shortUrl(sp.endpointUrl)} → ${compactForSynthesis(res.data, 600)}`)
           spentThisTurn += price
           progressed = true
@@ -714,6 +725,7 @@ export async function routeMessage(opts: RouteOptions): Promise<RouterDecision> 
     notes,
     context,
     artifact,
+    portfolio,
     clarify: clarifyOut,
     entities,
   }
