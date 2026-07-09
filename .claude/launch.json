@@ -72,6 +72,13 @@
       "autoPort": false
     },
     {
+      "name": "web-keys-unify",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["next", "start", "-p", "3238"],
+      "port": 3238,
+      "autoPort": false
+    },
+    {
       "name": "web-embed-cta",
       "runtimeExecutable": "npx",
       "runtimeArgs": [

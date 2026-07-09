@@ -32,7 +32,7 @@ export default function EmbedDocsPage() {
         <pre>
           <code>{`https://www.yeetful.com/embed
   ?mcps=cow-free,snapshot-free     # comma-separated directory slugs (max 4)
-  &key=yfe_…                       # your PUBLIC embed key (dashboard → Overview)
+  &key=yfe_…                       # your PUBLIC embed key (dashboard → Keys)
   &address=0xYourUsersWallet       # optional wallet-address context
   &theme=dark                      # dark (default) | light
   &host=https%3A%2F%2Fyour.app     # URL-encoded parent origin (enables messaging)
