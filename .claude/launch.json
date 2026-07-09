@@ -82,6 +82,16 @@
       ],
       "port": 3236,
       "autoPort": false
+    },
+    {
+      "name": "web-og-card",
+      "runtimeExecutable": "bash",
+      "runtimeArgs": [
+        "-lc",
+        "cd /Users/nategeier/yeetful/website-og-card && exec npx next dev -p ${PORT:-3244}"
+      ],
+      "port": 3244,
+      "autoPort": true
     }
   ]
 }
