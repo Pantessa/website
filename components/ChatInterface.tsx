@@ -35,6 +35,8 @@ import ConnectWallet from '@/components/ConnectWallet'
 import { YeetfulMark } from '@/components/Logo'
 import { useAppShellMode } from '@/components/AppShell'
 import ChatMarkdown from '@/components/ChatMarkdown'
+import BrandIcon from '@/components/BrandIcon'
+import { respondingServer } from '@/lib/responding-mcp'
 
 // Typed-data signing request shipped from the server for the wallet to sign.
 interface SigningRequest {
@@ -865,21 +867,32 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
                     msg.role === 'user' ? 'flex-row-reverse' : 'flex-row'
                   )}
                 >
-                  {/* Avatar */}
-                  <div
-                    className={cn(
-                      'flex-shrink-0 w-8 h-8 rounded-xl flex items-center justify-center',
-                      msg.role === 'user'
-                        ? 'bg-white text-black'
-                        : 'bg-[var(--surf-2)] border border-[var(--line)] text-[color:var(--muted)]'
-                    )}
-                  >
-                    {msg.role === 'user' ? (
-                      <User className="w-4 h-4" />
-                    ) : (
-                      <Bot className="w-4 h-4" />
-                    )}
-                  </div>
+                  {/* Avatar — assistant turns show the MCP that answered
+                      (Uniswap, Snapshot, …) resolved from the turn's receipts,
+                      so it tracks per message as the conversation switches MCPs;
+                      pure-inference turns fall back to the robot. */}
+                  {(() => {
+                    const responder = msg.role === 'assistant' ? respondingServer(msg.meta, servers) : null
+                    return (
+                      <div
+                        title={responder ? responder.name : undefined}
+                        className={cn(
+                          'flex-shrink-0 w-8 h-8 rounded-xl flex items-center justify-center overflow-hidden',
+                          msg.role === 'user'
+                            ? 'bg-white text-black'
+                            : 'bg-[var(--surf-2)] border border-[var(--line)] text-[color:var(--fg)]'
+                        )}
+                      >
+                        {msg.role === 'user' ? (
+                          <User className="w-4 h-4" />
+                        ) : responder ? (
+                          <BrandIcon server={responder} size={18} />
+                        ) : (
+                          <Bot className="w-4 h-4 text-[color:var(--muted)]" />
+                        )}
+                      </div>
+                    )
+                  })()}
 
                   {/* Bubble */}
                   <div
