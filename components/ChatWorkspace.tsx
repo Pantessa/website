@@ -9,7 +9,7 @@ import RouterEngineWindow from '@/components/RouterEngineWindow'
 import { useAppShellMode } from '@/components/AppShell'
 import { useYeetfulStore, McpServer } from '@/lib/store'
 import { CATALOG } from '@/lib/mcp-data'
-import { FREE_FLEET_FALLBACK } from '@/lib/free-fleet'
+import { FREE_FLEET_FALLBACK, DEFAULT_CHAT_FLEET_SLUGS } from '@/lib/free-fleet'
 
 // Free fleet leads the static fallback so the MCP rail's default (free) view
 // is never empty when /api/servers is down.
@@ -21,7 +21,7 @@ const STATIC_SERVERS: McpServer[] = [...FREE_FLEET_FALLBACK, ...CATALOG]
  * restore its active agents; the bare /chat route is a fresh "new chat" surface.
  */
 export default function ChatWorkspace({ chatId }: { chatId?: string }) {
-  const { servers, setServers, setCurrentChatId, loadChat, setActiveServerIds } =
+  const { servers, setServers, setCurrentChatId, loadChat, setActiveServerIds, activeServerIds } =
     useYeetfulStore()
 
   // A deep link like /chat?mcps=uniswap-free,snapshot-free preselects a working
@@ -69,6 +69,22 @@ export default function ChatWorkspace({ chatId }: { chatId?: string }) {
       setActiveServerIds(ids)
     }
   }, [chatId, servers, setActiveServerIds])
+
+  // Brand-new visitor on the bare /chat surface with an empty working set: seed
+  // the default fleet (Uniswap + Snapshot + Hyperliquid) so the connected-wallet
+  // splash has MCPs to build dashboards from the moment they land, instead of an
+  // empty state. Defers to a ?mcps= deep link (handled above) and never clobbers
+  // an existing selection — returning users keep their persisted set. Needs the
+  // directory loaded for slug→id.
+  useEffect(() => {
+    if (chatId || appliedMcpParam.current || servers.length === 0) return
+    if (activeServerIds.length > 0) return
+    if (new URLSearchParams(window.location.search).get('mcps')) return
+    const seed = DEFAULT_CHAT_FLEET_SLUGS
+      .map((slug) => servers.find((s) => s.slug === slug)?.id)
+      .filter((id): id is string => !!id)
+    if (seed.length) setActiveServerIds(seed)
+  }, [chatId, servers, activeServerIds.length, setActiveServerIds])
 
   // Logged in, the top nav is gone (AppShell) — reclaim its 4rem so chat fills
   // the whole viewport.
