@@ -32,6 +32,27 @@ export interface HoldingRow {
   priceUsd: number | null
   valueUsd: number | null
   native?: boolean
+  /** Chain this holding lives on (multichain portfolios). Absent = single-chain. */
+  chain?: string
+}
+
+/** One recent transaction (asset transfer) for the activity tile. */
+export interface ActivityRow {
+  hash: string
+  /** Human chain label (Ethereum, Base, Arbitrum). */
+  chain: string
+  /** Direction relative to the connected wallet. */
+  direction: 'in' | 'out' | 'self'
+  /** Token symbol moved. */
+  asset: string
+  /** Human amount, pre-formatted (empty when unknown). */
+  amount: string
+  /** Short counterparty address (the other side of the transfer). */
+  counterparty: string
+  /** Unix seconds of the block, or 0 when unknown. */
+  timestamp: number
+  /** Block-explorer link for the tx hash. */
+  explorerUrl: string
 }
 
 export interface ProposalRow {
@@ -73,6 +94,16 @@ export type ProposalsTile = TileBase & {
 /** A source that resolved but has nothing to show (empty wallet, no follows). */
 export type EmptyTile = TileBase & { render: 'empty'; message: string }
 
+/** A wallet's recent transactions across chains (in/out asset transfers). */
+export type ActivityTile = TileBase & {
+  render: 'activity'
+  rows: ActivityRow[]
+}
+
+/** A source that FAILED to load — surfaced as a retryable card instead of
+ *  silently vanishing (the old `.catch(() => null)` behaviour). */
+export type ErrorTile = TileBase & { render: 'error'; message: string }
+
 export interface StatRow {
   /** Left column — what the row is (e.g. "ETH long 2.5x", "WETH → USDC"). */
   label: string
@@ -93,7 +124,7 @@ export type RowsTile = TileBase & {
   rows: StatRow[]
 }
 
-export type SplashTile = HoldingsTile | ProposalsTile | RowsTile | EmptyTile
+export type SplashTile = HoldingsTile | ProposalsTile | RowsTile | ActivityTile | EmptyTile | ErrorTile
 
 export interface SplashResponse {
   address: string

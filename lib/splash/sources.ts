@@ -10,6 +10,7 @@
 import type { McpServer } from '@/lib/store'
 import { callMcpTool } from '@/lib/mcp-call'
 import { overrideFreeMcpBase } from '@/lib/endpoint-planner'
+import { alchemyEnabled, getMultichainPortfolio, getRecentActivity } from '@/lib/alchemy'
 import type { HoldingRow, ProposalRow, SpaceRow, SplashTile, StatRow, SuggestedPrompt } from './types'
 
 /** Snapshot's stamp service resolves a space logo from its id — always
@@ -22,12 +23,16 @@ interface SplashSource {
   id: string
   /** Does this source apply to a connected server? */
   match: (s: McpServer) => boolean
-  /** Build a tile (or null to contribute nothing). `call` is bound to this
-   *  server's endpoint; `address` is the connected wallet. */
-  build: (call: McpCaller, address: string, server: McpServer) => Promise<SplashTile | null>
+  /** Build one or more tiles (or null to contribute nothing). `call` is bound
+   *  to this server's endpoint; `address` is the connected wallet. */
+  build: (call: McpCaller, address: string, server: McpServer) => Promise<SplashTile | SplashTile[] | null>
 }
 
-// ── Uniswap → portfolio (holdings) ──────────────────────────────────────────
+// ── Uniswap slot → wallet portfolio + recent transactions ────────────────────
+// When ALCHEMY_API_KEY is set this is a WHOLE-WALLET view across Ethereum, Base
+// and Arbitrum (holdings priced to USD + recent transactions). Without a key it
+// falls back to the keyless Base-only on-chain read from the uniswap MCP's
+// `balances` tool — so the card always works, it's just single-chain.
 
 interface PortfolioPayload {
   totalUsd: number
@@ -35,45 +40,117 @@ interface PortfolioPayload {
   chainId: number
 }
 
+/** chainId → display label for the keyless fallback (the MCP is Base-only, but
+ *  read the real chainId rather than hardcoding the label). */
+function chainLabel(chainId: number): string {
+  const map: Record<number, string> = { 1: 'Ethereum', 8453: 'Base', 42161: 'Arbitrum', 10: 'Optimism', 137: 'Polygon' }
+  return map[chainId] ?? `chain ${chainId}`
+}
+
+/** Holdings → up to 3 "do something" prompt chips. `where` scopes the swap
+ *  prompts to the right venue phrasing. */
+function holdingPrompts(holdings: HoldingRow[], where: string): SuggestedPrompt[] {
+  const prompts: SuggestedPrompt[] = []
+  const stable = holdings.find((h) => /^(USDC|DAI|USDbC|USDT)$/i.test(h.symbol) && (h.valueUsd ?? 0) >= 10)
+  if (stable) {
+    const amt = Math.min(Math.floor(Number(stable.balance)), 100) || 1
+    prompts.push({ label: `Put ${stable.symbol} to work`, prompt: `Swap ${amt} ${stable.symbol} into ETH ${where}` })
+  }
+  const eth = holdings.find((h) => h.symbol === 'ETH' && (h.valueUsd ?? 0) >= 5)
+  if (eth) prompts.push({ label: 'Best swap for my ETH', prompt: 'What is the best swap I could make with my ETH right now?' })
+  const top = holdings.find((h) => !/^(USDC|DAI|USDbC|USDT|ETH|WETH)$/i.test(h.symbol) && (h.valueUsd ?? 0) >= 1)
+  if (top) prompts.push({ label: `Sell my ${top.symbol}`, prompt: `Quote selling all my ${top.symbol} for USDC` })
+  if (prompts.length === 0) prompts.push({ label: 'Review my holdings', prompt: 'What can I do with the tokens in my wallet?' })
+  return prompts.slice(0, 3)
+}
+
+/** Multichain path (Alchemy): a portfolio holdings tile + a recent-transactions
+ *  tile, both spanning Ethereum/Base/Arbitrum. */
+async function buildMultichainTiles(address: string, server: McpServer): Promise<SplashTile[]> {
+  const [portfolio, activity] = await Promise.all([
+    getMultichainPortfolio(address),
+    getRecentActivity(address).catch(() => []), // activity is a bonus — never fail the card over it
+  ])
+  const holdings = portfolio.holdings
+  const scope = portfolio.chainLabels.length ? portfolio.chainLabels.join(' · ') : 'Ethereum · Base · Arbitrum'
+  const tiles: SplashTile[] = []
+
+  if (holdings.length === 0) {
+    tiles.push({
+      id: 'uniswap-holdings',
+      mcpSlug: server.slug,
+      mcpName: server.name,
+      render: 'empty',
+      title: 'Your portfolio',
+      message: 'No tokens found on Ethereum, Base, or Arbitrum for this wallet.',
+      prompts: [{ label: 'Get a quote', prompt: 'What would it cost to swap 100 USDC into ETH on Base?' }],
+    })
+  } else {
+    tiles.push({
+      id: 'uniswap-holdings',
+      mcpSlug: server.slug,
+      mcpName: server.name,
+      render: 'holdings',
+      title: 'Your portfolio',
+      subtitle: `${holdings.length} across ${portfolio.chainsWithHoldings} ${portfolio.chainsWithHoldings === 1 ? 'chain' : 'chains'}`,
+      chain: scope,
+      totalUsd: portfolio.totalUsd,
+      holdings: holdings.slice(0, 8),
+      prompts: holdingPrompts(holdings, 'on Base'),
+    })
+  }
+
+  if (activity.length > 0) {
+    tiles.push({
+      id: 'uniswap-activity',
+      mcpSlug: server.slug,
+      mcpName: server.name,
+      render: 'activity',
+      title: 'Recent transactions',
+      subtitle: `${scope}`,
+      rows: activity,
+      prompts: [
+        { label: 'Explain my last tx', prompt: `Explain my most recent transaction (${activity[0].asset} on ${activity[0].chain}) in plain English.` },
+        { label: 'Summarize my activity', prompt: 'Summarize my recent on-chain activity across Ethereum, Base, and Arbitrum.' },
+      ],
+    })
+  }
+  return tiles
+}
+
+/** Keyless fallback (Base-only, via the uniswap MCP `balances` tool). */
+async function buildBaseFallbackTile(call: McpCaller, address: string, server: McpServer): Promise<SplashTile> {
+  const data = (await call('balances', { owner: address })) as PortfolioPayload
+  const holdings = Array.isArray(data.holdings) ? data.holdings : []
+  const label = typeof data.chainId === 'number' ? chainLabel(data.chainId) : 'Base'
+  const base = { id: 'uniswap-holdings', mcpSlug: server.slug, mcpName: server.name }
+  if (holdings.length === 0) {
+    return {
+      ...base,
+      render: 'empty',
+      title: `Your ${label} portfolio`,
+      message: `No tokens found on ${label} for this wallet.`,
+      prompts: [{ label: 'Get a quote', prompt: 'What would it cost to swap 100 USDC into ETH on Base?' }],
+    }
+  }
+  return {
+    ...base,
+    render: 'holdings',
+    title: `Your ${label} portfolio`,
+    subtitle: `via ${server.name}`,
+    chain: label,
+    totalUsd: typeof data.totalUsd === 'number' ? data.totalUsd : null,
+    holdings: holdings.slice(0, 8),
+    prompts: holdingPrompts(holdings, `on ${label}`),
+  }
+}
+
 const uniswapSource: SplashSource = {
   id: 'uniswap',
   match: (s) => s.slug === 'uniswap' || s.slug === 'uniswap-free' || /uniswap/i.test(s.name),
   build: async (call, address, server) => {
-    const data = (await call('balances', { owner: address })) as PortfolioPayload
-    const holdings = Array.isArray(data.holdings) ? data.holdings : []
-    const base = { id: 'uniswap-holdings', mcpSlug: server.slug, mcpName: server.name }
-    if (holdings.length === 0) {
-      return {
-        ...base,
-        render: 'empty',
-        title: 'Your Base portfolio',
-        message: 'No tokens found on Base for this wallet.',
-        prompts: [{ label: 'Get a quote', prompt: 'What would it cost to swap 100 USDC into ETH on Base?' }],
-      }
-    }
-    // Suggested prompts derived from what they actually hold.
-    const prompts: SuggestedPrompt[] = []
-    const stable = holdings.find((h) => /^(USDC|DAI|USDbC)$/i.test(h.symbol) && (h.valueUsd ?? 0) >= 10)
-    if (stable) {
-      const amt = Math.min(Math.floor(Number(stable.balance)), 100) || 1
-      prompts.push({ label: `Put ${stable.symbol} to work`, prompt: `Swap ${amt} ${stable.symbol} into ETH on Base` })
-    }
-    const eth = holdings.find((h) => h.symbol === 'ETH' && (h.valueUsd ?? 0) >= 5)
-    if (eth) prompts.push({ label: 'Best swap for my ETH', prompt: 'What is the best swap I could make with my ETH right now?' })
-    const top = holdings.find((h) => !/^(USDC|DAI|USDbC|ETH|WETH)$/i.test(h.symbol) && (h.valueUsd ?? 0) >= 1)
-    if (top) prompts.push({ label: `Sell my ${top.symbol}`, prompt: `Quote selling all my ${top.symbol} for USDC on Base` })
-    if (prompts.length === 0) prompts.push({ label: 'Review my holdings', prompt: 'What can I do with the tokens in my wallet?' })
-
-    return {
-      ...base,
-      render: 'holdings',
-      title: 'Your Base portfolio',
-      subtitle: `via ${server.name}`,
-      chain: 'Base',
-      totalUsd: typeof data.totalUsd === 'number' ? data.totalUsd : null,
-      holdings: holdings.slice(0, 8),
-      prompts: prompts.slice(0, 3),
-    }
+    if (alchemyEnabled()) return buildMultichainTiles(address, server)
+    return buildBaseFallbackTile(call, address, server)
   },
 }
 
@@ -444,14 +521,29 @@ async function buildFeaturedTile(
   }
 }
 
+/** A dedicated source that failed becomes a retryable error card rather than
+ *  silently vanishing — the user (and we) can tell "broke" from "nothing here". */
+function errorTile(source: SplashSource, server: McpServer): SplashTile {
+  return {
+    id: `${server.slug}-${source.id}-error`,
+    mcpSlug: server.slug,
+    mcpName: server.name,
+    render: 'error',
+    title: `Your ${server.name} view`,
+    message: "Couldn't load this right now.",
+    prompts: [],
+  }
+}
+
 /**
  * Build the splash tiles for a connected wallet across the connected MCP set.
- * Runs every matching source in parallel; a source that throws or times out
- * is dropped so one bad MCP can't blank the dashboard. Servers no dedicated
- * source claims fall through to the generic featured-endpoint tile.
+ * Runs every matching source in parallel; a dedicated source that throws or
+ * times out surfaces a retryable error card (never blanks the dashboard).
+ * Servers no dedicated source claims fall through to the generic
+ * featured-endpoint tile (best-effort — silent on failure).
  */
 export async function buildSplash(address: string, servers: SplashServer[]): Promise<SplashTile[]> {
-  const jobs: Promise<SplashTile | null>[] = []
+  const jobs: Promise<SplashTile[]>[] = []
   for (const server of servers) {
     if (!server.endpoint) continue
     const endpoint = overrideFreeMcpBase(server.endpoint)
@@ -460,12 +552,20 @@ export async function buildSplash(address: string, servers: SplashServer[]): Pro
     for (const source of SPLASH_SOURCES) {
       if (!source.match(server)) continue
       matched = true
-      jobs.push(source.build(call, address, server).catch(() => null))
+      jobs.push(
+        Promise.resolve()
+          .then(() => source.build(call, address, server))
+          .then((t) => (Array.isArray(t) ? t : t ? [t] : []))
+          .catch(() => [errorTile(source, server)]),
+      )
     }
     if (!matched && (server.featuredEndpoints?.length ?? 0) > 0) {
-      jobs.push(buildFeaturedTile(call, address, server).catch(() => null))
+      jobs.push(buildFeaturedTile(call, address, server).then((t) => (t ? [t] : [])).catch(() => []))
     }
   }
-  const tiles = await Promise.all(jobs)
-  return tiles.filter((t): t is SplashTile => t !== null)
+  const all = (await Promise.all(jobs)).flat()
+  // De-dupe by tile id (two connected uniswap servers → one portfolio card).
+  const byId = new Map<string, SplashTile>()
+  for (const tile of all) if (!byId.has(tile.id)) byId.set(tile.id, tile)
+  return [...byId.values()]
 }

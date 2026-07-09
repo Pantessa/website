@@ -33,6 +33,7 @@ export default function McpActionPanel({
 }) {
   const [tiles, setTiles] = useState<SplashTile[] | null>(null)
   const [loading, setLoading] = useState(false)
+  const [reload, setReload] = useState(0)
 
   const personal = !!address && splashCapable(server)
 
@@ -63,7 +64,7 @@ export default function McpActionPanel({
       alive = false
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [address, server.id])
+  }, [address, server.id, reload])
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -125,7 +126,7 @@ export default function McpActionPanel({
             loading || tiles === null ? (
               <SkeletonTiles count={1} />
             ) : tiles.length > 0 ? (
-              tiles.map((tile) => <TileCard key={tile.id} tile={tile} onPick={onPick} />)
+              tiles.map((tile) => <TileCard key={tile.id} tile={tile} onPick={onPick} onRetry={() => setReload((n) => n + 1)} />)
             ) : (
               <Fallback server={server} examples={examples} onPick={onPick} />
             )

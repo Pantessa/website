@@ -1,10 +1,10 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
-import { Clock, Vote, Wallet } from 'lucide-react'
+import { ArrowDownLeft, ArrowUpRight, Clock, ExternalLink, RefreshCw, Repeat, Vote, Wallet } from 'lucide-react'
 import type { McpServer } from '@/lib/store'
 import { splashCapable } from '@/lib/splash/types'
-import type { HoldingsTile, ProposalsTile, RowsTile, SplashTile, SuggestedPrompt } from '@/lib/splash/types'
+import type { ActivityTile, ErrorTile, HoldingsTile, ProposalsTile, RowsTile, SplashTile, SuggestedPrompt } from '@/lib/splash/types'
 
 /**
  * The connected-wallet splash: when someone jumps into the chat with a wallet
@@ -31,6 +31,8 @@ export function SplashDashboard({
 }) {
   const [tiles, setTiles] = useState<SplashTile[] | null>(null)
   const [loading, setLoading] = useState(false)
+  // Bumped by a tile's Retry button to force a fresh scan.
+  const [reload, setReload] = useState(0)
 
   // Only sources that can contribute — avoids a fetch when nothing matches.
   const relevant = useMemo(() => servers.filter(splashCapable), [servers])
@@ -73,7 +75,7 @@ export function SplashDashboard({
       alive = false
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [key])
+  }, [key, reload])
 
   // Nothing to show — let the caller render its normal empty state.
   if (!address || relevant.length === 0) return null
@@ -104,7 +106,7 @@ export function SplashDashboard({
         ) : (
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             {tiles.map((tile) => (
-              <TileCard key={tile.id} tile={tile} onPick={onPick} />
+              <TileCard key={tile.id} tile={tile} onPick={onPick} onRetry={() => setReload((n) => n + 1)} />
             ))}
           </div>
         )}
@@ -120,7 +122,15 @@ export function SplashDashboard({
 // ── Tile router ──────────────────────────────────────────────────────────────
 // Exported: the per-MCP action window (McpActionPanel) renders the same tiles.
 
-export function TileCard({ tile, onPick }: { tile: SplashTile; onPick: (p: string, slug?: string) => void }) {
+export function TileCard({
+  tile,
+  onPick,
+  onRetry,
+}: {
+  tile: SplashTile
+  onPick: (p: string, slug?: string) => void
+  onRetry?: () => void
+}) {
   return (
     <div className="flex flex-col rounded-2xl border border-[var(--line)] bg-[var(--surf-1)] p-4 text-left">
       <div className="mb-3 flex items-baseline justify-between gap-2">
@@ -130,8 +140,72 @@ export function TileCard({ tile, onPick }: { tile: SplashTile; onPick: (p: strin
       {tile.render === 'holdings' && <HoldingsBody tile={tile} />}
       {tile.render === 'proposals' && <ProposalsBody tile={tile} />}
       {tile.render === 'rows' && <RowsBody tile={tile} />}
+      {tile.render === 'activity' && <ActivityBody tile={tile} />}
       {tile.render === 'empty' && <p className="text-xs text-[color:var(--muted)]">{tile.message}</p>}
+      {tile.render === 'error' && <ErrorBody tile={tile} onRetry={onRetry} />}
       <PromptChips prompts={tile.prompts} slug={tile.mcpSlug} onPick={onPick} />
+    </div>
+  )
+}
+
+// ── Error (a source that failed — retryable, never silent) ───────────────────
+
+function ErrorBody({ tile, onRetry }: { tile: ErrorTile; onRetry?: () => void }) {
+  return (
+    <div className="flex-1">
+      <p className="text-xs text-[color:var(--muted)]">{tile.message}</p>
+      {onRetry && (
+        <button
+          type="button"
+          onClick={onRetry}
+          className="mt-3 inline-flex items-center gap-1.5 rounded-full border border-[var(--line)] px-2.5 py-1 text-[11px] text-[color:var(--muted)] transition-colors hover:border-[var(--line-2)] hover:bg-white/5 hover:text-white"
+        >
+          <RefreshCw className="h-3 w-3" /> Retry
+        </button>
+      )}
+    </div>
+  )
+}
+
+// ── Activity (recent transactions, multichain) ───────────────────────────────
+
+function ActivityBody({ tile }: { tile: ActivityTile }) {
+  return (
+    <div className="flex-1 space-y-1">
+      {tile.rows.map((r) => {
+        const Icon = r.direction === 'out' ? ArrowUpRight : r.direction === 'in' ? ArrowDownLeft : Repeat
+        const verb = r.direction === 'out' ? 'Sent' : r.direction === 'in' ? 'Received' : 'Self'
+        return (
+          <a
+            key={r.chain + r.hash}
+            href={r.explorerUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="group -mx-1 flex items-center justify-between gap-2 rounded-lg px-1 py-1 text-xs transition-colors hover:bg-white/5"
+          >
+            <div className="flex min-w-0 items-center gap-2">
+              <span
+                className={`grid h-6 w-6 shrink-0 place-items-center rounded-full ${
+                  r.direction === 'in' ? 'bg-[color:var(--accent)]/15 text-[color:var(--accent)]' : 'bg-white/5 text-[color:var(--muted)]'
+                }`}
+              >
+                <Icon className="h-3 w-3" />
+              </span>
+              <div className="min-w-0">
+                <div className="truncate font-medium text-white">
+                  {verb} {r.amount && `${r.amount} `}
+                  {r.asset}
+                </div>
+                <div className="truncate text-[10px] text-[color:var(--muted-2)]">
+                  {r.chain} · {r.direction === 'out' ? 'to' : 'from'} {r.counterparty}
+                  {r.timestamp ? ` · ${ago(r.timestamp)}` : ''}
+                </div>
+              </div>
+            </div>
+            <ExternalLink className="h-3 w-3 shrink-0 text-[color:var(--muted-2)] opacity-0 transition-opacity group-hover:opacity-70" />
+          </a>
+        )
+      })}
     </div>
   )
 }
@@ -182,18 +256,21 @@ function HoldingsBody({ tile }: { tile: HoldingsTile }) {
       {tile.totalUsd !== null && (
         <div className="mb-3">
           <span className="text-2xl font-semibold tracking-tight text-white">{usd(tile.totalUsd)}</span>
-          <span className="ml-2 text-[11px] text-[color:var(--muted-2)]">total on {tile.chain}</span>
+          <span className="ml-2 text-[11px] text-[color:var(--muted-2)]">
+            {tile.chain.includes('·') ? 'total portfolio' : `total on ${tile.chain}`}
+          </span>
         </div>
       )}
       <div className="space-y-1.5">
         {tile.holdings.map((h) => (
-          <div key={h.address + h.symbol} className="flex items-center justify-between gap-2 text-xs">
+          <div key={(h.chain ?? '') + h.address + h.symbol} className="flex items-center justify-between gap-2 text-xs">
             <div className="flex items-center gap-2">
               <span className="grid h-6 w-6 place-items-center rounded-full bg-white/5 text-[10px] font-semibold text-[color:var(--muted)]">
                 {h.symbol.slice(0, 3)}
               </span>
               <span className="font-medium text-white">{h.symbol}</span>
               {h.native && <span className="mono text-[9px] text-[color:var(--muted-2)]">native</span>}
+              {h.chain && <span className="rounded bg-white/5 px-1 py-0.5 text-[9px] text-[color:var(--muted-2)]">{h.chain}</span>}
             </div>
             <div className="text-right">
               <div className="text-white">{h.valueUsd !== null ? usd(h.valueUsd) : '—'}</div>
@@ -345,4 +422,18 @@ function endsIn(unixSec: number): string {
   if (h < 1) return `${Math.max(1, Math.floor(ms / 60_000))}m left`
   if (h < 48) return `${h}h left`
   return `${Math.floor(h / 24)}d left`
+}
+
+/** Relative "time ago" for a past unix-seconds timestamp. */
+function ago(unixSec: number): string {
+  const s = Math.floor((Date.now() - unixSec * 1000) / 1000)
+  if (s < 60) return 'just now'
+  const m = Math.floor(s / 60)
+  if (m < 60) return `${m}m ago`
+  const h = Math.floor(m / 60)
+  if (h < 24) return `${h}h ago`
+  const d = Math.floor(h / 24)
+  if (d < 30) return `${d}d ago`
+  const mo = Math.floor(d / 30)
+  return mo < 12 ? `${mo}mo ago` : `${Math.floor(mo / 12)}y ago`
 }
