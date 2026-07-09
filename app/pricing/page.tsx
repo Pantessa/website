@@ -70,15 +70,6 @@ export default function PricingPage() {
 
           <PricingPlans />
 
-          <div className="pricing__token">
-            <span className="pricing__tokenbadge mono">YEET</span>
-            <p>
-              Credits are the off-chain ledger of the YEET token — the plan is to take it ERC-20,
-              so balances, top-ups, and usage history move on-chain without changing what a credit
-              buys. No token sale, no speculation required: it meters inference.
-            </p>
-          </div>
-
           <div className="pricing__faq">
             {FAQ.map((f) => (
               <div className="pricing__faqitem" key={f.q}>

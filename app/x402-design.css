@@ -2435,17 +2435,6 @@
   .pricing__cta:disabled { opacity: .55; cursor: default; }
   .pricing__note { margin-top: 16px; font-size: 12.5px; color: #ffb86b; }
 
-  .pricing__token {
-    margin-top: 40px; display: flex; gap: 16px; align-items: flex-start;
-    border: 1px dashed color-mix(in oklch, var(--accent) 40%, var(--line)); border-radius: 14px;
-    padding: 18px 20px; background: color-mix(in oklch, var(--accent) 3%, transparent);
-  }
-  .pricing__tokenbadge {
-    flex-shrink: 0; font-size: 12px; letter-spacing: .12em; font-weight: 600;
-    padding: 6px 12px; border-radius: 999px; background: var(--accent); color: #000;
-  }
-  .pricing__token p { font-size: 13.5px; color: var(--muted); line-height: 1.6; max-width: 80ch; }
-
   .pricing__faq { margin-top: 36px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
   .pricing__faqitem { border: 1px solid var(--line); border-radius: 14px; padding: 18px; background: var(--surf-1); min-width: 0; }
   .pricing__faqq { font-family: 'Archivo', sans-serif; font-weight: 700; font-size: 14.5px; letter-spacing: -.01em; }
