@@ -6,6 +6,7 @@ import { YeetfulMark } from '@/components/Logo'
 import MessageReceipts from '@/components/MessageReceipts'
 import RouterTraceLines from '@/components/RouterTraceLines'
 import ChatMarkdown from '@/components/ChatMarkdown'
+import { respondingMark } from '@/lib/responding-mcp'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -71,15 +72,26 @@ export default async function SharedChatPage({ params }: Params) {
             key={msg.id}
             className={`flex gap-3 ${msg.role === 'user' ? 'flex-row-reverse' : 'flex-row'}`}
           >
-            <div
-              className={`flex-shrink-0 w-8 h-8 rounded-xl flex items-center justify-center ${
-                msg.role === 'user'
-                  ? 'bg-white text-black'
-                  : 'bg-[var(--surf-2)] border border-[var(--line)] text-[color:var(--muted)]'
-              }`}
-            >
-              {msg.role === 'user' ? <User className="w-4 h-4" /> : <Bot className="w-4 h-4" />}
-            </div>
+            {(() => {
+              const Mark = msg.role === 'assistant' ? respondingMark(msg.meta) : null
+              return (
+                <div
+                  className={`flex-shrink-0 w-8 h-8 rounded-xl flex items-center justify-center overflow-hidden ${
+                    msg.role === 'user'
+                      ? 'bg-white text-black'
+                      : `bg-[var(--surf-2)] border border-[var(--line)] ${Mark ? 'text-[color:var(--fg)]' : 'text-[color:var(--muted)]'}`
+                  }`}
+                >
+                  {msg.role === 'user' ? (
+                    <User className="w-4 h-4" />
+                  ) : Mark ? (
+                    <Mark size={18} />
+                  ) : (
+                    <Bot className="w-4 h-4" />
+                  )}
+                </div>
+              )
+            })()}
             <div
               className={`max-w-[80%] px-4 py-3 rounded-2xl text-sm leading-relaxed ${
                 msg.role === 'user'
