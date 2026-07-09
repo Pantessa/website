@@ -36,7 +36,7 @@ import { YeetfulMark } from '@/components/Logo'
 import { useAppShellMode } from '@/components/AppShell'
 import ChatMarkdown from '@/components/ChatMarkdown'
 import BrandIcon from '@/components/BrandIcon'
-import { respondingServer } from '@/lib/responding-mcp'
+import { respondingServers } from '@/lib/responding-mcp'
 
 // Typed-data signing request shipped from the server for the wallet to sign.
 interface SigningRequest {
@@ -867,12 +867,38 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
                     msg.role === 'user' ? 'flex-row-reverse' : 'flex-row'
                   )}
                 >
-                  {/* Avatar — assistant turns show the MCP that answered
-                      (Uniswap, Snapshot, …) resolved from the turn's receipts,
-                      so it tracks per message as the conversation switches MCPs;
-                      pure-inference turns fall back to the robot. */}
+                  {/* Avatar — assistant turns show the MCP(s) that answered,
+                      resolved from the turn's receipts (falling back to the
+                      active working set on pure-inference turns, so talking TO
+                      an agent always shows its mark). A multi-MCP turn stacks
+                      the marks like coins seen sideways; only a turn with no
+                      MCPs anywhere falls back to the robot. */}
                   {(() => {
-                    const responder = msg.role === 'assistant' ? respondingServer(msg.meta, servers) : null
+                    const responders =
+                      msg.role === 'assistant' ? respondingServers(msg.meta, servers, activeServers) : []
+                    const stack = responders.slice(0, 3)
+                    if (msg.role === 'assistant' && stack.length > 1) {
+                      return (
+                        <div
+                          className="flex-shrink-0 flex items-center self-start"
+                          title={stack.map((s) => s.name).join(' + ')}
+                        >
+                          {stack.map((s, i) => (
+                            <div
+                              key={s.slug}
+                              className={cn(
+                                'relative w-8 h-8 rounded-full flex items-center justify-center overflow-hidden bg-[var(--surf-2)] border border-[var(--line-2)] ring-2 ring-[var(--bg)]',
+                                i > 0 && '-ml-3'
+                              )}
+                              style={{ zIndex: stack.length - i }}
+                            >
+                              <BrandIcon server={s} size={16} />
+                            </div>
+                          ))}
+                        </div>
+                      )
+                    }
+                    const responder = stack[0] ?? null
                     return (
                       <div
                         title={responder ? responder.name : undefined}
@@ -899,7 +925,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
                     className={cn(
                       'group/bubble relative max-w-[85vw] lg:max-w-[80%] px-4 py-3 rounded-2xl text-sm leading-relaxed',
                       msg.role === 'user'
-                        ? 'bg-[color:var(--accent)]/90 text-black rounded-br-sm'
+                        ? 'chat-bubble--user rounded-br-sm'
                         : 'bg-[var(--surf-1)]/70 text-[color:var(--fg)] border border-white/[0.06] rounded-tl-sm'
                     )}
                   >
@@ -907,7 +933,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
                     {msg.role === 'assistant' ? (
                       <ChatMarkdown content={msg.content} />
                     ) : (
-                      <pre className="whitespace-pre-wrap font-sans [overflow-wrap:anywhere]">{msg.content}</pre>
+                      <pre className="whitespace-pre-wrap [font-family:var(--font-chat-body)] [overflow-wrap:anywhere]">{msg.content}</pre>
                     )}
                     {msg.role === 'assistant' && <MessageReceipts meta={msg.meta} />}
                     {msg.role === 'assistant' && <RouteReport meta={msg.meta} />}

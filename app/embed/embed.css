@@ -18,10 +18,13 @@
   color-scheme: light;
 }
 
-/* Body copy in assistant replies is a soft near-white on dark; on a light
-   embed that needs to become a dark ink or it disappears against white. */
+/* The chat-local grey scale (body / strong / lede — see .chat-md in
+   x402-design.css) is tuned for dark; on a light embed the three steps
+   flip to inks or the copy disappears against white. */
 .embed-root[data-theme='light'] .chat-md {
   --chat-fg: #1c1c22;
+  --chat-strong: #09090b;
+  --chat-lede: #4b4b53;
 }
 
 /* The chat surface hard-codes a few dark-theme utility colors (text-white,
