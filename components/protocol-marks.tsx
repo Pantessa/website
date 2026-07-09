@@ -49,6 +49,17 @@ export function SnapshotMark({ size = 22 }: { size?: number }) {
   )
 }
 
+export function AaveMark({ size = 22 }: { size?: number }) {
+  // Aave's "ghost" logomark (official Logomark, aave.com). Natural ~1.9:1
+  // landscape mark; keep the aspect and center it in a square box.
+  return (
+    <svg viewBox="0 0 266 139" width={size} height={(size * 139) / 266} fill="currentColor" aria-hidden style={{ display: 'block' }}>
+      <path d="M97.542 138.533c14.919 0 27.014-12.095 27.014-27.015s-12.095-27.014-27.014-27.014c-14.92 0-27.015 12.095-27.015 27.014 0 14.92 12.095 27.015 27.015 27.015m70.607 0c14.92 0 27.015-12.095 27.015-27.015s-12.095-27.014-27.015-27.014-27.014 12.095-27.014 27.014c0 14.92 12.095 27.015 27.014 27.015" />
+      <path d="M132.8 0C59.45 0-.02 60.602 0 135.335h33.926c0-56.007 43.917-101.415 98.874-101.415s98.874 45.408 98.874 101.415H265.6C265.613 60.602 206.144 0 132.8 0" />
+    </svg>
+  )
+}
+
 // slug/name matcher → mark. Ordered; first match wins. The regex is tested
 // against a space-joined string of iconSlug/slug/id/name, so `-free`/`-mcp`
 // suffixes and display names all resolve to the same mark.
@@ -56,6 +67,7 @@ const REGISTRY: { match: RegExp; Mark: Mark }[] = [
   { match: /uniswap/i, Mark: UniswapMark },
   { match: /(^|[^a-z])cow([^a-z]|$)|cowswap|cow-?protocol/i, Mark: CowMark },
   { match: /snapshot/i, Mark: SnapshotMark },
+  { match: /aave/i, Mark: AaveMark },
 ]
 
 /** Resolve a vendored protocol mark from any of a server's identifiers.
