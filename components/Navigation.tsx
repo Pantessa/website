@@ -145,9 +145,6 @@ export default function Navigation() {
       <Link href="/" className={`nav__tab ${pathname === '/' ? 'is-on' : ''}`}>
         Router
       </Link>
-      <Link href="/servers" className={`nav__tab ${pathname.startsWith('/servers') ? 'is-on' : ''}`}>
-        Servers
-      </Link>
       <Link href="/chat" className={`nav__tab ${pathname === '/chat' ? 'is-on' : ''}`}>
         Chat
       </Link>
@@ -170,9 +167,6 @@ export default function Navigation() {
     <>
       <Link href="/" className={`nav__tab ${pathname === '/' ? 'is-on' : ''}`}>
         Router
-      </Link>
-      <Link href="/servers" className={`nav__tab ${pathname.startsWith('/servers') ? 'is-on' : ''}`}>
-        Servers
       </Link>
       <Link href="/chat" className={`nav__tab ${pathname === '/chat' ? 'is-on' : ''}`}>
         Chat

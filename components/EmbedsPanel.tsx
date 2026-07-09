@@ -11,10 +11,13 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
-import { Check, Copy, Globe, Plus, Trash2 } from 'lucide-react'
+import { Globe, Plus, Trash2 } from 'lucide-react'
 import { Card, CardTitle, SkeletonCard, timeAgo } from '@/lib/dashboard-ui'
 import { useToast } from '@/lib/toast'
 import Button from '@/components/Button'
+// The shared install card (snippet + Claude-prompt copy) — lib/embed-snippets
+// strings presented by components/EmbedInstall, same surface as the docs.
+import EmbedInstall from '@/components/EmbedInstall'
 
 interface EmbedSite {
   origin: string
@@ -29,66 +32,6 @@ interface EmbedKeyRow {
   label: string
   createdAt: string
   sites: EmbedSite[]
-}
-
-const DEFAULT_MCPS = "['uniswap-free', 'snapshot-free']"
-
-function snippetFor(key: string): string {
-  return `import { mountYeetfulChat } from 'yeetful/embed'
-
-mountYeetfulChat({
-  mode: 'bubble',
-  key: '${key}',
-  mcps: ${DEFAULT_MCPS},
-  wallet: 'auto', // the host page's wallet signs
-})`
-}
-
-/** The copy-paste "Install with Claude" prompt — hand it to Claude Code (or
- * any coding agent) inside the host app's repo and it does the whole
- * integration. Self-contained on purpose: key, CSP note, verify step. */
-function claudePromptFor(key: string): string {
-  return `Install the Yeetful embeddable chat (an agent that composes MCPs — swaps, DAO votes, live data — and signs with the user's own wallet) into this app.
-
-1. Install the SDK: \`npm i yeetful\` (needs yeetful >= 0.10).
-2. Mount it once wherever the app initializes client-side:
-
-   import { mountYeetfulChat } from 'yeetful/embed'
-
-   mountYeetfulChat({
-     mode: 'bubble',            // or 'inline' with { container }
-     key: '${key}',  // public embed key — attributes usage to our account
-     mcps: ${DEFAULT_MCPS},  // swap for slugs from https://www.yeetful.com/servers
-     wallet: 'auto',            // bridges the page's connected wallet; signatures pop in the user's own wallet
-   })
-
-   No bundler? Use a module script instead:
-   <script type="module">
-     import { mountYeetfulChat } from 'https://esm.sh/yeetful@^0.10/embed'
-     mountYeetfulChat({ mode: 'bubble', key: '${key}', mcps: ${DEFAULT_MCPS}, wallet: 'auto' })
-   </script>
-
-3. If the app ships a Content-Security-Policy, add https://www.yeetful.com to frame-src (the chat runs in an iframe on that origin).
-4. Do not move the key to an env secret — it is a publishable identifier, safe in page source.
-5. Verify: run the app, open the chat bubble, and ask "what is WETH trading at?" — the answer should include a $0 receipt line. Docs: https://www.yeetful.com/docs/embed`
-}
-
-function CopyButton({ text, label, solid }: { text: string; label: string; solid?: boolean }) {
-  const [copied, setCopied] = useState(false)
-  return (
-    <Button
-      variant={solid ? 'primary' : 'secondary'}
-      icon={copied ? Check : Copy}
-      onClick={() => {
-        void navigator.clipboard.writeText(text).then(() => {
-          setCopied(true)
-          setTimeout(() => setCopied(false), 1600)
-        })
-      }}
-    >
-      {copied ? 'Copied' : label}
-    </Button>
-  )
 }
 
 export default function EmbedsPanel() {
@@ -191,21 +134,8 @@ export default function EmbedsPanel() {
               ))}
             </ul>
 
-            {/* install block — Claude prompt first (the easy path), raw snippet second */}
-            <div className="mt-4 rounded-xl border border-[color:var(--line)] bg-[color:var(--bg)] overflow-hidden">
-              <div className="flex items-center justify-between gap-3 px-4 py-2.5 border-b border-[color:var(--line)] flex-wrap">
-                <span className="mono text-[11px] tracking-wider text-[color:var(--muted-2)]">
-                  INSTALL WITH CLAUDE — PASTE THIS INTO CLAUDE CODE IN YOUR APP&rsquo;S REPO
-                </span>
-                <span className="flex items-center gap-2">
-                  <CopyButton solid text={claudePromptFor(primary.key)} label="Copy Claude prompt" />
-                  <CopyButton text={snippetFor(primary.key)} label="Copy snippet" />
-                </span>
-              </div>
-              <pre className="px-4 py-3 mono text-[12px] leading-relaxed text-[color:var(--muted)] overflow-x-auto max-h-44">
-                {claudePromptFor(primary.key)}
-              </pre>
-            </div>
+            {/* the shared install card — the primary key baked in */}
+            <EmbedInstall embedKey={primary.key} className="mt-4" />
             <p className="mt-2 text-[12.5px] text-[color:var(--muted-2)]">
               Then{' '}
               <Link href="/servers" className="underline underline-offset-2 decoration-dotted hover:text-white">

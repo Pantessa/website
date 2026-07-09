@@ -4,42 +4,70 @@
     {
       "name": "web",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev"],
+      "runtimeArgs": [
+        "run",
+        "dev"
+      ],
       "port": 3010,
       "autoPort": true
     },
     {
       "name": "web-prod",
       "runtimeExecutable": "npx",
-      "runtimeArgs": ["next", "start"],
+      "runtimeArgs": [
+        "next",
+        "start"
+      ],
       "port": 3210,
       "autoPort": true
     },
     {
       "name": "web-footer",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev", "--", "-p", "3229"],
+      "runtimeArgs": [
+        "run",
+        "dev",
+        "--",
+        "-p",
+        "3229"
+      ],
       "port": 3229,
       "autoPort": true
     },
     {
       "name": "web-nav-clean",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev", "--", "-p", "3227"],
+      "runtimeArgs": [
+        "run",
+        "dev",
+        "--",
+        "-p",
+        "3227"
+      ],
       "port": 3227,
       "autoPort": true
     },
     {
       "name": "web-free-first",
       "runtimeExecutable": "npx",
-      "runtimeArgs": ["next", "start", "-p", "3228"],
+      "runtimeArgs": [
+        "next",
+        "start",
+        "-p",
+        "3228"
+      ],
       "port": 3228,
       "autoPort": false
     },
     {
       "name": "web-featured",
       "runtimeExecutable": "npx",
-      "runtimeArgs": ["next", "start", "-p", "3234"],
+      "runtimeArgs": [
+        "next",
+        "start",
+        "-p",
+        "3234"
+      ],
       "port": 3234,
       "autoPort": false
     },
@@ -49,6 +77,58 @@
       "runtimeArgs": ["next", "start", "-p", "3238"],
       "port": 3238,
       "autoPort": false
+    },
+    {
+      "name": "web-embed-cta",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": [
+        "next",
+        "start",
+        "-p",
+        "3236"
+      ],
+      "port": 3236,
+      "autoPort": false
+    },
+    {
+      "name": "web-og-card",
+      "runtimeExecutable": "bash",
+      "runtimeArgs": [
+        "-lc",
+        "cd /Users/nategeier/yeetful/website-og-card && exec npx next dev -p ${PORT:-3244}"
+      ],
+      "port": 3244,
+      "autoPort": true
+    },
+    {
+      "name": "web-getstarted",
+      "runtimeExecutable": "bash",
+      "runtimeArgs": [
+        "-lc",
+        "cd /Users/nategeier/yeetful/website-getstarted && exec npx next start -p 3240"
+      ],
+      "port": 3240
+    },
+    {
+      "name": "web-docs-embed",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": [
+        "next",
+        "start",
+        "-p",
+        "3242"
+      ],
+      "port": 3242,
+      "autoPort": false
+    },
+    {
+      "name": "web-home-embed",
+      "runtimeExecutable": "bash",
+      "runtimeArgs": [
+        "-lc",
+        "exec npx next start -p 3246"
+      ],
+      "port": 3246
     }
   ]
 }

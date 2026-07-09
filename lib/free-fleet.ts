@@ -13,6 +13,18 @@ export const FREE_FLEET_SLUGS = [
   'hyperliquid-free',
 ] as const
 
+// The default working set a brand-new visitor lands on in chat: Uniswap +
+// Snapshot + Hyperliquid. These three each carry a connected-wallet splash
+// source (portfolio / proposals / positions), so a fresh view with a wallet
+// immediately renders the dashboard building itself — the first-run "aha".
+// CoW is in the browsable fleet but left out of the auto-on set to keep the
+// splash focused on three distinct dashboards.
+export const DEFAULT_CHAT_FLEET_SLUGS = [
+  'uniswap-free',
+  'snapshot-free',
+  'hyperliquid-free',
+] as const
+
 /** Sort key: fleet rows first (in fleet order), then everything else. */
 export function fleetRank(slug: string): number {
   const i = (FREE_FLEET_SLUGS as readonly string[]).indexOf(slug)

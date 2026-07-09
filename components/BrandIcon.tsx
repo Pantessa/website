@@ -2,15 +2,21 @@
 
 import { useState } from 'react'
 import type { McpServer } from '@/lib/store'
+import { getProtocolMark } from '@/components/protocol-marks'
 
 /**
- * Monochrome brand glyph for an agent. Tries the Simple Icons CDN by slug,
- * falls back to an Archivo lettermark. Active cards invert the tile to white,
- * and the `.card.is-active .card__tile img { filter: invert(1) }` rule flips
- * the glyph to black — so this just renders white art.
+ * Monochrome brand glyph for an agent. Resolution order:
+ *   1. a hand-vendored protocol mark (Uniswap / CoW / Snapshot — see
+ *      components/protocol-marks), which wins for the free fleet whose slugs
+ *      Simple Icons doesn't carry;
+ *   2. the Simple Icons CDN by slug;
+ *   3. an Archivo lettermark.
+ * Active cards invert the tile to white, and the
+ * `.card.is-active .card__tile img { filter: invert(1) }` rule flips the glyph
+ * to black — so this just renders white art.
  *
- * In production, swap the CDN for the real agentic.market icon assets — this
- * component is the single swap point.
+ * To add a logo as new server pages come in, add it to the protocol-marks
+ * registry (one row) — no change needed here.
  */
 
 // Our catalog slug/id → Simple Icons brand slug. Missing → lettermark.
@@ -26,10 +32,8 @@ const ICON_SLUG: Record<string, string> = {
 // Inline glyphs for brands Simple Icons doesn't carry. Keyed by iconSlug (or
 // catalog slug). Rendered as monochrome `currentColor` art so it tracks the
 // tile's foreground — white on a dark tile, black when an active card inverts.
-const INLINE_ICONS: Record<string, string> = {
-  // Snapshot's lightning-bolt motif (snapshot.org / snapshot.box).
-  snapshot: 'M13 2 L4 14 h6 l-1 8 L20 9 h-6 z',
-}
+// (Multi-path brand marks like Uniswap/CoW/Snapshot live in protocol-marks.)
+const INLINE_ICONS: Record<string, string> = {}
 
 export default function BrandIcon({ server, size = 22 }: { server: McpServer; size?: number }) {
   const [failed, setFailed] = useState(false)
@@ -37,7 +41,12 @@ export default function BrandIcon({ server, size = 22 }: { server: McpServer; si
   const slug = server.iconSlug ?? ICON_SLUG[server.slug] ?? ICON_SLUG[server.id]
   const letter = server.name.replace(/[^A-Za-z]/g, '').charAt(0).toUpperCase() || '?'
 
-  // Inline glyph (for brands Simple Icons lacks) wins — no network, no failure mode.
+  // A hand-vendored protocol mark (Uniswap / CoW / Snapshot) wins over the CDN —
+  // no network, no failure mode, and it catches the `-free` fleet slugs.
+  const Mark = getProtocolMark(server.iconSlug, server.slug, server.id, server.name)
+  if (Mark) return <Mark size={size} />
+
+  // Inline single-path glyph fallback (kept for future simple additions).
   const inlinePath = INLINE_ICONS[slug ?? ''] ?? INLINE_ICONS[server.slug]
   if (inlinePath) {
     return (

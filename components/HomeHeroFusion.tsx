@@ -14,18 +14,31 @@
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import Link from 'next/link'
+import { useAccount } from 'wagmi'
+import { useSession } from '@/lib/session'
+import { cdpEnabled } from '@/lib/cdp-embedded'
+import CreateAccountButton from '@/components/CreateAccountButton'
+import { getProtocolMark } from '@/components/protocol-marks'
 
 const EMBED_SRC = '/embed?mcps=uniswap-free,snapshot-free&theme=dark'
 
 /** Stream sources — normalized anchors, protocol hue, and the chip label.
  * Desktop shows labeled medallions at these anchors; phones tuck the streams
- * into the corners and show a plain chip row instead. */
+ * into the corners and show a plain chip row instead. The medallion shows the
+ * protocol's real mark (resolved from the shared registry) in its brand hue,
+ * falling back to `glyph` for "your MCP". */
 const SOURCES = [
   { x: 0.09, y: 0.3, color: '#FF6BAF', name: 'Uniswap', glyph: 'U', dashed: false },
   { x: 0.91, y: 0.27, color: '#FFC94D', name: 'Snapshot', glyph: '⚡', dashed: false },
   { x: 0.11, y: 0.76, color: '#7AA7FF', name: 'CoW', glyph: 'C', dashed: false },
   { x: 0.89, y: 0.78, color: '#34e3a0', name: 'your MCP', glyph: '+', dashed: true },
 ]
+
+/** The mark for a source's `<i>` glyph slot — real logo when we have one. */
+function SourceGlyph({ name, glyph }: { name: string; glyph: string }) {
+  const Mark = getProtocolMark(name)
+  return <i>{Mark ? <Mark size={13} /> : glyph}</i>
+}
 const CORE = { x: 0.5, y: 0.47 }
 
 /** What the fusion produces — cycled under the CTAs, ring-pulsed in the art. */
@@ -366,6 +379,16 @@ export default function HomeHeroFusion() {
   const liveAtRef = useRef(0)
   const [embedSrc, setEmbedSrc] = useState(EMBED_SRC)
 
+  // "Get started" opens the sign-in modal for newcomers instead of dumping
+  // them on the SIWE-gated dashboard. Signed-in / connected visitors skip the
+  // modal and go straight to /dashboard. mounted-gated so SSR and the first
+  // client render agree (wagmi state only exists post-hydration).
+  const { isConnected } = useAccount()
+  const { address: sessionAddress } = useSession()
+  const [mounted, setMounted] = useState(false)
+  useEffect(() => setMounted(true), [])
+  const showSignInModal = mounted && cdpEnabled && !isConnected && !sessionAddress
+
   // Pin the embed to this origin so its postMessage events reach us.
   useEffect(() => {
     setEmbedSrc(`${EMBED_SRC}&host=${encodeURIComponent(window.location.origin)}`)
@@ -428,7 +451,7 @@ export default function HomeHeroFusion() {
             className={`fhero__chip mono${s.dashed ? ' fhero__chip--dashed' : ''}`}
             style={{ left: `${s.x * 100}%`, top: `${s.y * 100}%`, ['--pc' as string]: s.color }}
           >
-            <i>{s.glyph}</i> {s.name}
+            <SourceGlyph name={s.name} glyph={s.glyph} /> {s.name}
           </span>
         ))}
       </div>
@@ -456,9 +479,13 @@ export default function HomeHeroFusion() {
           <Link className="btn btn--solid" href="/chat?mcps=uniswap-free,snapshot-free">
             Try it live
           </Link>
-          <Link className="btn btn--ghost" href="/dashboard">
-            Get started
-          </Link>
+          {showSignInModal ? (
+            <CreateAccountButton className="btn btn--ghost" label="Get started" redirectTo="/dashboard" />
+          ) : (
+            <Link className="btn btn--ghost" href="/dashboard">
+              Get started
+            </Link>
+          )}
         </div>
         {/* the transmutation readout — written by the burst: each character
             materializes as the writer particles arrive from the core */}
@@ -476,7 +503,7 @@ export default function HomeHeroFusion() {
       <div className="fhero__chiprow" aria-hidden="true">
         {SOURCES.map((s) => (
           <span key={s.name} className={`fhero__chip fhero__chip--flow mono${s.dashed ? ' fhero__chip--dashed' : ''}`} style={{ ['--pc' as string]: s.color }}>
-            <i>{s.glyph}</i> {s.name}
+            <SourceGlyph name={s.name} glyph={s.glyph} /> {s.name}
           </span>
         ))}
       </div>

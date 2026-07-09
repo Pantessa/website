@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
+import EmbedInstall from '@/components/EmbedInstall'
 import { DOCS_PAGES, docsJsonLd, docsUrl } from '@/lib/docs'
 
 const PAGE = DOCS_PAGES.find((p) => p.slug === 'embed')!
@@ -146,12 +147,13 @@ mountYeetfulChat({
 
         <h2>Install with Claude</h2>
         <p>
-          The fastest path: sign in, and the{' '}
-          <Link href="/dashboard">dashboard&apos;s embed card</Link>{' '}generates a copy-paste
-          prompt — with your key baked in — that you hand to Claude Code inside your app&apos;s
+          The fastest path: copy the Claude Code prompt below and paste it inside your app&apos;s
           repo. It installs the SDK, mounts the chat, patches your CSP if needed, and tells you
-          how to verify. One paste, live chat.
+          how to verify. One paste, live chat. Sign in and the{' '}
+          <Link href="/dashboard/keys">Keys page</Link>{' '}generates the same prompt with your
+          embed key baked in, so usage attributes to your account.
         </p>
+        <EmbedInstall />
 
         <h2>Notes</h2>
         <ul>
