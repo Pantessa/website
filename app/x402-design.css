@@ -2374,13 +2374,14 @@
   .embeda__sub { margin-top: 14px; max-width: 62ch; font-size: 15px; line-height: 1.6; color: var(--muted); text-wrap: pretty; }
   .embeda__code { font-family: var(--font-mono); font-size: .9em; color: var(--fg); background: var(--surf-2); padding: 1px 6px; border-radius: 6px; white-space: nowrap; }
   .embeda__grid { margin-top: 32px; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 20px; align-items: start; }
+  .embeda__left { min-width: 0; display: flex; flex-direction: column; gap: 20px; }
   .embeda__snippet { border: 1px solid var(--line); border-radius: 14px; background: var(--surf-1); overflow: hidden; }
   .embeda__snipbar { display: flex; justify-content: space-between; gap: 10px; padding: 10px 16px; border-bottom: 1px solid var(--line); font-size: 12px; color: var(--muted); }
   .embeda__snipver { color: var(--accent); }
   .embeda__pre { padding: 18px 16px; font-size: 13px; line-height: 1.7; overflow-x: auto; color: #c9cec6; }
   .embeda__docs { display: block; padding: 12px 16px; border-top: 1px solid var(--line); font-size: 13px; color: var(--accent); }
   .embeda__docs:hover { text-decoration: underline; }
-  .embeda__demos { margin-top: 20px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+  .embeda__demos { display: grid; grid-template-columns: 1fr; gap: 14px; }
   .embeda__demo {
     border: 1px solid var(--line); border-radius: 14px; padding: 18px; background: var(--surf-1);
     display: flex; flex-direction: column; gap: 9px; min-width: 0; transition: border-color .15s, transform .15s;
@@ -2400,7 +2401,11 @@
   .embeda__demotag { align-self: flex-start; font-size: 10px; letter-spacing: .14em; padding: 3px 9px; border-radius: 999px; border: 1px solid color-mix(in oklch, var(--accent) 40%, transparent); color: var(--accent); }
   .embeda__disclaimer { margin-top: 16px; font-size: 12px; color: var(--muted-2); line-height: 1.55; max-width: 70ch; }
   .embeda__next { margin-top: 8px; font-size: 11.5px; letter-spacing: .06em; color: var(--muted-2); }
-  @media (max-width: 1023px) { .embeda__grid { grid-template-columns: 1fr; } }
+  @media (max-width: 1023px) {
+    .embeda__grid { grid-template-columns: 1fr; }
+    /* full-width single column now — put the fork cards back side-by-side */
+    .embeda__demos { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  }
   @media (max-width: 767px) { .embeda__demos { grid-template-columns: 1fr; } }
 
   /* ── TRUST LAYER ────────────────────────────────── */
@@ -2773,6 +2778,14 @@
   }
   .edemo--live .edemo__panel,
   .edemo--live .edemo__bubble { animation: none; }
+  /* Lazy start: hold the loop on its first frame until scrolled into view. */
+  .edemo:not(.edemo--seen) .edemo__bubble,
+  .edemo:not(.edemo--seen) .edemo__panel,
+  .edemo:not(.edemo--seen) .edemo__msg--user,
+  .edemo:not(.edemo--seen) .edemo__typing,
+  .edemo:not(.edemo--seen) .edemo__typing i,
+  .edemo:not(.edemo--seen) .edemo__msg--agent,
+  .edemo:not(.edemo--seen) .edemo__receipt { animation-play-state: paused; }
   .edemo__iframe { width: 100%; height: 100%; border: 0; display: block; }
 
   .edemo__chat { display: flex; flex-direction: column; height: 100%; }

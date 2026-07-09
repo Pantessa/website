@@ -8,7 +8,7 @@
 // screenshots and degrades to the open, static panel under
 // prefers-reduced-motion. Styles live in x402-design.css under `.edemo`.
 
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { MessageCircle, Play } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { DEFAULT_EMBED_MCPS } from '@/lib/embed-snippets'
@@ -17,9 +17,31 @@ const EMBED_SRC = `/embed?mcps=${DEFAULT_EMBED_MCPS.join(',')}&theme=dark`
 
 export default function EmbedDemo() {
   const [live, setLive] = useState(false)
+  // Hold the CSS loop paused until the demo scrolls into view — the animation
+  // starts from its bubble-closed first frame the moment the user reaches it,
+  // instead of already mid-cycle on page load.
+  const [seen, setSeen] = useState(false)
+  const rootRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    const el = rootRef.current
+    if (!el || seen) return
+    if (typeof IntersectionObserver === 'undefined') { setSeen(true); return }
+    const io = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((e) => e.isIntersecting)) {
+          setSeen(true)
+          io.disconnect()
+        }
+      },
+      { threshold: 0.35 },
+    )
+    io.observe(el)
+    return () => io.disconnect()
+  }, [seen])
 
   return (
-    <div className={cn('edemo', live && 'edemo--live')} aria-label="Embedded chat demo">
+    <div ref={rootRef} className={cn('edemo', live && 'edemo--live', seen && 'edemo--seen')} aria-label="Embedded chat demo">
       {/* mock browser chrome */}
       <div className="edemo__bar">
         <span className="edemo__dots" aria-hidden>
