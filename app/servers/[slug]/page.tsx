@@ -155,6 +155,7 @@ export default async function ServiceDetailPage({ params }: Params) {
                   websiteUrl: server.websiteUrl,
                   color: server.color,
                   iconSlug: server.iconSlug,
+                  logoUrl: server.logoUrl,
                 }}
                 size={34}
               />

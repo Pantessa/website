@@ -127,13 +127,15 @@ export default function AddServerPage() {
 
     try {
       const [data, disc] = await Promise.all([meta, discover])
-      if (data) {
+      // The MCP's own declared logo (serverInfo.icons) beats the site favicon.
+      const mcpLogo = disc.ok && typeof disc.data?.logoUrl === 'string' ? disc.data.logoUrl : ''
+      if (data || mcpLogo) {
         setForm((f) => ({
           ...f,
-          name: f.name || data.title || '',
-          description: f.description || data.description || '',
-          iconUrl: data.iconUrl || f.iconUrl,
-          color: data.color || f.color,
+          name: f.name || data?.title || '',
+          description: f.description || data?.description || '',
+          iconUrl: mcpLogo || data?.iconUrl || f.iconUrl,
+          color: data?.color || f.color,
         }))
         setImgError(false)
       }

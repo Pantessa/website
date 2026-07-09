@@ -37,9 +37,31 @@ const INLINE_ICONS: Record<string, string> = {}
 
 export default function BrandIcon({ server, size = 22 }: { server: McpServer; size?: number }) {
   const [failed, setFailed] = useState(false)
+  const [logoFailed, setLogoFailed] = useState(false)
   // Prefer the DB-provided Simple Icons slug, then the local map, then lettermark.
   const slug = server.iconSlug ?? ICON_SLUG[server.slug] ?? ICON_SLUG[server.id]
   const letter = server.name.replace(/[^A-Za-z]/g, '').charAt(0).toUpperCase() || '?'
+
+  // A real image logo (uploaded or linked, or auto-pulled from the MCP's own
+  // serverInfo.icons / site favicon at add time) wins over everything. Unlike
+  // the monochrome CDN glyphs it renders in full color, so it's NOT tile-
+  // inverted — a brand logo should look like itself. On load failure we fall
+  // through to the protocol-mark / slug / lettermark chain below.
+  const logoUrl = server.logoUrl ?? server.iconUrl
+  if (logoUrl && !logoFailed) {
+    return (
+      // eslint-disable-next-line @next/next/no-img-element
+      <img
+        src={logoUrl}
+        alt=""
+        width={size}
+        height={size}
+        onError={() => setLogoFailed(true)}
+        style={{ display: 'block', objectFit: 'contain', borderRadius: size * 0.18 }}
+        draggable={false}
+      />
+    )
+  }
 
   // A hand-vendored protocol mark (Uniswap / CoW / Snapshot) wins over the CDN —
   // no network, no failure mode, and it catches the `-free` fleet slugs.

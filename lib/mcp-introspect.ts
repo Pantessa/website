@@ -26,10 +26,31 @@ export interface DiscoveredTool {
   plannable: boolean
 }
 
+/** An MCP-declared icon (spec SEP-973, initialize→result.serverInfo.icons).
+ *  `src` is an absolute https:// URL or a data: URI. */
+export interface McpIcon {
+  src: string
+  mimeType?: string
+  sizes?: string
+  theme?: 'light' | 'dark'
+}
+
+/** The `serverInfo` an MCP returns from `initialize` — its own name/branding.
+ *  All fields best-effort: many servers omit icons/title/websiteUrl. */
+export interface McpServerInfo {
+  name?: string
+  title?: string
+  websiteUrl?: string
+  icons?: McpIcon[]
+}
+
 export interface McpDiscovery {
   /** The normalized `<origin>/mcp` base the planner posts tools/call to. */
   base: string
   tools: DiscoveredTool[]
+  /** The server's self-declared identity from `initialize`, when it answers.
+   *  Used to auto-pull a logo (serverInfo.icons) at add time. */
+  serverInfo?: McpServerInfo
 }
 
 /** Names that mutate state or need a signed envelope — never planner-callable
@@ -131,6 +152,108 @@ function extractToolsPayload(body: string): { tools?: unknown } | null {
   return null
 }
 
+/** Parse a JSON-RPC `result` object from a Streamable-HTTP body (SSE or plain
+ *  JSON), without requiring any particular key inside it. Last SSE frame wins. */
+function extractRpcResult(body: string): Record<string, unknown> | null {
+  const tryParse = (s: string): { result?: unknown } | null => {
+    try {
+      return JSON.parse(s)
+    } catch {
+      return null
+    }
+  }
+  const whole = tryParse(body)
+  if (whole && typeof whole.result === 'object' && whole.result) return whole.result as Record<string, unknown>
+  const dataLines = body
+    .split('\n')
+    .filter((l) => l.startsWith('data:'))
+    .map((l) => l.slice(5).trim())
+  for (const line of dataLines.reverse()) {
+    const parsed = tryParse(line)
+    if (parsed && typeof parsed.result === 'object' && parsed.result) return parsed.result as Record<string, unknown>
+  }
+  return null
+}
+
+/** Absolute-ize an icon `src`: pass through https:// and data: URIs, and
+ *  resolve site-relative paths against the server origin. Drops anything else
+ *  (a malformed src shouldn't poison the logo field). */
+function normalizeIconSrc(src: unknown, origin: string): string | null {
+  if (typeof src !== 'string' || !src) return null
+  if (/^data:image\//i.test(src)) return src
+  try {
+    const u = new URL(src, origin)
+    return u.protocol === 'https:' ? u.href : null
+  } catch {
+    return null
+  }
+}
+
+function parseServerInfo(result: Record<string, unknown> | null, origin: string): McpServerInfo | undefined {
+  const si = result?.serverInfo
+  if (!si || typeof si !== 'object') return undefined
+  const s = si as Record<string, unknown>
+  const rawIcons = Array.isArray(s.icons) ? (s.icons as Record<string, unknown>[]) : []
+  const icons = rawIcons
+    .map((ic) => {
+      const src = normalizeIconSrc(ic?.src, origin)
+      return src ? ({ src, mimeType: typeof ic.mimeType === 'string' ? ic.mimeType : undefined, sizes: typeof ic.sizes === 'string' ? ic.sizes : undefined } as McpIcon) : null
+    })
+    .filter((x): x is McpIcon => x !== null)
+  const info: McpServerInfo = {
+    name: typeof s.name === 'string' ? s.name : undefined,
+    title: typeof s.title === 'string' ? s.title : undefined,
+    websiteUrl: typeof s.websiteUrl === 'string' ? s.websiteUrl : undefined,
+    ...(icons.length > 0 ? { icons } : {}),
+  }
+  return info
+}
+
+/**
+ * Best-effort `initialize` handshake to read the server's own `serverInfo`
+ * (name/title/icons — MCP spec SEP-973). Never throws: a server that doesn't
+ * answer initialize (or omits serverInfo) just yields `undefined`, and tool
+ * discovery proceeds regardless.
+ */
+export async function discoverServerInfo(base: string, timeoutMs = 8_000): Promise<McpServerInfo | undefined> {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), timeoutMs)
+  try {
+    const res = await fetch(base, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json, text/event-stream' },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: 0,
+        method: 'initialize',
+        params: {
+          protocolVersion: '2025-06-18',
+          capabilities: {},
+          clientInfo: { name: 'yeetful-directory', version: '1.0' },
+        },
+      }),
+      signal: controller.signal,
+    })
+    if (!res.ok) return undefined
+    const info = parseServerInfo(extractRpcResult(await res.text()), new URL(base).origin)
+    // Only return something if it actually carries a usable field.
+    if (info && (info.name || info.title || info.websiteUrl || info.icons)) return info
+    return undefined
+  } catch {
+    return undefined
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+/** The single best logo icon from a serverInfo, preferring a dark-theme mark
+ *  (our UI is dark) then the first declared. Returns its `src` or null. */
+export function bestIconSrc(info?: McpServerInfo): string | null {
+  if (!info?.icons?.length) return null
+  const dark = info.icons.find((i) => i.theme === 'dark')
+  return (dark ?? info.icons[0]).src
+}
+
 /**
  * Discover the full tool surface of an MCP server from its base URL.
  * Throws on unreachable/invalid servers so the caller can report why.
@@ -138,6 +261,10 @@ function extractToolsPayload(body: string): { tools?: unknown } | null {
 export async function discoverMcpTools(input: string, timeoutMs = 10_000): Promise<McpDiscovery> {
   const base = normalizeMcpBase(input)
   assertPublicHttps(base)
+
+  // The server's own branding (serverInfo.icons) rides along, in parallel and
+  // best-effort — it must never block or fail tool discovery.
+  const serverInfoP = discoverServerInfo(base)
 
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), timeoutMs)
@@ -181,5 +308,5 @@ export async function discoverMcpTools(input: string, timeoutMs = 10_000): Promi
       }
     })
 
-  return { base, tools }
+  return { base, tools, serverInfo: await serverInfoP }
 }

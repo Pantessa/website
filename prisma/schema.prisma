@@ -58,6 +58,12 @@ model McpServer {
 
   // Presentation
   iconSlug   String? @map("icon_slug") // Simple Icons brand slug for the glyph
+  // A real image logo — an https:// URL or a data: URI (inline SVG/PNG). Takes
+  // precedence over iconSlug/lettermark in BrandIcon, so the whole app (detail
+  // page, cards, chat rail) renders it. Auto-pulled from the MCP's own
+  // serverInfo.icons (MCP spec SEP-973) or the site favicon at add time; the
+  // owner can override with an uploaded/linked image.
+  logoUrl    String? @map("logo_url")
   color      String?
   websiteUrl String? @map("website_url") // agentic.market service page
 

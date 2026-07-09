@@ -4,7 +4,26 @@ import prisma from '@/lib/db'
 import { loadCatalog } from '@/lib/catalog'
 import { serviceReputation } from '@/lib/route-telemetry'
 import { getAuthAddress } from '@/lib/api-key'
-import { discoverMcpTools } from '@/lib/mcp-introspect'
+import { discoverMcpTools, bestIconSrc } from '@/lib/mcp-introspect'
+
+/**
+ * Accept only a safe image logo: an https:// URL or an inline data:image/ URI.
+ * Rejects javascript:/http:/other schemes and anything over ~256KB (a data URI
+ * that large is abuse, not a favicon). Returns null for anything invalid so a
+ * bad value simply falls back to the glyph.
+ */
+function sanitizeLogoUrl(raw: unknown): string | null {
+  if (typeof raw !== 'string') return null
+  const v = raw.trim()
+  if (!v) return null
+  if (v.length > 256_000) return null
+  if (/^data:image\/(png|jpeg|jpg|gif|webp|svg\+xml);/i.test(v)) return v
+  try {
+    return new URL(v).protocol === 'https:' ? v : null
+  } catch {
+    return null
+  }
+}
 
 /**
  * Serves the x402 MCP directory.
@@ -93,6 +112,9 @@ export async function POST(req: NextRequest) {
   const color = typeof body.color === 'string' ? body.color : null
   const websiteUrl = typeof body.websiteUrl === 'string' && body.websiteUrl ? body.websiteUrl : null
   const mcpUrl = typeof body.mcpUrl === 'string' && body.mcpUrl ? body.mcpUrl : websiteUrl
+  // A logo the submitter linked/uploaded (legacy field name: iconUrl). If absent
+  // we fall back to whatever the MCP declares in serverInfo.icons below.
+  let logoUrl = sanitizeLogoUrl(body.logoUrl) ?? sanitizeLogoUrl(body.iconUrl)
 
   if (!name || !description || !category) {
     return NextResponse.json({ error: 'Name, description, and category are required.' }, { status: 400 })
@@ -112,6 +134,9 @@ export async function POST(req: NextRequest) {
       const discovery = await discoverMcpTools(mcpUrl)
       base = discovery.base
       tools = discovery.tools
+      // Auto-pull the MCP's own declared logo (serverInfo.icons) when the
+      // submitter didn't provide one — the "SET LOGO" the server ships itself.
+      if (!logoUrl) logoUrl = sanitizeLogoUrl(bestIconSrc(discovery.serverInfo))
     } catch (e) {
       discoveryError = e instanceof Error ? e.message : 'MCP discovery failed'
     }
@@ -135,6 +160,7 @@ export async function POST(req: NextRequest) {
       gated: false,
       callable: false, // the PLANNER calls the tools (autoCallable via endpoints)
       color,
+      logoUrl,
       websiteUrl,
       source: 'custom',
       featured: false,
