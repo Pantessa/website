@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { discoverMcpTools } from '@/lib/mcp-introspect'
+import { discoverMcpTools, bestIconSrc } from '@/lib/mcp-introspect'
 
 /**
  * Read-only MCP tool discovery for the Add Server form's auto-fill — introspects
@@ -19,9 +19,12 @@ export async function POST(req: NextRequest) {
   if (!url) return NextResponse.json({ error: 'url required' }, { status: 400 })
 
   try {
-    const { base, tools } = await discoverMcpTools(url)
+    const { base, tools, serverInfo } = await discoverMcpTools(url)
     return NextResponse.json({
       base,
+      // The server's self-declared branding, for logo/name auto-fill.
+      serverInfo: serverInfo ?? null,
+      logoUrl: bestIconSrc(serverInfo),
       tools: tools.map((t) => ({
         name: t.name,
         title: t.title ?? null,

@@ -51,6 +51,8 @@ export default function AddMcpModal({ open, onClose }: { open: boolean; onClose:
   const [url, setUrl] = useState('')
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
+  const [logoUrl, setLogoUrl] = useState('')
+  const [logoError, setLogoError] = useState(false)
   const [tools, setTools] = useState<DiscoveredTool[] | null>(null)
   const [starred, setStarred] = useState<Set<string>>(new Set())
   const [fetching, setFetching] = useState(false)
@@ -64,6 +66,8 @@ export default function AddMcpModal({ open, onClose }: { open: boolean; onClose:
     setUrl('')
     setName('')
     setDescription('')
+    setLogoUrl('')
+    setLogoError(false)
     setTools(null)
     setStarred(new Set())
     setError('')
@@ -103,6 +107,13 @@ export default function AddMcpModal({ open, onClose }: { open: boolean; onClose:
       if (m) {
         setName((n) => n || m.title || '')
         setDescription((v) => v || m.description || '')
+      }
+      // Auto-pull the logo: the MCP's own serverInfo.icons first (what it ships
+      // for itself), else the site favicon/og:image. User can still override.
+      const autoLogo = (d.ok && typeof d.data?.logoUrl === 'string' ? d.data.logoUrl : '') || m?.iconUrl || ''
+      if (autoLogo) {
+        setLogoError(false)
+        setLogoUrl((v) => v || autoLogo)
       }
       const found: DiscoveredTool[] = d.ok && Array.isArray(d.data?.tools) ? d.data.tools : []
       setTools(found)
@@ -145,6 +156,7 @@ export default function AddMcpModal({ open, onClose }: { open: boolean; onClose:
           category: 'Custom',
           websiteUrl: url || null,
           mcpUrl: url || null,
+          logoUrl: logoUrl || null,
           featuredTools: [...starred],
         }),
       })
@@ -281,6 +293,39 @@ export default function AddMcpModal({ open, onClose }: { open: boolean; onClose:
                       onChange={(e) => setDescription(e.target.value)}
                       className="w-full px-3 py-2.5 rounded-xl bg-[var(--surf-1)] border border-[var(--line)] text-white placeholder-[color:var(--muted-2)] text-xs focus:outline-none focus:border-[var(--line-2)] transition-colors resize-none"
                     />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-medium text-[color:var(--muted)] mb-1.5">
+                      Logo <span className="text-[color:var(--muted-2)] font-normal">— auto-pulled, or link your own</span>
+                    </label>
+                    <div className="flex items-center gap-2.5">
+                      <span className="w-9 h-9 flex-shrink-0 grid place-items-center rounded-lg border border-[var(--line)] bg-black/30 overflow-hidden">
+                        {logoUrl && !logoError ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            src={logoUrl}
+                            alt=""
+                            className="w-full h-full object-contain"
+                            onError={() => setLogoError(true)}
+                            draggable={false}
+                          />
+                        ) : (
+                          <span className="mono text-[13px] font-bold text-[color:var(--muted-2)]">
+                            {name.replace(/[^A-Za-z]/g, '').charAt(0).toUpperCase() || '?'}
+                          </span>
+                        )}
+                      </span>
+                      <input
+                        type="url"
+                        value={logoUrl}
+                        placeholder="https://…/logo.svg"
+                        onChange={(e) => {
+                          setLogoError(false)
+                          setLogoUrl(e.target.value)
+                        }}
+                        className="flex-1 min-w-0 px-3 py-2.5 rounded-xl bg-[var(--surf-1)] border border-[var(--line)] text-white placeholder-[color:var(--muted-2)] text-xs focus:outline-none focus:border-[var(--line-2)] transition-colors"
+                      />
+                    </div>
                   </div>
                 </div>
               )}

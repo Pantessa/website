@@ -41,6 +41,10 @@ export interface McpServer {
 
   // presentation / provenance (DB-backed directory)
   iconSlug?: string | null
+  /** Real image logo (https:// URL or data: URI). Wins over iconSlug/lettermark
+   *  in BrandIcon. Auto-pulled from the MCP's serverInfo.icons or site favicon
+   *  at add time; owner-overridable. Falls back to legacy `iconUrl` below. */
+  logoUrl?: string | null
   source?: string
   featured?: boolean
   /** Example user asks (seeded per MCP) — the action window's fallback chips. */
