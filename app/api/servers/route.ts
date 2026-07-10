@@ -143,30 +143,50 @@ export async function POST(req: NextRequest) {
   }
 
   const plannableCount = tools.filter((t) => t.plannable).length
-  const slug = await uniqueSlug(slugify(name))
   const kind = category === 'Inference' ? 'inference' : 'data'
 
-  const server = await prisma.mcpServer.create({
-    data: {
-      slug,
-      name,
-      description,
-      category: category === 'Custom' ? 'Other' : category,
-      kind,
-      // '0' marks it explicitly free so the planner will call it (a null price
-      // also numbers to 0 but is treated as "unknown" and skipped).
-      priceUsd: tools.length > 0 ? '0' : null,
-      networks: [],
-      gated: false,
-      callable: false, // the PLANNER calls the tools (autoCallable via endpoints)
-      color,
-      logoUrl,
-      websiteUrl,
-      source: 'custom',
-      featured: false,
-    },
-  })
+  const data = {
+    name,
+    description,
+    category: category === 'Custom' ? 'Other' : category,
+    kind,
+    // '0' marks it explicitly free so the planner will call it (a null price
+    // also numbers to 0 but is treated as "unknown" and skipped).
+    priceUsd: tools.length > 0 ? '0' : null,
+    networks: [] as string[],
+    gated: false,
+    callable: false, // the PLANNER calls the tools (autoCallable via endpoints)
+    // The MCP base ON THE ROW, like the seeded first-party rows — surfaces
+    // that judge callability read s.endpoint (the cross-chain agent guard
+    // false-negatived on a modal row that only had endpoint children,
+    // live 2026-07-10).
+    endpoint: base,
+    protocol: base ? 'mcp' : null,
+    color,
+    logoUrl,
+    websiteUrl,
+    source: 'custom',
+    featured: false,
+  }
 
+  // Idempotent re-add: the same MCP base UPDATES the existing custom row
+  // (fresh tools, fresh metadata) instead of minting a sibling slug —
+  // re-adding was creating duplicate directory rows (live 2026-07-10).
+  const existing = base
+    ? await prisma.mcpServer.findFirst({
+        where: {
+          source: 'custom',
+          OR: [{ endpoint: base }, { endpoints: { some: { url: { startsWith: `${base}/` } } } }],
+        },
+      })
+    : null
+
+  const server = existing
+    ? await prisma.mcpServer.update({ where: { id: existing.id }, data })
+    : await prisma.mcpServer.create({ data: { ...data, slug: await uniqueSlug(slugify(name)) } })
+
+  // Replace the tool surface wholesale (no-op on a fresh row).
+  await prisma.mcpEndpoint.deleteMany({ where: { serverId: server.id } })
   if (base && tools.length > 0) {
     await prisma.mcpEndpoint.createMany({
       data: tools.map((t, i) => ({
@@ -196,6 +216,8 @@ export async function POST(req: NextRequest) {
     mcpBase: base,
     discoveredTools: tools.map((t) => t.name),
     discoveryError,
+    // True when this add refreshed an existing row instead of creating one.
+    updated: !!existing,
     // Lets the freshly added row paint the connect-time quick view immediately
     // (the catalog derives the same flag from mcp_endpoints.featured).
     splashReady: tools.some((t) => featuredTools.has(t.name)),

@@ -1512,6 +1512,33 @@ async function main() {
     check('claim a real MCP as a non-payee wallet → rejected (400)', notPayee.status === 400)
   }
 
+  // ── Add-MCP (custom rows): callable row + idempotent re-add ───────────────
+  // Discovery runs against the LIVE first-party wallet MCP (free, no key) —
+  // proves the whole modal path: tools discovered, endpoint/protocol set ON
+  // the server row (the cross-chain guard reads s.endpoint), and re-adding
+  // the same base UPDATES the row instead of minting a duplicate slug.
+  console.log('— add-MCP (custom rows)')
+  {
+    const WALLET_BASE = 'https://wallet-mcp.yeetful.com/mcp'
+    const addBody = (name: string) => ({
+      method: 'POST' as const,
+      headers: { 'content-type': 'application/json', ...C },
+      body: JSON.stringify({ name, description: 'test-api custom add', category: 'Custom', mcpUrl: WALLET_BASE, featuredTools: ['portfolio'] }),
+    })
+    const first = await fetch(`${BASE}/api/servers`, addBody('Test Custom Wallet'))
+    const firstRow = (await first.json().catch(() => null)) as { id?: string; slug?: string; endpoint?: string | null; protocol?: string | null; endpointCount?: number; updated?: boolean } | null
+    check('add-MCP: created with discovered tools', first.ok && (firstRow?.endpointCount ?? 0) >= 6)
+    check('add-MCP: server row is CALLABLE (endpoint + protocol set)', firstRow?.endpoint === WALLET_BASE && firstRow?.protocol === 'mcp')
+    const again = await fetch(`${BASE}/api/servers`, addBody('Test Custom Wallet Renamed'))
+    const againRow = (await again.json().catch(() => null)) as { id?: string; slug?: string; name?: string; updated?: boolean } | null
+    check('add-MCP: re-adding the same base UPDATES the row (no duplicate)', again.ok && againRow?.updated === true && againRow?.id === firstRow?.id)
+    check('add-MCP: re-add keeps the original slug, refreshes metadata', againRow?.slug === firstRow?.slug && againRow?.name === 'Test Custom Wallet Renamed')
+    if (firstRow?.id) {
+      const del = await fetch(`${BASE}/api/servers?id=${firstRow.id}`, { method: 'DELETE', headers: C })
+      check('add-MCP: test row cleaned up', del.ok)
+    }
+  }
+
   // ── Launch token (link an on-chain launch to the directory) ───────────────
   console.log('— launch token')
   const launchAnon = await fetch(`${BASE}/api/mcp/__nope__/launch`, { method: 'POST' })

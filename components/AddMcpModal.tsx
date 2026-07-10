@@ -14,8 +14,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { motion, AnimatePresence } from 'framer-motion'
-import { ExternalLink, Globe, Loader2, Plus, Star, Wand2, X } from 'lucide-react'
-import Link from 'next/link'
+import { Globe, Loader2, Plus, Star, Wand2, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useYeetfulStore, type McpServer } from '@/lib/store'
 import { useSession } from '@/lib/session'
@@ -410,14 +409,6 @@ export default function AddMcpModal({ open, onClose }: { open: boolean; onClose:
 
             {/* Footer */}
             <div className="flex items-center gap-3 px-5 py-3.5 border-t border-[var(--line)]">
-              <Link
-                href="/servers/add"
-                target="_blank"
-                className="mono text-[10px] text-[color:var(--muted-2)] hover:text-white transition-colors inline-flex items-center gap-1"
-              >
-                Full form
-                <ExternalLink className="w-2.5 h-2.5" />
-              </Link>
               <div className="flex-1" />
               <button
                 type="button"
