@@ -44,12 +44,16 @@ export default function SendTxButton({
   const { address, isConnected } = useAccount()
   const { sendTransactionAsync } = useSendTransaction()
   const { switchChainAsync } = useSwitchChain()
-  const publicClient = usePublicClient()
+  const chainId = tx.chainId ?? 8453
+  // The receipt must be read from the chain the TX IS ON, not whatever chain
+  // the wallet happened to be connected to when this rendered — an unpinned
+  // client polls the wrong chain forever and the card sticks on "Waiting for
+  // confirmation…" while the tx has long since confirmed.
+  const publicClient = usePublicClient({ chainId })
   const [status, setStatus] = useState<Status>('idle')
   const [error, setError] = useState('')
   const [hash, setHash] = useState<string | null>(null)
 
-  const chainId = tx.chainId ?? 8453
   const explorer = `${TX_EXPLORER[chainId] ?? TX_EXPLORER[8453]}`
 
   const send = async () => {
@@ -75,9 +79,15 @@ export default function SendTxButton({
       // Generous window + retries: smart-wallet bundlers (Coinbase) add
       // seconds between hash issuance and mining — the default gave up on a
       // tx that CONFIRMED moments later (2026-07-03, Nate's approve).
-      const receipt = await publicClient?.waitForTransactionReceipt({ hash: txHash, timeout: 120_000, retryCount: 8 })
-      setStatus(receipt?.status === 'success' ? 'confirmed' : 'reverted')
-      if (receipt?.status === 'success') onConfirmed?.(txHash)
+      if (!publicClient) {
+        // No client for this chain in the wagmi config — we can't verify the
+        // receipt. Say so honestly instead of painting "reverted".
+        setError('Broadcast — this chain isn’t configured for receipt checks; verify on the explorer link above.')
+        return
+      }
+      const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash, timeout: 120_000, retryCount: 8 })
+      setStatus(receipt.status === 'success' ? 'confirmed' : 'reverted')
+      if (receipt.status === 'success') onConfirmed?.(txHash)
     } catch (e) {
       const msg = e instanceof Error ? e.message.split('\n')[0] : 'Transaction failed.'
       if (/timed out while waiting/i.test(msg) && txHash) {
@@ -88,7 +98,7 @@ export default function SendTxButton({
         setStatus('broadcast')
         const watched = txHash
         void (async () => {
-          for (let i = 0; i < 20; i++) {
+          for (let i = 0; i < 40; i++) {
             await new Promise((r) => setTimeout(r, 15_000))
             try {
               const receipt = await publicClient?.getTransactionReceipt({ hash: watched })
@@ -102,6 +112,9 @@ export default function SendTxButton({
               /* not mined yet — keep watching */
             }
           }
+          // Don't die silently after the watch window — tell the user where
+          // the truth is instead of spinning "Waiting for confirmation…".
+          setError('Couldn’t verify the receipt after 10 minutes — check the explorer link above; if it shows success, the transfer landed.')
         })()
         return
       }
