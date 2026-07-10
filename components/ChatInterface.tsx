@@ -462,25 +462,53 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
     }
   }
 
-  // ── Embed telemetry (keyed embeds only) ──────────────────────────────────
+  // ── Turn telemetry (keyed embeds + first-party money flow) ───────────────
   // One compact beacon per turn → /api/embed/telemetry, so the owner
   // dashboard can render asks → outcomes → transactions and detect dead-end
   // sessions. Classified from exactly what the UI received; fire-and-forget.
+  // First-party chat (yeetful.com itself, no embed key) reports ONLY its
+  // value-bearing outcomes (tx-built / signed) — no prompt ever leaves the
+  // client on that lane — so "money moved" counts the whole product.
   const chainLabel = (id: unknown): string | undefined => {
     const n = typeof id === 'string' ? parseInt(id, 16) || Number(id) : typeof id === 'number' ? id : NaN
     if (Number.isNaN(n)) return undefined
     return { 1: 'ethereum', 100: 'gnosis', 8453: 'base', 42161: 'arbitrum' }[n] ?? String(n)
   }
+  // The guardrail layer prices every transaction it builds (policy caps are
+  // USD) — that notional rides the beacon as valueUsd.
+  const guardrailUsdOf = (source: unknown): number | undefined => {
+    const v = (source as { guardrails?: { valueUsd?: unknown } } | null | undefined)?.guardrails?.valueUsd
+    return typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : undefined
+  }
+  // One session id per first-party mount — same role embedSession plays for embeds.
+  const [chatSession] = useState(() =>
+    typeof crypto !== 'undefined' && 'randomUUID' in crypto
+      ? crypto.randomUUID()
+      : `s-${Math.random().toString(36).slice(2)}${Date.now().toString(36)}`,
+  )
   const postEmbedTelemetry = (payload: Record<string, unknown>) => {
-    if (!embedKey || !embedSession) return
+    const body = embedded
+      ? embedKey && embedSession
+        ? { key: embedKey, sessionId: embedSession, page: embedOrigin, ...payload }
+        : null // keyless third-party embeds record nothing
+      : payload.outcome === 'tx-built' || payload.outcome === 'signed'
+        ? {
+            firstParty: true,
+            sessionId: chatSession,
+            page: typeof window !== 'undefined' ? window.location.href : undefined,
+            ...payload,
+            prompt: undefined,
+            detail: undefined,
+          }
+        : null // first-party lane carries value-bearing outcomes only
+    if (!body) return
     void fetch('/api/embed/telemetry', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ key: embedKey, sessionId: embedSession, page: embedOrigin, ...payload }),
+      body: JSON.stringify(body),
     }).catch(() => {})
   }
   const reportEmbedTurn = (prompt: string, data: Record<string, unknown> | null, error?: string) => {
-    if (!embedded) return
     let outcome = 'answered'
     let artifact: string | undefined
     let chain: string | undefined
@@ -517,9 +545,16 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
     // the host page hears every turn (the fusion hero reacts to these);
     // durable telemetry still requires a key
     onEmbedEvent?.('turn', { outcome, artifact })
-    postEmbedTelemetry({ prompt: prompt.slice(0, 280), outcome, artifact, chain, detail })
+    postEmbedTelemetry({
+      prompt: prompt.slice(0, 280),
+      outcome,
+      artifact,
+      chain,
+      detail,
+      valueUsd: outcome === 'tx-built' ? guardrailUsdOf(data) : undefined,
+    })
   }
-  const reportEmbedSigned = (info: { artifact: string; chain?: string; txUrl?: string; detail?: string }) => {
+  const reportEmbedSigned = (info: { artifact: string; chain?: string; txUrl?: string; detail?: string; valueUsd?: number }) => {
     onEmbedEvent?.('turn', { outcome: 'signed', artifact: info.artifact })
     postEmbedTelemetry({ outcome: 'signed', ...info })
   }
@@ -1011,6 +1046,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
                                 chain: 'ethereum',
                                 txUrl: (info as { explorerUrl?: string }).explorerUrl,
                                 detail: (info as { orderUid?: string }).orderUid?.slice(0, 60),
+                                valueUsd: guardrailUsdOf(msg.meta),
                               })
                             }}
                           />
@@ -1027,7 +1063,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
                               const explorer =
                                 { 1: 'https://etherscan.io/tx/', 8453: 'https://basescan.org/tx/', 42161: 'https://arbiscan.io/tx/' }[chainId] ??
                                 'https://basescan.org/tx/'
-                              reportEmbedSigned({ artifact: 'tx', chain: chainLabel(chainId), txUrl: `${explorer}${hash}` })
+                              reportEmbedSigned({ artifact: 'tx', chain: chainLabel(chainId), txUrl: `${explorer}${hash}`, valueUsd: guardrailUsdOf(msg.meta) })
                             }}
                           />
                         ) : null
@@ -1035,7 +1071,25 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
                     {msg.role === 'assistant' &&
                       (() => {
                         const chain = txChainOf(msg.meta)
-                        return chain ? <SendTxChain chain={chain} /> : null
+                        return chain ? (
+                          <SendTxChain
+                            chain={chain}
+                            // The chain's money moves when its FINAL step (the
+                            // swap, not the approve) confirms — that's the
+                            // signed event for the money-flow metric.
+                            onCompleted={({ hash, chainId }) => {
+                              const explorer =
+                                { 1: 'https://etherscan.io/tx/', 8453: 'https://basescan.org/tx/', 42161: 'https://arbiscan.io/tx/' }[chainId] ??
+                                'https://basescan.org/tx/'
+                              reportEmbedSigned({
+                                artifact: 'tx-chain',
+                                chain: chainLabel(chainId),
+                                txUrl: `${explorer}${hash}`,
+                                valueUsd: guardrailUsdOf(msg.meta),
+                              })
+                            }}
+                          />
+                        ) : null
                       })()}
                     {msg.role === 'assistant' &&
                       (() => {

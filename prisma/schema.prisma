@@ -745,7 +745,11 @@ model EmbedSite {
 /// mount) make dead-end conversations computable: a session whose goal was
 /// a transaction but that never reached tx-built/signed is the signal that
 /// feeds "upgrade your MCP" suggestions. Keyless embeds record nothing —
-/// telemetry is a feature OF the key.
+/// telemetry is a feature OF the key — with ONE exception: first-party
+/// yeetful.com chat records its VALUE-BEARING outcomes (tx-built / signed)
+/// under embedKeyId '' with no prompt, so "money moved" counts the whole
+/// product, not just embeds. `valueUsd` is the guardrail layer's notional
+/// USD for the built transaction (best-effort — null when unpriceable).
 model EmbedTurn {
   id           String   @id @default(cuid())
   embedKeyId   String   @map("embed_key_id")
@@ -758,6 +762,7 @@ model EmbedTurn {
   chain        String? // 'base' | 'ethereum' | a hex chainId — best-effort from the artifact
   detail       String? // short refusal/error text, or a human label for the artifact
   txUrl        String?  @map("tx_url") // explorer link once signed/placed
+  valueUsd     Float?   @map("value_usd") // notional USD of the built/signed tx (guardrail-priced)
   createdAt    DateTime @default(now()) @map("created_at")
 
   @@index([ownerAddress, createdAt])

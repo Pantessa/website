@@ -40,6 +40,8 @@ interface Insights {
     creditGated: number
     signRate: number | null
     deadEndSessions: number
+    builtUsd: number
+    signedUsd: number
   }
   funnel: { sessions: number; withTxBuilt: number; withSigned: number }
   recentAsks: { prompt: string; outcome: string; origin: string; at: string }[]
@@ -51,18 +53,35 @@ interface Insights {
     detail: string | null
     prompt: string
     origin: string
+    valueUsd: number | null
     at: string
   }[]
   deadEnds: SessionLite[]
   builtNotSigned: SessionLite[]
-  perSite: { origin: string; pageUrl: string | null; turns: number; sessions: number; txBuilt: number; signed: number; friction: number; lastAt: string }[]
+  perSite: { origin: string; pageUrl: string | null; turns: number; sessions: number; txBuilt: number; signed: number; signedUsd: number; friction: number; lastAt: string }[]
   sites: { origin: string; pageUrl: string | null; mountTurns: number; lastSeen: string }[]
+  /** Platform-wide money flow — present only for admin viewers. */
+  global?: {
+    allTimeSignedUsd: number
+    allTimeSignedCount: number
+    windowSignedUsd: number
+    windowSignedCount: number
+    windowBuiltUsd: number
+    windowBuiltCount: number
+    chatSignedUsd: number
+    chatSignedCount: number
+  }
 }
+
+/** $1,234 above a grand, cents below — money reads at a glance either way. */
+const fmtUsd = (n: number) => (n >= 1000 ? `$${Math.round(n).toLocaleString('en-US')}` : `$${n.toFixed(2)}`)
 
 const OUTCOME_STYLE: Record<string, string> = {
   answered: 'border-[color:var(--line-2)] text-[color:var(--muted)]',
   clarify: 'border-amber-400/40 text-amber-400',
-  'tx-built': 'border-[color:var(--accent)]/50 text-[color:var(--accent)]',
+  // NOTE: never `var(--x)]/N` color modifiers — Tailwind can't opacity-modify
+  // a CSS-var color and silently paints transparent (live bug: invisible bars).
+  'tx-built': 'border-[color:var(--accent)] text-[color:var(--accent)]',
   signed: 'bg-[color:var(--accent)] text-black border-transparent font-semibold',
   refused: 'border-red-400/50 text-red-400',
   error: 'border-red-400/50 text-red-400',
@@ -171,22 +190,79 @@ export default function EmbedInsights() {
 
   const t = data.totals
   const noData = t.turns === 0
+  const g = data.global
+
+  // Money moved — THE progress number. Signed = money that actually moved
+  // (guardrail-priced notional); built = value sitting one signature away.
+  // Admin viewers see the platform-wide number (every embed + yeetful.com
+  // chat); everyone sees their own embeds' flow.
+  const moneyMoved = (
+    <Card>
+      <div className="flex items-start justify-between gap-4 flex-wrap">
+        <div>
+          <CardTitle serif eyebrow="THE NUMBER">
+            Money moved
+          </CardTitle>
+          <div className="mt-2 font-serif text-[42px] leading-none text-white tabular-nums">
+            {fmtUsd(g ? g.allTimeSignedUsd : t.signedUsd)}
+          </div>
+          <p className="mono text-[11.5px] text-[color:var(--muted-2)] mt-2">
+            {g
+              ? `platform-wide, all time · ${g.allTimeSignedCount} signed transaction${g.allTimeSignedCount === 1 ? '' : 's'}`
+              : `signed through your embeds · last ${data.windowDays}d · ${t.signed} transaction${t.signed === 1 ? '' : 's'}`}
+          </p>
+        </div>
+        <div className="flex flex-col gap-1.5 text-[12.5px] text-[color:var(--muted)] mono">
+          {g ? (
+            <>
+              <span>
+                {fmtUsd(g.windowSignedUsd)} <span className="text-[color:var(--muted-2)]">signed · {data.windowDays}d ({g.windowSignedCount})</span>
+              </span>
+              <span>
+                {fmtUsd(g.windowBuiltUsd)} <span className="text-[color:var(--muted-2)]">built · {data.windowDays}d ({g.windowBuiltCount})</span>
+              </span>
+              <span>
+                {fmtUsd(g.chatSignedUsd)} <span className="text-[color:var(--muted-2)]">via yeetful.com chat ({g.chatSignedCount})</span>
+              </span>
+              {t.signedUsd > 0 && (
+                <span>
+                  {fmtUsd(t.signedUsd)} <span className="text-[color:var(--muted-2)]">via your embeds · {data.windowDays}d</span>
+                </span>
+              )}
+            </>
+          ) : (
+            <span>
+              {fmtUsd(t.builtUsd)} <span className="text-[color:var(--muted-2)]">built, awaiting signature ({t.txBuilt})</span>
+            </span>
+          )}
+        </div>
+      </div>
+      <p className="text-[12.5px] text-[color:var(--muted-2)] mt-3 max-w-[80ch]">
+        Notional USD of the transactions the agent built that actually got signed — swaps count at
+        their quoted value even on free MCPs ($0 fees still move real money). Priced by the guardrail
+        layer at build time; transactions it can&rsquo;t price are counted but add $0.
+      </p>
+    </Card>
+  )
 
   if (noData) {
     return (
-      <Card>
-        <CardTitle serif eyebrow="NO TURNS YET">
-          Waiting for the first embedded conversation
-        </CardTitle>
-        <p className="text-[13.5px] text-[color:var(--muted)] mt-2 max-w-[70ch] leading-relaxed">
-          {data.sites.length > 0
-            ? `${data.sites.length} site${data.sites.length === 1 ? ' has' : 's have'} mounted your embed — analytics fill in the moment a visitor sends a prompt.`
-            : 'No sites are running your embed yet. Grab your key + the install prompt from the Keys page.'}{' '}
-          <Link href="/dashboard/keys#embed-keys" className="underline underline-offset-2 decoration-dotted hover:text-white">
-            Embed setup →
-          </Link>
-        </p>
-      </Card>
+      <div className="flex flex-col gap-4 min-w-0">
+        {g && moneyMoved}
+        <Card>
+          <CardTitle serif eyebrow="NO TURNS YET">
+            Waiting for the first embedded conversation
+          </CardTitle>
+          <p className="text-[13.5px] text-[color:var(--muted)] mt-2 max-w-[70ch] leading-relaxed">
+            {data.sites.length > 0
+              ? `${data.sites.length} site${data.sites.length === 1 ? ' has' : 's have'} mounted your embed — analytics fill in the moment a visitor sends a prompt.`
+              : 'No sites are running your embed yet. Grab your key + the install prompt from the Keys page.'}{' '}
+            <Link href="/dashboard/keys#embed-keys" className="underline underline-offset-2 decoration-dotted hover:text-white">
+              Embed setup →
+            </Link>
+          </p>
+        </Card>
+      </div>
     )
   }
 
@@ -194,6 +270,9 @@ export default function EmbedInsights() {
 
   return (
     <div className="flex flex-col gap-4 min-w-0">
+      {/* money moved — the headline */}
+      {moneyMoved}
+
       {/* KPIs */}
       <div className="grid grid-cols-2 lg:grid-cols-6 gap-3">
         <Kpi label={`Turns · ${data.windowDays}d`} value={String(t.turns)} small />
@@ -220,7 +299,7 @@ export default function EmbedInsights() {
                 {row.label}
               </span>
               <div className="flex-1 h-5 rounded-md bg-white/[0.04] overflow-hidden min-w-0">
-                <div className="h-full rounded-md bg-[color:var(--accent)]/80" style={{ width: `${Math.max(2, pct(row.n, row.base))}%` }} />
+                <div className="h-full rounded-md bg-[color:var(--accent)] opacity-80" style={{ width: `${Math.max(2, pct(row.n, row.base))}%` }} />
               </div>
               <span className="mono text-[12px] w-16 text-right flex-shrink-0">
                 {row.n} <span className="text-[color:var(--muted-2)]">· {pct(row.n, row.base)}%</span>
@@ -266,6 +345,9 @@ export default function EmbedInsights() {
                   <span className="min-w-0">
                     <span className="text-white block truncate">
                       {ARTIFACT_LABEL[x.artifact ?? ''] ?? 'Transaction'}
+                      {x.valueUsd != null && x.valueUsd > 0 && (
+                        <span className="mono text-[11px] text-[color:var(--accent)]"> · {fmtUsd(x.valueUsd)}</span>
+                      )}
                       {x.chain && <span className="mono text-[10.5px] text-[color:var(--muted-2)]"> · {x.chain}</span>}
                     </span>
                     <span className="text-[color:var(--muted-2)] text-[12px] block truncate" title={x.prompt}>
@@ -370,6 +452,7 @@ export default function EmbedInsights() {
                 <th className="py-2 pr-3 font-medium text-right">Sessions</th>
                 <th className="py-2 pr-3 font-medium text-right">Built</th>
                 <th className="py-2 pr-3 font-medium text-right">Signed</th>
+                <th className="py-2 pr-3 font-medium text-right">Signed $</th>
                 <th className="py-2 pr-3 font-medium text-right">Friction</th>
                 <th className="py-2 pr-3 font-medium text-right">Last</th>
               </tr>
@@ -386,6 +469,7 @@ export default function EmbedInsights() {
                   <td className="py-2 pr-3 text-right mono">{s.sessions}</td>
                   <td className="py-2 pr-3 text-right mono">{s.txBuilt}</td>
                   <td className="py-2 pr-3 text-right mono text-[color:var(--accent)]">{s.signed}</td>
+                  <td className="py-2 pr-3 text-right mono text-[color:var(--accent)]">{s.signedUsd > 0 ? fmtUsd(s.signedUsd) : '—'}</td>
                   <td className="py-2 pr-3 text-right mono">{s.friction}</td>
                   <td className="py-2 pr-3 text-right text-xs text-[color:var(--muted-2)]">{timeAgo(s.lastAt)}</td>
                 </tr>

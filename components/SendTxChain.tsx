@@ -28,7 +28,15 @@ const TX_EXPLORER: Record<number, string> = {
 
 type Phase = 'sign' | 'refreshing' | 'blocked' | 'done'
 
-export default function SendTxChain({ chain }: { chain: TxChainRequest }) {
+export default function SendTxChain({
+  chain,
+  onCompleted,
+}: {
+  chain: TxChainRequest
+  /** Fires once, when the FINAL step confirms — the whole chain is done and
+   * the money has actually moved (telemetry hooks here, not on approves). */
+  onCompleted?: (info: { hash: string; chainId: number }) => void
+}) {
   const { address } = useAccount()
   const [steps, setSteps] = useState<TxChainStep[]>(chain.steps)
   const [current, setCurrent] = useState(0)
@@ -41,6 +49,7 @@ export default function SendTxChain({ chain }: { chain: TxChainRequest }) {
     const next = confirmedIndex + 1
     if (next >= steps.length) {
       setPhase('done')
+      onCompleted?.({ hash, chainId: steps[confirmedIndex].tx.chainId ?? 8453 })
       return
     }
     // Re-quote the incoming step when the server marked it refreshable.

@@ -393,17 +393,61 @@ async function main() {
     body: JSON.stringify({ key: 'yfe_000000000000000000000000', sessionId: 'harness-session-1', page: 'https://x.test/', prompt: 'hi', outcome: 'answered' }),
   })
   check('telemetry drops an unknown key (202)', teleBadKey.status === 202)
+  // Money flow: a built-then-signed pair carrying the guardrail-priced
+  // notional — insights must sum it into builtUsd / signedUsd.
+  const tele2 = await fetch(`${BASE}/api/embed/telemetry`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      key: ek.key, sessionId: 'harness-session-2', page: 'https://harness-embed.test/swap',
+      prompt: 'swap 25 USDC to WETH', outcome: 'tx-built', artifact: 'tx', chain: 'base', valueUsd: 25.5,
+    }),
+  })
+  const tele3 = await fetch(`${BASE}/api/embed/telemetry`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      key: ek.key, sessionId: 'harness-session-2', page: 'https://harness-embed.test/swap',
+      outcome: 'signed', artifact: 'tx', chain: 'base', valueUsd: 25.5, txUrl: 'https://basescan.org/tx/0xharness',
+    }),
+  })
+  check('telemetry records tx-built + signed turns with valueUsd', tele2.status === 200 && tele3.status === 200)
+  // First-party lane (yeetful.com chat, keyless): only value-bearing outcomes
+  // are accepted, and only from our own origin — both rejections write nothing.
+  const fpAnswered = await fetch(`${BASE}/api/embed/telemetry`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ firstParty: true, sessionId: 'harness-fp-rejected', page: `${BASE}/chat`, outcome: 'answered' }),
+  })
+  check('first-party beacon rejects non-value outcomes (202)', fpAnswered.status === 202)
+  const fpForeign = await fetch(`${BASE}/api/embed/telemetry`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ firstParty: true, sessionId: 'harness-fp-foreign', page: 'https://stranger.test/chat', outcome: 'signed', artifact: 'tx', valueUsd: 999 }),
+  })
+  check('first-party beacon rejects foreign origins (202) — keyless embeds still record nothing', fpForeign.status === 202)
   const insNoAuth = await fetch(`${BASE}/api/embeds/insights`)
   check('insights require auth → 401', insNoAuth.status === 401)
   const ins = await (await fetch(`${BASE}/api/embeds/insights`, { headers: C })).json()
   check(
     'insights: the refused turn lands as a dead-end session with the verbatim ask',
-    ins.totals?.turns === 1 &&
+    ins.totals?.turns === 3 &&
       ins.totals?.deadEndSessions === 1 &&
       Array.isArray(ins.deadEnds) &&
       ins.deadEnds[0]?.turns?.[0]?.prompt === 'swap 5 USDC to WETH on my chain',
     `turns=${ins.totals?.turns} deadEnds=${ins.totals?.deadEndSessions}`,
   )
+  check(
+    'insights: money moved sums the notional (builtUsd + signedUsd = 25.5 each)',
+    ins.totals?.builtUsd === 25.5 && ins.totals?.signedUsd === 25.5,
+    `builtUsd=${ins.totals?.builtUsd} signedUsd=${ins.totals?.signedUsd}`,
+  )
+  check(
+    'insights: transactions carry valueUsd + per-site signedUsd rolls up',
+    (ins.transactions as { valueUsd: number | null }[])?.some((x) => x.valueUsd === 25.5) &&
+      (ins.perSite as { origin: string; signedUsd: number }[])?.find((s) => s.origin === 'https://harness-embed.test')?.signedUsd === 25.5,
+  )
+  check('insights: platform-wide `global` block is admin-only (absent for this wallet)', ins.global === undefined)
 
   const ekGone = await fetch(`${BASE}/api/embed-keys/${ek.id}?purge=1`, { method: 'DELETE', headers: C })
   const ekAfter = await (await fetch(`${BASE}/api/embed-keys`, { headers: C })).json()
