@@ -1,8 +1,10 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
+import Link from 'next/link'
 import { ArrowDownLeft, ArrowUpRight, Clock, ExternalLink, RefreshCw, Repeat, Vote, Wallet } from 'lucide-react'
-import type { McpServer } from '@/lib/store'
+import BrandIcon from '@/components/BrandIcon'
+import { useYeetfulStore, type McpServer } from '@/lib/store'
 import { splashCapable } from '@/lib/splash/types'
 import type { ActivityTile, ErrorTile, HoldingsTile, ProposalsTile, RowsTile, SplashTile, SuggestedPrompt } from '@/lib/splash/types'
 
@@ -93,7 +95,7 @@ export function SplashDashboard({
         overflow: 'hidden',
       }}
     >
-      <div className="mx-auto w-full max-w-3xl px-1 py-6">
+      <div className="mx-auto w-full max-w-[1600px] px-1 py-6 md:px-4">
         <div className="mb-4 flex items-center gap-2">
           <Wallet className="h-4 w-4 text-[color:var(--muted-2)]" />
           <span className="mono text-[11px] uppercase tracking-wider text-[color:var(--muted-2)]">
@@ -104,9 +106,9 @@ export function SplashDashboard({
         {loading || !tiles ? (
           <SkeletonTiles count={relevant.length} />
         ) : (
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-            {tiles.map((tile) => (
-              <TileCard key={tile.id} tile={tile} onPick={onPick} onRetry={() => setReload((n) => n + 1)} />
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+            {groupBySlug(tiles).map((group) => (
+              <TileCard key={group[0].mcpSlug} tiles={group} onPick={onPick} onRetry={() => setReload((n) => n + 1)} />
             ))}
           </div>
         )}
@@ -119,10 +121,24 @@ export function SplashDashboard({
   )
 }
 
+/** Group tiles by their MCP, preserving first-seen order — the grid renders
+ *  one card per MCP. */
+function groupBySlug(tiles: SplashTile[]): SplashTile[][] {
+  const bySlug = new Map<string, SplashTile[]>()
+  for (const t of tiles) {
+    const arr = bySlug.get(t.mcpSlug) ?? []
+    arr.push(t)
+    bySlug.set(t.mcpSlug, arr)
+  }
+  return [...bySlug.values()]
+}
+
 // ── Tile router ──────────────────────────────────────────────────────────────
 // Exported: the per-MCP action window (McpActionPanel) renders the same tiles.
 
-export function TileCard({
+/** One tile's content: caption row (what this section is + its scope), the
+ *  render-primitive body, and the tile's prompt chips. */
+function TileSection({
   tile,
   onPick,
   onRetry,
@@ -132,11 +148,17 @@ export function TileCard({
   onRetry?: () => void
 }) {
   return (
-    <div className="flex flex-col rounded-2xl border border-[var(--line)] bg-[var(--surf-1)] p-4 text-left">
-      <div className="mb-3 flex items-baseline justify-between gap-2">
-        <h3 className="text-sm font-semibold text-white">{tile.title}</h3>
-        {tile.subtitle && <span className="mono text-[10px] text-[color:var(--muted-2)]">{tile.subtitle}</span>}
-      </div>
+    <div className="flex flex-1 flex-col">
+      {((tile.title && tile.title !== tile.mcpName) || tile.subtitle) && (
+        <div className="mb-3 flex items-baseline justify-between gap-2">
+          {tile.title && tile.title !== tile.mcpName ? (
+            <p className="mono text-[10px] uppercase tracking-wider text-[color:var(--muted-2)]">{tile.title}</p>
+          ) : (
+            <span />
+          )}
+          {tile.subtitle && <span className="mono flex-shrink-0 text-[10px] text-[color:var(--muted-2)]">{tile.subtitle}</span>}
+        </div>
+      )}
       {tile.render === 'holdings' && <HoldingsBody tile={tile} />}
       {tile.render === 'proposals' && <ProposalsBody tile={tile} />}
       {tile.render === 'rows' && <RowsBody tile={tile} />}
@@ -144,6 +166,55 @@ export function TileCard({
       {tile.render === 'empty' && <p className="text-xs text-[color:var(--muted)]">{tile.message}</p>}
       {tile.render === 'error' && <ErrorBody tile={tile} onRetry={onRetry} />}
       <PromptChips prompts={tile.prompts} slug={tile.mcpSlug} onPick={onPick} />
+    </div>
+  )
+}
+
+/** ONE card per MCP: branded header (logo + name → the server page) and every
+ *  tile that MCP contributed stacked as sections — an MCP with a portfolio
+ *  AND an activity tile is one card with two sections, never two cards with
+ *  the same header (read as duplicates, live 2026-07-10). */
+export function TileCard({
+  tile,
+  tiles,
+  onPick,
+  onRetry,
+}: {
+  /** Single-tile call sites (McpActionPanel) pass `tile`… */
+  tile?: SplashTile
+  /** …the splash grid passes the MCP's whole tile group. */
+  tiles?: SplashTile[]
+  onPick: (p: string, slug?: string) => void
+  onRetry?: () => void
+}) {
+  const group = tiles && tiles.length > 0 ? tiles : tile ? [tile] : []
+  // The card belongs to an MCP — its header IS that MCP: logo + name, linking
+  // to the server page. The store row carries the logo; a minimal stand-in
+  // covers rows not in the loaded catalog (BrandIcon falls back to a mark).
+  const head = group[0]
+  const server = useYeetfulStore((s) => (head ? s.servers.find((x) => x.slug === head.mcpSlug) : undefined))
+  if (!head) return null
+  const iconServer = server ?? ({ id: head.mcpSlug, slug: head.mcpSlug, name: head.mcpName } as McpServer)
+  return (
+    <div className="flex flex-col rounded-2xl border border-[var(--line)] bg-[var(--surf-1)] p-4 text-left transition-colors hover:border-[var(--line-2)]">
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <Link
+          href={`/servers/${head.mcpSlug}`}
+          className="group/head flex min-w-0 items-center gap-2"
+          title={`Open ${head.mcpName}'s server page`}
+        >
+          <BrandIcon server={iconServer} size={20} />
+          <h3 className="truncate text-sm font-semibold text-white underline-offset-4 group-hover/head:underline">
+            {head.mcpName}
+          </h3>
+          <ExternalLink className="h-3 w-3 flex-shrink-0 text-[color:var(--muted-2)] opacity-0 transition-opacity group-hover/head:opacity-100" />
+        </Link>
+      </div>
+      {group.map((t, i) => (
+        <div key={t.id} className={i > 0 ? 'mt-4 border-t border-[var(--line)] pt-4' : undefined}>
+          <TileSection tile={t} onPick={onPick} onRetry={onRetry} />
+        </div>
+      ))}
     </div>
   )
 }
@@ -380,7 +451,7 @@ function Avatar({ url, label, size }: { url: string; label: string; size: number
 
 export function SkeletonTiles({ count }: { count: number }) {
   return (
-    <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+    <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
       {Array.from({ length: Math.max(1, Math.min(count, 2)) }).map((_, i) => (
         <div key={i} className="rounded-2xl border border-[var(--line)] bg-[var(--surf-1)] p-4">
           <div className="mb-3 h-3 w-24 animate-pulse rounded bg-white/10" />

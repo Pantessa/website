@@ -77,7 +77,7 @@ async function buildMultichainTiles(address: string, server: McpServer): Promise
 
   if (holdings.length === 0) {
     tiles.push({
-      id: 'uniswap-holdings',
+      id: 'portfolio-holdings',
       mcpSlug: server.slug,
       mcpName: server.name,
       render: 'empty',
@@ -87,7 +87,7 @@ async function buildMultichainTiles(address: string, server: McpServer): Promise
     })
   } else {
     tiles.push({
-      id: 'uniswap-holdings',
+      id: 'portfolio-holdings',
       mcpSlug: server.slug,
       mcpName: server.name,
       render: 'holdings',
@@ -102,7 +102,7 @@ async function buildMultichainTiles(address: string, server: McpServer): Promise
 
   if (activity.length > 0) {
     tiles.push({
-      id: 'uniswap-activity',
+      id: 'recent-activity',
       mcpSlug: server.slug,
       mcpName: server.name,
       render: 'activity',
@@ -123,7 +123,7 @@ async function buildBaseFallbackTile(call: McpCaller, address: string, server: M
   const data = (await call('balances', { owner: address })) as PortfolioPayload
   const holdings = Array.isArray(data.holdings) ? data.holdings : []
   const label = typeof data.chainId === 'number' ? chainLabel(data.chainId) : 'Base'
-  const base = { id: 'uniswap-holdings', mcpSlug: server.slug, mcpName: server.name }
+  const base = { id: 'portfolio-holdings', mcpSlug: server.slug, mcpName: server.name }
   if (holdings.length === 0) {
     return {
       ...base,
@@ -393,8 +393,17 @@ const hyperliquidSource: SplashSource = {
   },
 }
 
+const walletSource: SplashSource = {
+  id: 'wallet',
+  // The first-party multichain wallet MCP (yeetful-tool-*). Alchemy-backed —
+  // without the key the generic featured tile still covers it (which now
+  // renders kind:'portfolio' payloads as holdings, not raw rows).
+  match: (s) => (s.slug === 'yeetful-tool-wallet' || /yeetful\s*wallet/i.test(s.name)) && alchemyEnabled(),
+  build: (_call, address, server) => buildMultichainTiles(address, server),
+}
+
 /** All registered splash sources. Exported for tests; a new MCP appends here. */
-export const SPLASH_SOURCES: SplashSource[] = [uniswapSource, snapshotSource, cowSource, hyperliquidSource]
+export const SPLASH_SOURCES: SplashSource[] = [walletSource, uniswapSource, snapshotSource, cowSource, hyperliquidSource]
 
 // ── Generic featured-endpoint source (any MCP, zero hand-coding) ─────────────
 // An MCP with no dedicated source above still gets a connect-time quick view
@@ -472,6 +481,46 @@ function summarizedRows(data: unknown): StatRow[] {
   return rows
 }
 
+/** Map a kind:'portfolio' tool payload (wallet MCP shape) onto a holdings tile. */
+function holdingsTileFromPortfolio(data: unknown, server: SplashServer): SplashTile | null {
+  if (!data || typeof data !== 'object') return null
+  const p = data as {
+    kind?: string
+    totalUsd?: number
+    chains?: { chain?: string }[]
+    holdings?: { symbol?: string; chain?: string; balance?: string; priceUsd?: number | null; valueUsd?: number | null; native?: boolean; address?: string | null }[]
+  }
+  if (p.kind !== 'portfolio' || !Array.isArray(p.holdings) || p.holdings.length === 0) return null
+  const holdings: HoldingRow[] = p.holdings
+    .filter((h): h is NonNullable<typeof h> => !!h && typeof h.symbol === 'string' && typeof h.balance === 'string')
+    .map((h) => ({
+      symbol: h.symbol as string,
+      address: h.address ?? '0x0000000000000000000000000000000000000000',
+      balance: h.balance as string,
+      priceUsd: typeof h.priceUsd === 'number' ? h.priceUsd : null,
+      valueUsd: typeof h.valueUsd === 'number' ? h.valueUsd : null,
+      ...(h.native ? { native: true } : {}),
+      ...(typeof h.chain === 'string' ? { chain: h.chain } : {}),
+    }))
+  if (holdings.length === 0) return null
+  const chainLabels = [...new Set((p.chains ?? []).map((c) => c?.chain).filter((c): c is string => !!c))]
+  const prompts: SuggestedPrompt[] = (server.exampleQueries ?? [])
+    .slice(0, 2)
+    .map((q) => ({ label: truncate(q, 32), prompt: q }))
+  return {
+    id: 'portfolio-holdings', // shared with the dedicated sources → dedupes
+    mcpSlug: server.slug,
+    mcpName: server.name,
+    render: 'holdings',
+    title: 'Your portfolio',
+    subtitle: chainLabels.length ? `${holdings.length} across ${chainLabels.length} ${chainLabels.length === 1 ? 'chain' : 'chains'}` : `${holdings.length} holdings`,
+    chain: chainLabels.join(' · ') || 'multichain',
+    totalUsd: typeof p.totalUsd === 'number' ? p.totalUsd : null,
+    holdings: holdings.slice(0, 8),
+    prompts: prompts.length ? prompts : [{ label: 'Review my holdings', prompt: 'What can I do with the tokens in my wallet?' }],
+  }
+}
+
 /** Build the generic quick-view tile from a server's featured endpoints. */
 async function buildFeaturedTile(
   call: McpCaller,
@@ -489,6 +538,11 @@ async function buildFeaturedTile(
     if (args === null) continue
     try {
       const data = await call(tool, args)
+      // A kind:'portfolio' payload (the wallet-MCP display contract) gets the
+      // REAL holdings renderer — raw label/value rows made the first-party
+      // wallet card the ugliest tile on the board (Nate, 2026-07-10).
+      const asHoldings = holdingsTileFromPortfolio(data, server)
+      if (asHoldings) return asHoldings
       // Drop input echoes (the address we just sent) and repeated labels —
       // "user: 0x…" twice tells the user nothing about their account.
       const seen = new Set(rows.map((r) => r.label))
