@@ -28,6 +28,7 @@ import { latestWorkingContext, type WorkingContext } from '@/lib/working-context
 import { EXAMPLE_PROMPTS } from '@/lib/examples'
 import SampleCallDemo from '@/components/SampleCallDemo'
 import { SplashDashboard } from '@/components/SplashDashboard'
+import ChatLoader from '@/components/ChatLoader'
 import McpActionPanel from '@/components/McpActionPanel'
 import { splashCapable } from '@/lib/splash/types'
 import ShareButton from '@/components/ShareButton'
@@ -250,7 +251,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
-  const { address, isConnected } = useAccount()
+  const { address, isConnected, isReconnecting } = useAccount()
   const { signTypedDataAsync } = useSignTypedData()
   // Effective wallet context for /api/chat: an embed-provided address wins,
   // else the connected account. Context alone never signs anything.
@@ -857,6 +858,11 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
                 <EmptyState activeCount={activeServers.length} autoRouter={autoRouter} onPick={pickExample} />
               )}
             </>
+          ) : isReconnecting && !effectiveAddress ? (
+            // Wallet auto-reconnect in flight: the splash may be about to take
+            // over — hold with the loader instead of flashing the guest empty
+            // state and swapping a beat later.
+            <ChatLoader inline />
           ) : (
             <EmptyState activeCount={activeServers.length} autoRouter={autoRouter} onPick={pickExample} />
           )

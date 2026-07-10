@@ -13,9 +13,9 @@ const LINES = [
   'receipts, guardrails, signatures — loading',
 ]
 
-export default function ChatLoader() {
+export default function ChatLoader({ inline = false }: { inline?: boolean }) {
   return (
-    <div className="yload" role="status" aria-label="Loading chat">
+    <div className={inline ? 'yload yload--inline' : 'yload'} role="status" aria-label="Loading chat">
       <div className="yload__stage" aria-hidden>
         {/* launch nub — the "thrower" */}
         <span className="yload__hand" />
@@ -49,6 +49,12 @@ export default function ChatLoader() {
           justify-content: center;
           gap: 22px;
           background: var(--bg, #0a0c10);
+        }
+        /* inline: lives INSIDE the chat message area (splash loading, wallet
+           reconnect) — no full-viewport height, no background of its own. */
+        .yload--inline {
+          min-height: min(52vh, 420px);
+          background: transparent;
         }
         .yload__stage {
           position: relative;
