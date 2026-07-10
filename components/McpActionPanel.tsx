@@ -126,7 +126,7 @@ export default function McpActionPanel({
             loading || tiles === null ? (
               <SkeletonTiles count={1} />
             ) : tiles.length > 0 ? (
-              tiles.map((tile) => <TileCard key={tile.id} tile={tile} onPick={onPick} onRetry={() => setReload((n) => n + 1)} />)
+              <TileCard tiles={tiles} onPick={onPick} onRetry={() => setReload((n) => n + 1)} />
             ) : (
               <Fallback server={server} examples={examples} onPick={onPick} />
             )
