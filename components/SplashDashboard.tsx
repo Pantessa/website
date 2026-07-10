@@ -1,8 +1,10 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
+import Link from 'next/link'
 import { ArrowDownLeft, ArrowUpRight, Clock, ExternalLink, RefreshCw, Repeat, Vote, Wallet } from 'lucide-react'
-import type { McpServer } from '@/lib/store'
+import BrandIcon from '@/components/BrandIcon'
+import { useYeetfulStore, type McpServer } from '@/lib/store'
 import { splashCapable } from '@/lib/splash/types'
 import type { ActivityTile, ErrorTile, HoldingsTile, ProposalsTile, RowsTile, SplashTile, SuggestedPrompt } from '@/lib/splash/types'
 
@@ -93,7 +95,7 @@ export function SplashDashboard({
         overflow: 'hidden',
       }}
     >
-      <div className="mx-auto w-full max-w-3xl px-1 py-6">
+      <div className="mx-auto w-full max-w-[1600px] px-1 py-6 md:px-4">
         <div className="mb-4 flex items-center gap-2">
           <Wallet className="h-4 w-4 text-[color:var(--muted-2)]" />
           <span className="mono text-[11px] uppercase tracking-wider text-[color:var(--muted-2)]">
@@ -104,7 +106,7 @@ export function SplashDashboard({
         {loading || !tiles ? (
           <SkeletonTiles count={relevant.length} />
         ) : (
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
             {tiles.map((tile) => (
               <TileCard key={tile.id} tile={tile} onPick={onPick} onRetry={() => setReload((n) => n + 1)} />
             ))}
@@ -131,12 +133,30 @@ export function TileCard({
   onPick: (p: string, slug?: string) => void
   onRetry?: () => void
 }) {
+  // The tile belongs to an MCP — its header IS that MCP: logo + name, linking
+  // to the server page. The store row carries the logo; a minimal stand-in
+  // covers rows not in the loaded catalog (BrandIcon falls back to a mark).
+  const server = useYeetfulStore((s) => s.servers.find((x) => x.slug === tile.mcpSlug))
+  const iconServer = server ?? ({ id: tile.mcpSlug, slug: tile.mcpSlug, name: tile.mcpName } as McpServer)
   return (
-    <div className="flex flex-col rounded-2xl border border-[var(--line)] bg-[var(--surf-1)] p-4 text-left">
-      <div className="mb-3 flex items-baseline justify-between gap-2">
-        <h3 className="text-sm font-semibold text-white">{tile.title}</h3>
-        {tile.subtitle && <span className="mono text-[10px] text-[color:var(--muted-2)]">{tile.subtitle}</span>}
+    <div className="flex flex-col rounded-2xl border border-[var(--line)] bg-[var(--surf-1)] p-4 text-left transition-colors hover:border-[var(--line-2)]">
+      <div className="mb-1 flex items-center justify-between gap-2">
+        <Link
+          href={`/servers/${tile.mcpSlug}`}
+          className="group/head flex min-w-0 items-center gap-2"
+          title={`Open ${tile.mcpName}'s server page`}
+        >
+          <BrandIcon server={iconServer} size={20} />
+          <h3 className="truncate text-sm font-semibold text-white underline-offset-4 group-hover/head:underline">
+            {tile.mcpName}
+          </h3>
+          <ExternalLink className="h-3 w-3 flex-shrink-0 text-[color:var(--muted-2)] opacity-0 transition-opacity group-hover/head:opacity-100" />
+        </Link>
+        {tile.subtitle && <span className="mono flex-shrink-0 text-[10px] text-[color:var(--muted-2)]">{tile.subtitle}</span>}
       </div>
+      {tile.title && tile.title !== tile.mcpName && (
+        <p className="mb-3 mono text-[10px] uppercase tracking-wider text-[color:var(--muted-2)]">{tile.title}</p>
+      )}
       {tile.render === 'holdings' && <HoldingsBody tile={tile} />}
       {tile.render === 'proposals' && <ProposalsBody tile={tile} />}
       {tile.render === 'rows' && <RowsBody tile={tile} />}
@@ -380,7 +400,7 @@ function Avatar({ url, label, size }: { url: string; label: string; size: number
 
 export function SkeletonTiles({ count }: { count: number }) {
   return (
-    <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+    <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
       {Array.from({ length: Math.max(1, Math.min(count, 2)) }).map((_, i) => (
         <div key={i} className="rounded-2xl border border-[var(--line)] bg-[var(--surf-1)] p-4">
           <div className="mb-3 h-3 w-24 animate-pulse rounded bg-white/10" />
