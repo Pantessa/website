@@ -62,6 +62,7 @@ interface Insights {
   sites: { origin: string; pageUrl: string | null; mountTurns: number; lastSeen: string }[]
   /** Platform-wide money flow — present only for admin viewers. */
   global?: {
+    systemTotalUsd: number
     allTimeSignedUsd: number
     allTimeSignedCount: number
     windowSignedUsd: number
@@ -70,6 +71,10 @@ interface Insights {
     windowBuiltCount: number
     chatSignedUsd: number
     chatSignedCount: number
+    x402AllTimeUsd: number
+    x402AllTimeCount: number
+    x402WindowUsd: number
+    x402WindowCount: number
   }
 }
 
@@ -192,23 +197,23 @@ export default function EmbedInsights() {
   const noData = t.turns === 0
   const g = data.global
 
-  // Money moved — THE progress number. Signed = money that actually moved
-  // (guardrail-priced notional); built = value sitting one signature away.
-  // Admin viewers see the platform-wide number (every embed + yeetful.com
-  // chat); everyone sees their own embeds' flow.
+  // Money moved — THE progress number. For admins the big number is the whole
+  // system's flow, all time: transaction notional signed (chat + every embed,
+  // guardrail-priced) PLUS x402 call fees settled through the router. Everyone
+  // else sees their own embeds' flow.
   const moneyMoved = (
     <Card>
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
-          <CardTitle serif eyebrow="THE NUMBER">
+          <CardTitle serif eyebrow={g ? 'THE NUMBER · WHOLE SYSTEM' : 'THE NUMBER'}>
             Money moved
           </CardTitle>
           <div className="mt-2 font-serif text-[42px] leading-none text-white tabular-nums">
-            {fmtUsd(g ? g.allTimeSignedUsd : t.signedUsd)}
+            {fmtUsd(g ? g.systemTotalUsd : t.signedUsd)}
           </div>
           <p className="mono text-[11.5px] text-[color:var(--muted-2)] mt-2">
             {g
-              ? `platform-wide, all time · ${g.allTimeSignedCount} signed transaction${g.allTimeSignedCount === 1 ? '' : 's'}`
+              ? `everything, all time — ${g.allTimeSignedCount} signed transaction${g.allTimeSignedCount === 1 ? '' : 's'} + ${g.x402AllTimeCount} settled x402 call${g.x402AllTimeCount === 1 ? '' : 's'}`
               : `signed through your embeds · last ${data.windowDays}d · ${t.signed} transaction${t.signed === 1 ? '' : 's'}`}
           </p>
         </div>
@@ -216,10 +221,17 @@ export default function EmbedInsights() {
           {g ? (
             <>
               <span>
-                {fmtUsd(g.windowSignedUsd)} <span className="text-[color:var(--muted-2)]">signed · {data.windowDays}d ({g.windowSignedCount})</span>
+                {fmtUsd(g.allTimeSignedUsd)} <span className="text-[color:var(--muted-2)]">tx signed · all time ({g.allTimeSignedCount})</span>
               </span>
               <span>
-                {fmtUsd(g.windowBuiltUsd)} <span className="text-[color:var(--muted-2)]">built · {data.windowDays}d ({g.windowBuiltCount})</span>
+                {fmtUsd(g.x402AllTimeUsd)} <span className="text-[color:var(--muted-2)]">x402 fees settled · all time ({g.x402AllTimeCount})</span>
+              </span>
+              <span>
+                {fmtUsd(g.windowSignedUsd)} <span className="text-[color:var(--muted-2)]">tx signed · {data.windowDays}d</span> ·{' '}
+                {fmtUsd(g.x402WindowUsd)} <span className="text-[color:var(--muted-2)]">x402 · {data.windowDays}d</span>
+              </span>
+              <span>
+                {fmtUsd(g.windowBuiltUsd)} <span className="text-[color:var(--muted-2)]">built awaiting signature · {data.windowDays}d ({g.windowBuiltCount})</span>
               </span>
               <span>
                 {fmtUsd(g.chatSignedUsd)} <span className="text-[color:var(--muted-2)]">via yeetful.com chat ({g.chatSignedCount})</span>
@@ -238,9 +250,20 @@ export default function EmbedInsights() {
         </div>
       </div>
       <p className="text-[12.5px] text-[color:var(--muted-2)] mt-3 max-w-[80ch]">
-        Notional USD of the transactions the agent built that actually got signed — swaps count at
-        their quoted value even on free MCPs ($0 fees still move real money). Priced by the guardrail
-        layer at build time; transactions it can&rsquo;t price are counted but add $0.
+        {g ? (
+          <>
+            Every dollar the system moved: notional USD of transactions built &amp; signed (chat +
+            every embed — swaps count at quoted value even on free MCPs) plus x402 call fees actually
+            settled through the router. Priced by the guardrail layer at build time; transactions it
+            can&rsquo;t price are counted but add $0.
+          </>
+        ) : (
+          <>
+            Notional USD of the transactions the agent built that actually got signed — swaps count at
+            their quoted value even on free MCPs ($0 fees still move real money). Priced by the guardrail
+            layer at build time; transactions it can&rsquo;t price are counted but add $0.
+          </>
+        )}
       </p>
     </Card>
   )

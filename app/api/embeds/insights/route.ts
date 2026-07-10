@@ -64,28 +64,45 @@ export async function GET() {
   ])
 
   // ── platform-wide money flow (admin viewers only) ─────────────────────────
-  // One number for "is this working": notional USD signed through the product
-  // — every embed key + first-party yeetful.com chat. DB-side aggregates so
-  // the TURN_CAP on the per-owner feed never truncates the company metric.
+  // ONE number for "is this working": every dollar the system moved —
+  // transaction notional signed through chat + every embed, PLUS the x402
+  // call fees actually settled through the router (spend_ledger, real USDC
+  // on Base). DB-side aggregates so the TURN_CAP on the per-owner feed never
+  // truncates the company metric.
   let global: Record<string, unknown> | null = null
   if (isAdminAddress(addr)) {
     const sum = (where: object) =>
       prisma.embedTurn.aggregate({ where, _sum: { valueUsd: true }, _count: { _all: true } })
-    const [signedAll, signedWindow, builtWindow, chatSignedAll] = await Promise.all([
+    // Settled x402 spend only: ok row, real dollars, never dry-runs.
+    const x402Where = { ok: true, amountUsd: { gt: 0 }, NOT: { note: 'dry-run' } }
+    const x402 = (extra: object = {}) =>
+      prisma.spendLedgerEntry.aggregate({ where: { ...x402Where, ...extra }, _sum: { amountUsd: true }, _count: { _all: true } })
+    const [signedAll, signedWindow, builtWindow, chatSignedAll, x402All, x402Window] = await Promise.all([
       sum({ outcome: 'signed' }),
       sum({ outcome: 'signed', createdAt: { gte: since } }),
       sum({ outcome: 'tx-built', createdAt: { gte: since } }),
       sum({ outcome: 'signed', embedKeyId: '' }),
+      x402(),
+      x402({ createdAt: { gte: since } }),
     ])
+    const round = (n: number) => Math.round(n * 100) / 100
+    const allTimeSignedUsd = round(signedAll._sum.valueUsd ?? 0)
+    const x402AllTimeUsd = round(x402All._sum.amountUsd ?? 0)
     global = {
-      allTimeSignedUsd: signedAll._sum.valueUsd ?? 0,
+      // THE system number: tx notional signed + x402 fees settled, all time.
+      systemTotalUsd: round(allTimeSignedUsd + x402AllTimeUsd),
+      allTimeSignedUsd,
       allTimeSignedCount: signedAll._count._all,
-      windowSignedUsd: signedWindow._sum.valueUsd ?? 0,
+      windowSignedUsd: round(signedWindow._sum.valueUsd ?? 0),
       windowSignedCount: signedWindow._count._all,
-      windowBuiltUsd: builtWindow._sum.valueUsd ?? 0,
+      windowBuiltUsd: round(builtWindow._sum.valueUsd ?? 0),
       windowBuiltCount: builtWindow._count._all,
-      chatSignedUsd: chatSignedAll._sum.valueUsd ?? 0,
+      chatSignedUsd: round(chatSignedAll._sum.valueUsd ?? 0),
       chatSignedCount: chatSignedAll._count._all,
+      x402AllTimeUsd,
+      x402AllTimeCount: x402All._count._all,
+      x402WindowUsd: round(x402Window._sum.amountUsd ?? 0),
+      x402WindowCount: x402Window._count._all,
     }
   }
 
