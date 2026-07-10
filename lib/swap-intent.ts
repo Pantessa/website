@@ -67,6 +67,29 @@ export function detectCrossChain(message: string): CrossChainRead {
   return { crossChain: distinct.length >= 2 || explicit, chains: distinct }
 }
 
+// ── Cross-chain agent resolution ─────────────────────────────────────────────
+// Matched on slug/name/description so custom modal-added rows count too.
+export const CROSS_CHAIN_MCP_RE = /near[\s-]?intents|cross[\s-]?chain/i
+
+export interface CrossChainAgentRead<T> {
+  /** The first working-set agent that claims cross-chain capability. */
+  agent?: T
+  /** True when that agent can actually be CALLED. A row without an endpoint
+   *  (an add-MCP shell whose tool discovery failed — seen live 2026-07-09 as
+   *  `near-intents-mcp-yeetful`, endpoint:null, 0 endpoints) contributes
+   *  nothing to the planner menu; routing a swap at it makes the planner
+   *  hallucinate venue options. Unusable → answer honestly instead. */
+  usable: boolean
+}
+
+/** Find the working set's cross-chain-capable agent and whether it's callable. */
+export function crossChainAgentOf<T extends { slug: string; name: string; description?: string | null; endpoint?: string | null }>(
+  servers: T[],
+): CrossChainAgentRead<T> {
+  const agent = servers.find((s) => CROSS_CHAIN_MCP_RE.test(`${s.slug} ${s.name} ${s.description ?? ''}`))
+  return { agent, usable: !!agent?.endpoint }
+}
+
 const AMOUNT = String.raw`(\d+(?:\.\d+)?)`
 const TOKEN = String.raw`\$?([a-zA-Z]{2,10}|0x[0-9a-fA-F]{40})`
 

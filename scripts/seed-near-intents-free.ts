@@ -8,9 +8,8 @@
 // free-mcps/services/near-intents/lib/tools.ts — the planner sends tools/call
 // arguments by these exact names. Re-align if the service surface changes.
 //
-// ⚠️ Run AFTER near-intents-mcp.yeetful.com is deployed + the domain attached
-// (DEPLOYMENT_NOT_FOUND as of 2026-07-09 evening) — a seeded row pointing at a
-// dead domain gives every planner pick a failing call.
+// Live domain: near-intents.yeetful.com (SEEDED 2026-07-09 night — Nate
+// attached this domain, not the near-intents-mcp subdomain DEPLOY.md guessed).
 //
 // source:'yeetful' keeps db:ingest/db:audit from pruning or diffing it.
 // Idempotent: upserts by slug, replaces endpoints. Run:
@@ -35,7 +34,7 @@ const p = (name: string, type: string, description: string, required = false): P
   required,
 })
 
-const NI_BASE = process.env.FREE_NEAR_INTENTS_MCP_BASE ?? 'https://near-intents-mcp.yeetful.com/mcp'
+const NI_BASE = process.env.FREE_NEAR_INTENTS_MCP_BASE ?? 'https://near-intents.yeetful.com/mcp'
 
 const pair = (): Param[] => [
   p('originChain', 'string', 'Origin chain — "base", "arbitrum", "ethereum", "solana", … or an EVM chainId like "8453".', true),

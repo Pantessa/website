@@ -35,7 +35,7 @@ import { keccak256, stringToBytes } from 'viem'
 import { isCacheable, routeCacheKey, getCached, setCached, clearRouteCache } from '../lib/route-cache'
 import { routeSavings } from '../lib/route-telemetry'
 import { portfolioFromToolResult, portfolioOf } from '../lib/portfolio-display'
-import { detectCrossChain } from '../lib/swap-intent'
+import { crossChainAgentOf, detectCrossChain } from '../lib/swap-intent'
 
 const BASE = process.env.BASE ?? 'http://localhost:3000'
 const DOMAIN = new URL(BASE).host
@@ -2018,6 +2018,15 @@ async function main() {
   check('cross-chain: "a ton of" is not the TON chain', detectCrossChain('swap a ton of USDC for WETH on base').crossChain === false)
   check('cross-chain: bridge verb + one chain counts', detectCrossChain('bridge 5 USDC to solana').crossChain === true)
   check('cross-chain: explicit phrase counts', detectCrossChain('do a cross-chain swap of 2 USDC').crossChain === true)
+
+  // Cross-chain agent resolution — an add-MCP shell (endpoint:null, no tools)
+  // must read as present-but-unusable, never routed at (live 2026-07-09: the
+  // planner hallucinated 1inch/Across/Stargate venue chips for a shell row).
+  const shellRow = { slug: 'near-intents-mcp-yeetful', name: 'NEAR Intents MCP · Yeetful', description: null, endpoint: null }
+  const seededRow = { slug: 'near-intents-free', name: 'NEAR Intents (Free)', description: 'Cross-chain swaps…', endpoint: 'https://near-intents.yeetful.com/mcp' }
+  check('cross-chain agent: shell row detected but NOT usable', (() => { const r = crossChainAgentOf([shellRow]); return r.agent === shellRow && r.usable === false })())
+  check('cross-chain agent: seeded row usable', (() => { const r = crossChainAgentOf([seededRow]); return r.agent === seededRow && r.usable === true })())
+  check('cross-chain agent: none in set', crossChainAgentOf([{ slug: 'uniswap-free', name: 'Uniswap (Free)', description: null, endpoint: 'https://uniswap-mcp.yeetful.com/mcp' }]).agent === undefined)
 
   // ── Cleanup (verified) ────────────────────────────────────────────────────
   console.log('— cleanup')
