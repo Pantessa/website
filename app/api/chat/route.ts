@@ -14,7 +14,11 @@ import {
 import type { McpServer } from '@/lib/store'
 import { voteRequestFromToolResult, friendlyVoteError, type VoteRequest } from '@/lib/snapshot-vote'
 import { parseVoteIntent, resolveVoteReference, type VoteIntent } from '@/lib/vote-intent'
-import { parseSwapIntent, parseSwapFollowUp, swapWorkingContext, type SwapIntent } from '@/lib/swap-intent'
+import { detectCrossChain, parseSwapIntent, parseSwapFollowUp, swapWorkingContext, type SwapIntent } from '@/lib/swap-intent'
+
+// A working-set agent that can route cross-chain swaps (NEAR Intents today —
+// matched on slug/name/description so custom modal-added rows count too).
+const CROSS_CHAIN_MCP_RE = /near[\s-]?intents|cross[\s-]?chain/i
 import { buildGuardrailedOrder } from '@/lib/cow-build'
 import { buildUniswapSwap } from '@/lib/uniswap-venue'
 import { tokenDecimals, humanToAtoms } from '@/lib/cow'
@@ -378,20 +382,31 @@ export async function POST(req: NextRequest) {
     }
     const swapIntent = parseSwapIntent(message)
     if (swapIntent.isSwap) {
-      // Multichain (RR18) is in build: an explicit non-Base chain must get an
-      // HONEST answer — never a silently-wrong Base build. No chain mention →
-      // Base (the connected default), as today.
+      // The native venue layer (Uniswap/CoW) is BASE-ONLY. A swap that names
+      // other chains ("swap 1 USDC from base to arbitrum", "…on solana") is a
+      // cross-chain ask: with a cross-chain-capable agent in the working set
+      // (NEAR Intents), fall THROUGH to normal routing — the planner builds
+      // the one-transfer deposit via the MCP's quote/build_swap tools.
+      // Without one, answer honestly and point at the agent — never a
+      // silently-wrong Base build, never a dead-end "say the amount and pair".
+      const xc = detectCrossChain(message)
       const chainAsk = message.match(/\bon\s+(ethereum|eth\s?mainnet|mainnet|arbitrum|optimism|polygon|gnosis|avalanche|bnb|bsc|solana)\b/i)?.[1]
-      if (chainAsk) {
+      const nonBase = xc.crossChain || (chainAsk !== undefined && chainAsk.toLowerCase() !== 'base')
+      const crossChainAgent = activeServers.find((s) => CROSS_CHAIN_MCP_RE.test(`${s.slug} ${s.name} ${s.description ?? ''}`))
+      if (nonBase && !crossChainAgent) {
+        const named = xc.chains.length ? xc.chains.map((c) => `**${c[0].toUpperCase()}${c.slice(1)}**`).join(' → ') : `**${chainAsk}**`
         return NextResponse.json({
-          reply: `🔗 Cross-chain swaps are in the works — today Yeetful builds swaps on **Base**. **${chainAsk[0].toUpperCase()}${chainAsk.slice(1)}** support is queued; say the swap without a chain and I’ll build it on Base.`,
+          reply: `🔗 That swap involves ${named}, and Yeetful's built-in swap tools are Base-only. Add the **NEAR Intents** agent to your set and ask again — it swaps any asset to any asset across ~35 chains with ONE transfer you sign (unfillable swaps auto-refund). Or say the swap without a chain and I'll build it on Base.`,
         })
       }
-      const uniActive = activeServers.some((s) => s.slug === 'uniswap' || /uniswap/i.test(s.name))
-      const cowActive = activeServers.some((s) => s.slug === 'cow-swap' || /cow[\s·-]?swap/i.test(s.name))
-      const venue: 'uniswap' | 'cow' =
-        /\buni\s?swap\b|\buni\b/i.test(message) || (uniActive && !cowActive) ? 'uniswap' : 'cow'
-      return await prepareSwapTurn(swapIntent, walletAddress, venue, workingContext)
+      if (!nonBase) {
+        const uniActive = activeServers.some((s) => s.slug === 'uniswap' || /uniswap/i.test(s.name))
+        const cowActive = activeServers.some((s) => s.slug === 'cow-swap' || /cow[\s·-]?swap/i.test(s.name))
+        const venue: 'uniswap' | 'cow' =
+          /\buni\s?swap\b|\buni\b/i.test(message) || (uniActive && !cowActive) ? 'uniswap' : 'cow'
+        return await prepareSwapTurn(swapIntent, walletAddress, venue, workingContext)
+      }
+      // nonBase + capable agent → fall through to routing below.
     }
 
     // Need an inference provider to phrase an answer. With none selected, fall
@@ -1347,6 +1362,31 @@ async function runWithBurner(
               await recordLedger({ grantId: grant.id, orgId: grant.orgId ?? undefined, host, serviceName: ep.serverName, amountUsd: price, ok: true, txHash: dataTx, note: 'settled' })
               spentToday += price
               spentTotal += price
+            }
+            // Transaction layer: a planned tool that returned a SIGNABLE action
+            // (an ExecutionPlan / send_transaction / order) short-circuits the
+            // turn — the user signs, we don't synthesize prose about it. This
+            // mirrors the Auto-Router loop; without it, manual mode narrated
+            // "here's what you need to sign" as text (live 2026-07-09,
+            // near-intents build_swap).
+            const art = buildSignableArtifact(json)
+            if (art) {
+              if (art.kind === 'eip712-vote') {
+                return NextResponse.json({ reply: `🗳️ ${art.summary}`, receipts, payer: 'the house wallet', voteRequest: art.vote, notes })
+              }
+              if (art.kind === 'eip712-order') {
+                return NextResponse.json({ reply: `🔏 ${art.summary}`, receipts, payer: 'the house wallet', orderRequest: art.order, notes })
+              }
+              if (art.kind === 'evm-tx-chain') {
+                return NextResponse.json({
+                  reply: `🔏 ${art.summary}\n🔗 ${art.chain.steps.length} steps in the card below — each appears as the previous confirms.`,
+                  receipts,
+                  payer: 'the house wallet',
+                  txChain: art.chain,
+                  notes,
+                })
+              }
+              return NextResponse.json({ reply: `🔏 ${art.summary}`, receipts, payer: 'the house wallet', txRequest: art.tx, notes })
             }
           } catch (err) {
             const note = err instanceof Error ? err.message : 'call failed'

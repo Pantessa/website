@@ -226,6 +226,38 @@ export function buildSignableArtifact(toolResult: unknown): SignableArtifact | n
     }
   }
 
+  // Ordered ExecutionPlan steps (aave build_*, near-intents build_swap): the
+  // tool returns { steps: [{action:'send_transaction', label, summary, tx}…] }.
+  // One step → a plain evm-tx; several → a self-advancing chain card. Every
+  // step must parse — a partially-recognized plan is refused, never truncated.
+  if (toolResult && typeof toolResult === 'object') {
+    const d = toolResult as Record<string, unknown>
+    if (Array.isArray(d.steps) && d.steps.length > 0 && d.steps.length <= 6) {
+      const parsed = d.steps.map(evmTxOf)
+      if (parsed.every((s): s is NonNullable<ReturnType<typeof evmTxOf>> => s !== null)) {
+        const planSummary =
+          typeof d.summary === 'string'
+            ? d.summary
+            : (parsed[parsed.length - 1].summary ?? `${parsed.length}-step transaction`)
+        if (parsed.length === 1) {
+          return { kind: 'evm-tx', summary: parsed[0].summary ?? planSummary, tx: parsed[0].tx }
+        }
+        return {
+          kind: 'evm-tx-chain',
+          summary: planSummary,
+          chain: {
+            summary: planSummary,
+            steps: parsed.map((s, i) => ({
+              label: s.label ?? `step ${i + 1}`,
+              title: s.summary ?? `Sign step ${i + 1}`,
+              tx: s.tx,
+            })),
+          },
+        }
+      }
+    }
+  }
+
   // Generic EIP-712 order (CoW swap, OpenSea/Seaport order). The tool returns
   // `{ action:'sign_order', protocol, typedData, summary, submitUrl?, chainId? }`.
   if (toolResult && typeof toolResult === 'object') {
