@@ -36,6 +36,8 @@ import { isCacheable, routeCacheKey, getCached, setCached, clearRouteCache } fro
 import { routeSavings } from '../lib/route-telemetry'
 import { portfolioFromToolResult, portfolioOf } from '../lib/portfolio-display'
 import { crossChainAgentOf, detectCrossChain } from '../lib/swap-intent'
+import { parseCrossChainSwap, guardCrossChainBuild, expectedOriginChainId, parseCrossChainFollowUp } from '../lib/cross-chain-swap'
+import { encodeFunctionData, erc20Abi } from 'viem'
 
 const BASE = process.env.BASE ?? 'http://localhost:3000'
 const DOMAIN = new URL(BASE).host
@@ -1510,6 +1512,61 @@ async function main() {
   if (someSlug) {
     const notPayee = await fetch(`${BASE}/api/mcp/${someSlug}/claim`, { method: 'POST', headers: C })
     check('claim a real MCP as a non-payee wallet → rejected (400)', notPayee.status === 400)
+  }
+
+  // ── Cross-chain swap: parse + the SAFETY guardrail on the built transfer ──
+  // The guardrail is the load-bearing check — it's what stopped the house
+  // model's fabricated deposit address from ever becoming a signable tx.
+  {
+    const p = parseCrossChainSwap('swap 1 USDC from base to arbitrum')
+    check('xchain parse: "from base to arbitrum"', !!p && !('problem' in p) && p.amount === '1' && p.originChain === 'base' && p.destinationChain === 'arbitrum' && p.originToken === 'USDC' && p.destinationToken === 'USDC')
+    const p2 = parseCrossChainSwap('swap 1 USDC on base to 1 USDC on arbitrum')
+    check('xchain parse: "on base to 1 USDC on arbitrum"', !!p2 && !('problem' in p2) && p2.destinationChain === 'arbitrum')
+    const p3 = parseCrossChainSwap('swap 1 USDC on base to ETH on optimism')
+    check('xchain parse: second token named', !!p3 && !('problem' in p3) && p3.destinationToken === 'ETH' && p3.destinationChain === 'optimism')
+    check('xchain parse: plain Base swap is NOT cross-chain', parseCrossChainSwap('swap 100 USDC for WETH') === null)
+    const miss = parseCrossChainSwap('swap 1 USDC from base')
+    check('xchain parse: missing destination → problem', !!miss && 'problem' in miss)
+    check('xchain chainId map', expectedOriginChainId('base') === 8453 && expectedOriginChainId('arbitrum') === 42161)
+
+    const DEPOSIT = '0x7ff0D96c9f0528f0FF8dd948b2D316806fE3c7f2'
+    const USDC_BASE = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913'
+    const goodData = encodeFunctionData({ abi: erc20Abi, functionName: 'transfer', args: [DEPOSIT as `0x${string}`, BigInt(1000000)] })
+    const goodBuild = {
+      kind: 'swap_ready',
+      quote: { sell: { amountAtoms: '1000000' }, summary: 'Swap 1 USDC Base → Arbitrum' },
+      deposit: { address: DEPOSIT, addressExpires: '2026-07-12T00:00:00Z' },
+      steps: [{ action: 'send_transaction', summary: 'deposit', tx: { to: USDC_BASE, data: goodData, value: '0', chainId: 8453 } }],
+    }
+    const g = guardCrossChainBuild(goodBuild, { chainId: 8453 })
+    check('xchain guard: correct transfer PASSES', g.ok && g.tx?.to === USDC_BASE && g.depositAddress === DEPOSIT)
+
+    // Wrong recipient (the fabricated-address class of bug) MUST be refused.
+    const evilData = encodeFunctionData({ abi: erc20Abi, functionName: 'transfer', args: ['0x000000000000000000000000000000000000dEaD' as `0x${string}`, BigInt(1000000)] })
+    const evilBuild = { ...goodBuild, steps: [{ action: 'send_transaction', tx: { to: USDC_BASE, data: evilData, value: '0', chainId: 8453 } }] }
+    check('xchain guard: transfer to a DIFFERENT address is refused', !guardCrossChainBuild(evilBuild, { chainId: 8453 }).ok)
+
+    // Wrong amount refused.
+    const wrongAmt = encodeFunctionData({ abi: erc20Abi, functionName: 'transfer', args: [DEPOSIT as `0x${string}`, BigInt(5000000)] })
+    const wrongAmtBuild = { ...goodBuild, steps: [{ action: 'send_transaction', tx: { to: USDC_BASE, data: wrongAmt, value: '0', chainId: 8453 } }] }
+    check('xchain guard: wrong transfer amount is refused', !guardCrossChainBuild(wrongAmtBuild, { chainId: 8453 }).ok)
+
+    // Wrong chain refused.
+    check('xchain guard: wrong chainId is refused', !guardCrossChainBuild({ ...goodBuild, steps: [{ action: 'send_transaction', tx: { to: USDC_BASE, data: goodData, value: '0', chainId: 1 } }] }, { chainId: 8453 }).ok)
+
+    // No deposit address at all → refused (never fabricate one).
+    check('xchain guard: missing deposit address is refused', !guardCrossChainBuild({ ...goodBuild, deposit: { address: undefined } }, { chainId: 8453 }).ok)
+
+    // Native transfer path.
+    const nativeBuild = { kind: 'swap_ready', quote: { sell: { amountAtoms: '1000000000000000000' } }, deposit: { address: DEPOSIT }, steps: [{ action: 'send_transaction', tx: { to: DEPOSIT, data: '0x', value: '1000000000000000000', chainId: 8453 } }] }
+    check('xchain guard: native transfer to deposit address PASSES', guardCrossChainBuild(nativeBuild, { chainId: 8453 }).ok)
+
+    // Follow-ups.
+    const pend = { kind: 'xchain', data: { amount: '1', originToken: 'USDC', originChain: 'base', destinationToken: 'USDC', destinationChain: 'arbitrum', depositAddress: DEPOSIT } }
+    check('xchain follow-up: "cancel" drops it', parseCrossChainFollowUp('cancel', pend)?.kind === 'cancel')
+    check('xchain follow-up: "confirm" is a noop (button already there)', parseCrossChainFollowUp('confirm', pend)?.kind === 'noop')
+    const amend = parseCrossChainFollowUp('make it 2', pend)
+    check('xchain follow-up: "make it 2" re-amount', amend?.kind === 'amend' && amend.params.amount === '2' && amend.params.originChain === 'base')
   }
 
   // ── Add-MCP (custom rows): callable row + idempotent re-add ───────────────

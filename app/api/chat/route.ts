@@ -15,6 +15,15 @@ import type { McpServer } from '@/lib/store'
 import { voteRequestFromToolResult, friendlyVoteError, type VoteRequest } from '@/lib/snapshot-vote'
 import { parseVoteIntent, resolveVoteReference, type VoteIntent } from '@/lib/vote-intent'
 import { crossChainAgentOf, detectCrossChain, parseSwapIntent, parseSwapFollowUp, swapWorkingContext, type SwapIntent } from '@/lib/swap-intent'
+import {
+  parseCrossChainSwap,
+  parseCrossChainFollowUp,
+  guardCrossChainBuild,
+  expectedOriginChainId,
+  crossChainPending,
+  type CrossChainSwapParams,
+  type BuiltSwap,
+} from '@/lib/cross-chain-swap'
 import { buildGuardrailedOrder } from '@/lib/cow-build'
 import { buildUniswapSwap } from '@/lib/uniswap-venue'
 import { tokenDecimals, humanToAtoms } from '@/lib/cow'
@@ -354,6 +363,32 @@ export async function POST(req: NextRequest) {
     // turn returned a swap/order awaiting signature — "actually make it
     // 2 USDC" rebuilds it with the new amount, "cancel that" abandons it.
     // Resolved deterministically against what the user saw, never re-parsed.
+    // Cross-chain follow-ups against a pending (already-built) deposit —
+    // cancel / amend the amount / affirmations. Deterministic, never re-parsed.
+    const pendingXchain =
+      workingContext?.pending && workingContext.pending.kind === 'xchain' ? workingContext.pending : undefined
+    if (pendingXchain) {
+      const cc = parseCrossChainFollowUp(message, pendingXchain)
+      if (cc?.kind === 'cancel') {
+        const p = pendingXchain.data
+        return NextResponse.json({
+          reply: `👍 Dropped the cross-chain swap — ${p.amount} ${p.originToken} (${p.originChain} → ${p.destinationChain}) was never signed, so nothing moved.`,
+          workingContext: { v: 1, age: 0, ...(workingContext?.scope ? { scope: workingContext.scope } : {}) } satisfies WorkingContext,
+        })
+      }
+      if (cc?.kind === 'noop') {
+        return NextResponse.json({
+          reply: `🔏 The swap is built above — sign the deposit transfer with the button to send it. Say “cancel” to drop it.`,
+        })
+      }
+      if (cc?.kind === 'amend') {
+        const ccAgent = crossChainAgentOf(activeServers)
+        if (ccAgent.agent && ccAgent.usable) {
+          return await buildCrossChainSwapTurn(ccAgent.agent, cc.params, walletAddress, workingContext, message)
+        }
+      }
+    }
+
     const pendingArtifact =
       workingContext?.pending && (workingContext.pending.kind === 'swap' || workingContext.pending.kind === 'order')
         ? workingContext.pending
@@ -411,7 +446,20 @@ export async function POST(req: NextRequest) {
           /\buni\s?swap\b|\buni\b/i.test(message) || (uniActive && !cowActive) ? 'uniswap' : 'cow'
         return await prepareSwapTurn(swapIntent, walletAddress, venue, workingContext)
       }
-      // nonBase + capable agent → fall through to routing below.
+      // nonBase + a usable cross-chain agent → build it NATIVELY (deterministic
+      // build_swap + guardrails + Sign button), never via the planner/house
+      // model. A parse miss (a question, not an imperative build) falls through
+      // to routing so the quote tool can still answer.
+      if (ccAgent.agent && ccAgent.usable) {
+        const cc = parseCrossChainSwap(message)
+        if (cc && 'problem' in cc) {
+          return NextResponse.json({ reply: `🔗 ${cc.problem}` })
+        }
+        if (cc) {
+          return await buildCrossChainSwapTurn(ccAgent.agent, cc, walletAddress, workingContext, message)
+        }
+      }
+      // Otherwise (a quote question, etc.) fall through to routing below.
     }
 
     // Need an inference provider to phrase an answer. With none selected, fall
@@ -671,6 +719,90 @@ async function prepareVoteTurn(
   } catch (err) {
     return NextResponse.json({ reply: `🗳️ ${friendlyVoteError(err)}`, receipts })
   }
+}
+
+// ── Cross-chain swap (native, via the NEAR Intents agent) ───────────────────
+
+/** Call ONE tool on an MCP agent deterministically (tools/call over the free
+ *  MCP transport — no planner, no payment). Throws on transport/tool errors. */
+async function callAgentTool(endpoint: string, tool: string, args: Record<string, unknown>): Promise<unknown> {
+  const res = await getPaidFetch()(endpoint, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream' },
+    body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: tool, arguments: args } }),
+  })
+  if (!res.ok) throw new Error(await failureReason(res))
+  return parseMcpDataResult(res.headers.get('content-type') ?? '', await res.text())
+}
+
+/**
+ * Build a cross-chain swap into a SIGNABLE deposit transfer — the native,
+ * deterministic path (never the planner/house model, which once fabricated a
+ * deposit address). Calls the NEAR Intents agent's `build_swap`, GUARDRAILS
+ * the returned transfer (must move exactly the quoted amount to the API's
+ * one-time deposit address on the origin chain), and returns it as a Sign
+ * button. The address the user sees and the tx they sign both come only from
+ * the verified tool result.
+ */
+async function buildCrossChainSwapTurn(
+  agent: McpServer,
+  params: CrossChainSwapParams,
+  walletAddress: string | undefined,
+  ctx?: WorkingContext,
+  originalMessage?: string,
+) {
+  if (!walletAddress) {
+    return NextResponse.json({
+      reply:
+        '🔗 Connect your wallet to build the cross-chain swap — you sign the deposit transfer yourself, so it has to be built for your address.',
+      connectWallet: true,
+      ...(originalMessage ? { connectAsk: originalMessage } : {}),
+    })
+  }
+
+  let built: BuiltSwap
+  try {
+    built = (await callAgentTool(agent.endpoint!, 'build_swap', {
+      originChain: params.originChain,
+      originToken: params.originToken,
+      destinationChain: params.destinationChain,
+      destinationToken: params.destinationToken,
+      amount: params.amount,
+      from: walletAddress,
+    })) as BuiltSwap
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'the build failed'
+    return NextResponse.json({
+      reply: `🔗 Couldn't build that cross-chain swap: ${msg}`,
+    })
+  }
+
+  const guard = guardCrossChainBuild(built, { chainId: expectedOriginChainId(params.originChain) })
+  if (!guard.ok || !guard.tx) {
+    // A verification failure is a REFUSAL, not a warning — never offer a
+    // transfer we couldn't prove is correct.
+    return NextResponse.json({
+      reply: `🚫 I built the swap but refused it — the transfer didn't verify: ${guard.reasons.join(' ')} Nothing to sign; try again or use a different route.`,
+      blocked: true,
+    })
+  }
+
+  const summary = guard.summary ?? built.quote?.summary ?? 'Cross-chain swap'
+  const expiry = guard.addressExpires ? ` The one-time deposit address expires ${guard.addressExpires}.` : ''
+  const warn = guard.warnings.length ? `\n${guard.warnings.map((w) => `⚠️ ${w}`).join('\n')}` : ''
+  return NextResponse.json({
+    reply:
+      `🔏 ${summary}\n\nSign the deposit transfer below — it sends exactly the quoted amount to NEAR Intents' one-time deposit address, and solvers deliver on the destination chain automatically.${expiry}${warn}`,
+    txRequest: guard.tx,
+    // Invariant #11: a pending action — "cancel" drops it, "make it 2" rebuilds.
+    workingContext: {
+      v: 1 as const,
+      age: 0,
+      ...(ctx?.scope ? { scope: ctx.scope } : {}),
+      ...(ctx?.offers ? { offers: ctx.offers } : {}),
+      pending: crossChainPending(params, guard.depositAddress ?? '', summary),
+    } satisfies WorkingContext,
+  })
 }
 
 // ── Swap intent ───────────────────────────────────────────────────────────────
