@@ -14,11 +14,7 @@ import {
 import type { McpServer } from '@/lib/store'
 import { voteRequestFromToolResult, friendlyVoteError, type VoteRequest } from '@/lib/snapshot-vote'
 import { parseVoteIntent, resolveVoteReference, type VoteIntent } from '@/lib/vote-intent'
-import { detectCrossChain, parseSwapIntent, parseSwapFollowUp, swapWorkingContext, type SwapIntent } from '@/lib/swap-intent'
-
-// A working-set agent that can route cross-chain swaps (NEAR Intents today —
-// matched on slug/name/description so custom modal-added rows count too).
-const CROSS_CHAIN_MCP_RE = /near[\s-]?intents|cross[\s-]?chain/i
+import { crossChainAgentOf, detectCrossChain, parseSwapIntent, parseSwapFollowUp, swapWorkingContext, type SwapIntent } from '@/lib/swap-intent'
 import { buildGuardrailedOrder } from '@/lib/cow-build'
 import { buildUniswapSwap } from '@/lib/uniswap-venue'
 import { tokenDecimals, humanToAtoms } from '@/lib/cow'
@@ -392,11 +388,20 @@ export async function POST(req: NextRequest) {
       const xc = detectCrossChain(message)
       const chainAsk = message.match(/\bon\s+(ethereum|eth\s?mainnet|mainnet|arbitrum|optimism|polygon|gnosis|avalanche|bnb|bsc|solana)\b/i)?.[1]
       const nonBase = xc.crossChain || (chainAsk !== undefined && chainAsk.toLowerCase() !== 'base')
-      const crossChainAgent = activeServers.find((s) => CROSS_CHAIN_MCP_RE.test(`${s.slug} ${s.name} ${s.description ?? ''}`))
-      if (nonBase && !crossChainAgent) {
+      const ccAgent = crossChainAgentOf(activeServers)
+      if (nonBase && !ccAgent.agent) {
         const named = xc.chains.length ? xc.chains.map((c) => `**${c[0].toUpperCase()}${c.slice(1)}**`).join(' → ') : `**${chainAsk}**`
         return NextResponse.json({
-          reply: `🔗 That swap involves ${named}, and Yeetful's built-in swap tools are Base-only. Add the **NEAR Intents** agent to your set and ask again — it swaps any asset to any asset across ~35 chains with ONE transfer you sign (unfillable swaps auto-refund). Or say the swap without a chain and I'll build it on Base.`,
+          reply: `🔗 That swap involves ${named}, and Yeetful's built-in swap tools are Base-only. Add the **NEAR Intents (Free)** agent to your set and ask again — it swaps any asset to any asset across ~35 chains with ONE transfer you sign (unfillable swaps auto-refund). Or say the swap without a chain and I'll build it on Base.`,
+        })
+      }
+      if (nonBase && ccAgent.agent && !ccAgent.usable) {
+        // A cross-chain agent IS selected but can't be called (an add-MCP
+        // shell with no endpoint/tools — its discovery failed). Routing the
+        // swap at it makes the planner invent venues; say what's wrong
+        // instead (live 2026-07-09: hallucinated 1inch/Across/Stargate chips).
+        return NextResponse.json({
+          reply: `🔗 Your **${ccAgent.agent.name}** agent isn't fully connected — no callable tools are registered for it, so I can't route this cross-chain swap through it. Remove it from your set and pick **NEAR Intents (Free)** from the Free tab (or re-add your MCP so its tools register), then ask again.`,
         })
       }
       if (!nonBase) {
