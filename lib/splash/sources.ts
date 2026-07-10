@@ -6,11 +6,19 @@
 // address, shape the result into a tile + suggested prompts. Failures are
 // isolated per source (buildSplash filters nulls) so one dead MCP never blanks
 // the whole splash.
+//
+// THE AFFINITY CONTRACT (Nate, 2026-07-10): a card earns its place by showing
+// something REAL for this wallet. A source that finds no activity returns
+// null — no card — instead of an empty-state tile. Errors still surface as
+// retryable error cards ("broke" must stay distinguishable from "nothing
+// here"). Uniswap additionally gates on an on-chain router-interaction probe
+// (lib/splash/affinity.ts) because its card is a generic wallet portfolio.
 
 import type { McpServer } from '@/lib/store'
 import { callMcpTool } from '@/lib/mcp-call'
 import { overrideFreeMcpBase } from '@/lib/endpoint-planner'
 import { alchemyEnabled, getMultichainPortfolio, getRecentActivity } from '@/lib/alchemy'
+import { hasUniswapHistory } from './affinity'
 import type { HoldingRow, ProposalRow, SpaceRow, SplashTile, StatRow, SuggestedPrompt } from './types'
 
 /** Snapshot's stamp service resolves a space logo from its id — always
@@ -75,17 +83,9 @@ async function buildMultichainTiles(address: string, server: McpServer): Promise
   const scope = portfolio.chainLabels.length ? portfolio.chainLabels.join(' · ') : 'Ethereum · Base · Arbitrum'
   const tiles: SplashTile[] = []
 
-  if (holdings.length === 0) {
-    tiles.push({
-      id: 'portfolio-holdings',
-      mcpSlug: server.slug,
-      mcpName: server.name,
-      render: 'empty',
-      title: 'Your portfolio',
-      message: 'No tokens found on Ethereum, Base, or Arbitrum for this wallet.',
-      prompts: [{ label: 'Get a quote', prompt: 'What would it cost to swap 100 USDC into ETH on Base?' }],
-    })
-  } else {
+  // Empty wallet → no portfolio card (the affinity contract). A wallet with
+  // recent activity but zero priced holdings still gets the activity tile.
+  if (holdings.length > 0) {
     tiles.push({
       id: 'portfolio-holdings',
       mcpSlug: server.slug,
@@ -118,23 +118,17 @@ async function buildMultichainTiles(address: string, server: McpServer): Promise
   return tiles
 }
 
-/** Keyless fallback (Base-only, via the uniswap MCP `balances` tool). */
-async function buildBaseFallbackTile(call: McpCaller, address: string, server: McpServer): Promise<SplashTile> {
+/** Keyless fallback (Base-only, via the uniswap MCP `balances` tool). Empty
+ *  wallet → null (no card). */
+async function buildBaseFallbackTile(call: McpCaller, address: string, server: McpServer): Promise<SplashTile | null> {
   const data = (await call('balances', { owner: address })) as PortfolioPayload
   const holdings = Array.isArray(data.holdings) ? data.holdings : []
   const label = typeof data.chainId === 'number' ? chainLabel(data.chainId) : 'Base'
-  const base = { id: 'portfolio-holdings', mcpSlug: server.slug, mcpName: server.name }
-  if (holdings.length === 0) {
-    return {
-      ...base,
-      render: 'empty',
-      title: `Your ${label} portfolio`,
-      message: `No tokens found on ${label} for this wallet.`,
-      prompts: [{ label: 'Get a quote', prompt: 'What would it cost to swap 100 USDC into ETH on Base?' }],
-    }
-  }
+  if (holdings.length === 0) return null
   return {
-    ...base,
+    id: 'portfolio-holdings',
+    mcpSlug: server.slug,
+    mcpName: server.name,
     render: 'holdings',
     title: `Your ${label} portfolio`,
     subtitle: `via ${server.name}`,
@@ -149,7 +143,18 @@ const uniswapSource: SplashSource = {
   id: 'uniswap',
   match: (s) => s.slug === 'uniswap' || s.slug === 'uniswap-free' || /uniswap/i.test(s.name),
   build: async (call, address, server) => {
-    if (alchemyEnabled()) return buildMultichainTiles(address, server)
+    if (alchemyEnabled()) {
+      // The Uniswap card is a generic wallet view — earn it by actual Uniswap
+      // usage (router-interaction probe; runs concurrently with the portfolio
+      // fetch, so a shown card pays zero extra latency). Unknown (probe
+      // failed) fails open. When the wallet MCP is also connected its
+      // identical tiles win the dedupe anyway, so a false negative here still
+      // leaves the user their portfolio.
+      const [used, tiles] = await Promise.all([hasUniswapHistory(address), buildMultichainTiles(address, server)])
+      if (used === false) return null
+      return tiles
+    }
+    // Keyless: no way to probe usage — fail open to the Base-only balances view.
     return buildBaseFallbackTile(call, address, server)
   },
 }
@@ -175,15 +180,8 @@ const snapshotSource: SplashSource = {
     }
     const raw = Array.isArray(data.proposals) ? data.proposals : []
     const base = { id: 'snapshot-proposals', mcpSlug: server.slug, mcpName: server.name }
-    if (raw.length === 0) {
-      return {
-        ...base,
-        render: 'empty',
-        title: 'Governance',
-        message: data.note || 'No open proposals in the spaces this wallet follows.',
-        prompts: [{ label: 'Find active DAOs', prompt: 'What are the most active DAOs on Snapshot right now?' }],
-      }
-    }
+    // No follows / nothing open → no card (the affinity contract).
+    if (raw.length === 0) return null
     const proposals: ProposalRow[] = raw.map((p) => {
       const leadIdx = Array.isArray(p.scores) && p.scores.length
         ? p.scores.reduce((best, s, i, arr) => (s > arr[best] ? i : best), 0)
@@ -272,18 +270,9 @@ const cowSource: SplashSource = {
     const trades = chains.reduce((n, c) => n + (c.tradeCount ?? 0), 0)
     const base = { id: 'cow-activity', mcpSlug: server.slug, mcpName: server.name }
 
-    if (open.length === 0 && fills.length === 0) {
-      return {
-        ...base,
-        render: 'empty',
-        title: 'CoW Protocol',
-        message: 'No CoW orders or trades for this wallet yet — MEV-protected swaps start here.',
-        prompts: [
-          { label: 'Quote a swap', prompt: 'Quote swapping 100 USDC to WETH on CoW' },
-          { label: 'Place a limit order', prompt: 'Build a limit order selling 1 WETH at 4000 USDC on CoW' },
-        ],
-      }
-    }
+    // Never traded on CoW → no card. A wallet with lifetime trades but no
+    // open orders / recent fills is still a CoW user — show the trade count.
+    if (open.length === 0 && fills.length === 0 && trades === 0) return null
 
     const rows: StatRow[] = [
       ...open.slice(0, 4).map((o) => ({
@@ -298,6 +287,7 @@ const cowSource: SplashSource = {
         tone: 'pos' as const,
       })),
     ]
+    if (rows.length === 0) rows.push({ label: 'Lifetime trades', value: String(trades), sub: 'mainnet · base' })
     const prompts: SuggestedPrompt[] = open.length
       ? [
           { label: 'Check my open orders', prompt: 'Show my open CoW orders — are any close to filling?' },
@@ -346,18 +336,8 @@ const hyperliquidSource: SplashSource = {
     const accountValue = Number(data.perp?.accountValueUsd ?? 0)
     const base = { id: 'hyperliquid-positions', mcpSlug: server.slug, mcpName: server.name }
 
-    if (positions.length === 0 && accountValue === 0) {
-      return {
-        ...base,
-        render: 'empty',
-        title: 'Hyperliquid',
-        message: 'No Hyperliquid account activity for this wallet.',
-        prompts: [
-          { label: 'Market snapshot', prompt: "What's trading on Hyperliquid right now — top markets by volume?" },
-          { label: 'BTC funding', prompt: "What's the BTC funding rate on Hyperliquid?" },
-        ],
-      }
-    }
+    // No account, no positions → no card (the affinity contract).
+    if (positions.length === 0 && accountValue === 0) return null
 
     const rows: StatRow[] = positions.slice(0, 5).map((p) => {
       const size = Number(p.szi ?? 0)
@@ -393,6 +373,104 @@ const hyperliquidSource: SplashSource = {
   },
 }
 
+// ── Aave v4 → positions, supplies, borrows (rows) ────────────────────────────
+// Matches any aave-ish row (the seeded free row or a custom add-MCP row —
+// Nate's live one is `aave-mcp-yeetful`). Calls the aave MCP's `portfolio`
+// tool (default chain = the Ethereum hub, where v4 lives). No position at
+// all → null (the affinity contract).
+
+interface AaveToken {
+  symbol?: string | null
+}
+interface AavePortfolioPayload {
+  note?: string
+  positions?: {
+    spoke?: string | null
+    netBalanceUsd?: string | null
+    netApyPct?: number | null
+    healthFactor?: string | null
+    totalDebtUsd?: string | null
+    remainingBorrowingPowerUsd?: string | null
+  }[]
+  supplies?: {
+    token?: AaveToken | null
+    balance?: string | null
+    balanceUsd?: string | null
+    earnedInterestUsd?: string | null
+    supplyApyPct?: number | null
+    isCollateral?: boolean | null
+  }[]
+  borrows?: {
+    token?: AaveToken | null
+    debt?: string | null
+    debtUsd?: string | null
+    borrowApyPct?: number | null
+  }[]
+}
+
+const aaveSource: SplashSource = {
+  id: 'aave',
+  match: (s) => /aave/i.test(`${s.slug} ${s.name}`),
+  build: async (call, address, server) => {
+    const data = (await call('portfolio', { user: address })) as AavePortfolioPayload
+    const positions = Array.isArray(data.positions) ? data.positions : []
+    const supplies = Array.isArray(data.supplies) ? data.supplies : []
+    const borrows = Array.isArray(data.borrows) ? data.borrows : []
+    if (positions.length === 0 && supplies.length === 0 && borrows.length === 0) return null
+
+    const rows: StatRow[] = [
+      ...supplies.slice(0, 3).map((s) => ({
+        label: `${s.token?.symbol ?? 'Token'} supplied${s.isCollateral ? ' · collateral' : ''}`,
+        value: s.balanceUsd ?? s.balance ?? '—',
+        sub: [
+          s.supplyApyPct != null ? `${s.supplyApyPct}% APY` : null,
+          s.earnedInterestUsd ? `${s.earnedInterestUsd} earned` : null,
+        ]
+          .filter(Boolean)
+          .join(' · ') || undefined,
+        tone: 'pos' as const,
+      })),
+      ...borrows.slice(0, 2).map((b) => ({
+        label: `${b.token?.symbol ?? 'Token'} borrowed`,
+        value: b.debtUsd ?? b.debt ?? '—',
+        sub: b.borrowApyPct != null ? `${b.borrowApyPct}% APY accruing` : undefined,
+        tone: 'neg' as const,
+      })),
+    ]
+    const pos = positions[0]
+    const hf = pos?.healthFactor != null ? Number(pos.healthFactor) : NaN
+    if (Number.isFinite(hf) && borrows.length > 0 && rows.length < 5) {
+      rows.push({
+        label: 'Health factor',
+        value: hf.toFixed(2),
+        sub: hf < 1.5 ? 'getting close to liquidation' : 'comfortable',
+        tone: hf < 1.5 ? ('neg' as const) : ('pos' as const),
+      })
+    }
+
+    const prompts: SuggestedPrompt[] = [
+      { label: 'How is my position?', prompt: 'Summarize my Aave position — health factor, borrowing power, anything at risk?' },
+    ]
+    if (borrows.length > 0) {
+      prompts.push({ label: 'Plan a repay', prompt: 'What would it take to repay my Aave debt? Walk me through the steps.' })
+    } else {
+      prompts.push({ label: 'My borrowing power', prompt: 'How much could I safely borrow against my Aave collateral right now?' })
+    }
+
+    return {
+      id: 'aave-position',
+      mcpSlug: server.slug,
+      mcpName: server.name,
+      render: 'rows',
+      title: 'Your Aave position',
+      subtitle: `${supplies.length} supplied · ${borrows.length} borrowed${pos?.netApyPct != null ? ` · net ${pos.netApyPct}% APY` : ''}`,
+      headline: pos?.netBalanceUsd ? { value: pos.netBalanceUsd, caption: 'net balance on Aave' } : undefined,
+      rows,
+      prompts,
+    }
+  },
+}
+
 const walletSource: SplashSource = {
   id: 'wallet',
   // The first-party multichain wallet MCP (yeetful-tool-*). Alchemy-backed —
@@ -403,7 +481,7 @@ const walletSource: SplashSource = {
 }
 
 /** All registered splash sources. Exported for tests; a new MCP appends here. */
-export const SPLASH_SOURCES: SplashSource[] = [walletSource, uniswapSource, snapshotSource, cowSource, hyperliquidSource]
+export const SPLASH_SOURCES: SplashSource[] = [walletSource, uniswapSource, snapshotSource, cowSource, hyperliquidSource, aaveSource]
 
 // ── Generic featured-endpoint source (any MCP, zero hand-coding) ─────────────
 // An MCP with no dedicated source above still gets a connect-time quick view
