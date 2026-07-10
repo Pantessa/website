@@ -12,6 +12,7 @@
 // which would clip a fixed child.
 
 import { useEffect, useMemo, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { createPortal } from 'react-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Globe, Loader2, Plus, Star, Wand2, X } from 'lucide-react'
@@ -43,9 +44,10 @@ const isPersonalTool = (t: DiscoveredTool) =>
   t.plannable && t.params.some((p) => ADDRESS_PARAM_RE.test(p.name) || /\$USER_ADDRESS/.test(p.description ?? ''))
 
 export default function AddMcpModal({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const { addServer, activeServerIds, setActiveServerIds, updateChatServers, currentChatId, setMcpActionSlug } =
+  const { addServer, activeServerIds, setActiveServerIds, updateChatServers, currentChatId } =
     useYeetfulStore()
   const { status, connectAndSignIn } = useSession()
+  const router = useRouter()
 
   const [url, setUrl] = useState('')
   const [name, setName] = useState('')
@@ -170,13 +172,14 @@ export default function AddMcpModal({ open, onClose }: { open: boolean; onClose:
       }
       const server: McpServer = { ...data, isCustom: true }
       addServer(server)
-      // Straight into the working set + open its action window — the add
-      // should land exactly where a rail click would.
+      // Land it in the working set (so it's active when they come back to
+      // chat), close the modal, then send them to the newly created MCP's
+      // detail page to see the discovered tools it just saved.
       const nextIds = [...activeServerIds, server.id]
       setActiveServerIds(nextIds)
       if (currentChatId) updateChatServers(currentChatId, nextIds)
-      setMcpActionSlug(server.slug)
       onClose()
+      router.push(`/servers/${server.slug}`)
     } catch {
       setError('Network error — try again.')
     } finally {
