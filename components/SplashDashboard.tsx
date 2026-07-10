@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { ArrowDownLeft, ArrowUpRight, Clock, ExternalLink, RefreshCw, Repeat, Vote, Wallet } from 'lucide-react'
 import BrandIcon from '@/components/BrandIcon'
 import { useYeetfulStore, type McpServer } from '@/lib/store'
+import ChatLoader from '@/components/ChatLoader'
 import { splashCapable } from '@/lib/splash/types'
 import type { ActivityTile, ErrorTile, HoldingsTile, ProposalsTile, RowsTile, SplashTile, SuggestedPrompt } from '@/lib/splash/types'
 
@@ -104,7 +105,7 @@ export function SplashDashboard({
         </div>
 
         {loading || !tiles ? (
-          <SkeletonTiles count={relevant.length} />
+          <ChatLoader inline />
         ) : (
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
             {groupBySlug(tiles).map((group) => (

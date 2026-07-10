@@ -28,6 +28,7 @@ import { latestWorkingContext, type WorkingContext } from '@/lib/working-context
 import { EXAMPLE_PROMPTS } from '@/lib/examples'
 import SampleCallDemo from '@/components/SampleCallDemo'
 import { SplashDashboard } from '@/components/SplashDashboard'
+import ChatLoader from '@/components/ChatLoader'
 import McpActionPanel from '@/components/McpActionPanel'
 import { splashCapable } from '@/lib/splash/types'
 import ShareButton from '@/components/ShareButton'
@@ -238,6 +239,16 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
   // Splash dashboard: tile count the scan resolved (null = not yet), so the
   // normal empty state only shows when the splash finds nothing.
   const [splashCount, setSplashCount] = useState<number | null>(null)
+  // Boot hold: at first paint we can't know whether the splash is about to
+  // take over (wallet auto-reconnect + store hydration are in flight), so the
+  // loader is the DEFAULT and the guest empty state only appears once the
+  // wallet has conclusively settled — capped so a wedged connector can't hold
+  // the screen hostage (Nate: "we should never see this info on page start").
+  const [bootHoldElapsed, setBootHoldElapsed] = useState(false)
+  useEffect(() => {
+    const t = setTimeout(() => setBootHoldElapsed(true), 4000)
+    return () => clearTimeout(t)
+  }, [])
   // A planned wallet-mode turn awaiting the user's OK before the wallet pops —
   // so they see the real $ amount (not the wallet's raw base-units value) first.
   const [pendingPayment, setPendingPayment] = useState<{
@@ -250,7 +261,12 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
-  const { address, isConnected } = useAccount()
+  const { address, isConnected, status: walletStatus } = useAccount()
+  // Loader is the DEFAULT until the wallet conclusively settles (see the
+  // boot-hold state above) — 'connecting'/'reconnecting' means the splash may
+  // be about to take over.
+  const walletSettled = walletStatus === 'connected' || walletStatus === 'disconnected'
+  const bootHolding = !walletSettled && !bootHoldElapsed
   const { signTypedDataAsync } = useSignTypedData()
   // Effective wallet context for /api/chat: an embed-provided address wins,
   // else the connected account. Context alone never signs anything.
@@ -857,6 +873,11 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
                 <EmptyState activeCount={activeServers.length} autoRouter={autoRouter} onPick={pickExample} />
               )}
             </>
+          ) : bootHolding ? (
+            // Wallet auto-reconnect / store hydration in flight: the splash may
+            // be about to take over — hold with the loader instead of flashing
+            // the guest empty state and swapping a beat later.
+            <ChatLoader inline />
           ) : (
             <EmptyState activeCount={activeServers.length} autoRouter={autoRouter} onPick={pickExample} />
           )
