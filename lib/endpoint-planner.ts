@@ -144,6 +144,37 @@ export interface EndpointParam {
   description?: string
   example?: unknown
   required?: boolean
+  /** Allowed values (JSON-Schema `enum`), when the tool constrains this param to
+   *  a fixed set — surfaced in the menu so the model picks a value the target
+   *  MCP accepts instead of guessing one. */
+  enumValues?: string[]
+  /** Value format the tool requires (JSON-Schema `pattern`, i.e. a server-side
+   *  regex). A param the MCP validates with `z.string().regex(...)` rejects a
+   *  free-form guess with a `-32602 … validation:"regex"` error; surfacing the
+   *  pattern lets the model produce a conforming value. */
+  pattern?: string
+}
+
+/**
+ * A compact, human/LLM-legible hint of a param's value CONSTRAINTS — the allowed
+ * set (`enum`) or required format (`pattern`) the target MCP will validate. The
+ * menu already shows an `example`; this adds the hard constraint so the routing
+ * model doesn't fill a constrained param (e.g. an Aave `currency`) with a value
+ * the tool's schema rejects — the recurring cause of `MCP error -32602 … Invalid
+ * arguments … validation:"regex"`. Empty when the schema declares no constraint,
+ * so unconstrained params (and already-ingested rows lacking these fields) read
+ * exactly as before. Pure; shared by the planner + router menus.
+ */
+export function paramConstraintHint(p: EndpointParam): string {
+  if (p.enumValues && p.enumValues.length > 0) {
+    const shown = p.enumValues.slice(0, 12).map((v) => String(v))
+    return ` one of: ${shown.join('|')}${p.enumValues.length > shown.length ? '|…' : ''}`
+  }
+  if (p.pattern) {
+    const pat = p.pattern.length > 80 ? `${p.pattern.slice(0, 80)}…` : p.pattern
+    return ` matching /${pat}/`
+  }
+  return ''
 }
 
 export interface PlannableEndpoint {
@@ -510,7 +541,7 @@ export function plannerPrompt(
               p.description && p.description.includes(USER_ADDRESS_TOKEN)
                 ? ` — ${p.description.length > 110 ? `${p.description.slice(0, 110)}…` : p.description}`
                 : ''
-            return `${p.name}(${p.group}${p.required ? ',required' : ''}:${p.type ?? 'string'}${ex}${hint})`
+            return `${p.name}(${p.group}${p.required ? ',required' : ''}:${p.type ?? 'string'}${ex}${hint}${paramConstraintHint(p)})`
           })
           .join(', ')
         const proven = e.reliability && e.reliability.settled > 0

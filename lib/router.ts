@@ -24,6 +24,7 @@ import {
   parsePlannerPicks,
   buildSmartRequest,
   contextVarsLine,
+  paramConstraintHint,
   type PlanContext,
   type PlannableEndpoint,
   type PlannedPick,
@@ -395,7 +396,7 @@ export function routerPrompt(
               p.example !== undefined && p.example !== null && p.example !== ''
                 ? ` e.g. ${JSON.stringify(p.example)}`
                 : ''
-            return `${p.name}(${p.group}${p.required ? ',required' : ''}:${p.type ?? 'string'}${ex})`
+            return `${p.name}(${p.group}${p.required ? ',required' : ''}:${p.type ?? 'string'}${ex}${paramConstraintHint(p)})`
           })
           .join(', ')
         const proven =

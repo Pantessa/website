@@ -14,6 +14,15 @@ export interface DiscoveredParam {
   description?: string
   required?: boolean
   enumValues?: string[]
+  /** JSON-Schema `pattern` — a server-side regex the value must match. Captured
+   *  so the planner menu can surface the required format; without it a
+   *  regex-constrained param (e.g. Aave `build_supply.currency`) reaches the
+   *  routing model as a bare string and gets filled with a value the tool
+   *  rejects (`-32602 … validation:"regex"`). */
+  pattern?: string
+  /** A representative value the schema advertises (`examples[0]`/`default`) —
+   *  shown in the menu to steer the model toward a valid form. */
+  example?: unknown
 }
 
 export interface DiscoveredTool {
@@ -94,6 +103,9 @@ type JsonSchemaProp = {
   type?: string | string[]
   description?: string
   enum?: unknown[]
+  pattern?: string
+  examples?: unknown[]
+  default?: unknown
 }
 type ToolDef = {
   name?: string
@@ -113,6 +125,9 @@ function toParams(tool: ToolDef): DiscoveredParam[] {
   const required = new Set(tool.inputSchema?.required ?? [])
   return Object.entries(props).map(([name, prop]) => {
     const enumValues = Array.isArray(prop.enum) ? prop.enum.map(String) : undefined
+    const pattern = typeof prop.pattern === 'string' && prop.pattern.length > 0 ? prop.pattern : undefined
+    const example =
+      Array.isArray(prop.examples) && prop.examples.length > 0 ? prop.examples[0] : prop.default
     return {
       group: 'body' as const,
       name,
@@ -120,6 +135,8 @@ function toParams(tool: ToolDef): DiscoveredParam[] {
       description: typeof prop.description === 'string' ? prop.description : undefined,
       required: required.has(name),
       ...(enumValues ? { enumValues } : {}),
+      ...(pattern ? { pattern } : {}),
+      ...(example !== undefined && example !== null ? { example } : {}),
     }
   })
 }

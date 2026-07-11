@@ -1630,6 +1630,29 @@ async function main() {
   )
   check('router prompt: surfaces the proven tag to the model', routerPromptText.includes('✓proven'))
 
+  // Constrained-param surfacing (Aave build_supply.currency incident): a param
+  // the target MCP validates with an enum / regex must reach the model WITH that
+  // constraint, or it guesses a value the tool rejects (-32602 validation:regex).
+  const constrainedEps: PlannableEndpoint[] = [
+    {
+      id: 'ep-aave-supply', serverSlug: 'aave-mcp-yeetful', serverName: 'Aave MCP · Yeetful', method: 'POST',
+      url: 'https://aave.example.test/mcp/build_supply', description: 'Build an Aave supply transaction', priceUsd: '0',
+      parameters: [
+        { group: 'body', name: 'currency', type: 'string', required: true, enumValues: ['WETH', 'USDC', 'cbETH'] },
+        { group: 'body', name: 'amount', type: 'string', required: true, pattern: '^[0-9]+(\\.[0-9]+)?$' },
+      ],
+    },
+  ]
+  const constrainedPrompt = routerPrompt('supply 100 usdc to aave', constrainedEps)
+  check(
+    'router prompt: surfaces enum allowed-values for a constrained param',
+    constrainedPrompt.includes('one of: WETH|USDC|cbETH'),
+  )
+  check(
+    'router prompt: surfaces the required regex format for a pattern param',
+    constrainedPrompt.includes('matching /^[0-9]+(\\.[0-9]+)?$/'),
+  )
+
   const goodReply = JSON.stringify({
     intent: 'Find hotels in Paris',
     needs: ['live travel listings'],
