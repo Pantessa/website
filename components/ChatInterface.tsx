@@ -343,31 +343,47 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
       return
     }
     if (!effectiveAddress) return
-    const splashableIds = new Set(splashableServers.map((s) => s.id))
     setSplashBatches((prev) => {
-      // Pre-send the cards mirror the working set exactly — toggling an MCP
-      // off removes its card. (This also absorbs the boot races where the
-      // wallet-set restore rewrites the default fleet a beat after connect.)
-      let next = prev
-      if (emptyChat && prev.some((b) => b.serverIds.some((id) => !splashableIds.has(id)))) {
-        next = prev
-          .map((b) => ({ ...b, serverIds: b.serverIds.filter((id) => splashableIds.has(id)) }))
-          .filter((b) => b.serverIds.length > 0)
+      if (emptyChat) {
+        // Pre-send the splash is ONE unified dashboard mirroring the working
+        // set — NOT an accumulation of per-MCP batches. The boot sequence adds
+        // MCPs incrementally (default fleet → wallet-set restore → manual
+        // picks), and a batch-per-increment renders as several left-aligned
+        // grids stacked on top of each other instead of one responsive 3/2/1
+        // grid. Coalesce every splashable server into a single stable batch so
+        // the cards flow together; toggling an MCP off just drops it from the
+        // set. (A stable id keeps the SplashDashboard mounted — it re-scans on
+        // its own server-set key, so absorbing the boot races is a refetch, not
+        // a remount flash.)
+        const ids = splashableServers.map((s) => s.id)
+        if (ids.length === 0) return prev.length ? [] : prev
+        const id = prev[0]?.id ?? `splash-${splashSeqRef.current++}`
+        const mSlugs = manualSlugs.filter((slug) => splashableServers.some((s) => s.slug === slug))
+        const same =
+          prev.length === 1 &&
+          prev[0].id === id &&
+          prev[0].serverIds.length === ids.length &&
+          prev[0].serverIds.every((x) => ids.includes(x)) &&
+          prev[0].manualSlugs.length === mSlugs.length &&
+          prev[0].manualSlugs.every((m) => mSlugs.includes(m))
+        if (same) return prev
+        return [{ id, serverIds: ids, manualSlugs: mSlugs, anchor: 0 }]
       }
-      const covered = new Set([...splashSeedRef.current, ...next.flatMap((b) => b.serverIds)])
+      // Mid-conversation the cards are append-only history: an MCP toggled on
+      // after the chat has messages earns its OWN batch at the current point;
+      // existing cards never re-fetch and a mid-convo removal keeps its card.
+      const covered = new Set([...splashSeedRef.current, ...prev.flatMap((b) => b.serverIds)])
       const fresh = splashableServers.filter((s) => !covered.has(s.id))
-      if (fresh.length > 0) {
-        next = [
-          ...next,
-          {
-            id: `splash-${splashSeqRef.current++}`,
-            serverIds: fresh.map((s) => s.id),
-            manualSlugs: manualSlugs.filter((slug) => fresh.some((s) => s.slug === slug)),
-            anchor: currentChat?.messages.length ?? 0,
-          },
-        ]
-      }
-      return next
+      if (fresh.length === 0) return prev
+      return [
+        ...prev,
+        {
+          id: `splash-${splashSeqRef.current++}`,
+          serverIds: fresh.map((s) => s.id),
+          manualSlugs: manualSlugs.filter((slug) => fresh.some((s) => s.slug === slug)),
+          anchor: currentChat?.messages.length ?? 0,
+        },
+      ]
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [splashableKey, effectiveAddress, currentChatId, currentChat?.messagesLoaded, autoRouter])
