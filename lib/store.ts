@@ -198,9 +198,6 @@ interface YeetfulStore {
   /** Phone-overlay visibility for the MCP rail — transient, not persisted. */
   mobileMcpRailOpen: boolean
   setMobileMcpRailOpen: (open: boolean) => void
-  /** Slug of the MCP whose action window (per-MCP splash) is open, if any. */
-  mcpActionSlug: string | null
-  setMcpActionSlug: (slug: string | null) => void
 }
 
 const localId = () => Math.random().toString(36).slice(2)
@@ -459,8 +456,6 @@ export const useYeetfulStore = create<YeetfulStore>()(
       setMcpRailOpen: (open) => set({ mcpRailOpen: open }),
       mobileMcpRailOpen: false,
       setMobileMcpRailOpen: (open) => set({ mobileMcpRailOpen: open }),
-      mcpActionSlug: null,
-      setMcpActionSlug: (slug) => set({ mcpActionSlug: slug }),
     }),
     {
       name: 'yeetful-store',

@@ -135,7 +135,7 @@ function groupBySlug(tiles: SplashTile[]): SplashTile[][] {
 }
 
 // ── Tile router ──────────────────────────────────────────────────────────────
-// Exported: the per-MCP action window (McpActionPanel) renders the same tiles.
+// Exported so other splash surfaces can render the same tiles.
 
 /** One tile's content: caption row (what this section is + its scope), the
  *  render-primitive body, and the tile's prompt chips. */
@@ -181,7 +181,7 @@ export function TileCard({
   onPick,
   onRetry,
 }: {
-  /** Single-tile call sites (McpActionPanel) pass `tile`… */
+  /** Single-tile call sites pass `tile`… */
   tile?: SplashTile
   /** …the splash grid passes the MCP's whole tile group. */
   tiles?: SplashTile[]

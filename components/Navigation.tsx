@@ -146,7 +146,7 @@ export default function Navigation() {
         Router
       </Link>
       <Link href="/chat" className={`nav__tab ${pathname === '/chat' ? 'is-on' : ''}`}>
-        Chat
+        App
       </Link>
       <NavResearch />
       <Link href="/pricing" className={`nav__tab ${pathname.startsWith('/pricing') ? 'is-on' : ''}`}>
@@ -169,7 +169,7 @@ export default function Navigation() {
         Router
       </Link>
       <Link href="/chat" className={`nav__tab ${pathname === '/chat' ? 'is-on' : ''}`}>
-        Chat
+        App
       </Link>
       <span className="drawer__group mono">Research</span>
       {RESEARCH_ITEMS.map(({ href, label }) => (

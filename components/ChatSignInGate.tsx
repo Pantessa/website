@@ -13,11 +13,16 @@ import { cdpEnabled } from '@/lib/cdp-embedded'
  * still hydrating) we render nothing so the chat is fully usable.
  */
 export default function ChatSignInGate() {
-  const { status, signingIn, connectAndSignIn } = useSession()
+  const { status, signingIn, needsSignIn, signIn, connectAndSignIn } = useSession()
 
   // Only block confirmed guests. During `loading` we stay out of the way to
   // avoid a flash before the session cookie hydrates; `authed` needs no gate.
   if (status !== 'guest') return null
+
+  // A wallet is connected but there's no SIWE session yet — the user just needs
+  // to approve the signature request in their wallet. Swap the copy + CTA to
+  // point them at that pending prompt instead of the initial sign-in pitch.
+  const awaitingSignature = needsSignIn
 
   const ctaClass =
     'flex items-center gap-2 px-5 py-2.5 rounded-full bg-[var(--accent)] text-black text-sm font-semibold hover:opacity-90 transition-opacity disabled:opacity-60 disabled:cursor-not-allowed'
@@ -26,22 +31,38 @@ export default function ChatSignInGate() {
     <div className="absolute inset-0 z-40 flex items-center justify-center bg-black/60 backdrop-blur-sm px-6">
       <div className="max-w-md text-center">
         <p className="text-xs font-medium uppercase tracking-[0.2em] text-[color:var(--muted-2)]">
-          Sandbox
+          {awaitingSignature ? 'Almost there' : 'Sandbox'}
         </p>
         <h2
           className="mt-3 text-4xl sm:text-5xl leading-tight text-white"
           style={{ fontFamily: 'var(--font-serif)' }}
         >
-          Router Testing Grounds
+          {awaitingSignature ? 'Waiting for Signature' : 'Router Testing Grounds'}
         </h2>
         <p className="mt-5 text-sm sm:text-base leading-relaxed text-[color:var(--muted)]">
-          This chat is a testing ground for x402 payments — it combines inference
-          and data, paying per call from the USDC and ETH in your connected
-          wallet. Yeetful gives autonomous agents that same routing engine to
-          reach any MCP. Sign in with your wallet to start routing.
+          {awaitingSignature
+            ? 'Check your wallet and approve the signature request to finish signing in — it just proves you own this wallet, no funds are moved.'
+            : 'This chat is a testing ground for x402 payments — it combines inference and data, paying per call from the USDC and ETH in your connected wallet. Yeetful gives autonomous agents that same routing engine to reach any MCP. Sign in with your wallet to start routing.'}
         </p>
         <div className="mt-7 flex justify-center">
-          {cdpEnabled ? (
+          {awaitingSignature ? (
+            // Wallet already connected — re-fire the SIWE signature directly
+            // (re-opens the wallet prompt if the user dismissed it).
+            <button
+              onClick={() => signIn('/chat')}
+              disabled={signingIn}
+              type="button"
+              title="Approve the signature request in your wallet"
+              className={ctaClass}
+            >
+              {signingIn ? (
+                <Loader2 className="w-4 h-4 animate-spin" strokeWidth={2.5} />
+              ) : (
+                <LogIn className="w-4 h-4" strokeWidth={2.5} />
+              )}
+              <span>{signingIn ? 'Waiting for signature…' : 'Sign in with your wallet'}</span>
+            </button>
+          ) : cdpEnabled ? (
             // Open the full sign-in modal (wallet / Google / email).
             <CreateAccountButton
               className={ctaClass}
