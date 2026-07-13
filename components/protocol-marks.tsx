@@ -70,6 +70,28 @@ export function NearMark({ size = 22 }: { size?: number }) {
   )
 }
 
+export function LidoMark({ size = 22 }: { size?: number }) {
+  // Lido's droplet logomark (lido.fi) — the two upper petals + lower bowl of
+  // the staked-ETH drop. Square 1:1 mark.
+  return (
+    <svg viewBox="0 0 24 24" width={size} height={size} fill="currentColor" aria-hidden style={{ display: 'block' }}>
+      <path d="M11.9971 14.1288L6.89102 11.1299L6.74656 11.3491C5.98362 12.5558 5.65201 13.9856 5.80581 15.405C5.9596 16.8245 6.58972 18.1499 7.59342 19.1652C8.16999 19.7467 8.85597 20.2081 9.6118 20.523C10.3676 20.8378 11.1784 21 11.9971 21C12.8159 21 13.6267 20.8378 14.3824 20.523C15.1383 20.2081 15.8242 19.7467 16.4008 19.1652C17.4077 18.1518 18.04 16.826 18.1939 15.4055C18.3478 13.9852 18.0143 12.5549 17.2476 11.3491L17.1033 11.1299L11.9971 14.1288Z" />
+      <path d="M12.002 3L16.4057 9.94929L12.002 12.5347V3Z" />
+      <path d="M12.0024 3V12.5347L7.59863 9.94431L12.0024 3Z" />
+    </svg>
+  )
+}
+
+export function HyperliquidMark({ size = 22 }: { size?: number }) {
+  // Hyperliquid's wave logomark (hyperliquid.xyz / HyperEVM). Wide glyph in a
+  // square 1:1 viewBox, vertically centered as shipped by the brand.
+  return (
+    <svg viewBox="0 0 24 24" width={size} height={size} fill="currentColor" aria-hidden style={{ display: 'block' }}>
+      <path d="M20.9994 11.9374C21.0158 13.3707 20.7065 14.7403 20.099 16.0488C19.2315 17.9121 17.1518 19.4356 15.2526 17.8139C13.7037 16.4921 13.4163 13.8086 11.0958 13.4158C8.02535 13.0548 7.95146 16.5079 5.94557 16.8981C3.70981 17.3388 2.9682 13.6918 3.00104 12.0356C3.03388 10.3793 3.48814 8.05158 5.4311 8.05158C7.66686 8.05158 7.81737 11.3349 10.6552 11.157C13.4656 10.9712 13.5149 7.55523 15.3511 6.09275C16.9355 4.82933 18.7992 5.75566 19.7323 7.27654C20.5971 8.68328 20.9775 10.3342 20.9967 11.9374H20.9994Z" />
+    </svg>
+  )
+}
+
 // slug/name matcher → mark. Ordered; first match wins. The regex is tested
 // against a space-joined string of iconSlug/slug/id/name, so `-free`/`-mcp`
 // suffixes and display names all resolve to the same mark.
@@ -81,6 +103,8 @@ const REGISTRY: { match: RegExp; Mark: Mark }[] = [
   // \bnear\b (not /near/) so "near-intents-free" / "NEAR Intents" match but
   // "linear" doesn't.
   { match: /\bnear\b|near-intents/i, Mark: NearMark },
+  { match: /lido/i, Mark: LidoMark },
+  { match: /hyperliquid|hyper-?evm/i, Mark: HyperliquidMark },
 ]
 
 /** Resolve a vendored protocol mark from any of a server's identifiers.
