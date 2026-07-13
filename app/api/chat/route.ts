@@ -26,6 +26,7 @@ import {
 } from '@/lib/cross-chain-swap'
 import {
   aaveAgentOf,
+  competingVenueOf,
   parseAaveSupply,
   parseAaveSupplyFollowUp,
   pickSupplyReserve,
@@ -524,7 +525,12 @@ export async function POST(req: NextRequest) {
         nativeTrace({ type: 'status', label: 'native aave layer: supply ask under-specified — asking for the amount' })
         return NextResponse.json({ reply: `🏦 ${aaveAsk.problem}` })
       }
-      if (aaveAsk.explicitAave || aaveRead.agent) {
+      const rivalVenue = aaveAsk.weak ? competingVenueOf(activeServers) : null
+      if (rivalVenue) {
+        // Venue-generic verb ("deposit 5 USDC") and another selected agent
+        // could serve it — don't assume Aave; normal routing decides.
+        nativeTrace({ type: 'note', level: 'info', label: `native aave layer passed: venue-generic verb and ${rivalVenue} is also selected — normal routing decides the venue` })
+      } else if (aaveAsk.explicitAave || aaveRead.agent) {
         if (!aaveRead.agent) {
           nativeTrace({ type: 'note', level: 'warn', label: 'native aave layer: supply parsed but no Aave agent in the set — asking the user to add it' })
           return NextResponse.json({
@@ -545,11 +551,12 @@ export async function POST(req: NextRequest) {
             reply: `🏦 Aave v4 is live on **Ethereum only** today — I can't build a supply on ${aaveAsk.otherChain}. Say “supply ${aaveAsk.amount} ${aaveAsk.token.toUpperCase()} to Aave on Ethereum” and I'll prepare it.`,
           })
         }
-        nativeTrace({ type: 'status', label: `native aave layer claimed the turn: supply ${aaveAsk.amount} ${aaveAsk.token.toUpperCase()} — planner bypassed` })
+        nativeTrace({ type: 'status', label: `native aave layer claimed the turn: supply ${aaveAsk.amount} ${aaveAsk.token.toUpperCase()}${aaveAsk.explicitAave ? '' : ' (set-hint: Aave selected)'} — planner bypassed` })
         return await buildAaveSupplyTurn(aaveRead.agent, aaveAsk, walletAddress, workingContext, message, nativeTrace)
+      } else {
+        // Pool-ish/bare ask with no Aave agent and Aave not named → normal routing.
+        nativeTrace({ type: 'note', level: 'info', label: 'native aave layer passed: supply-shaped ask but no Aave agent in the set — normal routing' })
       }
-      // Pool-ish ask with no Aave agent and Aave not named → normal routing.
-      nativeTrace({ type: 'note', level: 'info', label: 'native aave layer passed: pool-ish supply but no Aave agent in the set — normal routing' })
     }
 
     // ── Aave withdraw / borrow / repay: the same native recipe ──────────────
@@ -563,7 +570,10 @@ export async function POST(req: NextRequest) {
         nativeTrace({ type: 'status', label: `native aave layer: ${aaveOpAsk.op} ask under-specified — asking for the amount` })
         return NextResponse.json({ reply: `🏦 ${aaveOpAsk.problem}` })
       }
-      if (aaveOpAsk.explicitAave || aaveRead.agent) {
+      const rivalOpVenue = aaveOpAsk.weak ? competingVenueOf(activeServers) : null
+      if (rivalOpVenue) {
+        nativeTrace({ type: 'note', level: 'info', label: `native aave layer passed: venue-generic ${aaveOpAsk.op} and ${rivalOpVenue} is also selected — normal routing decides the venue` })
+      } else if (aaveOpAsk.explicitAave || aaveRead.agent) {
         if (!aaveRead.agent) {
           nativeTrace({ type: 'note', level: 'warn', label: `native aave layer: ${aaveOpAsk.op} parsed but no Aave agent in the set — asking the user to add it` })
           return NextResponse.json({
@@ -582,11 +592,12 @@ export async function POST(req: NextRequest) {
             reply: `🏦 Aave v4 is live on **Ethereum only** today — I can't build a ${aaveOpAsk.op} on ${aaveOpAsk.otherChain}. Say “${aaveOpAsk.op} ${aaveOpAsk.amount ?? 'all my'} ${aaveOpAsk.token.toUpperCase()} on Ethereum” and I'll prepare it.`,
           })
         }
-        nativeTrace({ type: 'status', label: `native aave layer claimed the turn: ${aaveOpAsk.op} ${aaveOpAsk.max ? `all ${aaveOpAsk.token.toUpperCase()}` : `${aaveOpAsk.amount} ${aaveOpAsk.token.toUpperCase()}`} — planner bypassed` })
+        nativeTrace({ type: 'status', label: `native aave layer claimed the turn: ${aaveOpAsk.op} ${aaveOpAsk.max ? `all ${aaveOpAsk.token.toUpperCase()}` : `${aaveOpAsk.amount} ${aaveOpAsk.token.toUpperCase()}`}${aaveOpAsk.explicitAave ? '' : ' (set-hint: Aave selected)'} — planner bypassed` })
         return await buildAaveOpTurn(aaveRead.agent, aaveOpAsk, walletAddress, workingContext, message, nativeTrace)
+      } else {
+        // Lending-ish verb with no Aave agent and Aave not named → normal routing.
+        nativeTrace({ type: 'note', level: 'info', label: `native aave layer passed: ${aaveOpAsk.op}-shaped ask but no Aave agent in the set — normal routing` })
       }
-      // Lending-ish verb with no Aave agent and Aave not named → normal routing.
-      nativeTrace({ type: 'note', level: 'info', label: `native aave layer passed: ${aaveOpAsk.op}-shaped ask but no Aave agent in the set — normal routing` })
     }
     if (!aaveAsk && !aaveOpAsk && /\baave\b/i.test(message)) {
       // Aave named but neither native parser claimed it — the planner routes

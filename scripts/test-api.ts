@@ -39,6 +39,7 @@ import { crossChainAgentOf, detectCrossChain } from '../lib/swap-intent'
 import { parseCrossChainSwap, guardCrossChainBuild, expectedOriginChainId, parseCrossChainFollowUp } from '../lib/cross-chain-swap'
 import {
   parseAaveSupply,
+  competingVenueOf,
   pickSupplyReserve,
   guardAaveSupplyBuild,
   parseAaveSupplyFollowUp,
@@ -1655,10 +1656,17 @@ async function main() {
     const filler = parseAaveSupply('supply 5 extra USDC to aave')
     check('aave parse: "5 extra USDC" filler with aave named', !!filler && !('problem' in filler) && filler.amount === '5' && filler.token === 'USDC')
     check('aave parse: bare filler with NO token ("supply 1 more") → null', parseAaveSupply('supply 1 more') === null)
-    check('aave parse: bare generic verb ("add 1 USDC") → null (too ambiguous)', parseAaveSupply('add 1 USDC') === null)
+    check('aave parse: bare lending verb is NOT weak', !!bare && !('problem' in bare) && !bare.weak)
+    const weakAdd = parseAaveSupply('add 1 USDC')
+    check('aave parse: bare generic verb ("add 1 USDC") → WEAK (set decides)', !!weakAdd && !('problem' in weakAdd) && weakAdd.weak === true && weakAdd.amount === '1')
+    const weakDep = parseAaveSupply('deposit 5 USDC')
+    check('aave parse: bare "deposit 5 USDC" → WEAK (hyperliquid takes deposits too)', !!weakDep && !('problem' in weakDep) && weakDep.weak === true)
     check('aave parse: bare with a non-Aave destination → null', parseAaveSupply('deposit 5 USDC to hyperliquid') === null)
     check('aave parse: bare with an unknown destination → null', parseAaveSupply('supply 5 USDC to my savings account') === null)
     check('aave parse: bare question form ("should I…") → null', parseAaveSupply('should i supply 100 USDC') === null)
+    // Set-aware disambiguation for weak verbs.
+    check('aave rival: hyperliquid in the set → named', competingVenueOf([{ slug: 'aave', name: 'Aave' }, { slug: 'hyperliquid-free', name: 'Hyperliquid (Free)' }]) === 'Hyperliquid (Free)')
+    check('aave rival: wallet+aave only → null (Aave is the only venue)', competingVenueOf([{ slug: 'aave', name: 'Aave' }, { slug: 'yeetful-tool-wallet', name: 'Yeetful Wallet' }]) === null)
 
     // Reserve pick — Main (deepest + collateral-enabled) wins; shapes from a
     // live reserves probe 2026-07-10.
@@ -1719,7 +1727,10 @@ async function main() {
     check('aave ops parse: "withdraw 0.5 WETH from aave"', !!w && !('problem' in w) && w.op === 'withdraw' && w.amount === '0.5' && w.token === 'WETH' && !w.max)
     const wmax = parseAaveOp('withdraw all my USDC from the pool')
     check('aave ops parse: "withdraw all my USDC" → max (implicit aave, poolish)', !!wmax && !('problem' in wmax) && wmax.op === 'withdraw' && wmax.max && wmax.token === 'USDC' && !wmax.explicitAave)
-    check('aave ops parse: bare "withdraw 100 USDC" (no aave/pool context) → null', parseAaveOp('withdraw 100 USDC') === null)
+    const wbare = parseAaveOp('withdraw 100 USDC')
+    check('aave ops parse: bare "withdraw 100 USDC" → WEAK (set decides the venue)', !!wbare && !('problem' in wbare) && wbare.op === 'withdraw' && wbare.weak === true && wbare.amount === '100')
+    check('aave ops parse: bare withdraw with a non-Aave source → null', parseAaveOp('withdraw 100 USDC from binance') === null)
+    check('aave ops parse: bare withdraw "to my wallet" stays WEAK-parsed', (() => { const p = parseAaveOp('withdraw 100 USDC to my wallet'); return !!p && !('problem' in p) && p.weak === true })())
     const b = parseAaveOp('borrow 100 USDC on aave')
     check('aave ops parse: "borrow 100 USDC on aave"', !!b && !('problem' in b) && b.op === 'borrow' && b.amount === '100' && !b.max)
     const b2 = parseAaveOp('can we borrow 250 usdt against my collateral')

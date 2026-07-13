@@ -84,6 +84,10 @@ export interface AaveSupplyParams {
   explicitAave: boolean
   /** A NON-Ethereum chain the user named, or null (Ethereum/default). */
   otherChain: string | null
+  /** Venue-generic verb (deposit/add/put/park bare, withdraw with no
+   *  context) — the SELECTED SET is the only cue, so the route site builds
+   *  only when no OTHER selected agent could serve the verb. */
+  weak?: boolean
 }
 
 /**
@@ -97,20 +101,25 @@ export function parseAaveSupply(message: string): AaveSupplyParams | { problem: 
   const explicitAave = /\baave\b/i.test(message)
   const poolish = POOLISH_RE.test(message)
   const m = message.match(SUPPLY_RE)
+  let weak = false
   if (!explicitAave && !poolish) {
     // Bare imperative — no Aave/pool cue in the sentence ("can I supply 1
     // more USDC", live 2026-07-13: the context was the previous Aave turn,
     // and the fall-through planner died on build_supply's address regex).
-    // Route natively only when it can't mean anything else: a lending-
-    // specific verb (supply/deposit/lend — add/put/park are too generic
-    // bare), not a question, and no destination named that isn't Aave-shaped
-    // ("deposit 5 USDC to hyperliquid" falls through). explicitAave stays
-    // false, so the route site only builds when the Aave agent is in the set.
-    if (!m || !/^(?:supply|deposit|lend)\b/i.test(m[0])) return null
+    // The SELECTED SET is the cue here (explicitAave stays false → the
+    // route site requires the Aave agent in the set). Two strengths:
+    // supply/lend are lending-only verbs → route whenever the agent is
+    // selected; deposit/add/put/park are venue-generic → WEAK, and the
+    // route site additionally requires that no OTHER selected agent could
+    // serve the verb (Hyperliquid takes deposits too). All bare forms:
+    // not a question, and no destination named that isn't Aave-shaped
+    // ("deposit 5 USDC to my savings account" falls through).
+    if (!m) return null
     if (QUESTION_START_RE.test(message)) return null
     const rest = message.slice((m.index ?? 0) + m[0].length)
     const dest = rest.match(/\b(?:to|into|in|on|at)\s+(?:an?\s+|the\s+|my\s+)?([A-Za-z0-9]+)/i)
     if (dest && !/^(?:aave|pool|pools|lending|ethereum|eth|mainnet)$/i.test(dest[1])) return null
+    weak = !/^(?:supply|lend)\b/i.test(m[0])
   }
 
   if (!m) {
@@ -132,7 +141,26 @@ export function parseAaveSupply(message: string): AaveSupplyParams | { problem: 
     token,
     explicitAave,
     otherChain: other && !ETH_RE.test(other[1]) ? other[1].toLowerCase() : null,
+    ...(weak ? { weak: true } : {}),
   }
+}
+
+// ── Set-aware disambiguation for WEAK (venue-generic) verbs ──────────────────
+// "deposit 5 USDC" / "withdraw 100 USDC" with the Aave agent selected: the
+// set IS the hint — unless another selected agent could serve the same verb,
+// in which case normal routing decides the venue instead of assuming Aave.
+const COMPETING_VENUE_RE = /hyperliquid|binance|coinbase|kraken|exchange|morpho|compound|venus|spark/i
+
+/** The first selected agent (non-Aave) that also takes deposits/withdrawals,
+ *  or null when Aave is the only plausible venue in the set. */
+export function competingVenueOf<T extends { slug?: string | null; name?: string | null }>(
+  servers: T[],
+): string | null {
+  const hit = servers.find(
+    (s) =>
+      !AAVE_MCP_RE.test(`${s.slug} ${s.name}`) && COMPETING_VENUE_RE.test(`${s.slug ?? ''} ${s.name ?? ''}`),
+  )
+  return hit ? (hit.name ?? hit.slug ?? 'another venue') : null
 }
 
 // ── Reserve resolution (from the agent's `reserves` tool result) ─────────────
@@ -597,6 +625,9 @@ export interface AaveOpParams {
   token: string
   explicitAave: boolean
   otherChain: string | null
+  /** Withdraw with no Aave/lending cue — the selected set is the only hint;
+   *  the route site builds only when no competing venue is selected. */
+  weak?: boolean
 }
 
 // "all my USDC" / "everything" / "max" — the withdraw/repay full-amount forms.
@@ -677,6 +708,17 @@ export function parseAaveOp(message: string): AaveOpParams | { op: AaveOpKind; p
   if (w && (explicitAave || OP_CONTEXT_RE.test(message))) {
     const parsed = shape('withdraw', w[1] ?? null, w[2])
     if (parsed) return parsed
+  } else if (w) {
+    // Bare "withdraw 100 USDC" — no Aave/lending cue; the selected set is
+    // the hint (WEAK: the route site requires the Aave agent selected AND
+    // no competing venue in the set). A named source that isn't Aave-shaped
+    // ("withdraw 100 USDC from binance") still falls through.
+    const rest = message.slice((w.index ?? 0) + w[0].length)
+    const src = rest.match(/\b(?:from|to|into|in|on|at|out\s+of)\s+(?:an?\s+|the\s+|my\s+)?([A-Za-z0-9]+)/i)
+    if (!src || /^(?:aave|pool|pools|lending|wallet|ethereum|eth|mainnet)$/i.test(src[1])) {
+      const parsed = shape('withdraw', w[1] ?? null, w[2])
+      if (parsed) return { ...parsed, weak: true }
+    }
   }
 
   if (explicitAave) {
