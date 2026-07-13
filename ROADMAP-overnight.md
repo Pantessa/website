@@ -25,17 +25,17 @@ backed by a deterministic builder + live context; additive DDL only.
       runner auth, step-claim atomicity)
 
 ## W2 — Action chips replace suggested prompts  [~1h]
-- [ ] lib/action-chips.ts: chips = f(wallet context, native builders, MCP
+- [x] lib/action-chips.ts: chips = f(wallet context, native builders, MCP
       set). Each chip: {label, message-to-send, requires: balances/positions
       checked LIVE}. Sources: HL positions → "Protect …" / "Close …";
       Base/Arb USDC → "Bridge $N to …" / "Deposit $N to Hyperliquid";
       Aave positions → withdraw/repay; CoW/Uniswap balances → swap chips.
-- [ ] Replace static suggested prompts on splash cards + portfolio card
+- [x] Replace static suggested prompts on splash cards + portfolio card
       bottom rows with verified chips (keep uniform-grid contract, one
       bottom chip row per card — splash memory #393)
-- [ ] Chip → sends the exact message the native layer parses (already-proven
+- [x] Chip → sends the exact message the native layer parses (already-proven
       round trip), never a freeform prompt
-- [ ] Remove/retire prompt suggestions that lack a backing builder
+- [x] Remove/retire prompt suggestions that lack a backing builder
 
 ## W3 — Cards polish + receipts  [~45m]
 - [ ] Guardian: armed-policy reply becomes a live card (status, trigger
@@ -56,3 +56,9 @@ backed by a deterministic builder + live context; additive DDL only.
   tables live, cron wired, 450-check harness green, LIVE job verified on
   :3277 (real 1Click artifact offered; fund-less deposit failed closed).
   Screenshot: JobCard w/ $4 bridge quote + embedded sign button. Next: W2.
+- 21:50 W2 DONE — action-chips merged to lane (PR #406): every splash chip
+  is a native action with live amounts; round-trip harness check added
+  (451 green). Burner $33.86 → "Swap 33 USDC → ETH" verified live. Note:
+  W2 chips landed inside sources.ts derivations (no separate
+  lib/action-chips.ts needed — the registry already had the right shape).
+  Next: W3 cards polish.
