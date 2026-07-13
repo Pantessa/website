@@ -143,6 +143,11 @@ interface YeetfulStore {
   setActiveServerIds: (ids: string[]) => void
   clearActiveServers: () => void
 
+  // The chain picker's selection — null = all supported chains (default).
+  // Scopes the splash cards and makes the chain first-class for tx builds.
+  selectedChainId: number | null
+  setSelectedChainId: (id: number | null) => void
+
   // Slugs the user EXPLICITLY toggled on (rail click / add-MCP modal) — as
   // opposed to the seeded default fleet. The splash shows these MCPs' cards
   // even when the wallet has no activity on them (a hand-picked MCP earns its
@@ -273,6 +278,9 @@ export const useYeetfulStore = create<YeetfulStore>()(
       },
       setActiveServerIds: (ids) => set({ activeServerIds: ids }),
       clearActiveServers: () => set({ activeServerIds: [] }),
+
+      selectedChainId: null,
+      setSelectedChainId: (id) => set({ selectedChainId: id }),
 
       manualSlugs: [],
       markManualMcp: (slug, on) =>
@@ -575,6 +583,7 @@ export const useYeetfulStore = create<YeetfulStore>()(
       // leak into another account or survive a sign-out.
       partialize: (state) => ({
         activeServerIds: state.activeServerIds,
+        selectedChainId: state.selectedChainId,
         manualSlugs: state.manualSlugs,
         walletSets: state.walletSets,
         shortlistIds: state.shortlistIds,

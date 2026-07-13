@@ -7,7 +7,6 @@ import {
   injectedWallet,
 } from '@rainbow-me/rainbowkit/wallets'
 import { createConfig, http } from 'wagmi'
-import { defineChain } from 'viem'
 import { mainnet, base, baseSepolia, arbitrum } from 'wagmi/chains'
 import { cdpEmbeddedConnector, cdpEnabled } from '@/lib/cdp-embedded'
 import { hostWalletConnector } from '@/lib/host-wallet'
@@ -76,19 +75,11 @@ const connectors = [
   hostWalletConnector(),
 ]
 
-// Robinhood Chain (Arbitrum Orbit L2, mainnet 2026-07-01) — not in viem's
-// bundled chains yet, so defined here. The public RPC is rate-limited but
-// fine for what the app does on it (chain switching + receipt polling);
-// docs.robinhood.com/chain/connecting lists Alchemy as the heavier option.
-export const robinhoodChain = defineChain({
-  id: 4663,
-  name: 'Robinhood Chain',
-  nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
-  rpcUrls: { default: { http: ['https://rpc.mainnet.chain.robinhood.com'] } },
-  blockExplorers: {
-    default: { name: 'Robinhood Chain Explorer', url: 'https://robinhoodchain.blockscout.com' },
-  },
-})
+// Robinhood Chain's definition moved to lib/chains.ts (the app chain
+// registry) so server code can use it without pulling in wallet connectors;
+// re-exported here for back-compat.
+import { robinhoodChain } from '@/lib/chains'
+export { robinhoodChain }
 
 export const wagmiConfig = createConfig({
   connectors,

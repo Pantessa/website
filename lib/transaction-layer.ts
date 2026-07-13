@@ -71,7 +71,8 @@ export interface TxChainRequest {
     kind: 'uniswap-swap'
     /** 0-based index of the step to rebuild at advance time. */
     stepIndex: number
-    params: { sellToken: string; buyToken: string; amountHuman: string }
+    /** chainId rides as a string; absent = Base (pre-chain-picker recipes). */
+    params: { sellToken: string; buyToken: string; amountHuman: string; chainId?: string }
   }
 }
 
@@ -100,7 +101,16 @@ export function txChainOf(meta: unknown): TxChainRequest | null {
   if (r && typeof r === 'object' && r.kind === 'uniswap-swap' && typeof r.stepIndex === 'number' && r.params && typeof r.params === 'object') {
     const p = r.params as Record<string, unknown>
     if (typeof p.sellToken === 'string' && typeof p.buyToken === 'string' && typeof p.amountHuman === 'string') {
-      refresh = { kind: 'uniswap-swap', stepIndex: r.stepIndex, params: { sellToken: p.sellToken, buyToken: p.buyToken, amountHuman: p.amountHuman } }
+      refresh = {
+        kind: 'uniswap-swap',
+        stepIndex: r.stepIndex,
+        params: {
+          sellToken: p.sellToken,
+          buyToken: p.buyToken,
+          amountHuman: p.amountHuman,
+          ...(typeof p.chainId === 'string' ? { chainId: p.chainId } : {}),
+        },
+      }
     }
   }
   return { summary: typeof d.summary === 'string' ? d.summary : '', steps, refresh }

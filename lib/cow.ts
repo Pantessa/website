@@ -12,6 +12,7 @@
 //  submission to the order book = A4. Verified: CoW Swap is live on Base.
 // ─────────────────────────────────────────────────────────────────────────
 import { dynamicTokenBySymbol, dynamicTokenByAddress } from '@/lib/token-list'
+import { chainById } from '@/lib/chains'
 
 import { keccak256, stringToBytes } from 'viem'
 
@@ -27,16 +28,11 @@ export const COW_API_BASE: Record<number, string> = {
   42161: 'https://api.cow.fi/arbitrum_one',
 }
 
-/** Well-known Base tokens so a natural-language swap ("USDC → WETH") resolves
- *  to addresses — with decimals, so approval summaries show human units, never
- *  raw atoms. Raw 0x addresses pass through untouched. */
-const BASE_TOKENS: Record<string, { address: string; decimals: number }> = {
-  USDC: { address: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913', decimals: 6 },
-  WETH: { address: '0x4200000000000000000000000000000000000006', decimals: 18 },
-  ETH: { address: '0x4200000000000000000000000000000000000006', decimals: 18 }, // treated as WETH for ERC-20 swaps
-  CBETH: { address: '0x2Ae3F1Ec7F1F5012CFEab0185bfc7aa3cf0DEc22', decimals: 18 },
-  DAI: { address: '0x50c5725949A6F0c72E6C4a641F24049A917DB0Cb', decimals: 18 },
-  USDBC: { address: '0xd9aAEc86B65D86f6A7B5B1b0c42FFA531710b6CA', decimals: 6 },
+/** Hand-pinned symbol maps live per chain in lib/chains.ts (`tokens`) so the
+ *  flagship tokens resolve without the dynamic list. Raw 0x addresses pass
+ *  through untouched everywhere. */
+function staticTokensFor(chainId: number): Record<string, { address: string; decimals: number }> {
+  return chainById(chainId)?.tokens ?? {}
 }
 
 /** Resolve a token symbol or address to a checksum-free lowercase address.
@@ -44,34 +40,33 @@ const BASE_TOKENS: Record<string, { address: string; decimals: number }> = {
 export function resolveToken(input: string, chainId = 8453): string | null {
   const t = input.trim()
   if (/^0x[0-9a-fA-F]{40}$/.test(t)) return t.toLowerCase()
-  if (chainId === 8453) {
-    const info = BASE_TOKENS[t.toUpperCase()]
-    if (info) return info.address.toLowerCase()
-    // Dynamic layer (RR14): the official Uniswap token list filtered to Base,
-    // warmed via ensureBaseTokenList() at the swap entry points — covers
-    // UNI/AAVE/VIRTUAL/… without hand-typing addresses on a money surface.
-    const dyn = dynamicTokenBySymbol(t)
-    if (dyn) return dyn.address
-  }
+  const info = staticTokensFor(chainId)[t.toUpperCase()]
+  if (info) return info.address.toLowerCase()
+  // Dynamic layer (RR14): the official Uniswap token list filtered to this
+  // chain, warmed via ensureTokenList(chainId) at the swap entry points —
+  // covers UNI/AAVE/VIRTUAL/AAPL/… without hand-typing addresses on a money
+  // surface.
+  const dyn = dynamicTokenBySymbol(t, chainId)
+  if (dyn) return dyn.address
   return null
 }
 
 /** Decimals for a known token symbol (or an address that maps to one).
  *  Null when unknown — callers must fall back to labeling amounts as atoms. */
 export function tokenDecimals(input: string, chainId = 8453): number | null {
-  if (chainId !== 8453) return null
   const t = input.trim()
-  const bySymbol = BASE_TOKENS[t.toUpperCase()]
+  const tokens = staticTokensFor(chainId)
+  const bySymbol = tokens[t.toUpperCase()]
   if (bySymbol) return bySymbol.decimals
   if (/^0x[0-9a-fA-F]{40}$/.test(t)) {
     const lower = t.toLowerCase()
-    for (const info of Object.values(BASE_TOKENS)) {
+    for (const info of Object.values(tokens)) {
       if (info.address.toLowerCase() === lower) return info.decimals
     }
-    const dynAddr = dynamicTokenByAddress(lower)
+    const dynAddr = dynamicTokenByAddress(lower, chainId)
     if (dynAddr) return dynAddr.decimals
   }
-  const dyn = dynamicTokenBySymbol(t)
+  const dyn = dynamicTokenBySymbol(t, chainId)
   if (dyn) return dyn.decimals
   return null
 }
@@ -96,12 +91,12 @@ export function formatAtoms(atoms: string, decimals: number, maxFractionDigits =
 export function tokenLabel(input: string, chainId = 8453): string {
   const t = input.trim()
   if (!/^0x[0-9a-fA-F]{40}$/.test(t)) return t.toUpperCase()
-  if (chainId === 8453) {
-    const lower = t.toLowerCase()
-    for (const [sym, info] of Object.entries(BASE_TOKENS)) {
-      if (sym !== 'ETH' && info.address.toLowerCase() === lower) return sym
-    }
+  const lower = t.toLowerCase()
+  for (const [sym, info] of Object.entries(staticTokensFor(chainId))) {
+    if (sym !== 'ETH' && info.address.toLowerCase() === lower) return sym
   }
+  const dyn = dynamicTokenByAddress(lower, chainId)
+  if (dyn) return dyn.symbol.toUpperCase()
   return `${t.slice(0, 6)}…${t.slice(-4)}`
 }
 
@@ -408,7 +403,7 @@ export function describeCowOrder(quote: CowQuoteResult, kind: 'swap' | 'limit'):
   const { order, chainId } = quote
   const sell = describeAmount(order.sellAmount, order.sellToken, chainId)
   const buy = describeAmount(order.buyAmount, order.buyToken, chainId)
-  const chain = chainId === 8453 ? 'Base' : `chain ${chainId}`
+  const chain = chainById(chainId)?.name ?? `chain ${chainId}`
   return kind === 'limit'
     ? `Limit order via CoW on ${chain}: sell ${sell} for at least ${buy}`
     : `Swap ${sell} → ~${buy} via CoW on ${chain}`

@@ -32,6 +32,7 @@ import ChatLoader from '@/components/ChatLoader'
 import { splashCapable } from '@/lib/splash/types'
 import ShareButton from '@/components/ShareButton'
 import EmbedThisChat from '@/components/EmbedThisChat'
+import ChainPicker from '@/components/ChainPicker'
 import Link from 'next/link'
 import ConnectWallet from '@/components/ConnectWallet'
 import { YeetfulMark } from '@/components/Logo'
@@ -218,6 +219,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
     setMcpRailOpen,
     mobileMcpRailOpen,
     setMobileMcpRailOpen,
+    selectedChainId,
   } = useYeetfulStore()
 
   // Logged in, the top nav is removed — the chat toolbar carries the home
@@ -529,6 +531,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
             activeServerIds,
             activeServers, // full objects: endpoint/protocol/price per server
             walletAddress: effectiveAddress,
+            selectedChainId, // chain picker — swap asks build on this chain
             history,
             workingContext,
             turnId,
@@ -742,6 +745,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
         // Wallet connected → the engine streams its routing, then hands the
         // data + answer payments back for the wallet to sign (B5).
         walletAddress: effectiveAddress,
+        selectedChainId,
         embedKey,
         embedOrigin,
       }),
@@ -857,6 +861,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
         // Answer-prompt context ("my address") — the server falls back to the
         // SIWE session when absent; the plan phase already validated this shape.
         walletAddress: effectiveAddress,
+        selectedChainId,
       }),
     })
     const out = await res.json()
@@ -990,6 +995,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
               <PanelRight className="w-4 h-4" />
             </button>
           )}
+          <ChainPicker />
           <EmbedThisChat slugs={activeServers.map((s) => s.slug)} />
           <ShareButton />
           {showAppChrome && (

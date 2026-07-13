@@ -23,6 +23,7 @@ import type { McpServer } from '@/lib/store'
 import { callMcpTool } from '@/lib/mcp-call'
 import { overrideFreeMcpBase } from '@/lib/endpoint-planner'
 import { alchemyEnabled, getMultichainPortfolio, getRecentActivity } from '@/lib/alchemy'
+import type { AppChain } from '@/lib/chains'
 import { hasUniswapHistory } from './affinity'
 import type { HoldingRow, ProposalRow, SpaceRow, SplashTile, StatRow, SuggestedPrompt } from './types'
 
@@ -37,8 +38,11 @@ interface SplashSource {
   /** Does this source apply to a connected server? */
   match: (s: McpServer) => boolean
   /** Build one or more tiles (or null to contribute nothing). `call` is bound
-   *  to this server's endpoint; `address` is the connected wallet. */
-  build: (call: McpCaller, address: string, server: McpServer) => Promise<SplashTile | SplashTile[] | null>
+   *  to this server's endpoint; `address` is the connected wallet; `chain` is
+   *  the chain picker's selection (null/undefined = all supported chains) —
+   *  chain-scoped sources narrow their reads to it, chain-agnostic sources
+   *  (governance, perps) ignore it. */
+  build: (call: McpCaller, address: string, server: McpServer, chain?: AppChain | null) => Promise<SplashTile | SplashTile[] | null>
 }
 
 // ── Uniswap slot → wallet portfolio + recent transactions ────────────────────
@@ -78,14 +82,18 @@ function holdingPrompts(holdings: HoldingRow[], where: string): SuggestedPrompt[
 }
 
 /** Multichain path (Alchemy): a portfolio holdings tile + a recent-transactions
- *  tile, both spanning Ethereum/Base/Arbitrum. */
-async function buildMultichainTiles(address: string, server: McpServer): Promise<SplashTile[]> {
+ *  tile spanning every covered chain — or scoped to ONE when the chain picker
+ *  has a selection. */
+async function buildMultichainTiles(address: string, server: McpServer, chain?: AppChain | null): Promise<SplashTile[]> {
+  const onlyNet = chain?.alchemyNet
   const [portfolio, activity] = await Promise.all([
-    getMultichainPortfolio(address),
-    getRecentActivity(address).catch(() => []), // activity is a bonus — never fail the card over it
+    getMultichainPortfolio(address, onlyNet),
+    getRecentActivity(address, 6, onlyNet).catch(() => []), // activity is a bonus — never fail the card over it
   ])
   const holdings = portfolio.holdings
-  const scope = portfolio.chainLabels.length ? portfolio.chainLabels.join(' · ') : 'Ethereum · Base · Arbitrum'
+  const scope = chain
+    ? chain.name
+    : portfolio.chainLabels.length ? portfolio.chainLabels.join(' · ') : 'Ethereum · Base · Arbitrum'
   const tiles: SplashTile[] = []
 
   // Empty wallet → no portfolio card (the affinity contract). A wallet with
@@ -96,14 +104,16 @@ async function buildMultichainTiles(address: string, server: McpServer): Promise
       mcpSlug: server.slug,
       mcpName: server.name,
       render: 'holdings',
-      title: 'Your portfolio',
-      subtitle: `${holdings.length} across ${portfolio.chainsWithHoldings} ${portfolio.chainsWithHoldings === 1 ? 'chain' : 'chains'}`,
+      title: chain ? `Your ${chain.short} portfolio` : 'Your portfolio',
+      subtitle: chain
+        ? `${holdings.length} on ${chain.name}`
+        : `${holdings.length} across ${portfolio.chainsWithHoldings} ${portfolio.chainsWithHoldings === 1 ? 'chain' : 'chains'}`,
       chain: scope,
       totalUsd: portfolio.totalUsd,
       // Keep the card compact — it shares one uniform-height grid with
       // single-section cards, and the subtitle already carries the full count.
       holdings: holdings.slice(0, 4),
-      prompts: holdingPrompts(holdings, 'on Base'),
+      prompts: holdingPrompts(holdings, `on ${chain?.name ?? 'Base'}`),
     })
   }
 
@@ -118,7 +128,7 @@ async function buildMultichainTiles(address: string, server: McpServer): Promise
       rows: activity.slice(0, 2),
       prompts: [
         { label: 'Explain my last tx', prompt: `Explain my most recent transaction (${activity[0].asset} on ${activity[0].chain}) in plain English.` },
-        { label: 'Summarize my activity', prompt: 'Summarize my recent on-chain activity across Ethereum, Base, and Arbitrum.' },
+        { label: 'Summarize my activity', prompt: chain ? `Summarize my recent on-chain activity on ${chain.name}.` : 'Summarize my recent on-chain activity across Ethereum, Base, and Arbitrum.' },
       ],
     })
   }
@@ -149,7 +159,7 @@ async function buildBaseFallbackTile(call: McpCaller, address: string, server: M
 const uniswapSource: SplashSource = {
   id: 'uniswap',
   match: (s) => s.slug === 'uniswap' || s.slug === 'uniswap-free' || /uniswap/i.test(s.name),
-  build: async (call, address, server) => {
+  build: async (call, address, server, chain) => {
     if (alchemyEnabled()) {
       // The Uniswap card is a generic wallet view — earn it by actual Uniswap
       // usage (router-interaction probe; runs concurrently with the portfolio
@@ -157,13 +167,17 @@ const uniswapSource: SplashSource = {
       // failed) fails open. When the wallet MCP is also connected its
       // identical tiles win the dedupe anyway, so a false negative here still
       // leaves the user their portfolio. A manual pick (forceShow) skips the
-      // probe entirely — the user asked for this card.
-      if ((server as SplashServer).forceShow) return buildMultichainTiles(address, server)
-      const [used, tiles] = await Promise.all([hasUniswapHistory(address), buildMultichainTiles(address, server)])
+      // probe entirely — the user asked for this card. The usage probe stays
+      // whole-wallet even when a chain is selected ("has this wallet ever
+      // used Uniswap anywhere") — only the rendered holdings narrow.
+      if ((server as SplashServer).forceShow) return buildMultichainTiles(address, server, chain)
+      const [used, tiles] = await Promise.all([hasUniswapHistory(address), buildMultichainTiles(address, server, chain)])
       if (used === false) return null
       return tiles
     }
-    // Keyless: no way to probe usage — fail open to the Base-only balances view.
+    // Keyless: no way to probe usage — fail open to the Base-only balances
+    // view (which can't scope to another chain; skip when one is selected).
+    if (chain && chain.key !== 'base') return null
     return buildBaseFallbackTile(call, address, server)
   },
 }
@@ -268,9 +282,13 @@ const prettyPair = (pair: string) =>
 const cowSource: SplashSource = {
   id: 'cow',
   match: (s) => /(^|\b)cow(\b|-)/i.test(`${s.slug} ${s.name}`),
-  build: async (call, address, server) => {
-    // Two chains keeps the scan snappy (the full default is four).
-    const data = (await call('portfolio', { owner: address, chains: 'mainnet,base' })) as {
+  build: async (call, address, server, chain) => {
+    // Two chains keeps the scan snappy (the full default is four). A chain
+    // picker selection narrows to that chain — or drops the card entirely on
+    // chains CoW isn't live on (Robinhood).
+    const cowChainOf: Record<string, string> = { ethereum: 'mainnet', base: 'base', arbitrum: 'arbitrum_one' }
+    if (chain && !cowChainOf[chain.key]) return null
+    const data = (await call('portfolio', { owner: address, chains: chain ? cowChainOf[chain.key] : 'mainnet,base' })) as {
       chains?: CowChainView[]
     }
     const chains = Array.isArray(data.chains) ? data.chains.filter((c) => !c.error) : []
@@ -420,7 +438,10 @@ interface AavePortfolioPayload {
 const aaveSource: SplashSource = {
   id: 'aave',
   match: (s) => /aave/i.test(`${s.slug} ${s.name}`),
-  build: async (call, address, server) => {
+  build: async (call, address, server, chain) => {
+    // Aave v4 is Ethereum-only — a picker selection of any other chain has
+    // no Aave data to show.
+    if (chain && chain.key !== 'ethereum') return null
     const data = (await call('portfolio', { user: address })) as AavePortfolioPayload
     const positions = Array.isArray(data.positions) ? data.positions : []
     const supplies = Array.isArray(data.supplies) ? data.supplies : []
@@ -486,7 +507,7 @@ const walletSource: SplashSource = {
   // without the key the generic featured tile still covers it (which now
   // renders kind:'portfolio' payloads as holdings, not raw rows).
   match: (s) => (s.slug === 'yeetful-tool-wallet' || /yeetful\s*wallet/i.test(s.name)) && alchemyEnabled(),
-  build: (_call, address, server) => buildMultichainTiles(address, server),
+  build: (_call, address, server, chain) => buildMultichainTiles(address, server, chain),
 }
 
 /** All registered splash sources. Exported for tests; a new MCP appends here. */
@@ -764,7 +785,7 @@ function errorTile(source: SplashSource, server: McpServer): SplashTile {
  * Servers no dedicated source claims fall through to the generic
  * featured-endpoint tile (best-effort — silent on failure).
  */
-export async function buildSplash(address: string, servers: SplashServer[]): Promise<SplashTile[]> {
+export async function buildSplash(address: string, servers: SplashServer[], chain?: AppChain | null): Promise<SplashTile[]> {
   const jobs: Promise<SplashTile[]>[] = []
   for (const server of servers) {
     if (!server.endpoint) {
@@ -781,7 +802,7 @@ export async function buildSplash(address: string, servers: SplashServer[]): Pro
       matched = true
       jobs.push(
         Promise.resolve()
-          .then(() => source.build(call, address, server))
+          .then(() => source.build(call, address, server, chain))
           .then((t) => {
             const tiles = Array.isArray(t) ? t : t ? [t] : []
             // Hand-picked MCP with no activity → preview card, never nothing.
