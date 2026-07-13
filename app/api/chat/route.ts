@@ -424,8 +424,12 @@ export async function POST(req: NextRequest) {
       if (cc?.kind === 'amend') {
         const ccAgent = crossChainAgentOf(activeServers)
         if (ccAgent.agent && ccAgent.usable) {
-          return await buildCrossChainSwapTurn(ccAgent.agent, cc.params, walletAddress, workingContext, message)
+          nativeTrace({ type: 'status', label: `native cross-chain layer: amending the pending deposit to ${cc.params.amount} ${cc.params.originToken.toUpperCase()} (${cc.params.originChain} → ${cc.params.destinationChain})` })
+          return await buildCrossChainSwapTurn(ccAgent.agent, cc.params, walletAddress, workingContext, message, nativeTrace)
         }
+        // Amend parsed but the agent left the set (or is a shell row) since
+        // the build — fall through to normal routing, with the breadcrumb.
+        nativeTrace({ type: 'note', level: 'warn', label: 'native cross-chain layer: amend follow-up parsed but the cross-chain agent is no longer callable — normal routing' })
       }
     }
 
@@ -504,7 +508,8 @@ export async function POST(req: NextRequest) {
         })
       }
       const pendingVenue: 'uniswap' | 'cow' = pendingArtifact.data.venue === 'uniswap' ? 'uniswap' : 'cow'
-      return await prepareSwapTurn(swapFollowUp.intent, walletAddress, pendingVenue, workingContext)
+      nativeTrace({ type: 'status', label: `native swap layer: amending the pending ${pendingArtifact.kind} to ${swapFollowUp.intent.sellAmountHuman} ${(swapFollowUp.intent.sellToken ?? '').toUpperCase()} → ${(swapFollowUp.intent.buyToken ?? '').toUpperCase()} on ${pendingVenue === 'uniswap' ? 'Uniswap' : 'CoW'}` })
+      return await prepareSwapTurn(swapFollowUp.intent, walletAddress, pendingVenue, workingContext, nativeTrace)
     }
     // ── Aave supply: NATIVE deterministic build (no confirm round-trips) ────
     // "add 1 USDC to an Aave pool on Ethereum" once went planner/house-model:
@@ -621,6 +626,7 @@ export async function POST(req: NextRequest) {
       const ccAgent = crossChainAgentOf(activeServers)
       if (nonBase && !ccAgent.agent) {
         const named = xc.chains.length ? xc.chains.map((c) => `**${c[0].toUpperCase()}${c.slice(1)}**`).join(' → ') : `**${chainAsk}**`
+        nativeTrace({ type: 'note', level: 'warn', label: `native swap layer declined: cross-chain ask (${xc.chains.length ? xc.chains.join(' → ') : chainAsk}) but no cross-chain agent in the set — pointing at NEAR Intents, no build` })
         return NextResponse.json({
           reply: `🔗 That swap involves ${named}, and Yeetful's built-in swap tools are Base-only. Add the **NEAR Intents (Free)** agent to your set and ask again — it swaps any asset to any asset across ~35 chains with ONE transfer you sign (unfillable swaps auto-refund). Or say the swap without a chain and I'll build it on Base.`,
         })
@@ -630,6 +636,7 @@ export async function POST(req: NextRequest) {
         // shell with no endpoint/tools — its discovery failed). Routing the
         // swap at it makes the planner invent venues; say what's wrong
         // instead (live 2026-07-09: hallucinated 1inch/Across/Stargate chips).
+        nativeTrace({ type: 'note', level: 'warn', label: `native cross-chain layer: ${ccAgent.agent.name} has no callable endpoint (shell row) — refusing honestly` })
         return NextResponse.json({
           reply: `🔗 Your **${ccAgent.agent.name}** agent isn't fully connected — no callable tools are registered for it, so I can't route this cross-chain swap through it. Remove it from your set and pick **NEAR Intents (Free)** from the Free tab (or re-add your MCP so its tools register), then ask again.`,
         })
@@ -639,7 +646,11 @@ export async function POST(req: NextRequest) {
         const cowActive = activeServers.some((s) => s.slug === 'cow-swap' || /cow[\s·-]?swap/i.test(s.name))
         const venue: 'uniswap' | 'cow' =
           /\buni\s?swap\b|\buni\b/i.test(message) || (uniActive && !cowActive) ? 'uniswap' : 'cow'
-        return await prepareSwapTurn(swapIntent, walletAddress, venue, workingContext)
+        const pair = swapIntent.sellToken && swapIntent.buyToken
+          ? `${swapIntent.mode === 'limit' ? 'limit ' : ''}${swapIntent.sellAmountHuman ?? '?'} ${swapIntent.sellToken.toUpperCase()} → ${swapIntent.buyToken.toUpperCase()}`
+          : 'swap ask (pair not fully parsed yet)'
+        nativeTrace({ type: 'status', label: `native swap layer claimed the turn: ${pair} on ${venue === 'uniswap' ? 'Uniswap' : 'CoW'} (Base) — planner bypassed` })
+        return await prepareSwapTurn(swapIntent, walletAddress, venue, workingContext, nativeTrace)
       }
       // nonBase + a usable cross-chain agent → build it NATIVELY (deterministic
       // build_swap + guardrails + Sign button), never via the planner/house
@@ -648,11 +659,17 @@ export async function POST(req: NextRequest) {
       if (ccAgent.agent && ccAgent.usable) {
         const cc = parseCrossChainSwap(message)
         if (cc && 'problem' in cc) {
+          nativeTrace({ type: 'status', label: `native cross-chain layer: ask under-specified — ${cc.problem.slice(0, 160)}` })
           return NextResponse.json({ reply: `🔗 ${cc.problem}` })
         }
         if (cc) {
-          return await buildCrossChainSwapTurn(ccAgent.agent, cc, walletAddress, workingContext, message)
+          nativeTrace({ type: 'status', label: `native cross-chain layer claimed the turn: swap ${cc.amount} ${cc.originToken.toUpperCase()} (${cc.originChain}) → ${cc.destinationToken.toUpperCase()} (${cc.destinationChain}) — planner bypassed` })
+          return await buildCrossChainSwapTurn(ccAgent.agent, cc, walletAddress, workingContext, message, nativeTrace)
         }
+        // The breadcrumb that keeps a parse miss from reading as MCP flake:
+        // cross-chain-shaped but not an imperative build → the planner routes
+        // it (quote questions belong there).
+        nativeTrace({ type: 'note', level: 'info', label: 'native cross-chain layer passed: cross-chain-shaped ask but no imperative swap parse — normal routing (quote questions route via the planner)' })
       }
       // Otherwise (a quote question, etc.) fall through to routing below.
     }
@@ -945,8 +962,10 @@ async function buildCrossChainSwapTurn(
   walletAddress: string | undefined,
   ctx?: WorkingContext,
   originalMessage?: string,
+  trace: (event: unknown) => void = () => {},
 ) {
   if (!walletAddress) {
+    trace({ type: 'note', level: 'info', label: 'no wallet connected — asking to connect before building' })
     return NextResponse.json({
       reply:
         '🔗 Connect your wallet to build the cross-chain swap — you sign the deposit transfer yourself, so it has to be built for your address.',
@@ -955,6 +974,7 @@ async function buildCrossChainSwapTurn(
     })
   }
 
+  trace({ type: 'select', service: agent.name, endpoint: 'tools/call build_swap', priceUsd: 0, reason: 'native cross-chain layer — one-time deposit address from the agent, verified by the guard before anything is offered' })
   let built: BuiltSwap
   try {
     built = (await callAgentTool(agent.endpoint!, 'build_swap', {
@@ -967,6 +987,7 @@ async function buildCrossChainSwapTurn(
     })) as BuiltSwap
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'the build failed'
+    trace({ type: 'receipt', receipt: { name: agent.name, endpoint: 'build_swap', priceUsd: 0, ok: false, note: msg.slice(0, 200) } })
     return NextResponse.json({
       reply: `🔗 Couldn't build that cross-chain swap: ${msg}`,
     })
@@ -976,11 +997,13 @@ async function buildCrossChainSwapTurn(
   if (!guard.ok || !guard.tx) {
     // A verification failure is a REFUSAL, not a warning — never offer a
     // transfer we couldn't prove is correct.
+    trace({ type: 'note', level: 'warn', label: `guard REFUSED the cross-chain build: ${guard.reasons.join(' ').slice(0, 200)}` })
     return NextResponse.json({
       reply: `🚫 I built the swap but refused it — the transfer didn't verify: ${guard.reasons.join(' ')} Nothing to sign; try again or use a different route.`,
       blocked: true,
     })
   }
+  trace({ type: 'status', label: 'guard verified the deposit transfer — Sign & send card built, awaiting signature' })
 
   const summary = guard.summary ?? built.quote?.summary ?? 'Cross-chain swap'
   const expiry = guard.addressExpires ? ` The one-time deposit address expires ${guard.addressExpires}.` : ''
@@ -1462,11 +1485,12 @@ async function buildAaveOpTurn(
  * ambiguous asks; guardrail blocks surface with their reasons and the
  * artifact is withheld. The user signs — funds never touch Yeetful.
  */
-async function prepareSwapTurn(intent: SwapIntent, walletAddress: string | undefined, venue: 'uniswap' | 'cow' = 'cow', ctx?: WorkingContext) {
+async function prepareSwapTurn(intent: SwapIntent, walletAddress: string | undefined, venue: 'uniswap' | 'cow' = 'cow', ctx?: WorkingContext, trace: (event: unknown) => void = () => {}) {
   // Warm the dynamic Base token map (official Uniswap list) so UNI/AAVE/… ,
   // resolve — not just the 6 hand-typed tokens (RR14). Cached 24h; never throws.
   await ensureBaseTokenList()
   if (!walletAddress) {
+    trace({ type: 'note', level: 'info', label: 'no wallet connected — asking to connect before building' })
     return NextResponse.json({
       reply:
         '🔄 Connect your wallet to swap — you sign the transaction yourself, so it has to be built for your address.',
@@ -1474,17 +1498,20 @@ async function prepareSwapTurn(intent: SwapIntent, walletAddress: string | undef
     })
   }
   if (intent.problem || !intent.sellToken || !intent.buyToken || !intent.sellAmountHuman) {
+    trace({ type: 'status', label: 'native swap layer: ask under-specified — asking for the amount and pair' })
     return NextResponse.json({ reply: `🔄 ${intent.problem ?? 'Say the amount and pair — e.g. “swap 100 USDC for WETH”.'}` })
   }
 
   const sellDec = tokenDecimals(intent.sellToken)
   if (sellDec === null) {
+    trace({ type: 'note', level: 'warn', label: `unknown token “${intent.sellToken}” on Base — no build` })
     return NextResponse.json({
       reply: `🔄 I don't know the token “${intent.sellToken}” on Base — use a known symbol (USDC, WETH, DAI, cbETH, USDbC) or a 0x address via the API.`,
     })
   }
   const sellAmount = humanToAtoms(intent.sellAmountHuman, sellDec)
   if (!sellAmount) {
+    trace({ type: 'note', level: 'warn', label: `“${intent.sellAmountHuman}” exceeds ${intent.sellToken.toUpperCase()}'s ${sellDec} decimals — no build` })
     return NextResponse.json({
       reply: `🔄 “${intent.sellAmountHuman}” has more decimal places than ${intent.sellToken.toUpperCase()} supports (${sellDec}).`,
     })
@@ -1493,12 +1520,14 @@ async function prepareSwapTurn(intent: SwapIntent, walletAddress: string | undef
   if (intent.mode === 'limit') {
     const buyDec = tokenDecimals(intent.buyToken)
     if (buyDec === null) {
+      trace({ type: 'note', level: 'warn', label: `unknown token “${intent.buyToken}” on Base — no build` })
       return NextResponse.json({
         reply: `🔄 I don't know the token “${intent.buyToken}” on Base — use a known symbol (USDC, WETH, DAI, cbETH, USDbC).`,
       })
     }
     buyAmountAtLeast = humanToAtoms(intent.buyAmountAtLeastHuman ?? '', buyDec) ?? undefined
     if (!buyAmountAtLeast) {
+      trace({ type: 'note', level: 'warn', label: `couldn't read the limit price “${intent.buyAmountAtLeastHuman}” — no build` })
       return NextResponse.json({ reply: `🔄 Couldn't read the limit price “${intent.buyAmountAtLeastHuman}”.` })
     }
   }
@@ -1507,6 +1536,7 @@ async function prepareSwapTurn(intent: SwapIntent, walletAddress: string | undef
   //    resting limit orders are an order-book feature, so those stay on CoW
   //    with a note). Uniswap-pure build; cross-app guardrails inside.
   if (venue === 'uniswap' && (intent.mode ?? 'swap') === 'swap') {
+    trace({ type: 'select', service: 'Uniswap (native venue)', endpoint: 'quote → SwapRouter02 tx build', priceUsd: 0, reason: 'native swap layer — Yeetful builds the tx deterministically, guardrails before anything is offered' })
     try {
       const uni = await buildUniswapSwap({
         sellToken: intent.sellToken,
@@ -1516,6 +1546,7 @@ async function prepareSwapTurn(intent: SwapIntent, walletAddress: string | undef
       })
       if (uni.blocked) {
         const reasons = uni.guardrails.checks.filter((c) => !c.ok && c.level === 'block').map((c) => c.note).join(' ')
+        trace({ type: 'note', level: 'warn', label: `guardrails REFUSED the Uniswap swap: ${(reasons || 'a safety check failed.').slice(0, 200)}` })
         return NextResponse.json({
           reply: `🚫 Swap built but refused by your guardrails: ${reasons || 'a safety check failed.'}`,
           guardrails: uni.guardrails,
@@ -1531,6 +1562,7 @@ async function prepareSwapTurn(intent: SwapIntent, walletAddress: string | undef
         // recipe) — prices move while approvals mine.
         const sell = intent.sellToken.toUpperCase()
         const buy = intent.buyToken.toUpperCase()
+        trace({ type: 'status', label: `guardrails passed — approve → swap card built (${intent.sellAmountHuman} ${sell} → ${buy}), awaiting signature` })
         return NextResponse.json({
           reply: `🔏 ${uni.summary}\n🔗 Two steps in the card below — sign the ${sell} approval, and the swap appears automatically once it confirms (re-quoted fresh). Nothing to retype.${warns.length ? `\n${warns.join('\n')}` : ''}`,
           txChain: {
@@ -1551,6 +1583,7 @@ async function prepareSwapTurn(intent: SwapIntent, walletAddress: string | undef
           workingContext: swapWorkingContext(intent, 'uniswap', ctx),
         })
       }
+      trace({ type: 'status', label: `guardrails passed — swap tx built (${intent.sellAmountHuman} ${intent.sellToken.toUpperCase()} → ${intent.buyToken.toUpperCase()}), awaiting signature` })
       return NextResponse.json({
         reply: `🔏 ${uni.summary}${warns.length ? `\n${warns.join('\n')}` : ''}`,
         txRequest: uni.swapTx,
@@ -1559,6 +1592,7 @@ async function prepareSwapTurn(intent: SwapIntent, walletAddress: string | undef
       })
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'quote failed'
+      trace({ type: 'note', level: 'warn', label: `Uniswap build failed: ${msg.slice(0, 200)}` })
       return NextResponse.json({ reply: `🔄 Couldn't build the Uniswap swap: ${msg}` })
     }
   }
@@ -1567,7 +1601,11 @@ async function prepareSwapTurn(intent: SwapIntent, walletAddress: string | undef
     venue === 'uniswap' && intent.mode === 'limit'
       ? '\n🔀 Resting limit orders run on the CoW order book (fee comes from surplus when filled) — Uniswap v3 has no native limit orders.'
       : ''
+  if (cowNote) {
+    trace({ type: 'note', level: 'info', label: 'limit order re-routed to the CoW order book — Uniswap v3 has no native resting orders' })
+  }
 
+  trace({ type: 'select', service: 'CoW Protocol (native venue)', endpoint: `quote → EIP-712 ${intent.mode === 'limit' ? 'limit ' : ''}order build`, priceUsd: 0, reason: 'native swap layer — Yeetful builds the order deterministically, guardrails before anything is offered' })
   try {
     const built = await buildGuardrailedOrder({
       mode: intent.mode ?? 'swap',
@@ -1582,6 +1620,7 @@ async function prepareSwapTurn(intent: SwapIntent, walletAddress: string | undef
         .filter((c) => !c.ok && c.level === 'block')
         .map((c) => c.note)
         .join(' ')
+      trace({ type: 'note', level: 'warn', label: `guardrails REFUSED the CoW order: ${(reasons || 'a safety check failed.').slice(0, 200)}` })
       return NextResponse.json({
         reply: `🚫 Order built but refused by your guardrails: ${reasons || 'a safety check failed.'}`,
         guardrails: built.guardrails,
@@ -1591,6 +1630,7 @@ async function prepareSwapTurn(intent: SwapIntent, walletAddress: string | undef
     const warns = built.guardrails.checks
       .filter((c) => !c.ok && c.level === 'warn')
       .map((c) => `⚠️ ${c.note}`)
+    trace({ type: 'status', label: `guardrails passed — EIP-712 ${intent.mode === 'limit' ? 'limit ' : ''}order built (${intent.sellAmountHuman} ${intent.sellToken.toUpperCase()} → ${intent.buyToken.toUpperCase()}), awaiting signature` })
     return NextResponse.json({
       reply: `🔏 ${built.summary}${cowNote}${warns.length ? `\n${warns.join('\n')}` : ''}`,
       orderRequest: built.artifact.order,
@@ -1601,6 +1641,7 @@ async function prepareSwapTurn(intent: SwapIntent, walletAddress: string | undef
     })
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'quote failed'
+    trace({ type: 'note', level: 'warn', label: `CoW order build failed: ${msg.slice(0, 200)}` })
     return NextResponse.json({ reply: `🔄 Couldn't build the swap: ${msg}` })
   }
 }
