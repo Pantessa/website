@@ -1,7 +1,7 @@
 'use client'
 
 import { analytics } from '@/lib/analytics'
-import { useState, useRef, useEffect, useSyncExternalStore } from 'react'
+import { Fragment, useState, useRef, useEffect, useSyncExternalStore } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Send, Zap, Check, Loader2, Bot, User, Boxes, PanelLeft, PanelRight, Sparkles, Copy } from 'lucide-react'
 import { useAccount, useSignTypedData, useConnect } from 'wagmi'
@@ -148,6 +148,22 @@ function trackPaidReceipts(receipts: unknown) {
   analytics.chatPaid(totalUsd, paid.length, paid.map((r) => r.name ?? '?').join(','))
 }
 
+/** A splash-card batch pinned into the chat flow: which MCPs it covers (a
+ *  snapshot — later set changes never mutate it once the conversation has
+ *  started) and the message index it appeared at. Batches are append-only
+ *  history: typing or sending never clears them; they scroll up with the
+ *  conversation, and an MCP toggled on mid-chat earns a new batch at the
+ *  current point in the flow. */
+interface SplashBatch {
+  id: string
+  serverIds: string[]
+  /** Manual picks snapshot — keeps a hand-toggled MCP's "always a card"
+   *  status even if the user later untoggles it (the card is history). */
+  manualSlugs: string[]
+  /** Message count when the batch appeared — it renders before messages[anchor]. */
+  anchor: number
+}
+
 interface ChatInterfaceProps {
   /** Embed mode (/embed): hides the workspace toolbar (sidebar toggle, agent
    *  strip, share) and skips the /chat URL rewrites — the iframe URL carries
@@ -234,9 +250,6 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
   const [status, setStatus] = useState<string | null>(null)
-  // Splash dashboard: tile count the scan resolved (null = not yet), so the
-  // normal empty state only shows when the splash finds nothing.
-  const [splashCount, setSplashCount] = useState<number | null>(null)
   // Boot hold: at first paint we can't know whether the splash is about to
   // take over (wallet auto-reconnect + store hydration are in flight), so the
   // loader is the DEFAULT and the guest empty state only appears once the
@@ -280,6 +293,105 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
     !!effectiveAddress &&
     !autoRouter &&
     activeServers.some((s) => splashCapable(s) || manualSlugs.includes(s.slug))
+
+  // ── Splash cards live IN the chat flow ────────────────────────────────────
+  // Each batch is a snapshot of MCP cards anchored at the message index where
+  // it appeared: the boot scan is the first batch (anchor 0); toggling a NEW
+  // MCP on later appends a batch for just that MCP at the current point in the
+  // conversation. Cards behave like chat history — typing never dismisses
+  // them, sending scrolls them up with the messages. Only while the chat is
+  // still EMPTY does the grid mirror the working set exactly (toggling an MCP
+  // off prunes its card — the pre-send splash is a dashboard, not history yet).
+  const [splashBatches, setSplashBatches] = useState<SplashBatch[]>([])
+  // Per-batch resolved tile counts — the empty state only shows when every
+  // batch has settled and none produced a card.
+  const [splashCounts, setSplashCounts] = useState<Record<string, number>>({})
+  // The (chatId, wallet) surface the batches belong to. handleSend stamps it
+  // when the first send mints the chat id, so batches survive that transition;
+  // an actual chat switch or wallet change resets them.
+  const splashSurfaceRef = useRef<string | null>(null)
+  // MCPs absorbed silently when a surface opens on an EXISTING conversation —
+  // its set is context, not news, so it never earns retroactive cards.
+  const splashSeedRef = useRef<Set<string>>(new Set())
+  const splashSeqRef = useRef(0)
+
+  const splashableServers = activeServers.filter((s) => splashCapable(s) || manualSlugs.includes(s.slug))
+  const splashableKey = splashableServers.map((s) => s.id).sort().join(',')
+  useEffect(() => {
+    const surface = `${currentChatId ?? ''}|${effectiveAddress ?? ''}`
+    if (splashSurfaceRef.current !== surface) {
+      // An opened chat's history decides whether its pre-existing MCPs get
+      // cards — hold until the messages have actually loaded.
+      if (currentChatId && !currentChat?.messagesLoaded) return
+      splashSurfaceRef.current = surface
+      setSplashBatches([])
+      setSplashCounts({})
+      // Opening a conversation that already has messages: absorb its MCPs
+      // silently. The chat's own saved set is included so the agent-restore
+      // that follows message-load can't race a "new MCP" card into existence.
+      splashSeedRef.current = new Set(
+        (currentChat?.messages.length ?? 0) > 0
+          ? [...(currentChat?.activeServerIds ?? []), ...splashableServers.map((s) => s.id)]
+          : [],
+      )
+    }
+    const emptyChat = (currentChat?.messages.length ?? 0) === 0
+    if (autoRouter) {
+      // Engine mode has no splash surface. An untouched (empty) chat drops its
+      // cards like before; mid-conversation cards stay — they're history.
+      if (emptyChat) setSplashBatches((prev) => (prev.length ? [] : prev))
+      return
+    }
+    if (!effectiveAddress) return
+    const splashableIds = new Set(splashableServers.map((s) => s.id))
+    setSplashBatches((prev) => {
+      // Pre-send the cards mirror the working set exactly — toggling an MCP
+      // off removes its card. (This also absorbs the boot races where the
+      // wallet-set restore rewrites the default fleet a beat after connect.)
+      let next = prev
+      if (emptyChat && prev.some((b) => b.serverIds.some((id) => !splashableIds.has(id)))) {
+        next = prev
+          .map((b) => ({ ...b, serverIds: b.serverIds.filter((id) => splashableIds.has(id)) }))
+          .filter((b) => b.serverIds.length > 0)
+      }
+      const covered = new Set([...splashSeedRef.current, ...next.flatMap((b) => b.serverIds)])
+      const fresh = splashableServers.filter((s) => !covered.has(s.id))
+      if (fresh.length > 0) {
+        next = [
+          ...next,
+          {
+            id: `splash-${splashSeqRef.current++}`,
+            serverIds: fresh.map((s) => s.id),
+            manualSlugs: manualSlugs.filter((slug) => fresh.some((s) => s.slug === slug)),
+            anchor: currentChat?.messages.length ?? 0,
+          },
+        ]
+      }
+      return next
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [splashableKey, effectiveAddress, currentChatId, currentChat?.messagesLoaded, autoRouter])
+
+  // All batches settled with zero tiles → the caller's normal empty state.
+  const splashSettledEmpty =
+    splashBatches.length > 0 && splashBatches.every((b) => splashCounts[b.id] === 0)
+  // The wallet eyebrow rides the first batch that actually painted something
+  // (a batch whose scan found nothing renders null — chrome on it would
+  // orphan the header).
+  const splashChromeBatchId = splashBatches.find((b) => splashCounts[b.id] !== 0)?.id
+
+  const renderSplashBatch = (b: SplashBatch, opts: { chrome: boolean; hint: boolean }) => (
+    <SplashDashboard
+      key={b.id}
+      address={effectiveAddress}
+      servers={servers.filter((s) => b.serverIds.includes(s.id))}
+      manualSlugs={b.manualSlugs}
+      onPick={pickExample}
+      chrome={opts.chrome}
+      hint={opts.hint}
+      onResolve={(n) => setSplashCounts((prev) => (prev[b.id] === n ? prev : { ...prev, [b.id]: n }))}
+    />
+  )
 
   // "What can I do?" example: prefill the input and toggle the mapped agent on
   // (when it's in the live catalog). We prefill rather than auto-send so the
@@ -343,6 +455,10 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
     let chatId = currentChatId
     if (!chatId) {
       chatId = await createChat(input.slice(0, 40) + (input.length > 40 ? '...' : ''))
+      // The splash batches were born on the bare surface — adopt the freshly
+      // minted chat id so the id change reads as the SAME surface and the
+      // cards ride into the conversation instead of resetting.
+      splashSurfaceRef.current = `${chatId}|${effectiveAddress ?? ''}`
       // Reflect the new chat in the URL without a remount (which would refetch
       // an empty message list and clobber the optimistic messages below).
       // Not in the embed: the iframe URL carries the embed params.
@@ -893,17 +1009,16 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
       {/* Messages area */}
       <div className="flex-1 overflow-y-auto px-4 py-6 space-y-4">
         {!currentChat || currentChat.messages.length === 0 ? (
-          splashEligible ? (
+          splashEligible || splashBatches.length > 0 ? (
             <>
-              <SplashDashboard
-                address={effectiveAddress}
-                servers={activeServers}
-                manualSlugs={manualSlugs}
-                onPick={pickExample}
-                dismissed={input.trim().length > 0}
-                onResolve={setSplashCount}
-              />
-              {splashCount === 0 && (
+              {/* The batch effect hasn't committed yet (first paint after
+                  connect / chat-load) — hold with the loader, same as a
+                  batch's own in-flight scan. */}
+              {splashBatches.length === 0 && <ChatLoader inline />}
+              {splashBatches.map((b) =>
+                renderSplashBatch(b, { chrome: b.id === splashChromeBatchId, hint: b.id === splashChromeBatchId }),
+              )}
+              {splashSettledEmpty && (
                 <EmptyState activeCount={activeServers.length} autoRouter={autoRouter} onPick={pickExample} />
               )}
             </>
@@ -919,8 +1034,15 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
           <>
             <AnimatePresence initial={false}>
               {currentChat.messages.map((msg, i) => (
+                <Fragment key={msg.id}>
+                {/* Splash batches anchored at this point in the conversation —
+                    the boot cards sit above message 0 and scroll up with the
+                    chat; an MCP added mid-conversation slots in right where it
+                    joined. */}
+                {splashBatches
+                  .filter((b) => b.anchor === i)
+                  .map((b) => renderSplashBatch(b, { chrome: b.anchor === 0 && b.id === splashChromeBatchId, hint: false }))}
                 <motion.div
-                  key={msg.id}
                   initial={{ opacity: 0, y: 12 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ duration: 0.25 }}
@@ -1135,8 +1257,15 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
                       )}
                   </div>
                 </motion.div>
+                </Fragment>
               ))}
             </AnimatePresence>
+
+            {/* Batches newer than the latest message (an MCP toggled on just
+                now) flow in at the bottom, like the next turn arriving. */}
+            {splashBatches
+              .filter((b) => b.anchor >= currentChat.messages.length)
+              .map((b) => renderSplashBatch(b, { chrome: false, hint: false }))}
 
             {loading && (
               <motion.div

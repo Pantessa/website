@@ -110,7 +110,9 @@ async function buildMultichainTiles(address: string, server: McpServer, chain?: 
         : `${holdings.length} across ${portfolio.chainsWithHoldings} ${portfolio.chainsWithHoldings === 1 ? 'chain' : 'chains'}`,
       chain: scope,
       totalUsd: portfolio.totalUsd,
-      holdings: holdings.slice(0, 6),
+      // Keep the card compact — it shares one uniform-height grid with
+      // single-section cards, and the subtitle already carries the full count.
+      holdings: holdings.slice(0, 4),
       prompts: holdingPrompts(holdings, `on ${chain?.name ?? 'Base'}`),
     })
   }
@@ -123,7 +125,7 @@ async function buildMultichainTiles(address: string, server: McpServer, chain?: 
       render: 'activity',
       title: 'Recent transactions',
       subtitle: `${scope}`,
-      rows: activity.slice(0, 4),
+      rows: activity.slice(0, 2),
       prompts: [
         { label: 'Explain my last tx', prompt: `Explain my most recent transaction (${activity[0].asset} on ${activity[0].chain}) in plain English.` },
         { label: 'Summarize my activity', prompt: chain ? `Summarize my recent on-chain activity on ${chain.name}.` : 'Summarize my recent on-chain activity across Ethereum, Base, and Arbitrum.' },
@@ -149,7 +151,7 @@ async function buildBaseFallbackTile(call: McpCaller, address: string, server: M
     subtitle: `via ${server.name}`,
     chain: label,
     totalUsd: typeof data.totalUsd === 'number' ? data.totalUsd : null,
-    holdings: holdings.slice(0, 6),
+    holdings: holdings.slice(0, 5),
     prompts: holdingPrompts(holdings, `on ${label}`),
   }
 }
