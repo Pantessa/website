@@ -35,7 +35,8 @@ import { keccak256, stringToBytes } from 'viem'
 import { isCacheable, routeCacheKey, getCached, setCached, clearRouteCache } from '../lib/route-cache'
 import { routeSavings } from '../lib/route-telemetry'
 import { portfolioFromToolResult, portfolioOf } from '../lib/portfolio-display'
-import { crossChainAgentOf, detectCrossChain } from '../lib/swap-intent'
+import { crossChainAgentOf, detectCrossChain, swapWorkingContext } from '../lib/swap-intent'
+import { APP_CHAINS, chainById, chainNamedIn, sanitizeChainId } from '../lib/chains'
 import { parseCrossChainSwap, guardCrossChainBuild, expectedOriginChainId, parseCrossChainFollowUp } from '../lib/cross-chain-swap'
 import {
   parseAaveSupply,
@@ -2485,6 +2486,23 @@ async function main() {
   check('cross-chain agent: shell row detected but NOT usable', (() => { const r = crossChainAgentOf([shellRow]); return r.agent === shellRow && r.usable === false })())
   check('cross-chain agent: seeded row usable', (() => { const r = crossChainAgentOf([seededRow]); return r.agent === seededRow && r.usable === true })())
   check('cross-chain agent: none in set', crossChainAgentOf([{ slug: 'uniswap-free', name: 'Uniswap (Free)', description: null, endpoint: 'https://uniswap-mcp.yeetful.com/mcp' }]).agent === undefined)
+
+  // ── Chain registry + picker (lib/chains) ──────────────────────────────────
+  // The registry is the single source of truth for the picker, splash scoping,
+  // and per-chain swap builds — every entry must be complete enough to build.
+  check('chains: registry carries base/ethereum/arbitrum/robinhood', JSON.stringify(APP_CHAINS.map((c) => c.key).sort()) === '["arbitrum","base","ethereum","robinhood"]')
+  check('chains: every entry is build-complete (router+quoter, wrapped native, explorer, alchemy net)', APP_CHAINS.every((c) => !!c.uniswap?.swapRouter02 && !!c.uniswap?.quoterV2 && /^0x[0-9a-fA-F]{40}$/.test(c.wrappedNative) && c.explorerTx.startsWith('https://') && !!c.alchemyNet && c.viem.id === c.id))
+  check('chains: base keeps the original router constants', chainById(8453)?.uniswap?.swapRouter02 === '0x2626664c2603336E57B271c5C0b26F421741e481' && chainById(8453)?.uniswap?.quoterV2 === '0x3d4e44Eb1374240CE5F1B871ab261CD16335B76a')
+  check('chains: robinhood has no CoW, has USDG stable', chainById(4663)?.cow === false && Object.keys(chainById(4663)?.stables ?? {}).length >= 1 && !!chainById(4663)?.tokens.USDG)
+  check('chains: sanitizeChainId only passes registry ids', sanitizeChainId(8453) === 8453 && sanitizeChainId(4663) === 4663 && sanitizeChainId(137) === null && sanitizeChainId('8453') === null && sanitizeChainId(null) === null)
+  check('chains: chainNamedIn reads "on robinhood" + the arbitrum typo', chainNamedIn('swap 1 USDC for USDG on robinhood')?.id === 4663 && chainNamedIn('swap 1 usdc for weth on arbitum')?.id === 42161 && chainNamedIn('swap 1 usdc for weth') === null)
+  check('chains: per-chain token maps resolve (USDC differs by chain; USDG robinhood-only)', resolveToken('USDC', 1) === '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48' && resolveToken('USDC', 42161) === '0xaf88d065e77c8cc2239327c5edb3a432268e5831' && resolveToken('USDG', 4663) === '0x5fc5360d0400a0fd4f2af552add042d716f1d168' && resolveToken('USDG', 8453) === null)
+  check('chains: tokenDecimals is per-chain (USDG 6 on robinhood, unknown on base)', tokenDecimals('USDG', 4663) === 6 && tokenDecimals('USDG', 8453) === null && tokenDecimals('USDC', 1) === 6)
+  check('chains: swapWorkingContext pins chainId on non-Base pendings only', (() => {
+    const arb = swapWorkingContext({ isSwap: true, mode: 'swap', sellAmountHuman: '1', sellToken: 'USDC', buyToken: 'WETH' }, 'uniswap', undefined, 42161)
+    const basePending = swapWorkingContext({ isSwap: true, mode: 'swap', sellAmountHuman: '1', sellToken: 'USDC', buyToken: 'WETH' }, 'cow', undefined, 8453)
+    return arb.pending?.data.chainId === '42161' && basePending.pending?.data.chainId === undefined
+  })())
 
   // ── Cleanup (verified) ────────────────────────────────────────────────────
   console.log('— cleanup')

@@ -95,10 +95,11 @@ export interface MultichainPortfolio {
  * Alchemy Data API call. Only priced holdings (and native tokens) survive, so
  * unpriced spam airdrops are filtered out. Sorted richest-first.
  */
-export async function getMultichainPortfolio(address: string): Promise<MultichainPortfolio> {
+export async function getMultichainPortfolio(address: string, onlyNet?: string): Promise<MultichainPortfolio> {
+  const networks = onlyNet && NETWORKS.includes(onlyNet) ? [onlyNet] : NETWORKS
   const url = `https://api.g.alchemy.com/data/v1/${apiKey()}/assets/tokens/by-address`
   const json = (await postJson(url, {
-    addresses: [{ address, networks: NETWORKS }],
+    addresses: [{ address, networks }],
     withMetadata: true,
     withPrices: true,
     includeNativeTokens: true,
@@ -196,9 +197,10 @@ function shortAddr(a: string | null | undefined): string {
  * chain is fetched independently so one slow/failed chain never blanks the
  * others.
  */
-export async function getRecentActivity(address: string, limit = 6): Promise<ActivityRow[]> {
+export async function getRecentActivity(address: string, limit = 6, onlyNet?: string): Promise<ActivityRow[]> {
   const lower = address.toLowerCase()
-  const jobs = CHAINS.flatMap((c) => [
+  const scope = onlyNet ? CHAINS.filter((c) => c.net === onlyNet) : CHAINS
+  const jobs = scope.flatMap((c) => [
     transfersFor(c.net, address, 'from')
       .then((ts) => ts.map((t) => ({ t, chain: c })))
       .catch(() => []),

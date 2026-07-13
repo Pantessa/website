@@ -11,7 +11,8 @@
 // ─────────────────────────────────────────────────────────────────────────
 import { NextRequest, NextResponse } from 'next/server'
 import { buildUniswapSwap } from '@/lib/uniswap-venue'
-import { ensureBaseTokenList } from '@/lib/token-list'
+import { ensureTokenList } from '@/lib/token-list'
+import { sanitizeChainId, DEFAULT_CHAIN_ID } from '@/lib/chains'
 
 export async function POST(req: NextRequest) {
   let body: Record<string, unknown>
@@ -28,13 +29,16 @@ export async function POST(req: NextRequest) {
   const sellToken = typeof body.sellToken === 'string' ? body.sellToken.slice(0, 64) : ''
   const buyToken = typeof body.buyToken === 'string' ? body.buyToken.slice(0, 64) : ''
   const amountHuman = typeof body.amountHuman === 'string' && /^[0-9]+(\.[0-9]+)?$/.test(body.amountHuman) ? body.amountHuman : ''
+  // The chain the original build targeted (refresh recipes carry it as a
+  // string; pre-picker chains omitted it = Base). Only registry ids survive.
+  const chainId = sanitizeChainId(Number(body.chainId)) ?? DEFAULT_CHAIN_ID
   if (!from || !sellToken || !buyToken || !amountHuman) {
     return NextResponse.json({ error: 'missing/invalid from, sellToken, buyToken or amountHuman' }, { status: 400 })
   }
 
   try {
-    await ensureBaseTokenList()
-    const uni = await buildUniswapSwap({ sellToken, buyToken, amountHuman, from })
+    await ensureTokenList(chainId)
+    const uni = await buildUniswapSwap({ sellToken, buyToken, amountHuman, from, chainId })
     if (uni.blocked) {
       const reasons = uni.guardrails.checks.filter((c) => !c.ok && c.level === 'block').map((c) => c.note).join(' ')
       return NextResponse.json({ blocked: true, reasons: reasons || 'a safety check failed', guardrails: uni.guardrails })

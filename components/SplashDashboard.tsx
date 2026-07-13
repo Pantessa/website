@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { ArrowDownLeft, ArrowUpRight, Clock, ExternalLink, RefreshCw, Repeat, Vote, Wallet } from 'lucide-react'
 import BrandIcon from '@/components/BrandIcon'
 import { useYeetfulStore, type McpServer } from '@/lib/store'
+import { chainById } from '@/lib/chains'
 import ChatLoader from '@/components/ChatLoader'
 import { splashCapable } from '@/lib/splash/types'
 import type { ActivityTile, ErrorTile, HoldingsTile, ProposalsTile, RowsTile, SplashTile, SuggestedPrompt } from '@/lib/splash/types'
@@ -47,6 +48,9 @@ export function SplashDashboard({
   const [loading, setLoading] = useState(false)
   // Bumped by a tile's Retry button to force a fresh scan.
   const [reload, setReload] = useState(0)
+  // The chain picker's selection — cards re-scan scoped to it (null = all).
+  const selectedChainId = useYeetfulStore((s) => s.selectedChainId)
+  const chainKey = selectedChainId ? chainById(selectedChainId)?.key ?? '' : ''
 
   // Sources that can contribute, plus anything the user hand-picked — a manual
   // selection always earns a card, splash-capable or not.
@@ -63,7 +67,7 @@ export function SplashDashboard({
   // a fresh array each time). Depending on the string (not the array) also
   // keeps React 18 StrictMode's mount→cleanup→mount from aborting the only
   // in-flight fetch and leaving the skeleton up forever.
-  const key = `${address ?? ''}|${relevant.map((s) => s.id).sort().join(',')}|${relevantManual.slice().sort().join(',')}`
+  const key = `${address ?? ''}|${relevant.map((s) => s.id).sort().join(',')}|${relevantManual.slice().sort().join(',')}|${chainKey}`
 
   useEffect(() => {
     if (!address || relevant.length === 0) {
@@ -76,7 +80,7 @@ export function SplashDashboard({
     fetch('/api/splash', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ address, servers: relevant, manualSlugs: relevantManual }),
+      body: JSON.stringify({ address, servers: relevant, manualSlugs: relevantManual, ...(chainKey ? { chain: chainKey } : {}) }),
     })
       .then((r) => r.json())
       .then((data: { tiles?: SplashTile[] }) => {

@@ -163,7 +163,7 @@ export function parseSwapIntent(message: string): SwapIntent {
  * transaction awaiting SendTxButton. The prior turn's scope/offers are carried
  * — building a swap doesn't erase the list the user was just shown.
  */
-export function swapWorkingContext(intent: SwapIntent, venue: 'uniswap' | 'cow', prior?: WorkingContext): WorkingContext {
+export function swapWorkingContext(intent: SwapIntent, venue: 'uniswap' | 'cow', prior?: WorkingContext, chainId?: number): WorkingContext {
   const mode = intent.mode ?? 'swap'
   const sellToken = (intent.sellToken ?? '').toUpperCase()
   const buyToken = (intent.buyToken ?? '').toUpperCase()
@@ -182,6 +182,9 @@ export function swapWorkingContext(intent: SwapIntent, venue: 'uniswap' | 'cow',
         amount,
         venue,
         mode,
+        // The chain the artifact was built for — "make it 2" amends rebuild
+        // on the SAME chain, never silently back on Base.
+        ...(chainId && chainId !== 8453 ? { chainId: String(chainId) } : {}),
         ...(intent.buyAmountAtLeastHuman ? { buyAmountAtLeast: intent.buyAmountAtLeastHuman } : {}),
       },
     },
