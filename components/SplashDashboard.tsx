@@ -13,7 +13,9 @@ import type { ActivityTile, ErrorTile, HoldingsTile, ProposalsTile, RowsTile, Sp
  * The connected-wallet splash: when someone jumps into the chat with a wallet
  * and connected MCPs, we scan the address and paint a per-MCP dashboard
  * (Uniswap portfolio, Snapshot proposals, …) instead of an empty box. The
- * moment they start typing (`dismissed`), it fades and collapses into chat.
+ * cards are part of the chat flow — typing never dismisses them; they scroll
+ * up with the conversation like any other turn, and ChatInterface renders a
+ * fresh instance (a "batch") when new MCPs join mid-conversation.
  *
  * Everything below the fold is data-driven off SplashTile.render — a new MCP
  * that returns one of these shapes gets a tile with no new code here.
@@ -23,7 +25,8 @@ export function SplashDashboard({
   servers,
   manualSlugs = [],
   onPick,
-  dismissed,
+  chrome = true,
+  hint = false,
   onResolve,
 }: {
   address?: string
@@ -32,7 +35,11 @@ export function SplashDashboard({
    *  (a preview when the wallet has no activity on them). */
   manualSlugs?: string[]
   onPick: (prompt: string, slug?: string) => void
-  dismissed: boolean
+  /** Show the "Connected · 0x…" wallet eyebrow — the boot batch only; cards
+   *  added mid-conversation skip it. */
+  chrome?: boolean
+  /** Show the "Start typing…" footer — only on a still-empty chat. */
+  hint?: boolean
   /** Reports how many tiles resolved (0 → caller shows its normal empty state). */
   onResolve?: (count: number) => void
 }) {
@@ -97,24 +104,16 @@ export function SplashDashboard({
   if (!loading && tiles && tiles.length === 0) return null
 
   return (
-    <div
-      aria-hidden={dismissed}
-      className="w-full transition-all duration-500 ease-out"
-      style={{
-        maxHeight: dismissed ? 0 : 2400,
-        opacity: dismissed ? 0 : 1,
-        transform: dismissed ? 'translateY(-8px) scale(0.98)' : 'none',
-        pointerEvents: dismissed ? 'none' : 'auto',
-        overflow: 'hidden',
-      }}
-    >
-      <div className="mx-auto w-full max-w-[1600px] px-1 py-6 md:px-4">
-        <div className="mb-4 flex items-center gap-2">
-          <Wallet className="h-4 w-4 text-[color:var(--muted-2)]" />
-          <span className="mono text-[11px] uppercase tracking-wider text-[color:var(--muted-2)]">
-            Connected · {shortAddr(address)}
-          </span>
-        </div>
+    <div className="w-full">
+      <div className={`mx-auto w-full max-w-[1600px] px-1 md:px-4 ${chrome ? 'py-6' : 'py-2'}`}>
+        {chrome && (
+          <div className="mb-4 flex items-center gap-2">
+            <Wallet className="h-4 w-4 text-[color:var(--muted-2)]" />
+            <span className="mono text-[11px] uppercase tracking-wider text-[color:var(--muted-2)]">
+              Connected · {shortAddr(address)}
+            </span>
+          </div>
+        )}
 
         {loading || !tiles ? (
           <ChatLoader inline />
@@ -132,9 +131,11 @@ export function SplashDashboard({
           </div>
         )}
 
-        <p className="mt-4 text-center text-[11px] text-[color:var(--muted-2)]">
-          Start typing to ask about any of this.
-        </p>
+        {hint && (
+          <p className="mt-4 text-center text-[11px] text-[color:var(--muted-2)]">
+            Start typing to ask about any of this.
+          </p>
+        )}
       </div>
     </div>
   )
