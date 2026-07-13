@@ -19,6 +19,7 @@ import { useSession } from '@/lib/session'
 import { cdpEnabled } from '@/lib/cdp-embedded'
 import CreateAccountButton from '@/components/CreateAccountButton'
 import { getProtocolMark } from '@/components/protocol-marks'
+import { useSiteTheme } from '@/components/chart-theme'
 
 const EMBED_SRC = '/embed?mcps=uniswap-free,snapshot-free&theme=dark'
 
@@ -64,21 +65,6 @@ const CANVAS_PALETTES = {
 }
 const canvasPalette = () =>
   document.documentElement.dataset.theme === 'light' ? CANVAS_PALETTES.light : CANVAS_PALETTES.dark
-
-/** Re-render when the site theme flips (the footer toggle stamps
- * data-theme on <html>) — chips and static frames need the new hues. */
-function useSiteTheme() {
-  const [light, setLight] = useState(false)
-  useEffect(() => {
-    const el = document.documentElement
-    const update = () => setLight(el.dataset.theme === 'light')
-    update()
-    const mo = new MutationObserver(update)
-    mo.observe(el, { attributes: true, attributeFilter: ['data-theme'] })
-    return () => mo.disconnect()
-  }, [])
-  return light
-}
 
 /** The mark for a source's `<i>` glyph slot — real logo when we have one. */
 function SourceGlyph({ name, glyph }: { name: string; glyph: string }) {

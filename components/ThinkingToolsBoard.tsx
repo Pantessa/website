@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
-import { Terminal, GitBranch, TrendingUp, Wrench } from 'lucide-react'
+import { Terminal, TrendingUp, Wrench } from 'lucide-react'
 import type { RouterTraceEvent } from '@/lib/store'
 import { TraceLine } from '@/components/RouteTraceTerminal'
 import {
@@ -12,14 +12,12 @@ import {
   EVAL_ANSWERED_AT_FULL,
   EMPTY_TOOLS_STATS,
   type ToolsStats,
-  type FlowRow,
 } from '@/lib/thinking-tools'
 
 /**
- * /tools — the thinking tools, visualized. Four panels off one public stats
+ * /tools — the thinking tools, visualized. Three panels off one public stats
  * endpoint: the toolbox (each yeetful-tool-* with live usage), the decision
- * anatomy of the last real turn, the "which MCP for what" flow map (weighted
- * by settled receipts), and the self-updating progress strip. Polls
+ * anatomy of the last real turn, and the self-updating progress strip. Polls
  * /api/tools/stats; local dev and prod share one Neon DB, so turns routed
  * anywhere show up here.
  */
@@ -57,7 +55,6 @@ export default function ThinkingToolsBoard() {
       <KpiStrip stats={stats} live={live} />
       <Toolbox stats={stats} />
       <DecisionAnatomy stats={stats} />
-      <FlowMap stats={stats} />
       <ProgressStrip stats={stats} />
     </div>
   )
@@ -263,165 +260,6 @@ function DecisionAnatomy({ stats }: { stats: ToolsStats }) {
         </div>
       </div>
     </section>
-  )
-}
-
-// ── 3. Which MCP for what — the flow map ─────────────────────────────────
-
-const CATEGORY_FALLBACK: [RegExp, string][] = [
-  [/snapshot/i, 'Governance'],
-  [/house/i, 'Synthesis ($0)'],
-  [/claude|chatgpt|deepseek|gemini/i, 'Inference'],
-  [/uniswap|cow/i, 'Trading'],
-  [/harness/i, 'Health checks'],
-]
-
-function categoryFor(f: FlowRow): string {
-  if (f.category) return f.category
-  for (const [re, cat] of CATEGORY_FALLBACK) if (re.test(f.service)) return cat
-  return 'Data'
-}
-
-const STOP_NODE = '⛔ yeetful-tool-policy-gate'
-
-function FlowMap({ stats }: { stats: ToolsStats }) {
-  const model = useMemo(() => buildFlowModel(stats.flow), [stats.flow])
-  return (
-    <section>
-      <SectionHead
-        icon={<GitBranch className="w-4 h-4" />}
-        title="Which MCP for what"
-        sub="Every settled receipt, grouped by what it was for and which server earned it. Stopped calls — policy denials and failures — don't disappear; they route to the gate."
-      />
-      {model.edges.length === 0 ? (
-        <div className="rounded-xl border border-[var(--line)] bg-black/40 px-4 py-8">
-          <p className="mono text-[12px] text-[color:var(--muted-2)]">No receipted calls yet.</p>
-        </div>
-      ) : (
-        <div className="rounded-xl border border-[var(--line)] bg-black/40 p-4 overflow-x-auto">
-          <FlowSvg model={model} />
-        </div>
-      )}
-    </section>
-  )
-}
-
-interface FlowModel {
-  cats: { name: string; calls: number }[]
-  services: { name: string; calls: number; stopped: boolean }[]
-  edges: { from: string; to: string; calls: number; ok: boolean }[]
-  maxEdge: number
-}
-
-function buildFlowModel(flow: FlowRow[]): FlowModel {
-  const catCalls = new Map<string, number>()
-  const svcCalls = new Map<string, number>()
-  const edgeMap = new Map<string, { from: string; to: string; calls: number; ok: boolean }>()
-  let stoppedTotal = 0
-  for (const f of flow) {
-    const cat = categoryFor(f)
-    catCalls.set(cat, (catCalls.get(cat) ?? 0) + f.calls)
-    if (f.ok) {
-      svcCalls.set(f.service, (svcCalls.get(f.service) ?? 0) + f.calls)
-      const k = `${cat}→${f.service}`
-      const e = edgeMap.get(k) ?? { from: cat, to: f.service, calls: 0, ok: true }
-      e.calls += f.calls
-      edgeMap.set(k, e)
-    } else {
-      stoppedTotal += f.calls
-      const k = `${cat}→${STOP_NODE}`
-      const e = edgeMap.get(k) ?? { from: cat, to: STOP_NODE, calls: 0, ok: false }
-      e.calls += f.calls
-      edgeMap.set(k, e)
-    }
-  }
-  const cats = [...catCalls.entries()]
-    .map(([name, calls]) => ({ name, calls }))
-    .sort((a, b) => b.calls - a.calls)
-  const services = [...svcCalls.entries()]
-    .map(([name, calls]) => ({ name, calls, stopped: false }))
-    .sort((a, b) => b.calls - a.calls)
-    .slice(0, 10)
-  if (stoppedTotal > 0) services.push({ name: STOP_NODE, calls: stoppedTotal, stopped: true })
-  const keep = new Set(services.map((s) => s.name))
-  const edges = [...edgeMap.values()].filter((e) => keep.has(e.to))
-  const maxEdge = Math.max(1, ...edges.map((e) => e.calls))
-  return { cats, services, edges, maxEdge }
-}
-
-function FlowSvg({ model }: { model: FlowModel }) {
-  const ROW = 40
-  const PAD = 24
-  const W = 760
-  const LX = 200 // left column anchor (labels end here, edges start)
-  const RX = 540 // right column anchor (edges end, labels start)
-  const rows = Math.max(model.cats.length, model.services.length)
-  const H = PAD * 2 + rows * ROW
-  const catY = new Map(model.cats.map((c, i) => [c.name, PAD + i * ROW + ROW / 2]))
-  const svcY = new Map(model.services.map((s, i) => [s.name, PAD + i * ROW + ROW / 2]))
-  return (
-    <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-auto min-w-[640px]" role="img" aria-label="Settled calls, intent category to MCP server">
-      {model.edges.map((e, i) => {
-        const y1 = catY.get(e.from)
-        const y2 = svcY.get(e.to)
-        if (y1 === undefined || y2 === undefined) return null
-        const w = 1 + 11 * Math.sqrt(e.calls / model.maxEdge)
-        const mx = (LX + RX) / 2
-        return (
-          <path
-            key={i}
-            d={`M ${LX + 8} ${y1} C ${mx} ${y1}, ${mx} ${y2}, ${RX - 8} ${y2}`}
-            fill="none"
-            stroke={e.ok ? 'var(--accent)' : '#ff6b6b'}
-            strokeOpacity={e.ok ? 0.4 : 0.5}
-            strokeWidth={w}
-            strokeLinecap="round"
-          />
-        )
-      })}
-      {model.cats.map((c) => (
-        <g key={c.name}>
-          <circle cx={LX + 8} cy={catY.get(c.name)} r={3} fill="var(--accent)" />
-          <text
-            x={LX - 2}
-            y={(catY.get(c.name) ?? 0) + 4}
-            textAnchor="end"
-            className="mono"
-            fontSize={12}
-            fill="#fff"
-          >
-            {c.name}
-          </text>
-          <text
-            x={LX - 2}
-            y={(catY.get(c.name) ?? 0) + 18}
-            textAnchor="end"
-            className="mono"
-            fontSize={10}
-            fill="var(--muted-2)"
-          >
-            {c.calls} calls
-          </text>
-        </g>
-      ))}
-      {model.services.map((s) => (
-        <g key={s.name}>
-          <circle cx={RX - 8} cy={svcY.get(s.name)} r={3} fill={s.stopped ? '#ff6b6b' : 'var(--accent)'} />
-          <text
-            x={RX + 2}
-            y={(svcY.get(s.name) ?? 0) + 4}
-            className="mono"
-            fontSize={12}
-            fill={s.stopped ? '#ff6b6b' : '#fff'}
-          >
-            {s.name}
-          </text>
-          <text x={RX + 2} y={(svcY.get(s.name) ?? 0) + 18} className="mono" fontSize={10} fill="var(--muted-2)">
-            {s.calls} {s.stopped ? 'stopped' : 'settled'}
-          </text>
-        </g>
-      ))}
-    </svg>
   )
 }
 

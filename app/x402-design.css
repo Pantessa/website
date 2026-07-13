@@ -2725,9 +2725,10 @@
   .txp__stepbody strong { color: var(--fg); font-weight: 600; margin-right: 8px; font-family: 'Archivo', sans-serif; letter-spacing: -.01em; }
 
   .txp__visual {
+    --tvink: #cfd4cb; --tvguard: #ffd98a; --tvuserink: #04110b;
     border: 1px solid color-mix(in srgb, var(--fg) 9%, transparent); border-radius: 20px; overflow: hidden;
-    background: linear-gradient(165deg, rgba(52,227,160,.05), rgba(10,12,13,.9) 40%);
-    box-shadow: 0 28px 80px rgba(0,0,0,.5), 0 0 44px rgba(52,227,160,.07);
+    background: linear-gradient(165deg, color-mix(in srgb, var(--accent) 5%, transparent), var(--tvpanel, rgba(10,12,13,.9)) 40%);
+    box-shadow: var(--tvshadow, 0 28px 80px rgba(0,0,0,.5), 0 0 44px rgba(52,227,160,.07));
   }
   .txp__vhead { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 12px 16px; border-bottom: 1px solid color-mix(in srgb, var(--fg) 7%, transparent); flex-wrap: wrap; }
   .txp__vbrand { display: inline-flex; align-items: center; gap: 8px; font-size: 11.5px; letter-spacing: .06em; color: var(--accent); }
@@ -2735,18 +2736,20 @@
   .txp__vmarks { display: inline-flex; gap: 7px; }
   .txp__vmark {
     display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px;
-    font-size: 11px; color: #cfd4cb;
+    font-size: 11px; color: var(--tvink);
     border: 1px solid color-mix(in srgb, var(--pc) 35%, transparent);
     background: color-mix(in srgb, var(--pc) 8%, transparent);
   }
   .txp__vmark i { font-style: normal; font-weight: 700; color: var(--pc); }
+  .txp__vmark--uni { --pc: #FF6BAF; }
+  .txp__vmark--snap { --pc: #FFC94D; }
   .txp__vbody { padding: 18px 16px 20px; display: flex; flex-direction: column; gap: 12px; }
-  .txp__vuser { align-self: flex-end; max-width: 85%; padding: 9px 14px; border-radius: 14px 14px 4px 14px; background: rgba(52,227,160,.85); color: #04110b; font-size: 13.5px; font-weight: 500; }
+  .txp__vuser { align-self: flex-end; max-width: 85%; padding: 9px 14px; border-radius: 14px 14px 4px 14px; background: color-mix(in srgb, var(--accent) 85%, transparent); color: var(--tvuserink); font-size: 13.5px; font-weight: 500; }
   .txp__vcard { border: 1px solid color-mix(in srgb, var(--fg) 9%, transparent); border-radius: 14px; padding: 13px 14px; background: color-mix(in srgb, var(--fg) 2%, transparent); display: flex; flex-direction: column; gap: 9px; }
   .txp__vrow { display: flex; justify-content: space-between; gap: 10px; font-size: 12.5px; color: var(--fg); flex-wrap: wrap; }
   .txp__vamt { color: var(--accent); }
-  .txp__vguard { font-size: 11px; color: #ffd98a; letter-spacing: .04em; }
-  .txp__vsign { align-self: flex-start; padding: 8px 16px; border-radius: 999px; background: var(--accent); color: #04110b; font-size: 12.5px; font-weight: 600; box-shadow: 0 0 18px rgba(52,227,160,.3); }
+  .txp__vguard { font-size: 11px; color: var(--tvguard); letter-spacing: .04em; }
+  .txp__vsign { align-self: flex-start; padding: 8px 16px; border-radius: 999px; background: var(--accent); color: var(--tvuserink); font-size: 12.5px; font-weight: 600; box-shadow: 0 0 18px color-mix(in srgb, var(--accent) 30%, transparent); }
   .txp__vreceipt { font-size: 11px; color: var(--muted-2); letter-spacing: .05em; }
   @media (max-width: 1023px) {
     .txp__grid { grid-template-columns: 1fr; }
@@ -2993,8 +2996,7 @@
   /* The hero + engine stages carry their own light palettes (below); the
      remaining black-tuned demo panels re-pin the dark tokens so their
      fg-relative hairlines and inks keep pointing at white. */
-  :root[data-theme='light'] .mhero,
-  :root[data-theme='light'] .txp__visual {
+  :root[data-theme='light'] .mhero {
     --bg: #000000;
     --surf-1: oklch(0.156 0 0);
     --surf-2: oklch(0.205 0 0);
@@ -3119,3 +3121,40 @@
     border-color: color-mix(in srgb, #0e8f62 40%, transparent);
     box-shadow: 0 24px 80px rgba(0,0,0,.22), 0 0 48px rgba(14,143,98,.14);
   }
+
+  /* Transaction-layer demo panel in daylight — glass on paper. */
+  html[data-theme='light'] .txp__visual {
+    --tvpanel: rgba(252,253,252,.96);
+    --tvink: #3c463f;
+    --tvguard: #8f5e0a;
+    --tvuserink: #f2fdf8;
+    --tvshadow: 0 28px 80px rgba(10,30,20,.14), 0 0 44px rgba(14,143,98,.08);
+  }
+  html[data-theme='light'] .txp__vmark--uni { --pc: #d81f78; }
+  html[data-theme='light'] .txp__vmark--snap { --pc: #b07c00; }
+
+  /* State-variant dark-idiom utilities (hover/group-hover) — round-1 remaps
+     only covered the base classes, so rail rows and buttons flashed white
+     text on hover in light mode. */
+  html[data-theme='light'] .hover\:text-white:hover { color: var(--fg); }
+  html[data-theme='light'] .group:hover .group-hover\:text-white { color: var(--fg); }
+  html[data-theme='light'] .hover\:text-black:hover { color: var(--bg); }
+  html[data-theme='light'] .hover\:border-white:hover { border-color: var(--fg); }
+  html[data-theme='light'] .hover\:border-white\/20:hover { border-color: color-mix(in srgb, var(--fg) 20%, transparent); }
+  html[data-theme='light'] .hover\:border-white\/25:hover { border-color: color-mix(in srgb, var(--fg) 25%, transparent); }
+  html[data-theme='light'] .hover\:bg-white\/5:hover { background-color: color-mix(in srgb, var(--fg) 4%, transparent); }
+  html[data-theme='light'] .hover\:bg-white\/10:hover { background-color: color-mix(in srgb, var(--fg) 7%, transparent); }
+  html[data-theme='light'] .hover\:bg-white\/\[0\.02\]:hover,
+  html[data-theme='light'] .hover\:bg-white\/\[0\.03\]:hover { background-color: color-mix(in srgb, var(--fg) 3%, transparent); }
+  html[data-theme='light'] .hover\:bg-white\/\[0\.04\]:hover { background-color: color-mix(in srgb, var(--fg) 4%, transparent); }
+  html[data-theme='light'] .hover\:ring-white\/30:hover { --tw-ring-color: color-mix(in srgb, var(--fg) 30%, transparent); }
+
+  /* Add-your-own-MCP modal panel — was a hardcoded near-black glass. */
+  .addmcp__panel { background: color-mix(in srgb, var(--bg) 96%, var(--fg)); }
+
+  /* Blog bar charts (inline SVG, attribute-styled) — re-ink on paper. */
+  html[data-theme='light'] .blog__chart-svg line { stroke: rgba(16,21,18,0.15); }
+  html[data-theme='light'] .blog__chart-svg rect[fill='#ffffff'] { fill: #101512; }
+  html[data-theme='light'] .blog__chart-svg rect[fill='#3ECF8E'] { fill: #0e8f62; }
+  html[data-theme='light'] .blog__chart-val { fill: #101512; }
+  html[data-theme='light'] .blog__chart-cat { fill: rgba(16,21,18,0.55); }

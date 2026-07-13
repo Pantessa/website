@@ -14,17 +14,7 @@ import {
   YAxis,
 } from 'recharts'
 
-const ACCENT = '#34E0A1'
-const GRID = 'rgba(255,255,255,0.06)'
-const MUTED = 'rgba(255,255,255,0.45)'
-
-const tooltipStyle = {
-  background: '#101012',
-  border: '1px solid rgba(255,255,255,0.12)',
-  borderRadius: 10,
-  fontSize: 12,
-  color: '#fff',
-} as const
+import { useChartColors } from '@/components/chart-theme'
 
 function dayLabel(iso: string): string {
   const d = new Date(iso)
@@ -33,6 +23,7 @@ function dayLabel(iso: string): string {
 
 /** Daily spend over the last 30 days — area chart. */
 export function SpendOverTime({ daily }: { daily: { day: string; spent: number; calls: number }[] }) {
+  const C = useChartColors()
   if (daily.length === 0) {
     return <EmptyChart label="No spend yet — payments will chart here." cta={{ href: '/chat', label: 'Run your first call →' }} />
   }
@@ -41,33 +32,33 @@ export function SpendOverTime({ daily }: { daily: { day: string; spent: number; 
       <AreaChart data={daily} margin={{ top: 8, right: 8, left: -18, bottom: 0 }}>
         <defs>
           <linearGradient id="spendFill" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor={ACCENT} stopOpacity={0.35} />
-            <stop offset="100%" stopColor={ACCENT} stopOpacity={0.02} />
+            <stop offset="0%" stopColor={C.accent} stopOpacity={0.35} />
+            <stop offset="100%" stopColor={C.accent} stopOpacity={0.02} />
           </linearGradient>
         </defs>
-        <CartesianGrid stroke={GRID} vertical={false} />
+        <CartesianGrid stroke={C.grid} vertical={false} />
         <XAxis
           dataKey="day"
           tickFormatter={dayLabel}
-          tick={{ fill: MUTED, fontSize: 11 }}
+          tick={{ fill: C.muted, fontSize: 11 }}
           axisLine={false}
           tickLine={false}
         />
         <YAxis
           tickFormatter={(v: number) => `$${v}`}
-          tick={{ fill: MUTED, fontSize: 11 }}
+          tick={{ fill: C.muted, fontSize: 11 }}
           axisLine={false}
           tickLine={false}
           width={64}
         />
         <Tooltip
-          contentStyle={tooltipStyle}
+          contentStyle={C.tooltip}
           labelFormatter={(l) => new Date(l as string).toUTCString().slice(0, 16)}
           formatter={(value, name) =>
             name === 'spent' ? [`$${Number(value).toFixed(4)}`, 'spent'] : [String(value), 'calls']
           }
         />
-        <Area type="monotone" dataKey="spent" stroke={ACCENT} strokeWidth={2} fill="url(#spendFill)" />
+        <Area type="monotone" dataKey="spent" stroke={C.accent} strokeWidth={2} fill="url(#spendFill)" />
       </AreaChart>
     </ChartBox>
   )
@@ -75,6 +66,7 @@ export function SpendOverTime({ daily }: { daily: { day: string; spent: number; 
 
 /** Per-agent spend — horizontal bars, one color per agent. */
 export function SpendByAgent({ perAgent }: { perAgent: { service: string; spent: number; calls: number }[] }) {
+  const C = useChartColors()
   if (perAgent.length === 0) {
     return <EmptyChart label="No spend yet — services you pay will show here." cta={{ href: '/chat', label: 'Run your first call →' }} />
   }
@@ -82,11 +74,11 @@ export function SpendByAgent({ perAgent }: { perAgent: { service: string; spent:
   return (
     <ChartBox height={height}>
       <BarChart data={perAgent} layout="vertical" margin={{ top: 4, right: 16, left: 8, bottom: 0 }}>
-        <CartesianGrid stroke={GRID} horizontal={false} />
+        <CartesianGrid stroke={C.grid} horizontal={false} />
         <XAxis
           type="number"
           tickFormatter={(v: number) => `$${v}`}
-          tick={{ fill: MUTED, fontSize: 11 }}
+          tick={{ fill: C.muted, fontSize: 11 }}
           axisLine={false}
           tickLine={false}
         />
@@ -94,12 +86,12 @@ export function SpendByAgent({ perAgent }: { perAgent: { service: string; spent:
           type="category"
           dataKey="service"
           width={120}
-          tick={{ fill: '#fff', fontSize: 12 }}
+          tick={{ fill: C.ink, fontSize: 12 }}
           axisLine={false}
           tickLine={false}
         />
         <Tooltip
-          contentStyle={tooltipStyle}
+          contentStyle={C.tooltip}
           formatter={(value, name) =>
             name === 'spent' ? [`$${Number(value).toFixed(4)}`, 'spent'] : [String(value), 'calls']
           }
@@ -111,7 +103,7 @@ export function SpendByAgent({ perAgent }: { perAgent: { service: string; spent:
             // old categorical palette).
             <Cell
               key={row.service}
-              fill="#ffffff"
+              fill={C.mono}
               fillOpacity={Math.max(0.32, 0.9 - (i / Math.max(1, perAgent.length - 1)) * 0.58)}
             />
           ))}
@@ -168,6 +160,7 @@ function timeLabel(iso: string): string {
 
 /** A launched token's USD price over time — sampled from the v4 pool. */
 export function PriceChart({ samples, height = 200 }: { samples: { at: string; priceUsd: number }[]; height?: number }) {
+  const C = useChartColors()
   if (samples.length < 2) {
     return <EmptyChart label="Price history builds as the token trades." />
   }
@@ -176,15 +169,15 @@ export function PriceChart({ samples, height = 200 }: { samples: { at: string; p
       <AreaChart data={samples} margin={{ top: 8, right: 8, left: -6, bottom: 0 }}>
         <defs>
           <linearGradient id="priceFill" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor={ACCENT} stopOpacity={0.35} />
-            <stop offset="100%" stopColor={ACCENT} stopOpacity={0.02} />
+            <stop offset="0%" stopColor={C.accent} stopOpacity={0.35} />
+            <stop offset="100%" stopColor={C.accent} stopOpacity={0.02} />
           </linearGradient>
         </defs>
-        <CartesianGrid stroke={GRID} vertical={false} />
-        <XAxis dataKey="at" tickFormatter={timeLabel} tick={{ fill: MUTED, fontSize: 11 }} axisLine={false} tickLine={false} minTickGap={48} />
-        <YAxis tickFormatter={priceLabel} tick={{ fill: MUTED, fontSize: 11 }} axisLine={false} tickLine={false} width={72} domain={['auto', 'auto']} />
-        <Tooltip contentStyle={tooltipStyle} labelFormatter={(l) => timeLabel(l as string)} formatter={(v) => [priceLabel(Number(v)), 'price']} />
-        <Area type="monotone" dataKey="priceUsd" stroke={ACCENT} strokeWidth={2} fill="url(#priceFill)" />
+        <CartesianGrid stroke={C.grid} vertical={false} />
+        <XAxis dataKey="at" tickFormatter={timeLabel} tick={{ fill: C.muted, fontSize: 11 }} axisLine={false} tickLine={false} minTickGap={48} />
+        <YAxis tickFormatter={priceLabel} tick={{ fill: C.muted, fontSize: 11 }} axisLine={false} tickLine={false} width={72} domain={['auto', 'auto']} />
+        <Tooltip contentStyle={C.tooltip} labelFormatter={(l) => timeLabel(l as string)} formatter={(v) => [priceLabel(Number(v)), 'price']} />
+        <Area type="monotone" dataKey="priceUsd" stroke={C.accent} strokeWidth={2} fill="url(#priceFill)" />
       </AreaChart>
     </ChartBox>
   )
@@ -192,6 +185,7 @@ export function PriceChart({ samples, height = 200 }: { samples: { at: string; p
 
 /** Paid calls served per day — an MCP's usage over time. */
 export function UsageChart({ data, height = 160 }: { data: { date: string; calls: number }[]; height?: number }) {
+  const C = useChartColors()
   if (!data.some((d) => d.calls > 0)) {
     return <EmptyChart label="Usage fills in as the MCP serves paid calls." />
   }
@@ -200,15 +194,15 @@ export function UsageChart({ data, height = 160 }: { data: { date: string; calls
       <AreaChart data={data} margin={{ top: 8, right: 8, left: -18, bottom: 0 }}>
         <defs>
           <linearGradient id="usageFill" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor={ACCENT} stopOpacity={0.35} />
-            <stop offset="100%" stopColor={ACCENT} stopOpacity={0.02} />
+            <stop offset="0%" stopColor={C.accent} stopOpacity={0.35} />
+            <stop offset="100%" stopColor={C.accent} stopOpacity={0.02} />
           </linearGradient>
         </defs>
-        <CartesianGrid stroke={GRID} vertical={false} />
-        <XAxis dataKey="date" tickFormatter={dayLabel} tick={{ fill: MUTED, fontSize: 11 }} axisLine={false} tickLine={false} minTickGap={40} />
-        <YAxis allowDecimals={false} tick={{ fill: MUTED, fontSize: 11 }} axisLine={false} tickLine={false} width={32} />
-        <Tooltip contentStyle={tooltipStyle} labelFormatter={(l) => dayLabel(l as string)} formatter={(v) => [String(v), 'calls']} />
-        <Area type="monotone" dataKey="calls" stroke={ACCENT} strokeWidth={2} fill="url(#usageFill)" />
+        <CartesianGrid stroke={C.grid} vertical={false} />
+        <XAxis dataKey="date" tickFormatter={dayLabel} tick={{ fill: C.muted, fontSize: 11 }} axisLine={false} tickLine={false} minTickGap={40} />
+        <YAxis allowDecimals={false} tick={{ fill: C.muted, fontSize: 11 }} axisLine={false} tickLine={false} width={32} />
+        <Tooltip contentStyle={C.tooltip} labelFormatter={(l) => dayLabel(l as string)} formatter={(v) => [String(v), 'calls']} />
+        <Area type="monotone" dataKey="calls" stroke={C.accent} strokeWidth={2} fill="url(#usageFill)" />
       </AreaChart>
     </ChartBox>
   )

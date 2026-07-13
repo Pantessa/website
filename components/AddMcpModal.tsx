@@ -216,7 +216,7 @@ export default function AddMcpModal({ open, onClose }: { open: boolean; onClose:
             role="dialog"
             aria-label="Add your own MCP"
             onClick={(e) => e.stopPropagation()}
-            className="w-full max-w-[540px] rounded-2xl border border-[var(--line-2)] bg-[#0d0d0f]/95 shadow-[0_24px_64px_rgba(0,0,0,0.65)]"
+            className="addmcp__panel w-full max-w-[540px] rounded-2xl border border-[var(--line-2)] shadow-[0_24px_64px_rgba(0,0,0,0.35)]"
           >
             {/* Header */}
             <div className="flex items-center gap-2.5 px-5 pt-4 pb-3.5 border-b border-[var(--line)]">
