@@ -26,6 +26,7 @@ import {
 } from '@/lib/cross-chain-swap'
 import {
   aaveAgentOf,
+  competingVenueOf,
   parseAaveSupply,
   parseAaveSupplyFollowUp,
   pickSupplyReserve,
@@ -220,6 +221,16 @@ export async function POST(req: NextRequest) {
     // route_trace_lines so the in-chat engine terminal can poll it live.
     const clientTurnId: string | undefined =
       typeof body.turnId === 'string' && /^[A-Za-z0-9-]{8,64}$/.test(body.turnId) ? body.turnId : undefined
+    // The native tx-build layers' routing decisions were INVISIBLE — the
+    // engine pane only showed planner lines, so a parse fall-through read as
+    // the MCP failing (live 2026-07-13: "can I supply 1 more USDC" → planner
+    // → -32602, with no hint the native Aave layer had declined). Negative
+    // seq base keeps these ordered BEFORE the planner/burner sections' seq 0+
+    // when a declined ask falls through to them on the same turn id.
+    let nativeSeq = -1000
+    const nativeTrace = clientTurnId
+      ? (event: unknown) => recordTraceLine(clientTurnId, nativeSeq++, event, 'wallet')
+      : () => {}
     const walletAddress: string | undefined =
       typeof body.walletAddress === 'string' && isAddress(body.walletAddress)
         ? getAddress(body.walletAddress)
@@ -439,7 +450,8 @@ export async function POST(req: NextRequest) {
       if (fu?.kind === 'amend') {
         const aaveRead = aaveAgentOf(activeServers)
         if (aaveRead.agent && aaveRead.usable) {
-          return await buildAaveSupplyTurn(aaveRead.agent, fu.params, walletAddress, workingContext, message)
+          nativeTrace({ type: 'status', label: `native aave layer: amending the pending supply to ${fu.params.amount} ${fu.params.token.toUpperCase()}` })
+          return await buildAaveSupplyTurn(aaveRead.agent, fu.params, walletAddress, workingContext, message, nativeTrace)
         }
       }
     }
@@ -466,7 +478,8 @@ export async function POST(req: NextRequest) {
       if (fu?.kind === 'amend') {
         const aaveRead = aaveAgentOf(activeServers)
         if (aaveRead.agent && aaveRead.usable) {
-          return await buildAaveOpTurn(aaveRead.agent, fu.params, walletAddress, workingContext, message)
+          nativeTrace({ type: 'status', label: `native aave layer: amending the pending ${fu.params.op} to ${fu.params.max ? `all ${fu.params.token.toUpperCase()}` : `${fu.params.amount} ${fu.params.token.toUpperCase()}`}` })
+          return await buildAaveOpTurn(aaveRead.agent, fu.params, walletAddress, workingContext, message, nativeTrace)
         }
       }
     }
@@ -509,10 +522,17 @@ export async function POST(req: NextRequest) {
       if ('problem' in aaveAsk) {
         // Clearly an Aave deposit, just under-specified (no amount) — the ONE
         // clarify that's actually necessary.
+        nativeTrace({ type: 'status', label: 'native aave layer: supply ask under-specified — asking for the amount' })
         return NextResponse.json({ reply: `🏦 ${aaveAsk.problem}` })
       }
-      if (aaveAsk.explicitAave || aaveRead.agent) {
+      const rivalVenue = aaveAsk.weak ? competingVenueOf(activeServers) : null
+      if (rivalVenue) {
+        // Venue-generic verb ("deposit 5 USDC") and another selected agent
+        // could serve it — don't assume Aave; normal routing decides.
+        nativeTrace({ type: 'note', level: 'info', label: `native aave layer passed: venue-generic verb and ${rivalVenue} is also selected — normal routing decides the venue` })
+      } else if (aaveAsk.explicitAave || aaveRead.agent) {
         if (!aaveRead.agent) {
+          nativeTrace({ type: 'note', level: 'warn', label: 'native aave layer: supply parsed but no Aave agent in the set — asking the user to add it' })
           return NextResponse.json({
             reply: `🏦 Supplying to Aave needs the **Aave** agent in your set — add it from the rail and ask again, and I'll build the deposit for you to sign.`,
           })
@@ -520,18 +540,23 @@ export async function POST(req: NextRequest) {
         if (!aaveRead.usable) {
           // An add-MCP shell row (no endpoint) — same honest guard as the
           // cross-chain agent (routing at it makes the planner hallucinate).
+          nativeTrace({ type: 'note', level: 'warn', label: `native aave layer: ${aaveRead.agent.name} has no callable endpoint (shell row) — refusing honestly` })
           return NextResponse.json({
             reply: `🏦 Your **${aaveRead.agent.name}** agent isn't fully connected — no callable tools are registered for it. Re-add it (or pick the Aave agent from the Free tab) and ask again.`,
           })
         }
         if (aaveAsk.otherChain) {
+          nativeTrace({ type: 'note', level: 'info', label: `native aave layer: non-Ethereum chain (${aaveAsk.otherChain}) — Aave v4 is Ethereum-only, no build` })
           return NextResponse.json({
             reply: `🏦 Aave v4 is live on **Ethereum only** today — I can't build a supply on ${aaveAsk.otherChain}. Say “supply ${aaveAsk.amount} ${aaveAsk.token.toUpperCase()} to Aave on Ethereum” and I'll prepare it.`,
           })
         }
-        return await buildAaveSupplyTurn(aaveRead.agent, aaveAsk, walletAddress, workingContext, message)
+        nativeTrace({ type: 'status', label: `native aave layer claimed the turn: supply ${aaveAsk.amount} ${aaveAsk.token.toUpperCase()}${aaveAsk.explicitAave ? '' : ' (set-hint: Aave selected)'} — planner bypassed` })
+        return await buildAaveSupplyTurn(aaveRead.agent, aaveAsk, walletAddress, workingContext, message, nativeTrace)
+      } else {
+        // Pool-ish/bare ask with no Aave agent and Aave not named → normal routing.
+        nativeTrace({ type: 'note', level: 'info', label: 'native aave layer passed: supply-shaped ask but no Aave agent in the set — normal routing' })
       }
-      // Pool-ish ask with no Aave agent and Aave not named → normal routing.
     }
 
     // ── Aave withdraw / borrow / repay: the same native recipe ──────────────
@@ -542,27 +567,43 @@ export async function POST(req: NextRequest) {
     if (aaveOpAsk) {
       const aaveRead = aaveAgentOf(activeServers)
       if ('problem' in aaveOpAsk) {
+        nativeTrace({ type: 'status', label: `native aave layer: ${aaveOpAsk.op} ask under-specified — asking for the amount` })
         return NextResponse.json({ reply: `🏦 ${aaveOpAsk.problem}` })
       }
-      if (aaveOpAsk.explicitAave || aaveRead.agent) {
+      const rivalOpVenue = aaveOpAsk.weak ? competingVenueOf(activeServers) : null
+      if (rivalOpVenue) {
+        nativeTrace({ type: 'note', level: 'info', label: `native aave layer passed: venue-generic ${aaveOpAsk.op} and ${rivalOpVenue} is also selected — normal routing decides the venue` })
+      } else if (aaveOpAsk.explicitAave || aaveRead.agent) {
         if (!aaveRead.agent) {
+          nativeTrace({ type: 'note', level: 'warn', label: `native aave layer: ${aaveOpAsk.op} parsed but no Aave agent in the set — asking the user to add it` })
           return NextResponse.json({
             reply: `🏦 A ${aaveOpAsk.op} on Aave needs the **Aave** agent in your set — add it from the rail and ask again, and I'll build it for you to sign.`,
           })
         }
         if (!aaveRead.usable) {
+          nativeTrace({ type: 'note', level: 'warn', label: `native aave layer: ${aaveRead.agent.name} has no callable endpoint (shell row) — refusing honestly` })
           return NextResponse.json({
             reply: `🏦 Your **${aaveRead.agent.name}** agent isn't fully connected — no callable tools are registered for it. Re-add it (or pick the Aave agent from the Free tab) and ask again.`,
           })
         }
         if (aaveOpAsk.otherChain) {
+          nativeTrace({ type: 'note', level: 'info', label: `native aave layer: non-Ethereum chain (${aaveOpAsk.otherChain}) — Aave v4 is Ethereum-only, no build` })
           return NextResponse.json({
             reply: `🏦 Aave v4 is live on **Ethereum only** today — I can't build a ${aaveOpAsk.op} on ${aaveOpAsk.otherChain}. Say “${aaveOpAsk.op} ${aaveOpAsk.amount ?? 'all my'} ${aaveOpAsk.token.toUpperCase()} on Ethereum” and I'll prepare it.`,
           })
         }
-        return await buildAaveOpTurn(aaveRead.agent, aaveOpAsk, walletAddress, workingContext, message)
+        nativeTrace({ type: 'status', label: `native aave layer claimed the turn: ${aaveOpAsk.op} ${aaveOpAsk.max ? `all ${aaveOpAsk.token.toUpperCase()}` : `${aaveOpAsk.amount} ${aaveOpAsk.token.toUpperCase()}`}${aaveOpAsk.explicitAave ? '' : ' (set-hint: Aave selected)'} — planner bypassed` })
+        return await buildAaveOpTurn(aaveRead.agent, aaveOpAsk, walletAddress, workingContext, message, nativeTrace)
+      } else {
+        // Lending-ish verb with no Aave agent and Aave not named → normal routing.
+        nativeTrace({ type: 'note', level: 'info', label: `native aave layer passed: ${aaveOpAsk.op}-shaped ask but no Aave agent in the set — normal routing` })
       }
-      // Lending-ish verb with no Aave agent and Aave not named → normal routing.
+    }
+    if (!aaveAsk && !aaveOpAsk && /\baave\b/i.test(message)) {
+      // Aave named but neither native parser claimed it — the planner routes
+      // it. This line is the breadcrumb that was missing when a parse miss
+      // sent a build ask to the planner and its -32602 looked like MCP flake.
+      nativeTrace({ type: 'note', level: 'info', label: 'aave named but no imperative supply/withdraw/borrow/repay parse — normal routing (reads are fine here; build asks should say e.g. “supply 5 USDC to aave”)' })
     }
 
     const swapIntent = parseSwapIntent(message)
@@ -1021,9 +1062,11 @@ async function buildAaveSupplyTurn(
   walletAddress: string | undefined,
   ctx?: WorkingContext,
   originalMessage?: string,
+  trace: (event: unknown) => void = () => {},
 ) {
   const token = params.token.toUpperCase()
   if (!walletAddress) {
+    trace({ type: 'note', level: 'info', label: 'no wallet connected — asking to connect before building' })
     return NextResponse.json({
       reply: '🏦 Connect your wallet to supply — the deposit is built for your address and you sign it yourself.',
       connectWallet: true,
@@ -1041,13 +1084,16 @@ async function buildAaveSupplyTurn(
     picked = pickSupplyReserve(res?.reserves ?? [], token)
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'the lookup failed'
+    trace({ type: 'receipt', receipt: { name: agent.name, endpoint: 'reserves', priceUsd: 0, ok: false, note: msg.slice(0, 200) } })
     return NextResponse.json({ reply: `🏦 Couldn't read Aave's reserve list: ${msg}` })
   }
   if (!picked) {
+    trace({ type: 'note', level: 'warn', label: `${token} is not an active supplyable reserve — no build` })
     return NextResponse.json({
       reply: `🏦 ${token} isn't an active, supplyable Aave v4 reserve on Ethereum right now — ask “where can I earn on ${token}?” to see what's listed.`,
     })
   }
+  trace({ type: 'select', service: agent.name, endpoint: `${picked.spokeName} spoke · tools/call reserves → build_supply`, priceUsd: 0, reason: 'native aave supply layer — addresses from the official reserve list' })
 
   const atoms = humanToAtoms(params.amount, picked.decimals)
   if (!atoms) {
@@ -1072,6 +1118,7 @@ async function buildAaveSupplyTurn(
     // reason verbatim ("Insufficient balance: this needs 1.000000 USDC but
     // the wallet holds 0.000000…") instead of a model's guess.
     const msg = err instanceof Error ? err.message : 'the build failed'
+    trace({ type: 'receipt', receipt: { name: agent.name, endpoint: 'build_supply', priceUsd: 0, ok: false, note: msg.slice(0, 200) } })
     return NextResponse.json({ reply: `🏦 Couldn't build the supply: ${msg}` })
   }
 
@@ -1086,11 +1133,13 @@ async function buildAaveSupplyTurn(
   })
   if (!guard.ok || !guard.steps) {
     // A verification failure is a REFUSAL, not a warning.
+    trace({ type: 'note', level: 'warn', label: `guard REFUSED the supply build: ${guard.reasons.join(' ').slice(0, 200)}` })
     return NextResponse.json({
       reply: `🚫 I built the supply but refused it — the transaction didn't verify: ${guard.reasons.join(' ')} Nothing to sign.`,
       blocked: true,
     })
   }
+  trace({ type: 'status', label: `guard verified every step — ${guard.steps.length === 2 ? 'approve → supply' : 'supply'} card built, awaiting signature` })
 
   // 4) The spend-policy gate at the point of signing, and the money-moved
   //    value (guardrails.valueUsd — the headline-metric contract).
@@ -1153,11 +1202,13 @@ async function buildAaveOpTurn(
   walletAddress: string | undefined,
   ctx?: WorkingContext,
   originalMessage?: string,
+  trace: (event: unknown) => void = () => {},
 ) {
   const token = params.token.toUpperCase()
   const op = params.op
   const eq = (a?: string | null, b?: string | null) => !!a && !!b && a.toLowerCase() === b.toLowerCase()
   if (!walletAddress) {
+    trace({ type: 'note', level: 'info', label: 'no wallet connected — asking to connect before building' })
     return NextResponse.json({
       reply: `🏦 Connect your wallet to ${op} — the transaction is built for your address and position, and you sign it yourself.`,
       connectWallet: true,
@@ -1171,6 +1222,7 @@ async function buildAaveOpTurn(
     pf = (await callAgentTool(agent.endpoint!, 'portfolio', { user: walletAddress, chainId: 1 })) as AavePortfolioRead
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'the lookup failed'
+    trace({ type: 'receipt', receipt: { name: agent.name, endpoint: 'portfolio', priceUsd: 0, ok: false, note: msg.slice(0, 200) } })
     return NextResponse.json({ reply: `🏦 Couldn't read your Aave position: ${msg}` })
   }
 
@@ -1179,6 +1231,7 @@ async function buildAaveOpTurn(
   if (op === 'withdraw') {
     supplyPos = pickWithdrawPosition(pf.supplies ?? [], token)
     if (!supplyPos) {
+      trace({ type: 'note', level: 'info', label: `no ${token} supply position found — honest reply, no build` })
       return NextResponse.json({
         reply: `🏦 You don't have any ${token} supplied on Aave v4 — nothing to withdraw. Ask “show my Aave position” to see what's there.`,
       })
@@ -1192,6 +1245,7 @@ async function buildAaveOpTurn(
   if (op === 'repay') {
     debtPos = pickRepayPosition(pf.borrows ?? [], token)
     if (!debtPos) {
+      trace({ type: 'note', level: 'info', label: `no ${token} debt found — honest reply, no build` })
       return NextResponse.json({
         reply: `🏦 You don't have any ${token} debt on Aave v4 — nothing to repay. Ask “show my Aave position” to see what's outstanding.`,
       })
@@ -1213,6 +1267,7 @@ async function buildAaveOpTurn(
     reserveRows = res?.reserves ?? []
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'the lookup failed'
+    trace({ type: 'receipt', receipt: { name: agent.name, endpoint: 'reserves', priceUsd: 0, ok: false, note: msg.slice(0, 200) } })
     return NextResponse.json({ reply: `🏦 Couldn't read Aave's reserve list: ${msg}` })
   }
 
@@ -1242,10 +1297,12 @@ async function buildAaveOpTurn(
   }
   const posTokenAddr = op === 'withdraw' ? supplyPos!.token?.address : op === 'repay' ? debtPos!.token?.address : null
   if (posTokenAddr && !eq(posTokenAddr, picked.currency)) {
+    trace({ type: 'note', level: 'warn', label: `position ${token} address does not match the official reserve list — refusing to build` })
     return NextResponse.json({
       reply: `🏦 Your position's ${token} address doesn't match Aave's official reserve list, so I won't build the ${op}. Nothing to sign.`,
     })
   }
+  trace({ type: 'select', service: agent.name, endpoint: `${picked.spokeName} spoke · tools/call portfolio → reserves → build_${op}`, priceUsd: 0, reason: `native aave ${op} layer — anchored to your real position` })
 
   let atoms: string | null = null
   if (!params.max) {
@@ -1298,6 +1355,7 @@ async function buildAaveOpTurn(
     // AaveKit validates server-side against REAL balances + health factor —
     // surface its reason verbatim, never a model's guess.
     const msg = err instanceof Error ? err.message : 'the build failed'
+    trace({ type: 'receipt', receipt: { name: agent.name, endpoint: `build_${op}`, priceUsd: 0, ok: false, note: msg.slice(0, 200) } })
     return NextResponse.json({ reply: `🏦 Couldn't build the ${op}: ${msg}` })
   }
 
@@ -1321,11 +1379,13 @@ async function buildAaveOpTurn(
     onChainIds: legIds.length > 0 ? legIds : picked.onChainId !== null ? [picked.onChainId] : null,
   })
   if (!guard.ok || !guard.steps) {
+    trace({ type: 'note', level: 'warn', label: `guard REFUSED the ${op} build: ${guard.reasons.join(' ').slice(0, 200)}` })
     return NextResponse.json({
       reply: `🚫 I built the ${op} but refused it — the transaction didn't verify: ${guard.reasons.join(' ')} Nothing to sign.`,
       blocked: true,
     })
   }
+  trace({ type: 'status', label: `guard verified every step — ${op} card built, awaiting signature` })
 
   // 6) Money-moved value + the spend-policy gate at the point of signing.
   const valueUsd = params.max
