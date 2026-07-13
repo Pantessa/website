@@ -12,6 +12,7 @@ import MessageReceipts from '@/components/MessageReceipts'
 import RouteReport from '@/components/RouteReport'
 import SignVoteButton from '@/components/SignVoteButton'
 import SignOrderButton from '@/components/SignOrderButton'
+import SignHlActionButton from '@/components/SignHlActionButton'
 import SendTxButton from '@/components/SendTxButton'
 import SendTxChain from '@/components/SendTxChain'
 import { orderRequestOf, txRequestOf, txChainOf } from '@/lib/transaction-layer'
@@ -658,8 +659,9 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
       detail = error?.slice(0, 200)
     } else if (data.orderRequest) {
       outcome = 'tx-built'
-      artifact = 'cow-order'
-      chain = chainLabel((data.orderRequest as { chainId?: unknown }).chainId) ?? 'ethereum'
+      const isHl = (data.orderRequest as { protocol?: unknown }).protocol === 'hyperliquid'
+      artifact = isHl ? 'hl-order' : 'cow-order'
+      chain = isHl ? 'hyperliquid' : (chainLabel((data.orderRequest as { chainId?: unknown }).chainId) ?? 'ethereum')
     } else if (data.txChain) {
       outcome = 'tx-built'
       artifact = 'tx-chain'
@@ -1170,6 +1172,24 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
                     {msg.role === 'assistant' &&
                       (() => {
                         const order = orderRequestOf(msg.meta)
+                        if (order?.protocol === 'hyperliquid') {
+                          return (
+                            <SignHlActionButton
+                              order={order}
+                              onPlaced={(info) => {
+                                onEmbedEvent?.('order-signed', info)
+                                reportEmbedSigned({
+                                  artifact: 'hl-order',
+                                  chain: 'hyperliquid',
+                                  txUrl: info.explorerUrl,
+                                  detail: info.detail?.slice(0, 60),
+                                  valueUsd: info.valueUsd ?? guardrailUsdOf(msg.meta),
+                                  buildPath: buildPathOf(msg.meta),
+                                })
+                              }}
+                            />
+                          )
+                        }
                         return order ? (
                           <SignOrderButton
                             order={order}

@@ -298,3 +298,49 @@ export function splitSignature(sig: string): { r: string; s: string; v: 27 | 28 
     v: (v >= 27 ? v : v + 27) as 27 | 28,
   }
 }
+
+// ── Chat-side arming parse ──────────────────────────────────────────────────
+
+export interface GuardianArmAsk {
+  coin: string
+  kind: GuardianPolicyKind
+  triggerMode: GuardianTriggerMode
+  triggerValue: number
+}
+
+/**
+ * Parse a guardian arming ask — "protect my SYRUP long with a 10% stop",
+ * "stop loss on syrup at $0.12", "take profit on eth at +25%". These phrases
+ * are perp-native, so no venue word is demanded; the caller still requires a
+ * Hyperliquid agent in the set and validates against the LIVE position.
+ * Returns null when the message isn't an arming ask.
+ */
+export function parseGuardianArm(message: string): GuardianArmAsk | null {
+  const m = message.toLowerCase().replace(/\s+/g, ' ').trim()
+  if (!/\b(protect|stop[- ]?loss|take[- ]?profit)\b/.test(m)) return null
+
+  const kind: GuardianPolicyKind = /take[- ]?profit/.test(m) ? 'take_profit' : 'stop_loss'
+  // The trigger: "$0.12" / "at 0.12" → absolute price; "10%" / "+25%" → percent.
+  const pct = m.match(/([\d.]+)\s*%/)
+  const px = m.match(/(?:at|@)\s*\$?\s*([\d.]+)(?!\s*%)/)
+  let triggerMode: GuardianTriggerMode
+  let triggerValue: number
+  if (pct) {
+    triggerMode = 'price_move_pct'
+    triggerValue = Number(pct[1])
+  } else if (px) {
+    triggerMode = 'price'
+    triggerValue = Number(px[1])
+  } else return null
+  if (!Number.isFinite(triggerValue) || triggerValue <= 0) return null
+
+  // The coin: "my SYRUP long", "on syrup", "protect eth". Skip stop-words and
+  // the venue word itself.
+  const STOP = new Set(['my', 'the', 'a', 'an', 'on', 'at', 'with', 'stop', 'loss', 'take', 'profit', 'protect', 'position', 'long', 'short', 'perp', 'hyperliquid', 'hl', 'set', 'me', 'please', 'if', 'it', 'drops', 'falls', 'hits', 'from', 'entry', 'below', 'above'])
+  const coinMatch =
+    m.match(/\b(?:protect|on)\s+(?:my\s+)?([a-z0-9]{2,10})\b/) ??
+    m.match(/\bmy\s+([a-z0-9]{2,10})\s+(?:long|short|position|perp)\b/)
+  const coin = coinMatch && !STOP.has(coinMatch[1]) ? coinMatch[1].toUpperCase() : null
+  if (!coin) return null
+  return { coin, kind, triggerMode, triggerValue }
+}

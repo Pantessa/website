@@ -33,7 +33,8 @@ export interface EvmTxRequest {
  *  a solver/relayer after signing, so we carry the full typed-data payload +
  *  where the signed order is submitted (A4). */
 export interface Eip712OrderRequest {
-  /** Protocol label — 'cow' | 'opensea' | … (drives the submit + UI copy). */
+  /** Protocol label — 'cow' | 'hyperliquid' | 'opensea' | … (drives the
+   *  submit + UI copy). */
   protocol: string
   /** Full EIP-712 typed data: { domain, primaryType, types, message }. */
   typedData: unknown
@@ -44,6 +45,16 @@ export interface Eip712OrderRequest {
    *  the full appData JSON (the order signs only its hash) + the quoteId. */
   appDataJson?: string
   quoteId?: number
+  /** Hyperliquid extras (protocol 'hyperliquid'): the EXACT L1 action + nonce
+   *  the typed data hashes, and what the user asked for — the submit relay
+   *  re-derives the hash, recovers the signer, and re-guards against the live
+   *  market before anything reaches the venue. */
+  hl?: {
+    action: unknown
+    nonce: number
+    isTestnet: boolean
+    expected: { coin: string; kind: 'open' | 'close'; isBuy: boolean }
+  }
 }
 
 /** One step of a multi-step on-chain action (approve → swap, wrap → swap…). */
@@ -134,6 +145,7 @@ export function orderRequestOf(meta: unknown): Eip712OrderRequest | null {
   if (!raw || typeof raw !== 'object') return null
   const d = raw as Record<string, unknown>
   if (typeof d.protocol !== 'string' || !d.typedData || typeof d.typedData !== 'object') return null
+  const hl = d.hl && typeof d.hl === 'object' ? (d.hl as Eip712OrderRequest['hl']) : undefined
   return {
     protocol: d.protocol,
     typedData: d.typedData,
@@ -141,6 +153,7 @@ export function orderRequestOf(meta: unknown): Eip712OrderRequest | null {
     chainId: typeof d.chainId === 'number' ? d.chainId : undefined,
     appDataJson: typeof d.appDataJson === 'string' ? d.appDataJson : undefined,
     quoteId: typeof d.quoteId === 'number' ? d.quoteId : undefined,
+    hl: hl && hl.action && typeof hl.nonce === 'number' ? hl : undefined,
   }
 }
 

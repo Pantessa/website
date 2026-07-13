@@ -27,6 +27,7 @@ export const BUILD_PATHS = [
   'native-swap-cow',
   'native-cross-chain',
   'native-hl-guardian',
+  'native-hl-exec',
   'planner',
   'manual',
 ] as const
