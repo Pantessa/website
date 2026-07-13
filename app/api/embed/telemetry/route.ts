@@ -22,7 +22,7 @@ export const dynamic = 'force-dynamic'
 
 const OUTCOMES = new Set(['answered', 'clarify', 'tx-built', 'signed', 'refused', 'credit-gate', 'error'])
 const FIRST_PARTY_OUTCOMES = new Set(['tx-built', 'signed'])
-const ARTIFACTS = new Set(['cow-order', 'hl-order', 'tx', 'tx-chain', 'vote'])
+const ARTIFACTS = new Set(['cow-order', 'hl-order', 'tx', 'tx-chain', 'vote', 'job', 'job-step'])
 
 const str = (v: unknown, max: number): string | undefined =>
   typeof v === 'string' && v.trim() ? v.trim().slice(0, max) : undefined
