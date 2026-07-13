@@ -118,13 +118,15 @@ export function SplashDashboard({
         {loading || !tiles ? (
           <ChatLoader inline />
         ) : (
-          // Masonry via CSS multi-columns: cards keep their natural height and
-          // pack top-to-bottom, so a tall portfolio card never stretches its
-          // row-mates into empty space. Column count derives from the ~330px
-          // ideal width — it reflows as the screen widens or compresses.
-          <div className="columns-[330px] gap-4">
+          // A strict grid: every card is the same size (auto-rows-fr equalizes
+          // every row to one shared height), so six cards on a big screen read
+          // as one composed surface instead of a masonry scatter. Cards absorb
+          // any extra height internally — bodies stretch, prompt chips pin to
+          // the bottom edge. Mobile stays natural-height (1 col, nothing to
+          // align with).
+          <div className="grid grid-cols-1 gap-4 md:auto-rows-fr md:grid-cols-2 xl:grid-cols-3">
             {groupBySlug(tiles).map((group) => (
-              <div key={group[0].mcpSlug} className="mb-4 break-inside-avoid">
+              <div key={group[0].mcpSlug} className="min-w-0">
                 <TileCard tiles={group} onPick={onPick} onRetry={() => setReload((n) => n + 1)} />
               </div>
             ))}
@@ -160,11 +162,9 @@ function groupBySlug(tiles: SplashTile[]): SplashTile[][] {
  *  render-primitive body, and the tile's prompt chips. */
 function TileSection({
   tile,
-  onPick,
   onRetry,
 }: {
   tile: SplashTile
-  onPick: (p: string, slug?: string) => void
   onRetry?: () => void
 }) {
   return (
@@ -183,9 +183,8 @@ function TileSection({
       {tile.render === 'proposals' && <ProposalsBody tile={tile} />}
       {tile.render === 'rows' && <RowsBody tile={tile} />}
       {tile.render === 'activity' && <ActivityBody tile={tile} />}
-      {tile.render === 'empty' && <p className="text-xs leading-relaxed text-[color:var(--muted)]">{tile.message}</p>}
+      {tile.render === 'empty' && <p className="flex-1 text-xs leading-relaxed text-[color:var(--muted)]">{tile.message}</p>}
       {tile.render === 'error' && <ErrorBody tile={tile} onRetry={onRetry} />}
-      <PromptChips prompts={tile.prompts} slug={tile.mcpSlug} onPick={onPick} />
     </div>
   )
 }
@@ -216,7 +215,7 @@ export function TileCard({
   if (!head) return null
   const iconServer = server ?? ({ id: head.mcpSlug, slug: head.mcpSlug, name: head.mcpName } as McpServer)
   return (
-    <div className="relative flex flex-col overflow-hidden rounded-2xl border border-[var(--line)] bg-[var(--surf-1)] p-4 text-left transition-colors hover:border-[var(--line-2)]">
+    <div className="relative flex h-full flex-col overflow-hidden rounded-2xl border border-[var(--line)] bg-[var(--surf-1)] p-4 text-left transition-colors hover:border-[var(--line-2)]">
       {/* Hairline sheen along the top edge — the site's accent language. */}
       <div aria-hidden className="pointer-events-none absolute inset-x-4 top-0 h-px bg-gradient-to-r from-transparent via-white/15 to-transparent" />
       <div className="mb-3 flex items-center justify-between gap-2">
@@ -234,11 +233,22 @@ export function TileCard({
       </div>
       {group.map((t, i) => (
         <div key={t.id} className={i > 0 ? 'mt-4 border-t border-[var(--line)] pt-4' : undefined}>
-          <TileSection tile={t} onPick={onPick} onRetry={onRetry} />
+          <TileSection tile={t} onRetry={onRetry} />
         </div>
       ))}
+      {/* ONE chip row per card, pinned to the bottom edge (mt-auto): in the
+          equal-height grid every card's chips sit on the same baseline, and a
+          multi-section card doesn't pay a divider+chips band per section.
+          Capped at 4 so a multi-tile card's union stays a tidy row. */}
+      <PromptChips prompts={dedupePrompts(group.flatMap((t) => t.prompts)).slice(0, 4)} slug={head.mcpSlug} onPick={onPick} />
     </div>
   )
+}
+
+/** Union of a card group's prompts, first-seen order, deduped by label. */
+function dedupePrompts(prompts: SuggestedPrompt[]): SuggestedPrompt[] {
+  const seen = new Set<string>()
+  return prompts.filter((p) => (seen.has(p.label) ? false : (seen.add(p.label), true)))
 }
 
 // ── Error (a source that failed — retryable, never silent) ───────────────────
@@ -429,18 +439,22 @@ function PromptChips({
 }) {
   if (prompts.length === 0) return null
   return (
-    <div className="mt-4 flex flex-wrap gap-1.5 border-t border-[var(--line)] pt-3">
-      {prompts.map((p) => (
-        <button
-          key={p.label}
-          type="button"
-          title={p.prompt}
-          onClick={() => onPick(p.prompt, slug)}
-          className="rounded-full border border-[var(--line)] px-2.5 py-1 text-[11px] text-[color:var(--muted)] transition-colors hover:border-[var(--line-2)] hover:bg-white/5 hover:text-white"
-        >
-          {p.label}
-        </button>
-      ))}
+    // mt-auto pins the row to the card's bottom in the equal-height grid;
+    // pt-4 keeps a minimum gap when the card sits at its natural height.
+    <div className="mt-auto pt-4">
+      <div className="flex flex-wrap gap-1.5 border-t border-[var(--line)] pt-3">
+        {prompts.map((p) => (
+          <button
+            key={p.label}
+            type="button"
+            title={p.prompt}
+            onClick={() => onPick(p.prompt, slug)}
+            className="rounded-full border border-[var(--line)] px-2.5 py-1 text-[11px] text-[color:var(--muted)] transition-colors hover:border-[var(--line-2)] hover:bg-white/5 hover:text-white"
+          >
+            {p.label}
+          </button>
+        ))}
+      </div>
     </div>
   )
 }
