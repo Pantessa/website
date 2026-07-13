@@ -11,17 +11,17 @@ test:api + screenshot); no suggested prompts we can't answer — chips must be
 backed by a deterministic builder + live context; additive DDL only.
 
 ## W1 — Jobs v1 (the orchestrator, from HANDOFF-multistep-jobs.md)  [~2h]
-- [ ] Tables `jobs` + `job_steps` (additive DDL + Prisma models)
-- [ ] lib/jobs.ts: plan compiler — compound-ask parse ("…, then …") chaining
+- [x] Tables `jobs` + `job_steps` (additive DDL + Prisma models)
+- [x] lib/jobs.ts: plan compiler — compound-ask parse ("…, then …") chaining
       EXISTING native parses (cross-chain swap → hl deposit → hl order →
       guardian arm), $-flow-through ("put $X of that…")
-- [ ] Runner: app/api/cron/jobs (CRON_SECRET; guardian pattern: atomic step
+- [x] Runner: app/api/cron/jobs (CRON_SECRET; guardian pattern: atomic step
       claim, env fence N/A, per-step guard re-run, receipts on job_steps)
       + wait predicates (1Click status, HL credit, balance ≥)
-- [ ] JobCard in chat: step list w/ live states, embedded sign buttons
+- [x] JobCard in chat: step list w/ live states, embedded sign buttons
       (reuse SendTxButton / SignHlActionButton per step), value rollup,
       pause/cancel; SSE-or-poll progress
-- [ ] vercel.json cron entry + test:api coverage (plan compiler matrix,
+- [x] vercel.json cron entry + test:api coverage (plan compiler matrix,
       runner auth, step-claim atomicity)
 
 ## W2 — Action chips replace suggested prompts  [~1h]
@@ -52,3 +52,7 @@ backed by a deterministic builder + live context; additive DDL only.
 
 ## Log (append per iteration)
 - 20:24 lane opened @ af057bb (main w/ #401 #404 merged)
+- 21:15 W1 DONE — jobs-v1 merged to lane (PR #405): compiler/runner/JobCard,
+  tables live, cron wired, 450-check harness green, LIVE job verified on
+  :3277 (real 1Click artifact offered; fund-less deposit failed closed).
+  Screenshot: JobCard w/ $4 bridge quote + embedded sign button. Next: W2.
