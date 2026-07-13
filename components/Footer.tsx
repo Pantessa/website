@@ -1,5 +1,6 @@
 import Link from 'next/link'
 import { YeetfulMark } from '@/components/Logo'
+import ThemeToggle from '@/components/ThemeToggle'
 
 type FooterLink = { label: string; href: string; ext?: boolean }
 
@@ -125,7 +126,10 @@ export default function Footer() {
 
         <div className="footer__bottom">
           <span className="mono">© 2026 YEETFUL INC.</span>
-          <span className="mono">BUILT ON THE x402 STANDARD</span>
+          <div className="footer__bottomright">
+            <span className="mono">BUILT ON THE x402 STANDARD</span>
+            <ThemeToggle />
+          </div>
         </div>
       </div>
 

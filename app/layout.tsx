@@ -47,13 +47,33 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
-  themeColor: '#09090b',
+  themeColor: [
+    { media: '(prefers-color-scheme: light)', color: '#fdfdfc' },
+    { media: '(prefers-color-scheme: dark)', color: '#09090b' },
+  ],
 }
+
+/* Runs before first paint: stored choice ('yf-theme') wins, else the OS
+   preference; tracks OS changes while no explicit choice is stored.
+   /embed is exempt — it themes itself from the ?theme= param on .embed-root
+   (embed.css). Keep in sync with components/ThemeToggle. */
+const THEME_BOOTSTRAP = `(function(){try{
+if(location.pathname==='/embed'||location.pathname.indexOf('/embed/')===0)return;
+var mq=window.matchMedia('(prefers-color-scheme: light)');
+var apply=function(){
+var s=null;try{s=localStorage.getItem('yf-theme')}catch(e){}
+var t=(s==='light'||s==='dark')?s:(mq.matches?'light':'dark');
+var d=document.documentElement;d.dataset.theme=t;d.classList.toggle('dark',t==='dark');
+};
+apply();
+if(mq.addEventListener)mq.addEventListener('change',apply);
+}catch(e){}})()`
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className="dark">
+    <html lang="en" className="dark" data-theme="dark" suppressHydrationWarning>
       <head>
+        <script dangerouslySetInnerHTML={{ __html: THEME_BOOTSTRAP }} />
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
         <link
