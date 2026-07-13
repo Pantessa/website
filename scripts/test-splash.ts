@@ -7,8 +7,9 @@
 // (Kept out of test:api since it needs neither a server nor Neon.)
 
 import { SPLASH_SOURCES } from '@/lib/splash/sources'
+import { touchesContracts, UNISWAP_CONTRACTS } from '@/lib/splash/affinity'
 import type { McpServer } from '@/lib/store'
-import type { HoldingsTile, ProposalsTile, EmptyTile } from '@/lib/splash/types'
+import type { HoldingsTile, ProposalsTile, RowsTile } from '@/lib/splash/types'
 
 let passed = 0
 let failed = 0
@@ -27,6 +28,9 @@ const srv = (slug: string, name: string): McpServer =>
   ({ id: slug, slug, name, endpoint: 'https://x.example/mcp' } as McpServer)
 const uni = SPLASH_SOURCES.find((s) => s.id === 'uniswap')!
 const snap = SPLASH_SOURCES.find((s) => s.id === 'snapshot')!
+const cow = SPLASH_SOURCES.find((s) => s.id === 'cow')!
+const hl = SPLASH_SOURCES.find((s) => s.id === 'hyperliquid')!
+const aave = SPLASH_SOURCES.find((s) => s.id === 'aave')!
 
 async function run() {
   console.log('splash sources — uniswap (holdings)')
@@ -49,12 +53,11 @@ async function run() {
     check('caps prompts at 3', tile.prompts.length <= 3)
   }
 
-  console.log('splash sources — uniswap (empty wallet)')
+  console.log('splash sources — uniswap (empty wallet → no card)')
   {
     const call = async () => ({ chainId: 8453, totalUsd: 0, holdings: [] })
-    const tile = (await uni.build(call, ADDR, srv('uniswap-free', 'Uniswap (Free)'))) as EmptyTile
-    check('empty wallet → empty render', tile.render === 'empty')
-    check('empty tile still offers a prompt', tile.prompts.length >= 1)
+    const tile = await uni.build(call, ADDR, srv('uniswap-free', 'Uniswap (Free)'))
+    check('empty wallet contributes no tile', tile === null)
   }
 
   console.log('splash sources — snapshot (proposals)')
@@ -89,12 +92,72 @@ async function run() {
     check('summarize prompt references the first proposal', tile.prompts.some((p) => /Activate v4/i.test(p.prompt)))
   }
 
-  console.log('splash sources — snapshot (no follows)')
+  console.log('splash sources — snapshot (no follows → no card)')
   {
     const call = async () => ({ proposals: [], note: '0x… follows no spaces on Snapshot — no proposals in scope.' })
-    const tile = (await snap.build(call, ADDR, srv('snapshot-free', 'Snapshot DAO (Free)'))) as EmptyTile
-    check('no follows → empty render', tile.render === 'empty')
-    check('surfaces the MCP note', /follows no spaces/.test(tile.message))
+    const tile = await snap.build(call, ADDR, srv('snapshot-free', 'Snapshot DAO (Free)'))
+    check('no follows contributes no tile', tile === null)
+  }
+
+  console.log('splash sources — cow')
+  {
+    const active = async () => ({
+      chains: [
+        {
+          chain: 'mainnet',
+          openOrders: [{ pair: 'WETH → USDC', kind: 'sell', status: 'open', filledPct: 62, validTo: 1783867278 }],
+          tradeCount: 14,
+          recentFills: [{ pair: 'USDC → WETH', txHash: '0xabc' }],
+        },
+      ],
+    })
+    const tile = (await cow.build(active, ADDR, srv('cow-free', 'CoW Protocol (Free)'))) as RowsTile
+    check('cow activity → rows render', tile.render === 'rows')
+    check('open order mapped with fill pct', tile.rows.some((r) => /62% filled/.test(r.value ?? '')))
+
+    const never = async () => ({ chains: [{ chain: 'mainnet', openOrders: [], tradeCount: 0, recentFills: [] }] })
+    check('never traded contributes no tile', (await cow.build(never, ADDR, srv('cow-free', 'CoW Protocol (Free)'))) === null)
+
+    const pastOnly = async () => ({ chains: [{ chain: 'mainnet', openOrders: [], tradeCount: 9, recentFills: [] }] })
+    const past = (await cow.build(pastOnly, ADDR, srv('cow-free', 'CoW Protocol (Free)'))) as RowsTile
+    check('past trades w/o recent fills still shows the trade count', past?.rows?.some((r) => r.value === '9') === true)
+  }
+
+  console.log('splash sources — hyperliquid (no account → no card)')
+  {
+    const call = async () => ({ perp: { accountValueUsd: '0', positions: [] } })
+    check('no account contributes no tile', (await hl.build(call, ADDR, srv('hyperliquid-free', 'Hyperliquid (Free)'))) === null)
+  }
+
+  console.log('splash sources — aave')
+  {
+    const positioned = async () => ({
+      positions: [
+        { spoke: 'Core', netBalanceUsd: '$1,204.50', netApyPct: 3.1, healthFactor: '1.42', totalDebtUsd: '$500.00' },
+      ],
+      supplies: [
+        { token: { symbol: 'USDC' }, balance: '1700.2', balanceUsd: '$1,700.20', earnedInterestUsd: '$12.40', supplyApyPct: 4.2, isCollateral: true },
+      ],
+      borrows: [{ token: { symbol: 'WETH' }, debt: '0.2', debtUsd: '$500.00', borrowApyPct: 2.9 }],
+    })
+    const tile = (await aave.build(positioned, ADDR, srv('aave-mcp-yeetful', 'Aave MCP · Yeetful'))) as RowsTile
+    check('aave position → rows render', tile.render === 'rows')
+    check('headline is the net balance', tile.headline?.value === '$1,204.50')
+    check('supply row carries earned interest', tile.rows.some((r) => /USDC supplied/.test(r.label) && /12\.40 earned/.test(r.sub ?? '')))
+    check('borrow row is negative-toned', tile.rows.some((r) => /WETH borrowed/.test(r.label) && r.tone === 'neg'))
+    check('tight health factor flagged', tile.rows.some((r) => r.label === 'Health factor' && r.tone === 'neg'))
+    check('repay prompt when borrowing', tile.prompts.some((p) => /repay/i.test(p.prompt)))
+
+    const empty = async () => ({ note: 'No Aave v4 positions for this address.', positions: [], supplies: [], borrows: [] })
+    check('no position contributes no tile', (await aave.build(empty, ADDR, srv('aave-mcp-yeetful', 'Aave MCP · Yeetful'))) === null)
+  }
+
+  console.log('affinity — uniswap router probe (pure)')
+  {
+    const ur = UNISWAP_CONTRACTS['base-mainnet'][0]
+    check('counterparty in the router set matches', touchesContracts(['0xdeadbeef', ur], UNISWAP_CONTRACTS['base-mainnet']))
+    check('no router counterparty → no match', !touchesContracts(['0xdeadbeef'], UNISWAP_CONTRACTS['base-mainnet']))
+    check('all probe addresses are lowercase', Object.values(UNISWAP_CONTRACTS).flat().every((a) => a === a.toLowerCase() && /^0x[0-9a-f]{40}$/.test(a)))
   }
 
   console.log('splash sources — matchers')
@@ -102,6 +165,8 @@ async function run() {
     check('uniswap matches by name', uni.match(srv('uniswap-free', 'Uniswap (Free)')))
     check('snapshot matches by name', snap.match(srv('snapshot-free', 'Snapshot DAO (Free)')))
     check('uniswap does not match snapshot', !uni.match(srv('snapshot-free', 'Snapshot DAO (Free)')))
+    check('aave matches the custom add-MCP row', aave.match(srv('aave-mcp-yeetful', 'Aave MCP · Yeetful')))
+    check('aave does not match uniswap', !aave.match(srv('uniswap-free', 'Uniswap (Free)')))
   }
 
   console.log(`\n${passed} passed, ${failed} failed`)

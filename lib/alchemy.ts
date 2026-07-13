@@ -236,6 +236,41 @@ export async function getRecentActivity(address: string, limit = 6): Promise<Act
   return rows.slice(0, limit)
 }
 
+// ── Transfer counterparties (protocol-interaction probe fuel) ────────────────
+
+/**
+ * The distinct counterparty addresses (lowercase) of a wallet's most recent
+ * transfers on one chain — the `to` of what it sent, the `from` of what it
+ * received. One call per direction, newest-first, capped at 1000: a "recent
+ * history" read, not an archive crawl. Feeds the splash affinity probe
+ * ("has this wallet ever touched contract X?" — lib/splash/affinity.ts).
+ */
+export async function transferCounterparties(
+  net: string,
+  address: string,
+  direction: 'from' | 'to',
+): Promise<string[]> {
+  const url = `https://${net}.g.alchemy.com/v2/${apiKey()}`
+  const params: Record<string, unknown> = {
+    category: ['external', 'erc20'],
+    withMetadata: false,
+    excludeZeroValue: true,
+    order: 'desc',
+    maxCount: '0x3e8',
+  }
+  if (direction === 'from') params.fromAddress = address
+  else params.toAddress = address
+  const json = (await postJson(url, {
+    jsonrpc: '2.0',
+    id: 1,
+    method: 'alchemy_getAssetTransfers',
+    params: [params],
+  })) as { result?: { transfers?: AlchemyTransfer[] } }
+  const transfers = Array.isArray(json.result?.transfers) ? json.result!.transfers! : []
+  const side = direction === 'from' ? 'to' : 'from'
+  return [...new Set(transfers.map((t) => (t[side] ?? '').toLowerCase()).filter(Boolean))]
+}
+
 function trimAmount(n: number): string {
   if (n === 0) return '0'
   if (n >= 1000) return n.toLocaleString('en-US', { maximumFractionDigits: 2 })
