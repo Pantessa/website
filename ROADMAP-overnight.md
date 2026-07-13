@@ -38,11 +38,11 @@ backed by a deterministic builder + live context; additive DDL only.
 - [x] Remove/retire prompt suggestions that lack a backing builder
 
 ## W3 — Cards polish + receipts  [~45m]
-- [ ] Guardian: armed-policy reply becomes a live card (status, trigger
+- [x] Guardian: armed-policy reply becomes a live card (status, trigger
       distance, receipts feed link); HL fill card after SignHlActionButton
-- [ ] Money-moved: hl_guardian_runs.value_usd + hl submits into the admin
+- [x] Money-moved: hl_guardian_runs.value_usd + hl submits into the admin
       rollup on /dashboard/embeds
-- [ ] Screenshot pass (light + dark; typing-never-clears; embed exempt)
+- [x] Screenshot pass (light + dark; typing-never-clears; embed exempt)
 
 ## W4 — if time: MCP touches
 - [ ] hyperliquid MCP: surface guardian-able positions hint in portfolio
@@ -62,3 +62,13 @@ backed by a deterministic builder + live context; additive DDL only.
   W2 chips landed inside sources.ts derivations (no separate
   lib/action-chips.ts needed — the registry already had the right shape).
   Next: W3 cards polish.
+- 22:05 W3 DONE — cards-polish merged to lane (PR #407): GuardianPolicyCard
+  (live trigger distance, pause/resume, closed-by-guardian receipt) via new
+  GET /api/guardian/policies/[id]; guardian closes now in systemTotalUsd +
+  admin line. Screenshot-pass note: chips reuse PromptChips (strings only,
+  harness round-trip enforced), JobCard shot in W1, GuardianPolicyCard live
+  states are drill-gated (arming needs a real delegation) — no staged shots.
+- 22:05 W4 re-scoped: near-intents/hl MCP sources aren't in the local
+  free-mcps checkout (live on unmerged branches) — not tonight's
+  archaeology. Building instead: jobs list API + dashboard panel so the
+  primitive has a home outside chat.
