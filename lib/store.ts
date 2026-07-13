@@ -143,6 +143,21 @@ interface YeetfulStore {
   setActiveServerIds: (ids: string[]) => void
   clearActiveServers: () => void
 
+  // Slugs the user EXPLICITLY toggled on (rail click / add-MCP modal) — as
+  // opposed to the seeded default fleet. The splash shows these MCPs' cards
+  // even when the wallet has no activity on them (a hand-picked MCP earns its
+  // card by being picked; the affinity gate applies only to the auto scan).
+  // Persisted, so the choice survives reloads alongside the working set.
+  manualSlugs: string[]
+  /** Record a deliberate working-set choice: `on` adds the slug, off removes. */
+  markManualMcp: (slug: string, on: boolean) => void
+
+  // Per-wallet working-set cache: last active set for each connected address,
+  // so reconnecting restores the previous session's MCPs (ChatWorkspace
+  // restores on connect, writes through on change). Persisted locally.
+  walletSets: Record<string, string[]>
+  saveWalletSet: (address: string, ids: string[]) => void
+
   // Saved MCP shortlist — the wallet's curated 1–3 services (the "pick your
   // tools" default). Persisted per-wallet in the DB (signed in) and locally
   // (guest). Seeds a new chat's active set. See lib/shortlist.ts + /api/shortlist.
@@ -246,6 +261,28 @@ export const useYeetfulStore = create<YeetfulStore>()(
       },
       setActiveServerIds: (ids) => set({ activeServerIds: ids }),
       clearActiveServers: () => set({ activeServerIds: [] }),
+
+      manualSlugs: [],
+      markManualMcp: (slug, on) =>
+        set((s) => ({
+          manualSlugs: on
+            ? s.manualSlugs.includes(slug)
+              ? s.manualSlugs
+              : [...s.manualSlugs, slug]
+            : s.manualSlugs.filter((x) => x !== slug),
+        })),
+
+      walletSets: {},
+      saveWalletSet: (address, ids) =>
+        set((s) => {
+          const key = address.toLowerCase()
+          const cur = s.walletSets[key]
+          if (cur && cur.length === ids.length && cur.every((id, i) => id === ids[i])) return s
+          // Keep the map bounded — drop the oldest entries past 8 wallets.
+          const entries = Object.entries(s.walletSets).filter(([k]) => k !== key)
+          while (entries.length >= 8) entries.shift()
+          return { walletSets: Object.fromEntries([...entries, [key, ids]]) }
+        }),
 
       shortlistIds: [],
       toggleShortlist: (id) => {
@@ -477,6 +514,8 @@ export const useYeetfulStore = create<YeetfulStore>()(
       // leak into another account or survive a sign-out.
       partialize: (state) => ({
         activeServerIds: state.activeServerIds,
+        manualSlugs: state.manualSlugs,
+        walletSets: state.walletSets,
         shortlistIds: state.shortlistIds,
         sidebarOpen: state.sidebarOpen,
         mcpRailOpen: state.mcpRailOpen,

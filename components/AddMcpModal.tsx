@@ -44,7 +44,7 @@ const isPersonalTool = (t: DiscoveredTool) =>
   t.plannable && t.params.some((p) => ADDRESS_PARAM_RE.test(p.name) || /\$USER_ADDRESS/.test(p.description ?? ''))
 
 export default function AddMcpModal({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const { addServer, activeServerIds, setActiveServerIds, updateChatServers, currentChatId } =
+  const { addServer, activeServerIds, setActiveServerIds, updateChatServers, markManualMcp, currentChatId } =
     useYeetfulStore()
   const { status, connectAndSignIn } = useSession()
   const router = useRouter()
@@ -177,6 +177,9 @@ export default function AddMcpModal({ open, onClose }: { open: boolean; onClose:
       // detail page to see the discovered tools it just saved.
       const nextIds = [...activeServerIds, server.id]
       setActiveServerIds(nextIds)
+      // Adding your own MCP is the most deliberate pick there is — always
+      // paint its splash card, activity or not.
+      markManualMcp(server.slug, true)
       if (currentChatId) updateChatServers(currentChatId, nextIds)
       onClose()
       router.push(`/servers/${server.slug}`)

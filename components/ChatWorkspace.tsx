@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useRef } from 'react'
+import { useAccount } from 'wagmi'
 import ChatInterface from '@/components/ChatInterface'
 import ChatSidebar from '@/components/ChatSidebar'
 import ChatSignInGate from '@/components/ChatSignInGate'
@@ -21,8 +22,9 @@ const STATIC_SERVERS: McpServer[] = [...FREE_FLEET_FALLBACK, ...CATALOG]
  * restore its active agents; the bare /chat route is a fresh "new chat" surface.
  */
 export default function ChatWorkspace({ chatId }: { chatId?: string }) {
-  const { servers, setServers, setCurrentChatId, loadChat, setActiveServerIds, activeServerIds } =
+  const { servers, setServers, setCurrentChatId, loadChat, setActiveServerIds, activeServerIds, walletSets, saveWalletSet } =
     useYeetfulStore()
+  const { address } = useAccount()
 
   // A deep link like /chat?mcps=uniswap-free,snapshot-free preselects a working
   // set so the landing "Try it live" (and any shared combo link) lands the user
@@ -85,6 +87,38 @@ export default function ChatWorkspace({ chatId }: { chatId?: string }) {
       .filter((id): id is string => !!id)
     if (seed.length) setActiveServerIds(seed)
   }, [chatId, servers, activeServerIds.length, setActiveServerIds])
+
+  // Per-wallet working-set cache: when a wallet connects on the bare /chat
+  // surface, restore the MCP set it had last session (wins over the default
+  // fleet; defers to an open chat's own set and to a ?mcps= deep link). Once
+  // restored, every change writes through — so next login looks like the last
+  // session. The restoredFor ref both dedupes the restore per address and
+  // gates the write-through: saving before the restore ran would clobber the
+  // cache with the pre-hydration set.
+  const restoredFor = useRef<string | null>(null)
+  useEffect(() => {
+    if (!address || servers.length === 0) return
+    if (restoredFor.current === address) return
+    if (chatId || new URLSearchParams(window.location.search).get('mcps')) {
+      // An open chat / deep link owns the set — skip the restore but unlock
+      // the write-through, so this session still updates the wallet's cache.
+      restoredFor.current = address
+      return
+    }
+    restoredFor.current = address
+    const cached = walletSets[address.toLowerCase()]
+    // Only ids still present in the loaded directory — a stale cached row
+    // (deleted custom MCP) must not leave a ghost id in the working set.
+    const valid = (cached ?? []).filter((id) => servers.some((s) => s.id === id))
+    if (valid.length) setActiveServerIds(valid)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [address, servers, chatId, setActiveServerIds])
+
+  useEffect(() => {
+    if (!address || restoredFor.current !== address) return
+    if (activeServerIds.length === 0) return // never cache "nothing" — usually just pre-seed
+    saveWalletSet(address, activeServerIds)
+  }, [address, activeServerIds, saveWalletSet])
 
   // Logged in, the top nav is gone (AppShell) — reclaim its 4rem so chat fills
   // the whole viewport.

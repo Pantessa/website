@@ -13,6 +13,11 @@
 // retryable error cards ("broke" must stay distinguishable from "nothing
 // here"). Uniswap additionally gates on an on-chain router-interaction probe
 // (lib/splash/affinity.ts) because its card is a generic wallet portfolio.
+//
+// THE MANUAL-PICK EXCEPTION (Nate, 2026-07-13): an MCP the user EXPLICITLY
+// toggled on (rail click / add-MCP modal → `forceShow` on the server) always
+// gets a card. No activity → a "preview" card: what this MCP can do for you,
+// with prompt chips — so a hand-picked MCP shows its face instead of nothing.
 
 import type { McpServer } from '@/lib/store'
 import { callMcpTool } from '@/lib/mcp-call'
@@ -95,7 +100,7 @@ async function buildMultichainTiles(address: string, server: McpServer): Promise
       subtitle: `${holdings.length} across ${portfolio.chainsWithHoldings} ${portfolio.chainsWithHoldings === 1 ? 'chain' : 'chains'}`,
       chain: scope,
       totalUsd: portfolio.totalUsd,
-      holdings: holdings.slice(0, 8),
+      holdings: holdings.slice(0, 6),
       prompts: holdingPrompts(holdings, 'on Base'),
     })
   }
@@ -108,7 +113,7 @@ async function buildMultichainTiles(address: string, server: McpServer): Promise
       render: 'activity',
       title: 'Recent transactions',
       subtitle: `${scope}`,
-      rows: activity,
+      rows: activity.slice(0, 4),
       prompts: [
         { label: 'Explain my last tx', prompt: `Explain my most recent transaction (${activity[0].asset} on ${activity[0].chain}) in plain English.` },
         { label: 'Summarize my activity', prompt: 'Summarize my recent on-chain activity across Ethereum, Base, and Arbitrum.' },
@@ -134,7 +139,7 @@ async function buildBaseFallbackTile(call: McpCaller, address: string, server: M
     subtitle: `via ${server.name}`,
     chain: label,
     totalUsd: typeof data.totalUsd === 'number' ? data.totalUsd : null,
-    holdings: holdings.slice(0, 8),
+    holdings: holdings.slice(0, 6),
     prompts: holdingPrompts(holdings, `on ${label}`),
   }
 }
@@ -149,7 +154,9 @@ const uniswapSource: SplashSource = {
       // fetch, so a shown card pays zero extra latency). Unknown (probe
       // failed) fails open. When the wallet MCP is also connected its
       // identical tiles win the dedupe anyway, so a false negative here still
-      // leaves the user their portfolio.
+      // leaves the user their portfolio. A manual pick (forceShow) skips the
+      // probe entirely — the user asked for this card.
+      if ((server as SplashServer).forceShow) return buildMultichainTiles(address, server)
       const [used, tiles] = await Promise.all([hasUniswapHistory(address), buildMultichainTiles(address, server)])
       if (used === false) return null
       return tiles
@@ -483,6 +490,81 @@ const walletSource: SplashSource = {
 /** All registered splash sources. Exported for tests; a new MCP appends here. */
 export const SPLASH_SOURCES: SplashSource[] = [walletSource, uniswapSource, snapshotSource, cowSource, hyperliquidSource, aaveSource]
 
+// ── Preview cards (the manual-pick exception) ────────────────────────────────
+// What each source's card says when the user hand-picked the MCP but the
+// wallet has no activity on it: an honest "nothing here yet" plus prompt chips
+// that show what the MCP can do. Same card chrome as a live tile — the user
+// sees the MCP's face and a way in, not a blank column.
+
+const SOURCE_PREVIEWS: Record<string, { message: string; prompts: SuggestedPrompt[] }> = {
+  wallet: {
+    message: 'No holdings found for this wallet yet — once anything lands on Ethereum, Base, or Arbitrum it shows up here.',
+    prompts: [
+      { label: 'What can you show me?', prompt: 'What can the wallet agent show me about any address?' },
+      { label: 'Check gas balances', prompt: 'What are my gas balances across chains?' },
+    ],
+  },
+  uniswap: {
+    message: 'No swappable holdings yet. Uniswap quotes and builds swaps the moment you hold something.',
+    prompts: [
+      { label: 'Price of ETH', prompt: 'What is the current price of ETH in USDC on Uniswap?' },
+      { label: 'Quote a swap', prompt: 'Quote swapping 100 USDC to ETH on Base' },
+      { label: 'How do swaps work here?', prompt: 'How do I make a swap through this chat — what are the steps?' },
+    ],
+  },
+  snapshot: {
+    message: 'This wallet doesn’t follow any Snapshot spaces yet — follow a DAO and its open votes appear here.',
+    prompts: [
+      { label: 'Find popular DAOs', prompt: 'What are the most active DAOs on Snapshot right now?' },
+      { label: 'What’s hot in governance?', prompt: 'Show me interesting governance proposals closing soon on Snapshot' },
+    ],
+  },
+  cow: {
+    message: 'No CoW Protocol trades from this wallet yet. CoW gets you MEV-protected swaps at the best on-chain price.',
+    prompts: [
+      { label: 'Quote a swap', prompt: 'Quote swapping 100 USDC to WETH on CoW' },
+      { label: 'Why CoW?', prompt: 'What makes CoW Protocol swaps different from a regular DEX swap?' },
+    ],
+  },
+  hyperliquid: {
+    message: 'No Hyperliquid account for this wallet yet — markets and prices work without one.',
+    prompts: [
+      { label: 'Top markets', prompt: 'What are the top Hyperliquid markets by volume today?' },
+      { label: 'ETH funding rate', prompt: 'What is the current ETH funding rate on Hyperliquid?' },
+    ],
+  },
+  aave: {
+    message: 'No Aave position for this wallet yet. Supply an asset and your balances, APY, and health factor live here.',
+    prompts: [
+      { label: 'Best supply APYs', prompt: 'What are the best supply APYs on Aave right now?' },
+      { label: 'What would 100 USDC earn?', prompt: 'If I supplied 100 USDC to Aave, what would I earn in a year?' },
+    ],
+  },
+}
+
+/** The preview card for a hand-picked MCP with no activity: source-specific
+ *  copy when we have it, else the server's own example asks. Exported for
+ *  tests and reused by the generic featured path. */
+export function previewTile(server: SplashServer, sourceId?: string): SplashTile {
+  const canned = sourceId ? SOURCE_PREVIEWS[sourceId] : undefined
+  const examplePrompts: SuggestedPrompt[] = (server.exampleQueries ?? [])
+    .slice(0, 3)
+    .map((q) => ({ label: truncate(q, 32), prompt: q }))
+  const prompts = canned?.prompts ?? (examplePrompts.length
+    ? examplePrompts
+    : [{ label: `What can ${server.name} do?`, prompt: `What can ${server.name} do for me? Give me a few example asks.` }])
+  return {
+    id: `${server.slug}-preview`,
+    mcpSlug: server.slug,
+    mcpName: server.name,
+    render: 'empty',
+    title: 'Nothing here yet',
+    subtitle: 'try one of these',
+    message: canned?.message ?? (server.description ? truncate(server.description, 140) : `${server.name} is connected and ready.`),
+    prompts,
+  }
+}
+
 // ── Generic featured-endpoint source (any MCP, zero hand-coding) ─────────────
 // An MCP with no dedicated source above still gets a connect-time quick view
 // when its owner flagged featured ("ping first") endpoints — the add-MCP modal
@@ -500,7 +582,13 @@ export interface FeaturedEndpoint {
 }
 
 /** A server plus its featured endpoints (the splash route attaches them). */
-export type SplashServer = McpServer & { featuredEndpoints?: FeaturedEndpoint[] }
+export type SplashServer = McpServer & {
+  featuredEndpoints?: FeaturedEndpoint[]
+  /** The user explicitly picked this MCP (rail toggle / add-MCP modal) —
+   *  always paint a card, falling back to a preview when there's no activity.
+   *  Set by /api/splash from the client's manualSlugs. */
+  forceShow?: boolean
+}
 
 /** Param names that mean "the user's own address" — same intent as the
  *  planner's $USER_ADDRESS guidance, matched structurally here. */
@@ -594,7 +682,7 @@ function holdingsTileFromPortfolio(data: unknown, server: SplashServer): SplashT
     subtitle: chainLabels.length ? `${holdings.length} across ${chainLabels.length} ${chainLabels.length === 1 ? 'chain' : 'chains'}` : `${holdings.length} holdings`,
     chain: chainLabels.join(' · ') || 'multichain',
     totalUsd: typeof p.totalUsd === 'number' ? p.totalUsd : null,
-    holdings: holdings.slice(0, 8),
+    holdings: holdings.slice(0, 6),
     prompts: prompts.length ? prompts : [{ label: 'Review my holdings', prompt: 'What can I do with the tokens in my wallet?' }],
   }
 }
@@ -677,7 +765,12 @@ function errorTile(source: SplashSource, server: McpServer): SplashTile {
 export async function buildSplash(address: string, servers: SplashServer[]): Promise<SplashTile[]> {
   const jobs: Promise<SplashTile[]>[] = []
   for (const server of servers) {
-    if (!server.endpoint) continue
+    if (!server.endpoint) {
+      // Not callable (endpoint-less custom row) — a hand-picked MCP still
+      // shows its preview face; anything else contributes nothing.
+      if (server.forceShow) jobs.push(Promise.resolve([previewTile(server)]))
+      continue
+    }
     const endpoint = overrideFreeMcpBase(server.endpoint)
     const call: McpCaller = (name, args) => callMcpTool(endpoint, name, args)
     let matched = false
@@ -687,12 +780,23 @@ export async function buildSplash(address: string, servers: SplashServer[]): Pro
       jobs.push(
         Promise.resolve()
           .then(() => source.build(call, address, server))
-          .then((t) => (Array.isArray(t) ? t : t ? [t] : []))
+          .then((t) => {
+            const tiles = Array.isArray(t) ? t : t ? [t] : []
+            // Hand-picked MCP with no activity → preview card, never nothing.
+            if (tiles.length === 0 && server.forceShow) return [previewTile(server, source.id)]
+            return tiles
+          })
           .catch(() => [errorTile(source, server)]),
       )
     }
-    if (!matched && (server.featuredEndpoints?.length ?? 0) > 0) {
-      jobs.push(buildFeaturedTile(call, address, server).then((t) => (t ? [t] : [])).catch(() => []))
+    if (!matched) {
+      // No dedicated source: featured endpoints paint the generic quick view;
+      // a hand-picked MCP still gets its preview card when that comes up empty
+      // (or when it has no featured endpoints at all).
+      const featured = (server.featuredEndpoints?.length ?? 0) > 0
+        ? buildFeaturedTile(call, address, server).catch(() => null)
+        : Promise.resolve<SplashTile | null>(null)
+      jobs.push(featured.then((t) => (t ? [t] : server.forceShow ? [previewTile(server)] : [])))
     }
   }
   const all = (await Promise.all(jobs)).flat()

@@ -21,12 +21,16 @@ import type { ActivityTile, ErrorTile, HoldingsTile, ProposalsTile, RowsTile, Sp
 export function SplashDashboard({
   address,
   servers,
+  manualSlugs = [],
   onPick,
   dismissed,
   onResolve,
 }: {
   address?: string
   servers: McpServer[]
+  /** Slugs the user explicitly toggled on — these MCPs always get a card
+   *  (a preview when the wallet has no activity on them). */
+  manualSlugs?: string[]
   onPick: (prompt: string, slug?: string) => void
   dismissed: boolean
   /** Reports how many tiles resolved (0 → caller shows its normal empty state). */
@@ -37,14 +41,22 @@ export function SplashDashboard({
   // Bumped by a tile's Retry button to force a fresh scan.
   const [reload, setReload] = useState(0)
 
-  // Only sources that can contribute — avoids a fetch when nothing matches.
-  const relevant = useMemo(() => servers.filter(splashCapable), [servers])
+  // Sources that can contribute, plus anything the user hand-picked — a manual
+  // selection always earns a card, splash-capable or not.
+  const relevant = useMemo(
+    () => servers.filter((s) => splashCapable(s) || manualSlugs.includes(s.slug)),
+    [servers, manualSlugs],
+  )
+  const relevantManual = useMemo(
+    () => relevant.filter((s) => manualSlugs.includes(s.slug)).map((s) => s.slug),
+    [relevant, manualSlugs],
+  )
   // A stable string key so the scan re-runs only when the wallet or the set of
   // dashboard-capable MCPs actually changes — not on every render (relevant is
   // a fresh array each time). Depending on the string (not the array) also
   // keeps React 18 StrictMode's mount→cleanup→mount from aborting the only
   // in-flight fetch and leaving the skeleton up forever.
-  const key = `${address ?? ''}|${relevant.map((s) => s.id).sort().join(',')}`
+  const key = `${address ?? ''}|${relevant.map((s) => s.id).sort().join(',')}|${relevantManual.slice().sort().join(',')}`
 
   useEffect(() => {
     if (!address || relevant.length === 0) {
@@ -57,7 +69,7 @@ export function SplashDashboard({
     fetch('/api/splash', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ address, servers: relevant }),
+      body: JSON.stringify({ address, servers: relevant, manualSlugs: relevantManual }),
     })
       .then((r) => r.json())
       .then((data: { tiles?: SplashTile[] }) => {
@@ -107,9 +119,15 @@ export function SplashDashboard({
         {loading || !tiles ? (
           <ChatLoader inline />
         ) : (
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+          // Masonry via CSS multi-columns: cards keep their natural height and
+          // pack top-to-bottom, so a tall portfolio card never stretches its
+          // row-mates into empty space. Column count derives from the ~330px
+          // ideal width — it reflows as the screen widens or compresses.
+          <div className="columns-[330px] gap-4">
             {groupBySlug(tiles).map((group) => (
-              <TileCard key={group[0].mcpSlug} tiles={group} onPick={onPick} onRetry={() => setReload((n) => n + 1)} />
+              <div key={group[0].mcpSlug} className="mb-4 break-inside-avoid">
+                <TileCard tiles={group} onPick={onPick} onRetry={() => setReload((n) => n + 1)} />
+              </div>
             ))}
           </div>
         )}
@@ -164,7 +182,7 @@ function TileSection({
       {tile.render === 'proposals' && <ProposalsBody tile={tile} />}
       {tile.render === 'rows' && <RowsBody tile={tile} />}
       {tile.render === 'activity' && <ActivityBody tile={tile} />}
-      {tile.render === 'empty' && <p className="text-xs text-[color:var(--muted)]">{tile.message}</p>}
+      {tile.render === 'empty' && <p className="text-xs leading-relaxed text-[color:var(--muted)]">{tile.message}</p>}
       {tile.render === 'error' && <ErrorBody tile={tile} onRetry={onRetry} />}
       <PromptChips prompts={tile.prompts} slug={tile.mcpSlug} onPick={onPick} />
     </div>
@@ -197,8 +215,10 @@ export function TileCard({
   if (!head) return null
   const iconServer = server ?? ({ id: head.mcpSlug, slug: head.mcpSlug, name: head.mcpName } as McpServer)
   return (
-    <div className="flex flex-col rounded-2xl border border-[var(--line)] bg-[var(--surf-1)] p-4 text-left transition-colors hover:border-[var(--line-2)]">
-      <div className="mb-2 flex items-center justify-between gap-2">
+    <div className="relative flex flex-col overflow-hidden rounded-2xl border border-[var(--line)] bg-[var(--surf-1)] p-4 text-left transition-colors hover:border-[var(--line-2)]">
+      {/* Hairline sheen along the top edge — the site's accent language. */}
+      <div aria-hidden className="pointer-events-none absolute inset-x-4 top-0 h-px bg-gradient-to-r from-transparent via-white/15 to-transparent" />
+      <div className="mb-3 flex items-center justify-between gap-2">
         <Link
           href={`/servers/${head.mcpSlug}`}
           className="group/head flex min-w-0 items-center gap-2"
