@@ -763,6 +763,7 @@ model EmbedTurn {
   detail       String? // short refusal/error text, or a human label for the artifact
   txUrl        String?  @map("tx_url") // explorer link once signed/placed
   valueUsd     Float?   @map("value_usd") // notional USD of the built/signed tx (guardrail-priced)
+  buildPath    String?  @map("build_path") // which layer built the artifact: native-* | planner | manual (lib/build-path.ts)
   createdAt    DateTime @default(now()) @map("created_at")
 
   @@index([ownerAddress, createdAt])

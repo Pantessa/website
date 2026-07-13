@@ -93,7 +93,7 @@ function CopyTurn({ text, dark }: { text: string; dark?: boolean }) {
   )
 }
 
-function buildMeta(receipts: unknown, payer: unknown, voteRequest: unknown, voteCandidates?: unknown, routeReport?: unknown, routerTrace?: unknown, voteProposal?: unknown, orderRequest?: unknown, guardrails?: unknown, txRequest?: unknown, workingContext?: unknown, txChain?: unknown, clarify?: unknown, connectWallet?: unknown, connectAsk?: string, portfolio?: unknown) {
+function buildMeta(receipts: unknown, payer: unknown, voteRequest: unknown, voteCandidates?: unknown, routeReport?: unknown, routerTrace?: unknown, voteProposal?: unknown, orderRequest?: unknown, guardrails?: unknown, txRequest?: unknown, workingContext?: unknown, txChain?: unknown, clarify?: unknown, connectWallet?: unknown, connectAsk?: string, portfolio?: unknown, buildPath?: unknown) {
   const meta: Record<string, unknown> = {}
   if (Array.isArray(receipts) && receipts.length) {
     meta.receipts = receipts
@@ -117,6 +117,9 @@ function buildMeta(receipts: unknown, payer: unknown, voteRequest: unknown, vote
   // A multi-step transaction chain (approve → swap) — SendTxChain reads this
   // and self-advances as each step confirms.
   if (txChain && typeof txChain === 'object') meta.txChain = txChain
+  // Which layer built the artifact (lib/build-path.ts) — persisted so the
+  // SIGNED telemetry beacon (fired later from the sign buttons) carries it too.
+  if (typeof buildPath === 'string' && buildPath) meta.buildPath = buildPath
   // An ambiguous money/governance target the planner refused to guess (RR17)
   // — ClarifyChips reads this; a chip's pick is sent as the next message.
   if (clarify && typeof clarify === 'object') meta.clarify = clarify
@@ -367,7 +370,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
           addMessage(chatId, {
             role: 'assistant',
             content: out.content,
-            meta: buildMeta(out.receipts, out.payer, out.voteRequest, undefined, out.routeReport, out.routerTrace, out.voteProposal, out.orderRequest, undefined, out.txRequest, out.workingContext, out.txChain, out.clarify, undefined, undefined, out.portfolio),
+            meta: buildMeta(out.receipts, out.payer, out.voteRequest, undefined, out.routeReport, out.routerTrace, out.voteProposal, out.orderRequest, undefined, out.txRequest, out.workingContext, out.txChain, out.clarify, undefined, undefined, out.portfolio, out.buildPath),
           })
           reportEmbedTurn(userMsg, { ...out, reply: out.content })
         }
@@ -433,7 +436,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
         addMessage(chatId, {
           role: 'assistant',
           content: data.reply || data.error || 'No response.',
-          meta: buildMeta(data.receipts, data.payer, data.voteRequest, data.voteCandidates, undefined, undefined, data.voteProposal, data.orderRequest, data.guardrails, data.txRequest, data.workingContext, data.txChain, data.clarify, data.connectWallet, userMsg, data.portfolio),
+          meta: buildMeta(data.receipts, data.payer, data.voteRequest, data.voteCandidates, undefined, undefined, data.voteProposal, data.orderRequest, data.guardrails, data.txRequest, data.workingContext, data.txChain, data.clarify, data.connectWallet, userMsg, data.portfolio, data.buildPath),
         })
         reportEmbedTurn(userMsg, data as Record<string, unknown>)
       }
@@ -469,6 +472,13 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
   const guardrailUsdOf = (source: unknown): number | undefined => {
     const v = (source as { guardrails?: { valueUsd?: unknown } } | null | undefined)?.guardrails?.valueUsd
     return typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : undefined
+  }
+  // Which layer built the artifact (native-* | planner | manual) — read from
+  // the chat response on tx-built, from the persisted msg.meta on signed, so
+  // the dashboard's per-layer built → signed breakdown pairs both ends.
+  const buildPathOf = (source: unknown): string | undefined => {
+    const v = (source as { buildPath?: unknown } | null | undefined)?.buildPath
+    return typeof v === 'string' && v ? v : undefined
   }
   // One session id per first-party mount — same role embedSession plays for embeds.
   const [chatSession] = useState(() =>
@@ -542,9 +552,10 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
       chain,
       detail,
       valueUsd: outcome === 'tx-built' ? guardrailUsdOf(data) : undefined,
+      buildPath: outcome === 'tx-built' ? buildPathOf(data) : undefined,
     })
   }
-  const reportEmbedSigned = (info: { artifact: string; chain?: string; txUrl?: string; detail?: string; valueUsd?: number }) => {
+  const reportEmbedSigned = (info: { artifact: string; chain?: string; txUrl?: string; detail?: string; valueUsd?: number; buildPath?: string }) => {
     onEmbedEvent?.('turn', { outcome: 'signed', artifact: info.artifact })
     postEmbedTelemetry({ outcome: 'signed', ...info })
   }
@@ -593,7 +604,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
     history: { role: string; content: string }[],
     workingContext?: WorkingContext,
   ): Promise<
-    | { kind: 'reply'; content: string; receipts?: unknown; payer?: string; voteRequest?: unknown; voteProposal?: unknown; routeReport?: unknown; routerTrace?: unknown; orderRequest?: unknown; txRequest?: unknown; txChain?: unknown; clarify?: unknown; workingContext?: unknown; portfolio?: unknown }
+    | { kind: 'reply'; content: string; receipts?: unknown; payer?: string; voteRequest?: unknown; voteProposal?: unknown; routeReport?: unknown; routerTrace?: unknown; orderRequest?: unknown; txRequest?: unknown; txChain?: unknown; clarify?: unknown; workingContext?: unknown; portfolio?: unknown; buildPath?: unknown }
     | { kind: 'plan'; data: { plan: unknown; payments: PaymentToSign[]; listedOnly: unknown; notes?: unknown; turnId?: unknown; capabilities?: unknown } }
   > => {
     clearRouterTrace()
@@ -621,7 +632,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
     const reader = res.body.getReader()
     const decoder = new TextDecoder()
     let buf = ''
-    let reply: { kind: 'reply'; content: string; receipts?: unknown; payer?: string; voteRequest?: unknown; voteProposal?: unknown; routeReport?: unknown; routerTrace?: unknown; orderRequest?: unknown; txRequest?: unknown; txChain?: unknown; clarify?: unknown; workingContext?: unknown; portfolio?: unknown } | null = null
+    let reply: { kind: 'reply'; content: string; receipts?: unknown; payer?: string; voteRequest?: unknown; voteProposal?: unknown; routeReport?: unknown; routerTrace?: unknown; orderRequest?: unknown; txRequest?: unknown; txChain?: unknown; clarify?: unknown; workingContext?: unknown; portfolio?: unknown; buildPath?: unknown } | null = null
     for (;;) {
       const { done, value } = await reader.read()
       if (done) break
@@ -666,6 +677,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
             clarify: event.clarify,
             workingContext: event.workingContext,
             portfolio: event.portfolio,
+            buildPath: event.buildPath,
           }
         } else if (event.type === 'error') {
           const message = typeof event.message === 'string' ? event.message : 'Auto-router failed'
@@ -1022,6 +1034,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
                                 txUrl: (info as { explorerUrl?: string }).explorerUrl,
                                 detail: (info as { orderUid?: string }).orderUid?.slice(0, 60),
                                 valueUsd: guardrailUsdOf(msg.meta),
+                                buildPath: buildPathOf(msg.meta),
                               })
                             }}
                           />
@@ -1038,7 +1051,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
                               const explorer =
                                 { 1: 'https://etherscan.io/tx/', 8453: 'https://basescan.org/tx/', 42161: 'https://arbiscan.io/tx/' }[chainId] ??
                                 'https://basescan.org/tx/'
-                              reportEmbedSigned({ artifact: 'tx', chain: chainLabel(chainId), txUrl: `${explorer}${hash}`, valueUsd: guardrailUsdOf(msg.meta) })
+                              reportEmbedSigned({ artifact: 'tx', chain: chainLabel(chainId), txUrl: `${explorer}${hash}`, valueUsd: guardrailUsdOf(msg.meta), buildPath: buildPathOf(msg.meta) })
                             }}
                           />
                         ) : null
@@ -1061,6 +1074,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
                                 chain: chainLabel(chainId),
                                 txUrl: `${explorer}${hash}`,
                                 valueUsd: guardrailUsdOf(msg.meta),
+                                buildPath: buildPathOf(msg.meta),
                               })
                             }}
                           />

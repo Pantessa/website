@@ -58,6 +58,7 @@ export async function GET() {
         detail: true,
         txUrl: true,
         valueUsd: true,
+        buildPath: true,
         createdAt: true,
       },
     }),
@@ -77,17 +78,39 @@ export async function GET() {
     const x402Where = { ok: true, amountUsd: { gt: 0 }, NOT: { note: 'dry-run' } }
     const x402 = (extra: object = {}) =>
       prisma.spendLedgerEntry.aggregate({ where: { ...x402Where, ...extra }, _sum: { amountUsd: true }, _count: { _all: true } })
-    const [signedAll, signedWindow, builtWindow, chatSignedAll, x402All, x402Window] = await Promise.all([
+    const [signedAll, signedWindow, builtWindow, chatSignedAll, x402All, x402Window, pathAgg] = await Promise.all([
       sum({ outcome: 'signed' }),
       sum({ outcome: 'signed', createdAt: { gte: since } }),
       sum({ outcome: 'tx-built', createdAt: { gte: since } }),
       sum({ outcome: 'signed', embedKeyId: '' }),
       x402(),
       x402({ createdAt: { gte: since } }),
+      // Platform-wide per-build-layer split (window) — covers every embed key
+      // AND the first-party chat lane, so it answers "where are transactions
+      // being created and failing" for the whole system.
+      prisma.embedTurn.groupBy({
+        by: ['buildPath', 'outcome'],
+        where: { outcome: { in: ['tx-built', 'signed'] }, createdAt: { gte: since } },
+        _count: { _all: true },
+        _sum: { valueUsd: true },
+      }),
     ])
     const round = (n: number) => Math.round(n * 100) / 100
     const allTimeSignedUsd = round(signedAll._sum.valueUsd ?? 0)
     const x402AllTimeUsd = round(x402All._sum.amountUsd ?? 0)
+    const globalPerPath = new Map<string, { built: number; signed: number; builtUsd: number; signedUsd: number }>()
+    for (const row of pathAgg) {
+      const key = row.buildPath ?? 'unattributed'
+      const p = globalPerPath.get(key) ?? { built: 0, signed: 0, builtUsd: 0, signedUsd: 0 }
+      if (row.outcome === 'tx-built') {
+        p.built += row._count._all
+        p.builtUsd = round(p.builtUsd + (row._sum.valueUsd ?? 0))
+      } else {
+        p.signed += row._count._all
+        p.signedUsd = round(p.signedUsd + (row._sum.valueUsd ?? 0))
+      }
+      globalPerPath.set(key, p)
+    }
     global = {
       // THE system number: tx notional signed + x402 fees settled, all time.
       systemTotalUsd: round(allTimeSignedUsd + x402AllTimeUsd),
@@ -103,6 +126,9 @@ export async function GET() {
       x402AllTimeCount: x402All._count._all,
       x402WindowUsd: round(x402Window._sum.amountUsd ?? 0),
       x402WindowCount: x402Window._count._all,
+      perPath: [...globalPerPath.entries()]
+        .map(([path, p]) => ({ path, ...p }))
+        .sort((a, b) => b.built + b.signed - (a.built + a.signed)),
     }
   }
 
@@ -136,6 +162,25 @@ export async function GET() {
     Math.round(turns.reduce((acc, t) => acc + (t.outcome === o ? (t.valueUsd ?? 0) : 0), 0) * 100) / 100
   const builtUsd = sumUsd('tx-built')
   const signedUsd = sumUsd('signed')
+
+  // ── per-build-layer breakdown: which layer creates transactions, and which
+  // layer's builds die unsigned (aggregate sibling of route_trace_lines'
+  // per-turn detail). Turns recorded before build_path existed land in the
+  // 'unattributed' bucket — honest, never inferred.
+  const perPath = new Map<string, { built: number; signed: number; builtUsd: number; signedUsd: number }>()
+  for (const t of turns) {
+    if (t.outcome !== 'tx-built' && t.outcome !== 'signed') continue
+    const key = t.buildPath ?? 'unattributed'
+    const p = perPath.get(key) ?? { built: 0, signed: 0, builtUsd: 0, signedUsd: 0 }
+    if (t.outcome === 'tx-built') {
+      p.built++
+      p.builtUsd = Math.round((p.builtUsd + (t.valueUsd ?? 0)) * 100) / 100
+    } else {
+      p.signed++
+      p.signedUsd = Math.round((p.signedUsd + (t.valueUsd ?? 0)) * 100) / 100
+    }
+    perPath.set(key, p)
+  }
 
   const deadEnds = sessionList
     .filter((s) => s.friction && !s.txBuilt && !s.signed)
@@ -214,8 +259,13 @@ export async function GET() {
         prompt: t.prompt,
         origin: t.origin,
         valueUsd: t.valueUsd,
+        buildPath: t.buildPath,
         at: t.createdAt.toISOString(),
       })),
+    // which layer builds → which layer gets signed, most active first
+    perPath: [...perPath.entries()]
+      .map(([path, p]) => ({ path, ...p }))
+      .sort((a, b) => b.built + b.signed - (a.built + a.signed)),
     deadEnds: deadEnds.map(serializeSession),
     builtNotSigned: builtNotSigned.map(serializeSession),
     perSite: [...siteMap.entries()]

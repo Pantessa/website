@@ -25,6 +25,13 @@ interface SessionLite {
   endedAt: string
   turns: TurnLite[]
 }
+interface PathRow {
+  path: string
+  built: number
+  signed: number
+  builtUsd: number
+  signedUsd: number
+}
 interface Insights {
   windowDays: number
   keys: { id: string; key: string; label: string; revoked: boolean }[]
@@ -54,8 +61,11 @@ interface Insights {
     prompt: string
     origin: string
     valueUsd: number | null
+    buildPath: string | null
     at: string
   }[]
+  /** Which build layer created each transaction (native-* | planner | manual). */
+  perPath: PathRow[]
   deadEnds: SessionLite[]
   builtNotSigned: SessionLite[]
   perSite: { origin: string; pageUrl: string | null; turns: number; sessions: number; txBuilt: number; signed: number; signedUsd: number; friction: number; lastAt: string }[]
@@ -75,6 +85,7 @@ interface Insights {
     x402AllTimeCount: number
     x402WindowUsd: number
     x402WindowCount: number
+    perPath: PathRow[]
   }
 }
 
@@ -97,6 +108,17 @@ const ARTIFACT_LABEL: Record<string, string> = {
   tx: 'Transaction',
   'tx-chain': 'Multi-step tx',
   vote: 'DAO vote',
+}
+/** Human names for embed_turns.build_path (lib/build-path.ts). */
+const PATH_LABEL: Record<string, string> = {
+  'native-aave-supply': 'Native · Aave supply',
+  'native-aave-op': 'Native · Aave withdraw/borrow/repay',
+  'native-swap-uniswap': 'Native · Uniswap swap',
+  'native-swap-cow': 'Native · CoW swap',
+  'native-cross-chain': 'Native · cross-chain swap',
+  planner: 'Planner-routed tool',
+  manual: 'Direct tool call',
+  unattributed: 'Unattributed (pre-tracking)',
 }
 
 function OutcomeChip({ outcome }: { outcome: string }) {
@@ -332,6 +354,57 @@ export default function EmbedInsights() {
         </div>
       </Card>
 
+      {/* build layers — which layer creates transactions, which layer's builds
+          die unsigned. Admins see the whole system (every embed + first-party
+          chat); owners see their own embeds. Per-turn detail: route_trace_lines. */}
+      {(() => {
+        const rows = g?.perPath?.length ? g.perPath : data.perPath
+        if (!rows?.length) return null
+        const maxBuilt = Math.max(...rows.map((r) => Math.max(r.built, r.signed)), 1)
+        return (
+          <Card>
+            <CardTitle serif eyebrow={g?.perPath?.length ? 'BUILD LAYERS · WHOLE SYSTEM' : 'BUILD LAYERS'}>
+              Where transactions come from
+            </CardTitle>
+            <p className="text-[12.5px] text-[color:var(--muted-2)] mt-1 max-w-[80ch]">
+              Each built transaction names the layer that constructed it — the native guardrailed
+              builders, a planner-routed tool, or a direct tool call. A layer that builds plenty but
+              rarely gets signed is where transactions are dying.
+            </p>
+            <div className="mt-3 flex flex-col gap-2">
+              {rows.map((r) => {
+                const signRate = r.built > 0 ? Math.round((r.signed / r.built) * 100) : null
+                return (
+                  <div key={r.path} className="flex items-center gap-3 min-w-0">
+                    <span className="mono text-[11px] uppercase tracking-wider text-[color:var(--muted-2)] w-56 flex-shrink-0 truncate" title={r.path}>
+                      {PATH_LABEL[r.path] ?? r.path}
+                    </span>
+                    <div className="flex-1 flex flex-col gap-0.5 min-w-0">
+                      <div className="h-2.5 rounded bg-white/[0.04] overflow-hidden">
+                        <div className="h-full rounded bg-[color:var(--accent)] opacity-40" style={{ width: `${Math.max(2, Math.round((r.built / maxBuilt) * 100))}%` }} />
+                      </div>
+                      <div className="h-2.5 rounded bg-white/[0.04] overflow-hidden">
+                        <div className="h-full rounded bg-[color:var(--accent)]" style={{ width: `${Math.max(r.signed > 0 ? 2 : 0, Math.round((r.signed / maxBuilt) * 100))}%` }} />
+                      </div>
+                    </div>
+                    <span className="mono text-[11.5px] w-40 text-right flex-shrink-0 tabular-nums">
+                      {r.built} built → {r.signed} signed
+                      <span className="text-[color:var(--muted-2)]"> {signRate != null ? `· ${signRate}%` : ''}</span>
+                    </span>
+                    <span className="mono text-[11.5px] w-20 text-right flex-shrink-0 text-[color:var(--muted-2)] tabular-nums">
+                      {r.signedUsd > 0 ? fmtUsd(r.signedUsd) : r.builtUsd > 0 ? `(${fmtUsd(r.builtUsd)})` : ''}
+                    </span>
+                  </div>
+                )
+              })}
+            </div>
+            <p className="mono text-[10.5px] text-[color:var(--muted-2)] mt-2">
+              faint bar = built · solid bar = signed · $ = signed notional (built in parens)
+            </p>
+          </Card>
+        )
+      })()}
+
       {/* asks + transactions */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 min-w-0">
         <Card className="min-w-0">
@@ -372,6 +445,7 @@ export default function EmbedInsights() {
                         <span className="mono text-[11px] text-[color:var(--accent)]"> · {fmtUsd(x.valueUsd)}</span>
                       )}
                       {x.chain && <span className="mono text-[10.5px] text-[color:var(--muted-2)]"> · {x.chain}</span>}
+                      {x.buildPath && <span className="mono text-[10.5px] text-[color:var(--muted-2)]"> · {PATH_LABEL[x.buildPath] ?? x.buildPath}</span>}
                     </span>
                     <span className="text-[color:var(--muted-2)] text-[12px] block truncate" title={x.prompt}>
                       “{x.prompt || '…'}”
