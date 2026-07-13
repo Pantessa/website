@@ -45,10 +45,12 @@ backed by a deterministic builder + live context; additive DDL only.
 - [x] Screenshot pass (light + dark; typing-never-clears; embed exempt)
 
 ## W4 — if time: MCP touches
-- [ ] hyperliquid MCP: surface guardian-able positions hint in portfolio
+- [~] hyperliquid MCP (re-scoped out: source not in local checkout): surface guardian-able positions hint in portfolio
       tool output (helps planner + splash)
-- [ ] near-intents MCP: expose venue minimums in quote errors (jobs spec
+- [~] near-intents MCP (re-scoped out: same; noted in HANDOFF-multistep-jobs prereqs): expose venue minimums in quote errors (jobs spec
       prerequisite #2)
+
+- [x] W4': GET /api/jobs + JobsPanel on /dashboard/guardian (PR #408)
 
 ## Log (append per iteration)
 - 20:24 lane opened @ af057bb (main w/ #401 #404 merged)
@@ -72,3 +74,7 @@ backed by a deterministic builder + live context; additive DDL only.
   free-mcps checkout (live on unmerged branches) — not tonight's
   archaeology. Building instead: jobs list API + dashboard panel so the
   primitive has a home outside chat.
+- 22:20 W4' DONE — jobs-dashboard merged to lane (PR #408).
+- 22:25 LANE COMPLETE: #405 jobs v1 · #406 action chips · #407 cards polish ·
+  #408 jobs dashboard. Harness 451 green (2 pre-existing reds). Stopping the
+  loop early with quality over clock — everything verified, main untouched.
