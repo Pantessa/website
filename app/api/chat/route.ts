@@ -15,6 +15,28 @@ import type { McpServer } from '@/lib/store'
 import { voteRequestFromToolResult, friendlyVoteError, type VoteRequest } from '@/lib/snapshot-vote'
 import { parseVoteIntent, resolveVoteReference, type VoteIntent } from '@/lib/vote-intent'
 import { crossChainAgentOf, detectCrossChain, parseSwapIntent, parseSwapFollowUp, swapWorkingContext, type SwapIntent } from '@/lib/swap-intent'
+import {
+  parseCrossChainSwap,
+  parseCrossChainFollowUp,
+  guardCrossChainBuild,
+  expectedOriginChainId,
+  crossChainPending,
+  type CrossChainSwapParams,
+  type BuiltSwap,
+} from '@/lib/cross-chain-swap'
+import {
+  aaveAgentOf,
+  parseAaveSupply,
+  parseAaveSupplyFollowUp,
+  pickSupplyReserve,
+  guardAaveSupplyBuild,
+  aaveSupplyPending,
+  type AaveSupplyParams,
+  type AaveBuiltPlan,
+  type AaveReserveRow,
+  type PickedReserve,
+} from '@/lib/aave-supply'
+import { policyCheck, buildReport } from '@/lib/tx-guardrails'
 import { buildGuardrailedOrder } from '@/lib/cow-build'
 import { buildUniswapSwap } from '@/lib/uniswap-venue'
 import { tokenDecimals, humanToAtoms } from '@/lib/cow'
@@ -354,6 +376,58 @@ export async function POST(req: NextRequest) {
     // turn returned a swap/order awaiting signature — "actually make it
     // 2 USDC" rebuilds it with the new amount, "cancel that" abandons it.
     // Resolved deterministically against what the user saw, never re-parsed.
+    // Cross-chain follow-ups against a pending (already-built) deposit —
+    // cancel / amend the amount / affirmations. Deterministic, never re-parsed.
+    const pendingXchain =
+      workingContext?.pending && workingContext.pending.kind === 'xchain' ? workingContext.pending : undefined
+    if (pendingXchain) {
+      const cc = parseCrossChainFollowUp(message, pendingXchain)
+      if (cc?.kind === 'cancel') {
+        const p = pendingXchain.data
+        return NextResponse.json({
+          reply: `👍 Dropped the cross-chain swap — ${p.amount} ${p.originToken} (${p.originChain} → ${p.destinationChain}) was never signed, so nothing moved.`,
+          workingContext: { v: 1, age: 0, ...(workingContext?.scope ? { scope: workingContext.scope } : {}) } satisfies WorkingContext,
+        })
+      }
+      if (cc?.kind === 'noop') {
+        return NextResponse.json({
+          reply: `🔏 The swap is built above — sign the deposit transfer with the button to send it. Say “cancel” to drop it.`,
+        })
+      }
+      if (cc?.kind === 'amend') {
+        const ccAgent = crossChainAgentOf(activeServers)
+        if (ccAgent.agent && ccAgent.usable) {
+          return await buildCrossChainSwapTurn(ccAgent.agent, cc.params, walletAddress, workingContext, message)
+        }
+      }
+    }
+
+    // Aave-supply follow-ups against a pending (already-built) deposit —
+    // cancel / amend the amount / affirmations. Deterministic, never re-parsed.
+    const pendingAave =
+      workingContext?.pending && workingContext.pending.kind === 'aave-supply' ? workingContext.pending : undefined
+    if (pendingAave) {
+      const fu = parseAaveSupplyFollowUp(message, pendingAave)
+      if (fu?.kind === 'cancel') {
+        const p = pendingAave.data
+        return NextResponse.json({
+          reply: `👍 Dropped the Aave supply — ${p.amount} ${(p.token ?? '').toUpperCase()} was never signed, so nothing moved.`,
+          workingContext: { v: 1, age: 0, ...(workingContext?.scope ? { scope: workingContext.scope } : {}) } satisfies WorkingContext,
+        })
+      }
+      if (fu?.kind === 'noop') {
+        return NextResponse.json({
+          reply: `🔏 The supply is built above — sign the step(s) in the card to send it. Say “cancel” to drop it.`,
+        })
+      }
+      if (fu?.kind === 'amend') {
+        const aaveRead = aaveAgentOf(activeServers)
+        if (aaveRead.agent && aaveRead.usable) {
+          return await buildAaveSupplyTurn(aaveRead.agent, fu.params, walletAddress, workingContext, message)
+        }
+      }
+    }
+
     const pendingArtifact =
       workingContext?.pending && (workingContext.pending.kind === 'swap' || workingContext.pending.kind === 'order')
         ? workingContext.pending
@@ -376,6 +450,47 @@ export async function POST(req: NextRequest) {
       const pendingVenue: 'uniswap' | 'cow' = pendingArtifact.data.venue === 'uniswap' ? 'uniswap' : 'cow'
       return await prepareSwapTurn(swapFollowUp.intent, walletAddress, pendingVenue, workingContext)
     }
+    // ── Aave supply: NATIVE deterministic build (no confirm round-trips) ────
+    // "add 1 USDC to an Aave pool on Ethereum" once went planner/house-model:
+    // the model sent the SYMBOL where build_supply validates an ADDRESS
+    // (MCP -32602), asked "should I proceed?" three turns running, and
+    // FABRICATED wallet balances in prose (live 2026-07-10; the real balance
+    // was 0). Now: parse → resolve the reserve from the agent's own
+    // `reserves` tool → build_supply → guard → ONE approve→supply card,
+    // built immediately with everything shown. The confirmation is the
+    // signature. Generic "add 1 USDC to a pool" routes here too when the
+    // Aave agent is in the set — no protocol quiz.
+    const aaveAsk = parseAaveSupply(message)
+    if (aaveAsk) {
+      const aaveRead = aaveAgentOf(activeServers)
+      if ('problem' in aaveAsk) {
+        // Clearly an Aave deposit, just under-specified (no amount) — the ONE
+        // clarify that's actually necessary.
+        return NextResponse.json({ reply: `🏦 ${aaveAsk.problem}` })
+      }
+      if (aaveAsk.explicitAave || aaveRead.agent) {
+        if (!aaveRead.agent) {
+          return NextResponse.json({
+            reply: `🏦 Supplying to Aave needs the **Aave** agent in your set — add it from the rail and ask again, and I'll build the deposit for you to sign.`,
+          })
+        }
+        if (!aaveRead.usable) {
+          // An add-MCP shell row (no endpoint) — same honest guard as the
+          // cross-chain agent (routing at it makes the planner hallucinate).
+          return NextResponse.json({
+            reply: `🏦 Your **${aaveRead.agent.name}** agent isn't fully connected — no callable tools are registered for it. Re-add it (or pick the Aave agent from the Free tab) and ask again.`,
+          })
+        }
+        if (aaveAsk.otherChain) {
+          return NextResponse.json({
+            reply: `🏦 Aave v4 is live on **Ethereum only** today — I can't build a supply on ${aaveAsk.otherChain}. Say “supply ${aaveAsk.amount} ${aaveAsk.token.toUpperCase()} to Aave on Ethereum” and I'll prepare it.`,
+          })
+        }
+        return await buildAaveSupplyTurn(aaveRead.agent, aaveAsk, walletAddress, workingContext, message)
+      }
+      // Pool-ish ask with no Aave agent and Aave not named → normal routing.
+    }
+
     const swapIntent = parseSwapIntent(message)
     if (swapIntent.isSwap) {
       // The native venue layer (Uniswap/CoW) is BASE-ONLY. A swap that names
@@ -411,7 +526,20 @@ export async function POST(req: NextRequest) {
           /\buni\s?swap\b|\buni\b/i.test(message) || (uniActive && !cowActive) ? 'uniswap' : 'cow'
         return await prepareSwapTurn(swapIntent, walletAddress, venue, workingContext)
       }
-      // nonBase + capable agent → fall through to routing below.
+      // nonBase + a usable cross-chain agent → build it NATIVELY (deterministic
+      // build_swap + guardrails + Sign button), never via the planner/house
+      // model. A parse miss (a question, not an imperative build) falls through
+      // to routing so the quote tool can still answer.
+      if (ccAgent.agent && ccAgent.usable) {
+        const cc = parseCrossChainSwap(message)
+        if (cc && 'problem' in cc) {
+          return NextResponse.json({ reply: `🔗 ${cc.problem}` })
+        }
+        if (cc) {
+          return await buildCrossChainSwapTurn(ccAgent.agent, cc, walletAddress, workingContext, message)
+        }
+      }
+      // Otherwise (a quote question, etc.) fall through to routing below.
     }
 
     // Need an inference provider to phrase an answer. With none selected, fall
@@ -671,6 +799,243 @@ async function prepareVoteTurn(
   } catch (err) {
     return NextResponse.json({ reply: `🗳️ ${friendlyVoteError(err)}`, receipts })
   }
+}
+
+// ── Cross-chain swap (native, via the NEAR Intents agent) ───────────────────
+
+/** Call ONE tool on an MCP agent deterministically (tools/call over the free
+ *  MCP transport — no planner, no payment). Throws on transport/tool errors. */
+async function callAgentTool(endpoint: string, tool: string, args: Record<string, unknown>): Promise<unknown> {
+  const res = await getPaidFetch()(endpoint, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream' },
+    body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: tool, arguments: args } }),
+  })
+  if (!res.ok) throw new Error(await failureReason(res))
+  return parseMcpDataResult(res.headers.get('content-type') ?? '', await res.text())
+}
+
+/**
+ * Build a cross-chain swap into a SIGNABLE deposit transfer — the native,
+ * deterministic path (never the planner/house model, which once fabricated a
+ * deposit address). Calls the NEAR Intents agent's `build_swap`, GUARDRAILS
+ * the returned transfer (must move exactly the quoted amount to the API's
+ * one-time deposit address on the origin chain), and returns it as a Sign
+ * button. The address the user sees and the tx they sign both come only from
+ * the verified tool result.
+ */
+async function buildCrossChainSwapTurn(
+  agent: McpServer,
+  params: CrossChainSwapParams,
+  walletAddress: string | undefined,
+  ctx?: WorkingContext,
+  originalMessage?: string,
+) {
+  if (!walletAddress) {
+    return NextResponse.json({
+      reply:
+        '🔗 Connect your wallet to build the cross-chain swap — you sign the deposit transfer yourself, so it has to be built for your address.',
+      connectWallet: true,
+      ...(originalMessage ? { connectAsk: originalMessage } : {}),
+    })
+  }
+
+  let built: BuiltSwap
+  try {
+    built = (await callAgentTool(agent.endpoint!, 'build_swap', {
+      originChain: params.originChain,
+      originToken: params.originToken,
+      destinationChain: params.destinationChain,
+      destinationToken: params.destinationToken,
+      amount: params.amount,
+      from: walletAddress,
+    })) as BuiltSwap
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'the build failed'
+    return NextResponse.json({
+      reply: `🔗 Couldn't build that cross-chain swap: ${msg}`,
+    })
+  }
+
+  const guard = guardCrossChainBuild(built, { chainId: expectedOriginChainId(params.originChain) })
+  if (!guard.ok || !guard.tx) {
+    // A verification failure is a REFUSAL, not a warning — never offer a
+    // transfer we couldn't prove is correct.
+    return NextResponse.json({
+      reply: `🚫 I built the swap but refused it — the transfer didn't verify: ${guard.reasons.join(' ')} Nothing to sign; try again or use a different route.`,
+      blocked: true,
+    })
+  }
+
+  const summary = guard.summary ?? built.quote?.summary ?? 'Cross-chain swap'
+  const expiry = guard.addressExpires ? ` The one-time deposit address expires ${guard.addressExpires}.` : ''
+  const warn = guard.warnings.length ? `\n${guard.warnings.map((w) => `⚠️ ${w}`).join('\n')}` : ''
+  return NextResponse.json({
+    reply:
+      `🔏 ${summary}\n\nSign the deposit transfer below — it sends exactly the quoted amount to NEAR Intents' one-time deposit address, and solvers deliver on the destination chain automatically.${expiry}${warn}`,
+    txRequest: guard.tx,
+    // Invariant #11: a pending action — "cancel" drops it, "make it 2" rebuilds.
+    workingContext: {
+      v: 1 as const,
+      age: 0,
+      ...(ctx?.scope ? { scope: ctx.scope } : {}),
+      ...(ctx?.offers ? { offers: ctx.offers } : {}),
+      pending: crossChainPending(params, guard.depositAddress ?? '', summary),
+    } satisfies WorkingContext,
+  })
+}
+
+// ── Aave supply (native, via the Aave agent) ─────────────────────────────────
+
+/** The ledger/policy host Aave supplies are attributed to. */
+const AAVE_POLICY_HOST = 'aave-mcp.yeetful.com'
+
+/**
+ * Build an Aave v4 supply into a signable approve→supply chain — the native,
+ * deterministic path (never the planner/house model, which sent the token
+ * SYMBOL to an address-validated param and fabricated balances in prose).
+ * Resolves the reserve from the agent's `reserves` tool, calls `build_supply`
+ * with the RESOLVED addresses, GUARDRAILS every returned step (exact amount,
+ * spoke from the official list, deposit credits the user), and returns ONE
+ * self-advancing card. No confirmation round-trip — the reply shows the pool,
+ * amount, USD value, and APY; signing is the confirmation.
+ */
+async function buildAaveSupplyTurn(
+  agent: McpServer,
+  params: AaveSupplyParams,
+  walletAddress: string | undefined,
+  ctx?: WorkingContext,
+  originalMessage?: string,
+) {
+  const token = params.token.toUpperCase()
+  if (!walletAddress) {
+    return NextResponse.json({
+      reply: '🏦 Connect your wallet to supply — the deposit is built for your address and you sign it yourself.',
+      connectWallet: true,
+      ...(originalMessage ? { connectAsk: originalMessage } : {}),
+    })
+  }
+
+  // 1) Resolve the reserve from the agent's own reserves list — address,
+  //    decimals, APY, and spoke all come from the official API, never a model.
+  let picked: PickedReserve | null = null
+  try {
+    const res = (await callAgentTool(agent.endpoint!, 'reserves', { symbols: [token], chainId: 1 })) as {
+      reserves?: AaveReserveRow[]
+    }
+    picked = pickSupplyReserve(res?.reserves ?? [], token)
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'the lookup failed'
+    return NextResponse.json({ reply: `🏦 Couldn't read Aave's reserve list: ${msg}` })
+  }
+  if (!picked) {
+    return NextResponse.json({
+      reply: `🏦 ${token} isn't an active, supplyable Aave v4 reserve on Ethereum right now — ask “where can I earn on ${token}?” to see what's listed.`,
+    })
+  }
+
+  const atoms = humanToAtoms(params.amount, picked.decimals)
+  if (!atoms) {
+    return NextResponse.json({
+      reply: `🏦 “${params.amount}” has more decimal places than ${token} supports (${picked.decimals}).`,
+    })
+  }
+
+  // 2) Build via the agent, with resolved 0x addresses (the planner once sent
+  //    the symbol "USDC" here and died on the tool's address-regex → -32602).
+  let built: AaveBuiltPlan
+  try {
+    built = (await callAgentTool(agent.endpoint!, 'build_supply', {
+      spokeAddress: picked.spokeAddress,
+      currency: picked.currency,
+      amount: params.amount,
+      user: walletAddress,
+      chainId: 1,
+    })) as AaveBuiltPlan
+  } catch (err) {
+    // AaveKit validates server-side against REAL balances — surface its
+    // reason verbatim ("Insufficient balance: this needs 1.000000 USDC but
+    // the wallet holds 0.000000…") instead of a model's guess.
+    const msg = err instanceof Error ? err.message : 'the build failed'
+    return NextResponse.json({ reply: `🏦 Couldn't build the supply: ${msg}` })
+  }
+
+  // 3) Guard — nothing is offered unless every step verifies.
+  const guard = guardAaveSupplyBuild(built, {
+    chainId: 1,
+    atoms: BigInt(atoms),
+    currency: picked.currency,
+    spoke: picked.spokeAddress,
+    user: walletAddress,
+    onChainId: picked.onChainId,
+  })
+  if (!guard.ok || !guard.steps) {
+    // A verification failure is a REFUSAL, not a warning.
+    return NextResponse.json({
+      reply: `🚫 I built the supply but refused it — the transaction didn't verify: ${guard.reasons.join(' ')} Nothing to sign.`,
+      blocked: true,
+    })
+  }
+
+  // 4) The spend-policy gate at the point of signing, and the money-moved
+  //    value (guardrails.valueUsd — the headline-metric contract).
+  const valueUsd = picked.priceUsd !== null ? Number(params.amount) * picked.priceUsd : null
+  const grant = await getActiveGrant(walletAddress.toLowerCase())
+  const policy = grant ? toPolicy(grant) : null
+  const spentToday = grant ? await spentTodayUsd(grant.id) : 0
+  const { check: polCheck, violation } = policyCheck(valueUsd, policy, spentToday, AAVE_POLICY_HOST)
+  const guardrails = buildReport(valueUsd, [
+    {
+      id: 'aave-build',
+      level: 'block',
+      ok: true,
+      note: `Build verified: the steps move exactly ${params.amount} ${token} into Aave v4 ${picked.spokeName}, credited to your wallet.`,
+    },
+    polCheck,
+  ])
+  if (violation && grant) {
+    await recordLedger({
+      grantId: grant.id,
+      orgId: grant.orgId ?? undefined,
+      host: AAVE_POLICY_HOST,
+      serviceName: 'Aave',
+      amountUsd: 0,
+      ok: false,
+      note: `blocked: ${violation} (aave supply)`,
+    })
+  }
+  if (!guardrails.ok) {
+    return NextResponse.json({
+      reply: `🚫 Supply built but refused by your guardrails: ${polCheck.note}`,
+      guardrails,
+      blocked: true,
+    })
+  }
+
+  const apy = picked.supplyApyPct !== null ? `${picked.supplyApyPct.toFixed(2)}% APY` : "the pool's live APY"
+  const usd = valueUsd !== null ? ` (≈$${valueUsd.toFixed(2)})` : ''
+  const summary = `Supply ${params.amount} ${token}${usd} to Aave v4 ${picked.spokeName} on Ethereum — earning ${apy}`
+  const stepsNote =
+    guard.steps.length > 1
+      ? `Sign the ${token} approval in the card below, and the supply appears automatically once it confirms — nothing to retype.`
+      : 'One signature in the card below sends it.'
+  const warns = guard.warnings.map((w) => `⚠️ ${w}`).join('\n')
+  return NextResponse.json({
+    reply:
+      `🔏 ${summary}\n` +
+      `— Pool: ${picked.spokeName} spoke \`${picked.spokeAddress}\` · ${token} \`${picked.currency}\` (from Aave's official reserve list)\n` +
+      `— The deposit credits ${walletAddress} and starts earning immediately; withdraw any time.\n` +
+      `${stepsNote}${warns ? `\n${warns}` : ''}`,
+    txChain: { summary, steps: guard.steps },
+    guardrails,
+    workingContext: {
+      v: 1 as const,
+      age: 0,
+      ...(ctx?.scope ? { scope: ctx.scope } : {}),
+      ...(ctx?.offers ? { offers: ctx.offers } : {}),
+      pending: aaveSupplyPending(params, picked.spokeName, summary),
+    } satisfies WorkingContext,
+  })
 }
 
 // ── Swap intent ───────────────────────────────────────────────────────────────

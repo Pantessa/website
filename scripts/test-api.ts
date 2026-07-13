@@ -36,6 +36,9 @@ import { isCacheable, routeCacheKey, getCached, setCached, clearRouteCache } fro
 import { routeSavings } from '../lib/route-telemetry'
 import { portfolioFromToolResult, portfolioOf } from '../lib/portfolio-display'
 import { crossChainAgentOf, detectCrossChain } from '../lib/swap-intent'
+import { parseCrossChainSwap, guardCrossChainBuild, expectedOriginChainId, parseCrossChainFollowUp } from '../lib/cross-chain-swap'
+import { parseAaveSupply, pickSupplyReserve, guardAaveSupplyBuild, parseAaveSupplyFollowUp } from '../lib/aave-supply'
+import { encodeFunctionData, erc20Abi } from 'viem'
 
 const BASE = process.env.BASE ?? 'http://localhost:3000'
 const DOMAIN = new URL(BASE).host
@@ -1554,6 +1557,127 @@ async function main() {
   if (someSlug) {
     const notPayee = await fetch(`${BASE}/api/mcp/${someSlug}/claim`, { method: 'POST', headers: C })
     check('claim a real MCP as a non-payee wallet → rejected (400)', notPayee.status === 400)
+  }
+
+  // ── Cross-chain swap: parse + the SAFETY guardrail on the built transfer ──
+  // The guardrail is the load-bearing check — it's what stopped the house
+  // model's fabricated deposit address from ever becoming a signable tx.
+  {
+    const p = parseCrossChainSwap('swap 1 USDC from base to arbitrum')
+    check('xchain parse: "from base to arbitrum"', !!p && !('problem' in p) && p.amount === '1' && p.originChain === 'base' && p.destinationChain === 'arbitrum' && p.originToken === 'USDC' && p.destinationToken === 'USDC')
+    const p2 = parseCrossChainSwap('swap 1 USDC on base to 1 USDC on arbitrum')
+    check('xchain parse: "on base to 1 USDC on arbitrum"', !!p2 && !('problem' in p2) && p2.destinationChain === 'arbitrum')
+    const p3 = parseCrossChainSwap('swap 1 USDC on base to ETH on optimism')
+    check('xchain parse: second token named', !!p3 && !('problem' in p3) && p3.destinationToken === 'ETH' && p3.destinationChain === 'optimism')
+    check('xchain parse: plain Base swap is NOT cross-chain', parseCrossChainSwap('swap 100 USDC for WETH') === null)
+    const miss = parseCrossChainSwap('swap 1 USDC from base')
+    check('xchain parse: missing destination → problem', !!miss && 'problem' in miss)
+    check('xchain chainId map', expectedOriginChainId('base') === 8453 && expectedOriginChainId('arbitrum') === 42161)
+
+    const DEPOSIT = '0x7ff0D96c9f0528f0FF8dd948b2D316806fE3c7f2'
+    const USDC_BASE = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913'
+    const goodData = encodeFunctionData({ abi: erc20Abi, functionName: 'transfer', args: [DEPOSIT as `0x${string}`, BigInt(1000000)] })
+    const goodBuild = {
+      kind: 'swap_ready',
+      quote: { sell: { amountAtoms: '1000000' }, summary: 'Swap 1 USDC Base → Arbitrum' },
+      deposit: { address: DEPOSIT, addressExpires: '2026-07-12T00:00:00Z' },
+      steps: [{ action: 'send_transaction', summary: 'deposit', tx: { to: USDC_BASE, data: goodData, value: '0', chainId: 8453 } }],
+    }
+    const g = guardCrossChainBuild(goodBuild, { chainId: 8453 })
+    check('xchain guard: correct transfer PASSES', g.ok && g.tx?.to === USDC_BASE && g.depositAddress === DEPOSIT)
+
+    // Wrong recipient (the fabricated-address class of bug) MUST be refused.
+    const evilData = encodeFunctionData({ abi: erc20Abi, functionName: 'transfer', args: ['0x000000000000000000000000000000000000dEaD' as `0x${string}`, BigInt(1000000)] })
+    const evilBuild = { ...goodBuild, steps: [{ action: 'send_transaction', tx: { to: USDC_BASE, data: evilData, value: '0', chainId: 8453 } }] }
+    check('xchain guard: transfer to a DIFFERENT address is refused', !guardCrossChainBuild(evilBuild, { chainId: 8453 }).ok)
+
+    // Wrong amount refused.
+    const wrongAmt = encodeFunctionData({ abi: erc20Abi, functionName: 'transfer', args: [DEPOSIT as `0x${string}`, BigInt(5000000)] })
+    const wrongAmtBuild = { ...goodBuild, steps: [{ action: 'send_transaction', tx: { to: USDC_BASE, data: wrongAmt, value: '0', chainId: 8453 } }] }
+    check('xchain guard: wrong transfer amount is refused', !guardCrossChainBuild(wrongAmtBuild, { chainId: 8453 }).ok)
+
+    // Wrong chain refused.
+    check('xchain guard: wrong chainId is refused', !guardCrossChainBuild({ ...goodBuild, steps: [{ action: 'send_transaction', tx: { to: USDC_BASE, data: goodData, value: '0', chainId: 1 } }] }, { chainId: 8453 }).ok)
+
+    // No deposit address at all → refused (never fabricate one).
+    check('xchain guard: missing deposit address is refused', !guardCrossChainBuild({ ...goodBuild, deposit: { address: undefined } }, { chainId: 8453 }).ok)
+
+    // Native transfer path.
+    const nativeBuild = { kind: 'swap_ready', quote: { sell: { amountAtoms: '1000000000000000000' } }, deposit: { address: DEPOSIT }, steps: [{ action: 'send_transaction', tx: { to: DEPOSIT, data: '0x', value: '1000000000000000000', chainId: 8453 } }] }
+    check('xchain guard: native transfer to deposit address PASSES', guardCrossChainBuild(nativeBuild, { chainId: 8453 }).ok)
+
+    // Follow-ups.
+    const pend = { kind: 'xchain', data: { amount: '1', originToken: 'USDC', originChain: 'base', destinationToken: 'USDC', destinationChain: 'arbitrum', depositAddress: DEPOSIT } }
+    check('xchain follow-up: "cancel" drops it', parseCrossChainFollowUp('cancel', pend)?.kind === 'cancel')
+    check('xchain follow-up: "confirm" is a noop (button already there)', parseCrossChainFollowUp('confirm', pend)?.kind === 'noop')
+    const amend = parseCrossChainFollowUp('make it 2', pend)
+    check('xchain follow-up: "make it 2" re-amount', amend?.kind === 'amend' && amend.params.amount === '2' && amend.params.originChain === 'base')
+  }
+
+  // ── Aave supply: parse + reserve pick + the SAFETY guard on the build ─────
+  // The guard is the load-bearing check — the planner path once sent the
+  // SYMBOL to an address-validated param (-32602) and the house model
+  // fabricated wallet balances; the native path verifies every step it
+  // offers: exact amount, official spoke, deposit credits the user.
+  console.log('— aave native supply (parse + guard)')
+  {
+    const p = parseAaveSupply('add 1 USDC to an Aave pool on Ethereum')
+    check('aave parse: "add 1 USDC to an Aave pool"', !!p && !('problem' in p) && p.amount === '1' && p.token === 'USDC' && p.explicitAave && p.otherChain === null)
+    const p2 = parseAaveSupply('can we add 1 USDC to a pool on etheraum')
+    check('aave parse: generic "a pool" + typo chain (implicit aave)', !!p2 && !('problem' in p2) && p2.amount === '1' && !p2.explicitAave && p2.otherChain === null)
+    const p3 = parseAaveSupply('supply 25 USDC to aave on base')
+    check('aave parse: non-Ethereum chain surfaces', !!p3 && !('problem' in p3) && p3.otherChain === 'base')
+    check('aave parse: other venue named → null', parseAaveSupply('add 1 USDC to a uniswap pool') === null)
+    check('aave parse: plain question → null', parseAaveSupply('what is the best APY on aave?') === null)
+    check('aave parse: swap ask → null', parseAaveSupply('swap 100 USDC for WETH') === null)
+    const noAmt = parseAaveSupply('deposit USDC into aave')
+    check('aave parse: missing amount → problem (the one real clarify)', !!noAmt && 'problem' in noAmt)
+
+    // Reserve pick — Main (deepest + collateral-enabled) wins; shapes from a
+    // live reserves probe 2026-07-10.
+    const USDC = '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48'
+    const SPOKE = '0x94e7A5dCbE816e498b89aB752661904E2F56c485'
+    const USER = '0x28C6c06298d514Db089934071355E5743bf21d60'
+    // base64("1::<spoke>::7") — the Main-spoke USDC reserveId shape.
+    const reserveId = Buffer.from(`1::${SPOKE}::7`).toString('base64')
+    const rows = [
+      { reserveId: 'x', spoke: 'Frozen', spokeAddress: SPOKE, asset: { symbol: 'USDC', address: USDC, decimals: 6 }, canSupply: true, active: false },
+      { reserveId, spoke: 'Main', spokeAddress: SPOKE, asset: { symbol: 'USDC', address: USDC, decimals: 6 }, canSupply: true, canUseAsCollateral: true, active: true, supplied: '6232610.63', suppliedUsd: '$6,231,860.29', supplyApyPct: 2.55 },
+      { reserveId: 'y', spoke: 'Other', spokeAddress: SPOKE, asset: { symbol: 'WETH', address: USDC, decimals: 18 }, canSupply: true, active: true },
+    ]
+    const picked = pickSupplyReserve(rows, 'usdc')
+    check('aave pick: active+collateral Main reserve, decoded onChainId', !!picked && picked.spokeName === 'Main' && picked.decimals === 6 && picked.onChainId === BigInt(7) && !!picked.priceUsd && Math.abs(picked.priceUsd - 1) < 0.01)
+
+    // The guard vs the LIVE-probed plan shape: approve(spoke, atoms) on the
+    // token, then supply(onChainId, atoms, user) on the spoke.
+    const atoms = BigInt(1000000)
+    const approveData = encodeFunctionData({ abi: erc20Abi, functionName: 'approve', args: [SPOKE as `0x${string}`, atoms] })
+    const word = (v: bigint | string) => (typeof v === 'bigint' ? v.toString(16) : v.toLowerCase().replace(/^0x/, '')).padStart(64, '0')
+    const supplyData = `0x852a56a5${word(BigInt(7))}${word(atoms)}${word(USER)}`
+    const goodPlan = {
+      operation: 'supply',
+      steps: [
+        { action: 'send_transaction', label: 'approve', summary: 'Approve 1 USDC', tx: { to: USDC, data: approveData, value: '0', chainId: 1 } },
+        { action: 'send_transaction', label: 'supply', summary: 'Supply 1 USDC', tx: { to: SPOKE, data: supplyData, value: '0', chainId: 1 } },
+      ],
+    }
+    const exp = { chainId: 1, atoms, currency: USDC, spoke: SPOKE, user: USER, onChainId: BigInt(7) }
+    const g = guardAaveSupplyBuild(goodPlan, exp)
+    check('aave guard: correct approve→supply PASSES', g.ok && g.steps?.length === 2 && g.steps[1].tx.to === SPOKE)
+    check('aave guard: wrong supply amount is refused', !guardAaveSupplyBuild({ ...goodPlan, steps: [goodPlan.steps[0], { ...goodPlan.steps[1], tx: { ...goodPlan.steps[1].tx, data: `0x852a56a5${word(BigInt(7))}${word(BigInt(2000000))}${word(USER)}` } }] }, exp).ok)
+    check('aave guard: deposit crediting a DIFFERENT address is refused', !guardAaveSupplyBuild({ ...goodPlan, steps: [goodPlan.steps[0], { ...goodPlan.steps[1], tx: { ...goodPlan.steps[1].tx, data: `0x852a56a5${word(BigInt(7))}${word(atoms)}${word('0x000000000000000000000000000000000000dEaD')}` } }] }, exp).ok)
+    check('aave guard: supply to an unresolved spoke is refused', !guardAaveSupplyBuild({ ...goodPlan, steps: [goodPlan.steps[0], { ...goodPlan.steps[1], tx: { ...goodPlan.steps[1].tx, to: USER } }] }, exp).ok)
+    const evilApprove = encodeFunctionData({ abi: erc20Abi, functionName: 'approve', args: ['0x000000000000000000000000000000000000dEaD' as `0x${string}`, atoms] })
+    check('aave guard: approval to a non-spoke spender is refused', !guardAaveSupplyBuild({ ...goodPlan, steps: [{ ...goodPlan.steps[0], tx: { ...goodPlan.steps[0].tx, data: evilApprove } }, goodPlan.steps[1]] }, exp).ok)
+    check('aave guard: wrong chain is refused', !guardAaveSupplyBuild({ ...goodPlan, steps: goodPlan.steps.map((s) => ({ ...s, tx: { ...s.tx, chainId: 8453 } })) }, exp).ok)
+    check('aave guard: no-approve single-step plan PASSES', guardAaveSupplyBuild({ operation: 'supply', steps: [goodPlan.steps[1]] }, exp).ok)
+
+    // Follow-ups.
+    const apend = { kind: 'aave-supply', data: { amount: '1', token: 'USDC', spoke: 'Main' } }
+    check('aave follow-up: "cancel" drops it', parseAaveSupplyFollowUp('cancel', apend)?.kind === 'cancel')
+    check('aave follow-up: "yes" is a noop (card already there)', parseAaveSupplyFollowUp('yes', apend)?.kind === 'noop')
+    const aamend = parseAaveSupplyFollowUp('make it 5', apend)
+    check('aave follow-up: "make it 5" re-amount', aamend?.kind === 'amend' && aamend.params.amount === '5' && aamend.params.token === 'USDC')
   }
 
   // ── Add-MCP (custom rows): callable row + idempotent re-add ───────────────
