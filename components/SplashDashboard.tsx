@@ -118,7 +118,6 @@ export function SplashDashboard({
 }
 
 // ── Tile router ──────────────────────────────────────────────────────────────
-// Exported: the per-MCP action window (McpActionPanel) renders the same tiles.
 
 export function TileCard({ tile, onPick }: { tile: SplashTile; onPick: (p: string, slug?: string) => void }) {
   return (
