@@ -2685,6 +2685,26 @@ async function main() {
     )
     const partial = compileJobAsk('deposit 20 usdc to hyperliquid then tell me a joke')
     check('jobs: a compiled-then-unparseable segment refuses HONESTLY (problem, not a guess)', !!partial && 'problem' in partial && /step 2/i.test(partial.problem))
+    // Chip round-trips: the EXACT strings the splash action chips send must
+    // parse under their native layers — a chip that routes to the planner is
+    // a suggested prompt in disguise (the thing these replaced).
+    check(
+      'chips: splash action-chip strings round-trip through the native parsers',
+      parseGuardianArm('Protect my SYRUP long with a 10% stop loss')?.coin === 'SYRUP' &&
+        parseHlIntent('Close my ETH long on Hyperliquid')?.kind === 'close' &&
+        parseHlIntent('Deposit 10 USDC to Hyperliquid')?.kind === 'deposit' &&
+        parseHlIntent('Long $12 of ETH on Hyperliquid')?.kind === 'open' &&
+        parseSwapIntent('Swap 33 USDC for ETH on Base').isSwap &&
+        parseSwapIntent('Swap 0.0032 ETH for USDC on Base').isSwap &&
+        (() => {
+          const job = compileJobAsk('Deposit 12 usdc to hyperliquid, then long $12 of eth on hyperliquid, then protect my eth long with a 5% stop')
+          return !!job && !('problem' in job) && job.steps.length === 4
+        })() &&
+        !!parseAaveOp('Repay all my USDC on Aave') &&
+        !!parseAaveOp('Withdraw all my USDC from Aave') &&
+        !!parseAaveSupply('Supply 10 USDC to Aave on Ethereum'),
+    )
+
     const jobsAnon = await fetch(`${BASE}/api/jobs/nonexistent`)
     const jobsCronAnon = await fetch(`${BASE}/api/cron/jobs`)
     check('jobs: job read unauth → 401; cron unauth → 401', jobsAnon.status === 401 && jobsCronAnon.status === 401)
