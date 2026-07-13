@@ -46,10 +46,10 @@ export default function TxPipeline() {
               <i /> Yeetful chat
             </span>
             <span className="txp__vmarks">
-              <span className="txp__vmark mono" style={{ ['--pc' as string]: '#FF6BAF' }}>
+              <span className="txp__vmark txp__vmark--uni mono">
                 <i>U</i> Uniswap
               </span>
-              <span className="txp__vmark mono" style={{ ['--pc' as string]: '#FFC94D' }}>
+              <span className="txp__vmark txp__vmark--snap mono">
                 <i>⚡</i> Snapshot
               </span>
             </span>

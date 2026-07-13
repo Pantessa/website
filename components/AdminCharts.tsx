@@ -18,17 +18,7 @@ import {
   YAxis,
 } from 'recharts'
 
-const ACCENT = '#34E0A1'
-const BLUE = '#6AA8FF'
-const GRID = 'rgba(255,255,255,0.06)'
-const MUTED = 'rgba(255,255,255,0.45)'
-const tooltipStyle = {
-  background: '#101012',
-  border: '1px solid rgba(255,255,255,0.12)',
-  borderRadius: 10,
-  fontSize: 12,
-  color: '#fff',
-} as const
+import { useChartColors } from '@/components/chart-theme'
 
 function dayLabel(iso: string): string {
   const d = new Date(iso)
@@ -53,6 +43,7 @@ function Empty({ label }: { label: string }) {
 
 /** Onboarding funnel — four stacked bars, width ∝ count, with step conversion. */
 export function Funnel({ steps }: { steps: { key: string; label: string; value: number }[] }) {
+  const C = useChartColors()
   const top = steps[0]?.value ?? 0
   if (top === 0) return <Empty label="No signed-in wallets yet — the funnel fills as users arrive." />
   return (
@@ -77,7 +68,7 @@ export function Funnel({ steps }: { steps: { key: string; label: string; value: 
                 className="h-full rounded-full"
                 style={{
                   width: `${Math.max(pctOfTop, s.value > 0 ? 4 : 0)}%`,
-                  background: `linear-gradient(90deg, ${ACCENT}, ${BLUE})`,
+                  background: `linear-gradient(90deg, ${C.accent}, ${C.blue})`,
                   opacity: 0.85,
                 }}
               />
@@ -91,22 +82,23 @@ export function Funnel({ steps }: { steps: { key: string; label: string; value: 
 
 /** New wallets per day (bars) with a cumulative line. */
 export function WalletsOverTime({ daily }: { daily: { day: string; n: number }[] }) {
+  const C = useChartColors()
   if (daily.length === 0) return <Empty label="No new wallets in this window." />
   let run = 0
   const data = daily.map((d) => ({ day: d.day, n: d.n, cum: (run += d.n) }))
   return (
     <Box height={220}>
       <ComposedChart data={data} margin={{ top: 8, right: 8, left: -22, bottom: 0 }}>
-        <CartesianGrid stroke={GRID} vertical={false} />
-        <XAxis dataKey="day" tickFormatter={dayLabel} tick={{ fill: MUTED, fontSize: 11 }} axisLine={false} tickLine={false} />
-        <YAxis allowDecimals={false} tick={{ fill: MUTED, fontSize: 11 }} axisLine={false} tickLine={false} width={40} />
+        <CartesianGrid stroke={C.grid} vertical={false} />
+        <XAxis dataKey="day" tickFormatter={dayLabel} tick={{ fill: C.muted, fontSize: 11 }} axisLine={false} tickLine={false} />
+        <YAxis allowDecimals={false} tick={{ fill: C.muted, fontSize: 11 }} axisLine={false} tickLine={false} width={40} />
         <Tooltip
-          contentStyle={tooltipStyle}
+          contentStyle={C.tooltip}
           labelFormatter={(l) => new Date(l as string).toUTCString().slice(0, 16)}
           formatter={(value, name) => [String(value), name === 'cum' ? 'cumulative' : 'new']}
         />
-        <Bar dataKey="n" fill={ACCENT} fillOpacity={0.7} radius={[3, 3, 0, 0]} barSize={14} />
-        <Line type="monotone" dataKey="cum" stroke={BLUE} strokeWidth={2} dot={false} />
+        <Bar dataKey="n" fill={C.accent} fillOpacity={0.7} radius={[3, 3, 0, 0]} barSize={14} />
+        <Line type="monotone" dataKey="cum" stroke={C.blue} strokeWidth={2} dot={false} />
       </ComposedChart>
     </Box>
   )
@@ -114,25 +106,26 @@ export function WalletsOverTime({ daily }: { daily: { day: string; n: number }[]
 
 /** Active wallets per day — area. */
 export function ActiveWallets({ daily }: { daily: { day: string; n: number }[] }) {
+  const C = useChartColors()
   if (daily.length === 0) return <Empty label="No activity in this window." />
   return (
     <Box height={220}>
       <AreaChart data={daily} margin={{ top: 8, right: 8, left: -22, bottom: 0 }}>
         <defs>
           <linearGradient id="activeFill" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor={BLUE} stopOpacity={0.35} />
-            <stop offset="100%" stopColor={BLUE} stopOpacity={0.02} />
+            <stop offset="0%" stopColor={C.blue} stopOpacity={0.35} />
+            <stop offset="100%" stopColor={C.blue} stopOpacity={0.02} />
           </linearGradient>
         </defs>
-        <CartesianGrid stroke={GRID} vertical={false} />
-        <XAxis dataKey="day" tickFormatter={dayLabel} tick={{ fill: MUTED, fontSize: 11 }} axisLine={false} tickLine={false} />
-        <YAxis allowDecimals={false} tick={{ fill: MUTED, fontSize: 11 }} axisLine={false} tickLine={false} width={40} />
+        <CartesianGrid stroke={C.grid} vertical={false} />
+        <XAxis dataKey="day" tickFormatter={dayLabel} tick={{ fill: C.muted, fontSize: 11 }} axisLine={false} tickLine={false} />
+        <YAxis allowDecimals={false} tick={{ fill: C.muted, fontSize: 11 }} axisLine={false} tickLine={false} width={40} />
         <Tooltip
-          contentStyle={tooltipStyle}
+          contentStyle={C.tooltip}
           labelFormatter={(l) => new Date(l as string).toUTCString().slice(0, 16)}
           formatter={(value) => [String(value), 'active wallets']}
         />
-        <Area type="monotone" dataKey="n" stroke={BLUE} strokeWidth={2} fill="url(#activeFill)" />
+        <Area type="monotone" dataKey="n" stroke={C.blue} strokeWidth={2} fill="url(#activeFill)" />
       </AreaChart>
     </Box>
   )
