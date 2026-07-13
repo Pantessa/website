@@ -20,7 +20,7 @@ import type { EvmTxRequest } from '@/lib/transaction-layer'
 // a token is never mistaken for a chain). The MCP does the real normalization;
 // we just need to locate the two chains and pass their names through.
 const CHAIN_ALT =
-  'base|arbitrum|arb(?:itum|itrium)?|ethereum|eth\\s?mainnet|mainnet|optimism|polygon|matic|gnosis|xdai|avalanche|avax|bnb(?:\\s?chain)?|bsc|binance|scroll|solana|sol|bitcoin|btc|near|ton|tron|sui|op'
+  'base|arbitrum|arb(?:itum|itrium)?|ethereum|eth\\s?mainnet|mainnet|optimism|polygon|matic|gnosis|xdai|avalanche|avax|bnb(?:\\s?chain)?|bsc|binance|scroll|robinhood(?:\\s?chain)?|solana|sol|bitcoin|btc|near|ton|tron|sui|op'
 
 const AMOUNT = '\\d+(?:\\.\\d+)?'
 const TOKEN = '\\$?[A-Za-z]{2,12}|0x[0-9a-fA-F]{40}'
@@ -91,6 +91,8 @@ const ORIGIN_CHAIN_IDS: Record<string, number> = {
   gnosis: 100,
   xdai: 100,
   scroll: 534352,
+  robinhood: 4663,
+  'robinhood chain': 4663,
 }
 
 export function expectedOriginChainId(chain: string): number | null {

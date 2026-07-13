@@ -1622,6 +1622,9 @@ async function main() {
     const miss = parseCrossChainSwap('swap 1 USDC from base')
     check('xchain parse: missing destination → problem', !!miss && 'problem' in miss)
     check('xchain chainId map', expectedOriginChainId('base') === 8453 && expectedOriginChainId('arbitrum') === 42161)
+    const rh = parseCrossChainSwap('swap 1 USDC from base to robinhood chain')
+    check('xchain parse: "to robinhood chain"', !!rh && !('problem' in rh) && rh.destinationChain?.toLowerCase().startsWith('robinhood') === true)
+    check('xchain chainId map: robinhood = 4663', expectedOriginChainId('robinhood') === 4663 && expectedOriginChainId('robinhood chain') === 4663)
 
     const DEPOSIT = '0x7ff0D96c9f0528f0FF8dd948b2D316806fE3c7f2'
     const USDC_BASE = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913'
@@ -2406,6 +2409,7 @@ async function main() {
   check('cross-chain: chains named in order', JSON.stringify(detectCrossChain('swap 1 USDC from base to arbitrum').chains) === '["base","arbitrum"]')
   check('cross-chain: plain Base swap NOT flagged', detectCrossChain('swap 100 USDC for WETH').crossChain === false)
   check('cross-chain: "a ton of" is not the TON chain', detectCrossChain('swap a ton of USDC for WETH on base').crossChain === false)
+  check('cross-chain: robinhood chain detected', detectCrossChain('swap 1 USDC from base to robinhood chain').crossChain === true && detectCrossChain('swap 1 USDC from base to robinhood chain').chains.includes('robinhood'))
   check('cross-chain: bridge verb + one chain counts', detectCrossChain('bridge 5 USDC to solana').crossChain === true)
   check('cross-chain: explicit phrase counts', detectCrossChain('do a cross-chain swap of 2 USDC').crossChain === true)
 

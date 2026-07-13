@@ -7,7 +7,8 @@ import {
   injectedWallet,
 } from '@rainbow-me/rainbowkit/wallets'
 import { createConfig, http } from 'wagmi'
-import { mainnet, base, baseSepolia } from 'wagmi/chains'
+import { defineChain } from 'viem'
+import { mainnet, base, baseSepolia, arbitrum } from 'wagmi/chains'
 import { cdpEmbeddedConnector, cdpEnabled } from '@/lib/cdp-embedded'
 import { hostWalletConnector } from '@/lib/host-wallet'
 
@@ -75,19 +76,38 @@ const connectors = [
   hostWalletConnector(),
 ]
 
+// Robinhood Chain (Arbitrum Orbit L2, mainnet 2026-07-01) — not in viem's
+// bundled chains yet, so defined here. The public RPC is rate-limited but
+// fine for what the app does on it (chain switching + receipt polling);
+// docs.robinhood.com/chain/connecting lists Alchemy as the heavier option.
+export const robinhoodChain = defineChain({
+  id: 4663,
+  name: 'Robinhood Chain',
+  nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
+  rpcUrls: { default: { http: ['https://rpc.mainnet.chain.robinhood.com'] } },
+  blockExplorers: {
+    default: { name: 'Robinhood Chain Explorer', url: 'https://robinhoodchain.blockscout.com' },
+  },
+})
+
 export const wagmiConfig = createConfig({
   connectors,
-  // Base is the only chain we transact on (x402 payments). Mainnet is included
+  // Base is the primary chain we transact on (x402 payments). Mainnet is included
   // solely so RainbowKit can resolve ENS names/avatars — but its default RPC
   // (eth.merkle.io) rejects browser CORS preflights, which spammed the console
   // with retried ENS lookups, so pin it to a CORS-friendly public endpoint.
   // base.sepolia is included for the launchpad (testnet) — launching a token +
-  // staking happen there until mainnet. Mainnet (ENS only) keeps its CORS-safe RPC.
-  chains: [base, baseSepolia, mainnet],
+  // staking happen there until mainnet. Arbitrum + Robinhood Chain are here so
+  // tx cards can switch the wallet + watch receipts on them (SendTxButton needs
+  // a configured transport per tx.chainId, and switchChainAsync only knows the
+  // chains in this list — the Switch Networks modal mirrors it).
+  chains: [base, baseSepolia, mainnet, arbitrum, robinhoodChain],
   transports: {
     [base.id]: http(),
     [baseSepolia.id]: http(),
     [mainnet.id]: http('https://ethereum-rpc.publicnode.com'),
+    [arbitrum.id]: http(),
+    [robinhoodChain.id]: http(),
   },
   ssr: true,
 })

@@ -42,6 +42,7 @@ const CHAIN_WORDS: [chain: string, re: RegExp][] = [
   ['avalanche', /\bavalanche\b|\bavax\b/i],
   ['gnosis', /\bgnosis\b|\bxdai\b/i],
   ['scroll', /\bscroll\b/i],
+  ['robinhood', /\brobinhood(?:\s?chain)?\b/i],
   ['solana', /\bsolana\b|(?:\bon|\bfrom|\bto|\binto)\s+sol\b/i],
   ['bitcoin', /\bbitcoin\b|(?:\bon|\bfrom|\bto|\binto)\s+btc\b/i],
   ['near', /(?:\bon|\bfrom|\bto|\binto)\s+near\b/i],

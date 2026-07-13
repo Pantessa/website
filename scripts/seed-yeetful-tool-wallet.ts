@@ -47,18 +47,18 @@ const chains = () =>
   p(
     'chains',
     'array',
-    'Chains to cover, e.g. ["base","arbitrum"]. Omit for ALL nine (eth, base, arb, op, pol, bsc, avax, scroll, gnosis). Names, keys, and chainIds all work.',
+    'Chains to cover, e.g. ["base","arbitrum"]. Omit for ALL ten (eth, base, arb, op, pol, bsc, avax, scroll, gnosis, rh = Robinhood Chain). Names, keys, and chainIds all work.',
   )
 
 const SERVICE = {
   slug: 'yeetful-tool-wallet',
   name: 'Yeetful Wallet',
   description:
-    'Multichain wallet reads, free and non-gated: USD-priced whole-wallet portfolios across 9 top EVM chains (Ethereum, Base, Arbitrum, Optimism, Polygon, BNB, Avalanche, Scroll, Gnosis), native gas balances, precise per-token balances, recent transfers with scam-symbol flagging, and transaction confirmation status. The fresh-data layer after any swap or transfer settles. Read-only by construction. Rate-limited. By Yeetful.',
+    'Multichain wallet reads, free and non-gated: USD-priced whole-wallet portfolios across 10 top EVM chains (Ethereum, Base, Arbitrum, Optimism, Polygon, BNB, Avalanche, Scroll, Gnosis, Robinhood Chain), native gas balances, precise per-token balances, recent transfers with scam-symbol flagging, and transaction confirmation status. The fresh-data layer after any swap or transfer settles. Read-only by construction. Rate-limited. By Yeetful.',
   category: 'Wallets',
   kind: 'data',
   priceUsd: '0',
-  networks: ['Ethereum', 'Base', 'Arbitrum', 'Optimism', 'Polygon', 'BNB Chain', 'Avalanche', 'Scroll', 'Gnosis'],
+  networks: ['Ethereum', 'Base', 'Arbitrum', 'Optimism', 'Polygon', 'BNB Chain', 'Avalanche', 'Scroll', 'Gnosis', 'Robinhood Chain'],
   websiteUrl: 'https://github.com/Yeetful/free-mcps',
   // callable:false like the sibling free rows — free MCP rows are
   // PLANNER-driven: the endpoint planner picks among the mcp_endpoints

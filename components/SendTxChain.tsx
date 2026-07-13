@@ -24,6 +24,7 @@ const TX_EXPLORER: Record<number, string> = {
   8453: 'https://basescan.org/tx/',
   1: 'https://etherscan.io/tx/',
   42161: 'https://arbiscan.io/tx/',
+  4663: 'https://robinhoodchain.blockscout.com/tx/',
 }
 
 type Phase = 'sign' | 'refreshing' | 'blocked' | 'done'
