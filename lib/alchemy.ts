@@ -1,8 +1,8 @@
 // Alchemy multichain reads for the connected-wallet splash: a wallet's token
 // portfolio (balances priced to USD) and its recent transactions across
-// Ethereum, Base, and Arbitrum in a couple of calls. This is what lets the
-// "Uniswap" auto card show a whole-wallet view instead of Base-only on-chain
-// reads.
+// Ethereum, Base, Arbitrum, and Robinhood Chain in a couple of calls. This is
+// what lets the "Uniswap" auto card show a whole-wallet view instead of
+// Base-only on-chain reads.
 //
 // Gated behind ALCHEMY_API_KEY: when the key is unset, `alchemyEnabled()` is
 // false and callers fall back to the keyless Base-only path — so nothing here
@@ -26,6 +26,9 @@ const CHAINS: NetChain[] = [
   { net: 'eth-mainnet', label: 'Ethereum', native: 'ETH', explorerTx: 'https://etherscan.io/tx/' },
   { net: 'base-mainnet', label: 'Base', native: 'ETH', explorerTx: 'https://basescan.org/tx/' },
   { net: 'arb-mainnet', label: 'Arbitrum', native: 'ETH', explorerTx: 'https://arbiscan.io/tx/' },
+  // Arbitrum Orbit L2 (chain 4663, mainnet 2026-07-01) — Data API + Transfers
+  // API support probed live 2026-07-13; tokenized stocks trade here on Uniswap.
+  { net: 'robinhood-mainnet', label: 'Robinhood Chain', native: 'ETH', explorerTx: 'https://robinhoodchain.blockscout.com/tx/' },
 ]
 
 const NETWORKS = CHAINS.map((c) => c.net)

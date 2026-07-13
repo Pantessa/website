@@ -55,6 +55,13 @@ export const UNISWAP_CONTRACTS: Record<string, string[]> = {
     '0xe592427a0aece92de3edee1f18e0157c05861564', // SwapRouter (v3)
     '0x360e68faccca8ca495c1b759fd9eee466db9fb32', // v4 PoolManager
   ],
+  // Robinhood Chain (Arbitrum Orbit, chain 4663) — Uniswap v4 is live there
+  // from day one (blog.uniswap.org/robinhood-chain-is-live); addresses from
+  // developers.uniswap.org/contracts/v4/deployments (verified 2026-07-13).
+  'robinhood-mainnet': [
+    '0x8876789976decbfcbbbe364623c63652db8c0904', // Universal Router (v4 era)
+    '0x8366a39cc670b4001a1121b8f6a443a643e40951', // v4 PoolManager
+  ],
 }
 
 /** Pure membership check (exported for tests): did any counterparty land in
@@ -73,8 +80,9 @@ const cache = new Map<string, { value: boolean; at: number }>()
 
 /**
  * Has this wallet's recent transfer history touched a Uniswap router on
- * Ethereum, Base, or Arbitrum? true / false / null = unknown (no Alchemy key
- * or every probe failed — callers treat unknown as "show the card").
+ * Ethereum, Base, Arbitrum, or Robinhood Chain? true / false / null = unknown
+ * (no Alchemy key or every probe failed — callers treat unknown as "show the
+ * card").
  */
 export async function hasUniswapHistory(address: string): Promise<boolean | null> {
   if (!alchemyEnabled()) return null
