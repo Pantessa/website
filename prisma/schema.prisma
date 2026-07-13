@@ -613,6 +613,23 @@ model McpShortlist {
   @@map("mcp_shortlists")
 }
 
+/// A wallet's last chat working set — the full active MCP set from the bare
+/// /chat surface, so a signed-in user's set follows them across devices (the
+/// localStorage cache in store.walletSets is same-browser only; this is its
+/// DB mirror). Written through on every change, restored on connect; the DB
+/// copy wins over the local cache when signed in. Unlike McpShortlist there
+/// is NO size cap — this records whatever the user last had toggled on.
+/// Guests stay localStorage-only. One row per wallet.
+model WalletWorkingSet {
+  id           String   @id @default(cuid())
+  ownerAddress String   @unique @map("owner_address") // lowercased, SIWE-verified
+  serviceIds   String[] @map("service_ids") // McpServer ids, ordered
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  @@map("wallet_working_sets")
+}
+
 /// A blog post — Neon holds the metadata + markdown; images live in Vercel
 /// Blob (URLs only here). Published via the admin API (SIWE session or Bearer
 /// yf_… key ∩ ADMIN_WALLETS) — the headless path Claude publishes through.
