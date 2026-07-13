@@ -114,6 +114,7 @@ const PATH_LABEL: Record<string, string> = {
   'native-aave-supply': 'Native · Aave supply',
   'native-aave-op': 'Native · Aave withdraw/borrow/repay',
   'native-swap-uniswap': 'Native · Uniswap swap',
+  'native-swap-uniswap-v4': 'Native · Uniswap v4 swap',
   'native-swap-cow': 'Native · CoW swap',
   'native-cross-chain': 'Native · cross-chain swap',
   planner: 'Planner-routed tool',

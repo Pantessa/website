@@ -67,8 +67,8 @@ export interface TxChainRequest {
   summary: string
   steps: TxChainStep[]
   refresh?: {
-    /** Rebuild recipe — 'uniswap-swap' is wired today (POST /api/tx/refresh). */
-    kind: 'uniswap-swap'
+    /** Rebuild recipe (POST /api/tx/refresh) — v3 swaps and the v4 fallback. */
+    kind: 'uniswap-swap' | 'uniswap-v4-swap'
     /** 0-based index of the step to rebuild at advance time. */
     stepIndex: number
     /** chainId rides as a string; absent = Base (pre-chain-picker recipes). */
@@ -98,11 +98,11 @@ export function txChainOf(meta: unknown): TxChainRequest | null {
   }
   let refresh: TxChainRequest['refresh']
   const r = d.refresh as Record<string, unknown> | undefined
-  if (r && typeof r === 'object' && r.kind === 'uniswap-swap' && typeof r.stepIndex === 'number' && r.params && typeof r.params === 'object') {
+  if (r && typeof r === 'object' && (r.kind === 'uniswap-swap' || r.kind === 'uniswap-v4-swap') && typeof r.stepIndex === 'number' && r.params && typeof r.params === 'object') {
     const p = r.params as Record<string, unknown>
     if (typeof p.sellToken === 'string' && typeof p.buyToken === 'string' && typeof p.amountHuman === 'string') {
       refresh = {
-        kind: 'uniswap-swap',
+        kind: r.kind,
         stepIndex: r.stepIndex,
         params: {
           sellToken: p.sellToken,
