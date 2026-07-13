@@ -56,7 +56,8 @@ import {
 } from '@/lib/aave-supply'
 import { policyCheck, buildReport } from '@/lib/tx-guardrails'
 import { buildGuardrailedOrder } from '@/lib/cow-build'
-import { buildUniswapSwap } from '@/lib/uniswap-venue'
+import { buildUniswapSwap, NoV3PoolError } from '@/lib/uniswap-venue'
+import { buildUniswapV4Swap, NoV4PoolError } from '@/lib/uniswap-v4'
 import { tokenDecimals, humanToAtoms } from '@/lib/cow'
 import { ensureTokenList } from '@/lib/token-list'
 import { resolveProposal } from '@/lib/snapshot-read'
@@ -1632,6 +1633,13 @@ async function prepareSwapTurn(intent: SwapIntent, walletAddress: string | undef
         workingContext: swapWorkingContext(intent, 'uniswap', ctx, chainId),
       })
     } catch (err) {
+      // v3 has no pool → fall through to the guarded v4 layer where the chain
+      // carries one (Robinhood's tokenized stocks are v4-only). Pairs v3 CAN
+      // fill never reach here — v4 is strictly the fallback.
+      if (err instanceof NoV3PoolError && chain.uniswapV4) {
+        trace({ type: 'status', label: `no v3 pool for the pair on ${chain.name} — trying the Uniswap v4 fallback (tokenized-stock pools live there)` })
+        return await prepareUniswapV4Turn(intent, walletAddress, chainId, ctx, trace)
+      }
       const msg = err instanceof Error ? err.message : 'quote failed'
       trace({ type: 'note', level: 'warn', label: `Uniswap build failed: ${msg.slice(0, 200)}` })
       return NextResponse.json({ reply: `🔄 Couldn't build the Uniswap swap: ${msg}` })
@@ -1686,6 +1694,83 @@ async function prepareSwapTurn(intent: SwapIntent, walletAddress: string | undef
     const msg = err instanceof Error ? err.message : 'quote failed'
     trace({ type: 'note', level: 'warn', label: `CoW order build failed: ${msg.slice(0, 200)}` })
     return NextResponse.json({ reply: `🔄 Couldn't build the swap: ${msg}` })
+  }
+}
+
+/**
+ * The Uniswap v4 fallback turn — reached ONLY when v3 threw NoV3PoolError on
+ * a chain that carries a v4 deployment (lib/chains.ts uniswapV4). Same trust
+ * shape as v3: deterministic build, calldata guard inside the builder (a
+ * block-level check withholds the artifact), one self-advancing SendTxChain
+ * for the Permit2 approvals + swap, and the swap step re-quoted at advance
+ * time via /api/tx/refresh.
+ */
+async function prepareUniswapV4Turn(
+  intent: SwapIntent,
+  walletAddress: string,
+  chainId: number,
+  ctx: WorkingContext | undefined,
+  trace: (event: unknown) => void,
+) {
+  const chain = chainById(chainId)!
+  trace({ type: 'select', service: 'Uniswap v4 (native venue)', endpoint: `V4 Quoter → Universal Router build on ${chain.name}`, priceUsd: 0, reason: 'v4 fallback — the pair has no v3 pool; Yeetful builds + verifies the router calldata deterministically' })
+  try {
+    const uni = await buildUniswapV4Swap({
+      sellToken: intent.sellToken!,
+      buyToken: intent.buyToken!,
+      amountHuman: intent.sellAmountHuman!,
+      from: walletAddress,
+      chainId,
+    })
+    if (uni.blocked) {
+      const reasons = uni.guardrails.checks.filter((c) => !c.ok && c.level === 'block').map((c) => c.note).join(' ')
+      trace({ type: 'note', level: 'warn', label: `guardrails REFUSED the Uniswap v4 swap: ${(reasons || 'a safety check failed.').slice(0, 200)}` })
+      return NextResponse.json({
+        reply: `🚫 Swap built but refused by your guardrails: ${reasons || 'a safety check failed.'}`,
+        guardrails: uni.guardrails,
+        blocked: true,
+      })
+    }
+    const warns = uni.guardrails.checks.filter((c) => !c.ok && c.level === 'warn').map((c) => `⚠️ ${c.note}`)
+    const sell = intent.sellToken!.toUpperCase()
+    const buy = intent.buyToken!.toUpperCase()
+    if (uni.steps.length === 1) {
+      trace({ type: 'status', label: `guardrails passed — v4 swap tx built (${intent.sellAmountHuman} ${sell} → ${buy} on ${chain.name}), awaiting signature` })
+      return NextResponse.json({
+        reply: `🔏 ${uni.summary}${warns.length ? `\n${warns.join('\n')}` : ''}`,
+        txRequest: uni.steps[0].tx,
+        buildPath: 'native-swap-uniswap-v4',
+        guardrails: uni.guardrails,
+        workingContext: swapWorkingContext(intent, 'uniswap', ctx, chainId),
+      })
+    }
+    trace({ type: 'status', label: `guardrails passed — ${uni.steps.length}-step v4 card built (${intent.sellAmountHuman} ${sell} → ${buy}, Permit2 approvals + swap), awaiting signature` })
+    return NextResponse.json({
+      reply: `🔏 ${uni.summary}\n🔗 ${uni.steps.length} steps in the card below — v4 pulls funds through Permit2, so the approvals come first and the swap appears automatically once they confirm (re-quoted fresh). Nothing to retype.${warns.length ? `\n${warns.join('\n')}` : ''}`,
+      txChain: {
+        summary: uni.summary,
+        steps: uni.steps,
+        refresh: {
+          kind: 'uniswap-v4-swap',
+          stepIndex: uni.steps.length - 1,
+          params: { sellToken: intent.sellToken!, buyToken: intent.buyToken!, amountHuman: intent.sellAmountHuman!, chainId: String(chainId) },
+        },
+      },
+      buildPath: 'native-swap-uniswap-v4',
+      guardrails: uni.guardrails,
+      // Invariant #11: pending action — "make it 2" / "cancel" resolve here.
+      workingContext: swapWorkingContext(intent, 'uniswap', ctx, chainId),
+    })
+  } catch (err) {
+    if (err instanceof NoV4PoolError) {
+      trace({ type: 'note', level: 'warn', label: `no v4 pool either — the pair isn't on Uniswap on ${chain.name}` })
+      return NextResponse.json({
+        reply: `🔄 No Uniswap v3 or v4 pool on ${chain.name} can fill ${intent.sellToken!.toUpperCase()} → ${intent.buyToken!.toUpperCase()} for this amount.`,
+      })
+    }
+    const msg = err instanceof Error ? err.message : 'quote failed'
+    trace({ type: 'note', level: 'warn', label: `Uniswap v4 build failed: ${msg.slice(0, 200)}` })
+    return NextResponse.json({ reply: `🔄 Couldn't build the Uniswap swap: ${msg}` })
   }
 }
 

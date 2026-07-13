@@ -55,6 +55,10 @@ export interface AppChain {
   words: RegExp
   /** Uniswap v3 build support — null means no native venue on this chain. */
   uniswap: { swapRouter02: `0x${string}`; quoterV2: `0x${string}` } | null
+  /** Uniswap v4 FALLBACK — only consulted when v3 has no pool for a pair
+   *  (Robinhood's tokenized stocks are v4-only; WETH↔USDG stays on v3).
+   *  null = no v4 fallback on this chain. */
+  uniswapV4: { quoter: `0x${string}`; universalRouter: `0x${string}`; permit2: `0x${string}` } | null
   /** CoW Protocol order-book support (must also exist in COW_API_BASE). */
   cow: boolean
   wrappedNative: `0x${string}`
@@ -79,6 +83,7 @@ export const APP_CHAINS: AppChain[] = [
       swapRouter02: '0x2626664c2603336E57B271c5C0b26F421741e481',
       quoterV2: '0x3d4e44Eb1374240CE5F1B871ab261CD16335B76a',
     },
+    uniswapV4: null,
     cow: true,
     wrappedNative: '0x4200000000000000000000000000000000000006',
     stables: {
@@ -110,6 +115,7 @@ export const APP_CHAINS: AppChain[] = [
       swapRouter02: '0x68b3465833fb72A70ecDF485E0e4C7bD8665Fc45',
       quoterV2: '0x61fFE014bA17989E743c5F6cB21bF9697530B21e',
     },
+    uniswapV4: null,
     cow: true,
     wrappedNative: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2',
     stables: {
@@ -140,6 +146,7 @@ export const APP_CHAINS: AppChain[] = [
       swapRouter02: '0x68b3465833fb72A70ecDF485E0e4C7bD8665Fc45',
       quoterV2: '0x61fFE014bA17989E743c5F6cB21bF9697530B21e',
     },
+    uniswapV4: null,
     cow: true,
     wrappedNative: '0x82aF49447D8a07e3bd95BD0d56f35241523fBab1',
     stables: {
@@ -172,6 +179,14 @@ export const APP_CHAINS: AppChain[] = [
     uniswap: {
       swapRouter02: '0xcaf681a66d020601342297493863e78c959e5cb2',
       quoterV2: '0x33e885ed0ec9bf04ecfb19341582aadcb4c8a9e7',
+    },
+    // v4 fallback for the pairs v3 can't fill — the 100 tokenized stocks
+    // (AAPL/TSLA/…) trade in v4-ONLY pools quoted against USDG. Addresses
+    // from deployments/4663.md, bytecode verified via eth_getCode 2026-07-13.
+    uniswapV4: {
+      quoter: '0x8dc178efb8111bb0973dd9d722ebeff267c98f94',
+      universalRouter: '0x8876789976decbfcbbbe364623c63652db8c0904',
+      permit2: '0x000000000022d473030f116ddee9f6b43ac78ba3',
     },
     cow: false,
     wrappedNative: '0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73',

@@ -36,6 +36,7 @@ import { isCacheable, routeCacheKey, getCached, setCached, clearRouteCache } fro
 import { routeSavings } from '../lib/route-telemetry'
 import { portfolioFromToolResult, portfolioOf } from '../lib/portfolio-display'
 import { crossChainAgentOf, detectCrossChain, swapWorkingContext } from '../lib/swap-intent'
+import { encodeV4SwapCalldata, guardUniswapV4Build, type V4BuiltStep, type V4GuardExpectations, type V4PoolKey } from '../lib/uniswap-v4'
 import { APP_CHAINS, chainById, chainNamedIn, sanitizeChainId } from '../lib/chains'
 import { parseCrossChainSwap, guardCrossChainBuild, expectedOriginChainId, parseCrossChainFollowUp } from '../lib/cross-chain-swap'
 import {
@@ -1731,6 +1732,64 @@ async function main() {
     check('xchain follow-up: "make it 2" re-amount', amend?.kind === 'amend' && amend.params.amount === '2' && amend.params.originChain === 'base')
   }
 
+  // ── Uniswap v4 fallback: the calldata guard on the Universal Router build ─
+  // The v4 layer serves the pairs v3 can't fill (Robinhood's tokenized-stock
+  // pools). Everything the user signs is decoded and verified against pinned
+  // addresses + exact amounts — any mutation must refuse, fail closed.
+  console.log('— uniswap v4 (calldata guard)')
+  {
+    const UR = '0x8876789976decbfcbbbe364623c63652db8c0904' as `0x${string}`
+    const PERMIT2 = '0x000000000022d473030f116ddee9f6b43ac78ba3' as `0x${string}`
+    const USDG = '0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168' as `0x${string}` // currency0 (sorts below AAPL)
+    const AAPL = '0xaF3D76f1834A1d425780943C99Ea8A608f8a93f9' as `0x${string}`
+    const amountIn = BigInt(100_000_000) // 100 USDG (6 dec)
+    const minOut = BigInt('313643149919096180') // ~0.3136 AAPL
+    const now = Math.floor(Date.now() / 1000)
+    const deadline = now + 600
+    const permit2Expiration = deadline + 3600
+    const poolKey: V4PoolKey = { currency0: USDG, currency1: AAPL, fee: 3000, tickSpacing: 60, hooks: '0x0000000000000000000000000000000000000000' }
+    const exp: V4GuardExpectations = { chainId: 4663, universalRouter: UR, permit2: PERMIT2, sellToken: USDG, buyToken: AAPL, amountIn, minOut, poolKey, permit2Expiration }
+    const swapData = encodeV4SwapCalldata({ poolKey, zeroForOne: true, amountIn, minOut, deadline })
+    const erc20ApproveData = encodeFunctionData({ abi: erc20Abi, functionName: 'approve', args: [PERMIT2, amountIn] })
+    const permit2Abi = [{ name: 'approve', type: 'function', stateMutability: 'nonpayable', inputs: [{ name: 'token', type: 'address' }, { name: 'spender', type: 'address' }, { name: 'amount', type: 'uint160' }, { name: 'expiration', type: 'uint48' }], outputs: [] }] as const
+    const permit2ApproveData = encodeFunctionData({ abi: permit2Abi, functionName: 'approve', args: [USDG, UR, amountIn, permit2Expiration] })
+    const goodSteps: V4BuiltStep[] = [
+      { label: 'approve', title: 'Approve USDG to Permit2', tx: { to: USDG, data: erc20ApproveData, value: '0', chainId: 4663, action: 'approve' } },
+      { label: 'permit', title: 'Permit2 grant', tx: { to: PERMIT2, data: permit2ApproveData, value: '0', chainId: 4663, action: 'approve' } },
+      { label: 'swap', title: 'Swap 100 USDG → AAPL', tx: { to: UR, data: swapData, value: '0', chainId: 4663, action: 'swap' } },
+    ]
+    check('v4 guard: well-formed 3-step chain PASSES', guardUniswapV4Build(goodSteps, exp).ok)
+    check('v4 guard: swap-only chain PASSES (allowances in place)', guardUniswapV4Build([goodSteps[2]], exp).ok)
+
+    const withSwap = (tx: Partial<V4BuiltStep['tx']>): V4BuiltStep[] => [goodSteps[0], goodSteps[1], { ...goodSteps[2], tx: { ...goodSteps[2].tx, ...tx } }]
+    check('v4 guard: swap to a NON-pinned router is refused', !guardUniswapV4Build(withSwap({ to: '0x000000000000000000000000000000000000dEaD' }), exp).ok)
+    check('v4 guard: wrong chainId is refused', !guardUniswapV4Build(withSwap({ chainId: 8453 }), exp).ok)
+    check('v4 guard: nonzero native value is refused', !guardUniswapV4Build(withSwap({ value: '1' }), exp).ok)
+    check('v4 guard: opaque calldata is refused', !guardUniswapV4Build(withSwap({ data: '0xdeadbeef' }), exp).ok)
+
+    const wrongAmt = encodeV4SwapCalldata({ poolKey, zeroForOne: true, amountIn: amountIn * BigInt(2), minOut, deadline })
+    check('v4 guard: amountIn drift is refused', !guardUniswapV4Build(withSwap({ data: wrongAmt }), exp).ok)
+    const wrongMin = encodeV4SwapCalldata({ poolKey, zeroForOne: true, amountIn, minOut: BigInt(1), deadline })
+    check('v4 guard: weakened minimum-out is refused', !guardUniswapV4Build(withSwap({ data: wrongMin }), exp).ok)
+    const wrongDir = encodeV4SwapCalldata({ poolKey, zeroForOne: false, amountIn, minOut, deadline })
+    check('v4 guard: flipped swap direction is refused', !guardUniswapV4Build(withSwap({ data: wrongDir }), exp).ok)
+    const hooked = encodeV4SwapCalldata({ poolKey: { ...poolKey, hooks: '0x000000000000000000000000000000000000dEaD' }, zeroForOne: true, amountIn, minOut, deadline })
+    check('v4 guard: hooked pool is refused', !guardUniswapV4Build(withSwap({ data: hooked }), exp).ok)
+    const wrongPool = encodeV4SwapCalldata({ poolKey: { ...poolKey, fee: 10000, tickSpacing: 200 }, zeroForOne: true, amountIn, minOut, deadline })
+    check('v4 guard: un-quoted pool key is refused', !guardUniswapV4Build(withSwap({ data: wrongPool }), exp).ok)
+    const stale = encodeV4SwapCalldata({ poolKey, zeroForOne: true, amountIn, minOut, deadline: now - 10 })
+    check('v4 guard: expired deadline is refused', !guardUniswapV4Build(withSwap({ data: stale }), exp).ok)
+
+    const evilErc20 = encodeFunctionData({ abi: erc20Abi, functionName: 'approve', args: ['0x000000000000000000000000000000000000dEaD' as `0x${string}`, amountIn] })
+    check('v4 guard: token approval to a non-Permit2 spender is refused', !guardUniswapV4Build([{ ...goodSteps[0], tx: { ...goodSteps[0].tx, data: evilErc20 } }, goodSteps[1], goodSteps[2]], exp).ok)
+    const overApprove = encodeFunctionData({ abi: erc20Abi, functionName: 'approve', args: [PERMIT2, amountIn * BigInt(1000)] })
+    check('v4 guard: over-sized token approval is refused', !guardUniswapV4Build([{ ...goodSteps[0], tx: { ...goodSteps[0].tx, data: overApprove } }, goodSteps[1], goodSteps[2]], exp).ok)
+    const evilPermit = encodeFunctionData({ abi: permit2Abi, functionName: 'approve', args: [USDG, '0x000000000000000000000000000000000000dEaD' as `0x${string}`, amountIn, permit2Expiration] })
+    check('v4 guard: Permit2 grant to a non-router spender is refused', !guardUniswapV4Build([goodSteps[0], { ...goodSteps[1], tx: { ...goodSteps[1].tx, data: evilPermit } }, goodSteps[2]], exp).ok)
+    const approveToStranger = { ...goodSteps[0], tx: { ...goodSteps[0].tx, to: '0x000000000000000000000000000000000000dEaD' } }
+    check('v4 guard: approval step to an unknown contract is refused', !guardUniswapV4Build([approveToStranger, goodSteps[1], goodSteps[2]], exp).ok)
+  }
+
   // ── Aave supply: parse + reserve pick + the SAFETY guard on the build ─────
   // The guard is the load-bearing check — the planner path once sent the
   // SYMBOL to an address-validated param (-32602) and the house model
@@ -2493,6 +2552,7 @@ async function main() {
   check('chains: registry carries base/ethereum/arbitrum/robinhood', JSON.stringify(APP_CHAINS.map((c) => c.key).sort()) === '["arbitrum","base","ethereum","robinhood"]')
   check('chains: every entry is build-complete (router+quoter, wrapped native, explorer, alchemy net)', APP_CHAINS.every((c) => !!c.uniswap?.swapRouter02 && !!c.uniswap?.quoterV2 && /^0x[0-9a-fA-F]{40}$/.test(c.wrappedNative) && c.explorerTx.startsWith('https://') && !!c.alchemyNet && c.viem.id === c.id))
   check('chains: base keeps the original router constants', chainById(8453)?.uniswap?.swapRouter02 === '0x2626664c2603336E57B271c5C0b26F421741e481' && chainById(8453)?.uniswap?.quoterV2 === '0x3d4e44Eb1374240CE5F1B871ab261CD16335B76a')
+  check('chains: v4 fallback pinned ONLY on Robinhood (quoter + Universal Router + Permit2)', chainById(4663)?.uniswapV4?.quoter === '0x8dc178efb8111bb0973dd9d722ebeff267c98f94' && chainById(4663)?.uniswapV4?.universalRouter === '0x8876789976decbfcbbbe364623c63652db8c0904' && chainById(4663)?.uniswapV4?.permit2 === '0x000000000022d473030f116ddee9f6b43ac78ba3' && APP_CHAINS.every((c) => c.id === 4663 || c.uniswapV4 === null))
   check('chains: robinhood has no CoW, has USDG stable', chainById(4663)?.cow === false && Object.keys(chainById(4663)?.stables ?? {}).length >= 1 && !!chainById(4663)?.tokens.USDG)
   check('chains: sanitizeChainId only passes registry ids', sanitizeChainId(8453) === 8453 && sanitizeChainId(4663) === 4663 && sanitizeChainId(137) === null && sanitizeChainId('8453') === null && sanitizeChainId(null) === null)
   check('chains: chainNamedIn reads "on robinhood" + the arbitrum typo', chainNamedIn('swap 1 USDC for USDG on robinhood')?.id === 4663 && chainNamedIn('swap 1 usdc for weth on arbitum')?.id === 42161 && chainNamedIn('swap 1 usdc for weth') === null)

@@ -98,9 +98,20 @@ const SWAP_ROUTER_02_ABI = [
   },
 ] as const
 
+/** No v3 pool can fill the pair — a TYPED miss so the route can fall through
+ *  to the v4 layer (Robinhood's tokenized stocks are v4-only) instead of
+ *  string-matching an error message. */
+export class NoV3PoolError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'NoV3PoolError'
+  }
+}
+
 /** Stables priced at $1 face value (same heuristic as the CoW adapter) —
- *  the per-chain address→decimals maps live in lib/chains.ts. */
-function stableUsd(chainId: number, token: string, atoms: bigint): number | null {
+ *  the per-chain address→decimals maps live in lib/chains.ts. Shared with
+ *  the v4 sibling (lib/uniswap-v4.ts). */
+export function stableUsd(chainId: number, token: string, atoms: bigint): number | null {
   const dec = chainById(chainId)?.stables[token.toLowerCase()]
   if (dec === undefined) return null
   const v = Number(atoms) / 10 ** dec
@@ -182,7 +193,7 @@ export async function buildUniswapSwap(params: UniswapSwapParams): Promise<Unisw
     .filter((t): t is { fee: number; amountOut: bigint } => t !== null && t.amountOut > BigInt(0))
     .sort((a, b) => (b.amountOut > a.amountOut ? 1 : -1))
   if (live.length === 0) {
-    throw new Error(`No Uniswap v3 pool on ${chain.name} can fill ${tokenLabel(params.sellToken, chainId)} → ${tokenLabel(params.buyToken, chainId)} for this amount.`)
+    throw new NoV3PoolError(`No Uniswap v3 pool on ${chain.name} can fill ${tokenLabel(params.sellToken, chainId)} → ${tokenLabel(params.buyToken, chainId)} for this amount.`)
   }
   const best = live[0]
   const minOut = (best.amountOut * BigInt(10_000 - slippageBps)) / BigInt(10_000)
