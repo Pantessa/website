@@ -29,7 +29,6 @@ import { EXAMPLE_PROMPTS } from '@/lib/examples'
 import SampleCallDemo from '@/components/SampleCallDemo'
 import { SplashDashboard } from '@/components/SplashDashboard'
 import ChatLoader from '@/components/ChatLoader'
-import McpActionPanel from '@/components/McpActionPanel'
 import { splashCapable } from '@/lib/splash/types'
 import ShareButton from '@/components/ShareButton'
 import EmbedThisChat from '@/components/EmbedThisChat'
@@ -199,8 +198,6 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
     setMcpRailOpen,
     mobileMcpRailOpen,
     setMobileMcpRailOpen,
-    mcpActionSlug,
-    setMcpActionSlug,
   } = useYeetfulStore()
 
   // Logged in, the top nav is removed — the chat toolbar carries the home
@@ -231,11 +228,6 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
   const [status, setStatus] = useState<string | null>(null)
-  // Typing dissolves the per-MCP action window (same contract as the splash).
-  useEffect(() => {
-    if (input.trim().length > 0 && mcpActionSlug) setMcpActionSlug(null)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [input])
   // Splash dashboard: tile count the scan resolved (null = not yet), so the
   // normal empty state only shows when the splash finds nothing.
   const [splashCount, setSplashCount] = useState<number | null>(null)
@@ -278,8 +270,6 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
   // paint a dashboard tile (Uniswap portfolio / Snapshot proposals / CoW
   // orders / Hyperliquid positions / …).
   const splashEligible = !!effectiveAddress && !autoRouter && activeServers.some(splashCapable)
-  // The MCP whose action window is open (set by the rail).
-  const actionServer = mcpActionSlug ? servers.find((s) => s.slug === mcpActionSlug) ?? null : null
 
   // "What can I do?" example: prefill the input and toggle the mapped agent on
   // (when it's in the live catalog). We prefill rather than auto-send so the
@@ -875,21 +865,6 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
             </div>
           )}
         </div>
-      )}
-
-      {/* Per-MCP action window — opened by clicking an MCP in the rail; shows
-          what the connected account can do there (portfolio, orders,
-          proposals) + ready prompts. Fades the moment the user types. */}
-      {!embedded && actionServer && (
-        <McpActionPanel
-          server={actionServer}
-          address={effectiveAddress}
-          onPick={(prompt, slug) => {
-            setMcpActionSlug(null)
-            pickExample(prompt, slug)
-          }}
-          onClose={() => setMcpActionSlug(null)}
-        />
       )}
 
       {/* Messages area */}

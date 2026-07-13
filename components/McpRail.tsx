@@ -2,10 +2,8 @@
 
 // The vertical MCP rail — chat's left tool column. The free first-party fleet
 // is the default view (fleet order); the paid x402 catalog sits behind the
-// Free/Paid toggle at the top. Clicking an MCP adds it to the working set AND
-// opens its action window (per-MCP wallet-aware splash — McpActionPanel);
-// clicking an active row re-opens the window. Deactivation is the check
-// button on the row.
+// Free/Paid toggle at the top. Clicking an MCP toggles it in/out of the working
+// set; the check button on an active row also removes it.
 //
 // Layout model mirrors ChatSidebar: in-flow motion.aside on desktop
 // (persisted preference), fixed overlay below lg (transient).
@@ -31,7 +29,6 @@ export default function McpRail() {
     setMcpRailOpen,
     mobileMcpRailOpen,
     setMobileMcpRailOpen,
-    setMcpActionSlug,
   } = useYeetfulStore()
 
   // Free (default) vs the paid x402 catalog.
@@ -78,15 +75,17 @@ export default function McpRail() {
     if (currentChatId) updateChatServers(currentChatId, next)
   }
 
-  // Row click: make sure it's in the set, then open its action window.
-  const openMcp = (server: (typeof servers)[number]) => {
-    if (!activeServerIds.includes(server.id)) persist([...activeServerIds, server.id])
-    setMcpActionSlug(server.slug)
+  // Row click toggles the MCP in or out of the working set.
+  const toggleMcp = (server: (typeof servers)[number]) => {
+    persist(
+      activeServerIds.includes(server.id)
+        ? activeServerIds.filter((id) => id !== server.id)
+        : [...activeServerIds, server.id],
+    )
   }
 
   const removeMcp = (server: (typeof servers)[number]) => {
     persist(activeServerIds.filter((id) => id !== server.id))
-    setMcpActionSlug(null)
   }
 
   if (!mounted) return null
@@ -95,14 +94,14 @@ export default function McpRail() {
     <div
       role="button"
       tabIndex={0}
-      onClick={() => openMcp(server)}
+      onClick={() => toggleMcp(server)}
       onKeyDown={(e) => {
         if (e.key === 'Enter' || e.key === ' ') {
           e.preventDefault()
-          openMcp(server)
+          toggleMcp(server)
         }
       }}
-      title={isActive ? `${server.name} — open actions` : `Add ${server.name} and see what it can do`}
+      title={isActive ? `${server.name} — click to remove from your set` : `Add ${server.name} to your set`}
       className={cn(
         'group w-full flex items-center gap-2.5 px-2.5 py-2 min-h-[44px] md:min-h-0 rounded-xl cursor-pointer transition-all text-left',
         isActive
@@ -237,7 +236,7 @@ export default function McpRail() {
             </div>
 
             <p className="px-3 pb-3 text-[10px] leading-relaxed text-[color:var(--muted-2)] border-t border-[var(--line)] pt-2">
-              Click an MCP to see what it can do with your account.
+              Click an MCP to add or remove it from your set.
             </p>
           </div>
         </motion.aside>
