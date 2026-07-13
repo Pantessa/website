@@ -20,6 +20,17 @@ export interface Plan {
   highlights: string[]
   /** Marked-up card emphasis on /pricing. */
   popular?: boolean
+  /** Live Stripe Product id this plan subscribes to. Checkout attaches the
+   * (code-authored) price to this product so the Stripe dashboard shows one
+   * product per plan instead of an ad-hoc product per session. Env override
+   * (`STRIPE_PRODUCT_<ID>`) wins so test-mode ids can differ from live. */
+  stripeProductId?: string
+}
+
+/** Resolve a plan's live Stripe product id, letting an env var override the
+ * baked-in default (test vs live). */
+export function stripeProductFor(plan: Plan): string | undefined {
+  return process.env[`STRIPE_PRODUCT_${plan.id.toUpperCase()}`] ?? plan.stripeProductId
 }
 
 export const PLANS: Plan[] = [
@@ -43,6 +54,7 @@ export const PLANS: Plan[] = [
     priceUsd: 99,
     credits: 25_000,
     popular: true,
+    stripeProductId: 'prod_UsTzqqSZp2V3Sj',
     highlights: [
       'Embed on 3 sites',
       'Full paid MCP directory in your sets',
@@ -56,6 +68,7 @@ export const PLANS: Plan[] = [
     tagline: 'For major venues and mega apps',
     priceUsd: 499,
     credits: 150_000,
+    stripeProductId: 'prod_UsU0jKG1QyPBh7',
     highlights: [
       'Unlimited embed sites',
       'White-label chrome',
