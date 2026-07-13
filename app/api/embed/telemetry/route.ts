@@ -1,13 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
 import prisma from '@/lib/db'
 import { resolveEmbedKey, sightingOrigin } from '@/lib/embed-key'
+import { isBuildPath } from '@/lib/build-path'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
 // Per-turn embed telemetry — the client posts one compact beacon after each
 // embedded chat turn (and again when something gets signed):
-//   { key, sessionId, page?, prompt?, outcome, artifact?, chain?, detail?, txUrl?, valueUsd? }
+//   { key, sessionId, page?, prompt?, outcome, artifact?, chain?, detail?, txUrl?, valueUsd?, buildPath? }
 // KEYED embeds only: telemetry is a feature of the embed key (it's what the
 // owner dashboard renders); keyless mounts record nothing here — with ONE
 // exception: FIRST-PARTY beacons ({ firstParty: true }, no key) from
@@ -83,6 +84,9 @@ export async function POST(req: NextRequest) {
         detail: firstParty ? undefined : str(body.detail, 220),
         txUrl: str(body.txUrl, 300),
         valueUsd: usd(body.valueUsd),
+        // Which layer built the artifact — allowlisted (self-reported like
+        // everything here); anything unrecognized is dropped, not stored.
+        buildPath: isBuildPath(body.buildPath) ? body.buildPath : undefined,
       },
     })
   } catch {

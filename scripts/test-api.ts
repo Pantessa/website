@@ -411,13 +411,15 @@ async function main() {
   })
   check('telemetry drops an unknown key (202)', teleBadKey.status === 202)
   // Money flow: a built-then-signed pair carrying the guardrail-priced
-  // notional — insights must sum it into builtUsd / signedUsd.
+  // notional — insights must sum it into builtUsd / signedUsd — plus the
+  // build layer that constructed it (embed_turns.build_path).
   const tele2 = await fetch(`${BASE}/api/embed/telemetry`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({
       key: ek.key, sessionId: 'harness-session-2', page: 'https://harness-embed.test/swap',
       prompt: 'swap 25 USDC to WETH', outcome: 'tx-built', artifact: 'tx', chain: 'base', valueUsd: 25.5,
+      buildPath: 'native-swap-uniswap',
     }),
   })
   const tele3 = await fetch(`${BASE}/api/embed/telemetry`, {
@@ -426,9 +428,21 @@ async function main() {
     body: JSON.stringify({
       key: ek.key, sessionId: 'harness-session-2', page: 'https://harness-embed.test/swap',
       outcome: 'signed', artifact: 'tx', chain: 'base', valueUsd: 25.5, txUrl: 'https://basescan.org/tx/0xharness',
+      buildPath: 'native-swap-uniswap',
     }),
   })
   check('telemetry records tx-built + signed turns with valueUsd', tele2.status === 200 && tele3.status === 200)
+  // A beacon with an unrecognized buildPath still records the turn — but the
+  // bogus layer name is dropped, landing in the 'unattributed' bucket.
+  const tele4 = await fetch(`${BASE}/api/embed/telemetry`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      key: ek.key, sessionId: 'harness-session-3', page: 'https://harness-embed.test/swap',
+      prompt: 'supply 1 USDC', outcome: 'tx-built', artifact: 'tx-chain', chain: 'ethereum', buildPath: 'not-a-layer',
+    }),
+  })
+  check('telemetry records a turn with an unknown buildPath (field dropped)', tele4.status === 200)
   // First-party lane (yeetful.com chat, keyless): only value-bearing outcomes
   // are accepted, and only from our own origin — both rejections write nothing.
   const fpAnswered = await fetch(`${BASE}/api/embed/telemetry`, {
@@ -448,7 +462,7 @@ async function main() {
   const ins = await (await fetch(`${BASE}/api/embeds/insights`, { headers: C })).json()
   check(
     'insights: the refused turn lands as a dead-end session with the verbatim ask',
-    ins.totals?.turns === 3 &&
+    ins.totals?.turns === 4 &&
       ins.totals?.deadEndSessions === 1 &&
       Array.isArray(ins.deadEnds) &&
       ins.deadEnds[0]?.turns?.[0]?.prompt === 'swap 5 USDC to WETH on my chain',
@@ -465,6 +479,26 @@ async function main() {
       (ins.perSite as { origin: string; signedUsd: number }[])?.find((s) => s.origin === 'https://harness-embed.test')?.signedUsd === 25.5,
   )
   check('insights: platform-wide `global` block is admin-only (absent for this wallet)', ins.global === undefined)
+  // Build-layer breakdown: the uniswap pair rolls up under its layer with both
+  // ends of the funnel; the bogus layer never appears (dropped at the API) and
+  // its turn lands in 'unattributed'.
+  const perPath = ins.perPath as { path: string; built: number; signed: number; builtUsd: number; signedUsd: number }[] | undefined
+  const uniRow = perPath?.find((p) => p.path === 'native-swap-uniswap')
+  check(
+    'insights: perPath pairs built → signed under the reported build layer',
+    uniRow?.built === 1 && uniRow?.signed === 1 && uniRow?.builtUsd === 25.5 && uniRow?.signedUsd === 25.5,
+    `uniRow=${JSON.stringify(uniRow)}`,
+  )
+  check(
+    'insights: unknown buildPath is dropped → unattributed bucket, never stored verbatim',
+    !perPath?.some((p) => p.path === 'not-a-layer') &&
+      (perPath?.find((p) => p.path === 'unattributed')?.built ?? 0) === 1,
+    `perPath=${JSON.stringify(perPath)}`,
+  )
+  check(
+    'insights: transactions carry buildPath',
+    (ins.transactions as { buildPath: string | null }[])?.some((x) => x.buildPath === 'native-swap-uniswap'),
+  )
 
   const ekGone = await fetch(`${BASE}/api/embed-keys/${ek.id}?purge=1`, { method: 'DELETE', headers: C })
   const ekAfter = await (await fetch(`${BASE}/api/embed-keys`, { headers: C })).json()

@@ -948,6 +948,9 @@ async function buildCrossChainSwapTurn(
     reply:
       `🔏 ${summary}\n\nSign the deposit transfer below — it sends exactly the quoted amount to NEAR Intents' one-time deposit address, and solvers deliver on the destination chain automatically.${expiry}${warn}`,
     txRequest: guard.tx,
+    // Which layer built it — echoed on the tx-built/signed telemetry beacons
+    // so /dashboard/embeds can break the funnel down per builder (lib/build-path.ts).
+    buildPath: 'native-cross-chain',
     // Invariant #11: a pending action — "cancel" drops it, "make it 2" rebuilds.
     workingContext: {
       v: 1 as const,
@@ -1118,6 +1121,7 @@ async function buildAaveSupplyTurn(
       `— The deposit credits ${walletAddress} and starts earning immediately; withdraw any time.\n` +
       `${stepsNote}${warns ? `\n${warns}` : ''}`,
     txChain: { summary, steps: guard.steps },
+    buildPath: 'native-aave-supply',
     guardrails,
     workingContext: {
       v: 1 as const,
@@ -1379,6 +1383,7 @@ async function buildAaveOpTurn(
       `${detail}\n` +
       `${stepsNote}${warns ? `\n${warns}` : ''}`,
     txChain: { summary, steps: guard.steps },
+    buildPath: 'native-aave-op',
     guardrails,
     workingContext: {
       v: 1 as const,
@@ -1485,6 +1490,7 @@ async function prepareSwapTurn(intent: SwapIntent, walletAddress: string | undef
               params: { sellToken: intent.sellToken, buyToken: intent.buyToken, amountHuman: intent.sellAmountHuman },
             },
           },
+          buildPath: 'native-swap-uniswap',
           guardrails: uni.guardrails,
           // Invariant #11: the artifact is a pending action — "make it 2" /
           // "cancel that" next turn resolve against this, not re-parsed prose.
@@ -1494,6 +1500,7 @@ async function prepareSwapTurn(intent: SwapIntent, walletAddress: string | undef
       return NextResponse.json({
         reply: `🔏 ${uni.summary}${warns.length ? `\n${warns.join('\n')}` : ''}`,
         txRequest: uni.swapTx,
+        buildPath: 'native-swap-uniswap',
         guardrails: uni.guardrails,
         workingContext: swapWorkingContext(intent, 'uniswap', ctx),
       })
@@ -1534,6 +1541,7 @@ async function prepareSwapTurn(intent: SwapIntent, walletAddress: string | undef
     return NextResponse.json({
       reply: `🔏 ${built.summary}${cowNote}${warns.length ? `\n${warns.join('\n')}` : ''}`,
       orderRequest: built.artifact.order,
+      buildPath: 'native-swap-cow',
       guardrails: built.guardrails,
       // Invariant #11: the order awaits SignOrderButton — write it as the
       // pending action so amount amendments and cancels resolve against it.
@@ -2093,11 +2101,13 @@ async function runWithBurner(
             // near-intents build_swap).
             const art = buildSignableArtifact(json)
             if (art) {
+              // buildPath 'planner': the signable came out of a tool the
+              // ENDPOINT PLANNER picked — not a native builder (lib/build-path.ts).
               if (art.kind === 'eip712-vote') {
-                return NextResponse.json({ reply: `🗳️ ${art.summary}`, receipts, payer: 'the house wallet', voteRequest: art.vote, notes })
+                return NextResponse.json({ reply: `🗳️ ${art.summary}`, receipts, payer: 'the house wallet', voteRequest: art.vote, buildPath: 'planner', notes })
               }
               if (art.kind === 'eip712-order') {
-                return NextResponse.json({ reply: `🔏 ${art.summary}`, receipts, payer: 'the house wallet', orderRequest: art.order, notes })
+                return NextResponse.json({ reply: `🔏 ${art.summary}`, receipts, payer: 'the house wallet', orderRequest: art.order, buildPath: 'planner', notes })
               }
               if (art.kind === 'evm-tx-chain') {
                 return NextResponse.json({
@@ -2105,10 +2115,11 @@ async function runWithBurner(
                   receipts,
                   payer: 'the house wallet',
                   txChain: art.chain,
+                  buildPath: 'planner',
                   notes,
                 })
               }
-              return NextResponse.json({ reply: `🔏 ${art.summary}`, receipts, payer: 'the house wallet', txRequest: art.tx, notes })
+              return NextResponse.json({ reply: `🔏 ${art.summary}`, receipts, payer: 'the house wallet', txRequest: art.tx, buildPath: 'planner', notes })
             }
           } catch (err) {
             const note = err instanceof Error ? err.message : 'call failed'
@@ -2161,7 +2172,9 @@ async function runWithBurner(
     reply += `\n\n— spend grant “${grant.label}”: $${spentToday.toFixed(2)}/$${policy.perDayUsd} today`
     if (blocked.length) reply += ` · blocked ${blocked.join(', ')}`
   }
-  return NextResponse.json({ reply, receipts, payer: 'the house wallet', voteRequest: voteRequest ?? undefined, portfolio: portfolioCard, workingContext: carryContext(workingContext, carriedEntities) })
+  // buildPath 'manual': the vote artifact came from a DIRECTLY-called
+  // working-set tool (prepare_vote in the mcpDataServers loop) — no planning.
+  return NextResponse.json({ reply, receipts, payer: 'the house wallet', voteRequest: voteRequest ?? undefined, ...(voteRequest ? { buildPath: 'manual' } : {}), portfolio: portfolioCard, workingContext: carryContext(workingContext, carriedEntities) })
 }
 
 async function paidGet(endpoint: string, queryParam: string, value: string) {
@@ -2516,14 +2529,16 @@ export function streamAutoRouter(
           // — surface it exactly like burner mode; the user signs the ACTION,
           // no data plan needed. Signables break the loop (invariant 4).
           if (decision.artifact) {
+            // buildPath 'planner': the Auto-Router engine picked the tool that
+            // returned this signable (lib/build-path.ts).
             if (decision.artifact.kind === 'eip712-vote') {
-              send({ type: 'reply', content: `🗳️ ${decision.artifact.summary}`, receipts, payer: 'your wallet', voteRequest: decision.artifact.vote, trace: trace(), workingContext: carryContext(workingContext, decision.entities) })
+              send({ type: 'reply', content: `🗳️ ${decision.artifact.summary}`, receipts, payer: 'your wallet', voteRequest: decision.artifact.vote, buildPath: 'planner', trace: trace(), workingContext: carryContext(workingContext, decision.entities) })
             } else if (decision.artifact.kind === 'eip712-order') {
-              send({ type: 'reply', content: `🔏 ${decision.artifact.summary}`, receipts, payer: 'your wallet', orderRequest: decision.artifact.order, trace: trace(), workingContext: carryContext(workingContext, decision.entities) })
+              send({ type: 'reply', content: `🔏 ${decision.artifact.summary}`, receipts, payer: 'your wallet', orderRequest: decision.artifact.order, buildPath: 'planner', trace: trace(), workingContext: carryContext(workingContext, decision.entities) })
             } else if (decision.artifact.kind === 'evm-tx-chain') {
-              send({ type: 'reply', content: `🔏 ${decision.artifact.summary}\n🔗 ${decision.artifact.chain.steps.length} steps in the card below — each appears as the previous confirms.`, receipts, payer: 'your wallet', txChain: decision.artifact.chain, trace: trace(), workingContext: carryContext(workingContext, decision.entities) })
+              send({ type: 'reply', content: `🔏 ${decision.artifact.summary}\n🔗 ${decision.artifact.chain.steps.length} steps in the card below — each appears as the previous confirms.`, receipts, payer: 'your wallet', txChain: decision.artifact.chain, buildPath: 'planner', trace: trace(), workingContext: carryContext(workingContext, decision.entities) })
             } else {
-              send({ type: 'reply', content: `🔏 ${decision.artifact.summary}`, receipts, payer: 'your wallet', txRequest: decision.artifact.tx, trace: trace(), workingContext: carryContext(workingContext, decision.entities) })
+              send({ type: 'reply', content: `🔏 ${decision.artifact.summary}`, receipts, payer: 'your wallet', txRequest: decision.artifact.tx, buildPath: 'planner', trace: trace(), workingContext: carryContext(workingContext, decision.entities) })
             }
             recordTurn({ payer: 'your wallet', shortlisted: shortlistedOf(decision), picks: picksOf(decision), intent: intentOf(decision) })
             return finish()
@@ -2588,17 +2603,19 @@ export function streamAutoRouter(
         // it for explicit approval instead of synthesizing an answer. Votes reuse
         // the existing SignVoteButton (voteRequest meta); a raw tx rides txRequest.
         if (decision.artifact) {
+          // buildPath 'planner': the Auto-Router engine picked the tool that
+          // returned this signable (lib/build-path.ts).
           if (decision.artifact.kind === 'eip712-vote') {
-            send({ type: 'reply', content: `🗳️ ${decision.artifact.summary}`, receipts, payer: 'the house wallet', voteRequest: decision.artifact.vote, trace: trace() })
+            send({ type: 'reply', content: `🗳️ ${decision.artifact.summary}`, receipts, payer: 'the house wallet', voteRequest: decision.artifact.vote, buildPath: 'planner', trace: trace() })
           } else if (decision.artifact.kind === 'eip712-order') {
             // Intent-based order (CoW swap / OpenSea): the built order is sent
             // for signature. Guardrails (A3) gate it; the sign UI is A4.
-            send({ type: 'reply', content: `🔏 ${decision.artifact.summary}`, receipts, payer: 'the house wallet', orderRequest: decision.artifact.order, trace: trace() })
+            send({ type: 'reply', content: `🔏 ${decision.artifact.summary}`, receipts, payer: 'the house wallet', orderRequest: decision.artifact.order, buildPath: 'planner', trace: trace() })
           } else if (decision.artifact.kind === 'evm-tx-chain') {
             // Multi-step build (approve → swap): one self-advancing card.
-            send({ type: 'reply', content: `🔏 ${decision.artifact.summary}\n🔗 ${decision.artifact.chain.steps.length} steps in the card below — each appears as the previous confirms.`, receipts, payer: 'the house wallet', txChain: decision.artifact.chain, trace: trace() })
+            send({ type: 'reply', content: `🔏 ${decision.artifact.summary}\n🔗 ${decision.artifact.chain.steps.length} steps in the card below — each appears as the previous confirms.`, receipts, payer: 'the house wallet', txChain: decision.artifact.chain, buildPath: 'planner', trace: trace() })
           } else {
-            send({ type: 'reply', content: `🔏 ${decision.artifact.summary}`, receipts, payer: 'the house wallet', txRequest: decision.artifact.tx, trace: trace() })
+            send({ type: 'reply', content: `🔏 ${decision.artifact.summary}`, receipts, payer: 'the house wallet', txRequest: decision.artifact.tx, buildPath: 'planner', trace: trace() })
           }
           recordTurn({ payer: 'the house wallet', shortlisted: shortlistedOf(decision), picks: picksOf(decision), intent: intentOf(decision) })
           return finish()
