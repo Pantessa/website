@@ -14,6 +14,7 @@ import SignVoteButton from '@/components/SignVoteButton'
 import SignOrderButton from '@/components/SignOrderButton'
 import SignHlActionButton from '@/components/SignHlActionButton'
 import JobCard from '@/components/JobCard'
+import GuardianPolicyCard from '@/components/GuardianPolicyCard'
 import SendTxButton from '@/components/SendTxButton'
 import SendTxChain from '@/components/SendTxChain'
 import { orderRequestOf, txRequestOf, txChainOf } from '@/lib/transaction-layer'
@@ -96,7 +97,7 @@ function CopyTurn({ text, dark }: { text: string; dark?: boolean }) {
   )
 }
 
-function buildMeta(receipts: unknown, payer: unknown, voteRequest: unknown, voteCandidates?: unknown, routeReport?: unknown, routerTrace?: unknown, voteProposal?: unknown, orderRequest?: unknown, guardrails?: unknown, txRequest?: unknown, workingContext?: unknown, txChain?: unknown, clarify?: unknown, connectWallet?: unknown, connectAsk?: string, portfolio?: unknown, buildPath?: unknown, jobId?: unknown) {
+function buildMeta(receipts: unknown, payer: unknown, voteRequest: unknown, voteCandidates?: unknown, routeReport?: unknown, routerTrace?: unknown, voteProposal?: unknown, orderRequest?: unknown, guardrails?: unknown, txRequest?: unknown, workingContext?: unknown, txChain?: unknown, clarify?: unknown, connectWallet?: unknown, connectAsk?: string, portfolio?: unknown, buildPath?: unknown, jobId?: unknown, guardianPolicyId?: unknown) {
   const meta: Record<string, unknown> = {}
   if (Array.isArray(receipts) && receipts.length) {
     meta.receipts = receipts
@@ -126,6 +127,8 @@ function buildMeta(receipts: unknown, payer: unknown, voteRequest: unknown, vote
   // A compiled multi-step job — JobCard polls /api/jobs/[id] and embeds the
   // per-step sign buttons as the runner offers them.
   if (typeof jobId === 'string' && jobId) meta.jobId = jobId
+  // A just-armed guardian policy — GuardianPolicyCard watches it live.
+  if (typeof guardianPolicyId === 'string' && guardianPolicyId) meta.guardianPolicyId = guardianPolicyId
   // An ambiguous money/governance target the planner refused to guess (RR17)
   // — ClarifyChips reads this; a chip's pick is sent as the next message.
   if (clarify && typeof clarify === 'object') meta.clarify = clarify
@@ -514,7 +517,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
           addMessage(chatId, {
             role: 'assistant',
             content: out.content,
-            meta: buildMeta(out.receipts, out.payer, out.voteRequest, undefined, out.routeReport, out.routerTrace, out.voteProposal, out.orderRequest, undefined, out.txRequest, out.workingContext, out.txChain, out.clarify, undefined, undefined, out.portfolio, out.buildPath, out.jobId),
+            meta: buildMeta(out.receipts, out.payer, out.voteRequest, undefined, out.routeReport, out.routerTrace, out.voteProposal, out.orderRequest, undefined, out.txRequest, out.workingContext, out.txChain, out.clarify, undefined, undefined, out.portfolio, out.buildPath, out.jobId, out.guardianPolicyId),
           })
           reportEmbedTurn(userMsg, { ...out, reply: out.content })
         }
@@ -581,7 +584,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
         addMessage(chatId, {
           role: 'assistant',
           content: data.reply || data.error || 'No response.',
-          meta: buildMeta(data.receipts, data.payer, data.voteRequest, data.voteCandidates, undefined, undefined, data.voteProposal, data.orderRequest, data.guardrails, data.txRequest, data.workingContext, data.txChain, data.clarify, data.connectWallet, userMsg, data.portfolio, data.buildPath, data.jobId),
+          meta: buildMeta(data.receipts, data.payer, data.voteRequest, data.voteCandidates, undefined, undefined, data.voteProposal, data.orderRequest, data.guardrails, data.txRequest, data.workingContext, data.txChain, data.clarify, data.connectWallet, userMsg, data.portfolio, data.buildPath, data.jobId, data.guardianPolicyId),
         })
         reportEmbedTurn(userMsg, data as Record<string, unknown>)
       }
@@ -754,7 +757,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
     history: { role: string; content: string }[],
     workingContext?: WorkingContext,
   ): Promise<
-    | { kind: 'reply'; content: string; receipts?: unknown; payer?: string; voteRequest?: unknown; voteProposal?: unknown; routeReport?: unknown; routerTrace?: unknown; orderRequest?: unknown; txRequest?: unknown; txChain?: unknown; clarify?: unknown; workingContext?: unknown; portfolio?: unknown; buildPath?: unknown; jobId?: unknown }
+    | { kind: 'reply'; content: string; receipts?: unknown; payer?: string; voteRequest?: unknown; voteProposal?: unknown; routeReport?: unknown; routerTrace?: unknown; orderRequest?: unknown; txRequest?: unknown; txChain?: unknown; clarify?: unknown; workingContext?: unknown; portfolio?: unknown; buildPath?: unknown; jobId?: unknown; guardianPolicyId?: unknown }
     | { kind: 'plan'; data: { plan: unknown; payments: PaymentToSign[]; listedOnly: unknown; notes?: unknown; turnId?: unknown; capabilities?: unknown } }
   > => {
     clearRouterTrace()
@@ -783,7 +786,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
     const reader = res.body.getReader()
     const decoder = new TextDecoder()
     let buf = ''
-    let reply: { kind: 'reply'; content: string; receipts?: unknown; payer?: string; voteRequest?: unknown; voteProposal?: unknown; routeReport?: unknown; routerTrace?: unknown; orderRequest?: unknown; txRequest?: unknown; txChain?: unknown; clarify?: unknown; workingContext?: unknown; portfolio?: unknown; buildPath?: unknown; jobId?: unknown } | null = null
+    let reply: { kind: 'reply'; content: string; receipts?: unknown; payer?: string; voteRequest?: unknown; voteProposal?: unknown; routeReport?: unknown; routerTrace?: unknown; orderRequest?: unknown; txRequest?: unknown; txChain?: unknown; clarify?: unknown; workingContext?: unknown; portfolio?: unknown; buildPath?: unknown; jobId?: unknown; guardianPolicyId?: unknown } | null = null
     for (;;) {
       const { done, value } = await reader.read()
       if (done) break
@@ -830,6 +833,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
             portfolio: event.portfolio,
             buildPath: event.buildPath,
             jobId: event.jobId,
+            guardianPolicyId: event.guardianPolicyId,
           }
         } else if (event.type === 'error') {
           const message = typeof event.message === 'string' ? event.message : 'Auto-router failed'
@@ -1219,6 +1223,10 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
                           />
                         ) : null
                       })()}
+                    {msg.role === 'assistant' &&
+                      typeof (msg.meta as { guardianPolicyId?: unknown } | undefined)?.guardianPolicyId === 'string' && (
+                        <GuardianPolicyCard policyId={(msg.meta as { guardianPolicyId: string }).guardianPolicyId} />
+                      )}
                     {msg.role === 'assistant' &&
                       typeof (msg.meta as { jobId?: unknown } | undefined)?.jobId === 'string' && (
                         <JobCard

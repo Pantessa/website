@@ -78,13 +78,19 @@ export async function GET() {
     const x402Where = { ok: true, amountUsd: { gt: 0 }, NOT: { note: 'dry-run' } }
     const x402 = (extra: object = {}) =>
       prisma.spendLedgerEntry.aggregate({ where: { ...x402Where, ...extra }, _sum: { amountUsd: true }, _count: { _all: true } })
-    const [signedAll, signedWindow, builtWindow, chatSignedAll, x402All, x402Window, pathAgg] = await Promise.all([
+    // Guardian autonomous closes settle server-side (no client beacon), so
+    // they're summed straight from their receipt table.
+    const guardian = (extra: object = {}) =>
+      prisma.hlGuardianRun.aggregate({ where: { action: 'closed', valueUsd: { gt: 0 }, ...extra }, _sum: { valueUsd: true }, _count: { _all: true } })
+    const [signedAll, signedWindow, builtWindow, chatSignedAll, x402All, x402Window, guardianAll, guardianWindow, pathAgg] = await Promise.all([
       sum({ outcome: 'signed' }),
       sum({ outcome: 'signed', createdAt: { gte: since } }),
       sum({ outcome: 'tx-built', createdAt: { gte: since } }),
       sum({ outcome: 'signed', embedKeyId: '' }),
       x402(),
       x402({ createdAt: { gte: since } }),
+      guardian(),
+      guardian({ createdAt: { gte: since } }),
       // Platform-wide per-build-layer split (window) — covers every embed key
       // AND the first-party chat lane, so it answers "where are transactions
       // being created and failing" for the whole system.
@@ -111,9 +117,15 @@ export async function GET() {
       }
       globalPerPath.set(key, p)
     }
+    const guardianAllTimeUsd = round(guardianAll._sum.valueUsd ?? 0)
     global = {
-      // THE system number: tx notional signed + x402 fees settled, all time.
-      systemTotalUsd: round(allTimeSignedUsd + x402AllTimeUsd),
+      // THE system number: tx notional signed + x402 fees settled + guardian
+      // autonomous closes, all time.
+      systemTotalUsd: round(allTimeSignedUsd + x402AllTimeUsd + guardianAllTimeUsd),
+      guardianAllTimeUsd,
+      guardianAllTimeCount: guardianAll._count._all,
+      guardianWindowUsd: round(guardianWindow._sum.valueUsd ?? 0),
+      guardianWindowCount: guardianWindow._count._all,
       allTimeSignedUsd,
       allTimeSignedCount: signedAll._count._all,
       windowSignedUsd: round(signedWindow._sum.valueUsd ?? 0),

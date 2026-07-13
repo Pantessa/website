@@ -674,7 +674,9 @@ export async function POST(req: NextRequest) {
         reply:
           `🛡️ **Armed.** ${p.kind === 'stop_loss' ? 'Stop-loss' : 'Take-profit'} on your ${p.coin} ${p.side}: closes reduce-only when ` +
           `${p.triggerMode === 'price' ? `the mark crosses ${p.triggerValue}` : `price moves ${p.triggerValue}% ${p.kind === 'stop_loss' ? 'against' : 'for'} you from entry`}. ` +
-          `(${armed.positionNote}.) The guardian checks every minute; every action lands as a receipt on the [Guardian dashboard](/dashboard/guardian), where you can pause or retire it.`,
+          `(${armed.positionNote}.)`,
+        guardianPolicyId: p.id,
+        buildPath: 'native-hl-guardian',
       })
     }
 
