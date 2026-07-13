@@ -115,7 +115,15 @@ export default function McpRail() {
           : 'text-[color:var(--muted)] hover:text-white hover:bg-[var(--surf-1)]',
       )}
     >
-      <span className="w-9 h-9 grid place-items-center flex-shrink-0 rounded-lg bg-black/30 border border-[var(--line)]">
+      {/* In-set rows tint the mark with the accent (the vendored marks render
+          in currentColor, so this is just a color flip; full-color logo_url
+          <img> customs keep their own colors). */}
+      <span
+        className={cn(
+          'w-9 h-9 grid place-items-center flex-shrink-0 rounded-lg bg-black/30 border border-[var(--line)] transition-colors',
+          isActive && 'text-[color:var(--accent)]',
+        )}
+      >
         <BrandIcon server={server} size={22} />
       </span>
       <span className="flex-1 min-w-0">
