@@ -5,6 +5,10 @@
     {
       "path": "/api/cron/hl-guardian",
       "schedule": "* * * * *"
+    },
+    {
+      "path": "/api/cron/jobs",
+      "schedule": "* * * * *"
     }
   ],
   "functions": {

@@ -78,6 +78,7 @@ import {
   ARBITRUM_USDC,
   type HlOrderIntent,
 } from '../lib/hyperliquid-exec'
+import { compileJobAsk } from '../lib/jobs'
 
 const BASE = process.env.BASE ?? 'http://localhost:3000'
 const DOMAIN = new URL(BASE).host
@@ -2661,6 +2662,36 @@ async function main() {
       check('guardian: authorized sweep runs and reports', cronOk.status === 200 && typeof summary.checked === 'number', JSON.stringify(summary))
     } else {
       console.log('  ⚪ guardian: CRON_SECRET not in harness env — live sweep check skipped')
+    }
+  }
+
+  // ── Multi-step jobs (compiler + runner auth) ──────────────────────────────
+  console.log('— jobs')
+  {
+    const compiled = compileJobAsk(
+      'swap 25 usdc from base to arbitrum, then deposit 24 usdc to hyperliquid, then long $12 of eth on hyperliquid, then protect my eth long with a 5% stop',
+    )
+    check(
+      'jobs: canonical 4-segment ask compiles to 6 steps (sign/wait pairs + order + auto arm)',
+      !!compiled && !('problem' in compiled) && compiled.steps.length === 6 &&
+        JSON.stringify(compiled.steps.map((s) => s.kind)) === JSON.stringify(['sign', 'wait', 'sign', 'wait', 'sign', 'auto']) &&
+        compiled.steps[0].builder === 'native-cross-chain' && compiled.steps[2].builder === 'native-hl-exec' && compiled.steps[5].builder === 'native-hl-guardian' &&
+        (compiled.steps[1].waitPredicate as { kind?: string }).kind === 'oneclick' && (compiled.steps[3].waitPredicate as { kind?: string }).kind === 'hl-credit',
+      compiled && !('problem' in compiled) ? compiled.steps.map((s) => `${s.kind}:${s.builder}`).join(',') : JSON.stringify(compiled),
+    )
+    check(
+      'jobs: single asks and non-job compounds stay with the native layers (null)',
+      compileJobAsk('swap 1 usdc for eth') === null && compileJobAsk('tell me a joke then sing a song') === null && compileJobAsk('what is hyperliquid?') === null,
+    )
+    const partial = compileJobAsk('deposit 20 usdc to hyperliquid then tell me a joke')
+    check('jobs: a compiled-then-unparseable segment refuses HONESTLY (problem, not a guess)', !!partial && 'problem' in partial && /step 2/i.test(partial.problem))
+    const jobsAnon = await fetch(`${BASE}/api/jobs/nonexistent`)
+    const jobsCronAnon = await fetch(`${BASE}/api/cron/jobs`)
+    check('jobs: job read unauth → 401; cron unauth → 401', jobsAnon.status === 401 && jobsCronAnon.status === 401)
+    if (process.env.CRON_SECRET) {
+      const cronOk = await fetch(`${BASE}/api/cron/jobs`, { headers: { authorization: `Bearer ${process.env.CRON_SECRET}` } })
+      const body = await cronOk.json()
+      check('jobs: authorized runner tick reports', cronOk.status === 200 && typeof body.touched === 'number', JSON.stringify(body))
     }
   }
 
