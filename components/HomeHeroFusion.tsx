@@ -28,11 +28,57 @@ const EMBED_SRC = '/embed?mcps=uniswap-free,snapshot-free&theme=dark'
  * protocol's real mark (resolved from the shared registry) in its brand hue,
  * falling back to `glyph` for "your MCP". */
 const SOURCES = [
-  { x: 0.09, y: 0.3, color: '#FF6BAF', name: 'Uniswap', glyph: 'U', dashed: false },
-  { x: 0.91, y: 0.27, color: '#FFC94D', name: 'Snapshot', glyph: '⚡', dashed: false },
-  { x: 0.11, y: 0.76, color: '#7AA7FF', name: 'CoW', glyph: 'C', dashed: false },
-  { x: 0.89, y: 0.78, color: '#34e3a0', name: 'your MCP', glyph: '+', dashed: true },
+  { x: 0.09, y: 0.3, color: '#FF6BAF', light: '#d81f78', name: 'Uniswap', glyph: 'U', dashed: false },
+  { x: 0.91, y: 0.27, color: '#FFC94D', light: '#b07c00', name: 'Snapshot', glyph: '⚡', dashed: false },
+  { x: 0.11, y: 0.76, color: '#7AA7FF', light: '#2f62d9', name: 'CoW', glyph: 'C', dashed: false },
+  { x: 0.89, y: 0.78, color: '#34e3a0', light: '#0e8f62', name: 'your MCP', glyph: '+', dashed: true },
 ]
+
+/** Canvas palettes per theme. Dark paints additive light ('lighter' blends
+ * glows on black); light paints ink on paper (plain compositing, deeper
+ * hues, a soft emerald bloom for the core). Read live each frame so the
+ * footer toggle re-inks the art without a remount. */
+const CANVAS_PALETTES = {
+  dark: {
+    composite: 'lighter' as GlobalCompositeOperation,
+    source: (i: number) => SOURCES[i].color,
+    core0: 'rgba(210,255,236,',
+    core1: 'rgba(52,227,160,',
+    nucleus: 'rgba(235,255,246,',
+    writerA: '#8effc9',
+    writerB: '#ffd98a',
+    burst: '#8effc9',
+    ring: 'rgba(52,227,160,',
+  },
+  light: {
+    composite: 'source-over' as GlobalCompositeOperation,
+    source: (i: number) => SOURCES[i].light,
+    core0: 'rgba(12,122,84,',
+    core1: 'rgba(14,143,98,',
+    nucleus: 'rgba(7,74,51,',
+    writerA: '#0e8f62',
+    writerB: '#a3720c',
+    burst: '#0e8f62',
+    ring: 'rgba(14,143,98,',
+  },
+}
+const canvasPalette = () =>
+  document.documentElement.dataset.theme === 'light' ? CANVAS_PALETTES.light : CANVAS_PALETTES.dark
+
+/** Re-render when the site theme flips (the footer toggle stamps
+ * data-theme on <html>) — chips and static frames need the new hues. */
+function useSiteTheme() {
+  const [light, setLight] = useState(false)
+  useEffect(() => {
+    const el = document.documentElement
+    const update = () => setLight(el.dataset.theme === 'light')
+    update()
+    const mo = new MutationObserver(update)
+    mo.observe(el, { attributes: true, attributeFilter: ['data-theme'] })
+    return () => mo.disconnect()
+  }, [])
+  return light
+}
 
 /** The mark for a source's `<i>` glyph slot — real logo when we have one. */
 function SourceGlyph({ name, glyph }: { name: string; glyph: string }) {
@@ -167,32 +213,36 @@ function FusionCanvas({
     }
 
     const drawCore = (now: number, flash: number) => {
+      const pal = canvasPalette()
+      // ink on paper wants a gentler bloom than additive light on black
+      const soft = pal.composite === 'lighter' ? 1 : 0.6
       const cx = px(CORE.x)
       const cy = py(CORE.y)
       const breathe = 1 + 0.08 * Math.sin(now / 1200)
       const R = Math.min(w, h) * 0.16 * breathe * (1 + flash * 0.25)
       const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, R)
-      g.addColorStop(0, `rgba(210,255,236,${0.5 + flash * 0.4})`)
-      g.addColorStop(0.25, `rgba(52,227,160,${0.28 + flash * 0.25})`)
-      g.addColorStop(0.6, 'rgba(52,227,160,0.07)')
-      g.addColorStop(1, 'rgba(52,227,160,0)')
+      g.addColorStop(0, `${pal.core0}${(0.5 + flash * 0.4) * soft})`)
+      g.addColorStop(0.25, `${pal.core1}${(0.28 + flash * 0.25) * soft})`)
+      g.addColorStop(0.6, `${pal.core1}${0.07 * soft})`)
+      g.addColorStop(1, `${pal.core1}0)`)
       ctx.fillStyle = g
       ctx.beginPath()
       ctx.arc(cx, cy, R, 0, Math.PI * 2)
       ctx.fill()
       // nucleus
-      ctx.fillStyle = `rgba(235,255,246,${0.8 + flash * 0.2})`
+      ctx.fillStyle = `${pal.nucleus}${0.8 + flash * 0.2})`
       ctx.beginPath()
       ctx.arc(cx, cy, 2.6 + flash * 1.6, 0, Math.PI * 2)
       ctx.fill()
     }
 
     const drawStatic = () => {
+      const pal = canvasPalette()
       ctx.clearRect(0, 0, w, h)
-      ctx.globalCompositeOperation = 'lighter'
+      ctx.globalCompositeOperation = pal.composite
       // dotted field lines + a calm core — the no-motion rendering
       SOURCES.forEach((s, i) => {
-        ctx.strokeStyle = `${s.color}55`
+        ctx.strokeStyle = `${pal.source(i)}55`
         ctx.setLineDash([2, 7])
         ctx.beginPath()
         for (let t = 0; t <= 1.001; t += 0.02) {
@@ -210,7 +260,11 @@ function FusionCanvas({
       drawStatic()
       const onR = () => drawStatic()
       window.addEventListener('resize', onR)
+      // the static frame must re-ink when the footer toggle flips the theme
+      const mo = new MutationObserver(onR)
+      mo.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] })
       return () => {
+        mo.disconnect()
         window.removeEventListener('resize', onR)
         window.removeEventListener('resize', resize)
         window.removeEventListener('mousemove', onMove)
@@ -258,8 +312,9 @@ function FusionCanvas({
         }
         flash = Math.max(0, flash - dt / 900)
 
+        const pal = canvasPalette()
         ctx.clearRect(0, 0, w, h)
-        ctx.globalCompositeOperation = 'lighter'
+        ctx.globalCompositeOperation = pal.composite
 
         // rivers (bent by the cursor lens)
         for (let i = particles.length - 1; i >= 0; i--) {
@@ -281,7 +336,7 @@ function FusionCanvas({
             y += dy * pull
           }
           const alpha = Math.sin(Math.PI * p.t) * 0.85
-          ctx.fillStyle = SOURCES[p.src].color
+          ctx.fillStyle = pal.source(p.src)
           ctx.globalAlpha = alpha
           ctx.beginPath()
           ctx.arc(x, y, p.size * (0.6 + 0.6 * (1 - p.t)), 0, Math.PI * 2)
@@ -304,7 +359,7 @@ function FusionCanvas({
           const x = cx + (anchor.x - cx) * e + wr.ox * Math.sin(Math.PI * wr.t)
           const y = cy + (anchor.y - cy) * e + wr.oy * Math.sin(Math.PI * wr.t) + Math.sin(wr.t * 14 + wr.jitter) * 3
           ctx.globalAlpha = Math.sin(Math.PI * wr.t) * 0.9
-          ctx.fillStyle = wr.jitter > Math.PI ? '#8effc9' : '#ffd98a'
+          ctx.fillStyle = wr.jitter > Math.PI ? pal.writerA : pal.writerB
           ctx.beginPath()
           ctx.arc(x, y, 1.5, 0, Math.PI * 2)
           ctx.fill()
@@ -322,7 +377,7 @@ function FusionCanvas({
             continue
           }
           ctx.globalAlpha = Math.max(0, b.life) * 0.9
-          ctx.fillStyle = '#8effc9'
+          ctx.fillStyle = pal.burst
           ctx.beginPath()
           ctx.arc(b.x, b.y, 1.6, 0, Math.PI * 2)
           ctx.fill()
@@ -334,7 +389,7 @@ function FusionCanvas({
         for (const r of rings) {
           r.r += dt * 0.09
           r.a *= 1 - dt / 1400
-          ctx.strokeStyle = `rgba(52,227,160,${r.a})`
+          ctx.strokeStyle = `${pal.ring}${r.a})`
           ctx.lineWidth = 1.4
           ctx.beginPath()
           ctx.arc(px(CORE.x), py(CORE.y), r.r, 0, Math.PI * 2)
@@ -378,6 +433,7 @@ export default function HomeHeroFusion() {
   const [liveLine, setLiveLine] = useState<string | null>(null)
   const liveAtRef = useRef(0)
   const [embedSrc, setEmbedSrc] = useState(EMBED_SRC)
+  const lightMode = useSiteTheme()
 
   // "Get started" opens the sign-in modal for newcomers instead of dumping
   // them on the SIWE-gated dashboard. Signed-in / connected visitors skip the
@@ -389,10 +445,12 @@ export default function HomeHeroFusion() {
   useEffect(() => setMounted(true), [])
   const showSignInModal = mounted && cdpEnabled && !isConnected && !sessionAddress
 
-  // Pin the embed to this origin so its postMessage events reach us.
+  // Pin the embed to this origin so its postMessage events reach us, and
+  // hand it the site theme so the summoned chat matches the page.
   useEffect(() => {
-    setEmbedSrc(`${EMBED_SRC}&host=${encodeURIComponent(window.location.origin)}`)
-  }, [])
+    const src = lightMode ? EMBED_SRC.replace('theme=dark', 'theme=light') : EMBED_SRC
+    setEmbedSrc(`${src}&host=${encodeURIComponent(window.location.origin)}`)
+  }, [lightMode])
 
   // The transmutation clock: rotate the caption and ask the canvas for a
   // ring pulse + writer burst on the same beat — unless a REAL turn just
@@ -449,7 +507,7 @@ export default function HomeHeroFusion() {
           <span
             key={s.name}
             className={`fhero__chip mono${s.dashed ? ' fhero__chip--dashed' : ''}`}
-            style={{ left: `${s.x * 100}%`, top: `${s.y * 100}%`, ['--pc' as string]: s.color }}
+            style={{ left: `${s.x * 100}%`, top: `${s.y * 100}%`, ['--pc' as string]: lightMode ? s.light : s.color }}
           >
             <SourceGlyph name={s.name} glyph={s.glyph} /> {s.name}
           </span>
@@ -502,7 +560,7 @@ export default function HomeHeroFusion() {
       {/* phones: the sources as a plain row (the absolute chips hide) */}
       <div className="fhero__chiprow" aria-hidden="true">
         {SOURCES.map((s) => (
-          <span key={s.name} className={`fhero__chip fhero__chip--flow mono${s.dashed ? ' fhero__chip--dashed' : ''}`} style={{ ['--pc' as string]: s.color }}>
+          <span key={s.name} className={`fhero__chip fhero__chip--flow mono${s.dashed ? ' fhero__chip--dashed' : ''}`} style={{ ['--pc' as string]: lightMode ? s.light : s.color }}>
             <SourceGlyph name={s.name} glyph={s.glyph} /> {s.name}
           </span>
         ))}

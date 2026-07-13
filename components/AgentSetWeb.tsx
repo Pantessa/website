@@ -83,7 +83,7 @@ export default function AgentSetWeb() {
         const delay = (-Math.random() * dur).toFixed(1)
         const op = Math.random() * 0.4 + 0.1
         const drift = (Math.random() * 64 - 32).toFixed(0)
-        const bg = Math.random() < 0.22 ? `background:rgba(52,227,160,${(op * 1.15).toFixed(2)})` : ''
+        const bg = Math.random() < 0.22 ? `background:color-mix(in srgb, var(--haccent) ${Math.round(op * 115)}%, transparent)` : ''
         h += `<span class="pw-pt" style="left:${left}%;width:${size}px;height:${size}px;opacity:${op.toFixed(2)};--drift:${drift}px;animation-duration:${dur.toFixed(1)}s;animation-delay:${delay}s;${bg}"></span>`
       }
       pc.innerHTML = h
