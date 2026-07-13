@@ -19,12 +19,12 @@ import { useAccount } from 'wagmi'
 import { CheckCircle2, Circle, Link2, Loader2, ShieldX, ExternalLink } from 'lucide-react'
 import SendTxButton from '@/components/SendTxButton'
 import type { TxChainRequest, TxChainStep } from '@/lib/transaction-layer'
+import { chainById } from '@/lib/chains'
 
+// Explorer links come from the app chain registry (lib/chains); this local
+// map only covers non-registry chains the app can still broadcast on.
 const TX_EXPLORER: Record<number, string> = {
-  8453: 'https://basescan.org/tx/',
-  1: 'https://etherscan.io/tx/',
-  42161: 'https://arbiscan.io/tx/',
-  4663: 'https://robinhoodchain.blockscout.com/tx/',
+  84532: 'https://sepolia.basescan.org/tx/',
 }
 
 type Phase = 'sign' | 'refreshing' | 'blocked' | 'done'
@@ -103,7 +103,10 @@ export default function SendTxChain({
     setCurrent(next)
   }
 
-  const explorerFor = (step: TxChainStep) => TX_EXPLORER[step.tx.chainId ?? 8453] ?? TX_EXPLORER[8453]
+  const explorerFor = (step: TxChainStep) => {
+    const id = step.tx.chainId ?? 8453
+    return chainById(id)?.explorerTx ?? TX_EXPLORER[id] ?? 'https://basescan.org/tx/'
+  }
 
   return (
     <div className="mt-2.5 pt-2 border-t border-[var(--line)] space-y-2">

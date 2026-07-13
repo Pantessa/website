@@ -14,6 +14,7 @@ import { useState } from 'react'
 import { useAccount, usePublicClient, useSendTransaction, useSwitchChain } from 'wagmi'
 import { Loader2, PenLine, CheckCircle2, Circle, ExternalLink, XCircle } from 'lucide-react'
 import type { EvmTxRequest } from '@/lib/transaction-layer'
+import { chainById } from '@/lib/chains'
 
 type Status = 'idle' | 'signing' | 'broadcast' | 'confirmed' | 'reverted' | 'error'
 
@@ -24,11 +25,10 @@ const STEPS: Array<{ key: Status; label: string }> = [
   { key: 'confirmed', label: 'Confirmed' },
 ]
 
+// Explorer + display names come from the app chain registry; the local map
+// only covers non-registry chains the app can still broadcast on.
 const TX_EXPLORER: Record<number, string> = {
-  8453: 'https://basescan.org/tx/',
-  1: 'https://etherscan.io/tx/',
-  42161: 'https://arbiscan.io/tx/',
-  4663: 'https://robinhoodchain.blockscout.com/tx/',
+  84532: 'https://sepolia.basescan.org/tx/',
 }
 
 export default function SendTxButton({
@@ -55,7 +55,8 @@ export default function SendTxButton({
   const [error, setError] = useState('')
   const [hash, setHash] = useState<string | null>(null)
 
-  const explorer = `${TX_EXPLORER[chainId] ?? TX_EXPLORER[8453]}`
+  const chainInfo = chainById(chainId)
+  const explorer = chainInfo?.explorerTx ?? TX_EXPLORER[chainId] ?? 'https://basescan.org/tx/'
 
   const send = async () => {
     setError('')
@@ -121,7 +122,7 @@ export default function SendTxButton({
       }
       setError(
         /rejected|denied/i.test(msg)
-          ? 'Rejected in the wallet — nothing was sent. (If you didn’t cancel: check the wallet is on Base.)'
+          ? `Rejected in the wallet — nothing was sent. (If you didn’t cancel: check the wallet is on ${chainInfo?.name ?? `chain ${chainId}`}.)`
           : msg,
       )
       setStatus('error')

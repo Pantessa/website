@@ -9,6 +9,7 @@
 
 import { erc20Abi } from 'viem'
 import { publicClient } from '@/lib/auth'
+import { chainById, publicClientFor } from '@/lib/chains'
 import {
   buildReport,
   policyCheck,
@@ -31,11 +32,9 @@ export const COW_VAULT_RELAYER = '0xC92E8bdf79f0507f65a392b0ab4667716BFE0110'
  *  the grant allowlist gates. */
 export const COW_POLICY_HOST = 'api.cow.fi'
 
-/** Base stables we can price at $1 face value, with decimals. */
-const STABLES: Record<string, number> = {
-  '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913': 6, // USDC
-  '0xd9aaec86b65d86f6a7b5b1b0c42ffa531710b6ca': 6, // USDbC
-  '0x50c5725949a6f0c72e6c4a641f24049a917db0cb': 18, // DAI
+/** Stables we can price at $1 face value — per-chain maps in lib/chains.ts. */
+function stablesFor(chainId: number): Record<string, number> {
+  return chainById(chainId)?.stables ?? {}
 }
 
 /** Fee sanity as a share of sellAmount: warn above 1%, block above 5%. */
@@ -47,9 +46,9 @@ export const MAX_SLIPPAGE_BPS = 500
 /** USD value via the stable side: sell side preferred (that's what leaves the
  *  wallet), else buy side. Null when neither side is a known stable. */
 export function orderValueUsd(order: CowOrderParameters, chainId = 8453): number | null {
-  if (chainId !== 8453) return null
+  const stables = stablesFor(chainId)
   const side = (token: string, atoms: string): number | null => {
-    const dec = STABLES[token.toLowerCase()]
+    const dec = stables[token.toLowerCase()]
     if (dec === undefined) return null
     const v = Number(atoms) / 10 ** dec
     return Number.isFinite(v) ? v : null
@@ -84,9 +83,11 @@ export function pureChecks(quote: CowQuoteResult, from: string, nowSec = Math.fl
 
 /** On-chain reads: does `from` hold the sell amount, and has it approved the
  *  CoW VaultRelayer? Warn-level — orders may be signed before funding; they
- *  just won't settle until both are true. Base only (our publicClient). */
+ *  just won't settle until both are true. Runs on any registry chain (Base
+ *  keeps the dedicated lib/auth client; others use the per-chain factory). */
 export async function chainChecks(quote: CowQuoteResult, from: string): Promise<GuardrailCheck[]> {
-  if (quote.chainId !== 8453) {
+  const client = quote.chainId === 8453 ? publicClient : publicClientFor(quote.chainId)
+  if (!client) {
     return [{ id: 'chain-reads', level: 'warn', ok: true, note: `Balance/allowance not checked on chain ${quote.chainId}.` }]
   }
   const token = quote.order.sellToken as `0x${string}`
@@ -95,8 +96,8 @@ export async function chainChecks(quote: CowQuoteResult, from: string): Promise<
   const human = (v: bigint) => formatAtoms(v.toString(), 18, 6) // fallback label only
   try {
     const [balance, allowance] = await Promise.all([
-      publicClient.readContract({ address: token, abi: erc20Abi, functionName: 'balanceOf', args: [owner] }),
-      publicClient.readContract({ address: token, abi: erc20Abi, functionName: 'allowance', args: [owner, COW_VAULT_RELAYER as `0x${string}`] }),
+      client.readContract({ address: token, abi: erc20Abi, functionName: 'balanceOf', args: [owner] }),
+      client.readContract({ address: token, abi: erc20Abi, functionName: 'allowance', args: [owner, COW_VAULT_RELAYER as `0x${string}`] }),
     ])
     const label = tokenLabel(quote.order.sellToken, quote.chainId)
     return [

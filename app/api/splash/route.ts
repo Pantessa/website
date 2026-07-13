@@ -3,6 +3,7 @@ import { isAddress } from 'viem'
 import prisma from '@/lib/db'
 import type { McpServer } from '@/lib/store'
 import { buildSplash, type FeaturedEndpoint, type SplashServer } from '@/lib/splash/sources'
+import { chainByKey } from '@/lib/chains'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -28,12 +29,15 @@ function mcpBaseOf(endpoint: string | null, childUrl: string | null): string | n
  * no spend, no auth. The chat UI paints this before the first keystroke.
  */
 export async function POST(req: Request) {
-  let body: { address?: string; servers?: Pick<McpServer, 'slug'>[]; manualSlugs?: string[] }
+  let body: { address?: string; servers?: Pick<McpServer, 'slug'>[]; manualSlugs?: string[]; chain?: string }
   try {
     body = await req.json()
   } catch {
     return NextResponse.json({ error: 'Invalid JSON body.' }, { status: 400 })
   }
+  // The chain picker's selection ('base'/'ethereum'/…) — unknown keys mean
+  // no filter, same as the "All chains" default.
+  const chain = typeof body.chain === 'string' ? chainByKey(body.chain) : null
 
   const address = typeof body.address === 'string' ? body.address.trim() : ''
   if (!isAddress(address)) {
@@ -99,7 +103,7 @@ export async function POST(req: Request) {
       })
       .filter((s): s is SplashServer => s !== null)
 
-    const tiles = await buildSplash(address, resolved)
+    const tiles = await buildSplash(address, resolved, chain)
     return NextResponse.json({ address, tiles })
   } catch (err) {
     return NextResponse.json({ address, tiles: [], error: err instanceof Error ? err.message : 'splash failed' })
