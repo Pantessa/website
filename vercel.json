@@ -1,6 +1,12 @@
 {
   "framework": "nextjs",
   "buildCommand": "npm run db:generate && next build",
+  "crons": [
+    {
+      "path": "/api/cron/hl-guardian",
+      "schedule": "* * * * *"
+    }
+  ],
   "functions": {
     "app/api/**/*.ts": {
       "maxDuration": 30
