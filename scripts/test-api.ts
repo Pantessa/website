@@ -1647,6 +1647,19 @@ async function main() {
     const noAmt = parseAaveSupply('deposit USDC into aave')
     check('aave parse: missing amount → problem (the one real clarify)', !!noAmt && 'problem' in noAmt)
 
+    // Bare imperative + filler — the LIVE 2026-07-13 miss: "can I supply 1
+    // more USDC" (context = the previous Aave turn) fell through to the
+    // planner, which sent the SYMBOL to build_supply's address regex → -32602.
+    const bare = parseAaveSupply('can I supply 1 more USDC')
+    check('aave parse: bare "can I supply 1 more USDC" (filler + no aave word)', !!bare && !('problem' in bare) && bare.amount === '1' && bare.token === 'USDC' && !bare.explicitAave && bare.otherChain === null)
+    const filler = parseAaveSupply('supply 5 extra USDC to aave')
+    check('aave parse: "5 extra USDC" filler with aave named', !!filler && !('problem' in filler) && filler.amount === '5' && filler.token === 'USDC')
+    check('aave parse: bare filler with NO token ("supply 1 more") → null', parseAaveSupply('supply 1 more') === null)
+    check('aave parse: bare generic verb ("add 1 USDC") → null (too ambiguous)', parseAaveSupply('add 1 USDC') === null)
+    check('aave parse: bare with a non-Aave destination → null', parseAaveSupply('deposit 5 USDC to hyperliquid') === null)
+    check('aave parse: bare with an unknown destination → null', parseAaveSupply('supply 5 USDC to my savings account') === null)
+    check('aave parse: bare question form ("should I…") → null', parseAaveSupply('should i supply 100 USDC') === null)
+
     // Reserve pick — Main (deepest + collateral-enabled) wins; shapes from a
     // live reserves probe 2026-07-10.
     const USDC = '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48'
@@ -1726,6 +1739,13 @@ async function main() {
     check('aave ops parse: missing amount → problem', !!wna && 'problem' in wna && wna.op === 'withdraw')
     const bna = parseAaveOp('borrow USDC from aave')
     check('aave ops parse: borrow missing amount → problem', !!bna && 'problem' in bna && bna.op === 'borrow')
+    // Filler between amount and token — same live bug class as supply.
+    const wmore = parseAaveOp('withdraw 5 more USDC from aave')
+    check('aave ops parse: "withdraw 5 more USDC" filler', !!wmore && !('problem' in wmore) && wmore.op === 'withdraw' && wmore.amount === '5' && wmore.token === 'USDC')
+    const bmore = parseAaveOp('can we borrow 100 more USDC against my collateral')
+    check('aave ops parse: "borrow 100 more USDC" filler', !!bmore && !('problem' in bmore) && bmore.op === 'borrow' && bmore.amount === '100' && bmore.token === 'USDC')
+    check('aave ops parse: filler with NO token ("borrow 5 more" + aave) → null', parseAaveOp('borrow 5 more on aave') === null)
+    check('aave ops parse: hyperliquid destination → null (venue list)', parseAaveOp('withdraw 100 USDC from hyperliquid') === null)
 
     // Position pick — anchored to the user's own portfolio rows.
     const SPOKE = '0x94e7A5dCbE816e498b89aB752661904E2F56c485'

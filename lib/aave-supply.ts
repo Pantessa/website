@@ -47,6 +47,10 @@ export function aaveAgentOf<T extends { slug: string; name: string; endpoint?: s
 
 const AMOUNT = '\\d+(?:\\.\\d+)?'
 const TOKEN = '\\$?[A-Za-z]{2,12}'
+// "1 more USDC" / "5 extra DAI" — filler between amount and token. Live miss
+// 2026-07-13: "can I supply 1 more USDC" fell through to the planner, which
+// sent the SYMBOL to build_supply's address-regex param → MCP -32602.
+const FILLER = '(?:(?:more|extra|additional)\\s+)?'
 
 // Typo-tolerant Ethereum ("etheraum" seen live) vs. other named chains.
 const ETH_RE = /\b(?:ethereum|ether[aiu]+m|eth(?:\s?mainnet)?|mainnet)\b/i
@@ -54,11 +58,12 @@ const OTHER_CHAIN_RE =
   /\b(?:on|to)\s+(base|arbitrum|arb|optimism|polygon|matic|gnosis|avalanche|avax|bnb|bsc|scroll|solana|sol)\b/i
 
 // A different venue named explicitly → not an Aave ask, fall through.
-const OTHER_VENUE_RE = /\b(?:uniswap|cow\s?swap|curve|balancer|sushi|compound|morpho|pendle|yearn)\b/i
+const OTHER_VENUE_RE =
+  /\b(?:uniswap|cow\s?swap|curve|balancer|sushi|compound|morpho|pendle|yearn|hyperliquid|venus|spark)\b/i
 
 // "(add|supply|deposit|lend|put|park) <amt> <token> (to|into|in|on) …"
 const SUPPLY_RE = new RegExp(
-  `\\b(?:add|supply|deposit|lend|put|park)\\s+(${AMOUNT})\\s+(${TOKEN})\\b`,
+  `\\b(?:add|supply|deposit|lend|put|park)\\s+(${AMOUNT})\\s+${FILLER}(${TOKEN})\\b`,
   'i',
 )
 // Aave named anywhere, or generic pool/lending phrasing ("a pool on ethereum").
@@ -91,9 +96,23 @@ export function parseAaveSupply(message: string): AaveSupplyParams | { problem: 
   if (OTHER_VENUE_RE.test(message)) return null
   const explicitAave = /\baave\b/i.test(message)
   const poolish = POOLISH_RE.test(message)
-  if (!explicitAave && !poolish) return null
-
   const m = message.match(SUPPLY_RE)
+  if (!explicitAave && !poolish) {
+    // Bare imperative — no Aave/pool cue in the sentence ("can I supply 1
+    // more USDC", live 2026-07-13: the context was the previous Aave turn,
+    // and the fall-through planner died on build_supply's address regex).
+    // Route natively only when it can't mean anything else: a lending-
+    // specific verb (supply/deposit/lend — add/put/park are too generic
+    // bare), not a question, and no destination named that isn't Aave-shaped
+    // ("deposit 5 USDC to hyperliquid" falls through). explicitAave stays
+    // false, so the route site only builds when the Aave agent is in the set.
+    if (!m || !/^(?:supply|deposit|lend)\b/i.test(m[0])) return null
+    if (QUESTION_START_RE.test(message)) return null
+    const rest = message.slice((m.index ?? 0) + m[0].length)
+    const dest = rest.match(/\b(?:to|into|in|on|at)\s+(?:an?\s+|the\s+|my\s+)?([A-Za-z0-9]+)/i)
+    if (dest && !/^(?:aave|pool|pools|lending|ethereum|eth|mainnet)$/i.test(dest[1])) return null
+  }
+
   if (!m) {
     if (explicitAave && SUPPLY_NO_AMOUNT_RE.test(message)) {
       const t = message.match(SUPPLY_NO_AMOUNT_RE)
@@ -102,6 +121,9 @@ export function parseAaveSupply(message: string): AaveSupplyParams | { problem: 
     return null
   }
   const token = m[2].replace(/^\$/, '')
+  // The FILLER group is optional, so a trailing "supply 1 more" (no real
+  // token) would capture the filler word itself — reject grammar words.
+  if (NOT_TOKENS.has(token.toLowerCase())) return null
   // Chain words that double as tokens ("a ton of USDC") aren't a risk here —
   // OTHER_CHAIN_RE requires a chain preposition, same rule as detectCrossChain.
   const other = message.match(OTHER_CHAIN_RE)
@@ -582,12 +604,15 @@ const ALL_SRC = 'all(?:\\s+(?:of\\s+)?(?:my|the))?|everything|max(?:imum)?'
 const AMOUNT_OR_ALL = `(?:(${AMOUNT})|(?:${ALL_SRC}))`
 
 const WITHDRAW_RE = new RegExp(
-  `\\b(?:withdraw|redeem|pull(?:\\s+out)?|take\\s+out)\\s+${AMOUNT_OR_ALL}\\s+(?:of\\s+)?(?:my\\s+)?(${TOKEN})\\b`,
+  `\\b(?:withdraw|redeem|pull(?:\\s+out)?|take\\s+out)\\s+${AMOUNT_OR_ALL}\\s+${FILLER}(?:of\\s+)?(?:my\\s+)?(${TOKEN})\\b`,
   'i',
 )
-const BORROW_RE = new RegExp(`\\b(?:borrow|take\\s+(?:out\\s+)?a\\s+loan\\s+of)\\s+(${AMOUNT})\\s+(${TOKEN})\\b`, 'i')
+const BORROW_RE = new RegExp(
+  `\\b(?:borrow|take\\s+(?:out\\s+)?a\\s+loan\\s+of)\\s+(${AMOUNT})\\s+${FILLER}(${TOKEN})\\b`,
+  'i',
+)
 const REPAY_RE = new RegExp(
-  `\\b(?:repay|pay\\s+(?:back|off|down))\\s+${AMOUNT_OR_ALL}\\s+(?:of\\s+)?(?:my\\s+)?(${TOKEN})\\b`,
+  `\\b(?:repay|pay\\s+(?:back|off|down))\\s+${AMOUNT_OR_ALL}\\s+${FILLER}(?:of\\s+)?(?:my\\s+)?(${TOKEN})\\b`,
   'i',
 )
 // "pay off my USDT debt" / "repay my USDC loan" — full repay, no amount word.
@@ -611,6 +636,8 @@ const OP_CONTEXT_RE = /\b(?:pool|pools|lending|lend|supplied|supply|deposit(?:ed
 const NOT_TOKENS = new Set([
   'from', 'to', 'into', 'out', 'of', 'my', 'the', 'a', 'an', 'on', 'in', 'at',
   'aave', 'pool', 'pools', 'debt', 'loan', 'all', 'some', 'it', 'that', 'and',
+  // The FILLER words — captured as the "token" when nothing follows them.
+  'more', 'extra', 'additional',
 ])
 
 /** Pure questions ("should I repay?") never build a card. */
