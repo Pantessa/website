@@ -56,6 +56,17 @@ import {
   WITHDRAW_MAX_SENTINEL,
 } from '../lib/aave-supply'
 import { encodeFunctionData, erc20Abi } from 'viem'
+import {
+  evaluatePolicy,
+  formatPx,
+  formatSz,
+  buildGuardianClose,
+  guardGuardianClose,
+  approveAgentArtifacts,
+  splitSignature,
+  type GuardianPolicyParams,
+  type GuardianPosition,
+} from '../lib/hl-guardian'
 
 const BASE = process.env.BASE ?? 'http://localhost:3000'
 const DOMAIN = new URL(BASE).host
@@ -2563,6 +2574,84 @@ async function main() {
     const basePending = swapWorkingContext({ isSwap: true, mode: 'swap', sellAmountHuman: '1', sellToken: 'USDC', buyToken: 'WETH' }, 'cow', undefined, 8453)
     return arb.pending?.data.chainId === '42161' && basePending.pending?.data.chainId === undefined
   })())
+
+  // ── HL guardian (pure guard + route auth) ────────────────────────────────
+  console.log('— hl guardian')
+  {
+    const sl: GuardianPolicyParams = { coin: 'SYRUP', side: 'long', kind: 'stop_loss', triggerMode: 'price_move_pct', triggerValue: 10 }
+    const pos: GuardianPosition = { coin: 'SYRUP', szi: 700, entryPx: 0.14175 }
+    check(
+      'guardian: stop-loss fires DOWN only (long 10% from entry)',
+      !evaluatePolicy(sl, pos, 0.12876).fired && evaluatePolicy(sl, pos, 0.1275).fired && !evaluatePolicy(sl, pos, 0.15).fired,
+    )
+    check(
+      'guardian: take-profit fires UP; short logic mirrors',
+      evaluatePolicy({ ...sl, kind: 'take_profit', triggerValue: 25 }, pos, 0.1772).fired &&
+        !evaluatePolicy({ ...sl, kind: 'take_profit', triggerValue: 25 }, pos, 0.177).fired &&
+        evaluatePolicy({ ...sl, side: 'short' }, { ...pos, szi: -700 }, 0.156).fired &&
+        !evaluatePolicy({ ...sl, side: 'short' }, { ...pos, szi: -700 }, 0.155).fired,
+    )
+    check(
+      'guardian: absolute-price mode crosses in the right direction',
+      evaluatePolicy({ ...sl, triggerMode: 'price', triggerValue: 0.12 }, pos, 0.119).fired &&
+        !evaluatePolicy({ ...sl, triggerMode: 'price', triggerValue: 0.12 }, pos, 0.121).fired,
+    )
+    check('guardian: px/sz formatting (5 sig figs, szDecimals, floor)', formatPx(0.12811499, 0) === '0.12811' && formatPx(123456, 0) === '123460' && formatSz(1234.5678, 2) === '1234.56' && formatSz(700, 0) === '700')
+
+    const mark = 0.1275
+    const action = buildGuardianClose(sl, pos, 42, mark, 0)
+    const ctx = { delegationStatus: 'active', delegationExpiresAt: new Date(Date.now() + 86_400_000), killSwitchPaused: false, policyFlipWon: true, markPx: mark, assetIndex: 42, szDecimals: 0 }
+    const good = guardGuardianClose(sl, pos, action, ctx)
+    check('guardian: built close passes the guard (reduce-only IOC sell, sized to position)', good.ok && action.orders[0].r === true && action.orders[0].b === false && action.orders[0].s === '700' && Math.abs((good.valueUsd ?? 0) - 700 * mark) < 0.01, JSON.stringify(good.checks.filter((c) => !c.ok)))
+    const tampered = (patch: Partial<typeof action.orders[0]>) => guardGuardianClose(sl, pos, { orders: [{ ...action.orders[0], ...patch }], grouping: 'na' }, ctx)
+    check(
+      'guardian: guard fails CLOSED on any tamper (not-reduce-only / wrong asset / oversize / wrong side / stray price)',
+      !tampered({ r: false }).ok && !tampered({ a: 7 }).ok && !tampered({ s: '701' }).ok && !tampered({ b: true }).ok && !tampered({ p: formatPx(mark * 0.97, 0) }).ok,
+    )
+    check(
+      'guardian: guard refuses without delegation / with kill switch / on a lost flip / when the trigger is no longer true',
+      !guardGuardianClose(sl, pos, action, { ...ctx, delegationStatus: 'revoked' }).ok &&
+        !guardGuardianClose(sl, pos, action, { ...ctx, killSwitchPaused: true }).ok &&
+        !guardGuardianClose(sl, pos, action, { ...ctx, policyFlipWon: false }).ok &&
+        !guardGuardianClose(sl, pos, action, { ...ctx, markPx: 0.15 }).ok,
+    )
+
+    const artifacts = approveAgentArtifacts({ agentAddress: '0x' + 'ab'.repeat(20), nonce: 1752440000000, validUntil: 1760216000000, signatureChainId: 8453, isTestnet: false })
+    check(
+      'guardian: approveAgent typed data + action derive from ONE builder (chain hex, valid_until name, Mainnet)',
+      artifacts.typedData.primaryType === 'HyperliquidTransaction:ApproveAgent' &&
+        artifacts.action.signatureChainId === '0x2105' &&
+        String(artifacts.action.agentName).includes('valid_until 1760216000000') &&
+        artifacts.action.hyperliquidChain === 'Mainnet' &&
+        (artifacts.typedData.message as { nonce: number }).nonce === 1752440000000,
+    )
+    const sig = `0x${'11'.repeat(32)}${'22'.repeat(32)}1c`
+    const split = splitSignature(sig)
+    check('guardian: signature splits to r/s/v (v normalized to 27/28)', split.r === `0x${'11'.repeat(32)}` && split.s === `0x${'22'.repeat(32)}` && split.v === 28)
+
+    // Route surface: auth gates + validation (no delegation is created here —
+    // the signing flow needs a human wallet; the cron sweep is covered by the
+    // pure checks above plus the secret gate below).
+    const anonState = await fetch(`${BASE}/api/guardian`)
+    check('guardian: state read without session → 401', anonState.status === 401)
+    const stateRes = await fetch(`${BASE}/api/guardian`, { headers: C })
+    const stateBody = await stateRes.json()
+    check('guardian: fresh wallet state is empty', stateRes.status === 200 && stateBody.delegation === null && Array.isArray(stateBody.policies) && stateBody.policies.length === 0)
+    const noDelegation = await fetch(`${BASE}/api/guardian/policies`, { method: 'POST', headers: CJ, body: JSON.stringify({ coin: 'SYRUP', kind: 'stop_loss', triggerMode: 'price_move_pct', triggerValue: 10 }) })
+    check('guardian: arming without a delegation → 409', noDelegation.status === 409)
+    const badDelegation = await fetch(`${BASE}/api/guardian/delegation`, { method: 'POST', headers: CJ, body: JSON.stringify({}) })
+    check('guardian: delegation without signatureChainId → 400', badDelegation.status === 400)
+    const cronAnon = await fetch(`${BASE}/api/cron/hl-guardian`)
+    const cronWrong = await fetch(`${BASE}/api/cron/hl-guardian`, { headers: { authorization: 'Bearer wrong' } })
+    check('guardian: cron refuses without/with wrong secret', cronAnon.status === 401 && cronWrong.status === 401)
+    if (process.env.CRON_SECRET) {
+      const cronOk = await fetch(`${BASE}/api/cron/hl-guardian`, { headers: { authorization: `Bearer ${process.env.CRON_SECRET}` } })
+      const summary = await cronOk.json()
+      check('guardian: authorized sweep runs and reports', cronOk.status === 200 && typeof summary.checked === 'number', JSON.stringify(summary))
+    } else {
+      console.log('  ⚪ guardian: CRON_SECRET not in harness env — live sweep check skipped')
+    }
+  }
 
   // ── Cleanup (verified) ────────────────────────────────────────────────────
   console.log('— cleanup')

@@ -15,8 +15,8 @@ datasource db {
 /// A featured x402 agent/MCP. Ingested from agentic.market (see
 /// scripts/ingest-agentic.ts) and enriched for the verified, callable ones.
 model McpServer {
-  id          String   @id @default(cuid())
-  slug        String   @unique
+  id          String @id @default(cuid())
+  slug        String @unique
   name        String
   description String
 
@@ -215,7 +215,7 @@ model McpOwner {
   verifiedVia  String   @default("receiver") @map("verified_via")
   /// The endpoint host ownership was checked against (e.g. anthropic.yeetful.com).
   verifiedHost String?  @map("verified_host")
-  repo         String?  // optional: link to the MCP's source repo (display only, NOT the proof)
+  repo         String? // optional: link to the MCP's source repo (display only, NOT the proof)
   githubLogin  String?  @map("github_login")
   claimedAt    DateTime @default(now()) @map("claimed_at")
   updatedAt    DateTime @updatedAt @map("updated_at")
@@ -231,15 +231,15 @@ model McpOwner {
 /// activity is the trust layer. ownerAddress is denormalized (lowercased) so
 /// earnings are queryable per wallet and survive a re-claim.
 model McpReceipt {
-  id           String   @id @default(cuid())
-  mcpSlug      String   @map("mcp_slug") // the McpServer.slug that served the call
-  ownerAddress String   @map("owner_address") // payee wallet at report time (lowercased)
-  payer        String?  // the paying agent's wallet (lowercased), if the MCP reports it
-  amountUsd    Float    @map("amount_usd")
-  tool         String?  // MCP tool / resource the call hit (display)
-  network      String?  // e.g. "base"
-  txHash       String?  @unique @map("tx_hash") // unique ⇒ a settlement tx is counted once
-  apiKeyId     String?  @map("api_key_id") // which key reported it
+  id           String    @id @default(cuid())
+  mcpSlug      String    @map("mcp_slug") // the McpServer.slug that served the call
+  ownerAddress String    @map("owner_address") // payee wallet at report time (lowercased)
+  payer        String? // the paying agent's wallet (lowercased), if the MCP reports it
+  amountUsd    Float     @map("amount_usd")
+  tool         String? // MCP tool / resource the call hit (display)
+  network      String? // e.g. "base"
+  txHash       String?   @unique @map("tx_hash") // unique ⇒ a settlement tx is counted once
+  apiKeyId     String?   @map("api_key_id") // which key reported it
   /// On-chain verification (the trust layer). null = not checked / no txHash to
   /// check; true = a USDC transfer to the MCP's payTo backing ≥ the claimed
   /// amount was found on-chain; false = a txHash was given but contradicts the
@@ -257,9 +257,9 @@ model McpReceipt {
 /// Private by default; the owner can opt in to a public, unlisted share link
 /// (publicSlug). The sharing UI lands in a later branch — the schema is ready.
 model Chat {
-  id           String  @id @default(cuid())
-  title        String  @default("New chat")
-  ownerAddress String  @map("owner_address") // lowercased, SIWE-verified
+  id           String @id @default(cuid())
+  title        String @default("New chat")
+  ownerAddress String @map("owner_address") // lowercased, SIWE-verified
 
   // Selected x402 agents for this chat (slugs/ids), so a reopened chat
   // restores its active set.
@@ -280,8 +280,8 @@ model Chat {
 }
 
 model Message {
-  id      String  @id @default(cuid())
-  chatId  String  @map("chat_id")
+  id      String @id @default(cuid())
+  chatId  String @map("chat_id")
   role    String // 'user' | 'assistant'
   content String
   /// optional per-turn metadata (e.g. x402 payment receipts)
@@ -346,12 +346,12 @@ model OrgMember {
 /// (today the house burner; later a Coinbase Spend Permission / session key
 /// scoped to this grant) straight to the seller. See lib/spend-grant.ts.
 model SpendGrant {
-  id           String @id @default(cuid())
-  ownerAddress String @map("owner_address") // lowercased, SIWE-verified
+  id           String  @id @default(cuid())
+  ownerAddress String  @map("owner_address") // lowercased, SIWE-verified
   /// Org scope; NULL = the owner's personal expense account (pre-org rows
   /// all have NULL — back-compat by construction).
   orgId        String? @map("org_id")
-  label        String @default("Agent expense account")
+  label        String  @default("Agent expense account")
 
   /// Exact hostnames this grant may pay (e.g. "tripadvisor.x402.paysponge.com").
   allow String[]
@@ -406,25 +406,25 @@ model SpendGrant {
 /// Append-only record of every authorization decision under a grant — the audit
 /// trail, the budget data, and the x402 payment receipts in one table.
 model SpendLedgerEntry {
-  id        String  @id @default(cuid())
-  grantId   String  @map("grant_id")
-  host      String
+  id          String  @id @default(cuid())
+  grantId     String  @map("grant_id")
+  host        String
   /// Directory service the call belonged to (e.g. "Yeetful · Claude") — lets
   /// the dashboard chart per-agent without reverse-mapping hosts.
   serviceName String? @map("service_name")
-  amountUsd Float   @map("amount_usd")
-  ok        Boolean
-  txHash    String? @map("tx_hash")
-  note      String? // "settled" | "dry-run" | a GrantViolation code
+  amountUsd   Float   @map("amount_usd")
+  ok          Boolean
+  txHash      String? @map("tx_hash")
+  note        String? // "settled" | "dry-run" | a GrantViolation code
   /// Round-trip latency of the paid call in ms (settle time), when measured —
   /// feeds the per-MCP "speed" reputation sub-score. Null on older rows / blocks.
-  latencyMs Int?    @map("latency_ms")
+  latencyMs   Int?    @map("latency_ms")
   /// Which connected agent (API key) synced this receipt — set when the entry
   /// arrives via Bearer auth, so spend is attributable per agent.
-  apiKeyId  String? @map("api_key_id")
+  apiKeyId    String? @map("api_key_id")
   /// Denormalized org attribution (no FK — audit rows must outlive nothing;
   /// the grant relation already cascades them). NULL = personal spend.
-  orgId     String? @map("org_id")
+  orgId       String? @map("org_id")
 
   grant     SpendGrant @relation(fields: [grantId], references: [id], onDelete: Cascade)
   apiKey    ApiKey?    @relation(fields: [apiKeyId], references: [id], onDelete: SetNull)
@@ -472,19 +472,19 @@ model RouteEvent {
 /// links to the failing turn's full trace (route_trace_lines) — the "what the
 /// user tried + what they got" the fix PR cites.
 model RouteIncident {
-  id           String    @id @default(cuid())
-  signature    String    @unique // "<service-slug>:<errorClass>"
-  service      String? // serviceName/host that failed
-  errorClass   String?   @map("error_class") // "404" | "400" | "unresolved-path" | "settlement" | "timeout" | "error"
-  title        String // human summary
-  status       String    @default("open") // open | dispatched | pr_open | resolved | wontfix
-  count        Int       @default(0)
-  exampleTurnId String?  @map("example_turn_id") // a route_trace_lines turnId to view the trace
-  lastError    String?   @map("last_error") // last error message (capped)
-  prUrl        String?   @map("pr_url")
-  firstSeenAt  DateTime  @default(now()) @map("first_seen_at")
-  lastSeenAt   DateTime  @default(now()) @map("last_seen_at")
-  resolvedAt   DateTime? @map("resolved_at")
+  id            String    @id @default(cuid())
+  signature     String    @unique // "<service-slug>:<errorClass>"
+  service       String? // serviceName/host that failed
+  errorClass    String?   @map("error_class") // "404" | "400" | "unresolved-path" | "settlement" | "timeout" | "error"
+  title         String // human summary
+  status        String    @default("open") // open | dispatched | pr_open | resolved | wontfix
+  count         Int       @default(0)
+  exampleTurnId String?   @map("example_turn_id") // a route_trace_lines turnId to view the trace
+  lastError     String?   @map("last_error") // last error message (capped)
+  prUrl         String?   @map("pr_url")
+  firstSeenAt   DateTime  @default(now()) @map("first_seen_at")
+  lastSeenAt    DateTime  @default(now()) @map("last_seen_at")
+  resolvedAt    DateTime? @map("resolved_at")
 
   @@index([status])
   @@index([lastSeenAt])
@@ -787,4 +787,78 @@ model EmbedTurn {
   @@index([embedKeyId, createdAt])
   @@index([sessionId, createdAt])
   @@map("embed_turns")
+}
+
+/// One Hyperliquid agent-wallet delegation: the user's one-time approveAgent
+/// signature authorizing a Yeetful-held agent key to TRADE their HL account
+/// (the venue bars agent keys from withdrawing — custody stays with the
+/// user). The key is generated per delegation and stored AES-256-GCM
+/// encrypted (GUARDIAN_KEY_SECRET); expiry is venue-enforced via the
+/// `valid_until` agentName suffix and mirrored here. See lib/hl-guardian*.
+model HlGuardianDelegation {
+  id           String    @id @default(cuid())
+  wallet       String // master account, lowercased, SIWE-verified
+  agentAddress String    @map("agent_address")
+  agentKeyEnc  String    @map("agent_key_enc") // v1:<iv>:<tag>:<ct> AES-256-GCM
+  hlChain      String    @default("Mainnet") @map("hl_chain") // Mainnet | Testnet
+  status       String    @default("pending") // pending | active | revoked | expired
+  /// approveAgent action nonce (ms timestamp) — kept so the submitted action
+  /// re-derives EXACTLY what the user signed.
+  nonce        BigInt
+  sigChainId   Int       @map("sig_chain_id") // EIP-712 domain chainId the wallet signed under
+  approvedAt   DateTime? @map("approved_at")
+  expiresAt    DateTime  @map("expires_at")
+  createdAt    DateTime  @default(now()) @map("created_at")
+
+  policies HlGuardianPolicy[]
+
+  @@index([wallet])
+  @@map("hl_guardian_delegations")
+}
+
+/// One armed guardian policy: close a pinned position when its trigger
+/// crosses. Params are fixed by the USER at arm time; the sweep derives
+/// side/size/price from the live position and the guard refuses anything
+/// that is not a reduce-only close of this coin.
+model HlGuardianPolicy {
+  id           String    @id @default(cuid())
+  delegationId String    @map("delegation_id")
+  wallet       String
+  coin         String // HL perp symbol, e.g. "SYRUP"
+  side         String // long | short (the position being guarded)
+  kind         String // stop_loss | take_profit
+  triggerMode  String    @map("trigger_mode") // price_move_pct | price
+  triggerValue Float     @map("trigger_value")
+  status       String    @default("active") // active | paused | triggered | done | error
+  lastChecked  DateTime? @map("last_checked")
+  createdAt    DateTime  @default(now()) @map("created_at")
+
+  delegation HlGuardianDelegation @relation(fields: [delegationId], references: [id], onDelete: Cascade)
+  runs       HlGuardianRun[]
+
+  @@index([status])
+  @@index([wallet, createdAt])
+  @@map("hl_guardian_policies")
+}
+
+/// Append-only receipt trail: every consequential guardian decision — the
+/// exact guarded action, the verbatim guard report, the venue response, and
+/// the closed notional (money-moved value of the protective close).
+model HlGuardianRun {
+  id          String   @id @default(cuid())
+  policyId    String   @map("policy_id")
+  wallet      String
+  action      String // closed | retry | blocked | error | skipped_kill | noop_position_gone
+  reason      String
+  orderJson   Json?    @map("order_json")
+  guardReport Json?    @map("guard_report")
+  hlResponse  Json?    @map("hl_response")
+  valueUsd    Float?   @map("value_usd")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  policy HlGuardianPolicy @relation(fields: [policyId], references: [id], onDelete: Cascade)
+
+  @@index([policyId, createdAt])
+  @@index([wallet, createdAt])
+  @@map("hl_guardian_runs")
 }
