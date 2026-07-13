@@ -154,9 +154,21 @@ interface YeetfulStore {
 
   // Per-wallet working-set cache: last active set for each connected address,
   // so reconnecting restores the previous session's MCPs (ChatWorkspace
-  // restores on connect, writes through on change). Persisted locally.
+  // restores on connect, writes through on change). Persisted locally; for
+  // signed-in users saveWalletSet ALSO mirrors it to the DB (/api/working-set)
+  // so the set follows the wallet across devices. Guests stay local-only.
   walletSets: Record<string, string[]>
   saveWalletSet: (address: string, ids: string[]) => void
+  /** Authed address whose DB working-set copy has been read this session.
+   *  Gates the DB write-through: never write before reading, or a stale
+   *  local cache would clobber the copy another device just saved. Session
+   *  state — deliberately not persisted. */
+  walletSetDbFor: string | null
+  /** Pull the signed-in wallet's working set from the DB. Resolves to the ids
+   *  to apply (non-empty), or null (guest / fetch failed / empty row — nothing
+   *  to apply). On success it unlocks the DB write-through; an empty DB row is
+   *  seeded from the local cache so existing same-browser sets start syncing. */
+  loadWalletSet: () => Promise<string[] | null>
 
   // Saved MCP shortlist — the wallet's curated 1–3 services (the "pick your
   // tools" default). Persisted per-wallet in the DB (signed in) and locally
@@ -273,16 +285,65 @@ export const useYeetfulStore = create<YeetfulStore>()(
         })),
 
       walletSets: {},
-      saveWalletSet: (address, ids) =>
-        set((s) => {
-          const key = address.toLowerCase()
-          const cur = s.walletSets[key]
-          if (cur && cur.length === ids.length && cur.every((id, i) => id === ids[i])) return s
-          // Keep the map bounded — drop the oldest entries past 8 wallets.
-          const entries = Object.entries(s.walletSets).filter(([k]) => k !== key)
-          while (entries.length >= 8) entries.shift()
-          return { walletSets: Object.fromEntries([...entries, [key, ids]]) }
-        }),
+      saveWalletSet: (address, ids) => {
+        const key = address.toLowerCase()
+        const cur = get().walletSets[key]
+        if (cur && cur.length === ids.length && cur.every((id, i) => id === ids[i])) return
+        // Keep the map bounded — drop the oldest entries past 8 wallets.
+        const entries = Object.entries(get().walletSets).filter(([k]) => k !== key)
+        while (entries.length >= 8) entries.shift()
+        set({ walletSets: Object.fromEntries([...entries, [key, ids]]) })
+        // Signed in as this wallet AND the DB copy has been read this session
+        // → write through (fire-and-forget) so the set follows the wallet
+        // across devices. The walletSetDbFor gate is the store-level twin of
+        // ChatWorkspace's restoredFor ref: a save that ran before the DB
+        // restore would clobber the copy another device just wrote.
+        const st = get()
+        if (st.authedAddress?.toLowerCase() === key && st.walletSetDbFor === key) {
+          void fetch('/api/working-set', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ serviceIds: ids }),
+          }).catch(() => {})
+        }
+      },
+      walletSetDbFor: null,
+      loadWalletSet: async () => {
+        const authed = get().authedAddress?.toLowerCase()
+        if (!authed) return null
+        try {
+          const res = await fetch('/api/working-set', { cache: 'no-store' })
+          // Failed read → keep the write-through locked; never risk clobbering
+          // the DB copy on the strength of a fetch we couldn't complete.
+          if (!res.ok) return null
+          const data = await res.json()
+          const ids: string[] = Array.isArray(data.serviceIds)
+            ? data.serviceIds.filter((x: unknown): x is string => typeof x === 'string')
+            : []
+          if (ids.length) {
+            // Mirror the DB copy into the local cache BEFORE unlocking the
+            // write-through, so the no-change check above swallows the echo.
+            get().saveWalletSet(authed, ids)
+            set({ walletSetDbFor: authed })
+            return ids
+          }
+          // Empty/absent DB row: unlock, then seed it from the local
+          // same-browser cache so an existing set starts following the wallet
+          // without waiting for the user's next change.
+          set({ walletSetDbFor: authed })
+          const local = get().walletSets[authed]
+          if (local?.length) {
+            void fetch('/api/working-set', {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ serviceIds: local }),
+            }).catch(() => {})
+          }
+          return null
+        } catch {
+          return null
+        }
+      },
 
       shortlistIds: [],
       toggleShortlist: (id) => {

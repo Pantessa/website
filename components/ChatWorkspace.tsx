@@ -22,7 +22,7 @@ const STATIC_SERVERS: McpServer[] = [...FREE_FLEET_FALLBACK, ...CATALOG]
  * restore its active agents; the bare /chat route is a fresh "new chat" surface.
  */
 export default function ChatWorkspace({ chatId }: { chatId?: string }) {
-  const { servers, setServers, setCurrentChatId, loadChat, setActiveServerIds, activeServerIds, walletSets, saveWalletSet } =
+  const { servers, setServers, setCurrentChatId, loadChat, setActiveServerIds, activeServerIds, walletSets, saveWalletSet, authedAddress, loadWalletSet } =
     useYeetfulStore()
   const { address } = useAccount()
 
@@ -119,6 +119,28 @@ export default function ChatWorkspace({ chatId }: { chatId?: string }) {
     if (activeServerIds.length === 0) return // never cache "nothing" — usually just pre-seed
     saveWalletSet(address, activeServerIds)
   }, [address, activeServerIds, saveWalletSet])
+
+  // DB-backed restore for signed-in users: the working set follows the wallet
+  // across devices (walletSets above is same-browser only). Runs once the SIWE
+  // session hydrates — later than the local restore, so a non-empty DB copy
+  // wins over the local cache (it's the freshest cross-device truth). On an
+  // open chat / deep link we still load (that unlocks the store's DB
+  // write-through, so this session keeps the DB copy fresh) but don't apply.
+  const dbRestoredFor = useRef<string | null>(null)
+  useEffect(() => {
+    if (!authedAddress || servers.length === 0) return
+    if (dbRestoredFor.current === authedAddress) return
+    dbRestoredFor.current = authedAddress
+    const routeOwnsSet = !!chatId || !!new URLSearchParams(window.location.search).get('mcps')
+    void loadWalletSet().then((ids) => {
+      if (!ids || routeOwnsSet) return
+      // Same stale-id guard as the local restore: only ids still in the
+      // loaded directory make it into the working set.
+      const valid = ids.filter((id) => servers.some((s) => s.id === id))
+      if (valid.length) setActiveServerIds(valid)
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authedAddress, servers, chatId, loadWalletSet, setActiveServerIds])
 
   // Logged in, the top nav is gone (AppShell) — reclaim its 4rem so chat fills
   // the whole viewport.

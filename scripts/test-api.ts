@@ -329,6 +329,70 @@ async function main() {
     Array.isArray(slClear.serviceIds) && slClear.serviceIds.length === 0,
   )
 
+  // ── Per-wallet working set (DB mirror of store.walletSets — NO cap) ─────────
+  console.log('— wallet working set')
+  const wsNoAuth = await fetch(`${BASE}/api/working-set`)
+  check('working-set read requires auth → 401', wsNoAuth.status === 401)
+
+  const wsEmpty = await (await fetch(`${BASE}/api/working-set`, { headers: C })).json()
+  check(
+    'fresh wallet → empty working set',
+    Array.isArray(wsEmpty.serviceIds) && wsEmpty.serviceIds.length === 0,
+  )
+
+  if (svc.length >= 4) {
+    // Four ids — deliberately MORE than the shortlist's cap of 3: the working
+    // set mirrors whatever the user toggled on, uncapped.
+    const wsSaved = await (
+      await fetch(`${BASE}/api/working-set`, {
+        method: 'PUT', headers: CJ, body: JSON.stringify({ serviceIds: [s1, s2, s3, s4] }),
+      })
+    ).json()
+    check(
+      'save a 4-MCP working set (beyond the shortlist cap), order kept',
+      wsSaved.serviceIds?.length === 4 && wsSaved.serviceIds[0] === s1 && wsSaved.serviceIds[3] === s4,
+    )
+
+    const wsReread = await (await fetch(`${BASE}/api/working-set`, { headers: C })).json()
+    check(
+      'working set survives a re-read (DB-backed restore path)',
+      wsReread.serviceIds?.length === 4 && wsReread.serviceIds[1] === s2,
+    )
+
+    // Duplicates collapse, unknown ids are dropped (a deleted custom MCP must
+    // not ghost across devices).
+    const wsCleaned = await (
+      await fetch(`${BASE}/api/working-set`, {
+        method: 'PUT', headers: CJ, body: JSON.stringify({ serviceIds: [s1, s1, 'bogus-id-xyz', s2] }),
+      })
+    ).json()
+    check(
+      'working set de-dupes + drops unknown ids',
+      wsCleaned.serviceIds?.length === 2 && wsCleaned.serviceIds[0] === s1 && wsCleaned.serviceIds[1] === s2,
+    )
+
+    // Isolation: another wallet has its own (empty) working set.
+    const mWs = await (
+      await fetch(`${BASE}/api/working-set`, { headers: { cookie: mallorySession } })
+    ).json()
+    check('working set is per-wallet (mallory sees empty)', mWs.serviceIds?.length === 0)
+  }
+
+  const wsBad = await fetch(`${BASE}/api/working-set`, {
+    method: 'PUT', headers: CJ, body: JSON.stringify({ serviceIds: 'nope' }),
+  })
+  check('working-set PUT with non-array → 400', wsBad.status === 400)
+
+  const wsClear = await (
+    await fetch(`${BASE}/api/working-set`, {
+      method: 'PUT', headers: CJ, body: JSON.stringify({ serviceIds: [] }),
+    })
+  ).json()
+  check(
+    'empty working set clears',
+    Array.isArray(wsClear.serviceIds) && wsClear.serviceIds.length === 0,
+  )
+
   // ── Billing: plans + YEET credits (read-only — no rows to clean up) ────────
   console.log('— billing')
   const planNoAuth = await fetch(`${BASE}/api/billing/plan`)
