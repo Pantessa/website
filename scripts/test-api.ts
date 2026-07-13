@@ -37,7 +37,21 @@ import { routeSavings } from '../lib/route-telemetry'
 import { portfolioFromToolResult, portfolioOf } from '../lib/portfolio-display'
 import { crossChainAgentOf, detectCrossChain } from '../lib/swap-intent'
 import { parseCrossChainSwap, guardCrossChainBuild, expectedOriginChainId, parseCrossChainFollowUp } from '../lib/cross-chain-swap'
-import { parseAaveSupply, pickSupplyReserve, guardAaveSupplyBuild, parseAaveSupplyFollowUp } from '../lib/aave-supply'
+import {
+  parseAaveSupply,
+  pickSupplyReserve,
+  guardAaveSupplyBuild,
+  parseAaveSupplyFollowUp,
+  parseAaveOp,
+  parseAaveOpFollowUp,
+  guardAaveOpBuild,
+  pickWithdrawPosition,
+  pickRepayPosition,
+  pickBorrowReserve,
+  reserveForOp,
+  reserveLegIds,
+  WITHDRAW_MAX_SENTINEL,
+} from '../lib/aave-supply'
 import { encodeFunctionData, erc20Abi } from 'viem'
 
 const BASE = process.env.BASE ?? 'http://localhost:3000'
@@ -1678,6 +1692,122 @@ async function main() {
     check('aave follow-up: "yes" is a noop (card already there)', parseAaveSupplyFollowUp('yes', apend)?.kind === 'noop')
     const aamend = parseAaveSupplyFollowUp('make it 5', apend)
     check('aave follow-up: "make it 5" re-amount', aamend?.kind === 'amend' && aamend.params.amount === '5' && aamend.params.token === 'USDC')
+  }
+
+  // ── Aave withdraw / borrow / repay: parse + position pick + the op guard ──
+  // Same safety property as supply, per-op: pinned selectors + calldata
+  // layouts from a LIVE probe 2026-07-10 (withdraw 0x0ad58d2f / borrow
+  // 0xd6bda0c0 / repay 0xb1e8f8ef, all (reserve, amount, user); withdraw max
+  // = the 2^255−1 sentinel, repay max = quoted debt + ~1% interest buffer).
+  console.log('— aave native ops (withdraw/borrow/repay: parse + guard)')
+  {
+    // Parse.
+    const w = parseAaveOp('withdraw 0.5 WETH from aave')
+    check('aave ops parse: "withdraw 0.5 WETH from aave"', !!w && !('problem' in w) && w.op === 'withdraw' && w.amount === '0.5' && w.token === 'WETH' && !w.max)
+    const wmax = parseAaveOp('withdraw all my USDC from the pool')
+    check('aave ops parse: "withdraw all my USDC" → max (implicit aave, poolish)', !!wmax && !('problem' in wmax) && wmax.op === 'withdraw' && wmax.max && wmax.token === 'USDC' && !wmax.explicitAave)
+    check('aave ops parse: bare "withdraw 100 USDC" (no aave/pool context) → null', parseAaveOp('withdraw 100 USDC') === null)
+    const b = parseAaveOp('borrow 100 USDC on aave')
+    check('aave ops parse: "borrow 100 USDC on aave"', !!b && !('problem' in b) && b.op === 'borrow' && b.amount === '100' && !b.max)
+    const b2 = parseAaveOp('can we borrow 250 usdt against my collateral')
+    check('aave ops parse: bare borrow verb (implicit aave)', !!b2 && !('problem' in b2) && b2.op === 'borrow' && b2.token === 'usdt' && !b2.explicitAave)
+    const r = parseAaveOp('repay 100 USDT on aave')
+    check('aave ops parse: "repay 100 USDT"', !!r && !('problem' in r) && r.op === 'repay' && r.amount === '100' && !r.max)
+    const rmax = parseAaveOp('pay off my USDT debt on aave')
+    check('aave ops parse: "pay off my USDT debt" → full repay', !!rmax && !('problem' in rmax) && rmax.op === 'repay' && rmax.max && rmax.token === 'USDT')
+    const rall = parseAaveOp('repay all my USDC debt')
+    check('aave ops parse: "repay all my USDC debt" → max', !!rall && !('problem' in rall) && rall.op === 'repay' && rall.max)
+    const wchain = parseAaveOp('withdraw 5 USDC from aave on base')
+    check('aave ops parse: non-Ethereum chain surfaces', !!wchain && !('problem' in wchain) && wchain.otherChain === 'base')
+    check('aave ops parse: other venue named → null', parseAaveOp('withdraw 100 USDC from my compound position') === null)
+    check('aave ops parse: question → null', parseAaveOp('should I repay my USDT debt on aave?') === null)
+    check('aave ops parse: swap ask → null', parseAaveOp('swap 100 USDC for WETH') === null)
+    const wna = parseAaveOp('withdraw my USDC from aave')
+    check('aave ops parse: missing amount → problem', !!wna && 'problem' in wna && wna.op === 'withdraw')
+    const bna = parseAaveOp('borrow USDC from aave')
+    check('aave ops parse: borrow missing amount → problem', !!bna && 'problem' in bna && bna.op === 'borrow')
+
+    // Position pick — anchored to the user's own portfolio rows.
+    const SPOKE = '0x94e7A5dCbE816e498b89aB752661904E2F56c485'
+    const SPOKE2 = '0x973a023A77420ba610f06b3858aD991Df6d85A08'
+    const USDC = '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48'
+    const USER = '0x71F12a5b0E60d2Ff8A87FD34E7dcff3c10c914b0'
+    const supplies = [
+      { spoke: 'Bluechip', spokeAddress: SPOKE2, token: { symbol: 'USDC', address: USDC, decimals: 6 }, withdrawable: '50', balanceUsd: '$50.00' },
+      { spoke: 'Main', spokeAddress: SPOKE, token: { symbol: 'USDC', address: USDC, decimals: 6 }, withdrawable: '1500', balanceUsd: '$1,500.00' },
+    ]
+    const wpos = pickWithdrawPosition(supplies, 'usdc')
+    check('aave ops pick: withdraw anchors to the LARGEST position spoke', !!wpos && wpos.spoke === 'Main' && wpos.withdrawable === '1500')
+    const borrows = [
+      { spoke: 'Main', spokeAddress: SPOKE, token: { symbol: 'USDT', address: '0xdAC17F958D2ee523a2206206994597C13D831ec7', decimals: 6 }, debt: '156079.464951', debtUsd: '$155,946.32' },
+    ]
+    const rpos = pickRepayPosition(borrows, 'USDT')
+    check('aave ops pick: repay anchors to the debt spoke', !!rpos && rpos.spoke === 'Main')
+    check('aave ops pick: no position → null', pickWithdrawPosition(supplies, 'WETH') === null && pickRepayPosition(borrows, 'USDC') === null)
+
+    // The same asset can be listed as separate supply-leg / borrow-leg rows
+    // on one spoke with DIFFERENT on-chain ids — the op picks its leg.
+    const legRows = [
+      { reserveId: Buffer.from(`1::${SPOKE}::7`).toString('base64'), spoke: 'Main', spokeAddress: SPOKE, asset: { symbol: 'USDC', address: USDC, decimals: 6 }, canSupply: true, canBorrow: false, active: true, supplied: '100', suppliedUsd: '$100.00' },
+      { reserveId: Buffer.from(`1::${SPOKE}::9`).toString('base64'), spoke: 'Main', spokeAddress: SPOKE, asset: { symbol: 'USDC', address: USDC, decimals: 6 }, canSupply: false, canBorrow: true, active: true, supplied: '100', suppliedUsd: '$100.00', borrowApyPct: 3.44 },
+    ]
+    const supplyLeg = reserveForOp(legRows, 'USDC', SPOKE, 'supply')
+    const borrowLeg = reserveForOp(legRows, 'USDC', SPOKE, 'borrow')
+    check('aave ops reserve: op picks its leg (different onChainId)', supplyLeg?.onChainId === BigInt(7) && borrowLeg?.onChainId === BigInt(9) && borrowLeg.borrowApyPct === 3.44)
+    const positions = [
+      { spoke: 'Gold', spokeAddress: '0x65407b940966954b23dfA3caA5C0702bB42984DC', remainingBorrowingPowerUsd: '$19,241.92' },
+      { spoke: 'Main', spokeAddress: SPOKE, remainingBorrowingPowerUsd: '$123,375.34' },
+    ]
+    const bpick = pickBorrowReserve(legRows, 'USDC', positions)
+    check('aave ops pick: borrow uses the most-powered spoke listing the token', !!bpick && bpick.picked.onChainId === BigInt(9) && bpick.position.spoke === 'Main')
+    check('aave ops pick: borrow with zero borrowing power → null', pickBorrowReserve(legRows, 'USDC', [{ spokeAddress: SPOKE, remainingBorrowingPowerUsd: '$0.00' }]) === null)
+
+    // The op guard vs the LIVE-probed layouts. Selectors are pinned — one
+    // op's calldata can never verify as another's.
+    const word = (v: bigint | string) => (typeof v === 'bigint' ? v.toString(16) : v.toLowerCase().replace(/^0x/, '')).padStart(64, '0')
+    const atoms = BigInt(500000)
+    const step = (to: string, data: string, label = 'op') => ({ action: 'send_transaction', label, summary: label, tx: { to, data, value: '0', chainId: 1 } })
+    const wexp = { op: 'withdraw' as const, chainId: 1, amount: { kind: 'exact' as const, atoms }, currency: USDC, spoke: SPOKE, user: USER, onChainIds: [BigInt(7)] }
+    const wdata = `0x0ad58d2f${word(BigInt(7))}${word(atoms)}${word(USER)}`
+    check('aave op guard: correct single-step withdraw PASSES', guardAaveOpBuild({ operation: 'withdraw', steps: [step(SPOKE, wdata, 'withdraw')] }, wexp).ok)
+    check('aave op guard: withdraw sending funds ELSEWHERE is refused', !guardAaveOpBuild({ operation: 'withdraw', steps: [step(SPOKE, `0x0ad58d2f${word(BigInt(7))}${word(atoms)}${word('0x000000000000000000000000000000000000dEaD')}`, 'withdraw')] }, wexp).ok)
+    check('aave op guard: cross-op calldata (supply sel on a withdraw) is refused', !guardAaveOpBuild({ operation: 'withdraw', steps: [step(SPOKE, `0x852a56a5${word(BigInt(7))}${word(atoms)}${word(USER)}`, 'withdraw')] }, wexp).ok)
+    const approveData = encodeFunctionData({ abi: erc20Abi, functionName: 'approve', args: [SPOKE as `0x${string}`, atoms] })
+    check('aave op guard: a withdraw growing an approve step is refused', !guardAaveOpBuild({ operation: 'withdraw', steps: [step(USDC, approveData, 'approve'), step(SPOKE, wdata, 'withdraw')] }, wexp).ok)
+    const wmaxExp = { ...wexp, amount: { kind: 'withdraw-max' as const } }
+    check('aave op guard: withdraw-max sentinel PASSES', guardAaveOpBuild({ operation: 'withdraw', steps: [step(SPOKE, `0x0ad58d2f${word(BigInt(7))}${word(WITHDRAW_MAX_SENTINEL)}${word(USER)}`, 'withdraw')] }, wmaxExp).ok)
+    check('aave op guard: withdraw-max WITHOUT the sentinel is refused', !guardAaveOpBuild({ operation: 'withdraw', steps: [step(SPOKE, wdata, 'withdraw')] }, wmaxExp).ok)
+
+    const bexp = { ...wexp, op: 'borrow' as const, onChainIds: [BigInt(4), BigInt(9)] } // two borrow legs on one spoke (live: Bluechip USDC)
+    check('aave op guard: correct borrow PASSES', guardAaveOpBuild({ operation: 'borrow', steps: [step(SPOKE, `0xd6bda0c0${word(BigInt(9))}${word(atoms)}${word(USER)}`, 'borrow')] }, bexp).ok)
+    check('aave op guard: the OTHER leg of the same asset+spoke also PASSES', guardAaveOpBuild({ operation: 'borrow', steps: [step(SPOKE, `0xd6bda0c0${word(BigInt(4))}${word(atoms)}${word(USER)}`, 'borrow')] }, bexp).ok)
+    check('aave op guard: a FOREIGN reserve id is refused', !guardAaveOpBuild({ operation: 'borrow', steps: [step(SPOKE, `0xd6bda0c0${word(BigInt(5))}${word(atoms)}${word(USER)}`, 'borrow')] }, bexp).ok)
+    check('aave ops reserve: leg-id set for the guard', JSON.stringify(reserveLegIds(legRows, 'USDC', SPOKE, 'borrow').map(String)) === '["9"]' && JSON.stringify(reserveLegIds(legRows, 'USDC', SPOKE, 'supply').map(String)) === '["7"]')
+    check('aave op guard: borrow amount mismatch is refused', !guardAaveOpBuild({ operation: 'borrow', steps: [step(SPOKE, `0xd6bda0c0${word(BigInt(9))}${word(atoms * BigInt(2))}${word(USER)}`, 'borrow')] }, bexp).ok)
+    check('aave op guard: wrong chain is refused', !guardAaveOpBuild({ operation: 'borrow', steps: [{ ...step(SPOKE, `0xd6bda0c0${word(BigInt(9))}${word(atoms)}${word(USER)}`, 'borrow'), tx: { to: SPOKE, data: `0xd6bda0c0${word(BigInt(9))}${word(atoms)}${word(USER)}`, value: '0', chainId: 8453 } }] }, bexp).ok)
+
+    // Repay: approve→repay, and the live-probed max encoding (quoted debt +
+    // ~1% buffer — NOT a sentinel), bounded by the portfolio's debt read.
+    const rexp = { op: 'repay' as const, chainId: 1, amount: { kind: 'exact' as const, atoms }, currency: USDC, spoke: SPOKE, user: USER, onChainIds: [BigInt(9)] }
+    const rdata = `0xb1e8f8ef${word(BigInt(9))}${word(atoms)}${word(USER)}`
+    check('aave op guard: approve→repay PASSES', guardAaveOpBuild({ operation: 'repay', steps: [step(USDC, approveData, 'approve'), step(SPOKE, rdata, 'repay')] }, rexp).ok)
+    const debtAtoms = BigInt(92899677)
+    const quoted = BigInt(93828673) // live probe: debt 92.899677 → quote 93.828673
+    const rmaxExp = { ...rexp, amount: { kind: 'repay-max' as const, debtAtoms } }
+    const rmaxApprove = encodeFunctionData({ abi: erc20Abi, functionName: 'approve', args: [SPOKE as `0x${string}`, quoted] })
+    check('aave op guard: repay-max within the interest buffer PASSES', guardAaveOpBuild({ operation: 'repay', steps: [step(USDC, rmaxApprove, 'approve'), step(SPOKE, `0xb1e8f8ef${word(BigInt(9))}${word(quoted)}${word(USER)}`, 'repay')] }, rmaxExp).ok)
+    check('aave op guard: repay-max far OVER the debt is refused', !guardAaveOpBuild({ operation: 'repay', steps: [step(SPOKE, `0xb1e8f8ef${word(BigInt(9))}${word(debtAtoms * BigInt(2))}${word(USER)}`, 'repay')] }, rmaxExp).ok)
+    check('aave op guard: repay-max BELOW the read debt is refused', !guardAaveOpBuild({ operation: 'repay', steps: [step(SPOKE, `0xb1e8f8ef${word(BigInt(9))}${word(debtAtoms - BigInt(1))}${word(USER)}`, 'repay')] }, rmaxExp).ok)
+    const evilApprove = encodeFunctionData({ abi: erc20Abi, functionName: 'approve', args: ['0x000000000000000000000000000000000000dEaD' as `0x${string}`, atoms] })
+    check('aave op guard: repay approval to a non-spoke spender is refused', !guardAaveOpBuild({ operation: 'repay', steps: [step(USDC, evilApprove, 'approve'), step(SPOKE, rdata, 'repay')] }, rexp).ok)
+
+    // Follow-ups.
+    const wpend = { kind: 'aave-withdraw', data: { op: 'withdraw', amount: '0.5', token: 'WETH', spoke: 'Main' } }
+    check('aave ops follow-up: "cancel" drops it', parseAaveOpFollowUp('cancel', wpend)?.kind === 'cancel')
+    check('aave ops follow-up: "yes" is a noop (card already there)', parseAaveOpFollowUp('yes', wpend)?.kind === 'noop')
+    const wamend = parseAaveOpFollowUp('make it 2', wpend)
+    check('aave ops follow-up: "make it 2" re-amount keeps the op', wamend?.kind === 'amend' && wamend.params.op === 'withdraw' && wamend.params.amount === '2' && wamend.params.token === 'WETH')
+    check('aave ops follow-up: supply pending is not ours', parseAaveOpFollowUp('cancel', { kind: 'aave-supply', data: {} }) === null)
   }
 
   // ── Add-MCP (custom rows): callable row + idempotent re-add ───────────────

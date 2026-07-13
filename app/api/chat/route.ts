@@ -31,9 +31,25 @@ import {
   pickSupplyReserve,
   guardAaveSupplyBuild,
   aaveSupplyPending,
+  parseAaveOp,
+  parseAaveOpFollowUp,
+  aaveOpPending,
+  guardAaveOpBuild,
+  pickWithdrawPosition,
+  pickRepayPosition,
+  pickBorrowReserve,
+  reserveForOp,
+  reserveLegIds,
+  parseUsd,
+  AAVE_OP_PENDING_KINDS,
   type AaveSupplyParams,
+  type AaveOpParams,
+  type AaveAmountRule,
   type AaveBuiltPlan,
   type AaveReserveRow,
+  type AavePortfolioSupplyRow,
+  type AavePortfolioBorrowRow,
+  type AavePortfolioPosition,
   type PickedReserve,
 } from '@/lib/aave-supply'
 import { policyCheck, buildReport } from '@/lib/tx-guardrails'
@@ -428,6 +444,33 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // Same follow-up handling for pending withdraw / borrow / repay builds.
+    const pendingAaveOp =
+      workingContext?.pending && (AAVE_OP_PENDING_KINDS as readonly string[]).includes(workingContext.pending.kind)
+        ? workingContext.pending
+        : undefined
+    if (pendingAaveOp) {
+      const fu = parseAaveOpFollowUp(message, pendingAaveOp)
+      if (fu?.kind === 'cancel') {
+        const p = pendingAaveOp.data
+        return NextResponse.json({
+          reply: `👍 Dropped the Aave ${p.op} — ${p.amount === 'all' ? 'all your' : p.amount} ${(p.token ?? '').toUpperCase()} was never signed, so nothing moved.`,
+          workingContext: { v: 1, age: 0, ...(workingContext?.scope ? { scope: workingContext.scope } : {}) } satisfies WorkingContext,
+        })
+      }
+      if (fu?.kind === 'noop') {
+        return NextResponse.json({
+          reply: `🔏 The ${pendingAaveOp.data.op} is built above — sign the step(s) in the card to send it. Say “cancel” to drop it.`,
+        })
+      }
+      if (fu?.kind === 'amend') {
+        const aaveRead = aaveAgentOf(activeServers)
+        if (aaveRead.agent && aaveRead.usable) {
+          return await buildAaveOpTurn(aaveRead.agent, fu.params, walletAddress, workingContext, message)
+        }
+      }
+    }
+
     const pendingArtifact =
       workingContext?.pending && (workingContext.pending.kind === 'swap' || workingContext.pending.kind === 'order')
         ? workingContext.pending
@@ -489,6 +532,37 @@ export async function POST(req: NextRequest) {
         return await buildAaveSupplyTurn(aaveRead.agent, aaveAsk, walletAddress, workingContext, message)
       }
       // Pool-ish ask with no Aave agent and Aave not named → normal routing.
+    }
+
+    // ── Aave withdraw / borrow / repay: the same native recipe ──────────────
+    // Anchored to the user's REAL position (portfolio), built via the agent's
+    // build_* tool, every step guardrailed. Borrow runs the agent's `preview`
+    // first so the health-factor impact is shown before signing.
+    const aaveOpAsk = parseAaveOp(message)
+    if (aaveOpAsk) {
+      const aaveRead = aaveAgentOf(activeServers)
+      if ('problem' in aaveOpAsk) {
+        return NextResponse.json({ reply: `🏦 ${aaveOpAsk.problem}` })
+      }
+      if (aaveOpAsk.explicitAave || aaveRead.agent) {
+        if (!aaveRead.agent) {
+          return NextResponse.json({
+            reply: `🏦 A ${aaveOpAsk.op} on Aave needs the **Aave** agent in your set — add it from the rail and ask again, and I'll build it for you to sign.`,
+          })
+        }
+        if (!aaveRead.usable) {
+          return NextResponse.json({
+            reply: `🏦 Your **${aaveRead.agent.name}** agent isn't fully connected — no callable tools are registered for it. Re-add it (or pick the Aave agent from the Free tab) and ask again.`,
+          })
+        }
+        if (aaveOpAsk.otherChain) {
+          return NextResponse.json({
+            reply: `🏦 Aave v4 is live on **Ethereum only** today — I can't build a ${aaveOpAsk.op} on ${aaveOpAsk.otherChain}. Say “${aaveOpAsk.op} ${aaveOpAsk.amount ?? 'all my'} ${aaveOpAsk.token.toUpperCase()} on Ethereum” and I'll prepare it.`,
+          })
+        }
+        return await buildAaveOpTurn(aaveRead.agent, aaveOpAsk, walletAddress, workingContext, message)
+      }
+      // Lending-ish verb with no Aave agent and Aave not named → normal routing.
     }
 
     const swapIntent = parseSwapIntent(message)
@@ -885,10 +959,51 @@ async function buildCrossChainSwapTurn(
   })
 }
 
-// ── Aave supply (native, via the Aave agent) ─────────────────────────────────
+// ── Aave supply / withdraw / borrow / repay (native, via the Aave agent) ─────
 
-/** The ledger/policy host Aave supplies are attributed to. */
+/** The ledger/policy host Aave builds are attributed to. */
 const AAVE_POLICY_HOST = 'aave-mcp.yeetful.com'
+
+/**
+ * The spend-policy gate at the point of signing, shared by every Aave op —
+ * builds the guardrails report (guardrails.valueUsd = the money-moved
+ * headline metric), ledgers a policy denial, and returns the refusal
+ * response when the policy blocks.
+ */
+async function aavePolicyGate(
+  valueUsd: number | null,
+  walletAddress: string,
+  opLabel: string,
+  buildNote: string,
+): Promise<{ guardrails: ReturnType<typeof buildReport>; blocked: NextResponse | null }> {
+  const grant = await getActiveGrant(walletAddress.toLowerCase())
+  const policy = grant ? toPolicy(grant) : null
+  const spentToday = grant ? await spentTodayUsd(grant.id) : 0
+  const { check: polCheck, violation } = policyCheck(valueUsd, policy, spentToday, AAVE_POLICY_HOST)
+  const guardrails = buildReport(valueUsd, [
+    { id: 'aave-build', level: 'block', ok: true, note: buildNote },
+    polCheck,
+  ])
+  if (violation && grant) {
+    await recordLedger({
+      grantId: grant.id,
+      orgId: grant.orgId ?? undefined,
+      host: AAVE_POLICY_HOST,
+      serviceName: 'Aave',
+      amountUsd: 0,
+      ok: false,
+      note: `blocked: ${violation} (aave ${opLabel})`,
+    })
+  }
+  const blocked = !guardrails.ok
+    ? NextResponse.json({
+        reply: `🚫 ${opLabel[0].toUpperCase()}${opLabel.slice(1)} built but refused by your guardrails: ${polCheck.note}`,
+        guardrails,
+        blocked: true,
+      })
+    : null
+  return { guardrails, blocked }
+}
 
 /**
  * Build an Aave v4 supply into a signable approve→supply chain — the native,
@@ -980,37 +1095,13 @@ async function buildAaveSupplyTurn(
   // 4) The spend-policy gate at the point of signing, and the money-moved
   //    value (guardrails.valueUsd — the headline-metric contract).
   const valueUsd = picked.priceUsd !== null ? Number(params.amount) * picked.priceUsd : null
-  const grant = await getActiveGrant(walletAddress.toLowerCase())
-  const policy = grant ? toPolicy(grant) : null
-  const spentToday = grant ? await spentTodayUsd(grant.id) : 0
-  const { check: polCheck, violation } = policyCheck(valueUsd, policy, spentToday, AAVE_POLICY_HOST)
-  const guardrails = buildReport(valueUsd, [
-    {
-      id: 'aave-build',
-      level: 'block',
-      ok: true,
-      note: `Build verified: the steps move exactly ${params.amount} ${token} into Aave v4 ${picked.spokeName}, credited to your wallet.`,
-    },
-    polCheck,
-  ])
-  if (violation && grant) {
-    await recordLedger({
-      grantId: grant.id,
-      orgId: grant.orgId ?? undefined,
-      host: AAVE_POLICY_HOST,
-      serviceName: 'Aave',
-      amountUsd: 0,
-      ok: false,
-      note: `blocked: ${violation} (aave supply)`,
-    })
-  }
-  if (!guardrails.ok) {
-    return NextResponse.json({
-      reply: `🚫 Supply built but refused by your guardrails: ${polCheck.note}`,
-      guardrails,
-      blocked: true,
-    })
-  }
+  const { guardrails, blocked } = await aavePolicyGate(
+    valueUsd,
+    walletAddress,
+    'supply',
+    `Build verified: the steps move exactly ${params.amount} ${token} into Aave v4 ${picked.spokeName}, credited to your wallet.`,
+  )
+  if (blocked) return blocked
 
   const apy = picked.supplyApyPct !== null ? `${picked.supplyApyPct.toFixed(2)}% APY` : "the pool's live APY"
   const usd = valueUsd !== null ? ` (≈$${valueUsd.toFixed(2)})` : ''
@@ -1034,6 +1125,267 @@ async function buildAaveSupplyTurn(
       ...(ctx?.scope ? { scope: ctx.scope } : {}),
       ...(ctx?.offers ? { offers: ctx.offers } : {}),
       pending: aaveSupplyPending(params, picked.spokeName, summary),
+    } satisfies WorkingContext,
+  })
+}
+
+/** What the user's portfolio tool returns — the position-anchoring read. */
+interface AavePortfolioRead {
+  positions?: AavePortfolioPosition[]
+  supplies?: AavePortfolioSupplyRow[]
+  borrows?: AavePortfolioBorrowRow[]
+}
+
+/**
+ * Build an Aave v4 withdraw / borrow / repay into a signable chain — the same
+ * native recipe as supply, anchored to the user's REAL position: `portfolio`
+ * names the spoke the funds actually sit on (never "the deepest pool"),
+ * `reserves` cross-checks addresses + the on-chain reserve id, the matching
+ * build_* tool constructs the steps, and the guard verifies every one
+ * (pinned selector, exact amount or the live-probed max encoding, funds
+ * moving only to/for the user). Borrow runs the agent's `preview` first so
+ * the health-factor impact is in the reply. No confirmation round-trip —
+ * signing is the confirmation.
+ */
+async function buildAaveOpTurn(
+  agent: McpServer,
+  params: AaveOpParams,
+  walletAddress: string | undefined,
+  ctx?: WorkingContext,
+  originalMessage?: string,
+) {
+  const token = params.token.toUpperCase()
+  const op = params.op
+  const eq = (a?: string | null, b?: string | null) => !!a && !!b && a.toLowerCase() === b.toLowerCase()
+  if (!walletAddress) {
+    return NextResponse.json({
+      reply: `🏦 Connect your wallet to ${op} — the transaction is built for your address and position, and you sign it yourself.`,
+      connectWallet: true,
+      ...(originalMessage ? { connectAsk: originalMessage } : {}),
+    })
+  }
+
+  // 1) Anchor to the user's real position — which spoke, how much is there.
+  let pf: AavePortfolioRead
+  try {
+    pf = (await callAgentTool(agent.endpoint!, 'portfolio', { user: walletAddress, chainId: 1 })) as AavePortfolioRead
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'the lookup failed'
+    return NextResponse.json({ reply: `🏦 Couldn't read your Aave position: ${msg}` })
+  }
+
+  let supplyPos: AavePortfolioSupplyRow | null = null
+  let debtPos: AavePortfolioBorrowRow | null = null
+  if (op === 'withdraw') {
+    supplyPos = pickWithdrawPosition(pf.supplies ?? [], token)
+    if (!supplyPos) {
+      return NextResponse.json({
+        reply: `🏦 You don't have any ${token} supplied on Aave v4 — nothing to withdraw. Ask “show my Aave position” to see what's there.`,
+      })
+    }
+    if (!params.max && Number(params.amount) > Number(supplyPos.withdrawable ?? 0)) {
+      return NextResponse.json({
+        reply: `🏦 Your withdrawable ${token} on Aave v4 ${supplyPos.spoke ?? ''} is ${supplyPos.withdrawable} (asked: ${params.amount}) — say “withdraw all my ${token}” and I'll build the full withdrawal.`,
+      })
+    }
+  }
+  if (op === 'repay') {
+    debtPos = pickRepayPosition(pf.borrows ?? [], token)
+    if (!debtPos) {
+      return NextResponse.json({
+        reply: `🏦 You don't have any ${token} debt on Aave v4 — nothing to repay. Ask “show my Aave position” to see what's outstanding.`,
+      })
+    }
+    if (!params.max && Number(params.amount) > Number(debtPos.debt ?? 0)) {
+      return NextResponse.json({
+        reply: `🏦 Your ${token} debt on Aave v4 ${debtPos.spoke ?? ''} is ${debtPos.debt} (asked: ${params.amount}) — say “repay all my ${token} debt” and I'll build the full repayment, accrued interest included.`,
+      })
+    }
+  }
+
+  // 2) Cross-check against the official reserves list (addresses, decimals,
+  //    APYs, on-chain reserve id) — the guard's expectations come from here.
+  let reserveRows: AaveReserveRow[]
+  try {
+    const res = (await callAgentTool(agent.endpoint!, 'reserves', { symbols: [token], chainId: 1 })) as {
+      reserves?: AaveReserveRow[]
+    }
+    reserveRows = res?.reserves ?? []
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'the lookup failed'
+    return NextResponse.json({ reply: `🏦 Couldn't read Aave's reserve list: ${msg}` })
+  }
+
+  let picked: PickedReserve | null = null
+  if (op === 'withdraw') {
+    picked = reserveForOp(reserveRows, token, supplyPos!.spokeAddress!, 'supply')
+  } else if (op === 'repay') {
+    picked = reserveForOp(reserveRows, token, debtPos!.spokeAddress!, 'borrow')
+  } else {
+    const b = pickBorrowReserve(reserveRows, token, pf.positions ?? [])
+    if (!b) {
+      const anyPower = (pf.positions ?? []).some((p) => (parseUsd(p.remainingBorrowingPowerUsd) ?? 0) > 0)
+      return NextResponse.json({
+        reply: anyPower
+          ? `🏦 ${token} isn't borrowable on the Aave v4 spokes where you hold collateral — ask “where can I borrow ${token}?” to see what's listed.`
+          : `🏦 Borrowing needs collateral supplied first — you have no borrowing power on Aave v4 yet. Supply an asset (e.g. “supply 100 USDC to Aave”), then borrow against it.`,
+      })
+    }
+    picked = b.picked
+  }
+  if (!picked) {
+    // A position exists but the official list has no matching reserve leg —
+    // we can't verify what a build would return, so we refuse to build.
+    return NextResponse.json({
+      reply: `🏦 I couldn't cross-check the ${token} reserve on Aave's official list, so I won't build the ${op}. Nothing to sign.`,
+    })
+  }
+  const posTokenAddr = op === 'withdraw' ? supplyPos!.token?.address : op === 'repay' ? debtPos!.token?.address : null
+  if (posTokenAddr && !eq(posTokenAddr, picked.currency)) {
+    return NextResponse.json({
+      reply: `🏦 Your position's ${token} address doesn't match Aave's official reserve list, so I won't build the ${op}. Nothing to sign.`,
+    })
+  }
+
+  let atoms: string | null = null
+  if (!params.max) {
+    atoms = humanToAtoms(params.amount!, picked.decimals)
+    if (!atoms) {
+      return NextResponse.json({
+        reply: `🏦 “${params.amount}” has more decimal places than ${token} supports (${picked.decimals}).`,
+      })
+    }
+  }
+
+  // 3) Borrow only: simulate first — the health-factor impact belongs in the
+  //    reply the user signs against (AaveKit refuses HF<1 builds regardless).
+  let hfLine = ''
+  let hfWarning: string | null = null
+  if (op === 'borrow') {
+    try {
+      const prev = (await callAgentTool(agent.endpoint!, 'preview', {
+        spokeAddress: picked.spokeAddress,
+        currency: picked.currency,
+        user: walletAddress,
+        amount: params.amount,
+        action: 'borrow',
+        chainId: 1,
+      })) as { healthFactor?: { current?: string | null; after?: string | null; warning?: string | null } }
+      const cur = Number(prev?.healthFactor?.current)
+      const after = Number(prev?.healthFactor?.after)
+      if (Number.isFinite(cur) && Number.isFinite(after)) {
+        hfLine = `\n— Health factor: ${cur.toFixed(2)} → ${after.toFixed(2)} (Aave's own preview — 1.00 is liquidation)`
+        if (after < 1.1) hfWarning = `That leaves a thin liquidation margin (health factor ${after.toFixed(2)}) — a small price move could liquidate your collateral.`
+      } else if (prev?.healthFactor?.warning) {
+        hfWarning = prev.healthFactor.warning
+      }
+    } catch {
+      hfLine = '\n— (Couldn’t simulate the health-factor impact — Aave still refuses any borrow that would break it.)'
+    }
+  }
+
+  // 4) Build via the agent with the RESOLVED addresses.
+  let built: AaveBuiltPlan
+  try {
+    built = (await callAgentTool(agent.endpoint!, `build_${op}`, {
+      spokeAddress: picked.spokeAddress,
+      currency: picked.currency,
+      user: walletAddress,
+      chainId: 1,
+      ...(params.max ? { max: true } : { amount: params.amount }),
+    })) as AaveBuiltPlan
+  } catch (err) {
+    // AaveKit validates server-side against REAL balances + health factor —
+    // surface its reason verbatim, never a model's guess.
+    const msg = err instanceof Error ? err.message : 'the build failed'
+    return NextResponse.json({ reply: `🏦 Couldn't build the ${op}: ${msg}` })
+  }
+
+  // 5) Guard — nothing is offered unless every step verifies.
+  const amountRule: AaveAmountRule = params.max
+    ? op === 'withdraw'
+      ? { kind: 'withdraw-max' }
+      : { kind: 'repay-max', debtAtoms: BigInt(humanToAtoms(debtPos!.debt ?? '0', picked.decimals) ?? '0') }
+    : { kind: 'exact', atoms: BigInt(atoms!) }
+  // The calldata's reserve id may be ANY active leg of this asset on this
+  // spoke that serves the op — AaveKit resolves the leg from its own row
+  // order (live: Bluechip USDC = mixed leg 4 + borrow-only leg 7).
+  const legIds = reserveLegIds(reserveRows, token, picked.spokeAddress, op === 'withdraw' ? 'supply' : 'borrow')
+  const guard = guardAaveOpBuild(built, {
+    op,
+    chainId: 1,
+    amount: amountRule,
+    currency: picked.currency,
+    spoke: picked.spokeAddress,
+    user: walletAddress,
+    onChainIds: legIds.length > 0 ? legIds : picked.onChainId !== null ? [picked.onChainId] : null,
+  })
+  if (!guard.ok || !guard.steps) {
+    return NextResponse.json({
+      reply: `🚫 I built the ${op} but refused it — the transaction didn't verify: ${guard.reasons.join(' ')} Nothing to sign.`,
+      blocked: true,
+    })
+  }
+
+  // 6) Money-moved value + the spend-policy gate at the point of signing.
+  const valueUsd = params.max
+    ? op === 'withdraw'
+      ? parseUsd(supplyPos!.balanceUsd)
+      : parseUsd(debtPos!.debtUsd)
+    : picked.priceUsd !== null
+      ? Number(params.amount) * picked.priceUsd
+      : null
+  const amountText = params.max
+    ? op === 'withdraw'
+      ? `all your ${token} (~${supplyPos!.withdrawable})`
+      : `your full ${token} debt (~${debtPos!.debt}, accrued interest included)`
+    : `${params.amount} ${token}`
+  const { guardrails, blocked } = await aavePolicyGate(
+    valueUsd,
+    walletAddress,
+    op,
+    `Build verified: the steps ${op} exactly ${amountText} on Aave v4 ${picked.spokeName}, ${op === 'repay' ? 'paying down your own debt' : 'sent to your wallet'}.`,
+  )
+  if (blocked) return blocked
+
+  // 7) One self-advancing card, everything shown — signing is the confirmation.
+  const usd = valueUsd !== null ? ` (≈$${valueUsd.toFixed(2)})` : ''
+  let summary: string
+  let detail: string
+  if (op === 'withdraw') {
+    const remaining =
+      !params.max && supplyPos!.withdrawable ? ` — ~${(Number(supplyPos!.withdrawable) - Number(params.amount)).toFixed(4)} ${token} stays in the pool earning` : ''
+    summary = `Withdraw ${amountText}${usd} from Aave v4 ${picked.spokeName} back to your wallet`
+    detail = `— The funds land in ${walletAddress}${remaining}.`
+  } else if (op === 'borrow') {
+    const apy = picked.borrowApyPct !== null ? `${picked.borrowApyPct.toFixed(2)}% borrow APY` : "the pool's live borrow APY"
+    summary = `Borrow ${amountText}${usd} from Aave v4 ${picked.spokeName} against your collateral — ${apy}`
+    detail = `— The borrowed ${token} lands in ${walletAddress}; interest accrues until you repay.${hfLine}`
+  } else {
+    const remaining =
+      !params.max && debtPos!.debt ? ` — ~${(Number(debtPos!.debt) - Number(params.amount)).toFixed(4)} ${token} debt remains` : params.max ? ' — clears the debt in full (the build quotes a hair over for interest accrual; the contract takes only what’s owed)' : ''
+    summary = `Repay ${amountText}${usd} on Aave v4 ${picked.spokeName}`
+    detail = `— Pays down your own debt${remaining}.`
+  }
+  const stepsNote =
+    guard.steps.length > 1
+      ? `Sign the ${token} approval in the card below, and the ${op} appears automatically once it confirms — nothing to retype.`
+      : 'One signature in the card below sends it.'
+  const warns = [...guard.warnings, ...(hfWarning ? [hfWarning] : [])].map((w) => `⚠️ ${w}`).join('\n')
+  return NextResponse.json({
+    reply:
+      `🔏 ${summary}\n` +
+      `— Pool: ${picked.spokeName} spoke \`${picked.spokeAddress}\` · ${token} \`${picked.currency}\` (from Aave's official reserve list)\n` +
+      `${detail}\n` +
+      `${stepsNote}${warns ? `\n${warns}` : ''}`,
+    txChain: { summary, steps: guard.steps },
+    guardrails,
+    workingContext: {
+      v: 1 as const,
+      age: 0,
+      ...(ctx?.scope ? { scope: ctx.scope } : {}),
+      ...(ctx?.offers ? { offers: ctx.offers } : {}),
+      pending: aaveOpPending(params, picked.spokeName, summary),
     } satisfies WorkingContext,
   })
 }
