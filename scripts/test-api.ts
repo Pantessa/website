@@ -64,9 +64,20 @@ import {
   guardGuardianClose,
   approveAgentArtifacts,
   splitSignature,
+  parseGuardianArm,
   type GuardianPolicyParams,
   type GuardianPosition,
 } from '../lib/hl-guardian'
+import {
+  parseHlIntent,
+  buildHlOrderAction,
+  guardHlExecBuild,
+  buildHlDeposit,
+  hlActionTypedData,
+  HL_BRIDGE2_ARBITRUM,
+  ARBITRUM_USDC,
+  type HlOrderIntent,
+} from '../lib/hyperliquid-exec'
 
 const BASE = process.env.BASE ?? 'http://localhost:3000'
 const DOMAIN = new URL(BASE).host
@@ -2651,6 +2662,87 @@ async function main() {
     } else {
       console.log('  ⚪ guardian: CRON_SECRET not in harness env — live sweep check skipped')
     }
+  }
+
+  // ── HL execution layer (parse + build + guard + submit relay) ────────────
+  console.log('— hl exec')
+  {
+    const long = parseHlIntent('long 0.01 eth on hyperliquid')
+    const short = parseHlIntent('short $50 of btc on hl')
+    const dep = parseHlIntent('deposit 20 usdc to hyperliquid')
+    const close = parseHlIntent('close my syrup long on hyperliquid')
+    check(
+      'hl exec: parses long/short/deposit/close (venue word demanded)',
+      long?.kind === 'open' && (long as HlOrderIntent).coin === 'ETH' && (long as HlOrderIntent).sizeUnits === 0.01 && (long as HlOrderIntent).isBuy === true &&
+        short?.kind === 'open' && (short as HlOrderIntent).notionalUsd === 50 && (short as HlOrderIntent).isBuy === false &&
+        dep?.kind === 'deposit' && dep.amountUsdc === 20 &&
+        close?.kind === 'close' && (close as HlOrderIntent).coin === 'SYRUP',
+    )
+    check(
+      'hl exec: never claims venue-less or swap asks',
+      parseHlIntent('long eth') === null && parseHlIntent('swap 1 usdc for eth') === null && parseHlIntent('what is hyperliquid?') === null,
+    )
+
+    const snap = { assetIndex: 4, szDecimals: 4, markPx: 3000, positionSzi: 0 }
+    const openIntent: HlOrderIntent = { kind: 'open', coin: 'ETH', isBuy: true, notionalUsd: 50 }
+    const action = buildHlOrderAction(openIntent, snap)
+    const ctx = { markPx: 3000, assetIndex: 4, withdrawableUsd: 100, positionSzi: 0 }
+    const good = guardHlExecBuild(openIntent, action, ctx)
+    check('hl exec: open build passes guard (IOC, bounded px, ≥$10 notional)', good.ok && action.orders[0].b === true && action.orders[0].r === false && (good.valueUsd ?? 0) >= 49, JSON.stringify(good.checks.filter((c) => !c.ok)))
+    check(
+      'hl exec: guard fails CLOSED (tiny notional / no collateral / wrong asset / stray px)',
+      !guardHlExecBuild({ ...openIntent, notionalUsd: 5 }, buildHlOrderAction({ ...openIntent, notionalUsd: 5 }, snap), ctx).ok &&
+        !guardHlExecBuild(openIntent, action, { ...ctx, withdrawableUsd: 0 }).ok &&
+        !guardHlExecBuild(openIntent, { ...action, orders: [{ ...action.orders[0], a: 9 }] }, ctx).ok &&
+        !guardHlExecBuild(openIntent, { ...action, orders: [{ ...action.orders[0], p: '3300' }] }, ctx).ok,
+    )
+    const closeIntent: HlOrderIntent = { kind: 'close', coin: 'ETH' }
+    const closeSnap = { ...snap, positionSzi: 0.02 }
+    const closeAction = buildHlOrderAction(closeIntent, closeSnap)
+    const closeCtx = { ...ctx, positionSzi: 0.02 }
+    check(
+      'hl exec: close is reduce-only sized to the position; tampers refuse',
+      guardHlExecBuild(closeIntent, closeAction, closeCtx).ok && closeAction.orders[0].r === true && closeAction.orders[0].b === false &&
+        !guardHlExecBuild(closeIntent, { ...closeAction, orders: [{ ...closeAction.orders[0], r: false }] }, closeCtx).ok &&
+        !guardHlExecBuild(closeIntent, { ...closeAction, orders: [{ ...closeAction.orders[0], s: '0.03' }] }, closeCtx).ok,
+    )
+    const td = hlActionTypedData(action, 1752440000000)
+    check('hl exec: L1 typed data is the phantom agent over the action hash', td.primaryType === 'Agent' && (td.message as { source: string }).source === 'a' && /^0x[0-9a-f]{64}$/.test((td.message as { connectionId: string }).connectionId))
+
+    const depGood = buildHlDeposit({ kind: 'deposit', amountUsdc: 20 }, 25)
+    check(
+      'hl exec: deposit build → USDC transfer to the pinned Bridge2; sub-minimum and over-balance refuse',
+      depGood.guardrails.ok && depGood.tx.to === ARBITRUM_USDC && depGood.tx.chainId === 42161 && depGood.tx.data.includes(HL_BRIDGE2_ARBITRUM.slice(2)) &&
+        !buildHlDeposit({ kind: 'deposit', amountUsdc: 4 }, 25).guardrails.ok &&
+        !buildHlDeposit({ kind: 'deposit', amountUsdc: 20 }, 10).guardrails.ok,
+    )
+
+    check(
+      'guardian arm parse: protect/stop/take-profit phrases → policy ask; questions → null',
+      JSON.stringify(parseGuardianArm('protect my SYRUP long with a 10% stop')) === JSON.stringify({ coin: 'SYRUP', kind: 'stop_loss', triggerMode: 'price_move_pct', triggerValue: 10 }) &&
+        parseGuardianArm('take profit on eth at +25%')?.kind === 'take_profit' &&
+        parseGuardianArm('stop loss on syrup at $0.12')?.triggerMode === 'price' &&
+        parseGuardianArm('what is a stop loss?') === null &&
+        parseGuardianArm('protect my position') === null,
+    )
+
+    // Submit relay: the signature IS the auth — recover mismatch and guard
+    // failures refuse before the venue ever sees anything.
+    const relayBad = await fetch(`${BASE}/api/hl/submit`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({}) })
+    check('hl submit: garbage → 400', relayBad.status === 400)
+    const signer = privateKeyToAccount(generatePrivateKey())
+    const sig = await signer.signTypedData({ domain: td.domain, types: td.types, primaryType: 'Agent', message: td.message } as Parameters<typeof signer.signTypedData>[0])
+    const relayWrongFrom = await fetch(`${BASE}/api/hl/submit`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ action, nonce: 1752440000000, signature: sig, from: owner.address, expected: { coin: 'ETH', kind: 'open', isBuy: true } }),
+    })
+    const relayStale = await fetch(`${BASE}/api/hl/submit`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ action, nonce: 1752440000000, signature: sig, from: signer.address, expected: { coin: 'ETH', kind: 'open', isBuy: true } }),
+    })
+    check('hl submit: signer≠from → 403; stale nonce → 400', relayWrongFrom.status === 403 && relayStale.status === 400)
   }
 
   // ── Cleanup (verified) ────────────────────────────────────────────────────

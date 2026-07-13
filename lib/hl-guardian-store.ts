@@ -220,8 +220,11 @@ function policyParams(p: {
  */
 export async function runGuardianSweep(): Promise<SweepSummary> {
   const summary: SweepSummary = { checked: 0, fired: 0, closed: 0, blocked: 0, errors: 0, skipped: 0, notes: [] }
+  // Env fence: local + prod share one Neon DB, so only sweep policies whose
+  // delegation belongs to THIS env's network — never chew another env's rows.
+  const envChain = guardianIsTestnet() ? 'Testnet' : 'Mainnet'
   const policies = await prisma.hlGuardianPolicy.findMany({
-    where: { status: 'active' },
+    where: { status: 'active', delegation: { hlChain: envChain } },
     include: { delegation: true },
     orderBy: { createdAt: 'asc' },
     take: 100,
@@ -326,7 +329,19 @@ export async function runGuardianSweep(): Promise<SweepSummary> {
         }
 
         trace({ type: 'status', label: `guardian: guard passed (${guard.checks.length} checks) — closing ${action.orders[0].s} ${row.coin} reduce-only, ~$${guard.valueUsd}` })
-        const agentAccount = privateKeyToAccount(decryptAgentKey(row.delegation.agentKeyEnc))
+        // Second half of the env fence: same network, DIFFERENT env secret
+        // (a local-dev row on mainnet). Not ours — re-arm and step aside for
+        // the env that owns it; never mark it errored.
+        let agentKey: `0x${string}`
+        try {
+          agentKey = decryptAgentKey(row.delegation.agentKeyEnc)
+        } catch {
+          await prisma.hlGuardianPolicy.update({ where: { id: row.id }, data: { status: 'active' } })
+          trace({ type: 'note', level: 'info', label: 'guardian: agent key encrypted by another env — standing aside' })
+          summary.skipped++
+          continue
+        }
+        const agentAccount = privateKeyToAccount(agentKey)
         const exchange = new ExchangeClient({ transport: transport(), wallet: agentAccount })
         const res = await exchange.order({ orders: action.orders, grouping: action.grouping })
         const status = res.response.data.statuses[0]
@@ -381,4 +396,57 @@ async function recordRun(
       },
     })
     .catch(() => {})
+}
+
+// ── Arming (shared by the /api/guardian/policies route and the chat layer) ──
+
+import { evaluatePolicy as evalForArm, type GuardianArmAsk } from '@/lib/hl-guardian'
+
+export type ArmResult =
+  | { ok: true; policy: { id: string; coin: string; side: string; kind: string; triggerMode: string; triggerValue: number }; positionNote: string }
+  | { ok: false; status: number; error: string }
+
+/**
+ * Validate + arm one guardian policy against the LIVE position. One rulebook
+ * for every surface: an active unexpired delegation, an open position on the
+ * coin, a trigger that doesn't fire the instant it's armed, and no duplicate
+ * armed policy of the same kind on the coin.
+ */
+export async function armGuardianPolicy(wallet: string, ask: GuardianArmAsk): Promise<ArmResult> {
+  const w = wallet.toLowerCase()
+  if (!Number.isFinite(ask.triggerValue) || ask.triggerValue <= 0 || (ask.triggerMode === 'price_move_pct' && ask.triggerValue >= 100)) {
+    return { ok: false, status: 400, error: 'The trigger must be a positive number (a percent below 100, or an absolute price).' }
+  }
+  const delegation = await getDelegation(w)
+  if (!delegation || delegation.status !== 'active' || delegation.expiresAt <= new Date()) {
+    return { ok: false, status: 409, error: 'No active guardian delegation — approve the guardian agent first.' }
+  }
+  let positions
+  try {
+    positions = await fetchPositions(w)
+  } catch (e) {
+    return { ok: false, status: 502, error: `Hyperliquid read failed: ${(e as Error).message}` }
+  }
+  const pos = positions.find((p) => p.coin === ask.coin)
+  if (!pos) return { ok: false, status: 400, error: `No open ${ask.coin} perp position on this account.` }
+
+  if (pos.markPx != null) {
+    const verdict = evalForArm({ coin: ask.coin, side: pos.side, kind: ask.kind, triggerMode: ask.triggerMode, triggerValue: ask.triggerValue }, pos, pos.markPx)
+    if (verdict.fired) {
+      return { ok: false, status: 400, error: `That trigger would fire immediately (${verdict.reason}). Set it past the current mark.` }
+    }
+  }
+  const dupe = await prisma.hlGuardianPolicy.findFirst({
+    where: { wallet: w, coin: ask.coin, kind: ask.kind, status: { in: ['active', 'paused', 'triggered'] } },
+  })
+  if (dupe) return { ok: false, status: 409, error: `A ${ask.kind.replace('_', ' ')} on ${ask.coin} is already armed — pause or retire it first.` }
+
+  const row = await prisma.hlGuardianPolicy.create({
+    data: { delegationId: delegation.id, wallet: w, coin: ask.coin, side: pos.side, kind: ask.kind, triggerMode: ask.triggerMode, triggerValue: ask.triggerValue },
+  })
+  return {
+    ok: true,
+    policy: { id: row.id, coin: row.coin, side: row.side, kind: row.kind, triggerMode: row.triggerMode, triggerValue: row.triggerValue },
+    positionNote: `${pos.coin} ${pos.side} ${pos.leverage}x · entry ${pos.entryPx} · mark ${pos.markPx ?? '—'} · uPnL $${pos.unrealizedPnl.toFixed(2)}`,
+  }
 }

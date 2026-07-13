@@ -25,6 +25,9 @@ import {
   type CrossChainSwapParams,
   type BuiltSwap,
 } from '@/lib/cross-chain-swap'
+import { buildHlExecTurn, hlAgentOf, parseHlIntent } from '@/lib/hyperliquid-exec'
+import { parseGuardianArm } from '@/lib/hl-guardian'
+import { armGuardianPolicy } from '@/lib/hl-guardian-store'
 import {
   aaveAgentOf,
   competingVenueOf,
@@ -617,6 +620,57 @@ export async function POST(req: NextRequest) {
       // it. This line is the breadcrumb that was missing when a parse miss
       // sent a build ask to the planner and its -32602 looked like MCP flake.
       nativeTrace({ type: 'note', level: 'info', label: 'aave named but no imperative supply/withdraw/borrow/repay parse — normal routing (reads are fine here; build asks should say e.g. “supply 5 USDC to aave”)' })
+    }
+
+    // Guardian arming from chat — "protect my SYRUP long with a 10% stop".
+    // No signable artifact: with an active delegation the policy arms
+    // server-side through the SAME rulebook as the dashboard; without one,
+    // point at the one-signature approval. Requires the Hyperliquid agent in
+    // the set so a stray "stop loss" in another context never claims a turn.
+    const armAsk = parseGuardianArm(message)
+    if (armAsk && hlAgentOf(activeServers).agent) {
+      nativeTrace({ type: 'status', label: `guardian layer claimed the turn: ${armAsk.kind} on ${armAsk.coin} (${armAsk.triggerMode} ${armAsk.triggerValue}) — planner bypassed` })
+      if (!walletAddress) {
+        return NextResponse.json({ reply: '🛡️ Connect your wallet first — the guardian watches YOUR Hyperliquid positions.' })
+      }
+      const armed = await armGuardianPolicy(walletAddress, armAsk)
+      if (!armed.ok) {
+        nativeTrace({ type: 'note', level: 'warn', label: `guardian layer: arming refused — ${armed.error.slice(0, 140)}` })
+        const approveHint = armed.status === 409 && /delegation/i.test(armed.error)
+          ? ' Approve it on the [Guardian dashboard](/dashboard/guardian) — one signature, the agent key can trade but never withdraw, and it expires on its own.'
+          : ''
+        return NextResponse.json({ reply: `🛡️ ${armed.error}${approveHint}` })
+      }
+      const p = armed.policy
+      nativeTrace({ type: 'status', label: `guardian layer: armed ${p.kind} on ${p.coin} (${p.triggerMode} ${p.triggerValue})` })
+      return NextResponse.json({
+        reply:
+          `🛡️ **Armed.** ${p.kind === 'stop_loss' ? 'Stop-loss' : 'Take-profit'} on your ${p.coin} ${p.side}: closes reduce-only when ` +
+          `${p.triggerMode === 'price' ? `the mark crosses ${p.triggerValue}` : `price moves ${p.triggerValue}% ${p.kind === 'stop_loss' ? 'against' : 'for'} you from entry`}. ` +
+          `(${armed.positionNote}.) The guardian checks every minute; every action lands as a receipt on the [Guardian dashboard](/dashboard/guardian), where you can pause or retire it.`,
+      })
+    }
+
+    // Hyperliquid execution layer — perp orders + the bridge-deposit on-ramp,
+    // signed by the USER'S wallet (their wallet IS the HL account). Demands
+    // the venue word, so it never claims generic swap asks; runs BEFORE the
+    // swap layer so "buy 10 syrup perp on hyperliquid" isn't mistaken for a
+    // spot swap.
+    const hlIntent = parseHlIntent(message)
+    if (hlIntent) {
+      const hlAgent = hlAgentOf(activeServers)
+      if (hlAgent.agent && hlAgent.usable) {
+        const what = hlIntent.kind === 'deposit' ? `deposit ${hlIntent.amountUsdc} USDC` : `${hlIntent.kind} ${hlIntent.coin}`
+        nativeTrace({ type: 'status', label: `native hl layer claimed the turn: ${what} on Hyperliquid — planner bypassed` })
+        try {
+          const turn = await buildHlExecTurn(hlIntent, walletAddress, nativeTrace)
+          return NextResponse.json(turn)
+        } catch (e) {
+          nativeTrace({ type: 'error', label: `native hl layer: ${(e as Error).message}` })
+          return NextResponse.json({ reply: `📈 ${(e as Error).message}` })
+        }
+      }
+      nativeTrace({ type: 'note', level: 'info', label: 'hl-shaped ask but no Hyperliquid agent in the set — normal routing' })
     }
 
     const swapIntent = parseSwapIntent(message)
