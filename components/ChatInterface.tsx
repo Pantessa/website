@@ -179,6 +179,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
     servers,
     activeServerIds,
     setActiveServerIds,
+    manualSlugs,
     updateChatServers,
     chats,
     currentChatId,
@@ -268,8 +269,12 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
   const activeServers = servers.filter((s) => activeServerIds.includes(s.id))
   // Show the connected-wallet splash when we have a wallet + a MCP that can
   // paint a dashboard tile (Uniswap portfolio / Snapshot proposals / CoW
-  // orders / Hyperliquid positions / …).
-  const splashEligible = !!effectiveAddress && !autoRouter && activeServers.some(splashCapable)
+  // orders / Hyperliquid positions / …) — or one the user hand-picked, which
+  // always gets a card (preview when there's no activity).
+  const splashEligible =
+    !!effectiveAddress &&
+    !autoRouter &&
+    activeServers.some((s) => splashCapable(s) || manualSlugs.includes(s.slug))
 
   // "What can I do?" example: prefill the input and toggle the mapped agent on
   // (when it's in the live catalog). We prefill rather than auto-send so the
@@ -875,6 +880,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
               <SplashDashboard
                 address={effectiveAddress}
                 servers={activeServers}
+                manualSlugs={manualSlugs}
                 onPick={pickExample}
                 dismissed={input.trim().length > 0}
                 onResolve={setSplashCount}

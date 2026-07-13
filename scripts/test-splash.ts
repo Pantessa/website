@@ -6,7 +6,7 @@
 //
 // (Kept out of test:api since it needs neither a server nor Neon.)
 
-import { SPLASH_SOURCES } from '@/lib/splash/sources'
+import { SPLASH_SOURCES, previewTile, type SplashServer } from '@/lib/splash/sources'
 import { touchesContracts, UNISWAP_CONTRACTS } from '@/lib/splash/affinity'
 import type { McpServer } from '@/lib/store'
 import type { HoldingsTile, ProposalsTile, RowsTile } from '@/lib/splash/types'
@@ -158,6 +158,25 @@ async function run() {
     check('counterparty in the router set matches', touchesContracts(['0xdeadbeef', ur], UNISWAP_CONTRACTS['base-mainnet']))
     check('no router counterparty → no match', !touchesContracts(['0xdeadbeef'], UNISWAP_CONTRACTS['base-mainnet']))
     check('all probe addresses are lowercase', Object.values(UNISWAP_CONTRACTS).flat().every((a) => a === a.toLowerCase() && /^0x[0-9a-f]{40}$/.test(a)))
+  }
+
+  console.log('preview tiles — the manual-pick exception')
+  {
+    // Every dedicated source has canned preview copy with prompt chips.
+    for (const source of SPLASH_SOURCES) {
+      const tile = previewTile(srv(`${source.id}-x`, source.id) as SplashServer, source.id)
+      check(`${source.id} preview is an empty-render tile with prompts`, tile.render === 'empty' && tile.prompts.length >= 2)
+      check(`${source.id} preview has a message`, tile.render === 'empty' && tile.message.length > 0)
+    }
+    // Generic preview (no dedicated source): example queries become the chips…
+    const custom = { ...srv('my-mcp', 'My MCP'), description: 'Does useful things.', exampleQueries: ['Ask me a thing', 'Ask me another'] } as SplashServer
+    const generic = previewTile(custom)
+    check('generic preview chips come from exampleQueries', generic.prompts.length === 2 && generic.prompts[0].prompt === 'Ask me a thing')
+    check('generic preview message from the description', generic.render === 'empty' && /useful things/i.test(generic.message))
+    // …and a bare row still gets a "what can you do" way in.
+    const bare = previewTile(srv('bare-mcp', 'Bare MCP') as SplashServer)
+    check('bare preview falls back to a what-can-you-do prompt', bare.prompts.length === 1 && /what can/i.test(bare.prompts[0].prompt))
+    check('preview id is slug-scoped (dedupe-safe)', bare.id === 'bare-mcp-preview')
   }
 
   console.log('splash sources — matchers')

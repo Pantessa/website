@@ -28,7 +28,7 @@ function mcpBaseOf(endpoint: string | null, childUrl: string | null): string | n
  * no spend, no auth. The chat UI paints this before the first keystroke.
  */
 export async function POST(req: Request) {
-  let body: { address?: string; servers?: Pick<McpServer, 'slug'>[] }
+  let body: { address?: string; servers?: Pick<McpServer, 'slug'>[]; manualSlugs?: string[] }
   try {
     body = await req.json()
   } catch {
@@ -44,6 +44,12 @@ export async function POST(req: Request) {
     ...new Set((Array.isArray(body.servers) ? body.servers : []).map((s) => s?.slug).filter((s): s is string => !!s)),
   ]
   if (slugs.length === 0) return NextResponse.json({ address, tiles: [] })
+  // MCPs the user explicitly toggled on — these always paint a card (a
+  // preview when the wallet has no activity). Only honored for slugs that are
+  // in the requested set anyway; this flag can't conjure extra servers.
+  const manual = new Set(
+    (Array.isArray(body.manualSlugs) ? body.manualSlugs : []).filter((s): s is string => typeof s === 'string'),
+  )
 
   try {
     const rows = await prisma.mcpServer.findMany({
@@ -52,6 +58,7 @@ export async function POST(req: Request) {
         id: true,
         slug: true,
         name: true,
+        description: true,
         endpoint: true,
         exampleQueries: true,
         endpoints: { select: { url: true }, take: 1 },
@@ -72,13 +79,17 @@ export async function POST(req: Request) {
     const resolved: SplashServer[] = rows
       .map((r) => {
         const base = mcpBaseOf(r.endpoint, r.endpoints[0]?.url ?? null)
-        if (!base) return null
+        // No callable base normally means no card — but a hand-picked MCP
+        // still gets its preview (buildSplash skips the tool calls for it).
+        if (!base && !manual.has(r.slug)) return null
         return {
           id: r.id,
           slug: r.slug,
           name: r.name,
+          description: r.description,
           endpoint: base,
           exampleQueries: r.exampleQueries,
+          forceShow: manual.has(r.slug),
           featuredEndpoints: (featuredByServer.get(r.id) ?? []).map((f) => ({
             url: f.url,
             description: f.description,

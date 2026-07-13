@@ -24,6 +24,7 @@ export default function McpRail() {
     activeServerIds,
     setActiveServerIds,
     updateChatServers,
+    markManualMcp,
     currentChatId,
     mcpRailOpen,
     setMcpRailOpen,
@@ -75,16 +76,21 @@ export default function McpRail() {
     if (currentChatId) updateChatServers(currentChatId, next)
   }
 
-  // Row click toggles the MCP in or out of the working set.
+  // Row click toggles the MCP in or out of the working set. A rail toggle is a
+  // DELIBERATE pick — mark it manual so the splash shows this MCP's card even
+  // with zero wallet activity (the affinity gate only applies to the auto scan).
   const toggleMcp = (server: (typeof servers)[number]) => {
+    const turningOn = !activeServerIds.includes(server.id)
+    markManualMcp(server.slug, turningOn)
     persist(
-      activeServerIds.includes(server.id)
-        ? activeServerIds.filter((id) => id !== server.id)
-        : [...activeServerIds, server.id],
+      turningOn
+        ? [...activeServerIds, server.id]
+        : activeServerIds.filter((id) => id !== server.id),
     )
   }
 
   const removeMcp = (server: (typeof servers)[number]) => {
+    markManualMcp(server.slug, false)
     persist(activeServerIds.filter((id) => id !== server.id))
   }
 
