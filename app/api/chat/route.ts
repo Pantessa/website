@@ -17,6 +17,7 @@ import { parseVoteIntent, resolveVoteReference, type VoteIntent } from '@/lib/vo
 import { crossChainAgentOf, detectCrossChain, parseSwapIntent, parseSwapFollowUp, swapWorkingContext, type SwapIntent } from '@/lib/swap-intent'
 import { chainById, chainByKey, primaryStable, sanitizeChainId, DEFAULT_CHAIN_ID, APP_CHAINS } from '@/lib/chains'
 import { usdPerToken, usdToTokenAmount } from '@/lib/usd-probe'
+import { parseRobinhoodBridge, buildRobinhoodBridge } from '@/lib/robinhood-bridge'
 import {
   parseCrossChainSwap,
   parseCrossChainFollowUp,
@@ -701,6 +702,45 @@ export async function POST(req: NextRequest) {
         }
       }
       nativeTrace({ type: 'note', level: 'info', label: 'hl-shaped ask but no Hyperliquid agent in the set — normal routing' })
+    }
+
+    // ── Native Robinhood Chain bridge (deterministic). There is exactly ONE
+    //    bridge we trust for Robinhood Chain — the canonical Arbitrum bridge —
+    //    so a bridge ask either builds it or gets an honest answer. Before
+    //    this gate the planner claimed these turns and INVENTED venue chips
+    //    (Stargate/Across, live 2026-07-14) — none of them integrated.
+    const bridgeAsk = parseRobinhoodBridge(message)
+    if (bridgeAsk) {
+      if ('problem' in bridgeAsk) {
+        nativeTrace({ type: 'status', label: 'native bridge layer claimed the turn — outside the canonical route, honest limits (no build)' })
+        return NextResponse.json({ reply: `🌉 ${bridgeAsk.problem}` })
+      }
+      if (!walletAddress) {
+        nativeTrace({ type: 'note', level: 'info', label: 'bridge ask but no wallet connected — asking to connect before building' })
+        return NextResponse.json({
+          reply: '🌉 Connect your wallet to bridge — you sign the transaction yourself, so it has to be built for your address.',
+          connectWallet: true,
+        })
+      }
+      nativeTrace({ type: 'select', service: 'Robinhood Chain bridge (native)', endpoint: bridgeAsk.kind === 'deposit' ? 'Delayed Inbox depositEth on Ethereum' : 'ArbSys withdrawEth on Robinhood Chain', priceUsd: 0, reason: 'native bridge layer — the canonical bridge is the one trusted route, built deterministically and guarded' })
+      try {
+        const built = await buildRobinhoodBridge({ kind: bridgeAsk.kind, amount: bridgeAsk.amount, from: walletAddress })
+        if (built.blocked) {
+          const reasons = built.refusal ?? built.guardrails.checks.filter((c) => !c.ok && c.level === 'block').map((c) => c.note).join(' ')
+          nativeTrace({ type: 'note', level: 'warn', label: `bridge build REFUSED: ${(reasons || 'a safety check failed.').slice(0, 200)}` })
+          return NextResponse.json({ reply: `🚫 ${reasons || 'A safety check failed — nothing was built.'}`, guardrails: built.guardrails, blocked: true, buildPath: 'native-bridge-robinhood' })
+        }
+        nativeTrace({ type: 'status', label: `bridge guard passed — ${bridgeAsk.kind} of ${bridgeAsk.amount} ETH built (valueUsd ${built.guardrails.valueUsd ?? 'n/a'}), awaiting signature` })
+        return NextResponse.json({
+          reply: `🌉 ${built.summary}\n${built.note}`,
+          txRequest: built.tx,
+          guardrails: built.guardrails,
+          buildPath: 'native-bridge-robinhood',
+        })
+      } catch (e) {
+        nativeTrace({ type: 'note', level: 'warn', label: `bridge build failed: ${(e as Error).message.slice(0, 160)}` })
+        return NextResponse.json({ reply: `🌉 Couldn't build the bridge transfer: ${(e as Error).message}` })
+      }
     }
 
     const swapIntent = parseSwapIntent(message)

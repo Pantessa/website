@@ -32,6 +32,7 @@ import { resolveToken, buildCowOrderTypedData, cowOrderAction, buildCowLimitOrde
 import { pureChecks, policyCheck, orderValueUsd, buildReport } from '../lib/cow-guardrails'
 import { parseSwapIntent } from '../lib/swap-intent'
 import { usdToTokenAmount } from '../lib/usd-probe'
+import { parseRobinhoodBridge, guardRobinhoodBridge, RH_L1_INBOX, ARB_SYS } from '../lib/robinhood-bridge'
 import { keccak256, stringToBytes } from 'viem'
 import { isCacheable, routeCacheKey, getCached, setCached, clearRouteCache } from '../lib/route-cache'
 import { routeSavings } from '../lib/route-telemetry'
@@ -2380,6 +2381,49 @@ async function main() {
     body: JSON.stringify({ message: 'can i swap about $1 worth of ETH for USDC?', activeServers: [] }),
   }).then((r) => r.json())
   check('native swap: dollar ask asks to connect (not a dead-end clarify)', dollarNoWallet.connectWallet === true, JSON.stringify(dollarNoWallet).slice(0, 200))
+
+  // Native Robinhood bridge layer (pure parse + guard). The planner once
+  // invented Stargate/Across chips for these asks (live 2026-07-14) — the
+  // native layer claims them: canonical bridge or an honest answer.
+  const br = parseRobinhoodBridge('can i bridge 0.000561 ETH to robinhood from ethereum?')
+  check('bridge parse: ETH deposit ask (the live dead-end)', !!br && !('problem' in br) && br.kind === 'deposit' && br.amount === '0.000561')
+  const brArb = parseRobinhoodBridge('Can I bridge 0.000561 ETH from Arbitrum to Robinhood Chain?')
+  check('bridge parse: foreign origin → honest Ethereum-only answer, no options', !!brArb && 'problem' in brArb && /Ethereum/.test(brArb.problem))
+  const brW = parseRobinhoodBridge('withdraw 0.01 eth from robinhood to ethereum')
+  check('bridge parse: withdrawal direction', !!brW && !('problem' in brW) && brW.kind === 'withdraw' && brW.amount === '0.01')
+  const brErc = parseRobinhoodBridge('bridge 100 USDG to robinhood')
+  check('bridge parse: ERC-20 → bridge UI pointer, never built', !!brErc && 'problem' in brErc && /portal\.arbitrum\.io/.test(brErc.problem))
+  const brNoAmt = parseRobinhoodBridge('bridge eth to robinhood')
+  check('bridge parse: missing amount clarifies', !!brNoAmt && 'problem' in brNoAmt && /How much/i.test(brNoAmt.problem))
+  check(
+    'bridge parse: non-bridge robinhood asks fall through',
+    parseRobinhoodBridge('show my portfolio on robinhood') === null &&
+      parseRobinhoodBridge('what is robinhood chain?') === null &&
+      parseRobinhoodBridge('swap 1 usdc for weth') === null,
+  )
+  // Guard fails CLOSED: exact wei, pinned contracts, signer-pinned destination.
+  const me = '0x1111111111111111111111111111111111111111'
+  const depositData = keccak256(stringToBytes('depositEth()')).slice(0, 10)
+  const withdrawData = (keccak256(stringToBytes('withdrawEth(address)')).slice(0, 10) + '000000000000000000000000' + me.slice(2)) as string
+  check(
+    'bridge guard: valid deposit/withdraw pass, tampers refuse',
+    guardRobinhoodBridge({ to: RH_L1_INBOX, data: depositData, value: '1000', chainId: 1, action: 'bridge-deposit' }, { kind: 'deposit', wei: BigInt(1000), user: me }).ok === true &&
+      guardRobinhoodBridge({ to: RH_L1_INBOX, data: depositData, value: '999', chainId: 1, action: 'bridge-deposit' }, { kind: 'deposit', wei: BigInt(1000), user: me }).ok === false &&
+      guardRobinhoodBridge({ to: me, data: depositData, value: '1000', chainId: 1, action: 'bridge-deposit' }, { kind: 'deposit', wei: BigInt(1000), user: me }).ok === false &&
+      guardRobinhoodBridge({ to: ARB_SYS, data: withdrawData, value: '1000', chainId: 4663, action: 'bridge-withdraw' }, { kind: 'withdraw', wei: BigInt(1000), user: me }).ok === true &&
+      guardRobinhoodBridge({ to: ARB_SYS, data: withdrawData, value: '1000', chainId: 4663, action: 'bridge-withdraw' }, { kind: 'withdraw', wei: BigInt(1000), user: '0x2222222222222222222222222222222222222222' }).ok === false,
+  )
+  // Deterministic route paths: the native layer claims the turn (no planner).
+  const bridgeNoWallet = await fetch(`${BASE}/api/chat`, {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ message: 'can i bridge 0.000561 ETH to robinhood from ethereum?', activeServers: [] }),
+  }).then((r) => r.json())
+  check('native bridge: deposit ask asks to connect (not planner options)', bridgeNoWallet.connectWallet === true, JSON.stringify(bridgeNoWallet).slice(0, 200))
+  const bridgeArb = await fetch(`${BASE}/api/chat`, {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ message: 'Can I bridge 0.000561 ETH from Arbitrum to Robinhood Chain?', activeServers: [] }),
+  }).then((r) => r.json())
+  check('native bridge: foreign origin answered honestly (no invented venues)', typeof bridgeArb.reply === 'string' && /Ethereum/.test(bridgeArb.reply) && !/stargate|across/i.test(bridgeArb.reply), JSON.stringify(bridgeArb).slice(0, 200))
   // Native swap tool: fires with NO service shortlisted (Nate 2026-07-02 —
   // swap building is Yeetful's own tool, not gated on CoW being active).
   // Deterministic paths only (clarify + connect-wallet); the live build is a
