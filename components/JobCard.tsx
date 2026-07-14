@@ -49,9 +49,13 @@ function StepIcon({ step, isCurrent }: { step: StepRow; isCurrent: boolean }) {
 
 export default function JobCard({
   jobId,
+  token,
   onStepSigned,
 }: {
   jobId: string
+  /** Capability token from the turn that compiled the job — the embed path's
+   *  auth (no SIWE session in an iframe visitor). Appended as ?t=. */
+  token?: string
   /** Telemetry hook — fired once per signed step with its value + builder. */
   onStepSigned?: (info: { builder: string; valueUsd?: number | null; detail?: string }) => void
 }) {
@@ -59,12 +63,15 @@ export default function JobCard({
   const [error, setError] = useState('')
   const [expanded, setExpanded] = useState(true)
   const timer = useRef<ReturnType<typeof setInterval> | null>(null)
+  const q = token ? `?t=${token}` : ''
 
   const load = useCallback(async () => {
     try {
-      const res = await fetch(`/api/jobs/${jobId}`, { cache: 'no-store' })
+      const res = await fetch(`/api/jobs/${jobId}${q}`, { cache: 'no-store' })
       if (!res.ok) {
         setError(res.status === 401 ? 'Sign in to watch this job.' : 'Job not found.')
+        // Auth won't materialize mid-poll — stop instead of hammering 401s.
+        if (timer.current) clearInterval(timer.current)
         return
       }
       const data = (await res.json()) as { job: JobRow }
@@ -73,7 +80,7 @@ export default function JobCard({
     } catch {
       /* transient poll miss — keep the last state */
     }
-  }, [jobId])
+  }, [jobId, q])
 
   useEffect(() => {
     void load()
@@ -89,7 +96,7 @@ export default function JobCard({
   }, [job])
 
   const completeStep = async (seq: number, builder: string, result: Record<string, unknown>, valueUsd?: number | null) => {
-    await fetch(`/api/jobs/${jobId}/complete`, {
+    await fetch(`/api/jobs/${jobId}/complete${q}`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ seq, result }),
@@ -99,7 +106,7 @@ export default function JobCard({
   }
 
   const cancel = async () => {
-    await fetch(`/api/jobs/${jobId}`, { method: 'DELETE' }).catch(() => {})
+    await fetch(`/api/jobs/${jobId}${q}`, { method: 'DELETE' }).catch(() => {})
     void load()
   }
 

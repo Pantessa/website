@@ -28,10 +28,22 @@ FEATURE this lane ships, not a constraint it suffers.
       isn't live there yet) — rerun for the docs paste then.
 
 ## W2 — Embed verification, $0  [needs W1 dryRun for the cheap path]
-- [ ] Local embed page test: /embed with burner address → send the compound
-      ask → JobCard renders with offered step-1 artifact → DO NOT SIGN.
-- [ ] Fix whatever breaks (postMessage/meta plumbing in embed mode).
-- [ ] Screenshot for the lane PR.
+- [x] Local embed page test: /embed with burner address → send the compound
+      ask → JobCard renders with offered step-1 artifact → DID NOT SIGN.
+      (Bridge-first 6-step ask: step 1 offered at $4.00 w/ Sign & send;
+      deposit-first ask fails HONESTLY on real balances — also correct.)
+- [x] Fix whatever breaks: IT BROKE exactly as predicted — JobCard polls
+      GET /api/jobs/[id] which was SIWE/Bearer-only, so embed visitors got
+      401s forever (and the card kept polling). Fix = per-job capability
+      token (lib/job-token.ts, HMAC(jobId, SESSION_SECRET)): chat's job
+      reply carries jobToken, JobCard appends ?t= to poll/complete/cancel,
+      the three /api/jobs/[id]* routes accept owner OR token, and the card
+      stops polling on 401/404. Token DELETE proven through the real card's
+      cancel (200, status→canceled). 2 new harness checks (401→404 flip on
+      a token for a nonexistent id = the gate proven with ZERO rows).
+- [x] Screenshot for the lane PR (in-session: embed + compiled 6-step job
+      card, step-1 bridge artifact offered, unsigned). All 4 dev test jobs
+      terminal (canceled/failed), origin_env=dev — prod cron blind to them.
 
 ## W3 — Docs overhaul: the transaction layer IS the product
 - [ ] Restructure /docs nav: 1) What Yeetful is (intents → guarded builds →
@@ -71,4 +83,10 @@ FEATURE this lane ships, not a constraint it suffers.
   $25 on HL (ETH long armed w/ 0.1% guardian stop — leave it alone).
 - 10:15 W1 DONE: tsc + build green, test:api 459 passed / 2 known reds vs
   next start :3299, demo script run local (dryRun, $0, nothing created).
-  PR w1-jobs-api → day2-lane. Prod demo paste deferred to lane-end deploy.
+  PR w1-jobs-api → day2-lane (#411, merged). Prod demo paste deferred to
+  lane-end deploy.
+- 10:35 W2 DONE: embed JobCard 401 plumbing found + fixed via job
+  capability tokens (lib/job-token.ts); full sign-step card verified in
+  /embed unsigned; token cancel exercised through the UI; test:api 461/2
+  known reds. Headless gotcha: React controlled textarea ignores CDP
+  type + form_input — native value setter + dispatched input/keydown works.

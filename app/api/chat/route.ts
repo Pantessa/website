@@ -30,6 +30,7 @@ import { parseGuardianArm } from '@/lib/hl-guardian'
 import { armGuardianPolicy } from '@/lib/hl-guardian-store'
 import { compileJobAsk } from '@/lib/jobs'
 import { advanceJob, createJob } from '@/lib/jobs-runner'
+import { signJobToken } from '@/lib/job-token'
 import {
   aaveAgentOf,
   competingVenueOf,
@@ -645,6 +646,9 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({
         reply: `🧭 **Job compiled:** ${job.title}. Every step is built and guard-checked when it's offered; between your signatures the runner handles settlement waits and server-side steps on its own.`,
         jobId: job.id,
+        // Capability token: the JobCard reads/advances THIS job with it —
+        // embed visitors have no SIWE session (lib/job-token.ts).
+        jobToken: signJobToken(job.id),
         buildPath: 'native-job',
       })
     }
