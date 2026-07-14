@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getAddress, isAddress } from 'viem'
+import { erc20Abi, formatUnits, getAddress, isAddress } from 'viem'
 import { getPaidFetch, hasAgentWallet } from '@/lib/agent-wallet'
 import {
   decodeSettlement,
@@ -15,7 +15,17 @@ import type { McpServer } from '@/lib/store'
 import { voteRequestFromToolResult, friendlyVoteError, type VoteRequest } from '@/lib/snapshot-vote'
 import { parseVoteIntent, resolveVoteReference, type VoteIntent } from '@/lib/vote-intent'
 import { crossChainAgentOf, detectCrossChain, parseSwapIntent, parseSwapFollowUp, swapWorkingContext, type SwapIntent } from '@/lib/swap-intent'
-import { chainById, chainByKey, sanitizeChainId, DEFAULT_CHAIN_ID, APP_CHAINS } from '@/lib/chains'
+import { chainById, chainByKey, publicClientFor, sanitizeChainId, DEFAULT_CHAIN_ID, APP_CHAINS } from '@/lib/chains'
+import {
+  guardLidoStakeBuild,
+  isLidoGuidedAsk,
+  lidoAgentOf,
+  parseLidoStake,
+  suggestedStakeEth,
+  type LidoBuiltStake,
+  type LidoPositionPayload,
+  type LidoStakeParams,
+} from '@/lib/lido-stake'
 import {
   parseCrossChainSwap,
   parseCrossChainFollowUp,
@@ -30,6 +40,7 @@ import { parseGuardianArm } from '@/lib/hl-guardian'
 import { armGuardianPolicy } from '@/lib/hl-guardian-store'
 import { compileJobAsk } from '@/lib/jobs'
 import { advanceJob, createJob } from '@/lib/jobs-runner'
+import { signJobToken } from '@/lib/job-token'
 import {
   aaveAgentOf,
   competingVenueOf,
@@ -645,6 +656,9 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({
         reply: `🧭 **Job compiled:** ${job.title}. Every step is built and guard-checked when it's offered; between your signatures the runner handles settlement waits and server-side steps on its own.`,
         jobId: job.id,
+        // Capability token: the JobCard reads/advances THIS job with it —
+        // embed visitors have no SIWE session (lib/job-token.ts).
+        jobToken: signJobToken(job.id),
         buildPath: 'native-job',
       })
     }
@@ -678,6 +692,29 @@ export async function POST(req: NextRequest) {
         guardianPolicyId: p.id,
         buildPath: 'native-hl-guardian',
       })
+    }
+
+    // Lido staking layer — "stake 0.5 eth on lido" builds a guarded stake
+    // (recipient pinned to the canonical mainnet contracts), and the GUIDED
+    // ask ("help me stake on lido") answers with a deterministic balance
+    // check + the exact next ask as a chip — the agent proposes the job.
+    // Demands the venue word AND the Lido MCP in the set.
+    const lidoAgent = lidoAgentOf(activeServers)
+    if (lidoAgent.agent && lidoAgent.usable && isLidoGuidedAsk(message)) {
+      nativeTrace({ type: 'status', label: 'lido layer claimed the turn (guided): deterministic balance check → proposing the exact ask as a chip' })
+      return await guideLidoStakeTurn(lidoAgent.agent, walletAddress, message, nativeTrace)
+    }
+    const lidoAsk = parseLidoStake(message)
+    if (lidoAsk && lidoAgent.agent && lidoAgent.usable) {
+      if ('problem' in lidoAsk) {
+        nativeTrace({ type: 'status', label: `lido layer: ask under-specified — ${lidoAsk.problem.slice(0, 120)}` })
+        return NextResponse.json({ reply: `🌊 ${lidoAsk.problem}` })
+      }
+      nativeTrace({ type: 'status', label: `lido layer claimed the turn: stake ${lidoAsk.amount} ETH → ${lidoAsk.receive} — planner bypassed` })
+      return await buildLidoStakeTurn(lidoAgent.agent, lidoAsk, walletAddress, message, nativeTrace)
+    }
+    if (lidoAsk && !lidoAgent.agent) {
+      nativeTrace({ type: 'note', level: 'info', label: 'lido-shaped stake ask but no Lido MCP in the set — normal routing' })
     }
 
     // Hyperliquid execution layer — perp orders + the bridge-deposit on-ramp,
@@ -1127,6 +1164,170 @@ async function buildCrossChainSwapTurn(
       ...(ctx?.offers ? { offers: ctx.offers } : {}),
       pending: crossChainPending(params, guard.depositAddress ?? '', summary),
     } satisfies WorkingContext,
+  })
+}
+
+// ── Lido staking (native, via the Lido MCP) ──────────────────────────────────
+
+/** USDC contracts for the guided moment's broke-but-stablecoined check. */
+const GUIDED_USDC: { chain: string; chainId: number; address: `0x${string}` }[] = [
+  { chain: 'Base', chainId: 8453, address: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913' },
+  { chain: 'Arbitrum', chainId: 42161, address: '0xaf88d065e77c8cC2239327C5EDb3A432268e5831' },
+]
+
+/**
+ * The guided moment: "help me stake on lido" → a DETERMINISTIC context check
+ * (the lido MCP's `position` read + direct USDC balance reads), then the
+ * exact next ask proposed as a chip. Chips ROUND-TRIP: every resume string
+ * parses under a native layer (harness-checked) — a chip that routes to the
+ * planner is a suggested prompt in disguise.
+ */
+async function guideLidoStakeTurn(
+  agent: McpServer,
+  walletAddress: string | undefined,
+  originalMessage: string,
+  trace: (event: unknown) => void = () => {},
+) {
+  if (!walletAddress) {
+    return NextResponse.json({
+      reply: '🌊 Connect your wallet and I can check what you have to stake — the plan gets built for your address.',
+      connectWallet: true,
+      connectAsk: originalMessage,
+    })
+  }
+
+  let pos: LidoPositionPayload | null = null
+  try {
+    pos = (await callAgentTool(agent.endpoint!, 'position', { user: walletAddress })) as LidoPositionPayload
+  } catch (e) {
+    trace({ type: 'note', level: 'warn', label: `lido layer: position read failed — ${(e as Error).message.slice(0, 140)}` })
+    return NextResponse.json({ reply: `🌊 Couldn't read your balances just now (${(e as Error).message.slice(0, 120)}) — ask again in a moment.` })
+  }
+
+  const ethBal = pos.eth?.balance ?? '0'
+  const stakeable = suggestedStakeEth(ethBal)
+  const already = Number(pos.totalStaked?.stEth) > 0 ? ` You already have ${pos.totalStaked?.stEth} stETH earning${pos.currentAprPct != null ? ` ~${pos.currentAprPct}% APR` : ''}.` : ''
+
+  if (stakeable) {
+    trace({ type: 'status', label: `lido guided: ${ethBal} ETH on mainnet → proposing "Stake ${stakeable} ETH on Lido"` })
+    return NextResponse.json({
+      reply:
+        `🌊 You hold **${ethBal} ETH** on Ethereum — enough to stake **${stakeable}** and keep a gas buffer.${already} ` +
+        `Staking mints stETH 1:1 and starts earning via daily rebases; exiting later goes through the withdrawal queue or a DEX swap. One transaction, your wallet signs it.`,
+      clarify: {
+        question: 'Ready?',
+        options: [
+          { label: `Stake ${stakeable} ETH on Lido`, resume: `Stake ${stakeable} ETH on Lido` },
+          { label: 'Receive wstETH instead', resume: `Stake ${stakeable} ETH on Lido as wstETH` },
+        ],
+      },
+      buildPath: 'native-lido',
+    })
+  }
+
+  // Broke on mainnet — the Nate demo shape: notice the stablecoins and
+  // propose the EXACT compound job (bridge → stake) as one chip.
+  for (const u of GUIDED_USDC) {
+    try {
+      const client = publicClientFor(u.chainId)
+      if (!client) continue
+      const raw = await client.readContract({ address: u.address, abi: erc20Abi, functionName: 'balanceOf', args: [walletAddress as `0x${string}`] })
+      const usdc = Number(formatUnits(raw, 6))
+      if (usdc >= 2) {
+        const amt = Math.min(Math.floor(usdc), 100)
+        const resume = `Swap ${amt} USDC from ${u.chain} to ETH on Ethereum, then stake all my ETH on Lido`
+        trace({ type: 'status', label: `lido guided: no mainnet ETH but ${usdc.toFixed(2)} USDC on ${u.chain} → proposing the compound job` })
+        return NextResponse.json({
+          reply:
+            `🌊 You have **no stakeable ETH on Ethereum** (${ethBal} ETH — that's gas money), but you do have **${usdc.toFixed(2)} USDC on ${u.chain}**.${already} ` +
+            `I can run that as one job: bridge via NEAR Intents, then stake what arrives — each step built and guard-checked when it's your turn to sign.`,
+          clarify: {
+            question: 'Run it as one job?',
+            // clarifyOf drops single-option payloads ("one option is not a
+            // question") — offer the honest alternative: just the bridge.
+            options: [
+              { label: `Swap ${amt} USDC → ETH, then stake it`, resume },
+              { label: 'Just bridge, decide later', resume: `Swap ${amt} USDC from ${u.chain} to ETH on Ethereum` },
+            ],
+          },
+          buildPath: 'native-lido',
+        })
+      }
+    } catch {
+      /* per-chain read failure → try the next chain */
+    }
+  }
+
+  trace({ type: 'status', label: 'lido guided: no ETH and no stablecoins found — honest empty answer' })
+  return NextResponse.json({
+    reply:
+      `🌊 Staking on Lido takes ETH on Ethereum, and this wallet holds ${ethBal} ETH there with no USDC on Base or Arbitrum to bridge.${already} ` +
+      `Fund the wallet and ask again — I'll size the stake to your balance.`,
+  })
+}
+
+/** Build + guard a single Lido stake and offer it for signature. */
+async function buildLidoStakeTurn(
+  agent: McpServer,
+  params: LidoStakeParams,
+  walletAddress: string | undefined,
+  originalMessage?: string,
+  trace: (event: unknown) => void = () => {},
+) {
+  if (!walletAddress) {
+    return NextResponse.json({
+      reply: '🌊 Connect your wallet to build the stake — you sign it yourself, so it has to be built for your address.',
+      connectWallet: true,
+      ...(originalMessage ? { connectAsk: originalMessage } : {}),
+    })
+  }
+
+  let amountEth = params.amount
+  if (amountEth === 'max') {
+    const client = publicClientFor(1)
+    const balance = client ? await client.getBalance({ address: walletAddress as `0x${string}` }).catch(() => null) : null
+    const resolved = balance !== null && client ? suggestedStakeEth((Number(balance) / 1e18).toString()) : null
+    if (!resolved) {
+      return NextResponse.json({ reply: '🌊 Nothing left to stake — your mainnet ETH balance is at (or below) the gas buffer.' })
+    }
+    amountEth = resolved
+  }
+
+  trace({ type: 'select', service: agent.name, endpoint: 'tools/call build_stake', priceUsd: 0, reason: 'native lido layer — construction-only build, recipient pinned to the canonical mainnet contracts by the guard' })
+  let built: LidoBuiltStake
+  try {
+    built = (await callAgentTool(agent.endpoint!, 'build_stake', { user: walletAddress, amount: amountEth, receive: params.receive })) as LidoBuiltStake
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'the build failed'
+    trace({ type: 'receipt', receipt: { name: agent.name, endpoint: 'build_stake', priceUsd: 0, ok: false, note: msg.slice(0, 200) } })
+    return NextResponse.json({ reply: `🌊 Couldn't build that stake: ${msg}` })
+  }
+
+  const guard = guardLidoStakeBuild(built, { amountEth, receive: params.receive })
+  if (!guard.ok || !guard.tx) {
+    trace({ type: 'note', level: 'warn', label: `guard REFUSED the lido build: ${guard.reasons.join(' ').slice(0, 200)}` })
+    return NextResponse.json({
+      reply: `🚫 I built the stake but refused it — it didn't verify: ${guard.reasons.join(' ')} Nothing to sign.`,
+      blocked: true,
+    })
+  }
+
+  // Price the artifact off the same position read the splash uses (fail-soft).
+  const valueUsd = await callAgentTool(agent.endpoint!, 'position', { user: walletAddress })
+    .then((p) => {
+      const eth = (p as LidoPositionPayload).eth
+      const price = Number(eth?.usd) / Number(eth?.balance)
+      return Number.isFinite(price) && price > 0 ? Number((Number(amountEth) * price).toFixed(2)) : null
+    })
+    .catch(() => null)
+
+  trace({ type: 'status', label: 'guard verified the stake — Sign & send card built, awaiting signature' })
+  const warn = guard.warnings.length ? `\n${guard.warnings.map((w) => `⚠️ ${w}`).join('\n')}` : ''
+  return NextResponse.json({
+    reply: `🔏 ${guard.summary ?? `Stake ${amountEth} ETH with Lido.`}\n\nSign below — the recipient is the canonical Lido ${params.receive === 'wstETH' ? 'wstETH' : 'stETH'} contract, verified before this was offered.${warn}`,
+    txRequest: guard.tx,
+    guardrails: { ok: true, warnings: guard.warnings, valueUsd },
+    buildPath: 'native-lido',
   })
 }
 

@@ -79,6 +79,16 @@ import {
   type HlOrderIntent,
 } from '../lib/hyperliquid-exec'
 import { compileJobAsk } from '../lib/jobs'
+import { signJobToken, verifyJobToken } from '../lib/job-token'
+import {
+  guardLidoStakeBuild,
+  isLidoGuidedAsk,
+  parseLidoStake,
+  suggestedStakeEth,
+  LIDO_STETH_MAINNET,
+  LIDO_WSTETH_MAINNET,
+  type LidoBuiltStake,
+} from '../lib/lido-stake'
 
 const BASE = process.env.BASE ?? 'http://localhost:3000'
 const DOMAIN = new URL(BASE).host
@@ -2713,6 +2723,163 @@ async function main() {
       const body = await cronOk.json()
       check('jobs: authorized runner tick reports', cronOk.status === 200 && typeof body.touched === 'number', JSON.stringify(body))
     }
+
+    // ── Jobs API: the external-agent door (POST /api/jobs + dryRun) ────────
+    const jobsPostAnon = await fetch(`${BASE}/api/jobs`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ask: 'x', dryRun: true }) })
+    const jobsListAnon = await fetch(`${BASE}/api/jobs`)
+    check('jobs api: POST and GET unauth → 401', jobsPostAnon.status === 401 && jobsListAnon.status === 401)
+
+    const jobsNoAsk = await fetch(`${BASE}/api/jobs`, { method: 'POST', headers: CJ, body: '{}' })
+    check('jobs api: missing ask → 400', jobsNoAsk.status === 400)
+
+    const notCompound = await fetch(`${BASE}/api/jobs`, { method: 'POST', headers: CJ, body: JSON.stringify({ ask: 'swap 1 usdc for eth', dryRun: true }) })
+    const notCompoundBody = await notCompound.json()
+    check('jobs api: non-compound ask → 400 with "then" guidance', notCompound.status === 400 && /compound/i.test(notCompoundBody.error ?? ''))
+
+    const problemAsk = await fetch(`${BASE}/api/jobs`, { method: 'POST', headers: CJ, body: JSON.stringify({ ask: 'deposit 20 usdc to hyperliquid then tell me a joke', dryRun: true }) })
+    const problemBody = await problemAsk.json()
+    check('jobs api: unparseable segment → 400 problem passthrough (honest refusal)', problemAsk.status === 400 && /step 2/i.test(problemBody.error ?? ''))
+
+    const jobsBefore = await (await fetch(`${BASE}/api/jobs`, { headers: C })).json()
+    const CANON_ASK = 'deposit 12 usdc to hyperliquid, then long $12 of eth on hyperliquid, then protect my eth long with a 5% stop'
+    const dry = await fetch(`${BASE}/api/jobs`, { method: 'POST', headers: CJ, body: JSON.stringify({ ask: CANON_ASK, dryRun: true }) })
+    const dryBody = await dry.json()
+    check(
+      'jobs api: dryRun compiles the canonical ask — full plan + step-1 live build (artifact or honest refusal) + note',
+      dry.status === 200 && dryBody.dryRun === true && Array.isArray(dryBody.steps) && dryBody.steps.length === 4 &&
+        dryBody.steps[0].builder === 'native-hl-exec' && dryBody.steps[3].kind === 'auto' &&
+        dryBody.firstSignPreview?.step === 0 && ('artifact' in dryBody.firstSignPreview || 'refused' in dryBody.firstSignPreview) &&
+        /nothing was created/i.test(dryBody.note ?? ''),
+      JSON.stringify({ status: dry.status, title: dryBody.title, preview: Object.keys(dryBody.firstSignPreview ?? {}) }),
+    )
+    const jobsAfter = await (await fetch(`${BASE}/api/jobs`, { headers: C })).json()
+    check(
+      'jobs api: dryRun created NOTHING (job list unchanged)',
+      Array.isArray(jobsAfter.jobs) && jobsAfter.jobs.length === (jobsBefore.jobs?.length ?? -1),
+    )
+
+    // Bearer parity: a yf_ key walks through the same door with the same
+    // view. Mint fresh — the harness revoked the first key back in the
+    // key-lifecycle section.
+    const jobsKey = await (await fetch(`${BASE}/api/keys`, { method: 'POST', headers: CJ, body: JSON.stringify({ label: 'test:api jobs' }) })).json()
+    const JB = { authorization: `Bearer ${jobsKey.secret}` }
+    const dryBearer = await fetch(`${BASE}/api/jobs`, { method: 'POST', headers: { 'content-type': 'application/json', ...JB }, body: JSON.stringify({ ask: CANON_ASK, dryRun: true }) })
+    const dryBearerBody = await dryBearer.json()
+    check(
+      'jobs api: Bearer yf_ dryRun parity (same compile, same shape)',
+      dryBearer.status === 200 && dryBearerBody.dryRun === true && dryBearerBody.title === dryBody.title && dryBearerBody.steps?.length === 4,
+    )
+    const listBearer = await fetch(`${BASE}/api/jobs`, { headers: JB })
+    const listBearerBody = await listBearer.json()
+    check(
+      'jobs api: Bearer GET /api/jobs parity (same list as the SIWE session)',
+      listBearer.status === 200 && Array.isArray(listBearerBody.jobs) && listBearerBody.jobs.length === jobsAfter.jobs.length,
+    )
+    await fetch(`${BASE}/api/keys/${jobsKey.id}`, { method: 'DELETE', headers: C }) // leave the cleanup sweep nothing to find
+
+    // ── Job capability tokens (the embed JobCard's session-less auth) ──────
+    // The harness signs with the SAME SESSION_SECRET the server uses (read
+    // fail-soft from .env.local when not in the env), so a valid token for a
+    // NONEXISTENT id must get past the 401 gate and 404 on the lookup — the
+    // whole path proven without creating a single row.
+    const sessionSecret =
+      process.env.SESSION_SECRET ??
+      (await import('node:fs')
+        .then((fs) => fs.readFileSync('.env.local', 'utf8').match(/^SESSION_SECRET=(.+)$/m)?.[1]?.trim())
+        .catch(() => undefined))
+    if (sessionSecret) {
+      process.env.SESSION_SECRET = sessionSecret
+      const tok = signJobToken('job-token-probe')
+      check(
+        'job token: HMAC round-trip verifies; wrong id and garbage refuse',
+        verifyJobToken('job-token-probe', tok) && !verifyJobToken('another-id', tok) && !verifyJobToken('job-token-probe', 'f'.repeat(64)) && !verifyJobToken('job-token-probe', 'nope'),
+      )
+      const tokenRead = await fetch(`${BASE}/api/jobs/job-token-probe?t=${tok}`)
+      const badTokenRead = await fetch(`${BASE}/api/jobs/job-token-probe?t=${'f'.repeat(64)}`)
+      check(
+        'job token: valid token passes the auth gate (404 on missing job); bad token stays 401',
+        tokenRead.status === 404 && badTokenRead.status === 401,
+        `got ${tokenRead.status}/${badTokenRead.status}`,
+      )
+    } else {
+      console.log('  ⚪ job token: SESSION_SECRET not available to the harness — token checks skipped')
+    }
+  }
+
+  // ── Lido staking layer (parse + guided moment + guard + job step) ─────────
+  console.log('— lido')
+  {
+    const explicit = parseLidoStake('Stake 0.05 ETH on Lido')
+    const wst = parseLidoStake('stake 0.5 eth on lido as wstETH')
+    const max = parseLidoStake('stake all my eth on lido')
+    const swapped = parseLidoStake('then stake the swapped ETH on Lido')
+    check(
+      'lido parse: explicit / wstETH / all-my / the-swapped forms (venue word demanded)',
+      !!explicit && !('problem' in explicit) && explicit.amount === '0.05' && explicit.receive === 'stETH' &&
+        !!wst && !('problem' in wst) && wst.receive === 'wstETH' &&
+        !!max && !('problem' in max) && max.amount === 'max' &&
+        !!swapped && !('problem' in swapped) && swapped.amount === 'max',
+    )
+    const bare = parseLidoStake('stake some eth on lido')
+    check(
+      'lido parse: amountless ask → honest problem; no venue word / staking elsewhere → null',
+      !!bare && 'problem' in bare &&
+        parseLidoStake('stake 5 eth') === null &&
+        parseLidoStake('stake 5 eth on rocketpool') === null &&
+        parseLidoStake('what is lido?') === null,
+    )
+    check(
+      'lido guided: help-shaped asks detected, build asks and questions are not',
+      isLidoGuidedAsk('Help me stake on Lido') &&
+        isLidoGuidedAsk('how do i stake on lido?') &&
+        isLidoGuidedAsk('stake on lido') &&
+        !isLidoGuidedAsk('Stake 0.05 ETH on Lido') &&
+        !isLidoGuidedAsk('stake all my eth on lido') &&
+        !isLidoGuidedAsk('what is lido?'),
+    )
+
+    // The guided moment's compound proposal must COMPILE — the chip is a job.
+    const guidedJob = compileJobAsk('Swap 5 USDC from Base to ETH on Ethereum, then stake all my ETH on Lido')
+    check(
+      'lido job step: the guided chip round-trips through the compiler (bridge → wait → stake)',
+      !!guidedJob && !('problem' in guidedJob) && guidedJob.steps.length === 3 &&
+        JSON.stringify(guidedJob.steps.map((s) => `${s.kind}:${s.builder}`)) ===
+          JSON.stringify(['sign:native-cross-chain', 'wait:wait', 'sign:native-lido']),
+      guidedJob && !('problem' in guidedJob) ? guidedJob.steps.map((s) => s.builder).join(',') : JSON.stringify(guidedJob),
+    )
+    check('lido helper: suggested stake sizes from a live balance minus the gas buffer', suggestedStakeEth('0.0517') === '0.0497' && suggestedStakeEth('0.004') === null && suggestedStakeEth(undefined) === null)
+
+    // Guard: the artifact must be mainnet, exact-value, canonical-recipient.
+    const SUBMIT_ABI = [{ type: 'function', name: 'submit', stateMutability: 'payable', inputs: [{ name: '_referral', type: 'address' }], outputs: [{ type: 'uint256' }] }] as const
+    const submitData = encodeFunctionData({ abi: SUBMIT_ABI, functionName: 'submit', args: ['0x0000000000000000000000000000000000000000'] })
+    const goodStake: LidoBuiltStake = {
+      operation: 'stake',
+      steps: [{ action: 'send_transaction', label: 'stake', summary: 'Stake 0.05 ETH with Lido', tx: { to: LIDO_STETH_MAINNET, data: submitData, value: '50000000000000000', chainId: 1 } }],
+    }
+    check('lido guard: canonical stETH submit() build passes', guardLidoStakeBuild(goodStake, { amountEth: '0.05', receive: 'stETH' }).ok)
+    const tamper = (mut: (b: LidoBuiltStake) => void): boolean => {
+      const b = JSON.parse(JSON.stringify(goodStake)) as LidoBuiltStake
+      mut(b)
+      return guardLidoStakeBuild(b, { amountEth: '0.05', receive: 'stETH' }).ok
+    }
+    check(
+      'lido guard: fails CLOSED on tamper (recipient / value / chain / opaque data / extra steps)',
+      !tamper((b) => (b.steps![0].tx!.to = '0x000000000000000000000000000000000000dEaD')) &&
+        !tamper((b) => (b.steps![0].tx!.value = '51000000000000000')) &&
+        !tamper((b) => (b.steps![0].tx!.chainId = 8453)) &&
+        !tamper((b) => (b.steps![0].tx!.data = '0xdeadbeef')) &&
+        !tamper((b) => b.steps!.push(b.steps![0])),
+    )
+    const goodWrap: LidoBuiltStake = {
+      operation: 'stake',
+      steps: [{ action: 'send_transaction', label: 'stake', summary: 'Stake 0.05 ETH → wstETH', tx: { to: LIDO_WSTETH_MAINNET, data: '0x', value: '50000000000000000', chainId: 1 } }],
+    }
+    check(
+      'lido guard: wstETH = plain transfer to canonical wstETH; calldata or wrong target refuses',
+      guardLidoStakeBuild(goodWrap, { amountEth: '0.05', receive: 'wstETH' }).ok &&
+        !guardLidoStakeBuild({ ...goodWrap, steps: [{ ...goodWrap.steps![0], tx: { ...goodWrap.steps![0].tx!, data: submitData } }] }, { amountEth: '0.05', receive: 'wstETH' }).ok &&
+        !guardLidoStakeBuild(goodStake, { amountEth: '0.05', receive: 'wstETH' }).ok,
+    )
   }
 
   // ── HL execution layer (parse + build + guard + submit relay) ────────────
