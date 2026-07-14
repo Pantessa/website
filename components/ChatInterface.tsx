@@ -526,7 +526,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
 
       // Phase 1 — plan. If a wallet is connected, the server returns the
       // payments to sign; otherwise it pays with the house wallet and replies.
-      setStatus(isConnected ? 'Planning x402 calls…' : null)
+      setStatus(isConnected ? 'Reasoning…' : null)
       // Live engine terminal (manual mode): we mint the turn id CLIENT-side so
       // we can poll the server-recorded trace WHILE the request is in flight —
       // the router's thinking (tool picks, MCP calls, receipts) appears in the
