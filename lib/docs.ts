@@ -51,6 +51,14 @@ export const DOCS_PAGES: DocsPage[] = [
     ready: true,
   },
   {
+    slug: 'payer-demo',
+    title: 'The payer loop (demo)',
+    seoTitle: 'x402 payer demo — pay for data, leave with a guarded plan',
+    description:
+      'One script, the whole thesis: an external agent pays a ≤$0.05 x402 endpoint through the routing engine (receipted on-chain), then submits a compound intent as a $0 dryRun job.',
+    ready: true,
+  },
+  {
     slug: 'embed',
     title: 'Embed the chat',
     seoTitle: 'Embed the Yeetful chat — an iframe on your own site',
