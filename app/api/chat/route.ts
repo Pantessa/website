@@ -15,7 +15,8 @@ import type { McpServer } from '@/lib/store'
 import { voteRequestFromToolResult, friendlyVoteError, type VoteRequest } from '@/lib/snapshot-vote'
 import { parseVoteIntent, resolveVoteReference, type VoteIntent } from '@/lib/vote-intent'
 import { crossChainAgentOf, detectCrossChain, parseSwapIntent, parseSwapFollowUp, swapWorkingContext, type SwapIntent } from '@/lib/swap-intent'
-import { chainById, chainByKey, sanitizeChainId, DEFAULT_CHAIN_ID, APP_CHAINS } from '@/lib/chains'
+import { chainById, chainByKey, primaryStable, sanitizeChainId, DEFAULT_CHAIN_ID, APP_CHAINS } from '@/lib/chains'
+import { usdPerToken, usdToTokenAmount } from '@/lib/usd-probe'
 import {
   parseCrossChainSwap,
   parseCrossChainFollowUp,
@@ -1609,9 +1610,41 @@ async function prepareSwapTurn(intent: SwapIntent, walletAddress: string | undef
       connectWallet: true,
     })
   }
+  // Dollar-denominated asks ("swap $1 worth of ETH for USDG", "buy $5 of
+  // AAPL"): resolve the $ amount into a token amount BEFORE the gate below,
+  // via the same venue quoters the build uses (lib/usd-probe.ts). A "buy $X"
+  // with no spend token named spends the chain's primary stable.
+  if (!intent.problem && intent.sellAmountUsd && !intent.sellAmountHuman && intent.buyToken) {
+    const buySym = intent.buyToken.toUpperCase()
+    if (!intent.sellToken) {
+      const stable = primaryStable(chainId)
+      if (stable) intent = { ...intent, sellToken: stable.symbol }
+    }
+    if (intent.sellToken) {
+      const sellSym = intent.sellToken.toUpperCase()
+      const dec = tokenDecimals(intent.sellToken, chainId)
+      if (dec === null) {
+        trace({ type: 'note', level: 'warn', label: `unknown token “${intent.sellToken}” on ${chain.name} — no build` })
+        return NextResponse.json({
+          reply: `🔄 I don't know the token “${intent.sellToken}” on ${chain.name} — use a known symbol (${Object.keys(chain.tokens).filter((s) => s !== 'ETH').join(', ')}, …).`,
+        })
+      }
+      const probe = await usdPerToken(chainId, intent.sellToken)
+      const amountHuman = probe ? usdToTokenAmount(Number(intent.sellAmountUsd), probe.usd, dec) : null
+      if (!amountHuman) {
+        trace({ type: 'note', level: 'warn', label: `couldn't price ${sellSym} on ${chain.name} to size a $${intent.sellAmountUsd} ask — asking for a token amount` })
+        return NextResponse.json({
+          reply: `🔄 I couldn't price ${sellSym} on ${chain.name} to size a $${intent.sellAmountUsd} swap — say a token amount instead, e.g. “swap 0.01 ${sellSym} for ${buySym}”.`,
+        })
+      }
+      trace({ type: 'status', label: `native swap layer: $${intent.sellAmountUsd} of ${sellSym} ≈ ${amountHuman} ${sellSym} (priced via ${probe!.via})` })
+      intent = { ...intent, sellAmountHuman: amountHuman }
+    }
+  }
+
   if (intent.problem || !intent.sellToken || !intent.buyToken || !intent.sellAmountHuman) {
     trace({ type: 'status', label: 'native swap layer: ask under-specified — asking for the amount and pair' })
-    return NextResponse.json({ reply: `🔄 ${intent.problem ?? 'Say the amount and pair — e.g. “swap 100 USDC for WETH”.'}` })
+    return NextResponse.json({ reply: `🔄 ${intent.problem ?? 'Say the amount and pair — e.g. “swap 100 USDC for WETH” or “swap $5 of ETH for USDG”.'}` })
   }
 
   // Known-symbol hint, per chain (Robinhood has USDG/USDe, not USDC/DAI).

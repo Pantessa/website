@@ -14,6 +14,12 @@ export interface SwapIntent {
   isSwap: boolean
   mode?: 'swap' | 'limit'
   sellAmountHuman?: string
+  /** Dollar-denominated sell ("swap $1 worth of ETH…") — the route prices the
+   *  token and converts to sellAmountHuman before building. Exactly one of
+   *  sellAmountHuman / sellAmountUsd is set on a complete parse. */
+  sellAmountUsd?: string
+  /** Unset on a buy-dollar ask with no spend token named ("buy $5 of AAPL")
+   *  — the route fills in the chain's primary stable. */
   sellToken?: string
   buyToken?: string
   /** Limit orders only: the minimum acceptable buy amount (the named price). */
@@ -93,12 +99,34 @@ export function crossChainAgentOf<T extends { slug: string; name: string; descri
 
 const AMOUNT = String.raw`(\d+(?:\.\d+)?)`
 const TOKEN = String.raw`\$?([a-zA-Z]{2,10}|0x[0-9a-fA-F]{40})`
+// "$1" / "1 dollar" / "1.50 usd" / "5 bucks" — group 1 xor group 2 carries
+// the number. Users hedge dollar asks ("about $1 worth"), so a filler word
+// is tolerated before the amount (the live 2026-07-14 dead-end: "can i swap
+// about $1 worth of ETH for USDG?").
+const FILLER = String.raw`(?:(?:about|around|roughly|approximately|approx\.?|~)\s*)?`
+const USD_AMOUNT = String.raw`(?:\$\s?(\d+(?:\.\d+)?)|(\d+(?:\.\d+)?)\s?(?:dollars?|usd|bucks?))`
+const usdOf = (m: RegExpMatchArray, i: number) => m[i] ?? m[i + 1]
 
 // "swap/sell/convert/trade 100 USDC for/to/into WETH"
 const MARKET_RE = new RegExp(
   String.raw`\b(?:swap|sell|convert|trade)\s+${AMOUNT}\s*${TOKEN}\s+(?:for|to|into)\s+${TOKEN}\b`,
   'i',
 )
+// "swap (about) $1 (worth) of/in ETH for/to/into USDG" — dollar-denominated
+// sell; the route prices the token and converts before building.
+const DOLLAR_MARKET_RE = new RegExp(
+  String.raw`\b(?:swap|sell|convert|trade)\s+${FILLER}${USD_AMOUNT}(?:\s+worth)?\s+(?:of|in)\s+${TOKEN}\s+(?:for|to|into)\s+${TOKEN}\b`,
+  'i',
+)
+// "buy (about) $5 (worth) of/in AAPL (with/using USDG)" — spend token
+// optional; the route defaults it to the chain's primary stable.
+const BUY_DOLLAR_RE = new RegExp(
+  String.raw`\bbuy\s+${FILLER}${USD_AMOUNT}(?:\s+worth)?\s+(?:of|in)\s+${TOKEN}(?:\s+(?:with|using)\s+${TOKEN})?`,
+  'i',
+)
+// Dollar amounts on OTHER venues (perps etc.) must not be hijacked into a
+// spot swap — "buy $12 of ETH on hyperliquid" belongs to the HL exec layer.
+const OTHER_VENUE_RE = /\bhyperliquid\b|\bperp(?:s|etual)?\b|\bleverage\b|\b\d+x\b/i
 // "limit … sell 0.5 WETH for/at/when it hits (at least) 1750 USDC"
 const LIMIT_RE = new RegExp(
   String.raw`\b(?:sell|swap)\s+${AMOUNT}\s*${TOKEN}\s+(?:for|at|when(?:\s+it)?\s+hits?)\s+(?:at\s+least\s+)?${AMOUNT}\s*${TOKEN}\b`,
@@ -143,10 +171,22 @@ export function parseSwapIntent(message: string): SwapIntent {
   if (m) {
     return { isSwap: true, mode: 'swap', sellAmountHuman: m[1], sellToken: m[2], buyToken: m[3] }
   }
+  if (!OTHER_VENUE_RE.test(message)) {
+    const dm = message.match(DOLLAR_MARKET_RE)
+    if (dm) {
+      return { isSwap: true, mode: 'swap', sellAmountUsd: usdOf(dm, 1), sellToken: dm[3], buyToken: dm[4] }
+    }
+    const bm = message.match(BUY_DOLLAR_RE)
+    if (bm) {
+      // sellToken stays unset when no spend token is named — the route fills
+      // in the chain's primary stable (USDC on Base, USDG on Robinhood).
+      return { isSwap: true, mode: 'swap', sellAmountUsd: usdOf(bm, 1), buyToken: bm[3], sellToken: bm[4] }
+    }
+  }
   if (swapish(message)) {
     return {
       isSwap: true,
-      problem: 'Say the amount and pair — e.g. “swap 100 USDC for WETH”.',
+      problem: 'Say the amount and pair — e.g. “swap 100 USDC for WETH” or “swap $5 of ETH for USDG”.',
     }
   }
   return NOT_SWAP
