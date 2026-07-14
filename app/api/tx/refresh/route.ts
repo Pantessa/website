@@ -13,7 +13,37 @@ import { NextRequest, NextResponse } from 'next/server'
 import { buildUniswapSwap } from '@/lib/uniswap-venue'
 import { buildUniswapV4Swap } from '@/lib/uniswap-v4'
 import { ensureTokenList } from '@/lib/token-list'
-import { sanitizeChainId, DEFAULT_CHAIN_ID } from '@/lib/chains'
+import { sanitizeChainId, publicClientFor, DEFAULT_CHAIN_ID } from '@/lib/chains'
+
+/** Dry-run the rebuilt swap before offering it. A tx that reverts at
+ *  estimation must NEVER reach the wallet: MetaMask's estimate fails too and
+ *  its fee display falls back to the block gas limit — which Arbitrum-family
+ *  chains report as the 2^50 sentinel, painting a "$32M network fee" dead-end
+ *  (the 2026-07-14 AAPL incident). Returns null when the tx estimates clean
+ *  (or when we can't check), else a short human reason. */
+async function estimateReverts(
+  chainId: number,
+  from: string,
+  tx: { to: string; data: string; value: string },
+): Promise<string | null> {
+  const client = publicClientFor(chainId)
+  if (!client) return null
+  try {
+    await client.estimateGas({
+      account: from as `0x${string}`,
+      to: tx.to as `0x${string}`,
+      data: tx.data as `0x${string}`,
+      value: BigInt(tx.value || '0'),
+    })
+    return null
+  } catch (err) {
+    const msg = err instanceof Error ? err.message.split('\n')[0] : ''
+    // RPC hiccups (timeouts, rate limits) are not revert evidence — fail open
+    // to the slippage bound rather than blocking a good swap on a flaky node.
+    if (/timeout|timed out|rate limit|fetch failed|econnre/i.test(msg)) return null
+    return msg || 'the transaction would revert on-chain'
+  }
+}
 
 export async function POST(req: NextRequest) {
   let body: Record<string, unknown>
@@ -50,7 +80,11 @@ export async function POST(req: NextRequest) {
       if (v4.steps.length > 1) {
         return NextResponse.json({ pending: true, note: 'allowance not visible on-chain yet' })
       }
-      return NextResponse.json({ tx: v4.steps[0].tx, summary: v4.summary, guardrails: v4.guardrails })
+      const v4Revert = await estimateReverts(chainId, from, v4.steps[0].tx)
+      if (v4Revert) {
+        return NextResponse.json({ blocked: true, reasons: `the rebuilt swap would revert on-chain (${v4Revert.slice(0, 200)})` })
+      }
+      return NextResponse.json({ tx: v4.steps[0].tx, summary: v4.summary, guardrails: v4.guardrails, validUntil: v4.steps[0].validUntil ?? null })
     }
     const uni = await buildUniswapSwap({ sellToken, buyToken, amountHuman, from, chainId })
     if (uni.blocked) {
@@ -62,7 +96,11 @@ export async function POST(req: NextRequest) {
       // tell the card to wait and retry rather than offering a doomed swap.
       return NextResponse.json({ pending: true, note: 'allowance not visible on-chain yet' })
     }
-    return NextResponse.json({ tx: uni.swapTx, summary: uni.summary, guardrails: uni.guardrails })
+    const uniRevert = await estimateReverts(chainId, from, uni.swapTx)
+    if (uniRevert) {
+      return NextResponse.json({ blocked: true, reasons: `the rebuilt swap would revert on-chain (${uniRevert.slice(0, 200)})` })
+    }
+    return NextResponse.json({ tx: uni.swapTx, summary: uni.summary, guardrails: uni.guardrails, validUntil: uni.validUntil })
   } catch (err) {
     return NextResponse.json({ error: err instanceof Error ? err.message : 'rebuild failed' }, { status: 502 })
   }

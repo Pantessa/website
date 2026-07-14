@@ -27,7 +27,7 @@ import { grantTypedData } from '../lib/grant-typed-data'
 import { grantViolation, type GrantPolicy } from '../lib/spend-grant'
 import { routerPrompt, parseRouterDecision, selectInferenceProvider, routeMessage, shortlistEndpoints } from '../lib/router'
 import { buildSmartRequest, computeRating, type PlannableEndpoint } from '../lib/endpoint-planner'
-import { buildSignableArtifact, isActionIntent, orderRequestOf, txRequestOf } from '../lib/transaction-layer'
+import { buildSignableArtifact, isActionIntent, orderRequestOf, txRequestOf, txChainOf } from '../lib/transaction-layer'
 import { resolveToken, buildCowOrderTypedData, cowOrderAction, buildCowLimitOrder, buildCowSubmitBody, describeCowOrder, describeAmount, formatAtoms, tokenDecimals, tokenLabel, humanToAtoms, applySlippage, COW_APP_DATA_JSON, GPV2_SETTLEMENT, type CowQuoteResult } from '../lib/cow'
 import { primeTokenList } from '../lib/token-list'
 import { pureChecks, policyCheck, orderValueUsd, buildReport } from '../lib/cow-guardrails'
@@ -1796,6 +1796,24 @@ async function main() {
     ]
     check('v4 guard: well-formed 3-step chain PASSES', guardUniswapV4Build(goodSteps, exp).ok)
     check('v4 guard: swap-only chain PASSES (allowances in place)', guardUniswapV4Build([goodSteps[2]], exp).ok)
+
+    // TxChainStep.validUntil rides through the meta narrower — SendTxChain's
+    // deadline watch (re-quote before the calldata dies) reads it from here.
+    const parsedChain = txChainOf({
+      txChain: {
+        summary: 's',
+        steps: [
+          { label: 'approve', title: 't', tx: goodSteps[0].tx },
+          { label: 'swap', title: 't', tx: goodSteps[2].tx, validUntil: deadline },
+        ],
+      },
+    })
+    check(
+      'tx layer: txChainOf carries validUntil on the deadline-bearing step only',
+      parsedChain?.steps[1].validUntil === deadline && parsedChain?.steps[0].validUntil === undefined,
+    )
+    const junkChain = txChainOf({ txChain: { summary: 's', steps: [{ label: 'swap', title: 't', tx: goodSteps[2].tx, validUntil: 'soon' }] } })
+    check('tx layer: txChainOf drops a non-numeric validUntil', junkChain?.steps[0].validUntil === undefined)
 
     const withSwap = (tx: Partial<V4BuiltStep['tx']>): V4BuiltStep[] => [goodSteps[0], goodSteps[1], { ...goodSteps[2], tx: { ...goodSteps[2].tx, ...tx } }]
     check('v4 guard: swap to a NON-pinned router is refused', !guardUniswapV4Build(withSwap({ to: '0x000000000000000000000000000000000000dEaD' }), exp).ok)

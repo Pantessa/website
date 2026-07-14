@@ -1966,7 +1966,7 @@ async function prepareSwapTurn(intent: SwapIntent, walletAddress: string | undef
             summary: uni.summary,
             steps: [
               { label: 'approve', title: `Approve ${sell} to Uniswap's SwapRouter02`, tx: uni.approveTx },
-              { label: 'swap', title: `Swap ${intent.sellAmountHuman} ${sell} → ${buy}`, tx: uni.swapTx },
+              { label: 'swap', title: `Swap ${intent.sellAmountHuman} ${sell} → ${buy}`, tx: uni.swapTx, validUntil: uni.validUntil },
             ],
             refresh: {
               kind: 'uniswap-swap',
