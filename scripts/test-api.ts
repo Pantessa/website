@@ -80,6 +80,15 @@ import {
 } from '../lib/hyperliquid-exec'
 import { compileJobAsk } from '../lib/jobs'
 import { signJobToken, verifyJobToken } from '../lib/job-token'
+import {
+  guardLidoStakeBuild,
+  isLidoGuidedAsk,
+  parseLidoStake,
+  suggestedStakeEth,
+  LIDO_STETH_MAINNET,
+  LIDO_WSTETH_MAINNET,
+  type LidoBuiltStake,
+} from '../lib/lido-stake'
 
 const BASE = process.env.BASE ?? 'http://localhost:3000'
 const DOMAIN = new URL(BASE).host
@@ -2795,6 +2804,82 @@ async function main() {
     } else {
       console.log('  ⚪ job token: SESSION_SECRET not available to the harness — token checks skipped')
     }
+  }
+
+  // ── Lido staking layer (parse + guided moment + guard + job step) ─────────
+  console.log('— lido')
+  {
+    const explicit = parseLidoStake('Stake 0.05 ETH on Lido')
+    const wst = parseLidoStake('stake 0.5 eth on lido as wstETH')
+    const max = parseLidoStake('stake all my eth on lido')
+    const swapped = parseLidoStake('then stake the swapped ETH on Lido')
+    check(
+      'lido parse: explicit / wstETH / all-my / the-swapped forms (venue word demanded)',
+      !!explicit && !('problem' in explicit) && explicit.amount === '0.05' && explicit.receive === 'stETH' &&
+        !!wst && !('problem' in wst) && wst.receive === 'wstETH' &&
+        !!max && !('problem' in max) && max.amount === 'max' &&
+        !!swapped && !('problem' in swapped) && swapped.amount === 'max',
+    )
+    const bare = parseLidoStake('stake some eth on lido')
+    check(
+      'lido parse: amountless ask → honest problem; no venue word / staking elsewhere → null',
+      !!bare && 'problem' in bare &&
+        parseLidoStake('stake 5 eth') === null &&
+        parseLidoStake('stake 5 eth on rocketpool') === null &&
+        parseLidoStake('what is lido?') === null,
+    )
+    check(
+      'lido guided: help-shaped asks detected, build asks and questions are not',
+      isLidoGuidedAsk('Help me stake on Lido') &&
+        isLidoGuidedAsk('how do i stake on lido?') &&
+        isLidoGuidedAsk('stake on lido') &&
+        !isLidoGuidedAsk('Stake 0.05 ETH on Lido') &&
+        !isLidoGuidedAsk('stake all my eth on lido') &&
+        !isLidoGuidedAsk('what is lido?'),
+    )
+
+    // The guided moment's compound proposal must COMPILE — the chip is a job.
+    const guidedJob = compileJobAsk('Swap 5 USDC from Base to ETH on Ethereum, then stake all my ETH on Lido')
+    check(
+      'lido job step: the guided chip round-trips through the compiler (bridge → wait → stake)',
+      !!guidedJob && !('problem' in guidedJob) && guidedJob.steps.length === 3 &&
+        JSON.stringify(guidedJob.steps.map((s) => `${s.kind}:${s.builder}`)) ===
+          JSON.stringify(['sign:native-cross-chain', 'wait:wait', 'sign:native-lido']),
+      guidedJob && !('problem' in guidedJob) ? guidedJob.steps.map((s) => s.builder).join(',') : JSON.stringify(guidedJob),
+    )
+    check('lido helper: suggested stake sizes from a live balance minus the gas buffer', suggestedStakeEth('0.0517') === '0.0497' && suggestedStakeEth('0.004') === null && suggestedStakeEth(undefined) === null)
+
+    // Guard: the artifact must be mainnet, exact-value, canonical-recipient.
+    const SUBMIT_ABI = [{ type: 'function', name: 'submit', stateMutability: 'payable', inputs: [{ name: '_referral', type: 'address' }], outputs: [{ type: 'uint256' }] }] as const
+    const submitData = encodeFunctionData({ abi: SUBMIT_ABI, functionName: 'submit', args: ['0x0000000000000000000000000000000000000000'] })
+    const goodStake: LidoBuiltStake = {
+      operation: 'stake',
+      steps: [{ action: 'send_transaction', label: 'stake', summary: 'Stake 0.05 ETH with Lido', tx: { to: LIDO_STETH_MAINNET, data: submitData, value: '50000000000000000', chainId: 1 } }],
+    }
+    check('lido guard: canonical stETH submit() build passes', guardLidoStakeBuild(goodStake, { amountEth: '0.05', receive: 'stETH' }).ok)
+    const tamper = (mut: (b: LidoBuiltStake) => void): boolean => {
+      const b = JSON.parse(JSON.stringify(goodStake)) as LidoBuiltStake
+      mut(b)
+      return guardLidoStakeBuild(b, { amountEth: '0.05', receive: 'stETH' }).ok
+    }
+    check(
+      'lido guard: fails CLOSED on tamper (recipient / value / chain / opaque data / extra steps)',
+      !tamper((b) => (b.steps![0].tx!.to = '0x000000000000000000000000000000000000dEaD')) &&
+        !tamper((b) => (b.steps![0].tx!.value = '51000000000000000')) &&
+        !tamper((b) => (b.steps![0].tx!.chainId = 8453)) &&
+        !tamper((b) => (b.steps![0].tx!.data = '0xdeadbeef')) &&
+        !tamper((b) => b.steps!.push(b.steps![0])),
+    )
+    const goodWrap: LidoBuiltStake = {
+      operation: 'stake',
+      steps: [{ action: 'send_transaction', label: 'stake', summary: 'Stake 0.05 ETH → wstETH', tx: { to: LIDO_WSTETH_MAINNET, data: '0x', value: '50000000000000000', chainId: 1 } }],
+    }
+    check(
+      'lido guard: wstETH = plain transfer to canonical wstETH; calldata or wrong target refuses',
+      guardLidoStakeBuild(goodWrap, { amountEth: '0.05', receive: 'wstETH' }).ok &&
+        !guardLidoStakeBuild({ ...goodWrap, steps: [{ ...goodWrap.steps![0], tx: { ...goodWrap.steps![0].tx!, data: submitData } }] }, { amountEth: '0.05', receive: 'wstETH' }).ok &&
+        !guardLidoStakeBuild(goodStake, { amountEth: '0.05', receive: 'wstETH' }).ok,
+    )
   }
 
   // ── HL execution layer (parse + build + guard + submit relay) ────────────
