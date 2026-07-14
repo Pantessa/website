@@ -79,7 +79,12 @@ async function main() {
     const { done, value } = await reader.read()
     if (done) break
     buf += decoder.decode(value, { stream: true })
-    for (const line of buf.split('\n\n').slice(0, -1)) {
+    // Pop complete frames, keep the trailing partial INTACT — slicing on
+    // lastIndexOf('\n\n') returns -1 for a partial-only buffer and eats its
+    // first byte, which silently drops any frame that spans reads.
+    const frames = buf.split('\n\n')
+    buf = frames.pop() ?? ''
+    for (const line of frames) {
       const data = line.split('\n').find((l) => l.startsWith('data:'))?.slice(5).trim()
       if (!data) continue
       try {
@@ -100,7 +105,6 @@ async function main() {
         /* keep-alives */
       }
     }
-    buf = buf.slice(buf.lastIndexOf('\n\n') + 2)
   }
   console.log(`\n  ${reply ? reply.slice(0, 400) : '(no reply)'}\n`)
 
