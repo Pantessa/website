@@ -21,9 +21,41 @@ export const DOCS_PAGES: DocsPage[] = [
   {
     slug: '',
     title: 'Overview',
-    seoTitle: 'Yeetful docs — combine MCPs, embed one chat on your site',
+    seoTitle: 'Yeetful docs — the guarded transaction layer for agents',
     description:
-      'Combine MCPs — swaps, DAO votes, live data, your own server — into one agent and embed it on your site in five lines. Users sign with their own wallet.',
+      'One intent in, a guarded transaction out: Yeetful compiles plain-English asks into deterministic, guard-checked artifacts your users sign with their own wallet — from the API, the chat, or an embed on your site.',
+    ready: true,
+  },
+  {
+    slug: 'jobs',
+    title: 'Jobs: compound intents',
+    seoTitle: 'Jobs API — compound intents, built and guarded step by step',
+    description:
+      'POST one compound intent — "bridge, then deposit, then long, then protect it" — and the runner builds, guards, and offers each step for signature. dryRun previews the whole plan for $0.',
+    ready: true,
+  },
+  {
+    slug: 'guardian',
+    title: 'Guardian: autonomy, no custody',
+    seoTitle: 'Guardian — stops and take-profits without giving up keys',
+    description:
+      'Arm a stop-loss or take-profit on a Hyperliquid position with one signature: a delegated agent key can ONLY reduce that position, every close re-guarded fail-closed, receipts on your dashboard.',
+    ready: true,
+  },
+  {
+    slug: 'transactions',
+    title: 'Native venues & guards',
+    seoTitle: 'The transaction layer — venues, builders, and guards',
+    description:
+      'Every venue Yeetful builds natively — CoW, Uniswap v3/v4, NEAR Intents bridges, Aave, Hyperliquid, Snapshot — and the guard that re-derives each artifact before your wallet ever sees it.',
+    ready: true,
+  },
+  {
+    slug: 'embed',
+    title: 'Embed the chat',
+    seoTitle: 'Embed the Yeetful chat — an iframe on your own site',
+    description:
+      'Drop the Yeetful chat into any site as an iframe, scoped to the MCPs you pick — swaps, receipts, and signing included. URL params, postMessage API, SDK snippet.',
     ready: true,
   },
   {
@@ -120,14 +152,6 @@ export const DOCS_PAGES: DocsPage[] = [
     seoTitle: 'x402 protocol — what the SDK handles for you',
     description:
       'The x402 402-challenge flow, and the v1/v2 wire differences (amount fields, CAIP-2 networks, payment headers) the yeetful client absorbs automatically.',
-    ready: true,
-  },
-  {
-    slug: 'embed',
-    title: 'Embed the chat',
-    seoTitle: 'Embed the Yeetful chat — an iframe on your own site',
-    description:
-      'Drop the Yeetful chat into any site as an iframe, scoped to the MCPs you pick — swaps, receipts, and signing included. URL params, postMessage API, SDK snippet.',
     ready: true,
   },
   {

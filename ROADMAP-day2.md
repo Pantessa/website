@@ -46,13 +46,21 @@ FEATURE this lane ships, not a constraint it suffers.
       terminal (canceled/failed), origin_env=dev — prod cron blind to them.
 
 ## W3 — Docs overhaul: the transaction layer IS the product
-- [ ] Restructure /docs nav: 1) What Yeetful is (intents → guarded builds →
-      receipts), 2) Jobs (compound intents, the API quickstart from W1),
-      3) Guardian (autonomy without custody), 4) Native venues + guards
-      table, 5) Embed ("icing": 5 lines, host wallet), 6) x402 payer/payee.
-- [ ] Every docs code sample must be RUNNABLE against prod (dryRun) — no
-      aspirational snippets (the action-chips rule, applied to docs).
-- [ ] yeetful-brand voice pass on new pages.
+- [x] Restructure /docs nav (lib/docs.ts is the one ordering): Overview
+      (rewritten hero: "One intent in. A guarded transaction out." + steps
+      = INTENT → GUARDED BUILD → SIGN & RECEIPT + $0 curl block) → NEW
+      /docs/jobs (quickstart w/ REAL dryRun output) → NEW /docs/guardian
+      (the cannot-do list is the product) → NEW /docs/transactions
+      (doctrine + 8-venue guard table) → embed ("THE ICING · 5 LINES",
+      demo kept) → router → the x402/SDK pages unchanged below.
+- [x] Every snippet runnable: curl + Bearer dryRun, npx tsx
+      scripts/jobs-api-demo.ts; sample response is the real W1 run
+      (artifact + guard report + honest-refusal example).
+- [x] yeetful-brand voice pass (skill loaded; docs tone: dry, precise,
+      one aside max). Gotcha twice-earned: the JSX entity-space bug ALSO
+      eats the space before em dashes — detector must grep
+      `</(em|strong|a|code)>[a-zA-Z]` AND `</(em|strong|a|code)>—`; both
+      run clean on all four pages.
 
 ## W4 — Lido guided flow (the canonical "agent proposes the job" demo)
 - [ ] Native lido step: parse "stake N eth on lido" → lido MCP build_stake →
@@ -90,3 +98,7 @@ FEATURE this lane ships, not a constraint it suffers.
   /embed unsigned; token cancel exercised through the UI; test:api 461/2
   known reds. Headless gotcha: React controlled textarea ignores CDP
   type + form_input — native value setter + dispatched input/keydown works.
+- 11:00 W3 DONE: docs lead with the layer — 3 new pages (jobs/guardian/
+  transactions), overview + nav reordered, all snippets runnable, real
+  output pasted. tsc + build green, entity-space detectors (letters AND
+  dashes) clean, test:api 461/2 known reds. PR w3-docs → day2-lane.

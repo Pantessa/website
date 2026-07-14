@@ -5,12 +5,11 @@ import EmbedDemo from '@/components/EmbedDemo'
 import EmbedInstall from '@/components/EmbedInstall'
 import { DOCS_PAGES, docsJsonLd, docsUrl, guidePages } from '@/lib/docs'
 
-// The /docs landing — the grand entry to Yeetful, told embed-first: combine
-// MCPs (pick from the catalog or bring your own) into one agent, then drop
-// that agent on your own site. The animated EmbedDemo + the shared
-// EmbedInstall component are the headline; the SDK paths are demoted to
-// compact links. Server-rendered so the copy is crawlable — EmbedDemo and
-// EmbedInstall are the only client islands.
+// The /docs landing — the grand entry to Yeetful, told transaction-layer
+// first: one intent in, a guarded artifact out, a receipt behind it. Jobs +
+// Guardian + the venue table lead; the embed is the icing (kept — with its
+// animated demo — but below the layer story). Server-rendered so the copy is
+// crawlable — EmbedDemo and EmbedInstall are the only client islands.
 
 const PAGE = DOCS_PAGES.find((p) => p.slug === '')!
 
@@ -27,53 +26,53 @@ const DEEPER = guidePages().filter((p) => p.slug !== '')
 
 const STEPS = [
   {
-    num: 'STEP 1 · COMPOSE',
-    title: 'Combine MCPs into one agent',
+    num: 'STEP 1 · INTENT',
+    title: 'Say what should happen',
     lead: (
       <>
-        Pick a few MCPs from <Link href="/servers">the catalog</Link> — swaps, DAO votes, order
-        books, live market data — and they become <strong>one agent</strong>. A single ask can
-        cross servers: &ldquo;swap 20 USDC for WETH, then vote on the treasury proposal&rdquo;
-        routes each step to the right MCP, builds the transactions with guardrails, and hands
-        your user a receipt for every hop.
+        &ldquo;Swap 20 USDC for ETH on Base.&rdquo; &ldquo;Bridge 5 USDC to Arbitrum, then
+        deposit it to Hyperliquid, then long $12 of ETH, then protect it with a 5% stop.&rdquo;
+        Money asks are claimed by <strong>deterministic parsers</strong>, not sampled from a
+        model — the same sentence hits the same code path every time, and compound asks compile
+        into <Link href="/docs/jobs">jobs</Link> the runner walks step by step.
       </>
     ),
     links: [
-      { href: '/servers', label: 'Browse MCPs' },
-      { href: '/docs/router', label: 'How routing works' },
+      { href: '/docs/jobs', label: 'The Jobs API' },
+      { href: '/docs/transactions', label: 'How parsing works' },
     ],
   },
   {
-    num: 'STEP 2 · BRING YOUR OWN',
-    title: 'Add your own MCP',
+    num: 'STEP 2 · GUARDED BUILD',
+    title: 'Every artifact earns its signature',
     lead: (
       <>
-        Point us at your MCP&rsquo;s URL and its tools are discovered on the spot — no listing
-        process, no gatekeeping. Your server joins the working set next to the catalog MCPs, so
-        the agent your users talk to speaks <strong>your protocol</strong>{' '}too. Star the
-        &ldquo;start here&rdquo; tools and the router leads with them.
+        Per-venue builders — CoW, Uniswap v3/v4, NEAR Intents, Aave, Hyperliquid, Snapshot —
+        derive each transaction from <strong>live venue state</strong>, and a fail-closed guard
+        re-checks it before your wallet sees it. The model never writes calldata, amounts, or
+        addresses. When a check fails you get the reason, not a guess.
       </>
     ),
     links: [
-      { href: '/servers/add', label: 'Add your MCP' },
-      { href: '/docs/earn', label: 'Track its usage' },
+      { href: '/docs/transactions', label: 'Venues & guards' },
+      { href: '/docs/guardian', label: 'Guardian: autonomy, no custody' },
     ],
   },
   {
-    num: 'STEP 3 · EMBED',
-    title: 'Put it on your site',
+    num: 'STEP 3 · SIGN & RECEIPT',
+    title: 'Your wallet signs. Everything is receipted.',
     lead: (
       <>
-        Five lines mount the chat on any page — bubble or inline. <code>wallet: &apos;auto&apos;</code>{' '}
-        bridges the wallet already connected to your site, so signatures pop in{' '}
-        <strong>your user&rsquo;s own wallet</strong> and Yeetful never holds keys. A publishable{' '}
-        <code>yfe_</code> key attributes usage to your account and unlocks embed analytics: every
-        ask, every built transaction, every dead-end worth fixing.
+        Nothing is custodial: the layer produces artifacts, <strong>only your signature moves
+        money</strong>. Built, signed, or refused — every decision lands with its priced value
+        on your <Link href="/dashboard">dashboard</Link> and traces live on{' '}
+        <Link href="/activity">/activity</Link>. Autonomy you can audit beats autonomy you have
+        to trust.
       </>
     ),
     links: [
-      { href: '/docs/embed', label: 'The embed contract' },
-      { href: '/dashboard/keys', label: 'Mint an embed key' },
+      { href: '/docs/guardian', label: 'The Guardian receipts' },
+      { href: '/activity', label: 'Watch it decide live' },
     ],
   },
 ]
@@ -94,47 +93,28 @@ export default function DocsIndexPage() {
       {/* ── Hero ── */}
       <p className="splash__eyebrow mono">BUILD ON YEETFUL</p>
       <h1 className="splash__h1">
-        Ship your own agent. <em className="hero__em">Embed it anywhere.</em>
+        One intent in. <em className="hero__em">A guarded transaction out.</em>
       </h1>
       <p className="splash__lead">
-        Combine MCPs — swaps, DAO votes, live data, <strong>your own server</strong> — into one
-        agent, and drop it on your site with five lines. Your users ask in plain English; the
-        agent routes across your set, builds transactions with guardrails and receipts, and signs
-        with <strong>their own wallet</strong>. No API keys to hide, nothing custodial.
+        Yeetful is the transaction layer for agents: plain-English intents compile into
+        deterministic, guard-checked artifacts your users sign with{' '}
+        <strong>their own wallet</strong>{' '}— from the <Link href="/docs/jobs">Jobs API</Link>, the
+        chat, or an embed on your site. The model never writes calldata. Every decision gets a
+        receipt. Nothing is custodial.
       </p>
       <div className="splash__ctas">
-        <Link href="#embed" className="btn btn--solid">
-          Embed the chat
+        <Link href="/docs/jobs" className="btn btn--solid">
+          Run a job for $0
         </Link>
-        <Link href="/servers" className="btn btn--ghost">
-          Browse MCPs
+        <Link href="/docs/transactions" className="btn btn--ghost">
+          Venues &amp; guards
         </Link>
       </div>
 
-      {/* ── The embed: demo + the one install ── */}
-      <div className="splash__embedgrid" id="embed">
-        <div className="splash__embedcopy">
-          <p className="splash__kicker mono">THE 2-MINUTE INSTALL</p>
-          <h2 className="splash__pathtitle">Watch it land on a page</h2>
-          <p className="splash__pathlead">
-            This is the whole product from your user&rsquo;s side: a bubble on your page that
-            opens into the full chat — routing, transaction building, receipts, signing. Copy the
-            Claude Code prompt, paste it into your app&rsquo;s repo, and Claude does the install
-            end to end. Or take the raw snippet and mount it yourself.
-          </p>
-          <EmbedInstall />
-          <div className="splash__more">
-            <Link href="/docs/embed">The full embed docs <ArrowUpRight width={13} height={13} /></Link>
-            <Link href="/dashboard/keys">Mint an embed key <ArrowUpRight width={13} height={13} /></Link>
-          </div>
-        </div>
-        <EmbedDemo />
-      </div>
-
-      {/* ── How it comes together ── */}
+      {/* ── The layer, in three moves ── */}
       <div className="svc__section">
         <div className="svc__sectionhead">
-          <h2 className="svc__h2">How it comes together</h2>
+          <h2 className="svc__h2">Intent → guarded build → receipt</h2>
         </div>
         <div className="splash__steps">
           {STEPS.map((s) => (
@@ -152,6 +132,44 @@ export default function DocsIndexPage() {
             </section>
           ))}
         </div>
+      </div>
+
+      {/* ── Try it now: the $0 quickstart ── */}
+      <div className="splash__npm">
+        <div>
+          <p className="splash__kicker mono">TRY IT · $0</p>
+          <p className="splash__npmlead">
+            <code>dryRun</code> compiles a compound intent and builds step 1 against{' '}
+            <strong>live venues</strong>{' '}— real quote, real guard report — without creating or
+            costing anything. Mint a <code>yf_</code> key at{' '}
+            <Link href="/dashboard/keys">/dashboard/keys</Link> and paste. The{' '}
+            <Link href="/docs/jobs">Jobs page</Link> shows the real response.
+          </p>
+        </div>
+        <pre className="splash__code mono">{`curl -s https://www.yeetful.com/api/jobs \\
+  -H "authorization: Bearer $YF_API_KEY" \\
+  -H "content-type: application/json" \\
+  -d '{"ask": "swap 5 usdc from base to arbitrum, then deposit 4 usdc to hyperliquid", "dryRun": true}'`}</pre>
+      </div>
+
+      {/* ── The embed: the icing ── */}
+      <div className="splash__embedgrid" id="embed">
+        <div className="splash__embedcopy">
+          <p className="splash__kicker mono">THE ICING · 5 LINES</p>
+          <h2 className="splash__pathtitle">The same rails, on your site</h2>
+          <p className="splash__pathlead">
+            Everything above ships as a chat you can mount on any page — routing, guarded
+            builds, receipts, signing with the wallet already connected to your site. Copy the
+            Claude Code prompt and Claude does the install end to end, or take the raw snippet
+            and mount it yourself.
+          </p>
+          <EmbedInstall />
+          <div className="splash__more">
+            <Link href="/docs/embed">The full embed docs <ArrowUpRight width={13} height={13} /></Link>
+            <Link href="/dashboard/keys">Mint an embed key <ArrowUpRight width={13} height={13} /></Link>
+          </div>
+        </div>
+        <EmbedDemo />
       </div>
 
       {/* ── The SDK, demoted but reachable ── */}
