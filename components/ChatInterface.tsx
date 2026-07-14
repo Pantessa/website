@@ -680,7 +680,9 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
     } else if (data.txChain) {
       outcome = 'tx-built'
       artifact = 'tx-chain'
-      chain = chainLabel((data.txChain as { chainId?: unknown }).chainId) ?? 'base'
+      // A chain carries no top-level chainId — the steps' txs do.
+      const tc = data.txChain as { chainId?: unknown; steps?: Array<{ tx?: { chainId?: unknown } }> }
+      chain = chainLabel(tc.chainId ?? tc.steps?.[0]?.tx?.chainId) ?? 'base'
     } else if (data.txRequest) {
       outcome = 'tx-built'
       artifact = 'tx'

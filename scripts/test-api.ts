@@ -1815,6 +1815,21 @@ async function main() {
     const junkChain = txChainOf({ txChain: { summary: 's', steps: [{ label: 'swap', title: 't', tx: goodSteps[2].tx, validUntil: 'soon' }] } })
     check('tx layer: txChainOf drops a non-numeric validUntil', junkChain?.steps[0].validUntil === undefined)
 
+    // Allowances-in-place swaps now ship as ONE-step chains (refresh stepIndex
+    // 0) so SendTxChain's deadline watch covers them — a bare txRequest has no
+    // re-quote recipe and dies at the deadline (the 2026-07-14 AAPL incident).
+    const oneStep = txChainOf({
+      txChain: {
+        summary: 's',
+        steps: [{ label: 'swap', title: 't', tx: goodSteps[2].tx, validUntil: deadline }],
+        refresh: { kind: 'uniswap-v4-swap', stepIndex: 0, params: { sellToken: 'USDG', buyToken: 'AAPL', amountHuman: '100', chainId: '4663' } },
+      },
+    })
+    check(
+      'tx layer: txChainOf keeps a 1-step chain with refresh stepIndex 0 + validUntil',
+      oneStep?.steps.length === 1 && oneStep.refresh?.stepIndex === 0 && oneStep.refresh.kind === 'uniswap-v4-swap' && oneStep.steps[0].validUntil === deadline,
+    )
+
     const withSwap = (tx: Partial<V4BuiltStep['tx']>): V4BuiltStep[] => [goodSteps[0], goodSteps[1], { ...goodSteps[2], tx: { ...goodSteps[2].tx, ...tx } }]
     check('v4 guard: swap to a NON-pinned router is refused', !guardUniswapV4Build(withSwap({ to: '0x000000000000000000000000000000000000dEaD' }), exp).ok)
     check('v4 guard: wrong chainId is refused', !guardUniswapV4Build(withSwap({ chainId: 8453 }), exp).ok)

@@ -1982,9 +1982,23 @@ async function prepareSwapTurn(intent: SwapIntent, walletAddress: string | undef
         })
       }
       trace({ type: 'status', label: `guardrails passed — swap tx built (${intent.sellAmountHuman} ${intent.sellToken.toUpperCase()} → ${intent.buyToken.toUpperCase()} on ${chain.name}), awaiting signature` })
+      // One step, but still a CHAIN: SendTxChain's deadline watch re-quotes
+      // before validUntil lapses. A bare txRequest has no refresh recipe —
+      // clicked after the deadline, the wallet's gas estimate reverts and the
+      // fee fallback paints the 2^50 sentinel (the 2026-07-14 AAPL incident).
       return NextResponse.json({
         reply: `🔏 ${uni.summary}${warns.length ? `\n${warns.join('\n')}` : ''}`,
-        txRequest: uni.swapTx,
+        txChain: {
+          summary: uni.summary,
+          steps: [
+            { label: 'swap', title: `Swap ${intent.sellAmountHuman} ${intent.sellToken.toUpperCase()} → ${intent.buyToken.toUpperCase()}`, tx: uni.swapTx, validUntil: uni.validUntil },
+          ],
+          refresh: {
+            kind: 'uniswap-swap',
+            stepIndex: 0,
+            params: { sellToken: intent.sellToken, buyToken: intent.buyToken, amountHuman: intent.sellAmountHuman, chainId: String(chainId) },
+          },
+        },
         buildPath: 'native-swap-uniswap',
         guardrails: uni.guardrails,
         workingContext: swapWorkingContext(intent, 'uniswap', ctx, chainId),
@@ -2091,19 +2105,23 @@ async function prepareUniswapV4Turn(
     const warns = uni.guardrails.checks.filter((c) => !c.ok && c.level === 'warn').map((c) => `⚠️ ${c.note}`)
     const sell = intent.sellToken!.toUpperCase()
     const buy = intent.buyToken!.toUpperCase()
-    if (uni.steps.length === 1) {
-      trace({ type: 'status', label: `guardrails passed — v4 swap tx built (${intent.sellAmountHuman} ${sell} → ${buy} on ${chain.name}), awaiting signature` })
-      return NextResponse.json({
-        reply: `🔏 ${uni.summary}${warns.length ? `\n${warns.join('\n')}` : ''}`,
-        txRequest: uni.steps[0].tx,
-        buildPath: 'native-swap-uniswap-v4',
-        guardrails: uni.guardrails,
-        workingContext: swapWorkingContext(intent, 'uniswap', ctx, chainId),
-      })
-    }
-    trace({ type: 'status', label: `guardrails passed — ${uni.steps.length}-step v4 card built (${intent.sellAmountHuman} ${sell} → ${buy}, Permit2 approvals + swap), awaiting signature` })
+    // Approvals in place → ONE swap step, still a chain (never a bare
+    // txRequest): the refresh recipe + validUntil put it under SendTxChain's
+    // deadline watch, so a card left unsigned past the ~600s deadline is
+    // re-quoted instead of reverting at the wallet's gas estimate (the
+    // 2026-07-14 AAPL $32M-fee incident on Robinhood Chain).
+    trace({
+      type: 'status',
+      label:
+        uni.steps.length === 1
+          ? `guardrails passed — v4 swap tx built (${intent.sellAmountHuman} ${sell} → ${buy} on ${chain.name}), awaiting signature`
+          : `guardrails passed — ${uni.steps.length}-step v4 card built (${intent.sellAmountHuman} ${sell} → ${buy}, Permit2 approvals + swap), awaiting signature`,
+    })
     return NextResponse.json({
-      reply: `🔏 ${uni.summary}\n🔗 ${uni.steps.length} steps in the card below — v4 pulls funds through Permit2, so the approvals come first and the swap appears automatically once they confirm (re-quoted fresh). Nothing to retype.${warns.length ? `\n${warns.join('\n')}` : ''}`,
+      reply:
+        uni.steps.length === 1
+          ? `🔏 ${uni.summary}${warns.length ? `\n${warns.join('\n')}` : ''}`
+          : `🔏 ${uni.summary}\n🔗 ${uni.steps.length} steps in the card below — v4 pulls funds through Permit2, so the approvals come first and the swap appears automatically once they confirm (re-quoted fresh). Nothing to retype.${warns.length ? `\n${warns.join('\n')}` : ''}`,
       txChain: {
         summary: uni.summary,
         steps: uni.steps,
