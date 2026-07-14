@@ -79,6 +79,7 @@ import {
   type HlOrderIntent,
 } from '../lib/hyperliquid-exec'
 import { compileJobAsk } from '../lib/jobs'
+import { signJobToken, verifyJobToken } from '../lib/job-token'
 
 const BASE = process.env.BASE ?? 'http://localhost:3000'
 const DOMAIN = new URL(BASE).host
@@ -2766,6 +2767,34 @@ async function main() {
       listBearer.status === 200 && Array.isArray(listBearerBody.jobs) && listBearerBody.jobs.length === jobsAfter.jobs.length,
     )
     await fetch(`${BASE}/api/keys/${jobsKey.id}`, { method: 'DELETE', headers: C }) // leave the cleanup sweep nothing to find
+
+    // ── Job capability tokens (the embed JobCard's session-less auth) ──────
+    // The harness signs with the SAME SESSION_SECRET the server uses (read
+    // fail-soft from .env.local when not in the env), so a valid token for a
+    // NONEXISTENT id must get past the 401 gate and 404 on the lookup — the
+    // whole path proven without creating a single row.
+    const sessionSecret =
+      process.env.SESSION_SECRET ??
+      (await import('node:fs')
+        .then((fs) => fs.readFileSync('.env.local', 'utf8').match(/^SESSION_SECRET=(.+)$/m)?.[1]?.trim())
+        .catch(() => undefined))
+    if (sessionSecret) {
+      process.env.SESSION_SECRET = sessionSecret
+      const tok = signJobToken('job-token-probe')
+      check(
+        'job token: HMAC round-trip verifies; wrong id and garbage refuse',
+        verifyJobToken('job-token-probe', tok) && !verifyJobToken('another-id', tok) && !verifyJobToken('job-token-probe', 'f'.repeat(64)) && !verifyJobToken('job-token-probe', 'nope'),
+      )
+      const tokenRead = await fetch(`${BASE}/api/jobs/job-token-probe?t=${tok}`)
+      const badTokenRead = await fetch(`${BASE}/api/jobs/job-token-probe?t=${'f'.repeat(64)}`)
+      check(
+        'job token: valid token passes the auth gate (404 on missing job); bad token stays 401',
+        tokenRead.status === 404 && badTokenRead.status === 401,
+        `got ${tokenRead.status}/${badTokenRead.status}`,
+      )
+    } else {
+      console.log('  ⚪ job token: SESSION_SECRET not available to the harness — token checks skipped')
+    }
   }
 
   // ── HL execution layer (parse + build + guard + submit relay) ────────────
