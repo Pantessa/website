@@ -219,6 +219,19 @@ export function chainByKey(key: string | null | undefined): AppChain | null {
   return (key && BY_KEY.get(key.toLowerCase())) || null
 }
 
+/** The chain's primary $1 unit-of-account (USDC on Base, USDG on Robinhood)
+ *  — the first pinned token that's also in the stables map. Used to price
+ *  dollar-denominated swap asks ("$1 worth of ETH") and as the default spend
+ *  token for "buy $5 of AAPL". */
+export function primaryStable(chainId: number): { symbol: string; address: `0x${string}`; decimals: number } | null {
+  const chain = BY_ID.get(chainId)
+  if (!chain) return null
+  for (const [symbol, t] of Object.entries(chain.tokens)) {
+    if (chain.stables[t.address.toLowerCase()] !== undefined) return { symbol, ...t }
+  }
+  return null
+}
+
 /** The chain a message names ("on arbitrum", "on robinhood") — null if none. */
 export function chainNamedIn(message: string): AppChain | null {
   for (const c of APP_CHAINS) if (c.words.test(message)) return c

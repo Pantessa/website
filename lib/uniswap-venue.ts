@@ -31,12 +31,14 @@ import { getActiveGrant, recordLedger, spentTodayUsd, toPolicy } from '@/lib/gra
  *  consumers/tests; the multi-chain addresses live in lib/chains.ts. */
 export const UNI_QUOTER_V2 = '0x3d4e44Eb1374240CE5F1B871ab261CD16335B76a' as const
 export const UNI_SWAP_ROUTER_02 = '0x2626664c2603336E57B271c5C0b26F421741e481' as const
-const FEE_TIERS = [100, 500, 3000, 10000] as const
+// Exported for the dollar-amount price probe (lib/usd-probe.ts), which runs
+// the same tier scan for exactly one token.
+export const FEE_TIERS = [100, 500, 3000, 10000] as const
 
 /** The ledger/policy host Uniswap swaps are attributed to. */
 export const UNISWAP_POLICY_HOST = 'uniswap.yeetful.com'
 
-const QUOTER_V2_ABI = [
+export const QUOTER_V2_ABI = [
   {
     name: 'quoteExactInputSingle',
     type: 'function',

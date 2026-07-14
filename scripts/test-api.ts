@@ -31,6 +31,7 @@ import { buildSignableArtifact, isActionIntent, orderRequestOf, txRequestOf } fr
 import { resolveToken, buildCowOrderTypedData, cowOrderAction, buildCowLimitOrder, buildCowSubmitBody, describeCowOrder, describeAmount, formatAtoms, tokenDecimals, humanToAtoms, applySlippage, COW_APP_DATA_JSON, GPV2_SETTLEMENT, type CowQuoteResult } from '../lib/cow'
 import { pureChecks, policyCheck, orderValueUsd, buildReport } from '../lib/cow-guardrails'
 import { parseSwapIntent } from '../lib/swap-intent'
+import { usdToTokenAmount } from '../lib/usd-probe'
 import { keccak256, stringToBytes } from 'viem'
 import { isCacheable, routeCacheKey, getCached, setCached, clearRouteCache } from '../lib/route-cache'
 import { routeSavings } from '../lib/route-telemetry'
@@ -2359,6 +2360,36 @@ async function main() {
   check('swap intent: pair without amount clarifies', parseSwapIntent('swap USDC for WETH').problem !== undefined)
   check('swap intent: plain question falls through', parseSwapIntent('what is a swap?').isSwap === false)
   check('swap intent: price question falls through', parseSwapIntent('what is the price of ETH').isSwap === false)
+  // Dollar-denominated asks (the 2026-07-14 live dead-end): "$X worth of Y"
+  // parses to sellAmountUsd; the route prices it via lib/usd-probe.
+  const du = parseSwapIntent('can i swap about $1 worth of ETH for USDG?')
+  check('swap intent: "$1 worth of ETH" parses with filler', du.isSwap && du.mode === 'swap' && du.sellAmountUsd === '1' && du.sellToken === 'ETH' && du.buyToken === 'USDG' && !du.problem)
+  const du2 = parseSwapIntent('sell $50 of AAPL into USDG')
+  check('swap intent: "$50 of AAPL" sell-side dollar', du2.isSwap && du2.sellAmountUsd === '50' && du2.sellToken === 'AAPL' && du2.buyToken === 'USDG')
+  const du3 = parseSwapIntent('trade 20 dollars of eth for usdg')
+  check('swap intent: "20 dollars of eth" word form', du3.isSwap && du3.sellAmountUsd === '20' && du3.sellToken === 'eth')
+  const db = parseSwapIntent('buy $5 of TSLA with USDG')
+  check('swap intent: "buy $5 of TSLA with USDG"', db.isSwap && db.sellAmountUsd === '5' && db.buyToken === 'TSLA' && db.sellToken === 'USDG')
+  const db2 = parseSwapIntent('buy $5 worth of AAPL')
+  check('swap intent: "buy $5 of AAPL" leaves spend token to the chain stable', db2.isSwap && db2.sellAmountUsd === '5' && db2.buyToken === 'AAPL' && db2.sellToken === undefined)
+  check('swap intent: dollar perp ask is NOT hijacked', parseSwapIntent('buy $12 of ETH on hyperliquid').isSwap === false)
+  check('swap intent: token-amount parse unchanged by dollar support', parseSwapIntent('swap 100 USDC for WETH').sellAmountUsd === undefined)
+  // usd→token conversion (pure): bounded by token decimals, honest nulls.
+  check(
+    'usd probe: $1 at $3241.55/ETH ≈ 0.00030849 ETH',
+    usdToTokenAmount(1, 3241.55, 18) === '0.00030849' &&
+      usdToTokenAmount(5, 1, 6) === '5' &&
+      usdToTokenAmount(0, 100, 6) === null &&
+      usdToTokenAmount(1, 0, 6) === null &&
+      usdToTokenAmount(1, Number.NaN, 6) === null,
+  )
+  // Dollar ask reaches the native layer (deterministic path: no wallet →
+  // connect prompt, not the old "say the amount and pair" dead-end).
+  const dollarNoWallet = await fetch(`${BASE}/api/chat`, {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ message: 'can i swap about $1 worth of ETH for USDC?', activeServers: [] }),
+  }).then((r) => r.json())
+  check('native swap: dollar ask asks to connect (not a dead-end clarify)', dollarNoWallet.connectWallet === true, JSON.stringify(dollarNoWallet).slice(0, 200))
   // Native swap tool: fires with NO service shortlisted (Nate 2026-07-02 —
   // swap building is Yeetful's own tool, not gated on CoW being active).
   // Deterministic paths only (clarify + connect-wallet); the live build is a

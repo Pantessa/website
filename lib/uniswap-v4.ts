@@ -366,6 +366,53 @@ export function guardUniswapV4Build(steps: V4BuiltStep[], exp: V4GuardExpectatio
   return { ok: reasons.length === 0, reasons }
 }
 
+// ── Standalone quote (no build) ─────────────────────────────────────────────
+
+/**
+ * Best exact-in output across the standard no-hook v4 pool keys, or null when
+ * no pool quotes the pair. Used by the dollar-amount price probe for tokens
+ * that only trade on v4 (Robinhood's tokenized stocks); the swap build keeps
+ * its own inline scan because it also needs the winning pool key.
+ */
+export async function quoteV4BestOut(
+  chainId: number,
+  sellAddr: `0x${string}`,
+  buyAddr: `0x${string}`,
+  amountIn: bigint,
+): Promise<bigint | null> {
+  const chain = chainById(chainId)
+  const v4 = chain?.uniswapV4
+  const client = publicClientFor(chainId)
+  if (!chain || !v4 || !client || amountIn <= BigInt(0) || amountIn > UINT128_MAX) return null
+  const [currency0, currency1] =
+    sellAddr.toLowerCase() < buyAddr.toLowerCase() ? [sellAddr, buyAddr] : [buyAddr, sellAddr]
+  const zeroForOne = currency0.toLowerCase() === sellAddr.toLowerCase()
+  const quotes = await Promise.all(
+    V4_POOL_KEYS.map(async ({ fee, tickSpacing }): Promise<bigint | null> => {
+      try {
+        const { result } = await client.simulateContract({
+          address: v4.quoter,
+          abi: V4_QUOTER_ABI,
+          functionName: 'quoteExactInputSingle',
+          args: [
+            {
+              poolKey: { currency0, currency1, fee, tickSpacing, hooks: ZERO_HOOKS },
+              zeroForOne,
+              exactAmount: amountIn,
+              hookData: '0x',
+            },
+          ],
+        })
+        return result[0]
+      } catch {
+        return null
+      }
+    }),
+  )
+  const live = quotes.filter((q): q is bigint => q !== null && q > BigInt(0))
+  return live.length ? live.reduce((a, b) => (b > a ? b : a)) : null
+}
+
 // ── The builder ─────────────────────────────────────────────────────────────
 
 export interface UniswapV4SwapParams {
