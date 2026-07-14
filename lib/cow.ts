@@ -11,7 +11,7 @@
 //  typed-data builder. Guardrails (slippage/recipient/simulate) = A3; signing +
 //  submission to the order book = A4. Verified: CoW Swap is live on Base.
 // ─────────────────────────────────────────────────────────────────────────
-import { dynamicTokenBySymbol, dynamicTokenByAddress } from '@/lib/token-list'
+import { dynamicTokenBySymbol, dynamicTokenByAddress, dynamicTokenByName } from '@/lib/token-list'
 import { chainById } from '@/lib/chains'
 
 import { keccak256, stringToBytes } from 'viem'
@@ -48,6 +48,10 @@ export function resolveToken(input: string, chainId = 8453): string | null {
   // surface.
   const dyn = dynamicTokenBySymbol(t, chainId)
   if (dyn) return dyn.address
+  // Company-name fallback ("NVIDIA" → NVDA on Robinhood Chain) — exact full
+  // names only, and never before the symbol maps.
+  const byName = dynamicTokenByName(t, chainId)
+  if (byName) return byName.address
   return null
 }
 
@@ -68,6 +72,8 @@ export function tokenDecimals(input: string, chainId = 8453): number | null {
   }
   const dyn = dynamicTokenBySymbol(t, chainId)
   if (dyn) return dyn.decimals
+  const byName = dynamicTokenByName(t, chainId)
+  if (byName) return byName.decimals
   return null
 }
 
@@ -90,7 +96,16 @@ export function formatAtoms(atoms: string, decimals: number, maxFractionDigits =
  *  address. Used to build the exact string the user approves against. */
 export function tokenLabel(input: string, chainId = 8453): string {
   const t = input.trim()
-  if (!/^0x[0-9a-fA-F]{40}$/.test(t)) return t.toUpperCase()
+  if (!/^0x[0-9a-fA-F]{40}$/.test(t)) {
+    // A name that resolved via the name index labels as its ticker, so the
+    // artifact the user signs reads "1 USDG → NVDA", not "→ NVIDIA".
+    const up = t.toUpperCase()
+    if (!staticTokensFor(chainId)[up] && !dynamicTokenBySymbol(t, chainId)) {
+      const byName = dynamicTokenByName(t, chainId)
+      if (byName) return byName.symbol.toUpperCase()
+    }
+    return up
+  }
   const lower = t.toLowerCase()
   for (const [sym, info] of Object.entries(staticTokensFor(chainId))) {
     if (sym !== 'ETH' && info.address.toLowerCase() === lower) return sym
