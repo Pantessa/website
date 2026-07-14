@@ -97,11 +97,20 @@ FEATURE this lane ships, not a constraint it suffers.
 - [x] Docs page: /docs/payer-demo ("The payer loop"), real output pasted,
       placed after x402 in the nav. Entity-space detectors clean.
 
-## W6 — Hardening (as time allows; else backlog notes in the lane PR)
-- [ ] Explicit leverage on HL opens (updateLeverage behind the guard)
-- [ ] v2 delegations: SPEC ONLY unless CDP secrets appear (blocked:
-      CDP_WALLET_SECRET — note in PR)
-- [ ] Same-chain swap as a job step (uniswap/cow builders in the compiler)
+## W6 — Hardening → BACKLOG (time went to W1–W5 depth; notes for the PR)
+- [ ] Explicit leverage on HL opens: parse "at 5x" in parseHlIntent →
+      updateLeverage L1 action BEFORE the order, both behind the existing
+      guard (guard must pin the asset + cap leverage; the drill ran at
+      account-default 20x, which is the argument for shipping this next).
+- [ ] v2 delegations: SPEC ONLY, still blocked on CDP_WALLET_SECRET (see
+      spend-permissions memory) — no code written this lane.
+- [ ] Same-chain swap as a job step: the uniswap/cow builders already
+      exist; the compiler needs a swap segment (parseSwapIntent) + a
+      'swap-settled' wait predicate (tx receipt poll). Straightforward
+      but touches the venue-picker logic — a clean next sub-branch.
+- [ ] From this lane's findings: harness-check the /api/route SSE shape
+      (the payer demo depends on it); Otto weather routing (FlightAware
+      claims weather asks and fails — a shortlist-quality case).
 
 ## Log
 - 09:40 lane opened @ 1c45b0f (main w/ #409). Burner: $5.86 USDC Base,
@@ -128,3 +137,9 @@ FEATURE this lane ships, not a constraint it suffers.
   ($0.002, tx hashes) through /api/route + a $0 guarded dryRun plan, one
   script. /docs/payer-demo added. test:api 469/2 known reds. PR
   w5-x402-demo → day2-lane. Remaining: W6 (backlog notes) + lane→main PR.
+- 12:20 LANE COMPLETE: W6 written up as backlog (above), ONE PR
+  day2-lane → main opened for Nate. Post-merge follow-ups: rerun
+  jobs-api-demo + x402-payer-demo against prod and paste outputs into
+  /docs/jobs + /docs/payer-demo if they differ; 2 demo yf_ keys on the
+  burner's /dashboard/keys (revoke at will); all dev test jobs
+  canceled/failed + origin-fenced; the prod HL drill position untouched.
