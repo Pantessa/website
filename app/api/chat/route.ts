@@ -75,7 +75,7 @@ import {
 import { policyCheck, buildReport } from '@/lib/tx-guardrails'
 import { buildGuardrailedOrder } from '@/lib/cow-build'
 import { buildUniswapSwap, NoV3PoolError } from '@/lib/uniswap-venue'
-import { buildUniswapV4Swap, NoV4PoolError } from '@/lib/uniswap-v4'
+import { buildUniswapV4Swap, NoV4PoolError, GatedV4PoolError } from '@/lib/uniswap-v4'
 import { tokenDecimals, humanToAtoms } from '@/lib/cow'
 import { ensureTokenList } from '@/lib/token-list'
 import { resolveProposal } from '@/lib/snapshot-read'
@@ -2142,6 +2142,14 @@ async function prepareUniswapV4Turn(
       return NextResponse.json({
         reply: `🔄 No Uniswap v3 or v4 pool on ${chain.name} can fill ${intent.sellToken!.toUpperCase()} → ${intent.buyToken!.toUpperCase()} for this amount.`,
       })
+    }
+    if (err instanceof GatedV4PoolError) {
+      // The pool quotes but can never execute from a direct UR call
+      // (Robinhood's stock pools settle only through their backend-signed
+      // venue). Refusing HERE — before any card — is the whole point: the
+      // old flow asked for a Permit2 signature, then withheld the swap.
+      trace({ type: 'note', level: 'warn', label: `v4 pool is venue-gated — quotes but can't execute from a direct swap; no build (${err.message.slice(0, 160)})` })
+      return NextResponse.json({ reply: `🚫 ${err.message} Nothing was built — no signature needed.` })
     }
     const msg = err instanceof Error ? err.message : 'quote failed'
     trace({ type: 'note', level: 'warn', label: `Uniswap v4 build failed: ${msg.slice(0, 200)}` })

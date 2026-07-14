@@ -65,15 +65,23 @@ export default function SendTxChain({
           tx?: TxChainStep['tx']
           summary?: string
           blocked?: boolean
+          blockKind?: string
           reasons?: string
           pending?: boolean
           error?: string
           validUntil?: number | null
         }
         if (data.blocked) {
-          // Guardrails re-fired and refused — withhold the step, say why.
+          // Withhold the step and say WHO refused: the user's own policy
+          // (fixable on the Dashboard) vs the chain itself (an on-chain
+          // revert — pointing at the Dashboard here sent a user hunting for
+          // a spend limit that was never involved).
           setPhase('blocked')
-          setNote(`refused by your guardrails on the fresh quote: ${data.reasons ?? 'a safety check failed'}. Manage limits on the Dashboard`)
+          setNote(
+            data.blockKind === 'execution'
+              ? `the swap can't execute on-chain: ${data.reasons ?? 'the rebuilt transaction would revert'}. This isn't your spend policy — no limit needs changing`
+              : `refused by your guardrails on the fresh quote: ${data.reasons ?? 'a safety check failed'}. Manage limits on the Dashboard`,
+          )
           return false
         }
         if (data.tx) {
@@ -119,9 +127,12 @@ export default function SendTxChain({
       onCompleted?.({ hash, chainId: steps[confirmedIndex].tx.chainId ?? 8453 })
       return
     }
-    // Re-quote the incoming step when the server marked it refreshable.
-    if (!(await refreshStep(next))) return
+    // Advance FIRST so refresh states (spinner / a withheld shield) paint on
+    // the incoming step — a block used to render on the just-CONFIRMED step,
+    // reading as if the signed approval had failed.
     setCurrent(next)
+    // Re-quote the incoming step when the server marked it refreshable.
+    await refreshStep(next)
   }
 
   // Deadline watch: prebuilt calldata DIES at validUntil (the swap deadline).
@@ -207,7 +218,7 @@ export default function SendTxChain({
               )}
               {isCurrent && phase === 'blocked' && (
                 <div className="ml-6 text-[11px] text-red-400">
-                  Withheld — {note}. Nothing was signed.
+                  Withheld — {note}. This step was not signed{i > 0 ? '; your earlier confirmed steps stand' : ''}.
                 </div>
               )}
               {isCurrent && phase === 'sign' && (

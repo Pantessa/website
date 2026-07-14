@@ -183,6 +183,21 @@ export class NoV4PoolError extends Error {
   }
 }
 
+/** The pool QUOTES but can never EXECUTE from a direct Universal Router call.
+ *  Robinhood Chain's tokenized-stock pools (AAPL/TSLA/… vs USDG) are venue-
+ *  gated: every real stock swap runs through Robinhood's backend-signed
+ *  DexAggregator stack, and a direct UR `execute` bare-reverts (empty revert
+ *  data) at the SWAP action — while the v4 Quoter, which never triggers the
+ *  gate, happily prices the pool. Offering such a build burns the user's
+ *  Permit2 signature on a swap that can never land (the 2026-07-14 AAPL
+ *  incident, second act). The route turns this into an honest refusal. */
+export class GatedV4PoolError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'GatedV4PoolError'
+  }
+}
+
 // ── Calldata construction (pure — exported so the guard tests can build) ────
 
 export interface V4SwapPlan {
@@ -416,6 +431,64 @@ export async function quoteV4BestOut(
   return live.length ? live.reduce((a, b) => (b > a ? b : a)) : null
 }
 
+// ── Executability probe ─────────────────────────────────────────────────────
+
+/**
+ * Can this pool actually EXECUTE a swap from a direct Universal Router call?
+ * Simulates the SWAP action alone (no settle/take — needs no balances or
+ * allowances from `from`). A healthy pool always reverts WITH data
+ * (`CurrencyNotSettled`/`V4TooLittleReceived` — deltas are left unsettled by
+ * design); a venue-gated pool (Robinhood tokenized stocks) bare-reverts with
+ * EMPTY data before the pool math runs. Returns:
+ *   'ok'      — revert carried data (or the call somehow passed): executable
+ *   'gated'   — positive execution revert with empty data: NOT executable
+ *   'unknown' — transport trouble (timeout/rate-limit): fail OPEN; the
+ *               /api/tx/refresh estimateGas gate still backstops at sign time.
+ */
+async function probeV4Executability(
+  client: NonNullable<ReturnType<typeof publicClientFor>>,
+  universalRouter: `0x${string}`,
+  plan: V4SwapPlan,
+  from: `0x${string}`,
+): Promise<'ok' | 'gated' | 'unknown'> {
+  const swapParams = encodeAbiParameters(
+    [EXACT_IN_SINGLE_PARAM],
+    [
+      {
+        poolKey: plan.poolKey,
+        zeroForOne: plan.zeroForOne,
+        amountIn: plan.amountIn,
+        amountOutMinimum: plan.minOut,
+        hookData: '0x',
+      },
+    ],
+  )
+  const v4Input = encodeAbiParameters(
+    [...ACTIONS_ENVELOPE_PARAMS],
+    [`0x${ACTION_SWAP_EXACT_IN_SINGLE.toString(16).padStart(2, '0')}`, [swapParams]],
+  )
+  const data = encodeFunctionData({
+    abi: UNIVERSAL_ROUTER_ABI,
+    functionName: 'execute',
+    args: [`0x${UR_COMMAND_V4_SWAP.toString(16).padStart(2, '0')}`, [v4Input], BigInt(plan.deadline)],
+  })
+  try {
+    await client.call({ account: from, to: universalRouter, data })
+    return 'ok'
+  } catch (err) {
+    const cause = err instanceof Error && 'walk' in err && typeof (err as { walk?: unknown }).walk === 'function'
+      ? (err as { walk: (fn: (e: unknown) => boolean) => unknown }).walk((e) => !!e && typeof e === 'object' && 'data' in (e as object))
+      : null
+    const revertData = cause && typeof cause === 'object' && 'data' in cause ? (cause as { data?: unknown }).data : undefined
+    if (typeof revertData === 'string' && revertData.length > 2) return 'ok'
+    const msg = err instanceof Error ? err.message : ''
+    // Only a positive "execution reverted" with no data means gated — RPC
+    // flakiness must not block good builds.
+    if (/execution reverted|revert/i.test(msg)) return 'gated'
+    return 'unknown'
+  }
+}
+
 // ── The builder ─────────────────────────────────────────────────────────────
 
 export interface UniswapV4SwapParams {
@@ -519,6 +592,18 @@ export async function buildUniswapV4Swap(params: UniswapV4SwapParams): Promise<U
   // approval mining, small enough to be a real bound (not an open grant).
   const permit2Expiration = deadline + 3600
   const poolKey: V4PoolKey = { currency0, currency1, fee: best.fee, tickSpacing: best.tickSpacing, hooks: ZERO_HOOKS }
+
+  // Quoting is NOT executing: Robinhood's tokenized-stock pools price fine on
+  // the Quoter but a direct Universal Router swap bare-reverts (their stock
+  // venue is the backend-signed DexAggregator, not public UR calls). Refuse
+  // BEFORE any signature is requested — never burn a Permit2 grant on a swap
+  // that can never land.
+  const executability = await probeV4Executability(client, v4.universalRouter, { poolKey, zeroForOne, amountIn, minOut, deadline }, from)
+  if (executability === 'gated') {
+    throw new GatedV4PoolError(
+      `${tokenLabel(params.sellToken, chainId)} → ${tokenLabel(params.buyToken, chainId)} quotes on Uniswap v4 on ${chain.name}, but the pool only executes through ${chain.name}'s own swap venue — a direct Uniswap swap can't fill it.`,
+    )
+  }
 
   const sellLabel = tokenLabel(params.sellToken, chainId)
   const buyLabel = tokenLabel(params.buyToken, chainId)
