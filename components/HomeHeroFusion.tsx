@@ -69,7 +69,7 @@ const canvasPalette = () =>
 /** The mark for a source's `<i>` glyph slot — real logo when we have one. */
 function SourceGlyph({ name, glyph }: { name: string; glyph: string }) {
   const Mark = getProtocolMark(name)
-  return <i>{Mark ? <Mark size={13} /> : glyph}</i>
+  return <i>{Mark ? <Mark size={20} /> : glyph}</i>
 }
 const CORE = { x: 0.5, y: 0.47 }
 

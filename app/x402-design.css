@@ -2637,7 +2637,7 @@
     box-shadow: 0 0 24px color-mix(in srgb, var(--pc) 18%, transparent);
     animation: fh-float 8s ease-in-out infinite;
   }
-  .fhero__chip i { font-style: normal; font-weight: 700; color: var(--pc); display: inline-flex; align-items: center; }
+  .fhero__chip i { font-style: normal; font-weight: 700; font-size: 18px; color: var(--pc); display: inline-flex; align-items: center; }
   .fhero__chip i svg { display: block; }
   .fhero__chip:nth-child(2) { animation-delay: -2s; }
   .fhero__chip:nth-child(3) { animation-delay: -4s; }
