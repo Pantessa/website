@@ -63,15 +63,26 @@ FEATURE this lane ships, not a constraint it suffers.
       run clean on all four pages.
 
 ## W4 — Lido guided flow (the canonical "agent proposes the job" demo)
-- [ ] Native lido step: parse "stake N eth on lido" → lido MCP build_stake →
-      guarded SendTx artifact (recipient self, contract pinned from MCP
-      response verified against known Lido mainnet stETH addr).
-- [ ] Jobs compiler: lido stake as a step ("swap …, then stake … on lido").
-- [ ] The guided moment: "help me stake on lido" (chip on the Lido splash
-      card) → deterministic context check (ETH balance) → if broke-but-
-      stablecoined, reply proposes the EXACT compound job as a chip:
-      "Swap 5 USDC → ETH, then stake it on Lido — one job. Run it?"
-- [ ] Chip round-trip harness checks for every new string.
+- [x] Native lido step (lib/lido-stake.ts): parse "stake N eth on lido"
+      (+ wstETH, + max forms "all my / the swapped eth") → build_stake →
+      guard pins the CANONICAL mainnet stETH/wstETH addresses (hardcoded,
+      never trusted from the response), decodes submit(), matches value,
+      chainId 1, single step. Chat gate + buildLidoStakeTurn (route.ts),
+      valueUsd priced off the MCP's own position read (fail-soft).
+- [x] Jobs compiler: native-lido sign step; 'max' resolves from the LIVE
+      mainnet balance at build time minus a 0.002 gas buffer (the
+      amount-only-exists-after-the-bridge form).
+- [x] The guided moment: isLidoGuidedAsk → deterministic position read →
+      chips. VERIFIED LIVE on the burner: "Help me stake on Lido" → "no
+      stakeable ETH … but 5.86 USDC on Base" → chip → 3-step job compiled
+      (bridge → wait → stake), step 1 offered at $5.00, NOT signed,
+      canceled via the card. Gotcha: clarifyOf drops 1-option payloads —
+      the compound proposal needs a second honest option (bridge-only).
+      + lidoSource splash card (position/APR/withdrawals, live-amount
+      stake chip) + lido preview entry for hand-picked empties.
+- [x] Chip round-trip harness checks: 8 new checks (parse forms, guided
+      detection, compiler round-trip of the exact chip string, suggested-
+      stake sizing, guard pass + 5 tampers + wstETH shape). 469/2 known.
 
 ## W5 — x402 payer demo  [≤$2 total]
 - [ ] scripts/x402-payer-demo.ts: an external agent that (1) pays a ≤$0.05
@@ -102,3 +113,8 @@ FEATURE this lane ships, not a constraint it suffers.
   transactions), overview + nav reordered, all snippets runnable, real
   output pasted. tsc + build green, entity-space detectors (letters AND
   dashes) clean, test:api 461/2 known reds. PR w3-docs → day2-lane.
+- 11:45 W4 DONE: the Nate demo shape works end-to-end on the burner —
+  guided ask noticed $5.86 USDC on Base + 0 mainnet ETH, proposed the
+  exact bridge→stake job as a chip, chip compiled to a 3-step JobCard
+  with the $5 bridge artifact offered. Unsigned, canceled, dev-fenced.
+  tsc + build green, test:api 469/2 known reds. PR w4-lido → day2-lane.

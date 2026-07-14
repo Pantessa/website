@@ -15,6 +15,16 @@ import { buildHlExecTurn, type HlIntent } from '@/lib/hyperliquid-exec'
 import { armGuardianPolicy } from '@/lib/hl-guardian-store'
 import type { GuardianArmAsk } from '@/lib/hl-guardian'
 import type { CompiledJob } from '@/lib/jobs'
+import {
+  guardLidoStakeBuild,
+  suggestedStakeEth,
+  LIDO_MCP,
+  type LidoBuiltStake,
+  type LidoPositionPayload,
+  type LidoStakeParams,
+} from '@/lib/lido-stake'
+import { publicClientFor } from '@/lib/chains'
+import { formatEther } from 'viem'
 
 export function jobsEnv(): string {
   return process.env.VERCEL_ENV ?? 'dev'
@@ -216,6 +226,37 @@ export async function buildSignArtifact(
     if (turn.orderRequest) return { artifact: { orderRequest: turn.orderRequest }, guardReport: turn.guardrails, valueUsd: turn.guardrails?.valueUsd ?? null }
     if (turn.txRequest) return { artifact: { txRequest: turn.txRequest }, guardReport: turn.guardrails, valueUsd: turn.guardrails?.valueUsd ?? null }
     throw new Error(turn.reply.replace(/^[^\w]+/, ''))
+  }
+  if (builder === 'native-lido') {
+    const p = params as unknown as LidoStakeParams
+    // 'max' resolves from the LIVE mainnet balance at build time — the
+    // compound-job form ("…then stake the ETH on lido") where the amount
+    // only exists after the bridge settles.
+    let amountEth = p.amount
+    if (amountEth === 'max') {
+      const client = publicClientFor(1)
+      if (!client) throw new Error('No Ethereum mainnet RPC configured — cannot resolve the stake amount.')
+      const balance = await client.getBalance({ address: wallet as `0x${string}` })
+      const resolved = suggestedStakeEth(formatEther(balance))
+      if (!resolved) throw new Error(`Wallet holds only ${formatEther(balance)} ETH on mainnet — nothing left to stake after the gas buffer.`)
+      amountEth = resolved
+    }
+    const raw = (await callMcpTool(LIDO_MCP, 'build_stake', { user: wallet, amount: amountEth, receive: p.receive }, { timeoutMs: 20_000 })) as LidoBuiltStake
+    const guard = guardLidoStakeBuild(raw, { amountEth, receive: p.receive })
+    if (!guard.ok || !guard.tx) throw new Error(guard.reasons.join(' '))
+    // Price the stake off the same read the splash uses (fail-soft null).
+    const valueUsd = await callMcpTool(LIDO_MCP, 'position', { user: wallet }, { timeoutMs: 12_000 })
+      .then((pos) => {
+        const eth = (pos as LidoPositionPayload).eth
+        const price = Number(eth?.usd) / Number(eth?.balance)
+        return Number.isFinite(price) && price > 0 ? Number((Number(amountEth) * price).toFixed(2)) : null
+      })
+      .catch(() => null)
+    return {
+      artifact: { txRequest: guard.tx as unknown as Record<string, unknown>, summary: guard.summary },
+      guardReport: { ok: true, warnings: guard.warnings, valueUsd },
+      valueUsd,
+    }
   }
   throw new Error(`unknown sign builder ${builder}`)
 }

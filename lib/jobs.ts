@@ -21,6 +21,7 @@
 import { parseCrossChainSwap, type CrossChainSwapParams } from '@/lib/cross-chain-swap'
 import { parseHlIntent, type HlIntent, type HlOrderIntent } from '@/lib/hyperliquid-exec'
 import { parseGuardianArm, type GuardianArmAsk } from '@/lib/hl-guardian'
+import { parseLidoStake } from '@/lib/lido-stake'
 
 export interface CompiledStep {
   kind: 'sign' | 'wait' | 'auto'
@@ -103,6 +104,18 @@ export function compileJobAsk(message: string): CompiledJob | { problem: string 
       continue
     }
 
+    const lido = parseLidoStake(seg)
+    if (lido && 'problem' in lido) return { problem: `Step ${i + 1}: ${lido.problem}` }
+    if (lido) {
+      const title =
+        lido.amount === 'max'
+          ? `Stake the ETH on Lido${lido.receive === 'wstETH' ? ' (wstETH)' : ''}`
+          : `Stake ${lido.amount} ETH on Lido${lido.receive === 'wstETH' ? ' (wstETH)' : ''}`
+      steps.push({ kind: 'sign', builder: 'native-lido', title, params: lido as unknown as Record<string, unknown> })
+      titles.push(title)
+      continue
+    }
+
     const arm = parseGuardianArm(seg)
     if (arm) {
       const title = `Arm ${arm.kind === 'stop_loss' ? 'stop-loss' : 'take-profit'} on ${arm.coin} (${arm.triggerMode === 'price' ? `px ${arm.triggerValue}` : `${arm.triggerValue}%`})`
@@ -118,7 +131,7 @@ export function compileJobAsk(message: string): CompiledJob | { problem: string 
     if (steps.length === 0) return null
     return {
       problem:
-        `I can compile steps that are cross-chain swaps, Hyperliquid deposits/orders, or guardian protection — ` +
+        `I can compile steps that are cross-chain swaps, Hyperliquid deposits/orders, Lido stakes, or guardian protection — ` +
         `step ${i + 1} ("${seg.slice(0, 80)}") isn't one of those yet, so I won't guess. ` +
         `Amounts must be explicit (e.g. "deposit 20 usdc to hyperliquid").`,
     }
