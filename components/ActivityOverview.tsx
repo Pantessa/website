@@ -201,7 +201,7 @@ const KIND_CHIP: Record<string, { label: string; cls: string }> = {
   executed: { label: 'auto', cls: 'border-amber-400/50 text-amber-400' },
 }
 
-export default function ActivityOverview() {
+export default function ActivityOverview({ header }: { header?: React.ReactNode }) {
   const [data, setData] = useState<Overview | null>(null)
   const [failed, setFailed] = useState(false)
 
@@ -221,19 +221,61 @@ export default function ActivityOverview() {
 
   const total = data?.hero.systemTotalUsd ?? 0
   const counted = useCountUp(total)
+  const heroFigure = total >= 1000 ? `$${Math.round(counted).toLocaleString('en-US')}` : `$${counted.toFixed(2)}`
+
+  // ── the hero: page title left, the number right, one glow over both ──────
+  const heroSection = (
+    <section className="relative mb-8">
+      <div
+        aria-hidden
+        className="absolute -inset-x-8 -top-16 -bottom-6 pointer-events-none"
+        style={{
+          background:
+            'radial-gradient(62% 88% at 68% 38%, color-mix(in srgb, var(--accent) 12%, transparent), transparent 72%)',
+        }}
+      />
+      <div className="relative grid grid-cols-1 lg:grid-cols-[1fr_auto] gap-x-12 gap-y-10 items-center">
+        <div className="min-w-0">{header}</div>
+        <div className="lg:text-right px-1 pb-4 lg:pb-0">
+          <p className="mono text-[11px] uppercase tracking-[0.24em] text-[color:var(--muted-2)]">
+            Money moved · whole system · all time
+          </p>
+          {data ? (
+            <div
+              className="text-white tabular-nums mt-2"
+              style={{
+                fontFamily: 'var(--font-serif)',
+                fontSize: 'clamp(56px, 8.5vw, 118px)',
+                lineHeight: 1.02,
+                letterSpacing: '-0.02em',
+                fontWeight: 500,
+              }}
+            >
+              {heroFigure}
+            </div>
+          ) : (
+            <div className="animate-pulse rounded-xl bg-white/6 h-24 w-72 mt-3 lg:ml-auto" />
+          )}
+          <p className="mt-3 text-[13px] text-[color:var(--muted)] max-w-[48ch] lg:ml-auto leading-relaxed">
+            Swaps, lending, staking, cross-chain, perps and DAO votes — notional USD of every
+            transaction signed through chat, every embed and the guardian agent, plus every x402 call
+            fee settled on-chain.
+          </p>
+        </div>
+      </div>
+    </section>
+  )
 
   if (!data) {
     return (
       <div className="flex flex-col gap-4 pb-16">
+        {heroSection}
         {failed ? (
           <p className="text-sm text-[color:var(--muted)] py-16 text-center">
             Activity is unavailable right now — try a refresh.
           </p>
         ) : (
           <>
-            <div className="h-48 flex items-center justify-center">
-              <div className="animate-pulse rounded-xl bg-white/6 h-24 w-72" />
-            </div>
             <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-3">
               {Array.from({ length: 6 }).map((_, i) => (
                 <SkeletonKpi key={i} />
@@ -247,46 +289,13 @@ export default function ActivityOverview() {
   }
 
   const h = data.hero
-  const heroFigure = total >= 1000 ? `$${Math.round(counted).toLocaleString('en-US')}` : `$${counted.toFixed(2)}`
   const pct = (n: number, of: number) => (of > 0 ? Math.round((n / of) * 100) : 0)
   const venueMaxUsd = Math.max(...data.venues.map((v) => Math.max(v.signedUsd, v.builtUsd)), 0.01)
   const railMaxCalls = Math.max(...data.rails.map((r) => r.calls), 1)
 
   return (
     <div className="pb-16">
-      {/* ── the number ─────────────────────────────────────────────────── */}
-      <section className="relative mt-2 mb-8">
-        <div
-          aria-hidden
-          className="absolute inset-x-0 -top-10 h-72 pointer-events-none"
-          style={{
-            background:
-              'radial-gradient(58% 90% at 50% 42%, color-mix(in srgb, var(--accent) 13%, transparent), transparent 72%)',
-          }}
-        />
-        <div className="relative text-center px-2">
-          <p className="mono text-[11px] uppercase tracking-[0.24em] text-[color:var(--muted-2)]">
-            Money moved · whole system · all time
-          </p>
-          <div
-            className="text-white tabular-nums mt-2"
-            style={{
-              fontFamily: 'var(--font-serif)',
-              fontSize: 'clamp(64px, 11vw, 132px)',
-              lineHeight: 1.02,
-              letterSpacing: '-0.02em',
-              fontWeight: 500,
-            }}
-          >
-            {heroFigure}
-          </div>
-          <p className="mt-3 text-[13.5px] text-[color:var(--muted)] max-w-[62ch] mx-auto leading-relaxed">
-            Swaps, lending, staking, cross-chain, perps and DAO votes — notional USD of every transaction
-            signed through chat, every embed and the guardian agent, plus every x402 call fee settled
-            on-chain.
-          </p>
-        </div>
-      </section>
+      {heroSection}
 
       {/* ── the vitals ─────────────────────────────────────────────────── */}
       <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-3 mb-10">

@@ -25,17 +25,22 @@ export default function ActivityPage() {
   return (
     <>
       <main className="x-main x-main--fluid">
-        <header className="hero" style={{ paddingBottom: 12 }}>
-          <p className="hero__eyebrow">NETWORK ACTIVITY</p>
-          <h1 className="hero__h1 hero__h1--sm">
-            The system, <em className="hero__em">moving money.</em>
-          </h1>
-          <p className="hero__sub">
-            Every surface reports here — chat, every embedded agent, the guardian, and the x402
-            payment rail. Watch what gets built, what gets signed, and where the money goes.
-          </p>
-        </header>
-        <ActivityOverview />
+        {/* The header rides INSIDE the overview's hero row — title left, the
+            money-moved figure right, one accent glow spanning both. */}
+        <ActivityOverview
+          header={
+            <header className="hero" style={{ paddingBottom: 0 }}>
+              <p className="hero__eyebrow">NETWORK ACTIVITY</p>
+              <h1 className="hero__h1 hero__h1--sm">
+                The system, <em className="hero__em">moving money.</em>
+              </h1>
+              <p className="hero__sub">
+                Every surface reports here — chat, every embedded agent, the guardian, and the x402
+                payment rail. Watch what gets built, what gets signed, and where the money goes.
+              </p>
+            </header>
+          }
+        />
         <LiveRoutingFeed />
       </main>
       <Footer />
