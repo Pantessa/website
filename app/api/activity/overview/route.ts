@@ -1,0 +1,340 @@
+import { NextResponse } from 'next/server'
+import prisma from '@/lib/db'
+
+export const runtime = 'nodejs'
+export const dynamic = 'force-dynamic'
+
+/**
+ * The public system overview behind /activity — every dollar the system moved,
+ * aggregated across ALL surfaces (first-party chat, every embed, the guardian
+ * agent, and the x402 payment rail), plus the per-venue and per-MCP breakdowns
+ * the page charts. Unauthenticated read-only; CDN-cached.
+ *
+ * Privacy (same constitution as /api/activity, Run 7):
+ *  P1 — no full wallet addresses, no grant/key ids, and NO chat content:
+ *       visitor prompts never appear here (they're owner-private on
+ *       /dashboard/embeds). Transaction rows carry the artifact label the
+ *       build layer wrote (what the tx IS — already public on-chain), never
+ *       what anyone typed.
+ *  P2 — denials/refusals are aggregate-only.
+ */
+
+const SERIES_DAYS = 90
+const RECENT_LIMIT = 24
+
+/** embed_turns.build_path → the venue the native layer built against. */
+const VENUE_OF_PATH: Record<string, string> = {
+  'native-swap-uniswap': 'uniswap',
+  'native-swap-uniswap-v4': 'uniswap',
+  'native-swap-cow': 'cow',
+  'native-aave-supply': 'aave',
+  'native-aave-op': 'aave',
+  'native-cross-chain': 'near-intents',
+  'native-hl-guardian': 'hyperliquid',
+  'native-hl-exec': 'hyperliquid',
+  'native-lido': 'lido',
+  'native-job': 'jobs',
+  planner: 'planner',
+  manual: 'manual',
+}
+
+export interface VenueRow {
+  venue: string
+  built: number
+  signed: number
+  builtUsd: number
+  signedUsd: number
+}
+
+/** Human fallback when a turn carries no artifact label (embed_turns.detail). */
+const ARTIFACT_LABEL: Record<string, string> = {
+  'cow-order': 'CoW order',
+  tx: 'Transaction',
+  'tx-chain': 'Multi-step transaction',
+  vote: 'DAO vote',
+}
+
+const r2 = (n: number) => Math.round(n * 100) / 100
+const dayKey = (d: Date) => d.toISOString().slice(0, 10)
+
+export async function GET() {
+  const since = new Date(Date.now() - SERIES_DAYS * 86_400_000)
+  // Settled x402 spend only: ok rows, real dollars, never dry-runs.
+  const x402Where = { ok: true, amountUsd: { gt: 0 }, NOT: { note: 'dry-run' } }
+  const guardianWhere = { action: 'closed', valueUsd: { gt: 0 } }
+
+  const [
+    signedAgg,
+    builtAgg,
+    x402Agg,
+    guardianAgg,
+    outcomeAgg,
+    pathAgg,
+    turnDaily,
+    x402Daily,
+    guardianDaily,
+    railRows,
+    servers,
+    walletRow,
+    recentTurns,
+    recentReceipts,
+    recentGuardian,
+  ] = await Promise.all([
+    prisma.embedTurn.aggregate({ where: { outcome: 'signed' }, _sum: { valueUsd: true }, _count: { _all: true } }),
+    prisma.embedTurn.aggregate({ where: { outcome: 'tx-built' }, _sum: { valueUsd: true }, _count: { _all: true } }),
+    prisma.spendLedgerEntry.aggregate({ where: x402Where, _sum: { amountUsd: true }, _count: { _all: true } }),
+    prisma.hlGuardianRun.aggregate({ where: guardianWhere, _sum: { valueUsd: true }, _count: { _all: true } }),
+    prisma.embedTurn.groupBy({ by: ['outcome'], _count: { _all: true } }),
+    // Per-build-layer built → signed, all time — the venue conversion table.
+    prisma.embedTurn.groupBy({
+      by: ['buildPath', 'outcome'],
+      where: { outcome: { in: ['tx-built', 'signed'] } },
+      _count: { _all: true },
+      _sum: { valueUsd: true },
+    }),
+    prisma.$queryRaw<{ day: Date; signed_usd: number; built_usd: number; signed_n: bigint }[]>`
+      SELECT date_trunc('day', created_at) AS day,
+             COALESCE(SUM(value_usd) FILTER (WHERE outcome = 'signed'), 0)::float AS signed_usd,
+             COALESCE(SUM(value_usd) FILTER (WHERE outcome = 'tx-built'), 0)::float AS built_usd,
+             COUNT(*) FILTER (WHERE outcome = 'signed') AS signed_n
+      FROM embed_turns WHERE created_at >= ${since}
+      GROUP BY 1 ORDER BY 1`,
+    prisma.$queryRaw<{ day: Date; usd: number; n: bigint }[]>`
+      SELECT date_trunc('day', created_at) AS day,
+             COALESCE(SUM(amount_usd), 0)::float AS usd, COUNT(*) AS n
+      FROM spend_ledger
+      WHERE ok AND amount_usd > 0 AND COALESCE(note, '') <> 'dry-run' AND created_at >= ${since}
+      GROUP BY 1 ORDER BY 1`,
+    prisma.$queryRaw<{ day: Date; usd: number; n: bigint }[]>`
+      SELECT date_trunc('day', created_at) AS day,
+             COALESCE(SUM(value_usd), 0)::float AS usd, COUNT(*) AS n
+      FROM hl_guardian_runs
+      WHERE action = 'closed' AND value_usd > 0 AND created_at >= ${since}
+      GROUP BY 1 ORDER BY 1`,
+    // The rails: every MCP the router actually called, paid or free — call
+    // volume, settled fees, and settle rate, straight from the ledger.
+    prisma.$queryRaw<
+      { service: string; calls: bigint; failed: bigint; usd: number; free: boolean; last_at: Date }[]
+    >`
+      SELECT COALESCE(service_name, host) AS service,
+             COUNT(*) FILTER (WHERE ok) AS calls,
+             COUNT(*) FILTER (WHERE NOT ok AND note LIKE 'error:%') AS failed,
+             COALESCE(SUM(amount_usd) FILTER (WHERE ok), 0)::float AS usd,
+             BOOL_AND(COALESCE(amount_usd, 0) = 0) AS free,
+             MAX(created_at) AS last_at
+      FROM spend_ledger
+      WHERE COALESCE(note, '') <> 'dry-run'
+      GROUP BY 1 HAVING COUNT(*) FILTER (WHERE ok) > 0
+      ORDER BY 3 DESC, 2 DESC
+      LIMIT 14`,
+    // Directory rows so the client can render each rail's brand mark/logo.
+    prisma.mcpServer.findMany({ select: { slug: true, name: true, iconSlug: true, logoUrl: true, gated: true } }),
+    prisma.$queryRaw<[{ accounts: bigint }]>`
+      SELECT COUNT(DISTINCT g.owner_address) AS accounts
+      FROM spend_ledger l JOIN spend_grants g ON g.id = l.grant_id`,
+    // Recent value events — artifact labels only, never prompts (P1).
+    prisma.embedTurn.findMany({
+      where: { outcome: { in: ['signed', 'tx-built'] } },
+      orderBy: { createdAt: 'desc' },
+      take: RECENT_LIMIT,
+      select: { outcome: true, artifact: true, chain: true, detail: true, txUrl: true, valueUsd: true, buildPath: true, createdAt: true },
+    }),
+    prisma.spendLedgerEntry.findMany({
+      where: x402Where,
+      orderBy: { createdAt: 'desc' },
+      take: RECENT_LIMIT,
+      select: { serviceName: true, host: true, amountUsd: true, txHash: true, createdAt: true },
+    }),
+    prisma.hlGuardianRun.findMany({
+      where: guardianWhere,
+      orderBy: { createdAt: 'desc' },
+      take: 8,
+      select: { valueUsd: true, reason: true, createdAt: true },
+    }),
+  ])
+
+  const signedUsd = r2(signedAgg._sum.valueUsd ?? 0)
+  const builtUsd = r2(builtAgg._sum.valueUsd ?? 0)
+  const x402Usd = r2(x402Agg._sum.amountUsd ?? 0)
+  const guardianUsd = r2(guardianAgg._sum.valueUsd ?? 0)
+
+  // ── daily series: merge the three sources on the UTC day ──────────────────
+  const days = new Map<string, { signedUsd: number; builtUsd: number; x402Usd: number; events: number }>()
+  const at = (d: Date) => {
+    const k = dayKey(d)
+    const row = days.get(k) ?? { signedUsd: 0, builtUsd: 0, x402Usd: 0, events: 0 }
+    days.set(k, row)
+    return row
+  }
+  for (const d of turnDaily) {
+    const row = at(d.day)
+    row.signedUsd += d.signed_usd
+    row.builtUsd += d.built_usd
+    row.events += Number(d.signed_n)
+  }
+  for (const d of x402Daily) {
+    const row = at(d.day)
+    row.x402Usd += d.usd
+    row.events += Number(d.n)
+  }
+  for (const d of guardianDaily) {
+    const row = at(d.day)
+    row.signedUsd += d.usd
+    row.events += Number(d.n)
+  }
+  // Fill the gaps from the first active day so the cumulative line is honest
+  // (flat where nothing happened) — but never render an all-empty window.
+  // Start the running total at everything that moved BEFORE the window, so
+  // the curve stays all-time even once history outgrows SERIES_DAYS.
+  const windowMoved = [...days.values()].reduce((acc, d) => acc + d.signedUsd + d.x402Usd, 0)
+  const allTimeMoved = signedUsd + x402Usd + guardianUsd
+  const preWindowBase = Math.max(0, r2(allTimeMoved - windowMoved))
+  const keys = [...days.keys()].sort()
+  const series: { day: string; signedUsd: number; x402Usd: number; cumulativeUsd: number; events: number }[] = []
+  if (keys.length > 0) {
+    let cum = preWindowBase
+    const cursor = new Date(`${keys[0]}T00:00:00Z`)
+    const today = new Date()
+    while (cursor.getTime() <= today.getTime()) {
+      const k = dayKey(cursor)
+      const row = days.get(k)
+      cum = r2(cum + (row ? row.signedUsd + row.x402Usd : 0))
+      series.push({
+        day: k,
+        signedUsd: r2(row?.signedUsd ?? 0),
+        x402Usd: r2(row?.x402Usd ?? 0),
+        cumulativeUsd: cum,
+        events: row?.events ?? 0,
+      })
+      cursor.setUTCDate(cursor.getUTCDate() + 1)
+    }
+  }
+
+  // ── per-venue built → signed (embed_turns) + the guardian's own lane ──────
+  const venues = new Map<string, VenueRow>()
+  for (const row of pathAgg) {
+    const venue = VENUE_OF_PATH[row.buildPath ?? ''] ?? (row.buildPath ? row.buildPath : 'unattributed')
+    const v = venues.get(venue) ?? { venue, built: 0, signed: 0, builtUsd: 0, signedUsd: 0 }
+    if (row.outcome === 'tx-built') {
+      v.built += row._count._all
+      v.builtUsd = r2(v.builtUsd + (row._sum.valueUsd ?? 0))
+    } else {
+      v.signed += row._count._all
+      v.signedUsd = r2(v.signedUsd + (row._sum.valueUsd ?? 0))
+    }
+    venues.set(venue, v)
+  }
+  if (guardianAgg._count._all > 0) {
+    const v = venues.get('guardian') ?? { venue: 'guardian', built: 0, signed: 0, builtUsd: 0, signedUsd: 0 }
+    // Autonomous closes execute server-side the moment they trigger — every
+    // "built" is an execution, so they land as signed.
+    v.signed += guardianAgg._count._all
+    v.signedUsd = r2(v.signedUsd + guardianUsd)
+    venues.set('guardian', v)
+  }
+
+  // ── the rails: ledger rows + directory identity (for logos) ──────────────
+  const byName = new Map(servers.map((s) => [s.name.toLowerCase(), s]))
+  const rails = railRows.map((row) => {
+    const s = byName.get(row.service.toLowerCase())
+    const calls = Number(row.calls)
+    const failed = Number(row.failed)
+    return {
+      service: row.service,
+      slug: s?.slug ?? null,
+      iconSlug: s?.iconSlug ?? null,
+      logoUrl: s?.logoUrl ?? null,
+      free: s ? !s.gated : row.free,
+      calls,
+      usd: r2(row.usd),
+      settleRate: calls + failed > 0 ? calls / (calls + failed) : null,
+      lastAt: row.last_at.toISOString(),
+    }
+  })
+
+  // ── funnel (all time, embed_turns outcomes) ───────────────────────────────
+  const outcome = (o: string) => outcomeAgg.find((x) => x.outcome === o)?._count._all ?? 0
+  const turns = outcomeAgg.reduce((acc, x) => acc + x._count._all, 0)
+
+  // ── recent value events, merged newest-first ──────────────────────────────
+  type RecentEvent = {
+    kind: 'tx' | 'x402' | 'guardian'
+    label: string
+    outcome: string
+    chain: string | null
+    venue: string | null
+    usd: number | null
+    link: string | null
+    at: string
+  }
+  const recent: RecentEvent[] = [
+    ...recentTurns.map((t): RecentEvent => ({
+      kind: 'tx',
+      label: t.detail ?? ARTIFACT_LABEL[t.artifact ?? ''] ?? 'Transaction',
+      outcome: t.outcome,
+      chain: t.chain,
+      venue: VENUE_OF_PATH[t.buildPath ?? ''] ?? null,
+      usd: t.valueUsd,
+      link: t.txUrl,
+      at: t.createdAt.toISOString(),
+    })),
+    ...recentReceipts.map((x): RecentEvent => ({
+      kind: 'x402',
+      label: x.serviceName ?? x.host,
+      outcome: 'settled',
+      chain: 'base',
+      venue: null,
+      usd: x.amountUsd,
+      link: x.txHash ? `https://basescan.org/tx/${x.txHash}` : null,
+      at: x.createdAt.toISOString(),
+    })),
+    ...recentGuardian.map((g): RecentEvent => ({
+      kind: 'guardian',
+      label: g.reason || 'Guardian autonomous close',
+      outcome: 'executed',
+      chain: null,
+      venue: 'guardian',
+      usd: g.valueUsd,
+      link: null,
+      at: g.createdAt.toISOString(),
+    })),
+  ]
+    .sort((a, b) => b.at.localeCompare(a.at))
+    .slice(0, RECENT_LIMIT)
+
+  return NextResponse.json(
+    {
+      seriesDays: SERIES_DAYS,
+      hero: {
+        // THE number: tx notional signed + x402 fees settled + guardian closes.
+        systemTotalUsd: r2(signedUsd + x402Usd + guardianUsd),
+        signedUsd,
+        signedCount: signedAgg._count._all,
+        builtUsd,
+        builtCount: builtAgg._count._all,
+        x402Usd,
+        x402Count: x402Agg._count._all,
+        guardianUsd,
+        guardianCount: guardianAgg._count._all,
+        wallets: Number(walletRow[0]?.accounts ?? 0),
+        mcps: servers.length,
+        freeMcps: servers.filter((s) => !s.gated).length,
+      },
+      series,
+      venues: [...venues.values()].sort(
+        (a, b) => b.signedUsd + b.builtUsd - (a.signedUsd + a.builtUsd) || b.built + b.signed - (a.built + a.signed),
+      ),
+      rails,
+      funnel: {
+        turns,
+        answered: outcome('answered'),
+        clarify: outcome('clarify'),
+        txBuilt: outcome('tx-built'),
+        signed: outcome('signed'),
+        refused: outcome('refused') + outcome('error') + outcome('credit-gate'),
+      },
+      recent,
+    },
+    { headers: { 'cache-control': 'public, s-maxage=30, stale-while-revalidate=120' } },
+  )
+}
