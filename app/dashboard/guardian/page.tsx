@@ -6,6 +6,7 @@
 // deterministic-built, guard-checked, and receipted below.
 
 import GuardianPanel from '@/components/GuardianPanel'
+import JobsPanel from '@/components/JobsPanel'
 
 export default function DashboardGuardianPage() {
   return (
@@ -18,6 +19,12 @@ export default function DashboardGuardianPage() {
         and revokes in one click.
       </p>
       <GuardianPanel />
+      <section className="mt-8 max-w-3xl">
+        <h2 className="mono text-[11px] uppercase tracking-wider text-[color:var(--muted-2)] mb-2">
+          Jobs · multi-step runs
+        </h2>
+        <JobsPanel />
+      </section>
     </>
   )
 }

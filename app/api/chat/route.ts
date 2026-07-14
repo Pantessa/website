@@ -28,6 +28,8 @@ import {
 import { buildHlExecTurn, hlAgentOf, parseHlIntent } from '@/lib/hyperliquid-exec'
 import { parseGuardianArm } from '@/lib/hl-guardian'
 import { armGuardianPolicy } from '@/lib/hl-guardian-store'
+import { compileJobAsk } from '@/lib/jobs'
+import { advanceJob, createJob } from '@/lib/jobs-runner'
 import {
   aaveAgentOf,
   competingVenueOf,
@@ -622,6 +624,31 @@ export async function POST(req: NextRequest) {
       nativeTrace({ type: 'note', level: 'info', label: 'aave named but no imperative supply/withdraw/borrow/repay parse — normal routing (reads are fine here; build asks should say e.g. “supply 5 USDC to aave”)' })
     }
 
+    // Multi-step JOBS — a compound ask ("bridge …, then deposit …, then long
+    // …, then protect it") compiles into a FIXED sequence of guarded steps
+    // executed by the jobs runner (waits included). Runs BEFORE the single
+    // native gates: their parsers would otherwise each claim one segment of
+    // a compound message. Compiles deterministically or refuses honestly.
+    const jobAsk = compileJobAsk(message)
+    if (jobAsk && 'problem' in jobAsk) {
+      nativeTrace({ type: 'note', level: 'warn', label: `jobs layer: compound ask but a segment failed to compile — ${jobAsk.problem.slice(0, 120)}` })
+      return NextResponse.json({ reply: `🧭 ${jobAsk.problem}` })
+    }
+    if (jobAsk) {
+      if (!walletAddress) {
+        return NextResponse.json({ reply: "🧭 That chains multiple money steps — connect your wallet first and I'll compile it into a job you sign step by step." })
+      }
+      nativeTrace({ type: 'status', label: `jobs layer claimed the turn: ${jobAsk.steps.length}-step job — ${jobAsk.title} — planner bypassed` })
+      const job = await createJob(walletAddress, jobAsk)
+      // Kick the first step inline so the card opens with something to sign.
+      await advanceJob(job).catch(() => {})
+      return NextResponse.json({
+        reply: `🧭 **Job compiled:** ${job.title}. Every step is built and guard-checked when it's offered; between your signatures the runner handles settlement waits and server-side steps on its own.`,
+        jobId: job.id,
+        buildPath: 'native-job',
+      })
+    }
+
     // Guardian arming from chat — "protect my SYRUP long with a 10% stop".
     // No signable artifact: with an active delegation the policy arms
     // server-side through the SAME rulebook as the dashboard; without one,
@@ -647,7 +674,9 @@ export async function POST(req: NextRequest) {
         reply:
           `🛡️ **Armed.** ${p.kind === 'stop_loss' ? 'Stop-loss' : 'Take-profit'} on your ${p.coin} ${p.side}: closes reduce-only when ` +
           `${p.triggerMode === 'price' ? `the mark crosses ${p.triggerValue}` : `price moves ${p.triggerValue}% ${p.kind === 'stop_loss' ? 'against' : 'for'} you from entry`}. ` +
-          `(${armed.positionNote}.) The guardian checks every minute; every action lands as a receipt on the [Guardian dashboard](/dashboard/guardian), where you can pause or retire it.`,
+          `(${armed.positionNote}.)`,
+        guardianPolicyId: p.id,
+        buildPath: 'native-hl-guardian',
       })
     }
 

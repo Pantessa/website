@@ -67,17 +67,28 @@ function chainLabel(chainId: number): string {
 /** Holdings → up to 3 "do something" prompt chips. `where` scopes the swap
  *  prompts to the right venue phrasing. */
 function holdingPrompts(holdings: HoldingRow[], where: string): SuggestedPrompt[] {
+  // ACTIONS WITHIN REACH only: every chip sends a message a native builder
+  // parses into a signable artifact, sized from the LIVE balance — never a
+  // question we can't deterministically answer.
   const prompts: SuggestedPrompt[] = []
   const stable = holdings.find((h) => /^(USDC|DAI|USDbC|USDT)$/i.test(h.symbol) && (h.valueUsd ?? 0) >= 10)
   if (stable) {
     const amt = Math.min(Math.floor(Number(stable.balance)), 100) || 1
-    prompts.push({ label: `Put ${stable.symbol} to work`, prompt: `Swap ${amt} ${stable.symbol} into ETH ${where}` })
+    prompts.push({ label: `Swap ${amt} ${stable.symbol} → ETH`, prompt: `Swap ${amt} ${stable.symbol} for ETH ${where}` })
   }
-  const eth = holdings.find((h) => h.symbol === 'ETH' && (h.valueUsd ?? 0) >= 5)
-  if (eth) prompts.push({ label: 'Best swap for my ETH', prompt: 'What is the best swap I could make with my ETH right now?' })
-  const top = holdings.find((h) => !/^(USDC|DAI|USDbC|USDT|ETH|WETH)$/i.test(h.symbol) && (h.valueUsd ?? 0) >= 1)
-  if (top) prompts.push({ label: `Sell my ${top.symbol}`, prompt: `Quote selling all my ${top.symbol} for USDC` })
-  if (prompts.length === 0) prompts.push({ label: 'Review my holdings', prompt: 'What can I do with the tokens in my wallet?' })
+  const eth = holdings.find((h) => h.symbol === 'ETH' && (h.valueUsd ?? 0) >= 8 && h.priceUsd)
+  if (eth) {
+    // A ~$10 slice (or a quarter of the stack, whichever is smaller).
+    const amt = Math.min(10 / eth.priceUsd!, Number(eth.balance) * 0.25)
+    if (amt > 0.0001) prompts.push({ label: 'Swap some ETH → USDC', prompt: `Swap ${amt.toFixed(4)} ETH for USDC ${where}` })
+  }
+  const top = holdings.find((h) => !/^(USDC|DAI|USDbC|USDT|ETH|WETH)$/i.test(h.symbol) && (h.valueUsd ?? 0) >= 1 && Number(h.balance) > 0)
+  if (top) {
+    const bal = Number(top.balance)
+    const amt = bal >= 1 ? String(Math.floor(bal * 10000) / 10000) : top.balance
+    prompts.push({ label: `Sell my ${top.symbol}`, prompt: `Swap ${amt} ${top.symbol} for USDC ${where}` })
+  }
+  if (prompts.length === 0) prompts.push({ label: 'Show my full portfolio', prompt: 'Show my full portfolio across chains.' })
   return prompts.slice(0, 3)
 }
 
@@ -229,8 +240,10 @@ const snapshotSource: SplashSource = {
     }))
     const first = proposals[0]
     const prompts: SuggestedPrompt[] = [
+      // The vote itself is a native signable (EIP-712 prepare_vote →
+      // SignVoteButton) — the action chip leads, the reads follow.
+      { label: `Vote on “${truncate(first.title, 28)}”`, prompt: `Prepare my vote on the ${first.spaceName} proposal "${first.title}" — show me the choices.` },
       { label: `Summarize “${truncate(first.title, 32)}”`, prompt: `Summarize the ${first.spaceName} proposal "${first.title}" and tell me what's at stake.` },
-      { label: 'What needs my vote?', prompt: 'Which of my open Snapshot proposals should I prioritize, and why?' },
     ]
     if (spaces.length > 1) {
       prompts.push({ label: `${spaces.length} DAOs open`, prompt: `Give me a one-line summary of each open proposal across the ${spaces.length} DAOs I follow.` })
@@ -377,14 +390,22 @@ const hyperliquidSource: SplashSource = {
         tone: pnl >= 0 ? ('pos' as const) : ('neg' as const),
       }
     })
-    const dayPnl = Number(data.pnl?.day?.pnl ?? NaN)
-    const prompts: SuggestedPrompt[] = [
-      { label: 'How am I doing?', prompt: 'Summarize my Hyperliquid positions — PnL, risk, anything near liquidation?' },
-      { label: 'My open orders', prompt: 'What orders do I have resting on Hyperliquid?' },
-    ]
-    if (Number.isFinite(dayPnl) && dayPnl < 0) {
-      prompts.push({ label: 'What went wrong today?', prompt: 'My Hyperliquid PnL is down today — which position is dragging?' })
+    // ACTIONS FIRST: each open position gets a real guardian arm + a real
+    // reduce-only close — both native, deterministic, signable. The read chip
+    // rides last (the portfolio tool genuinely answers it).
+    const prompts: SuggestedPrompt[] = []
+    for (const p of positions.slice(0, 2)) {
+      const side = Number(p.szi ?? 0) >= 0 ? 'long' : 'short'
+      if (p.coin) {
+        prompts.push({ label: `Protect ${p.coin} (10% stop)`, prompt: `Protect my ${p.coin} ${side} with a 10% stop loss` })
+        if (prompts.length < 3) prompts.push({ label: `Close ${p.coin}`, prompt: `Close my ${p.coin} ${side} on Hyperliquid` })
+      }
     }
+    const withdrawable = Number(data.perp?.withdrawableUsd ?? 0)
+    if (positions.length === 0 && withdrawable >= 12) {
+      prompts.push({ label: 'Long $12 of ETH', prompt: 'Long $12 of ETH on Hyperliquid' })
+    }
+    if (prompts.length < 3) prompts.push({ label: 'How am I doing?', prompt: 'Summarize my Hyperliquid positions — PnL, risk, anything near liquidation?' })
     return {
       ...base,
       render: 'rows',
@@ -478,14 +499,19 @@ const aaveSource: SplashSource = {
       })
     }
 
-    const prompts: SuggestedPrompt[] = [
-      { label: 'How is my position?', prompt: 'Summarize my Aave position — health factor, borrowing power, anything at risk?' },
-    ]
-    if (borrows.length > 0) {
-      prompts.push({ label: 'Plan a repay', prompt: 'What would it take to repay my Aave debt? Walk me through the steps.' })
-    } else {
-      prompts.push({ label: 'My borrowing power', prompt: 'How much could I safely borrow against my Aave collateral right now?' })
+    // Concrete native ops with LIVE amounts (the aave layer parses repay/
+    // withdraw imperatives into guarded builds); the reads that remain are
+    // ones the portfolio tool actually answers.
+    const prompts: SuggestedPrompt[] = []
+    const firstBorrow = borrows.find((b) => b.token?.symbol && Number(b.debt) > 0)
+    if (firstBorrow) {
+      prompts.push({ label: `Repay my ${firstBorrow.token!.symbol}`, prompt: `Repay all my ${firstBorrow.token!.symbol} on Aave` })
     }
+    const firstSupply = supplies.find((s) => s.token?.symbol && Number(s.balance) > 0)
+    if (firstSupply && prompts.length < 2) {
+      prompts.push({ label: `Withdraw my ${firstSupply.token!.symbol}`, prompt: `Withdraw all my ${firstSupply.token!.symbol} from Aave` })
+    }
+    prompts.push({ label: 'How is my position?', prompt: 'Summarize my Aave position — health factor, borrowing power, anything at risk?' })
 
     return {
       id: 'aave-position',
@@ -550,17 +576,18 @@ const SOURCE_PREVIEWS: Record<string, { message: string; prompts: SuggestedPromp
     ],
   },
   hyperliquid: {
-    message: 'No Hyperliquid account for this wallet yet — markets and prices work without one.',
+    message: 'No Hyperliquid account for this wallet yet — fund it in one move (or one job) and the guardian can watch your positions.',
     prompts: [
+      { label: 'Deposit 10 USDC', prompt: 'Deposit 10 USDC to Hyperliquid' },
+      { label: 'Fund + protected long (1 job)', prompt: 'Deposit 12 usdc to hyperliquid, then long $12 of eth on hyperliquid, then protect my eth long with a 5% stop' },
       { label: 'Top markets', prompt: 'What are the top Hyperliquid markets by volume today?' },
-      { label: 'ETH funding rate', prompt: 'What is the current ETH funding rate on Hyperliquid?' },
     ],
   },
   aave: {
     message: 'No Aave position for this wallet yet. Supply an asset and your balances, APY, and health factor live here.',
     prompts: [
+      { label: 'Supply 10 USDC', prompt: 'Supply 10 USDC to Aave on Ethereum' },
       { label: 'Best supply APYs', prompt: 'What are the best supply APYs on Aave right now?' },
-      { label: 'What would 100 USDC earn?', prompt: 'If I supplied 100 USDC to Aave, what would I earn in a year?' },
     ],
   },
 }

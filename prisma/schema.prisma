@@ -862,3 +862,60 @@ model HlGuardianRun {
   @@index([wallet, createdAt])
   @@map("hl_guardian_runs")
 }
+
+/// A multi-step job: one user intent compiled into a FIXED sequence of
+/// guarded steps across venues (sign / wait / auto), executed by the jobs
+/// cron. The orchestration primitive from HANDOFF-multistep-jobs.md — jobs
+/// never widen authority, they only sequence consents the user already gave.
+model Job {
+  id          String   @id @default(cuid())
+  wallet      String // lowercased owner (SIWE-verified at creation)
+  title       String // human summary of the whole job
+  source      String   @default("chat") // chat | api
+  status      String   @default("running") // running | waiting_signature | waiting_settlement | paused | done | failed | canceled
+  currentStep Int      @default(0) @map("current_step")
+  /// Shared-DB env fence (the guardian lesson): only the creating env's
+  /// runner advances a job. 'production' | 'preview' | 'dev'.
+  originEnv   String   @default("dev") @map("origin_env")
+  valueUsd    Float?   @map("value_usd") // rollup of step notionals (money moved)
+  failReason  String?  @map("fail_reason")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  steps JobStep[]
+
+  @@index([wallet, createdAt])
+  @@index([status])
+  @@map("jobs")
+}
+
+/// One step of a job. kind:
+///  · sign — a guarded artifact the USER's wallet signs (built fresh at
+///    offer time; the chat card embeds the existing sign buttons)
+///  · wait — a settlement predicate the runner polls (1Click status, HL
+///    credit, balance ≥) — waits ARE the verification layer
+///  · auto — a server-side action under an EXISTING consent (guardian arm)
+model JobStep {
+  id            String    @id @default(cuid())
+  jobId         String    @map("job_id")
+  seq           Int
+  kind          String // sign | wait | auto
+  status        String    @default("pending") // pending | offered | running | done | failed | skipped
+  builder       String // build_path-style attribution (native-cross-chain | native-hl-exec | native-hl-guardian | wait)
+  title         String // human step title for the card
+  params        Json // FIXED build inputs (compiled from the ask, never re-planned)
+  artifact      Json? // built at offer time (sign steps)
+  guardReport   Json?     @map("guard_report")
+  result        Json? // txHash / fill / settlement proof / arm receipt
+  valueUsd      Float?    @map("value_usd")
+  waitPredicate Json?     @map("wait_predicate")
+  expiresAt     DateTime? @map("expires_at")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  job Job @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  @@unique([jobId, seq])
+  @@index([jobId])
+  @@map("job_steps")
+}

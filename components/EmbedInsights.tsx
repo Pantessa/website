@@ -85,6 +85,10 @@ interface Insights {
     x402AllTimeCount: number
     x402WindowUsd: number
     x402WindowCount: number
+    guardianAllTimeUsd?: number
+    guardianAllTimeCount?: number
+    guardianWindowUsd?: number
+    guardianWindowCount?: number
     perPath: PathRow[]
   }
 }
@@ -249,6 +253,12 @@ export default function EmbedInsights() {
               <span>
                 {fmtUsd(g.x402AllTimeUsd)} <span className="text-[color:var(--muted-2)]">x402 fees settled · all time ({g.x402AllTimeCount})</span>
               </span>
+              {(g.guardianAllTimeCount ?? 0) > 0 && (
+                <span>
+                  {fmtUsd(g.guardianAllTimeUsd ?? 0)}{' '}
+                  <span className="text-[color:var(--muted-2)]">guardian autonomous closes ({g.guardianAllTimeCount})</span>
+                </span>
+              )}
               <span>
                 {fmtUsd(g.windowSignedUsd)} <span className="text-[color:var(--muted-2)]">tx signed · {data.windowDays}d</span> ·{' '}
                 {fmtUsd(g.x402WindowUsd)} <span className="text-[color:var(--muted-2)]">x402 · {data.windowDays}d</span>
