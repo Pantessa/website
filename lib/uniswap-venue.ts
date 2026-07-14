@@ -140,6 +140,9 @@ export interface UniswapBuilt {
   swapTx: { to: string; data: string; value: string; chainId: number; action: string }
   approveTx: { to: string; data: string; value: string; chainId: number; action: string } | null
   minimumOut: string
+  /** Unix seconds the swap calldata dies (the multicall deadline) — rides
+   *  into TxChainStep.validUntil so the card re-quotes before it lapses. */
+  validUntil: number
 }
 
 /**
@@ -282,5 +285,5 @@ export async function buildUniswapSwap(params: UniswapSwapParams): Promise<Unisw
   const minHuman = formatAtoms(minOut.toString(), buyDec)
   const summary = `Swap ${inHuman} ${tokenLabel(params.sellToken, chainId)} → ~${outHuman} ${tokenLabel(params.buyToken, chainId)} via Uniswap v3 on ${chain.name} (${best.fee / 100}bps pool), min received ${minHuman} (${slippageBps}bps slippage)`
 
-  return { summary, guardrails, blocked: !guardrails.ok, swapTx, approveTx, minimumOut: minHuman }
+  return { summary, guardrails, blocked: !guardrails.ok, swapTx, approveTx, minimumOut: minHuman, validUntil: deadline }
 }

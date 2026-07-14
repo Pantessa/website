@@ -10,7 +10,7 @@
 // block-explorer link live from the moment a hash exists. Confirmation waits
 // on the real receipt — a revert shows as failure with the same link.
 
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useAccount, usePublicClient, useSendTransaction, useSwitchChain } from 'wagmi'
 import { Loader2, PenLine, CheckCircle2, Circle, ExternalLink, XCircle } from 'lucide-react'
 import type { EvmTxRequest } from '@/lib/transaction-layer'
@@ -34,15 +34,20 @@ const TX_EXPLORER: Record<number, string> = {
 export default function SendTxButton({
   tx,
   summary,
+  autoFire = false,
   onConfirmed,
 }: {
   tx: EvmTxRequest
   summary?: string
+  /** Request the wallet signature on mount — SendTxChain sets this on steps
+   *  after the first so popups follow each other like a sign-in flow, no
+   *  button hunt between steps. The button stays as the retry surface. */
+  autoFire?: boolean
   /** Fires once when the receipt lands with status success — SendTxChain
    *  advances the multi-step card on this. */
   onConfirmed?: (hash: string) => void
 }) {
-  const { address, isConnected } = useAccount()
+  const { address, isConnected, connector } = useAccount()
   const { sendTransactionAsync } = useSendTransaction()
   const { switchChainAsync } = useSwitchChain()
   const chainId = tx.chainId ?? 8453
@@ -128,6 +133,21 @@ export default function SendTxButton({
       setStatus('error')
     }
   }
+
+  // Auto-fire: request the signature as soon as the step mounts. Once per
+  // mount (a rejection shows the Retry button, it never re-pops on its own).
+  // Coinbase's popup-based wallet is excluded: a request issued outside a
+  // click handler after an await gets its popup blocked and the second
+  // signature dies silently (the #102 lesson) — it keeps the button.
+  const autoFired = useRef(false)
+  useEffect(() => {
+    if (!autoFire || autoFired.current || status !== 'idle') return
+    if (!isConnected || !address) return
+    if (/coinbase/i.test(`${connector?.id ?? ''} ${connector?.name ?? ''}`)) return
+    autoFired.current = true
+    void send()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoFire, isConnected, address])
 
   const stepState = (step: Status): 'done' | 'active' | 'pending' => {
     if (status === 'confirmed') return 'done'

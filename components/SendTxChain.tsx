@@ -14,7 +14,7 @@
 // back to the prebuilt transaction: its slippage bound means a stale quote
 // reverts, it never fills badly.
 
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useAccount } from 'wagmi'
 import { CheckCircle2, Circle, Link2, Loader2, ShieldX, ExternalLink } from 'lucide-react'
 import SendTxButton from '@/components/SendTxButton'
@@ -45,6 +45,72 @@ export default function SendTxChain({
   const [hashes, setHashes] = useState<Record<number, string>>({})
   const [note, setNote] = useState('')
 
+  // Re-quote one step server-side (fresh quote + guardrails + revert dry-run).
+  // Returns false when the step was withheld (blocked) — callers stop there.
+  const refreshStep = async (index: number): Promise<boolean> => {
+    if (!chain.refresh || chain.refresh.stepIndex !== index || !address) return true
+    setPhase('refreshing')
+    setNote('')
+    let gotFresh = false
+    // The just-confirmed allowance can take a moment to be visible to the
+    // builder's RPC — retry briefly on `pending` before falling back.
+    for (let attempt = 0; attempt < 5; attempt++) {
+      try {
+        const res = await fetch('/api/tx/refresh', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ kind: chain.refresh.kind, ...chain.refresh.params, from: address }),
+        })
+        const data = (await res.json()) as {
+          tx?: TxChainStep['tx']
+          summary?: string
+          blocked?: boolean
+          reasons?: string
+          pending?: boolean
+          error?: string
+          validUntil?: number | null
+        }
+        if (data.blocked) {
+          // Guardrails re-fired and refused — withhold the step, say why.
+          setPhase('blocked')
+          setNote(`refused by your guardrails on the fresh quote: ${data.reasons ?? 'a safety check failed'}. Manage limits on the Dashboard`)
+          return false
+        }
+        if (data.tx) {
+          const fresh = data.tx
+          const freshValidUntil = typeof data.validUntil === 'number' ? data.validUntil : undefined
+          setSteps((s) => s.map((st, i) => (i === index ? { ...st, tx: fresh, validUntil: freshValidUntil } : st)))
+          if (data.summary) setNote(`Re-quoted: ${data.summary}`)
+          gotFresh = true
+          break
+        }
+        if (data.pending && attempt < 4) {
+          await new Promise((r) => setTimeout(r, 2500))
+          continue
+        }
+        break
+      } catch {
+        break
+      }
+    }
+    if (!gotFresh) {
+      const vu = steps[index]?.validUntil
+      if (typeof vu === 'number' && vu * 1000 <= Date.now()) {
+        // The prebuilt calldata is DEAD (deadline passed — approvals may have
+        // lapsed with it) and no fresh build came back. Offering it anyway is
+        // the $32M-fee wallet dead-end — withhold and say what to do.
+        setPhase('blocked')
+        setNote('this quote expired while the card sat unsigned. Ask for the swap again and a fresh card will be built')
+        return false
+      }
+      // Still-live prebuilt tx → fall back to it (slippage-bounded).
+      setNote('Using the original quote — the live re-quote was unavailable. The slippage bound still protects the price.')
+    }
+    setPhase('sign')
+    setRefreshTick((t) => t + 1)
+    return true
+  }
+
   const advance = async (confirmedIndex: number, hash: string) => {
     setHashes((h) => ({ ...h, [confirmedIndex]: hash }))
     const next = confirmedIndex + 1
@@ -54,54 +120,39 @@ export default function SendTxChain({
       return
     }
     // Re-quote the incoming step when the server marked it refreshable.
-    if (chain.refresh && chain.refresh.stepIndex === next && address) {
-      setPhase('refreshing')
-      setNote('')
-      // The just-confirmed allowance can take a moment to be visible to the
-      // builder's RPC — retry briefly on `pending` before falling back.
-      for (let attempt = 0; attempt < 5; attempt++) {
-        try {
-          const res = await fetch('/api/tx/refresh', {
-            method: 'POST',
-            headers: { 'content-type': 'application/json' },
-            body: JSON.stringify({ kind: chain.refresh.kind, ...chain.refresh.params, from: address }),
-          })
-          const data = (await res.json()) as {
-            tx?: TxChainStep['tx']
-            summary?: string
-            blocked?: boolean
-            reasons?: string
-            pending?: boolean
-            error?: string
-          }
-          if (data.blocked) {
-            // Guardrails re-fired and refused — withhold the step, say why.
-            setPhase('blocked')
-            setNote(data.reasons ?? 'a safety check failed')
-            return
-          }
-          if (data.tx) {
-            const fresh = data.tx
-            setSteps((s) => s.map((st, i) => (i === next ? { ...st, tx: fresh } : st)))
-            if (data.summary) setNote(`Re-quoted: ${data.summary}`)
-            break
-          }
-          if (data.pending && attempt < 4) {
-            await new Promise((r) => setTimeout(r, 2500))
-            continue
-          }
-          // error / exhausted retries → prebuilt tx (slippage-bounded).
-          setNote('Using the original quote — the live re-quote was unavailable. The slippage bound still protects the price.')
-          break
-        } catch {
-          setNote('Using the original quote — the live re-quote was unavailable. The slippage bound still protects the price.')
-          break
-        }
-      }
-      setPhase('sign')
-    }
+    if (!(await refreshStep(next))) return
     setCurrent(next)
   }
+
+  // Deadline watch: prebuilt calldata DIES at validUntil (the swap deadline).
+  // If the card sits unsigned past it, the wallet's gas estimate reverts and
+  // MetaMask's fee fallback shows the Arbitrum 2^50 block-gas sentinel as a
+  // "$32M network fee" (the 2026-07-14 AAPL incident). Re-quote ~90s before
+  // the deadline — and keep retrying past it — so the offered tx is always
+  // live. refreshTick re-arms the timer after every refresh attempt.
+  const [refreshTick, setRefreshTick] = useState(0)
+  const refreshing = useRef(false)
+  const lastAttempt = useRef(0)
+  const currentValidUntil = steps[current]?.validUntil
+  useEffect(() => {
+    if (phase === 'done' || phase === 'blocked') return
+    if (!chain.refresh || chain.refresh.stepIndex !== current || !address) return
+    if (!currentValidUntil) return
+    const msUntilStale = (currentValidUntil - 90) * 1000 - Date.now()
+    // Overdue: fire NOW on first arm, then back off to 60s between retries
+    // (a failed re-quote leaves validUntil unchanged — never tight-loop it).
+    const delay = msUntilStale > 0 ? msUntilStale : Date.now() - lastAttempt.current < 55_000 ? 60_000 : 0
+    const t = setTimeout(() => {
+      if (refreshing.current) return
+      refreshing.current = true
+      lastAttempt.current = Date.now()
+      void refreshStep(current).finally(() => {
+        refreshing.current = false
+      })
+    }, delay)
+    return () => clearTimeout(t)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [current, currentValidUntil, phase, refreshTick, address])
 
   const explorerFor = (step: TxChainStep) => {
     const id = step.tx.chainId ?? 8453
@@ -156,14 +207,16 @@ export default function SendTxChain({
               )}
               {isCurrent && phase === 'blocked' && (
                 <div className="ml-6 text-[11px] text-red-400">
-                  Refused by your guardrails on the fresh quote: {note} — nothing was signed. Manage limits on the Dashboard.
+                  Withheld — {note}. Nothing was signed.
                 </div>
               )}
               {isCurrent && phase === 'sign' && (
                 <div className="ml-6">
                   {note && <div className="text-[11px] text-[color:var(--muted)] mb-1">{note}</div>}
-                  {/* keyed by step so the inner Sign→Broadcast→Confirmed stepper resets per step */}
-                  <SendTxButton key={i} tx={step.tx} summary={step.title} onConfirmed={(hash) => void advance(i, hash)} />
+                  {/* keyed by step so the inner Sign→Broadcast→Confirmed stepper resets per step.
+                      Steps after the first auto-request the wallet signature on mount — the user
+                      already committed by signing step 1; popup follows popup, no button hunt. */}
+                  <SendTxButton key={i} tx={step.tx} summary={step.title} autoFire={i > 0} onConfirmed={(hash) => void advance(i, hash)} />
                 </div>
               )}
             </li>

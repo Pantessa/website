@@ -225,6 +225,9 @@ export interface V4BuiltStep {
   label: string
   title: string
   tx: { to: string; data: string; value: string; chainId: number; action: string }
+  /** Unix seconds the step's calldata dies (the swap deadline) — rides into
+   *  TxChainStep.validUntil so the card re-quotes before it lapses. */
+  validUntil?: number
 }
 
 export interface V4GuardExpectations {
@@ -573,6 +576,8 @@ export async function buildUniswapV4Swap(params: UniswapV4SwapParams): Promise<U
       chainId,
       action: 'swap',
     },
+    // The execute reverts past this — the card must re-quote before then.
+    validUntil: deadline,
   })
 
   // ── The guard: decode what we just built; refuse the turn on any mismatch.

@@ -64,6 +64,12 @@ export interface TxChainStep {
   /** Human step title for the chain stepper, e.g. "Approve USDC". */
   title: string
   tx: EvmTxRequest
+  /** Unix seconds after which the built calldata is DEAD (e.g. the swap
+   *  deadline baked into a Universal Router execute). SendTxChain re-quotes
+   *  the step before this passes — offering expired calldata makes the
+   *  wallet's gas estimate revert, and on Arbitrum-family chains the fee
+   *  fallback then displays as thousands of ETH (the $32M-fee incident). */
+  validUntil?: number
 }
 
 /** A multi-step transaction CHAIN the user signs step by step in ONE card —
@@ -105,6 +111,7 @@ export function txChainOf(meta: unknown): TxChainRequest | null {
       label: typeof step.label === 'string' ? step.label : 'transaction',
       title: typeof step.title === 'string' ? step.title : 'Sign transaction',
       tx,
+      ...(typeof step.validUntil === 'number' && Number.isFinite(step.validUntil) ? { validUntil: step.validUntil } : {}),
     })
   }
   let refresh: TxChainRequest['refresh']
