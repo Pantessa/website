@@ -6,7 +6,7 @@
 //
 // (Kept out of test:api since it needs neither a server nor Neon.)
 
-import { SPLASH_SOURCES, previewTile, type SplashServer } from '@/lib/splash/sources'
+import { SPLASH_SOURCES, previewTile, finalizeSplashTiles, type SplashServer, type SourceResult } from '@/lib/splash/sources'
 import { touchesContracts, UNISWAP_CONTRACTS } from '@/lib/splash/affinity'
 import type { McpServer } from '@/lib/store'
 import type { HoldingsTile, ProposalsTile, RowsTile } from '@/lib/splash/types'
@@ -179,6 +179,71 @@ async function run() {
     check('preview id is slug-scoped (dedupe-safe)', bare.id === 'bare-mcp-preview')
   }
 
+  console.log('splash sources — robinhood')
+  {
+    const rh = SPLASH_SOURCES.find((s) => s.id === 'robinhood')!
+    const stocked = async () => ({
+      kind: 'portfolio',
+      chain: 'Robinhood Chain',
+      chainId: 4663,
+      totalUsd: 142.5,
+      holdings: [
+        { symbol: 'USDG', kind: 'stable', balance: '80.00', usd: 80, priceUsd: 1 },
+        { symbol: 'AAPL', kind: 'stock', balance: '0.25', usd: 52.5, priceUsd: 210 },
+        { symbol: 'ETH', kind: 'native', balance: '0.003', usd: 10, priceUsd: 3300 },
+      ],
+    })
+    const tile = (await rh.build(stocked, ADDR, srv('robinhood-free', 'Robinhood Chain (Free)'))) as HoldingsTile
+    check('robinhood holdings → holdings render', tile.render === 'holdings')
+    check('tile id is its own (not the wallet card id)', tile.id === 'robinhood-portfolio')
+    check('subtitle counts the stocks', /1 stock/.test(tile.subtitle ?? ''))
+    check('usd field mapped onto valueUsd', tile.holdings[0].valueUsd === 80)
+    check('idle USDG → buy-a-stock chip', tile.prompts.some((p) => /Swap 50 USDG for AAPL on Robinhood Chain/.test(p.prompt)))
+    check('held stock → sell chip', tile.prompts.some((p) => /Swap 0\.25 AAPL for USDG/.test(p.prompt)))
+    check('bridge chip rides along', tile.prompts.some((p) => /Bridge .* ETH from Ethereum to Robinhood Chain/.test(p.prompt)))
+
+    const empty = async () => ({ kind: 'portfolio', chainId: 4663, totalUsd: 0, holdings: [] })
+    check('empty chain wallet contributes no tile', (await rh.build(empty, ADDR, srv('robinhood-free', 'Robinhood Chain (Free)'))) === null)
+
+    const ethOnly = async () => ({ kind: 'portfolio', chainId: 4663, totalUsd: 33, holdings: [{ symbol: 'ETH', kind: 'native', balance: '0.01', usd: 33, priceUsd: 3300 }] })
+    const ethTile = (await rh.build(ethOnly, ADDR, srv('robinhood-free', 'Robinhood Chain (Free)'))) as HoldingsTile
+    check('ETH-only wallet → ETH→USDG chip (v3 is liquid there)', ethTile.prompts.some((p) => /ETH for USDG on Robinhood Chain/.test(p.prompt)))
+  }
+
+  console.log('finalize — the dedupe honors the manual-pick contract')
+  {
+    const mkServer = (slug: string, forceShow: boolean): SplashServer =>
+      ({ ...srv(slug, slug), forceShow } as SplashServer)
+    const portfolioTile = (slug: string) =>
+      ({ id: 'portfolio-holdings', mcpSlug: slug, mcpName: slug, render: 'holdings', title: 'Your portfolio', chain: 'Base', totalUsd: 1, holdings: [], prompts: [] }) as unknown as Parameters<typeof finalizeSplashTiles>[0][number]['tiles'][number]
+
+    // Wallet wins the shared id; hand-picked uniswap's identical tile loses the
+    // dedupe but still paints its preview face with action chips.
+    const results: SourceResult[] = [
+      { server: mkServer('yeetful-tool-wallet', false), sourceId: 'wallet', tiles: [portfolioTile('yeetful-tool-wallet')] },
+      { server: mkServer('uniswap-free', true), sourceId: 'uniswap', tiles: [portfolioTile('uniswap-free')] },
+    ]
+    const tiles = finalizeSplashTiles(results)
+    check('shared id keeps one portfolio card', tiles.filter((t) => t.id === 'portfolio-holdings').length === 1)
+    const fallback = tiles.find((t) => t.id === 'uniswap-free-preview')
+    check('hand-picked loser still paints a card', !!fallback && fallback.render === 'empty')
+    check('fallback carries the source action chips', !!fallback && fallback.prompts.length >= 2)
+    check('fallback copy says the data lives elsewhere', fallback?.render === 'empty' && /already on the portfolio card/i.test(fallback.message))
+
+    // A NON-picked server that loses the dedupe stays gone (the old behavior).
+    const auto = finalizeSplashTiles([
+      { server: mkServer('yeetful-tool-wallet', false), sourceId: 'wallet', tiles: [portfolioTile('yeetful-tool-wallet')] },
+      { server: mkServer('uniswap-free', false), sourceId: 'uniswap', tiles: [portfolioTile('uniswap-free')] },
+    ])
+    check('auto-scan loser contributes nothing', auto.length === 1)
+
+    // A hand-picked server whose tile SURVIVED gets no extra preview card.
+    const survived = finalizeSplashTiles([
+      { server: mkServer('uniswap-free', true), sourceId: 'uniswap', tiles: [portfolioTile('uniswap-free')] },
+    ])
+    check('surviving picked server paints only its live tile', survived.length === 1 && survived[0].id === 'portfolio-holdings')
+  }
+
   console.log('splash sources — matchers')
   {
     check('uniswap matches by name', uni.match(srv('uniswap-free', 'Uniswap (Free)')))
@@ -186,6 +251,9 @@ async function run() {
     check('uniswap does not match snapshot', !uni.match(srv('snapshot-free', 'Snapshot DAO (Free)')))
     check('aave matches the custom add-MCP row', aave.match(srv('aave-mcp-yeetful', 'Aave MCP · Yeetful')))
     check('aave does not match uniswap', !aave.match(srv('uniswap-free', 'Uniswap (Free)')))
+    const rh = SPLASH_SOURCES.find((s) => s.id === 'robinhood')!
+    check('robinhood matches the seeded row', rh.match(srv('robinhood-free', 'Robinhood Chain (Free)')))
+    check('robinhood does not match uniswap', !rh.match(srv('uniswap-free', 'Uniswap (Free)')))
   }
 
   console.log(`\n${passed} passed, ${failed} failed`)

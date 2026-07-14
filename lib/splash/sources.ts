@@ -25,7 +25,7 @@ import { overrideFreeMcpBase } from '@/lib/endpoint-planner'
 import { alchemyEnabled, getMultichainPortfolio, getRecentActivity } from '@/lib/alchemy'
 import type { AppChain } from '@/lib/chains'
 import { hasUniswapHistory } from './affinity'
-import type { HoldingRow, ProposalRow, SpaceRow, SplashTile, StatRow, SuggestedPrompt } from './types'
+import type { EmptyTile, HoldingRow, ProposalRow, SpaceRow, SplashTile, StatRow, SuggestedPrompt } from './types'
 
 /** Snapshot's stamp service resolves a space logo from its id — always
  *  available, no IPFS gateway flakiness. */
@@ -591,6 +591,94 @@ const lidoSource: SplashSource = {
   },
 }
 
+// ── Robinhood Chain → tokenized-stock portfolio + the bridge-in moment ───────
+// The robinhood MCP's `portfolio` tool returns the wallet-MCP display contract
+// (kind:'portfolio') but with Robinhood-specific fields: per-holding `kind`
+// (native/stock/etf/stable) and `usd` instead of `valueUsd`. A dedicated
+// source gives it its own tile id — the generic featured path used to map it
+// onto the shared 'portfolio-holdings' id, where the wallet card's identical
+// id deduped it out of existence.
+
+interface RobinhoodHolding {
+  symbol?: string
+  kind?: string
+  balance?: string
+  usd?: number | null
+  priceUsd?: number | null
+}
+
+/** Robinhood holdings → up to 3 action chips: buy a stock with idle USDG,
+ *  sell a held stock, turn loose ETH into USDG (WETH↔USDG v3 is liquid), and
+ *  always offer the bridge as the way in for more. */
+function robinhoodPrompts(holdings: RobinhoodHolding[]): SuggestedPrompt[] {
+  const prompts: SuggestedPrompt[] = []
+  const usdg = holdings.find((h) => h.symbol === 'USDG' && (h.usd ?? 0) >= 5)
+  if (usdg) {
+    const amt = Math.min(Math.floor(Number(usdg.balance)), 50) || 5
+    prompts.push({ label: `Buy AAPL with ${amt} USDG`, prompt: `Swap ${amt} USDG for AAPL on Robinhood Chain` })
+  }
+  const stock = holdings.find((h) => (h.kind === 'stock' || h.kind === 'etf') && (h.usd ?? 0) >= 1 && Number(h.balance) > 0)
+  if (stock) {
+    const bal = Number(stock.balance)
+    const amt = bal >= 1 ? String(Math.floor(bal * 10000) / 10000) : stock.balance
+    prompts.push({ label: `Sell my ${stock.symbol}`, prompt: `Swap ${amt} ${stock.symbol} for USDG on Robinhood Chain` })
+  }
+  const eth = holdings.find((h) => h.symbol === 'ETH' && (h.usd ?? 0) >= 8 && h.priceUsd)
+  if (!usdg && eth && prompts.length < 2) {
+    const amt = Math.min(10 / eth.priceUsd!, Number(eth.balance) * 0.25)
+    if (amt > 0.0001) prompts.push({ label: 'Swap some ETH → USDG', prompt: `Swap ${amt.toFixed(4)} ETH for USDG on Robinhood Chain` })
+  }
+  if (prompts.length < 3) {
+    prompts.push({ label: 'Bridge more ETH in', prompt: 'Bridge 0.01 ETH from Ethereum to Robinhood Chain' })
+  }
+  if (prompts.length < 3) {
+    prompts.push({ label: 'What can I trade here?', prompt: 'What tokenized stocks can I trade on Robinhood Chain?' })
+  }
+  return prompts.slice(0, 3)
+}
+
+const robinhoodSource: SplashSource = {
+  id: 'robinhood',
+  match: (s) => /robinhood/i.test(`${s.slug} ${s.name}`),
+  build: async (call, address, server, chain) => {
+    // Robinhood Chain only — any other picker selection has nothing to show.
+    if (chain && chain.key !== 'robinhood') return null
+    const data = (await call('portfolio', { user: address })) as {
+      totalUsd?: number
+      holdings?: RobinhoodHolding[]
+    }
+    const holdings = (Array.isArray(data.holdings) ? data.holdings : []).filter(
+      (h): h is RobinhoodHolding & { symbol: string; balance: string } =>
+        typeof h?.symbol === 'string' && typeof h?.balance === 'string',
+    )
+    // Nothing on Robinhood Chain → no card (manual picks get the preview,
+    // whose chips lead with the bridge-in moment).
+    if (holdings.length === 0) return null
+    const rows: HoldingRow[] = holdings.slice(0, 4).map((h) => ({
+      symbol: h.symbol,
+      address: '0x0000000000000000000000000000000000000000',
+      balance: h.balance,
+      priceUsd: typeof h.priceUsd === 'number' ? h.priceUsd : null,
+      valueUsd: typeof h.usd === 'number' ? h.usd : null,
+      ...(h.kind === 'native' ? { native: true } : {}),
+      chain: 'Robinhood Chain',
+    }))
+    const stocks = holdings.filter((h) => h.kind === 'stock' || h.kind === 'etf').length
+    return {
+      id: 'robinhood-portfolio',
+      mcpSlug: server.slug,
+      mcpName: server.name,
+      render: 'holdings',
+      title: 'Your Robinhood Chain portfolio',
+      subtitle: stocks > 0 ? `${stocks} ${stocks === 1 ? 'stock' : 'stocks'} · ${holdings.length} total` : `${holdings.length} on Robinhood Chain`,
+      chain: 'Robinhood Chain',
+      totalUsd: typeof data.totalUsd === 'number' ? data.totalUsd : null,
+      holdings: rows,
+      prompts: robinhoodPrompts(holdings),
+    }
+  },
+}
+
 const walletSource: SplashSource = {
   id: 'wallet',
   // The first-party multichain wallet MCP (yeetful-tool-*). Alchemy-backed —
@@ -601,7 +689,7 @@ const walletSource: SplashSource = {
 }
 
 /** All registered splash sources. Exported for tests; a new MCP appends here. */
-export const SPLASH_SOURCES: SplashSource[] = [walletSource, uniswapSource, snapshotSource, cowSource, hyperliquidSource, aaveSource, lidoSource]
+export const SPLASH_SOURCES: SplashSource[] = [walletSource, uniswapSource, snapshotSource, cowSource, hyperliquidSource, aaveSource, lidoSource, robinhoodSource]
 
 // ── Preview cards (the manual-pick exception) ────────────────────────────────
 // What each source's card says when the user hand-picked the MCP but the
@@ -663,12 +751,21 @@ const SOURCE_PREVIEWS: Record<string, { message: string; prompts: SuggestedPromp
       { label: 'Current APR', prompt: 'What is the current Lido staking APR?' },
     ],
   },
+  robinhood: {
+    message: 'Nothing on Robinhood Chain yet — bridge some ETH in and it becomes tokenized stocks, USDG, and Morpho lending.',
+    prompts: [
+      // The way in leads: the bridge build is a native signable artifact.
+      { label: 'Bridge ETH to Robinhood Chain', prompt: 'Bridge 0.01 ETH from Ethereum to Robinhood Chain' },
+      { label: 'Price of AAPL', prompt: 'What is the current price of AAPL on Robinhood Chain?' },
+      { label: 'What can I trade here?', prompt: 'What tokenized stocks can I trade on Robinhood Chain?' },
+    ],
+  },
 }
 
 /** The preview card for a hand-picked MCP with no activity: source-specific
  *  copy when we have it, else the server's own example asks. Exported for
  *  tests and reused by the generic featured path. */
-export function previewTile(server: SplashServer, sourceId?: string): SplashTile {
+export function previewTile(server: SplashServer, sourceId?: string): EmptyTile {
   const canned = sourceId ? SOURCE_PREVIEWS[sourceId] : undefined
   const examplePrompts: SuggestedPrompt[] = (server.exampleQueries ?? [])
     .slice(0, 3)
@@ -878,6 +975,43 @@ function errorTile(source: SplashSource, server: McpServer): SplashTile {
   }
 }
 
+/** One source's (or the generic path's) tiles for one server — buildSplash
+ *  keeps the attribution so the dedupe can honor the manual-pick contract. */
+export interface SourceResult {
+  server: SplashServer
+  sourceId?: string
+  tiles: SplashTile[]
+}
+
+/**
+ * De-dupe by tile id (two connected uniswap servers → one portfolio card) —
+ * WITHOUT letting the dedupe break the manual-pick contract. A hand-picked
+ * server whose every tile lost the dedupe did build a live view; it's just
+ * already on the board under another MCP's name (wallet + uniswap produce
+ * identical multichain tiles, and the robinhood/generic portfolio used to
+ * share the wallet card's id). That server still paints its face: a preview
+ * card with its action chips, instead of silently vanishing. Exported for
+ * tests.
+ */
+export function finalizeSplashTiles(results: SourceResult[]): SplashTile[] {
+  const byId = new Map<string, SplashTile>()
+  for (const r of results) for (const tile of r.tiles) if (!byId.has(tile.id)) byId.set(tile.id, tile)
+  const surviving = new Set([...byId.values()].map((t) => t.mcpSlug))
+  for (const r of results) {
+    const { server } = r
+    if (!server.forceShow || r.tiles.length === 0 || surviving.has(server.slug)) continue
+    const fallback = previewTile(server, r.sourceId)
+    if (byId.has(fallback.id)) continue
+    byId.set(fallback.id, {
+      ...fallback,
+      title: 'Ready when you are',
+      message: `Your holdings are already on the portfolio card — here's what ${server.name} can do with them.`,
+    })
+    surviving.add(server.slug)
+  }
+  return [...byId.values()]
+}
+
 /**
  * Build the splash tiles for a connected wallet across the connected MCP set.
  * Runs every matching source in parallel; a dedicated source that throws or
@@ -886,12 +1020,12 @@ function errorTile(source: SplashSource, server: McpServer): SplashTile {
  * featured-endpoint tile (best-effort — silent on failure).
  */
 export async function buildSplash(address: string, servers: SplashServer[], chain?: AppChain | null): Promise<SplashTile[]> {
-  const jobs: Promise<SplashTile[]>[] = []
+  const jobs: Promise<SourceResult>[] = []
   for (const server of servers) {
     if (!server.endpoint) {
       // Not callable (endpoint-less custom row) — a hand-picked MCP still
       // shows its preview face; anything else contributes nothing.
-      if (server.forceShow) jobs.push(Promise.resolve([previewTile(server)]))
+      if (server.forceShow) jobs.push(Promise.resolve({ server, tiles: [previewTile(server)] }))
       continue
     }
     const endpoint = overrideFreeMcpBase(server.endpoint)
@@ -906,10 +1040,10 @@ export async function buildSplash(address: string, servers: SplashServer[], chai
           .then((t) => {
             const tiles = Array.isArray(t) ? t : t ? [t] : []
             // Hand-picked MCP with no activity → preview card, never nothing.
-            if (tiles.length === 0 && server.forceShow) return [previewTile(server, source.id)]
-            return tiles
+            if (tiles.length === 0 && server.forceShow) return { server, sourceId: source.id, tiles: [previewTile(server, source.id)] }
+            return { server, sourceId: source.id, tiles }
           })
-          .catch(() => [errorTile(source, server)]),
+          .catch(() => ({ server, sourceId: source.id, tiles: [errorTile(source, server)] })),
       )
     }
     if (!matched) {
@@ -919,12 +1053,8 @@ export async function buildSplash(address: string, servers: SplashServer[], chai
       const featured = (server.featuredEndpoints?.length ?? 0) > 0
         ? buildFeaturedTile(call, address, server).catch(() => null)
         : Promise.resolve<SplashTile | null>(null)
-      jobs.push(featured.then((t) => (t ? [t] : server.forceShow ? [previewTile(server)] : [])))
+      jobs.push(featured.then((t) => ({ server, tiles: t ? [t] : server.forceShow ? [previewTile(server)] : [] })))
     }
   }
-  const all = (await Promise.all(jobs)).flat()
-  // De-dupe by tile id (two connected uniswap servers → one portfolio card).
-  const byId = new Map<string, SplashTile>()
-  for (const tile of all) if (!byId.has(tile.id)) byId.set(tile.id, tile)
-  return [...byId.values()]
+  return finalizeSplashTiles(await Promise.all(jobs))
 }
