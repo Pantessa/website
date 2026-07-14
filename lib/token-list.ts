@@ -40,11 +40,13 @@ export interface TokenInfo {
   address: string
   decimals: number
   symbol: string
+  name?: string
 }
 
 interface ChainCache {
   bySymbol: Record<string, TokenInfo>
   byAddress: Record<string, TokenInfo>
+  byName: Record<string, TokenInfo>
   loadedAt: number
   inflight: Promise<void> | null
 }
@@ -54,10 +56,61 @@ const chainCaches = new Map<number, ChainCache>()
 function cacheFor(chainId: number): ChainCache {
   let c = chainCaches.get(chainId)
   if (!c) {
-    c = { bySymbol: {}, byAddress: {}, loadedAt: 0, inflight: null }
+    c = { bySymbol: {}, byAddress: {}, byName: {}, loadedAt: 0, inflight: null }
     chainCaches.set(chainId, c)
   }
   return c
+}
+
+// Users type company names as often as tickers ("swap USDG for NVIDIA" —
+// the list symbol is NVDA). Uppercase + collapse whitespace; EXACT match
+// only, this feeds a money surface.
+function normalizeName(name: string): string {
+  return name.trim().replace(/\s+/g, ' ').toUpperCase()
+}
+
+interface RawListToken {
+  chainId: number
+  address: string
+  symbol: string
+  decimals: number
+  name?: string
+}
+
+interface BuiltIndexes {
+  bySymbol: Record<string, TokenInfo>
+  byAddress: Record<string, TokenInfo>
+  byName: Record<string, TokenInfo>
+}
+
+/** Merge token-list documents into the three lookup maps. Earlier lists win
+ *  on symbol collisions (Uniswap official first). A name that appears at two
+ *  DIFFERENT addresses on the same chain is ambiguous (impostor risk in the
+ *  long-tail lists) and resolves to nothing. */
+function buildIndexes(chainId: number, lists: { tokens?: RawListToken[] }[]): BuiltIndexes {
+  const bySymbol: Record<string, TokenInfo> = {}
+  const byAddress: Record<string, TokenInfo> = {}
+  const byName: Record<string, TokenInfo> = {}
+  const ambiguousNames = new Set<string>()
+  for (const list of lists) {
+    for (const t of list.tokens ?? []) {
+      if (t.chainId !== chainId) continue
+      if (!/^0x[0-9a-fA-F]{40}$/.test(t.address) || !Number.isInteger(t.decimals)) continue
+      const info: TokenInfo = { address: t.address.toLowerCase(), decimals: t.decimals, symbol: t.symbol, name: t.name }
+      if (!bySymbol[t.symbol.toUpperCase()]) bySymbol[t.symbol.toUpperCase()] = info
+      if (!byAddress[info.address]) byAddress[info.address] = info
+      const name = typeof t.name === 'string' ? normalizeName(t.name) : ''
+      if (name && !ambiguousNames.has(name)) {
+        const prior = byName[name]
+        if (!prior) byName[name] = info
+        else if (prior.address !== info.address) {
+          delete byName[name]
+          ambiguousNames.add(name)
+        }
+      }
+    }
+  }
+  return { bySymbol, byAddress, byName }
 }
 
 /** Warm the dynamic token map for a chain (no-op when fresh). Never throws. */
@@ -66,33 +119,38 @@ export async function ensureTokenList(chainId: number = 8453): Promise<void> {
   if (Date.now() - c.loadedAt < TTL_MS && Object.keys(c.bySymbol).length > 0) return
   if (c.inflight) return c.inflight
   c.inflight = (async () => {
-    const next: Record<string, TokenInfo> = {}
-    const nextByAddr: Record<string, TokenInfo> = {}
+    const lists: { tokens?: RawListToken[] }[] = []
     for (const url of listUrlsFor(chainId)) {
       try {
         const res = await fetch(url.trim(), { headers: { accept: 'application/json' }, signal: AbortSignal.timeout(8000) })
         if (!res.ok) continue
-        const json = (await res.json()) as { tokens?: { chainId: number; address: string; symbol: string; decimals: number }[] }
-        for (const t of json.tokens ?? []) {
-          if (t.chainId !== chainId) continue
-          if (!/^0x[0-9a-fA-F]{40}$/.test(t.address) || !Number.isInteger(t.decimals)) continue
-          const info: TokenInfo = { address: t.address.toLowerCase(), decimals: t.decimals, symbol: t.symbol }
-          // Earlier list wins on symbol collisions (Uniswap official first).
-          if (!next[t.symbol.toUpperCase()]) next[t.symbol.toUpperCase()] = info
-          if (!nextByAddr[info.address]) nextByAddr[info.address] = info
-        }
+        lists.push((await res.json()) as { tokens?: RawListToken[] })
       } catch {
         /* try the next source */
       }
     }
-    if (Object.keys(next).length > 0) {
-      c.bySymbol = next
-      c.byAddress = nextByAddr
+    const built = buildIndexes(chainId, lists)
+    if (Object.keys(built.bySymbol).length > 0) {
+      c.bySymbol = built.bySymbol
+      c.byAddress = built.byAddress
+      c.byName = built.byName
       c.loadedAt = Date.now()
     }
     c.inflight = null
   })()
   return c.inflight
+}
+
+/** Populate a chain's cache from in-memory token-list documents (same code
+ *  path as the network load). For the offline harness — production warms via
+ *  ensureTokenList. */
+export function primeTokenList(chainId: number, lists: { tokens?: RawListToken[] }[]): void {
+  const c = cacheFor(chainId)
+  const built = buildIndexes(chainId, lists)
+  c.bySymbol = built.bySymbol
+  c.byAddress = built.byAddress
+  c.byName = built.byName
+  c.loadedAt = Date.now()
 }
 
 /** Back-compat alias — the original Base-only entry point. */
@@ -106,6 +164,12 @@ export function dynamicTokenBySymbol(symbol: string, chainId: number = 8453): To
 }
 export function dynamicTokenByAddress(address: string, chainId: number = 8453): TokenInfo | undefined {
   return cacheFor(chainId).byAddress[address.trim().toLowerCase()]
+}
+/** Exact full-name lookup ("NVIDIA" → NVDA, "Apple" → AAPL). Consulted only
+ *  AFTER symbol lookup misses, so a ticker can never be shadowed by a name.
+ *  Names ambiguous within the chain's merged lists resolve to nothing. */
+export function dynamicTokenByName(name: string, chainId: number = 8453): TokenInfo | undefined {
+  return cacheFor(chainId).byName[normalizeName(name)]
 }
 export function dynamicTokenCount(chainId: number = 8453): number {
   return Object.keys(cacheFor(chainId).bySymbol).length

@@ -28,7 +28,8 @@ import { grantViolation, type GrantPolicy } from '../lib/spend-grant'
 import { routerPrompt, parseRouterDecision, selectInferenceProvider, routeMessage, shortlistEndpoints } from '../lib/router'
 import { buildSmartRequest, computeRating, type PlannableEndpoint } from '../lib/endpoint-planner'
 import { buildSignableArtifact, isActionIntent, orderRequestOf, txRequestOf } from '../lib/transaction-layer'
-import { resolveToken, buildCowOrderTypedData, cowOrderAction, buildCowLimitOrder, buildCowSubmitBody, describeCowOrder, describeAmount, formatAtoms, tokenDecimals, humanToAtoms, applySlippage, COW_APP_DATA_JSON, GPV2_SETTLEMENT, type CowQuoteResult } from '../lib/cow'
+import { resolveToken, buildCowOrderTypedData, cowOrderAction, buildCowLimitOrder, buildCowSubmitBody, describeCowOrder, describeAmount, formatAtoms, tokenDecimals, tokenLabel, humanToAtoms, applySlippage, COW_APP_DATA_JSON, GPV2_SETTLEMENT, type CowQuoteResult } from '../lib/cow'
+import { primeTokenList } from '../lib/token-list'
 import { pureChecks, policyCheck, orderValueUsd, buildReport } from '../lib/cow-guardrails'
 import { parseSwapIntent } from '../lib/swap-intent'
 import { usdToTokenAmount } from '../lib/usd-probe'
@@ -2242,6 +2243,27 @@ async function main() {
   check('cow: resolveToken maps a Base symbol', resolveToken('USDC') === '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913')
   check('cow: resolveToken passes 0x addresses through', resolveToken('0xABcd00000000000000000000000000000000abCD') === '0xabcd00000000000000000000000000000000abcd')
   check('cow: resolveToken rejects nonsense', resolveToken('NOTATOKEN') === null)
+
+  // Token-name resolution (the "swap USDG for NVIDIA" fix) — prime the
+  // dynamic list from a fixture (same indexer as the network load) so these
+  // stay offline. Real chain-4663 NVDA address from tokens.uniswap.org.
+  const nvdaAddr = '0xd0601ce157db5bdc3162bbac2a2c8af5320d9eec'
+  primeTokenList(4663, [
+    { tokens: [
+      { chainId: 4663, address: '0xd0601CE157Db5bdC3162BbaC2a2C8aF5320D9EEC', symbol: 'NVDA', decimals: 18, name: 'NVIDIA' },
+      { chainId: 4663, address: '0xaF3D76f1834A1d425780943C99Ea8A608f8a93f9', symbol: 'AAPL', decimals: 18, name: 'Apple' },
+      { chainId: 4663, address: '0x1111111111111111111111111111111111111111', symbol: 'DUPE1', decimals: 18, name: 'Same Name Co' },
+      { chainId: 4663, address: '0x2222222222222222222222222222222222222222', symbol: 'DUPE2', decimals: 18, name: 'Same Name Co' },
+      { chainId: 4663, address: '0x3333333333333333333333333333333333333333', symbol: 'SHADOW', decimals: 18, name: 'AAPL' },
+    ] },
+  ])
+  check('token names: exact full name resolves ("NVIDIA" → NVDA addr)', resolveToken('NVIDIA', 4663) === nvdaAddr)
+  check('token names: case/whitespace tolerant', resolveToken('  nvidia ', 4663) === nvdaAddr)
+  check('token names: ticker path unchanged', resolveToken('NVDA', 4663) === nvdaAddr)
+  check('token names: symbol always beats a name ("AAPL" is SHADOW\'s name but AAPL\'s ticker)', resolveToken('AAPL', 4663) === '0xaf3d76f1834a1d425780943c99ea8a608f8a93f9')
+  check('token names: ambiguous name (two addresses) resolves to nothing', resolveToken('Same Name Co', 4663) === null)
+  check('token names: decimals resolve via name', tokenDecimals('NVIDIA', 4663) === 18)
+  check('token names: label shows the ticker, not the typed name', tokenLabel('NVIDIA', 4663) === 'NVDA')
   const td = buildCowOrderTypedData(cowFixture)
   check(
     'cow: typed data has the GPv2 domain + Order type',
