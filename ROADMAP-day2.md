@@ -85,11 +85,17 @@ FEATURE this lane ships, not a constraint it suffers.
       stake sizing, guard pass + 5 tampers + wstETH shape). 469/2 known.
 
 ## W5 — x402 payer demo  [≤$2 total]
-- [ ] scripts/x402-payer-demo.ts: an external agent that (1) pays a ≤$0.05
-      x402 endpoint through the router for data, (2) then submits a dryRun
-      job via the W1 API with a yf_ key — the full "agent walks in with
-      money, leaves with a guarded plan" loop. Runnable, receipted, cheap.
-- [ ] Docs page for it (W3 section 6).
+- [x] scripts/x402-payer-demo.ts: ① POST /api/route (Bearer; SIWE-mints a
+      key if none) → engine pays a ≤$0.05 endpoint, streams select/pay/
+      receipt; ② POST /api/jobs dryRun → guarded plan, $0. RUN LIVE twice
+      vs local: Otto AI $0.001 + ChatGPT $0.001 settled with tx hashes,
+      real headlines, 6-step plan, "paid $0.0020, committed $0". Total
+      lane x402 spend ≈ $0.003 of the $2 budget. Gotchas: receipt.priceUsd
+      arrives as a string; failed receipts don't settle (don't sum them);
+      the weather ask routed badly (FlightAware fail → answer engine) —
+      crypto-news routes clean; 2 demo yf_ keys now on /dashboard/keys.
+- [x] Docs page: /docs/payer-demo ("The payer loop"), real output pasted,
+      placed after x402 in the nav. Entity-space detectors clean.
 
 ## W6 — Hardening (as time allows; else backlog notes in the lane PR)
 - [ ] Explicit leverage on HL opens (updateLeverage behind the guard)
@@ -118,3 +124,7 @@ FEATURE this lane ships, not a constraint it suffers.
   exact bridge→stake job as a chip, chip compiled to a 3-step JobCard
   with the $5 bridge artifact offered. Unsigned, canceled, dev-fenced.
   tsc + build green, test:api 469/2 known reds. PR w4-lido → day2-lane.
+- 12:10 W5 DONE: payer loop proven live — 2 settled x402 receipts
+  ($0.002, tx hashes) through /api/route + a $0 guarded dryRun plan, one
+  script. /docs/payer-demo added. test:api 469/2 known reds. PR
+  w5-x402-demo → day2-lane. Remaining: W6 (backlog notes) + lane→main PR.
