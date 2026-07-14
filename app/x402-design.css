@@ -1561,7 +1561,10 @@
   .splash__npmlead { font-size: 14.5px; color: var(--muted); line-height: 1.55; margin-top: 8px; max-width: 60ch; }
   .splash__npmlead code { font-family: 'Geist Mono', ui-monospace, monospace; font-size: 0.88em; background: var(--surf-2); border: 1px solid var(--line); border-radius: 5px; padding: 1px 6px; color: var(--fg); }
   .splash__npmlead a { color: var(--fg); text-decoration: underline; text-underline-offset: 3px; text-decoration-style: dotted; }
-  .splash__npm pre { flex-shrink: 0; white-space: nowrap; }
+  /* The one-line `npm install` hugs the right; the multi-line curl block must be
+     free to shrink and scroll internally (min-width:0 + overflow-x) so its long
+     lines never bleed past the card edge. white-space:pre keeps the newlines. */
+  .splash__npm pre { flex-shrink: 1; min-width: 0; max-width: 100%; white-space: pre; overflow-x: auto; }
 
   @media (max-width: 900px) {
     .splash__paths { grid-template-columns: 1fr; }
@@ -3085,6 +3088,14 @@
   html[data-theme='light'] .text-zinc-200 { color: #27272a; }
   html[data-theme='light'] .text-zinc-300 { color: #3f3f46; }
   html[data-theme='light'] .text-zinc-400 { color: #52525b; }
+
+  /* Inverted solid buttons (bg-white text-zinc-950 hover:bg-zinc-200): the
+     `bg-white` fill already flips to --fg, so the near-black label must flip to
+     --bg (white) or it's black-on-black, and the hover must lighten the dark
+     fill instead of jumping to a pale grey. */
+  html[data-theme='light'] .text-zinc-950 { color: var(--bg); }
+  html[data-theme='light'] .text-zinc-900 { color: var(--bg); }
+  html[data-theme='light'] .hover\:bg-zinc-200:hover { background-color: color-mix(in srgb, var(--fg) 82%, var(--bg)); }
 
   /* ── FOOTER THEME TOGGLE ─────────────────────────── */
   .themetog {
