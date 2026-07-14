@@ -11,7 +11,7 @@
 // ─────────────────────────────────────────────────────────────────────────
 import { NextRequest, NextResponse } from 'next/server'
 import { buildUniswapSwap } from '@/lib/uniswap-venue'
-import { buildUniswapV4Swap } from '@/lib/uniswap-v4'
+import { buildUniswapV4Swap, GatedV4PoolError } from '@/lib/uniswap-v4'
 import { ensureTokenList } from '@/lib/token-list'
 import { sanitizeChainId, publicClientFor, DEFAULT_CHAIN_ID } from '@/lib/chains'
 
@@ -69,27 +69,32 @@ export async function POST(req: NextRequest) {
 
   try {
     await ensureTokenList(chainId)
+    // `blockKind` tells the card WHO refused: 'policy' = the user's own
+    // guardrails/spend limits (fixable on the Dashboard); 'execution' = the
+    // chain itself would revert the swap (nothing to manage — the user's
+    // policy is not involved). Conflating them sent a user hunting for a
+    // nonexistent spend limit after Robinhood's venue-gated AAPL pool refused.
     if (body.kind === 'uniswap-v4-swap') {
       // v4 chains re-quote the FINAL step; the builder re-reads both Permit2
       // hops, so "approvals not visible yet" comes back as pending → retry.
       const v4 = await buildUniswapV4Swap({ sellToken, buyToken, amountHuman, from, chainId })
       if (v4.blocked) {
         const reasons = v4.guardrails.checks.filter((c) => !c.ok && c.level === 'block').map((c) => c.note).join(' ')
-        return NextResponse.json({ blocked: true, reasons: reasons || 'a safety check failed', guardrails: v4.guardrails })
+        return NextResponse.json({ blocked: true, blockKind: 'policy', reasons: reasons || 'a safety check failed', guardrails: v4.guardrails })
       }
       if (v4.steps.length > 1) {
         return NextResponse.json({ pending: true, note: 'allowance not visible on-chain yet' })
       }
       const v4Revert = await estimateReverts(chainId, from, v4.steps[0].tx)
       if (v4Revert) {
-        return NextResponse.json({ blocked: true, reasons: `the rebuilt swap would revert on-chain (${v4Revert.slice(0, 200)})` })
+        return NextResponse.json({ blocked: true, blockKind: 'execution', reasons: `the rebuilt swap would revert on-chain (${v4Revert.slice(0, 200)})` })
       }
       return NextResponse.json({ tx: v4.steps[0].tx, summary: v4.summary, guardrails: v4.guardrails, validUntil: v4.steps[0].validUntil ?? null })
     }
     const uni = await buildUniswapSwap({ sellToken, buyToken, amountHuman, from, chainId })
     if (uni.blocked) {
       const reasons = uni.guardrails.checks.filter((c) => !c.ok && c.level === 'block').map((c) => c.note).join(' ')
-      return NextResponse.json({ blocked: true, reasons: reasons || 'a safety check failed', guardrails: uni.guardrails })
+      return NextResponse.json({ blocked: true, blockKind: 'policy', reasons: reasons || 'a safety check failed', guardrails: uni.guardrails })
     }
     if (uni.approveTx) {
       // Allowance still short (approval not confirmed / not indexed yet) —
@@ -98,10 +103,15 @@ export async function POST(req: NextRequest) {
     }
     const uniRevert = await estimateReverts(chainId, from, uni.swapTx)
     if (uniRevert) {
-      return NextResponse.json({ blocked: true, reasons: `the rebuilt swap would revert on-chain (${uniRevert.slice(0, 200)})` })
+      return NextResponse.json({ blocked: true, blockKind: 'execution', reasons: `the rebuilt swap would revert on-chain (${uniRevert.slice(0, 200)})` })
     }
     return NextResponse.json({ tx: uni.swapTx, summary: uni.summary, guardrails: uni.guardrails, validUntil: uni.validUntil })
   } catch (err) {
+    if (err instanceof GatedV4PoolError) {
+      // Quotes-but-can't-execute (Robinhood stock pools): the prebuilt tx is
+      // dead by design — the card must WITHHOLD, never fall back to it.
+      return NextResponse.json({ blocked: true, blockKind: 'execution', reasons: err.message })
+    }
     return NextResponse.json({ error: err instanceof Error ? err.message : 'rebuild failed' }, { status: 502 })
   }
 }
