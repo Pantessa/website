@@ -187,7 +187,7 @@ export async function advanceJob(job: JobWithSteps): Promise<void> {
 
 /** Build a sign step's artifact with the SAME builders chat uses. Throws on
  *  guard refusal (the message is the honest reason). */
-async function buildSignArtifact(
+export async function buildSignArtifact(
   wallet: string,
   builder: string,
   params: Record<string, unknown>,
