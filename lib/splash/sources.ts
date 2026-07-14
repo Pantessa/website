@@ -527,6 +527,70 @@ const aaveSource: SplashSource = {
   },
 }
 
+// ── Lido slot → staking position + the guided stake-in moment ────────────────
+
+interface LidoPositionPayload {
+  hasPosition?: boolean
+  eth?: { balance?: string; usd?: string | null }
+  stEth?: { balance?: string; usd?: string | null }
+  wstEth?: { balance?: string; asStEth?: string; usd?: string | null }
+  totalStaked?: { stEth?: string; usd?: string | null }
+  currentAprPct?: number | null
+  withdrawals?: { pendingRequests?: number; claimableRequests?: number; claimableEth?: string }
+}
+
+const lidoSource: SplashSource = {
+  id: 'lido',
+  match: (s) => /lido/i.test(`${s.slug} ${s.name}`),
+  build: async (call, address, server, chain) => {
+    // Lido is Ethereum-only — any other picker selection has nothing to show.
+    if (chain && chain.key !== 'ethereum') return null
+    const pos = (await call('position', { user: address })) as LidoPositionPayload
+    if (!pos.hasPosition) return null // no activity → no card (manual picks get the preview)
+
+    const rows: StatRow[] = []
+    if (Number(pos.stEth?.balance) > 0) {
+      rows.push({ label: 'stETH', value: pos.stEth?.usd ?? pos.stEth?.balance ?? '—', sub: `${pos.stEth?.balance} stETH · rebasing daily`, tone: 'pos' as const })
+    }
+    if (Number(pos.wstEth?.balance) > 0) {
+      rows.push({ label: 'wstETH', value: pos.wstEth?.usd ?? pos.wstEth?.balance ?? '—', sub: `${pos.wstEth?.balance} wstETH (${pos.wstEth?.asStEth} stETH)`, tone: 'pos' as const })
+    }
+    const wd = pos.withdrawals
+    if ((wd?.pendingRequests ?? 0) > 0 || (wd?.claimableRequests ?? 0) > 0) {
+      rows.push({
+        label: 'Withdrawals',
+        value: `${(wd?.pendingRequests ?? 0) + (wd?.claimableRequests ?? 0)} in queue`,
+        sub: (wd?.claimableRequests ?? 0) > 0 ? `${wd?.claimableEth} ETH claimable now` : 'still pending',
+        tone: (wd?.claimableRequests ?? 0) > 0 ? ('pos' as const) : undefined,
+      })
+    }
+
+    // Chips round-trip through the native lido layer (harness-checked):
+    // live-amount stake when there's spare ETH, the guided ask otherwise.
+    const prompts: SuggestedPrompt[] = []
+    const stakeableEth = Number(pos.eth?.balance) - 0.002
+    if (stakeableEth >= 0.003) {
+      const amt = Math.floor(stakeableEth * 10_000) / 10_000
+      prompts.push({ label: `Stake ${amt} ETH`, prompt: `Stake ${amt} ETH on Lido` })
+    } else {
+      prompts.push({ label: 'Help me stake more', prompt: 'Help me stake on Lido' })
+    }
+    prompts.push({ label: 'What have I earned?', prompt: 'What has my Lido position earned so far?' })
+
+    return {
+      id: 'lido-position',
+      mcpSlug: server.slug,
+      mcpName: server.name,
+      render: 'rows',
+      title: 'Your Lido position',
+      subtitle: pos.currentAprPct != null ? `earning ~${pos.currentAprPct}% APR` : 'staked with Lido',
+      headline: pos.totalStaked?.usd ? { value: pos.totalStaked.usd, caption: `${pos.totalStaked.stEth} stETH total staked` } : undefined,
+      rows,
+      prompts,
+    }
+  },
+}
+
 const walletSource: SplashSource = {
   id: 'wallet',
   // The first-party multichain wallet MCP (yeetful-tool-*). Alchemy-backed —
@@ -537,7 +601,7 @@ const walletSource: SplashSource = {
 }
 
 /** All registered splash sources. Exported for tests; a new MCP appends here. */
-export const SPLASH_SOURCES: SplashSource[] = [walletSource, uniswapSource, snapshotSource, cowSource, hyperliquidSource, aaveSource]
+export const SPLASH_SOURCES: SplashSource[] = [walletSource, uniswapSource, snapshotSource, cowSource, hyperliquidSource, aaveSource, lidoSource]
 
 // ── Preview cards (the manual-pick exception) ────────────────────────────────
 // What each source's card says when the user hand-picked the MCP but the
@@ -588,6 +652,15 @@ const SOURCE_PREVIEWS: Record<string, { message: string; prompts: SuggestedPromp
     prompts: [
       { label: 'Supply 10 USDC', prompt: 'Supply 10 USDC to Aave on Ethereum' },
       { label: 'Best supply APYs', prompt: 'What are the best supply APYs on Aave right now?' },
+    ],
+  },
+  lido: {
+    message: 'Nothing staked with Lido yet. Staking mints stETH that earns via daily rebases — and the chat sizes the stake to your live balance.',
+    prompts: [
+      // The guided moment: a deterministic balance check that proposes the
+      // exact ask (or the whole bridge→stake job) as a chip.
+      { label: 'Help me stake on Lido', prompt: 'Help me stake on Lido' },
+      { label: 'Current APR', prompt: 'What is the current Lido staking APR?' },
     ],
   },
 }

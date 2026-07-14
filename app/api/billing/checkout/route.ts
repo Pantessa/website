@@ -35,8 +35,6 @@ export async function POST(req: NextRequest) {
   const plan = PLAN_BY_ID[planId]
   const owner = addr.toLowerCase()
 
-  // Reuse the wallet's Stripe customer when one exists so upgrades don't
-  // spawn duplicate customers.
   const existing = await prisma.subscription.findUnique({ where: { ownerAddress: owner } }).catch(() => null)
 
   const origin = billingOrigin(req.nextUrl.origin)
@@ -57,9 +55,9 @@ export async function POST(req: NextRequest) {
           },
         }),
   }
-  const session = await stripe.checkout.sessions.create({
+  const params = (customerId?: string): Stripe.Checkout.SessionCreateParams => ({
     mode: 'subscription',
-    ...(existing?.stripeCustomerId ? { customer: existing.stripeCustomerId } : {}),
+    ...(customerId ? { customer: customerId } : {}),
     client_reference_id: owner,
     line_items: [{ quantity: 1, price_data: priceData }],
     metadata: { ownerAddress: owner, plan: plan.id },
@@ -68,5 +66,39 @@ export async function POST(req: NextRequest) {
     cancel_url: `${origin}/pricing`,
   })
 
-  return NextResponse.json({ url: session.url })
+  try {
+    // Reuse the wallet's stored Stripe customer when one exists so upgrades
+    // don't spawn duplicates. But a stored id can be stale — most commonly a
+    // TEST-mode customer left over from before the switch to a live key, or a
+    // customer deleted in the dashboard. Stripe rejects those with a
+    // `resource_missing` on the customer param; when that happens, drop the id
+    // and retry with a fresh customer instead of failing the checkout.
+    let session
+    try {
+      session = await stripe.checkout.sessions.create(params(existing?.stripeCustomerId ?? undefined))
+    } catch (err) {
+      if (existing?.stripeCustomerId && isMissingCustomer(err)) {
+        session = await stripe.checkout.sessions.create(params())
+      } else {
+        throw err
+      }
+    }
+    return NextResponse.json({ url: session.url })
+  } catch (err) {
+    // Surface the Stripe reason (instead of a blind 500) so misconfig is
+    // diagnosable from the client + logs.
+    const msg = err instanceof Error ? err.message : 'checkout failed'
+    console.error('[billing/checkout]', msg)
+    return NextResponse.json({ error: `Checkout failed: ${msg}` }, { status: 500 })
+  }
+}
+
+/** True when Stripe rejected a request because the referenced customer no
+ * longer exists (wrong mode, or deleted) — param is `customer`. */
+function isMissingCustomer(err: unknown): boolean {
+  const e = err as { code?: string; param?: string; message?: string }
+  return (
+    e?.code === 'resource_missing' &&
+    (e?.param === 'customer' || /no such customer/i.test(e?.message ?? ''))
+  )
 }
