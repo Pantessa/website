@@ -2713,6 +2713,59 @@ async function main() {
       const body = await cronOk.json()
       check('jobs: authorized runner tick reports', cronOk.status === 200 && typeof body.touched === 'number', JSON.stringify(body))
     }
+
+    // ── Jobs API: the external-agent door (POST /api/jobs + dryRun) ────────
+    const jobsPostAnon = await fetch(`${BASE}/api/jobs`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ask: 'x', dryRun: true }) })
+    const jobsListAnon = await fetch(`${BASE}/api/jobs`)
+    check('jobs api: POST and GET unauth → 401', jobsPostAnon.status === 401 && jobsListAnon.status === 401)
+
+    const jobsNoAsk = await fetch(`${BASE}/api/jobs`, { method: 'POST', headers: CJ, body: '{}' })
+    check('jobs api: missing ask → 400', jobsNoAsk.status === 400)
+
+    const notCompound = await fetch(`${BASE}/api/jobs`, { method: 'POST', headers: CJ, body: JSON.stringify({ ask: 'swap 1 usdc for eth', dryRun: true }) })
+    const notCompoundBody = await notCompound.json()
+    check('jobs api: non-compound ask → 400 with "then" guidance', notCompound.status === 400 && /compound/i.test(notCompoundBody.error ?? ''))
+
+    const problemAsk = await fetch(`${BASE}/api/jobs`, { method: 'POST', headers: CJ, body: JSON.stringify({ ask: 'deposit 20 usdc to hyperliquid then tell me a joke', dryRun: true }) })
+    const problemBody = await problemAsk.json()
+    check('jobs api: unparseable segment → 400 problem passthrough (honest refusal)', problemAsk.status === 400 && /step 2/i.test(problemBody.error ?? ''))
+
+    const jobsBefore = await (await fetch(`${BASE}/api/jobs`, { headers: C })).json()
+    const CANON_ASK = 'deposit 12 usdc to hyperliquid, then long $12 of eth on hyperliquid, then protect my eth long with a 5% stop'
+    const dry = await fetch(`${BASE}/api/jobs`, { method: 'POST', headers: CJ, body: JSON.stringify({ ask: CANON_ASK, dryRun: true }) })
+    const dryBody = await dry.json()
+    check(
+      'jobs api: dryRun compiles the canonical ask — full plan + step-1 live build (artifact or honest refusal) + note',
+      dry.status === 200 && dryBody.dryRun === true && Array.isArray(dryBody.steps) && dryBody.steps.length === 4 &&
+        dryBody.steps[0].builder === 'native-hl-exec' && dryBody.steps[3].kind === 'auto' &&
+        dryBody.firstSignPreview?.step === 0 && ('artifact' in dryBody.firstSignPreview || 'refused' in dryBody.firstSignPreview) &&
+        /nothing was created/i.test(dryBody.note ?? ''),
+      JSON.stringify({ status: dry.status, title: dryBody.title, preview: Object.keys(dryBody.firstSignPreview ?? {}) }),
+    )
+    const jobsAfter = await (await fetch(`${BASE}/api/jobs`, { headers: C })).json()
+    check(
+      'jobs api: dryRun created NOTHING (job list unchanged)',
+      Array.isArray(jobsAfter.jobs) && jobsAfter.jobs.length === (jobsBefore.jobs?.length ?? -1),
+    )
+
+    // Bearer parity: a yf_ key walks through the same door with the same
+    // view. Mint fresh — the harness revoked the first key back in the
+    // key-lifecycle section.
+    const jobsKey = await (await fetch(`${BASE}/api/keys`, { method: 'POST', headers: CJ, body: JSON.stringify({ label: 'test:api jobs' }) })).json()
+    const JB = { authorization: `Bearer ${jobsKey.secret}` }
+    const dryBearer = await fetch(`${BASE}/api/jobs`, { method: 'POST', headers: { 'content-type': 'application/json', ...JB }, body: JSON.stringify({ ask: CANON_ASK, dryRun: true }) })
+    const dryBearerBody = await dryBearer.json()
+    check(
+      'jobs api: Bearer yf_ dryRun parity (same compile, same shape)',
+      dryBearer.status === 200 && dryBearerBody.dryRun === true && dryBearerBody.title === dryBody.title && dryBearerBody.steps?.length === 4,
+    )
+    const listBearer = await fetch(`${BASE}/api/jobs`, { headers: JB })
+    const listBearerBody = await listBearer.json()
+    check(
+      'jobs api: Bearer GET /api/jobs parity (same list as the SIWE session)',
+      listBearer.status === 200 && Array.isArray(listBearerBody.jobs) && listBearerBody.jobs.length === jobsAfter.jobs.length,
+    )
+    await fetch(`${BASE}/api/keys/${jobsKey.id}`, { method: 'DELETE', headers: C }) // leave the cleanup sweep nothing to find
   }
 
   // ── HL execution layer (parse + build + guard + submit relay) ────────────

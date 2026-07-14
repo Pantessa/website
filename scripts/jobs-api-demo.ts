@@ -49,25 +49,32 @@ async function authHeaders(): Promise<Record<string, string>> {
   return { cookie: `yf_session=${session}` }
 }
 
-const headers = { 'content-type': 'application/json', ...(await authHeaders()) }
-console.log(`\nPOST ${BASE}/api/jobs ${LIVE ? '(LIVE — creates the job)' : '(dryRun — costs nothing, creates nothing)'}\nask: "${ASK}"\n`)
-const res = await fetch(`${BASE}/api/jobs`, {
-  method: 'POST',
-  headers,
-  body: JSON.stringify({ ask: ASK, dryRun: !LIVE }),
-})
-const data = await res.json()
-if (!res.ok) {
-  console.error(`✖ ${res.status}:`, data.error)
+async function main() {
+  const headers = { 'content-type': 'application/json', ...(await authHeaders()) }
+  console.log(`\nPOST ${BASE}/api/jobs ${LIVE ? '(LIVE — creates the job)' : '(dryRun — costs nothing, creates nothing)'}\nask: "${ASK}"\n`)
+  const res = await fetch(`${BASE}/api/jobs`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ ask: ASK, dryRun: !LIVE }),
+  })
+  const data = await res.json().catch(() => null)
+  if (!res.ok || !data) {
+    console.error(`✖ ${res.status}:`, data?.error ?? '(no JSON body — is POST /api/jobs deployed at this base?)')
+    process.exit(1)
+  }
+  if (data.dryRun) {
+    console.log(`compiled: ${data.title}\n`)
+    for (const s of data.steps) console.log(`  ${s.seq}. [${s.kind}${s.kind === 'wait' ? `:${s.waitPredicate?.kind}` : ''}] ${s.title}  (${s.builder})`)
+    console.log('\nfirst signable step, built + guarded against LIVE venues:')
+    console.log(JSON.stringify(data.firstSignPreview, null, 2).slice(0, 1500))
+    console.log(`\n${data.note}`)
+  } else {
+    console.log(`job created: ${data.job.id} (${data.job.status})`)
+    console.log(`watch it: ${BASE}/dashboard/guardian — sign steps from the chat JobCard or GET /api/jobs/${data.job.id}`)
+  }
+}
+
+main().catch((e) => {
+  console.error('✖', (e as Error).message)
   process.exit(1)
-}
-if (data.dryRun) {
-  console.log(`compiled: ${data.title}\n`)
-  for (const s of data.steps) console.log(`  ${s.seq}. [${s.kind}${s.kind === 'wait' ? `:${s.waitPredicate?.kind}` : ''}] ${s.title}  (${s.builder})`)
-  console.log('\nfirst signable step, built + guarded against LIVE venues:')
-  console.log(JSON.stringify(data.firstSignPreview, null, 2).slice(0, 1500))
-  console.log(`\n${data.note}`)
-} else {
-  console.log(`job created: ${data.job.id} (${data.job.status})`)
-  console.log(`watch it: ${BASE}/dashboard/guardian — sign steps from the chat JobCard or GET /api/jobs/${data.job.id}`)
-}
+})
