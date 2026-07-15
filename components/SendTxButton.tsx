@@ -47,7 +47,7 @@ export default function SendTxButton({
    *  advances the multi-step card on this. */
   onConfirmed?: (hash: string) => void
 }) {
-  const { address, isConnected, connector } = useAccount()
+  const { address, isConnected, connector, chain: connectedChain } = useAccount()
   const { sendTransactionAsync } = useSendTransaction()
   const { switchChainAsync } = useSwitchChain()
   const chainId = tx.chainId ?? 8453
@@ -72,9 +72,25 @@ export default function SendTxButton({
     let txHash: `0x${string}` | null = null
     try {
       setStatus('signing')
-      // Match the wallet's network to the built transaction before signing
-      // (same idiom as SignOrderButton / LaunchToken).
-      await switchChainAsync({ chainId }).catch(() => {})
+      // Match the wallet's network to the built transaction before signing.
+      // Only when it actually differs: the same-chain path must stay a
+      // zero-await straight shot (Coinbase's popup wallet breaks on popups
+      // issued after extra awaits).
+      if (connectedChain?.id !== chainId) {
+        try {
+          await switchChainAsync({ chainId })
+        } catch {
+          setError(`Switch the wallet to ${chainInfo?.name ?? `chain ${chainId}`} and retry — this transaction is built for that network.`)
+          setStatus('error')
+          return
+        }
+        // Let the wallet settle on the new network before the sign sheet
+        // opens. MetaMask estimates fees + simulates DURING the popup; a
+        // request racing a just-switched network (worst on custom chains
+        // like Robinhood 4663) paints "fee unavailable" + "likely to fail"
+        // on a perfectly good tx (2026-07-15 funding-leg false alarm).
+        await new Promise((r) => setTimeout(r, 750))
+      }
       txHash = await sendTransactionAsync({
         to: tx.to as `0x${string}`,
         data: (tx.data ?? '0x') as `0x${string}`,
