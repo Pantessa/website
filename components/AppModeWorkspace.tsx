@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { AnimatePresence, animate, motion, useReducedMotion } from 'framer-motion'
 import { ArrowDownLeft, ArrowUpRight, Clock, ExternalLink, RefreshCw, Repeat, Vote, Wallet } from 'lucide-react'
 import BrandIcon from '@/components/BrandIcon'
-import ChatLoader from '@/components/ChatLoader'
+import SwapPanel from '@/components/panels/SwapPanel'
 import { useYeetfulStore, type McpServer } from '@/lib/store'
 import { chainById } from '@/lib/chains'
 import { splashCapable } from '@/lib/splash/types'
@@ -141,6 +141,8 @@ export default function AppModeWorkspace({
                 onRetry={() => setReload((n) => n + 1)}
                 onPick={onPick}
                 reduced={!!reduced}
+                address={address}
+                chainId={selectedChainId}
               />
             </motion.div>
           ))}
@@ -162,6 +164,8 @@ function PanelFrame({
   onRetry,
   onPick,
   reduced,
+  address,
+  chainId,
 }: {
   kind: PanelKind
   slugs: string[]
@@ -172,6 +176,8 @@ function PanelFrame({
   onRetry: () => void
   onPick: (prompt: string, slug?: string) => void
   reduced: boolean
+  address?: string
+  chainId: number | null
 }) {
   const feeders = slugs
     .map((slug) => servers.find((s) => s.slug === slug))
@@ -199,7 +205,11 @@ function PanelFrame({
       {loading ? (
         <PanelSkeleton />
       ) : kind === 'swap' ? (
-        <SwapBody tiles={tiles} feeders={feeders} onPick={onPick} />
+        address ? (
+          <SwapPanel address={address} chainId={chainId} />
+        ) : (
+          <p className="flex-1 text-xs leading-relaxed text-[color:var(--muted)]">{emptyCopy(kind)}</p>
+        )
       ) : tiles.length === 0 ? (
         errors.length > 0 ? (
           <div className="flex-1">
@@ -256,48 +266,6 @@ function PanelTileBody({ tile, reduced }: { tile: SplashTile; reduced: boolean }
     default:
       return null
   }
-}
-
-// ── Swap (interim body — the guarded quote flow lands as its own slice; until
-//    then the panel offers real prefills into the command bar, never dead
-//    controls) ────────────────────────────────────────────────────────────────
-
-function SwapBody({
-  tiles,
-  feeders,
-  onPick,
-}: {
-  tiles: SplashTile[]
-  feeders: McpServer[]
-  onPick: (prompt: string, slug?: string) => void
-}) {
-  void tiles
-  const venue = feeders[0]
-  const examples = [
-    'Swap 5 USDC for ETH',
-    'Swap 1 USDG for NVDA',
-    'What can I get for 0.01 ETH?',
-  ]
-  return (
-    <div className="flex flex-1 flex-col">
-      <p className="text-xs leading-relaxed text-[color:var(--muted)]">
-        Quote → guarded build → sign{venue ? ` via ${venue.name}` : ''}. Tell the command bar what to
-        swap and the built transaction lands here for review.
-      </p>
-      <div className="mt-auto flex flex-wrap gap-1.5 pt-4">
-        {examples.map((p) => (
-          <button
-            key={p}
-            type="button"
-            onClick={() => onPick(p, venue?.slug)}
-            className="rounded-full border border-[var(--line)] px-2.5 py-1 text-[11px] text-[color:var(--muted)] transition-colors hover:border-[var(--line-2)] hover:bg-white/5 hover:text-white"
-          >
-            {p}
-          </button>
-        ))}
-      </div>
-    </div>
-  )
 }
 
 // ── Portfolio ────────────────────────────────────────────────────────────────

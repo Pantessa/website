@@ -3188,6 +3188,54 @@ async function main() {
     check('hl submit: signer≠from → 403; stale nonce → 400', relayWrongFrom.status === 403 && relayStale.status === 400)
   }
 
+  // ── App Mode panel swap (POST /api/panels/swap) ───────────────────────────
+  // The panel's quote+build endpoint — same builders as chat, so this only
+  // asserts the ROUTE contract (validation + honest errors + artifact shape),
+  // not the venue logic the tx-layer sections already cover.
+  console.log('— panel swap')
+  {
+    const bad = await fetch(`${BASE}/api/panels/swap`, { method: 'POST', body: 'not json' })
+    const missing = await fetch(`${BASE}/api/panels/swap`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ from: '0x123', sellToken: 'USDC' }),
+    })
+    check('panel swap: garbage → 400, missing fields → 400', bad.status === 400 && missing.status === 400)
+    const unknown = await fetch(`${BASE}/api/panels/swap`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ from: owner.address, chainId: 8453, sellToken: 'USDC', buyToken: 'ZZZZNOTATOKEN', amountHuman: '1' }),
+    })
+    const unknownBody = await unknown.json()
+    check('panel swap: unknown token → honest error, nothing built', unknown.status === 502 && /unknown buy token/i.test(String(unknownBody.error ?? '')))
+    const quote = await fetch(`${BASE}/api/panels/swap`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ from: owner.address, chainId: 8453, sellToken: 'USDC', buyToken: 'ETH', amountHuman: '1' }),
+    })
+    const q = await quote.json()
+    const steps = q?.txChain?.steps
+    // Two honest outcomes: the artifact builds (chat-identical txChain), or
+    // the wallet's own spend policy refuses it (the harness owner picks up a
+    // restrictive policy in earlier sections — the refusal PROVES the panel
+    // route runs the same policy gate as chat).
+    const builtOk =
+      q?.ok === true &&
+      Array.isArray(steps) &&
+      steps.length >= 1 &&
+      steps[steps.length - 1].label === 'swap' &&
+      typeof steps[steps.length - 1].tx?.data === 'string' &&
+      q.txChain.refresh?.kind === 'uniswap-swap' &&
+      q.txChain.refresh?.params?.chainId === '8453' &&
+      typeof q.minReceived === 'string'
+    const policyBlocked = q?.blocked === true && q?.blockKind === 'policy' && !!q?.guardrails && /spend policy|NOT_ALLOWED/i.test(String(q?.reasons ?? ''))
+    check(
+      'panel swap: USDC→ETH builds the chat-identical txChain OR the spend policy refuses (same gate as chat)',
+      builtOk || policyBlocked,
+      !(builtOk || policyBlocked) ? JSON.stringify(q).slice(0, 160) : policyBlocked ? 'policy refused — gate live' : '',
+    )
+  }
+
   // ── Cleanup (verified) ────────────────────────────────────────────────────
   console.log('— cleanup')
   const delChat = await fetch(`${BASE}/api/chats/${chat.id}`, { method: 'DELETE', headers: C })
