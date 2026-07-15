@@ -1,0 +1,556 @@
+'use client'
+
+import { useEffect, useMemo, useRef, useState } from 'react'
+import Link from 'next/link'
+import { AnimatePresence, animate, motion, useReducedMotion } from 'framer-motion'
+import { ArrowDownLeft, ArrowUpRight, Clock, ExternalLink, RefreshCw, Repeat, Vote, Wallet } from 'lucide-react'
+import BrandIcon from '@/components/BrandIcon'
+import ChatLoader from '@/components/ChatLoader'
+import { useYeetfulStore, type McpServer } from '@/lib/store'
+import { chainById } from '@/lib/chains'
+import { splashCapable } from '@/lib/splash/types'
+import type { ActivityTile, HoldingsTile, ProposalsTile, RowsTile, SplashTile } from '@/lib/splash/types'
+import { PANEL_TITLES, derivePanels, tilePanelKind, type PanelKind } from '@/lib/panels/types'
+
+/**
+ * App Mode: the working set rendered as a persistent structured workspace —
+ * portfolio, swap, governance, earn, positions — instead of a transcript.
+ * Data rides the SAME pipeline as the splash (/api/splash → SplashTile),
+ * mapped into panels by lib/panels/types. Chat stays docked below as the
+ * command bar (ChatInterface owns the input in both modes).
+ *
+ * Motion charter (Nate): animation only ever shows real data or a real
+ * transition — panel entrances are spatial (the mode switch), totals count
+ * up from live values, refreshes sweep. Nothing idles, everything honors
+ * prefers-reduced-motion, transform/opacity only.
+ */
+export default function AppModeWorkspace({
+  address,
+  onPick,
+}: {
+  address?: string
+  /** Prefill the command bar (same contract as the splash's prompt chips). */
+  onPick: (prompt: string, slug?: string) => void
+}) {
+  const { servers, activeServerIds, manualSlugs, selectedChainId } = useYeetfulStore()
+  const [tiles, setTiles] = useState<SplashTile[] | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [reload, setReload] = useState(0)
+  const reduced = useReducedMotion()
+
+  const activeServers = useMemo(
+    () => servers.filter((s) => activeServerIds.includes(s.id)),
+    [servers, activeServerIds],
+  )
+  const relevant = useMemo(
+    () => activeServers.filter((s) => splashCapable(s) || manualSlugs.includes(s.slug)),
+    [activeServers, manualSlugs],
+  )
+  const panels = useMemo(() => derivePanels(activeServers), [activeServers])
+  const chainKey = selectedChainId ? chainById(selectedChainId)?.key ?? '' : ''
+
+  // Same stable-key scan discipline as SplashDashboard: refetch only when the
+  // wallet, the relevant set, or the chain scope actually changes.
+  const key = `${address ?? ''}|${relevant.map((s) => s.id).sort().join(',')}|${chainKey}`
+  useEffect(() => {
+    if (!address || relevant.length === 0) {
+      setTiles(null)
+      return
+    }
+    let alive = true
+    setLoading(true)
+    fetch('/api/splash', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        address,
+        servers: relevant,
+        manualSlugs: manualSlugs.filter((slug) => relevant.some((s) => s.slug === slug)),
+        ...(chainKey ? { chain: chainKey } : {}),
+      }),
+    })
+      .then((r) => r.json())
+      .then((data: { tiles?: SplashTile[] }) => {
+        if (alive) setTiles(Array.isArray(data.tiles) ? data.tiles : [])
+      })
+      .catch(() => {
+        if (alive) setTiles([])
+      })
+      .finally(() => {
+        if (alive) setLoading(false)
+      })
+    return () => {
+      alive = false
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key, reload])
+
+  if (!address) {
+    return (
+      <div className="grid h-full place-items-center px-6 text-center">
+        <div>
+          <Wallet className="mx-auto mb-3 h-6 w-6 text-[color:var(--muted-2)]" />
+          <p className="text-sm text-[color:var(--muted)]">
+            Connect a wallet to open your workspace — balances, swaps and votes, live.
+          </p>
+        </div>
+      </div>
+    )
+  }
+
+  // Tiles routed into their panel slots (a panel with no data yet still gets
+  // its frame — skeleton while loading, honest empty text after).
+  const byPanel = new Map<PanelKind, SplashTile[]>()
+  for (const t of tiles ?? []) {
+    const kind = tilePanelKind(t)
+    if (!kind) continue
+    byPanel.set(kind, [...(byPanel.get(kind) ?? []), t])
+  }
+  const errorTiles = (tiles ?? []).filter((t) => t.render === 'error')
+
+  return (
+    <div className="mx-auto w-full max-w-[1600px] px-1 py-4 md:px-4">
+      <div className="mb-4 flex items-center gap-2">
+        <Wallet className="h-4 w-4 text-[color:var(--muted-2)]" />
+        <span className="mono text-[11px] uppercase tracking-wider text-[color:var(--muted-2)]">
+          Workspace · {shortAddr(address)}
+        </span>
+        {loading && tiles && (
+          <RefreshCw className="h-3 w-3 animate-spin text-[color:var(--muted-2)]" aria-label="Refreshing" />
+        )}
+      </div>
+      <div className="grid grid-cols-1 gap-4 md:auto-rows-fr md:grid-cols-2 xl:grid-cols-3">
+        <AnimatePresence initial={false}>
+          {panels.map((p, i) => (
+            <motion.div
+              key={p.kind}
+              layout={!reduced}
+              initial={reduced ? false : { opacity: 0, y: 16, scale: 0.98 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={reduced ? undefined : { opacity: 0, scale: 0.98 }}
+              transition={{ type: 'spring', stiffness: 380, damping: 34, delay: reduced ? 0 : i * 0.05 }}
+              className="min-w-0"
+            >
+              <PanelFrame
+                kind={p.kind}
+                slugs={p.slugs}
+                servers={servers}
+                tiles={byPanel.get(p.kind) ?? []}
+                loading={loading && !tiles}
+                errors={errorTiles.filter((t) => p.slugs.includes(t.mcpSlug))}
+                onRetry={() => setReload((n) => n + 1)}
+                onPick={onPick}
+                reduced={!!reduced}
+              />
+            </motion.div>
+          ))}
+        </AnimatePresence>
+      </div>
+    </div>
+  )
+}
+
+// ── Panel frame ──────────────────────────────────────────────────────────────
+
+function PanelFrame({
+  kind,
+  slugs,
+  servers,
+  tiles,
+  loading,
+  errors,
+  onRetry,
+  onPick,
+  reduced,
+}: {
+  kind: PanelKind
+  slugs: string[]
+  servers: McpServer[]
+  tiles: SplashTile[]
+  loading: boolean
+  errors: SplashTile[]
+  onRetry: () => void
+  onPick: (prompt: string, slug?: string) => void
+  reduced: boolean
+}) {
+  const feeders = slugs
+    .map((slug) => servers.find((s) => s.slug === slug))
+    .filter((s): s is McpServer => !!s)
+  return (
+    <div className="relative flex h-full flex-col overflow-hidden rounded-2xl border border-[var(--line)] bg-[var(--surf-1)] p-4 transition-colors hover:border-[var(--line-2)]">
+      <div aria-hidden className="pointer-events-none absolute inset-x-4 top-0 h-px bg-gradient-to-r from-transparent via-white/15 to-transparent" />
+      <div className="mb-3 flex items-center justify-between gap-2">
+        <h3 className="mono text-[10px] font-semibold uppercase tracking-wider text-[color:var(--muted-2)]">
+          {PANEL_TITLES[kind]}
+        </h3>
+        <div className="flex items-center -space-x-1.5">
+          {feeders.slice(0, 3).map((s) => (
+            <Link
+              key={s.slug}
+              href={`/servers/${s.slug}`}
+              title={s.name}
+              className="grid h-5 w-5 place-items-center overflow-hidden rounded-full border border-[var(--line)] bg-[var(--surf-2)]"
+            >
+              <BrandIcon server={s} size={12} />
+            </Link>
+          ))}
+        </div>
+      </div>
+      {loading ? (
+        <PanelSkeleton />
+      ) : kind === 'swap' ? (
+        <SwapBody tiles={tiles} feeders={feeders} onPick={onPick} />
+      ) : tiles.length === 0 ? (
+        errors.length > 0 ? (
+          <div className="flex-1">
+            <p className="text-xs text-[color:var(--muted)]">{(errors[0] as { message?: string }).message ?? 'Failed to load.'}</p>
+            <button
+              type="button"
+              onClick={onRetry}
+              className="mt-3 inline-flex items-center gap-1.5 rounded-full border border-[var(--line)] px-2.5 py-1 text-[11px] text-[color:var(--muted)] transition-colors hover:border-[var(--line-2)] hover:bg-white/5 hover:text-white"
+            >
+              <RefreshCw className="h-3 w-3" /> Retry
+            </button>
+          </div>
+        ) : (
+          <p className="flex-1 text-xs leading-relaxed text-[color:var(--muted)]">{emptyCopy(kind)}</p>
+        )
+      ) : (
+        <div className="flex flex-1 flex-col gap-4">
+          {tiles.map((t) => (
+            <PanelTileBody key={t.id} tile={t} reduced={reduced} />
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function emptyCopy(kind: PanelKind): string {
+  switch (kind) {
+    case 'portfolio':
+      return 'No holdings found for this wallet on the selected chain.'
+    case 'governance':
+      return 'No open proposals in the spaces this wallet follows.'
+    case 'earn':
+      return 'No staking or lending positions yet — ask the command bar to stake or supply.'
+    case 'positions':
+      return 'No open positions or orders.'
+    case 'activity':
+      return 'No recent transactions.'
+    case 'swap':
+      return 'Pick two tokens to quote a guarded swap.'
+  }
+}
+
+function PanelTileBody({ tile, reduced }: { tile: SplashTile; reduced: boolean }) {
+  switch (tile.render) {
+    case 'holdings':
+      return <HoldingsBody tile={tile} reduced={reduced} />
+    case 'proposals':
+      return <ProposalsBody tile={tile} />
+    case 'rows':
+      return <RowsBody tile={tile} reduced={reduced} />
+    case 'activity':
+      return <ActivityBody tile={tile} />
+    default:
+      return null
+  }
+}
+
+// ── Swap (interim body — the guarded quote flow lands as its own slice; until
+//    then the panel offers real prefills into the command bar, never dead
+//    controls) ────────────────────────────────────────────────────────────────
+
+function SwapBody({
+  tiles,
+  feeders,
+  onPick,
+}: {
+  tiles: SplashTile[]
+  feeders: McpServer[]
+  onPick: (prompt: string, slug?: string) => void
+}) {
+  void tiles
+  const venue = feeders[0]
+  const examples = [
+    'Swap 5 USDC for ETH',
+    'Swap 1 USDG for NVDA',
+    'What can I get for 0.01 ETH?',
+  ]
+  return (
+    <div className="flex flex-1 flex-col">
+      <p className="text-xs leading-relaxed text-[color:var(--muted)]">
+        Quote → guarded build → sign{venue ? ` via ${venue.name}` : ''}. Tell the command bar what to
+        swap and the built transaction lands here for review.
+      </p>
+      <div className="mt-auto flex flex-wrap gap-1.5 pt-4">
+        {examples.map((p) => (
+          <button
+            key={p}
+            type="button"
+            onClick={() => onPick(p, venue?.slug)}
+            className="rounded-full border border-[var(--line)] px-2.5 py-1 text-[11px] text-[color:var(--muted)] transition-colors hover:border-[var(--line-2)] hover:bg-white/5 hover:text-white"
+          >
+            {p}
+          </button>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+// ── Portfolio ────────────────────────────────────────────────────────────────
+
+function HoldingsBody({ tile, reduced }: { tile: HoldingsTile; reduced: boolean }) {
+  return (
+    <div className="flex-1">
+      {tile.totalUsd !== null && (
+        <div className="mb-3">
+          <CountUpUsd value={tile.totalUsd} reduced={reduced} className="text-3xl font-semibold tracking-tight text-white" />
+          <span className="ml-2 text-[11px] text-[color:var(--muted-2)]">
+            {tile.chain.includes('·') ? 'total portfolio' : `total on ${tile.chain}`}
+          </span>
+        </div>
+      )}
+      <div className="space-y-1.5">
+        {tile.holdings.map((h) => (
+          <div key={(h.chain ?? '') + h.address + h.symbol} className="flex items-center justify-between gap-2 text-xs">
+            <div className="flex items-center gap-2">
+              <span className="grid h-6 w-6 place-items-center rounded-full bg-white/5 text-[10px] font-semibold text-[color:var(--muted)]">
+                {h.symbol.slice(0, 3)}
+              </span>
+              <span className="font-medium text-white">{h.symbol}</span>
+              {h.native && <span className="mono text-[9px] text-[color:var(--muted-2)]">native</span>}
+              {h.chain && <span className="rounded bg-white/5 px-1 py-0.5 text-[9px] text-[color:var(--muted-2)]">{h.chain}</span>}
+            </div>
+            <div className="text-right">
+              <div className="text-white">{h.valueUsd !== null ? usd(h.valueUsd) : '—'}</div>
+              <div className="text-[10px] text-[color:var(--muted-2)]">{trimNum(h.balance)}</div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+/** Animated USD headline: counts from the previous value to the new one on
+ *  every data refresh — a number that never jumps. Real values only. */
+function CountUpUsd({ value, reduced, className }: { value: number; reduced: boolean; className?: string }) {
+  const ref = useRef<HTMLSpanElement>(null)
+  const prev = useRef(0)
+  useEffect(() => {
+    const el = ref.current
+    if (!el) return
+    if (reduced) {
+      el.textContent = usd(value)
+      prev.current = value
+      return
+    }
+    const controls = animate(prev.current, value, {
+      duration: 0.8,
+      ease: 'easeOut',
+      onUpdate: (v) => {
+        el.textContent = usd(v)
+      },
+    })
+    prev.current = value
+    return () => controls.stop()
+  }, [value, reduced])
+  return <span ref={ref} className={className} />
+}
+
+// ── Governance ───────────────────────────────────────────────────────────────
+
+function ProposalsBody({ tile }: { tile: ProposalsTile }) {
+  return (
+    <div className="flex-1">
+      {tile.spaces.length > 0 && (
+        <div className="mb-3 flex flex-wrap items-center gap-1.5">
+          {tile.spaces.slice(0, 6).map((s) => (
+            <span key={s.id} className="flex items-center gap-1 rounded-full bg-white/5 py-0.5 pl-0.5 pr-2">
+              <Avatar url={s.avatarUrl} label={s.name} size={16} />
+              <span className="text-[10px] text-[color:var(--muted)]">{s.name}</span>
+            </span>
+          ))}
+        </div>
+      )}
+      <div className="space-y-2.5">
+        {tile.proposals.slice(0, 5).map((p) => (
+          <div key={p.id} className="flex items-start gap-2">
+            <Avatar url={p.avatarUrl} label={p.spaceName} size={22} />
+            <div className="min-w-0 flex-1">
+              <div className="truncate text-xs font-medium text-white" title={p.title}>
+                {p.title}
+              </div>
+              <div className="mt-0.5 flex items-center gap-2 text-[10px] text-[color:var(--muted-2)]">
+                <span className="flex items-center gap-1">
+                  <Vote className="h-3 w-3" /> {p.spaceName}
+                </span>
+                <span className="flex items-center gap-1">
+                  <Clock className="h-3 w-3" /> {endsIn(p.endsAt)}
+                </span>
+                {p.leadingChoice && <span className="text-[color:var(--accent)]">{p.leadingChoice} leading</span>}
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+// ── Earn / Positions (generic rows) ──────────────────────────────────────────
+
+function RowsBody({ tile, reduced }: { tile: RowsTile; reduced: boolean }) {
+  return (
+    <div className="flex-1">
+      {tile.headline && (
+        <div className="mb-3">
+          {/* Headline values arrive pre-formatted; only pure-USD ones count up. */}
+          {parseUsd(tile.headline.value) !== null ? (
+            <CountUpUsd value={parseUsd(tile.headline.value)!} reduced={reduced} className="text-2xl font-semibold tracking-tight text-white" />
+          ) : (
+            <span className="text-2xl font-semibold tracking-tight text-white">{tile.headline.value}</span>
+          )}
+          <span className="ml-2 text-[11px] text-[color:var(--muted-2)]">{tile.headline.caption}</span>
+        </div>
+      )}
+      <div className="space-y-1.5">
+        {tile.rows.map((r, i) => (
+          <div key={`${r.label}-${i}`} className="flex items-center justify-between gap-2 text-xs">
+            <div className="min-w-0">
+              <div className="truncate font-medium text-white">{r.label}</div>
+              {r.sub && <div className="text-[10px] text-[color:var(--muted-2)]">{r.sub}</div>}
+            </div>
+            {r.value && (
+              <span className={r.tone === 'pos' ? 'text-[color:var(--accent)]' : r.tone === 'neg' ? 'text-red-400' : 'text-white'}>
+                {r.value}
+              </span>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+// ── Activity ─────────────────────────────────────────────────────────────────
+
+function ActivityBody({ tile }: { tile: ActivityTile }) {
+  return (
+    <div className="flex-1 space-y-1">
+      {tile.rows.slice(0, 6).map((r) => {
+        const Icon = r.direction === 'out' ? ArrowUpRight : r.direction === 'in' ? ArrowDownLeft : Repeat
+        const verb = r.direction === 'out' ? 'Sent' : r.direction === 'in' ? 'Received' : 'Self'
+        return (
+          <a
+            key={r.chain + r.hash}
+            href={r.explorerUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="group -mx-1 flex items-center justify-between gap-2 rounded-lg px-1 py-1 text-xs transition-colors hover:bg-white/5"
+          >
+            <div className="flex min-w-0 items-center gap-2">
+              <span
+                className={`grid h-6 w-6 shrink-0 place-items-center rounded-full ${
+                  r.direction === 'in' ? 'bg-[color:var(--accent)]/15 text-[color:var(--accent)]' : 'bg-white/5 text-[color:var(--muted)]'
+                }`}
+              >
+                <Icon className="h-3 w-3" />
+              </span>
+              <div className="min-w-0">
+                <div className="truncate font-medium text-white">
+                  {verb} {r.amount && `${r.amount} `}
+                  {r.asset}
+                </div>
+                <div className="truncate text-[10px] text-[color:var(--muted-2)]">
+                  {r.chain} · {r.direction === 'out' ? 'to' : 'from'} {r.counterparty}
+                </div>
+              </div>
+            </div>
+            <ExternalLink className="h-3 w-3 shrink-0 text-[color:var(--muted-2)] opacity-0 transition-opacity group-hover:opacity-70" />
+          </a>
+        )
+      })}
+    </div>
+  )
+}
+
+// ── Shared bits ──────────────────────────────────────────────────────────────
+
+function PanelSkeleton() {
+  return (
+    <div className="flex-1">
+      <div className="mb-4 h-7 w-32 animate-pulse rounded bg-white/10" />
+      <div className="space-y-2">
+        {[0, 1, 2].map((j) => (
+          <div key={j} className="h-4 w-full animate-pulse rounded bg-white/5" />
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function Avatar({ url, label, size }: { url: string; label: string; size: number }) {
+  const [failed, setFailed] = useState(false)
+  if (failed || !url) {
+    return (
+      <span
+        className="grid shrink-0 place-items-center rounded-full bg-white/10 text-[9px] font-semibold text-[color:var(--muted)]"
+        style={{ height: size, width: size }}
+      >
+        {label.slice(0, 1).toUpperCase()}
+      </span>
+    )
+  }
+  return (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src={url}
+      alt={label}
+      width={size}
+      height={size}
+      onError={() => setFailed(true)}
+      className="shrink-0 rounded-full object-cover"
+      style={{ height: size, width: size }}
+    />
+  )
+}
+
+// ── formatters (mirrors SplashDashboard's) ───────────────────────────────────
+
+function usd(n: number): string {
+  if (n >= 1000) return `$${n.toLocaleString('en-US', { maximumFractionDigits: 0 })}`
+  if (n >= 1) return `$${n.toFixed(2)}`
+  return `$${n.toFixed(n < 0.01 ? 4 : 2)}`
+}
+
+/** "$1,204.55" → 1204.55; anything non-USD → null (rendered verbatim). */
+function parseUsd(s: string): number | null {
+  const m = s.match(/^\$([\d,]+(?:\.\d+)?)$/)
+  if (!m) return null
+  const n = Number(m[1].replace(/,/g, ''))
+  return Number.isFinite(n) ? n : null
+}
+
+function trimNum(s: string): string {
+  const n = Number(s)
+  if (!Number.isFinite(n)) return s
+  if (n >= 1000) return n.toLocaleString('en-US', { maximumFractionDigits: 2 })
+  return n.toLocaleString('en-US', { maximumFractionDigits: 4 })
+}
+
+function shortAddr(a: string): string {
+  return a.length > 10 ? `${a.slice(0, 6)}…${a.slice(-4)}` : a
+}
+
+function endsIn(unixSec: number): string {
+  const ms = unixSec * 1000 - Date.now()
+  if (ms <= 0) return 'ended'
+  const h = Math.floor(ms / 3_600_000)
+  if (h < 1) return `${Math.max(1, Math.floor(ms / 60_000))}m left`
+  if (h < 48) return `${h}h left`
+  return `${Math.floor(h / 24)}d left`
+}

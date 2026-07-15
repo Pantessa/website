@@ -148,6 +148,13 @@ interface YeetfulStore {
   selectedChainId: number | null
   setSelectedChainId: (id: number | null) => void
 
+  // Chat ↔ App: 'app' renders the working set as a structured workspace
+  // (portfolio / swap / governance / earn panels) with chat docked as the
+  // command bar; 'chat' is the classic transcript. Persisted — the mode is a
+  // workspace preference, not per-conversation state.
+  workspaceMode: 'chat' | 'app'
+  setWorkspaceMode: (mode: 'chat' | 'app') => void
+
   // Slugs the user EXPLICITLY toggled on (rail click / add-MCP modal) — as
   // opposed to the seeded default fleet. The splash shows these MCPs' cards
   // even when the wallet has no activity on them (a hand-picked MCP earns its
@@ -281,6 +288,9 @@ export const useYeetfulStore = create<YeetfulStore>()(
 
       selectedChainId: null,
       setSelectedChainId: (id) => set({ selectedChainId: id }),
+
+      workspaceMode: 'chat',
+      setWorkspaceMode: (mode) => set({ workspaceMode: mode }),
 
       manualSlugs: [],
       markManualMcp: (slug, on) =>
@@ -584,6 +594,7 @@ export const useYeetfulStore = create<YeetfulStore>()(
       partialize: (state) => ({
         activeServerIds: state.activeServerIds,
         selectedChainId: state.selectedChainId,
+        workspaceMode: state.workspaceMode,
         manualSlugs: state.manualSlugs,
         walletSets: state.walletSets,
         shortlistIds: state.shortlistIds,
