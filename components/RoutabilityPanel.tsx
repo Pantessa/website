@@ -25,12 +25,12 @@ function DimBar({ label, weight, score }: { label: string; weight: number; score
   return (
     <div className="flex items-center gap-2 text-[12px]">
       <span className="w-28 flex-shrink-0 text-[color:var(--muted)]">{label}</span>
-      <div className="flex-1 h-1.5 rounded-full bg-white/5 overflow-hidden">
+      <div className="flex-1 h-1.5 rounded-full bg-[color-mix(in_srgb,var(--fg)_8%,transparent)] overflow-hidden">
         {score != null && (
           <div className="h-full rounded-full" style={{ width: `${Math.round(score * 100)}%`, background: 'var(--accent)' }} />
         )}
       </div>
-      <span className="w-14 text-right mono text-[color:var(--muted-2)]">
+      <span className="w-20 flex-shrink-0 text-right mono text-[color:var(--muted-2)] whitespace-nowrap">
         {score != null ? `${Math.round(score * 100)}% · w${weight}` : 'skipped'}
       </span>
     </div>
@@ -73,16 +73,15 @@ export default function RoutabilityPanel({ slug, initial }: { slug: string; init
 
   return (
     <div className="svc__section">
-      <div className="flex items-center justify-between gap-2 flex-wrap">
-        <div className="flex items-center gap-2">
-          <Activity className="w-4 h-4 text-[color:var(--muted)]" />
-          <h2 className="text-[13px] font-medium text-[color:var(--fg)]">Routability</h2>
-          <span className="text-[11px] text-[color:var(--muted-2)]">can the Reason Router discover, pick, and call this service?</span>
+      <div className="svc__sectionhead" style={{ justifyContent: 'space-between', flexWrap: 'wrap', rowGap: 8 }}>
+        <div className="flex items-baseline gap-2.5 min-w-0">
+          <h2 className="svc__h2">Routability</h2>
+          <span className="svc__count mono">can the router discover, pick, and call it?</span>
         </div>
         <button
           onClick={() => void run()}
           disabled={running}
-          className="inline-flex items-center gap-1.5 text-[12px] font-medium px-3 py-1.5 rounded-full border border-[var(--line-2)] text-[color:var(--muted)] hover:text-white hover:border-white disabled:opacity-50 transition-colors"
+          className="inline-flex items-center gap-1.5 text-[12px] font-medium px-3 py-1.5 rounded-full border border-[var(--line-2)] text-[color:var(--muted)] hover:text-[color:var(--fg)] hover:border-[color:var(--fg)] disabled:opacity-50 transition-colors"
           title="Run the routability linter against this service (probes + a live planner test, nothing paid)"
         >
           {running ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Activity className="w-3.5 h-3.5" />}
@@ -171,12 +170,12 @@ export default function RoutabilityPanel({ slug, initial }: { slug: string; init
               <div className="relative mt-2">
                 <button
                   onClick={() => void copyPrompt()}
-                  className="absolute right-2 top-2 inline-flex items-center gap-1 text-[11px] mono px-2 py-1 rounded-md border border-[var(--line-2)] text-[color:var(--muted)] hover:text-white hover:border-white transition-colors bg-black/40"
+                  className="absolute right-2 top-2 inline-flex items-center gap-1 text-[11px] mono px-2 py-1 rounded-md border border-[var(--line-2)] text-[color:var(--muted)] hover:text-[color:var(--fg)] hover:border-[color:var(--fg)] transition-colors bg-[color:var(--surf-1)]"
                 >
                   {copied ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
                   {copied ? 'Copied' : 'Copy prompt'}
                 </button>
-                <pre className="max-h-64 overflow-auto rounded-md bg-white/[0.03] border border-[var(--line)] p-3 text-[11px] leading-relaxed text-[color:var(--muted)] whitespace-pre-wrap">
+                <pre className="max-h-64 overflow-auto rounded-md bg-[color-mix(in_srgb,var(--fg)_3%,transparent)] border border-[var(--line)] p-3 text-[11px] leading-relaxed text-[color:var(--muted)] whitespace-pre-wrap">
                   {buildUpgradePrompt(report)}
                 </pre>
               </div>

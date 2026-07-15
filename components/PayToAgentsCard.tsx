@@ -81,7 +81,7 @@ export default function PayToAgentsCard() {
             Here are your current payTo agents — the MCP servers paid to this wallet. Wire the SDK
             into them and every settled call lands here.{' '}
             <Link
-              href="/docs/launchpad"
+              href="/docs/earn"
               className="text-white underline underline-offset-2 decoration-dotted hover:text-emerald-400"
             >
               How to track earnings →
