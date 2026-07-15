@@ -57,7 +57,8 @@ export function derivePanels(servers: McpServer[]): PanelDescriptor[] {
   const panels: PanelDescriptor[] = []
 
   const swap = forKind(KIND_MATCHERS.swap)
-  panels.push({ kind: 'portfolio', slugs: servers.filter(splashCapable).map((s) => s.slug), span: 1 })
+  // Portfolio anchors the workspace — double-width on wide grids.
+  panels.push({ kind: 'portfolio', slugs: servers.filter(splashCapable).map((s) => s.slug), span: 2 })
   if (swap.length) panels.push({ kind: 'swap', slugs: swap, span: 1 })
   const governance = forKind(KIND_MATCHERS.governance)
   if (governance.length) panels.push({ kind: 'governance', slugs: governance, span: 1 })
