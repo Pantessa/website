@@ -487,8 +487,12 @@ function usd(n: number): string {
   return `$${n.toFixed(n < 0.01 ? 4 : 2)}`
 }
 
-/** "$1,204.55" → 1204.55; anything non-USD → null (rendered verbatim). */
-function parseUsd(s: string): number | null {
+/** "$1,204.55" → 1204.55; anything non-USD → null (rendered verbatim).
+ *  Tile values are pre-formatted strings by contract, but a source that leaks
+ *  a raw number must degrade to "rendered verbatim" — not take the page down
+ *  with it (the lido card shipped numbers here and .match crashed /chat). */
+export function parseUsd(s: string): number | null {
+  if (typeof s !== 'string') return null
   const m = s.match(/^\$([\d,]+(?:\.\d+)?)$/)
   if (!m) return null
   const n = Number(m[1].replace(/,/g, ''))

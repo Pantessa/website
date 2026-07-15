@@ -7,6 +7,8 @@
 // (Kept out of test:api since it needs neither a server nor Neon.)
 
 import { SPLASH_SOURCES, previewTile, finalizeSplashTiles, type SplashServer, type SourceResult } from '@/lib/splash/sources'
+// The real App-mode parser — asserting against a copy of it would prove nothing.
+import { parseUsd } from '@/components/AppModeWorkspace'
 import { touchesContracts, UNISWAP_CONTRACTS } from '@/lib/splash/affinity'
 import type { McpServer } from '@/lib/store'
 import type { HoldingsTile, ProposalsTile, RowsTile } from '@/lib/splash/types'
@@ -31,6 +33,7 @@ const snap = SPLASH_SOURCES.find((s) => s.id === 'snapshot')!
 const cow = SPLASH_SOURCES.find((s) => s.id === 'cow')!
 const hl = SPLASH_SOURCES.find((s) => s.id === 'hyperliquid')!
 const aave = SPLASH_SOURCES.find((s) => s.id === 'aave')!
+const lido = SPLASH_SOURCES.find((s) => s.id === 'lido')!
 
 async function run() {
   console.log('splash sources — uniswap (holdings)')
@@ -244,8 +247,66 @@ async function run() {
     check('surviving picked server paints only its live tile', survived.length === 1 && survived[0].id === 'portfolio-holdings')
   }
 
+  // The lido MCP prices in NUMBERS (unlike aave's pre-formatted "$1,204.50"),
+  // so this payload mirrors a real `position` response verbatim. Tile values
+  // are strings by contract: a leaked number crashed App mode's parseUsd and
+  // took /chat down with it (the .match TypeError).
+  console.log('splash sources — lido')
+  {
+    const staked = async () => ({
+      hasPosition: true,
+      eth: { balance: '0.455627', usd: 856.11 },
+      stEth: { balance: '0.116211', usd: 218.36 },
+      wstEth: { balance: '0.125939', asStEth: '0.156083', usd: 293.28 },
+      totalStaked: { stEth: '0.272294', usd: 511.63 },
+      currentAprPct: 2.216142857142857,
+      withdrawals: { pendingRequests: 0, claimableRequests: 0, claimableEth: '0' },
+    })
+    const tile = (await lido.build(staked, ADDR, srv('lido-free', 'Lido (Free)'))) as RowsTile
+    check('lido position → rows render', tile.render === 'rows')
+    check('headline is a formatted USD STRING, never a raw number', tile.headline?.value === '$511.63')
+    check('every row value is a string', tile.rows.every((r) => typeof r.value === 'string'))
+    check('stETH row priced in USD', tile.rows.some((r) => r.label === 'stETH' && r.value === '$218.36'))
+    check('wstETH row priced in USD', tile.rows.some((r) => r.label === 'wstETH' && r.value === '$293.28'))
+    check('APR rounded to 2dp (not 2.216142857142857)', tile.subtitle === 'earning ~2.22% APR')
+    check('stake chip sized off the live ETH balance minus gas', tile.prompts.some((p) => /Stake 0\.4536 ETH/.test(p.label)))
+    // The exact guard App mode applies — a number here throws, not returns null.
+    check('headline survives App mode parseUsd', parseUsd(tile.headline!.value) === 511.63)
+  }
+  {
+    const bare = async () => ({ hasPosition: false })
+    check('no lido position contributes no tile', (await lido.build(bare, ADDR, srv('lido-free', 'Lido (Free)'))) === null)
+  }
+  {
+    // Unpriced position (the MCP's price probe fails soft) → fall back to the
+    // token balance, still a string, and drop the headline rather than "$NaN".
+    const unpriced = async () => ({
+      hasPosition: true,
+      eth: { balance: '0.001', usd: null },
+      stEth: { balance: '0.116211', usd: null },
+      totalStaked: { stEth: '0.116211', usd: null },
+      currentAprPct: null,
+    })
+    const tile = (await lido.build(unpriced, ADDR, srv('lido-free', 'Lido (Free)'))) as RowsTile
+    check('unpriced position drops the headline', tile.headline === undefined)
+    check('unpriced stETH row falls back to the balance', tile.rows.some((r) => r.value === '0.116211 stETH'))
+    check('unpriced APR falls back to a static subtitle', tile.subtitle === 'staked with Lido')
+  }
+
+  // Defence in depth: the source above is the fix, this is the backstop. Any
+  // future MCP that leaks a non-string must render verbatim, not throw.
+  console.log('app mode — parseUsd is fail-closed')
+  {
+    check('formatted USD parses', parseUsd('$1,204.55') === 1204.55)
+    check('non-USD string → null (rendered verbatim)', parseUsd('62% filled') === null)
+    check('raw number → null, not a TypeError', parseUsd(511.63 as unknown as string) === null)
+    check('null/undefined → null, not a TypeError', parseUsd(undefined as unknown as string) === null)
+  }
+
   console.log('splash sources — matchers')
   {
+    check('lido matches the seeded row', lido.match(srv('lido-free', 'Lido (Free)')))
+    check('lido does not match uniswap', !lido.match(srv('uniswap-free', 'Uniswap (Free)')))
     check('uniswap matches by name', uni.match(srv('uniswap-free', 'Uniswap (Free)')))
     check('snapshot matches by name', snap.match(srv('snapshot-free', 'Snapshot DAO (Free)')))
     check('uniswap does not match snapshot', !uni.match(srv('snapshot-free', 'Snapshot DAO (Free)')))
