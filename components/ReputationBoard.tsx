@@ -37,6 +37,25 @@ const stateLabel = (s: HealthState): string =>
 
 const cleanUrl = (u: string) => u.replace(/^https?:\/\//, '')
 
+/** The dimensions behind the one bar, in weight order — on hover, so the blend
+ *  is inspectable without a second bar competing with it. */
+const DIMS: { key: keyof ReputationScore['scores']; label: string }[] = [
+  { key: 'reliability', label: 'reliability' },
+  { key: 'liveness', label: 'liveness' },
+  { key: 'adoption', label: 'adoption' },
+  { key: 'speed', label: 'speed' },
+  { key: 'value', label: 'value' },
+  { key: 'userRating', label: 'ratings' },
+]
+
+/** "reliability 98 · liveness 100 · speed — (no data)". A null dim drops out of
+ *  the blend entirely, so it reads as absent rather than zero. */
+const breakdown = (rep: ReputationScore): string =>
+  DIMS.map(({ key, label }) => {
+    const v = rep.scores[key]
+    return `${label} ${v == null ? '—' : v}`
+  }).join(' · ')
+
 /** What the row IS, under its name: category · price. Free MCPs say so. */
 const subline = (row: ReputationRowData): string => {
   const price = row.priceUsd != null && Number(row.priceUsd) > 0 ? `$${Number(row.priceUsd)}/call` : 'free'
@@ -73,20 +92,18 @@ function Row({ row }: { row: ReputationRowData }) {
           <p className="mono text-[10.5px] text-[color:var(--muted-2)] truncate">{subline(row)}</p>
         </div>
 
-        {/* faint = reliability, solid = overall — both already 0–100 */}
-        <div className="flex-1 hidden sm:flex flex-col gap-1 min-w-0">
-          <div className="h-2.5 rounded overflow-hidden" style={{ background: 'color-mix(in srgb, var(--fg) 5%, transparent)' }}>
-            <div
-              className="h-full rounded opacity-40"
-              style={{ width: `${Math.max(2, rep.scores.reliability)}%`, background: 'var(--accent)' }}
-            />
-          </div>
-          <div className="h-2.5 rounded overflow-hidden" style={{ background: 'color-mix(in srgb, var(--fg) 5%, transparent)' }}>
-            <div
-              className="h-full rounded"
-              style={{ width: `${Math.max(rep.qualified ? 2 : 0, rep.overall)}%`, background: 'var(--accent)' }}
-            />
-          </div>
+        {/* One bar: the blended score out of 100, in its tier's colour so the
+            bar and the number say the same thing. The dimensions behind it are
+            on hover — a second bar only ever tracked this one. */}
+        <div
+          className="flex-1 hidden sm:block min-w-0 h-3 rounded overflow-hidden"
+          style={{ background: 'color-mix(in srgb, var(--fg) 5%, transparent)' }}
+          title={rep.qualified ? breakdown(rep) : 'Not enough calls or ratings to grade yet'}
+        >
+          <div
+            className="h-full rounded transition-[width] duration-500"
+            style={{ width: `${rep.qualified ? Math.max(2, rep.overall) : 0}%`, background: color }}
+          />
         </div>
 
         {/* the ring: endpoints answering the free liveness probe */}
@@ -189,8 +206,8 @@ export default function ReputationBoard({ rows }: { rows: ReputationRowData[] })
         ))}
       </div>
       <p className="mono text-[10.5px] text-[color:var(--muted-2)] mt-3">
-        faint bar = reliability · solid bar = overall score · ring = endpoints answering the free x402 probe ·
-        scores blend reliability, liveness, speed, adoption, value and user ratings
+        bar = overall score out of 100, coloured by tier (hover for the dimensions behind it) · ring = endpoints
+        answering the free x402 probe
       </p>
     </>
   )
