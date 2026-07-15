@@ -22,6 +22,7 @@ import { parseCrossChainSwap, type CrossChainSwapParams } from '@/lib/cross-chai
 import { parseHlIntent, type HlIntent, type HlOrderIntent } from '@/lib/hyperliquid-exec'
 import { parseGuardianArm, type GuardianArmAsk } from '@/lib/hl-guardian'
 import { parseLidoStake } from '@/lib/lido-stake'
+import { GAS_LEG_USD } from '@/lib/lifi-bridge'
 
 export interface CompiledStep {
   kind: 'sign' | 'wait' | 'auto'
@@ -39,6 +40,35 @@ export interface CompiledJob {
   title: string
   steps: CompiledStep[]
 }
+
+// ── Robinhood funding plan ──────────────────────────────────────────────────
+// "Fund robinhood chain with $12 from base including gas, then buy $10 of
+// AAPL" — the exact resume string the chat route's funding-offer chips emit
+// (prepareSwapTurn detects an unfunded Robinhood Chain buy and proposes the
+// plan). Deterministic on purpose: the chip IS the contract, so the parse
+// stays narrow — "fund robinhood … with $X from base" and nothing looser.
+
+export interface RobinhoodFundingAsk {
+  /** Total dollars of Base USDC to convert (gas leg included when flagged). */
+  fundUsd: number
+  /** True when a gas leg (Base USDC → native ETH on 4663) must come first. */
+  gasIncluded: boolean
+}
+
+const FUND_RE = /\bfund\s+robinhood(?:\s+chain)?\s+with\s+\$?(\d+(?:\.\d+)?)\s+from\s+base\b/i
+
+export function parseRobinhoodFunding(segment: string): RobinhoodFundingAsk | null {
+  const m = segment.match(FUND_RE)
+  if (!m) return null
+  const fundUsd = Number(m[1])
+  if (!Number.isFinite(fundUsd) || fundUsd <= 0) return null
+  return { fundUsd, gasIncluded: /\bincluding\s+gas\b/i.test(segment) }
+}
+
+// The buy segment that follows a funding segment ("buy $10 of AAPL"). Only
+// consulted once a funding step compiled — a bare "buy $X of Y" elsewhere
+// belongs to the swap layer, not the jobs compiler.
+const FUND_BUY_RE = /\bbuy\s+\$?(\d+(?:\.\d+)?)(?:\s+worth)?\s+of\s+([A-Za-z]{1,10})\b/i
 
 /** Split a compound ask into segments on then/;/→ connectors. */
 export function splitJobSegments(message: string): string[] {
@@ -59,8 +89,48 @@ export function compileJobAsk(message: string): CompiledJob | { problem: string 
 
   const steps: CompiledStep[] = []
   const titles: string[] = []
+  // Set once a Robinhood funding segment compiles — gates the buy segment,
+  // so a bare "buy $X of Y" in any other compound ask never lands here.
+  let fundingSeen = false
   for (let i = 0; i < segments.length; i++) {
     const seg = segments[i]
+
+    const fund = parseRobinhoodFunding(seg)
+    if (fund) {
+      const usdgUsd = Math.max(0, Number((fund.fundUsd - (fund.gasIncluded ? GAS_LEG_USD : 0)).toFixed(2)))
+      if (usdgUsd <= 0) {
+        return { problem: `Step ${i + 1}: $${fund.fundUsd} isn't enough to fund Robinhood Chain${fund.gasIncluded ? ` — the gas leg alone is ~$${GAS_LEG_USD}` : ''}.` }
+      }
+      const arrivalFrom: number[] = []
+      if (fund.gasIncluded) {
+        steps.push({ kind: 'sign', builder: 'native-lifi-fund', title: `Bridge ~$${GAS_LEG_USD} of gas ETH → Robinhood Chain`, params: { leg: 'gas', usd: GAS_LEG_USD } })
+        arrivalFrom.push(steps.length - 1)
+      }
+      steps.push({ kind: 'sign', builder: 'native-lifi-fund', title: `Move $${usdgUsd} of Base USDC → USDG on Robinhood Chain`, params: { leg: 'usdg', usd: usdgUsd } })
+      arrivalFrom.push(steps.length - 1)
+      steps.push({
+        kind: 'wait',
+        builder: 'wait',
+        title: 'Funds arrive on Robinhood Chain',
+        params: {},
+        waitPredicate: { kind: 'chain-arrival', fromSteps: arrivalFrom },
+      })
+      titles.push(`Fund Robinhood Chain with $${fund.fundUsd} from Base`)
+      fundingSeen = true
+      continue
+    }
+
+    if (fundingSeen) {
+      const buy = seg.match(FUND_BUY_RE)
+      if (buy) {
+        const buyUsd = Number(buy[1])
+        const buyToken = buy[2].toUpperCase()
+        const title = `Buy ~$${buyUsd} of ${buyToken} with the arrived USDG`
+        steps.push({ kind: 'sign', builder: 'native-lifi-swap', title, params: { buyUsd, buyToken, sellToken: 'USDG', chainId: 4663 } })
+        titles.push(`Buy $${buyUsd} of ${buyToken}`)
+        continue
+      }
+    }
 
     const cc = parseCrossChainSwap(seg)
     if (cc && 'problem' in cc) return { problem: `Step ${i + 1}: ${cc.problem}` }
@@ -131,7 +201,7 @@ export function compileJobAsk(message: string): CompiledJob | { problem: string 
     if (steps.length === 0) return null
     return {
       problem:
-        `I can compile steps that are cross-chain swaps, Hyperliquid deposits/orders, Lido stakes, or guardian protection — ` +
+        `I can compile steps that are cross-chain swaps, Robinhood Chain funding plans, Hyperliquid deposits/orders, Lido stakes, or guardian protection — ` +
         `step ${i + 1} ("${seg.slice(0, 80)}") isn't one of those yet, so I won't guess. ` +
         `Amounts must be explicit (e.g. "deposit 20 usdc to hyperliquid").`,
     }

@@ -628,6 +628,11 @@ function robinhoodPrompts(holdings: RobinhoodHolding[]): SuggestedPrompt[] {
     const amt = Math.min(10 / eth.priceUsd!, Number(eth.balance) * 0.25)
     if (amt > 0.0001) prompts.push({ label: 'Swap some ETH → USDG', prompt: `Swap ${amt.toFixed(4)} ETH for USDG on Robinhood Chain` })
   }
+  if (!usdg && prompts.length < 3) {
+    // No USDG doesn't block the buy: an unfunded ask triggers the Base
+    // funding plan (LiFi legs + the swap, compiled into one job).
+    prompts.push({ label: 'Buy $10 of AAPL', prompt: 'Buy $10 of AAPL on Robinhood Chain' })
+  }
   if (prompts.length < 3) {
     prompts.push({ label: 'Bridge more ETH in', prompt: 'Bridge 0.01 ETH from Ethereum to Robinhood Chain' })
   }
@@ -752,11 +757,12 @@ const SOURCE_PREVIEWS: Record<string, { message: string; prompts: SuggestedPromp
     ],
   },
   robinhood: {
-    message: 'Nothing on Robinhood Chain yet — bridge some ETH in and it becomes tokenized stocks, USDG, and Morpho lending.',
+    message: 'Nothing on Robinhood Chain yet — buy a tokenized stock and Yeetful funds the chain from your Base USDC on the way (gas included), all in one guided job.',
     prompts: [
-      // The way in leads: the bridge build is a native signable artifact.
+      // The killer ask leads: an unfunded buy triggers the funding plan
+      // (Base USDC → gas + USDG → the stock, compiled into a job).
+      { label: 'Buy $10 of AAPL', prompt: 'Buy $10 of AAPL on Robinhood Chain' },
       { label: 'Bridge ETH to Robinhood Chain', prompt: 'Bridge 0.01 ETH from Ethereum to Robinhood Chain' },
-      { label: 'Price of AAPL', prompt: 'What is the current price of AAPL on Robinhood Chain?' },
       { label: 'What can I trade here?', prompt: 'What tokenized stocks can I trade on Robinhood Chain?' },
     ],
   },

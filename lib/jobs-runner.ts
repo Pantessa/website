@@ -23,8 +23,11 @@ import {
   type LidoPositionPayload,
   type LidoStakeParams,
 } from '@/lib/lido-stake'
-import { publicClientFor } from '@/lib/chains'
-import { formatEther } from 'viem'
+import { publicClientFor, primaryStable } from '@/lib/chains'
+import { erc20Abi, formatEther } from 'viem'
+import { buildLifiBridgeLeg, checkChainArrival, ROBINHOOD_CHAIN_ID, type ChainArrival, type FundingLeg } from '@/lib/lifi-bridge'
+import { buildLifiSwap } from '@/lib/lifi-venue'
+import { ensureTokenList } from '@/lib/token-list'
 
 export function jobsEnv(): string {
   return process.env.VERCEL_ENV ?? 'dev'
@@ -258,6 +261,68 @@ export async function buildSignArtifact(
       valueUsd,
     }
   }
+  if (builder === 'native-lifi-fund') {
+    // One funding leg of the Robinhood plan: Base USDC → gas ETH or USDG on
+    // Robinhood Chain, built fresh (quote + guardrails + destination
+    // baseline) at offer time. The artifact carries a txChain so the JobCard
+    // embeds the same self-advancing SendTxChain chat uses, refresh recipe
+    // included (LiFi quotes go stale in ~90s — the deadline watch re-quotes).
+    const p = params as { leg: FundingLeg; usd: number }
+    const built = await buildLifiBridgeLeg({ leg: p.leg, usd: Number(p.usd), from: wallet })
+    if (built.blocked) {
+      const reasons = built.guardrails.checks.filter((c) => !c.ok && c.level === 'block').map((c) => c.note).join(' ')
+      throw new Error(reasons || 'a safety check refused the funding leg')
+    }
+    return {
+      artifact: {
+        txChain: {
+          summary: built.summary,
+          steps: built.steps,
+          refresh: { kind: 'lifi-bridge', stepIndex: built.bridgeStepIndex, params: { leg: p.leg, usd: String(p.usd) } },
+        },
+        summary: built.summary,
+        arrival: built.arrival as unknown as Record<string, unknown>,
+      },
+      guardReport: built.guardrails,
+      valueUsd: built.valueUsd,
+    }
+  }
+  if (builder === 'native-lifi-swap') {
+    // The buy that the funding legs exist for. The USDG amount resolves from
+    // the LIVE Robinhood Chain balance at offer time — bridge fees mean the
+    // arrived amount is slightly under the asked dollars, and a job step
+    // must never offer a swap the wallet can't fund.
+    const p = params as { buyUsd: number; buyToken: string; chainId?: number }
+    const chainId = Number(p.chainId ?? ROBINHOOD_CHAIN_ID)
+    const client = publicClientFor(chainId)
+    const stable = primaryStable(chainId)
+    if (!client || !stable) throw new Error(`No RPC client / stable token configured for chain ${chainId}.`)
+    const balance = await client.readContract({ address: stable.address, abi: erc20Abi, functionName: 'balanceOf', args: [wallet as `0x${string}`] })
+    const balanceUsd = Number(balance) / 10 ** stable.decimals
+    const buyUsd = Number(p.buyUsd)
+    if (balanceUsd < buyUsd * 0.5) {
+      throw new Error(`The wallet holds only ${balanceUsd.toFixed(2)} ${stable.symbol} on the chain — not enough to buy $${buyUsd} of ${p.buyToken}.`)
+    }
+    const amountHuman = Math.min(buyUsd, Math.floor(balanceUsd * 100) / 100).toFixed(2)
+    await ensureTokenList(chainId) // AAPL/TSLA/… resolve from the official list
+    const built = await buildLifiSwap({ sellToken: stable.symbol, buyToken: p.buyToken, amountHuman, from: wallet, chainId })
+    if (built.blocked) {
+      const reasons = built.guardrails.checks.filter((c) => !c.ok && c.level === 'block').map((c) => c.note).join(' ')
+      throw new Error(reasons || 'a safety check refused the swap')
+    }
+    return {
+      artifact: {
+        txChain: {
+          summary: built.summary,
+          steps: built.steps,
+          refresh: { kind: 'lifi-swap', stepIndex: built.swapStepIndex, params: { sellToken: stable.symbol, buyToken: p.buyToken, amountHuman, chainId: String(chainId) } },
+        },
+        summary: built.summary,
+      },
+      guardReport: built.guardrails,
+      valueUsd: built.guardrails.valueUsd ?? Number(amountHuman),
+    }
+  }
   throw new Error(`unknown sign builder ${builder}`)
 }
 
@@ -267,7 +332,23 @@ async function evaluateWait(
   seq: number,
 ): Promise<{ done?: boolean; failed?: string; result?: unknown }> {
   const step = job.steps.find((s) => s.seq === seq)!
-  const pred = (step.waitPredicate ?? {}) as { kind?: string; fromStep?: number; minUsd?: number }
+  const pred = (step.waitPredicate ?? {}) as { kind?: string; fromStep?: number; fromSteps?: number[]; minUsd?: number }
+
+  if (pred.kind === 'chain-arrival') {
+    // Every funding leg recorded a destination baseline + expected delta at
+    // build time (artifact.arrival) — settled when ALL of them are visible.
+    const arrivals = (pred.fromSteps ?? [])
+      .map((s) => (job.steps.find((x) => x.seq === s)?.artifact as { arrival?: ChainArrival } | null)?.arrival)
+      .filter((a): a is ChainArrival => !!a?.baselineAtoms)
+    if (arrivals.length === 0) return { failed: 'no arrival expectations on the prior funding steps' }
+    try {
+      const check = await checkChainArrival(job.wallet, arrivals)
+      if (check.done) return { done: true, result: { status: check.note } }
+      return {}
+    } catch {
+      return {} // RPC trouble is "not yet", never arrival — the timeout still bounds the wait
+    }
+  }
 
   if (pred.kind === 'oneclick') {
     const from = job.steps.find((s) => s.seq === pred.fromStep)

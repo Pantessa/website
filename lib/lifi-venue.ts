@@ -319,8 +319,11 @@ export interface LifiBuilt {
   tool: string
 }
 
-async function fetchLifiQuote(params: {
+export async function fetchLifiQuote(params: {
   chainId: number
+  /** Destination chain — omitted = same-chain settlement (the venue path).
+   *  The bridge sibling (lib/lifi-bridge.ts) passes Robinhood Chain here. */
+  toChainId?: number
   sellAddr: string
   buyAddr: string
   swapAtoms: bigint
@@ -329,7 +332,7 @@ async function fetchLifiQuote(params: {
 }): Promise<LifiQuote> {
   const url = new URL(LIFI_API)
   url.searchParams.set('fromChain', String(params.chainId))
-  url.searchParams.set('toChain', String(params.chainId))
+  url.searchParams.set('toChain', String(params.toChainId ?? params.chainId))
   url.searchParams.set('fromToken', params.sellAddr)
   url.searchParams.set('toToken', params.buyAddr)
   url.searchParams.set('fromAmount', params.swapAtoms.toString())
