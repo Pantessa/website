@@ -201,6 +201,8 @@ interface SnapshotProposal {
   choices: string[]
   scores?: number[]
   end: number
+  /** Snapshot voting type — the MCP's PROPOSAL_FIELDS always selects it. */
+  type?: string
   space: { id: string; name: string }
 }
 
@@ -230,6 +232,7 @@ const snapshotSource: SplashSource = {
         choices: p.choices ?? [],
         leadingChoice: hasVotes && leadIdx >= 0 ? p.choices[leadIdx] ?? null : null,
         endsAt: p.end,
+        ...(typeof p.type === 'string' ? { type: p.type } : {}),
       }
     })
     // Unique followed spaces (for the logo strip).

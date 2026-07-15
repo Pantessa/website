@@ -67,6 +67,11 @@ export interface ProposalRow {
   leadingChoice: string | null
   /** Unix seconds the vote closes. */
   endsAt: number
+  /** Snapshot voting type (single-choice | basic | approval | ranked-choice |
+   *  weighted | quadratic) — drives the choice encoding when a surface offers
+   *  inline voting (App Mode's governance panel). Absent on rows cached
+   *  before this field existed → treat as single-choice. */
+  type?: string
 }
 
 export interface SpaceRow {

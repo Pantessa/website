@@ -36,6 +36,8 @@ import { splashCapable } from '@/lib/splash/types'
 import ShareButton from '@/components/ShareButton'
 import EmbedThisChat from '@/components/EmbedThisChat'
 import ChainPicker from '@/components/ChainPicker'
+import ModeToggle from '@/components/ModeToggle'
+import AppModeWorkspace from '@/components/AppModeWorkspace'
 import Link from 'next/link'
 import ConnectWallet from '@/components/ConnectWallet'
 import { YeetfulMark } from '@/components/Logo'
@@ -232,6 +234,8 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
     mobileMcpRailOpen,
     setMobileMcpRailOpen,
     selectedChainId,
+    workspaceMode,
+    setWorkspaceMode,
   } = useYeetfulStore()
 
   // Logged in, the top nav is removed — the chat toolbar carries the home
@@ -260,6 +264,16 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
     isNarrow ? setMobileMcpRailOpen(!mobileMcpRailOpen) : setMcpRailOpen(!mcpRailOpen)
 
   const [input, setInput] = useState('')
+  // App Mode's transcript view-switch: a command-bar send opens the transcript
+  // over the panels; the pill flips back. Reset when the mode or chat changes.
+  const appMode = workspaceMode === 'app' && !embedded
+  const [appTranscriptOpen, setAppTranscriptOpen] = useState(false)
+  // Reset only on mode flips — NOT on currentChatId: a command-bar send mints
+  // the chat id right after opening the transcript, and a chat-id-keyed reset
+  // would slam it shut mid-send.
+  useEffect(() => {
+    setAppTranscriptOpen(false)
+  }, [appMode])
   const [loading, setLoading] = useState(false)
   const [status, setStatus] = useState<string | null>(null)
   // Boot hold: at first paint we can't know whether the splash is about to
@@ -473,12 +487,29 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
     window.history.replaceState(null, '', '/chat')
   }, [servers]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // ?mode=app deep link — open the workspace face directly (shareable, and
+  // the SDK's future embed seam). One-shot; the param is part of the surface,
+  // not cleaned like ?try/?q.
+  const modeLinkRef = useRef(false)
+  useEffect(() => {
+    if (modeLinkRef.current || embedded) return
+    modeLinkRef.current = true
+    const mode = new URLSearchParams(window.location.search).get('mode')
+    if (mode === 'app' || mode === 'chat') setWorkspaceMode(mode)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   const handleSend = async (textOverride?: string) => {
     // textOverride lets UI affordances (e.g. a vote-candidate chip) submit a
     // composed message without going through the input box.
     const raw = typeof textOverride === 'string' ? textOverride : input
     if (!raw.trim() || loading || pendingPayment) return
     analytics.chatMessage(activeServers.length, isConnected)
+
+    // App Mode: a command-bar send slides the transcript view over the panels
+    // (same markup, every artifact behavior intact) — the workspace is one tap
+    // away and the answer is never invisible behind the panels.
+    if (workspaceMode === 'app' && !embedded) setAppTranscriptOpen(true)
 
     let chatId = currentChatId
     if (!chatId) {
@@ -1033,6 +1064,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
               <PanelRight className="w-4 h-4" />
             </button>
           )}
+          <ModeToggle />
           <ChainPicker />
           <EmbedThisChat slugs={activeServers.map((s) => s.slug)} />
           <ShareButton />
@@ -1044,9 +1076,39 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
         </div>
       )}
 
-      {/* Messages area */}
+      {/* Messages area — or, in App Mode, the structured workspace (panels
+          fed by the working set; the input below stays docked as the command
+          bar). A command-bar send slides the transcript view over the panels
+          (appTranscriptOpen) — same markup, every artifact intact — with a
+          pill to flip back. Never in the embed (v2 seam). */}
       <div className="flex-1 overflow-y-auto px-4 py-6 space-y-4">
-        {!currentChat || currentChat.messages.length === 0 ? (
+        {appMode && appTranscriptOpen && (
+          <div className="sticky top-0 z-10 flex justify-center">
+            <button
+              type="button"
+              onClick={() => setAppTranscriptOpen(false)}
+              className="rounded-full border border-[var(--line)] bg-[var(--surf-1)] px-3 py-1 text-[11px] text-[color:var(--muted)] shadow-sm transition-colors hover:border-[var(--line-2)] hover:text-white"
+            >
+              ↓ Back to workspace
+            </button>
+          </div>
+        )}
+        {appMode && !appTranscriptOpen ? (
+          <>
+            {(currentChat?.messages.length ?? 0) > 0 && (
+              <div className="sticky top-0 z-10 flex justify-center">
+                <button
+                  type="button"
+                  onClick={() => setAppTranscriptOpen(true)}
+                  className="rounded-full border border-[var(--line)] bg-[var(--surf-1)] px-3 py-1 text-[11px] text-[color:var(--muted)] shadow-sm transition-colors hover:border-[var(--line-2)] hover:text-white"
+                >
+                  ↑ Transcript · {currentChat!.messages.length}
+                </button>
+              </div>
+            )}
+            <AppModeWorkspace address={effectiveAddress} onPick={pickExample} />
+          </>
+        ) : !currentChat || currentChat.messages.length === 0 ? (
           splashEligible || splashBatches.length > 0 ? (
             <>
               {/* The batch effect hasn't committed yet (first paint after

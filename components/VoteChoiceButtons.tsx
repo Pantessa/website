@@ -25,7 +25,7 @@ function modeOf(type: string): Mode {
   return 'single' // single-choice / basic / anything else
 }
 
-export default function VoteChoiceButtons({ proposal }: { proposal: VoteProposal }) {
+export default function VoteChoiceButtons({ proposal, onSigned }: { proposal: VoteProposal; onSigned?: () => void }) {
   const { address, isConnected } = useAccount()
   const { signTypedDataAsync } = useSignTypedData()
   const [pending, setPending] = useState(false)
@@ -57,6 +57,7 @@ export default function VoteChoiceButtons({ proposal }: { proposal: VoteProposal
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Vote rejected.')
       setVotedSummary(label)
+      onSigned?.()
     } catch (e) {
       setError(friendlyVoteError(e))
     } finally {
