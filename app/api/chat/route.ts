@@ -77,6 +77,7 @@ import { buildGuardrailedOrder } from '@/lib/cow-build'
 import { buildUniswapSwap, NoV3PoolError } from '@/lib/uniswap-venue'
 import { buildUniswapV4Swap, NoV4PoolError, GatedV4PoolError } from '@/lib/uniswap-v4'
 import { buildLifiSwap, NoLifiRouteError } from '@/lib/lifi-venue'
+import { fundingNeedUsd, readFundingShortfall, ROBINHOOD_CHAIN_ID } from '@/lib/lifi-bridge'
 import { tokenDecimals, humanToAtoms } from '@/lib/cow'
 import { ensureTokenList } from '@/lib/token-list'
 import { resolveProposal } from '@/lib/snapshot-read'
@@ -1905,6 +1906,63 @@ async function prepareSwapTurn(intent: SwapIntent, walletAddress: string | undef
       reply: `🔄 “${intent.sellAmountHuman}” has more decimal places than ${intent.sellToken.toUpperCase()} supports (${sellDec}).`,
     })
   }
+  // ── Robinhood funding plan ── an unfunded buy on Robinhood Chain is not a
+  // dead end when the money is sitting on Base: LiFi routes Base USDC →
+  // USDG (and a gas leg → native ETH) directly onto Robinhood Chain in
+  // seconds (probed live 2026-07-15), so instead of building a swap the
+  // wallet can't pay for, offer to convert the Base balance — the user's
+  // pick compiles into a multi-step JOB (fund → wait → buy) via the chips'
+  // resume messages (lib/jobs.ts parseRobinhoodFunding). Three balance
+  // reads decide it; RPC trouble falls through to the normal build, which
+  // fails closed on its own.
+  const rhStable = chainId === ROBINHOOD_CHAIN_ID && intent.mode !== 'limit' ? primaryStable(chainId) : null
+  if (rhStable && intent.sellToken.toUpperCase() === rhStable.symbol.toUpperCase()) {
+    try {
+      const shortfall = await readFundingShortfall(walletAddress)
+      if (shortfall.usdgAtoms < BigInt(sellAmount)) {
+        const buyUsd = Number(Number(intent.sellAmountHuman).toFixed(2)) // USDG is the $1 unit of account
+        const buySym = intent.buyToken.toUpperCase()
+        const holdingUsd = Number(shortfall.usdgAtoms) / 10 ** rhStable.decimals
+        const includeGas = !shortfall.hasGas
+        const needUsd = fundingNeedUsd(buyUsd, includeGas)
+        if (shortfall.baseUsdcUsd >= needUsd) {
+          const gasSuffix = includeGas ? ' including gas' : ''
+          const resume = (usd: number) => `Fund robinhood chain with $${usd} from base${gasSuffix}, then buy $${buyUsd} of ${buySym}`
+          const options = [{ label: `Just enough (~$${needUsd})`, resume: resume(needUsd) }]
+          const half = Math.floor(shortfall.baseUsdcUsd / 2)
+          if (half > needUsd) options.push({ label: `Half my Base USDC ($${half})`, resume: resume(half) })
+          if (shortfall.baseUsdcUsd > needUsd) options.push({ label: `All of it ($${shortfall.baseUsdcUsd})`, resume: resume(shortfall.baseUsdcUsd) })
+          if (options.length < 2) options.push({ label: 'Not now', resume: 'Never mind — leave my Base USDC where it is.' })
+          trace({
+            type: 'status',
+            label: `funding layer claimed the turn: ${rhStable.symbol} short on ${chain.name} (holds ~$${holdingUsd.toFixed(2)}, needs $${buyUsd}) but ~$${shortfall.baseUsdcUsd} USDC sits on Base — offering the funding plan (${includeGas ? 'gas leg included' : 'gas already covered'})`,
+          })
+          return NextResponse.json({
+            reply:
+              `🌉 You don't have enough ${rhStable.symbol} on ${chain.name} for this yet (holding ~$${holdingUsd.toFixed(2)}, the buy needs ~$${buyUsd}) — ` +
+              `but you're holding **~$${shortfall.baseUsdcUsd} of USDC on Base**. I can convert some of it${includeGas ? ', drop in a little ETH for gas,' : ''} ` +
+              `and buy the ${buySym} — all in one job you sign step by step, funds arriving on ${chain.name} in seconds.`,
+            clarify: { question: 'How much of your Base USDC should I move over?', options: options.slice(0, 4) },
+            buildPath: 'native-lifi-fund-offer',
+          })
+        }
+        trace({
+          type: 'note',
+          level: 'warn',
+          label: `funding layer: ${rhStable.symbol} short on ${chain.name} and Base USDC (~$${shortfall.baseUsdcUsd}) can't cover the ~$${needUsd} plan — honest refusal, no build`,
+        })
+        return NextResponse.json({
+          reply:
+            `🚫 This buy needs ~$${buyUsd} of ${rhStable.symbol} on ${chain.name} and the wallet holds ~$${holdingUsd.toFixed(2)} there — ` +
+            `and your Base USDC (~$${shortfall.baseUsdcUsd}) isn't enough to fund it either (the plan needs ~$${needUsd}${includeGas ? ' including a gas leg' : ''}). ` +
+            `Nothing was built — top up USDC on Base or ${rhStable.symbol} on ${chain.name} and ask again.`,
+        })
+      }
+    } catch {
+      /* balance reads unavailable → the normal build path below fails closed on its own */
+    }
+  }
+
   let buyAmountAtLeast: string | undefined
   if (intent.mode === 'limit') {
     if (!chain.cow) {

@@ -11,8 +11,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Bot, CheckCircle2, ChevronDown, ChevronUp, Circle, Loader2, PenLine, ShieldCheck, XCircle } from 'lucide-react'
 import SendTxButton from '@/components/SendTxButton'
+import SendTxChain from '@/components/SendTxChain'
 import SignHlActionButton from '@/components/SignHlActionButton'
-import { orderRequestOf, txRequestOf } from '@/lib/transaction-layer'
+import { orderRequestOf, txChainOf, txRequestOf } from '@/lib/transaction-layer'
 
 interface StepRow {
   seq: number
@@ -158,7 +159,8 @@ export default function JobCard({
           {job.steps.map((step) => {
             const isCurrent = step.seq === job.currentStep && ACTIVE.has(job.status)
             const order = step.status === 'offered' ? orderRequestOf(step.artifact) : null
-            const tx = step.status === 'offered' && !order ? txRequestOf(step.artifact) : null
+            const chain = step.status === 'offered' && !order ? txChainOf(step.artifact) : null
+            const tx = step.status === 'offered' && !order && !chain ? txRequestOf(step.artifact) : null
             const resultNote =
               step.status === 'done' && step.result
                 ? String(
@@ -198,6 +200,18 @@ export default function JobCard({
                       tx={tx}
                       summary={(step.artifact as { summary?: string } | null)?.summary}
                       onConfirmed={(hash) => void completeStep(step.seq, step.builder, { txHash: hash }, step.valueUsd)}
+                    />
+                  </div>
+                )}
+                {/* multi-tx sign steps (approve → bridge/swap) ride the SAME
+                    self-advancing chain card chat uses — deadline watch,
+                    per-step re-quotes and all; the job step completes when
+                    the FINAL tx of the chain confirms. */}
+                {chain && (
+                  <div className="ml-6">
+                    <SendTxChain
+                      chain={chain}
+                      onCompleted={(info) => void completeStep(step.seq, step.builder, { txHash: info.hash }, step.valueUsd)}
                     />
                   </div>
                 )}

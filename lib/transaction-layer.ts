@@ -84,14 +84,18 @@ export interface TxChainRequest {
   summary: string
   steps: TxChainStep[]
   refresh?: {
-    /** Rebuild recipe (POST /api/tx/refresh) — v3 swaps and the v4 fallback. */
-    kind: 'uniswap-swap' | 'uniswap-v4-swap'
+    /** Rebuild recipe (POST /api/tx/refresh) — v3 swaps, the v4 fallback,
+     *  LiFi-settled swaps, and the cross-chain funding legs. */
+    kind: 'uniswap-swap' | 'uniswap-v4-swap' | 'lifi-swap' | 'lifi-bridge'
     /** 0-based index of the step to rebuild at advance time. */
     stepIndex: number
-    /** chainId rides as a string; absent = Base (pre-chain-picker recipes). */
-    params: { sellToken: string; buyToken: string; amountHuman: string; chainId?: string }
+    /** Recipe params, spread verbatim into the refresh POST body. Values ride
+     *  as strings (chainId included); each kind's route handler re-validates. */
+    params: Record<string, string>
   }
 }
+
+const REFRESH_KINDS = new Set(['uniswap-swap', 'uniswap-v4-swap', 'lifi-swap', 'lifi-bridge'])
 
 /** Narrow a persisted Message.meta into a TxChainRequest, or null. The sibling
  *  of txRequestOf — SendTxChain reads the step list from here. */
@@ -116,19 +120,13 @@ export function txChainOf(meta: unknown): TxChainRequest | null {
   }
   let refresh: TxChainRequest['refresh']
   const r = d.refresh as Record<string, unknown> | undefined
-  if (r && typeof r === 'object' && (r.kind === 'uniswap-swap' || r.kind === 'uniswap-v4-swap') && typeof r.stepIndex === 'number' && r.params && typeof r.params === 'object') {
-    const p = r.params as Record<string, unknown>
-    if (typeof p.sellToken === 'string' && typeof p.buyToken === 'string' && typeof p.amountHuman === 'string') {
-      refresh = {
-        kind: r.kind,
-        stepIndex: r.stepIndex,
-        params: {
-          sellToken: p.sellToken,
-          buyToken: p.buyToken,
-          amountHuman: p.amountHuman,
-          ...(typeof p.chainId === 'string' ? { chainId: p.chainId } : {}),
-        },
-      }
+  if (r && typeof r === 'object' && typeof r.kind === 'string' && REFRESH_KINDS.has(r.kind) && typeof r.stepIndex === 'number' && r.params && typeof r.params === 'object') {
+    const params: Record<string, string> = {}
+    for (const [k, v] of Object.entries(r.params as Record<string, unknown>)) {
+      if (typeof v === 'string') params[k] = v
+    }
+    if (Object.keys(params).length > 0) {
+      refresh = { kind: r.kind as NonNullable<TxChainRequest['refresh']>['kind'], stepIndex: r.stepIndex, params }
     }
   }
   return { summary: typeof d.summary === 'string' ? d.summary : '', steps, refresh }

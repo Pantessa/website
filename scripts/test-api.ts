@@ -41,6 +41,8 @@ import { portfolioFromToolResult, portfolioOf } from '../lib/portfolio-display'
 import { crossChainAgentOf, detectCrossChain, swapWorkingContext } from '../lib/swap-intent'
 import { encodeV4SwapCalldata, guardUniswapV4Build, type V4BuiltStep, type V4GuardExpectations, type V4PoolKey } from '../lib/uniswap-v4'
 import { guardLifiBuild, verifyLifiQuoteEcho, lifiPriceAcceptable, lifiRoutersFor, type LifiBuiltStep, type LifiGuardExpectations, type LifiQuote } from '../lib/lifi-venue'
+import { fundingNeedUsd, guardLifiBridgeBuild, lifiBridgeRoutersFor, verifyLifiBridgeEcho, type LifiBridgeExpectations, type LifiBridgeStep } from '../lib/lifi-bridge'
+import { parseRobinhoodFunding } from '../lib/jobs'
 import { swapFeeAtoms, SWAP_FEE_BPS, TREASURY_ADDRESS } from '../lib/fees'
 import { APP_CHAINS, chainById, chainNamedIn, sanitizeChainId } from '../lib/chains'
 import { parseCrossChainSwap, guardCrossChainBuild, expectedOriginChainId, parseCrossChainFollowUp } from '../lib/cross-chain-swap'
@@ -1952,6 +1954,103 @@ async function main() {
     check('lifi price: exactly 2% below accepted (boundary)', lifiPriceAcceptable(BigInt(980_000_000), ours))
     check('lifi price: 3% below REFUSED (bad or hostile fill)', !lifiPriceAcceptable(BigInt(970_000_000), ours))
     check('lifi price: paying MORE than our quote accepted', lifiPriceAcceptable(ours * BigInt(2), ours))
+  }
+
+  // ── LiFi funding bridge: cross-chain guard + the funding-plan compile ─────
+  // The layer behind "buy $10 of AAPL" from a wallet whose money lives on
+  // Base: two guarded Base legs (gas ETH + USDG) delivered to the SENDER's
+  // own address on Robinhood Chain, compiled with the buy into one job.
+  console.log('— lifi funding bridge (cross-chain guard + funding plan)')
+  {
+    const DIAMOND = '0x1231DEB6f5749EF6cE6943a275A1D3E7486F4EaE'
+    const USDC = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913'
+    const USDG = '0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168'
+    const USER = '0x1111111111111111111111111111111111111111'
+    const STRANGER = '0x000000000000000000000000000000000000dEaD'
+
+    check('bridge: Base LiFi diamond allowlisted by default', lifiBridgeRoutersFor(8453).some((r) => r.toLowerCase() === DIAMOND.toLowerCase()))
+    check('bridge: unknown origin chain has NO allowlist (fails closed)', lifiBridgeRoutersFor(999999).length === 0)
+
+    check('bridge: funding need = buy + 4% margin + gas leg, rounded to $0.50', fundingNeedUsd(10, true) === 12 && fundingNeedUsd(10, false) === 10.5)
+
+    const sellAtoms = BigInt(10_500_000) // $10.50 USDC
+    const bexp: LifiBridgeExpectations = {
+      originChainId: 8453,
+      destinationChainId: 4663,
+      routers: [DIAMOND],
+      approvalAddress: DIAMOND,
+      sellToken: USDC,
+      sellAtoms,
+      destinationToken: USDG,
+      from: USER,
+    }
+    const bridgeApprove = encodeFunctionData({ abi: erc20Abi, functionName: 'approve', args: [DIAMOND as `0x${string}`, sellAtoms] })
+    const goodLegs: LifiBridgeStep[] = [
+      { label: 'approve', title: 'Approve USDC to LiFi', tx: { to: USDC, data: bridgeApprove, value: '0', chainId: 8453, action: 'approve' } },
+      { label: 'bridge', title: 'Bridge USDC → USDG on Robinhood Chain', tx: { to: DIAMOND, data: '0x5fd9ae2e' + 'cd'.repeat(200), value: '0', chainId: 8453, action: 'bridge' }, validUntil: Math.floor(Date.now() / 1000) + 90 },
+    ]
+    check('bridge guard: approve→bridge chain PASSES', guardLifiBridgeBuild(goodLegs, bexp).ok)
+    check('bridge guard: bridge-only (allowance in place) PASSES', guardLifiBridgeBuild([goodLegs[1]], bexp).ok)
+    check('bridge guard: bridge to a NON-pinned router refused', !guardLifiBridgeBuild([goodLegs[0], { ...goodLegs[1], tx: { ...goodLegs[1].tx, to: STRANGER } }], bexp).ok)
+    check('bridge guard: empty allowlist fails closed', !guardLifiBridgeBuild(goodLegs, { ...bexp, routers: [] }).ok)
+    check('bridge guard: approvalAddress OFF the allowlist refused', !guardLifiBridgeBuild(goodLegs, { ...bexp, approvalAddress: STRANGER }).ok)
+    check('bridge guard: wrong-chain step refused', !guardLifiBridgeBuild([goodLegs[0], { ...goodLegs[1], tx: { ...goodLegs[1].tx, chainId: 4663 } }], bexp).ok)
+    check('bridge guard: nonzero native value refused', !guardLifiBridgeBuild([goodLegs[0], { ...goodLegs[1], tx: { ...goodLegs[1].tx, value: '1' } }], bexp).ok)
+    const bridgeOver = encodeFunctionData({ abi: erc20Abi, functionName: 'approve', args: [DIAMOND as `0x${string}`, sellAtoms * BigInt(1000)] })
+    check('bridge guard: over-sized approval refused (exact-amount only)', !guardLifiBridgeBuild([{ ...goodLegs[0], tx: { ...goodLegs[0].tx, data: bridgeOver } }, goodLegs[1]], bexp).ok)
+    const bridgeEvil = encodeFunctionData({ abi: erc20Abi, functionName: 'approve', args: [STRANGER as `0x${string}`, sellAtoms] })
+    check('bridge guard: approval to a stranger spender refused', !guardLifiBridgeBuild([{ ...goodLegs[0], tx: { ...goodLegs[0].tx, data: bridgeEvil } }, goodLegs[1]], bexp).ok)
+
+    // Quote echo, cross-chain edition: the route must go Base → Robinhood
+    // Chain with OUR tokens and atoms, delivered to the sender's own address.
+    const bridgeQuote = {
+      action: { fromToken: { address: USDC }, toToken: { address: USDG }, fromAmount: sellAtoms.toString(), fromChainId: 8453, toChainId: 4663, toAddress: USER },
+      estimate: { fromAmount: sellAtoms.toString() },
+      transactionRequest: { chainId: 8453, value: '0x0' },
+    }
+    check('bridge echo: exact echo PASSES', verifyLifiBridgeEcho(bridgeQuote, bexp).length === 0)
+    check('bridge echo: wrong destination chain refused', verifyLifiBridgeEcho({ ...bridgeQuote, action: { ...bridgeQuote.action, toChainId: 42161 } }, bexp).length > 0)
+    check('bridge echo: delivery to a STRANGER refused', verifyLifiBridgeEcho({ ...bridgeQuote, action: { ...bridgeQuote.action, toAddress: STRANGER } }, bexp).length > 0)
+    check('bridge echo: amount drift refused', verifyLifiBridgeEcho({ ...bridgeQuote, action: { ...bridgeQuote.action, fromAmount: '999' } }, bexp).length > 0)
+    check('bridge echo: native value on an ERC-20 input refused', verifyLifiBridgeEcho({ ...bridgeQuote, transactionRequest: { chainId: 8453, value: '0xde0b6b3a7640000' } }, bexp).length > 0)
+
+    // The funding-plan parse + compile — the chips' resume string is the
+    // contract, so the exact phrasing must compile deterministically.
+    const fp = parseRobinhoodFunding('Fund robinhood chain with $12 from base including gas')
+    check('funding parse: "$12 from base including gas"', !!fp && fp.fundUsd === 12 && fp.gasIncluded)
+    const fpNoGas = parseRobinhoodFunding('fund robinhood with 18 from base')
+    check('funding parse: no-gas variant', !!fpNoGas && fpNoGas.fundUsd === 18 && !fpNoGas.gasIncluded)
+    check('funding parse: unrelated messages → null', parseRobinhoodFunding('fund my hyperliquid account with $12') === null && parseRobinhoodFunding('bridge 0.01 eth to robinhood') === null)
+
+    const fundJob = compileJobAsk('Fund robinhood chain with $12 from base including gas, then buy $10 of AAPL')
+    check(
+      'funding compile: gas leg + USDG leg + arrival wait + buy',
+      !!fundJob &&
+        !('problem' in fundJob) &&
+        fundJob.steps.length === 4 &&
+        fundJob.steps[0].builder === 'native-lifi-fund' &&
+        (fundJob.steps[0].params as { leg?: string }).leg === 'gas' &&
+        fundJob.steps[1].builder === 'native-lifi-fund' &&
+        (fundJob.steps[1].params as { leg?: string; usd?: number }).leg === 'usdg' &&
+        (fundJob.steps[1].params as { usd?: number }).usd === 10.5 &&
+        fundJob.steps[2].kind === 'wait' &&
+        JSON.stringify(fundJob.steps[2].waitPredicate) === JSON.stringify({ kind: 'chain-arrival', fromSteps: [0, 1] }) &&
+        fundJob.steps[3].builder === 'native-lifi-swap' &&
+        (fundJob.steps[3].params as { buyUsd?: number; buyToken?: string }).buyUsd === 10 &&
+        (fundJob.steps[3].params as { buyToken?: string }).buyToken === 'AAPL',
+    )
+    const fundJobNoGas = compileJobAsk('Fund robinhood chain with $10.5 from base, then buy $10 of TSLA')
+    check(
+      'funding compile: gas-covered variant skips the gas leg',
+      !!fundJobNoGas &&
+        !('problem' in fundJobNoGas) &&
+        fundJobNoGas.steps.length === 3 &&
+        (fundJobNoGas.steps[0].params as { leg?: string }).leg === 'usdg' &&
+        JSON.stringify(fundJobNoGas.steps[1].waitPredicate) === JSON.stringify({ kind: 'chain-arrival', fromSteps: [0] }),
+    )
+    check('funding compile: a bare "buy $10 of AAPL" never lands in the jobs layer', compileJobAsk('buy $10 of AAPL, then buy $10 of TSLA') === null)
+    const dust = compileJobAsk('Fund robinhood chain with $1 from base including gas, then buy $10 of AAPL')
+    check('funding compile: amount below the gas leg refuses honestly', !!dust && 'problem' in dust)
   }
 
   // ── Aave supply: parse + reserve pick + the SAFETY guard on the build ─────

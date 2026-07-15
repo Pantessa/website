@@ -13,6 +13,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { buildUniswapSwap } from '@/lib/uniswap-venue'
 import { buildUniswapV4Swap, GatedV4PoolError } from '@/lib/uniswap-v4'
 import { buildLifiSwap, NoLifiRouteError } from '@/lib/lifi-venue'
+import { buildLifiBridgeLeg, type FundingLeg } from '@/lib/lifi-bridge'
 import { ensureTokenList } from '@/lib/token-list'
 import { sanitizeChainId, publicClientFor, DEFAULT_CHAIN_ID } from '@/lib/chains'
 
@@ -54,10 +55,41 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'invalid JSON' }, { status: 400 })
   }
 
-  if (body.kind !== 'uniswap-swap' && body.kind !== 'uniswap-v4-swap' && body.kind !== 'lifi-swap') {
+  if (body.kind !== 'uniswap-swap' && body.kind !== 'uniswap-v4-swap' && body.kind !== 'lifi-swap' && body.kind !== 'lifi-bridge') {
     return NextResponse.json({ error: `unknown refresh kind "${String(body.kind)}"` }, { status: 400 })
   }
   const from = typeof body.from === 'string' && /^0x[0-9a-fA-F]{40}$/.test(body.from) ? body.from : null
+
+  // Funding-bridge legs (the Robinhood funding job) refresh from their own
+  // recipe shape: {leg, usd} — the builder re-quotes the cross-chain route,
+  // re-runs every gate, and re-reads the destination baseline.
+  if (body.kind === 'lifi-bridge') {
+    const leg = body.leg === 'gas' || body.leg === 'usdg' ? (body.leg as FundingLeg) : null
+    const usd = typeof body.usd === 'string' && /^[0-9]+(\.[0-9]+)?$/.test(body.usd) ? Number(body.usd) : null
+    if (!from || !leg || !usd) {
+      return NextResponse.json({ error: 'missing/invalid from, leg or usd' }, { status: 400 })
+    }
+    try {
+      const built = await buildLifiBridgeLeg({ leg, usd, from })
+      if (built.blocked) {
+        const reasons = built.guardrails.checks.filter((c) => !c.ok && c.level === 'block').map((c) => c.note).join(' ')
+        const execFail = built.guardrails.checks.some((c) => !c.ok && (c.id === 'price' || c.id === 'venue'))
+        return NextResponse.json({ blocked: true, blockKind: execFail ? 'execution' : 'policy', reasons: reasons || 'a safety check failed', guardrails: built.guardrails })
+      }
+      if (built.bridgeStepIndex > 0) {
+        return NextResponse.json({ pending: true, note: 'allowance not visible on-chain yet' })
+      }
+      const bridgeStep = built.steps[built.bridgeStepIndex]
+      const revert = await estimateReverts(8453, from, bridgeStep.tx)
+      if (revert) {
+        return NextResponse.json({ blocked: true, blockKind: 'execution', reasons: `the rebuilt bridge would revert on-chain (${revert.slice(0, 200)})` })
+      }
+      return NextResponse.json({ tx: bridgeStep.tx, summary: built.summary, guardrails: built.guardrails, validUntil: bridgeStep.validUntil ?? null })
+    } catch (err) {
+      return NextResponse.json({ error: err instanceof Error ? err.message.slice(0, 300) : 'rebuild failed' }, { status: 502 })
+    }
+  }
+
   const sellToken = typeof body.sellToken === 'string' ? body.sellToken.slice(0, 64) : ''
   const buyToken = typeof body.buyToken === 'string' ? body.buyToken.slice(0, 64) : ''
   const amountHuman = typeof body.amountHuman === 'string' && /^[0-9]+(\.[0-9]+)?$/.test(body.amountHuman) ? body.amountHuman : ''
