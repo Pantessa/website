@@ -917,10 +917,10 @@
     .svc__split > .svc__rail { position: static; }
   }
 
-  /* Token-not-launched: a contained two-column grid. Service info, reputation
-     and performance stack in the main column; the "own a piece" CTA sits in a
-     sticky rail flush-right; endpoints span full width below. Restacks to one
-     column under 1080px with the rail above the endpoints. */
+  /* Service page: a contained two-column grid. Service info and routability
+     stack in the main column; the reputation scorecard sits in a sticky rail
+     flush-right; endpoints span full width below. Restacks to one column
+     under 1080px with the rail above the endpoints. */
   .svc__split2 {
     display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 22px 32px;
     align-items: start; margin-top: 24px;

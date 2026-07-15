@@ -1,7 +1,7 @@
 'use client'
 
 // Landing analytics — "we track every paying and earning agent." Real numbers
-// from /api/activity (the public spend_ledger + launchpad earn side), the same
+// from /api/activity (the public spend_ledger), the same
 // feed /activity uses. Spend-over-time = money the network moved; top agents =
 // who earned it. Honesty bar (PROBLEM.md P0): renders nothing until there's
 // real settled volume, and never shows zeros.
@@ -10,7 +10,6 @@ import Link from 'next/link'
 import { useEffect, useState } from 'react'
 import { SpendByAgent, SpendOverTime } from '@/components/LazyCharts'
 import { Card, CardTitle } from '@/lib/dashboard-ui'
-import type { LaunchpadSummary } from '@/lib/launchpad-summary'
 
 interface Activity {
   stats: {
@@ -20,7 +19,6 @@ interface Activity {
   }
   daily: { day: string; spent: number; calls: number }[]
   top: { service: string; spent: number; calls: number }[]
-  launchpad: LaunchpadSummary | null
 }
 
 function Stat({ value, label }: { value: string; label: string }) {
@@ -48,7 +46,6 @@ export default function SwitchboardStats() {
   if (!data || data.stats.settledCalls === 0 || data.top.length === 0) return null
 
   const s = data.stats
-  const lp = data.launchpad
   const avgPerCall = s.settledCalls > 0 ? s.settledUsd / s.settledCalls : 0
 
   return (
@@ -69,9 +66,6 @@ export default function SwitchboardStats() {
         <Stat value={String(s.settledCalls)} label="routed calls" />
         <Stat value={`$${avgPerCall.toFixed(4)}`} label="avg per call" />
         <Stat value={String(s.activeAccounts)} label="paying agents" />
-        {lp && lp.stakerRewardsUsd > 0 && (
-          <Stat value={`$${lp.stakerRewardsUsd.toFixed(2)}`} label="paid to stakers" />
-        )}
       </div>
 
       <div className="swstats__charts">

@@ -2,6 +2,13 @@
   "version": "0.0.1",
   "configurations": [
     {
+      "name": "web-token-removal",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["next", "start", "-p", "3345"],
+      "port": 3345,
+      "autoPort": false
+    },
+    {
       "name": "web",
       "runtimeExecutable": "npm",
       "runtimeArgs": [

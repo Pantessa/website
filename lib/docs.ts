@@ -176,9 +176,10 @@ export const DOCS_PAGES: DocsPage[] = [
     seoTitle: 'Yeetful launchpad — claim your MCP and launch its token',
     description:
       'Own a piece of an MCP. Claim it by signing in with the wallet it is paid to, launch a token, and earn a share of every paid call in USDC as agents use it.',
-    // Testnet, but listed in the nav so operators can find the claim/launch
-    // walk-through. (The page itself states the testnet/mainnet status.)
-    ready: true,
+    // Token launching shelved 2026-07-15 — UI removed everywhere, code kept
+    // for a possible pivot back. The page dir is unrouted (app/docs/_launchpad)
+    // and this entry hidden so no surface links to it.
+    ready: false,
   },
   {
     slug: 'earn',
