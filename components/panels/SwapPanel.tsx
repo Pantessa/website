@@ -6,6 +6,7 @@ import { ArrowDown, Loader2, ShieldAlert, ShieldX } from 'lucide-react'
 import SendTxChain from '@/components/SendTxChain'
 import { txChainOf, type TxChainRequest } from '@/lib/transaction-layer'
 import { chainById } from '@/lib/chains'
+import { chainLabelOf, postPanelTelemetry } from '@/lib/panel-telemetry'
 
 /**
  * App Mode swap panel: a structured face on the native swap layer. The panel
@@ -30,7 +31,7 @@ const SUGGESTED: Record<number, string[]> = {
 type QuoteState =
   | { phase: 'idle' }
   | { phase: 'loading' }
-  | { phase: 'quoted'; summary: string; expectedOut: string | null; minReceived: string | null; warns: string[]; buildPath: string; txChain: TxChainRequest }
+  | { phase: 'quoted'; summary: string; expectedOut: string | null; minReceived: string | null; warns: string[]; buildPath: string; valueUsd?: number; txChain: TxChainRequest }
   | { phase: 'blocked'; kind: 'policy' | 'execution'; reasons: string }
   | { phase: 'error'; message: string }
 
@@ -88,6 +89,10 @@ export default function SwapPanel({
               minReceived: data.minReceived ?? null,
               warns: Array.isArray(data.warns) ? data.warns : [],
               buildPath: String(data.buildPath ?? ''),
+              valueUsd:
+                typeof (data.guardrails as { valueUsd?: unknown } | undefined)?.valueUsd === 'number'
+                  ? ((data.guardrails as { valueUsd: number }).valueUsd)
+                  : undefined,
               txChain: parsed,
             })
           } else if (data.blocked) {
@@ -190,7 +195,18 @@ export default function SwapPanel({
               {!reviewing && !settled && (
                 <button
                   type="button"
-                  onClick={() => setReviewing(true)}
+                  onClick={() => {
+                    setReviewing(true)
+                    // Funnel: built = the artifact is in front of the user
+                    // (not every debounced re-quote — that's browsing).
+                    postPanelTelemetry({
+                      outcome: 'tx-built',
+                      artifact: 'tx-chain',
+                      chain: chainLabelOf(cid),
+                      valueUsd: quote.valueUsd,
+                      buildPath: 'app-mode-swap',
+                    })
+                  }}
                   className="mt-3 w-full rounded-lg border border-[color:var(--accent)]/50 bg-[color:var(--accent)]/10 px-3 py-2 text-xs font-semibold text-[color:var(--accent)] transition-colors hover:bg-[color:var(--accent)]/20"
                 >
                   Review &amp; sign
@@ -200,7 +216,16 @@ export default function SwapPanel({
                 <div className="mt-3">
                   <SendTxChain
                     chain={quote.txChain}
-                    onCompleted={({ hash }) => setSettled(hash)}
+                    onCompleted={({ hash }) => {
+                      setSettled(hash)
+                      postPanelTelemetry({
+                        outcome: 'signed',
+                        artifact: 'tx-chain',
+                        chain: chainLabelOf(cid),
+                        valueUsd: quote.valueUsd,
+                        buildPath: 'app-mode-swap',
+                      })
+                    }}
                   />
                 </div>
               )}

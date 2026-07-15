@@ -18,6 +18,10 @@
  * - manual    — a directly-called working-set tool returned it with no
  *               planning step (e.g. snapshot prepare_vote in the manual
  *               mcpDataServers loop).
+ * - app-mode-* — App Mode panels (the structured workspace face). The build
+ *               still runs through the native layers (/api/panels/* reuses
+ *               the same builders + guardrails); the distinct path splits
+ *               chat vs workspace conversion in the built → signed funnel.
  */
 export const BUILD_PATHS = [
   'native-aave-supply',
@@ -32,6 +36,8 @@ export const BUILD_PATHS = [
   'native-job',
   'planner',
   'manual',
+  'app-mode-swap',
+  'app-mode-vote',
 ] as const
 
 export type BuildPath = (typeof BUILD_PATHS)[number]
