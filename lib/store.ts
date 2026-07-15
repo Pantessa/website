@@ -64,6 +64,19 @@ export interface Message {
   /** Per-turn metadata persisted to the DB — e.g. { receipts: [...] } (x402 payments). */
   meta?: unknown
   createdAt: string
+  /** DB row id once persisted — equals `id` for messages loaded from the DB;
+   *  optimistic messages gain it when the background save resolves. Needed to
+   *  write back post-persist facts (signed tx hashes) onto the right row. */
+  dbId?: string
+}
+
+/** One wallet-signed, chain-confirmed transaction recorded onto the message
+ *  that offered it — the durable signing log the /p share page renders. */
+export interface SignedTxRecord {
+  hash: string
+  chainId: number
+  title?: string
+  at?: string
 }
 
 /** One step of the Auto-Router's live reasoning trace (the engine window's
@@ -120,6 +133,7 @@ function fromApiChat(c: ApiChat, existing?: Chat): Chat {
           content: m.content,
           meta: m.meta ?? undefined,
           createdAt: m.createdAt,
+          dbId: m.id,
         }))
       : existing?.messages ?? [],
     createdAt: c.createdAt ?? existing?.createdAt ?? new Date().toISOString(),
@@ -216,6 +230,10 @@ interface YeetfulStore {
   setCurrentChatId: (id: string | null) => void
   createChat: (title?: string) => Promise<string>
   addMessage: (chatId: string, message: Omit<Message, 'id' | 'createdAt'>) => void
+  /** Record wallet-signed, chain-confirmed txs onto the message that offered
+   *  them — locally for the live UI, and onto the DB row (meta.signed) so the
+   *  /p share page can show the signing log with explorer links. */
+  recordSignedTxs: (chatId: string, messageId: string, txs: SignedTxRecord[]) => void
   updateChatServers: (chatId: string, serverIds: string[]) => void
   deleteChat: (id: string) => void
   // DB sync
@@ -466,7 +484,9 @@ export const useYeetfulStore = create<YeetfulStore>()(
               : c
           ),
         }))
-        // Persist to the DB in the background (owner-only; system msgs aren't stored).
+        // Persist to the DB in the background (owner-only; system msgs aren't
+        // stored). The saved row's id is written back onto the optimistic
+        // message as dbId so later facts (signed tx hashes) can target it.
         if (get().authedAddress && (message.role === 'user' || message.role === 'assistant')) {
           void fetch(`/api/chats/${chatId}/messages`, {
             method: 'POST',
@@ -476,8 +496,63 @@ export const useYeetfulStore = create<YeetfulStore>()(
               content: message.content,
               meta: message.meta,
             }),
+          })
+            .then(async (res) => {
+              if (!res.ok) return
+              const saved = (await res.json()) as { id?: string }
+              if (typeof saved.id !== 'string' || !saved.id) return
+              set((s) => ({
+                chats: s.chats.map((c) =>
+                  c.id === chatId
+                    ? { ...c, messages: c.messages.map((m) => (m.id === msg.id ? { ...m, dbId: saved.id } : m)) }
+                    : c,
+                ),
+              }))
+            })
+            .catch(() => {})
+        }
+      },
+
+      recordSignedTxs: (chatId, messageId, txs) => {
+        if (txs.length === 0) return
+        const stamped = txs.map((t) => ({ at: new Date().toISOString(), ...t }))
+        // Local merge first — the live transcript reflects the signing log
+        // immediately, whether or not the DB write below lands.
+        set((s) => ({
+          chats: s.chats.map((c) =>
+            c.id === chatId
+              ? {
+                  ...c,
+                  messages: c.messages.map((m) => {
+                    if (m.id !== messageId) return m
+                    const prior = (m.meta as { signed?: SignedTxRecord[] } | undefined)?.signed ?? []
+                    const merged = [...prior, ...stamped.filter((t) => !prior.some((p) => p.hash === t.hash))]
+                    return { ...m, meta: { ...(m.meta as object | undefined), signed: merged } }
+                  }),
+                }
+              : c,
+          ),
+        }))
+        if (!get().authedAddress) return
+        // The DB write targets the persisted row id. Confirmation takes long
+        // enough that the background save has almost always resolved — but on
+        // a fast confirm, retry briefly until dbId lands.
+        const post = (attempt: number) => {
+          const msg = get()
+            .chats.find((c) => c.id === chatId)
+            ?.messages.find((m) => m.id === messageId)
+          const dbId = msg?.dbId
+          if (!dbId) {
+            if (attempt < 5) setTimeout(() => post(attempt + 1), 2000)
+            return
+          }
+          void fetch(`/api/chats/${chatId}/messages/${dbId}/signed`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ txs: stamped }),
           }).catch(() => {})
         }
+        post(0)
       },
 
       updateChatServers: (chatId, serverIds) => {

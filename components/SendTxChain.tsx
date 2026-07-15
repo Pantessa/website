@@ -35,8 +35,10 @@ export default function SendTxChain({
 }: {
   chain: TxChainRequest
   /** Fires once, when the FINAL step confirms — the whole chain is done and
-   * the money has actually moved (telemetry hooks here, not on approves). */
-  onCompleted?: (info: { hash: string; chainId: number }) => void
+   * the money has actually moved (telemetry hooks here, not on approves).
+   * `txs` carries EVERY confirmed step's hash + chain + title, in order, so
+   * callers can persist the full signing log (job results, message meta). */
+  onCompleted?: (info: { hash: string; chainId: number; txs: Array<{ hash: string; chainId: number; title: string }> }) => void
 }) {
   const { address } = useAccount()
   const [steps, setSteps] = useState<TxChainStep[]>(chain.steps)
@@ -120,11 +122,18 @@ export default function SendTxChain({
   }
 
   const advance = async (confirmedIndex: number, hash: string) => {
-    setHashes((h) => ({ ...h, [confirmedIndex]: hash }))
+    const all = { ...hashes, [confirmedIndex]: hash }
+    setHashes(all)
     const next = confirmedIndex + 1
     if (next >= steps.length) {
       setPhase('done')
-      onCompleted?.({ hash, chainId: steps[confirmedIndex].tx.chainId ?? 8453 })
+      onCompleted?.({
+        hash,
+        chainId: steps[confirmedIndex].tx.chainId ?? 8453,
+        txs: steps
+          .map((s, i) => ({ hash: all[i], chainId: s.tx.chainId ?? 8453, title: s.title }))
+          .filter((t): t is { hash: string; chainId: number; title: string } => !!t.hash),
+      })
       return
     }
     // Advance FIRST so refresh states (spinner / a withheld shield) paint on

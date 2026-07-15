@@ -30,7 +30,10 @@ const components: Components = {
 export default function ChatMarkdown({ content }: { content: string }) {
   return (
     <div className="chat-md">
-      <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
+      {/* singleTilde off: chat replies are full of "~$2" approximations, and
+          GFM's single-tilde strikethrough turns "~$0.00 … ~$2" into struck
+          text mid-sentence. Real strikethrough still works with ~~double~~. */}
+      <ReactMarkdown remarkPlugins={[[remarkGfm, { singleTilde: false }]]} components={components}>
         {content}
       </ReactMarkdown>
     </div>

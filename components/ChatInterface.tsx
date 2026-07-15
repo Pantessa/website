@@ -219,6 +219,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
     currentChatId,
     createChat,
     addMessage,
+    recordSignedTxs,
     sidebarOpen,
     setSidebarOpen,
     mobileSidebarOpen,
@@ -1324,6 +1325,9 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
                                 { 1: 'https://etherscan.io/tx/', 8453: 'https://basescan.org/tx/', 42161: 'https://arbiscan.io/tx/' }[chainId] ??
                                 'https://basescan.org/tx/'
                               reportEmbedSigned({ artifact: 'tx', chain: chainLabel(chainId), txUrl: `${explorer}${hash}`, valueUsd: guardrailUsdOf(msg.meta), buildPath: buildPathOf(msg.meta) })
+                              // Durable signing log → the message's DB meta
+                              // (the /p share page renders it with explorer links).
+                              if (currentChatId) recordSignedTxs(currentChatId, msg.id, [{ hash, chainId, title: builtTx.action ?? 'transaction' }])
                             }}
                           />
                         ) : null
@@ -1337,7 +1341,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
                             // The chain's money moves when its FINAL step (the
                             // swap, not the approve) confirms — that's the
                             // signed event for the money-flow metric.
-                            onCompleted={({ hash, chainId }) => {
+                            onCompleted={({ hash, chainId, txs }) => {
                               const explorer =
                                 { 1: 'https://etherscan.io/tx/', 8453: 'https://basescan.org/tx/', 42161: 'https://arbiscan.io/tx/' }[chainId] ??
                                 'https://basescan.org/tx/'
@@ -1348,6 +1352,9 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
                                 valueUsd: guardrailUsdOf(msg.meta),
                                 buildPath: buildPathOf(msg.meta),
                               })
+                              // Every confirmed step (approve AND swap AND fee)
+                              // → durable meta.signed for the share page's log.
+                              if (currentChatId) recordSignedTxs(currentChatId, msg.id, txs)
                             }}
                           />
                         ) : null

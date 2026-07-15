@@ -199,7 +199,14 @@ export default function JobCard({
                     <SendTxButton
                       tx={tx}
                       summary={(step.artifact as { summary?: string } | null)?.summary}
-                      onConfirmed={(hash) => void completeStep(step.seq, step.builder, { txHash: hash }, step.valueUsd)}
+                      onConfirmed={(hash) =>
+                        void completeStep(
+                          step.seq,
+                          step.builder,
+                          { txHash: hash, txs: [{ hash, chainId: tx.chainId ?? 8453, title: step.title }] },
+                          step.valueUsd,
+                        )
+                      }
                     />
                   </div>
                 )}
@@ -211,7 +218,10 @@ export default function JobCard({
                   <div className="ml-6">
                     <SendTxChain
                       chain={chain}
-                      onCompleted={(info) => void completeStep(step.seq, step.builder, { txHash: info.hash }, step.valueUsd)}
+                      // txs = every confirmed hash in the chain (approve AND
+                      // swap AND fee), so the persisted step result carries
+                      // the full signing log the shared page renders.
+                      onCompleted={(info) => void completeStep(step.seq, step.builder, { txHash: info.hash, txs: info.txs }, step.valueUsd)}
                     />
                   </div>
                 )}
