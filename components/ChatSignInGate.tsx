@@ -37,12 +37,12 @@ export default function ChatSignInGate() {
           className="mt-3 text-4xl sm:text-5xl leading-tight text-white"
           style={{ fontFamily: 'var(--font-serif)' }}
         >
-          {awaitingSignature ? 'Waiting for Signature' : 'Router Testing Grounds'}
+          {awaitingSignature ? 'Waiting for Signature' : 'Beta Mode'}
         </h2>
         <p className="mt-5 text-sm sm:text-base leading-relaxed text-[color:var(--muted)]">
           {awaitingSignature
             ? 'Check your wallet and approve the signature request to finish signing in — it just proves you own this wallet, no funds are moved.'
-            : 'This chat is a testing ground for x402 payments — it combines inference and data, paying per call from the USDC and ETH in your connected wallet. Yeetful gives autonomous agents that same routing engine to reach any MCP. Sign in with your wallet to start routing.'}
+            : 'Yeetful is just getting started. This chat spends real funds — it pays per call from the USDC and ETH in your connected wallet. Check every transaction carefully before you sign.'}
         </p>
         <div className="mt-7 flex justify-center">
           {awaitingSignature ? (
