@@ -6,14 +6,20 @@
 // explicitly free.
 //
 // Tool names + param names below MIRROR the shipped zod schemas in
-// free-mcps/services/robinhood/lib/tools.ts — the planner sends tools/call
-// arguments by these exact names. Amounts are decimal strings in HUMAN units
-// ("100" USDG, "0.5" AAPL), never wei/atoms; `user` is an 0x… address
-// ($USER_ADDRESS); `marketId` is the 32-byte Morpho id from lending_markets.
+// free-mcps/services/robinhood/lib/tools.ts (on-chain surface) and
+// lib/brokerage-tools.ts (Crypto Trading API surface) — the planner sends
+// tools/call arguments by these exact names. Amounts are decimal strings in
+// HUMAN units ("100" USDG, "0.5" AAPL), never wei/atoms; `user` is an 0x…
+// address ($USER_ADDRESS); `marketId` is the 32-byte Morpho id from
+// lending_markets. Brokerage tools authenticate with the USER'S OWN
+// Robinhood API key pair (per-request x-robinhood-api-key +
+// x-robinhood-private-key headers on the hosted MCP) — without credentials
+// they return setup instructions, never a cryptic failure.
 //
 // source:'yeetful' keeps db:ingest/db:audit from pruning or diffing it.
-// Idempotent: upserts by slug, replaces endpoints. Run AFTER the service is
-// live:
+// Idempotent: upserts by slug, replaces endpoints. Run AFTER free-mcps#15
+// (brokerage tools) + #16 (LiFi stock swaps) merge and
+// robinhood-mcp.yeetful.com redeploys:
 //   DATABASE_URL=... npx tsx scripts/seed-robinhood-free.ts
 // Local-dev overlay without touching Neon:
 //   FREE_ROBINHOOD_MCP_BASE=http://localhost:3271/mcp npx tsx scripts/seed-robinhood-free.ts --print-extra-env
@@ -48,11 +54,38 @@ const marketId = (): Param =>
 const token = (name: string, what: string, required = true): Param =>
   p(name, 'string', `${what} — token SYMBOL ("AAPL", "TSLA", "USDG", case-insensitive) or 0x… address on Robinhood Chain.`, required)
 
+// ── Brokerage (Robinhood Crypto Trading API) helpers ────────────────────────
+// Every brokerage_* tool talks to the user's REAL Robinhood crypto account.
+const BYOK =
+  " Bring your own Robinhood API credentials: the hosted MCP reads per-request 'x-robinhood-api-key' + 'x-robinhood-private-key' headers (the user's own Ed25519 key pair from the Robinhood API portal; env vars on self-hosted deployments). Without credentials the tool returns setup instructions instead of failing — say so rather than dead-ending."
+const pairSymbol = (what: string, required = true): Param =>
+  p('symbol', 'string', `${what} — crypto trading pair against USD, e.g. "BTC-USD", "ETH-USD" (brokerage symbols, not token addresses).`, required)
+const accountNumber = (): Param =>
+  p('accountNumber', 'string', "Robinhood crypto account number. Omit to use the credential's first (usually only) account.")
+const orderSide = (required = true): Param => p('side', 'string', '"buy" or "sell".', required)
+const orderType = (required = true): Param =>
+  p('type', 'string', 'Order type: "market", "limit", "stop_loss", or "stop_limit".', required)
+const ORDER_PARAMS: Param[] = [
+  accountNumber(),
+  pairSymbol('Pair to trade'),
+  orderSide(),
+  orderType(),
+  p(
+    'assetQuantity',
+    'string',
+    'Crypto amount as a decimal string, e.g. "0.001" BTC. Market orders require this; limit/stop orders take this OR quoteAmount.',
+  ),
+  p('quoteAmount', 'string', 'USD notional as a decimal string, e.g. "25". Limit/stop orders only — exactly one of assetQuantity/quoteAmount.'),
+  p('limitPrice', 'string', 'Limit price in USD (limit and stop_limit orders).'),
+  p('stopPrice', 'string', 'Stop trigger price in USD (stop_loss and stop_limit orders).'),
+  p('timeInForce', 'string', 'Time in force for non-market orders. Only "gtc" (good-til-canceled) is supported; default "gtc".'),
+]
+
 const SERVICE = {
   slug: 'robinhood-free',
   name: 'Robinhood Chain (Free)',
   description:
-    'Tokenized stocks & ETFs on Robinhood Chain (chain id 4663), free and non-gated: live Chainlink prices with corporate-action multipliers, whole-wallet portfolios (AAPL/TSLA/SPY/… + USDG), Morpho lending & borrowing (markets, positions, health factor), Uniswap v4 stock-token swap quotes with a Chainlink cross-check, the canonical Ethereum bridge, and construction-only build_* tools that return UNSIGNED transactions the user signs — swap, lend, post collateral, borrow, repay, withdraw, bridge. Swap builds are re-decoded and guard-verified before they are returned; lending builds fail closed on health factor. Never holds keys, never signs, never submits. Rate-limited. By Yeetful.',
+    "Tokenized stocks & ETFs on Robinhood Chain (chain id 4663), free and non-gated: live Chainlink prices with corporate-action multipliers, whole-wallet portfolios (AAPL/TSLA/SPY/… + USDG), Morpho lending & borrowing (markets, positions, health factor), stock-token swap quotes with a Chainlink cross-check, the canonical Ethereum bridge, and construction-only build_* tools that return UNSIGNED transactions the user signs — swap (direct Uniswap v4, or LiFi settlement for venue-gated stock pools with a 0.2% Yeetful fee as an explicit step), lend, post collateral, borrow, repay, withdraw, bridge. Swap builds are re-decoded and guard-verified before they are returned; lending builds fail closed on health factor. Never holds keys, never signs, never submits on-chain. PLUS the Robinhood brokerage crypto surface (the user's real Robinhood app account via the Crypto Trading API): accounts, holdings, tradable pairs, live bid/ask, pre-trade cost estimates, and fail-closed two-step order placement — bring your own Robinhood API credentials (per-request headers); without them brokerage tools return setup instructions. Rate-limited. By Yeetful.",
   category: 'DeFi',
   kind: 'data',
   priceUsd: '0',
@@ -63,10 +96,11 @@ const SERVICE = {
   callable: false,
   protocol: 'mcp',
   endpoint: ROBINHOOD_BASE,
-  tags: ['defi', 'stocks', 'robinhood', 'tokenized-stocks', 'morpho', 'lending', 'uniswap', 'bridge'],
+  tags: ['defi', 'stocks', 'robinhood', 'tokenized-stocks', 'morpho', 'lending', 'uniswap', 'lifi', 'bridge', 'brokerage', 'crypto-trading'],
   exampleQueries: [
     'what stocks can I trade on Robinhood Chain?',
     'buy AAPL with 500 USDG on robinhood',
+    'what crypto can I trade on my Robinhood account?',
     'lend 100 USDG on Morpho on Robinhood Chain',
   ],
   source: 'yeetful',
@@ -120,13 +154,14 @@ const TOOLS: Array<{ name: string; description: string; params: Param[]; feature
   {
     name: 'quote',
     description:
-      "Live Uniswap v4 swap quote on Robinhood Chain — tokenized stocks quote against USDG ('how much AAPL for 500 USDG?'). Scans the standard no-hook pools, best price wins, and cross-checks against Chainlink with a divergence warning. Quote only — build_swap prepares the signable transactions.",
+      "Live Uniswap v4 quote on Robinhood Chain for any registry pair — tokenized stocks quote against USDG ('how much AAPL for 500 USDG?'). Scans the standard no-hook pools, best price wins, and cross-checks the pool against Chainlink with a divergence warning. To actually trade, build_swap prepares the signable chain (including for venue-gated stock pools, via LiFi).",
     params: [token('sellToken', 'Token to sell'), token('buyToken', 'Token to buy'), amount('Amount of sellToken to swap')],
   },
   {
     name: 'build_swap',
+    featured: true,
     description:
-      "Prepare a Uniswap v4 stock-token swap on Robinhood Chain — returns UNSIGNED {action:'send_transaction'} steps for the USER to sign: exact-amount Permit2 approvals only when live allowances are short, then ONE Universal Router swap whose output credits the signer. Every build is re-decoded and guard-verified against the quote; balance checked first. 'Buy AAPL with 500 USDG.'",
+      "Prepare an UNSIGNED swap on Robinhood Chain — buy or sell tokenized stocks (AAPL, TSLA, NVDA, …) against USDG, or any quoted pair. Two settlement paths, picked automatically: pools that execute directly get ONE Universal Router Uniswap v4 swap (exact-amount Permit2 approvals only when live allowances are short); venue-gated stock pools — which only clear through Robinhood's backend-signed DexAggregator — build through LiFi's whitelisted router instead, with a 0.2% Yeetful fee as an explicit transfer step. Either way the build is re-decoded and guard-verified (pinned addresses, exact amounts, independent price check, simulation) before it's returned, and balances are checked first. 'Buy AAPL with 500 USDG' / 'buy 5 USDG of AAPL' — stock swaps ARE buildable here.",
     params: [
       user('the wallet that swaps, receives the output, and signs'),
       token('sellToken', 'Token to sell'),
@@ -193,6 +228,87 @@ const TOOLS: Array<{ name: string; description: string; params: Param[]; feature
       p('destination', 'string', 'Ethereum address to receive the ETH. Defaults to the sender.'),
     ],
   },
+  // ── Brokerage (Robinhood Crypto Trading API — the user's REAL Robinhood
+  //    app account, not an on-chain wallet; per-request credentials,
+  //    fail-closed two-step orders) ──────────────────────────────────────
+  {
+    name: 'brokerage_accounts',
+    description:
+      "The user's Robinhood CRYPTO BROKERAGE account(s) — account number, status, buying power, and fee-tier info from the Robinhood Crypto Trading API (this is the real Robinhood app account, NOT an on-chain wallet). Answers 'what's my Robinhood crypto buying power?'." +
+      BYOK,
+    params: [],
+  },
+  {
+    name: 'brokerage_holdings',
+    description:
+      "Crypto held in the user's Robinhood brokerage account — total and available quantity per asset (BTC, ETH, …). This is custodial brokerage crypto, separate from any on-chain wallet. Answers 'how much BTC do I hold on Robinhood?'." +
+      BYOK,
+    params: [accountNumber(), p('assetCodes', 'string[]', 'Filter by asset codes, e.g. ["BTC","ETH"]. Omit for all holdings.')],
+  },
+  {
+    name: 'brokerage_trading_pairs',
+    description:
+      "Crypto pairs tradable through the Robinhood brokerage API (BTC-USD, ETH-USD, …) with min/max order sizes, price increments, and tradability status. Answers 'what crypto can I trade on Robinhood?'." +
+      BYOK,
+    params: [p('symbols', 'string[]', 'Specific pairs to look up, e.g. ["BTC-USD"]. Omit for the full tradable list.')],
+  },
+  {
+    name: 'brokerage_best_bid_ask',
+    description:
+      "Live best bid and ask per crypto pair from Robinhood's partner exchanges (spread included; excludes order-size impact and fees). Answers 'what's BTC trading at on Robinhood?'." +
+      BYOK,
+    params: [p('symbols', 'string[]', 'Pairs to quote, e.g. ["BTC-USD"].', true)],
+  },
+  {
+    name: 'brokerage_estimated_price',
+    description:
+      "Estimated execution price for hypothetical order sizes on one pair — ask side prices a buy, bid side a sell, and up to 10 quantities can be checked at once. The pre-trade cost check. Answers 'what would 0.1 BTC cost me on Robinhood?'." +
+      BYOK,
+    params: [
+      pairSymbol('Pair to price'),
+      p('side', 'string', 'Book side: "ask" prices a BUY, "bid" prices a SELL, "both" returns both.', true),
+      p('quantity', 'string', 'Asset quantity, or up to 10 comma-separated quantities, e.g. "0.1" or "0.1,1,2.5".', true),
+    ],
+  },
+  {
+    name: 'brokerage_orders',
+    description:
+      "The user's Robinhood crypto orders — pass orderId for one order's full state (fills, average price, fees), or filter the list by symbol/side/type/state. Answers 'is my Robinhood BTC order filled?'." +
+      BYOK,
+    params: [
+      accountNumber(),
+      p('orderId', 'string', "One order's id (UUID) for a detailed lookup. Omit to list."),
+      pairSymbol('Filter by pair', false),
+      orderSide(false),
+      orderType(false),
+      p('state', 'string', 'Filter by order state: "open" | "canceled" | "partially_filled" | "filled" | "failed" | "pending".'),
+      p('limit', 'number', 'Page size (default API-defined, max 100).'),
+    ],
+  },
+  {
+    name: 'brokerage_build_order',
+    description:
+      'STEP 1 of the guarded order flow — READ-ONLY. Validates a crypto order (market/limit/stop_loss/stop_limit) against live Robinhood trading-pair limits and estimated execution price, then returns a full-cost PREVIEW (estimated USD notional, exact order config) plus a one-time confirmToken (5-minute TTL). NOTHING is placed. Show the user the preview and get their explicit approval before ever calling brokerage_submit_order — that second call moves REAL MONEY in their Robinhood brokerage account.' +
+      BYOK,
+    params: ORDER_PARAMS,
+  },
+  {
+    name: 'brokerage_submit_order',
+    description:
+      "STEP 2 — PLACES A REAL ORDER in the user's Robinhood brokerage account, spending their actual money. Requires the confirmToken from brokerage_build_order plus the EXACT same order params; refuses on any mismatch, credential change, or token older than 5 minutes. Never call this without the user's explicit approval of the step-1 preview. Construction and submission are deliberately separate calls — there is no one-shot order tool." +
+      BYOK,
+    params: [
+      ...ORDER_PARAMS,
+      p('confirmToken', 'string', 'The one-time confirmToken from brokerage_build_order (expires 5 minutes after the preview).', true),
+    ],
+  },
+  {
+    name: 'brokerage_cancel_order',
+    description:
+      'Cancel one OPEN Robinhood crypto order by id. Cancellation is best-effort — a fill that races the cancel stands; verify the final state with brokerage_orders.' +
+      BYOK,
+    params: [p('orderId', 'string', 'The order id (UUID) from brokerage_orders or the submit receipt.', true)],
+  },
 ]
 
 /** Print the local-dev env overlays derived from the SAME tool table (no DB). */
@@ -238,7 +354,7 @@ async function main() {
       parameters: t.params.length ? (t.params as unknown as object) : Prisma.DbNull,
     })),
   })
-  console.log(`✓ ${SERVICE.slug}: ${TOOLS.length} tool endpoints @ ${ROBINHOOD_BASE} (featured: portfolio, prices)`)
+  console.log(`✓ ${SERVICE.slug}: ${TOOLS.length} tool endpoints @ ${ROBINHOOD_BASE} (featured: portfolio, prices, build_swap)`)
   await prisma.$disconnect()
 }
 
