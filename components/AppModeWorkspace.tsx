@@ -129,7 +129,7 @@ export default function AppModeWorkspace({
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={reduced ? undefined : { opacity: 0, scale: 0.98 }}
               transition={{ type: 'spring', stiffness: 380, damping: 34, delay: reduced ? 0 : i * 0.05 }}
-              className="min-w-0"
+              className={p.span === 2 ? 'min-w-0 md:col-span-2' : 'min-w-0'}
             >
               <PanelFrame
                 kind={p.kind}
@@ -313,23 +313,44 @@ function HoldingsBody({ tile, reduced }: { tile: HoldingsTile; reduced: boolean 
           </span>
         </div>
       )}
-      <div className="space-y-1.5">
-        {tile.holdings.map((h) => (
-          <div key={(h.chain ?? '') + h.address + h.symbol} className="flex items-center justify-between gap-2 text-xs">
-            <div className="flex items-center gap-2">
-              <span className="grid h-6 w-6 place-items-center rounded-full bg-white/5 text-[10px] font-semibold text-[color:var(--muted)]">
-                {h.symbol.slice(0, 3)}
-              </span>
-              <span className="font-medium text-white">{h.symbol}</span>
-              {h.native && <span className="mono text-[9px] text-[color:var(--muted-2)]">native</span>}
-              {h.chain && <span className="rounded bg-white/5 px-1 py-0.5 text-[9px] text-[color:var(--muted-2)]">{h.chain}</span>}
+      {/* Two columns on wide screens — the portfolio panel is double-width,
+          so a single column of rows would read as a stripe of dead space. */}
+      <div className="grid grid-cols-1 gap-2 md:grid-cols-2 md:gap-x-8">
+        {tile.holdings.map((h, i) => {
+          // Share-of-portfolio bar — real data only (skip when unpriced).
+          const share =
+            tile.totalUsd && tile.totalUsd > 0 && h.valueUsd !== null
+              ? Math.min(1, h.valueUsd / tile.totalUsd)
+              : null
+          return (
+            <div key={(h.chain ?? '') + h.address + h.symbol}>
+              <div className="flex items-center justify-between gap-2 text-xs">
+                <div className="flex items-center gap-2">
+                  <span className="grid h-6 w-6 place-items-center rounded-full bg-white/5 text-[10px] font-semibold text-[color:var(--muted)]">
+                    {h.symbol.slice(0, 3)}
+                  </span>
+                  <span className="font-medium text-white">{h.symbol}</span>
+                  {h.native && <span className="mono text-[9px] text-[color:var(--muted-2)]">native</span>}
+                  {h.chain && <span className="rounded bg-white/5 px-1 py-0.5 text-[9px] text-[color:var(--muted-2)]">{h.chain}</span>}
+                </div>
+                <div className="text-right">
+                  <div className="text-white">{h.valueUsd !== null ? usd(h.valueUsd) : '—'}</div>
+                  <div className="text-[10px] text-[color:var(--muted-2)]">{trimNum(h.balance)}</div>
+                </div>
+              </div>
+              {share !== null && (
+                <div className="ml-8 mt-1 h-0.5 overflow-hidden rounded-full bg-white/5">
+                  <motion.div
+                    initial={reduced ? { width: `${share * 100}%` } : { width: 0 }}
+                    animate={{ width: `${share * 100}%` }}
+                    transition={{ duration: 0.7, ease: 'easeOut', delay: reduced ? 0 : 0.15 + i * 0.06 }}
+                    className="h-full rounded-full bg-[color:var(--accent)]/70"
+                  />
+                </div>
+              )}
             </div>
-            <div className="text-right">
-              <div className="text-white">{h.valueUsd !== null ? usd(h.valueUsd) : '—'}</div>
-              <div className="text-[10px] text-[color:var(--muted-2)]">{trimNum(h.balance)}</div>
-            </div>
-          </div>
-        ))}
+          )
+        })}
       </div>
     </div>
   )
@@ -339,15 +360,19 @@ function HoldingsBody({ tile, reduced }: { tile: HoldingsTile; reduced: boolean 
  *  every data refresh — a number that never jumps. Real values only. */
 function CountUpUsd({ value, reduced, className }: { value: number; reduced: boolean; className?: string }) {
   const ref = useRef<HTMLSpanElement>(null)
-  const prev = useRef(0)
+  const prev = useRef<number | null>(null)
   useEffect(() => {
     const el = ref.current
     if (!el) return
-    if (reduced) {
+    // First paint shows the real number instantly — the count-up runs only on
+    // live data CHANGES ("numbers never jump" is about transitions, and a
+    // 0-to-value spin-up on mount would be animation without new data).
+    if (reduced || prev.current === null) {
       el.textContent = usd(value)
       prev.current = value
       return
     }
+    if (prev.current === value) return
     const controls = animate(prev.current, value, {
       duration: 0.8,
       ease: 'easeOut',
