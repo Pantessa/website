@@ -6,6 +6,7 @@ import { AnimatePresence, animate, motion, useReducedMotion } from 'framer-motio
 import { ArrowDownLeft, ArrowUpRight, Clock, ExternalLink, RefreshCw, Repeat, Vote, Wallet } from 'lucide-react'
 import BrandIcon from '@/components/BrandIcon'
 import SwapPanel from '@/components/panels/SwapPanel'
+import GovernancePanel from '@/components/panels/GovernancePanel'
 import { useYeetfulStore, type McpServer } from '@/lib/store'
 import { chainById } from '@/lib/chains'
 import { splashCapable } from '@/lib/splash/types'
@@ -119,6 +120,10 @@ export default function AppModeWorkspace({
           <RefreshCw className="h-3 w-3 animate-spin text-[color:var(--muted-2)]" aria-label="Refreshing" />
         )}
       </div>
+      {/* Entrance + layout springs only — NO exit animation: AnimatePresence
+          exit-gating leaves ghost panels wherever rAF is starved (hidden
+          tabs, headless verification), so a panel whose MCP left the set
+          must unmount instantly. */}
       <div className="grid grid-cols-1 gap-4 md:auto-rows-fr md:grid-cols-2 xl:grid-cols-3">
         <AnimatePresence initial={false}>
           {panels.map((p, i) => (
@@ -127,7 +132,6 @@ export default function AppModeWorkspace({
               layout={!reduced}
               initial={reduced ? false : { opacity: 0, y: 16, scale: 0.98 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={reduced ? undefined : { opacity: 0, scale: 0.98 }}
               transition={{ type: 'spring', stiffness: 380, damping: 34, delay: reduced ? 0 : i * 0.05 }}
               className={p.span === 2 ? 'min-w-0 md:col-span-2' : 'min-w-0'}
             >
@@ -230,10 +234,39 @@ function PanelFrame({
           {tiles.map((t) => (
             <PanelTileBody key={t.id} tile={t} reduced={reduced} />
           ))}
+          {/* Earn/positions actions ride the tiles' own suggested prompts —
+              real per-MCP asks (stake, supply, close) into the command bar.
+              The guarded inline builds (like the swap panel's) are the v2
+              upgrade; a prefill through chat's proven flow ships first. */}
+          {(kind === 'earn' || kind === 'positions') && (
+            <div className="mt-auto flex flex-wrap gap-1.5 border-t border-[var(--line)] pt-3">
+              {dedupeBy(
+                tiles.flatMap((t) => t.prompts.map((pr) => ({ ...pr, slug: t.mcpSlug }))),
+                (pr) => pr.label,
+              )
+                .slice(0, 3)
+                .map((pr) => (
+                  <button
+                    key={pr.label}
+                    type="button"
+                    title={pr.prompt}
+                    onClick={() => onPick(pr.prompt, pr.slug)}
+                    className="rounded-full border border-[var(--line)] px-2.5 py-1 text-[11px] text-[color:var(--muted)] transition-colors hover:border-[var(--line-2)] hover:bg-white/5 hover:text-white"
+                  >
+                    {pr.label}
+                  </button>
+                ))}
+            </div>
+          )}
         </div>
       )}
     </div>
   )
+}
+
+function dedupeBy<T>(items: T[], key: (t: T) => string): T[] {
+  const seen = new Set<string>()
+  return items.filter((t) => (seen.has(key(t)) ? false : (seen.add(key(t)), true)))
 }
 
 function emptyCopy(kind: PanelKind): string {
@@ -258,7 +291,7 @@ function PanelTileBody({ tile, reduced }: { tile: SplashTile; reduced: boolean }
     case 'holdings':
       return <HoldingsBody tile={tile} reduced={reduced} />
     case 'proposals':
-      return <ProposalsBody tile={tile} />
+      return <GovernancePanel tile={tile} />
     case 'rows':
       return <RowsBody tile={tile} reduced={reduced} />
     case 'activity':
@@ -354,46 +387,6 @@ function CountUpUsd({ value, reduced, className }: { value: number; reduced: boo
   return <span ref={ref} className={className} />
 }
 
-// ── Governance ───────────────────────────────────────────────────────────────
-
-function ProposalsBody({ tile }: { tile: ProposalsTile }) {
-  return (
-    <div className="flex-1">
-      {tile.spaces.length > 0 && (
-        <div className="mb-3 flex flex-wrap items-center gap-1.5">
-          {tile.spaces.slice(0, 6).map((s) => (
-            <span key={s.id} className="flex items-center gap-1 rounded-full bg-white/5 py-0.5 pl-0.5 pr-2">
-              <Avatar url={s.avatarUrl} label={s.name} size={16} />
-              <span className="text-[10px] text-[color:var(--muted)]">{s.name}</span>
-            </span>
-          ))}
-        </div>
-      )}
-      <div className="space-y-2.5">
-        {tile.proposals.slice(0, 5).map((p) => (
-          <div key={p.id} className="flex items-start gap-2">
-            <Avatar url={p.avatarUrl} label={p.spaceName} size={22} />
-            <div className="min-w-0 flex-1">
-              <div className="truncate text-xs font-medium text-white" title={p.title}>
-                {p.title}
-              </div>
-              <div className="mt-0.5 flex items-center gap-2 text-[10px] text-[color:var(--muted-2)]">
-                <span className="flex items-center gap-1">
-                  <Vote className="h-3 w-3" /> {p.spaceName}
-                </span>
-                <span className="flex items-center gap-1">
-                  <Clock className="h-3 w-3" /> {endsIn(p.endsAt)}
-                </span>
-                {p.leadingChoice && <span className="text-[color:var(--accent)]">{p.leadingChoice} leading</span>}
-              </div>
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  )
-}
-
 // ── Earn / Positions (generic rows) ──────────────────────────────────────────
 
 function RowsBody({ tile, reduced }: { tile: RowsTile; reduced: boolean }) {
@@ -483,32 +476,6 @@ function PanelSkeleton() {
         ))}
       </div>
     </div>
-  )
-}
-
-function Avatar({ url, label, size }: { url: string; label: string; size: number }) {
-  const [failed, setFailed] = useState(false)
-  if (failed || !url) {
-    return (
-      <span
-        className="grid shrink-0 place-items-center rounded-full bg-white/10 text-[9px] font-semibold text-[color:var(--muted)]"
-        style={{ height: size, width: size }}
-      >
-        {label.slice(0, 1).toUpperCase()}
-      </span>
-    )
-  }
-  return (
-    // eslint-disable-next-line @next/next/no-img-element
-    <img
-      src={url}
-      alt={label}
-      width={size}
-      height={size}
-      onError={() => setFailed(true)}
-      className="shrink-0 rounded-full object-cover"
-      style={{ height: size, width: size }}
-    />
   )
 }
 
