@@ -47,7 +47,7 @@ function ScoreBar({ label, value }: { label: string; value: number | null }) {
   return (
     <div className="flex items-center gap-2 text-[12px]">
       <span className="w-24 flex-shrink-0 text-[color:var(--muted)]">{label}</span>
-      <div className="flex-1 h-1.5 rounded-full bg-white/5 overflow-hidden">
+      <div className="flex-1 h-1.5 rounded-full bg-[color-mix(in_srgb,var(--fg)_8%,transparent)] overflow-hidden">
         {value != null && (
           <div className="h-full rounded-full" style={{ width: `${value}%`, background: 'var(--accent)' }} />
         )}
@@ -80,22 +80,26 @@ export default function ReputationPanel({
 }) {
   const c = tierColor(rep.tier)
   return (
-    <section className="rounded-xl border border-[var(--line)] bg-black/30 p-4 sm:p-5">
-      <div className="flex items-start gap-4">
-        {/* Overall score */}
-        <div className="flex flex-col items-center justify-center flex-shrink-0 w-20">
-          <span className="text-3xl font-semibold" style={{ color: c }}>
-            {rep.qualified ? rep.overall : '—'}
-          </span>
-          <TierBadge tier={rep.tier} />
-          <span className="mt-1 text-[10px] text-[color:var(--muted-2)] mono">/ 100</span>
-        </div>
-        {/* Sub-scores */}
-        <div className="flex-1 min-w-0 space-y-1.5">
-          {LABELS.map(({ key, label }) => (
-            <ScoreBar key={key} label={label} value={rep.scores[key]} />
-          ))}
-        </div>
+    <div className="svc__section">
+      <div className="svc__sectionhead">
+        <h2 className="svc__h2">Reputation</h2>
+        <span className="svc__count mono">is it reliable?</span>
+      </div>
+      <section className="rounded-xl border border-[var(--line)] bg-[color:var(--surf-1)] p-4 sm:p-5">
+      {/* Overall score — a compact scorecard row, bars full width below so the
+          panel reads well in the narrow sticky rail. */}
+      <div className="flex items-baseline gap-2.5">
+        <span className="text-3xl font-semibold leading-none" style={{ color: c }}>
+          {rep.qualified ? rep.overall : '—'}
+        </span>
+        <span className="text-[11px] text-[color:var(--muted-2)] mono">/ 100</span>
+        <TierBadge tier={rep.tier} />
+      </div>
+      {/* Sub-scores */}
+      <div className="mt-3.5 space-y-1.5">
+        {LABELS.map(({ key, label }) => (
+          <ScoreBar key={key} label={label} value={rep.scores[key]} />
+        ))}
       </div>
 
       <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-[color:var(--muted-2)] mono">
@@ -120,7 +124,7 @@ export default function ReputationPanel({
                   target="_blank"
                   rel="noopener noreferrer"
                   title={`${p.ok ? 'settled' : 'failed'}${p.note ? ` — ${p.note}` : ''}${p.latencyMs ? ` · ${p.latencyMs}ms` : ''} · ${new Date(p.createdAt).toLocaleString()}`}
-                  className="w-2.5 h-2.5 rounded-sm hover:ring-2 hover:ring-white/30"
+                  className="w-2.5 h-2.5 rounded-sm hover:ring-2 hover:ring-[color-mix(in_srgb,var(--fg)_30%,transparent)]"
                   style={{ background: p.ok ? 'var(--accent)' : '#ff6b6b' }}
                 />
               ) : (
@@ -143,6 +147,7 @@ export default function ReputationPanel({
       <div className="mt-4 pt-3 border-t border-[var(--line)]">
         <RateService slug={slug} initial={rating} />
       </div>
-    </section>
+      </section>
+    </div>
   )
 }

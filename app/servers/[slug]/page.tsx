@@ -6,13 +6,11 @@ import prisma from '@/lib/db'
 import BrandIcon from '@/components/BrandIcon'
 import Footer from '@/components/Footer'
 import ServerApproveToggle from '@/components/ServerApproveToggle'
-import TokenPanel from '@/components/TokenPanel'
 import Description from '@/components/Description'
 import ReputationPanel from '@/components/ReputationPanel'
 import RoutabilityPanel from '@/components/RoutabilityPanel'
 import EndpointFeatureStar from '@/components/EndpointFeatureStar'
 import DeleteServerButton from '@/components/DeleteServerButton'
-import { getTokenPanel } from '@/lib/launch-token'
 import { computeReputation, recentPings } from '@/lib/reputation'
 import type { RoutabilityReport } from '@/lib/mcp-lint-report'
 import { getSessionAddress } from '@/lib/auth'
@@ -114,15 +112,6 @@ export default async function ServiceDetailPage({ params }: Params) {
 
   const paramsOf = (ep: { parameters: unknown }): EndpointParam[] =>
     Array.isArray(ep.parameters) ? (ep.parameters as EndpointParam[]) : []
-
-  const panel = await getTokenPanel({
-    slug: server.slug,
-    tokenAddress: server.tokenAddress,
-    stakingAddress: server.stakingAddress,
-  })
-  // Launched tokens get the pump.fun-style split (sticky trade rail top-right);
-  // unlaunched ones stay a simple single column.
-  const launched = panel.state === 'launched' && !!panel.token
 
   // Reputation: multi-dimension score + recent-call timeline + the viewer's rating.
   const [repMap, pings, viewerAddr] = await Promise.all([
@@ -306,33 +295,18 @@ export default async function ServiceDetailPage({ params }: Params) {
     </div>
   )
 
-  // Launched: pump.fun-style split (TokenPanel emits the lead/detail/rail areas).
-  const launchedBody = (
-    <>
-      {header}
-      <ServerApproveToggle serverId={server.id} serverName={server.name} />
-      <Description text={server.description} />
-      <ReputationPanel rep={rep} pings={pings} rating={ratingInitial} slug={server.slug} />
-      <RoutabilityPanel slug={server.slug} initial={server.routability as unknown as RoutabilityReport | null} />
-      <TokenPanel panel={panel} slug={server.slug} name={server.name} />
-      {endpoints}
-    </>
-  )
-
-  // Not launched: a contained two-column grid — service info + reputation +
-  // performance in the main column, the "own a piece" CTA in a sticky rail,
-  // endpoints full width below.
-  const infoBody = (
+  // Two-column grid: service info + routability in the main column, the
+  // reputation scorecard in a sticky rail, endpoints full width below.
+  const body = (
     <div className="svc__split2">
       <div className="svc__main">
         {header}
         <ServerApproveToggle serverId={server.id} serverName={server.name} />
         <Description text={server.description} />
-        <ReputationPanel rep={rep} pings={pings} rating={ratingInitial} slug={server.slug} />
         <RoutabilityPanel slug={server.slug} initial={server.routability as unknown as RoutabilityReport | null} />
       </div>
       <aside className="svc__rail">
-        <TokenPanel panel={panel} slug={server.slug} name={server.name} />
+        <ReputationPanel rep={rep} pings={pings} rating={ratingInitial} slug={server.slug} />
       </aside>
       {endpoints}
     </div>
@@ -340,13 +314,13 @@ export default async function ServiceDetailPage({ params }: Params) {
 
   return (
     <>
-      <main className={launched ? 'x-main x-main--fluid' : 'x-main'}>
+      <main className="x-main">
         <div className="svc">
           <Link href="/servers" className="svc__back mono">
             <ArrowLeft width={14} height={14} />
             Directory
           </Link>
-          {launched ? <div className="svc__split">{launchedBody}</div> : infoBody}
+          {body}
           <DeleteServerButton slug={server.slug} name={server.name} />
         </div>
       </main>
