@@ -1529,6 +1529,60 @@ async function main() {
     html.includes('Routing trace') && html.includes('shortlisted') && html.includes('selected'),
   )
 
+  // ── Signed-tx log: meta.signed write-back + share render ──────────────────
+  console.log('— signed-tx log')
+  const sigHashA = '0x' + 'cd'.repeat(32)
+  const sigHashB = '0x' + 'ef'.repeat(32)
+  const signedAnon = await fetch(`${BASE}/api/chats/${chat.id}/messages/${msg.id}/signed`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ txs: [{ hash: sigHashA, chainId: 8453 }] }),
+  })
+  check('signed write-back without session → 401', signedAnon.status === 401)
+  const signedBad = await fetch(`${BASE}/api/chats/${chat.id}/messages/${msg.id}/signed`, {
+    method: 'POST',
+    headers: CJ,
+    body: JSON.stringify({ txs: [{ hash: 'not-a-hash', chainId: 8453 }, { hash: sigHashA }] }),
+  })
+  check('signed write-back rejects malformed txs → 400', signedBad.status === 400)
+  const signedOk = await (
+    await fetch(`${BASE}/api/chats/${chat.id}/messages/${msg.id}/signed`, {
+      method: 'POST',
+      headers: CJ,
+      body: JSON.stringify({
+        txs: [
+          { hash: sigHashA, chainId: 8453, title: 'Approve 1 USDC' },
+          { hash: sigHashB, chainId: 4663, title: 'Swap 1 USDC → AAPL' },
+        ],
+      }),
+    })
+  ).json()
+  // Re-posting the same hash must not duplicate (the chain card can re-fire).
+  const signedDupe = await (
+    await fetch(`${BASE}/api/chats/${chat.id}/messages/${msg.id}/signed`, {
+      method: 'POST',
+      headers: CJ,
+      body: JSON.stringify({ txs: [{ hash: sigHashA, chainId: 8453, title: 'Approve 1 USDC' }] }),
+    })
+  ).json()
+  check(
+    'signed txs merge onto meta.signed (receipts preserved) and dedupe by hash',
+    signedOk.signed?.length === 2 && signedDupe.signed?.length === 2,
+  )
+  const loadedSigned = await (await fetch(`${BASE}/api/chats/${chat.id}`, { headers: C })).json()
+  const signedMsg = loadedSigned.messages?.find((m: { id: string }) => m.id === msg.id)
+  check(
+    'meta.signed round-trips alongside the original receipts',
+    signedMsg?.meta?.signed?.length === 2 && signedMsg.meta.receipts?.length === 3,
+  )
+  const htmlSigned = flat(await (await fetch(`${BASE}/p/${shared.publicSlug}`)).text())
+  check(
+    'share page renders the signing log with per-chain explorer links',
+    htmlSigned.includes('Signed &amp; settled on-chain') &&
+      htmlSigned.includes(`https://basescan.org/tx/${sigHashA}`) &&
+      htmlSigned.includes(`https://robinhoodchain.blockscout.com/tx/${sigHashB}`),
+  )
+
   // ── Blog (requires BLOG_ADMIN_PK + matching ADMIN_WALLETS on the server) ──
   const adminPk = process.env.BLOG_ADMIN_PK
   if (!adminPk) {
