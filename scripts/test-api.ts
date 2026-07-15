@@ -40,6 +40,8 @@ import { routeSavings } from '../lib/route-telemetry'
 import { portfolioFromToolResult, portfolioOf } from '../lib/portfolio-display'
 import { crossChainAgentOf, detectCrossChain, swapWorkingContext } from '../lib/swap-intent'
 import { encodeV4SwapCalldata, guardUniswapV4Build, type V4BuiltStep, type V4GuardExpectations, type V4PoolKey } from '../lib/uniswap-v4'
+import { guardLifiBuild, verifyLifiQuoteEcho, lifiPriceAcceptable, lifiRoutersFor, type LifiBuiltStep, type LifiGuardExpectations, type LifiQuote } from '../lib/lifi-venue'
+import { swapFeeAtoms, SWAP_FEE_BPS, TREASURY_ADDRESS } from '../lib/fees'
 import { APP_CHAINS, chainById, chainNamedIn, sanitizeChainId } from '../lib/chains'
 import { parseCrossChainSwap, guardCrossChainBuild, expectedOriginChainId, parseCrossChainFollowUp } from '../lib/cross-chain-swap'
 import {
@@ -1857,6 +1859,99 @@ async function main() {
     check('v4 guard: Permit2 grant to a non-router spender is refused', !guardUniswapV4Build([goodSteps[0], { ...goodSteps[1], tx: { ...goodSteps[1].tx, data: evilPermit } }, goodSteps[2]], exp).ok)
     const approveToStranger = { ...goodSteps[0], tx: { ...goodSteps[0].tx, to: '0x000000000000000000000000000000000000dEaD' } }
     check('v4 guard: approval step to an unknown contract is refused', !guardUniswapV4Build([approveToStranger, goodSteps[1], goodSteps[2]], exp).ok)
+  }
+
+  // ── LiFi settlement venue: fee math + the pinning guard ───────────────────
+  // Serves the pools v4 QUOTES but can't EXECUTE (Robinhood's venue-gated
+  // stock pools — every real fill settles through the chain's own backend-
+  // signed aggregator, which LiFi wraps). The inner calldata is opaque, so
+  // the guard pins everything around it: allowlisted router, exact-amount
+  // approval, decodable fee transfer to the treasury — any mutation refuses.
+  console.log('— lifi settlement venue (fee math + guard)')
+  {
+    const ROUTER = '0xB477751B76CF82d00a686A1232f5fCD772414Af3'
+    const USDG = '0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168'
+    const AAPL = '0xaF3D76f1834A1d425780943C99Ea8A608f8a93f9'
+    const USER = '0x1111111111111111111111111111111111111111'
+
+    // Fee math (lib/fees.ts): 20 bps default, floor division, dust → 0.
+    check('fees: default rate is 20 bps (below Uniswap’s 25 bps interface fee)', SWAP_FEE_BPS === 20)
+    check('fees: 20 bps of 100 USDG (6 dec) = 0.2 USDG', swapFeeAtoms(BigInt(100_000_000)) === BigInt(200_000))
+    check('fees: floor division favors the user', swapFeeAtoms(BigInt(9_999)) === BigInt(19)) // 9999*20/10000 = 19.998 → 19
+    check('fees: dust rounds to a ZERO fee (no fee step)', swapFeeAtoms(BigInt(400)) === BigInt(0))
+    check('fees: zero/negative input never charges', swapFeeAtoms(BigInt(0)) === BigInt(0) && swapFeeAtoms(BigInt(-5)) === BigInt(0))
+    check('fees: treasury address is pinned', /^0x[0-9a-fA-F]{40}$/.test(TREASURY_ADDRESS))
+    check('lifi: Robinhood Chain router allowlisted by default', lifiRoutersFor(4663).some((r) => r.toLowerCase() === ROUTER.toLowerCase()))
+    check('lifi: unknown chain has NO allowlist (fails closed)', lifiRoutersFor(999999).length === 0)
+
+    const totalAtoms = BigInt(100_000_000) // 100 USDG asked
+    const feeAtoms = swapFeeAtoms(totalAtoms) // 0.2 USDG
+    const swapAtoms = totalAtoms - feeAtoms // 99.8 USDG into the venue
+    const exp: LifiGuardExpectations = {
+      chainId: 4663,
+      routers: [ROUTER],
+      approvalAddress: ROUTER,
+      sellToken: USDG,
+      swapAtoms,
+      feeAtoms,
+      treasury: TREASURY_ADDRESS,
+    }
+    const approveData = encodeFunctionData({ abi: erc20Abi, functionName: 'approve', args: [ROUTER as `0x${string}`, swapAtoms] })
+    const feeData = encodeFunctionData({ abi: erc20Abi, functionName: 'transfer', args: [TREASURY_ADDRESS, feeAtoms] })
+    const goodSteps: LifiBuiltStep[] = [
+      { label: 'approve', title: 'Approve USDG to LiFi', tx: { to: USDG, data: approveData, value: '0', chainId: 4663, action: 'approve' } },
+      { label: 'swap', title: 'Swap 99.8 USDG → AAPL', tx: { to: ROUTER, data: '0x5fd9ae2e' + 'ab'.repeat(200), value: '0', chainId: 4663, action: 'swap' }, validUntil: Math.floor(Date.now() / 1000) + 90 },
+      { label: 'fee', title: 'Yeetful fee', tx: { to: USDG, data: feeData, value: '0', chainId: 4663, action: 'transfer' } },
+    ]
+    check('lifi guard: well-formed approve→swap→fee chain PASSES', guardLifiBuild(goodSteps, exp).ok)
+    check('lifi guard: swap+fee (allowance in place) PASSES', guardLifiBuild([goodSteps[1], goodSteps[2]], exp).ok)
+    check('lifi guard: zero-fee build needs NO fee step', guardLifiBuild([goodSteps[0], goodSteps[1]], { ...exp, feeAtoms: BigInt(0) }).ok)
+    check('lifi guard: fee expected but step missing is refused', !guardLifiBuild([goodSteps[0], goodSteps[1]], exp).ok)
+    check('lifi guard: swap to a NON-pinned router is refused', !guardLifiBuild([goodSteps[0], { ...goodSteps[1], tx: { ...goodSteps[1].tx, to: '0x000000000000000000000000000000000000dEaD' } }, goodSteps[2]], exp).ok)
+    check('lifi guard: empty router allowlist fails closed', !guardLifiBuild(goodSteps, { ...exp, routers: [] }).ok)
+    check('lifi guard: approvalAddress OFF the allowlist is refused', !guardLifiBuild(goodSteps, { ...exp, approvalAddress: '0x000000000000000000000000000000000000dEaD' }).ok)
+    check('lifi guard: wrong chainId is refused', !guardLifiBuild([goodSteps[0], { ...goodSteps[1], tx: { ...goodSteps[1].tx, chainId: 8453 } }, goodSteps[2]], exp).ok)
+    check('lifi guard: nonzero native value is refused', !guardLifiBuild([goodSteps[0], { ...goodSteps[1], tx: { ...goodSteps[1].tx, value: '1' } }, goodSteps[2]], exp).ok)
+    const overApprove = encodeFunctionData({ abi: erc20Abi, functionName: 'approve', args: [ROUTER as `0x${string}`, swapAtoms * BigInt(1000)] })
+    check('lifi guard: over-sized approval is refused (exact-amount only)', !guardLifiBuild([{ ...goodSteps[0], tx: { ...goodSteps[0].tx, data: overApprove } }, goodSteps[1], goodSteps[2]], exp).ok)
+    const evilApprove = encodeFunctionData({ abi: erc20Abi, functionName: 'approve', args: ['0x000000000000000000000000000000000000dEaD' as `0x${string}`, swapAtoms] })
+    check('lifi guard: approval to a stranger spender is refused', !guardLifiBuild([{ ...goodSteps[0], tx: { ...goodSteps[0].tx, data: evilApprove } }, goodSteps[1], goodSteps[2]], exp).ok)
+    const evilFee = encodeFunctionData({ abi: erc20Abi, functionName: 'transfer', args: ['0x000000000000000000000000000000000000dEaD' as `0x${string}`, feeAtoms] })
+    check('lifi guard: fee transfer to a NON-treasury address is refused', !guardLifiBuild([goodSteps[0], goodSteps[1], { ...goodSteps[2], tx: { ...goodSteps[2].tx, data: evilFee } }], exp).ok)
+    const wrongFeeAmt = encodeFunctionData({ abi: erc20Abi, functionName: 'transfer', args: [TREASURY_ADDRESS, feeAtoms * BigInt(10)] })
+    check('lifi guard: inflated fee amount is refused', !guardLifiBuild([goodSteps[0], goodSteps[1], { ...goodSteps[2], tx: { ...goodSteps[2].tx, data: wrongFeeAmt } }], exp).ok)
+    check('lifi guard: opaque fee calldata is refused', !guardLifiBuild([goodSteps[0], goodSteps[1], { ...goodSteps[2], tx: { ...goodSteps[2].tx, data: '0xdeadbeef' } }], exp).ok)
+
+    // Quote echo: the LiFi response must restate the parsed intent exactly.
+    const echoQuote = {
+      tool: 'fly',
+      action: {
+        fromToken: { address: USDG, decimals: 6 },
+        toToken: { address: AAPL, decimals: 18 },
+        fromAmount: swapAtoms.toString(),
+        fromChainId: 4663,
+        toChainId: 4663,
+        fromAddress: USER,
+        toAddress: USER,
+      },
+      estimate: { approvalAddress: ROUTER, toAmount: '313000000000000000', toAmountMin: '311000000000000000', fromAmount: swapAtoms.toString() },
+      transactionRequest: { to: ROUTER, data: '0x5fd9ae2e', value: '0x0', chainId: 4663 },
+    } as LifiQuote
+    const echoExp = { chainId: 4663, sellToken: USDG, buyToken: AAPL, swapAtoms, from: USER }
+    check('lifi echo: exact echo PASSES', verifyLifiQuoteEcho(echoQuote, echoExp).length === 0)
+    check('lifi echo: different sell token refused', verifyLifiQuoteEcho({ ...echoQuote, action: { ...echoQuote.action, fromToken: { address: AAPL, decimals: 18 } } }, echoExp).length > 0)
+    check('lifi echo: amount drift refused', verifyLifiQuoteEcho({ ...echoQuote, action: { ...echoQuote.action, fromAmount: totalAtoms.toString() } }, echoExp).length > 0)
+    check('lifi echo: cross-chain route refused (same-chain venue only)', verifyLifiQuoteEcho({ ...echoQuote, action: { ...echoQuote.action, toChainId: 42161 } }, echoExp).length > 0)
+    check('lifi echo: proceeds to a stranger refused', verifyLifiQuoteEcho({ ...echoQuote, action: { ...echoQuote.action, toAddress: '0x000000000000000000000000000000000000dEaD' } }, echoExp).length > 0)
+    check('lifi echo: native value on the swap refused', verifyLifiQuoteEcho({ ...echoQuote, transactionRequest: { ...echoQuote.transactionRequest, value: '0xde0b6b3a7640000' } }, echoExp).length > 0)
+
+    // Independent price sanity: LiFi may pay ≤2% below our own quote, no more.
+    const ours = BigInt(1_000_000_000)
+    check('lifi price: equal fill accepted', lifiPriceAcceptable(ours, ours))
+    check('lifi price: 1% below accepted (venue fees are real)', lifiPriceAcceptable(BigInt(990_000_000), ours))
+    check('lifi price: exactly 2% below accepted (boundary)', lifiPriceAcceptable(BigInt(980_000_000), ours))
+    check('lifi price: 3% below REFUSED (bad or hostile fill)', !lifiPriceAcceptable(BigInt(970_000_000), ours))
+    check('lifi price: paying MORE than our quote accepted', lifiPriceAcceptable(ours * BigInt(2), ours))
   }
 
   // ── Aave supply: parse + reserve pick + the SAFETY guard on the build ─────

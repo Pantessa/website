@@ -76,6 +76,7 @@ import { policyCheck, buildReport } from '@/lib/tx-guardrails'
 import { buildGuardrailedOrder } from '@/lib/cow-build'
 import { buildUniswapSwap, NoV3PoolError } from '@/lib/uniswap-venue'
 import { buildUniswapV4Swap, NoV4PoolError, GatedV4PoolError } from '@/lib/uniswap-v4'
+import { buildLifiSwap, NoLifiRouteError } from '@/lib/lifi-venue'
 import { tokenDecimals, humanToAtoms } from '@/lib/cow'
 import { ensureTokenList } from '@/lib/token-list'
 import { resolveProposal } from '@/lib/snapshot-read'
@@ -2146,14 +2147,84 @@ async function prepareUniswapV4Turn(
     if (err instanceof GatedV4PoolError) {
       // The pool quotes but can never execute from a direct UR call
       // (Robinhood's stock pools settle only through their backend-signed
-      // venue). Refusing HERE — before any card — is the whole point: the
-      // old flow asked for a Permit2 signature, then withheld the swap.
-      trace({ type: 'note', level: 'warn', label: `v4 pool is venue-gated — quotes but can't execute from a direct swap; no build (${err.message.slice(0, 160)})` })
-      return NextResponse.json({ reply: `🚫 ${err.message} Nothing was built — no signature needed.` })
+      // DexAggregator). LiFi wraps that venue — fall through to the LiFi
+      // settlement layer instead of refusing. The honest refusal survives
+      // ONLY for the case where LiFi can't fill either (prepareLifiTurn).
+      trace({ type: 'note', level: 'info', label: `v4 pool is venue-gated (quotes but a direct swap can't fill) — routing to the LiFi settlement venue (${err.message.slice(0, 120)})` })
+      return await prepareLifiTurn(intent, walletAddress, chainId, ctx, trace, err.message)
     }
     const msg = err instanceof Error ? err.message : 'quote failed'
     trace({ type: 'note', level: 'warn', label: `Uniswap v4 build failed: ${msg.slice(0, 200)}` })
     return NextResponse.json({ reply: `🔄 Couldn't build the Uniswap swap: ${msg}` })
+  }
+}
+
+/**
+ * The LiFi settlement turn — reached ONLY when v4 threw GatedV4PoolError:
+ * the pool quotes on the public Quoter but every real fill settles through
+ * the chain's own venue (Robinhood's backend-signed DexAggregator), which
+ * LiFi wraps. Different trust shape, same fail-closed posture: the router
+ * address is pinned, the approval is exact-amount, LiFi's price is checked
+ * against our own independent v4 quote, and the swap is simulated before
+ * anything is offered (lib/lifi-venue.ts). The chain carries a 0.20%
+ * Yeetful fee as its own visible transfer step (lib/fees.ts).
+ */
+async function prepareLifiTurn(
+  intent: SwapIntent,
+  walletAddress: string,
+  chainId: number,
+  ctx: WorkingContext | undefined,
+  trace: (event: unknown) => void,
+  gateReason: string,
+) {
+  const chain = chainById(chainId)!
+  trace({ type: 'select', service: 'LiFi (native settlement venue)', endpoint: `li.quest quote → pinned-router build on ${chain.name}`, priceUsd: 0, reason: 'the pool only fills through the chain\'s own venue — LiFi wraps it; Yeetful pins the router, cross-checks the price on-chain, and simulates before offering' })
+  try {
+    const built = await buildLifiSwap({
+      sellToken: intent.sellToken!,
+      buyToken: intent.buyToken!,
+      amountHuman: intent.sellAmountHuman!,
+      from: walletAddress,
+      chainId,
+    })
+    if (built.blocked) {
+      const reasons = built.guardrails.checks.filter((c) => !c.ok && c.level === 'block').map((c) => c.note).join(' ')
+      trace({ type: 'note', level: 'warn', label: `guardrails REFUSED the LiFi swap: ${(reasons || 'a safety check failed.').slice(0, 200)}` })
+      return NextResponse.json({
+        reply: `🚫 Swap built but refused by your guardrails: ${reasons || 'a safety check failed.'}`,
+        guardrails: built.guardrails,
+        blocked: true,
+      })
+    }
+    const warns = built.guardrails.checks.filter((c) => !c.ok && c.level === 'warn').map((c) => `⚠️ ${c.note}`)
+    const sell = intent.sellToken!.toUpperCase()
+    const buy = intent.buyToken!.toUpperCase()
+    trace({ type: 'status', label: `guardrails passed — ${built.steps.length}-step LiFi card built (${intent.sellAmountHuman} ${sell} → ${buy} through ${chain.name}'s own venue), awaiting signature` })
+    return NextResponse.json({
+      reply: `🔏 ${built.summary}\n🔗 This pair only settles through ${chain.name}'s own swap venue, so the trade routes via LiFi — Yeetful pinned the settlement contract, price-checked the fill against its own on-chain quote, and dry-ran it. The card below carries every step${built.feeHuman !== '0' ? `, including the ${built.feeHuman} ${sell} Yeetful fee as its own visible transfer` : ''}.${warns.length ? `\n${warns.join('\n')}` : ''}`,
+      txChain: {
+        summary: built.summary,
+        steps: built.steps,
+        refresh: {
+          kind: 'lifi-swap',
+          stepIndex: built.swapStepIndex,
+          params: { sellToken: intent.sellToken!, buyToken: intent.buyToken!, amountHuman: intent.sellAmountHuman!, chainId: String(chainId) },
+        },
+      },
+      buildPath: 'native-swap-lifi',
+      guardrails: built.guardrails,
+      // Invariant #11: pending action — "make it 2" / "cancel" resolve here.
+      workingContext: swapWorkingContext(intent, 'lifi', ctx, chainId),
+    })
+  } catch (err) {
+    if (err instanceof NoLifiRouteError) {
+      // LiFi can't fill either — the ONE case that keeps the honest refusal.
+      trace({ type: 'note', level: 'warn', label: `LiFi has no route either — honest refusal stands (${err.message.slice(0, 160)})` })
+      return NextResponse.json({ reply: `🚫 ${gateReason} LiFi couldn't route it through that venue either — nothing was built, no signature needed.` })
+    }
+    const msg = err instanceof Error ? err.message : 'quote failed'
+    trace({ type: 'note', level: 'warn', label: `LiFi build failed: ${msg.slice(0, 200)}` })
+    return NextResponse.json({ reply: `🔄 Couldn't build the venue-settled swap: ${msg}` })
   }
 }
 

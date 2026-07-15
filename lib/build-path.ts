@@ -24,6 +24,7 @@ export const BUILD_PATHS = [
   'native-aave-op',
   'native-swap-uniswap',
   'native-swap-uniswap-v4',
+  'native-swap-lifi',
   'native-swap-cow',
   'native-cross-chain',
   'native-hl-guardian',
