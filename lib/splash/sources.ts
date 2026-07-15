@@ -532,15 +532,23 @@ const aaveSource: SplashSource = {
 
 // ── Lido slot → staking position + the guided stake-in moment ────────────────
 
+// The lido MCP prices in NUMBERS (`usd: 511.66`) — unlike aave, which hands
+// back strings that are already "$20.01". Tile values are pre-formatted
+// strings, so every price crossing this boundary goes through lidoUsd().
 interface LidoPositionPayload {
   hasPosition?: boolean
-  eth?: { balance?: string; usd?: string | null }
-  stEth?: { balance?: string; usd?: string | null }
-  wstEth?: { balance?: string; asStEth?: string; usd?: string | null }
-  totalStaked?: { stEth?: string; usd?: string | null }
+  eth?: { balance?: string; usd?: number | null }
+  stEth?: { balance?: string; usd?: number | null }
+  wstEth?: { balance?: string; asStEth?: string; usd?: number | null }
+  totalStaked?: { stEth?: string; usd?: number | null }
   currentAprPct?: number | null
   withdrawals?: { pendingRequests?: number; claimableRequests?: number; claimableEth?: string }
 }
+
+const lidoUsd = (n: number | null | undefined): string | null =>
+  typeof n === 'number' && Number.isFinite(n)
+    ? `$${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+    : null
 
 const lidoSource: SplashSource = {
   id: 'lido',
@@ -553,10 +561,10 @@ const lidoSource: SplashSource = {
 
     const rows: StatRow[] = []
     if (Number(pos.stEth?.balance) > 0) {
-      rows.push({ label: 'stETH', value: pos.stEth?.usd ?? pos.stEth?.balance ?? '—', sub: `${pos.stEth?.balance} stETH · rebasing daily`, tone: 'pos' as const })
+      rows.push({ label: 'stETH', value: lidoUsd(pos.stEth?.usd) ?? `${pos.stEth?.balance} stETH`, sub: `${pos.stEth?.balance} stETH · rebasing daily`, tone: 'pos' as const })
     }
     if (Number(pos.wstEth?.balance) > 0) {
-      rows.push({ label: 'wstETH', value: pos.wstEth?.usd ?? pos.wstEth?.balance ?? '—', sub: `${pos.wstEth?.balance} wstETH (${pos.wstEth?.asStEth} stETH)`, tone: 'pos' as const })
+      rows.push({ label: 'wstETH', value: lidoUsd(pos.wstEth?.usd) ?? `${pos.wstEth?.balance} wstETH`, sub: `${pos.wstEth?.balance} wstETH (${pos.wstEth?.asStEth} stETH)`, tone: 'pos' as const })
     }
     const wd = pos.withdrawals
     if ((wd?.pendingRequests ?? 0) > 0 || (wd?.claimableRequests ?? 0) > 0) {
@@ -586,8 +594,10 @@ const lidoSource: SplashSource = {
       mcpName: server.name,
       render: 'rows',
       title: 'Your Lido position',
-      subtitle: pos.currentAprPct != null ? `earning ~${pos.currentAprPct}% APR` : 'staked with Lido',
-      headline: pos.totalStaked?.usd ? { value: pos.totalStaked.usd, caption: `${pos.totalStaked.stEth} stETH total staked` } : undefined,
+      subtitle: pos.currentAprPct != null ? `earning ~${pos.currentAprPct.toFixed(2)}% APR` : 'staked with Lido',
+      headline: lidoUsd(pos.totalStaked?.usd)
+        ? { value: lidoUsd(pos.totalStaked?.usd)!, caption: `${pos.totalStaked?.stEth} stETH total staked` }
+        : undefined,
       rows,
       prompts,
     }
