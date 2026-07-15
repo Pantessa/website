@@ -36,6 +36,8 @@ import { splashCapable } from '@/lib/splash/types'
 import ShareButton from '@/components/ShareButton'
 import EmbedThisChat from '@/components/EmbedThisChat'
 import ChainPicker from '@/components/ChainPicker'
+import ModeToggle from '@/components/ModeToggle'
+import AppModeWorkspace from '@/components/AppModeWorkspace'
 import Link from 'next/link'
 import ConnectWallet from '@/components/ConnectWallet'
 import { YeetfulMark } from '@/components/Logo'
@@ -232,6 +234,8 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
     mobileMcpRailOpen,
     setMobileMcpRailOpen,
     selectedChainId,
+    workspaceMode,
+    setWorkspaceMode,
   } = useYeetfulStore()
 
   // Logged in, the top nav is removed — the chat toolbar carries the home
@@ -473,12 +477,29 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
     window.history.replaceState(null, '', '/chat')
   }, [servers]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // ?mode=app deep link — open the workspace face directly (shareable, and
+  // the SDK's future embed seam). One-shot; the param is part of the surface,
+  // not cleaned like ?try/?q.
+  const modeLinkRef = useRef(false)
+  useEffect(() => {
+    if (modeLinkRef.current || embedded) return
+    modeLinkRef.current = true
+    const mode = new URLSearchParams(window.location.search).get('mode')
+    if (mode === 'app' || mode === 'chat') setWorkspaceMode(mode)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   const handleSend = async (textOverride?: string) => {
     // textOverride lets UI affordances (e.g. a vote-candidate chip) submit a
     // composed message without going through the input box.
     const raw = typeof textOverride === 'string' ? textOverride : input
     if (!raw.trim() || loading || pendingPayment) return
     analytics.chatMessage(activeServers.length, isConnected)
+
+    // Interim until the App Mode transcript drawer lands (see HANDOFF-app-mode):
+    // a command-bar send flips to the chat face so the streamed answer — and any
+    // signable artifact — is never invisible behind the panels.
+    if (workspaceMode === 'app' && !embedded) setWorkspaceMode('chat')
 
     let chatId = currentChatId
     if (!chatId) {
@@ -1033,6 +1054,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
               <PanelRight className="w-4 h-4" />
             </button>
           )}
+          <ModeToggle />
           <ChainPicker />
           <EmbedThisChat slugs={activeServers.map((s) => s.slug)} />
           <ShareButton />
@@ -1044,9 +1066,13 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
         </div>
       )}
 
-      {/* Messages area */}
+      {/* Messages area — or, in App Mode, the structured workspace (panels
+          fed by the working set; the input below stays docked as the command
+          bar). Never in the embed (its own mode contract is a v2 seam). */}
       <div className="flex-1 overflow-y-auto px-4 py-6 space-y-4">
-        {!currentChat || currentChat.messages.length === 0 ? (
+        {workspaceMode === 'app' && !embedded ? (
+          <AppModeWorkspace address={effectiveAddress} onPick={pickExample} />
+        ) : !currentChat || currentChat.messages.length === 0 ? (
           splashEligible || splashBatches.length > 0 ? (
             <>
               {/* The batch effect hasn't committed yet (first paint after
