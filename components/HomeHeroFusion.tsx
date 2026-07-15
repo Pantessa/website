@@ -1,7 +1,7 @@
 'use client'
 
 // The fusion hero — "where dapps become one agent". Protocol energies
-// (Uniswap pink, CoW blue, Snapshot gold, and a dashed "your MCP" emerald)
+// (Uniswap pink, Robinhood green, Snapshot gold, and a dashed "your MCP" emerald)
 // stream as luminous particle rivers from the edges into a breathing core
 // behind the headline. Every few seconds the core TRANSMUTES: a ring pulse
 // fires, an emerald burst leaves the core, and one mono line under the CTAs
@@ -31,7 +31,7 @@ const EMBED_SRC = '/embed?mcps=uniswap-free,snapshot-free&theme=dark'
 const SOURCES = [
   { x: 0.09, y: 0.3, color: '#FF6BAF', light: '#d81f78', name: 'Uniswap', glyph: 'U', dashed: false },
   { x: 0.91, y: 0.27, color: '#FFC94D', light: '#b07c00', name: 'Snapshot', glyph: '⚡', dashed: false },
-  { x: 0.11, y: 0.76, color: '#7AA7FF', light: '#2f62d9', name: 'CoW', glyph: 'C', dashed: false },
+  { x: 0.11, y: 0.76, color: '#00C805', light: '#04820c', name: 'Robinhood', glyph: 'R', dashed: false },
   { x: 0.89, y: 0.78, color: '#34e3a0', light: '#0e8f62', name: 'your MCP', glyph: '+', dashed: true },
 ]
 
@@ -512,7 +512,7 @@ export default function HomeHeroFusion() {
           <span className="fhero__em">One chat.</span>
         </h1>
         <p className="fhero__lede">
-          Fuse <strong>Uniswap, Snapshot, CoW — or your own MCP</strong> — into one agent that
+          Fuse <strong>Uniswap, Snapshot, Robinhood — or your own MCP</strong> — into one agent that
           answers, votes, and builds <strong>safe, signed, receipted</strong> transactions.
           Compose it in minutes. Embed it in five lines.
         </p>
