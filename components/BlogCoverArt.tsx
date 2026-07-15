@@ -36,6 +36,145 @@ function mulberry32(seed: number): () => number {
 const W = 640
 const H = 400
 
+// Bespoke composition for the orchestration launch post: one intent-arrow
+// skipping across the four job steps. Same canvas, same dot grid, same
+// blogart__route / blogart__ping animations as the generated art — it reads
+// as a sibling, not a different system.
+function OrchestrationCover({ tag, className }: { tag?: string; className?: string }) {
+  const steps = [
+    { x: 130, label: 'BRIDGE' },
+    { x: 270, label: 'SWAP' },
+    { x: 410, label: 'LONG' },
+    { x: 550, label: 'GUARD' },
+  ]
+  const baseY = 272 // circle centers
+  const r = 30
+  const touchY = baseY - r // the arrow grazes each circle's top
+  // Quadratic bounces with decaying peaks — a stone skipping toward settled.
+  const route =
+    `M 28 64 Q 70 210 ${steps[0].x} ${touchY}` +
+    ` Q ${(steps[0].x + steps[1].x) / 2} 96 ${steps[1].x} ${touchY}` +
+    ` Q ${(steps[1].x + steps[2].x) / 2} 138 ${steps[2].x} ${touchY}` +
+    ` Q ${(steps[2].x + steps[3].x) / 2} 172 ${steps[3].x} ${touchY}`
+  const settle = steps[steps.length - 1]
+
+  return (
+    <svg
+      viewBox={`0 0 ${W} ${H}`}
+      className={className}
+      role="img"
+      aria-hidden="true"
+      preserveAspectRatio="xMidYMid slice"
+    >
+      <defs>
+        <pattern id="dots-orch" width="28" height="28" patternUnits="userSpaceOnUse">
+          <circle cx="1.5" cy="1.5" r="1.1" fill="rgba(255,255,255,0.055)" />
+        </pattern>
+        <radialGradient id="glow-orch" cx="50%" cy="50%" r="50%">
+          <stop offset="0%" stopColor="#3ECF8E" stopOpacity="0.14" />
+          <stop offset="100%" stopColor="#3ECF8E" stopOpacity="0" />
+        </radialGradient>
+      </defs>
+      <rect width={W} height={H} fill="url(#dots-orch)" />
+      <circle cx={settle.x} cy={baseY} r="120" fill="url(#glow-orch)" />
+
+      {/* faint baseline threading the steps together */}
+      <line
+        x1={steps[0].x}
+        y1={baseY}
+        x2={settle.x}
+        y2={baseY}
+        stroke="rgba(255,255,255,0.09)"
+        strokeWidth="1"
+      />
+
+      {/* step circles the arrow bounces off */}
+      {steps.map((s, i) => (
+        <g key={s.label}>
+          <circle
+            cx={s.x}
+            cy={baseY}
+            r={r}
+            fill="rgba(255,255,255,0.03)"
+            stroke={i === steps.length - 1 ? '#3ECF8E' : 'rgba(255,255,255,0.28)'}
+            strokeWidth="1.5"
+          />
+          {/* touch point — where the intent grazes the step */}
+          <circle cx={s.x} cy={touchY} r="4.5" fill="#0f0f0f" stroke="#3ECF8E" strokeWidth="1.5" />
+          <text
+            x={s.x}
+            y={baseY + r + 24}
+            textAnchor="middle"
+            fontFamily="'Geist Mono', ui-monospace, monospace"
+            fontSize="11"
+            letterSpacing="0.12em"
+            fill="rgba(255,255,255,0.45)"
+          >
+            {s.label}
+          </text>
+        </g>
+      ))}
+
+      {/* the intent — one arrow, four bounces (CSS: blogart-flow) */}
+      <path
+        d={route}
+        fill="none"
+        stroke="#3ECF8E"
+        strokeWidth="1.6"
+        strokeLinejoin="round"
+        strokeDasharray="7 9"
+        className="blogart__route"
+        opacity="0.9"
+      />
+      {/* arrowhead at the last touch */}
+      <path
+        d={`M ${settle.x - 11} ${touchY - 13} L ${settle.x} ${touchY} L ${settle.x - 14} ${touchY - 4}`}
+        fill="none"
+        stroke="#3ECF8E"
+        strokeWidth="1.6"
+        strokeLinejoin="round"
+        opacity="0.9"
+      />
+
+      {/* the settle: expanding ring + solid core on the final step */}
+      <circle cx={settle.x} cy={baseY} r="6" fill="#3ECF8E" />
+      <circle
+        cx={settle.x}
+        cy={baseY}
+        r="6"
+        fill="none"
+        stroke="#3ECF8E"
+        strokeWidth="1.5"
+        className="blogart__ping"
+      />
+
+      {/* receipt stamp */}
+      <text
+        x="28"
+        y="42"
+        fontFamily="'Geist Mono', ui-monospace, monospace"
+        fontSize="12.5"
+        fill="#3ECF8E"
+        opacity="0.95"
+      >
+        1 prompt → 4 receipts
+      </text>
+      {tag && (
+        <text
+          x="24"
+          y={H - 22}
+          fontFamily="'Geist Mono', ui-monospace, monospace"
+          fontSize="11"
+          letterSpacing="0.12em"
+          fill="rgba(255,255,255,0.38)"
+        >
+          {tag.toUpperCase()}
+        </text>
+      )}
+    </svg>
+  )
+}
+
 export default function BlogCoverArt({
   slug,
   tag,
@@ -45,6 +184,9 @@ export default function BlogCoverArt({
   tag?: string
   className?: string
 }) {
+  if (slug === 'one-sentence-four-transactions') {
+    return <OrchestrationCover tag={tag} className={className} />
+  }
   const rand = mulberry32(seedFrom(slug))
 
   // Node field: one node per loose grid cell with jitter, so layouts differ
