@@ -5,6 +5,7 @@ import { motion, useReducedMotion } from 'framer-motion'
 import { ChevronDown, Clock, Vote } from 'lucide-react'
 import VoteChoiceButtons from '@/components/VoteChoiceButtons'
 import type { ProposalsTile } from '@/lib/splash/types'
+import { postPanelTelemetry } from '@/lib/panel-telemetry'
 
 /**
  * App Mode governance panel: open proposals with INLINE voting. Each row
@@ -75,6 +76,9 @@ export default function GovernancePanel({ tile }: { tile: ProposalsTile }) {
                       type: p.type ?? 'single-choice',
                       choices: p.choices,
                     }}
+                    onSigned={() =>
+                      postPanelTelemetry({ outcome: 'signed', artifact: 'vote', buildPath: 'app-mode-vote' })
+                    }
                   />
                 </motion.div>
               )}
