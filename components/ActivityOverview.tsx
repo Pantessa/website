@@ -11,7 +11,7 @@ import { ArrowUpRight, ShieldOff } from 'lucide-react'
 import { Card, Kpi, SkeletonCard, SkeletonKpi, timeAgo } from '@/lib/dashboard-ui'
 import { DailyFlow, MoneyCurve } from '@/components/LazyCharts'
 import type { FlowPoint } from '@/components/ActivityCharts'
-import { getProtocolMark } from '@/components/protocol-marks'
+import { ConvRing, Medallion, SectionHead } from '@/components/board-ui'
 
 const POLL_MS = 30_000
 
@@ -115,83 +115,6 @@ function useCountUp(target: number, duration = 1600): number {
     return () => cancelAnimationFrame(raf)
   }, [target, duration])
   return value
-}
-
-/** Brand medallion: vendored protocol mark → full-color logo → lettermark.
- *  (Not BrandIcon: its Simple Icons fallback is pinned white, and this page
- *  is fully themed — everything here tracks currentColor or is full-color.) */
-function Medallion({
-  name,
-  keys,
-  logoUrl,
-  size = 38,
-}: {
-  name: string
-  keys: (string | null | undefined)[]
-  logoUrl?: string | null
-  size?: number
-}) {
-  const [logoFailed, setLogoFailed] = useState(false)
-  const Mark = getProtocolMark(...keys, name)
-  return (
-    <span
-      className="flex items-center justify-center rounded-xl border border-[var(--line)] flex-shrink-0 text-white"
-      style={{ width: size, height: size, background: 'color-mix(in srgb, var(--fg) 5%, transparent)' }}
-      aria-hidden
-    >
-      {Mark ? (
-        <Mark size={Math.round(size * 0.55)} />
-      ) : logoUrl && !logoFailed ? (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img
-          src={logoUrl}
-          alt=""
-          width={Math.round(size * 0.58)}
-          height={Math.round(size * 0.58)}
-          onError={() => setLogoFailed(true)}
-          style={{ display: 'block', objectFit: 'contain', borderRadius: size * 0.12 }}
-          draggable={false}
-        />
-      ) : (
-        <span
-          style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: size * 0.42, letterSpacing: '-0.04em' }}
-        >
-          {name.replace(/[^A-Za-z]/g, '').charAt(0).toUpperCase() || '?'}
-        </span>
-      )}
-    </span>
-  )
-}
-
-/** Built→signed conversion donut — accent arc over a faint track. */
-function ConvRing({ pct }: { pct: number }) {
-  const r = 11
-  const c = 2 * Math.PI * r
-  return (
-    <svg width="30" height="30" viewBox="0 0 30 30" aria-hidden className="flex-shrink-0 -rotate-90">
-      <circle cx="15" cy="15" r={r} fill="none" stroke="color-mix(in srgb, var(--fg) 12%, transparent)" strokeWidth="3.5" />
-      <circle
-        cx="15"
-        cy="15"
-        r={r}
-        fill="none"
-        stroke="var(--accent)"
-        strokeWidth="3.5"
-        strokeLinecap="round"
-        strokeDasharray={`${Math.max(0.02, pct) * c} ${c}`}
-      />
-    </svg>
-  )
-}
-
-function SectionHead({ eyebrow, title, sub }: { eyebrow: string; title: string; sub?: string }) {
-  return (
-    <div className="actsec__head">
-      <span className="swtry__eyebrow mono">{eyebrow}</span>
-      <h2 className="swtry__h2">{title}</h2>
-      {sub && <p className="swtry__sub">{sub}</p>}
-    </div>
-  )
 }
 
 const KIND_CHIP: Record<string, { label: string; cls: string }> = {
