@@ -203,7 +203,7 @@ export function parseSwapIntent(message: string): SwapIntent {
  * transaction awaiting SendTxButton. The prior turn's scope/offers are carried
  * — building a swap doesn't erase the list the user was just shown.
  */
-export function swapWorkingContext(intent: SwapIntent, venue: 'uniswap' | 'cow', prior?: WorkingContext, chainId?: number): WorkingContext {
+export function swapWorkingContext(intent: SwapIntent, venue: 'uniswap' | 'cow' | 'lifi', prior?: WorkingContext, chainId?: number): WorkingContext {
   const mode = intent.mode ?? 'swap'
   const sellToken = (intent.sellToken ?? '').toUpperCase()
   const buyToken = (intent.buyToken ?? '').toUpperCase()
@@ -215,7 +215,7 @@ export function swapWorkingContext(intent: SwapIntent, venue: 'uniswap' | 'cow',
     ...(prior?.offers ? { offers: prior.offers } : {}),
     pending: {
       kind: venue === 'cow' ? 'order' : 'swap',
-      summary: `${mode === 'limit' ? 'limit order' : 'swap'} ${amount} ${sellToken} → ${buyToken} on ${venue === 'cow' ? 'CoW' : 'Uniswap'} — awaiting the user's signature`,
+      summary: `${mode === 'limit' ? 'limit order' : 'swap'} ${amount} ${sellToken} → ${buyToken} on ${venue === 'cow' ? 'CoW' : venue === 'lifi' ? 'the chain’s own venue (LiFi-routed)' : 'Uniswap'} — awaiting the user's signature`,
       data: {
         sellToken,
         buyToken,

@@ -12,6 +12,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { buildUniswapSwap } from '@/lib/uniswap-venue'
 import { buildUniswapV4Swap, GatedV4PoolError } from '@/lib/uniswap-v4'
+import { buildLifiSwap, NoLifiRouteError } from '@/lib/lifi-venue'
 import { ensureTokenList } from '@/lib/token-list'
 import { sanitizeChainId, publicClientFor, DEFAULT_CHAIN_ID } from '@/lib/chains'
 
@@ -53,7 +54,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'invalid JSON' }, { status: 400 })
   }
 
-  if (body.kind !== 'uniswap-swap' && body.kind !== 'uniswap-v4-swap') {
+  if (body.kind !== 'uniswap-swap' && body.kind !== 'uniswap-v4-swap' && body.kind !== 'lifi-swap') {
     return NextResponse.json({ error: `unknown refresh kind "${String(body.kind)}"` }, { status: 400 })
   }
   const from = typeof body.from === 'string' && /^0x[0-9a-fA-F]{40}$/.test(body.from) ? body.from : null
@@ -74,6 +75,31 @@ export async function POST(req: NextRequest) {
     // chain itself would revert the swap (nothing to manage — the user's
     // policy is not involved). Conflating them sent a user hunting for a
     // nonexistent spend limit after Robinhood's venue-gated AAPL pool refused.
+    if (body.kind === 'lifi-swap') {
+      // LiFi chains re-quote the SWAP step (quotes wrap backend-signed venue
+      // fills and go stale in ~90s). The fee step is deterministic calldata
+      // with no deadline — never refreshed. The builder re-runs every gate:
+      // pinned router, quote echo, independent price check, and its own
+      // estimateGas simulation (needsApprove=false at this point, so the
+      // simulation gate is live inside the build).
+      const lifi = await buildLifiSwap({ sellToken, buyToken, amountHuman, from, chainId })
+      if (lifi.blocked) {
+        const reasons = lifi.guardrails.checks.filter((c) => !c.ok && c.level === 'block').map((c) => c.note).join(' ')
+        const execFail = lifi.guardrails.checks.some((c) => !c.ok && (c.id === 'simulation' || c.id === 'price' || c.id === 'venue'))
+        return NextResponse.json({ blocked: true, blockKind: execFail ? 'execution' : 'policy', reasons: reasons || 'a safety check failed', guardrails: lifi.guardrails })
+      }
+      if (lifi.swapStepIndex > 0) {
+        // An approve step re-appeared → the approval isn't visible on-chain
+        // yet. Wait and retry rather than offering a doomed swap.
+        return NextResponse.json({ pending: true, note: 'allowance not visible on-chain yet' })
+      }
+      const swapStep = lifi.steps[lifi.swapStepIndex]
+      const lifiRevert = await estimateReverts(chainId, from, swapStep.tx)
+      if (lifiRevert) {
+        return NextResponse.json({ blocked: true, blockKind: 'execution', reasons: `the rebuilt swap would revert on-chain (${lifiRevert.slice(0, 200)})` })
+      }
+      return NextResponse.json({ tx: swapStep.tx, summary: lifi.summary, guardrails: lifi.guardrails, validUntil: swapStep.validUntil ?? null })
+    }
     if (body.kind === 'uniswap-v4-swap') {
       // v4 chains re-quote the FINAL step; the builder re-reads both Permit2
       // hops, so "approvals not visible yet" comes back as pending → retry.
@@ -109,8 +135,14 @@ export async function POST(req: NextRequest) {
   } catch (err) {
     if (err instanceof GatedV4PoolError) {
       // Quotes-but-can't-execute (Robinhood stock pools): the prebuilt tx is
-      // dead by design — the card must WITHHOLD, never fall back to it.
+      // dead by design — the card must WITHHOLD, never fall back to it. (A
+      // fresh ask in chat now routes these through the LiFi settlement venue.)
       return NextResponse.json({ blocked: true, blockKind: 'execution', reasons: err.message })
+    }
+    if (err instanceof NoLifiRouteError) {
+      // The venue that originally filled this quote has no route anymore —
+      // withhold rather than offering the stale prebuilt tx.
+      return NextResponse.json({ blocked: true, blockKind: 'execution', reasons: `LiFi no longer has a route for this pair (${err.message.slice(0, 160)})` })
     }
     return NextResponse.json({ error: err instanceof Error ? err.message : 'rebuild failed' }, { status: 502 })
   }
