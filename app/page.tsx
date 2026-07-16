@@ -4,6 +4,7 @@ import HomeHeroFusion from '@/components/HomeHeroFusion'
 import ComposeSet from '@/components/ComposeSet'
 import EngineInside from '@/components/EngineInside'
 import TxPipeline from '@/components/TxPipeline'
+import FundAnything from '@/components/FundAnything'
 import EmbedAnywhere from '@/components/EmbedAnywhere'
 import TrustStrip from '@/components/TrustStrip'
 import SwitchboardServers from '@/components/SwitchboardServers'
@@ -68,6 +69,9 @@ export default function HomePage() {
 
         {/* The edge: quote → build → guardrails → sign → receipt */}
         <TxPipeline />
+
+        {/* The power example: "Buy $2 of AAPL" funds itself across chains */}
+        <FundAnything />
 
         {/* Distribution: the 5-line install + the two fork demos */}
         <EmbedAnywhere />
