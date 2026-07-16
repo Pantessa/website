@@ -243,16 +243,17 @@ interface YeetfulStore {
   setChatPublic: (chatId: string, isPublic: boolean) => Promise<Chat | null>
 
   // UI state
-  sidebarOpen: boolean
-  setSidebarOpen: (open: boolean) => void
-  /** Phone-overlay visibility — intentionally NOT persisted, so a phone
-   *  visit can never collapse the desktop sidebar preference. */
-  mobileSidebarOpen: boolean
-  setMobileSidebarOpen: (open: boolean) => void
-  /** The vertical MCP rail (chat's left tool column) — desktop preference. */
+  /** Which tab the (single) left rail shows — MCPs are primary, chat history
+   *  lives behind the Chats tab of the same rail. */
+  railTab: 'mcps' | 'chats'
+  setRailTab: (tab: 'mcps' | 'chats') => void
+  /** The chat's left rail (MCPs + chat history) — desktop preference.
+   *  Key name predates the merged rail (it was the MCP-only rail's flag);
+   *  kept so existing clients don't lose their preference. */
   mcpRailOpen: boolean
   setMcpRailOpen: (open: boolean) => void
-  /** Phone-overlay visibility for the MCP rail — transient, not persisted. */
+  /** Phone-overlay visibility for the rail — intentionally NOT persisted, so
+   *  a phone visit can never collapse the desktop rail preference. */
   mobileMcpRailOpen: boolean
   setMobileMcpRailOpen: (open: boolean) => void
 }
@@ -648,12 +649,10 @@ export const useYeetfulStore = create<YeetfulStore>()(
         }
       },
 
-      // Chat history is secondary — closed by default; the MCP rail is the
-      // primary left column.
-      sidebarOpen: false,
-      setSidebarOpen: (open) => set({ sidebarOpen: open }),
-      mobileSidebarOpen: false,
-      setMobileSidebarOpen: (open) => set({ mobileSidebarOpen: open }),
+      // One left rail: MCPs are the primary tab, chat history sits behind
+      // the Chats tab. Open by default on desktop.
+      railTab: 'mcps',
+      setRailTab: (tab) => set({ railTab: tab }),
       mcpRailOpen: true,
       setMcpRailOpen: (open) => set({ mcpRailOpen: open }),
       mobileMcpRailOpen: false,
@@ -667,11 +666,13 @@ export const useYeetfulStore = create<YeetfulStore>()(
       // v3: chat history rail closed by default — apply the new default once
       // to every persisted client (they can reopen; the choice persists again
       // from there).
-      version: 3,
+      // v4: the chat-history sidebar and the MCP rail merged into ONE rail
+      // with MCPs/Chats tabs — drop the dead sidebarOpen key.
+      version: 4,
       migrate: (persisted, version) => {
         const s = (persisted ?? {}) as Record<string, unknown>
         if (version < 2) s.autoRouter = false
-        if (version < 3) s.sidebarOpen = false
+        if (version < 4) delete s.sidebarOpen
         return s
       },
       // Persist only UI prefs. Chats are DB-backed (signed in) or ephemeral
@@ -684,7 +685,7 @@ export const useYeetfulStore = create<YeetfulStore>()(
         manualSlugs: state.manualSlugs,
         walletSets: state.walletSets,
         shortlistIds: state.shortlistIds,
-        sidebarOpen: state.sidebarOpen,
+        railTab: state.railTab,
         mcpRailOpen: state.mcpRailOpen,
         autoRouter: state.autoRouter,
         engineWindowOpen: state.engineWindowOpen,

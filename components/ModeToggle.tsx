@@ -20,8 +20,18 @@ export default function ModeToggle() {
   if (!panelCapable(activeServers)) return null
 
   const segments = [
-    { mode: 'chat' as const, label: 'Chat', Icon: MessageSquare },
-    { mode: 'app' as const, label: 'App', Icon: LayoutGrid },
+    {
+      mode: 'chat' as const,
+      label: 'Chat',
+      Icon: MessageSquare,
+      hint: 'Chat view — talk to your MCPs, artifacts land in the transcript',
+    },
+    {
+      mode: 'app' as const,
+      label: 'App',
+      Icon: LayoutGrid,
+      hint: 'App view — your MCP set as live panels (portfolio, swap, vote)',
+    },
   ]
   return (
     <div
@@ -29,13 +39,15 @@ export default function ModeToggle() {
       aria-label="Workspace mode"
       className="flex-shrink-0 flex items-center rounded-lg border border-[var(--line)] bg-[var(--surf-1)] p-0.5"
     >
-      {segments.map(({ mode, label, Icon }) => {
+      {segments.map(({ mode, label, Icon, hint }) => {
         const active = workspaceMode === mode
         return (
           <button
             key={mode}
             role="tab"
             aria-selected={active}
+            title={hint}
+            aria-label={hint}
             onClick={() => setWorkspaceMode(mode)}
             className={cn(
               'relative flex items-center gap-1.5 rounded-md px-2.5 min-h-[32px] md:min-h-[26px] text-[11px] font-medium mono transition-colors',

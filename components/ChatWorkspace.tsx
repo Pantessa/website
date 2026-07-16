@@ -4,9 +4,8 @@ import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAccount } from 'wagmi'
 import ChatInterface from '@/components/ChatInterface'
-import ChatSidebar from '@/components/ChatSidebar'
+import ChatRail from '@/components/ChatRail'
 import ChatSignInGate from '@/components/ChatSignInGate'
-import McpRail from '@/components/McpRail'
 import RouterEngineWindow from '@/components/RouterEngineWindow'
 import { useAppShellMode } from '@/components/AppShell'
 import { useYeetfulStore, McpServer } from '@/lib/store'
@@ -173,13 +172,9 @@ export default function ChatWorkspace({ chatId }: { chatId?: string }) {
 
   return (
     <div className={`relative flex ${chrome ? 'h-dvh' : 'h-[calc(100dvh-4rem)]'}`}>
+      {/* The single left rail: MCPs (primary tab) + chat history (Chats tab). */}
       <div className="relative flex-shrink-0">
-        <ChatSidebar />
-      </div>
-      {/* The MCP rail — chat's primary left column (history stays secondary
-          and closed by default). */}
-      <div className="relative flex-shrink-0">
-        <McpRail />
+        <ChatRail />
       </div>
       <main className="flex-1 min-w-0 flex flex-col">
         <ChatInterface injectedPrompt={urlPrompt} />

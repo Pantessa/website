@@ -114,11 +114,16 @@ export default function AppModeWorkspace({
       <div className="mb-4 flex items-center gap-2">
         <Wallet className="h-4 w-4 text-[color:var(--muted-2)]" />
         <span className="mono text-[11px] uppercase tracking-wider text-[color:var(--muted-2)]">
-          Workspace · {shortAddr(address)}
+          App view · {shortAddr(address)}
         </span>
         {loading && tiles && (
           <RefreshCw className="h-3 w-3 animate-spin text-[color:var(--muted-2)]" aria-label="Refreshing" />
         )}
+        {/* One line of orientation — this surface and the Chat splash render
+            the same live data, so first-timers need to know what flipped. */}
+        <span className="hidden md:inline text-[11px] text-[color:var(--muted-2)]">
+          — your MCPs as panels · flip to Chat to just ask
+        </span>
       </div>
       {/* Entrance + layout springs only — NO exit animation: AnimatePresence
           exit-gating leaves ghost panels wherever rAF is starved (hidden
