@@ -781,6 +781,20 @@ async function main() {
       stats.agents?.topToday?.spentTodayUsd === 0.05,
   )
 
+  // Onboarding checklist signals (Get started card) — SIWE-only, and always
+  // the four pivot-flow booleans (chat → guarded tx → fund-then-act job →
+  // embed key). Values depend on what the harness wallet has done so far, so
+  // assert shape + types, not specific ticks.
+  const onboardNoAuth = await fetch(`${BASE}/api/dashboard/onboarding`)
+  check('onboarding signals require auth → 401', onboardNoAuth.status === 401)
+  const onboardRes = await fetch(`${BASE}/api/dashboard/onboarding`, { headers: C })
+  const onboard = await onboardRes.json()
+  check(
+    'onboarding signals: chatted/signedTx/fundedJob/embedKey booleans',
+    onboardRes.status === 200 &&
+      ['chatted', 'signedTx', 'fundedJob', 'embedKey'].every((k) => typeof onboard[k] === 'boolean'),
+  )
+
   // Payees: the wallet's claimed MCP servers (dashboard Agents → My MCP servers).
   // SIWE-only; a fresh wallet has claimed nothing, so an empty array.
   const mineNoAuth = await fetch(`${BASE}/api/mcp/mine`)
