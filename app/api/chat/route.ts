@@ -22,12 +22,14 @@ import {
   guardLidoStakeBuild,
   isLidoGuidedAsk,
   lidoAgentOf,
+  LIDO_GAS_BUFFER_ETH,
   parseLidoStake,
   suggestedStakeEth,
   type LidoBuiltStake,
   type LidoPositionPayload,
   type LidoStakeParams,
 } from '@/lib/lido-stake'
+import { offerFundingPlan } from '@/lib/funding-plan'
 import {
   parseCrossChainSwap,
   parseCrossChainFollowUp,
@@ -37,7 +39,7 @@ import {
   type CrossChainSwapParams,
   type BuiltSwap,
 } from '@/lib/cross-chain-swap'
-import { buildHlExecTurn, hlAgentOf, parseHlIntent } from '@/lib/hyperliquid-exec'
+import { arbitrumUsdcBalance, buildHlExecTurn, hlAgentOf, HL_MIN_DEPOSIT_USDC, parseHlIntent } from '@/lib/hyperliquid-exec'
 import { parseGuardianArm } from '@/lib/hl-guardian'
 import { armGuardianPolicy } from '@/lib/hl-guardian-store'
 import { compileJobAsk } from '@/lib/jobs'
@@ -730,6 +732,33 @@ export async function POST(req: NextRequest) {
     if (hlIntent) {
       const hlAgent = hlAgentOf(activeServers)
       if (hlAgent.agent && hlAgent.usable) {
+        // Universal funding plan: an under-funded deposit (above the bridge
+        // minimum — smaller ones the build refuses on its own) offers to move
+        // USDC over via NEAR Intents instead of building a blocked artifact.
+        // A failed read falls through — the deposit's balance guardrail
+        // fails closed on its own.
+        if (hlIntent.kind === 'deposit' && walletAddress && hlIntent.amountUsdc >= HL_MIN_DEPOSIT_USDC) {
+          const arbUsdc = await arbitrumUsdcBalance(walletAddress).catch(() => null)
+          if (arbUsdc !== null && arbUsdc < hlIntent.amountUsdc) {
+            const offer = await offerFundingPlan({
+              user: walletAddress,
+              need: {
+                chainId: 42161,
+                token: 'USDC',
+                amountHuman: Number((hlIntent.amountUsdc - arbUsdc).toFixed(2)),
+                followupResume: `deposit ${hlIntent.amountUsdc} USDC to Hyperliquid`,
+                actionLabel: 'the Hyperliquid deposit',
+              },
+              trace: nativeTrace,
+            })
+            if (offer && 'insufficient' in offer) {
+              return NextResponse.json({
+                reply: `🚫 The deposit needs ${hlIntent.amountUsdc} USDC on Arbitrum and the wallet holds ${arbUsdc.toFixed(2)} there. ${offer.insufficient}`,
+              })
+            }
+            if (offer) return NextResponse.json({ ...offer, reply: `🌉 ${offer.reply}` })
+          }
+        }
         const what = hlIntent.kind === 'deposit' ? `deposit ${hlIntent.amountUsdc} USDC` : `${hlIntent.kind} ${hlIntent.coin}`
         nativeTrace({ type: 'status', label: `native hl layer claimed the turn: ${what} on Hyperliquid — planner bypassed` })
         try {
@@ -1309,6 +1338,59 @@ async function guideLidoStakeTurn(
   })
 }
 
+/** The smallest stake `suggestedStakeEth` will size — below it, mainnet gas
+ *  makes the stake uneconomical, so funding plans target at least this. */
+const LIDO_MIN_STAKE_ETH = 0.003
+
+/**
+ * The funding-plan turn for an unstakeable Lido ask: size the shortfall
+ * (asked ETH floored at the economical minimum, plus the gas buffer, minus
+ * what's already there) and offer NEAR-Intents legs from the other chains
+ * as chips. The chip's job stakes ALL the ETH that arrives (minus the gas
+ * buffer) — bridge fees mean the exact ask would strand the remainder.
+ * Null when the scan/price is unavailable (caller falls through to the
+ * normal build, which fails closed with the MCP's own message).
+ */
+async function lidoFundingTurn(
+  walletAddress: string,
+  balEth: number,
+  askEth: number | null,
+  receive: 'stETH' | 'wstETH',
+  trace: (event: unknown) => void,
+) {
+  const targetEth = Number((Math.max(askEth ?? 0, LIDO_MIN_STAKE_ETH) + Number(LIDO_GAS_BUFFER_ETH)).toFixed(6))
+  const shortfall = Number((targetEth - balEth).toFixed(6))
+  if (shortfall <= 0) return null
+  const offer = await offerFundingPlan({
+    user: walletAddress,
+    need: {
+      chainId: 1,
+      token: 'ETH',
+      amountHuman: shortfall,
+      followupResume: `stake all my ETH on Lido${receive === 'wstETH' ? ' as wstETH' : ''}`,
+      actionLabel: 'the stake',
+    },
+    trace,
+  })
+  if (!offer) return null
+  const holding = `the wallet holds ${balEth.toFixed(4).replace(/\.?0+$/, '') || '0'} ETH on Ethereum`
+  if ('insufficient' in offer) {
+    const askNote =
+      askEth !== null
+        ? `Staking ${askEth} ETH really needs ~${targetEth} ETH on Ethereum once mainnet gas is counted, and ${holding}.`
+        : `Staking on Lido needs at least ~${targetEth} ETH on Ethereum once mainnet gas is counted, and ${holding}.`
+    return NextResponse.json({ reply: `🌊 ${askNote} ${offer.insufficient}` })
+  }
+  const tinyNote =
+    askEth !== null && askEth < LIDO_MIN_STAKE_ETH
+      ? ` (${askEth} ETH alone wouldn't clear mainnet gas — the plan lands ~${targetEth} ETH and stakes all of it.)`
+      : ''
+  return NextResponse.json({
+    ...offer,
+    reply: `🌉 ${offer.reply} The stake step sizes itself to whatever arrives, minus a small gas buffer.${tinyNote}`,
+  })
+}
+
 /** Build + guard a single Lido stake and offer it for signature. */
 async function buildLidoStakeTurn(
   agent: McpServer,
@@ -1325,15 +1407,28 @@ async function buildLidoStakeTurn(
     })
   }
 
+  // ── Universal funding plan: a shortfall is an offer, never a wall ────────
+  // Read the live mainnet balance BEFORE building. An ask the wallet can't
+  // cover (or a 'max' with nothing stakeable) scans ETH + USDC on the other
+  // chains and offers the bridge-then-stake job as chips — the same pattern
+  // the Robinhood funding plan proved, riding NEAR Intents instead of LiFi.
+  // A failed balance read falls through: build_stake fails closed on its own.
+  const mainnetClient = publicClientFor(1)
+  const balWei = mainnetClient ? await mainnetClient.getBalance({ address: walletAddress as `0x${string}` }).catch(() => null) : null
+  const balEth = balWei === null ? null : Number(balWei) / 1e18
+
   let amountEth = params.amount
   if (amountEth === 'max') {
-    const client = publicClientFor(1)
-    const balance = client ? await client.getBalance({ address: walletAddress as `0x${string}` }).catch(() => null) : null
-    const resolved = balance !== null && client ? suggestedStakeEth((Number(balance) / 1e18).toString()) : null
+    const resolved = balEth !== null ? suggestedStakeEth(String(balEth)) : null
     if (!resolved) {
+      const funded = balEth !== null ? await lidoFundingTurn(walletAddress, balEth, null, params.receive, trace) : null
+      if (funded) return funded
       return NextResponse.json({ reply: '🌊 Nothing left to stake — your mainnet ETH balance is at (or below) the gas buffer.' })
     }
     amountEth = resolved
+  } else if (balEth !== null && Number.isFinite(Number(amountEth)) && balEth < Number(amountEth) + Number(LIDO_GAS_BUFFER_ETH)) {
+    const funded = await lidoFundingTurn(walletAddress, balEth, Number(amountEth), params.receive, trace)
+    if (funded) return funded
   }
 
   trace({ type: 'select', service: agent.name, endpoint: 'tools/call build_stake', priceUsd: 0, reason: 'native lido layer — construction-only build, recipient pinned to the canonical mainnet contracts by the guard' })
