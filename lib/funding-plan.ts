@@ -74,7 +74,10 @@ export interface FundingNeed {
   /** How much MORE of the token must land there (shortfall, not the ask). */
   amountHuman: number
   /** The segment appended after the funding legs — MUST parse under an
-   *  existing native layer (e.g. "stake all my ETH on Lido"). */
+   *  existing native layer (e.g. "stake all my ETH on Lido"). EMPTY = a
+   *  bridge-only plan (the generic custom-MCP fallback): a single leg is a
+   *  plain cross-chain ask, several legs compile as a pure-bridge job, and
+   *  the user re-asks their action once the funds land. */
   followupResume: string
   /** Short human name woven into the copy ("the stake"). */
   actionLabel: string
@@ -178,13 +181,16 @@ export function planFundingChips(need: FundingNeed, needUsd: number, sources: Fu
     return segs
   }
 
+  // Empty followup = bridge-only chips (the generic custom-MCP fallback).
+  const withFollowup = (legs: string[]) => (need.followupResume ? `${legs.join(', then ')}, then ${need.followupResume}` : legs.join(', then '))
+
   const best = ranked.find((s) => s.usd >= totalNeedUsd)
   const chips: FundingChip[] = []
   if (best) {
     const legs = legsFrom(best, needUsd)!
     chips.push({
       label: `Just enough (~$${usd2(totalNeedUsd)} of ${best.token} on ${best.chainWord})`,
-      resume: `${legs.join(', then ')}, then ${need.followupResume}`,
+      resume: withFollowup(legs),
     })
     // "All of it" only when it's a sensible whole-balance move — a $15k
     // balance covering a $25 need doesn't get an all-in chip.
@@ -193,7 +199,7 @@ export function planFundingChips(need: FundingNeed, needUsd: number, sources: Fu
       if (allLegs) {
         chips.push({
           label: `All my ${best.token} on ${best.chainWord} (~$${usd2(Number(best.usd.toFixed(2)))})`,
-          resume: `${allLegs.join(', then ')}, then ${need.followupResume}`,
+          resume: withFollowup(allLegs),
         })
       }
     }
@@ -217,7 +223,7 @@ export function planFundingChips(need: FundingNeed, needUsd: number, sources: Fu
     if (covered >= needUsd && (gasUsd === 0 || gasCarried > 0)) {
       chips.push({
         label: `Combine ${legs.length} legs (~$${usd2(totalNeedUsd)} total)`,
-        resume: `${legs.join(', then ')}, then ${need.followupResume}`,
+        resume: withFollowup(legs),
       })
     }
   }
@@ -397,4 +403,120 @@ export async function offerFundingPlan(params: {
     clarify: { question: 'Fund it from another chain?', options: plan.chips },
     buildPath: 'native-funding-offer',
   }
+}
+
+// ── The generic fallback: ANY MCP's balance refusal → a funding offer ────────
+// User-added MCPs have no native layer, but their build tools refuse with
+// recognizable shapes ("Insufficient balance: this needs 20.000000 USDC but
+// the wallet holds 3.000000 USDC", "not enough ETH on Ethereum", …). When a
+// tool-call failure names a token, a plannable chain, and readable amounts,
+// the turn can still end with chips instead of a wall. Bridge-only chips
+// (empty followup) — the custom action can't compile as a job step, so the
+// user re-asks once the funds land; the reply says exactly that.
+
+const SHORTFALL_TRIGGER_RE = /\binsufficient\b|\bnot enough\b|\bholds only\b|\bbalance too low\b|\btop up\b/i
+const TOKEN_SYM = '[A-Z]{2,6}|[A-Z][a-z]?ETH'
+// "needs 20 USDC" / "requires ~20.5 USDC" / "staking 0.0002 ETH" / "bridging 1 ETH" / "this needs 20.000000 USDC"
+const NEEDED_RE = new RegExp(`\\b(?:needs?|requires?|staking|bridging|sending|supplying|repaying|depositing|short)\\s+~?\\$?(\\d+(?:\\.\\d+)?)\\s*(${TOKEN_SYM})\\b`)
+// "holds 3.000000 USDC" / "wallet holds only 0 ETH" / "has 3 USDC" / "you have 3 USDC"
+const HELD_RE = new RegExp(`\\b(?:holds?|have|has)\\s+(?:only\\s+)?~?\\$?(\\d+(?:\\.\\d+)?)\\s*(${TOKEN_SYM})?\\b`)
+// "insufficient USDC" / "not enough ETH" — the token when NEEDED_RE misses
+const TRIGGER_TOKEN_RE = new RegExp(`\\b(?:insufficient|not enough)\\s+(?:balance\\s+of\\s+)?(${TOKEN_SYM})\\b`)
+const CHAIN_HINT_RE = /\bon\s+(base|arbitrum(?:\s+one)?|arb|ethereum|eth\s+mainnet|mainnet)\b/i
+
+const CHAIN_HINT_IDS: Record<string, number> = {
+  base: 8453,
+  arbitrum: 42161,
+  'arbitrum one': 42161,
+  arb: 42161,
+  ethereum: 1,
+  'eth mainnet': 1,
+  mainnet: 1,
+}
+
+export interface DetectedShortfall {
+  chainId: number
+  token: string
+  /** needed − held (held 0 when unreadable), in token units. */
+  shortfall: number
+}
+
+/**
+ * Read a balance-refusal out of an arbitrary tool error. Conservative on
+ * purpose: no trigger word, no token, no PLANNABLE chain, or no positive
+ * shortfall → null (the failure surfaces as-is). The chain must be named —
+ * guessing where a stranger MCP wanted funds is how money gets stranded.
+ */
+export function detectBalanceShortfall(text: string): DetectedShortfall | null {
+  if (!text || !SHORTFALL_TRIGGER_RE.test(text)) return null
+  const chainHint = text.match(CHAIN_HINT_RE)
+  if (!chainHint) return null
+  const chainId = CHAIN_HINT_IDS[chainHint[1].toLowerCase().replace(/\s+/g, ' ')]
+  if (!chainId || !FUNDING_CHAIN_WORD[chainId]) return null
+
+  const needed = text.match(NEEDED_RE)
+  const token = needed?.[2] ?? text.match(TRIGGER_TOKEN_RE)?.[1] ?? null
+  if (!token || !needed) return null
+  const neededAmt = Number(needed[1])
+  const held = text.match(HELD_RE)
+  // A held-match naming a DIFFERENT token is someone else's number.
+  const heldAmt = held && (!held[2] || held[2].toUpperCase() === token.toUpperCase()) ? Number(held[1]) : 0
+  const shortfall = Number((neededAmt - heldAmt).toFixed(8))
+  if (!Number.isFinite(shortfall) || shortfall <= 0) return null
+  return { chainId, token: token.toUpperCase(), shortfall }
+}
+
+export interface GenericFundingFallback {
+  offer: FundingOfferTurn | null
+  /** Synthesis-context block explaining what's attached / what was seen. */
+  contextBlock: string
+}
+
+/**
+ * The generic fallback for failed tool calls from ANY MCP: detect a balance
+ * refusal in the failure notes, plan bridge-only chips, and hand back both
+ * the offer (chips ride the response) and a context block so the
+ * synthesized reply narrates it correctly. Null when nothing detectable.
+ */
+export async function fundingFallbackForFailures(
+  user: string,
+  failures: { name: string; note: string }[],
+  trace?: (event: unknown) => void,
+): Promise<GenericFundingFallback | null> {
+  for (const f of failures) {
+    const detected = detectBalanceShortfall(f.note)
+    if (!detected) continue
+    const offer = await offerFundingPlan({
+      user,
+      need: {
+        chainId: detected.chainId,
+        token: detected.token,
+        amountHuman: detected.shortfall,
+        followupResume: '', // bridge-only: the custom action re-runs after funds land
+        actionLabel: `the ${f.name} action`,
+      },
+      trace,
+    })
+    if (!offer) return null
+    if ('insufficient' in offer) {
+      return {
+        offer: null,
+        contextBlock:
+          `### Funding scan (after the ${f.name} failure)\n${offer.insufficient}\n` +
+          `Weave this into the failure explanation — the user should know exactly what they hold, per chain, and what the smallest plan needs.`,
+      }
+    }
+    return {
+      offer: {
+        ...offer,
+        reply: `${offer.reply.replace(/ and finish [^—]+— one job[^.]*\./, '.')} Once the move settles (seconds), ask again and I'll build the action with the funds in place.`,
+      },
+      contextBlock:
+        `### Funding options found (after the ${f.name} failure)\n` +
+        `The failed call was short of funds, but the wallet holds movable funds on other chains. The system RENDERS funding chips directly under your reply (this is guaranteed — never hedge about whether they appear, never add placeholder lines about them). ` +
+        `Tell the user the action couldn't be funded yet, that the chips below move the money over (they sign, delivered to their own address), and that once it settles they should re-ask so the action rebuilds with funds in place. ` +
+        `Do NOT invent your own bridge instructions, amounts, or addresses.`,
+    }
+  }
+  return null
 }

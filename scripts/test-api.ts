@@ -43,7 +43,7 @@ import { encodeV4SwapCalldata, guardUniswapV4Build, type V4BuiltStep, type V4Gua
 import { guardLifiBuild, verifyLifiQuoteEcho, lifiPriceAcceptable, lifiRoutersFor, type LifiBuiltStep, type LifiGuardExpectations, type LifiQuote } from '../lib/lifi-venue'
 import { fundingNeedUsd, guardLifiBridgeBuild, lifiBridgeRoutersFor, verifyLifiBridgeEcho, type LifiBridgeExpectations, type LifiBridgeStep } from '../lib/lifi-bridge'
 import { parseRobinhoodFunding } from '../lib/jobs'
-import { fundingPlanUsd, planFundingChips, rankFundingSources, type FundingNeed, type FundingSource } from '../lib/funding-plan'
+import { detectBalanceShortfall, fundingPlanUsd, planFundingChips, rankFundingSources, type FundingNeed, type FundingSource } from '../lib/funding-plan'
 import { swapFeeAtoms, SWAP_FEE_BPS, TREASURY_ADDRESS } from '../lib/fees'
 import { APP_CHAINS, chainById, chainNamedIn, sanitizeChainId } from '../lib/chains'
 import { parseCrossChainSwap, guardCrossChainBuild, expectedOriginChainId, parseCrossChainFollowUp } from '../lib/cross-chain-swap'
@@ -3367,6 +3367,44 @@ async function main() {
     )
     const gasShort = planFundingChips(gasNeed, 20, [src(8453, 'Base', 'USDC', 22)], 7)
     check('funding plan: a source covering the tokens but not the gas leg is honestly short', gasShort.kind === 'short' && gasShort.needUsd === 27)
+
+    // The generic fallback: balance refusals from ANY MCP become detectable
+    // shortfalls, and bridge-only chips (empty followup) still round-trip —
+    // one leg = a plain cross-chain ask, several legs = a pure-bridge job.
+    const detAave = detectBalanceShortfall('AaveKit API error (HTTP 400): "Insufficient balance: this needs 200.000000 USDC but the wallet holds 142.244500 USDC on Ethereum. Nothing was built."')
+    const detLido = detectBalanceShortfall('Insufficient ETH: staking 0.0002 ETH but the wallet holds 0 ETH on Ethereum. Nothing was built.')
+    const detGeneric = detectBalanceShortfall('not enough USDC on Arbitrum: needs 20 USDC but you have 3 USDC')
+    check(
+      'funding fallback: detects balance refusals (aave-shape / lido-shape / generic)',
+      !!detAave && detAave.token === 'USDC' && detAave.chainId === 1 && Math.abs(detAave.shortfall - 57.7555) < 0.001 &&
+        !!detLido && detLido.token === 'ETH' && detLido.chainId === 1 && detLido.shortfall === 0.0002 &&
+        !!detGeneric && detGeneric.chainId === 42161 && detGeneric.shortfall === 17,
+      JSON.stringify({ detAave, detLido, detGeneric }),
+    )
+    check(
+      'funding fallback: no chain / no trigger / covered balance → null (never guesses)',
+      detectBalanceShortfall('Insufficient balance: needs 20 USDC but holds 3 USDC') === null &&
+        detectBalanceShortfall('the wallet holds 20 USDC on Base') === null &&
+        detectBalanceShortfall('Insufficient USDG on Robinhood Chain: needs 20 USDG') === null &&
+        detectBalanceShortfall('insufficient: needs 3 USDC on Base but the wallet holds 5 USDC') === null,
+    )
+    const bridgeOnly = planFundingChips({ chainId: 42161, token: 'USDC', amountHuman: 17, followupResume: '', actionLabel: 'the custom action' }, 20, [src(8453, 'Base', 'USDC', 60)])
+    check(
+      'funding fallback: bridge-only chip is a plain cross-chain ask (native layer owns it)',
+      bridgeOnly.kind === 'offer' && bridgeOnly.chips[0].resume === 'Swap 20 USDC from Base to USDC on Arbitrum' &&
+        compileJobAsk(bridgeOnly.chips[0].resume) === null &&
+        !!parseCrossChainSwap(bridgeOnly.chips[0].resume) && !('problem' in parseCrossChainSwap(bridgeOnly.chips[0].resume)!),
+      bridgeOnly.kind === 'offer' ? bridgeOnly.chips[0].resume : bridgeOnly.kind,
+    )
+    const bridgeOnlyGas = planFundingChips({ chainId: 1, token: 'USDC', amountHuman: 17, followupResume: '', actionLabel: 'the custom action' }, 20, [src(8453, 'Base', 'USDC', 60)], 7)
+    const bridgeOnlyGasJob = bridgeOnlyGas.kind === 'offer' ? compileJobAsk(bridgeOnlyGas.chips[0].resume) : null
+    check(
+      'funding fallback: bridge-only with a gas leg compiles as a pure-bridge job',
+      !!bridgeOnlyGasJob && !('problem' in bridgeOnlyGasJob) &&
+        JSON.stringify(bridgeOnlyGasJob.steps.map((s) => `${s.kind}:${s.builder}`)) ===
+          JSON.stringify(['sign:native-cross-chain', 'wait:wait', 'sign:native-cross-chain', 'wait:wait']),
+      bridgeOnlyGas.kind === 'offer' ? bridgeOnlyGas.chips[0].resume : bridgeOnlyGas.kind,
+    )
 
     // The Hyperliquid variant: USDC on Arbitrum funded from Base, deposit follows.
     const hlNeed: FundingNeed = { chainId: 42161, token: 'USDC', amountHuman: 17, followupResume: 'deposit 20 USDC to Hyperliquid', actionLabel: 'the Hyperliquid deposit' }
