@@ -139,7 +139,7 @@ export default function Navigation() {
   ) : null
 
   // Desktop primary tabs — the three "engine, examined" surfaces (Benchmarks,
-  // Tools, Activity) collapse into the Research mega-menu.
+  // Tools, Activity) collapse into the Analytics mega-menu.
   const desktopTabs = (
     <>
       <Link href="/" className={`nav__tab ${pathname === '/' ? 'is-on' : ''}`}>
@@ -161,7 +161,7 @@ export default function Navigation() {
     </>
   )
 
-  // Drawer tabs — same destinations, but Research expands into a labeled group
+  // Drawer tabs — same destinations, but Analytics expands into a labeled group
   // so every surface stays one tap away on mobile.
   const drawerTabs = (
     <>
@@ -171,7 +171,7 @@ export default function Navigation() {
       <Link href="/chat" className={`nav__tab ${pathname === '/chat' ? 'is-on' : ''}`}>
         App
       </Link>
-      <span className="drawer__group mono">Research</span>
+      <span className="drawer__group mono">Analytics</span>
       {RESEARCH_ITEMS.map(({ href, label }) => (
         <Link
           key={href}

@@ -36,6 +36,7 @@ import { splashCapable } from '@/lib/splash/types'
 import ShareButton from '@/components/ShareButton'
 import EmbedThisChat from '@/components/EmbedThisChat'
 import ChainPicker from '@/components/ChainPicker'
+import { chainById } from '@/lib/chains'
 import ModeToggle from '@/components/ModeToggle'
 import AppModeWorkspace from '@/components/AppModeWorkspace'
 import Link from 'next/link'
@@ -1321,9 +1322,10 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
                             tx={builtTx}
                             onConfirmed={(hash) => {
                               const chainId = builtTx.chainId ?? 8453
-                              const explorer =
-                                { 1: 'https://etherscan.io/tx/', 8453: 'https://basescan.org/tx/', 42161: 'https://arbiscan.io/tx/' }[chainId] ??
-                                'https://basescan.org/tx/'
+                              // Explorer base from the chain registry (the single
+                              // source of truth) so Robinhood/Arbitrum/etc. link to
+                              // the right explorer, not a basescan fallback.
+                              const explorer = chainById(chainId)?.explorerTx ?? 'https://basescan.org/tx/'
                               reportEmbedSigned({ artifact: 'tx', chain: chainLabel(chainId), txUrl: `${explorer}${hash}`, valueUsd: guardrailUsdOf(msg.meta), buildPath: buildPathOf(msg.meta) })
                               // Durable signing log → the message's DB meta
                               // (the /p share page renders it with explorer links).
@@ -1342,9 +1344,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
                             // swap, not the approve) confirms — that's the
                             // signed event for the money-flow metric.
                             onCompleted={({ hash, chainId, txs }) => {
-                              const explorer =
-                                { 1: 'https://etherscan.io/tx/', 8453: 'https://basescan.org/tx/', 42161: 'https://arbiscan.io/tx/' }[chainId] ??
-                                'https://basescan.org/tx/'
+                              const explorer = chainById(chainId)?.explorerTx ?? 'https://basescan.org/tx/'
                               reportEmbedSigned({
                                 artifact: 'tx-chain',
                                 chain: chainLabel(chainId),

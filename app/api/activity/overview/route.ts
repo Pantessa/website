@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import prisma from '@/lib/db'
+import { chainById, chainByKey, type AppChain } from '@/lib/chains'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -46,12 +47,60 @@ export interface VenueRow {
   signedUsd: number
 }
 
+/** What the tx actually DID, keyed by the layer that built it — "Uniswap swap"
+ *  reads far better than a bare "Transaction". Falls back to ARTIFACT_LABEL. */
+const BUILD_PATH_LABEL: Record<string, string> = {
+  'native-swap-uniswap': 'Uniswap swap',
+  'native-swap-uniswap-v4': 'Uniswap swap',
+  'native-swap-cow': 'CoW swap',
+  'native-swap-lifi': 'Stock swap',
+  'native-aave-supply': 'Aave supply',
+  'native-aave-op': 'Aave position',
+  'native-cross-chain': 'Cross-chain swap',
+  'native-hl-guardian': 'Hyperliquid order',
+  'native-hl-exec': 'Hyperliquid order',
+  'native-lido': 'Lido stake',
+  'native-job': 'Multi-step job',
+}
+
 /** Human fallback when a turn carries no artifact label (embed_turns.detail). */
 const ARTIFACT_LABEL: Record<string, string> = {
   'cow-order': 'CoW order',
   tx: 'Transaction',
   'tx-chain': 'Multi-step transaction',
   vote: 'DAO vote',
+  job: 'Multi-step job',
+  'job-step': 'Job step',
+}
+
+/** embed_turns.chain is free-form ('base' | 'ethereum' | '4663' | '0x…' |
+ *  'multi' | 'hyperliquid') — resolve it to the app chain registry so links
+ *  and labels come from the SINGLE source of truth (lib/chains.ts). */
+function appChainOf(chain: string | null | undefined): AppChain | null {
+  if (!chain) return null
+  const byKey = chainByKey(chain)
+  if (byKey) return byKey
+  const id = chain.startsWith('0x') ? parseInt(chain, 16) : Number(chain)
+  return Number.isFinite(id) ? chainById(id) : null
+}
+
+/** A friendly chain name for the receipts feed ('4663' → 'Robinhood'). */
+function chainName(chain: string | null | undefined): string | null {
+  if (!chain) return null
+  if (chain === 'multi') return 'multi-chain'
+  return appChainOf(chain)?.short ?? chain
+}
+
+/** The explorer link for a signed tx — rebuilt from the chain registry when we
+ *  can (the write path historically hardcoded basescan for EVERY chain, so a
+ *  Robinhood or Arbitrum tx pointed at the wrong explorer), else the stored
+ *  url. The 66-char tx hash is lifted out of whatever url was stored. */
+const TX_HASH_RE = /0x[0-9a-fA-F]{64}/
+function txLink(chain: string | null | undefined, storedUrl: string | null): string | null {
+  const appChain = appChainOf(chain)
+  const hash = storedUrl?.match(TX_HASH_RE)?.[0]
+  if (appChain && hash) return `${appChain.explorerTx}${hash}`
+  return storedUrl
 }
 
 const r2 = (n: number) => Math.round(n * 100) / 100
@@ -270,19 +319,21 @@ export async function GET() {
   const recent: RecentEvent[] = [
     ...recentTurns.map((t): RecentEvent => ({
       kind: 'tx',
-      label: t.detail ?? ARTIFACT_LABEL[t.artifact ?? ''] ?? 'Transaction',
+      label: t.detail ?? BUILD_PATH_LABEL[t.buildPath ?? ''] ?? ARTIFACT_LABEL[t.artifact ?? ''] ?? 'Transaction',
       outcome: t.outcome,
-      chain: t.chain,
+      chain: chainName(t.chain),
       venue: VENUE_OF_PATH[t.buildPath ?? ''] ?? null,
       usd: t.valueUsd,
-      link: t.txUrl,
+      // Only signed turns have a real on-chain tx; rebuild the link on the
+      // correct explorer (fixes non-Base chains the write path mislabeled).
+      link: t.outcome === 'signed' ? txLink(t.chain, t.txUrl) : null,
       at: t.createdAt.toISOString(),
     })),
     ...recentReceipts.map((x): RecentEvent => ({
       kind: 'x402',
       label: x.serviceName ?? x.host,
       outcome: 'settled',
-      chain: 'base',
+      chain: 'Base',
       venue: null,
       usd: x.amountUsd,
       link: x.txHash ? `https://basescan.org/tx/${x.txHash}` : null,
