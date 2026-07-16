@@ -3,6 +3,7 @@
 import { useState, type ReactNode } from 'react'
 import { WagmiProvider } from 'wagmi'
 import TrackWallet from '@/components/TrackWallet'
+import AccountSwitchBanner from '@/components/AccountSwitchBanner'
 import CdpOAuthReturn from '@/components/CdpOAuthReturn'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { RainbowKitProvider, darkTheme } from '@rainbow-me/rainbowkit'
@@ -41,6 +42,9 @@ export default function Providers({ children }: { children: ReactNode }) {
         >
           <SessionProvider>
             <TrackWallet />
+            {/* Prompts a one-click re-sign when the user switches MetaMask
+                accounts (self-suppresses on /embed). */}
+            <AccountSwitchBanner />
             {/* Resumes a social (Google/Apple/X) sign-in after the OAuth
                 redirect. CDP-only — it uses CDP hooks. */}
             {cdpEnabled && <CdpOAuthReturn />}
