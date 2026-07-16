@@ -45,6 +45,7 @@ import { fundingNeedUsd, guardLifiBridgeBuild, lifiBridgeRoutersFor, verifyLifiB
 import { parseRobinhoodFunding, parseSameChainSwapSegment } from '../lib/jobs'
 import { detectBalanceShortfall, fundingPlanUsd, planFundingChips, rankFundingSources, type FundingNeed, type FundingSource } from '../lib/funding-plan'
 import { compileDcaBuy, dcaRunChip, parseDcaCreate, parseDcaManage, parseDcaRun, periodKeyFor } from '../lib/dca'
+import { EXAMPLE_PROMPTS } from '../lib/examples'
 import { swapFeeAtoms, SWAP_FEE_BPS, TREASURY_ADDRESS } from '../lib/fees'
 import { APP_CHAINS, chainById, chainNamedIn, sanitizeChainId } from '../lib/chains'
 import { parseCrossChainSwap, guardCrossChainBuild, expectedOriginChainId, parseCrossChainFollowUp } from '../lib/cross-chain-swap'
@@ -3508,6 +3509,28 @@ async function main() {
     check(
       'dca: ISO week keys (year boundary lands in the owning ISO year)',
       periodKeyFor('week', new Date(Date.UTC(2026, 6, 16))) === '2026-W29' && periodKeyFor('week', new Date(Date.UTC(2027, 0, 1))) === '2026-W53',
+    )
+
+    // Discoverability contract: every DCA suggestion chip (empty-state
+    // gallery + splash) must parse into a schedule create — a suggestion
+    // that falls through to the swap layer would silently drop the cadence.
+    const galleryDca = EXAMPLE_PROMPTS.find((e) => /every week/i.test(e.prompt))
+    const galleryParse = galleryDca ? parseDcaCreate(galleryDca.prompt) : null
+    check(
+      'dca: the empty-state gallery chip parses into a schedule (never a one-shot)',
+      !!galleryDca && !!galleryParse && !('problem' in galleryParse) && galleryParse.cadence === 'week' && galleryParse.chainId === 4663,
+      galleryDca?.prompt,
+    )
+    const splashDcaPrompts = [
+      'Buy $10 of AAPL every week on Robinhood Chain', // robinhood splash + preview
+      'Buy $25 of ETH every week on Base', // uniswap preview
+    ]
+    check(
+      'dca: splash/preview suggestion prompts all parse into schedule creates',
+      splashDcaPrompts.every((p) => {
+        const c = parseDcaCreate(p)
+        return !!c && !('problem' in c) && c.cadence === 'week' && c.chainId !== null
+      }),
     )
   }
 

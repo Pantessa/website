@@ -15,6 +15,14 @@ export interface ExamplePrompt {
 
 export const EXAMPLE_PROMPTS: ExamplePrompt[] = [
   {
+    // The auto-trader: arms a recurring buy (lib/dca) — native layer, no MCP
+    // toggle needed; the chip mainly teaches that "every week" is a thing
+    // you can SAY here.
+    label: 'DCA $10 into AAPL weekly',
+    prompt: 'Buy $10 of AAPL every week on Robinhood Chain',
+    slug: 'robinhood-free',
+  },
+  {
     label: 'Crypto market data',
     prompt: 'What is the current price and 24h change for ETH?',
     slug: 'yeetful-nansen',
