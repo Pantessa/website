@@ -660,6 +660,9 @@ function robinhoodPrompts(holdings: RobinhoodHolding[]): SuggestedPrompt[] {
   const prompts: SuggestedPrompt[] = []
   const usdg = holdings.find((h) => h.symbol === 'USDG' && (h.usd ?? 0) >= 5)
   if (usdg) {
+    // Funded wallets lead with the auto-trader: a recurring buy (confirm-mode
+    // DCA — the native layer builds each period's buy, the user signs it).
+    prompts.push({ label: 'DCA $10 into AAPL weekly', prompt: 'Buy $10 of AAPL every week on Robinhood Chain' })
     const amt = Math.min(Math.floor(Number(usdg.balance)), 50) || 5
     prompts.push({ label: `Buy AAPL with ${amt} USDG`, prompt: `Swap ${amt} USDG for AAPL on Robinhood Chain` })
   }

@@ -919,3 +919,50 @@ model JobStep {
   @@index([jobId])
   @@map("job_steps")
 }
+
+/// A recurring buy (DCA): spend a fixed $ of the chain's primary stable on a
+/// token once per calendar period (UTC day/week/month). CONFIRM-MODE by
+/// design — nothing signs itself. When a period is due, chat/splash offer a
+/// one-tap chip that compiles a ONE-STEP job (the same native-swap builder +
+/// guardrails as any swap), so every buy is built fresh at offer time and
+/// individually signed. Missed periods lapse silently — no catch-up buys.
+model DcaSchedule {
+  id        String   @id @default(cuid())
+  wallet    String // lowercased owner (connected wallet at creation)
+  status    String   @default("active") // active | paused | canceled
+  /// Shared-DB env fence (the guardian/jobs lesson): schedules only surface
+  /// and run in the env that created them. 'production' | 'preview' | 'dev'.
+  originEnv String   @default("dev") @map("origin_env")
+  cadence   String // day | week | month (UTC calendar periods)
+  buyUsd    Float    @map("buy_usd")
+  buyToken  String   @map("buy_token") // symbol — resolved per-build from the chain's official token list
+  sellToken String   @map("sell_token") // the chain's primary stable at creation (USDC / USDG)
+  chainId   Int      @map("chain_id")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  runs DcaRun[]
+
+  @@index([wallet, createdAt])
+  @@index([status])
+  @@map("dca_schedules")
+}
+
+/// One period's buy attempt. The @@unique([scheduleId, periodKey]) row IS the
+/// idempotency claim — overlapping taps/turns can't double-offer a period.
+/// Status is DERIVED from the linked one-step job (done → bought, failed /
+/// canceled → the period is reclaimable), never stored separately.
+model DcaRun {
+  id         String   @id @default(cuid())
+  scheduleId String   @map("schedule_id")
+  wallet     String
+  periodKey  String   @map("period_key") // 2026-07-16 | 2026-W29 | 2026-07 (UTC)
+  jobId      String?  @map("job_id") // the one-step buy job this period's claim produced
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  schedule DcaSchedule @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
+
+  @@unique([scheduleId, periodKey])
+  @@index([wallet, createdAt])
+  @@map("dca_runs")
+}
