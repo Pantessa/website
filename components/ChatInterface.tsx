@@ -3,7 +3,7 @@
 import { analytics } from '@/lib/analytics'
 import { Fragment, useState, useRef, useEffect, useSyncExternalStore } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Send, Zap, Check, Loader2, Bot, User, Boxes, PanelLeft, PanelRight, Sparkles, Copy } from 'lucide-react'
+import { Send, Zap, Check, Loader2, Bot, User, Boxes, MessageSquare, PanelRight, Sparkles, Copy } from 'lucide-react'
 import { useAccount, useSignTypedData, useConnect } from 'wagmi'
 import { useConnectModal } from '@rainbow-me/rainbowkit'
 import { getHostWalletServerState, getHostWalletState, HOST_WALLET_CONNECTOR_ID, subscribeHostWallet } from '@/lib/host-wallet'
@@ -222,10 +222,8 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
     createChat,
     addMessage,
     recordSignedTxs,
-    sidebarOpen,
-    setSidebarOpen,
-    mobileSidebarOpen,
-    setMobileSidebarOpen,
+    railTab,
+    setRailTab,
     autoRouter,
     pushRouterTrace,
     setRouterTrace,
@@ -246,9 +244,9 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
   const { chrome: appChrome } = useAppShellMode()
   const showAppChrome = appChrome && !embedded
 
-  // Reactive rail-open state so the toolbar can surface the reopen control only
-  // when the conversation sidebar is tucked away (the collapse toggle + home
-  // otherwise live at the TOP of the sidebar, above "New Chat" — like docs).
+  // Reactive rail-open state so the toolbar can surface the labeled reopen
+  // chips only while the rail is tucked away (the collapse toggle otherwise
+  // lives at the TOP of the rail, next to its MCPs/Chats tabs).
   const [isNarrow, setIsNarrow] = useState(false)
   useEffect(() => {
     const mql = window.matchMedia('(max-width: 1023px)')
@@ -257,14 +255,14 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
     mql.addEventListener('change', on)
     return () => mql.removeEventListener('change', on)
   }, [])
-  const railOpen = isNarrow ? mobileSidebarOpen : sidebarOpen
-  const toggleChatRail = () =>
-    isNarrow ? setMobileSidebarOpen(!mobileSidebarOpen) : setSidebarOpen(!sidebarOpen)
-  // The MCP rail (vertical tool column) — agent selection lives THERE now,
-  // not in a horizontal strip up here.
-  const mcpRailVisible = isNarrow ? mobileMcpRailOpen : mcpRailOpen
-  const toggleMcpRail = () =>
-    isNarrow ? setMobileMcpRailOpen(!mobileMcpRailOpen) : setMcpRailOpen(!mcpRailOpen)
+  const railVisible = isNarrow ? mobileMcpRailOpen : mcpRailOpen
+  // A reopen chip names what it opens: clicking "MCPs"/"Chats" opens the rail
+  // on that tab — no more anonymous panel icons. The chips only render while
+  // the rail is closed; open, the rail's own tabs sit right there instead.
+  const openRail = (tab: 'mcps' | 'chats') => {
+    setRailTab(tab)
+    isNarrow ? setMobileMcpRailOpen(true) : setMcpRailOpen(true)
+  }
 
   const [input, setInput] = useState('')
   // App Mode's transcript view-switch: a command-bar send opens the transcript
@@ -994,51 +992,47 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
 
   return (
     <div className="relative flex flex-col h-full">
-      {/* Toolbar: sidebar + MCP-rail toggles (agent selection lives in the
-          vertical MCP rail now). Hidden in the embed — EmbedChat renders its
-          own slim header. */}
+      {/* Toolbar: the rail reopen chips + view toggle + chain picker. Hidden
+          in the embed — EmbedChat renders its own slim header. */}
       {!embedded && (
       <div className="flex-shrink-0 px-3 py-2.5 border-b border-[var(--line)] bg-black/40 flex items-center gap-2">
-        {/* Reopen group — appears (with the home mark) only while the sidebar is
-            collapsed; the collapse toggle otherwise lives atop the sidebar. */}
-        {!railOpen && (
-          <div key="chat-reopen" className="chatreopen flex-shrink-0 flex items-center gap-2">
+        {/* Home mark — a PERMANENT, predictable path back to the dashboard
+            (it used to appear only while the chats sidebar was collapsed,
+            which read as chrome shuffling around). */}
+        {showAppChrome && (
+          <Link
+            href="/dashboard"
+            aria-label="Yeetful dashboard — keys, embeds, billing"
+            title="Yeetful dashboard — keys, embeds, billing"
+            className="flex-shrink-0 grid place-items-center w-10 h-10 md:w-8 md:h-8 rounded-lg text-white hover:bg-[var(--surf-1)] transition-colors"
+          >
+            <YeetfulMark size={20} />
+          </Link>
+        )}
+        {/* Labeled reopen chips — only while the rail is collapsed (open, the
+            rail's own MCPs/Chats tabs are visible right below). */}
+        {!railVisible && (
+          <div className="chatreopen flex-shrink-0 flex items-center gap-1.5">
             <button
-              onClick={toggleChatRail}
-              aria-label="Show chats"
-              title="Show chats"
-              className="flex-shrink-0 w-10 h-10 md:w-8 md:h-8 grid place-items-center rounded-lg border border-[var(--line)] bg-[var(--surf-1)] text-[color:var(--muted)] hover:text-white hover:border-[var(--line-2)] transition-colors"
+              onClick={() => openRail('mcps')}
+              aria-label="Show the MCP rail"
+              title="Show your MCP set"
+              className="flex-shrink-0 flex items-center gap-1.5 px-2.5 min-h-[40px] md:min-h-[32px] rounded-lg border bg-[var(--surf-1)] border-[var(--line)] text-[color:var(--muted)] hover:text-white hover:border-[var(--line-2)] transition-colors"
             >
-              <PanelLeft className="w-4 h-4" />
+              <Boxes className="w-4 h-4" />
+              <span className="text-[11px] whitespace-nowrap font-medium mono">MCPS · {activeServers.length}</span>
             </button>
-            {showAppChrome && (
-              <Link
-                href="/dashboard"
-                aria-label="Dashboard home"
-                title="Back to dashboard"
-                className="flex-shrink-0 grid place-items-center w-10 h-10 md:w-8 md:h-8 rounded-lg text-white hover:bg-[var(--surf-1)] transition-colors"
-              >
-                <YeetfulMark size={20} />
-              </Link>
-            )}
+            <button
+              onClick={() => openRail('chats')}
+              aria-label="Show your chat history"
+              title="Show your chat history"
+              className="flex-shrink-0 flex items-center gap-1.5 px-2.5 min-h-[40px] md:min-h-[32px] rounded-lg border bg-[var(--surf-1)] border-[var(--line)] text-[color:var(--muted)] hover:text-white hover:border-[var(--line-2)] transition-colors"
+            >
+              <MessageSquare className="w-4 h-4" />
+              <span className="text-[11px] whitespace-nowrap font-medium mono">CHATS</span>
+            </button>
           </div>
         )}
-        {/* MCP rail toggle — always available; shows the active-set count. */}
-        <button
-          onClick={toggleMcpRail}
-          aria-pressed={mcpRailVisible}
-          aria-label={mcpRailVisible ? 'Hide the MCP rail' : 'Show the MCP rail'}
-          title={mcpRailVisible ? 'Hide MCPs' : 'Show MCPs'}
-          className={cn(
-            'flex-shrink-0 flex items-center gap-1.5 px-2.5 min-h-[40px] md:min-h-[32px] rounded-lg border transition-colors',
-            mcpRailVisible
-              ? 'bg-[var(--surf-2)] border-white/30 text-white'
-              : 'bg-[var(--surf-1)] border-[var(--line)] text-[color:var(--muted)] hover:text-white hover:border-[var(--line-2)]',
-          )}
-        >
-          <Boxes className="w-4 h-4" />
-          <span className="text-[11px] whitespace-nowrap font-medium mono">MCPS · {activeServers.length}</span>
-        </button>
         <div className="flex-1 min-w-0 flex items-center">
           {/* Auto Router + the spending-policy master switch are DISABLED for
               now — the toggles are hidden and the features behave as if they
