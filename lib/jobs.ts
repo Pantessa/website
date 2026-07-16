@@ -18,6 +18,7 @@
 //     needs an active approveAgent delegation). Jobs never widen authority.
 // ─────────────────────────────────────────────────────────────────────────
 
+import { parseAaveOp, parseAaveSupply, type AaveOpParams, type AaveSupplyParams } from '@/lib/aave-supply'
 import { parseCrossChainSwap, type CrossChainSwapParams } from '@/lib/cross-chain-swap'
 import { parseHlIntent, type HlIntent, type HlOrderIntent } from '@/lib/hyperliquid-exec'
 import { parseGuardianArm, type GuardianArmAsk } from '@/lib/hl-guardian'
@@ -186,6 +187,27 @@ export function compileJobAsk(message: string): CompiledJob | { problem: string 
       continue
     }
 
+    // Aave supply/repay segments — the ops a funding plan lands on. The
+    // compiler has no selected-set context, so only EXPLICIT Aave asks
+    // compile ("supply 20 USDC to aave"); weak/bare verbs stay chat-only.
+    // Aave v4 builds run on Ethereum — a named other chain refuses honestly.
+    const aaveSup = parseAaveSupply(seg)
+    if (aaveSup && !('problem' in aaveSup) && aaveSup.explicitAave && !aaveSup.weak) {
+      if (aaveSup.otherChain) return { problem: `Step ${i + 1}: Aave v4 builds run on Ethereum — I can't supply on ${aaveSup.otherChain}.` }
+      const title = `Supply ${aaveSup.amount} ${aaveSup.token.toUpperCase()} to Aave v4`
+      steps.push({ kind: 'sign', builder: 'native-aave-supply', title, params: { token: aaveSup.token, amount: aaveSup.amount } })
+      titles.push(title)
+      continue
+    }
+    const aaveOp = parseAaveOp(seg)
+    if (aaveOp && !('problem' in aaveOp) && aaveOp.op === 'repay' && aaveOp.explicitAave && !aaveOp.weak) {
+      if (aaveOp.otherChain) return { problem: `Step ${i + 1}: Aave v4 builds run on Ethereum — I can't repay on ${aaveOp.otherChain}.` }
+      const title = aaveOp.max ? `Repay the full ${aaveOp.token.toUpperCase()} debt on Aave v4` : `Repay ${aaveOp.amount} ${aaveOp.token.toUpperCase()} on Aave v4`
+      steps.push({ kind: 'sign', builder: 'native-aave-repay', title, params: { token: aaveOp.token, amount: aaveOp.amount, max: aaveOp.max } })
+      titles.push(title)
+      continue
+    }
+
     const arm = parseGuardianArm(seg)
     if (arm) {
       const title = `Arm ${arm.kind === 'stop_loss' ? 'stop-loss' : 'take-profit'} on ${arm.coin} (${arm.triggerMode === 'price' ? `px ${arm.triggerValue}` : `${arm.triggerValue}%`})`
@@ -201,7 +223,7 @@ export function compileJobAsk(message: string): CompiledJob | { problem: string 
     if (steps.length === 0) return null
     return {
       problem:
-        `I can compile steps that are cross-chain swaps, Robinhood Chain funding plans, Hyperliquid deposits/orders, Lido stakes, or guardian protection — ` +
+        `I can compile steps that are cross-chain swaps, Robinhood Chain funding plans, Hyperliquid deposits/orders, Lido stakes, Aave supplies/repays, or guardian protection — ` +
         `step ${i + 1} ("${seg.slice(0, 80)}") isn't one of those yet, so I won't guess. ` +
         `Amounts must be explicit (e.g. "deposit 20 usdc to hyperliquid").`,
     }
@@ -213,4 +235,4 @@ export function compileJobAsk(message: string): CompiledJob | { problem: string 
   return { title: titles.join(' → '), steps }
 }
 
-export type { HlIntent, GuardianArmAsk, CrossChainSwapParams }
+export type { HlIntent, GuardianArmAsk, CrossChainSwapParams, AaveSupplyParams, AaveOpParams }
