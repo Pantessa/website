@@ -59,6 +59,13 @@ const DUST_USD = 0.5
 const GAS_RESERVE_ETH: Record<number, number> = { 1: 0.002, 8453: 0.0002, 42161: 0.0002 }
 /** Minimum native ETH a chain needs before an ERC-20 source there is signable. */
 const MIN_GAS_TO_SEND_ETH: Record<number, number> = { 1: 0.001, 8453: 0.00003, 42161: 0.00003 }
+/** Native ETH the DESTINATION wallet needs to sign the follow-up action
+ *  (approve + the op). Below it, the plan adds a gas leg — funds that land
+ *  where the wallet can't pay gas are stranded, not delivered (live
+ *  2026-07-16: a $2 bridge arrived and the stake couldn't fire). */
+export const DEST_GAS_FLOOR_ETH: Record<number, number> = { 1: 0.003, 8453: 0.0002, 42161: 0.0002 }
+/** The smallest gas leg worth quoting. */
+const MIN_GAS_LEG_USD = 1.5
 
 export interface FundingNeed {
   /** Destination chain + token the blocked action needs. */
@@ -126,12 +133,22 @@ export function rankFundingSources(need: FundingNeed, sources: FundingSource[]):
   return [...sources].sort((a, b) => group(a) - group(b) || b.usd - a.usd)
 }
 
+/** The gas-leg resume segment: same source, delivered as native ETH on the
+ *  destination so the follow-up action can actually be signed. */
+const gasLegResume = (s: FundingSource, amount: string, need: FundingNeed): string =>
+  `Swap ${amount} ${s.token} from ${s.chainWord} to ETH on ${FUNDING_CHAIN_WORD[need.chainId]}`
+
 /**
  * The pure planner: rank the sources and turn a shortfall into chips (or an
  * honest "the whole wallet can't cover it"). Every chip's resume string is
  * harness-checked to compile under lib/jobs.ts — the chip is the contract.
+ *
+ * `gasUsd` > 0 means the destination wallet can't pay for the follow-up
+ * action itself: every chip gets a gas leg FIRST (source → native ETH on
+ * the destination), then the token leg. Funds that land where the wallet
+ * can't sign are stranded, not delivered.
  */
-export function planFundingChips(need: FundingNeed, needUsd: number, sources: FundingSource[]): FundingPlan {
+export function planFundingChips(need: FundingNeed, needUsd: number, sources: FundingSource[], gasUsd = 0): FundingPlan {
   // Destination-chain balances are never sources — these legs are NEAR
   // Intents bridges, and a same-chain conversion belongs to the swap venues.
   const ranked = rankFundingSources(
@@ -143,68 +160,116 @@ export function planFundingChips(need: FundingNeed, needUsd: number, sources: Fu
     .map((s) => `~$${usd2(Number(s.usd.toFixed(2)))} of ${s.token} on ${s.chainWord}`)
     .join(', ')
   const totalUsd = Number(ranked.reduce((a, s) => a + s.usd, 0).toFixed(2))
+  const totalNeedUsd = Number((needUsd + gasUsd).toFixed(2))
 
-  const best = ranked.find((s) => s.usd >= needUsd)
+  /** [gas leg?, token leg] from ONE source, spending `tokenUsd` on the token
+   *  leg — the source must hold tokenUsd + gasUsd or this returns null. */
+  const legsFrom = (s: FundingSource, tokenUsd: number): string[] | null => {
+    if (s.usd < tokenUsd + gasUsd) return null
+    const segs: string[] = []
+    let spent = 0
+    if (gasUsd > 0) {
+      segs.push(gasLegResume(s, sourceAmountFor(s, gasUsd), need))
+      spent = gasUsd
+    }
+    // The token leg's amount comes out of what's left of the source.
+    const remaining: FundingSource = { ...s, balance: s.balance * (1 - spent / s.usd), usd: s.usd - spent }
+    segs.push(legResume(remaining, sourceAmountFor(remaining, tokenUsd), need))
+    return segs
+  }
+
+  const best = ranked.find((s) => s.usd >= totalNeedUsd)
   const chips: FundingChip[] = []
   if (best) {
-    const amount = sourceAmountFor(best, needUsd)
+    const legs = legsFrom(best, needUsd)!
     chips.push({
-      label: `Just enough (~$${usd2(needUsd)} of ${best.token} on ${best.chainWord})`,
-      resume: `${legResume(best, amount, need)}, then ${need.followupResume}`,
+      label: `Just enough (~$${usd2(totalNeedUsd)} of ${best.token} on ${best.chainWord})`,
+      resume: `${legs.join(', then ')}, then ${need.followupResume}`,
     })
     // "All of it" only when it's a sensible whole-balance move — a $15k
     // balance covering a $25 need doesn't get an all-in chip.
-    if (best.usd >= needUsd * 1.6 && best.usd <= needUsd * 10) {
-      const all = fmtAmount(best.balance, best.token === 'USDC' ? 2 : 6, 'down')
-      chips.push({
-        label: `All my ${best.token} on ${best.chainWord} (~$${usd2(Number(best.usd.toFixed(2)))})`,
-        resume: `${legResume(best, all, need)}, then ${need.followupResume}`,
-      })
+    if (best.usd >= totalNeedUsd * 1.6 && best.usd <= totalNeedUsd * 10) {
+      const allLegs = legsFrom(best, Number((best.usd - gasUsd).toFixed(2)))
+      if (allLegs) {
+        chips.push({
+          label: `All my ${best.token} on ${best.chainWord} (~$${usd2(Number(best.usd.toFixed(2)))})`,
+          resume: `${allLegs.join(', then ')}, then ${need.followupResume}`,
+        })
+      }
     }
-  } else if (totalUsd >= needUsd && ranked.length >= 2) {
-    // No single source covers it — combine legs (richest-first) until it does.
+  } else if (totalUsd >= totalNeedUsd && ranked.length >= 2) {
+    // No single source covers it — the richest source carries the gas leg,
+    // then legs combine (richest-first) until the token need is covered.
+    const byUsd = [...ranked].sort((a, b) => b.usd - a.usd)
     const legs: string[] = []
     let covered = 0
-    for (const s of [...ranked].sort((a, b) => b.usd - a.usd)) {
-      const legUsd = Math.min(s.usd, needUsd - covered)
-      legs.push(legResume(s, sourceAmountFor(s, legUsd), need))
-      covered += s.usd
+    let gasCarried = 0
+    for (const s of byUsd) {
+      const spendable = s.usd - (gasCarried === 0 && gasUsd > 0 ? gasUsd : 0)
+      if (spendable <= 0) continue
+      const segs = gasCarried === 0 && gasUsd > 0 ? legsFrom(s, Math.min(spendable, needUsd - covered)) : [legResume(s, sourceAmountFor(s, Math.min(s.usd, needUsd - covered)), need)]
+      if (!segs) continue
+      legs.push(...segs)
+      if (gasCarried === 0 && gasUsd > 0) gasCarried = gasUsd
+      covered += Math.min(spendable, needUsd - covered)
       if (covered >= needUsd) break
     }
-    chips.push({
-      label: `Combine ${legs.length} chains (~$${usd2(needUsd)} total)`,
-      resume: `${legs.join(', then ')}, then ${need.followupResume}`,
-    })
+    if (covered >= needUsd && (gasUsd === 0 || gasCarried > 0)) {
+      chips.push({
+        label: `Combine ${legs.length} legs (~$${usd2(totalNeedUsd)} total)`,
+        resume: `${legs.join(', then ')}, then ${need.followupResume}`,
+      })
+    }
   }
 
-  if (chips.length === 0) return { kind: 'short', needUsd, totalUsd, sourceSummary }
+  if (chips.length === 0) return { kind: 'short', needUsd: totalNeedUsd, totalUsd, sourceSummary }
   chips.push({ label: 'Not now', resume: 'Never mind — leave my funds where they are.' })
-  return { kind: 'offer', needUsd, chips: chips.slice(0, 4), sourceSummary }
+  return { kind: 'offer', needUsd: totalNeedUsd, chips: chips.slice(0, 4), sourceSummary }
 }
 
 // ── I/O: the wallet scan + the offer turn ───────────────────────────────────
 
-/** Read movable ETH + USDC across the scan chains. Per-chain read failures
- *  drop that chain (fail-soft); throws only when NOTHING was readable. */
-export async function scanFundingSources(user: string): Promise<FundingSource[]> {
+export interface FundingScan {
+  sources: FundingSource[]
+  /** Chain words that were actually read — the only chains any copy may
+   *  make claims about. */
+  readChains: string[]
+  /** Chain words whose RPC reads failed (after one retry). A failed chain
+   *  means "unknown", NEVER "empty" — a partial scan must not turn into a
+   *  confident "you have nothing" (live 2026-07-16: a rate-limited Base RPC
+   *  hid $15k of USDC). */
+  failedChains: string[]
+}
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
+
+/** Read movable ETH + USDC across the scan chains, one retry per chain.
+ *  Throws only when NOTHING was readable. */
+export async function scanFundingSources(user: string): Promise<FundingScan> {
   const ethProbe = await usdPerToken(8453, 'ETH').catch(() => null)
-  let readable = 0
   const sources: FundingSource[] = []
+  const readChains: string[] = []
+  const failedChains: string[] = []
   await Promise.all(
     FUNDING_SCAN_CHAINS.map(async (chainId) => {
       const chain = chainById(chainId)
       const client = publicClientFor(chainId)
       const usdc = chain?.tokens.USDC
+      const word = FUNDING_CHAIN_WORD[chainId]
       if (!chain || !client || !usdc) return
-      try {
-        const [nativeWei, usdcAtoms] = await Promise.all([
+      const read = () =>
+        Promise.all([
           client.getBalance({ address: user as `0x${string}` }),
           client.readContract({ address: usdc.address, abi: erc20Abi, functionName: 'balanceOf', args: [user as `0x${string}`] }),
         ])
-        readable++
+      try {
+        const [nativeWei, usdcAtoms] = await read().catch(async () => {
+          await sleep(400) // public RPCs rate-limit in bursts — one retry
+          return read()
+        })
+        readChains.push(word)
         const nativeEth = Number(formatEther(nativeWei))
         const usdcBal = Number(formatUnits(usdcAtoms, usdc.decimals))
-        const word = FUNDING_CHAIN_WORD[chainId]
         if (usdcBal > 0 && nativeEth >= (MIN_GAS_TO_SEND_ETH[chainId] ?? 0.001)) {
           sources.push({ chainId, chainWord: word, token: 'USDC', balance: usdcBal, usd: usdcBal })
         }
@@ -213,12 +278,12 @@ export async function scanFundingSources(user: string): Promise<FundingSource[]>
           sources.push({ chainId, chainWord: word, token: 'ETH', balance: movableEth, usd: movableEth * ethProbe.usd })
         }
       } catch {
-        /* this chain's RPC is down — the others still count */
+        failedChains.push(word)
       }
     }),
   )
-  if (readable === 0) throw new Error('no funding-scan chain was readable')
-  return sources
+  if (readChains.length === 0) throw new Error('no funding-scan chain was readable')
+  return { sources, readChains, failedChains }
 }
 
 export interface FundingOfferTurn {
@@ -255,28 +320,68 @@ export async function offerFundingPlan(params: {
     return null
   }
 
-  let sources: FundingSource[]
+  let scan: FundingScan
   try {
-    sources = await scanFundingSources(user)
+    scan = await scanFundingSources(user)
   } catch {
     trace({ type: 'note', level: 'warn', label: 'funding layer: wallet scan unavailable — falling through' })
     return null
   }
 
+  // Destination gas: funds that land where the wallet can't pay for the
+  // follow-up action are stranded, not delivered — when the needed token
+  // isn't the gas token itself, a short destination wallet gets a gas leg.
+  // (ETH needs carry their own gas via the caller's buffer.) An unreadable
+  // balance or unpriceable ETH means the plan can't be made honest → fall
+  // through to the normal fail-closed build.
+  let gasUsd = 0
+  if (need.token.toUpperCase() !== 'ETH') {
+    try {
+      const destClient = publicClientFor(need.chainId)
+      if (!destClient) return null
+      const nativeWei = await destClient.getBalance({ address: user as `0x${string}` })
+      const floor = DEST_GAS_FLOOR_ETH[need.chainId] ?? 0.0002
+      const shortEth = Math.max(0, floor - Number(formatEther(nativeWei)))
+      if (shortEth > 0) {
+        const ethProbe = await usdPerToken(8453, 'ETH').catch(() => null)
+        if (!ethProbe) {
+          trace({ type: 'note', level: 'warn', label: 'funding layer: destination needs a gas leg but ETH is unpriceable — falling through' })
+          return null
+        }
+        gasUsd = Math.max(MIN_GAS_LEG_USD, Math.ceil(shortEth * ethProbe.usd * 1.15 * 2) / 2)
+      }
+    } catch {
+      trace({ type: 'note', level: 'warn', label: "funding layer: couldn't read the destination gas balance — falling through" })
+      return null
+    }
+  }
+
   const needUsd = fundingPlanUsd(need.amountHuman, tokenUsd)
-  const plan = planFundingChips(need, needUsd, sources)
+  const plan = planFundingChips(need, needUsd, scan.sources, gasUsd)
 
   if (plan.kind === 'short') {
+    // A shortfall claim is only honest over chains that were actually read —
+    // when any chain's scan failed, "you have nothing there" may be a lie
+    // (a rate-limited RPC once hid $15k), so fall through instead.
+    if (scan.failedChains.length > 0) {
+      trace({
+        type: 'note',
+        level: 'warn',
+        label: `funding layer: sources look short but ${scan.failedChains.join('/')} didn't scan — falling through rather than claiming an empty wallet`,
+      })
+      return null
+    }
+    const chainsRead = scan.readChains.join(', ').replace(/, ([^,]*)$/, ' and $1')
     trace({
       type: 'note',
       level: 'warn',
-      label: `funding layer: ${need.actionLabel} needs ~$${plan.needUsd} moved but the wallet holds ~$${plan.totalUsd} movable across the scan chains — honest refusal`,
+      label: `funding layer: ${need.actionLabel} needs ~$${plan.needUsd} moved but the wallet holds ~$${plan.totalUsd} movable across ${chainsRead} — honest refusal`,
     })
     return {
       insufficient:
         (plan.sourceSummary
-          ? `Across Base, Arbitrum and Ethereum I can see ${plan.sourceSummary} — `
-          : 'Across Base, Arbitrum and Ethereum I found no movable ETH or USDC — ') +
+          ? `Across ${chainsRead} I can see ${plan.sourceSummary} — `
+          : `Across ${chainsRead} I found no movable ETH or USDC — `) +
         `the smallest plan for ${need.actionLabel} moves ~$${usd2(plan.needUsd)} (solver fees included). Top up any of those chains and ask again.`,
     }
   }
@@ -288,7 +393,7 @@ export async function offerFundingPlan(params: {
   return {
     reply:
       `You don't have enough ${need.token.toUpperCase()} on ${destChain.name} for ${need.actionLabel} yet — but you're holding ${plan.sourceSummary}. ` +
-      `I can move it over (NEAR Intents, delivered to your own address) and finish ${need.actionLabel} — one job, every step built and guard-checked when it's your turn to sign.`,
+      `I can move it over (NEAR Intents, delivered to your own address)${gasUsd > 0 ? `, drop in a little ETH so ${destChain.name} gas is covered,` : ''} and finish ${need.actionLabel} — one job, every step built and guard-checked when it's your turn to sign.`,
     clarify: { question: 'Fund it from another chain?', options: plan.chips },
     buildPath: 'native-funding-offer',
   }

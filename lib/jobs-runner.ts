@@ -25,6 +25,7 @@ import {
 } from '@/lib/lido-stake'
 import { publicClientFor, primaryStable } from '@/lib/chains'
 import { erc20Abi, formatEther } from 'viem'
+import { buildAaveRepayArtifact, buildAaveSupplyArtifact } from '@/lib/aave-exec'
 import { buildLifiBridgeLeg, checkChainArrival, ROBINHOOD_CHAIN_ID, type ChainArrival, type FundingLeg } from '@/lib/lifi-bridge'
 import { buildLifiSwap } from '@/lib/lifi-venue'
 import { ensureTokenList } from '@/lib/token-list'
@@ -259,6 +260,22 @@ export async function buildSignArtifact(
       artifact: { txRequest: guard.tx as unknown as Record<string, unknown>, summary: guard.summary },
       guardReport: { ok: true, warnings: guard.warnings, valueUsd },
       valueUsd,
+    }
+  }
+  if (builder === 'native-aave-supply' || builder === 'native-aave-repay') {
+    // Aave steps ride the same fail-closed recipe chat uses (lib/aave-exec):
+    // reserves resolved from the agent's own list, build_* with resolved
+    // addresses, every step re-verified. Built fresh at offer time — after a
+    // funding leg settles, the wallet really holds what the build checks.
+    const p = params as { token: string; amount: string | null; max?: boolean }
+    const built =
+      builder === 'native-aave-supply'
+        ? await buildAaveSupplyArtifact(wallet, { token: p.token, amount: p.amount ?? '' })
+        : await buildAaveRepayArtifact(wallet, p)
+    return {
+      artifact: { txChain: built.txChain, summary: built.summary },
+      guardReport: built.guardReport,
+      valueUsd: built.valueUsd,
     }
   }
   if (builder === 'native-lifi-fund') {

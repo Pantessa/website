@@ -78,6 +78,10 @@ export const APP_CHAINS: AppChain[] = [
     color: '#0052ff',
     viem: base,
     alchemyNet: 'base-mainnet',
+    // viem's default (mainnet.base.org) rate-limits in bursts — the same
+    // 429 pattern that hit mainnet (see the Ethereum entry) and once made a
+    // funding scan miss a $15k balance. publicnode holds up.
+    rpcUrl: 'https://base-rpc.publicnode.com',
     words: /\bbase\b/i,
     uniswap: {
       swapRouter02: '0x2626664c2603336E57B271c5C0b26F421741e481',
@@ -141,6 +145,7 @@ export const APP_CHAINS: AppChain[] = [
     color: '#1b4add',
     viem: arbitrum,
     alchemyNet: 'arb-mainnet',
+    rpcUrl: 'https://arbitrum-one-rpc.publicnode.com',
     words: /\barb(?:itrum|itum)?\b/i, // "arbitum" = live typo, matched deliberately
     uniswap: {
       swapRouter02: '0x68b3465833fb72A70ecDF485E0e4C7bD8665Fc45',

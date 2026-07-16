@@ -3318,6 +3318,56 @@ async function main() {
     const short = planFundingChips(need, 20.5, [src(8453, 'Base', 'USDC', 3), src(42161, 'Arbitrum', 'ETH', 0.3)])
     check('funding plan: uncoverable need reports the honest shortfall (dust ignored)', short.kind === 'short' && short.needUsd === 20.5 && short.totalUsd === 3)
 
+    // Aave job segments: explicit supply/repay compile; weak verbs stay chat-only.
+    const aaveSupJob = compileJobAsk('Swap 25 USDC from Base to USDC on Ethereum, then supply 20 USDC to aave')
+    check(
+      'funding plan: aave supply chip round-trips (bridge → wait → supply)',
+      !!aaveSupJob && !('problem' in aaveSupJob) &&
+        JSON.stringify(aaveSupJob.steps.map((s) => `${s.kind}:${s.builder}`)) === JSON.stringify(['sign:native-cross-chain', 'wait:wait', 'sign:native-aave-supply']) &&
+        (aaveSupJob.steps[2].params as { amount?: string }).amount === '20',
+      aaveSupJob && 'problem' in aaveSupJob ? aaveSupJob.problem : undefined,
+    )
+    const aaveRepayJob = compileJobAsk('Swap 25 USDC from Base to USDC on Ethereum, then repay all my USDC debt on aave')
+    check(
+      'funding plan: aave max-repay chip round-trips with max:true',
+      !!aaveRepayJob && !('problem' in aaveRepayJob) &&
+        JSON.stringify(aaveRepayJob.steps.map((s) => `${s.kind}:${s.builder}`)) === JSON.stringify(['sign:native-cross-chain', 'wait:wait', 'sign:native-aave-repay']) &&
+        (aaveRepayJob.steps[2].params as { max?: boolean }).max === true,
+      aaveRepayJob && 'problem' in aaveRepayJob ? aaveRepayJob.problem : undefined,
+    )
+    const aaveWeak = compileJobAsk('Swap 25 USDC from Base to USDC on Ethereum, then deposit 20 USDC into the pool')
+    check('funding plan: weak/venue-less aave verbs never compile as job steps', !!aaveWeak && 'problem' in aaveWeak)
+    const aaveWrongChain = compileJobAsk('Swap 25 USDC from Base to USDC on Ethereum, then supply 20 USDC to aave on polygon')
+    check(
+      'funding plan: aave segment on another chain refuses honestly (v4 = Ethereum)',
+      !!aaveWrongChain && 'problem' in aaveWrongChain && /Ethereum/.test(aaveWrongChain.problem),
+    )
+    const aaveNeed: FundingNeed = { chainId: 1, token: 'USDC', amountHuman: 17, followupResume: 'supply 20 USDC to Aave', actionLabel: 'the Aave supply' }
+    const aaveOffer = planFundingChips(aaveNeed, fundingPlanUsd(17, 1), [src(8453, 'Base', 'USDC', 60)])
+    const aaveOfferJob = aaveOffer.kind === 'offer' ? compileJobAsk(aaveOffer.chips[0].resume) : null
+    check(
+      'funding plan: the aave funding offer chip compiles end-to-end',
+      !!aaveOfferJob && !('problem' in aaveOfferJob) && aaveOfferJob.steps.length === 3 && aaveOfferJob.steps[2].builder === 'native-aave-supply',
+      aaveOffer.kind === 'offer' ? aaveOffer.chips[0].resume : aaveOffer.kind,
+    )
+
+    // Destination gas leg: when the wallet can't pay for the follow-up action,
+    // every chip leads with a source → native-ETH leg (the $2-bridge-then-
+    // unstakeable failure, live 2026-07-16).
+    const gasNeed: FundingNeed = { chainId: 1, token: 'USDC', amountHuman: 17, followupResume: 'supply 20 USDC to Aave', actionLabel: 'the Aave supply' }
+    const gasOffer = planFundingChips(gasNeed, 20, [src(8453, 'Base', 'USDC', 60)], 7)
+    const gasJob = gasOffer.kind === 'offer' ? compileJobAsk(gasOffer.chips[0].resume) : null
+    check(
+      'funding plan: destination gas leg rides first (gas → wait → tokens → wait → act)',
+      gasOffer.kind === 'offer' && /~\$27/.test(gasOffer.chips[0].label) && !!gasJob && !('problem' in gasJob) &&
+        JSON.stringify(gasJob.steps.map((s) => `${s.kind}:${s.builder}`)) ===
+          JSON.stringify(['sign:native-cross-chain', 'wait:wait', 'sign:native-cross-chain', 'wait:wait', 'sign:native-aave-supply']) &&
+        (gasJob.steps[0].params as { destinationToken?: string }).destinationToken?.toUpperCase() === 'ETH',
+      gasOffer.kind === 'offer' ? gasOffer.chips[0].resume : gasOffer.kind,
+    )
+    const gasShort = planFundingChips(gasNeed, 20, [src(8453, 'Base', 'USDC', 22)], 7)
+    check('funding plan: a source covering the tokens but not the gas leg is honestly short', gasShort.kind === 'short' && gasShort.needUsd === 27)
+
     // The Hyperliquid variant: USDC on Arbitrum funded from Base, deposit follows.
     const hlNeed: FundingNeed = { chainId: 42161, token: 'USDC', amountHuman: 17, followupResume: 'deposit 20 USDC to Hyperliquid', actionLabel: 'the Hyperliquid deposit' }
     const hlOffer = planFundingChips(hlNeed, fundingPlanUsd(17, 1), [src(8453, 'Base', 'USDC', 60)])

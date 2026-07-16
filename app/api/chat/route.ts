@@ -1241,12 +1241,6 @@ async function buildCrossChainSwapTurn(
 
 // ── Lido staking (native, via the Lido MCP) ──────────────────────────────────
 
-/** USDC contracts for the guided moment's broke-but-stablecoined check. */
-const GUIDED_USDC: { chain: string; chainId: number; address: `0x${string}` }[] = [
-  { chain: 'Base', chainId: 8453, address: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913' },
-  { chain: 'Arbitrum', chainId: 42161, address: '0xaf88d065e77c8cC2239327C5EDb3A432268e5831' },
-]
-
 /**
  * The guided moment: "help me stake on lido" → a DETERMINISTIC context check
  * (the lido MCP's `position` read + direct USDC balance reads), then the
@@ -1297,43 +1291,17 @@ async function guideLidoStakeTurn(
     })
   }
 
-  // Broke on mainnet — the Nate demo shape: notice the stablecoins and
-  // propose the EXACT compound job (bridge → stake) as one chip.
-  for (const u of GUIDED_USDC) {
-    try {
-      const client = publicClientFor(u.chainId)
-      if (!client) continue
-      const raw = await client.readContract({ address: u.address, abi: erc20Abi, functionName: 'balanceOf', args: [walletAddress as `0x${string}`] })
-      const usdc = Number(formatUnits(raw, 6))
-      if (usdc >= 2) {
-        const amt = Math.min(Math.floor(usdc), 100)
-        const resume = `Swap ${amt} USDC from ${u.chain} to ETH on Ethereum, then stake all my ETH on Lido`
-        trace({ type: 'status', label: `lido guided: no mainnet ETH but ${usdc.toFixed(2)} USDC on ${u.chain} → proposing the compound job` })
-        return NextResponse.json({
-          reply:
-            `🌊 You have **no stakeable ETH on Ethereum** (${ethBal} ETH — that's gas money), but you do have **${usdc.toFixed(2)} USDC on ${u.chain}**.${already} ` +
-            `I can run that as one job: bridge via NEAR Intents, then stake what arrives — each step built and guard-checked when it's your turn to sign.`,
-          clarify: {
-            question: 'Run it as one job?',
-            // clarifyOf drops single-option payloads ("one option is not a
-            // question") — offer the honest alternative: just the bridge.
-            options: [
-              { label: `Swap ${amt} USDC → ETH, then stake it`, resume },
-              { label: 'Just bridge, decide later', resume: `Swap ${amt} USDC from ${u.chain} to ETH on Ethereum` },
-            ],
-          },
-          buildPath: 'native-lido',
-        })
-      }
-    } catch {
-      /* per-chain read failure → try the next chain */
-    }
-  }
+  // Broke on mainnet — the universal funding plan sizes the move so the
+  // stake can actually FIRE (stake minimum + gas buffer + solver fees).
+  // The bespoke chip this replaces once bridged $2 → 0.001 ETH and the
+  // stake step refused it: nothing left after the gas buffer (2026-07-16).
+  const funded = await lidoFundingTurn(walletAddress, Number(ethBal) || 0, null, 'stETH', trace)
+  if (funded) return funded
 
-  trace({ type: 'status', label: 'lido guided: no ETH and no stablecoins found — honest empty answer' })
+  trace({ type: 'status', label: 'lido guided: no ETH and the funding scan found nothing to move — honest empty answer' })
   return NextResponse.json({
     reply:
-      `🌊 Staking on Lido takes ETH on Ethereum, and this wallet holds ${ethBal} ETH there with no USDC on Base or Arbitrum to bridge.${already} ` +
+      `🌊 Staking on Lido takes ETH on Ethereum, and this wallet holds ${ethBal} ETH there.${already} ` +
       `Fund the wallet and ask again — I'll size the stake to your balance.`,
   })
 }
@@ -1516,6 +1484,56 @@ async function aavePolicyGate(
 }
 
 /**
+ * The funding-plan turn shared by Aave supply + repay: read the wallet's
+ * live mainnet balance of the RESOLVED reserve token, and when it can't
+ * cover the ask, offer NEAR-Intents legs from the other chains as chips —
+ * the pick compiles into a job (fund → wait → the Aave op, rebuilt fresh by
+ * lib/aave-exec.ts once the funds are really there). Returns null when the
+ * wallet covers it or the scan/read is unavailable (callers fall through to
+ * the normal build, which fails closed on its own).
+ */
+async function aaveFundingTurn(
+  walletAddress: string,
+  currency: string,
+  decimals: number,
+  token: string,
+  askAmount: number,
+  followupResume: string,
+  actionLabel: string,
+  trace: (event: unknown) => void,
+) {
+  if (!Number.isFinite(askAmount) || askAmount <= 0) return null
+  const client = publicClientFor(1)
+  if (!client) return null
+  let held: number | null = null
+  try {
+    const raw = await client.readContract({ address: currency as `0x${string}`, abi: erc20Abi, functionName: 'balanceOf', args: [walletAddress as `0x${string}`] })
+    held = Number(formatUnits(raw, decimals))
+  } catch {
+    return null
+  }
+  if (held === null || held >= askAmount) return null
+  const offer = await offerFundingPlan({
+    user: walletAddress,
+    need: {
+      chainId: 1,
+      token,
+      amountHuman: Number((askAmount - held).toFixed(6)),
+      followupResume,
+      actionLabel,
+    },
+    trace,
+  })
+  if (!offer) return null
+  if ('insufficient' in offer) {
+    return NextResponse.json({
+      reply: `🏦 ${actionLabel[0].toUpperCase()}${actionLabel.slice(1)} needs ${askAmount} ${token} on Ethereum and the wallet holds ${held}. ${offer.insufficient}`,
+    })
+  }
+  return NextResponse.json({ ...offer, reply: `🌉 ${offer.reply}` })
+}
+
+/**
  * Build an Aave v4 supply into a signable approve→supply chain — the native,
  * deterministic path (never the planner/house model, which sent the token
  * SYMBOL to an address-validated param and fabricated balances in prose).
@@ -1569,6 +1587,19 @@ async function buildAaveSupplyTurn(
     return NextResponse.json({
       reply: `🏦 “${params.amount}” has more decimal places than ${token} supports (${picked.decimals}).`,
     })
+  }
+
+  // ── Universal funding plan: a shortfall is an offer, never a wall ────────
+  // Read the live mainnet balance of the RESOLVED reserve token before
+  // building; a short supply offers NEAR-Intents legs from the other chains
+  // as chips (fund → wait → supply, one job). ETH/WETH supplies are skipped
+  // (intents deliver native ETH; the reserve wants WETH — an offer that
+  // can't settle is worse than the honest build error). Read failure falls
+  // through — AaveKit's build validates against real balances and fails
+  // closed on its own.
+  if (token !== 'ETH' && token !== 'WETH') {
+    const fundingTurn = await aaveFundingTurn(walletAddress, picked.currency, picked.decimals, token, Number(params.amount), `supply ${params.amount} ${token} to Aave`, 'the Aave supply', trace)
+    if (fundingTurn) return fundingTurn
   }
 
   // 2) Build via the agent, with resolved 0x addresses (the planner once sent
@@ -1782,6 +1813,25 @@ async function buildAaveOpTurn(
         reply: `🏦 “${params.amount}” has more decimal places than ${token} supports (${picked.decimals}).`,
       })
     }
+  }
+
+  // ── Universal funding plan (repay only): a wallet that can't cover its
+  // own repayment gets funding chips instead of AaveKit's refusal. Max
+  // repays size the need to the live debt (interest headroom rides the
+  // plan's own margin). ETH/WETH skipped for the same reason as supply.
+  if (op === 'repay' && token !== 'ETH' && token !== 'WETH') {
+    const repayAsk = params.max ? Number(debtPos!.debt ?? 0) : Number(params.amount)
+    const fundingTurn = await aaveFundingTurn(
+      walletAddress,
+      picked.currency,
+      picked.decimals,
+      token,
+      repayAsk,
+      params.max ? `repay all my ${token} debt on aave` : `repay ${params.amount} ${token} on aave`,
+      'the Aave repayment',
+      trace,
+    )
+    if (fundingTurn) return fundingTurn
   }
 
   // 3) Borrow only: simulate first — the health-factor impact belongs in the
