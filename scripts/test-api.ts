@@ -43,6 +43,7 @@ import { encodeV4SwapCalldata, guardUniswapV4Build, type V4BuiltStep, type V4Gua
 import { guardLifiBuild, verifyLifiQuoteEcho, lifiPriceAcceptable, lifiRoutersFor, type LifiBuiltStep, type LifiGuardExpectations, type LifiQuote } from '../lib/lifi-venue'
 import { fundingNeedUsd, guardLifiBridgeBuild, lifiBridgeRoutersFor, verifyLifiBridgeEcho, type LifiBridgeExpectations, type LifiBridgeStep } from '../lib/lifi-bridge'
 import { parseRobinhoodFunding } from '../lib/jobs'
+import { fundingPlanUsd, planFundingChips, rankFundingSources, type FundingNeed, type FundingSource } from '../lib/funding-plan'
 import { swapFeeAtoms, SWAP_FEE_BPS, TREASURY_ADDRESS } from '../lib/fees'
 import { APP_CHAINS, chainById, chainNamedIn, sanitizeChainId } from '../lib/chains'
 import { parseCrossChainSwap, guardCrossChainBuild, expectedOriginChainId, parseCrossChainFollowUp } from '../lib/cross-chain-swap'
@@ -3257,6 +3258,76 @@ async function main() {
       guardLidoStakeBuild(goodWrap, { amountEth: '0.05', receive: 'wstETH' }).ok &&
         !guardLidoStakeBuild({ ...goodWrap, steps: [{ ...goodWrap.steps![0], tx: { ...goodWrap.steps![0].tx!, data: submitData } }] }, { amountEth: '0.05', receive: 'wstETH' }).ok &&
         !guardLidoStakeBuild(goodStake, { amountEth: '0.05', receive: 'wstETH' }).ok,
+    )
+  }
+
+  // ── Universal funding plan (scan ranking + chip round-trips) ──────────────
+  console.log('— funding plan')
+  {
+    const need: FundingNeed = { chainId: 1, token: 'ETH', amountHuman: 0.005, followupResume: 'stake all my ETH on Lido', actionLabel: 'the stake' }
+    const src = (chainId: number, chainWord: string, token: 'ETH' | 'USDC', usd: number, balance = token === 'USDC' ? usd : usd / 3500): FundingSource => ({ chainId, chainWord, token, balance, usd })
+
+    check('funding plan: need = shortfall × price + 10% + $1 flat, $0.50-rounded, $2 floor', fundingPlanUsd(0.005, 3500) === 20.5 && fundingPlanUsd(0.2, 1) === 2)
+
+    // Ranking: same token beats stables beats ETH; richest chain first.
+    const ranked = rankFundingSources(need, [src(8453, 'Base', 'USDC', 50), src(42161, 'Arbitrum', 'ETH', 40), src(8453, 'Base', 'ETH', 90)])
+    check(
+      'funding plan: same-token sources outrank stables, richest first',
+      ranked.map((s) => `${s.token}:${s.chainWord}`).join(',') === 'ETH:Base,ETH:Arbitrum,USDC:Base',
+    )
+
+    // Single source covers → just-enough + all-of-it + Not now; the chip is a JOB.
+    const offer = planFundingChips(need, 20.5, [src(8453, 'Base', 'USDC', 60)])
+    check('funding plan: covering source offers just-enough / all / not-now chips', offer.kind === 'offer' && offer.chips.length === 3 && offer.chips[2].label === 'Not now')
+    const chipJob = offer.kind === 'offer' ? compileJobAsk(offer.chips[0].resume) : null
+    check(
+      'funding plan: the lido chip round-trips through the compiler (bridge → wait → stake)',
+      !!chipJob && !('problem' in chipJob) &&
+        JSON.stringify(chipJob.steps.map((s) => `${s.kind}:${s.builder}`)) === JSON.stringify(['sign:native-cross-chain', 'wait:wait', 'sign:native-lido']),
+      offer.kind === 'offer' ? offer.chips[0].resume : offer.kind,
+    )
+
+    // wstETH survives the round trip.
+    const wstOffer = planFundingChips({ ...need, followupResume: 'stake all my ETH on Lido as wstETH' }, 20.5, [src(8453, 'Base', 'USDC', 60)])
+    const wstJob = wstOffer.kind === 'offer' ? compileJobAsk(wstOffer.chips[0].resume) : null
+    check(
+      'funding plan: wstETH variant compiles and keeps the receive token',
+      !!wstJob && !('problem' in wstJob) && (wstJob.steps[2].params as { receive?: string }).receive === 'wstETH',
+    )
+
+    // A whale balance never gets an all-in chip (moving $15k to cover $20 is absurd).
+    const whale = planFundingChips(need, 20.5, [src(8453, 'Base', 'USDC', 15_000)])
+    check('funding plan: all-of-it chip capped at 10× the need', whale.kind === 'offer' && whale.chips.length === 2)
+
+    // Destination-chain balances are never sources (that's a same-chain swap, not a bridge).
+    const sameChain = planFundingChips(need, 20.5, [src(1, 'Ethereum', 'USDC', 60)])
+    check('funding plan: destination-chain balances are excluded as sources', sameChain.kind === 'short')
+
+    // No single source covers, combined does → one combined chip, one leg per chain.
+    const combined = planFundingChips(need, 20.5, [src(8453, 'Base', 'USDC', 12), src(42161, 'Arbitrum', 'USDC', 11)])
+    const combinedJob = combined.kind === 'offer' ? compileJobAsk(combined.chips[0].resume) : null
+    check(
+      'funding plan: combined multi-chain plan compiles (leg → wait, per chain, then stake)',
+      combined.kind === 'offer' && combined.chips.length === 2 && !!combinedJob && !('problem' in combinedJob) &&
+        JSON.stringify(combinedJob.steps.map((s) => `${s.kind}:${s.builder}`)) ===
+          JSON.stringify(['sign:native-cross-chain', 'wait:wait', 'sign:native-cross-chain', 'wait:wait', 'sign:native-lido']),
+      combined.kind === 'offer' ? combined.chips[0].resume : combined.kind,
+    )
+
+    // The whole wallet can't cover it → honest shortfall, dust ignored.
+    const short = planFundingChips(need, 20.5, [src(8453, 'Base', 'USDC', 3), src(42161, 'Arbitrum', 'ETH', 0.3)])
+    check('funding plan: uncoverable need reports the honest shortfall (dust ignored)', short.kind === 'short' && short.needUsd === 20.5 && short.totalUsd === 3)
+
+    // The Hyperliquid variant: USDC on Arbitrum funded from Base, deposit follows.
+    const hlNeed: FundingNeed = { chainId: 42161, token: 'USDC', amountHuman: 17, followupResume: 'deposit 20 USDC to Hyperliquid', actionLabel: 'the Hyperliquid deposit' }
+    const hlOffer = planFundingChips(hlNeed, fundingPlanUsd(17, 1), [src(8453, 'Base', 'USDC', 60)])
+    const hlJob = hlOffer.kind === 'offer' ? compileJobAsk(hlOffer.chips[0].resume) : null
+    check(
+      'funding plan: the hyperliquid chip round-trips (bridge → wait → deposit → credit wait)',
+      !!hlJob && !('problem' in hlJob) &&
+        JSON.stringify(hlJob.steps.map((s) => `${s.kind}:${s.builder}`)) ===
+          JSON.stringify(['sign:native-cross-chain', 'wait:wait', 'sign:native-hl-exec', 'wait:wait']),
+      hlOffer.kind === 'offer' ? hlOffer.chips[0].resume : hlOffer.kind,
     )
   }
 
