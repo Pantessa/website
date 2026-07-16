@@ -40,6 +40,15 @@ interface SessionValue {
   signingIn: boolean
   /** True if a wallet is connected but no SIWE session exists yet. */
   needsSignIn: boolean
+  /** Live connected wallet address (lowercased), independent of the SIWE session. */
+  walletAddress: string | null
+  /**
+   * True when a prior SIWE session exists but the connected wallet now reports a
+   * DIFFERENT address — i.e. the user switched accounts in MetaMask. Drives the
+   * global re-sign banner; `signIn()` re-mints the cookie for the new account
+   * without disconnecting.
+   */
+  switchedAccount: boolean
   error: string | null
   /** Run SIWE on the already-connected wallet; optionally redirect on success. */
   signIn: (redirectTo?: string) => Promise<void>
@@ -257,6 +266,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     status,
     signingIn,
     needsSignIn: needsSignIn || (!!address && !sessionMatchesWallet),
+    walletAddress: walletAddress ? walletAddress.toLowerCase() : null,
+    switchedAccount: !!address && !sessionMatchesWallet,
     error,
     signIn,
     connectAndSignIn,
