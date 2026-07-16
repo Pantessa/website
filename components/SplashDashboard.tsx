@@ -2,8 +2,11 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
-import { ArrowDownLeft, ArrowUpRight, Clock, ExternalLink, RefreshCw, Repeat, Vote, Wallet } from 'lucide-react'
+import { motion, useReducedMotion } from 'framer-motion'
+import { ArrowDownLeft, ArrowUpRight, ChevronDown, Clock, ExternalLink, RefreshCw, Repeat, Vote, Wallet } from 'lucide-react'
 import BrandIcon from '@/components/BrandIcon'
+import TokenIcon from '@/components/TokenIcon'
+import VoteChoiceButtons from '@/components/VoteChoiceButtons'
 import { useYeetfulStore, type McpServer } from '@/lib/store'
 import { chainById } from '@/lib/chains'
 import ChatLoader from '@/components/ChatLoader'
@@ -166,9 +169,11 @@ function groupBySlug(tiles: SplashTile[]): SplashTile[][] {
  *  render-primitive body, and the tile's prompt chips. */
 function TileSection({
   tile,
+  onPick,
   onRetry,
 }: {
   tile: SplashTile
+  onPick: (p: string, slug?: string) => void
   onRetry?: () => void
 }) {
   return (
@@ -183,9 +188,9 @@ function TileSection({
           {tile.subtitle && <span className="mono flex-shrink-0 text-[10px] text-[color:var(--muted-2)]">{tile.subtitle}</span>}
         </div>
       )}
-      {tile.render === 'holdings' && <HoldingsBody tile={tile} />}
+      {tile.render === 'holdings' && <HoldingsBody tile={tile} onPick={onPick} />}
       {tile.render === 'proposals' && <ProposalsBody tile={tile} />}
-      {tile.render === 'rows' && <RowsBody tile={tile} />}
+      {tile.render === 'rows' && <RowsBody tile={tile} onPick={onPick} />}
       {tile.render === 'activity' && <ActivityBody tile={tile} />}
       {tile.render === 'empty' && <p className="flex-1 text-xs leading-relaxed text-[color:var(--muted)]">{tile.message}</p>}
       {tile.render === 'error' && <ErrorBody tile={tile} onRetry={onRetry} />}
@@ -237,7 +242,7 @@ export function TileCard({
       </div>
       {group.map((t, i) => (
         <div key={t.id} className={i > 0 ? 'mt-4 border-t border-[var(--line)] pt-4' : undefined}>
-          <TileSection tile={t} onRetry={onRetry} />
+          <TileSection tile={t} onPick={onPick} onRetry={onRetry} />
         </div>
       ))}
       {/* ONE chip row per card, pinned to the bottom edge (mt-auto): in the
@@ -319,7 +324,8 @@ function ActivityBody({ tile }: { tile: ActivityTile }) {
 
 // ── Rows (generic account-state list: positions, orders, fills) ─────────────
 
-function RowsBody({ tile }: { tile: RowsTile }) {
+function RowsBody({ tile, onPick }: { tile: RowsTile; onPick: (p: string, slug?: string) => void }) {
+  const [open, setOpen] = useState<string | null>(null)
   return (
     <div className="flex-1">
       {tile.headline && (
@@ -328,28 +334,63 @@ function RowsBody({ tile }: { tile: RowsTile }) {
           <span className="ml-2 text-[11px] text-[color:var(--muted-2)]">{tile.headline.caption}</span>
         </div>
       )}
-      <div className="space-y-1.5">
-        {tile.rows.map((r, i) => (
-          <div key={`${r.label}-${i}`} className="flex items-center justify-between gap-2 text-xs">
-            <div className="min-w-0">
-              <div className="truncate font-medium text-white">{r.label}</div>
-              {r.sub && <div className="text-[10px] text-[color:var(--muted-2)]">{r.sub}</div>}
+      <div className="space-y-1">
+        {tile.rows.map((r, i) => {
+          const id = `${r.label}-${i}`
+          const actions = r.actions ?? []
+          const expandable = actions.length > 0
+          const expanded = open === id
+          const value = r.value ? (
+            <span
+              className={
+                r.tone === 'pos'
+                  ? 'text-[color:var(--accent)]'
+                  : r.tone === 'neg'
+                    ? 'text-red-400'
+                    : 'text-white'
+              }
+            >
+              {r.value}
+            </span>
+          ) : null
+          const inner = (
+            <>
+              <div className="min-w-0 text-left">
+                <div className="truncate font-medium text-white">{r.label}</div>
+                {r.sub && <div className="text-[10px] text-[color:var(--muted-2)]">{r.sub}</div>}
+              </div>
+              <div className="flex flex-shrink-0 items-center gap-1.5">
+                {value}
+                {expandable && (
+                  <ChevronDown className={`h-3.5 w-3.5 text-[color:var(--muted-2)] transition-transform ${expanded ? 'rotate-180' : ''}`} />
+                )}
+              </div>
+            </>
+          )
+          return (
+            <div key={id}>
+              {expandable ? (
+                <button
+                  type="button"
+                  onClick={() => setOpen(expanded ? null : id)}
+                  aria-expanded={expanded}
+                  className="-mx-1 flex w-full items-center justify-between gap-2 rounded-lg px-1 py-1 text-xs transition-colors hover:bg-white/5"
+                >
+                  {inner}
+                </button>
+              ) : (
+                <div className="flex items-center justify-between gap-2 px-1 py-1 text-xs">{inner}</div>
+              )}
+              {expandable && expanded && (
+                <div className="px-1 pb-1">
+                  <Reveal>
+                    <InlineActionChips actions={actions} slug={tile.mcpSlug} onPick={onPick} />
+                  </Reveal>
+                </div>
+              )}
             </div>
-            {r.value && (
-              <span
-                className={
-                  r.tone === 'pos'
-                    ? 'text-[color:var(--accent)]'
-                    : r.tone === 'neg'
-                      ? 'text-red-400'
-                      : 'text-white'
-                }
-              >
-                {r.value}
-              </span>
-            )}
-          </div>
-        ))}
+          )
+        })}
       </div>
     </div>
   )
@@ -357,7 +398,8 @@ function RowsBody({ tile }: { tile: RowsTile }) {
 
 // ── Holdings (portfolio) ─────────────────────────────────────────────────────
 
-function HoldingsBody({ tile }: { tile: HoldingsTile }) {
+function HoldingsBody({ tile, onPick }: { tile: HoldingsTile; onPick: (p: string, slug?: string) => void }) {
+  const [open, setOpen] = useState<string | null>(null)
   return (
     <div className="flex-1">
       {tile.totalUsd !== null && (
@@ -368,23 +410,55 @@ function HoldingsBody({ tile }: { tile: HoldingsTile }) {
           </span>
         </div>
       )}
-      <div className="space-y-1.5">
-        {tile.holdings.map((h) => (
-          <div key={(h.chain ?? '') + h.address + h.symbol} className="flex items-center justify-between gap-2 text-xs">
-            <div className="flex items-center gap-2">
-              <span className="grid h-6 w-6 place-items-center rounded-full bg-white/5 text-[10px] font-semibold text-[color:var(--muted)]">
-                {h.symbol.slice(0, 3)}
-              </span>
-              <span className="font-medium text-white">{h.symbol}</span>
-              {h.native && <span className="mono text-[9px] text-[color:var(--muted-2)]">native</span>}
-              {h.chain && <span className="rounded bg-white/5 px-1 py-0.5 text-[9px] text-[color:var(--muted-2)]">{h.chain}</span>}
+      <div className="space-y-1">
+        {tile.holdings.map((h) => {
+          const id = (h.chain ?? '') + h.address + h.symbol
+          const actions = h.actions ?? []
+          const expandable = actions.length > 0
+          const expanded = open === id
+          const inner = (
+            <>
+              <div className="flex min-w-0 items-center gap-2">
+                <TokenIcon symbol={h.symbol} size={24} />
+                <span className="font-medium text-white">{h.symbol}</span>
+                {h.native && <span className="mono text-[9px] text-[color:var(--muted-2)]">native</span>}
+                {h.chain && <span className="rounded bg-white/5 px-1 py-0.5 text-[9px] text-[color:var(--muted-2)]">{h.chain}</span>}
+              </div>
+              <div className="flex flex-shrink-0 items-center gap-1.5">
+                <div className="text-right">
+                  <div className="text-white">{h.valueUsd !== null ? usd(h.valueUsd) : '—'}</div>
+                  <div className="text-[10px] text-[color:var(--muted-2)]">{trimNum(h.balance)}</div>
+                </div>
+                {expandable && (
+                  <ChevronDown className={`h-3.5 w-3.5 text-[color:var(--muted-2)] transition-transform ${expanded ? 'rotate-180' : ''}`} />
+                )}
+              </div>
+            </>
+          )
+          return (
+            <div key={id}>
+              {expandable ? (
+                <button
+                  type="button"
+                  onClick={() => setOpen(expanded ? null : id)}
+                  aria-expanded={expanded}
+                  className="-mx-1 flex w-full items-center justify-between gap-2 rounded-lg px-1 py-1 text-xs transition-colors hover:bg-white/5"
+                >
+                  {inner}
+                </button>
+              ) : (
+                <div className="flex items-center justify-between gap-2 px-1 py-1 text-xs">{inner}</div>
+              )}
+              {expandable && expanded && (
+                <div className="px-1 pb-1">
+                  <Reveal>
+                    <InlineActionChips actions={actions} slug={tile.mcpSlug} onPick={onPick} />
+                  </Reveal>
+                </div>
+              )}
             </div>
-            <div className="text-right">
-              <div className="text-white">{h.valueUsd !== null ? usd(h.valueUsd) : '—'}</div>
-              <div className="text-[10px] text-[color:var(--muted-2)]">{trimNum(h.balance)}</div>
-            </div>
-          </div>
-        ))}
+          )
+        })}
       </div>
     </div>
   )
@@ -392,7 +466,12 @@ function HoldingsBody({ tile }: { tile: HoldingsTile }) {
 
 // ── Proposals (governance) ───────────────────────────────────────────────────
 
+/** Governance rows expand into the standard VoteChoiceButtons — the same
+ *  EIP-712 build → wallet signature → /api/snapshot/relay path chat uses (the
+ *  relay re-guards server-side). Tapping a proposal reveals For / Against /
+ *  Abstain right there; no new signing surface, no round-trip through chat. */
 function ProposalsBody({ tile }: { tile: ProposalsTile }) {
+  const [open, setOpen] = useState<string | null>(null)
   return (
     <div className="flex-1">
       {tile.spaces.length > 0 && (
@@ -405,32 +484,108 @@ function ProposalsBody({ tile }: { tile: ProposalsTile }) {
           ))}
         </div>
       )}
-      <div className="space-y-2">
-        {tile.proposals.slice(0, 4).map((p) => (
-          <div key={p.id} className="flex items-start gap-2">
-            <Avatar url={p.avatarUrl} label={p.spaceName} size={22} />
-            <div className="min-w-0 flex-1">
-              <div className="truncate text-xs font-medium text-white" title={p.title}>
-                {p.title}
-              </div>
-              <div className="mt-0.5 flex items-center gap-2 text-[10px] text-[color:var(--muted-2)]">
-                <span className="flex items-center gap-1">
-                  <Vote className="h-3 w-3" /> {p.spaceName}
-                </span>
-                <span className="flex items-center gap-1">
-                  <Clock className="h-3 w-3" /> {endsIn(p.endsAt)}
-                </span>
-                {p.leadingChoice && <span className="text-[color:var(--accent)]">{p.leadingChoice} leading</span>}
-              </div>
+      <div className="space-y-1">
+        {tile.proposals.slice(0, 4).map((p) => {
+          const expanded = open === p.id
+          return (
+            <div key={p.id} className={expanded ? 'rounded-xl border border-[var(--line)] bg-white/[0.02] p-2' : undefined}>
+              <button
+                type="button"
+                onClick={() => setOpen(expanded ? null : p.id)}
+                aria-expanded={expanded}
+                className="-mx-1 flex w-full items-start gap-2 rounded-lg px-1 py-1.5 text-left transition-colors hover:bg-white/5"
+              >
+                <Avatar url={p.avatarUrl} label={p.spaceName} size={22} />
+                <div className="min-w-0 flex-1">
+                  <div className="truncate text-xs font-medium text-white" title={p.title}>
+                    {p.title}
+                  </div>
+                  <div className="mt-0.5 flex items-center gap-2 text-[10px] text-[color:var(--muted-2)]">
+                    <span className="flex items-center gap-1">
+                      <Vote className="h-3 w-3" /> {p.spaceName}
+                    </span>
+                    <span className="flex items-center gap-1">
+                      <Clock className="h-3 w-3" /> {endsIn(p.endsAt)}
+                    </span>
+                    {p.leadingChoice && <span className="text-[color:var(--accent)]">{p.leadingChoice} leading</span>}
+                  </div>
+                </div>
+                <ChevronDown
+                  className={`mt-1 h-3.5 w-3.5 flex-shrink-0 text-[color:var(--muted-2)] transition-transform ${expanded ? 'rotate-180' : ''}`}
+                />
+              </button>
+              {expanded && (
+                <div className="mt-1 px-1 pb-1">
+                  <Reveal>
+                    <VoteChoiceButtons
+                      proposal={{
+                        id: p.id,
+                        title: p.title,
+                        space: p.spaceId,
+                        // Rows cached before `type` shipped default to single-choice
+                        // (the encoding Snapshot uses for basic proposals too).
+                        type: p.type ?? 'single-choice',
+                        choices: p.choices,
+                      }}
+                    />
+                  </Reveal>
+                </div>
+              )}
             </div>
-          </div>
-        ))}
+          )
+        })}
       </div>
     </div>
   )
 }
 
 // ── Shared bits ──────────────────────────────────────────────────────────────
+
+/** Entrance for row-expand content: a short fade + settle. Entrance ONLY —
+ *  exit animations get stranded mid-fade when the headless preview (and busy
+ *  real tabs) starve rAF, the App Mode ghost-panel lesson. Collapse is
+ *  instant unmount; useReducedMotion drops the settle entirely. */
+function Reveal({ children }: { children: React.ReactNode }) {
+  const reduced = useReducedMotion()
+  return (
+    <motion.div
+      initial={reduced ? false : { opacity: 0, y: -4 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.18, ease: 'easeOut' }}
+    >
+      {children}
+    </motion.div>
+  )
+}
+
+/** The chip band revealed under an expanded holding/order row — same
+ *  drop-into-composer behaviour as the card's bottom PromptChips, scoped to
+ *  the one asset the user tapped. */
+function InlineActionChips({
+  actions,
+  slug,
+  onPick,
+}: {
+  actions: SuggestedPrompt[]
+  slug: string
+  onPick: (p: string, slug?: string) => void
+}) {
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      {actions.map((a) => (
+        <button
+          key={a.label}
+          type="button"
+          title={a.prompt}
+          onClick={() => onPick(a.prompt, slug)}
+          className="rounded-full border border-[var(--line)] px-2.5 py-1 text-[11px] text-[color:var(--muted)] transition-colors hover:border-[var(--line-2)] hover:bg-white/5 hover:text-white"
+        >
+          {a.label}
+        </button>
+      ))}
+    </div>
+  )
+}
 
 function PromptChips({
   prompts,

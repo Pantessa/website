@@ -34,6 +34,10 @@ export interface HoldingRow {
   native?: boolean
   /** Chain this holding lives on (multichain portfolios). Absent = single-chain. */
   chain?: string
+  /** Per-row "act on this holding" prompts — the row expands to reveal them
+   *  (e.g. tap AAPL → Buy more / Sell). Each drops its `prompt` into the
+   *  composer, same as a tile chip. Absent → the row stays display-only. */
+  actions?: SuggestedPrompt[]
 }
 
 /** One recent transaction (asset transfer) for the activity tile. */
@@ -118,6 +122,9 @@ export interface StatRow {
   sub?: string
   /** Tint the value (PnL green/red). */
   tone?: 'pos' | 'neg'
+  /** Per-row "act on this" prompts — the row expands to reveal them (e.g. tap
+   *  an open CoW order → Cancel / Check status). Absent → display-only. */
+  actions?: SuggestedPrompt[]
 }
 
 /** A generic label/value list — positions, open orders, fills; any MCP whose
