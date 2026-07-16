@@ -149,10 +149,13 @@ export default function DashboardOverviewPage() {
       {!activeOrgId && <EmbedsSummaryCard />}
 
       {/* First-run guided path — self-ticks from live state, hides when done
-          or dismissed. */}
-      <div id="get-started" className="scroll-mt-24">
-        <OnboardingChecklist stats={stats} />
-      </div>
+          or dismissed. Personal account only: the flow (chat → sign → job →
+          embed) belongs to a wallet, not an org budget view. */}
+      {!activeOrgId && (
+        <div id="get-started" className="scroll-mt-24">
+          <OnboardingChecklist />
+        </div>
+      )}
 
       {/* The org level of the two-level budget: the daily cap across ALL the
           org's agent keys, above the grant + per-key meters. SDK-enforced via

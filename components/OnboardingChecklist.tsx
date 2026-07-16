@@ -1,20 +1,31 @@
 'use client'
 
-// First-run "Get started" checklist on the dashboard Overview. Turns a blank
-// account into a guided path to the first paid call and first earnings. Each
-// step's done-state is read from live data (the stats the Overview already
-// loaded + a light earnings fetch), so it ticks off on its own. Hides once
-// everything's done or the user dismisses it.
+// First-run "Get started" checklist on the dashboard Overview — the pivot
+// flow: ask → sign a guarded transaction → run a fund-then-act job → embed.
+// Each step's done-state comes from /api/dashboard/onboarding, which reads
+// what the wallet has actually done (chats, durable signed-tx records,
+// completed wait-step jobs, embed keys), so it ticks off on its own. Hides
+// once everything's done or the user dismisses it.
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { CheckCircle2, Circle, X } from 'lucide-react'
-import { Card, type Stats } from '@/lib/dashboard-ui'
+import { Card } from '@/lib/dashboard-ui'
 
-const DISMISS_KEY = 'yf_onboarding_dismissed'
+// v2: the x402-era checklist (approve/mint-key/paid-call/earn) was retired
+// 2026-07-16 — a fresh key so everyone sees the new flow once, even if they
+// dismissed the old one.
+const DISMISS_KEY = 'yf_onboarding_dismissed_v2'
 
-export default function OnboardingChecklist({ stats }: { stats: Stats }) {
-  const [earnCalls, setEarnCalls] = useState<number | null>(null)
+interface OnboardingStatus {
+  chatted: boolean
+  signedTx: boolean
+  fundedJob: boolean
+  embedKey: boolean
+}
+
+export default function OnboardingChecklist() {
+  const [status, setStatus] = useState<OnboardingStatus | null>(null)
   const [dismissed, setDismissed] = useState(false)
 
   useEffect(() => {
@@ -26,46 +37,50 @@ export default function OnboardingChecklist({ stats }: { stats: Stats }) {
   }, [])
 
   useEffect(() => {
-    fetch('/api/dashboard/earnings', { cache: 'no-store' })
+    fetch('/api/dashboard/onboarding', { cache: 'no-store' })
       .then((r) => (r.ok ? r.json() : null))
-      .then((d) => setEarnCalls(d?.kpis?.callsServed ?? 0))
-      .catch(() => setEarnCalls(0))
+      .then((d) => setStatus(d ?? { chatted: false, signedTx: false, fundedJob: false, embedKey: false }))
+      .catch(() => setStatus({ chatted: false, signedTx: false, fundedJob: false, embedKey: false }))
   }, [])
+
+  // Hold until the live state arrives — painting four unchecked steps and
+  // ticking them a beat later reads as flicker.
+  if (dismissed || !status) return null
 
   const steps = [
     {
-      label: 'Approve an agent',
-      hint: 'Pick the MCP services your wallet is allowed to pay.',
-      done: (stats.grant?.allowCount ?? 0) > 0,
-      href: '/dashboard/approvals',
-      cta: 'Approve',
-    },
-    {
-      label: 'Connect an agent',
-      hint: 'Mint an API key — that key is your agent.',
-      done: (stats.agents?.connected ?? 0) > 0,
-      href: '/dashboard/keys',
-      cta: 'Mint a key',
-    },
-    {
-      label: 'Run your first paid call',
-      hint: 'Fund your wallet, then ask the router anything.',
-      done: (stats.kpis?.calls ?? 0) > 0,
+      label: 'Ask your agents anything',
+      hint: 'Open the chat and ask — "what\'s in my wallet?", "ETH price?". Your MCPs answer, every call receipted.',
+      done: status.chatted,
       href: '/chat',
       cta: 'Open chat',
     },
     {
-      label: 'Connect an MCP to earn',
-      hint: 'Report paid calls from your own MCP and earn per call.',
-      done: (earnCalls ?? 0) > 0,
-      href: '/docs/earn',
-      cta: 'Start earning',
+      label: 'Sign a guarded transaction',
+      hint: 'Try "swap $1 of ETH to USDC" or "stake $2 of ETH in Lido" — built, guard-checked, and priced before your wallet ever sees it.',
+      done: status.signedTx,
+      href: '/chat',
+      cta: 'Build one',
+    },
+    {
+      label: 'Run a fund-then-act job',
+      hint: 'Ask for something your funds aren\'t in place for — "buy $2 of AAPL" with only Base USDC. Yeetful compiles the bridge, the wait, and the buy into one job.',
+      done: status.fundedJob,
+      href: '/chat?mcps=robinhood-free,near-intents-mcp-yeetful,yeetful-tool-wallet',
+      cta: 'Try it',
+    },
+    {
+      label: 'Embed the chat on your site',
+      hint: 'Five lines put this chat on any page, signing with your visitors\' wallets. Mint a publishable embed key to start.',
+      done: status.embedKey,
+      href: '/dashboard/keys',
+      cta: 'Mint embed key',
     },
   ]
 
   const completed = steps.filter((s) => s.done).length
   const allDone = completed === steps.length
-  if (dismissed || allDone) return null
+  if (allDone) return null
 
   const next = steps.find((s) => !s.done)
 
@@ -84,8 +99,8 @@ export default function OnboardingChecklist({ stats }: { stats: Stats }) {
         <div className="min-w-0">
           <p className="text-sm font-semibold text-white">Get started</p>
           <p className="text-xs text-[color:var(--muted-2)] mt-0.5">
-            {completed} of {steps.length} done — a few steps to your first paid call and first
-            earnings.
+            {completed} of {steps.length} done — from first ask to money moved, then the chat on
+            your own site.
           </p>
         </div>
         <button
