@@ -8,7 +8,7 @@ import { Activity, Gauge, Route } from 'lucide-react'
 import Caret from '@/components/Caret'
 
 /**
- * The "Research" mega-menu — a single top-level tab that reveals the three
+ * The "Analytics" mega-menu — a single top-level tab that reveals the three
  * "engine, examined" surfaces (Benchmarks · Tools · Activity) in a full-bleed
  * sheet that drops down from under the nav bar.
  *
@@ -112,7 +112,7 @@ export default function NavResearch() {
         aria-expanded={open}
         onClick={() => (open ? closeNow() : (clearTimers(), setOpen(true)))}
       >
-        Research
+        Analytics
         <Caret className="navm__chev" />
       </button>
 
@@ -129,7 +129,7 @@ export default function NavResearch() {
               ref={panelRef}
               className={`navm__panel ${open ? 'is-open' : ''}`}
               role="menu"
-              aria-label="Research"
+              aria-label="Analytics"
               onMouseEnter={clearTimers}
               onMouseLeave={scheduleClose}
             >
