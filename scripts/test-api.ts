@@ -44,6 +44,7 @@ import { guardLifiBuild, verifyLifiQuoteEcho, lifiPriceAcceptable, lifiRoutersFo
 import { fundingNeedUsd, guardLifiBridgeBuild, lifiBridgeRoutersFor, verifyLifiBridgeEcho, type LifiBridgeExpectations, type LifiBridgeStep } from '../lib/lifi-bridge'
 import { parseRobinhoodFunding, parseSameChainSwapSegment } from '../lib/jobs'
 import { detectBalanceShortfall, fundingPlanUsd, planFundingChips, rankFundingSources, type FundingNeed, type FundingSource } from '../lib/funding-plan'
+import { compileDcaBuy, dcaRunChip, parseDcaCreate, parseDcaManage, parseDcaRun, periodKeyFor } from '../lib/dca'
 import { swapFeeAtoms, SWAP_FEE_BPS, TREASURY_ADDRESS } from '../lib/fees'
 import { APP_CHAINS, chainById, chainNamedIn, sanitizeChainId } from '../lib/chains'
 import { parseCrossChainSwap, guardCrossChainBuild, expectedOriginChainId, parseCrossChainFollowUp } from '../lib/cross-chain-swap'
@@ -3438,6 +3439,75 @@ async function main() {
         JSON.stringify(hlJob.steps.map((s) => `${s.kind}:${s.builder}`)) ===
           JSON.stringify(['sign:native-cross-chain', 'wait:wait', 'sign:native-hl-exec', 'wait:wait']),
       hlOffer.kind === 'offer' ? hlOffer.chips[0].resume : hlOffer.kind,
+    )
+  }
+
+  // ── DCA — recurring buys (grammar + period math + the chip contract) ─────
+  console.log('— dca schedules')
+  {
+    const create = parseDcaCreate('buy $10 of AAPL every week on robinhood')
+    check(
+      'dca: create parses (dollar amount + cadence + chain word)',
+      !!create && !('problem' in create) && create.buyUsd === 10 && create.buyToken === 'AAPL' && create.cadence === 'week' && create.chainId === 4663,
+    )
+    const noChain = parseDcaCreate('dca $25 into ETH daily')
+    check(
+      'dca: chainless create parses — chain left to the turn resolver (message > picker > token list)',
+      !!noChain && !('problem' in noChain) && noChain.buyUsd === 25 && noChain.buyToken === 'ETH' && noChain.cadence === 'day' && noChain.chainId === null,
+    )
+    const monthly = parseDcaCreate('dollar cost average $50 into WETH every month')
+    check('dca: dollar-cost-average verb + monthly cadence parse', !!monthly && !('problem' in monthly) && monthly.cadence === 'month' && monthly.buyUsd === 50)
+    check(
+      'dca: cadence-less buys never claim (the swap layer owns one-shots)',
+      parseDcaCreate('buy $10 of AAPL') === null && parseDcaCreate('buy $10 of AAPL on robinhood') === null,
+    )
+    const units = parseDcaCreate('buy 10 AAPL every week')
+    check('dca: token-unit sizing refuses honestly (recurring buys are dollar-sized)', !!units && 'problem' in units && /dollars/.test(units.problem))
+    const stableBuy = parseDcaCreate('dca $10 into USDC weekly')
+    const capped = parseDcaCreate('buy $20000 of ETH every day')
+    check('dca: stable-for-stable and above-cap asks refuse honestly', !!stableBuy && 'problem' in stableBuy && !!capped && 'problem' in capped)
+
+    // The chip contract: the due-period chip's resume string round-trips.
+    const chip = dcaRunChip({ id: 'clx0dcatest0001', buyUsd: 10, buyToken: 'AAPL', cadence: 'week' })
+    const run = parseDcaRun(chip.prompt)
+    check('dca: due-period chip resume round-trips (the chip is the contract)', !!run && run.scheduleId === 'clx0dcatest0001', chip.prompt)
+    check(
+      'dca: run resume never claimed by the jobs compiler; free text never reads as a run',
+      compileJobAsk(chip.prompt) === null && parseDcaRun('run my errands today') === null,
+    )
+
+    // The one-step buy job: same native-swap builder + params contract the
+    // funding plan's swap chips compile to (shared venue cascade).
+    const buyJob = compileDcaBuy({ buyUsd: 10, buyToken: 'AAPL', sellToken: 'USDG', chainId: 4663, cadence: 'week' })
+    check(
+      'dca: a due period compiles to ONE native-swap sign step (fresh-at-offer, guardrailed)',
+      buyJob.steps.length === 1 && buyJob.steps[0].kind === 'sign' && buyJob.steps[0].builder === 'native-swap' &&
+        JSON.stringify(buyJob.steps[0].params) === JSON.stringify({ sellToken: 'USDG', buyToken: 'AAPL', amountHuman: '10.00', chainId: 4663 }),
+    )
+
+    // Manage grammar.
+    const pause = parseDcaManage('pause my AAPL dca')
+    const cancel = parseDcaManage('cancel my dca')
+    const resumeAsk = parseDcaManage('resume my aapl dca')
+    const list = parseDcaManage('list my recurring buys')
+    check(
+      'dca: manage parses (pause/cancel/resume/list, token filter optional)',
+      pause?.op === 'pause' && pause.token === 'AAPL' && cancel?.op === 'cancel' && cancel.token === null &&
+        resumeAsk?.op === 'resume' && resumeAsk.token === 'AAPL' && list?.op === 'list',
+    )
+    check(
+      'dca: guardian/perp phrasing never reads as dca management',
+      parseDcaManage('set a stop loss on my ETH long') === null && parseDcaManage('stop my SYRUP position') === null,
+    )
+
+    // Period math: UTC calendar periods; missed periods lapse by construction.
+    check(
+      'dca: day/month period keys are UTC calendar buckets',
+      periodKeyFor('day', new Date(Date.UTC(2026, 6, 16))) === '2026-07-16' && periodKeyFor('month', new Date(Date.UTC(2026, 6, 16))) === '2026-07',
+    )
+    check(
+      'dca: ISO week keys (year boundary lands in the owning ISO year)',
+      periodKeyFor('week', new Date(Date.UTC(2026, 6, 16))) === '2026-W29' && periodKeyFor('week', new Date(Date.UTC(2027, 0, 1))) === '2026-W53',
     )
   }
 

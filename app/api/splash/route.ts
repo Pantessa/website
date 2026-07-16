@@ -3,7 +3,50 @@ import { isAddress } from 'viem'
 import prisma from '@/lib/db'
 import type { McpServer } from '@/lib/store'
 import { buildSplash, type FeaturedEndpoint, type SplashServer } from '@/lib/splash/sources'
+import type { RowsTile, StatRow, SuggestedPrompt } from '@/lib/splash/types'
 import { chainByKey } from '@/lib/chains'
+import { listDcaSchedules } from '@/lib/dca-exec'
+import { cadenceLabel, dcaRunChip, periodPhrase } from '@/lib/dca'
+
+/** The wallet's recurring buys as a rows tile — due periods lead with their
+ *  one-tap chip (the resume-string contract from lib/dca.ts). Env-fenced in
+ *  the store; fail-soft: a DB hiccup never blanks the rest of the splash. */
+async function dcaTileFor(address: string): Promise<RowsTile | null> {
+  const schedules = await listDcaSchedules(address).catch(() => [])
+  if (schedules.length === 0) return null
+  const rows: StatRow[] = schedules.map((s) => {
+    const chip = dcaRunChip(s)
+    const due = s.status === 'active' && s.period === 'due'
+    return {
+      label: `$${s.buyUsd} → ${s.buyToken} ${cadenceLabel(s.cadence)}`,
+      sub: `on ${s.chainName}`,
+      value: s.status === 'paused' ? 'paused' : s.period === 'bought' ? `bought ${periodPhrase(s.cadence)}` : s.period === 'live' ? 'awaiting signature' : 'due now',
+      tone: due ? ('pos' as const) : undefined,
+      actions: [
+        ...(due ? [{ label: chip.label, prompt: chip.prompt }] : []),
+        s.status === 'paused'
+          ? { label: 'Resume', prompt: `resume my ${s.buyToken} dca` }
+          : { label: 'Pause', prompt: `pause my ${s.buyToken} dca` },
+        { label: 'Cancel', prompt: `cancel my ${s.buyToken} dca` },
+      ],
+    }
+  })
+  const dueChips: SuggestedPrompt[] = schedules
+    .filter((s) => s.status === 'active' && s.period === 'due')
+    .map((s) => {
+      const chip = dcaRunChip(s)
+      return { label: chip.label, prompt: chip.prompt }
+    })
+  return {
+    id: 'dca-schedules',
+    mcpSlug: 'yeetful',
+    mcpName: 'Recurring buys',
+    title: 'DCA · you sign every buy',
+    render: 'rows',
+    rows,
+    prompts: dueChips.length > 0 ? dueChips.slice(0, 4) : [{ label: 'List my recurring buys', prompt: 'list my dcas' }],
+  }
+}
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -44,10 +87,13 @@ export async function POST(req: Request) {
     // No/invalid wallet → no splash (caller falls back to the normal empty state).
     return NextResponse.json({ address: '', tiles: [] })
   }
+  // Recurring buys aren't an MCP — the tile rides on the wallet alone, so a
+  // due period surfaces even before any server card resolves.
+  const dcaTile = await dcaTileFor(address)
   const slugs = [
     ...new Set((Array.isArray(body.servers) ? body.servers : []).map((s) => s?.slug).filter((s): s is string => !!s)),
   ]
-  if (slugs.length === 0) return NextResponse.json({ address, tiles: [] })
+  if (slugs.length === 0) return NextResponse.json({ address, tiles: dcaTile ? [dcaTile] : [] })
   // MCPs the user explicitly toggled on — these always paint a card (a
   // preview when the wallet has no activity). Only honored for slugs that are
   // in the requested set anyway; this flag can't conjure extra servers.
@@ -104,8 +150,8 @@ export async function POST(req: Request) {
       .filter((s): s is SplashServer => s !== null)
 
     const tiles = await buildSplash(address, resolved, chain)
-    return NextResponse.json({ address, tiles })
+    return NextResponse.json({ address, tiles: dcaTile ? [dcaTile, ...tiles] : tiles })
   } catch (err) {
-    return NextResponse.json({ address, tiles: [], error: err instanceof Error ? err.message : 'splash failed' })
+    return NextResponse.json({ address, tiles: dcaTile ? [dcaTile] : [], error: err instanceof Error ? err.message : 'splash failed' })
   }
 }

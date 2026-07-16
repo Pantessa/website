@@ -45,6 +45,7 @@ import { armGuardianPolicy } from '@/lib/hl-guardian-store'
 import { compileJobAsk } from '@/lib/jobs'
 import { advanceJob, createJob } from '@/lib/jobs-runner'
 import { signJobToken } from '@/lib/job-token'
+import { runDcaTurn } from '@/lib/dca-exec'
 import {
   aaveAgentOf,
   competingVenueOf,
@@ -640,6 +641,15 @@ export async function POST(req: NextRequest) {
       // sent a build ask to the planner and its -32602 looked like MCP flake.
       nativeTrace({ type: 'note', level: 'info', label: 'aave named but no imperative supply/withdraw/borrow/repay parse — normal routing (reads are fine here; build asks should say e.g. “supply 5 USDC to aave”)' })
     }
+
+    // DCA — recurring buys ("buy $10 of AAPL every week"), the due-period
+    // chip's resume string, and pause/resume/cancel/list. Runs BEFORE the
+    // jobs compiler and the swap layer: a cadence-bearing buy must become a
+    // SCHEDULE, never a one-shot swap that quietly drops "every week". Each
+    // due period compiles a one-step job (native-swap builder — same venue
+    // cascade + guardrails as any swap), confirm-mode only.
+    const dcaTurn = await runDcaTurn(message, walletAddress, selectedChainId, nativeTrace)
+    if (dcaTurn) return NextResponse.json(dcaTurn)
 
     // Multi-step JOBS — a compound ask ("bridge …, then deposit …, then long
     // …, then protect it") compiles into a FIXED sequence of guarded steps
