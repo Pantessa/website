@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useRef } from 'react'
+import { useRouter } from 'next/navigation'
 import { useAccount } from 'wagmi'
 import ChatInterface from '@/components/ChatInterface'
 import ChatSidebar from '@/components/ChatSidebar'
@@ -25,6 +26,7 @@ export default function ChatWorkspace({ chatId }: { chatId?: string }) {
   const { servers, setServers, setCurrentChatId, loadChat, setActiveServerIds, activeServerIds, walletSets, saveWalletSet, authedAddress, loadWalletSet } =
     useYeetfulStore()
   const { address } = useAccount()
+  const router = useRouter()
 
   // A deep link like /chat?mcps=uniswap-free,snapshot-free preselects a working
   // set so the landing "Try it live" (and any shared combo link) lands the user
@@ -46,16 +48,28 @@ export default function ChatWorkspace({ chatId }: { chatId?: string }) {
   }, [servers.length, setServers])
 
   // Follow the route: select the chat, load its messages, restore its agents.
+  // `authedAddress` is a dependency on purpose: on a direct load of /chat/[id]
+  // this effect fires BEFORE the SIWE session has hydrated, so loadChat bails
+  // without fetching (it needs the session cookie's owner). When the session
+  // resolves, the re-run performs the real fetch — without it the chat's
+  // messages never load and the splash hold spins the loader forever.
   useEffect(() => {
-    if (chatId) {
-      setCurrentChatId(chatId)
-      void loadChat(chatId).then((chat) => {
-        if (chat) setActiveServerIds(chat.activeServerIds)
-      })
-    } else {
+    if (!chatId) {
       setCurrentChatId(null)
+      return
     }
-  }, [chatId, setCurrentChatId, loadChat, setActiveServerIds])
+    setCurrentChatId(chatId)
+    void loadChat(chatId).then((chat) => {
+      if (chat) {
+        setActiveServerIds(chat.activeServerIds)
+      } else if (useYeetfulStore.getState().authedAddress) {
+        // Signed in and the chat definitively isn't loadable (deleted, or
+        // another wallet's): a dead id would otherwise hold the chat loader
+        // forever — fall back to a fresh chat.
+        router.replace('/chat')
+      }
+    })
+  }, [chatId, authedAddress, setCurrentChatId, loadChat, setActiveServerIds, router])
 
   // Apply the ?mcps= working set once the directory has loaded (need slug→id).
   useEffect(() => {

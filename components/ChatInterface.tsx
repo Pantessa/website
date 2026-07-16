@@ -27,6 +27,7 @@ import PaymentConfirm from '@/components/PaymentConfirm'
 import { voteRequestOf, voteCandidatesOf, voteProposalOf } from '@/lib/snapshot-vote'
 import { clarifyRequestOf } from '@/lib/clarify'
 import { useYeetfulStore, type RouterTraceEvent } from '@/lib/store'
+import { useSession } from '@/lib/session'
 import { latestWorkingContext, type WorkingContext } from '@/lib/working-context'
 import { EXAMPLE_PROMPTS } from '@/lib/examples'
 import SampleCallDemo from '@/components/SampleCallDemo'
@@ -301,6 +302,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
   const { address, isConnected, status: walletStatus } = useAccount()
+  const { status: sessionStatus } = useSession()
   // Loader is the DEFAULT until the wallet conclusively settles (see the
   // boot-hold state above) — 'connecting'/'reconnecting' means the splash may
   // be about to take over.
@@ -349,8 +351,11 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
     const surface = `${currentChatId ?? ''}|${effectiveAddress ?? ''}`
     if (splashSurfaceRef.current !== surface) {
       // An opened chat's history decides whether its pre-existing MCPs get
-      // cards — hold until the messages have actually loaded.
-      if (currentChatId && !currentChat?.messagesLoaded) return
+      // cards — hold until the messages have actually loaded. But only while
+      // a load can still deliver: a settled GUEST session can never fetch a
+      // DB chat (wallet connected + expired SIWE cookie is the common case),
+      // and holding then spins the chat loader forever.
+      if (currentChatId && !currentChat?.messagesLoaded && sessionStatus !== 'guest') return
       splashSurfaceRef.current = surface
       setSplashBatches([])
       setSplashCounts({})
@@ -414,7 +419,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
       ]
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [splashableKey, effectiveAddress, currentChatId, currentChat?.messagesLoaded, autoRouter])
+  }, [splashableKey, effectiveAddress, currentChatId, currentChat?.messagesLoaded, autoRouter, sessionStatus])
 
   // All batches settled with zero tiles → the caller's normal empty state.
   const splashSettledEmpty =
