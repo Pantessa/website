@@ -47,26 +47,28 @@ export default function OnboardingChecklist() {
   // ticking them a beat later reads as flicker.
   if (dismissed || !status) return null
 
+  // Each chat CTA deep-links with ?prompt= so the composer lands PREFILLED
+  // with the example ask (never auto-sent) — a bare /chat read as "now what?".
   const steps = [
     {
       label: 'Ask your agents anything',
       hint: 'Open the chat and ask — "what\'s in my wallet?", "ETH price?". Your MCPs answer, every call receipted.',
       done: status.chatted,
-      href: '/chat',
+      href: `/chat?prompt=${encodeURIComponent("What's in my wallet?")}`,
       cta: 'Open chat',
     },
     {
       label: 'Sign a guarded transaction',
-      hint: 'Try "swap $1 of ETH to USDC" or "stake $2 of ETH in Lido" — built, guard-checked, and priced before your wallet ever sees it.',
+      hint: 'We\'ll load "swap $1 of ETH to USDC" ready to send — built, guard-checked, and priced before your wallet ever sees it.',
       done: status.signedTx,
-      href: '/chat',
+      href: `/chat?prompt=${encodeURIComponent('Swap $1 of ETH to USDC')}`,
       cta: 'Build one',
     },
     {
       label: 'Run a fund-then-act job',
       hint: 'Ask for something your funds aren\'t in place for — "buy $2 of AAPL" with only Base USDC. Yeetful compiles the bridge, the wait, and the buy into one job.',
       done: status.fundedJob,
-      href: '/chat?mcps=robinhood-free,near-intents-mcp-yeetful,yeetful-tool-wallet',
+      href: `/chat?mcps=robinhood-free,near-intents-mcp-yeetful,yeetful-tool-wallet&prompt=${encodeURIComponent('Buy $2 of AAPL')}`,
       cta: 'Try it',
     },
     {
