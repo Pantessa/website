@@ -103,6 +103,9 @@ devDependencies:
   '@types/react-dom':
     specifier: ^19
     version: 19.2.3(@types/react@19.2.14)
+  '@web3icons/core':
+    specifier: ^4.0.53
+    version: 4.0.53
   autoprefixer:
     specifier: ^10.0.1
     version: 10.5.0(postcss@8.5.10)
@@ -118,6 +121,9 @@ devDependencies:
   prisma:
     specifier: ^5.22.0
     version: 5.22.0
+  simple-icons:
+    specifier: ^16.26.0
+    version: 16.26.0
   tailwindcss:
     specifier: ^3.4.17
     version: 3.4.19(tsx@4.21.0)
@@ -5286,6 +5292,16 @@ packages:
       tslib: 1.14.1
     dev: false
 
+  /@web3icons/common@0.11.48:
+    resolution: {integrity: sha512-n4DyN9fnf94N4XyL/iSRG9RmsgqK28OcYcPtQwj3NM0rs++bIbND4psoP1weRSVrY6wzToIcXD9THWKkHtF7BQ==}
+    dev: true
+
+  /@web3icons/core@4.0.53:
+    resolution: {integrity: sha512-9PZ8agCSBKj6TliDw69kvDfJ8x/DStJSgWIW/y3yywLqCVcoo3Tm8qLErbfmRsEW0Cex+GE5vHcace3LpieKGg==}
+    dependencies:
+      '@web3icons/common': 0.11.48
+    dev: true
+
   /abitype@1.0.6(typescript@5.6.3)(zod@3.25.76):
     resolution: {integrity: sha512-MMSqYh4+C/aVqI2RQaWqbvI4Kxo5cQV40WQ4QFtDnNzCkqChm8MuENhElmynZlO0qUy/ObkEUaXtKqYnx1Kp3A==}
     peerDependencies:
@@ -10265,6 +10281,11 @@ packages:
       side-channel-list: 1.0.1
       side-channel-map: 1.0.1
       side-channel-weakmap: 1.0.2
+    dev: true
+
+  /simple-icons@16.26.0:
+    resolution: {integrity: sha512-T9rNJtyOshULM8heLlvrZY346g9zOgZILQ3vxP+FWcX13RhaOLez7YM/hNCEx3b5gJckSCNDoNsjZuDncSMYSQ==}
+    engines: {node: '>=0.12.18'}
     dev: true
 
   /socket.io-client@4.8.3:

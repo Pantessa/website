@@ -2,8 +2,10 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
+import { motion, useReducedMotion } from 'framer-motion'
 import { ArrowDownLeft, ArrowUpRight, ChevronDown, Clock, ExternalLink, RefreshCw, Repeat, Vote, Wallet } from 'lucide-react'
 import BrandIcon from '@/components/BrandIcon'
+import TokenIcon from '@/components/TokenIcon'
 import VoteChoiceButtons from '@/components/VoteChoiceButtons'
 import { useYeetfulStore, type McpServer } from '@/lib/store'
 import { chainById } from '@/lib/chains'
@@ -381,7 +383,9 @@ function RowsBody({ tile, onPick }: { tile: RowsTile; onPick: (p: string, slug?:
               )}
               {expandable && expanded && (
                 <div className="px-1 pb-1">
-                  <InlineActionChips actions={actions} slug={tile.mcpSlug} onPick={onPick} />
+                  <Reveal>
+                    <InlineActionChips actions={actions} slug={tile.mcpSlug} onPick={onPick} />
+                  </Reveal>
                 </div>
               )}
             </div>
@@ -415,9 +419,7 @@ function HoldingsBody({ tile, onPick }: { tile: HoldingsTile; onPick: (p: string
           const inner = (
             <>
               <div className="flex min-w-0 items-center gap-2">
-                <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-white/5 text-[10px] font-semibold text-[color:var(--muted)]">
-                  {h.symbol.slice(0, 3)}
-                </span>
+                <TokenIcon symbol={h.symbol} size={24} />
                 <span className="font-medium text-white">{h.symbol}</span>
                 {h.native && <span className="mono text-[9px] text-[color:var(--muted-2)]">native</span>}
                 {h.chain && <span className="rounded bg-white/5 px-1 py-0.5 text-[9px] text-[color:var(--muted-2)]">{h.chain}</span>}
@@ -449,7 +451,9 @@ function HoldingsBody({ tile, onPick }: { tile: HoldingsTile; onPick: (p: string
               )}
               {expandable && expanded && (
                 <div className="px-1 pb-1">
-                  <InlineActionChips actions={actions} slug={tile.mcpSlug} onPick={onPick} />
+                  <Reveal>
+                    <InlineActionChips actions={actions} slug={tile.mcpSlug} onPick={onPick} />
+                  </Reveal>
                 </div>
               )}
             </div>
@@ -512,17 +516,19 @@ function ProposalsBody({ tile }: { tile: ProposalsTile }) {
               </button>
               {expanded && (
                 <div className="mt-1 px-1 pb-1">
-                  <VoteChoiceButtons
-                    proposal={{
-                      id: p.id,
-                      title: p.title,
-                      space: p.spaceId,
-                      // Rows cached before `type` shipped default to single-choice
-                      // (the encoding Snapshot uses for basic proposals too).
-                      type: p.type ?? 'single-choice',
-                      choices: p.choices,
-                    }}
-                  />
+                  <Reveal>
+                    <VoteChoiceButtons
+                      proposal={{
+                        id: p.id,
+                        title: p.title,
+                        space: p.spaceId,
+                        // Rows cached before `type` shipped default to single-choice
+                        // (the encoding Snapshot uses for basic proposals too).
+                        type: p.type ?? 'single-choice',
+                        choices: p.choices,
+                      }}
+                    />
+                  </Reveal>
                 </div>
               )}
             </div>
@@ -534,6 +540,23 @@ function ProposalsBody({ tile }: { tile: ProposalsTile }) {
 }
 
 // ── Shared bits ──────────────────────────────────────────────────────────────
+
+/** Entrance for row-expand content: a short fade + settle. Entrance ONLY —
+ *  exit animations get stranded mid-fade when the headless preview (and busy
+ *  real tabs) starve rAF, the App Mode ghost-panel lesson. Collapse is
+ *  instant unmount; useReducedMotion drops the settle entirely. */
+function Reveal({ children }: { children: React.ReactNode }) {
+  const reduced = useReducedMotion()
+  return (
+    <motion.div
+      initial={reduced ? false : { opacity: 0, y: -4 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.18, ease: 'easeOut' }}
+    >
+      {children}
+    </motion.div>
+  )
+}
 
 /** The chip band revealed under an expanded holding/order row — same
  *  drop-into-composer behaviour as the card's bottom PromptChips, scoped to

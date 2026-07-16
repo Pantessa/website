@@ -100,7 +100,10 @@ function holdingRowActions(h: HoldingRow, where: string): SuggestedPrompt[] {
   const bal = Number(h.balance)
   if (!Number.isFinite(bal) || bal <= 0) return []
   if (isStable) {
-    const amt = Math.min(Math.floor(bal), 100) || 1
+    // Sub-$1 stables get no swap chip: Math.floor would round to 0 and any
+    // fallback amount would suggest money the wallet doesn't hold.
+    if (bal < 1) return []
+    const amt = Math.min(Math.floor(bal), 100)
     return [{ label: `Swap ${h.symbol} → ETH`, prompt: `Swap ${amt} ${h.symbol} for ETH ${where}` }]
   }
   const sellAmt = bal >= 1 ? String(Math.floor(bal * 10000) / 10000) : h.balance
@@ -700,8 +703,11 @@ function robinhoodRowActions(h: RobinhoodHolding): SuggestedPrompt[] {
       ...(bal > 0 ? [{ label: `Sell ${sym}`, prompt: `Swap ${sellAmt} ${sym} for USDG on Robinhood Chain` }] : []),
     ]
   }
-  if (sym === 'USDG' && (h.usd ?? 0) >= 5) {
-    const amt = Math.min(Math.floor(bal), 50) || 5
+  // Any whole dollar of USDG is buyable stock — the $5 tile-chip threshold
+  // left small balances (the common case after a first bridge-in) with a
+  // dead row. Floor keeps the amount inside the live balance, never above.
+  if (sym === 'USDG' && Number.isFinite(bal) && bal >= 1) {
+    const amt = Math.min(Math.floor(bal), 50)
     return [{ label: 'Buy AAPL', prompt: `Swap ${amt} USDG for AAPL on Robinhood Chain` }]
   }
   if (sym === 'ETH' && bal > 0 && h.priceUsd) {
