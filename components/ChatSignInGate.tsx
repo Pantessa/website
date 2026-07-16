@@ -12,6 +12,15 @@ import { cdpEnabled } from '@/lib/cdp-embedded'
  * what the chat is and prompting sign-in. Once authed (or while the session is
  * still hydrating) we render nothing so the chat is fully usable.
  */
+/** Where to land after sign-in: the page the visitor is already on, query
+ *  string included — a hardcoded '/chat' used to drop ?mcps=/?prompt= deep
+ *  links (the share-page handoff) on the post-sign-in redirect. Client-only
+ *  component, so window is available; '/chat' is the SSR-safe fallback. */
+function hereWithQuery(): string {
+  if (typeof window === 'undefined') return '/chat'
+  return window.location.pathname + window.location.search
+}
+
 export default function ChatSignInGate() {
   const { status, signingIn, needsSignIn, signIn, connectAndSignIn } = useSession()
 
@@ -49,7 +58,7 @@ export default function ChatSignInGate() {
             // Wallet already connected — re-fire the SIWE signature directly
             // (re-opens the wallet prompt if the user dismissed it).
             <button
-              onClick={() => signIn('/chat')}
+              onClick={() => signIn(hereWithQuery())}
               disabled={signingIn}
               type="button"
               title="Approve the signature request in your wallet"
@@ -72,12 +81,12 @@ export default function ChatSignInGate() {
                   <span>Sign in to use the chat</span>
                 </>
               }
-              redirectTo="/chat"
+              redirectTo={hereWithQuery()}
             />
           ) : (
             // No embedded-wallet SDK configured — fall back to direct wallet SIWE.
             <button
-              onClick={() => connectAndSignIn('/chat')}
+              onClick={() => connectAndSignIn(hereWithQuery())}
               disabled={signingIn}
               type="button"
               title="Sign in with your wallet — connect and sign in one step"
