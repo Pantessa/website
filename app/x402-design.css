@@ -2693,8 +2693,8 @@
   }
   /* texture break: a soft emerald mist + a whisper of dotted field where a
      border-top used to be — visible only as a change in air, not a line */
-  .compose, .txp, .embeda, .trust, .swsrv, .swproof, .swstats { position: relative; }
-  .compose::before, .txp::before, .embeda::before, .trust::before, .swsrv::before, .swproof::before, .swstats::before {
+  .compose, .txp, .fundx, .embeda, .trust, .swsrv, .swproof, .swstats { position: relative; }
+  .compose::before, .txp::before, .fundx::before, .embeda::before, .trust::before, .swsrv::before, .swproof::before, .swstats::before {
     content: ''; position: absolute; top: 0; left: 50%; transform: translateX(-50%);
     width: min(100%, 1100px); height: 120px; pointer-events: none;
     background:
@@ -2757,6 +2757,68 @@
   @media (max-width: 1023px) {
     .txp__grid { grid-template-columns: 1fr; }
     .txp__visual { max-width: 460px; }
+  }
+
+
+  /* ── FUNDING LAYER (.fundx): the "Buy $2 of AAPL" power example ────────
+     Visual-left mirror of TxPipeline: a stylized still of the funding plan
+     running (offer → chips → job steps → receipt), the doctrine on the
+     right, one hot CTA into the prefilled /chat prompt. */
+  .fundx { padding: clamp(88px, 11vh, 132px) 0 72px; }
+  .fundx__grid { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: clamp(32px, 4vw, 64px); align-items: center; max-width: 1220px; margin: 0 auto; }
+  .fundx__eyebrow { font-size: 12px; letter-spacing: 0.18em; color: var(--muted-2); }
+  .fundx__h2 { font-family: var(--font-serif); font-weight: 500; font-optical-sizing: auto; font-size: clamp(28px, 3.6vw, 42px); letter-spacing: -0.012em; line-height: 1.06; margin-top: 12px; color: var(--fg); max-width: 22ch; }
+  .fundx__sub { margin-top: 14px; max-width: 54ch; font-size: 15px; line-height: 1.55; color: var(--muted); text-wrap: pretty; }
+  .fundx__points { list-style: none; margin-top: 30px; display: flex; flex-direction: column; }
+  .fundx__point { padding: 12px 0; border-bottom: 1px dashed color-mix(in srgb, var(--fg) 7%, transparent); font-size: 14.5px; line-height: 1.5; color: var(--muted); text-wrap: pretty; }
+  .fundx__point:last-child { border-bottom: 0; }
+  .fundx__point strong { color: var(--fg); font-weight: 600; margin-right: 8px; font-family: 'Archivo', sans-serif; letter-spacing: -.01em; }
+  .fundx__ctas { margin-top: 30px; display: flex; align-items: center; gap: 18px; flex-wrap: wrap; }
+  .fundx__cta {
+    display: inline-flex; align-items: center; padding: 11px 22px; border-radius: 999px;
+    background: var(--accent); color: #04110b; font-size: 14px; font-weight: 600; letter-spacing: -.01em;
+    box-shadow: 0 0 22px color-mix(in srgb, var(--accent) 28%, transparent);
+    transition: transform .15s ease, box-shadow .15s ease;
+  }
+  .fundx__cta:hover { transform: translateY(-1px); box-shadow: 0 0 30px color-mix(in srgb, var(--accent) 40%, transparent); }
+  .fundx__cta2 { font-size: 13.5px; color: var(--muted); text-decoration: underline; text-underline-offset: 4px; text-decoration-color: color-mix(in srgb, var(--fg) 25%, transparent); }
+  .fundx__cta2:hover { color: var(--fg); }
+
+  .fundx__visual {
+    --fvuserink: #04110b;
+    border: 1px solid color-mix(in srgb, var(--fg) 9%, transparent); border-radius: 20px; overflow: hidden;
+    background: linear-gradient(165deg, color-mix(in srgb, var(--accent) 5%, transparent), var(--tvpanel, rgba(10,12,13,.9)) 40%);
+    box-shadow: var(--tvshadow, 0 28px 80px rgba(0,0,0,.5), 0 0 44px rgba(52,227,160,.07));
+  }
+  .fundx__vhead { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 12px 16px; border-bottom: 1px solid color-mix(in srgb, var(--fg) 7%, transparent); flex-wrap: wrap; }
+  .fundx__vbrand { display: inline-flex; align-items: center; gap: 8px; font-size: 11.5px; letter-spacing: .06em; color: var(--accent); }
+  .fundx__vbrand i { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 8px var(--accent); animation: pw-blink 1.8s infinite; }
+  .fundx__vwallet { font-size: 11px; color: var(--muted-2); letter-spacing: .05em; }
+  .fundx__vbody { padding: 18px 16px 20px; display: flex; flex-direction: column; gap: 12px; }
+  .fundx__vuser { align-self: flex-end; max-width: 70%; padding: 9px 14px; border-radius: 14px 14px 4px 14px; background: color-mix(in srgb, var(--accent) 85%, transparent); color: var(--fvuserink); font-size: 13.5px; font-weight: 500; }
+  .fundx__voffer { border: 1px solid color-mix(in srgb, var(--fg) 9%, transparent); border-radius: 14px; padding: 13px 14px; background: color-mix(in srgb, var(--fg) 2%, transparent); }
+  .fundx__voffer p { font-size: 13px; line-height: 1.5; color: var(--muted); }
+  .fundx__voffer strong { color: var(--fg); font-weight: 600; }
+  .fundx__vchips { display: flex; gap: 7px; margin-top: 11px; flex-wrap: wrap; }
+  .fundx__vchip {
+    display: inline-flex; padding: 5px 12px; border-radius: 999px; font-size: 11px; letter-spacing: .02em;
+    color: var(--muted); border: 1px solid color-mix(in srgb, var(--fg) 12%, transparent);
+  }
+  .fundx__vchip--hot { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, transparent); background: color-mix(in srgb, var(--accent) 8%, transparent); box-shadow: 0 0 14px color-mix(in srgb, var(--accent) 14%, transparent); }
+  .fundx__vjob { list-style: none; border: 1px solid color-mix(in srgb, var(--fg) 9%, transparent); border-radius: 14px; padding: 4px 14px; background: color-mix(in srgb, var(--fg) 2%, transparent); }
+  .fundx__vstep { display: flex; align-items: baseline; gap: 10px; padding: 9px 0; font-size: 12px; color: var(--muted); border-bottom: 1px dashed color-mix(in srgb, var(--fg) 6%, transparent); }
+  .fundx__vstep:last-child { border-bottom: 0; }
+  .fundx__vstep i { font-style: normal; }
+  .fundx__vstep em { font-style: normal; color: var(--muted-2); }
+  .fundx__vstep--done { color: var(--muted-2); }
+  .fundx__vstep--done i { color: var(--accent); }
+  .fundx__vstep--live { color: var(--fg); }
+  .fundx__vstep--live i { color: var(--accent); animation: tt-pulse 2.2s ease-in-out infinite; }
+  .fundx__vreceipt { font-size: 11px; color: var(--muted-2); letter-spacing: .05em; }
+  @media (max-width: 1023px) {
+    .fundx__grid { grid-template-columns: 1fr; }
+    .fundx__visual { max-width: 460px; order: 2; }
+    .fundx__copy { order: 1; }
   }
 
 

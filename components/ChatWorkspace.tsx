@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAccount } from 'wagmi'
 import ChatInterface from '@/components/ChatInterface'
@@ -34,6 +34,17 @@ export default function ChatWorkspace({ chatId }: { chatId?: string }) {
   // convention as /embed?mcps=. Applied once, only on the bare /chat surface
   // (an existing chat restores its own agents).
   const appliedMcpParam = useRef(false)
+
+  // ?prompt= PREFILLS the composer (never auto-sends — a URL must not fire a
+  // money action; the user reads it and presses enter). Pairs with ?mcps= so
+  // the landing's power examples land ready to run: read once on mount into
+  // the same injectedPrompt contract the embed's postMessage prompt uses.
+  const [urlPrompt, setUrlPrompt] = useState<{ text: string; send: boolean; at: number } | null>(null)
+  useEffect(() => {
+    const raw = new URLSearchParams(window.location.search).get('prompt')
+    const text = raw?.trim().slice(0, 2000)
+    if (text) setUrlPrompt({ text, send: false, at: Date.now() })
+  }, [])
 
   // Load the MCP directory once (DB-backed, static fallback).
   useEffect(() => {
@@ -171,7 +182,7 @@ export default function ChatWorkspace({ chatId }: { chatId?: string }) {
         <McpRail />
       </div>
       <main className="flex-1 min-w-0 flex flex-col">
-        <ChatInterface />
+        <ChatInterface injectedPrompt={urlPrompt} />
       </main>
       <RouterEngineWindow />
       <ChatSignInGate />

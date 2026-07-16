@@ -4,6 +4,7 @@ import HomeHeroFusion from '@/components/HomeHeroFusion'
 import ComposeSet from '@/components/ComposeSet'
 import EngineInside from '@/components/EngineInside'
 import TxPipeline from '@/components/TxPipeline'
+import FundAnything from '@/components/FundAnything'
 import EmbedAnywhere from '@/components/EmbedAnywhere'
 import TrustStrip from '@/components/TrustStrip'
 import SwitchboardServers from '@/components/SwitchboardServers'
@@ -59,6 +60,10 @@ export default function HomePage() {
       <main className="x-main x-main--fluid">
         {/* The claim + the fusion artwork (live /embed summoned on demand) */}
         <HomeHeroFusion />
+
+        {/* The power example, straight after the claim: "Buy $2 of AAPL"
+            funds itself across chains — the onboarding story as one turn */}
+        <FundAnything />
 
         {/* Recipes: what a composed set unlocks */}
         <ComposeSet />
