@@ -26,6 +26,7 @@ import {
 import { publicClientFor, primaryStable } from '@/lib/chains'
 import { erc20Abi, formatEther } from 'viem'
 import { buildAaveRepayArtifact, buildAaveSupplyArtifact } from '@/lib/aave-exec'
+import { buildGuardedSwap } from '@/lib/swap-exec'
 import { buildLifiBridgeLeg, checkChainArrival, ROBINHOOD_CHAIN_ID, type ChainArrival, type FundingLeg } from '@/lib/lifi-bridge'
 import { buildLifiSwap } from '@/lib/lifi-venue'
 import { ensureTokenList } from '@/lib/token-list'
@@ -260,6 +261,20 @@ export async function buildSignArtifact(
       artifact: { txRequest: guard.tx as unknown as Record<string, unknown>, summary: guard.summary },
       guardReport: { ok: true, warnings: guard.warnings, valueUsd },
       valueUsd,
+    }
+  }
+  if (builder === 'native-swap') {
+    // Same-chain swap through the SHARED venue cascade (lib/swap-exec.ts —
+    // the exact builders + guardrails chat and the swap panel use). Built
+    // fresh at offer time: after a funding leg settles, the balance the
+    // venue simulation checks is the real, funded one.
+    const p = params as { sellToken: string; buyToken: string; amountHuman: string; chainId: number }
+    const built = await buildGuardedSwap({ sellToken: p.sellToken, buyToken: p.buyToken, amountHuman: p.amountHuman, from: wallet, chainId: Number(p.chainId) })
+    if (!built.ok) throw new Error(built.reasons)
+    return {
+      artifact: { txChain: built.txChain, summary: built.summary },
+      guardReport: built.guardrails,
+      valueUsd: built.guardrails.valueUsd ?? null,
     }
   }
   if (builder === 'native-aave-supply' || builder === 'native-aave-repay') {
