@@ -29,7 +29,7 @@ import {
   type LidoPositionPayload,
   type LidoStakeParams,
 } from '@/lib/lido-stake'
-import { fundingFallbackForFailures, offerFundingPlan } from '@/lib/funding-plan'
+import { DEST_GAS_FLOOR_ETH, FUNDING_CHAIN_WORD, fundingFallbackForFailures, offerFundingPlan } from '@/lib/funding-plan'
 import {
   parseCrossChainSwap,
   parseCrossChainFollowUp,
@@ -80,7 +80,7 @@ import { buildUniswapSwap, NoV3PoolError } from '@/lib/uniswap-venue'
 import { buildUniswapV4Swap, NoV4PoolError, GatedV4PoolError } from '@/lib/uniswap-v4'
 import { buildLifiSwap, NoLifiRouteError } from '@/lib/lifi-venue'
 import { fundingNeedUsd, readFundingShortfall, ROBINHOOD_CHAIN_ID } from '@/lib/lifi-bridge'
-import { tokenDecimals, humanToAtoms } from '@/lib/cow'
+import { resolveToken, tokenDecimals, humanToAtoms } from '@/lib/cow'
 import { ensureTokenList } from '@/lib/token-list'
 import { resolveProposal } from '@/lib/snapshot-read'
 import { detectGovernanceIntent, runGovernanceTurn } from '@/lib/governance'
@@ -2105,6 +2105,53 @@ async function prepareSwapTurn(intent: SwapIntent, walletAddress: string | undef
       }
     } catch {
       /* balance reads unavailable → the normal build path below fails closed on its own */
+    }
+  }
+
+  // ── Universal funding plan (same-chain swaps): a market swap whose sell
+  // token the wallet can't cover offers fund-then-swap chips — the swap
+  // segment compiles as a job step through the SAME venue cascade
+  // (lib/swap-exec.ts). Limit orders are exempt (CoW's order book settles
+  // whenever the funds arrive — being short is a feature there), Robinhood
+  // Chain keeps its LiFi plan above, and a failed read falls through to the
+  // venue build, whose own simulation fails closed.
+  if (walletAddress && intent.mode !== 'limit' && chainId !== ROBINHOOD_CHAIN_ID && FUNDING_CHAIN_WORD[chainId]) {
+    try {
+      const sellSym = intent.sellToken.toUpperCase()
+      const isEthSell = sellSym === 'ETH'
+      const sellAddr = isEthSell ? null : resolveToken(intent.sellToken, chainId)
+      const client = publicClientFor(chainId)
+      if (client && (isEthSell || sellAddr)) {
+        const balanceAtoms = isEthSell
+          ? await client.getBalance({ address: walletAddress as `0x${string}` })
+          : await client.readContract({ address: sellAddr as `0x${string}`, abi: erc20Abi, functionName: 'balanceOf', args: [walletAddress as `0x${string}`] })
+        const held = Number(balanceAtoms) / 10 ** sellDec
+        // An ETH sell must also leave gas for the swap itself.
+        const needTotal = Number(intent.sellAmountHuman) + (isEthSell ? (DEST_GAS_FLOOR_ETH[chainId] ?? 0.0002) : 0)
+        if (held < needTotal) {
+          const buySym = intent.buyToken.toUpperCase()
+          const offer = await offerFundingPlan({
+            user: walletAddress,
+            need: {
+              chainId,
+              token: sellSym,
+              amountHuman: Number((needTotal - held).toFixed(6)),
+              followupResume: `swap ${intent.sellAmountHuman} ${sellSym} for ${buySym} on ${FUNDING_CHAIN_WORD[chainId]}`,
+              actionLabel: 'the swap',
+            },
+            trace,
+          })
+          if (offer && 'insufficient' in offer) {
+            return NextResponse.json({
+              reply: `🔄 The swap sells ${intent.sellAmountHuman} ${sellSym} on ${chain.name} and the wallet holds ${held.toFixed(6).replace(/\.?0+$/, '') || '0'}. ${offer.insufficient}`,
+            })
+          }
+          if (offer) return NextResponse.json({ ...offer, reply: `🌉 ${offer.reply}` })
+          // null → scan/price unavailable; the venue build below fails closed
+        }
+      }
+    } catch {
+      /* balance read unavailable → the venue build below fails closed on its own */
     }
   }
 

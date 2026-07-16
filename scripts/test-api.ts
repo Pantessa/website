@@ -42,7 +42,7 @@ import { crossChainAgentOf, detectCrossChain, swapWorkingContext } from '../lib/
 import { encodeV4SwapCalldata, guardUniswapV4Build, type V4BuiltStep, type V4GuardExpectations, type V4PoolKey } from '../lib/uniswap-v4'
 import { guardLifiBuild, verifyLifiQuoteEcho, lifiPriceAcceptable, lifiRoutersFor, type LifiBuiltStep, type LifiGuardExpectations, type LifiQuote } from '../lib/lifi-venue'
 import { fundingNeedUsd, guardLifiBridgeBuild, lifiBridgeRoutersFor, verifyLifiBridgeEcho, type LifiBridgeExpectations, type LifiBridgeStep } from '../lib/lifi-bridge'
-import { parseRobinhoodFunding } from '../lib/jobs'
+import { parseRobinhoodFunding, parseSameChainSwapSegment } from '../lib/jobs'
 import { detectBalanceShortfall, fundingPlanUsd, planFundingChips, rankFundingSources, type FundingNeed, type FundingSource } from '../lib/funding-plan'
 import { swapFeeAtoms, SWAP_FEE_BPS, TREASURY_ADDRESS } from '../lib/fees'
 import { APP_CHAINS, chainById, chainNamedIn, sanitizeChainId } from '../lib/chains'
@@ -3404,6 +3404,28 @@ async function main() {
         JSON.stringify(bridgeOnlyGasJob.steps.map((s) => `${s.kind}:${s.builder}`)) ===
           JSON.stringify(['sign:native-cross-chain', 'wait:wait', 'sign:native-cross-chain', 'wait:wait']),
       bridgeOnlyGas.kind === 'offer' ? bridgeOnlyGas.chips[0].resume : bridgeOnlyGas.kind,
+    )
+
+    // Same-chain swap segments: the funding follow-up for sell-token
+    // shortfalls — disjoint from the cross-chain grammar, chain word demanded.
+    const seg = parseSameChainSwapSegment('swap 20 USDC for WETH on Arbitrum')
+    check(
+      'funding plan: same-chain swap segment parses (chain word demanded, cc grammar untouched)',
+      !!seg && seg.chainId === 42161 && seg.sellToken === 'USDC' && seg.buyToken === 'WETH' && seg.amountHuman === '20' &&
+        parseSameChainSwapSegment('swap 20 USDC for WETH') === null &&
+        parseSameChainSwapSegment('swap 1 USDC from Base to Arbitrum') === null &&
+        !!parseCrossChainSwap('swap 1 USDC from Base to Arbitrum'),
+    )
+    const swapChipNeed: FundingNeed = { chainId: 42161, token: 'USDC', amountHuman: 17, followupResume: 'swap 20 USDC for WETH on Arbitrum', actionLabel: 'the swap' }
+    const swapChip = planFundingChips(swapChipNeed, 20, [src(8453, 'Base', 'USDC', 60)])
+    const swapChipJob = swapChip.kind === 'offer' ? compileJobAsk(swapChip.chips[0].resume) : null
+    check(
+      'funding plan: the swap chip round-trips (bridge → wait → same-chain swap)',
+      !!swapChipJob && !('problem' in swapChipJob) &&
+        JSON.stringify(swapChipJob.steps.map((s) => `${s.kind}:${s.builder}`)) ===
+          JSON.stringify(['sign:native-cross-chain', 'wait:wait', 'sign:native-swap']) &&
+        (swapChipJob.steps[2].params as { chainId?: number }).chainId === 42161,
+      swapChip.kind === 'offer' ? swapChip.chips[0].resume : swapChip.kind,
     )
 
     // The Hyperliquid variant: USDC on Arbitrum funded from Base, deposit follows.

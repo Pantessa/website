@@ -71,6 +71,44 @@ export function parseRobinhoodFunding(segment: string): RobinhoodFundingAsk | nu
 // belongs to the swap layer, not the jobs compiler.
 const FUND_BUY_RE = /\bbuy\s+\$?(\d+(?:\.\d+)?)(?:\s+worth)?\s+of\s+([A-Za-z]{1,10})\b/i
 
+// ── Same-chain swap segment ────────────────────────────────────────────────
+// "swap 20 USDC for WETH on Arbitrum" — the exact follow-up the funding
+// plan's chips emit for sell-token shortfalls. Narrow on purpose: the verb,
+// an amount, both tokens, and an EXPLICIT first-class chain word. The
+// "for|into|to <token>" connector keeps it disjoint from the cross-chain
+// grammar (which demands from|on right after the first token).
+
+export interface SameChainSwapSegment {
+  amountHuman: string
+  sellToken: string
+  buyToken: string
+  chainId: number
+  chainName: string
+}
+
+const SWAP_SEG_CHAINS: Record<string, { id: number; name: string }> = {
+  base: { id: 8453, name: 'Base' },
+  arbitrum: { id: 42161, name: 'Arbitrum' },
+  arb: { id: 42161, name: 'Arbitrum' },
+  ethereum: { id: 1, name: 'Ethereum' },
+  mainnet: { id: 1, name: 'Ethereum' },
+  robinhood: { id: 4663, name: 'Robinhood Chain' },
+  'robinhood chain': { id: 4663, name: 'Robinhood Chain' },
+}
+
+const SWAP_SEG_RE = new RegExp(
+  `\\bswap\\s+(\\d+(?:\\.\\d+)?)\\s+\\$?([A-Za-z]{2,12})\\s+(?:for|into|to)\\s+\\$?([A-Za-z]{2,12})\\s+on\\s+(base|arb(?:itrum)?|ethereum|mainnet|robinhood(?:\\s+chain)?)\\b`,
+  'i',
+)
+
+export function parseSameChainSwapSegment(segment: string): SameChainSwapSegment | null {
+  const m = segment.match(SWAP_SEG_RE)
+  if (!m) return null
+  const chain = SWAP_SEG_CHAINS[m[4].toLowerCase().replace(/\s+/g, ' ')]
+  if (!chain) return null
+  return { amountHuman: m[1], sellToken: m[2], buyToken: m[3], chainId: chain.id, chainName: chain.name }
+}
+
 /** Split a compound ask into segments on then/;/→ connectors. */
 export function splitJobSegments(message: string): string[] {
   return message
@@ -146,6 +184,19 @@ export function compileJobAsk(message: string): CompiledJob | { problem: string 
         params: {},
         waitPredicate: { kind: 'oneclick', fromStep: steps.length - 1 },
       })
+      titles.push(title)
+      continue
+    }
+
+    // Same-chain swap segments — the funding plan's follow-up when the
+    // shortfall was a swap's sell token ("fund Arbitrum, then swap 20 USDC
+    // for WETH on Arbitrum"). Runs AFTER the cross-chain parse (a "from X to
+    // Y" phrasing is a bridge, never this) and demands the chain word — a
+    // compiled job step must never guess its chain.
+    const sameSwap = parseSameChainSwapSegment(seg)
+    if (sameSwap) {
+      const title = `Swap ${sameSwap.amountHuman} ${sameSwap.sellToken.toUpperCase()} → ${sameSwap.buyToken.toUpperCase()} on ${sameSwap.chainName}`
+      steps.push({ kind: 'sign', builder: 'native-swap', title, params: sameSwap as unknown as Record<string, unknown> })
       titles.push(title)
       continue
     }
