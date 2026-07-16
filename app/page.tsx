@@ -61,6 +61,10 @@ export default function HomePage() {
         {/* The claim + the fusion artwork (live /embed summoned on demand) */}
         <HomeHeroFusion />
 
+        {/* The power example, straight after the claim: "Buy $2 of AAPL"
+            funds itself across chains — the onboarding story as one turn */}
+        <FundAnything />
+
         {/* Recipes: what a composed set unlocks */}
         <ComposeSet />
 
@@ -69,9 +73,6 @@ export default function HomePage() {
 
         {/* The edge: quote → build → guardrails → sign → receipt */}
         <TxPipeline />
-
-        {/* The power example: "Buy $2 of AAPL" funds itself across chains */}
-        <FundAnything />
 
         {/* Distribution: the 5-line install + the two fork demos */}
         <EmbedAnywhere />
