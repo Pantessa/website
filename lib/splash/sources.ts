@@ -92,6 +92,25 @@ function holdingPrompts(holdings: HoldingRow[], where: string): SuggestedPrompt[
   return prompts.slice(0, 3)
 }
 
+/** One holding → the "act on THIS asset" prompts shown when its row is tapped.
+ *  Same discipline as the tile chips: each prompt sizes from the live balance
+ *  and lands on a native builder. `where` scopes the venue phrasing. */
+function holdingRowActions(h: HoldingRow, where: string): SuggestedPrompt[] {
+  const isStable = /^(USDC|DAI|USDbC|USDT|USDG)$/i.test(h.symbol)
+  const bal = Number(h.balance)
+  if (!Number.isFinite(bal) || bal <= 0) return []
+  if (isStable) {
+    const amt = Math.min(Math.floor(bal), 100) || 1
+    return [{ label: `Swap ${h.symbol} → ETH`, prompt: `Swap ${amt} ${h.symbol} for ETH ${where}` }]
+  }
+  const sellAmt = bal >= 1 ? String(Math.floor(bal * 10000) / 10000) : h.balance
+  const actions: SuggestedPrompt[] = [
+    { label: `Sell ${h.symbol}`, prompt: `Swap ${sellAmt} ${h.symbol} for USDC ${where}` },
+    { label: `Buy more ${h.symbol}`, prompt: `Swap $10 of USDC for ${h.symbol} ${where}` },
+  ]
+  return actions
+}
+
 /** Multichain path (Alchemy): a portfolio holdings tile + a recent-transactions
  *  tile spanning every covered chain — or scoped to ONE when the chain picker
  *  has a selection. */
@@ -123,7 +142,7 @@ async function buildMultichainTiles(address: string, server: McpServer, chain?: 
       totalUsd: portfolio.totalUsd,
       // Keep the card compact — it shares one uniform-height grid with
       // single-section cards, and the subtitle already carries the full count.
-      holdings: holdings.slice(0, 4),
+      holdings: holdings.slice(0, 4).map((h) => ({ ...h, actions: holdingRowActions(h, `on ${h.chain ?? chain?.name ?? 'Base'}`) })),
       prompts: holdingPrompts(holdings, `on ${chain?.name ?? 'Base'}`),
     })
   }
@@ -162,7 +181,7 @@ async function buildBaseFallbackTile(call: McpCaller, address: string, server: M
     subtitle: `via ${server.name}`,
     chain: label,
     totalUsd: typeof data.totalUsd === 'number' ? data.totalUsd : null,
-    holdings: holdings.slice(0, 5),
+    holdings: holdings.slice(0, 5).map((h) => ({ ...h, actions: holdingRowActions(h, `on ${label}`) })),
     prompts: holdingPrompts(holdings, `on ${label}`),
   }
 }
@@ -318,17 +337,28 @@ const cowSource: SplashSource = {
     if (open.length === 0 && fills.length === 0 && trades === 0) return null
 
     const rows: StatRow[] = [
-      ...open.slice(0, 4).map((o) => ({
-        label: `${prettyPair(o.pair)} · ${o.kind}`,
-        value: o.filledPct != null ? `${Math.round(o.filledPct)}% filled` : o.status,
-        sub: `open on ${o.chain}`,
-      })),
-      ...fills.slice(0, Math.max(0, 4 - Math.min(open.length, 4))).map((f) => ({
-        label: prettyPair(f.pair),
-        value: 'filled',
-        sub: `recent trade on ${f.chain}`,
-        tone: 'pos' as const,
-      })),
+      ...open.slice(0, 4).map((o) => {
+        const pair = prettyPair(o.pair)
+        return {
+          label: `${pair} · ${o.kind}`,
+          value: o.filledPct != null ? `${Math.round(o.filledPct)}% filled` : o.status,
+          sub: `open on ${o.chain}`,
+          actions: [
+            { label: 'Check status', prompt: `Is my ${pair} CoW order close to filling?` },
+            { label: 'Cancel order', prompt: `Help me cancel my ${pair} CoW order` },
+          ],
+        }
+      }),
+      ...fills.slice(0, Math.max(0, 4 - Math.min(open.length, 4))).map((f) => {
+        const pair = prettyPair(f.pair)
+        return {
+          label: pair,
+          value: 'filled',
+          sub: `recent trade on ${f.chain}`,
+          tone: 'pos' as const,
+          actions: [{ label: 'Trade again', prompt: `Quote ${pair} again on CoW at today’s price` }],
+        }
+      }),
     ]
     if (rows.length === 0) rows.push({ label: 'Lifetime trades', value: String(trades), sub: 'mainnet · base' })
     const prompts: SuggestedPrompt[] = open.length
@@ -655,6 +685,32 @@ function robinhoodPrompts(holdings: RobinhoodHolding[]): SuggestedPrompt[] {
   return prompts.slice(0, 3)
 }
 
+/** One Robinhood holding → the "act on THIS" prompts revealed when its row is
+ *  tapped: sell/buy-more a held stock, put idle USDG into AAPL, turn loose ETH
+ *  into USDG. Mirrors robinhoodPrompts' phrasing so each lands on a native
+ *  Robinhood-Chain builder. */
+function robinhoodRowActions(h: RobinhoodHolding): SuggestedPrompt[] {
+  const sym = h.symbol
+  if (!sym) return []
+  const bal = Number(h.balance)
+  if (h.kind === 'stock' || h.kind === 'etf') {
+    const sellAmt = bal >= 1 ? String(Math.floor(bal * 10000) / 10000) : h.balance
+    return [
+      { label: `Buy more ${sym}`, prompt: `Buy $10 of ${sym} on Robinhood Chain` },
+      ...(bal > 0 ? [{ label: `Sell ${sym}`, prompt: `Swap ${sellAmt} ${sym} for USDG on Robinhood Chain` }] : []),
+    ]
+  }
+  if (sym === 'USDG' && (h.usd ?? 0) >= 5) {
+    const amt = Math.min(Math.floor(bal), 50) || 5
+    return [{ label: 'Buy AAPL', prompt: `Swap ${amt} USDG for AAPL on Robinhood Chain` }]
+  }
+  if (sym === 'ETH' && bal > 0 && h.priceUsd) {
+    const amt = Math.min(10 / h.priceUsd, bal * 0.25)
+    if (amt > 0.0001) return [{ label: 'Swap ETH → USDG', prompt: `Swap ${amt.toFixed(4)} ETH for USDG on Robinhood Chain` }]
+  }
+  return []
+}
+
 const robinhoodSource: SplashSource = {
   id: 'robinhood',
   match: (s) => /robinhood/i.test(`${s.slug} ${s.name}`),
@@ -680,6 +736,7 @@ const robinhoodSource: SplashSource = {
       valueUsd: typeof h.usd === 'number' ? h.usd : null,
       ...(h.kind === 'native' ? { native: true } : {}),
       chain: 'Robinhood Chain',
+      actions: robinhoodRowActions(h),
     }))
     const stocks = holdings.filter((h) => h.kind === 'stock' || h.kind === 'etf').length
     return {
