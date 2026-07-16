@@ -605,7 +605,18 @@ export const useYeetfulStore = create<YeetfulStore>()(
         if (!get().authedAddress) return existing ?? null
         try {
           const res = await fetch(`/api/chats/${id}`, { cache: 'no-store' })
-          if (!res.ok) return existing ?? null
+          if (!res.ok) {
+            // Definitive miss on a chat we DO have a list row for (session
+            // expired between the list load and this fetch, or the row went
+            // away server-side): stamp it settled so the splash hold —
+            // `messagesLoaded` — can't spin the loader forever on it.
+            if (existing && !existing.messagesLoaded) {
+              set((s) => ({
+                chats: s.chats.map((c) => (c.id === id ? { ...c, messagesLoaded: true } : c)),
+              }))
+            }
+            return existing ?? null
+          }
           const chat = fromApiChat(await res.json(), existing)
           set((s) => ({
             chats: s.chats.some((c) => c.id === id)
