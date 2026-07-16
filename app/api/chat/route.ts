@@ -29,7 +29,7 @@ import {
   type LidoPositionPayload,
   type LidoStakeParams,
 } from '@/lib/lido-stake'
-import { offerFundingPlan } from '@/lib/funding-plan'
+import { fundingFallbackForFailures, offerFundingPlan } from '@/lib/funding-plan'
 import {
   parseCrossChainSwap,
   parseCrossChainFollowUp,
@@ -2665,6 +2665,9 @@ async function executeWithSignatures(
   const contextBlocks: string[] = []
   let carriedEntities: EntityRef[] = []
   let portfolioCard: PortfolioDisplay | undefined
+  // Balance-shaped tool failures feed the generic funding fallback after the
+  // data loop — ANY MCP's "insufficient funds" can end in chips, not a wall.
+  const balanceFailures: { name: string; note: string }[] = []
   const inferenceCall = plan.find((c) => c.role === 'inference')
 
   // Persist each wallet-mode receipt to the live routing feed (route_trace_lines)
@@ -2728,6 +2731,7 @@ async function executeWithSignatures(
       // Failures must be VISIBLE to synthesis — an invisible failure led the
       // model to narrate "Vote submitted!" over a failed call (2026-07-03).
       contextBlocks.push(`### ${c.name} — TOOL CALL FAILED\n${truncate(note, 300)}\nThis call did NOT succeed; nothing was executed or submitted. Tell the user it failed — never claim the action happened.`)
+      balanceFailures.push({ name: c.name, note })
       pushReceipt({ name: c.name, endpoint: c.host, priceUsd: c.priceUsd, ok: false, note })
       ledger(c, false, undefined, truncate(note, 120))
       // Feed the self-heal loop from the wallet path too (deduped by service +
@@ -2738,6 +2742,16 @@ async function executeWithSignatures(
 
   if (!inferenceCall) {
     return NextResponse.json({ error: 'No inference call in plan.' }, { status: 400 })
+  }
+
+  // ── Generic funding fallback (any MCP): a balance-shaped failure becomes
+  // bridge-only chips + a synthesis directive. Fail-soft: undetectable or
+  // unscannable → the failure surfaces exactly as before.
+  let fundingFallback: Awaited<ReturnType<typeof fundingFallbackForFailures>> = null
+  const fallbackWallet = walletAddress ?? owner ?? undefined
+  if (fallbackWallet && balanceFailures.length > 0) {
+    fundingFallback = await fundingFallbackForFailures(fallbackWallet, balanceFailures, (e) => recordTraceLine(turnId, traceSeq++, e, 'wallet')).catch(() => null)
+    if (fundingFallback) contextBlocks.push(fundingFallback.contextBlock)
   }
 
   // Inference with the real prompt. MCP authorizations are body-independent;
@@ -2775,7 +2789,16 @@ async function executeWithSignatures(
   const reply = text + infoFooter(listedOnly, notes)
   // RR18: resolved entities ride the reply so the NEXT turn (possibly on a
   // different MCP) plans against exact values, not prose.
-  return NextResponse.json({ reply, receipts, payer: 'your wallet', portfolio: portfolioCard, workingContext: carryContext(workingContext, carriedEntities) })
+  return NextResponse.json({
+    reply,
+    receipts,
+    payer: 'your wallet',
+    portfolio: portfolioCard,
+    workingContext: carryContext(workingContext, carriedEntities),
+    // The generic funding fallback's chips ride the same turn — the model's
+    // reply narrates them (contextBlock directive), the chips execute them.
+    ...(fundingFallback?.offer ? { clarify: fundingFallback.offer.clarify, buildPath: fundingFallback.offer.buildPath } : {}),
+  })
 }
 
 /** Build the payment header for a planned call from its client signature. */
@@ -2820,6 +2843,9 @@ async function runWithBurner(
   // A portfolio-shaped tool return, hoisted so the chat renders a rich card
   // next to the synthesized text (display layer — presentation only).
   let portfolioCard: PortfolioDisplay | undefined
+  // Balance-shaped tool failures feed the generic funding fallback before
+  // synthesis — ANY MCP's "insufficient funds" can end in chips, not a wall.
+  const balanceFailures: { name: string; note: string }[] = []
 
   // Load the signed-in owner's active spend grant. When one exists, every
   // burner payment is gated by it (expiry → allowlist → per-call → per-day) and
@@ -2856,7 +2882,9 @@ async function runWithBurner(
         spentTotal += price
       }
     } catch (err) {
-      receipts.push({ name: ds.name, endpoint: host, priceUsd: ds.priceUsd ?? '0.01', ok: false, note: err instanceof Error ? err.message : 'call failed' })
+      const note = err instanceof Error ? err.message : 'call failed'
+      balanceFailures.push({ name: ds.name, note })
+      receipts.push({ name: ds.name, endpoint: host, priceUsd: ds.priceUsd ?? '0.01', ok: false, note })
     }
   }
 
@@ -2901,7 +2929,9 @@ async function runWithBurner(
         spentTotal += price
       }
     } catch (err) {
-      receipts.push({ name: ds.name, endpoint: host, priceUsd: ds.priceUsd ?? '0.01', ok: false, note: err instanceof Error ? err.message : 'call failed' })
+      const note = err instanceof Error ? err.message : 'call failed'
+      balanceFailures.push({ name: ds.name, note })
+      receipts.push({ name: ds.name, endpoint: host, priceUsd: ds.priceUsd ?? '0.01', ok: false, note })
     }
   }
 
@@ -3002,6 +3032,7 @@ async function runWithBurner(
           } catch (err) {
             const note = err instanceof Error ? err.message : 'call failed'
             contextBlocks.push(`### ${ep.serverName} — TOOL CALL FAILED\n${truncate(note, 300)}\nThis call did NOT succeed; nothing was executed or submitted. Tell the user it failed — never claim the action happened.`)
+            balanceFailures.push({ name: ep.serverName, note })
             receipts.push({ name: ep.serverName, endpoint: host, priceUsd: ep.priceUsd, ok: false, note })
             trace({ type: 'receipt', receipt: { name: ep.serverName, endpoint: host, priceUsd: ep.priceUsd, ok: false, note: truncate(note, 160) } })
             // Record the failed paid call for the self-heal loop — the default
@@ -3034,6 +3065,16 @@ async function runWithBurner(
     }
   }
 
+  // ── Generic funding fallback (any MCP): a balance-shaped failure becomes
+  // bridge-only chips + a synthesis directive. Uses the USER's wallet (the
+  // burner only pays for calls; funding plans always move the user's money).
+  let fundingFallback: Awaited<ReturnType<typeof fundingFallbackForFailures>> = null
+  const fallbackWallet = userAddress ?? owner ?? undefined
+  if (fallbackWallet && balanceFailures.length > 0) {
+    fundingFallback = await fundingFallbackForFailures(fallbackWallet, balanceFailures, trace).catch(() => null)
+    if (fundingFallback) contextBlocks.push(fundingFallback.contextBlock)
+  }
+
   const capabilities = capabilitiesBlock([inference, ...dataServers, ...mcpDataServers, ...listedOnly], smart)
   const prompt = buildPrompt(message, contextBlocks, history, workingContext, userAddress ?? owner ?? undefined, capabilities)
   trace({ type: 'status', label: `writing the answer — ${inference.name}` })
@@ -3052,7 +3093,18 @@ async function runWithBurner(
   }
   // buildPath 'manual': the vote artifact came from a DIRECTLY-called
   // working-set tool (prepare_vote in the mcpDataServers loop) — no planning.
-  return NextResponse.json({ reply, receipts, payer: 'the house wallet', voteRequest: voteRequest ?? undefined, ...(voteRequest ? { buildPath: 'manual' } : {}), portfolio: portfolioCard, workingContext: carryContext(workingContext, carriedEntities) })
+  return NextResponse.json({
+    reply,
+    receipts,
+    payer: 'the house wallet',
+    voteRequest: voteRequest ?? undefined,
+    ...(voteRequest ? { buildPath: 'manual' } : {}),
+    portfolio: portfolioCard,
+    workingContext: carryContext(workingContext, carriedEntities),
+    // The generic funding fallback's chips ride the same turn (never over a
+    // vote artifact — a signable already claimed the turn's action slot).
+    ...(!voteRequest && fundingFallback?.offer ? { clarify: fundingFallback.offer.clarify, buildPath: fundingFallback.offer.buildPath } : {}),
+  })
 }
 
 async function paidGet(endpoint: string, queryParam: string, value: string) {
