@@ -110,6 +110,9 @@ function holdingRowActions(h: HoldingRow, where: string): SuggestedPrompt[] {
   const actions: SuggestedPrompt[] = [
     { label: `Sell ${h.symbol}`, prompt: `Swap ${sellAmt} ${h.symbol} for USDC ${where}` },
     { label: `Buy more ${h.symbol}`, prompt: `Swap $10 of USDC for ${h.symbol} ${where}` },
+    // Recurring buy (lib/dca): the chain word parses when `where` names a
+    // first-class chain; otherwise the turn's resolver picks the chain.
+    { label: 'DCA $10 weekly', prompt: `Buy $10 of ${h.symbol} every week ${where}` },
   ]
   return actions
 }
@@ -681,6 +684,7 @@ function robinhoodPrompts(holdings: RobinhoodHolding[]): SuggestedPrompt[] {
     // No USDG doesn't block the buy: an unfunded ask triggers the Base
     // funding plan (LiFi legs + the swap, compiled into one job).
     prompts.push({ label: 'Buy $10 of AAPL', prompt: 'Buy $10 of AAPL on Robinhood Chain' })
+    prompts.push({ label: 'DCA $10 into AAPL weekly', prompt: 'Buy $10 of AAPL every week on Robinhood Chain' })
   }
   if (prompts.length < 3) {
     prompts.push({ label: 'Bridge more ETH in', prompt: 'Bridge 0.01 ETH from Ethereum to Robinhood Chain' })
@@ -703,6 +707,7 @@ function robinhoodRowActions(h: RobinhoodHolding): SuggestedPrompt[] {
     const sellAmt = bal >= 1 ? String(Math.floor(bal * 10000) / 10000) : h.balance
     return [
       { label: `Buy more ${sym}`, prompt: `Buy $10 of ${sym} on Robinhood Chain` },
+      { label: `DCA $10 weekly`, prompt: `Buy $10 of ${sym} every week on Robinhood Chain` },
       ...(bal > 0 ? [{ label: `Sell ${sym}`, prompt: `Swap ${sellAmt} ${sym} for USDG on Robinhood Chain` }] : []),
     ]
   }
@@ -794,7 +799,8 @@ const SOURCE_PREVIEWS: Record<string, { message: string; prompts: SuggestedPromp
     prompts: [
       { label: 'Price of ETH', prompt: 'What is the current price of ETH in USDC on Uniswap?' },
       { label: 'Quote a swap', prompt: 'Quote swapping 100 USDC to ETH on Base' },
-      { label: 'How do swaps work here?', prompt: 'How do I make a swap through this chat — what are the steps?' },
+      // The auto-trader: a recurring buy you sign once per period (lib/dca).
+      { label: 'DCA $25 into ETH weekly', prompt: 'Buy $25 of ETH every week on Base' },
     ],
   },
   snapshot: {
@@ -841,7 +847,8 @@ const SOURCE_PREVIEWS: Record<string, { message: string; prompts: SuggestedPromp
       // The killer ask leads: an unfunded buy triggers the funding plan
       // (Base USDC → gas + USDG → the stock, compiled into a job).
       { label: 'Buy $10 of AAPL', prompt: 'Buy $10 of AAPL on Robinhood Chain' },
-      { label: 'Bridge ETH to Robinhood Chain', prompt: 'Bridge 0.01 ETH from Ethereum to Robinhood Chain' },
+      // The auto-trader: a recurring buy you sign once per period (lib/dca).
+      { label: 'DCA $10 into AAPL weekly', prompt: 'Buy $10 of AAPL every week on Robinhood Chain' },
       { label: 'What can I trade here?', prompt: 'What tokenized stocks can I trade on Robinhood Chain?' },
     ],
   },
