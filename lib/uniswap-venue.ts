@@ -267,7 +267,7 @@ export async function buildUniswapSwap(params: UniswapSwapParams): Promise<Unisw
   const spentToday = grant ? await spentTodayUsd(grant.id) : 0
   const { check: polCheck, violation } = policyCheck(valueUsd, policy, spentToday, UNISWAP_POLICY_HOST)
   checks.push(polCheck)
-  const guardrails = buildReport(valueUsd, checks)
+  const guardrails = buildReport(valueUsd, checks, violation ? { violation, valueUsd, host: UNISWAP_POLICY_HOST } : null)
   if (violation && grant) {
     await recordLedger({
       grantId: grant.id,

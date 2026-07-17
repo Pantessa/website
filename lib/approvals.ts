@@ -112,7 +112,7 @@ export async function syncGrantAllowlist(ownerAddress: string, orgId?: string) {
         select: { endpoint: true, endpoints: { select: { url: true } } },
       })
     : []
-  const allow = [
+  const derived = [
     ...new Set(
       approvedServers.flatMap((s) => [
         ...(s.endpoint ? [hostOf(s.endpoint)] : []),
@@ -134,6 +134,10 @@ export async function syncGrantAllowlist(ownerAddress: string, orgId?: string) {
   })
 
   if (existing) {
+    // Direct allows (extraAllow — e.g. a native venue host from a blocked-swap
+    // fix-it) survive every re-derive: union them back in, or a toggle here
+    // would silently un-allow what the owner explicitly allowed.
+    const allow = [...new Set([...derived, ...existing.extraAllow])]
     // A different allowlist = different signed terms: void any EIP-712
     // signature unless the host set is actually unchanged.
     const sameAllow =
@@ -153,7 +157,7 @@ export async function syncGrantAllowlist(ownerAddress: string, orgId?: string) {
       ownerAddress,
       orgId,
       label: orgId ? 'Org expense account' : DEFAULT_GRANT.label,
-      allow,
+      allow: derived,
       spendPolicyEnabled,
       perCallUsd: DEFAULT_GRANT.perCallUsd,
       perDayUsd: DEFAULT_GRANT.perDayUsd,
