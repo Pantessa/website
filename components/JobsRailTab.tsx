@@ -1,10 +1,11 @@
 'use client'
 
 // The rail's Jobs tab — every standing thing on this wallet, in one glance:
-// recurring buys (DCA schedules) with their current-period state, then jobs
-// (multi-step runs) newest-first. Born from a real confusion: a schedule
-// armed in chat was invisible afterwards, so "you already have a weekly buy"
-// read as "something bought itself". This tab is the standing answer.
+// guardian protections (autonomous stop-loss/take-profit), recurring buys
+// (DCA schedules) with their current-period state, then jobs (multi-step
+// runs) newest-first. Born from a real confusion: a schedule armed in chat
+// was invisible afterwards, so "you already have a weekly buy" read as
+// "something bought itself". This tab is the standing answer.
 //
 // Acting on a row PREFILLS the composer (store.composerPrefill) — the same
 // contract as /chat?prompt=: the user always sends and signs themselves.
@@ -16,7 +17,7 @@ import { useRouter } from 'next/navigation'
 import { cn } from '@/lib/utils'
 import { useYeetfulStore } from '@/lib/store'
 import { cadenceLabel, dcaRunChip, type DcaCadence } from '@/lib/dca'
-import { LIVE_JOB_STATUS, useRunningWork, type RunningJob, type RunningSchedule } from '@/lib/use-running-work'
+import { LIVE_JOB_STATUS, useRunningWork, type RunningGuard, type RunningJob, type RunningSchedule } from '@/lib/use-running-work'
 
 function jobDot(status: string) {
   if (status === 'done') return <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 flex-shrink-0" aria-hidden />
@@ -42,10 +43,22 @@ function scheduleState(s: RunningSchedule): { word: string; tone: string } {
   return { word: 'due now', tone: 'text-amber-400' }
 }
 
+function guardState(g: RunningGuard): { word: string; tone: string } {
+  if (g.status === 'active') return { word: 'watching', tone: 'text-emerald-400' }
+  if (g.status === 'paused') return { word: 'paused', tone: 'text-[color:var(--muted-2)]' }
+  if (g.status === 'triggered') return { word: 'fired — closing', tone: 'text-[color:var(--accent)]' }
+  return { word: g.status, tone: 'text-red-400' }
+}
+
+function guardLabel(g: RunningGuard): string {
+  const kind = g.kind === 'stop_loss' ? 'Stop-loss' : 'Take-profit'
+  return `${kind} · ${g.coin} ${g.side}`
+}
+
 export default function JobsRailTab({ onAct }: { onAct?: () => void }) {
   const router = useRouter()
   const { setComposerPrefill, setJobDetail } = useYeetfulStore()
-  const { jobs, schedules, signedOut, loaded } = useRunningWork(true)
+  const { jobs, schedules, guards, signedOut, loaded, refresh } = useRunningWork(true)
 
   // A row's action lands in the composer — never auto-sends.
   const prefill = (prompt: string) => {
@@ -76,13 +89,79 @@ export default function JobsRailTab({ onAct }: { onAct?: () => void }) {
     )
   }
 
-  if (jobs.length === 0 && schedules.length === 0) {
+  if (jobs.length === 0 && schedules.length === 0 && guards.length === 0) {
     return (
       <p className="px-3 py-6 text-xs leading-relaxed text-[color:var(--muted-2)]">
-        Nothing running yet. Recurring buys (“buy $10 of AAPL every week”) and
+        Nothing running yet. Recurring buys (“buy $10 of AAPL every week”),
+        protections (“protect my SYRUP long with a 10% stop loss”) and
         multi-step jobs land here the moment you arm one — with every state
         visible, and nothing signed without you.
       </p>
+    )
+  }
+
+  // Protections are the only rows whose actions hit their API directly
+  // (pause/resume/remove — same owner-gated PATCH/DELETE the chat card
+  // uses); there's nothing to compose or sign, so no prefill detour.
+  const setGuardStatus = async (id: string, status: 'active' | 'paused') => {
+    await fetch(`/api/guardian/policies/${id}`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ status }),
+    }).catch(() => {})
+    void refresh()
+  }
+  // One misclick must never silently unprotect a leveraged position.
+  const removeGuard = async (g: RunningGuard) => {
+    if (!window.confirm(`Remove the ${guardLabel(g).toLowerCase()}? The position stays open with no protection.`)) return
+    await fetch(`/api/guardian/policies/${g.id}`, { method: 'DELETE' }).catch(() => {})
+    void refresh()
+  }
+
+  const GuardRow = ({ g }: { g: RunningGuard }) => {
+    const st = guardState(g)
+    return (
+      <div
+        role="button"
+        tabIndex={0}
+        onClick={() => { router.push('/dashboard/guardian'); onAct?.() }}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault()
+            router.push('/dashboard/guardian')
+            onAct?.()
+          }
+        }}
+        title="Open the Guardian dashboard — live trigger distance and every check receipt"
+        className="px-2.5 py-2 rounded-xl hover:bg-[var(--surf-1)] transition-colors cursor-pointer"
+      >
+        <div className="flex items-center gap-2">
+          <ShieldCheck className={cn('w-3.5 h-3.5 flex-shrink-0', g.status === 'active' ? 'text-emerald-400' : 'text-[color:var(--muted-2)]')} aria-hidden />
+          <span className="flex-1 min-w-0 text-xs font-medium truncate">{guardLabel(g)}</span>
+          <span className={cn('text-[10px] mono whitespace-nowrap', st.tone)}>{st.word}</span>
+        </div>
+        <div className="ml-[22px] mt-0.5 flex items-center gap-2">
+          <span className="text-[10px] text-[color:var(--muted-2)] mono">
+            {g.triggerMode === 'price' ? `@ ${g.triggerValue}` : `${g.triggerValue}% from entry`} · checked every minute
+          </span>
+          <span className="flex-1" />
+          {g.status === 'active' && (
+            <button onClick={(e) => { e.stopPropagation(); void setGuardStatus(g.id, 'paused') }} className="text-[10.5px] mono text-[color:var(--muted-2)] hover:text-white transition-colors">
+              pause
+            </button>
+          )}
+          {g.status === 'paused' && (
+            <button onClick={(e) => { e.stopPropagation(); void setGuardStatus(g.id, 'active') }} className="text-[10.5px] mono text-[color:var(--muted-2)] hover:text-white transition-colors">
+              resume
+            </button>
+          )}
+          {g.status !== 'triggered' && (
+            <button onClick={(e) => { e.stopPropagation(); void removeGuard(g) }} className="text-[10.5px] mono text-[color:var(--muted-2)] hover:text-red-400 transition-colors">
+              remove
+            </button>
+          )}
+        </div>
+      </div>
     )
   }
 
@@ -176,9 +255,17 @@ export default function JobsRailTab({ onAct }: { onAct?: () => void }) {
 
   return (
     <div className="flex-1 overflow-y-auto px-2 pb-3">
+      {guards.length > 0 && (
+        <>
+          <p className="px-2.5 pt-1 pb-1 text-[10px] mono uppercase tracking-wider text-[color:var(--muted-2)]">Protections</p>
+          {guards.map((g) => (
+            <GuardRow key={g.id} g={g} />
+          ))}
+        </>
+      )}
       {schedules.length > 0 && (
         <>
-          <p className="px-2.5 pt-1 pb-1 text-[10px] mono uppercase tracking-wider text-[color:var(--muted-2)]">Recurring buys</p>
+          <p className={cn('px-2.5 pb-1 text-[10px] mono uppercase tracking-wider text-[color:var(--muted-2)]', guards.length > 0 ? 'pt-2' : 'pt-1')}>Recurring buys</p>
           {schedules.map((s) => (
             <ScheduleRow key={s.id} s={s} />
           ))}
@@ -194,7 +281,8 @@ export default function JobsRailTab({ onAct }: { onAct?: () => void }) {
       )}
       <p className="px-2.5 pt-2 text-[10px] leading-relaxed text-[color:var(--muted-2)] border-t border-[var(--line)] mt-2">
         Every buy is built fresh and signs from your wallet — schedules and jobs
-        can never spend on their own.
+        can never spend on their own. Protections can only close the position
+        they guard (reduce-only), never open or move funds.
       </p>
     </div>
   )

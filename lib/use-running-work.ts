@@ -1,10 +1,11 @@
 'use client'
 
 // One hook answering "what's running on this wallet right now?" — jobs
-// (multi-step runs) + DCA schedules (recurring buys), polled gently while a
-// surface shows them. Both the rail's Jobs tab and the collapsed JOBS chip
-// use it; at most one instance of each mounts at a time, so the poll load
-// stays at one-or-two light GETs per interval.
+// (multi-step runs) + DCA schedules (recurring buys) + guardian protections
+// (autonomous stop-loss/take-profit), polled gently while a surface shows
+// them. Both the rail's Jobs tab and the collapsed JOBS chip use it; at most
+// one instance of each mounts at a time, so the poll load stays at a few
+// light GETs per interval.
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 
@@ -31,21 +32,35 @@ export interface RunningSchedule {
   liveJobId: string | null
 }
 
+export interface RunningGuard {
+  id: string
+  coin: string
+  side: string // long | short
+  kind: string // stop_loss | take_profit
+  triggerMode: string // price_move_pct | price
+  triggerValue: number
+  status: string // active | paused | triggered | error
+  lastChecked: string | null
+  createdAt: string
+}
+
 /** Job statuses that count as "running now" (the badge's numerator). */
 export const LIVE_JOB_STATUS = new Set(['running', 'waiting_signature', 'waiting_settlement'])
 
 export function useRunningWork(enabled: boolean, intervalMs = 15_000) {
   const [jobs, setJobs] = useState<RunningJob[]>([])
   const [schedules, setSchedules] = useState<RunningSchedule[]>([])
+  const [guards, setGuards] = useState<RunningGuard[]>([])
   const [signedOut, setSignedOut] = useState(false)
   const [loaded, setLoaded] = useState(false)
   const timer = useRef<ReturnType<typeof setInterval> | null>(null)
 
   const refresh = useCallback(async () => {
     try {
-      const [jr, sr] = await Promise.all([
+      const [jr, sr, gr] = await Promise.all([
         fetch('/api/jobs', { cache: 'no-store' }),
         fetch('/api/dca', { cache: 'no-store' }),
+        fetch('/api/guardian/policies', { cache: 'no-store' }),
       ])
       if (jr.status === 401 || sr.status === 401) {
         setSignedOut(true)
@@ -55,6 +70,7 @@ export function useRunningWork(enabled: boolean, intervalMs = 15_000) {
       setSignedOut(false)
       if (jr.ok) setJobs(((await jr.json()) as { jobs: RunningJob[] }).jobs ?? [])
       if (sr.ok) setSchedules(((await sr.json()) as { schedules: RunningSchedule[] }).schedules ?? [])
+      if (gr.ok) setGuards(((await gr.json()) as { policies: RunningGuard[] }).policies ?? [])
       setLoaded(true)
     } catch {
       /* transient miss — keep the last state */
@@ -74,5 +90,8 @@ export function useRunningWork(enabled: boolean, intervalMs = 15_000) {
   // A schedule "needs you" when this period's buy is due or already prepared
   // and unsigned. Paused schedules keep their rows but never nag the badge.
   const needsYou = schedules.filter((s) => s.status === 'active' && s.period !== 'bought')
-  return { jobs, schedules, activeJobs, badgeCount: activeJobs.length + needsYou.length, signedOut, loaded, refresh }
+  // Guardians are set-and-forget: an active protection is healthy standing
+  // state, so it never nags the badge — only an errored one does.
+  const guardAlerts = guards.filter((g) => g.status === 'error')
+  return { jobs, schedules, guards, activeJobs, badgeCount: activeJobs.length + needsYou.length + guardAlerts.length, signedOut, loaded, refresh }
 }
