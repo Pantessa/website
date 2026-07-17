@@ -31,6 +31,8 @@ export const BUILD_PATHS = [
   'native-swap-lifi',
   'native-swap-cow',
   'native-cross-chain',
+  'native-nft-transfer',
+  'native-nft-list',
   'native-hl-guardian',
   'native-hl-exec',
   'native-job',

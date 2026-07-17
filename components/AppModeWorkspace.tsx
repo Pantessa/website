@@ -10,7 +10,7 @@ import GovernancePanel from '@/components/panels/GovernancePanel'
 import { useYeetfulStore, type McpServer } from '@/lib/store'
 import { chainById } from '@/lib/chains'
 import { splashCapable } from '@/lib/splash/types'
-import type { ActivityTile, HoldingsTile, ProposalsTile, RowsTile, SplashTile } from '@/lib/splash/types'
+import type { ActivityTile, HoldingsTile, NftsTile, ProposalsTile, RowsTile, SplashTile } from '@/lib/splash/types'
 import { PANEL_TITLES, derivePanels, tilePanelKind, type PanelKind } from '@/lib/panels/types'
 
 /**
@@ -301,9 +301,39 @@ function PanelTileBody({ tile, reduced }: { tile: SplashTile; reduced: boolean }
       return <RowsBody tile={tile} reduced={reduced} />
     case 'activity':
       return <ActivityBody tile={tile} />
+    case 'nfts':
+      return <NftGalleryBody tile={tile} />
     default:
       return null
   }
+}
+
+// ── NFTs (compact gallery — display-only; sell/transfer live in chat) ───────
+
+function NftGalleryBody({ tile }: { tile: NftsTile }) {
+  return (
+    <div className="grid flex-1 grid-cols-1 gap-2 md:grid-cols-2 md:gap-x-8">
+      {tile.nfts.map((n) => (
+        <div key={n.chain + n.contract + n.tokenId} className="flex items-center justify-between gap-2 text-xs">
+          <div className="flex min-w-0 items-center gap-2">
+            {n.imageUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={n.imageUrl} alt={n.name} width={24} height={24} loading="lazy" className="h-6 w-6 shrink-0 rounded-md object-cover" />
+            ) : (
+              <span className="grid h-6 w-6 shrink-0 place-items-center rounded-md bg-white/5 text-[10px] font-semibold text-[color:var(--muted)]">
+                {n.name.replace(/^#/, '').slice(0, 1).toUpperCase()}
+              </span>
+            )}
+            <span className="truncate font-medium text-white">{n.name}</span>
+          </div>
+          <div className="flex shrink-0 items-center gap-2 text-[10px] text-[color:var(--muted-2)]">
+            <span>{n.floor ?? ''}</span>
+            <span className="rounded bg-white/5 px-1 py-0.5 text-[9px]">{n.chain}</span>
+          </div>
+        </div>
+      ))}
+    </div>
+  )
 }
 
 // ── Portfolio ────────────────────────────────────────────────────────────────

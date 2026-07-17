@@ -11,7 +11,7 @@ import { useYeetfulStore, type McpServer } from '@/lib/store'
 import { chainById } from '@/lib/chains'
 import ChatLoader from '@/components/ChatLoader'
 import { splashCapable } from '@/lib/splash/types'
-import type { ActivityTile, ErrorTile, HoldingsTile, ProposalsTile, RowsTile, SplashTile, SuggestedPrompt } from '@/lib/splash/types'
+import type { ActivityTile, ErrorTile, HoldingsTile, NftsTile, ProposalsTile, RowsTile, SplashTile, SuggestedPrompt } from '@/lib/splash/types'
 
 /**
  * The connected-wallet splash: when someone jumps into the chat with a wallet
@@ -192,6 +192,7 @@ function TileSection({
       {tile.render === 'proposals' && <ProposalsBody tile={tile} />}
       {tile.render === 'rows' && <RowsBody tile={tile} onPick={onPick} />}
       {tile.render === 'activity' && <ActivityBody tile={tile} />}
+      {tile.render === 'nfts' && <NftsBody tile={tile} onPick={onPick} />}
       {tile.render === 'empty' && <p className="flex-1 text-xs leading-relaxed text-[color:var(--muted)]">{tile.message}</p>}
       {tile.render === 'error' && <ErrorBody tile={tile} onRetry={onRetry} />}
     </div>
@@ -461,6 +462,89 @@ function HoldingsBody({ tile, onPick }: { tile: HoldingsTile; onPick: (p: string
         })}
       </div>
     </div>
+  )
+}
+
+// ── NFTs (the OpenSea gallery) ───────────────────────────────────────────────
+
+/** Image-led NFT rows that expand into Sell / Transfer chips — the same
+ *  expand-to-act interaction as HoldingsBody, with a thumbnail instead of a
+ *  TokenIcon. Floor lines arrive pre-formatted from the source. */
+function NftsBody({ tile, onPick }: { tile: NftsTile; onPick: (p: string, slug?: string) => void }) {
+  const [open, setOpen] = useState<string | null>(null)
+  return (
+    <div className="flex-1">
+      <div className="space-y-1">
+        {tile.nfts.map((n) => {
+          const id = `${n.chain}${n.contract}${n.tokenId}`
+          const actions = n.actions ?? []
+          const expandable = actions.length > 0
+          const expanded = open === id
+          const inner = (
+            <>
+              <div className="flex min-w-0 items-center gap-2">
+                <NftThumb url={n.imageUrl} label={n.name} />
+                <div className="min-w-0 text-left">
+                  <div className="truncate font-medium text-white">{n.name}</div>
+                  <div className="truncate text-[10px] text-[color:var(--muted-2)] capitalize">{n.collectionName}</div>
+                </div>
+              </div>
+              <div className="flex flex-shrink-0 items-center gap-1.5">
+                <div className="text-right">
+                  <div className="text-[10px] text-[color:var(--muted)]">{n.floor ?? '—'}</div>
+                  <div className="text-[9px] text-[color:var(--muted-2)]">
+                    {n.chain}
+                    {n.standard === 'erc1155' ? ' · 1155' : ''}
+                  </div>
+                </div>
+                {expandable && (
+                  <ChevronDown className={`h-3.5 w-3.5 text-[color:var(--muted-2)] transition-transform ${expanded ? 'rotate-180' : ''}`} />
+                )}
+              </div>
+            </>
+          )
+          return (
+            <div key={id}>
+              {expandable ? (
+                <button
+                  type="button"
+                  onClick={() => setOpen(expanded ? null : id)}
+                  aria-expanded={expanded}
+                  className="-mx-1 flex w-full items-center justify-between gap-2 rounded-lg px-1 py-1 text-xs transition-colors hover:bg-white/5"
+                >
+                  {inner}
+                </button>
+              ) : (
+                <div className="flex items-center justify-between gap-2 px-1 py-1 text-xs">{inner}</div>
+              )}
+              {expandable && expanded && (
+                <div className="px-1 pb-1">
+                  <Reveal>
+                    <InlineActionChips actions={actions} slug={tile.mcpSlug} onPick={onPick} />
+                  </Reveal>
+                </div>
+              )}
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+/** Square NFT thumbnail with a lettermark fallback (the Avatar's gallery twin). */
+function NftThumb({ url, label }: { url: string | null; label: string }) {
+  const [failed, setFailed] = useState(false)
+  if (failed || !url) {
+    return (
+      <span className="grid h-8 w-8 shrink-0 place-items-center rounded-md bg-white/10 text-[10px] font-semibold text-[color:var(--muted)]">
+        {label.replace(/^#/, '').slice(0, 1).toUpperCase()}
+      </span>
+    )
+  }
+  return (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img src={url} alt={label} width={32} height={32} onError={() => setFailed(true)} className="h-8 w-8 shrink-0 rounded-md object-cover" loading="lazy" />
   )
 }
 

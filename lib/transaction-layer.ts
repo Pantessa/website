@@ -45,6 +45,12 @@ export interface Eip712OrderRequest {
    *  the full appData JSON (the order signs only its hash) + the quoteId. */
   appDataJson?: string
   quoteId?: number
+  /** A single on-chain prerequisite the order needs before signing means
+   *  anything (protocol 'opensea': the one-time setApprovalForAll to the
+   *  OpenSea conduit). The order card sends this first and self-advances to
+   *  the signature — never "sign this, then ask again". */
+  prereqTx?: EvmTxRequest
+  prereqTitle?: string
   /** Hyperliquid extras (protocol 'hyperliquid'): the EXACT L1 action + nonce
    *  the typed data hashes, and what the user asked for — the submit relay
    *  re-derives the hash, recovers the signer, and re-guards against the live
@@ -151,6 +157,7 @@ export function orderRequestOf(meta: unknown): Eip712OrderRequest | null {
   const d = raw as Record<string, unknown>
   if (typeof d.protocol !== 'string' || !d.typedData || typeof d.typedData !== 'object') return null
   const hl = d.hl && typeof d.hl === 'object' ? (d.hl as Eip712OrderRequest['hl']) : undefined
+  const prereqTx = txRequestOf({ txRequest: d.prereqTx })
   return {
     protocol: d.protocol,
     typedData: d.typedData,
@@ -158,6 +165,8 @@ export function orderRequestOf(meta: unknown): Eip712OrderRequest | null {
     chainId: typeof d.chainId === 'number' ? d.chainId : undefined,
     appDataJson: typeof d.appDataJson === 'string' ? d.appDataJson : undefined,
     quoteId: typeof d.quoteId === 'number' ? d.quoteId : undefined,
+    prereqTx: prereqTx ?? undefined,
+    prereqTitle: typeof d.prereqTitle === 'string' ? d.prereqTitle : undefined,
     hl: hl && hl.action && typeof hl.nonce === 'number' ? hl : undefined,
   }
 }

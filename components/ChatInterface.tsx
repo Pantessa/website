@@ -12,6 +12,7 @@ import MessageReceipts from '@/components/MessageReceipts'
 import RouteReport from '@/components/RouteReport'
 import SignVoteButton from '@/components/SignVoteButton'
 import SignOrderButton from '@/components/SignOrderButton'
+import SignNftListingButton from '@/components/SignNftListingButton'
 import SignHlActionButton from '@/components/SignHlActionButton'
 import JobCard from '@/components/JobCard'
 import SpendPolicyFix, { type PolicyBlockInfo } from '@/components/SpendPolicyFix'
@@ -1283,6 +1284,24 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
                     {msg.role === 'assistant' &&
                       (() => {
                         const order = orderRequestOf(msg.meta)
+                        if (order?.protocol === 'opensea') {
+                          return (
+                            <SignNftListingButton
+                              order={order}
+                              onPlaced={(info) => {
+                                onEmbedEvent?.('order-signed', info)
+                                reportEmbedSigned({
+                                  artifact: 'opensea-listing',
+                                  chain: String(order.chainId ?? 1),
+                                  txUrl: info.explorerUrl ?? undefined,
+                                  detail: info.orderUid?.slice(0, 60),
+                                  valueUsd: guardrailUsdOf(msg.meta),
+                                  buildPath: buildPathOf(msg.meta),
+                                })
+                              }}
+                            />
+                          )
+                        }
                         if (order?.protocol === 'hyperliquid') {
                           return (
                             <SignHlActionButton
