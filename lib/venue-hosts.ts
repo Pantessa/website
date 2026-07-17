@@ -20,6 +20,7 @@ export const NATIVE_VENUE_HOSTS = [
   'api.cow.fi',
   'aave-mcp.yeetful.com',
   'api.hyperliquid.xyz',
+  'opensea.io',
 ] as const
 
 /** Friendly names — "uniswap.yeetful.com" reads as a mystery third party
@@ -30,4 +31,5 @@ export const VENUE_HOST_LABELS: Record<string, string> = {
   'api.cow.fi': 'the CoW Swap venue',
   'aave-mcp.yeetful.com': 'the Aave agent',
   'api.hyperliquid.xyz': 'the Hyperliquid venue',
+  'opensea.io': 'the OpenSea marketplace',
 }

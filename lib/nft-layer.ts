@@ -40,7 +40,7 @@ import {
   type OpenseaNft,
   type SeaportOrderComponents,
 } from '@/lib/opensea'
-import { buildReport, policyCheck, validityCheck, type GuardrailCheck, type GuardrailReport } from '@/lib/tx-guardrails'
+import { buildReport, policyCheck, policyCheckInflow, validityCheck, type GuardrailCheck, type GuardrailReport } from '@/lib/tx-guardrails'
 import { getActiveGrant, recordLedger, spentTodayUsd, toPolicy } from '@/lib/grant-store'
 import { usdPerToken } from '@/lib/usd-probe'
 import type { EvmTxRequest, Eip712OrderRequest } from '@/lib/transaction-layer'
@@ -344,11 +344,21 @@ async function nftValueUsd(chainId: number, collection: string, units = BigInt(1
   return Number((floor * eth.usd * Number(units)).toFixed(2))
 }
 
-async function policyChecks(from: string, valueUsd: number | null): Promise<{ check: GuardrailCheck; violation: ReturnType<typeof policyCheck>['violation'] }> {
+async function policyChecks(
+  from: string,
+  valueUsd: number | null,
+  /** 'out' = the wallet gives value (a transfer leaving) → full policy gate.
+   *  'in' = the wallet RECEIVES (a sale's proceeds) → kill switches only;
+   *  the caps and allowlist govern what agents may PAY, and a sale pays
+   *  nothing (the $1,831 listing blocked by a $200 cap was this bug). */
+  flow: 'out' | 'in' = 'out',
+): Promise<{ check: GuardrailCheck; violation: ReturnType<typeof policyCheck>['violation'] }> {
   const grant = await getActiveGrant(from.toLowerCase())
   const policy = grant ? toPolicy(grant) : null
-  const spentToday = grant ? await spentTodayUsd(grant.id) : 0
-  const res = policyCheck(valueUsd, policy, spentToday, OPENSEA_POLICY_HOST)
+  const res =
+    flow === 'in'
+      ? policyCheckInflow(valueUsd, policy)
+      : policyCheck(valueUsd, policy, grant ? await spentTodayUsd(grant.id) : 0, OPENSEA_POLICY_HOST)
   if (res.violation && grant) {
     await recordLedger({
       grantId: grant.id,
@@ -513,7 +523,8 @@ export async function buildNftListing(ask: Extract<NftAsk, { kind: 'sell' }>, fr
 
   const eth = await usdPerToken(nft.chainId, 'ETH').catch(() => null)
   const valueUsd = eth ? Number((Number(ask.priceEth) * eth.usd).toFixed(2)) : null
-  const { check: polCheck, violation } = await policyChecks(from, valueUsd)
+  // A sale is an INFLOW — the seller receives; spend caps don't apply.
+  const { check: polCheck, violation } = await policyChecks(from, valueUsd, 'in')
   const checks = [ownCheck, orderCheck, validityCheck(endTime), ...(floorCheck ? [floorCheck] : []), polCheck]
   const guardrails = buildReport(valueUsd, checks, violation ? { violation, valueUsd, host: OPENSEA_POLICY_HOST } : null)
   const blocked = !guardrails.ok
