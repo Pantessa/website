@@ -78,6 +78,8 @@ export function tilePanelKind(tile: SplashTile): PanelKind | null {
   switch (tile.render) {
     case 'holdings':
       return 'portfolio'
+    case 'nfts':
+      return 'portfolio'
     case 'proposals':
       return 'governance'
     case 'activity':

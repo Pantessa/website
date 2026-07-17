@@ -11,6 +11,7 @@ export const FREE_FLEET_SLUGS = [
   'snapshot-free',
   'cow-free',
   'hyperliquid-free',
+  'opensea-free',
   'yeetful-tool-wallet',
 ] as const
 
@@ -99,6 +100,23 @@ export const FREE_FLEET_FALLBACK: McpServer[] = [
     kind: 'data',
     priceUsd: '0',
     networks: ['Hyperliquid'],
+    callable: false,
+    gated: false,
+    autoCallable: true,
+    source: 'yeetful',
+  },
+  {
+    id: 'opensea-free',
+    slug: 'opensea-free',
+    name: 'OpenSea NFTs (Free)',
+    description:
+      'OpenSea NFTs, free and non-gated: wallet NFT portfolios with images across Ethereum/Base/Arbitrum, collection floor prices and stats, live listings and best offers, plus construction-only NFT transactions — ERC-721/1155 transfers, Seaport sell listings the user signs gasless, cancels, and guarded buys. Ownership verified on-chain before any build; never holds keys, never signs. Rate-limited. By Yeetful.',
+    category: 'NFTs',
+    websiteUrl: 'https://github.com/Yeetful/free-mcps',
+    color: null,
+    kind: 'data',
+    priceUsd: '0',
+    networks: ['Ethereum', 'Base', 'Arbitrum'],
     callable: false,
     gated: false,
     autoCallable: true,

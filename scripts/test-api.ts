@@ -34,6 +34,8 @@ import { pureChecks, policyCheck, orderValueUsd, buildReport } from '../lib/cow-
 import { parseSwapIntent } from '../lib/swap-intent'
 import { usdToTokenAmount } from '../lib/usd-probe'
 import { parseRobinhoodBridge, guardRobinhoodBridge, RH_L1_INBOX, ARB_SYS } from '../lib/robinhood-bridge'
+import { parseNftAsk, guardNftTransfer, ERC721_ABI as NFT_ERC721_ABI, ERC1155_ABI as NFT_ERC1155_ABI } from '../lib/nft-layer'
+import { splitListingPrice, buildListingComponents, guardListingComponents } from '../lib/opensea'
 import { keccak256, stringToBytes } from 'viem'
 import { isCacheable, routeCacheKey, getCached, setCached, clearRouteCache } from '../lib/route-cache'
 import { routeSavings } from '../lib/route-telemetry'
@@ -2860,6 +2862,101 @@ async function main() {
     body: JSON.stringify({ message: 'Can I bridge 0.000561 ETH from Arbitrum to Robinhood Chain?', activeServers: [] }),
   }).then((r) => r.json())
   check('native bridge: foreign origin answered honestly (no invented venues)', typeof bridgeArb.reply === 'string' && /Ethereum/.test(bridgeArb.reply) && !/stargate|across/i.test(bridgeArb.reply), JSON.stringify(bridgeArb).slice(0, 200))
+  // ── Native NFT layer (pure parse + guards + Seaport order math) ────────────
+  // Claims only NFT-marked turns; "sell 1 ETH for USDC" must never land here.
+  const nftSell = parseNftAsk('sell my Pudgy Penguin #2489 for 4.2 ETH')
+  check(
+    'nft parse: sell ask (name + #id + price)',
+    !!nftSell && nftSell.kind === 'sell' && /pudgy penguin/i.test(nftSell.ref) && nftSell.tokenId === '2489' && nftSell.priceEth === '4.2',
+    JSON.stringify(nftSell),
+  )
+  const nftSellChain = parseNftAsk('Sell my Edition 77 NFT on base for 0.5 ETH')
+  check('nft parse: chain hint scopes the resolve', !!nftSellChain && nftSellChain.kind === 'sell' && nftSellChain.chainId === 8453, JSON.stringify(nftSellChain))
+  const nftXfer = parseNftAsk('send my Pudgy Penguin #2489 to 0x2222222222222222222222222222222222222222')
+  check(
+    'nft parse: transfer ask (0x recipient)',
+    !!nftXfer && nftXfer.kind === 'transfer' && nftXfer.tokenId === '2489' && nftXfer.to === '0x2222222222222222222222222222222222222222',
+    JSON.stringify(nftXfer),
+  )
+  const nftEns = parseNftAsk('transfer my Cool Cat NFT to vitalik.eth')
+  check('nft parse: ENS recipient rides through', !!nftEns && nftEns.kind === 'transfer' && nftEns.to === 'vitalik.eth', JSON.stringify(nftEns))
+  const nftNoPrice = parseNftAsk('sell my Pudgy Penguin #2489 nft')
+  check('nft parse: sell without a price clarifies (never guesses)', !!nftNoPrice && nftNoPrice.kind === 'problem' && /price/i.test(nftNoPrice.problem), JSON.stringify(nftNoPrice))
+  const nftNoTo = parseNftAsk('transfer my pudgy penguin #2489 nft')
+  check('nft parse: transfer without a recipient clarifies', !!nftNoTo && nftNoTo.kind === 'problem' && /recipient|go|0x/i.test(nftNoTo.problem), JSON.stringify(nftNoTo))
+  check(
+    'nft parse: token swaps + stock sells + bare sends fall through',
+    parseNftAsk('sell 1 ETH for USDC') === null &&
+      parseNftAsk('swap 100 usdc for weth') === null &&
+      parseNftAsk('Sell AAPL on Robinhood Chain') === null &&
+      parseNftAsk('send 0.1 eth to 0x2222222222222222222222222222222222222222') === null,
+  )
+  const nftRh = parseNftAsk('sell my pudgy penguin #2489 nft on robinhood chain for 1 eth')
+  check('nft parse: robinhood-chain NFT ask answered honestly', !!nftRh && nftRh.kind === 'problem' && /Ethereum, Base/i.test(nftRh.problem), JSON.stringify(nftRh))
+  // Transfer guard fails CLOSED: exact contract/chain/sender/recipient/id/amount.
+  const nftMe = '0x1111111111111111111111111111111111111111'
+  const nftYou = '0x2222222222222222222222222222222222222222'
+  const nftContract = '0x3333333333333333333333333333333333333333'
+  const xfer721 = encodeFunctionData({ abi: NFT_ERC721_ABI, functionName: 'safeTransferFrom', args: [nftMe, nftYou, BigInt(2489)] })
+  const xfer1155 = encodeFunctionData({ abi: NFT_ERC1155_ABI, functionName: 'safeTransferFrom', args: [nftMe, nftYou, BigInt(77), BigInt(3), '0x'] })
+  const exp721 = { contract: nftContract, chainId: 1, standard: 'erc721' as const, from: nftMe, to: nftYou, tokenId: '2489', amount: BigInt(1) }
+  check(
+    'nft transfer guard: valid 721/1155 pass, tampers refuse',
+    guardNftTransfer({ to: nftContract, data: xfer721, value: '0', chainId: 1 }, exp721).ok === true &&
+      guardNftTransfer({ to: nftContract, data: xfer721, value: '0', chainId: 8453 }, exp721).ok === false &&
+      guardNftTransfer({ to: nftContract, data: xfer721, value: '0', chainId: 1 }, { ...exp721, to: nftMe }).ok === false &&
+      guardNftTransfer({ to: nftContract, data: xfer721, value: '0', chainId: 1 }, { ...exp721, tokenId: '9' }).ok === false &&
+      guardNftTransfer({ to: nftContract, data: xfer1155, value: '0', chainId: 1 }, { ...exp721, standard: 'erc1155', tokenId: '77', amount: BigInt(3) }).ok === true &&
+      guardNftTransfer({ to: nftContract, data: xfer1155, value: '0', chainId: 1 }, { ...exp721, standard: 'erc1155', tokenId: '77', amount: BigInt(2) }).ok === false,
+  )
+  // Seaport order math: fee splits sum exactly; the independent guard refuses
+  // payouts outside offerer + published fee recipients.
+  const osFees = [
+    { fee: 1.0, recipient: '0x0000a26b00c1f0Df003000390027140000fAa719', required: true },
+    { fee: 5.0, recipient: '0x4444444444444444444444444444444444444444', required: false },
+  ]
+  const oneEth = BigInt('1000000000000000000')
+  const split = splitListingPrice(oneEth, osFees, false)
+  check(
+    'seaport split: required fee only, seller keeps the exact remainder',
+    split.splits.length === 1 && split.sellerWei + split.splits[0].amountWei === oneEth && split.splits[0].amountWei === oneEth / BigInt(100),
+  )
+  const osOrder = buildListingComponents({
+    offerer: nftMe, token: nftContract, identifier: '2489', standard: 'erc721', amount: '1',
+    priceWei: oneEth, fees: osFees, requiredZone: null, counter: '0', startTime: 1_784_000_000, endTime: 1_784_600_000, salt: '12345',
+  })
+  const osExp = { offerer: nftMe, token: nftContract, identifier: '2489', priceWei: oneEth, feeRecipients: osFees.map((f) => f.recipient), requiredZone: null }
+  const osTampered = JSON.parse(JSON.stringify(osOrder)) as typeof osOrder
+  osTampered.consideration[1].recipient = nftYou
+  const osWrongConduit = JSON.parse(JSON.stringify(osOrder)) as typeof osOrder
+  osWrongConduit.conduitKey = `0x${'00'.repeat(32)}`
+  check(
+    'seaport guard: clean order passes, tampered recipient/conduit refuse',
+    guardListingComponents(osOrder, osExp).ok === true &&
+      guardListingComponents(osTampered, osExp).ok === false &&
+      guardListingComponents(osWrongConduit, osExp).ok === false,
+  )
+  // orderRequest meta round-trip carries the opensea approval prereq.
+  const osMeta = orderRequestOf({
+    orderRequest: {
+      protocol: 'opensea', typedData: { domain: {}, primaryType: 'OrderComponents', types: {}, message: osOrder },
+      submitUrl: '/api/opensea/submit', chainId: 1,
+      prereqTx: { to: nftContract, data: '0x', value: '0', chainId: 1, action: 'approve-opensea' }, prereqTitle: 'Approve OpenSea',
+    },
+  })
+  check('orderRequestOf: opensea order + prereqTx round-trip', !!osMeta && osMeta.protocol === 'opensea' && osMeta.prereqTx?.to === nftContract && osMeta.prereqTitle === 'Approve OpenSea')
+  // Deterministic route paths: the native NFT layer claims the turn.
+  const nftNoWallet = await fetch(`${BASE}/api/chat`, {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ message: 'sell my Pudgy Penguin #2489 for 4.2 ETH', activeServers: [] }),
+  }).then((r) => r.json())
+  check('native nft: sell ask asks to connect (not the swap layer, not planner)', nftNoWallet.connectWallet === true, JSON.stringify(nftNoWallet).slice(0, 200))
+  const nftRhHttp = await fetch(`${BASE}/api/chat`, {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ message: 'sell my pudgy penguin #2489 nft on robinhood chain for 1 eth', activeServers: [] }),
+  }).then((r) => r.json())
+  check('native nft: robinhood-chain ask answered honestly (no build)', typeof nftRhHttp.reply === 'string' && /Ethereum, Base/i.test(nftRhHttp.reply), JSON.stringify(nftRhHttp).slice(0, 200))
+
   // Native swap tool: fires with NO service shortlisted (Nate 2026-07-02 —
   // swap building is Yeetful's own tool, not gated on CoW being active).
   // Deterministic paths only (clarify + connect-wallet); the live build is a

@@ -25,7 +25,8 @@ import { overrideFreeMcpBase } from '@/lib/endpoint-planner'
 import { alchemyEnabled, getMultichainPortfolio, getRecentActivity } from '@/lib/alchemy'
 import type { AppChain } from '@/lib/chains'
 import { hasUniswapHistory } from './affinity'
-import type { EmptyTile, HoldingRow, ProposalRow, SpaceRow, SplashTile, StatRow, SuggestedPrompt } from './types'
+import { fetchFloorEth, fetchOwnedNfts, openseaEnabled, type OpenseaNft } from '@/lib/opensea'
+import type { EmptyTile, HoldingRow, NftRow, ProposalRow, SpaceRow, SplashTile, StatRow, SuggestedPrompt } from './types'
 
 /** Snapshot's stamp service resolves a space logo from its id — always
  *  available, no IPFS gateway flakiness. */
@@ -768,6 +769,107 @@ const robinhoodSource: SplashSource = {
   },
 }
 
+// ── OpenSea slot → the wallet's recent NFTs with sell/transfer actions ──────
+// Reads OpenSea's API directly (server-side key, same as the native NFT
+// layer) rather than the opensea MCP — the card works even before the MCP
+// deploy, exactly like the Alchemy-backed wallet card. Each NFT row expands
+// into Sell / Transfer chips whose prompts land on the native NFT layer
+// (parseNftAsk resolves the name against these same holdings).
+
+/** The prompt-facing NFT name: must round-trip parseNftAsk → resolveNft, so
+ *  short token ids get "#id" appended for an exact-id match. Huge ids (ENS
+ *  hashes) stay name-only — the name is the unique handle there. */
+function nftPromptName(n: { name: string | null; identifier: string }): string {
+  const name = n.name ?? `#${n.identifier}`
+  if (name.includes('#') || n.identifier.length > 8) return name
+  return `${name} #${n.identifier}`
+}
+
+function nftRowActions(n: { name: string | null; identifier: string }, chainLabel: string, floorEth: number | null): SuggestedPrompt[] {
+  const pn = nftPromptName(n)
+  const sellPrompt =
+    floorEth != null
+      ? `Sell my ${pn} NFT on ${chainLabel} for ${Number(floorEth.toFixed(4))} ETH`
+      : `Sell my ${pn} NFT on ${chainLabel}`
+  return [
+    { label: 'Sell', prompt: sellPrompt },
+    // The recipient is deliberately blank — the user appends an address (or
+    // sends as-is and the native layer asks for the full one-liner).
+    { label: 'Transfer', prompt: `Send my ${pn} NFT on ${chainLabel} to ` },
+  ]
+}
+
+const openseaSource: SplashSource = {
+  id: 'opensea',
+  match: (s) => /opensea/i.test(`${s.slug} ${s.name}`) && openseaEnabled(),
+  build: async (_call, address, server, chain) => {
+    // OpenSea covers Ethereum/Base/Arbitrum — a Robinhood picker scope has
+    // nothing to show.
+    const chainIds: { id: number; label: string }[] =
+      chain && chain.key !== 'robinhood'
+        ? [{ id: chain.id, label: chain.name }]
+        : chain
+          ? []
+          : [
+              { id: 1, label: 'Ethereum' },
+              { id: 8453, label: 'Base' },
+              { id: 42161, label: 'Arbitrum' },
+            ]
+    if (chainIds.length === 0) return null
+    const owned: (OpenseaNft & { chainLabel: string })[] = []
+    await Promise.all(
+      chainIds.map(async ({ id, label }) => {
+        const nfts = await fetchOwnedNfts(id, address, 12).catch(() => [] as OpenseaNft[])
+        for (const n of nfts) owned.push({ ...n, chainLabel: label })
+      }),
+    )
+    // No NFTs → no card (the affinity contract; manual picks get the preview).
+    if (owned.length === 0) return null
+    owned.sort((a, b) => (b.updated_at ?? '').localeCompare(a.updated_at ?? ''))
+    const top = owned.slice(0, 6)
+
+    // Floor prices for the sell chips — first three distinct collections only
+    // (rate-limit hygiene; rows without a floor still sell, the layer asks).
+    const collections = [...new Set(top.map((n) => n.collection))].slice(0, 3)
+    const floors = new Map<string, number | null>()
+    await Promise.all(collections.map(async (slug) => floors.set(slug, await fetchFloorEth(slug).catch(() => null))))
+
+    const rows: NftRow[] = top.map((n) => {
+      const floorEth = floors.get(n.collection) ?? null
+      return {
+        name: n.name ?? `#${n.identifier.slice(0, 8)}`,
+        collection: n.collection,
+        collectionName: n.collection.replace(/-/g, ' '),
+        imageUrl: n.display_image_url ?? n.image_url ?? null,
+        chain: n.chainLabel,
+        contract: n.contract,
+        tokenId: n.identifier,
+        standard: n.token_standard === 'erc1155' ? 'erc1155' : 'erc721',
+        floor: floorEth != null ? `floor ${Number(floorEth.toFixed(4))} ETH` : null,
+        openseaUrl: n.opensea_url ?? null,
+        actions: nftRowActions(n, n.chainLabel, floorEth),
+      }
+    })
+
+    const first = rows.find((r) => r.floor) ?? rows[0]
+    const prompts: SuggestedPrompt[] = [
+      ...(first ? [{ label: `Sell ${truncate(first.name, 18)}`, prompt: first.actions?.[0]?.prompt ?? `Sell my ${first.name} NFT` }] : []),
+      { label: 'What are these worth?', prompt: 'What are my NFTs worth right now — check the floor prices of my collections on OpenSea?' },
+      { label: 'Any offers on mine?', prompt: 'Are there any offers on the NFTs I own?' },
+    ]
+    return {
+      id: 'opensea-nfts',
+      mcpSlug: server.slug,
+      mcpName: server.name,
+      render: 'nfts',
+      title: 'Your NFTs',
+      subtitle: `${owned.length >= 12 ? '12+' : owned.length} across ${chainIds.length > 1 ? 'Ethereum · Base · Arbitrum' : chainIds[0].label}`,
+      nfts: rows,
+      prompts: prompts.slice(0, 3),
+    }
+  },
+}
+
 const walletSource: SplashSource = {
   id: 'wallet',
   // The first-party multichain wallet MCP (yeetful-tool-*). Alchemy-backed —
@@ -778,7 +880,7 @@ const walletSource: SplashSource = {
 }
 
 /** All registered splash sources. Exported for tests; a new MCP appends here. */
-export const SPLASH_SOURCES: SplashSource[] = [walletSource, uniswapSource, snapshotSource, cowSource, hyperliquidSource, aaveSource, lidoSource, robinhoodSource]
+export const SPLASH_SOURCES: SplashSource[] = [walletSource, uniswapSource, snapshotSource, cowSource, hyperliquidSource, aaveSource, lidoSource, robinhoodSource, openseaSource]
 
 // ── Preview cards (the manual-pick exception) ────────────────────────────────
 // What each source's card says when the user hand-picked the MCP but the
@@ -839,6 +941,14 @@ const SOURCE_PREVIEWS: Record<string, { message: string; prompts: SuggestedPromp
       // exact ask (or the whole bridge→stake job) as a chip.
       { label: 'Help me stake on Lido', prompt: 'Help me stake on Lido' },
       { label: 'Current APR', prompt: 'What is the current Lido staking APR?' },
+    ],
+  },
+  opensea: {
+    message: 'No NFTs in this wallet yet (per OpenSea, across Ethereum/Base/Arbitrum). Once you hold one, it shows up here with one-tap sell and transfer.',
+    prompts: [
+      { label: 'Trending collections', prompt: 'What NFT collections are trending on OpenSea right now?' },
+      { label: 'Check a floor price', prompt: 'What is the floor price of Pudgy Penguins on OpenSea?' },
+      { label: 'Cheapest Pudgy', prompt: 'Show me the cheapest live Pudgy Penguins listings on OpenSea' },
     ],
   },
   robinhood: {

@@ -77,6 +77,7 @@ import {
 } from '@/lib/aave-supply'
 import { policyCheck, buildReport } from '@/lib/tx-guardrails'
 import { buildGuardrailedOrder } from '@/lib/cow-build'
+import { parseNftAsk, buildNftTransfer, buildNftListing } from '@/lib/nft-layer'
 import { buildUniswapSwap, NoV3PoolError } from '@/lib/uniswap-venue'
 import { buildUniswapV4Swap, NoV4PoolError, GatedV4PoolError } from '@/lib/uniswap-v4'
 import { buildLifiSwap, NoLifiRouteError } from '@/lib/lifi-venue'
@@ -818,6 +819,71 @@ export async function POST(req: NextRequest) {
       } catch (e) {
         nativeTrace({ type: 'note', level: 'warn', label: `bridge build failed: ${(e as Error).message.slice(0, 160)}` })
         return NextResponse.json({ reply: `🌉 Couldn't build the bridge transfer: ${(e as Error).message}` })
+      }
+    }
+
+    // ── Native NFT layer (deterministic). Claims only turns that name an NFT
+    //    (the word "nft"/"opensea", a "#id", or a contract#id pair), so token
+    //    swaps and stock sells never land here — and it runs BEFORE the swap
+    //    gate because "sell my Pudgy Penguin #2489 for 4.2 ETH" is sell-shaped.
+    //    Transfers: on-chain-verified safeTransferFrom (ERC-721 + ERC-1155),
+    //    re-decoded by an independent guard. Sells: a Seaport 1.6 order built
+    //    from the collection's LIVE fee schedule, offered as an EIP-712
+    //    artifact (SignNftListingButton) and re-verified at the submit relay.
+    const nftAsk = parseNftAsk(message)
+    if (nftAsk) {
+      if (nftAsk.kind === 'problem') {
+        nativeTrace({ type: 'status', label: 'native nft layer claimed the turn — ask incomplete, answering honestly (no build)' })
+        return NextResponse.json({ reply: `🖼️ ${nftAsk.problem}` })
+      }
+      if (!walletAddress) {
+        nativeTrace({ type: 'note', level: 'info', label: 'nft ask but no wallet connected — asking to connect before building' })
+        return NextResponse.json({
+          reply: '🖼️ Connect your wallet first — NFT transfers and listings build against what your address actually owns, and you sign them yourself.',
+          connectWallet: true,
+        })
+      }
+      const what = nftAsk.kind === 'transfer' ? `transfer "${nftAsk.ref}" → ${nftAsk.to}` : `sell "${nftAsk.ref}" @ ${nftAsk.priceEth} ETH`
+      nativeTrace({ type: 'select', service: 'OpenSea/Seaport (native NFT layer)', endpoint: what, priceUsd: 0, reason: 'native nft layer — ownership anchored on-chain, order/calldata built deterministically and guarded' })
+      try {
+        if (nftAsk.kind === 'transfer') {
+          const built = await buildNftTransfer(nftAsk, walletAddress)
+          if ('problem' in built) {
+            nativeTrace({ type: 'note', level: 'info', label: `nft transfer not buildable: ${built.problem.slice(0, 160)}` })
+            return NextResponse.json({ reply: `🖼️ ${built.problem}` })
+          }
+          if (built.blocked) {
+            nativeTrace({ type: 'note', level: 'warn', label: `nft transfer REFUSED: ${(built.refusal ?? 'a safety check failed.').slice(0, 200)}` })
+            return NextResponse.json({ reply: `🚫 ${built.refusal ?? 'A safety check failed — nothing was built.'}`, guardrails: built.guardrails, blocked: true, buildPath: 'native-nft-transfer' })
+          }
+          nativeTrace({ type: 'status', label: `nft transfer guard passed (valueUsd ${built.guardrails.valueUsd ?? 'n/a'}), awaiting signature` })
+          return NextResponse.json({
+            reply: `🖼️ ${built.summary}\n${built.note}`,
+            txRequest: built.tx,
+            guardrails: built.guardrails,
+            buildPath: 'native-nft-transfer',
+          })
+        }
+        const built = await buildNftListing(nftAsk, walletAddress)
+        if ('problem' in built) {
+          nativeTrace({ type: 'note', level: 'info', label: `nft listing not buildable: ${built.problem.slice(0, 160)}` })
+          return NextResponse.json({ reply: `🖼️ ${built.problem}` })
+        }
+        if (built.blocked) {
+          nativeTrace({ type: 'note', level: 'warn', label: `nft listing REFUSED: ${(built.refusal ?? 'a safety check failed.').slice(0, 200)}` })
+          return NextResponse.json({ reply: `🚫 ${built.refusal ?? 'A safety check failed — nothing was built.'}`, guardrails: built.guardrails, blocked: true, buildPath: 'native-nft-list' })
+        }
+        const warns = built.guardrails.checks.filter((c) => !c.ok && c.level === 'warn').map((c) => `⚠️ ${c.note}`)
+        nativeTrace({ type: 'status', label: `nft listing guard passed — Seaport order built (valueUsd ${built.guardrails.valueUsd ?? 'n/a'}), awaiting signature` })
+        return NextResponse.json({
+          reply: `🔏 ${built.summary}\n${built.note}${warns.length ? `\n${warns.join('\n')}` : ''}`,
+          orderRequest: built.order,
+          guardrails: built.guardrails,
+          buildPath: 'native-nft-list',
+        })
+      } catch (e) {
+        nativeTrace({ type: 'note', level: 'warn', label: `nft build failed: ${(e as Error).message.slice(0, 160)}` })
+        return NextResponse.json({ reply: `🖼️ Couldn't build that NFT action: ${(e as Error).message}` })
       }
     }
 

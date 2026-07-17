@@ -127,6 +127,36 @@ export interface StatRow {
   actions?: SuggestedPrompt[]
 }
 
+/** One owned NFT for the gallery tile. Values are PRE-FORMATTED strings
+ *  (floor etc.) — the client never does money math on these. */
+export interface NftRow {
+  /** Display name ("Pudgy Penguin #2489"). */
+  name: string
+  /** Collection slug + human collection label. */
+  collection: string
+  collectionName: string
+  /** Thumbnail URL (OpenSea CDN), or null → lettermark fallback. */
+  imageUrl: string | null
+  /** Human chain label (Ethereum, Base, Arbitrum). */
+  chain: string
+  contract: string
+  tokenId: string
+  standard: 'erc721' | 'erc1155'
+  /** Pre-formatted floor line ("floor 4.26 ETH"), or null when unknown. */
+  floor: string | null
+  openseaUrl: string | null
+  /** Per-NFT "act on this" prompts (Sell / Transfer) — same contract as
+   *  HoldingRow.actions; each drops its prompt into the composer. */
+  actions?: SuggestedPrompt[]
+}
+
+/** A wallet's NFT gallery (the opensea source): image-led rows that expand
+ *  into sell/transfer chips. */
+export type NftsTile = TileBase & {
+  render: 'nfts'
+  nfts: NftRow[]
+}
+
 /** A generic label/value list — positions, open orders, fills; any MCP whose
  *  overview is "a few rows of account state" reuses this with zero new UI. */
 export type RowsTile = TileBase & {
@@ -136,7 +166,7 @@ export type RowsTile = TileBase & {
   rows: StatRow[]
 }
 
-export type SplashTile = HoldingsTile | ProposalsTile | RowsTile | ActivityTile | EmptyTile | ErrorTile
+export type SplashTile = HoldingsTile | ProposalsTile | RowsTile | ActivityTile | NftsTile | EmptyTile | ErrorTile
 
 export interface SplashResponse {
   address: string
@@ -149,5 +179,5 @@ export interface SplashResponse {
  *  outside the hand-coded set still qualify when they carry featured ("ping
  *  first") endpoints — `splashReady`, derived server-side in lib/catalog. */
 export function splashCapable(s: { slug: string; name: string; splashReady?: boolean }): boolean {
-  return !!s.splashReady || /uniswap|snapshot|cow|hyperliquid|aave|lido|robinhood/i.test(`${s.slug} ${s.name}`)
+  return !!s.splashReady || /uniswap|snapshot|cow|hyperliquid|aave|lido|robinhood|opensea/i.test(`${s.slug} ${s.name}`)
 }
