@@ -164,8 +164,11 @@ interface YeetfulStore {
 
   // Chat ↔ App: 'app' renders the working set as a structured workspace
   // (portfolio / swap / governance / earn panels) with chat docked as the
-  // command bar; 'chat' is the classic transcript. Persisted — the mode is a
-  // workspace preference, not per-conversation state.
+  // command bar; 'chat' is the classic transcript. The toggle came OFF the
+  // toolbar in the nav rethink (Nate 2026-07-17) — App Mode is now reachable
+  // only via the ?mode=app deep link, and the mode is session-only (not
+  // persisted), so a deep-linked visit can never strand a client in a view
+  // that has no visible way back.
   workspaceMode: 'chat' | 'app'
   setWorkspaceMode: (mode: 'chat' | 'app') => void
 
@@ -252,6 +255,10 @@ interface YeetfulStore {
    *  persisted: it's a one-shot handoff, consumed (and cleared) by the chat. */
   composerPrefill: string | null
   setComposerPrefill: (prompt: string | null) => void
+  /** The job/recurring-buy the rail opened a detail card for (position, PnL,
+   *  pending signatures). Session state — never persisted. */
+  jobDetail: { type: 'job' | 'dca'; id: string } | null
+  setJobDetail: (detail: { type: 'job' | 'dca'; id: string } | null) => void
   /** The chat's left rail (MCPs + chat history) — desktop preference.
    *  Key name predates the merged rail (it was the MCP-only rail's flag);
    *  kept so existing clients don't lose their preference. */
@@ -660,6 +667,8 @@ export const useYeetfulStore = create<YeetfulStore>()(
       setRailTab: (tab) => set({ railTab: tab }),
       composerPrefill: null,
       setComposerPrefill: (prompt) => set({ composerPrefill: prompt }),
+      jobDetail: null,
+      setJobDetail: (detail) => set({ jobDetail: detail }),
       mcpRailOpen: true,
       setMcpRailOpen: (open) => set({ mcpRailOpen: open }),
       mobileMcpRailOpen: false,
@@ -675,11 +684,15 @@ export const useYeetfulStore = create<YeetfulStore>()(
       // from there).
       // v4: the chat-history sidebar and the MCP rail merged into ONE rail
       // with MCPs/Chats tabs — drop the dead sidebarOpen key.
-      version: 4,
+      // v5: the Chat|App toggle came off the toolbar — workspaceMode is
+      // session-only now (?mode=app deep link), so drop the persisted key:
+      // a client stuck in 'app' would otherwise have no visible way back.
+      version: 5,
       migrate: (persisted, version) => {
         const s = (persisted ?? {}) as Record<string, unknown>
         if (version < 2) s.autoRouter = false
         if (version < 4) delete s.sidebarOpen
+        if (version < 5) delete s.workspaceMode
         return s
       },
       // Persist only UI prefs. Chats are DB-backed (signed in) or ephemeral
@@ -688,7 +701,6 @@ export const useYeetfulStore = create<YeetfulStore>()(
       partialize: (state) => ({
         activeServerIds: state.activeServerIds,
         selectedChainId: state.selectedChainId,
-        workspaceMode: state.workspaceMode,
         manualSlugs: state.manualSlugs,
         walletSets: state.walletSets,
         shortlistIds: state.shortlistIds,
