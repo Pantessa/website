@@ -3489,6 +3489,15 @@ async function main() {
   // ── DCA — recurring buys (grammar + period math + the chip contract) ─────
   console.log('— dca schedules')
   {
+    // The Jobs rail's schedule list: wallet-scoped, so it must never answer
+    // anonymously (anyone could otherwise enumerate a wallet's standing buys).
+    const dcaAnon = await fetch(`${BASE}/api/dca`)
+    check('dca: GET /api/dca without auth → 401', dcaAnon.status === 401)
+    const dcaRes = await fetch(`${BASE}/api/dca`, { headers: C })
+    const dcaBody = await dcaRes.json()
+    check('dca: GET /api/dca returns the schedules array', dcaRes.status === 200 && Array.isArray(dcaBody.schedules))
+  }
+  {
     const create = parseDcaCreate('buy $10 of AAPL every week on robinhood')
     check(
       'dca: create parses (dollar amount + cadence + chain word)',

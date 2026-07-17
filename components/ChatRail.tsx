@@ -17,13 +17,15 @@ import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Boxes, Check, Globe, Info, Loader2, MessageSquare, PanelLeftClose, Plus, Trash2 } from 'lucide-react'
+import { Boxes, Check, Globe, Info, ListChecks, Loader2, MessageSquare, PanelLeftClose, Plus, Trash2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useYeetfulStore } from '@/lib/store'
 import { useSession } from '@/lib/session'
 import { fleetRank } from '@/lib/free-fleet'
+import { useRunningWork } from '@/lib/use-running-work'
 import BrandIcon from '@/components/BrandIcon'
 import AddMcpModal from '@/components/AddMcpModal'
+import JobsRailTab from '@/components/JobsRailTab'
 
 const RAIL_WIDTH = 248
 
@@ -70,6 +72,10 @@ export default function ChatRail() {
   // Phones: transient overlay state (default closed, never persisted).
   // Desktop: the persisted preference.
   const open = isMobile ? mobileMcpRailOpen : mcpRailOpen
+
+  // Running work (jobs + recurring buys) — the Jobs tab's badge. Polled only
+  // while the rail is open; the collapsed toolbar chip runs its own instance.
+  const { badgeCount } = useRunningWork(open)
 
   const active = useMemo(
     () =>
@@ -205,7 +211,7 @@ export default function ChatRail() {
         >
           <div className="flex flex-col h-full" style={{ width: RAIL_WIDTH }}>
             {/* Header: the MCPs/Chats tabs + the rail's ONE collapse control. */}
-            <div className="flex items-center gap-1.5 px-3 pt-3 pb-2">
+            <div className="flex items-center gap-1 px-2 pt-3 pb-2">
               <div
                 className="flex-1 flex rounded-xl border border-[var(--line)] bg-[var(--surf-1)] p-0.5"
                 role="tablist"
@@ -216,26 +222,42 @@ export default function ChatRail() {
                   aria-selected={railTab === 'mcps'}
                   onClick={() => setRailTab('mcps')}
                   className={cn(
-                    'flex-1 flex items-center justify-center gap-1.5 rounded-[10px] px-2 py-1.5 text-[11px] font-medium transition-colors',
+                    'flex-1 flex items-center justify-center gap-1 rounded-[10px] px-1 py-1.5 text-[11px] font-medium transition-colors',
                     railTab === 'mcps' ? 'bg-[var(--surf-2)] text-white' : 'text-[color:var(--muted)] hover:text-white',
                   )}
                 >
                   <Boxes className="w-3.5 h-3.5" />
                   MCPs <span className="mono text-[10px] text-[color:var(--muted-2)]">{active.length}</span>
                 </button>
+                {/* Three tabs now share the 248px rail — the Chats count came
+                    off (the list itself shows the history); the Jobs badge is
+                    the one number that must interrupt (things needing you). */}
                 <button
                   role="tab"
                   aria-selected={railTab === 'chats'}
                   onClick={() => setRailTab('chats')}
                   className={cn(
-                    'flex-1 flex items-center justify-center gap-1.5 rounded-[10px] px-2 py-1.5 text-[11px] font-medium transition-colors',
+                    'flex-1 flex items-center justify-center gap-1 rounded-[10px] px-1 py-1.5 text-[11px] font-medium transition-colors',
                     railTab === 'chats' ? 'bg-[var(--surf-2)] text-white' : 'text-[color:var(--muted)] hover:text-white',
                   )}
                 >
                   <MessageSquare className="w-3.5 h-3.5" />
-                  Chats{' '}
-                  {chats.length > 0 && (
-                    <span className="mono text-[10px] text-[color:var(--muted-2)]">{chats.length}</span>
+                  Chats
+                </button>
+                <button
+                  role="tab"
+                  aria-selected={railTab === 'jobs'}
+                  onClick={() => setRailTab('jobs')}
+                  title="Jobs and recurring buys running on this wallet"
+                  className={cn(
+                    'flex-1 flex items-center justify-center gap-1 rounded-[10px] px-1 py-1.5 text-[11px] font-medium transition-colors',
+                    railTab === 'jobs' ? 'bg-[var(--surf-2)] text-white' : 'text-[color:var(--muted)] hover:text-white',
+                  )}
+                >
+                  <ListChecks className="w-3.5 h-3.5" />
+                  Jobs
+                  {badgeCount > 0 && (
+                    <span className="mono text-[10px] px-1 rounded-full bg-amber-500/15 text-amber-400">{badgeCount}</span>
                   )}
                 </button>
               </div>
@@ -249,7 +271,9 @@ export default function ChatRail() {
               </button>
             </div>
 
-            {railTab === 'mcps' ? (
+            {railTab === 'jobs' ? (
+              <JobsRailTab onAct={closeOnMobile} />
+            ) : railTab === 'mcps' ? (
               <>
                 {/* Free / Paid segmented toggle */}
                 <div className="px-3 pb-2">

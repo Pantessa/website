@@ -243,10 +243,15 @@ interface YeetfulStore {
   setChatPublic: (chatId: string, isPublic: boolean) => Promise<Chat | null>
 
   // UI state
-  /** Which tab the (single) left rail shows — MCPs are primary, chat history
-   *  lives behind the Chats tab of the same rail. */
-  railTab: 'mcps' | 'chats'
-  setRailTab: (tab: 'mcps' | 'chats') => void
+  /** Which tab the (single) left rail shows — MCPs are primary; chat history
+   *  and running work (jobs + recurring buys) live behind their own tabs. */
+  railTab: 'mcps' | 'chats' | 'jobs'
+  setRailTab: (tab: 'mcps' | 'chats' | 'jobs') => void
+  /** A prompt a rail row wants in the composer (e.g. a due recurring buy's
+   *  run chip). Prefill only — the user always sends it themselves. NOT
+   *  persisted: it's a one-shot handoff, consumed (and cleared) by the chat. */
+  composerPrefill: string | null
+  setComposerPrefill: (prompt: string | null) => void
   /** The chat's left rail (MCPs + chat history) — desktop preference.
    *  Key name predates the merged rail (it was the MCP-only rail's flag);
    *  kept so existing clients don't lose their preference. */
@@ -653,6 +658,8 @@ export const useYeetfulStore = create<YeetfulStore>()(
       // the Chats tab. Open by default on desktop.
       railTab: 'mcps',
       setRailTab: (tab) => set({ railTab: tab }),
+      composerPrefill: null,
+      setComposerPrefill: (prompt) => set({ composerPrefill: prompt }),
       mcpRailOpen: true,
       setMcpRailOpen: (open) => set({ mcpRailOpen: open }),
       mobileMcpRailOpen: false,
