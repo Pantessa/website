@@ -113,7 +113,7 @@ export default async function SharedChatPage({ params }: Params) {
           <Link
             href={tryHref}
             className="flex-shrink-0 flex items-center gap-2 px-3 py-1.5 rounded-full bg-white text-zinc-950 text-xs font-semibold hover:bg-zinc-200 transition-colors"
-            title="Open Yeetful chat with these agents enabled"
+            title="Open Yeetful chat with these agents enabled and this chat's opening ask ready to run"
           >
             <YeetfulMark size={16} />
             <span>Try Yeetful</span>

@@ -45,6 +45,7 @@ import { fundingNeedUsd, guardLifiBridgeBuild, lifiBridgeRoutersFor, verifyLifiB
 import { parseRobinhoodFunding, parseSameChainSwapSegment } from '../lib/jobs'
 import { detectBalanceShortfall, fundingPlanUsd, planFundingChips, rankFundingSources, type FundingNeed, type FundingSource } from '../lib/funding-plan'
 import { compileDcaBuy, dcaRunChip, parseDcaCreate, parseDcaManage, parseDcaRun, periodKeyFor } from '../lib/dca'
+import { firstUserPromptOf } from '../lib/shared-chat'
 import { EXAMPLE_PROMPTS } from '../lib/examples'
 import { swapFeeAtoms, SWAP_FEE_BPS, TREASURY_ADDRESS } from '../lib/fees'
 import { APP_CHAINS, chainById, chainNamedIn, sanitizeChainId } from '../lib/chains'
@@ -1494,6 +1495,12 @@ async function main() {
       body: JSON.stringify({ title: 'test:api receipts', activeServerIds: [] }),
     })
   ).json()
+  // The ask that opens the chat — the share page's handoff link carries it.
+  await fetch(`${BASE}/api/chats/${chat.id}/messages`, {
+    method: 'POST',
+    headers: CJ,
+    body: JSON.stringify({ role: 'user', content: 'Buy $2 of AAPL on Robinhood Chain' }),
+  })
   const msg = await (
     await fetch(`${BASE}/api/chats/${chat.id}/messages`, {
       method: 'POST',
@@ -1544,6 +1551,28 @@ async function main() {
   check(
     'share page renders the routing trace (B23)',
     html.includes('Routing trace') && html.includes('shortlisted') && html.includes('selected'),
+  )
+
+  // "Run this chat yourself" hands off with the opening ask PREFILLED — the
+  // visitor lands on the sentence the page just showed them, not a blank box.
+  check(
+    'share CTA carries the opening ask as ?prompt=',
+    html.includes(`/chat?prompt=${encodeURIComponent('Buy $2 of AAPL on Robinhood Chain')}`),
+  )
+  check(
+    'firstUserPromptOf takes the FIRST user turn, trimmed (assistant turns skipped)',
+    firstUserPromptOf([
+      { role: 'assistant', content: 'Hello.' },
+      { role: 'user', content: '  Buy $2 of AAPL on Robinhood Chain  ' },
+      { role: 'user', content: 'and again tomorrow' },
+    ]) === 'Buy $2 of AAPL on Robinhood Chain',
+  )
+  check('firstUserPromptOf: no user turn → null', firstUserPromptOf([{ role: 'assistant', content: 'Hello.' }]) === null)
+  check('firstUserPromptOf: blank ask → null', firstUserPromptOf([{ role: 'user', content: '   ' }]) === null)
+  check(
+    'firstUserPromptOf: a paste over the cap is dropped, never truncated',
+    firstUserPromptOf([{ role: 'user', content: 'x'.repeat(401) }]) === null &&
+      firstUserPromptOf([{ role: 'user', content: 'x'.repeat(400) }])?.length === 400,
   )
 
   // ── Signed-tx log: meta.signed write-back + share render ──────────────────
