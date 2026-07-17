@@ -66,9 +66,11 @@ export default function DashboardApprovalsPage() {
     <>
       <h1 className="dash__h1">Agent approvals</h1>
       <p className="dash__sub">
-        Off means your expense account refuses to pay that agent — toggles are enforcement, not
-        décor. Approving an agent allowlists its hosts; it also voids a signed grant until you
-        re-sign on the Overview.
+        Every agent is enabled out of the gate — your caps are the protection. Turning one off
+        means your expense account refuses to pay it (toggles are enforcement, not décor), and
+        Yeetful&rsquo;s own guarded venues stay allowed either way since you sign those
+        transactions yourself. Changing the set voids a signed grant until you re-sign on the
+        Overview.
       </p>
 
       {/* The account's daily budget — editable here for easy access (same cap

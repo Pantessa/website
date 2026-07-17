@@ -284,6 +284,13 @@ async function main() {
     'policy ON → the same call is blocked',
     grantViolation({ ...offPolicy, spendPolicyEnabled: true }, 'not.allowed.test', 9.99, 0) === 'NOT_ALLOWED',
   )
+  // The open-by-default wildcard: ['*'] allows any host — the caps stay the
+  // real gate (same call over the per-call cap is still refused).
+  check(
+    "wildcard allowlist ['*'] admits any host (caps still bite)",
+    grantViolation({ ...offPolicy, spendPolicyEnabled: true, allow: ['*'], perCallUsd: 200, perDayUsd: 200 }, 'brand.new.mcp.test', 9.99, 0) === null &&
+      grantViolation({ ...offPolicy, spendPolicyEnabled: true, allow: ['*'] }, 'brand.new.mcp.test', 9.99, 0) === 'OVER_PER_CALL',
+  )
   // API plumbing: PATCH the flag; it persists and does NOT void the signature
   // (it's just a power switch, not a change to the signed terms).
   const polOn = await (
@@ -331,28 +338,38 @@ async function main() {
     method: 'PATCH', headers: CJ, body: JSON.stringify({ allowAdd: 'not a host!' }),
   })
   check('allowAdd rejects a non-hostname (400)', badHost.status === 400)
-  // The regression the extraAllow column exists for: every approval toggle
-  // RE-DERIVES allow from the approved-agent set — without the union, that
-  // re-derive silently wipes a direct venue allow. Prove it survives, on a
-  // throwaway grant (newest-active is what the sync targets) so the main
-  // harness grant's allowlist stays untouched.
+  // Open-by-default semantics (2026-07-17 flip): every agent is enabled out
+  // of the gate. Un-curated → the ['*'] wildcard allowlist; the first
+  // explicit OFF replaces it with a concrete list that must keep BOTH the
+  // native venue hosts (always allowed — the user signs those) and any
+  // direct allows (extraAllow) — the silent-wipe regression the column
+  // exists for. Throwaway grant (newest-active is what the sync targets).
   {
+    const apDefault = (await (await fetch(`${BASE}/api/approvals`, { headers: C })).json()) as { serverId: string; approved: boolean }[]
+    check('approvals default ON for a fresh account (curate down)', apDefault.length > 0 && apDefault.every((r) => r.approved))
     const g2 = await (
       await fetch(`${BASE}/api/grants`, {
         method: 'POST', headers: BJ,
         body: JSON.stringify({ allow: ['a.example.test'], perCallUsd: 0.05, perDayUsd: 2 }),
       })
     ).json()
-    await fetch(`${BASE}/api/grants/${g2.id}`, { method: 'PATCH', headers: CJ, body: JSON.stringify({ allowAdd: 'uniswap.yeetful.com' }) })
+    await fetch(`${BASE}/api/grants/${g2.id}`, { method: 'PATCH', headers: CJ, body: JSON.stringify({ allowAdd: 'direct.example.test' }) })
     const dir = await (await fetch(`${BASE}/api/servers`)).json()
     const srv = dir.find((s: { callable: boolean }) => s.callable) ?? dir[0]
-    const approvalsBefore = (await (await fetch(`${BASE}/api/approvals`, { headers: C })).json()) as { serverId: string; approved: boolean }[]
-    const prior = approvalsBefore.find?.((r) => r.serverId === srv.id)?.approved ?? false
+    // Curate: toggle ONE agent off → concrete allowlist, everything else kept.
+    await fetch(`${BASE}/api/approvals`, { method: 'PUT', headers: CJ, body: JSON.stringify({ serverId: srv.id, approved: false }) })
+    const curated = await (await fetch(`${BASE}/api/grants/${g2.id}`, { headers: C })).json()
+    check(
+      'curated re-derive keeps direct allows + native venue hosts',
+      Array.isArray(curated.allow) &&
+        !curated.allow.includes('*') &&
+        curated.allow.includes('direct.example.test') &&
+        curated.allow.includes('uniswap.yeetful.com'),
+    )
+    // Un-curate: back to ON → the wildcard returns (new MCPs need no re-sync).
     await fetch(`${BASE}/api/approvals`, { method: 'PUT', headers: CJ, body: JSON.stringify({ serverId: srv.id, approved: true }) })
-    const afterSync = await (await fetch(`${BASE}/api/grants/${g2.id}`, { headers: C })).json()
-    check('approval re-derive keeps direct allows (extraAllow unions in)', Array.isArray(afterSync.allow) && afterSync.allow.includes('uniswap.yeetful.com'))
-    // Restore the world: approval back to its prior state, throwaway grant gone.
-    await fetch(`${BASE}/api/approvals`, { method: 'PUT', headers: CJ, body: JSON.stringify({ serverId: srv.id, approved: prior }) })
+    const open = await (await fetch(`${BASE}/api/grants/${g2.id}`, { headers: C })).json()
+    check('zero explicit OFFs → wildcard allowlist', Array.isArray(open.allow) && open.allow.includes('*'))
     await fetch(`${BASE}/api/grants/${g2.id}`, { method: 'DELETE', headers: C })
   }
 
@@ -1366,9 +1383,9 @@ async function main() {
 
   // ── Wallet-mode plan gate (policy enforced BEFORE signature requests) ─────
   console.log('— wallet plan gate')
-  // The spend policy now defaults OFF (unrestricted), so the enforcement tests
-  // below must opt the owner's grant INTO the policy first — otherwise the gate
-  // short-circuits and nothing is blocked (that bypass is covered above).
+  // The harness grant's policy was toggled OFF above, so the enforcement tests
+  // below opt it back IN first — otherwise the gate short-circuits and nothing
+  // is blocked (that bypass is covered above).
   await fetch(`${BASE}/api/grants/${grant.id}`, {
     method: 'PATCH', headers: CJ, body: JSON.stringify({ spendPolicyEnabled: true }),
   })

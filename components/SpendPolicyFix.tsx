@@ -14,21 +14,12 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { ExternalLink, Loader2, ShieldAlert } from 'lucide-react'
+import { VENUE_HOST_LABELS as HOST_LABEL } from '@/lib/venue-hosts'
 
 export interface PolicyBlockInfo {
   violation: string
   valueUsd: number | null
   host: string
-}
-
-/** Friendly names for Yeetful's own venue policy hosts — "uniswap.yeetful.com"
- *  reads as a mystery third party when it's really the native swap layer. */
-const HOST_LABEL: Record<string, string> = {
-  'uniswap.yeetful.com': "Yeetful's native Uniswap venue",
-  'lifi.yeetful.com': "Yeetful's LiFi settlement venue",
-  'api.cow.fi': 'the CoW Swap venue',
-  'aave-mcp.yeetful.com': 'the Aave agent',
-  'api.hyperliquid.xyz': 'the Hyperliquid venue',
 }
 
 interface GrantLite {
