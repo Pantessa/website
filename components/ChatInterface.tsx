@@ -3,7 +3,7 @@
 import { analytics } from '@/lib/analytics'
 import { Fragment, useState, useRef, useEffect, useSyncExternalStore } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Send, Zap, Check, Loader2, Bot, User, Boxes, MessageSquare, PanelRight, Sparkles, Copy } from 'lucide-react'
+import { Send, Zap, Check, Loader2, Bot, User, Boxes, ListChecks, MessageSquare, PanelRight, Sparkles, Copy } from 'lucide-react'
 import { useAccount, useSignTypedData, useConnect } from 'wagmi'
 import { useConnectModal } from '@rainbow-me/rainbowkit'
 import { getHostWalletServerState, getHostWalletState, HOST_WALLET_CONNECTOR_ID, subscribeHostWallet } from '@/lib/host-wallet'
@@ -27,6 +27,7 @@ import PaymentConfirm from '@/components/PaymentConfirm'
 import { voteRequestOf, voteCandidatesOf, voteProposalOf } from '@/lib/snapshot-vote'
 import { clarifyRequestOf } from '@/lib/clarify'
 import { useYeetfulStore, type RouterTraceEvent } from '@/lib/store'
+import { useRunningWork } from '@/lib/use-running-work'
 import { useSession } from '@/lib/session'
 import { latestWorkingContext, type WorkingContext } from '@/lib/working-context'
 import { EXAMPLE_PROMPTS } from '@/lib/examples'
@@ -224,6 +225,8 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
     recordSignedTxs,
     railTab,
     setRailTab,
+    composerPrefill,
+    setComposerPrefill,
     autoRouter,
     pushRouterTrace,
     setRouterTrace,
@@ -256,15 +259,28 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
     return () => mql.removeEventListener('change', on)
   }, [])
   const railVisible = isNarrow ? mobileMcpRailOpen : mcpRailOpen
+  // The collapsed JOBS chip's count — running jobs + recurring buys needing
+  // you. Polled only while the chip is actually visible (rail closed,
+  // first-party chat); the open rail runs its own instance for its tab badge.
+  const { badgeCount: runningBadge } = useRunningWork(!railVisible && !embedded)
   // A reopen chip names what it opens: clicking "MCPs"/"Chats" opens the rail
   // on that tab — no more anonymous panel icons. The chips only render while
   // the rail is closed; open, the rail's own tabs sit right there instead.
-  const openRail = (tab: 'mcps' | 'chats') => {
+  const openRail = (tab: 'mcps' | 'chats' | 'jobs') => {
     setRailTab(tab)
     isNarrow ? setMobileMcpRailOpen(true) : setMcpRailOpen(true)
   }
 
   const [input, setInput] = useState('')
+
+  // A rail row's action (a due recurring buy, a pause/cancel verb) lands in
+  // the composer — prefill only, the user always sends it. One-shot handoff.
+  useEffect(() => {
+    if (!composerPrefill) return
+    setInput(composerPrefill)
+    setComposerPrefill(null)
+    textareaRef.current?.focus()
+  }, [composerPrefill, setComposerPrefill])
   // App Mode's transcript view-switch: a command-bar send opens the transcript
   // over the panels; the pill flips back. Reset when the mode or chat changes.
   const appMode = workspaceMode === 'app' && !embedded
@@ -1030,6 +1046,17 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
             >
               <MessageSquare className="w-4 h-4" />
               <span className="text-[11px] whitespace-nowrap font-medium mono">CHATS</span>
+            </button>
+            <button
+              onClick={() => openRail('jobs')}
+              aria-label="Show jobs and recurring buys running on this wallet"
+              title="Jobs and recurring buys running on this wallet"
+              className="flex-shrink-0 flex items-center gap-1.5 px-2.5 min-h-[40px] md:min-h-[32px] rounded-lg border bg-[var(--surf-1)] border-[var(--line)] text-[color:var(--muted)] hover:text-white hover:border-[var(--line-2)] transition-colors"
+            >
+              <ListChecks className="w-4 h-4" />
+              <span className="text-[11px] whitespace-nowrap font-medium mono">
+                JOBS{runningBadge > 0 ? ` · ${runningBadge}` : ''}
+              </span>
             </button>
           </div>
         )}
