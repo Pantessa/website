@@ -45,7 +45,7 @@ import { jobContextFor } from '../lib/job-context'
 import { crossChainAgentOf, detectCrossChain, swapWorkingContext } from '../lib/swap-intent'
 import { encodeV4SwapCalldata, guardUniswapV4Build, type V4BuiltStep, type V4GuardExpectations, type V4PoolKey } from '../lib/uniswap-v4'
 import { guardLifiBuild, verifyLifiQuoteEcho, lifiPriceAcceptable, lifiRoutersFor, type LifiBuiltStep, type LifiGuardExpectations, type LifiQuote } from '../lib/lifi-venue'
-import { fundingNeedUsd, guardLifiBridgeBuild, lifiBridgeRoutersFor, verifyLifiBridgeEcho, type LifiBridgeExpectations, type LifiBridgeStep } from '../lib/lifi-bridge'
+import { fundingNeedUsd, guardLifiBridgeBuild, lifiBridgeRoutersFor, planRobinhoodFundingChips, verifyLifiBridgeEcho, type LifiBridgeExpectations, type LifiBridgeStep } from '../lib/lifi-bridge'
 import { parseRobinhoodFunding, parseSameChainSwapSegment } from '../lib/jobs'
 import { detectBalanceShortfall, fundingPlanUsd, planFundingChips, rankFundingSources, type FundingNeed, type FundingSource } from '../lib/funding-plan'
 import { compileDcaBuy, dcaRunChip, parseDcaCreate, parseDcaManage, parseDcaRun, periodKeyFor } from '../lib/dca'
@@ -2210,10 +2210,25 @@ async function main() {
     // The funding-plan parse + compile — the chips' resume string is the
     // contract, so the exact phrasing must compile deterministically.
     const fp = parseRobinhoodFunding('Fund robinhood chain with $12 from base including gas')
-    check('funding parse: "$12 from base including gas"', !!fp && fp.fundUsd === 12 && fp.gasIncluded)
+    check('funding parse: "$12 from base including gas"', !!fp && fp.fundUsd === 12 && fp.gasIncluded && fp.originChainId === 8453 && fp.originWord === 'Base')
     const fpNoGas = parseRobinhoodFunding('fund robinhood with 18 from base')
     check('funding parse: no-gas variant', !!fpNoGas && fpNoGas.fundUsd === 18 && !fpNoGas.gasIncluded)
     check('funding parse: unrelated messages → null', parseRobinhoodFunding('fund my hyperliquid account with $12') === null && parseRobinhoodFunding('bridge 0.01 eth to robinhood') === null)
+    // Ethereum + Arbitrum origins — the 2026-07-17 extension: $15 of
+    // Ethereum USDC was invisible to a Base-only scan and a $5 buy walled.
+    const fpEth = parseRobinhoodFunding('Fund robinhood chain with $7 from ethereum including gas')
+    const fpArb = parseRobinhoodFunding('fund robinhood with $9.5 from arbitrum')
+    const fpMain = parseRobinhoodFunding('fund robinhood chain with $4 from mainnet')
+    const fpArbShort = parseRobinhoodFunding('fund robinhood chain with $4 from arb')
+    check(
+      'funding parse: ethereum/arbitrum/mainnet/arb origins resolve',
+      !!fpEth && fpEth.originChainId === 1 && fpEth.originWord === 'Ethereum' && fpEth.gasIncluded &&
+        !!fpArb && fpArb.originChainId === 42161 && fpArb.originWord === 'Arbitrum' && fpArb.fundUsd === 9.5 &&
+        !!fpMain && fpMain.originChainId === 1 &&
+        !!fpArbShort && fpArbShort.originChainId === 42161,
+    )
+    check('funding parse: an unknown origin chain → null (never guesses)', parseRobinhoodFunding('fund robinhood chain with $12 from solana') === null)
+    check('bridge: Ethereum + Arbitrum LiFi diamonds allowlisted by default', lifiBridgeRoutersFor(1).length === 1 && lifiBridgeRoutersFor(42161).length === 1 && lifiBridgeRoutersFor(1)[0].toLowerCase() === DIAMOND.toLowerCase())
 
     const fundJob = compileJobAsk('Fund robinhood chain with $12 from base including gas, then buy $10 of AAPL')
     check(
@@ -2244,6 +2259,92 @@ async function main() {
     check('funding compile: a bare "buy $10 of AAPL" never lands in the jobs layer', compileJobAsk('buy $10 of AAPL, then buy $10 of TSLA') === null)
     const dust = compileJobAsk('Fund robinhood chain with $1 from base including gas, then buy $10 of AAPL')
     check('funding compile: amount below the gas leg refuses honestly', !!dust && 'problem' in dust)
+
+    // Origin flows into the step params — the runner passes it to
+    // buildLifiBridgeLeg, the refresh recipe re-quotes from the right chain.
+    const ethJob = compileJobAsk('Fund robinhood chain with $7 from ethereum including gas, then buy $5 of NVDA')
+    check(
+      'funding compile: ethereum origin lands in every leg\'s params',
+      !!ethJob && !('problem' in ethJob) && ethJob.steps.length === 4 &&
+        (ethJob.steps[0].params as { origin?: number }).origin === 1 &&
+        (ethJob.steps[1].params as { origin?: number; leg?: string }).origin === 1 &&
+        (ethJob.steps[1].params as { leg?: string }).leg === 'usdg' &&
+        (ethJob.steps[1].params as { usd?: number }).usd === 5.5,
+    )
+    // A combined two-origin ask: each fund segment gets its own legs +
+    // arrival wait; the gas leg rides ONLY the first segment.
+    const comboJob = compileJobAsk('Fund robinhood chain with $5 from ethereum including gas, then fund robinhood chain with $2.5 from base, then buy $5 of NVDA')
+    check(
+      'funding compile: combined origins → per-segment legs + waits, gas on the first only',
+      !!comboJob && !('problem' in comboJob) &&
+        JSON.stringify(comboJob.steps.map((s) => `${s.kind}:${s.builder}`)) ===
+          JSON.stringify(['sign:native-lifi-fund', 'sign:native-lifi-fund', 'wait:wait', 'sign:native-lifi-fund', 'wait:wait', 'sign:native-lifi-swap']) &&
+        (comboJob.steps[0].params as { leg?: string; origin?: number }).leg === 'gas' &&
+        (comboJob.steps[0].params as { origin?: number }).origin === 1 &&
+        (comboJob.steps[3].params as { leg?: string; origin?: number }).leg === 'usdg' &&
+        (comboJob.steps[3].params as { origin?: number }).origin === 8453,
+      comboJob && 'problem' in comboJob ? comboJob.problem : JSON.stringify(comboJob?.steps.map((s) => s.params)),
+    )
+    // A LONE funding segment compiles (the MCP-fallback's bridge-only chips
+    // carry no follow-up) — but a lone anything-else still returns null.
+    const lone = compileJobAsk('Fund robinhood chain with $7 from ethereum including gas')
+    check(
+      'funding compile: a lone funding segment is a job (bridge-only chips)',
+      !!lone && !('problem' in lone) && lone.steps.length === 3 && lone.steps[2].kind === 'wait' &&
+        compileJobAsk('buy $10 of AAPL') === null,
+    )
+
+    // The chip planner: multi-origin ranking, and every resume string is
+    // the contract — each must round-trip through compileJobAsk.
+    const chipOrigins = [
+      { chainId: 1, word: 'Ethereum', usd: 15 },
+      { chainId: 8453, word: 'Base', usd: 3 },
+    ]
+    const chips = planRobinhoodFundingChips({ origins: chipOrigins, needUsd: 7, gasIncluded: true, followup: 'buy $5 of NVDA' })
+    check(
+      'funding chips: richest covering origin leads and every resume compiles',
+      !!chips && chips.length >= 2 && /Ethereum/.test(chips[0].label) && /~\$7/.test(chips[0].label) &&
+        chips.every((c) => {
+          const j = compileJobAsk(c.resume)
+          return !!j && !('problem' in j)
+        }),
+      JSON.stringify(chips),
+    )
+    const altChips = planRobinhoodFundingChips({ origins: [{ chainId: 8453, word: 'Base', usd: 20 }, { chainId: 1, word: 'Ethereum', usd: 10 }], needUsd: 7, gasIncluded: false, followup: 'buy $5 of NVDA' })
+    check(
+      'funding chips: a second covering origin gets an "instead" chip',
+      !!altChips && altChips.some((c) => /Use Ethereum instead/.test(c.label)),
+      JSON.stringify(altChips),
+    )
+    const comboChips = planRobinhoodFundingChips({ origins: [{ chainId: 1, word: 'Ethereum', usd: 5 }, { chainId: 8453, word: 'Base', usd: 4 }], needUsd: 8.5, gasIncluded: true, followup: 'buy $5 of NVDA' })
+    const comboChipJob = comboChips ? compileJobAsk(comboChips[0].resume) : null
+    check(
+      'funding chips: no single origin covers → one combined chip that compiles (gas on leg 1)',
+      !!comboChips && comboChips.length === 1 && /Combine Ethereum \+ Base/.test(comboChips[0].label) &&
+        !!comboChipJob && !('problem' in comboChipJob) &&
+        (comboChipJob.steps[0].params as { leg?: string; origin?: number }).leg === 'gas' &&
+        (comboChipJob.steps[0].params as { origin?: number }).origin === 1 &&
+        (comboChipJob.steps[3].params as { origin?: number }).origin === 8453,
+      JSON.stringify({ comboChips, steps: comboChipJob && !('problem' in comboChipJob) ? comboChipJob.steps.map((s) => s.params) : comboChipJob }),
+    )
+    check('funding chips: the whole wallet short → null (caller writes the honest refusal)', planRobinhoodFundingChips({ origins: [{ chainId: 1, word: 'Ethereum', usd: 3 }], needUsd: 12, gasIncluded: true, followup: '' }) === null)
+    // The 10× sanity cap (live 2026-07-17: a whale scan offered a $7.5k
+    // half-balance chip against a $7 need).
+    const whaleChips = planRobinhoodFundingChips({ origins: [{ chainId: 8453, word: 'Base', usd: 15112 }, { chainId: 1, word: 'Ethereum', usd: 142 }], needUsd: 7, gasIncluded: true, followup: 'buy $5 of NVDA' })
+    check(
+      'funding chips: a whale balance skips half/all (10× cap) but keeps the alternative origin',
+      !!whaleChips && !whaleChips.some((c) => /Half|All/.test(c.label)) && whaleChips.some((c) => /Use Ethereum instead/.test(c.label)),
+      JSON.stringify(whaleChips),
+    )
+    const bridgeOnlyChips = planRobinhoodFundingChips({ origins: chipOrigins, needUsd: 7, gasIncluded: true, followup: '' })
+    check(
+      'funding chips: bridge-only resumes (no follow-up) still compile as jobs',
+      !!bridgeOnlyChips && bridgeOnlyChips.every((c) => {
+        const j = compileJobAsk(c.resume)
+        return !!j && !('problem' in j)
+      }),
+      JSON.stringify(bridgeOnlyChips),
+    )
   }
 
   // ── Aave supply: parse + reserve pick + the SAFETY guard on the build ─────
@@ -3665,8 +3766,23 @@ async function main() {
       'funding fallback: no chain / no trigger / covered balance → null (never guesses)',
       detectBalanceShortfall('Insufficient balance: needs 20 USDC but holds 3 USDC') === null &&
         detectBalanceShortfall('the wallet holds 20 USDC on Base') === null &&
-        detectBalanceShortfall('Insufficient USDG on Robinhood Chain: needs 20 USDG') === null &&
         detectBalanceShortfall('insufficient: needs 3 USDC on Base but the wallet holds 5 USDC') === null,
+    )
+    // Robinhood Chain shortfalls ARE detectable now (they ride the LiFi
+    // funding plan, not NEAR Intents): a named chain works, and a bare
+    // "Insufficient USDG" implies 4663 — USDG exists nowhere else. The
+    // EXACT live 2026-07-17 refusal shape is the fixture.
+    const detRhNamed = detectBalanceShortfall('Insufficient USDG on Robinhood Chain: needs 20 USDG')
+    const detRhLive = detectBalanceShortfall('Insufficient USDG: swapping 5 but the wallet holds 0.473742. Nothing was built.')
+    check(
+      'funding fallback: USDG shortfalls resolve to Robinhood Chain (named + bare live shape)',
+      !!detRhNamed && detRhNamed.chainId === 4663 && detRhNamed.token === 'USDG' && detRhNamed.shortfall === 20 &&
+        !!detRhLive && detRhLive.chainId === 4663 && detRhLive.token === 'USDG' && Math.abs(detRhLive.shortfall - 4.526258) < 1e-9,
+      JSON.stringify({ detRhNamed, detRhLive }),
+    )
+    check(
+      'funding fallback: the bare-amount form never fires without a trigger-named token',
+      detectBalanceShortfall('insufficient: swapping 5 but the wallet holds 0.4 on Base') === null,
     )
     const bridgeOnly = planFundingChips({ chainId: 42161, token: 'USDC', amountHuman: 17, followupResume: '', actionLabel: 'the custom action' }, 20, [src(8453, 'Base', 'USDC', 60)])
     check(
