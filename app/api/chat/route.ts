@@ -1468,10 +1468,14 @@ async function aavePolicyGate(
   const policy = grant ? toPolicy(grant) : null
   const spentToday = grant ? await spentTodayUsd(grant.id) : 0
   const { check: polCheck, violation } = policyCheck(valueUsd, policy, spentToday, AAVE_POLICY_HOST)
-  const guardrails = buildReport(valueUsd, [
-    { id: 'aave-build', level: 'block', ok: true, note: buildNote },
-    polCheck,
-  ])
+  const guardrails = buildReport(
+    valueUsd,
+    [
+      { id: 'aave-build', level: 'block', ok: true, note: buildNote },
+      polCheck,
+    ],
+    violation ? { violation, valueUsd, host: AAVE_POLICY_HOST } : null,
+  )
   if (violation && grant) {
     await recordLedger({
       grantId: grant.id,

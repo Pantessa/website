@@ -20,12 +20,23 @@ export interface GuardrailCheck {
   note: string
 }
 
+/** Structured spend-policy refusal — enough for a UI to offer the exact fix
+ *  (allow the host / raise the right cap) instead of a dead-end message. */
+export interface PolicyBlock {
+  violation: GrantViolation | 'VALUE_UNKNOWN'
+  valueUsd: number | null
+  /** The venue's policy host the spend was attributed to. */
+  host: string
+}
+
 export interface GuardrailReport {
   /** True when no block-level check failed — the artifact may be offered. */
   ok: boolean
   /** USD value of the action (venue-supplied heuristic); null = unpriceable. */
   valueUsd: number | null
   checks: GuardrailCheck[]
+  /** Present when the failed check is the spend policy — drives fix-it UI. */
+  policyBlock?: PolicyBlock
 }
 
 /** Longest validity we'll offer for signature — an unbounded signed order or
@@ -98,14 +109,35 @@ export function policyCheck(
       level: 'block',
       ok: !violation,
       note: violation
-        ? `Blocked by your spend policy: ${violation} ($${valueUsd.toFixed(2)}).`
+        ? `Blocked by your spend policy: ${policyBlockNote(violation, host)} ($${valueUsd.toFixed(2)}).`
         : `Within your spend policy ($${valueUsd.toFixed(2)}).`,
     },
     violation,
   }
 }
 
+/** The violation code in words a user can act on (the code alone read as a
+ *  dead end — "NOT_ALLOWED ($5.00)" told Nate nothing about WHAT to change). */
+export function policyBlockNote(violation: GrantViolation | 'VALUE_UNKNOWN', host: string): string {
+  switch (violation) {
+    case 'NOT_ALLOWED':
+      return `${host} isn't on your allowlist`
+    case 'OVER_PER_CALL':
+      return 'over your per-action cap'
+    case 'BUDGET_EXCEEDED':
+      return 'over your budget cap'
+    case 'ACCOUNT_FROZEN':
+      return 'your account is frozen'
+    case 'EXPIRED':
+      return 'your expense account expired'
+    case 'REVOKED':
+      return 'your expense account was revoked'
+    default:
+      return violation
+  }
+}
+
 /** Assemble the report. `ok` = no failed block-level check. */
-export function buildReport(valueUsd: number | null, checks: GuardrailCheck[]): GuardrailReport {
-  return { ok: checks.every((c) => c.ok || c.level !== 'block'), valueUsd, checks }
+export function buildReport(valueUsd: number | null, checks: GuardrailCheck[], policyBlock?: PolicyBlock | null): GuardrailReport {
+  return { ok: checks.every((c) => c.ok || c.level !== 'block'), valueUsd, checks, ...(policyBlock ? { policyBlock } : {}) }
 }

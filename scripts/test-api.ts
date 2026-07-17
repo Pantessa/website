@@ -302,6 +302,67 @@ async function main() {
   ).json()
   check('owner can switch the policy back off (Bearer)', polOff.spendPolicyEnabled === false)
 
+  // ── Direct host allows (the blocked-swap fix-it) ───────────────────────────
+  console.log('— direct host allow (allowAdd)')
+  // Native venue policy hosts (uniswap.yeetful.com, …) can never enter the
+  // approval-DERIVED allowlist — allowAdd is the way out of NOT_ALLOWED, and
+  // it lands in BOTH allow (enforced now) and extraAllow (survives re-derive).
+  const allowAdded = await (
+    await fetch(`${BASE}/api/grants/${grant.id}`, {
+      method: 'PATCH', headers: CJ, body: JSON.stringify({ allowAdd: 'Uniswap.Yeetful.com' }),
+    })
+  ).json()
+  check(
+    'PATCH allowAdd lands in allow + extraAllow (lowercased)',
+    allowAdded.allow?.includes('uniswap.yeetful.com') && allowAdded.extraAllow?.includes('uniswap.yeetful.com'),
+  )
+  check('allowAdd (allowlist change) voids the signature', allowAdded.signed === false)
+  const allowAgain = await (
+    await fetch(`${BASE}/api/grants/${grant.id}`, {
+      method: 'PATCH', headers: CJ, body: JSON.stringify({ allowAdd: 'uniswap.yeetful.com' }),
+    })
+  ).json()
+  check(
+    'allowAdd is idempotent (no duplicate hosts)',
+    allowAgain.allow?.filter((h: string) => h === 'uniswap.yeetful.com').length === 1 &&
+      allowAgain.extraAllow?.filter((h: string) => h === 'uniswap.yeetful.com').length === 1,
+  )
+  const badHost = await fetch(`${BASE}/api/grants/${grant.id}`, {
+    method: 'PATCH', headers: CJ, body: JSON.stringify({ allowAdd: 'not a host!' }),
+  })
+  check('allowAdd rejects a non-hostname (400)', badHost.status === 400)
+  // The regression the extraAllow column exists for: every approval toggle
+  // RE-DERIVES allow from the approved-agent set — without the union, that
+  // re-derive silently wipes a direct venue allow. Prove it survives, on a
+  // throwaway grant (newest-active is what the sync targets) so the main
+  // harness grant's allowlist stays untouched.
+  {
+    const g2 = await (
+      await fetch(`${BASE}/api/grants`, {
+        method: 'POST', headers: BJ,
+        body: JSON.stringify({ allow: ['a.example.test'], perCallUsd: 0.05, perDayUsd: 2 }),
+      })
+    ).json()
+    await fetch(`${BASE}/api/grants/${g2.id}`, { method: 'PATCH', headers: CJ, body: JSON.stringify({ allowAdd: 'uniswap.yeetful.com' }) })
+    const dir = await (await fetch(`${BASE}/api/servers`)).json()
+    const srv = dir.find((s: { callable: boolean }) => s.callable) ?? dir[0]
+    const approvalsBefore = (await (await fetch(`${BASE}/api/approvals`, { headers: C })).json()) as { serverId: string; approved: boolean }[]
+    const prior = approvalsBefore.find?.((r) => r.serverId === srv.id)?.approved ?? false
+    await fetch(`${BASE}/api/approvals`, { method: 'PUT', headers: CJ, body: JSON.stringify({ serverId: srv.id, approved: true }) })
+    const afterSync = await (await fetch(`${BASE}/api/grants/${g2.id}`, { headers: C })).json()
+    check('approval re-derive keeps direct allows (extraAllow unions in)', Array.isArray(afterSync.allow) && afterSync.allow.includes('uniswap.yeetful.com'))
+    // Restore the world: approval back to its prior state, throwaway grant gone.
+    await fetch(`${BASE}/api/approvals`, { method: 'PUT', headers: CJ, body: JSON.stringify({ serverId: srv.id, approved: prior }) })
+    await fetch(`${BASE}/api/grants/${g2.id}`, { method: 'DELETE', headers: C })
+  }
+
+  // ── Failed-job retry (the fix-it's rebuild) ────────────────────────────────
+  console.log('— job retry')
+  const retryMissing = await fetch(`${BASE}/api/jobs/job_does_not_exist/retry`, { method: 'POST', headers: CJ })
+  check('job retry: unknown job → 400 (never 500)', retryMissing.status === 400)
+  const retryAnon = await fetch(`${BASE}/api/jobs/job_does_not_exist/retry`, { method: 'POST' })
+  check('job retry: no auth → 401', retryAnon.status === 401)
+
   // ── Saved MCP shortlist (pick 1–3) ──────────────────────────────────────────
   console.log('— shortlist')
   const slNoAuth = await fetch(`${BASE}/api/shortlist`)
@@ -2689,6 +2750,22 @@ async function main() {
   // The core is venue-neutral: the same gate refuses a host outside the
   // allowlist — what Uniswap's adapter (A10) plugs into unchanged.
   check('guardrails: core policyCheck gates by HOST (venue-neutral)', policyCheck(10, gPolicy, 0, 'uniswap.yeetful.com').violation === 'NOT_ALLOWED')
+  // A refusal must be actionable: NOT_ALLOWED names the host it refused, and
+  // buildReport carries the structured policyBlock the fix-it UI reads.
+  check(
+    'guardrails: NOT_ALLOWED note names the refused host',
+    /uniswap\.yeetful\.com isn't on your allowlist/.test(policyCheck(10, gPolicy, 0, 'uniswap.yeetful.com').check.note),
+  )
+  const pbReport = buildReport(
+    10,
+    [policyCheck(10, gPolicy, 0, 'uniswap.yeetful.com').check],
+    { violation: 'NOT_ALLOWED', valueUsd: 10, host: 'uniswap.yeetful.com' },
+  )
+  check(
+    'guardrails: buildReport attaches the structured policyBlock',
+    !pbReport.ok && pbReport.policyBlock?.violation === 'NOT_ALLOWED' && pbReport.policyBlock.host === 'uniswap.yeetful.com',
+  )
+  check('guardrails: no policyBlock key when the policy passed', !('policyBlock' in buildReport(10, [policyCheck(10, gPolicy, 0, 'api.cow.fi').check])))
   const slipped = applySlippage(cowFixture, 100) // 1%
   check(
     'guardrails: applySlippage lowers the signed min-buy by bps',

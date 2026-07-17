@@ -71,9 +71,22 @@ export async function PATCH(req: NextRequest, { params }: Params) {
   if (Number(body.perDayUsd) > 0) data.perDayUsd = Number(body.perDayUsd)
   if (Number(body.perCallUsd) > 0) data.perCallUsd = Number(body.perCallUsd)
 
-  // Changing caps changes the signed terms — a prior EIP-712 signature no
-  // longer attests to this grant, so it's voided (re-sign to restore).
-  if (grant.signature && (data.perDayUsd !== undefined || data.perCallUsd !== undefined)) {
+  // Allow one host directly (the blocked-swap fix-it: native venue policy
+  // hosts can never enter the approval-DERIVED allowlist, so without this
+  // there is no way out of NOT_ALLOWED on a native build). Persisted in
+  // extraAllow so syncGrantAllowlist's next re-derive unions it back in.
+  const allowAdd = typeof body.allowAdd === 'string' ? body.allowAdd.trim().toLowerCase() : ''
+  if (allowAdd) {
+    if (!/^[a-z0-9][a-z0-9.-]{2,80}$/.test(allowAdd)) {
+      return NextResponse.json({ error: 'allowAdd must be a bare hostname.' }, { status: 400 })
+    }
+    if (!grant.allow.includes(allowAdd)) data.allow = [...grant.allow, allowAdd]
+    if (!grant.extraAllow.includes(allowAdd)) data.extraAllow = [...grant.extraAllow, allowAdd]
+  }
+
+  // Changing caps or the allowlist changes the signed terms — a prior EIP-712
+  // signature no longer attests to this grant, so it's voided (re-sign to restore).
+  if (grant.signature && (data.perDayUsd !== undefined || data.perCallUsd !== undefined || data.allow !== undefined)) {
     data.signature = null
   }
 

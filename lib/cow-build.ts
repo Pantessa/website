@@ -87,7 +87,7 @@ export async function buildGuardrailedOrder(params: GuardrailedOrderParams): Pro
   const spentToday = grant ? await spentTodayUsd(grant.id) : 0
   const { check: polCheck, violation } = policyCheck(valueUsd, policy, spentToday, COW_POLICY_HOST)
   checks.push(polCheck)
-  const guardrails = buildReport(valueUsd, checks)
+  const guardrails = buildReport(valueUsd, checks, violation ? { violation, valueUsd, host: COW_POLICY_HOST } : null)
 
   // A refusal is a first-class outcome — same ledger trail as chat denials.
   if (violation && grant) {

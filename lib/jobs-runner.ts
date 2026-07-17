@@ -27,12 +27,33 @@ import { publicClientFor, primaryStable } from '@/lib/chains'
 import { erc20Abi, formatEther } from 'viem'
 import { buildAaveRepayArtifact, buildAaveSupplyArtifact } from '@/lib/aave-exec'
 import { buildGuardedSwap } from '@/lib/swap-exec'
+import type { PolicyBlock } from '@/lib/tx-guardrails'
 import { buildLifiBridgeLeg, checkChainArrival, ROBINHOOD_CHAIN_ID, type ChainArrival, type FundingLeg } from '@/lib/lifi-bridge'
 import { buildLifiSwap } from '@/lib/lifi-venue'
 import { ensureTokenList } from '@/lib/token-list'
 
 export function jobsEnv(): string {
   return process.env.VERCEL_ENV ?? 'dev'
+}
+
+/** A guard refusal whose cause is the wallet's own spend policy — carries the
+ *  structured block so the failed step can offer the exact fix (allow the
+ *  venue host / raise the right cap) instead of a dead-end string. */
+export class PolicyRefusedError extends Error {
+  constructor(message: string, public policyBlock: PolicyBlock) {
+    super(message)
+    this.name = 'PolicyRefusedError'
+  }
+}
+
+const policyBlockOf = (guardrails: unknown): PolicyBlock | undefined =>
+  (guardrails as { policyBlock?: PolicyBlock } | null | undefined)?.policyBlock
+
+/** Throw the refusal, structured when the spend policy caused it. */
+function throwRefusal(reasons: string, guardrails: unknown): never {
+  const pb = policyBlockOf(guardrails)
+  if (pb) throw new PolicyRefusedError(reasons, pb)
+  throw new Error(reasons)
 }
 
 const NEAR_INTENTS_MCP = 'https://near-intents.yeetful.com/mcp'
@@ -144,7 +165,13 @@ export async function advanceJob(job: JobWithSteps): Promise<void> {
         })
         await prisma.job.update({ where: { id: fresh.id }, data: { status: 'waiting_signature' } })
       } catch (e) {
-        await prisma.jobStep.update({ where: { id: step.id }, data: { status: 'failed', result: { error: (e as Error).message } } })
+        // A spend-policy refusal persists its structured block so the JobCard
+        // can offer the exact fix + retry instead of a dead-end message.
+        const policyBlock = e instanceof PolicyRefusedError ? e.policyBlock : undefined
+        await prisma.jobStep.update({
+          where: { id: step.id },
+          data: { status: 'failed', result: { error: (e as Error).message, ...(policyBlock ? { policyBlock } : {}) } as object },
+        })
         await failJob(fresh.id, `"${step.title}" refused: ${(e as Error).message}`)
       }
       return
@@ -270,7 +297,7 @@ export async function buildSignArtifact(
     // venue simulation checks is the real, funded one.
     const p = params as { sellToken: string; buyToken: string; amountHuman: string; chainId: number }
     const built = await buildGuardedSwap({ sellToken: p.sellToken, buyToken: p.buyToken, amountHuman: p.amountHuman, from: wallet, chainId: Number(p.chainId) })
-    if (!built.ok) throw new Error(built.reasons)
+    if (!built.ok) throwRefusal(built.reasons, built.guardrails)
     return {
       artifact: { txChain: built.txChain, summary: built.summary },
       guardReport: built.guardrails,
@@ -303,7 +330,7 @@ export async function buildSignArtifact(
     const built = await buildLifiBridgeLeg({ leg: p.leg, usd: Number(p.usd), from: wallet })
     if (built.blocked) {
       const reasons = built.guardrails.checks.filter((c) => !c.ok && c.level === 'block').map((c) => c.note).join(' ')
-      throw new Error(reasons || 'a safety check refused the funding leg')
+      throwRefusal(reasons || 'a safety check refused the funding leg', built.guardrails)
     }
     return {
       artifact: {
@@ -340,7 +367,7 @@ export async function buildSignArtifact(
     const built = await buildLifiSwap({ sellToken: stable.symbol, buyToken: p.buyToken, amountHuman, from: wallet, chainId })
     if (built.blocked) {
       const reasons = built.guardrails.checks.filter((c) => !c.ok && c.level === 'block').map((c) => c.note).join(' ')
-      throw new Error(reasons || 'a safety check refused the swap')
+      throwRefusal(reasons || 'a safety check refused the swap', built.guardrails)
     }
     return {
       artifact: {
@@ -419,6 +446,25 @@ export async function completeSignStep(
   const claim = await prisma.jobStep.updateMany({ where: { id: step.id, status: 'offered' }, data: { status: 'done', result: result as object } })
   if (claim.count !== 1) return { ok: false, error: 'step is not awaiting a signature' }
   await prisma.job.update({ where: { id: jobId }, data: { currentStep: seq + 1, status: 'running' } })
+  const fresh = await getJobWithSteps(jobId)
+  if (fresh) await advanceJob(fresh).catch(() => {})
+  return { ok: true }
+}
+
+/** Re-arm a failed job for a fresh build of its failed step — the fix (a
+ *  policy change, a topped-up balance) happened OUTSIDE the job, so the step
+ *  goes back to pending and rebuilds through the same guarded path. Completed
+ *  steps keep their receipts; nothing is signed here. */
+export async function retryFailedJob(jobId: string, wallet: string): Promise<{ ok: boolean; error?: string }> {
+  const job = await getJobWithSteps(jobId)
+  if (!job || job.wallet !== wallet.toLowerCase()) return { ok: false, error: 'job not found' }
+  if (job.status !== 'failed') return { ok: false, error: 'only a failed job can be retried' }
+  const failed = job.steps.find((s) => s.status === 'failed')
+  if (!failed) return { ok: false, error: 'no failed step to retry' }
+  // Atomic re-arm: overlapping retries converge on one pending step.
+  const claim = await prisma.jobStep.updateMany({ where: { id: failed.id, status: 'failed' }, data: { status: 'pending' } })
+  if (claim.count !== 1) return { ok: false, error: 'already retried' }
+  await prisma.job.update({ where: { id: jobId }, data: { status: 'running', failReason: null, currentStep: failed.seq } })
   const fresh = await getJobWithSteps(jobId)
   if (fresh) await advanceJob(fresh).catch(() => {})
   return { ok: true }

@@ -226,8 +226,19 @@ export async function runDcaTurn(
     })
     if (dup) {
       const chip = dcaRunChip({ id: dup.id, buyUsd: dup.buyUsd, buyToken: dup.buyToken, cadence: dup.cadence as DcaCadence })
+      // Say where this period actually stands — "already have" alone read as
+      // "something bought itself"; arming a schedule never signs anything.
+      const dupCadence = dup.cadence as DcaCadence
+      const run = await prisma.dcaRun.findUnique({
+        where: { scheduleId_periodKey: { scheduleId: dup.id, periodKey: periodKeyFor(dupCadence) } },
+      })
+      const runJob = run?.jobId ? await prisma.job.findUnique({ where: { id: run.jobId }, select: { status: true } }) : null
+      const periodNote =
+        runJob?.status === 'done'
+          ? ` ${periodPhrase(dupCadence)[0].toUpperCase()}${periodPhrase(dupCadence).slice(1)}'s buy is signed and settled.`
+          : ` Nothing has been bought ${periodPhrase(dupCadence)} — a buy only ever happens when you sign it.`
       return {
-        reply: `📆 You already have a ${cadenceLabel(dup.cadence as DcaCadence)} $${dup.buyUsd} ${dup.buyToken} buy on ${chainName}${dup.status === 'paused' ? ' (paused)' : ''} — one schedule per token+cadence, so nothing doubles silently.`,
+        reply: `📆 You already have a ${cadenceLabel(dupCadence)} $${dup.buyUsd} ${dup.buyToken} buy on ${chainName}${dup.status === 'paused' ? ' (paused)' : ''} — one schedule per token+cadence, so nothing doubles silently.${periodNote} “List my dcas” shows every schedule.`,
         clarify: {
           question: 'Want this period’s buy, or should I change the schedule?',
           options: [

@@ -14,6 +14,7 @@ import SignVoteButton from '@/components/SignVoteButton'
 import SignOrderButton from '@/components/SignOrderButton'
 import SignHlActionButton from '@/components/SignHlActionButton'
 import JobCard from '@/components/JobCard'
+import SpendPolicyFix, { type PolicyBlockInfo } from '@/components/SpendPolicyFix'
 import GuardianPolicyCard from '@/components/GuardianPolicyCard'
 import SendTxButton from '@/components/SendTxButton'
 import SendTxChain from '@/components/SendTxChain'
@@ -1407,6 +1408,25 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
                         return clarify ? (
                           <ClarifyChips clarify={clarify} disabled={loading} onPick={(resume) => void handleSend(resume)} />
                         ) : null
+                      })()}
+                    {/* A spend-policy refusal (blocked build) is fixable right
+                        here: the guardrails report carries the structured
+                        block; "ask again" re-runs the ask that was refused. */}
+                    {msg.role === 'assistant' &&
+                      (() => {
+                        const pb = (msg.meta as { guardrails?: { policyBlock?: PolicyBlockInfo } } | undefined)?.guardrails?.policyBlock
+                        if (!pb) return null
+                        const prevAsk = currentChat.messages
+                          .slice(0, i)
+                          .reverse()
+                          .find((m) => m.role === 'user')?.content
+                        return (
+                          <SpendPolicyFix
+                            block={pb}
+                            onFixed={prevAsk ? () => void handleSend(prevAsk) : undefined}
+                            retryLabel="Ask again"
+                          />
+                        )
                       })()}
                     {/* Transactional ask, no wallet → one-click connect, then the
                         ask re-runs by itself. Hidden once a wallet is present. */}

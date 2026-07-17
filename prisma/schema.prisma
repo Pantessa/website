@@ -356,6 +356,13 @@ model SpendGrant {
   /// Exact hostnames this grant may pay (e.g. "tripadvisor.x402.paysponge.com").
   allow String[]
 
+  /// Hosts the owner allowed DIRECTLY (e.g. a native venue's policy host from
+  /// a blocked-swap fix-it). `allow` is re-DERIVED from agent approvals on
+  /// every toggle (lib/approvals syncGrantAllowlist), which would silently
+  /// wipe an ad-hoc allow — so direct allows persist here and the sync unions
+  /// them back in.
+  extraAllow String[] @default([]) @map("extra_allow")
+
   /// Caps in USD. perDay resets at local midnight (UTC); total is a lifetime cap.
   perCallUsd Float  @map("per_call_usd")
   perDayUsd  Float  @map("per_day_usd")

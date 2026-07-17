@@ -573,7 +573,7 @@ export async function buildLifiSwap(params: LifiSwapParams): Promise<LifiBuilt> 
   const spentToday = grant ? await spentTodayUsd(grant.id) : 0
   const { check: polCheck, violation } = policyCheck(valueUsd, policy, spentToday, LIFI_POLICY_HOST)
   checks.push(polCheck)
-  const guardrails = buildReport(valueUsd, checks)
+  const guardrails = buildReport(valueUsd, checks, violation ? { violation, valueUsd, host: LIFI_POLICY_HOST } : null)
   if (violation && grant) {
     await recordLedger({
       grantId: grant.id,

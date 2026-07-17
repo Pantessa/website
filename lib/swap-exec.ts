@@ -10,6 +10,7 @@
 // ─────────────────────────────────────────────────────────────────────────
 
 import { chainById } from '@/lib/chains'
+import type { PolicyBlock } from '@/lib/tx-guardrails'
 import { buildLifiSwap, NoLifiRouteError } from '@/lib/lifi-venue'
 import { ensureTokenList } from '@/lib/token-list'
 import { buildUniswapSwap, NoV3PoolError, type UniswapBuilt } from '@/lib/uniswap-venue'
@@ -34,9 +35,9 @@ export type GuardedSwapResult =
       }
       buildPath: string
       summary: string
-      guardrails: { ok: boolean; valueUsd?: number | null; checks: { id: string; ok: boolean; level: string; note: string }[] }
+      guardrails: { ok: boolean; valueUsd?: number | null; checks: { id: string; ok: boolean; level: string; note: string }[]; policyBlock?: PolicyBlock }
     }
-  | { ok: false; blockKind: 'policy' | 'execution'; reasons: string; guardrails?: unknown }
+  | { ok: false; blockKind: 'policy' | 'execution'; reasons: string; guardrails?: unknown; policyBlock?: PolicyBlock }
 
 const blockedOf = (guardrails: { checks: { ok: boolean; level: string; note: string }[] }) =>
   guardrails.checks.filter((c) => !c.ok && c.level === 'block').map((c) => c.note).join(' ') || 'a safety check failed'
@@ -63,7 +64,7 @@ export async function buildGuardedSwap(params: GuardedSwapParams): Promise<Guard
     if (!(err instanceof NoV3PoolError && chain.uniswapV4)) throw err
   }
   if (uni) {
-    if (uni.blocked) return { ok: false, blockKind: 'policy', reasons: blockedOf(uni.guardrails), guardrails: uni.guardrails }
+    if (uni.blocked) return { ok: false, blockKind: 'policy', reasons: blockedOf(uni.guardrails), guardrails: uni.guardrails, policyBlock: uni.guardrails.policyBlock }
     const steps = uni.approveTx
       ? [
           { label: 'approve', title: `Approve ${sell} to Uniswap's SwapRouter02`, tx: uni.approveTx },
@@ -82,7 +83,7 @@ export async function buildGuardedSwap(params: GuardedSwapParams): Promise<Guard
   // ── v4 fallback (chain pins it; tokenized-stock pools live there) ────────
   try {
     const v4 = await buildUniswapV4Swap({ sellToken, buyToken, amountHuman, from, chainId })
-    if (v4.blocked) return { ok: false, blockKind: 'policy', reasons: blockedOf(v4.guardrails), guardrails: v4.guardrails }
+    if (v4.blocked) return { ok: false, blockKind: 'policy', reasons: blockedOf(v4.guardrails), guardrails: v4.guardrails, policyBlock: v4.guardrails.policyBlock }
     return {
       ok: true,
       txChain: { summary: v4.summary, steps: v4.steps, refresh: { kind: 'uniswap-v4-swap', stepIndex: v4.steps.length - 1, params: refreshParams } },
@@ -99,7 +100,7 @@ export async function buildGuardedSwap(params: GuardedSwapParams): Promise<Guard
     // the chain's own settlement venue. Same order as chat.
     try {
       const lifi = await buildLifiSwap({ sellToken, buyToken, amountHuman, from, chainId })
-      if (lifi.blocked) return { ok: false, blockKind: 'policy', reasons: blockedOf(lifi.guardrails), guardrails: lifi.guardrails }
+      if (lifi.blocked) return { ok: false, blockKind: 'policy', reasons: blockedOf(lifi.guardrails), guardrails: lifi.guardrails, policyBlock: lifi.guardrails.policyBlock }
       return {
         ok: true,
         txChain: { summary: lifi.summary, steps: lifi.steps, refresh: { kind: 'lifi-swap', stepIndex: lifi.swapStepIndex, params: refreshParams } },

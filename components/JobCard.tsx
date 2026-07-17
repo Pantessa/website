@@ -13,6 +13,7 @@ import { Bot, CheckCircle2, ChevronDown, ChevronUp, Circle, Loader2, PenLine, Sh
 import SendTxButton from '@/components/SendTxButton'
 import SendTxChain from '@/components/SendTxChain'
 import SignHlActionButton from '@/components/SignHlActionButton'
+import SpendPolicyFix, { type PolicyBlockInfo } from '@/components/SpendPolicyFix'
 import { orderRequestOf, txChainOf, txRequestOf } from '@/lib/transaction-layer'
 
 interface StepRow {
@@ -111,6 +112,15 @@ export default function JobCard({
     void load()
   }
 
+  // Re-arm the failed step (after a policy fix, a top-up, …). Polling stopped
+  // when the job went terminal — restart it so the fresh offer appears live.
+  const retry = async () => {
+    await fetch(`/api/jobs/${jobId}/retry${q}`, { method: 'POST' }).catch(() => {})
+    if (timer.current) clearInterval(timer.current)
+    timer.current = setInterval(() => void load(), 4000)
+    void load()
+  }
+
   if (error) return <p className="mt-2 text-[12px] text-[color:var(--muted-2)]">{error}</p>
   if (!job) return <p className="mt-2 text-[12px] text-[color:var(--muted-2)]">Loading job…</p>
 
@@ -184,6 +194,14 @@ export default function JobCard({
                 </div>
                 {resultNote && (
                   <div className={`ml-6 text-[11.5px] ${step.status === 'failed' ? 'text-red-400' : 'text-[color:var(--muted-2)]'}`}>{resultNote.slice(0, 180)}</div>
+                )}
+                {/* A spend-policy refusal is fixable in place: the failed step
+                    persisted the structured block, so offer the exact policy
+                    change + a retry that rebuilds this step fresh. */}
+                {step.status === 'failed' && job.status === 'failed' && (step.result as { policyBlock?: PolicyBlockInfo } | null)?.policyBlock && (
+                  <div className="ml-6">
+                    <SpendPolicyFix block={(step.result as { policyBlock: PolicyBlockInfo }).policyBlock} onFixed={() => void retry()} retryLabel="Try the build again" />
+                  </div>
                 )}
                 {/* the embedded sign surface — the SAME buttons chat uses */}
                 {order && (
