@@ -71,8 +71,20 @@ export default function SpendPolicyFix({
   retryLabel?: string
 }) {
   const [grant, setGrant] = useState<GrantLite | null>(null)
-  const [phase, setPhase] = useState<'idle' | 'fixing' | 'fixed' | 'error'>('idle')
+  const [phase, setPhase] = useState<'idle' | 'fixing' | 'rebuilding' | 'error'>('idle')
   const [note, setNote] = useState('')
+
+  // The retry rebuilds INLINE, so when the fresh build is refused by the NEXT
+  // policy check the card never unmounts — the new refusal lands as a prop
+  // change on this same instance. Without this reset, the stale "allowed."
+  // note + rebuilding phase mask the next fix (Nate's DCA looked "stuck":
+  // allow-venue succeeded, then OVER_PER_CALL arrived into a card whose state
+  // said "rebuilding…" and offered no button).
+  const blockKey = `${block.violation}|${block.host}|${block.valueUsd ?? ''}`
+  useEffect(() => {
+    setPhase('idle')
+    setNote('')
+  }, [blockKey])
 
   // The owner's active grant, if this browser has a session. Two hops
   // (stats → grant) because only the grant GET carries today's spend,
@@ -109,9 +121,24 @@ export default function SpendPolicyFix({
           body: JSON.stringify(body),
         })
         if (!r.ok) throw new Error(String(r.status))
+        // Track the caps we just set so a follow-up suggestion (same block
+        // re-failing) computes from the NEW policy, not the stale fetch.
+        setGrant((g) =>
+          g
+            ? {
+                ...g,
+                ...(typeof body.perCallUsd === 'number' ? { perCallUsd: body.perCallUsd } : {}),
+                ...(typeof body.perDayUsd === 'number' ? { perDayUsd: body.perDayUsd } : {}),
+              }
+            : g,
+        )
         setNote(doneNote)
-        setPhase('fixed')
+        setPhase('rebuilding')
         await onFixed?.()
+        // The rebuild resolved (inline). If it was refused again, the new
+        // policyBlock prop resets this card for the next fix; if it succeeded,
+        // the host surface unmounts us. Either way, stop saying "rebuilding".
+        setPhase('idle')
       } catch {
         setNote("Couldn't update the policy — adjust it on the dashboard instead.")
         setPhase('error')
@@ -120,21 +147,38 @@ export default function SpendPolicyFix({
     [grant, onFixed],
   )
 
-  // The one suggested cap per violation — minimal-sufficient, never silent
-  // (the button says the exact number it sets).
+  // Suggested caps — minimal-sufficient, never silent (the button says the
+  // exact numbers it sets). checkGrant refuses on the FIRST violation only,
+  // but the component can see the whole picture: if the action's value also
+  // exceeds a cap, folding that raise into the same click saves the user a
+  // walk down the violation chain (allow venue → fail → raise cap → fail…).
   const usd = block.valueUsd ?? 0
   const perCallTarget = Math.max(1, Math.ceil(usd))
   const dayTarget = grant ? Math.max(grant.perDayUsd, Math.ceil(grant.spentTodayUsd + usd)) : 0
+  const capFixes: Record<string, number> = {}
+  const capWords: string[] = []
+  if (grant && usd > 0 && usd > grant.perCallUsd) {
+    capFixes.perCallUsd = perCallTarget
+    capWords.push(`per-action cap $${perCallTarget}`)
+  }
+  if (grant && usd > 0 && grant.spentTodayUsd + usd > grant.perDayUsd) {
+    capFixes.perDayUsd = dayTarget
+    capWords.push(`daily budget $${dayTarget}`)
+  }
 
   const action = (() => {
-    if (!grant || phase === 'fixed') return null
+    if (!grant) return null
     switch (block.violation) {
-      case 'NOT_ALLOWED':
-        return { label: `Allow ${HOST_LABEL[block.host] ?? block.host}`, run: () => patch({ allowAdd: block.host }, `${block.host} allowed.`) }
+      case 'NOT_ALLOWED': {
+        const label = `Allow ${HOST_LABEL[block.host] ?? block.host}${capWords.length ? ` + set ${capWords.join(', ')}` : ''}`
+        const done = `${block.host} allowed${capWords.length ? `; ${capWords.join(', ')}` : ''}.`
+        return { label, run: () => patch({ allowAdd: block.host, ...capFixes }, done) }
+      }
       case 'OVER_PER_CALL':
-        return { label: `Raise per-action cap to $${perCallTarget}`, run: () => patch({ perCallUsd: perCallTarget }, `Per-action cap set to $${perCallTarget}.`) }
-      case 'BUDGET_EXCEEDED':
-        return { label: `Raise daily budget to $${dayTarget}`, run: () => patch({ perDayUsd: dayTarget }, `Daily budget set to $${dayTarget}.`) }
+      case 'BUDGET_EXCEEDED': {
+        if (capWords.length === 0) return null
+        return { label: `Set ${capWords.join(' + ')}`, run: () => patch(capFixes, `Caps updated: ${capWords.join(', ')}.`) }
+      }
       default:
         return null
     }
@@ -148,7 +192,7 @@ export default function SpendPolicyFix({
           <p className="text-[12.5px] leading-relaxed">{explain(block)}</p>
           {note && <p className={`text-[12px] ${phase === 'error' ? 'text-red-400' : 'text-emerald-400'}`}>{note}</p>}
           <div className="flex flex-wrap items-center gap-2 pt-0.5">
-            {action && (
+            {action && phase !== 'rebuilding' && (
               <button
                 onClick={() => void action.run()}
                 disabled={phase === 'fixing'}
@@ -158,10 +202,12 @@ export default function SpendPolicyFix({
                 {action.label}
               </button>
             )}
-            {phase === 'fixed' && onFixed && (
-              <span className="text-[12px] text-[color:var(--muted)]">Rebuilding with the new policy…</span>
+            {phase === 'rebuilding' && onFixed && (
+              <span className="inline-flex items-center gap-1.5 text-[12px] text-[color:var(--muted)]">
+                <Loader2 className="w-3 h-3 animate-spin" aria-hidden /> Rebuilding with the new policy…
+              </span>
             )}
-            {phase !== 'fixed' && onFixed && (
+            {phase !== 'rebuilding' && onFixed && (
               <button
                 onClick={() => void onFixed()}
                 className="rounded-lg border border-[var(--line-2)] px-2.5 py-1 text-[12px] text-[color:var(--muted)] hover:text-white transition-colors"
