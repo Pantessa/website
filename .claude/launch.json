@@ -2,6 +2,16 @@
   "version": "0.0.1",
   "configurations": [
     {
+      "name": "web-aha-polish",
+      "runtimeExecutable": "bash",
+      "runtimeArgs": [
+        "-lc",
+        "cd /Users/nategeier/yeetful/website-aha-polish && exec npx next start -p 3241"
+      ],
+      "port": 3241,
+      "autoPort": false
+    },
+    {
       "name": "web-token-removal",
       "runtimeExecutable": "npx",
       "runtimeArgs": ["next", "start", "-p", "3345"],

@@ -28,15 +28,14 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     markPx = mids[policy.coin] != null ? Number(mids[policy.coin]) : null
     const pos = state.assetPositions.find((ap) => ap.position.coin === policy.coin)
     entryPx = pos ? Number(pos.position.entryPx) : null
-    if (entryPx != null) {
+    // A fixed-price trigger IS the trigger px — it never needed the entry
+    // (pct-move triggers do, since they're anchored to it).
+    if (policy.triggerMode === 'price') {
+      triggerPx = policy.triggerValue
+    } else if (entryPx != null) {
       const adverse = policy.kind === 'stop_loss'
       const below = (policy.side === 'long') === adverse
-      triggerPx =
-        policy.triggerMode === 'price'
-          ? policy.triggerValue
-          : below
-            ? entryPx * (1 - policy.triggerValue / 100)
-            : entryPx * (1 + policy.triggerValue / 100)
+      triggerPx = below ? entryPx * (1 - policy.triggerValue / 100) : entryPx * (1 + policy.triggerValue / 100)
     }
   } catch {
     /* live picture is best-effort — the card renders without it */

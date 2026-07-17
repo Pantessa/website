@@ -127,7 +127,7 @@ export default function JobCard({
   const doneCount = job.steps.filter((s) => s.status === 'done').length
   const statusLine =
     job.status === 'done'
-      ? '✓ complete'
+      ? 'complete'
       : job.status === 'failed'
         ? 'failed'
         : job.status === 'canceled'
@@ -137,6 +137,7 @@ export default function JobCard({
             : job.status === 'waiting_settlement'
               ? 'settling…'
               : 'running'
+  const live = ACTIVE.has(job.status)
 
   return (
     <div className="mt-2.5 rounded-xl border border-[var(--line)] overflow-hidden">
@@ -154,20 +155,44 @@ export default function JobCard({
         </span>
         <span className="flex items-center gap-2 flex-shrink-0">
           <span
-            className={`text-[11px] mono ${
-              job.status === 'done' ? 'text-emerald-400' : job.status === 'failed' ? 'text-red-400' : 'text-[color:var(--muted)]'
+            className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] font-medium ${
+              job.status === 'done'
+                ? 'border-emerald-500/40 text-emerald-400'
+                : job.status === 'failed'
+                  ? 'border-red-500/40 text-red-400'
+                  : job.status === 'waiting_signature'
+                    ? 'border-[color:color-mix(in_srgb,var(--accent)_45%,transparent)] text-[color:var(--accent)]'
+                    : 'border-[color:var(--line-2)] text-[color:var(--muted)]'
             }`}
           >
+            {live && job.status !== 'waiting_signature' && (
+              <span className="w-1.5 h-1.5 rounded-full animate-pulse" style={{ background: 'var(--accent)' }} aria-hidden />
+            )}
+            {job.status === 'done' && <CheckCircle2 className="w-3 h-3" aria-hidden />}
             {statusLine}
           </span>
           {expanded ? <ChevronUp className="w-3.5 h-3.5" aria-hidden /> : <ChevronDown className="w-3.5 h-3.5" aria-hidden />}
         </span>
       </button>
 
+      {/* progress — visible even collapsed; the card's heartbeat */}
+      <div className="h-0.5 mx-3 mb-0.5 rounded-full overflow-hidden" style={{ background: 'color-mix(in srgb, var(--fg) 8%, transparent)' }}>
+        <div
+          className="h-full rounded-full transition-[width] duration-700"
+          style={{
+            width: `${job.steps.length ? (doneCount / job.steps.length) * 100 : 0}%`,
+            background: job.status === 'failed' ? '#f87171' : 'var(--accent)',
+          }}
+        />
+      </div>
+
       {expanded && (
-        <div className="px-3 pb-2.5 space-y-1">
-          {job.steps.map((step) => {
+        <div className="px-3 pb-2.5">
+          {job.steps.map((step, i) => {
             const isCurrent = step.seq === job.currentStep && ACTIVE.has(job.status)
+            const prevDone = i > 0 && job.steps[i - 1].status === 'done'
+            const isFirst = i === 0
+            const isLast = i === job.steps.length - 1
             const order = step.status === 'offered' ? orderRequestOf(step.artifact) : null
             const chain = step.status === 'offered' && !order ? txChainOf(step.artifact) : null
             const tx = step.status === 'offered' && !order && !chain ? txRequestOf(step.artifact) : null
@@ -182,38 +207,44 @@ export default function JobCard({
                 : step.status === 'failed' && step.result
                   ? String((step.result as { error?: string }).error ?? '')
                   : ''
+            // Timeline rail: each row draws its own connector segments so
+            // progress reads as a line filling in, not floating icons — the
+            // segment above an icon turns emerald the moment the step before
+            // it lands.
+            const railUp = prevDone ? 'bg-emerald-500/60' : 'bg-[var(--line)]'
+            const railDown = step.status === 'done' ? 'bg-emerald-500/60' : 'bg-[var(--line)]'
             return (
-              <div key={step.seq} className={`rounded-lg px-2 py-1.5 ${isCurrent ? 'bg-[color:color-mix(in_srgb,var(--fg)_4%,transparent)]' : ''}`}>
-                <div className="flex items-center gap-2 text-[12.5px]">
+              <div key={step.seq} className={`flex gap-2 rounded-lg px-2 ${isCurrent ? 'bg-[color:color-mix(in_srgb,var(--fg)_4%,transparent)]' : ''}`}>
+                <div className="flex flex-col items-center w-4 flex-shrink-0 self-stretch">
+                  <span className={`w-px h-[7px] flex-none ${isFirst ? 'opacity-0' : railUp}`} aria-hidden />
                   <StepIcon step={step} isCurrent={isCurrent} />
-                  <span className={step.status === 'pending' ? 'text-[color:var(--muted-2)]' : ''}>{step.title}</span>
-                  {step.valueUsd != null && <span className="mono text-[11px] text-[color:var(--muted)]">${step.valueUsd.toFixed(2)}</span>}
-                  {step.kind === 'auto' && step.status !== 'failed' && (
-                    <span className="mono text-[10px] uppercase tracking-wider text-[color:var(--muted-2)]">auto</span>
-                  )}
+                  <span className={`w-px flex-1 min-h-[7px] ${isLast ? 'opacity-0' : railDown}`} aria-hidden />
                 </div>
-                {resultNote && (
-                  <div className={`ml-6 text-[11.5px] ${step.status === 'failed' ? 'text-red-400' : 'text-[color:var(--muted-2)]'}`}>{resultNote.slice(0, 180)}</div>
-                )}
-                {/* A spend-policy refusal is fixable in place: the failed step
-                    persisted the structured block, so offer the exact policy
-                    change + a retry that rebuilds this step fresh. */}
-                {step.status === 'failed' && job.status === 'failed' && (step.result as { policyBlock?: PolicyBlockInfo } | null)?.policyBlock && (
-                  <div className="ml-6">
-                    <SpendPolicyFix block={(step.result as { policyBlock: PolicyBlockInfo }).policyBlock} onFixed={() => void retry()} retryLabel="Try the build again" />
+                <div className="flex-1 min-w-0 py-1.5">
+                  <div className="flex items-center gap-2 text-[12.5px]">
+                    <span className={step.status === 'pending' ? 'text-[color:var(--muted-2)]' : ''}>{step.title}</span>
+                    {step.valueUsd != null && <span className="mono text-[11px] text-[color:var(--muted)]">${step.valueUsd.toFixed(2)}</span>}
+                    {step.kind === 'auto' && step.status !== 'failed' && (
+                      <span className="mono text-[10px] uppercase tracking-wider text-[color:var(--muted-2)]">auto</span>
+                    )}
                   </div>
-                )}
-                {/* the embedded sign surface — the SAME buttons chat uses */}
-                {order && (
-                  <div className="ml-6">
+                  {resultNote && (
+                    <div className={`text-[11.5px] ${step.status === 'failed' ? 'text-red-400' : 'text-[color:var(--muted-2)]'}`}>{resultNote.slice(0, 180)}</div>
+                  )}
+                  {/* A spend-policy refusal is fixable in place: the failed step
+                      persisted the structured block, so offer the exact policy
+                      change + a retry that rebuilds this step fresh. */}
+                  {step.status === 'failed' && job.status === 'failed' && (step.result as { policyBlock?: PolicyBlockInfo } | null)?.policyBlock && (
+                    <SpendPolicyFix block={(step.result as { policyBlock: PolicyBlockInfo }).policyBlock} onFixed={() => void retry()} retryLabel="Try the build again" />
+                  )}
+                  {/* the embedded sign surface — the SAME buttons chat uses */}
+                  {order && (
                     <SignHlActionButton
                       order={order}
                       onPlaced={(info) => void completeStep(step.seq, step.builder, { detail: info.detail, explorerUrl: info.explorerUrl }, info.valueUsd)}
                     />
-                  </div>
-                )}
-                {tx && (
-                  <div className="ml-6">
+                  )}
+                  {tx && (
                     <SendTxButton
                       tx={tx}
                       summary={(step.artifact as { summary?: string } | null)?.summary}
@@ -226,14 +257,12 @@ export default function JobCard({
                         )
                       }
                     />
-                  </div>
-                )}
-                {/* multi-tx sign steps (approve → bridge/swap) ride the SAME
-                    self-advancing chain card chat uses — deadline watch,
-                    per-step re-quotes and all; the job step completes when
-                    the FINAL tx of the chain confirms. */}
-                {chain && (
-                  <div className="ml-6">
+                  )}
+                  {/* multi-tx sign steps (approve → bridge/swap) ride the SAME
+                      self-advancing chain card chat uses — deadline watch,
+                      per-step re-quotes and all; the job step completes when
+                      the FINAL tx of the chain confirms. */}
+                  {chain && (
                     <SendTxChain
                       chain={chain}
                       // txs = every confirmed hash in the chain (approve AND
@@ -241,20 +270,27 @@ export default function JobCard({
                       // the full signing log the shared page renders.
                       onCompleted={(info) => void completeStep(step.seq, step.builder, { txHash: info.hash, txs: info.txs }, step.valueUsd)}
                     />
-                  </div>
-                )}
+                  )}
+                </div>
               </div>
             )
           })}
 
-          <div className="flex items-center justify-between pt-1 border-t border-[var(--line)]">
-            <span className="text-[11px] text-[color:var(--muted-2)]">
-              {job.status === 'failed' && job.failReason
-                ? job.failReason.slice(0, 160)
-                : job.status === 'done'
-                  ? `Money moved: $${(job.valueUsd ?? 0).toFixed(2)} — every step receipted.`
+          <div className="flex items-center justify-between pt-1.5 mt-1 border-t border-[var(--line)]">
+            {job.status === 'done' ? (
+              <span className="inline-flex items-center gap-1.5 text-[11px] text-emerald-400">
+                <CheckCircle2 className="w-3.5 h-3.5" aria-hidden />
+                <span>
+                  <span className="mono font-semibold">${(job.valueUsd ?? 0).toFixed(2)}</span> moved — every step receipted.
+                </span>
+              </span>
+            ) : (
+              <span className="text-[11px] text-[color:var(--muted-2)]">
+                {job.status === 'failed' && job.failReason
+                  ? job.failReason.slice(0, 160)
                   : 'Steps are built + guard-checked only when offered; waits verify settlement.'}
-            </span>
+              </span>
+            )}
             {ACTIVE.has(job.status) && (
               <button onClick={() => void cancel()} className="text-[11px] mono text-[color:var(--muted-2)] hover:text-red-400 transition-colors">
                 cancel
