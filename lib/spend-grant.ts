@@ -57,9 +57,13 @@ export function hostOf(url: string): string {
   }
 }
 
-/** Exact host match (extend with wildcard support when needed). */
+/** Exact host match, plus the open-by-default sentinel: `['*']` is the
+ *  un-curated allowlist (everything enabled out of the gate — the caps are
+ *  the protection). The moment an owner toggles any agent OFF, the sync
+ *  replaces the wildcard with a concrete curated list. */
 export function hostAllowed(host: string, allow: string[]): boolean {
-  return allow.includes(host.toLowerCase())
+  if (!host) return false
+  return allow.includes('*') || allow.includes(host.toLowerCase())
 }
 
 /**
