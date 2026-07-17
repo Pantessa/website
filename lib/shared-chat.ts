@@ -103,9 +103,27 @@ export interface SharedChatServers {
   /** The working set with internal `yeetful-tool-*` utilities hidden — the
    *  agents worth headlining (header chips, avatar fallback, OG medallions). */
   display: McpServer[]
-  /** Deep link that reopens /chat with this chat's full MCP set enabled —
-   *  the "Try Yeetful" handoff. Falls back to bare /chat. */
+  /** Deep link that reopens /chat with this chat's full MCP set enabled and
+   *  the opening ask prefilled — the "Run this chat yourself" handoff. Falls
+   *  back to bare /chat. */
   tryHref: string
+}
+
+/** Longest opening ask we'll carry in the handoff URL. Past this it's a paste,
+ *  not an ask: the link turns unshareable and ChatWorkspace would cut it at
+ *  2000 chars anyway. Drop it rather than prefill half a sentence. */
+const TRY_PROMPT_MAX = 400
+
+/**
+ * The ask that opened the chat — the first user turn, verbatim. "Run this chat
+ * yourself" should land on the same sentence the share page opens with, not an
+ * empty composer. ?prompt= only PREFILLS (ChatWorkspace never auto-sends), so a
+ * shared link can't fire someone else's money action.
+ */
+export function firstUserPromptOf(messages: Array<{ role: string; content: string }>): string | null {
+  const first = messages.find((m) => m.role === 'user')?.content.trim()
+  if (!first || first.length > TRY_PROMPT_MAX) return null
+  return first
 }
 
 /**
@@ -116,7 +134,7 @@ export interface SharedChatServers {
  */
 export async function getChatServers(chat: {
   activeServerIds: string[]
-  messages: Array<{ meta: unknown }>
+  messages: Array<{ role: string; content: string; meta: unknown }>
 }): Promise<SharedChatServers> {
   const idsOrSlugs = chat.activeServerIds.filter(Boolean)
   const receiptNames = [
@@ -149,7 +167,14 @@ export async function getChatServers(chat: {
   const extras = rows.filter((r) => !active.some((a) => a.id === r.id))
   const catalog = [...active, ...extras].map(toServer)
   const display = active.filter((r) => !r.slug.startsWith('yeetful-tool-')).map(toServer)
+  // Same shape as the landing/onboarding deep links: a bare comma between
+  // slugs, the ask percent-encoded. Both read back through URLSearchParams.
   const trySlugs = active.map((r) => r.slug)
-  const tryHref = trySlugs.length ? `/chat?mcps=${trySlugs.join(',')}` : '/chat'
+  const prompt = firstUserPromptOf(chat.messages)
+  const parts = [
+    ...(trySlugs.length ? [`mcps=${trySlugs.join(',')}`] : []),
+    ...(prompt ? [`prompt=${encodeURIComponent(prompt)}`] : []),
+  ]
+  const tryHref = parts.length ? `/chat?${parts.join('&')}` : '/chat'
   return { catalog, display, tryHref }
 }
