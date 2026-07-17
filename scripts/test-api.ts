@@ -3277,6 +3277,12 @@ async function main() {
     check('guardian: fresh wallet state is empty', stateRes.status === 200 && stateBody.delegation === null && Array.isArray(stateBody.policies) && stateBody.policies.length === 0)
     const noDelegation = await fetch(`${BASE}/api/guardian/policies`, { method: 'POST', headers: CJ, body: JSON.stringify({ coin: 'SYRUP', kind: 'stop_loss', triggerMode: 'price_move_pct', triggerValue: 10 }) })
     check('guardian: arming without a delegation → 409', noDelegation.status === 409)
+    // The rail's lean list (jobs-tab Protections section reads this).
+    const listAnon = await fetch(`${BASE}/api/guardian/policies`)
+    check('guardian: policy list without session → 401', listAnon.status === 401)
+    const listRes = await fetch(`${BASE}/api/guardian/policies`, { headers: C })
+    const listBody = await listRes.json()
+    check('guardian: fresh wallet policy list is empty', listRes.status === 200 && Array.isArray(listBody.policies) && listBody.policies.length === 0)
     const badDelegation = await fetch(`${BASE}/api/guardian/delegation`, { method: 'POST', headers: CJ, body: JSON.stringify({}) })
     check('guardian: delegation without signatureChainId → 400', badDelegation.status === 400)
     const cronAnon = await fetch(`${BASE}/api/cron/hl-guardian`)

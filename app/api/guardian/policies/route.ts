@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import prisma from '@/lib/db'
 import { getSessionAddress } from '@/lib/auth'
 import type { GuardianArmAsk } from '@/lib/hl-guardian'
 import { armGuardianPolicy } from '@/lib/hl-guardian-store'
@@ -8,6 +9,32 @@ export const dynamic = 'force-dynamic'
 
 const KINDS = new Set(['stop_loss', 'take_profit'])
 const MODES = new Set(['price_move_pct', 'price'])
+
+// The rail's lean list: every not-retired policy on this wallet, DB-only —
+// no venue reads, no run feed (the full picture stays /api/guardian and the
+// per-policy live read). Polled alongside /api/jobs + /api/dca, so it must
+// stay one cheap query.
+export async function GET() {
+  const addr = await getSessionAddress()
+  if (!addr) return NextResponse.json({ error: 'Not signed in.' }, { status: 401 })
+  const policies = await prisma.hlGuardianPolicy.findMany({
+    where: { wallet: addr, status: { not: 'done' } },
+    orderBy: { createdAt: 'desc' },
+    take: 20,
+    select: {
+      id: true,
+      coin: true,
+      side: true,
+      kind: true,
+      triggerMode: true,
+      triggerValue: true,
+      status: true,
+      lastChecked: true,
+      createdAt: true,
+    },
+  })
+  return NextResponse.json({ policies })
+}
 
 // Arm a policy. One rulebook for every surface (chat arms through the same
 // armGuardianPolicy): active delegation, live position on the coin, a
