@@ -40,6 +40,7 @@ import { keccak256, stringToBytes } from 'viem'
 import { isCacheable, routeCacheKey, getCached, setCached, clearRouteCache } from '../lib/route-cache'
 import { routeSavings } from '../lib/route-telemetry'
 import { portfolioFromToolResult, portfolioOf } from '../lib/portfolio-display'
+import { jobContextFor } from '../lib/job-context'
 import { crossChainAgentOf, detectCrossChain, swapWorkingContext } from '../lib/swap-intent'
 import { encodeV4SwapCalldata, guardUniswapV4Build, type V4BuiltStep, type V4GuardExpectations, type V4PoolKey } from '../lib/uniswap-v4'
 import { guardLifiBuild, verifyLifiQuoteEcho, lifiPriceAcceptable, lifiRoutersFor, type LifiBuiltStep, type LifiGuardExpectations, type LifiQuote } from '../lib/lifi-venue'
@@ -3402,6 +3403,31 @@ async function main() {
     } else {
       console.log('  ⚪ job token: SESSION_SECRET not available to the harness — token checks skipped')
     }
+
+    // ── Job context (the rail detail card's position/PnL block) ────────────
+    // Same auth contract as the job poll: owner or capability token.
+    const ctxAnon = await fetch(`${BASE}/api/jobs/nonexistent/context`)
+    const ctxOwner = await fetch(`${BASE}/api/jobs/nonexistent/context`, { headers: C })
+    check('job context: unauth → 401; owner + missing job → 404', ctxAnon.status === 401 && ctxOwner.status === 404, `got ${ctxAnon.status}/${ctxOwner.status}`)
+    if (sessionSecret) {
+      const ctxTok = await fetch(`${BASE}/api/jobs/job-token-probe/context?t=${signJobToken('job-token-probe')}`)
+      check('job context: capability token passes the gate (404 on missing job)', ctxTok.status === 404, `got ${ctxTok.status}`)
+    }
+    // The pure derivation: no venue builders → no network, but the generic
+    // rows and the needs-you note always land (values are formatted strings).
+    const genericCtx = await jobContextFor({
+      wallet: '0x0000000000000000000000000000000000000001',
+      status: 'waiting_signature',
+      currentStep: 0,
+      valueUsd: 12.5,
+      failReason: null,
+      steps: [{ builder: 'wait', params: {} }],
+    })
+    check(
+      'job context: generic derivation — money-moved row formatted, signature note present',
+      genericCtx.rows.some((r) => r.value === '$12.50') && /signature/i.test(genericCtx.note ?? ''),
+      JSON.stringify(genericCtx),
+    )
   }
 
   // ── Lido staking layer (parse + guided moment + guard + job step) ─────────
@@ -3670,6 +3696,13 @@ async function main() {
     const dcaRes = await fetch(`${BASE}/api/dca`, { headers: C })
     const dcaBody = await dcaRes.json()
     check('dca: GET /api/dca returns the schedules array', dcaRes.status === 200 && Array.isArray(dcaBody.schedules))
+
+    // The recurring-buy detail card's context: owner-only (schedules have no
+    // capability tokens), and resolution goes through the wallet-fenced list
+    // so another wallet's schedule id can only ever 404.
+    const dcaCtxAnon = await fetch(`${BASE}/api/dca/nonexistent/context`)
+    const dcaCtxOwner = await fetch(`${BASE}/api/dca/nonexistent/context`, { headers: C })
+    check('dca context: unauth → 401; owner + missing schedule → 404', dcaCtxAnon.status === 401 && dcaCtxOwner.status === 404, `got ${dcaCtxAnon.status}/${dcaCtxOwner.status}`)
   }
   {
     const create = parseDcaCreate('buy $10 of AAPL every week on robinhood')

@@ -1,14 +1,16 @@
 'use client'
 
-// The chat's single left rail. MCPs (the working set + directory) and Chats
-// (history) are TABS of one panel — they used to be two independent sliding
-// sidebars with near-identical collapse toggles, which read as the whole UI
-// shoving around. One rail, one collapse, labeled tabs.
+// The chat's single left rail: MCPs | Jobs | Chats as TABS of one panel —
+// ordered by importance (the working set, then running work with its
+// needs-you badge, then history: findable, never competing). A pinned
+// Dashboard row at the bottom is the labeled way out of chat. They used to
+// be two independent sliding sidebars with near-identical collapse toggles,
+// which read as the whole UI shoving around. One rail, one collapse.
 //
-// MCPs stays the primary tab (history is secondary — it never steals the
-// default). The free first-party fleet is the default MCP view; the paid x402
-// catalog sits behind the Free/Paid toggle. Clicking an MCP toggles it in/out
-// of the working set; the check button on an active row also removes it.
+// MCPs stays the primary tab (it never steals the default). The free
+// first-party fleet is the default MCP view; the paid x402 catalog sits
+// behind the Free/Paid toggle. Clicking an MCP toggles it in/out of the
+// working set; the check button on an active row also removes it.
 //
 // Layout model: in-flow motion.aside on desktop (persisted preference), fixed
 // overlay below lg (transient).
@@ -17,7 +19,7 @@ import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Boxes, Check, Globe, Info, ListChecks, Loader2, MessageSquare, PanelLeftClose, Plus, Trash2 } from 'lucide-react'
+import { Boxes, Check, Globe, Info, LayoutDashboard, ListChecks, Loader2, MessageSquare, PanelLeftClose, Plus, Trash2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useYeetfulStore } from '@/lib/store'
 import { useSession } from '@/lib/session'
@@ -229,21 +231,10 @@ export default function ChatRail() {
                   <Boxes className="w-3.5 h-3.5" />
                   MCPs <span className="mono text-[10px] text-[color:var(--muted-2)]">{active.length}</span>
                 </button>
-                {/* Three tabs now share the 248px rail — the Chats count came
-                    off (the list itself shows the history); the Jobs badge is
-                    the one number that must interrupt (things needing you). */}
-                <button
-                  role="tab"
-                  aria-selected={railTab === 'chats'}
-                  onClick={() => setRailTab('chats')}
-                  className={cn(
-                    'flex-1 flex items-center justify-center gap-1 rounded-[10px] px-1 py-1.5 text-[11px] font-medium transition-colors',
-                    railTab === 'chats' ? 'bg-[var(--surf-2)] text-white' : 'text-[color:var(--muted)] hover:text-white',
-                  )}
-                >
-                  <MessageSquare className="w-3.5 h-3.5" />
-                  Chats
-                </button>
+                {/* Three tabs share the 248px rail, ordered by importance:
+                    MCPs (the working set), Jobs (running work — its badge is
+                    the one number that must interrupt), then Chats (history:
+                    findable, never competing for attention). */}
                 <button
                   role="tab"
                   aria-selected={railTab === 'jobs'}
@@ -259,6 +250,19 @@ export default function ChatRail() {
                   {badgeCount > 0 && (
                     <span className="mono text-[10px] px-1 rounded-full bg-amber-500/15 text-amber-400">{badgeCount}</span>
                   )}
+                </button>
+                <button
+                  role="tab"
+                  aria-selected={railTab === 'chats'}
+                  onClick={() => setRailTab('chats')}
+                  title="Your chat history"
+                  className={cn(
+                    'flex-1 flex items-center justify-center gap-1 rounded-[10px] px-1 py-1.5 text-[11px] font-medium transition-colors',
+                    railTab === 'chats' ? 'bg-[var(--surf-2)] text-white' : 'text-[color:var(--muted)] hover:text-white',
+                  )}
+                >
+                  <MessageSquare className="w-3.5 h-3.5" />
+                  Chats
                 </button>
               </div>
               <button
@@ -416,6 +420,21 @@ export default function ChatRail() {
                 </div>
               </>
             )}
+
+            {/* Pinned dashboard entry — the way OUT of chat is a labeled,
+                permanent row, not just the tiny Y mark in the toolbar. */}
+            <Link
+              href="/dashboard"
+              onClick={closeOnMobile}
+              title="Yeetful dashboard — keys, embeds, billing"
+              className="flex-shrink-0 flex items-center gap-2.5 px-4 py-3 border-t border-[var(--line)] text-[color:var(--muted)] hover:text-white hover:bg-[var(--surf-1)] transition-colors"
+            >
+              <LayoutDashboard className="w-4 h-4 flex-shrink-0" aria-hidden />
+              <span className="flex-1 min-w-0">
+                <span className="block text-xs font-medium">Dashboard</span>
+                <span className="block text-[10px] text-[color:var(--muted-2)]">keys · embeds · billing</span>
+              </span>
+            </Link>
           </div>
         </motion.aside>
       )}

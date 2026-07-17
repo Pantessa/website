@@ -41,8 +41,8 @@ import ShareButton from '@/components/ShareButton'
 import EmbedThisChat from '@/components/EmbedThisChat'
 import ChainPicker from '@/components/ChainPicker'
 import { chainById } from '@/lib/chains'
-import ModeToggle from '@/components/ModeToggle'
 import AppModeWorkspace from '@/components/AppModeWorkspace'
+import JobDetailOverlay from '@/components/JobDetailOverlay'
 import Link from 'next/link'
 import ConnectWallet from '@/components/ConnectWallet'
 import { YeetfulMark } from '@/components/Logo'
@@ -1041,15 +1041,6 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
               <span className="text-[11px] whitespace-nowrap font-medium mono">MCPS · {activeServers.length}</span>
             </button>
             <button
-              onClick={() => openRail('chats')}
-              aria-label="Show your chat history"
-              title="Show your chat history"
-              className="flex-shrink-0 flex items-center gap-1.5 px-2.5 min-h-[40px] md:min-h-[32px] rounded-lg border bg-[var(--surf-1)] border-[var(--line)] text-[color:var(--muted)] hover:text-white hover:border-[var(--line-2)] transition-colors"
-            >
-              <MessageSquare className="w-4 h-4" />
-              <span className="text-[11px] whitespace-nowrap font-medium mono">CHATS</span>
-            </button>
-            <button
               onClick={() => openRail('jobs')}
               aria-label="Show jobs and recurring buys running on this wallet"
               title="Jobs and recurring buys running on this wallet"
@@ -1059,6 +1050,15 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
               <span className="text-[11px] whitespace-nowrap font-medium mono">
                 JOBS{runningBadge > 0 ? ` · ${runningBadge}` : ''}
               </span>
+            </button>
+            <button
+              onClick={() => openRail('chats')}
+              aria-label="Show your chat history"
+              title="Show your chat history"
+              className="flex-shrink-0 flex items-center gap-1.5 px-2.5 min-h-[40px] md:min-h-[32px] rounded-lg border bg-[var(--surf-1)] border-[var(--line)] text-[color:var(--muted)] hover:text-white hover:border-[var(--line-2)] transition-colors"
+            >
+              <MessageSquare className="w-4 h-4" />
+              <span className="text-[11px] whitespace-nowrap font-medium mono">CHATS</span>
             </button>
           </div>
         )}
@@ -1094,7 +1094,8 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
               <PanelRight className="w-4 h-4" />
             </button>
           )}
-          <ModeToggle />
+          {/* The Chat|App ModeToggle came off the toolbar (nav rethink,
+              2026-07-17) — App Mode stays in-tree behind ?mode=app. */}
           <ChainPicker />
           <EmbedThisChat slugs={activeServers.map((s) => s.slug)} />
           <ShareButton />
@@ -1105,6 +1106,10 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
           )}
         </div>
       )}
+
+      {/* The rail's job detail card (portaled — renders nothing until a
+          jobs-tab row opens it). First-party chat only. */}
+      {!embedded && <JobDetailOverlay />}
 
       {/* Messages area — or, in App Mode, the structured workspace (panels
           fed by the working set; the input below stays docked as the command

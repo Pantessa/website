@@ -8,6 +8,8 @@
 //
 // Acting on a row PREFILLS the composer (store.composerPrefill) — the same
 // contract as /chat?prompt=: the user always sends and signs themselves.
+// Clicking the row BODY opens the job detail card (store.jobDetail): the
+// live position/PnL around the job + its step card — for any job kind.
 
 import { CalendarClock, CheckCircle2, Loader2, PenLine, ShieldCheck, XCircle } from 'lucide-react'
 import { useRouter } from 'next/navigation'
@@ -42,13 +44,19 @@ function scheduleState(s: RunningSchedule): { word: string; tone: string } {
 
 export default function JobsRailTab({ onAct }: { onAct?: () => void }) {
   const router = useRouter()
-  const { setComposerPrefill } = useYeetfulStore()
+  const { setComposerPrefill, setJobDetail } = useYeetfulStore()
   const { jobs, schedules, signedOut, loaded } = useRunningWork(true)
 
   // A row's action lands in the composer — never auto-sends.
   const prefill = (prompt: string) => {
     setComposerPrefill(prompt)
     router.push('/chat')
+    onAct?.()
+  }
+
+  // The row body opens the detail card (position, PnL, pending signatures).
+  const openDetail = (detail: { type: 'job' | 'dca'; id: string }) => {
+    setJobDetail(detail)
     onAct?.()
   }
 
@@ -82,7 +90,19 @@ export default function JobsRailTab({ onAct }: { onAct?: () => void }) {
     const st = scheduleState(s)
     const chip = dcaRunChip({ id: s.id, buyUsd: s.buyUsd, buyToken: s.buyToken, cadence: s.cadence as DcaCadence })
     return (
-      <div className="px-2.5 py-2 rounded-xl hover:bg-[var(--surf-1)] transition-colors">
+      <div
+        role="button"
+        tabIndex={0}
+        onClick={() => openDetail({ type: 'dca', id: s.id })}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault()
+            openDetail({ type: 'dca', id: s.id })
+          }
+        }}
+        title="Open this recurring buy — what it's bought, your position, this period's state"
+        className="px-2.5 py-2 rounded-xl hover:bg-[var(--surf-1)] transition-colors cursor-pointer"
+      >
         <div className="flex items-center gap-2">
           <CalendarClock className="w-3.5 h-3.5 flex-shrink-0 text-[color:var(--muted)]" aria-hidden />
           <span className="flex-1 min-w-0 text-xs font-medium truncate">
@@ -94,20 +114,20 @@ export default function JobsRailTab({ onAct }: { onAct?: () => void }) {
           <span className="text-[10px] text-[color:var(--muted-2)]">{s.chainName}</span>
           <span className="flex-1" />
           {s.status === 'active' && s.period === 'due' && (
-            <button onClick={() => prefill(chip.prompt)} className="text-[10.5px] mono text-[color:var(--accent)] hover:underline">
+            <button onClick={(e) => { e.stopPropagation(); prefill(chip.prompt) }} className="text-[10.5px] mono text-[color:var(--accent)] hover:underline">
               buy now
             </button>
           )}
           {s.status === 'active' ? (
-            <button onClick={() => prefill(`pause my ${s.buyToken} dca`)} className="text-[10.5px] mono text-[color:var(--muted-2)] hover:text-white transition-colors">
+            <button onClick={(e) => { e.stopPropagation(); prefill(`pause my ${s.buyToken} dca`) }} className="text-[10.5px] mono text-[color:var(--muted-2)] hover:text-white transition-colors">
               pause
             </button>
           ) : (
-            <button onClick={() => prefill(`resume my ${s.buyToken} dca`)} className="text-[10.5px] mono text-[color:var(--muted-2)] hover:text-white transition-colors">
+            <button onClick={(e) => { e.stopPropagation(); prefill(`resume my ${s.buyToken} dca`) }} className="text-[10.5px] mono text-[color:var(--muted-2)] hover:text-white transition-colors">
               resume
             </button>
           )}
-          <button onClick={() => prefill(`cancel my ${s.buyToken} dca`)} className="text-[10.5px] mono text-[color:var(--muted-2)] hover:text-red-400 transition-colors">
+          <button onClick={(e) => { e.stopPropagation(); prefill(`cancel my ${s.buyToken} dca`) }} className="text-[10.5px] mono text-[color:var(--muted-2)] hover:text-red-400 transition-colors">
             cancel
           </button>
         </div>
@@ -118,7 +138,19 @@ export default function JobsRailTab({ onAct }: { onAct?: () => void }) {
   const JobRow = ({ j }: { j: RunningJob }) => {
     const doneCount = j.steps.filter((x) => x.status === 'done').length
     return (
-      <div className="px-2.5 py-2 rounded-xl hover:bg-[var(--surf-1)] transition-colors">
+      <div
+        role="button"
+        tabIndex={0}
+        onClick={() => openDetail({ type: 'job', id: j.id })}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault()
+            openDetail({ type: 'job', id: j.id })
+          }
+        }}
+        title="Open this job — your live position around it, every step, anything it needs from you"
+        className="px-2.5 py-2 rounded-xl hover:bg-[var(--surf-1)] transition-colors cursor-pointer"
+      >
         <div className="flex items-center gap-2">
           {jobDot(j.status)}
           <span className="flex-1 min-w-0 text-xs truncate" title={j.title}>

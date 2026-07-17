@@ -3224,6 +3224,8 @@
 
   /* Add-your-own-MCP modal panel — was a hardcoded near-black glass. */
   .addmcp__panel { background: color-mix(in srgb, var(--bg) 96%, var(--fg)); }
+  /* Job detail overlay panel — same theme-aware glass. */
+  .jobdetail__panel { background: color-mix(in srgb, var(--bg) 96%, var(--fg)); }
 
   /* Blog bar charts (inline SVG, attribute-styled) — re-ink on paper. */
   html[data-theme='light'] .blog__chart-svg line { stroke: rgba(16,21,18,0.15); }
