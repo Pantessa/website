@@ -13,8 +13,8 @@ import {
   seaportDomain,
   type SeaportOrderComponents,
 } from '@/lib/opensea'
-import { policyCheck } from '@/lib/tx-guardrails'
-import { getActiveGrant, recordLedger, spentTodayUsd, toPolicy } from '@/lib/grant-store'
+import { policyCheckInflow } from '@/lib/tx-guardrails'
+import { getActiveGrant, recordLedger, toPolicy } from '@/lib/grant-store'
 import { usdPerToken } from '@/lib/usd-probe'
 
 export const runtime = 'nodejs'
@@ -95,13 +95,14 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: `Refused at submission: ${verdict.reasons.join(' ')}` }, { status: 403 })
   }
 
-  // ── Spend-policy re-gate at NOW's totals ──────────────────────────────────
+  // ── Policy re-gate: a listing is an INFLOW (the seller receives), so only
+  //    the kill switches apply — never the caps or allowlist. Gating a sale's
+  //    proceeds behind the spend caps blocked a $1,831 sale with a $200 cap.
   const eth = await usdPerToken(chainId, 'ETH').catch(() => null)
   const valueUsd = eth ? Number(((Number(priceWei) / 1e18) * eth.usd).toFixed(2)) : null
   const grant = await getActiveGrant(from.toLowerCase())
   const policy = grant ? toPolicy(grant) : null
-  const spentToday = grant ? await spentTodayUsd(grant.id) : 0
-  const { violation } = policyCheck(valueUsd, policy, spentToday, OPENSEA_POLICY_HOST)
+  const { violation } = policyCheckInflow(valueUsd, policy)
   if (violation && grant) {
     await recordLedger({
       grantId: grant.id,
@@ -129,14 +130,18 @@ export async function POST(req: NextRequest) {
   const openseaUrl = `https://opensea.io/assets/${chainSlug}/${item.token}/${item.identifierOrCriteria}`
 
   if (grant) {
+    // amountUsd 0: the ledger sums drive spentTodayUsd, and sale PROCEEDS are
+    // not spend — recording the notional here silently ate the daily budget
+    // (one $1,831 listing would have zeroed a $200 day). The receipt keeps
+    // the value in its note; money-moved telemetry rides guardrails.valueUsd.
     await recordLedger({
       grantId: grant.id,
       orgId: grant.orgId ?? undefined,
       host: OPENSEA_POLICY_HOST,
       serviceName: 'OpenSea',
-      amountUsd: valueUsd ?? 0,
+      amountUsd: 0,
       ok: true,
-      note: `opensea listing placed: ${nft.name ?? `#${item.identifierOrCriteria}`} at ${(Number(priceWei) / 1e18).toFixed(4)} ETH`.slice(0, 200),
+      note: `opensea listing placed: ${nft.name ?? `#${item.identifierOrCriteria}`} at ${(Number(priceWei) / 1e18).toFixed(4)} ETH (~$${(valueUsd ?? 0).toFixed(2)} proceeds — inflow, not spend)`.slice(0, 200),
     })
   }
 

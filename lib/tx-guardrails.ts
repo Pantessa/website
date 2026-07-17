@@ -116,6 +116,34 @@ export function policyCheck(
   }
 }
 
+/**
+ * The INFLOW gate — for actions where the wallet RECEIVES value (an NFT
+ * sale's proceeds, a filled listing): the account pays NOTHING, so the caps
+ * and the allowlist don't apply — those govern what agents may PAY, and
+ * gating a $1,800 sale behind a $200 spend cap read as nonsense. Only the
+ * kill switches survive direction: a frozen or revoked account refuses
+ * everything. valueUsd still rides the report for the money-moved metric.
+ */
+export function policyCheckInflow(
+  valueUsd: number | null,
+  policy: GrantPolicy | null,
+): { check: GuardrailCheck; violation: GrantViolation | null } {
+  if (!policy) {
+    return { check: { id: 'policy', level: 'warn', ok: true, note: 'No spend policy on this wallet — not gated.' }, violation: null }
+  }
+  if (policy.status === 'revoked') {
+    return { check: { id: 'policy', level: 'block', ok: false, note: 'Your expense account is revoked — everything is refused.' }, violation: 'REVOKED' }
+  }
+  if (policy.paused) {
+    return { check: { id: 'policy', level: 'block', ok: false, note: 'Your account is frozen (kill switch) — everything is refused, whatever the direction.' }, violation: 'ACCOUNT_FROZEN' }
+  }
+  const usd = valueUsd != null ? ` (~$${valueUsd.toFixed(2)} to you)` : ''
+  return {
+    check: { id: 'policy', level: 'block', ok: true, note: `You RECEIVE on this one${usd} — spend caps don't apply to sale proceeds.` },
+    violation: null,
+  }
+}
+
 /** The violation code in words a user can act on (the code alone read as a
  *  dead end — "NOT_ALLOWED ($5.00)" told Nate nothing about WHAT to change). */
 export function policyBlockNote(violation: GrantViolation | 'VALUE_UNKNOWN', host: string): string {

@@ -31,6 +31,7 @@ import { buildSignableArtifact, isActionIntent, orderRequestOf, txRequestOf, txC
 import { resolveToken, buildCowOrderTypedData, cowOrderAction, buildCowLimitOrder, buildCowSubmitBody, describeCowOrder, describeAmount, formatAtoms, tokenDecimals, tokenLabel, humanToAtoms, applySlippage, COW_APP_DATA_JSON, GPV2_SETTLEMENT, type CowQuoteResult } from '../lib/cow'
 import { primeTokenList } from '../lib/token-list'
 import { pureChecks, policyCheck, orderValueUsd, buildReport } from '../lib/cow-guardrails'
+import { policyCheckInflow } from '../lib/tx-guardrails'
 import { parseSwapIntent } from '../lib/swap-intent'
 import { usdToTokenAmount } from '../lib/usd-probe'
 import { parseRobinhoodBridge, guardRobinhoodBridge, RH_L1_INBOX, ARB_SYS } from '../lib/robinhood-bridge'
@@ -294,6 +295,17 @@ async function main() {
     grantViolation({ ...offPolicy, spendPolicyEnabled: true, allow: ['*'], perCallUsd: 200, perDayUsd: 200 }, 'brand.new.mcp.test', 9.99, 0) === null &&
       grantViolation({ ...offPolicy, spendPolicyEnabled: true, allow: ['*'] }, 'brand.new.mcp.test', 9.99, 0) === 'OVER_PER_CALL',
   )
+  // INFLOWS (sale proceeds — NFT listings): the account pays nothing, so the
+  // caps and allowlist never apply; only the kill switches survive direction.
+  // A $1,831 sale under a $200 cap must PASS; a frozen account refuses it.
+  const inPolicy: GrantPolicy = { ...offPolicy, spendPolicyEnabled: true, allow: ['only.allowed.test'], perCallUsd: 200, perDayUsd: 200 }
+  check(
+    'inflow gate: sale over every cap + off-allowlist host still passes',
+    policyCheckInflow(1831.77, inPolicy).violation === null && policyCheckInflow(1831.77, inPolicy).check.ok,
+  )
+  check('inflow gate: unpriceable proceeds pass (no VALUE_UNKNOWN wall)', policyCheckInflow(null, inPolicy).violation === null)
+  check('inflow gate: frozen account refuses everything', policyCheckInflow(10, { ...inPolicy, paused: true }).violation === 'ACCOUNT_FROZEN')
+  check('inflow gate: revoked account refuses everything', policyCheckInflow(10, { ...inPolicy, status: 'revoked' }).violation === 'REVOKED')
   // API plumbing: PATCH the flag; it persists and does NOT void the signature
   // (it's just a power switch, not a change to the signed terms).
   const polOn = await (
