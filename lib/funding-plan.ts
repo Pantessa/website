@@ -30,6 +30,7 @@
 
 import { erc20Abi, formatEther, formatUnits } from 'viem'
 import { chainById, publicClientFor } from '@/lib/chains'
+import { fundingNeedUsd, planRobinhoodFundingChips, readFundingShortfall } from '@/lib/lifi-bridge'
 import { usdPerToken } from '@/lib/usd-probe'
 
 /** Chains the scanner reads — the intersection of lib/chains first-class
@@ -417,12 +418,20 @@ export async function offerFundingPlan(params: {
 const SHORTFALL_TRIGGER_RE = /\binsufficient\b|\bnot enough\b|\bholds only\b|\bbalance too low\b|\btop up\b/i
 const TOKEN_SYM = '[A-Z]{2,6}|[A-Z][a-z]?ETH'
 // "needs 20 USDC" / "requires ~20.5 USDC" / "staking 0.0002 ETH" / "bridging 1 ETH" / "this needs 20.000000 USDC"
-const NEEDED_RE = new RegExp(`\\b(?:needs?|requires?|staking|bridging|sending|supplying|repaying|depositing|short)\\s+~?\\$?(\\d+(?:\\.\\d+)?)\\s*(${TOKEN_SYM})\\b`)
+const NEEDED_RE = new RegExp(`\\b(?:needs?|requires?|swapping|staking|bridging|sending|supplying|repaying|depositing|short)\\s+~?\\$?(\\d+(?:\\.\\d+)?)\\s*(${TOKEN_SYM})\\b`)
+// The bare-amount fallback ("Insufficient USDG: swapping 5 but …") — only
+// consulted when the trigger itself named the token, so the number can
+// stand alone without ambiguity about whose unit it is.
+const NEEDED_BARE_RE = /\b(?:needs?|requires?|swapping|staking|bridging|sending|supplying|repaying|depositing|short)\s+~?\$?(\d+(?:\.\d+)?)\b/
 // "holds 3.000000 USDC" / "wallet holds only 0 ETH" / "has 3 USDC" / "you have 3 USDC"
 const HELD_RE = new RegExp(`\\b(?:holds?|have|has)\\s+(?:only\\s+)?~?\\$?(\\d+(?:\\.\\d+)?)\\s*(${TOKEN_SYM})?\\b`)
-// "insufficient USDC" / "not enough ETH" — the token when NEEDED_RE misses
-const TRIGGER_TOKEN_RE = new RegExp(`\\b(?:insufficient|not enough)\\s+(?:balance\\s+of\\s+)?(${TOKEN_SYM})\\b`)
-const CHAIN_HINT_RE = /\bon\s+(base|arbitrum(?:\s+one)?|arb|ethereum|eth\s+mainnet|mainnet)\b/i
+// "insufficient USDC" / "Insufficient USDG" / "not enough ETH" — the token
+// when NEEDED_RE misses. Case-insensitive on the trigger words only; the
+// captured symbol is re-validated as a real uppercase token in code (the
+// live 2026-07-17 refusal opened with a capital I and silently missed).
+const TRIGGER_TOKEN_RE = new RegExp(`\\b(?:insufficient|not enough)\\s+(?:balance\\s+of\\s+)?(${TOKEN_SYM})\\b`, 'i')
+const TOKEN_SYM_STRICT_RE = /^(?:[A-Z]{2,6}|[A-Z][a-z]?ETH)$/
+const CHAIN_HINT_RE = /\bon\s+(base|arbitrum(?:\s+one)?|arb|ethereum|eth\s+mainnet|mainnet|robinhood(?:\s+chain)?)\b/i
 
 const CHAIN_HINT_IDS: Record<string, number> = {
   base: 8453,
@@ -432,6 +441,8 @@ const CHAIN_HINT_IDS: Record<string, number> = {
   ethereum: 1,
   'eth mainnet': 1,
   mainnet: 1,
+  robinhood: 4663,
+  'robinhood chain': 4663,
 }
 
 export interface DetectedShortfall {
@@ -446,18 +457,31 @@ export interface DetectedShortfall {
  * purpose: no trigger word, no token, no PLANNABLE chain, or no positive
  * shortfall → null (the failure surfaces as-is). The chain must be named —
  * guessing where a stranger MCP wanted funds is how money gets stranded.
+ * The ONE inference allowed: a USDG shortfall with no chain named is
+ * Robinhood Chain — USDG exists nowhere else in the registry (live
+ * 2026-07-17: the robinhood MCP's "Insufficient USDG" refusal named no
+ * chain and a funded wallet hit a wall).
  */
 export function detectBalanceShortfall(text: string): DetectedShortfall | null {
   if (!text || !SHORTFALL_TRIGGER_RE.test(text)) return null
-  const chainHint = text.match(CHAIN_HINT_RE)
-  if (!chainHint) return null
-  const chainId = CHAIN_HINT_IDS[chainHint[1].toLowerCase().replace(/\s+/g, ' ')]
-  if (!chainId || !FUNDING_CHAIN_WORD[chainId]) return null
 
+  const triggerRaw = text.match(TRIGGER_TOKEN_RE)?.[1] ?? null
+  const triggerToken = triggerRaw && TOKEN_SYM_STRICT_RE.test(triggerRaw) ? triggerRaw : null
   const needed = text.match(NEEDED_RE)
-  const token = needed?.[2] ?? text.match(TRIGGER_TOKEN_RE)?.[1] ?? null
-  if (!token || !needed) return null
-  const neededAmt = Number(needed[1])
+  // The bare-amount form is only trusted when the trigger named the token.
+  const neededBare = triggerToken ? text.match(NEEDED_BARE_RE) : null
+  const token = needed?.[2] ?? triggerToken
+  const neededAmt = needed ? Number(needed[1]) : neededBare ? Number(neededBare[1]) : null
+  if (!token || neededAmt === null) return null
+
+  const chainHint = text.match(CHAIN_HINT_RE)
+  const chainId = chainHint
+    ? CHAIN_HINT_IDS[chainHint[1].toLowerCase().replace(/\s+/g, ' ')]
+    : token.toUpperCase() === 'USDG'
+      ? 4663
+      : undefined
+  if (!chainId || !(FUNDING_CHAIN_WORD[chainId] || chainId === 4663)) return null
+
   const held = text.match(HELD_RE)
   // A held-match naming a DIFFERENT token is someone else's number.
   const heldAmt = held && (!held[2] || held[2].toUpperCase() === token.toUpperCase()) ? Number(held[1]) : 0
@@ -486,6 +510,52 @@ export async function fundingFallbackForFailures(
   for (const f of failures) {
     const detected = detectBalanceShortfall(f.note)
     if (!detected) continue
+
+    // Robinhood Chain shortfalls ride the LiFi funding plan (NEAR Intents
+    // doesn't deliver there): scan Base/Ethereum/Arbitrum USDC and offer
+    // bridge-only chips — a lone funding segment compiles as a job
+    // (lib/jobs.ts), and the user re-asks their action once funds land.
+    if (detected.chainId === 4663) {
+      if (detected.token !== 'USDG') continue // only the USDG plan is probed there
+      let scan: Awaited<ReturnType<typeof readFundingShortfall>>
+      try {
+        scan = await readFundingShortfall(user)
+      } catch {
+        trace?.({ type: 'note', level: 'warn', label: 'funding fallback: Robinhood Chain balance reads unavailable — surfacing the failure as-is' })
+        return null
+      }
+      const includeGas = !scan.hasGas
+      const needUsd = fundingNeedUsd(detected.shortfall, includeGas)
+      const chips = planRobinhoodFundingChips({ origins: scan.origins, needUsd, gasIncluded: includeGas, followup: '' })
+      const holdings = scan.origins.map((o) => `~$${o.usd} of USDC on ${o.word}`).join(', ')
+      if (!chips) {
+        if (scan.failedOrigins.length > 0) return null // partial scan must not claim an empty wallet
+        trace?.({ type: 'note', level: 'warn', label: `funding fallback: USDG short on Robinhood Chain and scanned USDC (${holdings || 'none'}) can't cover the ~$${needUsd} plan — honest refusal` })
+        return {
+          offer: null,
+          contextBlock:
+            `### Funding scan (after the ${f.name} failure)\nAcross Base, Ethereum, and Arbitrum I can see ${holdings || 'no USDC'} — the smallest plan for this moves ~$${needUsd} onto Robinhood Chain (bridge fees${includeGas ? ' and a gas leg' : ''} included). ` +
+            `Weave this into the failure explanation — the user should know exactly what they hold, per chain, and what the smallest plan needs.`,
+        }
+      }
+      chips.push({ label: 'Not now', resume: 'Never mind — leave my USDC where it is.' })
+      trace?.({ type: 'status', label: `funding fallback claimed the turn: USDG short on Robinhood Chain after the ${f.name} failure — offering ${chips.length - 1} LiFi funding path(s) (~$${needUsd} needed)` })
+      return {
+        offer: {
+          reply:
+            `You don't have enough USDG on Robinhood Chain for that yet — but you're holding ${holdings}. ` +
+            `I can bridge it over (LiFi-routed, delivered to your own address, arrives in seconds)${includeGas ? ', drop in a little ETH so Robinhood Chain gas is covered,' : ''} — every step built and guard-checked when it's your turn to sign. Once it settles, ask again and I'll build the trade with the funds in place.`,
+          clarify: { question: 'Fund Robinhood Chain from another chain?', options: chips.slice(0, 4) },
+          buildPath: 'native-lifi-fund-offer',
+        },
+        contextBlock:
+          `### Funding options found (after the ${f.name} failure)\n` +
+          `The failed call was short of USDG on Robinhood Chain, but the wallet holds USDC on other chains. The system RENDERS funding chips directly under your reply (this is guaranteed — never hedge about whether they appear, never add placeholder lines about them). ` +
+          `Tell the user the action couldn't be funded yet, that the chips below bridge the money over (they sign, delivered to their own address), and that once it settles they should re-ask so the action rebuilds with funds in place. ` +
+          `Do NOT invent your own bridge instructions, amounts, or addresses.`,
+      }
+    }
+
     const offer = await offerFundingPlan({
       user,
       need: {

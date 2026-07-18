@@ -326,8 +326,9 @@ export async function buildSignArtifact(
     // baseline) at offer time. The artifact carries a txChain so the JobCard
     // embeds the same self-advancing SendTxChain chat uses, refresh recipe
     // included (LiFi quotes go stale in ~90s — the deadline watch re-quotes).
-    const p = params as { leg: FundingLeg; usd: number }
-    const built = await buildLifiBridgeLeg({ leg: p.leg, usd: Number(p.usd), from: wallet })
+    const p = params as { leg: FundingLeg; usd: number; origin?: number }
+    const origin = Number(p.origin ?? 8453)
+    const built = await buildLifiBridgeLeg({ leg: p.leg, usd: Number(p.usd), from: wallet, origin })
     if (built.blocked) {
       const reasons = built.guardrails.checks.filter((c) => !c.ok && c.level === 'block').map((c) => c.note).join(' ')
       throwRefusal(reasons || 'a safety check refused the funding leg', built.guardrails)
@@ -337,7 +338,7 @@ export async function buildSignArtifact(
         txChain: {
           summary: built.summary,
           steps: built.steps,
-          refresh: { kind: 'lifi-bridge', stepIndex: built.bridgeStepIndex, params: { leg: p.leg, usd: String(p.usd) } },
+          refresh: { kind: 'lifi-bridge', stepIndex: built.bridgeStepIndex, params: { leg: p.leg, usd: String(p.usd), origin: String(origin) } },
         },
         summary: built.summary,
         arrival: built.arrival as unknown as Record<string, unknown>,

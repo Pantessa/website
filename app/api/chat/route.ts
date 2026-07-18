@@ -81,7 +81,7 @@ import { parseNftAsk, buildNftTransfer, buildNftListing } from '@/lib/nft-layer'
 import { buildUniswapSwap, NoV3PoolError } from '@/lib/uniswap-venue'
 import { buildUniswapV4Swap, NoV4PoolError, GatedV4PoolError } from '@/lib/uniswap-v4'
 import { buildLifiSwap, NoLifiRouteError } from '@/lib/lifi-venue'
-import { fundingNeedUsd, readFundingShortfall, ROBINHOOD_CHAIN_ID } from '@/lib/lifi-bridge'
+import { fundingNeedUsd, planRobinhoodFundingChips, readFundingShortfall, ROBINHOOD_CHAIN_ID } from '@/lib/lifi-bridge'
 import { resolveToken, tokenDecimals, humanToAtoms } from '@/lib/cow'
 import { ensureTokenList } from '@/lib/token-list'
 import { resolveProposal } from '@/lib/snapshot-read'
@@ -2132,14 +2132,15 @@ async function prepareSwapTurn(intent: SwapIntent, walletAddress: string | undef
     })
   }
   // ── Robinhood funding plan ── an unfunded buy on Robinhood Chain is not a
-  // dead end when the money is sitting on Base: LiFi routes Base USDC →
-  // USDG (and a gas leg → native ETH) directly onto Robinhood Chain in
-  // seconds (probed live 2026-07-15), so instead of building a swap the
-  // wallet can't pay for, offer to convert the Base balance — the user's
-  // pick compiles into a multi-step JOB (fund → wait → buy) via the chips'
-  // resume messages (lib/jobs.ts parseRobinhoodFunding). Three balance
-  // reads decide it; RPC trouble falls through to the normal build, which
-  // fails closed on its own.
+  // dead end when the money is sitting on Base, Ethereum, or Arbitrum:
+  // LiFi routes USDC → USDG (and a gas leg → native ETH) directly onto
+  // Robinhood Chain in seconds from all three origins (Base probed live
+  // 2026-07-15, Ethereum + Arbitrum 2026-07-17), so instead of building a
+  // swap the wallet can't pay for, offer to convert whichever origin's
+  // USDC covers it — the user's pick compiles into a multi-step JOB
+  // (fund → wait → buy) via the chips' resume messages (lib/jobs.ts
+  // parseRobinhoodFunding). RPC trouble falls through to the normal
+  // build, which fails closed on its own.
   const rhStable = chainId === ROBINHOOD_CHAIN_ID && intent.mode !== 'limit' ? primaryStable(chainId) : null
   if (rhStable && intent.sellToken.toUpperCase() === rhStable.symbol.toUpperCase()) {
     try {
@@ -2150,37 +2151,42 @@ async function prepareSwapTurn(intent: SwapIntent, walletAddress: string | undef
         const holdingUsd = Number(shortfall.usdgAtoms) / 10 ** rhStable.decimals
         const includeGas = !shortfall.hasGas
         const needUsd = fundingNeedUsd(buyUsd, includeGas)
-        if (shortfall.baseUsdcUsd >= needUsd) {
-          const gasSuffix = includeGas ? ' including gas' : ''
-          const resume = (usd: number) => `Fund robinhood chain with $${usd} from base${gasSuffix}, then buy $${buyUsd} of ${buySym}`
-          const options = [{ label: `Just enough (~$${needUsd})`, resume: resume(needUsd) }]
-          const half = Math.floor(shortfall.baseUsdcUsd / 2)
-          if (half > needUsd) options.push({ label: `Half my Base USDC ($${half})`, resume: resume(half) })
-          if (shortfall.baseUsdcUsd > needUsd) options.push({ label: `All of it ($${shortfall.baseUsdcUsd})`, resume: resume(shortfall.baseUsdcUsd) })
-          if (options.length < 2) options.push({ label: 'Not now', resume: 'Never mind — leave my Base USDC where it is.' })
+        const chips = planRobinhoodFundingChips({
+          origins: shortfall.origins,
+          needUsd,
+          gasIncluded: includeGas,
+          followup: `buy $${buyUsd} of ${buySym}`,
+        })
+        const holdingsSummary = shortfall.origins.map((o) => `~$${o.usd} of USDC on ${o.word}`).join(', ')
+        if (chips) {
+          const options = [...chips]
+          if (options.length < 2) options.push({ label: 'Not now', resume: 'Never mind — leave my USDC where it is.' })
           trace({
             type: 'status',
-            label: `funding layer claimed the turn: ${rhStable.symbol} short on ${chain.name} (holds ~$${holdingUsd.toFixed(2)}, needs $${buyUsd}) but ~$${shortfall.baseUsdcUsd} USDC sits on Base — offering the funding plan (${includeGas ? 'gas leg included' : 'gas already covered'})`,
+            label: `funding layer claimed the turn: ${rhStable.symbol} short on ${chain.name} (holds ~$${holdingUsd.toFixed(2)}, needs $${buyUsd}) but the wallet holds ${holdingsSummary} — offering the funding plan (${includeGas ? 'gas leg included' : 'gas already covered'})`,
           })
           return NextResponse.json({
             reply:
               `🌉 You don't have enough ${rhStable.symbol} on ${chain.name} for this yet (holding ~$${holdingUsd.toFixed(2)}, the buy needs ~$${buyUsd}) — ` +
-              `but you're holding **~$${shortfall.baseUsdcUsd} of USDC on Base**. I can convert some of it${includeGas ? ', drop in a little ETH for gas,' : ''} ` +
+              `but you're holding **${holdingsSummary}**. I can convert some of it${includeGas ? ', drop in a little ETH for gas,' : ''} ` +
               `and buy the ${buySym} — all in one job you sign step by step, funds arriving on ${chain.name} in seconds.`,
-            clarify: { question: 'How much of your Base USDC should I move over?', options: options.slice(0, 4) },
+            clarify: { question: 'Fund it from another chain?', options: options.slice(0, 4) },
             buildPath: 'native-lifi-fund-offer',
           })
         }
+        // No plan — but a shortfall claim is only honest over chains that
+        // actually scanned: an unreadable origin is "unknown", never "empty".
+        const unscanned = shortfall.failedOrigins.length > 0 ? ` (couldn't check ${shortfall.failedOrigins.join(' or ')})` : ''
         trace({
           type: 'note',
           level: 'warn',
-          label: `funding layer: ${rhStable.symbol} short on ${chain.name} and Base USDC (~$${shortfall.baseUsdcUsd}) can't cover the ~$${needUsd} plan — honest refusal, no build`,
+          label: `funding layer: ${rhStable.symbol} short on ${chain.name} and the scanned USDC (${holdingsSummary || 'none found'})${unscanned} can't cover the ~$${needUsd} plan — honest refusal, no build`,
         })
         return NextResponse.json({
           reply:
             `🚫 This buy needs ~$${buyUsd} of ${rhStable.symbol} on ${chain.name} and the wallet holds ~$${holdingUsd.toFixed(2)} there — ` +
-            `and your Base USDC (~$${shortfall.baseUsdcUsd}) isn't enough to fund it either (the plan needs ~$${needUsd}${includeGas ? ' including a gas leg' : ''}). ` +
-            `Nothing was built — top up USDC on Base or ${rhStable.symbol} on ${chain.name} and ask again.`,
+            `and the USDC I can see on other chains (${holdingsSummary || 'none on Base, Ethereum, or Arbitrum'}${unscanned}) isn't enough to fund it either (the plan needs ~$${needUsd}${includeGas ? ' including a gas leg' : ''}). ` +
+            `Nothing was built — top up USDC on Base, Ethereum, or Arbitrum, or ${rhStable.symbol} on ${chain.name}, and ask again.`,
         })
       }
     } catch {

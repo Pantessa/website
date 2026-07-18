@@ -47,23 +47,37 @@ export interface CompiledJob {
 // AAPL" — the exact resume string the chat route's funding-offer chips emit
 // (prepareSwapTurn detects an unfunded Robinhood Chain buy and proposes the
 // plan). Deterministic on purpose: the chip IS the contract, so the parse
-// stays narrow — "fund robinhood … with $X from base" and nothing looser.
+// stays narrow — "fund robinhood … with $X from <origin>" and nothing
+// looser. Origins: Base, Ethereum, Arbitrum (the LiFi-probed set).
 
 export interface RobinhoodFundingAsk {
-  /** Total dollars of Base USDC to convert (gas leg included when flagged). */
+  /** Total dollars of origin USDC to convert (gas leg included when flagged). */
   fundUsd: number
-  /** True when a gas leg (Base USDC → native ETH on 4663) must come first. */
+  /** True when a gas leg (origin USDC → native ETH on 4663) must come first. */
   gasIncluded: boolean
+  /** The origin chain the USDC leaves from. */
+  originChainId: number
+  originWord: string
 }
 
-const FUND_RE = /\bfund\s+robinhood(?:\s+chain)?\s+with\s+\$?(\d+(?:\.\d+)?)\s+from\s+base\b/i
+const FUND_RE = /\bfund\s+robinhood(?:\s+chain)?\s+with\s+\$?(\d+(?:\.\d+)?)\s+from\s+(base|ethereum|mainnet|arb(?:itrum)?)\b/i
+
+const FUND_ORIGINS: Record<string, { id: number; word: string }> = {
+  base: { id: 8453, word: 'Base' },
+  ethereum: { id: 1, word: 'Ethereum' },
+  mainnet: { id: 1, word: 'Ethereum' },
+  arb: { id: 42161, word: 'Arbitrum' },
+  arbitrum: { id: 42161, word: 'Arbitrum' },
+}
 
 export function parseRobinhoodFunding(segment: string): RobinhoodFundingAsk | null {
   const m = segment.match(FUND_RE)
   if (!m) return null
   const fundUsd = Number(m[1])
   if (!Number.isFinite(fundUsd) || fundUsd <= 0) return null
-  return { fundUsd, gasIncluded: /\bincluding\s+gas\b/i.test(segment) }
+  const origin = FUND_ORIGINS[m[2].toLowerCase()]
+  if (!origin) return null
+  return { fundUsd, gasIncluded: /\bincluding\s+gas\b/i.test(segment), originChainId: origin.id, originWord: origin.word }
 }
 
 // The buy segment that follows a funding segment ("buy $10 of AAPL"). Only
@@ -124,7 +138,11 @@ export function splitJobSegments(message: string): string[] {
  */
 export function compileJobAsk(message: string): CompiledJob | { problem: string } | null {
   const segments = splitJobSegments(message)
-  if (segments.length < 2) return null
+  // Single asks belong to the native layers — EXCEPT a lone Robinhood
+  // funding segment: the MCP-path fallback's bridge-only chips carry no
+  // follow-up (the user re-asks once funds land), and the funding legs +
+  // arrival wait are already a multi-step job on their own.
+  if (segments.length < 2 && !(segments.length === 1 && parseRobinhoodFunding(segments[0]))) return null
 
   const steps: CompiledStep[] = []
   const titles: string[] = []
@@ -142,10 +160,10 @@ export function compileJobAsk(message: string): CompiledJob | { problem: string 
       }
       const arrivalFrom: number[] = []
       if (fund.gasIncluded) {
-        steps.push({ kind: 'sign', builder: 'native-lifi-fund', title: `Bridge ~$${GAS_LEG_USD} of gas ETH → Robinhood Chain`, params: { leg: 'gas', usd: GAS_LEG_USD } })
+        steps.push({ kind: 'sign', builder: 'native-lifi-fund', title: `Bridge ~$${GAS_LEG_USD} of gas ETH → Robinhood Chain (from ${fund.originWord})`, params: { leg: 'gas', usd: GAS_LEG_USD, origin: fund.originChainId } })
         arrivalFrom.push(steps.length - 1)
       }
-      steps.push({ kind: 'sign', builder: 'native-lifi-fund', title: `Move $${usdgUsd} of Base USDC → USDG on Robinhood Chain`, params: { leg: 'usdg', usd: usdgUsd } })
+      steps.push({ kind: 'sign', builder: 'native-lifi-fund', title: `Move $${usdgUsd} of ${fund.originWord} USDC → USDG on Robinhood Chain`, params: { leg: 'usdg', usd: usdgUsd, origin: fund.originChainId } })
       arrivalFrom.push(steps.length - 1)
       steps.push({
         kind: 'wait',
@@ -154,7 +172,7 @@ export function compileJobAsk(message: string): CompiledJob | { problem: string 
         params: {},
         waitPredicate: { kind: 'chain-arrival', fromSteps: arrivalFrom },
       })
-      titles.push(`Fund Robinhood Chain with $${fund.fundUsd} from Base`)
+      titles.push(`Fund Robinhood Chain with $${fund.fundUsd} from ${fund.originWord}`)
       fundingSeen = true
       continue
     }
@@ -281,8 +299,9 @@ export function compileJobAsk(message: string): CompiledJob | { problem: string 
   }
 
   // A "job" of one real action + its waits is just that action — let the
-  // native layer own it directly.
-  if (titles.length < 2) return null
+  // native layer own it directly. The exception mirrors the gate at the
+  // top: a lone Robinhood funding segment IS the job (legs + arrival wait).
+  if (titles.length < 2 && !(titles.length === 1 && fundingSeen)) return null
   return { title: titles.join(' → '), steps }
 }
 

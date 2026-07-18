@@ -66,11 +66,13 @@ export async function POST(req: NextRequest) {
   if (body.kind === 'lifi-bridge') {
     const leg = body.leg === 'gas' || body.leg === 'usdg' ? (body.leg as FundingLeg) : null
     const usd = typeof body.usd === 'string' && /^[0-9]+(\.[0-9]+)?$/.test(body.usd) ? Number(body.usd) : null
+    // Origin chain the leg leaves from — pre-origin recipes omit it (Base).
+    const origin = typeof body.origin === 'string' && /^[0-9]+$/.test(body.origin) ? Number(body.origin) : 8453
     if (!from || !leg || !usd) {
       return NextResponse.json({ error: 'missing/invalid from, leg or usd' }, { status: 400 })
     }
     try {
-      const built = await buildLifiBridgeLeg({ leg, usd, from })
+      const built = await buildLifiBridgeLeg({ leg, usd, from, origin })
       if (built.blocked) {
         const reasons = built.guardrails.checks.filter((c) => !c.ok && c.level === 'block').map((c) => c.note).join(' ')
         const execFail = built.guardrails.checks.some((c) => !c.ok && (c.id === 'price' || c.id === 'venue'))
@@ -80,7 +82,7 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ pending: true, note: 'allowance not visible on-chain yet' })
       }
       const bridgeStep = built.steps[built.bridgeStepIndex]
-      const revert = await estimateReverts(8453, from, bridgeStep.tx)
+      const revert = await estimateReverts(origin, from, bridgeStep.tx)
       if (revert) {
         return NextResponse.json({ blocked: true, blockKind: 'execution', reasons: `the rebuilt bridge would revert on-chain (${revert.slice(0, 200)})` })
       }
