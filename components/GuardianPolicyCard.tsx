@@ -83,6 +83,21 @@ export default function GuardianPolicyCard({ policyId }: { policyId: string }) {
       : null
   const closed = p.status === 'done' && lastRun?.action === 'closed'
 
+  // The gauge: where the mark sits between the trigger (left, the danger end)
+  // and the entry (right, the safe end). All live numbers straight from the
+  // venue; renders only when both ends of the story exist. Without an entry
+  // px the safe end is a fixed 15% window — the dot still moves honestly.
+  const gauge = (() => {
+    if (closed || live.markPx == null || live.triggerPx == null) return null
+    const span =
+      live.entryPx != null && Math.abs(live.entryPx - live.triggerPx) > 1e-12
+        ? Math.abs(live.entryPx - live.triggerPx)
+        : Math.abs(live.triggerPx) * 0.15
+    if (span <= 0) return null
+    const f = Math.min(1, Math.abs(live.markPx - live.triggerPx) / span)
+    return { f, hasEntry: live.entryPx != null, hot: distancePct != null && Math.abs(distancePct) < 1 }
+  })()
+
   return (
     <div className="mt-2.5 rounded-xl border border-[var(--line)] px-3 py-2.5 space-y-1.5">
       <div className="flex items-center justify-between gap-2 flex-wrap">
@@ -97,7 +112,7 @@ export default function GuardianPolicyCard({ policyId }: { policyId: string }) {
         </span>
         <span className="flex items-center gap-2">
           <span
-            className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium ${
+            className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] font-medium ${
               p.status === 'active'
                 ? 'border-emerald-500/40 text-emerald-400'
                 : closed
@@ -105,7 +120,8 @@ export default function GuardianPolicyCard({ policyId }: { policyId: string }) {
                   : 'border-[color:var(--line-2)] text-[color:var(--muted-2)]'
             }`}
           >
-            {closed ? 'closed by guardian' : p.status}
+            {p.status === 'active' && <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" aria-hidden />}
+            {closed ? 'closed by guardian' : p.status === 'active' ? 'watching' : p.status}
           </span>
           {p.status === 'active' && (
             <button onClick={() => void setStatus('paused')} title="Pause" className="text-[color:var(--muted-2)] hover:text-[color:var(--fg)]">
@@ -120,16 +136,50 @@ export default function GuardianPolicyCard({ policyId }: { policyId: string }) {
         </span>
       </div>
 
+      {/* the watch gauge — trigger on the left (danger end), entry on the
+          right; the dot is the live mark. This is the card's whole job in
+          one glance: how close is the guardian to acting. */}
+      {gauge && (
+        <div className="pt-0.5">
+          <div className="relative h-1.5 rounded-full overflow-visible"
+            style={{
+              background:
+                'linear-gradient(90deg, color-mix(in srgb, #f87171 30%, transparent), color-mix(in srgb, #f59e0b 16%, transparent) 35%, color-mix(in srgb, var(--fg) 7%, transparent) 75%)',
+            }}
+          >
+            <span
+              className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2"
+              style={{ left: `${Math.min(97, Math.max(3, gauge.f * 100))}%` }}
+            >
+              {p.status === 'active' && (
+                <span
+                  className={`absolute inset-0 rounded-full animate-ping ${gauge.hot ? 'bg-amber-400/50' : ''}`}
+                  style={gauge.hot ? undefined : { background: 'color-mix(in srgb, var(--accent) 45%, transparent)' }}
+                  aria-hidden
+                />
+              )}
+              <span
+                className={`relative block w-2.5 h-2.5 rounded-full border-2 border-[var(--bg)] ${gauge.hot ? 'bg-amber-400' : 'bg-[var(--accent)]'}`}
+                aria-hidden
+              />
+            </span>
+          </div>
+          <div className="flex justify-between pt-1 text-[10px] mono text-[color:var(--muted-2)]">
+            <span>trigger {live.triggerPx != null ? Number(live.triggerPx.toPrecision(5)) : ''}</span>
+            {gauge.hasEntry && live.entryPx != null && <span>entry {Number(live.entryPx.toPrecision(5))}</span>}
+          </div>
+        </div>
+      )}
+
       <div className="text-[12px] text-[color:var(--muted)] mono tabular-nums">
         {closed && lastRun ? (
           <>filled — {lastRun.reason.slice(0, 120)}{lastRun.valueUsd != null && <> · ${lastRun.valueUsd.toFixed(2)} moved</>}</>
         ) : live.markPx != null ? (
           <>
             mark {live.markPx}
-            {live.triggerPx != null && <> · trigger {Number(live.triggerPx.toPrecision(5))}</>}
             {distancePct != null && (
               <span className={Math.abs(distancePct) < 1 ? ' text-amber-400' : ''}>
-                {' '}· {Math.abs(distancePct).toFixed(2)}% away
+                {' '}· {Math.abs(distancePct).toFixed(2)}% from trigger
               </span>
             )}
           </>
