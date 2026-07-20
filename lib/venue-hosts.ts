@@ -12,8 +12,9 @@
 // ─────────────────────────────────────────────────────────────────────────
 
 /** Always-allowed spend-attribution hosts of the native guarded layers.
- *  The user signs every one of these transactions themselves — the caps
- *  still gate them, the allowlist never should. */
+ *  The user signs every one of these transactions themselves — the
+ *  allowlist never gates them, and (since the self-signed cap exemption)
+ *  neither do the caps for wallet-signed builds; only kill switches do. */
 export const NATIVE_VENUE_HOSTS = [
   'uniswap.yeetful.com',
   'lifi.yeetful.com',
@@ -22,6 +23,13 @@ export const NATIVE_VENUE_HOSTS = [
   'api.hyperliquid.xyz',
   'opensea.io',
 ] as const
+
+/** House inference — every chat turn is attributed here. Curating agents
+ *  must never cut it off: an allowlist without it refuses ALL chat turns
+ *  (the "Yeetful · House NOT_ALLOWED" wall of 2026-07-17), which reads as
+ *  the product being broken, not a policy choice. Union it wherever a
+ *  concrete allowlist is derived, exactly like the venue hosts. */
+export const HOUSE_INFERENCE_HOSTS = ['api.anthropic.com'] as const
 
 /** Friendly names — "uniswap.yeetful.com" reads as a mystery third party
  *  when it's really the native swap layer. */

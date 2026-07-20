@@ -571,7 +571,7 @@ export async function buildLifiSwap(params: LifiSwapParams): Promise<LifiBuilt> 
   const grant = await getActiveGrant(from.toLowerCase())
   const policy = grant ? toPolicy(grant) : null
   const spentToday = grant ? await spentTodayUsd(grant.id) : 0
-  const { check: polCheck, violation } = policyCheck(valueUsd, policy, spentToday, LIFI_POLICY_HOST)
+  const { check: polCheck, violation } = policyCheck(valueUsd, policy, spentToday, LIFI_POLICY_HOST, 0, { selfSigned: true })
   checks.push(polCheck)
   const guardrails = buildReport(valueUsd, checks, violation ? { violation, valueUsd, host: LIFI_POLICY_HOST } : null)
   if (violation && grant) {

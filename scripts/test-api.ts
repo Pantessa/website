@@ -381,6 +381,9 @@ async function main() {
         curated.allow.includes('direct.example.test') &&
         curated.allow.includes('uniswap.yeetful.com'),
     )
+    // House inference must survive curation: without api.anthropic.com every
+    // chat turn refuses NOT_ALLOWED — the product reads as broken.
+    check('curated re-derive keeps house inference (api.anthropic.com)', curated.allow.includes('api.anthropic.com'))
     // Un-curate: back to ON → the wildcard returns (new MCPs need no re-sync).
     await fetch(`${BASE}/api/approvals`, { method: 'PUT', headers: CJ, body: JSON.stringify({ serverId: srv.id, approved: true }) })
     const open = await (await fetch(`${BASE}/api/grants/${g2.id}`, { headers: C })).json()
@@ -2880,6 +2883,35 @@ async function main() {
   check('guardrails: unpriceable order under an ON policy BLOCKS', policyCheck(null, gPolicy, 0, 'api.cow.fi').violation === 'VALUE_UNKNOWN')
   check('guardrails: unpriceable order with policy OFF passes', policyCheck(null, { ...gPolicy, spendPolicyEnabled: false }, 0, 'api.cow.fi').violation === null)
   check('guardrails: no grant at all → warn only, not gated', policyCheck(50, null, 0, 'api.cow.fi').check.ok)
+  // Self-signed exemption: the owner's wallet signature IS the consent, so
+  // the caps (which govern un-supervised agent spend) never refuse a build
+  // the owner signs per-action — the first-timer "demo a $250 swap" wall.
+  const selfOpts = { selfSigned: true } as const
+  check(
+    'guardrails: self-signed build over per-call cap PASSES (signature is the consent)',
+    policyCheck(100.25, gPolicy, 0, 'api.cow.fi', 0, selfOpts).violation === null &&
+      policyCheck(100.25, gPolicy, 0, 'api.cow.fi', 0, selfOpts).check.ok,
+  )
+  check(
+    'guardrails: self-signed build over the daily budget PASSES',
+    policyCheck(10, gPolicy, 95, 'api.cow.fi', 0, selfOpts).violation === null,
+  )
+  check(
+    'guardrails: self-signed unpriceable build passes as a warn, not VALUE_UNKNOWN',
+    policyCheck(null, gPolicy, 0, 'api.cow.fi', 0, selfOpts).violation === null,
+  )
+  check(
+    'guardrails: self-signed still refuses an off-allowlist host',
+    policyCheck(10, gPolicy, 0, 'evil.example.test', 0, selfOpts).violation === 'NOT_ALLOWED',
+  )
+  check(
+    'guardrails: self-signed still honors the kill switch (frozen)',
+    policyCheck(10, { ...gPolicy, paused: true }, 0, 'api.cow.fi', 0, selfOpts).violation === 'ACCOUNT_FROZEN',
+  )
+  check(
+    'guardrails: self-signed still honors revocation',
+    policyCheck(10, { ...gPolicy, status: 'revoked' }, 0, 'api.cow.fi', 0, selfOpts).violation === 'REVOKED',
+  )
   // The core is venue-neutral: the same gate refuses a host outside the
   // allowlist — what Uniswap's adapter (A10) plugs into unchanged.
   check('guardrails: core policyCheck gates by HOST (venue-neutral)', policyCheck(10, gPolicy, 0, 'uniswap.yeetful.com').violation === 'NOT_ALLOWED')

@@ -1533,7 +1533,7 @@ async function aavePolicyGate(
   const grant = await getActiveGrant(walletAddress.toLowerCase())
   const policy = grant ? toPolicy(grant) : null
   const spentToday = grant ? await spentTodayUsd(grant.id) : 0
-  const { check: polCheck, violation } = policyCheck(valueUsd, policy, spentToday, AAVE_POLICY_HOST)
+  const { check: polCheck, violation } = policyCheck(valueUsd, policy, spentToday, AAVE_POLICY_HOST, 0, { selfSigned: true })
   const guardrails = buildReport(
     valueUsd,
     [
