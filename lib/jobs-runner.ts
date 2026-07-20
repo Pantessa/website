@@ -32,7 +32,7 @@ import { buildLifiBridgeLeg, checkChainArrival, ROBINHOOD_CHAIN_ID, type ChainAr
 import { buildLifiSwap } from '@/lib/lifi-venue'
 import { ensureTokenList } from '@/lib/token-list'
 import { buildTransferArtifact, type TransferSegment } from '@/lib/transfer-exec'
-import { buildNftTransfer, buildNftListing, type NftAsk } from '@/lib/nft-layer'
+import { buildNftBuy, buildNftTransfer, buildNftListing, ERC721_ABI as NFT_ERC721_ABI, ERC1155_ABI as NFT_ERC1155_ABI, type NftAsk } from '@/lib/nft-layer'
 
 export function jobsEnv(): string {
   return process.env.VERCEL_ENV ?? 'dev'
@@ -401,12 +401,25 @@ export async function buildSignArtifact(
       valueUsd: built.guardrails.valueUsd ?? null,
     }
   }
-  if (builder === 'native-nft-transfer' || builder === 'native-nft-list') {
+  if (builder === 'native-nft-transfer' || builder === 'native-nft-list' || builder === 'native-nft-buy') {
     // NFT steps ride the SAME native NFT layer chat uses (lib/nft-layer):
     // ownership re-anchored on-chain at offer time, transfer calldata
     // re-decoded by the independent guard, listings assembled from the
-    // collection's LIVE fee schedule and re-verified at the submit relay.
+    // collection's LIVE fee schedule and re-verified at the submit relay,
+    // buys resolved against LIVE listings with locally re-encoded fulfillment.
     const ask = params as unknown as NftAsk
+    if (builder === 'native-nft-buy') {
+      if (ask.kind !== 'buy') throw new Error('step params are not an NFT buy ask')
+      const built = await buildNftBuy(ask, wallet)
+      if ('problem' in built) throw new Error(built.problem)
+      if (built.blocked) throwRefusal(built.refusal ?? 'a safety check refused the buy', built.guardrails)
+      // artifact.nft is what the nft-owned wait predicate polls against.
+      return {
+        artifact: { txRequest: built.tx as unknown as Record<string, unknown>, summary: built.summary, nft: built.nft as unknown as Record<string, unknown> },
+        guardReport: built.guardrails,
+        valueUsd: built.guardrails.valueUsd ?? null,
+      }
+    }
     if (builder === 'native-nft-transfer') {
       if (ask.kind !== 'transfer') throw new Error('step params are not an NFT transfer ask')
       const built = await buildNftTransfer(ask, wallet)
@@ -463,6 +476,31 @@ async function evaluateWait(
     const text = typeof status === 'string' ? status : JSON.stringify(status)
     if (/SUCCESS/.test(text)) return { done: true, result: { status: 'SUCCESS' } }
     if (/REFUNDED|FAILED/.test(text)) return { failed: 'the swap was refunded/failed — funds return to your wallet', result: { status: text.slice(0, 200) } }
+    return {}
+  }
+
+  if (pred.kind === 'nft-owned') {
+    // The prior buy step recorded exactly which NFT the fill targets
+    // (artifact.nft) — settled once the chain shows the job's wallet owning
+    // it. Probes ERC-721 ownerOf first, ERC-1155 balanceOf as the fallback.
+    const from = job.steps.find((s) => s.seq === pred.fromStep)
+    const nft = (from?.artifact as { nft?: { chainId: number; contract: string; tokenId: string } } | null)?.nft
+    if (!nft?.contract || !nft.tokenId) return { failed: 'no NFT target on the prior buy step' }
+    const client = publicClientFor(nft.chainId)
+    if (!client) return { failed: `no RPC client configured for chain ${nft.chainId}` }
+    try {
+      const owner = (await client.readContract({ address: nft.contract as `0x${string}`, abi: NFT_ERC721_ABI, functionName: 'ownerOf', args: [BigInt(nft.tokenId)] })) as string
+      if (owner.toLowerCase() === job.wallet) return { done: true, result: { owner } }
+      return {}
+    } catch {
+      /* not a 721 (or RPC trouble) — try 1155 before calling it "not yet" */
+    }
+    try {
+      const bal = (await client.readContract({ address: nft.contract as `0x${string}`, abi: NFT_ERC1155_ABI, functionName: 'balanceOf', args: [job.wallet as `0x${string}`, BigInt(nft.tokenId)] })) as bigint
+      if (bal >= BigInt(1)) return { done: true, result: { balance: bal.toString() } }
+    } catch {
+      /* RPC trouble is "not yet", never arrival — the timeout bounds the wait */
+    }
     return {}
   }
 

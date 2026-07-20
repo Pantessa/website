@@ -143,11 +143,22 @@ export function splitJobSegments(message: string): string[] {
 
 // ── Segment registry ───────────────────────────────────────────────────────
 
+/** The NFT an earlier segment named — lets "buy X then send it to 0x…"
+ *  resolve the pronoun deterministically within ONE compound ask. */
+export interface JobNftContext {
+  ref: string
+  tokenId: string | null
+  contract: string | null
+  chainId: number | null
+}
+
 export interface JobSegmentCtx {
   /** 0-based index of the segment in the compound ask. */
   index: number
   /** True once a Robinhood funding segment compiled earlier in the ask. */
   fundingSeen: boolean
+  /** The last NFT an earlier segment named, or null. */
+  nft: JobNftContext | null
 }
 
 export interface JobSegmentCompiled {
@@ -155,6 +166,8 @@ export interface JobSegmentCompiled {
   title: string
   /** Set to flag later segments (the funding parser gates the buy parser). */
   fundingSeen?: boolean
+  /** Set when the segment named an NFT (threads pronoun follow-ups). */
+  nft?: JobNftContext
 }
 
 export interface JobSegmentParser {
@@ -164,6 +177,10 @@ export interface JobSegmentParser {
   label?: string
   parse: (seg: string, ctx: JobSegmentCtx) => JobSegmentCompiled | { problem: string } | null
 }
+
+// "send it to 0x…" / "transfer the nft to name.eth" — only consulted when an
+// earlier segment in the same ask named an NFT (ctx.nft).
+const NFT_PRONOUN_SEND_RE = /^(?:and\s+)?(?:send|transfer|gift)\s+(?:it|that|this|the\s+nft)\s+to\s+(0x[0-9a-fA-F]{40}|[a-zA-Z0-9][a-zA-Z0-9-]*\.eth)\s*[.!?]*\s*$/i
 
 /**
  * Every chainable action, in claim order. To make a new dapp/MCP action
@@ -216,25 +233,50 @@ export const JOB_SEGMENT_PARSERS: JobSegmentParser[] = [
     },
   },
   {
-    // NFT sends and listings — BEFORE the fungible transfer entry, so "send
-    // my Pudgy Penguin #2489 to 0x…" claims here (the mentionsNft gate keeps
-    // token sends out), and BOTH run before the cross-chain parse: a send
-    // names an explicit 0x/ENS recipient, which the bridge grammar would
+    // NFT buys, sends, and listings — BEFORE the fungible transfer entry, so
+    // "send my Pudgy Penguin #2489 to 0x…" claims here (the mentionsNft gate
+    // keeps token sends out), and ALL run before the cross-chain parse: a
+    // send names an explicit 0x/ENS recipient, which the bridge grammar would
     // otherwise half-claim as a malformed destination ("send 1 USDC on base
     // to nate.eth" must be a send, not a bridge problem). Builders re-anchor
-    // ownership on-chain at offer time.
+    // ownership / live listings on-chain at offer time.
     id: 'nft',
-    label: 'NFT transfers/listings',
-    parse: (seg) => {
+    label: 'NFT buys/transfers/listings',
+    parse: (seg, ctx) => {
+      // "…then send it to 0x…" — the pronoun follow-up of an earlier NFT
+      // segment in the SAME ask (a just-bought NFT has no other name yet).
+      // Requires prior NFT context; a bare "send it to 0x…" never lands here.
+      if (ctx.nft) {
+        const pronoun = seg.match(NFT_PRONOUN_SEND_RE)
+        if (pronoun) {
+          const ask = { kind: 'transfer', ...ctx.nft, amount: '1', to: pronoun[1] }
+          const title = `Send ${ctx.nft.ref} to ${pronoun[1]}`
+          return { steps: [{ kind: 'sign', builder: 'native-nft-transfer', title, params: ask }], title, nft: ctx.nft }
+        }
+      }
       const ask = parseNftAsk(seg)
       if (!ask) return null
       if (ask.kind === 'problem') return { problem: ask.problem }
+      const nft: JobNftContext = { ref: ask.ref, tokenId: ask.tokenId, contract: ask.contract, chainId: ask.chainId }
+      if (ask.kind === 'buy') {
+        // The wait IS the chain step: a follow-up transfer's ownership check
+        // would refuse while the fill is still confirming.
+        const title = `Buy ${ask.ref} on OpenSea${ask.maxPriceEth ? ` (≤ ${ask.maxPriceEth} ETH)` : ''}`
+        return {
+          steps: [
+            { kind: 'sign', builder: 'native-nft-buy', title, params: ask as unknown as Record<string, unknown> },
+            { kind: 'wait', builder: 'wait', title: `${ask.ref} lands in your wallet`, params: {}, waitPredicate: { kind: 'nft-owned', fromStep: 0 } },
+          ],
+          title,
+          nft,
+        }
+      }
       if (ask.kind === 'transfer') {
         const title = `Send ${ask.ref} to ${ask.to}`
-        return { steps: [{ kind: 'sign', builder: 'native-nft-transfer', title, params: ask as unknown as Record<string, unknown> }], title }
+        return { steps: [{ kind: 'sign', builder: 'native-nft-transfer', title, params: ask as unknown as Record<string, unknown> }], title, nft }
       }
       const title = `List ${ask.ref} on OpenSea${ask.priceEth ? ` for ${ask.priceEth} ETH` : ' at floor'}`
-      return { steps: [{ kind: 'sign', builder: 'native-nft-list', title, params: ask as unknown as Record<string, unknown> }], title }
+      return { steps: [{ kind: 'sign', builder: 'native-nft-list', title, params: ask as unknown as Record<string, unknown> }], title, nft }
     },
   },
   {
@@ -384,11 +426,12 @@ export function compileJobAsk(message: string): CompiledJob | { problem: string 
   const steps: CompiledStep[] = []
   const titles: string[] = []
   let fundingSeen = false
+  let nftSeen: JobNftContext | null = null
   for (let i = 0; i < segments.length; i++) {
     const seg = segments[i]
     let matched = false
     for (const parser of JOB_SEGMENT_PARSERS) {
-      const res = parser.parse(seg, { index: i, fundingSeen })
+      const res = parser.parse(seg, { index: i, fundingSeen, nft: nftSeen })
       if (!res) continue
       if ('problem' in res) return { problem: `Step ${i + 1}: ${res.problem}` }
       // Wait predicates reference steps by index. Entries author them LOCAL
@@ -410,6 +453,7 @@ export function compileJobAsk(message: string): CompiledJob | { problem: string 
       }
       titles.push(res.title)
       if (res.fundingSeen) fundingSeen = true
+      if (res.nft) nftSeen = res.nft
       matched = true
       break
     }

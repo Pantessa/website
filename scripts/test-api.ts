@@ -36,8 +36,8 @@ import { parseSwapIntent } from '../lib/swap-intent'
 import { usdToTokenAmount } from '../lib/usd-probe'
 import { parseRobinhoodBridge, guardRobinhoodBridge, RH_L1_INBOX, ARB_SYS } from '../lib/robinhood-bridge'
 import { parseNftAsk, guardNftTransfer, ERC721_ABI as NFT_ERC721_ABI, ERC1155_ABI as NFT_ERC1155_ABI } from '../lib/nft-layer'
-import { splitListingPrice, buildListingComponents, guardListingComponents, openseaAssetUrl } from '../lib/opensea'
-import { keccak256, stringToBytes } from 'viem'
+import { splitListingPrice, buildListingComponents, guardListingComponents, openseaAssetUrl, SEAPORT_1_6, guardBuyFulfillment, fulfillmentToCalldata, normalizeOpenseaListing, collectionSlugCandidates } from '../lib/opensea'
+import { keccak256, stringToBytes, decodeFunctionData, parseAbi } from 'viem'
 import { isCacheable, routeCacheKey, getCached, setCached, clearRouteCache } from '../lib/route-cache'
 import { routeSavings } from '../lib/route-telemetry'
 import { portfolioFromToolResult, portfolioOf } from '../lib/portfolio-display'
@@ -3025,6 +3025,33 @@ async function main() {
   )
   const nftRh = parseNftAsk('sell my pudgy penguin #2489 nft on robinhood chain for 1 eth')
   check('nft parse: robinhood-chain NFT ask answered honestly', !!nftRh && nftRh.kind === 'problem' && /Ethereum, Base/i.test(nftRh.problem), JSON.stringify(nftRh))
+  // Buy asks: resolve against live listings; the grammar reads #id targets,
+  // "cheapest" collection buys, and an explicit ETH cap — and never claims
+  // token/stock buys (no NFT marker).
+  const nftBuy = parseNftAsk('buy pudgy penguin #2489')
+  check(
+    'nft parse: buy ask (name + #id)',
+    !!nftBuy && nftBuy.kind === 'buy' && /pudgy penguin/i.test(nftBuy.ref) && nftBuy.tokenId === '2489' && nftBuy.maxPriceEth === null,
+    JSON.stringify(nftBuy),
+  )
+  const nftBuyCap = parseNftAsk('buy the cheapest milady nft for up to 1.5 eth')
+  check(
+    'nft parse: cheapest-collection buy with an ETH cap',
+    !!nftBuyCap && nftBuyCap.kind === 'buy' && /milady/i.test(nftBuyCap.ref) && nftBuyCap.tokenId === null && nftBuyCap.maxPriceEth === '1.5',
+    JSON.stringify(nftBuyCap),
+  )
+  const nftBuyAddr = parseNftAsk('buy 0x3333333333333333333333333333333333333333 #7 nft on base')
+  check(
+    'nft parse: address#id buy carries contract + chain',
+    !!nftBuyAddr && nftBuyAddr.kind === 'buy' && nftBuyAddr.contract === '0x3333333333333333333333333333333333333333' && nftBuyAddr.tokenId === '7' && nftBuyAddr.chainId === 8453,
+    JSON.stringify(nftBuyAddr),
+  )
+  check(
+    'nft parse: token/stock buys never land in the NFT layer',
+    parseNftAsk('buy $10 of AAPL') === null && parseNftAsk('buy 20 USDC on base') === null,
+  )
+  const nftBuyRh = parseNftAsk('buy a milady nft on robinhood chain')
+  check('nft parse: robinhood-chain buy answered honestly', !!nftBuyRh && nftBuyRh.kind === 'problem' && /Ethereum, Base/i.test(nftBuyRh.problem), JSON.stringify(nftBuyRh))
   // Transfer guard fails CLOSED: exact contract/chain/sender/recipient/id/amount.
   const nftMe = '0x1111111111111111111111111111111111111111'
   const nftYou = '0x2222222222222222222222222222222222222222'
@@ -3067,6 +3094,53 @@ async function main() {
     guardListingComponents(osOrder, osExp).ok === true &&
       guardListingComponents(osTampered, osExp).ok === false &&
       guardListingComponents(osWrongConduit, osExp).ok === false,
+  )
+  // Buy guard fails CLOSED: pinned Seaport target, fulfill* function only,
+  // never above the quoted price or the user's cap, contract referenced.
+  const fulfillOkay = { functionSig: 'fulfillBasicOrder_efficient_6GL6yc((address,uint256))', to: SEAPORT_1_6, valueWei: oneEth, inputData: { parameters: { considerationToken: nftContract } } }
+  check(
+    'nft buy guard: clean fulfillment passes, tampered target/price/function refuse',
+    guardBuyFulfillment(fulfillOkay, { priceWei: oneEth, maxWei: null, contract: nftContract }).ok === true &&
+      guardBuyFulfillment({ ...fulfillOkay, to: nftYou }, { priceWei: oneEth, maxWei: null, contract: nftContract }).ok === false &&
+      guardBuyFulfillment({ ...fulfillOkay, functionSig: 'transferFrom(address,address,uint256)' }, { priceWei: oneEth, maxWei: null, contract: nftContract }).ok === false &&
+      guardBuyFulfillment({ ...fulfillOkay, valueWei: oneEth * BigInt(2) }, { priceWei: oneEth, maxWei: null, contract: nftContract }).ok === false &&
+      guardBuyFulfillment(fulfillOkay, { priceWei: oneEth, maxWei: oneEth / BigInt(2), contract: nftContract }).ok === false &&
+      guardBuyFulfillment({ ...fulfillOkay, valueWei: BigInt(0) }, { priceWei: oneEth, maxWei: null, contract: nftContract }).ok === false &&
+      guardBuyFulfillment(fulfillOkay, { priceWei: oneEth, maxWei: null, contract: nftMe }).ok === false,
+  )
+  // Fulfillment re-encode: named input objects → positional ABI values,
+  // locally encoded (never forwarded opaque). Round-trips through viem.
+  const reencoded = fulfillmentToCalldata('fulfillTest((address,uint256) item, address recipient)', {
+    item: { token: nftContract, identifier: '2489' },
+    recipient: nftYou,
+  })
+  const redecoded = decodeFunctionData({ abi: parseAbi(['function fulfillTest((address,uint256) item, address recipient)']), data: reencoded })
+  check(
+    'nft buy: fulfillment re-encodes locally and round-trips through viem',
+    redecoded.functionName === 'fulfillTest' &&
+      (redecoded.args[0] as unknown as [string, bigint])[1] === BigInt(2489) &&
+      (redecoded.args[1] as string).toLowerCase() === nftYou.toLowerCase(),
+    reencoded.slice(0, 40),
+  )
+  check(
+    'nft buy: listing normalizer pins Seaport 1.6 + native ETH, slug candidates cover plural/singular',
+    normalizeOpenseaListing({
+      order_hash: `0x${'ab'.repeat(32)}`, chain: 'base', protocol_address: SEAPORT_1_6,
+      price: { current: { currency: 'ETH', decimals: 18, value: '1000000000000000000' } },
+      protocol_data: { parameters: { offer: [{ token: nftContract, identifierOrCriteria: '7' }] } },
+    })?.priceWei === oneEth &&
+      normalizeOpenseaListing({
+        order_hash: `0x${'ab'.repeat(32)}`, chain: 'base', protocol_address: nftYou,
+        price: { current: { currency: 'ETH', decimals: 18, value: '1' } },
+        protocol_data: { parameters: { offer: [{ token: nftContract, identifierOrCriteria: '7' }] } },
+      }) === null &&
+      normalizeOpenseaListing({
+        order_hash: `0x${'ab'.repeat(32)}`, chain: 'base', protocol_address: SEAPORT_1_6,
+        price: { current: { currency: 'WETH', decimals: 18, value: '1' } },
+        protocol_data: { parameters: { offer: [{ token: nftContract, identifierOrCriteria: '7' }] } },
+      }) === null &&
+      JSON.stringify(collectionSlugCandidates('Pudgy Penguins')) === JSON.stringify(['pudgy-penguins', 'pudgy-penguin', 'pudgypenguins', 'pudgypenguin']) &&
+      JSON.stringify(collectionSlugCandidates('Milady')) === JSON.stringify(['milady', 'miladys']),
   )
   // Splash ⓘ links: every NFT row must resolve an OpenSea item page even when
   // the API response omitted opensea_url, and holding rows resolve explorer
@@ -3453,7 +3527,7 @@ async function main() {
     check('jobs: a compiled-then-unparseable segment refuses HONESTLY (problem, not a guess)', !!partial && 'problem' in partial && /step 2/i.test(partial.problem))
     check(
       'jobs: refusal copy lists itself from the segment registry (never stale)',
-      !!partial && 'problem' in partial && partial.problem.includes('token sends') && partial.problem.includes('NFT transfers/listings') && partial.problem.includes('guardian protection'),
+      !!partial && 'problem' in partial && partial.problem.includes('token sends') && partial.problem.includes('NFT buys/transfers/listings') && partial.problem.includes('guardian protection'),
       partial && 'problem' in partial ? partial.problem : '',
     )
     check(
@@ -3518,6 +3592,49 @@ async function main() {
       !!nftListChain && !('problem' in nftListChain) &&
         nftListChain.steps[0].builder === 'native-nft-list' && nftListChain.steps[1].builder === 'native-transfer',
       nftListChain && !('problem' in nftListChain) ? nftListChain.steps.map((s) => `${s.kind}:${s.builder}`).join(',') : JSON.stringify(nftListChain),
+    )
+    // Buy → own-wait → pronoun send: THE registry ask this entry exists for.
+    const nftBuyChain = compileJobAsk(`buy pudgy penguin #2489 then send it to ${sendTo}`)
+    check(
+      'jobs: "buy X then send it to Y" compiles — buy + nft-owned wait + nft-transfer',
+      !!nftBuyChain && !('problem' in nftBuyChain) &&
+        JSON.stringify(nftBuyChain.steps.map((s) => `${s.kind}:${s.builder}`)) === JSON.stringify(['sign:native-nft-buy', 'wait:wait', 'sign:native-nft-transfer']) &&
+        (nftBuyChain.steps[1].waitPredicate as { kind?: string; fromStep?: number }).kind === 'nft-owned' &&
+        (nftBuyChain.steps[1].waitPredicate as { fromStep?: number }).fromStep === 0,
+      nftBuyChain && !('problem' in nftBuyChain) ? JSON.stringify(nftBuyChain.steps.map((s) => [s.builder, s.waitPredicate ?? null])) : JSON.stringify(nftBuyChain),
+    )
+    check(
+      'jobs: the pronoun send inherits the bought NFT (ref + #id) and pins the recipient',
+      !!nftBuyChain && !('problem' in nftBuyChain) &&
+        (nftBuyChain.steps[2].params as { ref?: string; tokenId?: string; to?: string; kind?: string }).kind === 'transfer' &&
+        /pudgy penguin/i.test(String((nftBuyChain.steps[2].params as { ref?: string }).ref)) &&
+        (nftBuyChain.steps[2].params as { tokenId?: string }).tokenId === '2489' &&
+        (nftBuyChain.steps[2].params as { to?: string }).to === sendTo,
+      nftBuyChain && !('problem' in nftBuyChain) ? JSON.stringify(nftBuyChain.steps[2].params) : JSON.stringify(nftBuyChain),
+    )
+    // A buy followed by an explicit TOKEN send must not be stolen by the
+    // pronoun grammar — the fungible transfer entry still owns it.
+    const nftBuyTokenSend = compileJobAsk(`buy milady #77 nft then send 1 USDC on base to ${sendTo}`)
+    check(
+      'jobs: buy + explicit token send keeps the fungible transfer entry',
+      !!nftBuyTokenSend && !('problem' in nftBuyTokenSend) &&
+        JSON.stringify(nftBuyTokenSend.steps.map((s) => `${s.kind}:${s.builder}`)) === JSON.stringify(['sign:native-nft-buy', 'wait:wait', 'sign:native-transfer']),
+      nftBuyTokenSend && !('problem' in nftBuyTokenSend) ? nftBuyTokenSend.steps.map((s) => `${s.kind}:${s.builder}`).join(',') : JSON.stringify(nftBuyTokenSend),
+    )
+    // Without prior NFT context a pronoun send never compiles — nothing to
+    // resolve "it" against, so the whole ask falls back to the native layers.
+    check(
+      'jobs: "send it to 0x…" without a prior NFT segment never compiles',
+      compileJobAsk(`send it to ${sendTo}, then swap 20 USDC for WETH on Arbitrum`) === null,
+    )
+    // The buy's own wait rebases when the entry is not first.
+    const swapThenBuy = compileJobAsk(`swap 5 USDC for WETH on base then buy milady #77 nft`)
+    check(
+      'jobs: nft-owned wait rebases onto absolute indices when the buy is not first',
+      !!swapThenBuy && !('problem' in swapThenBuy) &&
+        JSON.stringify(swapThenBuy.steps.map((s) => `${s.kind}:${s.builder}`)) === JSON.stringify(['sign:native-swap', 'sign:native-nft-buy', 'wait:wait']) &&
+        (swapThenBuy.steps[2].waitPredicate as { fromStep?: number }).fromStep === 1,
+      swapThenBuy && !('problem' in swapThenBuy) ? JSON.stringify(swapThenBuy.steps.map((s) => s.waitPredicate ?? null)) : JSON.stringify(swapThenBuy),
     )
     const sendNoChainJob = compileJobAsk(`swap 5 USDC for WETH on base then send 1 USDC to ${sendTo}`)
     check(

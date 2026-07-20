@@ -11,6 +11,8 @@
 //  submit time (app/api/opensea/submit) before anything is relayed.
 // ─────────────────────────────────────────────────────────────────────────
 
+import { encodeFunctionData, formatEther, parseAbiItem, type AbiFunction, type AbiParameter } from 'viem'
+
 /** Spend-policy host every OpenSea/Seaport action is attributed to. */
 export const OPENSEA_POLICY_HOST = 'opensea.io'
 
@@ -133,6 +135,175 @@ export async function fetchFloorEth(slug: string): Promise<number | null> {
   } catch {
     return null
   }
+}
+
+// ── Listing reads (the buy-flow anchor) ────────────────────────────────────
+
+/** A live OpenSea listing, normalized to the fields the buy flow pins. */
+export interface OpenseaListing {
+  orderHash: string
+  chainId: number
+  /** Current price in wei of native ETH. */
+  priceWei: bigint
+  /** The listed NFT, read from the order's own offer leg. */
+  contract: string
+  tokenId: string
+}
+
+/** Normalize a raw OpenSea order into an OpenseaListing — null (never a
+ *  guess) unless it's a Seaport-1.6, native-ETH-priced listing whose offer
+ *  leg names the NFT. Pure; the harness pins the shape offline. */
+export function normalizeOpenseaListing(raw: unknown): OpenseaListing | null {
+  const o = raw as {
+    order_hash?: string
+    chain?: string
+    protocol_address?: string
+    price?: { current?: { currency?: string; decimals?: number; value?: string } }
+    protocol_data?: { parameters?: { offer?: { token?: string; identifierOrCriteria?: string | number }[] } }
+  } | null
+  if (!o?.order_hash || !o.chain) return null
+  const chainId = openseaChainIdOf(o.chain)
+  if (!chainId) return null
+  if (o.protocol_address && o.protocol_address.toLowerCase() !== SEAPORT_1_6.toLowerCase()) return null
+  const cur = o.price?.current
+  // Native ETH only — WETH-priced orders are offers, not fixed-price listings.
+  if (!cur?.value || !/^ETH$/i.test(cur.currency ?? '') || (cur.decimals ?? 18) !== 18) return null
+  let priceWei: bigint
+  try {
+    priceWei = BigInt(cur.value)
+  } catch {
+    return null
+  }
+  if (priceWei <= BigInt(0)) return null
+  const item = o.protocol_data?.parameters?.offer?.[0]
+  if (!item?.token || item.identifierOrCriteria == null) return null
+  return { orderHash: o.order_hash, chainId, priceWei, contract: item.token, tokenId: String(item.identifierOrCriteria) }
+}
+
+/** Best (cheapest) live listing for ONE NFT, or null. */
+export async function fetchBestListingForNft(slug: string, tokenId: string): Promise<OpenseaListing | null> {
+  try {
+    const d = await osGet(`/listings/collection/${slug}/nfts/${tokenId}/best`)
+    return normalizeOpenseaListing(d)
+  } catch {
+    return null
+  }
+}
+
+/** Cheapest live listing across a collection, or null. */
+export async function fetchCheapestListing(slug: string): Promise<OpenseaListing | null> {
+  try {
+    const d = (await osGet(`/listings/collection/${slug}/best?limit=1`)) as { listings?: unknown[] }
+    return normalizeOpenseaListing(d.listings?.[0]) ?? null
+  } catch {
+    return null
+  }
+}
+
+/** Candidate OpenSea collection slugs for a typed name ("Pudgy Penguin" →
+ *  pudgy-penguin, pudgy-penguins, pudgypenguin, pudgypenguins — the real
+ *  slug is often the collapsed form). Deterministic; the resolver probes
+ *  each against the live API and takes the first with a live listing —
+ *  never a guess beyond this list. */
+export function collectionSlugCandidates(name: string): string[] {
+  const dashed = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
+  if (!dashed) return []
+  const flip = (s: string) => (s.endsWith('s') ? s.replace(/s$/, '') : `${s}s`)
+  const collapsed = dashed.replace(/-/g, '')
+  return [...new Set([dashed, flip(dashed), collapsed, flip(collapsed)])]
+}
+
+// ── Fulfillment (buys) ─────────────────────────────────────────────────────
+
+/** OpenSea's fulfillment transaction for a live listing, normalized. */
+export interface OpenseaFulfillment {
+  functionSig: string
+  to: string
+  valueWei: bigint
+  inputData: Record<string, unknown>
+}
+
+/** Ask OpenSea for the exact fulfillment transaction of one listing —
+ *  pinned to Seaport 1.6, fulfiller = the buyer's own wallet. */
+export async function fetchListingFulfillment(chainId: number, orderHash: string, fulfiller: string): Promise<OpenseaFulfillment | { problem: string }> {
+  const slug = openseaSlugOf(chainId)
+  if (!slug) return { problem: `OpenSea doesn't serve chain ${chainId}.` }
+  const r = await osPost('/listings/fulfillment_data', {
+    listing: { hash: orderHash, chain: slug, protocol_address: SEAPORT_1_6 },
+    fulfiller: { address: fulfiller },
+  })
+  if (!r.ok) return { problem: `OpenSea could not produce fulfillment data — the listing may have just filled or been cancelled (HTTP ${r.status}).` }
+  const tx = (r.data as { fulfillment_data?: { transaction?: { function?: string; to?: string; value?: number | string; input_data?: Record<string, unknown> } } })
+    .fulfillment_data?.transaction
+  if (!tx?.function || !tx.to || tx.input_data == null) return { problem: "OpenSea's fulfillment response was missing the transaction." }
+  let valueWei: bigint
+  try {
+    valueWei = BigInt(String(tx.value ?? 0))
+  } catch {
+    return { problem: "OpenSea's fulfillment response carried an unreadable price." }
+  }
+  return { functionSig: tx.function, to: tx.to, valueWei, inputData: tx.input_data }
+}
+
+/**
+ * Re-encode OpenSea's fulfillment LOCALLY (never forward opaque calldata):
+ * the response carries the function SIGNATURE (unnamed tuple types) plus
+ * input_data as NAMED objects in ABI field order — walk the parsed ABI
+ * inputs and convert each named object to positional values (JSON preserves
+ * insertion order; the probed responses emit fields in exact ABI order).
+ */
+export function fulfillmentToCalldata(functionSig: string, inputData: Record<string, unknown>): `0x${string}` {
+  const abiFn = parseAbiItem(`function ${functionSig}`) as AbiFunction
+  const values = Object.values(inputData)
+  if (values.length !== abiFn.inputs.length) {
+    throw new Error(`fulfillment input arity mismatch: got ${values.length}, ABI wants ${abiFn.inputs.length}`)
+  }
+  const args = abiFn.inputs.map((param, i) => coerceAbiValue(param, values[i]))
+  return encodeFunctionData({ abi: [abiFn], functionName: abiFn.name, args })
+}
+
+function coerceAbiValue(param: AbiParameter, value: unknown): unknown {
+  if (param.type.endsWith('[]')) {
+    if (!Array.isArray(value)) throw new Error(`expected array for ${param.type}`)
+    const inner = { ...param, type: param.type.slice(0, -2) } as AbiParameter
+    return value.map((v) => coerceAbiValue(inner, v))
+  }
+  if (param.type === 'tuple') {
+    const components = (param as { components?: AbiParameter[] }).components ?? []
+    if (typeof value !== 'object' || value === null) throw new Error('expected object for tuple')
+    const values = Object.values(value as Record<string, unknown>)
+    if (values.length !== components.length) {
+      throw new Error(`tuple arity mismatch: got ${values.length}, ABI wants ${components.length}`)
+    }
+    return components.map((c, i) => coerceAbiValue(c, values[i]))
+  }
+  if (/^u?int\d*$/.test(param.type)) return BigInt(String(value))
+  if (param.type === 'bool') return Boolean(value)
+  return value // address, bytes, bytes32, string — pass through as-is
+}
+
+/**
+ * Independent buy guard (pure, fail-closed): the fulfillment must target the
+ * pinned Seaport 1.6, call a fulfill* function, cost more than zero but never
+ * more than the quoted listing (or the user's explicit ETH cap), and its
+ * input data must reference the resolved NFT contract.
+ */
+export function guardBuyFulfillment(
+  f: { functionSig: string; to: string; valueWei: bigint; inputData?: Record<string, unknown> },
+  exp: { priceWei: bigint; maxWei: bigint | null; contract: string },
+): { ok: boolean; reasons: string[] } {
+  const reasons: string[] = []
+  const eth = (wei: bigint) => formatEther(wei)
+  if (f.to.toLowerCase() !== SEAPORT_1_6.toLowerCase()) reasons.push(`Fulfillment target ${f.to} is not the pinned Seaport 1.6 — refusing.`)
+  const fnName = f.functionSig.split('(')[0]?.trim() ?? ''
+  if (!/^fulfill/.test(fnName)) reasons.push(`Fulfillment calls "${fnName}" — not a Seaport fulfill function.`)
+  if (f.valueWei <= BigInt(0)) reasons.push('Fulfillment came back with a zero price — refusing to build blind.')
+  if (f.valueWei > exp.priceWei) reasons.push(`Fulfillment wants ${eth(f.valueWei)} ETH but the listing quoted ${eth(exp.priceWei)} ETH — refusing to pay more than quoted.`)
+  if (exp.maxWei !== null && f.valueWei > exp.maxWei) reasons.push(`The listing costs ${eth(f.valueWei)} ETH, above your ${eth(exp.maxWei)} ETH cap.`)
+  if (f.inputData && !JSON.stringify(f.inputData).toLowerCase().includes(exp.contract.toLowerCase())) {
+    reasons.push('The fulfillment data does not reference the resolved NFT contract — refusing.')
+  }
+  return { ok: reasons.length === 0, reasons }
 }
 
 // ── Seaport order math (pure) ──────────────────────────────────────────────
