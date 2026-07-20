@@ -25,7 +25,7 @@ function dayLabel(iso: string): string {
 export function SpendOverTime({ daily }: { daily: { day: string; spent: number; calls: number }[] }) {
   const C = useChartColors()
   if (daily.length === 0) {
-    return <EmptyChart label="No spend yet — payments will chart here." cta={{ href: '/chat', label: 'Run your first call →' }} />
+    return <EmptyChart label="No spend yet — payments will chart here." cta={{ href: '/chat?prompt=Swap%20%241%20worth%20of%20ETH%20to%20USDC%20on%20Base', label: 'Make your first ask →' }} />
   }
   return (
     <ChartBox height={220}>
@@ -68,7 +68,7 @@ export function SpendOverTime({ daily }: { daily: { day: string; spent: number; 
 export function SpendByAgent({ perAgent }: { perAgent: { service: string; spent: number; calls: number }[] }) {
   const C = useChartColors()
   if (perAgent.length === 0) {
-    return <EmptyChart label="No spend yet — services you pay will show here." cta={{ href: '/chat', label: 'Run your first call →' }} />
+    return <EmptyChart label="No spend yet — services you pay will show here." cta={{ href: '/chat?prompt=Swap%20%241%20worth%20of%20ETH%20to%20USDC%20on%20Base', label: 'Make your first ask →' }} />
   }
   const height = Math.max(160, perAgent.length * 34)
   return (
