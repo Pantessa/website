@@ -36,7 +36,7 @@ import { parseSwapIntent } from '../lib/swap-intent'
 import { usdToTokenAmount } from '../lib/usd-probe'
 import { parseRobinhoodBridge, guardRobinhoodBridge, RH_L1_INBOX, ARB_SYS } from '../lib/robinhood-bridge'
 import { parseNftAsk, guardNftTransfer, ERC721_ABI as NFT_ERC721_ABI, ERC1155_ABI as NFT_ERC1155_ABI } from '../lib/nft-layer'
-import { splitListingPrice, buildListingComponents, guardListingComponents } from '../lib/opensea'
+import { splitListingPrice, buildListingComponents, guardListingComponents, openseaAssetUrl } from '../lib/opensea'
 import { keccak256, stringToBytes } from 'viem'
 import { isCacheable, routeCacheKey, getCached, setCached, clearRouteCache } from '../lib/route-cache'
 import { routeSavings } from '../lib/route-telemetry'
@@ -52,7 +52,7 @@ import { compileDcaBuy, dcaRunChip, parseDcaCreate, parseDcaManage, parseDcaRun,
 import { firstUserPromptOf } from '../lib/shared-chat'
 import { EXAMPLE_PROMPTS } from '../lib/examples'
 import { swapFeeAtoms, SWAP_FEE_BPS, TREASURY_ADDRESS } from '../lib/fees'
-import { APP_CHAINS, chainById, chainNamedIn, sanitizeChainId } from '../lib/chains'
+import { APP_CHAINS, chainById, chainNamedIn, explorerTokenUrl, sanitizeChainId } from '../lib/chains'
 import { parseCrossChainSwap, guardCrossChainBuild, expectedOriginChainId, parseCrossChainFollowUp } from '../lib/cross-chain-swap'
 import {
   parseAaveSupply,
@@ -3066,6 +3066,26 @@ async function main() {
     guardListingComponents(osOrder, osExp).ok === true &&
       guardListingComponents(osTampered, osExp).ok === false &&
       guardListingComponents(osWrongConduit, osExp).ok === false,
+  )
+  // Splash ⓘ links: every NFT row must resolve an OpenSea item page even when
+  // the API response omitted opensea_url, and holding rows resolve explorer
+  // token pages by the human chain label they carry — never for natives.
+  check(
+    'splash info links: openseaAssetUrl covers the three OpenSea chains, refuses the rest',
+    openseaAssetUrl(1, nftContract, '2489') === `https://opensea.io/assets/ethereum/${nftContract}/2489` &&
+      openseaAssetUrl(8453, nftContract, '1') === `https://opensea.io/assets/base/${nftContract}/1` &&
+      openseaAssetUrl(42161, nftContract, '7') === `https://opensea.io/assets/arbitrum/${nftContract}/7` &&
+      openseaAssetUrl(4663, nftContract, '1') === null &&
+      openseaAssetUrl(1, 'not-an-address', '1') === null,
+  )
+  check(
+    'splash info links: explorerTokenUrl maps labels/ids to token pages, nulls natives',
+    explorerTokenUrl('Ethereum', nftContract) === `https://etherscan.io/token/${nftContract}` &&
+      explorerTokenUrl('Base', nftContract) === `https://basescan.org/token/${nftContract}` &&
+      explorerTokenUrl(42161, nftContract) === `https://arbiscan.io/token/${nftContract}` &&
+      explorerTokenUrl('Robinhood Chain', nftContract) === `https://robinhoodchain.blockscout.com/token/${nftContract}` &&
+      explorerTokenUrl('Ethereum', '0x0000000000000000000000000000000000000000') === null &&
+      explorerTokenUrl('Solana', nftContract) === null,
   )
   // orderRequest meta round-trip carries the opensea approval prereq.
   const osMeta = orderRequestOf({

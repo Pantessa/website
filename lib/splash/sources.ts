@@ -23,9 +23,9 @@ import type { McpServer } from '@/lib/store'
 import { callMcpTool } from '@/lib/mcp-call'
 import { overrideFreeMcpBase } from '@/lib/endpoint-planner'
 import { alchemyEnabled, getMultichainPortfolio, getRecentActivity } from '@/lib/alchemy'
-import type { AppChain } from '@/lib/chains'
+import { explorerTokenUrl, type AppChain } from '@/lib/chains'
 import { hasUniswapHistory } from './affinity'
-import { fetchFloorEth, fetchOwnedNfts, openseaEnabled, type OpenseaNft } from '@/lib/opensea'
+import { fetchFloorEth, fetchOwnedNfts, openseaAssetUrl, openseaEnabled, type OpenseaNft } from '@/lib/opensea'
 import type { EmptyTile, HoldingRow, NftRow, ProposalRow, SpaceRow, SplashTile, StatRow, SuggestedPrompt } from './types'
 
 /** Snapshot's stamp service resolves a space logo from its id — always
@@ -149,7 +149,13 @@ async function buildMultichainTiles(address: string, server: McpServer, chain?: 
       totalUsd: portfolio.totalUsd,
       // Keep the card compact — it shares one uniform-height grid with
       // single-section cards, and the subtitle already carries the full count.
-      holdings: holdings.slice(0, 4).map((h) => ({ ...h, actions: holdingRowActions(h, `on ${h.chain ?? chain?.name ?? 'Base'}`) })),
+      holdings: holdings.slice(0, 4).map((h) => ({
+        ...h,
+        actions: holdingRowActions(h, `on ${h.chain ?? chain?.name ?? 'Base'}`),
+        // Explorer token page for real contracts (native pseudo-rows get null).
+        infoUrl: h.native ? null : explorerTokenUrl(h.chain ?? chain?.name ?? 'Base', h.address),
+        infoLabel: 'View on explorer',
+      })),
       prompts: holdingPrompts(holdings, `on ${chain?.name ?? 'Base'}`),
     })
   }
@@ -188,7 +194,12 @@ async function buildBaseFallbackTile(call: McpCaller, address: string, server: M
     subtitle: `via ${server.name}`,
     chain: label,
     totalUsd: typeof data.totalUsd === 'number' ? data.totalUsd : null,
-    holdings: holdings.slice(0, 5).map((h) => ({ ...h, actions: holdingRowActions(h, `on ${label}`) })),
+    holdings: holdings.slice(0, 5).map((h) => ({
+      ...h,
+      actions: holdingRowActions(h, `on ${label}`),
+      infoUrl: h.native ? null : explorerTokenUrl(label, h.address),
+      infoLabel: 'View on explorer',
+    })),
     prompts: holdingPrompts(holdings, `on ${label}`),
   }
 }
@@ -816,11 +827,11 @@ const openseaSource: SplashSource = {
               { id: 42161, label: 'Arbitrum' },
             ]
     if (chainIds.length === 0) return null
-    const owned: (OpenseaNft & { chainLabel: string })[] = []
+    const owned: (OpenseaNft & { chainLabel: string; chainId: number })[] = []
     await Promise.all(
       chainIds.map(async ({ id, label }) => {
         const nfts = await fetchOwnedNfts(id, address, 12).catch(() => [] as OpenseaNft[])
-        for (const n of nfts) owned.push({ ...n, chainLabel: label })
+        for (const n of nfts) owned.push({ ...n, chainLabel: label, chainId: id })
       }),
     )
     // No NFTs → no card (the affinity contract; manual picks get the preview).
@@ -846,8 +857,9 @@ const openseaSource: SplashSource = {
         tokenId: n.identifier,
         standard: n.token_standard === 'erc1155' ? 'erc1155' : 'erc721',
         floor: floorEth != null ? `floor ${Number(floorEth.toFixed(4))} ETH` : null,
-        openseaUrl: n.opensea_url ?? null,
         actions: nftRowActions(n, n.chainLabel, floorEth),
+        infoUrl: n.opensea_url ?? openseaAssetUrl(n.chainId, n.contract, n.identifier),
+        infoLabel: 'View on OpenSea',
       }
     })
 
@@ -1089,6 +1101,8 @@ function holdingsTileFromPortfolio(data: unknown, server: SplashServer): SplashT
       valueUsd: typeof h.valueUsd === 'number' ? h.valueUsd : null,
       ...(h.native ? { native: true } : {}),
       ...(typeof h.chain === 'string' ? { chain: h.chain } : {}),
+      infoUrl: h.native || typeof h.chain !== 'string' ? null : explorerTokenUrl(h.chain, h.address),
+      infoLabel: 'View on explorer',
     }))
   if (holdings.length === 0) return null
   const chainLabels = [...new Set((p.chains ?? []).map((c) => c?.chain).filter((c): c is string => !!c))]

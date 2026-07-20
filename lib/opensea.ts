@@ -31,6 +31,14 @@ export const openseaChainIdOf = (slug: string): number | null => {
   return hit ? Number(hit[0]) : null
 }
 
+/** Canonical OpenSea item page for an NFT — the splash rows' ⓘ target when
+ *  the API response didn't carry `opensea_url`. Null off OpenSea's chains. */
+export function openseaAssetUrl(chainId: number, contract: string, tokenId: string): string | null {
+  const slug = openseaSlugOf(chainId)
+  if (!slug || !/^0x[0-9a-fA-F]{40}$/.test(contract) || !tokenId) return null
+  return `https://opensea.io/assets/${slug}/${contract}/${tokenId}`
+}
+
 // ── API reads (server-side; OPENSEA_API_KEY) ───────────────────────────────
 
 export interface OpenseaNft {

@@ -38,6 +38,13 @@ export interface HoldingRow {
    *  (e.g. tap AAPL → Buy more / Sell). Each drops its `prompt` into the
    *  composer, same as a tile chip. Absent → the row stays display-only. */
   actions?: SuggestedPrompt[]
+  /** External detail page for this line item (explorer token page). Every row
+   *  primitive shares this contract: the client renders it as the MCP rail's
+   *  ⓘ affordance — a labeled link chip alongside the row's actions, or a
+   *  hover ⓘ on display-only rows. Absent → no link. */
+  infoUrl?: string | null
+  /** ⓘ link label ("View on Basescan"). Falls back to "More info". */
+  infoLabel?: string
 }
 
 /** One recent transaction (asset transfer) for the activity tile. */
@@ -125,6 +132,10 @@ export interface StatRow {
   /** Per-row "act on this" prompts — the row expands to reveal them (e.g. tap
    *  an open CoW order → Cancel / Check status). Absent → display-only. */
   actions?: SuggestedPrompt[]
+  /** External detail page for this line item — same ⓘ contract as
+   *  HoldingRow.infoUrl. */
+  infoUrl?: string | null
+  infoLabel?: string
 }
 
 /** One owned NFT for the gallery tile. Values are PRE-FORMATTED strings
@@ -144,10 +155,14 @@ export interface NftRow {
   standard: 'erc721' | 'erc1155'
   /** Pre-formatted floor line ("floor 4.26 ETH"), or null when unknown. */
   floor: string | null
-  openseaUrl: string | null
   /** Per-NFT "act on this" prompts (Sell / Transfer) — same contract as
    *  HoldingRow.actions; each drops its prompt into the composer. */
   actions?: SuggestedPrompt[]
+  /** The NFT's own OpenSea item page — same ⓘ contract as HoldingRow.infoUrl
+   *  (the source always resolves one: API-supplied or built from
+   *  chain/contract/tokenId). */
+  infoUrl?: string | null
+  infoLabel?: string
 }
 
 /** A wallet's NFT gallery (the opensea source): image-led rows that expand
