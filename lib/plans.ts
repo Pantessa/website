@@ -41,6 +41,7 @@ export const PLANS: Plan[] = [
     priceUsd: 0,
     credits: 2_500,
     highlights: [
+      '3 standing intents — jobs, DCA, guardian',
       'Embed on 1 site',
       'Compose up to 3 MCPs per set',
       'Guardrails, receipts & signing included',
@@ -56,6 +57,7 @@ export const PLANS: Plan[] = [
     popular: true,
     stripeProductId: 'prod_UsTzqqSZp2V3Sj',
     highlights: [
+      '25 standing intents — a working portfolio of automations',
       'Embed on 3 sites',
       'Full paid MCP directory in your sets',
       'Custom chat theme',
@@ -70,6 +72,7 @@ export const PLANS: Plan[] = [
     credits: 150_000,
     stripeProductId: 'prod_UsU0jKG1QyPBh7',
     highlights: [
+      'Unlimited standing intents',
       'Unlimited embed sites',
       'White-label chrome',
       'Orgs: team seats, daily caps, kill switch',
