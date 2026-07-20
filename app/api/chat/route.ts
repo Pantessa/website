@@ -78,6 +78,7 @@ import {
 import { policyCheck, buildReport } from '@/lib/tx-guardrails'
 import { buildGuardrailedOrder } from '@/lib/cow-build'
 import { parseNftAsk, buildNftTransfer, buildNftListing } from '@/lib/nft-layer'
+import { parseTransferSegment, buildTransferArtifact } from '@/lib/transfer-exec'
 import { buildUniswapSwap, NoV3PoolError } from '@/lib/uniswap-venue'
 import { buildUniswapV4Swap, NoV4PoolError, GatedV4PoolError } from '@/lib/uniswap-v4'
 import { buildLifiSwap, NoLifiRouteError } from '@/lib/lifi-venue'
@@ -884,6 +885,50 @@ export async function POST(req: NextRequest) {
       } catch (e) {
         nativeTrace({ type: 'note', level: 'warn', label: `nft build failed: ${(e as Error).message.slice(0, 160)}` })
         return NextResponse.json({ reply: `🖼️ Couldn't build that NFT action: ${(e as Error).message}` })
+      }
+    }
+
+    // ── Native transfer layer (deterministic). "send 1 USDC on arbitrum to
+    //    0x…" — pinned locally-encoded calldata (or a native ETH send),
+    //    live-balance checked, priced, full outflow policy gate. Runs AFTER
+    //    the NFT layer (NFT-shaped sends belong there) and demands an
+    //    explicit 0x/ENS recipient + chain word, so HL deposits and bridge
+    //    asks never land here. The same parser backs 'native-transfer' job
+    //    steps, so "swap … then send …" chains reuse this exact build.
+    const transferAsk = parseTransferSegment(message, { fallbackChainId: selectedChainId })
+    if (transferAsk && 'problem' in transferAsk) {
+      nativeTrace({ type: 'status', label: 'native transfer layer claimed the turn — ask incomplete, answering honestly (no build)' })
+      return NextResponse.json({ reply: `💸 ${transferAsk.problem}` })
+    }
+    if (transferAsk) {
+      if (!walletAddress) {
+        nativeTrace({ type: 'note', level: 'info', label: 'transfer ask but no wallet connected — asking to connect before building' })
+        return NextResponse.json({
+          reply: '💸 Connect your wallet first — a send builds against your live balance, and you sign it yourself.',
+          connectWallet: true,
+        })
+      }
+      nativeTrace({ type: 'select', service: 'Native transfer layer', endpoint: `send ${transferAsk.amountHuman} ${transferAsk.token.toUpperCase()} → ${transferAsk.to} on ${transferAsk.chainName}`, priceUsd: 0, reason: 'native transfer layer — calldata encoded locally, re-decoded by an independent guard, balance and policy checked' })
+      try {
+        const built = await buildTransferArtifact(transferAsk, walletAddress)
+        if ('problem' in built) {
+          nativeTrace({ type: 'note', level: 'info', label: `transfer not buildable: ${built.problem.slice(0, 160)}` })
+          return NextResponse.json({ reply: `💸 ${built.problem}` })
+        }
+        if (built.blocked) {
+          nativeTrace({ type: 'note', level: 'warn', label: `transfer REFUSED: ${(built.refusal ?? 'a safety check failed.').slice(0, 200)}` })
+          return NextResponse.json({ reply: `🚫 ${built.refusal ?? 'A safety check failed — nothing was built.'}`, guardrails: built.guardrails, blocked: true, buildPath: 'native-transfer' })
+        }
+        nativeTrace({ type: 'status', label: `transfer guard passed (valueUsd ${built.guardrails.valueUsd ?? 'n/a'}), awaiting signature` })
+        return NextResponse.json({
+          reply: `💸 ${built.summary}\n${built.note}`,
+          txRequest: built.tx,
+          guardrails: built.guardrails,
+          buildPath: 'native-transfer',
+        })
+      } catch (e) {
+        nativeTrace({ type: 'note', level: 'warn', label: `transfer build failed: ${(e as Error).message.slice(0, 160)}` })
+        return NextResponse.json({ reply: `💸 Couldn't build the transfer: ${(e as Error).message}` })
       }
     }
 

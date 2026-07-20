@@ -46,7 +46,8 @@ import { crossChainAgentOf, detectCrossChain, swapWorkingContext } from '../lib/
 import { encodeV4SwapCalldata, guardUniswapV4Build, type V4BuiltStep, type V4GuardExpectations, type V4PoolKey } from '../lib/uniswap-v4'
 import { guardLifiBuild, verifyLifiQuoteEcho, lifiPriceAcceptable, lifiRoutersFor, type LifiBuiltStep, type LifiGuardExpectations, type LifiQuote } from '../lib/lifi-venue'
 import { fundingNeedUsd, guardLifiBridgeBuild, lifiBridgeRoutersFor, planRobinhoodFundingChips, verifyLifiBridgeEcho, type LifiBridgeExpectations, type LifiBridgeStep } from '../lib/lifi-bridge'
-import { parseRobinhoodFunding, parseSameChainSwapSegment } from '../lib/jobs'
+import { parseRobinhoodFunding, parseSameChainSwapSegment, JOB_SEGMENT_PARSERS } from '../lib/jobs'
+import { parseTransferSegment } from '../lib/transfer-exec'
 import { detectBalanceShortfall, fundingPlanUsd, planFundingChips, rankFundingSources, type FundingNeed, type FundingSource } from '../lib/funding-plan'
 import { compileDcaBuy, dcaRunChip, parseDcaCreate, parseDcaManage, parseDcaRun, periodKeyFor } from '../lib/dca'
 import { firstUserPromptOf } from '../lib/shared-chat'
@@ -3430,6 +3431,80 @@ async function main() {
     )
     const partial = compileJobAsk('deposit 20 usdc to hyperliquid then tell me a joke')
     check('jobs: a compiled-then-unparseable segment refuses HONESTLY (problem, not a guess)', !!partial && 'problem' in partial && /step 2/i.test(partial.problem))
+    check(
+      'jobs: refusal copy lists itself from the segment registry (never stale)',
+      !!partial && 'problem' in partial && partial.problem.includes('token sends') && partial.problem.includes('NFT transfers/listings') && partial.problem.includes('guardian protection'),
+      partial && 'problem' in partial ? partial.problem : '',
+    )
+    check(
+      'jobs: registry entries all carry an id + parse (the extension contract)',
+      JOB_SEGMENT_PARSERS.length >= 11 && JOB_SEGMENT_PARSERS.every((p) => !!p.id && typeof p.parse === 'function'),
+    )
+
+    // ── Transfer segments (the "swap … then send …" chaining ask) ──────────
+    const sendTo = '0x6F93fa8B383E51D59DDfC87988AFC964d6ffb5Da'
+    const tSeg = parseTransferSegment(`send the 1 USDC on arbitrum to ${sendTo}`)
+    check(
+      'transfer parse: "send the 1 USDC on arbitrum to 0x…" → amount/token/chain/recipient',
+      !!tSeg && !('problem' in tSeg) && tSeg.amountHuman === '1' && tSeg.token === 'USDC' && tSeg.chainId === 42161 && tSeg.to === sendTo,
+      JSON.stringify(tSeg),
+    )
+    const tTail = parseTransferSegment(`transfer 0.5 ETH to ${sendTo} on base`)
+    check('transfer parse: chain-after-recipient variant + native ETH', !!tTail && !('problem' in tTail) && tTail.chainId === 8453 && tTail.token === 'ETH')
+    const tEns = parseTransferSegment('send 2 USDC on base to nate.eth')
+    check('transfer parse: ENS recipient accepted', !!tEns && !('problem' in tEns) && tEns.to === 'nate.eth')
+    const tNoChain = parseTransferSegment(`send 1 USDC to ${sendTo}`)
+    check('transfer parse: missing chain word → honest problem (never guess the chain)', !!tNoChain && 'problem' in tNoChain && /chain/i.test(tNoChain.problem))
+    check(
+      'transfer parse: NFT sends, HL deposits, and non-sends stay out',
+      parseTransferSegment(`send my Pudgy Penguin #2489 to ${sendTo}`) === null &&
+        parseTransferSegment('deposit 20 usdc to hyperliquid') === null &&
+        parseTransferSegment('swap 1 usdc for eth on base') === null,
+    )
+    const chainThenSend = compileJobAsk(`can you swap 1 USDC from base to Arbitrum then send the 1 USDC on arbitrum to ${sendTo}`)
+    check(
+      'jobs: bridge-then-send compiles (the screenshot ask) — cross-chain + wait + native-transfer',
+      !!chainThenSend && !('problem' in chainThenSend) &&
+        JSON.stringify(chainThenSend.steps.map((s) => `${s.kind}:${s.builder}`)) === JSON.stringify(['sign:native-cross-chain', 'wait:wait', 'sign:native-transfer']),
+      chainThenSend && !('problem' in chainThenSend) ? chainThenSend.steps.map((s) => `${s.kind}:${s.builder}`).join(',') : JSON.stringify(chainThenSend),
+    )
+    const bridgeSwapStake = compileJobAsk('swap 20 USDC from base to ethereum, then swap 10 USDC for WETH on ethereum, then stake 0.002 eth on lido')
+    check(
+      'jobs: bridge → swap → lido stake chains end to end',
+      !!bridgeSwapStake && !('problem' in bridgeSwapStake) &&
+        JSON.stringify(bridgeSwapStake.steps.map((s) => `${s.kind}:${s.builder}`)) ===
+          JSON.stringify(['sign:native-cross-chain', 'wait:wait', 'sign:native-swap', 'sign:native-lido']),
+      bridgeSwapStake && !('problem' in bridgeSwapStake) ? bridgeSwapStake.steps.map((s) => `${s.kind}:${s.builder}`).join(',') : JSON.stringify(bridgeSwapStake),
+    )
+    // Wait predicates rebase onto ABSOLUTE step indices whatever the entry's
+    // position — a send BEFORE the bridge must not corrupt the oneclick pointer.
+    const sendThenBridge = compileJobAsk(`send 1 USDC on base to ${sendTo}, then swap 5 USDC from base to arbitrum`)
+    check(
+      'jobs: wait predicates rebase when the entry is not first',
+      !!sendThenBridge && !('problem' in sendThenBridge) &&
+        (sendThenBridge.steps[2].waitPredicate as { fromStep?: number }).fromStep === 1,
+      sendThenBridge && !('problem' in sendThenBridge) ? JSON.stringify(sendThenBridge.steps.map((s) => s.waitPredicate ?? null)) : JSON.stringify(sendThenBridge),
+    )
+    const nftChain = compileJobAsk(`send my Pudgy Penguin #2489 nft to ${sendTo}, then swap 20 USDC for WETH on Arbitrum`)
+    check(
+      'jobs: NFT transfer chains as a native-nft-transfer step',
+      !!nftChain && !('problem' in nftChain) &&
+        JSON.stringify(nftChain.steps.map((s) => `${s.kind}:${s.builder}`)) === JSON.stringify(['sign:native-nft-transfer', 'sign:native-swap']),
+      nftChain && !('problem' in nftChain) ? nftChain.steps.map((s) => `${s.kind}:${s.builder}`).join(',') : JSON.stringify(nftChain),
+    )
+    const nftListChain = compileJobAsk('list my Pudgy Penguin #2489 nft for 4.2 eth, then send 1 USDC on base to nate.eth')
+    check(
+      'jobs: NFT listing chains as a native-nft-list step (Seaport EIP-712 artifact)',
+      !!nftListChain && !('problem' in nftListChain) &&
+        nftListChain.steps[0].builder === 'native-nft-list' && nftListChain.steps[1].builder === 'native-transfer',
+      nftListChain && !('problem' in nftListChain) ? nftListChain.steps.map((s) => `${s.kind}:${s.builder}`).join(',') : JSON.stringify(nftListChain),
+    )
+    const sendNoChainJob = compileJobAsk(`swap 5 USDC for WETH on base then send 1 USDC to ${sendTo}`)
+    check(
+      'jobs: a send segment without a chain word refuses honestly (Step 2 problem)',
+      !!sendNoChainJob && 'problem' in sendNoChainJob && /Step 2/.test(sendNoChainJob.problem) && /chain/i.test(sendNoChainJob.problem),
+      sendNoChainJob ? JSON.stringify(sendNoChainJob) : 'null',
+    )
     // Chip round-trips: the EXACT strings the splash action chips send must
     // parse under their native layers — a chip that routes to the planner is
     // a suggested prompt in disguise (the thing these replaced).

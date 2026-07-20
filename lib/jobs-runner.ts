@@ -31,6 +31,8 @@ import type { PolicyBlock } from '@/lib/tx-guardrails'
 import { buildLifiBridgeLeg, checkChainArrival, ROBINHOOD_CHAIN_ID, type ChainArrival, type FundingLeg } from '@/lib/lifi-bridge'
 import { buildLifiSwap } from '@/lib/lifi-venue'
 import { ensureTokenList } from '@/lib/token-list'
+import { buildTransferArtifact, type TransferSegment } from '@/lib/transfer-exec'
+import { buildNftTransfer, buildNftListing, type NftAsk } from '@/lib/nft-layer'
 
 export function jobsEnv(): string {
   return process.env.VERCEL_ENV ?? 'dev'
@@ -381,6 +383,49 @@ export async function buildSignArtifact(
       },
       guardReport: built.guardrails,
       valueUsd: built.guardrails.valueUsd ?? Number(amountHuman),
+    }
+  }
+  if (builder === 'native-transfer') {
+    // Fungible send through the native transfer layer (lib/transfer-exec):
+    // pinned calldata, live-balance check, priced valueUsd, full outflow
+    // policy gate. Built fresh at offer time — after a bridge leg settles,
+    // the balance the check reads is the real, funded one.
+    const built = await buildTransferArtifact(params as unknown as TransferSegment, wallet)
+    if ('problem' in built) throw new Error(built.problem)
+    if (built.blocked) {
+      throwRefusal(built.refusal ?? 'a safety check refused the transfer', built.guardrails)
+    }
+    return {
+      artifact: { txRequest: built.tx as unknown as Record<string, unknown>, summary: built.summary },
+      guardReport: built.guardrails,
+      valueUsd: built.guardrails.valueUsd ?? null,
+    }
+  }
+  if (builder === 'native-nft-transfer' || builder === 'native-nft-list') {
+    // NFT steps ride the SAME native NFT layer chat uses (lib/nft-layer):
+    // ownership re-anchored on-chain at offer time, transfer calldata
+    // re-decoded by the independent guard, listings assembled from the
+    // collection's LIVE fee schedule and re-verified at the submit relay.
+    const ask = params as unknown as NftAsk
+    if (builder === 'native-nft-transfer') {
+      if (ask.kind !== 'transfer') throw new Error('step params are not an NFT transfer ask')
+      const built = await buildNftTransfer(ask, wallet)
+      if ('problem' in built) throw new Error(built.problem)
+      if (built.blocked) throwRefusal(built.refusal ?? 'a safety check refused the NFT transfer', built.guardrails)
+      return {
+        artifact: { txRequest: built.tx as unknown as Record<string, unknown>, summary: built.summary },
+        guardReport: built.guardrails,
+        valueUsd: built.guardrails.valueUsd ?? null,
+      }
+    }
+    if (ask.kind !== 'sell') throw new Error('step params are not an NFT listing ask')
+    const built = await buildNftListing(ask, wallet)
+    if ('problem' in built) throw new Error(built.problem)
+    if (built.blocked) throwRefusal(built.refusal ?? 'a safety check refused the listing', built.guardrails)
+    return {
+      artifact: { orderRequest: built.order as unknown as Record<string, unknown>, summary: built.summary },
+      guardReport: built.guardrails,
+      valueUsd: built.guardrails.valueUsd ?? null,
     }
   }
   throw new Error(`unknown sign builder ${builder}`)
