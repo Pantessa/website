@@ -237,6 +237,20 @@ export function primaryStable(chainId: number): { symbol: string; address: `0x${
   return null
 }
 
+/** Explorer token page for a contract on a first-class chain — the ⓘ "more
+ *  info" target splash holding rows carry. Accepts a chain id or the human
+ *  label rows use ("Ethereum", "Robinhood Chain"); native pseudo-holdings
+ *  (zero/absent address) get null. Etherscan-family and Blockscout explorers
+ *  both serve /token/{address}. */
+export function explorerTokenUrl(chain: string | number, address: string | null | undefined): string | null {
+  if (!address || !/^0x[0-9a-fA-F]{40}$/.test(address) || /^0x0{40}$/.test(address)) return null
+  const c =
+    typeof chain === 'number'
+      ? chainById(chain)
+      : APP_CHAINS.find((x) => x.name.toLowerCase() === chain.toLowerCase() || x.short.toLowerCase() === chain.toLowerCase()) ?? null
+  return c ? c.explorerTx.replace(/\/tx\/$/, '/token/') + address : null
+}
+
 /** The chain a message names ("on arbitrum", "on robinhood") — null if none. */
 export function chainNamedIn(message: string): AppChain | null {
   for (const c of APP_CHAINS) if (c.words.test(message)) return c

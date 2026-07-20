@@ -1,9 +1,9 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import Link from 'next/link'
 import { motion, useReducedMotion } from 'framer-motion'
-import { ArrowDownLeft, ArrowUpRight, ChevronDown, Clock, ExternalLink, RefreshCw, Repeat, Vote, Wallet } from 'lucide-react'
+import { ArrowDownLeft, ArrowUpRight, ChevronDown, Clock, ExternalLink, Info, RefreshCw, Repeat, Vote, Wallet } from 'lucide-react'
 import BrandIcon from '@/components/BrandIcon'
 import TokenIcon from '@/components/TokenIcon'
 import VoteChoiceButtons from '@/components/VoteChoiceButtons'
@@ -323,6 +323,88 @@ function ActivityBody({ tile }: { tile: ActivityTile }) {
   )
 }
 
+// ── Shared line-item shell (rows / holdings / nfts) ──────────────────────────
+
+/** A row's optional external detail link, from the splash row contract
+ *  (types.ts infoUrl/infoLabel). */
+const rowInfo = (r: { infoUrl?: string | null; infoLabel?: string }) =>
+  r.infoUrl ? { url: r.infoUrl, label: r.infoLabel ?? 'More info' } : null
+
+/** One card line item: display-only, or expand-to-act. The optional `info`
+ *  link is the MCP rail's ⓘ affordance carried onto card rows — dynamic cards
+ *  pulling from external APIs link each line item to its detail page (OpenSea
+ *  item, explorer token page). Expandable rows surface it as a labeled chip
+ *  in the action drawer (an <a> can't nest inside the row's <button>);
+ *  display-only rows get the rail's hover-revealed ⓘ on the row itself. */
+function LineRow({
+  left,
+  right,
+  actions,
+  info,
+  slug,
+  onPick,
+  expanded,
+  onToggle,
+}: {
+  left: ReactNode
+  right?: ReactNode
+  actions: SuggestedPrompt[]
+  info: { url: string; label: string } | null
+  slug: string
+  onPick: (p: string, slug?: string) => void
+  expanded: boolean
+  onToggle: () => void
+}) {
+  const expandable = actions.length > 0
+  const inner = (
+    <>
+      {left}
+      <div className="flex flex-shrink-0 items-center gap-1.5">
+        {right}
+        {!expandable && info && (
+          <a
+            href={info.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={(e) => e.stopPropagation()}
+            aria-label={info.label}
+            title={info.label}
+            className="grid h-6 w-6 place-items-center rounded-md text-[color:var(--muted-2)] opacity-0 transition-all group-hover:opacity-100 focus-visible:opacity-100 hover:bg-white/5 hover:text-white"
+          >
+            <Info className="h-3.5 w-3.5" />
+          </a>
+        )}
+        {expandable && (
+          <ChevronDown className={`h-3.5 w-3.5 text-[color:var(--muted-2)] transition-transform ${expanded ? 'rotate-180' : ''}`} />
+        )}
+      </div>
+    </>
+  )
+  return (
+    <div>
+      {expandable ? (
+        <button
+          type="button"
+          onClick={onToggle}
+          aria-expanded={expanded}
+          className="-mx-1 flex w-full items-center justify-between gap-2 rounded-lg px-1 py-1 text-xs transition-colors hover:bg-white/5"
+        >
+          {inner}
+        </button>
+      ) : (
+        <div className="group -mx-1 flex items-center justify-between gap-2 rounded-lg px-1 py-1 text-xs">{inner}</div>
+      )}
+      {expandable && expanded && (
+        <div className="px-1 pb-1">
+          <Reveal>
+            <InlineActionChips actions={actions} info={info} slug={slug} onPick={onPick} />
+          </Reveal>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ── Rows (generic account-state list: positions, orders, fills) ─────────────
 
 function RowsBody({ tile, onPick }: { tile: RowsTile; onPick: (p: string, slug?: string) => void }) {
@@ -338,8 +420,6 @@ function RowsBody({ tile, onPick }: { tile: RowsTile; onPick: (p: string, slug?:
       <div className="space-y-1">
         {tile.rows.map((r, i) => {
           const id = `${r.label}-${i}`
-          const actions = r.actions ?? []
-          const expandable = actions.length > 0
           const expanded = open === id
           const value = r.value ? (
             <span
@@ -354,42 +434,23 @@ function RowsBody({ tile, onPick }: { tile: RowsTile; onPick: (p: string, slug?:
               {r.value}
             </span>
           ) : null
-          const inner = (
-            <>
-              <div className="min-w-0 text-left">
-                <div className="truncate font-medium text-white">{r.label}</div>
-                {r.sub && <div className="text-[10px] text-[color:var(--muted-2)]">{r.sub}</div>}
-              </div>
-              <div className="flex flex-shrink-0 items-center gap-1.5">
-                {value}
-                {expandable && (
-                  <ChevronDown className={`h-3.5 w-3.5 text-[color:var(--muted-2)] transition-transform ${expanded ? 'rotate-180' : ''}`} />
-                )}
-              </div>
-            </>
-          )
           return (
-            <div key={id}>
-              {expandable ? (
-                <button
-                  type="button"
-                  onClick={() => setOpen(expanded ? null : id)}
-                  aria-expanded={expanded}
-                  className="-mx-1 flex w-full items-center justify-between gap-2 rounded-lg px-1 py-1 text-xs transition-colors hover:bg-white/5"
-                >
-                  {inner}
-                </button>
-              ) : (
-                <div className="flex items-center justify-between gap-2 px-1 py-1 text-xs">{inner}</div>
-              )}
-              {expandable && expanded && (
-                <div className="px-1 pb-1">
-                  <Reveal>
-                    <InlineActionChips actions={actions} slug={tile.mcpSlug} onPick={onPick} />
-                  </Reveal>
+            <LineRow
+              key={id}
+              left={
+                <div className="min-w-0 text-left">
+                  <div className="truncate font-medium text-white">{r.label}</div>
+                  {r.sub && <div className="text-[10px] text-[color:var(--muted-2)]">{r.sub}</div>}
                 </div>
-              )}
-            </div>
+              }
+              right={value}
+              actions={r.actions ?? []}
+              info={rowInfo(r)}
+              slug={tile.mcpSlug}
+              onPick={onPick}
+              expanded={expanded}
+              onToggle={() => setOpen(expanded ? null : id)}
+            />
           )
         })}
       </div>
@@ -414,50 +475,31 @@ function HoldingsBody({ tile, onPick }: { tile: HoldingsTile; onPick: (p: string
       <div className="space-y-1">
         {tile.holdings.map((h) => {
           const id = (h.chain ?? '') + h.address + h.symbol
-          const actions = h.actions ?? []
-          const expandable = actions.length > 0
           const expanded = open === id
-          const inner = (
-            <>
-              <div className="flex min-w-0 items-center gap-2">
-                <TokenIcon symbol={h.symbol} size={24} />
-                <span className="font-medium text-white">{h.symbol}</span>
-                {h.native && <span className="mono text-[9px] text-[color:var(--muted-2)]">native</span>}
-                {h.chain && <span className="rounded bg-white/5 px-1 py-0.5 text-[9px] text-[color:var(--muted-2)]">{h.chain}</span>}
-              </div>
-              <div className="flex flex-shrink-0 items-center gap-1.5">
+          return (
+            <LineRow
+              key={id}
+              left={
+                <div className="flex min-w-0 items-center gap-2">
+                  <TokenIcon symbol={h.symbol} size={24} />
+                  <span className="font-medium text-white">{h.symbol}</span>
+                  {h.native && <span className="mono text-[9px] text-[color:var(--muted-2)]">native</span>}
+                  {h.chain && <span className="rounded bg-white/5 px-1 py-0.5 text-[9px] text-[color:var(--muted-2)]">{h.chain}</span>}
+                </div>
+              }
+              right={
                 <div className="text-right">
                   <div className="text-white">{h.valueUsd !== null ? usd(h.valueUsd) : '—'}</div>
                   <div className="text-[10px] text-[color:var(--muted-2)]">{trimNum(h.balance)}</div>
                 </div>
-                {expandable && (
-                  <ChevronDown className={`h-3.5 w-3.5 text-[color:var(--muted-2)] transition-transform ${expanded ? 'rotate-180' : ''}`} />
-                )}
-              </div>
-            </>
-          )
-          return (
-            <div key={id}>
-              {expandable ? (
-                <button
-                  type="button"
-                  onClick={() => setOpen(expanded ? null : id)}
-                  aria-expanded={expanded}
-                  className="-mx-1 flex w-full items-center justify-between gap-2 rounded-lg px-1 py-1 text-xs transition-colors hover:bg-white/5"
-                >
-                  {inner}
-                </button>
-              ) : (
-                <div className="flex items-center justify-between gap-2 px-1 py-1 text-xs">{inner}</div>
-              )}
-              {expandable && expanded && (
-                <div className="px-1 pb-1">
-                  <Reveal>
-                    <InlineActionChips actions={actions} slug={tile.mcpSlug} onPick={onPick} />
-                  </Reveal>
-                </div>
-              )}
-            </div>
+              }
+              actions={h.actions ?? []}
+              info={rowInfo(h)}
+              slug={tile.mcpSlug}
+              onPick={onPick}
+              expanded={expanded}
+              onToggle={() => setOpen(expanded ? null : id)}
+            />
           )
         })}
       </div>
@@ -477,19 +519,20 @@ function NftsBody({ tile, onPick }: { tile: NftsTile; onPick: (p: string, slug?:
       <div className="space-y-1">
         {tile.nfts.map((n) => {
           const id = `${n.chain}${n.contract}${n.tokenId}`
-          const actions = n.actions ?? []
-          const expandable = actions.length > 0
           const expanded = open === id
-          const inner = (
-            <>
-              <div className="flex min-w-0 items-center gap-2">
-                <NftThumb url={n.imageUrl} label={n.name} />
-                <div className="min-w-0 text-left">
-                  <div className="truncate font-medium text-white">{n.name}</div>
-                  <div className="truncate text-[10px] text-[color:var(--muted-2)] capitalize">{n.collectionName}</div>
+          return (
+            <LineRow
+              key={id}
+              left={
+                <div className="flex min-w-0 items-center gap-2">
+                  <NftThumb url={n.imageUrl} label={n.name} />
+                  <div className="min-w-0 text-left">
+                    <div className="truncate font-medium text-white">{n.name}</div>
+                    <div className="truncate text-[10px] text-[color:var(--muted-2)] capitalize">{n.collectionName}</div>
+                  </div>
                 </div>
-              </div>
-              <div className="flex flex-shrink-0 items-center gap-1.5">
+              }
+              right={
                 <div className="text-right">
                   <div className="text-[10px] text-[color:var(--muted)]">{n.floor ?? '—'}</div>
                   <div className="text-[9px] text-[color:var(--muted-2)]">
@@ -497,34 +540,14 @@ function NftsBody({ tile, onPick }: { tile: NftsTile; onPick: (p: string, slug?:
                     {n.standard === 'erc1155' ? ' · 1155' : ''}
                   </div>
                 </div>
-                {expandable && (
-                  <ChevronDown className={`h-3.5 w-3.5 text-[color:var(--muted-2)] transition-transform ${expanded ? 'rotate-180' : ''}`} />
-                )}
-              </div>
-            </>
-          )
-          return (
-            <div key={id}>
-              {expandable ? (
-                <button
-                  type="button"
-                  onClick={() => setOpen(expanded ? null : id)}
-                  aria-expanded={expanded}
-                  className="-mx-1 flex w-full items-center justify-between gap-2 rounded-lg px-1 py-1 text-xs transition-colors hover:bg-white/5"
-                >
-                  {inner}
-                </button>
-              ) : (
-                <div className="flex items-center justify-between gap-2 px-1 py-1 text-xs">{inner}</div>
-              )}
-              {expandable && expanded && (
-                <div className="px-1 pb-1">
-                  <Reveal>
-                    <InlineActionChips actions={actions} slug={tile.mcpSlug} onPick={onPick} />
-                  </Reveal>
-                </div>
-              )}
-            </div>
+              }
+              actions={n.actions ?? []}
+              info={rowInfo(n)}
+              slug={tile.mcpSlug}
+              onPick={onPick}
+              expanded={expanded}
+              onToggle={() => setOpen(expanded ? null : id)}
+            />
           )
         })}
       </div>
@@ -647,10 +670,14 @@ function Reveal({ children }: { children: React.ReactNode }) {
  *  the one asset the user tapped. */
 function InlineActionChips({
   actions,
+  info,
   slug,
   onPick,
 }: {
   actions: SuggestedPrompt[]
+  /** External detail page for the row — rendered after the action chips as
+   *  the ⓘ link chip ("View on OpenSea"), same affordance as the MCP rail. */
+  info?: { url: string; label: string } | null
   slug: string
   onPick: (p: string, slug?: string) => void
 }) {
@@ -667,6 +694,19 @@ function InlineActionChips({
           {a.label}
         </button>
       ))}
+      {info && (
+        <a
+          href={info.url}
+          target="_blank"
+          rel="noopener noreferrer"
+          onClick={(e) => e.stopPropagation()}
+          title={info.label}
+          className="flex items-center gap-1 rounded-full border border-[var(--line)] px-2.5 py-1 text-[11px] text-[color:var(--muted-2)] transition-colors hover:border-[var(--line-2)] hover:bg-white/5 hover:text-white"
+        >
+          <Info className="h-3 w-3" />
+          {info.label}
+        </a>
+      )}
     </div>
   )
 }
