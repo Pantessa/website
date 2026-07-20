@@ -15,6 +15,10 @@
 //    · sells: Seaport 1.6 order assembled from the collection's LIVE fee
 //      schedule, guarded by guardListingComponents, offered as an EIP-712
 //      artifact; the submit relay re-derives the payout set independently.
+//    · buys: the ask resolves against LIVE OpenSea listings, OpenSea's
+//      fulfillment is re-encoded LOCALLY (never opaque calldata), the target
+//      pinned to Seaport 1.6, price re-checked vs the collection floor and
+//      any explicit ETH cap.
 //    · every artifact runs the venue-neutral guardrails (policy gate at
 //      OPENSEA_POLICY_HOST) — unpriceable + policy-on = refused.
 // ─────────────────────────────────────────────────────────────────────────
@@ -28,15 +32,22 @@ import {
   SEAPORT_1_6,
   SEAPORT_EIP712_TYPES,
   buildListingComponents,
+  collectionSlugCandidates,
+  fetchBestListingForNft,
+  fetchCheapestListing,
   fetchCollectionFees,
   fetchFloorEth,
+  fetchListingFulfillment,
   fetchNftMeta,
   fetchOwnedNfts,
+  fulfillmentToCalldata,
+  guardBuyFulfillment,
   guardListingComponents,
   openseaEnabled,
   openseaSlugOf,
   randomListingSalt,
   seaportDomain,
+  type OpenseaListing,
   type OpenseaNft,
   type SeaportOrderComponents,
 } from '@/lib/opensea'
@@ -84,6 +95,7 @@ export interface NftAskBase {
 export type NftAsk =
   | (NftAskBase & { kind: 'transfer'; to: string })
   | (NftAskBase & { kind: 'sell'; priceEth: string | null; durationHours: number })
+  | (NftAskBase & { kind: 'buy'; maxPriceEth: string | null })
   | { kind: 'problem'; problem: string }
 
 /** Does the message talk about an NFT at all? The layer's cheap claim gate:
@@ -99,6 +111,12 @@ const COUNT = String.raw`(?:(\d+)\s+(?:of|x|×)\s+)?`
 const CHAIN_TAIL = String.raw`(?:\s+on\s+(?:ethereum|mainnet|base|arbitrum|opensea))*`
 
 const TRANSFER_RE = new RegExp(String.raw`\b(?:transfer|send|gift)\s+${COUNT}(?:my\s+)?${REF}\s+(?:nft\s+)?to\s+${RECIPIENT}`, 'i')
+// Buys have no required terminator ("to …"/"for … eth"), so the grammar
+// anchors to the end of the message — deterministic layers stay narrow.
+const BUY_RE = new RegExp(
+  String.raw`\b(?:buy|purchase)\s+${COUNT}(?:an?\s+|the\s+)?(?:cheapest\s+|floor\s+)?${REF}(?:\s+for\s+(?:up\s+to\s+|at\s+most\s+|max\s+)?(\d+(?:\.\d+)?)\s*(?:eth|Ξ))?${CHAIN_TAIL}\s*[.!?]*\s*$`,
+  'i',
+)
 const SELL_RE = new RegExp(String.raw`\b(?:sell|list)\s+${COUNT}(?:my\s+)?${REF}\s+(?:nft\s+)?for\s+(\d+(?:\.\d+)?)\s*(?:eth|Ξ)\b`, 'i')
 const SELL_NO_PRICE_RE = new RegExp(String.raw`\b(?:sell|list)\s+${COUNT}(?:my\s+)?${REF}(?:\s+nft)?\s*(?:$|on\s+opensea)`, 'i')
 const DURATION_RE = /\bfor\s+(\d+)\s*(day|days|week|weeks|hour|hours)\b/i
@@ -131,7 +149,7 @@ export function parseNftAsk(message: string): NftAsk | null {
   const chain = chainNamedIn(message)
   // Robinhood Chain has no OpenSea — an explicit robinhood NFT ask is honest-refused.
   if (chain && !NFT_CHAIN_IDS.includes(chain.id)) {
-    if (/\b(?:sell|list|transfer|send|gift)\b/i.test(message)) {
+    if (/\b(?:sell|list|transfer|send|gift|buy|purchase)\b/i.test(message)) {
       return { kind: 'problem', problem: `OpenSea covers Ethereum, Base, and Arbitrum — there's no NFT marketplace on ${chain.name} I can build against.` }
     }
     return null
@@ -168,6 +186,18 @@ export function parseNftAsk(message: string): NftAsk | null {
     if (ref) {
       return { kind: 'problem', problem: `At what price? Say “sell ${ref} for <amount> ETH” — I'll check the collection floor so you can sanity-check the number.` }
     }
+  }
+
+  const b = message.match(BUY_RE)
+  if (b) {
+    const { ref, tokenId, contract } = refParts(b[2])
+    if (ref) {
+      return { kind: 'buy', ref, tokenId, contract, chainId, amount: b[1] ?? '1', maxPriceEth: b[3] ?? null }
+    }
+  }
+  // A buy-shaped NFT ask the grammar couldn't read — ours, but unbuildable.
+  if (/^\s*(?:please\s+|can\s+you\s+)?(?:buy|purchase)\b/i.test(message)) {
+    return { kind: 'problem', problem: 'Give me the buy in one line: “buy <collection name> #<id>” or “buy the cheapest <collection> nft”, optionally “for up to <amount> ETH”. I resolve it against live OpenSea listings and you sign the exact Seaport fill.' }
   }
   return null
 }
@@ -564,5 +594,164 @@ export async function buildNftListing(ask: Extract<NftAsk, { kind: 'sell' }>, fr
       floorEth != null
         ? `Collection floor: ${floorEth.toFixed(4)} ETH.`
         : 'No floor price found for this collection.',
+  }
+}
+
+// ── Buy (fill a live listing) ──────────────────────────────────────────────
+
+interface BuyTarget {
+  listing: OpenseaListing
+  /** Collection slug the listing resolved through. */
+  collection: string
+  /** Display name: "Pudgy Penguins #2489". */
+  name: string
+  floorEth: number | null
+  /** True when the ask pinned a token id (rarity premiums above floor are
+   *  normal); false = "cheapest in the collection" (price ≈ floor expected). */
+  specific: boolean
+}
+
+/** Resolve a buy ask against LIVE OpenSea listings — an exact order hash or
+ *  an honest problem, never a guess. */
+async function resolveBuyListing(ask: Extract<NftAsk, { kind: 'buy' }>): Promise<BuyTarget | { problem: string }> {
+  // Address-shaped refs: contract (+ #id) → collection slug via metadata.
+  if (ask.contract) {
+    if (!ask.tokenId) return { problem: `Which token at ${ask.contract}? Give me the id (“0x… #<id>”) — or name the collection and I'll take its cheapest listing.` }
+    for (const chainId of ask.chainId ? [ask.chainId] : NFT_CHAIN_IDS) {
+      const meta = await fetchNftMeta(chainId, ask.contract, ask.tokenId)
+      if (!meta) continue
+      const listing = await fetchBestListingForNft(meta.collection, ask.tokenId)
+      if (!listing) return { problem: `${meta.name ?? `#${ask.tokenId}`} (${meta.collection}) has no live ETH listing on OpenSea right now.` }
+      if (listing.contract.toLowerCase() !== ask.contract.toLowerCase() || listing.tokenId !== ask.tokenId) {
+        return { problem: `OpenSea's best listing for that collection points at a different token than ${ask.contract} #${ask.tokenId} — refusing to buy the wrong NFT.` }
+      }
+      const floorEth = await fetchFloorEth(meta.collection)
+      return { listing, collection: meta.collection, name: meta.name ?? `#${ask.tokenId}`, floorEth, specific: true }
+    }
+    return { problem: `I couldn't find token #${ask.tokenId} at ${ask.contract} on ${ask.chainId ? (chainById(ask.chainId)?.name ?? 'that chain') : 'Ethereum, Base, or Arbitrum'}.` }
+  }
+
+  // Name-shaped refs: probe the deterministic slug candidates against the
+  // live API. A candidate that exists but has no live listing does NOT stop
+  // the scan — squatter slugs shadow the real collection ("pudgy-penguin"
+  // exists and is empty; "pudgy-penguins" is the one with listings).
+  const nameOnly = ask.ref.replace(/#\s*\d+/, '').trim()
+  let firstFound: { slug: string; name: string } | null = null
+  for (const slug of collectionSlugCandidates(nameOnly)) {
+    const col = await fetchCollectionFees(slug)
+    if (!col) continue
+    if (!firstFound) firstFound = { slug, name: col.name }
+    const listing = ask.tokenId ? await fetchBestListingForNft(slug, ask.tokenId) : await fetchCheapestListing(slug)
+    if (!listing) continue
+    const floorEth = await fetchFloorEth(slug)
+    return { listing, collection: slug, name: `${col.name} #${listing.tokenId}`, floorEth, specific: !!ask.tokenId }
+  }
+  if (firstFound) {
+    return {
+      problem: ask.tokenId
+        ? `${firstFound.name} #${ask.tokenId} has no live ETH listing on OpenSea right now.`
+        : `“${firstFound.name}” has no live ETH listings on OpenSea right now.`,
+    }
+  }
+  return { problem: `I couldn't find an OpenSea collection matching “${nameOnly || ask.ref}”. Give me the collection's OpenSea slug, or the exact NFT as “0x<contract> #<id>”.` }
+}
+
+export interface NftBuyBuilt {
+  summary: string
+  guardrails: GuardrailReport
+  blocked: boolean
+  refusal?: string
+  tx: EvmTxRequest
+  note: string
+  /** The resolved target — job wait predicates verify ownership of exactly
+   *  this NFT once the fill confirms. */
+  nft: { chainId: number; contract: string; tokenId: string; name: string; collection: string }
+}
+
+/** Resolve a live listing + build a guarded Seaport fill for the USER to
+ *  sign. The calldata is re-encoded locally from OpenSea's fulfillment —
+ *  target pinned to Seaport 1.6, price capped at the quoted listing (and any
+ *  explicit ETH cap), balance and spend policy checked as an OUTFLOW. */
+export async function buildNftBuy(ask: Extract<NftAsk, { kind: 'buy' }>, buyer: string): Promise<NftBuyBuilt | { problem: string }> {
+  if (!openseaEnabled()) return { problem: 'The NFT layer needs OPENSEA_API_KEY on the server — it anchors live listings before building. Not configured yet.' }
+  if (BigInt(ask.amount || '1') !== BigInt(1)) return { problem: 'Buys fill one listing at a time — ask for a single NFT per buy.' }
+  const maxWei = ask.maxPriceEth ? parseEther(ask.maxPriceEth) : null
+  if (maxWei !== null && maxWei <= BigInt(0)) return { problem: 'The ETH cap must be positive.' }
+
+  const target = await resolveBuyListing(ask)
+  if ('problem' in target) return target
+  const { listing } = target
+  if (ask.chainId && listing.chainId !== ask.chainId) {
+    return { problem: `${target.name} is listed on ${chainById(listing.chainId)?.name ?? `chain ${listing.chainId}`}, not ${chainById(ask.chainId)?.name ?? 'the chain you named'}.` }
+  }
+
+  const fulfillment = await fetchListingFulfillment(listing.chainId, listing.orderHash, buyer)
+  if ('problem' in fulfillment) return fulfillment
+
+  // Pure fail-closed guard: pinned target, fulfill* function, price ceiling.
+  const verdict = guardBuyFulfillment(fulfillment, { priceWei: listing.priceWei, maxWei, contract: listing.contract })
+  const fulfillCheck: GuardrailCheck = {
+    id: 'buy-fulfillment-guard',
+    level: 'block',
+    ok: verdict.ok,
+    note: verdict.ok
+      ? `Fulfillment verified: pays exactly ${fmtEth(fulfillment.valueWei)} ETH to the pinned Seaport 1.6, calldata re-encoded locally against the order for ${target.name}.`
+      : verdict.reasons.join(' '),
+  }
+
+  let data: `0x${string}` | null = null
+  try {
+    data = fulfillmentToCalldata(fulfillment.functionSig, fulfillment.inputData)
+  } catch (e) {
+    return { problem: `Couldn't re-encode OpenSea's fulfillment locally (${e instanceof Error ? e.message : String(e)}) — refusing to forward opaque calldata.` }
+  }
+
+  const client = publicClientFor(listing.chainId)
+  if (!client) return { problem: 'No RPC client configured for that chain.' }
+  const balance = await client.getBalance({ address: buyer as `0x${string}` }).catch(() => null)
+  const balanceOk = balance !== null && balance >= fulfillment.valueWei
+  const balanceCheck: GuardrailCheck = {
+    id: 'balance',
+    level: 'block',
+    ok: balanceOk,
+    note: balanceOk
+      ? `Wallet holds ${fmtEth(balance!)} ETH on ${chainById(listing.chainId)?.name} — covers the ${fmtEth(fulfillment.valueWei)} ETH fill (plus gas).`
+      : `Buying needs ${fmtEth(fulfillment.valueWei)} ETH but the wallet holds ${balance === null ? 'an unreadable balance' : `${fmtEth(balance)} ETH`} on ${chainById(listing.chainId)?.name} (plus gas).`,
+  }
+
+  // Floor sanity: a "cheapest in collection" buy should price ≈ floor — a
+  // big gap means a stale index, so refuse unless the user set their own cap.
+  // A pinned #id legitimately carries a rarity premium → warn only.
+  const priceEthNum = Number(formatEther(listing.priceWei))
+  const floorCheck: GuardrailCheck | null = (() => {
+    if (target.floorEth == null || target.floorEth <= 0) return null
+    const ratio = priceEthNum / target.floorEth
+    if (!target.specific && maxWei === null && ratio > 1.5) {
+      return { id: 'floor-sanity', level: 'block', ok: false, note: `The cheapest listing prices at ${fmtEth(listing.priceWei)} ETH but the collection floor is ${target.floorEth.toFixed(4)} ETH (${ratio.toFixed(1)}× floor) — that gap looks like a stale index. Re-ask with an explicit cap (“for up to X ETH”) if you really want it.` }
+    }
+    if (ratio > 2) {
+      return { id: 'floor-sanity', level: 'warn', ok: false, note: `${target.name} is listed at ${fmtEth(listing.priceWei)} ETH — ${ratio.toFixed(1)}× the ${target.floorEth.toFixed(4)} ETH collection floor.` }
+    }
+    return { id: 'floor-sanity', level: 'warn', ok: true, note: `Price checked against the collection floor (${target.floorEth.toFixed(4)} ETH).` }
+  })()
+
+  const eth = await usdPerToken(listing.chainId, 'ETH').catch(() => null)
+  const valueUsd = eth ? Number((priceEthNum * eth.usd).toFixed(2)) : null
+  // A buy is an OUTFLOW — the full spend-policy gate applies.
+  const { check: polCheck, violation } = await policyChecks(buyer, valueUsd, 'out')
+  const checks = [fulfillCheck, balanceCheck, ...(floorCheck ? [floorCheck] : []), polCheck]
+  const guardrails = buildReport(valueUsd, checks, violation ? { violation, valueUsd, host: OPENSEA_POLICY_HOST } : null)
+  const blocked = !guardrails.ok
+
+  const chainName = chainById(listing.chainId)?.name ?? `chain ${listing.chainId}`
+  const tx: EvmTxRequest = { to: SEAPORT_1_6, data, value: fulfillment.valueWei.toString(), chainId: listing.chainId, action: 'nft-buy' }
+  return {
+    summary: `Buy ${target.name} on OpenSea (${chainName}) for ${fmtEth(fulfillment.valueWei)} ETH — the NFT transfers to your wallet in the same transaction.`,
+    guardrails,
+    blocked,
+    ...(blocked ? { refusal: guardrails.checks.filter((c) => !c.ok && c.level === 'block').map((c) => c.note).join(' ') } : {}),
+    tx,
+    note: 'Listings can be filled or cancelled by others at any moment — if the transaction reverts, just ask again for a fresh fill.',
+    nft: { chainId: listing.chainId, contract: listing.contract, tokenId: listing.tokenId, name: target.name, collection: target.collection },
   }
 }

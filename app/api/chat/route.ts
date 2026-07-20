@@ -77,7 +77,7 @@ import {
 } from '@/lib/aave-supply'
 import { policyCheck, buildReport } from '@/lib/tx-guardrails'
 import { buildGuardrailedOrder } from '@/lib/cow-build'
-import { parseNftAsk, buildNftTransfer, buildNftListing } from '@/lib/nft-layer'
+import { parseNftAsk, buildNftBuy, buildNftTransfer, buildNftListing } from '@/lib/nft-layer'
 import { parseTransferSegment, buildTransferArtifact } from '@/lib/transfer-exec'
 import { buildUniswapSwap, NoV3PoolError } from '@/lib/uniswap-venue'
 import { buildUniswapV4Swap, NoV4PoolError, GatedV4PoolError } from '@/lib/uniswap-v4'
@@ -831,6 +831,8 @@ export async function POST(req: NextRequest) {
     //    re-decoded by an independent guard. Sells: a Seaport 1.6 order built
     //    from the collection's LIVE fee schedule, offered as an EIP-712
     //    artifact (SignNftListingButton) and re-verified at the submit relay.
+    //    Buys: live-listing resolve → OpenSea fulfillment re-encoded LOCALLY,
+    //    target pinned to Seaport 1.6, price re-checked vs floor/cap.
     const nftAsk = parseNftAsk(message)
     if (nftAsk) {
       if (nftAsk.kind === 'problem') {
@@ -840,13 +842,40 @@ export async function POST(req: NextRequest) {
       if (!walletAddress) {
         nativeTrace({ type: 'note', level: 'info', label: 'nft ask but no wallet connected — asking to connect before building' })
         return NextResponse.json({
-          reply: '🖼️ Connect your wallet first — NFT transfers and listings build against what your address actually owns, and you sign them yourself.',
+          reply: '🖼️ Connect your wallet first — NFT buys, transfers, and listings build against your actual address, and you sign them yourself.',
           connectWallet: true,
         })
       }
-      const what = nftAsk.kind === 'transfer' ? `transfer "${nftAsk.ref}" → ${nftAsk.to}` : `sell "${nftAsk.ref}" @ ${nftAsk.priceEth} ETH`
+      const what =
+        nftAsk.kind === 'transfer'
+          ? `transfer "${nftAsk.ref}" → ${nftAsk.to}`
+          : nftAsk.kind === 'buy'
+            ? `buy "${nftAsk.ref}"${nftAsk.maxPriceEth ? ` ≤ ${nftAsk.maxPriceEth} ETH` : ''}`
+            : `sell "${nftAsk.ref}" @ ${nftAsk.priceEth} ETH`
       nativeTrace({ type: 'select', service: 'OpenSea/Seaport (native NFT layer)', endpoint: what, priceUsd: 0, reason: 'native nft layer — ownership anchored on-chain, order/calldata built deterministically and guarded' })
       try {
+        if (nftAsk.kind === 'buy') {
+          // Live-listing resolve → locally re-encoded Seaport fill, target
+          // pinned, price re-checked vs floor + any explicit cap, full
+          // OUTFLOW policy gate.
+          const built = await buildNftBuy(nftAsk, walletAddress)
+          if ('problem' in built) {
+            nativeTrace({ type: 'note', level: 'info', label: `nft buy not buildable: ${built.problem.slice(0, 160)}` })
+            return NextResponse.json({ reply: `🖼️ ${built.problem}` })
+          }
+          if (built.blocked) {
+            nativeTrace({ type: 'note', level: 'warn', label: `nft buy REFUSED: ${(built.refusal ?? 'a safety check failed.').slice(0, 200)}` })
+            return NextResponse.json({ reply: `🚫 ${built.refusal ?? 'A safety check failed — nothing was built.'}`, guardrails: built.guardrails, blocked: true, buildPath: 'native-nft-buy' })
+          }
+          const buyWarns = built.guardrails.checks.filter((c) => !c.ok && c.level === 'warn').map((c) => `⚠️ ${c.note}`)
+          nativeTrace({ type: 'status', label: `nft buy guard passed — Seaport fill built (valueUsd ${built.guardrails.valueUsd ?? 'n/a'}), awaiting signature` })
+          return NextResponse.json({
+            reply: `🖼️ ${built.summary}\n${built.note}${buyWarns.length ? `\n${buyWarns.join('\n')}` : ''}`,
+            txRequest: built.tx,
+            guardrails: built.guardrails,
+            buildPath: 'native-nft-buy',
+          })
+        }
         if (nftAsk.kind === 'transfer') {
           const built = await buildNftTransfer(nftAsk, walletAddress)
           if ('problem' in built) {
