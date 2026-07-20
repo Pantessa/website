@@ -82,6 +82,18 @@ const TOOLS: Array<{ name: string; description: string; params: Param[]; plannab
     ],
   },
   {
+    name: 'fund_and_build',
+    description:
+      'The ONE-CALL composite for agents that can sign but can\'t orchestrate: scan + plan + an executable RUNBOOK in a single response. Call when an action refused on insufficient funds and you want the exact ordered tool calls, not just a plan. Returns everything plan_funding returns PLUS `runbook.steps` — numbered steps naming the NEAR Intents MCP tool for each leg (build_swap with verbatim params → submit_deposit_tx → await_completion) and ending with the follow-up action. Execute the steps in order, signing each deposit transfer with the user\'s own wallet; deposit addresses come from build_swap\'s responses, NEVER invented. Construction-only.',
+    params: [
+      user(),
+      p('chain', 'string', 'Destination chain — name or EVM chainId (Base/8453, Arbitrum/42161, Ethereum/1).', true),
+      p('token', 'string', 'The token that must LAND on the destination ("ETH", "USDC", …). ETH + major stables are priceable.', true),
+      p('amount', 'number', 'The SHORTFALL in token units: how much more must land there (needed minus currently held).', true),
+      p('finalAction', 'string', 'Optional: the action this funding is FOR ("supply 12 USDC to Aave on Arbitrum") — echoed into the runbook\'s final step.'),
+    ],
+  },
+  {
     name: 'scan_funding_sources',
     description:
       'Where a wallet\'s movable money sits: ETH + USDC across Base/Arbitrum/Ethereum in one call, gas-reserve aware (ETH counts only above what its own transfer costs; USDC only where the wallet also holds gas to sign). Call when an action failed on balance and you want to see what could fund it — then plan_funding turns it into an executable plan. failedChains means UNKNOWN, never empty.',
