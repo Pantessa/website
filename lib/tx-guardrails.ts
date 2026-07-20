@@ -77,6 +77,12 @@ export function validityCheck(validToSec: number, nowSec = Math.floor(Date.now()
  * go through (lib/spend-grant), pointed at the action's USD value and the
  * venue's policy host. Block-level: an unpriceable action under an enabled
  * policy is refused (caps are never bypassed because we couldn't price it).
+ *
+ * `selfSigned`: the artifact is signed by the OWNER's wallet, per action —
+ * that signature is the consent, so the caps (which govern what agents may
+ * spend without the owner in the loop) don't refuse it, and neither does an
+ * unpriceable leg. Kill switches, expiry, and the allowlist still apply.
+ * Autonomous paths (house-paid x402, the delegated HL key) never set this.
  */
 export function policyCheck(
   valueUsd: number | null,
@@ -84,13 +90,21 @@ export function policyCheck(
   spentTodayUsd: number,
   host: string,
   spentTotalUsd = 0,
+  opts?: { selfSigned?: boolean },
 ): { check: GuardrailCheck; violation: GrantViolation | 'VALUE_UNKNOWN' | null } {
+  const selfSigned = opts?.selfSigned === true
   if (!policy) {
     return { check: { id: 'policy', level: 'warn', ok: true, note: 'No spend policy on this wallet — not gated.' }, violation: null }
   }
   if (valueUsd === null) {
     if (!policy.spendPolicyEnabled) {
       return { check: { id: 'policy', level: 'warn', ok: true, note: 'Spend policy is off; value unpriced.' }, violation: null }
+    }
+    if (selfSigned) {
+      return {
+        check: { id: 'policy', level: 'warn', ok: true, note: 'No priceable leg — you sign this yourself, so no cap is being bypassed.' },
+        violation: null,
+      }
     }
     return {
       check: {
@@ -103,6 +117,17 @@ export function policyCheck(
     }
   }
   const violation = grantViolation(policy, host, valueUsd, spentTodayUsd, spentTotalUsd)
+  if (selfSigned && (violation === 'OVER_PER_CALL' || violation === 'BUDGET_EXCEEDED')) {
+    return {
+      check: {
+        id: 'policy',
+        level: 'block',
+        ok: true,
+        note: `Over your agent spend cap, but you sign this yourself ($${valueUsd.toFixed(2)}) — your signature is the consent.`,
+      },
+      violation: null,
+    }
+  }
   return {
     check: {
       id: 'policy',

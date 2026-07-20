@@ -22,7 +22,7 @@
 
 import prisma from '@/lib/db'
 import { hostOf } from '@/lib/spend-grant'
-import { NATIVE_VENUE_HOSTS } from '@/lib/venue-hosts'
+import { HOUSE_INFERENCE_HOSTS, NATIVE_VENUE_HOSTS } from '@/lib/venue-hosts'
 
 /** Default expense account minted on first dashboard visit / first toggle.
  *  Caps sized for real swaps, not x402 micro-payments — the $0.05/$5
@@ -131,6 +131,7 @@ export async function syncGrantAllowlist(ownerAddress: string, orgId?: string) {
           ...s.endpoints.map((e) => hostOf(e.url)),
         ]),
         ...NATIVE_VENUE_HOSTS,
+        ...HOUSE_INFERENCE_HOSTS,
       ]),
     ].filter(Boolean)
   }

@@ -63,7 +63,7 @@ export async function POST(req: NextRequest) {
   const grant = await getActiveGrant(from.toLowerCase())
   const policy = grant ? toPolicy(grant) : null
   const spentToday = grant ? await spentTodayUsd(grant.id) : 0
-  const { violation } = policyCheck(valueUsd, policy, spentToday, COW_POLICY_HOST)
+  const { violation } = policyCheck(valueUsd, policy, spentToday, COW_POLICY_HOST, 0, { selfSigned: true })
   if (violation && grant) {
     await recordLedger({
       grantId: grant.id,
