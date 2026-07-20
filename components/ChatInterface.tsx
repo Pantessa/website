@@ -38,6 +38,8 @@ import { SplashDashboard } from '@/components/SplashDashboard'
 import ChatLoader from '@/components/ChatLoader'
 import { splashCapable } from '@/lib/splash/types'
 import ShareButton from '@/components/ShareButton'
+import ShareReceiptButton from '@/components/ShareReceiptButton'
+import { signedTxsOf } from '@/components/SignedTxLines'
 import EmbedThisChat from '@/components/EmbedThisChat'
 import ChainPicker from '@/components/ChainPicker'
 import { chainById } from '@/lib/chains'
@@ -1414,6 +1416,19 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
                           />
                         ) : null
                       })()}
+                    {/* One-tap receipt share, the moment a signed turn settles
+                        (store merges meta.signed locally; the sign buttons above
+                        already show the hashes — this row is the share, not a
+                        second log). Needs the persisted row id to snapshot from. */}
+                    {msg.role === 'assistant' &&
+                      signedTxsOf(msg.meta).length > 0 &&
+                      currentChatId &&
+                      msg.dbId && (
+                        <div className="mt-2 pt-1.5 border-t border-[var(--line)] flex items-center gap-2">
+                          <span className="text-[10.5px] mono text-[color:var(--muted-2)]">✍️ signed &amp; settled</span>
+                          <ShareReceiptButton kind="tx" chatId={currentChatId} messageId={msg.dbId} />
+                        </div>
+                      )}
                     {msg.role === 'assistant' &&
                       (() => {
                         const vp = voteProposalOf(msg.meta)

@@ -52,6 +52,14 @@ import { parseTransferSegment } from '../lib/transfer-exec'
 import { detectBalanceShortfall, fundingPlanUsd, planFundingChips, rankFundingSources, type FundingNeed, type FundingSource } from '../lib/funding-plan'
 import { compileDcaBuy, dcaRunChip, parseDcaCreate, parseDcaManage, parseDcaRun, periodKeyFor } from '../lib/dca'
 import { firstUserPromptOf, shareTweetHrefOf } from '../lib/shared-chat'
+import {
+  VIA_RE,
+  dcaShareContent,
+  guardianShareContent,
+  receiptTryHref,
+  receiptTweetHref,
+  viaIdOf,
+} from '../lib/share-receipts'
 import { EXAMPLE_PROMPTS } from '../lib/examples'
 import { swapFeeAtoms, SWAP_FEE_BPS, TREASURY_ADDRESS } from '../lib/fees'
 import { APP_CHAINS, chainById, chainNamedIn, explorerTokenUrl, sanitizeChainId } from '../lib/chains'
@@ -1845,6 +1853,150 @@ async function main() {
       htmlSigned.includes(`https://basescan.org/tx/${sigHashA}`) &&
       htmlSigned.includes(`https://robinhoodchain.blockscout.com/tx/${sigHashB}`),
   )
+
+  // ── Receipt permalinks (/r) + via attribution (the viral loop) ────────────
+  console.log('— receipt permalinks + via attribution')
+
+  // Pure layer: via ids + per-kind share content + pre-written copy.
+  const ownerVia = viaIdOf(owner.address)
+  check(
+    'viaIdOf: stable, case-insensitive, matches the accepted shape',
+    ownerVia === viaIdOf(owner.address.toUpperCase()) && VIA_RE.test(ownerVia) && !ownerVia.includes(owner.address.slice(2, 8).toLowerCase()),
+  )
+  const dcaContent = dcaShareContent({ buyUsd: 10, buyToken: 'AAPL', sellToken: 'USDG', cadence: 'week', chainId: 4663, status: 'active' })
+  check(
+    'dca share content: number-forward headline + runnable ask + standing',
+    dcaContent.headline === '$10.00 → AAPL · every week' && dcaContent.ask === 'buy $10 of AAPL weekly' && dcaContent.standing,
+  )
+  const guardContent = guardianShareContent(
+    { coin: 'SYRUP', side: 'long', kind: 'stop_loss', triggerMode: 'price_move_pct', triggerValue: 8, status: 'active' },
+    null,
+  )
+  check(
+    'guardian share content: standing protection with the trigger in the headline',
+    guardContent.headline.startsWith('Stop-loss standing on SYRUP') && guardContent.standing && !!guardContent.ask?.includes('stop loss'),
+  )
+  const standingTweet = new URL(receiptTweetHref({ id: 'rid1', headline: dcaContent.headline, ask: dcaContent.ask, standing: true, via: ownerVia }))
+  check(
+    'standing tweet copy leads with the machine running unattended, url carries via',
+    (standingTweet.searchParams.get('text') ?? '').includes('keyboard') &&
+      (standingTweet.searchParams.get('url') ?? '').endsWith(`/r/rid1?via=${ownerVia}`),
+  )
+  const tryHrefUrl = receiptTryHref({ ask: dcaContent.ask, via: ownerVia })
+  check(
+    'receipt handoff prefills the exact ask and tags the sharer',
+    tryHrefUrl === `/chat?prompt=${encodeURIComponent('buy $10 of AAPL weekly')}&via=${ownerVia}`,
+  )
+
+  // API layer: mint from the signed turn created above.
+  const shareAnon = await fetch(`${BASE}/api/share/receipts`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ kind: 'tx', chatId: chat.id, messageId: msg.id }),
+  })
+  check('share mint without session → 401', shareAnon.status === 401)
+  const shareBadKind = await fetch(`${BASE}/api/share/receipts`, {
+    method: 'POST',
+    headers: CJ,
+    body: JSON.stringify({ kind: 'selfie' }),
+  })
+  check('share mint with unknown kind → 400', shareBadKind.status === 400)
+  const shareForeign = await fetch(`${BASE}/api/share/receipts`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', cookie: mallorySession },
+    body: JSON.stringify({ kind: 'tx', chatId: chat.id, messageId: msg.id }),
+  })
+  check("another wallet can't mint from someone else's turn (404)", shareForeign.status === 404)
+
+  const mintRes2 = await fetch(`${BASE}/api/share/receipts`, {
+    method: 'POST',
+    headers: CJ,
+    body: JSON.stringify({ kind: 'tx', chatId: chat.id, messageId: msg.id }),
+  })
+  const mintedShare = await mintRes2.json()
+  check(
+    'tx receipt mints: 201, /r url carries the sharer via id',
+    mintRes2.status === 201 && !!mintedShare.id && mintedShare.via === ownerVia && String(mintedShare.url).endsWith(`/r/${mintedShare.id}?via=${ownerVia}`),
+  )
+  const mintAgain = await fetch(`${BASE}/api/share/receipts`, {
+    method: 'POST',
+    headers: CJ,
+    body: JSON.stringify({ kind: 'tx', chatId: chat.id, messageId: msg.id }),
+  })
+  check('re-share is idempotent — same permalink back (200)', mintAgain.status === 200 && (await mintAgain.json()).id === mintedShare.id)
+
+  // Public page: the receipt renders, the ask prefill + via ride the CTA,
+  // the wallet appears ONLY truncated.
+  const receiptHtml = flat(await (await fetch(`${BASE}/r/${mintedShare.id}`)).text())
+  check(
+    'receipt page renders the signed story with explorer links',
+    receiptHtml.includes(`https://basescan.org/tx/${sigHashA}`) && receiptHtml.includes('only') && receiptHtml.includes('sign'),
+  )
+  check(
+    'receipt CTA prefills the ask and carries ?via=',
+    receiptHtml.includes(`via=${ownerVia}`) && receiptHtml.includes(encodeURIComponent('Buy $2 of AAPL on Robinhood Chain').replace(/'/g, '&#x27;')),
+  )
+  check(
+    'receipt page never prints the full wallet',
+    !receiptHtml.toLowerCase().includes(owner.address.toLowerCase()),
+  )
+  const ogRes = await fetch(`${BASE}/r/${mintedShare.id}/opengraph-image`)
+  check(
+    'receipt OG image renders (200, image/png)',
+    ogRes.status === 200 && (ogRes.headers.get('content-type') ?? '').startsWith('image/png'),
+  )
+  const twRes = await fetch(`${BASE}/r/${mintedShare.id}/twitter-image`)
+  check(
+    'receipt twitter image renders (200, image/png)',
+    twRes.status === 200 && (twRes.headers.get('content-type') ?? '').startsWith('image/png'),
+  )
+
+  // Revoke: mallory can't, the owner can, the page 404s after.
+  const revokeForeign = await fetch(`${BASE}/api/share/receipts/${mintedShare.id}`, { method: 'DELETE', headers: { cookie: mallorySession } })
+  check("another wallet can't revoke (404)", revokeForeign.status === 404)
+  const revokeOk = await fetch(`${BASE}/api/share/receipts/${mintedShare.id}`, { method: 'DELETE', headers: C })
+  check('owner revokes the permalink', revokeOk.status === 200)
+  const goneRes = await fetch(`${BASE}/r/${mintedShare.id}`)
+  check('revoked receipt page → 404', goneRes.status === 404)
+
+  // /chat ships its own social card (deep links are pasted everywhere).
+  const chatHtml = flat(await (await fetch(`${BASE}/chat`)).text())
+  check(
+    '/chat: twitter summary_large_image + segment og:image',
+    /<meta[^>]+name="twitter:card"[^>]+content="summary_large_image"/.test(chatHtml) &&
+      /<meta[^>]+property="og:image"[^>]+content="[^"]*\/chat\/opengraph-image/.test(chatHtml),
+  )
+  const chatOg = await fetch(`${BASE}/chat/opengraph-image`)
+  check('/chat OG image renders (200, image/png)', chatOg.status === 200 && (chatOg.headers.get('content-type') ?? '').startsWith('image/png'))
+
+  // /p handoff + tweet now carry the owner's via id.
+  const htmlVia = flat(await (await fetch(`${BASE}/p/${shared.publicSlug}`)).text())
+  check('/p handoff CTA carries the sharer via id', htmlVia.includes(`via=${ownerVia}`))
+
+  // Arrival stamping: a fresh wallet whose FIRST sign-in carries the via
+  // cookie gets one insert-only wallet_arrivals row; later sign-ins with a
+  // different via change nothing (first touch wins).
+  const visitor = privateKeyToAccount(generatePrivateKey())
+  const viaSignIn = async (via: string | null) => {
+    const nres = await fetch(`${BASE}/api/auth/nonce`)
+    const ncookie = getCookie(nres, 'yf_siwe_nonce')
+    const { nonce: vn } = await nres.json()
+    const vmsg = createSiweMessage({ address: visitor.address, chainId: 8453, domain: DOMAIN, nonce: vn, uri: BASE, version: '1' })
+    const vsig = await visitor.signMessage({ message: vmsg })
+    const cookies = [ncookie, ...(via ? [`yf_via=${via}`, 'yf_via_landing=/r/harness'] : [])].filter(Boolean).join('; ')
+    const vres = await fetch(`${BASE}/api/auth/verify`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie: cookies },
+      body: JSON.stringify({ message: vmsg, signature: vsig }),
+    })
+    return { status: vres.status, body: (await vres.json()) as { address?: string; via?: string } }
+  }
+  const firstArrival = await viaSignIn(ownerVia)
+  check('first sign-in with a via cookie stamps the arrival', firstArrival.status === 200 && firstArrival.body.via === ownerVia)
+  const secondArrival = await viaSignIn('zzzz99990000')
+  check('later via cookies never overwrite the first arrival', secondArrival.status === 200 && secondArrival.body.via === undefined)
+  const badVia = await viaSignIn('NOT VALID $$$')
+  check('malformed via cookie is ignored, login unharmed', badVia.status === 200 && badVia.body.via === undefined)
 
   // ── Blog (requires BLOG_ADMIN_PK + matching ADMIN_WALLETS on the server) ──
   const adminPk = process.env.BLOG_ADMIN_PK

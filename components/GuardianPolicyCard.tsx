@@ -8,6 +8,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { Loader2, Pause, Play, ShieldCheck, ShieldOff } from 'lucide-react'
+import ShareReceiptButton from '@/components/ShareReceiptButton'
 
 interface PolicyView {
   policy: {
@@ -190,12 +191,16 @@ export default function GuardianPolicyCard({ policyId }: { policyId: string }) {
         )}
       </div>
 
-      <div className="text-[11px] text-[color:var(--muted-2)]">
-        Checked every minute · every action receipted on the{' '}
-        <Link href="/dashboard/guardian" className="underline underline-offset-2 decoration-dotted">
-          Guardian dashboard
-        </Link>
-        {p.lastChecked && <> · last check {new Date(p.lastChecked).toLocaleTimeString()}</>}
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <span className="text-[11px] text-[color:var(--muted-2)]">
+          Checked every minute · every action receipted on the{' '}
+          <Link href="/dashboard/guardian" className="underline underline-offset-2 decoration-dotted">
+            Guardian dashboard
+          </Link>
+          {p.lastChecked && <> · last check {new Date(p.lastChecked).toLocaleTimeString()}</>}
+        </span>
+        {/* an armed (or fired) protection is a receipt worth showing off */}
+        <ShareReceiptButton kind="guardian" refId={p.id} />
       </div>
     </div>
   )

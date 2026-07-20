@@ -17,6 +17,7 @@ import { useRouter } from 'next/navigation'
 import { cn } from '@/lib/utils'
 import { useYeetfulStore } from '@/lib/store'
 import { cadenceLabel, dcaRunChip, type DcaCadence } from '@/lib/dca'
+import ShareReceiptButton from '@/components/ShareReceiptButton'
 import { LIVE_JOB_STATUS, useRunningWork, type RunningGuard, type RunningJob, type RunningSchedule } from '@/lib/use-running-work'
 
 function jobDot(status: string) {
@@ -209,6 +210,8 @@ export default function JobsRailTab({ onAct }: { onAct?: () => void }) {
           <button onClick={(e) => { e.stopPropagation(); prefill(`cancel my ${s.buyToken} dca`) }} className="text-[10.5px] mono text-[color:var(--muted-2)] hover:text-red-400 transition-colors">
             cancel
           </button>
+          {/* a standing order is the product's best receipt — one tap out */}
+          <ShareReceiptButton kind="dca" refId={s.id} />
         </div>
       </div>
     )

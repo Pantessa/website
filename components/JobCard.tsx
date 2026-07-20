@@ -15,6 +15,7 @@ import SendTxChain from '@/components/SendTxChain'
 import SignHlActionButton from '@/components/SignHlActionButton'
 import SignNftListingButton from '@/components/SignNftListingButton'
 import SpendPolicyFix, { type PolicyBlockInfo } from '@/components/SpendPolicyFix'
+import ShareReceiptButton from '@/components/ShareReceiptButton'
 import { orderRequestOf, txChainOf, txRequestOf } from '@/lib/transaction-layer'
 
 interface StepRow {
@@ -293,11 +294,15 @@ export default function JobCard({
 
           <div className="flex items-center justify-between pt-1.5 mt-1 border-t border-[var(--line)]">
             {job.status === 'done' ? (
-              <span className="inline-flex items-center gap-1.5 text-[11px] text-emerald-400">
-                <CheckCircle2 className="w-3.5 h-3.5" aria-hidden />
-                <span>
-                  <span className="mono font-semibold">${(job.valueUsd ?? 0).toFixed(2)}</span> moved — every step receipted.
+              <span className="inline-flex items-center gap-3 flex-wrap">
+                <span className="inline-flex items-center gap-1.5 text-[11px] text-emerald-400">
+                  <CheckCircle2 className="w-3.5 h-3.5" aria-hidden />
+                  <span>
+                    <span className="mono font-semibold">${(job.valueUsd ?? 0).toFixed(2)}</span> moved — every step receipted.
+                  </span>
                 </span>
+                {/* the aha moment, one tap from leaving the app as a link */}
+                <ShareReceiptButton kind="job" refId={jobId} />
               </span>
             ) : (
               <span className="text-[11px] text-[color:var(--muted-2)]">

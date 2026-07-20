@@ -31,6 +31,7 @@ interface Cohort {
     firstSigned: string | null
     firstStanding: string | null
     standingKind: 'job' | 'dca' | 'guardian' | null
+    via: string | null
     moneyMovedUsd: number
     movedEvents: number
     embedOrigins: string[]
@@ -266,7 +267,17 @@ export default function UsersPage() {
                         </span>
                       )}
                     </td>
-                    <td className="py-2 pr-3 whitespace-nowrap">{timeAgo(w.firstSeen)}</td>
+                    <td className="py-2 pr-3 whitespace-nowrap">
+                      {timeAgo(w.firstSeen)}
+                      {w.via && (
+                        <span
+                          className="ml-2 align-middle px-1.5 py-0.5 rounded text-[10px] mono uppercase tracking-wide bg-[color:color-mix(in_srgb,var(--accent,#34E0A1)_14%,transparent)] text-[color:var(--accent,#34E0A1)]"
+                          title={`First sign-in carried a share link (sharer id ${w.via})`}
+                        >
+                          via share
+                        </span>
+                      )}
+                    </td>
                     <td className="py-2 pr-3">
                       <Mile at={w.firstChat} note={w.firstChat ? (w.surface ?? undefined) : undefined} />
                     </td>

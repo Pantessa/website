@@ -11,6 +11,7 @@ import BrandIcon from '@/components/BrandIcon'
 import Footer from '@/components/Footer'
 import { respondingServers } from '@/lib/responding-mcp'
 import { getSharedChat, getJobs, getChatServers, jobIdOf, moneyMovedOf, shareTweetHrefOf } from '@/lib/shared-chat'
+import { viaIdOf } from '@/lib/share-receipts'
 import type { McpServer } from '@/lib/store'
 
 export const runtime = 'nodejs'
@@ -87,7 +88,7 @@ export default async function SharedChatPage({ params }: Params) {
     getJobs(chat.messages),
     getChatServers(chat),
   ])
-  const shareHref = shareTweetHrefOf(slug, chat.messages)
+  const shareHref = shareTweetHrefOf(slug, chat.messages, viaIdOf(chat.ownerAddress))
 
   return (
     <>
