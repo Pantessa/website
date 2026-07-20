@@ -8,8 +8,11 @@
 //  minus the slippage bound → SwapRouter02 multicall(deadline,
 //  [exactInputSingle]) calldata — an ON-CHAIN transaction the user
 //  broadcasts (evm-tx artifact → SendTxButton), not an off-chain order.
-//  Recipient is ALWAYS the payer. ERC-20 sells need an approval to
-//  SwapRouter02 (NOT CoW's VaultRelayer); native-ETH sells ride msg.value.
+//  With the protocol fee on (lib/fees.ts), the output lands on the router
+//  and sweepTokenWithFee — Uniswap's NATIVE interface-fee path — splits it
+//  user/treasury in the same multicall; fee off, recipient is ALWAYS the
+//  payer directly. ERC-20 sells need an approval to SwapRouter02 (NOT CoW's
+//  VaultRelayer); native-ETH sells ride msg.value.
 // ─────────────────────────────────────────────────────────────────────────
 
 import { encodeFunctionData, erc20Abi } from 'viem'
@@ -25,6 +28,7 @@ import {
   type GuardrailReport,
 } from '@/lib/tx-guardrails'
 import { getActiveGrant, recordLedger, spentTodayUsd, toPolicy } from '@/lib/grant-store'
+import { SWAP_FEE_BPS, TREASURY_ADDRESS, swapFeeAtoms } from '@/lib/fees'
 
 /** Uniswap v3 on Base (developers.uniswap.org, verified live by the MCP's
  *  smoke suite 2026-07-02). Kept as the Base constants for existing
@@ -98,7 +102,27 @@ const SWAP_ROUTER_02_ABI = [
     ],
     outputs: [{ name: 'results', type: 'bytes[]' }],
   },
+  // Uniswap's NATIVE interface-fee mechanism (Payments.sol): the swap pays
+  // the router (ADDRESS_THIS sentinel), then this sweeps the output to the
+  // user minus feeBips (≤100 enforced on-chain) to the fee recipient — the
+  // exact recipe Uniswap's own interface uses for its 25 bps.
+  {
+    name: 'sweepTokenWithFee',
+    type: 'function',
+    stateMutability: 'payable',
+    inputs: [
+      { name: 'token', type: 'address' },
+      { name: 'amountMinimum', type: 'uint256' },
+      { name: 'recipient', type: 'address' },
+      { name: 'feeBips', type: 'uint256' },
+      { name: 'feeRecipient', type: 'address' },
+    ],
+    outputs: [],
+  },
 ] as const
+
+/** SwapRouter02's "pay the router itself" recipient sentinel. */
+const ADDRESS_THIS = '0x0000000000000000000000000000000000000002' as const
 
 /** No v3 pool can fill the pair — a TYPED miss so the route can fall through
  *  to the v4 layer (Robinhood's tokenized stocks are v4-only) instead of
@@ -159,9 +183,11 @@ export async function buildUniswapSwap(params: UniswapSwapParams): Promise<Unisw
   if (!chain) throw new Error(`Chain ${chainId} isn't one of Yeetful's supported chains.`)
   if (!chain.uniswap) throw new Error(`Uniswap isn't wired on ${chain.name} yet — pick another chain.`)
   const { swapRouter02, quoterV2 } = chain.uniswap
-  // Base keeps its dedicated client (lib/auth.ts); other chains come from the
-  // registry's per-chain client factory.
-  const client = chainId === 8453 ? publicClient : publicClientFor(chainId)
+  // Registry client first — it carries the per-chain rpcUrl overrides
+  // (Base's viem default mainnet.base.org 429s under load and made this
+  // builder claim "no v3 pool" for USDC→WETH; publicnode holds up). The
+  // lib/auth client stays as the Base fallback only.
+  const client = publicClientFor(chainId) ?? (chainId === 8453 ? publicClient : null)
   if (!client) throw new Error(`No RPC client configured for ${chain.name}.`)
   const from = params.from as `0x${string}`
   if (!/^0x[0-9a-fA-F]{40}$/.test(from)) throw new Error('A valid wallet address is required.')
@@ -204,6 +230,13 @@ export async function buildUniswapSwap(params: UniswapSwapParams): Promise<Unisw
   const minOut = (best.amountOut * BigInt(10_000 - slippageBps)) / BigInt(10_000)
   const deadline = Math.floor(Date.now() / 1000) + deadlineSec
 
+  // Yeetful fee (lib/fees.ts) via the router's NATIVE fee path: output lands
+  // on the router, sweepTokenWithFee splits it user/treasury in the SAME
+  // multicall. Fee off (bps 0) → the classic direct-to-payer build.
+  const feeOn = SWAP_FEE_BPS > 0
+  const feeAtomsOnMin = feeOn ? swapFeeAtoms(minOut) : BigInt(0)
+  const minOutAfterFee = minOut - feeAtomsOnMin
+
   const swapCall = encodeFunctionData({
     abi: SWAP_ROUTER_02_ABI,
     functionName: 'exactInputSingle',
@@ -212,14 +245,26 @@ export async function buildUniswapSwap(params: UniswapSwapParams): Promise<Unisw
         tokenIn: sellAddr as `0x${string}`,
         tokenOut: buyAddr as `0x${string}`,
         fee: best.fee,
-        recipient: from, // ALWAYS the payer
+        // Fee on: the router holds the output for the sweep split. Fee off:
+        // ALWAYS the payer, directly.
+        recipient: feeOn ? ADDRESS_THIS : from,
         amountIn,
         amountOutMinimum: minOut,
         sqrtPriceLimitX96: BigInt(0),
       },
     ],
   })
-  const data = encodeFunctionData({ abi: SWAP_ROUTER_02_ABI, functionName: 'multicall', args: [BigInt(deadline), [swapCall]] })
+  const calls: `0x${string}`[] = [swapCall]
+  if (feeOn) {
+    calls.push(
+      encodeFunctionData({
+        abi: SWAP_ROUTER_02_ABI,
+        functionName: 'sweepTokenWithFee',
+        args: [buyAddr as `0x${string}`, minOut, from, BigInt(SWAP_FEE_BPS), TREASURY_ADDRESS],
+      }),
+    )
+  }
+  const data = encodeFunctionData({ abi: SWAP_ROUTER_02_ABI, functionName: 'multicall', args: [BigInt(deadline), calls] })
   const swapTx = {
     to: swapRouter02 as string,
     data,
@@ -260,7 +305,15 @@ export async function buildUniswapSwap(params: UniswapSwapParams): Promise<Unisw
   }
 
   // ── Cross-app guardrails: identical gate to CoW, host = Uniswap's. ────────
-  const checks: GuardrailCheck[] = [recipientCheck(from, from), validityCheck(deadline), allowanceCheck]
+  const feeCheck: GuardrailCheck = {
+    id: 'fee',
+    level: 'warn',
+    ok: true,
+    note: feeOn
+      ? `Yeetful fee: ${SWAP_FEE_BPS / 100}% of the output (below Uniswap's 0.25% interface fee), split by the router's own sweepTokenWithFee to the Yeetful treasury — visible in the multicall, minimum received shown post-fee.`
+      : 'No Yeetful fee on this swap.',
+  }
+  const checks: GuardrailCheck[] = [recipientCheck(from, from), validityCheck(deadline), allowanceCheck, feeCheck]
   const valueUsd = stableUsd(chainId, sellAddr, amountIn) ?? stableUsd(chainId, buyAddr, best.amountOut)
   const grant = await getActiveGrant(from.toLowerCase())
   const policy = grant ? toPolicy(grant) : null
@@ -282,8 +335,11 @@ export async function buildUniswapSwap(params: UniswapSwapParams): Promise<Unisw
 
   const inHuman = formatAtoms(amountIn.toString(), sellDec)
   const outHuman = formatAtoms(best.amountOut.toString(), buyDec)
-  const minHuman = formatAtoms(minOut.toString(), buyDec)
-  const summary = `Swap ${inHuman} ${tokenLabel(params.sellToken, chainId)} → ~${outHuman} ${tokenLabel(params.buyToken, chainId)} via Uniswap v3 on ${chain.name} (${best.fee / 100}bps pool), min received ${minHuman} (${slippageBps}bps slippage)`
+  // Honest minimum: what the USER receives after the treasury sweep, not the
+  // pool-level bound.
+  const minHuman = formatAtoms(minOutAfterFee.toString(), buyDec)
+  const feeNote = feeOn ? `, incl. ${SWAP_FEE_BPS / 100}% Yeetful fee on the output` : ''
+  const summary = `Swap ${inHuman} ${tokenLabel(params.sellToken, chainId)} → ~${outHuman} ${tokenLabel(params.buyToken, chainId)} via Uniswap v3 on ${chain.name} (${best.fee / 100}bps pool), min received ${minHuman} (${slippageBps}bps slippage${feeNote})`
 
   return { summary, guardrails, blocked: !guardrails.ok, swapTx, approveTx, minimumOut: minHuman, validUntil: deadline }
 }

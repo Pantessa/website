@@ -28,7 +28,7 @@ import { grantViolation, type GrantPolicy } from '../lib/spend-grant'
 import { routerPrompt, parseRouterDecision, selectInferenceProvider, routeMessage, shortlistEndpoints } from '../lib/router'
 import { buildSmartRequest, computeRating, type PlannableEndpoint } from '../lib/endpoint-planner'
 import { buildSignableArtifact, isActionIntent, orderRequestOf, txRequestOf, txChainOf } from '../lib/transaction-layer'
-import { resolveToken, buildCowOrderTypedData, cowOrderAction, buildCowLimitOrder, buildCowSubmitBody, describeCowOrder, describeAmount, formatAtoms, tokenDecimals, tokenLabel, humanToAtoms, applySlippage, COW_APP_DATA_JSON, GPV2_SETTLEMENT, type CowQuoteResult } from '../lib/cow'
+import { resolveToken, buildCowOrderTypedData, cowOrderAction, buildCowLimitOrder, buildCowSubmitBody, describeCowOrder, describeAmount, formatAtoms, tokenDecimals, tokenLabel, humanToAtoms, applySlippage, COW_APP_DATA_JSON, COW_APP_DATA_HASH, GPV2_SETTLEMENT, type CowQuoteResult } from '../lib/cow'
 import { primeTokenList } from '../lib/token-list'
 import { pureChecks, policyCheck, orderValueUsd, buildReport } from '../lib/cow-guardrails'
 import { policyCheckInflow, recipientCheck, validityCheck, MAX_VALID_SEC } from '../lib/tx-guardrails'
@@ -2872,7 +2872,9 @@ async function main() {
       buyToken: '0x4200000000000000000000000000000000000006',
       receiver: '0x1111111111111111111111111111111111111111',
       sellAmount: '100000000', buyAmount: '25000000000000000',
-      validTo: 1893456000, appData: '0x' + '0'.repeat(64), feeAmount: '250000',
+      // Yeetful's real appData hash — the app-data guard block-refuses
+      // anything else (fee stripping / hook injection).
+      validTo: 1893456000, appData: keccak256(stringToBytes(COW_APP_DATA_JSON)), feeAmount: '250000',
       kind: 'sell', partiallyFillable: false, sellTokenBalance: 'erc20', buyTokenBalance: 'erc20',
     },
   }
@@ -4529,6 +4531,90 @@ async function main() {
   // The panel's quote+build endpoint — same builders as chat, so this only
   // asserts the ROUTE contract (validation + honest errors + artifact shape),
   // not the venue logic the tx-layer sections already cover.
+  // ── Venue-native fees: CoW partnerFee appData + Uniswap v3 sweep split ────
+  console.log('— venue fees')
+  check(
+    'venue fees: cow appData carries the protocol partner fee (bps + treasury) when the fee is on',
+    SWAP_FEE_BPS === 0 ||
+      (COW_APP_DATA_JSON.includes(`"partnerFee":{"bps":${SWAP_FEE_BPS},"recipient":"${TREASURY_ADDRESS}"`) &&
+        COW_APP_DATA_HASH === keccak256(stringToBytes(COW_APP_DATA_JSON))),
+  )
+  const tamperApp = pureChecks(
+    { ...cowFixture, order: { ...cowFixture.order, appData: '0x' + 'de'.repeat(32), validTo: gNow + 1200 } },
+    gFrom, gNow,
+  )
+  check(
+    'venue fees: an order signing someone else\'s appData BLOCKS (fee stripping refused)',
+    !buildReport(null, tamperApp).ok && tamperApp.find((c) => c.id === 'app-data')?.ok === false,
+  )
+  const submitTamper = await fetch(`${BASE}/api/cow/submit`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      chainId: 8453,
+      from: gFrom,
+      signature: '0x' + '11'.repeat(65),
+      order: { ...cowFixture.order, appData: '0x' + 'de'.repeat(32), validTo: Math.floor(Date.now() / 1000) + 1200 },
+    }),
+  })
+  check(
+    'venue fees: submit relay refuses a foreign-appData order (403, never relayed)',
+    submitTamper.status === 403 && /appData/i.test(((await submitTamper.json()) as { error?: string }).error ?? ''),
+  )
+  // Live v3 build via the panel route (server-side env; SAME builder as
+  // chat): the multicall must be [swap → router sentinel, sweep → user
+  // minus feeBips to the treasury] — decoded, never trusted. Mirrors the
+  // panel-swap check's tolerance: a spend-policy refusal is also honest.
+  {
+    const feeQuote = await fetch(`${BASE}/api/panels/swap`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ from: owner.address, chainId: 8453, sellToken: 'USDC', buyToken: 'WETH', amountHuman: '1' }),
+    })
+    const fq = (await feeQuote.json()) as { ok?: boolean; txChain?: { steps?: { label: string; tx?: { data?: string } }[] }; policyBlock?: unknown; error?: string }
+    const feeSwapStep = fq?.txChain?.steps?.find((s) => s.label === 'swap')
+    if (fq?.ok && typeof feeSwapStep?.tx?.data === 'string' && SWAP_FEE_BPS > 0) {
+      try {
+        const mc = decodeFunctionData({
+          abi: parseAbi(['function multicall(uint256 deadline, bytes[] data) payable returns (bytes[] results)']),
+          data: feeSwapStep.tx.data as `0x${string}`,
+        })
+        const inner = mc.args[1] as readonly `0x${string}`[]
+        const swapDec = decodeFunctionData({
+          abi: parseAbi([
+            'struct ExactInputSingleParams { address tokenIn; address tokenOut; uint24 fee; address recipient; uint256 amountIn; uint256 amountOutMinimum; uint160 sqrtPriceLimitX96; }',
+            'function exactInputSingle(ExactInputSingleParams params) payable returns (uint256)',
+          ]),
+          data: inner[0],
+        })
+        const sweepDec = decodeFunctionData({
+          abi: parseAbi(['function sweepTokenWithFee(address token, uint256 amountMinimum, address recipient, uint256 feeBips, address feeRecipient) payable']),
+          data: inner[1],
+        })
+        const swapArgs = swapDec.args[0] as { recipient: string; amountOutMinimum: bigint }
+        const [, sweepMin, sweepRecipient, sweepBips, sweepFeeRecipient] = sweepDec.args as readonly [string, bigint, string, bigint, string]
+        check(
+          'venue fees: uniswap v3 output routes via the router + sweepTokenWithFee(user, SWAP_FEE_BPS, treasury)',
+          inner.length === 2 &&
+            swapArgs.recipient.toLowerCase() === '0x0000000000000000000000000000000000000002' &&
+            sweepRecipient.toLowerCase() === owner.address.toLowerCase() &&
+            sweepBips === BigInt(SWAP_FEE_BPS) &&
+            sweepFeeRecipient.toLowerCase() === TREASURY_ADDRESS.toLowerCase() &&
+            sweepMin === swapArgs.amountOutMinimum,
+          `calls=${inner.length} bips=${sweepBips}`,
+        )
+      } catch (e) {
+        check('venue fees: uniswap v3 fee multicall decodes', false, String(e).slice(0, 120))
+      }
+    } else {
+      check(
+        'venue fees: uniswap v3 fee build (live via panel route) — built or policy-refused honestly',
+        fq?.ok === true || fq?.policyBlock !== undefined,
+        JSON.stringify(fq).slice(0, 140),
+      )
+    }
+  }
+
   console.log('— panel swap')
   {
     const bad = await fetch(`${BASE}/api/panels/swap`, { method: 'POST', body: 'not json' })

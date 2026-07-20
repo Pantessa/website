@@ -18,7 +18,8 @@ import {
   type GuardrailCheck,
   type GuardrailReport,
 } from '@/lib/tx-guardrails'
-import { formatAtoms, tokenLabel, type CowQuoteResult, type CowOrderParameters } from '@/lib/cow'
+import { formatAtoms, tokenLabel, COW_APP_DATA_HASH, type CowQuoteResult, type CowOrderParameters } from '@/lib/cow'
+import { SWAP_FEE_BPS, TREASURY_ADDRESS } from '@/lib/fees'
 
 // Re-export the core's types/builders so existing CoW call sites and tests
 // keep one import surface; new venues import lib/tx-guardrails directly.
@@ -75,10 +76,28 @@ function feeCheck(order: CowOrderParameters): GuardrailCheck {
   }
 }
 
+/** The order must sign OUR appData doc — order.appData is the keccak of the
+ *  exact JSON Yeetful attributes orders with (incl. the partner fee when the
+ *  protocol fee is on). A quote whose appDataHash differs signed someone
+ *  else's document (fee stripped or hooks injected) — refuse, never offer. */
+function appDataCheck(order: CowOrderParameters): GuardrailCheck {
+  const ok = (order.appData ?? '').toLowerCase() === COW_APP_DATA_HASH.toLowerCase()
+  return {
+    id: 'app-data',
+    level: 'block',
+    ok,
+    note: ok
+      ? SWAP_FEE_BPS > 0
+        ? `Order carries Yeetful's appData: CoW settles a ${SWAP_FEE_BPS / 100}% partner fee to the treasury (${TREASURY_ADDRESS.slice(0, 6)}…${TREASURY_ADDRESS.slice(-4)}) inside the protocol — no extra step to sign.`
+        : "Order carries Yeetful's appData attribution."
+      : 'Order appData is not the document Yeetful builds with — refusing (fee/hook tampering).',
+  }
+}
+
 /** Pure checks — venue-neutral recipient/validity from the core + CoW fee. */
 export function pureChecks(quote: CowQuoteResult, from: string, nowSec = Math.floor(Date.now() / 1000)): GuardrailCheck[] {
   const { order } = quote
-  return [recipientCheck(order.receiver, from), validityCheck(order.validTo, nowSec), feeCheck(order)]
+  return [recipientCheck(order.receiver, from), validityCheck(order.validTo, nowSec), feeCheck(order), appDataCheck(order)]
 }
 
 /** On-chain reads: does `from` hold the sell amount, and has it approved the
