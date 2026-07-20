@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import { SITE } from '@/lib/docs'
 import HomeHeroFusion from '@/components/HomeHeroFusion'
+import StandingIntent from '@/components/StandingIntent'
 import ComposeSet from '@/components/ComposeSet'
 import EngineInside from '@/components/EngineInside'
 import TxPipeline from '@/components/TxPipeline'
@@ -22,7 +23,7 @@ import Footer from '@/components/Footer'
 
 const TITLE = 'Yeetful — Compose MCPs into one embeddable agent'
 const DESCRIPTION =
-  'Pick a few MCPs — or bring your own — and get one agent that swaps, votes, and answers from your docs. Safe transaction building: guardrails, your wallet signs, every call receipted. Embed it on any site in five lines.'
+  'Pick a few MCPs — or bring your own — and get one agent that swaps, votes, and keeps working between your turns: recurring buys, stop-loss protections, multi-step jobs. The non-custodial back office for autonomous money — guardrails, your wallet signs, every move receipted. Embed it on any site in five lines.'
 
 export const metadata: Metadata = {
   title: TITLE,
@@ -47,7 +48,7 @@ const JSON_LD = JSON.stringify([
     applicationCategory: 'FinanceApplication',
     operatingSystem: 'Web',
     description:
-      'An embeddable chat that composes multiple MCP servers into one agent for agentic finance: free first-party MCPs (Uniswap, Snapshot, CoW Protocol, Hyperliquid) plus your own. It quotes and builds on-chain transactions (swaps, DAO votes) with per-step guardrails, signs with the user’s own wallet via the host page, and receipts every call.',
+      'An embeddable chat that composes multiple MCP servers into one agent for agentic finance: free first-party MCPs (Uniswap, Snapshot, CoW Protocol, Hyperliquid, Robinhood Chain, OpenSea) plus your own. It quotes and builds on-chain transactions (swaps, DAO votes, NFT listings) with per-step guardrails, runs standing work between turns (recurring buys, stop-loss protections, multi-step fund-then-act jobs), signs with the user’s own wallet via the host page, and receipts every move.',
     offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD' },
     provider: { '@type': 'Organization', name: 'Yeetful', url: SITE },
   },
@@ -61,8 +62,12 @@ export default function HomePage() {
         {/* The claim + the fusion artwork (live /embed summoned on demand) */}
         <HomeHeroFusion />
 
-        {/* The power example, straight after the claim: "Buy $2 of AAPL"
-            funds itself across chains — the onboarding story as one turn */}
+        {/* The product claim, straight after the hero: standing intent —
+            jobs, DCA, Guardian, NFTs — money that moves between your turns */}
+        <StandingIntent />
+
+        {/* The power example: "Buy $2 of AAPL" funds itself across chains —
+            the onboarding story as one turn */}
         <FundAnything />
 
         {/* Recipes: what a composed set unlocks */}
