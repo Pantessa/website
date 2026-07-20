@@ -50,7 +50,7 @@ import { parseRobinhoodFunding, parseSameChainSwapSegment, JOB_SEGMENT_PARSERS }
 import { parseTransferSegment } from '../lib/transfer-exec'
 import { detectBalanceShortfall, fundingPlanUsd, planFundingChips, rankFundingSources, type FundingNeed, type FundingSource } from '../lib/funding-plan'
 import { compileDcaBuy, dcaRunChip, parseDcaCreate, parseDcaManage, parseDcaRun, periodKeyFor } from '../lib/dca'
-import { firstUserPromptOf } from '../lib/shared-chat'
+import { firstUserPromptOf, shareTweetHrefOf } from '../lib/shared-chat'
 import { EXAMPLE_PROMPTS } from '../lib/examples'
 import { swapFeeAtoms, SWAP_FEE_BPS, TREASURY_ADDRESS } from '../lib/fees'
 import { APP_CHAINS, chainById, chainNamedIn, explorerTokenUrl, sanitizeChainId } from '../lib/chains'
@@ -1671,6 +1671,36 @@ async function main() {
     firstUserPromptOf([{ role: 'user', content: 'x'.repeat(401) }]) === null &&
       firstUserPromptOf([{ role: 'user', content: 'x'.repeat(400) }])?.length === 400,
   )
+
+  // Share button — the tweet intent carries the chat's own opening ask.
+  check(
+    'share page renders the X share button with the pre-written tweet',
+    html.includes('twitter.com/intent/tweet?text=Lazy+transactions+are+here') &&
+      html.includes(encodeURIComponent('"Buy $2 of AAPL on Robinhood Chain" on @yeetful_ai').replaceAll('%20', '+')),
+  )
+  {
+    const href = shareTweetHrefOf('some-slug', [
+      { role: 'assistant', content: 'Hello.' },
+      { role: 'user', content: 'Buy $2 of AAPL on Robinhood Chain' },
+    ])
+    const p = new URL(href).searchParams
+    check(
+      'shareTweetHrefOf quotes the first user ask and links the share page',
+      p.get('text') === 'Lazy transactions are here!\n\n"Buy $2 of AAPL on Robinhood Chain" on @yeetful_ai' &&
+        p.get('url')?.endsWith('/p/some-slug') === true,
+    )
+    const long = new URL(shareTweetHrefOf('s', [{ role: 'user', content: 'y'.repeat(500) }])).searchParams
+    const longText = long.get('text') ?? ''
+    check(
+      'shareTweetHrefOf truncates an over-long ask with an ellipsis (never drops it)',
+      longText.includes('…') && longText.length <= 256 && longText.endsWith('on @yeetful_ai'),
+    )
+    const bare = new URL(shareTweetHrefOf('s', [{ role: 'assistant', content: 'hi' }])).searchParams
+    check(
+      'shareTweetHrefOf: no user turn → generic tweet, still tagged',
+      bare.get('text')?.includes('@yeetful_ai') === true && bare.get('text')?.includes('"') === false,
+    )
+  }
 
   // ── Signed-tx log: meta.signed write-back + share render ──────────────────
   console.log('— signed-tx log')
