@@ -53,6 +53,15 @@ export const DOCS_PAGES: DocsPage[] = [
 
   // ── TRUST IT · for users ────────────────────────────────────────────────
   {
+    slug: 'first-five-minutes',
+    title: 'Your first five minutes',
+    seoTitle: 'Your first five minutes with Yeetful',
+    description:
+      'Land, ask, sign, then tell it once — the path from a free first ask to a standing intent, with a guarded transaction and a receipt at every step. No wallet needed to start.',
+    ready: true,
+    door: 'user',
+  },
+  {
     slug: 'trust',
     title: 'Trust: the guardrails',
     seoTitle: 'Why you can sign what Yeetful builds',
