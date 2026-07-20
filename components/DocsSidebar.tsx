@@ -6,8 +6,8 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { useEffect, useRef } from 'react'
-import { guidePages, legalPages } from '@/lib/docs'
+import { Fragment, useEffect, useRef } from 'react'
+import { DOORS, doorPages, legalPages } from '@/lib/docs'
 
 export default function DocsSidebar() {
   const pathname = usePathname()
@@ -33,7 +33,15 @@ export default function DocsSidebar() {
 
   return (
     <nav className="docs__side" aria-label="Docs pages" ref={nav}>
-      {guidePages().map((p) => link(p.slug, p.title))}
+      {link('', 'Overview')}
+      {/* Fragments, not wrappers: the phone layout flattens the list into a
+          horizontal scroll-row, so links must stay direct flex children. */}
+      {DOORS.map((d) => (
+        <Fragment key={d.id}>
+          <p className="docs__sidegroup mono">{`${d.label} · ${d.reader}`.toUpperCase()}</p>
+          {doorPages(d.id).map((p) => link(p.slug, p.title))}
+        </Fragment>
+      ))}
       {legal.length > 0 && (
         <>
           <p className="docs__sidegroup mono">LEGAL</p>
