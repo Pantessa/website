@@ -16,6 +16,10 @@ export interface Plan {
   priceUsd: number
   /** YEET credits granted per calendar month (UTC). */
   credits: number
+  /** Pre-2026-07-21 allowance — subscriptions from before the right-sizing
+   * keep it forever (never strand a subscriber). Absent = credits applies
+   * to everyone. */
+  legacyCredits?: number
   /** Feature bullets, most important first. */
   highlights: string[]
   /** Marked-up card emphasis on /pricing. */
@@ -33,19 +37,36 @@ export function stripeProductFor(plan: Plan): string | undefined {
   return process.env[`STRIPE_PRODUCT_${plan.id.toUpperCase()}`] ?? plan.stripeProductId
 }
 
+/** Allowances were right-sized 2026-07-21 (PRICING.md: a maxed allowance must
+ * never exceed the plan's price in inference COGS). Paid subscriptions from
+ * before the cutoff keep their original allowance forever. */
+export const ALLOWANCE_CUTOFF = Date.parse('2026-07-21T00:00:00Z')
+
+/** The monthly credit allowance for a subscriber — legacy for pre-cutoff
+ * paid subscriptions, current for everyone else (free tier has no
+ * subscription row and always reads current). */
+export function planCreditsFor(plan: Plan, subscribedAt?: Date | null): number {
+  if (plan.legacyCredits !== undefined && subscribedAt && subscribedAt.getTime() < ALLOWANCE_CUTOFF) {
+    return plan.legacyCredits
+  }
+  return plan.credits
+}
+
 export const PLANS: Plan[] = [
   {
     id: 'free',
     name: 'Builder',
     tagline: 'For indie dapps and weekend forks',
     priceUsd: 0,
-    credits: 2_500,
+    // Right-sized 2026-07-21: ~40-80 real asks/month — plenty for the aha
+    // (first swap, first DCA, first guardian), bounded house-inference COGS.
+    credits: 250,
     highlights: [
       '3 standing intents — jobs, DCA, guardian',
+      '250 chat credits / month',
       'Embed on 1 site',
       'Compose up to 3 MCPs per set',
       'Guardrails, receipts & signing included',
-      'Community support',
     ],
   },
   {
@@ -53,7 +74,8 @@ export const PLANS: Plan[] = [
     name: 'Growth',
     tagline: 'For DEXs and DAOs finding volume',
     priceUsd: 99,
-    credits: 25_000,
+    credits: 8_000,
+    legacyCredits: 25_000,
     popular: true,
     stripeProductId: 'prod_UsTzqqSZp2V3Sj',
     highlights: [
@@ -69,7 +91,8 @@ export const PLANS: Plan[] = [
     name: 'Scale',
     tagline: 'For major venues and mega apps',
     priceUsd: 499,
-    credits: 150_000,
+    credits: 40_000,
+    legacyCredits: 150_000,
     stripeProductId: 'prod_UsU0jKG1QyPBh7',
     highlights: [
       'Unlimited standing intents',
