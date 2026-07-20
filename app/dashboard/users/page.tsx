@@ -14,7 +14,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { Check, ShieldAlert } from 'lucide-react'
 import { useSession } from '@/lib/session'
 import { isAdminAddress } from '@/lib/admin'
-import { Card, CardTitle, Kpi, SkeletonKpi, SkeletonCard, short, timeAgo } from '@/lib/dashboard-ui'
+import { Card, CardTitle, Kpi, SkeletonKpi, SkeletonCard, WalletKindBadge, short, timeAgo } from '@/lib/dashboard-ui'
 
 interface Cohort {
   windowDays: number
@@ -255,11 +255,7 @@ export default function UsersPage() {
                   <tr key={w.address} className="border-t border-[var(--line)]">
                     <td className="py-2 pr-3 mono text-white whitespace-nowrap">
                       {short(w.address)}
-                      {w.test && (
-                        <span className="ml-2 align-middle text-[9px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-[var(--surf-1)] border border-[var(--line)] text-[color:var(--muted-2)]">
-                          Test
-                        </span>
-                      )}
+                      <WalletKindBadge test={w.test} />
                       {w.embedOrigins.length > 0 && (
                         <span
                           className="ml-2 align-middle text-[10px] text-[color:var(--muted-2)]"

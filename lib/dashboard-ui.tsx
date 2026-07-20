@@ -153,6 +153,26 @@ export function short(s: string): string {
   return s.length > 12 ? `${s.slice(0, 6)}…${s.slice(-4)}` : s
 }
 
+/**
+ * Tester-vs-wild wallet badge for the admin views: YELLOW = one of Yeetful's
+ * own test wallets (lib/admin TEST_WALLETS), GREEN = a wallet from the wild.
+ * The colors are the contract — Nate scans for green.
+ */
+export function WalletKindBadge({ test }: { test: boolean }) {
+  return (
+    <span
+      className="ml-2 align-middle text-[9px] uppercase tracking-wider px-1.5 py-0.5 rounded border whitespace-nowrap"
+      style={
+        test
+          ? { color: '#EAB308', borderColor: 'rgba(234,179,8,0.35)', background: 'rgba(234,179,8,0.10)' }
+          : { color: 'var(--accent, #34E0A1)', borderColor: 'rgba(52,224,161,0.35)', background: 'rgba(52,224,161,0.10)' }
+      }
+    >
+      {test ? 'Tester' : 'Wild'}
+    </span>
+  )
+}
+
 export function timeAgo(iso: string): string {
   const sec = Math.max(1, Math.floor((Date.now() - new Date(iso).getTime()) / 1000))
   if (sec < 60) return `${sec}s ago`
