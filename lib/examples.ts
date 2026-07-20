@@ -23,18 +23,22 @@ export const EXAMPLE_PROMPTS: ExamplePrompt[] = [
     slug: 'robinhood-free',
   },
   {
-    label: 'Crypto market data',
-    prompt: 'What is the current price and 24h change for ETH?',
-    slug: 'yeetful-nansen',
+    // The guardian: a standing protection that fires while nobody watches —
+    // teaches that the chat is also where you arm autonomy.
+    label: 'Stop-loss my ETH perp',
+    prompt: 'Close my ETH perp on Hyperliquid if it drops 8%',
+    slug: 'hyperliquid-free',
   },
   {
+    // The attended lane: a real guarded build, small enough to actually sign.
+    label: 'Swap $1 of ETH',
+    prompt: 'Swap $1 worth of ETH to USDC on Base',
+    slug: 'uniswap-free',
+  },
+  {
+    // The no-wallet read: answers before anything is connected.
     label: 'DAO proposals',
     prompt: 'List the recent active proposals in the aave.eth Snapshot space.',
-    slug: 'yeetful-snapshot',
-  },
-  {
-    label: 'Solve with Wolfram',
-    prompt: 'Wolfram: integrate x^2 * sin(x) dx',
-    slug: 'wolfram-alpha',
+    slug: 'snapshot-free',
   },
 ]

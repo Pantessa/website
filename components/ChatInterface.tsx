@@ -1613,7 +1613,8 @@ function EmptyState({
         </div>
         <h3 className="text-white font-semibold mb-2">Auto Router is on</h3>
         <p className="text-[color:var(--muted)] text-sm max-w-xs">
-          Just ask — Yeetful picks the best MCP and endpoint for each message, pays per call, and shows its work in the engine window.
+          Just ask — Yeetful picks the right tool across your MCPs for every message and shows its
+          work. Anything that moves money is built for your wallet to sign.
         </p>
         <ExampleGallery onPick={onPick} />
       </div>
@@ -1626,18 +1627,19 @@ function EmptyState({
       </div>
       {activeCount === 0 ? (
         <>
-          <h3 className="text-white font-semibold mb-2">No agents selected</h3>
+          <h3 className="text-white font-semibold mb-2">No MCPs selected</h3>
           <p className="text-[color:var(--muted)] text-sm max-w-xs">
-            Pick x402 agents from the bar above (or the directory) to power up your chat.
+            Pick MCPs from the bar above (or the directory) to give your agent its tools.
           </p>
         </>
       ) : (
         <>
           <h3 className="text-white font-semibold mb-2">
-            {activeCount} agent{activeCount > 1 ? 's' : ''} ready
+            {activeCount} MCP{activeCount > 1 ? 's' : ''} · one agent
           </h3>
           <p className="text-[color:var(--muted)] text-sm max-w-xs">
-            Start chatting — your message is paid for and answered over x402.
+            Say what should happen. It answers from your set — and anything that moves money is
+            built, guarded, and signed only by your wallet.
           </p>
         </>
       )}

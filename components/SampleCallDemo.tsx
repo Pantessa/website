@@ -19,7 +19,7 @@ export default function SampleCallDemo() {
         className="mt-4 inline-flex items-center gap-1.5 text-xs font-medium px-3 py-2 max-lg:min-h-10 rounded-lg border border-[var(--line-2)] text-[color:var(--muted)] hover:text-white hover:border-white transition-colors"
       >
         <Play className="w-3.5 h-3.5" />
-        See a sample paid call (demo)
+        See a sample receipt (demo)
       </button>
     )
   }
@@ -38,8 +38,8 @@ export default function SampleCallDemo() {
         ETH?
       </p>
       <p className="text-xs text-white mt-2 leading-relaxed">
-        ETH is trading around <span className="font-medium">$3,480</span>, up ~2.1% on the day. Routed
-        to the cheapest proven source and paid per call.
+        ETH is trading around <span className="font-medium">$3,480</span>, up ~2.1% on the day.
+        Routed to the cheapest proven source — priced, receipted.
       </p>
 
       {/* Mirrors the real MessageReceipts footnote shape. */}
