@@ -2,6 +2,11 @@ import type { Metadata } from 'next'
 import Link from 'next/link'
 import { DOCS_PAGES, docsJsonLd, docsUrl } from '@/lib/docs'
 
+// Spend policy — rewritten 2026-07-20 for the open-by-default model
+// (website#467/#469/#474): agents ON, ['*'] allowlist, $200/$200 caps,
+// self-signed cap exemption, inflows never gated. Trust-critical page —
+// every claim here mirrors lib/spend-grant, lib/approvals, lib/tx-guardrails.
+
 const PAGE = DOCS_PAGES.find((p) => p.slug === 'spend-policy')!
 
 export const metadata: Metadata = {
@@ -16,68 +21,147 @@ export default function SpendPolicyPage() {
     <>
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: docsJsonLd(PAGE) }} />
       <p className="docs__crumbs mono">
-        <Link href="/docs">DOCS</Link> <span>/</span> THE SPEND-POLICY SWITCH
+        <Link href="/docs">DOCS</Link> <span>/</span> SPEND POLICY &amp; CAPS
       </p>
-      <h1 className="docs__h1">The spend-policy switch</h1>
+      <h1 className="docs__h1">Spend policy: open by default, capped by default</h1>
       <p className="docs__lead">
-        One master switch sits above every cap on your account. <strong>Off</strong>, your agent can
-        reach any MCP with no limits — the no-friction way to try things. <strong>On</strong>, your{' '}
-        <Link href="/docs/expense-account">spend grant</Link> takes over: only approved hosts, only
-        within your per-call and per-day USDC budgets.
+        Your expense account draws one line: what may <strong>agents</strong> spend without you
+        in the loop. It starts open — every service enabled, protected by $200 caps — and you
+        curate it down, not up. What you sign yourself is consented by that signature; what you{' '}
+        <em>receive</em> is never gated; and the kill switch outranks all of it.
       </p>
 
       <div className="docs__prose">
-        <h2>Why it&apos;s off by default</h2>
+        <h2>The defaults</h2>
         <p>
-          New accounts start with the policy <strong>off</strong>. The point is to never block a
-          brand-new agent on its very first call: you can wire up the SDK, run a chat, and see real
-          routing before you&apos;ve decided what to allow. Spend is still metered and receipted —
-          it just isn&apos;t <em>refused</em>.
+          Your expense account is created on your first dashboard visit, already on and already
+          protective:
+        </p>
+        <table>
+          <thead>
+            <tr>
+              <th>Setting</th>
+              <th>Default</th>
+              <th>What it does</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Allowlist</td>
+              <td>
+                everything (<code>*</code>)
+              </td>
+              <td>
+                All directory services enabled out of the gate — newly listed MCPs work without
+                a re-sync. The caps are the protection, not the list.
+              </td>
+            </tr>
+            <tr>
+              <td>Per-action cap</td>
+              <td>$200</td>
+              <td>An agent-initiated action above this is refused.</td>
+            </tr>
+            <tr>
+              <td>Daily cap</td>
+              <td>$200</td>
+              <td>Agent-initiated spend past this in a UTC day is refused.</td>
+            </tr>
+            <tr>
+              <td>Policy switch</td>
+              <td>on</td>
+              <td>The allowlist and caps are enforced from the first call.</td>
+            </tr>
+          </tbody>
+        </table>
+        <p>
+          Why open? The old model — everything off until approved — walled brand-new accounts at
+          their very first ask. Open-with-caps means your first swap works <em>and</em>{' '}a
+          runaway agent still can&apos;t drain anything: the caps bound what moves without you.
         </p>
 
-        <h2>When to turn it on</h2>
+        <h2>Curate down, not up</h2>
         <p>
-          Flip it <strong>on</strong> once you&apos;ve curated your account: turn on the agents you
-          trust in <Link href="/dashboard/approvals">Approvals</Link>, set a daily budget you&apos;re
-          comfortable with, and the switch starts enforcing both. From then on, anything outside the
-          allowlist or over a cap is refused with a typed{' '}
-          <Link href="/docs/expense-account">
-            <code>GrantError</code>
-          </Link>
-          .
+          The first agent you toggle <strong>off</strong> in{' '}
+          <Link href="/dashboard/approvals">Approvals</Link> starts curation: the open wildcard is
+          replaced by a concrete list — every service you have <em>not</em> disabled. Two things
+          always stay allowed on a curated list, because cutting them off breaks the product
+          rather than protecting you:
         </p>
-
-        <h2>Toggling is non-destructive</h2>
-        <p>
-          The switch never touches your per-agent approvals. Turn the policy off to unblock a quick
-          experiment, then back on, and your curated allowlist is exactly where you left it — it was
-          dormant, not deleted. The switch flips a single flag; your configuration is preserved.
-        </p>
-
-        <h2>Where it&apos;s enforced</h2>
-        <p>There are two payment paths, and the switch reaches them differently:</p>
         <ul>
           <li>
-            <strong>Chats Yeetful runs</strong> — hard-enforced. The payment is refused server-side,
-            before the call settles, and the denial is ledgered. Instant.
+            <strong>Yeetful&apos;s native venues</strong> (the Uniswap/LiFi/CoW/Aave/Hyperliquid/
+            OpenSea build layers) — you sign every one of those transactions yourself.
           </li>
           <li>
-            <strong>External SDK agents</strong> — advisory. Your agent pays from its own wallet, so
-            Yeetful can&apos;t intercept the transfer; instead the policy is published on{' '}
-            <code>GET /api/agent/policy</code> and the <Link href="/docs/agents">SDK</Link> refuses
-            locally on its next policy check. The hard, on-chain stop is a Coinbase Spend Permission
-            (coming to the dashboard&apos;s &ldquo;Back on-chain&rdquo;).
+            <strong>House inference</strong> — the model that answers your chat turns.
           </li>
         </ul>
 
-        <h2>Toggle it</h2>
+        <h2>Your signature is the consent</h2>
         <p>
-          The switch lives on your <Link href="/dashboard">dashboard Overview</Link>, above the
-          budget meter. It&apos;s distinct from the{' '}
-          <Link href="/docs/agents">freeze / kill switch</Link>: the spend policy decides{' '}
-          <em>whether caps apply at all</em>; freeze is the emergency stop that refuses{' '}
-          <em>every</em> payment regardless.
+          The caps exist to bound what agents do <em>without</em> you. A transaction{' '}
+          <strong>your own wallet signs</strong> — a swap you asked for and approved in your
+          wallet — is not refused by the per-action or daily cap: the signature is the consent.
+          The allowlist and the kill switches still apply to self-signed builds; only the caps
+          step aside.
         </p>
+
+        <h2>Sales are not spend</h2>
+        <p>
+          Actions where your wallet <strong>receives</strong>{' '}value — an NFT sale&apos;s
+          proceeds, a filled listing — are never gated by caps or the allowlist. Those controls
+          govern what may be paid out, and gating a $1,800 sale behind a $200 spend cap protects
+          no one. Only the kill switches apply regardless of direction.
+        </p>
+
+        <h2>The master switch</h2>
+        <p>
+          One switch on your <Link href="/dashboard">dashboard Overview</Link> arms the whole
+          policy. On (the default), the allowlist and caps are enforced and every refusal is
+          ledgered. Off, agent spend is unrestricted — still metered and receipted, just not
+          refused. Toggling it never touches your per-agent approvals: flip it off for an
+          experiment and back on, and your curated list is exactly where you left it.
+        </p>
+
+        <h2>The kill switch outranks everything</h2>
+        <p>
+          Two reversible stops work even when the policy switch is off, in both spend directions,
+          for self-signed and agent-initiated actions alike:
+        </p>
+        <ul>
+          <li>
+            <strong>Pause an agent</strong> (<Link href="/dashboard/agents">Agents tab</Link>) —
+            freezes one key; everything else keeps working.
+          </li>
+          <li>
+            <strong>Freeze the account</strong> (<Link href="/dashboard">Overview</Link>) —
+            refuses every payment and build under your account until you unfreeze.
+          </li>
+        </ul>
+
+        <h2>When a refusal happens</h2>
+        <p>
+          A blocked build tells you which rule refused it and what to change — over the
+          per-action cap, over the daily budget, or a host outside your curated allowlist — and
+          the chat offers the fix (allow this venue, retry the job) rather than a dead end. Every
+          refusal lands in your ledger next to the settlements; an audit trail that only shows
+          successes isn&apos;t one.
+        </p>
+
+        <h2>Where enforcement lives</h2>
+        <ul>
+          <li>
+            <strong>Chats and embeds Yeetful runs</strong> — enforced server-side at the build
+            gate and again at any submit relay. Instant and hard.
+          </li>
+          <li>
+            <strong>External SDK agents</strong> paying from their own wallet — enforced by the{' '}
+            <Link href="/docs/expense-account">SDK&apos;s grant</Link> in-process, refreshed from{' '}
+            <code>GET /api/agent/policy</code>. Yeetful cannot intercept another wallet&apos;s
+            transfer in flight; the hard on-chain stop for adversarial cases is what Coinbase
+            Spend Permissions add.
+          </li>
+        </ul>
       </div>
     </>
   )

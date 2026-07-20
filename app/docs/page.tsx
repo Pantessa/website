@@ -3,12 +3,13 @@ import Link from 'next/link'
 import { ArrowUpRight } from 'lucide-react'
 import EmbedDemo from '@/components/EmbedDemo'
 import EmbedInstall from '@/components/EmbedInstall'
-import { DOCS_PAGES, docsJsonLd, docsUrl, guidePages } from '@/lib/docs'
+import { DOCS_PAGES, DOORS, docsJsonLd, docsUrl, doorPages } from '@/lib/docs'
 
-// The /docs landing — the grand entry to Yeetful, told transaction-layer
-// first: one intent in, a guarded artifact out, a receipt behind it. Jobs +
-// Guardian + the venue table lead; the embed is the icing (kept — with its
-// animated demo — but below the layer story). Server-rendered so the copy is
+// The /docs landing — told story-first: Yeetful is the non-custodial back
+// office for autonomous money, and the docs open three doors for three
+// readers — embed it (hosts), trust it (users), pay it (agent devs). The
+// intent→build→receipt spine and the $0 jobs curl stay; the embed demo
+// lives under the host door's teaser. Server-rendered so the copy is
 // crawlable — EmbedDemo and EmbedInstall are the only client islands.
 
 const PAGE = DOCS_PAGES.find((p) => p.slug === '')!
@@ -20,25 +21,71 @@ export const metadata: Metadata = {
   openGraph: { title: PAGE.seoTitle, description: PAGE.description, url: docsUrl(''), type: 'website' },
 }
 
-// The "go deeper" grid: every ready guide except this landing (legal pages live
-// in their own sidebar group, not here).
-const DEEPER = guidePages().filter((p) => p.slug !== '')
+// The three doors — the landing's primary navigation. Each leads with its
+// reader and its first page.
+const DOOR_CARDS = [
+  {
+    id: 'host' as const,
+    kicker: 'EMBED IT · FOR HOSTS',
+    title: 'The chat on your site, in five lines',
+    lead: (
+      <>
+        Mount the full Yeetful chat on any page — guarded builds, receipts, and signing with the
+        wallet <strong>already connected to your site</strong> (<code>wallet: &apos;auto&apos;</code>).
+        A publishable <code>yfe_</code> key attributes every session to your dashboard: funnel,
+        dead-ends, money moved.
+      </>
+    ),
+    href: '/docs/embed',
+    cta: 'Embed the chat',
+  },
+  {
+    id: 'user' as const,
+    kicker: 'TRUST IT · FOR USERS',
+    title: 'Why you can sign what it builds',
+    lead: (
+      <>
+        Non-custodial, checked, and receipted: the model never writes calldata, every artifact is
+        re-checked fail-closed before your wallet sees it, and standing intents — jobs, recurring
+        buys, Guardian — <strong>never sign for you</strong> beyond what you explicitly delegated.
+      </>
+    ),
+    href: '/docs/trust',
+    cta: 'The trust model',
+  },
+  {
+    id: 'agent' as const,
+    kicker: 'PAY IT · FOR AGENT DEVS',
+    title: 'MCP doors your agent pays per call',
+    lead: (
+      <>
+        Free <code>/mcp</code> doors on the whole fleet, plus <code>/paid/mcp</code> x402 doors
+        serving identical tools — <strong>no API key, no account</strong>: a 402 challenge, a
+        gasless USDC signature, an answer. Put an expense account under it and every call is
+        capped and receipted.
+      </>
+    ),
+    href: '/docs/paid-doors',
+    cta: 'The paid doors',
+  },
+]
 
 const STEPS = [
   {
     num: 'STEP 1 · INTENT',
-    title: 'Say what should happen',
+    title: 'Say what should happen — once',
     lead: (
       <>
-        &ldquo;Swap 20 USDC for ETH on Base.&rdquo; &ldquo;Bridge 5 USDC to Arbitrum, then
-        deposit it to Hyperliquid, then long $12 of ETH, then protect it with a 5% stop.&rdquo;
-        Money asks are claimed by <strong>deterministic parsers</strong>, not sampled from a
-        model — the same sentence hits the same code path every time, and compound asks compile
-        into <Link href="/docs/jobs">jobs</Link> the runner walks step by step.
+        &ldquo;Swap 20 USDC for ETH on Base.&rdquo; &ldquo;Buy $10 of AAPL every week.&rdquo;
+        &ldquo;Bridge 5 USDC to Arbitrum, then deposit it to Hyperliquid, then long $12 of ETH,
+        then protect it with a 5% stop.&rdquo; Money asks are claimed by{' '}
+        <strong>deterministic parsers</strong>, not sampled from a model — the same sentence hits
+        the same code path every time, and compound asks compile into{' '}
+        <Link href="/docs/jobs">jobs</Link> the runner walks step by step.
       </>
     ),
     links: [
-      { href: '/docs/jobs', label: 'The Jobs API' },
+      { href: '/docs/jobs', label: 'Jobs & recurring buys' },
       { href: '/docs/transactions', label: 'How parsing works' },
     ],
   },
@@ -71,7 +118,7 @@ const STEPS = [
       </>
     ),
     links: [
-      { href: '/docs/guardian', label: 'The Guardian receipts' },
+      { href: '/docs/trust', label: 'The full trust model' },
       { href: '/activity', label: 'Watch it decide live' },
     ],
   },
@@ -93,22 +140,44 @@ export default function DocsIndexPage() {
       {/* ── Hero ── */}
       <p className="splash__eyebrow mono">BUILD ON YEETFUL</p>
       <h1 className="splash__h1">
-        One intent in. <em className="hero__em">A guarded transaction out.</em>
+        The non-custodial back office <em className="hero__em">for autonomous money.</em>
       </h1>
       <p className="splash__lead">
-        Yeetful is the transaction layer for agents: plain-English intents compile into
-        deterministic, guard-checked artifacts your users sign with{' '}
-        <strong>their own wallet</strong>{' '}— from the <Link href="/docs/jobs">Jobs API</Link>, the
-        chat, or an embed on your site. The model never writes calldata. Every decision gets a
-        receipt. Nothing is custodial.
+        Tell Yeetful what should happen — once. It compiles the sentence into deterministic,
+        guard-checked transactions; <strong>your own wallet is the only thing that can
+        sign</strong>; every build is priced, capped, receipted, and killable. These docs open
+        three doors: <Link href="/docs/embed">embed it</Link> on your site,{' '}
+        <Link href="/docs/trust">trust it</Link> with your signature, or{' '}
+        <Link href="/docs/paid-doors">pay it</Link> per call from your agent.
       </p>
       <div className="splash__ctas">
         <Link href="/docs/jobs" className="btn btn--solid">
           Run a job for $0
         </Link>
-        <Link href="/docs/transactions" className="btn btn--ghost">
-          Venues &amp; guards
+        <Link href="/docs/trust" className="btn btn--ghost">
+          The trust model
         </Link>
+      </div>
+
+      {/* ── The three doors ── */}
+      <div className="svc__section">
+        <div className="svc__sectionhead">
+          <h2 className="svc__h2">Three doors, three readers</h2>
+        </div>
+        <div className="splash__steps">
+          {DOOR_CARDS.map((d) => (
+            <section key={d.id} className="splash__step">
+              <p className="splash__stepnum mono">{d.kicker}</p>
+              <h3 className="splash__steptitle">{d.title}</h3>
+              <p className="splash__steplead">{d.lead}</p>
+              <div className="splash__more">
+                <Link href={d.href}>
+                  {d.cta} <ArrowUpRight width={13} height={13} />
+                </Link>
+              </div>
+            </section>
+          ))}
+        </div>
       </div>
 
       {/* ── The layer, in three moves ── */}
@@ -152,10 +221,10 @@ export default function DocsIndexPage() {
   -d '{"ask": "swap 5 usdc from base to arbitrum, then deposit 4 usdc to hyperliquid", "dryRun": true}'`}</pre>
       </div>
 
-      {/* ── The embed: the icing ── */}
+      {/* ── The embed: the host door's teaser ── */}
       <div className="splash__embedgrid" id="embed">
         <div className="splash__embedcopy">
-          <p className="splash__kicker mono">THE ICING · 5 LINES</p>
+          <p className="splash__kicker mono">EMBED IT · 5 LINES</p>
           <h2 className="splash__pathtitle">The same rails, on your site</h2>
           <p className="splash__pathlead">
             Everything above ships as a chat you can mount on any page — routing, guarded
@@ -178,29 +247,36 @@ export default function DocsIndexPage() {
           <p className="splash__kicker mono">ONE PACKAGE</p>
           <p className="splash__npmlead">
             Everything ships in the <code>yeetful</code> npm package: <code>yeetful/embed</code>{' '}
-            mounts the chat, and the x402 client &amp; server helpers cover agents that{' '}
-            <Link href="/docs/claude-code">pay per call</Link> and MCPs that{' '}
-            <Link href="/docs/earn">track their earnings</Link>. MIT, TypeScript.
+            mounts the chat, <code>yeetful/client</code> pays{' '}
+            <Link href="/docs/paid-doors">x402 doors</Link>, <code>yeetful/agent</code> adds the{' '}
+            <Link href="/docs/expense-account">expense account</Link>, and the server helpers let
+            your own MCP <Link href="/docs/earn">track its earnings</Link>. MIT, TypeScript.
           </p>
         </div>
         <pre className="splash__code mono">npm install yeetful</pre>
       </div>
 
-      {/* ── Go deeper ── */}
-      <div className="svc__section">
-        <div className="svc__sectionhead">
-          <h2 className="svc__h2">Everything you can do</h2>
-          <span className="svc__count mono">{DEEPER.length} guides</span>
-        </div>
-        <div className="docs__cards">
-          {DEEPER.map((p) => (
-            <Link key={p.slug} href={`/docs/${p.slug}`} className="docs__card">
-              <span className="docs__cardtitle">{p.title}</span>
-              <span className="docs__carddesc">{p.description}</span>
-            </Link>
-          ))}
-        </div>
-      </div>
+      {/* ── Go deeper, door by door ── */}
+      {DOORS.map((door) => {
+        const pages = doorPages(door.id)
+        if (pages.length === 0) return null
+        return (
+          <div className="svc__section" key={door.id}>
+            <div className="svc__sectionhead">
+              <h2 className="svc__h2">{door.label}</h2>
+              <span className="svc__count mono">{door.reader.toUpperCase()}</span>
+            </div>
+            <div className="docs__cards">
+              {pages.map((p) => (
+                <Link key={p.slug} href={`/docs/${p.slug}`} className="docs__card">
+                  <span className="docs__cardtitle">{p.title}</span>
+                  <span className="docs__carddesc">{p.description}</span>
+                </Link>
+              ))}
+            </div>
+          </div>
+        )
+      })}
 
       {/* ── Elsewhere ── */}
       <div className="svc__section">

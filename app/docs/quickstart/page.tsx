@@ -16,12 +16,14 @@ export default function QuickstartPage() {
     <>
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: docsJsonLd(PAGE) }} />
       <p className="docs__crumbs mono">
-        <Link href="/docs">DOCS</Link> <span>/</span> QUICKSTART
+        <Link href="/docs">DOCS</Link> <span>/</span> AGENT QUICKSTART
       </p>
-      <h1 className="docs__h1">Quickstart</h1>
+      <h1 className="docs__h1">Agent quickstart: pay per call</h1>
       <p className="docs__lead">
         Install the SDK, define a spend grant, make a paid call. About twenty lines, no API keys
-        to the services you call — payment is USDC on Base via the x402 protocol.
+        to the services you call — payment is USDC on Base via the x402 protocol. This is the
+        expense-account setup; for the barest possible client (no grant, just pay), see{' '}
+        <Link href="/docs/paid-doors">the paid doors</Link>.
       </p>
 
       <div className="docs__callout">

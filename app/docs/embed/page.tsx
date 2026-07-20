@@ -145,6 +145,44 @@ mountYeetfulChat({
           <em>Your embeds</em> list shows exactly which pages run the chat.
         </p>
 
+        <h2>What your dashboard sees</h2>
+        <p>
+          Every embed session reports turn telemetry, and{' '}
+          <Link href="/dashboard/embeds">/dashboard/embeds</Link> turns it into the numbers a
+          host actually wants:
+        </p>
+        <ul>
+          <li>
+            <strong>Money moved</strong> — signed, guardrail-priced USD notional through your
+            embed. The headline.
+          </li>
+          <li>
+            <strong>The funnel</strong> — sessions → transactions built → transactions signed,
+            per site and (with SDK ≥ 0.10&apos;s <code>page=</code> reporting) per page.
+          </li>
+          <li>
+            <strong>Dead-end sessions</strong> — visitors who hit friction and never got a build,
+            with their verbatim asks, plus a copyable prompt that hands the whole list to Claude
+            to diagnose which asks need a missing tool, schema, or MCP.
+          </li>
+        </ul>
+
+        <h2>Deep links, before you embed</h2>
+        <p>
+          Not ready for an iframe? Any link can land a visitor in the first-party chat with your
+          MCP set active and an ask <strong>prefilled but never auto-sent</strong>:
+        </p>
+        <pre>
+          <code>{`https://www.yeetful.com/chat
+  ?mcps=robinhood-free                       # your MCP set, same slugs as the embed
+  &prompt=Buy%20%242%20of%20AAPL             # prefilled — the visitor presses send`}</code>
+        </pre>
+        <p>
+          The embed&apos;s <code>prompt</code> postMessage (above) is the same contract with{' '}
+          <code>send: false</code> — CTAs on your page can drop a ready-to-run ask into either
+          surface.
+        </p>
+
         <h2>Install with Claude</h2>
         <p>
           The fastest path: copy the Claude Code prompt below and paste it inside your app&apos;s

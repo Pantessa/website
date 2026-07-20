@@ -205,6 +205,25 @@ npx tsx scripts/jobs-api-demo.ts --live     # actually creates the job`}</pre>
           </li>
         </ul>
 
+        <h2>Recurring buys (DCA) — a schedule, not an authorization</h2>
+        <p>
+          Add a cadence and a one-step intent becomes a standing one:
+        </p>
+        <pre>{`buy $10 of AAPL every week
+dca $25 into ETH daily on base`}</pre>
+        <p>
+          That creates a <strong>confirm-mode schedule</strong>. Nothing signs itself: each due
+          period (UTC day, week, or month) compiles a fresh one-step swap job — same builders,
+          same guards, quoted at offer time — and <strong>you sign that buy</strong>. Miss a
+          week and the period lapses; the schedule never buys behind your back and never
+          double-buys a period. Manage it in the same sentence register:{' '}
+          <code>pause my AAPL dca</code>, <code>resume my dca</code>,{' '}
+          <code>cancel my ETH dca</code>, <code>list my recurring buys</code> — or from the Jobs
+          tab in the chat rail. Sizing is dollar-denominated on purpose: a schedule&apos;s
+          contract is a fixed spend per period, so token-unit asks get an honest correction
+          instead of a guessed price.
+        </p>
+
         <h2>Where jobs show up</h2>
         <p>
           The same compiler answers everywhere: the <Link href="/chat">first-party chat</Link>,

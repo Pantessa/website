@@ -115,6 +115,11 @@ export default function X402Page() {
           <code>gate()</code> / the Express middleware) to charge for your own routes — that&apos;s
           how you <em>sell</em> to agents rather than buy.
         </p>
+        <p>
+          The first thing worth paying: Yeetful&apos;s own{' '}
+          <Link href="/docs/paid-doors">paid MCP doors</Link> — the same tools as the free doors
+          with no rate limit and no API key, starting at $0.02 a call.
+        </p>
       </div>
     </>
   )
