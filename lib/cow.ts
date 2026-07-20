@@ -13,6 +13,7 @@
 // ─────────────────────────────────────────────────────────────────────────
 import { dynamicTokenBySymbol, dynamicTokenByAddress, dynamicTokenByName } from '@/lib/token-list'
 import { chainById } from '@/lib/chains'
+import { SWAP_FEE_BPS, TREASURY_ADDRESS } from '@/lib/fees'
 
 import { keccak256, stringToBytes } from 'viem'
 
@@ -176,10 +177,23 @@ export interface CowQuoteResult {
   appDataJson?: string
 }
 
-/** The appData document we attribute orders with (exact string proven live in
- *  the A2 quote smoke). `order.appData` signs its keccak-256 hash; submission
- *  carries the full JSON. */
-export const COW_APP_DATA_JSON = '{"version":"1.1.0","appCode":"Yeetful"}'
+/** The appData document we attribute orders with. `order.appData` signs its
+ *  keccak-256 hash; submission carries the full JSON. When the protocol fee
+ *  is on (lib/fees.ts), the doc carries CoW's NATIVE partner-fee field — the
+ *  protocol itself settles SWAP_FEE_BPS of the buy amount to the Yeetful
+ *  treasury at execution; nothing extra to sign, no separate transfer step.
+ *  Schema 1.3.0 + this exact partnerFee shape verified live against the Base
+ *  orderbook 2026-07-20 (quote accepted, appDataHash echoed). EXACT-string
+ *  discipline: every site (quote request, limit-order hash, submit body)
+ *  reads THIS constant, and the guard pins order.appData to its keccak. */
+export const COW_APP_DATA_JSON =
+  SWAP_FEE_BPS > 0
+    ? `{"version":"1.3.0","appCode":"Yeetful","metadata":{"partnerFee":{"bps":${SWAP_FEE_BPS},"recipient":"${TREASURY_ADDRESS}"}}}`
+    : '{"version":"1.1.0","appCode":"Yeetful"}'
+
+/** keccak-256 of the appData doc — what a Yeetful-built order's `appData`
+ *  field MUST equal (guard + submit relay both pin it). */
+export const COW_APP_DATA_HASH = keccak256(stringToBytes(COW_APP_DATA_JSON))
 
 /**
  * Fetch a live CoW quote for a sell order. Throws with a readable message on a

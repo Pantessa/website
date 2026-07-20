@@ -1,8 +1,10 @@
 // ─────────────────────────────────────────────────────────────────────────
 //  Yeetful protocol fees — the single source of truth. Every fee-bearing
-//  venue (LiFi today; future aggregator/settlement venues) imports the
-//  treasury address and the fee rate from HERE — never a local constant,
-//  never a model-supplied value.
+//  venue imports the treasury address and the fee rate from HERE — never a
+//  local constant, never a model-supplied value. Fee-bearing venues today:
+//  LiFi (explicit transfer step), Uniswap v3 (router-native
+//  sweepTokenWithFee split), CoW (protocol-native partnerFee in the signed
+//  appData document).
 //
 //  SWAP_FEE_BPS is deliberately BELOW Uniswap's 25 bps interface fee: the
 //  chat should never be the expensive way to do the same swap. 20 bps on a
