@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import prisma from '@/lib/db'
 import { getSessionAddress } from '@/lib/auth'
 import { isAdminAddress } from '@/lib/admin'
+import { STANDING_TURN_WHERE } from '@/lib/value-origin'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -82,8 +83,13 @@ export async function GET() {
     // they're summed straight from their receipt table.
     const guardian = (extra: object = {}) =>
       prisma.hlGuardianRun.aggregate({ where: { action: 'closed', valueUsd: { gt: 0 }, ...extra }, _sum: { valueUsd: true }, _count: { _all: true } })
-    const [signedAll, signedWindow, builtWindow, chatSignedAll, x402All, x402Window, guardianAll, guardianWindow, pathAgg] = await Promise.all([
+    const [signedAll, standingAll, standingWindow, signedWindow, builtWindow, chatSignedAll, x402All, x402Window, guardianAll, guardianWindow, pathAgg] = await Promise.all([
       sum({ outcome: 'signed' }),
+      // STANDING signed turns (job steps + DCA runs) — attended falls out as
+      // signed − standing; guardian + x402 join from their own tables
+      // (lib/value-origin.ts is the single classification source).
+      sum({ outcome: 'signed', ...STANDING_TURN_WHERE }),
+      sum({ outcome: 'signed', createdAt: { gte: since }, ...STANDING_TURN_WHERE }),
       sum({ outcome: 'signed', createdAt: { gte: since } }),
       sum({ outcome: 'tx-built', createdAt: { gte: since } }),
       sum({ outcome: 'signed', embedKeyId: '' }),
@@ -118,10 +124,22 @@ export async function GET() {
       globalPerPath.set(key, p)
     }
     const guardianAllTimeUsd = round(guardianAll._sum.valueUsd ?? 0)
+    const standingAllUsd = round((standingAll._sum.valueUsd ?? 0) + x402AllTimeUsd + guardianAllTimeUsd)
+    const standingWindowUsd = round(
+      (standingWindow._sum.valueUsd ?? 0) + round(x402Window._sum.amountUsd ?? 0) + round(guardianWindow._sum.valueUsd ?? 0),
+    )
     global = {
       // THE system number: tx notional signed + x402 fees settled + guardian
       // autonomous closes, all time.
       systemTotalUsd: round(allTimeSignedUsd + x402AllTimeUsd + guardianAllTimeUsd),
+      // Attended vs standing (the falsifiable test): attended = a human typed
+      // it; standing = job/DCA turns + guardian closes + x402 agent fees.
+      attendedAllTimeUsd: round(allTimeSignedUsd - round(standingAll._sum.valueUsd ?? 0)),
+      attendedAllTimeCount: signedAll._count._all - standingAll._count._all,
+      standingAllTimeUsd: standingAllUsd,
+      standingAllTimeCount: standingAll._count._all + x402All._count._all + guardianAll._count._all,
+      attendedWindowUsd: round(round(signedWindow._sum.valueUsd ?? 0) - round(standingWindow._sum.valueUsd ?? 0)),
+      standingWindowUsd,
       guardianAllTimeUsd,
       guardianAllTimeCount: guardianAll._count._all,
       guardianWindowUsd: round(guardianWindow._sum.valueUsd ?? 0),

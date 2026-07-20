@@ -105,6 +105,7 @@ import {
   LIDO_WSTETH_MAINNET,
   type LidoBuiltStake,
 } from '../lib/lido-stake'
+import { classifyLegacyTurn, STANDING_TURN_SQL } from '../lib/value-origin'
 
 const BASE = process.env.BASE ?? 'http://localhost:3000'
 const DOMAIN = new URL(BASE).host
@@ -651,6 +652,18 @@ async function main() {
     }),
   })
   check('telemetry records a turn with an unknown buildPath (field dropped)', tele4.status === 200)
+  // Attended-vs-standing: a signed job-step turn must record (the server
+  // stamps origin_kind = job-step; a bogus jobId is ignored, never an error).
+  const tele5 = await fetch(`${BASE}/api/embed/telemetry`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      key: ek.key, sessionId: 'harness-session-4', page: 'https://harness-embed.test/swap',
+      outcome: 'signed', artifact: 'job-step', chain: 'multi', valueUsd: 1.25,
+      buildPath: 'native-job', jobId: 'not-a-real-job-id-shape!!',
+    }),
+  })
+  check('telemetry records a signed job-step turn (standing origin, bad jobId ignored)', tele5.status === 200 && (await tele5.json()).ok === true)
   // First-party lane (yeetful.com chat, keyless): only value-bearing outcomes
   // are accepted, and only from our own origin — both rejections write nothing.
   const fpAnswered = await fetch(`${BASE}/api/embed/telemetry`, {
@@ -670,7 +683,7 @@ async function main() {
   const ins = await (await fetch(`${BASE}/api/embeds/insights`, { headers: C })).json()
   check(
     'insights: the refused turn lands as a dead-end session with the verbatim ask',
-    ins.totals?.turns === 4 &&
+    ins.totals?.turns === 5 &&
       ins.totals?.deadEndSessions === 1 &&
       Array.isArray(ins.deadEnds) &&
       ins.deadEnds[0]?.turns?.[0]?.prompt === 'swap 5 USDC to WETH on my chain',
@@ -678,13 +691,13 @@ async function main() {
   )
   check(
     'insights: money moved sums the notional (builtUsd + signedUsd = 25.5 each)',
-    ins.totals?.builtUsd === 25.5 && ins.totals?.signedUsd === 25.5,
+    ins.totals?.builtUsd === 25.5 && ins.totals?.signedUsd === 26.75,
     `builtUsd=${ins.totals?.builtUsd} signedUsd=${ins.totals?.signedUsd}`,
   )
   check(
     'insights: transactions carry valueUsd + per-site signedUsd rolls up',
     (ins.transactions as { valueUsd: number | null }[])?.some((x) => x.valueUsd === 25.5) &&
-      (ins.perSite as { origin: string; signedUsd: number }[])?.find((s) => s.origin === 'https://harness-embed.test')?.signedUsd === 25.5,
+      (ins.perSite as { origin: string; signedUsd: number }[])?.find((s) => s.origin === 'https://harness-embed.test')?.signedUsd === 26.75,
   )
   check('insights: platform-wide `global` block is admin-only (absent for this wallet)', ins.global === undefined)
   // Build-layer breakdown: the uniswap pair rolls up under its layer with both
@@ -972,6 +985,63 @@ async function main() {
   check(
     'activity: P2 — denial rows absent from public feed (aggregate only)',
     !act.recent.some((r) => r.host === 'denied.example.test') && act.stats.blockedCalls >= 1,
+  )
+
+  // ── Attended vs standing (the falsifiable-test split, lib/value-origin) ──
+  console.log('— attended vs standing split')
+  const ovRes = await fetch(`${BASE}/api/activity/overview`)
+  const ov = (await ovRes.json()) as {
+    hero: {
+      systemTotalUsd: number
+      attendedUsd: number
+      attendedCount: number
+      standingUsd: number
+      standingCount: number
+      standing: { jobsUsd: number; guardianUsd: number; x402Usd: number }
+    }
+    series: { signedUsd: number; x402Usd: number; attendedUsd: number; standingUsd: number }[]
+  }
+  check(
+    'overview: hero carries the attended/standing split',
+    ovRes.status === 200 &&
+      typeof ov.hero?.attendedUsd === 'number' &&
+      typeof ov.hero?.standingUsd === 'number' &&
+      typeof ov.hero?.standing?.jobsUsd === 'number' &&
+      typeof ov.hero?.standing?.guardianUsd === 'number' &&
+      typeof ov.hero?.standing?.x402Usd === 'number',
+  )
+  check(
+    'overview: attended + standing = the system total (the split partitions THE number)',
+    Math.abs(ov.hero.attendedUsd + ov.hero.standingUsd - ov.hero.systemTotalUsd) < 0.06,
+    `attended=${ov.hero?.attendedUsd} standing=${ov.hero?.standingUsd} total=${ov.hero?.systemTotalUsd}`,
+  )
+  check(
+    'overview: standing sublines sum to the standing lane',
+    Math.abs(ov.hero.standing.jobsUsd + ov.hero.standing.guardianUsd + ov.hero.standing.x402Usd - ov.hero.standingUsd) < 0.06,
+  )
+  check(
+    'overview: every series day carries attended/standing and they partition the day',
+    ov.series.every(
+      (d) =>
+        typeof d.attendedUsd === 'number' &&
+        typeof d.standingUsd === 'number' &&
+        Math.abs(d.attendedUsd + d.standingUsd - (d.signedUsd + d.x402Usd)) < 0.06,
+    ),
+  )
+  // The legacy classifier (rows from before origin_kind existed) — pure.
+  check(
+    'value-origin: job artifacts and native-job builds classify STANDING; chat/embed stay ATTENDED',
+    classifyLegacyTurn({ artifact: 'job-step', embedKeyId: '' }) === 'job-step' &&
+      classifyLegacyTurn({ artifact: 'job', embedKeyId: 'k1' }) === 'job-step' &&
+      classifyLegacyTurn({ buildPath: 'native-job', embedKeyId: '' }) === 'job-step' &&
+      classifyLegacyTurn({ artifact: 'tx', embedKeyId: 'k1' }) === 'embed' &&
+      classifyLegacyTurn({ artifact: 'tx', embedKeyId: '' }) === 'chat',
+  )
+  check(
+    'value-origin: the SQL mirror covers origin_kind AND the legacy fallback',
+    STANDING_TURN_SQL.includes("origin_kind IN ('job-step','dca-run')") &&
+      STANDING_TURN_SQL.includes('origin_kind IS NULL') &&
+      STANDING_TURN_SQL.includes('native-job'),
   )
 
   // ── Route metrics (B14: observable routing telemetry, aggregate + public) ──

@@ -766,9 +766,12 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
       detail,
       valueUsd: outcome === 'tx-built' ? guardrailUsdOf(data) : undefined,
       buildPath: outcome === 'tx-built' ? buildPathOf(data) : undefined,
+      // Job-driven turns carry the job id so the server can tag DCA-schedule
+      // runs as standing dca-run origin (attended vs standing money-moved).
+      jobId: data && typeof data.jobId === 'string' ? data.jobId : undefined,
     })
   }
-  const reportEmbedSigned = (info: { artifact: string; chain?: string; txUrl?: string; detail?: string; valueUsd?: number; buildPath?: string }) => {
+  const reportEmbedSigned = (info: { artifact: string; chain?: string; txUrl?: string; detail?: string; valueUsd?: number; buildPath?: string; jobId?: string }) => {
     onEmbedEvent?.('turn', { outcome: 'signed', artifact: info.artifact })
     postEmbedTelemetry({ outcome: 'signed', ...info })
   }
@@ -1361,6 +1364,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
                               detail: info.detail?.slice(0, 60),
                               valueUsd: info.valueUsd ?? undefined,
                               buildPath: info.builder,
+                              jobId: (msg.meta as { jobId: string }).jobId,
                             })
                           }}
                         />

@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server'
+import { Prisma } from '@prisma/client'
 import prisma from '@/lib/db'
 import { chainById, chainByKey, type AppChain } from '@/lib/chains'
+import { STANDING_TURN_SQL, STANDING_TURN_WHERE } from '@/lib/value-origin'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -114,6 +116,7 @@ export async function GET() {
 
   const [
     signedAgg,
+    standingTurnAgg,
     builtAgg,
     x402Agg,
     guardianAgg,
@@ -130,6 +133,9 @@ export async function GET() {
     recentGuardian,
   ] = await Promise.all([
     prisma.embedTurn.aggregate({ where: { outcome: 'signed' }, _sum: { valueUsd: true }, _count: { _all: true } }),
+    // STANDING signed turns (job steps + DCA runs) — the subset of signedAgg
+    // a standing intent fired; attended = signed − standing (lib/value-origin).
+    prisma.embedTurn.aggregate({ where: { outcome: 'signed', ...STANDING_TURN_WHERE }, _sum: { valueUsd: true }, _count: { _all: true } }),
     prisma.embedTurn.aggregate({ where: { outcome: 'tx-built' }, _sum: { valueUsd: true }, _count: { _all: true } }),
     prisma.spendLedgerEntry.aggregate({ where: x402Where, _sum: { amountUsd: true }, _count: { _all: true } }),
     prisma.hlGuardianRun.aggregate({ where: guardianWhere, _sum: { valueUsd: true }, _count: { _all: true } }),
@@ -141,9 +147,10 @@ export async function GET() {
       _count: { _all: true },
       _sum: { valueUsd: true },
     }),
-    prisma.$queryRaw<{ day: Date; signed_usd: number; built_usd: number; signed_n: bigint }[]>`
+    prisma.$queryRaw<{ day: Date; signed_usd: number; standing_usd: number; built_usd: number; signed_n: bigint }[]>`
       SELECT date_trunc('day', created_at) AS day,
              COALESCE(SUM(value_usd) FILTER (WHERE outcome = 'signed'), 0)::float AS signed_usd,
+             COALESCE(SUM(value_usd) FILTER (WHERE outcome = 'signed' AND ${Prisma.raw(STANDING_TURN_SQL)}), 0)::float AS standing_usd,
              COALESCE(SUM(value_usd) FILTER (WHERE outcome = 'tx-built'), 0)::float AS built_usd,
              COUNT(*) FILTER (WHERE outcome = 'signed') AS signed_n
       FROM embed_turns WHERE created_at >= ${since}
@@ -207,28 +214,43 @@ export async function GET() {
   const x402Usd = r2(x402Agg._sum.amountUsd ?? 0)
   const guardianUsd = r2(guardianAgg._sum.valueUsd ?? 0)
 
+  // ── the falsifiable-test split: attended vs standing ─────────────────────
+  // ATTENDED = a human typed it and signed in the moment (chat + embed turns).
+  // STANDING = a standing intent fired it: job steps + DCA runs (embed_turns
+  // subset) + guardian autonomous closes + x402 agent-call fees. The company
+  // exists the week the standing line grows on its own.
+  const standingTurnUsd = r2(standingTurnAgg._sum.valueUsd ?? 0)
+  const standingTurnCount = standingTurnAgg._count._all
+  const attendedUsd = r2(signedUsd - standingTurnUsd)
+  const attendedCount = signedAgg._count._all - standingTurnCount
+  const standingUsd = r2(standingTurnUsd + x402Usd + guardianUsd)
+  const standingCount = standingTurnCount + x402Agg._count._all + guardianAgg._count._all
+
   // ── daily series: merge the three sources on the UTC day ──────────────────
-  const days = new Map<string, { signedUsd: number; builtUsd: number; x402Usd: number; events: number }>()
+  const days = new Map<string, { signedUsd: number; standingUsd: number; builtUsd: number; x402Usd: number; events: number }>()
   const at = (d: Date) => {
     const k = dayKey(d)
-    const row = days.get(k) ?? { signedUsd: 0, builtUsd: 0, x402Usd: 0, events: 0 }
+    const row = days.get(k) ?? { signedUsd: 0, standingUsd: 0, builtUsd: 0, x402Usd: 0, events: 0 }
     days.set(k, row)
     return row
   }
   for (const d of turnDaily) {
     const row = at(d.day)
     row.signedUsd += d.signed_usd
+    row.standingUsd += d.standing_usd
     row.builtUsd += d.built_usd
     row.events += Number(d.signed_n)
   }
   for (const d of x402Daily) {
     const row = at(d.day)
     row.x402Usd += d.usd
+    row.standingUsd += d.usd
     row.events += Number(d.n)
   }
   for (const d of guardianDaily) {
     const row = at(d.day)
     row.signedUsd += d.usd
+    row.standingUsd += d.usd
     row.events += Number(d.n)
   }
   // Fill the gaps from the first active day so the cumulative line is honest
@@ -239,7 +261,7 @@ export async function GET() {
   const allTimeMoved = signedUsd + x402Usd + guardianUsd
   const preWindowBase = Math.max(0, r2(allTimeMoved - windowMoved))
   const keys = [...days.keys()].sort()
-  const series: { day: string; signedUsd: number; x402Usd: number; cumulativeUsd: number; events: number }[] = []
+  const series: { day: string; signedUsd: number; x402Usd: number; attendedUsd: number; standingUsd: number; cumulativeUsd: number; events: number }[] = []
   if (keys.length > 0) {
     let cum = preWindowBase
     const cursor = new Date(`${keys[0]}T00:00:00Z`)
@@ -247,11 +269,16 @@ export async function GET() {
     while (cursor.getTime() <= today.getTime()) {
       const k = dayKey(cursor)
       const row = days.get(k)
-      cum = r2(cum + (row ? row.signedUsd + row.x402Usd : 0))
+      // Day total = turn signed (incl. guardian) + x402; standing = job/DCA
+      // turns + guardian + x402 — so attended falls out as total − standing.
+      const dayTotal = row ? row.signedUsd + row.x402Usd : 0
+      cum = r2(cum + dayTotal)
       series.push({
         day: k,
         signedUsd: r2(row?.signedUsd ?? 0),
         x402Usd: r2(row?.x402Usd ?? 0),
+        attendedUsd: r2(Math.max(0, dayTotal - (row?.standingUsd ?? 0))),
+        standingUsd: r2(row?.standingUsd ?? 0),
         cumulativeUsd: cum,
         events: row?.events ?? 0,
       })
@@ -359,6 +386,21 @@ export async function GET() {
       hero: {
         // THE number: tx notional signed + x402 fees settled + guardian closes.
         systemTotalUsd: r2(signedUsd + x402Usd + guardianUsd),
+        // The falsifiable test: attended (human typed it) vs standing (a job,
+        // schedule, guardian, or funded agent fired it). attended + standing
+        // = systemTotal. Standing sublines let the page show WHAT ran alone.
+        attendedUsd,
+        attendedCount,
+        standingUsd,
+        standingCount,
+        standing: {
+          jobsUsd: standingTurnUsd,
+          jobsCount: standingTurnCount,
+          guardianUsd,
+          guardianCount: guardianAgg._count._all,
+          x402Usd,
+          x402Count: x402Agg._count._all,
+        },
         signedUsd,
         signedCount: signedAgg._count._all,
         builtUsd,

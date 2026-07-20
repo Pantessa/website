@@ -47,6 +47,18 @@ interface Overview {
   seriesDays: number
   hero: {
     systemTotalUsd: number
+    attendedUsd: number
+    attendedCount: number
+    standingUsd: number
+    standingCount: number
+    standing: {
+      jobsUsd: number
+      jobsCount: number
+      guardianUsd: number
+      guardianCount: number
+      x402Usd: number
+      x402Count: number
+    }
     signedUsd: number
     signedCount: number
     builtUsd: number
@@ -219,6 +231,46 @@ export default function ActivityOverview({ header }: { header?: React.ReactNode 
   return (
     <div className="pb-16">
       {heroSection}
+
+      {/* ── attended vs standing: the split that matters ───────────────── */}
+      <section className="mb-10">
+        <SectionHead
+          eyebrow="WHO MOVED IT"
+          title="Attended vs standing"
+          sub="Attended money moved because a human typed the ask and signed it. Standing money moved because something they set up earlier — a job, a schedule, the guardian, a paying agent — fired on its own."
+        />
+        <Card>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+            <div>
+              <p className="mono text-[10.5px] uppercase tracking-[0.2em] text-[color:var(--muted-2)]">Attended</p>
+              <p className="mono text-[28px] tabular-nums text-white mt-1">{fmtUsd(h.attendedUsd)}</p>
+              <p className="mono text-[11px] text-[color:var(--muted-2)] tabular-nums">
+                {h.attendedCount} signatures · chat + embeds
+              </p>
+            </div>
+            <div>
+              <p className="mono text-[10.5px] uppercase tracking-[0.2em] text-[color:var(--accent)]">Standing</p>
+              <p className="mono text-[28px] tabular-nums text-[color:var(--accent)] mt-1">{fmtUsd(h.standingUsd)}</p>
+              <p className="mono text-[11px] text-[color:var(--muted-2)] tabular-nums">
+                {h.standing.jobsCount > 0 && `${fmtUsd(h.standing.jobsUsd)} jobs + DCA · `}
+                {h.standing.guardianCount > 0 && `${fmtUsd(h.standing.guardianUsd)} guardian · `}
+                {fmtFee(h.standing.x402Usd)} agent call fees
+              </p>
+            </div>
+          </div>
+          {h.systemTotalUsd > 0 && (
+            <div className="mt-4">
+              <div className="h-2.5 rounded overflow-hidden flex" style={{ background: 'color-mix(in srgb, var(--fg) 5%, transparent)' }}>
+                <div className="h-full opacity-40" style={{ width: `${pct(h.attendedUsd, h.systemTotalUsd)}%`, background: 'var(--fg)' }} />
+                <div className="h-full" style={{ width: `${pct(h.standingUsd, h.systemTotalUsd)}%`, background: 'var(--accent)' }} />
+              </div>
+              <p className="mono text-[10.5px] text-[color:var(--muted-2)] mt-2">
+                {pct(h.standingUsd, h.systemTotalUsd)}% of everything the system has moved, it moved with nobody at the keyboard.
+              </p>
+            </div>
+          )}
+        </Card>
+      </section>
 
       {/* ── the vitals ─────────────────────────────────────────────────── */}
       <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-3 mb-10">

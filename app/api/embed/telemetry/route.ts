@@ -2,13 +2,14 @@ import { NextRequest, NextResponse } from 'next/server'
 import prisma from '@/lib/db'
 import { resolveEmbedKey, sightingOrigin } from '@/lib/embed-key'
 import { isBuildPath } from '@/lib/build-path'
+import type { OriginKind } from '@/lib/value-origin'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
 // Per-turn embed telemetry — the client posts one compact beacon after each
 // embedded chat turn (and again when something gets signed):
-//   { key, sessionId, page?, prompt?, outcome, artifact?, chain?, detail?, txUrl?, valueUsd?, buildPath? }
+//   { key, sessionId, page?, prompt?, outcome, artifact?, chain?, detail?, txUrl?, valueUsd?, buildPath?, jobId? }
 // KEYED embeds only: telemetry is a feature of the embed key (it's what the
 // owner dashboard renders); keyless mounts record nothing here — with ONE
 // exception: FIRST-PARTY beacons ({ firstParty: true }, no key) from
@@ -22,7 +23,7 @@ export const dynamic = 'force-dynamic'
 
 const OUTCOMES = new Set(['answered', 'clarify', 'tx-built', 'signed', 'refused', 'credit-gate', 'error'])
 const FIRST_PARTY_OUTCOMES = new Set(['tx-built', 'signed'])
-const ARTIFACTS = new Set(['cow-order', 'hl-order', 'tx', 'tx-chain', 'vote', 'job', 'job-step'])
+const ARTIFACTS = new Set(['cow-order', 'hl-order', 'tx', 'tx-chain', 'vote', 'job', 'job-step', 'opensea-listing'])
 
 const str = (v: unknown, max: number): string | undefined =>
   typeof v === 'string' && v.trim() ? v.trim().slice(0, max) : undefined
@@ -70,6 +71,21 @@ export async function POST(req: NextRequest) {
   }
 
   const artifact = typeof body.artifact === 'string' && ARTIFACTS.has(body.artifact) ? body.artifact : undefined
+
+  // Attended-vs-standing origin, stamped SERVER-side (lib/value-origin.ts).
+  // Job-driven turns may carry the jobId so DCA-schedule runs (jobs whose
+  // source is 'dca:<scheduleId>') tag as dca-run; the lookup is best-effort —
+  // a missing/foreign job still tags the row job-step, never drops it.
+  let originKind: OriginKind = resolved ? 'embed' : 'chat'
+  if (artifact === 'job' || artifact === 'job-step') {
+    originKind = 'job-step'
+    const jobId = typeof body.jobId === 'string' && /^[a-z0-9]{20,32}$/i.test(body.jobId) ? body.jobId : null
+    if (jobId) {
+      const job = await prisma.job.findUnique({ where: { id: jobId }, select: { source: true } }).catch(() => null)
+      if (job?.source?.startsWith('dca:')) originKind = 'dca-run'
+    }
+  }
+
   try {
     await prisma.embedTurn.create({
       data: {
@@ -87,6 +103,7 @@ export async function POST(req: NextRequest) {
         // Which layer built the artifact — allowlisted (self-reported like
         // everything here); anything unrecognized is dropped, not stored.
         buildPath: isBuildPath(body.buildPath) ? body.buildPath : undefined,
+        originKind,
       },
     })
   } catch {
