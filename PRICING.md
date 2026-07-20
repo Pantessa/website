@@ -4,6 +4,44 @@
 adjusted… document the change in a PRICING.md decision note"). Status:
 DECIDED (copy re-anchor shipped in this PR) + QUEUED (enforcement follow-up).*
 
+## Addendum 2026-07-21 — COGS lock-in (Nate-directed)
+
+The only real inference COGS is a chat turn (~$0.01–0.06). Watchers don't
+burn inference: the guardian is a per-minute deterministic cron, DCA/jobs
+compile without the model. So the exposure was the credit allowances, and
+they're now sized so a maxed plan can never exceed its price in COGS:
+
+| Plan | Was | Now | Grandfathered |
+|---|---|---|---|
+| Builder $0 | 2,500 | **250/mo** (+40/day cap) | n/a (no Stripe object) |
+| Growth $99 | 25,000 | **8,000/mo** | pre-2026-07-21 subs keep 25k forever |
+| Scale $499 | 150,000 | **40,000/mo** | pre-2026-07-21 subs keep 150k forever |
+
+Enforced in lib/plans.ts `planCreditsFor` (keyed on subscription
+createdAt). Stripe untouched — allowances aren't Stripe objects.
+
+**Circuit breakers (lib/billing.ts — the "leave it open" guarantee):**
+- `FREE_DAILY_TURN_CAP` (default 40/day/wallet, free tier only)
+- `HOUSE_DAILY_TURN_CAP` (default 2,000/day across EVERYONE ≈ $60/day
+  worst-case Anthropic bill; env-overridable, clamped)
+Both refuse with honest per-gate copy; standing jobs/DCA/guardian are
+never gated (they don't touch the model). Fail-open on store errors
+(chat availability beats metering, unchanged).
+
+**Queued for Nate on Stripe (owner step):** credit packs — $10 per 1,000
+credits as a one-time price, so heavy chatters buy margin-priced
+inference instead of hitting walls. Code hook lands when the product id
+exists.
+
+**B2C stays subscription-free:** DCA/jobs/guardian price via the 0.20%
+flow fee (now on LiFi + Uniswap v3 + CoW, website#485) — a $100/week DCA
+pays $0.20/week, no seat fee. Subscriptions are for embed hosts and
+power autonomy (standing-intent capacity 3/25/unlimited).
+
+**If a faster watcher ever ships** (1s–10s cadence): it's a compute SKU
+($5–10/mo per protection or Scale-only), never inference-priced — the
+tick loop must stay model-free.
+
 ## The decision
 
 Keep the three plans and their prices — **Builder $0 / Growth $99 / Scale

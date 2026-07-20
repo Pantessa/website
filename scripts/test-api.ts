@@ -107,6 +107,8 @@ import {
   type LidoBuiltStake,
 } from '../lib/lido-stake'
 import { classifyLegacyTurn, STANDING_TURN_SQL } from '../lib/value-origin'
+import { PLAN_BY_ID, planCreditsFor, ALLOWANCE_CUTOFF } from '../lib/plans'
+import { FREE_DAILY_TURN_CAP, HOUSE_DAILY_TURN_CAP } from '../lib/billing'
 
 const BASE = process.env.BASE ?? 'http://localhost:3000'
 const DOMAIN = new URL(BASE).host
@@ -548,10 +550,33 @@ async function main() {
     'fresh wallet is on the free tier with the full allowance',
     planRes.status === 200 &&
       planBody.usage?.plan === 'free' &&
-      planBody.usage?.allowance === 2500 &&
+      planBody.usage?.allowance === 250 &&
       planBody.usage?.used === 0 &&
-      planBody.usage?.remaining === 2500,
+      planBody.usage?.remaining === 250,
     `plan=${planBody.usage?.plan} used=${planBody.usage?.used}`,
+  )
+  // COGS lock-in (PRICING.md addendum 2026-07-21): allowances sized so a
+  // maxed plan never exceeds its price in inference cost; pre-cutoff paid
+  // subscriptions keep their original allowance forever.
+  check(
+    'plans: right-sized allowances (250 / 8k / 40k) with legacy grandfathering (25k / 150k)',
+    PLAN_BY_ID.free.credits === 250 &&
+      PLAN_BY_ID.growth.credits === 8000 && PLAN_BY_ID.growth.legacyCredits === 25000 &&
+      PLAN_BY_ID.scale.credits === 40000 && PLAN_BY_ID.scale.legacyCredits === 150000,
+  )
+  const preCutoff = new Date(ALLOWANCE_CUTOFF - 86_400_000)
+  const postCutoff = new Date(ALLOWANCE_CUTOFF + 86_400_000)
+  check(
+    'plans: planCreditsFor grandfathers pre-cutoff subs, current for new + free',
+    planCreditsFor(PLAN_BY_ID.growth, preCutoff) === 25000 &&
+      planCreditsFor(PLAN_BY_ID.growth, postCutoff) === 8000 &&
+      planCreditsFor(PLAN_BY_ID.scale, preCutoff) === 150000 &&
+      planCreditsFor(PLAN_BY_ID.free, preCutoff) === 250 &&
+      planCreditsFor(PLAN_BY_ID.growth, null) === 8000,
+  )
+  check(
+    'billing: circuit breakers exported with sane clamped defaults (the "leave it open" bound)',
+    FREE_DAILY_TURN_CAP >= 5 && FREE_DAILY_TURN_CAP <= 1000 && HOUSE_DAILY_TURN_CAP >= 100,
   )
   check(
     'plan config ships 3 plans (free/growth/scale)',
