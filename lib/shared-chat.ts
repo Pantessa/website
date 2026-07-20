@@ -126,6 +126,33 @@ export function firstUserPromptOf(messages: Array<{ role: string; content: strin
   return first
 }
 
+/** How much of the ask fits in the tweet. Fixed copy (~47 chars) + this +
+ *  X's 23-char t.co link leaves comfortable headroom under the 280 budget
+ *  even with double-weight characters in the ask. */
+const TWEET_PROMPT_MAX = 180
+
+/**
+ * X share intent for a shared chat. The tweet leads with the chat's own
+ * opening ask — the "lazy transaction" the page proves — quoted verbatim so
+ * every share carries a runnable example, then tags @yeetful_ai. Unlike the
+ * ?prompt= handoff, an over-long ask is truncated here rather than dropped:
+ * a tweet with most of the sentence still sells the page.
+ */
+export function shareTweetHrefOf(slug: string, messages: Array<{ role: string; content: string }>): string {
+  const raw = messages.find((m) => m.role === 'user')?.content.trim()
+  const ask = raw
+    ? raw.length > TWEET_PROMPT_MAX
+      ? `${raw.slice(0, TWEET_PROMPT_MAX - 1).trimEnd()}…`
+      : raw
+    : null
+  const text = ask
+    ? `Lazy transactions are here!\n\n"${ask}" on @yeetful_ai`
+    : 'Lazy transactions are here! Watch a real guarded run on @yeetful_ai'
+  const site = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://www.yeetful.com'
+  const params = new URLSearchParams({ text, url: `${site}/p/${slug}` })
+  return `https://twitter.com/intent/tweet?${params.toString()}`
+}
+
 /**
  * Resolve the MCP set behind a shared chat. `activeServerIds` historically
  * holds ids or slugs, so we match both; receipt display names are included in

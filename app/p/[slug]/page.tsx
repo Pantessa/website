@@ -10,7 +10,7 @@ import SignedTxLines, { signedTxsOf } from '@/components/SignedTxLines'
 import BrandIcon from '@/components/BrandIcon'
 import Footer from '@/components/Footer'
 import { respondingServers } from '@/lib/responding-mcp'
-import { getSharedChat, getJobs, getChatServers, jobIdOf, moneyMovedOf } from '@/lib/shared-chat'
+import { getSharedChat, getJobs, getChatServers, jobIdOf, moneyMovedOf, shareTweetHrefOf } from '@/lib/shared-chat'
 import type { McpServer } from '@/lib/store'
 
 export const runtime = 'nodejs'
@@ -36,6 +36,14 @@ export async function generateMetadata({ params }: Params) {
     twitter: { card: 'summary_large_image', title, description },
     robots: { index: false, follow: false },
   }
+}
+
+function XMark() {
+  return (
+    <svg viewBox="0 0 24 24" width="13" height="13" fill="currentColor" aria-hidden>
+      <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24h-6.66l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
+    </svg>
+  )
 }
 
 /** The stacked agent avatar for an assistant turn — the same marks the live
@@ -79,6 +87,7 @@ export default async function SharedChatPage({ params }: Params) {
     getJobs(chat.messages),
     getChatServers(chat),
   ])
+  const shareHref = shareTweetHrefOf(slug, chat.messages)
 
   return (
     <>
@@ -110,14 +119,26 @@ export default async function SharedChatPage({ params }: Params) {
               </div>
             )}
           </div>
-          <Link
-            href={tryHref}
-            className="flex-shrink-0 flex items-center gap-2 px-3 py-1.5 rounded-full bg-white text-zinc-950 text-xs font-semibold hover:bg-zinc-200 transition-colors"
-            title="Open Yeetful chat with these agents enabled and this chat's opening ask ready to run"
-          >
-            <YeetfulMark size={16} />
-            <span>Try Yeetful</span>
-          </Link>
+          <div className="flex-shrink-0 flex items-center gap-2">
+            <a
+              href={shareHref}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-2 px-3 py-1.5 rounded-full border border-[var(--line)] bg-[var(--surf-1)] text-[color:var(--fg)] text-xs font-semibold hover:bg-[var(--surf-2)] transition-colors"
+              title="Share this chat on X — the post opens pre-written with this chat's ask"
+            >
+              <XMark />
+              <span>Share</span>
+            </a>
+            <Link
+              href={tryHref}
+              className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-white text-zinc-950 text-xs font-semibold hover:bg-zinc-200 transition-colors"
+              title="Open Yeetful chat with these agents enabled and this chat's opening ask ready to run"
+            >
+              <YeetfulMark size={16} />
+              <span>Try Yeetful</span>
+            </Link>
+          </div>
         </div>
 
         {/* Messages */}
