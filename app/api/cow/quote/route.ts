@@ -66,8 +66,13 @@ export async function POST(req: NextRequest) {
     })
     return NextResponse.json({
       mode,
-      quote: built.quote.order,
-      quoteId: built.quote.quoteId,
+      // The raw order struct is withheld on a blocked build too (2026-07-20
+      // audit): the artifact was always null on refusal, but the bare order
+      // params rode along — enough for a client to hand-sign the exact order
+      // (third-party receiver included) the guardrails just refused. A
+      // refusal returns the verdict, never the payload.
+      quote: built.blocked ? null : built.quote.order,
+      quoteId: built.blocked ? null : built.quote.quoteId,
       summary: built.summary,
       guardrails: built.guardrails,
       blocked: built.blocked,
