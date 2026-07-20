@@ -6,7 +6,7 @@
 
 import Link from 'next/link'
 import { useEffect, useRef } from 'react'
-import { LayoutDashboard, KeyRound, Bot, ToggleRight, Activity, ReceiptText, Building2, LineChart, Server, MessageSquare, BookOpen, Sparkles, AlertTriangle, CreditCard, Globe, ShieldCheck } from 'lucide-react'
+import { LayoutDashboard, KeyRound, Bot, ToggleRight, Activity, ReceiptText, Building2, LineChart, Server, MessageSquare, BookOpen, Sparkles, AlertTriangle, CreditCard, Globe, ShieldCheck, Users } from 'lucide-react'
 import { isAdminAddress } from '@/lib/admin'
 
 export const DASH_SECTIONS = [
@@ -31,6 +31,7 @@ export const DASH_SECTIONS = [
 // /incidents (the self-heal logs); admins only, page 404s for everyone else.
 const ADMIN_SECTIONS = [
   { href: '/dashboard/admin', label: 'Adoption', icon: LineChart, exact: false },
+  { href: '/dashboard/users', label: 'Users', icon: Users, exact: false },
   { href: '/incidents', label: 'Incidents', icon: AlertTriangle, exact: false },
 ] as const
 
