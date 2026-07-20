@@ -185,6 +185,8 @@ export function policyBlockNote(violation: GrantViolation | 'VALUE_UNKNOWN', hos
       return 'your expense account expired'
     case 'REVOKED':
       return 'your expense account was revoked'
+    case 'POLICY_ERROR':
+      return 'your spend policy could not be evaluated — refusing rather than guessing'
     default:
       return violation
   }

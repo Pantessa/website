@@ -22,6 +22,9 @@ export type GrantViolation =
   | 'NOT_ALLOWED'
   | 'OVER_PER_CALL'
   | 'BUDGET_EXCEEDED'
+  // The gate itself failed (malformed policy row, non-Date expiresAt, …).
+  // A broken gate REFUSES — it never authorizes (fail-closed, 2026-07-20 audit).
+  | 'POLICY_ERROR'
 
 export class GrantError extends Error {
   constructor(public code: GrantViolation, message: string) {
@@ -128,6 +131,9 @@ export function grantViolation(
     checkGrant(grant, host, priceUsd, spentTodayUsd, spentTotalUsd)
     return null
   } catch (e) {
-    return e instanceof GrantError ? e.code : null
+    // A non-GrantError means the CHECK ITSELF broke (e.g. a policy row whose
+    // expiresAt deserialized as a string). That used to return null —
+    // authorized-by-crash. A broken gate refuses; it never waves through.
+    return e instanceof GrantError ? e.code : 'POLICY_ERROR'
   }
 }

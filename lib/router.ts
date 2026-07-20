@@ -31,6 +31,7 @@ import {
   type SmartRequest,
 } from '@/lib/endpoint-planner'
 import { buildSignableArtifact, type SignableArtifact } from '@/lib/transaction-layer'
+import { guardPlannerArtifact } from '@/lib/planner-artifact-guard'
 import { portfolioFromToolResult, type PortfolioDisplay } from '@/lib/portfolio-display'
 import { clarifyPromptLine, clarifyOf, type ClarifyRequest } from '@/lib/clarify'
 import { extractEntities, type EntityRef } from '@/lib/working-context'
@@ -688,9 +689,20 @@ export async function routeMessage(opts: RouteOptions): Promise<RouterDecision> 
           progressed = true
           // Transaction layer: a tool that returned a signable action (a vote /
           // on-chain tx) short-circuits the loop — we have something to sign, not
-          // synthesize. The caller surfaces it for explicit approval.
+          // synthesize. The caller surfaces it for explicit approval. Planner-
+          // sourced artifacts are NOT native builds — they pass the generic
+          // drain-shape guard first (third-party transfers, unlimited
+          // approvals, operator grants, off-chain-registry chains all refuse).
           const art = buildSignableArtifact(res.data)
           if (art) {
+            const verdict = guardPlannerArtifact(art, { from: opts.userAddress ?? null })
+            if (!verdict.ok) {
+              addNote(`Refused a ${sp.serverName} transaction that failed Yeetful's guardrails: ${verdict.reasons.join(' ')}`, 'warn')
+              context.push(
+                `### GUARDRAIL REFUSAL — ${sp.serverName}\nThe tool returned a signable transaction Yeetful REFUSED to offer: ${verdict.reasons.join(' ')}\nNothing was signed or offered. Tell the user plainly why it was refused.`,
+              )
+              continue
+            }
             artifact = art
             addNote(`Prepared a signable ${art.kind === 'eip712-vote' ? 'vote' : 'transaction'} for you to approve.`)
             break

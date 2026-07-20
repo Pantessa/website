@@ -112,6 +112,7 @@ import {
 import { loadCatalog } from '@/lib/catalog'
 import { routeMessage, selectInferenceProvider, compactForSynthesis, dedupePlannerPicks, type TraceStep, type SmartPick } from '@/lib/router'
 import { buildSignableArtifact } from '@/lib/transaction-layer'
+import { guardPlannerArtifact } from '@/lib/planner-artifact-guard'
 import { portfolioFromToolResult, type PortfolioDisplay } from '@/lib/portfolio-display'
 import { parseClarify, type ClarifyRequest } from '@/lib/clarify'
 import type { EntityRef } from '@/lib/working-context'
@@ -3216,6 +3217,18 @@ async function runWithBurner(
             // near-intents build_swap).
             const art = buildSignableArtifact(json)
             if (art) {
+              // Planner-sourced signables are NOT native builds — run the
+              // generic drain-shape guard before anything reaches a sign
+              // button (third-party transfers, unlimited approvals, operator
+              // grants, unknown chains, non-CoW generic orders all refuse).
+              const verdict = guardPlannerArtifact(art, { from: userAddress ?? null })
+              if (!verdict.ok) {
+                notes.push(`Refused a ${ep.serverName} transaction that failed Yeetful's guardrails.`)
+                contextBlocks.push(
+                  `### GUARDRAIL REFUSAL — ${ep.serverName}\nThe tool returned a signable transaction Yeetful REFUSED to offer: ${verdict.reasons.join(' ')}\nNothing was signed or offered. Tell the user plainly why it was refused — never present it as signable.`,
+                )
+                continue
+              }
               // buildPath 'planner': the signable came out of a tool the
               // ENDPOINT PLANNER picked — not a native builder (lib/build-path.ts).
               if (art.kind === 'eip712-vote') {

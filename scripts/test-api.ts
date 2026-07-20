@@ -31,7 +31,8 @@ import { buildSignableArtifact, isActionIntent, orderRequestOf, txRequestOf, txC
 import { resolveToken, buildCowOrderTypedData, cowOrderAction, buildCowLimitOrder, buildCowSubmitBody, describeCowOrder, describeAmount, formatAtoms, tokenDecimals, tokenLabel, humanToAtoms, applySlippage, COW_APP_DATA_JSON, GPV2_SETTLEMENT, type CowQuoteResult } from '../lib/cow'
 import { primeTokenList } from '../lib/token-list'
 import { pureChecks, policyCheck, orderValueUsd, buildReport } from '../lib/cow-guardrails'
-import { policyCheckInflow } from '../lib/tx-guardrails'
+import { policyCheckInflow, recipientCheck, validityCheck, MAX_VALID_SEC } from '../lib/tx-guardrails'
+import { guardPlannerArtifact, PERMIT2_ADDRESS } from '../lib/planner-artifact-guard'
 import { parseSwapIntent } from '../lib/swap-intent'
 import { usdToTokenAmount } from '../lib/usd-probe'
 import { parseRobinhoodBridge, guardRobinhoodBridge, RH_L1_INBOX, ARB_SYS } from '../lib/robinhood-bridge'
@@ -2970,6 +2971,151 @@ async function main() {
   check('guardrails: applySlippage rejects out-of-range bps', (() => {
     try { applySlippage(cowFixture, 20000); return false } catch { return true }
   })())
+
+  // ── 2026-07-20 guardrail audit — fail-closed invariants ────────────────────
+  console.log('— guardrail audit (fail-closed invariants)')
+  // The gate itself breaking must REFUSE, never authorize. A policy row whose
+  // expiresAt deserialized as a string used to crash checkGrant → grantViolation
+  // swallowed the TypeError and returned null = authorized-by-crash.
+  const brokenPolicy = { ...gPolicy, expiresAt: 'not-a-date' as unknown as Date }
+  check('audit: a broken policy row refuses (POLICY_ERROR), never authorizes', grantViolation(brokenPolicy, 'api.cow.fi', 1, 0) === 'POLICY_ERROR')
+  check(
+    'audit: self-signed does NOT bypass POLICY_ERROR (only caps are exempt)',
+    policyCheck(10, brokenPolicy, 0, 'api.cow.fi', 0, selfOpts).violation === 'POLICY_ERROR' &&
+      !policyCheck(10, brokenPolicy, 0, 'api.cow.fi', 0, selfOpts).check.ok,
+  )
+  // Kill-switch precedence: frozen is checked BEFORE the caps, so a frozen
+  // account combined with an over-cap value can never surface as the
+  // (self-signed-exempt) OVER_PER_CALL code.
+  check(
+    'audit: frozen + over-cap self-signed → ACCOUNT_FROZEN wins (no cap-code masking)',
+    policyCheck(500, { ...gPolicy, paused: true }, 0, 'api.cow.fi', 0, selfOpts).violation === 'ACCOUNT_FROZEN',
+  )
+  // Venue-neutral core checks: recipient + validity window.
+  const nowSec = Math.floor(Date.now() / 1000)
+  check('audit: recipientCheck refuses proceeds to a third party', !recipientCheck(mallory.address, owner.address).ok)
+  check('audit: recipientCheck passes self (case-insensitive)', recipientCheck(owner.address.toUpperCase().replace('0X', '0x'), owner.address).ok)
+  check('audit: validityCheck refuses expired calldata', !validityCheck(nowSec - 10, nowSec).ok)
+  check('audit: validityCheck refuses a standing (>31d) liability', !validityCheck(nowSec + MAX_VALID_SEC + 60, nowSec).ok)
+  check('audit: validityCheck passes a sane window', validityCheck(nowSec + 600, nowSec).ok)
+
+  // Planner-artifact guard — the generic MCP passthrough (buildSignableArtifact)
+  // used to surface tool-returned calldata VERBATIM. Every drain shape refuses.
+  const mkTx = (tx: Record<string, unknown>) =>
+    buildSignableArtifact({ action: 'send_transaction', label: 'swap', summary: 's', tx })!
+  const auditMe = owner.address
+  const pctx = { from: auditMe }
+  const thirdPartyTransfer = mkTx({
+    to: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
+    data: encodeFunctionData({ abi: erc20Abi, functionName: 'transfer', args: [mallory.address as `0x${string}`, BigInt(5_000_000)] }),
+    value: '0',
+    chainId: 8453,
+  })
+  check('planner guard: ERC-20 transfer to a third party REFUSES', !guardPlannerArtifact(thirdPartyTransfer, pctx).ok)
+  const selfTransfer = mkTx({
+    to: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
+    data: encodeFunctionData({ abi: erc20Abi, functionName: 'transfer', args: [auditMe as `0x${string}`, BigInt(5_000_000)] }),
+    value: '0',
+    chainId: 8453,
+  })
+  check('planner guard: ERC-20 transfer back to the signer passes', guardPlannerArtifact(selfTransfer, pctx).ok)
+  check(
+    'planner guard: transfer refuses when the signer is UNKNOWN (fail closed)',
+    !guardPlannerArtifact(selfTransfer, { from: null }).ok,
+  )
+  const unlimitedApprove = mkTx({
+    to: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
+    data: encodeFunctionData({ abi: erc20Abi, functionName: 'approve', args: [mallory.address as `0x${string}`, (BigInt(1) << BigInt(256)) - BigInt(1)] }),
+    value: '0',
+    chainId: 8453,
+  })
+  check('planner guard: UNLIMITED approve REFUSES (standing drain authorization)', !guardPlannerArtifact(unlimitedApprove, pctx).ok)
+  const boundedApprove = mkTx({
+    to: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
+    data: encodeFunctionData({ abi: erc20Abi, functionName: 'approve', args: [mallory.address as `0x${string}`, BigInt(1_000_000)] }),
+    value: '0',
+    chainId: 8453,
+  })
+  const boundedVerdict = guardPlannerArtifact(boundedApprove, pctx)
+  check('planner guard: bounded approve passes WITH a warning', boundedVerdict.ok && boundedVerdict.warnings.length > 0)
+  const transferFrom = mkTx({
+    to: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
+    data: encodeFunctionData({ abi: erc20Abi, functionName: 'transferFrom', args: [auditMe as `0x${string}`, mallory.address as `0x${string}`, BigInt(1)] }),
+    value: '0',
+    chainId: 8453,
+  })
+  check('planner guard: transferFrom-family calldata REFUSES', !guardPlannerArtifact(transferFrom, pctx).ok)
+  const setApprovalForAll = mkTx({
+    to: '0x8a90CAb2b38dba80c64b7734e58Ee1dB38B8992e',
+    data: `0xa22cb465${mallory.address.slice(2).toLowerCase().padStart(64, '0')}${'1'.padStart(64, '0')}`,
+    value: '0',
+    chainId: 8453,
+  })
+  check('planner guard: setApprovalForAll (whole-collection operator) REFUSES', !guardPlannerArtifact(setApprovalForAll, pctx).ok)
+  const bareSend = mkTx({ to: mallory.address, value: '1000000000000000000', chainId: 8453 })
+  check('planner guard: bare native send to a third party REFUSES', !guardPlannerArtifact(bareSend, pctx).ok)
+  const permit2Call = mkTx({ to: PERMIT2_ADDRESS, data: '0x87517c45' + 'ab'.repeat(128), value: '0', chainId: 8453 })
+  check('planner guard: any Permit2 call REFUSES', !guardPlannerArtifact(permit2Call, pctx).ok)
+  const offRegistryChain = mkTx({ to: mallory.address, data: '0x12345678' + 'ab'.repeat(64), value: '0', chainId: 10 })
+  check('planner guard: off-registry chainId REFUSES', !guardPlannerArtifact(offRegistryChain, pctx).ok)
+  const noChain = mkTx({ to: mallory.address, data: '0x12345678' + 'ab'.repeat(64), value: '0' })
+  check('planner guard: missing chainId REFUSES', !guardPlannerArtifact(noChain, pctx).ok)
+  const plainCall = mkTx({ to: '0x2626664c2603336E57B271c5C0b26F421741e481', data: '0x5ae401dc' + 'ab'.repeat(200), value: '0', chainId: 8453 })
+  check('planner guard: an ordinary contract call on an app chain still passes', guardPlannerArtifact(plainCall, pctx).ok)
+  // A chain is only as safe as its worst step.
+  const poisonedChain = buildSignableArtifact({
+    summary: 'approve + swap',
+    steps: [
+      { action: 'send_transaction', label: 'approve', summary: 'a', tx: { to: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913', data: encodeFunctionData({ abi: erc20Abi, functionName: 'approve', args: [mallory.address as `0x${string}`, BigInt(100)] }), value: '0', chainId: 8453 } },
+      { action: 'send_transaction', label: 'swap', summary: 'b', tx: { to: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913', data: encodeFunctionData({ abi: erc20Abi, functionName: 'transfer', args: [mallory.address as `0x${string}`, BigInt(100)] }), value: '0', chainId: 8453 } },
+    ],
+  })!
+  check('planner guard: one drain-shaped step poisons the whole chain', poisonedChain.kind === 'evm-tx-chain' && !guardPlannerArtifact(poisonedChain, pctx).ok)
+  // Generic EIP-712 orders: only a CoW order verifying against the pinned
+  // settlement contract and paying the signer survives the passthrough.
+  const mkOrder = (protocol: string, typedData: unknown) => buildSignableArtifact({ action: 'sign_order', protocol, typedData, summary: 'o' })!
+  check('planner guard: generic non-CoW order REFUSES', !guardPlannerArtifact(mkOrder('mystery', { domain: {}, message: {} }), pctx).ok)
+  check(
+    'planner guard: CoW order against a fake settlement contract REFUSES',
+    !guardPlannerArtifact(mkOrder('cow', { domain: { verifyingContract: mallory.address }, message: { receiver: auditMe } }), pctx).ok,
+  )
+  check(
+    'planner guard: CoW order paying a third party REFUSES',
+    !guardPlannerArtifact(mkOrder('cow', { domain: { verifyingContract: GPV2_SETTLEMENT }, message: { receiver: mallory.address } }), pctx).ok,
+  )
+  check(
+    'planner guard: pinned CoW order paying the signer passes',
+    guardPlannerArtifact(mkOrder('cow', { domain: { verifyingContract: GPV2_SETTLEMENT }, message: { receiver: auditMe } }), pctx).ok,
+  )
+  check(
+    'planner guard: votes pass (no economic outflow)',
+    voteArt !== null && guardPlannerArtifact(voteArt, pctx).ok,
+  )
+
+  // /api/cow/quote refusal shape: a blocked build must withhold the RAW order
+  // struct too — guardrails verdict only, never a hand-signable payload.
+  {
+    const blockedQuote = await fetch(`${BASE}/api/cow/quote`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        mode: 'limit',
+        chainId: 8453,
+        sellToken: 'USDC',
+        buyToken: 'WETH',
+        sellAmount: '1000000',
+        buyAmountAtLeast: '1',
+        from: owner.address,
+        receiver: mallory.address, // third-party proceeds → recipient check blocks
+      }),
+    })
+    const bq = (await blockedQuote.json()) as { blocked?: boolean; quote?: unknown; quoteId?: unknown; artifact?: unknown }
+    check(
+      'audit: /api/cow/quote refusal withholds the raw order struct (not just the artifact)',
+      blockedQuote.status === 200 && bq.blocked === true && bq.quote == null && bq.quoteId == null && bq.artifact == null,
+      `blocked=${bq.blocked} quote=${bq.quote == null ? 'withheld' : 'LEAKED'}`,
+    )
+  }
 
   // A2c — swap intent parsing (pure) + atoms conversion.
   const si = parseSwapIntent('swap 100 USDC for WETH')

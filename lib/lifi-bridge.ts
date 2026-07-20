@@ -42,9 +42,10 @@
 import { decodeFunctionData, encodeFunctionData, erc20Abi, formatEther, parseEther } from 'viem'
 import { chainById, primaryStable, publicClientFor } from '@/lib/chains'
 import { formatAtoms } from '@/lib/cow'
-import { fetchLifiQuote, LIFI_QUOTE_TTL_SEC } from '@/lib/lifi-venue'
+import { fetchLifiQuote, LIFI_POLICY_HOST, LIFI_QUOTE_TTL_SEC } from '@/lib/lifi-venue'
 import { usdPerToken } from '@/lib/usd-probe'
-import { buildReport, recipientCheck, validityCheck, type GuardrailCheck, type GuardrailReport } from '@/lib/tx-guardrails'
+import { buildReport, policyCheck, recipientCheck, validityCheck, type GuardrailCheck, type GuardrailReport } from '@/lib/tx-guardrails'
+import { getActiveGrant, recordLedger, spentTodayUsd, toPolicy } from '@/lib/grant-store'
 
 export const BASE_CHAIN_ID = 8453
 export const ROBINHOOD_CHAIN_ID = 4663
@@ -425,8 +426,29 @@ export async function buildLifiBridgeLeg(params: { leg: FundingLeg; usd: number;
     minDeltaAtoms: ((toAmountMin * BigInt(95)) / BigInt(100)).toString(),
   }
 
-  const checks: GuardrailCheck[] = [recipientCheck(quote.action.toAddress ?? '', from), validityCheck(validUntil), balanceCheck, priceCheck, venueCheck]
-  const guardrails = buildReport(params.usd, checks)
+  // ── Cross-app policy gate: same as every native venue (2026-07-20 audit —
+  // this builder used to skip it entirely, so a FROZEN or REVOKED account
+  // could still build and sign a funding bridge; the direction-aware
+  // invariant says kill switches survive everything). selfSigned: the owner
+  // signs each leg, so the caps never wall it — kill switches + allowlist do.
+  const grant = await getActiveGrant(from.toLowerCase())
+  const policy = grant ? toPolicy(grant) : null
+  const spentToday = grant ? await spentTodayUsd(grant.id) : 0
+  const { check: polCheck, violation } = policyCheck(params.usd, policy, spentToday, LIFI_POLICY_HOST, 0, { selfSigned: true })
+  if (violation && grant) {
+    await recordLedger({
+      grantId: grant.id,
+      orgId: grant.orgId ?? undefined,
+      host: LIFI_POLICY_HOST,
+      serviceName: 'LiFi',
+      amountUsd: 0,
+      ok: false,
+      note: `blocked: ${violation} (lifi funding bridge)`,
+    })
+  }
+
+  const checks: GuardrailCheck[] = [recipientCheck(quote.action.toAddress ?? '', from), validityCheck(validUntil), balanceCheck, priceCheck, venueCheck, polCheck]
+  const guardrails = buildReport(params.usd, checks, violation ? { violation, valueUsd: params.usd, host: LIFI_POLICY_HOST } : null)
 
   const summary = gasLeg
     ? `Bridge $${params.usd} of ${origin.name} USDC → ~${formatAtoms(toAmountMin.toString(), 18)} ETH on ${destination.name} for gas (LiFi-routed, tool: ${quote.tool}) — arrives in seconds, delivered to your own address.`
