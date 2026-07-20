@@ -127,7 +127,7 @@ export default function Footer() {
         <div className="footer__bottom">
           <span className="mono">© 2026 YEETFUL INC.</span>
           <div className="footer__bottomright">
-            <span className="mono">BUILT ON THE x402 STANDARD</span>
+            <span className="mono">NON-CUSTODIAL · YOUR WALLET SIGNS</span>
             <ThemeToggle />
           </div>
         </div>

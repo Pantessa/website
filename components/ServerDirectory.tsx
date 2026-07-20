@@ -96,12 +96,12 @@ export default function ServerDirectory({ initialCategory = ALL }: { initialCate
         <button
           role="switch"
           aria-checked={!freeOnly}
-          aria-label="Show the paid x402 directory"
+          aria-label="Show the paid directory"
           onClick={() => {
             setFreeOnly((v) => !v)
             setCat(ALL) // the views have disjoint category sets
           }}
-          title={freeOnly ? 'Showing free MCPs — flip for the paid x402 directory' : 'Showing the paid x402 directory — flip back for free MCPs'}
+          title={freeOnly ? 'Showing free MCPs — flip for the paid directory (agents pay per call)' : 'Showing the paid directory — flip back for free MCPs'}
           className="dir__pricing"
         >
           <span className={`dir__pricinglbl ${freeOnly ? 'is-on' : ''}`}>

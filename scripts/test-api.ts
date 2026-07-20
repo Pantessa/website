@@ -1220,11 +1220,12 @@ async function main() {
     /<link[^>]+rel="canonical"[^>]+href="https?:\/\/[^"/]+\/?"/.test(homeHtml),
   )
   check('router: og:image present (social card)', /<meta[^>]+property="og:image"/.test(homeHtml))
-  // The pivot (2026-07-07, website#326) retold the homepage: compose MCPs →
-  // one embeddable agent. The old expectation ("routing") is the pre-pivot story.
+  // The pivot (2026-07-07, website#326) retold the homepage; the autonomy
+  // retitle (2026-07-20) leads with the claim + standing story: "Every dapp.
+  // One chat. Tell it once." The old expectations are the pre-pivot stories.
   check(
-    'router: descriptive <title> (the pivot story: compose + embed)',
-    /<title>[^<]*(embeddable|[Cc]ompose)[^<]*<\/title>/.test(homeHtml),
+    'router: descriptive <title> (the claim + the standing story)',
+    /<title>[^<]*(Every dapp|Tell it once|embeddable|[Cc]ompose)[^<]*<\/title>/.test(homeHtml),
   )
   const sitemapXml = await (await fetch(`${BASE}/sitemap.xml`)).text()
   check('sitemap: site root is listed', /<loc>https?:\/\/[^</]+\/?<\/loc>/.test(sitemapXml))
