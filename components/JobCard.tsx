@@ -13,6 +13,7 @@ import { Bot, CheckCircle2, ChevronDown, ChevronUp, Circle, Loader2, PenLine, Sh
 import SendTxButton from '@/components/SendTxButton'
 import SendTxChain from '@/components/SendTxChain'
 import SignHlActionButton from '@/components/SignHlActionButton'
+import SignNftListingButton from '@/components/SignNftListingButton'
 import SpendPolicyFix, { type PolicyBlockInfo } from '@/components/SpendPolicyFix'
 import { orderRequestOf, txChainOf, txRequestOf } from '@/lib/transaction-layer'
 
@@ -237,8 +238,22 @@ export default function JobCard({
                   {step.status === 'failed' && job.status === 'failed' && (step.result as { policyBlock?: PolicyBlockInfo } | null)?.policyBlock && (
                     <SpendPolicyFix block={(step.result as { policyBlock: PolicyBlockInfo }).policyBlock} onFixed={() => void retry()} retryLabel="Try the build again" />
                   )}
-                  {/* the embedded sign surface — the SAME buttons chat uses */}
-                  {order && (
+                  {/* the embedded sign surface — the SAME buttons chat uses;
+                      orderRequest artifacts dispatch on their protocol */}
+                  {order && order.protocol === 'opensea' && (
+                    <SignNftListingButton
+                      order={order}
+                      onPlaced={(info) =>
+                        void completeStep(
+                          step.seq,
+                          step.builder,
+                          { detail: info.orderUid ? `Listed on OpenSea — order ${info.orderUid.slice(0, 12)}…` : 'Listed on OpenSea', explorerUrl: info.explorerUrl },
+                          step.valueUsd,
+                        )
+                      }
+                    />
+                  )}
+                  {order && order.protocol !== 'opensea' && (
                     <SignHlActionButton
                       order={order}
                       onPlaced={(info) => void completeStep(step.seq, step.builder, { detail: info.detail, explorerUrl: info.explorerUrl }, info.valueUsd)}

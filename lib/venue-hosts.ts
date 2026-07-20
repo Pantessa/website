@@ -32,4 +32,8 @@ export const VENUE_HOST_LABELS: Record<string, string> = {
   'aave-mcp.yeetful.com': 'the Aave agent',
   'api.hyperliquid.xyz': 'the Hyperliquid venue',
   'opensea.io': 'the OpenSea marketplace',
+  // Labeled but NOT in NATIVE_VENUE_HOSTS above: a send to an arbitrary
+  // recipient is exactly what a curated allowlist should get to gate — the
+  // SpendPolicyFix card offers the allow when a curated account blocks it.
+  'transfer.yeetful.com': "Yeetful's native token sends",
 }
