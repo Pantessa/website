@@ -5,9 +5,9 @@
 // wallet signs everything. Left: a stylized CSS still of that exact turn
 // (no iframe, no spend — same treatment as TxPipeline's visual). Right: the
 // claim + the doctrine + the deep link to run the real prompt in /chat.
-// Sits between TxPipeline (guarded builds) and EmbedAnywhere (distribution)
-// because it IS the bridge: builds so safe they can fix their own funding,
-// on any site the chat is embedded in.
+// Sits after StandingIntent (the standing-money claim) as the one-turn power
+// example: builds so safe they can fix their own funding, on any site the
+// chat is embedded in.
 
 import Link from 'next/link'
 

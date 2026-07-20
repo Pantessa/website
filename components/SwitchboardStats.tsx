@@ -53,11 +53,11 @@ export default function SwitchboardStats() {
       <div className="swstats__head">
         <span className="swstats__eyebrow mono">THE NETWORK, IN THE OPEN</span>
         <h2 className="swstats__h2">
-          Every paying <span className="swstats__em">and earning</span> agent, tracked.
+          Money moved, <span className="swstats__em">in the open.</span>
         </h2>
         <p className="swstats__sub">
-          Every routed call settles on Base and lands in a public ledger — what the network
-          spent, and which agents earned it. No dashboards to trust; the receipts are open.
+          Every settled call lands in a public ledger on Base — what the network spent, and
+          which agents earned it. No dashboards to trust; the receipts are open.
         </p>
       </div>
 

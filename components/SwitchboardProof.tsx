@@ -47,7 +47,7 @@ export default function SwitchboardProof() {
         <span className="swproof__eyebrow mono">PROOF, IN THE OPEN</span>
         <h2 className="swproof__h2">Real questions. Real calls. On-chain.</h2>
         <p className="swproof__sub">
-          Actual routed turns — what was asked, what Switchboard answered, and the settlement tx for
+          Actual routed turns — what was asked, what the agent answered, and the settlement tx for
           every paid call. Nothing simulated.
         </p>
       </div>

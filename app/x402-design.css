@@ -2693,8 +2693,8 @@
   }
   /* texture break: a soft emerald mist + a whisper of dotted field where a
      border-top used to be — visible only as a change in air, not a line */
-  .compose, .txp, .fundx, .embeda, .trust, .swsrv, .swproof, .swstats { position: relative; }
-  .compose::before, .txp::before, .fundx::before, .embeda::before, .trust::before, .swsrv::before, .swproof::before, .swstats::before {
+  .compose, .txp, .fundx, .standx, .embeda, .trust, .swsrv, .swproof, .swstats { position: relative; }
+  .compose::before, .txp::before, .fundx::before, .standx::before, .embeda::before, .trust::before, .swsrv::before, .swproof::before, .swstats::before {
     content: ''; position: absolute; top: 0; left: 50%; transform: translateX(-50%);
     width: min(100%, 1100px); height: 120px; pointer-events: none;
     background:
@@ -2819,6 +2819,69 @@
     .fundx__grid { grid-template-columns: 1fr; }
     .fundx__visual { max-width: 460px; order: 2; }
     .fundx__copy { order: 1; }
+  }
+
+
+  /* ── STANDING INTENT (.standx): the machine between your turns ─────────
+     "While you were asleep" — doctrine left, a stylized overnight receipt
+     log right (panel-scoped ink vars so the still flips cleanly with the
+     site theme), then four ask-tiles: DCA · Guardian · Jobs · NFTs. */
+  .standx { padding: clamp(88px, 11vh, 132px) 0 72px; }
+  .standx__grid { display: grid; grid-template-columns: minmax(0, 7fr) minmax(0, 5fr); gap: clamp(32px, 4vw, 64px); align-items: center; max-width: 1220px; margin: 0 auto; }
+  .standx__eyebrow { font-size: 12px; letter-spacing: 0.18em; color: var(--muted-2); }
+  .standx__h2 { font-family: var(--font-serif); font-weight: 500; font-optical-sizing: auto; font-size: clamp(28px, 3.6vw, 42px); letter-spacing: -0.012em; line-height: 1.06; margin-top: 12px; color: var(--fg); max-width: 24ch; }
+  .standx__sub { margin-top: 14px; max-width: 54ch; font-size: 15px; line-height: 1.55; color: var(--muted); text-wrap: pretty; }
+  .standx__points { list-style: none; margin-top: 30px; display: flex; flex-direction: column; }
+  .standx__point { padding: 12px 0; border-bottom: 1px dashed color-mix(in srgb, var(--fg) 7%, transparent); font-size: 14.5px; line-height: 1.5; color: var(--muted); text-wrap: pretty; }
+  .standx__point:last-child { border-bottom: 0; }
+  .standx__point strong { color: var(--fg); font-weight: 600; margin-right: 8px; font-family: 'Archivo', sans-serif; letter-spacing: -.01em; }
+
+  /* the overnight log still — every ink is panel-scoped (--sv*) so the
+     panel reads in both themes without leaning on page tokens */
+  .standx__visual {
+    --svpanel: rgba(10, 12, 13, .9);
+    --svink: #cfd4cb;
+    --svmut: #7e878f;
+    --svline: rgba(255, 255, 255, .09);
+    border: 1px solid color-mix(in srgb, var(--fg) 9%, transparent); border-radius: 20px; overflow: hidden;
+    background: linear-gradient(165deg, color-mix(in srgb, var(--accent) 5%, transparent), var(--svpanel) 40%);
+    box-shadow: var(--svshadow, 0 28px 80px rgba(0, 0, 0, .5), 0 0 44px rgba(52, 227, 160, .07));
+  }
+  .standx__vhead { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 12px 16px; border-bottom: 1px solid var(--svline); flex-wrap: wrap; }
+  .standx__vbrand { display: inline-flex; align-items: center; gap: 8px; font-size: 11.5px; letter-spacing: .06em; color: var(--accent); }
+  .standx__vbrand i { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 8px var(--accent); animation: pw-blink 1.8s infinite; }
+  .standx__vwallet { font-size: 11px; color: var(--svmut); letter-spacing: .05em; }
+  .standx__vlog { list-style: none; padding: 4px 16px; }
+  .standx__vrow { display: flex; align-items: baseline; gap: 10px; padding: 12px 0; font-size: 12px; line-height: 1.55; color: var(--svink); border-bottom: 1px dashed var(--svline); }
+  .standx__vrow:last-child { border-bottom: 0; }
+  .standx__vtime { color: var(--svmut); flex-shrink: 0; }
+  .standx__vbody { flex: 1; min-width: 0; }
+  .standx__vkind { font-weight: 700; color: var(--accent); letter-spacing: .04em; margin-right: 6px; }
+  .standx__vbody em { font-style: normal; color: var(--svmut); }
+  .standx__vok { color: var(--accent); flex-shrink: 0; }
+  .standx__vfoot { padding: 12px 16px 14px; font-size: 11px; letter-spacing: .05em; color: var(--svmut); border-top: 1px solid var(--svline); }
+  .standx__vcaption { margin-top: 14px; font-size: 11.5px; letter-spacing: .04em; color: var(--muted-2); text-align: center; text-wrap: pretty; }
+
+  /* the four standing surfaces — whole tile is the deep link */
+  .standx__tiles { max-width: 1220px; margin: clamp(40px, 5vh, 56px) auto 0; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; }
+  .standx__tile {
+    display: flex; flex-direction: column; gap: 8px; padding: 20px 18px;
+    border: 1px solid color-mix(in srgb, var(--fg) 9%, transparent); border-radius: 16px;
+    background: color-mix(in srgb, var(--fg) 2%, transparent);
+    transition: border-color .15s ease, transform .15s ease, box-shadow .15s ease;
+  }
+  .standx__tile:hover { border-color: color-mix(in srgb, var(--accent) 40%, transparent); transform: translateY(-2px); box-shadow: 0 10px 34px color-mix(in srgb, var(--accent) 9%, transparent); }
+  .standx__tlabel { font-size: 10px; letter-spacing: .16em; color: var(--muted-2); }
+  .standx__tt { font-family: 'Archivo', sans-serif; font-size: 16.5px; font-weight: 600; letter-spacing: -.01em; color: var(--fg); }
+  .standx__td { flex: 1; font-size: 13px; line-height: 1.5; color: var(--muted); text-wrap: pretty; }
+  .standx__task { margin-top: 4px; font-size: 11.5px; line-height: 1.45; color: var(--accent); }
+  @media (max-width: 1023px) {
+    .standx__grid { grid-template-columns: 1fr; }
+    .standx__visualwrap { max-width: 460px; }
+    .standx__tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  }
+  @media (max-width: 620px) {
+    .standx__tiles { grid-template-columns: 1fr; }
   }
 
 
@@ -3205,6 +3268,25 @@
   }
   html[data-theme='light'] .txp__vmark--uni { --pc: #d81f78; }
   html[data-theme='light'] .txp__vmark--snap { --pc: #b07c00; }
+
+  /* Funding-layer still in daylight — the panel kept its dark fallback while
+     the fg-relative inks inside flipped to ink, leaving dark-on-dark. Same
+     glass-on-paper flip as .txp__visual (the user bubble ink goes pale: the
+     light accent is a deep emerald). */
+  html[data-theme='light'] .fundx__visual {
+    --tvpanel: rgba(252, 253, 252, .96);
+    --fvuserink: #f2fdf8;
+    --tvshadow: 0 28px 80px rgba(10, 30, 20, .14), 0 0 44px rgba(14, 143, 98, .08);
+  }
+
+  /* Overnight receipt log in daylight — same glass-on-paper flip. */
+  html[data-theme='light'] .standx__visual {
+    --svpanel: rgba(252, 253, 252, .96);
+    --svink: #3c463f;
+    --svmut: #6a736c;
+    --svline: rgba(16, 21, 18, .12);
+    --svshadow: 0 28px 80px rgba(10, 30, 20, .14), 0 0 44px rgba(14, 143, 98, .08);
+  }
 
   /* State-variant dark-idiom utilities (hover/group-hover) — round-1 remaps
      only covered the base classes, so rail rows and buttons flashed white

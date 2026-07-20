@@ -59,7 +59,7 @@ export default function StayUpToDate() {
       <div className="max-w-md mx-auto">
         <h2 className="text-xl font-semibold text-white mb-1">Stay up to date</h2>
         <p className="text-sm text-[color:var(--muted)] mb-4">
-          Occasional updates on agent expense accounts and new x402 services. No spam.
+          Occasional updates on new MCPs, standing jobs, and what the agent can sign next. No spam.
         </p>
 
         {state === 'done' ? (
