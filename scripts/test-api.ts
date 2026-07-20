@@ -1625,6 +1625,28 @@ async function main() {
       !arwEvents.some((e) => e.type === 'plan'),
   )
 
+  // ── Guest trial lane: /api/chat must stay open to anonymous turns ────────
+  // The first-party chat's guest lane (and the keyless embed) both ride the
+  // anonymous house-model path — no cookie, no wallet. If someone adds an
+  // auth wall to /api/chat, the first-ask funnel dies silently; this guards
+  // the contract. (The reply itself may vary — the check is only that the
+  // turn is ACCEPTED, not walled.)
+  console.log('— guest trial lane (/api/chat anonymous)')
+  const guestTurn = await fetch(`${BASE}/api/chat`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ message: 'hi', activeServers: [], history: [] }),
+  })
+  check(
+    'guest lane: anonymous chat turn is accepted (no auth wall)',
+    guestTurn.status !== 401 && guestTurn.status !== 403,
+  )
+  check(
+    'guest lane: anonymous turn answers with a JSON body',
+    (guestTurn.headers.get('content-type') ?? '').includes('application/json') &&
+      typeof ((await guestTurn.json()) as { reply?: unknown; error?: unknown }) === 'object',
+  )
+
   // ── Engine-as-service (B9a): the routing engine exposed to API keys ───────
   console.log('— engine-as-service (/api/route)')
   const routeNoAuth = await fetch(`${BASE}/api/route`, {

@@ -32,7 +32,8 @@ import { useYeetfulStore, type RouterTraceEvent } from '@/lib/store'
 import { useRunningWork } from '@/lib/use-running-work'
 import { useSession } from '@/lib/session'
 import { latestWorkingContext, type WorkingContext } from '@/lib/working-context'
-import { EXAMPLE_PROMPTS } from '@/lib/examples'
+import { EXAMPLE_PROMPTS, TRY_PROMPTS } from '@/lib/examples'
+import { GUEST_TRIAL_LIMIT, bumpGuestTurns, guestTurnsUsed } from '@/lib/guest-trial'
 import SampleCallDemo from '@/components/SampleCallDemo'
 import { SplashDashboard } from '@/components/SplashDashboard'
 import ChatLoader from '@/components/ChatLoader'
@@ -451,7 +452,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
       address={effectiveAddress}
       servers={servers.filter((s) => b.serverIds.includes(s.id))}
       manualSlugs={b.manualSlugs}
-      onPick={pickExample}
+      onPick={runExample}
       chrome={opts.chrome}
       hint={opts.hint}
       onResolve={(n) => setSplashCounts((prev) => (prev[b.id] === n ? prev : { ...prev, [b.id]: n }))}
@@ -459,8 +460,9 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
   )
 
   // "What can I do?" example: prefill the input and toggle the mapped agent on
-  // (when it's in the live catalog). We prefill rather than auto-send so the
-  // user reviews before paying for the call.
+  // (when it's in the live catalog). Used by deep links (?try/?q/?prompt land
+  // prefilled — a URL must never fire a turn) and by chips whose MCP still
+  // needs a toggle.
   const pickExample = (prompt: string, slug?: string) => {
     setInput(prompt)
     if (slug) {
@@ -472,6 +474,23 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
       }
     }
     textareaRef.current?.focus()
+  }
+
+  // One-tap RUN for in-page example chips (empty state + splash cards): a
+  // click IS the first turn — asking is free, and anything transactional
+  // still ends at the wallet signature (wallet-mode payments get the heads-up
+  // confirm; native builds get the sign card), so an auto-sent ask can never
+  // move money. When the ask's MCP isn't in the working set yet we fall back
+  // to prefill: the toggle has to land in state before a send would carry it.
+  const runExample = (prompt: string, slug?: string) => {
+    const srv = slug ? servers.find((s) => s.slug === slug) : undefined
+    if (srv && !activeServerIds.includes(srv.id)) {
+      analytics.exampleRun(prompt, false)
+      pickExample(prompt, slug)
+      return
+    }
+    analytics.exampleRun(prompt, true)
+    void handleSend(prompt)
   }
 
   useEffect(() => {
@@ -502,7 +521,9 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
     if (trySlug) {
       const ex = EXAMPLE_PROMPTS.find((e) => e.slug === trySlug)
       const srv = servers.find((s) => s.slug === trySlug)
-      pickExample(q ?? ex?.prompt ?? `Try ${srv?.name ?? 'this agent'}: `, trySlug)
+      // Per-MCP TRY_PROMPTS give every /servers row a concrete, runnable ask —
+      // the old "Try <name>: " stub left the visitor composing from scratch.
+      pickExample(q ?? TRY_PROMPTS[trySlug] ?? ex?.prompt ?? `Try ${srv?.name ?? 'this agent'}: `, trySlug)
     } else if (q) {
       setInput(q)
       textareaRef.current?.focus()
@@ -527,6 +548,17 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
     // composed message without going through the input box.
     const raw = typeof textOverride === 'string' ? textOverride : input
     if (!raw.trim() || loading || pendingPayment) return
+
+    // Guest trial lane (first-party only — the embed has its own contract):
+    // signed-out visitors without a wallet get GUEST_TRIAL_LIMIT free turns
+    // before the sign-in gate closes. Counted here so every path (composer,
+    // run-chips, connect-wallet re-runs) shares one meter; the gate watches
+    // the same counter and swaps its banner for the scrim at zero.
+    const guestTrialTurn = !embedded && sessionStatus === 'guest' && !effectiveAddress
+    if (guestTrialTurn) {
+      if (guestTurnsUsed() >= GUEST_TRIAL_LIMIT) return // scrim is up — belt & suspenders
+      bumpGuestTurns()
+    }
     analytics.chatMessage(activeServers.length, isConnected)
 
     // App Mode: a command-bar send slides the transcript view over the panels
@@ -535,6 +567,11 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
     if (workspaceMode === 'app' && !embedded) setAppTranscriptOpen(true)
 
     let chatId = currentChatId
+    // Guest dead-id guard: a guest's chats are ephemeral (local only), so a
+    // reload of /chat/<localId> leaves currentChatId pointing at nothing —
+    // addMessage against it would silently drop the turn. Mint a fresh local
+    // chat instead. (Authed chats load from the DB, so their id resolves.)
+    if (chatId && !currentChat && sessionStatus === 'guest') chatId = null
     if (!chatId) {
       chatId = await createChat(input.slice(0, 40) + (input.length > 40 ? '...' : ''))
       // The splash batches were born on the bare surface — adopt the freshly
@@ -1157,7 +1194,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
                 renderSplashBatch(b, { chrome: b.id === splashChromeBatchId, hint: b.id === splashChromeBatchId }),
               )}
               {splashSettledEmpty && (
-                <EmptyState activeCount={activeServers.length} autoRouter={autoRouter} onPick={pickExample} />
+                <EmptyState activeCount={activeServers.length} autoRouter={autoRouter} onPick={runExample} />
               )}
             </>
           ) : bootHolding ? (
@@ -1166,7 +1203,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
             // the guest empty state and swapping a beat later.
             <ChatLoader inline />
           ) : (
-            <EmptyState activeCount={activeServers.length} autoRouter={autoRouter} onPick={pickExample} />
+            <EmptyState activeCount={activeServers.length} autoRouter={autoRouter} onPick={runExample} />
           )
         ) : (
           <>
@@ -1570,11 +1607,14 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
   )
 }
 
+// One-tap example asks: a click SENDS the turn (the caller passes runExample).
+// Asking is free — anything transactional still ends at the wallet signature —
+// so the chip is the whole first turn, not a writing prompt.
 function ExampleGallery({ onPick }: { onPick: (prompt: string, slug?: string) => void }) {
   return (
     <div className="mt-7 w-full max-w-md">
       <p className="mono text-[11px] uppercase tracking-wider text-[color:var(--muted-2)] mb-2">
-        Try one
+        Run one — a tap sends it
       </p>
       <div className="flex flex-wrap justify-center gap-2">
         {EXAMPLE_PROMPTS.map((ex) => (
@@ -1583,8 +1623,9 @@ function ExampleGallery({ onPick }: { onPick: (prompt: string, slug?: string) =>
             type="button"
             onClick={() => onPick(ex.prompt, ex.slug)}
             title={ex.prompt}
-            className="text-xs px-3 py-1.5 rounded-full border border-[var(--line)] text-[color:var(--muted)] hover:text-white hover:border-[var(--line-2)] hover:bg-white/5 transition-colors"
+            className="group flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full border border-[var(--line)] text-[color:var(--muted)] hover:text-white hover:border-[color:var(--accent)]/45 hover:bg-white/5 transition-colors"
           >
+            <Send className="w-3 h-3 text-[color:var(--muted-2)] group-hover:text-[color:var(--accent)] transition-colors" />
             {ex.label}
           </button>
         ))}
@@ -1605,42 +1646,21 @@ function EmptyState({
   autoRouter: boolean
   onPick: (prompt: string, slug?: string) => void
 }) {
-  if (autoRouter) {
-    return (
-      <div className="flex flex-col items-center justify-center h-full text-center py-20">
-        <div className="w-16 h-16 rounded-2xl bg-[var(--accent)]/15 border border-[var(--accent)]/50 flex items-center justify-center mb-6">
-          <Sparkles className="w-8 h-8" style={{ color: 'var(--accent)' }} />
-        </div>
-        <h3 className="text-white font-semibold mb-2">Auto Router is on</h3>
-        <p className="text-[color:var(--muted)] text-sm max-w-xs">
-          Just ask — Yeetful picks the best MCP and endpoint for each message, pays per call, and shows its work in the engine window.
-        </p>
-        <ExampleGallery onPick={onPick} />
-      </div>
-    )
-  }
   return (
     <div className="flex flex-col items-center justify-center h-full text-center py-20">
-      <div className="w-16 h-16 rounded-2xl bg-[var(--surf-1)] border border-[var(--line)] flex items-center justify-center mb-6">
-        <Zap className="w-8 h-8 text-[color:var(--muted-2)]" />
+      <div className="w-16 h-16 rounded-2xl bg-[var(--accent)]/15 border border-[var(--accent)]/50 flex items-center justify-center mb-6">
+        <Sparkles className="w-8 h-8" style={{ color: 'var(--accent)' }} />
       </div>
-      {activeCount === 0 ? (
-        <>
-          <h3 className="text-white font-semibold mb-2">No agents selected</h3>
-          <p className="text-[color:var(--muted)] text-sm max-w-xs">
-            Pick x402 agents from the bar above (or the directory) to power up your chat.
-          </p>
-        </>
-      ) : (
-        <>
-          <h3 className="text-white font-semibold mb-2">
-            {activeCount} agent{activeCount > 1 ? 's' : ''} ready
-          </h3>
-          <p className="text-[color:var(--muted)] text-sm max-w-xs">
-            Start chatting — your message is paid for and answered over x402.
-          </p>
-        </>
-      )}
+      <h3 className="text-white font-semibold mb-2" style={{ fontFamily: 'var(--font-serif)', fontSize: '1.5rem' }}>
+        Say what should happen.
+      </h3>
+      <p className="text-[color:var(--muted)] text-sm max-w-sm">
+        {autoRouter
+          ? 'Auto Router picks the right MCP for each ask and shows its work. Anything that moves money is compiled into a guarded transaction — only your wallet can sign it.'
+          : activeCount === 0
+            ? 'Pick MCPs from the rail, or just ask — swaps, schedules, stop-losses, and portfolios are built in. Only your wallet can sign what comes back.'
+            : `Your ${activeCount} MCP${activeCount > 1 ? 's' : ''} answer questions free; anything that moves money is compiled into a guarded transaction only your wallet can sign.`}
+      </p>
       <ExampleGallery onPick={onPick} />
     </div>
   )
