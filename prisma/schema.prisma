@@ -788,6 +788,7 @@ model EmbedTurn {
   txUrl        String?  @map("tx_url") // explorer link once signed/placed
   valueUsd     Float?   @map("value_usd") // notional USD of the built/signed tx (guardrail-priced)
   buildPath    String?  @map("build_path") // which layer built the artifact: native-* | planner | manual (lib/build-path.ts)
+  originKind   String?  @map("origin_kind") // chat | embed | job-step | dca-run (lib/value-origin.ts) — attended vs standing; null = legacy row, classified at read time
   createdAt    DateTime @default(now()) @map("created_at")
 
   @@index([ownerAddress, createdAt])

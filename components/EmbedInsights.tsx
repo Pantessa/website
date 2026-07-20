@@ -89,6 +89,12 @@ interface Insights {
     guardianAllTimeCount?: number
     guardianWindowUsd?: number
     guardianWindowCount?: number
+    attendedAllTimeUsd?: number
+    attendedAllTimeCount?: number
+    standingAllTimeUsd?: number
+    standingAllTimeCount?: number
+    attendedWindowUsd?: number
+    standingWindowUsd?: number
     perPath: PathRow[]
   }
 }
@@ -247,6 +253,14 @@ export default function EmbedInsights() {
         <div className="flex flex-col gap-1.5 text-[12.5px] text-[color:var(--muted)] mono">
           {g ? (
             <>
+              {(g.standingAllTimeUsd ?? 0) >= 0 && g.attendedAllTimeUsd !== undefined && (
+                <span className="pb-1 mb-0.5 border-b border-[color:var(--line)]">
+                  <span className="text-white">{fmtUsd(g.attendedAllTimeUsd)}</span>{' '}
+                  <span className="text-[color:var(--muted-2)]">attended</span> ·{' '}
+                  <span className="text-[color:var(--accent)]">{fmtUsd(g.standingAllTimeUsd ?? 0)}</span>{' '}
+                  <span className="text-[color:var(--muted-2)]">standing — moved with nobody at the keyboard</span>
+                </span>
+              )}
               <span>
                 {fmtUsd(g.allTimeSignedUsd)} <span className="text-[color:var(--muted-2)]">tx signed · all time ({g.allTimeSignedCount})</span>
               </span>

@@ -22,6 +22,10 @@ export interface FlowPoint {
   day: string
   signedUsd: number
   x402Usd: number
+  /** Human typed it and signed in the moment (chat + embeds). */
+  attendedUsd: number
+  /** A standing intent fired it: jobs, DCA runs, guardian closes, x402 agent calls. */
+  standingUsd: number
   cumulativeUsd: number
   events: number
 }
@@ -97,10 +101,10 @@ export function DailyFlow({ series }: { series: FlowPoint[] }) {
     <div className="min-w-0">
       <div className="flex items-center gap-4 mb-1 mono text-[10.5px] uppercase tracking-wider" style={{ color: 'var(--muted-2)' }}>
         <span className="inline-flex items-center gap-1.5">
-          <span className="w-2 h-2 rounded-[3px]" style={{ background: C.accent }} /> Transactions signed
+          <span className="w-2 h-2 rounded-[3px]" style={{ background: C.accent }} /> Attended · a human signed
         </span>
         <span className="inline-flex items-center gap-1.5">
-          <span className="w-2 h-2 rounded-[3px]" style={{ background: C.blue }} /> x402 fees settled
+          <span className="w-2 h-2 rounded-[3px]" style={{ background: C.blue }} /> Standing · fired on its own
         </span>
       </div>
       <div style={{ height: 240 }}>
@@ -128,11 +132,11 @@ export function DailyFlow({ series }: { series: FlowPoint[] }) {
               labelFormatter={(l) => new Date(`${l as string}T00:00:00Z`).toUTCString().slice(0, 16)}
               formatter={(value, name) => [
                 fmtUsd(Number(value)),
-                name === 'signedUsd' ? 'transactions signed' : 'x402 fees',
+                name === 'attendedUsd' ? 'attended · human signed' : 'standing · fired on its own',
               ]}
             />
-            <Bar dataKey="signedUsd" stackId="flow" fill={C.accent} isAnimationActive={false} />
-            <Bar dataKey="x402Usd" stackId="flow" fill={C.blue} radius={[3, 3, 0, 0]} isAnimationActive={false} />
+            <Bar dataKey="attendedUsd" stackId="flow" fill={C.accent} isAnimationActive={false} />
+            <Bar dataKey="standingUsd" stackId="flow" fill={C.blue} radius={[3, 3, 0, 0]} isAnimationActive={false} />
           </BarChart>
         </ResponsiveContainer>
       </div>
