@@ -732,6 +732,16 @@ async function main() {
       insAfter.totals?.turns === 0,
   )
 
+  // ── Onboarding cohorts (admin-only) ───────────────────────────────────────
+  // The recent-users progress view (/dashboard/users): per-wallet journey
+  // milestones + funnel. Same gate as /api/admin/overview — the harness
+  // wallets are never admins, so this only exercises the gate.
+  console.log('— onboarding cohorts')
+  const cohNoAuth = await fetch(`${BASE}/api/admin/cohorts`)
+  check('cohorts: no auth → 401', cohNoAuth.status === 401)
+  const cohNonAdmin = await fetch(`${BASE}/api/admin/cohorts?days=7&external=1`, { headers: C })
+  check('cohorts: signed-in non-admin → 403', cohNonAdmin.status === 403)
+
   // ── Ledger sync ───────────────────────────────────────────────────────────
   console.log('— ledger sync')
   const ledgerRes = await fetch(`${BASE}/api/grants/${grant.id}/ledger`, {
