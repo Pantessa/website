@@ -35,10 +35,10 @@ export default function ComposeSet() {
     <section className="compose">
       <div className="compose__head">
         <span className="compose__eyebrow mono">COMPOSE YOUR SET</span>
-        <h2 className="compose__h2">Pick two or three MCPs. Get <span className="x-grad">one agent.</span></h2>
+        <h2 className="compose__h2">The <span className="x-grad">combo</span> is the point.</h2>
         <p className="compose__sub">
-          Combine our free first-party MCPs, anything in the directory, or bring your own. The
-          combo is the point — each set unlocks turns no single dapp can do.
+          Pick two or three MCPs — the free fleet, the directory, or bring your own. Each set
+          unlocks turns no single dapp can do.
         </p>
       </div>
       <div className="compose__grid">
