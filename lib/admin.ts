@@ -31,6 +31,11 @@ export const TEST_WALLETS = [
   '0xe630826c26760f46339cda35621e3aac63736c4a',
   '0xc917800fa6c9019d4d007302f09abfc16a657c26',
   '0xc7b4fde9b363514b5e84e2af8a63681aa495ec8c',
+  // Nate's list, 2026-07-20 — includes the treasury itself (it signs test flows).
+  '0x9cc0b7a0ddb091e17647d689206e730131e9892a',
+  '0x9ab3c2631018e89d6be7416dac85b3a42ad81051',
+  '0xd980fb8cda9bdab910147ee9e36ccc7c4c31f9b7',
+  '0xfdcc56eef544a63b8301f5e9e7c4e17a37f32821',
 ] as const
 
 const TEST_WALLET_SET = new Set<string>(TEST_WALLETS)

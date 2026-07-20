@@ -159,14 +159,19 @@ interface AlchemyTransfer {
   blockNum?: string
 }
 
-async function transfersFor(net: string, address: string, direction: 'from' | 'to'): Promise<AlchemyTransfer[]> {
+async function transfersFor(
+  net: string,
+  address: string,
+  direction: 'from' | 'to',
+  maxCount = '0xf', // 15 per direction per chain — plenty to merge down from
+): Promise<AlchemyTransfer[]> {
   const url = `https://${net}.g.alchemy.com/v2/${apiKey()}`
   const params: Record<string, unknown> = {
     category: ['external', 'erc20'],
     withMetadata: true,
     excludeZeroValue: true,
     order: 'desc',
-    maxCount: '0xf', // 15 per direction per chain — plenty to merge down from
+    maxCount,
   }
   if (direction === 'from') params.fromAddress = address
   else params.toAddress = address
@@ -239,6 +244,97 @@ export async function getRecentActivity(address: string, limit = 6, onlyNet?: st
     .sort((a, b) => b.timestamp - a.timestamp)
 
   return rows.slice(0, limit)
+}
+
+// ── Treasury inflow (admin Treasury dashboard) ───────────────────────────────
+
+/** Symbols we can price 1:1 to USD without an oracle. */
+const STABLE_SYMBOLS = new Set(['USDC', 'USDC.E', 'USDG', 'USDT', 'DAI'])
+
+export interface TreasuryInflow {
+  hash: string
+  chain: string
+  asset: string
+  amount: number
+  /** 1:1 for stables, spot for ETH/WETH, null when unpriceable. */
+  usd: number | null
+  /** Full lowercase sender — the fee payer (classified tester/wild upstream). */
+  from: string
+  timestamp: number
+  explorerUrl: string
+}
+
+/** Spot ETH price via the Alchemy Prices API — fail-soft null (transfers still
+ *  render, just unpriced). */
+async function ethSpotUsd(): Promise<number | null> {
+  try {
+    const res = await fetch(`https://api.g.alchemy.com/prices/v1/${apiKey()}/tokens/by-symbol?symbols=ETH`, {
+      signal: AbortSignal.timeout(8_000),
+      cache: 'no-store',
+    })
+    if (!res.ok) return null
+    const json = (await res.json()) as { data?: { symbol?: string; prices?: { currency?: string; value?: string }[] }[] }
+    const v = json.data?.[0]?.prices?.find((p) => (p.currency ?? 'usd').toLowerCase() === 'usd')?.value
+    const n = Number(v)
+    return Number.isFinite(n) && n > 0 ? n : null
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Every recent transfer INTO an address (the treasury) across the covered
+ * chains — the on-chain ground truth for fees collected, since swap fees are
+ * per-token transfer steps that never land in a DB row. Each chain fetched
+ * independently; a failed chain drops out rather than blanking the rest.
+ */
+export async function getTreasuryInflows(address: string, limit = 40): Promise<TreasuryInflow[]> {
+  const lower = address.toLowerCase()
+  const [ethUsd, ...perChain] = await Promise.all([
+    ethSpotUsd(),
+    ...CHAINS.map((c) =>
+      // 0x64 = 100 newest per chain — at current fee volume that's the whole
+      // history; when it isn't, the oldest days just fall off the trend.
+      transfersFor(c.net, address, 'to', '0x64')
+        .then((ts) => ts.map((t) => ({ t, chain: c })))
+        .catch(() => [] as { t: AlchemyTransfer; chain: NetChain }[]),
+    ),
+  ])
+
+  const byKey = new Map<string, { t: AlchemyTransfer; chain: NetChain }>()
+  for (const entry of perChain.flat()) {
+    if (!entry.t.hash) continue
+    const key = `${entry.chain.net}:${entry.t.hash}:${entry.t.from ?? ''}:${entry.t.asset ?? ''}`
+    if (!byKey.has(key)) byKey.set(key, entry)
+  }
+
+  return [...byKey.values()]
+    .map(({ t, chain }) => {
+      const from = (t.from ?? '').toLowerCase()
+      const amount = typeof t.value === 'number' && Number.isFinite(t.value) ? t.value : 0
+      const asset = (t.asset || chain.native).trim()
+      const sym = asset.toUpperCase()
+      // 6-decimal precision — real swap fees are often sub-cent (0.20% of a
+      // $2 test trade); rounding to cents here would erase them.
+      const usd = STABLE_SYMBOLS.has(sym)
+        ? Math.round(amount * 1e6) / 1e6
+        : (sym === 'ETH' || sym === 'WETH') && ethUsd !== null
+          ? Math.round(amount * ethUsd * 1e6) / 1e6
+          : null
+      return {
+        hash: t.hash as string,
+        chain: chain.label,
+        asset,
+        amount,
+        usd,
+        from,
+        timestamp: tsOf(t),
+        explorerUrl: chain.explorerTx + t.hash,
+      }
+    })
+    .filter((r) => r.from !== lower) // self-shuffles aren't inflow
+    .sort((a, b) => b.timestamp - a.timestamp)
+    .slice(0, limit)
 }
 
 // ── Transfer counterparties (protocol-interaction probe fuel) ────────────────

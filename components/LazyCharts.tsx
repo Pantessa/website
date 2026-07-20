@@ -47,6 +47,14 @@ export const UsageChart = dynamic(() => import('./DashboardCharts').then((m) => 
   ssr: false,
   loading: skeleton(160),
 })
+export const FeeCurve = dynamic(() => import('./TreasuryCharts').then((m) => m.FeeCurve), {
+  ssr: false,
+  loading: skeleton(260),
+})
+export const FeeDaily = dynamic(() => import('./TreasuryCharts').then((m) => m.FeeDaily), {
+  ssr: false,
+  loading: skeleton(260),
+})
 export const MoneyCurve = dynamic(() => import('./ActivityCharts').then((m) => m.MoneyCurve), {
   ssr: false,
   loading: skeleton(280),

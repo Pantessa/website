@@ -742,6 +742,15 @@ async function main() {
   const cohNonAdmin = await fetch(`${BASE}/api/admin/cohorts?days=7&external=1`, { headers: C })
   check('cohorts: signed-in non-admin → 403', cohNonAdmin.status === 403)
 
+  // ── Treasury (admin-only) ─────────────────────────────────────────────────
+  // Fees-collected view (/dashboard/treasury): on-chain inflow + x402 ledger.
+  // The harness wallets are never admins, so this only exercises the gate.
+  console.log('— treasury')
+  const treNoAuth = await fetch(`${BASE}/api/admin/treasury`)
+  check('treasury: no auth → 401', treNoAuth.status === 401)
+  const treNonAdmin = await fetch(`${BASE}/api/admin/treasury?days=90`, { headers: C })
+  check('treasury: signed-in non-admin → 403', treNonAdmin.status === 403)
+
   // ── Ledger sync ───────────────────────────────────────────────────────────
   console.log('— ledger sync')
   const ledgerRes = await fetch(`${BASE}/api/grants/${grant.id}/ledger`, {
