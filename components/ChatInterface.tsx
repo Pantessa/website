@@ -497,7 +497,11 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [currentChat?.messages])
+    // `loading` in the deps re-pins the view when the reply lands AND when a
+    // send starts: on a splash-heavy surface the async card scans grow the
+    // page ABOVE the thread after the messages-change scroll fired, leaving
+    // the new turn below the fold — the dead-tap illusion.
+  }, [currentChat?.messages, loading])
 
   // Deep-link prefill: /chat?try=<slug> (toggle that agent + prefill its example
   // ask) or /chat?q=<text> (just prefill). Fires once the catalog has loaded,
@@ -575,7 +579,9 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
     // chat instead. (Authed chats load from the DB, so their id resolves.)
     if (chatId && !currentChat && sessionStatus === 'guest') chatId = null
     if (!chatId) {
-      chatId = await createChat(input.slice(0, 40) + (input.length > 40 ? '...' : ''))
+      // Title from the MESSAGE, not the composer — chip taps send via
+      // textOverride with an empty input box (they used to title chats '').
+      chatId = await createChat(raw.trim().slice(0, 40) + (raw.trim().length > 40 ? '...' : ''))
       // The splash batches were born on the bare surface — adopt the freshly
       // minted chat id so the id change reads as the SAME surface and the
       // cards ride into the conversation instead of resetting.
@@ -616,6 +622,10 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
             content: out.content,
             meta: buildMeta(out.receipts, out.payer, out.voteRequest, undefined, out.routeReport, out.routerTrace, out.voteProposal, out.orderRequest, undefined, out.txRequest, out.workingContext, out.txChain, out.clarify, undefined, undefined, out.portfolio, out.buildPath, out.jobId, out.guardianPolicyId, out.jobToken),
           })
+          // Same standing-intent rail signal as the manual path.
+          if (!embedded && (typeof out.jobId === 'string' || typeof out.guardianPolicyId === 'string')) {
+            setRailTab('jobs')
+          }
           reportEmbedTurn(userMsg, { ...out, reply: out.content })
         }
         return
@@ -683,6 +693,13 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
           content: data.reply || data.error || 'No response.',
           meta: buildMeta(data.receipts, data.payer, data.voteRequest, data.voteCandidates, undefined, undefined, data.voteProposal, data.orderRequest, data.guardrails, data.txRequest, data.workingContext, data.txChain, data.clarify, data.connectWallet, userMsg, data.portfolio, data.buildPath, data.jobId, data.guardianPolicyId, data.jobToken),
         })
+        // A standing intent was born this turn (job / DCA schedule / guardian
+        // policy): the JobCard renders inline, AND the rail flips to Jobs so
+        // its badge shows the new running work — the user never has to guess
+        // which tab their schedule landed in.
+        if (!embedded && (typeof data.jobId === 'string' || typeof data.guardianPolicyId === 'string')) {
+          setRailTab('jobs')
+        }
         reportEmbedTurn(userMsg, data as Record<string, unknown>)
       }
     } catch (err) {

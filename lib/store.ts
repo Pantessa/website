@@ -490,13 +490,32 @@ export const useYeetfulStore = create<YeetfulStore>()(
           id: localId(),
           createdAt: new Date().toISOString(),
         }
-        set((s) => ({
-          chats: s.chats.map((c) =>
-            c.id === chatId
-              ? { ...c, messages: [...c.messages, msg], updatedAt: msg.createdAt }
-              : c
-          ),
-        }))
+        set((s) => {
+          // Definitive-miss settle path (#447): if the target chat was
+          // clobbered out of the store (a list load raced this turn), a
+          // silent map-over-nothing would DROP the message — the user sees a
+          // dead tap while the server did real work. Resurrect a shell chat
+          // under the same id instead; a later load merges the DB copy in.
+          if (!s.chats.some((c) => c.id === chatId)) {
+            const shell: Chat = {
+              id: chatId,
+              title: message.role === 'user' ? message.content.slice(0, 40) : 'New chat',
+              activeServerIds: s.activeServerIds,
+              messages: [msg],
+              createdAt: msg.createdAt,
+              updatedAt: msg.createdAt,
+              messagesLoaded: true,
+            }
+            return { chats: [shell, ...s.chats] }
+          }
+          return {
+            chats: s.chats.map((c) =>
+              c.id === chatId
+                ? { ...c, messages: [...c.messages, msg], updatedAt: msg.createdAt }
+                : c
+            ),
+          }
+        })
         // Persist to the DB in the background (owner-only; system msgs aren't
         // stored). The saved row's id is written back onto the optimistic
         // message as dbId so later facts (signed tx hashes) can target it.
@@ -596,14 +615,24 @@ export const useYeetfulStore = create<YeetfulStore>()(
       loadChats: async () => {
         if (!get().authedAddress) return
         set({ chatsLoading: true })
+        // Chats born while this fetch is in flight can't be in its response —
+        // a plain replace would VANISH them (and every message optimistically
+        // added since), which is exactly how a splash-chip send once created a
+        // DCA schedule server-side while the UI showed nothing (#447 class:
+        // every load needs a definitive-miss settle path, not a clobber).
+        const startedAt = Date.now() - 2_000 // small skew allowance
         try {
           const res = await fetch('/api/chats', { cache: 'no-store' })
           if (!res.ok) throw new Error('failed')
           const rows: ApiChat[] = await res.json()
           set((s) => {
             const byId = new Map(s.chats.map((c) => [c.id, c]))
+            const apiIds = new Set(rows.map((r) => r.id))
+            const bornMidFlight = s.chats.filter(
+              (c) => !apiIds.has(c.id) && new Date(c.createdAt).getTime() >= startedAt,
+            )
             return {
-              chats: rows.map((r) => fromApiChat(r, byId.get(r.id))),
+              chats: [...bornMidFlight, ...rows.map((r) => fromApiChat(r, byId.get(r.id)))],
               chatsLoading: false,
             }
           })
