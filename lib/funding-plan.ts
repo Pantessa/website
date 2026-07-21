@@ -31,6 +31,7 @@
 import { erc20Abi, formatEther, formatUnits } from 'viem'
 import { chainById, publicClientFor } from '@/lib/chains'
 import { fundingNeedUsd, planRobinhoodFundingAdvice, readFundingShortfall } from '@/lib/lifi-bridge'
+import { describeInflightDeposit } from '@/lib/inflight-funding'
 import { usdPerToken } from '@/lib/usd-probe'
 
 /** Chains the scanner reads — the intersection of lib/chains first-class
@@ -506,6 +507,11 @@ export async function fundingFallbackForFailures(
   user: string,
   failures: { name: string; note: string }[],
   trace?: (event: unknown) => void,
+  /** The turn's echoed workingContext.pending — a just-built cross-chain
+   *  deposit there (lib/inflight-funding.ts) means the scan may be reading a
+   *  mid-settlement snapshot, and the copy must say so instead of asserting
+   *  the money doesn't exist (live 2026-07-21). */
+  pending?: { kind: string; data: Record<string, string> },
 ): Promise<GenericFundingFallback | null> {
   for (const f of failures) {
     const detected = detectBalanceShortfall(f.note)
@@ -524,6 +530,26 @@ export async function fundingFallbackForFailures(
         trace?.({ type: 'note', level: 'warn', label: 'funding fallback: Robinhood Chain balance reads unavailable — surfacing the failure as-is' })
         return null
       }
+      // In-flight settlement awareness — read-only, fail-soft: no deposit in
+      // the pending (or a failed status probe) just means no extra sentence.
+      const inflight = await describeInflightDeposit(pending).catch(() => null)
+      if (inflight) {
+        trace?.({
+          type: 'status',
+          label: `funding fallback: in-flight ${inflight.dep.amount} ${inflight.dep.token} ${inflight.dep.originChain} → ${inflight.dep.destinationChain} deposit noted (one-click status: ${inflight.status}) — the answer names it instead of denying the funds`,
+        })
+      }
+      // The branches that already count landed money (chips / gas-stranded)
+      // skip a 'settled' note as noise; the 'none' refusal keeps every status
+      // — there, balance-read lag IS the explanation the user needs.
+      const unsettled = inflight && inflight.status !== 'settled' ? inflight : null
+      const inflightSuffix = unsettled ? ` Also — ${unsettled.note}` : ''
+      const inflightStrandedDirective = unsettled
+        ? `\nALSO tell the user, with these exact facts: ${unsettled.note}`
+        : ''
+      const inflightNoneDirective = inflight
+        ? `\nALSO tell the user, with these exact facts: ${inflight.note}`
+        : ''
       const includeGas = !scan.hasGas
       const needUsd = fundingNeedUsd(detected.shortfall, includeGas)
       const advice = planRobinhoodFundingAdvice({ scan, needUsd, gasIncluded: includeGas, followup: '' })
@@ -543,12 +569,12 @@ export async function fundingFallbackForFailures(
               `### Gas-stranded funds found (after the ${f.name} failure)\n` +
               `The wallet holds ~$${advice.stranded.usd} of ${advice.stranded.token} on ${advice.stranded.word} — enough for this — but no ETH there to pay for the bridge signatures, and no other chain of theirs can donate it. ` +
               `Tell the user exactly that: their money is real and where it is, only ${advice.stranded.word} gas is missing (about a dollar of ETH is plenty), and once they send a little ETH to their own address on ${advice.stranded.word} they should re-ask so the plan rebuilds. ` +
-              `Do NOT invent your own bridge instructions, amounts, or addresses.`,
+              `Do NOT invent your own bridge instructions, amounts, or addresses.${inflightStrandedDirective}`,
           }
         }
         return {
           offer: {
-            reply: `You don't have enough USDG on Robinhood Chain for that yet — and ${advice.copy}`,
+            reply: `You don't have enough USDG on Robinhood Chain for that yet — and ${advice.copy}${inflightSuffix}`,
             clarify: { question: `Fix the ${advice.stranded.word} gas and bridge it?`, options: advice.chips.slice(0, 4) },
             buildPath: 'native-lifi-fund-offer',
           },
@@ -565,7 +591,7 @@ export async function fundingFallbackForFailures(
           offer: null,
           contextBlock:
             `### Funding scan (after the ${f.name} failure)\nAcross Base, Ethereum, and Arbitrum I can see: ${advice.copy} — the smallest plan for this moves ~$${needUsd} onto Robinhood Chain (bridge fees${includeGas ? ' and a gas leg' : ''} included). ` +
-            `Weave this into the failure explanation — the user should know exactly what they hold, per chain, and what the smallest plan needs.`,
+            `Weave this into the failure explanation — the user should know exactly what they hold, per chain, and what the smallest plan needs.${inflightNoneDirective}`,
         }
       }
       const chips = [...advice.chips, { label: 'Not now', resume: 'Never mind — leave my USDC where it is.' }]
@@ -574,7 +600,7 @@ export async function fundingFallbackForFailures(
         offer: {
           reply:
             `You don't have enough USDG on Robinhood Chain for that yet — but you're holding ${holdings}. ` +
-            `I can bridge it over (LiFi-routed, delivered to your own address, arrives in seconds)${includeGas ? ', drop in a little ETH so Robinhood Chain gas is covered,' : ''} — every step built and guard-checked when it's your turn to sign. Once it settles, ask again and I'll build the trade with the funds in place.`,
+            `I can bridge it over (LiFi-routed, delivered to your own address, arrives in seconds)${includeGas ? ', drop in a little ETH so Robinhood Chain gas is covered,' : ''} — every step built and guard-checked when it's your turn to sign. Once it settles, ask again and I'll build the trade with the funds in place.${inflightSuffix}`,
           clarify: { question: 'Fund Robinhood Chain from another chain?', options: chips.slice(0, 4) },
           buildPath: 'native-lifi-fund-offer',
         },

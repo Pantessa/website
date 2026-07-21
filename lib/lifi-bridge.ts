@@ -766,12 +766,17 @@ export function planRobinhoodFundingAdvice(params: {
 // reach — and asked the user to say "yes" to a plan that could never build
 // (live 2026-07-21).
 
-/** The pending payload a funding refusal/offer attaches to its response. */
-export function rhFundingPending(buyUsd: number, buySym: string) {
+/** The pending payload a funding refusal/offer attaches to its response.
+ *  `inflight` forwards a just-built cross-chain deposit's facts (lib/
+ *  inflight-funding.ts inflightPendingData) so the "check again" turn still
+ *  knows a transfer is settling — writing this pending REPLACES the xchain
+ *  pending that carried them, and without the forward the awareness dies
+ *  after one turn. */
+export function rhFundingPending(buyUsd: number, buySym: string, inflight?: Record<string, string>) {
   return {
     kind: 'rh-funding',
     summary: `Unfunded buy on Robinhood Chain: $${buyUsd} of ${buySym} — waiting for USDC or gas to land`,
-    data: { buyUsd: String(buyUsd), buySym },
+    data: { buyUsd: String(buyUsd), buySym, ...(inflight ?? {}) },
   }
 }
 
