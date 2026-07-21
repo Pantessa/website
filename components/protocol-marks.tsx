@@ -16,7 +16,7 @@
 //      `foo-free`, `foo-mcp`, etc. That's the whole wiring — every surface
 //      (BrandIcon and the hero) picks it up automatically.
 
-import type { ComponentType } from 'react'
+import { useId, type ComponentType } from 'react'
 
 export type Mark = ComponentType<{ size?: number }>
 
@@ -112,6 +112,37 @@ export function OpenseaMark({ size = 22 }: { size?: number }) {
   )
 }
 
+export function YeetfulMark({ size = 22 }: { size?: number }) {
+  // Yeetful's own agent-graph "Y" mark — three nodes wired to a central hub
+  // (identical geometry to components/Logo.tsx and
+  // public/design-system/assets/yeetful-mark.svg). Used for the first-party
+  // `yeetful-tool-*` internal MCPs so they carry the brand mark instead of a
+  // bare Archivo "Y" lettermark. Pure `currentColor` art, so it inverts with
+  // the tile like every other mark here. The mask punches the hub center out
+  // where the spokes converge; a per-instance id keeps multiple marks on one
+  // page from colliding.
+  const maskId = `yf-hub-${useId().replace(/:/g, '')}`
+  return (
+    <svg viewBox="0 0 40 40" width={size} height={size} fill="none" aria-hidden style={{ display: 'block' }}>
+      <mask id={maskId}>
+        <rect width="40" height="40" fill="#fff" />
+        <circle cx="20" cy="20" r="1.9" fill="#000" />
+      </mask>
+      <g mask={`url(#${maskId})`} stroke="currentColor" strokeWidth={2.2} strokeLinecap="round">
+        <line x1="20" y1="20" x2="9" y2="9" />
+        <line x1="20" y1="20" x2="31" y2="9" />
+        <line x1="20" y1="20" x2="20" y2="33" />
+      </g>
+      <g fill="currentColor">
+        <circle cx="9" cy="9" r="4.4" />
+        <circle cx="31" cy="9" r="4.4" />
+        <circle cx="20" cy="33" r="4.4" />
+      </g>
+      <circle cx="20" cy="20" r="3" fill="none" stroke="currentColor" strokeWidth={2.2} />
+    </svg>
+  )
+}
+
 // slug/name matcher → mark. Ordered; first match wins. The regex is tested
 // against a space-joined string of iconSlug/slug/id/name, so `-free`/`-mcp`
 // suffixes and display names all resolve to the same mark.
@@ -127,6 +158,11 @@ const REGISTRY: { match: RegExp; Mark: Mark }[] = [
   { match: /hyperliquid|hyper-?evm/i, Mark: HyperliquidMark },
   { match: /robinhood/i, Mark: RobinhoodMark },
   { match: /opensea|seaport/i, Mark: OpenseaMark },
+  // First-party internal MCPs (the documented `yeetful-tool-*` prefix, plus
+  // their display names) — carry Yeetful's own mark. Deliberately narrow so it
+  // never catches `yeetful-claude` (the paid Anthropic inference MCP, which
+  // keeps its Anthropic icon via ICON_SLUG in BrandIcon).
+  { match: /yeetful-tool|yeetful (wallet|funding)/i, Mark: YeetfulMark },
 ]
 
 /** Resolve a vendored protocol mark from any of a server's identifiers.

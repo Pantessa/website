@@ -37,6 +37,7 @@ import { parseSwapIntent } from '../lib/swap-intent'
 import { usdToTokenAmount } from '../lib/usd-probe'
 import { parseRobinhoodBridge, guardRobinhoodBridge, RH_L1_INBOX, ARB_SYS } from '../lib/robinhood-bridge'
 import { parseNftAsk, guardNftTransfer, ERC721_ABI as NFT_ERC721_ABI, ERC1155_ABI as NFT_ERC1155_ABI } from '../lib/nft-layer'
+import { getProtocolMark, YeetfulMark } from '../components/protocol-marks'
 import { splitListingPrice, buildListingComponents, guardListingComponents, openseaAssetUrl, SEAPORT_1_6, guardBuyFulfillment, fulfillmentToCalldata, normalizeOpenseaListing, collectionSlugCandidates } from '../lib/opensea'
 import { keccak256, stringToBytes, decodeFunctionData, parseAbi } from 'viem'
 import { isCacheable, routeCacheKey, getCached, setCached, clearRouteCache } from '../lib/route-cache'
@@ -3593,6 +3594,19 @@ async function main() {
       guardNftTransfer({ to: nftContract, data: xfer721, value: '0', chainId: 1 }, { ...exp721, tokenId: '9' }).ok === false &&
       guardNftTransfer({ to: nftContract, data: xfer1155, value: '0', chainId: 1 }, { ...exp721, standard: 'erc1155', tokenId: '77', amount: BigInt(3) }).ok === true &&
       guardNftTransfer({ to: nftContract, data: xfer1155, value: '0', chainId: 1 }, { ...exp721, standard: 'erc1155', tokenId: '77', amount: BigInt(2) }).ok === false,
+  )
+  // Brand marks: the first-party `yeetful-tool-*` internal MCPs carry Yeetful's
+  // own mark (rail + server pages), while `yeetful-claude` KEEPS its Anthropic
+  // icon (resolved via ICON_SLUG, not a protocol mark). getProtocolMark is the
+  // step-1 winner in BrandIcon, so this is what decides which glyph shows.
+  check(
+    'brand mark: yeetful-tool-* MCPs resolve to the Yeetful mark',
+    getProtocolMark(undefined, 'yeetful-tool-wallet', 'yeetful-tool-wallet', 'Yeetful Wallet') === YeetfulMark &&
+      getProtocolMark(undefined, 'yeetful-tool-funding', 'yeetful-tool-funding', 'Yeetful Funding Planner') === YeetfulMark,
+  )
+  check(
+    'brand mark: yeetful-claude is NOT captured (keeps its Anthropic icon)',
+    getProtocolMark('anthropic', 'yeetful-claude', 'yeetful-claude', 'Yeetful · Claude') === null,
   )
   // Seaport order math: fee splits sum exactly; the independent guard refuses
   // payouts outside offerer + published fee recipients.
