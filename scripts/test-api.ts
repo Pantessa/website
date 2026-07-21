@@ -47,7 +47,7 @@ import { jobContextFor } from '../lib/job-context'
 import { crossChainAgentOf, detectCrossChain, swapWorkingContext } from '../lib/swap-intent'
 import { encodeV4SwapCalldata, guardUniswapV4Build, type V4BuiltStep, type V4GuardExpectations, type V4PoolKey } from '../lib/uniswap-v4'
 import { guardLifiBuild, verifyLifiQuoteEcho, lifiPriceAcceptable, lifiRoutersFor, type LifiBuiltStep, type LifiGuardExpectations, type LifiQuote } from '../lib/lifi-venue'
-import { fundingNeedUsd, GAS_TOPUP_ETH, guardLifiBridgeBuild, lifiBridgeRoutersFor, parseRhFundingFollowUp, planRobinhoodFundingAdvice, planRobinhoodFundingChips, verifyLifiBridgeEcho, type FundingOrigin, type LifiBridgeExpectations, type LifiBridgeStep } from '../lib/lifi-bridge'
+import { FUNDING_ALT_USDC, fundingAltUsdcFor, fundingNeedUsd, GAS_TOPUP_ETH, guardLifiBridgeBuild, lifiBridgeRoutersFor, parseRhFundingFollowUp, planRobinhoodFundingAdvice, planRobinhoodFundingChips, verifyLifiBridgeEcho, type FundingOrigin, type LifiBridgeExpectations, type LifiBridgeStep } from '../lib/lifi-bridge'
 import { parseRobinhoodFunding, parseSameChainSwapSegment, JOB_SEGMENT_PARSERS } from '../lib/jobs'
 import { parseTransferSegment } from '../lib/transfer-exec'
 import { detectBalanceShortfall, fundingPlanUsd, planFundingChips, rankFundingSources, type FundingNeed, type FundingSource } from '../lib/funding-plan'
@@ -2580,6 +2580,23 @@ async function main() {
         !!fpArbShort && fpArbShort.originChainId === 42161,
     )
     check('funding parse: an unknown origin chain → null (never guesses)', parseRobinhoodFunding('fund robinhood chain with $12 from solana') === null)
+    // Bridged USDC.e (2026-07-21 follow-up: a wallet holding only Arbitrum
+    // USDC.e read as "no USDC on Arbitrum") — the "using usdc.e" clause
+    // picks the variant; absent = native USDC, exactly as before.
+    check(
+      'funding alt-USDC: registry cross-check (Arbitrum only, address in lib/chains stables)',
+      fundingAltUsdcFor(42161)?.symbol === 'USDC.e' &&
+        fundingAltUsdcFor(42161)?.address === FUNDING_ALT_USDC[42161].address &&
+        fundingAltUsdcFor(8453) === null && fundingAltUsdcFor(1) === null,
+    )
+    const fpUsdce = parseRobinhoodFunding('Fund robinhood chain with $12 from arbitrum using usdc.e including gas')
+    const fpUsdceNoDot = parseRobinhoodFunding('fund robinhood with $9 from arb using usdce')
+    check(
+      'funding parse: "using usdc.e" picks the variant, default stays USDC',
+      !!fpUsdce && fpUsdce.token === 'USDC.e' && fpUsdce.originChainId === 42161 && fpUsdce.gasIncluded &&
+        !!fpUsdceNoDot && fpUsdceNoDot.token === 'USDC.e' && !fpUsdceNoDot.gasIncluded &&
+        parseRobinhoodFunding('fund robinhood with $9 from arbitrum')?.token === 'USDC',
+    )
     check('bridge: Ethereum + Arbitrum LiFi diamonds allowlisted by default', lifiBridgeRoutersFor(1).length === 1 && lifiBridgeRoutersFor(42161).length === 1 && lifiBridgeRoutersFor(1)[0].toLowerCase() === DIAMOND.toLowerCase())
 
     const fundJob = compileJobAsk('Fund robinhood chain with $12 from base including gas, then buy $10 of AAPL')
@@ -2648,7 +2665,7 @@ async function main() {
 
     // The chip planner: multi-origin ranking, and every resume string is
     // the contract — each must round-trip through compileJobAsk.
-    const O = (chainId: number, word: string, usd: number, gasEth = 0.01): FundingOrigin => ({ chainId, word, usd, gasEth })
+    const O = (chainId: number, word: string, usd: number, gasEth = 0.01, token = 'USDC'): FundingOrigin => ({ chainId, word, token, usd, gasEth })
     const chipOrigins = [O(1, 'Ethereum', 15), O(8453, 'Base', 3)]
     const chips = planRobinhoodFundingChips({ origins: chipOrigins, needUsd: 7, gasIncluded: true, followup: 'buy $5 of NVDA' })
     check(
@@ -2739,6 +2756,65 @@ async function main() {
       under.kind === 'none' && /\$4 of USDC on Arbitrum \(no ETH there to sign with\)/.test(under.copy) && /couldn't check Ethereum/.test(under.copy),
       JSON.stringify(under),
     )
+
+    // ── Bridged USDC.e as a funding source: chips name the token, resumes
+    // carry the "using usdc.e" clause, and every one compiles with the
+    // token in BOTH legs' params (the gas leg sells the same origin token —
+    // a USDC.e-only wallet has no native USDC to pay the gas leg with).
+    const usdceOrigin = O(42161, 'Arbitrum', 12, 0.01, 'USDC.e')
+    const usdceChips = planRobinhoodFundingChips({ origins: [usdceOrigin], needUsd: 7, gasIncluded: true, followup: 'buy $5 of NVDA' })
+    const usdceJob = usdceChips ? compileJobAsk(usdceChips[0].resume) : null
+    check(
+      'funding chips: a USDC.e origin is offered, named, and compiles with the token in both legs',
+      !!usdceChips && usdceChips.every((c) => /USDC\.e/i.test(c.label) || /usdc\.e/.test(c.resume)) &&
+        !!usdceJob && !('problem' in usdceJob) &&
+        (usdceJob.steps[0].params as { leg?: string; token?: string }).leg === 'gas' &&
+        (usdceJob.steps[0].params as { token?: string }).token === 'USDC.e' &&
+        (usdceJob.steps[1].params as { leg?: string; token?: string }).leg === 'usdg' &&
+        (usdceJob.steps[1].params as { token?: string }).token === 'USDC.e' &&
+        (usdceJob.steps[1].params as { origin?: number }).origin === 42161 &&
+        usdceChips.every((c) => {
+          const j = compileJobAsk(c.resume)
+          return !!j && !('problem' in j)
+        }),
+      JSON.stringify({ usdceChips, steps: usdceJob && !('problem' in usdceJob) ? usdceJob.steps.map((s) => s.params) : usdceJob }),
+    )
+    // Native-USDC flows are untouched: no "using" clause, no token surprise.
+    const usdcJob = compileJobAsk('Fund robinhood chain with $7 from arbitrum including gas, then buy $5 of NVDA')
+    check(
+      'funding compile: a plain arbitrum ask still sells native USDC',
+      !!usdcJob && !('problem' in usdcJob) && (usdcJob.steps[0].params as { token?: string }).token === 'USDC' && (usdcJob.steps[1].params as { token?: string }).token === 'USDC',
+    )
+    // "using usdc.e" where the registry knows no variant refuses at compile
+    // time — never a job whose every build fails.
+    const usdceWrongChain = compileJobAsk('Fund robinhood chain with $7 from base using usdc.e including gas, then buy $5 of NVDA')
+    check('funding compile: "using usdc.e" off Arbitrum refuses honestly', !!usdceWrongChain && 'problem' in usdceWrongChain && /USDC\.e/.test(usdceWrongChain.problem))
+    // Gas-stranded USDC.e: the rescue names the actual token and the topup
+    // resume compiles (bridge gas → wait → fund USDC.e → wait → buy).
+    const strandedUsdce = O(42161, 'Arbitrum', 12, 0, 'USDC.e')
+    const usdceRescue = planRobinhoodFundingAdvice({
+      scan: { origins: [], gaslessOrigins: [strandedUsdce], allScanned: [strandedUsdce, O(8453, 'Base', 0, 0.01)], failedOrigins: [] },
+      needUsd: 11, gasIncluded: true, followup: 'buy $10 of GOOGL',
+    })
+    const usdceRescueJob = usdceRescue.kind === 'gas-stranded' && usdceRescue.chips ? compileJobAsk(usdceRescue.chips[0].resume) : null
+    check(
+      'funding advice: gas-stranded USDC.e is named and its topup resume compiles',
+      usdceRescue.kind === 'gas-stranded' && usdceRescue.stranded.token === 'USDC.e' && /USDC\.e/.test(usdceRescue.copy) &&
+        !!usdceRescueJob && !('problem' in usdceRescueJob) &&
+        usdceRescueJob.steps.some((s) => (s.params as { token?: string }).token === 'USDC.e'),
+      JSON.stringify(usdceRescue),
+    )
+    // The honest refusal names USDC.e holdings too — money is never invisible.
+    const usdceUnder = planRobinhoodFundingAdvice({
+      scan: { origins: [], gaslessOrigins: [O(42161, 'Arbitrum', 4, 0, 'USDC.e')], allScanned: [O(42161, 'Arbitrum', 4, 0, 'USDC.e')], failedOrigins: [] },
+      needUsd: 20, gasIncluded: true, followup: '',
+    })
+    check(
+      'funding advice: the per-chain accounting names USDC.e',
+      usdceUnder.kind === 'none' && /\$4 of USDC\.e on Arbitrum \(no ETH there to sign with\)/.test(usdceUnder.copy),
+      JSON.stringify(usdceUnder),
+    )
+    check('rh-funding follow-up: "I have $10 USDC.e on arbitrum" → recheck', parseRhFundingFollowUp('I have $10 USDC.e on arbitrum')?.kind === 'recheck')
 
     // ── The rh-funding follow-up parser: the typed continuations that must
     // re-enter the funding layer instead of falling to the planner.

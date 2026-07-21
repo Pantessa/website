@@ -527,7 +527,7 @@ export async function fundingFallbackForFailures(
       const includeGas = !scan.hasGas
       const needUsd = fundingNeedUsd(detected.shortfall, includeGas)
       const advice = planRobinhoodFundingAdvice({ scan, needUsd, gasIncluded: includeGas, followup: '' })
-      const holdings = scan.origins.map((o) => `~$${o.usd} of USDC on ${o.word}`).join(', ')
+      const holdings = scan.origins.map((o) => `~$${o.usd} of ${o.token} on ${o.word}`).join(', ')
       if (advice.kind === 'gas-stranded') {
         // The money EXISTS — it just can't sign where it sits. With a donor
         // origin the chips run the whole rescue as one job; without one the
@@ -535,13 +535,13 @@ export async function fundingFallbackForFailures(
         // names the stranded USDC — a scan that hid it once told a user
         // "none on Base, Ethereum, or Arbitrum" minutes after THEY bridged
         // $12 in.
-        trace?.({ type: 'status', label: `funding fallback claimed the turn: USDG short on Robinhood Chain after the ${f.name} failure — ~$${advice.stranded.usd} USDC on ${advice.stranded.word} is gas-stranded (${advice.donor ? `offering a topup from ${advice.donor.word}` : 'asking for an ETH topup'})` })
+        trace?.({ type: 'status', label: `funding fallback claimed the turn: USDG short on Robinhood Chain after the ${f.name} failure — ~$${advice.stranded.usd} ${advice.stranded.token} on ${advice.stranded.word} is gas-stranded (${advice.donor ? `offering a topup from ${advice.donor.word}` : 'asking for an ETH topup'})` })
         if (!advice.chips) {
           return {
             offer: null,
             contextBlock:
               `### Gas-stranded funds found (after the ${f.name} failure)\n` +
-              `The wallet holds ~$${advice.stranded.usd} of USDC on ${advice.stranded.word} — enough for this — but no ETH there to pay for the bridge signatures, and no other chain of theirs can donate it. ` +
+              `The wallet holds ~$${advice.stranded.usd} of ${advice.stranded.token} on ${advice.stranded.word} — enough for this — but no ETH there to pay for the bridge signatures, and no other chain of theirs can donate it. ` +
               `Tell the user exactly that: their money is real and where it is, only ${advice.stranded.word} gas is missing (about a dollar of ETH is plenty), and once they send a little ETH to their own address on ${advice.stranded.word} they should re-ask so the plan rebuilds. ` +
               `Do NOT invent your own bridge instructions, amounts, or addresses.`,
           }
@@ -554,7 +554,7 @@ export async function fundingFallbackForFailures(
           },
           contextBlock:
             `### Gas-stranded funds found (after the ${f.name} failure)\n` +
-            `The wallet holds ~$${advice.stranded.usd} of USDC on ${advice.stranded.word} but no ETH there to sign with. The system RENDERS action chips directly under your reply. ` +
+            `The wallet holds ~$${advice.stranded.usd} of ${advice.stranded.token} on ${advice.stranded.word} but no ETH there to sign with. The system RENDERS action chips directly under your reply. ` +
             `Tell the user their money is real and where it is, that only origin-chain gas is missing, and what the chips do. Do NOT invent your own bridge instructions, amounts, or addresses.`,
         }
       }

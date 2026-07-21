@@ -2271,7 +2271,7 @@ async function prepareSwapTurn(intent: SwapIntent, walletAddress: string | undef
           gasIncluded: includeGas,
           followup: `buy $${buyUsd} of ${buySym}`,
         })
-        const holdingsSummary = shortfall.origins.map((o) => `~$${o.usd} of USDC on ${o.word}`).join(', ')
+        const holdingsSummary = shortfall.origins.map((o) => `~$${o.usd} of ${o.token} on ${o.word}`).join(', ')
         // Any of the three outcomes leaves the buy PENDING — a typed
         // follow-up ("I have $10 USDC on arbitrum", "sent the ETH, check
         // again") re-runs this exact ask with a fresh scan instead of
@@ -2304,7 +2304,7 @@ async function prepareSwapTurn(intent: SwapIntent, walletAddress: string | undef
         if (advice.kind === 'gas-stranded') {
           trace({
             type: 'status',
-            label: `funding layer claimed the turn: ${rhStable.symbol} short on ${chain.name} and the wallet's ~$${advice.stranded.usd} USDC on ${advice.stranded.word} is gas-stranded — ${advice.donor ? `offering a ${GAS_TOPUP_ETH} ETH topup from ${advice.donor.word}` : 'asking for an ETH topup there'}`,
+            label: `funding layer claimed the turn: ${rhStable.symbol} short on ${chain.name} and the wallet's ~$${advice.stranded.usd} ${advice.stranded.token} on ${advice.stranded.word} is gas-stranded — ${advice.donor ? `offering a ${GAS_TOPUP_ETH} ETH topup from ${advice.donor.word}` : 'asking for an ETH topup there'}`,
           })
           return NextResponse.json({
             reply: `⛽ This buy needs ~$${buyUsd} of ${rhStable.symbol} on ${chain.name} — and ${advice.copy}`,
