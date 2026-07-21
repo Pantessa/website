@@ -90,40 +90,20 @@ export default function Navigation() {
   )
 
   // DESKTOP account cluster (top bar):
-  // - chat: plain ConnectWallet (+ sign-in chip) — paying, not identity.
   // - disconnected: one "Sign in" / "Create account".
   // - connected / signed in: ONE consolidated account pill (NavAccount) that
   //   folds Dashboard + wallet + sign-out into a single dropdown. This kills
   //   the old "Signed in chip + separate wallet pill + Dashboard button" triple.
-  const desktopAccount = onChat ? (
-    disconnected ? (
-      // Logged out on chat: one "Sign in" control that opens the modal (which
-      // itself offers wallet / Google / email) — no separate Connect Wallet.
-      disconnectedCta
-    ) : (
-      <>
-        <ConnectWallet />
-        {isConnected && <AuthButton />}
-      </>
-    )
-  ) : disconnected ? (
-    disconnectedCta
-  ) : (
-    <NavAccount />
-  )
+  // Chat used to get the plain ConnectWallet pill here — a copy-address/
+  // disconnect-only modal that read as inconsistent with the brochure nav.
+  // NavAccount already covers the connect-to-pay case (it offers "Sign in with
+  // wallet" + Wallet details while connected-but-not-signed-in), so chat now
+  // shows the exact same dropdown as everywhere else.
+  const desktopAccount = disconnected ? disconnectedCta : <NavAccount />
 
   // MOBILE drawer account cluster — the drawer has room, so it stays explicit
   // (Dashboard link + auth + wallet) rather than the collapsed desktop pill.
-  const drawerAccount = onChat ? (
-    disconnected ? (
-      disconnectedCta
-    ) : (
-      <>
-        <ConnectWallet />
-        {isConnected && <AuthButton />}
-      </>
-    )
-  ) : disconnected ? (
+  const drawerAccount = disconnected ? (
     disconnectedCta
   ) : (
     <>
