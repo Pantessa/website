@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import prisma from '@/lib/db'
 import { getAuthAddress } from '@/lib/api-key'
-import { cleanAsk, composeMcps, mintSlug, validateRedirect } from '@/lib/intent-links'
+import { cleanAsk, composeMcps, mintSlug, sanitizeMcps, validateRedirect } from '@/lib/intent-links'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -20,7 +20,7 @@ export async function POST(req: NextRequest) {
   if (!addr) return NextResponse.json({ error: 'Sign in to mint an intent link.' }, { status: 401 })
   const creator = addr.toLowerCase()
 
-  let body: { ask?: string; agent?: string; redirectUrl?: string }
+  let body: { ask?: string; agent?: string; redirectUrl?: string; mcps?: unknown }
   try {
     body = await req.json()
   } catch {
@@ -38,7 +38,9 @@ export async function POST(req: NextRequest) {
   }
 
   const agent = body.agent ? cleanAsk(String(body.agent)).slice(0, 40) : null
-  const mcps = composeMcps(ask).join(',')
+  // Creator-chosen MCPs win (validated against the mintable set); otherwise
+  // the composer decides from the ask's shape.
+  const mcps = (sanitizeMcps(body.mcps) ?? composeMcps(ask)).join(',')
 
   // Slug collisions at 40 bits are lottery-rare; retry twice anyway.
   for (let attempt = 0; attempt < 3; attempt++) {

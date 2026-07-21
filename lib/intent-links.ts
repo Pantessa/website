@@ -4,8 +4,6 @@
 // the connected wallet is the only signer. Everything here treats the ask as
 // untrusted input.
 
-import { randomBytes } from 'crypto'
-
 export const ASK_MAX = 400
 
 /** Untrusted-input hygiene — same contract as the /sign page. */
@@ -21,10 +19,36 @@ export function cleanAsk(raw: string): string {
 const SLUG_ALPHABET = 'abcdefghjkmnpqrstuvwxyz23456789'
 
 export function mintSlug(len = 8): string {
-  const bytes = randomBytes(len)
+  // Web crypto (edge- and client-safe) so this module stays importable from
+  // client components that only want the pure helpers (composeMcps preview).
+  const bytes = new Uint8Array(len)
+  globalThis.crypto.getRandomValues(bytes)
   let out = ''
   for (let i = 0; i < len; i++) out += SLUG_ALPHABET[bytes[i] % SLUG_ALPHABET.length]
   return out
+}
+
+/** The MCPs a creator can attach to a link — curated labels for the manual
+ *  picker; slugs must exist in the seeded directory. */
+export const MINTABLE_MCPS: Array<{ slug: string; label: string }> = [
+  { slug: 'robinhood-free', label: 'Robinhood Chain' },
+  { slug: 'hyperliquid-free', label: 'Hyperliquid' },
+  { slug: 'uniswap-free', label: 'Uniswap' },
+  { slug: 'opensea-free', label: 'OpenSea NFTs' },
+  { slug: 'cow-free', label: 'CoW Protocol' },
+  { slug: 'snapshot-free', label: 'Snapshot DAO' },
+  { slug: 'lido-free', label: 'Lido' },
+  { slug: 'aave', label: 'Aave' },
+  { slug: 'near-intents-mcp-yeetful', label: 'NEAR Intents (bridging)' },
+  { slug: 'yeetful-tool-wallet', label: 'Yeetful Wallet' },
+]
+
+/** Validate a caller-chosen MCP list: known slugs only, capped, deduped. */
+export function sanitizeMcps(raw: unknown): string[] | null {
+  if (!Array.isArray(raw)) return null
+  const known = new Set(MINTABLE_MCPS.map((m) => m.slug))
+  const picked = [...new Set(raw.map((s) => String(s).trim()).filter((s) => known.has(s)))].slice(0, 4)
+  return picked.length ? picked : null
 }
 
 /** Auto-compose the MCP set from the intent's shape. The native layers parse

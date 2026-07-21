@@ -1325,6 +1325,18 @@ async function main() {
     const ghostPage = await fetch(`${BASE}/i/zzzz9999`)
     check('intent links: /i unknown slug → 404', ghostPage.status === 404)
 
+    // Creator-chosen MCPs win when valid; junk falls back to the composer.
+    const manualMint = await fetch(`${BASE}/api/intent-links`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie: mallorySession },
+      body: JSON.stringify({ ask: 'Stake some ETH for me', mcps: ['lido-free', 'not-a-real-mcp'] }),
+    })
+    const manual = (await manualMint.json()) as { mcps?: string }
+    check('intent links: manual MCP pick honored, junk slugs dropped', manualMint.status === 200 && manual.mcps === 'lido-free')
+
+    const og = await fetch(`${BASE}/i/${slug}/opengraph-image`)
+    check('intent links: OG card renders as a PNG', og.status === 200 && (og.headers.get('content-type') ?? '').includes('image/png'))
+
     // cleanup: the minted row + its events (raw deletes via prisma are not
     // exposed here — the API has no delete; rows are tiny and harmless, but
     // keep the namespace tidy by revoking… no revoke endpoint in v1 either.

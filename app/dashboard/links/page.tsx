@@ -7,7 +7,8 @@
 // metric stays guardrail-priced in embed_turns and is NOT fed from this.
 
 import { useCallback, useEffect, useState } from 'react'
-import { Check, Copy, Link2, Plus } from 'lucide-react'
+import { Check, Copy, Link2, Plus, Sparkles, SlidersHorizontal } from 'lucide-react'
+import { MINTABLE_MCPS, composeMcps } from '@/lib/intent-links'
 
 interface LinkRow {
   slug: string
@@ -27,6 +28,32 @@ export default function DashboardLinksPage() {
   const [redirectUrl, setRedirectUrl] = useState('')
   const [minting, setMinting] = useState(false)
   const [copied, setCopied] = useState<string | null>(null)
+  // MCP attachment: 'auto' = the composer decides from the ask (live preview
+  // below the field); 'manual' = the creator picks up to 4. A chat handoff
+  // (?ask= + ?mcps=) arrives in manual mode carrying the working set that
+  // produced the aha.
+  const [mcpMode, setMcpMode] = useState<'auto' | 'manual'>('auto')
+  const [pickedMcps, setPickedMcps] = useState<string[]>([])
+
+  // Prefill from the chat's "create intent link" handoff — read once.
+  useEffect(() => {
+    const sp = new URLSearchParams(window.location.search)
+    const a = sp.get('ask')
+    if (a) setAsk(a.slice(0, 400))
+    const m = sp.get('mcps')
+    if (m) {
+      const known = new Set(MINTABLE_MCPS.map((x) => x.slug))
+      const picked = m.split(',').map((s) => s.trim()).filter((s) => known.has(s)).slice(0, 4)
+      if (picked.length) {
+        setPickedMcps(picked)
+        setMcpMode('manual')
+      }
+    }
+  }, [])
+
+  const autoPreview = composeMcps(ask)
+  const togglePick = (slug: string) =>
+    setPickedMcps((cur) => (cur.includes(slug) ? cur.filter((s) => s !== slug) : cur.length >= 4 ? cur : [...cur, slug]))
 
   const load = useCallback(() => {
     void fetch('/api/intent-links', { cache: 'no-store' })
@@ -54,7 +81,11 @@ export default function DashboardLinksPage() {
       const res = await fetch('/api/intent-links', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ ask: ask.trim(), redirectUrl: redirectUrl.trim() || undefined }),
+        body: JSON.stringify({
+          ask: ask.trim(),
+          redirectUrl: redirectUrl.trim() || undefined,
+          mcps: mcpMode === 'manual' && pickedMcps.length ? pickedMcps : undefined,
+        }),
       })
       const data = await res.json()
       if (!res.ok) {
@@ -97,6 +128,60 @@ export default function DashboardLinksPage() {
           maxLength={400}
           className="mt-1.5 w-full rounded-lg border border-[var(--line)] bg-[var(--bg)] px-3 py-2 text-sm text-[color:var(--fg)] focus:outline-none focus:border-[var(--accent)]"
         />
+        <div className="mt-3 flex items-center gap-2">
+          <span className="mono text-[11px] uppercase tracking-wider text-[color:var(--muted-2)]">MCPs</span>
+          <div className="inline-flex rounded-lg border border-[var(--line)] overflow-hidden">
+            <button
+              type="button"
+              onClick={() => setMcpMode('auto')}
+              className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-[12px] transition-colors ${mcpMode === 'auto' ? 'bg-[var(--accent)] text-black font-semibold' : 'text-[color:var(--muted)] hover:text-white'}`}
+            >
+              <Sparkles className="w-3.5 h-3.5" /> Decide for me
+            </button>
+            <button
+              type="button"
+              onClick={() => setMcpMode('manual')}
+              className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-[12px] transition-colors ${mcpMode === 'manual' ? 'bg-[var(--accent)] text-black font-semibold' : 'text-[color:var(--muted)] hover:text-white'}`}
+            >
+              <SlidersHorizontal className="w-3.5 h-3.5" /> Choose MCPs
+            </button>
+          </div>
+        </div>
+        {mcpMode === 'auto' ? (
+          <p className="mt-2 text-[12px] text-[color:var(--muted-2)]">
+            {ask.trim().length >= 8 ? (
+              <>
+                From this ask, the link will carry:{' '}
+                {autoPreview.map((slug) => (
+                  <span key={slug} className="mono text-[11px] text-[color:var(--accent)] mr-1.5">
+                    {MINTABLE_MCPS.find((m) => m.slug === slug)?.label ?? slug}
+                  </span>
+                ))}
+              </>
+            ) : (
+              'Type the ask and the right MCPs attach themselves — stocks pull Robinhood Chain, perps pull Hyperliquid, bridging always rides along.'
+            )}
+          </p>
+        ) : (
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            {MINTABLE_MCPS.map((m) => (
+              <button
+                key={m.slug}
+                type="button"
+                onClick={() => togglePick(m.slug)}
+                className={`px-2.5 py-1 rounded-full border text-[12px] transition-colors ${
+                  pickedMcps.includes(m.slug)
+                    ? 'border-[var(--accent)] text-[color:var(--accent)] bg-[color:var(--accent)]/10'
+                    : 'border-[var(--line)] text-[color:var(--muted)] hover:text-white hover:border-[var(--line-2)]'
+                }`}
+              >
+                {m.label}
+              </button>
+            ))}
+            <span className="text-[11px] text-[color:var(--muted-2)] self-center ml-1">up to 4</span>
+          </div>
+        )}
+
         <label className="mono text-[11px] uppercase tracking-wider text-[color:var(--muted-2)] mt-3 block">
           Return URL after signing (optional, https — e.g. your site)
         </label>
