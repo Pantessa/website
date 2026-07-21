@@ -47,7 +47,7 @@ import { chainById } from '@/lib/chains'
 import AppModeWorkspace from '@/components/AppModeWorkspace'
 import JobDetailOverlay from '@/components/JobDetailOverlay'
 import Link from 'next/link'
-import ConnectWallet from '@/components/ConnectWallet'
+import NavAccount from '@/components/NavAccount'
 import { YeetfulMark } from '@/components/Logo'
 import { useAppShellMode } from '@/components/AppShell'
 import ChatMarkdown from '@/components/ChatMarkdown'
@@ -1160,7 +1160,11 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
           <ShareButton />
           {showAppChrome && (
             <div className="flex-shrink-0 pl-1">
-              <ConnectWallet />
+              {/* The consolidated account pill (same dropdown as the brochure
+                  nav: Dashboard / Wallet details / Sign out) — not RainbowKit's
+                  copy-address/disconnect-only modal. Chain switching lives in
+                  the ChainPicker to the left, so the pill needs no chain chip. */}
+              <NavAccount />
             </div>
           )}
         </div>

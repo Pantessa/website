@@ -74,6 +74,16 @@ export default function Navigation() {
   const signInPill =
     'inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-white/5 border border-white/15 text-zinc-200 text-xs font-semibold hover:bg-white/10 hover:border-white/25 transition-colors'
 
+  // Signing in from an app surface should keep the user WHERE THEY ARE, not
+  // yank them to /dashboard. On chat we return them to the same chat URL (query
+  // included, so ?mcps=/?prompt= deep links survive). Only used inside the
+  // mounted-gated account clusters below, so window is available and there's no
+  // SSR/hydration mismatch (the value is read in click handlers, not rendered).
+  const signInRedirect =
+    onChat && typeof window !== 'undefined'
+      ? window.location.pathname + window.location.search
+      : '/dashboard'
+
   // The disconnected sign-in affordance (one control) — shared everywhere.
   const disconnectedCta = cdpEnabled ? (
     <CreateAccountButton
@@ -83,10 +93,10 @@ export default function Navigation() {
           <LogIn className="w-3.5 h-3.5" strokeWidth={2.5} /> Sign in
         </>
       }
-      redirectTo="/dashboard"
+      redirectTo={signInRedirect}
     />
   ) : (
-    <AuthButton />
+    <AuthButton redirectTo={signInRedirect} />
   )
 
   // DESKTOP account cluster (top bar):
