@@ -1266,6 +1266,71 @@ async function main() {
     check('sign: bare visit 200s with the empty state', bare.status === 200 && /Nothing to review/.test(await bare.text()))
   }
 
+  // ── Intent links — mint, funnel events, runtime page ─────────────────────
+  // A link carries an ASK as a sentence; the runtime rebuilds it through the
+  // guarded layers. Minting is SIWE-gated; events are best-effort public;
+  // redirects are validated https AT MINT and never read from the runtime URL.
+  console.log('— intent links')
+  {
+    const noAuth = await fetch(`${BASE}/api/intent-links`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ ask: 'Buy $12 of AAPL' }),
+    })
+    check('intent links: mint without session → 401', noAuth.status === 401)
+
+    const badRedirect = await fetch(`${BASE}/api/intent-links`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie: mallorySession },
+      body: JSON.stringify({ ask: 'Buy $12 of AAPL', redirectUrl: 'http://evil.test/back' }),
+    })
+    check('intent links: non-https redirect refused at mint (400)', badRedirect.status === 400)
+
+    const mintRes = await fetch(`${BASE}/api/intent-links`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie: mallorySession },
+      body: JSON.stringify({ ask: 'Buy $12 of AAPL', redirectUrl: 'https://example.com/thanks' }),
+    })
+    const minted = (await mintRes.json()) as { slug?: string; mcps?: string }
+    check('intent links: mint returns a slug + composed mcps', mintRes.status === 200 && !!minted.slug && (minted.mcps ?? '').includes('robinhood-free'))
+
+    const slug = minted.slug ?? 'missing'
+    const evOk = await fetch(`${BASE}/api/intent-links/${slug}/events`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ kind: 'open' }),
+    })
+    check('intent links: open event accepted unauthenticated', evOk.status === 200)
+    const evBad = await fetch(`${BASE}/api/intent-links/${slug}/events`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ kind: 'exfiltrate' }),
+    })
+    check('intent links: unknown event kind → 400', evBad.status === 400)
+    const evGhost = await fetch(`${BASE}/api/intent-links/zzzz9999/events`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ kind: 'open' }),
+    })
+    check('intent links: events for an unknown slug → 404', evGhost.status === 404)
+
+    const list = await fetch(`${BASE}/api/intent-links`, { headers: { cookie: mallorySession } })
+    const listBody = (await list.json()) as { links: Array<{ slug: string; funnel: { open: number } }> }
+    const row = listBody.links?.find((l) => l.slug === slug)
+    check('intent links: creator list shows the link with its funnel', !!row && row.funnel.open >= 1)
+
+    const page = await fetch(`${BASE}/i/${slug}`)
+    const pageHtml = await page.text()
+    check('intent links: /i runtime renders the ask + consent button', page.status === 200 && pageHtml.includes('Buy $12 of AAPL') && /Connect (&amp;|&) build/.test(pageHtml))
+    const ghostPage = await fetch(`${BASE}/i/zzzz9999`)
+    check('intent links: /i unknown slug → 404', ghostPage.status === 404)
+
+    // cleanup: the minted row + its events (raw deletes via prisma are not
+    // exposed here — the API has no delete; rows are tiny and harmless, but
+    // keep the namespace tidy by revoking… no revoke endpoint in v1 either.
+    // Deliberate: harness rows land in the mallory wallet's own list only.
+  }
+
   // ── Organizations (SIWE-only org core + the role matrix) ──────────────────
   console.log('— organizations')
   const MJ = { 'content-type': 'application/json', cookie: mallorySession }

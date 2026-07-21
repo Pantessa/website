@@ -6,12 +6,13 @@
 
 import Link from 'next/link'
 import { useEffect, useRef } from 'react'
-import { LayoutDashboard, KeyRound, Bot, ToggleRight, Activity, ReceiptText, Building2, LineChart, Server, MessageSquare, BookOpen, Sparkles, AlertTriangle, CreditCard, Globe, ShieldCheck, Users, Landmark } from 'lucide-react'
+import { LayoutDashboard, KeyRound, Bot, ToggleRight, Activity, ReceiptText, Building2, LineChart, Server, MessageSquare, BookOpen, Sparkles, AlertTriangle, CreditCard, Globe, ShieldCheck, Users, Landmark, Link2 } from 'lucide-react'
 import { isAdminAddress } from '@/lib/admin'
 
 export const DASH_SECTIONS = [
   { href: '/dashboard', label: 'Overview', icon: LayoutDashboard, exact: true },
   { href: '/dashboard/embeds', label: 'Embeds', icon: Globe, exact: false },
+  { href: '/dashboard/links', label: 'Intent links', icon: Link2, exact: false },
   { href: '/dashboard/servers', label: 'Servers', icon: Server, exact: false },
   { href: '/chat', label: 'App', icon: MessageSquare, exact: false },
   { href: '/dashboard/agents', label: 'Agents', icon: Bot, exact: false },
