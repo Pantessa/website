@@ -83,6 +83,7 @@ import { buildUniswapSwap, NoV3PoolError } from '@/lib/uniswap-venue'
 import { buildUniswapV4Swap, NoV4PoolError, GatedV4PoolError } from '@/lib/uniswap-v4'
 import { buildLifiSwap, NoLifiRouteError } from '@/lib/lifi-venue'
 import { fundingNeedUsd, GAS_TOPUP_ETH, parseRhFundingFollowUp, planRobinhoodFundingAdvice, readFundingShortfall, rhFundingPending, ROBINHOOD_CHAIN_ID } from '@/lib/lifi-bridge'
+import { describeInflightDeposit, inflightPendingData } from '@/lib/inflight-funding'
 import { resolveToken, tokenDecimals, humanToAtoms } from '@/lib/cow'
 import { ensureTokenList } from '@/lib/token-list'
 import { resolveProposal } from '@/lib/snapshot-read'
@@ -2272,6 +2273,28 @@ async function prepareSwapTurn(intent: SwapIntent, walletAddress: string | undef
           followup: `buy $${buyUsd} of ${buySym}`,
         })
         const holdingsSummary = shortfall.origins.map((o) => `~$${o.usd} of ${o.token} on ${o.word}`).join(', ')
+        // In-flight settlement awareness (live 2026-07-21): the user signed a
+        // NEAR Intents deposit toward a funding origin ~60s before this ask,
+        // and the scan — a plain balance read — reported the mid-flight money
+        // as absent ("none on Base, Ethereum, or Arbitrum" over a just-sent
+        // $12). When the echoed pending carries such a deposit (xchain, or
+        // forwarded on a prior rh-funding turn), probe its one-click status
+        // read-only and NAME the transfer in whatever refusal follows instead
+        // of asserting the funds don't exist. Fail-soft: no deposit or a
+        // failed probe just means no extra sentence.
+        const inflight = await describeInflightDeposit(ctx?.pending).catch(() => null)
+        if (inflight) {
+          trace({
+            type: 'status',
+            label: `funding layer: in-flight ${inflight.dep.amount} ${inflight.dep.token} ${inflight.dep.originChain} → ${inflight.dep.destinationChain} deposit noted (one-click status: ${inflight.status}) — the refusal names it instead of denying the funds`,
+          })
+        }
+        // A 'settled' note only matters when the scan STILL can't see the
+        // money (the 'none' outcome — balance reads lag); next to a chips or
+        // gas-stranded answer the landed funds are already counted, and
+        // "say check again" would be noise.
+        const inflightSuffix =
+          inflight && !(inflight.status === 'settled' && advice.kind !== 'none') ? ` Also — ${inflight.note}` : ''
         // Any of the three outcomes leaves the buy PENDING — a typed
         // follow-up ("I have $10 USDC on arbitrum", "sent the ETH, check
         // again") re-runs this exact ask with a fresh scan instead of
@@ -2282,7 +2305,7 @@ async function prepareSwapTurn(intent: SwapIntent, walletAddress: string | undef
           v: 1,
           age: 0,
           ...(ctx?.scope ? { scope: ctx.scope } : {}),
-          pending: rhFundingPending(buyUsd, buySym),
+          pending: rhFundingPending(buyUsd, buySym, inflight ? inflightPendingData(inflight.dep) : undefined),
         } satisfies WorkingContext
         if (advice.kind === 'chips') {
           const options = [...advice.chips]
@@ -2295,7 +2318,7 @@ async function prepareSwapTurn(intent: SwapIntent, walletAddress: string | undef
             reply:
               `🌉 You don't have enough ${rhStable.symbol} on ${chain.name} for this yet (holding ~$${holdingUsd.toFixed(2)}, the buy needs ~$${buyUsd}) — ` +
               `but you're holding **${holdingsSummary}**. I can convert some of it${includeGas ? ', drop in a little ETH for gas,' : ''} ` +
-              `and buy the ${buySym} — all in one job you sign step by step, funds arriving on ${chain.name} in seconds.`,
+              `and buy the ${buySym} — all in one job you sign step by step, funds arriving on ${chain.name} in seconds.${inflightSuffix}`,
             clarify: { question: 'Fund it from another chain?', options: options.slice(0, 4) },
             buildPath: 'native-lifi-fund-offer',
             workingContext: pendingFunding,
@@ -2307,7 +2330,7 @@ async function prepareSwapTurn(intent: SwapIntent, walletAddress: string | undef
             label: `funding layer claimed the turn: ${rhStable.symbol} short on ${chain.name} and the wallet's ~$${advice.stranded.usd} ${advice.stranded.token} on ${advice.stranded.word} is gas-stranded — ${advice.donor ? `offering a ${GAS_TOPUP_ETH} ETH topup from ${advice.donor.word}` : 'asking for an ETH topup there'}`,
           })
           return NextResponse.json({
-            reply: `⛽ This buy needs ~$${buyUsd} of ${rhStable.symbol} on ${chain.name} — and ${advice.copy}`,
+            reply: `⛽ This buy needs ~$${buyUsd} of ${rhStable.symbol} on ${chain.name} — and ${advice.copy}${inflightSuffix}`,
             ...(advice.chips ? { clarify: { question: `Fix the ${advice.stranded.word} gas and run it?`, options: advice.chips.slice(0, 4) } } : {}),
             buildPath: 'native-lifi-fund-offer',
             workingContext: pendingFunding,
@@ -2325,7 +2348,7 @@ async function prepareSwapTurn(intent: SwapIntent, walletAddress: string | undef
           reply:
             `🚫 This buy needs ~$${buyUsd} of ${rhStable.symbol} on ${chain.name} and the wallet holds ~$${holdingUsd.toFixed(2)} there. ` +
             `Across the chains I can bridge from I see: ${advice.copy} — not enough for the ~$${needUsd} plan${includeGas ? ' (gas leg included)' : ''}. ` +
-            `Nothing was built — top up USDC on Base, Ethereum, or Arbitrum, or ${rhStable.symbol} on ${chain.name}, and tell me when it's there.`,
+            `Nothing was built — top up USDC on Base, Ethereum, or Arbitrum, or ${rhStable.symbol} on ${chain.name}, and tell me when it's there.${inflightSuffix}`,
           workingContext: pendingFunding,
         })
       }
@@ -3023,7 +3046,7 @@ async function executeWithSignatures(
   let fundingFallback: Awaited<ReturnType<typeof fundingFallbackForFailures>> = null
   const fallbackWallet = walletAddress ?? owner ?? undefined
   if (fallbackWallet && balanceFailures.length > 0) {
-    fundingFallback = await fundingFallbackForFailures(fallbackWallet, balanceFailures, (e) => recordTraceLine(turnId, traceSeq++, e, 'wallet')).catch(() => null)
+    fundingFallback = await fundingFallbackForFailures(fallbackWallet, balanceFailures, (e) => recordTraceLine(turnId, traceSeq++, e, 'wallet'), workingContext?.pending).catch(() => null)
     if (fundingFallback) contextBlocks.push(fundingFallback.contextBlock)
   }
 
@@ -3356,7 +3379,7 @@ async function runWithBurner(
   let fundingFallback: Awaited<ReturnType<typeof fundingFallbackForFailures>> = null
   const fallbackWallet = userAddress ?? owner ?? undefined
   if (fallbackWallet && balanceFailures.length > 0) {
-    fundingFallback = await fundingFallbackForFailures(fallbackWallet, balanceFailures, trace).catch(() => null)
+    fundingFallback = await fundingFallbackForFailures(fallbackWallet, balanceFailures, trace, workingContext?.pending).catch(() => null)
     if (fundingFallback) contextBlocks.push(fundingFallback.contextBlock)
   }
 

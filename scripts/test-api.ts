@@ -47,7 +47,9 @@ import { jobContextFor } from '../lib/job-context'
 import { crossChainAgentOf, detectCrossChain, swapWorkingContext } from '../lib/swap-intent'
 import { encodeV4SwapCalldata, guardUniswapV4Build, type V4BuiltStep, type V4GuardExpectations, type V4PoolKey } from '../lib/uniswap-v4'
 import { guardLifiBuild, verifyLifiQuoteEcho, lifiPriceAcceptable, lifiRoutersFor, type LifiBuiltStep, type LifiGuardExpectations, type LifiQuote } from '../lib/lifi-venue'
-import { FUNDING_ALT_USDC, fundingAltUsdcFor, fundingNeedUsd, GAS_TOPUP_ETH, guardLifiBridgeBuild, lifiBridgeRoutersFor, parseRhFundingFollowUp, planRobinhoodFundingAdvice, planRobinhoodFundingChips, verifyLifiBridgeEcho, type FundingOrigin, type LifiBridgeExpectations, type LifiBridgeStep } from '../lib/lifi-bridge'
+import { FUNDING_ALT_USDC, fundingAltUsdcFor, fundingNeedUsd, GAS_TOPUP_ETH, guardLifiBridgeBuild, lifiBridgeRoutersFor, parseRhFundingFollowUp, planRobinhoodFundingAdvice, planRobinhoodFundingChips, rhFundingPending, verifyLifiBridgeEcho, type FundingOrigin, type LifiBridgeExpectations, type LifiBridgeStep } from '../lib/lifi-bridge'
+import { classifyOneclickStatus, inflightDepositFromPending, inflightPendingData, inflightSettlingNote } from '../lib/inflight-funding'
+import { sanitizeWorkingContext } from '../lib/working-context'
 import { parseRobinhoodFunding, parseSameChainSwapSegment, JOB_SEGMENT_PARSERS } from '../lib/jobs'
 import { parseTransferSegment } from '../lib/transfer-exec'
 import { detectBalanceShortfall, fundingPlanUsd, planFundingChips, rankFundingSources, type FundingNeed, type FundingSource } from '../lib/funding-plan'
@@ -64,7 +66,7 @@ import {
 import { EXAMPLE_PROMPTS } from '../lib/examples'
 import { swapFeeAtoms, SWAP_FEE_BPS, TREASURY_ADDRESS } from '../lib/fees'
 import { APP_CHAINS, chainById, chainNamedIn, explorerTokenUrl, sanitizeChainId } from '../lib/chains'
-import { parseCrossChainSwap, guardCrossChainBuild, expectedOriginChainId, parseCrossChainFollowUp } from '../lib/cross-chain-swap'
+import { parseCrossChainSwap, guardCrossChainBuild, expectedOriginChainId, parseCrossChainFollowUp, crossChainPending } from '../lib/cross-chain-swap'
 import {
   parseAaveSupply,
   competingVenueOf,
@@ -2891,6 +2893,68 @@ async function main() {
     check('rh-funding follow-up: "never mind" → cancel', parseRhFundingFollowUp('never mind, leave it')?.kind === 'cancel')
     check('rh-funding follow-up: a question never claims the turn', parseRhFundingFollowUp('what do I have on arbitrum?') === null && parseRhFundingFollowUp('do i have any USDC') === null)
     check('rh-funding follow-up: an unrelated ask never claims the turn', parseRhFundingFollowUp('buy $5 of NVDA') === null && parseRhFundingFollowUp('show my portfolio') === null && parseRhFundingFollowUp('swap 1 USDC for WETH on base') === null)
+
+    // ── In-flight settlement awareness (live 2026-07-21): a funding scan run
+    // ~60s after the user signed a NEAR Intents deposit toward Arbitrum saw
+    // an empty destination and asserted "none on Base, Ethereum, or
+    // Arbitrum". The refusal must NAME the in-flight transfer instead —
+    // detection reads the echoed pending (xchain, or the facts forwarded on
+    // rh-funding), the one-click status maps to a claim, and every branch
+    // routes the user to "check again" (the deterministic re-scan).
+    const DEPOSIT = '0x1111111111111111111111111111111111111111'
+    const xp = crossChainPending(
+      { amount: '12', originToken: 'USDC', originChain: 'base', destinationToken: 'USDC', destinationChain: 'arb' },
+      DEPOSIT,
+      'x',
+    )
+    const dep = inflightDepositFromPending(xp)
+    check(
+      'inflight: the xchain pending (the real producer) → deposit toward a funding origin, words normalized',
+      !!dep && dep.depositAddress === DEPOSIT && dep.token === 'USDC' && dep.originChain === 'Base' && dep.destinationChain === 'Arbitrum' && dep.amount === '12',
+      JSON.stringify(dep),
+    )
+    check(
+      'inflight: a deposit toward a NON-funding-origin chain never produces a note',
+      inflightDepositFromPending(crossChainPending({ amount: '1', originToken: 'USDC', originChain: 'base', destinationToken: 'USDC', destinationChain: 'solana' }, DEPOSIT, 'x')) === null,
+    )
+    check(
+      'inflight: an invalid deposit address → null (the address only ever comes from the tool)',
+      inflightDepositFromPending({ kind: 'xchain', data: { amount: '1', originToken: 'USDC', originChain: 'base', destinationChain: 'arbitrum', depositAddress: 'not-an-address' } }) === null,
+    )
+    check(
+      'inflight: unrelated pending kinds and no pending → null',
+      inflightDepositFromPending({ kind: 'aave-supply', data: {} }) === null && inflightDepositFromPending(undefined) === null,
+    )
+    // The forward-carry loop: a refusal REPLACES the xchain pending with
+    // rh-funding — the deposit's facts must survive that swap AND the
+    // client-echo sanitizer, or the awareness dies after one turn.
+    const forwarded = rhFundingPending(10, 'AAPL', inflightPendingData(dep!))
+    const echoed = sanitizeWorkingContext({ v: 1, age: 1, pending: forwarded })
+    check(
+      'inflight: rh-funding forward-carry round-trips through sanitizeWorkingContext',
+      !!echoed?.pending && JSON.stringify(inflightDepositFromPending(echoed.pending)) === JSON.stringify(dep),
+      JSON.stringify(echoed?.pending),
+    )
+    check('inflight: rhFundingPending without a deposit keeps its plain shape', Object.keys(rhFundingPending(10, 'AAPL').data).join(',') === 'buyUsd,buySym')
+    check(
+      'inflight: pending expiry bounds the awareness window (age > 2 → gone)',
+      !sanitizeWorkingContext({ v: 1, age: 3, pending: forwarded })?.pending,
+    )
+    // Status → claim mapping (the jobs runner's oneclick buckets).
+    check(
+      'inflight status: one-click states map to the right claims',
+      classifyOneclickStatus('{"status":"SUCCESS"}') === 'settled' &&
+        classifyOneclickStatus('REFUNDED') === 'refunded' &&
+        classifyOneclickStatus('KNOWN_DEPOSIT_TX') === 'settling' &&
+        classifyOneclickStatus('PROCESSING') === 'settling' &&
+        classifyOneclickStatus('PENDING_DEPOSIT') === 'awaiting-deposit' &&
+        classifyOneclickStatus('something unrecognized') === 'unknown',
+    )
+    const settling = inflightSettlingNote(dep!, 'settling')
+    check('inflight copy: settling names the route and routes to “check again”', /12 USDC Base → Arbitrum/.test(settling) && /still settling/.test(settling) && /check again/.test(settling), settling)
+    check('inflight copy: awaiting-deposit hedges the unsigned case', /never signed/.test(inflightSettlingNote(dep!, 'awaiting-deposit')))
+    check('inflight copy: refunded says where the money went back to', /refunded/.test(inflightSettlingNote(dep!, 'refunded')) && /back on Base/.test(inflightSettlingNote(dep!, 'refunded')))
+    check('inflight copy: unknown never asserts — conditional phrasing only', /if you signed it/.test(inflightSettlingNote(dep!, 'unknown')))
   }
 
   // ── Aave supply: parse + reserve pick + the SAFETY guard on the build ─────
