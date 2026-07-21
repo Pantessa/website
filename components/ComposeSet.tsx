@@ -8,24 +8,34 @@ const RECIPES: {
   chips: string[]
   title: string
   ask: string
+  /** The ask, plain, prefilled into /chat (never auto-sends). */
+  prompt: string
+  /** Free-fleet slugs toggled on when the visitor lands in /chat. */
+  mcps: string
   unlocks: string
 }[] = [
   {
     chips: ['Uniswap', 'Snapshot'],
     title: 'Trade + govern',
     ask: '“Swap 1 USDC to WETH, then vote FOR the treasury proposal.”',
+    prompt: 'Swap 1 USDC to WETH, then vote FOR the treasury proposal',
+    mcps: 'uniswap-free,snapshot-free',
     unlocks: 'One conversation quotes the swap, builds the tx, and signs the EIP-712 vote — two dapps, one turn.',
   },
   {
     chips: ['CoW Protocol', 'CoW docs'],
     title: 'Trade + explain',
     ask: '“Quote 100 USDC → WETH — and how does MEV protection work here?”',
+    prompt: 'Quote 100 USDC to WETH — and how does MEV protection work here?',
+    mcps: 'cow-free',
     unlocks: 'Live quotes next to answers pulled from the protocol’s own docs. Ship your docs with your MCP and the agent answers from the latest push.',
   },
   {
     chips: ['Hyperliquid', 'Uniswap'],
     title: 'Positions + trade',
     ask: '“How’s my ETH perp doing — and swap 500 USDC to ETH on Base.”',
+    prompt: "How's my ETH perp doing — and swap 500 USDC to ETH on Base",
+    mcps: 'hyperliquid-free,uniswap-free',
     unlocks: 'Positions and funding from one MCP, a built-to-sign swap from another — read-only is $0, you sign the rest.',
   },
 ]
@@ -53,7 +63,16 @@ export default function ComposeSet() {
               ))}
             </div>
             <h3 className="compose__title">{r.title}</h3>
-            <p className="compose__ask mono">{r.ask}</p>
+            <Link
+              className="compose__ask compose__ask--link mono"
+              href={`/chat?mcps=${r.mcps}&prompt=${encodeURIComponent(r.prompt)}`}
+              title="Opens the chat with this ask prefilled — nothing sends until you do"
+            >
+              {r.ask}
+              <span className="compose__try mono" aria-hidden="true">
+                try it →
+              </span>
+            </Link>
             <p className="compose__unlocks">{r.unlocks}</p>
           </article>
         ))}
