@@ -2,6 +2,13 @@ import { NextRequest, NextResponse } from 'next/server'
 import prisma from '@/lib/db'
 import { getAuthAddress } from '@/lib/api-key'
 import { cleanAsk, composeMcps, mintSlug, sanitizeMcps, validateRedirect } from '@/lib/intent-links'
+import { FEE_BEARING_BUILD_PATHS, creatorEarningsUsd } from '@/lib/fees'
+import { getEffectivePlan } from '@/lib/billing'
+
+/** Active-link capacity per plan — the third capacity axis alongside
+ *  standing intents (PRICING.md). Soft: mints past the cap get a friendly
+ *  upgrade pointer; existing links keep running forever. */
+const LINK_CAPS: Record<string, number> = { free: 3, growth: 25, scale: Infinity }
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -41,6 +48,20 @@ export async function POST(req: NextRequest) {
   // Creator-chosen MCPs win (validated against the mintable set); otherwise
   // the composer decides from the ask's shape.
   const mcps = (sanitizeMcps(body.mcps) ?? composeMcps(ask)).join(',')
+
+  // Capacity gate (soft): active links per plan, mirroring standing-intent
+  // tiers. Existing links are never touched — the cap gates NEW mints only.
+  const { plan } = await getEffectivePlan(creator)
+  const cap = LINK_CAPS[plan.id] ?? 3
+  if (cap !== Infinity) {
+    const active = await prisma.intentLink.count({ where: { creator, revoked: false } })
+    if (active >= cap) {
+      return NextResponse.json(
+        { error: `Your plan carries ${cap} active intent links — upgrade on /pricing for more, or revoke one first. Links you've already shared keep working forever.`, upgrade: '/pricing' },
+        { status: 402 },
+      )
+    }
+  }
 
   // Slug collisions at 40 bits are lottery-rare; retry twice anyway.
   for (let attempt = 0; attempt < 3; attempt++) {
@@ -96,6 +117,33 @@ export async function GET(req: NextRequest) {
     return f
   }
 
+  // Server-truth money: signed turns attributed to these links in
+  // embed_turns (guardrail-priced). Earnings accrue ONLY on fee-bearing
+  // build paths — the conversions-not-movements rule from lib/fees.
+  const turns = await prisma.embedTurn.groupBy({
+    by: ['intentLinkSlug', 'buildPath'],
+    where: { intentLinkSlug: { in: links.map((l) => l.id) }, outcome: 'signed', valueUsd: { gt: 0 } },
+    _sum: { valueUsd: true },
+  })
+  const moneyOf = (slug: string) => {
+    let signedUsd = 0
+    let feeBearingUsd = 0
+    for (const t of turns) {
+      if (t.intentLinkSlug !== slug) continue
+      const v = t._sum.valueUsd ?? 0
+      signedUsd += v
+      if (t.buildPath && FEE_BEARING_BUILD_PATHS.has(t.buildPath)) feeBearingUsd += v
+    }
+    return { signedUsd, earnedUsd: creatorEarningsUsd(feeBearingUsd) }
+  }
+
+  const totalEarnedUsd = links.reduce((s, l) => s + moneyOf(l.id).earnedUsd, 0)
+  const claims = await prisma.intentLinkClaim.aggregate({
+    where: { creator, status: { in: ['requested', 'paid'] } },
+    _sum: { amountUsd: true },
+  })
+  const claimedUsd = claims._sum.amountUsd ?? 0
+
   return NextResponse.json({
     links: links.map((l) => ({
       slug: l.id,
@@ -106,6 +154,13 @@ export async function GET(req: NextRequest) {
       revoked: l.revoked,
       createdAt: l.createdAt,
       funnel: funnelOf(l.id),
+      ...moneyOf(l.id),
     })),
+    earnings: {
+      totalEarnedUsd,
+      claimedUsd,
+      claimableUsd: Math.max(0, totalEarnedUsd - claimedUsd),
+      minClaimUsd: 10,
+    },
   })
 }

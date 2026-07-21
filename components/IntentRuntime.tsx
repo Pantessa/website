@@ -35,12 +35,14 @@ export default function IntentRuntime({
   mcps,
   agent,
   redirectUrl,
+  hasCreator = false,
 }: {
   slug: string
   ask: string
   mcps: string
   agent: string
   redirectUrl: string
+  hasCreator?: boolean
 }) {
   const { address, isConnected } = useAccount()
   const { openConnectModal } = useConnectModal()
@@ -152,6 +154,12 @@ export default function IntentRuntime({
           Connecting runs the scan and the build for your wallet — signing stays yours
           {transferShaped ? '. This ask involves a transfer, so nothing runs until you press send.' : '.'}
         </p>
+        {hasCreator && (
+          <p className="mono text-[11px] text-[color:var(--muted-2)] mt-8 pt-4 border-t border-[var(--line)]">
+            The creator of this link earns half of Yeetful&apos;s 0.20% conversion fee. Sales,
+            transfers, and bridges are always fee-free.
+          </p>
+        )}
       </main>
     )
   }
@@ -182,7 +190,7 @@ export default function IntentRuntime({
         )}
       </div>
       <div className="flex-1 max-w-3xl w-full mx-auto px-4 pb-4 min-h-0">
-        <ChatInterface injectedPrompt={prompt} onEmbedEvent={onTurnEvent} />
+        <ChatInterface injectedPrompt={prompt} onEmbedEvent={onTurnEvent} intentLinkSlug={slug} />
       </div>
       {signed && returnHref && redirectHost && (
         <div className="sticky bottom-0 border-t border-[var(--line)] bg-[var(--bg)]/95 backdrop-blur px-4 py-3">

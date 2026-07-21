@@ -93,3 +93,61 @@ Everything else (sites, credits, theming, orgs, SLA) stays as-is per tier.
 - The 0.20% flow fee and its single source (lib/fees.ts).
 - x402 paid doors: per-call packaging for agent customers, separate lane.
 - Credits: still the attended-chat meter on every plan.
+
+---
+
+## Addendum 2026-07-21 — Intent links: the creator rail (Nate-approved)
+
+Intent links (website#500/#503) get the third capacity axis and the first
+revenue-share program. Decided in-session with Nate; shipped ledgered
+(phase 1) in website#505's lane.
+
+### The fee map (unchanged rule, now on the record)
+
+**Charge on conversions, never on movements or inflows.** The fee is
+earned when Yeetful's routing chose a price for you — one asset became
+another through our venue cascade:
+
+| Action | Fee |
+|---|---|
+| Swaps, tokenized-stock buys/sells, DCA runs | 0.20% (lib/fees.ts, unchanged) |
+| NFT sales / listings / transfers | $0 forever (a sale is an inflow) |
+| Sends, bridges, funding legs | $0 (taxing the fix kills the wedge) |
+| Reads, asks, votes, staking | $0 |
+
+### Creator fee-split
+
+- **50% of the fee** (10bps of notional) accrues to the link's creator on
+  fee-bearing conversions attributed to their link. Single source:
+  lib/fees.ts `CREATOR_FEE_SPLIT` + `FEE_BEARING_BUILD_PATHS` (exactly the
+  four native-swap-* paths — NFTs/transfers/bridges move $ through links
+  but never earn).
+- Sybil-proof by construction: creators earn a fraction of fees actually
+  paid; self-referral is a self-discount, not a drain.
+- **Phase 1 (live): ledgered.** Fees land in the treasury unchanged;
+  earnings compute read-time from embed_turns (guardrail-priced, server
+  side); claims open at $10, paid manually as USDC on Base.
+- **Phase 2 (when payouts get frequent):** venue fee recipient becomes a
+  per-creator deterministic split contract (0xSplits on Base/Eth/Arb;
+  CREATE2-derived so the guard re-pins it; 4663 stays ledgered). No user
+  ever signs an extra transaction in either phase.
+- Disclosed on every creator-minted /i page: "The creator of this link
+  earns half of Yeetful's 0.20% conversion fee."
+
+### Active-link capacity (mirrors standing intents)
+
+| | Builder $0 | Growth $99 | Scale $499 |
+|---|---|---|---|
+| Active intent links | 3 | 25 | Unlimited |
+
+Soft at mint time (402 + upgrade pointer; revoke frees capacity); revoked
+links keep their funnel + earnings history forever; nothing retro-limits.
+Link visitors' auto-run turns bill the creator's credit allowance — the
+embed-key contract in link form; the existing breakers bound the worst
+case.
+
+### Explicitly not changed (again)
+
+- Stripe products/prices; credit allowances + breakers (#486 lock).
+- The global money-moved metric stays guardrail-priced embed_turns —
+  per-link client-reported funnel numbers never feed it.

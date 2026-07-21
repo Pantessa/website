@@ -236,9 +236,12 @@ interface ChatInterfaceProps {
   /** One id per embed mount (EmbedChat mints it) — groups turns into a
    *  conversation so the owner dashboard can spot dead-end sessions. */
   embedSession?: string
+  /** /i/<slug> attribution — rides value-bearing telemetry so creator
+   *  fee-split earnings accrue server-side (lib/fees CREATOR_FEE_SPLIT). */
+  intentLinkSlug?: string
 }
 
-export default function ChatInterface({ embedded = false, contextAddress, onEmbedEvent, injectedPrompt, embedKey, embedOrigin, embedSession }: ChatInterfaceProps = {}) {
+export default function ChatInterface({ embedded = false, contextAddress, onEmbedEvent, injectedPrompt, embedKey, embedOrigin, embedSession, intentLinkSlug }: ChatInterfaceProps = {}) {
   const {
     servers,
     activeServerIds,
@@ -788,6 +791,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
             firstParty: true,
             sessionId: chatSession,
             page: typeof window !== 'undefined' ? window.location.href : undefined,
+            intentLinkSlug,
             ...payload,
             prompt: undefined,
             detail: undefined,

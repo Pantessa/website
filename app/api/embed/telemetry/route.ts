@@ -104,6 +104,12 @@ export async function POST(req: NextRequest) {
         // everything here); anything unrecognized is dropped, not stored.
         buildPath: isBuildPath(body.buildPath) ? body.buildPath : undefined,
         originKind,
+        // /i/<slug> attribution — slug-shaped only; creator fee-split
+        // earnings compute read-time from fee-bearing signed rows.
+        intentLinkSlug:
+          typeof body.intentLinkSlug === 'string' && /^[a-z0-9]{4,16}$/.test(body.intentLinkSlug)
+            ? body.intentLinkSlug
+            : undefined,
       },
     })
   } catch {

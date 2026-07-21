@@ -775,21 +775,22 @@ model EmbedSite {
 /// product, not just embeds. `valueUsd` is the guardrail layer's notional
 /// USD for the built transaction (best-effort — null when unpriceable).
 model EmbedTurn {
-  id           String   @id @default(cuid())
-  embedKeyId   String   @map("embed_key_id")
-  ownerAddress String?  @map("owner_address")
-  origin       String
-  sessionId    String   @map("session_id")
-  prompt       String   @default("") // the visitor's ask, capped client+server side
-  outcome      String // answered | clarify | tx-built | signed | refused | credit-gate | error
-  artifact     String? // cow-order | tx | tx-chain | vote
-  chain        String? // 'base' | 'ethereum' | a hex chainId — best-effort from the artifact
-  detail       String? // short refusal/error text, or a human label for the artifact
-  txUrl        String?  @map("tx_url") // explorer link once signed/placed
-  valueUsd     Float?   @map("value_usd") // notional USD of the built/signed tx (guardrail-priced)
-  buildPath    String?  @map("build_path") // which layer built the artifact: native-* | planner | manual (lib/build-path.ts)
-  originKind   String?  @map("origin_kind") // chat | embed | job-step | dca-run (lib/value-origin.ts) — attended vs standing; null = legacy row, classified at read time
-  createdAt    DateTime @default(now()) @map("created_at")
+  id             String   @id @default(cuid())
+  embedKeyId     String   @map("embed_key_id")
+  ownerAddress   String?  @map("owner_address")
+  origin         String
+  sessionId      String   @map("session_id")
+  prompt         String   @default("") // the visitor's ask, capped client+server side
+  outcome        String // answered | clarify | tx-built | signed | refused | credit-gate | error
+  artifact       String? // cow-order | tx | tx-chain | vote
+  chain          String? // 'base' | 'ethereum' | a hex chainId — best-effort from the artifact
+  detail         String? // short refusal/error text, or a human label for the artifact
+  txUrl          String?  @map("tx_url") // explorer link once signed/placed
+  valueUsd       Float?   @map("value_usd") // notional USD of the built/signed tx (guardrail-priced)
+  buildPath      String?  @map("build_path") // which layer built the artifact: native-* | planner | manual (lib/build-path.ts)
+  originKind     String?  @map("origin_kind") // chat | embed | job-step | dca-run (lib/value-origin.ts) — attended vs standing; null = legacy row, classified at read time
+  intentLinkSlug String?  @map("intent_link_slug") // /i/<slug> attribution — creator fee-split accrues on fee-bearing signed turns
+  createdAt      DateTime @default(now()) @map("created_at")
 
   @@index([ownerAddress, createdAt])
   @@index([embedKeyId, createdAt])
@@ -1047,4 +1048,20 @@ model IntentLinkEvent {
 
   @@index([slug, kind])
   @@map("intent_link_events")
+}
+
+/// A creator payout request against accrued intent-link earnings (half of
+/// the swap fee on link-attributed signed conversions, computed read-time
+/// from embed_turns). Manual payout in v1: Nate settles, sets status paid +
+/// txUrl. Phase 2 replaces accrual with per-creator on-chain splits.
+model IntentLinkClaim {
+  id        String   @id @default(cuid())
+  creator   String // lowercased wallet
+  amountUsd Float    @map("amount_usd")
+  status    String   @default("requested") // requested | paid | rejected
+  txUrl     String?  @map("tx_url")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([creator, createdAt])
+  @@map("intent_link_claims")
 }
