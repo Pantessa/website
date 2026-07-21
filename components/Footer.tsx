@@ -20,6 +20,7 @@ const GROUPS: { title: string; links: FooterLink[] }[] = [
       { label: 'Pricing', href: '/pricing' },
       { label: 'MCP Directory', href: '/servers' },
       { label: 'Live Activity', href: '/activity' },
+      { label: 'Intent Links', href: '/links' },
       { label: 'Blog', href: '/blog' },
       { label: 'Terms', href: '/docs/terms' },
       { label: 'Privacy', href: '/docs/privacy' },
