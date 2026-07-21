@@ -47,7 +47,7 @@ import { jobContextFor } from '../lib/job-context'
 import { crossChainAgentOf, detectCrossChain, swapWorkingContext } from '../lib/swap-intent'
 import { encodeV4SwapCalldata, guardUniswapV4Build, type V4BuiltStep, type V4GuardExpectations, type V4PoolKey } from '../lib/uniswap-v4'
 import { guardLifiBuild, verifyLifiQuoteEcho, lifiPriceAcceptable, lifiRoutersFor, type LifiBuiltStep, type LifiGuardExpectations, type LifiQuote } from '../lib/lifi-venue'
-import { fundingNeedUsd, guardLifiBridgeBuild, lifiBridgeRoutersFor, planRobinhoodFundingChips, verifyLifiBridgeEcho, type LifiBridgeExpectations, type LifiBridgeStep } from '../lib/lifi-bridge'
+import { fundingNeedUsd, GAS_TOPUP_ETH, guardLifiBridgeBuild, lifiBridgeRoutersFor, parseRhFundingFollowUp, planRobinhoodFundingAdvice, planRobinhoodFundingChips, verifyLifiBridgeEcho, type FundingOrigin, type LifiBridgeExpectations, type LifiBridgeStep } from '../lib/lifi-bridge'
 import { parseRobinhoodFunding, parseSameChainSwapSegment, JOB_SEGMENT_PARSERS } from '../lib/jobs'
 import { parseTransferSegment } from '../lib/transfer-exec'
 import { detectBalanceShortfall, fundingPlanUsd, planFundingChips, rankFundingSources, type FundingNeed, type FundingSource } from '../lib/funding-plan'
@@ -2648,10 +2648,8 @@ async function main() {
 
     // The chip planner: multi-origin ranking, and every resume string is
     // the contract — each must round-trip through compileJobAsk.
-    const chipOrigins = [
-      { chainId: 1, word: 'Ethereum', usd: 15 },
-      { chainId: 8453, word: 'Base', usd: 3 },
-    ]
+    const O = (chainId: number, word: string, usd: number, gasEth = 0.01): FundingOrigin => ({ chainId, word, usd, gasEth })
+    const chipOrigins = [O(1, 'Ethereum', 15), O(8453, 'Base', 3)]
     const chips = planRobinhoodFundingChips({ origins: chipOrigins, needUsd: 7, gasIncluded: true, followup: 'buy $5 of NVDA' })
     check(
       'funding chips: richest covering origin leads and every resume compiles',
@@ -2662,13 +2660,13 @@ async function main() {
         }),
       JSON.stringify(chips),
     )
-    const altChips = planRobinhoodFundingChips({ origins: [{ chainId: 8453, word: 'Base', usd: 20 }, { chainId: 1, word: 'Ethereum', usd: 10 }], needUsd: 7, gasIncluded: false, followup: 'buy $5 of NVDA' })
+    const altChips = planRobinhoodFundingChips({ origins: [O(8453, 'Base', 20), O(1, 'Ethereum', 10)], needUsd: 7, gasIncluded: false, followup: 'buy $5 of NVDA' })
     check(
       'funding chips: a second covering origin gets an "instead" chip',
       !!altChips && altChips.some((c) => /Use Ethereum instead/.test(c.label)),
       JSON.stringify(altChips),
     )
-    const comboChips = planRobinhoodFundingChips({ origins: [{ chainId: 1, word: 'Ethereum', usd: 5 }, { chainId: 8453, word: 'Base', usd: 4 }], needUsd: 8.5, gasIncluded: true, followup: 'buy $5 of NVDA' })
+    const comboChips = planRobinhoodFundingChips({ origins: [O(1, 'Ethereum', 5), O(8453, 'Base', 4)], needUsd: 8.5, gasIncluded: true, followup: 'buy $5 of NVDA' })
     const comboChipJob = comboChips ? compileJobAsk(comboChips[0].resume) : null
     check(
       'funding chips: no single origin covers → one combined chip that compiles (gas on leg 1)',
@@ -2679,10 +2677,10 @@ async function main() {
         (comboChipJob.steps[3].params as { origin?: number }).origin === 8453,
       JSON.stringify({ comboChips, steps: comboChipJob && !('problem' in comboChipJob) ? comboChipJob.steps.map((s) => s.params) : comboChipJob }),
     )
-    check('funding chips: the whole wallet short → null (caller writes the honest refusal)', planRobinhoodFundingChips({ origins: [{ chainId: 1, word: 'Ethereum', usd: 3 }], needUsd: 12, gasIncluded: true, followup: '' }) === null)
+    check('funding chips: the whole wallet short → null (caller writes the honest refusal)', planRobinhoodFundingChips({ origins: [O(1, 'Ethereum', 3)], needUsd: 12, gasIncluded: true, followup: '' }) === null)
     // The 10× sanity cap (live 2026-07-17: a whale scan offered a $7.5k
     // half-balance chip against a $7 need).
-    const whaleChips = planRobinhoodFundingChips({ origins: [{ chainId: 8453, word: 'Base', usd: 15112 }, { chainId: 1, word: 'Ethereum', usd: 142 }], needUsd: 7, gasIncluded: true, followup: 'buy $5 of NVDA' })
+    const whaleChips = planRobinhoodFundingChips({ origins: [O(8453, 'Base', 15112), O(1, 'Ethereum', 142)], needUsd: 7, gasIncluded: true, followup: 'buy $5 of NVDA' })
     check(
       'funding chips: a whale balance skips half/all (10× cap) but keeps the alternative origin',
       !!whaleChips && !whaleChips.some((c) => /Half|All/.test(c.label)) && whaleChips.some((c) => /Use Ethereum instead/.test(c.label)),
@@ -2697,6 +2695,61 @@ async function main() {
       }),
       JSON.stringify(bridgeOnlyChips),
     )
+
+    // ── The advice planner (live 2026-07-21): $12 of freshly-bridged USDC on
+    // Arbitrum was reported as "none on Base, Ethereum, or Arbitrum" because
+    // the wallet's last origin gas went into the bridge signatures — the
+    // gasless origin was silently dropped, and the planner then invented a
+    // NEAR Intents bridge to Robinhood Chain (a chain NEAR can't reach).
+    const covered = planRobinhoodFundingAdvice({
+      scan: { origins: chipOrigins, gaslessOrigins: [], allScanned: chipOrigins, failedOrigins: [] },
+      needUsd: 7, gasIncluded: true, followup: 'buy $5 of NVDA',
+    })
+    check('funding advice: signable USDC covers → the chips outcome (unchanged behavior)', covered.kind === 'chips' && covered.chips.length >= 2)
+    const stranded = O(42161, 'Arbitrum', 12, 0)
+    const donorScan = { origins: [], gaslessOrigins: [stranded], allScanned: [stranded, O(8453, 'Base', 0, 0.01)], failedOrigins: [] }
+    const rescue = planRobinhoodFundingAdvice({ scan: donorScan, needUsd: 11, gasIncluded: true, followup: 'buy $10 of GOOGL' })
+    const rescueJob = rescue.kind === 'gas-stranded' && rescue.chips ? compileJobAsk(rescue.chips[0].resume) : null
+    check(
+      'funding advice: gas-stranded + donor → topup chip whose resume compiles (bridge gas → wait → fund → wait → buy)',
+      rescue.kind === 'gas-stranded' && rescue.stranded.word === 'Arbitrum' && rescue.donor?.word === 'Base' &&
+        !!rescue.chips && rescue.chips[0].resume.includes(`swap ${GAS_TOPUP_ETH} ETH from base to arbitrum`) &&
+        !!rescueJob && !('problem' in rescueJob) &&
+        rescueJob.steps[0].builder === 'native-cross-chain' && rescueJob.steps[1].kind === 'wait' &&
+        rescueJob.steps.some((s) => s.builder === 'native-lifi-fund') && rescueJob.steps.some((s) => s.builder === 'native-lifi-swap'),
+      JSON.stringify({ rescue, steps: rescueJob && !('problem' in rescueJob) ? rescueJob.steps.map((s) => `${s.kind}:${s.builder}`) : rescueJob }),
+    )
+    const noDonor = planRobinhoodFundingAdvice({
+      scan: { origins: [], gaslessOrigins: [stranded], allScanned: [stranded], failedOrigins: [] },
+      needUsd: 11, gasIncluded: true, followup: 'buy $10 of GOOGL',
+    })
+    check(
+      'funding advice: gas-stranded, no donor → honest copy naming the stranded chain, no chips',
+      noDonor.kind === 'gas-stranded' && noDonor.donor === null && noDonor.chips === null && /\$12 of USDC on \*\*Arbitrum\*\*/.test(noDonor.copy) && /no ETH on Arbitrum/.test(noDonor.copy),
+      JSON.stringify(noDonor),
+    )
+    // A gasless origin that can't cover the need must still be NAMED in the
+    // refusal — money the user owns is never invisible.
+    const under = planRobinhoodFundingAdvice({
+      scan: { origins: [O(8453, 'Base', 1)], gaslessOrigins: [O(42161, 'Arbitrum', 4, 0)], allScanned: [O(8453, 'Base', 1), O(42161, 'Arbitrum', 4, 0)], failedOrigins: ['Ethereum'] },
+      needUsd: 20, gasIncluded: true, followup: '',
+    })
+    check(
+      'funding advice: nothing covers → per-chain accounting names gasless holdings and failed reads',
+      under.kind === 'none' && /\$4 of USDC on Arbitrum \(no ETH there to sign with\)/.test(under.copy) && /couldn't check Ethereum/.test(under.copy),
+      JSON.stringify(under),
+    )
+
+    // ── The rh-funding follow-up parser: the typed continuations that must
+    // re-enter the funding layer instead of falling to the planner.
+    check('rh-funding follow-up: "I have $10 USDC on arbitrum" → recheck', parseRhFundingFollowUp('I have $10 USDC on arbitrum')?.kind === 'recheck')
+    check('rh-funding follow-up: "just sent the ETH" → recheck', parseRhFundingFollowUp('just sent the ETH')?.kind === 'recheck')
+    check('rh-funding follow-up: "topped up gas on base" → recheck', parseRhFundingFollowUp('topped up gas on base')?.kind === 'recheck')
+    check('rh-funding follow-up: "check again" → recheck', parseRhFundingFollowUp('check again')?.kind === 'recheck')
+    check('rh-funding follow-up: "done" → recheck', parseRhFundingFollowUp('done')?.kind === 'recheck')
+    check('rh-funding follow-up: "never mind" → cancel', parseRhFundingFollowUp('never mind, leave it')?.kind === 'cancel')
+    check('rh-funding follow-up: a question never claims the turn', parseRhFundingFollowUp('what do I have on arbitrum?') === null && parseRhFundingFollowUp('do i have any USDC') === null)
+    check('rh-funding follow-up: an unrelated ask never claims the turn', parseRhFundingFollowUp('buy $5 of NVDA') === null && parseRhFundingFollowUp('show my portfolio') === null && parseRhFundingFollowUp('swap 1 USDC for WETH on base') === null)
   }
 
   // ── Aave supply: parse + reserve pick + the SAFETY guard on the build ─────
