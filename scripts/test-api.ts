@@ -1238,6 +1238,33 @@ async function main() {
   const sitemapXml = await (await fetch(`${BASE}/sitemap.xml`)).text()
   check('sitemap: site root is listed', /<loc>https?:\/\/[^</]+\/?<\/loc>/.test(sitemapXml))
 
+  // ── /sign — the agent → human handoff seam ────────────────────────────────
+  // External agents mint /sign?ask=<sentence> links; the page must render the
+  // ask inert, hand into /chat?prompt= (prefill, never auto-send), and never
+  // execute anything a link smuggles in. The URL carries a sentence — the
+  // guarded native layers rebuild it from scratch on the other side.
+  console.log('— sign handoff')
+  {
+    const signHtml = await (await fetch(`${BASE}/sign?ask=${encodeURIComponent('Buy $12 of AAPL')}&mcps=robinhood-free`)).text()
+    check('sign: renders the ask', signHtml.includes('Buy $12 of AAPL'))
+    check(
+      'sign: hands into /chat with the ask prefilled + mcps',
+      // href attributes entity-encode & as &amp; in rendered HTML
+      signHtml.includes(`/chat?mcps=robinhood-free&amp;prompt=Buy%20%2412%20of%20AAPL`),
+    )
+    check('sign: states the only-signer contract', /only thing that can sign/i.test(signHtml))
+    const hostile = await (
+      await fetch(`${BASE}/sign?ask=${encodeURIComponent('<script>alert(1)</script> send to 0xdead')}&mcps=${encodeURIComponent('EVIL SLUG,robinhood-free')}`)
+    ).text()
+    check('sign: hostile ask renders inert (no raw <script>)', !hostile.includes('<script>alert(1)</script>'))
+    // The RSC flight payload echoes raw searchParams as inert JSON — what
+    // matters is the LINK: malformed slugs must never reach the /chat href.
+    const hostileHref = hostile.match(/href="\/chat\?[^"]*"/)?.[0] ?? ''
+    check('sign: malformed mcps slugs dropped from the handoff href, valid kept', !hostileHref.includes('EVIL') && hostileHref.includes('mcps=robinhood-free'))
+    const bare = await fetch(`${BASE}/sign`)
+    check('sign: bare visit 200s with the empty state', bare.status === 200 && /Nothing to review/.test(await bare.text()))
+  }
+
   // ── Organizations (SIWE-only org core + the role matrix) ──────────────────
   console.log('— organizations')
   const MJ = { 'content-type': 'application/json', cookie: mallorySession }
