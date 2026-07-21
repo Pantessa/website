@@ -821,8 +821,9 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
       detail = String(data.error).slice(0, 200)
     }
     // the host page hears every turn (the fusion hero reacts to these);
-    // durable telemetry still requires a key
-    onEmbedEvent?.('turn', { outcome, artifact })
+    // durable telemetry still requires a key. valueUsd rides along for
+    // listeners with their own funnels (intent links) — guardrail-priced.
+    onEmbedEvent?.('turn', { outcome, artifact, valueUsd: outcome === 'tx-built' ? guardrailUsdOf(data) : undefined })
     postEmbedTelemetry({
       prompt: prompt.slice(0, 280),
       outcome,
@@ -837,7 +838,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
     })
   }
   const reportEmbedSigned = (info: { artifact: string; chain?: string; txUrl?: string; detail?: string; valueUsd?: number; buildPath?: string; jobId?: string }) => {
-    onEmbedEvent?.('turn', { outcome: 'signed', artifact: info.artifact })
+    onEmbedEvent?.('turn', { outcome: 'signed', artifact: info.artifact, valueUsd: info.valueUsd })
     postEmbedTelemetry({ outcome: 'signed', ...info })
   }
 
