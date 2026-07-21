@@ -14,6 +14,8 @@ import { signJobToken } from '@/lib/job-token'
 import { APP_CHAINS, chainById, DEFAULT_CHAIN_ID, primaryStable } from '@/lib/chains'
 import { ensureTokenList } from '@/lib/token-list'
 import { resolveToken } from '@/lib/cow'
+import { pairStockToken, stockChipLabel } from '@/lib/stock-pairing'
+import { ROBINHOOD_CHAIN_ID } from '@/lib/lifi-bridge'
 import type { ClarifyRequest } from '@/lib/clarify'
 import {
   cadenceLabel,
@@ -212,7 +214,37 @@ export async function runDcaTurn(
   if (create) {
     trace({ type: 'status', label: `dca layer claimed the turn: $${create.buyUsd} of ${create.buyToken} ${cadenceLabel(create.cadence)} — planner bypassed` })
     if (!wallet) return { reply: `📆 That's a recurring buy — connect your wallet first and I'll set up $${create.buyUsd} of ${create.buyToken} ${cadenceLabel(create.cadence)}, one signature per buy.` }
-    const chainId = await resolveDcaChain(create.buyToken, create.chainId, selectedChainId)
+    let chainId = await resolveDcaChain(create.buyToken, create.chainId, selectedChainId)
+    // ── Stock pairing ── a schedule is the WORST place for a typo'd ticker:
+    // it would fail every period's build. An explicitly-Robinhood ask (the
+    // named-chain shortcut above skips resolution checks!) or a token that
+    // resolves nowhere pairs against 4663's stock list — obvious names
+    // rewrite ("google weekly" → GOOGL), suspected misspellings ASK before
+    // any schedule exists, nothing close refuses honestly.
+    if (chainId === ROBINHOOD_CHAIN_ID || chainId === null) {
+      await ensureTokenList(ROBINHOOD_CHAIN_ID).catch(() => {})
+      const paired = pairStockToken(create.buyToken, ROBINHOOD_CHAIN_ID)
+      if (paired.kind === 'paired') {
+        trace({ type: 'status', label: `dca layer: stock pairing “${create.buyToken}” → ${paired.symbol} (${paired.name}) on Robinhood Chain` })
+        create.buyToken = paired.symbol
+        chainId = chainId ?? ROBINHOOD_CHAIN_ID
+      } else if (paired.kind === 'suggest') {
+        const wordRe = new RegExp(`\\b${create.buyToken.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i')
+        const options = paired.candidates.map((c) => ({ label: stockChipLabel(c), resume: message.replace(wordRe, c.symbol) }))
+        if (options.length < 2) options.push({ label: 'None of these — cancel', resume: 'Never mind — don’t set anything up.' })
+        trace({ type: 'status', label: `dca layer: “${create.buyToken}” looks misspelled — asking before creating a schedule (${paired.candidates.map((c) => c.symbol).join('/')})` })
+        return {
+          reply: `📆 Before I set up a recurring buy — I don't see "${create.buyToken}" on Robinhood Chain's stock list, and a schedule with a guessed ticker would fail every single period.`,
+          clarify: {
+            question: paired.candidates.length === 1 ? `Did you mean ${stockChipLabel(paired.candidates[0])}?` : 'Which did you mean?',
+            options: options.slice(0, 4),
+          },
+          buildPath: 'native-dca',
+        }
+      } else if (chainId === ROBINHOOD_CHAIN_ID && paired.kind === 'unknown') {
+        return { reply: `📆 Robinhood Chain doesn't list "${create.buyToken}" — it carries 100 tokenized stocks (AAPL, NVDA, TSLA, …). No schedule was created.` }
+      }
+    }
     if (!chainId) {
       return { reply: `📆 I can't find ${create.buyToken} on a first-class chain's official token list (Base, Ethereum, Arbitrum, Robinhood Chain) — name the chain, e.g. "buy $${create.buyUsd} of ${create.buyToken} ${cadenceLabel(create.cadence)} on robinhood".` }
     }

@@ -174,3 +174,8 @@ export function dynamicTokenByName(name: string, chainId: number = 8453): TokenI
 export function dynamicTokenCount(chainId: number = 8453): number {
   return Object.keys(cacheFor(chainId).bySymbol).length
 }
+/** Every listed token on a chain (one per symbol) — empty until warmed.
+ *  Feeds the Robinhood stock-pairing ladder (lib/stock-pairing.ts). */
+export function dynamicTokensFor(chainId: number = 8453): TokenInfo[] {
+  return Object.values(cacheFor(chainId).bySymbol)
+}

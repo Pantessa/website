@@ -30,6 +30,7 @@ import { buildSmartRequest, computeRating, type PlannableEndpoint } from '../lib
 import { buildSignableArtifact, isActionIntent, orderRequestOf, txRequestOf, txChainOf } from '../lib/transaction-layer'
 import { resolveToken, buildCowOrderTypedData, cowOrderAction, buildCowLimitOrder, buildCowSubmitBody, describeCowOrder, describeAmount, formatAtoms, tokenDecimals, tokenLabel, humanToAtoms, applySlippage, COW_APP_DATA_JSON, COW_APP_DATA_HASH, GPV2_SETTLEMENT, type CowQuoteResult } from '../lib/cow'
 import { primeTokenList } from '../lib/token-list'
+import { pairStockToken, stockChipLabel } from '../lib/stock-pairing'
 import { pureChecks, policyCheck, orderValueUsd, buildReport } from '../lib/cow-guardrails'
 import { policyCheckInflow, recipientCheck, validityCheck, MAX_VALID_SEC } from '../lib/tx-guardrails'
 import { guardPlannerArtifact, PERMIT2_ADDRESS } from '../lib/planner-artifact-guard'
@@ -106,7 +107,16 @@ import {
   ARBITRUM_USDC,
   type HlOrderIntent,
 } from '../lib/hyperliquid-exec'
-import { compileJobAsk } from '../lib/jobs'
+import { compileJobAsk as compileJobAskFull, type CompiledJob } from '../lib/jobs'
+
+// Harness shim: the pre-pairing checks below narrow on `'problem' in x` only.
+// A stock-pairing clarify folds into a problem-shaped result here (their asks
+// all use real tickers, so none ever clarifies); the clarify-specific checks
+// call compileJobAskFull directly.
+const compileJobAsk = (m: string): CompiledJob | { problem: string } | null => {
+  const r = compileJobAskFull(m)
+  return r && 'clarify' in r ? { problem: `clarify: ${r.clarify.question}` } : r
+}
 import { signJobToken, verifyJobToken } from '../lib/job-token'
 import {
   guardLidoStakeBuild,
@@ -3409,6 +3419,80 @@ async function main() {
   check('token names: ambiguous name (two addresses) resolves to nothing', resolveToken('Same Name Co', 4663) === null)
   check('token names: decimals resolve via name', tokenDecimals('NVIDIA', 4663) === 18)
   check('token names: label shows the ticker, not the typed name', tokenLabel('NVIDIA', 4663) === 'NVDA')
+
+  // ── Stock pairing (lib/stock-pairing.ts) ── the 2026-07-21 "GOOGLe"/"AAPLE"
+  // incidents: obvious brand/company names pair silently, suspected typos ASK
+  // (clarify at parse/compile time — never at job-run time, after money moved).
+  // Re-prime with a SUPERSET fixture (all rows above kept) + real-roster rows.
+  primeTokenList(4663, [
+    { tokens: [
+      { chainId: 4663, address: '0xd0601CE157Db5bdC3162BbaC2a2C8aF5320D9EEC', symbol: 'NVDA', decimals: 18, name: 'NVIDIA' },
+      { chainId: 4663, address: '0xaF3D76f1834A1d425780943C99Ea8A608f8a93f9', symbol: 'AAPL', decimals: 18, name: 'Apple' },
+      { chainId: 4663, address: '0x1111111111111111111111111111111111111111', symbol: 'DUPE1', decimals: 18, name: 'Same Name Co' },
+      { chainId: 4663, address: '0x2222222222222222222222222222222222222222', symbol: 'DUPE2', decimals: 18, name: 'Same Name Co' },
+      { chainId: 4663, address: '0x3333333333333333333333333333333333333333', symbol: 'SHADOW', decimals: 18, name: 'AAPL' },
+      { chainId: 4663, address: '0x4444444444444444444444444444444444444444', symbol: 'GOOGL', decimals: 18, name: 'Alphabet Class A' },
+      { chainId: 4663, address: '0x5555555555555555555555555555555555555555', symbol: 'META', decimals: 18, name: 'Meta Platforms' },
+      { chainId: 4663, address: '0x6666666666666666666666666666666666666666', symbol: 'TSLA', decimals: 18, name: 'Tesla' },
+      { chainId: 4663, address: '0x7777777777777777777777777777777777777777', symbol: 'AMAT', decimals: 18, name: 'Applied Materials' },
+      { chainId: 4663, address: '0x8888888888888888888888888888888888888888', symbol: 'APLD', decimals: 18, name: 'Applied Digital' },
+      { chainId: 4663, address: '0x9999999999999999999999999999999999999999', symbol: 'AAOI', decimals: 18, name: 'Applied Optoelectronics' },
+      { chainId: 4663, address: '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', symbol: 'PLTR', decimals: 18, name: 'Palantir Technologies' },
+      { chainId: 4663, address: '0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb', symbol: 'RKLB', decimals: 18, name: 'Rocket Lab Corporation' },
+      { chainId: 4663, address: '0xcccccccccccccccccccccccccccccccccccccccc', symbol: 'SPCX', decimals: 18, name: 'Space Exploration Technologies Corp' },
+      { chainId: 4663, address: '0xdddddddddddddddddddddddddddddddddddddddd', symbol: 'MU', decimals: 18, name: 'Micron Technology' },
+      { chainId: 4663, address: '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee', symbol: 'F', decimals: 18, name: 'Ford Motor' },
+    ] },
+  ])
+  const pairKind = (input: string, chainId = 4663) => pairStockToken(input, chainId).kind
+  const pairedSym = (input: string) => {
+    const p = pairStockToken(input, 4663)
+    return p.kind === 'paired' ? p.symbol : null
+  }
+  check('stock pairing: a real ticker passes untouched', pairKind('AAPL') === 'ok' && pairKind('NVDA') === 'ok')
+  check('stock pairing: an exact company name passes untouched (name ladder owns it)', pairKind('Tesla') === 'ok')
+  check('stock pairing: brand alias pairs "GOOGLe"/"google" → GOOGL', pairedSym('GOOGLe') === 'GOOGL' && pairedSym('google') === 'GOOGL')
+  check('stock pairing: brand aliases Facebook → META, SpaceX → SPCX, Alphabet → GOOGL', pairedSym('Facebook') === 'META' && pairedSym('SpaceX') === 'SPCX' && pairedSym('Alphabet') === 'GOOGL')
+  check('stock pairing: unique company-name prefix pairs (Palantir → PLTR, Rocket Lab → RKLB, Micron → MU)', pairedSym('Palantir') === 'PLTR' && pairedSym('Rocket Lab') === 'RKLB' && pairedSym('Micron') === 'MU')
+  const applied = pairStockToken('Applied', 4663)
+  check('stock pairing: multi-hit name prefix ASKS ("Applied" → 3 candidates)', applied.kind === 'suggest' && applied.candidates.length === 3 && applied.candidates.map((c) => c.symbol).sort().join(',') === 'AAOI,AMAT,APLD')
+  const aaple = pairStockToken('AAPLE', 4663)
+  check('stock pairing: a near-miss ticker ASKS, never rewrites ("AAPLE" → suggest AAPL first)', aaple.kind === 'suggest' && aaple.candidates[0].symbol === 'AAPL')
+  const teslla = pairStockToken('TESLLA', 4663)
+  check('stock pairing: a near-miss name ASKS ("TESLLA" → suggest TSLA)', teslla.kind === 'suggest' && teslla.candidates.some((c) => c.symbol === 'TSLA'))
+  check('stock pairing: short inputs never fuzz (F and MU live on this list)', pairKind('MUU') === 'unknown' && pairKind('FRD') === 'unknown')
+  check('stock pairing: nothing close is unknown (honest refusal upstream)', pairKind('ZZZZQQ') === 'unknown')
+  check('stock pairing: gated OFF every other chain (Base long-tail lists carry impostor names)', pairKind('Google', 8453) === 'ok' && pairKind('AAPLE', 1) === 'ok')
+  check('stock pairing: chip label reads "AAPL (Apple)"', stockChipLabel({ symbol: 'AAPL', name: 'Apple' }) === 'AAPL (Apple)')
+
+  // Compile-time pairing in the jobs compiler — the "AAPLE" job must ask
+  // BEFORE it exists, and the chip's resume must round-trip to a clean job.
+  const aapleJob = compileJobAskFull('Fund robinhood chain with $12 from base including gas, then buy $15 of AAPLE')
+  check('jobs pairing: a typo\'d fund-buy ASKS before compiling (clarify, no job)', !!aapleJob && 'clarify' in aapleJob && aapleJob.clarify.options[0].label.startsWith('AAPL'))
+  const aapleResume = aapleJob && 'clarify' in aapleJob ? aapleJob.clarify.options[0].resume : ''
+  const aapleRetry = compileJobAskFull(aapleResume)
+  check(
+    'jobs pairing: the clarify chip round-trips into the corrected job',
+    aapleResume === 'Fund robinhood chain with $12 from base including gas, then buy $15 of AAPL' &&
+      !!aapleRetry && !('problem' in aapleRetry) && !('clarify' in aapleRetry) &&
+      (aapleRetry.steps[3].params as { buyToken?: string }).buyToken === 'AAPL',
+  )
+  const googleJob = compileJobAskFull('Fund robinhood chain with $12 from base, then buy $10 of google')
+  check(
+    'jobs pairing: an obvious brand name compiles straight through as the ticker',
+    !!googleJob && !('problem' in googleJob) && !('clarify' in googleJob) &&
+      (googleJob.steps[googleJob.steps.length - 1].params as { buyToken?: string }).buyToken === 'GOOGL',
+  )
+  const gibberishJob = compileJobAskFull('Fund robinhood chain with $12 from base, then buy $10 of ZZZZQQ')
+  check('jobs pairing: nothing close refuses at compile time (never at run time)', !!gibberishJob && 'problem' in gibberishJob && /doesn't list "ZZZZQQ"/.test(gibberishJob.problem))
+  const segSwapPaired = compileJobAskFull('fund robinhood chain with $12 from base, then swap 10 USDG for GOOGLE on robinhood')
+  check(
+    'jobs pairing: same-chain Robinhood swap segments pair too',
+    !!segSwapPaired && !('problem' in segSwapPaired) && !('clarify' in segSwapPaired) &&
+      (segSwapPaired.steps[segSwapPaired.steps.length - 1].params as { buyToken?: string }).buyToken === 'GOOGL',
+  )
+  const segSwapTypo = compileJobAskFull('fund robinhood chain with $12 from base, then swap 10 USDG for TESLLA on robinhood')
+  check('jobs pairing: a typo\'d same-chain swap segment ASKS', !!segSwapTypo && 'clarify' in segSwapTypo)
   const td = buildCowOrderTypedData(cowFixture)
   check(
     'cow: typed data has the GPv2 domain + Order type',

@@ -49,6 +49,15 @@ export async function POST(req: NextRequest) {
     )
   }
   if ('problem' in compiled) return NextResponse.json({ error: compiled.problem }, { status: 400 })
+  // Suspected stock-ticker miss (lib/stock-pairing.ts) — the compiler won't
+  // guess on a money surface. Surface the candidates; the caller re-POSTs
+  // one of the resume strings as the ask. Nothing was compiled or created.
+  if ('clarify' in compiled) {
+    return NextResponse.json(
+      { error: compiled.clarify.question, clarify: compiled.clarify, note: 'Ambiguous ticker — re-POST with one of the clarify options\' resume strings as the ask.' },
+      { status: 400 },
+    )
+  }
 
   if (body.dryRun) {
     const first = compiled.steps.findIndex((s) => s.kind === 'sign')
