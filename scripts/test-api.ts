@@ -1284,6 +1284,14 @@ async function main() {
   // redirects are validated https AT MINT and never read from the runtime URL.
   console.log('— intent links')
   {
+    // Self-healing preamble: revoke every link mallory holds from prior runs
+    // so the plan cap (free = 3 active) never trips the standing checks.
+    const pre = await fetch(`${BASE}/api/intent-links`, { headers: { cookie: mallorySession } })
+    if (pre.status === 200) {
+      const held = ((await pre.json()) as { links?: Array<{ slug: string }> }).links ?? []
+      await Promise.all(held.map((l) => fetch(`${BASE}/api/intent-links/${l.slug}`, { method: 'DELETE', headers: { cookie: mallorySession } })))
+    }
+
     const noAuth = await fetch(`${BASE}/api/intent-links`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
@@ -1348,6 +1356,64 @@ async function main() {
 
     const og = await fetch(`${BASE}/i/${slug}/opengraph-image`)
     check('intent links: OG card renders as a PNG', og.status === 200 && (og.headers.get('content-type') ?? '').includes('image/png'))
+
+    // ── Creator fee-split (the ledgered rail) ─────────────────────────────
+    // Server-truth earnings: a signed FEE-BEARING turn attributed to the
+    // link accrues half the 20bps fee; a signed NON-fee-bearing turn (an
+    // NFT transfer — "sell my NFT" money) moves $ but earns $0. The rule:
+    // conversions pay, movements and inflows never do.
+    const M = { 'content-type': 'application/json', cookie: mallorySession }
+    const turn = (over: Record<string, unknown>) =>
+      fetch(`${BASE}/api/embed/telemetry`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          firstParty: true,
+          sessionId: `harness-ilink-${Date.now()}`,
+          page: `${BASE}/i/${slug}`,
+          outcome: 'signed',
+          artifact: 'tx',
+          valueUsd: 100,
+          intentLinkSlug: slug,
+          ...over,
+        }),
+      })
+    await turn({ buildPath: 'native-swap-uniswap' }) // fee-bearing: earns $0.10
+    await turn({ buildPath: 'native-nft-transfer', valueUsd: 500 }) // moves $500, earns $0
+    const after = await fetch(`${BASE}/api/intent-links`, { headers: { cookie: mallorySession } })
+    const afterBody = (await after.json()) as {
+      links: Array<{ slug: string; signedUsd: number; earnedUsd: number }>
+      earnings: { totalEarnedUsd: number; claimableUsd: number }
+    }
+    const mine = afterBody.links.find((l) => l.slug === slug)
+    check(
+      'intent links: fee-bearing signed turn accrues half the 20bps fee',
+      !!mine && Math.abs(mine.earnedUsd - 0.1) < 0.001,
+    )
+    check(
+      'intent links: NFT/transfer $ counts as moved but NEVER as earnings',
+      !!mine && mine.signedUsd >= 600 && Math.abs(mine.earnedUsd - 0.1) < 0.001,
+    )
+    const claim = await fetch(`${BASE}/api/intent-links/claims`, { method: 'POST', headers: M })
+    check('intent links: claim below the $10 floor refused (400)', claim.status === 400)
+
+    // The fee-split disclosure renders on creator-minted /i pages.
+    const iPage = await (await fetch(`${BASE}/i/${slug}`)).text()
+    check('intent links: /i discloses the creator fee split', /earns half of Yeetful/.test(iPage))
+
+    // Plan cap: free carries 3 active links; this run minted 2, so one more
+    // fits and the 4th refuses with the upgrade pointer.
+    const third = await fetch(`${BASE}/api/intent-links`, { method: 'POST', headers: M, body: JSON.stringify({ ask: 'Swap $5 of ETH to USDC' }) })
+    const fourth = await fetch(`${BASE}/api/intent-links`, { method: 'POST', headers: M, body: JSON.stringify({ ask: 'DCA $25 into ETH weekly' }) })
+    check('intent links: free plan carries 3 active links; the 4th mint → 402 + upgrade pointer', third.status === 200 && fourth.status === 402)
+
+    // Revoke frees capacity — the cap counts ACTIVE links only.
+    const thirdSlug = ((await third.json()) as { slug?: string }).slug
+    const revoke = await fetch(`${BASE}/api/intent-links/${thirdSlug}`, { method: 'DELETE', headers: { cookie: mallorySession } })
+    const fifth = await fetch(`${BASE}/api/intent-links`, { method: 'POST', headers: M, body: JSON.stringify({ ask: 'DCA $25 into ETH weekly' }) })
+    check('intent links: revoke frees capacity (next mint 200) and needs auth', revoke.status === 200 && fifth.status === 200)
+    const strangerRevoke = await fetch(`${BASE}/api/intent-links/${slug}`, { method: 'DELETE' })
+    check('intent links: revoking without a session → 401', strangerRevoke.status === 401)
 
     // cleanup: the minted row + its events (raw deletes via prisma are not
     // exposed here — the API has no delete; rows are tiny and harmless, but

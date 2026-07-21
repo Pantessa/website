@@ -51,6 +51,7 @@ export default async function IntentLinkPage({ params }: Params) {
       mcps={link.mcps ?? ''}
       agent={link.agent ?? ''}
       redirectUrl={link.redirectUrl ?? ''}
+      hasCreator={!!link.creator}
     />
   )
 }

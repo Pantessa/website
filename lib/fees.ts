@@ -40,3 +40,29 @@ export function swapFeeAtoms(amountIn: bigint, bps: number = SWAP_FEE_BPS): bigi
   if (amountIn <= BigInt(0) || bps <= 0) return BigInt(0)
   return (amountIn * BigInt(bps)) / BigInt(10_000)
 }
+
+// ── Creator fee-split (intent links) ────────────────────────────────────────
+// Half of the swap fee on link-attributed conversions accrues to the link's
+// creator — the referral rail. Phase 1 is LEDGERED (fees land in the
+// treasury unchanged; earnings compute read-time from embed_turns and pay
+// out as USDC-on-Base claims). Phase 2 points the venue fee recipient at a
+// per-creator deterministic split contract — same math, on-chain enforced.
+
+/** Fraction of the Yeetful fee the link creator earns. */
+export const CREATOR_FEE_SPLIT = 0.5
+
+/** Build paths whose artifacts CARRY the venue fee — the ONLY paths creator
+ *  earnings accrue on. Everything else (bridges, funding, NFTs, transfers,
+ *  votes, staking, HL) is fee-free by the conversions-not-movements rule. */
+export const FEE_BEARING_BUILD_PATHS = new Set([
+  'native-swap-uniswap',
+  'native-swap-uniswap-v4',
+  'native-swap-lifi',
+  'native-swap-cow',
+])
+
+/** Creator earnings on a signed, fee-bearing notional. */
+export function creatorEarningsUsd(valueUsd: number): number {
+  if (!(valueUsd > 0)) return 0
+  return valueUsd * (SWAP_FEE_BPS / 10_000) * CREATOR_FEE_SPLIT
+}

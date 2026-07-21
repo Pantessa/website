@@ -19,10 +19,23 @@ interface LinkRow {
   revoked: boolean
   createdAt: string
   funnel: { open: number; connect: number; built: number; signed: number; valueUsd: number }
+  /** Server-truth signed notional attributed to this link (embed_turns). */
+  signedUsd: number
+  /** Creator's accrued half of the fee on fee-bearing conversions. */
+  earnedUsd: number
+}
+
+interface Earnings {
+  totalEarnedUsd: number
+  claimedUsd: number
+  claimableUsd: number
+  minClaimUsd: number
 }
 
 export default function DashboardLinksPage() {
   const [links, setLinks] = useState<LinkRow[] | null>(null)
+  const [earnings, setEarnings] = useState<Earnings | null>(null)
+  const [claimMsg, setClaimMsg] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [ask, setAsk] = useState('')
   const [redirectUrl, setRedirectUrl] = useState('')
@@ -64,8 +77,11 @@ export default function DashboardLinksPage() {
         }
         return r.json()
       })
-      .then((d: { links: LinkRow[] } | null) => {
-        if (d) setLinks(d.links)
+      .then((d: { links: LinkRow[]; earnings?: Earnings } | null) => {
+        if (d) {
+          setLinks(d.links)
+          setEarnings(d.earnings ?? null)
+        }
       })
       .catch(() => setError('Could not load your links — try a refresh.'))
   }, [])
@@ -204,6 +220,37 @@ export default function DashboardLinksPage() {
         </div>
       </div>
 
+      {earnings && earnings.totalEarnedUsd > 0 && (
+        <div className="rounded-xl border border-[var(--line)] bg-[var(--surf-1)] px-4 py-3 mb-6 flex flex-wrap items-center gap-x-6 gap-y-2">
+          <span className="text-[13px] text-[color:var(--muted)]">
+            Earned <span className="mono text-[color:var(--accent)]">${earnings.totalEarnedUsd.toFixed(2)}</span>
+            {' · '}claimed <span className="mono">${earnings.claimedUsd.toFixed(2)}</span>
+            {' · '}claimable <span className="mono text-[color:var(--fg)]">${earnings.claimableUsd.toFixed(2)}</span>
+          </span>
+          <button
+            type="button"
+            disabled={earnings.claimableUsd < earnings.minClaimUsd}
+            onClick={() =>
+              void fetch('/api/intent-links/claims', { method: 'POST' })
+                .then((r) => r.json())
+                .then((d: { error?: string; amountUsd?: number; note?: string }) => {
+                  setClaimMsg(d.error ?? `Claim filed for $${d.amountUsd?.toFixed(2)} — ${d.note ?? ''}`)
+                  load()
+                })
+            }
+            className="btn btn--solid text-[12px] disabled:opacity-50"
+            title={earnings.claimableUsd < earnings.minClaimUsd ? `Claims open at $${earnings.minClaimUsd}` : 'Claim as USDC on Base'}
+          >
+            Claim USDC
+          </button>
+          {claimMsg && <span className="text-[12px] text-[color:var(--muted-2)]">{claimMsg}</span>}
+          <span className="text-[11px] text-[color:var(--muted-2)] w-full">
+            Half of Yeetful&apos;s 0.20% fee on swaps and stock buys your links produced — sales,
+            transfers, and bridges are always fee-free. Paid as USDC on Base from ${earnings.minClaimUsd}.
+          </span>
+        </div>
+      )}
+
       {links && links.length > 0 && (
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
@@ -214,7 +261,9 @@ export default function DashboardLinksPage() {
                 <th className="py-2 pr-3 font-medium text-right">Connects</th>
                 <th className="py-2 pr-3 font-medium text-right">Built</th>
                 <th className="py-2 pr-3 font-medium text-right">Signed</th>
-                <th className="py-2 font-medium text-right">$ moved</th>
+                <th className="py-2 pr-3 font-medium text-right">$ moved</th>
+                <th className="py-2 pr-3 font-medium text-right">Earned</th>
+                <th className="py-2 font-medium text-right"></th>
               </tr>
             </thead>
             <tbody>
@@ -243,8 +292,24 @@ export default function DashboardLinksPage() {
                   <td className="py-2.5 pr-3 text-right mono text-[13px]">{l.funnel.connect}</td>
                   <td className="py-2.5 pr-3 text-right mono text-[13px]">{l.funnel.built}</td>
                   <td className="py-2.5 pr-3 text-right mono text-[13px]">{l.funnel.signed}</td>
-                  <td className="py-2.5 text-right mono text-[13px]">
-                    {l.funnel.valueUsd > 0 ? `$${l.funnel.valueUsd.toFixed(2)}` : '—'}
+                  <td className="py-2.5 pr-3 text-right mono text-[13px]">
+                    {l.signedUsd > 0 ? `$${l.signedUsd.toFixed(2)}` : '—'}
+                  </td>
+                  <td className="py-2.5 pr-3 text-right mono text-[13px] text-[color:var(--accent)]">
+                    {l.earnedUsd > 0 ? `$${l.earnedUsd.toFixed(2)}` : '—'}
+                  </td>
+                  <td className="py-2.5 text-right">
+                    <button
+                      type="button"
+                      title="Revoke — the link stops working; its history and earnings stay"
+                      onClick={() => {
+                        if (!window.confirm(`Revoke /i/${l.slug}? Anyone holding the link gets a 404. Earnings history stays.`)) return
+                        void fetch(`/api/intent-links/${l.slug}`, { method: 'DELETE' }).then(load)
+                      }}
+                      className="text-[11px] mono text-[color:var(--muted-2)] hover:text-red-400 transition-colors"
+                    >
+                      revoke
+                    </button>
                   </td>
                 </tr>
               ))}
