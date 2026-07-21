@@ -3,7 +3,8 @@
 import { analytics } from '@/lib/analytics'
 import { Fragment, useState, useRef, useEffect, useSyncExternalStore } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Send, Zap, Check, Loader2, Bot, User, Boxes, ListChecks, MessageSquare, PanelRight, Sparkles, Copy } from 'lucide-react'
+import { Send, Zap, Check, Loader2, Bot, User, Boxes, ListChecks, MessageSquare, PanelRight, Sparkles, Copy, Plus } from 'lucide-react'
+import { useRouter } from 'next/navigation'
 import { useAccount, useSignTypedData, useConnect } from 'wagmi'
 import { useConnectModal } from '@rainbow-me/rainbowkit'
 import { getHostWalletServerState, getHostWalletState, HOST_WALLET_CONNECTOR_ID, subscribeHostWallet } from '@/lib/host-wallet'
@@ -275,6 +276,14 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
     setRailTab(tab)
     isNarrow ? setMobileMcpRailOpen(true) : setMcpRailOpen(true)
   }
+
+  // "New chat" → drop to the bare /chat surface, which resets to a fresh
+  // session (currentChatId=null, default fleet seeded) with the row minted
+  // lazily on first send. Mirrors the rail's own New Chat button so the two
+  // stay in lockstep; a top-level button just makes it reachable without
+  // hunting through the Chats tab.
+  const router = useRouter()
+  const startNewChat = () => router.push('/chat')
 
   const [input, setInput] = useState('')
 
@@ -1086,6 +1095,17 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
             <YeetfulMark size={20} />
           </Link>
         )}
+        {/* New chat — always visible, so starting fresh never means hunting
+            through the Chats tab. Lands on the bare /chat surface. */}
+        <button
+          onClick={startNewChat}
+          aria-label="Start a new chat"
+          title="Start a new chat"
+          className="flex-shrink-0 flex items-center gap-1.5 px-2.5 min-h-[40px] md:min-h-[32px] rounded-lg border bg-[var(--surf-1)] border-[var(--line)] text-[color:var(--muted)] hover:text-white hover:border-[var(--line-2)] transition-colors"
+        >
+          <Plus className="w-4 h-4" />
+          <span className="text-[11px] whitespace-nowrap font-medium mono">NEW</span>
+        </button>
         {/* Labeled reopen chips — only while the rail is collapsed (open, the
             rail's own MCPs/Chats tabs are visible right below). */}
         {!railVisible && (
