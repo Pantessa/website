@@ -3,7 +3,7 @@
 import { analytics } from '@/lib/analytics'
 import { Fragment, useState, useRef, useEffect, useSyncExternalStore } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Send, Zap, Check, Loader2, Bot, User, Boxes, ListChecks, MessageSquare, PanelRight, Sparkles, Copy, Plus } from 'lucide-react'
+import { Send, Zap, Check, Loader2, Bot, User, Boxes, ListChecks, MessageSquare, PanelRight, Sparkles, Copy, Plus, Link2 } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { useAccount, useSignTypedData, useConnect } from 'wagmi'
 import { useConnectModal } from '@rainbow-me/rainbowkit'
@@ -105,6 +105,27 @@ function CopyTurn({ text, dark }: { text: string; dark?: boolean }) {
     >
       {done ? <Check className="w-3.5 h-3.5 text-[color:var(--accent)]" /> : <Copy className="w-3.5 h-3.5" />}
     </button>
+  )
+}
+
+/** Hover mint affordance on USER turns — an aha becomes a shareable intent
+ *  link: /dashboard/links opens prefilled with this ask + the working set
+ *  that produced it. Sits left of the copy button. */
+function MintLinkTurn({ ask, mcpsCsv }: { ask: string; mcpsCsv: string }) {
+  const href = `/dashboard/links?ask=${encodeURIComponent(ask.slice(0, 400))}${mcpsCsv ? `&mcps=${encodeURIComponent(mcpsCsv)}` : ''}`
+  return (
+    <a
+      href={href}
+      aria-label="Create an intent link from this ask"
+      title="Create an intent link — share this ask as one tap"
+      className={cn(
+        'absolute -top-2.5 -right-11 w-7 h-7 rounded-full grid place-items-center border backdrop-blur-md',
+        'opacity-0 group-hover/bubble:opacity-100 focus-visible:opacity-100 transition-opacity duration-150',
+        'bg-black/70 border-black/30 text-white',
+      )}
+    >
+      <Link2 className="w-3.5 h-3.5" />
+    </a>
   )
 }
 
@@ -1329,6 +1350,9 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
                     )}
                   >
                     <CopyTurn text={msg.content} dark={msg.role === 'user'} />
+                    {msg.role === 'user' && !embedded && (
+                      <MintLinkTurn ask={msg.content} mcpsCsv={activeServers.map((s) => s.slug).join(',')} />
+                    )}
                     {msg.role === 'assistant' ? (
                       <ChatMarkdown content={msg.content} />
                     ) : (
