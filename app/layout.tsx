@@ -2,9 +2,11 @@ import '@/lib/indexeddb-polyfill' // server-only IndexedDB shim (must load befor
 import type { Metadata, Viewport } from 'next'
 import './globals.css'
 import './x402-design.css'
+import { Suspense } from 'react'
 import Navigation from '@/components/Navigation'
 import { AppShellMount } from '@/components/AppShell'
 import Providers from '@/components/Providers'
+import ViaTracker from '@/components/ViaTracker'
 import { Analytics } from "@vercel/analytics/next"
 
 
@@ -89,6 +91,12 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       </head>
       <body className="text-white min-h-screen antialiased">
         <Providers>
+          {/* Share-loop attribution: cookies ?via= on any landing so the
+              visitor's first sign-in can stamp where they came from. Suspense
+              because useSearchParams() must not block static shells. */}
+          <Suspense fallback={null}>
+            <ViaTracker />
+          </Suspense>
           <Navigation />
           <AppShellMount />
           {children}

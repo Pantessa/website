@@ -7,6 +7,7 @@
 import prisma from '@/lib/db'
 import type { McpServer } from '@/lib/store'
 import { receiptsOf } from '@/lib/responding-mcp'
+import { viaIdOf } from '@/lib/share-receipts'
 import type { SharedJob } from '@/components/SharedJobLog'
 
 export async function getSharedChat(slug: string) {
@@ -138,7 +139,7 @@ const TWEET_PROMPT_MAX = 180
  * ?prompt= handoff, an over-long ask is truncated here rather than dropped:
  * a tweet with most of the sentence still sells the page.
  */
-export function shareTweetHrefOf(slug: string, messages: Array<{ role: string; content: string }>): string {
+export function shareTweetHrefOf(slug: string, messages: Array<{ role: string; content: string }>, via?: string): string {
   const raw = messages.find((m) => m.role === 'user')?.content.trim()
   const ask = raw
     ? raw.length > TWEET_PROMPT_MAX
@@ -149,7 +150,9 @@ export function shareTweetHrefOf(slug: string, messages: Array<{ role: string; c
     ? `Lazy transactions are here!\n\n"${ask}" on @yeetful_ai`
     : 'Lazy transactions are here! Watch a real guarded run on @yeetful_ai'
   const site = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://www.yeetful.com'
-  const params = new URLSearchParams({ text, url: `${site}/p/${slug}` })
+  // The shared URL carries the sharer's short id so arrivals attribute back
+  // to the share (the id is a one-way hash — never the wallet).
+  const params = new URLSearchParams({ text, url: `${site}/p/${slug}${via ? `?via=${via}` : ''}` })
   return `https://twitter.com/intent/tweet?${params.toString()}`
 }
 
@@ -161,6 +164,7 @@ export function shareTweetHrefOf(slug: string, messages: Array<{ role: string; c
  */
 export async function getChatServers(chat: {
   activeServerIds: string[]
+  ownerAddress?: string
   messages: Array<{ role: string; content: string; meta: unknown }>
 }): Promise<SharedChatServers> {
   const idsOrSlugs = chat.activeServerIds.filter(Boolean)
@@ -201,6 +205,9 @@ export async function getChatServers(chat: {
   const parts = [
     ...(trySlugs.length ? [`mcps=${trySlugs.join(',')}`] : []),
     ...(prompt ? [`prompt=${encodeURIComponent(prompt)}`] : []),
+    // Attribution rides the handoff too: whoever runs this chat themselves
+    // arrived via the owner's share (via = one-way hash, never the wallet).
+    ...(chat.ownerAddress ? [`via=${viaIdOf(chat.ownerAddress)}`] : []),
   ]
   const tryHref = parts.length ? `/chat?${parts.join('&')}` : '/chat'
   return { catalog, display, tryHref }

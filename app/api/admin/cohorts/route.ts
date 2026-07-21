@@ -115,6 +115,11 @@ function milestoneCtes(days: number, excl: string[]) {
       SELECT lower(owner_address) AS a, array_agg(DISTINCT origin) AS origins
       FROM embed_turns WHERE owner_address IS NOT NULL AND embed_key_id <> ''
       GROUP BY 1
+    ),
+    -- Share-loop attribution: the wallet's first sign-in carried a ?via=
+    -- cookie (wallet_arrivals is insert-only, first writer wins).
+    arrivals AS (
+      SELECT lower(address) AS a, via FROM wallet_arrivals
     )
   `
 }
@@ -127,6 +132,7 @@ const JOINS = Prisma.sql`
   LEFT JOIN signed sg ON sg.a = r.a
   LEFT JOIN moved mv ON mv.a = r.a
   LEFT JOIN standing st ON st.a = r.a
+  LEFT JOIN arrivals av ON av.a = r.a
 `
 
 export async function GET(req: NextRequest) {
@@ -148,6 +154,7 @@ export async function GET(req: NextRequest) {
              count(*) FILTER (WHERE tg.t IS NOT NULL)::int AS toggled,
              count(*) FILTER (WHERE sg.t IS NOT NULL)::int AS signed,
              count(*) FILTER (WHERE st.t IS NOT NULL)::int AS standing,
+             count(*) FILTER (WHERE av.via IS NOT NULL)::int AS via_share,
              coalesce(sum(mv.usd), 0)::float AS money_moved,
              coalesce(sum(mv.n), 0)::int AS moved_events
       ${JOINS}
@@ -164,6 +171,7 @@ export async function GET(req: NextRequest) {
              coalesce(mv.usd, 0)::float AS money_moved,
              coalesce(mv.n, 0)::int AS moved_events,
              st.t AS first_standing, st.kind AS standing_kind,
+             av.via AS via,
              coalesce(h.origins, '{}') AS embed_origins
       ${JOINS}
       LEFT JOIN hosts h ON h.a = r.a
@@ -184,6 +192,7 @@ export async function GET(req: NextRequest) {
       { key: 'toggled', label: 'Toggled an MCP', value: f.toggled },
       { key: 'signed', label: 'Signed a transaction', value: f.signed },
       { key: 'standing', label: 'Standing intent (job · DCA · guardian)', value: f.standing },
+      { key: 'viaShare', label: 'Arrived via a share link', value: f.via_share },
     ],
     moneyMovedUsd: cents(f.money_moved),
     movedEvents: f.moved_events,
@@ -196,6 +205,7 @@ export async function GET(req: NextRequest) {
       firstSigned: iso(r.first_signed),
       firstStanding: iso(r.first_standing),
       standingKind: r.standing_kind,
+      via: r.via,
       moneyMovedUsd: cents(r.money_moved),
       movedEvents: r.moved_events,
       embedOrigins: (r.embed_origins ?? []).slice(0, 3),
@@ -210,6 +220,7 @@ interface FunnelRow {
   toggled: number
   signed: number
   standing: number
+  via_share: number
   money_moved: number
   moved_events: number
 }
@@ -224,5 +235,6 @@ interface WalletRow {
   moved_events: number
   first_standing: Date | null
   standing_kind: 'job' | 'dca' | 'guardian' | null
+  via: string | null
   embed_origins: string[] | null
 }

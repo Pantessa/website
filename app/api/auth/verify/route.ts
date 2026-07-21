@@ -7,6 +7,8 @@ import {
   clearNonce,
   setSessionCookie,
 } from '@/lib/auth'
+import prisma from '@/lib/db'
+import { VIA_RE } from '@/lib/share-receipts'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -53,5 +55,26 @@ export async function POST(req: NextRequest) {
 
   await setSessionCookie(parsed.address)
   await clearNonce()
-  return NextResponse.json({ address: parsed.address.toLowerCase() })
+
+  // Share-loop attribution: if this browser landed via a ?via= share link
+  // (ViaTracker cookied it), stamp the wallet's arrival — insert-only, first
+  // writer wins, so only the FIRST sign-in that carried a via ever records.
+  // Fail-soft: attribution must never block a login.
+  let stampedVia: string | null = null
+  const via = req.cookies.get('yf_via')?.value
+  if (via && VIA_RE.test(via)) {
+    const landingRaw = req.cookies.get('yf_via_landing')?.value ?? null
+    const landing = landingRaw && /^\/[\w\-/.]{0,80}$/.test(landingRaw) ? landingRaw : null
+    try {
+      const { count } = await prisma.walletArrival.createMany({
+        data: [{ address: parsed.address.toLowerCase(), via, landing }],
+        skipDuplicates: true,
+      })
+      if (count === 1) stampedVia = via
+    } catch {
+      /* attribution is best-effort */
+    }
+  }
+
+  return NextResponse.json({ address: parsed.address.toLowerCase(), ...(stampedVia ? { via: stampedVia } : {}) })
 }

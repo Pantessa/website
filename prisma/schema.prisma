@@ -974,3 +974,43 @@ model DcaRun {
   @@index([wallet, createdAt])
   @@map("dca_runs")
 }
+
+/// A public receipt permalink (/r/<id>) minted from something the owner
+/// signed or armed: a settled tx turn, a done job, a DCA schedule, a
+/// guardian protection. The row is a SNAPSHOT taken at share time — the
+/// public page never queries the live artifact, so nothing about the
+/// owner's ongoing activity leaks after the click. `via` is the sharer's
+/// stable short id (a hash of the wallet, never the wallet itself) that
+/// rides every outbound link for arrival attribution.
+model ShareReceipt {
+  id       String  @id @default(cuid()) // unguessable slug — /r/<id>
+  kind     String // 'tx' | 'job' | 'dca' | 'guardian'
+  wallet   String // lowercased owner (SIWE-verified at creation)
+  via      String // sharer short id — viaIdOf(wallet)
+  refId    String? @map("ref_id") // jobId / scheduleId / policyId / messageId
+  headline String // "$10 → AAPL · every week"
+  ask      String? // the do-this-yourself prompt the CTA prefills
+  standing Boolean @default(false) // ran between turns — nobody at the keyboard
+  valueUsd Float?  @map("value_usd")
+  facts    Json    @default("[]") // [{ label, value }] public-safe lines
+  txs      Json    @default("[]") // [{ hash, chainId, title }]
+  revoked  Boolean @default(false)
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([wallet, createdAt])
+  @@map("share_receipts")
+}
+
+/// First-touch share attribution: the wallet's FIRST sign-in that carried a
+/// `yf_via` cookie (set client-side from any ?via= landing). One row per
+/// wallet, insert-only, first writer wins — so the cohort view can answer
+/// "did this wallet arrive via a share link?" without tracking anything else.
+model WalletArrival {
+  address   String   @id // lowercased
+  via       String // the sharer's short id from the link
+  landing   String? // pathname the via param was first seen on
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("wallet_arrivals")
+}
