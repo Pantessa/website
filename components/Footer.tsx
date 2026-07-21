@@ -85,8 +85,8 @@ export default function Footer() {
               <span className="logo__word">yeetful</span>
             </Link>
             <p className="footer__tag">
-              Every dapp, one chat. Compose a few MCPs, build the transaction, sign
-              with your wallet — pay per call in USDC on Base.
+              Every dapp, one chat. Say what should happen — Yeetful builds guarded
+              transactions only your wallet can sign, and keeps working between your turns.
             </p>
             <div className="footer__socials">
               {SOCIALS.map((s) => (
@@ -127,7 +127,7 @@ export default function Footer() {
         <div className="footer__bottom">
           <span className="mono">© 2026 YEETFUL INC.</span>
           <div className="footer__bottomright">
-            <span className="mono">BUILT ON THE x402 STANDARD</span>
+            <span className="mono">NON-CUSTODIAL · YOUR WALLET SIGNS</span>
             <ThemeToggle />
           </div>
         </div>

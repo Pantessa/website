@@ -21,7 +21,7 @@ import Footer from '@/components/Footer'
  * engine INSIDE your set (EngineInside). Server component so it can export
  * metadata + JSON-LD; interactive pieces are client children. */
 
-const TITLE = 'Yeetful — Compose MCPs into one embeddable agent'
+const TITLE = 'Yeetful — Every dapp. One chat. Tell it once.'
 const DESCRIPTION =
   'Pick a few MCPs — or bring your own — and get one agent that swaps, votes, and keeps working between your turns: recurring buys, stop-loss protections, multi-step jobs. The non-custodial back office for autonomous money — guardrails, your wallet signs, every move receipted. Embed it on any site in five lines.'
 
