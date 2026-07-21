@@ -34,6 +34,8 @@ import { parseLidoStake } from '@/lib/lido-stake'
 import { fundingAltUsdcFor, GAS_LEG_USD } from '@/lib/lifi-bridge'
 import { parseNftAsk } from '@/lib/nft-layer'
 import { parseTransferSegment } from '@/lib/transfer-exec'
+import { pairStockToken, stockChipLabel } from '@/lib/stock-pairing'
+import type { ClarifyRequest } from '@/lib/clarify'
 
 export interface CompiledStep {
   kind: 'sign' | 'wait' | 'auto'
@@ -169,6 +171,9 @@ export interface JobSegmentCtx {
   fundingSeen: boolean
   /** The last NFT an earlier segment named, or null. */
   nft: JobNftContext | null
+  /** The FULL compound ask — clarify resume strings restate it with the
+   *  ambiguous piece resolved, so a chip click round-trips this compiler. */
+  message: string
 }
 
 export interface JobSegmentCompiled {
@@ -185,7 +190,35 @@ export interface JobSegmentParser {
   /** Plural noun phrase for the self-listing refusal copy ("token sends").
    *  Omit to keep an entry out of the copy (context-gated parsers). */
   label?: string
-  parse: (seg: string, ctx: JobSegmentCtx) => JobSegmentCompiled | { problem: string } | null
+  parse: (seg: string, ctx: JobSegmentCtx) => JobSegmentCompiled | { problem: string } | { clarify: ClarifyRequest } | null
+}
+
+// ── Stock pairing at COMPILE time ──────────────────────────────────────────
+// The 2026-07-21 "AAPLE" job: the buy segment compiled unvalidated and only
+// failed at RUN time — step 3, after the funding legs had moved real money.
+// Every Robinhood-bound token now pairs here, before the job exists: obvious
+// names rewrite to the ticker, a suspected misspelling ASKS first (clarify
+// chips whose resumes restate the whole compound ask, corrected — a chip
+// click round-trips compileJobAsk), and nothing close refuses outright.
+function pairJobStockToken(raw: string, ctx: JobSegmentCtx): { token: string } | { problem: string } | { clarify: ClarifyRequest } {
+  const paired = pairStockToken(raw, 4663)
+  if (paired.kind === 'ok') return { token: raw.toUpperCase() }
+  if (paired.kind === 'paired') return { token: paired.symbol }
+  if (paired.kind === 'unknown') {
+    return { problem: `Robinhood Chain doesn't list "${raw}" — it carries 100 tokenized stocks (AAPL, NVDA, TSLA, …). Nothing was built.` }
+  }
+  const wordRe = new RegExp(`\\b${raw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i')
+  const options = paired.candidates.map((c) => ({ label: stockChipLabel(c), resume: ctx.message.replace(wordRe, c.symbol) }))
+  if (options.length < 2) options.push({ label: 'None of these — cancel', resume: 'Never mind — don’t build anything.' })
+  return {
+    clarify: {
+      question:
+        paired.candidates.length === 1
+          ? `"${raw}" isn't listed on Robinhood Chain — did you mean ${stockChipLabel(paired.candidates[0])}?`
+          : `"${raw}" matches a few Robinhood Chain stocks — which did you mean?`,
+      options: options.slice(0, 4),
+    },
+  }
 }
 
 // "send it to 0x…" / "transfer the nft to name.eth" — only consulted when an
@@ -243,7 +276,11 @@ export const JOB_SEGMENT_PARSERS: JobSegmentParser[] = [
       const buy = seg.match(FUND_BUY_RE)
       if (!buy) return null
       const buyUsd = Number(buy[1])
-      const buyToken = buy[2].toUpperCase()
+      // Pair the ticker BEFORE the job exists — "AAPLE" must ask here, not
+      // fail at step 3 after the funding legs already moved money.
+      const paired = pairJobStockToken(buy[2], ctx)
+      if (!('token' in paired)) return paired
+      const buyToken = paired.token
       const title = `Buy ~$${buyUsd} of ${buyToken} with the arrived USDG`
       return { steps: [{ kind: 'sign', builder: 'native-lifi-swap', title, params: { buyUsd, buyToken, sellToken: 'USDG', chainId: 4663 } }], title: `Buy $${buyUsd} of ${buyToken}` }
     },
@@ -337,9 +374,19 @@ export const JOB_SEGMENT_PARSERS: JobSegmentParser[] = [
     // compiled job step must never guess its chain.
     id: 'same-chain-swap',
     label: 'same-chain swaps',
-    parse: (seg) => {
+    parse: (seg, ctx) => {
       const sameSwap = parseSameChainSwapSegment(seg)
       if (!sameSwap) return null
+      // Robinhood-bound legs pair their tokens at compile time (obvious
+      // names rewrite, suspected typos ask) — same rule as the fund-buy.
+      if (sameSwap.chainId === 4663) {
+        const sell = pairJobStockToken(sameSwap.sellToken, ctx)
+        if (!('token' in sell)) return sell
+        const buy = pairJobStockToken(sameSwap.buyToken, ctx)
+        if (!('token' in buy)) return buy
+        sameSwap.sellToken = sell.token
+        sameSwap.buyToken = buy.token
+      }
       const title = `Swap ${sameSwap.amountHuman} ${sameSwap.sellToken.toUpperCase()} → ${sameSwap.buyToken.toUpperCase()} on ${sameSwap.chainName}`
       return { steps: [{ kind: 'sign', builder: 'native-swap', title, params: sameSwap as unknown as Record<string, unknown> }], title }
     },
@@ -431,7 +478,7 @@ const compilableKinds = (): string => {
  * null when the message isn't job-shaped (fewer than 2 parseable segments —
  * single asks belong to the native layers directly).
  */
-export function compileJobAsk(message: string): CompiledJob | { problem: string } | null {
+export function compileJobAsk(message: string): CompiledJob | { problem: string } | { clarify: ClarifyRequest } | null {
   const segments = splitJobSegments(message)
   // Single asks belong to the native layers — EXCEPT a lone Robinhood
   // funding segment: the MCP-path fallback's bridge-only chips carry no
@@ -447,8 +494,9 @@ export function compileJobAsk(message: string): CompiledJob | { problem: string 
     const seg = segments[i]
     let matched = false
     for (const parser of JOB_SEGMENT_PARSERS) {
-      const res = parser.parse(seg, { index: i, fundingSeen, nft: nftSeen })
+      const res = parser.parse(seg, { index: i, fundingSeen, nft: nftSeen, message })
       if (!res) continue
+      if ('clarify' in res) return res // ask BEFORE the job exists — a chip click re-enters here resolved
       if ('problem' in res) return { problem: `Step ${i + 1}: ${res.problem}` }
       // Wait predicates reference steps by index. Entries author them LOCAL
       // to their own steps array (fromStep/fromSteps count from 0 within the

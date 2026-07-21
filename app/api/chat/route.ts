@@ -86,6 +86,7 @@ import { fundingNeedUsd, GAS_TOPUP_ETH, parseRhFundingFollowUp, planRobinhoodFun
 import { describeInflightDeposit, inflightPendingData } from '@/lib/inflight-funding'
 import { resolveToken, tokenDecimals, humanToAtoms } from '@/lib/cow'
 import { ensureTokenList } from '@/lib/token-list'
+import { pairStockToken, stockChipLabel } from '@/lib/stock-pairing'
 import { resolveProposal } from '@/lib/snapshot-read'
 import { detectGovernanceIntent, runGovernanceTurn } from '@/lib/governance'
 import { sanitizeWorkingContext, contextBlockForPlanner, type WorkingContext, extractEntities, carryContext } from '@/lib/working-context'
@@ -691,7 +692,20 @@ export async function POST(req: NextRequest) {
     // executed by the jobs runner (waits included). Runs BEFORE the single
     // native gates: their parsers would otherwise each claim one segment of
     // a compound message. Compiles deterministically or refuses honestly.
+    // Robinhood-bound segments pair stock names/tickers at COMPILE time
+    // (lib/stock-pairing.ts) — warm the 4663 list first, or the pure
+    // compiler fails open and a typo'd ticker dies at RUN time instead,
+    // after earlier steps already moved money (the 2026-07-21 "AAPLE" job).
+    if (/robinhood/i.test(message)) await ensureTokenList(ROBINHOOD_CHAIN_ID).catch(() => {})
     const jobAsk = compileJobAsk(message)
+    if (jobAsk && 'clarify' in jobAsk) {
+      nativeTrace({ type: 'status', label: `jobs layer: suspected stock-ticker miss in a compound ask — asking before compiling (${jobAsk.clarify.question.slice(0, 120)})` })
+      return NextResponse.json({
+        reply: '🧭 That chains multiple money steps, so I want the ticker right before anything runs — nothing is built yet.',
+        clarify: jobAsk.clarify,
+        buildPath: 'native-job',
+      })
+    }
     if (jobAsk && 'problem' in jobAsk) {
       nativeTrace({ type: 'note', level: 'warn', label: `jobs layer: compound ask but a segment failed to compile — ${jobAsk.problem.slice(0, 120)}` })
       return NextResponse.json({ reply: `🧭 ${jobAsk.problem}` })
@@ -2192,6 +2206,54 @@ async function prepareSwapTurn(intent: SwapIntent, walletAddress: string | undef
         '🔄 Connect your wallet to swap — you sign the transaction yourself, so it has to be built for your address.',
       connectWallet: true,
     })
+  }
+  // ── Stock name pairing (Robinhood Chain) ── "buy $14 of GOOGLe", "swap
+  // USDG for Google": pair each typed token against the chain's 100 listed
+  // stocks BEFORE anything prices or builds (lib/stock-pairing.ts). Obvious
+  // pairings (brand alias, unique company-name prefix) rewrite silently and
+  // the sign card shows the ticker; a suspected misspelling ASKS with chips
+  // whose resumes restate the ask corrected; nothing close falls through to
+  // the honest refusals below. Limit-mode asks only auto-pair — their
+  // grammar doesn't round-trip a market-swap resume string.
+  if (chainId === ROBINHOOD_CHAIN_ID && !intent.problem) {
+    for (const side of ['sellToken', 'buyToken'] as const) {
+      const typed = intent[side]
+      if (!typed) continue
+      const paired = pairStockToken(typed, chainId)
+      if (paired.kind === 'paired') {
+        trace({ type: 'status', label: `stock pairing: “${typed}” → ${paired.symbol} (${paired.name}) on ${chain.name}` })
+        intent = { ...intent, [side]: paired.symbol }
+      } else if (paired.kind === 'suggest' && intent.mode !== 'limit') {
+        // Only ask when the chip can restate a COMPLETE ask — a partial parse
+        // falls through to the under-specified gate below instead.
+        const canResume =
+          side === 'buyToken'
+            ? !!intent.sellAmountUsd || (!!intent.sellToken && !!intent.sellAmountHuman)
+            : !!intent.buyToken && (!!intent.sellAmountUsd || !!intent.sellAmountHuman)
+        if (!canResume) continue
+        const resumeFor = (sym: string) => {
+          const buy = side === 'buyToken' ? sym : (intent.buyToken ?? '').toUpperCase()
+          const sell = side === 'sellToken' ? sym : (intent.sellToken ?? '').toUpperCase()
+          if (intent.sellAmountUsd && side === 'buyToken') return `buy $${intent.sellAmountUsd} of ${buy} on robinhood chain`
+          if (intent.sellAmountUsd) return `swap $${intent.sellAmountUsd} worth of ${sell} for ${buy} on robinhood chain`
+          return `swap ${intent.sellAmountHuman} ${sell} for ${buy} on robinhood chain`
+        }
+        const options = paired.candidates.map((c) => ({ label: stockChipLabel(c), resume: resumeFor(c.symbol) }))
+        if (options.length < 2) options.push({ label: 'None of these — cancel', resume: 'Never mind — don’t build anything.' })
+        trace({ type: 'status', label: `stock pairing: “${typed}” looks misspelled or ambiguous on ${chain.name} — asking before building (${paired.candidates.map((c) => c.symbol).join('/')})` })
+        return NextResponse.json({
+          reply: `🔄 Before I build anything — I don't see "${typed}" on ${chain.name}'s stock list, and I won't guess a ticker on a trade.`,
+          clarify: {
+            question:
+              paired.candidates.length === 1
+                ? `Did you mean ${stockChipLabel(paired.candidates[0])}?`
+                : `Which did you mean?`,
+            options: options.slice(0, 4),
+          },
+          buildPath: 'native-swap-pairing',
+        })
+      }
+    }
   }
   // Dollar-denominated asks ("swap $1 worth of ETH for USDG", "buy $5 of
   // AAPL"): resolve the $ amount into a token amount BEFORE the gate below,
