@@ -82,7 +82,7 @@ import { parseTransferSegment, buildTransferArtifact } from '@/lib/transfer-exec
 import { buildUniswapSwap, NoV3PoolError } from '@/lib/uniswap-venue'
 import { buildUniswapV4Swap, NoV4PoolError, GatedV4PoolError } from '@/lib/uniswap-v4'
 import { buildLifiSwap, NoLifiRouteError } from '@/lib/lifi-venue'
-import { fundingNeedUsd, planRobinhoodFundingChips, readFundingShortfall, ROBINHOOD_CHAIN_ID } from '@/lib/lifi-bridge'
+import { fundingNeedUsd, GAS_TOPUP_ETH, parseRhFundingFollowUp, planRobinhoodFundingAdvice, readFundingShortfall, rhFundingPending, ROBINHOOD_CHAIN_ID } from '@/lib/lifi-bridge'
 import { resolveToken, tokenDecimals, humanToAtoms } from '@/lib/cow'
 import { ensureTokenList } from '@/lib/token-list'
 import { resolveProposal } from '@/lib/snapshot-read'
@@ -461,6 +461,37 @@ export async function POST(req: NextRequest) {
         // Amend parsed but the agent left the set (or is a shell row) since
         // the build — fall through to normal routing, with the breadcrumb.
         nativeTrace({ type: 'note', level: 'warn', label: 'native cross-chain layer: amend follow-up parsed but the cross-chain agent is no longer callable — normal routing' })
+      }
+    }
+
+    // Unfunded-Robinhood-buy follow-ups: the last turn refused (or offered
+    // chips for) a buy the wallet couldn't fund. A typed holdings assertion
+    // ("I have $10 USDC on arbitrum", "just sent the ETH") or an explicit
+    // re-check ("check again", "done") re-runs the SAME buy with a fresh
+    // scan — deterministically, never the planner (live 2026-07-21: the
+    // planner claimed this exact follow-up and invented a NEAR Intents
+    // bridge to Robinhood Chain, a chain NEAR Intents doesn't reach).
+    const pendingRhFunding =
+      workingContext?.pending && workingContext.pending.kind === 'rh-funding' ? workingContext.pending : undefined
+    if (pendingRhFunding) {
+      const fu = parseRhFundingFollowUp(message)
+      const buyUsd = Number(pendingRhFunding.data.buyUsd)
+      const buySym = (pendingRhFunding.data.buySym ?? '').toUpperCase()
+      if (fu?.kind === 'cancel') {
+        return NextResponse.json({
+          reply: `👍 Dropped it — the $${buyUsd} ${buySym} buy was never built, so nothing moved. Your funds stay where they are.`,
+          workingContext: { v: 1, age: 0, ...(workingContext?.scope ? { scope: workingContext.scope } : {}) } satisfies WorkingContext,
+        })
+      }
+      if (fu?.kind === 'recheck' && Number.isFinite(buyUsd) && buyUsd > 0 && /^[A-Z0-9]{1,10}$/.test(buySym)) {
+        const rerun = parseSwapIntent(`buy $${buyUsd} of ${buySym} on robinhood`)
+        if (rerun.isSwap) {
+          nativeTrace({
+            type: 'status',
+            label: `funding layer: follow-up on the unfunded ${buySym} buy — fresh scan, re-running “buy $${buyUsd} of ${buySym}” on Robinhood Chain (planner bypassed)`,
+          })
+          return await prepareSwapTurn(rerun, walletAddress, 'uniswap', workingContext, nativeTrace, ROBINHOOD_CHAIN_ID)
+        }
       }
     }
 
@@ -2234,15 +2265,27 @@ async function prepareSwapTurn(intent: SwapIntent, walletAddress: string | undef
         const holdingUsd = Number(shortfall.usdgAtoms) / 10 ** rhStable.decimals
         const includeGas = !shortfall.hasGas
         const needUsd = fundingNeedUsd(buyUsd, includeGas)
-        const chips = planRobinhoodFundingChips({
-          origins: shortfall.origins,
+        const advice = planRobinhoodFundingAdvice({
+          scan: shortfall,
           needUsd,
           gasIncluded: includeGas,
           followup: `buy $${buyUsd} of ${buySym}`,
         })
         const holdingsSummary = shortfall.origins.map((o) => `~$${o.usd} of USDC on ${o.word}`).join(', ')
-        if (chips) {
-          const options = [...chips]
+        // Any of the three outcomes leaves the buy PENDING — a typed
+        // follow-up ("I have $10 USDC on arbitrum", "sent the ETH, check
+        // again") re-runs this exact ask with a fresh scan instead of
+        // falling to the planner (live 2026-07-21: that fall-through
+        // invented a NEAR Intents bridge to a chain NEAR can't reach and
+        // burned the user's "yes" on a plan that could never build).
+        const pendingFunding = {
+          v: 1,
+          age: 0,
+          ...(ctx?.scope ? { scope: ctx.scope } : {}),
+          pending: rhFundingPending(buyUsd, buySym),
+        } satisfies WorkingContext
+        if (advice.kind === 'chips') {
+          const options = [...advice.chips]
           if (options.length < 2) options.push({ label: 'Not now', resume: 'Never mind — leave my USDC where it is.' })
           trace({
             type: 'status',
@@ -2255,21 +2298,35 @@ async function prepareSwapTurn(intent: SwapIntent, walletAddress: string | undef
               `and buy the ${buySym} — all in one job you sign step by step, funds arriving on ${chain.name} in seconds.`,
             clarify: { question: 'Fund it from another chain?', options: options.slice(0, 4) },
             buildPath: 'native-lifi-fund-offer',
+            workingContext: pendingFunding,
           })
         }
-        // No plan — but a shortfall claim is only honest over chains that
-        // actually scanned: an unreadable origin is "unknown", never "empty".
-        const unscanned = shortfall.failedOrigins.length > 0 ? ` (couldn't check ${shortfall.failedOrigins.join(' or ')})` : ''
+        if (advice.kind === 'gas-stranded') {
+          trace({
+            type: 'status',
+            label: `funding layer claimed the turn: ${rhStable.symbol} short on ${chain.name} and the wallet's ~$${advice.stranded.usd} USDC on ${advice.stranded.word} is gas-stranded — ${advice.donor ? `offering a ${GAS_TOPUP_ETH} ETH topup from ${advice.donor.word}` : 'asking for an ETH topup there'}`,
+          })
+          return NextResponse.json({
+            reply: `⛽ This buy needs ~$${buyUsd} of ${rhStable.symbol} on ${chain.name} — and ${advice.copy}`,
+            ...(advice.chips ? { clarify: { question: `Fix the ${advice.stranded.word} gas and run it?`, options: advice.chips.slice(0, 4) } } : {}),
+            buildPath: 'native-lifi-fund-offer',
+            workingContext: pendingFunding,
+          })
+        }
+        // Nothing covers it — but a shortfall claim is only honest over
+        // chains that actually scanned (advice.copy carries the per-chain
+        // accounting, gas-stranded holdings and failed reads included).
         trace({
           type: 'note',
           level: 'warn',
-          label: `funding layer: ${rhStable.symbol} short on ${chain.name} and the scanned USDC (${holdingsSummary || 'none found'})${unscanned} can't cover the ~$${needUsd} plan — honest refusal, no build`,
+          label: `funding layer: ${rhStable.symbol} short on ${chain.name} and the scan (${advice.copy}) can't cover the ~$${needUsd} plan — honest refusal, no build`,
         })
         return NextResponse.json({
           reply:
-            `🚫 This buy needs ~$${buyUsd} of ${rhStable.symbol} on ${chain.name} and the wallet holds ~$${holdingUsd.toFixed(2)} there — ` +
-            `and the USDC I can see on other chains (${holdingsSummary || 'none on Base, Ethereum, or Arbitrum'}${unscanned}) isn't enough to fund it either (the plan needs ~$${needUsd}${includeGas ? ' including a gas leg' : ''}). ` +
-            `Nothing was built — top up USDC on Base, Ethereum, or Arbitrum, or ${rhStable.symbol} on ${chain.name}, and ask again.`,
+            `🚫 This buy needs ~$${buyUsd} of ${rhStable.symbol} on ${chain.name} and the wallet holds ~$${holdingUsd.toFixed(2)} there. ` +
+            `Across the chains I can bridge from I see: ${advice.copy} — not enough for the ~$${needUsd} plan${includeGas ? ' (gas leg included)' : ''}. ` +
+            `Nothing was built — top up USDC on Base, Ethereum, or Arbitrum, or ${rhStable.symbol} on ${chain.name}, and tell me when it's there.`,
+          workingContext: pendingFunding,
         })
       }
     } catch {

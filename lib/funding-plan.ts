@@ -30,7 +30,7 @@
 
 import { erc20Abi, formatEther, formatUnits } from 'viem'
 import { chainById, publicClientFor } from '@/lib/chains'
-import { fundingNeedUsd, planRobinhoodFundingChips, readFundingShortfall } from '@/lib/lifi-bridge'
+import { fundingNeedUsd, planRobinhoodFundingAdvice, readFundingShortfall } from '@/lib/lifi-bridge'
 import { usdPerToken } from '@/lib/usd-probe'
 
 /** Chains the scanner reads — the intersection of lib/chains first-class
@@ -526,19 +526,49 @@ export async function fundingFallbackForFailures(
       }
       const includeGas = !scan.hasGas
       const needUsd = fundingNeedUsd(detected.shortfall, includeGas)
-      const chips = planRobinhoodFundingChips({ origins: scan.origins, needUsd, gasIncluded: includeGas, followup: '' })
+      const advice = planRobinhoodFundingAdvice({ scan, needUsd, gasIncluded: includeGas, followup: '' })
       const holdings = scan.origins.map((o) => `~$${o.usd} of USDC on ${o.word}`).join(', ')
-      if (!chips) {
+      if (advice.kind === 'gas-stranded') {
+        // The money EXISTS — it just can't sign where it sits. With a donor
+        // origin the chips run the whole rescue as one job; without one the
+        // model narrates exactly what to send where. Either way the answer
+        // names the stranded USDC — a scan that hid it once told a user
+        // "none on Base, Ethereum, or Arbitrum" minutes after THEY bridged
+        // $12 in.
+        trace?.({ type: 'status', label: `funding fallback claimed the turn: USDG short on Robinhood Chain after the ${f.name} failure — ~$${advice.stranded.usd} USDC on ${advice.stranded.word} is gas-stranded (${advice.donor ? `offering a topup from ${advice.donor.word}` : 'asking for an ETH topup'})` })
+        if (!advice.chips) {
+          return {
+            offer: null,
+            contextBlock:
+              `### Gas-stranded funds found (after the ${f.name} failure)\n` +
+              `The wallet holds ~$${advice.stranded.usd} of USDC on ${advice.stranded.word} — enough for this — but no ETH there to pay for the bridge signatures, and no other chain of theirs can donate it. ` +
+              `Tell the user exactly that: their money is real and where it is, only ${advice.stranded.word} gas is missing (about a dollar of ETH is plenty), and once they send a little ETH to their own address on ${advice.stranded.word} they should re-ask so the plan rebuilds. ` +
+              `Do NOT invent your own bridge instructions, amounts, or addresses.`,
+          }
+        }
+        return {
+          offer: {
+            reply: `You don't have enough USDG on Robinhood Chain for that yet — and ${advice.copy}`,
+            clarify: { question: `Fix the ${advice.stranded.word} gas and bridge it?`, options: advice.chips.slice(0, 4) },
+            buildPath: 'native-lifi-fund-offer',
+          },
+          contextBlock:
+            `### Gas-stranded funds found (after the ${f.name} failure)\n` +
+            `The wallet holds ~$${advice.stranded.usd} of USDC on ${advice.stranded.word} but no ETH there to sign with. The system RENDERS action chips directly under your reply. ` +
+            `Tell the user their money is real and where it is, that only origin-chain gas is missing, and what the chips do. Do NOT invent your own bridge instructions, amounts, or addresses.`,
+        }
+      }
+      if (advice.kind === 'none') {
         if (scan.failedOrigins.length > 0) return null // partial scan must not claim an empty wallet
-        trace?.({ type: 'note', level: 'warn', label: `funding fallback: USDG short on Robinhood Chain and scanned USDC (${holdings || 'none'}) can't cover the ~$${needUsd} plan — honest refusal` })
+        trace?.({ type: 'note', level: 'warn', label: `funding fallback: USDG short on Robinhood Chain and the scan (${advice.copy}) can't cover the ~$${needUsd} plan — honest refusal` })
         return {
           offer: null,
           contextBlock:
-            `### Funding scan (after the ${f.name} failure)\nAcross Base, Ethereum, and Arbitrum I can see ${holdings || 'no USDC'} — the smallest plan for this moves ~$${needUsd} onto Robinhood Chain (bridge fees${includeGas ? ' and a gas leg' : ''} included). ` +
+            `### Funding scan (after the ${f.name} failure)\nAcross Base, Ethereum, and Arbitrum I can see: ${advice.copy} — the smallest plan for this moves ~$${needUsd} onto Robinhood Chain (bridge fees${includeGas ? ' and a gas leg' : ''} included). ` +
             `Weave this into the failure explanation — the user should know exactly what they hold, per chain, and what the smallest plan needs.`,
         }
       }
-      chips.push({ label: 'Not now', resume: 'Never mind — leave my USDC where it is.' })
+      const chips = [...advice.chips, { label: 'Not now', resume: 'Never mind — leave my USDC where it is.' }]
       trace?.({ type: 'status', label: `funding fallback claimed the turn: USDG short on Robinhood Chain after the ${f.name} failure — offering ${chips.length - 1} LiFi funding path(s) (~$${needUsd} needed)` })
       return {
         offer: {

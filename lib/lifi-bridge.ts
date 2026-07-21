@@ -473,6 +473,8 @@ export interface FundingOrigin {
   word: string
   /** Whole dollars of USDC there (floored), gas-to-sign already verified. */
   usd: number
+  /** Native ETH held there — how a gas-stranded sibling finds a donor. */
+  gasEth: number
 }
 
 export interface FundingShortfall {
@@ -482,6 +484,15 @@ export interface FundingShortfall {
   hasGas: boolean
   /** Origins holding signable USDC, richest first. */
   origins: FundingOrigin[]
+  /** Origins holding USDC the wallet CANNOT sign with — no ETH there for the
+   *  approve + bridge pair. Dropping these silently made the product claim
+   *  "no USDC anywhere" while $12 sat on Arbitrum (live 2026-07-21) — the
+   *  user had just bridged it in and burned their last origin gas doing so.
+   *  Money the user owns is never invisible; it's named, with the fix. */
+  gaslessOrigins: FundingOrigin[]
+  /** Every origin that scanned cleanly, any balance — a chain with ETH but
+   *  no USDC still matters (it can donate gas to a stranded sibling). */
+  allScanned: FundingOrigin[]
   /** Origin chain words whose reads failed — "unknown", NEVER "empty": a
    *  partial scan must not turn into a confident "you have nothing there". */
   failedOrigins: string[]
@@ -502,7 +513,7 @@ export async function readFundingShortfall(user: string): Promise<FundingShortfa
     rh.readContract({ address: usdg.address, abi: erc20Abi, functionName: 'balanceOf', args: [from] }),
     rh.getBalance({ address: from }),
   ])
-  const origins: FundingOrigin[] = []
+  const allScanned: FundingOrigin[] = []
   const failedOrigins: string[] = []
   await Promise.all(
     FUNDING_ORIGIN_CHAINS.map(async (chainId) => {
@@ -516,17 +527,22 @@ export async function readFundingShortfall(user: string): Promise<FundingShortfa
           client.getBalance({ address: from }),
         ])
         const usd = Math.floor(Number(usdcAtoms) / 10 ** usdc.decimals)
-        const gasEth = Number(formatEther(gasWei))
-        if (usd > 0 && gasEth >= (ORIGIN_MIN_GAS_ETH[chainId] ?? 0.002)) {
-          origins.push({ chainId, word, usd })
-        }
+        allScanned.push({ chainId, word, usd, gasEth: Number(formatEther(gasWei)) })
       } catch {
         failedOrigins.push(word)
       }
     }),
   )
-  origins.sort((a, b) => b.usd - a.usd)
-  return { usdgAtoms, hasGas: nativeWei >= RH_GAS_FLOOR_WEI, origins, failedOrigins }
+  allScanned.sort((a, b) => b.usd - a.usd)
+  const signable = (o: FundingOrigin) => o.gasEth >= (ORIGIN_MIN_GAS_ETH[o.chainId] ?? 0.002)
+  return {
+    usdgAtoms,
+    hasGas: nativeWei >= RH_GAS_FLOOR_WEI,
+    origins: allScanned.filter((o) => o.usd > 0 && signable(o)),
+    gaslessOrigins: allScanned.filter((o) => o.usd > 0 && !signable(o)),
+    allScanned,
+    failedOrigins,
+  }
 }
 
 // ── Chip planner (pure — the resume strings ARE the contract) ──────────────
@@ -595,5 +611,143 @@ export function planRobinhoodFundingChips(params: {
       return chips
     }
   }
+  return null
+}
+
+// ── Advice planner (pure) — the single voice for "the wallet is short" ─────
+//
+// Both refusal sites (the swap layer's unfunded Robinhood buy and the
+// MCP-failure funding fallback) route their scan through here so the answer
+// is the same everywhere: chips when the signable USDC covers it, a gas
+// rescue when the money EXISTS but can't sign (live 2026-07-21: $12 of
+// freshly-bridged Arbitrum USDC was reported as "none on Base, Ethereum, or
+// Arbitrum" because the wallet's last origin gas went into the bridge
+// signatures — the user then got a planner-invented NEAR Intents plan to a
+// chain NEAR can't reach), and an honest per-chain accounting otherwise.
+
+/** ETH moved to a gas-stranded origin so its USDC becomes signable — big
+ *  enough to clear NEAR Intents minimums and leave real signing headroom on
+ *  any origin, small enough to be a rounding error next to the buy. The
+ *  string IS the cross-chain job segment amount (lib/cross-chain-swap.ts
+ *  grammar: "swap 0.001 ETH from base to arbitrum"). */
+export const GAS_TOPUP_ETH = '0.001'
+
+export type RobinhoodFundingAdvice =
+  /** Signable USDC covers the plan — offer the chips. */
+  | { kind: 'chips'; chips: RobinhoodFundingChip[] }
+  /** The money is there but its chain can't sign (no ETH). `chips` carries a
+   *  donor-funded topup job when another origin can send gas; null = the
+   *  user must top up ETH themselves and `copy` says exactly where/how much. */
+  | { kind: 'gas-stranded'; stranded: FundingOrigin; donor: FundingOrigin | null; chips: RobinhoodFundingChip[] | null; copy: string }
+  /** Nothing covers it — `copy` is the honest per-chain accounting. */
+  | { kind: 'none'; copy: string }
+
+export function planRobinhoodFundingAdvice(params: {
+  scan: Pick<FundingShortfall, 'origins' | 'gaslessOrigins' | 'allScanned' | 'failedOrigins'>
+  needUsd: number
+  gasIncluded: boolean
+  /** Appended to chip resumes (empty = bridge-only, user re-asks after). */
+  followup: string
+}): RobinhoodFundingAdvice {
+  const { scan, needUsd, gasIncluded, followup } = params
+  const chips = planRobinhoodFundingChips({ origins: scan.origins, needUsd, gasIncluded, followup })
+  if (chips) return { kind: 'chips', chips }
+
+  // Gas-stranded rescue: the richest gasless origin covering the need.
+  const stranded = scan.gaslessOrigins.find((o) => o.usd >= needUsd) ?? null
+  if (stranded) {
+    // A donor origin can sign there AND part with the topup: its own signing
+    // floor, the leg itself, and 50% headroom so the donation never leaves
+    // the donor stranded in turn.
+    const topup = Number(GAS_TOPUP_ETH)
+    const donor =
+      scan.allScanned.find(
+        (o) => o.chainId !== stranded.chainId && o.gasEth >= (ORIGIN_MIN_GAS_ETH[o.chainId] ?? 0.002) + topup * 1.5,
+      ) ?? null
+    const strandedLc = stranded.word.toLowerCase()
+    if (donor) {
+      const segs = [
+        `swap ${GAS_TOPUP_ETH} ETH from ${donor.word.toLowerCase()} to ${strandedLc}`,
+        fundSegment(needUsd, stranded.word, gasIncluded),
+      ]
+      const resume = followup ? `${segs.join(', then ')}, then ${followup}` : segs.join(', then ')
+      return {
+        kind: 'gas-stranded',
+        stranded,
+        donor,
+        chips: [
+          { label: `Send gas to ${stranded.word} + use its $${stranded.usd}`, resume },
+          { label: 'Not now', resume: 'Never mind — leave my funds where they are.' },
+        ],
+        copy:
+          `your ~$${stranded.usd} of USDC is already on **${stranded.word}** — the wallet just has no ETH there to pay for the two tiny signatures the bridge needs. ` +
+          `I can fix that from ${donor.word}: move ~${GAS_TOPUP_ETH} ETH over first, then convert the ${stranded.word} USDC${gasIncluded ? ' (gas for Robinhood Chain included)' : ''} — one job, each step built and checked when it's your turn to sign.`,
+      }
+    }
+    return {
+      kind: 'gas-stranded',
+      stranded,
+      donor: null,
+      chips: null,
+      copy:
+        `you're holding ~$${stranded.usd} of USDC on **${stranded.word}** — enough for this — but the wallet has no ETH on ${stranded.word} to pay for the two tiny signatures the bridge needs (about a dollar's worth is plenty). ` +
+        `Send a little ETH to your address on ${stranded.word} from an exchange or another wallet, then ask again — I'll build the whole path from there.`,
+    }
+  }
+
+  // Nothing covers it — say exactly what was seen, per chain, including
+  // money that exists but can't sign and chains that couldn't be read.
+  const parts: string[] = []
+  const held = [...scan.origins, ...scan.gaslessOrigins].sort((a, b) => b.usd - a.usd)
+  if (held.length > 0)
+    parts.push(held.map((o) => `~$${o.usd} of USDC on ${o.word}${scan.gaslessOrigins.includes(o) ? ' (no ETH there to sign with)' : ''}`).join(', '))
+  else parts.push('no USDC on Base, Ethereum, or Arbitrum')
+  if (scan.failedOrigins.length > 0) parts.push(`couldn't check ${scan.failedOrigins.join(' or ')}`)
+  return { kind: 'none', copy: parts.join('; ') }
+}
+
+// ── Unfunded-buy continuity (workingContext.pending) ───────────────────────
+//
+// Every funding refusal/offer leaves the buy pending so the NEXT typed
+// message can resolve against it deterministically. Without this, "I have
+// $10 USDC on arbitrum" after a refusal fell to the planner, which invented
+// a NEAR Intents bridge to Robinhood Chain — a chain NEAR Intents can't
+// reach — and asked the user to say "yes" to a plan that could never build
+// (live 2026-07-21).
+
+/** The pending payload a funding refusal/offer attaches to its response. */
+export function rhFundingPending(buyUsd: number, buySym: string) {
+  return {
+    kind: 'rh-funding',
+    summary: `Unfunded buy on Robinhood Chain: $${buyUsd} of ${buySym} — waiting for USDC or gas to land`,
+    data: { buyUsd: String(buyUsd), buySym },
+  }
+}
+
+export type RhFundingFollowUp = { kind: 'recheck' } | { kind: 'cancel' }
+
+/**
+ * Does this message continue a pending unfunded buy? Conservative on
+ * purpose — only two shapes claim the turn:
+ *   · a holdings/top-up assertion ("I have $10 USDC on arbitrum", "just
+ *     sent the ETH", "topped up gas on base") — a have/sent verb PLUS a
+ *     funding noun or origin chain word;
+ *   · an explicit re-check ("check again", "rescan", "done", "ready").
+ * Questions never match (a "what do I have on arbitrum?" is a portfolio
+ * ask, not a funding follow-up), and anything else falls through to the
+ * normal ladder untouched.
+ */
+export function parseRhFundingFollowUp(message: string): RhFundingFollowUp | null {
+  const m = message.trim()
+  if (!m || m.length > 120) return null
+  if (/\?\s*$/.test(m) || /^(what|which|how|why|where|who|when|do|does|did|can|could|would|should|is|are)\b/i.test(m)) return null
+  if (/\b(never\s*mind|cancel|forget\s+it|leave\s+(?:it|my))\b/i.test(m)) return { kind: 'cancel' }
+  if (/\b(?:check|scan|look|try)\s+again\b|\bre-?(?:check|scan)\b|^\s*(?:done|ready|ok(?:ay)?|it'?s\s+(?:there|landed|settled))\s*[.!]*$/i.test(m)) {
+    return { kind: 'recheck' }
+  }
+  const assertVerb = /\b(?:i|we)(?:'ve)?\s+(?:now\s+|just\s+|already\s+|do\s+)?(?:have|hold|got)\b|\b(?:just\s+)?(?:sent|moved|bridged|deposited|funded|added|topped\s*(?:up|off))\b/i
+  const fundingNoun = /\b(usdc|usdg|eth|gas|funds?|money)\b/i
+  const originWord = /\b(base|arb(?:itrum)?|ethereum|mainnet|robinhood)\b/i
+  if (assertVerb.test(m) && (fundingNoun.test(m) || originWord.test(m))) return { kind: 'recheck' }
   return null
 }
