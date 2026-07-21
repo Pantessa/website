@@ -142,7 +142,7 @@ export function SplashDashboard({
 
         {hint && (
           <p className="mt-4 text-center text-[11px] text-[color:var(--muted-2)]">
-            Start typing to ask about any of this.
+            Tap a chip to run it — or just start typing.
           </p>
         )}
       </div>

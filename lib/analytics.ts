@@ -27,9 +27,15 @@ export const analytics = {
   agentToggled: (slug: string, active: boolean) =>
     send(active ? 'agent_added' : 'agent_removed', { slug }),
 
-  /** A chat message sent — agents in play + whether the sender is authed. */
+  /** A chat message sent — agents in play + whether the sender is authed.
+   *  authed:false turns are the guest-trial lane (first-ask wall work). */
   chatMessage: (agents: number, authed: boolean) =>
     send('chat_message_sent', { agents, authed }),
+
+  /** An example chip tapped (empty state / splash). sent=true means the tap
+   *  ran the turn itself; false means it prefilled (MCP toggle needed). */
+  exampleRun: (prompt: string, sent: boolean) =>
+    send('example_chip', { prompt: prompt.slice(0, 80), sent }),
 
   /** A chat turn that actually paid: settled receipt totals. */
   chatPaid: (totalUsd: number, calls: number, services: string) =>

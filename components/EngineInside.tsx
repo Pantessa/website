@@ -32,7 +32,13 @@ export default function EngineInside() {
             dropped, not built.
           </p>
           <div className="heroweb__ctas">
-            <Link className="btn btn--solid" href="/chat">
+            {/* Land with the double-act ask prefilled (?prompt= never
+                auto-sends) — the section just promised swap + vote in one
+                turn, so the composer should arrive holding exactly that. */}
+            <Link
+              className="btn btn--solid"
+              href={`/chat?mcps=uniswap-free,snapshot-free&prompt=${encodeURIComponent('Swap 1 USDC to WETH, then list the active proposals in aave.eth')}`}
+            >
               Open the chat
             </Link>
             <Link className="btn btn--ghost" href="/servers">

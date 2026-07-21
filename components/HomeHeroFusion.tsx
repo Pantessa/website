@@ -518,9 +518,13 @@ export default function HomeHeroFusion() {
         </p>
         <div className="fhero__ctas">
           {/* Try it live → drop the user into /chat with the free Uniswap +
-              Snapshot working set preselected, so the MCP cards auto-load.
-              (The /embed overlay below is kept for later, just not shown.) */}
-          <Link className="btn btn--solid" href="/chat?mcps=uniswap-free,snapshot-free">
+              Snapshot working set preselected AND the first ask prefilled —
+              a blank composer is where strangers bounce; ?prompt= never
+              auto-sends, they just press enter. */}
+          <Link
+            className="btn btn--solid"
+            href={`/chat?mcps=uniswap-free,snapshot-free&prompt=${encodeURIComponent('Swap $1 of ETH to USDC')}`}
+          >
             Try it live
           </Link>
           {showSignInModal ? (

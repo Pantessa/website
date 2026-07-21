@@ -1,16 +1,25 @@
 'use client'
 
-import { LogIn, Loader2 } from 'lucide-react'
+import { useSyncExternalStore } from 'react'
+import { LogIn, Loader2, Sparkles } from 'lucide-react'
 import { useSession } from '@/lib/session'
 import CreateAccountButton from '@/components/CreateAccountButton'
 import { cdpEnabled } from '@/lib/cdp-embedded'
+import { GUEST_TRIAL_LIMIT, guestTurnsUsed, subscribeGuestTrial } from '@/lib/guest-trial'
 
 /**
- * Sign-in gate for the chat surface. While a visitor is a guest (wallet not
- * signed in via SIWE) we overlay the whole workspace with a near-opaque scrim —
- * the chat stays faintly visible behind it, but is non-interactive — explaining
- * what the chat is and prompting sign-in. Once authed (or while the session is
- * still hydrating) we render nothing so the chat is fully usable.
+ * The chat's sign-in surface. It used to be a full-screen scrim that demanded
+ * SIWE before a visitor could type ANYTHING — the cohort funnel measured ~93%
+ * of arrivals bouncing on it before their first ask. Now:
+ *
+ *  · Guests get a slim, non-blocking banner and a real guest lane — asking is
+ *    free (house model + free MCP calls, the same anonymous lane the embed
+ *    has always run on), and anything transactional ends at the in-chat
+ *    connect-wallet moment, so a guest turn can never move money.
+ *  · Only when the guest trial is exhausted (GUEST_TRIAL_LIMIT turns) does
+ *    the blocking scrim return, asking for a wallet to continue.
+ *  · A connected wallet awaiting its SIWE signature gets the same banner with
+ *    a re-open CTA instead of a wall.
  */
 /** Where to land after sign-in: the page the visitor is already on, query
  *  string included — a hardcoded '/chat' used to drop ?mcps=/?prompt= deep
@@ -23,84 +32,123 @@ function hereWithQuery(): string {
 
 export default function ChatSignInGate() {
   const { status, signingIn, needsSignIn, signIn, connectAndSignIn } = useSession()
+  const turnsUsed = useSyncExternalStore(subscribeGuestTrial, guestTurnsUsed, () => 0)
 
-  // Only block confirmed guests. During `loading` we stay out of the way to
+  // Only guests see any of this. During `loading` we stay out of the way to
   // avoid a flash before the session cookie hydrates; `authed` needs no gate.
   if (status !== 'guest') return null
 
-  // A wallet is connected but there's no SIWE session yet — the user just needs
-  // to approve the signature request in their wallet. Swap the copy + CTA to
-  // point them at that pending prompt instead of the initial sign-in pitch.
+  // A wallet is connected but there's no SIWE session yet — the user just
+  // needs to approve the signature request in their wallet.
   const awaitingSignature = needsSignIn
+  const turnsLeft = Math.max(0, GUEST_TRIAL_LIMIT - turnsUsed)
+  const exhausted = !awaitingSignature && turnsLeft === 0
 
   const ctaClass =
     'flex items-center gap-2 px-5 py-2.5 rounded-full bg-[var(--accent)] text-black text-sm font-semibold hover:opacity-90 transition-opacity disabled:opacity-60 disabled:cursor-not-allowed'
 
-  return (
-    <div className="absolute inset-0 z-40 flex items-center justify-center bg-black/60 backdrop-blur-sm px-6">
-      <div className="max-w-md text-center">
-        <p className="text-xs font-medium uppercase tracking-[0.2em] text-[color:var(--muted-2)]">
-          {awaitingSignature ? 'Almost there' : 'Sandbox'}
-        </p>
-        <h2
-          className="mt-3 text-4xl sm:text-5xl leading-tight text-white"
-          style={{ fontFamily: 'var(--font-serif)' }}
-        >
-          {awaitingSignature ? 'Waiting for Signature' : 'Beta Mode'}
-        </h2>
-        <p className="mt-5 text-sm sm:text-base leading-relaxed text-[color:var(--muted)]">
-          {awaitingSignature
-            ? 'Check your wallet and approve the signature request to finish signing in — it just proves you own this wallet, no funds are moved.'
-            : 'Yeetful is just getting started. This chat spends real funds — it pays per call from the USDC and ETH in your connected wallet. Check every transaction carefully before you sign.'}
-        </p>
-        <div className="mt-7 flex justify-center">
-          {awaitingSignature ? (
-            // Wallet already connected — re-fire the SIWE signature directly
-            // (re-opens the wallet prompt if the user dismissed it).
-            <button
-              onClick={() => signIn(hereWithQuery())}
-              disabled={signingIn}
-              type="button"
-              title="Approve the signature request in your wallet"
-              className={ctaClass}
-            >
-              {signingIn ? (
-                <Loader2 className="w-4 h-4 animate-spin" strokeWidth={2.5} />
-              ) : (
-                <LogIn className="w-4 h-4" strokeWidth={2.5} />
-              )}
-              <span>{signingIn ? 'Waiting for signature…' : 'Sign in with your wallet'}</span>
-            </button>
-          ) : cdpEnabled ? (
-            // Open the full sign-in modal (wallet / Google / email).
-            <CreateAccountButton
-              className={ctaClass}
-              label={
-                <>
-                  <LogIn className="w-4 h-4" strokeWidth={2.5} />
-                  <span>Sign in to use the chat</span>
-                </>
-              }
-              redirectTo={hereWithQuery()}
-            />
-          ) : (
-            // No embedded-wallet SDK configured — fall back to direct wallet SIWE.
-            <button
-              onClick={() => connectAndSignIn(hereWithQuery())}
-              disabled={signingIn}
-              type="button"
-              title="Sign in with your wallet — connect and sign in one step"
-              className={ctaClass}
-            >
-              {signingIn ? (
-                <Loader2 className="w-4 h-4 animate-spin" strokeWidth={2.5} />
-              ) : (
-                <LogIn className="w-4 h-4" strokeWidth={2.5} />
-              )}
-              <span>{signingIn ? 'Signing in…' : 'Sign in to use the chat'}</span>
-            </button>
-          )}
+  const signInCta = (label: string) =>
+    cdpEnabled ? (
+      // Open the full sign-in modal (wallet / Google / email).
+      <CreateAccountButton
+        className={ctaClass}
+        label={
+          <>
+            <LogIn className="w-4 h-4" strokeWidth={2.5} />
+            <span>{label}</span>
+          </>
+        }
+        redirectTo={hereWithQuery()}
+      />
+    ) : (
+      // No embedded-wallet SDK configured — direct wallet SIWE.
+      <button
+        onClick={() => connectAndSignIn(hereWithQuery())}
+        disabled={signingIn}
+        type="button"
+        title="Connect a wallet and sign in — one step"
+        className={ctaClass}
+      >
+        {signingIn ? <Loader2 className="w-4 h-4 animate-spin" strokeWidth={2.5} /> : <LogIn className="w-4 h-4" strokeWidth={2.5} />}
+        <span>{signingIn ? 'Signing in…' : label}</span>
+      </button>
+    )
+
+  // ── Trial exhausted: the one place the blocking scrim remains ────────────
+  if (exhausted) {
+    return (
+      <div className="absolute inset-0 z-40 flex items-center justify-center bg-black/60 backdrop-blur-sm px-6">
+        <div className="max-w-md text-center">
+          <p className="text-xs font-medium uppercase tracking-[0.2em] text-[color:var(--muted-2)]">Guest run complete</p>
+          <h2 className="mt-3 text-4xl sm:text-5xl leading-tight text-white" style={{ fontFamily: 'var(--font-serif)' }}>
+            Bring a wallet to keep going
+          </h2>
+          <p className="mt-5 text-sm sm:text-base leading-relaxed text-[color:var(--muted)]">
+            That was the guest taste — {GUEST_TRIAL_LIMIT} free asks. Sign in with a wallet to keep your
+            chats, see your portfolio, and sign what the chat builds. Asking stays free; money only
+            moves when your wallet signs it.
+          </p>
+          <div className="mt-7 flex justify-center">{signInCta('Sign in to keep going')}</div>
         </div>
+      </div>
+    )
+  }
+
+  // ── Non-blocking banner: guests keep the whole chat interactive ──────────
+  return (
+    <div className="pointer-events-none absolute bottom-28 inset-x-0 z-40 flex justify-center px-4">
+      <div className="pointer-events-auto flex flex-wrap items-center justify-center gap-x-4 gap-y-2 max-w-2xl rounded-2xl border border-[var(--line)] bg-[var(--surf-1)] backdrop-blur-md px-4 py-2.5 shadow-[0_8px_32px_rgba(0,0,0,0.35)]">
+        <p className="flex items-center gap-2 text-xs text-[color:var(--muted)]">
+          <Sparkles className="w-3.5 h-3.5 flex-shrink-0 text-[color:var(--accent)]" />
+          {awaitingSignature ? (
+            <span>
+              Signature request open in your wallet — approving it just proves you own the address.
+              Nothing moves.
+            </span>
+          ) : (
+            <span>
+              <span className="text-white font-medium">Ask anything — no wallet needed.</span>{' '}
+              {turnsUsed > 0
+                ? `${turnsLeft} guest ask${turnsLeft === 1 ? '' : 's'} left. `
+                : `${GUEST_TRIAL_LIMIT} free asks to look around. `}
+              Connect when you want to sign what it builds.
+            </span>
+          )}
+        </p>
+        {awaitingSignature ? (
+          <button
+            onClick={() => signIn(hereWithQuery())}
+            disabled={signingIn}
+            type="button"
+            title="Re-open the signature request in your wallet"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[var(--accent)] text-black text-xs font-semibold hover:opacity-90 transition-opacity disabled:opacity-60"
+          >
+            {signingIn ? <Loader2 className="w-3.5 h-3.5 animate-spin" strokeWidth={2.5} /> : <LogIn className="w-3.5 h-3.5" strokeWidth={2.5} />}
+            <span>{signingIn ? 'Waiting…' : 'Re-open request'}</span>
+          </button>
+        ) : cdpEnabled ? (
+          <CreateAccountButton
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[var(--accent)] text-black text-xs font-semibold hover:opacity-90 transition-opacity"
+            label={
+              <>
+                <LogIn className="w-3.5 h-3.5" strokeWidth={2.5} />
+                <span>Sign in</span>
+              </>
+            }
+            redirectTo={hereWithQuery()}
+          />
+        ) : (
+          <button
+            onClick={() => connectAndSignIn(hereWithQuery())}
+            disabled={signingIn}
+            type="button"
+            title="Connect a wallet and sign in — one step"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[var(--accent)] text-black text-xs font-semibold hover:opacity-90 transition-opacity disabled:opacity-60"
+          >
+            {signingIn ? <Loader2 className="w-3.5 h-3.5 animate-spin" strokeWidth={2.5} /> : <LogIn className="w-3.5 h-3.5" strokeWidth={2.5} />}
+            <span>{signingIn ? 'Signing in…' : 'Sign in'}</span>
+          </button>
+        )}
       </div>
     </div>
   )
