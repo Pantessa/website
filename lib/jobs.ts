@@ -31,7 +31,7 @@ import { parseCrossChainSwap, type CrossChainSwapParams } from '@/lib/cross-chai
 import { parseHlIntent, type HlIntent, type HlOrderIntent } from '@/lib/hyperliquid-exec'
 import { parseGuardianArm, type GuardianArmAsk } from '@/lib/hl-guardian'
 import { parseLidoStake } from '@/lib/lido-stake'
-import { GAS_LEG_USD } from '@/lib/lifi-bridge'
+import { fundingAltUsdcFor, GAS_LEG_USD } from '@/lib/lifi-bridge'
 import { parseNftAsk } from '@/lib/nft-layer'
 import { parseTransferSegment } from '@/lib/transfer-exec'
 
@@ -57,8 +57,9 @@ export interface CompiledJob {
 // AAPL" — the exact resume string the chat route's funding-offer chips emit
 // (prepareSwapTurn detects an unfunded Robinhood Chain buy and proposes the
 // plan). Deterministic on purpose: the chip IS the contract, so the parse
-// stays narrow — "fund robinhood … with $X from <origin>" and nothing
-// looser. Origins: Base, Ethereum, Arbitrum (the LiFi-probed set).
+// stays narrow — "fund robinhood … with $X from <origin> [using usdc.e]"
+// and nothing looser. Origins: Base, Ethereum, Arbitrum (the LiFi-probed
+// set); the "using" clause picks a registry-known bridged variant.
 
 export interface RobinhoodFundingAsk {
   /** Total dollars of origin USDC to convert (gas leg included when flagged). */
@@ -68,6 +69,9 @@ export interface RobinhoodFundingAsk {
   /** The origin chain the USDC leaves from. */
   originChainId: number
   originWord: string
+  /** The origin-side sell stable: 'USDC', or a registry-known bridged
+   *  variant ('USDC.e' via the "using usdc.e" clause). Both legs sell it. */
+  token: string
 }
 
 const FUND_RE = /\bfund\s+robinhood(?:\s+chain)?\s+with\s+\$?(\d+(?:\.\d+)?)\s+from\s+(base|ethereum|mainnet|arb(?:itrum)?)\b/i
@@ -87,7 +91,13 @@ export function parseRobinhoodFunding(segment: string): RobinhoodFundingAsk | nu
   if (!Number.isFinite(fundUsd) || fundUsd <= 0) return null
   const origin = FUND_ORIGINS[m[2].toLowerCase()]
   if (!origin) return null
-  return { fundUsd, gasIncluded: /\bincluding\s+gas\b/i.test(segment), originChainId: origin.id, originWord: origin.word }
+  return {
+    fundUsd,
+    gasIncluded: /\bincluding\s+gas\b/i.test(segment),
+    originChainId: origin.id,
+    originWord: origin.word,
+    token: /\busing\s+usdc\.?e\b/i.test(segment) ? 'USDC.e' : 'USDC',
+  }
 }
 
 // The buy segment that follows a funding segment ("buy $10 of AAPL"). Only
@@ -195,6 +205,12 @@ export const JOB_SEGMENT_PARSERS: JobSegmentParser[] = [
     parse: (seg) => {
       const fund = parseRobinhoodFunding(seg)
       if (!fund) return null
+      // A bridged-variant ask only compiles where the registry knows the
+      // token — "using usdc.e" from Base would otherwise become a job whose
+      // every build refuses.
+      if (fund.token !== 'USDC' && fundingAltUsdcFor(fund.originChainId)?.symbol !== fund.token) {
+        return { problem: `${fund.originWord} has no ${fund.token} in the chain registry — only Arbitrum's bridged USDC.e is supported.` }
+      }
       const usdgUsd = Math.max(0, Number((fund.fundUsd - (fund.gasIncluded ? GAS_LEG_USD : 0)).toFixed(2)))
       if (usdgUsd <= 0) {
         return { problem: `$${fund.fundUsd} isn't enough to fund Robinhood Chain${fund.gasIncluded ? ` — the gas leg alone is ~$${GAS_LEG_USD}` : ''}.` }
@@ -202,10 +218,10 @@ export const JOB_SEGMENT_PARSERS: JobSegmentParser[] = [
       const steps: CompiledStep[] = []
       const arrivalFrom: number[] = []
       if (fund.gasIncluded) {
-        steps.push({ kind: 'sign', builder: 'native-lifi-fund', title: `Bridge ~$${GAS_LEG_USD} of gas ETH → Robinhood Chain (from ${fund.originWord})`, params: { leg: 'gas', usd: GAS_LEG_USD, origin: fund.originChainId } })
+        steps.push({ kind: 'sign', builder: 'native-lifi-fund', title: `Bridge ~$${GAS_LEG_USD} of gas ETH → Robinhood Chain (from ${fund.originWord})`, params: { leg: 'gas', usd: GAS_LEG_USD, origin: fund.originChainId, token: fund.token } })
         arrivalFrom.push(steps.length - 1)
       }
-      steps.push({ kind: 'sign', builder: 'native-lifi-fund', title: `Move $${usdgUsd} of ${fund.originWord} USDC → USDG on Robinhood Chain`, params: { leg: 'usdg', usd: usdgUsd, origin: fund.originChainId } })
+      steps.push({ kind: 'sign', builder: 'native-lifi-fund', title: `Move $${usdgUsd} of ${fund.originWord} ${fund.token} → USDG on Robinhood Chain`, params: { leg: 'usdg', usd: usdgUsd, origin: fund.originChainId, token: fund.token } })
       arrivalFrom.push(steps.length - 1)
       steps.push({
         kind: 'wait',

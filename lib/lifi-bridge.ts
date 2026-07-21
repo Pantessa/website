@@ -63,6 +63,26 @@ export const FUNDING_ORIGIN_WORD: Record<number, string> = {
   1: 'Ethereum',
   42161: 'Arbitrum',
 }
+/** Bridged-USDC variants the scan ALSO reads, where lib/chains' stables map
+ *  knows them. Arbitrum's USDC.e is the one that bites: a wallet holding only
+ *  bridged USDC.e read as "no USDC on Arbitrum" (the 2026-07-21 gasless-scan
+ *  sibling — same wallet class, different invisibility). LiFi routes USDC.e →
+ *  USDG and → gas ETH onto Robinhood Chain through the SAME canonical diamond
+ *  as native USDC (probed live 2026-07-21: across ~99.0% parity min /
+ *  relaydepository, 1–2s). Entries must stay in the registry's stables map —
+ *  fundingAltUsdcFor cross-checks and drops any the registry forgot. */
+export const FUNDING_ALT_USDC: Record<number, { symbol: string; address: `0x${string}`; decimals: number }> = {
+  42161: { symbol: 'USDC.e', address: '0xFF970A61A04b1cA14834A43f5dE4533eBDDB5CC8', decimals: 6 },
+}
+
+/** The registry-verified alt-USDC for an origin, or null. */
+export function fundingAltUsdcFor(chainId: number): { symbol: string; address: `0x${string}`; decimals: number } | null {
+  const alt = FUNDING_ALT_USDC[chainId]
+  if (!alt) return null
+  const chain = chainById(chainId)
+  if (!chain || chain.stables[alt.address.toLowerCase()] === undefined) return null
+  return alt
+}
 /** Native ETH an origin needs before its USDC is signable there — the
  *  approve + bridge pair must be payable, or the chip is a wall later.
  *  Mainnet's floor is real L1 gas; the L2 floors are cents. */
@@ -264,10 +284,13 @@ export interface LifiBridgeBuilt {
 /** Build + guard ONE funding leg: origin-chain USDC → (native ETH | USDG)
  *  delivered to the sender's own address on Robinhood Chain. The origin
  *  defaults to Base (every pre-existing job/refresh recipe omits it) and
- *  must be a FUNDING_ORIGIN_CHAINS member. Throws on transport / no-route
- *  (the jobs runner surfaces the message); a guard or price failure comes
- *  back as blocked with the reasons in the report. */
-export async function buildLifiBridgeLeg(params: { leg: FundingLeg; usd: number; from: string; origin?: number }): Promise<LifiBridgeBuilt> {
+ *  must be a FUNDING_ORIGIN_CHAINS member. `token` picks the origin-side
+ *  sell stable: absent/USDC = the chain's native USDC (every pre-existing
+ *  recipe), 'USDC.e' = the registry-known bridged variant (Arbitrum only —
+ *  anywhere else throws). Throws on transport / no-route (the jobs runner
+ *  surfaces the message); a guard or price failure comes back as blocked
+ *  with the reasons in the report. */
+export async function buildLifiBridgeLeg(params: { leg: FundingLeg; usd: number; from: string; origin?: number; token?: string }): Promise<LifiBridgeBuilt> {
   const from = params.from as `0x${string}`
   if (!ADDR_RE.test(from)) throw new Error('A valid wallet address is required.')
   if (!Number.isFinite(params.usd) || params.usd <= 0) throw new Error(`Couldn't read the funding amount "${params.usd}".`)
@@ -281,8 +304,21 @@ export async function buildLifiBridgeLeg(params: { leg: FundingLeg; usd: number;
   const destClient = publicClientFor(ROBINHOOD_CHAIN_ID)
   if (!originClient || !destClient) throw new Error('No RPC client configured for the funding route.')
 
-  const usdc = origin.tokens.USDC
-  if (!usdc) throw new Error(`${origin.name} has no USDC in the chain registry.`)
+  // The origin-side sell stable: native USDC unless the recipe pinned a
+  // registry-known bridged variant. Normalized so 'usdc.e'/'USDCE' both land.
+  const tokenKey = (params.token ?? 'USDC').toUpperCase().replace(/[^A-Z]/g, '')
+  let usdc: { symbol: string; address: `0x${string}`; decimals: number }
+  if (tokenKey === 'USDC') {
+    const native = origin.tokens.USDC
+    if (!native) throw new Error(`${origin.name} has no USDC in the chain registry.`)
+    usdc = { symbol: 'USDC', ...native }
+  } else if (tokenKey === 'USDCE') {
+    const alt = fundingAltUsdcFor(originId)
+    if (!alt) throw new Error(`${origin.name} has no registry-known USDC.e to fund from.`)
+    usdc = alt
+  } else {
+    throw new Error(`"${params.token}" isn't a supported funding token — USDC or USDC.e only.`)
+  }
   const usdg = primaryStable(ROBINHOOD_CHAIN_ID)!
   const sellAtoms = BigInt(Math.round(params.usd * 10 ** usdc.decimals))
   const gasLeg = params.leg === 'gas'
@@ -298,8 +334,8 @@ export async function buildLifiBridgeLeg(params: { leg: FundingLeg; usd: number;
     level: 'block',
     ok: funded,
     note: funded
-      ? `The wallet holds ${formatAtoms(usdcBalance.toString(), usdc.decimals)} USDC on ${origin.name} — covered.`
-      : `Insufficient USDC on ${origin.name}: this leg needs $${params.usd} but the wallet holds ${formatAtoms(usdcBalance.toString(), usdc.decimals)}.`,
+      ? `The wallet holds ${formatAtoms(usdcBalance.toString(), usdc.decimals)} ${usdc.symbol} on ${origin.name} — covered.`
+      : `Insufficient ${usdc.symbol} on ${origin.name}: this leg needs $${params.usd} but the wallet holds ${formatAtoms(usdcBalance.toString(), usdc.decimals)}.`,
   }
 
   const quote = await fetchLifiQuote({
@@ -374,7 +410,7 @@ export async function buildLifiBridgeLeg(params: { leg: FundingLeg; usd: number;
   if (needsApprove) {
     steps.push({
       label: 'approve',
-      title: `Approve ${formatAtoms(sellAtoms.toString(), usdc.decimals)} USDC to LiFi`,
+      title: `Approve ${formatAtoms(sellAtoms.toString(), usdc.decimals)} ${usdc.symbol} to LiFi`,
       tx: {
         to: usdc.address,
         data: encodeFunctionData({ abi: erc20Abi, functionName: 'approve', args: [approvalAddress, sellAtoms] }),
@@ -388,8 +424,8 @@ export async function buildLifiBridgeLeg(params: { leg: FundingLeg; usd: number;
   steps.push({
     label: 'bridge',
     title: gasLeg
-      ? `Bridge $${params.usd} USDC → gas ETH on ${destination.name} (via ${quote.tool})`
-      : `Bridge $${params.usd} USDC → ${destSymbol} on ${destination.name} (via ${quote.tool})`,
+      ? `Bridge $${params.usd} ${usdc.symbol} → gas ETH on ${destination.name} (via ${quote.tool})`
+      : `Bridge $${params.usd} ${usdc.symbol} → ${destSymbol} on ${destination.name} (via ${quote.tool})`,
     tx: {
       to: quote.transactionRequest.to,
       data: quote.transactionRequest.data,
@@ -451,8 +487,8 @@ export async function buildLifiBridgeLeg(params: { leg: FundingLeg; usd: number;
   const guardrails = buildReport(params.usd, checks, violation ? { violation, valueUsd: params.usd, host: LIFI_POLICY_HOST } : null)
 
   const summary = gasLeg
-    ? `Bridge $${params.usd} of ${origin.name} USDC → ~${formatAtoms(toAmountMin.toString(), 18)} ETH on ${destination.name} for gas (LiFi-routed, tool: ${quote.tool}) — arrives in seconds, delivered to your own address.`
-    : `Bridge $${params.usd} of ${origin.name} USDC → ≥ ${formatAtoms(toAmountMin.toString(), destDecimals)} ${destSymbol} on ${destination.name} (LiFi-routed, tool: ${quote.tool}) — arrives in seconds, delivered to your own address.`
+    ? `Bridge $${params.usd} of ${origin.name} ${usdc.symbol} → ~${formatAtoms(toAmountMin.toString(), 18)} ETH on ${destination.name} for gas (LiFi-routed, tool: ${quote.tool}) — arrives in seconds, delivered to your own address.`
+    : `Bridge $${params.usd} of ${origin.name} ${usdc.symbol} → ≥ ${formatAtoms(toAmountMin.toString(), destDecimals)} ${destSymbol} on ${destination.name} (LiFi-routed, tool: ${quote.tool}) — arrives in seconds, delivered to your own address.`
 
   return {
     summary,
@@ -471,11 +507,18 @@ export interface FundingOrigin {
   chainId: number
   /** The chain word chip resumes use ("Base", "Ethereum", "Arbitrum"). */
   word: string
-  /** Whole dollars of USDC there (floored), gas-to-sign already verified. */
+  /** The $1 token held there — 'USDC', or a registry-known bridged variant
+   *  ('USDC.e' on Arbitrum). One FundingOrigin row per (chain, token). */
+  token: string
+  /** Whole dollars of that token there (floored). */
   usd: number
   /** Native ETH held there — how a gas-stranded sibling finds a donor. */
   gasEth: number
 }
+
+/** Chip-label qualifier: "Base" for native USDC, "Arbitrum USDC.e" when the
+ *  row holds a bridged variant — two rows can share a chain word. */
+const originLabel = (o: FundingOrigin) => (o.token === 'USDC' ? o.word : `${o.word} ${o.token}`)
 
 export interface FundingShortfall {
   /** USDG atoms the wallet holds on Robinhood Chain. */
@@ -521,13 +564,20 @@ export async function readFundingShortfall(user: string): Promise<FundingShortfa
       const client = publicClientFor(chainId)
       const usdc = chainById(chainId)?.tokens.USDC
       if (!client || !usdc) return
+      const alt = fundingAltUsdcFor(chainId)
       try {
-        const [usdcAtoms, gasWei] = await Promise.all([
+        const [usdcAtoms, altAtoms, gasWei] = await Promise.all([
           client.readContract({ address: usdc.address, abi: erc20Abi, functionName: 'balanceOf', args: [from] }),
+          alt ? client.readContract({ address: alt.address, abi: erc20Abi, functionName: 'balanceOf', args: [from] }) : Promise.resolve(BigInt(0)),
           client.getBalance({ address: from }),
         ])
+        const gasEth = Number(formatEther(gasWei))
         const usd = Math.floor(Number(usdcAtoms) / 10 ** usdc.decimals)
-        allScanned.push({ chainId, word, usd, gasEth: Number(formatEther(gasWei)) })
+        allScanned.push({ chainId, word, token: 'USDC', usd, gasEth })
+        // Bridged-variant row only when it actually holds money — the USDC
+        // row above already carries the chain's donor-gas signal.
+        const altUsd = alt ? Math.floor(Number(altAtoms) / 10 ** alt.decimals) : 0
+        if (alt && altUsd > 0) allScanned.push({ chainId, word, token: alt.symbol, usd: altUsd, gasEth })
       } catch {
         failedOrigins.push(word)
       }
@@ -552,9 +602,10 @@ export interface RobinhoodFundingChip {
   resume: string
 }
 
-/** One funding-ask segment: lib/jobs.ts parseRobinhoodFunding's grammar. */
-const fundSegment = (usd: number, word: string, gas: boolean) =>
-  `Fund robinhood chain with $${usd} from ${word.toLowerCase()}${gas ? ' including gas' : ''}`
+/** One funding-ask segment: lib/jobs.ts parseRobinhoodFunding's grammar.
+ *  A non-USDC token rides the "using usdc.e" clause (before "including gas"). */
+const fundSegment = (usd: number, word: string, gas: boolean, token = 'USDC') =>
+  `Fund robinhood chain with $${usd} from ${word.toLowerCase()}${token === 'USDC' ? '' : ` using ${token.toLowerCase()}`}${gas ? ' including gas' : ''}`
 
 /**
  * Turn a multi-origin scan into chips. `followup` is appended to every
@@ -576,16 +627,16 @@ export function planRobinhoodFundingChips(params: {
   const chips: RobinhoodFundingChip[] = []
   const best = origins[0]
   if (best && best.usd >= needUsd) {
-    chips.push({ label: `Just enough (~$${needUsd} from ${best.word})`, resume: withFollowup([fundSegment(needUsd, best.word, gasIncluded)]) })
+    chips.push({ label: `Just enough (~$${needUsd} from ${originLabel(best)})`, resume: withFollowup([fundSegment(needUsd, best.word, gasIncluded, best.token)]) })
     // Half/all only when they're sensible whole-balance moves — a $15k
     // balance covering a $7 need doesn't get a $7.5k chip (same 10× rule
     // as lib/funding-plan's all-in cap).
     const sensible = best.usd <= needUsd * 10
     const half = Math.floor(best.usd / 2)
-    if (sensible && half > needUsd) chips.push({ label: `Half my ${best.word} USDC ($${half})`, resume: withFollowup([fundSegment(half, best.word, gasIncluded)]) })
-    if (sensible && best.usd > needUsd) chips.push({ label: `All my ${best.word} USDC ($${best.usd})`, resume: withFollowup([fundSegment(best.usd, best.word, gasIncluded)]) })
+    if (sensible && half > needUsd) chips.push({ label: `Half my ${best.word} ${best.token} ($${half})`, resume: withFollowup([fundSegment(half, best.word, gasIncluded, best.token)]) })
+    if (sensible && best.usd > needUsd) chips.push({ label: `All my ${best.word} ${best.token} ($${best.usd})`, resume: withFollowup([fundSegment(best.usd, best.word, gasIncluded, best.token)]) })
     const alt = origins.find((o) => o !== best && o.usd >= needUsd)
-    if (alt) chips.push({ label: `Use ${alt.word} instead (~$${needUsd})`, resume: withFollowup([fundSegment(needUsd, alt.word, gasIncluded)]) })
+    if (alt) chips.push({ label: `Use ${originLabel(alt)} instead (~$${needUsd})`, resume: withFollowup([fundSegment(needUsd, alt.word, gasIncluded, alt.token)]) })
     return chips.slice(0, 4)
   }
   // No single origin covers it — combine legs richest-first. The first leg
@@ -602,8 +653,8 @@ export function planRobinhoodFundingChips(params: {
       const first = segs.length === 0
       const take = Math.min(o.usd, remaining)
       if (first && gasIncluded && take <= GAS_LEG_USD + 1) continue
-      segs.push(fundSegment(take, o.word, first && gasIncluded))
-      words.push(o.word)
+      segs.push(fundSegment(take, o.word, first && gasIncluded, o.token))
+      words.push(originLabel(o))
       remaining = Number((remaining - take).toFixed(2))
     }
     if (remaining <= 0 && segs.length >= 2) {
@@ -668,7 +719,7 @@ export function planRobinhoodFundingAdvice(params: {
     if (donor) {
       const segs = [
         `swap ${GAS_TOPUP_ETH} ETH from ${donor.word.toLowerCase()} to ${strandedLc}`,
-        fundSegment(needUsd, stranded.word, gasIncluded),
+        fundSegment(needUsd, stranded.word, gasIncluded, stranded.token),
       ]
       const resume = followup ? `${segs.join(', then ')}, then ${followup}` : segs.join(', then ')
       return {
@@ -680,8 +731,8 @@ export function planRobinhoodFundingAdvice(params: {
           { label: 'Not now', resume: 'Never mind — leave my funds where they are.' },
         ],
         copy:
-          `your ~$${stranded.usd} of USDC is already on **${stranded.word}** — the wallet just has no ETH there to pay for the two tiny signatures the bridge needs. ` +
-          `I can fix that from ${donor.word}: move ~${GAS_TOPUP_ETH} ETH over first, then convert the ${stranded.word} USDC${gasIncluded ? ' (gas for Robinhood Chain included)' : ''} — one job, each step built and checked when it's your turn to sign.`,
+          `your ~$${stranded.usd} of ${stranded.token} is already on **${stranded.word}** — the wallet just has no ETH there to pay for the two tiny signatures the bridge needs. ` +
+          `I can fix that from ${donor.word}: move ~${GAS_TOPUP_ETH} ETH over first, then convert the ${stranded.word} ${stranded.token}${gasIncluded ? ' (gas for Robinhood Chain included)' : ''} — one job, each step built and checked when it's your turn to sign.`,
       }
     }
     return {
@@ -690,7 +741,7 @@ export function planRobinhoodFundingAdvice(params: {
       donor: null,
       chips: null,
       copy:
-        `you're holding ~$${stranded.usd} of USDC on **${stranded.word}** — enough for this — but the wallet has no ETH on ${stranded.word} to pay for the two tiny signatures the bridge needs (about a dollar's worth is plenty). ` +
+        `you're holding ~$${stranded.usd} of ${stranded.token} on **${stranded.word}** — enough for this — but the wallet has no ETH on ${stranded.word} to pay for the two tiny signatures the bridge needs (about a dollar's worth is plenty). ` +
         `Send a little ETH to your address on ${stranded.word} from an exchange or another wallet, then ask again — I'll build the whole path from there.`,
     }
   }
@@ -700,7 +751,7 @@ export function planRobinhoodFundingAdvice(params: {
   const parts: string[] = []
   const held = [...scan.origins, ...scan.gaslessOrigins].sort((a, b) => b.usd - a.usd)
   if (held.length > 0)
-    parts.push(held.map((o) => `~$${o.usd} of USDC on ${o.word}${scan.gaslessOrigins.includes(o) ? ' (no ETH there to sign with)' : ''}`).join(', '))
+    parts.push(held.map((o) => `~$${o.usd} of ${o.token} on ${o.word}${scan.gaslessOrigins.includes(o) ? ' (no ETH there to sign with)' : ''}`).join(', '))
   else parts.push('no USDC on Base, Ethereum, or Arbitrum')
   if (scan.failedOrigins.length > 0) parts.push(`couldn't check ${scan.failedOrigins.join(' or ')}`)
   return { kind: 'none', copy: parts.join('; ') }
