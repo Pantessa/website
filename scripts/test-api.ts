@@ -1421,6 +1421,37 @@ async function main() {
     check('intent links: /links leaderboard renders with the mint CTA', board.status === 200 && /Mint yours/.test(boardHtml) && /dollars moved/i.test(boardHtml))
     check('intent links: leaderboard never leaks a wallet address', !/0x[0-9a-fA-F]{40}/.test(boardHtml))
 
+    // ── Creator storefronts (/l/<handle>) — opt-in public pages ──────────
+    // The privacy contract: a wallet is never the key to a public page;
+    // only a claimed handle is, and releasing it kills the page.
+    const hNoAuth = await fetch(`${BASE}/api/intent-links/handle`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ handle: 'harness-store' }),
+    })
+    check('storefront: claim without session → 401', hNoAuth.status === 401)
+    const hBad = await fetch(`${BASE}/api/intent-links/handle`, { method: 'POST', headers: M, body: JSON.stringify({ handle: 'dashboard' }) })
+    const hBad2 = await fetch(`${BASE}/api/intent-links/handle`, { method: 'POST', headers: M, body: JSON.stringify({ handle: 'x' }) })
+    check('storefront: reserved + malformed handles refused (400)', hBad.status === 400 && hBad2.status === 400)
+    const hClaim = await fetch(`${BASE}/api/intent-links/handle`, { method: 'POST', headers: M, body: JSON.stringify({ handle: 'Harness-Store' }) })
+    check('storefront: claim normalizes + returns the page url', hClaim.status === 200 && ((await hClaim.json()) as { url?: string }).url === '/l/harness-store')
+    const hSteal = await fetch(`${BASE}/api/intent-links/handle`, { method: 'POST', headers: CJ, body: JSON.stringify({ handle: 'harness-store' }) })
+    check('storefront: a taken handle refuses (409)', hSteal.status === 409)
+    const storeHtml = flat(await (await fetch(`${BASE}/l/harness-store`)).text())
+    check(
+      "storefront: /l page lists the creator's active links",
+      storeHtml.includes('@harness-store') && storeHtml.includes('DCA $25 into ETH weekly'),
+    )
+    check('storefront: /l never prints the wallet', !storeHtml.toLowerCase().includes(mallory.address.toLowerCase()))
+    const ghostStore = await fetch(`${BASE}/l/never-claimed-xyz`)
+    check('storefront: unknown handle → 404', ghostStore.status === 404)
+    const hRename = await fetch(`${BASE}/api/intent-links/handle`, { method: 'POST', headers: M, body: JSON.stringify({ handle: 'harness-store-2' }) })
+    const oldGone = await fetch(`${BASE}/l/harness-store`)
+    check('storefront: rename frees the old handle (old page 404)', hRename.status === 200 && oldGone.status === 404)
+    const hDrop = await fetch(`${BASE}/api/intent-links/handle`, { method: 'DELETE', headers: { cookie: mallorySession } })
+    const droppedGone = await fetch(`${BASE}/l/harness-store-2`)
+    check('storefront: release drops the page', hDrop.status === 200 && droppedGone.status === 404)
+
     // cleanup: the minted row + its events (raw deletes via prisma are not
     // exposed here — the API has no delete; rows are tiny and harmless, but
     // keep the namespace tidy by revoking… no revoke endpoint in v1 either.
