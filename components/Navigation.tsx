@@ -54,6 +54,11 @@ export default function Navigation() {
   // (After every hook, so the hook order stays stable across routes.)
   if (pathname.startsWith('/embed')) return null
 
+  // /i/<slug> is a focused intent-link landing — the runtime owns the full
+  // viewport (its own mark + ask header), so no brochure nav either.
+  // ('/i/' with the trailing slash: /incidents must keep its nav.)
+  if (pathname.startsWith('/i/')) return null
+
   // When a signed-in user is on an app surface (dashboard / chat / docs) the
   // brochure top-nav is removed entirely — the app shell (left rail + its
   // collapse/home toggle) owns the viewport. Logged-out visitors still get the
