@@ -78,6 +78,12 @@ export default function IntentRuntime({
   const [blocked, setBlocked] = useState(false)
   const [sigDismissed, setSigDismissed] = useState(false)
   const [prompt, setPrompt] = useState<{ text: string; send: boolean; at: number } | null>(null)
+  // The link's MCP set must be APPLIED to the store before the ask fires —
+  // a visitor arriving with a wallet already connected raced /api/servers
+  // and sent the turn against the DEFAULT set (live 2026-07-22: an intent
+  // link showing NEAR Intents branding answered "add the NEAR Intents agent
+  // to your set"). True immediately when the link composes no set.
+  const [mcpsReady, setMcpsReady] = useState(!mcps)
   const transferShaped = isTransferShaped(ask)
 
   // The moment the runtime starts with a connected-but-unsigned wallet, fire
@@ -125,14 +131,16 @@ export default function IntentRuntime({
   const appliedMcps = useRef(false)
   useEffect(() => {
     if (appliedMcps.current || servers.length === 0 || !mcps) return
+    appliedMcps.current = true
     const ids = mcps
       .split(',')
       .map((s) => servers.find((srv) => srv.slug === s.trim())?.id)
       .filter((id): id is string => !!id)
-    if (ids.length) {
-      appliedMcps.current = true
-      setActiveServerIds(ids)
-    }
+    if (ids.length) setActiveServerIds(ids)
+    // Definitive settle either way ([[chat-id-load-race]]): a stale slug
+    // list must release the ask (the refusal copy then says what to add),
+    // never hold the link's whole flow hostage.
+    setMcpsReady(true)
   }, [servers, mcps, setActiveServerIds])
 
   // Connect IS the consent: the moment a wallet is present, run the ask —
@@ -141,7 +149,7 @@ export default function IntentRuntime({
   // connect and run — fail CLOSED (a partner's "reserved" promise beats a
   // flaky network), with the ask still one honest click away in /chat.
   useEffect(() => {
-    if (!isConnected || started) return
+    if (!isConnected || started || !mcpsReady) return
     setStarted(true)
     postEvent('connect')
     // The link runtime is its own thread: never append the ask into whatever
@@ -158,7 +166,7 @@ export default function IntentRuntime({
       .then((d: { allowed?: boolean }) => (d.allowed ? run() : setBlocked(true)))
       .catch(() => setBlocked(true))
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isConnected, started])
+  }, [isConnected, started, mcpsReady])
 
   const onTurnEvent = (name: string, data?: Record<string, unknown>) => {
     if (name !== 'turn' || !data) return
