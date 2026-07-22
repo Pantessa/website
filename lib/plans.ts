@@ -62,6 +62,7 @@ export const PLANS: Plan[] = [
     // (first swap, first DCA, first guardian), bounded house-inference COGS.
     credits: 250,
     highlights: [
+      '3 active intent links — mint, share, earn',
       '3 standing intents — jobs, DCA, guardian',
       '250 chat credits / month',
       'Embed on 1 site',
@@ -79,6 +80,7 @@ export const PLANS: Plan[] = [
     popular: true,
     stripeProductId: 'prod_UsTzqqSZp2V3Sj',
     highlights: [
+      '25 active intent links',
       '25 standing intents — a working portfolio of automations',
       'Embed on 3 sites',
       'Full paid MCP directory in your sets',
@@ -95,6 +97,7 @@ export const PLANS: Plan[] = [
     legacyCredits: 150_000,
     stripeProductId: 'prod_UsU0jKG1QyPBh7',
     highlights: [
+      'Unlimited intent links',
       'Unlimited standing intents',
       'Unlimited embed sites',
       'White-label chrome',

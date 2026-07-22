@@ -6,50 +6,53 @@ export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
 /**
- * Done-state signals for the dashboard "Get started" checklist — the pivot
- * flow (chat → guarded tx → fund-then-act job → embed), each read from what
- * the wallet has actually done rather than self-reported:
+ * Done-state signals for the dashboard "Get started" checklist — the
+ * links-first flow (mint a link → share it → watch the funnel → first
+ * conversion → claim), each read from what the wallet has actually done
+ * rather than self-reported:
  *
- *  · chatted    — owns ≥1 chat (created on the first turn)
- *  · signedTx   — a durable signed-tx record on one of their messages
- *                 (meta.signed, written back after a wallet-signed artifact
- *                 confirms) OR a completed job that moved value — either way,
- *                 a guarded build made it through their wallet
- *  · fundedJob  — a completed job with a settlement-wait step: the runner
- *                 waited on a bridge/solver between their signatures, i.e. a
- *                 fund-then-act / cross-chain "lazy trade"
- *  · embedKey   — minted a publishable `yfe_` embed key
+ *  · minted    — owns ≥1 live (non-revoked) intent link
+ *  · opened    — one of their links has been opened by anyone (the share
+ *                landed — funnel stage 1)
+ *  · connected — a visitor connected a wallet on one of their links (the
+ *                funnel is moving)
+ *  · converted — a signed, guardrail-priced turn attributed to one of
+ *                their links (server truth: embed_turns, never client
+ *                events)
+ *  · claimed   — requested (or been paid) a creator earnings claim
  */
 export async function GET() {
   const addr = await getSessionAddress()
   if (!addr) return NextResponse.json({ error: 'Not signed in.' }, { status: 401 })
+  const creator = addr.toLowerCase()
 
-  const [chat, embedKey, signedRows, jobRows] = await Promise.all([
-    prisma.chat.findFirst({ where: { ownerAddress: addr }, select: { id: true } }),
-    prisma.embedKey.findFirst({ where: { ownerAddress: addr, revoked: false }, select: { id: true } }),
-    prisma.$queryRaw<{ ok: boolean }[]>`
-      SELECT EXISTS(
-        SELECT 1 FROM messages m
-        JOIN chats c ON c.id = m.chat_id
-        WHERE c.owner_address = ${addr}
-          AND jsonb_typeof(m.meta->'signed') = 'array'
-          AND jsonb_array_length(m.meta->'signed') > 0
-      ) OR EXISTS(
-        SELECT 1 FROM jobs
-        WHERE wallet = ${addr} AND status = 'done' AND COALESCE(value_usd, 0) > 0
-      ) AS ok`,
-    prisma.$queryRaw<{ ok: boolean }[]>`
-      SELECT EXISTS(
-        SELECT 1 FROM jobs j
-        WHERE j.wallet = ${addr} AND j.status = 'done'
-          AND EXISTS(SELECT 1 FROM job_steps s WHERE s.job_id = j.id AND s.kind = 'wait')
-      ) AS ok`,
+  const links = await prisma.intentLink.findMany({
+    where: { creator, revoked: false },
+    select: { id: true },
+  })
+  const slugs = links.map((l) => l.id)
+
+  const [opened, connected, converted, claim] = await Promise.all([
+    slugs.length
+      ? prisma.intentLinkEvent.findFirst({ where: { slug: { in: slugs }, kind: 'open' }, select: { id: true } })
+      : null,
+    slugs.length
+      ? prisma.intentLinkEvent.findFirst({ where: { slug: { in: slugs }, kind: 'connect' }, select: { id: true } })
+      : null,
+    slugs.length
+      ? prisma.embedTurn.findFirst({
+          where: { intentLinkSlug: { in: slugs }, outcome: 'signed', valueUsd: { gt: 0 } },
+          select: { id: true },
+        })
+      : null,
+    prisma.intentLinkClaim.findFirst({ where: { creator, status: { in: ['requested', 'paid'] } }, select: { id: true } }),
   ])
 
   return NextResponse.json({
-    chatted: !!chat,
-    signedTx: signedRows[0]?.ok ?? false,
-    fundedJob: jobRows[0]?.ok ?? false,
-    embedKey: !!embedKey,
+    minted: slugs.length > 0,
+    opened: !!opened,
+    connected: !!connected,
+    converted: !!converted,
+    claimed: !!claim,
   })
 }

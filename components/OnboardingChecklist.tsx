@@ -1,27 +1,36 @@
 'use client'
 
-// First-run "Get started" checklist on the dashboard Overview — the pivot
-// flow: ask → sign a guarded transaction → run a fund-then-act job → embed.
-// Each step's done-state comes from /api/dashboard/onboarding, which reads
-// what the wallet has actually done (chats, durable signed-tx records,
-// completed wait-step jobs, embed keys), so it ticks off on its own. Hides
-// once everything's done or the user dismisses it.
+// First-run "Get started" checklist on the dashboard Overview — the
+// links-first flow: mint a link → share it → watch the funnel → first
+// conversion → claim your earnings. Each step's done-state comes from
+// /api/dashboard/onboarding, which reads what the wallet has actually done
+// (live links, funnel events, server-truth signed turns, claims), so it
+// ticks off on its own. Hides once everything's done or the user dismisses.
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { CheckCircle2, Circle, X } from 'lucide-react'
 import { Card } from '@/lib/dashboard-ui'
 
-// v2: the x402-era checklist (approve/mint-key/paid-call/earn) was retired
-// 2026-07-16 — a fresh key so everyone sees the new flow once, even if they
-// dismissed the old one.
-const DISMISS_KEY = 'yf_onboarding_dismissed_v2'
+// v3: the chat/embed-era checklist (ask/sign/job/embed) was retired with the
+// links-first repositioning — a fresh key so everyone sees the new flow
+// once, even if they dismissed an older one.
+const DISMISS_KEY = 'yf_onboarding_dismissed_v3'
 
 interface OnboardingStatus {
-  chatted: boolean
-  signedTx: boolean
-  fundedJob: boolean
-  embedKey: boolean
+  minted: boolean
+  opened: boolean
+  connected: boolean
+  converted: boolean
+  claimed: boolean
+}
+
+const EMPTY: OnboardingStatus = {
+  minted: false,
+  opened: false,
+  connected: false,
+  converted: false,
+  claimed: false,
 }
 
 export default function OnboardingChecklist() {
@@ -39,44 +48,49 @@ export default function OnboardingChecklist() {
   useEffect(() => {
     fetch('/api/dashboard/onboarding', { cache: 'no-store' })
       .then((r) => (r.ok ? r.json() : null))
-      .then((d) => setStatus(d ?? { chatted: false, signedTx: false, fundedJob: false, embedKey: false }))
-      .catch(() => setStatus({ chatted: false, signedTx: false, fundedJob: false, embedKey: false }))
+      .then((d) => setStatus(d ?? EMPTY))
+      .catch(() => setStatus(EMPTY))
   }, [])
 
-  // Hold until the live state arrives — painting four unchecked steps and
+  // Hold until the live state arrives — painting five unchecked steps and
   // ticking them a beat later reads as flicker.
   if (dismissed || !status) return null
 
-  // Each chat CTA deep-links with ?prompt= so the composer lands PREFILLED
-  // with the example ask (never auto-sent) — a bare /chat read as "now what?".
   const steps = [
     {
-      label: 'Ask your agents anything',
-      hint: 'Open the chat and ask — "what\'s in my wallet?", "ETH price?". Your MCPs answer, every call receipted.',
-      done: status.chatted,
-      href: `/chat?prompt=${encodeURIComponent("What's in my wallet?")}`,
-      cta: 'Open chat',
+      label: 'Mint your first link',
+      hint: 'One sentence — "Buy $5 of AAPL", "DCA $25 into ETH weekly" — becomes a link anyone can act on. We\'ll prefill an ask.',
+      done: status.minted,
+      href: `/dashboard/links?ask=${encodeURIComponent('Buy $5 of AAPL')}`,
+      cta: 'Mint a link',
     },
     {
-      label: 'Sign a guarded transaction',
-      hint: 'We\'ll load "swap $1 of ETH to USDC" ready to send — built, guard-checked, and priced before your wallet ever sees it.',
-      done: status.signedTx,
-      href: `/chat?prompt=${encodeURIComponent('Swap $1 of ETH to USDC')}`,
-      cta: 'Build one',
+      label: 'Share it',
+      hint: 'Post it, DM it, drop it in your community. The moment someone opens it, this ticks.',
+      done: status.opened,
+      href: '/dashboard/links',
+      cta: 'Copy your link',
     },
     {
-      label: 'Run a fund-then-act job',
-      hint: 'Ask for something your funds aren\'t in place for — "buy $2 of AAPL" with only Base USDC. Yeetful compiles the bridge, the wait, and the buy into one job.',
-      done: status.fundedJob,
-      href: `/chat?mcps=robinhood-free,near-intents-mcp-yeetful,yeetful-tool-wallet&prompt=${encodeURIComponent('Buy $2 of AAPL')}`,
-      cta: 'Try it',
+      label: 'Watch the funnel',
+      hint: 'Opens → connects → built → signed, per link, live on your links page. Ticks when a visitor connects a wallet.',
+      done: status.connected,
+      href: '/dashboard/links',
+      cta: 'Open the funnel',
     },
     {
-      label: 'Embed the chat on your site',
-      hint: 'Five lines put this chat on any page, signing with your visitors\' wallets. Mint a publishable embed key to start.',
-      done: status.embedKey,
-      href: '/dashboard/keys',
-      cta: 'Mint embed key',
+      label: 'First conversion',
+      hint: 'Someone signs through your link — guarded, priced, their own wallet. That conversion also starts your earnings.',
+      done: status.converted,
+      href: '/links',
+      cta: 'See the board',
+    },
+    {
+      label: 'Claim your earnings',
+      hint: 'You keep half of Yeetful\'s 0.20% fee on your links\' conversions. Claims open at $10, paid in USDC on Base.',
+      done: status.claimed,
+      href: '/dashboard/links',
+      cta: 'Claim',
     },
   ]
 
@@ -101,8 +115,7 @@ export default function OnboardingChecklist() {
         <div className="min-w-0">
           <p className="text-sm font-semibold text-white">Get started</p>
           <p className="text-xs text-[color:var(--muted-2)] mt-0.5">
-            {completed} of {steps.length} done — from first ask to money moved, then the chat on
-            your own site.
+            {completed} of {steps.length} done — from your first link to your first payout.
           </p>
         </div>
         <button

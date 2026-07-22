@@ -961,17 +961,30 @@ async function main() {
   )
 
   // Onboarding checklist signals (Get started card) — SIWE-only, and always
-  // the four pivot-flow booleans (chat → guarded tx → fund-then-act job →
-  // embed key). Values depend on what the harness wallet has done so far, so
+  // the five links-first booleans (mint → share → funnel → conversion →
+  // claim). Values depend on what the harness wallet has done so far, so
   // assert shape + types, not specific ticks.
   const onboardNoAuth = await fetch(`${BASE}/api/dashboard/onboarding`)
   check('onboarding signals require auth → 401', onboardNoAuth.status === 401)
   const onboardRes = await fetch(`${BASE}/api/dashboard/onboarding`, { headers: C })
   const onboard = await onboardRes.json()
   check(
-    'onboarding signals: chatted/signedTx/fundedJob/embedKey booleans',
+    'onboarding signals: minted/opened/connected/converted/claimed booleans',
     onboardRes.status === 200 &&
-      ['chatted', 'signedTx', 'fundedJob', 'embedKey'].every((k) => typeof onboard[k] === 'boolean'),
+      ['minted', 'opened', 'connected', 'converted', 'claimed'].every((k) => typeof onboard[k] === 'boolean'),
+  )
+
+  // /pricing displays the creator rail (links-first: kickbacks are a selling
+  // point, not a footnote) — the split and the per-plan link caps.
+  const pricingRes = await fetch(`${BASE}/pricing`)
+  const pricingHtml = await pricingRes.text()
+  check(
+    'pricing: creator kickback + active-link caps displayed',
+    pricingRes.status === 200 &&
+      /creator kickbacks/i.test(pricingHtml) &&
+      pricingHtml.includes('3 active intent links') &&
+      pricingHtml.includes('25 active intent links') &&
+      pricingHtml.includes('Unlimited intent links'),
   )
 
   // Payees: the wallet's claimed MCP servers (dashboard Agents → My MCP servers).
