@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Share2, Check, Copy, Loader2, Globe, Lock } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useYeetfulStore } from '@/lib/store'
+import { isDbChatId } from '@/lib/chat-ids'
 import { useSession } from '@/lib/session'
 
 /**
@@ -31,8 +32,9 @@ export default function ShareButton() {
     return () => document.removeEventListener('mousedown', onClick)
   }, [open])
 
-  // Only the signed-in owner of a real (persisted) chat can share it.
-  if (!address || !chat) return null
+  // Only the signed-in owner of a real (persisted) chat can share it — a
+  // local ephemeral chat has no row to flip public (its PATCH would 404).
+  if (!address || !chat || !isDbChatId(chat.id)) return null
 
   const isPublic = !!chat.isPublic
   const shareUrl =

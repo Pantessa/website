@@ -6,6 +6,7 @@ import { persist } from 'zustand/middleware'
 // Type-only the other way (free-fleet imports `type McpServer` from here), so
 // this runtime import is not circular.
 import { DEFAULT_CHAT_FLEET_SLUGS } from '@/lib/free-fleet'
+import { isDbChatId } from '@/lib/chat-ids'
 
 export interface McpServer {
   id: string
@@ -519,7 +520,9 @@ export const useYeetfulStore = create<YeetfulStore>()(
         // Persist to the DB in the background (owner-only; system msgs aren't
         // stored). The saved row's id is written back onto the optimistic
         // message as dbId so later facts (signed tx hashes) can target it.
-        if (get().authedAddress && (message.role === 'user' || message.role === 'assistant')) {
+        // Gated on the chat being DB-backed, not just on authedAddress: a
+        // SIWE session settling mid-turn otherwise 404s a local chat's turn.
+        if (get().authedAddress && isDbChatId(chatId) && (message.role === 'user' || message.role === 'assistant')) {
           void fetch(`/api/chats/${chatId}/messages`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -593,7 +596,7 @@ export const useYeetfulStore = create<YeetfulStore>()(
             c.id === chatId ? { ...c, activeServerIds: serverIds } : c
           ),
         }))
-        if (get().authedAddress) {
+        if (get().authedAddress && isDbChatId(chatId)) {
           void fetch(`/api/chats/${chatId}`, {
             method: 'PATCH',
             headers: { 'Content-Type': 'application/json' },
@@ -607,7 +610,7 @@ export const useYeetfulStore = create<YeetfulStore>()(
           chats: s.chats.filter((c) => c.id !== id),
           currentChatId: s.currentChatId === id ? null : s.currentChatId,
         }))
-        if (get().authedAddress) {
+        if (get().authedAddress && isDbChatId(id)) {
           void fetch(`/api/chats/${id}`, { method: 'DELETE' }).catch(() => {})
         }
       },
@@ -644,7 +647,7 @@ export const useYeetfulStore = create<YeetfulStore>()(
       loadChat: async (id) => {
         // Local (guest) chats are already complete in memory.
         const existing = get().chats.find((c) => c.id === id)
-        if (!get().authedAddress) return existing ?? null
+        if (!get().authedAddress || !isDbChatId(id)) return existing ?? null
         try {
           const res = await fetch(`/api/chats/${id}`, { cache: 'no-store' })
           if (!res.ok) {
@@ -674,7 +677,7 @@ export const useYeetfulStore = create<YeetfulStore>()(
       resetChats: () => set({ chats: [], currentChatId: null }),
 
       setChatPublic: async (chatId, isPublic) => {
-        if (!get().authedAddress) return null
+        if (!get().authedAddress || !isDbChatId(chatId)) return null
         try {
           const res = await fetch(`/api/chats/${chatId}`, {
             method: 'PATCH',
