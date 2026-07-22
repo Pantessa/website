@@ -2508,6 +2508,9 @@
     color: var(--fink); text-wrap: balance;
     text-shadow: 0 2px 40px rgba(var(--fhalorgb, 5,7,8),.8);
   }
+  /* links-first claim is a longer sentence than the old two-word headline —
+     size down so both lines hold on one row across the stage's 880px. */
+  .fhero__h1--links { font-size: clamp(44px, 6.6vw, 96px); }
   .fhero__em {
     font-style: italic; letter-spacing: -.012em;
     color: transparent;
