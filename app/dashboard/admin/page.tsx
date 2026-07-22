@@ -17,7 +17,7 @@ import { ArrowUpRight, Check, Download, Mail, ShieldAlert } from 'lucide-react'
 import { useSession } from '@/lib/session'
 import { isAdminAddress, isTestWallet } from '@/lib/admin'
 import { Card, CardTitle, Kpi, SkeletonKpi, SkeletonCard, WalletKindBadge, short, timeAgo } from '@/lib/dashboard-ui'
-import { ActiveWallets, SpendByAgent, SpendOverTime, WalletsOverTime } from '@/components/LazyCharts'
+import { ActiveWallets, LinksDaily, SpendByAgent, SpendOverTime, WalletsOverTime } from '@/components/LazyCharts'
 
 interface Overview {
   excludeOwners: boolean
@@ -80,6 +80,7 @@ interface Cohort {
   linksMinted: number
   linkConversions: number
   linkMovedUsd: number
+  linksDaily: { day: string; minted: number; convs: number; usd: number }[]
   wallets: {
     address: string
     firstSeen: string
@@ -185,6 +186,55 @@ function MilestoneBars({ steps }: { steps: { key: string; label: string; value: 
   )
 }
 
+const PAGE_SIZE = 25
+
+/** Client-side pager over already-fetched rows — Prev/Next + "x–y of n". */
+function usePager<T>(rows: T[], size = PAGE_SIZE) {
+  const [page, setPage] = useState(0)
+  // Snap back when the data shrinks under the current page (window/toggle flips).
+  const pages = Math.max(1, Math.ceil(rows.length / size))
+  const cur = Math.min(page, pages - 1)
+  return {
+    rows: rows.slice(cur * size, (cur + 1) * size),
+    cur,
+    pages,
+    total: rows.length,
+    from: rows.length === 0 ? 0 : cur * size + 1,
+    to: Math.min(rows.length, (cur + 1) * size),
+    prev: () => setPage(Math.max(0, cur - 1)),
+    next: () => setPage(Math.min(pages - 1, cur + 1)),
+  }
+}
+
+function PagerBar({ p }: { p: ReturnType<typeof usePager<unknown>> }) {
+  if (p.total <= PAGE_SIZE) return null
+  return (
+    <div className="flex items-center justify-between gap-3 mt-3">
+      <span className="mono text-[11px] text-[color:var(--muted-2)] tabular-nums">
+        {p.from}–{p.to} of {p.total}
+      </span>
+      <span className="flex items-center gap-2">
+        <button
+          type="button"
+          onClick={p.prev}
+          disabled={p.cur === 0}
+          className="px-3 py-1.5 text-xs mono rounded-lg border border-[var(--line)] text-[color:var(--muted)] hover:text-white disabled:opacity-40 disabled:hover:text-[color:var(--muted)] transition-colors"
+        >
+          ← Prev
+        </button>
+        <button
+          type="button"
+          onClick={p.next}
+          disabled={p.cur >= p.pages - 1}
+          className="px-3 py-1.5 text-xs mono rounded-lg border border-[var(--line)] text-[color:var(--muted)] hover:text-white disabled:opacity-40 disabled:hover:text-[color:var(--muted)] transition-colors"
+        >
+          Next →
+        </button>
+      </span>
+    </div>
+  )
+}
+
 /** A milestone cell: green check + the date it happened, or a quiet dash. */
 function Mile({ at, note }: { at: string | null; note?: string }) {
   if (!at) return <span className="text-[color:var(--muted-2)]">—</span>
@@ -205,6 +255,10 @@ export default function AdminPage() {
   const [external, setExternal] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  // Pagers ride above the early returns (hooks run every render); empty
+  // arrays until the data lands.
+  const cohortPager = usePager(cohort?.wallets ?? [])
+  const rosterPager = usePager(data?.roster ?? [])
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -408,7 +462,7 @@ export default function AdminPage() {
                 </tr>
               </thead>
               <tbody className="text-[color:var(--muted)]">
-                {cohort.wallets.map((w) => (
+                {cohortPager.rows.map((w) => (
                   <tr key={w.address} className="border-t border-[var(--line)]">
                     <td className="py-2 pr-3 mono text-white whitespace-nowrap">
                       {short(w.address)}
@@ -464,8 +518,19 @@ export default function AdminPage() {
                 ))}
               </tbody>
             </table>
+            <PagerBar p={cohortPager} />
           </div>
         )}
+      </Card>
+
+      {/* The link economy per day — minted · conversions · $ moved. */}
+      <Card className="mt-3">
+        <CardTitle>Link economy · daily (30d)</CardTitle>
+        <p className="text-xs text-[color:var(--muted-2)] mt-0.5 mb-3">
+          Links minted and signed conversions (bars, left axis) with guardrail-priced dollars moved
+          through links (line, right axis). Window-independent — always the last 30 days.
+        </p>
+        <LinksDaily daily={cohort?.linksDaily ?? []} />
       </Card>
 
       {/* Embedders — every site that has mounted the embedded chat. */}
@@ -716,7 +781,7 @@ export default function AdminPage() {
               </tr>
             </thead>
             <tbody className="text-[color:var(--muted)]">
-              {data.roster.map((r) => (
+              {rosterPager.rows.map((r) => (
                 <tr key={r.address} className="border-t border-[var(--line)]">
                   <td className="py-2 pr-3 mono text-white">
                     {short(r.address)}
@@ -740,6 +805,7 @@ export default function AdminPage() {
               )}
             </tbody>
           </table>
+          <PagerBar p={rosterPager} />
         </div>
       </Card>
 

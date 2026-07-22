@@ -112,7 +112,7 @@ export async function GET(req: NextRequest) {
       GROUP BY 1 HAVING count(*) FILTER (WHERE l.ok) > 0
       ORDER BY 2 DESC LIMIT 12
     `),
-    // Wallet roster — most-recently-active first, top 50.
+    // Wallet roster — most-recently-active first (client paginates).
     prisma.$queryRaw<RosterRow[]>(Prisma.sql`
       WITH addrs AS (${ADDRS}),
       fs AS (SELECT a, min(created_at) AS first_seen FROM addrs WHERE a <> ALL(${excl}) GROUP BY a),
@@ -134,7 +134,7 @@ export async function GET(req: NextRequest) {
       FROM fs
       LEFT JOIN ch ON ch.a = fs.a LEFT JOIN ky ON ky.a = fs.a
       LEFT JOIN pd ON pd.a = fs.a LEFT JOIN om ON om.a = fs.a
-      ORDER BY last_active DESC LIMIT 50
+      ORDER BY last_active DESC LIMIT 400
     `),
     prisma.$queryRaw<{ orgs: number; members: number; org_settled: number }[]>(Prisma.sql`
       SELECT (SELECT count(*)::int FROM organizations) AS orgs,

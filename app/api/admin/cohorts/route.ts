@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client'
 import prisma from '@/lib/db'
 import { getAuthAddress } from '@/lib/api-key'
 import { isAdminAddress, isTestWallet, TEST_WALLETS } from '@/lib/admin'
+import { linkDailySeries } from '@/lib/links-board'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -178,7 +179,7 @@ export async function GET(req: NextRequest) {
   const excl = external ? Array.from(TEST_WALLETS) : ['']
 
   const base = milestoneCtes(days, excl)
-  const [funnelRows, walletRows] = await Promise.all([
+  const [funnelRows, walletRows, linksDaily] = await Promise.all([
     prisma.$queryRaw<FunnelRow[]>(Prisma.sql`
       ${base}
       SELECT count(*)::int AS wallets,
@@ -220,6 +221,8 @@ export async function GET(req: NextRequest) {
       ORDER BY r.first_seen DESC
       LIMIT ${ROW_CAP}
     `),
+    // The link economy per day (30d, window-independent — the pulse chart).
+    linkDailySeries(30),
   ])
 
   const f = funnelRows[0]
@@ -245,6 +248,7 @@ export async function GET(req: NextRequest) {
     linksMinted: f.links_minted,
     linkConversions: f.link_convs,
     linkMovedUsd: cents(f.link_moved),
+    linksDaily,
     wallets: walletRows.map((r) => ({
       address: r.address,
       firstSeen: r.first_seen.toISOString(),
