@@ -10,7 +10,6 @@ import { LogIn, Menu, X } from 'lucide-react'
 import ConnectWallet from '@/components/ConnectWallet'
 import AuthButton from '@/components/AuthButton'
 import CreateAccountButton from '@/components/CreateAccountButton'
-import NavResearch, { RESEARCH_ITEMS } from '@/components/NavResearch'
 import NavAccount from '@/components/NavAccount'
 import { cdpEnabled } from '@/lib/cdp-embedded'
 import { YeetfulMark } from '@/components/Logo'
@@ -128,17 +127,20 @@ export default function Navigation() {
     </Link>
   ) : null
 
-  // Desktop primary tabs — the three "engine, examined" surfaces (Benchmarks,
-  // Tools, Activity) collapse into the Analytics mega-menu.
+  // Desktop primary tabs — links-first: the leaderboard and the money story
+  // are top-level; chat is the LINK BUILDER; deep-dive surfaces (Benchmarks,
+  // Tools, MCP Directory) live in the footer, out of the main story.
   const desktopTabs = (
     <>
-      <Link href="/" className={`nav__tab ${pathname === '/' ? 'is-on' : ''}`}>
-        Router
+      <Link href="/links" className={`nav__tab ${pathname.startsWith('/links') ? 'is-on' : ''}`}>
+        Links
       </Link>
       <Link href="/chat" className={`nav__tab ${pathname === '/chat' ? 'is-on' : ''}`}>
-        App
+        Builder
       </Link>
-      <NavResearch />
+      <Link href="/activity" className={`nav__tab ${pathname.startsWith('/activity') ? 'is-on' : ''}`}>
+        Activity
+      </Link>
       <Link href="/pricing" className={`nav__tab ${pathname.startsWith('/pricing') ? 'is-on' : ''}`}>
         Pricing
       </Link>
@@ -151,26 +153,18 @@ export default function Navigation() {
     </>
   )
 
-  // Drawer tabs — same destinations, but Analytics expands into a labeled group
-  // so every surface stays one tap away on mobile.
+  // Drawer tabs — same destinations, one tap each.
   const drawerTabs = (
     <>
-      <Link href="/" className={`nav__tab ${pathname === '/' ? 'is-on' : ''}`}>
-        Router
+      <Link href="/links" className={`nav__tab ${pathname.startsWith('/links') ? 'is-on' : ''}`}>
+        Links
       </Link>
       <Link href="/chat" className={`nav__tab ${pathname === '/chat' ? 'is-on' : ''}`}>
-        App
+        Builder
       </Link>
-      <span className="drawer__group mono">Analytics</span>
-      {RESEARCH_ITEMS.map(({ href, label }) => (
-        <Link
-          key={href}
-          href={href}
-          className={`nav__tab drawer__sub ${pathname.startsWith(href) ? 'is-on' : ''}`}
-        >
-          {label}
-        </Link>
-      ))}
+      <Link href="/activity" className={`nav__tab ${pathname.startsWith('/activity') ? 'is-on' : ''}`}>
+        Activity
+      </Link>
       <span className="drawer__group mono">More</span>
       <Link href="/pricing" className={`nav__tab drawer__sub ${pathname.startsWith('/pricing') ? 'is-on' : ''}`}>
         Pricing
@@ -180,6 +174,12 @@ export default function Navigation() {
       </Link>
       <Link href="/blog" className={`nav__tab drawer__sub ${pathname.startsWith('/blog') ? 'is-on' : ''}`}>
         Blog
+      </Link>
+      <Link href="/benchmarks" className={`nav__tab drawer__sub ${pathname.startsWith('/benchmarks') ? 'is-on' : ''}`}>
+        Benchmarks
+      </Link>
+      <Link href="/tools" className={`nav__tab drawer__sub ${pathname.startsWith('/tools') ? 'is-on' : ''}`}>
+        Tools
       </Link>
     </>
   )

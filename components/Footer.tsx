@@ -11,29 +11,36 @@ const GROUPS: { title: string; links: FooterLink[] }[] = [
       { label: 'X / Twitter', href: 'https://x.com/yeetful_ai', ext: true },
       { label: 'Telegram', href: 'https://t.me/yeetful', ext: true },
       { label: 'GitHub', href: 'https://github.com/Yeetful', ext: true },
-      { label: 'Status', href: '/incidents' },
     ],
   },
   {
     title: 'Company',
     links: [
-      { label: 'Pricing', href: '/pricing' },
-      { label: 'MCP Directory', href: '/servers' },
-      { label: 'Live Activity', href: '/activity' },
       { label: 'Intent Links', href: '/links' },
+      { label: 'Site Buttons', href: '/links/embed' },
+      { label: 'Live Activity', href: '/activity' },
+      { label: 'Pricing', href: '/pricing' },
       { label: 'Blog', href: '/blog' },
       { label: 'Terms', href: '/docs/terms' },
       { label: 'Privacy', href: '/docs/privacy' },
     ],
   },
   {
+    // The deep-dive surfaces — out of the main nav, still one click away.
+    title: 'Under the hood',
+    links: [
+      { label: 'MCP Directory', href: '/servers' },
+      { label: 'Benchmarks', href: '/benchmarks' },
+      { label: 'Router Tools', href: '/tools' },
+      { label: 'Status', href: '/incidents' },
+    ],
+  },
+  {
     title: 'Devs / Claude Wizards',
     links: [
       { label: 'Docs', href: '/docs' },
-      { label: 'Quickstart', href: '/docs/quickstart' },
-      { label: 'Install with Claude', href: '/docs/claude-code' },
-      { label: 'API Reference', href: '/docs/api' },
       { label: 'Embed Anywhere', href: '/docs/embed' },
+      { label: 'API Reference', href: '/docs/api' },
       { label: 'SDK on npm', href: 'https://www.npmjs.com/package/yeetful', ext: true },
     ],
   },
@@ -86,8 +93,9 @@ export default function Footer() {
               <span className="logo__word">yeetful</span>
             </Link>
             <p className="footer__tag">
-              Every dapp, one chat. Say what should happen — Yeetful builds guarded
-              transactions only your wallet can sign, and keeps working between your turns.
+              You have an intent — we do the rest. A link carries the ask; Yeetful builds
+              guarded transactions only your wallet can sign, and keeps working between
+              your turns.
             </p>
             <div className="footer__socials">
               {SOCIALS.map((s) => (
