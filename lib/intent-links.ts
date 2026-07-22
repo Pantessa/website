@@ -97,6 +97,18 @@ export function validateRedirect(raw: string): { ok: true; url: string; host: st
 export const EVENT_KINDS = ['open', 'connect', 'built', 'signed'] as const
 export type IntentEventKind = (typeof EVENT_KINDS)[number]
 
+/** Active-link capacity per plan — the third capacity axis alongside
+ *  standing intents (PRICING.md). Soft: mints past the cap get a friendly
+ *  upgrade pointer; existing links keep running forever. Admin wallets
+ *  (OWNER_WALLETS ∪ ADMIN_WALLETS) are exempt — the cap gates external
+ *  creators, not the team minting demo/marketing links. */
+export const LINK_CAPS: Record<string, number> = { free: 3, growth: 25, scale: Infinity }
+
+export function activeLinkCapFor(planId: string, isAdmin: boolean): number {
+  if (isAdmin) return Infinity
+  return LINK_CAPS[planId] ?? 3
+}
+
 // ── Creator handles (/l/<handle> storefronts) ──────────────────────────────
 // Opt-in public page names. Opt-in is the privacy contract: a wallet is
 // never the key to a public page — only a claimed handle is.

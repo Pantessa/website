@@ -76,9 +76,12 @@ export default async function LinksLeaderboardPage() {
             signed only by their own wallet, receipted. Creators earn half of Yeetful&apos;s 0.20%
             fee on the conversions their link produces.
           </p>
-          <div className="flex items-center gap-3 mb-12">
+          <div className="flex items-center gap-3 mb-12 flex-wrap">
             <Link href="/dashboard/links" className="btn btn--solid text-[13px]">
               Mint yours
+            </Link>
+            <Link href="/links/embed" className="btn btn--ghost text-[13px]">
+              Put a button on your site
             </Link>
             <Link href="/docs" className="btn btn--ghost text-[13px]">
               How it works
