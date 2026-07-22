@@ -16,6 +16,7 @@ import Link from 'next/link'
 import { ArrowRight } from 'lucide-react'
 import { getProtocolMark } from '@/components/protocol-marks'
 import { useSiteTheme } from '@/components/chart-theme'
+import SignInFlowLink from '@/components/SignInFlowLink'
 
 export interface LinkHeroStats {
   links: string
@@ -468,9 +469,9 @@ export default function LinksHeroView({ stats }: { stats: LinkHeroStats | null }
           <Link className="btn btn--solid" href="/i/buy-aapl">
             Try a live link
           </Link>
-          <Link className="btn btn--ghost" href="/dashboard/links">
+          <SignInFlowLink className="btn btn--ghost" href="/dashboard/links">
             Mint yours
-          </Link>
+          </SignInFlowLink>
           <Link
             href="/links"
             className="inline-flex items-center gap-1.5 text-[13px] text-[color:var(--muted)] hover:text-[color:var(--fg)] transition-colors"
