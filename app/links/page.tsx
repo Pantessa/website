@@ -3,6 +3,7 @@ import Link from 'next/link'
 import Footer from '@/components/Footer'
 import { YeetfulMark } from '@/components/Logo'
 import IntentLinksBoard from '@/components/IntentLinksBoard'
+import SignInFlowLink from '@/components/SignInFlowLink'
 import { topLinks, liveHouseLinks } from '@/lib/links-board'
 
 // /links — the public leaderboard: intent links ranked by server-truth
@@ -47,9 +48,9 @@ export default async function LinksLeaderboardPage() {
             fee on the conversions their link produces.
           </p>
           <div className="flex items-center gap-3 mb-12 flex-wrap">
-            <Link href="/dashboard/links" className="btn btn--solid text-[13px]">
+            <SignInFlowLink href="/dashboard/links" className="btn btn--solid text-[13px]">
               Mint yours
-            </Link>
+            </SignInFlowLink>
             <Link href="/links/embed" className="btn btn--ghost text-[13px]">
               Put a button on your site
             </Link>
