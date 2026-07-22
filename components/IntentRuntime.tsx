@@ -11,11 +11,15 @@
 // from the MINT-TIME redirect stored on the link row — never from the URL.
 
 import { useEffect, useRef, useState } from 'react'
+import Link from 'next/link'
 import { useAccount } from 'wagmi'
 import { useConnectModal } from '@rainbow-me/rainbowkit'
-import { ArrowRight, ExternalLink, Fingerprint, Loader2, PenLine, ReceiptText, ShieldCheck, X, Zap } from 'lucide-react'
+import { ArrowRight, ExternalLink, Fingerprint, Link2, Loader2, MessageSquare, PenLine, ReceiptText, ShieldCheck, X, Zap } from 'lucide-react'
 import ChatInterface from '@/components/ChatInterface'
 import CreateAccountButton from '@/components/CreateAccountButton'
+import NavAccount from '@/components/NavAccount'
+import ShareButton from '@/components/ShareButton'
+import SignInFlowLink from '@/components/SignInFlowLink'
 import { YeetfulMark } from '@/components/Logo'
 import { useSession } from '@/lib/session'
 import { cdpEnabled } from '@/lib/cdp-embedded'
@@ -76,6 +80,10 @@ export default function IntentRuntime({
   const [started, setStarted] = useState(false)
   const [signed, setSigned] = useState(false)
   const [blocked, setBlocked] = useState(false)
+  // A turn settled with nothing to sign (no funds, plain answer, refusal) —
+  // the visitor must never dead-end here: surface the onward paths. Cleared
+  // the moment any turn actually builds.
+  const [flowNudge, setFlowNudge] = useState(false)
   const [sigDismissed, setSigDismissed] = useState(false)
   const [prompt, setPrompt] = useState<{ text: string; send: boolean; at: number } | null>(null)
   const transferShaped = isTransferShaped(ask)
@@ -168,6 +176,12 @@ export default function IntentRuntime({
       postEvent('signed', { valueUsd })
       setSigned(true)
     }
+    // Keep-the-flow-going bar: any settled turn that produced nothing to sign
+    // (answered / refused / error — the no-funds wall) raises it; a build
+    // clears it. 'clarify' is excluded — its chips ARE the continuation.
+    const o = data.outcome
+    if (o === 'tx-built' || o === 'signed') setFlowNudge(false)
+    else if (typeof o === 'string' && o !== 'clarify') setFlowNudge(true)
   }
 
   const redirectHost = (() => {
@@ -178,6 +192,14 @@ export default function IntentRuntime({
     }
   })()
   const returnHref = redirectUrl ? `${redirectUrl}${redirectUrl.includes('?') ? '&' : '?'}yeetful=signed&ilink=${slug}` : null
+
+  // Onward paths — the visitor never dead-ends on a link. "Make your own
+  // link" opens the mint board prefilled with THIS ask + set (remixing is
+  // the loop); SignInFlowLink gives guests the unified sign-in door with
+  // redirectTo, per the sign-in UX contract.
+  const mintHref = `/dashboard/links?ask=${encodeURIComponent(ask.slice(0, 400))}${mcps ? `&mcps=${encodeURIComponent(mcps)}` : ''}`
+  const chipClass =
+    'flex items-center gap-1.5 px-2.5 min-h-[32px] rounded-lg border bg-[var(--surf-1)] border-[var(--line)] text-[color:var(--muted)] hover:text-white hover:border-[var(--line-2)] transition-colors mono text-[11px] font-medium whitespace-nowrap'
 
   if (!started) {
     const ctaLabel = (
@@ -349,7 +371,14 @@ export default function IntentRuntime({
         <div className="max-w-5xl w-full mx-auto px-4 sm:px-6 py-3">
           <div className="flex items-center justify-between gap-3">
             <div className="flex items-center gap-3 min-w-0">
-              <YeetfulMark size={18} />
+              <Link
+                href="/"
+                title="Yeetful home"
+                aria-label="Yeetful home"
+                className="flex-shrink-0 grid place-items-center w-8 h-8 rounded-lg text-white hover:bg-[var(--surf-1)] transition-colors"
+              >
+                <YeetfulMark size={18} />
+              </Link>
               <div className="min-w-0">
                 <p className="mono text-[10px] uppercase tracking-widest text-[color:var(--muted-2)] leading-none">
                   Intent link{agent ? ` · from ${agent}` : ''}
@@ -362,14 +391,28 @@ export default function IntentRuntime({
                 </p>
               </div>
             </div>
-            {signed && returnHref && redirectHost && (
-              <a
-                href={returnHref}
-                className="btn btn--solid inline-flex items-center gap-1.5 text-[13px] flex-shrink-0"
-              >
-                Return to {redirectHost} <ArrowRight className="w-3.5 h-3.5" />
-              </a>
-            )}
+            <div className="flex items-center gap-1.5 flex-shrink-0">
+              {signed && returnHref && redirectHost && (
+                <a
+                  href={returnHref}
+                  className="btn btn--solid inline-flex items-center gap-1.5 text-[13px] flex-shrink-0"
+                >
+                  Return to {redirectHost} <ArrowRight className="w-3.5 h-3.5" />
+                </a>
+              )}
+              {/* Share this run — the owner-gated chat share (renders once
+                  the visitor's link chat persists). */}
+              <ShareButton />
+              <SignInFlowLink href={mintHref} className={`${chipClass} max-sm:hidden`}>
+                <Link2 className="w-4 h-4" /> MAKE A LINK
+              </SignInFlowLink>
+              <Link href="/chat" className={`${chipClass} max-sm:hidden`}>
+                <MessageSquare className="w-4 h-4" /> OPEN THE APP
+              </Link>
+              {/* Dashboard / wallet / sign-out live in the account pill — a
+                  bare "Dashboard" button would dead-end signed-out visitors. */}
+              <NavAccount />
+            </div>
           </div>
           {transferShaped && (
             <p className="mt-2 text-[12px] text-amber-400">
@@ -381,6 +424,25 @@ export default function IntentRuntime({
       <div className="relative flex-1 max-w-5xl w-full mx-auto px-4 sm:px-6 min-h-0">
         <ChatInterface simple injectedPrompt={prompt} onEmbedEvent={onTurnEvent} intentLinkSlug={slug} />
       </div>
+      {/* Keep-the-flow-going bar: a turn settled with nothing to sign (the
+          no-funds wall, a refusal, a plain answer) — never a dead end. */}
+      {flowNudge && !signed && (
+        <div className="relative flex-shrink-0 border-t border-[var(--line)] bg-[var(--bg)]/95 backdrop-blur px-4 py-2.5">
+          <div className="max-w-5xl mx-auto flex flex-wrap items-center justify-between gap-2">
+            <span className="text-[12px] text-[color:var(--muted)]">
+              Don&apos;t stop here — the full app scans any wallet, funds shortfalls, and builds the path.
+            </span>
+            <div className="flex items-center gap-1.5">
+              <Link href="/chat" className={chipClass}>
+                <MessageSquare className="w-4 h-4" /> OPEN THE APP
+              </Link>
+              <SignInFlowLink href={mintHref} className={chipClass}>
+                <Link2 className="w-4 h-4" /> MAKE YOUR OWN LINK
+              </SignInFlowLink>
+            </div>
+          </div>
+        </div>
+      )}
       {signed && returnHref && redirectHost && (
         <div className="sticky bottom-0 border-t border-[var(--line)] bg-[var(--bg)]/95 backdrop-blur px-4 py-3">
           <div className="max-w-3xl mx-auto flex items-center justify-between gap-3">

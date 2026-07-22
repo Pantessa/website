@@ -240,11 +240,12 @@ interface ChatInterfaceProps {
    *  fee-split earnings accrue server-side (lib/fees CREATOR_FEE_SPLIT). */
   intentLinkSlug?: string
   /** Simple mode (the /i/<slug> intent-link runtime): one ask, one focused
-   *  surface. Hides the workspace toolbar, splash cards, and the mint-a-link
-   *  affordances, and never rewrites the URL to /chat/<id> — a refresh must
-   *  land back on the link page, not the full chat workspace. Unlike
-   *  `embedded`, the first-party /api/chat body (SIWE session, intent-link
-   *  attribution) is unchanged. */
+   *  surface. Hides the workspace toolbar and splash cards, and never
+   *  rewrites the URL to /chat/<id> — a refresh must land back on the link
+   *  page, not the full chat workspace. The viral touchpoints (per-bubble
+   *  mint-a-link, receipt "mint as link") stay ON — IntentRuntime's header
+   *  carries share + onward paths. Unlike `embedded`, the first-party
+   *  /api/chat body (SIWE session, intent-link attribution) is unchanged. */
   simple?: boolean
 }
 
@@ -1378,7 +1379,10 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
                     )}
                   >
                     <CopyTurn text={msg.content} dark={msg.role === 'user'} />
-                    {msg.role === 'user' && !embedded && !simple && (
+                    {/* The mint-a-link affordance stays in simple mode too —
+                        a visitor remixing an ask into their OWN link is the
+                        viral loop, not workspace chrome. */}
+                    {msg.role === 'user' && !embedded && (
                       <MintLinkTurn ask={msg.content} mcpsCsv={activeServers.map((s) => s.slug).join(',')} />
                     )}
                     {msg.role === 'assistant' ? (
@@ -1559,7 +1563,6 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
                               link (same /dashboard/links prefill handoff as the
                               user-bubble mint icon). */}
                           {!embedded &&
-                            !simple &&
                             (() => {
                               let ask = ''
                               for (let j = i - 1; j >= 0; j--) {
