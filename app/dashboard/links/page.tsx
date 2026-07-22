@@ -9,6 +9,21 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Check, Copy, Link2, Plus, Sparkles, SlidersHorizontal } from 'lucide-react'
 import { MINTABLE_MCPS, composeMcps } from '@/lib/intent-links'
+import { getProtocolMark } from '@/components/protocol-marks'
+
+/** The vendored brand glyph for a mintable MCP, sized for a picker chip.
+ *  Marks render in `currentColor`, so they inherit whatever the chip's text
+ *  color is — same hue selected or not, by construction. Landscape marks
+ *  (CoW, Aave) center inside the fixed box so labels stay aligned. */
+function McpMark({ slug, label, size = 14 }: { slug: string; label: string; size?: number }) {
+  const Mark = getProtocolMark(slug, label)
+  if (!Mark) return null
+  return (
+    <span className="inline-flex items-center justify-center flex-shrink-0" style={{ width: size, height: size }}>
+      <Mark size={size} />
+    </span>
+  )
+}
 
 interface LinkRow {
   slug: string
@@ -247,11 +262,15 @@ export default function DashboardLinksPage() {
             {ask.trim().length >= 8 ? (
               <>
                 From this ask, the link will carry:{' '}
-                {autoPreview.map((slug) => (
-                  <span key={slug} className="mono text-[11px] text-[color:var(--accent)] mr-1.5">
-                    {MINTABLE_MCPS.find((m) => m.slug === slug)?.label ?? slug}
-                  </span>
-                ))}
+                {autoPreview.map((slug) => {
+                  const label = MINTABLE_MCPS.find((m) => m.slug === slug)?.label ?? slug
+                  return (
+                    <span key={slug} className="inline-flex items-center gap-1 mono text-[11px] text-[color:var(--accent)] mr-2 align-middle">
+                      <McpMark slug={slug} label={label} size={12} />
+                      {label}
+                    </span>
+                  )
+                })}
               </>
             ) : (
               'Type the ask and the right MCPs attach themselves — stocks pull Robinhood Chain, perps pull Hyperliquid, bridging always rides along.'
@@ -259,17 +278,24 @@ export default function DashboardLinksPage() {
           </p>
         ) : (
           <div className="mt-2 flex flex-wrap gap-1.5">
+            {/* Chip content keeps ONE color whether picked or not — the mark
+                renders in currentColor so logo + label always match; selection
+                reads from the accent border + tint, never a text-color flip.
+                (Tint via color-mix: Tailwind's `/10` on a CSS-var color
+                silently paints transparent.) */}
             {MINTABLE_MCPS.map((m) => (
               <button
                 key={m.slug}
                 type="button"
                 onClick={() => togglePick(m.slug)}
-                className={`px-2.5 py-1 rounded-full border text-[12px] transition-colors ${
+                aria-pressed={pickedMcps.includes(m.slug)}
+                className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[12px] text-[color:var(--fg)] transition-colors ${
                   pickedMcps.includes(m.slug)
-                    ? 'border-[var(--accent)] text-[color:var(--accent)] bg-[color:var(--accent)]/10'
-                    : 'border-[var(--line)] text-[color:var(--muted)] hover:text-white hover:border-[var(--line-2)]'
+                    ? 'border-[var(--accent)] bg-[color-mix(in_srgb,var(--accent)_12%,transparent)]'
+                    : 'border-[var(--line)] hover:border-[var(--line-2)] hover:bg-[color-mix(in_srgb,var(--fg)_6%,transparent)]'
                 }`}
               >
+                <McpMark slug={m.slug} label={m.label} />
                 {m.label}
               </button>
             ))}
