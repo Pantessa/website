@@ -4,19 +4,22 @@
 // the plan page when signed in). Paid tiers: POST /api/billing/checkout →
 // Stripe. A 503 (no STRIPE_SECRET_KEY yet) renders inline instead of dying.
 
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useAccount } from 'wagmi'
 import { useSession } from '@/lib/session'
+import CreateAccountButton from '@/components/CreateAccountButton'
+import { cdpEnabled } from '@/lib/cdp-embedded'
 import { PLANS, type PlanId } from '@/lib/plans'
 
 export default function PricingPlans({ currentPlan }: { currentPlan?: PlanId }) {
   const router = useRouter()
   const { isConnected } = useAccount()
-  const { connectAndSignIn } = useSession()
+  const { address: sessionAddress, connectAndSignIn } = useSession()
   const [busy, setBusy] = useState<PlanId | null>(null)
   const [note, setNote] = useState<string | null>(null)
+  const signedIn = !!sessionAddress
 
   const checkout = async (plan: PlanId) => {
     setBusy(plan)
@@ -29,7 +32,9 @@ export default function PricingPlans({ currentPlan }: { currentPlan?: PlanId }) 
       })
       const data = (await res.json().catch(() => ({}))) as { url?: string; error?: string }
       if (res.status === 401) {
-        connectAndSignIn('/pricing')
+        // No account yet — send them through the sign-in modal (wallet / email /
+        // Google), returning here to resume this exact plan's checkout.
+        connectAndSignIn(`/pricing?checkout=${plan}`)
         return
       }
       if (!res.ok || !data.url) {
@@ -41,6 +46,23 @@ export default function PricingPlans({ currentPlan }: { currentPlan?: PlanId }) 
       setBusy(null)
     }
   }
+
+  // Resume checkout after the sign-in modal returns. The intended plan rides in
+  // the URL (?checkout=<plan>) so it survives the connect → sign → redirect
+  // round-trip (including the full-page OAuth bounce). Once signed in, open
+  // Stripe for that plan and strip the param so a refresh can't re-fire it.
+  const resumedRef = useRef(false)
+  useEffect(() => {
+    if (resumedRef.current || !signedIn) return
+    const wanted = new URLSearchParams(window.location.search).get('checkout')
+    if (!wanted) return
+    const plan = PLANS.find((p) => p.id === wanted && p.priceUsd > 0)
+    if (!plan) return
+    resumedRef.current = true
+    router.replace('/pricing')
+    void checkout(plan.id)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [signedIn])
 
   return (
     <>
@@ -75,6 +97,15 @@ export default function PricingPlans({ currentPlan }: { currentPlan?: PlanId }) 
                 >
                   Start free
                 </button>
+              ) : !signedIn && cdpEnabled ? (
+                // Not signed in yet: open the full connect-wallet modal (wallet /
+                // email / Google). On success it returns to /pricing?checkout=…,
+                // which resumes straight into Stripe (the effect above).
+                <CreateAccountButton
+                  className={`btn ${p.popular ? 'btn--solid' : 'btn--ghost'} pricing__cta`}
+                  label={`Upgrade to ${p.name}`}
+                  redirectTo={`/pricing?checkout=${p.id}`}
+                />
               ) : (
                 <button
                   className={`btn ${p.popular ? 'btn--solid' : 'btn--ghost'} pricing__cta`}

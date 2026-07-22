@@ -40,6 +40,14 @@ export default function NavAccount() {
   const authed = !!sessionAddress
   const closeNow = useCallback(() => setOpen(false), [])
 
+  // On the chat surface this pill IS the chat account control, so signing in
+  // from it must keep the user on chat (query included), not send them to the
+  // dashboard. Everywhere else the dashboard is the right post-sign-in landing.
+  const signInRedirect =
+    pathname.startsWith('/chat') && typeof window !== 'undefined'
+      ? window.location.pathname + window.location.search
+      : '/dashboard'
+
   useEffect(() => closeNow(), [pathname, closeNow])
   useEffect(() => {
     if (!open) return
@@ -116,7 +124,7 @@ export default function NavAccount() {
                   disabled={signingIn}
                   onClick={() => {
                     closeNow()
-                    connectAndSignIn('/dashboard')
+                    connectAndSignIn(signInRedirect)
                   }}
                 >
                   <LogIn width={15} height={15} strokeWidth={2.25} />
