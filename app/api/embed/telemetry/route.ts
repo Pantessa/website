@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import prisma from '@/lib/db'
 import { resolveEmbedKey, sightingOrigin } from '@/lib/embed-key'
 import { isBuildPath } from '@/lib/build-path'
+import { INTENT_SLUG_RE } from '@/lib/intent-links'
 import type { OriginKind } from '@/lib/value-origin'
 
 export const runtime = 'nodejs'
@@ -107,7 +108,7 @@ export async function POST(req: NextRequest) {
         // /i/<slug> attribution — slug-shaped only; creator fee-split
         // earnings compute read-time from fee-bearing signed rows.
         intentLinkSlug:
-          typeof body.intentLinkSlug === 'string' && /^[a-z0-9]{4,16}$/.test(body.intentLinkSlug)
+          typeof body.intentLinkSlug === 'string' && INTENT_SLUG_RE.test(body.intentLinkSlug)
             ? body.intentLinkSlug
             : undefined,
       },

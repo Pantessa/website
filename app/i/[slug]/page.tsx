@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import { notFound } from 'next/navigation'
 import prisma from '@/lib/db'
+import { INTENT_SLUG_RE } from '@/lib/intent-links'
 import IntentRuntime from '@/components/IntentRuntime'
 
 // /i/<slug> — an intent link's runtime. The link row carries the ASK (a
@@ -15,7 +16,7 @@ export const dynamic = 'force-dynamic'
 type Params = { params: Promise<{ slug: string }> }
 
 async function getLink(slug: string) {
-  if (!/^[a-z0-9]{4,16}$/.test(slug)) return null
+  if (!INTENT_SLUG_RE.test(slug)) return null
   try {
     const l = await prisma.intentLink.findUnique({ where: { id: slug } })
     return l && !l.revoked ? l : null

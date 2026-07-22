@@ -35,6 +35,7 @@ import { pureChecks, policyCheck, orderValueUsd, buildReport } from '../lib/cow-
 import { policyCheckInflow, recipientCheck, validityCheck, MAX_VALID_SEC } from '../lib/tx-guardrails'
 import { guardPlannerArtifact, PERMIT2_ADDRESS } from '../lib/planner-artifact-guard'
 import { parseSwapIntent } from '../lib/swap-intent'
+import { activeLinkCapFor } from '../lib/intent-links'
 import { usdToTokenAmount } from '../lib/usd-probe'
 import { parseRobinhoodBridge, guardRobinhoodBridge, RH_L1_INBOX, ARB_SYS } from '../lib/robinhood-bridge'
 import { parseNftAsk, guardNftTransfer, ERC721_ABI as NFT_ERC721_ABI, ERC1155_ABI as NFT_ERC1155_ABI } from '../lib/nft-layer'
@@ -1407,6 +1408,17 @@ async function main() {
     const fourth = await fetch(`${BASE}/api/intent-links`, { method: 'POST', headers: M, body: JSON.stringify({ ask: 'DCA $25 into ETH weekly' }) })
     check('intent links: free plan carries 3 active links; the 4th mint → 402 + upgrade pointer', third.status === 200 && fourth.status === 402)
 
+    // Admin wallets mint uncapped on EVERY plan; external creators keep the
+    // plan ladder (the pure gate the mint route routes every mint through).
+    check(
+      'intent links: admin wallets are cap-exempt on every plan',
+      activeLinkCapFor('free', true) === Infinity && activeLinkCapFor('growth', true) === Infinity && activeLinkCapFor('unknown-plan', true) === Infinity,
+    )
+    check(
+      'intent links: non-admin caps hold — free 3, growth 25, scale ∞, unknown falls back to 3',
+      activeLinkCapFor('free', false) === 3 && activeLinkCapFor('growth', false) === 25 && activeLinkCapFor('scale', false) === Infinity && activeLinkCapFor('unknown-plan', false) === 3,
+    )
+
     // Revoke frees capacity — the cap counts ACTIVE links only.
     const thirdSlug = ((await third.json()) as { slug?: string }).slug
     const revoke = await fetch(`${BASE}/api/intent-links/${thirdSlug}`, { method: 'DELETE', headers: { cookie: mallorySession } })
@@ -1420,6 +1432,90 @@ async function main() {
     const boardHtml = await board.text()
     check('intent links: /links leaderboard renders with the mint CTA', board.status === 200 && /Mint yours/.test(boardHtml) && /dollars moved/i.test(boardHtml))
     check('intent links: leaderboard never leaks a wallet address', !/0x[0-9a-fA-F]{40}/.test(boardHtml))
+    check('intent links: leaderboard links to the host button generator', boardHtml.includes('/links/embed'))
+
+    // The host button generator: a public page whose form mints through the
+    // same gated door; the emitted snippet is a plain <a> — the button IS an
+    // intent link, so consent + redirect invariants ride along untouched.
+    const genPage = await fetch(`${BASE}/links/embed`)
+    const genHtml = await genPage.text()
+    check(
+      'intent links: /links/embed generator renders (form + return-URL field)',
+      genPage.status === 200 && genHtml.includes('A button on your site that moves money.') && genHtml.includes('Return URL after signing'),
+    )
+    // Free one cap slot first — the cap tests above left this wallet at 3/3.
+    await fetch(`${BASE}/api/intent-links/${slug}`, { method: 'DELETE', headers: { cookie: mallorySession } })
+    const redirectMint = await fetch(`${BASE}/api/intent-links`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie: mallorySession },
+      body: JSON.stringify({ ask: 'Buy $10 of AAPL on ours', redirectUrl: 'https://example-host.com/thanks' }),
+    })
+    const redirected = (await redirectMint.json()) as { slug?: string; redirectUrl?: string | null }
+    check(
+      'intent links: mint with a valid https redirect stores + echoes it',
+      redirectMint.status === 200 && redirected.redirectUrl === 'https://example-host.com/thanks',
+    )
+
+    // ── Creator storefronts (/l/<handle>) — opt-in public pages ──────────
+    // The privacy contract: a wallet is never the key to a public page;
+    // only a claimed handle is, and releasing it kills the page.
+    const hNoAuth = await fetch(`${BASE}/api/intent-links/handle`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ handle: 'harness-store' }),
+    })
+    check('storefront: claim without session → 401', hNoAuth.status === 401)
+    const hBad = await fetch(`${BASE}/api/intent-links/handle`, { method: 'POST', headers: M, body: JSON.stringify({ handle: 'dashboard' }) })
+    const hBad2 = await fetch(`${BASE}/api/intent-links/handle`, { method: 'POST', headers: M, body: JSON.stringify({ handle: 'x' }) })
+    check('storefront: reserved + malformed handles refused (400)', hBad.status === 400 && hBad2.status === 400)
+    const hClaim = await fetch(`${BASE}/api/intent-links/handle`, { method: 'POST', headers: M, body: JSON.stringify({ handle: 'Harness-Store' }) })
+    check('storefront: claim normalizes + returns the page url', hClaim.status === 200 && ((await hClaim.json()) as { url?: string }).url === '/l/harness-store')
+    const hSteal = await fetch(`${BASE}/api/intent-links/handle`, { method: 'POST', headers: CJ, body: JSON.stringify({ handle: 'harness-store' }) })
+    check('storefront: a taken handle refuses (409)', hSteal.status === 409)
+    const storeHtml = flat(await (await fetch(`${BASE}/l/harness-store`)).text())
+    check(
+      "storefront: /l page lists the creator's active links",
+      storeHtml.includes('@harness-store') && storeHtml.includes('DCA $25 into ETH weekly'),
+    )
+    check('storefront: /l never prints the wallet', !storeHtml.toLowerCase().includes(mallory.address.toLowerCase()))
+    const ghostStore = await fetch(`${BASE}/l/never-claimed-xyz`)
+    check('storefront: unknown handle → 404', ghostStore.status === 404)
+    const hRename = await fetch(`${BASE}/api/intent-links/handle`, { method: 'POST', headers: M, body: JSON.stringify({ handle: 'harness-store-2' }) })
+    const oldGone = await fetch(`${BASE}/l/harness-store`)
+    check('storefront: rename frees the old handle (old page 404)', hRename.status === 200 && oldGone.status === 404)
+    const hDrop = await fetch(`${BASE}/api/intent-links/handle`, { method: 'DELETE', headers: { cookie: mallorySession } })
+    const droppedGone = await fetch(`${BASE}/l/harness-store-2`)
+    check('storefront: release drops the page', hDrop.status === 200 && droppedGone.status === 404)
+
+    // The agent door: a Bearer yf_ key mints as its OWNER (SIWE-less) — the
+    // hands MCP's mint_intent_link (free-mcps#22) rides exactly this seam.
+    // The creator on record is the key owner (the agent's operator), so
+    // caps/funnels/earnings land on a human's dashboard.
+    const bearerMint = await fetch(`${BASE}/api/intent-links`, {
+      method: 'POST',
+      headers: BJ,
+      body: JSON.stringify({ ask: 'Buy $5 of AAPL, planned by my agent' }),
+    })
+    const bearerLink = (await bearerMint.json()) as { slug?: string }
+    check('intent links: a Bearer yf_ key mints as its owner (the agent door)', bearerMint.status === 200 && !!bearerLink.slug)
+    const bearerList = await fetch(`${BASE}/api/intent-links`, { headers: B })
+    const bearerRows = ((await bearerList.json()) as { links?: Array<{ slug: string }> }).links ?? []
+    check('intent links: the bearer-minted link lists under the key owner', bearerRows.some((l) => l.slug === bearerLink.slug))
+    const bearerRevoke = await fetch(`${BASE}/api/intent-links/${bearerLink.slug}`, { method: 'DELETE', headers: B })
+    check('intent links: the key owner revokes it (capacity restored)', bearerRevoke.status === 200)
+
+    // House links: the seeded canonical set (deterministic slugs,
+    // creator=null — earns nothing, belongs to no dashboard). The landing
+    // lane + the /links start-here strip point at these forever.
+    const housePage = await fetch(`${BASE}/i/buy-aapl`)
+    const houseHtml = flat(await housePage.text())
+    check('house links: /i/buy-aapl is live with the canonical ask', housePage.status === 200 && houseHtml.includes('Buy $10 of AAPL'))
+    check('house links: /links start-here strip renders the seeded set', boardHtml.includes('Start here') && boardHtml.includes('/i/dca-eth'))
+    const homeHtml = flat(await (await fetch(`${BASE}/`)).text())
+    check(
+      'house links: the landing link lane renders with tappable house links',
+      homeHtml.includes('A link that moves money.') && homeHtml.includes('/i/buy-aapl'),
+    )
 
     // ── Ask A/B variants — one slug, N phrasings, funnel per phrasing ────
     // Free a cap slot first (the cap tests above left this wallet at 3/3).
@@ -2224,6 +2320,12 @@ async function main() {
     'receipt page never prints the full wallet',
     !receiptHtml.toLowerCase().includes(owner.address.toLowerCase()),
   )
+  // Receipt → mint chip: the viewer can mint their OWN copy of the ask as an
+  // intent link (the aha→link loop). Prefill handoff only — nothing auto-runs.
+  check(
+    'receipt page offers "Mint this as a link" with the ask prefilled',
+    receiptHtml.includes('/dashboard/links?ask=') && receiptHtml.includes('Mint this as a link'),
+  )
   const ogRes = await fetch(`${BASE}/r/${mintedShare.id}/opengraph-image`)
   check(
     'receipt OG image renders (200, image/png)',
@@ -2385,6 +2487,22 @@ async function main() {
     const delKey = await fetch(`${BASE}/api/keys/${adminKey.id}`, { method: 'DELETE', headers: { cookie: adminSession } })
     const anonAfter = await (await fetch(`${BASE}/api/blog`)).json()
     check('blog cleanup: post + key deleted', delPost.status === 200 && delKey.status === 200 && !anonAfter.some((q: { slug: string }) => q.slug === draft.slug))
+
+    // ── Intent links: admin cap exemption, wired end-to-end ────────────────
+    // The same ADMIN_WALLETS gate that admits this wallet to /api/blog must
+    // lift the plan's active-link cap in the mint route: mint one PAST the
+    // free cap (4 active) — every mint 200s. Revoked after (rows persist,
+    // but only under this dedicated test-admin wallet).
+    const adminMints: string[] = []
+    let adminMintsOk = true
+    for (let i = 0; i < 4; i++) {
+      const r = await fetch(`${BASE}/api/intent-links`, { method: 'POST', headers: AJ, body: JSON.stringify({ ask: `Buy $${i + 2} of AAPL` }) })
+      adminMintsOk &&= r.status === 200
+      const s = ((await r.json()) as { slug?: string }).slug
+      if (s) adminMints.push(s)
+    }
+    check('intent links: admin wallet mints past the free cap (4th mint 200, no 402)', adminMintsOk && adminMints.length === 4)
+    await Promise.all(adminMints.map((s) => fetch(`${BASE}/api/intent-links/${s}`, { method: 'DELETE', headers: { cookie: adminSession } })))
   }
 
   // ── Admin adoption overview (negatives always; 200 path needs an admin PK) ──
