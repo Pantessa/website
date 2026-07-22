@@ -1054,6 +1054,15 @@ async function main() {
     !act.recent.some((r) => r.host === 'denied.example.test') && act.stats.blockedCalls >= 1,
   )
 
+  // /activity page — the consolidated public money story (links-first: the
+  // overview + the link-economy section + the live feed on one page).
+  const actPageRes = await fetch(`${BASE}/activity`)
+  const actPageHtml = await actPageRes.text()
+  check(
+    'activity: page renders the consolidated money story (hero + live feed)',
+    actPageRes.status === 200 && /moving money\./.test(actPageHtml) && /Live routing/.test(actPageHtml),
+  )
+
   // ── Attended vs standing (the falsifiable-test split, lib/value-origin) ──
   console.log('— attended vs standing split')
   const ovRes = await fetch(`${BASE}/api/activity/overview`)

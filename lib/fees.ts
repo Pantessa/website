@@ -66,3 +66,10 @@ export function creatorEarningsUsd(valueUsd: number): number {
   if (!(valueUsd > 0)) return 0
   return valueUsd * (SWAP_FEE_BPS / 10_000) * CREATOR_FEE_SPLIT
 }
+
+/** Fees went live with the LiFi venue on 2026-07-15 (July 1 gives margin).
+ *  Every fee figure — the admin treasury inflow window AND any ledgered
+ *  estimate derived from embed_turns — starts the clock HERE: the treasury
+ *  address is an old wallet with unrelated history, and signed fee-bearing
+ *  turns before this date carried no fee. */
+export const FEES_LIVE_SINCE = Date.parse('2026-07-01T00:00:00Z')
