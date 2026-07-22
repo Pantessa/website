@@ -136,7 +136,7 @@ export default function Navigation() {
         Links
       </Link>
       <Link href="/chat" className={`nav__tab ${pathname === '/chat' ? 'is-on' : ''}`}>
-        Builder
+        App
       </Link>
       <Link href="/activity" className={`nav__tab ${pathname.startsWith('/activity') ? 'is-on' : ''}`}>
         Activity
@@ -160,7 +160,7 @@ export default function Navigation() {
         Links
       </Link>
       <Link href="/chat" className={`nav__tab ${pathname === '/chat' ? 'is-on' : ''}`}>
-        Builder
+        App
       </Link>
       <Link href="/activity" className={`nav__tab ${pathname.startsWith('/activity') ? 'is-on' : ''}`}>
         Activity

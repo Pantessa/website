@@ -58,6 +58,8 @@ function milestoneCtes(days: number, excl: string[]) {
       UNION ALL SELECT lower(owner_address), created_at FROM agent_approvals
       UNION ALL SELECT lower(address), created_at FROM org_members
       UNION ALL SELECT lower(owner_address), created_at FROM spend_grants WHERE owner_address NOT LIKE 'org:%'
+      UNION ALL SELECT lower(creator), created_at FROM intent_links WHERE creator IS NOT NULL
+      UNION ALL SELECT lower(wallet), created_at FROM intent_link_events WHERE wallet IS NOT NULL
     ),
     fs AS (SELECT a, min(created_at) AS first_seen FROM addrs WHERE a <> ALL(${excl}) GROUP BY a),
     recent AS (SELECT a, first_seen FROM fs WHERE first_seen >= now() - make_interval(days => ${days}::int)),
@@ -120,6 +122,32 @@ function milestoneCtes(days: number, excl: string[]) {
     -- cookie (wallet_arrivals is insert-only, first writer wins).
     arrivals AS (
       SELECT lower(address) AS a, via FROM wallet_arrivals
+    ),
+    -- ── The link economy (links-first milestones) ─────────────────────────
+    -- Creator side: minted a link → someone opened it → it produced a
+    -- signed conversion (server truth: embed_turns, never client events).
+    minted AS (
+      SELECT lower(creator) AS a, min(created_at) AS t, count(*)::int AS n
+      FROM intent_links WHERE creator IS NOT NULL GROUP BY 1
+    ),
+    link_open AS (
+      SELECT lower(il.creator) AS a, min(e.created_at) AS t
+      FROM intent_link_events e JOIN intent_links il ON il.id = e.slug
+      WHERE il.creator IS NOT NULL AND e.kind = 'open' GROUP BY 1
+    ),
+    link_conv AS (
+      SELECT lower(il.creator) AS a, min(t.created_at) AS t,
+             sum(coalesce(t.value_usd, 0))::float AS usd, count(*)::int AS n
+      FROM embed_turns t JOIN intent_links il ON il.id = t.intent_link_slug
+      WHERE il.creator IS NOT NULL AND t.outcome = 'signed' AND t.value_usd > 0
+      GROUP BY 1
+    ),
+    -- Visitor side: this wallet CONNECTED on someone's /i page — the link
+    -- economy brought them in.
+    via_link AS (
+      SELECT lower(wallet) AS a, min(created_at) AS t
+      FROM intent_link_events WHERE wallet IS NOT NULL AND kind = 'connect'
+      GROUP BY 1
     )
   `
 }
@@ -133,6 +161,10 @@ const JOINS = Prisma.sql`
   LEFT JOIN moved mv ON mv.a = r.a
   LEFT JOIN standing st ON st.a = r.a
   LEFT JOIN arrivals av ON av.a = r.a
+  LEFT JOIN minted mi ON mi.a = r.a
+  LEFT JOIN link_open lo ON lo.a = r.a
+  LEFT JOIN link_conv lc ON lc.a = r.a
+  LEFT JOIN via_link vl ON vl.a = r.a
 `
 
 export async function GET(req: NextRequest) {
@@ -154,7 +186,14 @@ export async function GET(req: NextRequest) {
              count(*) FILTER (WHERE tg.t IS NOT NULL)::int AS toggled,
              count(*) FILTER (WHERE sg.t IS NOT NULL)::int AS signed,
              count(*) FILTER (WHERE st.t IS NOT NULL)::int AS standing,
+             count(*) FILTER (WHERE mi.t IS NOT NULL)::int AS minted,
+             count(*) FILTER (WHERE lo.t IS NOT NULL)::int AS link_opened,
+             count(*) FILTER (WHERE lc.t IS NOT NULL)::int AS link_converted,
+             count(*) FILTER (WHERE vl.t IS NOT NULL)::int AS via_link,
              count(*) FILTER (WHERE av.via IS NOT NULL)::int AS via_share,
+             coalesce(sum(mi.n), 0)::int AS links_minted,
+             coalesce(sum(lc.usd), 0)::float AS link_moved,
+             coalesce(sum(lc.n), 0)::int AS link_convs,
              coalesce(sum(mv.usd), 0)::float AS money_moved,
              coalesce(sum(mv.n), 0)::int AS moved_events
       ${JOINS}
@@ -171,6 +210,9 @@ export async function GET(req: NextRequest) {
              coalesce(mv.usd, 0)::float AS money_moved,
              coalesce(mv.n, 0)::int AS moved_events,
              st.t AS first_standing, st.kind AS standing_kind,
+             mi.t AS first_link, coalesce(mi.n, 0)::int AS links_n,
+             coalesce(lc.usd, 0)::float AS link_moved,
+             (vl.t IS NOT NULL) AS via_link,
              av.via AS via,
              coalesce(h.origins, '{}') AS embed_origins
       ${JOINS}
@@ -189,13 +231,20 @@ export async function GET(req: NextRequest) {
     funnel: [
       { key: 'arrived', label: 'Arrived (first seen)', value: f.wallets },
       { key: 'chatted', label: 'First chat turn', value: f.chatted },
-      { key: 'toggled', label: 'Toggled an MCP', value: f.toggled },
       { key: 'signed', label: 'Signed a transaction', value: f.signed },
       { key: 'standing', label: 'Standing intent (job · DCA · guardian)', value: f.standing },
+      { key: 'minted', label: 'Minted an intent link', value: f.minted },
+      { key: 'linkOpened', label: 'Their link got opened', value: f.link_opened },
+      { key: 'linkConverted', label: 'Link produced a signed conversion', value: f.link_converted },
+      { key: 'viaLink', label: 'Connected through someone’s link', value: f.via_link },
       { key: 'viaShare', label: 'Arrived via a share link', value: f.via_share },
+      { key: 'toggled', label: 'Toggled an MCP', value: f.toggled },
     ],
     moneyMovedUsd: cents(f.money_moved),
     movedEvents: f.moved_events,
+    linksMinted: f.links_minted,
+    linkConversions: f.link_convs,
+    linkMovedUsd: cents(f.link_moved),
     wallets: walletRows.map((r) => ({
       address: r.address,
       firstSeen: r.first_seen.toISOString(),
@@ -205,6 +254,10 @@ export async function GET(req: NextRequest) {
       firstSigned: iso(r.first_signed),
       firstStanding: iso(r.first_standing),
       standingKind: r.standing_kind,
+      firstLink: iso(r.first_link),
+      links: r.links_n,
+      linkMovedUsd: cents(r.link_moved),
+      viaLink: r.via_link,
       via: r.via,
       moneyMovedUsd: cents(r.money_moved),
       movedEvents: r.moved_events,
@@ -220,7 +273,14 @@ interface FunnelRow {
   toggled: number
   signed: number
   standing: number
+  minted: number
+  link_opened: number
+  link_converted: number
+  via_link: number
   via_share: number
+  links_minted: number
+  link_moved: number
+  link_convs: number
   money_moved: number
   moved_events: number
 }
@@ -235,6 +295,10 @@ interface WalletRow {
   moved_events: number
   first_standing: Date | null
   standing_kind: 'job' | 'dca' | 'guardian' | null
+  first_link: Date | null
+  links_n: number
+  link_moved: number
+  via_link: boolean
   via: string | null
   embed_origins: string[] | null
 }

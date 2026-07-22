@@ -15,6 +15,8 @@ import { PolicySwitch, BudgetEditor } from '@/components/SpendPolicyControls'
 import { useToast } from '@/lib/toast'
 import EarnPanel from '@/components/EarnPanel'
 import EmbedsSummaryCard from '@/components/EmbedsSummaryCard'
+import LinksSummaryCard from '@/components/LinksSummaryCard'
+import StandingSummaryCard from '@/components/StandingSummaryCard'
 import OnboardingChecklist from '@/components/OnboardingChecklist'
 import WelcomeNudge from '@/components/WelcomeNudge'
 import PayToAgentsCard from '@/components/PayToAgentsCard'
@@ -142,20 +144,21 @@ export default function DashboardOverviewPage() {
           the checklist anchor just below. */}
       <WelcomeNudge />
 
-      {/* THE pivot onboarding, slimmed: the pitch (or the numbers) plus links —
-          embed-key management moved to /dashboard/keys with the API keys.
-          Personal account only — an embed key belongs to a wallet, and the
-          org view keeps its budget-first layout. */}
-      {!activeOrgId && <EmbedsSummaryCard />}
-
       {/* First-run guided path — self-ticks from live state, hides when done
-          or dismissed. Personal account only: the flow (chat → sign → job →
-          embed) belongs to a wallet, not an org budget view. */}
+          or dismissed. Personal account only: the links-first flow (mint →
+          share → funnel → conversion → claim) belongs to a wallet. */}
       {!activeOrgId && (
         <div id="get-started" className="scroll-mt-24">
           <OnboardingChecklist />
         </div>
       )}
+
+      {/* Links-first: the link economy leads the overview — your links'
+          funnel + earnings, then what's working between visits (jobs, DCA,
+          guardian), then the embed pitch. Personal account only. */}
+      {!activeOrgId && <LinksSummaryCard />}
+      {!activeOrgId && <StandingSummaryCard />}
+      {!activeOrgId && <EmbedsSummaryCard />}
 
       {/* The org level of the two-level budget: the daily cap across ALL the
           org's agent keys, above the grant + per-key meters. SDK-enforced via
@@ -324,16 +327,7 @@ export default function DashboardOverviewPage() {
           Org Overview shows the org budget instead, not a single wallet. */}
       {!activeOrgId && <FundAccountCard />}
 
-      {/* The EARN side, lifted up directly under Spend so the two-sided model
-          is visible without scrolling past the spend charts. EarnPanel shows
-          zeroed KPIs + a "Connect your MCPs" CTA until receipts flow; the payee
-          roster self-hides for pure payers. */}
-      <div className="mt-6">
-        <EarnPanel />
-      </div>
-      <PayToAgentsCard />
-
-      {/* Spend detail charts last. grid-cols-1 (not the implicit auto track) +
+      {/* Spend detail charts. grid-cols-1 (not the implicit auto track) +
           min-w-0 so a chart's transient fixed-px width can never inflate the
           column on phones. */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-6">
@@ -348,6 +342,16 @@ export default function DashboardOverviewPage() {
           <SpendByAgent perAgent={stats.perAgent ?? []} />
         </Card>
       </div>
+
+      {/* The x402 EARN side — demoted below the fold with the links-first
+          repositioning (the creator rail on the links card is the earning
+          story now). Functionality kept: EarnPanel shows zeroed KPIs + a
+          "Connect your MCPs" CTA until receipts flow; the payee roster
+          self-hides for pure payers. */}
+      <div className="mt-6">
+        <EarnPanel />
+      </div>
+      <PayToAgentsCard />
     </>
   )
 }
