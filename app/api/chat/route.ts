@@ -39,6 +39,7 @@ import {
   type CrossChainSwapParams,
   type BuiltSwap,
 } from '@/lib/cross-chain-swap'
+import { prettyChainWord } from '@/lib/chain-lexicon'
 import { arbitrumUsdcBalance, buildHlExecTurn, hlAgentOf, HL_MIN_DEPOSIT_USDC, parseHlIntent } from '@/lib/hyperliquid-exec'
 import { parseGuardianArm } from '@/lib/hl-guardian'
 import { armGuardianPolicy } from '@/lib/hl-guardian-store'
@@ -1408,6 +1409,67 @@ async function callAgentTool(endpoint: string, tool: string, args: Record<string
  * button. The address the user sees and the tx they sign both come only from
  * the verified tool result.
  */
+/**
+ * The cross-chain "path to success" reply — a scannable receipt instead of a
+ * wall of addresses (Nate, 2026-07-22): what you send, what arrives, the
+ * numbered path, and any warning as its own block. The receive amount and
+ * ETA only exist inside the MCP's summary sentence, so they're extracted
+ * fail-soft — a parse miss just drops that line, never the reply.
+ */
+function composeCrossChainReply(
+  params: CrossChainSwapParams,
+  guard: { depositAddress?: string; addressExpires?: string | null; warnings: string[] },
+  summary: string,
+  walletAddress: string,
+): string {
+  const short = (a: string) => (a.length > 12 ? `${a.slice(0, 6)}…${a.slice(-4)}` : a)
+  const cap = (c: string) => prettyChainWord(c)
+  const sellTok = params.originToken.toUpperCase()
+  const recv = summary.match(/deliver\s+~?([\d.]+)\s+\$?([A-Za-z.]{2,12})/)
+  const eta = summary.match(/ETA\s+~?([^,)]+)/)
+  const expires = (() => {
+    if (!guard.addressExpires) return null
+    const d = new Date(guard.addressExpires)
+    return Number.isNaN(+d) ? guard.addressExpires : `${d.toUTCString().slice(5, 22)} UTC`
+  })()
+
+  const lines = [
+    `🔏 **Swap ${params.amount} ${sellTok} · ${cap(params.originChain)} → ${cap(params.destinationChain)}**`,
+    '',
+    `- **You send:** ${params.amount} ${sellTok} on ${cap(params.originChain)} — one signature, that's the whole job`,
+  ]
+  if (recv) {
+    lines.push(`- **You receive:** ~${recv[1]} ${recv[2].toUpperCase()} on ${cap(params.destinationChain)}, delivered to your wallet (${short(walletAddress)})${eta ? ` in ${eta[1].trim()}` : ''}`)
+  }
+  // A same-token move arriving visibly lighter reads as broken unless the
+  // cost is named — solver/route costs are fixed-ish, so small sizes pay a
+  // big percentage.
+  const recvNum = recv ? Number(recv[1]) : null
+  const sellNum = Number(params.amount)
+  if (recvNum && sellNum > 0 && recv![2].toUpperCase() === sellTok) {
+    const pct = Math.round((1 - recvNum / sellNum) * 100)
+    if (pct >= 5) lines.push(`- **Rate note:** ~${pct}% of this goes to route costs at this size — larger amounts get a much better rate`)
+  }
+  if (guard.depositAddress) {
+    lines.push(`- **Deposit address:** one-time, guard-verified — \`${short(guard.depositAddress)}\`${expires ? ` (expires ${expires})` : ''}`)
+  }
+  lines.push(
+    '',
+    '**The path from here**',
+    '1. Press **Sign & send deposit** below — it moves exactly the quoted amount to the one-time deposit address.',
+    `2. Solvers pick it up and deliver on ${cap(params.destinationChain)} automatically — nothing else to sign.`,
+    '3. If no solver can fill it, the deposit auto-refunds to your wallet.',
+  )
+  if (!recv) {
+    // Parse miss on the MCP summary — keep the original sentence so no
+    // detail is lost, just below the structured header.
+    lines.push('', summary)
+  }
+  for (const w of guard.warnings) lines.push('', `⚠️ **Heads up:** ${w}`)
+  lines.push('', `Want a different size? Just say “make it 2” and I'll rebuild it.`)
+  return lines.join('\n')
+}
+
 async function buildCrossChainSwapTurn(
   agent: McpServer,
   params: CrossChainSwapParams,
@@ -1458,11 +1520,8 @@ async function buildCrossChainSwapTurn(
   trace({ type: 'status', label: 'guard verified the deposit transfer — Sign & send card built, awaiting signature' })
 
   const summary = guard.summary ?? built.quote?.summary ?? 'Cross-chain swap'
-  const expiry = guard.addressExpires ? ` The one-time deposit address expires ${guard.addressExpires}.` : ''
-  const warn = guard.warnings.length ? `\n${guard.warnings.map((w) => `⚠️ ${w}`).join('\n')}` : ''
   return NextResponse.json({
-    reply:
-      `🔏 ${summary}\n\nSign the deposit transfer below — it sends exactly the quoted amount to NEAR Intents' one-time deposit address, and solvers deliver on the destination chain automatically.${expiry}${warn}`,
+    reply: composeCrossChainReply(params, guard, summary, walletAddress),
     txRequest: guard.tx,
     // Which layer built it — echoed on the tx-built/signed telemetry beacons
     // so /dashboard/embeds can break the funnel down per builder (lib/build-path.ts).
