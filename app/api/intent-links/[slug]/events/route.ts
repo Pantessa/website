@@ -17,7 +17,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ slu
   const { slug } = await params
   if (!INTENT_SLUG_RE.test(slug)) return NextResponse.json({ error: 'Bad slug.' }, { status: 400 })
 
-  let body: { kind?: string; wallet?: string; valueUsd?: number }
+  let body: { kind?: string; wallet?: string; valueUsd?: number; variant?: number }
   try {
     body = await req.json()
   } catch {
@@ -35,6 +35,13 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ slu
       ? body.valueUsd
       : null
 
-  await prisma.intentLinkEvent.create({ data: { slug, kind, wallet, valueUsd } })
+  // Which A/B phrasing the visit was served (0 = base ask). Client-reported
+  // like everything here — clamped to the plausible range, junk dropped.
+  const variant =
+    typeof body.variant === 'number' && Number.isInteger(body.variant) && body.variant >= 0 && body.variant <= 8
+      ? body.variant
+      : null
+
+  await prisma.intentLinkEvent.create({ data: { slug, kind, wallet, valueUsd, variant } })
   return NextResponse.json({ ok: true })
 }

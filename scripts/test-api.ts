@@ -1517,6 +1517,53 @@ async function main() {
       homeHtml.includes('A link that moves money.') && homeHtml.includes('/i/buy-aapl'),
     )
 
+    // ── Ask A/B variants — one slug, N phrasings, funnel per phrasing ────
+    // Free a cap slot first (the cap tests above left this wallet at 3/3).
+    await fetch(`${BASE}/api/intent-links/${slug}`, { method: 'DELETE', headers: { cookie: mallorySession } })
+    const abMint = await fetch(`${BASE}/api/intent-links`, {
+      method: 'POST',
+      headers: M,
+      body: JSON.stringify({
+        ask: 'Buy $12 of TSLA',
+        // dupe-of-base and sub-sentence junk must drop; the cap is 3.
+        variants: ['Own a slice of Tesla for $12', 'Buy $12 of TSLA', 'x', 'Put $12 into Tesla stock', 'A fourth phrasing that fits'],
+      }),
+    })
+    const abLink = (await abMint.json()) as { slug?: string; variants?: string[] }
+    check(
+      'variants: mint sanitizes (dupe + junk dropped) and caps at 3',
+      abMint.status === 200 && Array.isArray(abLink.variants) && abLink.variants.length === 3 && !abLink.variants.includes('Buy $12 of TSLA') && !abLink.variants.includes('x'),
+    )
+    const abEvent = (variant: unknown, kind = 'open') =>
+      fetch(`${BASE}/api/intent-links/${abLink.slug}/events`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ kind, variant }),
+      })
+    await abEvent(1)
+    await abEvent(1, 'signed')
+    await abEvent(0)
+    const junkEvent = await abEvent(99) // out of range → stored variant-less, aggregate only
+    check('variants: events accept an index; junk indexes degrade to variant-less', junkEvent.status === 200)
+    const abList = (await (await fetch(`${BASE}/api/intent-links`, { headers: { cookie: mallorySession } })).json()) as {
+      links: Array<{ slug: string; funnel: { open: number }; funnelVariants?: Array<{ variant: number; ask: string; open: number; signed: number }> }>
+    }
+    const abRow = abList.links.find((l) => l.slug === abLink.slug)
+    const v0 = abRow?.funnelVariants?.find((v) => v.variant === 0)
+    const v1 = abRow?.funnelVariants?.find((v) => v.variant === 1)
+    check(
+      'variants: the creator funnel segments per phrasing (v1 converts, v0 opened)',
+      !!v0 && !!v1 && v0.ask === 'Buy $12 of TSLA' && v0.open === 1 && v1.open === 1 && v1.signed === 1,
+    )
+    check('variants: the aggregate funnel still counts every open (junk-variant row included)', !!abRow && abRow.funnel.open === 3)
+    const abPage = await fetch(`${BASE}/i/${abLink.slug}`)
+    const abHtml = flat(await abPage.text())
+    const phrasings = ['Buy $12 of TSLA', 'Own a slice of Tesla for $12', 'Put $12 into Tesla stock', 'A fourth phrasing that fits']
+    check(
+      'variants: /i serves exactly one of the phrasings per visit',
+      abPage.status === 200 && phrasings.some((p) => abHtml.includes(p)),
+    )
+
     // cleanup: the minted row + its events (raw deletes via prisma are not
     // exposed here — the API has no delete; rows are tiny and harmless, but
     // keep the namespace tidy by revoking… no revoke endpoint in v1 either.

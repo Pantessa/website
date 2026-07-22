@@ -14,11 +14,14 @@ interface LinkRow {
   slug: string
   url: string
   ask: string
+  variants: string[]
   agent: string | null
   redirectUrl: string | null
   revoked: boolean
   createdAt: string
   funnel: { open: number; connect: number; built: number; signed: number; valueUsd: number }
+  /** Per-phrasing funnels — present only when the link A/B tests its ask. */
+  funnelVariants?: Array<{ variant: number; ask: string; open: number; connect: number; built: number; signed: number }>
   /** Server-truth signed notional attributed to this link (embed_turns). */
   signedUsd: number
   /** Creator's accrued half of the fee on fee-bearing conversions. */
@@ -38,6 +41,7 @@ export default function DashboardLinksPage() {
   const [claimMsg, setClaimMsg] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [ask, setAsk] = useState('')
+  const [variantsText, setVariantsText] = useState('')
   const [redirectUrl, setRedirectUrl] = useState('')
   const [minting, setMinting] = useState(false)
   const [copied, setCopied] = useState<string | null>(null)
@@ -133,6 +137,11 @@ export default function DashboardLinksPage() {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           ask: ask.trim(),
+          variants: variantsText
+            .split('\n')
+            .map((s) => s.trim())
+            .filter(Boolean)
+            .slice(0, 3),
           redirectUrl: redirectUrl.trim() || undefined,
           mcps: mcpMode === 'manual' && pickedMcps.length ? pickedMcps : undefined,
         }),
@@ -143,6 +152,7 @@ export default function DashboardLinksPage() {
         return
       }
       setAsk('')
+      setVariantsText('')
       setRedirectUrl('')
       load()
     } finally {
@@ -178,6 +188,18 @@ export default function DashboardLinksPage() {
           maxLength={400}
           className="mt-1.5 w-full rounded-lg border border-[var(--line)] bg-[var(--bg)] px-3 py-2 text-sm text-[color:var(--fg)] focus:outline-none focus:border-[var(--accent)]"
         />
+        <label className="mono text-[11px] uppercase tracking-wider text-[color:var(--muted-2)] mt-3 block">
+          A/B phrasings (optional — one per line, up to 3; each visitor sees one at random)
+        </label>
+        <textarea
+          value={variantsText}
+          onChange={(e) => setVariantsText(e.target.value)}
+          placeholder={'e.g. "Own a slice of Apple for $12"\n"Put $12 into AAPL right now"'}
+          rows={2}
+          maxLength={1300}
+          className="mt-1.5 w-full rounded-lg border border-[var(--line)] bg-[var(--bg)] px-3 py-2 text-sm text-[color:var(--fg)] focus:outline-none focus:border-[var(--accent)]"
+        />
+
         <div className="mt-3 flex items-center gap-2">
           <span className="mono text-[11px] uppercase tracking-wider text-[color:var(--muted-2)]">MCPs</span>
           <div className="inline-flex rounded-lg border border-[var(--line)] overflow-hidden">
@@ -359,6 +381,18 @@ export default function DashboardLinksPage() {
                         </span>
                       )}
                     </div>
+                    {/* A/B: the per-phrasing funnel — which wording converts. */}
+                    {l.funnelVariants && (
+                      <div className="mt-1 space-y-0.5">
+                        {l.funnelVariants.map((v) => (
+                          <div key={v.variant} className="mono text-[11px] text-[color:var(--muted-2)] truncate">
+                            {String.fromCharCode(65 + v.variant)} · &ldquo;{v.ask}&rdquo; — {v.open} open · {v.connect} connect
+                            · {v.built} built ·{' '}
+                            <span className={v.signed > 0 ? 'text-[color:var(--accent)]' : undefined}>{v.signed} signed</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </td>
                   <td className="py-2.5 pr-3 text-right mono text-[13px]">{l.funnel.open}</td>
                   <td className="py-2.5 pr-3 text-right mono text-[13px]">{l.funnel.connect}</td>

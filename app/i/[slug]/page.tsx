@@ -45,10 +45,18 @@ export default async function IntentLinkPage({ params }: Params) {
   const { slug } = await params
   const link = await getLink(slug)
   if (!link) notFound()
+  // A/B: one phrasing per visit, picked server-side (index 0 = the base
+  // ask). The chosen phrasing IS the ask for this visit — every runtime
+  // gate (transfer shape included) applies to what's actually shown — and
+  // the funnel events carry the index so the creator sees which phrasing
+  // converts. Metadata above stays on the base ask (stable OG card).
+  const phrasings = [link.ask, ...link.variants]
+  const variant = Math.floor(Math.random() * phrasings.length)
   return (
     <IntentRuntime
       slug={link.id}
-      ask={link.ask}
+      ask={phrasings[variant]}
+      variant={variant}
       mcps={link.mcps ?? ''}
       agent={link.agent ?? ''}
       redirectUrl={link.redirectUrl ?? ''}
