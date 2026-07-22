@@ -1530,6 +1530,33 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
                         <div className="mt-2 pt-1.5 border-t border-[var(--line)] flex items-center gap-2">
                           <span className="text-[10.5px] mono text-[color:var(--muted-2)]">✍️ signed &amp; settled</span>
                           <ShareReceiptButton kind="tx" chatId={currentChatId} messageId={msg.dbId} />
+                          {/* The aha→link loop closes itself: the receipt that
+                              just proved the ask offers to become an intent
+                              link (same /dashboard/links prefill handoff as the
+                              user-bubble mint icon). */}
+                          {!embedded &&
+                            (() => {
+                              let ask = ''
+                              for (let j = i - 1; j >= 0; j--) {
+                                if (currentChat.messages[j].role === 'user') {
+                                  ask = currentChat.messages[j].content
+                                  break
+                                }
+                              }
+                              if (!ask) return null
+                              const mcpsCsv = activeServers.map((s) => s.slug).join(',')
+                              const href = `/dashboard/links?ask=${encodeURIComponent(ask.slice(0, 400))}${mcpsCsv ? `&mcps=${encodeURIComponent(mcpsCsv)}` : ''}`
+                              return (
+                                <a
+                                  href={href}
+                                  title="Mint this ask as an intent link — one tap for anyone you share it with"
+                                  className="inline-flex items-center gap-1 text-[10.5px] mono text-[color:var(--muted-2)] hover:text-[color:var(--fg)] transition-colors"
+                                >
+                                  <Link2 className="w-3 h-3" aria-hidden />
+                                  mint as link
+                                </a>
+                              )
+                            })()}
                         </div>
                       )}
                     {msg.role === 'assistant' &&
