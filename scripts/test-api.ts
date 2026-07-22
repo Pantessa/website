@@ -1432,6 +1432,29 @@ async function main() {
     const boardHtml = await board.text()
     check('intent links: /links leaderboard renders with the mint CTA', board.status === 200 && /Mint yours/.test(boardHtml) && /dollars moved/i.test(boardHtml))
     check('intent links: leaderboard never leaks a wallet address', !/0x[0-9a-fA-F]{40}/.test(boardHtml))
+    check('intent links: leaderboard links to the host button generator', boardHtml.includes('/links/embed'))
+
+    // The host button generator: a public page whose form mints through the
+    // same gated door; the emitted snippet is a plain <a> — the button IS an
+    // intent link, so consent + redirect invariants ride along untouched.
+    const genPage = await fetch(`${BASE}/links/embed`)
+    const genHtml = await genPage.text()
+    check(
+      'intent links: /links/embed generator renders (form + return-URL field)',
+      genPage.status === 200 && genHtml.includes('A button on your site that moves money.') && genHtml.includes('Return URL after signing'),
+    )
+    // Free one cap slot first — the cap tests above left this wallet at 3/3.
+    await fetch(`${BASE}/api/intent-links/${slug}`, { method: 'DELETE', headers: { cookie: mallorySession } })
+    const redirectMint = await fetch(`${BASE}/api/intent-links`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie: mallorySession },
+      body: JSON.stringify({ ask: 'Buy $10 of AAPL on ours', redirectUrl: 'https://example-host.com/thanks' }),
+    })
+    const redirected = (await redirectMint.json()) as { slug?: string; redirectUrl?: string | null }
+    check(
+      'intent links: mint with a valid https redirect stores + echoes it',
+      redirectMint.status === 200 && redirected.redirectUrl === 'https://example-host.com/thanks',
+    )
 
     // cleanup: the minted row + its events (raw deletes via prisma are not
     // exposed here — the API has no delete; rows are tiny and harmless, but
