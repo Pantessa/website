@@ -1030,6 +1030,13 @@ model IntentLink {
   creator     String? // lowercased wallet (SIWE-verified at mint)
   agent       String? // optional byline shown on the runtime page
   redirectUrl String?  @map("redirect_url")
+  // Partner-promo limits (all optional): a link can expire, cap its total
+  // SERVER-TRUTH signs (embed_turns, never client events), and reserve
+  // itself for an allowlist of wallets (targeting, not a security boundary
+  // — the ask itself is public on the page).
+  expiresAt    DateTime? @map("expires_at")
+  maxSigns     Int?      @map("max_signs")
+  allowWallets String[]  @default([]) @map("allow_wallets")
   revoked     Boolean  @default(false)
   createdAt   DateTime @default(now()) @map("created_at")
 

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import prisma from '@/lib/db'
 import { getAuthAddress } from '@/lib/api-key'
-import { activeLinkCapFor, cleanAsk, composeMcps, mintSlug, sanitizeMcps, sanitizeVariants, validateRedirect } from '@/lib/intent-links'
+import { activeLinkCapFor, cleanAsk, composeMcps, mintSlug, parseAllowWallets, parseExpiry, parseMaxSigns, sanitizeMcps, sanitizeVariants, validateRedirect } from '@/lib/intent-links'
 import { FEE_BEARING_BUILD_PATHS, creatorEarningsUsd } from '@/lib/fees'
 import { getEffectivePlan } from '@/lib/billing'
 import { isAdminAddress } from '@/lib/admin'
@@ -23,7 +23,7 @@ export async function POST(req: NextRequest) {
   if (!addr) return NextResponse.json({ error: 'Sign in to mint an intent link.' }, { status: 401 })
   const creator = addr.toLowerCase()
 
-  let body: { ask?: string; agent?: string; redirectUrl?: string; mcps?: unknown; variants?: unknown }
+  let body: { ask?: string; agent?: string; redirectUrl?: string; mcps?: unknown; variants?: unknown; expiresAt?: unknown; maxSigns?: unknown; allowWallets?: unknown }
   try {
     body = await req.json()
   } catch {
@@ -48,6 +48,14 @@ export async function POST(req: NextRequest) {
   // visit and the funnel segments by which one was shown.
   const variants = sanitizeVariants(body.variants, ask)
 
+  // Partner-promo limits — validated at mint, enforced server-side at run.
+  const expiry = parseExpiry(body.expiresAt)
+  if (!expiry.ok) return NextResponse.json({ error: expiry.reason }, { status: 400 })
+  const maxSigns = parseMaxSigns(body.maxSigns)
+  if (!maxSigns.ok) return NextResponse.json({ error: maxSigns.reason }, { status: 400 })
+  const allow = parseAllowWallets(body.allowWallets)
+  if (!allow.ok) return NextResponse.json({ error: allow.reason }, { status: 400 })
+
   // Capacity gate (soft): active links per plan, mirroring standing-intent
   // tiers. Existing links are never touched — the cap gates NEW mints only.
   // Admin wallets mint uncapped (demo/marketing links, not plan-gated usage).
@@ -67,7 +75,9 @@ export async function POST(req: NextRequest) {
   for (let attempt = 0; attempt < 3; attempt++) {
     const id = mintSlug()
     try {
-      const link = await prisma.intentLink.create({ data: { id, ask, variants, mcps, creator, agent, redirectUrl } })
+      const link = await prisma.intentLink.create({
+        data: { id, ask, variants, mcps, creator, agent, redirectUrl, expiresAt: expiry.date, maxSigns: maxSigns.max, allowWallets: allow.wallets },
+      })
       return NextResponse.json({
         slug: link.id,
         url: `/i/${link.id}`,
@@ -75,6 +85,9 @@ export async function POST(req: NextRequest) {
         variants: link.variants,
         mcps: link.mcps,
         redirectUrl: link.redirectUrl,
+        expiresAt: link.expiresAt,
+        maxSigns: link.maxSigns,
+        allowCount: link.allowWallets.length,
       })
     } catch (e) {
       const unique = e instanceof Error && 'code' in e && (e as { code?: string }).code === 'P2002'
@@ -146,17 +159,20 @@ export async function GET(req: NextRequest) {
     by: ['intentLinkSlug', 'buildPath'],
     where: { intentLinkSlug: { in: links.map((l) => l.id) }, outcome: 'signed', valueUsd: { gt: 0 } },
     _sum: { valueUsd: true },
+    _count: { _all: true },
   })
   const moneyOf = (slug: string) => {
     let signedUsd = 0
     let feeBearingUsd = 0
+    let signsCount = 0
     for (const t of turns) {
       if (t.intentLinkSlug !== slug) continue
       const v = t._sum.valueUsd ?? 0
       signedUsd += v
+      signsCount += t._count._all
       if (t.buildPath && FEE_BEARING_BUILD_PATHS.has(t.buildPath)) feeBearingUsd += v
     }
-    return { signedUsd, earnedUsd: creatorEarningsUsd(feeBearingUsd) }
+    return { signedUsd, signsCount, earnedUsd: creatorEarningsUsd(feeBearingUsd) }
   }
 
   const totalEarnedUsd = links.reduce((s, l) => s + moneyOf(l.id).earnedUsd, 0)
@@ -176,6 +192,9 @@ export async function GET(req: NextRequest) {
       redirectUrl: l.redirectUrl,
       revoked: l.revoked,
       createdAt: l.createdAt,
+      expiresAt: l.expiresAt,
+      maxSigns: l.maxSigns,
+      allowCount: l.allowWallets.length,
       funnel: funnelOf(l.id),
       funnelVariants: variantFunnelsOf(l),
       ...moneyOf(l.id),

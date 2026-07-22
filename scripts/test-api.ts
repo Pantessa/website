@@ -1517,9 +1517,21 @@ async function main() {
       homeHtml.includes('A link that moves money.') && homeHtml.includes('/i/buy-aapl'),
     )
 
+    // Robust cap-slot freeing: several blocks above and below each need one
+    // free mint slot, and a single hardcoded revoke only works once — revoke
+    // ACTIVE links until `need` slots are open (free plan cap = 3).
+    const freeSlots = async (need: number) => {
+      const list = await fetch(`${BASE}/api/intent-links`, { headers: { cookie: mallorySession } })
+      const rows = ((await list.json()) as { links?: Array<{ slug: string; revoked: boolean }> }).links ?? []
+      const active = rows.filter((l) => !l.revoked)
+      const excess = active.length - (3 - need)
+      for (const l of active.slice(0, Math.max(0, excess))) {
+        await fetch(`${BASE}/api/intent-links/${l.slug}`, { method: 'DELETE', headers: { cookie: mallorySession } })
+      }
+    }
+
     // ── Ask A/B variants — one slug, N phrasings, funnel per phrasing ────
-    // Free a cap slot first (the cap tests above left this wallet at 3/3).
-    await fetch(`${BASE}/api/intent-links/${slug}`, { method: 'DELETE', headers: { cookie: mallorySession } })
+    await freeSlots(1)
     const abMint = await fetch(`${BASE}/api/intent-links`, {
       method: 'POST',
       headers: M,
@@ -1563,6 +1575,77 @@ async function main() {
       'variants: /i serves exactly one of the phrasings per visit',
       abPage.status === 200 && phrasings.some((p) => abHtml.includes(p)),
     )
+
+    // ── Partner-promo limits: expiry / max-signs / allowlists ────────────
+    await freeSlots(1)
+    const badExpiry = await fetch(`${BASE}/api/intent-links`, {
+      method: 'POST',
+      headers: M,
+      body: JSON.stringify({ ask: 'Buy $9 of AAPL for the promo', expiresAt: '2020-01-01' }),
+    })
+    const badAllow = await fetch(`${BASE}/api/intent-links`, {
+      method: 'POST',
+      headers: M,
+      body: JSON.stringify({ ask: 'Buy $9 of AAPL for the promo', allowWallets: [mallory.address, 'not-an-address'] }),
+    })
+    check('limits: past expiry and malformed allowlist entries refuse at mint (400, never a silent drop)', badExpiry.status === 400 && badAllow.status === 400)
+
+    // Allowlist + sign cap on one link (server-truth signs, not events).
+    const capMintRes = await fetch(`${BASE}/api/intent-links`, {
+      method: 'POST',
+      headers: M,
+      body: JSON.stringify({ ask: 'Buy $9 of AAPL for the promo', maxSigns: 2, allowWallets: [mallory.address] }),
+    })
+    const capLink = (await capMintRes.json()) as { slug?: string; maxSigns?: number; allowCount?: number }
+    check('limits: mint echoes the cap and the allowlist size (never the list)', capMintRes.status === 200 && capLink.maxSigns === 2 && capLink.allowCount === 1)
+    const probeYes = (await (await fetch(`${BASE}/api/intent-links/${capLink.slug}/allowed?wallet=${mallory.address}`)).json()) as { allowed?: boolean }
+    const probeNo = (await (await fetch(`${BASE}/api/intent-links/${capLink.slug}/allowed?wallet=0x000000000000000000000000000000000000dEaD`)).json()) as { allowed?: boolean }
+    check('limits: the allowlist probe answers membership without leaking the list', probeYes.allowed === true && probeNo.allowed === false)
+    const capPageBefore = await fetch(`${BASE}/i/${capLink.slug}`)
+    const signTurn = () =>
+      fetch(`${BASE}/api/embed/telemetry`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          firstParty: true,
+          sessionId: `harness-limits-${Date.now()}`,
+          page: `${BASE}/i/${capLink.slug}`,
+          outcome: 'signed',
+          artifact: 'tx',
+          valueUsd: 10,
+          intentLinkSlug: capLink.slug,
+        }),
+      })
+    await signTurn()
+    const capPageMid = await fetch(`${BASE}/i/${capLink.slug}`)
+    await signTurn()
+    const capPageAfter = await fetch(`${BASE}/i/${capLink.slug}`)
+    check(
+      'limits: the sign cap counts SERVER-TRUTH turns — live below the cap, 404 at it',
+      capPageBefore.status === 200 && capPageMid.status === 200 && capPageAfter.status === 404,
+    )
+    await fetch(`${BASE}/api/intent-links/${capLink.slug}`, { method: 'DELETE', headers: { cookie: mallorySession } })
+
+    // Expiry: live until the clock passes, then dead everywhere.
+    const expMintRes = await fetch(`${BASE}/api/intent-links`, {
+      method: 'POST',
+      headers: M,
+      body: JSON.stringify({ ask: 'Buy $9 of AAPL for the promo', expiresAt: new Date(Date.now() + 1500).toISOString() }),
+    })
+    const expLink = (await expMintRes.json()) as { slug?: string }
+    const expBefore = await fetch(`${BASE}/i/${expLink.slug}`)
+    await new Promise((r) => setTimeout(r, 1700))
+    const expAfter = await fetch(`${BASE}/i/${expLink.slug}`)
+    const expEvent = await fetch(`${BASE}/api/intent-links/${expLink.slug}/events`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ kind: 'open' }),
+    })
+    check(
+      'limits: an expired link dies everywhere (page 404, events 404)',
+      expMintRes.status === 200 && expBefore.status === 200 && expAfter.status === 404 && expEvent.status === 404,
+    )
+    await fetch(`${BASE}/api/intent-links/${expLink.slug}`, { method: 'DELETE', headers: { cookie: mallorySession } })
 
     // cleanup: the minted row + its events (raw deletes via prisma are not
     // exposed here — the API has no delete; rows are tiny and harmless, but
