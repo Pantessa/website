@@ -1487,6 +1487,23 @@ async function main() {
     const droppedGone = await fetch(`${BASE}/l/harness-store-2`)
     check('storefront: release drops the page', hDrop.status === 200 && droppedGone.status === 404)
 
+    // The agent door: a Bearer yf_ key mints as its OWNER (SIWE-less) — the
+    // hands MCP's mint_intent_link (free-mcps#22) rides exactly this seam.
+    // The creator on record is the key owner (the agent's operator), so
+    // caps/funnels/earnings land on a human's dashboard.
+    const bearerMint = await fetch(`${BASE}/api/intent-links`, {
+      method: 'POST',
+      headers: BJ,
+      body: JSON.stringify({ ask: 'Buy $5 of AAPL, planned by my agent' }),
+    })
+    const bearerLink = (await bearerMint.json()) as { slug?: string }
+    check('intent links: a Bearer yf_ key mints as its owner (the agent door)', bearerMint.status === 200 && !!bearerLink.slug)
+    const bearerList = await fetch(`${BASE}/api/intent-links`, { headers: B })
+    const bearerRows = ((await bearerList.json()) as { links?: Array<{ slug: string }> }).links ?? []
+    check('intent links: the bearer-minted link lists under the key owner', bearerRows.some((l) => l.slug === bearerLink.slug))
+    const bearerRevoke = await fetch(`${BASE}/api/intent-links/${bearerLink.slug}`, { method: 'DELETE', headers: B })
+    check('intent links: the key owner revokes it (capacity restored)', bearerRevoke.status === 200)
+
     // cleanup: the minted row + its events (raw deletes via prisma are not
     // exposed here — the API has no delete; rows are tiny and harmless, but
     // keep the namespace tidy by revoking… no revoke endpoint in v1 either.
