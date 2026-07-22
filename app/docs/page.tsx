@@ -54,19 +54,19 @@ const DOOR_CARDS = [
     cta: 'The trust model',
   },
   {
-    id: 'agent' as const,
-    kicker: 'PAY IT · FOR AGENT DEVS',
-    title: 'MCP doors your agent pays per call',
+    id: 'creator' as const,
+    kicker: 'EARN WITH IT · FOR CREATORS',
+    title: 'A link that carries an ask — and pays you on conversions',
     lead: (
       <>
-        Free <code>/mcp</code> doors on the whole fleet, plus <code>/paid/mcp</code> x402 doors
-        serving identical tools — <strong>no API key, no account</strong>: a 402 challenge, a
-        gasless USDC signature, an answer. Put an expense account under it and every call is
-        capped and receipted.
+        Mint <code>/i/&lt;slug&gt;</code> links that carry a plain-English ask. Whoever opens
+        one connects <strong>their own wallet</strong>, Yeetful builds the guarded path, they
+        sign — and you earn half of the 0.20% fee on every conversion your link produces, with
+        a live funnel to prove it.
       </>
     ),
-    href: '/docs/paid-doors',
-    cta: 'The paid doors',
+    href: '/docs/links',
+    cta: 'Intent links',
   },
 ]
 
@@ -146,9 +146,9 @@ export default function DocsIndexPage() {
         Tell Yeetful what should happen — once. It compiles the sentence into deterministic,
         guard-checked transactions; <strong>your own wallet is the only thing that can
         sign</strong>; every build is priced, capped, receipted, and killable. These docs open
-        three doors: <Link href="/docs/embed">embed it</Link> on your site,{' '}
-        <Link href="/docs/trust">trust it</Link> with your signature, or{' '}
-        <Link href="/docs/paid-doors">pay it</Link> per call from your agent.
+        three doors: <Link href="/docs/links">earn with it</Link> as a creator,{' '}
+        <Link href="/docs/embed">embed it</Link> on your site, or{' '}
+        <Link href="/docs/trust">trust it</Link> with your signature.
       </p>
       <div className="splash__ctas">
         <Link href="/docs/jobs" className="btn btn--solid">
@@ -246,11 +246,10 @@ export default function DocsIndexPage() {
         <div>
           <p className="splash__kicker mono">ONE PACKAGE</p>
           <p className="splash__npmlead">
-            Everything ships in the <code>yeetful</code> npm package: <code>yeetful/embed</code>{' '}
-            mounts the chat, <code>yeetful/client</code> pays{' '}
-            <Link href="/docs/paid-doors">x402 doors</Link>, <code>yeetful/agent</code> adds the{' '}
-            <Link href="/docs/expense-account">expense account</Link>, and the server helpers let
-            your own MCP <Link href="/docs/earn">track its earnings</Link>. MIT, TypeScript.
+            Everything ships in the <code>yeetful</code> npm package — <code>yeetful/embed</code>{' '}
+            mounts the full chat on your site in five lines (see{' '}
+            <Link href="/docs/embed">the embed docs</Link>), with agent-payment and MCP-earnings
+            helpers included for the deep end. MIT, TypeScript.
           </p>
         </div>
         <pre className="splash__code mono">npm install yeetful</pre>

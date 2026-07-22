@@ -2,7 +2,7 @@
 
 // Progressive enhancement for the docs: gives every heading a stable slug id +
 // a hover-revealed "copy link" button so a reader can deep-link to a section
-// (e.g. /docs/earn#add-it-with-claude-code) without scrolling. The docs pages
+// (e.g. /docs/links#mint-from-chat) without scrolling. The docs pages
 // are server components rendered to static HTML, so React holds no client tree
 // for them — we enhance the DOM directly in an effect, which never fights
 // reconciliation. The copy is still server-rendered + crawlable; ids/buttons

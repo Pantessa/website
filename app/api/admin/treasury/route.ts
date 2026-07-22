@@ -4,7 +4,7 @@ import { Prisma } from '@prisma/client'
 import { getAuthAddress } from '@/lib/api-key'
 import { isAdminAddress, isTestWallet } from '@/lib/admin'
 import { alchemyEnabled, getTreasuryInflows, type TreasuryInflow } from '@/lib/alchemy'
-import { TREASURY_ADDRESS } from '@/lib/fees'
+import { TREASURY_ADDRESS, FEES_LIVE_SINCE } from '@/lib/fees'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -34,10 +34,9 @@ export const dynamic = 'force-dynamic'
 
 const WINDOWS = new Set([30, 90])
 
-/** The treasury address is an old wallet — it received unrelated transfers
- *  years before Yeetful existed. Only inflow since fees went live (the LiFi
- *  venue fee shipped 2026-07-15; July 1 gives margin) counts as collected. */
-const FEES_LIVE_SINCE = Date.parse('2026-07-01T00:00:00Z')
+// The treasury address is an old wallet — it received unrelated transfers
+// years before Yeetful existed. Only inflow since FEES_LIVE_SINCE
+// (lib/fees.ts — shared with the public /activity fee strip) counts.
 
 /** 4-decimal rounding — sub-cent fees are the norm at test-trade sizes. */
 const round4 = (n: number) => Math.round(n * 1e4) / 1e4

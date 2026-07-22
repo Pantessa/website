@@ -88,7 +88,7 @@ export default function DashboardReceiptsPage() {
             icon={Coins}
             title="No earnings yet"
             description="When a claimed MCP reports a paid call (via reportUsage or POST /api/mcp/receipts), it shows up here with its on-chain check."
-            cta={{ href: '/docs/earn', label: 'How earnings work' }}
+            cta={{ href: '/docs', label: 'Docs' }}
           />
         ) : (
           <div className="divide-y divide-white/5">

@@ -180,92 +180,6 @@
   .nav__dash:hover { border-color: var(--fg); background: var(--surf-2); }
   .drawer__foot .nav__dash { justify-content: center; padding: 14px 16px; font-size: 16px; min-height: 48px; }
 
-  /* ── RESEARCH MEGA-MENU ──────────────────────────── */
-  /* The wrapper stays UNpositioned on purpose: the panel + scrim are portaled
-     to <body> and positioned:fixed to the viewport, dropping full-bleed from
-     under the 64px bar. */
-  .navm { display: inline-flex; }
-  .navm__trigger { cursor: pointer; }
-  /* Fine hand-drawn caret (see NavResearch) — smaller + thinner than the old
-     lucide chevron so the tab reads as type, not UI chrome. */
-  .navm__chev { margin-left: 2px; opacity: .55; transition: transform .22s cubic-bezier(.16,1,.3,1), opacity .15s; }
-  .navm__trigger:hover .navm__chev { opacity: 1; }
-  .navm__trigger.is-active { color: var(--fg); }
-  .navm__trigger.is-active .navm__chev { transform: rotate(180deg); opacity: 1; }
-
-  /* Scrim — dims the page beneath the dropping sheet; also the outside-click
-     catcher. Sits under the panel, over the page. */
-  .navm__scrim {
-    position: fixed; inset: 64px 0 0 0; z-index: 39;
-    background: rgba(0,0,0,0.45); backdrop-filter: blur(2px);
-    opacity: 0; pointer-events: none; transition: opacity .26s ease;
-  }
-  .navm__scrim.is-open { opacity: 1; pointer-events: auto; }
-
-  /* The sheet itself — a full-width bar that "comes down": a clip-path curtain
-     wipes it open from the top edge while it fades + settles into place. */
-  .navm__panel {
-    position: fixed; top: 64px; left: 0; right: 0; z-index: 41;
-    background: color-mix(in srgb, var(--bg) 86%, transparent); backdrop-filter: blur(18px) saturate(1.3);
-    box-shadow: 0 32px 80px -20px rgba(0,0,0,0.85);
-    opacity: 0; transform: translateY(-10px); pointer-events: none;
-    clip-path: inset(0 0 100% 0);
-    transition: opacity .2s ease, transform .28s cubic-bezier(.16,1,.3,1),
-                clip-path .3s cubic-bezier(.16,1,.3,1);
-  }
-  .navm__panel.is-open {
-    opacity: 1; transform: none; pointer-events: auto;
-    clip-path: inset(0 0 -40% 0);
-  }
-  /* Rainbow filament that draws across the top edge as the sheet opens —
-     the same gradient as the active-tab underline, so the nav has one accent
-     language instead of borders. Edges fade out via mask so it never reads
-     as a bar. */
-  .navm__panel::before {
-    content: ''; position: absolute; top: 0; left: 0; height: 1.5px;
-    width: 0; background: var(--nav-rainbow);
-    -webkit-mask: linear-gradient(90deg, transparent, #000 15%, #000 85%, transparent);
-    mask: linear-gradient(90deg, transparent, #000 15%, #000 85%, transparent);
-    opacity: 0; transition: width .5s ease .05s, opacity .3s ease;
-  }
-  .navm__panel.is-open::before { width: 100%; opacity: .7; }
-  .navm__inner {
-    padding: 22px clamp(24px, 4vw, 64px) 26px;
-    max-width: 1180px; margin: 0 auto;
-  }
-  .navm__eyebrow {
-    display: block; font-size: 10.5px; letter-spacing: 0.18em; text-transform: uppercase;
-    color: var(--muted-2); margin-bottom: 14px;
-  }
-  .navm__grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
-  .navm__card {
-    display: flex; align-items: flex-start; gap: 13px;
-    padding: 15px 16px; border-radius: 14px;
-    border: 1px solid transparent; background: transparent;
-    transition: background .16s, border-color .16s, transform .16s;
-    /* per-card stagger on open */
-    opacity: 0; transform: translateY(6px);
-  }
-  .navm__panel.is-open .navm__card {
-    opacity: 1; transform: none;
-    transition: opacity .32s ease, transform .32s cubic-bezier(.16,1,.3,1),
-                background .16s, border-color .16s;
-    transition-delay: calc(0.06s + var(--i) * 0.05s);
-  }
-  .navm__card:hover { background: var(--surf-1); border-color: var(--line); transform: translateY(-1px); }
-  .navm__card.is-on { background: var(--surf-1); border-color: var(--line-2); }
-  .navm__icon {
-    flex-shrink: 0; width: 38px; height: 38px; border-radius: 10px;
-    display: grid; place-items: center;
-    background: color-mix(in oklch, var(--accent) 12%, transparent);
-    color: var(--accent);
-    transition: background .16s;
-  }
-  .navm__card:hover .navm__icon { background: color-mix(in oklch, var(--accent) 20%, transparent); }
-  .navm__ctext { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
-  .navm__label { font-size: 14.5px; font-weight: 600; color: var(--fg); letter-spacing: -0.01em; }
-  .navm__blurb { font-size: 12.5px; line-height: 1.4; color: var(--muted); }
-
   /* ── CONSOLIDATED ACCOUNT MENU ───────────────────── */
   .navacct { position: relative; display: inline-flex; }
   .navacct__pill {
@@ -334,11 +248,9 @@
   .drawer__tabs .drawer__sub { padding-left: 28px; }
 
   @media (prefers-reduced-motion: reduce) {
-    .navm__panel, .navm__card, .navm__scrim, .navacct__menu,
-    .navm__chev, .navacct__chev, .navm__panel::before {
+    .navacct__menu, .navacct__chev {
       transition: opacity .12s linear !important;
     }
-    .navm__panel { transform: none; clip-path: none; }
   }
 
   .btn {
@@ -2596,6 +2508,9 @@
     color: var(--fink); text-wrap: balance;
     text-shadow: 0 2px 40px rgba(var(--fhalorgb, 5,7,8),.8);
   }
+  /* links-first claim is a longer sentence than the old two-word headline —
+     size down so both lines hold on one row across the stage's 880px. */
+  .fhero__h1--links { font-size: clamp(44px, 6.6vw, 96px); }
   .fhero__em {
     font-style: italic; letter-spacing: -.012em;
     color: transparent;

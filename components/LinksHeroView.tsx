@@ -1,33 +1,32 @@
 'use client'
 
-// The fusion hero — "where dapps become one agent". Protocol energies
-// (Uniswap pink, Robinhood green, Snapshot gold, and a dashed "your MCP" emerald)
-// stream as luminous particle rivers from the edges into a breathing core
-// behind the headline. Every few seconds the core TRANSMUTES: a ring pulse
-// fires, an emerald burst leaves the core, and one mono line under the CTAs
-// names what the fusion just produced (swap built, vote signed, receipted) —
-// the art literally performs the product. No browser chrome, no mockup;
-// "Try it live" summons the real /embed chat as an overlay instead.
-// Canvas is 2D + additive blending (no WebGL), throttled particle counts,
-// static frame under prefers-reduced-motion.
+// The links-first fusion hero — the client half. Protocol energies
+// (Uniswap pink, Robinhood green, Snapshot gold, and a dashed "your MCP"
+// emerald) stream as luminous particle rivers from the edges into a
+// breathing core behind the claim — dapps fusing into ONE LINK. Every few
+// seconds the core TRANSMUTES: a ring pulse fires, an emerald burst leaves
+// the core, and one mono line under the CTAs names what the link economy
+// just produced (link opened, swap signed, creator paid) — the art performs
+// the product. Canvas is 2D + additive blending (no WebGL), throttled
+// particle counts, static frame under prefers-reduced-motion. Copy, doors,
+// and the server-truth stats strip come from the server parent (LinksHero).
 
 import { useEffect, useRef, useState } from 'react'
-import { createPortal } from 'react-dom'
 import Link from 'next/link'
-import { useAccount } from 'wagmi'
-import { useSession } from '@/lib/session'
-import { cdpEnabled } from '@/lib/cdp-embedded'
-import CreateAccountButton from '@/components/CreateAccountButton'
+import { ArrowRight } from 'lucide-react'
 import { getProtocolMark } from '@/components/protocol-marks'
 import { useSiteTheme } from '@/components/chart-theme'
 
-const EMBED_SRC = '/embed?mcps=uniswap-free,snapshot-free&theme=dark'
+export interface LinkHeroStats {
+  links: string
+  opens: string
+  movedUsd: string
+  creatorUsd: string
+}
 
 /** Stream sources — normalized anchors, protocol hue, and the chip label.
  * Desktop shows labeled medallions at these anchors; phones tuck the streams
- * into the corners and show a plain chip row instead. The medallion shows the
- * protocol's real mark (resolved from the shared registry) in its brand hue,
- * falling back to `glyph` for "your MCP". */
+ * into the corners and show a plain chip row instead. */
 const SOURCES = [
   { x: 0.09, y: 0.3, color: '#FF6BAF', light: '#d81f78', name: 'Uniswap', glyph: 'U', dashed: false },
   { x: 0.91, y: 0.27, color: '#FFC94D', light: '#b07c00', name: 'Snapshot', glyph: '⚡', dashed: false },
@@ -35,10 +34,8 @@ const SOURCES = [
   { x: 0.89, y: 0.78, color: '#34e3a0', light: '#0e8f62', name: 'your MCP', glyph: '+', dashed: true },
 ]
 
-/** Canvas palettes per theme. Dark paints additive light ('lighter' blends
- * glows on black); light paints ink on paper (plain compositing, deeper
- * hues, a soft emerald bloom for the core). Read live each frame so the
- * footer toggle re-inks the art without a remount. */
+/** Canvas palettes per theme — read live each frame so the footer toggle
+ * re-inks the art without a remount. */
 const CANVAS_PALETTES = {
   dark: {
     composite: 'lighter' as GlobalCompositeOperation,
@@ -73,12 +70,13 @@ function SourceGlyph({ name, glyph }: { name: string; glyph: string }) {
 }
 const CORE = { x: 0.5, y: 0.47 }
 
-/** What the fusion produces — cycled under the CTAs, ring-pulsed in the art. */
+/** What the fusion produces — links-first: the core mints and settles
+ * intent links. Cycled under the CTAs, ring-pulsed in the art. */
 const TRANSMUTATIONS = [
-  '⇄ swap built on Uniswap · signed by your wallet · receipted',
-  '🗳 vote cast on Snapshot · EIP-712 · your signature, your say',
-  '✓ quote → build → guardrails → sign · $0.00 · receipted',
-  '⛓ approve → swap chained · re-quoted per step · over-cap dropped',
+  '🔗 /i/buy-aapl opened · funded cross-chain · signed · receipted',
+  '⇄ swap built on Uniswap · signed by their own wallet · receipted',
+  '🗳 vote cast on Snapshot · EIP-712 · their signature, their say',
+  '½ of the 0.20% fee → the link’s creator · claimable in USDC',
 ]
 
 interface Particle {
@@ -170,8 +168,7 @@ function FusionCanvas({
     let lastPulse = pulseRef.current
 
     // Cursor lens — the rivers bend around the pointer. Smoothed so the
-    // field flexes instead of snapping; influence decays to zero when the
-    // pointer leaves the hero.
+    // field flexes instead of snapping.
     const mouse = { x: 0, y: 0, tx: 0, ty: 0, k: 0, tk: 0 }
     const onMove = (e: MouseEvent) => {
       const r = canvas.getBoundingClientRect()
@@ -400,73 +397,22 @@ function FusionCanvas({
   return <canvas ref={canvasRef} className="fhero__canvas" aria-hidden="true" />
 }
 
-/** What a REAL turn in the summoned chat renders as — actual outcomes drive
- * the transmutation, so the art and the product become the same object. */
-const LIVE_LINES: Record<string, string> = {
-  answered: '✓ answered live · $0.00 · receipted',
-  clarify: '… the agent asked a clarifying question — live',
-  'tx-built': '⇄ transaction built live — waiting for a signature in the chat',
-  signed: '✍ signed — receipted on-chain, just now',
-}
-
-export default function HomeHeroFusion() {
+export default function LinksHeroView({ stats }: { stats: LinkHeroStats | null }) {
   const pulseRef = useRef(0)
   const sectionRef = useRef<HTMLElement>(null)
   const captionRef = useRef<HTMLParagraphElement>(null)
   const captionAnchorRef = useRef<{ x: number; y: number } | null>(null)
   const [captionIdx, setCaptionIdx] = useState(0)
-  const [live, setLive] = useState(false)
-  const [liveLine, setLiveLine] = useState<string | null>(null)
-  const liveAtRef = useRef(0)
-  const [embedSrc, setEmbedSrc] = useState(EMBED_SRC)
   const lightMode = useSiteTheme()
 
-  // "Get started" opens the sign-in modal for newcomers instead of dumping
-  // them on the SIWE-gated dashboard. Signed-in / connected visitors skip the
-  // modal and go straight to /dashboard. mounted-gated so SSR and the first
-  // client render agree (wagmi state only exists post-hydration).
-  const { isConnected } = useAccount()
-  const { address: sessionAddress } = useSession()
-  const [mounted, setMounted] = useState(false)
-  useEffect(() => setMounted(true), [])
-  const showSignInModal = mounted && cdpEnabled && !isConnected && !sessionAddress
-
-  // Pin the embed to this origin so its postMessage events reach us, and
-  // hand it the site theme so the summoned chat matches the page.
-  useEffect(() => {
-    const src = lightMode ? EMBED_SRC.replace('theme=dark', 'theme=light') : EMBED_SRC
-    setEmbedSrc(`${src}&host=${encodeURIComponent(window.location.origin)}`)
-  }, [lightMode])
-
   // The transmutation clock: rotate the caption and ask the canvas for a
-  // ring pulse + writer burst on the same beat — unless a REAL turn just
-  // happened (the live line holds the stage for ~9s).
+  // ring pulse + writer burst on the same beat.
   useEffect(() => {
     const id = setInterval(() => {
-      if (Date.now() - liveAtRef.current < 9000) return
-      setLiveLine(null)
       setCaptionIdx((i) => (i + 1) % TRANSMUTATIONS.length)
       pulseRef.current++
     }, 4600)
     return () => clearInterval(id)
-  }, [])
-
-  // REAL transmutations: the summoned chat reports each turn (embed contract
-  // 'event' messages) — actual outcomes drive the art, no script.
-  useEffect(() => {
-    const onMessage = (e: MessageEvent) => {
-      if (e.origin !== window.location.origin) return
-      const d = e.data as { source?: string; type?: string; name?: string; data?: { outcome?: string } } | null
-      if (!d || d.source !== 'yeetful-embed' || d.type !== 'event') return
-      const outcome = d.name === 'order-signed' ? 'signed' : d.name === 'turn' ? d.data?.outcome : undefined
-      const line = outcome ? LIVE_LINES[outcome] : undefined
-      if (!line) return
-      setLiveLine(line)
-      liveAtRef.current = Date.now()
-      pulseRef.current++
-    }
-    window.addEventListener('message', onMessage)
-    return () => window.removeEventListener('message', onMessage)
   }, [])
 
   // Where the writers land: the caption's center, in section-local px
@@ -487,7 +433,7 @@ export default function HomeHeroFusion() {
     <section className="fhero" ref={sectionRef}>
       <FusionCanvas pulseRef={pulseRef} captionAnchorRef={captionAnchorRef} />
 
-      {/* labeled sources — the protocols feeding the core (desktop) */}
+      {/* labeled sources — the dapps feeding the link (desktop) */}
       <div className="fhero__chips" aria-hidden="true">
         {SOURCES.map((s) => (
           <span
@@ -504,78 +450,84 @@ export default function HomeHeroFusion() {
 
       <div className="fhero__stage">
         <div className="fhero__eyebrow mono">
-          The federated transaction layer <span>·</span> <b>mega apps are here</b>
+          Intent links <span>·</span> non-custodial <span>·</span> <b>your wallet signs</b>
         </div>
-        <h1 className="fhero__h1">
-          Every dapp.
+        <h1 className="fhero__h1 fhero__h1--links">
+          You have an intent.
           <br />
-          <span className="fhero__em">One chat.</span>
+          <span className="fhero__em">We do the rest.</span>
         </h1>
         <p className="fhero__lede">
-          Fuse <strong>Uniswap, Snapshot, Robinhood — or your own MCP</strong> — into one agent that
-          answers, votes, and builds <strong>safe, signed, receipted</strong> transactions.
-          Compose it in minutes. Embed it in five lines.
+          Mint a link that carries an ask — &ldquo;Buy $10 of AAPL&rdquo;, &ldquo;Stake ETH with
+          Lido&rdquo;, &ldquo;DCA $25 weekly&rdquo;. Whoever opens it connects their own wallet and
+          Yeetful scans, funds across chains, builds, and guard-checks the whole path. They sign.
+          Done. The transaction onboarding flow, nailed — for your dapp, or for the audience you
+          teach.
         </p>
         <div className="fhero__ctas">
-          {/* Try it live → drop the user into /chat with the free Uniswap +
-              Snapshot working set preselected AND the first ask prefilled —
-              a blank composer is where strangers bounce; ?prompt= never
-              auto-sends, they just press enter. */}
-          <Link
-            className="btn btn--solid"
-            href={`/chat?mcps=uniswap-free,snapshot-free&prompt=${encodeURIComponent('Swap $1 of ETH to USDC')}`}
-          >
-            Try it live
+          <Link className="btn btn--solid" href="/i/buy-aapl">
+            Try a live link
           </Link>
-          {showSignInModal ? (
-            <CreateAccountButton className="btn btn--ghost" label="Get started" redirectTo="/dashboard" />
-          ) : (
-            <Link className="btn btn--ghost" href="/dashboard">
-              Get started
-            </Link>
-          )}
+          <Link className="btn btn--ghost" href="/dashboard/links">
+            Mint yours
+          </Link>
+          <Link
+            href="/links"
+            className="inline-flex items-center gap-1.5 text-[13px] text-[color:var(--muted)] hover:text-[color:var(--fg)] transition-colors"
+          >
+            The leaderboard <ArrowRight className="w-3.5 h-3.5" />
+          </Link>
         </div>
         {/* the transmutation readout — written by the burst: each character
             materializes as the writer particles arrive from the core */}
-        <p className={`fhero__caption mono${liveLine ? ' fhero__caption--live' : ''}`} key={liveLine ?? captionIdx} ref={captionRef}>
-          {liveLine && <span className="fhero__livedot" aria-hidden="true" />}
-          {[...(liveLine ?? TRANSMUTATIONS[captionIdx])].map((ch, i) => (
+        <p className="fhero__caption mono" key={captionIdx} ref={captionRef}>
+          {[...TRANSMUTATIONS[captionIdx]].map((ch, i) => (
             <span className="fhero__char" style={{ animationDelay: `${340 + i * 13}ms` }} key={i}>
-              {ch === ' ' ? ' ' : ch}
+              {ch === ' ' ? ' ' : ch}
             </span>
           ))}
         </p>
+
+        {/* The link economy, live — server-truth numbers, same sources as
+            /activity ($ = guardrail-priced signed notional attributed to
+            links; creator earnings = half the 20bps on fee-bearing
+            conversions). */}
+        {stats && (
+          <div className="mt-10 grid grid-cols-2 sm:grid-cols-4 gap-3 w-full max-w-3xl">
+            {(
+              [
+                { label: 'Links live', value: stats.links },
+                { label: 'Opens', value: stats.opens },
+                { label: 'Moved through links', value: stats.movedUsd },
+                { label: 'Creator earnings', value: stats.creatorUsd },
+              ] as const
+            ).map((s) => (
+              <div
+                key={s.label}
+                className="rounded-xl border border-[var(--line)] bg-[color-mix(in_srgb,var(--surf-1)_72%,transparent)] backdrop-blur-sm px-4 py-3 text-left"
+              >
+                <div className="mono text-[20px] text-[color:var(--fg)]">{s.value}</div>
+                <div className="mono text-[10.5px] uppercase tracking-wider text-[color:var(--muted-2)] mt-1">
+                  {s.label}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* phones: the sources as a plain row (the absolute chips hide) */}
       <div className="fhero__chiprow" aria-hidden="true">
         {SOURCES.map((s) => (
-          <span key={s.name} className={`fhero__chip fhero__chip--flow mono${s.dashed ? ' fhero__chip--dashed' : ''}`} style={{ ['--pc' as string]: lightMode ? s.light : s.color }}>
+          <span
+            key={s.name}
+            className={`fhero__chip fhero__chip--flow mono${s.dashed ? ' fhero__chip--dashed' : ''}`}
+            style={{ ['--pc' as string]: lightMode ? s.light : s.color }}
+          >
             <SourceGlyph name={s.name} glyph={s.glyph} /> {s.name}
           </span>
         ))}
       </div>
-
-      {/* Try it live — the REAL /embed chat, summoned instead of mocked.
-          Portaled to <body> so its fixed positioning escapes the hero's
-          `isolation: isolate` stacking context — otherwise later page
-          sections paint over it on scroll. */}
-      {live &&
-        typeof document !== 'undefined' &&
-        createPortal(
-          <div className="fhero__livewrap" role="dialog" aria-label="Yeetful chat — live">
-            <div className="fhero__livebar">
-              <span className="mono">
-                <i /> Yeetful chat · live — Uniswap + Snapshot, one agent
-              </span>
-              <button className="fhero__liveclose" onClick={() => setLive(false)} aria-label="Close live chat">
-                ✕
-              </button>
-            </div>
-            <iframe className="fhero__liveframe" src={embedSrc} title="Yeetful chat — live" allow="clipboard-write; fullscreen" allowFullScreen />
-          </div>,
-          document.body,
-        )}
     </section>
   )
 }

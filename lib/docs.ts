@@ -17,17 +17,19 @@ export interface DocsPage {
   group?: 'guide' | 'legal'
   /**
    * The reader this page serves — the docs are structured around three doors:
-   * embed it (hosts), trust it (users), pay it (agent devs). Drives the
-   * sidebar groups and the landing's door sections. Legal pages have none.
+   * embed it (hosts), trust it (users), earn with it (creators). The old
+   * fourth reader (x402 agent devs) was demoted in the links-first purge
+   * (2026-07-22) — those pages stay in the registry ready:false, their dirs
+   * unrouted (_-prefixed), everything reversible. Legal pages have none.
    */
-  door?: 'host' | 'user' | 'agent'
+  door?: 'host' | 'user' | 'agent' | 'creator'
 }
 
 /** Door display metadata — one place for the labels the sidebar + landing share. */
-export const DOORS: Array<{ id: 'host' | 'user' | 'agent'; label: string; reader: string }> = [
+export const DOORS: Array<{ id: 'host' | 'user' | 'creator'; label: string; reader: string }> = [
+  { id: 'creator', label: 'Earn with it', reader: 'for creators' },
   { id: 'host', label: 'Embed it', reader: 'for hosts' },
   { id: 'user', label: 'Trust it', reader: 'for users' },
-  { id: 'agent', label: 'Pay it', reader: 'for agent devs' },
 ]
 
 export const DOCS_PAGES: DocsPage[] = [
@@ -40,7 +42,36 @@ export const DOCS_PAGES: DocsPage[] = [
     ready: true,
   },
 
+  // ── EARN WITH IT · for creators ─────────────────────────────────────────
+  {
+    slug: 'links',
+    title: 'Intent links',
+    seoTitle: 'Intent links — a link that carries an ask',
+    description:
+      'Mint a short link that carries a plain-English ask. Whoever opens it connects their own wallet, Yeetful builds the guarded path, they sign. Funnels, A/B phrasings, storefronts, and partner limits.',
+    ready: true,
+    door: 'creator',
+  },
+  {
+    slug: 'creator-earnings',
+    title: 'Creator earnings',
+    seoTitle: 'Creator earnings — half the fee on your conversions',
+    description:
+      'Creators earn half of Yeetful’s 0.20% fee on the fee-bearing conversions their links produce — server-truth accounting, sales and transfers never charged, claims paid as USDC on Base from $10.',
+    ready: true,
+    door: 'creator',
+  },
+
   // ── EMBED IT · for hosts ────────────────────────────────────────────────
+  {
+    slug: 'host-buttons',
+    title: 'Site buttons',
+    seoTitle: 'Site buttons — a money button any site can wear',
+    description:
+      'Generate a copy-paste HTML button that carries an ask. Visitors tap it, sign with their own wallet on Yeetful, and return to your site — no script, no iframe, no keys.',
+    ready: true,
+    door: 'host',
+  },
   {
     slug: 'embed',
     title: 'Embed the chat',
@@ -132,7 +163,7 @@ export const DOCS_PAGES: DocsPage[] = [
     seoTitle: 'Paid doors — pay-per-call MCPs, no API key',
     description:
       'Every Yeetful MCP has a free door; some add a paid one. Same tools, no API key, no account: your agent pays per call in USDC on Base over x402. Try fund_and_build for $0.02.',
-    ready: true,
+    ready: false, // links-first purge 2026-07-22 — functionality live, docs demoted
     door: 'agent',
   },
   {
@@ -141,7 +172,7 @@ export const DOCS_PAGES: DocsPage[] = [
     seoTitle: 'Agent quickstart — pay per call with the yeetful SDK',
     description:
       'Install the yeetful SDK, define a spend grant, and make your first pay-per-call x402 request in USDC on Base — about twenty lines of TypeScript.',
-    ready: true,
+    ready: false, // links-first purge 2026-07-22 — functionality live, docs demoted
     door: 'agent',
   },
   {
@@ -150,7 +181,7 @@ export const DOCS_PAGES: DocsPage[] = [
     seoTitle: 'Spend grants — allowlists, budgets, and receipts',
     description:
       'How yeetful spend grants work: host allowlists, per-call/per-day/lifetime USD caps, typed GrantError denials, and a receipt for every decision.',
-    ready: true,
+    ready: false, // links-first purge 2026-07-22 — functionality live, docs demoted
     door: 'agent',
   },
   {
@@ -159,7 +190,7 @@ export const DOCS_PAGES: DocsPage[] = [
     seoTitle: 'Agents & budgets — a daily cap for every connected app',
     description:
       'On Yeetful an agent IS an API key: give each connected app a per-day USD budget the SDK pre-flights via /api/agent/policy and enforces before paying.',
-    ready: true,
+    ready: false, // links-first purge 2026-07-22 — functionality live, docs demoted
     door: 'agent',
   },
   {
@@ -168,7 +199,7 @@ export const DOCS_PAGES: DocsPage[] = [
     seoTitle: 'Teams — a shared expense account for your whole org',
     description:
       'Yeetful organizations: invite teammates by wallet address, share agent keys, set a two-level budget (org daily cap over per-key budgets), export the report.',
-    ready: true,
+    ready: false, // links-first purge 2026-07-22 — functionality live, docs demoted
     door: 'agent',
   },
   {
@@ -177,7 +208,7 @@ export const DOCS_PAGES: DocsPage[] = [
     seoTitle: 'Grants & policy API — the REST reference',
     description:
       'The REST reference: every /api/grants route (CRUD, EIP-712 signing, receipt sync), the GET /api/agent/policy pre-flight, and the receipt body fields — Bearer or session auth.',
-    ready: true,
+    ready: false, // links-first purge 2026-07-22 — functionality live, docs demoted
     door: 'agent',
   },
   {
@@ -186,7 +217,7 @@ export const DOCS_PAGES: DocsPage[] = [
     seoTitle: 'Ledger sync — agent receipts on your Yeetful dashboard',
     description:
       'Mint a yf_ API key, set YEETFUL_GRANT_ID, and every settlement and denial your agent makes lands in your yeetful.com dashboard audit feed.',
-    ready: true,
+    ready: false, // links-first purge 2026-07-22 — functionality live, docs demoted
     door: 'agent',
   },
   {
@@ -195,7 +226,7 @@ export const DOCS_PAGES: DocsPage[] = [
     seoTitle: 'x402 protocol — what the SDK handles for you',
     description:
       'The x402 402-challenge flow, and the v1/v2 wire differences (amount fields, CAIP-2 networks, payment headers) the yeetful client absorbs automatically.',
-    ready: true,
+    ready: false, // links-first purge 2026-07-22 — functionality live, docs demoted
     door: 'agent',
   },
   {
@@ -204,7 +235,7 @@ export const DOCS_PAGES: DocsPage[] = [
     seoTitle: 'Funding — get USDC on Base for x402 calls',
     description:
       'How to fund a Yeetful account with USDC on Base: where to get it, how much to keep (EIP-3009 is gasless), mainnet vs Base Sepolia, and what happens if you run dry.',
-    ready: true,
+    ready: false, // links-first purge 2026-07-22 — functionality live, docs demoted
     door: 'agent',
   },
   {
@@ -213,7 +244,7 @@ export const DOCS_PAGES: DocsPage[] = [
     seoTitle: 'Router — route MCP calls by plain-English ask',
     description:
       'Router is Yeetful’s MCP routing engine: ask in plain English, it weighs every route, picks the cheapest proven one under your cap, and your agent pays per call.',
-    ready: true,
+    ready: false, // links-first purge 2026-07-22 — functionality live, docs demoted
     door: 'agent',
   },
   {
@@ -222,7 +253,7 @@ export const DOCS_PAGES: DocsPage[] = [
     seoTitle: 'Add Yeetful to your agent with one Claude prompt',
     description:
       'Paste one prompt into Claude Code and it wires the yeetful SDK into your agent, then walks you through minting an API key and copying your grant id.',
-    ready: true,
+    ready: false, // links-first purge 2026-07-22 — functionality live, docs demoted
     door: 'agent',
   },
   {
@@ -231,7 +262,7 @@ export const DOCS_PAGES: DocsPage[] = [
     seoTitle: 'x402 payer demo — pay for data, leave with a guarded plan',
     description:
       'One script, the whole thesis: an external agent pays a ≤$0.05 x402 endpoint through the routing engine (receipted on-chain), then submits a compound intent as a $0 dryRun job.',
-    ready: true,
+    ready: false, // links-first purge 2026-07-22 — functionality live, docs demoted
     door: 'agent',
   },
   {
@@ -240,7 +271,7 @@ export const DOCS_PAGES: DocsPage[] = [
     seoTitle: 'Track MCP earnings — report paid calls to your dashboard',
     description:
       'Add one async, non-blocking call to your MCP and every paid request shows up on your Yeetful dashboard: total earned, last 30 days, calls served, and paying agents.',
-    ready: true,
+    ready: false, // links-first purge 2026-07-22 — functionality live, docs demoted
     door: 'agent',
   },
   {
@@ -281,7 +312,7 @@ export const guidePages = () => readyPages().filter((p) => (p.group ?? 'guide') 
 /** Legal pages — their own sidebar group; excluded from the dev-doc cards. */
 export const legalPages = () => readyPages().filter((p) => p.group === 'legal')
 /** Ready guide pages behind one door — sidebar groups + landing door sections. */
-export const doorPages = (door: 'host' | 'user' | 'agent') =>
+export const doorPages = (door: 'host' | 'user' | 'agent' | 'creator') =>
   guidePages().filter((p) => p.door === door)
 
 export function docsUrl(slug: string): string {

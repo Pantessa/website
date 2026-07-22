@@ -1,6 +1,6 @@
-// One source of truth for the two Claude Code onboarding prompts. The splash
-// (/docs), the payer guide (/docs/claude-code), and the payee guide (/docs/earn)
-// all render these — keeping them here means the headline integration copy never
+// One source of truth for the two Claude Code onboarding prompts. The docs
+// splash (/docs) and the dashboard earn/connect panels render these — keeping
+// them here means the headline integration copy never
 // drifts between pages. Plain text on purpose (no markdown fences inside) so a
 // single copy-paste survives intact.
 

@@ -93,7 +93,7 @@ export default function EarnPanel() {
             {[
               { n: 1, label: 'Claim your MCP', hint: 'Open it in the directory and sign in with its payTo wallet.', href: '/dashboard/servers', cta: 'Directory' },
               { n: 2, label: 'Mint an API key', hint: 'The yf_… secret your server uses to report calls.', href: '/dashboard/keys', cta: 'Mint a key' },
-              { n: 3, label: 'Report each paid call', hint: 'One async, non-blocking SDK line after settlement.', href: '/docs/earn', cta: 'How' },
+              { n: 3, label: 'Report each paid call', hint: 'One async, non-blocking SDK line after settlement.', href: '/docs', cta: 'How' },
             ].map((s) => (
               <li key={s.n} className="flex items-start gap-3">
                 <span className="flex-shrink-0 mt-0.5 w-5 h-5 grid place-items-center rounded-full bg-emerald-500/15 text-emerald-400 text-[11px] font-semibold mono">
@@ -119,10 +119,10 @@ export default function EarnPanel() {
           <CopyBlock text={PAYEE_CLAUDE_PROMPT} label="Copy prompt" maxHeightClassName="max-h-56" />
 
           <Link
-            href="/docs/earn"
+            href="/docs"
             className="inline-flex items-center gap-1.5 mt-3 text-xs font-medium text-emerald-400 hover:text-emerald-300 transition-colors"
           >
-            Full earn guide →
+            Docs →
           </Link>
         </Card>
       </section>

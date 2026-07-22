@@ -1,30 +1,26 @@
 import type { Metadata } from 'next'
 import { SITE } from '@/lib/docs'
-import HomeHeroFusion from '@/components/HomeHeroFusion'
-import StandingIntent from '@/components/StandingIntent'
-import ComposeSet from '@/components/ComposeSet'
-import EngineInside from '@/components/EngineInside'
-import TxPipeline from '@/components/TxPipeline'
+import LinksHero from '@/components/LinksHero'
+import LinkLane from '@/components/LinkLane'
 import FundAnything from '@/components/FundAnything'
+import StandingIntent from '@/components/StandingIntent'
+import TxPipeline from '@/components/TxPipeline'
 import EmbedAnywhere from '@/components/EmbedAnywhere'
 import TrustStrip from '@/components/TrustStrip'
-import SwitchboardServers from '@/components/SwitchboardServers'
-import SwitchboardProof from '@/components/SwitchboardProof'
-import SwitchboardStats from '@/components/SwitchboardStats'
 import StayUpToDate from '@/components/StayUpToDate'
-import LinkLane from '@/components/LinkLane'
 import MobileCtaBar from '@/components/MobileCtaBar'
 import Footer from '@/components/Footer'
 
-/** / — the landing page tells the pivot story: compose a few MCPs into one
- * agent, Yeetful builds + guardrails + receipts the transactions, and the
- * chat embeds on any site (mega apps). Sharp routing survives demoted — the
- * engine INSIDE your set (EngineInside). Server component so it can export
- * metadata + JSON-LD; interactive pieces are client children. */
+/** / — the links-first landing (2026-07-22 repositioning): intent links are
+ * the product, chat is the link builder. One claim up top — "You have an
+ * intent. We do the rest." — then the link economy's live numbers, what a
+ * link can carry, the onboarding story, the standing/Guardian value, the
+ * trust pipeline, and the host-side embed door. One message per section.
+ * Server component so it can export metadata + JSON-LD. */
 
-const TITLE = 'Yeetful — Every dapp. One chat. Tell it once.'
+const TITLE = 'Yeetful — You have an intent. We do the rest.'
 const DESCRIPTION =
-  'Pick a few MCPs — or bring your own — and get one agent that swaps, votes, and keeps working between your turns: recurring buys, stop-loss protections, multi-step jobs. The non-custodial back office for autonomous money — guardrails, your wallet signs, every move receipted. Embed it on any site in five lines.'
+  'Mint a link that carries an ask — buy a stock, stake ETH, set a recurring buy. Whoever opens it connects their own wallet; Yeetful scans, funds across chains, builds guarded transactions, and receipts every move. Killer onboarding for any dapp; creators earn on the conversions their links produce.'
 
 export const metadata: Metadata = {
   title: TITLE,
@@ -45,11 +41,11 @@ const JSON_LD = JSON.stringify([
   {
     '@context': 'https://schema.org',
     '@type': 'SoftwareApplication',
-    name: 'Yeetful embeddable agent chat',
+    name: 'Yeetful intent links',
     applicationCategory: 'FinanceApplication',
     operatingSystem: 'Web',
     description:
-      'An embeddable chat that composes multiple MCP servers into one agent for agentic finance: free first-party MCPs (Uniswap, Snapshot, CoW Protocol, Hyperliquid, Robinhood Chain, OpenSea) plus your own. It quotes and builds on-chain transactions (swaps, DAO votes, NFT listings) with per-step guardrails, runs standing work between turns (recurring buys, stop-loss protections, multi-step fund-then-act jobs), signs with the user’s own wallet via the host page, and receipts every move.',
+      'Short links that carry a plain-English ask — buy a tokenized stock, stake ETH, set a recurring buy, protect a position. Opening one connects the visitor’s own wallet; Yeetful compiles the ask into guarded on-chain transactions (deterministic builders, fail-closed checks, cross-chain funding included), the visitor signs, and every move is receipted. Creators earn half of Yeetful’s 0.20% conversion fee; the chat doubles as the link builder and embeds on any site.',
     offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD' },
     provider: { '@type': 'Organization', name: 'Yeetful', url: SITE },
   },
@@ -60,43 +56,27 @@ export default function HomePage() {
     <>
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON_LD }} />
       <main className="x-main x-main--fluid">
-        {/* The claim + the fusion artwork (live /embed summoned on demand) */}
-        <HomeHeroFusion />
+        {/* The claim + the live link economy */}
+        <LinksHero />
 
-        {/* The product claim, straight after the hero: standing intent —
-            jobs, DCA, Guardian, NFTs — money that moves between your turns */}
-        <StandingIntent />
+        {/* What a link can carry — the six house links, tappable */}
+        <LinkLane />
 
-        {/* The power example: "Buy $2 of AAPL" funds itself across chains —
-            the onboarding story as one turn */}
+        {/* The onboarding story: "Buy $2 of AAPL" funds itself across chains */}
         <FundAnything />
 
-        {/* Recipes: what a composed set unlocks */}
-        <ComposeSet />
-
-        {/* The demoted engine — sharp routing inside YOUR set (old hero, retold) */}
-        <EngineInside />
+        {/* The underlying value: standing intent — jobs, DCA, Guardian —
+            money that moves between your turns */}
+        <StandingIntent />
 
         {/* The edge: quote → build → guardrails → sign → receipt */}
         <TxPipeline />
 
-        {/* Distribution: the 5-line install + the two fork demos */}
+        {/* Hosts: the 5-line embed + host buttons */}
         <EmbedAnywhere />
-
-        {/* Distribution, person-to-person: a link that carries an ask */}
-        <LinkLane />
 
         {/* Why hosts embed it / why users sign */}
         <TrustStrip />
-
-        {/* The working set: the free first-party fleet + bring your own */}
-        <SwitchboardServers />
-
-        {/* Proof: real turns — prompt, answer, on-chain tx */}
-        <SwitchboardProof />
-
-        {/* Aggregate analytics — real settled volume */}
-        <SwitchboardStats />
 
         <StayUpToDate />
       </main>

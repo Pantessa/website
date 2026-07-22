@@ -36,6 +36,10 @@ const JSON_LD = JSON.stringify({
 
 const FAQ: { q: string; a: string }[] = [
   {
+    q: 'How do creator kickbacks work?',
+    a: "Yeetful takes a 0.20% fee on fee-bearing swap conversions — and when the conversion came through your intent link, half of that fee is yours. Earnings accrue automatically from server-truth signed turns; claims open at $10 and pay out in USDC on Base. Every plan earns the same split; plans differ only in how many links can be active at once.",
+  },
+  {
     q: 'What is a YEET credit?',
     a: 'One credit is one answer written by the house model. Credits are ledgered off-chain today and are designed to become an ERC-20 — your balance and usage history carry over when that ships.',
   },
@@ -61,10 +65,11 @@ export default function PricingPage() {
               Plans that scale with <span className="pricing__em">your dapp.</span>
             </h1>
             <p className="pricing__sub">
-              Every plan gets the full product — compose MCPs, safe transaction building, receipts,
-              the embeddable chat. Plans meter <strong>YEET credits</strong>: one credit, one
-              house-model answer. On-chain calls stay pay-per-call from your users&rsquo; own
-              wallets.
+              Every plan gets the full product — intent links, safe transaction building, receipts,
+              the embeddable chat. Plans meter <strong>active links</strong> and{' '}
+              <strong>YEET credits</strong>; on-chain calls stay pay-per-call from your users&rsquo;
+              own wallets. And every plan earns: creators keep{' '}
+              <strong>half of Yeetful&rsquo;s 0.20% fee</strong> on their links&rsquo; conversions.
             </p>
           </div>
 

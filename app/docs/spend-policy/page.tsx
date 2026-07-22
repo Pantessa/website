@@ -155,8 +155,8 @@ export default function SpendPolicyPage() {
             gate and again at any submit relay. Instant and hard.
           </li>
           <li>
-            <strong>External SDK agents</strong> paying from their own wallet — enforced by the{' '}
-            <Link href="/docs/expense-account">SDK&apos;s grant</Link> in-process, refreshed from{' '}
+            <strong>External SDK agents</strong> paying from their own wallet — enforced by the
+            SDK&apos;s grant in-process, refreshed from{' '}
             <code>GET /api/agent/policy</code>. Yeetful cannot intercept another wallet&apos;s
             transfer in flight; the hard on-chain stop for adversarial cases is what Coinbase
             Spend Permissions add.

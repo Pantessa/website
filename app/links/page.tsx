@@ -1,9 +1,9 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
-import prisma from '@/lib/db'
 import Footer from '@/components/Footer'
 import { YeetfulMark } from '@/components/Logo'
-import { HOUSE_LINKS } from '@/lib/house-links'
+import IntentLinksBoard from '@/components/IntentLinksBoard'
+import { topLinks, liveHouseLinks } from '@/lib/links-board'
 
 // /links — the public leaderboard: intent links ranked by server-truth
 // dollars moved (guardrail-priced signed turns in embed_turns). In-the-open
@@ -22,54 +22,6 @@ export const metadata: Metadata = {
   description: DESCRIPTION,
   openGraph: { title: TITLE, description: DESCRIPTION, siteName: 'Yeetful', type: 'website' },
   twitter: { card: 'summary_large_image', title: TITLE, description: DESCRIPTION },
-}
-
-async function topLinks() {
-  try {
-    const moved = await prisma.embedTurn.groupBy({
-      by: ['intentLinkSlug'],
-      where: { intentLinkSlug: { not: null }, outcome: 'signed', valueUsd: { gt: 0 } },
-      _sum: { valueUsd: true },
-      orderBy: { _sum: { valueUsd: 'desc' } },
-      take: 10,
-    })
-    const slugs = moved.map((m) => m.intentLinkSlug).filter((s): s is string => !!s)
-    if (slugs.length === 0) return []
-    const [links, opens] = await Promise.all([
-      prisma.intentLink.findMany({ where: { id: { in: slugs }, revoked: false }, select: { id: true, ask: true } }),
-      prisma.intentLinkEvent.groupBy({ by: ['slug'], where: { slug: { in: slugs }, kind: 'open' }, _count: { _all: true } }),
-    ])
-    return moved
-      .map((m) => {
-        const link = links.find((l) => l.id === m.intentLinkSlug)
-        if (!link) return null
-        return {
-          slug: link.id,
-          ask: link.ask,
-          movedUsd: m._sum.valueUsd ?? 0,
-          opens: opens.find((o) => o.slug === link.id)?._count._all ?? 0,
-        }
-      })
-      .filter((r): r is NonNullable<typeof r> => !!r)
-  } catch {
-    return []
-  }
-}
-
-/** House links that are live in the DB (seeded) and not already on the
- *  board — the start-here strip, so the page demos real product even when
- *  the board is young. */
-async function liveHouseLinks(exclude: Set<string>) {
-  try {
-    const rows = await prisma.intentLink.findMany({
-      where: { id: { in: HOUSE_LINKS.map((h) => h.slug) }, revoked: false },
-      select: { id: true, ask: true },
-    })
-    // Preserve the curated HOUSE_LINKS order, drop board duplicates.
-    return HOUSE_LINKS.filter((h) => !exclude.has(h.slug) && rows.some((r) => r.id === h.slug))
-  } catch {
-    return []
-  }
 }
 
 export default async function LinksLeaderboardPage() {
@@ -101,7 +53,7 @@ export default async function LinksLeaderboardPage() {
             <Link href="/links/embed" className="btn btn--ghost text-[13px]">
               Put a button on your site
             </Link>
-            <Link href="/docs" className="btn btn--ghost text-[13px]">
+            <Link href="/docs/links" className="btn btn--ghost text-[13px]">
               How it works
             </Link>
           </div>
@@ -114,29 +66,7 @@ export default async function LinksLeaderboardPage() {
               The board is empty — the first link to move a dollar tops it. Mint yours above.
             </p>
           ) : (
-            <ol className="divide-y divide-[var(--line)] border-y border-[var(--line)]">
-              {rows.map((r, i) => (
-                <li key={r.slug}>
-                  <Link
-                    href={`/i/${r.slug}`}
-                    className="flex items-center gap-4 py-3 group hover:bg-white/[0.02] transition-colors"
-                  >
-                    <span className="mono text-[12px] text-[color:var(--muted-2)] w-6 flex-shrink-0">
-                      {i + 1}
-                    </span>
-                    <span className="text-[14px] text-[color:var(--fg)] truncate flex-1 group-hover:text-[color:var(--accent)] transition-colors">
-                      &ldquo;{r.ask}&rdquo;
-                    </span>
-                    <span className="mono text-[12px] text-[color:var(--muted-2)] flex-shrink-0">
-                      {r.opens} opens
-                    </span>
-                    <span className="mono text-[13px] text-[color:var(--accent)] flex-shrink-0">
-                      ${r.movedUsd.toFixed(2)}
-                    </span>
-                  </Link>
-                </li>
-              ))}
-            </ol>
+            <IntentLinksBoard rows={rows} />
           )}
           <p className="mono text-[11px] text-[color:var(--muted-2)] mt-4">
             Dollars are guardrail-priced signed notional — the same source as /activity. Asks only;

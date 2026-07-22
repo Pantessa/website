@@ -961,17 +961,30 @@ async function main() {
   )
 
   // Onboarding checklist signals (Get started card) — SIWE-only, and always
-  // the four pivot-flow booleans (chat → guarded tx → fund-then-act job →
-  // embed key). Values depend on what the harness wallet has done so far, so
+  // the five links-first booleans (mint → share → funnel → conversion →
+  // claim). Values depend on what the harness wallet has done so far, so
   // assert shape + types, not specific ticks.
   const onboardNoAuth = await fetch(`${BASE}/api/dashboard/onboarding`)
   check('onboarding signals require auth → 401', onboardNoAuth.status === 401)
   const onboardRes = await fetch(`${BASE}/api/dashboard/onboarding`, { headers: C })
   const onboard = await onboardRes.json()
   check(
-    'onboarding signals: chatted/signedTx/fundedJob/embedKey booleans',
+    'onboarding signals: minted/opened/connected/converted/claimed booleans',
     onboardRes.status === 200 &&
-      ['chatted', 'signedTx', 'fundedJob', 'embedKey'].every((k) => typeof onboard[k] === 'boolean'),
+      ['minted', 'opened', 'connected', 'converted', 'claimed'].every((k) => typeof onboard[k] === 'boolean'),
+  )
+
+  // /pricing displays the creator rail (links-first: kickbacks are a selling
+  // point, not a footnote) — the split and the per-plan link caps.
+  const pricingRes = await fetch(`${BASE}/pricing`)
+  const pricingHtml = await pricingRes.text()
+  check(
+    'pricing: creator kickback + active-link caps displayed',
+    pricingRes.status === 200 &&
+      /creator kickbacks/i.test(pricingHtml) &&
+      pricingHtml.includes('3 active intent links') &&
+      pricingHtml.includes('25 active intent links') &&
+      pricingHtml.includes('Unlimited intent links'),
   )
 
   // Payees: the wallet's claimed MCP servers (dashboard Agents → My MCP servers).
@@ -1052,6 +1065,15 @@ async function main() {
   check(
     'activity: P2 — denial rows absent from public feed (aggregate only)',
     !act.recent.some((r) => r.host === 'denied.example.test') && act.stats.blockedCalls >= 1,
+  )
+
+  // /activity page — the consolidated public money story (links-first: the
+  // overview + the link-economy section + the live feed on one page).
+  const actPageRes = await fetch(`${BASE}/activity`)
+  const actPageHtml = await actPageRes.text()
+  check(
+    'activity: page renders the consolidated money story (hero + live feed)',
+    actPageRes.status === 200 && /moving money\./.test(actPageHtml) && /Live routing/.test(actPageHtml),
   )
 
   // ── Attended vs standing (the falsifiable-test split, lib/value-origin) ──
@@ -1242,12 +1264,12 @@ async function main() {
     /<link[^>]+rel="canonical"[^>]+href="https?:\/\/[^"/]+\/?"/.test(homeHtml),
   )
   check('router: og:image present (social card)', /<meta[^>]+property="og:image"/.test(homeHtml))
-  // The pivot (2026-07-07, website#326) retold the homepage; the autonomy
-  // retitle (2026-07-20) leads with the claim + standing story: "Every dapp.
-  // One chat. Tell it once." The old expectations are the pre-pivot stories.
+  // The links-first repositioning (2026-07-22, HANDOFF-links-first.md) leads
+  // with the intent claim: "You have an intent. We do the rest." Retitle and
+  // re-pin TOGETHER — this check is the pin.
   check(
-    'router: descriptive <title> (the claim + the standing story)',
-    /<title>[^<]*(Every dapp|Tell it once|embeddable|[Cc]ompose)[^<]*<\/title>/.test(homeHtml),
+    'home: descriptive <title> (the links-first claim)',
+    /<title>[^<]*(You have an intent|[Ww]e do the rest|intent link)[^<]*<\/title>/.test(homeHtml),
   )
   const sitemapXml = await (await fetch(`${BASE}/sitemap.xml`)).text()
   check('sitemap: site root is listed', /<loc>https?:\/\/[^</]+\/?<\/loc>/.test(sitemapXml))

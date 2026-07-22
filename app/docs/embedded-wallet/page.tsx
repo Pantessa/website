@@ -39,9 +39,8 @@ export default function EmbeddedWalletPage() {
         <h2>Why it just works everywhere else</h2>
         <p>
           The embedded wallet is wired in as a <strong>wagmi connector</strong>. So the moment
-          it&apos;s connected, it&apos;s a normal connected account — <Link href="/docs/quickstart">SIWE</Link>{' '}
-          sign-in, EIP-712 <Link href="/docs/x402">x402</Link> signing, and your{' '}
-          <Link href="/docs/expense-account">spend grant</Link> all treat it identically to an
+          it&apos;s connected, it&apos;s a normal connected account — SIWE sign-in, EIP-712
+          x402 signing, and your spend grant all treat it identically to an
           extension wallet. None of that code is connector-aware; nothing special to handle.
         </p>
 
@@ -62,8 +61,8 @@ export default function EmbeddedWalletPage() {
         </p>
 
         <p>
-          New here? Start with the <Link href="/docs/quickstart">quickstart</Link>, or wire the SDK in
-          automatically with <Link href="/docs/claude-code">Claude Code</Link>.
+          New here? Start with{' '}
+          <Link href="/docs/first-five-minutes">your first five minutes</Link>.
         </p>
       </div>
     </>

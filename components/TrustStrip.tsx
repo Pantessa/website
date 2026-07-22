@@ -26,8 +26,8 @@ const TILES: { kind: 'guard' | 'receipt' | 'kill' | 'rep'; t: string; d: string;
     kind: 'kill',
     t: 'Kill switch + org caps',
     d: 'Pause an agent or freeze an account server-side, instantly and reversibly. Orgs get a daily cap above per-key budgets.',
-    href: '/docs/teams',
-    cta: 'How teams work',
+    href: '/docs/spend-policy',
+    cta: 'The spend policy',
   },
   {
     kind: 'rep',
