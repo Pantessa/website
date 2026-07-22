@@ -381,7 +381,12 @@ export default function IntentRuntime({
           </div>
         </div>
       )}
-      <header className="relative flex-shrink-0 border-b border-[var(--line)] bg-[color-mix(in_srgb,var(--bg)_82%,transparent)] backdrop-blur">
+      {/* z-20: backdrop-blur makes this header a stacking context, and the
+          thread wrapper below is a LATER positioned sibling — without a
+          z-index the header's dropdowns (Share popover, account menu) render
+          visibly but the thread's scroll container wins hit-testing over
+          them: visible, unclickable controls. */}
+      <header className="relative z-20 flex-shrink-0 border-b border-[var(--line)] bg-[color-mix(in_srgb,var(--bg)_82%,transparent)] backdrop-blur">
         <div className="max-w-5xl w-full mx-auto px-4 sm:px-6 py-3">
           <div className="flex items-center justify-between gap-3">
             <div className="flex items-center gap-3 min-w-0">
