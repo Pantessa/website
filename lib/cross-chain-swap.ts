@@ -15,12 +15,15 @@
 
 import { decodeFunctionData, erc20Abi, getAddress, isAddress } from 'viem'
 import type { EvmTxRequest } from '@/lib/transaction-layer'
+import { chainAlt, canonicalChainWord, normalizeChainWords, prettyChainWord, unknownDestinationWord } from '@/lib/chain-lexicon'
 
 // Chain words we accept in a swap phrase (kept separate from token matching so
-// a token is never mistaken for a chain). The MCP does the real normalization;
-// we just need to locate the two chains and pass their names through.
-const CHAIN_ALT =
-  'base|arbitrum|arb(?:itum|itrium)?|ethereum|eth\\s?mainnet|mainnet|optimism|polygon|matic|gnosis|xdai|avalanche|avax|bnb(?:\\s?chain)?|bsc|binance|scroll|robinhood(?:\\s?chain)?|solana|sol|bitcoin|btc|near|ton|tron|sui|op'
+// a token is never mistaken for a chain). Aliases come from the shared
+// typo-tolerant lexicon; captures are canonicalized before they reach the
+// MCP or any keyed lookup ("Etheruem" → ethereum). The short/ambiguous
+// names (sol, btc, near, ton, tron, sui, op) are safe HERE because they
+// only match inside the from/to chain slots of an already-swap-shaped ask.
+const CHAIN_ALT = `${chainAlt()}|sol|btc|near|ton|tron|sui|op`
 
 const AMOUNT = '\\d+(?:\\.\\d+)?'
 const TOKEN = '\\$?[A-Za-z]{2,12}|0x[0-9a-fA-F]{40}'
@@ -47,27 +50,84 @@ export interface CrossChainSwapParams {
 
 const cleanTok = (t: string) => t.replace(/^\$/, '')
 
+// Under-specified shapes that are still clearly cross-chain moves — each
+// gets an honest clarify naming EXACTLY the missing piece, never a generic
+// re-ask for things already in the message (the 2026-07-22 dead-end).
+// "move my USDC from base to solana" — origin present, amount missing.
+const AMOUNTLESS_RE = new RegExp(
+  `\\b(?:swap|bridge|move|convert|send|trade|transfer)\\s+(?:my\\s+|all\\s+(?:my\\s+)?|some\\s+)?(${TOKEN})\\s+(?:from|on)\\s+(${CHAIN_ALT})\\b`,
+  'i',
+)
+// "bridge 5 USDC to Arbitrum" — destination present, origin missing.
+const DEST_ONLY_RE = new RegExp(
+  `\\b(?:swap|bridge|move|convert|send|trade|transfer)\\s+(${AMOUNT})\\s+(${TOKEN})\\s+(?:to|into|onto)\\s+(${CHAIN_ALT})\\b`,
+  'i',
+)
+
 /**
  * Parse an imperative cross-chain swap. Returns the params, a `problem` when
  * it's clearly a cross-chain swap but under-specified, or null when it isn't
  * one at all (→ falls through to normal routing / quote questions).
  */
-export function parseCrossChainSwap(message: string): CrossChainSwapParams | { problem: string } | null {
+export function parseCrossChainSwap(rawMessage: string): CrossChainSwapParams | { problem: string } | null {
+  const message = normalizeChainWords(rawMessage)
   const o = message.match(ORIGIN_RE)
-  if (!o) return null
+  if (!o) {
+    // Wh-questions ("what's the cheapest way to move USDT from …") belong to
+    // the planner's quote tools — the clarifies below are for imperatives.
+    if (/^\s*(?:what|how|why|where|when|which|who)\b/i.test(message)) return null
+    const al = message.match(AMOUNTLESS_RE)
+    if (al) {
+      const tok = cleanTok(al[1]).toUpperCase()
+      const dest = message.slice((al.index ?? 0) + al[0].length).match(DEST_RE)
+      const destWord = dest ? prettyChainWord(canonicalChainWord(dest[2]) ?? dest[2]) : 'Arbitrum'
+      const originWord = prettyChainWord(canonicalChainWord(al[2]) ?? al[2])
+      return { problem: `How much ${tok}? Say e.g. “swap 5 ${tok} from ${originWord} to ${destWord}” and I'll build it.` }
+    }
+    const dOnly = message.match(DEST_ONLY_RE)
+    if (dOnly) {
+      const tok = cleanTok(dOnly[2]).toUpperCase()
+      return { problem: `Which chain should the ${dOnly[1]} ${tok} come FROM? Say e.g. “swap ${dOnly[1]} ${tok} from Base to ${prettyChainWord(canonicalChainWord(dOnly[3]) ?? dOnly[3])}” and I'll build it.` }
+    }
+    return null
+  }
   const rest = message.slice((o.index ?? 0) + o[0].length)
   const d = rest.match(DEST_RE)
-  if (!d) {
-    return { problem: "Tell me the destination chain too — e.g. “swap 1 USDC from Base to Arbitrum”." }
-  }
   const originToken = cleanTok(o[2])
+  if (!d) {
+    // Grammar missed the destination — but before re-asking for what may
+    // already be in the message, try the word actually sitting in the "to …"
+    // slot: a fuzzy chain typo becomes the destination, and a word we truly
+    // don't know gets NAMED in the clarify (the "Etheruem" dead-end asked
+    // for "the amount and pair" the user had already typed).
+    const unknown = unknownDestinationWord(rest)
+    const fuzzy = rest.match(/\bto\s+([A-Za-z]{5,14})\b/i)
+    const fuzzyChain = fuzzy ? canonicalChainWord(fuzzy[1]) : null
+    if (fuzzyChain) {
+      return {
+        amount: o[1],
+        originToken,
+        originChain: canonicalChainWord(o[3]) ?? o[3],
+        destinationToken: originToken,
+        destinationChain: fuzzyChain,
+      }
+    }
+    if (unknown) {
+      return {
+        problem: `I don't recognize “${unknown}” as a chain. I can reach Base, Ethereum, Arbitrum, Optimism, Polygon, Solana, and ~30 more — say the destination like “swap ${o[1]} ${originToken.toUpperCase()} from ${o[3]} to Arbitrum”.`,
+      }
+    }
+    return { problem: `Got it — ${o[1]} ${originToken.toUpperCase()} from ${o[3]}. Tell me the destination chain too, e.g. “swap ${o[1]} ${originToken.toUpperCase()} from ${o[3]} to Arbitrum”.` }
+  }
   return {
     amount: o[1],
     originToken,
-    originChain: o[3],
+    // Canonicalize before the MCP call / chain-id lookups — the grammar
+    // accepts typo aliases, downstream maps key on canonical words.
+    originChain: canonicalChainWord(o[3]) ?? o[3],
     // Same token on the other chain unless a second token is named.
     destinationToken: d[1] ? cleanTok(d[1]) : originToken,
-    destinationChain: d[2],
+    destinationChain: canonicalChainWord(d[2]) ?? d[2],
   }
 }
 

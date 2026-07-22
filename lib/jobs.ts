@@ -28,6 +28,7 @@
 
 import { parseAaveOp, parseAaveSupply, type AaveOpParams, type AaveSupplyParams } from '@/lib/aave-supply'
 import { parseCrossChainSwap, type CrossChainSwapParams } from '@/lib/cross-chain-swap'
+import { chainAlt, canonicalChainWord, normalizeChainWords } from '@/lib/chain-lexicon'
 import { parseHlIntent, type HlIntent, type HlOrderIntent } from '@/lib/hyperliquid-exec'
 import { parseGuardianArm, type GuardianArmAsk } from '@/lib/hl-guardian'
 import { parseLidoStake } from '@/lib/lido-stake'
@@ -76,7 +77,12 @@ export interface RobinhoodFundingAsk {
   token: string
 }
 
-const FUND_RE = /\bfund\s+robinhood(?:\s+chain)?\s+with\s+\$?(\d+(?:\.\d+)?)\s+from\s+(base|ethereum|mainnet|arb(?:itrum)?)\b/i
+// Typo-tolerant chain words (shared lexicon) — captures canonicalize
+// before the keyed lookups below.
+const FUND_RE = new RegExp(
+  String.raw`\bfund\s+robin\s?hoo?d(?:\s?chain)?\s+with\s+\$?(\d+(?:\.\d+)?)\s+from\s+(${chainAlt(['base', 'ethereum', 'arbitrum'])})\b`,
+  'i',
+)
 
 const FUND_ORIGINS: Record<string, { id: number; word: string }> = {
   base: { id: 8453, word: 'Base' },
@@ -87,11 +93,12 @@ const FUND_ORIGINS: Record<string, { id: number; word: string }> = {
 }
 
 export function parseRobinhoodFunding(segment: string): RobinhoodFundingAsk | null {
-  const m = segment.match(FUND_RE)
+  const m = normalizeChainWords(segment).match(FUND_RE)
   if (!m) return null
   const fundUsd = Number(m[1])
   if (!Number.isFinite(fundUsd) || fundUsd <= 0) return null
-  const origin = FUND_ORIGINS[m[2].toLowerCase()]
+  const originWord = m[2].toLowerCase().replace(/\s+/g, ' ')
+  const origin = FUND_ORIGINS[canonicalChainWord(originWord) ?? originWord]
   if (!origin) return null
   return {
     fundUsd,
@@ -133,14 +140,15 @@ const SWAP_SEG_CHAINS: Record<string, { id: number; name: string }> = {
 }
 
 const SWAP_SEG_RE = new RegExp(
-  `\\bswap\\s+(\\d+(?:\\.\\d+)?)\\s+\\$?([A-Za-z]{2,12})\\s+(?:for|into|to)\\s+\\$?([A-Za-z]{2,12})\\s+on\\s+(base|arb(?:itrum)?|ethereum|mainnet|robinhood(?:\\s+chain)?)\\b`,
+  `\\bswap\\s+(\\d+(?:\\.\\d+)?)\\s+\\$?([A-Za-z]{2,12})\\s+(?:for|into|to)\\s+\\$?([A-Za-z]{2,12})\\s+on\\s+(${chainAlt(['base', 'ethereum', 'arbitrum', 'robinhood'])})\\b`,
   'i',
 )
 
 export function parseSameChainSwapSegment(segment: string): SameChainSwapSegment | null {
-  const m = segment.match(SWAP_SEG_RE)
+  const m = normalizeChainWords(segment).match(SWAP_SEG_RE)
   if (!m) return null
-  const chain = SWAP_SEG_CHAINS[m[4].toLowerCase().replace(/\s+/g, ' ')]
+  const segWord = m[4].toLowerCase().replace(/\s+/g, ' ')
+  const chain = SWAP_SEG_CHAINS[canonicalChainWord(segWord) ?? segWord]
   if (!chain) return null
   return { amountHuman: m[1], sellToken: m[2], buyToken: m[3], chainId: chain.id, chainName: chain.name }
 }

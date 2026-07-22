@@ -25,6 +25,7 @@
 import { decodeFunctionData, encodeFunctionData, erc20Abi, formatUnits, parseUnits } from 'viem'
 import { normalize } from 'viem/ens'
 import { chainById, publicClientFor } from '@/lib/chains'
+import { chainAlt, canonicalChainWord, normalizeChainWords } from '@/lib/chain-lexicon'
 import { resolveToken, tokenDecimals, tokenLabel } from '@/lib/cow'
 import { ensureTokenList } from '@/lib/token-list'
 import { usdPerToken } from '@/lib/usd-probe'
@@ -58,7 +59,10 @@ const TRANSFER_CHAINS: Record<string, { id: number; name: string }> = {
   'robinhood chain': { id: 4663, name: 'Robinhood Chain' },
 }
 
-const CHAIN_WORDS = String.raw`base|arb(?:itrum)?|ethereum|mainnet|robinhood(?:\s+chain)?`
+// Typo-tolerant native-chain words from the shared lexicon ("Etheruem",
+// "arbitum" are real users, live 2026-07-22); captures canonicalize before
+// the TRANSFER_CHAINS lookup.
+const CHAIN_WORDS = chainAlt(['base', 'ethereum', 'arbitrum', 'robinhood'])
 const RECIPIENT = String.raw`(0x[0-9a-fA-F]{40}|[a-zA-Z0-9][a-zA-Z0-9-]*\.eth)`
 // "send (the) 1 USDC on arbitrum to 0x…" — chain mid, Nate's phrasing.
 const TRANSFER_MID_RE = new RegExp(
@@ -80,11 +84,12 @@ export function parseTransferSegment(
 ): TransferSegment | { problem: string } | null {
   // NFT-shaped sends ("send my Pudgy #2489 to 0x…") belong to the NFT layer.
   if (mentionsNft(segment)) return null
-  const m = segment.match(TRANSFER_MID_RE)
+  const m = normalizeChainWords(segment).match(TRANSFER_MID_RE)
   if (!m) return null
   const [, amountHuman, token, chainMid, to, chainTail] = m
   if (!(Number(amountHuman) > 0)) return null
-  const chainWord = (chainMid ?? chainTail)?.toLowerCase().replace(/\s+/g, ' ')
+  const rawChainWord = (chainMid ?? chainTail)?.toLowerCase().replace(/\s+/g, ' ')
+  const chainWord = rawChainWord ? canonicalChainWord(rawChainWord) ?? rawChainWord : rawChainWord
   let chain = chainWord ? TRANSFER_CHAINS[chainWord] : null
   if (!chain && opts?.fallbackChainId) {
     const picked = Object.values(TRANSFER_CHAINS).find((c) => c.id === opts.fallbackChainId)

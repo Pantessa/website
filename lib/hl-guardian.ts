@@ -335,11 +335,14 @@ export function parseGuardianArm(message: string): GuardianArmAsk | null {
   if (!Number.isFinite(triggerValue) || triggerValue <= 0) return null
 
   // The coin: "my SYRUP long", "on syrup", "protect eth". Skip stop-words and
-  // the venue word itself.
+  // the venue word itself. The venue word is STRIPPED before matching — "my
+  // Hyperliquid ETH position" (the /i/stop-loss house link's phrasing) must
+  // yield ETH, not a stop-worded miss (live audit 2026-07-22).
   const STOP = new Set(['my', 'the', 'a', 'an', 'on', 'at', 'with', 'stop', 'loss', 'take', 'profit', 'protect', 'position', 'long', 'short', 'perp', 'hyperliquid', 'hl', 'set', 'me', 'please', 'if', 'it', 'drops', 'falls', 'hits', 'from', 'entry', 'below', 'above'])
+  const mc = m.replace(/\bhyperliquid\b|\bhl\b/g, ' ').replace(/\s+/g, ' ')
   const coinMatch =
-    m.match(/\b(?:protect|on)\s+(?:my\s+)?([a-z0-9]{2,10})\b/) ??
-    m.match(/\bmy\s+([a-z0-9]{2,10})\s+(?:long|short|position|perp)\b/)
+    mc.match(/\b(?:protect|on)\s+(?:my\s+)?([a-z0-9]{2,10})\b/) ??
+    mc.match(/\bmy\s+([a-z0-9]{2,10})\s+(?:long|short|position|perp)\b/)
   const coin = coinMatch && !STOP.has(coinMatch[1]) ? coinMatch[1].toUpperCase() : null
   if (!coin) return null
   return { coin, kind, triggerMode, triggerValue }
