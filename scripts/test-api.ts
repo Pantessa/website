@@ -36,6 +36,7 @@ import { policyCheckInflow, recipientCheck, validityCheck, MAX_VALID_SEC } from 
 import { guardPlannerArtifact, PERMIT2_ADDRESS } from '../lib/planner-artifact-guard'
 import { parseSwapIntent } from '../lib/swap-intent'
 import { activeLinkCapFor } from '../lib/intent-links'
+import { isDbChatId } from '../lib/chat-ids'
 import { usdToTokenAmount } from '../lib/usd-probe'
 import { parseRobinhoodBridge, guardRobinhoodBridge, RH_L1_INBOX, ARB_SYS } from '../lib/robinhood-bridge'
 import { parseNftAsk, guardNftTransfer, ERC721_ABI as NFT_ERC721_ABI, ERC1155_ABI as NFT_ERC1155_ABI } from '../lib/nft-layer'
@@ -2243,6 +2244,24 @@ async function main() {
   check('meta.receipts + payer round-trip', loadedMsg?.meta?.payer === 'your wallet' && loadedMsg.meta.receipts.length === 3)
   check('meta.routeReport (B15 value) round-trips', loadedMsg?.meta?.routeReport?.picked?.[0] === 'CoinMarketCap' && loadedMsg.meta.routeReport.savedVsPriciestUsd === 0.04)
   check('meta.routerTrace (B16 replay) round-trips', Array.isArray(loadedMsg?.meta?.routerTrace) && loadedMsg.meta.routerTrace.length === 3 && loadedMsg.meta.routerTrace[0].type === 'shortlist')
+
+  // ── Chat id provenance: local ids never reach the DB routes ──────────────
+  // The store gates every /api/chats/<id>/* write on isDbChatId — a SIWE
+  // session settling MID-turn otherwise 404s a local chat's history posts
+  // (observed live on /i 2026-07-22). The classifier must accept every real
+  // row id and reject the client's short random ids; the server side of the
+  // contract is that a local-shaped id is a definitive 404, not a 5xx.
+  check('chat ids: real DB cuid passes isDbChatId', isDbChatId(chat.id) && isDbChatId(msg.chatId ?? chat.id))
+  check(
+    'chat ids: local/random ids rejected by isDbChatId',
+    !isDbChatId('kt1x9q2z7ab') && !isDbChatId('c3po') && !isDbChatId('') && !isDbChatId('local-abc123'),
+  )
+  const localPost = await fetch(`${BASE}/api/chats/kt1x9q2z7ab/messages`, {
+    method: 'POST',
+    headers: CJ,
+    body: JSON.stringify({ role: 'user', content: 'ghost turn' }),
+  })
+  check('chat ids: authed message post to a local-shaped id → clean 404', localPost.status === 404)
 
   const shared = await (
     await fetch(`${BASE}/api/chats/${chat.id}`, {

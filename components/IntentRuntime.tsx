@@ -74,7 +74,7 @@ export default function IntentRuntime({
 }) {
   const { address, isConnected } = useAccount()
   const { openConnectModal } = useConnectModal()
-  const { status, needsSignIn, signIn, signingIn } = useSession()
+  const { status, address: sessionAddress, needsSignIn, signIn, signingIn } = useSession()
   const { servers, setServers, setActiveServerIds, setCurrentChatId } = useYeetfulStore()
 
   const [started, setStarted] = useState(false)
@@ -183,12 +183,21 @@ export default function IntentRuntime({
   // empty thread. Held, the turn runs authed (creator attribution intact)
   // into a DB chat that survives the load. Transfer-shaped asks still only
   // prefill — a human presses send.
+  //
+  // Settled means MATCHING, not just status==='authed': `sessionAddress` is
+  // null while a session belongs to a DIFFERENT wallet (account switch, or a
+  // stale localhost cookie leaked across ports). In that state the store
+  // treats the run as guest — the turn landed in a LOCAL chat, the takeover's
+  // auto re-sign flipped authedAddress mid-turn, and every history POST hit
+  // /api/chats/<localId>/messages → 404 (observed live 2026-07-22 on
+  // /i/bridge-usdc). needsSignIn is already true there, so the takeover +
+  // re-sign are on screen; hold the ask for them.
   useEffect(() => {
     if (!started || blocked || !allowCleared || prompt) return
-    if (status !== 'authed' && !sigDismissed) return
+    if ((status !== 'authed' || !sessionAddress) && !sigDismissed) return
     setPrompt({ text: ask, send: !transferShaped, at: Date.now() })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [started, blocked, allowCleared, prompt, status, sigDismissed])
+  }, [started, blocked, allowCleared, prompt, status, sessionAddress, sigDismissed])
 
   const onTurnEvent = (name: string, data?: Record<string, unknown>) => {
     if (name !== 'turn' || !data) return
