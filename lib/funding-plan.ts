@@ -400,7 +400,7 @@ export async function offerFundingPlan(params: {
   })
   return {
     reply:
-      `You don't have enough ${need.token.toUpperCase()} on ${destChain.name} for ${need.actionLabel} yet — but you're holding ${plan.sourceSummary}. ` +
+      `**We can make this happen.** You're holding ${plan.sourceSummary} — ${need.actionLabel} just needs more ${need.token.toUpperCase()} on ${destChain.name} than the wallet has there yet. ` +
       `I can move it over (NEAR Intents, delivered to your own address)${gasUsd > 0 ? `, drop in a little ETH so ${destChain.name} gas is covered,` : ''} and finish ${need.actionLabel} — one job, every step built and guard-checked when it's your turn to sign.`,
     clarify: { question: 'Fund it from another chain?', options: plan.chips },
     buildPath: 'native-funding-offer',
@@ -495,6 +495,36 @@ export interface GenericFundingFallback {
   offer: FundingOfferTurn | null
   /** Synthesis-context block explaining what's attached / what was seen. */
   contextBlock: string
+  /** The failure this fallback claimed — its "TOOL CALL FAILED" context
+   *  block gets softened (softenClaimedFailureBlock) so the model isn't
+   *  simultaneously ordered to announce a failure and to frame the plan. */
+  claimed?: string
+}
+
+// The 2026-07-22 headline fix: with only "TOOL CALL FAILED … tell the user it
+// failed" in context, the house model titled a fundable shortfall "❌ Swap
+// failed" over a perfectly good set of funding chips. Every funding-offer
+// context block now carries this mandatory framing.
+const TONE_DIRECTIVE =
+  `TONE (mandatory): this is a "here's the plan" moment, NOT an error report. Nothing was attempted on-chain, nothing failed, nothing was lost — the build stopped at a pre-flight balance check. ` +
+  `Never open with failure framing: no ❌, no red-X imagery, no "failed"/"error"/"insufficient" headlines. ` +
+  `Open with what happens NEXT (e.g. "**We can make this happen** — …" naming what they hold), then ONE line on what's short, then what the chips/plan do.`
+
+/**
+ * Replace a claimed failure's "### <name> — TOOL CALL FAILED" context block
+ * with pre-flight-check framing. The original error text stays (honesty);
+ * only the "tell the user it failed" directive goes — it was making the
+ * model headline fundable shortfalls as failures. In-place, fail-soft.
+ */
+export function softenClaimedFailureBlock(contextBlocks: string[], fallback: GenericFundingFallback | null): void {
+  if (!fallback?.claimed) return
+  const prefix = `### ${fallback.claimed} — TOOL CALL FAILED\n`
+  const i = contextBlocks.findIndex((b) => b.startsWith(prefix))
+  if (i === -1) return
+  const note = contextBlocks[i].slice(prefix.length).split('\n')[0]
+  contextBlocks[i] =
+    `### ${fallback.claimed} — stopped at a pre-flight funds check\n${note}\n` +
+    `No transaction was attempted, signed, or submitted — the tool checked balances and stopped before building anything. Frame this as prep for the funding plan below, never as a failure.`
 }
 
 /**
@@ -564,51 +594,56 @@ export async function fundingFallbackForFailures(
         trace?.({ type: 'status', label: `funding fallback claimed the turn: USDG short on Robinhood Chain after the ${f.name} failure — ~$${advice.stranded.usd} ${advice.stranded.token} on ${advice.stranded.word} is gas-stranded (${advice.donor ? `offering a topup from ${advice.donor.word}` : 'asking for an ETH topup'})` })
         if (!advice.chips) {
           return {
+            claimed: f.name,
             offer: null,
             contextBlock:
-              `### Gas-stranded funds found (after the ${f.name} failure)\n` +
+              `### Gas-stranded funds found (after the ${f.name} balance check)\n` +
               `The wallet holds ~$${advice.stranded.usd} of ${advice.stranded.token} on ${advice.stranded.word} — enough for this — but no ETH there to pay for the bridge signatures, and no other chain of theirs can donate it. ` +
               `Tell the user exactly that: their money is real and where it is, only ${advice.stranded.word} gas is missing (about a dollar of ETH is plenty), and once they send a little ETH to their own address on ${advice.stranded.word} they should re-ask so the plan rebuilds. ` +
-              `Do NOT invent your own bridge instructions, amounts, or addresses.${inflightStrandedDirective}`,
+              `Do NOT invent your own bridge instructions, amounts, or addresses.${inflightStrandedDirective}\n${TONE_DIRECTIVE}`,
           }
         }
         return {
+          claimed: f.name,
           offer: {
-            reply: `You don't have enough USDG on Robinhood Chain for that yet — and ${advice.copy}${inflightSuffix}`,
+            reply: `**Your money's already in place** — this needs more USDG on Robinhood Chain, and ${advice.copy}${inflightSuffix}`,
             clarify: { question: `Fix the ${advice.stranded.word} gas and bridge it?`, options: advice.chips.slice(0, 4) },
             buildPath: 'native-lifi-fund-offer',
           },
           contextBlock:
-            `### Gas-stranded funds found (after the ${f.name} failure)\n` +
+            `### Gas-stranded funds found (after the ${f.name} balance check)\n` +
             `The wallet holds ~$${advice.stranded.usd} of ${advice.stranded.token} on ${advice.stranded.word} but no ETH there to sign with. The system RENDERS action chips directly under your reply. ` +
-            `Tell the user their money is real and where it is, that only origin-chain gas is missing, and what the chips do. Do NOT invent your own bridge instructions, amounts, or addresses.`,
+            `Tell the user their money is real and where it is, that only origin-chain gas is missing, and what the chips do. Do NOT invent your own bridge instructions, amounts, or addresses.\n${TONE_DIRECTIVE}`,
         }
       }
       if (advice.kind === 'none') {
         if (scan.failedOrigins.length > 0) return null // partial scan must not claim an empty wallet
         trace?.({ type: 'note', level: 'warn', label: `funding fallback: USDG short on Robinhood Chain and the scan (${advice.copy}) can't cover the ~$${needUsd} plan — honest refusal` })
         return {
+          claimed: f.name,
           offer: null,
           contextBlock:
-            `### Funding scan (after the ${f.name} failure)\nAcross Base, Ethereum, and Arbitrum I can see: ${advice.copy} — the smallest plan for this moves ~$${needUsd} onto Robinhood Chain (bridge fees${includeGas ? ' and a gas leg' : ''} included). ` +
-            `Weave this into the failure explanation — the user should know exactly what they hold, per chain, and what the smallest plan needs.${inflightNoneDirective}`,
+            `### Funding scan (after the ${f.name} balance check)\nAcross Base, Ethereum, and Arbitrum I can see: ${advice.copy} — the smallest plan for this moves ~$${needUsd} onto Robinhood Chain (bridge fees${includeGas ? ' and a gas leg' : ''} included). ` +
+            `The user should know exactly what they hold, per chain, and what the smallest plan needs — and what unlocks the buy (topping up any of those chains, then asking again). ` +
+            `Frame it as a checkpoint, not an error: nothing was attempted, signed, or lost — no ❌ or "failed" headlines.${inflightNoneDirective}`,
         }
       }
       const chips = [...advice.chips, { label: 'Not now', resume: 'Never mind — leave my USDC where it is.' }]
       trace?.({ type: 'status', label: `funding fallback claimed the turn: USDG short on Robinhood Chain after the ${f.name} failure — offering ${chips.length - 1} LiFi funding path(s) (~$${needUsd} needed)` })
       return {
+        claimed: f.name,
         offer: {
           reply:
-            `You don't have enough USDG on Robinhood Chain for that yet — but you're holding ${holdings}. ` +
+            `**We can make this happen.** You're holding ${holdings} — this just needs more USDG on Robinhood Chain than the wallet has there yet. ` +
             `I can bridge it over (LiFi-routed, delivered to your own address, arrives in seconds)${includeGas ? ', drop in a little ETH so Robinhood Chain gas is covered,' : ''} — every step built and guard-checked when it's your turn to sign. Once it settles, ask again and I'll build the trade with the funds in place.${inflightSuffix}`,
           clarify: { question: 'Fund Robinhood Chain from another chain?', options: chips.slice(0, 4) },
           buildPath: 'native-lifi-fund-offer',
         },
         contextBlock:
-          `### Funding options found (after the ${f.name} failure)\n` +
-          `The failed call was short of USDG on Robinhood Chain, but the wallet holds USDC on other chains. The system RENDERS funding chips directly under your reply (this is guaranteed — never hedge about whether they appear, never add placeholder lines about them). ` +
-          `Tell the user the action couldn't be funded yet, that the chips below bridge the money over (they sign, delivered to their own address), and that once it settles they should re-ask so the action rebuilds with funds in place. ` +
-          `Do NOT invent your own bridge instructions, amounts, or addresses.`,
+          `### Funding path ready (after the ${f.name} balance check)\n` +
+          `The call stopped at a pre-flight balance check — more USDG is needed on Robinhood Chain — and the wallet holds ${holdings || 'USDC on other chains'}. The system RENDERS funding chips directly under your reply (this is guaranteed — never hedge about whether they appear, never add placeholder lines about them). ` +
+          `Tell the user the chips below bridge the money over (they sign, delivered to their own address, arrives in seconds), and that once it settles they should re-ask so the action rebuilds with funds in place. ` +
+          `Do NOT invent your own bridge instructions, amounts, or addresses.\n${TONE_DIRECTIVE}`,
       }
     }
 
@@ -626,22 +661,25 @@ export async function fundingFallbackForFailures(
     if (!offer) return null
     if ('insufficient' in offer) {
       return {
+        claimed: f.name,
         offer: null,
         contextBlock:
-          `### Funding scan (after the ${f.name} failure)\n${offer.insufficient}\n` +
-          `Weave this into the failure explanation — the user should know exactly what they hold, per chain, and what the smallest plan needs.`,
+          `### Funding scan (after the ${f.name} balance check)\n${offer.insufficient}\n` +
+          `The user should know exactly what they hold, per chain, and what the smallest plan needs — and that topping up any of those chains and asking again unlocks it. ` +
+          `Frame it as a checkpoint, not an error: nothing was attempted, signed, or lost — no ❌ or "failed" headlines.`,
       }
     }
     return {
+      claimed: f.name,
       offer: {
         ...offer,
         reply: `${offer.reply.replace(/ and finish [^—]+— one job[^.]*\./, '.')} Once the move settles (seconds), ask again and I'll build the action with the funds in place.`,
       },
       contextBlock:
-        `### Funding options found (after the ${f.name} failure)\n` +
-        `The failed call was short of funds, but the wallet holds movable funds on other chains. The system RENDERS funding chips directly under your reply (this is guaranteed — never hedge about whether they appear, never add placeholder lines about them). ` +
-        `Tell the user the action couldn't be funded yet, that the chips below move the money over (they sign, delivered to their own address), and that once it settles they should re-ask so the action rebuilds with funds in place. ` +
-        `Do NOT invent your own bridge instructions, amounts, or addresses.`,
+        `### Funding path ready (after the ${f.name} balance check)\n` +
+        `The call stopped at a pre-flight balance check, and the wallet holds movable funds on other chains. The system RENDERS funding chips directly under your reply (this is guaranteed — never hedge about whether they appear, never add placeholder lines about them). ` +
+        `Tell the user the chips below move the money over (they sign, delivered to their own address), and that once it settles they should re-ask so the action rebuilds with funds in place. ` +
+        `Do NOT invent your own bridge instructions, amounts, or addresses.\n${TONE_DIRECTIVE}`,
     }
   }
   return null

@@ -53,7 +53,7 @@ import { classifyOneclickStatus, inflightDepositFromPending, inflightPendingData
 import { sanitizeWorkingContext } from '../lib/working-context'
 import { parseRobinhoodFunding, parseSameChainSwapSegment, JOB_SEGMENT_PARSERS } from '../lib/jobs'
 import { parseTransferSegment } from '../lib/transfer-exec'
-import { detectBalanceShortfall, fundingPlanUsd, planFundingChips, rankFundingSources, type FundingNeed, type FundingSource } from '../lib/funding-plan'
+import { detectBalanceShortfall, fundingPlanUsd, planFundingChips, rankFundingSources, softenClaimedFailureBlock, type FundingNeed, type FundingSource } from '../lib/funding-plan'
 import { compileDcaBuy, dcaRunChip, parseDcaCreate, parseDcaManage, parseDcaRun, periodKeyFor } from '../lib/dca'
 import { firstUserPromptOf, shareTweetHrefOf } from '../lib/shared-chat'
 import {
@@ -3888,6 +3888,14 @@ async function main() {
   check('swap intent: "buy $5 of AAPL" leaves spend token to the chain stable', db2.isSwap && db2.sellAmountUsd === '5' && db2.buyToken === 'AAPL' && db2.sellToken === undefined)
   check('swap intent: dollar perp ask is NOT hijacked', parseSwapIntent('buy $12 of ETH on hyperliquid').isSwap === false)
   check('swap intent: token-amount parse unchanged by dollar support', parseSwapIntent('swap 100 USDC for WETH').sellAmountUsd === undefined)
+  // Shares phrasing (live 2026-07-22: "I want to buy $20 shares of APPL"
+  // missed the grammar and fell to the planner's quote-then-confirm detour).
+  const sh = parseSwapIntent('I want to buy $20 shares of APPL')
+  check('swap intent: "$20 shares of APPL" parses as a dollar buy', sh.isSwap && sh.sellAmountUsd === '20' && sh.buyToken === 'APPL' && !sh.problem)
+  const sh2 = parseSwapIntent('buy $20 worth of shares of AAPL')
+  check('swap intent: "worth of shares of" variant', sh2.isSwap && sh2.sellAmountUsd === '20' && sh2.buyToken === 'AAPL')
+  const sh3 = parseSwapIntent('buy 5 shares of AAPL')
+  check('swap intent: share-COUNT buy clarifies toward dollars (no planner fall-through)', sh3.isSwap && sh3.problem !== undefined && sh3.problem.includes('$') && sh3.problem.includes('AAPL'))
   // usd→token conversion (pure): bounded by token decimals, honest nulls.
   check(
     'usd probe: $1 at $3241.55/ETH ≈ 0.00030849 ETH',
@@ -4962,6 +4970,27 @@ async function main() {
       'funding fallback: the bare-amount form never fires without a trigger-named token',
       detectBalanceShortfall('insufficient: swapping 5 but the wallet holds 0.4 on Base') === null,
     )
+    // Tone (live 2026-07-22): "TOOL CALL FAILED … tell the user it failed"
+    // next to a funding plan made the model headline the turn "❌ Swap
+    // failed". The claimed failure's block softens to pre-flight framing —
+    // the error text stays, the failure directive goes.
+    {
+      const failedBlock = `### Robinhood Chain (Free) — TOOL CALL FAILED\nInsufficient USDG: swapping 20 but the wallet holds 18.547709. Nothing was built.\nThis call did NOT succeed; nothing was executed or submitted. Tell the user it failed — never claim the action happened.`
+      const blocks = ['### something else\nfine', failedBlock]
+      softenClaimedFailureBlock(blocks, { claimed: 'Robinhood Chain (Free)', offer: null, contextBlock: '' })
+      check(
+        'funding fallback: claimed failure block softens to pre-flight framing (error text kept, "it failed" dropped)',
+        blocks[1].includes('pre-flight funds check') &&
+          blocks[1].includes('Insufficient USDG: swapping 20') &&
+          !blocks[1].includes('Tell the user it failed') &&
+          blocks[0] === '### something else\nfine',
+        blocks[1],
+      )
+      const untouched = [failedBlock]
+      softenClaimedFailureBlock(untouched, { claimed: 'Some Other MCP', offer: null, contextBlock: '' })
+      softenClaimedFailureBlock(untouched, null)
+      check('funding fallback: softener never touches unclaimed failures', untouched[0] === failedBlock)
+    }
     const bridgeOnly = planFundingChips({ chainId: 42161, token: 'USDC', amountHuman: 17, followupResume: '', actionLabel: 'the custom action' }, 20, [src(8453, 'Base', 'USDC', 60)])
     check(
       'funding fallback: bridge-only chip is a plain cross-chain ask (native layer owns it)',

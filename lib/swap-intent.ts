@@ -119,11 +119,20 @@ const DOLLAR_MARKET_RE = new RegExp(
   'i',
 )
 // "buy (about) $5 (worth) of/in AAPL (with/using USDG)" — spend token
-// optional; the route defaults it to the chain's primary stable.
+// optional; the route defaults it to the chain's primary stable. Stock asks
+// arrive share-flavored too ("buy $20 shares of AAPL", "buy $20 worth of
+// shares of AAPL" — live 2026-07-22: the phrasing missed this grammar and
+// fell to the planner, which quoted and asked for a confirm instead of
+// building the signable swap in one turn).
 const BUY_DOLLAR_RE = new RegExp(
-  String.raw`\bbuy\s+${FILLER}${USD_AMOUNT}(?:\s+worth)?\s+(?:of|in)\s+${TOKEN}(?:\s+(?:with|using)\s+${TOKEN})?`,
+  String.raw`\bbuy\s+${FILLER}${USD_AMOUNT}(?:\s+worth)?\s+(?:(?:of|in)\s+(?:shares?\s+(?:of|in)\s+)?|shares?\s+(?:of|in)\s+)${TOKEN}(?:\s+(?:with|using)\s+${TOKEN})?`,
   'i',
 )
+// "buy 5 shares of AAPL" — a share-COUNT ask. Buys here are sized in what
+// you spend, not what you receive (exact-output stock swaps aren't wired),
+// so this clarifies deterministically toward the dollar phrasing instead of
+// falling to the planner's quote-and-confirm detour.
+const BUY_SHARES_COUNT_RE = new RegExp(String.raw`\bbuy\s+${FILLER}${AMOUNT}\s+shares?\s+(?:of|in)\s+${TOKEN}`, 'i')
 // Dollar amounts on OTHER venues (perps etc.) must not be hijacked into a
 // spot swap — "buy $12 of ETH on hyperliquid" belongs to the HL exec layer.
 const OTHER_VENUE_RE = /\bhyperliquid\b|\bperp(?:s|etual)?\b|\bleverage\b|\b\d+x\b/i
@@ -181,6 +190,13 @@ export function parseSwapIntent(message: string): SwapIntent {
       // sellToken stays unset when no spend token is named — the route fills
       // in the chain's primary stable (USDC on Base, USDG on Robinhood).
       return { isSwap: true, mode: 'swap', sellAmountUsd: usdOf(bm, 1), buyToken: bm[3], sellToken: bm[4] }
+    }
+    const sm = message.match(BUY_SHARES_COUNT_RE)
+    if (sm) {
+      return {
+        isSwap: true,
+        problem: `Buys here are sized by what you spend — say it in dollars ("buy $20 of ${sm[2].toUpperCase()}") and I'll build it at the live price.`,
+      }
     }
   }
   if (swapish(message)) {
