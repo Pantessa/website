@@ -1365,6 +1365,9 @@ async function main() {
     const page = await fetch(`${BASE}/i/${slug}`)
     const pageHtml = await page.text()
     check('intent links: /i runtime renders the ask + consent button', page.status === 200 && pageHtml.includes('Buy $12 of AAPL') && /Connect (&amp;|&) build/.test(pageHtml))
+    // Simple-mode shell: /i is a focused full-screen landing — the brochure
+    // top nav must not render on it (Navigation returns null on /i/).
+    check('intent links: /i page carries no brochure nav', !pageHtml.includes('nav__tab'))
     const ghostPage = await fetch(`${BASE}/i/zzzz9999`)
     check('intent links: /i unknown slug → 404', ghostPage.status === 404)
 

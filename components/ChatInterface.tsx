@@ -239,9 +239,16 @@ interface ChatInterfaceProps {
   /** /i/<slug> attribution — rides value-bearing telemetry so creator
    *  fee-split earnings accrue server-side (lib/fees CREATOR_FEE_SPLIT). */
   intentLinkSlug?: string
+  /** Simple mode (the /i/<slug> intent-link runtime): one ask, one focused
+   *  surface. Hides the workspace toolbar, splash cards, and the mint-a-link
+   *  affordances, and never rewrites the URL to /chat/<id> — a refresh must
+   *  land back on the link page, not the full chat workspace. Unlike
+   *  `embedded`, the first-party /api/chat body (SIWE session, intent-link
+   *  attribution) is unchanged. */
+  simple?: boolean
 }
 
-export default function ChatInterface({ embedded = false, contextAddress, onEmbedEvent, injectedPrompt, embedKey, embedOrigin, embedSession, intentLinkSlug }: ChatInterfaceProps = {}) {
+export default function ChatInterface({ embedded = false, contextAddress, onEmbedEvent, injectedPrompt, embedKey, embedOrigin, embedSession, intentLinkSlug, simple = false }: ChatInterfaceProps = {}) {
   const {
     servers,
     activeServerIds,
@@ -292,7 +299,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
   // The collapsed JOBS chip's count — running jobs + recurring buys needing
   // you. Polled only while the chip is actually visible (rail closed,
   // first-party chat); the open rail runs its own instance for its tab badge.
-  const { badgeCount: runningBadge } = useRunningWork(!railVisible && !embedded)
+  const { badgeCount: runningBadge } = useRunningWork(!railVisible && !embedded && !simple)
   // A reopen chip names what it opens: clicking "MCPs"/"Chats" opens the rail
   // on that tab — no more anonymous panel icons. The chips only render while
   // the rail is closed; open, the rail's own tabs sit right there instead.
@@ -321,7 +328,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
   }, [composerPrefill, setComposerPrefill])
   // App Mode's transcript view-switch: a command-bar send opens the transcript
   // over the panels; the pill flips back. Reset when the mode or chat changes.
-  const appMode = workspaceMode === 'app' && !embedded
+  const appMode = workspaceMode === 'app' && !embedded && !simple
   const [appTranscriptOpen, setAppTranscriptOpen] = useState(false)
   // Reset only on mode flips — NOT on currentChatId: a command-bar send mints
   // the chat id right after opening the transcript, and a chat-id-keyed reset
@@ -372,6 +379,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
   // orders / Hyperliquid positions / …) — or one the user hand-picked, which
   // always gets a card (preview when there's no activity).
   const splashEligible =
+    !simple &&
     !!effectiveAddress &&
     !autoRouter &&
     activeServers.some((s) => splashCapable(s) || manualSlugs.includes(s.slug))
@@ -397,7 +405,11 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
   const splashSeedRef = useRef<Set<string>>(new Set())
   const splashSeqRef = useRef(0)
 
-  const splashableServers = activeServers.filter((s) => splashCapable(s) || manualSlugs.includes(s.slug))
+  // Simple mode has no splash surface at all — batches never mint, so the
+  // link runtime stays a single focused thread (cards were "too much info").
+  const splashableServers = simple
+    ? []
+    : activeServers.filter((s) => splashCapable(s) || manualSlugs.includes(s.slug))
   const splashableKey = splashableServers.map((s) => s.id).sort().join(',')
   useEffect(() => {
     const surface = `${currentChatId ?? ''}|${effectiveAddress ?? ''}`
@@ -621,8 +633,10 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
       splashSurfaceRef.current = `${chatId}|${effectiveAddress ?? ''}`
       // Reflect the new chat in the URL without a remount (which would refetch
       // an empty message list and clobber the optimistic messages below).
-      // Not in the embed: the iframe URL carries the embed params.
-      if (!embedded) window.history.replaceState(null, '', `/chat/${chatId}`)
+      // Not in the embed: the iframe URL carries the embed params. Not in
+      // simple mode either: /i/<slug> IS the mode flag — rewriting it to
+      // /chat/<id> made a refresh reopen the full chat workspace.
+      if (!embedded && !simple) window.history.replaceState(null, '', `/chat/${chatId}`)
     }
 
     const userMsg = raw.trim()
@@ -1105,8 +1119,9 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
   return (
     <div className="relative flex flex-col h-full">
       {/* Toolbar: the rail reopen chips + view toggle + chain picker. Hidden
-          in the embed — EmbedChat renders its own slim header. */}
-      {!embedded && (
+          in the embed — EmbedChat renders its own slim header — and in simple
+          mode, where IntentRuntime's own header carries the ask. */}
+      {!embedded && !simple && (
       <div className="flex-shrink-0 px-3 py-2.5 border-b border-[var(--line)] bg-black/40 flex items-center gap-2">
         {/* Home mark — a PERMANENT, predictable path back to the dashboard
             (it used to appear only while the chats sidebar was collapsed,
@@ -1218,7 +1233,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
 
       {/* The rail's job detail card (portaled — renders nothing until a
           jobs-tab row opens it). First-party chat only. */}
-      {!embedded && <JobDetailOverlay />}
+      {!embedded && !simple && <JobDetailOverlay />}
 
       {/* Messages area — or, in App Mode, the structured workspace (panels
           fed by the working set; the input below stays docked as the command
@@ -1271,6 +1286,11 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
             // be about to take over — hold with the loader instead of flashing
             // the guest empty state and swapping a beat later.
             <ChatLoader inline />
+          ) : simple ? (
+            // Simple mode: the link's ask auto-runs the moment it lands (or
+            // sits prefilled in the composer for transfer-shaped asks), so an
+            // example gallery here is noise — hold the surface clean.
+            null
           ) : (
             <EmptyState activeCount={activeServers.length} autoRouter={autoRouter} onPick={runExample} />
           )
@@ -1358,7 +1378,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
                     )}
                   >
                     <CopyTurn text={msg.content} dark={msg.role === 'user'} />
-                    {msg.role === 'user' && !embedded && (
+                    {msg.role === 'user' && !embedded && !simple && (
                       <MintLinkTurn ask={msg.content} mcpsCsv={activeServers.map((s) => s.slug).join(',')} />
                     )}
                     {msg.role === 'assistant' ? (
@@ -1539,6 +1559,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
                               link (same /dashboard/links prefill handoff as the
                               user-bubble mint icon). */}
                           {!embedded &&
+                            !simple &&
                             (() => {
                               let ask = ''
                               for (let j = i - 1; j >= 0; j--) {

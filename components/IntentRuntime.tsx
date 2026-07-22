@@ -71,7 +71,7 @@ export default function IntentRuntime({
   const { address, isConnected } = useAccount()
   const { openConnectModal } = useConnectModal()
   const { needsSignIn, signIn, signingIn } = useSession()
-  const { servers, setServers, setActiveServerIds } = useYeetfulStore()
+  const { servers, setServers, setActiveServerIds, setCurrentChatId } = useYeetfulStore()
 
   const [started, setStarted] = useState(false)
   const [signed, setSigned] = useState(false)
@@ -144,6 +144,10 @@ export default function IntentRuntime({
     if (!isConnected || started) return
     setStarted(true)
     postEvent('connect')
+    // The link runtime is its own thread: never append the ask into whatever
+    // chat the visitor happened to have open (same-session nav from /chat
+    // keeps the store's currentChatId — EmbedChat isolates the same way).
+    setCurrentChatId(null)
     const run = () => setPrompt({ text: ask, send: !transferShaped, at: Date.now() })
     if (!restricted) {
       run()
@@ -184,7 +188,7 @@ export default function IntentRuntime({
     const ctaClass =
       'btn btn--solid inline-flex items-center justify-center gap-2 h-[54px] px-8 rounded-full text-[15px]'
     return (
-      <main className="relative min-h-[calc(100vh-4rem)] overflow-hidden">
+      <main className="relative min-h-dvh overflow-hidden">
         {/* one soft accent bloom behind the ask — the fusion-core glow */}
         <div
           aria-hidden
@@ -194,7 +198,7 @@ export default function IntentRuntime({
               'radial-gradient(ellipse 60% 42% at 50% 34%, color-mix(in srgb, var(--accent) 13%, transparent), transparent 70%)',
           }}
         />
-        <div className="relative max-w-3xl mx-auto px-4 py-16 min-h-[calc(100vh-4rem)] flex flex-col items-center justify-center text-center">
+        <div className="relative max-w-3xl mx-auto px-4 py-16 min-h-dvh flex flex-col items-center justify-center text-center">
           <div className="flex items-center gap-2 mb-8">
             <YeetfulMark size={18} />
             <span className="mono text-[11px] uppercase tracking-widest text-[color:var(--muted-2)]">
@@ -253,7 +257,7 @@ export default function IntentRuntime({
 
   if (blocked) {
     return (
-      <main className="min-h-[calc(100vh-4rem)] max-w-xl mx-auto px-4 py-12 flex flex-col justify-center">
+      <main className="min-h-dvh max-w-xl mx-auto px-4 py-12 flex flex-col justify-center">
         <div className="flex items-center gap-2 mb-8">
           <YeetfulMark size={18} />
           <span className="mono text-[11px] uppercase tracking-widest text-[color:var(--muted-2)]">
@@ -279,7 +283,19 @@ export default function IntentRuntime({
   }
 
   return (
-    <div className="relative min-h-[calc(100vh-4rem)] flex flex-col">
+    // Full-screen shell: the global nav is hidden on /i (Navigation.tsx), so
+    // the runtime owns the viewport — header pinned, the thread scrolls
+    // inside ChatInterface. Simple mode keeps the surface to ONE focused ask:
+    // no workspace toolbar, no splash cards, URL stays on /i/<slug>.
+    <div className="relative h-dvh flex flex-col overflow-hidden">
+      <div
+        aria-hidden
+        className="absolute inset-x-0 top-0 h-64 pointer-events-none"
+        style={{
+          background:
+            'radial-gradient(ellipse 70% 100% at 50% 0%, color-mix(in srgb, var(--accent) 8%, transparent), transparent 70%)',
+        }}
+      />
       {/* Waiting-for-signature takeover: a connected wallet with no SIWE
           session has an open (or missed) signature request — without this,
           the page reads as stalled. Approving proves ownership; nothing
@@ -329,31 +345,41 @@ export default function IntentRuntime({
           </div>
         </div>
       )}
-      <div className="max-w-3xl w-full mx-auto px-4 pt-6 pb-2">
-        <div className="flex items-center justify-between gap-3">
-          <div className="flex items-center gap-2 min-w-0">
-            <YeetfulMark size={16} />
-            <span className="mono text-[11px] uppercase tracking-widest text-[color:var(--muted-2)] truncate">
-              {ask}
-            </span>
+      <header className="relative flex-shrink-0 border-b border-[var(--line)] bg-[color-mix(in_srgb,var(--bg)_82%,transparent)] backdrop-blur">
+        <div className="max-w-5xl w-full mx-auto px-4 sm:px-6 py-3">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-3 min-w-0">
+              <YeetfulMark size={18} />
+              <div className="min-w-0">
+                <p className="mono text-[10px] uppercase tracking-widest text-[color:var(--muted-2)] leading-none">
+                  Intent link{agent ? ` · from ${agent}` : ''}
+                </p>
+                <p
+                  className="mt-1 text-[15px] leading-tight text-[color:var(--fg)] truncate"
+                  style={{ fontFamily: 'var(--font-serif)' }}
+                >
+                  &ldquo;{ask}&rdquo;
+                </p>
+              </div>
+            </div>
+            {signed && returnHref && redirectHost && (
+              <a
+                href={returnHref}
+                className="btn btn--solid inline-flex items-center gap-1.5 text-[13px] flex-shrink-0"
+              >
+                Return to {redirectHost} <ArrowRight className="w-3.5 h-3.5" />
+              </a>
+            )}
           </div>
-          {signed && returnHref && redirectHost && (
-            <a
-              href={returnHref}
-              className="btn btn--solid inline-flex items-center gap-1.5 text-[13px] flex-shrink-0"
-            >
-              Return to {redirectHost} <ArrowRight className="w-3.5 h-3.5" />
-            </a>
+          {transferShaped && (
+            <p className="mt-2 text-[12px] text-amber-400">
+              This ask involves a transfer — review it in the composer and press send yourself.
+            </p>
           )}
         </div>
-        {transferShaped && (
-          <p className="mt-2 text-[12px] text-amber-400">
-            This ask involves a transfer — review it in the composer and press send yourself.
-          </p>
-        )}
-      </div>
-      <div className="flex-1 max-w-3xl w-full mx-auto px-4 pb-4 min-h-0">
-        <ChatInterface injectedPrompt={prompt} onEmbedEvent={onTurnEvent} intentLinkSlug={slug} />
+      </header>
+      <div className="relative flex-1 max-w-5xl w-full mx-auto px-4 sm:px-6 min-h-0">
+        <ChatInterface simple injectedPrompt={prompt} onEmbedEvent={onTurnEvent} intentLinkSlug={slug} />
       </div>
       {signed && returnHref && redirectHost && (
         <div className="sticky bottom-0 border-t border-[var(--line)] bg-[var(--bg)]/95 backdrop-blur px-4 py-3">
