@@ -1242,12 +1242,12 @@ async function main() {
     /<link[^>]+rel="canonical"[^>]+href="https?:\/\/[^"/]+\/?"/.test(homeHtml),
   )
   check('router: og:image present (social card)', /<meta[^>]+property="og:image"/.test(homeHtml))
-  // The pivot (2026-07-07, website#326) retold the homepage; the autonomy
-  // retitle (2026-07-20) leads with the claim + standing story: "Every dapp.
-  // One chat. Tell it once." The old expectations are the pre-pivot stories.
+  // The links-first repositioning (2026-07-22, HANDOFF-links-first.md) leads
+  // with the intent claim: "You have an intent. We do the rest." Retitle and
+  // re-pin TOGETHER — this check is the pin.
   check(
-    'router: descriptive <title> (the claim + the standing story)',
-    /<title>[^<]*(Every dapp|Tell it once|embeddable|[Cc]ompose)[^<]*<\/title>/.test(homeHtml),
+    'home: descriptive <title> (the links-first claim)',
+    /<title>[^<]*(You have an intent|[Ww]e do the rest|intent link)[^<]*<\/title>/.test(homeHtml),
   )
   const sitemapXml = await (await fetch(`${BASE}/sitemap.xml`)).text()
   check('sitemap: site root is listed', /<loc>https?:\/\/[^</]+\/?<\/loc>/.test(sitemapXml))
