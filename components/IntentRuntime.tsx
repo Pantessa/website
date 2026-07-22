@@ -74,7 +74,7 @@ export default function IntentRuntime({
 }) {
   const { address, isConnected } = useAccount()
   const { openConnectModal } = useConnectModal()
-  const { needsSignIn, signIn, signingIn } = useSession()
+  const { status, needsSignIn, signIn, signingIn } = useSession()
   const { servers, setServers, setActiveServerIds, setCurrentChatId } = useYeetfulStore()
 
   const [started, setStarted] = useState(false)
@@ -143,11 +143,11 @@ export default function IntentRuntime({
     }
   }, [servers, mcps, setActiveServerIds])
 
-  // Connect IS the consent: the moment a wallet is present, run the ask —
-  // except transfer-shaped asks, which land prefilled and wait for a human
-  // press of send. Restricted links insert the allowlist probe between
-  // connect and run — fail CLOSED (a partner's "reserved" promise beats a
-  // flaky network), with the ask still one honest click away in /chat.
+  // Connect IS the consent: the moment a wallet is present, start the
+  // runtime. Restricted links insert the allowlist probe between connect and
+  // run — fail CLOSED (a partner's "reserved" promise beats a flaky
+  // network), with the ask still one honest click away in /chat.
+  const [allowCleared, setAllowCleared] = useState(false)
   useEffect(() => {
     if (!isConnected || started) return
     setStarted(true)
@@ -156,17 +156,31 @@ export default function IntentRuntime({
     // chat the visitor happened to have open (same-session nav from /chat
     // keeps the store's currentChatId — EmbedChat isolates the same way).
     setCurrentChatId(null)
-    const run = () => setPrompt({ text: ask, send: !transferShaped, at: Date.now() })
     if (!restricted) {
-      run()
+      setAllowCleared(true)
       return
     }
     fetch(`/api/intent-links/${slug}/allowed?wallet=${address}`)
       .then((r) => r.json())
-      .then((d: { allowed?: boolean }) => (d.allowed ? run() : setBlocked(true)))
+      .then((d: { allowed?: boolean }) => (d.allowed ? setAllowCleared(true) : setBlocked(true)))
       .catch(() => setBlocked(true))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isConnected, started])
+
+  // The ask injects only once the SIWE session has SETTLED for this wallet
+  // (or the visitor explicitly dismissed the takeover — the guest lane).
+  // Firing on raw connect was a live blank-screen: a real wallet takes
+  // seconds to sign, the turn ran into a LOCAL guest chat meanwhile, and the
+  // post-sign-in loadChats replace wiped that chat — the visitor watched an
+  // empty thread. Held, the turn runs authed (creator attribution intact)
+  // into a DB chat that survives the load. Transfer-shaped asks still only
+  // prefill — a human presses send.
+  useEffect(() => {
+    if (!started || blocked || !allowCleared || prompt) return
+    if (status !== 'authed' && !sigDismissed) return
+    setPrompt({ text: ask, send: !transferShaped, at: Date.now() })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [started, blocked, allowCleared, prompt, status, sigDismissed])
 
   const onTurnEvent = (name: string, data?: Record<string, unknown>) => {
     if (name !== 'turn' || !data) return
