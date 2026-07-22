@@ -11,6 +11,8 @@
 //  funding plan's chips round-trip through compileJobAsk.
 // ─────────────────────────────────────────────────────────────────────────
 
+import { chainAlt, canonicalChainWord, normalizeChainWords } from './chain-lexicon'
+
 export type DcaCadence = 'day' | 'week' | 'month'
 
 export interface DcaCreateAsk {
@@ -42,7 +44,9 @@ const DCA_CHAINS: Record<string, number> = {
   'robinhood chain': 4663,
 }
 
-const CHAIN_WORD_RE = /\bon\s+(base|arb(?:itrum)?|ethereum|mainnet|robinhood(?:\s+chain)?)\b/i
+// Typo-tolerant native-chain words (shared lexicon); the capture
+// canonicalizes before the DCA_CHAINS lookup.
+const CHAIN_WORD_RE = new RegExp(String.raw`\bon\s+(${chainAlt(['base', 'ethereum', 'arbitrum', 'robinhood'])})\b`, 'i')
 
 const CADENCE_RES: Array<[DcaCadence, RegExp]> = [
   ['day', /\b(?:daily|every\s+day|each\s+day)\b/i],
@@ -88,8 +92,9 @@ export function parseDcaCreate(message: string): DcaCreateAsk | { problem: strin
   if (/^(USDC|USDG|USDT|DAI)$/i.test(buyToken)) {
     return { problem: `A recurring buy spends the chain's stable — buying ${buyToken} with itself is a no-op. Name the token to accumulate (e.g. "buy $${buyUsd} of ETH weekly").` }
   }
-  const cw = message.match(CHAIN_WORD_RE)
-  const chainId = cw ? (DCA_CHAINS[cw[1].toLowerCase().replace(/\s+/g, ' ')] ?? null) : null
+  const cw = normalizeChainWords(message).match(CHAIN_WORD_RE)
+  const cwWord = cw ? cw[1].toLowerCase().replace(/\s+/g, ' ') : null
+  const chainId = cwWord ? (DCA_CHAINS[canonicalChainWord(cwWord) ?? cwWord] ?? null) : null
   return { buyUsd, buyToken, cadence, chainId }
 }
 

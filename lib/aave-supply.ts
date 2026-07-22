@@ -22,6 +22,7 @@
 // ─────────────────────────────────────────────────────────────────────────
 
 import { decodeFunctionData, erc20Abi, isAddress } from 'viem'
+import { chainAlt } from '@/lib/chain-lexicon'
 import type { TxChainStep } from '@/lib/transaction-layer'
 
 // ── The working set's Aave-capable agent ────────────────────────────────────
@@ -52,10 +53,13 @@ const TOKEN = '\\$?[A-Za-z]{2,12}'
 // sent the SYMBOL to build_supply's address-regex param → MCP -32602.
 const FILLER = '(?:(?:more|extra|additional)\\s+)?'
 
-// Typo-tolerant Ethereum ("etheraum" seen live) vs. other named chains.
-const ETH_RE = /\b(?:ethereum|ether[aiu]+m|eth(?:\s?mainnet)?|mainnet)\b/i
-const OTHER_CHAIN_RE =
-  /\b(?:on|to)\s+(base|arbitrum|arb|optimism|polygon|matic|gnosis|avalanche|avax|bnb|bsc|scroll|solana|sol)\b/i
+// Typo-tolerant Ethereum ("etheraum" seen live) vs. other named chains —
+// both from the shared lexicon (plus the legacy ether[aiu]+m net).
+const ETH_RE = new RegExp(String.raw`\b(?:${chainAlt(['ethereum'])}|ether[aiu]+m|eth(?:\s?mainnet)?)\b`, 'i')
+const OTHER_CHAIN_RE = new RegExp(
+  String.raw`\b(?:on|to)\s+(${chainAlt(['base', 'arbitrum', 'optimism', 'polygon', 'gnosis', 'avalanche', 'bnb', 'scroll', 'solana'])}|arb|sol)\b`,
+  'i',
+)
 
 // A different venue named explicitly → not an Aave ask, fall through.
 const OTHER_VENUE_RE =

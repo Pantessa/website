@@ -1009,7 +1009,10 @@ export async function POST(req: NextRequest) {
     }
 
     const swapIntent = parseSwapIntent(message)
-    if (swapIntent.isSwap) {
+    // The gate opens for swap-shaped asks AND bare cross-chain moves —
+    // "bridge 5 USDC from base to arbitrum" has no swap verb, but leaving it
+    // to the planner is exactly the venue-freelancing #423 forbids.
+    if (swapIntent.isSwap || detectCrossChain(message).crossChain) {
       // The native venue layer (Uniswap/CoW) builds on the registry chains
       // (Base default; Ethereum/Arbitrum/Robinhood via the chain picker or a
       // chain named in the message). A TRUE cross-chain ask ("from base to

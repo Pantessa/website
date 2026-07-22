@@ -41,6 +41,7 @@
 
 import { decodeFunctionData, encodeFunctionData, erc20Abi, formatEther, parseEther } from 'viem'
 import { chainById, primaryStable, publicClientFor } from '@/lib/chains'
+import { chainAlt } from '@/lib/chain-lexicon'
 import { formatAtoms } from '@/lib/cow'
 import { fetchLifiQuote, LIFI_POLICY_HOST, LIFI_QUOTE_TTL_SEC } from '@/lib/lifi-venue'
 import { usdPerToken } from '@/lib/usd-probe'
@@ -803,7 +804,7 @@ export function parseRhFundingFollowUp(message: string): RhFundingFollowUp | nul
   }
   const assertVerb = /\b(?:i|we)(?:'ve)?\s+(?:now\s+|just\s+|already\s+|do\s+)?(?:have|hold|got)\b|\b(?:just\s+)?(?:sent|moved|bridged|deposited|funded|added|topped\s*(?:up|off))\b/i
   const fundingNoun = /\b(usdc|usdg|eth|gas|funds?|money)\b/i
-  const originWord = /\b(base|arb(?:itrum)?|ethereum|mainnet|robinhood)\b/i
+  const originWord = new RegExp(String.raw`\b(${chainAlt(['base', 'ethereum', 'arbitrum', 'robinhood'])})\b`, 'i')
   if (assertVerb.test(m) && (fundingNoun.test(m) || originWord.test(m))) return { kind: 'recheck' }
   return null
 }

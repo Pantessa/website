@@ -54,6 +54,7 @@ import { classifyOneclickStatus, inflightDepositFromPending, inflightPendingData
 import { sanitizeWorkingContext } from '../lib/working-context'
 import { parseRobinhoodFunding, parseSameChainSwapSegment, JOB_SEGMENT_PARSERS } from '../lib/jobs'
 import { parseTransferSegment } from '../lib/transfer-exec'
+import { canonicalChainWord, normalizeChainWords } from '../lib/chain-lexicon'
 import { detectBalanceShortfall, fundingPlanUsd, planFundingChips, rankFundingSources, softenClaimedFailureBlock, type FundingNeed, type FundingSource } from '../lib/funding-plan'
 import { compileDcaBuy, dcaRunChip, parseDcaCreate, parseDcaManage, parseDcaRun, periodKeyFor } from '../lib/dca'
 import { firstUserPromptOf, shareTweetHrefOf } from '../lib/shared-chat'
@@ -2728,6 +2729,34 @@ async function main() {
     const rh = parseCrossChainSwap('swap 1 USDC from base to robinhood chain')
     check('xchain parse: "to robinhood chain"', !!rh && !('problem' in rh) && rh.destinationChain?.toLowerCase().startsWith('robinhood') === true)
     check('xchain chainId map: robinhood = 4663', expectedOriginChainId('robinhood') === 4663 && expectedOriginChainId('robinhood chain') === 4663)
+
+    // ── Chain lexicon: typo tolerance + honest clarifies (audit 2026-07-22) ──
+    // The live dead-end: "swap 1 USDC from base to Etheruem" answered "Say
+    // the amount and pair…" — a typo'd chain word must never fall out of the
+    // cross-chain layer or gaslight the user about what they already typed.
+    const typo = parseCrossChainSwap('swap 1 USDC from base to Etheruem')
+    check('lexicon: "to Etheruem" builds base→ethereum (canonical)', !!typo && !('problem' in typo) && typo.destinationChain === 'ethereum' && typo.originChain === 'base')
+    check('lexicon: detectCrossChain sees the typo\'d chain', detectCrossChain('swap 1 USDC from base to Etheruem').crossChain === true)
+    const fuzz = parseCrossChainSwap('swap 5 USDC from base to Ethereom')
+    check('lexicon: uncurated typo resolves via fuzzy (chain slot only)', !!fuzz && !('problem' in fuzz) && fuzz.destinationChain === 'ethereum')
+    const dOnly = parseCrossChainSwap('bridge 5 USDC to Arbitrum')
+    check('xchain: destination-only bridge asks for the ORIGIN, not "amount and pair"', !!dOnly && 'problem' in dOnly && /come FROM/.test(dOnly.problem))
+    const noAmt = parseCrossChainSwap('move my USDC from base to solana')
+    check('xchain: amountless move asks for the AMOUNT only', !!noAmt && 'problem' in noAmt && /How much USDC/.test(noAmt.problem))
+    check('xchain: wh-questions still fall through to the planner', parseCrossChainSwap("What's the cheapest way to convert USDT from Ethereum to Base?") === null)
+    const chainAsBuy = parseSwapIntent('swap 1 USDC to arbitrum')
+    check('swap intent: chain in the buy slot → origin clarify, never token "ARBITRUM"', chainAsBuy.isSwap && !!chainAsBuy.problem && /FROM/.test(chainAsBuy.problem))
+    const ethBuy = parseSwapIntent('swap 1 USDC to eth')
+    check('swap intent: short chain-ish words (eth) stay tokens', ethBuy.isSwap && !ethBuy.problem && ethBuy.buyToken?.toLowerCase() === 'eth')
+    const trTypo = parseTransferSegment('send 1 USDC on Aribtrum to 0x1111111111111111111111111111111111111111')
+    check('transfer: typo\'d chain word still resolves the chain', !!trTypo && !('problem' in trTypo) && trTypo.chainId === 42161)
+    const armLink = parseGuardianArm('Set a stop-loss on my Hyperliquid ETH position at -5%')
+    check('guardian: /i/stop-loss house-link phrasing parses (venue word stripped)', !!armLink && armLink.coin === 'ETH' && armLink.triggerValue === 5)
+    const fundTypo = parseRobinhoodFunding('Fund Robbinhood chain with $12 from base')
+    check('jobs funding: typo\'d "Robbinhood chain" still compiles', !!fundTypo && fundTypo.fundUsd === 12)
+    check('lexicon: ENS names in chain slots are never rewritten', normalizeChainWords('send 1 USDC on arbitrum to polygonn.eth').includes('polygonn.eth'))
+    check('lexicon: "a ton of USDC" is not a chain', detectCrossChain('swap a ton of USDC for ETH').chains.length === 0)
+    check('lexicon: "based" never fuzzy-matches base', canonicalChainWord('based') === null)
 
     const DEPOSIT = '0x7ff0D96c9f0528f0FF8dd948b2D316806fE3c7f2'
     const USDC_BASE = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913'

@@ -30,6 +30,7 @@
 
 import { erc20Abi, formatEther, formatUnits } from 'viem'
 import { chainById, publicClientFor } from '@/lib/chains'
+import { chainAlt, canonicalChainWord } from '@/lib/chain-lexicon'
 import { fundingNeedUsd, planRobinhoodFundingAdvice, readFundingShortfall } from '@/lib/lifi-bridge'
 import { describeInflightDeposit } from '@/lib/inflight-funding'
 import { usdPerToken } from '@/lib/usd-probe'
@@ -432,7 +433,10 @@ const HELD_RE = new RegExp(`\\b(?:holds?|have|has)\\s+(?:only\\s+)?~?\\$?(\\d+(?
 // live 2026-07-17 refusal opened with a capital I and silently missed).
 const TRIGGER_TOKEN_RE = new RegExp(`\\b(?:insufficient|not enough)\\s+(?:balance\\s+of\\s+)?(${TOKEN_SYM})\\b`, 'i')
 const TOKEN_SYM_STRICT_RE = /^(?:[A-Z]{2,6}|[A-Z][a-z]?ETH)$/
-const CHAIN_HINT_RE = /\bon\s+(base|arbitrum(?:\s+one)?|arb|ethereum|eth\s+mainnet|mainnet|robinhood(?:\s+chain)?)\b/i
+const CHAIN_HINT_RE = new RegExp(
+  String.raw`\bon\s+(${chainAlt(['base', 'ethereum', 'arbitrum', 'robinhood'])}|arbitrum\s+one)\b`,
+  'i',
+)
 
 const CHAIN_HINT_IDS: Record<string, number> = {
   base: 8453,
@@ -477,7 +481,7 @@ export function detectBalanceShortfall(text: string): DetectedShortfall | null {
 
   const chainHint = text.match(CHAIN_HINT_RE)
   const chainId = chainHint
-    ? CHAIN_HINT_IDS[chainHint[1].toLowerCase().replace(/\s+/g, ' ')]
+    ? CHAIN_HINT_IDS[canonicalChainWord(chainHint[1]) ?? chainHint[1].toLowerCase().replace(/\s+/g, ' ')]
     : token.toUpperCase() === 'USDG'
       ? 4663
       : undefined

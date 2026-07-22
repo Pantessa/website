@@ -77,8 +77,8 @@ const STEPS = [
     lead: (
       <>
         &ldquo;Swap 20 USDC for ETH on Base.&rdquo; &ldquo;Buy $10 of AAPL every week.&rdquo;
-        &ldquo;Bridge 5 USDC to Arbitrum, then deposit it to Hyperliquid, then long $12 of ETH,
-        then protect it with a 5% stop.&rdquo; Money asks are claimed by{' '}
+        &ldquo;Bridge 5 USDC from Base to Arbitrum, then deposit 4 USDC to Hyperliquid, then long
+        $12 of ETH on Hyperliquid, then protect my ETH long with a 5% stop.&rdquo; Money asks are claimed by{' '}
         <strong>deterministic parsers</strong>, not sampled from a model — the same sentence hits
         the same code path every time, and compound asks compile into{' '}
         <Link href="/docs/jobs">jobs</Link> the runner walks step by step.

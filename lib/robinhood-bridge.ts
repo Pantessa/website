@@ -24,6 +24,7 @@
 
 import { decodeFunctionData, encodeFunctionData, parseEther, formatEther } from 'viem'
 import { publicClientFor } from '@/lib/chains'
+import { chainAlt, normalizeChainWords } from '@/lib/chain-lexicon'
 import { buildReport, recipientCheck, type GuardrailCheck, type GuardrailReport } from '@/lib/tx-guardrails'
 import { usdPerToken } from '@/lib/usd-probe'
 
@@ -56,7 +57,7 @@ const BRIDGE_VERB = String.raw`(?:bridge|move|send|transfer|deposit|withdraw)`
 // canonical bridge can't do it in one hop; answer honestly instead.
 const FOREIGN_CHAIN_RE =
   /\bbase\b|\barb(?:itrum|itum|itrium)?\b|\boptimism\b|\bpolygon\b|\bmatic\b|\bbsc\b|\bbnb\b|\bavalanche\b|\bavax\b|\bsolana\b|\bgnosis\b|\bscroll\b|(?:\bon|\bfrom|\bto|\binto)\s+(?:sol|op|btc)\b/i
-const ETHEREUM_RE = /\bethereum\b|\beth\s?mainnet\b|\bmainnet\b|\bl1\b/i
+const ETHEREUM_RE = new RegExp(String.raw`\b(?:${chainAlt(['ethereum'])}|l1)\b`, 'i')
 // A non-ETH asset named next to the bridge verb ("bridge 100 USDG…").
 const TOKEN_AFTER_AMOUNT_RE = new RegExp(String.raw`${BRIDGE_VERB}\s+(?:about\s+|~\s*)?${AMOUNT}\s*\$?([a-zA-Z]{2,10})\b`, 'i')
 
@@ -66,8 +67,11 @@ const TOKEN_AFTER_AMOUNT_RE = new RegExp(String.raw`${BRIDGE_VERB}\s+(?:about\s+
  * answer (wrong asset / wrong chain / no amount) but can't build, or null
  * when the message isn't a Robinhood bridge ask at all.
  */
-export function parseRobinhoodBridge(message: string): RobinhoodBridgeIntent | { problem: string } | null {
-  if (!/\brobinhood\b/i.test(message)) return null
+export function parseRobinhoodBridge(rawMessage: string): RobinhoodBridgeIntent | { problem: string } | null {
+  // Canonicalize chain-slot typos first ("to Robinhod Chain", "from
+  // Ethereom") — every check below assumes canonical spellings.
+  const message = normalizeChainWords(rawMessage)
+  if (!/\brobin\s?hoo?d\b/i.test(message)) return null
   if (!new RegExp(String.raw`\b${BRIDGE_VERB}\b`, 'i').test(message)) return null
   // "bridge" language, or an explicit movement between robinhood and elsewhere.
   const movementish = /\bbridge\b/i.test(message) || /\b(?:from|to|into|onto)\s+robinhood\b/i.test(message) || /\bfrom\s+robinhood\b/i.test(message) || /\bwithdraw\b/i.test(message)
@@ -99,7 +103,7 @@ export function parseRobinhoodBridge(message: string): RobinhoodBridgeIntent | {
           : `I can start the Robinhood → Ethereum withdrawal (~7 days), and you can hop onward from Ethereum after the claim.`),
     }
   }
-  if (kind === 'deposit' && ETHEREUM_RE.test(message) === false && /\bfrom\s+\w/i.test(message) && !/\bfrom\s+(?:ethereum|mainnet|eth\s?mainnet|l1|my|the)\b/i.test(message)) {
+  if (kind === 'deposit' && ETHEREUM_RE.test(message) === false && /\bfrom\s+\w/i.test(message) && !new RegExp(String.raw`\bfrom\s+(?:${chainAlt(['ethereum'])}|l1|my|the)\b`, 'i').test(message)) {
     // "from <something unrecognized>" — don't silently assume Ethereum.
     return { problem: `The canonical Robinhood Chain bridge connects to Ethereum — I can build “bridge X ETH to robinhood from ethereum”. If the ETH is on another chain, move it to Ethereum first.` }
   }

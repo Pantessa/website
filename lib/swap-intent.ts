@@ -9,6 +9,7 @@
 // ─────────────────────────────────────────────────────────────────────────
 
 import type { WorkingContext } from './working-context'
+import { canonicalChainWord, chainMentions } from './chain-lexicon'
 
 export interface SwapIntent {
   isSwap: boolean
@@ -34,42 +35,23 @@ const NOT_SWAP: SwapIntent = { isSwap: false }
 // The native venue layer (Uniswap/CoW) is Base-only by design. A swap ask
 // that names OTHER chains ("swap 1 USDC from base to arbitrum", "bridge to
 // solana") must never be hijacked into a Base build or a dead-end clarify —
-// it belongs to a cross-chain agent (NEAR Intents). Detection is pure and
-// deliberately typo-tolerant where users actually typo ("arbitum", live
-// 2026-07-09). Short/ambiguous names (sol, ton, near, tron, sui, op) only
-// count next to a chain preposition — "a ton of USDC" is not a chain.
-const CHAIN_WORDS: [chain: string, re: RegExp][] = [
-  ['base', /\bbase\b/i],
-  ['arbitrum', /\barb(?:itrum|itum|itrium)?\b/i],
-  ['ethereum', /\bethereum\b|\beth\s?mainnet\b|\bmainnet\b/i],
-  ['optimism', /\boptimism\b/i],
-  ['polygon', /\bpolygon\b|\bmatic\b/i],
-  ['bnb', /\bbsc\b|\bbnb(?:\s?chain)?\b|\bbinance\b/i],
-  ['avalanche', /\bavalanche\b|\bavax\b/i],
-  ['gnosis', /\bgnosis\b|\bxdai\b/i],
-  ['scroll', /\bscroll\b/i],
-  ['robinhood', /\brobinhood(?:\s?chain)?\b/i],
-  ['solana', /\bsolana\b|(?:\bon|\bfrom|\bto|\binto)\s+sol\b/i],
-  ['bitcoin', /\bbitcoin\b|(?:\bon|\bfrom|\bto|\binto)\s+btc\b/i],
-  ['near', /(?:\bon|\bfrom|\bto|\binto)\s+near\b/i],
-  ['ton', /(?:\bon|\bfrom|\bto|\binto)\s+ton\b/i],
-  ['tron', /(?:\bon|\bfrom|\bto|\binto)\s+tron\b/i],
-  ['sui', /(?:\bon|\bfrom|\bto|\binto)\s+sui\b/i],
-  ['op', /(?:\bon|\bfrom|\bto|\binto)\s+op\b/i],
-]
+// it belongs to a cross-chain agent (NEAR Intents). Chain words come from
+// the shared typo-tolerant lexicon (lib/chain-lexicon): "Etheruem" and
+// "arbitum" are real users mid-flow, not strangers ("Etheruem" fell to the
+// same-chain clarify live, 2026-07-22). Short/ambiguous names (sol, ton,
+// near, tron, sui, op) only count next to a chain preposition — "a ton of
+// USDC" is not a chain.
 
 export interface CrossChainRead {
   /** True when the ask clearly spans chains (or explicitly says so). */
   crossChain: boolean
-  /** Distinct chains the message names, detection order. */
+  /** Distinct canonical chains the message names, detection order. */
   chains: string[]
 }
 
 /** Pure read of the chains a message names + whether it's a cross-chain ask. */
 export function detectCrossChain(message: string): CrossChainRead {
-  const chains = CHAIN_WORDS.filter(([, re]) => re.test(message)).map(([chain]) => chain)
-  // op + optimism both firing is one chain, not two.
-  const distinct = [...new Set(chains.map((c) => (c === 'op' ? 'optimism' : c)))]
+  const distinct = chainMentions(message).map((m) => m.chain)
   const explicit = /\bcross[\s-]?chain\b/i.test(message) || (/\bbridge\b/i.test(message) && distinct.length >= 1)
   return { crossChain: distinct.length >= 2 || explicit, chains: distinct }
 }
@@ -178,6 +160,17 @@ export function parseSwapIntent(message: string): SwapIntent {
 
   const m = message.match(MARKET_RE)
   if (m) {
+    // "swap 1 USDC to arbitrum" — the buy slot holds a CHAIN, not a token.
+    // Building a token literally named "ARBITRUM" is a dead-end (or worse);
+    // this is a cross-chain move missing its origin — say exactly that.
+    // Four-letter-and-under words (eth, sol, base) stay tokens: too ambiguous.
+    const destChain = m[3].length >= 5 ? canonicalChainWord(m[3]) : null
+    if (destChain) {
+      return {
+        isSwap: true,
+        problem: `Which chain should the ${m[1]} ${m[2].toUpperCase()} come FROM? That looks like a cross-chain move — say e.g. “swap ${m[1]} ${m[2].toUpperCase()} from Base to ${destChain}” and I'll build it.`,
+      }
+    }
     return { isSwap: true, mode: 'swap', sellAmountHuman: m[1], sellToken: m[2], buyToken: m[3] }
   }
   if (!OTHER_VENUE_RE.test(message)) {
