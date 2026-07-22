@@ -40,7 +40,7 @@ const GROUPS: { title: string; links: FooterLink[] }[] = [
     links: [
       { label: 'Docs', href: '/docs' },
       { label: 'Embed Anywhere', href: '/docs/embed' },
-      { label: 'API Reference', href: '/docs/api' },
+      { label: 'Creator Earnings', href: '/docs/creator-earnings' },
       { label: 'SDK on npm', href: 'https://www.npmjs.com/package/yeetful', ext: true },
     ],
   },

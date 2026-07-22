@@ -191,7 +191,7 @@ export default function ApiKeysPanel({
           icon={KeyRound}
           title="No keys yet"
           description="A key lets a headless agent authenticate as your wallet on the grants API — the yeetful SDK uses it to sync receipts here. Mint one above; the secret shows once."
-          cta={{ href: '/docs/agents', label: 'How agents connect →' }}
+          cta={{ href: '/docs', label: 'Docs →' }}
         />
       ) : (
         <ul className="mt-4 space-y-1.5">

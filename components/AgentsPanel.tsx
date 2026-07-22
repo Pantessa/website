@@ -134,8 +134,8 @@ export default function AgentsPanel({ orgId }: { orgId?: string | null }) {
             </Link>{' '}
             — mint one, hand it to the app via <span className="mono">yeetful(&#123; apiKey &#125;)</span>, and its
             spend shows up here with a budget you control. See{' '}
-            <Link href="/docs/agents" className="text-white underline underline-offset-2 decoration-dotted">
-              how agent budgets work
+            <Link href="/docs" className="text-white underline underline-offset-2 decoration-dotted">
+              the docs
             </Link>
             .
           </p>

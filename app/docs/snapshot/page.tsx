@@ -73,9 +73,8 @@ export default function SnapshotDocsPage() {
           meaningful when <em>your</em> wallet signs it. Yeetful never holds your key and never
           signs on your behalf — it only <strong>constructs</strong> the message and{' '}
           <strong>relays</strong>{' '}the result. Your signature is the authorization; the relay
-          carries no extra trust. It&apos;s the same principle as the rest of the{' '}
-          <Link href="/docs/expense-account">expense account</Link>: Yeetful is the control
-          plane, not the custodian.
+          carries no extra trust. It&apos;s the same principle as everything else here: Yeetful
+          is the control plane, not the custodian.
         </p>
 
         <h2>For agents: the MCP endpoint</h2>
@@ -115,8 +114,7 @@ export default function SnapshotDocsPage() {
         <p>
           Browse the full tool surface and pricing on the{' '}
           <Link href="/servers/yeetful-snapshot">service page</Link>, or give your agent a budget
-          for it the same way you would any other connected app — see{' '}
-          <Link href="/docs/agents">Agents &amp; budgets</Link>.
+          for it the same way you would any other connected app.
         </p>
       </div>
     </>

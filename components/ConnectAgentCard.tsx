@@ -111,10 +111,10 @@ export default function ConnectAgentCard({
         <code className="mono">npm install yeetful</code> · set{' '}
         <code className="mono">YEETFUL_API_KEY</code>{' '}in your agent&apos;s env (mint above) ·{' '}
         <Link
-          href="/docs/agents"
+          href="/docs"
           className="underline decoration-dotted underline-offset-2 hover:text-white transition-colors"
         >
-          budgets &amp; the agent model
+          docs
         </Link>{' '}
         · full example:{' '}
         <a

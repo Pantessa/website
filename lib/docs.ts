@@ -312,7 +312,7 @@ export const guidePages = () => readyPages().filter((p) => (p.group ?? 'guide') 
 /** Legal pages — their own sidebar group; excluded from the dev-doc cards. */
 export const legalPages = () => readyPages().filter((p) => p.group === 'legal')
 /** Ready guide pages behind one door — sidebar groups + landing door sections. */
-export const doorPages = (door: 'host' | 'user' | 'agent') =>
+export const doorPages = (door: 'host' | 'user' | 'agent' | 'creator') =>
   guidePages().filter((p) => p.door === door)
 
 export function docsUrl(slug: string): string {

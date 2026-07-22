@@ -90,7 +90,7 @@ export function onboardingEmail(opts: { name?: string } = {}): {
 } {
   const hi = opts.name ? `Hi ${opts.name},` : 'Hi there,'
   const dashboard = `${SITE}/dashboard`
-  const docs = `${SITE}/docs/quickstart`
+  const docs = `${SITE}/docs/links`
   const subject = 'welcome to yeetful — the two-minute version'
 
   const text = [
@@ -101,7 +101,7 @@ export function onboardingEmail(opts: { name?: string } = {}): {
     'One thing to do now: open your dashboard, connect a wallet, and set your first budget.',
     `→ ${dashboard}`,
     '',
-    `Wiring it into your own agent takes about twenty lines: ${docs}`,
+    `Minting your first intent link takes about a minute — the guide: ${docs}`,
     '',
     'No invoices, no API-key sprawl, no surprise bill at 2am.',
     '',
@@ -115,7 +115,7 @@ export function onboardingEmail(opts: { name?: string } = {}): {
     <p>Yeetful gives your AI agent an expense account: an allowlist plus per-call and per-day USDC budgets, enforced <em>before</em> any payment is signed. Connect a wallet, set the rules, and every call your agent makes is paid per-use on Base — with a receipt for each one.</p>
     <p>One thing to do now: open your dashboard, connect a wallet, and set your first budget.</p>
     <p><a href="${dashboard}" style="display:inline-block;background:#34E0A1;color:#0b0b0c;padding:10px 18px;border-radius:8px;text-decoration:none;font-weight:600">Open your dashboard →</a></p>
-    <p style="color:#888;font-size:13px">Wiring it into your own agent takes about twenty lines — the <a href="${docs}">quickstart</a> has it. No invoices, no API-key sprawl, no surprise bill at 2am.</p>
+    <p style="color:#888;font-size:13px">Minting your first intent link takes about a minute — the <a href="${docs}">guide</a> has it. No invoices, no API-key sprawl, no surprise bill at 2am.</p>
     <p>— Nate, yeetful</p>
   </div>`
 
