@@ -136,7 +136,15 @@ const KIND_CHIP: Record<string, { label: string; cls: string }> = {
   executed: { label: 'auto', cls: 'border-amber-400/50 text-amber-400' },
 }
 
-export default function ActivityOverview({ header }: { header?: React.ReactNode }) {
+export default function ActivityOverview({
+  header,
+  lead,
+}: {
+  header?: React.ReactNode
+  /** Server-rendered section slotted right under the hero (the link
+   *  economy leads the page) — before the overview's own sections. */
+  lead?: React.ReactNode
+}) {
   const [data, setData] = useState<Overview | null>(null)
   const [failed, setFailed] = useState(false)
 
@@ -205,6 +213,7 @@ export default function ActivityOverview({ header }: { header?: React.ReactNode 
     return (
       <div className="flex flex-col gap-4 pb-16">
         {heroSection}
+        {lead}
         {failed ? (
           <p className="text-sm text-[color:var(--muted)] py-16 text-center">
             Activity is unavailable right now — try a refresh.
@@ -231,6 +240,7 @@ export default function ActivityOverview({ header }: { header?: React.ReactNode 
   return (
     <div className="pb-16">
       {heroSection}
+      {lead}
 
       {/* ── attended vs standing: the split that matters ───────────────── */}
       <section className="mb-10">

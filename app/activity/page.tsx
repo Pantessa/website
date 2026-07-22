@@ -5,7 +5,8 @@ import ActivityOverview from '@/components/ActivityOverview'
 import IntentLinksBoard from '@/components/IntentLinksBoard'
 import SignInFlowLink from '@/components/SignInFlowLink'
 import LiveRoutingFeed from '@/components/LiveRoutingFeed'
-import { topLinks, feeSummary } from '@/lib/links-board'
+import { LinksDaily } from '@/components/LazyCharts'
+import { topLinks, feeSummary, linkDailySeries } from '@/lib/links-board'
 
 // Public system overview — the whole money story on one page: every dollar
 // the system moved (swaps, lending, staking, cross-chain, votes + x402
@@ -39,7 +40,7 @@ const fmtUsd = (n: number) =>
  *  ledgered estimate (the claims-rail formula, FEES_LIVE_SINCE-windowed);
  *  the on-chain treasury stays the source of truth for collections. */
 async function LinkEconomy() {
-  const [rows, fees] = await Promise.all([topLinks(5), feeSummary()])
+  const [rows, fees, daily] = await Promise.all([topLinks(5), feeSummary(), linkDailySeries(30)])
   if (rows.length === 0 && !fees) return null
   return (
     <section className="mb-10">
@@ -93,6 +94,15 @@ async function LinkEconomy() {
         </div>
       )}
 
+      {daily.length > 0 && (
+        <div className="rounded-lg border border-[var(--line)] bg-[var(--surf-1)] px-4 py-3 mb-5">
+          <p className="mono text-[10.5px] uppercase tracking-wider text-[color:var(--muted-2)] mb-2">
+            The link economy, daily — minted · conversions · $ moved (30d)
+          </p>
+          <LinksDaily daily={daily} />
+        </div>
+      )}
+
       {rows.length > 0 && <IntentLinksBoard rows={rows} />}
       <p className="mono text-[11px] text-[color:var(--muted-2)] mt-3">
         Dollars are guardrail-priced signed notional — the same source as the figures above. Every
@@ -112,6 +122,8 @@ export default async function ActivityPage() {
       <main className="x-main x-main--fluid">
         {/* The header rides INSIDE the overview's hero row — title left, the
             money-moved figure right, one accent glow spanning both. */}
+        {/* The link economy leads the page — slotted right under the hero,
+            before the overview's own sections. */}
         <ActivityOverview
           header={
             <header className="hero" style={{ paddingBottom: 0 }}>
@@ -126,8 +138,8 @@ export default async function ActivityPage() {
               </p>
             </header>
           }
+          lead={<LinkEconomy />}
         />
-        <LinkEconomy />
         <LiveRoutingFeed />
       </main>
       <Footer />
