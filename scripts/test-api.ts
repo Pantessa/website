@@ -2189,6 +2189,12 @@ async function main() {
     'receipt page never prints the full wallet',
     !receiptHtml.toLowerCase().includes(owner.address.toLowerCase()),
   )
+  // Receipt → mint chip: the viewer can mint their OWN copy of the ask as an
+  // intent link (the aha→link loop). Prefill handoff only — nothing auto-runs.
+  check(
+    'receipt page offers "Mint this as a link" with the ask prefilled',
+    receiptHtml.includes('/dashboard/links?ask=') && receiptHtml.includes('Mint this as a link'),
+  )
   const ogRes = await fetch(`${BASE}/r/${mintedShare.id}/opengraph-image`)
   check(
     'receipt OG image renders (200, image/png)',
