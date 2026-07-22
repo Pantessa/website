@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import prisma from '@/lib/db'
 import { getAuthAddress } from '@/lib/api-key'
-import { cleanAsk, composeMcps, mintSlug, sanitizeMcps, validateRedirect } from '@/lib/intent-links'
+import { cleanAsk, composeMcps, mintSlug, sanitizeMcps, sanitizeVariants, validateRedirect } from '@/lib/intent-links'
 import { FEE_BEARING_BUILD_PATHS, creatorEarningsUsd } from '@/lib/fees'
 import { getEffectivePlan } from '@/lib/billing'
 
@@ -27,7 +27,7 @@ export async function POST(req: NextRequest) {
   if (!addr) return NextResponse.json({ error: 'Sign in to mint an intent link.' }, { status: 401 })
   const creator = addr.toLowerCase()
 
-  let body: { ask?: string; agent?: string; redirectUrl?: string; mcps?: unknown }
+  let body: { ask?: string; agent?: string; redirectUrl?: string; mcps?: unknown; variants?: unknown }
   try {
     body = await req.json()
   } catch {
@@ -48,6 +48,9 @@ export async function POST(req: NextRequest) {
   // Creator-chosen MCPs win (validated against the mintable set); otherwise
   // the composer decides from the ask's shape.
   const mcps = (sanitizeMcps(body.mcps) ?? composeMcps(ask)).join(',')
+  // A/B alternate phrasings — each a full ask; the runtime shows one per
+  // visit and the funnel segments by which one was shown.
+  const variants = sanitizeVariants(body.variants, ask)
 
   // Capacity gate (soft): active links per plan, mirroring standing-intent
   // tiers. Existing links are never touched — the cap gates NEW mints only.
@@ -67,11 +70,12 @@ export async function POST(req: NextRequest) {
   for (let attempt = 0; attempt < 3; attempt++) {
     const id = mintSlug()
     try {
-      const link = await prisma.intentLink.create({ data: { id, ask, mcps, creator, agent, redirectUrl } })
+      const link = await prisma.intentLink.create({ data: { id, ask, variants, mcps, creator, agent, redirectUrl } })
       return NextResponse.json({
         slug: link.id,
         url: `/i/${link.id}`,
         ask: link.ask,
+        variants: link.variants,
         mcps: link.mcps,
         redirectUrl: link.redirectUrl,
       })
@@ -96,8 +100,11 @@ export async function GET(req: NextRequest) {
   })
   if (links.length === 0) return NextResponse.json({ links: [] })
 
+  // Grouped by variant too, so A/B links segment their funnel per phrasing;
+  // the aggregate funnel sums across variants (legacy null-variant rows
+  // included).
   const events = await prisma.intentLinkEvent.groupBy({
-    by: ['slug', 'kind'],
+    by: ['slug', 'kind', 'variant'],
     where: { slug: { in: links.map((l) => l.id) } },
     _count: { _all: true },
     _sum: { valueUsd: true },
@@ -106,15 +113,33 @@ export async function GET(req: NextRequest) {
     const f = { open: 0, connect: 0, built: 0, signed: 0, valueUsd: 0 }
     for (const e of events) {
       if (e.slug !== slug) continue
-      if (e.kind === 'open') f.open = e._count._all
-      else if (e.kind === 'connect') f.connect = e._count._all
-      else if (e.kind === 'built') f.built = e._count._all
+      if (e.kind === 'open') f.open += e._count._all
+      else if (e.kind === 'connect') f.connect += e._count._all
+      else if (e.kind === 'built') f.built += e._count._all
       else if (e.kind === 'signed') {
-        f.signed = e._count._all
-        f.valueUsd = e._sum.valueUsd ?? 0
+        f.signed += e._count._all
+        f.valueUsd += e._sum.valueUsd ?? 0
       }
     }
     return f
+  }
+  /** Per-phrasing funnels, only for links that carry variants. Index 0 is
+   *  the base ask; events minted before the A/B era (variant null) stay in
+   *  the aggregate but belong to no phrasing. */
+  const variantFunnelsOf = (link: { id: string; ask: string; variants: string[] }) => {
+    if (!link.variants.length) return undefined
+    const phrasings = [link.ask, ...link.variants]
+    return phrasings.map((askText, v) => {
+      const f = { variant: v, ask: askText, open: 0, connect: 0, built: 0, signed: 0 }
+      for (const e of events) {
+        if (e.slug !== link.id || e.variant !== v) continue
+        if (e.kind === 'open') f.open += e._count._all
+        else if (e.kind === 'connect') f.connect += e._count._all
+        else if (e.kind === 'built') f.built += e._count._all
+        else if (e.kind === 'signed') f.signed += e._count._all
+      }
+      return f
+    })
   }
 
   // Server-truth money: signed turns attributed to these links in
@@ -149,11 +174,13 @@ export async function GET(req: NextRequest) {
       slug: l.id,
       url: `/i/${l.id}`,
       ask: l.ask,
+      variants: l.variants,
       agent: l.agent,
       redirectUrl: l.redirectUrl,
       revoked: l.revoked,
       createdAt: l.createdAt,
       funnel: funnelOf(l.id),
+      funnelVariants: variantFunnelsOf(l),
       ...moneyOf(l.id),
     })),
     earnings: {

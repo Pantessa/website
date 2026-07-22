@@ -1025,6 +1025,7 @@ model WalletArrival {
 model IntentLink {
   id          String   @id // short slug — /i/<id>
   ask         String // the sentence (sanitized at mint)
+  variants    String[] @default([]) // A/B alternate phrasings (≤3); index 0 = ask
   mcps        String? // comma-separated slugs auto-composed from the intent
   creator     String? // lowercased wallet (SIWE-verified at mint)
   agent       String? // optional byline shown on the runtime page
@@ -1042,6 +1043,7 @@ model IntentLinkEvent {
   id        String   @id @default(cuid())
   slug      String
   kind      String // 'open' | 'connect' | 'built' | 'signed'
+  variant   Int? // which phrasing this visit saw (0 = the base ask)
   wallet    String? // lowercased, when known (connect and later)
   valueUsd  Float?   @map("value_usd") // guardrail-priced, signed/built turns
   createdAt DateTime @default(now()) @map("created_at")

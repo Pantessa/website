@@ -32,6 +32,7 @@ const CONTRACT = [
 export default function IntentRuntime({
   slug,
   ask,
+  variant = 0,
   mcps,
   agent,
   redirectUrl,
@@ -39,6 +40,9 @@ export default function IntentRuntime({
 }: {
   slug: string
   ask: string
+  /** Which A/B phrasing this visit was served (0 = the base ask) — rides
+   *  every funnel event so the creator sees conversion per phrasing. */
+  variant?: number
   mcps: string
   agent: string
   redirectUrl: string
@@ -62,7 +66,7 @@ export default function IntentRuntime({
     void fetch(`/api/intent-links/${slug}/events`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ kind, wallet: address, ...extra }),
+      body: JSON.stringify({ kind, wallet: address, variant, ...extra }),
     }).catch(() => {})
   }
 

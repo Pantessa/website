@@ -70,6 +70,25 @@ export function composeMcps(ask: string): string[] {
   return [...new Set(slugs)].slice(0, 4)
 }
 
+/** How many A/B alternate phrasings a link may carry beyond the base ask. */
+export const MAX_VARIANTS = 3
+
+/** Sanitize creator-supplied A/B phrasings: cleaned like the ask, sentence
+ *  minimum, deduped against the base and each other, capped. Every variant
+ *  is a full ask in its own right — the runtime shows exactly one and every
+ *  gate (transfer shape included) applies to the one shown. */
+export function sanitizeVariants(raw: unknown, baseAsk: string): string[] {
+  if (!Array.isArray(raw)) return []
+  const out: string[] = []
+  for (const v of raw) {
+    const a = cleanAsk(String(v))
+    if (a.length < 8 || a === baseAsk || out.includes(a)) continue
+    out.push(a)
+    if (out.length >= MAX_VARIANTS) break
+  }
+  return out
+}
+
 /** Transfer-shaped asks (send X to <address/ens>) are the phishing shape —
  *  they NEVER auto-build from a link. The runtime falls back to prefill-only
  *  so a human types nothing but must deliberately press send. */
