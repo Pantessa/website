@@ -1415,6 +1415,12 @@ async function main() {
     const strangerRevoke = await fetch(`${BASE}/api/intent-links/${slug}`, { method: 'DELETE' })
     check('intent links: revoking without a session → 401', strangerRevoke.status === 401)
 
+    // The public leaderboard: server-truth board, mint CTA, no wallets.
+    const board = await fetch(`${BASE}/links`)
+    const boardHtml = await board.text()
+    check('intent links: /links leaderboard renders with the mint CTA', board.status === 200 && /Mint yours/.test(boardHtml) && /dollars moved/i.test(boardHtml))
+    check('intent links: leaderboard never leaks a wallet address', !/0x[0-9a-fA-F]{40}/.test(boardHtml))
+
     // cleanup: the minted row + its events (raw deletes via prisma are not
     // exposed here — the API has no delete; rows are tiny and harmless, but
     // keep the namespace tidy by revoking… no revoke endpoint in v1 either.
