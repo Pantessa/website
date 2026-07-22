@@ -108,3 +108,24 @@ export function activeLinkCapFor(planId: string, isAdmin: boolean): number {
   if (isAdmin) return Infinity
   return LINK_CAPS[planId] ?? 3
 }
+
+// ── Creator handles (/l/<handle> storefronts) ──────────────────────────────
+// Opt-in public page names. Opt-in is the privacy contract: a wallet is
+// never the key to a public page — only a claimed handle is.
+
+/** Route/brand names a handle may not shadow. */
+export const RESERVED_HANDLES = new Set([
+  'admin', 'api', 'app', 'activity', 'blog', 'chat', 'dashboard', 'docs',
+  'doc', 'embed', 'help', 'i', 'l', 'link', 'links', 'me', 'official', 'p',
+  'pricing', 'r', 'root', 'servers', 'sign', 'support', 'team', 'www',
+  'yeetful',
+])
+
+/** Normalize a claimed handle: lowercase, 3–20 chars of [a-z0-9-], no edge
+ *  hyphens, not reserved. Returns null when unclaimable. */
+export function normalizeHandle(raw: string): string | null {
+  const h = raw.trim().toLowerCase().replace(/^@/, '')
+  if (!/^[a-z0-9](?:[a-z0-9-]{1,18}[a-z0-9])$/.test(h)) return null
+  if (RESERVED_HANDLES.has(h)) return null
+  return h
+}
