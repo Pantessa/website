@@ -96,3 +96,46 @@ export function validateRedirect(raw: string): { ok: true; url: string; host: st
 
 export const EVENT_KINDS = ['open', 'connect', 'built', 'signed'] as const
 export type IntentEventKind = (typeof EVENT_KINDS)[number]
+
+// ── Partner-promo limits (expiry / max-signs / allowlists) ─────────────────
+// All optional, all validated at MINT. Enforcement is server-side: expiry +
+// sign-cap gate the /i page load (sign counts come from server-truth
+// embed_turns, never client-reported events); the allowlist gates the
+// runtime's auto-run via a membership probe so the list itself never ships
+// in page HTML.
+
+const TWO_YEARS_MS = 2 * 365 * 24 * 60 * 60 * 1000
+
+/** Parse a mint-time expiry. Absent → null (never expires). */
+export function parseExpiry(raw: unknown): { ok: true; date: Date | null } | { ok: false; reason: string } {
+  if (raw === undefined || raw === null || raw === '') return { ok: true, date: null }
+  const d = new Date(String(raw))
+  if (isNaN(d.getTime())) return { ok: false, reason: 'expiresAt is not a valid date' }
+  const now = Date.now()
+  if (d.getTime() <= now) return { ok: false, reason: 'expiresAt must be in the future' }
+  if (d.getTime() > now + TWO_YEARS_MS) return { ok: false, reason: 'expiresAt must be within two years' }
+  return { ok: true, date: d }
+}
+
+/** Parse a mint-time sign cap. Absent → null (unlimited). */
+export function parseMaxSigns(raw: unknown): { ok: true; max: number | null } | { ok: false; reason: string } {
+  if (raw === undefined || raw === null || raw === '') return { ok: true, max: null }
+  const n = Number(raw)
+  if (!Number.isInteger(n) || n < 1 || n > 1_000_000) return { ok: false, reason: 'maxSigns must be an integer from 1 to 1,000,000' }
+  return { ok: true, max: n }
+}
+
+/** Parse a mint-time wallet allowlist. Partner lists must not silently lose
+ *  entries — any malformed address is an ERROR, never a drop. */
+export function parseAllowWallets(raw: unknown): { ok: true; wallets: string[] } | { ok: false; reason: string } {
+  if (raw === undefined || raw === null) return { ok: true, wallets: [] }
+  if (!Array.isArray(raw)) return { ok: false, reason: 'allowWallets must be an array of 0x addresses' }
+  const out = new Set<string>()
+  for (const w of raw) {
+    const s = String(w).trim()
+    if (!/^0x[0-9a-fA-F]{40}$/.test(s)) return { ok: false, reason: `allowWallets contains a malformed address: "${s.slice(0, 60)}"` }
+    out.add(s.toLowerCase())
+  }
+  if (out.size > 500) return { ok: false, reason: 'allowWallets is capped at 500 wallets' }
+  return { ok: true, wallets: [...out] }
+}

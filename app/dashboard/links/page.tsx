@@ -18,6 +18,11 @@ interface LinkRow {
   redirectUrl: string | null
   revoked: boolean
   createdAt: string
+  expiresAt: string | null
+  maxSigns: number | null
+  allowCount: number
+  /** Server-truth signed turns (embed_turns) — what the maxSigns cap counts. */
+  signsCount: number
   funnel: { open: number; connect: number; built: number; signed: number; valueUsd: number }
   /** Server-truth signed notional attributed to this link (embed_turns). */
   signedUsd: number
@@ -39,6 +44,10 @@ export default function DashboardLinksPage() {
   const [error, setError] = useState<string | null>(null)
   const [ask, setAsk] = useState('')
   const [redirectUrl, setRedirectUrl] = useState('')
+  // Partner-promo limits — all optional, validated server-side at mint.
+  const [expiresAt, setExpiresAt] = useState('')
+  const [maxSigns, setMaxSigns] = useState('')
+  const [allowText, setAllowText] = useState('')
   const [minting, setMinting] = useState(false)
   const [copied, setCopied] = useState<string | null>(null)
   // MCP attachment: 'auto' = the composer decides from the ask (live preview
@@ -101,6 +110,14 @@ export default function DashboardLinksPage() {
           ask: ask.trim(),
           redirectUrl: redirectUrl.trim() || undefined,
           mcps: mcpMode === 'manual' && pickedMcps.length ? pickedMcps : undefined,
+          expiresAt: expiresAt ? new Date(expiresAt).toISOString() : undefined,
+          maxSigns: maxSigns.trim() ? Number(maxSigns) : undefined,
+          allowWallets: allowText.trim()
+            ? allowText
+                .split('\n')
+                .map((s) => s.trim())
+                .filter(Boolean)
+            : undefined,
         }),
       })
       const data = await res.json()
@@ -110,6 +127,9 @@ export default function DashboardLinksPage() {
       }
       setAsk('')
       setRedirectUrl('')
+      setExpiresAt('')
+      setMaxSigns('')
+      setAllowText('')
       load()
     } finally {
       setMinting(false)
@@ -207,6 +227,45 @@ export default function DashboardLinksPage() {
           placeholder="https://yoursite.com/thanks"
           className="mt-1.5 w-full rounded-lg border border-[var(--line)] bg-[var(--bg)] px-3 py-2 text-sm text-[color:var(--fg)] focus:outline-none focus:border-[var(--accent)]"
         />
+        {/* Partner-promo limits: expiry, sign cap, wallet allowlist — the
+            knobs a big-partner promo needs ("dies after 1000 signs"). */}
+        <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div>
+            <label className="mono text-[11px] uppercase tracking-wider text-[color:var(--muted-2)] block">
+              Expires (optional)
+            </label>
+            <input
+              type="datetime-local"
+              value={expiresAt}
+              onChange={(e) => setExpiresAt(e.target.value)}
+              className="mt-1.5 w-full rounded-lg border border-[var(--line)] bg-[var(--bg)] px-3 py-2 text-sm text-[color:var(--fg)] focus:outline-none focus:border-[var(--accent)]"
+            />
+          </div>
+          <div>
+            <label className="mono text-[11px] uppercase tracking-wider text-[color:var(--muted-2)] block">
+              Max signs (optional — server-truth count)
+            </label>
+            <input
+              type="number"
+              min={1}
+              value={maxSigns}
+              onChange={(e) => setMaxSigns(e.target.value)}
+              placeholder="e.g. 1000"
+              className="mt-1.5 w-full rounded-lg border border-[var(--line)] bg-[var(--bg)] px-3 py-2 text-sm text-[color:var(--fg)] focus:outline-none focus:border-[var(--accent)]"
+            />
+          </div>
+        </div>
+        <label className="mono text-[11px] uppercase tracking-wider text-[color:var(--muted-2)] mt-3 block">
+          Wallet allowlist (optional — one 0x address per line; the list never appears on the page)
+        </label>
+        <textarea
+          value={allowText}
+          onChange={(e) => setAllowText(e.target.value)}
+          placeholder="0x…"
+          rows={2}
+          className="mt-1.5 w-full rounded-lg border border-[var(--line)] bg-[var(--bg)] px-3 py-2 text-sm mono text-[color:var(--fg)] focus:outline-none focus:border-[var(--accent)]"
+        />
+
         <div className="mt-3 flex items-center gap-3">
           <button
             type="button"
@@ -287,6 +346,17 @@ export default function DashboardLinksPage() {
                         </span>
                       )}
                     </div>
+                    {(l.expiresAt || l.maxSigns !== null || l.allowCount > 0) && (
+                      <div className="mt-0.5 mono text-[11px] text-[color:var(--muted-2)]">
+                        {[
+                          l.expiresAt ? `expires ${new Date(l.expiresAt).toISOString().slice(0, 10)}` : null,
+                          l.maxSigns !== null ? `${l.signsCount}/${l.maxSigns} signs` : null,
+                          l.allowCount > 0 ? `${l.allowCount} wallets` : null,
+                        ]
+                          .filter(Boolean)
+                          .join(' · ')}
+                      </div>
+                    )}
                   </td>
                   <td className="py-2.5 pr-3 text-right mono text-[13px]">{l.funnel.open}</td>
                   <td className="py-2.5 pr-3 text-right mono text-[13px]">{l.funnel.connect}</td>

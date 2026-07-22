@@ -36,6 +36,7 @@ export default function IntentRuntime({
   agent,
   redirectUrl,
   hasCreator = false,
+  restricted = false,
 }: {
   slug: string
   ask: string
@@ -43,6 +44,10 @@ export default function IntentRuntime({
   agent: string
   redirectUrl: string
   hasCreator?: boolean
+  /** The link carries a wallet allowlist — the connected wallet must pass
+   *  the membership probe before the ask auto-runs. The list itself never
+   *  reaches the client. */
+  restricted?: boolean
 }) {
   const { address, isConnected } = useAccount()
   const { openConnectModal } = useConnectModal()
@@ -50,6 +55,7 @@ export default function IntentRuntime({
 
   const [started, setStarted] = useState(false)
   const [signed, setSigned] = useState(false)
+  const [blocked, setBlocked] = useState(false)
   const [prompt, setPrompt] = useState<{ text: string; send: boolean; at: number } | null>(null)
   const transferShaped = isTransferShaped(ask)
 
@@ -95,12 +101,22 @@ export default function IntentRuntime({
 
   // Connect IS the consent: the moment a wallet is present, run the ask —
   // except transfer-shaped asks, which land prefilled and wait for a human
-  // press of send.
+  // press of send. Restricted links insert the allowlist probe between
+  // connect and run — fail CLOSED (a partner's "reserved" promise beats a
+  // flaky network), with the ask still one honest click away in /chat.
   useEffect(() => {
     if (!isConnected || started) return
     setStarted(true)
     postEvent('connect')
-    setPrompt({ text: ask, send: !transferShaped, at: Date.now() })
+    const run = () => setPrompt({ text: ask, send: !transferShaped, at: Date.now() })
+    if (!restricted) {
+      run()
+      return
+    }
+    fetch(`/api/intent-links/${slug}/allowed?wallet=${address}`)
+      .then((r) => r.json())
+      .then((d: { allowed?: boolean }) => (d.allowed ? run() : setBlocked(true)))
+      .catch(() => setBlocked(true))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isConnected, started])
 
@@ -160,6 +176,33 @@ export default function IntentRuntime({
             transfers, and bridges are always fee-free.
           </p>
         )}
+      </main>
+    )
+  }
+
+  if (blocked) {
+    return (
+      <main className="min-h-[calc(100vh-4rem)] max-w-xl mx-auto px-4 py-12">
+        <div className="flex items-center gap-2 mb-8">
+          <YeetfulMark size={18} />
+          <span className="mono text-[11px] uppercase tracking-widest text-[color:var(--muted-2)]">
+            Intent link{agent ? ` · from ${agent}` : ''}
+          </span>
+        </div>
+        <h1 className="text-xl font-semibold text-[color:var(--fg)] mb-3">
+          This link is reserved for specific wallets.
+        </h1>
+        <p className="text-[14px] leading-relaxed text-[color:var(--muted)] mb-6">
+          The wallet you connected isn&apos;t on this link&apos;s list, so nothing was run and
+          nothing was signed. The ask itself isn&apos;t a secret — you can take it to the chat
+          yourself:
+        </p>
+        <a
+          href={`/chat?prompt=${encodeURIComponent(ask)}`}
+          className="btn btn--solid inline-flex items-center gap-2 text-[13px]"
+        >
+          <Zap className="w-4 h-4" /> Open in chat (prefilled, never auto-sent)
+        </a>
       </main>
     )
   }

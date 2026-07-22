@@ -26,8 +26,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ slu
   const kind = body.kind as IntentEventKind
   if (!EVENT_KINDS.includes(kind)) return NextResponse.json({ error: 'Bad kind.' }, { status: 400 })
 
-  const link = await prisma.intentLink.findUnique({ where: { id: slug }, select: { id: true, revoked: true } })
+  const link = await prisma.intentLink.findUnique({ where: { id: slug }, select: { id: true, revoked: true, expiresAt: true } })
   if (!link || link.revoked) return NextResponse.json({ error: 'Unknown link.' }, { status: 404 })
+  if (link.expiresAt && link.expiresAt.getTime() <= Date.now()) return NextResponse.json({ error: 'Link expired.' }, { status: 404 })
 
   const wallet = typeof body.wallet === 'string' && /^0x[0-9a-fA-F]{40}$/.test(body.wallet) ? body.wallet.toLowerCase() : null
   const valueUsd =

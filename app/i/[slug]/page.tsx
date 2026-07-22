@@ -18,7 +18,16 @@ async function getLink(slug: string) {
   if (!/^[a-z0-9]{4,16}$/.test(slug)) return null
   try {
     const l = await prisma.intentLink.findUnique({ where: { id: slug } })
-    return l && !l.revoked ? l : null
+    if (!l || l.revoked) return null
+    // Expiry: a dead promo behaves exactly like a revoked link.
+    if (l.expiresAt && l.expiresAt.getTime() <= Date.now()) return null
+    // Sign cap: SERVER-TRUTH signs only (guardrail-priced embed_turns) —
+    // client-reported funnel events can neither burn nor extend the cap.
+    if (l.maxSigns !== null) {
+      const signs = await prisma.embedTurn.count({ where: { intentLinkSlug: slug, outcome: 'signed' } })
+      if (signs >= l.maxSigns) return null
+    }
+    return l
   } catch {
     return null
   }
@@ -52,6 +61,7 @@ export default async function IntentLinkPage({ params }: Params) {
       agent={link.agent ?? ''}
       redirectUrl={link.redirectUrl ?? ''}
       hasCreator={!!link.creator}
+      restricted={link.allowWallets.length > 0}
     />
   )
 }
