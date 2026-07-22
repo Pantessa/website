@@ -12,6 +12,7 @@ import SwitchboardServers from '@/components/SwitchboardServers'
 import SwitchboardProof from '@/components/SwitchboardProof'
 import SwitchboardStats from '@/components/SwitchboardStats'
 import StayUpToDate from '@/components/StayUpToDate'
+import LinkLane from '@/components/LinkLane'
 import MobileCtaBar from '@/components/MobileCtaBar'
 import Footer from '@/components/Footer'
 
@@ -81,6 +82,9 @@ export default function HomePage() {
 
         {/* Distribution: the 5-line install + the two fork demos */}
         <EmbedAnywhere />
+
+        {/* Distribution, person-to-person: a link that carries an ask */}
+        <LinkLane />
 
         {/* Why hosts embed it / why users sign */}
         <TrustStrip />

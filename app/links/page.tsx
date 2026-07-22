@@ -3,6 +3,7 @@ import Link from 'next/link'
 import prisma from '@/lib/db'
 import Footer from '@/components/Footer'
 import { YeetfulMark } from '@/components/Logo'
+import { HOUSE_LINKS } from '@/lib/house-links'
 
 // /links — the public leaderboard: intent links ranked by server-truth
 // dollars moved (guardrail-priced signed turns in embed_turns). In-the-open
@@ -55,8 +56,25 @@ async function topLinks() {
   }
 }
 
+/** House links that are live in the DB (seeded) and not already on the
+ *  board — the start-here strip, so the page demos real product even when
+ *  the board is young. */
+async function liveHouseLinks(exclude: Set<string>) {
+  try {
+    const rows = await prisma.intentLink.findMany({
+      where: { id: { in: HOUSE_LINKS.map((h) => h.slug) }, revoked: false },
+      select: { id: true, ask: true },
+    })
+    // Preserve the curated HOUSE_LINKS order, drop board duplicates.
+    return HOUSE_LINKS.filter((h) => !exclude.has(h.slug) && rows.some((r) => r.id === h.slug))
+  } catch {
+    return []
+  }
+}
+
 export default async function LinksLeaderboardPage() {
   const rows = await topLinks()
+  const house = await liveHouseLinks(new Set(rows.map((r) => r.slug)))
   return (
     <>
       <main className="x-main">
@@ -121,6 +139,28 @@ export default async function LinksLeaderboardPage() {
             Dollars are guardrail-priced signed notional — the same source as /activity. Asks only;
             creators stay pseudonymous.
           </p>
+
+          {house.length > 0 && (
+            <>
+              <h2 className="mono text-[11px] uppercase tracking-wider text-[color:var(--muted-2)] mt-12 mb-3">
+                Start here — the house links
+              </h2>
+              <div className="flex flex-wrap gap-2.5">
+                {house.map((h) => (
+                  <Link
+                    key={h.slug}
+                    href={`/i/${h.slug}`}
+                    className="group rounded-full border border-[var(--line)] bg-[var(--surf-1)] px-4 py-2 hover:border-[var(--accent)] transition-colors"
+                    title={h.label}
+                  >
+                    <span className="text-[13px] text-[color:var(--fg)] group-hover:text-[color:var(--accent)] transition-colors">
+                      &ldquo;{h.ask}&rdquo;
+                    </span>
+                  </Link>
+                ))}
+              </div>
+            </>
+          )}
         </section>
       </main>
       <Footer />
