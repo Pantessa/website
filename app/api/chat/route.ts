@@ -29,7 +29,7 @@ import {
   type LidoPositionPayload,
   type LidoStakeParams,
 } from '@/lib/lido-stake'
-import { DEST_GAS_FLOOR_ETH, FUNDING_CHAIN_WORD, fundingFallbackForFailures, offerFundingPlan } from '@/lib/funding-plan'
+import { DEST_GAS_FLOOR_ETH, FUNDING_CHAIN_WORD, fundingFallbackForFailures, offerFundingPlan, softenClaimedFailureBlock } from '@/lib/funding-plan'
 import {
   parseCrossChainSwap,
   parseCrossChainFollowUp,
@@ -1048,19 +1048,50 @@ export async function POST(req: NextRequest) {
         })
       }
       if (!crossChain) {
+        // ── Stock-chain inference ── "buy $20 shares of AAPL" names no chain,
+        // so the picker/default would aim it at Base, where AAPL resolves to
+        // nothing — a dead-end "unknown token" wall (or worse, a fall-through
+        // to the planner's quote-then-confirm detour; live 2026-07-22). When
+        // the buy token doesn't exist on the target chain but IS on Robinhood
+        // Chain's curated stock list (or is an obvious near-miss of one —
+        // pairing asks before building), build there instead: the signable
+        // path in one turn. A chain named in the MESSAGE still wins, and the
+        // spend side must make sense on 4663 too (unset → USDG fills in).
+        let buildChain = targetChain
+        if (
+          !namedNative &&
+          targetChain.id !== ROBINHOOD_CHAIN_ID &&
+          swapIntent.mode !== 'limit' &&
+          !swapIntent.problem &&
+          swapIntent.buyToken &&
+          swapIntent.buyToken.toUpperCase() !== 'ETH' &&
+          (!swapIntent.sellToken || !!resolveToken(swapIntent.sellToken, ROBINHOOD_CHAIN_ID))
+        ) {
+          // Warm BOTH lists first — a dynamic-only token on the target chain
+          // (unwarmed → resolves null) must not read as "not a token here".
+          await Promise.all([ensureTokenList(targetChain.id).catch(() => {}), ensureTokenList(ROBINHOOD_CHAIN_ID).catch(() => {})])
+          const pairing = !resolveToken(swapIntent.buyToken, targetChain.id) ? pairStockToken(swapIntent.buyToken, ROBINHOOD_CHAIN_ID) : null
+          // 'ok' with a null resolve = the list never warmed (pairing fails
+          // open) — that must NOT retarget arbitrary unknown tokens to 4663.
+          const isStock = pairing !== null && (!!resolveToken(swapIntent.buyToken, ROBINHOOD_CHAIN_ID) || pairing.kind === 'paired' || pairing.kind === 'suggest')
+          if (isStock) {
+            buildChain = chainById(ROBINHOOD_CHAIN_ID)!
+            nativeTrace({ type: 'status', label: `stock-chain inference: “${swapIntent.buyToken.toUpperCase()}” isn't a ${targetChain.name} token but matches Robinhood Chain's stock list — building there` })
+          }
+        }
         const uniActive = activeServers.some((s) => s.slug === 'uniswap' || /uniswap/i.test(s.name))
         const cowActive = activeServers.some((s) => s.slug === 'cow-swap' || /cow[\s·-]?swap/i.test(s.name))
         let venue: 'uniswap' | 'cow' =
           /\buni\s?swap\b|\buni\b/i.test(message) || (uniActive && !cowActive) ? 'uniswap' : 'cow'
         // The venue must exist on the target chain — CoW has no order book on
         // Robinhood Chain, so the default flips to Uniswap there.
-        if (venue === 'cow' && !targetChain.cow) venue = 'uniswap'
+        if (venue === 'cow' && !buildChain.cow) venue = 'uniswap'
         const pair = swapIntent.sellToken && swapIntent.buyToken
           ? `${swapIntent.mode === 'limit' ? 'limit ' : ''}${swapIntent.sellAmountHuman ?? '?'} ${swapIntent.sellToken.toUpperCase()} → ${swapIntent.buyToken.toUpperCase()}`
           : 'swap ask (pair not fully parsed yet)'
-        const chainVia = namedNative ? 'named in the message' : pickerChain ? 'from the chain picker' : 'default'
-        nativeTrace({ type: 'status', label: `native swap layer claimed the turn: ${pair} on ${venue === 'uniswap' ? 'Uniswap' : 'CoW'} (${targetChain.name}, ${chainVia}) — planner bypassed` })
-        return await prepareSwapTurn(swapIntent, walletAddress, venue, workingContext, nativeTrace, targetChain.id)
+        const chainVia = buildChain.id !== targetChain.id ? 'stock list, inferred' : namedNative ? 'named in the message' : pickerChain ? 'from the chain picker' : 'default'
+        nativeTrace({ type: 'status', label: `native swap layer claimed the turn: ${pair} on ${venue === 'uniswap' ? 'Uniswap' : 'CoW'} (${buildChain.name}, ${chainVia}) — planner bypassed` })
+        return await prepareSwapTurn(swapIntent, walletAddress, venue, workingContext, nativeTrace, buildChain.id)
       }
       // crossChain + a usable cross-chain agent → build it NATIVELY (deterministic
       // build_swap + guardrails + Sign button), never via the planner/house
@@ -2378,8 +2409,8 @@ async function prepareSwapTurn(intent: SwapIntent, walletAddress: string | undef
           })
           return NextResponse.json({
             reply:
-              `🌉 You don't have enough ${rhStable.symbol} on ${chain.name} for this yet (holding ~$${holdingUsd.toFixed(2)}, the buy needs ~$${buyUsd}) — ` +
-              `but you're holding **${holdingsSummary}**. I can convert some of it${includeGas ? ', drop in a little ETH for gas,' : ''} ` +
+              `🌉 **We can make this happen.** You're holding **${holdingsSummary}** — ` +
+              `this buy needs ~$${buyUsd} of ${rhStable.symbol} on ${chain.name} and you're at ~$${holdingUsd.toFixed(2)} there, so I'll convert some of it${includeGas ? ', drop in a little ETH for gas,' : ''} ` +
               `and buy the ${buySym} — all in one job you sign step by step, funds arriving on ${chain.name} in seconds.${inflightSuffix}`,
             clarify: { question: 'Fund it from another chain?', options: options.slice(0, 4) },
             buildPath: 'native-lifi-fund-offer',
@@ -2392,7 +2423,7 @@ async function prepareSwapTurn(intent: SwapIntent, walletAddress: string | undef
             label: `funding layer claimed the turn: ${rhStable.symbol} short on ${chain.name} and the wallet's ~$${advice.stranded.usd} ${advice.stranded.token} on ${advice.stranded.word} is gas-stranded — ${advice.donor ? `offering a ${GAS_TOPUP_ETH} ETH topup from ${advice.donor.word}` : 'asking for an ETH topup there'}`,
           })
           return NextResponse.json({
-            reply: `⛽ This buy needs ~$${buyUsd} of ${rhStable.symbol} on ${chain.name} — and ${advice.copy}${inflightSuffix}`,
+            reply: `⛽ **Your money's already in place** — this buy needs ~$${buyUsd} of ${rhStable.symbol} on ${chain.name}, and ${advice.copy}${inflightSuffix}`,
             ...(advice.chips ? { clarify: { question: `Fix the ${advice.stranded.word} gas and run it?`, options: advice.chips.slice(0, 4) } } : {}),
             buildPath: 'native-lifi-fund-offer',
             workingContext: pendingFunding,
@@ -2408,9 +2439,9 @@ async function prepareSwapTurn(intent: SwapIntent, walletAddress: string | undef
         })
         return NextResponse.json({
           reply:
-            `🚫 This buy needs ~$${buyUsd} of ${rhStable.symbol} on ${chain.name} and the wallet holds ~$${holdingUsd.toFixed(2)} there. ` +
-            `Across the chains I can bridge from I see: ${advice.copy} — not enough for the ~$${needUsd} plan${includeGas ? ' (gas leg included)' : ''}. ` +
-            `Nothing was built — top up USDC on Base, Ethereum, or Arbitrum, or ${rhStable.symbol} on ${chain.name}, and tell me when it's there.${inflightSuffix}`,
+            `🌉 Here's where this stands: the buy needs ~$${buyUsd} of ${rhStable.symbol} on ${chain.name} and the wallet holds ~$${holdingUsd.toFixed(2)} there. ` +
+            `Across the chains I can bridge from I see: ${advice.copy} — not enough yet for the ~$${needUsd} plan${includeGas ? ' (gas leg included)' : ''}. ` +
+            `Here's what unlocks it: top up USDC on Base, Ethereum, or Arbitrum (or ${rhStable.symbol} on ${chain.name}), tell me when it's there, and I'll pick it up from that point — nothing was built or spent in the meantime.${inflightSuffix}`,
           workingContext: pendingFunding,
         })
       }
@@ -3109,7 +3140,13 @@ async function executeWithSignatures(
   const fallbackWallet = walletAddress ?? owner ?? undefined
   if (fallbackWallet && balanceFailures.length > 0) {
     fundingFallback = await fundingFallbackForFailures(fallbackWallet, balanceFailures, (e) => recordTraceLine(turnId, traceSeq++, e, 'wallet'), workingContext?.pending).catch(() => null)
-    if (fundingFallback) contextBlocks.push(fundingFallback.contextBlock)
+    if (fundingFallback) {
+      // The claimed failure's "TOOL CALL FAILED" block softens to pre-flight
+      // framing — "tell the user it failed" next to a funding plan made the
+      // model headline the turn "❌ Swap failed" (live 2026-07-22).
+      softenClaimedFailureBlock(contextBlocks, fundingFallback)
+      contextBlocks.push(fundingFallback.contextBlock)
+    }
   }
 
   // Inference with the real prompt. MCP authorizations are body-independent;
@@ -3442,7 +3479,10 @@ async function runWithBurner(
   const fallbackWallet = userAddress ?? owner ?? undefined
   if (fallbackWallet && balanceFailures.length > 0) {
     fundingFallback = await fundingFallbackForFailures(fallbackWallet, balanceFailures, trace, workingContext?.pending).catch(() => null)
-    if (fundingFallback) contextBlocks.push(fundingFallback.contextBlock)
+    if (fundingFallback) {
+      softenClaimedFailureBlock(contextBlocks, fundingFallback)
+      contextBlocks.push(fundingFallback.contextBlock)
+    }
   }
 
   const capabilities = capabilitiesBlock([inference, ...dataServers, ...mcpDataServers, ...listedOnly], smart)
