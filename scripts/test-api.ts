@@ -35,6 +35,7 @@ import { pureChecks, policyCheck, orderValueUsd, buildReport } from '../lib/cow-
 import { policyCheckInflow, recipientCheck, validityCheck, MAX_VALID_SEC } from '../lib/tx-guardrails'
 import { guardPlannerArtifact, PERMIT2_ADDRESS } from '../lib/planner-artifact-guard'
 import { parseSwapIntent } from '../lib/swap-intent'
+import { activeLinkCapFor } from '../lib/intent-links'
 import { usdToTokenAmount } from '../lib/usd-probe'
 import { parseRobinhoodBridge, guardRobinhoodBridge, RH_L1_INBOX, ARB_SYS } from '../lib/robinhood-bridge'
 import { parseNftAsk, guardNftTransfer, ERC721_ABI as NFT_ERC721_ABI, ERC1155_ABI as NFT_ERC1155_ABI } from '../lib/nft-layer'
@@ -1407,6 +1408,17 @@ async function main() {
     const fourth = await fetch(`${BASE}/api/intent-links`, { method: 'POST', headers: M, body: JSON.stringify({ ask: 'DCA $25 into ETH weekly' }) })
     check('intent links: free plan carries 3 active links; the 4th mint → 402 + upgrade pointer', third.status === 200 && fourth.status === 402)
 
+    // Admin wallets mint uncapped on EVERY plan; external creators keep the
+    // plan ladder (the pure gate the mint route routes every mint through).
+    check(
+      'intent links: admin wallets are cap-exempt on every plan',
+      activeLinkCapFor('free', true) === Infinity && activeLinkCapFor('growth', true) === Infinity && activeLinkCapFor('unknown-plan', true) === Infinity,
+    )
+    check(
+      'intent links: non-admin caps hold — free 3, growth 25, scale ∞, unknown falls back to 3',
+      activeLinkCapFor('free', false) === 3 && activeLinkCapFor('growth', false) === 25 && activeLinkCapFor('scale', false) === Infinity && activeLinkCapFor('unknown-plan', false) === 3,
+    )
+
     // Revoke frees capacity — the cap counts ACTIVE links only.
     const thirdSlug = ((await third.json()) as { slug?: string }).slug
     const revoke = await fetch(`${BASE}/api/intent-links/${thirdSlug}`, { method: 'DELETE', headers: { cookie: mallorySession } })
@@ -2338,6 +2350,22 @@ async function main() {
     const delKey = await fetch(`${BASE}/api/keys/${adminKey.id}`, { method: 'DELETE', headers: { cookie: adminSession } })
     const anonAfter = await (await fetch(`${BASE}/api/blog`)).json()
     check('blog cleanup: post + key deleted', delPost.status === 200 && delKey.status === 200 && !anonAfter.some((q: { slug: string }) => q.slug === draft.slug))
+
+    // ── Intent links: admin cap exemption, wired end-to-end ────────────────
+    // The same ADMIN_WALLETS gate that admits this wallet to /api/blog must
+    // lift the plan's active-link cap in the mint route: mint one PAST the
+    // free cap (4 active) — every mint 200s. Revoked after (rows persist,
+    // but only under this dedicated test-admin wallet).
+    const adminMints: string[] = []
+    let adminMintsOk = true
+    for (let i = 0; i < 4; i++) {
+      const r = await fetch(`${BASE}/api/intent-links`, { method: 'POST', headers: AJ, body: JSON.stringify({ ask: `Buy $${i + 2} of AAPL` }) })
+      adminMintsOk &&= r.status === 200
+      const s = ((await r.json()) as { slug?: string }).slug
+      if (s) adminMints.push(s)
+    }
+    check('intent links: admin wallet mints past the free cap (4th mint 200, no 402)', adminMintsOk && adminMints.length === 4)
+    await Promise.all(adminMints.map((s) => fetch(`${BASE}/api/intent-links/${s}`, { method: 'DELETE', headers: { cookie: adminSession } })))
   }
 
   // ── Admin adoption overview (negatives always; 200 path needs an admin PK) ──
