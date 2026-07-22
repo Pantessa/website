@@ -96,3 +96,36 @@ export function validateRedirect(raw: string): { ok: true; url: string; host: st
 
 export const EVENT_KINDS = ['open', 'connect', 'built', 'signed'] as const
 export type IntentEventKind = (typeof EVENT_KINDS)[number]
+
+/** Active-link capacity per plan — the third capacity axis alongside
+ *  standing intents (PRICING.md). Soft: mints past the cap get a friendly
+ *  upgrade pointer; existing links keep running forever. Admin wallets
+ *  (OWNER_WALLETS ∪ ADMIN_WALLETS) are exempt — the cap gates external
+ *  creators, not the team minting demo/marketing links. */
+export const LINK_CAPS: Record<string, number> = { free: 3, growth: 25, scale: Infinity }
+
+export function activeLinkCapFor(planId: string, isAdmin: boolean): number {
+  if (isAdmin) return Infinity
+  return LINK_CAPS[planId] ?? 3
+}
+
+// ── Creator handles (/l/<handle> storefronts) ──────────────────────────────
+// Opt-in public page names. Opt-in is the privacy contract: a wallet is
+// never the key to a public page — only a claimed handle is.
+
+/** Route/brand names a handle may not shadow. */
+export const RESERVED_HANDLES = new Set([
+  'admin', 'api', 'app', 'activity', 'blog', 'chat', 'dashboard', 'docs',
+  'doc', 'embed', 'help', 'i', 'l', 'link', 'links', 'me', 'official', 'p',
+  'pricing', 'r', 'root', 'servers', 'sign', 'support', 'team', 'www',
+  'yeetful',
+])
+
+/** Normalize a claimed handle: lowercase, 3–20 chars of [a-z0-9-], no edge
+ *  hyphens, not reserved. Returns null when unclaimable. */
+export function normalizeHandle(raw: string): string | null {
+  const h = raw.trim().toLowerCase().replace(/^@/, '')
+  if (!/^[a-z0-9](?:[a-z0-9-]{1,18}[a-z0-9])$/.test(h)) return null
+  if (RESERVED_HANDLES.has(h)) return null
+  return h
+}

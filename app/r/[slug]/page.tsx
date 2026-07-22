@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
-import { ExternalLink, ShieldCheck } from 'lucide-react'
+import { ExternalLink, Link2, ShieldCheck } from 'lucide-react'
 import { YeetfulMark } from '@/components/Logo'
 import Footer from '@/components/Footer'
 import prisma from '@/lib/db'
@@ -155,15 +155,30 @@ export default async function ReceiptPage({ params }: Params) {
               Opens the chat with this exact ask prefilled. Nothing sends, nothing signs, until you say so.
             </p>
           )}
-          <a
-            href={tweetHref}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex items-center gap-2 px-3 py-1.5 rounded-full border border-[var(--line)] bg-[var(--surf-1)] text-[color:var(--fg)] text-xs font-semibold hover:bg-[var(--surf-2)] transition-colors"
-          >
-            <XMark />
-            <span>Share</span>
-          </a>
+          <div className="flex items-center gap-2">
+            <a
+              href={tweetHref}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-2 px-3 py-1.5 rounded-full border border-[var(--line)] bg-[var(--surf-1)] text-[color:var(--fg)] text-xs font-semibold hover:bg-[var(--surf-2)] transition-colors"
+            >
+              <XMark />
+              <span>Share</span>
+            </a>
+            {/* Receipt → link: the viewer mints their OWN copy of this ask as
+                an intent link (/dashboard/links prefill — sign-in gated there,
+                minted under the viewer's wallet, never the sharer's). */}
+            {receipt.ask && (
+              <Link
+                href={`/dashboard/links?ask=${encodeURIComponent(receipt.ask)}`}
+                className="flex items-center gap-2 px-3 py-1.5 rounded-full border border-[var(--line)] bg-[var(--surf-1)] text-[color:var(--fg)] text-xs font-semibold hover:bg-[var(--surf-2)] transition-colors"
+                title="Your own copy of this ask, as a one-tap link you can share"
+              >
+                <Link2 className="w-3.5 h-3.5" aria-hidden />
+                <span>Mint this as a link</span>
+              </Link>
+            )}
+          </div>
           <p className="mt-3 text-[11px] text-[color:var(--muted-2)] text-center mono">
             Yeetful — the non-custodial back office for autonomous money.
           </p>

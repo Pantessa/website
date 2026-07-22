@@ -1036,6 +1036,17 @@ model IntentLink {
   @@map("intent_links")
 }
 
+/// An opt-in public page name for a link creator — /l/<handle> lists their
+/// active links (the storefront). Opt-in by claiming keeps the leaderboard's
+/// privacy rule intact: no wallet is ever the key to a public page.
+model CreatorHandle {
+  handle    String   @id // lowercase slug — /l/<handle>
+  creator   String   @unique // lowercased wallet (SIWE-verified at claim)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("creator_handles")
+}
+
 /// The per-link funnel, event-sourced: open → connect → built → signed.
 /// Best-effort client posts; aggregated for the creator dashboard.
 model IntentLinkEvent {
