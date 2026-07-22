@@ -1,14 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import prisma from '@/lib/db'
 import { getAuthAddress } from '@/lib/api-key'
-import { cleanAsk, composeMcps, mintSlug, sanitizeMcps, validateRedirect } from '@/lib/intent-links'
+import { activeLinkCapFor, cleanAsk, composeMcps, mintSlug, sanitizeMcps, validateRedirect } from '@/lib/intent-links'
 import { FEE_BEARING_BUILD_PATHS, creatorEarningsUsd } from '@/lib/fees'
 import { getEffectivePlan } from '@/lib/billing'
-
-/** Active-link capacity per plan — the third capacity axis alongside
- *  standing intents (PRICING.md). Soft: mints past the cap get a friendly
- *  upgrade pointer; existing links keep running forever. */
-const LINK_CAPS: Record<string, number> = { free: 3, growth: 25, scale: Infinity }
+import { isAdminAddress } from '@/lib/admin'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -51,8 +47,9 @@ export async function POST(req: NextRequest) {
 
   // Capacity gate (soft): active links per plan, mirroring standing-intent
   // tiers. Existing links are never touched — the cap gates NEW mints only.
+  // Admin wallets mint uncapped (demo/marketing links, not plan-gated usage).
   const { plan } = await getEffectivePlan(creator)
-  const cap = LINK_CAPS[plan.id] ?? 3
+  const cap = activeLinkCapFor(plan.id, isAdminAddress(creator))
   if (cap !== Infinity) {
     const active = await prisma.intentLink.count({ where: { creator, revoked: false } })
     if (active >= cap) {
