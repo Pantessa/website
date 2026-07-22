@@ -43,7 +43,13 @@ export async function POST(req: NextRequest) {
     })
   } catch (e) {
     const taken = e instanceof Error && 'code' in e && (e as { code?: string }).code === 'P2002'
-    if (taken) return NextResponse.json({ error: `@${handle} is taken — try another.` }, { status: 409 })
+    // Point at the live page: if the "someone" is the claimer's other wallet
+    // (a real support case), the link is exactly how they rediscover it.
+    if (taken)
+      return NextResponse.json(
+        { error: `@${handle} is taken — its page is live — try another name.`, url: `/l/${handle}` },
+        { status: 409 },
+      )
     throw e
   }
   return NextResponse.json({ handle, url: `/l/${handle}` })

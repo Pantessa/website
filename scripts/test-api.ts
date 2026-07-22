@@ -1507,7 +1507,18 @@ async function main() {
     const hClaim = await fetch(`${BASE}/api/intent-links/handle`, { method: 'POST', headers: M, body: JSON.stringify({ handle: 'Harness-Store' }) })
     check('storefront: claim normalizes + returns the page url', hClaim.status === 200 && ((await hClaim.json()) as { url?: string }).url === '/l/harness-store')
     const hSteal = await fetch(`${BASE}/api/intent-links/handle`, { method: 'POST', headers: CJ, body: JSON.stringify({ handle: 'harness-store' }) })
-    check('storefront: a taken handle refuses (409)', hSteal.status === 409)
+    const hStealBody = (await hSteal.json()) as { url?: string }
+    check(
+      'storefront: a taken handle refuses (409) and points at the live page',
+      hSteal.status === 409 && hStealBody.url === '/l/harness-store',
+    )
+    // Claimed pages are LISTED — /links shows every /l/<handle> storefront,
+    // so a page stays findable after the claim.
+    const listedHtml = flat(await (await fetch(`${BASE}/links`)).text())
+    check(
+      'storefront: /links lists the claimed page under Creator pages',
+      listedHtml.includes('Creator pages') && listedHtml.includes('/l/harness-store') && listedHtml.includes('@harness-store'),
+    )
     const storeHtml = flat(await (await fetch(`${BASE}/l/harness-store`)).text())
     check(
       "storefront: /l page lists the creator's active links",

@@ -89,6 +89,50 @@ export async function liveHouseLinks(exclude: Set<string>) {
   }
 }
 
+// ── Creator pages ───────────────────────────────────────────────────────────
+// Every claimed /l/<handle> storefront, listed so pages are FINDABLE — a
+// claim is the opt-in to being public, so listing is part of the deal. The
+// handle is the only key shown; wallets stay off every public surface.
+
+export interface CreatorPageRow {
+  handle: string
+  /** Active (non-revoked) links on the page. */
+  links: number
+  /** Guardrail-priced signed notional across the page's links. */
+  movedUsd: number
+}
+
+export async function creatorPages(limit = 50): Promise<CreatorPageRow[]> {
+  try {
+    const handles = await prisma.creatorHandle.findMany({ take: limit })
+    if (handles.length === 0) return []
+    const creators = handles.map((h) => h.creator)
+    const [links, moved] = await Promise.all([
+      prisma.intentLink.findMany({
+        where: { creator: { in: creators }, revoked: false },
+        select: { id: true, creator: true },
+      }),
+      prisma.embedTurn.groupBy({
+        by: ['intentLinkSlug'],
+        where: { intentLinkSlug: { not: null }, outcome: 'signed', valueUsd: { gt: 0 }, ...NOT_HARNESS },
+        _sum: { valueUsd: true },
+      }),
+    ])
+    const usdBySlug = new Map(moved.map((m) => [m.intentLinkSlug, m._sum.valueUsd ?? 0]))
+    const rows = handles.map((h) => {
+      const mine = links.filter((l) => l.creator === h.creator)
+      return {
+        handle: h.handle,
+        links: mine.length,
+        movedUsd: mine.reduce((s, l) => s + (usdBySlug.get(l.id) ?? 0), 0),
+      }
+    })
+    return rows.sort((a, b) => b.movedUsd - a.movedUsd || b.links - a.links || (a.handle < b.handle ? -1 : 1))
+  } catch {
+    return []
+  }
+}
+
 // ── The link economy, per day ───────────────────────────────────────────────
 // Links minted + signed conversions + guardrail-priced dollars, bucketed by
 // UTC day — the daily pulse chart on /activity and the admin Adoption page.
