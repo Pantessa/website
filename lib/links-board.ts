@@ -63,6 +63,56 @@ export async function liveHouseLinks(exclude: Set<string>) {
   }
 }
 
+// ── The link economy, per day ───────────────────────────────────────────────
+// Links minted + signed conversions + guardrail-priced dollars, bucketed by
+// UTC day — the daily pulse chart on /activity and the admin Adoption page.
+// Server truth only (intent_links rows; embed_turns signed notional).
+
+export interface LinkDayPoint {
+  day: string
+  minted: number
+  convs: number
+  usd: number
+}
+
+export async function linkDailySeries(days = 30): Promise<LinkDayPoint[]> {
+  try {
+    const since = new Date(Date.now() - days * 86_400_000)
+    const [mintRows, convRows] = await Promise.all([
+      prisma.$queryRaw<{ day: Date; n: number }[]>`
+        SELECT date_trunc('day', created_at) AS day, count(*)::int AS n
+        FROM intent_links WHERE created_at >= ${since}
+        GROUP BY 1 ORDER BY 1`,
+      prisma.$queryRaw<{ day: Date; n: number; usd: number }[]>`
+        SELECT date_trunc('day', created_at) AS day, count(*)::int AS n,
+               coalesce(sum(value_usd), 0)::float AS usd
+        FROM embed_turns
+        WHERE intent_link_slug IS NOT NULL AND outcome = 'signed' AND value_usd > 0
+          AND created_at >= ${since}
+        GROUP BY 1 ORDER BY 1`,
+    ])
+    const byDay = new Map<string, LinkDayPoint>()
+    const at = (d: Date) => {
+      const key = d.toISOString().slice(0, 10)
+      let p = byDay.get(key)
+      if (!p) {
+        p = { day: key, minted: 0, convs: 0, usd: 0 }
+        byDay.set(key, p)
+      }
+      return p
+    }
+    for (const r of mintRows) at(r.day).minted = r.n
+    for (const r of convRows) {
+      const p = at(r.day)
+      p.convs = r.n
+      p.usd = Math.round(r.usd * 100) / 100
+    }
+    return [...byDay.values()].sort((a, b) => (a.day < b.day ? -1 : 1))
+  } catch {
+    return []
+  }
+}
+
 // ── The public fee story ────────────────────────────────────────────────────
 // A LEDGERED ESTIMATE, not a new money source: the same read-time formula
 // the creator claims rail uses (lib/fees.ts — SWAP_FEE_BPS on fee-bearing
