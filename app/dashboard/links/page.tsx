@@ -63,7 +63,10 @@ export default function DashboardLinksPage() {
   // The public page name (/l/<handle>) — opt-in storefront for these links.
   const [myHandle, setMyHandle] = useState<string | null>(null)
   const [handleInput, setHandleInput] = useState('')
-  const [handleMsg, setHandleMsg] = useState<string | null>(null)
+  // A claim refusal, with the taken page's URL when the API knows it — the
+  // "@x is taken" case where x is YOUR page under another wallet needs the
+  // link, or the page is unfindable.
+  const [handleMsg, setHandleMsg] = useState<{ text: string; url?: string } | null>(null)
   const [claiming, setClaiming] = useState(false)
 
   // Prefill from the chat's "create intent link" handoff — read once.
@@ -123,9 +126,9 @@ export default function DashboardLinksPage() {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ handle: handleInput.trim() }),
       })
-      const data = (await res.json()) as { handle?: string; error?: string }
+      const data = (await res.json()) as { handle?: string; error?: string; url?: string }
       if (!res.ok) {
-        setHandleMsg(data.error ?? 'Claim failed.')
+        setHandleMsg({ text: data.error ?? 'Claim failed.', url: data.url })
         return
       }
       setMyHandle(data.handle ?? null)
@@ -370,7 +373,19 @@ export default function DashboardLinksPage() {
             {claiming ? 'Claiming…' : myHandle ? 'Rename' : 'Claim'}
           </button>
         </span>
-        {handleMsg && <span className="text-[12px] text-amber-400 w-full">{handleMsg}</span>}
+        {handleMsg && (
+          <span className="text-[12px] text-amber-400 w-full">
+            {handleMsg.text}
+            {handleMsg.url && (
+              <>
+                {' '}
+                <a href={handleMsg.url} className="mono underline hover:text-[color:var(--accent)]">
+                  {handleMsg.url}
+                </a>
+              </>
+            )}
+          </span>
+        )}
       </div>
 
       {earnings && earnings.totalEarnedUsd > 0 && (

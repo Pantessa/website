@@ -4,7 +4,7 @@ import Footer from '@/components/Footer'
 import { YeetfulMark } from '@/components/Logo'
 import IntentLinksBoard from '@/components/IntentLinksBoard'
 import SignInFlowLink from '@/components/SignInFlowLink'
-import { linksBoard, liveHouseLinks } from '@/lib/links-board'
+import { creatorPages, linksBoard, liveHouseLinks } from '@/lib/links-board'
 
 // /links — the public leaderboard: intent links ranked by FINISHED flows
 // (signed turns in embed_turns — most claimed by default, dollars moved as
@@ -29,7 +29,7 @@ export const metadata: Metadata = {
 export default async function LinksLeaderboardPage() {
   const board = await linksBoard()
   const onBoard = new Set([...board.byClaims, ...board.byMoved].map((r) => r.slug))
-  const house = await liveHouseLinks(onBoard)
+  const [house, pages] = await Promise.all([liveHouseLinks(onBoard), creatorPages()])
   return (
     <>
       <main className="x-main">
@@ -76,6 +76,34 @@ export default async function LinksLeaderboardPage() {
             guardrail-priced signed notional, the same source as /activity. Asks only; creators stay
             pseudonymous.
           </p>
+
+          {/* Creator pages: every claimed /l/<handle> storefront. Claiming a
+              name IS the opt-in to being listed — this is how a page gets
+              found again (and how anyone else finds it at all). */}
+          {pages.length > 0 && (
+            <>
+              <h2 className="mono text-[11px] uppercase tracking-wider text-[color:var(--muted-2)] mt-12 mb-3">
+                Creator pages
+              </h2>
+              <div className="flex flex-wrap gap-2.5">
+                {pages.map((p) => (
+                  <Link
+                    key={p.handle}
+                    href={`/l/${p.handle}`}
+                    className="group rounded-full border border-[var(--line)] bg-[var(--surf-1)] px-4 py-2 hover:border-[var(--accent)] transition-colors"
+                  >
+                    <span className="text-[13px] text-[color:var(--fg)] group-hover:text-[color:var(--accent)] transition-colors">
+                      @{p.handle}
+                    </span>
+                    <span className="mono text-[11px] text-[color:var(--muted-2)] ml-2">
+                      {p.links} link{p.links === 1 ? '' : 's'}
+                      {p.movedUsd > 0 ? ` · $${p.movedUsd.toFixed(2)}` : ''}
+                    </span>
+                  </Link>
+                ))}
+              </div>
+            </>
+          )}
 
           {house.length > 0 && (
             <>
