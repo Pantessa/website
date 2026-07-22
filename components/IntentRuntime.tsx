@@ -14,8 +14,9 @@ import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useAccount } from 'wagmi'
 import { useConnectModal } from '@rainbow-me/rainbowkit'
-import { ArrowRight, ExternalLink, Fingerprint, Link2, Loader2, MessageSquare, PenLine, ReceiptText, ShieldCheck, X, Zap } from 'lucide-react'
+import { ArrowRight, ExternalLink, Fingerprint, Link2, MessageSquare, ReceiptText, ShieldCheck, Zap } from 'lucide-react'
 import ChatInterface from '@/components/ChatInterface'
+import { SignatureWaitModal } from '@/components/SignatureWaitTakeover'
 import CreateAccountButton from '@/components/CreateAccountButton'
 import NavAccount from '@/components/NavAccount'
 import ShareButton from '@/components/ShareButton'
@@ -340,54 +341,19 @@ export default function IntentRuntime({
             'radial-gradient(ellipse 70% 100% at 50% 0%, color-mix(in srgb, var(--accent) 8%, transparent), transparent 70%)',
         }}
       />
-      {/* Waiting-for-signature takeover: a connected wallet with no SIWE
+      {/* Waiting-for-signature takeover (shared card — the global mount in
+          Providers covers every other page): a connected wallet with no SIWE
           session has an open (or missed) signature request — without this,
           the page reads as stalled. Approving proves ownership; nothing
           moves. Dismissable: the guest lane still works underneath. */}
       {needsSignIn && !sigDismissed && (
-        <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm px-6">
-          <div className="relative max-w-sm w-full rounded-2xl border border-[var(--line)] bg-[var(--surf-1)] px-6 py-7 text-center">
-            <button
-              type="button"
-              onClick={() => setSigDismissed(true)}
-              aria-label="Continue without signing in"
-              className="absolute top-3 right-3 p-1 rounded-md text-[color:var(--muted-2)] hover:text-[color:var(--fg)] transition-colors"
-            >
-              <X className="w-4 h-4" />
-            </button>
-            <div className="mx-auto w-10 h-10 grid place-items-center rounded-full bg-[color-mix(in_srgb,var(--accent)_16%,transparent)] mb-4">
-              {signingIn ? (
-                <Loader2 className="w-5 h-5 animate-spin" style={{ color: 'var(--accent)' }} />
-              ) : (
-                <PenLine className="w-5 h-5" style={{ color: 'var(--accent)' }} />
-              )}
-            </div>
-            <h2 className="text-[17px] font-semibold text-[color:var(--fg)]">
-              {signingIn ? 'Waiting for your signature…' : 'One signature to continue'}
-            </h2>
-            <p className="mt-2 text-[13px] leading-relaxed text-[color:var(--muted)]">
-              {signingIn
-                ? 'The request is open in your wallet — approving it just proves you own this address. Nothing moves, nothing spends.'
-                : 'Your wallet needs to sign one message to finish signing in. It proves ownership — nothing moves, nothing spends.'}
-            </p>
-            <button
-              type="button"
-              onClick={() => void signIn()}
-              disabled={signingIn}
-              className="btn btn--solid mt-5 inline-flex items-center justify-center gap-2 text-[13px] disabled:opacity-60"
-            >
-              {signingIn ? (
-                <>
-                  <Loader2 className="w-4 h-4 animate-spin" /> Waiting…
-                </>
-              ) : (
-                <>
-                  <PenLine className="w-4 h-4" /> Open the signature request
-                </>
-              )}
-            </button>
-          </div>
-        </div>
+        <SignatureWaitModal
+          signingIn={signingIn}
+          onOpenRequest={() => void signIn()}
+          onDismiss={() => setSigDismissed(true)}
+          dismissLabel="Continue without signing in"
+          overlayClassName="absolute inset-0 z-50"
+        />
       )}
       {/* z-20: backdrop-blur makes this header a stacking context, and the
           thread wrapper below is a LATER positioned sibling — without a
