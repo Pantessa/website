@@ -15,6 +15,12 @@ export function cleanAsk(raw: string): string {
     .slice(0, ASK_MAX)
 }
 
+/** Slug shape accepted by every /i lookup and event/telemetry gate: minted
+ *  slugs are 8 chars of the unambiguous alphabet; HOUSE links
+ *  (lib/house-links.ts) use readable hyphenated slugs (buy-aapl). 4–16
+ *  chars, hyphens allowed inside, never at the edges. */
+export const INTENT_SLUG_RE = /^[a-z0-9][a-z0-9-]{2,14}[a-z0-9]$/
+
 /** Unambiguous lowercase alphabet (no 0/o/1/l) — 8 chars ≈ 40 bits. */
 const SLUG_ALPHABET = 'abcdefghjkmnpqrstuvwxyz23456789'
 

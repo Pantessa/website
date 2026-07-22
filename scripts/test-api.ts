@@ -1504,6 +1504,19 @@ async function main() {
     const bearerRevoke = await fetch(`${BASE}/api/intent-links/${bearerLink.slug}`, { method: 'DELETE', headers: B })
     check('intent links: the key owner revokes it (capacity restored)', bearerRevoke.status === 200)
 
+    // House links: the seeded canonical set (deterministic slugs,
+    // creator=null — earns nothing, belongs to no dashboard). The landing
+    // lane + the /links start-here strip point at these forever.
+    const housePage = await fetch(`${BASE}/i/buy-aapl`)
+    const houseHtml = flat(await housePage.text())
+    check('house links: /i/buy-aapl is live with the canonical ask', housePage.status === 200 && houseHtml.includes('Buy $10 of AAPL'))
+    check('house links: /links start-here strip renders the seeded set', boardHtml.includes('Start here') && boardHtml.includes('/i/dca-eth'))
+    const homeHtml = flat(await (await fetch(`${BASE}/`)).text())
+    check(
+      'house links: the landing link lane renders with tappable house links',
+      homeHtml.includes('A link that moves money.') && homeHtml.includes('/i/buy-aapl'),
+    )
+
     // cleanup: the minted row + its events (raw deletes via prisma are not
     // exposed here — the API has no delete; rows are tiny and harmless, but
     // keep the namespace tidy by revoking… no revoke endpoint in v1 either.
