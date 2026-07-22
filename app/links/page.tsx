@@ -53,7 +53,7 @@ export default async function LinksLeaderboardPage() {
             <Link href="/links/embed" className="btn btn--ghost text-[13px]">
               Put a button on your site
             </Link>
-            <Link href="/docs" className="btn btn--ghost text-[13px]">
+            <Link href="/docs/links" className="btn btn--ghost text-[13px]">
               How it works
             </Link>
           </div>
