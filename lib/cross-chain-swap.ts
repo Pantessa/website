@@ -168,11 +168,23 @@ interface BuiltStep {
 }
 export interface BuiltSwap {
   kind?: string
-  quote?: { sell?: { amountAtoms?: string; token?: string; chain?: string }; receive?: { token?: string; chain?: string }; summary?: string }
+  quote?: { sell?: { amountAtoms?: string; token?: string; chain?: string; usd?: string }; receive?: { token?: string; chain?: string }; summary?: string }
   deposit?: { address?: string; addressExpires?: string | null; deliveredTo?: string }
   balanceCheck?: { ok?: boolean | null; note?: string }
   steps?: BuiltStep[]
   warnings?: string[]
+}
+
+/**
+ * Guardrail-priced notional of the leg — the quote's own USD figure (the
+ * 1Click API prices the sell side as `amountInUsd`), null when absent or
+ * unparseable. Must ride guardrails.valueUsd on every offered build: a
+ * signed turn with null value never counts toward money moved and never
+ * ranks on the intent-links board.
+ */
+export function crossChainValueUsd(built: BuiltSwap): number | null {
+  const usd = Number(built.quote?.sell?.usd)
+  return Number.isFinite(usd) && usd > 0 ? Number(usd.toFixed(2)) : null
 }
 
 export interface GuardResult {

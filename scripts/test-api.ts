@@ -69,7 +69,7 @@ import {
 import { EXAMPLE_PROMPTS } from '../lib/examples'
 import { swapFeeAtoms, SWAP_FEE_BPS, TREASURY_ADDRESS } from '../lib/fees'
 import { APP_CHAINS, chainById, chainNamedIn, explorerTokenUrl, sanitizeChainId } from '../lib/chains'
-import { parseCrossChainSwap, guardCrossChainBuild, expectedOriginChainId, parseCrossChainFollowUp, crossChainPending } from '../lib/cross-chain-swap'
+import { parseCrossChainSwap, guardCrossChainBuild, expectedOriginChainId, parseCrossChainFollowUp, crossChainPending, crossChainValueUsd } from '../lib/cross-chain-swap'
 import {
   parseAaveSupply,
   competingVenueOf,
@@ -2807,6 +2807,14 @@ async function main() {
     check('xchain follow-up: "confirm" is a noop (button already there)', parseCrossChainFollowUp('confirm', pend)?.kind === 'noop')
     const amend = parseCrossChainFollowUp('make it 2', pend)
     check('xchain follow-up: "make it 2" re-amount', amend?.kind === 'amend' && amend.params.amount === '2' && amend.params.originChain === 'base')
+
+    // Pricing: the quote's own USD figure must ride guardrails.valueUsd — a
+    // signed cross-chain turn with null value never counts as money moved
+    // and never ranks on the intent-links board (Nate's live 2026-07-22
+    // signed link claim was invisible for exactly this reason).
+    check('xchain value: quote sell.usd → valueUsd', crossChainValueUsd({ ...goodBuild, quote: { sell: { amountAtoms: '1000000', usd: '0.9998' } } }) === 1)
+    check('xchain value: missing usd → null (fail-soft, never guessed)', crossChainValueUsd(goodBuild) === null)
+    check('xchain value: junk usd → null', crossChainValueUsd({ ...goodBuild, quote: { sell: { usd: 'n/a' } } }) === null && crossChainValueUsd({ ...goodBuild, quote: { sell: { usd: '0' } } }) === null)
   }
 
   // ── Uniswap v4 fallback: the calldata guard on the Universal Router build ─
