@@ -36,6 +36,7 @@ import {
   guardCrossChainBuild,
   expectedOriginChainId,
   crossChainPending,
+  crossChainValueUsd,
   type CrossChainSwapParams,
   type BuiltSwap,
 } from '@/lib/cross-chain-swap'
@@ -1519,10 +1520,22 @@ async function buildCrossChainSwapTurn(
   }
   trace({ type: 'status', label: 'guard verified the deposit transfer — Sign & send card built, awaiting signature' })
 
+  // Price the leg for money-moved and the links board (fail-soft): the
+  // quote's own USD figure first, else the origin-chain venue probe. A
+  // signed turn with null valueUsd never counts as moved money.
+  const valueUsd =
+    crossChainValueUsd(built) ??
+    (await (async () => {
+      const originChainId = expectedOriginChainId(params.originChain)
+      const probe = originChainId === null ? null : await usdPerToken(originChainId, params.originToken).catch(() => null)
+      return probe ? Number((Number(params.amount) * probe.usd).toFixed(2)) : null
+    })())
+
   const summary = guard.summary ?? built.quote?.summary ?? 'Cross-chain swap'
   return NextResponse.json({
     reply: composeCrossChainReply(params, guard, summary, walletAddress),
     txRequest: guard.tx,
+    guardrails: { ok: true, warnings: guard.warnings, valueUsd },
     // Which layer built it — echoed on the tx-built/signed telemetry beacons
     // so /dashboard/embeds can break the funnel down per builder (lib/build-path.ts).
     buildPath: 'native-cross-chain',

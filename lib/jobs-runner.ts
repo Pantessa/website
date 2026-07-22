@@ -10,7 +10,7 @@
 import { HttpTransport, InfoClient } from '@nktkas/hyperliquid'
 import prisma from '@/lib/db'
 import { callMcpTool } from '@/lib/mcp-call'
-import { expectedOriginChainId, guardCrossChainBuild, type BuiltSwap, type CrossChainSwapParams } from '@/lib/cross-chain-swap'
+import { crossChainValueUsd, expectedOriginChainId, guardCrossChainBuild, type BuiltSwap, type CrossChainSwapParams } from '@/lib/cross-chain-swap'
 import { buildHlExecTurn, type HlIntent } from '@/lib/hyperliquid-exec'
 import { armGuardianPolicy } from '@/lib/hl-guardian-store'
 import type { GuardianArmAsk } from '@/lib/hl-guardian'
@@ -248,11 +248,11 @@ export async function buildSignArtifact(
     }, { timeoutMs: 20_000 })) as BuiltSwap
     const guard = guardCrossChainBuild(raw, { chainId: expectedOriginChainId(p.originChain) })
     if (!guard.ok || !guard.tx) throw new Error(guard.reasons.join(' '))
-    const usd = Number((raw.quote?.sell as { usd?: string } | undefined)?.usd)
+    const valueUsd = crossChainValueUsd(raw)
     return {
       artifact: { txRequest: guard.tx as unknown as Record<string, unknown>, depositAddress: guard.depositAddress, summary: guard.summary, addressExpires: guard.addressExpires },
-      guardReport: { ok: true, warnings: guard.warnings },
-      valueUsd: Number.isFinite(usd) ? Number(usd.toFixed(2)) : null,
+      guardReport: { ok: true, warnings: guard.warnings, valueUsd },
+      valueUsd,
     }
   }
   if (builder === 'native-hl-exec') {
