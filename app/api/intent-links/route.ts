@@ -1,14 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import prisma from '@/lib/db'
 import { getAuthAddress } from '@/lib/api-key'
-import { cleanAsk, composeMcps, mintSlug, parseAllowWallets, parseExpiry, parseMaxSigns, sanitizeMcps, validateRedirect } from '@/lib/intent-links'
+import { activeLinkCapFor, cleanAsk, composeMcps, mintSlug, parseAllowWallets, parseExpiry, parseMaxSigns, sanitizeMcps, sanitizeVariants, validateRedirect } from '@/lib/intent-links'
 import { FEE_BEARING_BUILD_PATHS, creatorEarningsUsd } from '@/lib/fees'
 import { getEffectivePlan } from '@/lib/billing'
-
-/** Active-link capacity per plan — the third capacity axis alongside
- *  standing intents (PRICING.md). Soft: mints past the cap get a friendly
- *  upgrade pointer; existing links keep running forever. */
-const LINK_CAPS: Record<string, number> = { free: 3, growth: 25, scale: Infinity }
+import { isAdminAddress } from '@/lib/admin'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -27,7 +23,7 @@ export async function POST(req: NextRequest) {
   if (!addr) return NextResponse.json({ error: 'Sign in to mint an intent link.' }, { status: 401 })
   const creator = addr.toLowerCase()
 
-  let body: { ask?: string; agent?: string; redirectUrl?: string; mcps?: unknown; expiresAt?: unknown; maxSigns?: unknown; allowWallets?: unknown }
+  let body: { ask?: string; agent?: string; redirectUrl?: string; mcps?: unknown; variants?: unknown; expiresAt?: unknown; maxSigns?: unknown; allowWallets?: unknown }
   try {
     body = await req.json()
   } catch {
@@ -48,6 +44,9 @@ export async function POST(req: NextRequest) {
   // Creator-chosen MCPs win (validated against the mintable set); otherwise
   // the composer decides from the ask's shape.
   const mcps = (sanitizeMcps(body.mcps) ?? composeMcps(ask)).join(',')
+  // A/B alternate phrasings — each a full ask; the runtime shows one per
+  // visit and the funnel segments by which one was shown.
+  const variants = sanitizeVariants(body.variants, ask)
 
   // Partner-promo limits — validated at mint, enforced server-side at run.
   const expiry = parseExpiry(body.expiresAt)
@@ -59,8 +58,9 @@ export async function POST(req: NextRequest) {
 
   // Capacity gate (soft): active links per plan, mirroring standing-intent
   // tiers. Existing links are never touched — the cap gates NEW mints only.
+  // Admin wallets mint uncapped (demo/marketing links, not plan-gated usage).
   const { plan } = await getEffectivePlan(creator)
-  const cap = LINK_CAPS[plan.id] ?? 3
+  const cap = activeLinkCapFor(plan.id, isAdminAddress(creator))
   if (cap !== Infinity) {
     const active = await prisma.intentLink.count({ where: { creator, revoked: false } })
     if (active >= cap) {
@@ -76,12 +76,13 @@ export async function POST(req: NextRequest) {
     const id = mintSlug()
     try {
       const link = await prisma.intentLink.create({
-        data: { id, ask, mcps, creator, agent, redirectUrl, expiresAt: expiry.date, maxSigns: maxSigns.max, allowWallets: allow.wallets },
+        data: { id, ask, variants, mcps, creator, agent, redirectUrl, expiresAt: expiry.date, maxSigns: maxSigns.max, allowWallets: allow.wallets },
       })
       return NextResponse.json({
         slug: link.id,
         url: `/i/${link.id}`,
         ask: link.ask,
+        variants: link.variants,
         mcps: link.mcps,
         redirectUrl: link.redirectUrl,
         expiresAt: link.expiresAt,
@@ -109,8 +110,11 @@ export async function GET(req: NextRequest) {
   })
   if (links.length === 0) return NextResponse.json({ links: [] })
 
+  // Grouped by variant too, so A/B links segment their funnel per phrasing;
+  // the aggregate funnel sums across variants (legacy null-variant rows
+  // included).
   const events = await prisma.intentLinkEvent.groupBy({
-    by: ['slug', 'kind'],
+    by: ['slug', 'kind', 'variant'],
     where: { slug: { in: links.map((l) => l.id) } },
     _count: { _all: true },
     _sum: { valueUsd: true },
@@ -119,15 +123,33 @@ export async function GET(req: NextRequest) {
     const f = { open: 0, connect: 0, built: 0, signed: 0, valueUsd: 0 }
     for (const e of events) {
       if (e.slug !== slug) continue
-      if (e.kind === 'open') f.open = e._count._all
-      else if (e.kind === 'connect') f.connect = e._count._all
-      else if (e.kind === 'built') f.built = e._count._all
+      if (e.kind === 'open') f.open += e._count._all
+      else if (e.kind === 'connect') f.connect += e._count._all
+      else if (e.kind === 'built') f.built += e._count._all
       else if (e.kind === 'signed') {
-        f.signed = e._count._all
-        f.valueUsd = e._sum.valueUsd ?? 0
+        f.signed += e._count._all
+        f.valueUsd += e._sum.valueUsd ?? 0
       }
     }
     return f
+  }
+  /** Per-phrasing funnels, only for links that carry variants. Index 0 is
+   *  the base ask; events minted before the A/B era (variant null) stay in
+   *  the aggregate but belong to no phrasing. */
+  const variantFunnelsOf = (link: { id: string; ask: string; variants: string[] }) => {
+    if (!link.variants.length) return undefined
+    const phrasings = [link.ask, ...link.variants]
+    return phrasings.map((askText, v) => {
+      const f = { variant: v, ask: askText, open: 0, connect: 0, built: 0, signed: 0 }
+      for (const e of events) {
+        if (e.slug !== link.id || e.variant !== v) continue
+        if (e.kind === 'open') f.open += e._count._all
+        else if (e.kind === 'connect') f.connect += e._count._all
+        else if (e.kind === 'built') f.built += e._count._all
+        else if (e.kind === 'signed') f.signed += e._count._all
+      }
+      return f
+    })
   }
 
   // Server-truth money: signed turns attributed to these links in
@@ -165,6 +187,7 @@ export async function GET(req: NextRequest) {
       slug: l.id,
       url: `/i/${l.id}`,
       ask: l.ask,
+      variants: l.variants,
       agent: l.agent,
       redirectUrl: l.redirectUrl,
       revoked: l.revoked,
@@ -173,6 +196,7 @@ export async function GET(req: NextRequest) {
       maxSigns: l.maxSigns,
       allowCount: l.allowWallets.length,
       funnel: funnelOf(l.id),
+      funnelVariants: variantFunnelsOf(l),
       ...moneyOf(l.id),
     })),
     earnings: {

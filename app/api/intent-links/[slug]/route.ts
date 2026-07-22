@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import prisma from '@/lib/db'
 import { getAuthAddress } from '@/lib/api-key'
+import { INTENT_SLUG_RE } from '@/lib/intent-links'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -15,7 +16,7 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ s
   const addr = await getAuthAddress(req)
   if (!addr) return NextResponse.json({ error: 'Sign in.' }, { status: 401 })
   const { slug } = await params
-  if (!/^[a-z0-9]{4,16}$/.test(slug)) return NextResponse.json({ error: 'Bad slug.' }, { status: 400 })
+  if (!INTENT_SLUG_RE.test(slug)) return NextResponse.json({ error: 'Bad slug.' }, { status: 400 })
 
   const link = await prisma.intentLink.findUnique({ where: { id: slug }, select: { creator: true, revoked: true } })
   if (!link || link.creator !== addr.toLowerCase()) return NextResponse.json({ error: 'Not your link.' }, { status: 404 })

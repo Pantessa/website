@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import prisma from '@/lib/db'
-import { EVENT_KINDS, type IntentEventKind } from '@/lib/intent-links'
+import { EVENT_KINDS, INTENT_SLUG_RE, type IntentEventKind } from '@/lib/intent-links'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -15,9 +15,9 @@ export const dynamic = 'force-dynamic'
  */
 export async function POST(req: NextRequest, { params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params
-  if (!/^[a-z0-9]{4,16}$/.test(slug)) return NextResponse.json({ error: 'Bad slug.' }, { status: 400 })
+  if (!INTENT_SLUG_RE.test(slug)) return NextResponse.json({ error: 'Bad slug.' }, { status: 400 })
 
-  let body: { kind?: string; wallet?: string; valueUsd?: number }
+  let body: { kind?: string; wallet?: string; valueUsd?: number; variant?: number }
   try {
     body = await req.json()
   } catch {
@@ -36,6 +36,13 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ slu
       ? body.valueUsd
       : null
 
-  await prisma.intentLinkEvent.create({ data: { slug, kind, wallet, valueUsd } })
+  // Which A/B phrasing the visit was served (0 = base ask). Client-reported
+  // like everything here — clamped to the plausible range, junk dropped.
+  const variant =
+    typeof body.variant === 'number' && Number.isInteger(body.variant) && body.variant >= 0 && body.variant <= 8
+      ? body.variant
+      : null
+
+  await prisma.intentLinkEvent.create({ data: { slug, kind, wallet, valueUsd, variant } })
   return NextResponse.json({ ok: true })
 }

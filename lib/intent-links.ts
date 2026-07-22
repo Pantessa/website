@@ -15,6 +15,12 @@ export function cleanAsk(raw: string): string {
     .slice(0, ASK_MAX)
 }
 
+/** Slug shape accepted by every /i lookup and event/telemetry gate: minted
+ *  slugs are 8 chars of the unambiguous alphabet; HOUSE links
+ *  (lib/house-links.ts) use readable hyphenated slugs (buy-aapl). 4–16
+ *  chars, hyphens allowed inside, never at the edges. */
+export const INTENT_SLUG_RE = /^[a-z0-9][a-z0-9-]{2,14}[a-z0-9]$/
+
 /** Unambiguous lowercase alphabet (no 0/o/1/l) — 8 chars ≈ 40 bits. */
 const SLUG_ALPHABET = 'abcdefghjkmnpqrstuvwxyz23456789'
 
@@ -70,6 +76,25 @@ export function composeMcps(ask: string): string[] {
   return [...new Set(slugs)].slice(0, 4)
 }
 
+/** How many A/B alternate phrasings a link may carry beyond the base ask. */
+export const MAX_VARIANTS = 3
+
+/** Sanitize creator-supplied A/B phrasings: cleaned like the ask, sentence
+ *  minimum, deduped against the base and each other, capped. Every variant
+ *  is a full ask in its own right — the runtime shows exactly one and every
+ *  gate (transfer shape included) applies to the one shown. */
+export function sanitizeVariants(raw: unknown, baseAsk: string): string[] {
+  if (!Array.isArray(raw)) return []
+  const out: string[] = []
+  for (const v of raw) {
+    const a = cleanAsk(String(v))
+    if (a.length < 8 || a === baseAsk || out.includes(a)) continue
+    out.push(a)
+    if (out.length >= MAX_VARIANTS) break
+  }
+  return out
+}
+
 /** Transfer-shaped asks (send X to <address/ens>) are the phishing shape —
  *  they NEVER auto-build from a link. The runtime falls back to prefill-only
  *  so a human types nothing but must deliberately press send. */
@@ -96,6 +121,39 @@ export function validateRedirect(raw: string): { ok: true; url: string; host: st
 
 export const EVENT_KINDS = ['open', 'connect', 'built', 'signed'] as const
 export type IntentEventKind = (typeof EVENT_KINDS)[number]
+
+/** Active-link capacity per plan — the third capacity axis alongside
+ *  standing intents (PRICING.md). Soft: mints past the cap get a friendly
+ *  upgrade pointer; existing links keep running forever. Admin wallets
+ *  (OWNER_WALLETS ∪ ADMIN_WALLETS) are exempt — the cap gates external
+ *  creators, not the team minting demo/marketing links. */
+export const LINK_CAPS: Record<string, number> = { free: 3, growth: 25, scale: Infinity }
+
+export function activeLinkCapFor(planId: string, isAdmin: boolean): number {
+  if (isAdmin) return Infinity
+  return LINK_CAPS[planId] ?? 3
+}
+
+// ── Creator handles (/l/<handle> storefronts) ──────────────────────────────
+// Opt-in public page names. Opt-in is the privacy contract: a wallet is
+// never the key to a public page — only a claimed handle is.
+
+/** Route/brand names a handle may not shadow. */
+export const RESERVED_HANDLES = new Set([
+  'admin', 'api', 'app', 'activity', 'blog', 'chat', 'dashboard', 'docs',
+  'doc', 'embed', 'help', 'i', 'l', 'link', 'links', 'me', 'official', 'p',
+  'pricing', 'r', 'root', 'servers', 'sign', 'support', 'team', 'www',
+  'yeetful',
+])
+
+/** Normalize a claimed handle: lowercase, 3–20 chars of [a-z0-9-], no edge
+ *  hyphens, not reserved. Returns null when unclaimable. */
+export function normalizeHandle(raw: string): string | null {
+  const h = raw.trim().toLowerCase().replace(/^@/, '')
+  if (!/^[a-z0-9](?:[a-z0-9-]{1,18}[a-z0-9])$/.test(h)) return null
+  if (RESERVED_HANDLES.has(h)) return null
+  return h
+}
 
 // ── Partner-promo limits (expiry / max-signs / allowlists) ─────────────────
 // All optional, all validated at MINT. Enforcement is server-side: expiry +

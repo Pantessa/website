@@ -14,6 +14,7 @@ interface LinkRow {
   slug: string
   url: string
   ask: string
+  variants: string[]
   agent: string | null
   redirectUrl: string | null
   revoked: boolean
@@ -24,6 +25,8 @@ interface LinkRow {
   /** Server-truth signed turns (embed_turns) — what the maxSigns cap counts. */
   signsCount: number
   funnel: { open: number; connect: number; built: number; signed: number; valueUsd: number }
+  /** Per-phrasing funnels — present only when the link A/B tests its ask. */
+  funnelVariants?: Array<{ variant: number; ask: string; open: number; connect: number; built: number; signed: number }>
   /** Server-truth signed notional attributed to this link (embed_turns). */
   signedUsd: number
   /** Creator's accrued half of the fee on fee-bearing conversions. */
@@ -43,6 +46,7 @@ export default function DashboardLinksPage() {
   const [claimMsg, setClaimMsg] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [ask, setAsk] = useState('')
+  const [variantsText, setVariantsText] = useState('')
   const [redirectUrl, setRedirectUrl] = useState('')
   // Partner-promo limits — all optional, validated server-side at mint.
   const [expiresAt, setExpiresAt] = useState('')
@@ -56,6 +60,11 @@ export default function DashboardLinksPage() {
   // produced the aha.
   const [mcpMode, setMcpMode] = useState<'auto' | 'manual'>('auto')
   const [pickedMcps, setPickedMcps] = useState<string[]>([])
+  // The public page name (/l/<handle>) — opt-in storefront for these links.
+  const [myHandle, setMyHandle] = useState<string | null>(null)
+  const [handleInput, setHandleInput] = useState('')
+  const [handleMsg, setHandleMsg] = useState<string | null>(null)
+  const [claiming, setClaiming] = useState(false)
 
   // Prefill from the chat's "create intent link" handoff — read once.
   useEffect(() => {
@@ -96,7 +105,36 @@ export default function DashboardLinksPage() {
   }, [])
   useEffect(() => {
     load()
+    void fetch('/api/intent-links/handle', { cache: 'no-store' })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d: { handle: string | null } | null) => {
+        if (d?.handle) setMyHandle(d.handle)
+      })
+      .catch(() => {})
   }, [load])
+
+  const claimHandle = async () => {
+    if (claiming || !handleInput.trim()) return
+    setClaiming(true)
+    setHandleMsg(null)
+    try {
+      const res = await fetch('/api/intent-links/handle', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ handle: handleInput.trim() }),
+      })
+      const data = (await res.json()) as { handle?: string; error?: string }
+      if (!res.ok) {
+        setHandleMsg(data.error ?? 'Claim failed.')
+        return
+      }
+      setMyHandle(data.handle ?? null)
+      setHandleInput('')
+      setHandleMsg(null)
+    } finally {
+      setClaiming(false)
+    }
+  }
 
   const mint = async () => {
     if (minting || ask.trim().length < 8) return
@@ -108,6 +146,11 @@ export default function DashboardLinksPage() {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           ask: ask.trim(),
+          variants: variantsText
+            .split('\n')
+            .map((s) => s.trim())
+            .filter(Boolean)
+            .slice(0, 3),
           redirectUrl: redirectUrl.trim() || undefined,
           mcps: mcpMode === 'manual' && pickedMcps.length ? pickedMcps : undefined,
           expiresAt: expiresAt ? new Date(expiresAt).toISOString() : undefined,
@@ -126,6 +169,7 @@ export default function DashboardLinksPage() {
         return
       }
       setAsk('')
+      setVariantsText('')
       setRedirectUrl('')
       setExpiresAt('')
       setMaxSigns('')
@@ -164,6 +208,18 @@ export default function DashboardLinksPage() {
           maxLength={400}
           className="mt-1.5 w-full rounded-lg border border-[var(--line)] bg-[var(--bg)] px-3 py-2 text-sm text-[color:var(--fg)] focus:outline-none focus:border-[var(--accent)]"
         />
+        <label className="mono text-[11px] uppercase tracking-wider text-[color:var(--muted-2)] mt-3 block">
+          A/B phrasings (optional — one per line, up to 3; each visitor sees one at random)
+        </label>
+        <textarea
+          value={variantsText}
+          onChange={(e) => setVariantsText(e.target.value)}
+          placeholder={'e.g. "Own a slice of Apple for $12"\n"Put $12 into AAPL right now"'}
+          rows={2}
+          maxLength={1300}
+          className="mt-1.5 w-full rounded-lg border border-[var(--line)] bg-[var(--bg)] px-3 py-2 text-sm text-[color:var(--fg)] focus:outline-none focus:border-[var(--accent)]"
+        />
+
         <div className="mt-3 flex items-center gap-2">
           <span className="mono text-[11px] uppercase tracking-wider text-[color:var(--muted-2)]">MCPs</span>
           <div className="inline-flex rounded-lg border border-[var(--line)] overflow-hidden">
@@ -279,6 +335,44 @@ export default function DashboardLinksPage() {
         </div>
       </div>
 
+      {/* The storefront: opt-in public page of these links (/l/<handle>).
+          Claiming is the privacy contract — no page exists until it's named. */}
+      <div className="rounded-xl border border-[var(--line)] bg-[var(--surf-1)] px-4 py-3 mb-6 flex flex-wrap items-center gap-x-4 gap-y-2">
+        <span className="mono text-[11px] uppercase tracking-wider text-[color:var(--muted-2)]">Your public page</span>
+        {myHandle ? (
+          <>
+            <a href={`/l/${myHandle}`} className="mono text-[13px] text-[color:var(--accent)] hover:underline">
+              /l/{myHandle}
+            </a>
+            <span className="text-[12px] text-[color:var(--muted-2)]">
+              — all your active links on one shareable page
+            </span>
+          </>
+        ) : (
+          <span className="text-[12px] text-[color:var(--muted-2)]">
+            claim a name and every active link above gets one shareable page
+          </span>
+        )}
+        <span className="inline-flex items-center gap-2">
+          <input
+            value={handleInput}
+            onChange={(e) => setHandleInput(e.target.value)}
+            placeholder={myHandle ? 'rename…' : 'your-name'}
+            maxLength={20}
+            className="w-36 rounded-lg border border-[var(--line)] bg-[var(--bg)] px-2.5 py-1.5 text-[13px] text-[color:var(--fg)] focus:outline-none focus:border-[var(--accent)]"
+          />
+          <button
+            type="button"
+            onClick={() => void claimHandle()}
+            disabled={claiming || !handleInput.trim()}
+            className="btn btn--solid text-[12px] disabled:opacity-50"
+          >
+            {claiming ? 'Claiming…' : myHandle ? 'Rename' : 'Claim'}
+          </button>
+        </span>
+        {handleMsg && <span className="text-[12px] text-amber-400 w-full">{handleMsg}</span>}
+      </div>
+
       {earnings && earnings.totalEarnedUsd > 0 && (
         <div className="rounded-xl border border-[var(--line)] bg-[var(--surf-1)] px-4 py-3 mb-6 flex flex-wrap items-center gap-x-6 gap-y-2">
           <span className="text-[13px] text-[color:var(--muted)]">
@@ -355,6 +449,18 @@ export default function DashboardLinksPage() {
                         ]
                           .filter(Boolean)
                           .join(' · ')}
+                      </div>
+                    )}
+                    {/* A/B: the per-phrasing funnel — which wording converts. */}
+                    {l.funnelVariants && (
+                      <div className="mt-1 space-y-0.5">
+                        {l.funnelVariants.map((v) => (
+                          <div key={v.variant} className="mono text-[11px] text-[color:var(--muted-2)] truncate">
+                            {String.fromCharCode(65 + v.variant)} · &ldquo;{v.ask}&rdquo; — {v.open} open · {v.connect} connect
+                            · {v.built} built ·{' '}
+                            <span className={v.signed > 0 ? 'text-[color:var(--accent)]' : undefined}>{v.signed} signed</span>
+                          </div>
+                        ))}
                       </div>
                     )}
                   </td>
