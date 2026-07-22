@@ -1455,6 +1455,16 @@ async function main() {
     check('intent links: /links leaderboard renders with the mint CTA', board.status === 200 && /Mint yours/.test(boardHtml) && /dollars moved/i.test(boardHtml))
     check('intent links: leaderboard never leaks a wallet address', !/0x[0-9a-fA-F]{40}/.test(boardHtml))
     check('intent links: leaderboard links to the host button generator', boardHtml.includes('/links/embed'))
+    // Tabs: finished flows (claims) is the default rank; dollars is the
+    // second tab. They render only when the board has real rows — with
+    // harness turns excluded the board may legitimately be empty.
+    check(
+      'intent links: board tabs (Most claimed + Dollars moved) or the honest empty state',
+      (/Most claimed/.test(boardHtml) && /Dollars moved/.test(boardHtml)) || /The board is empty/.test(boardHtml),
+    )
+    // The fake $600 this section signed above must NEVER rank the public
+    // board — harness- sessions are excluded server-side.
+    check('intent links: harness turns never rank the public board', !boardHtml.includes(`/i/${slug}`))
 
     // The host button generator: a public page whose form mints through the
     // same gated door; the emitted snippet is a plain <a> — the button IS an
@@ -1669,10 +1679,18 @@ async function main() {
     )
     await fetch(`${BASE}/api/intent-links/${expLink.slug}`, { method: 'DELETE', headers: { cookie: mallorySession } })
 
-    // cleanup: the minted row + its events (raw deletes via prisma are not
-    // exposed here — the API has no delete; rows are tiny and harmless, but
-    // keep the namespace tidy by revoking… no revoke endpoint in v1 either.
-    // Deliberate: harness rows land in the mallory wallet's own list only.
+    // cleanup: revoke every link this run minted. Mallory is a fresh wallet
+    // each run, so the preamble can't catch leftovers from PRIOR runs — but
+    // revoking here means runs stop leaving live links behind at all. The
+    // telemetry rows stay (the fee-split checks above need them); the public
+    // board excludes harness- sessions server-side regardless.
+    const tail = await fetch(`${BASE}/api/intent-links`, { headers: { cookie: mallorySession } })
+    if (tail.status === 200) {
+      const held = ((await tail.json()) as { links?: Array<{ slug: string; revoked: boolean }> }).links ?? []
+      await Promise.all(
+        held.filter((l) => !l.revoked).map((l) => fetch(`${BASE}/api/intent-links/${l.slug}`, { method: 'DELETE', headers: { cookie: mallorySession } })),
+      )
+    }
   }
 
   // ── Organizations (SIWE-only org core + the role matrix) ──────────────────

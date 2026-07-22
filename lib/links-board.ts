@@ -4,33 +4,54 @@ import { HOUSE_LINKS } from '@/lib/house-links'
 import { FEE_BEARING_BUILD_PATHS, FEES_LIVE_SINCE, SWAP_FEE_BPS, CREATOR_FEE_SPLIT } from '@/lib/fees'
 
 // The intent-links board data, shared by /links (the full leaderboard) and
-// /activity (the link-economy section). Server-only: ranks by server-truth
-// dollars moved — guardrail-priced signed turns in embed_turns — never a
-// client-reported number. Asks only; creators stay pseudonymous.
+// /activity (the link-economy section). Server-only: every figure comes from
+// FINISHED flows — guardrail-priced signed turns in embed_turns — never a
+// mint-time amount and never a client-reported number. Asks only; creators
+// stay pseudonymous.
+
+// The API harness posts fake signed turns (sessionId `harness-…`) to exercise
+// the fee-split rail against the shared DB; the public board must never rank
+// them. Creator-facing surfaces (dashboard list, claims) keep seeing them.
+const NOT_HARNESS: Prisma.EmbedTurnWhereInput = { NOT: { sessionId: { startsWith: 'harness-' } } }
 
 export interface LinkBoardRow {
   slug: string
   ask: string
+  /** Signed notional attributed to the link — dollars actually moved. */
   movedUsd: number
+  /** Finished flows: signed, value-bearing turns the link produced. */
+  claims: number
   opens: number
 }
 
-export async function topLinks(limit = 10): Promise<LinkBoardRow[]> {
+export interface LinksBoard {
+  /** Ranked by finished flows (signed conversions) — the default tab. */
+  byClaims: LinkBoardRow[]
+  /** Ranked by signed notional moved. */
+  byMoved: LinkBoardRow[]
+}
+
+// How many slugs to aggregate before joining/sorting; revoked links drop at
+// the join, so this over-fetches past `limit` on purpose.
+const BOARD_SCAN = 200
+
+export async function linksBoard(limit = 10): Promise<LinksBoard> {
   try {
-    const moved = await prisma.embedTurn.groupBy({
+    const signed = await prisma.embedTurn.groupBy({
       by: ['intentLinkSlug'],
-      where: { intentLinkSlug: { not: null }, outcome: 'signed', valueUsd: { gt: 0 } },
+      where: { intentLinkSlug: { not: null }, outcome: 'signed', valueUsd: { gt: 0 }, ...NOT_HARNESS },
       _sum: { valueUsd: true },
+      _count: { _all: true },
       orderBy: { _sum: { valueUsd: 'desc' } },
-      take: limit,
+      take: BOARD_SCAN,
     })
-    const slugs = moved.map((m) => m.intentLinkSlug).filter((s): s is string => !!s)
-    if (slugs.length === 0) return []
+    const slugs = signed.map((m) => m.intentLinkSlug).filter((s): s is string => !!s)
+    if (slugs.length === 0) return { byClaims: [], byMoved: [] }
     const [links, opens] = await Promise.all([
       prisma.intentLink.findMany({ where: { id: { in: slugs }, revoked: false }, select: { id: true, ask: true } }),
       prisma.intentLinkEvent.groupBy({ by: ['slug'], where: { slug: { in: slugs }, kind: 'open' }, _count: { _all: true } }),
     ])
-    return moved
+    const rows = signed
       .map((m) => {
         const link = links.find((l) => l.id === m.intentLinkSlug)
         if (!link) return null
@@ -38,12 +59,17 @@ export async function topLinks(limit = 10): Promise<LinkBoardRow[]> {
           slug: link.id,
           ask: link.ask,
           movedUsd: m._sum.valueUsd ?? 0,
+          claims: m._count._all,
           opens: opens.find((o) => o.slug === link.id)?._count._all ?? 0,
         }
       })
       .filter((r): r is NonNullable<typeof r> => !!r)
+    return {
+      byClaims: [...rows].sort((a, b) => b.claims - a.claims || b.movedUsd - a.movedUsd).slice(0, limit),
+      byMoved: [...rows].sort((a, b) => b.movedUsd - a.movedUsd).slice(0, limit),
+    }
   } catch {
-    return []
+    return { byClaims: [], byMoved: [] }
   }
 }
 
@@ -88,6 +114,7 @@ export async function linkDailySeries(days = 30): Promise<LinkDayPoint[]> {
                coalesce(sum(value_usd), 0)::float AS usd
         FROM embed_turns
         WHERE intent_link_slug IS NOT NULL AND outcome = 'signed' AND value_usd > 0
+          AND session_id NOT LIKE 'harness-%'
           AND created_at >= ${since}
         GROUP BY 1 ORDER BY 1`,
     ])
@@ -138,6 +165,7 @@ export async function feeSummary(): Promise<FeeSummary | null> {
       valueUsd: { gt: 0 },
       buildPath: { in: [...FEE_BEARING_BUILD_PATHS] },
       createdAt: { gte: since },
+      ...NOT_HARNESS,
     }
     const [all, linked] = await Promise.all([
       prisma.embedTurn.aggregate({ where: feeWhere, _sum: { valueUsd: true }, _count: true }),

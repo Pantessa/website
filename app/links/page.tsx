@@ -4,12 +4,13 @@ import Footer from '@/components/Footer'
 import { YeetfulMark } from '@/components/Logo'
 import IntentLinksBoard from '@/components/IntentLinksBoard'
 import SignInFlowLink from '@/components/SignInFlowLink'
-import { topLinks, liveHouseLinks } from '@/lib/links-board'
+import { linksBoard, liveHouseLinks } from '@/lib/links-board'
 
-// /links — the public leaderboard: intent links ranked by server-truth
-// dollars moved (guardrail-priced signed turns in embed_turns). In-the-open
-// energy, same ethos as /activity: the funnel IS the pitch, and every row
-// is a live link a visitor can tap. Asks only — never creators' wallets.
+// /links — the public leaderboard: intent links ranked by FINISHED flows
+// (signed turns in embed_turns — most claimed by default, dollars moved as
+// the second tab; never mint-time amounts). In-the-open energy, same ethos
+// as /activity: the funnel IS the pitch, and every row is a live link a
+// visitor can tap. Asks only — never creators' wallets.
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -26,8 +27,9 @@ export const metadata: Metadata = {
 }
 
 export default async function LinksLeaderboardPage() {
-  const rows = await topLinks()
-  const house = await liveHouseLinks(new Set(rows.map((r) => r.slug)))
+  const board = await linksBoard()
+  const onBoard = new Set([...board.byClaims, ...board.byMoved].map((r) => r.slug))
+  const house = await liveHouseLinks(onBoard)
   return (
     <>
       <main className="x-main">
@@ -60,18 +62,19 @@ export default async function LinksLeaderboardPage() {
           </div>
 
           <h2 className="mono text-[11px] uppercase tracking-wider text-[color:var(--muted-2)] mb-3">
-            Top links by dollars moved
+            The board
           </h2>
-          {rows.length === 0 ? (
+          {board.byClaims.length === 0 ? (
             <p className="text-[13px] text-[color:var(--muted-2)]">
               The board is empty — the first link to move a dollar tops it. Mint yours above.
             </p>
           ) : (
-            <IntentLinksBoard rows={rows} />
+            <IntentLinksBoard board={board} />
           )}
           <p className="mono text-[11px] text-[color:var(--muted-2)] mt-4">
-            Dollars are guardrail-priced signed notional — the same source as /activity. Asks only;
-            creators stay pseudonymous.
+            A claim is a finished flow — the visitor signed with their own wallet. Dollars moved are
+            guardrail-priced signed notional, the same source as /activity. Asks only; creators stay
+            pseudonymous.
           </p>
 
           {house.length > 0 && (
