@@ -4,6 +4,7 @@ import { useState, type ReactNode } from 'react'
 import { WagmiProvider } from 'wagmi'
 import TrackWallet from '@/components/TrackWallet'
 import AccountSwitchBanner from '@/components/AccountSwitchBanner'
+import SignatureWaitTakeover from '@/components/SignatureWaitTakeover'
 import CdpOAuthReturn from '@/components/CdpOAuthReturn'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { RainbowKitProvider, darkTheme } from '@rainbow-me/rainbowkit'
@@ -45,6 +46,11 @@ export default function Providers({ children }: { children: ReactNode }) {
             {/* Prompts a one-click re-sign when the user switches MetaMask
                 accounts (self-suppresses on /embed). */}
             <AccountSwitchBanner />
+            {/* The waiting-for-signature takeover, site-wide: whenever a SIWE
+                round-trip is in flight, the card with the loading animation
+                covers the page so an open MetaMask request never reads as a
+                stall (self-suppresses on /embed and /i — /i mounts its own). */}
+            <SignatureWaitTakeover />
             {/* Resumes a social (Google/Apple/X) sign-in after the OAuth
                 redirect. CDP-only — it uses CDP hooks. */}
             {cdpEnabled && <CdpOAuthReturn />}
