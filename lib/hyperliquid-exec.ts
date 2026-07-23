@@ -301,6 +301,41 @@ export async function fetchHlSnapshot(coin: string, wallet: string | undefined, 
   }
 }
 
+/** Collateral an OPEN order should have behind it: a third of notional
+ *  (keeps the build's ≤3x margin warn clean, ≈2–3x effective leverage),
+ *  floored at the bridge minimum — smaller deposits are lost, not credited. */
+export function hlCollateralTargetUsd(notionalUsd: number): number {
+  return Math.max(HL_MIN_DEPOSIT_USDC, Math.ceil((notionalUsd / 3) * 100) / 100)
+}
+
+export interface HlOpenShortfall {
+  /** The deposit that makes the order buildable (≥ the bridge minimum). */
+  depositUsdc: number
+  withdrawableUsd: number
+  notionalUsd: number
+}
+
+/**
+ * "You have an intent — we do the rest": would this OPEN order build against
+ * an under-collateralized account? Returns the deposit that fixes it, or
+ * null when the account is funded — or when the read fails (fail-soft: the
+ * build's own has-collateral guard still fails closed downstream).
+ */
+export async function hlOpenCollateralShortfall(intent: HlOrderIntent, wallet: string): Promise<HlOpenShortfall | null> {
+  if (intent.kind !== 'open') return null
+  try {
+    const snap = await fetchHlSnapshot(intent.coin, wallet)
+    const notionalUsd = intent.notionalUsd ?? (intent.sizeUnits ? intent.sizeUnits * snap.markPx : 0)
+    if (!(notionalUsd > 0)) return null
+    const target = hlCollateralTargetUsd(notionalUsd)
+    if (snap.withdrawableUsd >= notionalUsd / 3) return null
+    const depositUsdc = Math.max(HL_MIN_DEPOSIT_USDC, Number((target - snap.withdrawableUsd).toFixed(2)))
+    return { depositUsdc, withdrawableUsd: snap.withdrawableUsd, notionalUsd: Number(notionalUsd.toFixed(2)) }
+  } catch {
+    return null
+  }
+}
+
 /** USDC balance on Arbitrum (the deposit leg's funding check). */
 export async function arbitrumUsdcBalance(wallet: string): Promise<number> {
   const { createPublicClient, http, formatUnits } = await import('viem')

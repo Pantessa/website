@@ -44,7 +44,7 @@ export default function JobsDocsPage() {
   -H "authorization: Bearer $YF_API_KEY" \\
   -H "content-type: application/json" \\
   -d '{
-    "ask": "swap 5 usdc from base to arbitrum, then deposit 4 usdc to hyperliquid, then long $12 of eth on hyperliquid, then protect my eth long with a 5% stop",
+    "ask": "swap 5 usdc from base to arbitrum, then deposit 5 usdc to hyperliquid, then long $12 of eth on hyperliquid, then protect my eth long with a 5% stop",
     "dryRun": true
   }'`}</pre>
         <p>
