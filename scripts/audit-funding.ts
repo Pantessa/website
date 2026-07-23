@@ -112,16 +112,39 @@ const SCENARIOS: Scenario[] = [
     name: "$2 of ETH on mainnet + gasless $20 USDC on Base → HL deposit (Nate's probe)",
     need: HL_NEED,
     reads: [R(1, 0.001, 0), R(8453, 0, 20), R(42161, 0, 0)],
+    // The $2 sits under mainnet's keep-back — it can't donate (moving it
+    // costs more than it's worth), so the refusal must NAME both holdings
+    // and hand over the manual rescue.
     expect: 'refusal',
-    knownUnnamed: ['ETH on Ethereum'],
-    gaps: ['sub-reserve ETH (under the chain\'s keep-back) is invisible to the scan — should be named'],
   },
   {
-    name: '$2 of ETH on Arbitrum + gasless $20 USDC on Base → HL deposit (donor exists)',
+    name: '$2 of ETH on Arbitrum + gasless $20 USDC on Base → HL deposit (donor rescue)',
     need: HL_NEED,
     reads: [R(42161, 0.001, 0), R(8453, 0, 20), R(1, 0, 0)],
+    expect: 'offer',
+  },
+  {
+    // The movable Base ETH ($9.6) covers the whole plan by itself, so the
+    // NORMAL chips win and the mainnet USDC stays parked — cheaper than
+    // burning ~$6 of L1 gas to unstick it. The rescue is a last resort.
+    name: 'mainnet-stranded $20 USDC + rich Base donor → HL deposit (movable ETH funds it directly)',
+    need: HL_NEED,
+    reads: [R(1, 0, 20), R(8453, 0.005, 0), R(42161, 0, 0)],
+    expect: 'offer',
+  },
+  {
+    // Donor covers mainnet's ~$6 gas leg but NOT the whole ~$8 plan — the
+    // rescue is the only path, and it must price L1 gas honestly.
+    name: 'mainnet-stranded $20 USDC + $7 Base donor → HL deposit (true L1 unstick)',
+    need: HL_NEED,
+    reads: [R(1, 0, 20), R(8453, 0.0037, 0), R(42161, 0, 0)],
+    expect: 'offer',
+  },
+  {
+    name: 'mainnet-stranded $20 USDC + $2 Arbitrum donor → HL deposit (donor too poor for L1 gas)',
+    need: HL_NEED,
+    reads: [R(1, 0, 20), R(42161, 0.001, 0), R(8453, 0, 0)],
     expect: 'refusal',
-    gaps: ['a donor-topup chip (Arbitrum ETH → Base gas → move the USDC) should turn this refusal into an offer'],
   },
   {
     name: '$20 USDC + gas on Base → HL deposit (the healthy path)',
@@ -194,6 +217,7 @@ for (const s of SCENARIOS) {
   const header = `— ${s.name}`
   const scan = {
     ...classifyFundingBalances(s.reads, ETH_USD),
+    ethUsd: ETH_USD,
     readChains: s.reads.map((r) => r.chainWord),
     failedChains: s.failed ?? [],
   }
