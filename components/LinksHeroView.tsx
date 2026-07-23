@@ -1,8 +1,8 @@
 'use client'
 
 // The links-first fusion hero — the client half. Protocol energies
-// (Uniswap pink, Robinhood green, Snapshot gold, and a dashed "your MCP"
-// emerald) stream as luminous particle rivers from the edges into a
+// (Uniswap pink, Hyperliquid mint, Robinhood green, Snapshot gold)
+// stream as luminous particle rivers from the edges into a
 // breathing core behind the claim — dapps fusing into ONE LINK. Every few
 // seconds the core TRANSMUTES: a ring pulse fires, an emerald burst leaves
 // the core, and one mono line under the CTAs names what the link economy
@@ -30,9 +30,9 @@ export interface LinkHeroStats {
  * into the corners and show a plain chip row instead. */
 const SOURCES = [
   { x: 0.09, y: 0.3, color: '#FF6BAF', light: '#d81f78', name: 'Uniswap', glyph: 'U', dashed: false },
-  { x: 0.91, y: 0.27, color: '#FFC94D', light: '#b07c00', name: 'Snapshot', glyph: '⚡', dashed: false },
+  { x: 0.91, y: 0.27, color: '#97FCE4', light: '#0a8577', name: 'Hyperliquid', glyph: 'H', dashed: false },
   { x: 0.11, y: 0.76, color: '#00C805', light: '#04820c', name: 'Robinhood', glyph: 'R', dashed: false },
-  { x: 0.89, y: 0.78, color: '#34e3a0', light: '#0e8f62', name: 'your MCP', glyph: '+', dashed: true },
+  { x: 0.89, y: 0.78, color: '#FFC94D', light: '#b07c00', name: 'Snapshot', glyph: '⚡', dashed: false },
 ]
 
 /** Canvas palettes per theme — read live each frame so the footer toggle
