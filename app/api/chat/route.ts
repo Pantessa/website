@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse, after } from 'next/server'
 import { attachFundsSnapshot, classifyTurn, moneyShaped, recordAskFailure } from '@/lib/ask-failure'
-import { erc20Abi, formatUnits, getAddress, isAddress } from 'viem'
+import { erc20Abi, formatEther, formatUnits, getAddress, isAddress, parseEther } from 'viem'
+import { openseaSlugOf } from '@/lib/opensea'
 import { getPaidFetch, hasAgentWallet } from '@/lib/agent-wallet'
 import {
   decodeSettlement,
@@ -959,6 +960,46 @@ async function handleChatTurn(req: NextRequest) {
             return NextResponse.json({ reply: `🖼️ ${built.problem}`, ...(built.clarify ? { clarify: built.clarify } : {}) })
           }
           if (built.blocked) {
+            // A balance-ONLY block is a funding gap, not a dead end (live
+            // 2026-07-23: "buy this NFT" refused 0.007 ETH short on Base
+            // while ~$19 of USDC sat idle on Base+Arbitrum). Offer the
+            // universal funding plan: chips whose resume compiles
+            // fund → wait → buy-the-nft as ONE job — the buy step re-resolves
+            // the listing fresh at its own sign turn. Any other failing
+            // block (opaque calldata, floor sanity, spend policy) keeps the
+            // hard refusal, and a failed offer falls back to it too.
+            const blocks = built.guardrails.checks.filter((c) => !c.ok && c.level === 'block')
+            const balanceOnly = blocks.length > 0 && blocks.every((c) => c.id === 'balance')
+            const buyChainId = built.nft?.chainId
+            const itemSlug = buyChainId ? openseaSlugOf(buyChainId) : null
+            if (balanceOnly && buyChainId && itemSlug && built.nft) {
+              try {
+                const client = publicClientFor(buyChainId)
+                const bal = client ? await client.getBalance({ address: walletAddress as `0x${string}` }) : null
+                const needWei = BigInt(built.tx.value ?? '0') + parseEther(String(DEST_GAS_FLOOR_ETH[buyChainId] ?? 0.0002))
+                if (bal !== null && needWei > bal) {
+                  const shortEth = Math.ceil(Number(formatEther(needWei - bal)) * 1e6) / 1e6
+                  const itemUrl = `https://opensea.io/item/${itemSlug}/${built.nft.contract}/${built.nft.tokenId}`
+                  const offer = await offerFundingPlan({
+                    user: walletAddress,
+                    need: {
+                      chainId: buyChainId,
+                      token: 'ETH',
+                      amountHuman: shortEth,
+                      followupResume: `buy the nft ${itemUrl}${nftAsk.maxPriceEth ? ` for up to ${nftAsk.maxPriceEth} ETH` : ''}`,
+                      actionLabel: 'the buy',
+                    },
+                    trace: nativeTrace,
+                  })
+                  if (offer && 'insufficient' in offer) {
+                    return NextResponse.json({ reply: `🖼️ ${built.refusal ?? 'The wallet can’t cover this buy.'} ${offer.insufficient}` })
+                  }
+                  if (offer) return NextResponse.json({ ...offer, reply: `🖼️ ${offer.reply}` })
+                }
+              } catch {
+                /* offer unavailable → the honest hard refusal below */
+              }
+            }
             nativeTrace({ type: 'note', level: 'warn', label: `nft buy REFUSED: ${(built.refusal ?? 'a safety check failed.').slice(0, 200)}` })
             return NextResponse.json({ reply: `🚫 ${built.refusal ?? 'A safety check failed — nothing was built.'}`, guardrails: built.guardrails, blocked: true, buildPath: 'native-nft-buy' })
           }

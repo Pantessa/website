@@ -129,20 +129,31 @@ function sourceAmountFor(source: FundingSource, usd: number): string {
   return fmtAmount(amt, dp, amt >= source.balance ? 'down' : 'up')
 }
 
+// Cross-chain sources ride a NEAR Intents leg ("from X to Y on Z"); a source
+// already ON the destination chain converts through the native venue cascade
+// instead ("swap A for B on Z" — the jobs same-chain segment, #450): no
+// bridge, no solver fee, and it was the missing offer in the live 2026-07-23
+// NFT buy (0.007 ETH short on Base while $12 of USDC sat ON Base).
 const legResume = (s: FundingSource, amount: string, need: FundingNeed): string =>
-  `Swap ${amount} ${s.token} from ${s.chainWord} to ${need.token.toUpperCase()} on ${FUNDING_CHAIN_WORD[need.chainId]}`
+  s.chainId === need.chainId
+    ? `Swap ${amount} ${s.token} for ${need.token.toUpperCase()} on ${FUNDING_CHAIN_WORD[need.chainId]}`
+    : `Swap ${amount} ${s.token} from ${s.chainWord} to ${need.token.toUpperCase()} on ${FUNDING_CHAIN_WORD[need.chainId]}`
 
-/** Rank: same token first (no swap spread), stables next, ETH last; richest
- *  chain first within each group. */
+/** Rank: destination-chain conversions first (no bridge, no solver fee),
+ *  then same token (no swap spread), stables next, ETH last; richest chain
+ *  first within each group. */
 export function rankFundingSources(need: FundingNeed, sources: FundingSource[]): FundingSource[] {
-  const group = (s: FundingSource) => (s.token.toUpperCase() === need.token.toUpperCase() ? 0 : s.token === 'USDC' ? 1 : 2)
+  const group = (s: FundingSource) =>
+    s.chainId === need.chainId ? -1 : s.token.toUpperCase() === need.token.toUpperCase() ? 0 : s.token === 'USDC' ? 1 : 2
   return [...sources].sort((a, b) => group(a) - group(b) || b.usd - a.usd)
 }
 
 /** The gas-leg resume segment: same source, delivered as native ETH on the
  *  destination so the follow-up action can actually be signed. */
 const gasLegResume = (s: FundingSource, amount: string, need: FundingNeed): string =>
-  `Swap ${amount} ${s.token} from ${s.chainWord} to ETH on ${FUNDING_CHAIN_WORD[need.chainId]}`
+  s.chainId === need.chainId
+    ? `Swap ${amount} ${s.token} for ETH on ${FUNDING_CHAIN_WORD[need.chainId]}`
+    : `Swap ${amount} ${s.token} from ${s.chainWord} to ETH on ${FUNDING_CHAIN_WORD[need.chainId]}`
 
 /**
  * The pure planner: rank the sources and turn a shortfall into chips (or an
@@ -155,11 +166,12 @@ const gasLegResume = (s: FundingSource, amount: string, need: FundingNeed): stri
  * can't sign are stranded, not delivered.
  */
 export function planFundingChips(need: FundingNeed, needUsd: number, sources: FundingSource[], gasUsd = 0): FundingPlan {
-  // Destination-chain balances are never sources — these legs are NEAR
-  // Intents bridges, and a same-chain conversion belongs to the swap venues.
+  // A destination-chain balance of the NEEDED token is not a source (the
+  // shortfall already accounts for it) — but a different token sitting on
+  // the destination IS: it converts through the native venues, no bridge.
   const ranked = rankFundingSources(
     need,
-    sources.filter((s) => s.usd >= DUST_USD && s.chainId !== need.chainId),
+    sources.filter((s) => s.usd >= DUST_USD && (s.chainId !== need.chainId || s.token.toUpperCase() !== need.token.toUpperCase())),
   )
   const sourceSummary = ranked
     .slice(0, 4)
@@ -402,8 +414,8 @@ export async function offerFundingPlan(params: {
   return {
     reply:
       `**We can make this happen.** You're holding ${plan.sourceSummary} — ${need.actionLabel} just needs more ${need.token.toUpperCase()} on ${destChain.name} than the wallet has there yet. ` +
-      `I can move it over (NEAR Intents, delivered to your own address)${gasUsd > 0 ? `, drop in a little ETH so ${destChain.name} gas is covered,` : ''} and finish ${need.actionLabel} — one job, every step built and guard-checked when it's your turn to sign.`,
-    clarify: { question: 'Fund it from another chain?', options: plan.chips },
+      `${plan.chips[0]?.resume.toLowerCase().startsWith('swap') && plan.chips[0].resume.toLowerCase().includes(` for ${need.token.toLowerCase()} on `) ? `I can convert it right there on ${destChain.name} (own-wallet venue swap, no bridge)` : 'I can move it over (NEAR Intents, delivered to your own address)'}${gasUsd > 0 ? `, drop in a little ETH so ${destChain.name} gas is covered,` : ''} and finish ${need.actionLabel} — one job, every step built and guard-checked when it's your turn to sign.`,
+    clarify: { question: `Fund it from what you're holding?`, options: plan.chips },
     buildPath: 'native-funding-offer',
   }
 }
