@@ -121,7 +121,8 @@ export default function ApiKeysPanel({
         API keys
         <span className="font-normal text-[color:var(--muted-2)]">
           {' '}
-          — Bearer credentials for headless agents (SDK ledger sync, scripts, CI)
+          — track your agents&apos; x402 payment usage (spend policy + receipts, synced by the
+          yeetful SDK)
         </span>
       </h2>
 
@@ -190,7 +191,7 @@ export default function ApiKeysPanel({
         <EmptyState
           icon={KeyRound}
           title="No keys yet"
-          description="A key lets a headless agent authenticate as your wallet on the grants API — the yeetful SDK uses it to sync receipts here. Mint one above; the secret shows once."
+          description="A key lets a headless agent authenticate as your wallet on the grants API — its x402 payments run under your spend policy and every receipt syncs here. Mint one above; the secret shows once."
           cta={{ href: '/docs', label: 'Docs →' }}
         />
       ) : (
