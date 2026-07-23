@@ -323,12 +323,42 @@ export interface FundingScan {
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
+/** One chain's raw balances, as the RPC shell hands them to the classifier —
+ *  and as the scenario audit (scripts/audit-funding.ts) fabricates them. */
+export interface FundingBalanceRead {
+  chainId: number
+  chainWord: string
+  nativeEth: number
+  usdcBal: number
+}
+
+/** The pure classification step: raw balances → movable sources + stranded
+ *  funds. Extracted from the RPC scan so any wallet state is constructible
+ *  in a costless dry run — the rules here are THE rules, there is no second
+ *  copy. `ethUsd` null (unpriceable) skips ETH sources, matching the live
+ *  scan's fail-soft. */
+export function classifyFundingBalances(reads: FundingBalanceRead[], ethUsd: number | null): Pick<FundingScan, 'sources' | 'stranded'> {
+  const sources: FundingSource[] = []
+  const stranded: FundingSource[] = []
+  for (const r of reads) {
+    if (r.usdcBal > 0 && r.nativeEth >= (MIN_GAS_TO_SEND_ETH[r.chainId] ?? 0.001)) {
+      sources.push({ chainId: r.chainId, chainWord: r.chainWord, token: 'USDC', balance: r.usdcBal, usd: r.usdcBal })
+    } else if (r.usdcBal >= DUST_USD) {
+      stranded.push({ chainId: r.chainId, chainWord: r.chainWord, token: 'USDC', balance: r.usdcBal, usd: r.usdcBal })
+    }
+    const movableEth = r.nativeEth - (GAS_RESERVE_ETH[r.chainId] ?? 0.002)
+    if (ethUsd !== null && movableEth > 0) {
+      sources.push({ chainId: r.chainId, chainWord: r.chainWord, token: 'ETH', balance: movableEth, usd: movableEth * ethUsd })
+    }
+  }
+  return { sources, stranded }
+}
+
 /** Read movable ETH + USDC across the scan chains, one retry per chain.
  *  Throws only when NOTHING was readable. */
 export async function scanFundingSources(user: string): Promise<FundingScan> {
   const ethProbe = await usdPerToken(8453, 'ETH').catch(() => null)
-  const sources: FundingSource[] = []
-  const stranded: FundingSource[] = []
+  const reads: FundingBalanceRead[] = []
   const readChains: string[] = []
   const failedChains: string[] = []
   await Promise.all(
@@ -349,24 +379,14 @@ export async function scanFundingSources(user: string): Promise<FundingScan> {
           return read()
         })
         readChains.push(word)
-        const nativeEth = Number(formatEther(nativeWei))
-        const usdcBal = Number(formatUnits(usdcAtoms, usdc.decimals))
-        if (usdcBal > 0 && nativeEth >= (MIN_GAS_TO_SEND_ETH[chainId] ?? 0.001)) {
-          sources.push({ chainId, chainWord: word, token: 'USDC', balance: usdcBal, usd: usdcBal })
-        } else if (usdcBal >= DUST_USD) {
-          stranded.push({ chainId, chainWord: word, token: 'USDC', balance: usdcBal, usd: usdcBal })
-        }
-        const movableEth = nativeEth - (GAS_RESERVE_ETH[chainId] ?? 0.002)
-        if (ethProbe && movableEth > 0) {
-          sources.push({ chainId, chainWord: word, token: 'ETH', balance: movableEth, usd: movableEth * ethProbe.usd })
-        }
+        reads.push({ chainId, chainWord: word, nativeEth: Number(formatEther(nativeWei)), usdcBal: Number(formatUnits(usdcAtoms, usdc.decimals)) })
       } catch {
         failedChains.push(word)
       }
     }),
   )
   if (readChains.length === 0) throw new Error('no funding-scan chain was readable')
-  return { sources, stranded, readChains, failedChains }
+  return { ...classifyFundingBalances(reads, ethProbe?.usd ?? null), readChains, failedChains }
 }
 
 export interface FundingOfferTurn {
@@ -444,6 +464,35 @@ export async function offerFundingPlan(params: {
   const needUsd = need.amountHuman > 0 ? fundingPlanUsd(need.amountHuman, tokenUsd) : 0
   // Token covered AND gas covered — nothing to fund; the caller proceeds.
   if (needUsd === 0 && gasUsd === 0) return null
+  const decision = decideFundingTurn({ need, needUsd, gasUsd, scan, destChainName: destChain.name, trace })
+  if (decision.kind === 'fallthrough') return null
+  if (decision.kind === 'refusal') return { insufficient: decision.insufficient }
+  return decision.turn
+}
+
+/** What the funding layer decided to do with a priced shortfall. */
+export type FundingDecision =
+  | { kind: 'offer'; turn: FundingOfferTurn }
+  | { kind: 'refusal'; insufficient: string }
+  | { kind: 'fallthrough'; reason: string }
+
+/**
+ * The pure decision core of `offerFundingPlan`: priced need + scan result →
+ * offer / honest refusal / fall-through. No RPC, no pricing — everything
+ * I/O-shaped arrives as arguments, so the scenario audit
+ * (scripts/audit-funding.ts) can drive the REAL decision logic across
+ * fabricated wallet states.
+ */
+export function decideFundingTurn(params: {
+  need: FundingNeed
+  needUsd: number
+  gasUsd: number
+  scan: Pick<FundingScan, 'sources' | 'stranded' | 'readChains' | 'failedChains'>
+  destChainName: string
+  trace?: (event: unknown) => void
+}): FundingDecision {
+  const { need, needUsd, gasUsd, scan, destChainName } = params
+  const trace = params.trace ?? (() => {})
   const plan = planFundingChips(need, needUsd, scan.sources, gasUsd)
 
   if (plan.kind === 'short') {
@@ -456,7 +505,7 @@ export async function offerFundingPlan(params: {
         level: 'warn',
         label: `funding layer: sources look short but ${scan.failedChains.join('/')} didn't scan — falling through rather than claiming an empty wallet`,
       })
-      return null
+      return { kind: 'fallthrough', reason: 'partial scan' }
     }
     const chainsRead = scan.readChains.join(', ').replace(/, ([^,]*)$/, ' and $1')
     trace({
@@ -470,6 +519,7 @@ export async function offerFundingPlan(params: {
         ' — honest refusal',
     })
     return {
+      kind: 'refusal',
       insufficient: shortRefusalCopy({
         chainsRead,
         need,
@@ -483,14 +533,17 @@ export async function offerFundingPlan(params: {
 
   trace({
     type: 'status',
-    label: `funding layer claimed the turn: ${need.token} short on ${destChain.name} for ${need.actionLabel} — offering ${plan.chips.length - 1} funding path(s) (~$${plan.needUsd} needed, NEAR Intents legs)`,
+    label: `funding layer claimed the turn: ${need.token} short on ${destChainName} for ${need.actionLabel} — offering ${plan.chips.length - 1} funding path(s) (~$${plan.needUsd} needed, NEAR Intents legs)`,
   })
   return {
-    reply:
-      `**We can make this happen.** You're holding ${plan.sourceSummary} — ${need.actionLabel} just needs ${needUsd === 0 ? `a little ETH on ${destChain.name} for gas` : `more ${need.token.toUpperCase()} on ${destChain.name} than the wallet has there yet`}. ` +
-      `${plan.chips[0]?.resume.toLowerCase().startsWith('swap') && plan.chips[0].resume.toLowerCase().includes(` for ${need.token.toLowerCase()} on `) ? `I can convert it right there on ${destChain.name} (own-wallet venue swap, no bridge)` : 'I can move it over (NEAR Intents, delivered to your own address)'}${gasUsd > 0 ? `, drop in a little ETH so ${destChain.name} gas is covered,` : ''} and finish ${need.actionLabel} — one job, every step built and guard-checked when it's your turn to sign.`,
-    clarify: { question: `Fund it from what you're holding?`, options: plan.chips },
-    buildPath: 'native-funding-offer',
+    kind: 'offer',
+    turn: {
+      reply:
+        `**We can make this happen.** You're holding ${plan.sourceSummary} — ${need.actionLabel} just needs ${needUsd === 0 ? `a little ETH on ${destChainName} for gas` : `more ${need.token.toUpperCase()} on ${destChainName} than the wallet has there yet`}. ` +
+        `${plan.chips[0]?.resume.toLowerCase().startsWith('swap') && plan.chips[0].resume.toLowerCase().includes(` for ${need.token.toLowerCase()} on `) ? `I can convert it right there on ${destChainName} (own-wallet venue swap, no bridge)` : 'I can move it over (NEAR Intents, delivered to your own address)'}${gasUsd > 0 ? `, drop in a little ETH so ${destChainName} gas is covered,` : ''} and finish ${need.actionLabel} — one job, every step built and guard-checked when it's your turn to sign.`,
+      clarify: { question: `Fund it from what you're holding?`, options: plan.chips },
+      buildPath: 'native-funding-offer',
+    },
   }
 }
 
