@@ -7,6 +7,7 @@
 // hosts, links are distribution for everyone.
 
 import Link from 'next/link'
+import HouseLinkChip from '@/components/HouseLinkChip'
 import { HOUSE_LINKS } from '@/lib/house-links'
 
 export default function LinkLane() {
@@ -27,18 +28,12 @@ export default function LinkLane() {
         </p>
       </div>
 
+      {/* Each chip wears the marks of the apps its ask runs through
+          (HouseLinkChip) — the visitor sees WHICH protocols a link calls
+          before opening it. */}
       <div className="mt-8 flex flex-wrap gap-2.5">
         {HOUSE_LINKS.map((h) => (
-          <Link
-            key={h.slug}
-            href={`/i/${h.slug}`}
-            className="group rounded-full border border-[var(--line)] bg-[var(--surf-1)] px-4 py-2 hover:border-[var(--accent)] transition-colors"
-            title={h.label}
-          >
-            <span className="text-[13px] text-[color:var(--fg)] group-hover:text-[color:var(--accent)] transition-colors">
-              &ldquo;{h.ask}&rdquo;
-            </span>
-          </Link>
+          <HouseLinkChip key={h.slug} link={h} />
         ))}
       </div>
 
