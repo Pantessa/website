@@ -85,6 +85,7 @@ export default function IntentRuntime({
   const { servers, setServers, setActiveServerIds, setCurrentChatId } = useYeetfulStore()
 
   const [started, setStarted] = useState(false)
+  const [built, setBuilt] = useState(false)
   const [signed, setSigned] = useState(false)
   const [blocked, setBlocked] = useState(false)
   // A turn settled with nothing to sign (no funds, plain answer, refusal) —
@@ -200,9 +201,13 @@ export default function IntentRuntime({
   const onTurnEvent = (name: string, data?: Record<string, unknown>) => {
     if (name !== 'turn' || !data) return
     const valueUsd = typeof data.valueUsd === 'number' ? data.valueUsd : undefined
-    if (data.outcome === 'tx-built') postEvent('built', { valueUsd })
+    if (data.outcome === 'tx-built') {
+      postEvent('built', { valueUsd })
+      setBuilt(true)
+    }
     if (data.outcome === 'signed') {
       postEvent('signed', { valueUsd })
+      setBuilt(true)
       setSigned(true)
     }
     // Keep-the-flow-going bar: any settled turn that produced nothing to sign
@@ -369,7 +374,7 @@ export default function IntentRuntime({
           z-index the header's dropdowns (Share popover, account menu) render
           visibly but the thread's scroll container wins hit-testing over
           them: visible, unclickable controls. */}
-      <header className="relative z-20 flex-shrink-0 border-b border-[var(--line)] bg-[color-mix(in_srgb,var(--bg)_82%,transparent)] backdrop-blur">
+      <header className="relative z-20 flex-shrink-0 bg-[color-mix(in_srgb,var(--bg)_82%,transparent)] backdrop-blur">
         <div className="max-w-5xl w-full mx-auto px-4 sm:px-6 py-3">
           <div className="flex items-center justify-between gap-3">
             <div className="flex items-center gap-3 min-w-0">
@@ -422,15 +427,41 @@ export default function IntentRuntime({
             </p>
           )}
         </div>
+        {/* The header's bottom rule doubles as the run's progress line:
+            connected → built → signed fills it in thirds. Decorative-only
+            (the funnel events are the truth), but it turns the chrome into
+            the stage's arc instead of a static border. */}
+        <div aria-hidden className="absolute inset-x-0 bottom-0 h-px bg-[var(--line)]">
+          <div
+            className="h-full bg-[color:var(--accent)] transition-[width] duration-700 ease-out"
+            style={{
+              width: signed ? '100%' : built ? '66%' : '33%',
+              boxShadow: '0 0 8px color-mix(in srgb, var(--accent) 55%, transparent)',
+            }}
+          />
+        </div>
       </header>
-      <div className="relative flex-1 max-w-5xl w-full mx-auto px-4 sm:px-6 min-h-0">
+      {/* One focused reading column — the runtime is a single ask on a
+          stage, not a workspace; a 5xl-wide thread scattered the user bubble
+          and the reply to opposite edges of big screens. */}
+      <div className="relative flex-1 max-w-3xl w-full mx-auto px-4 sm:px-6 min-h-0">
         <ChatInterface simple injectedPrompt={prompt} onEmbedEvent={onTurnEvent} intentLinkSlug={slug} />
       </div>
+      {/* Soft floor bloom grounding the docked composer — the stage has a
+          top light and a footlight, never a bare line. */}
+      <div
+        aria-hidden
+        className="absolute inset-x-0 bottom-0 h-48 pointer-events-none"
+        style={{
+          background:
+            'radial-gradient(ellipse 72% 100% at 50% 100%, color-mix(in srgb, var(--accent) 5%, transparent), transparent 70%)',
+        }}
+      />
       {/* Keep-the-flow-going bar: a turn settled with nothing to sign (the
           no-funds wall, a refusal, a plain answer) — never a dead end. */}
       {flowNudge && !signed && (
-        <div className="relative flex-shrink-0 border-t border-[var(--line)] bg-[var(--bg)]/95 backdrop-blur px-4 py-2.5">
-          <div className="max-w-5xl mx-auto flex flex-wrap items-center justify-between gap-2">
+        <div className="relative flex-shrink-0 border-t border-[var(--line)] bg-[color-mix(in_srgb,var(--bg)_92%,transparent)] backdrop-blur px-4 py-2.5">
+          <div className="max-w-3xl mx-auto flex flex-wrap items-center justify-between gap-2">
             <span className="text-[12px] text-[color:var(--muted)]">
               Don&apos;t stop here — the full app scans any wallet, funds shortfalls, and builds the path.
             </span>
@@ -451,7 +482,7 @@ export default function IntentRuntime({
           live in a local chat; signing in adopts it into the DB
           (session.tsx → adoptLocalChat). */}
       {signed && needsSignIn && (
-        <div className="relative flex-shrink-0 border-t border-[var(--line)] bg-[var(--bg)]/95 backdrop-blur px-4 py-3">
+        <div className="relative flex-shrink-0 border-t border-[var(--line)] bg-[color-mix(in_srgb,var(--bg)_92%,transparent)] backdrop-blur px-4 py-3">
           <div className="max-w-3xl mx-auto flex flex-wrap items-center justify-between gap-3">
             <span className="text-[13px] text-[color:var(--muted)]">
               Signed and receipted. Want to keep it? Sign in to save this chat and see the
@@ -469,7 +500,7 @@ export default function IntentRuntime({
         </div>
       )}
       {signed && returnHref && redirectHost && (
-        <div className="sticky bottom-0 border-t border-[var(--line)] bg-[var(--bg)]/95 backdrop-blur px-4 py-3">
+        <div className="relative sticky bottom-0 border-t border-[var(--line)] bg-[color-mix(in_srgb,var(--bg)_92%,transparent)] backdrop-blur px-4 py-3">
           <div className="max-w-3xl mx-auto flex items-center justify-between gap-3">
             <span className="text-[13px] text-[color:var(--muted)]">
               Signed and receipted — all done here.

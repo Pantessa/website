@@ -1390,9 +1390,13 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
                   {/* Avatar — assistant turns show the MCP(s) that answered,
                       resolved from the turn's receipts (falling back to the
                       active working set on pure-inference turns, so talking TO
-                      an agent always shows its mark). A multi-MCP turn stacks
-                      the marks like coins seen sideways; only a turn with no
-                      MCPs anywhere falls back to the robot. */}
+                      an agent always shows its mark). A multi-MCP turn keeps
+                      the coin treatment but overlaps only the circle EDGES
+                      (-ml-1.5 + the 2px ring = 8px intrusion, exactly the
+                      margin around a 16px icon in a 32px coin) — every mark
+                      stays fully legible, never buried under the coin above
+                      it. Only a turn with no MCPs anywhere falls back to the
+                      robot. */}
                   {(() => {
                     const responders =
                       msg.role === 'assistant' ? respondingServers(msg.meta, servers, activeServers) : []
@@ -1408,7 +1412,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
                               key={s.slug}
                               className={cn(
                                 'relative w-8 h-8 rounded-full flex items-center justify-center overflow-hidden bg-[var(--surf-2)] border border-[var(--line-2)] ring-2 ring-[var(--bg)]',
-                                i > 0 && '-ml-3'
+                                i > 0 && '-ml-1.5'
                               )}
                               style={{ zIndex: stack.length - i }}
                             >
@@ -1443,7 +1447,10 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
                   {/* Bubble */}
                   <div
                     className={cn(
-                      'group/bubble relative max-w-[85vw] lg:max-w-[80%] px-4 py-3 rounded-2xl text-sm leading-relaxed',
+                      // min-w-0: as a flex child next to the avatar the bubble
+                      // must be allowed to shrink — at 85vw alone it clipped
+                      // off-screen on phones (avatar + gap + 85vw > 100vw).
+                      'group/bubble relative min-w-0 max-w-[85vw] lg:max-w-[80%] px-4 py-3 rounded-2xl text-sm leading-relaxed',
                       msg.role === 'user'
                         ? 'chat-bubble--user rounded-br-sm'
                         : 'bg-[var(--surf-1)]/70 text-[color:var(--fg)] border border-white/[0.06] rounded-tl-sm'
@@ -1770,16 +1777,31 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
         </div>
       </div>
 
-      {/* Input area */}
-      <div className="flex-shrink-0 p-4 max-lg:pb-[max(1rem,env(safe-area-inset-bottom))] border-t border-[var(--line)]">
-        <div className="flex items-center gap-3 py-2 pl-4 pr-2 rounded-full border border-[var(--line)] bg-[var(--surf-1)]/80 backdrop-blur-md transition-[border-color,box-shadow] duration-200 focus-within:border-[color:var(--accent)]/45 focus-within:shadow-[0_0_0_4px_rgba(52,227,160,0.07),0_0_24px_rgba(52,227,160,0.06)]">
+      {/* Input area. Simple mode (the /i link runtime) docks the composer as
+          a free-floating pill: no full-width border-t — on a mostly-empty
+          stage that rule read as a stray line hanging under the chat — and
+          the keyboard hint only fades in once the composer has focus. */}
+      <div
+        className={cn(
+          'flex-shrink-0 p-4 max-lg:pb-[max(1rem,env(safe-area-inset-bottom))]',
+          simple ? 'group/composer pb-5' : 'border-t border-[var(--line)]',
+        )}
+      >
+        <div
+          className={cn(
+            'flex items-center gap-3 py-2 pl-4 pr-2 rounded-full border border-[var(--line)] bg-[color-mix(in_srgb,var(--surf-1)_85%,transparent)] backdrop-blur-md transition-[border-color,box-shadow] duration-200 focus-within:border-[color:var(--accent)]/45 focus-within:shadow-[0_0_0_4px_rgba(52,227,160,0.07),0_0_24px_rgba(52,227,160,0.06)]',
+            simple && 'shadow-[0_10px_36px_-14px_rgba(0,0,0,0.55)]',
+          )}
+        >
           <textarea
             ref={textareaRef}
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
             placeholder={
-              autoRouter
+              simple
+                ? 'Ask a follow-up, or tweak the ask…'
+                : autoRouter
                 ? 'Ask anything — Yeetful routes it to the best MCP…'
                 : activeServers.length > 1
                   ? `Ask your ${activeServers.length} agents anything…`
@@ -1808,7 +1830,12 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
             )}
           </button>
         </div>
-        <p className="text-[11px] text-[color:var(--muted-2)] mt-2 text-center mono">
+        <p
+          className={cn(
+            'text-[11px] text-[color:var(--muted-2)] mt-2 text-center mono',
+            simple && 'opacity-0 transition-opacity duration-300 group-focus-within/composer:opacity-100',
+          )}
+        >
           Enter to send · Shift+Enter for newline
         </p>
       </div>
