@@ -243,6 +243,17 @@ interface YeetfulStore {
   // DB sync
   loadChats: () => Promise<void>
   loadChat: (id: string) => Promise<Chat | null>
+  /** Promote the CURRENT local (guest) chat into the DB. Runs right after a
+   *  SIWE session lands ("connect to act, sign in to keep"): the thread the
+   *  visitor just built — receipts included — becomes a real DB chat instead
+   *  of evaporating on the next load. No-op unless the current chat is local
+   *  and holds at least one user message. Returns the new DB id, or null. */
+  adoptLocalChat: () => Promise<string | null>
+  /** local id → DB id for chats promoted by adoptLocalChat. A turn in flight
+   *  when the session lands still closes over the OLD id — every chat write
+   *  translates through this map so the reply can't fork into a shell chat
+   *  the user never sees. Session-only, never persisted. */
+  adoptedChatIds: Record<string, string>
   resetChats: () => void
   setChatPublic: (chatId: string, isPublic: boolean) => Promise<Chat | null>
 
@@ -486,6 +497,7 @@ export const useYeetfulStore = create<YeetfulStore>()(
       },
 
       addMessage: (chatId, message) => {
+        chatId = get().adoptedChatIds[chatId] ?? chatId
         const msg: Message = {
           ...message,
           id: localId(),
@@ -550,6 +562,7 @@ export const useYeetfulStore = create<YeetfulStore>()(
 
       recordSignedTxs: (chatId, messageId, txs) => {
         if (txs.length === 0) return
+        chatId = get().adoptedChatIds[chatId] ?? chatId
         const stamped = txs.map((t) => ({ at: new Date().toISOString(), ...t }))
         // Local merge first — the live transcript reflects the signing log
         // immediately, whether or not the DB write below lands.
@@ -591,6 +604,7 @@ export const useYeetfulStore = create<YeetfulStore>()(
       },
 
       updateChatServers: (chatId, serverIds) => {
+        chatId = get().adoptedChatIds[chatId] ?? chatId
         set((s) => ({
           chats: s.chats.map((c) =>
             c.id === chatId ? { ...c, activeServerIds: serverIds } : c
@@ -606,6 +620,7 @@ export const useYeetfulStore = create<YeetfulStore>()(
       },
 
       deleteChat: (id) => {
+        id = get().adoptedChatIds[id] ?? id
         set((s) => ({
           chats: s.chats.filter((c) => c.id !== id),
           currentChatId: s.currentChatId === id ? null : s.currentChatId,
@@ -631,11 +646,18 @@ export const useYeetfulStore = create<YeetfulStore>()(
           set((s) => {
             const byId = new Map(s.chats.map((c) => [c.id, c]))
             const apiIds = new Set(rows.map((r) => r.id))
-            const bornMidFlight = s.chats.filter(
-              (c) => !apiIds.has(c.id) && new Date(c.createdAt).getTime() >= startedAt,
+            // Local (guest) chats can NEVER be in the API response — keep them
+            // unconditionally. A guest thread built before sign-in used to be
+            // clobbered by the post-SIWE load, vanishing the visitor's receipt
+            // the moment they signed in to "keep" it (adoptLocalChat then swaps
+            // it to a DB id, after which this merge sees it normally).
+            const keep = s.chats.filter(
+              (c) =>
+                !apiIds.has(c.id) &&
+                (!isDbChatId(c.id) || new Date(c.createdAt).getTime() >= startedAt),
             )
             return {
-              chats: [...bornMidFlight, ...rows.map((r) => fromApiChat(r, byId.get(r.id)))],
+              chats: [...keep, ...rows.map((r) => fromApiChat(r, byId.get(r.id)))],
               chatsLoading: false,
             }
           })
@@ -674,9 +696,72 @@ export const useYeetfulStore = create<YeetfulStore>()(
         }
       },
 
-      resetChats: () => set({ chats: [], currentChatId: null }),
+      adoptLocalChat: async () => {
+        const { authedAddress, currentChatId, chats } = get()
+        if (!authedAddress || !currentChatId || isDbChatId(currentChatId)) return null
+        const chat = chats.find((c) => c.id === currentChatId)
+        if (!chat || !chat.messages.some((m) => m.role === 'user')) return null
+        try {
+          const res = await fetch('/api/chats', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ title: chat.title, activeServerIds: chat.activeServerIds }),
+          })
+          if (!res.ok) return null
+          const created = fromApiChat(await res.json())
+          // Replay in order, sequentially — the DB rows' createdAt sequence IS
+          // the transcript order the /p share page renders. meta rides along,
+          // so signed-tx receipts survive the promotion. Each saved row's id
+          // is written back as the message's dbId so later facts (a signed tx
+          // confirming after adoption) can still target it.
+          const dbIds = new Map<string, string>()
+          for (const m of chat.messages) {
+            if (m.role !== 'user' && m.role !== 'assistant') continue
+            try {
+              const saved = await fetch(`/api/chats/${created.id}/messages`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ role: m.role, content: m.content, meta: m.meta }),
+              })
+              if (saved.ok) {
+                const row = (await saved.json()) as { id?: string }
+                if (typeof row.id === 'string' && row.id) dbIds.set(m.id, row.id)
+              }
+            } catch {
+              /* one lost row must not abort the promotion */
+            }
+          }
+          // Swap the id in place — the on-screen thread keeps its messages —
+          // and record the mapping so a turn still in flight (it closed over
+          // the OLD id) writes into THIS chat, not a resurrected shell.
+          set((s) => ({
+            chats: s.chats.map((c) =>
+              c.id === chat.id
+                ? {
+                    ...c,
+                    id: created.id,
+                    isPublic: created.isPublic,
+                    publicSlug: created.publicSlug,
+                    messagesLoaded: true,
+                    messages: c.messages.map((m) => (dbIds.has(m.id) ? { ...m, dbId: dbIds.get(m.id) } : m)),
+                  }
+                : c,
+            ),
+            currentChatId: s.currentChatId === chat.id ? created.id : s.currentChatId,
+            adoptedChatIds: { ...s.adoptedChatIds, [chat.id]: created.id },
+          }))
+          return created.id
+        } catch {
+          return null
+        }
+      },
+
+      adoptedChatIds: {},
+
+      resetChats: () => set({ chats: [], currentChatId: null, adoptedChatIds: {} }),
 
       setChatPublic: async (chatId, isPublic) => {
+        chatId = get().adoptedChatIds[chatId] ?? chatId
         if (!get().authedAddress || !isDbChatId(chatId)) return null
         try {
           const res = await fetch(`/api/chats/${chatId}`, {

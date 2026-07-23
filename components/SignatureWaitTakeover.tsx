@@ -97,8 +97,9 @@ export default function SignatureWaitTakeover() {
   }, [signingIn])
 
   // /embed signs through the host page's wallet relay — not our surface to
-  // cover. /i mounts its own instance (it also holds the takeover on the
-  // persistent needsSignIn state, and dismissing routes to the guest lane).
+  // cover. /i mounts its own instance inside its full-viewport shell (same
+  // signingIn-only semantics — the run itself is the guest lane, and SIWE is
+  // only ever a click the visitor made on the post-receipt save bar).
   if (pathname?.startsWith('/embed')) return null
   if (pathname === '/i' || pathname?.startsWith('/i/')) return null
   if (!signingIn || dismissed) return null
