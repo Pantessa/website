@@ -694,7 +694,13 @@ export const useYeetfulStore = create<YeetfulStore>()(
       },
 
       // One left rail: MCPs are the primary tab, chat history sits behind
-      // the Chats tab. Open by default on desktop.
+      // the Chats tab. Open by default on desktop. Session-only (not
+      // persisted): every load leads with MCPs — the composable set IS the
+      // product's front door — and the rail flips to Jobs only when THIS
+      // session births a standing intent or the user clicks the tab. A
+      // persisted tab leaked across accounts (localStorage is per-browser,
+      // not per-wallet), so a fresh account inherited whatever tab the last
+      // session's job left open.
       railTab: 'mcps',
       setRailTab: (tab) => set({ railTab: tab }),
       composerPrefill: null,
@@ -719,12 +725,17 @@ export const useYeetfulStore = create<YeetfulStore>()(
       // v5: the Chat|App toggle came off the toolbar — workspaceMode is
       // session-only now (?mode=app deep link), so drop the persisted key:
       // a client stuck in 'app' would otherwise have no visible way back.
-      version: 5,
+      // v6: railTab is session-only — the auto-flip to Jobs (a turn that
+      // births a standing intent) used to persist browser-wide, so a FRESH
+      // account's first look at the rail was the previous session's Jobs
+      // tab instead of the MCP set. Drop the persisted key.
+      version: 6,
       migrate: (persisted, version) => {
         const s = (persisted ?? {}) as Record<string, unknown>
         if (version < 2) s.autoRouter = false
         if (version < 4) delete s.sidebarOpen
         if (version < 5) delete s.workspaceMode
+        if (version < 6) delete s.railTab
         return s
       },
       // Persist only UI prefs. Chats are DB-backed (signed in) or ephemeral
@@ -736,7 +747,6 @@ export const useYeetfulStore = create<YeetfulStore>()(
         manualSlugs: state.manualSlugs,
         walletSets: state.walletSets,
         shortlistIds: state.shortlistIds,
-        railTab: state.railTab,
         mcpRailOpen: state.mcpRailOpen,
         autoRouter: state.autoRouter,
         engineWindowOpen: state.engineWindowOpen,
