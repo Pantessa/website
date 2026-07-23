@@ -26,9 +26,50 @@ export default function SignHlActionButton({
   const [error, setError] = useState('')
   const [fill, setFill] = useState<{ totalSz: string; avgPx: string } | null>(null)
   const [explorerUrl, setExplorerUrl] = useState('')
+  // Explicit-leverage builds carry a guarded pre-action (set 2x cross) that
+  // signs + submits FIRST; the card then self-advances to the order sign.
+  // Two clicks, two popups — a popup fired after an awaited submit is the
+  // known Coinbase second-signature breaker, so each signature gets its own
+  // user gesture.
+  const [preDone, setPreDone] = useState(false)
 
   if (order.protocol !== 'hyperliquid' || !order.hl) return null
   const hl = order.hl
+  const pre = hl.pre && !preDone ? hl.pre : null
+
+  const signPre = async () => {
+    if (!address || !hl.pre) {
+      setError(address ? 'Missing leverage step.' : 'Connect your wallet first — it is your Hyperliquid account.')
+      return
+    }
+    setError('')
+    setStatus('signing')
+    try {
+      const td = hl.pre.typedData as { domain: object; types: object; primaryType: string; message: object }
+      const signature = await signTypedDataAsync(td as Parameters<typeof signTypedDataAsync>[0])
+      setStatus('submitting')
+      const res = await fetch('/api/hl/submit', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          action: hl.pre.action,
+          nonce: hl.pre.nonce,
+          isTestnet: hl.isTestnet,
+          expected: hl.pre.expected,
+          signature,
+          from: address,
+        }),
+      })
+      const data = (await res.json()) as { status?: string; error?: string }
+      if (!res.ok) throw new Error(data.error || 'Leverage update failed.')
+      setPreDone(true)
+      setStatus('idle')
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : ''
+      setError(/rejected|denied/i.test(msg) ? 'Signature request declined.' : msg || 'Leverage update failed.')
+      setStatus('error')
+    }
+  }
 
   const sign = async () => {
     if (!address) {
@@ -95,14 +136,27 @@ export default function SignHlActionButton({
         </div>
       ) : (
         <div className="flex items-center gap-2 flex-wrap">
+          {hl.pre && preDone && (
+            <span className="inline-flex items-center gap-1 text-[12px] text-emerald-400">
+              <CheckCircle2 className="w-3.5 h-3.5" /> {hl.pre.expected.leverage}x leverage set
+            </span>
+          )}
           <button
-            onClick={() => void sign()}
+            onClick={() => void (pre ? signPre() : sign())}
             disabled={inFlight}
             className="inline-flex items-center gap-1.5 text-[12px] font-medium px-3 py-1.5 max-lg:min-h-10 rounded-full border border-[var(--line-2)] text-[color:var(--muted)] hover:text-white hover:border-white disabled:opacity-50 transition-colors"
-            title="Sign this Hyperliquid order with your wallet and execute it"
+            title={pre ? `Sign the ${pre.expected.leverage}x leverage update first, then the order` : 'Sign this Hyperliquid order with your wallet and execute it'}
           >
             {inFlight ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <PenLine className="w-3.5 h-3.5" />}
-            {status === 'signing' ? 'Sign in wallet…' : status === 'submitting' ? 'Executing…' : status === 'error' ? 'Retry — sign & execute' : 'Sign & execute'}
+            {status === 'signing'
+              ? 'Sign in wallet…'
+              : status === 'submitting'
+                ? pre ? 'Setting leverage…' : 'Executing…'
+                : pre
+                  ? `${status === 'error' ? 'Retry — sign' : 'Sign'} 1/2 · set ${pre.expected.leverage}x leverage`
+                  : hl.pre
+                    ? `${status === 'error' ? 'Retry — sign' : 'Sign'} 2/2 · place the order`
+                    : status === 'error' ? 'Retry — sign & execute' : 'Sign & execute'}
           </button>
           {error && <span className="text-[12px] text-red-400">{error}</span>}
         </div>

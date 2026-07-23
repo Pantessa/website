@@ -108,6 +108,8 @@ import {
   buildHlOrderAction,
   guardHlExecBuild,
   buildHlDeposit,
+  buildHlLeverageAction,
+  guardHlLeverageBuild,
   hlActionTypedData,
   hlCollateralTargetUsd,
   HL_BRIDGE2_ARBITRUM,
@@ -1621,26 +1623,31 @@ async function main() {
     check('intent links: composeMcps is plural-tolerant (NFTs → opensea-free)', composeMcps('Show my NFTs').includes('opensea-free'))
     check(
       'intent links: the protected-long ask composes hyperliquid into the set',
-      composeMcps('Long $12 of HYPE on Hyperliquid, then protect my HYPE long with a 5% stop').includes('hyperliquid-free'),
+      composeMcps('I want a 2X Long $12 of HYPE on Hyperliquid, then protect my HYPE long with a 5% stop').includes('hyperliquid-free'),
     )
     // The Guardian/jobs aha chip is a PURE intent — the funding path (deposit
     // + bridge legs) is discovered and offered by the system, never typed by
-    // the visitor. Retired predecessors (/i/stop-loss, the verbose
-    // four-clause phrasing) stay live in the DB, just unsurfaced.
-    const houseJobAsk = 'Long $12 of HYPE on Hyperliquid, then protect my HYPE long with a 5% stop'
+    // the visitor. The 2X is REAL: the leverage rides the parsed intent into
+    // the open step's params, and the build signs a guarded updateLeverage
+    // ahead of the order. Retired predecessors (/i/stop-loss, the verbose
+    // four-clause phrasing, the leverage-less original) stay live in the DB,
+    // just unsurfaced.
+    const houseJobAsk = 'I want a 2X Long $12 of HYPE on Hyperliquid, then protect my HYPE long with a 5% stop'
     const houseJob = compileJobAskFull(houseJobAsk) as CompiledJob
     check(
-      'house links: the protected-long intent compiles to open + guardian arm',
-      !!houseJob && !('problem' in houseJob) && houseJob.steps.length === 2 && houseJob.steps[0].builder === 'native-hl-exec' && houseJob.steps[1].builder === 'native-hl-guardian',
+      'house links: the protected-long intent compiles to open + guardian arm with the 2x in the open params',
+      !!houseJob && !('problem' in houseJob) && houseJob.steps.length === 2 && houseJob.steps[0].builder === 'native-hl-exec' && houseJob.steps[1].builder === 'native-hl-guardian' &&
+        (houseJob.steps[0].params as { leverage?: number }).leverage === 2 && /^2x Long/.test(houseJob.steps[0].title),
     )
     check(
-      'hl: collateral target = notional/3, floored at the bridge minimum',
-      hlCollateralTargetUsd(12) === HL_MIN_DEPOSIT_USDC && hlCollateralTargetUsd(60) === 20,
+      'hl: collateral target = notional/leverage (default 3), floored at the bridge minimum',
+      hlCollateralTargetUsd(12) === HL_MIN_DEPOSIT_USDC && hlCollateralTargetUsd(60) === 20 && hlCollateralTargetUsd(12, 2) === 6 && hlCollateralTargetUsd(6, 2) === HL_MIN_DEPOSIT_USDC,
     )
     // The funded version the system offers must round-trip the compiler as
     // the full deposit → credit-wait → open → arm job (the chip IS the
-    // contract), and its deposit clears the bridge minimum.
-    const fundedHouse = compileJobAskFull(`deposit ${hlCollateralTargetUsd(12)} USDC to Hyperliquid, then ${houseJobAsk}`) as CompiledJob
+    // contract), and its deposit clears the bridge minimum. At 2x the $12
+    // position needs $6 behind it — notional/2, not the /3 default.
+    const fundedHouse = compileJobAskFull(`deposit ${hlCollateralTargetUsd(12, 2)} USDC to Hyperliquid, then ${houseJobAsk}`) as CompiledJob
     check(
       'house links: the system-offered funded ask compiles deposit→wait→open→arm',
       !!fundedHouse && !('problem' in fundedHouse) && fundedHouse.steps.length === 4 && fundedHouse.steps[1].kind === 'wait',
@@ -5351,6 +5358,41 @@ async function main() {
         !!parseAaveSupply('Supply 10 USDC to Aave on Ethereum'),
     )
 
+    // ── HL explicit leverage (the 2X landing ask) ──────────────────────────
+    // Never decorative: an ask that names leverage either parses it into the
+    // intent (→ guarded updateLeverage pre-step) or the guard refuses.
+    const lev2 = parseHlIntent('I want a 2X Long $12 of HYPE on Hyperliquid') as HlOrderIntent
+    const levTrail = parseHlIntent('long $12 of hype on hyperliquid with 3x leverage') as HlOrderIntent
+    const levAt = parseHlIntent('short $50 of btc on hl at 5x') as HlOrderIntent
+    const levNone = parseHlIntent('Long $12 of HYPE on Hyperliquid') as HlOrderIntent
+    check(
+      'hl leverage: leading "2X Long", trailing "with 3x leverage" and "at 5x" all parse; leverage-less asks stay clean',
+      lev2?.kind === 'open' && lev2.leverage === 2 && lev2.notionalUsd === 12 && lev2.coin === 'HYPE' &&
+        levTrail?.leverage === 3 && levAt?.leverage === 5 && levAt.isBuy === false &&
+        levNone?.kind === 'open' && levNone.leverage === undefined,
+      JSON.stringify({ lev2, levTrail, levAt }),
+    )
+    const levSnap = { assetIndex: 7, szDecimals: 2, markPx: 40, positionSzi: 0, maxLeverage: 3, accountLeverage: null }
+    const levAction = buildHlLeverageAction(lev2, levSnap)
+    check(
+      'hl leverage: the updateLeverage action pins asset + cross + the asked multiple, and guards green in range',
+      levAction.type === 'updateLeverage' && levAction.asset === 7 && levAction.isCross === true && levAction.leverage === 2 &&
+        guardHlLeverageBuild(lev2, levAction, { assetIndex: 7, maxLeverage: 3 }).ok,
+    )
+    check(
+      'hl leverage: guard fails closed — over the venue max, non-integer, and asset drift all block',
+      !guardHlLeverageBuild(lev2, { ...levAction, leverage: 4 }, { assetIndex: 7, maxLeverage: 3 }).ok &&
+        !guardHlLeverageBuild({ ...lev2, leverage: 2.5 }, { ...levAction, leverage: 2.5 }, { assetIndex: 7, maxLeverage: 3 }).ok &&
+        !guardHlLeverageBuild(lev2, levAction, { assetIndex: 9, maxLeverage: 3 }).ok,
+    )
+    // The typed data derives from the leverage action exactly like an order's
+    // (same phantom-agent domain) — the relay recovers the signer from it.
+    const levTd = hlActionTypedData(levAction, 1234567890)
+    check(
+      'hl leverage: typed data is the phantom-agent payload over the leverage action',
+      (levTd.domain as { name?: string }).name === 'Exchange' && levTd.primaryType === 'Agent' && typeof (levTd.message as { connectionId?: string }).connectionId === 'string',
+    )
+
     const jobsAnon = await fetch(`${BASE}/api/jobs/nonexistent`)
     const jobsCronAnon = await fetch(`${BASE}/api/cron/jobs`)
     check('jobs: job read unauth → 401; cron unauth → 401', jobsAnon.status === 401 && jobsCronAnon.status === 401)
@@ -5921,7 +5963,7 @@ async function main() {
       parseHlIntent('long eth') === null && parseHlIntent('swap 1 usdc for eth') === null && parseHlIntent('what is hyperliquid?') === null,
     )
 
-    const snap = { assetIndex: 4, szDecimals: 4, markPx: 3000, positionSzi: 0 }
+    const snap = { assetIndex: 4, szDecimals: 4, markPx: 3000, positionSzi: 0, maxLeverage: 25, accountLeverage: null }
     const openIntent: HlOrderIntent = { kind: 'open', coin: 'ETH', isBuy: true, notionalUsd: 50 }
     const action = buildHlOrderAction(openIntent, snap)
     const ctx = { markPx: 3000, assetIndex: 4, withdrawableUsd: 100, positionSzi: 0 }
@@ -5981,6 +6023,23 @@ async function main() {
       body: JSON.stringify({ action, nonce: 1752440000000, signature: sig, from: signer.address, expected: { coin: 'ETH', kind: 'open', isBuy: true } }),
     })
     check('hl submit: signer≠from → 403; stale nonce → 400', relayWrongFrom.status === 403 && relayStale.status === 400)
+    // Leverage-update path: expected.leverage is the contract; a PROPERLY
+    // signed but stale leverage action still dies on nonce staleness (same
+    // discipline as orders — recovery first, then freshness).
+    const levWireAction = { type: 'updateLeverage' as const, asset: 0, isCross: true, leverage: 2 }
+    const relayLevNoExp = await fetch(`${BASE}/api/hl/submit`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ action: levWireAction, nonce: 1752440000000, signature: sig, from: signer.address, expected: { coin: 'ETH' } }),
+    })
+    const levStaleTd = hlActionTypedData(levWireAction, 1752440000000)
+    const levStaleSig = await signer.signTypedData({ domain: levStaleTd.domain, types: levStaleTd.types, primaryType: levStaleTd.primaryType, message: levStaleTd.message } as Parameters<typeof signer.signTypedData>[0])
+    const relayLevStale = await fetch(`${BASE}/api/hl/submit`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ action: levWireAction, nonce: 1752440000000, signature: levStaleSig, from: signer.address, expected: { coin: 'ETH', leverage: 2 } }),
+    })
+    check('hl submit: leverage update without expected.leverage → 400; stale leverage nonce → 400', relayLevNoExp.status === 400 && relayLevStale.status === 400)
   }
 
   // ── App Mode panel swap (POST /api/panels/swap) ───────────────────────────
