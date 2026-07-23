@@ -10,15 +10,16 @@ import { LayoutDashboard, KeyRound, Bot, ToggleRight, Activity, ReceiptText, Bui
 import { isAdminAddress } from '@/lib/admin'
 
 // Links-first order (Nate, 2026-07-22): App rides right under Overview,
-// Intent links above Embeds — the link rail is the product's front door.
+// Intent links at the top of the product sections — the link rail is the
+// product's front door. Guardian rides right below it (Nate, 2026-07-23).
 export const DASH_SECTIONS = [
   { href: '/dashboard', label: 'Overview', icon: LayoutDashboard, exact: true },
   { href: '/chat', label: 'App', icon: MessageSquare, exact: false },
   { href: '/dashboard/links', label: 'Intent links', icon: Link2, exact: false },
+  { href: '/dashboard/guardian', label: 'Guardian', icon: ShieldCheck, exact: false },
   { href: '/dashboard/embeds', label: 'Embeds', icon: Globe, exact: false },
   { href: '/dashboard/servers', label: 'Servers', icon: Server, exact: false },
   { href: '/dashboard/agents', label: 'Agents', icon: Bot, exact: false },
-  { href: '/dashboard/guardian', label: 'Guardian', icon: ShieldCheck, exact: false },
   { href: '/dashboard/keys', label: 'Keys', icon: KeyRound, exact: false },
   { href: '/dashboard/approvals', label: 'Approvals', icon: ToggleRight, exact: false },
   { href: '/dashboard/plan', label: 'Usage', icon: CreditCard, exact: false },
