@@ -58,7 +58,7 @@ import { parseRobinhoodFunding, parseSameChainSwapSegment, JOB_SEGMENT_PARSERS }
 import { parseMultiSendSegments, parseTransferSegment } from '../lib/transfer-exec'
 import { classifyTurn, moneyShaped } from '../lib/ask-failure'
 import { canonicalChainWord, normalizeChainWords } from '../lib/chain-lexicon'
-import { detectBalanceShortfall, fundingPlanUsd, planFundingChips, rankFundingSources, shortRefusalCopy, softenClaimedFailureBlock, type FundingNeed, type FundingSource } from '../lib/funding-plan'
+import { detectBalanceShortfall, fundingPlanUsd, planFundingChips, planStrandedRescue, rankFundingSources, shortRefusalCopy, softenClaimedFailureBlock, type FundingNeed, type FundingSource } from '../lib/funding-plan'
 import { compileDcaBuy, dcaRunChip, parseDcaCreate, parseDcaManage, parseDcaRun, periodKeyFor } from '../lib/dca'
 import { firstUserPromptOf, shareTweetHrefOf } from '../lib/shared-chat'
 import {
@@ -2964,6 +2964,44 @@ async function main() {
       'funding refusal: destination-chain same-token stranded is named but never counts as "enough" (already in the shortfall)',
       refusalDestStranded.includes('~$20 of USDC on Arbitrum') && !/already there/.test(refusalDestStranded) && /gas ETH on Arbitrum/.test(refusalDestStranded),
       refusalDestStranded,
+    )
+    // Sub-reserve ETH (real money under the chain's keep-back) must be named
+    // as unusable, never silently dropped and never promised.
+    const refusalSubReserve = shortRefusalCopy({
+      chainsRead: 'Base, Arbitrum and Ethereum', need: hlNeed, needUsd: 8, sourceSummary: '',
+      stranded: [strandedBase, { chainId: 1, chainWord: 'Ethereum', token: 'ETH', balance: 0.001, usd: 2 }], movableTotalUsd: 0,
+    })
+    check(
+      'funding refusal: sub-reserve ETH is named as unusable (never dropped, never promised)',
+      refusalSubReserve.includes('~$2 of ETH on Ethereum') && /under what a move from there costs/.test(refusalSubReserve) &&
+        /Send a little ETH .* on Base/.test(refusalSubReserve) && !/on Base and Ethereum/.test(refusalSubReserve),
+      refusalSubReserve,
+    )
+    // The donor-topup rescue: stranded USDC + a movable source elsewhere →
+    // one job (topup gas → move → act); the chip resume is the contract.
+    const rescue = planStrandedRescue({
+      need: hlNeed, needUsd: 6.5, gasUsd: 0,
+      sources: [{ chainId: 42161, chainWord: 'Arbitrum', token: 'ETH', balance: 0.0008, usd: 1.6 }],
+      stranded: [strandedBase], ethUsd: 2000,
+    })
+    const rescueJob = rescue ? compileJobAsk(rescue.chips[0].resume) : null
+    check(
+      'funding rescue: L2 donor + stranded Base USDC → topup chip whose resume compiles (gas → move)',
+      !!rescue && rescue.donor.chainWord === 'Arbitrum' && rescue.target.chainWord === 'Base' &&
+        !!rescueJob && !('problem' in rescueJob) && rescueJob.steps.length >= 2,
+      JSON.stringify({ resume: rescue?.chips[0].resume, steps: rescueJob && 'steps' in rescueJob ? rescueJob.steps.map((st) => st.builder) : null }),
+    )
+    check(
+      'funding rescue: no donor rich enough → null (the named refusal is the honest floor)',
+      planStrandedRescue({ need: hlNeed, needUsd: 6.5, gasUsd: 0, sources: [], stranded: [strandedBase], ethUsd: 2000 }) === null,
+    )
+    check(
+      'funding rescue: destination same-token stranded is never a rescue target (already in the shortfall)',
+      planStrandedRescue({
+        need: hlNeed, needUsd: 6.5, gasUsd: 0,
+        sources: [{ chainId: 8453, chainWord: 'Base', token: 'ETH', balance: 0.005, usd: 10 }],
+        stranded: [{ chainId: 42161, chainWord: 'Arbitrum', token: 'USDC', balance: 20, usd: 20 }], ethUsd: 2000,
+      }) === null,
     )
 
     // Acquisition grammar (live 2026-07-23: "I need $50 of USDG on Robinhood,
