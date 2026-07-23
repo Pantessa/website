@@ -188,7 +188,7 @@ mountYeetfulChat({
           The fastest path: copy the Claude Code prompt below and paste it inside your app&apos;s
           repo. It installs the SDK, mounts the chat, patches your CSP if needed, and tells you
           how to verify. One paste, live chat. Sign in and the{' '}
-          <Link href="/dashboard/keys">Keys page</Link>{' '}generates the same prompt with your
+          <Link href="/dashboard/keys">API Keys page</Link>{' '}generates the same prompt with your
           embed key baked in, so usage attributes to your account.
         </p>
         <EmbedInstall />

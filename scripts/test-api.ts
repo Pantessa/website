@@ -39,7 +39,7 @@ import { activeLinkCapFor } from '../lib/intent-links'
 import { isDbChatId } from '../lib/chat-ids'
 import { usdToTokenAmount } from '../lib/usd-probe'
 import { parseRobinhoodBridge, guardRobinhoodBridge, RH_L1_INBOX, ARB_SYS } from '../lib/robinhood-bridge'
-import { parseNftAsk, guardNftTransfer, ERC721_ABI as NFT_ERC721_ABI, ERC1155_ABI as NFT_ERC1155_ABI } from '../lib/nft-layer'
+import { parseNftAsk, parseOpenSeaItemUrl, guardNftTransfer, ERC721_ABI as NFT_ERC721_ABI, ERC1155_ABI as NFT_ERC1155_ABI } from '../lib/nft-layer'
 import { getProtocolMark, YeetfulMark } from '../components/protocol-marks'
 import { splitListingPrice, buildListingComponents, guardListingComponents, openseaAssetUrl, SEAPORT_1_6, guardBuyFulfillment, fulfillmentToCalldata, normalizeOpenseaListing, collectionSlugCandidates } from '../lib/opensea'
 import { keccak256, stringToBytes, decodeFunctionData, parseAbi } from 'viem'
@@ -97,6 +97,7 @@ import {
   approveAgentArtifacts,
   splitSignature,
   parseGuardianArm,
+  planForExistingPolicy,
   type GuardianPolicyParams,
   type GuardianPosition,
 } from '../lib/hl-guardian'
@@ -4371,6 +4372,51 @@ async function main() {
   )
   const nftBuyRh = parseNftAsk('buy a milady nft on robinhood chain')
   check('nft parse: robinhood-chain buy answered honestly', !!nftBuyRh && nftBuyRh.kind === 'problem' && /Ethereum, Base/i.test(nftBuyRh.problem), JSON.stringify(nftBuyRh))
+  // Pasted OpenSea item links: chain + contract + token id read straight off
+  // the URL (Nate's live repro 2026-07-23 — the layer asked "which token?"
+  // with the id sitting in the link).
+  const osUrl = parseOpenSeaItemUrl('https://opensea.io/item/base/0x6cf64997bcfcec770e231aba2ba9ea38ff9511a0/198')
+  const osUrlLegacy = parseOpenSeaItemUrl('opensea.io/assets/ethereum/0x3333333333333333333333333333333333333333/42 please')
+  const osUrlAlien = parseOpenSeaItemUrl('https://opensea.io/item/matic/0x3333333333333333333333333333333333333333/9')
+  check(
+    'nft parse: OpenSea item URL → chain/contract/id (item + legacy assets forms; unsupported slug → null chain)',
+    !!osUrl && osUrl.chainId === 8453 && osUrl.contract === '0x6cf64997bcfcec770e231aba2ba9ea38ff9511a0' && osUrl.tokenId === '198' &&
+      !!osUrlLegacy && osUrlLegacy.chainId === 1 && osUrlLegacy.tokenId === '42' &&
+      !!osUrlAlien && osUrlAlien.chainId === null && osUrlAlien.chainSlug === 'matic',
+    JSON.stringify({ osUrl, osUrlLegacy, osUrlAlien }),
+  )
+  const nftBuyUrl = parseNftAsk('I want to buy this NFT on base https://opensea.io/item/base/0x6cf64997bcfcec770e231aba2ba9ea38ff9511a0/198')
+  check(
+    'nft parse: buy with a pasted item link never asks "which token?" — id + contract + chain from the URL',
+    !!nftBuyUrl && nftBuyUrl.kind === 'buy' && nftBuyUrl.contract === '0x6cf64997bcfcec770e231aba2ba9ea38ff9511a0' && nftBuyUrl.tokenId === '198' && nftBuyUrl.chainId === 8453 && nftBuyUrl.maxPriceEth === null,
+    JSON.stringify(nftBuyUrl),
+  )
+  const nftBuyUrlCap = parseNftAsk('buy https://opensea.io/item/base/0x6cf64997bcfcec770e231aba2ba9ea38ff9511a0/198 for up to 0.2 eth')
+  check(
+    'nft parse: link buy still reads an explicit ETH cap',
+    !!nftBuyUrlCap && nftBuyUrlCap.kind === 'buy' && nftBuyUrlCap.tokenId === '198' && nftBuyUrlCap.maxPriceEth === '0.2',
+    JSON.stringify(nftBuyUrlCap),
+  )
+  const nftBuyUrlAlien = parseNftAsk('buy this nft https://opensea.io/item/matic/0x3333333333333333333333333333333333333333/9')
+  check(
+    'nft parse: link on an unsupported chain answered honestly (names the slug)',
+    !!nftBuyUrlAlien && nftBuyUrlAlien.kind === 'problem' && /matic/.test(nftBuyUrlAlien.problem) && /Ethereum, Base/.test(nftBuyUrlAlien.problem),
+    JSON.stringify(nftBuyUrlAlien),
+  )
+  const nftXferUrl = parseNftAsk('send https://opensea.io/item/base/0x6cf64997bcfcec770e231aba2ba9ea38ff9511a0/198 nft to 0x2222222222222222222222222222222222222222')
+  check(
+    'nft parse: transfers read pasted item links too',
+    !!nftXferUrl && nftXferUrl.kind === 'transfer' && nftXferUrl.contract === '0x6cf64997bcfcec770e231aba2ba9ea38ff9511a0' && nftXferUrl.tokenId === '198' && nftXferUrl.chainId === 8453,
+    JSON.stringify(nftXferUrl),
+  )
+  // The onward-chip resume ("buy the cheapest 0x… nft on base") round-trips
+  // the grammar — chip IS the contract.
+  const nftChipResume = parseNftAsk('buy the cheapest 0x6cf64997bcfcec770e231aba2ba9ea38ff9511a0 nft on base')
+  check(
+    'nft parse: cheapest-at-contract chip resume round-trips (cheapest flag, no token id)',
+    !!nftChipResume && nftChipResume.kind === 'buy' && nftChipResume.contract === '0x6cf64997bcfcec770e231aba2ba9ea38ff9511a0' && nftChipResume.tokenId === null && nftChipResume.cheapest === true && nftChipResume.chainId === 8453,
+    JSON.stringify(nftChipResume),
+  )
   // Transfer guard fails CLOSED: exact contract/chain/sender/recipient/id/amount.
   const nftMe = '0x1111111111111111111111111111111111111111'
   const nftYou = '0x2222222222222222222222222222222222222222'
@@ -4756,6 +4802,18 @@ async function main() {
   // ── HL guardian (pure guard + route auth) ────────────────────────────────
   console.log('— hl guardian')
   {
+    // Arming into an existing policy: paused resumes (never the old
+    // "already armed — pause it first" contradiction), live rows refuse
+    // with copy that matches their actual state.
+    const dupePaused = planForExistingPolicy('paused', 'stop_loss', 'SYRUP')
+    const dupeActive = planForExistingPolicy('active', 'stop_loss', 'SYRUP')
+    const dupeFiring = planForExistingPolicy('triggered', 'take_profit', 'ETH')
+    check(
+      'guardian: paused dupe RESUMES; active refuses as "armed and watching"; mid-fire names execution',
+      dupePaused.action === 'resume' &&
+        dupeActive.action === 'refuse' && /already armed and watching — pause or remove/.test(dupeActive.message) &&
+        dupeFiring.action === 'refuse' && /take profit on ETH is executing right now/.test(dupeFiring.message),
+    )
     const sl: GuardianPolicyParams = { coin: 'SYRUP', side: 'long', kind: 'stop_loss', triggerMode: 'price_move_pct', triggerValue: 10 }
     const pos: GuardianPosition = { coin: 'SYRUP', szi: 700, entryPx: 0.14175 }
     check(
