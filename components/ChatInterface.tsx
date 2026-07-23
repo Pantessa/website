@@ -358,7 +358,20 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
     history: { role: string; content: string }[]
     workingContext?: WorkingContext
   } | null>(null)
-  const messagesEndRef = useRef<HTMLDivElement>(null)
+  // Stick-to-bottom scroll (scroller = the overflow container, thread = its
+  // content). pinnedRef holds while the reader is AT the newest turn; the
+  // thread ResizeObserver re-pins on every content growth — splash scans
+  // resolving, cards streaming in — where a one-shot scrollIntoView aims at
+  // a layout that's about to grow ~1000px above the thread and strands the
+  // just-sent message below the fold. Scrolling up releases the pin (they're
+  // reading history); a new turn re-arms it.
+  const scrollerRef = useRef<HTMLDivElement>(null)
+  const threadRef = useRef<HTMLDivElement>(null)
+  const pinnedRef = useRef(true)
+  // Mirrored for the observers: pinning only applies once a conversation is
+  // on screen — the empty splash surface reads top-down and must NOT chase
+  // its own cards to the bottom as their scans resolve.
+  const hasThreadRef = useRef(false)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
   const { address, isConnected, status: walletStatus } = useAccount()
@@ -541,13 +554,46 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
     void handleSend(prompt)
   }
 
+  // Render-time mirror for the scroll observers (see refs above). App Mode's
+  // workspace face scrolls panels, not the thread — growing tiles there must
+  // not yank the view to the bottom.
+  hasThreadRef.current =
+    ((currentChat?.messages.length ?? 0) > 0 || loading) && !(appMode && !appTranscriptOpen)
+
+  // `loading` in the deps re-pins the view when the reply lands AND when a
+  // send starts. Instant (not smooth): a smooth scroll animates toward a
+  // target computed against the CURRENT layout, and on a splash-heavy
+  // surface the cards are still growing the page above the thread — the
+  // animation lands somewhere stale and the new turn sits off-screen. The
+  // ResizeObserver below keeps the pin honest through that growth.
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-    // `loading` in the deps re-pins the view when the reply lands AND when a
-    // send starts: on a splash-heavy surface the async card scans grow the
-    // page ABOVE the thread after the messages-change scroll fired, leaving
-    // the new turn below the fold — the dead-tap illusion.
+    if (!hasThreadRef.current) return
+    pinnedRef.current = true
+    const el = scrollerRef.current
+    if (el) el.scrollTop = el.scrollHeight
   }, [currentChat?.messages, loading])
+
+  // Hold the bottom-pin while thread content grows; release it when the
+  // reader scrolls away from the bottom. The 80px slack means "within a
+  // bubble of the newest turn still counts as reading it" — and absorbs
+  // sub-pixel rounding between scrollHeight and scrollTop.
+  useEffect(() => {
+    const scroller = scrollerRef.current
+    const thread = threadRef.current
+    if (!scroller || !thread) return
+    const ro = new ResizeObserver(() => {
+      if (pinnedRef.current && hasThreadRef.current) scroller.scrollTop = scroller.scrollHeight
+    })
+    ro.observe(thread)
+    const onScroll = () => {
+      pinnedRef.current = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 80
+    }
+    scroller.addEventListener('scroll', onScroll, { passive: true })
+    return () => {
+      ro.disconnect()
+      scroller.removeEventListener('scroll', onScroll)
+    }
+  }, [])
 
   // Deep-link prefill: /chat?try=<slug> (toggle that agent + prefill its example
   // ask) or /chat?q=<text> (just prefill). Fires once the catalog has loaded,
@@ -1241,7 +1287,13 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
           bar). A command-bar send slides the transcript view over the panels
           (appTranscriptOpen) — same markup, every artifact intact — with a
           pill to flip back. Never in the embed (v2 seam). */}
-      <div className="flex-1 overflow-y-auto px-4 py-6 space-y-4">
+      <div ref={scrollerRef} className="flex-1 overflow-y-auto px-4 py-6">
+        {/* Inner thread wrapper: the stick-to-bottom ResizeObserver watches
+            THIS element — content growth (splash scans resolving, replies
+            streaming) re-pins the scroll, which the container itself can't
+            report. min-h-full + flex-col so centered empty states (flex-1 /
+            h-full children) still fill the viewport. */}
+        <div ref={threadRef} className="min-h-full flex flex-col space-y-4">
         {appMode && appTranscriptOpen && (
           <div className="sticky top-0 z-10 flex justify-center">
             <button
@@ -1268,45 +1320,64 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
             )}
             <AppModeWorkspace address={effectiveAddress} onPick={pickExample} />
           </>
-        ) : !currentChat || currentChat.messages.length === 0 ? (
-          splashEligible || splashBatches.length > 0 ? (
-            <>
-              {/* The batch effect hasn't committed yet (first paint after
-                  connect / chat-load) — hold with the loader, same as a
-                  batch's own in-flight scan. */}
-              {splashBatches.length === 0 && <ChatLoader inline />}
-              {splashBatches.map((b) =>
-                renderSplashBatch(b, { chrome: b.id === splashChromeBatchId, hint: b.id === splashChromeBatchId }),
-              )}
-              {splashSettledEmpty && (
-                <EmptyState activeCount={activeServers.length} autoRouter={autoRouter} onPick={runExample} />
-              )}
-            </>
-          ) : bootHolding ? (
-            // Wallet auto-reconnect / store hydration in flight: the splash may
-            // be about to take over — hold with the loader instead of flashing
-            // the guest empty state and swapping a beat later.
-            <ChatLoader inline />
-          ) : simple ? (
-            // Simple mode: the link's ask auto-runs the moment it lands (or
-            // sits prefilled in the composer for transfer-shaped asks), so an
-            // example gallery here is noise — hold the surface clean.
-            null
-          ) : (
-            <EmptyState activeCount={activeServers.length} autoRouter={autoRouter} onPick={runExample} />
-          )
         ) : (
+          <>
+            {/* Boot splash batches (anchor 0) render at this SAME tree slot on
+                both the empty surface and the conversation — the first send
+                must not move them in the tree: a remount re-runs every card's
+                scan, and the collapsing-then-regrowing cards yank ~1000px of
+                layout out from under the just-sent message (the "glitchy
+                scroll" report). Mid-conversation batches (anchor > 0) still
+                render inline with their message below. */}
+            {(splashEligible || splashBatches.length > 0) && (
+              <>
+                {/* The batch effect hasn't committed yet (first paint after
+                    connect / chat-load) — hold with the loader, same as a
+                    batch's own in-flight scan. */}
+                {splashBatches.length === 0 &&
+                  (!currentChat || currentChat.messages.length === 0) && <ChatLoader inline />}
+                {splashBatches
+                  .filter((b) => b.anchor === 0)
+                  .map((b) =>
+                    renderSplashBatch(b, {
+                      chrome: b.id === splashChromeBatchId,
+                      hint:
+                        (!currentChat || currentChat.messages.length === 0) &&
+                        b.id === splashChromeBatchId,
+                    }),
+                  )}
+              </>
+            )}
+            {!currentChat || currentChat.messages.length === 0 ? (
+              splashEligible || splashBatches.length > 0 ? (
+                splashSettledEmpty ? (
+                  <EmptyState activeCount={activeServers.length} autoRouter={autoRouter} onPick={runExample} />
+                ) : null
+              ) : bootHolding ? (
+                // Wallet auto-reconnect / store hydration in flight: the splash may
+                // be about to take over — hold with the loader instead of flashing
+                // the guest empty state and swapping a beat later.
+                <ChatLoader inline />
+              ) : simple ? (
+                // Simple mode: the link's ask auto-runs the moment it lands (or
+                // sits prefilled in the composer for transfer-shaped asks), so an
+                // example gallery here is noise — hold the surface clean.
+                null
+              ) : (
+                <EmptyState activeCount={activeServers.length} autoRouter={autoRouter} onPick={runExample} />
+              )
+            ) : (
           <>
             <AnimatePresence initial={false}>
               {currentChat.messages.map((msg, i) => (
                 <Fragment key={msg.id}>
                 {/* Splash batches anchored at this point in the conversation —
-                    the boot cards sit above message 0 and scroll up with the
-                    chat; an MCP added mid-conversation slots in right where it
-                    joined. */}
+                    an MCP added mid-conversation slots in right where it
+                    joined (anchor-0 boot cards render above, outside this
+                    map, so they survive the 0→1 message transition). */}
                 {splashBatches
-                  .filter((b) => b.anchor === i)
-                  .map((b) => renderSplashBatch(b, { chrome: b.anchor === 0 && b.id === splashChromeBatchId, hint: false }))}
+                  .filter((b) => b.anchor === i && b.anchor > 0)
+                  .map((b) => renderSplashBatch(b, { chrome: false, hint: false }))}
                 <motion.div
                   initial={{ opacity: 0, y: 12 }}
                   animate={{ opacity: 1, y: 0 }}
@@ -1692,9 +1763,11 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
               </motion.div>
             )}
 
-            <div ref={messagesEndRef} />
+          </>
+            )}
           </>
         )}
+        </div>
       </div>
 
       {/* Input area */}
@@ -1783,7 +1856,10 @@ function EmptyState({
   onPick: (prompt: string, slug?: string) => void
 }) {
   return (
-    <div className="flex flex-col items-center justify-center h-full text-center py-20">
+    // flex-1 (not h-full): the thread wrapper is a min-h-full flex column,
+    // so percentage heights don't resolve — growing into the free space
+    // keeps the vertical centering instead.
+    <div className="flex flex-col items-center justify-center flex-1 text-center py-20">
       <div className="w-16 h-16 rounded-2xl bg-[var(--accent)]/15 border border-[var(--accent)]/50 flex items-center justify-center mb-6">
         <Sparkles className="w-8 h-8" style={{ color: 'var(--accent)' }} />
       </div>
