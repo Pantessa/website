@@ -750,10 +750,11 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ reply: `🛡️ ${armed.error}${approveHint}` })
       }
       const p = armed.policy
-      nativeTrace({ type: 'status', label: `guardian layer: armed ${p.kind} on ${p.coin} (${p.triggerMode} ${p.triggerValue})` })
+      nativeTrace({ type: 'status', label: `guardian layer: ${armed.resumed ? 'resumed' : 'armed'} ${p.kind} on ${p.coin} (${p.triggerMode} ${p.triggerValue})` })
+      const armLabel = p.kind === 'stop_loss' ? 'Stop-loss' : 'Take-profit'
       return NextResponse.json({
         reply:
-          `🛡️ **Armed.** ${p.kind === 'stop_loss' ? 'Stop-loss' : 'Take-profit'} on your ${p.coin} ${p.side}: closes reduce-only when ` +
+          `🛡️ **${armed.resumed ? 'Resumed.' : 'Armed.'}** ${armed.resumed ? `Your paused ${armLabel.toLowerCase()}` : armLabel} on your ${p.coin} ${p.side}${armed.resumed ? ' is watching again' : ''}: closes reduce-only when ` +
           `${p.triggerMode === 'price' ? `the mark crosses ${p.triggerValue}` : `price moves ${p.triggerValue}% ${p.kind === 'stop_loss' ? 'against' : 'for'} you from entry`}. ` +
           `(${armed.positionNote}.)`,
         guardianPolicyId: p.id,

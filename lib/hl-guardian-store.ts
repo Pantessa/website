@@ -22,6 +22,7 @@ import {
   buildGuardianClose,
   evaluatePolicy,
   guardGuardianClose,
+  planForExistingPolicy,
   splitSignature,
   GUARDIAN_DELEGATION_DAYS,
   type GuardianPolicyParams,
@@ -403,7 +404,7 @@ async function recordRun(
 import { evaluatePolicy as evalForArm, type GuardianArmAsk } from '@/lib/hl-guardian'
 
 export type ArmResult =
-  | { ok: true; policy: { id: string; coin: string; side: string; kind: string; triggerMode: string; triggerValue: number }; positionNote: string }
+  | { ok: true; resumed?: boolean; policy: { id: string; coin: string; side: string; kind: string; triggerMode: string; triggerValue: number }; positionNote: string }
   | { ok: false; status: number; error: string }
 
 /**
@@ -436,10 +437,27 @@ export async function armGuardianPolicy(wallet: string, ask: GuardianArmAsk): Pr
       return { ok: false, status: 400, error: `That trigger would fire immediately (${verdict.reason}). Set it past the current mark.` }
     }
   }
+  const positionNote = `${pos.coin} ${pos.side} ${pos.leverage}x · entry ${pos.entryPx} · mark ${pos.markPx ?? '—'} · uPnL $${pos.unrealizedPnl.toFixed(2)}`
   const dupe = await prisma.hlGuardianPolicy.findFirst({
     where: { wallet: w, coin: ask.coin, kind: ask.kind, status: { in: ['active', 'paused', 'triggered'] } },
   })
-  if (dupe) return { ok: false, status: 409, error: `A ${ask.kind.replace('_', ' ')} on ${ask.coin} is already armed — pause or retire it first.` }
+  if (dupe) {
+    const plan = planForExistingPolicy(dupe.status, ask.kind, ask.coin)
+    if (plan.action === 'refuse') return { ok: false, status: 409, error: plan.message }
+    // Paused → resume as the freshly-validated ask: trigger, side, and
+    // delegation re-derived live (a stale side would dead-letter the sweep's
+    // lost-flip check; the arm validations above already ran on this trigger).
+    const row = await prisma.hlGuardianPolicy.update({
+      where: { id: dupe.id },
+      data: { status: 'active', triggerMode: ask.triggerMode, triggerValue: ask.triggerValue, side: pos.side, delegationId: delegation.id },
+    })
+    return {
+      ok: true,
+      resumed: true,
+      policy: { id: row.id, coin: row.coin, side: row.side, kind: row.kind, triggerMode: row.triggerMode, triggerValue: row.triggerValue },
+      positionNote,
+    }
+  }
 
   const row = await prisma.hlGuardianPolicy.create({
     data: { delegationId: delegation.id, wallet: w, coin: ask.coin, side: pos.side, kind: ask.kind, triggerMode: ask.triggerMode, triggerValue: ask.triggerValue },
@@ -447,6 +465,6 @@ export async function armGuardianPolicy(wallet: string, ask: GuardianArmAsk): Pr
   return {
     ok: true,
     policy: { id: row.id, coin: row.coin, side: row.side, kind: row.kind, triggerMode: row.triggerMode, triggerValue: row.triggerValue },
-    positionNote: `${pos.coin} ${pos.side} ${pos.leverage}x · entry ${pos.entryPx} · mark ${pos.markPx ?? '—'} · uPnL $${pos.unrealizedPnl.toFixed(2)}`,
+    positionNote,
   }
 }
