@@ -97,6 +97,7 @@ import {
   approveAgentArtifacts,
   splitSignature,
   parseGuardianArm,
+  planForExistingPolicy,
   type GuardianPolicyParams,
   type GuardianPosition,
 } from '../lib/hl-guardian'
@@ -4756,6 +4757,18 @@ async function main() {
   // ── HL guardian (pure guard + route auth) ────────────────────────────────
   console.log('— hl guardian')
   {
+    // Arming into an existing policy: paused resumes (never the old
+    // "already armed — pause it first" contradiction), live rows refuse
+    // with copy that matches their actual state.
+    const dupePaused = planForExistingPolicy('paused', 'stop_loss', 'SYRUP')
+    const dupeActive = planForExistingPolicy('active', 'stop_loss', 'SYRUP')
+    const dupeFiring = planForExistingPolicy('triggered', 'take_profit', 'ETH')
+    check(
+      'guardian: paused dupe RESUMES; active refuses as "armed and watching"; mid-fire names execution',
+      dupePaused.action === 'resume' &&
+        dupeActive.action === 'refuse' && /already armed and watching — pause or remove/.test(dupeActive.message) &&
+        dupeFiring.action === 'refuse' && /take profit on ETH is executing right now/.test(dupeFiring.message),
+    )
     const sl: GuardianPolicyParams = { coin: 'SYRUP', side: 'long', kind: 'stop_loss', triggerMode: 'price_move_pct', triggerValue: 10 }
     const pos: GuardianPosition = { coin: 'SYRUP', szi: 700, entryPx: 0.14175 }
     check(

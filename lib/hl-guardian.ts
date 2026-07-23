@@ -299,6 +299,26 @@ export function splitSignature(sig: string): { r: string; s: string; v: 27 | 28 
   }
 }
 
+// ── Duplicate-policy plan ───────────────────────────────────────────────────
+
+export type DupePolicyPlan = { action: 'resume' } | { action: 'refuse'; message: string }
+
+/**
+ * What an arm ask should do when a policy of the same kind already exists on
+ * the coin. A PAUSED row resumes — the ask is exactly that protection, and
+ * the old blanket refusal ("already armed — pause or retire it first") was a
+ * contradiction and a dead end when the row was already paused. Live rows
+ * refuse with copy that matches their actual state.
+ */
+export function planForExistingPolicy(status: string, kind: GuardianPolicyKind, coin: string): DupePolicyPlan {
+  const label = kind === 'stop_loss' ? 'stop loss' : 'take profit'
+  if (status === 'paused') return { action: 'resume' }
+  if (status === 'triggered') {
+    return { action: 'refuse', message: `The ${label} on ${coin} is executing right now — check the Guardian dashboard.` }
+  }
+  return { action: 'refuse', message: `A ${label} on ${coin} is already armed and watching — pause or remove it first.` }
+}
+
 // ── Chat-side arming parse ──────────────────────────────────────────────────
 
 export interface GuardianArmAsk {
