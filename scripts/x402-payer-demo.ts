@@ -25,7 +25,7 @@ const BASE = arg('base', 'https://www.yeetful.com')
 const ASK = arg('ask', 'What are the top crypto news headlines right now?')
 const JOB = arg(
   'job',
-  'swap 5 usdc from base to arbitrum, then deposit 4 usdc to hyperliquid, then long $12 of eth on hyperliquid, then protect my eth long with a 5% stop',
+  'swap 5 usdc from base to arbitrum, then deposit 5 usdc to hyperliquid, then long $12 of eth on hyperliquid, then protect my eth long with a 5% stop',
 )
 
 /** A yf_ key from the env, or minted via SIWE with the local burner. */
