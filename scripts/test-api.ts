@@ -55,6 +55,7 @@ import { classifyOneclickStatus, inflightDepositFromPending, inflightPendingData
 import { sanitizeWorkingContext } from '../lib/working-context'
 import { parseRobinhoodFunding, parseSameChainSwapSegment, JOB_SEGMENT_PARSERS } from '../lib/jobs'
 import { parseMultiSendSegments, parseTransferSegment } from '../lib/transfer-exec'
+import { classifyTurn, moneyShaped } from '../lib/ask-failure'
 import { canonicalChainWord, normalizeChainWords } from '../lib/chain-lexicon'
 import { detectBalanceShortfall, fundingPlanUsd, planFundingChips, rankFundingSources, softenClaimedFailureBlock, type FundingNeed, type FundingSource } from '../lib/funding-plan'
 import { compileDcaBuy, dcaRunChip, parseDcaCreate, parseDcaManage, parseDcaRun, periodKeyFor } from '../lib/dca'
@@ -178,6 +179,18 @@ async function signIn(account: PrivateKeyAccount): Promise<string> {
 
 /** Strip React's inter-text-node comments before asserting on rendered HTML. */
 const flat = (html: string) => html.replace(/<!--.*?-->/g, '')
+
+
+// Chat probes below deliberately provoke refusals and fall-throughs — mark
+// them so the ask-failure log (lib/ask-failure.ts) skips harness traffic.
+const realFetch = globalThis.fetch
+globalThis.fetch = ((input: Parameters<typeof realFetch>[0], init?: RequestInit) => {
+  const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
+  if (typeof url === 'string' && url.includes('/api/chat')) {
+    init = { ...(init ?? {}), headers: { ...((init?.headers as Record<string, string>) ?? {}), 'x-yf-no-ask-log': '1' } }
+  }
+  return realFetch(input, init)
+}) as typeof fetch
 
 async function main() {
   console.log(`\nTesting the spend-account API @ ${BASE}\n`)
@@ -2805,6 +2818,32 @@ async function main() {
     const wantSwap = parseSwapIntent('I want to swap 1 USDC for WETH')
     check('swap intent: "I want to swap 1 USDC for WETH" keeps the market grammar (need-verbs never hijack)', wantSwap.isSwap && wantSwap.sellAmountHuman === '1' && wantSwap.sellToken === 'USDC')
     check('swap intent: "I want to send all my USDC…" is NOT a swap (transfer territory)', parseSwapIntent('I want to send all my USDC on arbitrum to nate.eth').isSwap === false)
+
+    // ── Ask-failure classifier (the wall logger's pure core) ──────────────
+    check(
+      'ask-failure: money-shaped detector (verb + evidence, questions stay out)',
+      moneyShaped('I WOULD LIKE TO BUY THIS NFT  https://opensea.io/item/base/0x6cf64997bcfcec770e231aba2ba9ea38ff9511a0/198') &&
+        moneyShaped('send all my USDC on base to nate.eth') &&
+        moneyShaped('I need $50 of USDG on Robinhood, can you make that happen?') &&
+        !moneyShaped('what is a swap?') &&
+        !moneyShaped('tell me a joke') &&
+        !moneyShaped('how do fees work?'),
+    )
+    check(
+      'ask-failure: actionable turns never classify as failures',
+      classifyTurn({ reply: 'x', txRequest: {} }).kind === null &&
+        classifyTurn({ reply: 'x', txChain: {} }).kind === null &&
+        classifyTurn({ reply: 'x', clarify: { question: 'q', options: [] } }).kind === null &&
+        classifyTurn({ reply: 'x', jobId: 'j' }).kind === null &&
+        classifyTurn({ reply: 'connect first', connectWallet: true }).kind === null,
+    )
+    check(
+      'ask-failure: walls classify by the layer that answered',
+      classifyTurn({ reply: 'sorry, no idea' }).kind === 'planner-answer' &&
+        classifyTurn({ reply: 'cannot', buildPath: 'native-transfer' }).kind === 'native-wall' &&
+        classifyTurn({ reply: 'refused', blocked: true }).kind === 'blocked' &&
+        classifyTurn(null).kind === 'error',
+    )
 
     const DEPOSIT = '0x7ff0D96c9f0528f0FF8dd948b2D316806fE3c7f2'
     const USDC_BASE = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913'

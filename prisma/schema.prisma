@@ -798,6 +798,30 @@ model EmbedTurn {
   @@map("embed_turns")
 }
 
+/// One chat turn that ENDED IN A WALL on a money-shaped ask — no signable
+/// artifact, no job, no chips — plus a best-effort funds snapshot taken at
+/// the moment of failure. `had_funds = true` rows are the product-gap queue:
+/// the user held movable money somewhere and the ladder/planner offered no
+/// path to use it (the 2026-07-23 NFT buy: 0.007 ETH short on Base while
+/// $19 of USDC sat on Base+Arbitrum). Written by the chat route's response
+/// wrapper (lib/ask-failure.ts); read by /dashboard/failures (admin).
+model AskFailure {
+  id          String   @id @default(cuid())
+  wallet      String?
+  prompt      String // capped server-side
+  reply       String? // what the user actually saw, capped
+  kind        String // planner-answer | native-wall | blocked | error
+  buildPath   String?  @map("build_path")
+  hadFunds    Boolean? @map("had_funds") // null until the async scan lands
+  fundsUsd    Float?   @map("funds_usd") // movable USD seen across scanned chains
+  fundsDetail String?  @map("funds_detail") // human per-chain summary
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@index([createdAt])
+  @@index([hadFunds, createdAt])
+  @@map("ask_failures")
+}
+
 /// One Hyperliquid agent-wallet delegation: the user's one-time approveAgent
 /// signature authorizing a Yeetful-held agent key to TRADE their HL account
 /// (the venue bars agent keys from withdrawing — custody stays with the
