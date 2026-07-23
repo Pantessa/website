@@ -27,9 +27,10 @@ const GROUPS: { title: string; links: FooterLink[] }[] = [
   },
   {
     // The deep-dive surfaces — out of the main nav, still one click away.
+    // Servers moved here from the dashboard rail (Nate, 2026-07-23).
     title: 'Under the hood',
     links: [
-      { label: 'MCP Directory', href: '/servers' },
+      { label: 'MCP Servers', href: '/servers' },
       { label: 'Benchmarks', href: '/benchmarks' },
       { label: 'Router Tools', href: '/tools' },
       { label: 'Status', href: '/incidents' },

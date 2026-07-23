@@ -1159,13 +1159,24 @@
   .dash__rail {
     position: sticky; top: 88px; padding: 24px 0 24px;
     display: flex; flex-direction: column; gap: 18px;
-    /* Full column height so the account control can pin to the bottom. */
+    /* Full column height so the account control can pin to the bottom —
+       and CAPPED at the viewport so sticky always holds: a nav taller than
+       the screen scrolls INSIDE .dash__side instead of stretching the rail
+       (which used to force scrolling the whole page to reach the bottom). */
     min-height: calc(100vh - 88px);
+    max-height: calc(100vh - 88px);
     /* A grid item defaults to min-width:auto, so the nowrap section links
        set the whole 1fr track's minimum (= the mobile bleed). Floor it. */
     min-width: 0;
   }
-  .dash__side { display: flex; flex-direction: column; gap: 2px; }
+  /* The section list is the rail's only flexible child: header, org switcher
+     and account keep their size; overflow scrolls here (popovers unclipped). */
+  .dash__side {
+    display: flex; flex-direction: column; gap: 2px;
+    min-height: 0; overflow-y: auto; overscroll-behavior: contain;
+    scrollbar-width: thin;
+  }
+  .dash__rail > :not(.dash__side) { flex-shrink: 0; }
   /* Account footer: pushed to the bottom of the rail (wallet + sign out). */
   .dash__acct { margin-top: auto; padding-top: 14px; border-top: 1px solid var(--line); }
 
@@ -1263,7 +1274,7 @@
 
   /* With the top nav gone, app surfaces own the full viewport height. */
   :root[data-app-shell] .dash { min-height: 100vh; }
-  :root[data-app-shell] .dash__rail { top: 20px; min-height: calc(100vh - 20px); }
+  :root[data-app-shell] .dash__rail { top: 20px; min-height: calc(100vh - 20px); max-height: calc(100vh - 20px); }
   :root[data-app-shell] .docs { min-height: 100vh; }
   :root[data-app-shell] .docs__rail { top: 20px; }
   :root[data-app-shell] .dashnav__bar { top: 0; }
