@@ -88,7 +88,10 @@ export default function AppModeWorkspace({
 
   if (!address) {
     return (
-      <div className="grid h-full place-items-center px-6 text-center">
+      // flex-1 alongside h-full: in the chat surface this sits in a
+      // min-h-full flex column (where h-full resolves to auto), while the
+      // dev harness gives it a definite-height parent — cover both.
+      <div className="grid h-full flex-1 place-items-center px-6 text-center">
         <div>
           <Wallet className="mx-auto mb-3 h-6 w-6 text-[color:var(--muted-2)]" />
           <p className="text-sm text-[color:var(--muted)]">
