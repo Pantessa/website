@@ -35,7 +35,7 @@ import { pureChecks, policyCheck, orderValueUsd, buildReport } from '../lib/cow-
 import { policyCheckInflow, recipientCheck, validityCheck, MAX_VALID_SEC } from '../lib/tx-guardrails'
 import { guardPlannerArtifact, PERMIT2_ADDRESS } from '../lib/planner-artifact-guard'
 import { parseSwapIntent } from '../lib/swap-intent'
-import { activeLinkCapFor } from '../lib/intent-links'
+import { activeLinkCapFor, composeMcps } from '../lib/intent-links'
 import { isDbChatId } from '../lib/chat-ids'
 import { usdToTokenAmount } from '../lib/usd-probe'
 import { parseRobinhoodBridge, guardRobinhoodBridge, RH_L1_INBOX, ARB_SYS } from '../lib/robinhood-bridge'
@@ -1578,6 +1578,20 @@ async function main() {
       'house links: the landing link lane renders with tappable house links',
       homeHtml.includes('A link that moves money.') && homeHtml.includes('/i/buy-aapl'),
     )
+    // The composed MCP set must survive plurals — "Show my NFTs" once
+    // composed to NO opensea (\bnft\b can't match "nfts"), so the seeded
+    // /i/my-nfts link dead-ended for everyone.
+    check('intent links: composeMcps is plural-tolerant (NFTs → opensea-free)', composeMcps('Show my NFTs').includes('opensea-free'))
+    check(
+      'intent links: the protected-long ask composes hyperliquid into the set',
+      composeMcps('Bridge 5 USDC from Base to Arbitrum, then deposit 4 USDC to Hyperliquid, then long $12 of ETH on Hyperliquid, then protect my ETH long with a 5% stop.').includes('hyperliquid-free'),
+    )
+    // The Guardian/jobs aha chip (no pre-existing position required) —
+    // seeded like the rest of the house set; the retired /i/stop-loss row
+    // stays live for anyone still holding that link.
+    const houseJobPage = await fetch(`${BASE}/i/protected-long`)
+    const houseJobHtml = flat(await houseJobPage.text())
+    check('house links: /i/protected-long is live with the four-tx job ask', houseJobPage.status === 200 && houseJobHtml.includes('then protect my ETH long with a 5% stop'))
 
     // Robust cap-slot freeing: several blocks above and below each need one
     // free mint slot, and a single hardcoded revoke only works once — revoke
@@ -2795,7 +2809,7 @@ async function main() {
     const trTypo = parseTransferSegment('send 1 USDC on Aribtrum to 0x1111111111111111111111111111111111111111')
     check('transfer: typo\'d chain word still resolves the chain', !!trTypo && !('problem' in trTypo) && trTypo.chainId === 42161)
     const armLink = parseGuardianArm('Set a stop-loss on my Hyperliquid ETH position at -5%')
-    check('guardian: /i/stop-loss house-link phrasing parses (venue word stripped)', !!armLink && armLink.coin === 'ETH' && armLink.triggerValue === 5)
+    check('guardian: legacy /i/stop-loss link phrasing parses (venue word stripped)', !!armLink && armLink.coin === 'ETH' && armLink.triggerValue === 5)
     const fundTypo = parseRobinhoodFunding('Fund Robbinhood chain with $12 from base')
     check('jobs funding: typo\'d "Robbinhood chain" still compiles', !!fundTypo && fundTypo.fundUsd === 12)
     check('lexicon: ENS names in chain slots are never rewritten', normalizeChainWords('send 1 USDC on arbitrum to polygonn.eth').includes('polygonn.eth'))

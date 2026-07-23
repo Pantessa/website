@@ -63,9 +63,11 @@ export function sanitizeMcps(raw: unknown): string[] | null {
 export function composeMcps(ask: string): string[] {
   const a = ask.toLowerCase()
   const slugs: string[] = []
-  if (/\b(aapl|tsla|nvda|amd|msft|amzn|meta|googl?|stock|stocks|share of|robinhood)\b/.test(a)) slugs.push('robinhood-free')
-  if (/\b(perp|position|long|short|leverage|hyperliquid|stop[- ]?loss|take[- ]?profit)\b/.test(a)) slugs.push('hyperliquid-free')
-  if (/\b(nft|opensea|seaport|floor|collection)\b/.test(a)) slugs.push('opensea-free')
+  // Every noun alternation is plural-tolerant — "Show my NFTs" once composed
+  // to NO opensea because \bnft\b can't match "nfts" (live house-link miss).
+  if (/\b(aapl|tsla|nvda|amd|msft|amzn|meta|googl?|stocks?|shares? of|robinhood)\b/.test(a)) slugs.push('robinhood-free')
+  if (/\b(perps?|positions?|long|short|leverage|hyperliquid|stop[- ]?loss(es)?|take[- ]?profits?)\b/.test(a)) slugs.push('hyperliquid-free')
+  if (/\b(nfts?|opensea|seaport|floors?|collections?)\b/.test(a)) slugs.push('opensea-free')
   if (/\b(stake|steth|wsteth|lido)\b/.test(a)) slugs.push('lido-free')
   if (/\b(supply|borrow|repay|aave|lend)\b/.test(a)) slugs.push('aave')
   if (/\b(vote|proposal|snapshot|dao|governance)\b/.test(a)) slugs.push('snapshot-free')

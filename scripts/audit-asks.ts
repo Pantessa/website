@@ -177,7 +177,7 @@ const CORPUS: Entry[] = [
   { ask: 'Swap 20 USDC for ETH on Base.', source: 'docs', expect: 'action' },
   {
     ask: 'Bridge 5 USDC from Base to Arbitrum, then deposit 4 USDC to Hyperliquid, then long $12 of ETH on Hyperliquid, then protect my ETH long with a 5% stop.',
-    source: 'docs STEP 1 · INTENT', expect: 'action',
+    source: 'docs STEP 1 · INTENT + house link /i/protected-long', expect: 'action',
   },
   {
     // The pre-2026-07-22 docs phrasing — users may still type it; the origin
@@ -192,7 +192,8 @@ const CORPUS: Entry[] = [
   { ask: 'Buy $10 of AAPL', source: 'house link /i/buy-aapl', expect: 'action' },
   { ask: 'DCA $25 into ETH weekly', source: 'house link /i/dca-eth', expect: 'action' },
   { ask: 'Stake 0.05 ETH with Lido', source: 'house link /i/stake-eth', expect: 'action' },
-  { ask: 'Set a stop-loss on my Hyperliquid ETH position at -5%', source: 'house link /i/stop-loss', expect: 'action' },
+  { ask: 'Set a stop-loss on my Hyperliquid ETH position at -5%', source: 'retired house link /i/stop-loss (row stays live)', expect: 'action' },
+  { ask: 'Show my NFTs', source: 'house link /i/my-nfts', expect: 'planner' },
   { ask: 'Swap 5 USDC from Base to Arbitrum', source: 'house link /i/bridge-usdc', expect: 'action' },
   { ask: 'Buy $5 of AAPL', source: 'onboarding checklist', expect: 'action' },
   { ask: 'Swap $1 worth of ETH to USDC on Base', source: 'dashboard charts + docs', expect: 'action' },
