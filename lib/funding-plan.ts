@@ -274,31 +274,96 @@ export function shortRefusalCopy(params: {
   const { chainsRead, need, needUsd, sourceSummary, stranded, movableTotalUsd } = params
   const actionLabel = need.actionLabel
   const planLine = `the smallest plan for ${actionLabel} moves ~$${usd2(needUsd)} (solver fees included).`
-  if (stranded.length === 0) {
+  // Stranded splits by token: USDC is unstickable with a gas topup; ETH under
+  // the keep-back IS the (insufficient) gas — name it, never promise it.
+  const usdcStranded = stranded.filter((s) => s.token === 'USDC')
+  const ethStranded = stranded.filter((s) => s.token === 'ETH')
+  const ethNote =
+    ethStranded.length > 0
+      ? `${ethStranded.map((s) => `~$${usd2(Number(s.usd.toFixed(2)))} of ETH on ${s.chainWord}`).join(', ')} (under what a move from there costs, so it can't help)`
+      : ''
+  if (usdcStranded.length === 0) {
+    const seen = [sourceSummary, ethNote].filter(Boolean).join(', plus ')
     return (
-      (sourceSummary ? `Across ${chainsRead} I can see ${sourceSummary} — ` : `Across ${chainsRead} I found no movable ETH or USDC — `) +
+      (seen ? `Across ${chainsRead} I can see ${seen} — ` : `Across ${chainsRead} I found no movable ETH or USDC — `) +
       `${planLine} Top up any of those chains and ask again.`
     )
   }
-  const strandedSummary = stranded.map((s) => `~$${usd2(Number(s.usd.toFixed(2)))} of ${s.token} on ${s.chainWord}`).join(', ')
+  const strandedSummary = usdcStranded.map((s) => `~$${usd2(Number(s.usd.toFixed(2)))} of ${s.token} on ${s.chainWord}`).join(', ')
   // The needed token already ON the destination chain was subtracted from the
   // shortfall by the caller — name it, but never count it toward "enough".
-  const coverableUsd = stranded
+  const coverableUsd = usdcStranded
     .filter((s) => s.chainId !== need.chainId || s.token.toUpperCase() !== need.token.toUpperCase())
     .reduce((a, s) => a + s.usd, 0)
-  const gasWords = [...new Set(stranded.map((s) => s.chainWord))].join(' and ')
+  const gasWords = [...new Set(usdcStranded.map((s) => s.chainWord))].join(' and ')
   const rescue = `Send a little ETH (about a dollar's worth is plenty) to your own address on ${gasWords} and ask again — ${planLine}`
+  const alsoEth = ethNote ? ` (Also seen: ${ethNote}.)` : ''
   if (movableTotalUsd + coverableUsd >= needUsd) {
     // The money EXISTS — only origin gas is missing. Lead with that.
     return (
       `Your money's already there: across ${chainsRead} I can see ${sourceSummary ? `${sourceSummary}, plus ` : ''}${strandedSummary} — enough for ${actionLabel} — ` +
-      `but there's no ETH on ${gasWords} to sign the move with, so it's stuck where it sits. ${rescue}`
+      `but there's no ETH on ${gasWords} to sign the move with, so it's stuck where it sits. ${rescue}${alsoEth}`
     )
   }
   return (
     `Across ${chainsRead} I can see ${sourceSummary ? `${sourceSummary}, plus ` : ''}${strandedSummary} that can't move without gas ETH on ${gasWords} — ` +
-    `${planLine} Top up any of those chains (and ${gasWords} needs a little ETH before its USDC can move) and ask again.`
+    `${planLine} Top up any of those chains (and ${gasWords} needs a little ETH before its USDC can move) and ask again.${alsoEth}`
   )
+}
+
+/**
+ * The donor-topup rescue: gas-stranded USDC + a movable source elsewhere →
+ * ONE job that unsticks and finishes. Legs: donor → ETH on the stranded
+ * chain (the topup), then (when the destination is gas-short) stranded →
+ * ETH on the destination, then stranded → the needed token, then the
+ * follow-up. Every leg is an existing cross-chain segment — no new
+ * builders, no new guards. Null when no honest rescue exists (no
+ * unstickable USDC, it can't cover the need, no donor rich enough, or ETH
+ * is unpriceable so the topup can't be sized) — the caller falls back to
+ * the named refusal.
+ */
+export function planStrandedRescue(params: {
+  need: FundingNeed
+  needUsd: number
+  gasUsd: number
+  sources: FundingSource[]
+  stranded: FundingSource[]
+  ethUsd: number | null
+}): { chips: FundingChip[]; target: FundingSource; donor: FundingSource; gasLegUsd: number } | null {
+  const { need, needUsd, gasUsd, sources, stranded, ethUsd } = params
+  if (ethUsd === null || needUsd <= 0) return null
+  // Only USDC stuck on a NON-destination chain is rescuable this way — the
+  // needed token already on the destination was subtracted from the
+  // shortfall, so unsticking it cannot cover the need.
+  const target = stranded
+    .filter((s) => s.token === 'USDC' && (s.chainId !== need.chainId || need.token.toUpperCase() !== 'USDC'))
+    .sort((a, b) => b.usd - a.usd)[0]
+  if (!target || target.usd < needUsd + gasUsd) return null
+  // Deliver 3× the stranded chain's min-send floor (signature headroom),
+  // floored at the smallest leg worth quoting. Mainnet floors are real
+  // money — the sizing must say so, not hide it.
+  const gasLegUsd = Math.max(MIN_GAS_LEG_USD, Math.ceil((MIN_GAS_TO_SEND_ETH[target.chainId] ?? 0.001) * 3 * ethUsd * 2) / 2)
+  // A chain with stranded USDC has no signable ETH, so every source lives
+  // elsewhere — the richest one that can carry the topup donates.
+  const donor = [...sources].sort((a, b) => b.usd - a.usd).find((s) => s.usd >= gasLegUsd)
+  if (!donor) return null
+  const legs: string[] = [`Swap ${sourceAmountFor(donor, gasLegUsd)} ${donor.token} from ${donor.chainWord} to ETH on ${target.chainWord}`]
+  let src = target
+  if (gasUsd > 0) {
+    legs.push(gasLegResume(src, sourceAmountFor(src, gasUsd), need))
+    src = { ...target, balance: target.balance * (1 - gasUsd / target.usd), usd: target.usd - gasUsd }
+  }
+  legs.push(legResume(src, sourceAmountFor(src, needUsd), need))
+  const resume = need.followupResume ? `${legs.join(', then ')}, then ${need.followupResume}` : legs.join(', then ')
+  return {
+    chips: [
+      { label: `Unstick it (gas via ${donor.chainWord}, then ~$${usd2(Number((needUsd + gasUsd).toFixed(2)))} from ${target.chainWord})`, resume },
+      { label: 'Not now', resume: 'Never mind — leave my funds where they are.' },
+    ],
+    target,
+    donor,
+    gasLegUsd,
+  }
 }
 
 // ── I/O: the wallet scan + the offer turn ───────────────────────────────────
@@ -311,6 +376,9 @@ export interface FundingScan {
    *  "I found no movable ETH or USDC" (live 2026-07-23, four retries in
    *  five minutes on the HYPE house link). */
   stranded: FundingSource[]
+  /** The ETH price the scan classified with (null = unpriceable) — the
+   *  rescue planner sizes donor gas legs off it. */
+  ethUsd: number | null
   /** Chain words that were actually read — the only chains any copy may
    *  make claims about. */
   readChains: string[]
@@ -349,6 +417,11 @@ export function classifyFundingBalances(reads: FundingBalanceRead[], ethUsd: num
     const movableEth = r.nativeEth - (GAS_RESERVE_ETH[r.chainId] ?? 0.002)
     if (ethUsd !== null && movableEth > 0) {
       sources.push({ chainId: r.chainId, chainWord: r.chainWord, token: 'ETH', balance: movableEth, usd: movableEth * ethUsd })
+    } else if (ethUsd !== null && r.nativeEth * ethUsd >= DUST_USD) {
+      // Sub-reserve ETH: real money that can't clear the chain's keep-back —
+      // never plannable, but a refusal must name it ($2 on mainnet answered
+      // Nate's "would it move that to Base?" probe with silence, 2026-07-23).
+      stranded.push({ chainId: r.chainId, chainWord: r.chainWord, token: 'ETH', balance: r.nativeEth, usd: r.nativeEth * ethUsd })
     }
   }
   return { sources, stranded }
@@ -386,7 +459,8 @@ export async function scanFundingSources(user: string): Promise<FundingScan> {
     }),
   )
   if (readChains.length === 0) throw new Error('no funding-scan chain was readable')
-  return { ...classifyFundingBalances(reads, ethProbe?.usd ?? null), readChains, failedChains }
+  const ethUsd = ethProbe?.usd ?? null
+  return { ...classifyFundingBalances(reads, ethUsd), ethUsd, readChains, failedChains }
 }
 
 export interface FundingOfferTurn {
@@ -487,7 +561,7 @@ export function decideFundingTurn(params: {
   need: FundingNeed
   needUsd: number
   gasUsd: number
-  scan: Pick<FundingScan, 'sources' | 'stranded' | 'readChains' | 'failedChains'>
+  scan: Pick<FundingScan, 'sources' | 'stranded' | 'ethUsd' | 'readChains' | 'failedChains'>
   destChainName: string
   trace?: (event: unknown) => void
 }): FundingDecision {
@@ -507,6 +581,27 @@ export function decideFundingTurn(params: {
       })
       return { kind: 'fallthrough', reason: 'partial scan' }
     }
+    // Before refusing: gas-stranded USDC + a donor elsewhere = a one-job
+    // rescue, not a wall. (The refusal below still names stranded funds
+    // when no honest rescue exists.)
+    const rescue = planStrandedRescue({ need, needUsd, gasUsd, sources: scan.sources, stranded: scan.stranded, ethUsd: scan.ethUsd })
+    if (rescue) {
+      trace({
+        type: 'status',
+        label: `funding layer claimed the turn: ~$${usd2(Number(rescue.target.usd.toFixed(2)))} USDC gas-stranded on ${rescue.target.chainWord} — offering a donor topup via ${rescue.donor.chainWord} (~$${usd2(rescue.gasLegUsd)} gas leg)`,
+      })
+      return {
+        kind: 'offer',
+        turn: {
+          reply:
+            `**We can make this happen.** Your ~$${usd2(Number(rescue.target.usd.toFixed(2)))} of USDC on ${rescue.target.chainWord} is real — ${rescue.target.chainWord} just has no ETH to sign the move with. ` +
+            `One job fixes it: a sliver of your ${rescue.donor.chainWord} ${rescue.donor.token} covers ${rescue.target.chainWord} gas, then the USDC moves over${gasUsd > 0 ? `, ${destChainName} gas gets topped up,` : ''}${need.followupResume ? ` and ${need.actionLabel} finishes` : ''} — every step built and guard-checked when it's your turn to sign.` +
+            (need.followupResume ? '' : ` Once it settles, ask again and I'll build ${need.actionLabel} with the funds in place.`),
+          clarify: { question: `Unstick the ${rescue.target.chainWord} USDC?`, options: rescue.chips },
+          buildPath: 'native-funding-offer',
+        },
+      }
+    }
     const chainsRead = scan.readChains.join(', ').replace(/, ([^,]*)$/, ' and $1')
     trace({
       type: 'note',
@@ -514,7 +609,7 @@ export function decideFundingTurn(params: {
       label:
         `funding layer: ${need.actionLabel} needs ~$${plan.needUsd} moved but the wallet holds ~$${plan.totalUsd} movable across ${chainsRead}` +
         (scan.stranded.length > 0
-          ? ` (+ $${usd2(Number(scan.stranded.reduce((a, s) => a + s.usd, 0).toFixed(2)))} USDC gas-stranded on ${scan.stranded.map((s) => s.chainWord).join('/')}) — naming it`
+          ? ` (+ $${usd2(Number(scan.stranded.reduce((a, s) => a + s.usd, 0).toFixed(2)))} gas-stranded/sub-reserve on ${scan.stranded.map((s) => `${s.token}·${s.chainWord}`).join('/')}) — naming it`
           : '') +
         ' — honest refusal',
     })
