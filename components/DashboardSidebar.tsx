@@ -6,27 +6,25 @@
 
 import Link from 'next/link'
 import { useEffect, useRef } from 'react'
-import { LayoutDashboard, KeyRound, Bot, ToggleRight, Activity, ReceiptText, Building2, LineChart, Server, MessageSquare, BookOpen, Sparkles, AlertTriangle, CreditCard, Globe, ShieldAlert, ShieldCheck, Users, Landmark, Link2 } from 'lucide-react'
+import { LayoutDashboard, KeyRound, Bot, ToggleRight, Activity, Building2, LineChart, MessageSquare, BookOpen, AlertTriangle, CreditCard, Globe, ShieldAlert, ShieldCheck, Users, Landmark, Link2 } from 'lucide-react'
 import { isAdminAddress } from '@/lib/admin'
 
 // Links-first order (Nate, 2026-07-22): App rides right under Overview,
 // Intent links at the top of the product sections — the link rail is the
 // product's front door. Guardian rides right below it (Nate, 2026-07-23).
+// Slimmed 2026-07-23 (Nate): Servers moved to the site footer; Routing +
+// Earnings retired from the rail (pages stay routable by URL).
 export const DASH_SECTIONS = [
   { href: '/dashboard', label: 'Overview', icon: LayoutDashboard, exact: true },
   { href: '/chat', label: 'App', icon: MessageSquare, exact: false },
   { href: '/dashboard/links', label: 'Intent links', icon: Link2, exact: false },
   { href: '/dashboard/guardian', label: 'Guardian', icon: ShieldCheck, exact: false },
   { href: '/dashboard/embeds', label: 'Embeds', icon: Globe, exact: false },
-  { href: '/dashboard/servers', label: 'Servers', icon: Server, exact: false },
   { href: '/dashboard/agents', label: 'Agents', icon: Bot, exact: false },
-  { href: '/dashboard/guardian', label: 'Guardian', icon: ShieldCheck, exact: false },
   { href: '/dashboard/keys', label: 'API Keys', icon: KeyRound, exact: false },
   { href: '/dashboard/approvals', label: 'Approvals', icon: ToggleRight, exact: false },
   { href: '/dashboard/plan', label: 'Usage', icon: CreditCard, exact: false },
   { href: '/dashboard/activity', label: 'Activity', icon: Activity, exact: false },
-  { href: '/dashboard/routing', label: 'Routing', icon: Sparkles, exact: false },
-  { href: '/dashboard/receipts', label: 'Earnings', icon: ReceiptText, exact: false },
   { href: '/dashboard/org', label: 'Organization', icon: Building2, exact: false },
   { href: '/docs', label: 'Docs', icon: BookOpen, exact: false },
 ] as const
