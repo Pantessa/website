@@ -1477,12 +1477,17 @@ async function main() {
     check('intent links: leaderboard never leaks a wallet address', !/0x[0-9a-fA-F]{40}/.test(boardHtml))
     check('intent links: leaderboard links to the host button generator', boardHtml.includes('/links/embed'))
     // Tabs: finished flows (claims) is the default rank; dollars is the
-    // second tab. They render only when the board has real rows — with
-    // harness turns excluded the board may legitimately be empty.
+    // second tab; recently minted lists the newest live links. They render
+    // only when the board has real rows — with harness turns excluded the
+    // board may legitimately be empty.
     check(
-      'intent links: board tabs (Most claimed + Dollars moved) or the honest empty state',
-      (/Most claimed/.test(boardHtml) && /Dollars moved/.test(boardHtml)) || /The board is empty/.test(boardHtml),
+      'intent links: board tabs (Most claimed + Dollars moved + Recently minted) or the honest empty state',
+      (/Most claimed/.test(boardHtml) && /Dollars moved/.test(boardHtml) && /Recently minted/.test(boardHtml)) ||
+        /The board is empty/.test(boardHtml),
     )
+    // The recent tab reads MINTS (not turns), so this run's freshly minted
+    // active links must reach the page data with no sign required.
+    check('intent links: recently-minted tab surfaces a fresh mint pre-sign', boardHtml.includes('Stake some ETH for me'))
     // The fake $600 this section signed above must NEVER rank the public
     // board — harness- sessions are excluded server-side.
     check('intent links: harness turns never rank the public board', !boardHtml.includes(`/i/${slug}`))
