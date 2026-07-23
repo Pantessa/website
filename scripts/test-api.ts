@@ -2816,6 +2816,57 @@ async function main() {
     check('lexicon: "a ton of USDC" is not a chain', detectCrossChain('swap a ton of USDC for ETH').chains.length === 0)
     check('lexicon: "based" never fuzzy-matches base', canonicalChainWord('based') === null)
 
+    // ── NFT-buy funding resume (the 2026-07-23 unfunded "buy this NFT") ───
+    // The funding offer's chips append this exact follow-up; it must compile
+    // as a job whose last steps are the guarded buy + its ownership wait.
+    const nftFundResume = compileJobAsk(
+      'Swap 5 USDC from base to ETH on base, then buy the nft https://opensea.io/item/base/0x6cf64997bcfcec770e231aba2ba9ea38ff9511a0/198',
+    )
+    check(
+      'jobs: fund-then-buy-nft resume compiles (cross-chain leg → wait → nft buy → owned wait)',
+      !!nftFundResume && !('problem' in nftFundResume) &&
+        JSON.stringify(nftFundResume.steps.map((st) => `${st.kind}:${st.builder}`)) ===
+          JSON.stringify(['sign:native-cross-chain', 'wait:wait', 'sign:native-nft-buy', 'wait:wait']),
+      JSON.stringify(nftFundResume),
+    )
+    const nftFundCap = compileJobAsk(
+      'Swap 5 USDC from base to ETH on base, then buy the nft https://opensea.io/item/base/0x6cf64997bcfcec770e231aba2ba9ea38ff9511a0/198 for up to 0.01 ETH',
+    )
+    check(
+      'jobs: the resume preserves an explicit ETH cap on the buy step',
+      !!nftFundCap && !('problem' in nftFundCap) &&
+        (nftFundCap.steps.find((st) => st.builder === 'native-nft-buy')?.params as { maxPriceEth?: string | null })?.maxPriceEth === '0.01',
+      JSON.stringify(nftFundCap),
+    )
+    const sameChainPlan = planFundingChips(
+      { chainId: 8453, token: 'ETH', amountHuman: 0.0062, followupResume: 'buy the nft https://opensea.io/item/base/0x6cf64997bcfcec770e231aba2ba9ea38ff9511a0/198', actionLabel: 'the buy' },
+      10,
+      [
+        { chainId: 8453, chainWord: 'base', token: 'USDC', balance: 12, usd: 12 },
+        { chainId: 42161, chainWord: 'arbitrum', token: 'USDC', balance: 6, usd: 6 },
+      ],
+      0,
+    )
+    check(
+      'funding plan: a destination-chain USDC source converts SAME-CHAIN (venue swap leg, ranked first, no bridge)',
+      sameChainPlan.kind === 'offer' && /^Swap 10\.?\d* USDC for ETH on base/i.test(sameChainPlan.chips[0].resume),
+      JSON.stringify(sameChainPlan).slice(0, 200),
+    )
+    const sameChainJob = sameChainPlan.kind === 'offer' ? compileJobAsk(sameChainPlan.chips[0].resume) : null
+    check(
+      'funding plan: the same-chain chip resume round-trips the jobs compiler (native-swap → nft buy)',
+      !!sameChainJob && !('problem' in sameChainJob) &&
+        JSON.stringify(sameChainJob.steps.map((st) => st.builder)) === JSON.stringify(['native-swap', 'native-nft-buy', 'wait']),
+      JSON.stringify(sameChainJob),
+    )
+    const destTokenExcluded = planFundingChips(
+      { chainId: 8453, token: 'ETH', amountHuman: 0.005, followupResume: '', actionLabel: 'the buy' },
+      10,
+      [{ chainId: 8453, chainWord: 'base', token: 'ETH', balance: 0.01, usd: 19 }],
+      0,
+    )
+    check('funding plan: the needed token on the destination chain is never a source (already counted)', destTokenExcluded.kind === 'short')
+
     // Acquisition grammar (live 2026-07-23: "I need $50 of USDG on Robinhood,
     // can you make that happen?" fell to the planner, which called USDG "not
     // a standard token").
@@ -5393,9 +5444,18 @@ async function main() {
     const whale = planFundingChips(need, 20.5, [src(8453, 'Base', 'USDC', 15_000)])
     check('funding plan: all-of-it chip capped at 10× the need', whale.kind === 'offer' && whale.chips.length === 2)
 
-    // Destination-chain balances are never sources (that's a same-chain swap, not a bridge).
+    // Destination-chain balances of a DIFFERENT token are same-chain
+    // conversion sources (venue swap leg, no bridge) — re-pinned 2026-07-23,
+    // the live NFT-buy gap: $12 of Base USDC was invisible to a Base ETH need.
     const sameChain = planFundingChips(need, 20.5, [src(1, 'Ethereum', 'USDC', 60)])
-    check('funding plan: destination-chain balances are excluded as sources', sameChain.kind === 'short')
+    const sameChainLegJob = sameChain.kind === 'offer' ? compileJobAsk(sameChain.chips[0].resume) : null
+    check(
+      'funding plan: a destination-chain USDC source converts same-chain and compiles (venue swap → stake)',
+      sameChain.kind === 'offer' && /^Swap [\d.]+ USDC for ETH on ethereum/i.test(sameChain.chips[0].resume) &&
+        !!sameChainLegJob && !('problem' in sameChainLegJob) &&
+        JSON.stringify(sameChainLegJob.steps.map((s) => `${s.kind}:${s.builder}`)) === JSON.stringify(['sign:native-swap', 'sign:native-lido']),
+      sameChain.kind === 'offer' ? sameChain.chips[0].resume : sameChain.kind,
+    )
 
     // No single source covers, combined does → one combined chip, one leg per chain.
     const combined = planFundingChips(need, 20.5, [src(8453, 'Base', 'USDC', 12), src(42161, 'Arbitrum', 'USDC', 11)])

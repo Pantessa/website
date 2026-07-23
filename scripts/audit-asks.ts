@@ -203,6 +203,10 @@ const CORPUS: Entry[] = [
   { ask: 'Fund robinhood chain with $12 from base, then buy $10 of AAPL', source: 'lifi funding chip', expect: 'action' },
   { ask: 'Swap 5 USDC from base to USDG on robinhood', source: 'funding-plan leg chip', expect: 'action' },
   { ask: 'Swap 5 USDC from base to ETH on arbitrum', source: 'funding-plan gas-leg chip', expect: 'action' },
+  {
+    ask: 'Swap 7.5 USDC for ETH on Base, then buy the nft https://opensea.io/item/base/0x6cf64997bcfcec770e231aba2ba9ea38ff9511a0/198',
+    source: 'funding-plan same-chain chip (nft buy)', expect: 'action',
+  },
   { ask: 'Run my $10 AAPL dca (schedule cmd7x2k9q0001ab12cd34ef56)', source: 'dca due chip', expect: 'action' },
   { ask: 'bridge 5 USDC from base to arbitrum', source: 'bridge-verb single leg', expect: 'action' },
   { ask: 'Bridge 5 USDC to Arbitrum', source: 'docs (origin unstated)', expect: 'clarify-ok' },
