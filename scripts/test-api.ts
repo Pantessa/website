@@ -108,7 +108,9 @@ import {
   guardHlExecBuild,
   buildHlDeposit,
   hlActionTypedData,
+  hlCollateralTargetUsd,
   HL_BRIDGE2_ARBITRUM,
+  HL_MIN_DEPOSIT_USDC,
   ARBITRUM_USDC,
   type HlOrderIntent,
 } from '../lib/hyperliquid-exec'
@@ -1584,14 +1586,35 @@ async function main() {
     check('intent links: composeMcps is plural-tolerant (NFTs → opensea-free)', composeMcps('Show my NFTs').includes('opensea-free'))
     check(
       'intent links: the protected-long ask composes hyperliquid into the set',
-      composeMcps('Bridge 5 USDC from Base to Arbitrum, then deposit 4 USDC to Hyperliquid, then long $12 of ETH on Hyperliquid, then protect my ETH long with a 5% stop.').includes('hyperliquid-free'),
+      composeMcps('Long $12 of HYPE on Hyperliquid, then protect my HYPE long with a 5% stop').includes('hyperliquid-free'),
     )
-    // The Guardian/jobs aha chip (no pre-existing position required) —
-    // seeded like the rest of the house set; the retired /i/stop-loss row
-    // stays live for anyone still holding that link.
+    // The Guardian/jobs aha chip is a PURE intent — the funding path (deposit
+    // + bridge legs) is discovered and offered by the system, never typed by
+    // the visitor. Retired predecessors (/i/stop-loss, the verbose
+    // four-clause phrasing) stay live in the DB, just unsurfaced.
+    const houseJobAsk = 'Long $12 of HYPE on Hyperliquid, then protect my HYPE long with a 5% stop'
+    const houseJob = compileJobAskFull(houseJobAsk) as CompiledJob
+    check(
+      'house links: the protected-long intent compiles to open + guardian arm',
+      !!houseJob && !('problem' in houseJob) && houseJob.steps.length === 2 && houseJob.steps[0].builder === 'native-hl-exec' && houseJob.steps[1].builder === 'native-hl-guardian',
+    )
+    check(
+      'hl: collateral target = notional/3, floored at the bridge minimum',
+      hlCollateralTargetUsd(12) === HL_MIN_DEPOSIT_USDC && hlCollateralTargetUsd(60) === 20,
+    )
+    // The funded version the system offers must round-trip the compiler as
+    // the full deposit → credit-wait → open → arm job (the chip IS the
+    // contract), and its deposit clears the bridge minimum.
+    const fundedHouse = compileJobAskFull(`deposit ${hlCollateralTargetUsd(12)} USDC to Hyperliquid, then ${houseJobAsk}`) as CompiledJob
+    check(
+      'house links: the system-offered funded ask compiles deposit→wait→open→arm',
+      !!fundedHouse && !('problem' in fundedHouse) && fundedHouse.steps.length === 4 && fundedHouse.steps[1].kind === 'wait',
+    )
+    const hlMeta = (await (await fetch('https://api.hyperliquid.xyz/info', { method: 'POST', headers: CJ, body: JSON.stringify({ type: 'meta' }) })).json()) as { universe?: Array<{ name: string }> }
+    check('house links: HYPE is a live Hyperliquid perp (the house ask names it)', !!hlMeta.universe?.some((u) => u.name === 'HYPE'))
     const houseJobPage = await fetch(`${BASE}/i/protected-long`)
     const houseJobHtml = flat(await houseJobPage.text())
-    check('house links: /i/protected-long is live with the four-tx job ask', houseJobPage.status === 200 && houseJobHtml.includes('then protect my ETH long with a 5% stop'))
+    check('house links: /i/protected-long is live with the pure-intent ask', houseJobPage.status === 200 && houseJobHtml.includes('then protect my HYPE long with a 5% stop'))
 
     // Robust cap-slot freeing: several blocks above and below each need one
     // free mint slot, and a single hardcoded revoke only works once — revoke

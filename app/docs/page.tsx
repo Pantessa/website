@@ -77,7 +77,7 @@ const STEPS = [
     lead: (
       <>
         &ldquo;Swap 20 USDC for ETH on Base.&rdquo; &ldquo;Buy $10 of AAPL every week.&rdquo;
-        &ldquo;Bridge 5 USDC from Base to Arbitrum, then deposit 4 USDC to Hyperliquid, then long
+        &ldquo;Bridge 5 USDC from Base to Arbitrum, then deposit 5 USDC to Hyperliquid, then long
         $12 of ETH on Hyperliquid, then protect my ETH long with a 5% stop.&rdquo; Money asks are claimed by{' '}
         <strong>deterministic parsers</strong>, not sampled from a model — the same sentence hits
         the same code path every time, and compound asks compile into{' '}
@@ -218,7 +218,7 @@ export default function DocsIndexPage() {
         <pre className="splash__code mono">{`curl -s https://www.yeetful.com/api/jobs \\
   -H "authorization: Bearer $YF_API_KEY" \\
   -H "content-type: application/json" \\
-  -d '{"ask": "swap 5 usdc from base to arbitrum, then deposit 4 usdc to hyperliquid", "dryRun": true}'`}</pre>
+  -d '{"ask": "swap 5 usdc from base to arbitrum, then deposit 5 usdc to hyperliquid", "dryRun": true}'`}</pre>
       </div>
 
       {/* ── The embed: the host door's teaser ── */}
