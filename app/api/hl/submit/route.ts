@@ -4,8 +4,11 @@ import { splitSignature } from '@/lib/hl-guardian'
 import {
   fetchHlSnapshot,
   guardHlExecBuild,
+  guardHlLeverageBuild,
   hlActionTypedData,
   HL_EXEC_POLICY_HOST,
+  type HlWireAction,
+  type HlWireLeverageAction,
   type HlWireOrderAction,
 } from '@/lib/hyperliquid-exec'
 import { policyCheck } from '@/lib/tx-guardrails'
@@ -25,18 +28,23 @@ export const dynamic = 'force-dynamic'
 // No SIWE needed: the recovered signature IS the auth.
 export async function POST(req: NextRequest) {
   const body = (await req.json().catch(() => ({}))) as {
-    action?: HlWireOrderAction
+    action?: HlWireAction
     nonce?: number
     signature?: string
     from?: string
     isTestnet?: boolean
-    expected?: { coin?: string; kind?: string; isBuy?: boolean }
+    expected?: { coin?: string; kind?: string; isBuy?: boolean; leverage?: number }
   }
   const { action, nonce, signature, from, expected } = body
   if (!action || typeof nonce !== 'number' || typeof signature !== 'string' || typeof from !== 'string' || !expected?.coin) {
     return NextResponse.json({ error: 'action, nonce, signature, from and expected are required.' }, { status: 400 })
   }
-  if (expected.kind !== 'open' && expected.kind !== 'close') {
+  const isLeverage = action.type === 'updateLeverage'
+  if (isLeverage) {
+    if (typeof expected.leverage !== 'number') {
+      return NextResponse.json({ error: 'expected.leverage is required for a leverage update.' }, { status: 400 })
+    }
+  } else if (expected.kind !== 'open' && expected.kind !== 'close') {
     return NextResponse.json({ error: 'expected.kind must be open|close.' }, { status: 400 })
   }
   const isTestnet = body.isTestnet === true
@@ -63,7 +71,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'This build is stale (nonce >2 min old) — ask again for a fresh quote.' }, { status: 400 })
   }
 
-  // 2 — re-guard against the live market.
+  // 2 — re-guard against the live market. Leverage updates get their own
+  //     guard (asset/mode/multiple pinned vs live meta); orders the full
+  //     market re-check.
   const coin = expected.coin.toUpperCase()
   let snap
   try {
@@ -71,11 +81,17 @@ export async function POST(req: NextRequest) {
   } catch (e) {
     return NextResponse.json({ error: `Hyperliquid read failed: ${(e as Error).message}` }, { status: 502 })
   }
-  const guard = guardHlExecBuild(
-    { kind: expected.kind, coin, isBuy: expected.isBuy },
-    action,
-    { markPx: snap.markPx, assetIndex: snap.assetIndex, withdrawableUsd: snap.withdrawableUsd, positionSzi: snap.positionSzi },
-  )
+  const guard = isLeverage
+    ? guardHlLeverageBuild(
+        { kind: 'open', coin, leverage: expected.leverage },
+        action as HlWireLeverageAction,
+        { assetIndex: snap.assetIndex, maxLeverage: snap.maxLeverage },
+      )
+    : guardHlExecBuild(
+        { kind: expected.kind as 'open' | 'close', coin, isBuy: expected.isBuy },
+        action as HlWireOrderAction,
+        { markPx: snap.markPx, assetIndex: snap.assetIndex, withdrawableUsd: snap.withdrawableUsd, positionSzi: snap.positionSzi },
+      )
   if (!guard.ok) {
     const bad = guard.checks.filter((c) => !c.ok && c.level === 'block').map((c) => c.note)
     return NextResponse.json({ error: `Refused at submit: ${bad.join(' ')}` }, { status: 403 })
@@ -110,6 +126,23 @@ export async function POST(req: NextRequest) {
     const msg = typeof venue?.response === 'string' ? venue.response : `venue rejected the order (HTTP ${res.status})`
     return NextResponse.json({ error: msg }, { status: 502 })
   }
+  // Leverage set: no fill statuses — 'ok' from the venue IS the receipt.
+  // Not money moved (amountUsd 0) but ledgered for the audit trail.
+  if (isLeverage) {
+    if (grant) {
+      await recordLedger({
+        grantId: grant.id,
+        host: HL_EXEC_POLICY_HOST,
+        serviceName: 'Hyperliquid',
+        amountUsd: 0,
+        ok: true,
+        note: `hl leverage set: ${coin} ${expected.leverage}x cross`,
+        orgId: grant.orgId ?? undefined,
+      }).catch(() => {})
+    }
+    return NextResponse.json({ status: 'leverage-set', leverage: expected.leverage })
+  }
+
   const status = (venue.response as { data?: { statuses?: unknown[] } })?.data?.statuses?.[0]
   if (status && typeof status === 'object' && 'error' in status) {
     return NextResponse.json({ error: String((status as { error: unknown }).error) }, { status: 502 })

@@ -55,6 +55,11 @@ export interface HlOrderIntent {
   /** Exactly one of the two on open; close defaults to the full position. */
   sizeUnits?: number
   notionalUsd?: number
+  /** open only: explicit leverage from the ask ("2x long …", "with 3x
+   *  leverage"). The build sets it venue-side (cross mode) with a guarded
+   *  updateLeverage signature BEFORE the order — never silently ignored:
+   *  an ask that names leverage either sets it or refuses. */
+  leverage?: number
 }
 
 export interface HlDepositIntent {
@@ -100,12 +105,21 @@ export function parseHlIntent(message: string): HlIntent | null {
   )
   if (open) {
     const isBuy = open[1] === 'long' || open[1] === 'buy'
+    // Leverage rides in two spots: leading "2x long …" (the landing ask —
+    // "I want a 2X Long $12 of HYPE…") or trailing "with/at 3x (leverage)".
+    // Decimals are CAPTURED here so the guard can refuse them by name —
+    // dropping "2.5x" silently would trade at the account's setting instead.
+    const lev =
+      m.match(/\b(\d{1,3}(?:\.\d+)?)\s*x\s+(?:long|short|buy|sell)\b/) ??
+      m.match(/\b(?:with|at|using)\s+(\d{1,3}(?:\.\d+)?)\s*x(?:\s+(?:leverage|margin))?\b/)
+    const leverage = lev ? Number(lev[1]) : undefined
+    const withLev = leverage && Number.isFinite(leverage) && leverage > 0 ? { leverage } : {}
     if (open[2] && open[3]) {
       const notionalUsd = Number(open[2])
-      if (Number.isFinite(notionalUsd) && notionalUsd > 0) return { kind: 'open', coin: open[3].toUpperCase(), isBuy, notionalUsd }
+      if (Number.isFinite(notionalUsd) && notionalUsd > 0) return { kind: 'open', coin: open[3].toUpperCase(), isBuy, notionalUsd, ...withLev }
     } else if (open[4] && open[5]) {
       const sizeUnits = Number(open[4])
-      if (Number.isFinite(sizeUnits) && sizeUnits > 0) return { kind: 'open', coin: open[5].toUpperCase(), isBuy, sizeUnits }
+      if (Number.isFinite(sizeUnits) && sizeUnits > 0) return { kind: 'open', coin: open[5].toUpperCase(), isBuy, sizeUnits, ...withLev }
     }
   }
   return null
@@ -119,6 +133,12 @@ export interface HlMarketSnapshot {
   markPx: number
   /** Live signed position size for the coin (0 = flat) — close needs it. */
   positionSzi: number
+  /** Venue cap for the asset — the leverage guard's upper bound. */
+  maxLeverage: number
+  /** The account's CURRENT venue-side leverage setting for this asset
+   *  (null = no wallet or the read failed — fail-soft: we then always
+   *  offer the updateLeverage step rather than guessing it's already set). */
+  accountLeverage: { type: 'cross' | 'isolated'; value: number } | null
 }
 
 export interface HlWireOrderAction {
@@ -132,6 +152,58 @@ export interface HlWireOrderAction {
     t: { limit: { tif: 'Ioc' } }
   }[]
   grouping: 'na'
+}
+
+/** The venue's updateLeverage L1 action — signed exactly like an order
+ *  (phantom agent over the msgpack action hash). */
+export interface HlWireLeverageAction {
+  type: 'updateLeverage'
+  asset: number
+  isCross: boolean
+  leverage: number
+}
+
+export type HlWireAction = HlWireOrderAction | HlWireLeverageAction
+
+/**
+ * Build the venue-side leverage update an explicit-leverage ask needs before
+ * its order. Cross mode — the venue default and what "2x long" means without
+ * further qualification. Numbers come from the intent + live meta only.
+ */
+export function buildHlLeverageAction(intent: HlOrderIntent, snap: HlMarketSnapshot): HlWireLeverageAction {
+  if (intent.kind !== 'open' || !intent.leverage) throw new Error('leverage action needs an open intent with explicit leverage')
+  return { type: 'updateLeverage', asset: snap.assetIndex, isCross: true, leverage: intent.leverage }
+}
+
+/** Guard the leverage update (fail closed; runs at BUILD and again at
+ *  SUBMIT). Not money moved — valueUsd 0 — but every field is pinned:
+ *  the signature must not be redirectable onto a different asset, mode,
+ *  or multiple. */
+export function guardHlLeverageBuild(
+  intent: HlOrderIntent,
+  action: HlWireLeverageAction,
+  ctx: { assetIndex: number; maxLeverage: number },
+): GuardrailReport {
+  const checks: GuardrailCheck[] = []
+  const block = (id: string, ok: boolean, okNote: string, badNote: string) =>
+    checks.push({ id, level: 'block', ok, note: ok ? okNote : badNote })
+  block('lev-shape', action.type === 'updateLeverage', 'Leverage update only — no order rides in this signature.', 'Malformed leverage action — refusing.')
+  block('lev-asset-pinned', action.asset === ctx.assetIndex, `Asset pinned to ${intent.coin} (index ${ctx.assetIndex}).`, `Leverage asset ${action.asset} ≠ ${intent.coin}'s live index ${ctx.assetIndex}.`)
+  block('lev-cross', action.isCross === true, 'Cross margin — the venue default mode.', 'Only cross-margin leverage is built here.')
+  block(
+    'lev-integer',
+    Number.isInteger(action.leverage),
+    `${action.leverage}x is a whole number.`,
+    `Hyperliquid only takes whole-number leverage — ${action.leverage}x isn't settable. Ask with a whole number (e.g. ${Math.max(1, Math.round(action.leverage))}x).`,
+  )
+  block(
+    'lev-bounds',
+    action.leverage >= 1 && action.leverage <= ctx.maxLeverage,
+    `${action.leverage}x within ${intent.coin}'s 1–${ctx.maxLeverage}x venue range.`,
+    `${intent.coin} allows 1–${ctx.maxLeverage}x — ${action.leverage}x is outside the venue's range.`,
+  )
+  block('lev-as-asked', action.leverage === intent.leverage, `Sets the ${intent.leverage}x you asked for.`, 'Leverage differs from the ask.')
+  return buildReport(0, checks)
 }
 
 /**
@@ -178,7 +250,7 @@ export function buildHlOrderAction(intent: HlOrderIntent, snap: HlMarketSnapshot
 /** The EIP-712 payload a wallet signs for any HL L1 action: the phantom
  *  agent over the canonical msgpack action hash. Domain chainId 1337 is the
  *  venue's constant, not a network the wallet must be on. */
-export function hlActionTypedData(action: HlWireOrderAction, nonce: number, isTestnet = false): Eip712TypedData {
+export function hlActionTypedData(action: HlWireAction, nonce: number, isTestnet = false): Eip712TypedData {
   const connectionId = createL1ActionHash({ action: action as unknown as Record<string, unknown>, nonce })
   return {
     domain: { name: 'Exchange', version: '1', chainId: 1337, verifyingContract: '0x0000000000000000000000000000000000000000' },
@@ -224,8 +296,11 @@ export function guardHlExecBuild(intent: HlOrderIntent, action: HlWireOrderActio
       block('side-as-asked', order.b === intent.isBuy, `Opens the ${sideWord} you asked for.`, 'Order side differs from the ask.')
       block('has-collateral', ctx.withdrawableUsd > 0, `$${ctx.withdrawableUsd.toFixed(2)} withdrawable on the account.`, 'No withdrawable collateral on the Hyperliquid account — deposit first ("deposit 10 usdc to hyperliquid").')
       // Margin sufficiency is the venue's final call (leverage settings live
-      // there); we surface it rather than double-book it.
-      checks.push({ id: 'margin', level: 'warn', ok: notionalUsd <= ctx.withdrawableUsd * 3, note: notionalUsd <= ctx.withdrawableUsd * 3 ? 'Comfortably within collateral at ≤3x.' : 'Large vs collateral — the venue may reject on margin.' })
+      // there); we surface it rather than double-book it. Explicit leverage
+      // tightens the yardstick to the multiple being SET.
+      const effLev = intent.leverage ?? 3
+      const marginOk = notionalUsd <= ctx.withdrawableUsd * effLev
+      checks.push({ id: 'margin', level: 'warn', ok: marginOk, note: marginOk ? `Comfortably within collateral at ≤${effLev}x.` : 'Large vs collateral — the venue may reject on margin.' })
     }
   }
   return buildReport(notionalUsd, checks)
@@ -282,10 +357,14 @@ export function hlAgentOf<T extends { slug: string; name: string; endpoint?: str
 export async function fetchHlSnapshot(coin: string, wallet: string | undefined, isTestnet = false): Promise<HlMarketSnapshot & { withdrawableUsd: number }> {
   const { InfoClient, HttpTransport } = await import('@nktkas/hyperliquid')
   const info = new InfoClient({ transport: new HttpTransport({ isTestnet }) })
-  const [meta, mids, state] = await Promise.all([
+  const [meta, mids, state, active] = await Promise.all([
     info.meta(),
     info.allMids(),
     wallet ? info.clearinghouseState({ user: wallet as `0x${string}` }) : Promise.resolve(null),
+    // The account's current leverage setting for THIS asset (set even when
+    // flat). Fail-soft: null just means an explicit-leverage ask always
+    // offers the updateLeverage signature instead of skipping it.
+    wallet ? info.activeAssetData({ user: wallet as `0x${string}`, coin }).catch(() => null) : Promise.resolve(null),
   ])
   const assetIndex = meta.universe.findIndex((u) => u.name === coin)
   if (assetIndex < 0) throw new Error(`${coin} is not a Hyperliquid perp`)
@@ -297,15 +376,19 @@ export async function fetchHlSnapshot(coin: string, wallet: string | undefined, 
     szDecimals: meta.universe[assetIndex].szDecimals,
     markPx,
     positionSzi: pos ? Number(pos.position.szi) : 0,
+    maxLeverage: meta.universe[assetIndex].maxLeverage,
+    accountLeverage: active?.leverage ? { type: active.leverage.type, value: Number(active.leverage.value) } : null,
     withdrawableUsd: state ? Number(state.withdrawable) : 0,
   }
 }
 
-/** Collateral an OPEN order should have behind it: a third of notional
- *  (keeps the build's ≤3x margin warn clean, ≈2–3x effective leverage),
- *  floored at the bridge minimum — smaller deposits are lost, not credited. */
-export function hlCollateralTargetUsd(notionalUsd: number): number {
-  return Math.max(HL_MIN_DEPOSIT_USDC, Math.ceil((notionalUsd / 3) * 100) / 100)
+/** Collateral an OPEN order should have behind it: notional over the
+ *  leverage actually being set (default 3 — the historical ≈2–3x effective
+ *  yardstick when the ask names none), floored at the bridge minimum —
+ *  smaller deposits are lost, not credited. An explicit "2x long $12" needs
+ *  $6 behind it, not $4. */
+export function hlCollateralTargetUsd(notionalUsd: number, leverage = 3): number {
+  return Math.max(HL_MIN_DEPOSIT_USDC, Math.ceil((notionalUsd / leverage) * 100) / 100)
 }
 
 export interface HlOpenShortfall {
@@ -327,8 +410,9 @@ export async function hlOpenCollateralShortfall(intent: HlOrderIntent, wallet: s
     const snap = await fetchHlSnapshot(intent.coin, wallet)
     const notionalUsd = intent.notionalUsd ?? (intent.sizeUnits ? intent.sizeUnits * snap.markPx : 0)
     if (!(notionalUsd > 0)) return null
-    const target = hlCollateralTargetUsd(notionalUsd)
-    if (snap.withdrawableUsd >= notionalUsd / 3) return null
+    const lev = intent.leverage ?? 3
+    const target = hlCollateralTargetUsd(notionalUsd, lev)
+    if (snap.withdrawableUsd >= notionalUsd / lev) return null
     const depositUsdc = Math.max(HL_MIN_DEPOSIT_USDC, Number((target - snap.withdrawableUsd).toFixed(2)))
     return { depositUsdc, withdrawableUsd: snap.withdrawableUsd, notionalUsd: Number(notionalUsd.toFixed(2)) }
   } catch {
@@ -392,12 +476,37 @@ export async function buildHlExecTurn(
 
   const snap = await fetchHlSnapshot(intent.coin, walletAddress)
   const action = buildHlOrderAction(intent, snap)
-  const guard = guardHlExecBuild(intent, action, {
+  let guard = guardHlExecBuild(intent, action, {
     markPx: snap.markPx,
     assetIndex: snap.assetIndex,
     withdrawableUsd: snap.withdrawableUsd,
     positionSzi: snap.positionSzi,
   })
+
+  // Explicit leverage ("2x long $12 of HYPE…"): a guarded updateLeverage
+  // signature rides AHEAD of the order — never silently ignored. Skipped
+  // only when the account is verifiably ALREADY at that cross multiple.
+  let pre: { action: HlWireLeverageAction; nonce: number; typedData: Eip712TypedData; expected: { coin: string; leverage: number } } | undefined
+  let levPhrase = ''
+  if (intent.kind === 'open' && intent.leverage) {
+    const already = snap.accountLeverage?.type === 'cross' && snap.accountLeverage.value === intent.leverage
+    if (already) {
+      levPhrase = ` Account is already at ${intent.leverage}x cross on ${intent.coin} — no leverage change needed.`
+    } else {
+      const levAction = buildHlLeverageAction(intent, snap)
+      const levGuard = guardHlLeverageBuild(intent, levAction, { assetIndex: snap.assetIndex, maxLeverage: snap.maxLeverage })
+      // One merged report on the card: the leverage checks lead, the order
+      // checks follow; a failure on EITHER side refuses the whole turn.
+      guard = { ...guard, ok: guard.ok && levGuard.ok, checks: [...levGuard.checks, ...guard.checks] }
+      if (levGuard.ok) {
+        // Distinct nonce (venue nonces must be unique) strictly below the
+        // order's — the leverage set is submitted first.
+        const levNonce = Date.now() - 1
+        pre = { action: levAction, nonce: levNonce, typedData: hlActionTypedData(levAction, levNonce), expected: { coin: intent.coin, leverage: intent.leverage } }
+        levPhrase = ` Signs ${intent.leverage}x cross leverage first, then the order — two signatures, one card.`
+      }
+    }
+  }
   if (!guard.ok) {
     const bad = guard.checks.filter((c) => !c.ok && c.level === 'block').map((c) => c.note)
     trace({ type: 'note', level: 'warn', label: `native hl layer: ${intent.kind} refused — ${bad.join(' · ')}` })
@@ -407,15 +516,16 @@ export async function buildHlExecTurn(
   const typedData = hlActionTypedData(action, nonce)
   const o = action.orders[0]
   const verb = intent.kind === 'close' ? 'Close' : o.b ? 'Long' : 'Short'
-  const summary = `${verb} ${o.s} ${intent.coin} on Hyperliquid — IOC at ≤${HL_EXEC_SLIPPAGE_BPS}bps from mark ${snap.markPx} (~$${guard.valueUsd})${intent.kind === 'close' ? ', reduce-only' : ''}.`
+  const levTag = intent.kind === 'open' && intent.leverage ? ` at ${intent.leverage}x (cross)` : ''
+  const summary = `${verb} ${o.s} ${intent.coin}${levTag} on Hyperliquid — IOC at ≤${HL_EXEC_SLIPPAGE_BPS}bps from mark ${snap.markPx} (~$${guard.valueUsd})${intent.kind === 'close' ? ', reduce-only' : ''}.`
   const warns = guard.checks.filter((c) => !c.ok && c.level === 'warn').map((c) => ` ⚠️ ${c.note}`).join('')
-  trace({ type: 'status', label: `native hl layer: built ${summary}` })
+  trace({ type: 'status', label: `native hl layer: built ${summary}${pre ? ' (+ leverage pre-step)' : ''}` })
   return {
-    reply: `🔏 ${summary}${warns}`,
+    reply: `🔏 ${summary}${levPhrase}${warns}`,
     orderRequest: {
       protocol: 'hyperliquid',
       typedData,
-      hl: { action, nonce, isTestnet: false, expected: { coin: intent.coin, kind: intent.kind, isBuy: o.b } },
+      hl: { action, nonce, isTestnet: false, expected: { coin: intent.coin, kind: intent.kind, isBuy: o.b }, ...(pre ? { pre } : {}) },
     },
     guardrails: guard,
     buildPath: 'native-hl-exec',

@@ -438,7 +438,7 @@ export const JOB_SEGMENT_PARSERS: JobSegmentParser[] = [
       const title =
         o.kind === 'close'
           ? `Close ${o.coin} on Hyperliquid`
-          : `${o.isBuy ? 'Long' : 'Short'} ${o.notionalUsd ? `$${o.notionalUsd} of ` : `${o.sizeUnits} `}${o.coin} on Hyperliquid`
+          : `${o.leverage ? `${o.leverage}x ` : ''}${o.isBuy ? 'Long' : 'Short'} ${o.notionalUsd ? `$${o.notionalUsd} of ` : `${o.sizeUnits} `}${o.coin} on Hyperliquid`
       return { steps: [{ kind: 'sign', builder: 'native-hl-exec', title, params: hl as unknown as Record<string, unknown> }], title }
     },
   },

@@ -60,6 +60,15 @@ export interface Eip712OrderRequest {
     nonce: number
     isTestnet: boolean
     expected: { coin: string; kind: 'open' | 'close'; isBuy: boolean }
+    /** Optional guarded pre-action the card signs FIRST (explicit-leverage
+     *  asks: the updateLeverage set). Its own action+nonce+typedData — the
+     *  relay re-derives and re-guards it exactly like the order. */
+    pre?: {
+      action: unknown
+      nonce: number
+      typedData: unknown
+      expected: { coin: string; leverage: number }
+    }
   }
 }
 

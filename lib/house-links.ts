@@ -31,9 +31,11 @@ export const HOUSE_LINKS: HouseLink[] = [
   // USDC lives) as one job chip. The plumbing is the demo, not the ask.
   // Retired predecessors stay live in the DB, just unsurfaced: /i/stop-loss
   // (assumed an open position) and the verbose four-clause phrasing.
+  // Explicit leverage is REAL here (2026-07-23): the build signs a guarded
+  // updateLeverage (2x cross) ahead of the order — never decorative copy.
   {
     slug: 'protected-long',
-    ask: 'Long $12 of HYPE on Hyperliquid, then protect my HYPE long with a 5% stop',
+    ask: 'I want a 2X Long $12 of HYPE on Hyperliquid, then protect my HYPE long with a 5% stop',
     label: 'Open & protect a position — funding handled for you',
   },
   { slug: 'bridge-usdc', ask: 'Swap 5 USDC from Base to Arbitrum', label: 'Move stables across chains' },
