@@ -2373,29 +2373,60 @@ async function prepareSwapTurn(intent: SwapIntent, walletAddress: string | undef
     }
     if (intent.sellToken) {
       const sellSym = intent.sellToken.toUpperCase()
-      const dec = tokenDecimals(intent.sellToken, chainId)
-      if (dec === null) {
-        trace({ type: 'note', level: 'warn', label: `unknown token “${intent.sellToken}” on ${chain.name} — no build` })
-        return NextResponse.json({
-          reply: `🔄 I don't know the token “${intent.sellToken}” on ${chain.name} — use a known symbol (${Object.keys(chain.tokens).filter((s) => s !== 'ETH').join(', ')}, …).`,
-        })
+      const stableHere = primaryStable(chainId)
+      if (sellSym === buySym && stableHere && buySym === stableHere.symbol.toUpperCase()) {
+        // Acquisition ask ("I need $50 of USDG on Robinhood") — buy and sell
+        // both resolved to the chain's own $1 unit. $X of it IS X tokens, so
+        // no price probe; the sell==buy gate below owns the answer.
+        intent = { ...intent, sellAmountHuman: Number(intent.sellAmountUsd).toFixed(2) }
+      } else {
+        const dec = tokenDecimals(intent.sellToken, chainId)
+        if (dec === null) {
+          trace({ type: 'note', level: 'warn', label: `unknown token “${intent.sellToken}” on ${chain.name} — no build` })
+          return NextResponse.json({
+            reply: `🔄 I don't know the token “${intent.sellToken}” on ${chain.name} — use a known symbol (${Object.keys(chain.tokens).filter((s) => s !== 'ETH').join(', ')}, …).`,
+          })
+        }
+        const probe = await usdPerToken(chainId, intent.sellToken)
+        const amountHuman = probe ? usdToTokenAmount(Number(intent.sellAmountUsd), probe.usd, dec) : null
+        if (!amountHuman) {
+          trace({ type: 'note', level: 'warn', label: `couldn't price ${sellSym} on ${chain.name} to size a $${intent.sellAmountUsd} ask — asking for a token amount` })
+          return NextResponse.json({
+            reply: `🔄 I couldn't price ${sellSym} on ${chain.name} to size a $${intent.sellAmountUsd} swap — say a token amount instead, e.g. “swap 0.01 ${sellSym} for ${buySym}”.`,
+          })
+        }
+        trace({ type: 'status', label: `native swap layer: $${intent.sellAmountUsd} of ${sellSym} ≈ ${amountHuman} ${sellSym} (priced via ${probe!.via})` })
+        intent = { ...intent, sellAmountHuman: amountHuman }
       }
-      const probe = await usdPerToken(chainId, intent.sellToken)
-      const amountHuman = probe ? usdToTokenAmount(Number(intent.sellAmountUsd), probe.usd, dec) : null
-      if (!amountHuman) {
-        trace({ type: 'note', level: 'warn', label: `couldn't price ${sellSym} on ${chain.name} to size a $${intent.sellAmountUsd} ask — asking for a token amount` })
-        return NextResponse.json({
-          reply: `🔄 I couldn't price ${sellSym} on ${chain.name} to size a $${intent.sellAmountUsd} swap — say a token amount instead, e.g. “swap 0.01 ${sellSym} for ${buySym}”.`,
-        })
-      }
-      trace({ type: 'status', label: `native swap layer: $${intent.sellAmountUsd} of ${sellSym} ≈ ${amountHuman} ${sellSym} (priced via ${probe!.via})` })
-      intent = { ...intent, sellAmountHuman: amountHuman }
     }
   }
 
   if (intent.problem || !intent.sellToken || !intent.buyToken || !intent.sellAmountHuman) {
     trace({ type: 'status', label: 'native swap layer: ask under-specified — asking for the amount and pair' })
     return NextResponse.json({ reply: `🔄 ${intent.problem ?? 'Say the amount and pair — e.g. “swap 100 USDC for WETH” or “swap $5 of ETH for USDG”.'}` })
+  }
+
+  // A sell==buy "swap" is never a build. On Robinhood Chain a USDG target is
+  // the ACQUISITION path — "I need $50 of USDG on Robinhood" (live
+  // 2026-07-23: it fell to the planner, which called USDG "not a standard
+  // token") resolves to buy==sell==USDG and belongs to the funding plan
+  // below. Anywhere else, the money is presumably on another chain — say the
+  // exact phrasing that moves it instead of erroring in a venue.
+  if (intent.sellToken.toUpperCase() === intent.buyToken.toUpperCase()) {
+    const sym = intent.sellToken.toUpperCase()
+    const acquisitionHere = chainId === ROBINHOOD_CHAIN_ID && intent.mode !== 'limit' && primaryStable(chainId)?.symbol.toUpperCase() === sym
+    if (!acquisitionHere) {
+      trace({ type: 'status', label: `native swap layer: sell==buy (${sym} on ${chain.name}) — pointing at the cross-chain phrasing, no build` })
+      return NextResponse.json({
+        reply: `🔄 ${sym} → ${sym} on ${chain.name} isn't a swap. If you're topping up ${sym} on ${chain.name} from another chain, say e.g. “swap ${intent.sellAmountHuman} ${sym} from base to ${chain.name.toLowerCase().replace(' chain', '')}” and I'll build the move.`,
+      })
+    }
+    if (!walletAddress) {
+      return NextResponse.json({
+        reply: `🌉 Connect your wallet first — getting ${sym} onto ${chain.name} starts from the balances you already hold, and you sign every step yourself.`,
+        connectWallet: true,
+      })
+    }
   }
 
   // Known-symbol hint, per chain (Robinhood has USDG/USDe, not USDC/DAI).
@@ -2425,6 +2456,11 @@ async function prepareSwapTurn(intent: SwapIntent, walletAddress: string | undef
   // parseRobinhoodFunding). RPC trouble falls through to the normal
   // build, which fails closed on its own.
   const rhStable = chainId === ROBINHOOD_CHAIN_ID && intent.mode !== 'limit' ? primaryStable(chainId) : null
+  // The target is the stable ITSELF ("I need $50 of USDG on Robinhood") —
+  // an acquisition, not a buy: the funding legs landing ARE the outcome, so
+  // the chips carry no follow-up buy, and the need subtracts what's already
+  // held there.
+  const acquiring = !!rhStable && intent.buyToken.toUpperCase() === rhStable.symbol.toUpperCase()
   if (rhStable && intent.sellToken.toUpperCase() === rhStable.symbol.toUpperCase()) {
     try {
       const shortfall = await readFundingShortfall(walletAddress)
@@ -2433,12 +2469,14 @@ async function prepareSwapTurn(intent: SwapIntent, walletAddress: string | undef
         const buySym = intent.buyToken.toUpperCase()
         const holdingUsd = Number(shortfall.usdgAtoms) / 10 ** rhStable.decimals
         const includeGas = !shortfall.hasGas
-        const needUsd = fundingNeedUsd(buyUsd, includeGas)
+        const needUsd = acquiring
+          ? fundingNeedUsd(Math.max(0.01, Number((buyUsd - holdingUsd).toFixed(2))), includeGas)
+          : fundingNeedUsd(buyUsd, includeGas)
         const advice = planRobinhoodFundingAdvice({
           scan: shortfall,
           needUsd,
           gasIncluded: includeGas,
-          followup: `buy $${buyUsd} of ${buySym}`,
+          followup: acquiring ? '' : `buy $${buyUsd} of ${buySym}`,
         })
         const holdingsSummary = shortfall.origins.map((o) => `~$${o.usd} of ${o.token} on ${o.word}`).join(', ')
         // In-flight settlement awareness (live 2026-07-21): the user signed a
@@ -2483,10 +2521,12 @@ async function prepareSwapTurn(intent: SwapIntent, walletAddress: string | undef
             label: `funding layer claimed the turn: ${rhStable.symbol} short on ${chain.name} (holds ~$${holdingUsd.toFixed(2)}, needs $${buyUsd}) but the wallet holds ${holdingsSummary} — offering the funding plan (${includeGas ? 'gas leg included' : 'gas already covered'})`,
           })
           return NextResponse.json({
-            reply:
-              `🌉 **We can make this happen.** You're holding **${holdingsSummary}** — ` +
-              `this buy needs ~$${buyUsd} of ${rhStable.symbol} on ${chain.name} and you're at ~$${holdingUsd.toFixed(2)} there, so I'll convert some of it${includeGas ? ', drop in a little ETH for gas,' : ''} ` +
-              `and buy the ${buySym} — all in one job you sign step by step, funds arriving on ${chain.name} in seconds.${inflightSuffix}`,
+            reply: acquiring
+              ? `🌉 **We can make this happen.** You asked for $${buyUsd} of ${rhStable.symbol} on ${chain.name} and you're at ~$${holdingUsd.toFixed(2)} there — but you're holding **${holdingsSummary}**, so I'll convert enough to close the gap${includeGas ? ' (a little ETH for gas included)' : ''}, ` +
+                `landing on ${chain.name} in seconds. One job, you sign each step.${inflightSuffix}`
+              : `🌉 **We can make this happen.** You're holding **${holdingsSummary}** — ` +
+                `this buy needs ~$${buyUsd} of ${rhStable.symbol} on ${chain.name} and you're at ~$${holdingUsd.toFixed(2)} there, so I'll convert some of it${includeGas ? ', drop in a little ETH for gas,' : ''} ` +
+                `and buy the ${buySym} — all in one job you sign step by step, funds arriving on ${chain.name} in seconds.${inflightSuffix}`,
             clarify: { question: 'Fund it from another chain?', options: options.slice(0, 4) },
             buildPath: 'native-lifi-fund-offer',
             workingContext: pendingFunding,
@@ -2498,7 +2538,7 @@ async function prepareSwapTurn(intent: SwapIntent, walletAddress: string | undef
             label: `funding layer claimed the turn: ${rhStable.symbol} short on ${chain.name} and the wallet's ~$${advice.stranded.usd} ${advice.stranded.token} on ${advice.stranded.word} is gas-stranded — ${advice.donor ? `offering a ${GAS_TOPUP_ETH} ETH topup from ${advice.donor.word}` : 'asking for an ETH topup there'}`,
           })
           return NextResponse.json({
-            reply: `⛽ **Your money's already in place** — this buy needs ~$${buyUsd} of ${rhStable.symbol} on ${chain.name}, and ${advice.copy}${inflightSuffix}`,
+            reply: `⛽ **Your money's already in place** — ${acquiring ? `you asked for $${buyUsd} of ${rhStable.symbol} on ${chain.name}` : `this buy needs ~$${buyUsd} of ${rhStable.symbol} on ${chain.name}`}, and ${advice.copy}${inflightSuffix}`,
             ...(advice.chips ? { clarify: { question: `Fix the ${advice.stranded.word} gas and run it?`, options: advice.chips.slice(0, 4) } } : {}),
             buildPath: 'native-lifi-fund-offer',
             workingContext: pendingFunding,
@@ -2514,14 +2554,27 @@ async function prepareSwapTurn(intent: SwapIntent, walletAddress: string | undef
         })
         return NextResponse.json({
           reply:
-            `🌉 Here's where this stands: the buy needs ~$${buyUsd} of ${rhStable.symbol} on ${chain.name} and the wallet holds ~$${holdingUsd.toFixed(2)} there. ` +
+            `🌉 Here's where this stands: ${acquiring ? 'you asked for' : 'the buy needs'} ~$${buyUsd} of ${rhStable.symbol} on ${chain.name} and the wallet holds ~$${holdingUsd.toFixed(2)} there. ` +
             `Across the chains I can bridge from I see: ${advice.copy} — not enough yet for the ~$${needUsd} plan${includeGas ? ' (gas leg included)' : ''}. ` +
             `Here's what unlocks it: top up USDC on Base, Ethereum, or Arbitrum (or ${rhStable.symbol} on ${chain.name}), tell me when it's there, and I'll pick it up from that point — nothing was built or spent in the meantime.${inflightSuffix}`,
           workingContext: pendingFunding,
         })
+      } else if (acquiring) {
+        const holdingUsd = Number(shortfall.usdgAtoms) / 10 ** rhStable.decimals
+        trace({ type: 'status', label: `funding layer: acquisition target already covered (~$${holdingUsd.toFixed(2)} ${rhStable.symbol} on ${chain.name}) — nothing to move` })
+        return NextResponse.json({
+          reply: `💰 Covered already — you hold ~$${holdingUsd.toFixed(2)} of ${rhStable.symbol} on ${chain.name}, at or above the $${Number(intent.sellAmountHuman).toFixed(2)} you asked for. Nothing needs to move; ask for the trade whenever you're ready.`,
+        })
       }
     } catch {
-      /* balance reads unavailable → the normal build path below fails closed on its own */
+      /* balance reads unavailable → the normal build path below fails closed
+         on its own. EXCEPT an acquisition: there is no venue build behind it
+         (USDG→USDG), so answer honestly instead of falling through. */
+      if (acquiring) {
+        return NextResponse.json({
+          reply: `🌉 I couldn't read your balances just now, so I won't plan the ${rhStable.symbol} top-up blind — say "check again" in a moment and I'll re-scan.`,
+        })
+      }
     }
   }
 

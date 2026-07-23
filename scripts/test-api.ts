@@ -54,7 +54,7 @@ import { FUNDING_ALT_USDC, fundingAltUsdcFor, fundingNeedUsd, GAS_TOPUP_ETH, gua
 import { classifyOneclickStatus, inflightDepositFromPending, inflightPendingData, inflightSettlingNote } from '../lib/inflight-funding'
 import { sanitizeWorkingContext } from '../lib/working-context'
 import { parseRobinhoodFunding, parseSameChainSwapSegment, JOB_SEGMENT_PARSERS } from '../lib/jobs'
-import { parseTransferSegment } from '../lib/transfer-exec'
+import { parseMultiSendSegments, parseTransferSegment } from '../lib/transfer-exec'
 import { canonicalChainWord, normalizeChainWords } from '../lib/chain-lexicon'
 import { detectBalanceShortfall, fundingPlanUsd, planFundingChips, rankFundingSources, softenClaimedFailureBlock, type FundingNeed, type FundingSource } from '../lib/funding-plan'
 import { compileDcaBuy, dcaRunChip, parseDcaCreate, parseDcaManage, parseDcaRun, periodKeyFor } from '../lib/dca'
@@ -2788,6 +2788,23 @@ async function main() {
     check('lexicon: "a ton of USDC" is not a chain', detectCrossChain('swap a ton of USDC for ETH').chains.length === 0)
     check('lexicon: "based" never fuzzy-matches base', canonicalChainWord('based') === null)
 
+    // Acquisition grammar (live 2026-07-23: "I need $50 of USDG on Robinhood,
+    // can you make that happen?" fell to the planner, which called USDG "not
+    // a standard token").
+    const needUsdg = parseSwapIntent('I need $50 of USDG on Robinhood, can you make that happen?')
+    check(
+      'swap intent: "I need $50 of USDG on Robinhood" parses as a dollar acquisition (never the planner)',
+      needUsdg.isSwap && !needUsdg.problem && needUsdg.sellAmountUsd === '50' && needUsdg.buyToken?.toUpperCase() === 'USDG',
+      JSON.stringify(needUsdg),
+    )
+    const needIn = parseSwapIntent('I need $20 in USDG on robinhood')
+    check('swap intent: "$20 in USDG" variant parses too', needIn.isSwap && !needIn.problem && needIn.sellAmountUsd === '20')
+    const getMe = parseSwapIntent('get me $20 worth of AAPL')
+    check('swap intent: "get me $20 worth of AAPL" rides the dollar-buy shape', getMe.isSwap && !getMe.problem && getMe.sellAmountUsd === '20' && getMe.buyToken?.toUpperCase() === 'AAPL')
+    const wantSwap = parseSwapIntent('I want to swap 1 USDC for WETH')
+    check('swap intent: "I want to swap 1 USDC for WETH" keeps the market grammar (need-verbs never hijack)', wantSwap.isSwap && wantSwap.sellAmountHuman === '1' && wantSwap.sellToken === 'USDC')
+    check('swap intent: "I want to send all my USDC…" is NOT a swap (transfer territory)', parseSwapIntent('I want to send all my USDC on arbitrum to nate.eth').isSwap === false)
+
     const DEPOSIT = '0x7ff0D96c9f0528f0FF8dd948b2D316806fE3c7f2'
     const USDC_BASE = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913'
     const goodData = encodeFunctionData({ abi: erc20Abi, functionName: 'transfer', args: [DEPOSIT as `0x${string}`, BigInt(1000000)] })
@@ -4887,6 +4904,47 @@ async function main() {
         parseTransferSegment('deposit 20 usdc to hyperliquid') === null &&
         parseTransferSegment('swap 1 usdc for eth on base') === null,
     )
+
+    // ── Multi-clause sends + all-sizing (the 2026-07-23 two-chain ask) ────
+    const multiTo = '0x2055Fa9E99565181A8509B81cBD0aa3D73be8d56'
+    const multiAsk = `I want to send all my USDC on arbitrum and an additional 5 USDC on base to ${multiTo}`
+    const multi = parseMultiSendSegments(multiAsk)
+    check(
+      'multi-send parse: "all my USDC on arbitrum and an additional 5 USDC on base to 0x…" → two clauses, shared recipient',
+      Array.isArray(multi) && multi.length === 2 &&
+        multi[0].amountHuman === 'all' && multi[0].chainId === 42161 &&
+        multi[1].amountHuman === '5' && multi[1].chainId === 8453 &&
+        multi.every((t) => t.to === multiTo && t.token === 'USDC'),
+      JSON.stringify(multi),
+    )
+    const multiJob = compileJobAsk(multiAsk)
+    check(
+      'jobs: a multi-clause send compiles as ONE job — two native-transfer sign steps, no "then" needed',
+      !!multiJob && !('problem' in multiJob) &&
+        JSON.stringify(multiJob.steps.map((s) => `${s.kind}:${s.builder}`)) === JSON.stringify(['sign:native-transfer', 'sign:native-transfer']) &&
+        (multiJob.steps[0].params as { chainId?: number }).chainId === 42161 && (multiJob.steps[1].params as { chainId?: number }).chainId === 8453,
+      JSON.stringify(multiJob),
+    )
+    const multiNoChain = parseMultiSendSegments(`send all my USDC and 5 USDC on base to ${multiTo}`)
+    check(
+      'multi-send parse: a chainless clause refuses honestly (each part names its own chain)',
+      !!multiNoChain && 'problem' in multiNoChain && /chain/i.test(multiNoChain.problem),
+      JSON.stringify(multiNoChain),
+    )
+    check(
+      'multi-send parse: single sends and non-sends stay out (null)',
+      parseMultiSendSegments(`send 1 USDC on base to ${multiTo}`) === null && parseMultiSendSegments('swap 1 usdc for eth on base') === null,
+    )
+    const allSingle = parseTransferSegment(`send all my USDC on base to ${multiTo}`)
+    check(
+      "transfer parse: \"all my USDC\" → the 'all' sentinel (sized from the live balance at build time)",
+      !!allSingle && !('problem' in allSingle) && allSingle.amountHuman === 'all' && allSingle.chainId === 8453,
+      JSON.stringify(allSingle),
+    )
+    const entire = parseTransferSegment(`transfer my entire USDC balance on arbitrum to ${multiTo}`)
+    check('transfer parse: "my entire USDC balance" reads as an all-send', !!entire && !('problem' in entire) && entire.amountHuman === 'all' && entire.chainId === 42161)
+    const allTypo = parseMultiSendSegments(`send all my USDC on Aribtrum and 5 USDC on base to ${multiTo}`)
+    check('multi-send parse: chain typos canonicalize per clause (shared lexicon)', Array.isArray(allTypo) && allTypo[0].chainId === 42161, JSON.stringify(allTypo))
     const chainThenSend = compileJobAsk(`can you swap 1 USDC from base to Arbitrum then send the 1 USDC on arbitrum to ${sendTo}`)
     check(
       'jobs: bridge-then-send compiles (the screenshot ask) — cross-chain + wait + native-transfer',

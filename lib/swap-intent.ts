@@ -115,6 +115,17 @@ const BUY_DOLLAR_RE = new RegExp(
 // so this clarifies deterministically toward the dollar phrasing instead of
 // falling to the planner's quote-and-confirm detour.
 const BUY_SHARES_COUNT_RE = new RegExp(String.raw`\bbuy\s+${FILLER}${AMOUNT}\s+shares?\s+(?:of|in)\s+${TOKEN}`, 'i')
+// "I need $50 of USDG on Robinhood, can you make that happen?" — an
+// ACQUISITION ask: no buy/swap verb, but the same shape as a dollar buy
+// (dollars + target token; the spend token is the route's to default).
+// Live 2026-07-23: this exact ask fell to the planner, which replied
+// "USDG is not a standard token" — about the one token Robinhood Chain
+// trades everything against. When the target IS the chain's own stable,
+// the route answers with the funding plan instead of a swap.
+const NEED_DOLLAR_RE = new RegExp(
+  String.raw`\b(?:i\s+)?(?:need|want|get\s+me)\s+${FILLER}${USD_AMOUNT}(?:\s+worth)?\s+(?:of|in)\s+${TOKEN}\b`,
+  'i',
+)
 // Dollar amounts on OTHER venues (perps etc.) must not be hijacked into a
 // spot swap — "buy $12 of ETH on hyperliquid" belongs to the HL exec layer.
 const OTHER_VENUE_RE = /\bhyperliquid\b|\bperp(?:s|etual)?\b|\bleverage\b|\b\d+x\b/i
@@ -190,6 +201,16 @@ export function parseSwapIntent(message: string): SwapIntent {
         isSwap: true,
         problem: `Buys here are sized by what you spend — say it in dollars ("buy $20 of ${sm[2].toUpperCase()}") and I'll build it at the live price.`,
       }
+    }
+    // Acquisition asks ride the dollar-buy shape: "I need $50 of USDG" ≡
+    // "buy $50 of USDG" as far as the route is concerned (the route's
+    // stable-target branch decides funding-plan vs swap). Checked LAST so a
+    // real verb ("I want to swap 1 USDC for WETH") keeps its own grammar,
+    // and never on cadence asks — "I need $10 of AAPL every week" belongs
+    // to the DCA layer, and a one-shot buy would silently eat the schedule.
+    const nm = message.match(NEED_DOLLAR_RE)
+    if (nm && !/\b(?:every|each|daily|weekly|monthly)\b/i.test(message)) {
+      return { isSwap: true, mode: 'swap', sellAmountUsd: usdOf(nm, 1), buyToken: nm[3] }
     }
   }
   if (swapish(message)) {
