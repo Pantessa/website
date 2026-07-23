@@ -254,10 +254,63 @@ export function planFundingChips(need: FundingNeed, needUsd: number, sources: Fu
   return { kind: 'offer', needUsd: totalNeedUsd, chips: chips.slice(0, 4), sourceSummary }
 }
 
+/**
+ * The honest-refusal copy when the movable sources can't cover the plan.
+ * Pure so the harness pins every variant. Stranded USDC (exists, but its
+ * chain holds no gas ETH to sign a move) must be NAMED with its rescue —
+ * "I found no movable ETH or USDC" next to a visible $20 reads as a broken
+ * product, and the rescue is one dollar of ETH away.
+ */
+export function shortRefusalCopy(params: {
+  /** Human chain list, already joined ("Base, Arbitrum and Ethereum"). */
+  chainsRead: string
+  need: FundingNeed
+  needUsd: number
+  /** Movable-source summary from the plan ('' when nothing movable). */
+  sourceSummary: string
+  stranded: FundingSource[]
+  movableTotalUsd: number
+}): string {
+  const { chainsRead, need, needUsd, sourceSummary, stranded, movableTotalUsd } = params
+  const actionLabel = need.actionLabel
+  const planLine = `the smallest plan for ${actionLabel} moves ~$${usd2(needUsd)} (solver fees included).`
+  if (stranded.length === 0) {
+    return (
+      (sourceSummary ? `Across ${chainsRead} I can see ${sourceSummary} — ` : `Across ${chainsRead} I found no movable ETH or USDC — `) +
+      `${planLine} Top up any of those chains and ask again.`
+    )
+  }
+  const strandedSummary = stranded.map((s) => `~$${usd2(Number(s.usd.toFixed(2)))} of ${s.token} on ${s.chainWord}`).join(', ')
+  // The needed token already ON the destination chain was subtracted from the
+  // shortfall by the caller — name it, but never count it toward "enough".
+  const coverableUsd = stranded
+    .filter((s) => s.chainId !== need.chainId || s.token.toUpperCase() !== need.token.toUpperCase())
+    .reduce((a, s) => a + s.usd, 0)
+  const gasWords = [...new Set(stranded.map((s) => s.chainWord))].join(' and ')
+  const rescue = `Send a little ETH (about a dollar's worth is plenty) to your own address on ${gasWords} and ask again — ${planLine}`
+  if (movableTotalUsd + coverableUsd >= needUsd) {
+    // The money EXISTS — only origin gas is missing. Lead with that.
+    return (
+      `Your money's already there: across ${chainsRead} I can see ${sourceSummary ? `${sourceSummary}, plus ` : ''}${strandedSummary} — enough for ${actionLabel} — ` +
+      `but there's no ETH on ${gasWords} to sign the move with, so it's stuck where it sits. ${rescue}`
+    )
+  }
+  return (
+    `Across ${chainsRead} I can see ${sourceSummary ? `${sourceSummary}, plus ` : ''}${strandedSummary} that can't move without gas ETH on ${gasWords} — ` +
+    `${planLine} Top up any of those chains (and ${gasWords} needs a little ETH before its USDC can move) and ask again.`
+  )
+}
+
 // ── I/O: the wallet scan + the offer turn ───────────────────────────────────
 
 export interface FundingScan {
   sources: FundingSource[]
+  /** USDC that EXISTS but can't leave its chain — no gas ETH there to sign
+   *  the move. Never a plannable source, but any refusal must NAME it: a
+   *  scan that dropped it once told a wallet holding $20 of Base USDC
+   *  "I found no movable ETH or USDC" (live 2026-07-23, four retries in
+   *  five minutes on the HYPE house link). */
+  stranded: FundingSource[]
   /** Chain words that were actually read — the only chains any copy may
    *  make claims about. */
   readChains: string[]
@@ -275,6 +328,7 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 export async function scanFundingSources(user: string): Promise<FundingScan> {
   const ethProbe = await usdPerToken(8453, 'ETH').catch(() => null)
   const sources: FundingSource[] = []
+  const stranded: FundingSource[] = []
   const readChains: string[] = []
   const failedChains: string[] = []
   await Promise.all(
@@ -299,6 +353,8 @@ export async function scanFundingSources(user: string): Promise<FundingScan> {
         const usdcBal = Number(formatUnits(usdcAtoms, usdc.decimals))
         if (usdcBal > 0 && nativeEth >= (MIN_GAS_TO_SEND_ETH[chainId] ?? 0.001)) {
           sources.push({ chainId, chainWord: word, token: 'USDC', balance: usdcBal, usd: usdcBal })
+        } else if (usdcBal >= DUST_USD) {
+          stranded.push({ chainId, chainWord: word, token: 'USDC', balance: usdcBal, usd: usdcBal })
         }
         const movableEth = nativeEth - (GAS_RESERVE_ETH[chainId] ?? 0.002)
         if (ethProbe && movableEth > 0) {
@@ -310,7 +366,7 @@ export async function scanFundingSources(user: string): Promise<FundingScan> {
     }),
   )
   if (readChains.length === 0) throw new Error('no funding-scan chain was readable')
-  return { sources, readChains, failedChains }
+  return { sources, stranded, readChains, failedChains }
 }
 
 export interface FundingOfferTurn {
@@ -406,14 +462,22 @@ export async function offerFundingPlan(params: {
     trace({
       type: 'note',
       level: 'warn',
-      label: `funding layer: ${need.actionLabel} needs ~$${plan.needUsd} moved but the wallet holds ~$${plan.totalUsd} movable across ${chainsRead} — honest refusal`,
+      label:
+        `funding layer: ${need.actionLabel} needs ~$${plan.needUsd} moved but the wallet holds ~$${plan.totalUsd} movable across ${chainsRead}` +
+        (scan.stranded.length > 0
+          ? ` (+ $${usd2(Number(scan.stranded.reduce((a, s) => a + s.usd, 0).toFixed(2)))} USDC gas-stranded on ${scan.stranded.map((s) => s.chainWord).join('/')}) — naming it`
+          : '') +
+        ' — honest refusal',
     })
     return {
-      insufficient:
-        (plan.sourceSummary
-          ? `Across ${chainsRead} I can see ${plan.sourceSummary} — `
-          : `Across ${chainsRead} I found no movable ETH or USDC — `) +
-        `the smallest plan for ${need.actionLabel} moves ~$${usd2(plan.needUsd)} (solver fees included). Top up any of those chains and ask again.`,
+      insufficient: shortRefusalCopy({
+        chainsRead,
+        need,
+        needUsd: plan.needUsd,
+        sourceSummary: plan.sourceSummary,
+        stranded: scan.stranded,
+        movableTotalUsd: plan.totalUsd,
+      }),
     }
   }
 

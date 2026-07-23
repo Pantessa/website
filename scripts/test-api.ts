@@ -57,7 +57,7 @@ import { parseRobinhoodFunding, parseSameChainSwapSegment, JOB_SEGMENT_PARSERS }
 import { parseMultiSendSegments, parseTransferSegment } from '../lib/transfer-exec'
 import { classifyTurn, moneyShaped } from '../lib/ask-failure'
 import { canonicalChainWord, normalizeChainWords } from '../lib/chain-lexicon'
-import { detectBalanceShortfall, fundingPlanUsd, planFundingChips, rankFundingSources, softenClaimedFailureBlock, type FundingNeed, type FundingSource } from '../lib/funding-plan'
+import { detectBalanceShortfall, fundingPlanUsd, planFundingChips, rankFundingSources, shortRefusalCopy, softenClaimedFailureBlock, type FundingNeed, type FundingSource } from '../lib/funding-plan'
 import { compileDcaBuy, dcaRunChip, parseDcaCreate, parseDcaManage, parseDcaRun, periodKeyFor } from '../lib/dca'
 import { firstUserPromptOf, shareTweetHrefOf } from '../lib/shared-chat'
 import {
@@ -2894,6 +2894,47 @@ async function main() {
       0,
     )
     check('funding plan: the needed token on the destination chain is never a source (already counted)', destTokenExcluded.kind === 'short')
+
+    // ── The short-refusal copy (live 2026-07-23: a wallet holding $20 USDC
+    // on Base with zero gas ETH hit the HYPE house link four times and was
+    // told "I found no movable ETH or USDC" — stranded funds must be NAMED).
+    const hlNeed: FundingNeed = { chainId: 42161, token: 'USDC', amountHuman: 5, followupResume: '', actionLabel: 'the Hyperliquid position' }
+    const strandedBase: FundingSource = { chainId: 8453, chainWord: 'Base', token: 'USDC', balance: 20, usd: 20 }
+    const refusalStranded = shortRefusalCopy({
+      chainsRead: 'Base, Arbitrum and Ethereum', need: hlNeed, needUsd: 8, sourceSummary: '', stranded: [strandedBase], movableTotalUsd: 0,
+    })
+    check(
+      'funding refusal: gas-stranded USDC is NAMED with the one-line gas rescue (the HYPE house-link wall)',
+      refusalStranded.includes('~$20 of USDC on Base') && /already there/.test(refusalStranded) && /no ETH on Base/.test(refusalStranded) &&
+        /Send a little ETH/.test(refusalStranded) && !/found no movable/.test(refusalStranded),
+      refusalStranded,
+    )
+    const refusalEmpty = shortRefusalCopy({
+      chainsRead: 'Base, Arbitrum and Ethereum', need: hlNeed, needUsd: 8, sourceSummary: '', stranded: [], movableTotalUsd: 0,
+    })
+    check(
+      'funding refusal: a truly empty wallet keeps the honest "no movable" line',
+      /found no movable ETH or USDC/.test(refusalEmpty) && /Top up any of those chains/.test(refusalEmpty),
+      refusalEmpty,
+    )
+    const refusalStillShort = shortRefusalCopy({
+      chainsRead: 'Base, Arbitrum and Ethereum', need: hlNeed, needUsd: 40, sourceSummary: '~$3 of ETH on Arbitrum',
+      stranded: [strandedBase], movableTotalUsd: 3,
+    })
+    check(
+      'funding refusal: stranded funds that still don\'t cover are named without an "already there" claim',
+      refusalStillShort.includes('~$20 of USDC on Base') && /gas ETH on Base/.test(refusalStillShort) && !/already there/.test(refusalStillShort),
+      refusalStillShort,
+    )
+    const refusalDestStranded = shortRefusalCopy({
+      chainsRead: 'Base, Arbitrum and Ethereum', need: hlNeed, needUsd: 8, sourceSummary: '',
+      stranded: [{ chainId: 42161, chainWord: 'Arbitrum', token: 'USDC', balance: 20, usd: 20 }], movableTotalUsd: 0,
+    })
+    check(
+      'funding refusal: destination-chain same-token stranded is named but never counts as "enough" (already in the shortfall)',
+      refusalDestStranded.includes('~$20 of USDC on Arbitrum') && !/already there/.test(refusalDestStranded) && /gas ETH on Arbitrum/.test(refusalDestStranded),
+      refusalDestStranded,
+    )
 
     // Acquisition grammar (live 2026-07-23: "I need $50 of USDG on Robinhood,
     // can you make that happen?" fell to the planner, which called USDG "not
