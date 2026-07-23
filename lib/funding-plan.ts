@@ -166,6 +166,8 @@ const gasLegResume = (s: FundingSource, amount: string, need: FundingNeed): stri
  * can't sign are stranded, not delivered.
  */
 export function planFundingChips(need: FundingNeed, needUsd: number, sources: FundingSource[], gasUsd = 0): FundingPlan {
+  // Nothing to move at all — never emit a zero-amount leg.
+  if (needUsd + gasUsd <= 0) return { kind: 'short', needUsd: 0, totalUsd: 0, sourceSummary: '' }
   // A destination-chain balance of the NEEDED token is not a source (the
   // shortfall already accounts for it) — but a different token sitting on
   // the destination IS: it converts through the native venues, no bridge.
@@ -181,7 +183,9 @@ export function planFundingChips(need: FundingNeed, needUsd: number, sources: Fu
   const totalNeedUsd = Number((needUsd + gasUsd).toFixed(2))
 
   /** [gas leg?, token leg] from ONE source, spending `tokenUsd` on the token
-   *  leg — the source must hold tokenUsd + gasUsd or this returns null. */
+   *  leg — the source must hold tokenUsd + gasUsd or this returns null.
+   *  tokenUsd 0 = a GAS-ONLY plan (the token need is already covered on the
+   *  destination; only the follow-up's gas is missing). */
   const legsFrom = (s: FundingSource, tokenUsd: number): string[] | null => {
     if (s.usd < tokenUsd + gasUsd) return null
     const segs: string[] = []
@@ -190,10 +194,12 @@ export function planFundingChips(need: FundingNeed, needUsd: number, sources: Fu
       segs.push(gasLegResume(s, sourceAmountFor(s, gasUsd), need))
       spent = gasUsd
     }
-    // The token leg's amount comes out of what's left of the source.
-    const remaining: FundingSource = { ...s, balance: s.balance * (1 - spent / s.usd), usd: s.usd - spent }
-    segs.push(legResume(remaining, sourceAmountFor(remaining, tokenUsd), need))
-    return segs
+    if (tokenUsd > 0) {
+      // The token leg's amount comes out of what's left of the source.
+      const remaining: FundingSource = { ...s, balance: s.balance * (1 - spent / s.usd), usd: s.usd - spent }
+      segs.push(legResume(remaining, sourceAmountFor(remaining, tokenUsd), need))
+    }
+    return segs.length > 0 ? segs : null
   }
 
   // Empty followup = bridge-only chips (the generic custom-MCP fallback).
@@ -327,7 +333,9 @@ export async function offerFundingPlan(params: {
   const { user, need } = params
   const trace = params.trace ?? (() => {})
   const destChain = chainById(need.chainId)
-  if (!destChain || !FUNDING_CHAIN_WORD[need.chainId] || !(need.amountHuman > 0)) return null
+  // amountHuman 0 is a GAS-ONLY probe: the token need is covered on the
+  // destination, but the follow-up action may still be gas-stranded there.
+  if (!destChain || !FUNDING_CHAIN_WORD[need.chainId] || !(need.amountHuman >= 0)) return null
 
   let tokenUsd: number | null = null
   try {
@@ -377,7 +385,9 @@ export async function offerFundingPlan(params: {
     }
   }
 
-  const needUsd = fundingPlanUsd(need.amountHuman, tokenUsd)
+  const needUsd = need.amountHuman > 0 ? fundingPlanUsd(need.amountHuman, tokenUsd) : 0
+  // Token covered AND gas covered — nothing to fund; the caller proceeds.
+  if (needUsd === 0 && gasUsd === 0) return null
   const plan = planFundingChips(need, needUsd, scan.sources, gasUsd)
 
   if (plan.kind === 'short') {
@@ -413,7 +423,7 @@ export async function offerFundingPlan(params: {
   })
   return {
     reply:
-      `**We can make this happen.** You're holding ${plan.sourceSummary} — ${need.actionLabel} just needs more ${need.token.toUpperCase()} on ${destChain.name} than the wallet has there yet. ` +
+      `**We can make this happen.** You're holding ${plan.sourceSummary} — ${need.actionLabel} just needs ${needUsd === 0 ? `a little ETH on ${destChain.name} for gas` : `more ${need.token.toUpperCase()} on ${destChain.name} than the wallet has there yet`}. ` +
       `${plan.chips[0]?.resume.toLowerCase().startsWith('swap') && plan.chips[0].resume.toLowerCase().includes(` for ${need.token.toLowerCase()} on `) ? `I can convert it right there on ${destChain.name} (own-wallet venue swap, no bridge)` : 'I can move it over (NEAR Intents, delivered to your own address)'}${gasUsd > 0 ? `, drop in a little ETH so ${destChain.name} gas is covered,` : ''} and finish ${need.actionLabel} — one job, every step built and guard-checked when it's your turn to sign.`,
     clarify: { question: `Fund it from what you're holding?`, options: plan.chips },
     buildPath: 'native-funding-offer',
