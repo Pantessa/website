@@ -1,4 +1,5 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest, NextResponse, after } from 'next/server'
+import { attachFundsSnapshot, classifyTurn, moneyShaped, recordAskFailure } from '@/lib/ask-failure'
 import { erc20Abi, formatUnits, getAddress, isAddress } from 'viem'
 import { getPaidFetch, hasAgentWallet } from '@/lib/agent-wallet'
 import {
@@ -219,7 +220,51 @@ async function planSmartPicks(
   return { picks, dropped, txHash, clarify }
 }
 
+/**
+ * POST wrapper — the ask-failure choke point (lib/ask-failure.ts). The
+ * ladder has ~20 refusal/fall-through returns; instrumenting each one is a
+ * maintenance treadmill, so the turn's FINISHED JSON is inspected here
+ * instead: a money-shaped ask that ended with no actionable artifact (no
+ * tx/order/job/chips) is logged, and the funds snapshot runs after the
+ * response is sent. Streaming turns and phase-2 executes pass through
+ * untouched; a logging crash never breaks a chat turn.
+ */
 export async function POST(req: NextRequest) {
+  let raw = ''
+  try {
+    raw = await req.text()
+  } catch {
+    /* fall through — the inner handler 400s on the empty body */
+  }
+  const res = await handleChatTurn(new NextRequest(req.nextUrl, { method: 'POST', headers: req.headers, body: raw }))
+  try {
+    if (!raw || !res.headers.get('content-type')?.includes('application/json')) return res
+    // The API harness provokes walls on purpose — its probes opt out.
+    if (req.headers.get('x-yf-no-ask-log') === '1') return res
+    const reqBody = JSON.parse(raw) as Record<string, unknown>
+    const message = typeof reqBody.message === 'string' ? reqBody.message : ''
+    if (reqBody.phase === 'execute' || !message.trim() || !moneyShaped(message)) return res
+    const data = (await res.clone().json().catch(() => null)) as Record<string, unknown> | null
+    const { kind } = classifyTurn(data)
+    if (!kind) return res
+    const wallet =
+      typeof reqBody.walletAddress === 'string' && isAddress(reqBody.walletAddress) ? getAddress(reqBody.walletAddress) : null
+    const failureId = await recordAskFailure({
+      wallet,
+      prompt: message,
+      reply: typeof data?.reply === 'string' ? data.reply : null,
+      kind,
+      buildPath: typeof data?.buildPath === 'string' ? data.buildPath : null,
+    })
+    // The scan is RPC-heavy — run it after the reply is on the wire.
+    if (failureId && wallet) after(() => attachFundsSnapshot(failureId, wallet))
+  } catch {
+    /* the log must never break a chat turn */
+  }
+  return res
+}
+
+async function handleChatTurn(req: NextRequest) {
   try {
     const body = await req.json()
 
