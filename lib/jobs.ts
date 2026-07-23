@@ -34,7 +34,7 @@ import { parseGuardianArm, type GuardianArmAsk } from '@/lib/hl-guardian'
 import { parseLidoStake } from '@/lib/lido-stake'
 import { fundingAltUsdcFor, GAS_LEG_USD } from '@/lib/lifi-bridge'
 import { parseNftAsk } from '@/lib/nft-layer'
-import { parseTransferSegment } from '@/lib/transfer-exec'
+import { parseMultiSendSegments, parseTransferSegment } from '@/lib/transfer-exec'
 import { pairStockToken, stockChipLabel } from '@/lib/stock-pairing'
 import type { ClarifyRequest } from '@/lib/clarify'
 
@@ -233,6 +233,9 @@ function pairJobStockToken(raw: string, ctx: JobSegmentCtx): { token: string } |
 // earlier segment in the same ask named an NFT (ctx.nft).
 const NFT_PRONOUN_SEND_RE = /^(?:and\s+)?(?:send|transfer|gift)\s+(?:it|that|this|the\s+nft)\s+to\s+(0x[0-9a-fA-F]{40}|[a-zA-Z0-9][a-zA-Z0-9-]*\.eth)\s*[.!?]*\s*$/i
 
+const shortRecipient = (to: string) => (to.startsWith('0x') ? `${to.slice(0, 6)}…${to.slice(-4)}` : to)
+const sendAmountWord = (amountHuman: string) => (amountHuman === 'all' ? 'all your' : amountHuman)
+
 /**
  * Every chainable action, in claim order. To make a new dapp/MCP action
  * chainable: add an entry here (narrow parser → CompiledSteps) and a
@@ -349,10 +352,26 @@ export const JOB_SEGMENT_PARSERS: JobSegmentParser[] = [
     id: 'transfer',
     label: 'token sends',
     parse: (seg) => {
+      // Multi-clause first: "send all my USDC on arbitrum and an additional
+      // 5 USDC on base to 0x…" — ONE recipient, one sign step per clause,
+      // each step's build re-reading its own chain's live balance ('all'
+      // resolves at sign time, never at compile time).
+      const multi = parseMultiSendSegments(seg)
+      if (multi && 'problem' in multi) return { problem: multi.problem }
+      if (multi) {
+        const steps: CompiledStep[] = multi.map((t) => ({
+          kind: 'sign',
+          builder: 'native-transfer',
+          title: `Send ${sendAmountWord(t.amountHuman)} ${t.token.toUpperCase()} to ${shortRecipient(t.to)} on ${t.chainName}`,
+          params: t as unknown as Record<string, unknown>,
+        }))
+        const parts = multi.map((t) => `${sendAmountWord(t.amountHuman)} ${t.token.toUpperCase()} (${t.chainName})`).join(' + ')
+        return { steps, title: `Send ${parts} to ${shortRecipient(multi[0].to)}` }
+      }
       const t = parseTransferSegment(seg)
       if (!t) return null
       if ('problem' in t) return { problem: t.problem }
-      const title = `Send ${t.amountHuman} ${t.token.toUpperCase()} to ${t.to.slice(0, 6)}…${t.to.slice(-4)} on ${t.chainName}`
+      const title = `Send ${sendAmountWord(t.amountHuman)} ${t.token.toUpperCase()} to ${shortRecipient(t.to)} on ${t.chainName}`
       return { steps: [{ kind: 'sign', builder: 'native-transfer', title, params: t as unknown as Record<string, unknown> }], title }
     },
   },
@@ -488,11 +507,14 @@ const compilableKinds = (): string => {
  */
 export function compileJobAsk(message: string): CompiledJob | { problem: string } | { clarify: ClarifyRequest } | null {
   const segments = splitJobSegments(message)
-  // Single asks belong to the native layers — EXCEPT a lone Robinhood
-  // funding segment: the MCP-path fallback's bridge-only chips carry no
-  // follow-up (the user re-asks once funds land), and the funding legs +
-  // arrival wait are already a multi-step job on their own.
-  if (segments.length < 2 && !(segments.length === 1 && parseRobinhoodFunding(segments[0]))) return null
+  // Single asks belong to the native layers — EXCEPT segments that are
+  // multi-step on their own: a lone Robinhood funding segment (the MCP-path
+  // fallback's bridge-only chips carry no follow-up; the legs + arrival
+  // wait are already a job), and a multi-clause send ("send all my USDC on
+  // arbitrum and 5 USDC on base to 0x…" — one sentence, two chains, two
+  // signatures = a job even without a "then").
+  const loneMultiStep = (seg: string) => !!parseRobinhoodFunding(seg) || parseMultiSendSegments(seg) !== null
+  if (segments.length < 2 && !(segments.length === 1 && loneMultiStep(segments[0]))) return null
 
   const steps: CompiledStep[] = []
   const titles: string[] = []
@@ -545,9 +567,12 @@ export function compileJobAsk(message: string): CompiledJob | { problem: string 
   }
 
   // A "job" of one real action + its waits is just that action — let the
-  // native layer own it directly. The exception mirrors the gate at the
-  // top: a lone Robinhood funding segment IS the job (legs + arrival wait).
-  if (titles.length < 2 && !(titles.length === 1 && fundingSeen)) return null
+  // native layer own it directly. Two exceptions mirror the gate at the
+  // top: a lone Robinhood funding segment IS the job (legs + arrival wait),
+  // and a lone segment that compiled to ≥2 sign/auto steps (a multi-clause
+  // send) IS one too — two chains, two signatures.
+  const actionSteps = steps.filter((s) => s.kind !== 'wait').length
+  if (titles.length < 2 && actionSteps < 2 && !(titles.length === 1 && fundingSeen)) return null
   return { title: titles.join(' → '), steps }
 }
 

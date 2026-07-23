@@ -123,6 +123,15 @@ const CORPUS: Entry[] = [
   // The live dead-end that started this audit
   { ask: 'swap 1 USDC from base to Etheruem', source: 'live 2026-07-22', expect: 'action' },
 
+  // Live asks 2026-07-23 — multi-clause sends + stable acquisition
+  {
+    ask: 'I want to send all my USDC on arbitrum and an additional 5 USDC on base to 0x2055Fa9E99565181A8509B81cBD0aa3D73be8d56',
+    source: 'live 2026-07-23 (two-chain send)', expect: 'action',
+  },
+  { ask: 'send all my USDC on base to nate.eth', source: 'live 2026-07-23 (all-send)', expect: 'action' },
+  { ask: 'I need $50 of USDG on Robinhood, can you make that happen?', source: 'live 2026-07-23 (screenshot)', expect: 'action' },
+  { ask: 'I need $20 in USDG on robinhood', source: 'live 2026-07-23 variant', expect: 'action' },
+
   // lib/examples.ts EXAMPLE_PROMPTS + TRY_PROMPTS
   { ask: 'Swap $1 of ETH to USDC', source: 'examples', expect: 'action' },
   { ask: "What's in my wallet?", source: 'examples', expect: 'planner' },
