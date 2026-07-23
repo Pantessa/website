@@ -5500,6 +5500,33 @@ async function main() {
     const short = planFundingChips(need, 20.5, [src(8453, 'Base', 'USDC', 3), src(42161, 'Arbitrum', 'ETH', 0.3)])
     check('funding plan: uncoverable need reports the honest shortfall (dust ignored)', short.kind === 'short' && short.needUsd === 20.5 && short.totalUsd === 3)
 
+    // Gas-only plans (needUsd 0): the token need is already covered on the
+    // destination but the follow-up is gas-stranded there — ONE ETH leg,
+    // never a zero-amount token leg (the live 2026-07-23 wall: 12.99 USDC on
+    // Arbitrum, zero Arbitrum ETH, and "covers it" offered a stranded job).
+    const hlGasNeed: FundingNeed = {
+      chainId: 42161,
+      token: 'USDC',
+      amountHuman: 0,
+      followupResume: 'deposit 5 USDC to Hyperliquid, then Long $12 of HYPE on Hyperliquid, then protect my HYPE long with a 5% stop',
+      actionLabel: 'the Hyperliquid position',
+    }
+    const gasOnly = planFundingChips(hlGasNeed, 0, [src(8453, 'Base', 'USDC', 6)], 1.5)
+    check(
+      'funding plan: gas-only plan emits one ETH leg then the follow-up',
+      gasOnly.kind === 'offer' && /^Swap [\d.]+ USDC from Base to ETH on arbitrum, then deposit 5 USDC/i.test(gasOnly.chips[0].resume),
+      gasOnly.kind === 'offer' ? gasOnly.chips[0].resume : gasOnly.kind,
+    )
+    const gasOnlyJob = gasOnly.kind === 'offer' ? compileJobAsk(gasOnly.chips[0].resume) : null
+    check(
+      'funding plan: the gas-only HL chip compiles gas-leg → wait → deposit → wait → open → arm',
+      !!gasOnlyJob && !('problem' in gasOnlyJob) &&
+        JSON.stringify(gasOnlyJob.steps.map((s) => `${s.kind}:${s.builder}`)) ===
+          JSON.stringify(['sign:native-cross-chain', 'wait:wait', 'sign:native-hl-exec', 'wait:wait', 'sign:native-hl-exec', 'auto:native-hl-guardian']),
+      gasOnly.kind === 'offer' ? gasOnly.chips[0].resume : undefined,
+    )
+    check('funding plan: nothing-to-move (needUsd 0, gasUsd 0) never emits a chip', planFundingChips(hlGasNeed, 0, [src(8453, 'Base', 'USDC', 6)], 0).kind === 'short')
+
     // Aave job segments: explicit supply/repay compile; weak verbs stay chat-only.
     const aaveSupJob = compileJobAsk('Swap 25 USDC from Base to USDC on Ethereum, then supply 20 USDC to aave')
     check(

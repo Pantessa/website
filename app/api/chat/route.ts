@@ -43,7 +43,7 @@ import {
   type BuiltSwap,
 } from '@/lib/cross-chain-swap'
 import { prettyChainWord } from '@/lib/chain-lexicon'
-import { arbitrumUsdcBalance, buildHlExecTurn, hlAgentOf, HL_MIN_DEPOSIT_USDC, hlOpenCollateralShortfall, parseHlIntent, type HlOrderIntent } from '@/lib/hyperliquid-exec'
+import { arbitrumUsdcBalance, buildHlExecTurn, hlAgentOf, HL_MIN_DEPOSIT_USDC, hlOpenCollateralShortfall, parseHlIntent, type HlOpenShortfall, type HlOrderIntent } from '@/lib/hyperliquid-exec'
 import { parseGuardianArm } from '@/lib/hl-guardian'
 import { armGuardianPolicy } from '@/lib/hl-guardian-store'
 import { compileJobAsk } from '@/lib/jobs'
@@ -131,6 +131,73 @@ import type { RouterDecision } from '@/lib/router'
 // x402 signing + paid fetch need the Node runtime.
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
+
+/**
+ * "You have an intent — we do the rest," with NO ok-step: a Hyperliquid OPEN
+ * against an under-collateralized account compiles straight into the FUNDED
+ * job — deposit prepended, bridge legs when the USDC lives on another chain,
+ * an Arbitrum gas leg when the deposit couldn't pay for itself — and the
+ * JobCard opens with step 1 built. The signature is the consent (standing
+ * rule): nothing moves until the user signs each step, and the job cancels
+ * from the card. Live lesson (2026-07-23, /p/GfXoBe65B93U): the chip version
+ * stalled — the visitor typed "ok" instead of tapping, the turn fell to the
+ * planner, which improvised a confirmation flow and a dead end. Returns null
+ * to fall through to the caller's normal path (every guard fails closed).
+ */
+async function hlAutoFundedJobTurn(
+  short: HlOpenShortfall,
+  message: string,
+  walletAddress: string,
+  nativeTrace: (event: unknown) => void,
+): Promise<NextResponse | null> {
+  const fundedAsk = `deposit ${short.depositUsdc} USDC to Hyperliquid, then ${message.trim()}`
+  const arbUsdc = await arbitrumUsdcBalance(walletAddress).catch(() => null)
+  if (arbUsdc === null) return null
+  const usdcShort = Number(Math.max(0, short.depositUsdc - arbUsdc).toFixed(2))
+  // amountHuman 0 = gas-only probe: Arbitrum USDC covers the deposit, but a
+  // gas-stranded wallet still gets its ETH leg (the live 2026-07-23 wall:
+  // 12.99 USDC on Arbitrum, zero Arbitrum ETH — "covers it" was a lie).
+  const offer = await offerFundingPlan({
+    user: walletAddress,
+    need: { chainId: 42161, token: 'USDC', amountHuman: usdcShort, followupResume: fundedAsk, actionLabel: 'the Hyperliquid position' },
+    trace: nativeTrace,
+  })
+  if (offer && 'insufficient' in offer) {
+    return NextResponse.json({
+      reply: `🚫 The position needs about $${short.depositUsdc} of USDC reaching Hyperliquid and the wallet can't cover it yet. ${offer.insufficient}`,
+    })
+  }
+  let resume = fundedAsk
+  if (offer) {
+    const first = offer.clarify.options[0]
+    if (!first || /never mind/i.test(first.resume)) return null
+    resume = first.resume
+  } else if (usdcShort > 0) {
+    // Funding was needed but couldn't be planned (scan/pricing down) — the
+    // normal path's balance guard explains itself.
+    return null
+  }
+  const compiled = compileJobAsk(resume)
+  if (!compiled || 'problem' in compiled || 'clarify' in compiled) {
+    nativeTrace({ type: 'note', level: 'warn', label: `hl auto-fund: the funded ask didn't compile — falling through (${resume.slice(0, 140)})` })
+    return null
+  }
+  nativeTrace({
+    type: 'status',
+    label: `hl auto-fund: open is under-collateralized ($${short.withdrawableUsd.toFixed(2)} withdrawable vs ~$${short.notionalUsd} notional) — compiled the funded job directly: ${compiled.title.slice(0, 160)}`,
+  })
+  const job = await createJob(walletAddress, compiled)
+  await advanceJob(job).catch(() => {})
+  const gasLegNote = /\b(?:to|for) eth on arbitrum\b/i.test(resume) ? ' (plus a little Arbitrum ETH so the deposit can pay its own gas)' : ''
+  return NextResponse.json({
+    reply:
+      `📈 **We can make this happen.** The ~$${short.notionalUsd} position needs about $${short.depositUsdc} of collateral on Hyperliquid first${gasLegNote} — so the whole path is lined up as one job: **${job.title}**. ` +
+      `Every step is built and guard-checked when it's your turn to sign; nothing moves without your signature, and you can cancel from the card.`,
+    jobId: job.id,
+    jobToken: signJobToken(job.id),
+    buildPath: 'native-job',
+  })
+}
 
 interface Receipt {
   name: string
@@ -763,44 +830,17 @@ async function handleChatTurn(req: NextRequest) {
         return NextResponse.json({ reply: "🧭 That chains multiple money steps — connect your wallet first and I'll compile it into a job you sign step by step." })
       }
       // "You have an intent — we do the rest": when the job LEADS with a
-      // Hyperliquid open ("long $12 of ETH…, then protect it…") and the HL
+      // Hyperliquid open ("long $12 of HYPE…, then protect it…") and the HL
       // account has no collateral behind it, don't compile a job that blocks
-      // at step 1 — offer the funded version of the SAME ask as one chip
-      // (deposit prepended; bridge legs too when the USDC sits on another
-      // chain). Only the leading-open shape: a job with earlier steps is
-      // already hand-plumbed. Reads fail soft — the build's has-collateral
-      // guard still fails closed at sign time.
+      // at step 1 — compile the FUNDED version of the same ask directly (no
+      // ok-step; the signature is the consent). Only the leading-open shape:
+      // a job with earlier steps is already hand-plumbed.
       const leadStep = jobAsk.steps[0]
       if (leadStep?.builder === 'native-hl-exec' && (leadStep.params as { kind?: string }).kind === 'open') {
         const short = await hlOpenCollateralShortfall(leadStep.params as unknown as HlOrderIntent, walletAddress)
         if (short) {
-          const fundedAsk = `deposit ${short.depositUsdc} USDC to Hyperliquid, then ${message.trim()}`
-          const arbUsdc = await arbitrumUsdcBalance(walletAddress).catch(() => null)
-          if (arbUsdc !== null && arbUsdc >= short.depositUsdc) {
-            nativeTrace({ type: 'status', label: `jobs layer: leading HL open is under-collateralized ($${short.withdrawableUsd.toFixed(2)} vs ~$${short.notionalUsd} notional) — Arbitrum USDC covers the deposit, offering the funded job` })
-            return NextResponse.json({
-              reply: `📈 We can make this happen — the ~$${short.notionalUsd} position needs about $${short.depositUsdc} of collateral on Hyperliquid first, and your ${arbUsdc.toFixed(2)} USDC on Arbitrum covers it. One tap chains the deposit in front and runs the whole thing as a job.`,
-              clarify: { question: 'Fund the position and run it?', options: [{ label: `Deposit $${short.depositUsdc} & run it — one job`, resume: fundedAsk }] },
-              buildPath: 'native-job',
-            })
-          }
-          const offer = await offerFundingPlan({
-            user: walletAddress,
-            need: {
-              chainId: 42161,
-              token: 'USDC',
-              amountHuman: Number((short.depositUsdc - Math.max(0, arbUsdc ?? 0)).toFixed(2)),
-              followupResume: fundedAsk,
-              actionLabel: 'the Hyperliquid position',
-            },
-            trace: nativeTrace,
-          })
-          if (offer && 'insufficient' in offer) {
-            return NextResponse.json({
-              reply: `🚫 The position needs about $${short.depositUsdc} of USDC reaching Hyperliquid and the wallet can't cover it yet. ${offer.insufficient}`,
-            })
-          }
-          if (offer) return NextResponse.json({ ...offer, reply: `📈 ${offer.reply}` })
+          const autoTurn = await hlAutoFundedJobTurn(short, message, walletAddress, nativeTrace)
+          if (autoTurn) return autoTurn
           // No plan available (scan/price down) — fall through to the job;
           // the step's own guard explains itself if it can't build.
         }
@@ -910,40 +950,16 @@ async function handleChatTurn(req: NextRequest) {
             if (offer) return NextResponse.json({ ...offer, reply: `🌉 ${offer.reply}` })
           }
         }
-        // Same story for a bare OPEN ("long $12 of ETH on hyperliquid") from
-        // an empty HL account: the intent is the ask — the deposit (and any
-        // bridge legs) are OUR problem. Offer the funded job instead of
-        // building an artifact the has-collateral guard would block.
+        // Same story for a bare OPEN ("long $12 of HYPE on hyperliquid") from
+        // an empty HL account: the intent is the ask — the deposit, any
+        // bridge legs, and Arbitrum gas are OUR problem. Compile the funded
+        // job directly (no ok-step) instead of building an artifact the
+        // has-collateral guard would block.
         if (hlIntent.kind === 'open' && walletAddress) {
           const short = await hlOpenCollateralShortfall(hlIntent, walletAddress)
           if (short) {
-            const fundedAsk = `deposit ${short.depositUsdc} USDC to Hyperliquid, then ${message.trim()}`
-            const arbUsdc = await arbitrumUsdcBalance(walletAddress).catch(() => null)
-            if (arbUsdc !== null && arbUsdc >= short.depositUsdc) {
-              nativeTrace({ type: 'status', label: `native hl layer: open is under-collateralized ($${short.withdrawableUsd.toFixed(2)} vs ~$${short.notionalUsd} notional) — Arbitrum USDC covers the deposit, offering the funded job` })
-              return NextResponse.json({
-                reply: `📈 We can make this happen — the ~$${short.notionalUsd} position needs about $${short.depositUsdc} of collateral on Hyperliquid first, and your ${arbUsdc.toFixed(2)} USDC on Arbitrum covers it. One tap chains the deposit in front and runs it as a job.`,
-                clarify: { question: 'Fund the position and run it?', options: [{ label: `Deposit $${short.depositUsdc} & run it — one job`, resume: fundedAsk }] },
-                buildPath: 'native-hl-exec',
-              })
-            }
-            const offer = await offerFundingPlan({
-              user: walletAddress,
-              need: {
-                chainId: 42161,
-                token: 'USDC',
-                amountHuman: Number((short.depositUsdc - Math.max(0, arbUsdc ?? 0)).toFixed(2)),
-                followupResume: fundedAsk,
-                actionLabel: 'the Hyperliquid position',
-              },
-              trace: nativeTrace,
-            })
-            if (offer && 'insufficient' in offer) {
-              return NextResponse.json({
-                reply: `🚫 The position needs about $${short.depositUsdc} of USDC reaching Hyperliquid and the wallet can't cover it yet. ${offer.insufficient}`,
-              })
-            }
-            if (offer) return NextResponse.json({ ...offer, reply: `📈 ${offer.reply}` })
+            const autoTurn = await hlAutoFundedJobTurn(short, message, walletAddress, nativeTrace)
+            if (autoTurn) return autoTurn
           }
         }
         const what = hlIntent.kind === 'deposit' ? `deposit ${hlIntent.amountUsdc} USDC` : `${hlIntent.kind} ${hlIntent.coin}`
