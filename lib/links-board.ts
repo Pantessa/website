@@ -22,6 +22,8 @@ export interface LinkBoardRow {
   /** Finished flows: signed, value-bearing turns the link produced. */
   claims: number
   opens: number
+  /** ISO mint time — set on the recently-minted rows only. */
+  mintedAt?: string
 }
 
 export interface LinksBoard {
@@ -29,6 +31,8 @@ export interface LinksBoard {
   byClaims: LinkBoardRow[]
   /** Ranked by signed notional moved. */
   byMoved: LinkBoardRow[]
+  /** Newest creator mints, straight from intent_links — no signs needed. */
+  byRecent: LinkBoardRow[]
 }
 
 // How many slugs to aggregate before joining/sorting; revoked links drop at
@@ -37,19 +41,51 @@ const BOARD_SCAN = 200
 
 export async function linksBoard(limit = 10): Promise<LinksBoard> {
   try {
-    const signed = await prisma.embedTurn.groupBy({
-      by: ['intentLinkSlug'],
-      where: { intentLinkSlug: { not: null }, outcome: 'signed', valueUsd: { gt: 0 }, ...NOT_HARNESS },
-      _sum: { valueUsd: true },
-      _count: { _all: true },
-      orderBy: { _sum: { valueUsd: 'desc' } },
-      take: BOARD_SCAN,
-    })
+    // The recent tab reads MINTS, not turns: the newest live creator links.
+    // House seeds (creator null) stay on their curated start-here strip, and
+    // allowlist-reserved promo links stay off — a public row that refuses
+    // whoever taps it is a dead-end, not a demo.
+    const [signed, recent] = await Promise.all([
+      prisma.embedTurn.groupBy({
+        by: ['intentLinkSlug'],
+        where: { intentLinkSlug: { not: null }, outcome: 'signed', valueUsd: { gt: 0 }, ...NOT_HARNESS },
+        _sum: { valueUsd: true },
+        _count: { _all: true },
+        orderBy: { _sum: { valueUsd: 'desc' } },
+        take: BOARD_SCAN,
+      }),
+      prisma.intentLink.findMany({
+        where: {
+          revoked: false,
+          creator: { not: null },
+          allowWallets: { isEmpty: true },
+          OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
+        },
+        orderBy: { createdAt: 'desc' },
+        take: limit,
+        select: { id: true, ask: true, createdAt: true },
+      }),
+    ])
     const slugs = signed.map((m) => m.intentLinkSlug).filter((s): s is string => !!s)
-    if (slugs.length === 0) return { byClaims: [], byMoved: [] }
-    const [links, opens] = await Promise.all([
+    const recentIds = recent.map((r) => r.id)
+    if (slugs.length === 0 && recentIds.length === 0) return { byClaims: [], byMoved: [], byRecent: [] }
+    const [links, opens, recentSigned] = await Promise.all([
       prisma.intentLink.findMany({ where: { id: { in: slugs }, revoked: false }, select: { id: true, ask: true } }),
-      prisma.intentLinkEvent.groupBy({ by: ['slug'], where: { slug: { in: slugs }, kind: 'open' }, _count: { _all: true } }),
+      prisma.intentLinkEvent.groupBy({
+        by: ['slug'],
+        where: { slug: { in: [...new Set([...slugs, ...recentIds])] }, kind: 'open' },
+        _count: { _all: true },
+      }),
+      // Exact per-slug figures for the recent rows — a fresh mint can sit
+      // below the BOARD_SCAN ranking window and still deserve its truth.
+      recentIds.length
+        ? prisma.embedTurn.groupBy({
+            by: ['intentLinkSlug'],
+            where: { intentLinkSlug: { in: recentIds }, outcome: 'signed', valueUsd: { gt: 0 }, ...NOT_HARNESS },
+            _sum: { valueUsd: true },
+            _count: { _all: true },
+          })
+        : Promise.resolve([]),
     ])
     const rows = signed
       .map((m) => {
@@ -64,12 +100,24 @@ export async function linksBoard(limit = 10): Promise<LinksBoard> {
         }
       })
       .filter((r): r is NonNullable<typeof r> => !!r)
+    const byRecent = recent.map((l) => {
+      const m = recentSigned.find((s) => s.intentLinkSlug === l.id)
+      return {
+        slug: l.id,
+        ask: l.ask,
+        movedUsd: m?._sum.valueUsd ?? 0,
+        claims: m?._count._all ?? 0,
+        opens: opens.find((o) => o.slug === l.id)?._count._all ?? 0,
+        mintedAt: l.createdAt.toISOString(),
+      }
+    })
     return {
       byClaims: [...rows].sort((a, b) => b.claims - a.claims || b.movedUsd - a.movedUsd).slice(0, limit),
       byMoved: [...rows].sort((a, b) => b.movedUsd - a.movedUsd).slice(0, limit),
+      byRecent,
     }
   } catch {
-    return { byClaims: [], byMoved: [] }
+    return { byClaims: [], byMoved: [], byRecent: [] }
   }
 }
 

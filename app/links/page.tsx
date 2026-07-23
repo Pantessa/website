@@ -64,7 +64,7 @@ export default async function LinksLeaderboardPage() {
           <h2 className="mono text-[11px] uppercase tracking-wider text-[color:var(--muted-2)] mb-3">
             The board
           </h2>
-          {board.byClaims.length === 0 ? (
+          {board.byClaims.length === 0 && board.byRecent.length === 0 ? (
             <p className="text-[13px] text-[color:var(--muted-2)]">
               The board is empty — the first link to move a dollar tops it. Mint yours above.
             </p>
@@ -73,8 +73,8 @@ export default async function LinksLeaderboardPage() {
           )}
           <p className="mono text-[11px] text-[color:var(--muted-2)] mt-4">
             A claim is a finished flow — the visitor signed with their own wallet. Dollars moved are
-            guardrail-priced signed notional, the same source as /activity. Asks only; creators stay
-            pseudonymous.
+            guardrail-priced signed notional, the same source as /activity. Recently minted is the
+            newest live links, straight from mint. Asks only; creators stay pseudonymous.
           </p>
 
           {/* Creator pages: every claimed /l/<handle> storefront. Claiming a

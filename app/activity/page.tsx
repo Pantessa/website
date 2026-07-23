@@ -41,7 +41,7 @@ const fmtUsd = (n: number) =>
  *  the on-chain treasury stays the source of truth for collections. */
 async function LinkEconomy() {
   const [board, fees, daily] = await Promise.all([linksBoard(5), feeSummary(), linkDailySeries(30)])
-  if (board.byClaims.length === 0 && !fees) return null
+  if (board.byClaims.length === 0 && board.byRecent.length === 0 && !fees) return null
   return (
     <section className="mb-10">
       <div className="flex items-baseline justify-between gap-4 mb-3 flex-wrap">
@@ -103,7 +103,7 @@ async function LinkEconomy() {
         </div>
       )}
 
-      {board.byClaims.length > 0 && <IntentLinksBoard board={board} />}
+      {(board.byClaims.length > 0 || board.byRecent.length > 0) && <IntentLinksBoard board={board} />}
       <p className="mono text-[11px] text-[color:var(--muted-2)] mt-3">
         Dollars are guardrail-priced signed notional — the same source as the figures above. Every
         row is a live link.{' '}
