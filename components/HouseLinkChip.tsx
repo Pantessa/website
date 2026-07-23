@@ -3,7 +3,9 @@
 // actually runs through (houseLinkMarks: the composed /i set + declared
 // venue marks) stacked like coins seen sideways — the same treatment as the
 // chat's multi-MCP responder avatar — so a visitor can see which apps the
-// link calls before they open it.
+// link calls before they open it. Coins overlap only at the circle edge
+// (-ml-1 + the 2px ring stays clear of a 12px icon's 6px margin) so every
+// mark reads in full — a buried under-logo says nothing.
 
 import Link from 'next/link'
 import { getProtocolMark } from '@/components/protocol-marks'
@@ -24,7 +26,7 @@ export default function HouseLinkChip({ link }: { link: HouseLink }) {
           {marks.map((m, i) => (
             <span
               key={m.key}
-              className={`relative flex h-6 w-6 items-center justify-center overflow-hidden rounded-full border border-[var(--line-2)] bg-[var(--surf-2)] ring-2 ring-[var(--surf-1)] text-[color:var(--fg)]${i > 0 ? ' -ml-2' : ''}`}
+              className={`relative flex h-6 w-6 items-center justify-center overflow-hidden rounded-full border border-[var(--line-2)] bg-[var(--surf-2)] ring-2 ring-[var(--surf-1)] text-[color:var(--fg)]${i > 0 ? ' -ml-1' : ''}`}
               style={{ zIndex: marks.length - i }}
             >
               <m.Mark size={12} />
