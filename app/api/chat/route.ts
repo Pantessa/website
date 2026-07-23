@@ -910,8 +910,8 @@ export async function POST(req: NextRequest) {
           // OUTFLOW policy gate.
           const built = await buildNftBuy(nftAsk, walletAddress)
           if ('problem' in built) {
-            nativeTrace({ type: 'note', level: 'info', label: `nft buy not buildable: ${built.problem.slice(0, 160)}` })
-            return NextResponse.json({ reply: `🖼️ ${built.problem}` })
+            nativeTrace({ type: 'note', level: 'info', label: `nft buy not buildable: ${built.problem.slice(0, 160)}${built.clarify ? ' (onward chips offered)' : ''}` })
+            return NextResponse.json({ reply: `🖼️ ${built.problem}`, ...(built.clarify ? { clarify: built.clarify } : {}) })
           }
           if (built.blocked) {
             nativeTrace({ type: 'note', level: 'warn', label: `nft buy REFUSED: ${(built.refusal ?? 'a safety check failed.').slice(0, 200)}` })

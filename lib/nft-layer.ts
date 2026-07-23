@@ -36,6 +36,7 @@ import {
   fetchBestListingForNft,
   fetchCheapestListing,
   fetchCollectionFees,
+  fetchContractCollection,
   fetchFloorEth,
   fetchListingFulfillment,
   fetchNftMeta,
@@ -43,6 +44,7 @@ import {
   fulfillmentToCalldata,
   guardBuyFulfillment,
   guardListingComponents,
+  openseaChainIdOf,
   openseaEnabled,
   openseaSlugOf,
   randomListingSalt,
@@ -52,6 +54,7 @@ import {
   type SeaportOrderComponents,
 } from '@/lib/opensea'
 import { buildReport, policyCheck, policyCheckInflow, validityCheck, type GuardrailCheck, type GuardrailReport } from '@/lib/tx-guardrails'
+import type { ClarifyRequest } from '@/lib/clarify'
 import { getActiveGrant, recordLedger, spentTodayUsd, toPolicy } from '@/lib/grant-store'
 import { usdPerToken } from '@/lib/usd-probe'
 import type { EvmTxRequest, Eip712OrderRequest } from '@/lib/transaction-layer'
@@ -95,7 +98,7 @@ export interface NftAskBase {
 export type NftAsk =
   | (NftAskBase & { kind: 'transfer'; to: string })
   | (NftAskBase & { kind: 'sell'; priceEth: string | null; durationHours: number })
-  | (NftAskBase & { kind: 'buy'; maxPriceEth: string | null })
+  | (NftAskBase & { kind: 'buy'; maxPriceEth: string | null; cheapest?: boolean })
   | { kind: 'problem'; problem: string }
 
 /** Does the message talk about an NFT at all? The layer's cheap claim gate:
@@ -103,6 +106,29 @@ export type NftAsk =
  *  stock sells, and bare "send 1 eth" asks never pass. */
 export function mentionsNft(message: string): boolean {
   return /\bnfts?\b|\bopensea\b|#\d+|\bcollectible\b/i.test(message)
+}
+
+// ── OpenSea item links ──────────────────────────────────────────────────────
+// opensea.io/item/<chain>/<contract>/<tokenId> (current) and the legacy
+// /assets/<chain>/<contract>/<tokenId> form. A pasted link names the exact
+// NFT — chain, contract, AND token id — so the grammar must never come back
+// asking "which token?" when the answer is sitting in the URL.
+
+const OPENSEA_ITEM_URL_RE = /(?:https?:\/\/)?(?:www\.)?opensea\.io\/(?:item|assets)\/([a-z][a-z0-9-]*)\/(0x[0-9a-fA-F]{40})\/(\d+)/i
+
+export interface OpenSeaItemRef {
+  /** Resolved chain id, or null when the URL names a chain we don't build on. */
+  chainId: number | null
+  chainSlug: string
+  contract: `0x${string}`
+  tokenId: string
+}
+
+export function parseOpenSeaItemUrl(text: string): OpenSeaItemRef | null {
+  const m = text.match(OPENSEA_ITEM_URL_RE)
+  if (!m) return null
+  const chainSlug = m[1].toLowerCase()
+  return { chainSlug, chainId: openseaChainIdOf(chainSlug), contract: m[2] as `0x${string}`, tokenId: m[3] }
 }
 
 const REF = String.raw`(.+?)`
@@ -132,6 +158,9 @@ function cleanRef(raw: string): string {
 }
 
 function refParts(refRaw: string): { ref: string; tokenId: string | null; contract: string | null } {
+  // A pasted OpenSea link IS the ref — contract and token id read directly.
+  const link = parseOpenSeaItemUrl(refRaw)
+  if (link) return { ref: `${link.contract} #${link.tokenId}`, tokenId: link.tokenId, contract: link.contract }
   const ref = cleanRef(refRaw)
   const addr = ref.match(/(0x[0-9a-fA-F]{40})/)
   const id = ref.match(/#\s*(\d+)/) ?? (addr ? ref.match(/0x[0-9a-fA-F]{40}\s+(\d+)\b/) : null)
@@ -154,7 +183,13 @@ export function parseNftAsk(message: string): NftAsk | null {
     }
     return null
   }
-  const chainId = chain?.id ?? null
+  // A pasted OpenSea item link names the exact NFT; its chain slug is the
+  // most precise chain signal in the message.
+  const link = parseOpenSeaItemUrl(message)
+  if (link && !link.chainId && /\b(?:sell|list|transfer|send|gift|buy|purchase)\b/i.test(message)) {
+    return { kind: 'problem', problem: `That OpenSea link is on “${link.chainSlug}” — I build against Ethereum, Base, and Arbitrum listings only.` }
+  }
+  const chainId = link?.chainId ?? chain?.id ?? null
 
   const t = message.match(TRANSFER_RE)
   if (t) {
@@ -188,11 +223,20 @@ export function parseNftAsk(message: string): NftAsk | null {
     }
   }
 
+  // A buy ask with a pasted item link needs no strict grammar — the link
+  // already carries chain + contract + token id ("I want to buy this NFT on
+  // base https://opensea.io/item/base/0x…/198").
+  const wantsCheapest = /\b(?:cheapest|floor)\b/i.test(message)
+  if (link?.chainId && /\b(?:buy|purchase)\b/i.test(message)) {
+    const cap = message.match(/\bfor\s+(?:up\s+to\s+|at\s+most\s+|max\s+)?(\d+(?:\.\d+)?)\s*(?:eth|Ξ)/i)
+    return { kind: 'buy', ref: `${link.contract} #${link.tokenId}`, tokenId: link.tokenId, contract: link.contract, chainId, amount: '1', maxPriceEth: cap?.[1] ?? null, cheapest: wantsCheapest }
+  }
+
   const b = message.match(BUY_RE)
   if (b) {
     const { ref, tokenId, contract } = refParts(b[2])
     if (ref) {
-      return { kind: 'buy', ref, tokenId, contract, chainId, amount: b[1] ?? '1', maxPriceEth: b[3] ?? null }
+      return { kind: 'buy', ref, tokenId, contract, chainId, amount: b[1] ?? '1', maxPriceEth: b[3] ?? null, cheapest: wantsCheapest }
     }
   }
   // A buy-shaped NFT ask the grammar couldn't read — ours, but unbuildable.
@@ -611,17 +655,67 @@ interface BuyTarget {
   specific: boolean
 }
 
+/** An unbuildable resolve — the honest sentence, plus (when there's a live
+ *  onward path) clarify chips whose resumes round-trip parseNftAsk. */
+type BuyProblem = { problem: string; clarify?: ClarifyRequest }
+
+const chainWordOf = (chainId: number) => (chainById(chainId)?.name ?? 'Ethereum').toLowerCase()
+
 /** Resolve a buy ask against LIVE OpenSea listings — an exact order hash or
  *  an honest problem, never a guess. */
-async function resolveBuyListing(ask: Extract<NftAsk, { kind: 'buy' }>): Promise<BuyTarget | { problem: string }> {
+async function resolveBuyListing(ask: Extract<NftAsk, { kind: 'buy' }>): Promise<BuyTarget | BuyProblem> {
   // Address-shaped refs: contract (+ #id) → collection slug via metadata.
   if (ask.contract) {
-    if (!ask.tokenId) return { problem: `Which token at ${ask.contract}? Give me the id (“0x… #<id>”) — or name the collection and I'll take its cheapest listing.` }
+    // No token id: never a dead end — resolve the collection straight from
+    // the contract and put its cheapest live listing on the table.
+    if (!ask.tokenId) {
+      for (const chainId of ask.chainId ? [ask.chainId] : NFT_CHAIN_IDS) {
+        const slug = await fetchContractCollection(chainId, ask.contract)
+        if (!slug) continue
+        const listing = await fetchCheapestListing(slug)
+        if (!listing) return { problem: `That collection (${slug}) has no live ETH listings on OpenSea right now.` }
+        if (ask.cheapest) {
+          const floorEth = await fetchFloorEth(slug)
+          return { listing, collection: slug, name: `${slug} #${listing.tokenId}`, floorEth, specific: false }
+        }
+        const word = chainWordOf(listing.chainId)
+        return {
+          problem: `Which token at ${ask.contract}? The collection's cheapest live listing is #${listing.tokenId} at ${fmtEth(listing.priceWei)} ETH.`,
+          clarify: {
+            question: 'Take that one, or name a specific token?',
+            options: [
+              { label: `Buy the cheapest — #${listing.tokenId} at ${fmtEth(listing.priceWei)} ETH`, resume: `buy the cheapest ${ask.contract} nft on ${word}` },
+              { label: 'See what else is listed', resume: `show the live listings for ${slug}` },
+            ],
+          },
+        }
+      }
+      return { problem: `I couldn't resolve an OpenSea collection at ${ask.contract} on ${ask.chainId ? (chainById(ask.chainId)?.name ?? 'that chain') : 'Ethereum, Base, or Arbitrum'}.` }
+    }
     for (const chainId of ask.chainId ? [ask.chainId] : NFT_CHAIN_IDS) {
       const meta = await fetchNftMeta(chainId, ask.contract, ask.tokenId)
       if (!meta) continue
       const listing = await fetchBestListingForNft(meta.collection, ask.tokenId)
-      if (!listing) return { problem: `${meta.name ?? `#${ask.tokenId}`} (${meta.collection}) has no live ETH listing on OpenSea right now.` }
+      if (!listing) {
+        // The exact token isn't for sale — offer the collection's cheapest
+        // live listing right away instead of stopping at "not listed".
+        const cheapest = await fetchCheapestListing(meta.collection).catch(() => null)
+        const base = `${meta.name ?? `#${ask.tokenId}`} (${meta.collection}) has no live ETH listing on OpenSea right now.`
+        if (cheapest && cheapest.tokenId !== ask.tokenId) {
+          const word = chainWordOf(cheapest.chainId)
+          return {
+            problem: `${base} The collection's cheapest live listing is #${cheapest.tokenId} at ${fmtEth(cheapest.priceWei)} ETH.`,
+            clarify: {
+              question: 'Take the cheapest instead?',
+              options: [
+                { label: `Buy #${cheapest.tokenId} — ${fmtEth(cheapest.priceWei)} ETH (cheapest live)`, resume: `buy the cheapest ${ask.contract} nft on ${word}` },
+                { label: 'See what else is listed', resume: `show the live listings for ${meta.collection}` },
+              ],
+            },
+          }
+        }
+        return { problem: base }
+      }
       if (listing.contract.toLowerCase() !== ask.contract.toLowerCase() || listing.tokenId !== ask.tokenId) {
         return { problem: `OpenSea's best listing for that collection points at a different token than ${ask.contract} #${ask.tokenId} — refusing to buy the wrong NFT.` }
       }
@@ -672,7 +766,7 @@ export interface NftBuyBuilt {
  *  sign. The calldata is re-encoded locally from OpenSea's fulfillment —
  *  target pinned to Seaport 1.6, price capped at the quoted listing (and any
  *  explicit ETH cap), balance and spend policy checked as an OUTFLOW. */
-export async function buildNftBuy(ask: Extract<NftAsk, { kind: 'buy' }>, buyer: string): Promise<NftBuyBuilt | { problem: string }> {
+export async function buildNftBuy(ask: Extract<NftAsk, { kind: 'buy' }>, buyer: string): Promise<NftBuyBuilt | BuyProblem> {
   if (!openseaEnabled()) return { problem: 'The NFT layer needs OPENSEA_API_KEY on the server — it anchors live listings before building. Not configured yet.' }
   if (BigInt(ask.amount || '1') !== BigInt(1)) return { problem: 'Buys fill one listing at a time — ask for a single NFT per buy.' }
   const maxWei = ask.maxPriceEth ? parseEther(ask.maxPriceEth) : null

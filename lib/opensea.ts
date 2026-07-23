@@ -115,6 +115,20 @@ export async function fetchNftMeta(chainId: number, contract: string, tokenId: s
   }
 }
 
+/** Collection slug for a bare contract address (no token id needed) — the
+ *  hop that lets a pasted contract resolve to its listings. Null when
+ *  OpenSea doesn't index the contract on that chain. */
+export async function fetchContractCollection(chainId: number, contract: string): Promise<string | null> {
+  const slug = openseaSlugOf(chainId)
+  if (!slug) return null
+  try {
+    const d = (await osGet(`/chain/${slug}/contract/${contract}`)) as { collection?: string }
+    return typeof d.collection === 'string' && d.collection ? d.collection : null
+  } catch {
+    return null
+  }
+}
+
 /** Collection fee schedule + required zone — the sell-flow anchor. */
 export async function fetchCollectionFees(slug: string): Promise<{ fees: OpenseaCollectionFee[]; requiredZone: string | null; name: string } | null> {
   try {
