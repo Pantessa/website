@@ -18,8 +18,11 @@ import { GUEST_TRIAL_LIMIT, guestTurnsUsed, subscribeGuestTrial } from '@/lib/gu
  *    connect-wallet moment, so a guest turn can never move money.
  *  · Only when the guest trial is exhausted (GUEST_TRIAL_LIMIT turns) does
  *    the blocking scrim return, asking for a wallet to continue.
- *  · A connected wallet awaiting its SIWE signature gets the same banner with
- *    a re-open CTA instead of a wall.
+ *  · A connected-but-unsigned wallet is a FULL participant — connecting is
+ *    enough to sign what the chat builds (the tx signature is the ownership
+ *    proof that matters). The banner offers SIWE only for what it actually
+ *    buys: keeping chats + receipts on the dashboard ("connect to act, sign
+ *    in to keep"). Nothing auto-fires a signature request on arrival.
  */
 /** Where to land after sign-in: the page the visitor is already on, query
  *  string included — a hardcoded '/chat' used to drop ?mcps=/?prompt= deep
@@ -102,8 +105,9 @@ export default function ChatSignInGate() {
           <Sparkles className="w-3.5 h-3.5 flex-shrink-0 text-[color:var(--accent)]" />
           {awaitingSignature ? (
             <span>
-              Signature request open in your wallet — approving it just proves you own the address.
-              Nothing moves.
+              <span className="text-white font-medium">Wallet connected — you can sign what it builds.</span>{' '}
+              Sign in to keep this chat and your receipts on your dashboard. One signature; nothing
+              moves.
             </span>
           ) : (
             <span>
@@ -120,11 +124,11 @@ export default function ChatSignInGate() {
             onClick={() => signIn(hereWithQuery())}
             disabled={signingIn}
             type="button"
-            title="Re-open the signature request in your wallet"
+            title="Sign one message to keep your chats — proves ownership, nothing moves"
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[var(--accent)] text-black text-xs font-semibold hover:opacity-90 transition-opacity disabled:opacity-60"
           >
             {signingIn ? <Loader2 className="w-3.5 h-3.5 animate-spin" strokeWidth={2.5} /> : <LogIn className="w-3.5 h-3.5" strokeWidth={2.5} />}
-            <span>{signingIn ? 'Waiting…' : 'Re-open request'}</span>
+            <span>{signingIn ? 'Waiting…' : 'Sign in to keep'}</span>
           </button>
         ) : cdpEnabled ? (
           <CreateAccountButton

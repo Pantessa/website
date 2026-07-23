@@ -6,6 +6,12 @@
 // cascade, guarded build) with no typing. Transfer-shaped asks are the
 // exception — they prefill but never auto-run (the phishing shape).
 //
+// Auth model: CONNECT TO ACT, SIGN IN TO KEEP. The run itself never demands
+// SIWE — the tx signature is the ownership proof that matters, and the
+// pre-ask SIWE wall was pure funnel loss. A live matching session still runs
+// authed (DB chat, cross-device); everyone else runs the guest lane, and the
+// post-receipt save bar offers sign-in to adopt the thread + receipt.
+//
 // Funnel events (open → connect → built → signed) post best-effort to the
 // link's event sink; the post-receipt "Return to <host>" button renders only
 // from the MINT-TIME redirect stored on the link row — never from the URL.
@@ -75,7 +81,7 @@ export default function IntentRuntime({
 }) {
   const { address, isConnected } = useAccount()
   const { openConnectModal } = useConnectModal()
-  const { status, address: sessionAddress, needsSignIn, signIn, signingIn } = useSession()
+  const { status, needsSignIn, signIn, signingIn } = useSession()
   const { servers, setServers, setActiveServerIds, setCurrentChatId } = useYeetfulStore()
 
   const [started, setStarted] = useState(false)
@@ -87,6 +93,11 @@ export default function IntentRuntime({
   const [flowNudge, setFlowNudge] = useState(false)
   const [sigDismissed, setSigDismissed] = useState(false)
   const [prompt, setPrompt] = useState<{ text: string; send: boolean; at: number } | null>(null)
+  // The post-receipt SIWE round-trip renders the waiting card only for a
+  // sign-in the visitor ASKED for (the save bar) — never on arrival.
+  useEffect(() => {
+    if (!signingIn) setSigDismissed(false)
+  }, [signingIn])
   // The link's MCP set must be APPLIED to the store before the ask fires —
   // a visitor arriving with a wallet already connected raced /api/servers
   // and sent the turn against the DEFAULT set (live 2026-07-22: an intent
@@ -94,17 +105,6 @@ export default function IntentRuntime({
   // to your set"). True immediately when the link composes no set.
   const [mcpsReady, setMcpsReady] = useState(!mcps)
   const transferShaped = isTransferShaped(ask)
-
-  // The moment the runtime starts with a connected-but-unsigned wallet, fire
-  // the SIWE request ONCE and hold the "waiting for signature" takeover —
-  // a raw wallet connect never asks on its own, and a visitor who missed
-  // the prompt reads the page as stalled.
-  const sigAsked = useRef(false)
-  useEffect(() => {
-    if (!started || !needsSignIn || signingIn || sigAsked.current) return
-    sigAsked.current = true
-    void signIn()
-  }, [started, needsSignIn, signingIn, signIn])
 
   /** Where sign-in should land: this link, exactly as opened. */
   const hereHref = () =>
@@ -176,29 +176,26 @@ export default function IntentRuntime({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isConnected, started, mcpsReady])
 
-  // The ask injects only once the SIWE session has SETTLED for this wallet
-  // (or the visitor explicitly dismissed the takeover — the guest lane).
-  // Firing on raw connect was a live blank-screen: a real wallet takes
-  // seconds to sign, the turn ran into a LOCAL guest chat meanwhile, and the
-  // post-sign-in loadChats replace wiped that chat — the visitor watched an
-  // empty thread. Held, the turn runs authed (creator attribution intact)
-  // into a DB chat that survives the load. Transfer-shaped asks still only
-  // prefill — a human presses send.
+  // Connect to act, sign in to keep: the ask injects the moment the session
+  // has HYDRATED (a fast /api/auth/me cookie check — never a signature). A
+  // returning visitor with a live matching session runs authed into a DB
+  // chat; everyone else runs the guest lane into a local chat immediately —
+  // no SIWE wall between the click and the build. The tx signature itself is
+  // the proof of ownership that matters here; SIWE is offered AFTER the
+  // receipt, to keep the thread (the save bar below + adoptLocalChat).
   //
-  // Settled means MATCHING, not just status==='authed': `sessionAddress` is
-  // null while a session belongs to a DIFFERENT wallet (account switch, or a
-  // stale localhost cookie leaked across ports). In that state the store
-  // treats the run as guest — the turn landed in a LOCAL chat, the takeover's
-  // auto re-sign flipped authedAddress mid-turn, and every history POST hit
-  // /api/chats/<localId>/messages → 404 (observed live 2026-07-22 on
-  // /i/bridge-usdc). needsSignIn is already true there, so the takeover +
-  // re-sign are on screen; hold the ask for them.
+  // Holding for 'loading' is what prevents the historical blank-screen race:
+  // firing before hydration once ran the turn into a local chat that a
+  // just-settled session's loadChats then wiped (2026-07-22, /i/bridge-usdc
+  // — see also isDbChatId gating in the store, and loadChats now preserves
+  // local chats regardless). Transfer-shaped asks still only prefill — a
+  // human presses send.
   useEffect(() => {
     if (!started || blocked || !allowCleared || prompt) return
-    if ((status !== 'authed' || !sessionAddress) && !sigDismissed) return
+    if (status === 'loading') return
     setPrompt({ text: ask, send: !transferShaped, at: Date.now() })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [started, blocked, allowCleared, prompt, status, sessionAddress, sigDismissed])
+  }, [started, blocked, allowCleared, prompt, status])
 
   const onTurnEvent = (name: string, data?: Record<string, unknown>) => {
     if (name !== 'turn' || !data) return
@@ -287,7 +284,10 @@ export default function IntentRuntime({
             ) : cdpEnabled ? (
               // The unified sign-in door — wallet, Google, or email — landing
               // right back on this link (sign-in UX contract, CLAUDE.md).
-              <CreateAccountButton className={ctaClass} label={ctaLabel} redirectTo={hereHref()} />
+              // walletConnectOnly: connecting IS the whole step here — the run
+              // is the guest lane, and no SIWE popup lands between the click
+              // and the build.
+              <CreateAccountButton className={ctaClass} label={ctaLabel} redirectTo={hereHref()} walletConnectOnly />
             ) : (
               <button type="button" onClick={() => openConnectModal?.()} className={ctaClass}>
                 {ctaLabel}
@@ -351,13 +351,13 @@ export default function IntentRuntime({
         }}
       />
       {/* Waiting-for-signature takeover (shared card — the global mount in
-          Providers covers every other page): a connected wallet with no SIWE
-          session has an open (or missed) signature request — without this,
-          the page reads as stalled. Approving proves ownership; nothing
-          moves. Dismissable: the guest lane still works underneath. */}
-      {needsSignIn && !sigDismissed && (
+          Providers skips /i, so this instance covers it): shown ONLY while a
+          SIWE round-trip the visitor asked for (the save bar) is in flight —
+          a silent stall reads as broken. Arrival never fires a signature;
+          the run itself is the guest lane. */}
+      {signingIn && !sigDismissed && (
         <SignatureWaitModal
-          signingIn={signingIn}
+          signingIn
           onOpenRequest={() => void signIn()}
           onDismiss={() => setSigDismissed(true)}
           dismissLabel="Continue without signing in"
@@ -442,6 +442,29 @@ export default function IntentRuntime({
                 <Link2 className="w-4 h-4" /> MAKE YOUR OWN LINK
               </SignInFlowLink>
             </div>
+          </div>
+        </div>
+      )}
+      {/* Post-receipt save bar — the one moment SIWE is worth a signature to
+          a visitor: the trade is explicit (keep this thread + receipt on your
+          dashboard), and it comes AFTER the aha, never before it. Guest runs
+          live in a local chat; signing in adopts it into the DB
+          (session.tsx → adoptLocalChat). */}
+      {signed && needsSignIn && (
+        <div className="relative flex-shrink-0 border-t border-[var(--line)] bg-[var(--bg)]/95 backdrop-blur px-4 py-3">
+          <div className="max-w-3xl mx-auto flex flex-wrap items-center justify-between gap-3">
+            <span className="text-[13px] text-[color:var(--muted)]">
+              Signed and receipted. Want to keep it? Sign in to save this chat and see the
+              receipt on your dashboard — one signature, nothing moves.
+            </span>
+            <button
+              type="button"
+              onClick={() => void signIn()}
+              disabled={signingIn}
+              className="btn btn--solid inline-flex items-center gap-1.5 text-[13px] disabled:opacity-60"
+            >
+              <Fingerprint className="w-3.5 h-3.5" /> {signingIn ? 'Waiting…' : 'Sign in & save'}
+            </button>
           </div>
         </div>
       )}

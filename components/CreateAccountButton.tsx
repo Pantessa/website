@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { useRouter } from 'next/navigation'
+import { useConnectModal } from '@rainbow-me/rainbowkit'
 import { useConnect } from 'wagmi'
 import { CDP_CONNECTOR_ID } from '@coinbase/cdp-wagmi'
 import {
@@ -44,11 +45,17 @@ export default function CreateAccountButton({
   className,
   label = 'Create an account',
   redirectTo = '/dashboard',
+  walletConnectOnly = false,
 }: {
   className?: string
   label?: ReactNode
   /** Where to land after a successful sign-in (email or wallet). */
   redirectTo?: string
+  /** Connect-to-act surfaces (/i): the wallet lane only CONNECTS — no SIWE
+   *  request fires (the run is the guest lane; SIWE is offered post-receipt).
+   *  Email/Google lanes are unaffected: their CDP auth IS their wallet, and
+   *  any signature they later make is silent (no extension popup). */
+  walletConnectOnly?: boolean
 }) {
   const [open, setOpen] = useState(false)
   return (
@@ -56,16 +63,27 @@ export default function CreateAccountButton({
       <button type="button" className={className} onClick={() => setOpen(true)}>
         {label}
       </button>
-      {open && <CreateAccountModal onClose={() => setOpen(false)} redirectTo={redirectTo} />}
+      {open && (
+        <CreateAccountModal onClose={() => setOpen(false)} redirectTo={redirectTo} walletConnectOnly={walletConnectOnly} />
+      )}
     </>
   )
 }
 
 type Step = 'email' | 'otp' | 'connecting'
 
-function CreateAccountModal({ onClose, redirectTo }: { onClose: () => void; redirectTo: string }) {
+function CreateAccountModal({
+  onClose,
+  redirectTo,
+  walletConnectOnly,
+}: {
+  onClose: () => void
+  redirectTo: string
+  walletConnectOnly?: boolean
+}) {
   const router = useRouter()
   const { connectAndSignIn } = useSession()
+  const { openConnectModal } = useConnectModal()
   const { isInitialized } = useIsInitialized()
   const { signInWithEmail } = useSignInWithEmail()
   const { verifyEmailOTP } = useVerifyEmailOTP()
@@ -179,14 +197,16 @@ function CreateAccountModal({ onClose, redirectTo }: { onClose: () => void; redi
             <div className="ca__icon"><Mail width={20} height={20} /></div>
             <h2 className="ca__title">Sign in to Yeetful</h2>
 
-            {/* Connect an existing wallet — top of the list. Closes this modal,
-                opens the wagmi connect modal, and (via connectAndSignIn) signs
-                once connected. */}
+            {/* Connect an existing wallet — top of the list. Closes this modal
+                and opens the wagmi connect modal. Default: connectAndSignIn
+                fires SIWE once connected. walletConnectOnly (connect-to-act
+                surfaces): connect IS the whole step — no signature request. */}
             <button
               type="button"
               className="ca__wallet ca__wallet--lead"
               onClick={() => {
-                connectAndSignIn(redirectTo)
+                if (walletConnectOnly) openConnectModal?.()
+                else connectAndSignIn(redirectTo)
                 onClose()
               }}
             >
