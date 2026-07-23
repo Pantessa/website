@@ -36,6 +36,7 @@ import { policyCheckInflow, recipientCheck, validityCheck, MAX_VALID_SEC } from 
 import { guardPlannerArtifact, PERMIT2_ADDRESS } from '../lib/planner-artifact-guard'
 import { parseSwapIntent } from '../lib/swap-intent'
 import { activeLinkCapFor, composeMcps } from '../lib/intent-links'
+import { HOUSE_LINKS, houseLinkMarks } from '../lib/house-links'
 import { isDbChatId } from '../lib/chat-ids'
 import { usdToTokenAmount } from '../lib/usd-probe'
 import { parseRobinhoodBridge, guardRobinhoodBridge, RH_L1_INBOX, ARB_SYS } from '../lib/robinhood-bridge'
@@ -1584,6 +1585,35 @@ async function main() {
     check(
       'house links: the landing link lane renders with tappable house links',
       homeHtml.includes('A link that moves money.') && homeHtml.includes('/i/buy-aapl'),
+    )
+    // House-link chips wear the marks of the apps their ask runs through
+    // (HouseLinkChip) — derived from composeMcps + declared venue marks, so
+    // a visitor sees WHICH protocols a link calls before opening it.
+    const markNames = (slug: string) => houseLinkMarks(HOUSE_LINKS.find((h) => h.slug === slug)!).map((m) => m.name)
+    check(
+      'house links: the cross-chain chip wears the NEAR Intents mark',
+      markNames('bridge-usdc').includes('NEAR Intents'),
+    )
+    check(
+      'house links: protected-long wears Hyperliquid + the NEAR companion',
+      markNames('protected-long')[0] === 'Hyperliquid' && markNames('protected-long').includes('NEAR Intents'),
+    )
+    check(
+      'house links: the ETH DCA chip leads with its Uniswap venue mark',
+      markNames('dca-eth')[0] === 'Uniswap',
+    )
+    // Sync guard: every composed MCP stays represented on the chip (the cap
+    // must never silently drop a compose slug as venue marks are added).
+    check(
+      'house links: chip marks cover the full composed set for every house ask',
+      HOUSE_LINKS.every((h) => {
+        const keys = houseLinkMarks(h).map((m) => m.key)
+        return composeMcps(h.ask).every((s) => keys.includes(s))
+      }),
+    )
+    check(
+      'house links: the landing lane chips render the mark stacks (title carries the apps)',
+      homeHtml.includes('via Uniswap + NEAR Intents'),
     )
     // The composed MCP set must survive plurals — "Show my NFTs" once
     // composed to NO opensea (\bnft\b can't match "nfts"), so the seeded

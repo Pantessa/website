@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import Link from 'next/link'
 import Footer from '@/components/Footer'
 import { YeetfulMark } from '@/components/Logo'
+import HouseLinkChip from '@/components/HouseLinkChip'
 import IntentLinksBoard from '@/components/IntentLinksBoard'
 import SignInFlowLink from '@/components/SignInFlowLink'
 import { creatorPages, linksBoard, liveHouseLinks } from '@/lib/links-board'
@@ -112,16 +113,7 @@ export default async function LinksLeaderboardPage() {
               </h2>
               <div className="flex flex-wrap gap-2.5">
                 {house.map((h) => (
-                  <Link
-                    key={h.slug}
-                    href={`/i/${h.slug}`}
-                    className="group rounded-full border border-[var(--line)] bg-[var(--surf-1)] px-4 py-2 hover:border-[var(--accent)] transition-colors"
-                    title={h.label}
-                  >
-                    <span className="text-[13px] text-[color:var(--fg)] group-hover:text-[color:var(--accent)] transition-colors">
-                      &ldquo;{h.ask}&rdquo;
-                    </span>
-                  </Link>
+                  <HouseLinkChip key={h.slug} link={h} />
                 ))}
               </div>
             </>
