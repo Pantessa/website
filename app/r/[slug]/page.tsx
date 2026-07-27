@@ -5,7 +5,7 @@ import { YeetfulMark } from '@/components/Logo'
 import Footer from '@/components/Footer'
 import prisma from '@/lib/db'
 import { chainById } from '@/lib/chains'
-import { factsOf, receiptTryHref, receiptTweetHref, shortWallet, txLinesOf } from '@/lib/share-receipts'
+import { factsOf, maskAddressTokens, receiptTryHref, receiptTweetHref, shortWallet, txLinesOf } from '@/lib/share-receipts'
 
 // /r/<id> — a receipt permalink: ONE receipt-shaped thing (a settled turn, a
 // done job, a DCA schedule, a guardian protection), public because its owner
@@ -21,7 +21,10 @@ type Params = { params: Promise<{ slug: string }> }
 async function getReceipt(slug: string) {
   try {
     const r = await prisma.shareReceipt.findUnique({ where: { id: slug } })
-    return r && !r.revoked ? r : null
+    if (!r || r.revoked) return null
+    // Read-time mask covers receipts minted before write-time masking
+    // existed — a pasted 0x address in the ask must never render in full.
+    return { ...r, ask: r.ask ? maskAddressTokens(r.ask) : r.ask }
   } catch {
     return null
   }
