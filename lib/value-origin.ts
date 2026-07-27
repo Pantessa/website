@@ -70,3 +70,67 @@ export const STANDING_TURN_WHERE = {
     },
   ],
 }
+
+// ── Internal traffic — dev/harness rows that must never read as growth ──────
+//
+// Localhost prod builds, harness fixture origins, and this project's own
+// Vercel previews all write real embed_turns rows — by design: dev drives
+// exercise the REAL pipeline. But the scoreboard reads (money moved, funnels,
+// the public activity feed, the links board) must exclude them: in the 7 days
+// to 2026-07-27, ~$62k of a $79.8k "money moved" week was localhost dev
+// sessions — the north-star metric was unusable as a launch instrument.
+// Three mirrors, kept in lockstep like STANDING_TURN_*: the TS predicate
+// (row-level classification), the Prisma `where`, and the raw-SQL fragment.
+// Real embed hosts are arbitrary third-party origins and must NEVER match —
+// which is why plain `.vercel.app` is NOT internal, only this project's own
+// preview-deployment naming.
+
+const INTERNAL_HOST_RE = /^(localhost|127\.0\.0\.1|\[?::1\]?|0\.0\.0\.0)$/
+const INTERNAL_TLD_RE = /\.(test|localhost|local|example|invalid)$/
+/** This project's own Vercel previews (team slug / git-branch prefix). */
+const OWN_PREVIEW_RE = /^website-git-.*\.vercel\.app$|-nate-4683s-projects\.vercel\.app$/
+
+/** True when an embed_turns origin is Yeetful's own dev/test traffic. */
+export function isInternalOrigin(origin: string | null | undefined): boolean {
+  if (!origin) return false
+  let host: string
+  try {
+    host = new URL(origin).hostname.toLowerCase()
+  } catch {
+    return false
+  }
+  return INTERNAL_HOST_RE.test(host) || INTERNAL_TLD_RE.test(host) || OWN_PREVIEW_RE.test(host)
+}
+
+/** Prisma `where` matching internal-traffic embed_turns rows — the Prisma
+ *  mirror of {@link isInternalOrigin} over the stored origin string
+ *  ('http://localhost:3477', 'https://harness-embed.test', …). */
+export const INTERNAL_TRAFFIC_WHERE = {
+  OR: [
+    { origin: 'http://localhost' },
+    { origin: 'https://localhost' },
+    { origin: { startsWith: 'http://localhost:' } },
+    { origin: { startsWith: 'https://localhost:' } },
+    { origin: { startsWith: 'http://127.0.0.1' } },
+    { origin: { startsWith: 'https://127.0.0.1' } },
+    { origin: { startsWith: 'http://[::1]' } },
+    { origin: { startsWith: 'http://0.0.0.0' } },
+    { origin: { endsWith: '.test' } },
+    { origin: { endsWith: '.localhost' } },
+    { origin: { endsWith: '.local' } },
+    { origin: { endsWith: '.example' } },
+    { origin: { endsWith: '.invalid' } },
+    { origin: { endsWith: '-nate-4683s-projects.vercel.app' } },
+    { origin: { startsWith: 'https://website-git-' } },
+  ],
+}
+
+/** Compose into any embed_turns `where` to keep only REAL traffic. */
+export const REAL_TRAFFIC_WHERE = { NOT: INTERNAL_TRAFFIC_WHERE }
+
+/**
+ * Raw-SQL predicate for "this embed_turns row is internal traffic" — the SQL
+ * mirror of {@link isInternalOrigin}. Interpolate via Prisma.raw inside a
+ * WHERE as `NOT ${…}`; references the bare `origin` column.
+ */
+export const INTERNAL_ORIGIN_SQL = `(origin ~* '^https?://(localhost|127\\.0\\.0\\.1|\\[::1\\]|0\\.0\\.0\\.0)([:/]|$)' OR origin ~* '^https?://[^/]*\\.(test|localhost|local|example|invalid)(:[0-9]+)?$' OR origin ~* '^https?://(website-git-[^/]*|[^/]*-nate-4683s-projects)\\.vercel\\.app$')`

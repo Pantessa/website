@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import prisma from '@/lib/db'
 import { getSessionAddress } from '@/lib/auth'
 import { isAdminAddress } from '@/lib/admin'
-import { STANDING_TURN_WHERE } from '@/lib/value-origin'
+import { REAL_TRAFFIC_WHERE, STANDING_TURN_WHERE } from '@/lib/value-origin'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -45,6 +45,10 @@ export async function GET() {
       where: { ownerAddress: addr },
       select: { origin: true, pageUrl: true, turns: true, lastSeen: true },
     }),
+    // The owner's own feed keeps dev/test traffic — seeing your localhost
+    // drives in your own dashboard is dev feedback, same convention as the
+    // links board's creator-facing surfaces. Only the platform-wide `global`
+    // block below excludes it (lib/value-origin.ts isInternalOrigin).
     prisma.embedTurn.findMany({
       where: { ownerAddress: addr, createdAt: { gte: since } },
       orderBy: { createdAt: 'desc' },
@@ -73,8 +77,11 @@ export async function GET() {
   // truncates the company metric.
   let global: Record<string, unknown> | null = null
   if (isAdminAddress(addr)) {
+    // Every global aggregate excludes internal traffic — a week of localhost
+    // dev sessions once read as ~$62k of an ~$80k "money moved" week
+    // (2026-07-27), which makes the company number unusable.
     const sum = (where: object) =>
-      prisma.embedTurn.aggregate({ where, _sum: { valueUsd: true }, _count: { _all: true } })
+      prisma.embedTurn.aggregate({ where: { ...REAL_TRAFFIC_WHERE, ...where }, _sum: { valueUsd: true }, _count: { _all: true } })
     // Settled x402 spend only: ok row, real dollars, never dry-runs.
     const x402Where = { ok: true, amountUsd: { gt: 0 }, NOT: { note: 'dry-run' } }
     const x402 = (extra: object = {}) =>
@@ -102,7 +109,7 @@ export async function GET() {
       // being created and failing" for the whole system.
       prisma.embedTurn.groupBy({
         by: ['buildPath', 'outcome'],
-        where: { outcome: { in: ['tx-built', 'signed'] }, createdAt: { gte: since } },
+        where: { outcome: { in: ['tx-built', 'signed'] }, createdAt: { gte: since }, ...REAL_TRAFFIC_WHERE },
         _count: { _all: true },
         _sum: { valueUsd: true },
       }),
