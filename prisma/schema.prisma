@@ -1082,6 +1082,7 @@ model CreatorHandle {
   brandName      String?   @map("brand_name")
   brandLogo      String?   @map("brand_logo")
   brandAccent    String?   @map("brand_accent")
+  brandBg        String?   @map("brand_bg")
   brandUpdatedAt DateTime? @map("brand_updated_at")
 
   @@map("creator_handles")

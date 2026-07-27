@@ -37,7 +37,7 @@ import { policyCheckInflow, recipientCheck, validityCheck, MAX_VALID_SEC } from 
 import { guardPlannerArtifact, PERMIT2_ADDRESS } from '../lib/planner-artifact-guard'
 import { parseSwapIntent } from '../lib/swap-intent'
 import { activeLinkCapFor, composeMcps } from '../lib/intent-links'
-import { normalizeAccent, parseBrandHtml, validateBrandUrl } from '../lib/brand-scan'
+import { hexLuminance, normalizeAccent, normalizeBg, parseBrandHtml, validateBrandUrl } from '../lib/brand-scan'
 import { HOUSE_LINKS, houseLinkMarks } from '../lib/house-links'
 import { isDbChatId } from '../lib/chat-ids'
 import { usdToTokenAmount } from '../lib/usd-probe'
@@ -1607,12 +1607,14 @@ async function main() {
       <meta property="og:image" content="https://acme.example/social-card.png">
       <link rel="icon" href="/favicon-32.png" sizes="32x32">
       <link rel="apple-touch-icon" href="/apple-180.png" sizes="180x180">
+      <link rel="manifest" href="/manifest.json">
     </head></html>`
     const brandSig = parseBrandHtml(brandFixture, 'https://acme.example/')
     check(
-      'brand: parseBrandHtml reads name + theme-color and ranks apple-touch-icon > icon > favicon > og:image',
+      'brand: parseBrandHtml reads name + theme-color + manifest and ranks apple-touch-icon > icon > favicon > og:image',
       brandSig.siteName === 'Acme Corp' &&
         brandSig.themeColor === '#6633cc' &&
+        brandSig.manifestHref === 'https://acme.example/manifest.json' &&
         brandSig.logoCandidates[0] === 'https://acme.example/apple-180.png' &&
         brandSig.logoCandidates[1] === 'https://acme.example/favicon-32.png' &&
         brandSig.logoCandidates[2] === 'https://acme.example/favicon.ico' &&
@@ -1625,6 +1627,14 @@ async function main() {
         normalizeAccent('#ffffff') === null &&
         normalizeAccent('#000') === null &&
         normalizeAccent('purple') === null,
+    )
+    check(
+      'brand: normalizeBg takes any hex (white/black backgrounds are legitimate) and hexLuminance orders dark < light',
+      normalizeBg('#052b65') === '#052b65' &&
+        normalizeBg('fff') === '#ffffff' &&
+        normalizeBg('navy') === null &&
+        (hexLuminance('#052b65') ?? 1) < 0.2 &&
+        (hexLuminance('#ffffff') ?? 0) > 0.9,
     )
     // API gates: owner-only, a claimed handle required, hostile URLs die at
     // the gate. (The live-scan happy path needs the open internet, so it
@@ -1648,11 +1658,27 @@ async function main() {
       'brand: the /l page wears the accent and keeps the Powered by Yeetful mark',
       brandedHtml.includes('--accent:#6633cc') && brandedHtml.includes('Powered by'),
     )
+    // Background: the page re-themes wholesale — dark bg derives near-white
+    // text, and the earlier purple accent sits too close to navy in
+    // luminance, so the contrast guard swaps it for the derived fg.
+    const bBg = await fetch(`${BASE}/api/intent-links/brand`, { method: 'PATCH', headers: M, body: JSON.stringify({ bg: '#052b65' }) })
+    const bBgBad = await fetch(`${BASE}/api/intent-links/brand`, { method: 'PATCH', headers: M, body: JSON.stringify({ bg: 'zebra' }) })
+    check('brand: bg PATCH validates (#052b65 lands, junk refused)', bBg.status === 200 && bBgBad.status === 400)
+    const bgHtml = flat(await (await fetch(`${BASE}/l/harness-store`)).text())
+    check(
+      'brand: a dark bg re-themes the page (navy bg, derived near-white fg, low-contrast accent guarded to fg)',
+      bgHtml.includes('--bg:#052b65') && bgHtml.includes('--fg:#f4f6f8') && bgHtml.includes('--accent:#f4f6f8'),
+    )
+    check('brand: the /l page carries the tweet-this-page share link', bgHtml.includes('twitter.com/intent/tweet'))
     const bClear = await fetch(`${BASE}/api/intent-links/brand`, { method: 'DELETE', headers: { cookie: mallorySession } })
     const unbrandedHtml = flat(await (await fetch(`${BASE}/l/harness-store`)).text())
     check(
-      'brand: remove restores the default page (accent gone, Powered by stays)',
-      bClear.status === 200 && !unbrandedHtml.includes('--accent:#6633cc') && unbrandedHtml.includes('Powered by'),
+      'brand: remove restores the default page (accent + bg gone, Powered by and the share link stay)',
+      bClear.status === 200 &&
+        !unbrandedHtml.includes('--accent:#6633cc') &&
+        !unbrandedHtml.includes('--bg:#052b65') &&
+        unbrandedHtml.includes('Powered by') &&
+        unbrandedHtml.includes('twitter.com/intent/tweet'),
     )
 
     const hRename = await fetch(`${BASE}/api/intent-links/handle`, { method: 'POST', headers: M, body: JSON.stringify({ handle: 'harness-store-2' }) })

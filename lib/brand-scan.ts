@@ -44,6 +44,8 @@ export function validateBrandUrl(raw: string): { ok: true; url: URL } | { ok: fa
 export interface BrandSignals {
   siteName: string | null
   themeColor: string | null
+  /** PWA manifest href (absolute), when the page declares one. */
+  manifestHref: string | null
   /** Best-first logo candidate URLs (absolute). */
   logoCandidates: string[]
 }
@@ -93,6 +95,7 @@ export function parseBrandHtml(html: string, baseUrl: string): BrandSignals {
   const links = head.match(/<link\b[^>]*>/gi) ?? []
   const touch: Array<{ href: string; size: number }> = []
   const icons: Array<{ href: string; size: number; svg: boolean }> = []
+  let manifestHref: string | null = null
   for (const tag of links) {
     const rel = attrOf(tag, 'rel')?.toLowerCase() ?? ''
     const href = attrOf(tag, 'href')
@@ -100,6 +103,7 @@ export function parseBrandHtml(html: string, baseUrl: string): BrandSignals {
     const size = sizeOf(attrOf(tag, 'sizes'))
     if (/\bapple-touch-icon\b/.test(rel)) touch.push({ href, size })
     else if (/\bicon\b/.test(rel)) icons.push({ href, size, svg: /svg/i.test(attrOf(tag, 'type') ?? '') || /\.svg(\?|$)/i.test(href) })
+    else if (rel === 'manifest' && !manifestHref) manifestHref = href
   }
   touch.sort((a, b) => b.size - a.size)
   icons.sort((a, b) => b.size - a.size || Number(b.svg) - Number(a.svg))
@@ -111,7 +115,33 @@ export function parseBrandHtml(html: string, baseUrl: string): BrandSignals {
     ...(ogImage ? [ogImage] : []),
   ]
   const logoCandidates = [...new Set(candidates.map(abs).filter((x): x is string => !!x))]
-  return { siteName, themeColor, logoCandidates }
+  return { siteName, themeColor, manifestHref: manifestHref ? abs(manifestHref) : null, logoCandidates }
+}
+
+/** Parse a #rgb/#rrggbb hex to its expanded form, or null. */
+export function normalizeHex(raw: string | null | undefined): string | null {
+  if (!raw) return null
+  const m = raw.trim().match(/^#?([0-9a-f]{3}|[0-9a-f]{6})$/i)
+  if (!m) return null
+  let hex = m[1].toLowerCase()
+  if (hex.length === 3) hex = hex.split('').map((c) => c + c).join('')
+  return `#${hex}`
+}
+
+/** Relative luminance of a hex color (0 black → 1 white), null when unparsable. */
+export function hexLuminance(raw: string | null | undefined): number | null {
+  const hex = normalizeHex(raw)?.slice(1)
+  if (!hex) return null
+  const r = parseInt(hex.slice(0, 2), 16) / 255
+  const g = parseInt(hex.slice(2, 4), 16) / 255
+  const b = parseInt(hex.slice(4, 6), 16) / 255
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b
+}
+
+/** Normalize a page BACKGROUND color: any valid hex goes — a white or black
+ *  background is a legitimate brand statement, unlike an accent. */
+export function normalizeBg(raw: string | null | undefined): string | null {
+  return normalizeHex(raw)
 }
 
 /** Normalize an accent color for the storefront: #rgb/#rrggbb only, and
@@ -120,17 +150,11 @@ export function parseBrandHtml(html: string, baseUrl: string): BrandSignals {
  *  when unusable (the caller falls back to Yeetful's default accent, or to
  *  client-side logo sampling). */
 export function normalizeAccent(raw: string | null | undefined): string | null {
-  if (!raw) return null
-  const m = raw.trim().match(/^#?([0-9a-f]{3}|[0-9a-f]{6})$/i)
-  if (!m) return null
-  let hex = m[1].toLowerCase()
-  if (hex.length === 3) hex = hex.split('').map((c) => c + c).join('')
-  const r = parseInt(hex.slice(0, 2), 16) / 255
-  const g = parseInt(hex.slice(2, 4), 16) / 255
-  const b = parseInt(hex.slice(4, 6), 16) / 255
-  const lum = 0.2126 * r + 0.7152 * g + 0.0722 * b
+  const hex = normalizeHex(raw)
+  const lum = hexLuminance(hex)
+  if (hex === null || lum === null) return null
   if (lum > 0.88 || lum < 0.06) return null
-  return `#${hex}`
+  return hex
 }
 
 async function boundedFetch(url: string): Promise<Response> {
@@ -149,8 +173,12 @@ async function boundedFetch(url: string): Promise<Response> {
 
 /** Fetch + parse a creator's site. The URL must already have passed
  *  validateBrandUrl; the post-redirect landing URL is re-validated so a
- *  redirect can't tunnel to an internal host. */
-export async function scanBrand(url: URL): Promise<{ ok: true; domain: string; signals: BrandSignals } | { ok: false; reason: string }> {
+ *  redirect can't tunnel to an internal host. `declaredColors` collects
+ *  every color the site declares about itself, best-first: meta
+ *  theme-color, then the PWA manifest's theme_color and background_color. */
+export async function scanBrand(
+  url: URL,
+): Promise<{ ok: true; domain: string; signals: BrandSignals; declaredColors: string[] } | { ok: false; reason: string }> {
   let res: Response
   try {
     res = await boundedFetch(url.toString())
@@ -161,7 +189,22 @@ export async function scanBrand(url: URL): Promise<{ ok: true; domain: string; s
   if (!landed.ok) return { ok: false, reason: 'That site redirected somewhere we won’t follow.' }
   if (!res.ok) return { ok: false, reason: `That site answered ${res.status} — check the URL and try again.` }
   const html = (await res.text()).slice(0, HTML_MAX_BYTES)
-  return { ok: true, domain: landed.url.hostname.toLowerCase(), signals: parseBrandHtml(html, landed.url.toString()) }
+  const signals = parseBrandHtml(html, landed.url.toString())
+
+  const declared: Array<string | null> = [signals.themeColor]
+  if (signals.manifestHref && validateBrandUrl(signals.manifestHref).ok) {
+    try {
+      const mres = await boundedFetch(signals.manifestHref)
+      if (mres.ok) {
+        const manifest = JSON.parse((await mres.text()).slice(0, 50_000)) as { theme_color?: string; background_color?: string }
+        declared.push(manifest.theme_color ?? null, manifest.background_color ?? null)
+      }
+    } catch {
+      // fail-soft: a broken manifest never blocks the scan
+    }
+  }
+  const declaredColors = [...new Set(declared.map(normalizeHex).filter((x): x is string => !!x))]
+  return { ok: true, domain: landed.url.hostname.toLowerCase(), signals, declaredColors }
 }
 
 /** Fetch a logo candidate and re-encode it as a data URI. Content-type must
