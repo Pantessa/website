@@ -55,6 +55,71 @@ interface Earnings {
   minClaimUsd: number
 }
 
+interface Brand {
+  domain: string | null
+  name: string | null
+  logo: string | null
+  accent: string | null
+}
+
+function rgbHue(r: number, g: number, b: number): number {
+  const max = Math.max(r, g, b)
+  const min = Math.min(r, g, b)
+  if (max === min) return 0
+  const d = max - min
+  const h = max === r ? (g - b) / d + (g < b ? 6 : 0) : max === g ? (b - r) / d + 2 : (r - g) / d + 4
+  return h * 60
+}
+
+/** Dominant colorful pixel of the scanned logo — runs in the creator's own
+ *  browser (the logo is a same-origin data URI, so canvas never taints).
+ *  Closes the gap when the site declares no theme-color: grays/whites/
+ *  blacks are skipped, remaining pixels bucket by hue, densest bucket's
+ *  average wins. Null when the logo is effectively monochrome — the page
+ *  then keeps Yeetful's default accent. */
+function sampleAccent(dataUri: string): Promise<string | null> {
+  return new Promise((resolve) => {
+    const img = new Image()
+    img.onload = () => {
+      try {
+        const N = 48
+        const c = document.createElement('canvas')
+        c.width = N
+        c.height = N
+        const ctx = c.getContext('2d')
+        if (!ctx) return resolve(null)
+        ctx.drawImage(img, 0, 0, N, N)
+        const { data } = ctx.getImageData(0, 0, N, N)
+        const buckets = new Map<number, { r: number; g: number; b: number; n: number }>()
+        for (let i = 0; i < data.length; i += 4) {
+          const r = data[i]
+          const g = data[i + 1]
+          const b = data[i + 2]
+          if (data[i + 3] < 200) continue
+          const lum = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255
+          if (Math.max(r, g, b) - Math.min(r, g, b) < 24 || lum > 0.88 || lum < 0.06) continue
+          const key = Math.round(rgbHue(r, g, b) / 24)
+          const cur = buckets.get(key) ?? { r: 0, g: 0, b: 0, n: 0 }
+          cur.r += r
+          cur.g += g
+          cur.b += b
+          cur.n++
+          buckets.set(key, cur)
+        }
+        let best: { r: number; g: number; b: number; n: number } | null = null
+        for (const v of buckets.values()) if (!best || v.n > best.n) best = v
+        if (!best || best.n < 8) return resolve(null)
+        const hx = (x: number) => Math.round(x / best.n).toString(16).padStart(2, '0')
+        resolve(`#${hx(best.r)}${hx(best.g)}${hx(best.b)}`)
+      } catch {
+        resolve(null)
+      }
+    }
+    img.onerror = () => resolve(null)
+    img.src = dataUri
+  })
+}
+
 export default function DashboardLinksPage() {
   const [links, setLinks] = useState<LinkRow[] | null>(null)
   const [earnings, setEarnings] = useState<Earnings | null>(null)
@@ -82,6 +147,11 @@ export default function DashboardLinksPage() {
   // link, or the page is unfindable.
   const [handleMsg, setHandleMsg] = useState<{ text: string; url?: string } | null>(null)
   const [claiming, setClaiming] = useState(false)
+  // White-label brand for the /l page — one pasted URL, no form.
+  const [brand, setBrand] = useState<Brand | null>(null)
+  const [brandUrl, setBrandUrl] = useState('')
+  const [branding, setBranding] = useState(false)
+  const [brandMsg, setBrandMsg] = useState<string | null>(null)
 
   // Prefill from the chat's "create intent link" handoff — read once.
   useEffect(() => {
@@ -120,8 +190,9 @@ export default function DashboardLinksPage() {
     load()
     void fetch('/api/intent-links/handle', { cache: 'no-store' })
       .then((r) => (r.ok ? r.json() : null))
-      .then((d: { handle: string | null } | null) => {
+      .then((d: { handle: string | null; brand?: Brand | null } | null) => {
         if (d?.handle) setMyHandle(d.handle)
+        setBrand(d?.brand ?? null)
       })
       .catch(() => {})
   }, [load])
@@ -147,6 +218,49 @@ export default function DashboardLinksPage() {
     } finally {
       setClaiming(false)
     }
+  }
+
+  // One paste → scan → save. If the site declared no theme-color, the logo
+  // just stored gets sampled here on canvas and the accent PATCHed back.
+  const matchSite = async () => {
+    if (branding || !brandUrl.trim()) return
+    setBranding(true)
+    setBrandMsg(null)
+    try {
+      const res = await fetch('/api/intent-links/brand', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ url: brandUrl.trim() }),
+      })
+      const data = (await res.json()) as { error?: string; brand?: Brand | null; needsAccent?: boolean }
+      if (!res.ok) {
+        setBrandMsg(data.error ?? 'Scan failed — try again.')
+        return
+      }
+      let b = data.brand ?? null
+      if (data.needsAccent && b?.logo) {
+        const accent = await sampleAccent(b.logo)
+        if (accent) {
+          const pr = await fetch('/api/intent-links/brand', {
+            method: 'PATCH',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ accent }),
+          })
+          const pd = (await pr.json()) as { brand?: Brand | null }
+          if (pr.ok && pd.brand) b = pd.brand
+        }
+      }
+      setBrand(b)
+      setBrandUrl('')
+    } finally {
+      setBranding(false)
+    }
+  }
+
+  const removeBrand = async () => {
+    await fetch('/api/intent-links/brand', { method: 'DELETE' })
+    setBrand(null)
+    setBrandMsg(null)
   }
 
   const mint = async () => {
@@ -366,6 +480,59 @@ export default function DashboardLinksPage() {
                 </a>
               </>
             )}
+          </span>
+        )}
+        {/* White-label: paste the site, the page wears its logo + colors.
+            No pickers, no uploads — the scan does the whole thing, and the
+            page keeps its "Powered by Yeetful" mark. */}
+        {myHandle && (
+          <span className="inline-flex flex-wrap items-center gap-2 w-full">
+            <span className="mono text-[11px] uppercase tracking-wider text-[color:var(--muted-2)]">Brand</span>
+            {brand ? (
+              <>
+                {brand.logo && (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={brand.logo} alt="" className="w-4 h-4 rounded object-contain" />
+                )}
+                <span className="mono text-[12px] text-[color:var(--muted)]">{brand.name ?? brand.domain}</span>
+                {brand.accent && (
+                  <span
+                    className="w-3 h-3 rounded-full border border-[var(--line)] inline-block"
+                    style={{ background: brand.accent }}
+                    title={brand.accent}
+                  />
+                )}
+                <span className="text-[11px] text-[color:var(--muted-2)]">— your page wears it, powered by Yeetful</span>
+                <button
+                  type="button"
+                  onClick={() => void removeBrand()}
+                  className="text-[11px] mono text-[color:var(--muted-2)] hover:text-red-400 transition-colors"
+                >
+                  remove
+                </button>
+              </>
+            ) : (
+              <>
+                <input
+                  value={brandUrl}
+                  onChange={(e) => setBrandUrl(e.target.value)}
+                  placeholder="https://yoursite.com"
+                  className="w-56 rounded-lg border border-[var(--line)] bg-[var(--bg)] px-2.5 py-1.5 text-[13px] text-[color:var(--fg)] focus:outline-none focus:border-[var(--accent)]"
+                />
+                <button
+                  type="button"
+                  onClick={() => void matchSite()}
+                  disabled={branding || !brandUrl.trim()}
+                  className="btn btn--solid text-[12px] disabled:opacity-50"
+                >
+                  {branding ? 'Scanning…' : 'Match my site'}
+                </button>
+                <span className="text-[11px] text-[color:var(--muted-2)]">
+                  paste your site — we grab the logo and colors, no form
+                </span>
+              </>
+            )}
+            {brandMsg && <span className="text-[12px] text-amber-400 w-full">{brandMsg}</span>}
           </span>
         )}
       </div>
