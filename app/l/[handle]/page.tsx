@@ -2,7 +2,7 @@ import type { Metadata } from 'next'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import prisma from '@/lib/db'
-import { brandThemeStyle } from '@/lib/brand-theme'
+import { brandCtaStyle, brandThemeStyle } from '@/lib/brand-theme'
 import Footer from '@/components/Footer'
 import { YeetfulMark } from '@/components/Logo'
 
@@ -132,7 +132,9 @@ export default async function StorefrontPage({ params }: Params) {
           </p>
           {totalMoved > 0 && (
             <p className="mono text-[12px] text-[color:var(--muted-2)] mb-8">
-              ${totalMoved.toFixed(2)} moved through this page&apos;s links
+              {/* one template string — the SWC entity-space bug eats the space
+                  between an expression and an entity-bearing text node */}
+              {`$${totalMoved.toFixed(2)} moved through this page's links`}
             </p>
           )}
 
@@ -168,7 +170,9 @@ export default async function StorefrontPage({ params }: Params) {
           )}
 
           <div className="mt-10 flex flex-wrap items-center gap-3">
-            <Link href="/dashboard/links" className="btn btn--solid text-[13px]">
+            {/* branded pages repaint the solid pill in the creator's accent —
+                the stock fg-on-bg fill goes dark-blob on saturated brand bgs */}
+            <Link href="/dashboard/links" className="btn btn--solid text-[13px]" style={brandCtaStyle(brand)}>
               Make your own page
             </Link>
             <Link href="/links" className="btn btn--ghost text-[13px]">

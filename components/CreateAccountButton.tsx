@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { useRouter } from 'next/navigation'
 import { useConnectModal } from '@rainbow-me/rainbowkit'
@@ -43,11 +43,15 @@ const OAUTH_PROVIDERS = [
  */
 export default function CreateAccountButton({
   className,
+  style,
   label = 'Create an account',
   redirectTo = '/dashboard',
   walletConnectOnly = false,
 }: {
   className?: string
+  /** Inline trigger styling — branded /i splashes repaint the CTA in the
+   *  creator's accent (brandCtaStyle). */
+  style?: CSSProperties
   label?: ReactNode
   /** Where to land after a successful sign-in (email or wallet). */
   redirectTo?: string
@@ -60,7 +64,7 @@ export default function CreateAccountButton({
   const [open, setOpen] = useState(false)
   return (
     <>
-      <button type="button" className={className} onClick={() => setOpen(true)}>
+      <button type="button" className={className} style={style} onClick={() => setOpen(true)}>
         {label}
       </button>
       {open && (
