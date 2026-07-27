@@ -36,6 +36,13 @@ function mulberry32(seed: number): () => number {
 const W = 640
 const H = 400
 
+// Every well that shows this art uses preserveAspectRatio="slice" at a
+// DIFFERENT ratio — 2/1 post hero, 2.4/1 index cards, ~1.45/1 feature panel —
+// so each one crops a different pair of edges. Anything that must survive all
+// three (text above all) belongs inside this box; only decorative geometry
+// should stray outside it.
+const SAFE = { x0: 40, x1: 600, y0: 66, y1: 334 }
+
 // Bespoke composition for the orchestration launch post: one intent-arrow
 // skipping across the four job steps. Same canvas, same dot grid, same
 // blogart__route / blogart__ping animations as the generated art — it reads
@@ -150,8 +157,8 @@ function OrchestrationCover({ tag, className }: { tag?: string; className?: stri
 
       {/* receipt stamp */}
       <text
-        x="28"
-        y="42"
+        x={SAFE.x0}
+        y={SAFE.y0 + 20}
         fontFamily="'Geist Mono', ui-monospace, monospace"
         fontSize="12.5"
         fill="#3ECF8E"
@@ -161,8 +168,9 @@ function OrchestrationCover({ tag, className }: { tag?: string; className?: stri
       </text>
       {tag && (
         <text
-          x="24"
-          y={H - 22}
+          x={SAFE.x1}
+          y={SAFE.y0 + 20}
+          textAnchor="end"
           fontFamily="'Geist Mono', ui-monospace, monospace"
           fontSize="11"
           letterSpacing="0.12em"
@@ -183,10 +191,9 @@ function LinksCover({ tag, className }: { tag?: string; className?: string }) {
   const originX = 74
   const originY = H / 2
   const fanX = 268 // where the batch of links stacks up
-  const settleX = 556
-  // The art is 640×400 but every well that shows it (2/1 hero, 2.4/1 cards)
-  // crops with `slice`. Everything lives inside the tightest safe band —
-  // y ∈ [66, 334] — so no label is ever half-eaten by an aspect ratio.
+  // Pulled in from the right edge so the "signed" label lands inside SAFE.x1
+  // on the feature panel, which crops the sides rather than the top.
+  const settleX = 500
   const rows = [116, 158, 200, 242, 284]
 
   return (
@@ -211,8 +218,8 @@ function LinksCover({ tag, className }: { tag?: string; className?: string }) {
 
       {/* the intent — one sentence, entering */}
       <text
-        x="28"
-        y="86"
+        x={SAFE.x0}
+        y={SAFE.y0 + 20}
         fontFamily="'Geist Mono', ui-monospace, monospace"
         fontSize="12.5"
         fill="#3ECF8E"
@@ -289,8 +296,9 @@ function LinksCover({ tag, className }: { tag?: string; className?: string }) {
       </text>
       {tag && (
         <text
-          x="28"
-          y="330"
+          x={SAFE.x1}
+          y={SAFE.y0 + 20}
+          textAnchor="end"
           fontFamily="'Geist Mono', ui-monospace, monospace"
           fontSize="11"
           letterSpacing="0.12em"
@@ -329,8 +337,8 @@ export default function BlogCoverArt({
     for (let r = 0; r < rows; r++) {
       if (rand() < 0.22) continue
       nodes.push({
-        x: 60 + (c * (W - 120)) / (cols - 1) + (rand() - 0.5) * 56,
-        y: 70 + (r * (H - 150)) / (rows - 1) + (rand() - 0.5) * 44,
+        x: SAFE.x0 + 36 + (c * (SAFE.x1 - SAFE.x0 - 72)) / (cols - 1) + (rand() - 0.5) * 48,
+        y: SAFE.y0 + 24 + (r * (SAFE.y1 - SAFE.y0 - 48)) / (rows - 1) + (rand() - 0.5) * 36,
         r: 2.5 + rand() * 2.5,
       })
     }
@@ -432,7 +440,9 @@ export default function BlogCoverArt({
       {settle && (
         <text
           x={Math.min(settle.x + 16, W - 120)}
-          y={settle.y - 14}
+          // Never ride up into the tag's line: a settle node in the top band
+          // put "402 → 200" straight through the tag on the right.
+          y={Math.max(settle.y - 14, SAFE.y0 + 44)}
           fontFamily="'Geist Mono', ui-monospace, monospace"
           fontSize="12.5"
           fill="#3ECF8E"
@@ -443,8 +453,9 @@ export default function BlogCoverArt({
       )}
       {tag && (
         <text
-          x="24"
-          y={H - 22}
+          x={SAFE.x1}
+          y={SAFE.y0 + 20}
+          textAnchor="end"
           fontFamily="'Geist Mono', ui-monospace, monospace"
           fontSize="11"
           letterSpacing="0.12em"

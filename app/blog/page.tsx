@@ -1,7 +1,9 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import prisma from '@/lib/db'
+import { isBlogAdminSession } from '@/lib/blog'
 import Footer from '@/components/Footer'
+import BlogAdminBar from '@/components/BlogAdminBar'
 import BlogCoverArt from '@/components/BlogCoverArt'
 
 export const runtime = 'nodejs'
@@ -43,11 +45,28 @@ async function getPosts() {
   }
 }
 
+/** Unpublished posts, newest first — only ever called for a signed-in admin.
+ *  Kept as a separate query so the public path can't accidentally widen: the
+ *  published list above is still the only thing that feeds the page's JSON-LD
+ *  and the sitemap. */
+async function getDrafts() {
+  try {
+    return await prisma.blogPost.findMany({
+      where: { published: false },
+      orderBy: { updatedAt: 'desc' },
+      select: { slug: true, title: true, description: true, tags: true, updatedAt: true },
+    })
+  } catch {
+    return []
+  }
+}
+
 const fmt = (d: Date) =>
   d.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })
 
 export default async function BlogIndexPage() {
-  const posts = await getPosts()
+  const admin = await isBlogAdminSession()
+  const [posts, drafts] = await Promise.all([getPosts(), admin ? getDrafts() : Promise.resolve([])])
 
   const jsonLd = {
     '@context': 'https://schema.org',
@@ -84,6 +103,42 @@ export default async function BlogIndexPage() {
                 line, echoing the hero's settlement motif. Pure CSS. */}
             <div className="blog__rail" aria-hidden="true" />
           </header>
+
+          {/* Admin-only: every unpublished post, with a one-click publish.
+              Renders nothing for everyone else — and the API re-checks the
+              allowlist on the flip, so this being visible is never authority. */}
+          {admin && (
+            <section className="blogdrafts">
+              <div className="blogdrafts__head">
+                <span className="blogdrafts__kicker mono">ADMIN · UNPUBLISHED</span>
+                <span className="blogdrafts__count mono">
+                  {drafts.length} draft{drafts.length === 1 ? '' : 's'}
+                </span>
+              </div>
+              {drafts.length === 0 ? (
+                <p className="blogdrafts__empty mono">
+                  No drafts. Everything written is live.
+                </p>
+              ) : (
+                <ul className="blogdrafts__list">
+                  {drafts.map((d) => (
+                    <li key={d.slug} className="blogdrafts__row">
+                      <div className="blogdrafts__meta">
+                        <Link href={`/blog/${d.slug}`} className="blogdrafts__title">
+                          {d.title}
+                        </Link>
+                        <span className="blogdrafts__sub mono">
+                          /blog/{d.slug} · edited {fmt(d.updatedAt)}
+                          {d.tags.length > 0 ? ` · ${d.tags.join(', ')}` : ''}
+                        </span>
+                      </div>
+                      <BlogAdminBar slug={d.slug} published={false} compact />
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
+          )}
 
           {posts.length === 0 ? (
             <p className="svc__empty">Nothing published yet. The autopilot is probably typing.</p>

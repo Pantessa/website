@@ -2671,6 +2671,52 @@ async function main() {
       coverSrc.includes(`slug === '${linksPost.slug}'`),
       linksPost.slug,
     )
+    // Cover art is shown through THREE `slice` wells at different ratios, so
+    // any text placed outside the safe box gets sliced by one of them (the
+    // orchestration stamp used to lose its top on the post hero). Pin that no
+    // literal y below the top crop survives in a text anchor.
+    check(
+      'cover art declares the slice-safe box',
+      /const SAFE = \{ x0: 40, x1: 600, y0: 66, y1: 334 \}/.test(coverSrc),
+    )
+    check(
+      'no cover-art text anchors outside the safe box',
+      !/<text[\s\S]{0,120}?y="(?:[0-5]?\d|6[0-5]|3[4-9]\d)"/.test(coverSrc),
+    )
+
+    // The blog admin allowlist must include the hardcoded owners: ADMIN_WALLETS
+    // is unset locally and unverified on Vercel, and a publish gate reading only
+    // that env locks the owner out of the publish UI entirely.
+    const { adminWallets: blogAdmins } = await import('../lib/blog')
+    const { OWNER_WALLETS } = await import('../lib/admin')
+    check(
+      'blog admin allowlist covers OWNER_WALLETS even with ADMIN_WALLETS unset',
+      OWNER_WALLETS.every((w) => blogAdmins().has(w)),
+      `${blogAdmins().size} admins`,
+    )
+    check('blog admin allowlist never empty (publish UI always reachable)', blogAdmins().size > 0)
+  }
+
+  // ── Blog admin chrome: the public surface must never leak it ──────────────
+  // The publish UI is server-rendered only for an admin session, but the gate
+  // that matters is the API. These run unauthenticated on every harness pass.
+  {
+    const publicIndex = await fetch(`${BASE}/blog`).then((r) => r.text())
+    check(
+      'anonymous /blog renders no admin chrome',
+      !publicIndex.includes('blogdrafts') && !publicIndex.includes('blogadmin'),
+    )
+    // 403 before 404: an anonymous PATCH must not reveal whether a slug exists.
+    const anonPatchMissing = await fetch(`${BASE}/api/blog/no-such-post-xyz`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ published: true }),
+    })
+    check(
+      'anonymous publish is 403 even for an unknown slug (no existence leak)',
+      anonPatchMissing.status === 403,
+      `${anonPatchMissing.status}`,
+    )
   }
 
   // ── Blog (requires BLOG_ADMIN_PK + matching ADMIN_WALLETS on the server) ──

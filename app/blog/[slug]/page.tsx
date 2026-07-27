@@ -5,7 +5,9 @@ import { ArrowLeft } from 'lucide-react'
 import ReactMarkdown, { type Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import prisma from '@/lib/db'
+import { isBlogAdminSession } from '@/lib/blog'
 import Footer from '@/components/Footer'
+import BlogAdminBar from '@/components/BlogAdminBar'
 import BlogChart from '@/components/BlogChart'
 import BlogCoverArt from '@/components/BlogCoverArt'
 import BlogFigure from '@/components/BlogFigure'
@@ -35,10 +37,16 @@ const SITE = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://yeetful.com'
 
 type Params = { params: Promise<{ slug: string }> }
 
+/** A post the caller may see, plus whether they may administer it. Drafts stay
+ *  404 for everyone but a signed-in admin — an unpublished post's existence is
+ *  still undisclosed to the public. */
 async function getPost(slug: string) {
   try {
     const post = await prisma.blogPost.findUnique({ where: { slug } })
-    return post?.published ? post : null // drafts are 404 — existence undisclosed
+    if (!post) return null
+    const admin = await isBlogAdminSession()
+    if (!post.published && !admin) return null
+    return { post, admin }
   } catch {
     return null
   }
@@ -46,9 +54,18 @@ async function getPost(slug: string) {
 
 export async function generateMetadata({ params }: Params): Promise<Metadata> {
   const { slug } = await params
-  const post = await getPost(slug)
-  if (!post) return { title: 'Not found — Yeetful' }
+  const found = await getPost(slug)
+  if (!found) return { title: 'Not found — Yeetful' }
+  const { post } = found
   const url = `${SITE}/blog/${post.slug}`
+  // A draft an admin is previewing must never leak into search: no canonical,
+  // no OG, and an explicit noindex. Only published posts carry SEO metadata.
+  if (!post.published) {
+    return {
+      title: `[DRAFT] ${post.title} — Yeetful Blog`,
+      robots: { index: false, follow: false, nocache: true },
+    }
+  }
   return {
     title: `${post.title} — Yeetful Blog`,
     description: post.description,
@@ -74,8 +91,9 @@ export async function generateMetadata({ params }: Params): Promise<Metadata> {
 
 export default async function BlogPostPage({ params }: Params) {
   const { slug } = await params
-  const post = await getPost(slug)
-  if (!post) notFound()
+  const found = await getPost(slug)
+  if (!found) notFound()
+  const { post, admin } = found
 
   const jsonLd = {
     '@context': 'https://schema.org',
@@ -100,6 +118,14 @@ export default async function BlogPostPage({ params }: Params) {
             <ArrowLeft width={14} height={14} />
             Blog
           </Link>
+
+          {admin && (
+            <BlogAdminBar
+              slug={post.slug}
+              published={post.published}
+              publishedAt={post.publishedAt?.toISOString() ?? null}
+            />
+          )}
 
           <header className="blog__posthead">
             <span className="blog__postkicker mono">NOTES FROM THE CONTROL PLANE</span>
@@ -150,10 +176,13 @@ export default async function BlogPostPage({ params }: Params) {
         </article>
       </main>
       <Footer />
-      <script
-        type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
-      />
+      {/* Structured data is a publication claim — drafts don't make one. */}
+      {post.published && (
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+        />
+      )}
     </>
   )
 }
