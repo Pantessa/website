@@ -86,7 +86,7 @@ import { parseTransferSegment, buildTransferArtifact } from '@/lib/transfer-exec
 import { buildUniswapSwap, NoV3PoolError } from '@/lib/uniswap-venue'
 import { buildUniswapV4Swap, NoV4PoolError, GatedV4PoolError } from '@/lib/uniswap-v4'
 import { buildLifiSwap, NoLifiRouteError } from '@/lib/lifi-venue'
-import { fundingNeedUsd, GAS_TOPUP_ETH, parseRhFundingFollowUp, planRobinhoodFundingAdvice, readFundingShortfall, rhFundingPending, ROBINHOOD_CHAIN_ID } from '@/lib/lifi-bridge'
+import { GAS_TOPUP_ETH, parseRhFundingFollowUp, planDownsizedRobinhoodBuy, planRobinhoodFundingAdvice, readFundingShortfall, rhFundingPending, robinhoodBuyNeedUsd, ROBINHOOD_CHAIN_ID } from '@/lib/lifi-bridge'
 import { describeInflightDeposit, inflightPendingData } from '@/lib/inflight-funding'
 import { resolveToken, tokenDecimals, humanToAtoms } from '@/lib/cow'
 import { ensureTokenList } from '@/lib/token-list'
@@ -2651,9 +2651,11 @@ async function prepareSwapTurn(intent: SwapIntent, walletAddress: string | undef
         const buySym = intent.buyToken.toUpperCase()
         const holdingUsd = Number(shortfall.usdgAtoms) / 10 ** rhStable.decimals
         const includeGas = !shortfall.hasGas
-        const needUsd = acquiring
-          ? fundingNeedUsd(Math.max(0.01, Number((buyUsd - holdingUsd).toFixed(2))), includeGas)
-          : fundingNeedUsd(buyUsd, includeGas)
+        // Buys subtract the held USDG too — the buy spends what's already
+        // there plus what lands. Ignoring it demanded a ~$12.5 bridge from a
+        // wallet holding $12 movable + $0.48 held, and the flagship
+        // "Buy $12 of AAPL" ask walled three times (live 2026-07-27).
+        const needUsd = robinhoodBuyNeedUsd(buyUsd, holdingUsd, includeGas)
         const advice = planRobinhoodFundingAdvice({
           scan: shortfall,
           needUsd,
@@ -2725,6 +2727,34 @@ async function prepareSwapTurn(intent: SwapIntent, walletAddress: string | undef
             buildPath: 'native-lifi-fund-offer',
             workingContext: pendingFunding,
           })
+        }
+        // Nothing covers the ASKED size — before the wall, a near miss gets
+        // the buy the wallet CAN fund ("Buy $11.5 of AAPL instead"): an
+        // executable counter-offer converts where a correct per-chain
+        // accounting doesn't (live 2026-07-27: three retries on the walled
+        // flagship ask). Only over a complete scan — a downsize sized off a
+        // partial read could lowball a wallet whose money hid behind a
+        // failed RPC.
+        if (shortfall.failedOrigins.length === 0) {
+          const downsized = planDownsizedRobinhoodBuy({ scan: shortfall, buyUsd, holdingUsd, includeGas, buySym, acquiring })
+          if (downsized) {
+            trace({
+              type: 'status',
+              label: `funding layer claimed the turn: ${rhStable.symbol} short on ${chain.name} for the $${buyUsd} ask, but the wallet funds $${downsized.buyUsd} — offering the downsized ${acquiring ? 'acquisition' : 'buy'} (~$${downsized.needUsd} plan)`,
+            })
+            return NextResponse.json({
+              reply:
+                `🌉 **We can make this happen — just a notch smaller.** ${acquiring ? 'You asked for' : 'The buy needs'} ~$${buyUsd} of ${rhStable.symbol} on ${chain.name} and you're at ~$${holdingUsd.toFixed(2)} there; across the chains I can bridge from I see: ${advice.copy}. ` +
+                `That doesn't quite cover $${buyUsd} — but it does cover **$${downsized.buyUsd}**${includeGas ? ' (gas leg included)' : ''}, built and guard-checked when it's your turn to sign. ` +
+                `Or top up USDC on Base, Ethereum, or Arbitrum (or ${rhStable.symbol} on ${chain.name}), tell me when it's there, and I'll run the full $${buyUsd}.${inflightSuffix}`,
+              clarify: {
+                question: `Run the size your wallet covers?`,
+                options: [...downsized.chips, { label: 'Not now', resume: 'Never mind — leave my funds where they are.' }],
+              },
+              buildPath: 'native-lifi-fund-offer',
+              workingContext: pendingFunding,
+            })
+          }
         }
         // Nothing covers it — but a shortfall claim is only honest over
         // chains that actually scanned (advice.copy carries the per-chain
