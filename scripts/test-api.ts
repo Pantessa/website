@@ -1669,7 +1669,20 @@ async function main() {
       'brand: a dark bg re-themes the page (navy bg, derived near-white fg, low-contrast accent guarded to fg)',
       bgHtml.includes('--bg:#052b65') && bgHtml.includes('--fg:#f4f6f8') && bgHtml.includes('--accent:#f4f6f8'),
     )
+    // Full-bleed: .x-main is width-capped, so the brand bg paints past its
+    // box via the box-shadow spread + clip-path trick — edge to edge, no
+    // horizontal scrollbar, no layout change.
+    check(
+      'brand: the /l background runs full-bleed past the x-main gutters',
+      bgHtml.includes('box-shadow:0 0 0 100vmax #052b65') && bgHtml.includes('clip-path:inset(0 -100vmax)'),
+    )
     check('brand: the /l page carries the tweet-this-page share link', bgHtml.includes('twitter.com/intent/tweet'))
+    // The creator's brand rides onto their /i splash pages too (bg + accent
+    // scoped to the splash) — house links (creator=null) stay pure Yeetful.
+    const brandedIPage = redirected.slug ? flat(await (await fetch(`${BASE}/i/${redirected.slug}`)).text()) : ''
+    check('brand: the creator brand re-themes their /i splash (bg carried)', brandedIPage.includes('--bg:#052b65'))
+    const houseIPage = flat(await (await fetch(`${BASE}/i/buy-aapl`)).text())
+    check('brand: house links stay pure Yeetful (no brand bg on their /i splash)', !houseIPage.includes('--bg:#'))
     const bClear = await fetch(`${BASE}/api/intent-links/brand`, { method: 'DELETE', headers: { cookie: mallorySession } })
     const unbrandedHtml = flat(await (await fetch(`${BASE}/l/harness-store`)).text())
     check(

@@ -7,6 +7,13 @@
 // re-encoded as a size-capped data URI so the storefront never hotlinks or
 // re-fetches a foreign host at render time.
 
+import { hexLuminance, normalizeHex } from '@/lib/brand-theme'
+
+// The pure color helpers live in lib/brand-theme.ts (client-safe, shared
+// with the branded pages); re-exported here so this module stays the one
+// import for the scan API + harness.
+export { hexLuminance, normalizeHex }
+
 const FETCH_TIMEOUT_MS = 6000
 const HTML_MAX_BYTES = 600_000
 export const LOGO_MAX_BYTES = 200_000
@@ -116,26 +123,6 @@ export function parseBrandHtml(html: string, baseUrl: string): BrandSignals {
   ]
   const logoCandidates = [...new Set(candidates.map(abs).filter((x): x is string => !!x))]
   return { siteName, themeColor, manifestHref: manifestHref ? abs(manifestHref) : null, logoCandidates }
-}
-
-/** Parse a #rgb/#rrggbb hex to its expanded form, or null. */
-export function normalizeHex(raw: string | null | undefined): string | null {
-  if (!raw) return null
-  const m = raw.trim().match(/^#?([0-9a-f]{3}|[0-9a-f]{6})$/i)
-  if (!m) return null
-  let hex = m[1].toLowerCase()
-  if (hex.length === 3) hex = hex.split('').map((c) => c + c).join('')
-  return `#${hex}`
-}
-
-/** Relative luminance of a hex color (0 black → 1 white), null when unparsable. */
-export function hexLuminance(raw: string | null | undefined): number | null {
-  const hex = normalizeHex(raw)?.slice(1)
-  if (!hex) return null
-  const r = parseInt(hex.slice(0, 2), 16) / 255
-  const g = parseInt(hex.slice(2, 4), 16) / 255
-  const b = parseInt(hex.slice(4, 6), 16) / 255
-  return 0.2126 * r + 0.7152 * g + 0.0722 * b
 }
 
 /** Normalize a page BACKGROUND color: any valid hex goes — a white or black

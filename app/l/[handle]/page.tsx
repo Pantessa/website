@@ -1,9 +1,8 @@
 import type { Metadata } from 'next'
-import type { CSSProperties } from 'react'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import prisma from '@/lib/db'
-import { hexLuminance } from '@/lib/brand-scan'
+import { brandThemeStyle } from '@/lib/brand-theme'
 import Footer from '@/components/Footer'
 import { YeetfulMark } from '@/components/Logo'
 
@@ -88,32 +87,10 @@ export default async function StorefrontPage({ params }: Params) {
   const brand = store.brand
 
   // A branded page re-themes in place, scoped to this main — the site
-  // chrome (nav/footer) stays Yeetful. With a brand background, the whole
-  // token ramp (fg/muted/line/surface) derives from its luminance: dark bg
-  // → near-white text, light bg → near-black. An accent too close to the
-  // bg's luminance would vanish, so it falls back to the derived fg.
-  const bgLum = hexLuminance(brand?.bg)
-  const fg = bgLum === null ? null : bgLum < 0.5 ? '#f4f6f8' : '#12141a'
-  const accentLum = hexLuminance(brand?.accent)
-  const accentSafe = brand?.accent && (bgLum === null || accentLum === null || Math.abs(accentLum - bgLum) > 0.18) ? brand.accent : fg
-  const themeStyle =
-    brand && (brand.bg || accentSafe)
-      ? ({
-          ...(brand.bg && fg
-            ? {
-                '--bg': brand.bg,
-                '--fg': fg,
-                '--muted': `color-mix(in srgb, ${fg} 68%, ${brand.bg})`,
-                '--muted-2': `color-mix(in srgb, ${fg} 46%, ${brand.bg})`,
-                '--line': `color-mix(in srgb, ${fg} 14%, ${brand.bg})`,
-                '--surf-1': `color-mix(in srgb, ${fg} 5%, ${brand.bg})`,
-                backgroundColor: brand.bg,
-                color: fg,
-              }
-            : {}),
-          ...(accentSafe ? { '--accent': accentSafe } : {}),
-        } as CSSProperties)
-      : undefined
+  // chrome (nav/footer) stays Yeetful. fullBleed paints the bg past
+  // .x-main's centered gutters (box-shadow spread + clip-path), so the
+  // color runs edge to edge without touching layout.
+  const themeStyle = brandThemeStyle(brand, { fullBleed: true })
 
   const pageUrl = `https://yeetful.com/l/${store.handle}`
   const tweetHref = `https://twitter.com/intent/tweet?text=${encodeURIComponent(`Links that move money — @${store.handle}`)}&url=${encodeURIComponent(pageUrl)}`
