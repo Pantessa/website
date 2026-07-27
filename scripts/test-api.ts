@@ -1660,6 +1660,20 @@ async function main() {
       'intent links: the protected-long ask composes hyperliquid into the set',
       composeMcps('I want a 2X Long $12 of HYPE on Hyperliquid, then protect my HYPE long with a 5% stop').includes('hyperliquid-free'),
     )
+    // The "Decide for me" rules — compose doubles as the creator form's
+    // suggester, so each inference is pinned where a wrong chip would ship.
+    check('intent links: a same-chain swap composes Uniswap', composeMcps('Swap $20 of ETH for USDC on Base').includes('uniswap-free'))
+    check(
+      'intent links: a cross-chain from→to swap does NOT pull Uniswap — NEAR settles it',
+      !composeMcps('Swap 5 USDC from Base to Arbitrum').includes('uniswap-free'),
+    )
+    check('intent links: naming the dapp pulls it (limit order → CoW)', composeMcps('Place a limit order to sell ETH at 4200').includes('cow-free'))
+    check('intent links: a margin ask composes Hyperliquid', composeMcps('Add a 2x margin position on BTC').includes('hyperliquid-free'))
+    check('intent links: company names compose Robinhood (Tesla → TSLA land)', composeMcps('Buy $10 of Tesla').includes('robinhood-free'))
+    check(
+      'intent links: NEAR Intents rides along as the bridging companion on any ask',
+      composeMcps('Buy $10 of Tesla').includes('near-intents-mcp-yeetful'),
+    )
     // The Guardian/jobs aha chip is a PURE intent — the funding path (deposit
     // + bridge legs) is discovered and offered by the system, never typed by
     // the visitor. The 2X is REAL: the leverage rides the parsed intent into

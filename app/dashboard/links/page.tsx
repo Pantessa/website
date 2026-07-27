@@ -7,7 +7,7 @@
 // metric stays guardrail-priced in embed_turns and is NOT fed from this.
 
 import { useCallback, useEffect, useState } from 'react'
-import { Check, Copy, Link2, Plus, Sparkles, SlidersHorizontal } from 'lucide-react'
+import { Check, Copy, Link2, Plus, Sparkles } from 'lucide-react'
 import { MINTABLE_MCPS, composeMcps } from '@/lib/intent-links'
 import { getProtocolMark } from '@/components/protocol-marks'
 
@@ -61,7 +61,6 @@ export default function DashboardLinksPage() {
   const [claimMsg, setClaimMsg] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [ask, setAsk] = useState('')
-  const [variantsText, setVariantsText] = useState('')
   const [redirectUrl, setRedirectUrl] = useState('')
   // Partner-promo limits — all optional, validated server-side at mint.
   const [expiresAt, setExpiresAt] = useState('')
@@ -69,11 +68,11 @@ export default function DashboardLinksPage() {
   const [allowText, setAllowText] = useState('')
   const [minting, setMinting] = useState(false)
   const [copied, setCopied] = useState<string | null>(null)
-  // MCP attachment: 'auto' = the composer decides from the ask (live preview
-  // below the field); 'manual' = the creator picks up to 4. A chat handoff
-  // (?ask= + ?mcps=) arrives in manual mode carrying the working set that
-  // produced the aha.
-  const [mcpMode, setMcpMode] = useState<'auto' | 'manual'>('auto')
+  // Dapp attachment: the picker is the one surface — chips always visible,
+  // creator picks up to 4. "Decide for me" reads the ask and lights up the
+  // suggested set (composeMcps — same rules the mint API falls back to when
+  // nothing is picked). A chat handoff (?ask= + ?mcps=) arrives with the
+  // working set that produced the aha already lit.
   const [pickedMcps, setPickedMcps] = useState<string[]>([])
   // The public page name (/l/<handle>) — opt-in storefront for these links.
   const [myHandle, setMyHandle] = useState<string | null>(null)
@@ -93,14 +92,10 @@ export default function DashboardLinksPage() {
     if (m) {
       const known = new Set(MINTABLE_MCPS.map((x) => x.slug))
       const picked = m.split(',').map((s) => s.trim()).filter((s) => known.has(s)).slice(0, 4)
-      if (picked.length) {
-        setPickedMcps(picked)
-        setMcpMode('manual')
-      }
+      if (picked.length) setPickedMcps(picked)
     }
   }, [])
 
-  const autoPreview = composeMcps(ask)
   const togglePick = (slug: string) =>
     setPickedMcps((cur) => (cur.includes(slug) ? cur.filter((s) => s !== slug) : cur.length >= 4 ? cur : [...cur, slug]))
 
@@ -164,13 +159,8 @@ export default function DashboardLinksPage() {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           ask: ask.trim(),
-          variants: variantsText
-            .split('\n')
-            .map((s) => s.trim())
-            .filter(Boolean)
-            .slice(0, 3),
           redirectUrl: redirectUrl.trim() || undefined,
-          mcps: mcpMode === 'manual' && pickedMcps.length ? pickedMcps : undefined,
+          mcps: pickedMcps.length ? pickedMcps : undefined,
           expiresAt: expiresAt ? new Date(expiresAt).toISOString() : undefined,
           maxSigns: maxSigns.trim() ? Number(maxSigns) : undefined,
           allowWallets: allowText.trim()
@@ -187,7 +177,6 @@ export default function DashboardLinksPage() {
         return
       }
       setAsk('')
-      setVariantsText('')
       setRedirectUrl('')
       setExpiresAt('')
       setMaxSigns('')
@@ -226,81 +215,48 @@ export default function DashboardLinksPage() {
           maxLength={400}
           className="mt-1.5 w-full rounded-lg border border-[var(--line)] bg-[var(--bg)] px-3 py-2 text-sm text-[color:var(--fg)] focus:outline-none focus:border-[var(--accent)]"
         />
-        <label className="mono text-[11px] uppercase tracking-wider text-[color:var(--muted-2)] mt-3 block">
-          A/B phrasings (optional — one per line, up to 3; each visitor sees one at random)
-        </label>
-        <textarea
-          value={variantsText}
-          onChange={(e) => setVariantsText(e.target.value)}
-          placeholder={'e.g. "Own a slice of Apple for $12"\n"Put $12 into AAPL right now"'}
-          rows={2}
-          maxLength={1300}
-          className="mt-1.5 w-full rounded-lg border border-[var(--line)] bg-[var(--bg)] px-3 py-2 text-sm text-[color:var(--fg)] focus:outline-none focus:border-[var(--accent)]"
-        />
-
         <div className="mt-3 flex items-center gap-2">
-          <span className="mono text-[11px] uppercase tracking-wider text-[color:var(--muted-2)]">MCPs</span>
-          <div className="inline-flex rounded-lg border border-[var(--line)] overflow-hidden">
-            <button
-              type="button"
-              onClick={() => setMcpMode('auto')}
-              className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-[12px] transition-colors ${mcpMode === 'auto' ? 'bg-[var(--accent)] text-black font-semibold' : 'text-[color:var(--muted)] hover:text-white'}`}
-            >
-              <Sparkles className="w-3.5 h-3.5" /> Decide for me
-            </button>
-            <button
-              type="button"
-              onClick={() => setMcpMode('manual')}
-              className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-[12px] transition-colors ${mcpMode === 'manual' ? 'bg-[var(--accent)] text-black font-semibold' : 'text-[color:var(--muted)] hover:text-white'}`}
-            >
-              <SlidersHorizontal className="w-3.5 h-3.5" /> Choose MCPs
-            </button>
-          </div>
+          <span className="mono text-[11px] uppercase tracking-wider text-[color:var(--muted-2)]">Dapps</span>
+          <button
+            type="button"
+            onClick={() => setPickedMcps(composeMcps(ask))}
+            disabled={ask.trim().length < 8}
+            title={ask.trim().length < 8 ? 'Type the ask first — the suggestion reads it' : 'Suggest dapps from the ask'}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[var(--line)] text-[12px] text-[color:var(--muted)] transition-colors hover:border-[var(--accent)] hover:text-[color:var(--fg)] disabled:opacity-50 disabled:hover:border-[var(--line)] disabled:hover:text-[color:var(--muted)]"
+          >
+            <Sparkles className="w-3.5 h-3.5" /> Decide for me
+          </button>
         </div>
-        {mcpMode === 'auto' ? (
+        <div className="mt-2 flex flex-wrap gap-1.5">
+          {/* Chip content keeps ONE color whether picked or not — the mark
+              renders in currentColor so logo + label always match; selection
+              reads from the accent border + tint, never a text-color flip.
+              (Tint via color-mix: Tailwind's `/10` on a CSS-var color
+              silently paints transparent.) */}
+          {MINTABLE_MCPS.map((m) => (
+            <button
+              key={m.slug}
+              type="button"
+              onClick={() => togglePick(m.slug)}
+              aria-pressed={pickedMcps.includes(m.slug)}
+              className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[12px] text-[color:var(--fg)] transition-colors ${
+                pickedMcps.includes(m.slug)
+                  ? 'border-[var(--accent)] bg-[color-mix(in_srgb,var(--accent)_12%,transparent)]'
+                  : 'border-[var(--line)] hover:border-[var(--line-2)] hover:bg-[color-mix(in_srgb,var(--fg)_6%,transparent)]'
+              }`}
+            >
+              <McpMark slug={m.slug} label={m.label} />
+              {m.label}
+            </button>
+          ))}
+          <span className="text-[11px] text-[color:var(--muted-2)] self-center ml-1">up to 4</span>
+        </div>
+        {pickedMcps.length === 0 && (
           <p className="mt-2 text-[12px] text-[color:var(--muted-2)]">
-            {ask.trim().length >= 8 ? (
-              <>
-                From this ask, the link will carry:{' '}
-                {autoPreview.map((slug) => {
-                  const label = MINTABLE_MCPS.find((m) => m.slug === slug)?.label ?? slug
-                  return (
-                    <span key={slug} className="inline-flex items-center gap-1 mono text-[11px] text-[color:var(--accent)] mr-2 align-middle">
-                      <McpMark slug={slug} label={label} size={12} />
-                      {label}
-                    </span>
-                  )
-                })}
-              </>
-            ) : (
-              'Type the ask and the right MCPs attach themselves — stocks pull Robinhood Chain, perps pull Hyperliquid, bridging always rides along.'
-            )}
+            None picked — the link decides from the ask at mint. &ldquo;Decide for me&rdquo; previews
+            that pick: NFTs pull OpenSea, swaps pull Uniswap, stock tickers pull Robinhood, and
+            NEAR Intents rides along for bridging.
           </p>
-        ) : (
-          <div className="mt-2 flex flex-wrap gap-1.5">
-            {/* Chip content keeps ONE color whether picked or not — the mark
-                renders in currentColor so logo + label always match; selection
-                reads from the accent border + tint, never a text-color flip.
-                (Tint via color-mix: Tailwind's `/10` on a CSS-var color
-                silently paints transparent.) */}
-            {MINTABLE_MCPS.map((m) => (
-              <button
-                key={m.slug}
-                type="button"
-                onClick={() => togglePick(m.slug)}
-                aria-pressed={pickedMcps.includes(m.slug)}
-                className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[12px] text-[color:var(--fg)] transition-colors ${
-                  pickedMcps.includes(m.slug)
-                    ? 'border-[var(--accent)] bg-[color-mix(in_srgb,var(--accent)_12%,transparent)]'
-                    : 'border-[var(--line)] hover:border-[var(--line-2)] hover:bg-[color-mix(in_srgb,var(--fg)_6%,transparent)]'
-                }`}
-              >
-                <McpMark slug={m.slug} label={m.label} />
-                {m.label}
-              </button>
-            ))}
-            <span className="text-[11px] text-[color:var(--muted-2)] self-center ml-1">up to 4</span>
-          </div>
         )}
 
         <label className="mono text-[11px] uppercase tracking-wider text-[color:var(--muted-2)] mt-3 block">
