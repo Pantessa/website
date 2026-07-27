@@ -2,7 +2,7 @@ import { ImageResponse } from 'next/og'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import prisma from '@/lib/db'
-import { factsOf } from '@/lib/share-receipts'
+import { factsOf, maskAddressTokens } from '@/lib/share-receipts'
 
 // Social card for a receipt permalink (/r/<id>) — the 3am screenshot, as a
 // card. Standing receipts lead with NOBODY WAS AT THE KEYBOARD (the product's
@@ -58,7 +58,8 @@ export default async function Image({ params }: Params) {
   const live = receipt && !receipt.revoked ? receipt : null
 
   const headline = live?.headline ?? 'A Yeetful receipt'
-  const ask = live?.ask ?? null
+  // Read-time mask for pre-masking rows — no full addresses on the card.
+  const ask = live?.ask ? maskAddressTokens(live.ask) : null
   const standing = live?.standing ?? false
   const facts = live ? factsOf(live.facts).slice(0, 3) : []
   const kicker = standing ? 'NOBODY WAS AT THE KEYBOARD' : 'SIGNED FROM ONE CHAT ASK'

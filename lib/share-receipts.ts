@@ -59,6 +59,23 @@ export function shortWallet(address: string): string {
   return address.length > 12 ? `${address.slice(0, 6)}…${address.slice(-4)}` : address
 }
 
+/** Hex runs long enough to be an address/hash/calldata fragment. */
+const ADDRESS_TOKEN_RE = /0x[a-fA-F0-9]{8,}/g
+
+/**
+ * Truncate every address-shaped token in free text to the 0x1234…abcd
+ * idiom. The tx-kind receipt is the ONLY share path that republishes
+ * verbatim user text (the other kinds synthesize canonical asks), and
+ * prompts sometimes carry pasted recipient addresses — the #490 review
+ * finding: "no prompts or full addresses on public share surfaces", and
+ * the address-bearing ask is the leak that bites. Applied at write time
+ * (the persisted snapshot is clean at rest) AND at the /r read doors
+ * (covers rows minted before this existed).
+ */
+export function maskAddressTokens(text: string): string {
+  return text.replace(ADDRESS_TOKEN_RE, (t) => `${t.slice(0, 6)}…${t.slice(-4)}`)
+}
+
 const usd = (n: number) => `$${n.toFixed(2)}`
 
 // ── Per-kind content builders (pure) ────────────────────────────────────────
@@ -176,7 +193,9 @@ export function txShareContent(
   const msg = messages[idx]
   const txs = signedTxsOf(msg.meta)
   if (txs.length === 0) return null
-  const ask = [...messages.slice(0, idx)].reverse().find((m) => m.role === 'user')?.content.trim() ?? null
+  const rawAsk = [...messages.slice(0, idx)].reverse().find((m) => m.role === 'user')?.content.trim() ?? null
+  // The one verbatim-user-text path — pasted 0x addresses go public here.
+  const ask = rawAsk ? maskAddressTokens(rawAsk) : null
   const guard = (msg.meta as { guardrails?: { valueUsd?: unknown } } | null)?.guardrails
   const valueUsd = typeof guard?.valueUsd === 'number' && guard.valueUsd > 0 ? guard.valueUsd : null
   return {

@@ -65,8 +65,10 @@ import {
   VIA_RE,
   dcaShareContent,
   guardianShareContent,
+  maskAddressTokens,
   receiptTryHref,
   receiptTweetHref,
+  txShareContent,
   viaIdOf,
 } from '../lib/share-receipts'
 import { EXAMPLE_PROMPTS } from '../lib/examples'
@@ -2516,6 +2518,28 @@ async function main() {
   check(
     'receipt handoff prefills the exact ask and tags the sharer',
     tryHrefUrl === `/chat?prompt=${encodeURIComponent('buy $10 of AAPL weekly')}&via=${ownerVia}`,
+  )
+  // The #490 finding: the tx path is the ONLY one republishing verbatim user
+  // text, and prompts sometimes carry pasted recipient addresses — the
+  // persisted snapshot masks every address-shaped token at write time.
+  check(
+    'maskAddressTokens: hex runs truncate to 0x1234…abcd, prose and short hex untouched',
+    maskAddressTokens('send 5 USDC to 0xD980AF077d17BB399681D9C7fCa9E01D2F009d34 on base') === 'send 5 USDC to 0xD980…9d34 on base' &&
+      maskAddressTokens('what is 0x123 in decimal') === 'what is 0x123 in decimal' &&
+      maskAddressTokens('no addresses here') === 'no addresses here',
+  )
+  const maskedTx = txShareContent(
+    [
+      { id: 'u1', role: 'user', content: 'send 5 USDC on base to 0xD980AF077d17BB399681D9C7fCa9E01D2F009d34', meta: null },
+      { id: 'a1', role: 'assistant', content: 'done', meta: { signed: [{ hash: `0x${'ab'.repeat(32)}`, chainId: 8453, title: 'USDC transfer' }] } },
+    ],
+    'a1',
+  )
+  check(
+    'tx share content: the snapshot ask never carries a full address (#490)',
+    !!maskedTx && maskedTx.ask === 'send 5 USDC on base to 0xD980…9d34' &&
+      !JSON.stringify(maskedTx).includes('0xD980AF077d17BB399681D9C7fCa9E01D2F009d34'),
+    JSON.stringify(maskedTx?.ask),
   )
 
   // API layer: mint from the signed turn created above.
