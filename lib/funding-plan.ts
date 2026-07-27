@@ -84,6 +84,13 @@ export interface FundingNeed {
   followupResume: string
   /** Short human name woven into the copy ("the stake"). */
   actionLabel: string
+  /** Present = the follow-up sizes itself to whatever ARRIVES ("stake all
+   *  my ETH on Lido"): when the wallet can't fund the full ask, chips may
+   *  move what it CAN fund instead of walling — as long as the arrival
+   *  still clears this many token units (0 = any arrival helps). A
+   *  fixed-size follow-up ("buy $12 of AAPL") must NOT set this — moving
+   *  less than the action needs strands the money one step later. */
+  flexMinAmountHuman?: number
 }
 
 export interface FundingSource {
@@ -165,16 +172,21 @@ const gasLegResume = (s: FundingSource, amount: string, need: FundingNeed): stri
  * the destination), then the token leg. Funds that land where the wallet
  * can't sign are stranded, not delivered.
  */
-export function planFundingChips(need: FundingNeed, needUsd: number, sources: FundingSource[], gasUsd = 0): FundingPlan {
-  // Nothing to move at all — never emit a zero-amount leg.
-  if (needUsd + gasUsd <= 0) return { kind: 'short', needUsd: 0, totalUsd: 0, sourceSummary: '' }
-  // A destination-chain balance of the NEEDED token is not a source (the
-  // shortfall already accounts for it) — but a different token sitting on
-  // the destination IS: it converts through the native venues, no bridge.
-  const ranked = rankFundingSources(
+/** The sources a plan may actually spend: dust dropped, and a destination-
+ *  chain balance of the NEEDED token excluded (the shortfall already
+ *  accounts for it) — a different token on the destination IS a source (it
+ *  converts through the native venues, no bridge). */
+export function plannableSources(need: FundingNeed, sources: FundingSource[]): FundingSource[] {
+  return rankFundingSources(
     need,
     sources.filter((s) => s.usd >= DUST_USD && (s.chainId !== need.chainId || s.token.toUpperCase() !== need.token.toUpperCase())),
   )
+}
+
+export function planFundingChips(need: FundingNeed, needUsd: number, sources: FundingSource[], gasUsd = 0): FundingPlan {
+  // Nothing to move at all — never emit a zero-amount leg.
+  if (needUsd + gasUsd <= 0) return { kind: 'short', needUsd: 0, totalUsd: 0, sourceSummary: '' }
+  const ranked = plannableSources(need, sources)
   const sourceSummary = ranked
     .slice(0, 4)
     .map((s) => `~$${usd2(Number(s.usd.toFixed(2)))} of ${s.token} on ${s.chainWord}`)
@@ -538,7 +550,15 @@ export async function offerFundingPlan(params: {
   const needUsd = need.amountHuman > 0 ? fundingPlanUsd(need.amountHuman, tokenUsd) : 0
   // Token covered AND gas covered — nothing to fund; the caller proceeds.
   if (needUsd === 0 && gasUsd === 0) return null
-  const decision = decideFundingTurn({ need, needUsd, gasUsd, scan, destChainName: destChain.name, trace })
+  // A flexible need's floor, priced the same way the plan is: the smallest
+  // move still worth making (0 = any arrival helps the follow-up).
+  const flexMinUsd =
+    typeof need.flexMinAmountHuman === 'number'
+      ? need.flexMinAmountHuman > 0
+        ? fundingPlanUsd(need.flexMinAmountHuman, tokenUsd)
+        : 0
+      : undefined
+  const decision = decideFundingTurn({ need, needUsd, gasUsd, scan, destChainName: destChain.name, flexMinUsd, trace })
   if (decision.kind === 'fallthrough') return null
   if (decision.kind === 'refusal') return { insufficient: decision.insufficient }
   return decision.turn
@@ -563,9 +583,12 @@ export function decideFundingTurn(params: {
   gasUsd: number
   scan: Pick<FundingScan, 'sources' | 'stranded' | 'ethUsd' | 'readChains' | 'failedChains'>
   destChainName: string
+  /** Priced floor for a flexible need (see FundingNeed.flexMinAmountHuman) —
+   *  set only when the follow-up sizes itself to whatever arrives. */
+  flexMinUsd?: number
   trace?: (event: unknown) => void
 }): FundingDecision {
-  const { need, needUsd, gasUsd, scan, destChainName } = params
+  const { need, needUsd, gasUsd, scan, destChainName, flexMinUsd } = params
   const trace = params.trace ?? (() => {})
   const plan = planFundingChips(need, needUsd, scan.sources, gasUsd)
 
@@ -600,6 +623,42 @@ export function decideFundingTurn(params: {
           clarify: { question: `Unstick the ${rescue.target.chainWord} USDC?`, options: rescue.chips },
           buildPath: 'native-funding-offer',
         },
+      }
+    }
+    // Flexible follow-ups ("stake all my ETH") size themselves to whatever
+    // arrives — so a wallet that can't fund the FULL ask still gets a plan
+    // moving what it CAN fund, as long as that clears the priced floor.
+    // Only over a complete scan: a partial read could lowball a wallet
+    // whose money hid behind a failed RPC. (Live 2026-07-23: "Stake 0.05
+    // ETH with Lido" walled a wallet holding $28 of movable funds that a
+    // smaller stake would have used happily.)
+    if (typeof flexMinUsd === 'number' && scan.failedChains.length === 0) {
+      const movable = plannableSources(need, scan.sources)
+      const capacity = Math.max(movable[0]?.usd ?? 0, movable.length >= 2 ? movable.reduce((a, s) => a + s.usd, 0) : 0)
+      const downNeedUsd = Math.floor((capacity - gasUsd) * 2) / 2
+      if (downNeedUsd >= Math.max(flexMinUsd, FUNDING_MIN_PLAN_USD) && downNeedUsd < needUsd) {
+        const downPlan = planFundingChips(need, downNeedUsd, scan.sources, gasUsd)
+        if (downPlan.kind === 'offer') {
+          // Lead with what the move IS — "just enough" would misread here.
+          const first = downPlan.chips[0]
+          const via = first.label.match(/\(([^)]+)\)\s*$/)?.[1] ?? `~$${usd2(downNeedUsd)}`
+          const chips = [{ label: `Move what I've got (${via})`, resume: first.resume }, ...downPlan.chips.slice(1).filter((c) => c.label !== 'Not now')]
+          trace({
+            type: 'status',
+            label: `funding layer claimed the turn: ${need.actionLabel} wants ~$${usd2(needUsd + gasUsd)} but the wallet funds ~$${usd2(downNeedUsd + gasUsd)} — offering the smaller move (flexible follow-up sizes itself to the arrival)`,
+          })
+          return {
+            kind: 'offer',
+            turn: {
+              reply:
+                `**We can make this happen — with what you're holding.** The full plan for ${need.actionLabel} moves ~$${usd2(needUsd + gasUsd)} and you're holding ${downPlan.sourceSummary} — ` +
+                `so I'll move ~$${usd2(downNeedUsd + gasUsd)} instead and ${need.actionLabel} sizes itself to what lands${gasUsd > 0 ? ` (a little ETH for ${destChainName} gas included)` : ''}. ` +
+                `One job, every step built and guard-checked when it's your turn to sign. Top up any chain first if you'd rather run the full amount.`,
+              clarify: { question: `Run it with what's there?`, options: chips.slice(0, 3).concat([{ label: 'Not now', resume: 'Never mind — leave my funds where they are.' }]) },
+              buildPath: 'native-funding-offer',
+            },
+          }
+        }
       }
     }
     const chainsRead = scan.readChains.join(', ').replace(/, ([^,]*)$/, ' and $1')
