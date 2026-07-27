@@ -21,6 +21,7 @@
  *   npm run dev        # in one terminal
  *   npm run test:api   # in another
  */
+import { readFile } from 'node:fs/promises'
 import { generatePrivateKey, privateKeyToAccount, type PrivateKeyAccount } from 'viem/accounts'
 import { createSiweMessage } from 'viem/siwe'
 import { grantTypedData } from '../lib/grant-typed-data'
@@ -2665,6 +2666,90 @@ async function main() {
   check('later via cookies never overwrite the first arrival', secondArrival.status === 200 && secondArrival.body.via === undefined)
   const badVia = await viaSignIn('NOT VALID $$$')
   check('malformed via cookie is ignored, login unharmed', badVia.status === 200 && badVia.body.via === undefined)
+
+  // ── Blog post fixtures (pure — no server needed) ──────────────────────────
+  // A ```figure block naming a composition BlogFigure doesn't have renders
+  // NOTHING, silently. Pin every fenced block in every committed post against
+  // the component's registry so a rename or a typo fails here instead of
+  // shipping a post with a hole where a diagram should be.
+  {
+    const { POST: linksPost } = await import('./seed-links-post')
+    const figureSrc = await readFile(new URL('../components/BlogFigure.tsx', import.meta.url), 'utf8')
+    const registered = new Set(
+      [...figureSrc.matchAll(/^\s*'([a-z-]+)':\s*\w+,$/gm)].map((m) => m[1]),
+    )
+    check('BlogFigure registry parsed', registered.size >= 4, `${[...registered].join(',')}`)
+
+    const blocks = [...linksPost.content.matchAll(/```figure\n([\s\S]*?)```/g)].map((m) => m[1])
+    check('links post ships figure blocks', blocks.length === 4, `${blocks.length}`)
+    const named = blocks.map((b) => {
+      try {
+        return (JSON.parse(b) as { name?: string }).name ?? ''
+      } catch {
+        return ''
+      }
+    })
+    check('every figure block is valid JSON with a name', named.every(Boolean), named.join(','))
+    check(
+      'every figure block names a registered composition',
+      named.every((n) => registered.has(n)),
+      named.filter((n) => !registered.has(n)).join(',') || 'all present',
+    )
+    // The cover art dispatches on slug — a renamed slug silently falls back to
+    // the generated art, which is the wrong head for a bespoke composition.
+    const coverSrc = await readFile(new URL('../components/BlogCoverArt.tsx', import.meta.url), 'utf8')
+    check(
+      'links post slug has bespoke cover art',
+      coverSrc.includes(`slug === '${linksPost.slug}'`),
+      linksPost.slug,
+    )
+    // Cover art is shown through THREE `slice` wells at different ratios, so
+    // any text placed outside the safe box gets sliced by one of them (the
+    // orchestration stamp used to lose its top on the post hero). Pin that no
+    // literal y below the top crop survives in a text anchor.
+    check(
+      'cover art declares the slice-safe box',
+      /const SAFE = \{ x0: 40, x1: 600, y0: 66, y1: 334 \}/.test(coverSrc),
+    )
+    check(
+      'no cover-art text anchors outside the safe box',
+      !/<text[\s\S]{0,120}?y="(?:[0-5]?\d|6[0-5]|3[4-9]\d)"/.test(coverSrc),
+    )
+
+    // The blog admin allowlist must include the hardcoded owners: ADMIN_WALLETS
+    // is unset locally and unverified on Vercel, and a publish gate reading only
+    // that env locks the owner out of the publish UI entirely.
+    const { adminWallets: blogAdmins } = await import('../lib/blog')
+    const { OWNER_WALLETS } = await import('../lib/admin')
+    check(
+      'blog admin allowlist covers OWNER_WALLETS even with ADMIN_WALLETS unset',
+      OWNER_WALLETS.every((w) => blogAdmins().has(w)),
+      `${blogAdmins().size} admins`,
+    )
+    check('blog admin allowlist never empty (publish UI always reachable)', blogAdmins().size > 0)
+  }
+
+  // ── Blog admin chrome: the public surface must never leak it ──────────────
+  // The publish UI is server-rendered only for an admin session, but the gate
+  // that matters is the API. These run unauthenticated on every harness pass.
+  {
+    const publicIndex = await fetch(`${BASE}/blog`).then((r) => r.text())
+    check(
+      'anonymous /blog renders no admin chrome',
+      !publicIndex.includes('blogdrafts') && !publicIndex.includes('blogadmin'),
+    )
+    // 403 before 404: an anonymous PATCH must not reveal whether a slug exists.
+    const anonPatchMissing = await fetch(`${BASE}/api/blog/no-such-post-xyz`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ published: true }),
+    })
+    check(
+      'anonymous publish is 403 even for an unknown slug (no existence leak)',
+      anonPatchMissing.status === 403,
+      `${anonPatchMissing.status}`,
+    )
+  }
 
   // ── Blog (requires BLOG_ADMIN_PK + matching ADMIN_WALLETS on the server) ──
   const adminPk = process.env.BLOG_ADMIN_PK
