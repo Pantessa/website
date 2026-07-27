@@ -138,6 +138,15 @@ export function fundingNeedUsd(buyUsd: number, includeGas: boolean): number {
   return Math.ceil(raw * 2) / 2
 }
 
+/** The dollars a Robinhood Chain buy must BRIDGE: the buy minus the USDG the
+ *  wallet already holds there. Buys and acquisitions share this — a buy that
+ *  ignored the held USDG once demanded a ~$12.5 bridge from a wallet holding
+ *  $12 of Base USDC plus $0.48 of USDG, and the flagship "Buy $12 of AAPL"
+ *  ask walled three times in a row (live 2026-07-27). */
+export function robinhoodBuyNeedUsd(buyUsd: number, holdingUsd: number, includeGas: boolean): number {
+  return fundingNeedUsd(Math.max(0.01, Number((buyUsd - holdingUsd).toFixed(2))), includeGas)
+}
+
 // ── Arrival predicate (built-time baseline + expected delta) ────────────────
 
 export interface ChainArrival {
@@ -756,6 +765,77 @@ export function planRobinhoodFundingAdvice(params: {
   else parts.push('no USDC on Base, Ethereum, or Arbitrum')
   if (scan.failedOrigins.length > 0) parts.push(`couldn't check ${scan.failedOrigins.join(' or ')}`)
   return { kind: 'none', copy: parts.join('; ') }
+}
+
+// ── Near-miss downsize (pure) — the rescue between chips and the wall ──────
+
+export interface DownsizedRobinhoodBuy {
+  /** The largest buy the wallet CAN fund (whole cents). */
+  buyUsd: number
+  /** ONE action chip (the caller appends its own decline chip). */
+  chips: RobinhoodFundingChip[]
+  /** The ~$ the chip's plan moves — for the reply copy. */
+  needUsd: number
+}
+
+/**
+ * When the 'none' outcome is a NEAR miss, offer the buy the wallet can
+ * actually fund instead of a wall: "Buy $12 of AAPL" against $12 of movable
+ * USDC misses the ~$12.5 margined plan by cents, and the honest per-chain
+ * accounting — correct as it is — converts nobody (live 2026-07-27: that
+ * exact wallet retried the flagship ask three times and left). The chip's
+ * resume rides the normal chip planner, so it stays a compiling contract.
+ * Null when the wallet can't fund a meaningful fraction of the ask (a $1.20
+ * counter-offer to a $100 ask is noise, not a rescue) — the caller falls
+ * back to the honest refusal.
+ */
+export function planDownsizedRobinhoodBuy(params: {
+  scan: Pick<FundingShortfall, 'origins'>
+  /** The asked size (USDG dollars). */
+  buyUsd: number
+  /** USDG already held on Robinhood Chain — part of what the buy spends. */
+  holdingUsd: number
+  includeGas: boolean
+  /** Woven into the follow-up segment; ignored when acquiring. */
+  buySym: string
+  /** Acquisition = the landing funds ARE the outcome (no follow-up buy). */
+  acquiring: boolean
+}): DownsizedRobinhoodBuy | null {
+  const { scan, buyUsd, holdingUsd, includeGas, buySym, acquiring } = params
+  // Capacity: the richest single origin, or combined non-dust origins when
+  // no single one leads (mirrors planRobinhoodFundingChips' two shapes).
+  const usable = scan.origins.filter((o) => o.usd >= 2)
+  const combined = usable.length >= 2 ? usable.reduce((a, o) => a + o.usd, 0) : 0
+  const capUsd = Math.max(scan.origins[0]?.usd ?? 0, combined)
+  if (capUsd <= 0) return null
+  const gasLeg = includeGas ? GAS_LEG_USD : 0
+  // Invert fundingNeedUsd, then floor to a clean quarter-dollar label.
+  const maxRaw = holdingUsd + (capUsd - gasLeg) / (1 + FUNDING_MARGIN_BPS / 10_000)
+  let max = Math.floor(maxRaw * 4) / 4
+  // Only a genuine downsize, and only a meaningful one: at least a dollar
+  // AND at least a tenth of what was asked.
+  if (!(max < buyUsd) || max < Math.max(1, buyUsd * 0.1)) return null
+  // fundingNeedUsd rounds UP to $0.50 — the floored candidate can still
+  // overshoot the cap by a rounding step, so verify against the real chip
+  // planner and step down (bounded) until it fits.
+  for (let i = 0; i < 8 && max >= 1; i++, max = Number((max - 0.25).toFixed(2))) {
+    const needUsd = robinhoodBuyNeedUsd(max, holdingUsd, includeGas)
+    const chips = planRobinhoodFundingChips({
+      origins: scan.origins,
+      needUsd,
+      gasIncluded: includeGas,
+      followup: acquiring ? '' : `buy $${max} of ${buySym}`,
+    })
+    if (!chips) continue
+    // Lead with the downsize; keep the planner label's "(~$N from X)" tail.
+    const via = chips[0].label.match(/\(([^)]+)\)\s*$/)?.[1] ?? `~$${needUsd}`
+    return {
+      buyUsd: max,
+      needUsd,
+      chips: [{ label: acquiring ? `Land $${max} of it instead (${via})` : `Buy $${max} of ${buySym} instead (${via})`, resume: chips[0].resume }],
+    }
+  }
+  return null
 }
 
 // ── Unfunded-buy continuity (workingContext.pending) ───────────────────────

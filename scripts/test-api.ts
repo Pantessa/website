@@ -51,7 +51,7 @@ import { jobContextFor } from '../lib/job-context'
 import { crossChainAgentOf, detectCrossChain, swapWorkingContext } from '../lib/swap-intent'
 import { encodeV4SwapCalldata, guardUniswapV4Build, type V4BuiltStep, type V4GuardExpectations, type V4PoolKey } from '../lib/uniswap-v4'
 import { guardLifiBuild, verifyLifiQuoteEcho, lifiPriceAcceptable, lifiRoutersFor, type LifiBuiltStep, type LifiGuardExpectations, type LifiQuote } from '../lib/lifi-venue'
-import { FUNDING_ALT_USDC, fundingAltUsdcFor, fundingNeedUsd, GAS_TOPUP_ETH, guardLifiBridgeBuild, lifiBridgeRoutersFor, parseRhFundingFollowUp, planRobinhoodFundingAdvice, planRobinhoodFundingChips, rhFundingPending, verifyLifiBridgeEcho, type FundingOrigin, type LifiBridgeExpectations, type LifiBridgeStep } from '../lib/lifi-bridge'
+import { FUNDING_ALT_USDC, fundingAltUsdcFor, fundingNeedUsd, GAS_TOPUP_ETH, guardLifiBridgeBuild, lifiBridgeRoutersFor, parseRhFundingFollowUp, planDownsizedRobinhoodBuy, planRobinhoodFundingAdvice, planRobinhoodFundingChips, rhFundingPending, robinhoodBuyNeedUsd, verifyLifiBridgeEcho, type FundingOrigin, type LifiBridgeExpectations, type LifiBridgeStep } from '../lib/lifi-bridge'
 import { classifyOneclickStatus, inflightDepositFromPending, inflightPendingData, inflightSettlingNote } from '../lib/inflight-funding'
 import { sanitizeWorkingContext } from '../lib/working-context'
 import { parseRobinhoodFunding, parseSameChainSwapSegment, JOB_SEGMENT_PARSERS } from '../lib/jobs'
@@ -3540,6 +3540,51 @@ async function main() {
       'funding advice: nothing covers → per-chain accounting names gasless holdings and failed reads',
       under.kind === 'none' && /\$4 of USDC on Arbitrum \(no ETH there to sign with\)/.test(under.copy) && /couldn't check Ethereum/.test(under.copy),
       JSON.stringify(under),
+    )
+
+    // ── THE 2026-07-27 WALL: "Buy $12 of AAPL" with $12 of movable Base
+    // USDC + $0.48 of USDG already held. Buys ignored the held USDG, so the
+    // plan demanded ~$12.5 and refused a wallet that covered it — three
+    // retries on the flagship ask. The held USDG is part of what the buy
+    // spends; the need subtracts it, and the exact live wallet gets chips.
+    check('funding need: a buy subtracts the USDG already held (the 2026-07-27 wall)', robinhoodBuyNeedUsd(12, 0.48, false) === 12 && robinhoodBuyNeedUsd(12, 0, false) === 12.5)
+    const july27 = planRobinhoodFundingAdvice({
+      scan: { origins: [O(8453, 'Base', 12, 0.001)], gaslessOrigins: [], allScanned: [O(8453, 'Base', 12, 0.001)], failedOrigins: [] },
+      needUsd: robinhoodBuyNeedUsd(12, 0.48, false), gasIncluded: false, followup: 'buy $12 of AAPL',
+    })
+    check('funding advice: the exact 2026-07-27 wallet now gets chips, not a wall', july27.kind === 'chips' && /~\$12 from Base/.test(july27.chips[0].label))
+
+    // ── The near-miss downsize: when nothing covers the ASKED size, offer
+    // the buy the wallet CAN fund — the chip resume stays a compiling
+    // contract, lowballs and non-downsizes return null.
+    const downsized = planDownsizedRobinhoodBuy({
+      scan: { origins: [O(8453, 'Base', 10)] }, buyUsd: 12, holdingUsd: 0, includeGas: false, buySym: 'AAPL', acquiring: false,
+    })
+    const downsizedJob = downsized ? compileJobAsk(downsized.chips[0].resume) : null
+    check(
+      'funding downsize: $10 movable vs a $12 ask → a smaller buy whose resume compiles',
+      !!downsized && downsized.buyUsd === 9.5 && /Buy \$9\.5 of AAPL instead/.test(downsized.chips[0].label) &&
+        downsized.chips[0].resume.endsWith('then buy $9.5 of AAPL') &&
+        !!downsizedJob && !('problem' in downsizedJob),
+      JSON.stringify({ downsized, job: downsizedJob && !('problem' in downsizedJob) ? downsizedJob.steps.map((s) => `${s.kind}:${s.builder}`) : downsizedJob }),
+    )
+    const downsizedAcq = planDownsizedRobinhoodBuy({
+      scan: { origins: [O(8453, 'Base', 10)] }, buyUsd: 50, holdingUsd: 5, includeGas: true, buySym: 'USDG', acquiring: true,
+    })
+    const downsizedAcqJob = downsizedAcq ? compileJobAsk(downsizedAcq.chips[0].resume) : null
+    check(
+      'funding downsize: an acquisition counts the held USDG and compiles bridge-only',
+      !!downsizedAcq && downsizedAcq.buyUsd === 13 && /Land \$13 of it instead/.test(downsizedAcq.chips[0].label) &&
+        !/then buy/.test(downsizedAcq.chips[0].resume) && !!downsizedAcqJob && !('problem' in downsizedAcqJob),
+      JSON.stringify(downsizedAcq),
+    )
+    check(
+      'funding downsize: a lowball counter-offer is null (a $100 ask over a $2 wallet)',
+      planDownsizedRobinhoodBuy({ scan: { origins: [O(8453, 'Base', 2)] }, buyUsd: 100, holdingUsd: 0, includeGas: false, buySym: 'AAPL', acquiring: false }) === null,
+    )
+    check(
+      'funding downsize: a wallet that covers the ask is null (not a downsize)',
+      planDownsizedRobinhoodBuy({ scan: { origins: [O(8453, 'Base', 50)] }, buyUsd: 12, holdingUsd: 0, includeGas: false, buySym: 'AAPL', acquiring: false }) === null,
     )
 
     // ── Bridged USDC.e as a funding source: chips name the token, resumes
