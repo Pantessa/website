@@ -803,6 +803,18 @@ model EmbedTurn {
 /// the moment of failure. `had_funds = true` rows are the product-gap queue:
 /// the user held movable money somewhere and the ladder/planner offered no
 /// path to use it (the 2026-07-23 NFT buy: 0.007 ETH short on Base while
+/// Hourly unsigned-turn counters (lib/turn-limits.ts) — the abuse fence in
+/// front of connect-to-act link traffic. key = `i:<ip-hash>` | `w:<wallet>`;
+/// rows are lazily swept after their window ages out.
+model UnsignedTurnWindow {
+  key         String
+  windowStart DateTime @map("window_start")
+  count       Int      @default(0)
+
+  @@id([key, windowStart])
+  @@map("unsigned_turn_windows")
+}
+
 /// $19 of USDC sat on Base+Arbitrum). Written by the chat route's response
 /// wrapper (lib/ask-failure.ts); read by /dashboard/failures (admin).
 model AskFailure {
