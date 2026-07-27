@@ -95,6 +95,7 @@ import { resolveProposal } from '@/lib/snapshot-read'
 import { detectGovernanceIntent, runGovernanceTurn } from '@/lib/governance'
 import { sanitizeWorkingContext, contextBlockForPlanner, type WorkingContext, extractEntities, carryContext } from '@/lib/working-context'
 import { getSessionAddress } from '@/lib/auth'
+import { bumpAndCheckUnsignedTurn, clientIpFrom, turnLimitReply } from '@/lib/turn-limits'
 import { spendCredits } from '@/lib/billing'
 import { recordEmbedSighting, resolveEmbedKey } from '@/lib/embed-key'
 import { walletContextLine } from '@/lib/wallet-context'
@@ -404,6 +405,23 @@ async function handleChatTurn(req: NextRequest) {
         origin: embedOrigin,
         bumpTurn: true,
       })
+    }
+
+    // ── Unsigned-turn abuse fence (#553 follow-up). Connect-to-act means the
+    // guest lane reaches real work — house inference, planner tokens, RPC
+    // scans — without a signature, and a cycling burner mints a fresh free
+    // allowance per wallet. Meter unsigned, non-embed turns per IP + wallet
+    // BEFORE any expensive path runs; the wall is a polite reply whose
+    // escape hatch is signing in (rule 6 intact — an invitation, never an
+    // auto-fired SIWE). Signed sessions and embed-key turns pass untouched.
+    if (!embedBill && !(await getSessionAddress())) {
+      const limited = await bumpAndCheckUnsignedTurn(clientIpFrom(req.headers), walletAddress)
+      if (limited) {
+        return NextResponse.json({
+          reply: turnLimitReply(limited),
+          rateGate: { scope: limited, signInLifts: true },
+        })
+      }
     }
 
     // ── Auto-Router: the engine picks services across the whole directory and
