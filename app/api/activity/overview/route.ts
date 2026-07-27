@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { Prisma } from '@prisma/client'
 import prisma from '@/lib/db'
 import { chainById, chainByKey, type AppChain } from '@/lib/chains'
-import { STANDING_TURN_SQL, STANDING_TURN_WHERE } from '@/lib/value-origin'
+import { INTERNAL_ORIGIN_SQL, REAL_TRAFFIC_WHERE, STANDING_TURN_SQL, STANDING_TURN_WHERE } from '@/lib/value-origin'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -132,18 +132,22 @@ export async function GET() {
     recentReceipts,
     recentGuardian,
   ] = await Promise.all([
-    prisma.embedTurn.aggregate({ where: { outcome: 'signed' }, _sum: { valueUsd: true }, _count: { _all: true } }),
+    // Real traffic only, everywhere embed_turns is aggregated here — localhost
+    // dev drives and harness origins write real rows but the PUBLIC activity
+    // page must never count them (lib/value-origin.ts isInternalOrigin +
+    // mirrors; ~$62k of an ~$80k week was dev sessions, 2026-07-27).
+    prisma.embedTurn.aggregate({ where: { outcome: 'signed', ...REAL_TRAFFIC_WHERE }, _sum: { valueUsd: true }, _count: { _all: true } }),
     // STANDING signed turns (job steps + DCA runs) — the subset of signedAgg
     // a standing intent fired; attended = signed − standing (lib/value-origin).
-    prisma.embedTurn.aggregate({ where: { outcome: 'signed', ...STANDING_TURN_WHERE }, _sum: { valueUsd: true }, _count: { _all: true } }),
-    prisma.embedTurn.aggregate({ where: { outcome: 'tx-built' }, _sum: { valueUsd: true }, _count: { _all: true } }),
+    prisma.embedTurn.aggregate({ where: { outcome: 'signed', ...STANDING_TURN_WHERE, ...REAL_TRAFFIC_WHERE }, _sum: { valueUsd: true }, _count: { _all: true } }),
+    prisma.embedTurn.aggregate({ where: { outcome: 'tx-built', ...REAL_TRAFFIC_WHERE }, _sum: { valueUsd: true }, _count: { _all: true } }),
     prisma.spendLedgerEntry.aggregate({ where: x402Where, _sum: { amountUsd: true }, _count: { _all: true } }),
     prisma.hlGuardianRun.aggregate({ where: guardianWhere, _sum: { valueUsd: true }, _count: { _all: true } }),
-    prisma.embedTurn.groupBy({ by: ['outcome'], _count: { _all: true } }),
+    prisma.embedTurn.groupBy({ by: ['outcome'], where: REAL_TRAFFIC_WHERE, _count: { _all: true } }),
     // Per-build-layer built → signed, all time — the venue conversion table.
     prisma.embedTurn.groupBy({
       by: ['buildPath', 'outcome'],
-      where: { outcome: { in: ['tx-built', 'signed'] } },
+      where: { outcome: { in: ['tx-built', 'signed'] }, ...REAL_TRAFFIC_WHERE },
       _count: { _all: true },
       _sum: { valueUsd: true },
     }),
@@ -153,7 +157,7 @@ export async function GET() {
              COALESCE(SUM(value_usd) FILTER (WHERE outcome = 'signed' AND ${Prisma.raw(STANDING_TURN_SQL)}), 0)::float AS standing_usd,
              COALESCE(SUM(value_usd) FILTER (WHERE outcome = 'tx-built'), 0)::float AS built_usd,
              COUNT(*) FILTER (WHERE outcome = 'signed') AS signed_n
-      FROM embed_turns WHERE created_at >= ${since}
+      FROM embed_turns WHERE created_at >= ${since} AND NOT ${Prisma.raw(INTERNAL_ORIGIN_SQL)}
       GROUP BY 1 ORDER BY 1`,
     prisma.$queryRaw<{ day: Date; usd: number; n: bigint }[]>`
       SELECT date_trunc('day', created_at) AS day,
@@ -190,7 +194,7 @@ export async function GET() {
       FROM spend_ledger l JOIN spend_grants g ON g.id = l.grant_id`,
     // Recent value events — artifact labels only, never prompts (P1).
     prisma.embedTurn.findMany({
-      where: { outcome: { in: ['signed', 'tx-built'] } },
+      where: { outcome: { in: ['signed', 'tx-built'] }, ...REAL_TRAFFIC_WHERE },
       orderBy: { createdAt: 'desc' },
       take: RECENT_LIMIT,
       select: { outcome: true, artifact: true, chain: true, detail: true, txUrl: true, valueUsd: true, buildPath: true, createdAt: true },

@@ -137,7 +137,7 @@ import {
   LIDO_WSTETH_MAINNET,
   type LidoBuiltStake,
 } from '../lib/lido-stake'
-import { classifyLegacyTurn, STANDING_TURN_SQL } from '../lib/value-origin'
+import { classifyLegacyTurn, INTERNAL_ORIGIN_SQL, isInternalOrigin, STANDING_TURN_SQL } from '../lib/value-origin'
 import { PLAN_BY_ID, planCreditsFor, ALLOWANCE_CUTOFF } from '../lib/plans'
 import { FREE_DAILY_TURN_CAP, HOUSE_DAILY_TURN_CAP } from '../lib/billing'
 
@@ -1152,6 +1152,38 @@ async function main() {
     STANDING_TURN_SQL.includes("origin_kind IN ('job-step','dca-run')") &&
       STANDING_TURN_SQL.includes('origin_kind IS NULL') &&
       STANDING_TURN_SQL.includes('native-job'),
+  )
+  // Internal-traffic classification: dev drives on localhost prod builds,
+  // harness fixture origins, and this project's own Vercel previews must
+  // never read as growth — while real third-party embed hosts (including
+  // arbitrary *.vercel.app sites) must NEVER match. In the 7 days to
+  // 2026-07-27, ~$62k of an ~$80k "money moved" week was localhost sessions.
+  check(
+    'value-origin: internal origins classify internal (localhost/ports, .test fixtures, own previews)',
+    isInternalOrigin('http://localhost:3477') &&
+      isInternalOrigin('http://localhost') &&
+      isInternalOrigin('https://localhost:8443') &&
+      isInternalOrigin('http://127.0.0.1:3000') &&
+      isInternalOrigin('https://harness-embed.test') &&
+      isInternalOrigin('http://app.localhost:3000') &&
+      isInternalOrigin('https://website-git-feat-intent-link-onward-paths-nate-4683s-projects.vercel.app'),
+  )
+  check(
+    'value-origin: real traffic never classifies internal (prod, third-party hosts, foreign vercel.app)',
+    !isInternalOrigin('https://www.yeetful.com') &&
+      !isInternalOrigin('https://yeetful.com') &&
+      !isInternalOrigin('https://app.uniswap.org') &&
+      !isInternalOrigin('https://someones-dapp.vercel.app') &&
+      !isInternalOrigin('https://localhosting.io') &&
+      !isInternalOrigin('https://my.test-app.com') &&
+      !isInternalOrigin(null) &&
+      !isInternalOrigin('not a url'),
+  )
+  check(
+    'value-origin: the internal-origin SQL mirror names all three families',
+    INTERNAL_ORIGIN_SQL.includes('localhost') &&
+      INTERNAL_ORIGIN_SQL.includes('test|localhost|local|example|invalid') &&
+      INTERNAL_ORIGIN_SQL.includes('vercel\\.app'),
   )
 
   // ── Route metrics (B14: observable routing telemetry, aggregate + public) ──
