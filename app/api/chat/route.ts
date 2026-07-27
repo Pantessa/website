@@ -1830,6 +1830,12 @@ async function lidoFundingTurn(
       amountHuman: shortfall,
       followupResume: `stake all my ETH on Lido${receive === 'wstETH' ? ' as wstETH' : ''}`,
       actionLabel: 'the stake',
+      // "stake all my ETH" sizes itself to whatever lands — a wallet that
+      // can't fund the FULL ask still gets a plan moving what it can, as
+      // long as held + arrival clears the economical stake floor (live
+      // 2026-07-23: "Stake 0.05 ETH" walled a wallet holding $28 movable
+      // that a smaller stake would have used happily).
+      flexMinAmountHuman: Math.max(0, Number((LIDO_MIN_STAKE_ETH + Number(LIDO_GAS_BUFFER_ETH) - balEth).toFixed(6))),
     },
     trace,
   })

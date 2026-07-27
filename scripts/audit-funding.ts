@@ -184,6 +184,24 @@ const SCENARIOS: Scenario[] = [
     expect: 'offer',
   },
   {
+    // THE 2026-07-23 LIVE WALL: "Stake 0.05 ETH with Lido" holding 0.0149
+    // ETH on mainnet + ~$12 movable on Base — the full ~$83 plan refused,
+    // but "stake all my ETH" sizes itself to the arrival, so the flexible
+    // need moves what the wallet CAN fund instead of walling.
+    name: 'flexible follow-up — big stake ask, small movable wallet → downsized move (the Lido wall)',
+    need: { chainId: 1, token: 'ETH', amountHuman: 0.0371, followupResume: 'stake all my ETH on Lido', actionLabel: 'the stake', flexMinAmountHuman: 0 },
+    reads: [R(1, 0.0149, 0), R(8453, 0.004, 5), R(42161, 0, 0)],
+    expect: 'offer',
+  },
+  {
+    // The flexible floor still holds: when even the smallest useful move
+    // can't be funded, the honest refusal stands (no dust-sized stakes).
+    name: 'flexible follow-up — capacity under the useful floor → refusal',
+    need: { chainId: 1, token: 'ETH', amountHuman: 0.0371, followupResume: 'stake all my ETH on Lido', actionLabel: 'the stake', flexMinAmountHuman: 0.01 },
+    reads: [R(1, 0, 0), R(8453, 0.001, 3), R(42161, 0, 0)],
+    expect: 'refusal',
+  },
+  {
     name: 'same-chain conversion — $20 USDC + gas on Base → NFT buy on Base',
     need: NFT_NEED,
     reads: [R(8453, 0.001, 20), R(42161, 0, 0), R(1, 0, 0)],
@@ -223,12 +241,20 @@ for (const s of SCENARIOS) {
   }
   const needUsd = s.need.amountHuman > 0 ? fundingPlanUsd(s.need.amountHuman, tokenUsdOf(s.need.token)) : 0
   const gasUsd = gasUsdFor(s.need, s.reads)
+  // Mirror of offerFundingPlan's flexible-floor pricing (same formula).
+  const flexMinUsd =
+    typeof s.need.flexMinAmountHuman === 'number'
+      ? s.need.flexMinAmountHuman > 0
+        ? fundingPlanUsd(s.need.flexMinAmountHuman, tokenUsdOf(s.need.token))
+        : 0
+      : undefined
   const decision = decideFundingTurn({
     need: s.need,
     needUsd,
     gasUsd,
     scan,
     destChainName: FUNDING_CHAIN_WORD[s.need.chainId],
+    flexMinUsd,
   })
   const got = decision.kind === 'offer' ? 'offer' : decision.kind === 'refusal' ? 'refusal' : 'fallthrough'
   if (verbose) {

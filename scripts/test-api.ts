@@ -58,7 +58,7 @@ import { parseRobinhoodFunding, parseSameChainSwapSegment, JOB_SEGMENT_PARSERS }
 import { parseMultiSendSegments, parseTransferSegment } from '../lib/transfer-exec'
 import { classifyTurn, moneyShaped } from '../lib/ask-failure'
 import { canonicalChainWord, normalizeChainWords } from '../lib/chain-lexicon'
-import { detectBalanceShortfall, fundingPlanUsd, planFundingChips, planStrandedRescue, rankFundingSources, shortRefusalCopy, softenClaimedFailureBlock, type FundingNeed, type FundingSource } from '../lib/funding-plan'
+import { decideFundingTurn, detectBalanceShortfall, fundingPlanUsd, planFundingChips, planStrandedRescue, rankFundingSources, shortRefusalCopy, softenClaimedFailureBlock, type FundingNeed, type FundingSource } from '../lib/funding-plan'
 import { compileDcaBuy, dcaRunChip, parseDcaCreate, parseDcaManage, parseDcaRun, periodKeyFor } from '../lib/dca'
 import { firstUserPromptOf, shareTweetHrefOf } from '../lib/shared-chat'
 import {
@@ -3010,6 +3010,31 @@ async function main() {
         stranded: [{ chainId: 42161, chainWord: 'Arbitrum', token: 'USDC', balance: 20, usd: 20 }], ethUsd: 2000,
       }) === null,
     )
+
+    // ── Flexible follow-ups (the 2026-07-23 Lido wall): "stake all my ETH"
+    // sizes itself to whatever arrives, so a wallet short of the FULL plan
+    // still gets a smaller move — never a wall while movable money exists
+    // above the priced floor. Fixed-size needs (no flexMinAmountHuman)
+    // must be untouched by the branch.
+    const flexNeed: FundingNeed = { chainId: 1, token: 'ETH', amountHuman: 0.0371, followupResume: 'stake all my ETH on Lido', actionLabel: 'the stake', flexMinAmountHuman: 0 }
+    const flexScan = {
+      sources: [{ chainId: 8453, chainWord: 'Base', token: 'USDC' as const, balance: 12, usd: 12 }],
+      stranded: [], ethUsd: 2000, readChains: ['Base', 'Ethereum', 'Arbitrum'], failedChains: [],
+    }
+    const flexDown = decideFundingTurn({ need: flexNeed, needUsd: 83, gasUsd: 0, scan: flexScan, destChainName: 'Ethereum', flexMinUsd: 0 })
+    const flexJob = flexDown.kind === 'offer' ? compileJobAsk(flexDown.turn.clarify.options[0].resume) : null
+    check(
+      'funding flex: short of the full plan → "Move what I\'ve got" chip that compiles (stake sizes itself)',
+      flexDown.kind === 'offer' && /^Move what I've got/.test(flexDown.turn.clarify.options[0].label) &&
+        flexDown.turn.clarify.options[0].resume.endsWith('then stake all my ETH on Lido') &&
+        flexDown.turn.clarify.options.filter((o) => o.label === 'Not now').length === 1 &&
+        !!flexJob && !('problem' in flexJob),
+      JSON.stringify(flexDown.kind === 'offer' ? flexDown.turn.clarify.options : flexDown),
+    )
+    const flexFixed = decideFundingTurn({ need: { ...flexNeed, flexMinAmountHuman: undefined }, needUsd: 83, gasUsd: 0, scan: flexScan, destChainName: 'Ethereum' })
+    check('funding flex: a fixed-size need never downsizes (refusal unchanged)', flexFixed.kind === 'refusal')
+    const flexFloor = decideFundingTurn({ need: flexNeed, needUsd: 83, gasUsd: 0, scan: flexScan, destChainName: 'Ethereum', flexMinUsd: 40 })
+    check('funding flex: capacity under the priced floor → the honest refusal stands', flexFloor.kind === 'refusal')
 
     // Acquisition grammar (live 2026-07-23: "I need $50 of USDG on Robinhood,
     // can you make that happen?" fell to the planner, which called USDG "not
