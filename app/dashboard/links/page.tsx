@@ -716,7 +716,16 @@ export default function DashboardLinksPage() {
                   <td className="py-2.5 pr-3 text-right mono text-[13px] text-[color:var(--accent)]">
                     {l.earnedUsd > 0 ? `$${l.earnedUsd.toFixed(2)}` : '—'}
                   </td>
-                  <td className="py-2.5 text-right">
+                  <td className="py-2.5 text-right whitespace-nowrap">
+                    <a
+                      href={`https://twitter.com/intent/tweet?text=${encodeURIComponent(`“${l.ask}” — tap it, connect your wallet, done.`)}&url=${encodeURIComponent(`https://yeetful.com/i/${l.slug}`)}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      title="Tweet this link — the card wears your brand"
+                      className="text-[11px] mono text-[color:var(--muted-2)] hover:text-[color:var(--accent)] transition-colors mr-3"
+                    >
+                      tweet
+                    </a>
                     <button
                       type="button"
                       title="Revoke — the link stops working; its history and earnings stay"

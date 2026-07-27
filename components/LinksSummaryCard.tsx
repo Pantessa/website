@@ -26,6 +26,15 @@ interface LinksApi {
   earnings: { totalEarnedUsd: number; claimedUsd: number; claimableUsd: number; minClaimUsd: number }
 }
 
+interface HandleApi {
+  handle: string | null
+  brand: { domain: string | null; name: string | null; logo: string | null; accent: string | null; bg: string | null } | null
+}
+
+/** Per-link share intent — the ask IS the tweet (dynamic OG wears the brand). */
+const tweetLinkHref = (ask: string, url: string) =>
+  `https://twitter.com/intent/tweet?text=${encodeURIComponent(`“${ask}” — tap it, connect your wallet, done.`)}&url=${encodeURIComponent(`https://yeetful.com${url}`)}`
+
 const usd = (n: number) => (n >= 1000 ? `$${Math.round(n).toLocaleString('en-US')}` : `$${n.toFixed(2)}`)
 
 const PAGE_SIZE = 5
@@ -57,12 +66,19 @@ export default function LinksSummaryCard() {
   const [data, setData] = useState<LinksApi | null>(null)
   const [failed, setFailed] = useState(false)
   const [page, setPage] = useState(0)
+  // null = still loading (render nothing yet); {handle: null} = unclaimed.
+  const [me, setMe] = useState<HandleApi | null>(null)
+  const [copiedPage, setCopiedPage] = useState(false)
 
   useEffect(() => {
     fetch('/api/intent-links', { cache: 'no-store' })
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
       .then((d: LinksApi) => setData(d))
       .catch(() => setFailed(true))
+    fetch('/api/intent-links/handle', { cache: 'no-store' })
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
+      .then((h: HandleApi) => setMe(h))
+      .catch(() => setMe({ handle: null, brand: null }))
   }, [])
 
   // Hold until settled — a flash of zeros reads as "you have nothing".
@@ -96,6 +112,71 @@ export default function LinksSummaryCard() {
           <Plus className="w-3.5 h-3.5" /> Mint a link
         </Link>
       </div>
+
+      {/* Your public page — the /l storefront lived only inside Intent links;
+          here it's one glance: the URL, the share, and the claim door. */}
+      {me &&
+        (me.handle ? (
+          <div className="mt-4 flex items-center gap-2.5 flex-wrap rounded-xl border border-[var(--line)] bg-[color-mix(in_srgb,var(--fg)_3%,transparent)] px-3 py-2.5">
+            {me.brand?.logo ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={me.brand.logo} alt="" className="w-6 h-6 rounded-md object-contain flex-shrink-0" />
+            ) : (
+              <Link2 className="w-4 h-4 text-[color:var(--accent)] flex-shrink-0" />
+            )}
+            <Link href={`/l/${me.handle}`} className="mono text-[12.5px] text-[color:var(--accent)] hover:underline underline-offset-2">
+              /l/{me.handle}
+            </Link>
+            <span className="text-[12px] text-[color:var(--muted-2)]">
+              your public page{movedUsd > 0 ? ` · ${usd(movedUsd)} moved through it` : ''}
+              {!me.brand && (
+                <>
+                  {' · '}
+                  <Link href="/dashboard/links" className="underline underline-offset-2 decoration-dotted hover:text-white">
+                    brand it with your site
+                  </Link>
+                </>
+              )}
+            </span>
+            <span className="ml-auto flex items-center gap-1">
+              <button
+                type="button"
+                aria-label="Copy your page URL"
+                title="Copy your page URL"
+                onClick={() => {
+                  void navigator.clipboard?.writeText(`https://yeetful.com/l/${me.handle}`).then(() => {
+                    setCopiedPage(true)
+                    setTimeout(() => setCopiedPage(false), 1500)
+                  })
+                }}
+                className="p-1.5 rounded-md text-[color:var(--muted-2)] hover:text-[color:var(--accent)] transition-colors"
+              >
+                {copiedPage ? <Check className="w-3.5 h-3.5 text-[color:var(--accent)]" /> : <Copy className="w-3.5 h-3.5" />}
+              </button>
+              <a
+                href={`https://twitter.com/intent/tweet?text=${encodeURIComponent(`Links that move money — @${me.handle}`)}&url=${encodeURIComponent(`https://yeetful.com/l/${me.handle}`)}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="mono text-[11px] px-2 py-1 rounded-md border border-[var(--line)] text-[color:var(--muted)] hover:text-white hover:border-[var(--line-2)] transition-colors"
+              >
+                tweet it
+              </a>
+            </span>
+          </div>
+        ) : (
+          <div className="mt-4 flex items-center gap-2.5 flex-wrap rounded-xl border border-[var(--line)] bg-[color-mix(in_srgb,var(--fg)_3%,transparent)] px-3 py-2.5">
+            <Link2 className="w-4 h-4 text-[color:var(--muted-2)] flex-shrink-0" />
+            <span className="text-[12px] text-[color:var(--muted-2)]">
+              Name a public page — <span className="mono">/l/your-name</span> — and every link you mint lives on it.
+            </span>
+            <Link
+              href="/dashboard/links"
+              className="ml-auto text-[12px] font-medium text-[color:var(--accent)] hover:underline underline-offset-2"
+            >
+              Claim your page →
+            </Link>
+          </div>
+        ))}
 
       {(live.length > 0 || (earned && earned.totalEarnedUsd > 0)) && (
         <div className="mt-4 grid grid-cols-2 sm:grid-cols-5 gap-3">
@@ -155,6 +236,16 @@ export default function LinksSummaryCard() {
                       <td className="py-2 pr-3 min-w-0">
                         <span className="flex items-center gap-1.5 min-w-0">
                           <CopyLinkButton url={l.url} />
+                          <a
+                            href={tweetLinkHref(l.ask, l.url)}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            aria-label="Tweet this link"
+                            title="Tweet this link — the card wears your brand"
+                            className="p-1 rounded-md text-[13px] leading-none text-[color:var(--muted-2)] hover:text-[color:var(--accent)] transition-colors flex-shrink-0"
+                          >
+                            𝕏
+                          </a>
                           <Link
                             href={l.url}
                             className="mono text-[12px] text-[color:var(--accent)] hover:underline underline-offset-2 flex-shrink-0"
