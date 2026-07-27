@@ -37,6 +37,7 @@ import { policyCheckInflow, recipientCheck, validityCheck, MAX_VALID_SEC } from 
 import { guardPlannerArtifact, PERMIT2_ADDRESS } from '../lib/planner-artifact-guard'
 import { parseSwapIntent } from '../lib/swap-intent'
 import { activeLinkCapFor, composeMcps } from '../lib/intent-links'
+import { normalizeAccent, parseBrandHtml, validateBrandUrl } from '../lib/brand-scan'
 import { HOUSE_LINKS, houseLinkMarks } from '../lib/house-links'
 import { isDbChatId } from '../lib/chat-ids'
 import { usdToTokenAmount } from '../lib/usd-probe'
@@ -1587,6 +1588,73 @@ async function main() {
     check('storefront: /l never prints the wallet', !storeHtml.toLowerCase().includes(mallory.address.toLowerCase()))
     const ghostStore = await fetch(`${BASE}/l/never-claimed-xyz`)
     check('storefront: unknown handle → 404', ghostStore.status === 404)
+
+    // ── White-label brand (one pasted URL → logo + accent on the /l page) ──
+    // Pure gates first: the SSRF fence and the HTML parser are what keep a
+    // creator-supplied URL from becoming a server-side probe.
+    check(
+      'brand: validateBrandUrl refuses http / IPs / localhost / internal / ports, accepts a public https site',
+      !validateBrandUrl('http://example.com').ok &&
+        !validateBrandUrl('https://192.168.1.7').ok &&
+        !validateBrandUrl('https://localhost').ok &&
+        !validateBrandUrl('https://staging.internal').ok &&
+        !validateBrandUrl('https://example.com:8443').ok &&
+        validateBrandUrl('https://example.com').ok,
+    )
+    const brandFixture = `<html><head>
+      <meta property="og:site_name" content="Acme Corp">
+      <meta name="theme-color" content="#6633cc">
+      <meta property="og:image" content="https://acme.example/social-card.png">
+      <link rel="icon" href="/favicon-32.png" sizes="32x32">
+      <link rel="apple-touch-icon" href="/apple-180.png" sizes="180x180">
+    </head></html>`
+    const brandSig = parseBrandHtml(brandFixture, 'https://acme.example/')
+    check(
+      'brand: parseBrandHtml reads name + theme-color and ranks apple-touch-icon > icon > favicon > og:image',
+      brandSig.siteName === 'Acme Corp' &&
+        brandSig.themeColor === '#6633cc' &&
+        brandSig.logoCandidates[0] === 'https://acme.example/apple-180.png' &&
+        brandSig.logoCandidates[1] === 'https://acme.example/favicon-32.png' &&
+        brandSig.logoCandidates[2] === 'https://acme.example/favicon.ico' &&
+        brandSig.logoCandidates[3] === 'https://acme.example/social-card.png',
+    )
+    check(
+      'brand: normalizeAccent expands #rgb and refuses near-white/near-black (backgrounds are not accents)',
+      normalizeAccent('#6633cc') === '#6633cc' &&
+        normalizeAccent('ABC') === '#aabbcc' &&
+        normalizeAccent('#ffffff') === null &&
+        normalizeAccent('#000') === null &&
+        normalizeAccent('purple') === null,
+    )
+    // API gates: owner-only, a claimed handle required, hostile URLs die at
+    // the gate. (The live-scan happy path needs the open internet, so it
+    // stays out of the harness — the accent PATCH proves the storage+render
+    // loop end-to-end without it.)
+    const bNoAuth = await fetch(`${BASE}/api/intent-links/brand`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ url: 'https://example.com' }),
+    })
+    check('brand: scan without session → 401', bNoAuth.status === 401)
+    const bNoHandle = await fetch(`${BASE}/api/intent-links/brand`, { method: 'PATCH', headers: CJ, body: JSON.stringify({ accent: '#6633cc' }) })
+    check('brand: branding without a claimed handle → 409', bNoHandle.status === 409)
+    const bBadUrl = await fetch(`${BASE}/api/intent-links/brand`, { method: 'POST', headers: M, body: JSON.stringify({ url: 'https://localhost/x' }) })
+    check('brand: a non-public URL refuses at the gate (400, never fetched)', bBadUrl.status === 400)
+    const bAccent = await fetch(`${BASE}/api/intent-links/brand`, { method: 'PATCH', headers: M, body: JSON.stringify({ accent: '#6633cc' }) })
+    const bAccentBad = await fetch(`${BASE}/api/intent-links/brand`, { method: 'PATCH', headers: M, body: JSON.stringify({ accent: '#ffffff' }) })
+    check('brand: accent PATCH validates (#6633cc lands, near-white refused)', bAccent.status === 200 && bAccentBad.status === 400)
+    const brandedHtml = flat(await (await fetch(`${BASE}/l/harness-store`)).text())
+    check(
+      'brand: the /l page wears the accent and keeps the Powered by Yeetful mark',
+      brandedHtml.includes('--accent:#6633cc') && brandedHtml.includes('Powered by'),
+    )
+    const bClear = await fetch(`${BASE}/api/intent-links/brand`, { method: 'DELETE', headers: { cookie: mallorySession } })
+    const unbrandedHtml = flat(await (await fetch(`${BASE}/l/harness-store`)).text())
+    check(
+      'brand: remove restores the default page (accent gone, Powered by stays)',
+      bClear.status === 200 && !unbrandedHtml.includes('--accent:#6633cc') && unbrandedHtml.includes('Powered by'),
+    )
+
     const hRename = await fetch(`${BASE}/api/intent-links/handle`, { method: 'POST', headers: M, body: JSON.stringify({ handle: 'harness-store-2' }) })
     const oldGone = await fetch(`${BASE}/l/harness-store`)
     check('storefront: rename frees the old handle (old page 404)', hRename.status === 200 && oldGone.status === 404)

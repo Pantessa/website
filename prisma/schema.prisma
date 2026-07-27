@@ -1075,6 +1075,14 @@ model CreatorHandle {
   handle    String   @id // lowercase slug — /l/<handle>
   creator   String   @unique // lowercased wallet (SIWE-verified at claim)
   createdAt DateTime @default(now()) @map("created_at")
+  // White-label brand, scanned from the creator's own site URL (one paste,
+  // no form): logo stored as a size-capped data URI so the page never
+  // hotlinks or re-fetches a foreign host at render time.
+  brandDomain    String?   @map("brand_domain")
+  brandName      String?   @map("brand_name")
+  brandLogo      String?   @map("brand_logo")
+  brandAccent    String?   @map("brand_accent")
+  brandUpdatedAt DateTime? @map("brand_updated_at")
 
   @@map("creator_handles")
 }

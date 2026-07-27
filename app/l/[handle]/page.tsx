@@ -1,4 +1,5 @@
 import type { Metadata } from 'next'
+import type { CSSProperties } from 'react'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import prisma from '@/lib/db'
@@ -21,6 +22,12 @@ async function getStorefront(rawHandle: string) {
   try {
     const row = await prisma.creatorHandle.findUnique({ where: { handle } })
     if (!row) return null
+    // White-label brand — scanned from the creator's own site (one paste on
+    // the dashboard). Logo is a stored data URI: no foreign fetch at render.
+    const brand =
+      row.brandDomain || row.brandLogo || row.brandAccent
+        ? { domain: row.brandDomain, name: row.brandName, logo: row.brandLogo, accent: row.brandAccent }
+        : null
     const links = await prisma.intentLink.findMany({
       where: { creator: row.creator, revoked: false },
       orderBy: { createdAt: 'desc' },
@@ -44,6 +51,7 @@ async function getStorefront(rawHandle: string) {
       : [[], []]
     return {
       handle,
+      brand,
       links: links.map((l) => ({
         slug: l.id,
         ask: l.ask,
@@ -76,16 +84,40 @@ export default async function StorefrontPage({ params }: Params) {
   if (!store) notFound()
 
   const totalMoved = store.links.reduce((s, l) => s + l.movedUsd, 0)
+  const brand = store.brand
 
   return (
     <>
-      <main className="x-main">
+      {/* A branded page re-accents in place: --accent is scoped to this main,
+          so every accent-colored element below inherits the creator's color
+          while the site chrome (nav/footer) stays Yeetful. */}
+      <main className="x-main" style={brand?.accent ? ({ '--accent': brand.accent } as CSSProperties) : undefined}>
         <section className="max-w-2xl mx-auto px-4 py-16">
           <div className="flex items-center gap-2 mb-6">
-            <YeetfulMark size={18} />
-            <span className="mono text-[11px] uppercase tracking-widest text-[color:var(--muted-2)]">
-              Creator page
-            </span>
+            {brand?.logo ? (
+              <>
+                {/* data URI from our own DB, size-capped at scan time */}
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={brand.logo} alt={brand.name ?? brand.domain ?? 'logo'} className="w-[18px] h-[18px] rounded object-contain" />
+                <span className="mono text-[11px] uppercase tracking-widest text-[color:var(--muted-2)]">
+                  {brand.name ?? brand.domain}
+                </span>
+              </>
+            ) : (
+              <>
+                <YeetfulMark size={18} />
+                <span className="mono text-[11px] uppercase tracking-widest text-[color:var(--muted-2)]">
+                  Creator page
+                </span>
+              </>
+            )}
+            <a
+              href="/"
+              className="ml-auto inline-flex items-center gap-1.5 mono text-[10.5px] uppercase tracking-widest text-[color:var(--muted-2)] hover:text-[color:var(--fg)] transition-colors"
+              title="Non-custodial intent links — the visitor's wallet is the only signer"
+            >
+              Powered by <YeetfulMark size={13} /> Yeetful
+            </a>
           </div>
           <h1 className="text-3xl font-semibold text-[color:var(--fg)] mb-2">@{store.handle}</h1>
           <p className="text-[15px] leading-relaxed text-[color:var(--muted)] max-w-xl mb-2">
@@ -100,7 +132,9 @@ export default async function StorefrontPage({ params }: Params) {
 
           {store.links.length === 0 ? (
             <p className="text-[13px] text-[color:var(--muted-2)] mt-8">
-              Nothing here yet — @{store.handle} hasn&apos;t published any links.
+              {/* one template string — the SWC entity-space bug eats the space
+                  between an expression and an entity-bearing text node */}
+              {`Nothing here yet — @${store.handle} hasn't published any links.`}
             </p>
           ) : (
             <ol className="divide-y divide-[var(--line)] border-y border-[var(--line)] mt-6">
