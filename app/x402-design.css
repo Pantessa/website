@@ -2628,6 +2628,9 @@
     display: inline-block; white-space: pre; opacity: 0;
     animation: fh-char .55s cubic-bezier(.2,.7,.2,1) forwards;
   }
+  /* each character is its own inline-block, so a narrow screen would break the
+     line mid-word ("wa / llet") — the per-word wrapper keeps words intact */
+  .fhero__word { display: inline-block; white-space: pre; }
   .fhero__caption--live { color: var(--flive); }
   .fhero__livedot {
     display: inline-block; width: 6px; height: 6px; border-radius: 50%;
@@ -2684,11 +2687,16 @@
   .fhero__liveframe { flex: 1; width: 100%; border: 0; background: transparent; }
 
   @media (max-width: 900px) {
-    .fhero { padding: 48px 20px 64px; }
+    /* Phones: the stage runs tall (claim + lede + CTAs + the 2×2 stats grid),
+       and the chip row used to be pinned absolutely to the section's bottom —
+       so on a 375px screen the protocol chips landed ON TOP of the stats cards
+       (Nate, mobile). Stack the section instead and let the chips flow
+       underneath everything. */
+    .fhero { padding: 48px 20px 64px; flex-direction: column; }
     .fhero__chips { display: none; }
     .fhero__chiprow {
       display: flex; flex-wrap: wrap; justify-content: center; gap: 8px;
-      position: absolute; left: 16px; right: 16px; bottom: 22px; z-index: 2;
+      position: static; width: 100%; margin-top: 32px; z-index: 2;
     }
     .fhero__chip--flow { position: static; transform: none; animation: none; font-size: 11.5px; padding: 7px 11px; }
     .fhero__caption { font-size: 11px; }
