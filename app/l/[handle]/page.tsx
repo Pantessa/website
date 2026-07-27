@@ -3,6 +3,7 @@ import type { CSSProperties } from 'react'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import prisma from '@/lib/db'
+import { hexLuminance } from '@/lib/brand-scan'
 import Footer from '@/components/Footer'
 import { YeetfulMark } from '@/components/Logo'
 
@@ -25,8 +26,8 @@ async function getStorefront(rawHandle: string) {
     // White-label brand — scanned from the creator's own site (one paste on
     // the dashboard). Logo is a stored data URI: no foreign fetch at render.
     const brand =
-      row.brandDomain || row.brandLogo || row.brandAccent
-        ? { domain: row.brandDomain, name: row.brandName, logo: row.brandLogo, accent: row.brandAccent }
+      row.brandDomain || row.brandLogo || row.brandAccent || row.brandBg
+        ? { domain: row.brandDomain, name: row.brandName, logo: row.brandLogo, accent: row.brandAccent, bg: row.brandBg }
         : null
     const links = await prisma.intentLink.findMany({
       where: { creator: row.creator, revoked: false },
@@ -86,20 +87,48 @@ export default async function StorefrontPage({ params }: Params) {
   const totalMoved = store.links.reduce((s, l) => s + l.movedUsd, 0)
   const brand = store.brand
 
+  // A branded page re-themes in place, scoped to this main — the site
+  // chrome (nav/footer) stays Yeetful. With a brand background, the whole
+  // token ramp (fg/muted/line/surface) derives from its luminance: dark bg
+  // → near-white text, light bg → near-black. An accent too close to the
+  // bg's luminance would vanish, so it falls back to the derived fg.
+  const bgLum = hexLuminance(brand?.bg)
+  const fg = bgLum === null ? null : bgLum < 0.5 ? '#f4f6f8' : '#12141a'
+  const accentLum = hexLuminance(brand?.accent)
+  const accentSafe = brand?.accent && (bgLum === null || accentLum === null || Math.abs(accentLum - bgLum) > 0.18) ? brand.accent : fg
+  const themeStyle =
+    brand && (brand.bg || accentSafe)
+      ? ({
+          ...(brand.bg && fg
+            ? {
+                '--bg': brand.bg,
+                '--fg': fg,
+                '--muted': `color-mix(in srgb, ${fg} 68%, ${brand.bg})`,
+                '--muted-2': `color-mix(in srgb, ${fg} 46%, ${brand.bg})`,
+                '--line': `color-mix(in srgb, ${fg} 14%, ${brand.bg})`,
+                '--surf-1': `color-mix(in srgb, ${fg} 5%, ${brand.bg})`,
+                backgroundColor: brand.bg,
+                color: fg,
+              }
+            : {}),
+          ...(accentSafe ? { '--accent': accentSafe } : {}),
+        } as CSSProperties)
+      : undefined
+
+  const pageUrl = `https://yeetful.com/l/${store.handle}`
+  const tweetHref = `https://twitter.com/intent/tweet?text=${encodeURIComponent(`Links that move money — @${store.handle}`)}&url=${encodeURIComponent(pageUrl)}`
+
   return (
     <>
-      {/* A branded page re-accents in place: --accent is scoped to this main,
-          so every accent-colored element below inherits the creator's color
-          while the site chrome (nav/footer) stays Yeetful. */}
-      <main className="x-main" style={brand?.accent ? ({ '--accent': brand.accent } as CSSProperties) : undefined}>
+      <main className="x-main" style={themeStyle}>
         <section className="max-w-2xl mx-auto px-4 py-16">
           <div className="flex items-center gap-2 mb-6">
             {brand?.logo ? (
               <>
                 {/* data URI from our own DB, size-capped at scan time */}
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={brand.logo} alt={brand.name ?? brand.domain ?? 'logo'} className="w-[18px] h-[18px] rounded object-contain" />
-                <span className="mono text-[11px] uppercase tracking-widest text-[color:var(--muted-2)]">
+                <img src={brand.logo} alt={brand.name ?? brand.domain ?? 'logo'} className="w-10 h-10 rounded-xl object-contain" />
+                <span className="mono text-[12px] uppercase tracking-widest text-[color:var(--muted-2)]">
                   {brand.name ?? brand.domain}
                 </span>
               </>
@@ -142,7 +171,7 @@ export default async function StorefrontPage({ params }: Params) {
                 <li key={l.slug}>
                   <Link
                     href={`/i/${l.slug}`}
-                    className="flex items-center gap-4 py-3.5 group hover:bg-white/[0.02] transition-colors"
+                    className="flex items-center gap-4 py-3.5 group hover:bg-[color-mix(in_srgb,var(--fg)_4%,transparent)] transition-colors"
                   >
                     <span className="text-[15px] text-[color:var(--fg)] truncate flex-1 group-hover:text-[color:var(--accent)] transition-colors">
                       &ldquo;{l.ask}&rdquo;
@@ -161,13 +190,16 @@ export default async function StorefrontPage({ params }: Params) {
             </ol>
           )}
 
-          <div className="mt-10 flex items-center gap-3">
+          <div className="mt-10 flex flex-wrap items-center gap-3">
             <Link href="/dashboard/links" className="btn btn--solid text-[13px]">
               Make your own page
             </Link>
             <Link href="/links" className="btn btn--ghost text-[13px]">
               The leaderboard
             </Link>
+            <a href={tweetHref} target="_blank" rel="noopener noreferrer" className="btn btn--ghost text-[13px]">
+              Share on 𝕏
+            </a>
           </div>
           <p className="mono text-[11px] text-[color:var(--muted-2)] mt-6">
             Every link opens with an explicit Connect &amp; build step — nothing runs, nothing

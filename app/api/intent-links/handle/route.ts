@@ -15,8 +15,8 @@ export async function GET(req: NextRequest) {
   if (!addr) return NextResponse.json({ error: 'Sign in first.' }, { status: 401 })
   const row = await prisma.creatorHandle.findUnique({ where: { creator: addr.toLowerCase() } })
   const brand =
-    row && (row.brandDomain || row.brandLogo || row.brandAccent)
-      ? { domain: row.brandDomain, name: row.brandName, logo: row.brandLogo, accent: row.brandAccent }
+    row && (row.brandDomain || row.brandLogo || row.brandAccent || row.brandBg)
+      ? { domain: row.brandDomain, name: row.brandName, logo: row.brandLogo, accent: row.brandAccent, bg: row.brandBg }
       : null
   return NextResponse.json({ handle: row?.handle ?? null, brand })
 }
