@@ -105,3 +105,33 @@ export function brandCtaStyle(brand: LinkBrand | null | undefined): CSSPropertie
   const lum = hexLuminance(accent)
   return { background: accent, color: lum !== null && lum < 0.5 ? '#f6f8fa' : '#0c0e12' }
 }
+
+/**
+ * Flat colors for the OG/X share cards (satori renders no color-mix): the
+ * brand bg drives ink/muted by luminance, the accent keeps the same
+ * 0.18-luminance guard as the pages. Without a brand bg the house dark
+ * palette comes back byte-identical, so unbranded cards don't shift.
+ */
+export function brandOgPalette(brand: LinkBrand | null | undefined): {
+  bg: string
+  ink: string
+  /** "r,g,b" of the ink, for rgba() alphas (satori renders no color-mix). */
+  inkRgb: string
+  muted: string
+  accent: string
+  branded: boolean
+} {
+  const bg = normalizeHex(brand?.bg)
+  if (!bg) {
+    return { bg: '#050708', ink: '#FAFAF7', inkRgb: '250,250,247', muted: '#8a9186', accent: '#34e3a0', branded: false }
+  }
+  const lum = hexLuminance(bg) ?? 0
+  const dark = lum < 0.5
+  const ink = dark ? '#f4f6f8' : '#12141a'
+  const inkRgb = dark ? '244,246,248' : '18,20,26'
+  const accentRaw = normalizeHex(brand?.accent)
+  const accentLum = hexLuminance(accentRaw)
+  const accent =
+    accentRaw && accentLum !== null && Math.abs(accentLum - lum) > 0.18 ? accentRaw : dark ? '#f4f6f8' : ink
+  return { bg, ink, inkRgb, muted: `rgba(${inkRgb},0.66)`, accent, branded: true }
+}

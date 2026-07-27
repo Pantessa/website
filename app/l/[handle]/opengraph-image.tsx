@@ -4,22 +4,20 @@ import { join } from 'node:path'
 import prisma from '@/lib/db'
 import { brandOgPalette, normalizeHex } from '@/lib/brand-theme'
 
-// Social card for an intent link (/i/<slug>) — the ASK is the hero: the
-// sentence in serif quotes, the one-tap promise under it, the guardrail
-// strip as the footer. Same palette + fonts as the /p and /r cards so every
-// Yeetful link on a timeline reads as one family. A creator's white-label
-// brand re-inks the whole card (bg/logo/accent, luminance-derived text) so
-// their links look like THEIR links in the feed — house links stay pure
-// Yeetful, byte-identical to before.
+// Social card for a creator page (/l/<handle>) — the handle is the hero,
+// the link count + dollars moved are the proof line. Wears the creator's
+// white-label brand (bg/logo/accent, luminance-derived ink) so a shared
+// storefront looks like THEIR storefront in the feed; unbranded pages keep
+// the house dark card. Same fonts + footer family as the /i and /p cards.
 
 export const runtime = 'nodejs'
-export const alt = 'A Yeetful intent link — one tap from ask to signed.'
+export const alt = 'A Yeetful creator page — links that move money.'
 export const size = { width: 1200, height: 630 }
 export const contentType = 'image/png'
 
 const toDataUri = (svg: string) => `data:image/svg+xml;base64,${Buffer.from(svg).toString('base64')}`
 
-/** Soft radial glow behind the ask, tinted by the card's accent. */
+/** Soft radial glow behind the handle, tinted by the card's accent. */
 const ambient = (accent: string) => {
   const hex = normalizeHex(accent)?.slice(1) ?? '34e3a0'
   const rgb = [hex.slice(0, 2), hex.slice(2, 4), hex.slice(4, 6)].map((c) => parseInt(c, 16)).join(',')
@@ -46,36 +44,42 @@ const mark = (accent: string) => `<svg xmlns="http://www.w3.org/2000/svg" viewBo
   </g>
 </svg>`
 
-const CONTRACT_PILLS = ['Guarded build', 'Your wallet signs', 'Receipted']
-
-type Params = { params: Promise<{ slug: string }> }
+type Params = { params: Promise<{ handle: string }> }
 
 export default async function Image({ params }: Params) {
-  const { slug } = await params
-  let link = null
-  try {
-    link = await prisma.intentLink.findUnique({ where: { id: slug } })
-  } catch {
-    link = null
-  }
-  const live = link && !link.revoked ? link : null
-  const ask = live?.ask ?? 'One tap from ask to signed'
-  const askSize = ask.length > 80 ? 44 : ask.length > 44 ? 56 : 72
-
-  // The creator's white-label brand re-inks the card; house/unbranded links
-  // keep the stock dark palette (brandOgPalette falls back byte-identically).
+  const { handle: rawHandle } = await params
+  const handle = rawHandle.toLowerCase()
   let brand = null
-  if (live?.creator) {
-    try {
-      const row = await prisma.creatorHandle.findUnique({ where: { creator: live.creator } })
-      if (row && (row.brandDomain || row.brandLogo || row.brandAccent || row.brandBg)) {
+  let linkCount = 0
+  let movedUsd = 0
+  try {
+    const row = await prisma.creatorHandle.findUnique({ where: { handle } })
+    if (row) {
+      if (row.brandDomain || row.brandLogo || row.brandAccent || row.brandBg) {
         brand = { domain: row.brandDomain, name: row.brandName, logo: row.brandLogo, accent: row.brandAccent, bg: row.brandBg }
       }
-    } catch {
-      brand = null
+      const links = await prisma.intentLink.findMany({
+        where: { creator: row.creator, revoked: false },
+        select: { id: true },
+        take: 50,
+      })
+      linkCount = links.length
+      if (links.length) {
+        const moved = await prisma.embedTurn.aggregate({
+          where: { intentLinkSlug: { in: links.map((l) => l.id) }, outcome: 'signed', valueUsd: { gt: 0 } },
+          _sum: { valueUsd: true },
+        })
+        movedUsd = moved._sum.valueUsd ?? 0
+      }
     }
+  } catch {
+    brand = null
   }
   const pal = brandOgPalette(brand)
+  const proof = [
+    `${linkCount} link${linkCount === 1 ? '' : 's'}`,
+    ...(movedUsd > 0 ? [`$${movedUsd >= 1000 ? Math.round(movedUsd).toLocaleString('en-US') : movedUsd.toFixed(2)} moved`] : []),
+  ].join(' · ')
 
   const fonts = join(process.cwd(), 'assets', 'og-fonts')
   const [serifItalic, sans, sansSemi] = await Promise.all([
@@ -125,50 +129,34 @@ export default async function Image({ params }: Params) {
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 17, letterSpacing: 4, color: pal.muted }}>
             <div style={{ display: 'flex', width: 8, height: 8, borderRadius: 4, background: pal.accent }} />
-            <span>{brand ? 'POWERED BY YEETFUL' : 'INTENT LINK · TAP TO RUN'}</span>
+            <span>{brand ? 'POWERED BY YEETFUL' : 'CREATOR PAGE'}</span>
           </div>
         </div>
 
-        {/* the ask — the hero */}
-        <div style={{ position: 'absolute', top: 200, left: 64, right: 64, display: 'flex', flexDirection: 'column' }}>
+        {/* the handle — the hero — with the proof line under it */}
+        <div style={{ position: 'absolute', top: 218, left: 64, right: 64, display: 'flex', flexDirection: 'column' }}>
           <div
             style={{
               display: 'flex',
               fontFamily: 'Newsreader',
               fontStyle: 'italic',
               fontWeight: 500,
-              fontSize: askSize,
-              lineHeight: 1.12,
-              maxHeight: 250,
-              overflow: 'hidden',
+              fontSize: handle.length > 18 ? 64 : 84,
+              lineHeight: 1.05,
               color: pal.ink,
             }}
           >
-            <span>“{ask}”</span>
+            <span>@{handle}</span>
           </div>
-          <div
-            style={{
-              display: 'flex',
-              marginTop: 30,
-              fontSize: 30,
-              fontWeight: 600,
-              letterSpacing: -0.5,
-              // the tri-color gradient is tuned for the house dark card — a
-              // branded card takes its promise line flat in the accent
-              ...(pal.branded
-                ? { color: pal.accent }
-                : {
-                    backgroundImage: `linear-gradient(92deg, #7df0bd 6%, ${pal.accent} 46%, #ffd25e 104%)`,
-                    backgroundClip: 'text',
-                    color: 'transparent',
-                  }),
-            }}
-          >
-            <span>Connect a wallet and the path builds itself.</span>
+          <div style={{ display: 'flex', marginTop: 26, fontSize: 30, fontWeight: 600, letterSpacing: -0.5, color: pal.accent }}>
+            <span>Links that move money{proof ? ` · ${proof}` : ''}</span>
+          </div>
+          <div style={{ display: 'flex', marginTop: 16, fontSize: 24, color: pal.muted }}>
+            <span>Tap one, connect your own wallet, and the path builds itself.</span>
           </div>
         </div>
 
-        {/* footer: contract pills + the door */}
+        {/* footer: the contract + the door */}
         <div
           style={{
             position: 'absolute',
@@ -181,7 +169,7 @@ export default async function Image({ params }: Params) {
           }}
         >
           <div style={{ display: 'flex', gap: 14 }}>
-            {CONTRACT_PILLS.map((label) => (
+            {['Guarded build', 'Your wallet signs', 'Receipted'].map((label) => (
               <div
                 key={label}
                 style={{
