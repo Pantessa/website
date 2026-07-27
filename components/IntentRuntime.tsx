@@ -22,6 +22,7 @@ import { useAccount } from 'wagmi'
 import { useConnectModal } from '@rainbow-me/rainbowkit'
 import { ArrowRight, ExternalLink, Fingerprint, Link2, MessageSquare, ReceiptText, ShieldCheck, Zap } from 'lucide-react'
 import ChatInterface from '@/components/ChatInterface'
+import ChatLoader from '@/components/ChatLoader'
 import { SignatureWaitModal } from '@/components/SignatureWaitTakeover'
 import CreateAccountButton from '@/components/CreateAccountButton'
 import NavAccount from '@/components/NavAccount'
@@ -30,6 +31,7 @@ import SignInFlowLink from '@/components/SignInFlowLink'
 import { YeetfulMark } from '@/components/Logo'
 import { useSession } from '@/lib/session'
 import { cdpEnabled } from '@/lib/cdp-embedded'
+import { brandThemeStyle, type LinkBrand } from '@/lib/brand-theme'
 import { isTransferShaped } from '@/lib/intent-links'
 import { useYeetfulStore, McpServer } from '@/lib/store'
 import { CATALOG } from '@/lib/mcp-data'
@@ -64,6 +66,7 @@ export default function IntentRuntime({
   redirectUrl,
   hasCreator = false,
   restricted = false,
+  brand = null,
 }: {
   slug: string
   ask: string
@@ -78,8 +81,12 @@ export default function IntentRuntime({
    *  the membership probe before the ask auto-runs. The list itself never
    *  reaches the client. */
   restricted?: boolean
+  /** The creator's white-label brand — the splash wears it (bg + accent +
+   *  logo, powered by Yeetful); the post-connect runtime keeps the chat
+   *  legible and takes only the accent + a logo chip. */
+  brand?: LinkBrand | null
 }) {
-  const { address, isConnected } = useAccount()
+  const { address, isConnected, status: walletStatus } = useAccount()
   const { openConnectModal } = useConnectModal()
   const { status, needsSignIn, signIn, signingIn } = useSession()
   const { servers, setServers, setActiveServerIds, setCurrentChatId } = useYeetfulStore()
@@ -154,13 +161,26 @@ export default function IntentRuntime({
   }, [servers, mcps, setActiveServerIds])
 
   // Connect IS the consent: the moment a wallet is present, start the
-  // runtime. Restricted links insert the allowlist probe between connect and
-  // run — fail CLOSED (a partner's "reserved" promise beats a flaky
-  // network), with the ask still one honest click away in /chat.
-  const [allowCleared, setAllowCleared] = useState(false)
+  // runtime. The auto path (wagmi reconnect resolving a beat after load)
+  // takes a short branded pause first — the splash announces the wallet was
+  // found and fades, instead of hard-cutting to the chat shell mid-read.
+  const [autoStarting, setAutoStarting] = useState(false)
   useEffect(() => {
     if (!isConnected || started || !mcpsReady) return
-    setStarted(true)
+    setAutoStarting(true)
+    const t = setTimeout(() => setStarted(true), 900)
+    return () => clearTimeout(t)
+  }, [isConnected, started, mcpsReady])
+
+  // The start side-effects run once, whichever path flipped `started`.
+  // Restricted links insert the allowlist probe between connect and run —
+  // fail CLOSED (a partner's "reserved" promise beats a flaky network),
+  // with the ask still one honest click away in /chat.
+  const [allowCleared, setAllowCleared] = useState(false)
+  const startedFx = useRef(false)
+  useEffect(() => {
+    if (!started || startedFx.current) return
+    startedFx.current = true
     postEvent('connect')
     // The link runtime is its own thread: never append the ask into whatever
     // chat the visitor happened to have open (same-session nav from /chat
@@ -175,7 +195,7 @@ export default function IntentRuntime({
       .then((d: { allowed?: boolean }) => (d.allowed ? setAllowCleared(true) : setBlocked(true)))
       .catch(() => setBlocked(true))
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isConnected, started, mcpsReady])
+  }, [started])
 
   // Connect to act, sign in to keep: the ask injects the moment the session
   // has HYDRATED (a fast /api/auth/me cookie check — never a signature). A
@@ -243,8 +263,15 @@ export default function IntentRuntime({
     )
     const ctaClass =
       'btn btn--solid inline-flex items-center justify-center gap-2 h-[54px] px-8 rounded-full text-[15px]'
+    // wagmi resolves a returning wallet a beat after load ('reconnecting'),
+    // and a found wallet auto-starts the runtime — both moments read as a
+    // stall or a hard cut without a stage direction. The loader IS the
+    // stage direction: checking → found → fade → the chat takes over.
+    const walletResolving = walletStatus === 'connecting' || walletStatus === 'reconnecting'
     return (
-      <main className="relative min-h-dvh overflow-hidden">
+      // The splash wears the creator's brand wholesale (bg + accent + logo,
+      // scoped here) — the post-connect chat keeps Yeetful's own legibility.
+      <main className="relative min-h-dvh overflow-hidden" style={brandThemeStyle(brand)}>
         {/* one soft accent bloom behind the ask — the fusion-core glow */}
         <div
           aria-hidden
@@ -254,12 +281,33 @@ export default function IntentRuntime({
               'radial-gradient(ellipse 60% 42% at 50% 34%, color-mix(in srgb, var(--accent) 13%, transparent), transparent 70%)',
           }}
         />
-        <div className="relative max-w-3xl mx-auto px-4 py-16 min-h-dvh flex flex-col items-center justify-center text-center">
+        <div
+          className={`relative max-w-3xl mx-auto px-4 py-16 min-h-dvh flex flex-col items-center justify-center text-center transition-opacity duration-700 ${autoStarting ? 'opacity-0' : 'opacity-100'}`}
+        >
           <div className="flex items-center gap-2 mb-8">
-            <YeetfulMark size={18} />
-            <span className="mono text-[11px] uppercase tracking-widest text-[color:var(--muted-2)]">
-              Intent link{agent ? ` · from ${agent}` : ''}
-            </span>
+            {brand?.logo ? (
+              <>
+                {/* the creator's mark (data URI from our DB, capped at scan) */}
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={brand.logo} alt={brand.name ?? brand.domain ?? 'logo'} className="w-7 h-7 rounded-lg object-contain" />
+                <span className="mono text-[11px] uppercase tracking-widest text-[color:var(--muted-2)]">
+                  {brand.name ?? brand.domain}
+                </span>
+                <span className="mono text-[11px] text-[color:var(--muted-2)]" aria-hidden>
+                  ·
+                </span>
+                <span className="inline-flex items-center gap-1.5 mono text-[10.5px] uppercase tracking-widest text-[color:var(--muted-2)]">
+                  Powered by <YeetfulMark size={13} /> Yeetful
+                </span>
+              </>
+            ) : (
+              <>
+                <YeetfulMark size={18} />
+                <span className="mono text-[11px] uppercase tracking-widest text-[color:var(--muted-2)]">
+                  Intent link{agent ? ` · from ${agent}` : ''}
+                </span>
+              </>
+            )}
           </div>
           <h1
             className="text-[clamp(1.9rem,4.6vw,3.2rem)] leading-[1.12] font-medium text-[color:var(--fg)] max-w-2xl [text-wrap:balance]"
@@ -282,7 +330,11 @@ export default function IntentRuntime({
           </div>
 
           <div className="mt-10">
-            {isConnected ? (
+            {autoStarting ? (
+              <ChatLoader compact lines={['wallet connected — building your path']} />
+            ) : walletResolving ? (
+              <ChatLoader compact lines={['checking for a connected wallet']} />
+            ) : isConnected ? (
               <button type="button" onClick={() => setStarted(true)} className={ctaClass}>
                 {ctaLabel}
               </button>
@@ -299,10 +351,12 @@ export default function IntentRuntime({
               </button>
             )}
           </div>
-          <p className="text-[12px] text-[color:var(--muted-2)] mt-4 max-w-md">
-            Connecting runs the scan and the build for your wallet — signing stays yours
-            {transferShaped ? '. This ask involves a transfer, so nothing runs until you press send.' : '.'}
-          </p>
+          {!autoStarting && !walletResolving && (
+            <p className="text-[12px] text-[color:var(--muted-2)] mt-4 max-w-md">
+              Connecting runs the scan and the build for your wallet — signing stays yours
+              {transferShaped ? '. This ask involves a transfer, so nothing runs until you press send.' : '.'}
+            </p>
+          )}
           {hasCreator && (
             <p className="mono text-[11px] text-[color:var(--muted-2)] mt-10 pt-4 border-t border-[var(--line)] max-w-md">
               The creator of this link earns half of Yeetful&apos;s 0.20% conversion fee. Sales,
@@ -346,7 +400,14 @@ export default function IntentRuntime({
     // the runtime owns the viewport — header pinned, the thread scrolls
     // inside ChatInterface. Simple mode keeps the surface to ONE focused ask:
     // no workspace toolbar, no splash cards, URL stays on /i/<slug>.
-    <div className="relative h-dvh flex flex-col overflow-hidden">
+    // Brand carries over as ACCENT + the logo chip only — the chat thread
+    // keeps Yeetful's bg for legibility; the fade-in meets the splash's
+    // fade-out so the handoff reads as one motion, not a hard cut.
+    <div
+      className="relative h-dvh flex flex-col overflow-hidden yf-runtime-in"
+      style={brand ? brandThemeStyle({ ...brand, bg: null }) : undefined}
+    >
+      <style>{'@keyframes yfRuntimeIn { from { opacity: 0 } to { opacity: 1 } } .yf-runtime-in { animation: yfRuntimeIn 0.5s ease-out }'}</style>
       <div
         aria-hidden
         className="absolute inset-x-0 top-0 h-64 pointer-events-none"
@@ -386,9 +447,13 @@ export default function IntentRuntime({
               >
                 <YeetfulMark size={18} />
               </Link>
+              {brand?.logo && (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={brand.logo} alt={brand.name ?? brand.domain ?? ''} className="w-5 h-5 rounded flex-shrink-0 object-contain" />
+              )}
               <div className="min-w-0">
                 <p className="mono text-[10px] uppercase tracking-widest text-[color:var(--muted-2)] leading-none">
-                  Intent link{agent ? ` · from ${agent}` : ''}
+                  {brand ? `${brand.name ?? brand.domain} · intent link · powered by Yeetful` : `Intent link${agent ? ` · from ${agent}` : ''}`}
                 </p>
                 <p
                   className="mt-1 text-[15px] leading-tight text-[color:var(--fg)] truncate"

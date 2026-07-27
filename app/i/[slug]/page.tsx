@@ -50,10 +50,24 @@ export async function generateMetadata({ params }: Params): Promise<Metadata> {
   }
 }
 
+/** The creator's white-label brand (creator_handles) — the splash wears it,
+ *  powered by Yeetful. House links (creator=null) stay pure Yeetful. */
+async function getBrand(creator: string | null) {
+  if (!creator) return null
+  try {
+    const row = await prisma.creatorHandle.findUnique({ where: { creator } })
+    if (!row || !(row.brandDomain || row.brandLogo || row.brandAccent || row.brandBg)) return null
+    return { domain: row.brandDomain, name: row.brandName, logo: row.brandLogo, accent: row.brandAccent, bg: row.brandBg }
+  } catch {
+    return null
+  }
+}
+
 export default async function IntentLinkPage({ params }: Params) {
   const { slug } = await params
   const link = await getLink(slug)
   if (!link) notFound()
+  const brand = await getBrand(link.creator)
   // A/B: one phrasing per visit, picked server-side (index 0 = the base
   // ask). The chosen phrasing IS the ask for this visit — every runtime
   // gate (transfer shape included) applies to what's actually shown — and
@@ -71,6 +85,7 @@ export default async function IntentLinkPage({ params }: Params) {
       redirectUrl={link.redirectUrl ?? ''}
       hasCreator={!!link.creator}
       restricted={link.allowWallets.length > 0}
+      brand={brand}
     />
   )
 }

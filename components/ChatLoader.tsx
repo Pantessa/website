@@ -13,9 +13,23 @@ const LINES = [
   'receipts, guardrails, signatures — loading',
 ]
 
-export default function ChatLoader({ inline = false }: { inline?: boolean }) {
+export default function ChatLoader({
+  inline = false,
+  compact = false,
+  lines = LINES,
+}: {
+  inline?: boolean
+  /** Small in-flow slot (the /i splash's wallet check) — no tall min-height. */
+  compact?: boolean
+  /** Caption(s) under the throw. One line renders static (no carousel). */
+  lines?: string[]
+}) {
   return (
-    <div className={inline ? 'yload yload--inline' : 'yload'} role="status" aria-label="Loading chat">
+    <div
+      className={`yload${inline || compact ? ' yload--inline' : ''}${compact ? ' yload--compact' : ''}`}
+      role="status"
+      aria-label="Loading chat"
+    >
       <div className="yload__stage" aria-hidden>
         {/* launch nub — the "thrower" */}
         <span className="yload__hand" />
@@ -32,13 +46,17 @@ export default function ChatLoader({ inline = false }: { inline?: boolean }) {
       </div>
 
       <div className="yload__lines" aria-hidden>
-        {LINES.map((l, i) => (
-          <span key={l} className="yload__line" style={{ animationDelay: `${i * 2.2}s` }}>
+        {lines.map((l, i) => (
+          <span
+            key={l}
+            className={lines.length === 1 ? 'yload__line yload__line--solo' : 'yload__line'}
+            style={lines.length === 1 ? undefined : { animationDelay: `${i * 2.2}s` }}
+          >
             {l}
           </span>
         ))}
       </div>
-      <span className="sr-only">Loading chat…</span>
+      <span className="sr-only">{lines[0] ?? 'Loading chat…'}</span>
 
       <style>{`
         .yload {
@@ -55,6 +73,15 @@ export default function ChatLoader({ inline = false }: { inline?: boolean }) {
         .yload--inline {
           min-height: min(52vh, 420px);
           background: transparent;
+        }
+        /* compact: a small in-flow slot (the /i splash CTA area). */
+        .yload--compact {
+          min-height: 150px;
+          gap: 14px;
+        }
+        .yload__line--solo {
+          animation: none;
+          opacity: 1;
         }
         .yload__stage {
           position: relative;
