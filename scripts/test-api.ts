@@ -38,6 +38,13 @@ import { guardPlannerArtifact, PERMIT2_ADDRESS } from '../lib/planner-artifact-g
 import { parseSwapIntent } from '../lib/swap-intent'
 import { activeLinkCapFor, composeMcps } from '../lib/intent-links'
 import { hexLuminance, normalizeAccent, normalizeBg, parseBrandHtml, validateBrandUrl } from '../lib/brand-scan'
+import {
+  decideTurnLimit,
+  hashIp,
+  limitKeysFor,
+  UNSIGNED_IP_HOURLY_CAP,
+  UNSIGNED_WALLET_HOURLY_CAP,
+} from '../lib/turn-limits'
 import { HOUSE_LINKS, houseLinkMarks } from '../lib/house-links'
 import { isDbChatId } from '../lib/chat-ids'
 import { usdToTokenAmount } from '../lib/usd-probe'
@@ -2400,6 +2407,47 @@ async function main() {
     (guestTurn.headers.get('content-type') ?? '').includes('application/json') &&
       typeof ((await guestTurn.json()) as { reply?: unknown; error?: unknown }) === 'object',
   )
+
+  // ── Unsigned-turn abuse fence (lib/turn-limits, the #553 follow-up) ──────
+  // Pure decision + key shapes; the live trip path is drilled directly
+  // against the store (pre-loaded counter → one HTTP turn → the wall).
+  console.log('— unsigned-turn fence (lib/turn-limits)')
+  check(
+    'fence: keys are hashed-ip + lowercased wallet; loopback-no-wallet has none',
+    (() => {
+      const keys = limitKeysFor(hashIp('203.0.113.9'), '0xABCDEF0123456789abcdef0123456789ABCDEF01')
+      return (
+        keys.length === 2 &&
+        keys[0].startsWith('i:') &&
+        !keys[0].includes('203.0.113.9') &&
+        keys[1] === 'w:0xabcdef0123456789abcdef0123456789abcdef01' &&
+        limitKeysFor(null, undefined).length === 0
+      )
+    })(),
+  )
+  check(
+    'fence: under-cap passes; wallet cap trips at cap+1; the ip tier outranks',
+    decideTurnLimit([{ key: 'i:aa', count: UNSIGNED_IP_HOURLY_CAP }, { key: 'w:0xa', count: UNSIGNED_WALLET_HOURLY_CAP }]) === null &&
+      decideTurnLimit([{ key: 'w:0xa', count: UNSIGNED_WALLET_HOURLY_CAP + 1 }]) === 'wallet' &&
+      decideTurnLimit([
+        { key: 'i:aa', count: UNSIGNED_IP_HOURLY_CAP + 1 },
+        { key: 'w:0xa', count: UNSIGNED_WALLET_HOURLY_CAP + 1 },
+      ]) === 'ip',
+  )
+  // A forged platform IP + wallet crosses the fence under-cap: the turn is
+  // accepted and carries no rate wall (regression guard for false trips).
+  const fencedTurn = await fetch(`${BASE}/api/chat`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-real-ip': '203.0.113.77' },
+    body: JSON.stringify({
+      message: 'hi',
+      activeServers: [],
+      history: [],
+      walletAddress: privateKeyToAccount(generatePrivateKey()).address,
+    }),
+  })
+  const fencedBody = (await fencedTurn.json()) as { rateGate?: unknown }
+  check('fence: an under-cap unsigned turn passes with no rate wall', fencedTurn.status === 200 && fencedBody.rateGate === undefined)
 
   // ── Engine-as-service (B9a): the routing engine exposed to API keys ───────
   console.log('— engine-as-service (/api/route)')
