@@ -59,18 +59,29 @@ export function sanitizeMcps(raw: unknown): string[] | null {
 
 /** Auto-compose the MCP set from the intent's shape. The native layers parse
  *  most asks with no MCP at all — these slugs mainly pull the right splash
- *  cards + reads into the runtime so the build has its context. */
+ *  cards + reads into the runtime so the build has its context. Doubles as
+ *  the creator form's "Decide for me" suggester, so every rule here shows
+ *  its work as lit chips. */
 export function composeMcps(ask: string): string[] {
   const a = ask.toLowerCase()
   const slugs: string[] = []
   // Every noun alternation is plural-tolerant — "Show my NFTs" once composed
   // to NO opensea because \bnft\b can't match "nfts" (live house-link miss).
-  if (/\b(aapl|tsla|nvda|amd|msft|amzn|meta|googl?|stocks?|shares? of|robinhood)\b/.test(a)) slugs.push('robinhood-free')
-  if (/\b(perps?|positions?|long|short|leverage|hyperliquid|stop[- ]?loss(es)?|take[- ]?profits?)\b/.test(a)) slugs.push('hyperliquid-free')
+  // Tickers AND common company names both land on Robinhood — asks say
+  // "Buy $10 of Apple" as often as "of AAPL".
+  if (/\b(aapl|tsla|nvda|amd|msft|amzn|meta|googl?|google|apple|tesla|nvidia|microsoft|amazon|netflix|nflx|palantir|pltr|hood|stocks?|shares? of|robinhood)\b/.test(a)) slugs.push('robinhood-free')
+  if (/\b(perps?|positions?|long|short|leverage|margin|hyperliquid|stop[- ]?loss(es)?|take[- ]?profits?)\b/.test(a)) slugs.push('hyperliquid-free')
   if (/\b(nfts?|opensea|seaport|floors?|collections?)\b/.test(a)) slugs.push('opensea-free')
+  // Same-chain swaps run the Uniswap venue; a cross-chain "swap X from A to
+  // B" settles through NEAR Intents instead, so the from→to shape doesn't
+  // pull Uniswap unless the ask names it.
+  const crossChainShape = /\bfrom\s+\w+\s+to\s+\w+\b/.test(a)
+  if (/\b(uniswap|dex)\b/.test(a) || (!crossChainShape && /\b(swaps?|swapping|convert)\b/.test(a))) slugs.push('uniswap-free')
+  if (/\b(cow ?swap|cow ?protocol|cow|limit orders?)\b/.test(a)) slugs.push('cow-free')
   if (/\b(stake|steth|wsteth|lido)\b/.test(a)) slugs.push('lido-free')
   if (/\b(supply|borrow|repay|aave|lend)\b/.test(a)) slugs.push('aave')
   if (/\b(vote|proposal|snapshot|dao|governance)\b/.test(a)) slugs.push('snapshot-free')
+  if (/\b(portfolio|balances?|holdings?|wallet)\b/.test(a)) slugs.push('yeetful-tool-wallet')
   // Bridging/swapping rides the native cross-chain + funding layers; the
   // NEAR Intents MCP joins the set whenever movement between chains is
   // plausible — which is any funded action, so it's the default companion.
