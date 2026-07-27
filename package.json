@@ -18,6 +18,7 @@
     "mcp:lint": "tsx scripts/mcp-lint.ts",
     "audit:asks": "tsx scripts/audit-asks.ts",
     "audit:funding": "tsx scripts/audit-funding.ts",
+    "preflight:house": "tsx scripts/preflight-house.ts",
     "vendor:icons": "tsx scripts/vendor-token-icons.ts",
     "db:receivers": "tsx scripts/backfill-receivers.ts",
     "probe:callable": "tsx scripts/probe-callable.ts",
