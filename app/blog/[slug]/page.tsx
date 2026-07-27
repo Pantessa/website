@@ -7,10 +7,13 @@ import remarkGfm from 'remark-gfm'
 import prisma from '@/lib/db'
 import Footer from '@/components/Footer'
 import BlogChart from '@/components/BlogChart'
+import BlogCoverArt from '@/components/BlogCoverArt'
+import BlogFigure from '@/components/BlogFigure'
 import BlogViews from '@/components/BlogViews'
 
-// A ```chart fenced block renders as an inline SVG chart (BlogChart) instead of
-// a code block. Everything else stays default — raw HTML is still escaped.
+// A ```chart fenced block renders as an inline SVG chart (BlogChart) and a
+// ```figure block as an inline SVG diagram (BlogFigure), instead of code
+// blocks. Everything else stays default — raw HTML is still escaped.
 const mdComponents: Components = {
   pre(props) {
     const child = Array.isArray(props.children) ? props.children[0] : props.children
@@ -18,10 +21,9 @@ const mdComponents: Components = {
       (child && typeof child === 'object' && 'props' in child
         ? ((child as { props?: { className?: string } }).props?.className ?? '')
         : '') || ''
-    if (cls.includes('language-chart')) {
-      const raw = String((child as { props?: { children?: unknown } }).props?.children ?? '')
-      return <BlogChart raw={raw} />
-    }
+    const raw = () => String((child as { props?: { children?: unknown } }).props?.children ?? '')
+    if (cls.includes('language-chart')) return <BlogChart raw={raw()} />
+    if (cls.includes('language-figure')) return <BlogFigure raw={raw()} />
     return <pre>{props.children}</pre>
   },
 }
@@ -122,13 +124,20 @@ export default async function BlogPostPage({ params }: Params) {
             </div>
           </header>
 
-          {post.coverImageUrl && (
+          {/* The head: an uploaded cover when there is one, otherwise the same
+              generated route art the post wears on /blog — so every post has a
+              moving head instead of a bare wall of type. */}
+          {post.coverImageUrl ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img
               src={post.coverImageUrl}
               alt={post.coverImageAlt ?? ''}
               className="blog__cover blog__cover--hero"
             />
+          ) : (
+            <div className="blog__coverart blog__cover--hero">
+              <BlogCoverArt slug={post.slug} tag={post.tags[0]} className="blog__coverart-svg" />
+            </div>
           )}
 
           {/* react-markdown escapes raw HTML by default (no rehype-raw) — the

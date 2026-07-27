@@ -175,6 +175,134 @@ function OrchestrationCover({ tag, className }: { tag?: string; className?: stri
   )
 }
 
+// Bespoke composition for the intent-links post: one sentence entering on the
+// left, fanning into a batch of links, every one of them landing on the same
+// settled receipt. Same canvas, same dot grid, same blogart__route /
+// blogart__ping animations as everything else on /blog.
+function LinksCover({ tag, className }: { tag?: string; className?: string }) {
+  const originX = 74
+  const originY = H / 2
+  const fanX = 268 // where the batch of links stacks up
+  const settleX = 556
+  // The art is 640×400 but every well that shows it (2/1 hero, 2.4/1 cards)
+  // crops with `slice`. Everything lives inside the tightest safe band —
+  // y ∈ [66, 334] — so no label is ever half-eaten by an aspect ratio.
+  const rows = [116, 158, 200, 242, 284]
+
+  return (
+    <svg
+      viewBox={`0 0 ${W} ${H}`}
+      className={className}
+      role="img"
+      aria-hidden="true"
+      preserveAspectRatio="xMidYMid slice"
+    >
+      <defs>
+        <pattern id="dots-links" width="28" height="28" patternUnits="userSpaceOnUse">
+          <circle cx="1.5" cy="1.5" r="1.1" fill="rgba(255,255,255,0.055)" />
+        </pattern>
+        <radialGradient id="glow-links" cx="50%" cy="50%" r="50%">
+          <stop offset="0%" stopColor="#3ECF8E" stopOpacity="0.14" />
+          <stop offset="100%" stopColor="#3ECF8E" stopOpacity="0" />
+        </radialGradient>
+      </defs>
+      <rect width={W} height={H} fill="url(#dots-links)" />
+      <circle cx={settleX} cy={originY} r="130" fill="url(#glow-links)" />
+
+      {/* the intent — one sentence, entering */}
+      <text
+        x="28"
+        y="86"
+        fontFamily="'Geist Mono', ui-monospace, monospace"
+        fontSize="12.5"
+        fill="#3ECF8E"
+        opacity="0.95"
+      >
+        one intent → many links → one receipt
+      </text>
+      <circle cx={originX} cy={originY} r="7" fill="#3ECF8E" />
+      <circle cx={originX} cy={originY} r="7" fill="none" stroke="#3ECF8E" strokeWidth="1.5" className="blogart__ping" />
+
+      {/* the batch: each link its own route, all from the same sentence */}
+      {rows.map((y, i) => (
+        <g key={y}>
+          <path
+            d={`M ${originX} ${originY} C ${originX + 90} ${originY}, ${fanX - 74} ${y}, ${fanX} ${y}`}
+            fill="none"
+            stroke="rgba(255,255,255,0.16)"
+            strokeWidth="1"
+          />
+          {/* the link itself — a small pill, the shape it wears in product */}
+          <rect
+            x={fanX}
+            y={y - 11}
+            width={92 + (i % 3) * 22}
+            height={22}
+            rx={11}
+            fill="rgba(255,255,255,0.03)"
+            stroke={i === 2 ? '#3ECF8E' : 'rgba(255,255,255,0.28)'}
+            strokeWidth="1.2"
+          />
+          {/* a sentence inside the pill — the link's whole payload, at
+              thumbnail scale where real type would be mud */}
+          <line
+            x1={fanX + 13}
+            y1={y}
+            x2={fanX + 92 + (i % 3) * 22 - 15}
+            y2={y}
+            stroke={i === 2 ? 'rgba(62,207,142,0.5)' : 'rgba(255,255,255,0.22)'}
+            strokeWidth="2.5"
+            strokeLinecap="round"
+          />
+          <path
+            d={`M ${fanX + 92 + (i % 3) * 22} ${y} C ${fanX + 190} ${y}, ${settleX - 110} ${originY}, ${settleX} ${originY}`}
+            fill="none"
+            stroke="#3ECF8E"
+            strokeWidth="1.5"
+            strokeDasharray="7 9"
+            className="blogart__route"
+            opacity={i === 2 ? 0.95 : 0.42}
+          />
+        </g>
+      ))}
+
+      {/* the settle — every link ends at a signature that isn't ours */}
+      <circle cx={settleX} cy={originY} r="7" fill="#3ECF8E" />
+      <circle
+        cx={settleX}
+        cy={originY}
+        r="7"
+        fill="none"
+        stroke="#3ECF8E"
+        strokeWidth="1.5"
+        className="blogart__ping"
+      />
+      <text
+        x={settleX + 20}
+        y={originY + 5}
+        fontFamily="'Geist Mono', ui-monospace, monospace"
+        fontSize="12"
+        fill="#3ECF8E"
+        opacity="0.95"
+      >
+        signed
+      </text>
+      {tag && (
+        <text
+          x="28"
+          y="330"
+          fontFamily="'Geist Mono', ui-monospace, monospace"
+          fontSize="11"
+          letterSpacing="0.12em"
+          fill="rgba(255,255,255,0.38)"
+        >
+          {tag.toUpperCase()}
+        </text>
+      )}
+    </svg>
+  )
+}
+
 export default function BlogCoverArt({
   slug,
   tag,
@@ -186,6 +314,9 @@ export default function BlogCoverArt({
 }) {
   if (slug === 'one-sentence-four-transactions') {
     return <OrchestrationCover tag={tag} className={className} />
+  }
+  if (slug === 'onboarding-is-a-link-problem') {
+    return <LinksCover tag={tag} className={className} />
   }
   const rand = mulberry32(seedFrom(slug))
 

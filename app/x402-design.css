@@ -1550,7 +1550,9 @@
     box-shadow: 0 0 44px color-mix(in oklch, var(--accent) 7%, transparent);
   }
   .blog__feature:hover .blog__featmore { color: var(--fg); }
-  .blog__featart { position: relative; min-height: 300px; border-left: 1px solid var(--line); order: 2; }
+  /* The route art is white-ink-on-dark by construction — both art wells keep
+     a dark plate so light theme renders it instead of erasing it. */
+  .blog__featart { position: relative; min-height: 300px; border-left: 1px solid var(--line); order: 2; background: #0b0d0c; }
   .blog__featcover { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; display: block; }
   .blog__featbody { padding: clamp(24px, 3vw, 40px); order: 1; }
   .blog__featkicker { font-size: 11px; letter-spacing: 0.16em; color: var(--accent); }
@@ -1576,7 +1578,7 @@
   .blog__card:hover .blog__cardmore { color: var(--fg); }
   .blog__cardlink { display: block; }
   /* Full-bleed art strip atop each card; body keeps the old padding. */
-  .blog__cardart { position: relative; aspect-ratio: 2.4 / 1; border-bottom: 1px solid var(--line); overflow: hidden; }
+  .blog__cardart { position: relative; aspect-ratio: 2.4 / 1; border-bottom: 1px solid var(--line); overflow: hidden; background: #0b0d0c; }
   .blog__cardart .blog__cover { position: absolute; inset: 0; height: 100%; aspect-ratio: auto; border: none; border-radius: 0; margin: 0; }
   .blog__cardbody { padding: 20px 24px 22px; }
   /* aspect-ratio reserves the box height before the (dynamic, dimension-less)
@@ -1636,6 +1638,40 @@
   .blog__stat-num { font-family: 'Archivo', sans-serif; font-weight: 800; font-size: clamp(2.2rem, 6vw, 3rem); line-height: 1; letter-spacing: -0.03em; color: var(--accent); }
   .blog__stat-cap { font-size: 15px; line-height: 1.5; color: var(--fg); max-width: 46ch; }
   .blog__stat-src { font-size: 10.5px; letter-spacing: 0.04em; color: var(--muted-2); }
+
+  /* In-post diagrams (BlogFigure) — rendered from a ```figure fenced block.
+     Unlike the charts (attribute-styled, re-inked per theme below), every
+     figure ink is a class wired to a token here, so light/dark comes free. */
+  .blog__figure { margin: 30px 0; padding: 20px 18px 16px; border: 1px solid var(--line); border-radius: 14px; background: var(--surf-1); }
+  .blog__figure-title { font-family: 'Archivo', sans-serif; font-weight: 700; font-size: 15px; color: var(--fg); margin: 0 0 4px; }
+  .blog__figure-cap { font-size: 12.5px; line-height: 1.5; color: var(--muted-2); margin: 10px 0 0; }
+  .blogfig__svg { display: block; margin: 12px 0 2px; overflow: visible; }
+  .blogfig__t { fill: var(--fg); }
+  .blogfig__t-dim { fill: var(--muted-2); }
+  .blogfig__t-accent { fill: var(--accent); }
+  .blogfig__t-warn { fill: var(--sell); }
+  .blogfig__t-strike { fill: var(--muted-2); opacity: 0.7; }
+  .blogfig__f { fill: var(--muted); }
+  .blogfig__f-accent { fill: var(--accent); }
+  .blogfig__rule { stroke: var(--line); stroke-width: 1; }
+  .blogfig__rule-accent { stroke: color-mix(in srgb, var(--accent) 45%, transparent); stroke-width: 1.5; }
+  .blogfig__route { stroke: var(--accent); stroke-width: 1.6; stroke-linejoin: round; fill: none; opacity: 0.85; }
+  .blogfig__ping { fill: none; stroke: var(--accent); stroke-width: 1.5; }
+  .blogfig__wall { stroke: var(--sell); stroke-width: 1.5; stroke-dasharray: 4 5; }
+  .blogfig__strike { stroke: var(--muted-2); stroke-width: 1; opacity: 0.6; }
+  .blogfig__panel { fill: var(--surf-2); stroke: var(--line); stroke-width: 1; }
+  .blogfig__chip { fill: var(--surf-2); stroke: var(--line); stroke-width: 1; }
+  .blogfig__chip--accent { stroke: var(--accent); fill: color-mix(in srgb, var(--accent) 10%, transparent); }
+  .blogfig__hub { fill: color-mix(in srgb, var(--accent) 12%, transparent); stroke: var(--accent); stroke-width: 1.5; }
+  .blogfig__bar { fill: var(--fg); fill-opacity: 0.14; }
+  .blogfig__bar--accent { fill: var(--accent); fill-opacity: 0.22; }
+
+  /* Cover art as a post head. The generated route art is drawn in white ink
+     for a dark canvas, so it rides its own plate in BOTH themes rather than
+     dissolving into a paper-white page. */
+  .blog__coverart { position: relative; overflow: hidden; border: 1px solid var(--line); border-radius: 10px; background: #0b0d0c; }
+  .blog__coverart.blog__cover--hero { aspect-ratio: 2 / 1; margin: 26px 0 0; }
+  .blog__coverart-svg { position: absolute; inset: 0; width: 100%; height: 100%; }
 
   /* ── CHAT MARKDOWN ────────────────────────────────────
      Editorial typography for assistant replies (ChatMarkdown.tsx). The chat

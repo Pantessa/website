@@ -21,6 +21,7 @@
  *   npm run dev        # in one terminal
  *   npm run test:api   # in another
  */
+import { readFile } from 'node:fs/promises'
 import { generatePrivateKey, privateKeyToAccount, type PrivateKeyAccount } from 'viem/accounts'
 import { createSiweMessage } from 'viem/siwe'
 import { grantTypedData } from '../lib/grant-typed-data'
@@ -2633,6 +2634,44 @@ async function main() {
   check('later via cookies never overwrite the first arrival', secondArrival.status === 200 && secondArrival.body.via === undefined)
   const badVia = await viaSignIn('NOT VALID $$$')
   check('malformed via cookie is ignored, login unharmed', badVia.status === 200 && badVia.body.via === undefined)
+
+  // ── Blog post fixtures (pure — no server needed) ──────────────────────────
+  // A ```figure block naming a composition BlogFigure doesn't have renders
+  // NOTHING, silently. Pin every fenced block in every committed post against
+  // the component's registry so a rename or a typo fails here instead of
+  // shipping a post with a hole where a diagram should be.
+  {
+    const { POST: linksPost } = await import('./seed-links-post')
+    const figureSrc = await readFile(new URL('../components/BlogFigure.tsx', import.meta.url), 'utf8')
+    const registered = new Set(
+      [...figureSrc.matchAll(/^\s*'([a-z-]+)':\s*\w+,$/gm)].map((m) => m[1]),
+    )
+    check('BlogFigure registry parsed', registered.size >= 4, `${[...registered].join(',')}`)
+
+    const blocks = [...linksPost.content.matchAll(/```figure\n([\s\S]*?)```/g)].map((m) => m[1])
+    check('links post ships figure blocks', blocks.length === 4, `${blocks.length}`)
+    const named = blocks.map((b) => {
+      try {
+        return (JSON.parse(b) as { name?: string }).name ?? ''
+      } catch {
+        return ''
+      }
+    })
+    check('every figure block is valid JSON with a name', named.every(Boolean), named.join(','))
+    check(
+      'every figure block names a registered composition',
+      named.every((n) => registered.has(n)),
+      named.filter((n) => !registered.has(n)).join(',') || 'all present',
+    )
+    // The cover art dispatches on slug — a renamed slug silently falls back to
+    // the generated art, which is the wrong head for a bespoke composition.
+    const coverSrc = await readFile(new URL('../components/BlogCoverArt.tsx', import.meta.url), 'utf8')
+    check(
+      'links post slug has bespoke cover art',
+      coverSrc.includes(`slug === '${linksPost.slug}'`),
+      linksPost.slug,
+    )
+  }
 
   // ── Blog (requires BLOG_ADMIN_PK + matching ADMIN_WALLETS on the server) ──
   const adminPk = process.env.BLOG_ADMIN_PK
