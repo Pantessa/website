@@ -494,7 +494,9 @@ export default function DashboardLinksPage() {
       <div className="rounded-xl border border-[var(--line)] bg-[var(--surf-1)] px-4 py-4 mb-6">
         {!myHandle ? (
           <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-            <div className="min-w-0 flex-1">
+            {/* min-w keeps the copy readable — at phone widths the claim
+                controls wrap BELOW instead of crushing this column */}
+            <div className="min-w-[240px] flex-1">
               <p className="text-[14px] font-medium text-white">Name your page</p>
               <p className="text-[12px] text-[color:var(--muted-2)] mt-0.5">
                 One name — <span className="mono">/l/your-name</span> — and every link you mint
