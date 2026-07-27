@@ -2449,6 +2449,34 @@ async function main() {
   const fencedBody = (await fencedTurn.json()) as { rateGate?: unknown }
   check('fence: an under-cap unsigned turn passes with no rate wall', fencedTurn.status === 200 && fencedBody.rateGate === undefined)
 
+  // ── Missing-MCP door: venue-worded builds never fall to a planner how-to ──
+  // Live 2026-07-27: a default-fleet chat answered "Stake 0.05 ETH with
+  // Lido" with a stake.lido.fi walkthrough — the conversion handed away.
+  // Without the venue MCP in the set, the native layers answer with the
+  // add-the-dapp deep link (prefill, never auto-send). Pre-planner, cheap.
+  const lidoDoor = await fetch(`${BASE}/api/chat`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ message: 'Stake 0.05 ETH with Lido', activeServers: [], history: [] }),
+  })
+  const lidoDoorBody = (await lidoDoor.json()) as { reply?: string }
+  check(
+    'missing-mcp door: a Lido stake ask without the Lido MCP gets the add-Lido deep link, never a DIY how-to',
+    lidoDoor.status === 200 &&
+      /mcps=lido-free/.test(lidoDoorBody.reply ?? '') &&
+      !/stake\.lido\.fi/i.test(lidoDoorBody.reply ?? ''),
+  )
+  const hlDoor = await fetch(`${BASE}/api/chat`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ message: 'Long $12 of HYPE on Hyperliquid', activeServers: [], history: [] }),
+  })
+  const hlDoorBody = (await hlDoor.json()) as { reply?: string }
+  check(
+    'missing-mcp door: an HL order ask without the Hyperliquid MCP gets the add door',
+    hlDoor.status === 200 && /mcps=hyperliquid-free/.test(hlDoorBody.reply ?? ''),
+  )
+
   // ── Engine-as-service (B9a): the routing engine exposed to API keys ───────
   console.log('— engine-as-service (/api/route)')
   const routeNoAuth = await fetch(`${BASE}/api/route`, {

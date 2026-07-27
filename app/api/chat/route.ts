@@ -928,8 +928,16 @@ async function handleChatTurn(req: NextRequest) {
       nativeTrace({ type: 'status', label: `lido layer claimed the turn: stake ${lidoAsk.amount} ETH → ${lidoAsk.receive} — planner bypassed` })
       return await buildLidoStakeTurn(lidoAgent.agent, lidoAsk, walletAddress, message, nativeTrace)
     }
-    if (lidoAsk && !lidoAgent.agent) {
-      nativeTrace({ type: 'note', level: 'info', label: 'lido-shaped stake ask but no Lido MCP in the set — normal routing' })
+    if ((lidoAsk || isLidoGuidedAsk(message)) && !(lidoAgent.agent && lidoAgent.usable)) {
+      // Never let the planner answer a venue-worded build ask with a
+      // go-do-it-on-their-site how-to (live 2026-07-27: a default-fleet chat
+      // sent "Stake 0.05 ETH with Lido" to stake.lido.fi — the funnel's
+      // conversion, handed away). The door is the #491 deep link: reopen
+      // with the dapp lit and the ask prefilled — prefill never auto-sends.
+      nativeTrace({ type: 'note', level: 'warn', label: 'lido-shaped stake ask but no usable Lido MCP in the set — offering the add-Lido door (planner never claims venue-worded builds)' })
+      return NextResponse.json({
+        reply: `🌊 Staking with Lido runs right here — it just needs the **Lido** dapp in this chat's set. **[Add Lido with this ask ready](/chat?mcps=lido-free&prompt=${encodeURIComponent(message)})** (it prefills — you press send), or add it from the rail and ask again.`,
+      })
     }
 
     // Hyperliquid execution layer — perp orders + the bridge-deposit on-ramp,
@@ -990,7 +998,14 @@ async function handleChatTurn(req: NextRequest) {
           return NextResponse.json({ reply: `📈 ${(e as Error).message}` })
         }
       }
-      nativeTrace({ type: 'note', level: 'info', label: 'hl-shaped ask but no Hyperliquid agent in the set — normal routing' })
+      // Same door as the Lido case: parseHlIntent demands the venue word, so
+      // falling through would hand a perp/deposit ask to the planner (or the
+      // spot-swap layer) — both wrong. Custom sets can drop Hyperliquid even
+      // though the default fleet carries it.
+      nativeTrace({ type: 'note', level: 'warn', label: 'hl-shaped ask but no usable Hyperliquid agent in the set — offering the add-Hyperliquid door' })
+      return NextResponse.json({
+        reply: `📈 Hyperliquid orders build right here — they just need the **Hyperliquid** dapp in this chat's set. **[Add Hyperliquid with this ask ready](/chat?mcps=hyperliquid-free&prompt=${encodeURIComponent(message)})** (it prefills — you press send), or add it from the rail and ask again.`,
+      })
     }
 
     // ── Native Robinhood Chain bridge (deterministic). There is exactly ONE
