@@ -480,13 +480,24 @@ export default function LinksHeroView({ stats }: { stats: LinkHeroStats | null }
           </Link>
         </div>
         {/* the transmutation readout — written by the burst: each character
-            materializes as the writer particles arrive from the core */}
+            materializes as the writer particles arrive from the core. Chars are
+            grouped per WORD so the line wraps between words on a phone (loose
+            chars broke mid-word: "signed by their own wa / llet"); the delay
+            keeps counting across the whole line, so the writing beat is
+            unchanged. */}
         <p className="fhero__caption mono" key={captionIdx} ref={captionRef}>
-          {[...TRANSMUTATIONS[captionIdx]].map((ch, i) => (
-            <span className="fhero__char" style={{ animationDelay: `${340 + i * 13}ms` }} key={i}>
-              {ch === ' ' ? ' ' : ch}
-            </span>
-          ))}
+          {(() => {
+            let n = 0
+            return TRANSMUTATIONS[captionIdx].split(/(\s+)/).map((word, w) => (
+              <span className="fhero__word" key={w}>
+                {[...word].map((ch, i) => (
+                  <span className="fhero__char" style={{ animationDelay: `${340 + n++ * 13}ms` }} key={i}>
+                    {ch}
+                  </span>
+                ))}
+              </span>
+            ))
+          })()}
         </p>
 
         {/* The link economy, live — server-truth numbers, same sources as

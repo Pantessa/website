@@ -1384,7 +1384,13 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
                   transition={{ duration: 0.25 }}
                   className={cn(
                     'flex gap-3',
-                    msg.role === 'user' ? 'flex-row-reverse' : 'flex-row'
+                    msg.role === 'user' ? 'flex-row-reverse' : 'flex-row',
+                    // Phones: stack the responder marks ABOVE the reply so the
+                    // copy owns the full column. Side-by-side, the avatar + gap
+                    // ate ~44px of a 375px screen and wrapped every reply into a
+                    // narrow ribbon (Nate, mobile /i). Assistant turns only — the
+                    // user's own short bubble reads fine right-aligned.
+                    msg.role === 'assistant' && 'max-sm:flex-col max-sm:gap-2',
                   )}
                 >
                   {/* Avatar — assistant turns show the MCP(s) that answered,
@@ -1451,6 +1457,9 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
                       // must be allowed to shrink — at 85vw alone it clipped
                       // off-screen on phones (avatar + gap + 85vw > 100vw).
                       'group/bubble relative min-w-0 max-w-[85vw] lg:max-w-[80%] px-4 py-3 rounded-2xl text-sm leading-relaxed',
+                      // Stacked on a phone: no avatar sits beside the reply, so
+                      // it takes the full column instead of 85vw.
+                      msg.role === 'assistant' && 'max-sm:max-w-full',
                       msg.role === 'user'
                         ? 'chat-bubble--user rounded-br-sm'
                         : 'bg-[var(--surf-1)]/70 text-[color:var(--fg)] border border-white/[0.06] rounded-tl-sm'
