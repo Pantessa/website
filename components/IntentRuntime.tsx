@@ -31,7 +31,7 @@ import SignInFlowLink from '@/components/SignInFlowLink'
 import { YeetfulMark } from '@/components/Logo'
 import { useSession } from '@/lib/session'
 import { cdpEnabled } from '@/lib/cdp-embedded'
-import { brandThemeStyle, type LinkBrand } from '@/lib/brand-theme'
+import { brandCtaStyle, brandThemeStyle, type LinkBrand } from '@/lib/brand-theme'
 import { isTransferShaped } from '@/lib/intent-links'
 import { useYeetfulStore, McpServer } from '@/lib/store'
 import { CATALOG } from '@/lib/mcp-data'
@@ -263,6 +263,9 @@ export default function IntentRuntime({
     )
     const ctaClass =
       'btn btn--solid inline-flex items-center justify-center gap-2 h-[54px] px-8 rounded-full text-[15px]'
+    // On a branded splash the stock fg-on-bg pill reads as a dark blob —
+    // repaint the CTA in the creator's accent with luminance-picked ink.
+    const ctaStyle = brandCtaStyle(brand)
     // wagmi resolves a returning wallet a beat after load ('reconnecting'),
     // and a found wallet auto-starts the runtime — both moments read as a
     // stall or a hard cut without a stage direction. The loader IS the
@@ -335,7 +338,7 @@ export default function IntentRuntime({
             ) : walletResolving ? (
               <ChatLoader compact lines={['checking for a connected wallet']} />
             ) : isConnected ? (
-              <button type="button" onClick={() => setStarted(true)} className={ctaClass}>
+              <button type="button" onClick={() => setStarted(true)} className={ctaClass} style={ctaStyle}>
                 {ctaLabel}
               </button>
             ) : cdpEnabled ? (
@@ -344,9 +347,9 @@ export default function IntentRuntime({
               // walletConnectOnly: connecting IS the whole step here — the run
               // is the guest lane, and no SIWE popup lands between the click
               // and the build.
-              <CreateAccountButton className={ctaClass} label={ctaLabel} redirectTo={hereHref()} walletConnectOnly />
+              <CreateAccountButton className={ctaClass} style={ctaStyle} label={ctaLabel} redirectTo={hereHref()} walletConnectOnly />
             ) : (
-              <button type="button" onClick={() => openConnectModal?.()} className={ctaClass}>
+              <button type="button" onClick={() => openConnectModal?.()} className={ctaClass} style={ctaStyle}>
                 {ctaLabel}
               </button>
             )}
