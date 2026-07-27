@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import prisma from '@/lib/db'
+import { getSessionAddress } from '@/lib/auth'
 import { brandCtaStyle, brandThemeStyle } from '@/lib/brand-theme'
 import Footer from '@/components/Footer'
 import { YeetfulMark } from '@/components/Logo'
@@ -52,6 +53,7 @@ async function getStorefront(rawHandle: string) {
     return {
       handle,
       brand,
+      creator: row.creator,
       links: links.map((l) => ({
         slug: l.id,
         ask: l.ask,
@@ -82,6 +84,12 @@ export default async function StorefrontPage({ params }: Params) {
   const { handle } = await params
   const store = await getStorefront(handle)
   if (!store) notFound()
+
+  // The owner sees their own page with the next step in hand (mint, brand,
+  // share). Read-only session peek — no SIWE is ever prompted here (rule 6),
+  // and the wallet address itself never renders.
+  const viewer = await getSessionAddress()
+  const isOwner = !!viewer && viewer.toLowerCase() === store.creator.toLowerCase()
 
   const totalMoved = store.links.reduce((s, l) => s + l.movedUsd, 0)
   const brand = store.brand
@@ -138,11 +146,41 @@ export default async function StorefrontPage({ params }: Params) {
             </p>
           )}
 
+          {isOwner && (
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-xl border border-[var(--line)] bg-[var(--surf-1)] px-3.5 py-2.5 mb-2">
+              <span className="mono text-[10.5px] uppercase tracking-widest text-[color:var(--muted-2)]">
+                Your page
+              </span>
+              <Link
+                href={`/dashboard/links?ask=${encodeURIComponent('Buy $5 of AAPL')}`}
+                className="text-[12.5px] font-medium text-[color:var(--accent)] hover:underline underline-offset-2"
+              >
+                + Mint another link
+              </Link>
+              <Link
+                href="/dashboard/links"
+                className="text-[12.5px] text-[color:var(--muted)] hover:text-[color:var(--fg)] underline underline-offset-2 decoration-dotted"
+              >
+                {brand ? 'Change the brand' : 'Brand it with your site'}
+              </Link>
+              <a
+                href={tweetHref}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-[12.5px] text-[color:var(--muted)] hover:text-[color:var(--fg)] underline underline-offset-2 decoration-dotted"
+              >
+                Tweet your page
+              </a>
+            </div>
+          )}
+
           {store.links.length === 0 ? (
             <p className="text-[13px] text-[color:var(--muted-2)] mt-8">
               {/* one template string — the SWC entity-space bug eats the space
                   between an expression and an entity-bearing text node */}
-              {`Nothing here yet — @${store.handle} hasn't published any links.`}
+              {isOwner
+                ? 'Nothing here yet — mint your first link and it lands on this page.'
+                : `Nothing here yet — @${store.handle} hasn't published any links.`}
             </p>
           ) : (
             <ol className="divide-y divide-[var(--line)] border-y border-[var(--line)] mt-6">
