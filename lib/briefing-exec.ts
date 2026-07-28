@@ -32,7 +32,7 @@ export async function readBriefingInputs(address: string): Promise<BriefingInput
   const wallet = address.toLowerCase()
   const failed: string[] = []
 
-  const [positionsR, protectedR, fundingR, aaveR] = await Promise.allSettled([
+  const [positionsR, protectedR, fundingR, aaveR, spotR] = await Promise.allSettled([
     withTimeout(fetchPositions(address)),
     prisma.hlGuardianPolicy.findMany({
       where: { wallet, status: { in: ['active', 'triggered'] } },
@@ -40,6 +40,10 @@ export async function readBriefingInputs(address: string): Promise<BriefingInput
     }),
     withTimeout(scanFundingSources(address)),
     withTimeout(callMcpTool(AAVE_MCP, 'portfolio', { user: address }, { timeoutMs: PROVIDER_TIMEOUT_MS })),
+    prisma.spotGuardPolicy.findMany({
+      where: { wallet, status: { in: ['active', 'triggered'] } },
+      select: { tokenSymbol: true },
+    }),
   ])
 
   const positions =
@@ -84,7 +88,12 @@ export async function readBriefingInputs(address: string): Promise<BriefingInput
     failed.push('aave')
   }
 
-  return { positions, protectedCoins, funding, aave, failed }
+  // A failed spot-policy read hides the SUGGESTION (never claims naked) by
+  // reporting every symbol as protected — the honest failure mode.
+  const spotProtectedSymbols =
+    spotR.status === 'fulfilled' ? spotR.value.map((r) => r.tokenSymbol) : (failed.push('spot-guard-policies'), ['ETH'])
+
+  return { positions, protectedCoins, spotProtectedSymbols, funding, aave, failed }
 }
 
 /** The whole pipeline as one fail-soft call for /api/splash (and /w). */
@@ -130,7 +139,7 @@ export function walletSnapshotFor(address: string): Promise<WalletSnapshot> {
     const inputs =
       inputsR.status === 'fulfilled'
         ? inputsR.value
-        : { positions: [], protectedCoins: [], funding: null, aave: null, failed: ['briefing'] }
+        : { positions: [], protectedCoins: [], spotProtectedSymbols: [], funding: null, aave: null, failed: ['briefing'] }
     const rows = composeBriefingItems(inputs)
     return {
       address: key,

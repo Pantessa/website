@@ -5968,6 +5968,17 @@ async function main() {
     body: JSON.stringify({ message: 'swap 2 USDC for WETH', activeServers: [] }),
   }).then((r) => r.json())
   check('native swap: asks to connect a wallet (not a Claude lecture)', typeof nativeNoWallet.reply === 'string' && /connect your wallet/i.test(nativeNoWallet.reply))
+  // Spot guardian gate: claims BEFORE the HL guardian (whose loose coin slot
+  // would read "spot" as a coin) and asks to connect — never a planner fall.
+  const spotGate = await fetch(`${BASE}/api/chat`, {
+    method: 'POST', headers: { 'content-type': 'application/json', 'x-yf-no-ask-log': '1' },
+    body: JSON.stringify({ message: 'Protect my spot ETH with a 10% stop loss', activeServers: [] }),
+  }).then((r) => r.json())
+  check(
+    'spot guardian: gate claims the spot ask and asks to connect',
+    typeof spotGate.reply === 'string' && /arm spot protection/i.test(spotGate.reply) && spotGate.buildPath === 'native-spot-guard',
+    JSON.stringify(spotGate).slice(0, 160),
+  )
 
   check('atoms: humanToAtoms whole + fraction', humanToAtoms('100', 6) === '100000000' && humanToAtoms('0.5', 18) === '500000000000000000')
   check('atoms: humanToAtoms refuses excess precision', humanToAtoms('0.1234567', 6) === null)
@@ -7501,7 +7512,7 @@ async function main() {
     const pos = (over: Partial<BriefingPosition> = {}): BriefingPosition => ({
       coin: 'ETH', side: 'long', positionValueUsd: 412.5, unrealizedPnl: 12.4, leverage: 4, ...over,
     })
-    const empty: BriefingInputs = { positions: [], protectedCoins: [], funding: null, aave: null, failed: [] }
+    const empty: BriefingInputs = { positions: [], protectedCoins: [], spotProtectedSymbols: [], funding: null, aave: null, failed: [] }
 
     // Unprotected position → the loud row, chip round-trips parseGuardianArm.
     const naked = composeBriefingItems({ ...empty, positions: [pos()] })
@@ -7603,6 +7614,24 @@ async function main() {
       ...empty,
       funding: { ...fundingBase, sources: [{ chainId: 8453, chainWord: 'Base', token: 'USDC', balance: 10, usd: 10 }], stranded: [] },
     }).length === 0)
+    // Spot-guard suggestion: large unwatched Base ETH chips the spot arm
+    // (round-trips parseSpotGuardArm); armed → quiet pos row; small → silent.
+    const bigEth = { chainId: 8453, chainWord: 'Base', token: 'ETH' as const, balance: 0.22, usd: 412 }
+    const unwatched = composeBriefingItems({ ...empty, funding: { ...fundingBase, sources: [bigEth], stranded: [] } })
+    const spotChip = unwatched.find((r) => /unwatched/.test(r.label))?.actions?.[0]
+    const spotAsk = spotChip ? parseSpotGuardArm(spotChip.prompt) : null
+    check(
+      'briefing: large unwatched Base ETH → spot-guard chip that round-trips',
+      !!spotAsk && spotAsk.token === 'ETH' && spotAsk.triggerMode === 'price_move_pct' && spotAsk.triggerValue === 10,
+      spotChip ? spotChip.prompt : 'no chip',
+    )
+    const watched = composeBriefingItems({ ...empty, spotProtectedSymbols: ['ETH'], funding: { ...fundingBase, sources: [bigEth], stranded: [] } })
+    check(
+      'briefing: spot-protected ETH → quiet pos row, no chip',
+      watched.length === 1 && watched[0].tone === 'pos' && !watched[0].actions,
+    )
+    check('briefing: small ETH never nags for a guard', composeBriefingItems({ ...empty, funding: { ...fundingBase, sources: [{ ...bigEth, usd: 50 }], stranded: [] } }).length === 0)
+
     // Aave HF drift only with live debt; healthy or debt-free stays silent.
     check(
       'briefing: HF < 1.5 with debt → neg row; no debt or healthy HF → silent',

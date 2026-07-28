@@ -40,6 +40,8 @@ export interface BriefingInputs {
   positions: BriefingPosition[]
   /** Coins with an active/triggered guardian policy — existence only. */
   protectedCoins: string[]
+  /** Symbols with an active SPOT guard policy — existence only. */
+  spotProtectedSymbols: string[]
   /** Idle + stranded stables per chain, or null when the scan failed. */
   funding: Pick<FundingScan, 'sources' | 'stranded' | 'readChains' | 'failedChains'> | null
   /** Aave read: health factor + whether debt exists, or null on failure. */
@@ -60,6 +62,7 @@ const DONOR_CHAINS = new Set([8453, 42161])
 // mainnet unstick (~$8 round trip) only pays for a meaningful balance.
 const STRANDED_ETH_NAME_FLOOR_USD = 2
 const MAINNET_UNSTICK_FLOOR_USD = 25
+const SPOT_GUARD_SUGGEST_FLOOR_USD = 100
 
 const usd = (n: number) =>
   `$${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
@@ -154,6 +157,32 @@ export function composeBriefingItems(inputs: BriefingInputs): StatRow[] {
             }
           : {}),
       })
+    }
+
+    // 2b. Large unwatched spot ETH on Base — the Spot Guardian's home
+    //     signal. One chip, one signature, a stop-loss that sells to USDC
+    //     in the owner's wallet (chip round-trips parseSpotGuardArm).
+    //     Base-only v1, floor $100 — small balances don't need a guard.
+    const spotProtected = new Set(inputs.spotProtectedSymbols.map((s) => s.toUpperCase()))
+    for (const s of inputs.funding.sources) {
+      if (s.token !== 'ETH' || s.chainId !== 8453 || s.usd < SPOT_GUARD_SUGGEST_FLOOR_USD) continue
+      if (spotProtected.has('ETH')) {
+        rows.push({
+          label: `${usd(s.usd)} of ETH on ${s.chainWord} · spot protection armed`,
+          value: 'watched',
+          tone: 'pos',
+          chartSymbol: 'ETH',
+        })
+      } else {
+        rows.push({
+          label: `${usd(s.usd)} of ETH on ${s.chainWord} · unwatched`,
+          value: 'no stop loss',
+          sub: 'one signature arms a spot stop — if it dumps, USDC lands in your wallet',
+          tone: 'neg',
+          chartSymbol: 'ETH',
+          actions: [{ label: 'Protect spot ETH', prompt: 'Protect my spot ETH with a 10% stop loss' }],
+        })
+      }
     }
 
     // 3. Idle stables — not a problem, an opportunity; soft chips only

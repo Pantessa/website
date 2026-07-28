@@ -16,6 +16,7 @@ import { parseAaveSupply, parseAaveOp } from '../lib/aave-supply'
 import { parseDcaRun, parseDcaCreate, parseDcaManage } from '../lib/dca'
 import { compileJobAsk } from '../lib/jobs'
 import { parseGuardianArm } from '../lib/hl-guardian'
+import { parseSpotGuardArm, parseSpotGuardManage } from '../lib/spot-guard'
 import { isLidoGuidedAsk, parseLidoStake } from '../lib/lido-stake'
 import { parseHlIntent } from '../lib/hyperliquid-exec'
 import { parseRobinhoodBridge } from '../lib/robinhood-bridge'
@@ -62,6 +63,8 @@ export function simulateLadder(message: string): Outcome {
     return { gate: 'jobs', kind: 'action', note: `${(job as { steps: unknown[] }).steps?.length ?? '?'} steps` }
   }
 
+  // Spot guardian runs BEFORE the HL guardian in the route — same here.
+  if (parseSpotGuardArm(message) || parseSpotGuardManage(message)) return { gate: 'spot-guard', kind: 'action' }
   if (parseGuardianArm(message)) return { gate: 'guardian', kind: 'action' }
   if (isLidoGuidedAsk(message)) return { gate: 'lido', kind: 'action', note: 'guided' }
   const lido = parseLidoStake(message)
