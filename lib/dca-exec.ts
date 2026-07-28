@@ -46,6 +46,12 @@ export interface DcaScheduleView {
   /** Current UTC period: 'due' | 'live' (offered, unsigned) | 'bought'. */
   period: 'due' | 'live' | 'bought'
   liveJobId: string | null
+  /** 'confirm' (you sign every buy) | 'auto' (armed — autopilot executes). */
+  mode: string
+  /** Last sweep failure on an armed schedule — the ONLY needs-you signal. */
+  autoError: string | null
+  /** The armed schedule's latest auto-run receipt line, if any. */
+  lastAutoRun: { periodKey: string; status: string; detail: string | null } | null
 }
 
 /** A schedule's derived current-period state, env-fenced. */
@@ -64,10 +70,22 @@ export async function listDcaSchedules(wallet: string): Promise<DcaScheduleView[
     ? await prisma.job.findMany({ where: { id: { in: jobIds } }, select: { id: true, status: true } })
     : []
   const jobStatus = new Map(jobs.map((j) => [j.id, j.status]))
+  // Armed schedules' latest receipts (one query, newest per schedule in JS —
+  // the sets are tiny). An auto-BOUGHT current period counts as 'bought'.
+  const armedIds = schedules.filter((s) => s.mode === 'auto').map((s) => s.id)
+  const autoRuns = armedIds.length
+    ? await prisma.dcaAutoRun.findMany({
+        where: { scheduleId: { in: armedIds } },
+        orderBy: { createdAt: 'desc' },
+        select: { scheduleId: true, periodKey: true, status: true, detail: true },
+      })
+    : []
   return schedules.map((s) => {
     const run = runs.find((r) => r.scheduleId === s.id)
     const st = run?.jobId ? jobStatus.get(run.jobId) : undefined
-    const period: DcaScheduleView['period'] = st === 'done' ? 'bought' : st && LIVE_JOB.includes(st) ? 'live' : 'due'
+    const latestAuto = autoRuns.find((r) => r.scheduleId === s.id) ?? null
+    const autoBoughtNow = latestAuto?.status === 'bought' && latestAuto.periodKey === periodKeyFor(s.cadence as DcaCadence)
+    const period: DcaScheduleView['period'] = st === 'done' || autoBoughtNow ? 'bought' : st && LIVE_JOB.includes(st) ? 'live' : 'due'
     return {
       id: s.id,
       status: s.status,
@@ -79,6 +97,9 @@ export async function listDcaSchedules(wallet: string): Promise<DcaScheduleView[
       chainName: chainById(s.chainId)?.name ?? `chain ${s.chainId}`,
       period,
       liveJobId: st && LIVE_JOB.includes(st) ? run!.jobId : null,
+      mode: s.mode,
+      autoError: s.autoError,
+      lastAutoRun: latestAuto ? { periodKey: latestAuto.periodKey, status: latestAuto.status, detail: latestAuto.detail } : null,
     }
   })
 }
@@ -164,6 +185,8 @@ export interface DcaTurn {
   clarify?: ClarifyRequest
   buildPath?: string
   dcaScheduleId?: string
+  /** The autopilot arm offer (one signTypedData card) — lib/dca-auto-exec. */
+  dcaArm?: import('@/lib/dca-auto-exec').DcaArmOffer
 }
 
 const nextPeriodWord: Record<DcaCadence, string> = { day: 'tomorrow', week: 'next week', month: 'next month' }
@@ -180,6 +203,13 @@ export async function runDcaTurn(
   selectedChainId: number | null | undefined,
   trace: Trace,
 ): Promise<DcaTurn | null> {
+  // ── Autopilot toggles FIRST — "turn off my dca autopilot" must never read
+  //    as the manage grammar's cancel. Lazy import keeps the module graph
+  //    acyclic at runtime (dca-auto-exec type-imports DcaTurn from here). ──
+  const { runDcaAutoToggleTurn } = await import('@/lib/dca-auto-exec')
+  const auto = await runDcaAutoToggleTurn(message, wallet, trace)
+  if (auto) return auto
+
   // ── The due-period chip's resume — one tap → this period's guarded buy ──
   const run = parseDcaRun(message)
   if (run) {
@@ -301,7 +331,9 @@ export async function runDcaTurn(
       reply:
         `📆 **Recurring buy armed:** $${create.buyUsd} of ${create.buyToken} ${cadenceLabel(create.cadence)} on ${chainName}, spending ${stable.symbol}. ` +
         `Each period the buy is built fresh — live quote, guardrails, receipt — and NOTHING buys without your signature; skip a period and it simply lapses. ` +
-        `Say “pause my ${create.buyToken} dca” or “cancel my ${create.buyToken} dca” anytime. Here's ${periodPhrase(create.cadence)}:`,
+        `Say “pause my ${create.buyToken} dca” or “cancel my ${create.buyToken} dca” anytime.` +
+        (chainId === 8453 ? ` Want it fully hands-free? Say “make my ${create.buyToken} dca autonomous” — one signature caps the spend on-chain and each buy executes itself.` : '') +
+        ` Here's ${periodPhrase(create.cadence)}:`,
       buildPath: 'native-dca',
       dcaScheduleId: schedule.id,
     }
@@ -322,10 +354,25 @@ export async function runDcaTurn(
   if (manage.op === 'list') {
     if (all.length === 0) return { reply: `📆 No recurring buys yet — say something like “buy $10 of AAPL every week” and I'll set one up (you sign each buy).` }
     const lines = all.map((s) => {
-      const state = s.status === 'paused' ? 'paused' : s.period === 'bought' ? `bought ${periodPhrase(s.cadence)}` : s.period === 'live' ? 'buy prepared — awaiting your signature' : 'due now'
+      const state =
+        s.status === 'paused'
+          ? 'paused'
+          : s.mode === 'auto'
+            ? s.autoError
+              ? `🤖 autopilot — needs you: ${s.autoError}`
+              : s.period === 'bought'
+                ? `🤖 autopilot — bought ${periodPhrase(s.cadence)}`
+                : '🤖 autopilot — buys itself when due'
+            : s.period === 'bought'
+              ? `bought ${periodPhrase(s.cadence)}`
+              : s.period === 'live'
+                ? 'buy prepared — awaiting your signature'
+                : 'due now'
       return `• **$${s.buyUsd} of ${s.buyToken}** ${cadenceLabel(s.cadence)} on ${s.chainName} — ${state}`
     })
-    const due = all.filter((s) => s.status === 'active' && s.period === 'due')
+    // Armed schedules buy themselves — the one-tap chip is only for
+    // confirm-mode periods that genuinely wait on a signature.
+    const due = all.filter((s) => s.status === 'active' && s.period === 'due' && s.mode !== 'auto')
     const options = due.map((s) => {
       const chip = dcaRunChip(s)
       return { label: chip.label, resume: chip.prompt }

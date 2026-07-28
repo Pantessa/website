@@ -16,15 +16,36 @@ async function dcaTileFor(address: string): Promise<RowsTile | null> {
   if (schedules.length === 0) return null
   const rows: StatRow[] = schedules.map((s) => {
     const chip = dcaRunChip(s)
-    const due = s.status === 'active' && s.period === 'due'
+    const armed = s.mode === 'auto'
+    // Armed schedules buy themselves — the one-tap run chip is confirm-only.
+    const due = s.status === 'active' && s.period === 'due' && !armed
+    const value =
+      s.status === 'paused'
+        ? 'paused'
+        : armed
+          ? s.autoError
+            ? 'autopilot · needs you'
+            : s.period === 'bought'
+              ? `autopilot · bought ${periodPhrase(s.cadence)}`
+              : 'autopilot · armed'
+          : s.period === 'bought'
+            ? `bought ${periodPhrase(s.cadence)}`
+            : s.period === 'live'
+              ? 'awaiting signature'
+              : 'due now'
     return {
       label: `$${s.buyUsd} → ${s.buyToken} ${cadenceLabel(s.cadence)}`,
       sub: `on ${s.chainName}`,
       chartSymbol: s.buyToken,
-      value: s.status === 'paused' ? 'paused' : s.period === 'bought' ? `bought ${periodPhrase(s.cadence)}` : s.period === 'live' ? 'awaiting signature' : 'due now',
-      tone: due ? ('pos' as const) : undefined,
+      value,
+      tone: due || (armed && !s.autoError) ? ('pos' as const) : undefined,
       actions: [
         ...(due ? [{ label: chip.label, prompt: chip.prompt }] : []),
+        ...(armed
+          ? [{ label: 'Turn off autopilot', prompt: `turn off my ${s.buyToken} dca autopilot` }]
+          : s.status === 'active' && s.chainId === 8453
+            ? [{ label: 'Make it autonomous', prompt: `make my ${s.buyToken} dca autonomous` }]
+            : []),
         s.status === 'paused'
           ? { label: 'Resume', prompt: `resume my ${s.buyToken} dca` }
           : { label: 'Pause', prompt: `pause my ${s.buyToken} dca` },
@@ -33,16 +54,17 @@ async function dcaTileFor(address: string): Promise<RowsTile | null> {
     }
   })
   const dueChips: SuggestedPrompt[] = schedules
-    .filter((s) => s.status === 'active' && s.period === 'due')
+    .filter((s) => s.status === 'active' && s.period === 'due' && s.mode !== 'auto')
     .map((s) => {
       const chip = dcaRunChip(s)
       return { label: chip.label, prompt: chip.prompt }
     })
+  const anyArmed = schedules.some((s) => s.mode === 'auto')
   return {
     id: 'dca-schedules',
     mcpSlug: 'yeetful',
     mcpName: 'Recurring buys',
-    title: 'DCA · you sign every buy',
+    title: anyArmed ? 'DCA · autopilot armed' : 'DCA · you sign every buy',
     render: 'rows',
     rows,
     prompts: dueChips.length > 0 ? dueChips.slice(0, 4) : [{ label: 'List my recurring buys', prompt: 'list my dcas' }],

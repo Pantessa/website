@@ -70,7 +70,7 @@ export const QUOTER_V2_ABI = [
 ] as const
 
 /** SwapRouter02: exactInputSingle has NO deadline field — it rides multicall. */
-const SWAP_ROUTER_02_ABI = [
+export const SWAP_ROUTER_02_ABI = [
   {
     name: 'exactInputSingle',
     type: 'function',
@@ -122,7 +122,7 @@ const SWAP_ROUTER_02_ABI = [
 ] as const
 
 /** SwapRouter02's "pay the router itself" recipient sentinel. */
-const ADDRESS_THIS = '0x0000000000000000000000000000000000000002' as const
+export const ADDRESS_THIS = '0x0000000000000000000000000000000000000002' as const
 
 /** No v3 pool can fill the pair — a TYPED miss so the route can fall through
  *  to the v4 layer (Robinhood's tokenized stocks are v4-only) instead of
@@ -154,6 +154,11 @@ export interface UniswapSwapParams {
   chainId?: number
   slippageBps?: number
   deadlineSec?: number
+  /** Where the swap OUTPUT lands (default `from`). Only internal executors
+   *  set this (autonomous DCA sells from the spender, output pinned to the
+   *  schedule owner) — every override MUST be re-verified by the caller's own
+   *  independent calldata guard against the intended owner. */
+  recipient?: string
 }
 
 export interface UniswapBuilt {
@@ -191,6 +196,8 @@ export async function buildUniswapSwap(params: UniswapSwapParams): Promise<Unisw
   if (!client) throw new Error(`No RPC client configured for ${chain.name}.`)
   const from = params.from as `0x${string}`
   if (!/^0x[0-9a-fA-F]{40}$/.test(from)) throw new Error('A valid wallet address is required.')
+  const recipient = (params.recipient ?? params.from) as `0x${string}`
+  if (!/^0x[0-9a-fA-F]{40}$/.test(recipient)) throw new Error('A valid recipient address is required.')
 
   const sellIsEth = params.sellToken.trim().toUpperCase() === 'ETH'
   const sellAddr = resolveToken(params.sellToken, chainId)
@@ -246,8 +253,8 @@ export async function buildUniswapSwap(params: UniswapSwapParams): Promise<Unisw
         tokenOut: buyAddr as `0x${string}`,
         fee: best.fee,
         // Fee on: the router holds the output for the sweep split. Fee off:
-        // ALWAYS the payer, directly.
-        recipient: feeOn ? ADDRESS_THIS : from,
+        // straight to the intended receiver (the payer unless overridden).
+        recipient: feeOn ? ADDRESS_THIS : recipient,
         amountIn,
         amountOutMinimum: minOut,
         sqrtPriceLimitX96: BigInt(0),
@@ -260,7 +267,7 @@ export async function buildUniswapSwap(params: UniswapSwapParams): Promise<Unisw
       encodeFunctionData({
         abi: SWAP_ROUTER_02_ABI,
         functionName: 'sweepTokenWithFee',
-        args: [buyAddr as `0x${string}`, minOut, from, BigInt(SWAP_FEE_BPS), TREASURY_ADDRESS],
+        args: [buyAddr as `0x${string}`, minOut, recipient, BigInt(SWAP_FEE_BPS), TREASURY_ADDRESS],
       }),
     )
   }
@@ -313,7 +320,14 @@ export async function buildUniswapSwap(params: UniswapSwapParams): Promise<Unisw
       ? `Yeetful fee: ${SWAP_FEE_BPS / 100}% of the output (below Uniswap's 0.25% interface fee), split by the router's own sweepTokenWithFee to the Yeetful treasury — visible in the multicall, minimum received shown post-fee.`
       : 'No Yeetful fee on this swap.',
   }
-  const checks: GuardrailCheck[] = [recipientCheck(from, from), validityCheck(deadline), allowanceCheck, feeCheck]
+  // Recipient pin: the classic build pays the payer (self-check). An override
+  // reports where proceeds land — the overriding executor's own independent
+  // guard is the block-level gate that the receiver is the intended owner.
+  const recipCheck: GuardrailCheck =
+    recipient.toLowerCase() === from.toLowerCase()
+      ? recipientCheck(from, from)
+      : { id: 'recipient', level: 'block', ok: true, note: `Proceeds pinned to ${recipient} (recipient override — re-verified by the caller's independent guard).` }
+  const checks: GuardrailCheck[] = [recipCheck, validityCheck(deadline), allowanceCheck, feeCheck]
   const valueUsd = stableUsd(chainId, sellAddr, amountIn) ?? stableUsd(chainId, buyAddr, best.amountOut)
   const grant = await getActiveGrant(from.toLowerCase())
   const policy = grant ? toPolicy(grant) : null

@@ -53,6 +53,35 @@ export async function getSpenderAccount() {
   return cdp().evm.getOrCreateAccount({ name: 'yeetful-spender' })
 }
 
+let _spenderAddress: `0x${string}` | null = null
+
+/** The spender's ADDRESS alone — bound onto DCA schedules at arm time so the
+ *  signed permission names exactly one puller. Cached: getOrCreateAccount is
+ *  idempotent and the address never changes. */
+export async function getSpenderAddress(): Promise<`0x${string}`> {
+  if (_spenderAddress) return _spenderAddress
+  const account = await getSpenderAccount()
+  _spenderAddress = account.address as `0x${string}`
+  return _spenderAddress
+}
+
+/** Send one transaction from the CDP spender (server-side signing — no raw
+ *  key in env) and return the hash. Inclusion/receipt waits are the caller's
+ *  job via its own public client. */
+export async function sendSpenderTx(
+  tx: { to: `0x${string}`; data: `0x${string}`; value?: bigint },
+  network: SpendPermissionNetwork = spendNetwork(),
+): Promise<`0x${string}`> {
+  const c = cdp()
+  const spender = await getSpenderAccount()
+  const result = await c.evm.sendTransaction({
+    address: spender.address as `0x${string}`,
+    network,
+    transaction: { to: tx.to, data: tx.data, value: tx.value ?? BigInt(0) },
+  })
+  return result.transactionHash as `0x${string}`
+}
+
 export interface CreatedPermission {
   id: string
   network: SpendPermissionNetwork
