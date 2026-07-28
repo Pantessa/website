@@ -40,6 +40,7 @@ import { activeLinkCapFor, composeMcps } from '../lib/intent-links'
 import { formatEarnedUsd, netFeeBpsFor, creatorEarningsUsd, FEE_BEARING_BUILD_PATHS, CROSS_CHAIN_FEE_BPS, CROSS_CHAIN_NET_FEE_BPS } from '../lib/fees'
 import { hexLuminance, normalizeAccent, normalizeBg, parseBrandHtml, validateBrandUrl } from '../lib/brand-scan'
 import {
+  clientIpFrom,
   decideTurnLimit,
   hashIp,
   limitKeysFor,
@@ -2477,6 +2478,18 @@ async function main() {
   })
   const fencedBody = (await fencedTurn.json()) as { rateGate?: unknown }
   check('fence: an under-cap unsigned turn passes with no rate wall', fencedTurn.status === 200 && fencedBody.rateGate === undefined)
+  // Loopback IS a header value on `next start` (x-forwarded-for: ::1), not
+  // an absent one — it must read as "no platform IP" or local dev and this
+  // very harness accumulate fence walls across runs in the shared DB (live
+  // 2026-07-28: ::1 sat at 169 unsigned turns and walled the run's tail).
+  check(
+    'fence: loopback header values read as direct traffic (no platform IP)',
+    clientIpFrom(new Headers({ 'x-forwarded-for': '::1' })) === null &&
+      clientIpFrom(new Headers({ 'x-real-ip': '127.0.0.1' })) === null &&
+      clientIpFrom(new Headers({ 'x-forwarded-for': '::ffff:127.0.0.1, 203.0.113.9' })) === null &&
+      clientIpFrom(new Headers({ 'x-real-ip': '203.0.113.9' })) === '203.0.113.9' &&
+      clientIpFrom(new Headers()) === null,
+  )
 
   // ── Missing-MCP door: venue-worded builds never fall to a planner how-to ──
   // Live 2026-07-27: a default-fleet chat answered "Stake 0.05 ETH with
@@ -3786,6 +3799,30 @@ async function main() {
     check('bridge echo: amount drift refused', verifyLifiBridgeEcho({ ...bridgeQuote, action: { ...bridgeQuote.action, fromAmount: '999' } }, bexp).length > 0)
     check('bridge echo: native value on an ERC-20 input refused', verifyLifiBridgeEcho({ ...bridgeQuote, transactionRequest: { chainId: 8453, value: '0xde0b6b3a7640000' } }, bexp).length > 0)
 
+    // ── Native-ETH sell mode (2026-07-28): the value IS the input — the
+    // single bridge step must carry exactly the sold atoms, and no approval
+    // may exist (there is no ERC-20 to approve).
+    const ETH_ATOMS = BigInt('4000000000000000') // 0.004 ETH
+    const ZERO = '0x0000000000000000000000000000000000000000'
+    const nexp: LifiBridgeExpectations = { ...bexp, sellToken: ZERO, sellAtoms: ETH_ATOMS, nativeSellAtoms: ETH_ATOMS }
+    const nativeBridge: LifiBridgeStep = {
+      label: 'bridge',
+      title: 'Bridge ETH → USDG on Robinhood Chain',
+      tx: { to: DIAMOND, data: '0x5fd9ae2e' + 'cd'.repeat(200), value: ETH_ATOMS.toString(), chainId: 8453, action: 'bridge' },
+      validUntil: Math.floor(Date.now() / 1000) + 90,
+    }
+    check('bridge guard (native): single value-carrying bridge step PASSES', guardLifiBridgeBuild([nativeBridge], nexp).ok)
+    check('bridge guard (native): a zero-value bridge step refused (the ETH must ride as msg.value)', !guardLifiBridgeBuild([{ ...nativeBridge, tx: { ...nativeBridge.tx, value: '0' } }], nexp).ok)
+    check('bridge guard (native): value drift refused (exactly the sold atoms)', !guardLifiBridgeBuild([{ ...nativeBridge, tx: { ...nativeBridge.tx, value: (ETH_ATOMS + BigInt(1)).toString() } }], nexp).ok)
+    check('bridge guard (native): an approval step in a native leg refused', !guardLifiBridgeBuild([goodLegs[0], nativeBridge], nexp).ok)
+    const nativeQuote = {
+      action: { fromToken: { address: ZERO }, toToken: { address: USDG }, fromAmount: ETH_ATOMS.toString(), fromChainId: 8453, toChainId: 4663, toAddress: USER },
+      estimate: { fromAmount: ETH_ATOMS.toString() },
+      transactionRequest: { chainId: 8453, value: '0x' + ETH_ATOMS.toString(16) },
+    }
+    check('bridge echo (native): value = fromAmount PASSES (the live 2026-07-28 probe shape)', verifyLifiBridgeEcho(nativeQuote, nexp).length === 0)
+    check('bridge echo (native): a zero-value native quote refused', verifyLifiBridgeEcho({ ...nativeQuote, transactionRequest: { chainId: 8453, value: '0x0' } }, nexp).length > 0)
+
     // The funding-plan parse + compile — the chips' resume string is the
     // contract, so the exact phrasing must compile deterministically.
     const fp = parseRobinhoodFunding('Fund robinhood chain with $12 from base including gas')
@@ -4087,6 +4124,68 @@ async function main() {
       JSON.stringify(usdceUnder),
     )
     check('rh-funding follow-up: "I have $10 USDC.e on arbitrum" → recheck', parseRhFundingFollowUp('I have $10 USDC.e on arbitrum')?.kind === 'recheck')
+
+    // ── Native ETH as a funding source (2026-07-28): the most common
+    // stranger wallet — ETH, no stables — used to wall the flagship stock
+    // buy with "no USDC on Base, Ethereum, or Arbitrum". ETH origin rows
+    // now ride the same chips/advice path: resumes carry "using eth" and
+    // compile with the token in BOTH legs.
+    const fpEthTok = parseRobinhoodFunding('Fund robinhood chain with $13.5 from base using eth including gas')
+    check('funding parse: "using eth" picks native ETH', !!fpEthTok && fpEthTok.token === 'ETH' && fpEthTok.gasIncluded && fpEthTok.originChainId === 8453)
+    const ethAnyOrigin = compileJobAsk('Fund robinhood chain with $7 from ethereum using eth, then buy $5 of NVDA')
+    check(
+      'funding compile: "using eth" compiles from every origin (native ETH needs no registry variant)',
+      !!ethAnyOrigin && !('problem' in ethAnyOrigin) && (ethAnyOrigin.steps[0].params as { token?: string }).token === 'ETH',
+    )
+    const ethOnly = O(8453, 'Base', 480, 0.2, 'ETH')
+    const ethChips = planRobinhoodFundingChips({ origins: [ethOnly], needUsd: 13.5, gasIncluded: true, followup: 'buy $12 of AAPL' })
+    const ethOnlyJob = ethChips ? compileJobAsk(ethChips[0].resume) : null
+    check(
+      'funding chips: an ETH-only wallet gets chips whose resumes compile with token ETH in both legs',
+      !!ethChips && /Base ETH/.test(ethChips[0].label) && /using eth/.test(ethChips[0].resume) &&
+        !!ethOnlyJob && !('problem' in ethOnlyJob) &&
+        (ethOnlyJob.steps[0].params as { leg?: string; token?: string }).leg === 'gas' &&
+        (ethOnlyJob.steps[0].params as { token?: string }).token === 'ETH' &&
+        (ethOnlyJob.steps[1].params as { token?: string }).token === 'ETH' &&
+        ethChips.every((c) => {
+          const j = compileJobAsk(c.resume)
+          return !!j && !('problem' in j)
+        }),
+      JSON.stringify({ ethChips, steps: ethOnlyJob && !('problem' in ethOnlyJob) ? ethOnlyJob.steps.map((s) => s.params) : ethOnlyJob }),
+    )
+    // Stables lead, but the FIRST COVERING origin wins: dust USDC must not
+    // force a combine past an ETH balance that covers the plan alone.
+    const dustPlusEth = planRobinhoodFundingChips({ origins: [O(8453, 'Base', 3), ethOnly], needUsd: 13.5, gasIncluded: false, followup: 'buy $12 of AAPL' })
+    check(
+      'funding chips: dust USDC + covering ETH → the ETH origin leads (no forced combine)',
+      !!dustPlusEth && /from Base ETH/.test(dustPlusEth[0].label),
+      JSON.stringify(dustPlusEth),
+    )
+    // A covering stable still leads; covering ETH becomes the "instead" chip.
+    const bothCover = planRobinhoodFundingChips({ origins: [O(8453, 'Base', 20), ethOnly], needUsd: 13.5, gasIncluded: false, followup: 'buy $12 of AAPL' })
+    check(
+      'funding chips: covering USDC leads, covering ETH offered as "Use Base ETH instead"',
+      !!bothCover && /~\$13\.5 from Base\)/.test(bothCover[0].label) && bothCover.some((c) => /Use Base ETH instead/.test(c.label)),
+      JSON.stringify(bothCover),
+    )
+    // Sub-keep-back ETH is NAMED but never planned and never "rescued" —
+    // it IS the missing gas, so a gas-topup rescue would be nonsense.
+    const dustEth = { ...O(1, 'Ethereum', 2, 0.0011, 'ETH'), spendable: false }
+    const ethUnder = planRobinhoodFundingAdvice({
+      scan: { origins: [], gaslessOrigins: [dustEth], allScanned: [dustEth], failedOrigins: [] },
+      needUsd: 2, gasIncluded: true, followup: '',
+    })
+    check(
+      'funding advice: sub-keep-back ETH → named with the honest parenthetical, never a gas-stranded rescue',
+      ethUnder.kind === 'none' && /\$2 of ETH on Ethereum \(under what a move from there costs\)/.test(ethUnder.copy),
+      JSON.stringify(ethUnder),
+    )
+    const emptyAdvice = planRobinhoodFundingAdvice({ scan: { origins: [], gaslessOrigins: [], allScanned: [], failedOrigins: [] }, needUsd: 5, gasIncluded: true, followup: '' })
+    check(
+      'funding advice: an empty wallet names both scanned tokens',
+      emptyAdvice.kind === 'none' && /no USDC or ETH on Base, Ethereum, or Arbitrum/.test(emptyAdvice.copy),
+      JSON.stringify(emptyAdvice),
+    )
 
     // ── The rh-funding follow-up parser: the typed continuations that must
     // re-enter the funding layer instead of falling to the planner.

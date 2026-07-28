@@ -2907,7 +2907,7 @@ async function prepareSwapTurn(intent: SwapIntent, walletAddress: string | undef
               reply:
                 `🌉 **We can make this happen — just a notch smaller.** ${acquiring ? 'You asked for' : 'The buy needs'} ~$${buyUsd} of ${rhStable.symbol} on ${chain.name} and you're at ~$${holdingUsd.toFixed(2)} there; across the chains I can bridge from I see: ${advice.copy}. ` +
                 `That doesn't quite cover $${buyUsd} — but it does cover **$${downsized.buyUsd}**${includeGas ? ' (gas leg included)' : ''}, built and guard-checked when it's your turn to sign. ` +
-                `Or top up USDC on Base, Ethereum, or Arbitrum (or ${rhStable.symbol} on ${chain.name}), tell me when it's there, and I'll run the full $${buyUsd}.${inflightSuffix}`,
+                `Or top up USDC or ETH on Base, Ethereum, or Arbitrum (or ${rhStable.symbol} on ${chain.name}), tell me when it's there, and I'll run the full $${buyUsd}.${inflightSuffix}`,
               clarify: {
                 question: `Run the size your wallet covers?`,
                 options: [...downsized.chips, { label: 'Not now', resume: 'Never mind — leave my funds where they are.' }],
@@ -2929,7 +2929,7 @@ async function prepareSwapTurn(intent: SwapIntent, walletAddress: string | undef
           reply:
             `🌉 Here's where this stands: ${acquiring ? 'you asked for' : 'the buy needs'} ~$${buyUsd} of ${rhStable.symbol} on ${chain.name} and the wallet holds ~$${holdingUsd.toFixed(2)} there. ` +
             `Across the chains I can bridge from I see: ${advice.copy} — not enough yet for the ~$${needUsd} plan${includeGas ? ' (gas leg included)' : ''}. ` +
-            `Here's what unlocks it: top up USDC on Base, Ethereum, or Arbitrum (or ${rhStable.symbol} on ${chain.name}), tell me when it's there, and I'll pick it up from that point — nothing was built or spent in the meantime.${inflightSuffix}`,
+            `Here's what unlocks it: top up USDC or ETH on Base, Ethereum, or Arbitrum (or ${rhStable.symbol} on ${chain.name}), tell me when it's there, and I'll pick it up from that point — nothing was built or spent in the meantime.${inflightSuffix}`,
           workingContext: pendingFunding,
         })
       } else if (acquiring) {

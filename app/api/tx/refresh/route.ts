@@ -68,11 +68,11 @@ export async function POST(req: NextRequest) {
     const usd = typeof body.usd === 'string' && /^[0-9]+(\.[0-9]+)?$/.test(body.usd) ? Number(body.usd) : null
     // Origin chain the leg leaves from — pre-origin recipes omit it (Base).
     const origin = typeof body.origin === 'string' && /^[0-9]+$/.test(body.origin) ? Number(body.origin) : 8453
-    // Origin-side sell stable — pre-token recipes omit it (native USDC). A
+    // Origin-side sell asset — pre-token recipes omit it (native USDC). A
     // token that's present but unrecognized must NOT silently rebuild as
     // USDC (that re-quotes a different sell token than the recipe's).
     const token = typeof body.token === 'string' ? body.token : undefined
-    if (token !== undefined && !/^usdc(\.?e)?$/i.test(token)) {
+    if (token !== undefined && !/^(usdc(\.?e)?|eth)$/i.test(token)) {
       return NextResponse.json({ error: `unknown funding token "${token.slice(0, 20)}"` }, { status: 400 })
     }
     if (!from || !leg || !usd) {

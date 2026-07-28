@@ -88,6 +88,16 @@ export function fundingAltUsdcFor(chainId: number): { symbol: string; address: `
  *  approve + bridge pair must be payable, or the chip is a wall later.
  *  Mainnet's floor is real L1 gas; the L2 floors are cents. */
 const ORIGIN_MIN_GAS_ETH: Record<number, number> = { 1: 0.002, 8453: 0.00003, 42161: 0.00003 }
+/** ETH kept back on an origin when ETH itself is the sell side — the leg's
+ *  own signature (and one more after it) must stay payable once the value
+ *  leaves. Mirrors lib/funding-plan's GAS_RESERVE_ETH. ETH became a funding
+ *  source 2026-07-28: the most common stranger wallet holds ETH and no
+ *  stables, and the flagship stock buy answered it "no USDC on Base,
+ *  Ethereum, or Arbitrum" — real money, invisible. LiFi routes native ETH →
+ *  USDG and → gas ETH from all three origins through the SAME canonical
+ *  diamond as the USDC legs (probed live 2026-07-28: across /
+ *  relaydepository, value = fromAmount exactly, 1–2s). */
+export const ORIGIN_ETH_KEEPBACK: Record<number, number> = { 1: 0.002, 8453: 0.0002, 42161: 0.0002 }
 
 /** Dollars converted to native ETH on Robinhood Chain for gas — ~0.0008 ETH,
  *  enough for many Orbit-chain transactions (observed live: $2 → 0.00105). */
@@ -199,6 +209,11 @@ export interface LifiBridgeExpectations {
   sellAtoms: bigint
   destinationToken: string
   from: string
+  /** Set (= sellAtoms) when the sell side is native ETH: the value rides as
+   *  msg.value on the ONE bridge step — no approval exists, and the value
+   *  must equal the sold amount exactly. Absent/0 = ERC-20 mode (every step
+   *  zero-value). */
+  nativeSellAtoms?: bigint
 }
 
 /** Echo check on the raw quote — the quote must restate OUR intent exactly.
@@ -224,20 +239,33 @@ export function verifyLifiBridgeEcho(
   } catch {
     reasons.push('The bridge carries an unreadable native value — refusing.')
   }
-  if (value !== BigInt(0)) reasons.push('The bridge carries native value — an ERC-20 input must not send ETH.')
+  const expectedValue = exp.nativeSellAtoms ?? BigInt(0)
+  if (value !== expectedValue) {
+    reasons.push(
+      expectedValue > BigInt(0)
+        ? 'The bridge does not carry exactly the sold ETH as native value — refusing.'
+        : 'The bridge carries native value — an ERC-20 input must not send ETH.',
+    )
+  }
   return reasons
 }
 
 /** Verify the assembled step chain: exact-amount approval to the allowlisted
- *  diamond, the bridge call addressed only to it, zero native value, origin
- *  chain only. Inner calldata is aggregator-opaque by design — pinning +
- *  price sanity + the sign-time estimateGas gate stand in for byte-decoding. */
+ *  diamond, the bridge call addressed only to it, zero native value (or —
+ *  native-ETH legs — exactly the sold amount on the single bridge step),
+ *  origin chain only. Inner calldata is aggregator-opaque by design —
+ *  pinning + price sanity + the sign-time estimateGas gate stand in for
+ *  byte-decoding. */
 export function guardLifiBridgeBuild(steps: LifiBridgeStep[], exp: LifiBridgeExpectations): { ok: boolean; reasons: string[] } {
   const reasons: string[] = []
   if (exp.routers.length === 0) return { ok: false, reasons: ['No LiFi bridge router allowlist for the origin chain — refusing.'] }
   const eqAddr = (a?: string, b?: string) => !!a && !!b && a.toLowerCase() === b.toLowerCase()
   if (!exp.routers.some((r) => eqAddr(r, exp.approvalAddress))) {
     reasons.push('The quoted approvalAddress is not on the pinned LiFi bridge allowlist — refusing.')
+  }
+  const nativeAtoms = exp.nativeSellAtoms ?? BigInt(0)
+  if (nativeAtoms > BigInt(0) && steps.length !== 1) {
+    return { ok: false, reasons: ['A native-ETH leg must be a single bridge step — no approval belongs in it.'] }
   }
   if (steps.length < 1 || steps.length > 2) {
     return { ok: false, reasons: [`Expected 1–2 steps (approve? → bridge), got ${steps.length}.`] }
@@ -246,7 +274,14 @@ export function guardLifiBridgeBuild(steps: LifiBridgeStep[], exp: LifiBridgeExp
   const approvals = steps.slice(0, -1)
   for (const step of steps) {
     if (step.tx.chainId !== exp.originChainId) reasons.push(`A step targets chain ${step.tx.chainId}, not the origin chain ${exp.originChainId}.`)
-    if (BigInt(step.tx.value || '0') !== BigInt(0)) reasons.push('Every step must carry zero native value.')
+    const expectValue = step === bridge ? nativeAtoms : BigInt(0)
+    if (BigInt(step.tx.value || '0') !== expectValue) {
+      reasons.push(
+        expectValue > BigInt(0)
+          ? 'The bridge step must carry exactly the sold ETH as native value — refusing.'
+          : 'Every step must carry zero native value.',
+      )
+    }
   }
   for (const step of approvals) {
     if (!eqAddr(step.tx.to, exp.sellToken)) {
@@ -314,44 +349,64 @@ export async function buildLifiBridgeLeg(params: { leg: FundingLeg; usd: number;
   const destClient = publicClientFor(ROBINHOOD_CHAIN_ID)
   if (!originClient || !destClient) throw new Error('No RPC client configured for the funding route.')
 
-  // The origin-side sell stable: native USDC unless the recipe pinned a
-  // registry-known bridged variant. Normalized so 'usdc.e'/'USDCE' both land.
+  // The origin-side sell asset: native USDC unless the recipe pinned a
+  // registry-known bridged variant ('USDC.e') or native ETH ('ETH', sold by
+  // value — probed live 2026-07-28, same canonical diamond as the stable
+  // legs). Normalized so 'usdc.e'/'USDCE' both land.
   const tokenKey = (params.token ?? 'USDC').toUpperCase().replace(/[^A-Z]/g, '')
-  let usdc: { symbol: string; address: `0x${string}`; decimals: number }
+  const nativeSell = tokenKey === 'ETH'
+  let sell: { symbol: string; address: `0x${string}`; decimals: number }
   if (tokenKey === 'USDC') {
     const native = origin.tokens.USDC
     if (!native) throw new Error(`${origin.name} has no USDC in the chain registry.`)
-    usdc = { symbol: 'USDC', ...native }
+    sell = { symbol: 'USDC', ...native }
   } else if (tokenKey === 'USDCE') {
     const alt = fundingAltUsdcFor(originId)
     if (!alt) throw new Error(`${origin.name} has no registry-known USDC.e to fund from.`)
-    usdc = alt
+    sell = alt
+  } else if (nativeSell) {
+    sell = { symbol: 'ETH', address: NATIVE_TOKEN, decimals: 18 }
   } else {
-    throw new Error(`"${params.token}" isn't a supported funding token — USDC or USDC.e only.`)
+    throw new Error(`"${params.token}" isn't a supported funding token — USDC, USDC.e, or ETH only.`)
   }
   const usdg = primaryStable(ROBINHOOD_CHAIN_ID)!
-  const sellAtoms = BigInt(Math.round(params.usd * 10 ** usdc.decimals))
+  // Stables are the $1 unit; an ETH sell sizes at build time off Yeetful's
+  // own venue-quoter read, so a chip minted yesterday still moves today's
+  // right amount of ETH.
+  let sellAtoms: bigint
+  if (nativeSell) {
+    const probe = await usdPerToken(8453, 'ETH').catch(() => null)
+    if (!probe) throw new Error("Couldn't price ETH to size the funding leg — try again in a moment.")
+    sellAtoms = parseEther((params.usd / probe.usd).toFixed(8))
+  } else {
+    sellAtoms = BigInt(Math.round(params.usd * 10 ** sell.decimals))
+  }
   const gasLeg = params.leg === 'gas'
   const destinationToken = gasLeg ? NATIVE_TOKEN : usdg.address
   const destSymbol = gasLeg ? 'ETH' : usdg.symbol
   const destDecimals = gasLeg ? 18 : usdg.decimals
 
-  // Funding must actually be fundable — read the origin USDC balance up front.
-  const usdcBalance = await originClient.readContract({ address: usdc.address, abi: erc20Abi, functionName: 'balanceOf', args: [from] })
-  const funded = usdcBalance >= sellAtoms
+  // Funding must actually be fundable — read the origin balance up front.
+  // A native sell must also clear the keep-back: the leg's own signature
+  // (and one more) stays payable after the value leaves.
+  const keepbackWei = nativeSell ? parseEther(String(ORIGIN_ETH_KEEPBACK[originId] ?? 0.002)) : BigInt(0)
+  const sellBalance = nativeSell
+    ? await originClient.getBalance({ address: from })
+    : await originClient.readContract({ address: sell.address, abi: erc20Abi, functionName: 'balanceOf', args: [from] })
+  const funded = sellBalance >= sellAtoms + keepbackWei
   const balanceCheck: GuardrailCheck = {
     id: 'balance',
     level: 'block',
     ok: funded,
     note: funded
-      ? `The wallet holds ${formatAtoms(usdcBalance.toString(), usdc.decimals)} ${usdc.symbol} on ${origin.name} — covered.`
-      : `Insufficient ${usdc.symbol} on ${origin.name}: this leg needs $${params.usd} but the wallet holds ${formatAtoms(usdcBalance.toString(), usdc.decimals)}.`,
+      ? `The wallet holds ${formatAtoms(sellBalance.toString(), sell.decimals)} ${sell.symbol} on ${origin.name} — covered${nativeSell ? ' (gas keep-back included)' : ''}.`
+      : `Insufficient ${sell.symbol} on ${origin.name}: this leg needs $${params.usd}${nativeSell ? ' plus a gas keep-back' : ''} but the wallet holds ${formatAtoms(sellBalance.toString(), sell.decimals)}.`,
   }
 
   const quote = await fetchLifiQuote({
     chainId: originId,
     toChainId: ROBINHOOD_CHAIN_ID,
-    sellAddr: usdc.address,
+    sellAddr: sell.address,
     buyAddr: destinationToken,
     swapAtoms: sellAtoms,
     from,
@@ -363,21 +418,25 @@ export async function buildLifiBridgeLeg(params: { leg: FundingLeg; usd: number;
     destinationChainId: ROBINHOOD_CHAIN_ID,
     routers,
     approvalAddress: quote.estimate.approvalAddress,
-    sellToken: usdc.address,
+    sellToken: sell.address,
     sellAtoms,
     destinationToken,
     from,
+    ...(nativeSell ? { nativeSellAtoms: sellAtoms } : {}),
   }
   const echoReasons = verifyLifiBridgeEcho(quote, exp)
 
   const toAmountMin = BigInt(quote.estimate.toAmountMin)
   const validUntil = Math.floor(Date.now() / 1000) + LIFI_QUOTE_TTL_SEC
 
-  // Price sanity. USDG leg: dollar→dollar, min-out floor in the same 6-dec
-  // unit. Gas leg: value the guaranteed ETH against our own venue-quoter
-  // ETH/USD read (fail-soft — a dead probe warns instead of blocking).
+  // Price sanity. Stable USDG leg: dollar→dollar, min-out floor in the same
+  // 6-dec unit. ETH-sold USDG leg: the sell was sized off Yeetful's own
+  // ETH/USD read, so the guaranteed USDG (≈ dollars) must land within the
+  // priced-leg tolerance of the ask. Gas leg: value the guaranteed ETH
+  // against our own venue-quoter ETH/USD read (fail-soft — a dead probe
+  // warns instead of blocking).
   let priceCheck: GuardrailCheck
-  if (!gasLeg) {
+  if (!gasLeg && !nativeSell) {
     const floor = (sellAtoms * BigInt(STABLE_LEG_MIN_OUT_BPS)) / BigInt(10_000)
     const ok = toAmountMin >= floor
     priceCheck = {
@@ -387,6 +446,17 @@ export async function buildLifiBridgeLeg(params: { leg: FundingLeg; usd: number;
       note: ok
         ? `Guaranteed ≥ ${formatAtoms(toAmountMin.toString(), destDecimals)} ${destSymbol} for $${params.usd} — within ${(10_000 - STABLE_LEG_MIN_OUT_BPS) / 100}% of dollar parity.`
         : `The route guarantees only ${formatAtoms(toAmountMin.toString(), destDecimals)} ${destSymbol} for $${params.usd} — more than ${(10_000 - STABLE_LEG_MIN_OUT_BPS) / 100}% below dollar parity, refusing a bad fill.`,
+    }
+  } else if (!gasLeg) {
+    const minOutUsd = Number(toAmountMin) / 10 ** destDecimals
+    const ok = minOutUsd >= params.usd * (GAS_LEG_MIN_OUT_BPS / 10_000)
+    priceCheck = {
+      id: 'price',
+      level: 'block',
+      ok,
+      note: ok
+        ? `Guaranteed ≥ ${formatAtoms(toAmountMin.toString(), destDecimals)} ${destSymbol} for $${params.usd} of ETH (sized at Yeetful's own on-chain read).`
+        : `The route guarantees only ~$${minOutUsd.toFixed(2)} of ${destSymbol} for $${params.usd} of ETH — more than ${(10_000 - GAS_LEG_MIN_OUT_BPS) / 100}% short of Yeetful's own on-chain read, refusing.`,
     }
   } else {
     const probe = await usdPerToken(ROBINHOOD_CHAIN_ID, 'ETH').catch(() => null)
@@ -406,23 +476,26 @@ export async function buildLifiBridgeLeg(params: { leg: FundingLeg; usd: number;
     }
   }
 
-  // Allowance → optional exact-amount approval step.
+  // Allowance → optional exact-amount approval step. Native ETH rides as
+  // msg.value on the bridge call itself — no allowance exists to read.
   const approvalAddress = quote.estimate.approvalAddress as `0x${string}`
   let allowance = BigInt(0)
-  try {
-    allowance = await originClient.readContract({ address: usdc.address, abi: erc20Abi, functionName: 'allowance', args: [from, approvalAddress] })
-  } catch {
-    allowance = BigInt(0)
+  if (!nativeSell) {
+    try {
+      allowance = await originClient.readContract({ address: sell.address, abi: erc20Abi, functionName: 'allowance', args: [from, approvalAddress] })
+    } catch {
+      allowance = BigInt(0)
+    }
   }
-  const needsApprove = allowance < sellAtoms
+  const needsApprove = !nativeSell && allowance < sellAtoms
 
   const steps: LifiBridgeStep[] = []
   if (needsApprove) {
     steps.push({
       label: 'approve',
-      title: `Approve ${formatAtoms(sellAtoms.toString(), usdc.decimals)} ${usdc.symbol} to LiFi`,
+      title: `Approve ${formatAtoms(sellAtoms.toString(), sell.decimals)} ${sell.symbol} to LiFi`,
       tx: {
-        to: usdc.address,
+        to: sell.address,
         data: encodeFunctionData({ abi: erc20Abi, functionName: 'approve', args: [approvalAddress, sellAtoms] }),
         value: '0',
         chainId: originId,
@@ -434,12 +507,12 @@ export async function buildLifiBridgeLeg(params: { leg: FundingLeg; usd: number;
   steps.push({
     label: 'bridge',
     title: gasLeg
-      ? `Bridge $${params.usd} ${usdc.symbol} → gas ETH on ${destination.name} (via ${quote.tool})`
-      : `Bridge $${params.usd} ${usdc.symbol} → ${destSymbol} on ${destination.name} (via ${quote.tool})`,
+      ? `Bridge $${params.usd} ${sell.symbol} → gas ETH on ${destination.name} (via ${quote.tool})`
+      : `Bridge $${params.usd} ${sell.symbol} → ${destSymbol} on ${destination.name} (via ${quote.tool})`,
     tx: {
       to: quote.transactionRequest.to,
       data: quote.transactionRequest.data,
-      value: '0',
+      value: nativeSell ? sellAtoms.toString() : '0',
       chainId: originId,
       action: 'bridge',
     },
@@ -497,8 +570,8 @@ export async function buildLifiBridgeLeg(params: { leg: FundingLeg; usd: number;
   const guardrails = buildReport(params.usd, checks, violation ? { violation, valueUsd: params.usd, host: LIFI_POLICY_HOST } : null)
 
   const summary = gasLeg
-    ? `Bridge $${params.usd} of ${origin.name} ${usdc.symbol} → ~${formatAtoms(toAmountMin.toString(), 18)} ETH on ${destination.name} for gas (LiFi-routed, tool: ${quote.tool}) — arrives in seconds, delivered to your own address.`
-    : `Bridge $${params.usd} of ${origin.name} ${usdc.symbol} → ≥ ${formatAtoms(toAmountMin.toString(), destDecimals)} ${destSymbol} on ${destination.name} (LiFi-routed, tool: ${quote.tool}) — arrives in seconds, delivered to your own address.`
+    ? `Bridge $${params.usd} of ${origin.name} ${sell.symbol} → ~${formatAtoms(toAmountMin.toString(), 18)} ETH on ${destination.name} for gas (LiFi-routed, tool: ${quote.tool}) — arrives in seconds, delivered to your own address.`
+    : `Bridge $${params.usd} of ${origin.name} ${sell.symbol} → ≥ ${formatAtoms(toAmountMin.toString(), destDecimals)} ${destSymbol} on ${destination.name} (LiFi-routed, tool: ${quote.tool}) — arrives in seconds, delivered to your own address.`
 
   return {
     summary,
@@ -517,13 +590,19 @@ export interface FundingOrigin {
   chainId: number
   /** The chain word chip resumes use ("Base", "Ethereum", "Arbitrum"). */
   word: string
-  /** The $1 token held there — 'USDC', or a registry-known bridged variant
-   *  ('USDC.e' on Arbitrum). One FundingOrigin row per (chain, token). */
+  /** The token held there — 'USDC', a registry-known bridged variant
+   *  ('USDC.e' on Arbitrum), or 'ETH' (native, sold by value). One
+   *  FundingOrigin row per (chain, token). */
   token: string
-  /** Whole dollars of that token there (floored). */
+  /** Whole dollars of that token there (floored; ETH rows price the
+   *  MOVABLE balance — the keep-back never counts as buying power). */
   usd: number
   /** Native ETH held there — how a gas-stranded sibling finds a donor. */
   gasEth: number
+  /** ETH rows only: true when the balance clears the keep-back and can be
+   *  planned. False = a named-only row (real money under the floor) that
+   *  refusals must mention but no chip may spend. */
+  spendable?: boolean
 }
 
 /** Chip-label qualifier: "Base" for native USDC, "Arbitrum USDC.e" when the
@@ -535,13 +614,15 @@ export interface FundingShortfall {
   usdgAtoms: bigint
   /** True when the wallet can already pay Orbit gas. */
   hasGas: boolean
-  /** Origins holding signable USDC, richest first. */
+  /** Origins the plan may spend — stables first (dollar-parity legs), then
+   *  movable ETH; richest first within each group. */
   origins: FundingOrigin[]
-  /** Origins holding USDC the wallet CANNOT sign with — no ETH there for the
-   *  approve + bridge pair. Dropping these silently made the product claim
-   *  "no USDC anywhere" while $12 sat on Arbitrum (live 2026-07-21) — the
-   *  user had just bridged it in and burned their last origin gas doing so.
-   *  Money the user owns is never invisible; it's named, with the fix. */
+  /** Origins holding money the wallet CANNOT move — USDC with no ETH there
+   *  for the approve + bridge pair, or ETH under its own keep-back.
+   *  Dropping these silently made the product claim "no USDC anywhere"
+   *  while $12 sat on Arbitrum (live 2026-07-21) — the user had just
+   *  bridged it in and burned their last origin gas doing so. Money the
+   *  user owns is never invisible; it's named, with the fix. */
   gaslessOrigins: FundingOrigin[]
   /** Every origin that scanned cleanly, any balance — a chain with ETH but
    *  no USDC still matters (it can donate gas to a stranded sibling). */
@@ -552,19 +633,26 @@ export interface FundingShortfall {
 }
 
 /** The balance reads that decide whether a Robinhood Chain buy needs the
- *  funding plan: USDG + native ETH there, then USDC (and gas-to-sign) on
- *  every funding origin — Base, Ethereum, and Arbitrum, not just Base
- *  (live 2026-07-17: $15 of Ethereum USDC was invisible and a $5 buy hit
- *  a wall). Throws only when the ROBINHOOD reads fail — those decide the
- *  whole plan; a failed origin lands in failedOrigins instead. */
+ *  funding plan: USDG + native ETH there, then USDC, USDC.e, and movable
+ *  ETH (and gas-to-sign) on every funding origin — Base, Ethereum, and
+ *  Arbitrum, not just Base (live 2026-07-17: $15 of Ethereum USDC was
+ *  invisible and a $5 buy hit a wall; 2026-07-28: ETH-only wallets — the
+ *  most common stranger state — were refused with "no USDC anywhere").
+ *  Throws only when the ROBINHOOD reads fail — those decide the whole
+ *  plan; a failed origin lands in failedOrigins instead. */
 export async function readFundingShortfall(user: string): Promise<FundingShortfall> {
   const from = user as `0x${string}`
   const rh = publicClientFor(ROBINHOOD_CHAIN_ID)
   if (!rh) throw new Error('missing RPC client')
   const usdg = primaryStable(ROBINHOOD_CHAIN_ID)!
-  const [usdgAtoms, nativeWei] = await Promise.all([
+  // ETH price for the ETH rows — fail-soft: unpriceable ETH just means no
+  // ETH rows this scan (the USDC rows are untouched), never a thrown plan.
+  const [usdgAtoms, nativeWei, ethUsd] = await Promise.all([
     rh.readContract({ address: usdg.address, abi: erc20Abi, functionName: 'balanceOf', args: [from] }),
     rh.getBalance({ address: from }),
+    usdPerToken(8453, 'ETH')
+      .then((p) => p?.usd ?? null)
+      .catch(() => null),
   ])
   const allScanned: FundingOrigin[] = []
   const failedOrigins: string[] = []
@@ -588,18 +676,31 @@ export async function readFundingShortfall(user: string): Promise<FundingShortfa
         // row above already carries the chain's donor-gas signal.
         const altUsd = alt ? Math.floor(Number(altAtoms) / 10 ** alt.decimals) : 0
         if (alt && altUsd > 0) allScanned.push({ chainId, word, token: alt.symbol, usd: altUsd, gasEth })
+        // ETH as buying power: movable = balance minus the keep-back that
+        // keeps the wallet signable after the leg. Real ETH under the floor
+        // becomes a NAMED row (spendable: false) — refusals must say it,
+        // chips must never spend it.
+        if (ethUsd) {
+          const movableUsd = Math.floor((gasEth - (ORIGIN_ETH_KEEPBACK[chainId] ?? 0.002)) * ethUsd)
+          if (movableUsd > 0) allScanned.push({ chainId, word, token: 'ETH', usd: movableUsd, gasEth, spendable: true })
+          else if (Math.floor(gasEth * ethUsd) >= 1) allScanned.push({ chainId, word, token: 'ETH', usd: Math.floor(gasEth * ethUsd), gasEth, spendable: false })
+        }
       } catch {
         failedOrigins.push(word)
       }
     }),
   )
-  allScanned.sort((a, b) => b.usd - a.usd)
+  // Stables lead (dollar-parity legs, no spread), ETH follows; richest
+  // first within each group. The chip planner picks the FIRST origin that
+  // covers, so a $3 USDC row never forces a combine past a $500 ETH row.
+  allScanned.sort((a, b) => (a.token === 'ETH' ? 1 : 0) - (b.token === 'ETH' ? 1 : 0) || b.usd - a.usd)
   const signable = (o: FundingOrigin) => o.gasEth >= (ORIGIN_MIN_GAS_ETH[o.chainId] ?? 0.002)
+  const movable = (o: FundingOrigin) => (o.token === 'ETH' ? o.spendable === true : signable(o))
   return {
     usdgAtoms,
     hasGas: nativeWei >= RH_GAS_FLOOR_WEI,
-    origins: allScanned.filter((o) => o.usd > 0 && signable(o)),
-    gaslessOrigins: allScanned.filter((o) => o.usd > 0 && !signable(o)),
+    origins: allScanned.filter((o) => o.usd > 0 && movable(o)),
+    gaslessOrigins: allScanned.filter((o) => o.usd > 0 && !movable(o)),
     allScanned,
     failedOrigins,
   }
@@ -635,7 +736,10 @@ export function planRobinhoodFundingChips(params: {
   const { origins, needUsd, gasIncluded, followup } = params
   const withFollowup = (segs: string[]) => (followup ? `${segs.join(', then ')}, then ${followup}` : segs.join(', then '))
   const chips: RobinhoodFundingChip[] = []
-  const best = origins[0]
+  // The FIRST covering origin leads — origins arrive stables-first, so a
+  // dust USDC row never forces a combine past an ETH balance that covers
+  // the whole plan on its own.
+  const best = origins.find((o) => o.usd >= needUsd)
   if (best && best.usd >= needUsd) {
     chips.push({ label: `Just enough (~$${needUsd} from ${originLabel(best)})`, resume: withFollowup([fundSegment(needUsd, best.word, gasIncluded, best.token)]) })
     // Half/all only when they're sensible whole-balance moves — a $15k
@@ -714,8 +818,10 @@ export function planRobinhoodFundingAdvice(params: {
   const chips = planRobinhoodFundingChips({ origins: scan.origins, needUsd, gasIncluded, followup })
   if (chips) return { kind: 'chips', chips }
 
-  // Gas-stranded rescue: the richest gasless origin covering the need.
-  const stranded = scan.gaslessOrigins.find((o) => o.usd >= needUsd) ?? null
+  // Gas-stranded rescue: the richest gasless STABLE origin covering the
+  // need. ETH rows never land here — sub-keep-back ETH IS the (missing)
+  // gas, so "send gas to unstick it" would be nonsense advice.
+  const stranded = scan.gaslessOrigins.find((o) => o.token !== 'ETH' && o.usd >= needUsd) ?? null
   if (stranded) {
     // A donor origin can sign there AND part with the topup: its own signing
     // floor, the leg itself, and 50% headroom so the donation never leaves
@@ -761,8 +867,17 @@ export function planRobinhoodFundingAdvice(params: {
   const parts: string[] = []
   const held = [...scan.origins, ...scan.gaslessOrigins].sort((a, b) => b.usd - a.usd)
   if (held.length > 0)
-    parts.push(held.map((o) => `~$${o.usd} of ${o.token} on ${o.word}${scan.gaslessOrigins.includes(o) ? ' (no ETH there to sign with)' : ''}`).join(', '))
-  else parts.push('no USDC on Base, Ethereum, or Arbitrum')
+    parts.push(
+      held
+        .map(
+          (o) =>
+            `~$${o.usd} of ${o.token} on ${o.word}${
+              scan.gaslessOrigins.includes(o) ? (o.token === 'ETH' ? ' (under what a move from there costs)' : ' (no ETH there to sign with)') : ''
+            }`,
+        )
+        .join(', '),
+    )
+  else parts.push('no USDC or ETH on Base, Ethereum, or Arbitrum')
   if (scan.failedOrigins.length > 0) parts.push(`couldn't check ${scan.failedOrigins.join(' or ')}`)
   return { kind: 'none', copy: parts.join('; ') }
 }
