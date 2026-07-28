@@ -3,7 +3,8 @@
  * costless audits (audit-asks.ts replays surfaced example asks through it;
  * audit-funding.ts replays funding-chip resume strings). Mirrors
  * app/api/chat/route.ts gate ORDER (vote → aave → dca → jobs → guardian →
- * lido → hyperliquid → robinhood bridge → nft → transfer →
+ * lido → hyperliquid → robinhood bridge → nft (gallery → market → build) →
+ * transfer →
  * swap/cross-chain) with the working set assumed to be ALL free MCPs
  * (usable), no chain picker, no pending context. Route-level gating that
  * needs live data (stock-list warm, balances) is approximated — this
@@ -18,7 +19,7 @@ import { parseGuardianArm } from '../lib/hl-guardian'
 import { isLidoGuidedAsk, parseLidoStake } from '../lib/lido-stake'
 import { parseHlIntent } from '../lib/hyperliquid-exec'
 import { parseRobinhoodBridge } from '../lib/robinhood-bridge'
-import { mentionsNft, parseNftAsk } from '../lib/nft-layer'
+import { mentionsNft, parseNftAsk, parseNftListAsk, parseNftMarketAsk } from '../lib/nft-layer'
 import { parseTransferSegment } from '../lib/transfer-exec'
 import { parseSwapIntent, detectCrossChain } from '../lib/swap-intent'
 import { parseCrossChainSwap } from '../lib/cross-chain-swap'
@@ -72,6 +73,11 @@ export function simulateLadder(message: string): Outcome {
   if (rb) return 'problem' in rb ? { gate: 'rh-bridge', kind: 'clarify', note: rb.problem } : { gate: 'rh-bridge', kind: 'action' }
 
   if (mentionsNft(message)) {
+    // The READ half runs first in the route (gallery, then the market reads),
+    // and both always answer with a live artifact — never a clarify.
+    if (parseNftListAsk(message)) return { gate: 'nft-gallery', kind: 'action', note: 'wallet gallery read' }
+    const nftMarket = parseNftMarketAsk(message)
+    if (nftMarket) return { gate: 'nft-market', kind: 'action', note: nftMarket.kind }
     const nft = parseNftAsk(message)
     if (nft) return nft.kind === 'problem' ? { gate: 'nft', kind: 'clarify', note: (nft as { problem?: string }).problem } : { gate: 'nft', kind: 'action', note: nft.kind }
   }

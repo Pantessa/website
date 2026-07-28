@@ -63,6 +63,9 @@ export function classifyTurn(body: Record<string, unknown> | null): TurnClassifi
     // The native NFT gallery: a real wallet read whose rows are one tap from
     // a sell/transfer build — an answer, not a wall.
     !!(body.nfts && typeof body.nfts === 'object') ||
+    // The NFT market reads (floors + value estimate, live bids) — same: a
+    // real read whose rows are one tap from a listing build.
+    !!(body.nftMarket && typeof body.nftMarket === 'object') ||
     !!(body.clarify && typeof body.clarify === 'object')
   if (actionable) return { kind: null }
   if (body.blocked) return { kind: 'blocked' }

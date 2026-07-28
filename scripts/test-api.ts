@@ -52,11 +52,12 @@ import { isDbChatId } from '../lib/chat-ids'
 import { usdToTokenAmount } from '../lib/usd-probe'
 import { parseRobinhoodBridge, guardRobinhoodBridge, RH_L1_INBOX, ARB_SYS } from '../lib/robinhood-bridge'
 import { parseNftAsk, parseOpenSeaItemUrl, guardNftTransfer, ERC721_ABI as NFT_ERC721_ABI, ERC1155_ABI as NFT_ERC1155_ABI } from '../lib/nft-layer'
-import { parseNftListAsk, parseNftTransferFollowUp, nftTransferPending, nftAskFromPending } from '../lib/nft-layer'
+import { parseNftListAsk, parseNftMarketAsk, parseNftTransferFollowUp, nftTransferPending, nftAskFromPending } from '../lib/nft-layer'
 import { nftGalleryChains, nftRowActions } from '../lib/nft-gallery'
-import { nftGalleryOf } from '../lib/nft-display'
+import { groupCollections, marketReplyCopy, offersDisplay, valuationDisplay } from '../lib/nft-market'
+import { nftGalleryOf, nftMarketOf } from '../lib/nft-display'
 import { getProtocolMark, YeetfulMark } from '../components/protocol-marks'
-import { splitListingPrice, buildListingComponents, guardListingComponents, openseaAssetUrl, SEAPORT_1_6, guardBuyFulfillment, fulfillmentToCalldata, normalizeOpenseaListing, collectionSlugCandidates } from '../lib/opensea'
+import { splitListingPrice, buildListingComponents, guardListingComponents, openseaAssetUrl, SEAPORT_1_6, guardBuyFulfillment, fulfillmentToCalldata, normalizeOpenseaListing, normalizeOpenseaOffer, collectionSlugCandidates } from '../lib/opensea'
 import { keccak256, stringToBytes, decodeFunctionData, parseAbi } from 'viem'
 import { isCacheable, routeCacheKey, getCached, setCached, clearRouteCache } from '../lib/route-cache'
 import { routeSavings } from '../lib/route-telemetry'
@@ -5407,6 +5408,273 @@ async function main() {
   check(
     'nft gallery turn: the read counts as actionable (never logged as a wall)',
     classifyTurn({ reply: 'x', nfts: { owner: '0x1', nfts: [] }, buildPath: 'native-nft-gallery' }).kind === null,
+  )
+  // ── The MARKET reads. The gallery gate refuses market questions so it
+  // never answers the wrong one — which left the OpenSea splash tile's own
+  // two chips falling to the planner ("I can't check real-time floor
+  // prices"). Both halves of that split are pinned here.
+  const nftWorthAsk = parseNftMarketAsk('What are my NFTs worth right now — check the floor prices of my collections on OpenSea?')
+  const nftOffersAsk = parseNftMarketAsk('Are there any offers on the NFTs I own?')
+  check(
+    'nft market parse: BOTH OpenSea splash chips are claimed, each by the right read',
+    !!nftWorthAsk && nftWorthAsk.kind === 'worth' && !!nftOffersAsk && nftOffersAsk.kind === 'offers',
+    JSON.stringify({ nftWorthAsk, nftOffersAsk }),
+  )
+  // The two gates share one vocabulary: every word the gallery refuses as
+  // "market" must land in the market gate. A word in neither is exactly how
+  // these asks reached the planner, so the coverage is checked word by word.
+  const marketWords = ['offer', 'offers', 'bid', 'bids', 'floor', 'floors', 'worth', 'price', 'prices', 'value', 'valuation']
+  check(
+    'nft market parse: no market word falls between the gallery gate and this one',
+    marketWords.every((w) => {
+      const m = `what is the ${w} of my nfts`
+      return parseNftListAsk(m) === null && parseNftMarketAsk(m) !== null
+    }),
+    marketWords.filter((w) => parseNftMarketAsk(`what is the ${w} of my nfts`) === null).join(',') || 'all covered',
+  )
+  check(
+    'nft market parse: an explicit bid word wins over a co-occurring "worth"',
+    parseNftMarketAsk('what are my NFTs worth — are there any offers?')?.kind === 'offers',
+  )
+  const nftWorthChain = parseNftMarketAsk('what are my nfts worth on base?')
+  check('nft market parse: a named chain scopes the read', !!nftWorthChain && nftWorthChain.chainId === 8453, JSON.stringify(nftWorthChain))
+  check(
+    'nft market parse: build asks, ONE named NFT, and non-NFT asks fall through',
+    parseNftMarketAsk('sell my Pudgy Penguin #2489 for 4.2 ETH') === null &&
+      parseNftMarketAsk('what is my Pudgy Penguin #2489 worth?') === null &&
+      parseNftMarketAsk('what is the floor price of pudgy penguins?') === null &&
+      parseNftMarketAsk('buy the cheapest milady nft') === null &&
+      parseNftMarketAsk('what is my portfolio worth?') === null &&
+      parseNftMarketAsk('what are my tokens worth right now?') === null,
+  )
+  // The valuation math: only what we actually priced lands in the total, and
+  // a collection with no floor is COUNTED as unpriced rather than as zero.
+  const marketSample = (collection: string, chainLabel: string, identifier: string) => ({
+    collection,
+    chainLabel,
+    chainId: chainLabel === 'Base' ? 8453 : 1,
+    identifier,
+    contract: '0x3333333333333333333333333333333333333333',
+    name: 'Pudgy Penguin',
+    token_standard: 'erc721',
+  })
+  const worthGroups = groupCollections([
+    marketSample('pudgy-penguins', 'Ethereum', '1'),
+    marketSample('pudgy-penguins', 'Ethereum', '2'),
+    marketSample('pudgy-penguins', 'Base', '3'),
+    marketSample('unlisted-thing', 'Ethereum', '9'),
+  ] as never)
+  check(
+    'nft worth: grouping is per collection PER CHAIN (different markets, different floors)',
+    worthGroups.length === 3 && worthGroups[0].count === 2 && worthGroups[0].chainLabel === 'Ethereum',
+    JSON.stringify(worthGroups.map((g) => `${g.key}=${g.count}`)),
+  )
+  check(
+    'nft worth: ties break deterministically (the lookup cap must pick the SAME collections twice)',
+    (() => {
+      const shuffled = groupCollections([
+        marketSample('unlisted-thing', 'Ethereum', '9'),
+        marketSample('pudgy-penguins', 'Base', '3'),
+        marketSample('pudgy-penguins', 'Ethereum', '1'),
+        marketSample('pudgy-penguins', 'Ethereum', '2'),
+      ] as never)
+      return shuffled.map((g) => g.key).join() === worthGroups.map((g) => g.key).join()
+    })(),
+    JSON.stringify(worthGroups.map((g) => g.key)),
+  )
+  const worthDisplay = valuationDisplay({
+    owner: '0x1111111111111111111111111111111111111111',
+    chains: ['Ethereum', 'Base'],
+    failedChains: [],
+    groups: worthGroups,
+    floors: new Map([
+      ['Ethereum:pudgy-penguins', 4],
+      ['Base:pudgy-penguins', 1.5],
+      ['Ethereum:unlisted-thing', null],
+    ]),
+    ethUsd: 3000,
+    found: 4,
+    collectionsFound: 3,
+  })
+  check(
+    'nft worth: the total sums ONLY priced collections (2×4 + 1×1.5), unpriced counted not zeroed',
+    worthDisplay.total === '≈ 9.5 ETH' && worthDisplay.unpriced === 1 && /28\.5K|\$28/.test(worthDisplay.totalNote ?? ''),
+    JSON.stringify({ total: worthDisplay.total, note: worthDisplay.totalNote, unpriced: worthDisplay.unpriced }),
+  )
+  check(
+    'nft worth: an unpriced collection still renders, and says it is out of the total',
+    worthDisplay.rows.length === 3 &&
+      worthDisplay.rows.every((r) => typeof r.value === 'string') &&
+      /not counted/i.test(worthDisplay.rows.find((r) => r.name === 'unlisted thing')?.note ?? ''),
+    JSON.stringify(worthDisplay.rows.map((r) => `${r.name}:${r.value}`)),
+  )
+  // Every value leaves the reader PRE-FORMATTED (the splash tile contract —
+  // a raw number where a string was expected once crashed /chat).
+  check(
+    'nft worth: a row Sell chip round-trips parseNftAsk at the collection floor',
+    (() => {
+      const resume = parseNftAsk(worthDisplay.rows[0].actions?.[0].prompt ?? '')
+      return !!resume && resume.kind === 'sell' && resume.priceEth === '4' && resume.chainId === 1
+    })(),
+    JSON.stringify(worthDisplay.rows[0].actions),
+  )
+  check(
+    'nft worth: the Sell label stays short (a collection name in it wrecked the row layout)',
+    worthDisplay.rows.every((r) => (r.actions?.[0].label.length ?? 0) <= 10),
+    JSON.stringify(worthDisplay.rows.map((r) => r.actions?.[0].label)),
+  )
+  check(
+    'nft worth: an all-unpriced wallet gets NO total (never a fabricated zero)',
+    (() => {
+      const none = valuationDisplay({
+        owner: '0x1', chains: ['Ethereum'], failedChains: [], groups: worthGroups.slice(2),
+        floors: new Map([['Ethereum:unlisted-thing', null]]), ethUsd: 3000, found: 1, collectionsFound: 1,
+      })
+      return none.total === null && none.totalNote === null && none.unpriced === 1
+    })(),
+  )
+  // Offers: the normalizer is fail-closed on the LIVE payload shape (probed
+  // 2026-07-28 — collection bids are WETH-priced criteria orders whose NFT
+  // leg sits in the consideration).
+  const rawOffer = {
+    order_hash: '0x079fe4ba',
+    chain: 'ethereum',
+    protocol_address: SEAPORT_1_6.toLowerCase(),
+    price: { currency: 'WETH', decimals: 18, value: '100000000000000' },
+    asset: { identifier: null, contract: '0x22c1f6050e56d2876009903609a2cc3fef83b415' },
+    criteria: { contract: { address: '0x22c1f6050e56d2876009903609a2cc3fef83b415' }, encoded_token_ids: '*' },
+    protocol_data: { parameters: { endTime: '1785224495', consideration: [{ itemType: 4, token: '0x22c1f6050e56d2876009903609a2cc3fef83b415', identifierOrCriteria: '0' }] } },
+  }
+  const offer = normalizeOpenseaOffer(rawOffer)
+  check(
+    'nft offers: a live WETH collection bid normalizes (and is marked collection-wide)',
+    !!offer && offer.priceWei === BigInt('100000000000000') && offer.collectionWide === true && offer.tokenId === null && offer.chainId === 1,
+    JSON.stringify(offer, (_k, v) => (typeof v === 'bigint' ? v.toString() : v)),
+  )
+  check(
+    'nft offers: the normalizer fails closed (wrong protocol, zero price, no contract)',
+    normalizeOpenseaOffer({ ...rawOffer, protocol_address: '0x000000000000000000000000000000000000dead' }) === null &&
+      normalizeOpenseaOffer({ ...rawOffer, price: { currency: 'WETH', decimals: 18, value: '0' } }) === null &&
+      normalizeOpenseaOffer({ ...rawOffer, price: { currency: 'USDC', decimals: 6, value: '100' } }) === null &&
+      normalizeOpenseaOffer({ ...rawOffer, criteria: undefined, asset: undefined, protocol_data: undefined }) === null &&
+      normalizeOpenseaOffer(null) === null,
+  )
+  const offersDisp = offersDisplay({
+    owner: '0x1111111111111111111111111111111111111111',
+    chains: ['Ethereum'],
+    failedChains: [],
+    checked: [
+      { group: groupCollections([marketSample('quiet-thing', 'Ethereum', '2489')] as never)[0], offer: null },
+      { group: groupCollections([marketSample('pudgy-penguins', 'Ethereum', '77')] as never)[0], offer: { ...offer!, priceWei: BigInt('300000000000000000') } },
+    ],
+    ethUsd: 3000,
+    found: 9,
+    collectionsFound: 5,
+  })
+  check(
+    'nft offers: bids lead, the best one is the headline, un-bid collections counted not hidden',
+    offersDisp.total === 'best 0.3 ETH' &&
+      offersDisp.rows.length === 2 &&
+      offersDisp.rows[0].value === '0.3 ETH' &&
+      offersDisp.rows[1].value === 'no bids' &&
+      offersDisp.unpriced === 1 &&
+      offersDisp.found === 9 &&
+      // a CAPPED read never reads as a complete one
+      offersDisp.scanned === '9 NFTs · 2 of 5 collections',
+    JSON.stringify({ total: offersDisp.total, rows: offersDisp.rows.map((r) => `${r.name}:${r.value}`), unpriced: offersDisp.unpriced }),
+  )
+  check(
+    'nft offers: only a bid row gets an action, and it lists AT the bid (round-trips parseNftAsk)',
+    (() => {
+      const resume = parseNftAsk(offersDisp.rows[0].actions?.[0].prompt ?? '')
+      return !!resume && resume.kind === 'sell' && resume.priceEth === '0.3' && (offersDisp.rows[1].actions ?? []).length === 0
+    })(),
+    JSON.stringify(offersDisp.rows[0].actions),
+  )
+  // The reply SENTENCE makes claims about money, so every variant is pinned
+  // here rather than left inline in the route where nothing can reach it.
+  check(
+    'nft market copy: the worth sentence carries the total and names what is NOT in it',
+    (() => {
+      const s = marketReplyCopy(worthDisplay, 'Ethereum and Base', '', '')
+      return s.includes('≈ 9.5 ETH') && /1 collection has no floor/.test(s) && /not a bid/.test(s)
+    })(),
+    marketReplyCopy(worthDisplay, 'Ethereum and Base', '', ''),
+  )
+  check(
+    'nft market copy: nothing priced → NO number, and it points at the read that can give one',
+    (() => {
+      const none = { ...worthDisplay, total: null, totalNote: null, unpriced: 3, found: 7 }
+      const s = marketReplyCopy(none, 'Ethereum', '', '')
+      return !/ETH/.test(s) && /7 NFTs/.test(s) && /offers/i.test(s)
+    })(),
+    marketReplyCopy({ ...worthDisplay, total: null, totalNote: null, unpriced: 3, found: 7 }, 'Ethereum', '', ''),
+  )
+  check(
+    'nft market copy: an all-failed read says UNKNOWN, never "you have none"',
+    (() => {
+      const dead = { ...worthDisplay, rows: [], chains: ['Ethereum', 'Base'], failedChains: ['Ethereum', 'Base'] }
+      const s = marketReplyCopy(dead, 'Ethereum and Base', '', 'Ethereum or Base')
+      return /didn't answer/.test(s) && !/No NFTs/.test(s)
+    })(),
+    marketReplyCopy({ ...worthDisplay, rows: [], chains: ['Ethereum', 'Base'], failedChains: ['Ethereum', 'Base'] }, 'Ethereum and Base', '', 'Ethereum or Base'),
+  )
+  check(
+    'nft market copy: the offers sentence agrees with the count and admits we cannot accept a bid',
+    (() => {
+      const one = marketReplyCopy(offersDisp, 'Ethereum', '', '')
+      const zero = marketReplyCopy({ ...offersDisp, total: null, unpriced: 2 }, 'Ethereum', '', '')
+      return /1 of the 2 collections you hold on Ethereum has a live bid/.test(one) && /can't accept a bid/.test(one) && /No live bids/.test(zero)
+    })(),
+    marketReplyCopy(offersDisp, 'Ethereum', '', ''),
+  )
+  // A market payload survives the meta round-trip the chat message makes.
+  check(
+    'nft market: the display contract reads back off message meta (and rejects malformed)',
+    (() => {
+      const back = nftMarketOf({ nftMarket: worthDisplay })
+      return (
+        !!back &&
+        back.kind === 'worth' &&
+        back.rows.length === 3 &&
+        nftMarketOf({ nftMarket: { owner: '0x1', rows: [], kind: 'nope' } }) === null &&
+        // values are STRINGS by contract — a raw number is a producer bug
+        nftMarketOf({ nftMarket: { owner: '0x1', kind: 'worth', rows: [{ name: 'x', detail: 'y', value: 12 }] } })?.rows.length === 0
+      )
+    })(),
+  )
+  // The turns themselves: BOTH chips must come back with the read attached —
+  // the exact repro that opened this lane (a bare "I can't browse OpenSea").
+  for (const [label, ask, kind] of [
+    ['worth', 'What are my NFTs worth right now — check the floor prices of my collections on OpenSea?', 'native-nft-worth'],
+    ['offers', 'Are there any offers on the NFTs I own?', 'native-nft-offers'],
+  ] as const) {
+    const turn = await fetch(`${BASE}/api/chat`, {
+      method: 'POST', headers: { 'content-type': 'application/json', 'x-yf-no-ask-log': '1' },
+      body: JSON.stringify({ message: ask, activeServers: [], walletAddress: '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045' }),
+    }).then((r) => r.json())
+    check(
+      `nft market turn: the "${label}" splash chip answers with the read, never a planner shrug`,
+      !!turn.nftMarket &&
+        Array.isArray(turn.nftMarket.rows) &&
+        turn.nftMarket.rows.length > 0 &&
+        turn.buildPath === kind &&
+        !/can't\s+(?:browse|check|query)|visit\s+opensea/i.test(turn.reply ?? ''),
+      JSON.stringify({ buildPath: turn.buildPath, reply: (turn.reply ?? '').slice(0, 160), rows: turn.nftMarket?.rows?.length }),
+    )
+  }
+  const nftMarketNoWallet = await fetch(`${BASE}/api/chat`, {
+    method: 'POST', headers: { 'content-type': 'application/json', 'x-yf-no-ask-log': '1' },
+    body: JSON.stringify({ message: 'Are there any offers on the NFTs I own?', activeServers: [] }),
+  }).then((r) => r.json())
+  check(
+    'nft market turn: no wallet asks to connect (never a planner shrug)',
+    nftMarketNoWallet.connectWallet === true && nftMarketNoWallet.buildPath === 'native-nft-offers',
+    JSON.stringify(nftMarketNoWallet).slice(0, 200),
+  )
+  check(
+    'nft market turn: the read counts as actionable (never logged as a wall)',
+    classifyTurn({ reply: 'x', nftMarket: { owner: '0x1', rows: [] }, buildPath: 'native-nft-worth' }).kind === null,
   )
   // Buy asks: resolve against live listings; the grammar reads #id targets,
   // "cheapest" collection buys, and an explicit ETH cap — and never claims

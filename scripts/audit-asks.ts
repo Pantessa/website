@@ -109,7 +109,15 @@ const CORPUS: Entry[] = [
   { ask: 'Set a stop-loss on my Hyperliquid ETH position at -5%', source: 'retired house link /i/stop-loss (row stays live)', expect: 'action' },
   { ask: 'I want a 2X Long $12 of HYPE on Hyperliquid, then protect my HYPE long with a 5% stop', source: 'house link /i/protected-long (pure intent — funding auto-offered, 2x set venue-side)', expect: 'action' },
   { ask: 'Long $12 of HYPE on Hyperliquid, then protect my HYPE long with a 5% stop', source: 'retired house-link phrasing (row history / shared links)', expect: 'action' },
-  { ask: 'Show my NFTs', source: 'house link /i/my-nfts', expect: 'planner' },
+  // The NFT READS — each answers with a live OpenSea artifact (website#573
+  // for the gallery, this PR for the two market chips that fell through to
+  // "I can't check real-time floor prices").
+  { ask: 'Show my NFTs', source: 'house link /i/my-nfts', expect: 'action' },
+  {
+    ask: 'What are my NFTs worth right now — check the floor prices of my collections on OpenSea?',
+    source: 'splash/opensea chip', expect: 'action',
+  },
+  { ask: 'Are there any offers on the NFTs I own?', source: 'splash/opensea chip', expect: 'action' },
   { ask: 'Swap 5 USDC from Base to Arbitrum', source: 'house link /i/bridge-usdc', expect: 'action' },
   { ask: 'Buy $5 of AAPL', source: 'onboarding checklist', expect: 'action' },
   { ask: 'Swap $1 worth of ETH to USDC on Base', source: 'dashboard charts + docs', expect: 'action' },

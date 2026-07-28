@@ -204,6 +204,90 @@ export async function fetchBestListingForNft(slug: string, tokenId: string): Pro
   }
 }
 
+// ── Offer reads (the "what am I being bid?" anchor) ────────────────────────
+// Offers are WETH-denominated (a native-ETH bid can't be escrowed), and the
+// best offer on a token is usually a COLLECTION-wide bid — one order whose
+// criteria cover every id in the collection. Both facts are why offers get
+// their own normalizer instead of reusing the listing one, which rejects
+// WETH on purpose (a WETH-priced order is a bid, not a fixed-price listing).
+
+/** A live OpenSea offer, normalized to the fields an answer can stand on. */
+export interface OpenseaOffer {
+  orderHash: string
+  chainId: number
+  /** GROSS bid in wei (18-decimal WETH/ETH) — what OpenSea displays. The
+   *  seller nets this minus the order's fee legs. */
+  priceWei: bigint
+  /** The NFT contract being bid on. */
+  contract: string
+  /** The token id when the bid names ONE item; null for a collection bid. */
+  tokenId: string | null
+  /** True when the bid covers any token in the collection (criteria order). */
+  collectionWide: boolean
+  /** Unix seconds the bid expires, or null when unreadable. */
+  endTime: number | null
+}
+
+/** Seaport criteria item types — a consideration leg of either type means the
+ *  order is a collection/trait bid, not a bid on one named token. */
+const SEAPORT_CRITERIA_TYPES = [4, 5]
+
+/**
+ * Normalize a raw OpenSea offer order — null (never a guess) unless it's a
+ * Seaport-1.6, 18-decimal WETH/ETH bid naming the NFT contract. Pure; the
+ * harness pins the shape offline against the live payloads probed
+ * 2026-07-28 (collection bids on poap-v2 / pudgypenguins).
+ */
+export function normalizeOpenseaOffer(raw: unknown): OpenseaOffer | null {
+  const o = raw as {
+    order_hash?: string
+    chain?: string
+    protocol_address?: string
+    price?: { currency?: string; decimals?: number; value?: string }
+    asset?: { identifier?: string | null; contract?: string }
+    criteria?: { contract?: { address?: string }; encoded_token_ids?: string | null }
+    protocol_data?: { parameters?: { endTime?: string | number; consideration?: { itemType?: number; token?: string; identifierOrCriteria?: string | number }[] } }
+  } | null
+  if (!o?.order_hash || !o.chain) return null
+  const chainId = openseaChainIdOf(o.chain)
+  if (!chainId) return null
+  if (o.protocol_address && o.protocol_address.toLowerCase() !== SEAPORT_1_6.toLowerCase()) return null
+  const cur = o.price
+  // Bids are escrowed ERC-20 — WETH in practice; a native-ETH "offer" would
+  // be a listing read by the wrong endpoint, so it's refused here.
+  if (!cur?.value || !/^W?ETH$/i.test(cur.currency ?? '') || (cur.decimals ?? 18) !== 18) return null
+  let priceWei: bigint
+  try {
+    priceWei = BigInt(cur.value)
+  } catch {
+    return null
+  }
+  if (priceWei <= BigInt(0)) return null
+  // The NFT leg sits in the consideration (the offerer offers WETH and asks
+  // for the NFT) — cross-checked against the criteria/asset contract.
+  const nftLeg = o.protocol_data?.parameters?.consideration?.find((c) => c.itemType === 2 || c.itemType === 3 || SEAPORT_CRITERIA_TYPES.includes(c.itemType ?? -1))
+  const contract = o.criteria?.contract?.address ?? o.asset?.contract ?? nftLeg?.token
+  if (!contract || !/^0x[0-9a-fA-F]{40}$/.test(contract)) return null
+  const collectionWide = o.criteria?.encoded_token_ids === '*' || SEAPORT_CRITERIA_TYPES.includes(nftLeg?.itemType ?? -1)
+  const assetId = typeof o.asset?.identifier === 'string' && o.asset.identifier ? o.asset.identifier : null
+  const endRaw = o.protocol_data?.parameters?.endTime
+  const endTime = endRaw != null && Number.isFinite(Number(endRaw)) ? Number(endRaw) : null
+  return { orderHash: o.order_hash, chainId, priceWei, contract, tokenId: collectionWide ? null : assetId, collectionWide, endTime }
+}
+
+/** Best (highest) live offer on ONE NFT, or null when nobody's bidding.
+ *  OpenSea answers this with the collection-wide bid when that's the best
+ *  one available — which is the honest answer to "can I sell it now?". */
+export async function fetchBestOfferForNft(slug: string, tokenId: string): Promise<OpenseaOffer | null> {
+  try {
+    // 404 = "No offers found for NFT …" (the common case) — osGet throws it.
+    const d = await osGet(`/offers/collection/${slug}/nfts/${encodeURIComponent(tokenId)}/best`)
+    return normalizeOpenseaOffer(d)
+  } catch {
+    return null
+  }
+}
+
 /** Cheapest live listing across a collection, or null. */
 export async function fetchCheapestListing(slug: string): Promise<OpenseaListing | null> {
   try {

@@ -64,6 +64,38 @@ export function nftRowActions(n: { name: string | null; identifier: string }, ch
   ]
 }
 
+/** One owned NFT with the chain it was read on. */
+export type OwnedNft = OpenseaNft & { chainLabel: string; chainId: number }
+
+export interface OwnedScan {
+  /** Everything the scan saw, most recently active first. */
+  owned: OwnedNft[]
+  /** Chains whose read THREW — unknown, never "nothing there". */
+  failedChains: string[]
+}
+
+/**
+ * The wallet's NFTs across the given chains, newest activity first. The one
+ * scan behind every NFT read — the gallery ("show my NFTs") and the market
+ * answers (floors, offers) all start here, so they can never disagree about
+ * what the wallet holds. Never throws.
+ */
+export async function scanOwnedNfts(address: string, chainIds: { id: number; label: string }[], perChain: number): Promise<OwnedScan> {
+  const owned: OwnedNft[] = []
+  const failedChains: string[] = []
+  await Promise.all(
+    chainIds.map(async ({ id, label }) => {
+      try {
+        for (const n of await fetchOwnedNfts(id, address, perChain)) owned.push({ ...n, chainLabel: label, chainId: id })
+      } catch {
+        failedChains.push(label)
+      }
+    }),
+  )
+  owned.sort((a, b) => (b.updated_at ?? '').localeCompare(a.updated_at ?? ''))
+  return { owned, failedChains }
+}
+
 export interface NftGalleryOptions {
   /** Chains to scan (default: all three). */
   chainIds?: { id: number; label: string }[]
@@ -87,18 +119,7 @@ export async function readNftGallery(address: string, opts: NftGalleryOptions = 
   const max = opts.max ?? 6
   const floorCollections = opts.floorCollections ?? 3
 
-  const owned: (OpenseaNft & { chainLabel: string; chainId: number })[] = []
-  const failedChains: string[] = []
-  await Promise.all(
-    chainIds.map(async ({ id, label }) => {
-      try {
-        for (const n of await fetchOwnedNfts(id, address, perChain)) owned.push({ ...n, chainLabel: label, chainId: id })
-      } catch {
-        failedChains.push(label)
-      }
-    }),
-  )
-  owned.sort((a, b) => (b.updated_at ?? '').localeCompare(a.updated_at ?? ''))
+  const { owned, failedChains } = await scanOwnedNfts(address, chainIds, perChain)
   const top = owned.slice(0, max)
 
   const collections = [...new Set(top.map((n) => n.collection))].slice(0, floorCollections)

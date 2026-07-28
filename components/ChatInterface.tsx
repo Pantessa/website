@@ -22,9 +22,10 @@ import SendTxButton from '@/components/SendTxButton'
 import SendTxChain from '@/components/SendTxChain'
 import { orderRequestOf, txRequestOf, txChainOf } from '@/lib/transaction-layer'
 import { portfolioOf } from '@/lib/portfolio-display'
-import { nftGalleryOf } from '@/lib/nft-display'
+import { nftGalleryOf, nftMarketOf } from '@/lib/nft-display'
 import PortfolioCard from '@/components/PortfolioCard'
 import NftGalleryCard from '@/components/NftGalleryCard'
+import NftMarketCard from '@/components/NftMarketCard'
 import VoteChoiceButtons from '@/components/VoteChoiceButtons'
 import VoteCandidates from '@/components/VoteCandidates'
 import ClarifyChips from '@/components/ClarifyChips'
@@ -131,7 +132,7 @@ function MintLinkTurn({ ask, mcpsCsv }: { ask: string; mcpsCsv: string }) {
   )
 }
 
-function buildMeta(receipts: unknown, payer: unknown, voteRequest: unknown, voteCandidates?: unknown, routeReport?: unknown, routerTrace?: unknown, voteProposal?: unknown, orderRequest?: unknown, guardrails?: unknown, txRequest?: unknown, workingContext?: unknown, txChain?: unknown, clarify?: unknown, connectWallet?: unknown, connectAsk?: string, portfolio?: unknown, buildPath?: unknown, jobId?: unknown, guardianPolicyId?: unknown, jobToken?: unknown, nfts?: unknown) {
+function buildMeta(receipts: unknown, payer: unknown, voteRequest: unknown, voteCandidates?: unknown, routeReport?: unknown, routerTrace?: unknown, voteProposal?: unknown, orderRequest?: unknown, guardrails?: unknown, txRequest?: unknown, workingContext?: unknown, txChain?: unknown, clarify?: unknown, connectWallet?: unknown, connectAsk?: string, portfolio?: unknown, buildPath?: unknown, jobId?: unknown, guardianPolicyId?: unknown, jobToken?: unknown, nfts?: unknown, nftMarket?: unknown) {
   const meta: Record<string, unknown> = {}
   if (Array.isArray(receipts) && receipts.length) {
     meta.receipts = receipts
@@ -176,6 +177,9 @@ function buildMeta(receipts: unknown, payer: unknown, voteRequest: unknown, vote
   // The native NFT gallery read — NftGalleryCard draws the wallet's NFTs (with
   // their Sell / Transfer prompts) under the reply.
   if (nfts && typeof nfts === 'object') meta.nfts = nfts
+  // The native NFT market read — NftMarketCard draws collection floors + a
+  // value estimate, or the live bids, under the reply.
+  if (nftMarket && typeof nftMarket === 'object') meta.nftMarket = nftMarket
   // The ask needs a transaction but no wallet is connected — the client
   // renders a Connect-wallet button and re-runs `connectAsk` once one lands.
   if (connectWallet === true) {
@@ -790,7 +794,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
         addMessage(chatId, {
           role: 'assistant',
           content: data.reply || data.error || 'No response.',
-          meta: buildMeta(data.receipts, data.payer, data.voteRequest, data.voteCandidates, undefined, undefined, data.voteProposal, data.orderRequest, data.guardrails, data.txRequest, data.workingContext, data.txChain, data.clarify, data.connectWallet, userMsg, data.portfolio, data.buildPath, data.jobId, data.guardianPolicyId, data.jobToken, data.nfts),
+          meta: buildMeta(data.receipts, data.payer, data.voteRequest, data.voteCandidates, undefined, undefined, data.voteProposal, data.orderRequest, data.guardrails, data.txRequest, data.workingContext, data.txChain, data.clarify, data.connectWallet, userMsg, data.portfolio, data.buildPath, data.jobId, data.guardianPolicyId, data.jobToken, data.nfts, data.nftMarket),
         })
         // A standing intent was born this turn (job / DCA schedule / guardian
         // policy): the JobCard renders inline, AND the rail flips to Jobs so
@@ -1495,6 +1499,13 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
                         // the reply, each row one tap from a sell or transfer.
                         const g = nftGalleryOf(msg.meta)
                         return g ? <NftGalleryCard data={g} onPick={(prompt) => runExample(prompt)} /> : null
+                      })()}
+                    {msg.role === 'assistant' &&
+                      (() => {
+                        // The native NFT market read — collection floors + a
+                        // value estimate, or the live bids, with Sell chips.
+                        const m = nftMarketOf(msg.meta)
+                        return m ? <NftMarketCard data={m} onPick={(prompt) => runExample(prompt)} /> : null
                       })()}
                     {msg.role === 'assistant' && <MessageReceipts meta={msg.meta} />}
                     {msg.role === 'assistant' && <RouteReport meta={msg.meta} />}

@@ -101,6 +101,7 @@ async function main() {
         'connectWallet',
         'portfolio',
         'nfts',
+        'nftMarket',
         'guardrails',
       ].find((k) => body[k] !== undefined && body[k] !== null)
       ok = res.status === 200 && !!artifact
