@@ -76,6 +76,7 @@ import { buildFundsDetail, classifyTurn, FAILURE_PROBE_TOKENS, moneyShaped } fro
 import { canonicalChainWord, normalizeChainWords } from '../lib/chain-lexicon'
 import { decideFundingTurn, detectBalanceShortfall, fundingPlanUsd, planFundingChips, planStrandedRescue, rankFundingSources, shortRefusalCopy, softenClaimedFailureBlock, type FundingNeed, type FundingSource } from '../lib/funding-plan'
 import { compileDcaBuy, dcaRunChip, parseDcaCreate, parseDcaManage, parseDcaRun, periodKeyFor } from '../lib/dca'
+import { briefingNeedsCount, briefingTile, composeBriefingItems, type BriefingInputs, type BriefingPosition } from '../lib/briefing'
 import {
   buildDcaSpendPermission,
   guardAutoBuy,
@@ -7482,6 +7483,132 @@ async function main() {
       'panel swap: USDC→ETH builds the chat-identical txChain OR the spend policy refuses (same gate as chat)',
       builtOk || policyBlocked,
       !(builtOk || policyBlocked) ? JSON.stringify(q).slice(0, 160) : policyBlocked ? 'policy refused — gate live' : '',
+    )
+  }
+
+  // ── Wallet briefing (pure composer — the "what Yeetful noticed" tile) ─────
+  console.log('— wallet briefing')
+  {
+    const pos = (over: Partial<BriefingPosition> = {}): BriefingPosition => ({
+      coin: 'ETH', side: 'long', positionValueUsd: 412.5, unrealizedPnl: 12.4, leverage: 4, ...over,
+    })
+    const empty: BriefingInputs = { positions: [], protectedCoins: [], funding: null, aave: null, failed: [] }
+
+    // Unprotected position → the loud row, chip round-trips parseGuardianArm.
+    const naked = composeBriefingItems({ ...empty, positions: [pos()] })
+    const nakedChip = naked[0]?.actions?.[0]
+    const nakedArm = nakedChip ? parseGuardianArm(nakedChip.prompt) : null
+    check(
+      'briefing: unprotected position → neg row + guardian chip that round-trips',
+      naked.length === 1 && naked[0].tone === 'neg' && !!nakedArm && nakedArm.coin === 'ETH' && nakedArm.kind === 'stop_loss' && nakedArm.triggerValue === 10,
+      JSON.stringify(naked).slice(0, 200),
+    )
+    // Protected position → quiet pos row, NO chip (active guardian never nags).
+    const guarded = composeBriefingItems({ ...empty, positions: [pos()], protectedCoins: ['eth'] })
+    check(
+      'briefing: protected position → pos row, no actions (case-insensitive join)',
+      guarded.length === 1 && guarded[0].tone === 'pos' && !guarded[0].actions,
+    )
+    // Dust positions never surface.
+    check('briefing: dust position filtered', composeBriefingItems({ ...empty, positions: [pos({ positionValueUsd: 5 })] }).length === 0)
+
+    const fundingBase = { readChains: ['Base', 'Arbitrum', 'Ethereum'], failedChains: [] as string[] }
+    // Stranded USDC with an L2 ETH donor → unstick chip round-trips the
+    // cross-chain parser; mainnet-only donors never chip (the #551 lesson).
+    const stuck = composeBriefingItems({
+      ...empty,
+      funding: {
+        ...fundingBase,
+        sources: [{ chainId: 8453, chainWord: 'Base', token: 'ETH', balance: 0.004, usd: 7.5 }],
+        stranded: [{ chainId: 42161, chainWord: 'Arbitrum', token: 'USDC', balance: 12, usd: 12 }],
+      },
+    })
+    const stuckChip = stuck.find((r) => /stuck/.test(r.label))?.actions?.[0]
+    const cc = stuckChip ? parseCrossChainSwap(stuckChip.prompt) : null
+    check(
+      'briefing: stranded USDC + L2 donor → unstick chip round-trips (base → arbitrum)',
+      !!cc && !('problem' in cc) && cc.originChain === 'base' && cc.destinationChain === 'arbitrum',
+      stuckChip ? stuckChip.prompt : 'no chip',
+    )
+    const stuckMainnetDonor = composeBriefingItems({
+      ...empty,
+      funding: {
+        ...fundingBase,
+        sources: [{ chainId: 1, chainWord: 'Ethereum', token: 'ETH', balance: 0.01, usd: 19 }],
+        stranded: [{ chainId: 42161, chainWord: 'Arbitrum', token: 'USDC', balance: 12, usd: 12 }],
+      },
+    })
+    check(
+      'briefing: mainnet-only donor → stranded named but never chipped',
+      stuckMainnetDonor.length === 1 && !stuckMainnetDonor[0].actions,
+    )
+    // Stranded ETH is the missing gas itself — named honestly, never
+    // chipped, never a neg nag (the #551 "said out loud" rule); dust ETH
+    // isn't even named.
+    const stuckEth = composeBriefingItems({
+      ...empty,
+      funding: { ...fundingBase, sources: [], stranded: [{ chainId: 1, chainWord: 'Ethereum', token: 'ETH', balance: 0.0018, usd: 3.45 }] },
+    })
+    check(
+      'briefing: sub-floor mainnet ETH → honest "not worth moving", no chip, no nag',
+      stuckEth.length === 1 && !stuckEth[0].actions && stuckEth[0].tone === undefined && /not worth moving/.test(stuckEth[0].value ?? ''),
+      JSON.stringify(stuckEth).slice(0, 160),
+    )
+    check('briefing: dust stranded ETH not even named', composeBriefingItems({
+      ...empty,
+      funding: { ...fundingBase, sources: [], stranded: [{ chainId: 42161, chainWord: 'Arbitrum', token: 'ETH', balance: 0.0004, usd: 0.8 }] },
+    }).length === 0)
+    // Mainnet-stranded USDC: the ~$8 unstick only pays for a real balance —
+    // $12 gets named without a chip, $40 gets the 0.004 ETH donor leg.
+    const mainnetStuckSmall = composeBriefingItems({
+      ...empty,
+      funding: { ...fundingBase, sources: [{ chainId: 8453, chainWord: 'Base', token: 'ETH', balance: 0.004, usd: 7.5 }], stranded: [{ chainId: 1, chainWord: 'Ethereum', token: 'USDC', balance: 12, usd: 12 }] },
+    })
+    const mainnetStuckBig = composeBriefingItems({
+      ...empty,
+      funding: { ...fundingBase, sources: [{ chainId: 8453, chainWord: 'Base', token: 'ETH', balance: 0.004, usd: 7.5 }], stranded: [{ chainId: 1, chainWord: 'Ethereum', token: 'USDC', balance: 40, usd: 40 }] },
+    })
+    const bigChip = mainnetStuckBig[0]?.actions?.[0]
+    const bigCc = bigChip ? parseCrossChainSwap(bigChip.prompt) : null
+    check(
+      'briefing: mainnet unstick gated on balance — $12 named only, $40 chips 0.004 ETH base→ethereum',
+      mainnetStuckSmall.length === 1 && !mainnetStuckSmall[0].actions &&
+        !!bigCc && !('problem' in bigCc) && bigCc.amount === '0.004' && bigCc.originChain === 'base' && bigCc.destinationChain === 'ethereum',
+      bigChip ? bigChip.prompt : 'no chip',
+    )
+    // Idle USDC → soft chips, both round-tripping their parsers, chain named.
+    const idle = composeBriefingItems({
+      ...empty,
+      funding: { ...fundingBase, sources: [{ chainId: 8453, chainWord: 'Base', token: 'USDC', balance: 180, usd: 180 }], stranded: [] },
+    })
+    const dcaChip = idle[0]?.actions?.[0]
+    const swapChip = idle[0]?.actions?.[1]
+    const swapIntent = swapChip ? parseSwapIntent(swapChip.prompt) : null
+    check(
+      'briefing: idle USDC → DCA + swap chips that round-trip (swap names the chain)',
+      idle.length === 1 && !!dcaChip && !!parseDcaCreate(dcaChip.prompt) &&
+        !!swapIntent && swapIntent.isSwap && !swapIntent.problem && swapIntent.sellToken === 'USDC' && /on Base/i.test(swapChip!.prompt),
+      JSON.stringify(idle[0]?.actions).slice(0, 160),
+    )
+    check('briefing: dust USDC never reads as idle', composeBriefingItems({
+      ...empty,
+      funding: { ...fundingBase, sources: [{ chainId: 8453, chainWord: 'Base', token: 'USDC', balance: 10, usd: 10 }], stranded: [] },
+    }).length === 0)
+    // Aave HF drift only with live debt; healthy or debt-free stays silent.
+    check(
+      'briefing: HF < 1.5 with debt → neg row; no debt or healthy HF → silent',
+      composeBriefingItems({ ...empty, aave: { healthFactor: 1.2, hasBorrows: true } }).length === 1 &&
+        composeBriefingItems({ ...empty, aave: { healthFactor: 1.2, hasBorrows: false } }).length === 0 &&
+        composeBriefingItems({ ...empty, aave: { healthFactor: 2.1, hasBorrows: true } }).length === 0,
+    )
+    // Nothing noticed → NO tile (affinity contract), and the headline counts
+    // only the rows that need the user.
+    check('briefing: zero items → null tile, never an empty card', briefingTile([]) === null)
+    const tile = briefingTile(composeBriefingItems({ ...empty, positions: [pos(), pos({ coin: 'SYRUP', positionValueUsd: 80 })], protectedCoins: ['SYRUP'] }))
+    check(
+      'briefing: tile headline counts neg rows only',
+      !!tile && tile.headline?.value === '1 needs you' && tile.rows.length === 2 && briefingNeedsCount(tile.rows) === 1,
+      JSON.stringify(tile?.headline),
     )
   }
 

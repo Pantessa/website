@@ -7,6 +7,7 @@ import type { RowsTile, StatRow, SuggestedPrompt } from '@/lib/splash/types'
 import { chainByKey } from '@/lib/chains'
 import { listDcaSchedules } from '@/lib/dca-exec'
 import { cadenceLabel, dcaRunChip, periodPhrase } from '@/lib/dca'
+import { briefingTileFor } from '@/lib/briefing-exec'
 
 /** The wallet's recurring buys as a rows tile — due periods lead with their
  *  one-tap chip (the resume-string contract from lib/dca.ts). Env-fenced in
@@ -110,13 +111,19 @@ export async function POST(req: Request) {
     // No/invalid wallet → no splash (caller falls back to the normal empty state).
     return NextResponse.json({ address: '', tiles: [] })
   }
-  // Recurring buys aren't an MCP — the tile rides on the wallet alone, so a
-  // due period surfaces even before any server card resolves.
-  const dcaTile = await dcaTileFor(address)
+  // Wallet-alone tiles (no MCP behind them): the briefing ("what Yeetful
+  // noticed" — unprotected positions, stranded/idle funds, HF drift) leads,
+  // then recurring buys — so what NEEDS the user surfaces even before any
+  // server card resolves. Both fail-soft in parallel.
+  const [briefTile, dcaTile] = await Promise.all([
+    briefingTileFor(address).catch(() => null),
+    dcaTileFor(address),
+  ])
+  const walletTiles = [...(briefTile ? [briefTile] : []), ...(dcaTile ? [dcaTile] : [])]
   const slugs = [
     ...new Set((Array.isArray(body.servers) ? body.servers : []).map((s) => s?.slug).filter((s): s is string => !!s)),
   ]
-  if (slugs.length === 0) return NextResponse.json({ address, tiles: dcaTile ? [dcaTile] : [] })
+  if (slugs.length === 0) return NextResponse.json({ address, tiles: walletTiles })
   // MCPs the user explicitly toggled on — these always paint a card (a
   // preview when the wallet has no activity). Only honored for slugs that are
   // in the requested set anyway; this flag can't conjure extra servers.
@@ -173,8 +180,8 @@ export async function POST(req: Request) {
       .filter((s): s is SplashServer => s !== null)
 
     const tiles = await buildSplash(address, resolved, chain)
-    return NextResponse.json({ address, tiles: dcaTile ? [dcaTile, ...tiles] : tiles })
+    return NextResponse.json({ address, tiles: [...walletTiles, ...tiles] })
   } catch (err) {
-    return NextResponse.json({ address, tiles: dcaTile ? [dcaTile] : [], error: err instanceof Error ? err.message : 'splash failed' })
+    return NextResponse.json({ address, tiles: walletTiles, error: err instanceof Error ? err.message : 'splash failed' })
   }
 }
