@@ -67,7 +67,7 @@ import { jobContextFor } from '../lib/job-context'
 import { crossChainAgentOf, detectCrossChain, swapWorkingContext } from '../lib/swap-intent'
 import { encodeV4SwapCalldata, guardUniswapV4Build, type V4BuiltStep, type V4GuardExpectations, type V4PoolKey } from '../lib/uniswap-v4'
 import { guardLifiBuild, verifyLifiQuoteEcho, lifiPriceAcceptable, lifiRoutersFor, type LifiBuiltStep, type LifiGuardExpectations, type LifiQuote } from '../lib/lifi-venue'
-import { FUNDING_ALT_USDC, fundingAltUsdcFor, fundingNeedUsd, GAS_TOPUP_ETH, guardLifiBridgeBuild, lifiBridgeRoutersFor, parseRhFundingFollowUp, planDownsizedRobinhoodBuy, planRobinhoodFundingAdvice, planRobinhoodFundingChips, rhFundingPending, robinhoodBuyNeedUsd, verifyLifiBridgeEcho, type FundingOrigin, type LifiBridgeExpectations, type LifiBridgeStep } from '../lib/lifi-bridge'
+import { clampNativeSellAtoms, FUNDING_ALT_USDC, fundingAltUsdcFor, fundingNeedUsd, GAS_TOPUP_ETH, guardLifiBridgeBuild, lifiBridgeRoutersFor, parseRhFundingFollowUp, planDownsizedRobinhoodBuy, planRobinhoodFundingAdvice, planRobinhoodFundingChips, rhFundingPending, robinhoodBuyNeedUsd, verifyLifiBridgeEcho, type FundingOrigin, type LifiBridgeExpectations, type LifiBridgeStep } from '../lib/lifi-bridge'
 import { classifyOneclickStatus, inflightDepositFromPending, inflightPendingData, inflightSettlingNote } from '../lib/inflight-funding'
 import { sanitizeWorkingContext } from '../lib/working-context'
 import { parseRobinhoodFunding, parseSameChainSwapSegment, JOB_SEGMENT_PARSERS } from '../lib/jobs'
@@ -4250,6 +4250,52 @@ async function main() {
       'funding advice: an empty wallet names both scanned tokens',
       emptyAdvice.kind === 'none' && /no USDC or ETH on Base, Ethereum, or Arbitrum/.test(emptyAdvice.copy),
       JSON.stringify(emptyAdvice),
+    )
+
+    // ── ETH two-leg headroom (live 2026-07-28): "~$8 from Ethereum ETH"
+    // compiled a $1.5 gas leg + $6.5 value leg off the SAME balance — leg 1's
+    // own L1 fee came out of the keep-back leg 2 re-checks in full, and the
+    // job died mid-flight with $1.5 already bridged. A gas-included plan may
+    // only promise an ETH row's capacity MINUS the per-chain headroom.
+    const ethTight = O(1, 'Ethereum', 8, 0.0063, 'ETH')
+    check(
+      'funding chips: a gas-included plan never promises an ETH row\'s whole movable balance (two legs, one balance)',
+      planRobinhoodFundingChips({ origins: [ethTight], needUsd: 8, gasIncluded: true, followup: 'buy $6.25 of AAPL' }) === null,
+    )
+    check(
+      'funding chips: the same ETH row still covers a single-leg (gas-free) plan at full size',
+      planRobinhoodFundingChips({ origins: [ethTight], needUsd: 8, gasIncluded: false, followup: 'buy $6.25 of AAPL' }) !== null,
+    )
+    const ethDownsized = planDownsizedRobinhoodBuy({ scan: { origins: [ethTight] }, buyUsd: 12, holdingUsd: 0, includeGas: true, buySym: 'AAPL', acquiring: false })
+    const ethDownJob = ethDownsized ? compileJobAsk(ethDownsized.chips[0].resume) : null
+    check(
+      'funding downsize: the live wallet shape ($8 Ethereum ETH, gas leg) sizes under the headroom and compiles',
+      !!ethDownsized && ethDownsized.needUsd <= 7 && ethDownsized.buyUsd <= 5.25 &&
+        !!ethDownJob && !('problem' in ethDownJob),
+      JSON.stringify(ethDownsized),
+    )
+    const ethAllChips = planRobinhoodFundingChips({ origins: [O(8453, 'Base', 20, 0.011, 'ETH')], needUsd: 13.5, gasIncluded: true, followup: 'buy $12 of AAPL' })
+    check(
+      'funding chips: "All my ETH" caps at the promisable capacity, not the raw row',
+      !!ethAllChips && ethAllChips.some((c) => /^All my Base ETH \(\$19\.9\)/.test(c.label) && /with \$19\.9 from base using eth/.test(c.resume)),
+      JSON.stringify(ethAllChips),
+    )
+    // The mid-flight clamp (pure core): the exact live numbers — a $6.5 leg
+    // (0.003463 ETH at the day's mark) against the wallet's 0.005429 ETH
+    // after leg 1's fee → clamps to movable (keep-back preserved); fully
+    // funded stays untouched; really short still refuses (null).
+    const wei = (s: string) => BigInt(s)
+    check(
+      'native clamp: a marginal mid-flight shortfall clamps to the movable balance',
+      clampNativeSellAtoms(wei('3463000000000000'), wei('5429000000000000'), wei('2000000000000000')) === wei('3429000000000000'),
+    )
+    check(
+      'native clamp: a funded leg sells exactly the ask',
+      clampNativeSellAtoms(wei('3463000000000000'), wei('9000000000000000'), wei('2000000000000000')) === wei('3463000000000000'),
+    )
+    check(
+      'native clamp: a real shortfall (past tolerance) still refuses',
+      clampNativeSellAtoms(wei('3463000000000000'), wei('3000000000000000'), wei('2000000000000000')) === null,
     )
 
     // ── The rh-funding follow-up parser: the typed continuations that must

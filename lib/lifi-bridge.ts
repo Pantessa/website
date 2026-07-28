@@ -98,6 +98,34 @@ const ORIGIN_MIN_GAS_ETH: Record<number, number> = { 1: 0.002, 8453: 0.00003, 42
  *  diamond as the USDC legs (probed live 2026-07-28: across /
  *  relaydepository, value = fromAmount exactly, 1–2s). */
 export const ORIGIN_ETH_KEEPBACK: Record<number, number> = { 1: 0.002, 8453: 0.0002, 42161: 0.0002 }
+/** Sizing headroom when ONE ETH balance funds a gas-included plan — TWO
+ *  legs off the same balance. Leg 1's own origin fee is paid out of the
+ *  very keep-back leg 2's build re-checks in full, so a plan sized to the
+ *  whole movable balance fails at leg 2 by exactly that fee (live
+ *  2026-07-28: "~$8 from Ethereum ETH" bridged the $1.5 gas leg, then the
+ *  $6.5 value leg refused — the wallet held $6.44 after leg 1's ~$0.06 L1
+ *  fee). Covers the extra fee plus inter-leg ETH price drift; the sizing
+ *  planners subtract it, the scan's movable number stays the true
+ *  single-move capacity. */
+export const ETH_TWO_LEG_HEADROOM_USD: Record<number, number> = { 1: 1, 8453: 0.1, 42161: 0.1 }
+/** A native-ETH leg's build clamps DOWN to the wallet's real movable
+ *  balance when it lands within this fraction of the ask (leg-1 fees and
+ *  price drift between signatures shave a mid-flight job's balance; the
+ *  FUNDING_MARGIN_BPS headroom absorbs the difference so the follow-up buy
+ *  still covers). Below it, the honest refusal stands. */
+export const NATIVE_CLAMP_MIN_BPS = 9_500
+
+/** Pure core of the mid-flight clamp: the atoms a native-ETH leg should
+ *  actually sell given the wallet's live balance. Fully funded → the ask,
+ *  untouched. Marginally short (movable ≥ NATIVE_CLAMP_MIN_BPS of the ask)
+ *  → the movable balance, keep-back preserved. Really short → null (the
+ *  caller refuses by name). */
+export function clampNativeSellAtoms(sellAtoms: bigint, balanceWei: bigint, keepbackWei: bigint): bigint | null {
+  if (balanceWei >= sellAtoms + keepbackWei) return sellAtoms
+  const movable = balanceWei - keepbackWei
+  if (movable > BigInt(0) && movable * BigInt(10_000) >= sellAtoms * BigInt(NATIVE_CLAMP_MIN_BPS)) return movable
+  return null
+}
 
 /** Dollars converted to native ETH on Robinhood Chain for gas — ~0.0008 ETH,
  *  enough for many Orbit-chain transactions (observed live: $2 → 0.00105). */
@@ -393,13 +421,31 @@ export async function buildLifiBridgeLeg(params: { leg: FundingLeg; usd: number;
   const sellBalance = nativeSell
     ? await originClient.getBalance({ address: from })
     : await originClient.readContract({ address: sell.address, abi: erc20Abi, functionName: 'balanceOf', args: [from] })
+  // Mid-flight self-heal: a native leg's sibling legs pay their fees out of
+  // the SAME balance this leg sells, and ETH re-prices between signatures —
+  // a marginal shortfall (within NATIVE_CLAMP_MIN_BPS of the ask) clamps
+  // the sell down to the wallet's real movable balance instead of stranding
+  // the job (live 2026-07-28: the $6.5 value leg refused over leg 1's
+  // ~$0.06 fee). FUNDING_MARGIN_BPS headroom on the plan absorbs the shave;
+  // a real shortfall past the tolerance still refuses by name.
+  let clampedFromUsd: number | null = null
+  if (nativeSell) {
+    const clamped = clampNativeSellAtoms(sellAtoms, sellBalance, keepbackWei)
+    if (clamped !== null && clamped !== sellAtoms) {
+      clampedFromUsd = params.usd
+      params = { ...params, usd: Number(((params.usd * Number(clamped)) / Number(sellAtoms)).toFixed(2)) }
+      sellAtoms = clamped
+    }
+  }
   const funded = sellBalance >= sellAtoms + keepbackWei
   const balanceCheck: GuardrailCheck = {
     id: 'balance',
     level: 'block',
     ok: funded,
     note: funded
-      ? `The wallet holds ${formatAtoms(sellBalance.toString(), sell.decimals)} ${sell.symbol} on ${origin.name} — covered${nativeSell ? ' (gas keep-back included)' : ''}.`
+      ? clampedFromUsd !== null
+        ? `Sized to what the wallet holds: ~$${params.usd} of ${sell.symbol} on ${origin.name} (the $${clampedFromUsd} ask, less fees already paid by earlier legs; gas keep-back kept).`
+        : `The wallet holds ${formatAtoms(sellBalance.toString(), sell.decimals)} ${sell.symbol} on ${origin.name} — covered${nativeSell ? ' (gas keep-back included)' : ''}.`
       : `Insufficient ${sell.symbol} on ${origin.name}: this leg needs $${params.usd}${nativeSell ? ' plus a gas keep-back' : ''} but the wallet holds ${formatAtoms(sellBalance.toString(), sell.decimals)}.`,
   }
 
@@ -609,6 +655,14 @@ export interface FundingOrigin {
  *  row holds a bridged variant — two rows can share a chain word. */
 const originLabel = (o: FundingOrigin) => (o.token === 'USDC' ? o.word : `${o.word} ${o.token}`)
 
+/** The dollars a plan may actually PROMISE from an origin. Stables spend
+ *  their full row (gas is paid in ETH, the stable balance is untouched);
+ *  an ETH row funding a gas-included segment runs TWO legs off the one
+ *  balance and must keep ETH_TWO_LEG_HEADROOM_USD back for leg 1's own
+ *  fee + inter-leg drift, or the chip is a mid-job wall. */
+const originCapUsd = (o: FundingOrigin, gasIncluded: boolean) =>
+  o.token === 'ETH' && gasIncluded ? Math.max(0, o.usd - (ETH_TWO_LEG_HEADROOM_USD[o.chainId] ?? 1)) : o.usd
+
 export interface FundingShortfall {
   /** USDG atoms the wallet holds on Robinhood Chain. */
   usdgAtoms: bigint
@@ -738,26 +792,31 @@ export function planRobinhoodFundingChips(params: {
   const chips: RobinhoodFundingChip[] = []
   // The FIRST covering origin leads — origins arrive stables-first, so a
   // dust USDC row never forces a combine past an ETH balance that covers
-  // the whole plan on its own.
-  const best = origins.find((o) => o.usd >= needUsd)
-  if (best && best.usd >= needUsd) {
+  // the whole plan on its own. "Covers" means the origin's PROMISABLE
+  // capacity (originCapUsd), not its raw row — an ETH row spending its
+  // whole movable balance across two legs was a mid-job wall.
+  const best = origins.find((o) => originCapUsd(o, gasIncluded) >= needUsd)
+  if (best) {
+    const bestCap = originCapUsd(best, gasIncluded)
     chips.push({ label: `Just enough (~$${needUsd} from ${originLabel(best)})`, resume: withFollowup([fundSegment(needUsd, best.word, gasIncluded, best.token)]) })
     // Half/all only when they're sensible whole-balance moves — a $15k
     // balance covering a $7 need doesn't get a $7.5k chip (same 10× rule
-    // as lib/funding-plan's all-in cap).
+    // as lib/funding-plan's all-in cap). "All" is the full PROMISABLE
+    // capacity, never the raw ETH row.
     const sensible = best.usd <= needUsd * 10
-    const half = Math.floor(best.usd / 2)
+    const half = Math.floor(bestCap / 2)
     if (sensible && half > needUsd) chips.push({ label: `Half my ${best.word} ${best.token} ($${half})`, resume: withFollowup([fundSegment(half, best.word, gasIncluded, best.token)]) })
-    if (sensible && best.usd > needUsd) chips.push({ label: `All my ${best.word} ${best.token} ($${best.usd})`, resume: withFollowup([fundSegment(best.usd, best.word, gasIncluded, best.token)]) })
-    const alt = origins.find((o) => o !== best && o.usd >= needUsd)
+    if (sensible && bestCap > needUsd) chips.push({ label: `All my ${best.word} ${best.token} ($${bestCap})`, resume: withFollowup([fundSegment(bestCap, best.word, gasIncluded, best.token)]) })
+    const alt = origins.find((o) => o !== best && originCapUsd(o, gasIncluded) >= needUsd)
     if (alt) chips.push({ label: `Use ${originLabel(alt)} instead (~$${needUsd})`, resume: withFollowup([fundSegment(needUsd, alt.word, gasIncluded, alt.token)]) })
     return chips.slice(0, 4)
   }
   // No single origin covers it — combine legs richest-first. The first leg
   // carries the gas segment and must be worth more than the gas leg alone;
-  // sub-$2 origins are dust for a bridge.
+  // sub-$2 origins are dust for a bridge. Each origin contributes at most
+  // its promisable capacity (the gas-bearing first leg is the two-leg one).
   const usable = origins.filter((o) => o.usd >= 2)
-  const total = usable.reduce((a, o) => a + o.usd, 0)
+  const total = usable.reduce((a, o) => a + originCapUsd(o, gasIncluded && o === usable[0]), 0)
   if (usable.length >= 2 && total >= needUsd) {
     const segs: string[] = []
     const words: string[] = []
@@ -765,8 +824,9 @@ export function planRobinhoodFundingChips(params: {
     for (const o of usable) {
       if (remaining <= 0) break
       const first = segs.length === 0
-      const take = Math.min(o.usd, remaining)
+      const take = Math.min(originCapUsd(o, first && gasIncluded), remaining)
       if (first && gasIncluded && take <= GAS_LEG_USD + 1) continue
+      if (take <= 0) continue
       segs.push(fundSegment(take, o.word, first && gasIncluded, o.token))
       words.push(originLabel(o))
       remaining = Number((remaining - take).toFixed(2))
@@ -919,9 +979,12 @@ export function planDownsizedRobinhoodBuy(params: {
   const { scan, buyUsd, holdingUsd, includeGas, buySym, acquiring } = params
   // Capacity: the richest single origin, or combined non-dust origins when
   // no single one leads (mirrors planRobinhoodFundingChips' two shapes).
+  // Origins count at their PROMISABLE capacity (originCapUsd) — sizing the
+  // max buy off an ETH row's raw movable balance offered a plan whose
+  // second leg couldn't clear leg 1's own fee (live 2026-07-28).
   const usable = scan.origins.filter((o) => o.usd >= 2)
-  const combined = usable.length >= 2 ? usable.reduce((a, o) => a + o.usd, 0) : 0
-  const capUsd = Math.max(scan.origins[0]?.usd ?? 0, combined)
+  const combined = usable.length >= 2 ? usable.reduce((a, o) => a + originCapUsd(o, includeGas && o === usable[0]), 0) : 0
+  const capUsd = Math.max(...scan.origins.map((o) => originCapUsd(o, includeGas)), combined, 0)
   if (capUsd <= 0) return null
   const gasLeg = includeGas ? GAS_LEG_USD : 0
   // Invert fundingNeedUsd, then floor to a clean quarter-dollar label.
