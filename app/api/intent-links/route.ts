@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import prisma from '@/lib/db'
 import { getAuthAddress } from '@/lib/api-key'
 import { activeLinkCapFor, cleanAsk, composeMcps, mintSlug, parseAllowWallets, parseExpiry, parseMaxSigns, sanitizeMcps, sanitizeVariants, validateRedirect } from '@/lib/intent-links'
-import { FEE_BEARING_BUILD_PATHS, creatorEarningsUsd } from '@/lib/fees'
+import { FEE_BEARING_BUILD_PATHS, creatorEarningsUsd, netFeeBpsFor } from '@/lib/fees'
 import { getEffectivePlan } from '@/lib/billing'
 import { isAdminAddress } from '@/lib/admin'
 
@@ -164,18 +164,24 @@ export async function GET(req: NextRequest) {
   const moneyOf = (slug: string) => {
     let signedUsd = 0
     let feeBearingUsd = 0
+    let earnedUsd = 0
     let signsCount = 0
     for (const t of turns) {
       if (t.intentLinkSlug !== slug) continue
       const v = t._sum.valueUsd ?? 0
       signedUsd += v
       signsCount += t._count._all
-      if (t.buildPath && FEE_BEARING_BUILD_PATHS.has(t.buildPath)) feeBearingUsd += v
+      if (t.buildPath && FEE_BEARING_BUILD_PATHS.has(t.buildPath)) {
+        feeBearingUsd += v
+        // Per PATH, not one blended rate: NEAR Intents splits its app fee
+        // with the protocol, so the same $1 earns half what a Uniswap $1 does.
+        earnedUsd += creatorEarningsUsd(v, netFeeBpsFor(t.buildPath))
+      }
     }
     // feeBearingUsd rides along so the UI can tell "$0.00 because nothing
     // moved" apart from "$0.00 because every dollar took a fee-free route"
     // (bridges, transfers, stakes) — a bare zero reads as broken.
-    return { signedUsd, signsCount, feeBearingUsd, earnedUsd: creatorEarningsUsd(feeBearingUsd) }
+    return { signedUsd, signsCount, feeBearingUsd, earnedUsd }
   }
 
   const money = links.map((l) => moneyOf(l.id))

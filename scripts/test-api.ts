@@ -37,7 +37,7 @@ import { policyCheckInflow, recipientCheck, validityCheck, MAX_VALID_SEC } from 
 import { guardPlannerArtifact, PERMIT2_ADDRESS } from '../lib/planner-artifact-guard'
 import { parseSwapIntent } from '../lib/swap-intent'
 import { activeLinkCapFor, composeMcps } from '../lib/intent-links'
-import { formatEarnedUsd } from '../lib/fees'
+import { formatEarnedUsd, netFeeBpsFor, creatorEarningsUsd, FEE_BEARING_BUILD_PATHS, CROSS_CHAIN_FEE_BPS, CROSS_CHAIN_NET_FEE_BPS } from '../lib/fees'
 import { hexLuminance, normalizeAccent, normalizeBg, parseBrandHtml, validateBrandUrl } from '../lib/brand-scan'
 import {
   decideTurnLimit,
@@ -3477,6 +3477,56 @@ async function main() {
     // Native transfer path.
     const nativeBuild = { kind: 'swap_ready', quote: { sell: { amountAtoms: '1000000000000000000' } }, deposit: { address: DEPOSIT }, steps: [{ action: 'send_transaction', tx: { to: DEPOSIT, data: '0x', value: '1000000000000000000', chainId: 8453 } }] }
     check('xchain guard: native transfer to deposit address PASSES', guardCrossChainBuild(nativeBuild, { chainId: 8453 }).ok)
+
+    // ── The venue fee (1Click appFees) ──────────────────────────────────────
+    // It rides the quote, so the DEPOSIT is identical with or without it —
+    // the guard's job is only to police who the fee pays.
+    const ONECLICK_SHARE = '5880ad2b362620fadf759cbceb1cd5737ce8c6ed7fb8e9942881e6731f9247dd'
+    const feeExpect = { recipient: TREASURY_ADDRESS, bps: CROSS_CHAIN_FEE_BPS }
+    const feeSplit = [
+      { recipient: TREASURY_ADDRESS, fee: CROSS_CHAIN_NET_FEE_BPS },
+      { recipient: ONECLICK_SHARE, fee: CROSS_CHAIN_NET_FEE_BPS },
+    ]
+    const feeBuild = { ...goodBuild, appFee: { requested: [{ recipient: TREASURY_ADDRESS, fee: CROSS_CHAIN_FEE_BPS }], applied: feeSplit } }
+    const feeGuard = guardCrossChainBuild(feeBuild, { chainId: 8453, fee: feeExpect })
+    check(
+      'xchain fee: the pinned treasury split PASSES and the deposit is untouched',
+      feeGuard.ok && feeGuard.tx?.to === USDC_BASE && feeGuard.feeBps === CROSS_CHAIN_FEE_BPS && (feeGuard.feeNotes ?? []).length === 0,
+    )
+    check(
+      'xchain fee: an app fee paid to an address we did not pin is REFUSED',
+      !guardCrossChainBuild(
+        { ...goodBuild, appFee: { applied: [{ recipient: '0x000000000000000000000000000000000000dEaD', fee: 10 }, { recipient: ONECLICK_SHARE, fee: 10 }] } },
+        { chainId: 8453, fee: feeExpect },
+      ).ok,
+    )
+    check(
+      'xchain fee: a fee larger than we requested is REFUSED',
+      !guardCrossChainBuild(
+        { ...goodBuild, appFee: { applied: [{ recipient: TREASURY_ADDRESS, fee: 400 }, { recipient: ONECLICK_SHARE, fee: 400 }] } },
+        { chainId: 8453, fee: feeExpect },
+      ).ok,
+    )
+    check(
+      'xchain fee: an UNREQUESTED app fee is REFUSED (job/funding legs stay fee-free)',
+      !guardCrossChainBuild({ ...goodBuild, appFee: { applied: feeSplit } }, { chainId: 8453, fee: null }).ok &&
+        guardCrossChainBuild(goodBuild, { chainId: 8453, fee: null }).ok,
+    )
+    const notApplied = guardCrossChainBuild(goodBuild, { chainId: 8453, fee: feeExpect })
+    check(
+      'xchain fee: a venue that did not apply the fee still SIGNS, quietly (operator note, no user warning, no fee claimed)',
+      notApplied.ok && notApplied.feeBps === 0 && (notApplied.feeNotes ?? []).length === 1 && notApplied.warnings.length === 0,
+    )
+    // The earnings rate is the NET half — 1Click keeps the rest.
+    check(
+      'xchain fee: creator earnings use the per-path NET rate (cross-chain earns half a uniswap dollar)',
+      netFeeBpsFor('native-cross-chain') === CROSS_CHAIN_NET_FEE_BPS &&
+        netFeeBpsFor('native-swap-uniswap') === CROSS_CHAIN_FEE_BPS &&
+        netFeeBpsFor('native-nft-transfer') === 0 &&
+        FEE_BEARING_BUILD_PATHS.has('native-cross-chain') &&
+        Math.abs(creatorEarningsUsd(1000, netFeeBpsFor('native-cross-chain')) - 0.5) < 1e-9 &&
+        Math.abs(creatorEarningsUsd(1000, netFeeBpsFor('native-swap-uniswap')) - 1) < 1e-9,
+    )
 
     // Follow-ups.
     const pend = { kind: 'xchain', data: { amount: '1', originToken: 'USDC', originChain: 'base', destinationToken: 'USDC', destinationChain: 'arbitrum', depositAddress: DEPOSIT } }
