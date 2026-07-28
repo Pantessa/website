@@ -220,6 +220,9 @@ export function composeBriefingItems(inputs: BriefingInputs): StatRow[] {
         sub: 'put a slice to work — you sign everything',
         chartSymbol: 'ETH',
         actions: [
+          // Leads: the full rebalance read (round-trips parseRebalanceAsk —
+          // live rates + honest gas math, one batch offered as chips).
+          { label: 'Put it to work', prompt: 'Rebalance my portfolio' },
           { label: 'DCA $10 → ETH weekly', prompt: 'DCA $10 into ETH weekly' },
           { label: `Swap $${swapUsd} → ETH`, prompt: `Swap $${swapUsd} of USDC for ETH on ${s.chainWord}` },
         ],

@@ -834,8 +834,43 @@ const walletSource: SplashSource = {
   build: (_call, address, server, chain) => buildMultichainTiles(address, server, chain),
 }
 
+// ── Yeetful Finance (yeetful-tool-funding) → the idle-capital read ───────────
+// The rebalance planner's card face: where money sits idle across the scan
+// chains, what the live venue rates would pay, and ONE chip whose ask
+// round-trips parseRebalanceAsk (the offer turn re-plans at click time, so
+// the chips are never stale). Quiet plans contribute nothing — the manual
+// pick falls to the 'finance' preview below (the affinity contract).
+const financeSource: SplashSource = {
+  id: 'finance',
+  match: (s) => s.slug === 'yeetful-tool-funding' || /yeetful\s*(finance|funding)/i.test(s.name),
+  build: async (_call, address, server) => {
+    const { readRebalance } = await import('../rebalance-exec')
+    const read = await readRebalance(address).catch(() => null)
+    if (!read || read.plan.kind !== 'plan') return null
+    const { plan } = read
+    const est = plan.totalEstYearUsd.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+    const rows: StatRow[] = plan.moves.map((m) => ({
+      label: m.summary,
+      value: 'earning nothing yet',
+      tone: 'neg' as const,
+      actions: [{ label: 'Put it to work', prompt: 'Rebalance my portfolio' }],
+    }))
+    return {
+      id: `${server.slug}-rebalance`,
+      mcpSlug: server.slug,
+      mcpName: server.name,
+      render: 'rows',
+      title: 'Idle capital',
+      subtitle: 'live rates · you sign everything',
+      headline: { value: `≈ $${est}/yr on the table`, caption: 'at today’s live rates — estimates, not advice' },
+      rows,
+      prompts: [{ label: 'Rebalance my portfolio', prompt: 'Rebalance my portfolio' }],
+    }
+  },
+}
+
 /** All registered splash sources. Exported for tests; a new MCP appends here. */
-export const SPLASH_SOURCES: SplashSource[] = [walletSource, uniswapSource, snapshotSource, cowSource, hyperliquidSource, aaveSource, lidoSource, robinhoodSource, openseaSource]
+export const SPLASH_SOURCES: SplashSource[] = [walletSource, uniswapSource, snapshotSource, cowSource, hyperliquidSource, aaveSource, lidoSource, robinhoodSource, openseaSource, financeSource]
 
 // ── Preview cards (the manual-pick exception) ────────────────────────────────
 // What each source's card says when the user hand-picked the MCP but the
@@ -904,6 +939,17 @@ const SOURCE_PREVIEWS: Record<string, { message: string; prompts: SuggestedPromp
       { label: 'Trending collections', prompt: 'What NFT collections are trending on OpenSea right now?' },
       { label: 'Check a floor price', prompt: 'What is the floor price of Pudgy Penguins on OpenSea?' },
       { label: 'Cheapest Pudgy', prompt: 'Show me the cheapest live Pudgy Penguins listings on OpenSea' },
+    ],
+  },
+  finance: {
+    message:
+      'Yeetful Finance reads where your money sits across Base, Arbitrum, and Ethereum — and when the math beats the gas, turns idle balances into ONE signed batch (bridge → supply → stake). Quiet right now means nothing is worth moving.',
+    prompts: [
+      // Each round-trips a real parser (rebalance ×2, the funding-scan read
+      // routes via the planner to the MCP's own scan tool).
+      { label: 'Rebalance my portfolio', prompt: 'Rebalance my portfolio' },
+      { label: 'Where could I earn more?', prompt: 'Where could my money earn more?' },
+      { label: 'What movable funds do I have?', prompt: 'What movable funds do I have across my chains?' },
     ],
   },
   robinhood: {

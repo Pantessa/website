@@ -2,7 +2,8 @@
  * The PURE replica of the chat route's native-gate ladder, shared by the
  * costless audits (audit-asks.ts replays surfaced example asks through it;
  * audit-funding.ts replays funding-chip resume strings). Mirrors
- * app/api/chat/route.ts gate ORDER (vote → aave → dca → jobs → guardian →
+ * app/api/chat/route.ts gate ORDER (vote → aave → dca → jobs → rebalance →
+ * guardian →
  * lido → hyperliquid → robinhood bridge → nft (gallery → market → build) →
  * transfer →
  * swap/cross-chain) with the working set assumed to be ALL free MCPs
@@ -15,6 +16,7 @@ import { parseVoteIntent } from '../lib/vote-intent'
 import { parseAaveSupply, parseAaveOp } from '../lib/aave-supply'
 import { parseDcaRun, parseDcaCreate, parseDcaManage } from '../lib/dca'
 import { compileJobAsk } from '../lib/jobs'
+import { parseRebalanceAsk } from '../lib/rebalance'
 import { parseGuardianArm } from '../lib/hl-guardian'
 import { parseSpotGuardArm, parseSpotGuardManage } from '../lib/spot-guard'
 import { isLidoGuidedAsk, parseLidoStake } from '../lib/lido-stake'
@@ -62,6 +64,11 @@ export function simulateLadder(message: string): Outcome {
     if ('clarify' in job) return { gate: 'jobs', kind: 'clarify', note: String((job as { clarify: unknown }).clarify) }
     return { gate: 'jobs', kind: 'action', note: `${(job as { steps: unknown[] }).steps?.length ?? '?'} steps` }
   }
+
+  // Rebalance sits AFTER jobs (compound asks keep their claim) and BEFORE
+  // spot-guard, mirroring the route. Its turn is a live-scan offer whose
+  // chips re-enter this ladder — the harness round-trips them.
+  if (parseRebalanceAsk(message)) return { gate: 'rebalance', kind: 'action', note: 'live scan → offer/quiet' }
 
   // Spot guardian runs BEFORE the HL guardian in the route — same here.
   if (parseSpotGuardArm(message) || parseSpotGuardManage(message)) return { gate: 'spot-guard', kind: 'action' }
