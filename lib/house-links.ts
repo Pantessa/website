@@ -1,7 +1,7 @@
 // First-party "house" intent links — the canonical demo set, minted with
 // deterministic slugs so landing CTAs and docs can reference them forever.
 // Single source: the seed script (scripts/seed-house-links.ts), the landing
-// lane (components/LinkLane.tsx), and the /links start-here strip all read
+// spread (components/LinkEconomy.tsx), and the /links start-here strip all read
 // THIS list. House links have creator=null: they earn nothing and never
 // appear in any creator's dashboard — they exist so the leaderboard and the
 // landing never demo an empty product.
