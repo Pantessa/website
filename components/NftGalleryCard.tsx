@@ -77,8 +77,10 @@ function Row({ n, onPick }: { n: NftRow; onPick?: (prompt: string) => void }) {
 export default function NftGalleryCard({ data, onPick }: { data: NftGalleryDisplay; onPick?: (prompt: string) => void }) {
   if (data.nfts.length === 0) return null
   const more = data.found - data.nfts.length
+  // Surface matches PortfolioCard: plain --surf-1. Tailwind can't
+  // opacity-modify a CSS-var color, so the old /60 painted nothing.
   return (
-    <div className="not-prose mt-3 rounded-2xl border border-[var(--line)] bg-[var(--surf-2)]/60 p-4">
+    <div className="not-prose mt-3 rounded-2xl border border-[var(--line)] bg-[var(--surf-1)] p-4">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <div className="flex items-center gap-2">
           <Images className="h-3.5 w-3.5 text-[color:var(--muted-2)]" />
