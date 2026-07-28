@@ -77,6 +77,7 @@ import { canonicalChainWord, normalizeChainWords } from '../lib/chain-lexicon'
 import { decideFundingTurn, detectBalanceShortfall, fundingPlanUsd, planFundingChips, planStrandedRescue, rankFundingSources, shortRefusalCopy, softenClaimedFailureBlock, type FundingNeed, type FundingSource } from '../lib/funding-plan'
 import { compileDcaBuy, dcaRunChip, parseDcaCreate, parseDcaManage, parseDcaRun, periodKeyFor } from '../lib/dca'
 import { briefingNeedsCount, briefingTile, composeBriefingItems, type BriefingInputs, type BriefingPosition } from '../lib/briefing'
+import { moveAsk, parseRebalanceAsk, planRebalance, type RebalanceInputs } from '../lib/rebalance'
 import {
   buildSpotGuardPermission,
   guardSpotSell,
@@ -7602,12 +7603,14 @@ async function main() {
       ...empty,
       funding: { ...fundingBase, sources: [{ chainId: 8453, chainWord: 'Base', token: 'USDC', balance: 180, usd: 180 }], stranded: [] },
     })
-    const dcaChip = idle[0]?.actions?.[0]
-    const swapChip = idle[0]?.actions?.[1]
+    const workChip = idle[0]?.actions?.[0]
+    const dcaChip = idle[0]?.actions?.[1]
+    const swapChip = idle[0]?.actions?.[2]
     const swapIntent = swapChip ? parseSwapIntent(swapChip.prompt) : null
     check(
-      'briefing: idle USDC → DCA + swap chips that round-trip (swap names the chain)',
-      idle.length === 1 && !!dcaChip && !!parseDcaCreate(dcaChip.prompt) &&
+      'briefing: idle USDC → rebalance + DCA + swap chips that round-trip (swap names the chain)',
+      idle.length === 1 && !!workChip && parseRebalanceAsk(workChip.prompt) &&
+        !!dcaChip && !!parseDcaCreate(dcaChip.prompt) &&
         !!swapIntent && swapIntent.isSwap && !swapIntent.problem && swapIntent.sellToken === 'USDC' && /on Base/i.test(swapChip!.prompt),
       JSON.stringify(idle[0]?.actions).slice(0, 160),
     )
@@ -7660,6 +7663,124 @@ async function main() {
       'briefing: tile headline counts neg rows only',
       !!tile && tile.headline?.value === '1 needs you' && tile.rows.length === 2 && briefingNeedsCount(tile.rows) === 1,
       JSON.stringify(tile?.headline),
+    )
+  }
+
+  // ── Rebalance (pure planner: gas honesty, economics floor, chip contract) ─
+  console.log('— rebalance')
+  {
+    const scanBase = { ethUsd: 2000, readChains: ['Base', 'Arbitrum', 'Ethereum'], failedChains: [] as string[], stranded: [] as RebalanceInputs['scan']['stranded'] }
+    const rates = { aaveUsdcSupplyApyPct: 4.2, lidoAprPct: 2.9 }
+    const earning = { aaveSuppliedUsd: 0, lidoStakedUsd: 0 }
+    const src = (chainId: number, chainWord: string, token: 'ETH' | 'USDC', balance: number, usd: number) =>
+      ({ chainId, chainWord, token, balance, usd })
+
+    // Grammar: the surfaced asks claim; reads and venue asks never do.
+    check(
+      'rebalance: grammar claims the surfaced asks',
+      parseRebalanceAsk('Rebalance my portfolio') && parseRebalanceAsk('put my idle money to work') &&
+        parseRebalanceAsk('Where could my money earn more?') && parseRebalanceAsk('make my money work harder'),
+    )
+    check(
+      'rebalance: reads + venue asks never claimed ("balance" is not "rebalance")',
+      !parseRebalanceAsk("what's my balance") && !parseRebalanceAsk('swap 5 USDC for ETH on base') &&
+        !parseRebalanceAsk('supply 10 USDC to aave') && !parseRebalanceAsk('stake 0.1 eth on lido'),
+    )
+
+    // L2 USDC + mainnet gas → bridge → supply, ONE job, arrival haircut on
+    // the supplied amount (the action never asks for more than arrives).
+    const p1 = planRebalance({ scan: { ...scanBase, sources: [src(8453, 'Base', 'USDC', 500, 500), src(1, 'Ethereum', 'ETH', 0.01, 20)] }, rates, earning })
+    const p1job = p1.kind === 'plan' ? compileJobAsk(p1.ask) : null
+    check(
+      'rebalance: L2 USDC + mainnet gas → bridge→supply plan that compiles as one job',
+      p1.kind === 'plan' && p1.moves.length === 1 && p1.moves[0].venue === 'aave' && p1.moves[0].gasLeg === null &&
+        !!p1job && !('problem' in p1job) && p1job.steps.map((s) => `${s.kind}:${s.builder}`).join(' ') === 'sign:native-cross-chain wait:wait sign:native-aave-supply' &&
+        /supply 480 USDC to aave$/.test(p1.ask),
+      p1.kind === 'plan' ? p1.ask : JSON.stringify(p1),
+    )
+
+    // Gasless mainnet + an L2 ETH donor → the plan buys its own signature
+    // (gas leg first), and the standalone chip carries it too.
+    const p2 = planRebalance({ scan: { ...scanBase, sources: [src(8453, 'Base', 'USDC', 500, 500), src(8453, 'Base', 'ETH', 0.02, 40)] }, rates, earning })
+    const p2gas = p2.kind === 'plan' ? p2.moves[0]?.gasLeg : null
+    const p2cc = p2gas ? parseCrossChainSwap(p2gas) : null
+    const p2job = p2.kind === 'plan' ? compileJobAsk(p2.ask) : null
+    check(
+      'rebalance: gasless mainnet → explicit gas leg leads (ETH → Ethereum), plan still compiles',
+      p2.kind === 'plan' && !!p2cc && !('problem' in p2cc) && p2cc.destinationChain === 'ethereum' && p2cc.destinationToken?.toUpperCase() === 'ETH' &&
+        p2.ask.startsWith(p2gas!) && !!p2job && !('problem' in p2job),
+      p2.kind === 'plan' ? p2.ask : JSON.stringify(p2),
+    )
+
+    // Both venues: the ETH move's arrivals ARE the mainnet gas — the
+    // combined batch drops the USDC move's gas leg, the standalone keeps it.
+    const p3 = planRebalance({ scan: { ...scanBase, sources: [src(8453, 'Base', 'USDC', 500, 500), src(42161, 'Arbitrum', 'ETH', 0.2, 400)] }, rates, earning })
+    const p3aave = p3.kind === 'plan' ? p3.moves.find((m) => m.venue === 'aave') : undefined
+    const p3solo = p3aave ? compileJobAsk(moveAsk(p3aave)) : null
+    const p3job = p3.kind === 'plan' ? compileJobAsk(p3.ask) : null
+    check(
+      'rebalance: both venues → one batch (ETH bridge funds gas, no explicit gas leg); standalone USDC chip stays self-funding',
+      p3.kind === 'plan' && p3.moves.length === 2 && !!p3aave?.gasLeg && !p3.ask.includes(p3aave.gasLeg) &&
+        !!p3job && !('problem' in p3job) && p3job.steps.filter((s) => s.kind === 'sign').length === 4 &&
+        /supply .* to aave, then stake .* eth on lido$/.test(p3.ask) &&
+        !!p3solo && !('problem' in p3solo) && moveAsk(p3aave).startsWith(p3aave.gasLeg),
+      p3.kind === 'plan' ? p3.ask : JSON.stringify(p3),
+    )
+
+    // Economics floor: small idle money gets the arithmetic, not a plan.
+    const p4 = planRebalance({ scan: { ...scanBase, sources: [src(8453, 'Base', 'USDC', 30, 30), src(1, 'Ethereum', 'ETH', 0.01, 20)] }, rates, earning })
+    check(
+      'rebalance: small idle USDC → honest quiet naming the yearly math',
+      p4.kind === 'quiet' && p4.notes.some((n) => /would earn ~\$1\.2\d\/yr/.test(n) && /move costs/.test(n)),
+      JSON.stringify(p4),
+    )
+
+    // Unreadable rates are skipped BY NAME — never guessed.
+    const p5 = planRebalance({ scan: { ...scanBase, sources: [src(8453, 'Base', 'USDC', 500, 500), src(1, 'Ethereum', 'ETH', 0.01, 20)] }, rates: { aaveUsdcSupplyApyPct: null, lidoAprPct: null }, earning })
+    check(
+      'rebalance: null rates → both venues sit out by name, quiet plan',
+      p5.kind === 'quiet' && p5.notes.some((n) => /Aave/.test(n) && /not guessing/.test(n)) && p5.notes.some((n) => /Lido/.test(n) && /not guessing/.test(n)),
+      JSON.stringify(p5.notes),
+    )
+
+    // Stranded money + failed chains are named (the #549 rule), and what's
+    // already earning shows in the picture.
+    const p6 = planRebalance({
+      scan: { ...scanBase, failedChains: ['Arbitrum'], stranded: [src(8453, 'Base', 'USDC', 20, 20)], sources: [] },
+      rates,
+      earning: { aaveSuppliedUsd: 52, lidoStakedUsd: 0 },
+    })
+    check(
+      'rebalance: stranded + failed chains + already-earning all named in the quiet',
+      p6.kind === 'quiet' && p6.notes.some((n) => /Arbitrum didn't answer/.test(n)) &&
+        p6.notes.some((n) => /no gas to move/.test(n)) && p6.notes.some((n) => /\$52\.00 supplied on Aave/.test(n)),
+      JSON.stringify(p6.notes),
+    )
+
+    // No mainnet gas and no donor → the USDC move is named, never offered
+    // (funds that land where the wallet can't sign are stranded).
+    const p7 = planRebalance({ scan: { ...scanBase, sources: [src(8453, 'Base', 'USDC', 500, 500)] }, rates, earning })
+    check(
+      'rebalance: no gas anywhere → move refused by name, top-up asked',
+      p7.kind === 'quiet' && p7.notes.some((n) => /can't sign on Ethereum/.test(n) && /top up mainnet gas/.test(n)),
+      JSON.stringify(p7.notes),
+    )
+
+    // The live gate: no wallet → connect; harness wallet → live scan turn
+    // (quiet or plan, buildPath pins the layer; RPC-down answers honestly).
+    const rbNoWallet = await fetch(`${BASE}/api/chat`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ message: 'Rebalance my portfolio', activeServers: [] }),
+    }).then((r) => r.json())
+    check('rebalance: gate asks to connect without a wallet', rbNoWallet.connectWallet === true && /rebalance read/i.test(rbNoWallet.reply ?? ''))
+    const rbLive = await fetch(`${BASE}/api/chat`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ message: 'Rebalance my portfolio', activeServers: [], walletAddress: '0x1111111111111111111111111111111111111111' }),
+    }).then((r) => r.json())
+    check(
+      'rebalance: live gate claims the turn (quiet/plan/honest-unreadable)',
+      rbLive.buildPath === 'native-rebalance' && typeof rbLive.reply === 'string' && rbLive.reply.startsWith('💸'),
+      String(rbLive.reply).slice(0, 120),
     )
   }
 

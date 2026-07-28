@@ -51,6 +51,8 @@ import { compileJobAsk } from '@/lib/jobs'
 import { advanceJob, createJob } from '@/lib/jobs-runner'
 import { signJobToken } from '@/lib/job-token'
 import { runDcaTurn } from '@/lib/dca-exec'
+import { parseRebalanceAsk } from '@/lib/rebalance'
+import { rebalanceTurnFor } from '@/lib/rebalance-exec'
 import { runSpotGuardTurn } from '@/lib/spot-guard-exec'
 import {
   aaveAgentOf,
@@ -880,6 +882,25 @@ async function handleChatTurn(req: NextRequest) {
         jobToken: signJobToken(job.id),
         buildPath: 'native-job',
       })
+    }
+
+    // Rebalance — "rebalance my portfolio" / "put my idle money to work":
+    // the full multi-chain read (funding scan + live Aave/Lido rates) turned
+    // into ONE batch offered as chips; every resume compiles under the jobs
+    // compiler or a single native gate (the chip is the contract). Runs
+    // AFTER the jobs compiler so a compound ask keeps its claim; the grammar
+    // is disjoint from every venue gate (no amount+token pair). Uneconomical
+    // balances get the arithmetic, not a plan — refusing a move that gas
+    // would eat is the feature.
+    if (parseRebalanceAsk(message)) {
+      if (!walletAddress) {
+        return NextResponse.json({
+          reply: '💸 Connect your wallet first — the rebalance read scans YOUR balances across Base, Arbitrum, and Ethereum and only ever offers moves you sign.',
+          connectWallet: true,
+        })
+      }
+      const rebalTurn = await rebalanceTurnFor(walletAddress, nativeTrace)
+      return NextResponse.json(rebalTurn)
     }
 
     // Spot Guardian — "protect my spot ETH with a 10% stop loss". MUST run

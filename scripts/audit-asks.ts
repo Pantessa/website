@@ -62,6 +62,23 @@ const CORPUS: Entry[] = [
   { ask: 'Swap 0.004 ETH from base to ethereum', source: 'briefing unstick chip (mainnet dest)', expect: 'action' },
   { ask: 'Swap $50 of USDC for ETH on Base', source: 'briefing idle-USDC chip', expect: 'action' },
 
+  // Rebalance (the idle-capital answer — briefing "Put it to work" chip,
+  // the Yeetful Finance card, and the bare grammar). The offer's own chip
+  // resumes are representative planner outputs: multi-leg strings compile
+  // as jobs, single legs land on their venue gate.
+  { ask: 'Rebalance my portfolio', source: 'briefing "Put it to work" chip + finance card', expect: 'action' },
+  { ask: 'Where could my money earn more?', source: 'finance card preview', expect: 'action' },
+  { ask: 'put my idle money to work', source: 'rebalance grammar', expect: 'action' },
+  { ask: 'What movable funds do I have across my chains?', source: 'finance card preview (scan read → planner)', expect: 'planner' },
+  { ask: 'Swap 118.40 USDC from Base to USDC on Ethereum, then supply 113.66 USDC to aave', source: 'rebalance combined chip', expect: 'action' },
+  { ask: 'Swap 0.024 ETH from Base to ETH on Ethereum, then supply 113.66 USDC to aave', source: 'rebalance gas-leg chip', expect: 'action' },
+  { ask: 'supply 120 USDC to aave', source: 'rebalance single-leg (mainnet USDC)', expect: 'action' },
+  { ask: 'stake 0.05 eth on lido', source: 'rebalance single-leg (mainnet ETH)', expect: 'action' },
+  {
+    ask: 'Swap 0.03 ETH from Arbitrum to ETH on Ethereum, then supply 120 USDC to aave, then stake 0.05 eth on lido',
+    source: 'rebalance full batch', expect: 'action',
+  },
+
   // Spot Guardian (briefing chip + manage verbs)
   { ask: 'Protect my spot ETH with a 10% stop loss', source: 'briefing spot-guard chip', expect: 'action' },
   { ask: 'Protect 0.5 spot ETH with a stop loss at $1500', source: 'spot-guard sized variant', expect: 'action' },

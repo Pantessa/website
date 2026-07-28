@@ -199,5 +199,5 @@ export interface SplashResponse {
  *  outside the hand-coded set still qualify when they carry featured ("ping
  *  first") endpoints — `splashReady`, derived server-side in lib/catalog. */
 export function splashCapable(s: { slug: string; name: string; splashReady?: boolean }): boolean {
-  return !!s.splashReady || /uniswap|snapshot|cow|hyperliquid|aave|lido|robinhood|opensea/i.test(`${s.slug} ${s.name}`)
+  return !!s.splashReady || /uniswap|snapshot|cow|hyperliquid|aave|lido|robinhood|opensea|funding|finance/i.test(`${s.slug} ${s.name}`)
 }

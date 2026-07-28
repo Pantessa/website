@@ -46,7 +46,11 @@ const user = () =>
 
 const SERVICE = {
   slug: 'yeetful-tool-funding',
-  name: 'Yeetful Funding Planner',
+  // Display name only — the slug and funding-mcp.yeetful.com stay put so
+  // nothing referencing them breaks (renamed from "Yeetful Funding Planner",
+  // 2026-07-28: the service is growing past funding into the finance layer —
+  // the website's rebalance read wears this card).
+  name: 'Yeetful Finance',
   description:
     '"Insufficient funds" is an offer, never a wall: when any action can\'t be funded (a stake, a supply, a deposit, a swap), this planner scans the wallet\'s movable ETH + USDC across Base/Arbitrum/Ethereum and returns an EXECUTABLE cross-chain funding plan — ordered NEAR Intents legs (same-token first, then stables), a destination gas leg when the wallet couldn\'t even sign the follow-up, and honest per-chain numbers when the whole wallet can\'t cover it. Construction-only: reads balances and prices, never signs, never submits; legs execute via the NEAR Intents MCP under its own deposit-address guard. Keyless, rate-limited. By Yeetful.',
   category: 'Wallets',
@@ -62,8 +66,8 @@ const SERVICE = {
   endpoint: FUNDING_BASE,
   tags: ['funding', 'bridge', 'cross-chain', 'gas', 'wallet', 'near-intents', 'planner'],
   exampleQueries: [
+    'Rebalance my portfolio',
     "I don't have enough USDC on Arbitrum — where can I pull it from?",
-    'plan how to fund 0.01 ETH on Ethereum from my other chains',
     'what movable funds do I have across my chains?',
   ],
   source: 'yeetful',
