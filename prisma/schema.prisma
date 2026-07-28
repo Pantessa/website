@@ -1174,3 +1174,67 @@ model IntentLinkClaim {
   @@index([creator, createdAt])
   @@map("intent_link_claims")
 }
+
+/// Spot Guardian (the HL Guardian's promise on SPOT holdings, via the DCA
+/// autopilot's Spend Permission rails): ONE one-shot permission over the
+/// protected asset; when the trigger fires the sweep sells it to USDC with
+/// the output pinned to the OWNER. Non-custodial end to end.
+model SpotGuardPolicy {
+  id        String @id @default(cuid())
+  wallet    String // lowercased owner
+  /// awaiting_signature → active → triggered → done; paused | error on the side.
+  status    String @default("awaiting_signature")
+  originEnv String @default("dev") @map("origin_env")
+  chainId   Int    @map("chain_id") // Base-only v1 (the autopilot chain)
+
+  tokenSymbol  String  @map("token_symbol") // ETH, WETH, CBETH…
+  tokenAddress String  @map("token_address") // ERC-20 addr, or the ERC-7528 native sentinel
+  native       Boolean @default(false)
+  amountAtoms  String  @map("amount_atoms") // bigint as string — the permission allowance
+  amountHuman  String  @map("amount_human") // display
+
+  triggerMode  String @map("trigger_mode") // price | price_move_pct
+  triggerValue Float  @map("trigger_value")
+  refPrice     Float  @map("ref_price") // arm-time venue mark (USD) — the pct anchor
+
+  permissionJson     String?   @map("permission_json") // SpendPermission struct, bigints as strings
+  permissionSig      String?   @map("permission_sig")
+  permissionHash     String?   @map("permission_hash") // manager.getHash — from the CONTRACT
+  permissionApproved Boolean   @default(false) @map("permission_approved")
+  spender            String? // the CDP spender bound at arm time (lowercased)
+  armNetwork         String?   @map("arm_network")
+  armedAt            DateTime? @map("armed_at")
+
+  lastChecked DateTime? @map("last_checked") // sweep heartbeat
+  lastMark    Float?    @map("last_mark")
+  error       String? // last sweep failure — the ONLY thing that badges needs-you
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  runs SpotGuardRun[]
+
+  @@index([wallet, status])
+  @@index([status, chainId])
+  @@map("spot_guard_policies")
+}
+
+model SpotGuardRun {
+  id        String   @id @default(cuid())
+  policyId  String   @map("policy_id")
+  wallet    String // lowercased policy owner (the sell's pinned recipient)
+  status    String   @default("running") // running | sold | failed
+  valueUsd  Float?   @map("value_usd") // mark-priced protected value at fire time
+  markPrice Float?   @map("mark_price")
+  spendTx   String?  @map("spend_tx") // SpendPermissionManager.spend hash
+  swapTx    String?  @map("swap_tx") // the venue sell hash (USDC → owner)
+  detail    String? // human receipt line / failure reason
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  policy SpotGuardPolicy @relation(fields: [policyId], references: [id], onDelete: Cascade)
+
+  @@unique([policyId]) // one-shot: a policy fires at most once
+  @@index([wallet, createdAt])
+  @@map("spot_guard_runs")
+}
