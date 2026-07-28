@@ -2827,6 +2827,50 @@
   }
 
 
+  /* ── STATIONS + SHARED LANDING MOTION ──────────────────────────────────
+     One fixed rail names where you are on the page and jumps you there. It's
+     navigation, so reduced-motion keeps it — only the drift and the reveal
+     get stilled. Hidden below 1280px, where it would fight the content for
+     the gutter it needs. */
+  .stations {
+    position: fixed; right: 22px; top: 50%; transform: translateY(-50%); z-index: 40;
+    display: flex; flex-direction: column; align-items: flex-end; gap: 3px;
+  }
+  .stations__s {
+    display: flex; align-items: center; gap: 10px; padding: 5px 0 5px 12px;
+    background: none; border: 0; cursor: pointer; color: var(--muted-2);
+  }
+  .stations__tick {
+    display: block; width: 16px; height: 1.5px; border-radius: 2px; flex-shrink: 0;
+    background: color-mix(in srgb, var(--fg) 22%, transparent);
+    transition: width .28s cubic-bezier(.2,.8,.2,1), background .28s;
+  }
+  .stations__label {
+    font-size: 10px; letter-spacing: .11em; text-transform: uppercase; white-space: nowrap;
+    opacity: 0; transform: translateX(6px);
+    transition: opacity .25s ease, transform .25s cubic-bezier(.2,.8,.2,1), color .25s;
+  }
+  .stations__s:hover .stations__label { opacity: 1; transform: none; }
+  .stations__s:hover .stations__tick { width: 24px; background: color-mix(in srgb, var(--fg) 45%, transparent); }
+  .stations__s.is-on .stations__tick { width: 30px; background: var(--accent); box-shadow: 0 0 10px color-mix(in srgb, var(--accent) 55%, transparent); }
+  .stations__s.is-on .stations__label { opacity: 1; transform: none; color: var(--fg); }
+  /* Hidden below 1400px: the active label extends left from its tick, and
+     under that width it starts eating the content's own gutter. */
+  @media (max-width: 1399px) { .stations { display: none; } }
+
+  /* parallax: LandingMotion writes --py on decorative visuals only */
+  .night__dialwrap, .spread__svg, .loopband__demo { transform: translate3d(0, var(--py, 0px), 0); will-change: transform; }
+
+  /* reveals: one rise as a section head arrives, then never again */
+  .reveal { opacity: 0; transform: translateY(14px); transition: opacity .7s ease, transform .7s cubic-bezier(.2,.8,.2,1); }
+  .reveal.is-in { opacity: 1; transform: none; }
+
+  @media (prefers-reduced-motion: reduce) {
+    .night__dialwrap, .spread__svg, .loopband__demo { transform: none; will-change: auto; }
+    .reveal { opacity: 1; transform: none; transition: none; }
+    .stations__tick, .stations__label { transition: none; }
+  }
+
   /* ── THE LOOP BAND (.loopband) — rescued from the retired TxPipeline ───
      Lives inside the host section now, because the loop is a host's payoff:
      the asks the chat couldn't answer are the tools their MCP is missing. */
