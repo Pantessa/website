@@ -7,12 +7,17 @@
 // was invisible afterwards, so "you already have a weekly buy" read as
 // "something bought itself". This tab is the standing answer.
 //
-// Acting on a row PREFILLS the composer (store.composerPrefill) — the same
-// contract as /chat?prompt=: the user always sends and signs themselves.
+// Row actions are ICON BUTTONS that act DIRECTLY (Nate 2026-07-28: the
+// prefill detour made "cancel" look like it did nothing, and the verb row
+// read dense) — pause/resume/trash hit their owner-gated API and the list
+// refreshes on the spot; trash confirms first (the guardian-remove rule:
+// one misclick never silently unprotects/retires anything). Only "buy now"
+// still routes through the composer — it opens a signable buy, and the
+// signature is the user's anyway.
 // Clicking the row BODY opens the job detail card (store.jobDetail): the
 // live position/PnL around the job + its step card — for any job kind.
 
-import { CalendarClock, CheckCircle2, Loader2, PenLine, ShieldCheck, XCircle } from 'lucide-react'
+import { CalendarClock, CheckCircle2, Loader2, Pause, PenLine, Play, ShieldCheck, Trash2, XCircle, ZapOff } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { cn } from '@/lib/utils'
 import { useYeetfulStore } from '@/lib/store'
@@ -20,6 +25,22 @@ import { cadenceLabel, dcaRunChip, type DcaCadence } from '@/lib/dca'
 import ShareReceiptButton from '@/components/ShareReceiptButton'
 import { ChartHoverButton } from '@/components/TokenChartButton'
 import { LIVE_JOB_STATUS, useRunningWork, type RunningGuard, type RunningJob, type RunningSchedule } from '@/lib/use-running-work'
+
+function IconBtn({ label, danger, onClick, children }: { label: string; danger?: boolean; onClick: () => void; children: React.ReactNode }) {
+  return (
+    <button
+      onClick={(e) => { e.stopPropagation(); onClick() }}
+      title={label}
+      aria-label={label}
+      className={cn(
+        'grid h-6 w-6 place-items-center rounded-md text-[color:var(--muted-2)] transition-colors',
+        danger ? 'hover:text-red-400 hover:bg-red-400/10' : 'hover:text-white hover:bg-[var(--surf-1)]',
+      )}
+    >
+      {children}
+    </button>
+  )
+}
 
 function jobDot(status: string) {
   if (status === 'done') return <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 flex-shrink-0" aria-hidden />
@@ -155,23 +176,38 @@ export default function JobsRailTab({ onAct }: { onAct?: () => void }) {
           </span>
           <span className="flex-1" />
           {g.status === 'active' && (
-            <button onClick={(e) => { e.stopPropagation(); void setGuardStatus(g.id, 'paused') }} className="text-[10.5px] mono text-[color:var(--muted-2)] hover:text-white transition-colors">
-              pause
-            </button>
+            <IconBtn label="Pause this protection" onClick={() => void setGuardStatus(g.id, 'paused')}><Pause className="h-3 w-3" /></IconBtn>
           )}
           {g.status === 'paused' && (
-            <button onClick={(e) => { e.stopPropagation(); void setGuardStatus(g.id, 'active') }} className="text-[10.5px] mono text-[color:var(--muted-2)] hover:text-white transition-colors">
-              resume
-            </button>
+            <IconBtn label="Resume watching" onClick={() => void setGuardStatus(g.id, 'active')}><Play className="h-3 w-3" /></IconBtn>
           )}
           {g.status !== 'triggered' && (
-            <button onClick={(e) => { e.stopPropagation(); void removeGuard(g) }} className="text-[10.5px] mono text-[color:var(--muted-2)] hover:text-red-400 transition-colors">
-              remove
-            </button>
+            <IconBtn label="Remove this protection" danger onClick={() => void removeGuard(g)}><Trash2 className="h-3 w-3" /></IconBtn>
           )}
         </div>
       </div>
     )
+  }
+
+  // Schedule manage — same direct-API pattern as protections; cancel is
+  // terminal so it confirms first, and the refreshed list drops the row
+  // (the GET only returns active|paused).
+  const manageSchedule = async (id: string, op: 'pause' | 'resume' | 'cancel') => {
+    await fetch(`/api/dca/${id}`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ op }),
+    }).catch(() => {})
+    void refresh()
+  }
+  const cancelSchedule = async (s: RunningSchedule) => {
+    if (!window.confirm(`Cancel the $${s.buyUsd} ${s.buyToken} ${cadenceLabel(s.cadence as DcaCadence)} buy? This retires the schedule.`)) return
+    await manageSchedule(s.id, 'cancel')
+  }
+  const disarmAutopilot = async (s: RunningSchedule) => {
+    if (!window.confirm(`Turn off autopilot for the $${s.buyUsd} ${s.buyToken} buy? It drops back to confirm-mode — you sign each period again.`)) return
+    await fetch(`/api/dca/${s.id}/arm`, { method: 'DELETE' }).catch(() => {})
+    void refresh()
   }
 
   const ScheduleRow = ({ s }: { s: RunningSchedule }) => {
@@ -208,22 +244,14 @@ export default function JobsRailTab({ onAct }: { onAct?: () => void }) {
             </button>
           )}
           {s.status === 'active' && s.mode === 'auto' && (
-            <button onClick={(e) => { e.stopPropagation(); prefill(`turn off my ${s.buyToken} dca autopilot`) }} className="text-[10.5px] mono text-[color:var(--muted-2)] hover:text-white transition-colors">
-              autopilot off
-            </button>
+            <IconBtn label="Turn off autopilot (back to confirm-mode)" onClick={() => void disarmAutopilot(s)}><ZapOff className="h-3 w-3" /></IconBtn>
           )}
           {s.status === 'active' ? (
-            <button onClick={(e) => { e.stopPropagation(); prefill(`pause my ${s.buyToken} dca`) }} className="text-[10.5px] mono text-[color:var(--muted-2)] hover:text-white transition-colors">
-              pause
-            </button>
+            <IconBtn label="Pause this recurring buy" onClick={() => void manageSchedule(s.id, 'pause')}><Pause className="h-3 w-3" /></IconBtn>
           ) : (
-            <button onClick={(e) => { e.stopPropagation(); prefill(`resume my ${s.buyToken} dca`) }} className="text-[10.5px] mono text-[color:var(--muted-2)] hover:text-white transition-colors">
-              resume
-            </button>
+            <IconBtn label="Resume this recurring buy" onClick={() => void manageSchedule(s.id, 'resume')}><Play className="h-3 w-3" /></IconBtn>
           )}
-          <button onClick={(e) => { e.stopPropagation(); prefill(`cancel my ${s.buyToken} dca`) }} className="text-[10.5px] mono text-[color:var(--muted-2)] hover:text-red-400 transition-colors">
-            cancel
-          </button>
+          <IconBtn label="Cancel this recurring buy" danger onClick={() => void cancelSchedule(s)}><Trash2 className="h-3 w-3" /></IconBtn>
           {/* a standing order is the product's best receipt — one tap out */}
           <ShareReceiptButton kind="dca" refId={s.id} />
         </div>

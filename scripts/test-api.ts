@@ -7085,6 +7085,13 @@ async function main() {
   }
 
   // ── DCA AUTOPILOT (Spend Permissions: grammar + typed data + the guard) ──
+  {
+    // Rail icon actions (2026-07-28): the schedule manage PATCH is owner-
+    // gated — no session, no mutation; bad ops refuse by name.
+    const noAuth = await fetch(`${BASE}/api/dca/nonexistent`, { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ op: 'cancel' }) })
+    check('dca manage: PATCH without a session → 401', noAuth.status === 401)
+  }
+
   console.log('— dca autopilot')
   {
     // Toggle grammar: narrow, deterministic, and it must NEVER collide with
