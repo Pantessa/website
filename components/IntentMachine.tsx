@@ -330,12 +330,13 @@ export default function IntentMachine() {
       <div className="mach__head">
         <span className="mach__eyebrow mono">THE MACHINE</span>
         <h2 className="mach__h2">
-          Watch a sentence <span className="x-grad">become a transaction.</span>
+          Watch a sentence <span className="x-grad">become multiple transactions.</span>
         </h2>
         <p className="mach__sub">
-          Pick an ask. The same stages your users walk run right here — the wallet scan, the
-          funding plan, the pinned builder, the guardrails that fail closed, the signature that is
-          only ever theirs. Four asks, four different endings. That difference is the whole product.
+          Almost nothing worth asking for is one transaction. Pick an ask and the same stages your
+          users walk run right here — the wallet scan, the funding plan, the pinned builder, the
+          guardrails that fail closed, the signatures that are only ever theirs. Four asks, four
+          different endings. That difference is the whole product.
         </p>
       </div>
 
