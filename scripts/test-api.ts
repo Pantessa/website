@@ -36,7 +36,7 @@ import { chartPairFor, changePct24h, aggregateCandles, type Candle } from '../li
 import { pureChecks, policyCheck, orderValueUsd, buildReport } from '../lib/cow-guardrails'
 import { policyCheckInflow, recipientCheck, validityCheck, MAX_VALID_SEC } from '../lib/tx-guardrails'
 import { guardPlannerArtifact, PERMIT2_ADDRESS } from '../lib/planner-artifact-guard'
-import { parseSwapIntent } from '../lib/swap-intent'
+import { parseSwapIntent, swapClarify } from '../lib/swap-intent'
 import { activeLinkCapFor, composeMcps } from '../lib/intent-links'
 import { formatEarnedUsd, netFeeBpsFor, creatorEarningsUsd, FEE_BEARING_BUILD_PATHS, CROSS_CHAIN_FEE_BPS, CROSS_CHAIN_NET_FEE_BPS } from '../lib/fees'
 import { hexLuminance, normalizeAccent, normalizeBg, parseBrandHtml, validateBrandUrl } from '../lib/brand-scan'
@@ -5159,6 +5159,40 @@ async function main() {
   check('swap intent: "worth of shares of" variant', sh2.isSwap && sh2.sellAmountUsd === '20' && sh2.buyToken === 'AAPL')
   const sh3 = parseSwapIntent('buy 5 shares of AAPL')
   check('swap intent: share-COUNT buy clarifies toward dollars (no planner fall-through)', sh3.isSwap && sh3.problem !== undefined && sh3.problem.includes('$') && sh3.problem.includes('AAPL'))
+  // Bare sells with no buy side (live 2026-07-28: the chart overlay's
+  // "Sell $50 of ETH" chip earned the prose clarify, then two planner turns
+  // and an invalid CoW chain enum — nothing built). The parse carries the
+  // sell side alone; the route buys the chain's primary stable.
+  const bs = parseSwapIntent('Sell $50 of ETH')
+  check('swap intent: "Sell $50 of ETH" parses, buy side left to the route', bs.isSwap && bs.sellAmountUsd === '50' && bs.sellToken === 'ETH' && bs.buyToken === undefined && !bs.problem)
+  const bs2 = parseSwapIntent('sell 0.25 ETH')
+  check('swap intent: "sell 0.25 ETH" unit sell with no buy side', bs2.isSwap && bs2.sellAmountHuman === '0.25' && bs2.sellToken === 'ETH' && bs2.buyToken === undefined && !bs2.problem)
+  check('swap intent: stop-words never claim the bare-token slot', parseSwapIntent('sell 2 of my NFTs').sellToken === undefined)
+  check('swap intent: chain words never claim the bare-token slot', parseSwapIntent('sell 5 arbitrum').sellToken === undefined)
+  check('swap intent: bare perp sells stay off the spot venue', parseSwapIntent('sell $50 of ETH on hyperliquid').sellToken === undefined)
+  const pn = parseSwapIntent('swap USDC for WETH')
+  check('swap intent: pair-no-amount carries the pair for chips (problem stays set)', !!pn.problem && pn.sellToken === 'USDC' && pn.buyToken === 'WETH')
+  // Chip-bearing clarifies — every resume is a COMPLETE ask that round-trips
+  // this parser (the chip is the contract, same as funding/DCA chips).
+  const cc1 = swapClarify(parseSwapIntent('swap USDC for WETH'))
+  check(
+    'swap clarify: pair without amount → preset $ chips that round-trip',
+    !!cc1 && cc1.options.length >= 2 && cc1.options.every((o) => { const r = parseSwapIntent(o.resume); return r.isSwap && !r.problem && r.sellToken === 'USDC' && r.buyToken === 'WETH' && !!r.sellAmountUsd }),
+  )
+  const cc2 = swapClarify(parseSwapIntent('buy 5 shares of AAPL'))
+  check(
+    'swap clarify: share-count buy → dollar preset chips that round-trip',
+    !!cc2 && cc2.options.length >= 2 && cc2.options.every((o) => { const r = parseSwapIntent(o.resume); return r.isSwap && !r.problem && r.buyToken === 'AAPL' && !!r.sellAmountUsd }),
+  )
+  const cc3 = swapClarify(parseSwapIntent('sell $50 of USDC'), { targets: ['ETH', 'CBETH'] })
+  check(
+    'swap clarify: stable sell with no target → target chips that round-trip',
+    !!cc3 && cc3.options.length === 2 && cc3.options.every((o) => { const r = parseSwapIntent(o.resume); return r.isSwap && !r.problem && r.sellToken === 'USDC' && !!r.buyToken }),
+  )
+  check(
+    'swap clarify: complete asks never chip-clarify',
+    swapClarify(parseSwapIntent('swap 100 USDC for WETH')) === null && swapClarify(parseSwapIntent('Sell $50 of ETH')) === null,
+  )
   // usd→token conversion (pure): bounded by token decimals, honest nulls.
   check(
     'usd probe: $1 at $3241.55/ETH ≈ 0.00030849 ETH',
@@ -5913,7 +5947,12 @@ async function main() {
     method: 'POST', headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ message: 'swap USDC for WETH', activeServers: [], walletAddress: '0x1111111111111111111111111111111111111111' }),
   }).then((r) => r.json())
-  check('native swap: clarifies with zero services active', typeof nativeClarify.reply === 'string' && nativeClarify.reply.includes('amount and pair'))
+  check(
+    'native swap: clarifies with zero services active (preset-amount chips since 2026-07-28)',
+    typeof nativeClarify.reply === 'string' && /how much usdc/i.test(nativeClarify.reply) &&
+      Array.isArray((nativeClarify.clarify as { options?: unknown[] } | undefined)?.options) && (nativeClarify.clarify as { options: unknown[] }).options.length >= 2,
+    JSON.stringify(nativeClarify).slice(0, 200),
+  )
   const nativeNoWallet = await fetch(`${BASE}/api/chat`, {
     method: 'POST', headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ message: 'swap 2 USDC for WETH', activeServers: [] }),

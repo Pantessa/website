@@ -22,6 +22,9 @@ export interface SwapIntent {
   /** Unset on a buy-dollar ask with no spend token named ("buy $5 of AAPL")
    *  — the route fills in the chain's primary stable. */
   sellToken?: string
+  /** Unset on a bare sell with no buy side named ("sell $50 of ETH") — the
+   *  route fills in the chain's primary stable (chips when the sell side IS
+   *  the stable). */
   buyToken?: string
   /** Limit orders only: the minimum acceptable buy amount (the named price). */
   buyAmountAtLeastHuman?: string
@@ -126,6 +129,23 @@ const NEED_DOLLAR_RE = new RegExp(
   String.raw`\b(?:i\s+)?(?:need|want|get\s+me)\s+${FILLER}${USD_AMOUNT}(?:\s+worth)?\s+(?:of|in)\s+${TOKEN}\b`,
   'i',
 )
+// "sell/swap $50 (worth) of/in ETH" — a sell with NO buy side named (the
+// chart overlay's Sell chip sends exactly this shape). The route fills the
+// buy side with the chain's primary stable — the mirror of the buy-dollar
+// default. Live 2026-07-28: "Sell $50 of ETH" got the prose clarify, the
+// typed "USDC" answer fell to the planner, and the planner called CoW with
+// an invalid chain enum — three turns, nothing built.
+const SELL_DOLLAR_NO_TARGET_RE = new RegExp(
+  String.raw`\b(?:swap|sell|convert|trade)\s+${FILLER}${USD_AMOUNT}(?:\s+worth)?\s+(?:of|in)\s+${TOKEN}\b`,
+  'i',
+)
+// "sell 0.25 ETH" — unit-amount sell, no buy side named.
+const SELL_UNIT_NO_TARGET_RE = new RegExp(String.raw`\b(?:swap|sell|convert|trade)\s+${AMOUNT}\s*${TOKEN}\b`, 'i')
+// The no-target token slot must hold a real symbol: filler words ("sell 2 of
+// my NFTs" puts "of" there) and dollar words never claim; chain words are
+// guarded separately (canonicalChainWord, ≥5 chars — eth/base stay tokens).
+const NO_TARGET_STOPWORDS = /^(?:of|my|the|an?|to|for|in|on|at|it|that|this|these|them|some|all|more|worth|usd|dollars?|bucks?|shares?|percent|pct)$/i
+const claimableBareToken = (tok: string) => !NO_TARGET_STOPWORDS.test(tok) && !(tok.length >= 5 && canonicalChainWord(tok))
 // Dollar amounts on OTHER venues (perps etc.) must not be hijacked into a
 // spot swap — "buy $12 of ETH on hyperliquid" belongs to the HL exec layer.
 const OTHER_VENUE_RE = /\bhyperliquid\b|\bperp(?:s|etual)?\b|\bleverage\b|\b\d+x\b/i
@@ -197,8 +217,10 @@ export function parseSwapIntent(message: string): SwapIntent {
     }
     const sm = message.match(BUY_SHARES_COUNT_RE)
     if (sm) {
+      // buyToken rides along so the clarify can offer preset-$ chips.
       return {
         isSwap: true,
+        buyToken: sm[2],
         problem: `Buys here are sized by what you spend — say it in dollars ("buy $20 of ${sm[2].toUpperCase()}") and I'll build it at the live price.`,
       }
     }
@@ -212,14 +234,91 @@ export function parseSwapIntent(message: string): SwapIntent {
     if (nm && !/\b(?:every|each|daily|weekly|monthly)\b/i.test(message)) {
       return { isSwap: true, mode: 'swap', sellAmountUsd: usdOf(nm, 1), buyToken: nm[3] }
     }
+    // Sells with no buy side — the route defaults the buy to the chain's
+    // primary stable (selling the stable itself asks with chips instead).
+    const sd = message.match(SELL_DOLLAR_NO_TARGET_RE)
+    if (sd && claimableBareToken(sd[3])) {
+      return { isSwap: true, mode: 'swap', sellAmountUsd: usdOf(sd, 1), sellToken: sd[3] }
+    }
+    const su = message.match(SELL_UNIT_NO_TARGET_RE)
+    if (su && claimableBareToken(su[2])) {
+      return { isSwap: true, mode: 'swap', sellAmountHuman: su[1], sellToken: su[2] }
+    }
   }
   if (swapish(message)) {
+    // A pair with no amount ("swap USDC for WETH") stays under-specified
+    // (`problem` set — callers gate on it) but CARRIES the pair, so the
+    // route can answer with tappable preset amounts instead of prose
+    // homework. A chain word in either slot is a cross-chain shape, not a
+    // pair — carry nothing.
+    const pm = message.match(PAIR_NO_AMOUNT_RE)
+    const pairOk = pm && claimableBareToken(pm[1]) && claimableBareToken(pm[2])
     return {
       isSwap: true,
       problem: 'Say the amount and pair — e.g. “swap 100 USDC for WETH” or “swap $5 of ETH for USDG”.',
+      ...(pairOk ? { sellToken: pm[1], buyToken: pm[2] } : {}),
     }
   }
   return NOT_SWAP
+}
+
+// ── Chip-bearing clarifies ───────────────────────────────────────────────────
+// When a swap ask IS under-specified, hand the user options to TAP, not
+// homework (live 2026-07-28: the chart chip's "Sell $50 of ETH" got "Say the
+// amount and pair…" and the typed answers fell to the planner). Every resume
+// is a COMPLETE ask that round-trips parseSwapIntent — the chip is the
+// contract, same as funding/DCA/stock-pairing chips.
+
+export interface SwapClarifyChips {
+  reply: string
+  question: string
+  options: { label: string; resume: string }[]
+}
+
+const PRESET_USD = [25, 50, 100] as const
+
+/**
+ * Compose a chip clarify for an under-specified swap intent, or null when the
+ * parse doesn't pin enough to write complete resumes (prose is all that's
+ * left then). `targets` supplies buy-side candidates for a stable sell —
+ * chain-aware, so the route passes the chain's own token list.
+ */
+export function swapClarify(intent: SwapIntent, opts: { targets?: string[] } = {}): SwapClarifyChips | null {
+  if (!intent.isSwap || intent.mode === 'limit') return null
+  const sell = intent.sellToken?.toUpperCase()
+  const buy = intent.buyToken?.toUpperCase()
+  const amountless = !intent.sellAmountHuman && !intent.sellAmountUsd
+  // Pair known, amount missing ("swap USDC for WETH") → preset $ amounts.
+  if (sell && buy && amountless) {
+    return {
+      reply: `How much ${sell} → ${buy}? Pick an amount, or say one — “swap $5 of ${sell} for ${buy}”, “swap 100 ${sell} for ${buy}”.`,
+      question: `How much ${sell}?`,
+      options: PRESET_USD.map((usd) => ({ label: `$${usd}`, resume: `Swap $${usd} of ${sell} for ${buy}` })),
+    }
+  }
+  // Target known, amount missing ("buy 5 shares of AAPL" — sized by what you
+  // spend, so the chips restate it in dollars).
+  if (!sell && buy && amountless) {
+    return {
+      reply: `Buys are sized by what you spend — pick an amount for ${buy}, or say one (“buy $20 of ${buy}”).`,
+      question: `How much ${buy}?`,
+      options: PRESET_USD.map((usd) => ({ label: `$${usd}`, resume: `Buy $${usd} of ${buy}` })),
+    }
+  }
+  // Amount known, buy side missing, and the sell side is the chain's own
+  // stable ("sell $50 of USDC") — no honest default; offer the chain's
+  // targets. Two minimum: one option is not a question (lib/clarify drops
+  // single-option payloads client-side).
+  const targets = opts.targets ?? []
+  if (sell && !buy && !amountless && targets.length >= 2) {
+    const amountPhrase = intent.sellAmountUsd ? `$${intent.sellAmountUsd} of ${sell}` : `${intent.sellAmountHuman} ${sell}`
+    return {
+      reply: `Swap ${amountPhrase} into what? Pick a target, or name any token (“swap ${amountPhrase} for ETH”).`,
+      question: `Buy what with the ${sell}?`,
+      options: targets.slice(0, 4).map((t) => ({ label: t.toUpperCase(), resume: `Swap ${amountPhrase} for ${t.toUpperCase()}` })),
+    }
+  }
+  return null
 }
 
 // ── Working context for swap/order artifacts (invariant #11) ─────────────────

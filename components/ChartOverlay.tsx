@@ -3,9 +3,10 @@
 // The live chart view behind every token chart button. Clicking a token
 // anywhere in chat opens this overlay OVER the conversation (the
 // JobDetailOverlay pattern — no navigation away, context intact): live
-// candles, timeframes, and act-on-it chips that PREFILL the composer and
-// close — the user always sends and signs themselves. The same CandleChart
-// powers the shareable /t/<symbol> page, linked from the header.
+// candles, timeframes, and act-on-it chips that SEND their ask and close —
+// the click is the send (2026-07-28: prefill-then-press-send-again read as
+// friction; the wallet signature stays the only real gate). The same
+// CandleChart powers the shareable /t/<symbol> page, linked from the header.
 
 import { useCallback, useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
@@ -16,15 +17,19 @@ import { chartPairFor } from '@/lib/charts'
 import CandleChart, { fmtPrice, type ChartStats } from '@/components/CandleChart'
 import TokenIcon from '@/components/TokenIcon'
 
-export default function ChartOverlay() {
+export default function ChartOverlay({ onAsk }: { onAsk?: (prompt: string) => void } = {}) {
   const { chartDetail, setChartDetail, setComposerPrefill } = useYeetfulStore()
   const [stats, setStats] = useState<ChartStats | null>(null)
 
   const close = useCallback(() => setChartDetail(null), [setChartDetail])
 
-  // An action chip lands in the composer — never auto-sends.
-  const prefill = (prompt: string) => {
-    setComposerPrefill(prompt)
+  // An action chip SENDS its complete ask — a button that lands in the
+  // composer and waits for a second click is friction, not safety (nothing
+  // moves without the wallet signature). Composer prefill only as the
+  // defensive fallback when no send path is wired.
+  const act = (prompt: string) => {
+    if (onAsk) onAsk(prompt)
+    else setComposerPrefill(prompt)
     close()
   }
 
@@ -109,28 +114,28 @@ export default function ChartOverlay() {
             <div className="space-y-3 px-4 py-3">
               <CandleChart symbol={pair.symbol} height={340} onStats={setStats} />
 
-              {/* act on it — the composer-prefill contract */}
+              {/* act on it — a chip click sends the ask; the wallet signs */}
               <div className="flex flex-wrap items-center gap-1.5 border-t border-[var(--line)] pt-2.5">
                 <button
-                  onClick={() => prefill(`Buy $50 of ${pair.symbol}`)}
+                  onClick={() => act(`Buy $50 of ${pair.symbol}`)}
                   className="rounded-lg border border-[var(--line-2)] px-2.5 py-1.5 text-[11px] font-medium text-[color:var(--accent)] transition-colors hover:bg-white/[0.04]"
                 >
                   Buy {pair.symbol}
                 </button>
                 <button
-                  onClick={() => prefill(`Sell $50 of ${pair.symbol}`)}
+                  onClick={() => act(`Sell $50 of ${pair.symbol}`)}
                   className="rounded-lg border border-[var(--line)] px-2.5 py-1.5 text-[11px] text-[color:var(--muted)] transition-colors hover:text-white"
                 >
                   Sell {pair.symbol}
                 </button>
                 <button
-                  onClick={() => prefill(`DCA $10 into ${pair.symbol} weekly`)}
+                  onClick={() => act(`DCA $10 into ${pair.symbol} weekly`)}
                   className="rounded-lg border border-[var(--line)] px-2.5 py-1.5 text-[11px] text-[color:var(--muted)] transition-colors hover:text-white"
                 >
                   DCA weekly
                 </button>
                 <span className="mono ml-auto text-[9.5px] uppercase tracking-widest text-[color:var(--muted-2)]">
-                  fills the composer · you send it
+                  sends the ask · your wallet signs
                 </span>
               </div>
             </div>

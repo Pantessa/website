@@ -567,6 +567,19 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
     void handleSend(prompt)
   }
 
+  // Chart-overlay chips SEND their ask — the click is the send (2026-07-28:
+  // prefill-then-press-send-again read as friction). Mid-turn the ask lands
+  // in the composer instead so it's never silently dropped (handleSend
+  // no-ops while loading).
+  const sendFromOverlay = (prompt: string) => {
+    if (loading || pendingPayment) {
+      setInput(prompt)
+      textareaRef.current?.focus()
+      return
+    }
+    runExample(prompt)
+  }
+
   // Render-time mirror for the scroll observers (see refs above). App Mode's
   // workspace face scrolls panels, not the thread — growing tiles there must
   // not yank the view to the bottom.
@@ -1298,7 +1311,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
       {/* Chart buttons live inside cards that render on EVERY surface
           (embed + /i included), so their overlay mounts ungated — a button
           that no-ops would read as broken. No chrome, no auth inside. */}
-      <ChartOverlay />
+      <ChartOverlay onAsk={sendFromOverlay} />
 
       {/* Messages area — or, in App Mode, the structured workspace (panels
           fed by the working set; the input below stays docked as the command
