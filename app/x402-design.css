@@ -2827,6 +2827,296 @@
   }
 
 
+  /* ── THE MACHINE (.mach) ───────────────────────────────────────────────
+     The landing's runnable model of a turn: pick an ask, watch it walk
+     read → scan → plan → build → guard → sign → settle. Scoped tokens (--m*)
+     so the daylight flip is one block at the bottom of this file; every
+     animation is a fade/slide the reduced-motion guard can null out, and the
+     component itself renders the run complete-and-still in that mode. */
+  .mach {
+    --mpanel: color-mix(in srgb, var(--surf-1) 82%, transparent);
+    --mink: var(--fg);
+    --mmut: var(--muted);
+    --mfaint: var(--muted-2);
+    --mline: var(--line);
+    --mglow: color-mix(in srgb, var(--accent) 22%, transparent);
+    --mread: #8b9df8;
+    --mscan: #62c8f0;
+    --mplan: #e8c468;
+    --mbuild: #b487f0;
+    --mguard: #34e3a0;
+    --msign: #f0876f;
+    --msettle: #34e3a0;
+    padding: clamp(72px, 9vh, 112px) 0 clamp(56px, 7vh, 88px);
+  }
+  .mach__head { max-width: 1220px; margin: 0 auto; }
+  .mach__eyebrow { font-size: 12px; letter-spacing: 0.18em; color: var(--mfaint); }
+  .mach__h2 {
+    font-family: var(--font-serif); font-weight: 500; font-optical-sizing: auto;
+    font-size: clamp(30px, 4.2vw, 50px); letter-spacing: -0.015em; line-height: 1.04;
+    margin-top: 12px; color: var(--mink); max-width: 20ch;
+  }
+  .mach__sub { margin-top: 16px; max-width: 64ch; font-size: 15.5px; line-height: 1.6; color: var(--mmut); text-wrap: pretty; }
+
+  /* the four asks */
+  .mach__tabs { max-width: 1220px; margin: 30px auto 0; display: flex; flex-wrap: wrap; gap: 8px; }
+  .mach__tab {
+    display: inline-flex; align-items: center; gap: 9px;
+    padding: 7px 16px 7px 9px; border-radius: 999px;
+    border: 1px solid var(--mline); background: var(--surf-1);
+    color: var(--mmut); font-size: 13.5px; cursor: pointer;
+    transition: color .2s, border-color .2s, background .2s, transform .2s;
+  }
+  .mach__tab:hover { color: var(--mink); border-color: var(--line-2); transform: translateY(-1px); }
+  .mach__tab.is-on {
+    color: var(--mink); border-color: color-mix(in srgb, var(--accent) 55%, transparent);
+    background: color-mix(in srgb, var(--accent) 9%, var(--surf-1));
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 18%, transparent), 0 6px 22px -12px var(--accent);
+  }
+  .mach__tabname { white-space: nowrap; }
+  .mach__marks { display: inline-flex; align-items: center; flex-shrink: 0; }
+  .mach__mark {
+    position: relative; display: inline-flex; align-items: center; justify-content: center;
+    height: 22px; width: 22px; border-radius: 999px; overflow: hidden;
+    border: 1px solid var(--line-2); background: var(--surf-2); color: var(--mink);
+    box-shadow: 0 0 0 2px var(--surf-1);
+  }
+  .mach__mark + .mach__mark { margin-left: -5px; }
+
+  /* the console */
+  .mach__console {
+    position: relative; max-width: 1220px; margin: 22px auto 0;
+    border: 1px solid var(--mline); border-radius: 22px;
+    background:
+      radial-gradient(120% 90% at 50% -10%, var(--mglow), transparent 62%),
+      var(--mpanel);
+    backdrop-filter: blur(8px);
+    overflow: hidden;
+  }
+  .mach__top { padding: clamp(24px, 3vw, 40px) clamp(20px, 3vw, 40px) 20px; }
+  .mach__ask {
+    font-family: var(--font-serif); font-weight: 500; font-optical-sizing: auto;
+    font-size: clamp(21px, 2.5vw, 32px); line-height: 1.32; letter-spacing: -.01em;
+    color: var(--mink); text-wrap: pretty;
+  }
+  .mach__quote { color: var(--mfaint); }
+  .mach__tok { position: relative; white-space: nowrap; transition: color .35s ease; }
+  .mach__tok::after {
+    content: ''; position: absolute; left: 0; right: 0; bottom: -2px; height: 2px;
+    background: var(--accent); border-radius: 2px;
+    transform: scaleX(0); transform-origin: left; transition: transform .5s cubic-bezier(.2,.8,.2,1);
+  }
+  .mach__tok.is-read { color: color-mix(in srgb, var(--accent) 72%, var(--mink)); }
+  .mach__tok.is-read::after { transform: scaleX(1); }
+  /* the spec the sentence became — chips land one after another as READ runs */
+  .mach__spec { margin-top: 18px; display: flex; flex-wrap: wrap; gap: 7px; min-height: 26px; }
+  .mach__chip {
+    display: inline-flex; align-items: baseline; gap: 7px;
+    padding: 4px 11px; border-radius: 7px; font-size: 11px; color: var(--mmut);
+    border: 1px solid var(--mline); background: color-mix(in srgb, var(--fg) 3%, transparent);
+    opacity: 0; transform: translateY(6px) scale(.96);
+    transition: opacity .4s ease var(--d), transform .4s cubic-bezier(.2,.8,.2,1) var(--d);
+  }
+  .mach__chip b { font-weight: 400; font-size: 9px; letter-spacing: .13em; text-transform: uppercase; color: var(--mfaint); }
+  .mach__spec.is-read .mach__chip { opacity: 1; transform: none; }
+  .mach__premise { margin-top: 18px; font-size: 12px; letter-spacing: .04em; color: var(--mfaint); }
+
+  .mach__bar { height: 2px; background: color-mix(in srgb, var(--fg) 8%, transparent); }
+  .mach__barfill { display: block; height: 100%; background: linear-gradient(90deg, var(--mread), var(--accent)); transition: width .12s linear; }
+
+  .mach__body { display: grid; grid-template-columns: 176px minmax(0, 1fr) minmax(280px, 360px); min-height: 340px; }
+
+  /* the stage rail */
+  .mach__rail {
+    list-style: none; margin: 0; padding: 26px 0 26px 22px;
+    border-right: 1px solid var(--mline);
+    display: flex; flex-direction: column; justify-content: center; gap: 2px;
+    position: relative;
+  }
+  .mach__rail::before {
+    content: ''; position: absolute; left: 27px; top: 34px; bottom: 34px; width: 1px;
+    background: linear-gradient(180deg, transparent, var(--mline) 12%, var(--mline) 88%, transparent);
+  }
+  .mach__stagebtn {
+    display: flex; align-items: center; gap: 12px; width: 100%;
+    padding: 6px 0; background: none; border: 0; cursor: pointer; text-align: left;
+  }
+  .mach__dot {
+    position: relative; z-index: 1; flex-shrink: 0; height: 11px; width: 11px; border-radius: 999px;
+    border: 1px solid var(--line-2); background: var(--surf-1);
+    transition: background .3s, border-color .3s, box-shadow .3s, transform .3s;
+  }
+  .mach__stagekey { font-size: 11px; letter-spacing: .13em; color: var(--mfaint); transition: color .3s; }
+  .mach__stage--read { --sc: var(--mread); }
+  .mach__stage--scan { --sc: var(--mscan); }
+  .mach__stage--plan { --sc: var(--mplan); }
+  .mach__stage--build { --sc: var(--mbuild); }
+  .mach__stage--guard { --sc: var(--mguard); }
+  .mach__stage--sign { --sc: var(--msign); }
+  .mach__stage--settle { --sc: var(--msettle); }
+  .mach__stage.is-done .mach__dot { background: color-mix(in srgb, var(--sc) 50%, transparent); border-color: var(--sc); }
+  .mach__stage.is-done .mach__stagekey { color: var(--mmut); }
+  .mach__stage.is-live .mach__dot {
+    background: var(--sc); border-color: var(--sc); transform: scale(1.28);
+    box-shadow: 0 0 0 4px color-mix(in srgb, var(--sc) 18%, transparent), 0 0 16px var(--sc);
+  }
+  .mach__stage.is-live .mach__stagekey { color: var(--mink); }
+  .mach__stagebtn:hover .mach__stagekey { color: var(--mink); }
+
+  /* the panel */
+  .mach__panel { padding: 30px clamp(20px, 3vw, 40px); display: flex; flex-direction: column; min-width: 0; }
+  .mach__headline {
+    font-family: var(--font-serif); font-weight: 500; font-optical-sizing: auto;
+    font-size: clamp(17px, 1.7vw, 22px); line-height: 1.4; color: var(--mink); max-width: 46ch;
+    animation: mach-head .5s cubic-bezier(.2,.8,.2,1) both;
+  }
+  @keyframes mach-head { from { opacity: 0; transform: translateY(7px); } to { opacity: 1; transform: none; } }
+  .mach__log { margin-top: 18px; display: flex; flex-direction: column; gap: 5px; min-height: 128px; overflow: hidden; }
+  .mach__line {
+    font-size: 12.5px; line-height: 1.5; color: var(--mmut); letter-spacing: .01em;
+    opacity: 0; transform: translateX(-6px); transition: opacity .3s ease, transform .3s cubic-bezier(.2,.8,.2,1);
+    white-space: pre-wrap; word-break: break-word;
+  }
+  .mach__line.is-in { opacity: 1; transform: none; }
+  .mach__line.is-ok { color: color-mix(in srgb, var(--mguard) 78%, var(--fg)); }
+  .mach__line.is-warn { color: var(--mplan); }
+  .mach__outcome { margin-top: auto; padding-top: 20px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; animation: mach-head .5s cubic-bezier(.2,.8,.2,1) both; }
+  .mach__stamp {
+    display: inline-block; padding: 6px 14px; border-radius: 999px;
+    border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
+    background: color-mix(in srgb, var(--accent) 12%, transparent);
+    color: color-mix(in srgb, var(--accent) 82%, var(--fg));
+    font-size: 11.5px; letter-spacing: .1em; text-transform: uppercase;
+  }
+  .mach__stampsub { font-size: 11.5px; color: var(--mfaint); }
+
+  /* ── the route, assembling ─────────────────────────────────────────────
+     One horizontal path: where the money is → the legs → where the ask
+     settles. Each reveal is a class the component sets off the stage TONE it
+     has reached (r-bal … r-done), so the diagram is readable frozen at any
+     stage and needs no clock of its own. */
+  .mach__route {
+    border-left: 1px solid var(--mline); padding: 26px 24px;
+    display: flex; flex-direction: column; gap: 18px; min-width: 0;
+    background: color-mix(in srgb, var(--fg) 1.6%, transparent);
+  }
+  .mach__routetop { display: flex; justify-content: space-between; align-items: baseline; font-size: 10px; letter-spacing: .16em; color: var(--mfaint); }
+  .mach__routestate { color: var(--accent); letter-spacing: .1em; }
+  .mach__nodes { flex: 1; display: grid; grid-template-rows: auto 1fr auto; gap: 6px; }
+
+  .mach__node { display: grid; grid-template-columns: 34px 1fr; grid-template-areas: 'icon name' 'icon sub' 'stamp stamp'; align-items: center; column-gap: 11px; }
+  .mach__nodeicon {
+    grid-area: icon; height: 34px; width: 34px; border-radius: 11px;
+    display: flex; align-items: center; justify-content: center;
+    border: 1px solid var(--mline); background: var(--surf-2); color: var(--mink);
+    transition: border-color .4s, box-shadow .4s;
+  }
+  .mach__nodeletter { font-family: var(--font-mono); font-size: 14px; }
+  .mach__nodename { grid-area: name; font-size: 13.5px; color: var(--mink); line-height: 1.2; }
+  .mach__nodesub { grid-area: sub; font-size: 11px; color: var(--mfaint); line-height: 1.5; transition: color .4s; }
+  .r-bal .mach__node .mach__nodesub { color: var(--mscan); }
+  .r-bal .mach__node .mach__nodeicon { border-color: color-mix(in srgb, var(--mscan) 45%, transparent); }
+
+  .mach__legs { position: relative; display: flex; flex-direction: column; justify-content: center; gap: 12px; padding: 8px 0 8px 46px; min-height: 96px; }
+  .mach__leg { position: relative; display: flex; align-items: center; gap: 10px; }
+  .mach__legwire { position: relative; display: block; width: 3px; height: 26px; border-radius: 3px; background: repeating-linear-gradient(180deg, var(--mline) 0 3px, transparent 3px 7px); overflow: hidden; transition: background .4s; }
+  .r-plan .mach__legwire { background: repeating-linear-gradient(180deg, var(--mplan) 0 3px, transparent 3px 7px); }
+  .r-built .mach__legwire { background: color-mix(in srgb, var(--mbuild) 70%, transparent); }
+  .r-done .mach__legwire { background: var(--accent); }
+  .mach__legspark { position: absolute; left: 0; right: 0; height: 8px; border-radius: 3px; background: var(--accent); opacity: 0; top: -8px; }
+  .r-sign .mach__legspark { opacity: 1; animation: mach-spark 1.5s cubic-bezier(.4,0,.3,1) infinite; animation-delay: calc(var(--i) * .28s); }
+  @keyframes mach-spark { 0% { top: -8px; opacity: 0; } 20% { opacity: 1; } 100% { top: 26px; opacity: 0; } }
+  .mach__leglabel { font-size: 10.5px; color: var(--mfaint); opacity: .45; transition: opacity .4s, color .4s; }
+  .r-plan .mach__leglabel { opacity: 1; color: var(--mmut); }
+
+  .mach__shield {
+    position: absolute; right: 0; top: 50%; transform: translateY(-50%);
+    display: inline-flex; align-items: center; gap: 7px;
+    font-size: 10px; letter-spacing: .1em; color: var(--mfaint);
+    opacity: 0; transition: opacity .5s ease, color .5s;
+  }
+  .r-guard .mach__shield { opacity: 1; color: color-mix(in srgb, var(--mguard) 80%, var(--fg)); }
+  .mach__shieldring { height: 12px; width: 12px; border-radius: 999px; border: 1.5px solid currentColor; border-top-color: transparent; }
+  .r-guard .mach__shieldring { animation: mach-ring 1.4s linear infinite; }
+  .r-done .mach__shieldring { animation: none; border-top-color: currentColor; background: color-mix(in srgb, var(--mguard) 35%, transparent); }
+  @keyframes mach-ring { to { transform: rotate(360deg); } }
+
+  .mach__node--to .mach__nodeicon { border-color: var(--mline); }
+  .r-done .mach__node--to .mach__nodeicon {
+    border-color: color-mix(in srgb, var(--accent) 60%, transparent);
+    box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 12%, transparent);
+  }
+  .mach__stampchip {
+    grid-area: stamp; justify-self: start; margin-top: 10px;
+    padding: 4px 11px; border-radius: 7px; font-size: 11px; letter-spacing: .04em;
+    border: 1px dashed var(--mline); color: var(--mfaint);
+    transform: rotate(-1.2deg); transition: all .45s cubic-bezier(.2,.8,.2,1);
+  }
+  .r-done .mach__stampchip {
+    border-style: solid; border-color: color-mix(in srgb, var(--accent) 55%, transparent);
+    color: color-mix(in srgb, var(--accent) 85%, var(--fg));
+    background: color-mix(in srgb, var(--accent) 10%, transparent);
+    transform: rotate(-1.2deg) scale(1.04);
+  }
+  .mach__routefoot { font-size: 10.5px; line-height: 1.5; color: var(--mfaint); border-top: 1px solid var(--mline); padding-top: 12px; }
+
+  .mach__foot {
+    display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap;
+    padding: 14px clamp(20px, 3vw, 40px); border-top: 1px solid var(--mline);
+    background: color-mix(in srgb, var(--fg) 2.5%, transparent);
+  }
+  .mach__disclose { font-size: 11px; color: var(--mfaint); letter-spacing: .03em; }
+  .mach__acts { display: flex; align-items: center; gap: 10px; }
+  .mach__ctl {
+    display: inline-flex; align-items: center; gap: 6px; padding: 7px 14px; border-radius: 999px;
+    border: 1px solid var(--mline); background: transparent; color: var(--mmut);
+    font-size: 11.5px; letter-spacing: .05em; cursor: pointer; transition: color .2s, border-color .2s;
+  }
+  .mach__ctl:hover { color: var(--mink); border-color: var(--line-2); }
+  .mach__cta {
+    display: inline-flex; align-items: center; gap: 7px; padding: 8px 16px; border-radius: 999px;
+    background: var(--accent); color: var(--ink); font-size: 13px; font-weight: 600;
+    transition: transform .2s, box-shadow .2s;
+  }
+  .mach__cta:hover { transform: translateY(-1px); box-shadow: 0 8px 24px -10px var(--accent); }
+
+  @media (max-width: 1180px) {
+    .mach__body { grid-template-columns: 176px minmax(0, 1fr); }
+    .mach__route { grid-column: 1 / -1; border-left: 0; border-top: 1px solid var(--mline); }
+    .mach__nodes { grid-template-rows: none; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 18px; }
+    .mach__legs { padding: 0; min-height: 0; }
+    .mach__leg { flex-direction: column; gap: 6px; }
+    .mach__legwire { width: 34px; height: 3px; background: repeating-linear-gradient(90deg, var(--mline) 0 3px, transparent 3px 7px); }
+    .r-plan .mach__legwire { background: repeating-linear-gradient(90deg, var(--mplan) 0 3px, transparent 3px 7px); }
+    .mach__legspark { top: 0; bottom: 0; left: -8px; right: auto; width: 8px; height: auto; }
+    .r-sign .mach__legspark { animation-name: mach-spark-x; }
+    @keyframes mach-spark-x { 0% { left: -8px; opacity: 0; } 20% { opacity: 1; } 100% { left: 34px; opacity: 0; } }
+    .mach__shield { position: static; transform: none; justify-content: center; }
+  }
+  @media (max-width: 900px) {
+    .mach__body { grid-template-columns: 1fr; }
+    .mach__nodes { grid-template-columns: 1fr; grid-template-rows: auto auto auto; }
+    .mach__rail {
+      flex-direction: row; overflow-x: auto; padding: 14px 18px; gap: 4px;
+      border-right: 0; border-bottom: 1px solid var(--mline); justify-content: flex-start;
+    }
+    .mach__rail::before { left: 30px; right: 30px; top: auto; bottom: auto; width: auto; height: 1px; top: 50%;
+      background: linear-gradient(90deg, transparent, var(--mline) 12%, var(--mline) 88%, transparent); }
+    .mach__stagebtn { flex-direction: column; gap: 6px; padding: 0 10px; }
+    .mach__stagekey { font-size: 9.5px; }
+    .mach__panel { padding: 24px 20px 28px; }
+    .mach__foot { flex-direction: column; align-items: stretch; }
+    .mach__acts { justify-content: space-between; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .mach__headline, .mach__outcome { animation: none; }
+    .mach__line { transition: none; opacity: 1; transform: none; }
+    .mach__tok::after { transition: none; }
+    .mach__legspark, .mach__shieldring { animation: none !important; }
+    .mach__legspark { opacity: 0 !important; }
+    .mach__chip { transition: none; opacity: 1; transform: none; }
+  }
+
   /* ── FUNDING LAYER (.fundx): the "Buy $2 of AAPL" power example ────────
      Visual-left mirror of TxPipeline: a stylized still of the funding plan
      running (offer → chips → job steps → receipt), the doctrine on the
@@ -3208,6 +3498,21 @@
   /* Fusion hero in daylight: the particle rivers become ink on paper — a
      mint-washed stage, deep-emerald core, saturated protocol hues (the
      canvas palette flips in HomeHeroFusion.tsx alongside these). */
+  /* The machine in daylight: the stage hues are tuned for additive light on
+     black, so they wash out on paper — re-ink them to their ink-on-paper
+     siblings. The rest of the console rides --surf/--line/--fg and flips on
+     its own. */
+  html[data-theme='light'] .mach {
+    --mread: #4a5cd0;
+    --mscan: #1f7fa8;
+    --mplan: #a3720c;
+    --mbuild: #7a45c4;
+    --mguard: #0e8f62;
+    --msign: #c4552f;
+    --msettle: #0e8f62;
+    --mpanel: color-mix(in srgb, var(--surf-1) 88%, #ffffff);
+    --mglow: color-mix(in srgb, var(--accent) 13%, transparent);
+  }
   html[data-theme='light'] .fhero {
     --fbg: #f4f9f5;
     --haccent: #0e8f62;
