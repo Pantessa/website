@@ -172,10 +172,16 @@ export async function GET(req: NextRequest) {
       signsCount += t._count._all
       if (t.buildPath && FEE_BEARING_BUILD_PATHS.has(t.buildPath)) feeBearingUsd += v
     }
-    return { signedUsd, signsCount, earnedUsd: creatorEarningsUsd(feeBearingUsd) }
+    // feeBearingUsd rides along so the UI can tell "$0.00 because nothing
+    // moved" apart from "$0.00 because every dollar took a fee-free route"
+    // (bridges, transfers, stakes) — a bare zero reads as broken.
+    return { signedUsd, signsCount, feeBearingUsd, earnedUsd: creatorEarningsUsd(feeBearingUsd) }
   }
 
-  const totalEarnedUsd = links.reduce((s, l) => s + moneyOf(l.id).earnedUsd, 0)
+  const money = links.map((l) => moneyOf(l.id))
+  const totalEarnedUsd = money.reduce((s, m) => s + m.earnedUsd, 0)
+  const totalSignedUsd = money.reduce((s, m) => s + m.signedUsd, 0)
+  const totalFeeBearingUsd = money.reduce((s, m) => s + m.feeBearingUsd, 0)
   const claims = await prisma.intentLinkClaim.aggregate({
     where: { creator, status: { in: ['requested', 'paid'] } },
     _sum: { amountUsd: true },
@@ -201,6 +207,8 @@ export async function GET(req: NextRequest) {
     })),
     earnings: {
       totalEarnedUsd,
+      totalSignedUsd,
+      totalFeeBearingUsd,
       claimedUsd,
       claimableUsd: Math.max(0, totalEarnedUsd - claimedUsd),
       minClaimUsd: 10,

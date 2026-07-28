@@ -1,5 +1,6 @@
 import prisma from '@/lib/db'
-import { FEE_BEARING_BUILD_PATHS, creatorEarningsUsd } from '@/lib/fees'
+import { FEE_BEARING_BUILD_PATHS, creatorEarningsUsd, formatEarnedUsd } from '@/lib/fees'
+import { REAL_TRAFFIC_WHERE } from '@/lib/value-origin'
 import LinksHeroView from '@/components/LinksHeroView'
 
 // The links-first hero, server half. One claim — "You have an intent. We do
@@ -15,9 +16,12 @@ async function linkStats() {
     const [links, opens, turns] = await Promise.all([
       prisma.intentLink.count({ where: { revoked: false } }),
       prisma.intentLinkEvent.count({ where: { kind: 'open' } }),
+      // REAL_TRAFFIC_WHERE: the homepage is a public claim, so harness and
+      // localhost turns must never count toward it (the same rule every other
+      // public money read follows).
       prisma.embedTurn.groupBy({
         by: ['buildPath'],
-        where: { intentLinkSlug: { not: null }, outcome: 'signed', valueUsd: { gt: 0 } },
+        where: { intentLinkSlug: { not: null }, outcome: 'signed', valueUsd: { gt: 0 }, ...REAL_TRAFFIC_WHERE },
         _sum: { valueUsd: true },
       }),
     ])
@@ -34,7 +38,7 @@ async function linkStats() {
       links: String(links),
       opens: String(opens),
       movedUsd: usd(movedUsd),
-      creatorUsd: usd(creatorEarningsUsd(feeBearingUsd)),
+      creatorUsd: formatEarnedUsd(creatorEarningsUsd(feeBearingUsd)),
     }
   } catch {
     return null
