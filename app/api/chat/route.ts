@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse, after } from 'next/server'
 import { attachFundsSnapshot, classifyTurn, moneyShaped, recordAskFailure } from '@/lib/ask-failure'
 import { erc20Abi, formatEther, formatUnits, getAddress, isAddress, parseEther } from 'viem'
-import { openseaSlugOf } from '@/lib/opensea'
+import { openseaEnabled, openseaSlugOf } from '@/lib/opensea'
 import { getPaidFetch, hasAgentWallet } from '@/lib/agent-wallet'
 import {
   decodeSettlement,
@@ -81,7 +81,8 @@ import {
 } from '@/lib/aave-supply'
 import { policyCheck, buildReport } from '@/lib/tx-guardrails'
 import { buildGuardrailedOrder } from '@/lib/cow-build'
-import { parseNftAsk, buildNftBuy, buildNftTransfer, buildNftListing } from '@/lib/nft-layer'
+import { parseNftAsk, parseNftListAsk, buildNftBuy, buildNftTransfer, buildNftListing } from '@/lib/nft-layer'
+import { chainListSentence, nftGalleryChains, readNftGallery } from '@/lib/nft-gallery'
 import { parseTransferSegment, buildTransferArtifact } from '@/lib/transfer-exec'
 import { buildUniswapSwap, NoV3PoolError } from '@/lib/uniswap-venue'
 import { buildUniswapV4Swap, NoV4PoolError, GatedV4PoolError } from '@/lib/uniswap-v4'
@@ -1045,6 +1046,74 @@ async function handleChatTurn(req: NextRequest) {
         nativeTrace({ type: 'note', level: 'warn', label: `bridge build failed: ${(e as Error).message.slice(0, 160)}` })
         return NextResponse.json({ reply: `🌉 Couldn't build the bridge transfer: ${(e as Error).message}` })
       }
+    }
+
+    // ── Native NFT gallery (the READ half of the layer). "Show my NFTs" is a
+    //    wallet question, and every other surface answers it (splash card, App
+    //    Mode panel) — but in-chat it fell past every native gate to the
+    //    planner, which holds no chain reads and answered the house link
+    //    /i/my-nfts with "I can't query blockchain data — visit OpenSea". A
+    //    go-elsewhere pointer IS the funnel handing away its own conversion,
+    //    so the layer claims the ask and does the read itself (server OpenSea
+    //    key, same as the builds below — never gated on the MCP being in the
+    //    set, exactly like the rest of the native layer). Rows come back with
+    //    Sell / Transfer prompts that round-trip parseNftAsk, so the gallery
+    //    is the doorway into the build half.
+    const nftListAsk = parseNftListAsk(message)
+    if (nftListAsk) {
+      if (!walletAddress) {
+        nativeTrace({ type: 'note', level: 'info', label: 'nft gallery ask but no wallet connected — asking to connect before reading' })
+        return NextResponse.json({
+          reply: "🖼️ Connect your wallet and I'll show you the NFTs it holds across Ethereum, Base, and Arbitrum — then you can sell or transfer any of them right here.",
+          connectWallet: true,
+          buildPath: 'native-nft-gallery',
+        })
+      }
+      if (!openseaEnabled()) {
+        // Fail closed, but never by pointing the user off-site: say what's
+        // broken. (The build half refuses the same way.)
+        nativeTrace({ type: 'note', level: 'warn', label: 'nft gallery ask but OPENSEA_API_KEY is not configured — answering honestly' })
+        return NextResponse.json({
+          reply: "🖼️ I can't read NFT holdings right now — this server has no OpenSea key configured. Nothing's wrong with your wallet; the read is just unavailable.",
+          buildPath: 'native-nft-gallery',
+        })
+      }
+      const scopeChain = nftListAsk.chainId ?? selectedChainId ?? null
+      const chainIds = nftGalleryChains(scopeChain ? chainById(scopeChain) : null)
+      if (chainIds.length === 0) {
+        const named = scopeChain ? chainById(scopeChain)?.name : null
+        nativeTrace({ type: 'note', level: 'info', label: `nft gallery scoped to ${named ?? 'an unsupported chain'} — outside OpenSea's coverage` })
+        return NextResponse.json({
+          reply: `🖼️ OpenSea doesn't cover ${named ?? 'that chain'} — I can show you the NFTs you hold on Ethereum, Base, or Arbitrum. Switch the chain picker (or say "show my NFTs on Base") and I'll read them.`,
+          buildPath: 'native-nft-gallery',
+        })
+      }
+      nativeTrace({
+        type: 'select',
+        service: 'OpenSea (native NFT gallery)',
+        endpoint: `account NFTs · ${chainIds.map((c) => c.label).join(', ')}`,
+        priceUsd: 0,
+        reason: 'native nft layer — the wallet read answers in-chat instead of pointing off-site',
+      })
+      // Slightly wider than the splash card (which is a glance): a turn that
+      // asked for "my NFTs" should show more of them.
+      const gallery = await readNftGallery(walletAddress, { chainIds, perChain: 20, max: 12, floorCollections: 4 })
+      const scanned = chainListSentence(gallery.chains, 'and')
+      const failed = gallery.failedChains.length > 0 ? ` (${chainListSentence(gallery.failedChains, 'and')} didn't answer — there may be more there)` : ''
+      let reply: string
+      if (gallery.nfts.length > 0) {
+        const shown = gallery.found > gallery.nfts.length ? `the ${gallery.nfts.length} most recent of ${gallery.found}` : `${gallery.found} NFT${gallery.found === 1 ? '' : 's'}`
+        reply = `🖼️ You hold ${shown} on ${scanned}${failed}. Tap any of them to sell or transfer it — I'll build the transaction and you sign it.`
+      } else if (gallery.failedChains.length === gallery.chains.length) {
+        reply = `🖼️ OpenSea didn't answer for ${chainListSentence(gallery.failedChains, 'or')} just now, so I can't say what you hold. Ask again in a moment.`
+      } else {
+        reply = `🖼️ No NFTs in your wallet on ${chainListSentence(gallery.chains)}${failed} — nothing to show yet.`
+      }
+      nativeTrace({ type: 'status', label: `nft gallery read: ${gallery.found} owned across ${gallery.chains.length} chain(s)${gallery.failedChains.length ? `, ${gallery.failedChains.length} unreadable` : ''}` })
+      // The gallery rides EVERY outcome (empty included) — its presence means
+      // the read actually ran, which is what separates this from the planner
+      // shrug it replaced. The card draws nothing when there are no rows.
+      return NextResponse.json({ reply, nfts: gallery, buildPath: 'native-nft-gallery' })
     }
 
     // ── Native NFT layer (deterministic). Claims only turns that name an NFT

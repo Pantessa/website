@@ -50,6 +50,9 @@ import { isDbChatId } from '../lib/chat-ids'
 import { usdToTokenAmount } from '../lib/usd-probe'
 import { parseRobinhoodBridge, guardRobinhoodBridge, RH_L1_INBOX, ARB_SYS } from '../lib/robinhood-bridge'
 import { parseNftAsk, parseOpenSeaItemUrl, guardNftTransfer, ERC721_ABI as NFT_ERC721_ABI, ERC1155_ABI as NFT_ERC1155_ABI } from '../lib/nft-layer'
+import { parseNftListAsk } from '../lib/nft-layer'
+import { nftGalleryChains, nftRowActions } from '../lib/nft-gallery'
+import { nftGalleryOf } from '../lib/nft-display'
 import { getProtocolMark, YeetfulMark } from '../components/protocol-marks'
 import { splitListingPrice, buildListingComponents, guardListingComponents, openseaAssetUrl, SEAPORT_1_6, guardBuyFulfillment, fulfillmentToCalldata, normalizeOpenseaListing, collectionSlugCandidates } from '../lib/opensea'
 import { keccak256, stringToBytes, decodeFunctionData, parseAbi } from 'viem'
@@ -5018,6 +5021,90 @@ async function main() {
   )
   const nftRh = parseNftAsk('sell my pudgy penguin #2489 nft on robinhood chain for 1 eth')
   check('nft parse: robinhood-chain NFT ask answered honestly', !!nftRh && nftRh.kind === 'problem' && /Ethereum, Base/i.test(nftRh.problem), JSON.stringify(nftRh))
+  // ── The gallery READ ("show my NFTs"). Before this layer the house link
+  // /i/my-nfts answered with a planner "visit OpenSea" pointer — the funnel
+  // handing away its own conversion. The gate is deliberately narrow: a
+  // possessive, UNSPECIFIC NFT question and nothing else.
+  check(
+    'nft gallery parse: the wallet-gallery shapes are claimed',
+    ['Show my NFTs', 'show the NFTs in my wallet', 'what NFTs do I own?', 'which nfts do i have', 'list my nfts', 'my collectibles'].every(
+      (m) => parseNftListAsk(m) !== null,
+    ),
+  )
+  const nftListChain = parseNftListAsk('show my nfts on base')
+  check('nft gallery parse: a named chain scopes the read', !!nftListChain && nftListChain.chainId === 8453, JSON.stringify(nftListChain))
+  check(
+    'nft gallery parse: build asks + market questions + non-NFT asks fall through',
+    parseNftListAsk('sell my Pudgy Penguin #2489 for 4.2 ETH') === null &&
+      parseNftListAsk('send my Cool Cat NFT to vitalik.eth') === null &&
+      parseNftListAsk('buy the cheapest milady nft') === null &&
+      parseNftListAsk('list my nfts for sale') === null &&
+      parseNftListAsk('What are my NFTs worth right now — check the floor prices of my collections on OpenSea?') === null &&
+      parseNftListAsk('Are there any offers on the NFTs I own?') === null &&
+      parseNftListAsk('show my portfolio') === null &&
+      parseNftListAsk('what tokens do I own?') === null,
+  )
+  // The gallery answer and the sell/transfer builds share one row shape, so a
+  // row's own chip must come back as a buildable ask — the round-trip that
+  // keeps the card a doorway instead of a dead end.
+  const galleryRow = nftRowActions({ name: 'Pudgy Penguin', identifier: '2489' }, 'Base', 4.2)
+  const galleryResume = parseNftAsk(galleryRow[0].prompt)
+  check(
+    'nft gallery: a row Sell chip round-trips parseNftAsk (name + chain + price)',
+    !!galleryResume && galleryResume.kind === 'sell' && galleryResume.tokenId === '2489' && galleryResume.chainId === 8453 && galleryResume.priceEth === '4.2',
+    JSON.stringify(galleryResume),
+  )
+  check(
+    'nft gallery: an unpriced row still sells (the layer asks for the price)',
+    (() => {
+      const noFloor = parseNftAsk(nftRowActions({ name: 'Cool Cat', identifier: '77' }, 'Ethereum', null)[0].prompt)
+      return !!noFloor && noFloor.kind === 'problem' && /price/i.test(noFloor.problem)
+    })(),
+  )
+  // The chain picker scopes the read; a picker parked off OpenSea's coverage
+  // has nothing to scan (the caller says so rather than silently scanning).
+  check(
+    'nft gallery: chain scoping follows the picker (robinhood → empty scope)',
+    nftGalleryChains(null).length === 3 &&
+      nftGalleryChains(chainById(8453)).map((c) => c.label).join() === 'Base' &&
+      nftGalleryChains(chainById(4663)).length === 0,
+  )
+  // A gallery payload survives the meta round-trip the chat message makes.
+  const galleryDisplay = nftGalleryOf({
+    nfts: { owner: '0x1111111111111111111111111111111111111111', chains: ['Base'], failedChains: [], found: 3, nfts: [{ name: 'Pudgy #1', contract: '0xabc', tokenId: '1', chain: 'Base' }] },
+  })
+  check(
+    'nft gallery: the display contract reads back off message meta',
+    !!galleryDisplay && galleryDisplay.nfts.length === 1 && galleryDisplay.found === 3 && nftGalleryOf({ nfts: { owner: 1 } }) === null,
+    JSON.stringify(galleryDisplay),
+  )
+  // The turn itself: the ask must never come back a bare planner reply.
+  const nftGalleryTurn = await fetch(`${BASE}/api/chat`, {
+    method: 'POST', headers: { 'content-type': 'application/json', 'x-yf-no-ask-log': '1' },
+    body: JSON.stringify({ message: 'Show my NFTs', activeServers: [], walletAddress: '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045' }),
+  }).then((r) => r.json())
+  check(
+    'nft gallery turn: "Show my NFTs" answers with the read, never a visit-OpenSea pointer',
+    !!nftGalleryTurn.nfts &&
+      typeof nftGalleryTurn.nfts.owner === 'string' &&
+      Array.isArray(nftGalleryTurn.nfts.nfts) &&
+      nftGalleryTurn.buildPath === 'native-nft-gallery' &&
+      !/visit\s+opensea|opensea\.io|can't\s+query/i.test(nftGalleryTurn.reply ?? ''),
+    JSON.stringify(nftGalleryTurn).slice(0, 220),
+  )
+  const nftGalleryNoWallet = await fetch(`${BASE}/api/chat`, {
+    method: 'POST', headers: { 'content-type': 'application/json', 'x-yf-no-ask-log': '1' },
+    body: JSON.stringify({ message: 'Show my NFTs', activeServers: [] }),
+  }).then((r) => r.json())
+  check(
+    'nft gallery turn: no wallet asks to connect (never a planner shrug)',
+    nftGalleryNoWallet.connectWallet === true && nftGalleryNoWallet.buildPath === 'native-nft-gallery',
+    JSON.stringify(nftGalleryNoWallet).slice(0, 200),
+  )
+  check(
+    'nft gallery turn: the read counts as actionable (never logged as a wall)',
+    classifyTurn({ reply: 'x', nfts: { owner: '0x1', nfts: [] }, buildPath: 'native-nft-gallery' }).kind === null,
+  )
   // Buy asks: resolve against live listings; the grammar reads #id targets,
   // "cheapest" collection buys, and an explicit ETH cap — and never claims
   // token/stock buys (no NFT marker).

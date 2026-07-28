@@ -105,7 +105,7 @@ export type NftAsk =
  *  the word nft/opensea, a "#123" id, or an address#id pair. Token swaps,
  *  stock sells, and bare "send 1 eth" asks never pass. */
 export function mentionsNft(message: string): boolean {
-  return /\bnfts?\b|\bopensea\b|#\d+|\bcollectible\b/i.test(message)
+  return /\bnfts?\b|\bopensea\b|#\d+|\bcollectibles?\b/i.test(message)
 }
 
 // ── OpenSea item links ──────────────────────────────────────────────────────
@@ -165,6 +165,48 @@ function refParts(refRaw: string): { ref: string; tokenId: string | null; contra
   const addr = ref.match(/(0x[0-9a-fA-F]{40})/)
   const id = ref.match(/#\s*(\d+)/) ?? (addr ? ref.match(/0x[0-9a-fA-F]{40}\s+(\d+)\b/) : null)
   return { ref, tokenId: id ? id[1] : null, contract: addr ? addr[1] : null }
+}
+
+// ── The gallery read ("show my NFTs") ──────────────────────────────────────
+// The READ half of the layer. Without it "Show my NFTs" fell past every
+// native gate to the planner, which — holding no chain reads — answered the
+// house link with "I can't query blockchain data, visit OpenSea". A wallet
+// question the product answers everywhere else (splash card, App Mode panel)
+// must answer in the turn too, so this claims the ask and does the read.
+//
+// Deliberately NARROW: it wants a possessive, UNSPECIFIC NFT question. A
+// named token ("#2489", a contract) is a build ask; a build verb belongs to
+// parseNftAsk; a floor/offer/worth question is about the MARKET, not the
+// wallet, and stays with the planner + the OpenSea MCP's own tools.
+
+/** "my NFTs", "the NFTs I own", "nfts in my wallet", "what NFTs do I have". */
+const OWNED_NFTS_RE =
+  /\b(?:my|our)\s+(?:nfts?|collectibles?)\b|\b(?:nfts?|collectibles?)\s+(?:i\s+(?:own|have|hold)\b|in\s+my\s+wallet\b|do\s+i\s+(?:own|have|hold)\b)/i
+/** Verbs that mean BUILD (parseNftAsk's turn), not "show me". */
+const NFT_BUILD_VERB_RE = /\b(?:sell|sale|buy|purchase|transfer|send|gift|mint|listings?)\b/i
+/** Market questions — a different answer than the gallery. */
+const NFT_MARKET_RE = /\b(?:offers?|bids?|floors?|worth|prices?|value|valuation)\b/i
+
+export interface NftListAsk {
+  /** Chain named in the message, or null (scan every OpenSea chain). */
+  chainId: number | null
+}
+
+/**
+ * Deterministic read of "show me the NFTs I own". Returns the (chain-scoped)
+ * gallery ask, or null when the message is anything else — a build ask, a
+ * market question, or not about NFTs at all.
+ */
+export function parseNftListAsk(message: string): NftListAsk | null {
+  if (!mentionsNft(message)) return null
+  // A specific token id or contract names ONE NFT — that's a build ask.
+  if (/#\s*\d+|0x[0-9a-fA-F]{40}/.test(message)) return null
+  if (NFT_BUILD_VERB_RE.test(message) || NFT_MARKET_RE.test(message)) return null
+  if (!OWNED_NFTS_RE.test(message)) return null
+  const chain = chainNamedIn(message)
+  // A chain OpenSea doesn't cover (Robinhood) is answered honestly by the
+  // caller — the ask is still ours, the scope is just empty.
+  return { chainId: chain?.id ?? null }
 }
 
 /**

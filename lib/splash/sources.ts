@@ -25,8 +25,9 @@ import { overrideFreeMcpBase } from '@/lib/endpoint-planner'
 import { alchemyEnabled, getMultichainPortfolio, getRecentActivity } from '@/lib/alchemy'
 import { explorerTokenUrl, type AppChain } from '@/lib/chains'
 import { hasUniswapHistory } from './affinity'
-import { fetchFloorEth, fetchOwnedNfts, openseaAssetUrl, openseaEnabled, type OpenseaNft } from '@/lib/opensea'
-import type { EmptyTile, HoldingRow, NftRow, ProposalRow, SpaceRow, SplashTile, StatRow, SuggestedPrompt } from './types'
+import { openseaEnabled } from '@/lib/opensea'
+import { nftGalleryChains, readNftGallery } from '@/lib/nft-gallery'
+import type { EmptyTile, HoldingRow, ProposalRow, SpaceRow, SplashTile, StatRow, SuggestedPrompt } from './types'
 
 /** Snapshot's stamp service resolves a space logo from its id — always
  *  available, no IPFS gateway flakiness. */
@@ -786,29 +787,10 @@ const robinhoodSource: SplashSource = {
 // deploy, exactly like the Alchemy-backed wallet card. Each NFT row expands
 // into Sell / Transfer chips whose prompts land on the native NFT layer
 // (parseNftAsk resolves the name against these same holdings).
-
-/** The prompt-facing NFT name: must round-trip parseNftAsk → resolveNft, so
- *  short token ids get "#id" appended for an exact-id match. Huge ids (ENS
- *  hashes) stay name-only — the name is the unique handle there. */
-function nftPromptName(n: { name: string | null; identifier: string }): string {
-  const name = n.name ?? `#${n.identifier}`
-  if (name.includes('#') || n.identifier.length > 8) return name
-  return `${name} #${n.identifier}`
-}
-
-function nftRowActions(n: { name: string | null; identifier: string }, chainLabel: string, floorEth: number | null): SuggestedPrompt[] {
-  const pn = nftPromptName(n)
-  const sellPrompt =
-    floorEth != null
-      ? `Sell my ${pn} NFT on ${chainLabel} for ${Number(floorEth.toFixed(4))} ETH`
-      : `Sell my ${pn} NFT on ${chainLabel}`
-  return [
-    { label: 'Sell', prompt: sellPrompt },
-    // The recipient is deliberately blank — the user appends an address (or
-    // sends as-is and the native layer asks for the full one-liner).
-    { label: 'Transfer', prompt: `Send my ${pn} NFT on ${chainLabel} to ` },
-  ]
-}
+//
+// The read + row shaping live in lib/nft-gallery.ts because the chat's
+// native gallery turn ("show my NFTs") answers from the SAME rows — one
+// place to keep the Sell/Transfer prompts round-tripping parseNftAsk.
 
 const openseaSource: SplashSource = {
   id: 'opensea',
@@ -816,52 +798,12 @@ const openseaSource: SplashSource = {
   build: async (_call, address, server, chain) => {
     // OpenSea covers Ethereum/Base/Arbitrum — a Robinhood picker scope has
     // nothing to show.
-    const chainIds: { id: number; label: string }[] =
-      chain && chain.key !== 'robinhood'
-        ? [{ id: chain.id, label: chain.name }]
-        : chain
-          ? []
-          : [
-              { id: 1, label: 'Ethereum' },
-              { id: 8453, label: 'Base' },
-              { id: 42161, label: 'Arbitrum' },
-            ]
+    const chainIds = nftGalleryChains(chain)
     if (chainIds.length === 0) return null
-    const owned: (OpenseaNft & { chainLabel: string; chainId: number })[] = []
-    await Promise.all(
-      chainIds.map(async ({ id, label }) => {
-        const nfts = await fetchOwnedNfts(id, address, 12).catch(() => [] as OpenseaNft[])
-        for (const n of nfts) owned.push({ ...n, chainLabel: label, chainId: id })
-      }),
-    )
+    const gallery = await readNftGallery(address, { chainIds })
     // No NFTs → no card (the affinity contract; manual picks get the preview).
-    if (owned.length === 0) return null
-    owned.sort((a, b) => (b.updated_at ?? '').localeCompare(a.updated_at ?? ''))
-    const top = owned.slice(0, 6)
-
-    // Floor prices for the sell chips — first three distinct collections only
-    // (rate-limit hygiene; rows without a floor still sell, the layer asks).
-    const collections = [...new Set(top.map((n) => n.collection))].slice(0, 3)
-    const floors = new Map<string, number | null>()
-    await Promise.all(collections.map(async (slug) => floors.set(slug, await fetchFloorEth(slug).catch(() => null))))
-
-    const rows: NftRow[] = top.map((n) => {
-      const floorEth = floors.get(n.collection) ?? null
-      return {
-        name: n.name ?? `#${n.identifier.slice(0, 8)}`,
-        collection: n.collection,
-        collectionName: n.collection.replace(/-/g, ' '),
-        imageUrl: n.display_image_url ?? n.image_url ?? null,
-        chain: n.chainLabel,
-        contract: n.contract,
-        tokenId: n.identifier,
-        standard: n.token_standard === 'erc1155' ? 'erc1155' : 'erc721',
-        floor: floorEth != null ? `floor ${Number(floorEth.toFixed(4))} ETH` : null,
-        actions: nftRowActions(n, n.chainLabel, floorEth),
-        infoUrl: n.opensea_url ?? openseaAssetUrl(n.chainId, n.contract, n.identifier),
-        infoLabel: 'View on OpenSea',
-      }
-    })
+    if (gallery.nfts.length === 0) return null
+    const rows = gallery.nfts
 
     const first = rows.find((r) => r.floor) ?? rows[0]
     const prompts: SuggestedPrompt[] = [
@@ -875,7 +817,7 @@ const openseaSource: SplashSource = {
       mcpName: server.name,
       render: 'nfts',
       title: 'Your NFTs',
-      subtitle: `${owned.length >= 12 ? '12+' : owned.length} across ${chainIds.length > 1 ? 'Ethereum · Base · Arbitrum' : chainIds[0].label}`,
+      subtitle: `${gallery.found >= 12 ? '12+' : gallery.found} across ${chainIds.length > 1 ? 'Ethereum · Base · Arbitrum' : chainIds[0].label}`,
       nfts: rows,
       prompts: prompts.slice(0, 3),
     }
