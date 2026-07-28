@@ -184,8 +184,14 @@ const OWNED_NFTS_RE =
   /\b(?:my|our)\s+(?:nfts?|collectibles?)\b|\b(?:nfts?|collectibles?)\s+(?:i\s+(?:own|have|hold)\b|in\s+my\s+wallet\b|do\s+i\s+(?:own|have|hold)\b)/i
 /** Verbs that mean BUILD (parseNftAsk's turn), not "show me". */
 const NFT_BUILD_VERB_RE = /\b(?:sell|sale|buy|purchase|transfer|send|gift|mint|listings?)\b/i
-/** Market questions — a different answer than the gallery. */
+/** Market questions — a different answer than the gallery (parseNftMarketAsk). */
 const NFT_MARKET_RE = /\b(?:offers?|bids?|floors?|worth|prices?|value|valuation)\b/i
+/** The market vocabulary, split by which answer it wants. Their union must
+ *  cover NFT_MARKET_RE exactly — otherwise a word falls out of the gallery
+ *  gate and into nothing, which is how these asks reached the planner in the
+ *  first place. The harness pins that coverage word by word. */
+const NFT_OFFERS_RE = /\b(?:offers?|bids?|bidding)\b/i
+const NFT_WORTH_RE = /\b(?:worth|values?|valuations?|floors?|prices?|pricing|estimates?)\b/i
 
 export interface NftListAsk {
   /** Chain named in the message, or null (scan every OpenSea chain). */
@@ -207,6 +213,43 @@ export function parseNftListAsk(message: string): NftListAsk | null {
   // A chain OpenSea doesn't cover (Robinhood) is answered honestly by the
   // caller — the ask is still ours, the scope is just empty.
   return { chainId: chain?.id ?? null }
+}
+
+// ── The market read ("what are they worth", "any offers?") ─────────────────
+// The gallery gate above deliberately refuses market questions so it never
+// answers the wrong one — which left BOTH OpenSea splash chips falling
+// through to the planner ("I can't check real-time floor prices"). This is
+// the other half: same narrowness (possessive, unspecific, no build verb),
+// answered by lib/nft-market.ts's live reads instead.
+
+export interface NftMarketAsk {
+  /** Which read answers it: floors + a value estimate, or live bids. */
+  kind: 'worth' | 'offers'
+  /** Chain named in the message, or null (scan every OpenSea chain). */
+  chainId: number | null
+}
+
+/**
+ * Deterministic read of "what is the stuff I own worth / is anyone bidding".
+ * Returns null for anything else — a build ask, ONE named NFT (that's a
+ * lookup the build layer owns), or a market question about someone else's
+ * collection.
+ */
+export function parseNftMarketAsk(message: string): NftMarketAsk | null {
+  if (!mentionsNft(message)) return null
+  // A specific token id or contract names ONE NFT — the build layer's turf.
+  if (/#\s*\d+|0x[0-9a-fA-F]{40}/.test(message)) return null
+  if (NFT_BUILD_VERB_RE.test(message)) return null
+  // Possessive and unspecific, exactly like the gallery — plus "my
+  // collections", which is how people ask this one ("the floor prices of my
+  // collections"). mentionsNft already proved we're talking about NFTs.
+  if (!OWNED_NFTS_RE.test(message) && !/\b(?:my|our)\s+collections?\b/i.test(message)) return null
+  const chainId = chainNamedIn(message)?.id ?? null
+  // An explicit offers/bids word names a concrete artifact — it wins over a
+  // co-occurring "worth" ("what are my NFTs worth — any offers?").
+  if (NFT_OFFERS_RE.test(message)) return { kind: 'offers', chainId }
+  if (NFT_WORTH_RE.test(message)) return { kind: 'worth', chainId }
+  return null
 }
 
 /**

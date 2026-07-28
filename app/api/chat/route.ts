@@ -81,8 +81,9 @@ import {
 } from '@/lib/aave-supply'
 import { policyCheck, buildReport } from '@/lib/tx-guardrails'
 import { buildGuardrailedOrder } from '@/lib/cow-build'
-import { parseNftAsk, parseNftListAsk, buildNftBuy, buildNftTransfer, buildNftListing } from '@/lib/nft-layer'
+import { parseNftAsk, parseNftListAsk, parseNftMarketAsk, buildNftBuy, buildNftTransfer, buildNftListing } from '@/lib/nft-layer'
 import { chainListSentence, nftGalleryChains, readNftGallery } from '@/lib/nft-gallery'
+import { marketReplyCopy, readNftOffers, readNftWorth } from '@/lib/nft-market'
 import { parseTransferSegment, buildTransferArtifact } from '@/lib/transfer-exec'
 import { buildUniswapSwap, NoV3PoolError } from '@/lib/uniswap-venue'
 import { buildUniswapV4Swap, NoV4PoolError, GatedV4PoolError } from '@/lib/uniswap-v4'
@@ -1114,6 +1115,71 @@ async function handleChatTurn(req: NextRequest) {
       // the read actually ran, which is what separates this from the planner
       // shrug it replaced. The card draws nothing when there are no rows.
       return NextResponse.json({ reply, nfts: gallery, buildPath: 'native-nft-gallery' })
+    }
+
+    // ── Native NFT MARKET reads. The gallery gate above refuses market
+    //    questions on purpose (it must never answer the wrong one), which
+    //    left the OpenSea splash tile's own two chips — "What are my NFTs
+    //    worth right now?" and "Are there any offers on the NFTs I own?" —
+    //    falling straight to the planner, which answered "I can't browse
+    //    OpenSea / check real-time floor prices". Same fix, one question
+    //    over: the layer claims the ask, reads OpenSea with the server key,
+    //    and always carries an artifact. Rows carry Sell chips that
+    //    round-trip parseNftAsk, so the answer opens the build half.
+    const nftMarketAsk = parseNftMarketAsk(message)
+    if (nftMarketAsk) {
+      const marketPath = nftMarketAsk.kind === 'offers' ? 'native-nft-offers' : 'native-nft-worth'
+      if (!walletAddress) {
+        nativeTrace({ type: 'note', level: 'info', label: `nft ${nftMarketAsk.kind} ask but no wallet connected — asking to connect before reading` })
+        return NextResponse.json({
+          reply:
+            nftMarketAsk.kind === 'offers'
+              ? "🤝 Connect your wallet and I'll check every live bid on the NFTs it holds across Ethereum, Base, and Arbitrum."
+              : "💰 Connect your wallet and I'll price the NFTs it holds against each collection's current OpenSea floor.",
+          connectWallet: true,
+          buildPath: marketPath,
+        })
+      }
+      if (!openseaEnabled()) {
+        nativeTrace({ type: 'note', level: 'warn', label: `nft ${nftMarketAsk.kind} ask but OPENSEA_API_KEY is not configured — answering honestly` })
+        return NextResponse.json({
+          reply: "🖼️ I can't read OpenSea market data right now — this server has no OpenSea key configured. Nothing's wrong with your wallet; the read is just unavailable.",
+          buildPath: marketPath,
+        })
+      }
+      const marketScope = nftMarketAsk.chainId ?? selectedChainId ?? null
+      const marketChains = nftGalleryChains(marketScope ? chainById(marketScope) : null)
+      if (marketChains.length === 0) {
+        const named = marketScope ? chainById(marketScope)?.name : null
+        nativeTrace({ type: 'note', level: 'info', label: `nft ${nftMarketAsk.kind} read scoped to ${named ?? 'an unsupported chain'} — outside OpenSea's coverage` })
+        return NextResponse.json({
+          reply: `🖼️ OpenSea doesn't cover ${named ?? 'that chain'} — I can price (and check bids on) the NFTs you hold on Ethereum, Base, or Arbitrum. Switch the chain picker and ask again.`,
+          buildPath: marketPath,
+        })
+      }
+      nativeTrace({
+        type: 'select',
+        service: 'OpenSea (native NFT market read)',
+        endpoint: `${nftMarketAsk.kind === 'offers' ? 'best offers' : 'collection floors'} · ${marketChains.map((c) => c.label).join(', ')}`,
+        priceUsd: 0,
+        reason: 'native nft layer — the market read answers in-chat instead of pointing off-site',
+      })
+      const market = nftMarketAsk.kind === 'offers' ? await readNftOffers(walletAddress, marketChains) : await readNftWorth(walletAddress, marketChains)
+      const marketFailed =
+        market.failedChains.length > 0 ? ` (${chainListSentence(market.failedChains, 'and')} didn't answer — there may be more there)` : ''
+      const marketReply = marketReplyCopy(
+        market,
+        chainListSentence(market.chains, 'and'),
+        marketFailed,
+        chainListSentence(market.failedChains, 'or'),
+      )
+      nativeTrace({
+        type: 'status',
+        label: `nft ${nftMarketAsk.kind} read: ${market.rows.length} row(s), ${market.unpriced} unpriced, ${market.found} owned${market.failedChains.length ? `, ${market.failedChains.length} chain(s) unreadable` : ''}`,
+      })
+      // Like the gallery, the artifact rides EVERY outcome — its presence is
+      // what proves the read actually ran.
+      return NextResponse.json({ reply: marketReply, nftMarket: market, buildPath: marketPath })
     }
 
     // ── Native NFT layer (deterministic). Claims only turns that name an NFT
