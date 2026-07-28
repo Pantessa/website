@@ -23,11 +23,22 @@ const OWNERS_LC = new Set<string>(OWNER_WALLETS)
 
 // The "user universe": one row per (address, created_at) across every table
 // that records an owner action. Reused as a CTE in several queries below.
+//
+// agent_approvals is deliberately NOT in this union. A preference toggle is
+// not an arrival, and it never has to be one: setApproval mints the expense
+// account through syncGrantAllowlist, so every real toggle already lands in
+// spend_grants. Counting the approval row too bought nothing real and cost a
+// lot of fake — the harness toggles an agent off/on for a throwaway wallet
+// every run, deletes the grant it made, and the orphaned approval row was
+// left standing as a brand-new "user" forever (276 of them between
+// 2026-07-17 and 2026-07-28, at which point they outnumbered the real
+// signed-in wallets 7:1 and made the adoption curve read as hockey-stick
+// growth). Dropping the arm retires every one of them without touching a
+// row; setApproval no longer writes the no-op rows in the first place.
 const ADDRS = Prisma.sql`
   SELECT lower(owner_address) AS a, created_at FROM chats WHERE owner_address IS NOT NULL
   UNION ALL SELECT lower(owner_address), created_at FROM spend_grants WHERE owner_address NOT LIKE 'org:%'
   UNION ALL SELECT lower(owner_address), created_at FROM api_keys
-  UNION ALL SELECT lower(owner_address), created_at FROM agent_approvals
   UNION ALL SELECT lower(address), created_at FROM org_members
 `
 
@@ -47,10 +58,15 @@ export async function GET(req: NextRequest) {
     prisma.$queryRaw<FunnelRow[]>(Prisma.sql`
       WITH addrs AS (${ADDRS}),
       fs AS (SELECT a, min(created_at) AS first_seen FROM addrs WHERE a <> ALL(${excl}) GROUP BY a),
+      -- "Activated" = did something deliberate. An approved row used to mean
+      -- that under the opt-in model; since agents default to ON (#467) an
+      -- approval row means the owner turned one OFF, which is the real act of
+      -- curation -- and reading WHERE approved counted the harness's no-op
+      -- rows as activated users.
       act AS (
         SELECT a FROM (
           SELECT lower(owner_address) a FROM api_keys
-          UNION SELECT lower(owner_address) FROM agent_approvals WHERE approved
+          UNION SELECT lower(owner_address) FROM agent_approvals WHERE NOT approved
         ) z WHERE a <> ALL(${excl})
       ),
       paid AS (
