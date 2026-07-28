@@ -3716,6 +3716,10 @@
      its own. */
   /* The return wire's gold is tuned for black; on paper it needs its
      ink-on-paper sibling or the receipts read as a highlighter smear. */
+  /* Pending night-shift rows dim to .34 on black and still read; on paper
+     that lands as washed-out grey, which looks broken rather than pending. */
+  html[data-theme='light'] .night__row { opacity: .5; }
+  html[data-theme='light'] .night__row.is-in { opacity: 1; }
   html[data-theme='light'] .spread__back { stroke: #a3720c; }
   html[data-theme='light'] .spread__key--back i { background: #a3720c; }
   html[data-theme='light'] .mach {
