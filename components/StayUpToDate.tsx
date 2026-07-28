@@ -1,10 +1,23 @@
 'use client'
 
-// Landing-page "stay up to date" signup. Posts to /api/subscribe (double
-// opt-in); reads ?subscribed=1|invalid from the confirm-link redirect to show
-// a confirmation inline.
+// The closing band — "stay up to date", but as the page's last statement
+// rather than a grey box bolted to the bottom. It names what actually lands
+// in the inbox (the same three things the old sub-line listed, now legible as
+// a list) and carries the page's accent glow so the ending reads like an
+// ending. Shared with /pricing, which gets the same treatment.
+//
+// Posts to /api/subscribe (double opt-in); reads ?subscribed=1|invalid from
+// the confirm-link redirect to show a confirmation inline.
 
 import { useEffect, useState } from 'react'
+
+/** What you're actually signing up for. Vague newsletters get ignored;
+ *  naming the three things is the whole pitch. */
+const GETS: { k: string; d: string }[] = [
+  { k: 'NEW DAPPS', d: 'when a protocol becomes one sentence away' },
+  { k: 'STANDING WORK', d: 'schedules, guards and jobs that run between turns' },
+  { k: 'NEW SIGNATURES', d: 'what the agent can build and sign that it couldn’t last month' },
+]
 
 type State = 'idle' | 'loading' | 'done' | 'error'
 
@@ -55,42 +68,59 @@ export default function StayUpToDate() {
   }
 
   return (
-    <section className="mt-3 rounded-2xl border border-[var(--line)] bg-[var(--surf-1)] p-6 sm:p-8 text-center">
-      <div className="max-w-md mx-auto">
-        <h2 className="text-xl font-semibold text-white mb-1">Stay up to date</h2>
-        <p className="text-sm text-[color:var(--muted)] mb-4">
-          Occasional updates on new MCPs, standing jobs, and what the agent can sign next. No spam.
+    <section className="sud">
+      <div className="sud__copy">
+        <span className="sud__eyebrow mono">THE LIST</span>
+        <h2 className="sud__h2">Stay up to date.</h2>
+        <p className="sud__sub">
+          The agent can sign things this month it couldn&rsquo;t sign last month. That&rsquo;s the
+          only thing this list is for.
         </p>
+        <dl className="sud__gets">
+          {GETS.map((g) => (
+            <div key={g.k}>
+              <dt className="mono">{g.k}</dt>
+              <dd>{g.d}</dd>
+            </div>
+          ))}
+        </dl>
+      </div>
 
+      <div className="sud__form">
         {state === 'done' ? (
-          <p className="text-sm text-emerald-400 mono" role="status">
+          <p className="sud__done mono" role="status">
             {msg}
           </p>
         ) : (
-          <form className="flex flex-col sm:flex-row sm:items-stretch gap-2.5 max-w-sm mx-auto" onSubmit={submit}>
-            <input
-              type="email"
-              required
-              inputMode="email"
-              autoComplete="email"
-              placeholder="you@example.com"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className="flex-1 min-w-0 rounded-lg border border-[var(--line)] bg-black/30 px-4 py-3 text-sm text-white placeholder:text-[color:var(--muted-2)] outline-none focus:border-[var(--accent,#34E0A1)] mono"
-              aria-label="Email address"
-              disabled={state === 'loading'}
-            />
-            <button
-              type="submit"
-              className="btn btn--solid flex-shrink-0"
-              disabled={state === 'loading' || !email}
-            >
-              {state === 'loading' ? 'Sending…' : 'Notify me'}
-            </button>
-          </form>
+          <>
+            <form className="sud__row" onSubmit={submit}>
+              <input
+                type="email"
+                required
+                inputMode="email"
+                autoComplete="email"
+                placeholder="you@example.com"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                className="sud__input mono"
+                aria-label="Email address"
+                disabled={state === 'loading'}
+              />
+              <button
+                type="submit"
+                className="btn btn--solid flex-shrink-0"
+                disabled={state === 'loading' || !email}
+              >
+                {state === 'loading' ? 'Sending…' : 'Notify me'}
+              </button>
+            </form>
+            <p className="sud__fine mono">
+              Double opt-in · no spam · unsubscribe from any email
+            </p>
+          </>
         )}
         {state === 'error' && (
-          <p className="text-xs text-amber-400 mono mt-2" role="alert">
+          <p className="sud__err mono" role="alert">
             {msg}
           </p>
         )}
