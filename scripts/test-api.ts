@@ -69,6 +69,18 @@ import { classifyTurn, moneyShaped } from '../lib/ask-failure'
 import { canonicalChainWord, normalizeChainWords } from '../lib/chain-lexicon'
 import { decideFundingTurn, detectBalanceShortfall, fundingPlanUsd, planFundingChips, planStrandedRescue, rankFundingSources, shortRefusalCopy, softenClaimedFailureBlock, type FundingNeed, type FundingSource } from '../lib/funding-plan'
 import { compileDcaBuy, dcaRunChip, parseDcaCreate, parseDcaManage, parseDcaRun, periodKeyFor } from '../lib/dca'
+import {
+  buildDcaSpendPermission,
+  guardAutoBuy,
+  parseDcaAutoToggle,
+  parsePermission,
+  permissionMatchesSchedule,
+  serializePermission,
+  spendPermissionTypedData,
+  usdcAtomsToHuman,
+  SPEND_PERMISSION_MANAGER,
+} from '../lib/dca-auto'
+import { ADDRESS_THIS, SWAP_ROUTER_02_ABI } from '../lib/uniswap-venue'
 import { firstUserPromptOf, shareTweetHrefOf } from '../lib/shared-chat'
 import {
   VIA_RE,
@@ -6349,6 +6361,189 @@ async function main() {
         const c = parseDcaCreate(p)
         return !!c && !('problem' in c) && c.cadence === 'week' && c.chainId !== null
       }),
+    )
+  }
+
+  // ── DCA AUTOPILOT (Spend Permissions: grammar + typed data + the guard) ──
+  console.log('— dca autopilot')
+  {
+    // Toggle grammar: narrow, deterministic, and it must NEVER collide with
+    // the manage grammar ("stop my dca autopilot" ≠ "cancel my dca").
+    const arm1 = parseDcaAutoToggle('make my ETH dca autonomous')
+    const arm2 = parseDcaAutoToggle('arm my dca')
+    const arm3 = parseDcaAutoToggle('turn my aapl dca automatic')
+    const dis1 = parseDcaAutoToggle('turn off my dca autopilot')
+    const dis2 = parseDcaAutoToggle('stop my ETH dca autopilot')
+    const dis3 = parseDcaAutoToggle('switch my dca back to manual')
+    check(
+      'dca autopilot: arm/disarm grammar parses (token filter optional)',
+      arm1?.op === 'arm' && arm1.token === 'ETH' && arm2?.op === 'arm' && arm2.token === null &&
+        arm3?.op === 'arm' && arm3.token === 'AAPL' &&
+        dis1?.op === 'disarm' && dis1.token === null && dis2?.op === 'disarm' && dis2.token === 'ETH' && dis3?.op === 'disarm',
+    )
+    check(
+      'dca autopilot: never claims creates, manages, or free text',
+      parseDcaAutoToggle('buy $10 of ETH weekly') === null && parseDcaAutoToggle('pause my dca') === null &&
+        parseDcaAutoToggle('cancel my AAPL dca') === null && parseDcaAutoToggle('is the car automatic?') === null,
+    )
+    check(
+      'dca autopilot: "stop … autopilot" disarms, and plain "stop my dca" still cancels',
+      parseDcaAutoToggle('stop my dca autopilot')?.op === 'disarm' && parseDcaManage('stop my dca')?.op === 'cancel' &&
+        parseDcaAutoToggle('stop my dca') === null,
+    )
+
+    // Permission construction: the allowance IS the schedule's dollar amount,
+    // the period IS the cadence window — a fatter permission cannot be built.
+    const nowSec = 1_790_000_000
+    const perm = buildDcaSpendPermission({
+      account: '0x1111111111111111111111111111111111111111',
+      spender: '0x2222222222222222222222222222222222222222',
+      token: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
+      buyUsd: 25,
+      cadence: 'week',
+      nowSec,
+      salt: BigInt(7),
+    })
+    check(
+      'dca autopilot: permission binds exact allowance + cadence window + bounded life',
+      perm.allowance === BigInt(25_000_000) && perm.period === 604_800 &&
+        perm.start === nowSec - 300 && perm.end === nowSec + 366 * 86_400 && perm.extraData === '0x',
+    )
+    let selfGrantThrew = false
+    try {
+      buildDcaSpendPermission({ account: '0x1111111111111111111111111111111111111111', spender: '0x1111111111111111111111111111111111111111', token: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913', buyUsd: 5, cadence: 'day', nowSec, salt: BigInt(1) })
+    } catch {
+      selfGrantThrew = true
+    }
+    check('dca autopilot: account == spender refuses at construction', selfGrantThrew)
+
+    // The EIP-712 field order pin — must match SPEND_PERMISSION_TYPEHASH
+    // exactly (the arm route also proves it on-chain by simulation, but a
+    // drift should die HERE first).
+    const typed = spendPermissionTypedData(perm, 8453, { name: 'Spend Permission Manager', version: '1' })
+    check(
+      'dca autopilot: typed-data field order pins to the contract TYPEHASH',
+      JSON.stringify(typed.types.SpendPermission.map((f) => `${f.type} ${f.name}`)) ===
+        JSON.stringify(['address account', 'address spender', 'address token', 'uint160 allowance', 'uint48 period', 'uint48 start', 'uint48 end', 'uint256 salt', 'bytes extraData']) &&
+        typed.domain.verifyingContract === SPEND_PERMISSION_MANAGER && typed.domain.chainId === 8453 && typed.primaryType === 'SpendPermission',
+    )
+
+    // Storage round-trip + strict parse.
+    const parsed = parsePermission(serializePermission(perm))
+    check(
+      'dca autopilot: permission serialize → parse round-trips bigints exactly',
+      !!parsed && parsed.allowance === perm.allowance && parsed.salt === perm.salt && parsed.account === perm.account && parsed.period === perm.period,
+    )
+    check(
+      'dca autopilot: junk permissions refuse to parse',
+      parsePermission('{"account":"0xnope"}') === null && parsePermission('[]') === null && parsePermission(serializePermission(perm).replace('"allowance":"25000000"', '"allowance":"-1"')) === null,
+    )
+
+    // Permission ⇄ schedule agreement — one rulebook for arm AND sweep.
+    const terms = { ownerWallet: perm.account, buyUsd: 25, cadence: 'week' as const, usdcAddress: perm.token, spender: perm.spender, nowSec }
+    check('dca autopilot: matching permission passes the shared rulebook', permissionMatchesSchedule(perm, terms).ok)
+    check(
+      'dca autopilot: the rulebook refuses a fatter allowance, a foreign spender, an alien token, and an expired permission',
+      !permissionMatchesSchedule({ ...perm, allowance: BigInt(26_000_000) }, terms).ok &&
+        !permissionMatchesSchedule({ ...perm, spender: '0x3333333333333333333333333333333333333333' }, terms).ok &&
+        !permissionMatchesSchedule({ ...perm, token: '0x4444444444444444444444444444444444444444' }, terms).ok &&
+        !permissionMatchesSchedule(perm, { ...terms, nowSec: perm.end + 1 }).ok,
+    )
+
+    // guardAutoBuy — the independent re-decode over FABRICATED calldata:
+    // green on exactly what the venue builder emits, refusal on every
+    // deviation that matters (recipient, amount, token, router, deadline).
+    const owner = perm.account
+    const spender = perm.spender
+    const usdc = perm.token
+    const router = '0x2626664c2603336E57B271c5C0b26F421741e481'
+    const weth = '0x4200000000000000000000000000000000000006'
+    const pulled = perm.allowance
+    const treasury = '0x9cc0000000000000000000000000000000009999'
+    const mkApprove = (amount: bigint, to = usdc, spenderArg = router) => ({
+      to,
+      data: encodeFunctionData({ abi: erc20Abi, functionName: 'approve', args: [spenderArg as `0x${string}`, amount] }),
+      value: '0',
+    })
+    const mkSwap = (opts: { recipient?: string; sweepTo?: string; amountIn?: bigint; tokenIn?: string; deadline?: number; noSweep?: boolean; minOut?: bigint }) => {
+      const inner = encodeFunctionData({
+        abi: SWAP_ROUTER_02_ABI,
+        functionName: 'exactInputSingle',
+        args: [{
+          tokenIn: (opts.tokenIn ?? usdc) as `0x${string}`,
+          tokenOut: weth as `0x${string}`,
+          fee: 500,
+          recipient: (opts.recipient ?? (opts.noSweep ? owner : ADDRESS_THIS)) as `0x${string}`,
+          amountIn: opts.amountIn ?? pulled,
+          amountOutMinimum: opts.minOut ?? BigInt(1),
+          sqrtPriceLimitX96: BigInt(0),
+        }],
+      })
+      const calls = opts.noSweep
+        ? [inner]
+        : [inner, encodeFunctionData({ abi: SWAP_ROUTER_02_ABI, functionName: 'sweepTokenWithFee', args: [weth as `0x${string}`, BigInt(1), (opts.sweepTo ?? owner) as `0x${string}`, BigInt(20), treasury as `0x${string}`] })]
+      return {
+        to: router,
+        data: encodeFunctionData({ abi: SWAP_ROUTER_02_ABI, functionName: 'multicall', args: [BigInt(opts.deadline ?? nowSec + 600), calls] }),
+        value: '0',
+      }
+    }
+    const guardBase = {
+      schedule: { mode: 'auto', status: 'active', buyUsd: 25, cadence: 'week' as const, chainId: 8453 },
+      permission: perm,
+      ownerWallet: owner,
+      spender,
+      chain: { chainId: 8453, swapRouter02: router, usdcAddress: usdc },
+      expectedBuyAddr: weth,
+      pulledAtomic: pulled,
+      nowSec,
+    }
+    check('dca autopilot guard: the fee build passes (approve exact + swap → sweep to owner)', guardAutoBuy({ ...guardBase, steps: [mkApprove(pulled), mkSwap({})] }).ok)
+    check('dca autopilot guard: the feeless build passes (output straight to owner)', guardAutoBuy({ ...guardBase, steps: [mkApprove(pulled), mkSwap({ noSweep: true })] }).ok)
+    check(
+      'dca autopilot guard: refuses a hijacked recipient (sweep AND direct)',
+      !guardAutoBuy({ ...guardBase, steps: [mkApprove(pulled), mkSwap({ sweepTo: spender })] }).ok &&
+        !guardAutoBuy({ ...guardBase, steps: [mkApprove(pulled), mkSwap({ noSweep: true, recipient: spender })] }).ok,
+    )
+    check(
+      'dca autopilot guard: refuses amount drift, alien tokenIn, over-pull, and a dead deadline',
+      !guardAutoBuy({ ...guardBase, steps: [mkApprove(pulled), mkSwap({ amountIn: pulled + BigInt(1) })] }).ok &&
+        !guardAutoBuy({ ...guardBase, steps: [mkApprove(pulled), mkSwap({ tokenIn: weth })] }).ok &&
+        !guardAutoBuy({ ...guardBase, pulledAtomic: pulled + BigInt(1), steps: [mkApprove(pulled + BigInt(1)), mkSwap({ amountIn: pulled + BigInt(1) })] }).ok &&
+        !guardAutoBuy({ ...guardBase, steps: [mkApprove(pulled), mkSwap({ deadline: nowSec - 1 })] }).ok,
+    )
+    check(
+      'dca autopilot guard: refuses an un-pinned router, an inflated approval, and a disarmed schedule',
+      !guardAutoBuy({ ...guardBase, steps: [mkApprove(pulled), { ...mkSwap({}), to: '0x5555555555555555555555555555555555555555' }] }).ok &&
+        !guardAutoBuy({ ...guardBase, steps: [mkApprove(pulled * BigInt(2)), mkSwap({})] }).ok &&
+        !guardAutoBuy({ ...guardBase, schedule: { ...guardBase.schedule, mode: 'confirm' }, steps: [mkApprove(pulled), mkSwap({})] }).ok,
+    )
+    check('dca autopilot: atomic → human feeds the builder losslessly', usdcAtomsToHuman(BigInt(10_000_000)) === '10' && usdcAtomsToHuman(BigInt(10_500_000)) === '10.5' && usdcAtomsToHuman(BigInt(123)) === '0.000123')
+
+    // HTTP surfaces: the cron is CRON_SECRET-gated (fail closed), the arm
+    // route 404s foreign/missing schedules, disarm needs a session.
+    const cronAnon = await fetch(`${BASE}/api/cron/dca`)
+    check('dca autopilot: cron without the secret → 401 (fail closed)', cronAnon.status === 401)
+    const armMissing = await fetch(`${BASE}/api/dca/nonexistent/arm`, {
+      method: 'POST',
+      headers: { ...C, 'content-type': 'application/json' },
+      body: JSON.stringify({ permission: {}, signature: '0x00' }),
+    })
+    check('dca autopilot: arming a missing schedule → 404', armMissing.status === 404)
+    const disarmAnon = await fetch(`${BASE}/api/dca/nonexistent/arm`, { method: 'DELETE' })
+    check('dca autopilot: disarm without a session → 401', disarmAnon.status === 401)
+
+    // The chat turn: connect-first (the toggle layer answers, not the planner).
+    const toggleRes = await fetch(`${BASE}/api/chat`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ message: 'make my dca autonomous', chatId: 'harness-dca-auto', activeServerIds: [], activeServers: [], history: [] }),
+    })
+    const toggleBody = await toggleRes.json()
+    check(
+      'dca autopilot: the walletless toggle gets the autopilot layer’s connect reply',
+      toggleRes.status === 200 && typeof toggleBody.reply === 'string' && toggleBody.reply.includes('🤖'),
+      String(toggleBody.reply).slice(0, 80),
     )
   }
 

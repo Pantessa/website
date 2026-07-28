@@ -9,6 +9,10 @@
     {
       "path": "/api/cron/jobs",
       "schedule": "* * * * *"
+    },
+    {
+      "path": "/api/cron/dca",
+      "schedule": "7 * * * *"
     }
   ],
   "functions": {

@@ -39,6 +39,13 @@ const jobStatusWord: Record<string, string> = {
 
 function scheduleState(s: RunningSchedule): { word: string; tone: string } {
   if (s.status === 'paused') return { word: 'paused', tone: 'text-[color:var(--muted-2)]' }
+  // Autopilot rows mirror the guardian doctrine: a HEALTHY armed schedule
+  // never nags — only an error reads as needs-you.
+  if (s.mode === 'auto') {
+    if (s.autoError) return { word: 'autopilot — needs you', tone: 'text-red-400' }
+    if (s.period === 'bought') return { word: 'autopilot — bought this period', tone: 'text-emerald-400' }
+    return { word: 'autopilot — armed', tone: 'text-emerald-400' }
+  }
   if (s.period === 'bought') return { word: 'bought this period', tone: 'text-emerald-400' }
   if (s.period === 'live') return { word: 'buy prepared — sign it', tone: 'text-[color:var(--accent)]' }
   return { word: 'due now', tone: 'text-amber-400' }
@@ -193,9 +200,14 @@ export default function JobsRailTab({ onAct }: { onAct?: () => void }) {
         <div className="ml-[22px] mt-0.5 flex items-center gap-2">
           <span className="text-[10px] text-[color:var(--muted-2)]">{s.chainName}</span>
           <span className="flex-1" />
-          {s.status === 'active' && s.period === 'due' && (
+          {s.status === 'active' && s.period === 'due' && s.mode !== 'auto' && (
             <button onClick={(e) => { e.stopPropagation(); prefill(chip.prompt) }} className="text-[10.5px] mono text-[color:var(--accent)] hover:underline">
               buy now
+            </button>
+          )}
+          {s.status === 'active' && s.mode === 'auto' && (
+            <button onClick={(e) => { e.stopPropagation(); prefill(`turn off my ${s.buyToken} dca autopilot`) }} className="text-[10.5px] mono text-[color:var(--muted-2)] hover:text-white transition-colors">
+              autopilot off
             </button>
           )}
           {s.status === 'active' ? (

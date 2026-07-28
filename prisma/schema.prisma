@@ -986,7 +986,25 @@ model DcaSchedule {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  runs DcaRun[]
+  /// Autonomous tier (Spend Permissions). 'confirm' = the user signs every
+  /// buy (the default, works for any wallet). 'auto' = the user's SMART
+  /// wallet signed ONE SpendPermission whose allowance == buyUsd per cadence
+  /// period — the on-chain SpendPermissionManager caps the pull regardless
+  /// of this codebase, and the sweep executes each due period's buy with the
+  /// swap output pinned to the OWNER's wallet. Disarm never deletes the
+  /// schedule — it drops back to confirm-mode.
+  mode               String    @default("confirm") // confirm | auto
+  permissionJson     String?   @map("permission_json") // SpendPermission struct, bigints as strings
+  permissionSig      String?   @map("permission_sig") // the user's one-time EIP-712 signature
+  permissionHash     String?   @map("permission_hash") // manager.getHash(permission) — read from the CONTRACT, never computed locally
+  permissionApproved Boolean   @default(false) @map("permission_approved") // approveWithSignature landed on-chain
+  spender            String?   // the CDP-managed spender bound at arm time (lowercased)
+  armNetwork         String?   @map("arm_network") // base | base-sepolia
+  armedAt            DateTime? @map("armed_at")
+  autoError          String?   @map("auto_error") // last sweep failure — the ONLY thing that badges needs-you
+
+  runs     DcaRun[]
+  autoRuns DcaAutoRun[]
 
   @@index([wallet, createdAt])
   @@index([status])
@@ -1010,6 +1028,32 @@ model DcaRun {
   @@unique([scheduleId, periodKey])
   @@index([wallet, createdAt])
   @@map("dca_runs")
+}
+
+/// One AUTONOMOUS period's buy — the receipt row (guardian-runs pattern:
+/// standing value lives in its own table, never embed_turns). The
+/// @@unique([scheduleId, periodKey]) row is the sweep's idempotency claim —
+/// created BEFORE any tx is sent, so overlapping crons can't double-pull.
+/// A failed run keeps the claim (no retry-until-it-spends): the error
+/// surfaces as the schedule's auto_error and the NEXT period tries fresh.
+model DcaAutoRun {
+  id         String   @id @default(cuid())
+  scheduleId String   @map("schedule_id")
+  wallet     String // lowercased schedule owner (the swap's pinned recipient)
+  periodKey  String   @map("period_key") // same UTC calendar keys as dca_runs
+  status     String   @default("running") // running | bought | failed
+  valueUsd   Float?   @map("value_usd") // the pulled USDC, guardrail-priced
+  spendTx    String?  @map("spend_tx") // SpendPermissionManager.spend hash
+  swapTx     String?  @map("swap_tx") // the venue swap hash (output → owner)
+  detail     String? // human receipt line / failure reason
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  schedule DcaSchedule @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
+
+  @@unique([scheduleId, periodKey])
+  @@index([wallet, createdAt])
+  @@map("dca_auto_runs")
 }
 
 /// A public receipt permalink (/r/<id>) minted from something the owner

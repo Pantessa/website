@@ -30,6 +30,10 @@ export interface RunningSchedule {
   chainName: string
   period: 'due' | 'live' | 'bought'
   liveJobId: string | null
+  /** 'confirm' | 'auto' — autopilot (Spend Permission armed). */
+  mode: string
+  autoError: string | null
+  lastAutoRun: { periodKey: string; status: string; detail: string | null } | null
 }
 
 export interface RunningGuard {
@@ -89,7 +93,11 @@ export function useRunningWork(enabled: boolean, intervalMs = 15_000) {
   const activeJobs = jobs.filter((j) => LIVE_JOB_STATUS.has(j.status))
   // A schedule "needs you" when this period's buy is due or already prepared
   // and unsigned. Paused schedules keep their rows but never nag the badge.
-  const needsYou = schedules.filter((s) => s.status === 'active' && s.period !== 'bought')
+  // ARMED schedules follow the guardian doctrine — healthy autopilot is
+  // standing state (the cron buys it), only an auto error nags.
+  const needsYou = schedules.filter((s) =>
+    s.status === 'active' && (s.mode === 'auto' ? Boolean(s.autoError) : s.period !== 'bought'),
+  )
   // Guardians are set-and-forget: an active protection is healthy standing
   // state, so it never nags the badge — only an errored one does.
   const guardAlerts = guards.filter((g) => g.status === 'error')
