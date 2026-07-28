@@ -2827,6 +2827,83 @@
   }
 
 
+  /* ── THE LOOP BAND (.loopband) — rescued from the retired TxPipeline ───
+     Lives inside the host section now, because the loop is a host's payoff:
+     the asks the chat couldn't answer are the tools their MCP is missing. */
+  .loopband {
+    margin-top: 28px; display: grid; grid-template-columns: minmax(0, 1fr) minmax(280px, 400px);
+    gap: clamp(20px, 3vw, 44px); align-items: center;
+    border: 1px solid var(--line); border-radius: 18px; padding: clamp(22px, 3vw, 34px);
+    background: linear-gradient(120deg, color-mix(in srgb, var(--accent) 5%, transparent), transparent 58%), var(--surf-1);
+  }
+  .loopband__eyebrow { display: inline-flex; align-items: center; gap: 9px; font-size: 11px; letter-spacing: .16em; color: var(--accent); }
+  .loopband__eyebrow b { font-weight: 400; opacity: .7; }
+  .loopband__h3 { font-family: var(--font-serif); font-weight: 500; font-optical-sizing: auto; font-size: clamp(20px, 2.2vw, 27px); line-height: 1.2; letter-spacing: -.012em; margin-top: 12px; color: var(--fg); max-width: 24ch; }
+  .loopband__sub { margin-top: 11px; max-width: 54ch; font-size: 14px; line-height: 1.6; color: var(--muted); text-wrap: pretty; }
+  .loopband__demo { display: flex; flex-direction: column; gap: 8px; padding: 18px; border: 1px solid var(--line); border-radius: 14px; background: color-mix(in srgb, var(--fg) 3%, transparent); font-size: 12px; }
+  .loopband__dead { color: var(--muted-2); text-decoration: line-through; text-decoration-color: color-mix(in srgb, var(--sell) 60%, transparent); }
+  .loopband__arrow { color: var(--muted-2); font-size: 13px; }
+  .loopband__fix { color: var(--fg); }
+  .loopband__fix b { color: var(--accent); font-weight: 400; }
+  .loopband__meta { font-size: 10.5px; color: var(--muted-2); letter-spacing: .04em; margin-top: 2px; }
+  @media (max-width: 900px) { .loopband { grid-template-columns: 1fr; } }
+
+  /* ── THE SPREAD (.spread) — intent links as distribution ───────────────
+     One link, four surfaces, receipts coming back. The travelling packets are
+     a short dash on a duplicated path with an animated stroke-dashoffset:
+     pure CSS, no rAF, and one reduced-motion rule stills every wire. */
+  .spread { padding: clamp(80px, 10vh, 124px) 0 clamp(56px, 7vh, 80px); }
+  .spread__grid { display: grid; grid-template-columns: minmax(0, 6fr) minmax(0, 5fr); gap: clamp(32px, 4.5vw, 64px); align-items: center; max-width: 1220px; margin: 0 auto; }
+  .spread__eyebrow { font-size: 12px; letter-spacing: .18em; color: var(--muted-2); }
+  .spread__h2 {
+    font-family: var(--font-serif); font-weight: 500; font-optical-sizing: auto;
+    font-size: clamp(28px, 3.7vw, 44px); letter-spacing: -.014em; line-height: 1.05;
+    margin-top: 12px; color: var(--fg);
+  }
+  .spread__sub { margin-top: 15px; max-width: 58ch; font-size: 15px; line-height: 1.6; color: var(--muted); text-wrap: pretty; }
+  .spread__chips { margin-top: 26px; display: flex; flex-wrap: wrap; gap: 9px; }
+  .spread__ctas { margin-top: 26px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .spread__note { font-size: 11px; color: var(--muted-2); }
+
+  .spread__stage { min-width: 0; display: flex; flex-direction: column; gap: 16px; }
+  .spread__svg { width: 100%; height: auto; overflow: visible; }
+  .spread__wire { fill: none; stroke: color-mix(in srgb, var(--fg) 11%, transparent); stroke-width: 1; }
+  .spread__out, .spread__back { fill: none; stroke-width: 2; stroke-linecap: round; }
+  .spread__out {
+    stroke: var(--accent); stroke-dasharray: 7 340; stroke-dashoffset: 347;
+    animation: spread-out 3.2s linear infinite; animation-delay: calc(var(--i) * .38s);
+  }
+  .spread__back {
+    stroke: #e8c468; stroke-dasharray: 5 340; stroke-dashoffset: 0;
+    animation: spread-back 3.2s linear infinite; animation-delay: calc(var(--i) * .38s + 1.5s);
+  }
+  @keyframes spread-out { from { stroke-dashoffset: 347; } to { stroke-dashoffset: 0; } }
+  @keyframes spread-back { from { stroke-dashoffset: 0; } to { stroke-dashoffset: 345; } }
+  .spread__node { fill: var(--surf-2); stroke: color-mix(in srgb, var(--fg) 22%, transparent); stroke-width: 1; }
+  .spread__nlabel { fill: var(--fg); font-size: 11px; }
+  .spread__nsub { fill: var(--muted-2); font-size: 9.5px; }
+  .spread__link { fill: color-mix(in srgb, var(--accent) 12%, transparent); stroke: color-mix(in srgb, var(--accent) 55%, transparent); stroke-width: 1; }
+  .spread__linktext { fill: color-mix(in srgb, var(--accent) 88%, var(--fg)); font-size: 12px; }
+  .spread__linkdot { fill: var(--accent); }
+  .spread__legend { display: flex; flex-direction: column; gap: 6px; font-size: 10.5px; color: var(--muted-2); }
+  .spread__key { display: inline-flex; align-items: center; gap: 8px; }
+  .spread__key i { width: 14px; height: 2px; border-radius: 2px; flex-shrink: 0; }
+  .spread__key--out i { background: var(--accent); }
+  .spread__key--back i { background: #e8c468; }
+
+  .spread__econ { margin-top: 6px; display: flex; flex-direction: column; gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: 13px; overflow: hidden; }
+  .spread__econ > div { display: grid; grid-template-columns: 58px minmax(0, 1fr); gap: 12px; align-items: baseline; padding: 11px 15px; background: var(--surf-1); }
+  .spread__econ dt { font-size: 14px; color: var(--accent); }
+  .spread__econ dd { font-size: 12px; line-height: 1.5; color: var(--muted); text-wrap: pretty; }
+
+  @media (max-width: 1023px) {
+    .spread__grid { grid-template-columns: 1fr; }
+    .spread__stage { max-width: 520px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .spread__out, .spread__back { animation: none; stroke-dasharray: none; stroke-dashoffset: 0; opacity: .3; }
+  }
+
   /* ── THE NIGHT SHIFT (.night) ──────────────────────────────────────────
      Standing intent as a clock that keeps running. The dial loops on one
      normalized progress value from the component; everything here is
@@ -3582,6 +3659,10 @@
      black, so they wash out on paper — re-ink them to their ink-on-paper
      siblings. The rest of the console rides --surf/--line/--fg and flips on
      its own. */
+  /* The return wire's gold is tuned for black; on paper it needs its
+     ink-on-paper sibling or the receipts read as a highlighter smear. */
+  html[data-theme='light'] .spread__back { stroke: #a3720c; }
+  html[data-theme='light'] .spread__key--back i { background: #a3720c; }
   html[data-theme='light'] .mach {
     --mread: #4a5cd0;
     --mscan: #1f7fa8;

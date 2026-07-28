@@ -87,6 +87,33 @@ export default function EmbedAnywhere() {
         <EmbedDemo />
       </div>
 
+      {/* The loop TxPipeline used to carry (retired 2026-07-28 when the
+          machine absorbed the pipeline): usage feeds the host's analytics,
+          analytics feed upgrade prompts, upgrades feed more signed txs. It
+          belongs to hosts, so it lives in the host section now. */}
+      <div className="loopband">
+        <div className="loopband__copy">
+          <span className="loopband__eyebrow mono">
+            IT LEARNS FROM YOUR USERS <b aria-hidden>⟲</b>
+          </span>
+          <h3 className="loopband__h3">
+            Every dead end becomes an upgrade prompt for your MCP.
+          </h3>
+          <p className="loopband__sub">
+            The chat records the asks it couldn&rsquo;t answer on your site — not the ones it
+            aced. Those are the tools you&rsquo;re missing, ranked by how many people wanted them.
+          </p>
+        </div>
+        <div className="loopband__demo mono" aria-hidden>
+          <span className="loopband__dead">dead end · &ldquo;what&rsquo;s my balance on Base?&rdquo;</span>
+          <span className="loopband__arrow">↓</span>
+          <span className="loopband__fix">
+            suggested: add a <b>balances</b> tool to your MCP
+          </span>
+          <span className="loopband__meta">asked 41× this week · 0 answered</span>
+        </div>
+      </div>
+
       <p className="embeda__disclaimer">
         Both demos are proof-of-concept forks of open-source interfaces, built to show the
         install. They are test cases only — not partnerships, and not affiliated with or
