@@ -28,11 +28,13 @@ const STATIONS: { sel: string; label: string }[] = [
   { sel: '.trust', label: 'The proof' },
 ]
 
-/** Decorative-only. Positive drifts down-slower, negative drifts up-faster. */
+/** Decorative-only, and only on visuals that own their own whitespace.
+ *  Positive drifts down-slower, negative up-faster. Nothing framed by a
+ *  border goes on this list: drifting a card's contents out of its own frame
+ *  reads as a layout bug, not depth. */
 const PARALLAX: { sel: string; k: number }[] = [
   { sel: '.night__dialwrap', k: -0.055 },
   { sel: '.spread__svg', k: 0.045 },
-  { sel: '.loopband__demo', k: -0.03 },
 ]
 
 export default function LandingMotion() {
@@ -90,7 +92,11 @@ export default function LandingMotion() {
         for (const { el, k } of parallax) {
           const r = el.getBoundingClientRect()
           // −1 above the fold … +1 below it; 0 when the element is centred.
-          const t = (r.top + r.height / 2 - vh / 2) / vh
+          // CLAMPED: on a first paint at scrollY 0 a section five screens down
+          // scores t ≈ 5, which multiplied out to a 140px displacement — the
+          // visual sat outside its own section until the first scroll event
+          // corrected it.
+          const t = Math.max(-1, Math.min(1, (r.top + r.height / 2 - vh / 2) / vh))
           el.style.setProperty('--py', `${(t * k * vh).toFixed(1)}px`)
         }
       }

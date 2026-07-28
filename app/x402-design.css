@@ -2833,40 +2833,51 @@
      get stilled. Hidden below 1280px, where it would fight the content for
      the gutter it needs. */
   .stations {
-    position: fixed; right: 22px; top: 50%; transform: translateY(-50%); z-index: 40;
-    display: flex; flex-direction: column; align-items: flex-end; gap: 3px;
+    position: fixed; right: 15px; top: 50%; transform: translateY(-50%); z-index: 40;
+    display: flex; flex-direction: column; align-items: flex-end; gap: 4px;
   }
   .stations__s {
-    display: flex; align-items: center; gap: 10px; padding: 5px 0 5px 12px;
+    position: relative; display: flex; align-items: center; justify-content: flex-end;
+    padding: 5px 0 5px 12px; width: 38px;
     background: none; border: 0; cursor: pointer; color: var(--muted-2);
   }
   .stations__tick {
-    display: block; width: 16px; height: 1.5px; border-radius: 2px; flex-shrink: 0;
+    display: block; width: 14px; height: 1.5px; border-radius: 2px; flex-shrink: 0;
     background: color-mix(in srgb, var(--fg) 22%, transparent);
     transition: width .28s cubic-bezier(.2,.8,.2,1), background .28s;
   }
+  /* Labels appear on HOVER only. `.embeda` runs the full fluid width, so a
+     label parked beside the active tick sat on top of the demo's "try it
+     live" control — the ticks fit the gutter, prose never does. Which station
+     you're at reads from the long accent tick instead. */
   .stations__label {
+    /* Absolutely positioned so the BUTTON stays tick-width. In flow it made
+       every station a 160px-wide invisible hit target parked over the
+       content underneath — clicks on the page vanished into the rail. */
+    position: absolute; right: 34px; top: 50%;
     font-size: 10px; letter-spacing: .11em; text-transform: uppercase; white-space: nowrap;
-    opacity: 0; transform: translateX(6px);
-    transition: opacity .25s ease, transform .25s cubic-bezier(.2,.8,.2,1), color .25s;
+    padding: 4px 9px; border-radius: 7px;
+    border: 1px solid var(--line); background: color-mix(in srgb, var(--bg) 88%, transparent);
+    backdrop-filter: blur(6px);
+    opacity: 0; transform: translateY(-50%) translateX(6px); pointer-events: none;
+    transition: opacity .22s ease, transform .22s cubic-bezier(.2,.8,.2,1), color .22s;
   }
-  .stations__s:hover .stations__label { opacity: 1; transform: none; }
-  .stations__s:hover .stations__tick { width: 24px; background: color-mix(in srgb, var(--fg) 45%, transparent); }
-  .stations__s.is-on .stations__tick { width: 30px; background: var(--accent); box-shadow: 0 0 10px color-mix(in srgb, var(--accent) 55%, transparent); }
-  .stations__s.is-on .stations__label { opacity: 1; transform: none; color: var(--fg); }
-  /* Hidden below 1400px: the active label extends left from its tick, and
-     under that width it starts eating the content's own gutter. */
-  @media (max-width: 1399px) { .stations { display: none; } }
+  .stations__s:hover .stations__label,
+  .stations__s:focus-visible .stations__label { opacity: 1; transform: translateY(-50%); color: var(--fg); }
+  .stations__s:hover .stations__tick { width: 22px; background: color-mix(in srgb, var(--fg) 45%, transparent); }
+  .stations__s.is-on .stations__tick { width: 26px; background: var(--accent); box-shadow: 0 0 10px color-mix(in srgb, var(--accent) 55%, transparent); }
+  /* Below 1280px even the ticks would crowd the content gutter. */
+  @media (max-width: 1279px) { .stations { display: none; } }
 
   /* parallax: LandingMotion writes --py on decorative visuals only */
-  .night__dialwrap, .spread__svg, .loopband__demo { transform: translate3d(0, var(--py, 0px), 0); will-change: transform; }
+  .night__dialwrap, .spread__svg { transform: translate3d(0, var(--py, 0px), 0); will-change: transform; }
 
   /* reveals: one rise as a section head arrives, then never again */
   .reveal { opacity: 0; transform: translateY(14px); transition: opacity .7s ease, transform .7s cubic-bezier(.2,.8,.2,1); }
   .reveal.is-in { opacity: 1; transform: none; }
 
   @media (prefers-reduced-motion: reduce) {
-    .night__dialwrap, .spread__svg, .loopband__demo { transform: none; will-change: auto; }
+    .night__dialwrap, .spread__svg { transform: none; will-change: auto; }
     .reveal { opacity: 1; transform: none; transition: none; }
     .stations__tick, .stations__label { transition: none; }
   }
