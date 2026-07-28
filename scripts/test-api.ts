@@ -75,7 +75,7 @@ import { parseRobinhoodFunding, parseSameChainSwapSegment, JOB_SEGMENT_PARSERS }
 import { parseMultiSendSegments, parseTransferSegment } from '../lib/transfer-exec'
 import { buildFundsDetail, classifyTurn, FAILURE_PROBE_TOKENS, moneyShaped } from '../lib/ask-failure'
 import { canonicalChainWord, normalizeChainWords } from '../lib/chain-lexicon'
-import { decideFundingTurn, detectBalanceShortfall, fundingPlanUsd, planFundingChips, planStrandedRescue, rankFundingSources, shortRefusalCopy, softenClaimedFailureBlock, type FundingNeed, type FundingSource } from '../lib/funding-plan'
+import { decideFundingTurn, detectBalanceShortfall, fundingPlanUsd, planFundingChips, planStrandedRescue, promisableCapacityUsd, rankFundingSources, shortRefusalCopy, softenClaimedFailureBlock, type FundingNeed, type FundingSource } from '../lib/funding-plan'
 import { compileDcaBuy, dcaRunChip, parseDcaCreate, parseDcaManage, parseDcaRun, periodKeyFor } from '../lib/dca'
 import { briefingNeedsCount, briefingTile, composeBriefingItems, type BriefingInputs, type BriefingPosition } from '../lib/briefing'
 import { moveAsk, parseRebalanceAsk, planRebalance, type RebalanceInputs } from '../lib/rebalance'
@@ -3421,6 +3421,21 @@ async function main() {
         /Send a little ETH .* on Base/.test(refusalSubReserve) && !/on Base and Ethereum/.test(refusalSubReserve),
       refusalSubReserve,
     )
+    // Short ONLY because a gas-included ETH plan must keep leg 1's own fee
+    // back (sourceCapUsd): the visible balance looks big enough, so the copy
+    // owes the user the reason and the number it CAN commit — otherwise
+    // "~$8.50 of ETH" next to "moves ~$8" reads as a broken product.
+    const refusalHeadroom = shortRefusalCopy({
+      chainsRead: 'Base, Arbitrum and Ethereum', need: hlNeed, needUsd: 8, sourceSummary: '~$8.50 of ETH on Ethereum',
+      stranded: [], movableTotalUsd: 8.5, promisableUsd: 7.5,
+    })
+    check(
+      'funding refusal: an ETH plan short only by its own leg-1 fee explains the two moves and names what it CAN commit',
+      refusalHeadroom.includes('~$8.50 of ETH on Ethereum') && /two moves off that one balance/.test(refusalHeadroom) &&
+        /only safely commit ~\$7\.50/.test(refusalHeadroom) && !/found no movable/.test(refusalHeadroom),
+      refusalHeadroom,
+    )
+
     // The donor-topup rescue: stranded USDC + a movable source elsewhere →
     // one job (topup gas → move → act); the chip resume is the contract.
     const rescue = planStrandedRescue({
@@ -6945,6 +6960,66 @@ async function main() {
     )
     const gasShort = planFundingChips(gasNeed, 20, [src(8453, 'Base', 'USDC', 22)], 7)
     check('funding plan: a source covering the tokens but not the gas leg is honestly short', gasShort.kind === 'short' && gasShort.needUsd === 27)
+
+    // ── ETH sources fund their OWN legs (the #590 pattern, generic path) ────
+    // A gas-included plan runs TWO legs off one ETH balance and leg 1's fee
+    // comes out of the very reserve leg 2 spends against — so an ETH row may
+    // only promise sourceCapUsd, never its whole movable balance. Stables are
+    // untouched (their legs' fees are paid in ETH).
+    const hlEthNeed: FundingNeed = { chainId: 42161, token: 'USDC', amountHuman: 5, followupResume: 'deposit 5 USDC to Hyperliquid', actionLabel: 'the Hyperliquid deposit' }
+    const ethBarely = planFundingChips(hlEthNeed, 6.5, [src(1, 'Ethereum', 'ETH', 8.5)], 1.5)
+    check(
+      'funding plan: an ETH row that only covers a gas-included plan by spending its whole balance is short, not a mid-job wall',
+      ethBarely.kind === 'short' && ethBarely.needUsd === 8 && ethBarely.totalUsd === 8.5,
+      ethBarely.kind,
+    )
+    const ethClears = planFundingChips(hlEthNeed, 6.5, [src(1, 'Ethereum', 'ETH', 9.5)], 1.5)
+    check(
+      'funding plan: the same ETH row one headroom richer still funds the plan (no blanket ETH refusal)',
+      ethClears.kind === 'offer' && /~\$8 of ETH on Ethereum/.test(ethClears.chips[0].label),
+      ethClears.kind === 'offer' ? ethClears.chips[0].label : ethClears.kind,
+    )
+    const stableUnchanged = planFundingChips(hlEthNeed, 6.5, [src(8453, 'Base', 'USDC', 8)], 1.5)
+    check('funding plan: a stable row still spends in full — its legs pay fees in ETH, not in itself', stableUnchanged.kind === 'offer')
+    // "All my ETH" promises the capped figure, and the capped chip still compiles.
+    const ethAllIn = planFundingChips(hlEthNeed, 6.5, [src(1, 'Ethereum', 'ETH', 30)], 1.5)
+    const ethAllInChip = ethAllIn.kind === 'offer' ? ethAllIn.chips.find((c) => c.label.startsWith('All my')) : undefined
+    const ethAllInJob = ethAllInChip ? compileJobAsk(ethAllInChip.resume) : null
+    check(
+      'funding plan: the all-in ETH chip promises the capped balance (~$29 of $30) and still compiles',
+      !!ethAllInChip && /~\$29\b/.test(ethAllInChip.label) && !/~\$30\b/.test(ethAllInChip.label) &&
+        !!ethAllInJob && !('problem' in ethAllInJob) &&
+        JSON.stringify(ethAllInJob.steps.map((s) => `${s.kind}:${s.builder}`)) ===
+          JSON.stringify(['sign:native-cross-chain', 'wait:wait', 'sign:native-cross-chain', 'wait:wait', 'sign:native-hl-exec', 'wait:wait']),
+      ethAllInChip?.label,
+    )
+    // Gas-FREE plans still spend the whole row: one leg, no fee to keep back.
+    const ethNoGas = planFundingChips(need, 20.5, [src(8453, 'Base', 'ETH', 60)])
+    const ethNoGasChip = ethNoGas.kind === 'offer' ? ethNoGas.chips.find((c) => c.label.startsWith('All my')) : undefined
+    check(
+      'funding plan: a single-leg (gas-free) ETH plan still spends the full movable row',
+      !!ethNoGasChip && /~\$60\b/.test(ethNoGasChip.label),
+      ethNoGasChip?.label,
+    )
+    // Combine: only the gas-BEARING source pays the headroom, and its legs
+    // must sum to the capped figure ($4 of a $5 row), not the whole row.
+    const ethCombine = planFundingChips(hlEthNeed, 6.5, [src(1, 'Ethereum', 'ETH', 5), src(8453, 'Base', 'USDC', 4)], 1.5)
+    const ethFromMainnet = (ethCombine.kind === 'offer' ? ethCombine.chips[0].resume : '')
+      .split(', then ')
+      .filter((leg) => /ETH from Ethereum/.test(leg))
+      .reduce((a, leg) => a + Number(leg.match(/Swap ([\d.]+) ETH/)?.[1] ?? 0) * 3500, 0)
+    check(
+      'funding plan: in a combined plan only the gas-bearing ETH source pays the headroom (~$4 of a $5 row)',
+      ethCombine.kind === 'offer' && ethFromMainnet > 3.9 && ethFromMainnet <= 4.01,
+      `${ethFromMainnet.toFixed(2)} — ${ethCombine.kind === 'offer' ? ethCombine.chips[0].resume : ethCombine.kind}`,
+    )
+    check(
+      'funding plan: promisable capacity = best capped single source, or the set combined (only the richest pays it)',
+      promisableCapacityUsd([src(1, 'Ethereum', 'ETH', 9)], true) === 8 &&
+        promisableCapacityUsd([src(1, 'Ethereum', 'ETH', 9)], false) === 9 &&
+        promisableCapacityUsd([src(1, 'Ethereum', 'ETH', 9), src(8453, 'Base', 'USDC', 4)], true) === 12 &&
+        promisableCapacityUsd([], true) === 0,
+    )
 
     // The generic fallback: balance refusals from ANY MCP become detectable
     // shortfalls, and bridge-only chips (empty followup) still round-trip —

@@ -214,6 +214,33 @@ const SCENARIOS: Scenario[] = [
     expect: 'refusal',
   },
   {
+    // THE #590 PATTERN ON THE GENERIC PATH: a gas-included plan runs TWO
+    // legs off ONE ETH balance, and leg 1's own fee comes out of the reserve
+    // leg 2 spends against. $8.50 movable on mainnet "covers" an $8 plan
+    // only by spending the wallet to fee dust — the promise is withdrawn and
+    // the copy must explain why money that looks sufficient isn't.
+    name: 'ETH row covers the plan only by spending its own leg-1 fee → HL deposit (the two-leg strand)',
+    need: HL_NEED,
+    reads: [R(1, 0.00625, 0), R(8453, 0, 0), R(42161, 0, 0)],
+    expect: 'refusal',
+  },
+  {
+    // One headroom richer and the same wallet funds it — the fix is a
+    // sizing haircut, never a blanket "ETH can't fund gas-included plans".
+    name: 'ETH row one headroom richer → HL deposit (still funds it)',
+    need: HL_NEED,
+    reads: [R(1, 0.00725, 0), R(8453, 0, 0), R(42161, 0, 0)],
+    expect: 'offer',
+  },
+  {
+    // The all-in chip is where the whole-balance promise used to live: it
+    // must now compile at the CAPPED size (the ladder replay proves it).
+    name: 'rich mainnet ETH row → HL deposit (all-in chip at the capped size)',
+    need: HL_NEED,
+    reads: [R(1, 0.017, 0), R(8453, 0, 0), R(42161, 0, 0)],
+    expect: 'offer',
+  },
+  {
     name: 'dust — $0.30 USDC on Base → HL deposit (below naming threshold)',
     need: HL_NEED,
     reads: [R(8453, 0.001, 0.3), R(42161, 0, 0), R(1, 0, 0)],

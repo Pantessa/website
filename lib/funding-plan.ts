@@ -31,7 +31,7 @@
 import { erc20Abi, formatEther, formatUnits } from 'viem'
 import { chainById, publicClientFor } from '@/lib/chains'
 import { chainAlt, canonicalChainWord } from '@/lib/chain-lexicon'
-import { fundingNeedUsd, planRobinhoodFundingAdvice, readFundingShortfall } from '@/lib/lifi-bridge'
+import { ETH_TWO_LEG_HEADROOM_USD, fundingNeedUsd, planRobinhoodFundingAdvice, readFundingShortfall } from '@/lib/lifi-bridge'
 import { describeInflightDeposit } from '@/lib/inflight-funding'
 import { usdPerToken } from '@/lib/usd-probe'
 
@@ -69,6 +69,38 @@ const MIN_GAS_TO_SEND_ETH: Record<number, number> = { 1: 0.001, 8453: 0.00003, 4
 export const DEST_GAS_FLOOR_ETH: Record<number, number> = { 1: 0.003, 8453: 0.0002, 42161: 0.0002 }
 /** The smallest gas leg worth quoting. */
 const MIN_GAS_LEG_USD = 1.5
+
+/** The dollars a source may actually PROMISE to a plan.
+ *
+ *  A stable spends its whole row: the legs' fees are paid in ETH, so the
+ *  USDC balance the second leg sells is exactly the one the first leg left.
+ *  An ETH row funding a GAS-INCLUDED plan is different — it runs TWO legs
+ *  off the ONE balance (gas to the destination, then the token), and leg 1's
+ *  own origin fee comes out of the very keep-back leg 2 spends against. A
+ *  plan sized to the whole movable balance therefore leaves the origin with
+ *  nothing but fee dust, and a fee spike or inter-leg ETH drift strands the
+ *  job with leg 1 already moved — the live 2026-07-28 failure on the
+ *  Robinhood/LiFi path (job cms4mv990000c1krkq00kfgy7), whose sizing fix is
+ *  lib/lifi-bridge's ETH_TWO_LEG_HEADROOM_USD. Same balance, same arithmetic,
+ *  same number: the two planners share ONE headroom so they can't drift.
+ *
+ *  The scan's movable figure is untouched — it stays the true single-move
+ *  capacity, which is what the refusal copy names and what a gas-free
+ *  single-leg plan may still spend in full. */
+export const sourceCapUsd = (s: FundingSource, gasIncluded: boolean): number =>
+  s.token === 'ETH' && gasIncluded ? Math.max(0, Number((s.usd - (ETH_TWO_LEG_HEADROOM_USD[s.chainId] ?? 1)).toFixed(2))) : s.usd
+
+/** What a set of sources can PROMISE for one plan: the best single source,
+ *  or the whole set combined (the richest carries the gas leg, so only it
+ *  pays the two-leg headroom). Mirrors the two shapes planFundingChips
+ *  offers — sizing anything off the raw movable sum re-opens the strand. */
+export function promisableCapacityUsd(sources: FundingSource[], gasIncluded: boolean): number {
+  if (sources.length === 0) return 0
+  const byUsd = [...sources].sort((a, b) => b.usd - a.usd)
+  const single = Math.max(...byUsd.map((s) => sourceCapUsd(s, gasIncluded)))
+  const combined = byUsd.length >= 2 ? byUsd.reduce((a, s, i) => a + sourceCapUsd(s, gasIncluded && i === 0), 0) : 0
+  return Number(Math.max(single, combined, 0).toFixed(2))
+}
 
 export interface FundingNeed {
   /** Destination chain + token the blocked action needs. */
@@ -195,11 +227,12 @@ export function planFundingChips(need: FundingNeed, needUsd: number, sources: Fu
   const totalNeedUsd = Number((needUsd + gasUsd).toFixed(2))
 
   /** [gas leg?, token leg] from ONE source, spending `tokenUsd` on the token
-   *  leg — the source must hold tokenUsd + gasUsd or this returns null.
+   *  leg — the source must be able to PROMISE tokenUsd + gasUsd (sourceCapUsd,
+   *  so a two-leg ETH plan keeps its own fee back) or this returns null.
    *  tokenUsd 0 = a GAS-ONLY plan (the token need is already covered on the
    *  destination; only the follow-up's gas is missing). */
   const legsFrom = (s: FundingSource, tokenUsd: number): string[] | null => {
-    if (s.usd < tokenUsd + gasUsd) return null
+    if (sourceCapUsd(s, gasUsd > 0) < tokenUsd + gasUsd) return null
     const segs: string[] = []
     let spent = 0
     if (gasUsd > 0) {
@@ -217,26 +250,31 @@ export function planFundingChips(need: FundingNeed, needUsd: number, sources: Fu
   // Empty followup = bridge-only chips (the generic custom-MCP fallback).
   const withFollowup = (legs: string[]) => (need.followupResume ? `${legs.join(', then ')}, then ${need.followupResume}` : legs.join(', then '))
 
-  const best = ranked.find((s) => s.usd >= totalNeedUsd)
+  // "Covers it" means the source's PROMISABLE capacity, not its raw row: an
+  // ETH row spending its whole movable balance across a gas leg AND a token
+  // leg is a mid-job wall (see sourceCapUsd).
+  const best = ranked.find((s) => sourceCapUsd(s, gasUsd > 0) >= totalNeedUsd)
   const chips: FundingChip[] = []
   if (best) {
+    const bestCap = sourceCapUsd(best, gasUsd > 0)
     const legs = legsFrom(best, needUsd)!
     chips.push({
       label: `Just enough (~$${usd2(totalNeedUsd)} of ${best.token} on ${best.chainWord})`,
       resume: withFollowup(legs),
     })
     // "All of it" only when it's a sensible whole-balance move — a $15k
-    // balance covering a $25 need doesn't get an all-in chip.
-    if (best.usd >= totalNeedUsd * 1.6 && best.usd <= totalNeedUsd * 10) {
-      const allLegs = legsFrom(best, Number((best.usd - gasUsd).toFixed(2)))
+    // balance covering a $25 need doesn't get an all-in chip. "All" is the
+    // promisable capacity, never the raw ETH row.
+    if (bestCap >= totalNeedUsd * 1.6 && best.usd <= totalNeedUsd * 10) {
+      const allLegs = legsFrom(best, Number((bestCap - gasUsd).toFixed(2)))
       if (allLegs) {
         chips.push({
-          label: `All my ${best.token} on ${best.chainWord} (~$${usd2(Number(best.usd.toFixed(2)))})`,
+          label: `All my ${best.token} on ${best.chainWord} (~$${usd2(Number(bestCap.toFixed(2)))})`,
           resume: withFollowup(allLegs),
         })
       }
     }
-  } else if (totalUsd >= totalNeedUsd && ranked.length >= 2) {
+  } else if (promisableCapacityUsd(ranked, gasUsd > 0) >= totalNeedUsd && ranked.length >= 2) {
     // No single source covers it — the richest source carries the gas leg,
     // then legs combine (richest-first) until the token need is covered.
     const byUsd = [...ranked].sort((a, b) => b.usd - a.usd)
@@ -244,12 +282,16 @@ export function planFundingChips(need: FundingNeed, needUsd: number, sources: Fu
     let covered = 0
     let gasCarried = 0
     for (const s of byUsd) {
-      const spendable = s.usd - (gasCarried === 0 && gasUsd > 0 ? gasUsd : 0)
+      // The gas-bearing leg's source runs two legs off one balance, so it
+      // contributes its promisable capacity; every other source runs a
+      // single leg and spends its full row.
+      const carriesGas = gasCarried === 0 && gasUsd > 0
+      const spendable = sourceCapUsd(s, carriesGas) - (carriesGas ? gasUsd : 0)
       if (spendable <= 0) continue
-      const segs = gasCarried === 0 && gasUsd > 0 ? legsFrom(s, Math.min(spendable, needUsd - covered)) : [legResume(s, sourceAmountFor(s, Math.min(s.usd, needUsd - covered)), need)]
+      const segs = carriesGas ? legsFrom(s, Math.min(spendable, needUsd - covered)) : [legResume(s, sourceAmountFor(s, Math.min(s.usd, needUsd - covered)), need)]
       if (!segs) continue
       legs.push(...segs)
-      if (gasCarried === 0 && gasUsd > 0) gasCarried = gasUsd
+      if (carriesGas) gasCarried = gasUsd
       covered += Math.min(spendable, needUsd - covered)
       if (covered >= needUsd) break
     }
@@ -282,8 +324,13 @@ export function shortRefusalCopy(params: {
   sourceSummary: string
   stranded: FundingSource[]
   movableTotalUsd: number
+  /** Set ONLY when the ETH two-leg headroom is what made the plan short:
+   *  the dollars the wallet's movable ETH can actually promise. Naming a
+   *  holding that LOOKS big enough next to a smaller plan and saying nothing
+   *  else reads as a broken product — the same lesson as stranded funds. */
+  promisableUsd?: number
 }): string {
-  const { chainsRead, need, needUsd, sourceSummary, stranded, movableTotalUsd } = params
+  const { chainsRead, need, needUsd, sourceSummary, stranded, movableTotalUsd, promisableUsd } = params
   const actionLabel = need.actionLabel
   const planLine = `the smallest plan for ${actionLabel} moves ~$${usd2(needUsd)} (solver fees included).`
   // Stranded splits by token: USDC is unstickable with a gas topup; ETH under
@@ -296,6 +343,18 @@ export function shortRefusalCopy(params: {
       : ''
   if (usdcStranded.length === 0) {
     const seen = [sourceSummary, ethNote].filter(Boolean).join(', plus ')
+    // The headroom case: the ETH is there, but funding this takes TWO moves
+    // off that one balance and the first move's own fee comes out of it —
+    // so what can be committed is less than what's visible. Say so, with the
+    // number, or the refusal looks like it's ignoring the money on screen.
+    if (seen && typeof promisableUsd === 'number') {
+      return (
+        `Across ${chainsRead} I can see ${seen} — but funding ${actionLabel} from ETH takes two moves off that one balance ` +
+        `(a little gas for ${FUNDING_CHAIN_WORD[need.chainId] ?? 'the destination'} first, then the ${need.token.toUpperCase()}), and the first move pays its own fee out of the same ETH — ` +
+        `so I can only safely commit ~$${usd2(promisableUsd)} of it, and ${planLine} ` +
+        `Top up any of those chains — a dollar or two is plenty — and ask again.`
+      )
+    }
     return (
       (seen ? `Across ${chainsRead} I can see ${seen} — ` : `Across ${chainsRead} I found no movable ETH or USDC — `) +
       `${planLine} Top up any of those chains and ask again.`
@@ -356,7 +415,11 @@ export function planStrandedRescue(params: {
   // money — the sizing must say so, not hide it.
   const gasLegUsd = Math.max(MIN_GAS_LEG_USD, Math.ceil((MIN_GAS_TO_SEND_ETH[target.chainId] ?? 0.001) * 3 * ethUsd * 2) / 2)
   // A chain with stranded USDC has no signable ETH, so every source lives
-  // elsewhere — the richest one that can carry the topup donates.
+  // elsewhere — the richest one that can carry the topup donates. No two-leg
+  // headroom applies here: the donor signs exactly ONE leg (its full row is
+  // the true single-move capacity), and the target's own legs are USDC —
+  // their fees come out of the ETH the topup just delivered, not out of the
+  // balance the second leg sells.
   const donor = [...sources].sort((a, b) => b.usd - a.usd).find((s) => s.usd >= gasLegUsd)
   if (!donor) return null
   const legs: string[] = [`Swap ${sourceAmountFor(donor, gasLegUsd)} ${donor.token} from ${donor.chainWord} to ETH on ${target.chainWord}`]
@@ -634,7 +697,10 @@ export function decideFundingTurn(params: {
     // smaller stake would have used happily.)
     if (typeof flexMinUsd === 'number' && scan.failedChains.length === 0) {
       const movable = plannableSources(need, scan.sources)
-      const capacity = Math.max(movable[0]?.usd ?? 0, movable.length >= 2 ? movable.reduce((a, s) => a + s.usd, 0) : 0)
+      // Promisable capacity, not the raw movable sum: a downsized plan sized
+      // to an ETH row's whole balance strands at its own second leg exactly
+      // like a full-size one.
+      const capacity = promisableCapacityUsd(movable, gasUsd > 0)
       const downNeedUsd = Math.floor((capacity - gasUsd) * 2) / 2
       if (downNeedUsd >= Math.max(flexMinUsd, FUNDING_MIN_PLAN_USD) && downNeedUsd < needUsd) {
         const downPlan = planFundingChips(need, downNeedUsd, scan.sources, gasUsd)
@@ -662,11 +728,17 @@ export function decideFundingTurn(params: {
       }
     }
     const chainsRead = scan.readChains.join(', ').replace(/, ([^,]*)$/, ' and $1')
+    // Short ONLY because of the ETH two-leg headroom: the wallet's movable
+    // total covers the plan on paper, but a gas-included plan can't promise
+    // the fee it has to pay first. The copy owes the user that sentence.
+    const promisable = promisableCapacityUsd(plannableSources(need, scan.sources), gasUsd > 0)
+    const headroomShort = gasUsd > 0 && plan.totalUsd >= plan.needUsd && promisable < plan.needUsd
     trace({
       type: 'note',
       level: 'warn',
       label:
         `funding layer: ${need.actionLabel} needs ~$${plan.needUsd} moved but the wallet holds ~$${plan.totalUsd} movable across ${chainsRead}` +
+        (headroomShort ? ` (only ~$${promisable} of it promisable — a gas-included ETH plan keeps its own leg-1 fee back)` : '') +
         (scan.stranded.length > 0
           ? ` (+ $${usd2(Number(scan.stranded.reduce((a, s) => a + s.usd, 0).toFixed(2)))} gas-stranded/sub-reserve on ${scan.stranded.map((s) => `${s.token}·${s.chainWord}`).join('/')}) — naming it`
           : '') +
@@ -681,6 +753,7 @@ export function decideFundingTurn(params: {
         sourceSummary: plan.sourceSummary,
         stranded: scan.stranded,
         movableTotalUsd: plan.totalUsd,
+        ...(headroomShort ? { promisableUsd: promisable } : {}),
       }),
     }
   }
