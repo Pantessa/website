@@ -81,7 +81,7 @@ import {
 } from '@/lib/aave-supply'
 import { policyCheck, buildReport } from '@/lib/tx-guardrails'
 import { buildGuardrailedOrder } from '@/lib/cow-build'
-import { parseNftAsk, parseNftListAsk, buildNftBuy, buildNftTransfer, buildNftListing } from '@/lib/nft-layer'
+import { parseNftAsk, parseNftListAsk, parseNftTransferFollowUp, nftAskFromPending, nftTransferPending, buildNftBuy, buildNftTransfer, buildNftListing } from '@/lib/nft-layer'
 import { chainListSentence, nftGalleryChains, readNftGallery } from '@/lib/nft-gallery'
 import { parseTransferSegment, buildTransferArtifact } from '@/lib/transfer-exec'
 import { buildUniswapSwap, NoV3PoolError } from '@/lib/uniswap-venue'
@@ -1126,11 +1126,47 @@ async function handleChatTurn(req: NextRequest) {
     //    artifact (SignNftListingButton) and re-verified at the submit relay.
     //    Buys: live-listing resolve → OpenSea fulfillment re-encoded LOCALLY,
     //    target pinned to Seaport 1.6, price re-checked vs floor/cap.
-    const nftAsk = parseNftAsk(message)
+    //    Continuity: a recipient-less transfer parks the resolved NFT in
+    //    workingContext, so the user's next line — a bare address answering
+    //    "where should it go?" — completes THAT transfer here instead of
+    //    reaching the planner, which has no NFT to name and invents one.
+    const pendingNftTransfer =
+      workingContext?.pending && workingContext.pending.kind === 'nft-transfer' ? workingContext.pending : undefined
+    let nftAsk = parseNftAsk(message)
+    if (!nftAsk && pendingNftTransfer) {
+      const fu = parseNftTransferFollowUp(message)
+      if (fu?.kind === 'cancel') {
+        nativeTrace({ type: 'status', label: 'pending nft transfer dropped by the user — nothing was built' })
+        return NextResponse.json({
+          reply: `👍 Dropped it — the ${pendingNftTransfer.data.ref ?? 'NFT'} transfer was never built, so it hasn't moved.`,
+          workingContext: { v: 1, age: 0, ...(workingContext?.scope ? { scope: workingContext.scope } : {}) } satisfies WorkingContext,
+        })
+      }
+      if (fu?.kind === 'recipient') {
+        const resumed = nftAskFromPending(pendingNftTransfer.data, fu.to)
+        if (resumed) {
+          nativeTrace({ type: 'status', label: `recipient answered a pending nft transfer — resuming "${resumed.ref}" → ${fu.to}` })
+          nftAsk = resumed
+        }
+      }
+    }
     if (nftAsk) {
       if (nftAsk.kind === 'problem') {
-        nativeTrace({ type: 'status', label: 'native nft layer claimed the turn — ask incomplete, answering honestly (no build)' })
-        return NextResponse.json({ reply: `🖼️ ${nftAsk.problem}` })
+        nativeTrace({ type: 'status', label: `native nft layer claimed the turn — ask incomplete${nftAsk.awaiting ? ` (awaiting the ${nftAsk.awaiting})` : ''}, answering honestly (no build)` })
+        return NextResponse.json({
+          reply: `🖼️ ${nftAsk.problem}`,
+          // Park the resolved NFT so the answer to the question completes it.
+          ...(nftAsk.awaiting === 'recipient' && nftAsk.partial
+            ? {
+                workingContext: {
+                  v: 1,
+                  age: 0,
+                  ...(workingContext?.scope ? { scope: workingContext.scope } : {}),
+                  pending: nftTransferPending(nftAsk.partial),
+                } satisfies WorkingContext,
+              }
+            : {}),
+        })
       }
       if (!walletAddress) {
         nativeTrace({ type: 'note', level: 'info', label: 'nft ask but no wallet connected — asking to connect before building' })

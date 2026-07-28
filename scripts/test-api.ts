@@ -50,7 +50,7 @@ import { isDbChatId } from '../lib/chat-ids'
 import { usdToTokenAmount } from '../lib/usd-probe'
 import { parseRobinhoodBridge, guardRobinhoodBridge, RH_L1_INBOX, ARB_SYS } from '../lib/robinhood-bridge'
 import { parseNftAsk, parseOpenSeaItemUrl, guardNftTransfer, ERC721_ABI as NFT_ERC721_ABI, ERC1155_ABI as NFT_ERC1155_ABI } from '../lib/nft-layer'
-import { parseNftListAsk } from '../lib/nft-layer'
+import { parseNftListAsk, parseNftTransferFollowUp, nftTransferPending, nftAskFromPending } from '../lib/nft-layer'
 import { nftGalleryChains, nftRowActions } from '../lib/nft-gallery'
 import { nftGalleryOf } from '../lib/nft-display'
 import { getProtocolMark, YeetfulMark } from '../components/protocol-marks'
@@ -5012,6 +5012,95 @@ async function main() {
   check('nft parse: sell without a price clarifies (never guesses)', !!nftNoPrice && nftNoPrice.kind === 'problem' && /price/i.test(nftNoPrice.problem), JSON.stringify(nftNoPrice))
   const nftNoTo = parseNftAsk('transfer my pudgy penguin #2489 nft')
   check('nft parse: transfer without a recipient clarifies', !!nftNoTo && nftNoTo.kind === 'problem' && /recipient|go|0x/i.test(nftNoTo.problem), JSON.stringify(nftNoTo))
+  // ── Transfer continuity. "Where should it go?" is a QUESTION, so its answer
+  // is a bare address — which names no NFT. Without a memory that turn fell to
+  // the planner, which "confirmed" the transfer and then invented a failed
+  // ownership lookup for an NFT it had been handed two turns earlier (live
+  // 2026-07-28, from the gallery's Transfer chip).
+  const nftOpen = parseNftAsk('Transfer my Mintbase #42 NFT on Ethereum')
+  check(
+    'nft parse: a recipient-less transfer KEEPS the NFT it parsed',
+    !!nftOpen && nftOpen.kind === 'problem' && nftOpen.awaiting === 'recipient' && nftOpen.partial?.ref === 'Mintbase #42' && nftOpen.partial?.tokenId === '42' && nftOpen.partial?.chainId === 1,
+    JSON.stringify(nftOpen),
+  )
+  // The chip that caused it shipped a dangling "…to " for the user to finish;
+  // chips auto-send, so it fired half-written. Old links still carry it.
+  const nftOpenLegacy = parseNftAsk('Send my Mintbase #42 NFT on Ethereum to ')
+  check(
+    'nft parse: the legacy dangling-"to" chip still parks its NFT',
+    !!nftOpenLegacy && nftOpenLegacy.kind === 'problem' && nftOpenLegacy.partial?.ref === 'Mintbase #42',
+    JSON.stringify(nftOpenLegacy),
+  )
+  check(
+    'nft follow-up: a bare address (or ENS) answers the pending transfer',
+    (() => {
+      const bare = parseNftTransferFollowUp('0x5EaaBd731d2Bc0490C2D47e41858e9b0629455a0')
+      const worded = parseNftTransferFollowUp('send it to vitalik.eth')
+      return bare?.kind === 'recipient' && bare.to === '0x5EaaBd731d2Bc0490C2D47e41858e9b0629455a0' && worded?.kind === 'recipient' && worded.to === 'vitalik.eth'
+    })(),
+  )
+  check(
+    'nft follow-up: fresh asks, questions, and chatter never become a recipient',
+    parseNftTransferFollowUp('what NFTs do I own?') === null &&
+      parseNftTransferFollowUp('sell my Cool Cat #7 for 1 eth') === null &&
+      parseNftTransferFollowUp('how do I do that') === null &&
+      parseNftTransferFollowUp('never mind')?.kind === 'cancel',
+  )
+  // The round trip: park it, answer it, get a buildable transfer back.
+  check(
+    'nft follow-up: parked NFT + pasted address rebuild the full transfer ask',
+    (() => {
+      const open = parseNftAsk('Transfer my Pudgy Penguin #2489 NFT on Base')
+      if (!open || open.kind !== 'problem' || !open.partial) return false
+      const parked = nftTransferPending(open.partial)
+      const resumed = nftAskFromPending(parked.data, '0x2222222222222222222222222222222222222222')
+      return (
+        parked.kind === 'nft-transfer' &&
+        Object.keys(parked.data).length <= 8 &&
+        !!resumed &&
+        resumed.ref === 'Pudgy Penguin #2489' &&
+        resumed.tokenId === '2489' &&
+        resumed.chainId === 8453 &&
+        resumed.to === '0x2222222222222222222222222222222222222222'
+      )
+    })(),
+  )
+  check('nft follow-up: a parked payload with no ref never builds on a guess', nftAskFromPending({ amount: '1' }, '0x2222222222222222222222222222222222222222') === null)
+  // The gallery's own Transfer chip must round-trip its OWN flow: complete ask
+  // in, parked NFT out (a chip that auto-sends can never be half-written).
+  check(
+    'nft gallery: the Transfer chip is a complete ask that parks its NFT',
+    (() => {
+      const chip = nftRowActions({ name: 'Pudgy Penguin', identifier: '2489' }, 'Base', null)[1]
+      if (/\bto\s*$/i.test(chip.prompt)) return false
+      const open = parseNftAsk(chip.prompt)
+      return !!open && open.kind === 'problem' && open.awaiting === 'recipient' && open.partial?.tokenId === '2489' && open.partial?.chainId === 8453
+    })(),
+  )
+  // The live seam: refusal carries the pending, the address completes it.
+  const nftXferOpen = await fetch(`${BASE}/api/chat`, {
+    method: 'POST', headers: { 'content-type': 'application/json', 'x-yf-no-ask-log': '1' },
+    body: JSON.stringify({ message: 'Transfer my Pudgy Penguin #2489 NFT on Base', activeServers: [], walletAddress: '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045' }),
+  }).then((r) => r.json())
+  check(
+    'nft transfer turn: the "where should it go?" refusal parks the NFT',
+    nftXferOpen.workingContext?.pending?.kind === 'nft-transfer' && /Pudgy Penguin #2489/.test(nftXferOpen.workingContext?.pending?.summary ?? ''),
+    JSON.stringify(nftXferOpen).slice(0, 220),
+  )
+  const nftXferResume = await fetch(`${BASE}/api/chat`, {
+    method: 'POST', headers: { 'content-type': 'application/json', 'x-yf-no-ask-log': '1' },
+    body: JSON.stringify({
+      message: '0x2222222222222222222222222222222222222222',
+      activeServers: [],
+      walletAddress: '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045',
+      workingContext: nftXferOpen.workingContext,
+    }),
+  }).then((r) => r.json())
+  check(
+    'nft transfer turn: the pasted address resumes THAT NFT (never the planner)',
+    typeof nftXferResume.reply === 'string' && /pudgy penguin|#2489/i.test(nftXferResume.reply) && !/could\s*n[o']t verify|double-check/i.test(nftXferResume.reply),
+    JSON.stringify(nftXferResume).slice(0, 260),
+  )
   check(
     'nft parse: token swaps + stock sells + bare sends fall through',
     parseNftAsk('sell 1 ETH for USDC') === null &&
