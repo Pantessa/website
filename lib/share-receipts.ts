@@ -38,9 +38,9 @@ export interface ShareContent {
   txs: ShareTxLine[]
 }
 
-export type ShareKind = 'tx' | 'job' | 'dca' | 'guardian'
+export type ShareKind = 'tx' | 'job' | 'dca' | 'guardian' | 'spot-guard'
 
-export const SHARE_KINDS: ReadonlySet<string> = new Set(['tx', 'job', 'dca', 'guardian'])
+export const SHARE_KINDS: ReadonlySet<string> = new Set(['tx', 'job', 'dca', 'guardian', 'spot-guard'])
 
 /** ?via= values we accept back at the door (cookie + arrival stamp). */
 export const VIA_RE = /^[a-z0-9]{4,16}$/
@@ -272,4 +272,39 @@ export function receiptTweetHref(receipt: {
       : `${receipt.headline} — built, guarded, signed on @yeetful_ai. Receipt:`
   const params = new URLSearchParams({ text, url: shareReceiptUrl(receipt.id, receipt.via) })
   return `https://twitter.com/intent/tweet?${params.toString()}`
+}
+
+
+/** Spot Guardian receipts — standing while armed, loud when fired. The ask
+ *  round-trips the spot arm grammar, so the receipt sells the exact move. */
+export function spotGuardShareContent(
+  p: {
+    tokenSymbol: string
+    amountHuman: string
+    triggerMode: string
+    triggerValue: number
+    refPrice: number
+    status: string
+  },
+  lastRun?: { status: string; valueUsd: number | null; markPrice: number | null } | null,
+): ShareContent {
+  const trigger =
+    p.triggerMode === 'price' ? `if it touches $${p.triggerValue}` : `if it drops ${p.triggerValue}% from $${p.refPrice.toFixed(2)}`
+  const fired = lastRun?.status === 'sold'
+  const headline = fired
+    ? `Spot stop fired on ${p.tokenSymbol}${lastRun?.valueUsd ? ` · ${usd(lastRun.valueUsd)} moved to USDC` : ''}`
+    : `Spot stop standing on ${p.amountHuman} ${p.tokenSymbol} · ${trigger}`
+  return {
+    headline,
+    ask: `protect my spot ${p.tokenSymbol} with a ${p.triggerMode === 'price' ? `stop loss at $${p.triggerValue}` : `${p.triggerValue}% stop loss`}`,
+    standing: true,
+    valueUsd: fired ? (lastRun?.valueUsd ?? null) : null,
+    facts: [
+      { label: 'Watching', value: `${p.amountHuman} ${p.tokenSymbol} (spot, Base)` },
+      { label: 'Trigger', value: trigger },
+      { label: 'Cap', value: 'one-shot Spend Permission — the wallet contract enforces it' },
+      ...(fired && lastRun?.markPrice ? [{ label: 'Fired at', value: `$${lastRun.markPrice.toFixed(2)}` }] : []),
+    ],
+    txs: [],
+  }
 }

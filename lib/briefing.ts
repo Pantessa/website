@@ -35,7 +35,18 @@ export interface BriefingPosition {
   leverage: number
 }
 
+/** A standing intent that FIRED recently — the briefing's loudest row.
+ *  Label + when are PRE-FORMATTED by the reader (client-string doctrine). */
+export interface FiredEvent {
+  kind: 'guardian' | 'dca-auto' | 'spot-guard'
+  label: string
+  valueUsd: number | null
+  when: string
+}
+
 export interface BriefingInputs {
+  /** Standing intents that fired in the last 7 days — shown FIRST. */
+  firedRecently: FiredEvent[]
   /** Open HL perp positions (empty = none OR the read failed — see failed). */
   positions: BriefingPosition[]
   /** Coins with an active/triggered guardian policy — existence only. */
@@ -75,6 +86,18 @@ const signedUsd = (n: number) => `${n >= 0 ? '+' : '−'}${usd(Math.abs(n))}`
 export function composeBriefingItems(inputs: BriefingInputs): StatRow[] {
   const rows: StatRow[] = []
   const protectedSet = new Set(inputs.protectedCoins.map((c) => c.toUpperCase()))
+
+  // 0. While you were away — standing intents that FIRED. The product's
+  //    proudest moment leads the tile; the share affordance rides the rail
+  //    and /r receipts (ShareReceiptButton), the row here is the herald.
+  for (const f of inputs.firedRecently.slice(0, 3)) {
+    rows.push({
+      label: f.label,
+      value: f.valueUsd != null ? usd(f.valueUsd) : 'done',
+      sub: `${f.when} · while you were away — every step receipted`,
+      tone: 'pos',
+    })
+  }
 
   // 1. Perp positions — the unprotected ones lead (the guardian doctrine:
   //    an ACTIVE protection is healthy standing state and never nags; a

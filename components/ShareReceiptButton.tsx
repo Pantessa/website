@@ -32,7 +32,7 @@ export default function ShareReceiptButton({
   messageId,
   className,
 }: {
-  kind: 'tx' | 'job' | 'dca' | 'guardian'
+  kind: 'tx' | 'job' | 'dca' | 'guardian' | 'spot-guard'
   refId?: string
   chatId?: string
   messageId?: string
