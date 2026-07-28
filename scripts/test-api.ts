@@ -78,6 +78,15 @@ import { decideFundingTurn, detectBalanceShortfall, fundingPlanUsd, planFundingC
 import { compileDcaBuy, dcaRunChip, parseDcaCreate, parseDcaManage, parseDcaRun, periodKeyFor } from '../lib/dca'
 import { briefingNeedsCount, briefingTile, composeBriefingItems, type BriefingInputs, type BriefingPosition } from '../lib/briefing'
 import {
+  buildSpotGuardPermission,
+  guardSpotSell,
+  NATIVE_TOKEN_SENTINEL,
+  parseSpotGuardArm,
+  parseSpotGuardManage,
+  permissionMatchesPolicy,
+  spotTriggerFired,
+} from '../lib/spot-guard'
+import {
   buildDcaSpendPermission,
   guardAutoBuy,
   parseDcaAutoToggle,
@@ -7610,6 +7619,103 @@ async function main() {
       !!tile && tile.headline?.value === '1 needs you' && tile.rows.length === 2 && briefingNeedsCount(tile.rows) === 1,
       JSON.stringify(tile?.headline),
     )
+  }
+
+  // ── Spot guardian (pure: grammar, permission, trigger, fail-closed guard) ─
+  console.log('— spot guardian (pure)')
+  {
+    const OWNER = '0x5EaaBd731d2Bc0490C2D47e41858e9b0629455a0'
+    const SPENDER = '0x1111111111111111111111111111111111111111'
+    const WETH = '0x4200000000000000000000000000000000000006'
+    const USDC = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913'
+    const ROUTER = '0x2626664c2603336E57B271c5C0b26F421741e481'
+    const guardChain = { chainId: 8453, usdcAddress: USDC, swapRouter02: ROUTER, wethAddress: WETH }
+    const NOW = 1_753_700_000
+
+    // Grammar — DISJOINT from the HL guardian's by construction: side/venue
+    // words always mean perps; spot needs its own marker.
+    const a1 = parseSpotGuardArm('Protect my spot ETH with a 10% stop loss')
+    check('spot arm: pct grammar', !!a1 && a1.token === 'ETH' && a1.triggerMode === 'price_move_pct' && a1.triggerValue === 10 && !a1.amountHuman)
+    const a2 = parseSpotGuardArm('Protect 0.5 spot ETH with a 10% stop loss')
+    check('spot arm: sized grammar carries the amount', !!a2 && a2.amountHuman === '0.5' && a2.token === 'ETH')
+    const a3 = parseSpotGuardArm('Protect the ETH in my wallet with a 10% stop loss')
+    check('spot arm: "in my wallet" marker works without the word spot', !!a3 && a3.token === 'ETH')
+    const a4 = parseSpotGuardArm('Protect my spot ETH with a stop loss at $1500')
+    const a5 = parseSpotGuardArm('Protect my spot ETH if it drops to $1500')
+    check('spot arm: absolute-price grammars', !!a4 && a4.triggerMode === 'price' && a4.triggerValue === 1500 && !!a5 && a5.triggerValue === 1500)
+    check(
+      'spot arm: perp asks refused (long/position/hl belong to the HL guardian)',
+      parseSpotGuardArm('Protect my ETH long with a 10% stop loss') === null &&
+        parseSpotGuardArm('Protect my ETH position at -8%') === null &&
+        parseSpotGuardArm('Protect my spot ETH long with a 10% stop loss') === null,
+    )
+    check('spot arm: bare protect (no spot marker) stays with the HL layer', parseSpotGuardArm('Protect my ETH with a 10% stop loss') === null)
+    const mg = parseSpotGuardManage('cancel my ETH spot protection')
+    check('spot manage: cancel/pause grammar', !!mg && mg.op === 'cancel' && mg.token === 'ETH' && parseSpotGuardManage('pause my spot stop loss')?.op === 'pause')
+
+    // Permission: one-shot by construction.
+    const amount = BigInt('500000000000000000') // 0.5 ETH
+    const perm = buildSpotGuardPermission({ account: OWNER, spender: SPENDER, token: NATIVE_TOKEN_SENTINEL, amountAtoms: amount, nowSec: NOW, salt: BigInt(42) })
+    check('spot permission: period spans the whole life (total pullable = the amount, once)', perm.period === perm.end - perm.start && perm.allowance === amount)
+    const pm = permissionMatchesPolicy(perm, { ownerWallet: OWNER, spender: SPENDER, tokenAddress: NATIVE_TOKEN_SENTINEL, amountAtoms: amount, nowSec: NOW })
+    const pmBad = permissionMatchesPolicy({ ...perm, allowance: amount * BigInt(2) }, { ownerWallet: OWNER, spender: SPENDER, tokenAddress: NATIVE_TOKEN_SENTINEL, amountAtoms: amount, nowSec: NOW })
+    check('spot permission: policy agreement passes clean, refuses a doubled allowance', pm.ok && !pmBad.ok)
+
+    // Trigger math: fires at/below the line, malformed never fires.
+    const trig = { mode: 'price_move_pct' as const, value: 10, refPrice: 2000 }
+    check('spot trigger: pct fires at/below the line, never above', spotTriggerFired(trig, 1800).fired && spotTriggerFired(trig, 1799).fired && !spotTriggerFired(trig, 1801).fired)
+    check(
+      'spot trigger: malformed inputs never fire',
+      !spotTriggerFired({ mode: 'price_move_pct', value: 95, refPrice: 2000 }, 1).fired &&
+        !spotTriggerFired({ mode: 'price', value: 0, refPrice: 0 }, 1).fired &&
+        !spotTriggerFired(trig, NaN).fired,
+    )
+
+    // The fail-closed guard: fabricate the exact steps the sweep would build.
+    const depositAbi = [{ name: 'deposit', type: 'function', stateMutability: 'payable', inputs: [], outputs: [] }] as const
+    const wrapStep = { to: WETH, data: encodeFunctionData({ abi: depositAbi, functionName: 'deposit' }), value: amount.toString() }
+    const approveStep = { to: WETH, data: encodeFunctionData({ abi: erc20Abi, functionName: 'approve', args: [ROUTER as `0x${string}`, amount] }), value: '0' }
+    const mkSwapStep = (over: Record<string, unknown> = {}) => ({
+      to: ROUTER,
+      value: '0',
+      data: encodeFunctionData({
+        abi: SWAP_ROUTER_02_ABI,
+        functionName: 'multicall',
+        args: [BigInt(NOW + 600), [encodeFunctionData({
+          abi: SWAP_ROUTER_02_ABI,
+          functionName: 'exactInputSingle',
+          args: [{ tokenIn: WETH as `0x${string}`, tokenOut: USDC as `0x${string}`, fee: 500, recipient: OWNER as `0x${string}`, amountIn: amount, amountOutMinimum: BigInt(900000000), sqrtPriceLimitX96: BigInt(0), ...over } as never],
+        })]],
+      }),
+    })
+    const guardBase = {
+      policy: { status: 'triggered', tokenAddress: NATIVE_TOKEN_SENTINEL, native: true, amountAtoms: amount, trigger: trig },
+      permission: perm,
+      ownerWallet: OWNER,
+      spender: SPENDER,
+      chain: guardChain,
+      markPrice: 1750,
+      minOutAtomic: BigInt(850000000),
+      steps: [wrapStep, approveStep, mkSwapStep()],
+      pulledAtomic: amount,
+      nowSec: NOW,
+    }
+    const happy = guardSpotSell(guardBase)
+    check('spot guard: native wrap+approve+sell to the OWNER passes every check', happy.ok, JSON.stringify(happy.checks.filter((c) => !c.ok)).slice(0, 200))
+    check('spot guard: recipient ≠ owner refuses', !guardSpotSell({ ...guardBase, steps: [wrapStep, approveStep, mkSwapStep({ recipient: SPENDER })] }).ok)
+    check('spot guard: minOut under the quote floor refuses', !guardSpotSell({ ...guardBase, steps: [wrapStep, approveStep, mkSwapStep({ amountOutMinimum: BigInt(1) })] }).ok)
+    check('spot guard: un-fired trigger refuses the sell (mark re-checked)', !guardSpotSell({ ...guardBase, markPrice: 1990 }).ok)
+    check('spot guard: pull ≠ allowance refuses', !guardSpotSell({ ...guardBase, pulledAtomic: amount + BigInt(1) }).ok)
+    check('spot guard: unclaimed policy refuses (claim-before-build)', !guardSpotSell({ ...guardBase, policy: { ...guardBase.policy, status: 'active' } }).ok)
+    check('spot guard: wrap value ≠ pull refuses', !guardSpotSell({ ...guardBase, steps: [{ ...wrapStep, value: (amount - BigInt(1)).toString() }, approveStep, mkSwapStep()] }).ok)
+    const permW = buildSpotGuardPermission({ account: OWNER, spender: SPENDER, token: WETH, amountAtoms: amount, nowSec: NOW, salt: BigInt(7) })
+    const erc = guardSpotSell({
+      ...guardBase,
+      policy: { ...guardBase.policy, tokenAddress: WETH, native: false },
+      permission: permW,
+      steps: [approveStep, mkSwapStep()],
+    })
+    check('spot guard: erc-20 approve+sell passes without a wrap', erc.ok, JSON.stringify(erc.checks.filter((c) => !c.ok)).slice(0, 200))
   }
 
   // ── Token charts (the uniform chart button + /t pages) ───────────────────
