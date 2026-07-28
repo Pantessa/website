@@ -80,8 +80,10 @@ export default function NftMarketCard({ data, onPick }: { data: NftMarketDisplay
   if (data.rows.length === 0) return null
   const offers = data.kind === 'offers'
   const Icon = offers ? Gavel : Coins
+  // Surface matches the other in-chat cards: plain --surf-1. Tailwind can't
+  // opacity-modify a CSS-var color, so a `/60` here would paint nothing.
   return (
-    <div className="not-prose mt-3 rounded-2xl border border-[var(--line)] bg-[var(--surf-2)]/60 p-4">
+    <div className="not-prose mt-3 rounded-2xl border border-[var(--line)] bg-[var(--surf-1)] p-4">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <div className="flex items-center gap-2">
           <Icon className="h-3.5 w-3.5 text-[color:var(--muted-2)]" />
