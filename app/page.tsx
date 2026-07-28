@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import { SITE } from '@/lib/docs'
 import LinksHero from '@/components/LinksHero'
+import LandingMotion from '@/components/LandingMotion'
 import IntentMachine from '@/components/IntentMachine'
 import LinkEconomy from '@/components/LinkEconomy'
 import NightShift from '@/components/NightShift'
@@ -64,6 +65,9 @@ export default function HomePage() {
   return (
     <>
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON_LD }} />
+      {/* One scroll listener + one observer for the whole page: stations,
+          decorative parallax, and the one-time section reveals */}
+      <LandingMotion />
       <main className="x-main x-main--fluid">
         {/* The claim + the live link economy */}
         <LinksHero />
