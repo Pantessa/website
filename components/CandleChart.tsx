@@ -8,7 +8,7 @@
 // reaches this component has a real source, so the empty state here means
 // "feed hiccup", not "unknown token".
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { CHART_TFS, chartPairFor, type Candle, type ChartTf } from '@/lib/charts'
 
 const POLL_MS: Record<ChartTf, number> = { '15m': 8_000, '1h': 15_000, '4h': 20_000, '1d': 30_000 }
@@ -59,38 +59,75 @@ function fmtHoverTime(tSec: number, tf: ChartTf): string {
 
 export default function CandleChart({
   symbol,
-  height = 300,
+  height: heightProp = 300,
   defaultTf = '1h',
   onStats,
+  controlsRight,
+  resizeKey,
 }: {
   symbol: string
-  height?: number
+  /** Fixed pixel height, or 'fill' to take the flex parent's remaining space
+   *  (the full-bleed /t page — the chart IS the page there). */
+  height?: number | 'fill'
   defaultTf?: ChartTf
   /** Fires whenever fresh candles land — overlay/page headers feed off it. */
   onStats?: (s: ChartStats) => void
+  /** Extra control rendered beside the live badge (the page's expand toggle). */
+  controlsRight?: ReactNode
+  /** Changes whenever the PARENT knowingly changes the chart's box (the page's
+   *  expand toggle). Re-measures directly instead of waiting on an observer
+   *  the browser may not have delivered yet. */
+  resizeKey?: string | number | boolean
 }) {
+  const fill = heightProp === 'fill'
   const [tf, setTf] = useState<ChartTf>(defaultTf)
   const [data, setData] = useState<CandlesResponse | null>(null)
   const [stale, setStale] = useState(false)
   const [hover, setHover] = useState<{ i: number; y: number } | null>(null)
   const [width, setWidth] = useState(0)
+  const [measuredH, setMeasuredH] = useState(0)
   const wrapRef = useRef<HTMLDivElement | null>(null)
   const onStatsRef = useRef(onStats)
   onStatsRef.current = onStats
 
   const resolvable = useMemo(() => chartPairFor(symbol) !== null, [symbol])
 
-  // Container-measured layout — viewBox stretching would distort wick widths.
+  // Container-measured layout — viewBox stretching would distort wick widths,
+  // so the axis math stays in real pixels. ResizeObserver is the primary
+  // signal, but its callbacks are delivered on the frame loop: a starved or
+  // backgrounded tab can withhold them (reproduced), which would leave the
+  // canvas stuck at a stale size after leaving fullscreen. window resize and
+  // fullscreenchange re-measure directly so the chart can't get stranded.
+  const measure = useCallback(() => {
+    const el = wrapRef.current
+    if (!el) return
+    const box = el.getBoundingClientRect()
+    if (box.width) setWidth(Math.round(box.width))
+    if (box.height) setMeasuredH(Math.round(box.height))
+  }, [])
+
   useEffect(() => {
     const el = wrapRef.current
     if (!el) return
-    const ro = new ResizeObserver((entries) => {
-      const w = entries[0]?.contentRect.width
-      if (w) setWidth(Math.round(w))
-    })
+    measure()
+    const ro = new ResizeObserver(() => measure())
     ro.observe(el)
-    return () => ro.disconnect()
-  }, [])
+    window.addEventListener('resize', measure)
+    document.addEventListener('fullscreenchange', measure)
+    document.addEventListener('webkitfullscreenchange', measure)
+    return () => {
+      ro.disconnect()
+      window.removeEventListener('resize', measure)
+      document.removeEventListener('fullscreenchange', measure)
+      document.removeEventListener('webkitfullscreenchange', measure)
+    }
+  }, [measure])
+
+  // Parent-announced layout change (expand/collapse) — runs after the DOM has
+  // the new box, so this is the authoritative measure for that transition.
+  useEffect(() => {
+    measure()
+  }, [resizeKey, measure])
 
   const load = useCallback(async () => {
     try {
@@ -128,11 +165,14 @@ export default function CandleChart({
   const candles = data?.candles ?? []
 
   // ── Layout math ────────────────────────────────────────────────────────────
+  const height = fill ? measuredH : heightProp
   const plotW = Math.max(0, width - AXIS_W)
   const volH = Math.round(height * VOL_FRAC)
   const priceH = height - volH - TIME_H - 6
   const layout = useMemo(() => {
-    if (!candles.length || plotW <= 0) return null
+    // priceH guard: in fill mode the first paint happens before the
+    // ResizeObserver reports, so height is 0 for a frame.
+    if (!candles.length || plotW <= 0 || priceH < 40) return null
     let lo = Infinity
     let hi = -Infinity
     let maxV = 0
@@ -191,7 +231,7 @@ export default function CandleChart({
   }
 
   return (
-    <div className="tok__chart">
+    <div className={fill ? 'tok__chart min-h-0 flex-1' : 'tok__chart'}>
       {/* Timeframe row + live/stale badge */}
       <div className="flex items-center justify-between gap-3">
         <div className="tok__tf">
@@ -207,19 +247,28 @@ export default function CandleChart({
             </button>
           ))}
         </div>
-        <span className="mono flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-[color:var(--muted-2)]">
-          {stale ? (
-            'feed stalled — retrying'
-          ) : (
-            <>
-              <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full" style={{ background: upColor }} />
-              live
-            </>
-          )}
+        <span className="flex items-center gap-2.5">
+          <span className="mono flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-[color:var(--muted-2)]">
+            {stale ? (
+              'feed stalled — retrying'
+            ) : (
+              <>
+                <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full" style={{ background: upColor }} />
+                live
+              </>
+            )}
+          </span>
+          {controlsRight}
         </span>
       </div>
 
-      <div ref={wrapRef} className="relative w-full" style={{ height }}>
+      {/* overflow-hidden: if a measurement is ever a frame behind (fullscreen
+          exit), the oversized canvas clips instead of pushing a scrollbar. */}
+      <div
+        ref={wrapRef}
+        className={fill ? 'relative w-full min-h-0 flex-1 overflow-hidden' : 'relative w-full'}
+        style={fill ? undefined : { height }}
+      >
         {candles.length === 0 ? (
           <div className="absolute inset-0 grid place-items-center rounded-xl border border-[var(--line)]">
             <span className="text-[12px] text-[color:var(--muted-2)]">

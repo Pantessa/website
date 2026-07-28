@@ -28,9 +28,11 @@ export async function generateMetadata({ params }: Params): Promise<Metadata> {
 export default async function TokenPage({ params }: Params) {
   const { symbol } = await params
   const norm = normalizeChartSymbol(symbol)
+  // No .x-main here on purpose: the chart page is full-bleed, so the shell
+  // owns the viewport and the footer sits just below the fold.
   return (
     <>
-      <main className="x-main">
+      <main>
         <TokenPageView symbol={norm} />
       </main>
       <Footer />
