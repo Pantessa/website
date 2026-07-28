@@ -4,7 +4,7 @@ import LinksHero from '@/components/LinksHero'
 import LinkLane from '@/components/LinkLane'
 import IntentMachine from '@/components/IntentMachine'
 import FundAnything from '@/components/FundAnything'
-import StandingIntent from '@/components/StandingIntent'
+import NightShift from '@/components/NightShift'
 import TxPipeline from '@/components/TxPipeline'
 import EmbedAnywhere from '@/components/EmbedAnywhere'
 import TrustStrip from '@/components/TrustStrip'
@@ -70,9 +70,9 @@ export default function HomePage() {
         {/* The onboarding story: "Buy $2 of AAPL" funds itself across chains */}
         <FundAnything />
 
-        {/* The underlying value: standing intent — jobs, DCA, Guardian —
-            money that moves between your turns */}
-        <StandingIntent />
+        {/* The underlying value: standing intent as a clock that keeps
+            running — jobs, DCA, Guardian, money moving between your turns */}
+        <NightShift />
 
         {/* The edge: quote → build → guardrails → sign → receipt */}
         <TxPipeline />

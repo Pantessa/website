@@ -2827,6 +2827,86 @@
   }
 
 
+  /* ── THE NIGHT SHIFT (.night) ──────────────────────────────────────────
+     Standing intent as a clock that keeps running. The dial loops on one
+     normalized progress value from the component; everything here is
+     presentation, and the reduced-motion branch is handled upstream by
+     pinning that value to 1 (every event fired, hand parked at 06:00). */
+  .night { padding: clamp(80px, 10vh, 124px) 0 clamp(56px, 7vh, 80px); }
+  .night__grid { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: clamp(32px, 4.5vw, 72px); align-items: center; max-width: 1220px; margin: 0 auto; }
+  .night__eyebrow { font-size: 12px; letter-spacing: .18em; color: var(--muted-2); }
+  .night__h2 {
+    font-family: var(--font-serif); font-weight: 500; font-optical-sizing: auto;
+    font-size: clamp(28px, 3.7vw, 44px); letter-spacing: -.014em; line-height: 1.05;
+    margin-top: 12px; color: var(--fg); max-width: 18ch;
+  }
+  .night__sub { margin-top: 15px; max-width: 52ch; font-size: 15px; line-height: 1.6; color: var(--muted); text-wrap: pretty; }
+  .night__points { margin-top: 26px; display: flex; flex-direction: column; gap: 16px; list-style: none; }
+  .night__point { padding-left: 15px; border-left: 1px solid var(--line); font-size: 13.5px; line-height: 1.6; color: var(--muted); text-wrap: pretty; }
+  .night__point strong { display: block; color: var(--fg); font-weight: 600; font-size: 14px; margin-bottom: 3px; }
+
+  .night__stage { min-width: 0; width: 100%; max-width: 560px; margin: 0 auto; display: flex; flex-direction: column; align-items: center; gap: 26px; }
+  .night__dialwrap { position: relative; width: min(300px, 74vw); aspect-ratio: 1; flex-shrink: 0; margin-top: 8px; }
+  .night__hour { fill: var(--muted-2); font-size: 9.5px; letter-spacing: .1em; text-anchor: middle; }
+  .night__dial { width: 100%; height: 100%; overflow: visible; }
+  .night__tick { stroke: color-mix(in srgb, var(--fg) 13%, transparent); stroke-width: 1; }
+  .night__tick.is-major { stroke: color-mix(in srgb, var(--fg) 26%, transparent); stroke-width: 1.4; }
+  .night__rim { fill: none; stroke: color-mix(in srgb, var(--fg) 8%, transparent); stroke-width: 1; }
+  .night__arc { fill: none; stroke: color-mix(in srgb, var(--fg) 17%, transparent); stroke-width: 3; stroke-linecap: round; }
+  .night__arcrun { fill: none; stroke: var(--accent); stroke-width: 3; stroke-linecap: round; filter: drop-shadow(0 0 6px color-mix(in srgb, var(--accent) 55%, transparent)); }
+  .night__evdot { fill: var(--bg); stroke: color-mix(in srgb, var(--fg) 30%, transparent); stroke-width: 1.5; transition: fill .4s, stroke .4s; }
+  .night__evhalo { fill: var(--accent); opacity: 0; transform-box: fill-box; transform-origin: center; }
+  .night__ev.is-fired .night__evdot { fill: var(--accent); stroke: var(--accent); }
+  .night__ev.is-fired .night__evhalo { animation: night-pop 1.6s ease-out; }
+  @keyframes night-pop { 0% { opacity: .5; transform: scale(.35); } 100% { opacity: 0; transform: scale(1.5); } }
+  .night__hand { stroke: var(--fg); stroke-width: 1.2; opacity: .55; }
+  .night__handhead { fill: var(--fg); filter: drop-shadow(0 0 8px color-mix(in srgb, var(--accent) 70%, transparent)); }
+  .night__hub { fill: color-mix(in srgb, var(--fg) 45%, transparent); }
+  .night__face { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; pointer-events: none; }
+  .night__time { font-size: clamp(30px, 4.6vw, 44px); color: var(--fg); letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+  .night__facesub { font-size: 10.5px; letter-spacing: .12em; color: var(--muted-2); text-transform: uppercase; }
+
+  .night__log { list-style: none; width: 100%; display: flex; flex-direction: column; gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; }
+  .night__row {
+    display: grid; grid-template-columns: 52px minmax(0, 1fr) 18px; gap: 12px; align-items: start;
+    padding: 12px 15px; background: var(--surf-1); font-size: 12.5px; color: var(--muted);
+    opacity: .34; transition: opacity .5s ease, background .5s ease;
+  }
+  .night__row.is-in { opacity: 1; background: color-mix(in srgb, var(--accent) 4%, var(--surf-1)); }
+  .night__rtime { color: var(--muted-2); font-size: 11.5px; padding-top: 1px; }
+  .night__rbody { min-width: 0; line-height: 1.5; color: var(--fg); font-size: 12.5px; }
+  .night__rkind { font-size: 10px; letter-spacing: .11em; color: var(--accent); margin-right: 6px; }
+  .night__rmeta { display: block; margin-top: 3px; font-style: normal; font-size: 10.5px; color: var(--muted-2); }
+  .night__rok { color: var(--accent); font-size: 12px; opacity: 0; transition: opacity .4s ease .25s; }
+  .night__row.is-in .night__rok { opacity: 1; }
+  .night__caption { font-size: 11px; color: var(--muted-2); text-align: center; letter-spacing: .03em; }
+
+  .night__tiles { margin: clamp(44px, 6vh, 72px) auto 0; max-width: 1220px; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; }
+  .night__tile {
+    display: flex; flex-direction: column; min-width: 0; padding: 22px 20px 20px;
+    border: 1px solid var(--line); border-radius: 16px; background: var(--surf-1);
+    transition: border-color .2s, transform .2s, background .2s;
+  }
+  .night__tile:hover { border-color: color-mix(in srgb, var(--accent) 45%, transparent); transform: translateY(-3px); background: color-mix(in srgb, var(--accent) 4%, var(--surf-1)); }
+  .night__tlabel { font-size: 10px; letter-spacing: .15em; color: var(--accent); }
+  .night__tt { font-family: 'Archivo', sans-serif; font-weight: 700; font-size: 16.5px; letter-spacing: -.018em; margin-top: 12px; color: var(--fg); }
+  .night__td { margin-top: 8px; font-size: 12.5px; line-height: 1.55; color: var(--muted); flex: 1; text-wrap: pretty; }
+  .night__task { margin-top: 16px; font-size: 11px; color: var(--muted-2); transition: color .2s; }
+  .night__tile:hover .night__task { color: var(--accent); }
+
+  @media (max-width: 1023px) {
+    .night__grid { grid-template-columns: 1fr; }
+    .night__tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  }
+  @media (max-width: 620px) {
+    .night__tiles { grid-template-columns: 1fr; }
+    .night__row { grid-template-columns: 46px minmax(0, 1fr) 16px; gap: 9px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .night__ev.is-fired .night__evhalo { animation: none; }
+    .night__row, .night__rok { transition: none; }
+  }
+
   /* ── THE MACHINE (.mach) ───────────────────────────────────────────────
      The landing's runnable model of a turn: pick an ask, watch it walk
      read → scan → plan → build → guard → sign → settle. Scoped tokens (--m*)
