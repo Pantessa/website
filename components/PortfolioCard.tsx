@@ -39,8 +39,11 @@ function TokenDot({ h }: { h: PortfolioHolding }) {
 export default function PortfolioCard({ data }: { data: PortfolioDisplay }) {
   const max = Math.max(...data.holdings.map((h) => h.valueUsd ?? 0), 0.01)
   const fetchedAt = data.updatedAt ? new Date(data.updatedAt) : null
+  // Surface is plain --surf-1 (the panel fill every other card uses): Tailwind
+  // can't opacity-modify a CSS-var color, so `bg-[var(--surf-2)]/60` painted
+  // nothing at all. --surf-1 is what that blend was reaching for anyway.
   return (
-    <div className="mt-3 rounded-2xl border border-[var(--line)] bg-[var(--surf-2)]/60 p-4 not-prose">
+    <div className="mt-3 rounded-2xl border border-[var(--line)] bg-[var(--surf-1)] p-4 not-prose">
       {/* Header: owner + total */}
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <div className="flex items-center gap-2">
