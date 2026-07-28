@@ -40,6 +40,7 @@ import { activeLinkCapFor, composeMcps } from '../lib/intent-links'
 import { formatEarnedUsd, netFeeBpsFor, creatorEarningsUsd, FEE_BEARING_BUILD_PATHS, CROSS_CHAIN_FEE_BPS, CROSS_CHAIN_NET_FEE_BPS } from '../lib/fees'
 import { hexLuminance, normalizeAccent, normalizeBg, parseBrandHtml, validateBrandUrl } from '../lib/brand-scan'
 import {
+  clientIpFrom,
   decideTurnLimit,
   hashIp,
   limitKeysFor,
@@ -2477,6 +2478,18 @@ async function main() {
   })
   const fencedBody = (await fencedTurn.json()) as { rateGate?: unknown }
   check('fence: an under-cap unsigned turn passes with no rate wall', fencedTurn.status === 200 && fencedBody.rateGate === undefined)
+  // Loopback IS a header value on `next start` (x-forwarded-for: ::1), not
+  // an absent one — it must read as "no platform IP" or local dev and this
+  // very harness accumulate fence walls across runs in the shared DB (live
+  // 2026-07-28: ::1 sat at 169 unsigned turns and walled the run's tail).
+  check(
+    'fence: loopback header values read as direct traffic (no platform IP)',
+    clientIpFrom(new Headers({ 'x-forwarded-for': '::1' })) === null &&
+      clientIpFrom(new Headers({ 'x-real-ip': '127.0.0.1' })) === null &&
+      clientIpFrom(new Headers({ 'x-forwarded-for': '::ffff:127.0.0.1, 203.0.113.9' })) === null &&
+      clientIpFrom(new Headers({ 'x-real-ip': '203.0.113.9' })) === '203.0.113.9' &&
+      clientIpFrom(new Headers()) === null,
+  )
 
   // ── Missing-MCP door: venue-worded builds never fall to a planner how-to ──
   // Live 2026-07-27: a default-fleet chat answered "Stake 0.05 ETH with

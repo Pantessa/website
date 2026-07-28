@@ -33,13 +33,19 @@ export function hourStartUTC(now = new Date()): Date {
   return d
 }
 
+/** Addresses that mean "this request never crossed the platform proxy" —
+ *  `next start` stamps x-forwarded-for with the SOCKET address on direct
+ *  connections, so loopback arrives as a header value, not an absent one.
+ *  Live 2026-07-28: two same-hour harness runs walled their own tails —
+ *  ::1 had quietly become a 169-count fence bucket in Neon. */
+const LOOPBACK_IPS = new Set(['::1', '127.0.0.1', '::ffff:127.0.0.1'])
+
 /** The platform-stamped client IP, or null for direct (loopback) traffic. */
 export function clientIpFrom(headers: Headers): string | null {
   const real = headers.get('x-real-ip')?.trim()
-  if (real) return real
   const fwd = headers.get('x-forwarded-for')
-  const first = fwd?.split(',')[0]?.trim()
-  return first || null
+  const first = real || fwd?.split(',')[0]?.trim() || null
+  return first && !LOOPBACK_IPS.has(first) ? first : null
 }
 
 /** Raw IPs never land in the DB — a salted hash prefix is the key. */
@@ -76,9 +82,13 @@ export async function bumpAndCheckUnsignedTurn(
   ip: string | null,
   wallet: string | null | undefined,
 ): Promise<'ip' | 'wallet' | null> {
-  const keys = limitKeysFor(ip ? hashIp(ip) : null, wallet)
-  // Direct loopback traffic with no wallet in context has nothing to key on
-  // (and is unreachable in prod) — pass.
+  // Direct traffic (no platform-stamped IP) skips the fence ENTIRELY — the
+  // module contract above: that's local dev and the API harness, and in
+  // prod there is no unstamped path to the origin. Counting only the wallet
+  // tier here made harness dummy wallets accumulate walls across runs in
+  // the shared DB (live 2026-07-28).
+  if (!ip) return null
+  const keys = limitKeysFor(hashIp(ip), wallet)
   if (keys.length === 0) return null
   try {
     // Lazy so the module stays import-safe for the pure helpers (the API
