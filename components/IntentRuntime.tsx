@@ -31,7 +31,7 @@ import SignInFlowLink from '@/components/SignInFlowLink'
 import { YeetfulMark } from '@/components/Logo'
 import { useSession } from '@/lib/session'
 import { cdpEnabled } from '@/lib/cdp-embedded'
-import { brandCtaStyle, brandThemeStyle, type LinkBrand } from '@/lib/brand-theme'
+import { brandBloomTint, brandCtaStyle, brandThemeStyle, type LinkBrand } from '@/lib/brand-theme'
 import { isTransferShaped } from '@/lib/intent-links'
 import { useYeetfulStore, McpServer } from '@/lib/store'
 import { CATALOG } from '@/lib/mcp-data'
@@ -275,13 +275,15 @@ export default function IntentRuntime({
       // The splash wears the creator's brand wholesale (bg + accent + logo,
       // scoped here) — the post-connect chat keeps Yeetful's own legibility.
       <main className="relative min-h-dvh overflow-hidden" style={brandThemeStyle(brand)}>
-        {/* one soft accent bloom behind the ask — the fusion-core glow */}
+        {/* One soft bloom behind the ask — the fusion-core glow. It has to
+            LIFT: on a light brand an accent-tinted radial darkens the middle
+            of the page and reads as a screen over the design, so the tint
+            flips to white there (brandBloomTint). */}
         <div
           aria-hidden
           className="absolute inset-0 pointer-events-none"
           style={{
-            background:
-              'radial-gradient(ellipse 60% 42% at 50% 34%, color-mix(in srgb, var(--accent) 13%, transparent), transparent 70%)',
+            background: `radial-gradient(ellipse 60% 42% at 50% 34%, ${brandBloomTint(brand)}, transparent 70%)`,
           }}
         />
         <div
@@ -323,7 +325,11 @@ export default function IntentRuntime({
             {CONTRACT.map((c) => (
               <div
                 key={c.title}
-                className="rounded-2xl border border-[var(--line)] bg-[color-mix(in_srgb,var(--surf-1)_72%,transparent)] backdrop-blur-sm px-4 py-4"
+                // Opaque surface, not a 72%-transparent one: over a saturated
+                // brand bg the alpha composites the card straight back into
+                // the field, and the three contract points stop reading as
+                // cards at all.
+                className="rounded-2xl border border-[var(--line)] bg-[var(--surf-1)] px-4 py-4"
               >
                 <c.icon className="w-4 h-4 mb-2.5" style={{ color: 'var(--accent)' }} />
                 <p className="text-[12.5px] font-semibold text-[color:var(--fg)]">{c.title}</p>

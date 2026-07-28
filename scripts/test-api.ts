@@ -40,6 +40,7 @@ import { parseSwapIntent, swapClarify } from '../lib/swap-intent'
 import { activeLinkCapFor, composeMcps } from '../lib/intent-links'
 import { formatEarnedUsd, netFeeBpsFor, creatorEarningsUsd, FEE_BEARING_BUILD_PATHS, CROSS_CHAIN_FEE_BPS, CROSS_CHAIN_NET_FEE_BPS } from '../lib/fees'
 import { hexLuminance, normalizeAccent, normalizeBg, parseBrandHtml, validateBrandUrl } from '../lib/brand-scan'
+import { brandBloomTint, brandCtaStyle, brandThemeStyle } from '../lib/brand-theme'
 import {
   clientIpFrom,
   decideTurnLimit,
@@ -1698,6 +1699,36 @@ async function main() {
         normalizeBg('navy') === null &&
         (hexLuminance('#052b65') ?? 1) < 0.2 &&
         (hexLuminance('#ffffff') ?? 0) > 0.9,
+    )
+    // Contrast on a hyper-saturated light brand (Robinhood's #ccff00 with
+    // the #526700 accent its own logo yields): the CTA must not fill with a
+    // shade of the background, the bloom must not darken the page, and the
+    // cards must clear the field.
+    const rh = { domain: 'robinhood.com', name: 'Robinhood', logo: null, accent: '#526700', bg: '#ccff00' }
+    const cow = { domain: 'cow.fi', name: 'CoW', logo: null, accent: '#012f7a', bg: '#65d9ff' }
+    const navy = { domain: 'a.example', name: 'A', logo: null, accent: '#6633cc', bg: '#052b65' }
+    const rhCta = brandCtaStyle(rh) as { background?: string; color?: string } | undefined
+    const cowCta = brandCtaStyle(cow) as { background?: string; color?: string } | undefined
+    check(
+      'brand: a same-hue accent is shading, not a second color — the CTA falls to the ink pole (Robinhood black), a genuinely different brand color keeps its fill (CoW navy)',
+      rhCta?.background === '#0c0e12' &&
+        rhCta?.color === '#f6f8fa' &&
+        cowCta?.background === '#012f7a' &&
+        cowCta?.color === '#f6f8fa',
+    )
+    check(
+      'brand: the splash bloom only ever lifts — white over a light brand, the accent when it is the brighter color',
+      brandBloomTint(rh).includes('#ffffff') &&
+        brandBloomTint(navy).includes('var(--accent)') &&
+        brandBloomTint(null).includes('var(--accent)'),
+    )
+    const rhTheme = brandThemeStyle(rh) as Record<string, string> | undefined
+    const navyTheme = brandThemeStyle(navy) as Record<string, string> | undefined
+    check(
+      'brand: light-brand surfaces pull hard toward white (cards clear a saturated field); dark brands keep the subtle lift',
+      rhTheme?.['--surf-1'] === 'color-mix(in srgb, #ffffff 84%, #ccff00)' &&
+        rhTheme?.['--surf-2'] === 'color-mix(in srgb, #ffffff 93%, #ccff00)' &&
+        navyTheme?.['--surf-1'] === 'color-mix(in srgb, #ffffff 9%, #052b65)',
     )
     // API gates: owner-only, a claimed handle required, hostile URLs die at
     // the gate. (The live-scan happy path needs the open internet, so it

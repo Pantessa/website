@@ -37,6 +37,32 @@ function derivedFg(bgLum: number | null): string | null {
   return bgLum === null ? null : bgLum < 0.5 ? '#f4f6f8' : '#12141a'
 }
 
+/** Hue angle (0–360) of a hex, or null when the color is effectively
+ *  neutral (chroma too low for a hue to mean anything). */
+function hexHue(raw: string | null | undefined): number | null {
+  const hex = normalizeHex(raw)?.slice(1)
+  if (!hex) return null
+  const r = parseInt(hex.slice(0, 2), 16) / 255
+  const g = parseInt(hex.slice(2, 4), 16) / 255
+  const b = parseInt(hex.slice(4, 6), 16) / 255
+  const max = Math.max(r, g, b)
+  const min = Math.min(r, g, b)
+  const c = max - min
+  if (c < 0.08) return null
+  const h = max === r ? ((g - b) / c) % 6 : max === g ? (b - r) / c + 2 : (r - g) / c + 4
+  return (h * 60 + 360) % 360
+}
+
+/** Shortest angular distance between two hues, or null if either is
+ *  neutral. */
+function hueDistance(a: string | null | undefined, b: string | null | undefined): number | null {
+  const ha = hexHue(a)
+  const hb = hexHue(b)
+  if (ha === null || hb === null) return null
+  const d = Math.abs(ha - hb) % 360
+  return d > 180 ? 360 - d : d
+}
+
 /** The accent, guarded: within 0.18 luminance of the bg it would vanish, so
  *  it collapses to the derived fg (harness-pinned behavior). */
 function safeAccent(brand: LinkBrand): string | null {
@@ -56,7 +82,10 @@ function safeAccent(brand: LinkBrand): string | null {
  * into the bg — an fg mix keeps a saturated brand color saturated and
  * mid-luminance (CoW's light blue), collapsing card/border/muted hierarchy;
  * white-mixed panels read as paper cards on light brands and lifted panels
- * on dark ones. `fullBleed` paints the bg past a width-constrained
+ * on dark ones. The light pole pulls HARD toward white: a hyper-saturated
+ * brand bg (Robinhood's #ccff00) swallows a modest white mix, and the cards
+ * flatten back into the field — the whole surface then reads as one tinted
+ * pane with a film over it. `fullBleed` paints the bg past a width-constrained
  * element's box (the .x-main gutters) via the box-shadow spread + clip-path
  * trick — no layout change, no horizontal scrollbar.
  */
@@ -79,8 +108,8 @@ export function brandThemeStyle(
           '--muted-2': `color-mix(in srgb, ${fg} 62%, ${brand.bg})`,
           '--line': `color-mix(in srgb, ${fg} 26%, ${brand.bg})`,
           '--line-2': `color-mix(in srgb, ${fg} 42%, ${brand.bg})`,
-          '--surf-1': `color-mix(in srgb, #ffffff ${dark ? 9 : 62}%, ${brand.bg})`,
-          '--surf-2': `color-mix(in srgb, #ffffff ${dark ? 15 : 78}%, ${brand.bg})`,
+          '--surf-1': `color-mix(in srgb, #ffffff ${dark ? 9 : 84}%, ${brand.bg})`,
+          '--surf-2': `color-mix(in srgb, #ffffff ${dark ? 15 : 93}%, ${brand.bg})`,
           backgroundColor: brand.bg,
           color: fg,
           ...(opts.fullBleed ? { boxShadow: `0 0 0 100vmax ${brand.bg}`, clipPath: 'inset(0 -100vmax)' } : {}),
@@ -97,13 +126,46 @@ export function brandThemeStyle(
  * brand-color text. Inline styles also outrank .btn--solid:hover's pale-grey
  * repaint, so the fill holds on hover. Undefined without a brand bg — house
  * and unbranded links keep the stock pill.
+ *
+ * SAME-HUE ACCENTS ARE SHADING, NOT A SECOND COLOR. Robinhood's neon
+ * #ccff00 sampled a #526700 accent — the identical hue at a fifth of the
+ * lightness, which fills the button with army-green mud. When the accent
+ * sits within HUE_FAMILY degrees of the bg it's read as a shade of the
+ * background and the CTA falls to the ink pole instead: near-black on a
+ * light brand, near-white on a dark one. A genuinely different brand color
+ * (CoW's #012f7a navy on #65d9ff, 22° apart) keeps its fill.
  */
+const HUE_FAMILY = 14
+
 export function brandCtaStyle(brand: LinkBrand | null | undefined): CSSProperties | undefined {
   if (!brand?.bg) return undefined
   const accent = safeAccent(brand)
   if (!accent) return undefined
-  const lum = hexLuminance(accent)
-  return { background: accent, color: lum !== null && lum < 0.5 ? '#f6f8fa' : '#0c0e12' }
+  const bgLum = hexLuminance(brand.bg)
+  const hueGap = hueDistance(accent, brand.bg)
+  const sameFamily = hueGap !== null && hueGap < HUE_FAMILY
+  const fill = sameFamily ? (bgLum !== null && bgLum < 0.5 ? '#f4f6f8' : '#0c0e12') : accent
+  const lum = hexLuminance(fill)
+  return { background: fill, color: lum !== null && lum < 0.5 ? '#f6f8fa' : '#0c0e12' }
+}
+
+/**
+ * The ambient bloom behind a branded splash. An accent-tinted radial LIFTS
+ * a surface only when the accent is lighter than the bg — the fusion-core
+ * glow on Yeetful's own dark pages. Paint a darker accent over a light
+ * brand and the same gradient becomes a smudge across the middle of the
+ * page: it reads as a grey screen sitting on top of the design (live on
+ * Robinhood's #ccff00 splash, 2026-07-28). So a bloom that would darken is
+ * replaced by a white one, which lifts on any background.
+ */
+export function brandBloomTint(brand: LinkBrand | null | undefined, accentPct = 13): string {
+  const accent = brand ? safeAccent(brand) : null
+  const bgLum = hexLuminance(brand?.bg)
+  const accentLum = hexLuminance(accent)
+  const lifts = bgLum === null || accentLum === null || accentLum > bgLum
+  return lifts
+    ? `color-mix(in srgb, var(--accent) ${accentPct}%, transparent)`
+    : `color-mix(in srgb, #ffffff ${accentPct * 2}%, transparent)`
 }
 
 /**
