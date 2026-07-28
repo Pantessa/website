@@ -56,7 +56,10 @@ function milestoneCtes(days: number, excl: string[]) {
       UNION ALL SELECT lower(wallet), created_at FROM dca_schedules
       UNION ALL SELECT lower(wallet), created_at FROM hl_guardian_policies
       UNION ALL SELECT lower(owner_address), created_at FROM api_keys
-      UNION ALL SELECT lower(owner_address), created_at FROM agent_approvals
+      -- agent_approvals is deliberately absent: a preference toggle is not an
+      -- arrival, and every real one mints a grant (see the note on ADDRS in
+      -- app/api/admin/overview). agent_toggle_events above already carries the
+      -- honest version of that signal.
       UNION ALL SELECT lower(address), created_at FROM org_members
       UNION ALL SELECT lower(owner_address), created_at FROM spend_grants WHERE owner_address NOT LIKE 'org:%'
       UNION ALL SELECT lower(creator), created_at FROM intent_links WHERE creator IS NOT NULL

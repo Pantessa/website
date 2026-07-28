@@ -814,7 +814,7 @@ export default function AdminPage() {
         <Kpi label="Organizations" value={String(data.orgs.orgs)} sub={`${data.orgs.members} members`} />
         <Kpi label="Org spend" value={usd(data.orgs.org_settled)} small />
         <Kpi label="Callable services" value={String(data.supply.callable)} sub={`of ${data.supply.servers} listed`} />
-        <Kpi label="Activated wallets" value={String(t.activated)} sub="minted a key or approved an agent" />
+        <Kpi label="Activated wallets" value={String(t.activated)} sub="minted a key or curated their agents" />
       </div>
     </>
   )

@@ -86,18 +86,32 @@ export async function listApprovals(ownerAddress: string): Promise<ApprovalRow[]
   }))
 }
 
-/** Upsert one approval, then re-sync the owner's grant allowlist. */
+/**
+ * Record one approval, then re-sync the owner's grant allowlist.
+ *
+ * THE TABLE STORES CURATION, NOT STATE. Agents default to ON, `listApprovals`
+ * reads a missing row as approved, and `syncGrantAllowlist` only ever queries
+ * `approved: false` — so an `approved: true` row is indistinguishable from no
+ * row at all, and re-enabling deletes rather than writing one. Un-curating
+ * then returns the account to a true clean slate instead of leaving a trail
+ * of no-op rows behind every toggle (those rows were being counted as wallet
+ * arrivals in the adoption metrics — see app/api/admin/overview).
+ */
 export async function setApproval(
   ownerAddress: string,
   serverId: string,
   approved: boolean,
   orgId?: string,
 ) {
-  await prisma.agentApproval.upsert({
-    where: { ownerAddress_serverId: { ownerAddress, serverId } },
-    update: { approved },
-    create: { ownerAddress, serverId, approved, orgId },
-  })
+  if (approved) {
+    await prisma.agentApproval.deleteMany({ where: { ownerAddress, serverId } })
+  } else {
+    await prisma.agentApproval.upsert({
+      where: { ownerAddress_serverId: { ownerAddress, serverId } },
+      update: { approved },
+      create: { ownerAddress, serverId, approved, orgId },
+    })
+  }
   return syncGrantAllowlist(ownerAddress, orgId)
 }
 

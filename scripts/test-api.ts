@@ -479,6 +479,15 @@ async function main() {
     await fetch(`${BASE}/api/approvals`, { method: 'PUT', headers: CJ, body: JSON.stringify({ serverId: srv.id, approved: true }) })
     const open = await (await fetch(`${BASE}/api/grants/${g2.id}`, { headers: C })).json()
     check('zero explicit OFFs → wildcard allowlist', Array.isArray(open.allow) && open.allow.includes('*'))
+    // Re-enabling LEAVES NOTHING BEHIND. The table stores curation (the OFFs);
+    // an approved:true row is a no-op the reader already assumes, and writing
+    // one made this very block mint a permanent phantom "new wallet" in the
+    // adoption metrics on every harness run (276 of them by 2026-07-28).
+    const reOpen = (await (await fetch(`${BASE}/api/approvals`, { headers: C })).json()) as { approved: boolean }[]
+    check(
+      'un-curating clears the row (default ON restored, no no-op rows left behind)',
+      reOpen.length > 0 && reOpen.every((r) => r.approved),
+    )
     await fetch(`${BASE}/api/grants/${g2.id}`, { method: 'DELETE', headers: C })
   }
 
@@ -3227,6 +3236,29 @@ async function main() {
       await fetch(`${BASE}/api/admin/overview?excludeOwners=1`, { headers: { cookie: ovSession } })
     ).json()
     check('overview: ?excludeOwners=1 echoes the flag', ovExcl.excludeOwners === true)
+
+    // A TOGGLE IS NOT AN ARRIVAL. A wallet that only ever curated its agent
+    // list and kept no grant must not appear as a signed-in user: that path
+    // is exactly what the harness itself walks every run, and counting it
+    // inflated the adoption curve with 276 phantom wallets in eleven days.
+    const ghost = privateKeyToAccount(generatePrivateKey())
+    const ghostSession = await signIn(ghost)
+    const GJ = { 'content-type': 'application/json', cookie: ghostSession }
+    const ghostDir = await (await fetch(`${BASE}/api/servers`)).json()
+    const ghostSrv = ghostDir.find((s: { callable: boolean }) => s.callable) ?? ghostDir[0]
+    await fetch(`${BASE}/api/approvals`, { method: 'PUT', headers: GJ, body: JSON.stringify({ serverId: ghostSrv.id, approved: false }) })
+    await fetch(`${BASE}/api/approvals`, { method: 'PUT', headers: GJ, body: JSON.stringify({ serverId: ghostSrv.id, approved: true }) })
+    for (const g of (await (await fetch(`${BASE}/api/grants`, { headers: { cookie: ghostSession } })).json()) as { id: string }[]) {
+      await fetch(`${BASE}/api/grants/${g.id}`, { method: 'DELETE', headers: { cookie: ghostSession } })
+    }
+    const ovAfter = await (await fetch(`${BASE}/api/admin/overview`, { headers: { cookie: ovSession } })).json()
+    const ghostLc = ghost.address.toLowerCase()
+    const seenIn = (rows: unknown): boolean =>
+      Array.isArray(rows) && rows.some((r) => String((r as { address?: string }).address ?? '').toLowerCase() === ghostLc)
+    check(
+      'overview: an approvals-only wallet never counts as an arrival (no phantom users from curation)',
+      !seenIn(ovAfter.roster) && !seenIn(ovAfter.recentArrivals),
+    )
   }
 
   // ── Email signup (double opt-in) ──────────────────────────────────────────
