@@ -8,6 +8,7 @@
 
 import { Wallet } from 'lucide-react'
 import type { PortfolioDisplay, PortfolioHolding } from '@/lib/portfolio-display'
+import { ChartHoverButton } from '@/components/TokenChartButton'
 
 const usd = (n: number) => `$${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 
@@ -39,8 +40,11 @@ function TokenDot({ h }: { h: PortfolioHolding }) {
 export default function PortfolioCard({ data }: { data: PortfolioDisplay }) {
   const max = Math.max(...data.holdings.map((h) => h.valueUsd ?? 0), 0.01)
   const fetchedAt = data.updatedAt ? new Date(data.updatedAt) : null
+  // Surface is plain --surf-1 (the panel fill every other card uses): Tailwind
+  // can't opacity-modify a CSS-var color, so `bg-[var(--surf-2)]/60` painted
+  // nothing at all. --surf-1 is what that blend was reaching for anyway.
   return (
-    <div className="mt-3 rounded-2xl border border-[var(--line)] bg-[var(--surf-2)]/60 p-4 not-prose">
+    <div className="mt-3 rounded-2xl border border-[var(--line)] bg-[var(--surf-1)] p-4 not-prose">
       {/* Header: owner + total */}
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <div className="flex items-center gap-2">
@@ -76,7 +80,7 @@ export default function PortfolioCard({ data }: { data: PortfolioDisplay }) {
           const share = h.valueUsd !== null && h.valueUsd !== undefined ? Math.max(0.02, h.valueUsd / max) : 0
           return (
             <div key={`${h.chain}:${h.address ?? 'native'}:${h.symbol}`} className="text-xs">
-              <div className="flex items-center justify-between gap-2">
+              <div className="group flex items-center justify-between gap-2">
                 <div className="flex min-w-0 items-center gap-2">
                   <TokenDot h={h} />
                   <div className="min-w-0">
@@ -88,10 +92,13 @@ export default function PortfolioCard({ data }: { data: PortfolioDisplay }) {
                     {h.name && <div className="truncate text-[10px] text-[color:var(--muted-2)]">{h.name}</div>}
                   </div>
                 </div>
-                <div className="flex-shrink-0 text-right">
-                  <div className="text-white">{h.valueUsd !== null && h.valueUsd !== undefined ? usd(h.valueUsd) : '—'}</div>
-                  <div className="text-[10px] text-[color:var(--muted-2)]">
-                    {h.balance} {h.symbol}
+                <div className="flex flex-shrink-0 items-center gap-1">
+                  <ChartHoverButton symbol={h.symbol} />
+                  <div className="text-right">
+                    <div className="text-white">{h.valueUsd !== null && h.valueUsd !== undefined ? usd(h.valueUsd) : '—'}</div>
+                    <div className="text-[10px] text-[color:var(--muted-2)]">
+                      {h.balance} {h.symbol}
+                    </div>
                   </div>
                 </div>
               </div>

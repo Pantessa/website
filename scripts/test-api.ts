@@ -32,13 +32,16 @@ import { buildSignableArtifact, isActionIntent, orderRequestOf, txRequestOf, txC
 import { resolveToken, buildCowOrderTypedData, cowOrderAction, buildCowLimitOrder, buildCowSubmitBody, describeCowOrder, describeAmount, formatAtoms, tokenDecimals, tokenLabel, humanToAtoms, applySlippage, COW_APP_DATA_JSON, COW_APP_DATA_HASH, GPV2_SETTLEMENT, type CowQuoteResult } from '../lib/cow'
 import { primeTokenList } from '../lib/token-list'
 import { pairStockToken, stockChipLabel } from '../lib/stock-pairing'
+import { chartPairFor, changePct24h, aggregateCandles, type Candle } from '../lib/charts'
 import { pureChecks, policyCheck, orderValueUsd, buildReport } from '../lib/cow-guardrails'
 import { policyCheckInflow, recipientCheck, validityCheck, MAX_VALID_SEC } from '../lib/tx-guardrails'
 import { guardPlannerArtifact, PERMIT2_ADDRESS } from '../lib/planner-artifact-guard'
 import { parseSwapIntent } from '../lib/swap-intent'
 import { activeLinkCapFor, composeMcps } from '../lib/intent-links'
+import { formatEarnedUsd, netFeeBpsFor, creatorEarningsUsd, FEE_BEARING_BUILD_PATHS, CROSS_CHAIN_FEE_BPS, CROSS_CHAIN_NET_FEE_BPS } from '../lib/fees'
 import { hexLuminance, normalizeAccent, normalizeBg, parseBrandHtml, validateBrandUrl } from '../lib/brand-scan'
 import {
+  clientIpFrom,
   decideTurnLimit,
   hashIp,
   limitKeysFor,
@@ -50,8 +53,12 @@ import { isDbChatId } from '../lib/chat-ids'
 import { usdToTokenAmount } from '../lib/usd-probe'
 import { parseRobinhoodBridge, guardRobinhoodBridge, RH_L1_INBOX, ARB_SYS } from '../lib/robinhood-bridge'
 import { parseNftAsk, parseOpenSeaItemUrl, guardNftTransfer, ERC721_ABI as NFT_ERC721_ABI, ERC1155_ABI as NFT_ERC1155_ABI } from '../lib/nft-layer'
+import { parseNftListAsk, parseNftMarketAsk, parseNftTransferFollowUp, nftTransferPending, nftAskFromPending } from '../lib/nft-layer'
+import { nftGalleryChains, nftRowActions } from '../lib/nft-gallery'
+import { groupCollections, marketReplyCopy, offersDisplay, valuationDisplay } from '../lib/nft-market'
+import { nftGalleryOf, nftMarketOf } from '../lib/nft-display'
 import { getProtocolMark, YeetfulMark } from '../components/protocol-marks'
-import { splitListingPrice, buildListingComponents, guardListingComponents, openseaAssetUrl, SEAPORT_1_6, guardBuyFulfillment, fulfillmentToCalldata, normalizeOpenseaListing, collectionSlugCandidates } from '../lib/opensea'
+import { splitListingPrice, buildListingComponents, guardListingComponents, openseaAssetUrl, SEAPORT_1_6, guardBuyFulfillment, fulfillmentToCalldata, normalizeOpenseaListing, normalizeOpenseaOffer, collectionSlugCandidates } from '../lib/opensea'
 import { keccak256, stringToBytes, decodeFunctionData, parseAbi } from 'viem'
 import { isCacheable, routeCacheKey, getCached, setCached, clearRouteCache } from '../lib/route-cache'
 import { routeSavings } from '../lib/route-telemetry'
@@ -65,7 +72,7 @@ import { classifyOneclickStatus, inflightDepositFromPending, inflightPendingData
 import { sanitizeWorkingContext } from '../lib/working-context'
 import { parseRobinhoodFunding, parseSameChainSwapSegment, JOB_SEGMENT_PARSERS } from '../lib/jobs'
 import { parseMultiSendSegments, parseTransferSegment } from '../lib/transfer-exec'
-import { classifyTurn, moneyShaped } from '../lib/ask-failure'
+import { buildFundsDetail, classifyTurn, FAILURE_PROBE_TOKENS, moneyShaped } from '../lib/ask-failure'
 import { canonicalChainWord, normalizeChainWords } from '../lib/chain-lexicon'
 import { decideFundingTurn, detectBalanceShortfall, fundingPlanUsd, planFundingChips, planStrandedRescue, rankFundingSources, shortRefusalCopy, softenClaimedFailureBlock, type FundingNeed, type FundingSource } from '../lib/funding-plan'
 import { compileDcaBuy, dcaRunChip, parseDcaCreate, parseDcaManage, parseDcaRun, periodKeyFor } from '../lib/dca'
@@ -1484,8 +1491,13 @@ async function main() {
     await turn({ buildPath: 'native-nft-transfer', valueUsd: 500 }) // moves $500, earns $0
     const after = await fetch(`${BASE}/api/intent-links`, { headers: { cookie: mallorySession } })
     const afterBody = (await after.json()) as {
-      links: Array<{ slug: string; signedUsd: number; earnedUsd: number }>
-      earnings: { totalEarnedUsd: number; claimableUsd: number }
+      links: Array<{ slug: string; signedUsd: number; feeBearingUsd: number; earnedUsd: number }>
+      earnings: {
+        totalEarnedUsd: number
+        totalSignedUsd: number
+        totalFeeBearingUsd: number
+        claimableUsd: number
+      }
     }
     const mine = afterBody.links.find((l) => l.slug === slug)
     check(
@@ -1495,6 +1507,26 @@ async function main() {
     check(
       'intent links: NFT/transfer $ counts as moved but NEVER as earnings',
       !!mine && mine.signedUsd >= 600 && Math.abs(mine.earnedUsd - 0.1) < 0.001,
+    )
+    // A zero must be able to explain itself: the fee-bearing base rides along
+    // so the UI can say "fee-free route" instead of showing a bare $0.00.
+    check(
+      'intent links: the fee-bearing base ships alongside moved $ (per link + total)',
+      !!mine &&
+        Math.abs(mine.feeBearingUsd - 100) < 0.001 &&
+        afterBody.earnings.totalSignedUsd >= 600 &&
+        afterBody.earnings.totalFeeBearingUsd >= 100,
+    )
+    // Sub-cent display: half of 20bps on a $1 test swap is $0.001 — two
+    // decimals would render the tester's own proof-of-life as "$0.00".
+    check(
+      'intent links: sub-cent earnings render the tiny bits, not $0.00',
+      formatEarnedUsd(0) === '$0.00' &&
+        formatEarnedUsd(0.001) === '$0.001' &&
+        formatEarnedUsd(0.0025) === '$0.0025' &&
+        formatEarnedUsd(0.00001) === '<$0.0001' &&
+        formatEarnedUsd(0.1) === '$0.10' &&
+        formatEarnedUsd(12.345) === '$12.35',
     )
     const claim = await fetch(`${BASE}/api/intent-links/claims`, { method: 'POST', headers: M })
     check('intent links: claim below the $10 floor refused (400)', claim.status === 400)
@@ -2460,6 +2492,18 @@ async function main() {
   })
   const fencedBody = (await fencedTurn.json()) as { rateGate?: unknown }
   check('fence: an under-cap unsigned turn passes with no rate wall', fencedTurn.status === 200 && fencedBody.rateGate === undefined)
+  // Loopback IS a header value on `next start` (x-forwarded-for: ::1), not
+  // an absent one — it must read as "no platform IP" or local dev and this
+  // very harness accumulate fence walls across runs in the shared DB (live
+  // 2026-07-28: ::1 sat at 169 unsigned turns and walled the run's tail).
+  check(
+    'fence: loopback header values read as direct traffic (no platform IP)',
+    clientIpFrom(new Headers({ 'x-forwarded-for': '::1' })) === null &&
+      clientIpFrom(new Headers({ 'x-real-ip': '127.0.0.1' })) === null &&
+      clientIpFrom(new Headers({ 'x-forwarded-for': '::ffff:127.0.0.1, 203.0.113.9' })) === null &&
+      clientIpFrom(new Headers({ 'x-real-ip': '203.0.113.9' })) === '203.0.113.9' &&
+      clientIpFrom(new Headers()) === null,
+  )
 
   // ── Missing-MCP door: venue-worded builds never fall to a planner how-to ──
   // Live 2026-07-27: a default-fleet chat answered "Stake 0.05 ETH with
@@ -3428,6 +3472,45 @@ async function main() {
         classifyTurn({ reply: 'refused', blocked: true }).kind === 'blocked' &&
         classifyTurn(null).kind === 'error',
     )
+    // ── The funds-snapshot assembly (pure): counting rules the funded=1
+    // queue depends on. A USDT-only wallet used to log had_funds=false —
+    // indistinguishable from an empty one — so USDT demand had no data; and
+    // multiple token rows sharing a chain (USDC.e today, spendable ETH rows
+    // once the funding scan grows them) must never price that chain's gas
+    // ETH more than once.
+    {
+      const FO = (chainId: number, word: string, usd: number, gasEth: number, token = 'USDC') => ({ chainId, word, token, usd, gasEth })
+      const usdcRow = FO(42161, 'Arbitrum', 10, 0.002)
+      const usdceRow = FO(42161, 'Arbitrum', 5, 0.002, 'USDC.e')
+      const ethRow = { ...FO(8453, 'Base', 100, 0.06, 'ETH'), spendable: true }
+      const built = buildFundsDetail(
+        { origins: [usdcRow, usdceRow, ethRow], gaslessOrigins: [], allScanned: [usdcRow, usdceRow, ethRow], failedOrigins: ['Ethereum'], usdgAtoms: BigInt(4_800_000) },
+        2000,
+        [{ symbol: 'USDT', word: 'Ethereum', usd: 50 }],
+      )
+      check(
+        'ask-failure snapshot: gas priced once per chain, ETH rows never double-count, USDT named with its no-path marker',
+        // 10 + 5 (stables) + 4 (Arb gas once: 0.002×2000) + 120 (Base gas
+        // 0.06×2000 — covers the ETH row, which itself adds nothing) +
+        // 4.80 USDG + 50 USDT = 193.80
+        built.totalUsd === 193.8 &&
+          built.parts.filter((p) => /ETH Arbitrum/.test(p)).length === 1 &&
+          !built.parts.some((p) => /\$100 ETH/.test(p)) &&
+          built.parts.some((p) => p === '$50 USDT Ethereum (no funding path yet)') &&
+          built.parts.some((p) => /unscanned: Ethereum/.test(p)),
+        JSON.stringify(built),
+      )
+      const bare = buildFundsDetail({ origins: [], gaslessOrigins: [], allScanned: [], failedOrigins: [], usdgAtoms: BigInt(0) }, null, [{ symbol: 'USDT', word: 'Base', usd: 7.25 }])
+      check(
+        'ask-failure snapshot: a USDT-only wallet now measures as funded (the demand signal)',
+        bare.totalUsd === 7.25 && bare.parts.length === 1 && /USDT Base \(no funding path yet\)/.test(bare.parts[0]),
+        JSON.stringify(bare),
+      )
+      check(
+        'ask-failure snapshot: probe tokens stay 6-dec on the three funding origins (registry sanity)',
+        [1, 8453, 42161].every((id) => (FAILURE_PROBE_TOKENS[id] ?? []).every((t) => t.decimals === 6 && /^0x[0-9a-fA-F]{40}$/.test(t.address) && t.symbol === 'USDT')),
+      )
+    }
 
     const DEPOSIT = '0x7ff0D96c9f0528f0FF8dd948b2D316806fE3c7f2'
     const USDC_BASE = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913'
@@ -3460,6 +3543,56 @@ async function main() {
     // Native transfer path.
     const nativeBuild = { kind: 'swap_ready', quote: { sell: { amountAtoms: '1000000000000000000' } }, deposit: { address: DEPOSIT }, steps: [{ action: 'send_transaction', tx: { to: DEPOSIT, data: '0x', value: '1000000000000000000', chainId: 8453 } }] }
     check('xchain guard: native transfer to deposit address PASSES', guardCrossChainBuild(nativeBuild, { chainId: 8453 }).ok)
+
+    // ── The venue fee (1Click appFees) ──────────────────────────────────────
+    // It rides the quote, so the DEPOSIT is identical with or without it —
+    // the guard's job is only to police who the fee pays.
+    const ONECLICK_SHARE = '5880ad2b362620fadf759cbceb1cd5737ce8c6ed7fb8e9942881e6731f9247dd'
+    const feeExpect = { recipient: TREASURY_ADDRESS, bps: CROSS_CHAIN_FEE_BPS }
+    const feeSplit = [
+      { recipient: TREASURY_ADDRESS, fee: CROSS_CHAIN_NET_FEE_BPS },
+      { recipient: ONECLICK_SHARE, fee: CROSS_CHAIN_NET_FEE_BPS },
+    ]
+    const feeBuild = { ...goodBuild, appFee: { requested: [{ recipient: TREASURY_ADDRESS, fee: CROSS_CHAIN_FEE_BPS }], applied: feeSplit } }
+    const feeGuard = guardCrossChainBuild(feeBuild, { chainId: 8453, fee: feeExpect })
+    check(
+      'xchain fee: the pinned treasury split PASSES and the deposit is untouched',
+      feeGuard.ok && feeGuard.tx?.to === USDC_BASE && feeGuard.feeBps === CROSS_CHAIN_FEE_BPS && (feeGuard.feeNotes ?? []).length === 0,
+    )
+    check(
+      'xchain fee: an app fee paid to an address we did not pin is REFUSED',
+      !guardCrossChainBuild(
+        { ...goodBuild, appFee: { applied: [{ recipient: '0x000000000000000000000000000000000000dEaD', fee: 10 }, { recipient: ONECLICK_SHARE, fee: 10 }] } },
+        { chainId: 8453, fee: feeExpect },
+      ).ok,
+    )
+    check(
+      'xchain fee: a fee larger than we requested is REFUSED',
+      !guardCrossChainBuild(
+        { ...goodBuild, appFee: { applied: [{ recipient: TREASURY_ADDRESS, fee: 400 }, { recipient: ONECLICK_SHARE, fee: 400 }] } },
+        { chainId: 8453, fee: feeExpect },
+      ).ok,
+    )
+    check(
+      'xchain fee: an UNREQUESTED app fee is REFUSED (job/funding legs stay fee-free)',
+      !guardCrossChainBuild({ ...goodBuild, appFee: { applied: feeSplit } }, { chainId: 8453, fee: null }).ok &&
+        guardCrossChainBuild(goodBuild, { chainId: 8453, fee: null }).ok,
+    )
+    const notApplied = guardCrossChainBuild(goodBuild, { chainId: 8453, fee: feeExpect })
+    check(
+      'xchain fee: a venue that did not apply the fee still SIGNS, quietly (operator note, no user warning, no fee claimed)',
+      notApplied.ok && notApplied.feeBps === 0 && (notApplied.feeNotes ?? []).length === 1 && notApplied.warnings.length === 0,
+    )
+    // The earnings rate is the NET half — 1Click keeps the rest.
+    check(
+      'xchain fee: creator earnings use the per-path NET rate (cross-chain earns half a uniswap dollar)',
+      netFeeBpsFor('native-cross-chain') === CROSS_CHAIN_NET_FEE_BPS &&
+        netFeeBpsFor('native-swap-uniswap') === CROSS_CHAIN_FEE_BPS &&
+        netFeeBpsFor('native-nft-transfer') === 0 &&
+        FEE_BEARING_BUILD_PATHS.has('native-cross-chain') &&
+        Math.abs(creatorEarningsUsd(1000, netFeeBpsFor('native-cross-chain')) - 0.5) < 1e-9 &&
+        Math.abs(creatorEarningsUsd(1000, netFeeBpsFor('native-swap-uniswap')) - 1) < 1e-9,
+    )
 
     // Follow-ups.
     const pend = { kind: 'xchain', data: { amount: '1', originToken: 'USDC', originChain: 'base', destinationToken: 'USDC', destinationChain: 'arbitrum', depositAddress: DEPOSIT } }
@@ -3718,6 +3851,30 @@ async function main() {
     check('bridge echo: delivery to a STRANGER refused', verifyLifiBridgeEcho({ ...bridgeQuote, action: { ...bridgeQuote.action, toAddress: STRANGER } }, bexp).length > 0)
     check('bridge echo: amount drift refused', verifyLifiBridgeEcho({ ...bridgeQuote, action: { ...bridgeQuote.action, fromAmount: '999' } }, bexp).length > 0)
     check('bridge echo: native value on an ERC-20 input refused', verifyLifiBridgeEcho({ ...bridgeQuote, transactionRequest: { chainId: 8453, value: '0xde0b6b3a7640000' } }, bexp).length > 0)
+
+    // ── Native-ETH sell mode (2026-07-28): the value IS the input — the
+    // single bridge step must carry exactly the sold atoms, and no approval
+    // may exist (there is no ERC-20 to approve).
+    const ETH_ATOMS = BigInt('4000000000000000') // 0.004 ETH
+    const ZERO = '0x0000000000000000000000000000000000000000'
+    const nexp: LifiBridgeExpectations = { ...bexp, sellToken: ZERO, sellAtoms: ETH_ATOMS, nativeSellAtoms: ETH_ATOMS }
+    const nativeBridge: LifiBridgeStep = {
+      label: 'bridge',
+      title: 'Bridge ETH → USDG on Robinhood Chain',
+      tx: { to: DIAMOND, data: '0x5fd9ae2e' + 'cd'.repeat(200), value: ETH_ATOMS.toString(), chainId: 8453, action: 'bridge' },
+      validUntil: Math.floor(Date.now() / 1000) + 90,
+    }
+    check('bridge guard (native): single value-carrying bridge step PASSES', guardLifiBridgeBuild([nativeBridge], nexp).ok)
+    check('bridge guard (native): a zero-value bridge step refused (the ETH must ride as msg.value)', !guardLifiBridgeBuild([{ ...nativeBridge, tx: { ...nativeBridge.tx, value: '0' } }], nexp).ok)
+    check('bridge guard (native): value drift refused (exactly the sold atoms)', !guardLifiBridgeBuild([{ ...nativeBridge, tx: { ...nativeBridge.tx, value: (ETH_ATOMS + BigInt(1)).toString() } }], nexp).ok)
+    check('bridge guard (native): an approval step in a native leg refused', !guardLifiBridgeBuild([goodLegs[0], nativeBridge], nexp).ok)
+    const nativeQuote = {
+      action: { fromToken: { address: ZERO }, toToken: { address: USDG }, fromAmount: ETH_ATOMS.toString(), fromChainId: 8453, toChainId: 4663, toAddress: USER },
+      estimate: { fromAmount: ETH_ATOMS.toString() },
+      transactionRequest: { chainId: 8453, value: '0x' + ETH_ATOMS.toString(16) },
+    }
+    check('bridge echo (native): value = fromAmount PASSES (the live 2026-07-28 probe shape)', verifyLifiBridgeEcho(nativeQuote, nexp).length === 0)
+    check('bridge echo (native): a zero-value native quote refused', verifyLifiBridgeEcho({ ...nativeQuote, transactionRequest: { chainId: 8453, value: '0x0' } }, nexp).length > 0)
 
     // The funding-plan parse + compile — the chips' resume string is the
     // contract, so the exact phrasing must compile deterministically.
@@ -4020,6 +4177,68 @@ async function main() {
       JSON.stringify(usdceUnder),
     )
     check('rh-funding follow-up: "I have $10 USDC.e on arbitrum" → recheck', parseRhFundingFollowUp('I have $10 USDC.e on arbitrum')?.kind === 'recheck')
+
+    // ── Native ETH as a funding source (2026-07-28): the most common
+    // stranger wallet — ETH, no stables — used to wall the flagship stock
+    // buy with "no USDC on Base, Ethereum, or Arbitrum". ETH origin rows
+    // now ride the same chips/advice path: resumes carry "using eth" and
+    // compile with the token in BOTH legs.
+    const fpEthTok = parseRobinhoodFunding('Fund robinhood chain with $13.5 from base using eth including gas')
+    check('funding parse: "using eth" picks native ETH', !!fpEthTok && fpEthTok.token === 'ETH' && fpEthTok.gasIncluded && fpEthTok.originChainId === 8453)
+    const ethAnyOrigin = compileJobAsk('Fund robinhood chain with $7 from ethereum using eth, then buy $5 of NVDA')
+    check(
+      'funding compile: "using eth" compiles from every origin (native ETH needs no registry variant)',
+      !!ethAnyOrigin && !('problem' in ethAnyOrigin) && (ethAnyOrigin.steps[0].params as { token?: string }).token === 'ETH',
+    )
+    const ethOnly = O(8453, 'Base', 480, 0.2, 'ETH')
+    const ethChips = planRobinhoodFundingChips({ origins: [ethOnly], needUsd: 13.5, gasIncluded: true, followup: 'buy $12 of AAPL' })
+    const ethOnlyJob = ethChips ? compileJobAsk(ethChips[0].resume) : null
+    check(
+      'funding chips: an ETH-only wallet gets chips whose resumes compile with token ETH in both legs',
+      !!ethChips && /Base ETH/.test(ethChips[0].label) && /using eth/.test(ethChips[0].resume) &&
+        !!ethOnlyJob && !('problem' in ethOnlyJob) &&
+        (ethOnlyJob.steps[0].params as { leg?: string; token?: string }).leg === 'gas' &&
+        (ethOnlyJob.steps[0].params as { token?: string }).token === 'ETH' &&
+        (ethOnlyJob.steps[1].params as { token?: string }).token === 'ETH' &&
+        ethChips.every((c) => {
+          const j = compileJobAsk(c.resume)
+          return !!j && !('problem' in j)
+        }),
+      JSON.stringify({ ethChips, steps: ethOnlyJob && !('problem' in ethOnlyJob) ? ethOnlyJob.steps.map((s) => s.params) : ethOnlyJob }),
+    )
+    // Stables lead, but the FIRST COVERING origin wins: dust USDC must not
+    // force a combine past an ETH balance that covers the plan alone.
+    const dustPlusEth = planRobinhoodFundingChips({ origins: [O(8453, 'Base', 3), ethOnly], needUsd: 13.5, gasIncluded: false, followup: 'buy $12 of AAPL' })
+    check(
+      'funding chips: dust USDC + covering ETH → the ETH origin leads (no forced combine)',
+      !!dustPlusEth && /from Base ETH/.test(dustPlusEth[0].label),
+      JSON.stringify(dustPlusEth),
+    )
+    // A covering stable still leads; covering ETH becomes the "instead" chip.
+    const bothCover = planRobinhoodFundingChips({ origins: [O(8453, 'Base', 20), ethOnly], needUsd: 13.5, gasIncluded: false, followup: 'buy $12 of AAPL' })
+    check(
+      'funding chips: covering USDC leads, covering ETH offered as "Use Base ETH instead"',
+      !!bothCover && /~\$13\.5 from Base\)/.test(bothCover[0].label) && bothCover.some((c) => /Use Base ETH instead/.test(c.label)),
+      JSON.stringify(bothCover),
+    )
+    // Sub-keep-back ETH is NAMED but never planned and never "rescued" —
+    // it IS the missing gas, so a gas-topup rescue would be nonsense.
+    const dustEth = { ...O(1, 'Ethereum', 2, 0.0011, 'ETH'), spendable: false }
+    const ethUnder = planRobinhoodFundingAdvice({
+      scan: { origins: [], gaslessOrigins: [dustEth], allScanned: [dustEth], failedOrigins: [] },
+      needUsd: 2, gasIncluded: true, followup: '',
+    })
+    check(
+      'funding advice: sub-keep-back ETH → named with the honest parenthetical, never a gas-stranded rescue',
+      ethUnder.kind === 'none' && /\$2 of ETH on Ethereum \(under what a move from there costs\)/.test(ethUnder.copy),
+      JSON.stringify(ethUnder),
+    )
+    const emptyAdvice = planRobinhoodFundingAdvice({ scan: { origins: [], gaslessOrigins: [], allScanned: [], failedOrigins: [] }, needUsd: 5, gasIncluded: true, followup: '' })
+    check(
+      'funding advice: an empty wallet names both scanned tokens',
+      emptyAdvice.kind === 'none' && /no USDC or ETH on Base, Ethereum, or Arbitrum/.test(emptyAdvice.copy),
+      JSON.stringify(emptyAdvice),
+    )
 
     // ── The rh-funding follow-up parser: the typed continuations that must
     // re-enter the funding layer instead of falling to the planner.
@@ -5021,6 +5240,95 @@ async function main() {
   check('nft parse: sell without a price clarifies (never guesses)', !!nftNoPrice && nftNoPrice.kind === 'problem' && /price/i.test(nftNoPrice.problem), JSON.stringify(nftNoPrice))
   const nftNoTo = parseNftAsk('transfer my pudgy penguin #2489 nft')
   check('nft parse: transfer without a recipient clarifies', !!nftNoTo && nftNoTo.kind === 'problem' && /recipient|go|0x/i.test(nftNoTo.problem), JSON.stringify(nftNoTo))
+  // ── Transfer continuity. "Where should it go?" is a QUESTION, so its answer
+  // is a bare address — which names no NFT. Without a memory that turn fell to
+  // the planner, which "confirmed" the transfer and then invented a failed
+  // ownership lookup for an NFT it had been handed two turns earlier (live
+  // 2026-07-28, from the gallery's Transfer chip).
+  const nftOpen = parseNftAsk('Transfer my Mintbase #42 NFT on Ethereum')
+  check(
+    'nft parse: a recipient-less transfer KEEPS the NFT it parsed',
+    !!nftOpen && nftOpen.kind === 'problem' && nftOpen.awaiting === 'recipient' && nftOpen.partial?.ref === 'Mintbase #42' && nftOpen.partial?.tokenId === '42' && nftOpen.partial?.chainId === 1,
+    JSON.stringify(nftOpen),
+  )
+  // The chip that caused it shipped a dangling "…to " for the user to finish;
+  // chips auto-send, so it fired half-written. Old links still carry it.
+  const nftOpenLegacy = parseNftAsk('Send my Mintbase #42 NFT on Ethereum to ')
+  check(
+    'nft parse: the legacy dangling-"to" chip still parks its NFT',
+    !!nftOpenLegacy && nftOpenLegacy.kind === 'problem' && nftOpenLegacy.partial?.ref === 'Mintbase #42',
+    JSON.stringify(nftOpenLegacy),
+  )
+  check(
+    'nft follow-up: a bare address (or ENS) answers the pending transfer',
+    (() => {
+      const bare = parseNftTransferFollowUp('0x5EaaBd731d2Bc0490C2D47e41858e9b0629455a0')
+      const worded = parseNftTransferFollowUp('send it to vitalik.eth')
+      return bare?.kind === 'recipient' && bare.to === '0x5EaaBd731d2Bc0490C2D47e41858e9b0629455a0' && worded?.kind === 'recipient' && worded.to === 'vitalik.eth'
+    })(),
+  )
+  check(
+    'nft follow-up: fresh asks, questions, and chatter never become a recipient',
+    parseNftTransferFollowUp('what NFTs do I own?') === null &&
+      parseNftTransferFollowUp('sell my Cool Cat #7 for 1 eth') === null &&
+      parseNftTransferFollowUp('how do I do that') === null &&
+      parseNftTransferFollowUp('never mind')?.kind === 'cancel',
+  )
+  // The round trip: park it, answer it, get a buildable transfer back.
+  check(
+    'nft follow-up: parked NFT + pasted address rebuild the full transfer ask',
+    (() => {
+      const open = parseNftAsk('Transfer my Pudgy Penguin #2489 NFT on Base')
+      if (!open || open.kind !== 'problem' || !open.partial) return false
+      const parked = nftTransferPending(open.partial)
+      const resumed = nftAskFromPending(parked.data, '0x2222222222222222222222222222222222222222')
+      return (
+        parked.kind === 'nft-transfer' &&
+        Object.keys(parked.data).length <= 8 &&
+        !!resumed &&
+        resumed.ref === 'Pudgy Penguin #2489' &&
+        resumed.tokenId === '2489' &&
+        resumed.chainId === 8453 &&
+        resumed.to === '0x2222222222222222222222222222222222222222'
+      )
+    })(),
+  )
+  check('nft follow-up: a parked payload with no ref never builds on a guess', nftAskFromPending({ amount: '1' }, '0x2222222222222222222222222222222222222222') === null)
+  // The gallery's own Transfer chip must round-trip its OWN flow: complete ask
+  // in, parked NFT out (a chip that auto-sends can never be half-written).
+  check(
+    'nft gallery: the Transfer chip is a complete ask that parks its NFT',
+    (() => {
+      const chip = nftRowActions({ name: 'Pudgy Penguin', identifier: '2489' }, 'Base', null)[1]
+      if (/\bto\s*$/i.test(chip.prompt)) return false
+      const open = parseNftAsk(chip.prompt)
+      return !!open && open.kind === 'problem' && open.awaiting === 'recipient' && open.partial?.tokenId === '2489' && open.partial?.chainId === 8453
+    })(),
+  )
+  // The live seam: refusal carries the pending, the address completes it.
+  const nftXferOpen = await fetch(`${BASE}/api/chat`, {
+    method: 'POST', headers: { 'content-type': 'application/json', 'x-yf-no-ask-log': '1' },
+    body: JSON.stringify({ message: 'Transfer my Pudgy Penguin #2489 NFT on Base', activeServers: [], walletAddress: '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045' }),
+  }).then((r) => r.json())
+  check(
+    'nft transfer turn: the "where should it go?" refusal parks the NFT',
+    nftXferOpen.workingContext?.pending?.kind === 'nft-transfer' && /Pudgy Penguin #2489/.test(nftXferOpen.workingContext?.pending?.summary ?? ''),
+    JSON.stringify(nftXferOpen).slice(0, 220),
+  )
+  const nftXferResume = await fetch(`${BASE}/api/chat`, {
+    method: 'POST', headers: { 'content-type': 'application/json', 'x-yf-no-ask-log': '1' },
+    body: JSON.stringify({
+      message: '0x2222222222222222222222222222222222222222',
+      activeServers: [],
+      walletAddress: '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045',
+      workingContext: nftXferOpen.workingContext,
+    }),
+  }).then((r) => r.json())
+  check(
+    'nft transfer turn: the pasted address resumes THAT NFT (never the planner)',
+    typeof nftXferResume.reply === 'string' && /pudgy penguin|#2489/i.test(nftXferResume.reply) && !/could\s*n[o']t verify|double-check/i.test(nftXferResume.reply),
+    JSON.stringify(nftXferResume).slice(0, 260),
+  )
   check(
     'nft parse: token swaps + stock sells + bare sends fall through',
     parseNftAsk('sell 1 ETH for USDC') === null &&
@@ -5030,6 +5338,357 @@ async function main() {
   )
   const nftRh = parseNftAsk('sell my pudgy penguin #2489 nft on robinhood chain for 1 eth')
   check('nft parse: robinhood-chain NFT ask answered honestly', !!nftRh && nftRh.kind === 'problem' && /Ethereum, Base/i.test(nftRh.problem), JSON.stringify(nftRh))
+  // ── The gallery READ ("show my NFTs"). Before this layer the house link
+  // /i/my-nfts answered with a planner "visit OpenSea" pointer — the funnel
+  // handing away its own conversion. The gate is deliberately narrow: a
+  // possessive, UNSPECIFIC NFT question and nothing else.
+  check(
+    'nft gallery parse: the wallet-gallery shapes are claimed',
+    ['Show my NFTs', 'show the NFTs in my wallet', 'what NFTs do I own?', 'which nfts do i have', 'list my nfts', 'my collectibles'].every(
+      (m) => parseNftListAsk(m) !== null,
+    ),
+  )
+  const nftListChain = parseNftListAsk('show my nfts on base')
+  check('nft gallery parse: a named chain scopes the read', !!nftListChain && nftListChain.chainId === 8453, JSON.stringify(nftListChain))
+  check(
+    'nft gallery parse: build asks + market questions + non-NFT asks fall through',
+    parseNftListAsk('sell my Pudgy Penguin #2489 for 4.2 ETH') === null &&
+      parseNftListAsk('send my Cool Cat NFT to vitalik.eth') === null &&
+      parseNftListAsk('buy the cheapest milady nft') === null &&
+      parseNftListAsk('list my nfts for sale') === null &&
+      parseNftListAsk('What are my NFTs worth right now — check the floor prices of my collections on OpenSea?') === null &&
+      parseNftListAsk('Are there any offers on the NFTs I own?') === null &&
+      parseNftListAsk('show my portfolio') === null &&
+      parseNftListAsk('what tokens do I own?') === null,
+  )
+  // The gallery answer and the sell/transfer builds share one row shape, so a
+  // row's own chip must come back as a buildable ask — the round-trip that
+  // keeps the card a doorway instead of a dead end.
+  const galleryRow = nftRowActions({ name: 'Pudgy Penguin', identifier: '2489' }, 'Base', 4.2)
+  const galleryResume = parseNftAsk(galleryRow[0].prompt)
+  check(
+    'nft gallery: a row Sell chip round-trips parseNftAsk (name + chain + price)',
+    !!galleryResume && galleryResume.kind === 'sell' && galleryResume.tokenId === '2489' && galleryResume.chainId === 8453 && galleryResume.priceEth === '4.2',
+    JSON.stringify(galleryResume),
+  )
+  check(
+    'nft gallery: an unpriced row still sells (the layer asks for the price)',
+    (() => {
+      const noFloor = parseNftAsk(nftRowActions({ name: 'Cool Cat', identifier: '77' }, 'Ethereum', null)[0].prompt)
+      return !!noFloor && noFloor.kind === 'problem' && /price/i.test(noFloor.problem)
+    })(),
+  )
+  // The chain picker scopes the read; a picker parked off OpenSea's coverage
+  // has nothing to scan (the caller says so rather than silently scanning).
+  check(
+    'nft gallery: chain scoping follows the picker (robinhood → empty scope)',
+    nftGalleryChains(null).length === 3 &&
+      nftGalleryChains(chainById(8453)).map((c) => c.label).join() === 'Base' &&
+      nftGalleryChains(chainById(4663)).length === 0,
+  )
+  // A gallery payload survives the meta round-trip the chat message makes.
+  const galleryDisplay = nftGalleryOf({
+    nfts: { owner: '0x1111111111111111111111111111111111111111', chains: ['Base'], failedChains: [], found: 3, nfts: [{ name: 'Pudgy #1', contract: '0xabc', tokenId: '1', chain: 'Base' }] },
+  })
+  check(
+    'nft gallery: the display contract reads back off message meta',
+    !!galleryDisplay && galleryDisplay.nfts.length === 1 && galleryDisplay.found === 3 && nftGalleryOf({ nfts: { owner: 1 } }) === null,
+    JSON.stringify(galleryDisplay),
+  )
+  // The turn itself: the ask must never come back a bare planner reply.
+  const nftGalleryTurn = await fetch(`${BASE}/api/chat`, {
+    method: 'POST', headers: { 'content-type': 'application/json', 'x-yf-no-ask-log': '1' },
+    body: JSON.stringify({ message: 'Show my NFTs', activeServers: [], walletAddress: '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045' }),
+  }).then((r) => r.json())
+  check(
+    'nft gallery turn: "Show my NFTs" answers with the read, never a visit-OpenSea pointer',
+    !!nftGalleryTurn.nfts &&
+      typeof nftGalleryTurn.nfts.owner === 'string' &&
+      Array.isArray(nftGalleryTurn.nfts.nfts) &&
+      nftGalleryTurn.buildPath === 'native-nft-gallery' &&
+      !/visit\s+opensea|opensea\.io|can't\s+query/i.test(nftGalleryTurn.reply ?? ''),
+    JSON.stringify(nftGalleryTurn).slice(0, 220),
+  )
+  const nftGalleryNoWallet = await fetch(`${BASE}/api/chat`, {
+    method: 'POST', headers: { 'content-type': 'application/json', 'x-yf-no-ask-log': '1' },
+    body: JSON.stringify({ message: 'Show my NFTs', activeServers: [] }),
+  }).then((r) => r.json())
+  check(
+    'nft gallery turn: no wallet asks to connect (never a planner shrug)',
+    nftGalleryNoWallet.connectWallet === true && nftGalleryNoWallet.buildPath === 'native-nft-gallery',
+    JSON.stringify(nftGalleryNoWallet).slice(0, 200),
+  )
+  check(
+    'nft gallery turn: the read counts as actionable (never logged as a wall)',
+    classifyTurn({ reply: 'x', nfts: { owner: '0x1', nfts: [] }, buildPath: 'native-nft-gallery' }).kind === null,
+  )
+  // ── The MARKET reads. The gallery gate refuses market questions so it
+  // never answers the wrong one — which left the OpenSea splash tile's own
+  // two chips falling to the planner ("I can't check real-time floor
+  // prices"). Both halves of that split are pinned here.
+  const nftWorthAsk = parseNftMarketAsk('What are my NFTs worth right now — check the floor prices of my collections on OpenSea?')
+  const nftOffersAsk = parseNftMarketAsk('Are there any offers on the NFTs I own?')
+  check(
+    'nft market parse: BOTH OpenSea splash chips are claimed, each by the right read',
+    !!nftWorthAsk && nftWorthAsk.kind === 'worth' && !!nftOffersAsk && nftOffersAsk.kind === 'offers',
+    JSON.stringify({ nftWorthAsk, nftOffersAsk }),
+  )
+  // The two gates share one vocabulary: every word the gallery refuses as
+  // "market" must land in the market gate. A word in neither is exactly how
+  // these asks reached the planner, so the coverage is checked word by word.
+  const marketWords = ['offer', 'offers', 'bid', 'bids', 'floor', 'floors', 'worth', 'price', 'prices', 'value', 'valuation']
+  check(
+    'nft market parse: no market word falls between the gallery gate and this one',
+    marketWords.every((w) => {
+      const m = `what is the ${w} of my nfts`
+      return parseNftListAsk(m) === null && parseNftMarketAsk(m) !== null
+    }),
+    marketWords.filter((w) => parseNftMarketAsk(`what is the ${w} of my nfts`) === null).join(',') || 'all covered',
+  )
+  check(
+    'nft market parse: an explicit bid word wins over a co-occurring "worth"',
+    parseNftMarketAsk('what are my NFTs worth — are there any offers?')?.kind === 'offers',
+  )
+  const nftWorthChain = parseNftMarketAsk('what are my nfts worth on base?')
+  check('nft market parse: a named chain scopes the read', !!nftWorthChain && nftWorthChain.chainId === 8453, JSON.stringify(nftWorthChain))
+  check(
+    'nft market parse: build asks, ONE named NFT, and non-NFT asks fall through',
+    parseNftMarketAsk('sell my Pudgy Penguin #2489 for 4.2 ETH') === null &&
+      parseNftMarketAsk('what is my Pudgy Penguin #2489 worth?') === null &&
+      parseNftMarketAsk('what is the floor price of pudgy penguins?') === null &&
+      parseNftMarketAsk('buy the cheapest milady nft') === null &&
+      parseNftMarketAsk('what is my portfolio worth?') === null &&
+      parseNftMarketAsk('what are my tokens worth right now?') === null,
+  )
+  // The valuation math: only what we actually priced lands in the total, and
+  // a collection with no floor is COUNTED as unpriced rather than as zero.
+  const marketSample = (collection: string, chainLabel: string, identifier: string) => ({
+    collection,
+    chainLabel,
+    chainId: chainLabel === 'Base' ? 8453 : 1,
+    identifier,
+    contract: '0x3333333333333333333333333333333333333333',
+    name: 'Pudgy Penguin',
+    token_standard: 'erc721',
+  })
+  const worthGroups = groupCollections([
+    marketSample('pudgy-penguins', 'Ethereum', '1'),
+    marketSample('pudgy-penguins', 'Ethereum', '2'),
+    marketSample('pudgy-penguins', 'Base', '3'),
+    marketSample('unlisted-thing', 'Ethereum', '9'),
+  ] as never)
+  check(
+    'nft worth: grouping is per collection PER CHAIN (different markets, different floors)',
+    worthGroups.length === 3 && worthGroups[0].count === 2 && worthGroups[0].chainLabel === 'Ethereum',
+    JSON.stringify(worthGroups.map((g) => `${g.key}=${g.count}`)),
+  )
+  check(
+    'nft worth: ties break deterministically (the lookup cap must pick the SAME collections twice)',
+    (() => {
+      const shuffled = groupCollections([
+        marketSample('unlisted-thing', 'Ethereum', '9'),
+        marketSample('pudgy-penguins', 'Base', '3'),
+        marketSample('pudgy-penguins', 'Ethereum', '1'),
+        marketSample('pudgy-penguins', 'Ethereum', '2'),
+      ] as never)
+      return shuffled.map((g) => g.key).join() === worthGroups.map((g) => g.key).join()
+    })(),
+    JSON.stringify(worthGroups.map((g) => g.key)),
+  )
+  const worthDisplay = valuationDisplay({
+    owner: '0x1111111111111111111111111111111111111111',
+    chains: ['Ethereum', 'Base'],
+    failedChains: [],
+    groups: worthGroups,
+    floors: new Map([
+      ['Ethereum:pudgy-penguins', 4],
+      ['Base:pudgy-penguins', 1.5],
+      ['Ethereum:unlisted-thing', null],
+    ]),
+    ethUsd: 3000,
+    found: 4,
+    collectionsFound: 3,
+  })
+  check(
+    'nft worth: the total sums ONLY priced collections (2×4 + 1×1.5), unpriced counted not zeroed',
+    worthDisplay.total === '≈ 9.5 ETH' && worthDisplay.unpriced === 1 && /28\.5K|\$28/.test(worthDisplay.totalNote ?? ''),
+    JSON.stringify({ total: worthDisplay.total, note: worthDisplay.totalNote, unpriced: worthDisplay.unpriced }),
+  )
+  check(
+    'nft worth: an unpriced collection still renders, and says it is out of the total',
+    worthDisplay.rows.length === 3 &&
+      worthDisplay.rows.every((r) => typeof r.value === 'string') &&
+      /not counted/i.test(worthDisplay.rows.find((r) => r.name === 'unlisted thing')?.note ?? ''),
+    JSON.stringify(worthDisplay.rows.map((r) => `${r.name}:${r.value}`)),
+  )
+  // Every value leaves the reader PRE-FORMATTED (the splash tile contract —
+  // a raw number where a string was expected once crashed /chat).
+  check(
+    'nft worth: a row Sell chip round-trips parseNftAsk at the collection floor',
+    (() => {
+      const resume = parseNftAsk(worthDisplay.rows[0].actions?.[0].prompt ?? '')
+      return !!resume && resume.kind === 'sell' && resume.priceEth === '4' && resume.chainId === 1
+    })(),
+    JSON.stringify(worthDisplay.rows[0].actions),
+  )
+  check(
+    'nft worth: the Sell label stays short (a collection name in it wrecked the row layout)',
+    worthDisplay.rows.every((r) => (r.actions?.[0].label.length ?? 0) <= 10),
+    JSON.stringify(worthDisplay.rows.map((r) => r.actions?.[0].label)),
+  )
+  check(
+    'nft worth: an all-unpriced wallet gets NO total (never a fabricated zero)',
+    (() => {
+      const none = valuationDisplay({
+        owner: '0x1', chains: ['Ethereum'], failedChains: [], groups: worthGroups.slice(2),
+        floors: new Map([['Ethereum:unlisted-thing', null]]), ethUsd: 3000, found: 1, collectionsFound: 1,
+      })
+      return none.total === null && none.totalNote === null && none.unpriced === 1
+    })(),
+  )
+  // Offers: the normalizer is fail-closed on the LIVE payload shape (probed
+  // 2026-07-28 — collection bids are WETH-priced criteria orders whose NFT
+  // leg sits in the consideration).
+  const rawOffer = {
+    order_hash: '0x079fe4ba',
+    chain: 'ethereum',
+    protocol_address: SEAPORT_1_6.toLowerCase(),
+    price: { currency: 'WETH', decimals: 18, value: '100000000000000' },
+    asset: { identifier: null, contract: '0x22c1f6050e56d2876009903609a2cc3fef83b415' },
+    criteria: { contract: { address: '0x22c1f6050e56d2876009903609a2cc3fef83b415' }, encoded_token_ids: '*' },
+    protocol_data: { parameters: { endTime: '1785224495', consideration: [{ itemType: 4, token: '0x22c1f6050e56d2876009903609a2cc3fef83b415', identifierOrCriteria: '0' }] } },
+  }
+  const offer = normalizeOpenseaOffer(rawOffer)
+  check(
+    'nft offers: a live WETH collection bid normalizes (and is marked collection-wide)',
+    !!offer && offer.priceWei === BigInt('100000000000000') && offer.collectionWide === true && offer.tokenId === null && offer.chainId === 1,
+    JSON.stringify(offer, (_k, v) => (typeof v === 'bigint' ? v.toString() : v)),
+  )
+  check(
+    'nft offers: the normalizer fails closed (wrong protocol, zero price, no contract)',
+    normalizeOpenseaOffer({ ...rawOffer, protocol_address: '0x000000000000000000000000000000000000dead' }) === null &&
+      normalizeOpenseaOffer({ ...rawOffer, price: { currency: 'WETH', decimals: 18, value: '0' } }) === null &&
+      normalizeOpenseaOffer({ ...rawOffer, price: { currency: 'USDC', decimals: 6, value: '100' } }) === null &&
+      normalizeOpenseaOffer({ ...rawOffer, criteria: undefined, asset: undefined, protocol_data: undefined }) === null &&
+      normalizeOpenseaOffer(null) === null,
+  )
+  const offersDisp = offersDisplay({
+    owner: '0x1111111111111111111111111111111111111111',
+    chains: ['Ethereum'],
+    failedChains: [],
+    checked: [
+      { group: groupCollections([marketSample('quiet-thing', 'Ethereum', '2489')] as never)[0], offer: null },
+      { group: groupCollections([marketSample('pudgy-penguins', 'Ethereum', '77')] as never)[0], offer: { ...offer!, priceWei: BigInt('300000000000000000') } },
+    ],
+    ethUsd: 3000,
+    found: 9,
+    collectionsFound: 5,
+  })
+  check(
+    'nft offers: bids lead, the best one is the headline, un-bid collections counted not hidden',
+    offersDisp.total === 'best 0.3 ETH' &&
+      offersDisp.rows.length === 2 &&
+      offersDisp.rows[0].value === '0.3 ETH' &&
+      offersDisp.rows[1].value === 'no bids' &&
+      offersDisp.unpriced === 1 &&
+      offersDisp.found === 9 &&
+      // a CAPPED read never reads as a complete one
+      offersDisp.scanned === '9 NFTs · 2 of 5 collections',
+    JSON.stringify({ total: offersDisp.total, rows: offersDisp.rows.map((r) => `${r.name}:${r.value}`), unpriced: offersDisp.unpriced }),
+  )
+  check(
+    'nft offers: only a bid row gets an action, and it lists AT the bid (round-trips parseNftAsk)',
+    (() => {
+      const resume = parseNftAsk(offersDisp.rows[0].actions?.[0].prompt ?? '')
+      return !!resume && resume.kind === 'sell' && resume.priceEth === '0.3' && (offersDisp.rows[1].actions ?? []).length === 0
+    })(),
+    JSON.stringify(offersDisp.rows[0].actions),
+  )
+  // The reply SENTENCE makes claims about money, so every variant is pinned
+  // here rather than left inline in the route where nothing can reach it.
+  check(
+    'nft market copy: the worth sentence carries the total and names what is NOT in it',
+    (() => {
+      const s = marketReplyCopy(worthDisplay, 'Ethereum and Base', '', '')
+      return s.includes('≈ 9.5 ETH') && /1 collection has no floor/.test(s) && /not a bid/.test(s)
+    })(),
+    marketReplyCopy(worthDisplay, 'Ethereum and Base', '', ''),
+  )
+  check(
+    'nft market copy: nothing priced → NO number, and it points at the read that can give one',
+    (() => {
+      const none = { ...worthDisplay, total: null, totalNote: null, unpriced: 3, found: 7 }
+      const s = marketReplyCopy(none, 'Ethereum', '', '')
+      return !/ETH/.test(s) && /7 NFTs/.test(s) && /offers/i.test(s)
+    })(),
+    marketReplyCopy({ ...worthDisplay, total: null, totalNote: null, unpriced: 3, found: 7 }, 'Ethereum', '', ''),
+  )
+  check(
+    'nft market copy: an all-failed read says UNKNOWN, never "you have none"',
+    (() => {
+      const dead = { ...worthDisplay, rows: [], chains: ['Ethereum', 'Base'], failedChains: ['Ethereum', 'Base'] }
+      const s = marketReplyCopy(dead, 'Ethereum and Base', '', 'Ethereum or Base')
+      return /didn't answer/.test(s) && !/No NFTs/.test(s)
+    })(),
+    marketReplyCopy({ ...worthDisplay, rows: [], chains: ['Ethereum', 'Base'], failedChains: ['Ethereum', 'Base'] }, 'Ethereum and Base', '', 'Ethereum or Base'),
+  )
+  check(
+    'nft market copy: the offers sentence agrees with the count and admits we cannot accept a bid',
+    (() => {
+      const one = marketReplyCopy(offersDisp, 'Ethereum', '', '')
+      const zero = marketReplyCopy({ ...offersDisp, total: null, unpriced: 2 }, 'Ethereum', '', '')
+      return /1 of the 2 collections you hold on Ethereum has a live bid/.test(one) && /can't accept a bid/.test(one) && /No live bids/.test(zero)
+    })(),
+    marketReplyCopy(offersDisp, 'Ethereum', '', ''),
+  )
+  // A market payload survives the meta round-trip the chat message makes.
+  check(
+    'nft market: the display contract reads back off message meta (and rejects malformed)',
+    (() => {
+      const back = nftMarketOf({ nftMarket: worthDisplay })
+      return (
+        !!back &&
+        back.kind === 'worth' &&
+        back.rows.length === 3 &&
+        nftMarketOf({ nftMarket: { owner: '0x1', rows: [], kind: 'nope' } }) === null &&
+        // values are STRINGS by contract — a raw number is a producer bug
+        nftMarketOf({ nftMarket: { owner: '0x1', kind: 'worth', rows: [{ name: 'x', detail: 'y', value: 12 }] } })?.rows.length === 0
+      )
+    })(),
+  )
+  // The turns themselves: BOTH chips must come back with the read attached —
+  // the exact repro that opened this lane (a bare "I can't browse OpenSea").
+  for (const [label, ask, kind] of [
+    ['worth', 'What are my NFTs worth right now — check the floor prices of my collections on OpenSea?', 'native-nft-worth'],
+    ['offers', 'Are there any offers on the NFTs I own?', 'native-nft-offers'],
+  ] as const) {
+    const turn = await fetch(`${BASE}/api/chat`, {
+      method: 'POST', headers: { 'content-type': 'application/json', 'x-yf-no-ask-log': '1' },
+      body: JSON.stringify({ message: ask, activeServers: [], walletAddress: '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045' }),
+    }).then((r) => r.json())
+    check(
+      `nft market turn: the "${label}" splash chip answers with the read, never a planner shrug`,
+      !!turn.nftMarket &&
+        Array.isArray(turn.nftMarket.rows) &&
+        turn.nftMarket.rows.length > 0 &&
+        turn.buildPath === kind &&
+        !/can't\s+(?:browse|check|query)|visit\s+opensea/i.test(turn.reply ?? ''),
+      JSON.stringify({ buildPath: turn.buildPath, reply: (turn.reply ?? '').slice(0, 160), rows: turn.nftMarket?.rows?.length }),
+    )
+  }
+  const nftMarketNoWallet = await fetch(`${BASE}/api/chat`, {
+    method: 'POST', headers: { 'content-type': 'application/json', 'x-yf-no-ask-log': '1' },
+    body: JSON.stringify({ message: 'Are there any offers on the NFTs I own?', activeServers: [] }),
+  }).then((r) => r.json())
+  check(
+    'nft market turn: no wallet asks to connect (never a planner shrug)',
+    nftMarketNoWallet.connectWallet === true && nftMarketNoWallet.buildPath === 'native-nft-offers',
+    JSON.stringify(nftMarketNoWallet).slice(0, 200),
+  )
+  check(
+    'nft market turn: the read counts as actionable (never logged as a wall)',
+    classifyTurn({ reply: 'x', nftMarket: { owner: '0x1', rows: [] }, buildPath: 'native-nft-worth' }).kind === null,
+  )
   // Buy asks: resolve against live listings; the grammar reads #id targets,
   // "cheapest" collection buys, and an explicit ETH cap — and never claims
   // token/stock buys (no NFT marker).
@@ -6785,6 +7444,85 @@ async function main() {
       builtOk || policyBlocked,
       !(builtOk || policyBlocked) ? JSON.stringify(q).slice(0, 160) : policyBlocked ? 'policy refused — gate live' : '',
     )
+  }
+
+  // ── Token charts (the uniform chart button + /t pages) ───────────────────
+  console.log('— token charts')
+  {
+    // The resolver is the gate: it decides which rows grow the chart button
+    // AND which symbols the candles proxy will touch. Fail-closed by design.
+    check(
+      'charts: resolver maps majors to Coinbase USD, collapses wrapped aliases',
+      chartPairFor('ETH')?.pair === 'ETH-USD' &&
+        chartPairFor('eth')?.source === 'coinbase' &&
+        chartPairFor('WETH')?.pair === 'ETH-USD' &&
+        chartPairFor('WBTC')?.pair === 'BTC-USD' &&
+        chartPairFor('ETH')?.label === 'ETH / USD',
+    )
+    check(
+      'charts: HL perps chart via hyperliquid, stables + stocks + garbage stay chartless',
+      chartPairFor('HYPE')?.source === 'hyperliquid' &&
+        chartPairFor('SYRUP')?.source === 'hyperliquid' &&
+        chartPairFor('USDC') === null &&
+        chartPairFor('USDG') === null &&
+        // Tokenized stocks are the declared follow-up — this pin flips
+        // consciously when a robinhood candle source lands.
+        chartPairFor('AAPL') === null &&
+        chartPairFor('$$$') === null &&
+        chartPairFor('') === null,
+    )
+    const fakeCandles: Candle[] = Array.from({ length: 30 }, (_, i) => ({
+      t: 1_700_000_000 + i * 3600, o: 100 + i, h: 101 + i, l: 99 + i, c: 100.5 + i, v: 10,
+    }))
+    const agg = aggregateCandles(fakeCandles, 14400)
+    check(
+      'charts: 4h aggregation buckets hourly candles with honest OHLCV',
+      agg.length === 8 &&
+        agg[0].o === fakeCandles[0].o &&
+        agg[agg.length - 1].c === fakeCandles[29].c &&
+        agg.every((c) => c.h >= c.l && c.h >= c.o && c.h >= c.c) &&
+        agg.reduce((s, c) => s + c.v, 0) === 300,
+      `buckets=${agg.length}`,
+    )
+    const nowSec = fakeCandles[29].t
+    const chg = changePct24h(fakeCandles, nowSec)
+    check('charts: 24h change anchors on the candle nearest 24h back', chg !== null && Math.abs(chg - ((129.5 - 105.5) / 105.5) * 100) < 0.01, `chg=${chg}`)
+
+    // Candles proxy: unknown symbols never reach an upstream.
+    const refuse = await fetch(`${BASE}/api/charts/candles?symbol=USDG&tf=1h`)
+    const refuseBody = await refuse.json()
+    check(
+      'charts api: chartless symbol → shape-compatible refusal, no upstream probe',
+      refuse.status === 200 && refuseBody.source === null && refuseBody.candles.length === 0 && refuseBody.error === 'no chart source',
+    )
+    const badSym = await fetch(`${BASE}/api/charts/candles?symbol=%3Cscript%3E&tf=1h`)
+    check('charts api: malformed symbol → 400', badSym.status === 400)
+    // Live feed (Coinbase public). Two honest outcomes: real candles with
+    // sane OHLC ordering, or the named feed-down refusal — never a 500.
+    const live = await fetch(`${BASE}/api/charts/candles?symbol=ETH&tf=1h`)
+    const liveBody = await live.json()
+    const liveCandles = (liveBody.candles ?? []) as Candle[]
+    const liveOk =
+      live.status === 200 &&
+      liveBody.source === 'coinbase' &&
+      liveCandles.length > 20 &&
+      typeof liveBody.last === 'number' &&
+      liveCandles.every((c) => c.h >= c.l && Number.isFinite(c.o) && Number.isFinite(c.v)) &&
+      liveCandles.every((c, i) => i === 0 || c.t > liveCandles[i - 1].t)
+    const feedDown = live.status === 200 && liveBody.error === 'feed unavailable'
+    check('charts api: ETH 1h returns live ascending candles (or the named feed-down)', liveOk || feedDown, feedDown ? 'feed down — refusal shape verified' : `n=${liveCandles.length}`)
+
+    // /t pages: chartable symbol gets the live pair page, chartless symbols
+    // get the honest still-tradable page — both carry prefill CTAs only.
+    const tEth = flat(await (await fetch(`${BASE}/t/ETH`)).text())
+    check(
+      '/t/ETH: pair header + prefill trade CTAs (never auto-send)',
+      /ETH \/ USD/.test(tEth) && tEth.includes('Buy ETH in chat') && tEth.includes(encodeURIComponent('DCA $10 into ETH weekly')) && /Non-custodial/i.test(tEth),
+    )
+    const tUsdg = flat(await (await fetch(`${BASE}/t/USDG`)).text())
+    check('/t/USDG: chartless token stays honest + tradable', tUsdg.includes('No live chart for USDG yet') && tUsdg.includes('Buy USDG in chat'))
+    const tWeth = flat(await (await fetch(`${BASE}/t/weth`)).text())
+    check('/t/weth: alias collapses to the ETH pair', /ETH \/ USD/.test(tWeth))
   }
 
   // ── Cleanup (verified) ────────────────────────────────────────────────────

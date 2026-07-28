@@ -23,7 +23,10 @@ import SendTxButton from '@/components/SendTxButton'
 import SendTxChain from '@/components/SendTxChain'
 import { orderRequestOf, txRequestOf, txChainOf } from '@/lib/transaction-layer'
 import { portfolioOf } from '@/lib/portfolio-display'
+import { nftGalleryOf, nftMarketOf } from '@/lib/nft-display'
 import PortfolioCard from '@/components/PortfolioCard'
+import NftGalleryCard from '@/components/NftGalleryCard'
+import NftMarketCard from '@/components/NftMarketCard'
 import VoteChoiceButtons from '@/components/VoteChoiceButtons'
 import VoteCandidates from '@/components/VoteCandidates'
 import ClarifyChips from '@/components/ClarifyChips'
@@ -48,6 +51,7 @@ import ChainPicker from '@/components/ChainPicker'
 import { chainById } from '@/lib/chains'
 import AppModeWorkspace from '@/components/AppModeWorkspace'
 import JobDetailOverlay from '@/components/JobDetailOverlay'
+import ChartOverlay from '@/components/ChartOverlay'
 import Link from 'next/link'
 import NavAccount from '@/components/NavAccount'
 import { YeetfulMark } from '@/components/Logo'
@@ -130,7 +134,7 @@ function MintLinkTurn({ ask, mcpsCsv }: { ask: string; mcpsCsv: string }) {
   )
 }
 
-function buildMeta(receipts: unknown, payer: unknown, voteRequest: unknown, voteCandidates?: unknown, routeReport?: unknown, routerTrace?: unknown, voteProposal?: unknown, orderRequest?: unknown, guardrails?: unknown, txRequest?: unknown, workingContext?: unknown, txChain?: unknown, clarify?: unknown, connectWallet?: unknown, connectAsk?: string, portfolio?: unknown, buildPath?: unknown, jobId?: unknown, guardianPolicyId?: unknown, jobToken?: unknown, dcaArm?: unknown) {
+function buildMeta(receipts: unknown, payer: unknown, voteRequest: unknown, voteCandidates?: unknown, routeReport?: unknown, routerTrace?: unknown, voteProposal?: unknown, orderRequest?: unknown, guardrails?: unknown, txRequest?: unknown, workingContext?: unknown, txChain?: unknown, clarify?: unknown, connectWallet?: unknown, connectAsk?: string, portfolio?: unknown, buildPath?: unknown, jobId?: unknown, guardianPolicyId?: unknown, jobToken?: unknown, nfts?: unknown, nftMarket?: unknown, dcaArm?: unknown) {
   const meta: Record<string, unknown> = {}
   if (Array.isArray(receipts) && receipts.length) {
     meta.receipts = receipts
@@ -174,6 +178,12 @@ function buildMeta(receipts: unknown, payer: unknown, voteRequest: unknown, vote
   // A portfolio-shaped tool return (wallet MCP) — PortfolioCard renders it as
   // a rich card under the reply text instead of leaving balances as prose.
   if (portfolio && typeof portfolio === 'object') meta.portfolio = portfolio
+  // The native NFT gallery read — NftGalleryCard draws the wallet's NFTs (with
+  // their Sell / Transfer prompts) under the reply.
+  if (nfts && typeof nfts === 'object') meta.nfts = nfts
+  // The native NFT market read — NftMarketCard draws collection floors + a
+  // value estimate, or the live bids, under the reply.
+  if (nftMarket && typeof nftMarket === 'object') meta.nftMarket = nftMarket
   // The ask needs a transaction but no wallet is connected — the client
   // renders a Connect-wallet button and re-runs `connectAsk` once one lands.
   if (connectWallet === true) {
@@ -717,7 +727,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
           addMessage(chatId, {
             role: 'assistant',
             content: out.content,
-            meta: buildMeta(out.receipts, out.payer, out.voteRequest, undefined, out.routeReport, out.routerTrace, out.voteProposal, out.orderRequest, undefined, out.txRequest, out.workingContext, out.txChain, out.clarify, undefined, undefined, out.portfolio, out.buildPath, out.jobId, out.guardianPolicyId, out.jobToken, out.dcaArm),
+            meta: buildMeta(out.receipts, out.payer, out.voteRequest, undefined, out.routeReport, out.routerTrace, out.voteProposal, out.orderRequest, undefined, out.txRequest, out.workingContext, out.txChain, out.clarify, undefined, undefined, out.portfolio, out.buildPath, out.jobId, out.guardianPolicyId, out.jobToken, undefined, undefined, out.dcaArm),
           })
           // Same standing-intent rail signal as the manual path.
           if (!embedded && (typeof out.jobId === 'string' || typeof out.guardianPolicyId === 'string')) {
@@ -788,7 +798,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
         addMessage(chatId, {
           role: 'assistant',
           content: data.reply || data.error || 'No response.',
-          meta: buildMeta(data.receipts, data.payer, data.voteRequest, data.voteCandidates, undefined, undefined, data.voteProposal, data.orderRequest, data.guardrails, data.txRequest, data.workingContext, data.txChain, data.clarify, data.connectWallet, userMsg, data.portfolio, data.buildPath, data.jobId, data.guardianPolicyId, data.jobToken, data.dcaArm),
+          meta: buildMeta(data.receipts, data.payer, data.voteRequest, data.voteCandidates, undefined, undefined, data.voteProposal, data.orderRequest, data.guardrails, data.txRequest, data.workingContext, data.txChain, data.clarify, data.connectWallet, userMsg, data.portfolio, data.buildPath, data.jobId, data.guardianPolicyId, data.jobToken, data.nfts, data.nftMarket, data.dcaArm),
         })
         // A standing intent was born this turn (job / DCA schedule / guardian
         // policy): the JobCard renders inline, AND the rail flips to Jobs so
@@ -1285,6 +1295,10 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
       {/* The rail's job detail card (portaled — renders nothing until a
           jobs-tab row opens it). First-party chat only. */}
       {!embedded && !simple && <JobDetailOverlay />}
+      {/* Chart buttons live inside cards that render on EVERY surface
+          (embed + /i included), so their overlay mounts ungated — a button
+          that no-ops would read as broken. No chrome, no auth inside. */}
+      <ChartOverlay />
 
       {/* Messages area — or, in App Mode, the structured workspace (panels
           fed by the working set; the input below stays docked as the command
@@ -1487,6 +1501,20 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
                         // as a rich card under the reply text (never prose-only).
                         const p = portfolioOf(msg.meta)
                         return p ? <PortfolioCard data={p} /> : null
+                      })()}
+                    {msg.role === 'assistant' &&
+                      (() => {
+                        // The native NFT gallery — the wallet's NFTs drawn under
+                        // the reply, each row one tap from a sell or transfer.
+                        const g = nftGalleryOf(msg.meta)
+                        return g ? <NftGalleryCard data={g} onPick={(prompt) => runExample(prompt)} /> : null
+                      })()}
+                    {msg.role === 'assistant' &&
+                      (() => {
+                        // The native NFT market read — collection floors + a
+                        // value estimate, or the live bids, with Sell chips.
+                        const m = nftMarketOf(msg.meta)
+                        return m ? <NftMarketCard data={m} onPick={(prompt) => runExample(prompt)} /> : null
                       })()}
                     {msg.role === 'assistant' && <MessageReceipts meta={msg.meta} />}
                     {msg.role === 'assistant' && <RouteReport meta={msg.meta} />}

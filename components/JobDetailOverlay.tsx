@@ -14,7 +14,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useRouter } from 'next/navigation'
-import { motion, AnimatePresence } from 'framer-motion'
+import { motion } from 'framer-motion'
 import { CalendarClock, ListChecks, Loader2, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useYeetfulStore } from '@/lib/store'
@@ -147,13 +147,16 @@ export default function JobDetailOverlay() {
 
   const chip = schedule ? dcaRunChip({ id: schedule.id, buyUsd: schedule.buyUsd, buyToken: schedule.buyToken, cadence: schedule.cadence }) : null
 
+  // Entrance ONLY — an exit animation strands the invisible backdrop over the
+  // whole page when rAF starves (busy real tabs, not just headless: the App
+  // Mode ghost-panel lesson), and a stranded backdrop eats every click. Close
+  // is instant unmount.
   return createPortal(
-    <AnimatePresence>
+    <>
       {jobDetail && (
         <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
           transition={{ duration: 0.15 }}
           className="fixed inset-0 z-[70] flex items-start justify-center overflow-y-auto bg-black/60 backdrop-blur-sm p-4 pt-[10vh]"
           onClick={close}
@@ -240,7 +243,7 @@ export default function JobDetailOverlay() {
           </div>
         </motion.div>
       )}
-    </AnimatePresence>,
+    </>,
     document.body,
   )
 }

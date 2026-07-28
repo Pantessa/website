@@ -166,8 +166,16 @@ interface BuiltStep {
   summary?: string
   tx?: { to?: string; data?: string; value?: string; chainId?: number }
 }
+/** The app-fee echo the MCP passes through from 1Click's quote response:
+ *  what we asked for, and the 50/50 split 1Click actually applied. */
+export interface BuiltAppFee {
+  requested?: Array<{ recipient?: string; fee?: number }>
+  applied?: Array<{ recipient?: string; fee?: number }> | null
+  note?: string
+}
 export interface BuiltSwap {
   kind?: string
+  appFee?: BuiltAppFee
   quote?: { sell?: { amountAtoms?: string; token?: string; chain?: string; usd?: string }; receive?: { token?: string; chain?: string }; summary?: string }
   deposit?: { address?: string; addressExpires?: string | null; deliveredTo?: string }
   balanceCheck?: { ok?: boolean | null; note?: string }
@@ -193,6 +201,10 @@ export interface GuardResult {
   reasons: string[]
   /** Advisory notes (e.g. low balance) — shown but not blocking. */
   warnings: string[]
+  /** Operator-only notes about the venue fee — traced, never user-facing. */
+  feeNotes?: string[]
+  /** Net bps of the venue fee this build actually carries (0 when none). */
+  feeBps?: number
   tx?: EvmTxRequest
   depositAddress?: string
   summary?: string
@@ -214,7 +226,54 @@ const eqAddr = (a?: string, b?: string): boolean => {
  * the quoted amount to the API's one-time deposit address, on the origin
  * chain — nothing the model wrote, only what the tool built and we decoded.
  */
-export function guardCrossChainBuild(built: BuiltSwap, expected: { chainId: number | null }): GuardResult {
+/**
+ * Verify the venue fee on a build we asked to carry one. The user's funds are
+ * never at risk from the fee itself — it comes out of the OUTPUT, so a
+ * missing one costs us revenue, not them — but an EVM recipient we did NOT
+ * pin means someone redirected value out of the user's swap, and that is a
+ * refusal. 1Click's own protocol share arrives as a non-EVM implicit
+ * account, so only 0x recipients are ours to police.
+ *
+ * Returns block reasons (fatal) and notes (advisory, e.g. the fee silently
+ * didn't apply because the MCP hasn't been redeployed yet).
+ */
+export function checkCrossChainFee(
+  built: BuiltSwap,
+  expected: { recipient: string; bps: number } | null,
+): { reasons: string[]; notes: string[] } {
+  const reasons: string[] = []
+  const notes: string[] = []
+  const applied = built.appFee?.applied
+  if (!expected) {
+    // We asked for no fee — any app fee at all is unexpected value leaving
+    // the swap, and we refuse rather than pass it on.
+    if (applied?.length) reasons.push('The quote carries an app fee we did not request — refusing.')
+    return { reasons, notes }
+  }
+  if (!applied?.length) {
+    notes.push('fee not applied by the venue (older MCP build) — the swap is unaffected')
+    return { reasons, notes }
+  }
+  const evmEntries = applied.filter((f) => typeof f.recipient === 'string' && /^0x[0-9a-fA-F]{40}$/.test(f.recipient))
+  const ours = evmEntries.filter((f) => eqAddr(f.recipient, expected.recipient))
+  const foreign = evmEntries.filter((f) => !eqAddr(f.recipient, expected.recipient))
+  if (foreign.length > 0) {
+    reasons.push(`The quote pays an app fee to an address we did not pin (${foreign[0].recipient}) — refusing.`)
+  }
+  if (ours.length === 0) {
+    notes.push('fee not applied by the venue — the swap is unaffected')
+  }
+  const totalBps = applied.reduce((s, f) => s + (typeof f.fee === 'number' ? f.fee : 0), 0)
+  if (totalBps > expected.bps) {
+    reasons.push(`The quote's app fee (${totalBps} bps) exceeds the ${expected.bps} bps we requested — refusing.`)
+  }
+  return { reasons, notes }
+}
+
+export function guardCrossChainBuild(
+  built: BuiltSwap,
+  expected: { chainId: number | null; fee?: { recipient: string; bps: number } | null },
+): GuardResult {
   const reasons: string[] = []
   const warnings: string[] = []
 
@@ -270,10 +329,21 @@ export function guardCrossChainBuild(built: BuiltSwap, expected: { chainId: numb
     warnings.push(built.balanceCheck.note)
   }
 
+  // Fee problems that BLOCK are reasons; the rest are operator notes (traced,
+  // never shown as a "⚠️ Heads up" — a fee that didn't apply is our revenue
+  // problem, not something the user needs to worry about mid-swap).
+  const fee = checkCrossChainFee(built, expected.fee ?? null)
+  reasons.push(...fee.reasons)
+
   return {
     ok: reasons.length === 0,
     reasons,
     warnings,
+    feeNotes: fee.notes,
+    // What the USER paid (the requested rate), only once the venue confirms
+    // it applied — the disclosure line must never claim a fee that isn't on
+    // the quote, and never omit one that is.
+    feeBps: fee.notes.length === 0 && expected.fee ? expected.fee.bps : 0,
     tx: reasons.length === 0 ? { to: tx.to, data, value, chainId: tx.chainId, action: 'deposit' } : undefined,
     depositAddress,
     summary: step.summary ?? built.quote?.summary,

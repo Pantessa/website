@@ -18,6 +18,7 @@ import { cn } from '@/lib/utils'
 import { useYeetfulStore } from '@/lib/store'
 import { cadenceLabel, dcaRunChip, type DcaCadence } from '@/lib/dca'
 import ShareReceiptButton from '@/components/ShareReceiptButton'
+import { ChartHoverButton } from '@/components/TokenChartButton'
 import { LIVE_JOB_STATUS, useRunningWork, type RunningGuard, type RunningJob, type RunningSchedule } from '@/lib/use-running-work'
 
 function jobDot(status: string) {
@@ -188,13 +189,14 @@ export default function JobsRailTab({ onAct }: { onAct?: () => void }) {
           }
         }}
         title="Open this recurring buy — what it's bought, your position, this period's state"
-        className="px-2.5 py-2 rounded-xl hover:bg-[var(--surf-1)] transition-colors cursor-pointer"
+        className="group px-2.5 py-2 rounded-xl hover:bg-[var(--surf-1)] transition-colors cursor-pointer"
       >
         <div className="flex items-center gap-2">
           <CalendarClock className="w-3.5 h-3.5 flex-shrink-0 text-[color:var(--muted)]" aria-hidden />
           <span className="flex-1 min-w-0 text-xs font-medium truncate">
             ${s.buyUsd} {s.buyToken} · {cadenceLabel(s.cadence as DcaCadence)}
           </span>
+          <ChartHoverButton symbol={s.buyToken} />
           <span className={cn('text-[10px] mono whitespace-nowrap', st.tone)}>{st.word}</span>
         </div>
         <div className="ml-[22px] mt-0.5 flex items-center gap-2">

@@ -60,20 +60,22 @@ export interface CompiledJob {
 // AAPL" — the exact resume string the chat route's funding-offer chips emit
 // (prepareSwapTurn detects an unfunded Robinhood Chain buy and proposes the
 // plan). Deterministic on purpose: the chip IS the contract, so the parse
-// stays narrow — "fund robinhood … with $X from <origin> [using usdc.e]"
-// and nothing looser. Origins: Base, Ethereum, Arbitrum (the LiFi-probed
-// set); the "using" clause picks a registry-known bridged variant.
+// stays narrow — "fund robinhood … with $X from <origin> [using usdc.e |
+// using eth]" and nothing looser. Origins: Base, Ethereum, Arbitrum (the
+// LiFi-probed set); the "using" clause picks a registry-known bridged
+// variant or native ETH.
 
 export interface RobinhoodFundingAsk {
-  /** Total dollars of origin USDC to convert (gas leg included when flagged). */
+  /** Total dollars of origin funds to convert (gas leg included when flagged). */
   fundUsd: number
-  /** True when a gas leg (origin USDC → native ETH on 4663) must come first. */
+  /** True when a gas leg (origin funds → native ETH on 4663) must come first. */
   gasIncluded: boolean
-  /** The origin chain the USDC leaves from. */
+  /** The origin chain the funds leave from. */
   originChainId: number
   originWord: string
-  /** The origin-side sell stable: 'USDC', or a registry-known bridged
-   *  variant ('USDC.e' via the "using usdc.e" clause). Both legs sell it. */
+  /** The origin-side sell asset: 'USDC', a registry-known bridged variant
+   *  ('USDC.e' via "using usdc.e"), or native 'ETH' ("using eth"). Both
+   *  legs sell it. */
   token: string
 }
 
@@ -105,7 +107,7 @@ export function parseRobinhoodFunding(segment: string): RobinhoodFundingAsk | nu
     gasIncluded: /\bincluding\s+gas\b/i.test(segment),
     originChainId: origin.id,
     originWord: origin.word,
-    token: /\busing\s+usdc\.?e\b/i.test(segment) ? 'USDC.e' : 'USDC',
+    token: /\busing\s+usdc\.?e\b/i.test(segment) ? 'USDC.e' : /\busing\s+eth\b/i.test(segment) ? 'ETH' : 'USDC',
   }
 }
 
@@ -251,8 +253,8 @@ export const JOB_SEGMENT_PARSERS: JobSegmentParser[] = [
       if (!fund) return null
       // A bridged-variant ask only compiles where the registry knows the
       // token — "using usdc.e" from Base would otherwise become a job whose
-      // every build refuses.
-      if (fund.token !== 'USDC' && fundingAltUsdcFor(fund.originChainId)?.symbol !== fund.token) {
+      // every build refuses. Native ETH exists on every origin.
+      if (fund.token !== 'USDC' && fund.token !== 'ETH' && fundingAltUsdcFor(fund.originChainId)?.symbol !== fund.token) {
         return { problem: `${fund.originWord} has no ${fund.token} in the chain registry — only Arbitrum's bridged USDC.e is supported.` }
       }
       const usdgUsd = Math.max(0, Number((fund.fundUsd - (fund.gasIncluded ? GAS_LEG_USD : 0)).toFixed(2)))

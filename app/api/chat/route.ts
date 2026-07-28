@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse, after } from 'next/server'
 import { attachFundsSnapshot, classifyTurn, moneyShaped, recordAskFailure } from '@/lib/ask-failure'
 import { erc20Abi, formatEther, formatUnits, getAddress, isAddress, parseEther } from 'viem'
-import { openseaSlugOf } from '@/lib/opensea'
+import { openseaEnabled, openseaSlugOf } from '@/lib/opensea'
 import { getPaidFetch, hasAgentWallet } from '@/lib/agent-wallet'
 import {
   decodeSettlement,
@@ -42,6 +42,7 @@ import {
   type CrossChainSwapParams,
   type BuiltSwap,
 } from '@/lib/cross-chain-swap'
+import { CROSS_CHAIN_FEE_BPS, TREASURY_ADDRESS } from '@/lib/fees'
 import { prettyChainWord } from '@/lib/chain-lexicon'
 import { arbitrumUsdcBalance, buildHlExecTurn, hlAgentOf, HL_MIN_DEPOSIT_USDC, hlOpenCollateralShortfall, parseHlIntent, type HlOpenShortfall, type HlOrderIntent } from '@/lib/hyperliquid-exec'
 import { parseGuardianArm } from '@/lib/hl-guardian'
@@ -81,7 +82,9 @@ import {
 } from '@/lib/aave-supply'
 import { policyCheck, buildReport } from '@/lib/tx-guardrails'
 import { buildGuardrailedOrder } from '@/lib/cow-build'
-import { parseNftAsk, buildNftBuy, buildNftTransfer, buildNftListing } from '@/lib/nft-layer'
+import { parseNftAsk, parseNftListAsk, parseNftMarketAsk, parseNftTransferFollowUp, nftAskFromPending, nftTransferPending, buildNftBuy, buildNftTransfer, buildNftListing } from '@/lib/nft-layer'
+import { chainListSentence, nftGalleryChains, readNftGallery } from '@/lib/nft-gallery'
+import { marketReplyCopy, readNftOffers, readNftWorth } from '@/lib/nft-market'
 import { parseTransferSegment, buildTransferArtifact } from '@/lib/transfer-exec'
 import { buildUniswapSwap, NoV3PoolError } from '@/lib/uniswap-venue'
 import { buildUniswapV4Swap, NoV4PoolError, GatedV4PoolError } from '@/lib/uniswap-v4'
@@ -1047,6 +1050,139 @@ async function handleChatTurn(req: NextRequest) {
       }
     }
 
+    // ── Native NFT gallery (the READ half of the layer). "Show my NFTs" is a
+    //    wallet question, and every other surface answers it (splash card, App
+    //    Mode panel) — but in-chat it fell past every native gate to the
+    //    planner, which holds no chain reads and answered the house link
+    //    /i/my-nfts with "I can't query blockchain data — visit OpenSea". A
+    //    go-elsewhere pointer IS the funnel handing away its own conversion,
+    //    so the layer claims the ask and does the read itself (server OpenSea
+    //    key, same as the builds below — never gated on the MCP being in the
+    //    set, exactly like the rest of the native layer). Rows come back with
+    //    Sell / Transfer prompts that round-trip parseNftAsk, so the gallery
+    //    is the doorway into the build half.
+    const nftListAsk = parseNftListAsk(message)
+    if (nftListAsk) {
+      if (!walletAddress) {
+        nativeTrace({ type: 'note', level: 'info', label: 'nft gallery ask but no wallet connected — asking to connect before reading' })
+        return NextResponse.json({
+          reply: "🖼️ Connect your wallet and I'll show you the NFTs it holds across Ethereum, Base, and Arbitrum — then you can sell or transfer any of them right here.",
+          connectWallet: true,
+          buildPath: 'native-nft-gallery',
+        })
+      }
+      if (!openseaEnabled()) {
+        // Fail closed, but never by pointing the user off-site: say what's
+        // broken. (The build half refuses the same way.)
+        nativeTrace({ type: 'note', level: 'warn', label: 'nft gallery ask but OPENSEA_API_KEY is not configured — answering honestly' })
+        return NextResponse.json({
+          reply: "🖼️ I can't read NFT holdings right now — this server has no OpenSea key configured. Nothing's wrong with your wallet; the read is just unavailable.",
+          buildPath: 'native-nft-gallery',
+        })
+      }
+      const scopeChain = nftListAsk.chainId ?? selectedChainId ?? null
+      const chainIds = nftGalleryChains(scopeChain ? chainById(scopeChain) : null)
+      if (chainIds.length === 0) {
+        const named = scopeChain ? chainById(scopeChain)?.name : null
+        nativeTrace({ type: 'note', level: 'info', label: `nft gallery scoped to ${named ?? 'an unsupported chain'} — outside OpenSea's coverage` })
+        return NextResponse.json({
+          reply: `🖼️ OpenSea doesn't cover ${named ?? 'that chain'} — I can show you the NFTs you hold on Ethereum, Base, or Arbitrum. Switch the chain picker (or say "show my NFTs on Base") and I'll read them.`,
+          buildPath: 'native-nft-gallery',
+        })
+      }
+      nativeTrace({
+        type: 'select',
+        service: 'OpenSea (native NFT gallery)',
+        endpoint: `account NFTs · ${chainIds.map((c) => c.label).join(', ')}`,
+        priceUsd: 0,
+        reason: 'native nft layer — the wallet read answers in-chat instead of pointing off-site',
+      })
+      // Slightly wider than the splash card (which is a glance): a turn that
+      // asked for "my NFTs" should show more of them.
+      const gallery = await readNftGallery(walletAddress, { chainIds, perChain: 20, max: 12, floorCollections: 4 })
+      const scanned = chainListSentence(gallery.chains, 'and')
+      const failed = gallery.failedChains.length > 0 ? ` (${chainListSentence(gallery.failedChains, 'and')} didn't answer — there may be more there)` : ''
+      let reply: string
+      if (gallery.nfts.length > 0) {
+        const shown = gallery.found > gallery.nfts.length ? `the ${gallery.nfts.length} most recent of ${gallery.found}` : `${gallery.found} NFT${gallery.found === 1 ? '' : 's'}`
+        reply = `🖼️ You hold ${shown} on ${scanned}${failed}. Tap any of them to sell or transfer it — I'll build the transaction and you sign it.`
+      } else if (gallery.failedChains.length === gallery.chains.length) {
+        reply = `🖼️ OpenSea didn't answer for ${chainListSentence(gallery.failedChains, 'or')} just now, so I can't say what you hold. Ask again in a moment.`
+      } else {
+        reply = `🖼️ No NFTs in your wallet on ${chainListSentence(gallery.chains)}${failed} — nothing to show yet.`
+      }
+      nativeTrace({ type: 'status', label: `nft gallery read: ${gallery.found} owned across ${gallery.chains.length} chain(s)${gallery.failedChains.length ? `, ${gallery.failedChains.length} unreadable` : ''}` })
+      // The gallery rides EVERY outcome (empty included) — its presence means
+      // the read actually ran, which is what separates this from the planner
+      // shrug it replaced. The card draws nothing when there are no rows.
+      return NextResponse.json({ reply, nfts: gallery, buildPath: 'native-nft-gallery' })
+    }
+
+    // ── Native NFT MARKET reads. The gallery gate above refuses market
+    //    questions on purpose (it must never answer the wrong one), which
+    //    left the OpenSea splash tile's own two chips — "What are my NFTs
+    //    worth right now?" and "Are there any offers on the NFTs I own?" —
+    //    falling straight to the planner, which answered "I can't browse
+    //    OpenSea / check real-time floor prices". Same fix, one question
+    //    over: the layer claims the ask, reads OpenSea with the server key,
+    //    and always carries an artifact. Rows carry Sell chips that
+    //    round-trip parseNftAsk, so the answer opens the build half.
+    const nftMarketAsk = parseNftMarketAsk(message)
+    if (nftMarketAsk) {
+      const marketPath = nftMarketAsk.kind === 'offers' ? 'native-nft-offers' : 'native-nft-worth'
+      if (!walletAddress) {
+        nativeTrace({ type: 'note', level: 'info', label: `nft ${nftMarketAsk.kind} ask but no wallet connected — asking to connect before reading` })
+        return NextResponse.json({
+          reply:
+            nftMarketAsk.kind === 'offers'
+              ? "🤝 Connect your wallet and I'll check every live bid on the NFTs it holds across Ethereum, Base, and Arbitrum."
+              : "💰 Connect your wallet and I'll price the NFTs it holds against each collection's current OpenSea floor.",
+          connectWallet: true,
+          buildPath: marketPath,
+        })
+      }
+      if (!openseaEnabled()) {
+        nativeTrace({ type: 'note', level: 'warn', label: `nft ${nftMarketAsk.kind} ask but OPENSEA_API_KEY is not configured — answering honestly` })
+        return NextResponse.json({
+          reply: "🖼️ I can't read OpenSea market data right now — this server has no OpenSea key configured. Nothing's wrong with your wallet; the read is just unavailable.",
+          buildPath: marketPath,
+        })
+      }
+      const marketScope = nftMarketAsk.chainId ?? selectedChainId ?? null
+      const marketChains = nftGalleryChains(marketScope ? chainById(marketScope) : null)
+      if (marketChains.length === 0) {
+        const named = marketScope ? chainById(marketScope)?.name : null
+        nativeTrace({ type: 'note', level: 'info', label: `nft ${nftMarketAsk.kind} read scoped to ${named ?? 'an unsupported chain'} — outside OpenSea's coverage` })
+        return NextResponse.json({
+          reply: `🖼️ OpenSea doesn't cover ${named ?? 'that chain'} — I can price (and check bids on) the NFTs you hold on Ethereum, Base, or Arbitrum. Switch the chain picker and ask again.`,
+          buildPath: marketPath,
+        })
+      }
+      nativeTrace({
+        type: 'select',
+        service: 'OpenSea (native NFT market read)',
+        endpoint: `${nftMarketAsk.kind === 'offers' ? 'best offers' : 'collection floors'} · ${marketChains.map((c) => c.label).join(', ')}`,
+        priceUsd: 0,
+        reason: 'native nft layer — the market read answers in-chat instead of pointing off-site',
+      })
+      const market = nftMarketAsk.kind === 'offers' ? await readNftOffers(walletAddress, marketChains) : await readNftWorth(walletAddress, marketChains)
+      const marketFailed =
+        market.failedChains.length > 0 ? ` (${chainListSentence(market.failedChains, 'and')} didn't answer — there may be more there)` : ''
+      const marketReply = marketReplyCopy(
+        market,
+        chainListSentence(market.chains, 'and'),
+        marketFailed,
+        chainListSentence(market.failedChains, 'or'),
+      )
+      nativeTrace({
+        type: 'status',
+        label: `nft ${nftMarketAsk.kind} read: ${market.rows.length} row(s), ${market.unpriced} unpriced, ${market.found} owned${market.failedChains.length ? `, ${market.failedChains.length} chain(s) unreadable` : ''}`,
+      })
+      // Like the gallery, the artifact rides EVERY outcome — its presence is
+      // what proves the read actually ran.
+      return NextResponse.json({ reply: marketReply, nftMarket: market, buildPath: marketPath })
+    }
+
     // ── Native NFT layer (deterministic). Claims only turns that name an NFT
     //    (the word "nft"/"opensea", a "#id", or a contract#id pair), so token
     //    swaps and stock sells never land here — and it runs BEFORE the swap
@@ -1057,11 +1193,47 @@ async function handleChatTurn(req: NextRequest) {
     //    artifact (SignNftListingButton) and re-verified at the submit relay.
     //    Buys: live-listing resolve → OpenSea fulfillment re-encoded LOCALLY,
     //    target pinned to Seaport 1.6, price re-checked vs floor/cap.
-    const nftAsk = parseNftAsk(message)
+    //    Continuity: a recipient-less transfer parks the resolved NFT in
+    //    workingContext, so the user's next line — a bare address answering
+    //    "where should it go?" — completes THAT transfer here instead of
+    //    reaching the planner, which has no NFT to name and invents one.
+    const pendingNftTransfer =
+      workingContext?.pending && workingContext.pending.kind === 'nft-transfer' ? workingContext.pending : undefined
+    let nftAsk = parseNftAsk(message)
+    if (!nftAsk && pendingNftTransfer) {
+      const fu = parseNftTransferFollowUp(message)
+      if (fu?.kind === 'cancel') {
+        nativeTrace({ type: 'status', label: 'pending nft transfer dropped by the user — nothing was built' })
+        return NextResponse.json({
+          reply: `👍 Dropped it — the ${pendingNftTransfer.data.ref ?? 'NFT'} transfer was never built, so it hasn't moved.`,
+          workingContext: { v: 1, age: 0, ...(workingContext?.scope ? { scope: workingContext.scope } : {}) } satisfies WorkingContext,
+        })
+      }
+      if (fu?.kind === 'recipient') {
+        const resumed = nftAskFromPending(pendingNftTransfer.data, fu.to)
+        if (resumed) {
+          nativeTrace({ type: 'status', label: `recipient answered a pending nft transfer — resuming "${resumed.ref}" → ${fu.to}` })
+          nftAsk = resumed
+        }
+      }
+    }
     if (nftAsk) {
       if (nftAsk.kind === 'problem') {
-        nativeTrace({ type: 'status', label: 'native nft layer claimed the turn — ask incomplete, answering honestly (no build)' })
-        return NextResponse.json({ reply: `🖼️ ${nftAsk.problem}` })
+        nativeTrace({ type: 'status', label: `native nft layer claimed the turn — ask incomplete${nftAsk.awaiting ? ` (awaiting the ${nftAsk.awaiting})` : ''}, answering honestly (no build)` })
+        return NextResponse.json({
+          reply: `🖼️ ${nftAsk.problem}`,
+          // Park the resolved NFT so the answer to the question completes it.
+          ...(nftAsk.awaiting === 'recipient' && nftAsk.partial
+            ? {
+                workingContext: {
+                  v: 1,
+                  age: 0,
+                  ...(workingContext?.scope ? { scope: workingContext.scope } : {}),
+                  pending: nftTransferPending(nftAsk.partial),
+                } satisfies WorkingContext,
+              }
+            : {}),
+        })
       }
       if (!walletAddress) {
         nativeTrace({ type: 'note', level: 'info', label: 'nft ask but no wallet connected — asking to connect before building' })
@@ -1634,7 +1806,7 @@ async function callAgentTool(endpoint: string, tool: string, args: Record<string
  */
 function composeCrossChainReply(
   params: CrossChainSwapParams,
-  guard: { depositAddress?: string; addressExpires?: string | null; warnings: string[] },
+  guard: { depositAddress?: string; addressExpires?: string | null; warnings: string[]; feeBps?: number },
   summary: string,
   walletAddress: string,
 ): string {
@@ -1665,6 +1837,12 @@ function composeCrossChainReply(
   if (recvNum && sellNum > 0 && recv![2].toUpperCase() === sellTok) {
     const pct = Math.round((1 - recvNum / sellNum) * 100)
     if (pct >= 5) lines.push(`- **Rate note:** ~${pct}% of this goes to route costs at this size — larger amounts get a much better rate`)
+  }
+  // The fee rides the venue's own quote (nothing extra to sign), so it's
+  // already inside the "you receive" number — name it rather than let it
+  // read as a worse rate.
+  if (guard.feeBps) {
+    lines.push(`- **Yeetful fee:** ${(guard.feeBps / 100).toFixed(2)}% — taken by the venue out of the amount delivered, no extra transaction`)
   }
   if (guard.depositAddress) {
     lines.push(`- **Deposit address:** one-time, guard-verified — \`${short(guard.depositAddress)}\`${expires ? ` (expires ${expires})` : ''}`)
@@ -1714,6 +1892,12 @@ async function buildCrossChainSwapTurn(
       destinationToken: params.destinationToken,
       amount: params.amount,
       from: walletAddress,
+      // The venue-native fee: 1Click takes it out of the INPUT before the
+      // swap, so the deposit the user signs is unchanged — no extra step,
+      // no second signature. Recipient is PINNED from lib/fees (never from
+      // the model, never from the tool's own suggestion).
+      feeRecipient: TREASURY_ADDRESS,
+      feeBps: CROSS_CHAIN_FEE_BPS,
     })) as BuiltSwap
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'the build failed'
@@ -1723,7 +1907,10 @@ async function buildCrossChainSwapTurn(
     })
   }
 
-  const guard = guardCrossChainBuild(built, { chainId: expectedOriginChainId(params.originChain) })
+  const guard = guardCrossChainBuild(built, {
+    chainId: expectedOriginChainId(params.originChain),
+    fee: { recipient: TREASURY_ADDRESS, bps: CROSS_CHAIN_FEE_BPS },
+  })
   if (!guard.ok || !guard.tx) {
     // A verification failure is a REFUSAL, not a warning — never offer a
     // transfer we couldn't prove is correct.
@@ -1734,6 +1921,7 @@ async function buildCrossChainSwapTurn(
     })
   }
   trace({ type: 'status', label: 'guard verified the deposit transfer — Sign & send card built, awaiting signature' })
+  for (const note of guard.feeNotes ?? []) trace({ type: 'note', level: 'warn', label: `venue fee: ${note}` })
 
   // Price the leg for money-moved and the links board (fail-soft): the
   // quote's own USD figure first, else the origin-chain venue probe. A
@@ -2785,7 +2973,7 @@ async function prepareSwapTurn(intent: SwapIntent, walletAddress: string | undef
               reply:
                 `🌉 **We can make this happen — just a notch smaller.** ${acquiring ? 'You asked for' : 'The buy needs'} ~$${buyUsd} of ${rhStable.symbol} on ${chain.name} and you're at ~$${holdingUsd.toFixed(2)} there; across the chains I can bridge from I see: ${advice.copy}. ` +
                 `That doesn't quite cover $${buyUsd} — but it does cover **$${downsized.buyUsd}**${includeGas ? ' (gas leg included)' : ''}, built and guard-checked when it's your turn to sign. ` +
-                `Or top up USDC on Base, Ethereum, or Arbitrum (or ${rhStable.symbol} on ${chain.name}), tell me when it's there, and I'll run the full $${buyUsd}.${inflightSuffix}`,
+                `Or top up USDC or ETH on Base, Ethereum, or Arbitrum (or ${rhStable.symbol} on ${chain.name}), tell me when it's there, and I'll run the full $${buyUsd}.${inflightSuffix}`,
               clarify: {
                 question: `Run the size your wallet covers?`,
                 options: [...downsized.chips, { label: 'Not now', resume: 'Never mind — leave my funds where they are.' }],
@@ -2807,7 +2995,7 @@ async function prepareSwapTurn(intent: SwapIntent, walletAddress: string | undef
           reply:
             `🌉 Here's where this stands: ${acquiring ? 'you asked for' : 'the buy needs'} ~$${buyUsd} of ${rhStable.symbol} on ${chain.name} and the wallet holds ~$${holdingUsd.toFixed(2)} there. ` +
             `Across the chains I can bridge from I see: ${advice.copy} — not enough yet for the ~$${needUsd} plan${includeGas ? ' (gas leg included)' : ''}. ` +
-            `Here's what unlocks it: top up USDC on Base, Ethereum, or Arbitrum (or ${rhStable.symbol} on ${chain.name}), tell me when it's there, and I'll pick it up from that point — nothing was built or spent in the meantime.${inflightSuffix}`,
+            `Here's what unlocks it: top up USDC or ETH on Base, Ethereum, or Arbitrum (or ${rhStable.symbol} on ${chain.name}), tell me when it's there, and I'll pick it up from that point — nothing was built or spent in the meantime.${inflightSuffix}`,
           workingContext: pendingFunding,
         })
       } else if (acquiring) {

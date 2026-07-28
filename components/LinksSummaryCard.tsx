@@ -12,6 +12,7 @@ import Link from 'next/link'
 import { useEffect, useState } from 'react'
 import { Check, Copy, Link2, Plus } from 'lucide-react'
 import { Card } from '@/lib/dashboard-ui'
+import { formatEarnedUsd } from '@/lib/fees'
 
 interface LinksApi {
   links: {
@@ -23,7 +24,14 @@ interface LinksApi {
     signedUsd: number
     signsCount: number
   }[]
-  earnings: { totalEarnedUsd: number; claimedUsd: number; claimableUsd: number; minClaimUsd: number }
+  earnings: {
+    totalEarnedUsd: number
+    /** Signed notional that took a fee-bearing route — the earnings base. */
+    totalFeeBearingUsd: number
+    claimedUsd: number
+    claimableUsd: number
+    minClaimUsd: number
+  }
 }
 
 interface HandleApi {
@@ -36,6 +44,12 @@ const tweetLinkHref = (ask: string, url: string) =>
   `https://twitter.com/intent/tweet?text=${encodeURIComponent(`“${ask}” — tap it, connect your wallet, done.`)}&url=${encodeURIComponent(`https://yeetful.com${url}`)}`
 
 const usd = (n: number) => (n >= 1000 ? `$${Math.round(n).toLocaleString('en-US')}` : `$${n.toFixed(2)}`)
+
+/** The one sentence that explains an honest zero — which routes pay a fee at
+ *  all. Bridges (NEAR Intents), transfers, stakes and sales are fee-free by
+ *  the conversions-not-movements rule, so they earn a creator nothing. */
+const FEE_FREE_NOTE =
+  'You keep half of the 0.20% fee on swaps and stock buys. Bridges, transfers, stakes and sales are fee-free — they move money but earn nothing.'
 
 const PAGE_SIZE = 5
 
@@ -188,23 +202,36 @@ export default function LinksSummaryCard() {
               { label: 'Moved', value: usd(movedUsd) },
               {
                 label: 'Earned',
-                value: usd(earned?.totalEarnedUsd ?? 0),
+                // Sub-cent precision on purpose: half of 20 bps on a $1 test
+                // swap is $0.001, and "$0.00" would read as "the rail is
+                // broken" on exactly the conversion you minted to prove it.
+                value: formatEarnedUsd(earned?.totalEarnedUsd ?? 0),
                 sub:
                   earned && earned.claimableUsd > 0
                     ? earned.claimableUsd >= earned.minClaimUsd
                       ? `${usd(earned.claimableUsd)} claimable`
                       : `claims open at $${earned.minClaimUsd}`
-                    : undefined,
+                    : // Money moved but none of it fee-bearing: say WHY, or a
+                      // zero next to a conversion looks like a bug.
+                      earned && earned.totalFeeBearingUsd <= 0 && movedUsd > 0
+                      ? 'fee-free route'
+                      : undefined,
+                dim: !!earned && earned.claimableUsd <= 0,
+                title: FEE_FREE_NOTE,
               },
             ] as const
           ).map((s) => (
-            <div key={s.label} className="min-w-0">
+            <div key={s.label} className="min-w-0" title={'title' in s ? s.title : undefined}>
               <p className="mono text-[18px] tabular-nums text-white truncate">{s.value}</p>
               <p className="mono text-[10px] uppercase tracking-wider text-[color:var(--muted-2)] mt-0.5">
                 {s.label}
               </p>
               {'sub' in s && s.sub && (
-                <p className="text-[10.5px] text-[color:var(--accent)] mt-0.5">{s.sub}</p>
+                <p
+                  className={`text-[10.5px] mt-0.5 ${'dim' in s && s.dim ? 'text-[color:var(--muted-2)]' : 'text-[color:var(--accent)]'}`}
+                >
+                  {s.sub}
+                </p>
               )}
             </div>
           ))}

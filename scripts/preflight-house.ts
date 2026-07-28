@@ -33,10 +33,7 @@ const BASE = process.env.BASE ?? 'http://localhost:3481'
 /** Documented gaps — a bare reply here WARNS instead of failing, and a row
  *  that stops being bare FAILS (stale entry) so the fix promotes it to
  *  strict in the same PR (audit:funding's knownUnnamed discipline). */
-const KNOWN_GAPS: Record<string, string> = {
-  'my-nfts':
-    'the splash gallery card renders the NFTs client-side, but the TURN answers a planner "visit OpenSea" pointer — opensea-free has no wired `tool`, so the read never happens in-chat',
-}
+const KNOWN_GAPS: Record<string, string> = {}
 
 function envLocal(key: string): string | null {
   try {
@@ -103,6 +100,8 @@ async function main() {
         'guardianPolicyId',
         'connectWallet',
         'portfolio',
+        'nfts',
+        'nftMarket',
         'guardrails',
       ].find((k) => body[k] !== undefined && body[k] !== null)
       ok = res.status === 200 && !!artifact

@@ -36,6 +36,7 @@ async function dcaTileFor(address: string): Promise<RowsTile | null> {
     return {
       label: `$${s.buyUsd} → ${s.buyToken} ${cadenceLabel(s.cadence)}`,
       sub: `on ${s.chainName}`,
+      chartSymbol: s.buyToken,
       value,
       tone: due || (armed && !s.autoError) ? ('pos' as const) : undefined,
       actions: [

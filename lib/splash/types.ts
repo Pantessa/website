@@ -136,6 +136,11 @@ export interface StatRow {
    *  HoldingRow.infoUrl. */
   infoUrl?: string | null
   infoLabel?: string
+  /** Token symbol behind this row (an HL position's coin, a DCA buy's token)
+   *  — lets the client offer the uniform chart button on rows whose label
+   *  isn't itself a symbol. Chartability is decided client-side by
+   *  lib/charts' resolver; unresolvable symbols show nothing. */
+  chartSymbol?: string | null
 }
 
 /** One owned NFT for the gallery tile. Values are PRE-FORMATTED strings
