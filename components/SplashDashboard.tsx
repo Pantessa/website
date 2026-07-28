@@ -6,6 +6,7 @@ import { motion, useReducedMotion } from 'framer-motion'
 import { ArrowDownLeft, ArrowUpRight, ChevronDown, Clock, ExternalLink, Info, RefreshCw, Repeat, Vote, Wallet } from 'lucide-react'
 import BrandIcon from '@/components/BrandIcon'
 import TokenIcon from '@/components/TokenIcon'
+import { ChartChip, ChartHoverButton } from '@/components/TokenChartButton'
 import VoteChoiceButtons from '@/components/VoteChoiceButtons'
 import { useYeetfulStore, type McpServer } from '@/lib/store'
 import { chainById } from '@/lib/chains'
@@ -341,6 +342,7 @@ function LineRow({
   right,
   actions,
   info,
+  chart,
   slug,
   onPick,
   expanded,
@@ -350,6 +352,10 @@ function LineRow({
   right?: ReactNode
   actions: SuggestedPrompt[]
   info: { url: string; label: string } | null
+  /** Token symbol behind the row — the uniform chart button (ⓘ contract:
+   *  hover icon on display-only rows, chip in the action band otherwise).
+   *  Unresolvable symbols render nothing. */
+  chart?: string | null
   slug: string
   onPick: (p: string, slug?: string) => void
   expanded: boolean
@@ -361,6 +367,7 @@ function LineRow({
       {left}
       <div className="flex flex-shrink-0 items-center gap-1.5">
         {right}
+        {!expandable && chart && <ChartHoverButton symbol={chart} />}
         {!expandable && info && (
           <a
             href={info.url}
@@ -397,7 +404,7 @@ function LineRow({
       {expandable && expanded && (
         <div className="px-1 pb-1">
           <Reveal>
-            <InlineActionChips actions={actions} info={info} slug={slug} onPick={onPick} />
+            <InlineActionChips actions={actions} info={info} chart={chart} slug={slug} onPick={onPick} />
           </Reveal>
         </div>
       )}
@@ -446,6 +453,7 @@ function RowsBody({ tile, onPick }: { tile: RowsTile; onPick: (p: string, slug?:
               right={value}
               actions={r.actions ?? []}
               info={rowInfo(r)}
+              chart={r.chartSymbol}
               slug={tile.mcpSlug}
               onPick={onPick}
               expanded={expanded}
@@ -495,6 +503,7 @@ function HoldingsBody({ tile, onPick }: { tile: HoldingsTile; onPick: (p: string
               }
               actions={h.actions ?? []}
               info={rowInfo(h)}
+              chart={h.symbol}
               slug={tile.mcpSlug}
               onPick={onPick}
               expanded={expanded}
@@ -671,6 +680,7 @@ function Reveal({ children }: { children: React.ReactNode }) {
 function InlineActionChips({
   actions,
   info,
+  chart,
   slug,
   onPick,
 }: {
@@ -678,6 +688,9 @@ function InlineActionChips({
   /** External detail page for the row — rendered after the action chips as
    *  the ⓘ link chip ("View on OpenSea"), same affordance as the MCP rail. */
   info?: { url: string; label: string } | null
+  /** Token symbol behind the row — the uniform chart chip rides after the
+   *  action chips, before the ⓘ link. */
+  chart?: string | null
   slug: string
   onPick: (p: string, slug?: string) => void
 }) {
@@ -694,6 +707,7 @@ function InlineActionChips({
           {a.label}
         </button>
       ))}
+      {chart && <ChartChip symbol={chart} />}
       {info && (
         <a
           href={info.url}
