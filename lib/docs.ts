@@ -129,6 +129,15 @@ export const DOCS_PAGES: DocsPage[] = [
     door: 'user',
   },
   {
+    slug: 'dca',
+    title: 'Recurring buys: confirm & autopilot',
+    seoTitle: 'Recurring buys (DCA) — one tap per buy, or arm autopilot',
+    description:
+      'Two tiers, one schedule: every wallet gets confirm-mode (each buy built fresh, you sign it), and smart wallets can arm autopilot — one signature caps the spend on-chain and each period buys itself.',
+    ready: true,
+    door: 'user',
+  },
+  {
     slug: 'spend-policy',
     title: 'Spend policy & caps',
     seoTitle: 'Spend policy — open by default, capped by default',

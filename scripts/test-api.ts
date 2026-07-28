@@ -6533,6 +6533,16 @@ async function main() {
     const disarmAnon = await fetch(`${BASE}/api/dca/nonexistent/arm`, { method: 'DELETE' })
     check('dca autopilot: disarm without a session → 401', disarmAnon.status === 401)
 
+    // The docs page: the two-tier story must stay routed and keep its spine —
+    // confirm-mode for every wallet, autopilot for smart wallets, and the
+    // honest EOA custody explanation (never a silent capability claim).
+    const docsRes = await fetch(`${BASE}/docs/dca`)
+    const docsHtml = await docsRes.text()
+    check(
+      'dca autopilot: /docs/dca routes and keeps the two-tier + EOA-honesty spine',
+      docsRes.status === 200 && docsHtml.includes('confirm-mode') && docsHtml.includes('autopilot') && /EOA/.test(docsHtml) && docsHtml.includes('Spend Permission'),
+    )
+
     // The chat turn: connect-first (the toggle layer answers, not the planner).
     const toggleRes = await fetch(`${BASE}/api/chat`, {
       method: 'POST',
