@@ -67,6 +67,19 @@ export function creatorEarningsUsd(valueUsd: number): number {
   return valueUsd * (SWAP_FEE_BPS / 10_000) * CREATOR_FEE_SPLIT
 }
 
+/** Display for a creator earning. The split is SUB-CENT at test scale — a $1
+ *  swap earns $0.001 — so two decimals render every early real conversion as
+ *  "$0.00", indistinguishable from a fee-free route that earned nothing at
+ *  all. Exact zero keeps the familiar $0.00; under a cent shows the tiny bits
+ *  (4 decimals, trailing zeros trimmed) so a tester can watch the rail work
+ *  on a dollar; a cent or more is money and rounds like money. */
+export function formatEarnedUsd(n: number): string {
+  if (!(n > 0)) return '$0.00'
+  if (n >= 0.01) return `$${n.toFixed(2)}`
+  if (n < 0.0001) return '<$0.0001'
+  return `$${n.toFixed(4).replace(/0+$/, '')}`
+}
+
 /** Fees went live with the LiFi venue on 2026-07-15 (July 1 gives margin).
  *  Every fee figure — the admin treasury inflow window AND any ledgered
  *  estimate derived from embed_turns — starts the clock HERE: the treasury

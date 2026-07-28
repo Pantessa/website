@@ -37,6 +37,7 @@ import { policyCheckInflow, recipientCheck, validityCheck, MAX_VALID_SEC } from 
 import { guardPlannerArtifact, PERMIT2_ADDRESS } from '../lib/planner-artifact-guard'
 import { parseSwapIntent } from '../lib/swap-intent'
 import { activeLinkCapFor, composeMcps } from '../lib/intent-links'
+import { formatEarnedUsd } from '../lib/fees'
 import { hexLuminance, normalizeAccent, normalizeBg, parseBrandHtml, validateBrandUrl } from '../lib/brand-scan'
 import {
   decideTurnLimit,
@@ -1472,8 +1473,13 @@ async function main() {
     await turn({ buildPath: 'native-nft-transfer', valueUsd: 500 }) // moves $500, earns $0
     const after = await fetch(`${BASE}/api/intent-links`, { headers: { cookie: mallorySession } })
     const afterBody = (await after.json()) as {
-      links: Array<{ slug: string; signedUsd: number; earnedUsd: number }>
-      earnings: { totalEarnedUsd: number; claimableUsd: number }
+      links: Array<{ slug: string; signedUsd: number; feeBearingUsd: number; earnedUsd: number }>
+      earnings: {
+        totalEarnedUsd: number
+        totalSignedUsd: number
+        totalFeeBearingUsd: number
+        claimableUsd: number
+      }
     }
     const mine = afterBody.links.find((l) => l.slug === slug)
     check(
@@ -1483,6 +1489,26 @@ async function main() {
     check(
       'intent links: NFT/transfer $ counts as moved but NEVER as earnings',
       !!mine && mine.signedUsd >= 600 && Math.abs(mine.earnedUsd - 0.1) < 0.001,
+    )
+    // A zero must be able to explain itself: the fee-bearing base rides along
+    // so the UI can say "fee-free route" instead of showing a bare $0.00.
+    check(
+      'intent links: the fee-bearing base ships alongside moved $ (per link + total)',
+      !!mine &&
+        Math.abs(mine.feeBearingUsd - 100) < 0.001 &&
+        afterBody.earnings.totalSignedUsd >= 600 &&
+        afterBody.earnings.totalFeeBearingUsd >= 100,
+    )
+    // Sub-cent display: half of 20bps on a $1 test swap is $0.001 — two
+    // decimals would render the tester's own proof-of-life as "$0.00".
+    check(
+      'intent links: sub-cent earnings render the tiny bits, not $0.00',
+      formatEarnedUsd(0) === '$0.00' &&
+        formatEarnedUsd(0.001) === '$0.001' &&
+        formatEarnedUsd(0.0025) === '$0.0025' &&
+        formatEarnedUsd(0.00001) === '<$0.0001' &&
+        formatEarnedUsd(0.1) === '$0.10' &&
+        formatEarnedUsd(12.345) === '$12.35',
     )
     const claim = await fetch(`${BASE}/api/intent-links/claims`, { method: 'POST', headers: M })
     check('intent links: claim below the $10 floor refused (400)', claim.status === 400)
