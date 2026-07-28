@@ -55,6 +55,14 @@ const CORPUS: Entry[] = [
   { ask: 'Buy $2 of AAPL', source: 'examples/try + FundAnything', expect: 'action' },
   { ask: 'Quote 100 USDC to WETH on Base — which fee tier is best?', source: 'examples/try', expect: 'planner' },
 
+  // Chart-overlay act-on-it chips (SEND on click since 2026-07-28; rendered
+  // for every chartable symbol). The HL-perp row parses as a swap and the
+  // route answers the Hyperliquid door chips instead of "unknown token".
+  { ask: 'Buy $50 of ETH', source: 'chart overlay buy chip', expect: 'action' },
+  { ask: 'Sell $50 of ETH', source: 'chart overlay sell chip (live 2026-07-28 dead-end)', expect: 'action' },
+  { ask: 'DCA $10 into ETH weekly', source: 'chart overlay DCA chip', expect: 'action' },
+  { ask: 'Sell $50 of HYPE', source: 'chart overlay sell chip on an HL perp', expect: 'action' },
+
   // Splash chips (templates instantiated with representative values)
   { ask: 'Swap 5 USDC for ETH on Base', source: 'splash/holdings', expect: 'action' },
   { ask: 'Swap 0.0100 ETH for USDC on Base', source: 'splash/holdings', expect: 'action' },

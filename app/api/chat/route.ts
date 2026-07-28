@@ -16,7 +16,7 @@ import {
 import type { McpServer } from '@/lib/store'
 import { voteRequestFromToolResult, friendlyVoteError, type VoteRequest } from '@/lib/snapshot-vote'
 import { parseVoteIntent, resolveVoteReference, type VoteIntent } from '@/lib/vote-intent'
-import { crossChainAgentOf, detectCrossChain, parseSwapIntent, parseSwapFollowUp, swapWorkingContext, type SwapIntent } from '@/lib/swap-intent'
+import { crossChainAgentOf, detectCrossChain, parseSwapIntent, parseSwapFollowUp, swapClarify, swapWorkingContext, type SwapIntent } from '@/lib/swap-intent'
 import { chainById, chainByKey, primaryStable, publicClientFor, sanitizeChainId, DEFAULT_CHAIN_ID, APP_CHAINS } from '@/lib/chains'
 import { usdPerToken, usdToTokenAmount } from '@/lib/usd-probe'
 import { parseRobinhoodBridge, buildRobinhoodBridge } from '@/lib/robinhood-bridge'
@@ -92,6 +92,7 @@ import { buildLifiSwap, NoLifiRouteError } from '@/lib/lifi-venue'
 import { GAS_TOPUP_ETH, parseRhFundingFollowUp, planDownsizedRobinhoodBuy, planRobinhoodFundingAdvice, readFundingShortfall, rhFundingPending, robinhoodBuyNeedUsd, ROBINHOOD_CHAIN_ID } from '@/lib/lifi-bridge'
 import { describeInflightDeposit, inflightPendingData } from '@/lib/inflight-funding'
 import { resolveToken, tokenDecimals, humanToAtoms } from '@/lib/cow'
+import { chartPairFor } from '@/lib/charts'
 import { ensureTokenList } from '@/lib/token-list'
 import { pairStockToken, stockChipLabel } from '@/lib/stock-pairing'
 import { resolveProposal } from '@/lib/snapshot-read'
@@ -2707,6 +2708,34 @@ async function buildAaveOpTurn(
  * ambiguous asks; guardrail blocks surface with their reasons and the
  * artifact is withheld. The user signs — funds never touch Yeetful.
  */
+/** Hyperliquid door for unknown-token refusals (2026-07-28): a symbol that
+ *  isn't a spot token on any first-class chain but IS a chartable HL perp
+ *  (HYPE, SYRUP — the chart overlay renders Buy/Sell chips on their charts)
+ *  must not dead-end in "I don't know the token". Offer the venue-worded
+ *  asks the HL exec layer actually parses — chips lead with the side the
+ *  user asked for; resumes round-trip parseHlIntent. */
+function hlPerpDoor(symbol: string | undefined, amount: { usd?: string; human?: string }, wantsSell: boolean) {
+  if (!symbol) return null
+  const pair = chartPairFor(symbol)
+  if (pair?.source !== 'hyperliquid') return null
+  const sym = pair.symbol
+  const mk = (side: 'long' | 'short') => ({
+    label: `${side === 'long' ? 'Long' : 'Short'} ${amount.usd ? `$${amount.usd}` : (amount.human ?? '$50')} of ${sym}`,
+    // The unit form carries no "of" — parseHlIntent's coin-sized alternative
+    // doesn't accept one.
+    resume: amount.usd
+      ? `${side} $${amount.usd} of ${sym} on hyperliquid`
+      : amount.human
+        ? `${side} ${amount.human} ${sym} on hyperliquid`
+        : `${side} $50 of ${sym} on hyperliquid`,
+  })
+  return {
+    reply: `🔄 ${sym} isn't a spot token on Yeetful's chains — it trades as a **perp on Hyperliquid**. Pick a side and I'll build the guarded order (you sign it; funds never leave your wallet).`,
+    clarify: { question: `Trade ${sym} on Hyperliquid?`, options: wantsSell ? [mk('short'), mk('long')] : [mk('long'), mk('short')] },
+    buildPath: 'native-swap-hl-door',
+  }
+}
+
 async function prepareSwapTurn(intent: SwapIntent, walletAddress: string | undefined, venue: 'uniswap' | 'cow' = 'cow', ctx?: WorkingContext, trace: (event: unknown) => void = () => {}, chainId: number = DEFAULT_CHAIN_ID) {
   const chain = chainById(chainId) ?? chainById(DEFAULT_CHAIN_ID)!
   chainId = chain.id
@@ -2721,6 +2750,48 @@ async function prepareSwapTurn(intent: SwapIntent, walletAddress: string | undef
         '🔄 Connect your wallet to swap — you sign the transaction yourself, so it has to be built for your address.',
       connectWallet: true,
     })
+  }
+  // ── Bare sells ── "Sell $50 of ETH" (the chart overlay's Sell chip sends
+  // exactly this) names no buy side: buy the chain's primary stable, the
+  // mirror of the buy-dollar default below. Selling the stable itself has no
+  // honest default — ask with chips whose resumes are complete asks (live
+  // 2026-07-28: the prose clarify here sent the user through three planner
+  // turns and an invalid CoW enum, nothing built).
+  if (!intent.problem && !intent.buyToken && intent.sellToken && (intent.sellAmountHuman || intent.sellAmountUsd)) {
+    const stable = primaryStable(chainId)
+    if (stable && intent.sellToken.toUpperCase() !== stable.symbol.toUpperCase()) {
+      trace({ type: 'status', label: `native swap layer: no buy side named — defaulting to the chain stable (${stable.symbol} on ${chain.name})` })
+      intent = { ...intent, buyToken: stable.symbol }
+    } else {
+      const sellSym = intent.sellToken.toUpperCase()
+      // Targets: the chain's own non-stable tokens (stable→stable is never
+      // the intent), deduped by address so ETH/WETH don't both show, ETH
+      // leading. Robinhood Chain trades everything against USDG — its
+      // honest targets are the marquee stocks.
+      let targets: string[] = []
+      if (chainId === ROBINHOOD_CHAIN_ID) {
+        targets = ['AAPL', 'TSLA', 'NVDA']
+      } else {
+        const seen = new Set<string>()
+        for (const sym of ['ETH', ...Object.keys(chain.tokens)]) {
+          const t = chain.tokens[sym]
+          if (!t || sym.toUpperCase() === sellSym) continue
+          if (chain.stables[t.address.toLowerCase()] !== undefined) continue
+          if (seen.has(t.address.toLowerCase())) continue
+          seen.add(t.address.toLowerCase())
+          targets.push(sym)
+        }
+      }
+      const chips = swapClarify(intent, { targets })
+      if (chips) {
+        trace({ type: 'status', label: `native swap layer: selling the chain stable (${sellSym}) with no target — asking with chips (${chips.options.map((o) => o.label).join('/')})` })
+        return NextResponse.json({
+          reply: `🔄 ${chips.reply}`,
+          clarify: { question: chips.question, options: chips.options },
+          buildPath: 'native-swap-clarify',
+        })
+      }
+    }
   }
   // ── Stock name pairing (Robinhood Chain) ── "buy $14 of GOOGLe", "swap
   // USDG for Google": pair each typed token against the chain's 100 listed
@@ -2791,6 +2862,11 @@ async function prepareSwapTurn(intent: SwapIntent, walletAddress: string | undef
       } else {
         const dec = tokenDecimals(intent.sellToken, chainId)
         if (dec === null) {
+          const door = hlPerpDoor(intent.sellToken, { usd: intent.sellAmountUsd }, true)
+          if (door) {
+            trace({ type: 'status', label: `native swap layer: ${intent.sellToken.toUpperCase()} is an HL perp, not a spot token — opening the Hyperliquid door` })
+            return NextResponse.json(door)
+          }
           trace({ type: 'note', level: 'warn', label: `unknown token “${intent.sellToken}” on ${chain.name} — no build` })
           return NextResponse.json({
             reply: `🔄 I don't know the token “${intent.sellToken}” on ${chain.name} — use a known symbol (${Object.keys(chain.tokens).filter((s) => s !== 'ETH').join(', ')}, …).`,
@@ -2811,6 +2887,18 @@ async function prepareSwapTurn(intent: SwapIntent, walletAddress: string | undef
   }
 
   if (intent.problem || !intent.sellToken || !intent.buyToken || !intent.sellAmountHuman) {
+    // When the partial parse pins enough for complete resumes ("swap USDC
+    // for WETH" → preset amounts; "buy 5 shares of AAPL" → dollar presets),
+    // answer with chips — prose homework only when we truly know nothing.
+    const chips = swapClarify(intent)
+    if (chips) {
+      trace({ type: 'status', label: `native swap layer: ask under-specified — asking with preset chips (${chips.options.map((o) => o.label).join('/')})` })
+      return NextResponse.json({
+        reply: `🔄 ${chips.reply}`,
+        clarify: { question: chips.question, options: chips.options },
+        buildPath: 'native-swap-clarify',
+      })
+    }
     trace({ type: 'status', label: 'native swap layer: ask under-specified — asking for the amount and pair' })
     return NextResponse.json({ reply: `🔄 ${intent.problem ?? 'Say the amount and pair — e.g. “swap 100 USDC for WETH” or “swap $5 of ETH for USDG”.'}` })
   }
@@ -2842,9 +2930,29 @@ async function prepareSwapTurn(intent: SwapIntent, walletAddress: string | undef
   const knownSymbols = Object.keys(chain.tokens).filter((s) => s !== 'ETH').join(', ')
   const sellDec = tokenDecimals(intent.sellToken, chainId)
   if (sellDec === null) {
+    const door = hlPerpDoor(intent.sellToken, { usd: intent.sellAmountUsd, human: intent.sellAmountHuman }, true)
+    if (door) {
+      trace({ type: 'status', label: `native swap layer: ${intent.sellToken.toUpperCase()} is an HL perp, not a spot token — opening the Hyperliquid door` })
+      return NextResponse.json(door)
+    }
     trace({ type: 'note', level: 'warn', label: `unknown token “${intent.sellToken}” on ${chain.name} — no build` })
     return NextResponse.json({
       reply: `🔄 I don't know the token “${intent.sellToken}” on ${chain.name} — use a known symbol (${knownSymbols}, …) or a 0x address via the API.`,
+    })
+  }
+  // The buy side of a MARKET swap resolves against the same token maps the
+  // venues use — an unknown symbol would otherwise surface as a generic
+  // build error deep in the venue. Chartable HL perps get the door instead
+  // (the chart overlay's Buy chip on a HYPE chart sends "Buy $50 of HYPE").
+  if (intent.mode !== 'limit' && tokenDecimals(intent.buyToken, chainId) === null) {
+    const door = hlPerpDoor(intent.buyToken, { usd: intent.sellAmountUsd }, false)
+    if (door) {
+      trace({ type: 'status', label: `native swap layer: ${intent.buyToken.toUpperCase()} is an HL perp, not a spot token — opening the Hyperliquid door` })
+      return NextResponse.json(door)
+    }
+    trace({ type: 'note', level: 'warn', label: `unknown token “${intent.buyToken}” on ${chain.name} — no build` })
+    return NextResponse.json({
+      reply: `🔄 I don't know the token “${intent.buyToken}” on ${chain.name} — use a known symbol (${knownSymbols}, …).`,
     })
   }
   const sellAmount = humanToAtoms(intent.sellAmountHuman, sellDec)
