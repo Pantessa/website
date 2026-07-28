@@ -1,30 +1,25 @@
-// Embed anywhere — the distribution story. The animated EmbedDemo (shared
-// with the docs landing: bubble → panel → ask → $0 receipt on a CSS loop,
-// "Try it live" swaps in the real /embed) next to the real 5-line install
-// (SDK 0.9, wallet:'auto' = the HOST page's wallet signs), plus the two live
-// fork demos. The demos are proof-of-concept forks of open-source interfaces
-// — label them clearly as test cases: no partnership, no endorsement.
-// Protocol logos on the demo cards are Nate-directed (2026-07-09) — the
-// official marks vendored from the fork repos, colored per each brand.
+// Embed anywhere — the distribution story, told the way the rest of the
+// landing tells things now: the install ASSEMBLES (EmbedAssemble types the
+// five real lines and builds the widget in a host window beside them, one
+// capability per line) instead of sitting next to a static screenshot. The
+// docs landing keeps EmbedDemo, which shows the widget's behaviour rather
+// than its install — different job, different page.
+//
+// Under it: the two live fork demos (proof-of-concept forks of open-source
+// interfaces — labelled clearly as test cases: no partnership, no
+// endorsement; protocol logos are Nate-directed, 2026-07-09, vendored from
+// the fork repos) and the learning loop, which is a host's payoff.
 
-import Link from 'next/link'
-import EmbedDemo from '@/components/EmbedDemo'
+import EmbedAssemble from '@/components/EmbedAssemble'
 import { UniswapMark, CowMark } from '@/components/protocol-marks'
-
-const SNIPPET = `import { mountYeetfulChat } from 'yeetful/embed'
-
-mountYeetfulChat({
-  mode: 'bubble',
-  mcps: ['uniswap-free', 'snapshot-free'],
-  wallet: 'auto', // the host page's wallet signs
-})`
 
 const DEMOS: { name: string; url: string; host: string; blurb: string; logo: React.ReactNode; logoClass: string }[] = [
   {
     name: 'Uniswap interface + Yeetful chat',
     url: 'https://uniswap-embed.yeetful.com/',
     host: 'uniswap-embed.yeetful.com',
-    blurb: 'A fork of the open-source Uniswap interface with the chat mounted in ~25 lines. It auto-connects the page’s wallet, answers with your address, and quotes WETH→USDC through the free MCP.',
+    blurb:
+      'A fork of the open-source Uniswap interface with the chat mounted in ~25 lines. It auto-connects the page’s wallet, answers with your address, and quotes WETH→USDC through the free MCP.',
     logo: <UniswapMark />,
     logoClass: 'embeda__demologo--uni',
   },
@@ -32,7 +27,8 @@ const DEMOS: { name: string; url: string; host: string; blurb: string; logo: Rea
     name: 'CoW Swap + Yeetful chat',
     url: 'https://cow-embed.yeetful.com/',
     host: 'cow-embed.yeetful.com',
-    blurb: 'A fork of the open-source CoW Swap interface. The widget streams the connected wallet into the chat; quotes and MEV-docs answers run through the CoW MCP.',
+    blurb:
+      'A fork of the open-source CoW Swap interface. The widget streams the connected wallet into the chat; quotes and MEV-docs answers run through the CoW MCP.',
     logo: <CowMark />,
     logoClass: 'embeda__demologo--cow',
   },
@@ -43,48 +39,60 @@ export default function EmbedAnywhere() {
     <section className="embeda">
       <div className="embeda__head">
         <span className="embeda__eyebrow mono">EMBED ANYWHERE</span>
-        <h2 className="embeda__h2">Embed the <span className="x-grad">whole agent</span> on your site. Five lines.</h2>
+        <h2 className="embeda__h2">
+          Embed the <span className="x-grad">whole agent</span> on your site. Five lines.
+        </h2>
         <p className="embeda__sub">
-          <code className="embeda__code">yeetful/embed</code> mounts the full chat — receipts,
-          guardrails, signing — as a bubble or inline. With <code className="embeda__code">wallet:
-          &lsquo;auto&rsquo;</code>, it uses the wallet already connected to the host page:
-          signatures pop in the user&rsquo;s own wallet, and we never hold keys.
+          Not a support widget with a payments tab bolted on — the same chat that scans, funds,
+          builds, guard-checks and receipts, mounted on your page. Watch each line buy something:
+          a bubble, a set of dapps, and the wallet your visitors already connected.
         </p>
       </div>
 
-      <div className="embeda__grid">
-        <div className="embeda__left">
-          <div className="embeda__snippet">
-            <div className="embeda__snipbar mono">
-              <span>npm i yeetful</span>
-              <span className="embeda__snipver">v0.9</span>
+      <EmbedAssemble />
+
+      {/* real forks, running right now — the install claim, kept honest */}
+      <div className="embeda__demos">
+        {DEMOS.map((d) => (
+          <a className="embeda__demo" href={d.url} target="_blank" rel="noreferrer" key={d.url}>
+            <div className="embeda__demotop">
+              <span className="embeda__demoid">
+                <span className={`embeda__demologo ${d.logoClass}`}>{d.logo}</span>
+                <span className="embeda__demoname">{d.name}</span>
+              </span>
+              <span className="embeda__demotag mono">LIVE DEMO</span>
             </div>
-            <pre className="embeda__pre mono">
-              <code>{SNIPPET}</code>
-            </pre>
-            <Link href="/docs/embed" className="embeda__docs mono">
-              Read the embed docs →
-            </Link>
-          </div>
+            <p className="embeda__demoblurb">{d.blurb}</p>
+            <span className="embeda__demohost mono">{d.host} ↗</span>
+          </a>
+        ))}
+      </div>
 
-          <div className="embeda__demos">
-            {DEMOS.map((d) => (
-              <a className="embeda__demo" href={d.url} target="_blank" rel="noreferrer" key={d.url}>
-                <div className="embeda__demotop">
-                  <span className="embeda__demoid">
-                    <span className={`embeda__demologo ${d.logoClass}`}>{d.logo}</span>
-                    <span className="embeda__demoname">{d.name}</span>
-                  </span>
-                  <span className="embeda__demohost mono">{d.host} ↗</span>
-                </div>
-                <p className="embeda__demoblurb">{d.blurb}</p>
-                <span className="embeda__demotag mono">LIVE DEMO</span>
-              </a>
-            ))}
-          </div>
+      {/* The loop TxPipeline used to carry (retired 2026-07-28 when the
+          machine absorbed the pipeline): usage feeds the host's analytics,
+          analytics feed upgrade prompts, upgrades feed more signed txs. It
+          belongs to hosts, so it lives in the host section now. */}
+      <div className="loopband">
+        <div className="loopband__copy">
+          <span className="loopband__eyebrow mono">
+            IT LEARNS FROM YOUR USERS <b aria-hidden>⟲</b>
+          </span>
+          <h3 className="loopband__h3">
+            Every dead end becomes an upgrade prompt for your MCP.
+          </h3>
+          <p className="loopband__sub">
+            The chat records the asks it couldn&rsquo;t answer on your site — not the ones it
+            aced. Those are the tools you&rsquo;re missing, ranked by how many people wanted them.
+          </p>
         </div>
-
-        <EmbedDemo />
+        <div className="loopband__demo mono" aria-hidden>
+          <span className="loopband__dead">dead end · &ldquo;what&rsquo;s my balance on Base?&rdquo;</span>
+          <span className="loopband__arrow">↓</span>
+          <span className="loopband__fix">
+            suggested: add a <b>balances</b> tool to your MCP
+          </span>
+          <span className="loopband__meta">asked 41× this week · 0 answered</span>
+        </div>
       </div>
 
       <p className="embeda__disclaimer">

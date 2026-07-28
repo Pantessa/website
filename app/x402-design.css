@@ -2491,15 +2491,10 @@
   .embeda__h2 { font-family: var(--font-serif); font-weight: 500; font-optical-sizing: auto; font-size: clamp(28px, 3.6vw, 42px); letter-spacing: -0.012em; line-height: 1.06; margin-top: 12px; color: var(--fg); }
   .embeda__sub { margin-top: 14px; max-width: 62ch; font-size: 15px; line-height: 1.6; color: var(--muted); text-wrap: pretty; }
   .embeda__code { font-family: var(--font-mono); font-size: .9em; color: var(--fg); background: var(--surf-2); padding: 1px 6px; border-radius: 6px; white-space: nowrap; }
-  .embeda__grid { margin-top: 32px; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 20px; align-items: start; }
-  .embeda__left { min-width: 0; display: flex; flex-direction: column; gap: 20px; }
-  .embeda__snippet { border: 1px solid var(--line); border-radius: 14px; background: var(--surf-1); overflow: hidden; }
-  .embeda__snipbar { display: flex; justify-content: space-between; gap: 10px; padding: 10px 16px; border-bottom: 1px solid var(--line); font-size: 12px; color: var(--muted); }
-  .embeda__snipver { color: var(--accent); }
-  .embeda__pre { padding: 18px 16px; font-size: 13px; line-height: 1.7; overflow-x: auto; color: #c9cec6; }
-  .embeda__docs { display: block; padding: 12px 16px; border-top: 1px solid var(--line); font-size: 13px; color: var(--accent); }
-  .embeda__docs:hover { text-decoration: underline; }
-  .embeda__demos { display: grid; grid-template-columns: 1fr; gap: 14px; }
+  /* The static snippet block (.embeda__grid/__left/__snippet/__pre) retired
+     2026-07-28 — EmbedAssemble types the same five lines and builds the
+     widget beside them. The docs landing still uses EmbedDemo. */
+  .embeda__demos { margin-top: 20px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
   .embeda__demo {
     border: 1px solid var(--line); border-radius: 14px; padding: 18px; background: var(--surf-1);
     display: flex; flex-direction: column; gap: 9px; min-width: 0; transition: border-color .15s, transform .15s;
@@ -2519,25 +2514,89 @@
   .embeda__demotag { align-self: flex-start; font-size: 10px; letter-spacing: .14em; padding: 3px 9px; border-radius: 999px; border: 1px solid color-mix(in oklch, var(--accent) 40%, transparent); color: var(--accent); }
   .embeda__disclaimer { margin-top: 16px; font-size: 12px; color: var(--muted-2); line-height: 1.55; max-width: 70ch; }
   .embeda__next { margin-top: 8px; font-size: 11.5px; letter-spacing: .06em; color: var(--muted-2); }
-  @media (max-width: 1023px) {
-    .embeda__grid { grid-template-columns: 1fr; }
-    /* full-width single column now — put the fork cards back side-by-side */
-    .embeda__demos { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  }
   @media (max-width: 767px) { .embeda__demos { grid-template-columns: 1fr; } }
 
-  /* ── TRUST LAYER ────────────────────────────────── */
-  .trust { padding: clamp(88px, 11vh, 132px) 0 72px; }
+  /* ── TRUST LAYER (.trust + .tl) ─────────────────────────────────────────
+     The headline asks two questions of two different people, so the section
+     answers in two lanes with the party named at the top of each. Each row's
+     glyph animates its own claim on hover — the gate deflects, the pen signs,
+     the key gets cut. */
+  .trust { padding: clamp(80px, 10vh, 124px) 0 clamp(56px, 7vh, 80px); }
+  .trust__head { max-width: 1220px; margin: 0 auto; }
   .trust__eyebrow { font-size: 12px; letter-spacing: 0.18em; color: var(--muted-2); }
-  .trust__h2 { font-family: var(--font-serif); font-weight: 500; font-optical-sizing: auto; font-size: clamp(28px, 3.6vw, 42px); letter-spacing: -0.012em; line-height: 1.06; margin-top: 12px; color: var(--fg); }
-  .trust__grid { margin-top: 30px; display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
-  .trust__tile { border: 1px solid var(--line); border-radius: 14px; padding: 18px; background: var(--surf-1); display: flex; flex-direction: column; gap: 9px; min-width: 0; }
-  .trust__t { font-family: 'Archivo', sans-serif; font-weight: 700; font-size: 15.5px; letter-spacing: -.01em; }
-  .trust__d { font-size: 13px; color: var(--muted); line-height: 1.55; flex: 1; }
-  .trust__link { font-size: 12.5px; color: var(--accent); }
-  .trust__link:hover { text-decoration: underline; }
-  @media (max-width: 1280px) { .trust__grid { grid-template-columns: repeat(2, 1fr); } }
-  @media (max-width: 640px) { .trust__grid { grid-template-columns: 1fr; } }
+  .trust__h2 { font-family: var(--font-serif); font-weight: 500; font-optical-sizing: auto; font-size: clamp(28px, 3.7vw, 44px); letter-spacing: -0.014em; line-height: 1.05; margin-top: 12px; color: var(--fg); }
+  .trust__sub { margin-top: 15px; max-width: 62ch; font-size: 15px; line-height: 1.6; color: var(--muted); text-wrap: pretty; }
+
+  .tl { max-width: 1220px; margin: 34px auto 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: 20px; overflow: hidden; }
+  .tl__lane { background: var(--bg); padding: clamp(22px, 2.6vw, 32px); display: flex; flex-direction: column; min-width: 0; }
+  .tl__lanehead { padding-bottom: 18px; border-bottom: 1px solid var(--line); }
+  .tl__who { font-size: 10.5px; letter-spacing: .16em; color: var(--accent); }
+  .tl__lead { margin-top: 9px; font-size: 14.5px; line-height: 1.5; color: var(--fg); max-width: 40ch; text-wrap: pretty; }
+  .tl__rows { list-style: none; display: flex; flex-direction: column; }
+  .tl__row {
+    display: grid; grid-template-columns: 40px minmax(0, 1fr) 14px; gap: 15px; align-items: start;
+    padding: 18px 0; border-bottom: 1px solid color-mix(in srgb, var(--line) 60%, transparent);
+    transition: opacity .2s;
+  }
+  .tl__rows li:last-child .tl__row { border-bottom: 0; padding-bottom: 4px; }
+  .tl__body { min-width: 0; display: flex; flex-direction: column; gap: 5px; }
+  .tl__body strong { font-size: 14px; font-weight: 600; color: var(--fg); letter-spacing: -.005em; line-height: 1.35; }
+  .tl__body span { font-size: 12.5px; line-height: 1.55; color: var(--muted); text-wrap: pretty; }
+  .tl__go { font-size: 13px; color: var(--muted-2); opacity: 0; transform: translateX(-4px); transition: opacity .2s, transform .2s, color .2s; padding-top: 2px; }
+  .tl__row:hover .tl__go { opacity: 1; transform: none; color: var(--accent); }
+  .tl__row:hover .tl__body strong { color: color-mix(in srgb, var(--accent) 40%, var(--fg)); }
+  .tl__foot { max-width: 1220px; margin: 20px auto 0; font-size: 11px; letter-spacing: .09em; color: var(--muted-2); text-align: center; }
+
+  /* the glyphs */
+  .tl__glyph { display: block; width: 40px; height: 40px; border-radius: 11px; border: 1px solid var(--line); background: var(--surf-1); overflow: hidden; }
+  .tl__glyph svg { width: 100%; height: 100%; fill: none; stroke-linecap: round; stroke-linejoin: round; }
+  .tl__glyph .tl-route, .tl__glyph .tl-after, .tl__glyph .tl-deflect { stroke: color-mix(in srgb, var(--accent) 70%, transparent); stroke-width: 1.6; stroke-dasharray: 3 3; }
+  .tl__glyph .tl-bar { stroke: var(--sell); stroke-width: 1.6; stroke-dasharray: 3 3; }
+  .tl__glyph .tl-hot { fill: var(--sell); }
+  .tl__glyph .tl-deflect { stroke: var(--sell); }
+  .tl__glyph .tl-node { fill: var(--accent); }
+  .tl__glyph .tl-halo { fill: var(--accent); opacity: .16; }
+  .tl__glyph .tl-ring { stroke: #e8c468; stroke-width: 1.6; }
+  .tl__glyph .tl-pip { stroke: #e8c468; stroke-width: 1.8; }
+  .tl__glyph .tl-riser { fill: color-mix(in srgb, var(--accent) 55%, transparent); }
+  .tl__glyph .tl-frame { stroke: color-mix(in srgb, var(--fg) 26%, transparent); stroke-width: 1.4; }
+  .tl__glyph .tl-scan { stroke: color-mix(in srgb, var(--fg) 20%, transparent); stroke-width: 1.2; }
+  .tl__glyph .tl-axis { stroke: color-mix(in srgb, var(--fg) 22%, transparent); stroke-width: 1.2; }
+  .tl__glyph .tl-bar1, .tl__glyph .tl-bar2, .tl__glyph .tl-bar3 { fill: color-mix(in srgb, var(--accent) 55%, transparent); transform-box: fill-box; transform-origin: bottom; }
+  .tl__glyph .tl-bar2 { fill: var(--accent); }
+  .tl__glyph .tl-sig { stroke: var(--accent); stroke-width: 1.8; stroke-dasharray: 60; stroke-dashoffset: 0; }
+  .tl__glyph .tl-baseline { stroke: color-mix(in srgb, var(--fg) 20%, transparent); stroke-width: 1.2; }
+  .tl__glyph .tl-shaft { stroke: color-mix(in srgb, var(--fg) 40%, transparent); stroke-width: 1.8; }
+  .tl__glyph .tl-cut { stroke: var(--sell); stroke-width: 1.8; stroke-dasharray: 32; stroke-dashoffset: 32; }
+
+  /* each glyph performs its own claim when its row is hovered */
+  .tl__row:hover .tl__glyph { border-color: color-mix(in srgb, var(--accent) 45%, transparent); }
+  .tl__row:hover .tl-halo { animation: tl-pulse 1.4s ease-out infinite; }
+  .tl__row:hover .tl-riser { animation: tl-lift 1.4s ease-in-out infinite; }
+  .tl__row:hover .tl-hot { animation: tl-knock .9s ease-in-out infinite; }
+  .tl__row:hover .tl-ring { animation: tl-ringpulse 1.3s ease-in-out infinite; }
+  .tl__row:hover .tl-node { animation: tl-pop 1.2s ease-in-out infinite; }
+  .tl__row:hover .tl-bar1 { animation: tl-grow 1.3s ease-in-out infinite; }
+  .tl__row:hover .tl-bar2 { animation: tl-grow 1.3s ease-in-out .12s infinite; }
+  .tl__row:hover .tl-bar3 { animation: tl-grow 1.3s ease-in-out .24s infinite; }
+  .tl__row:hover .tl-sig { animation: tl-sign 1.8s ease-in-out infinite; }
+  .tl__row:hover .tl-cut { animation: tl-slash 1.5s ease-in-out infinite; }
+  @keyframes tl-pulse { 0% { opacity: .3; transform: scale(.7); } 100% { opacity: 0; transform: scale(1.35); } }
+  @keyframes tl-lift { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-2.5px); } }
+  @keyframes tl-knock { 0%, 100% { transform: translateX(0); } 50% { transform: translateX(2px); } }
+  @keyframes tl-ringpulse { 0%, 100% { opacity: 1; } 50% { opacity: .45; } }
+  @keyframes tl-pop { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.22); } }
+  @keyframes tl-grow { 0%, 100% { transform: scaleY(1); } 50% { transform: scaleY(.62); } }
+  @keyframes tl-sign { 0% { stroke-dashoffset: 60; } 55%, 100% { stroke-dashoffset: 0; } }
+  @keyframes tl-slash { 0%, 20% { stroke-dashoffset: 32; } 60%, 100% { stroke-dashoffset: 0; } }
+  .tl__glyph .tl-halo, .tl__glyph .tl-riser, .tl__glyph .tl-hot, .tl__glyph .tl-node { transform-box: fill-box; transform-origin: center; }
+
+  @media (max-width: 900px) { .tl { grid-template-columns: 1fr; } }
+  @media (prefers-reduced-motion: reduce) {
+    .tl__glyph * { animation: none !important; }
+    .tl__glyph .tl-cut, .tl__glyph .tl-sig { stroke-dashoffset: 0; }
+    .tl__go { transition: none; }
+  }
 
   /* ══ PRICING (/pricing) + PLAN METER (dashboard) ═══════════════════════
      The business model surface: three plan cards (Growth accented) over the
@@ -2826,6 +2885,657 @@
     .txp__visual { max-width: 460px; }
   }
 
+
+  /* ── STATIONS + SHARED LANDING MOTION ──────────────────────────────────
+     One fixed rail names where you are on the page and jumps you there. It's
+     navigation, so reduced-motion keeps it — only the drift and the reveal
+     get stilled. Hidden below 1280px, where it would fight the content for
+     the gutter it needs. */
+  .stations {
+    position: fixed; right: 15px; top: 50%; transform: translateY(-50%); z-index: 40;
+    display: flex; flex-direction: column; align-items: flex-end; gap: 4px;
+  }
+  .stations__s {
+    position: relative; display: flex; align-items: center; justify-content: flex-end;
+    padding: 5px 0 5px 12px; width: 38px;
+    background: none; border: 0; cursor: pointer; color: var(--muted-2);
+  }
+  .stations__tick {
+    display: block; width: 14px; height: 1.5px; border-radius: 2px; flex-shrink: 0;
+    background: color-mix(in srgb, var(--fg) 22%, transparent);
+    transition: width .28s cubic-bezier(.2,.8,.2,1), background .28s;
+  }
+  /* Labels appear on HOVER only. `.embeda` runs the full fluid width, so a
+     label parked beside the active tick sat on top of the demo's "try it
+     live" control — the ticks fit the gutter, prose never does. Which station
+     you're at reads from the long accent tick instead. */
+  .stations__label {
+    /* Absolutely positioned so the BUTTON stays tick-width. In flow it made
+       every station a 160px-wide invisible hit target parked over the
+       content underneath — clicks on the page vanished into the rail. */
+    position: absolute; right: 34px; top: 50%;
+    font-size: 10px; letter-spacing: .11em; text-transform: uppercase; white-space: nowrap;
+    padding: 4px 9px; border-radius: 7px;
+    border: 1px solid var(--line); background: color-mix(in srgb, var(--bg) 88%, transparent);
+    backdrop-filter: blur(6px);
+    opacity: 0; transform: translateY(-50%) translateX(6px); pointer-events: none;
+    transition: opacity .22s ease, transform .22s cubic-bezier(.2,.8,.2,1), color .22s;
+  }
+  .stations__s:hover .stations__label,
+  .stations__s:focus-visible .stations__label { opacity: 1; transform: translateY(-50%); color: var(--fg); }
+  .stations__s:hover .stations__tick { width: 22px; background: color-mix(in srgb, var(--fg) 45%, transparent); }
+  .stations__s.is-on .stations__tick { width: 26px; background: var(--accent); box-shadow: 0 0 10px color-mix(in srgb, var(--accent) 55%, transparent); }
+  /* Below 1280px even the ticks would crowd the content gutter. */
+  @media (max-width: 1279px) { .stations { display: none; } }
+
+  /* parallax: LandingMotion writes --py on decorative visuals only */
+  .night__dialwrap, .spread__svg { transform: translate3d(0, var(--py, 0px), 0); will-change: transform; }
+
+  /* reveals: one rise as a section head arrives, then never again */
+  .reveal { opacity: 0; transform: translateY(14px); transition: opacity .7s ease, transform .7s cubic-bezier(.2,.8,.2,1); }
+  .reveal.is-in { opacity: 1; transform: none; }
+
+  @media (prefers-reduced-motion: reduce) {
+    .night__dialwrap, .spread__svg { transform: none; will-change: auto; }
+    .reveal { opacity: 1; transform: none; transition: none; }
+    .stations__tick, .stations__label { transition: none; }
+  }
+
+  /* ── THE CLOSING BAND (.sud) ───────────────────────────────────────────
+     "Stay up to date" as the page's last statement rather than a grey box
+     bolted to the bottom. Names the three things that actually land in the
+     inbox; carries the same accent glow as the machine console so the ending
+     reads like an ending. Shared with /pricing. */
+  .sud {
+    margin: clamp(40px, 6vh, 72px) auto 0; max-width: 1220px;
+    display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(280px, 1fr);
+    gap: clamp(24px, 4vw, 56px); align-items: center;
+    padding: clamp(28px, 3.4vw, 46px);
+    border: 1px solid var(--line); border-radius: 22px;
+    background:
+      radial-gradient(110% 130% at 88% 0%, color-mix(in srgb, var(--accent) 13%, transparent), transparent 62%),
+      var(--surf-1);
+  }
+  .sud__eyebrow { font-size: 11px; letter-spacing: .18em; color: var(--muted-2); }
+  .sud__h2 { font-family: var(--font-serif); font-weight: 500; font-optical-sizing: auto; font-size: clamp(26px, 3.2vw, 38px); letter-spacing: -.014em; line-height: 1.06; margin-top: 10px; color: var(--fg); }
+  .sud__sub { margin-top: 12px; max-width: 46ch; font-size: 14.5px; line-height: 1.6; color: var(--muted); text-wrap: pretty; }
+  .sud__gets { margin-top: 22px; display: flex; flex-direction: column; gap: 10px; }
+  .sud__gets > div { display: grid; grid-template-columns: 132px minmax(0, 1fr); gap: 14px; align-items: baseline; }
+  .sud__gets dt { font-size: 10px; letter-spacing: .14em; color: var(--accent); }
+  .sud__gets dd { font-size: 12.5px; line-height: 1.5; color: var(--muted); text-wrap: pretty; }
+  .sud__form { min-width: 0; }
+  .sud__row { display: flex; flex-direction: column; gap: 10px; }
+  .sud__input {
+    width: 100%; min-width: 0; border-radius: 12px; padding: 14px 16px; font-size: 13.5px;
+    border: 1px solid var(--line); background: color-mix(in srgb, var(--bg) 55%, transparent);
+    color: var(--fg); outline: none; transition: border-color .2s, box-shadow .2s;
+  }
+  .sud__input::placeholder { color: var(--muted-2); }
+  .sud__input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 15%, transparent); }
+  .sud__row .btn { width: 100%; justify-content: center; height: 46px; border-radius: 12px; }
+  .sud__fine { margin-top: 12px; font-size: 10.5px; letter-spacing: .06em; color: var(--muted-2); }
+  .sud__done { font-size: 13px; color: var(--accent); line-height: 1.6; }
+  .sud__err { margin-top: 8px; font-size: 11.5px; color: #e8c468; }
+  @media (max-width: 860px) {
+    .sud { grid-template-columns: 1fr; }
+    .sud__gets > div { grid-template-columns: 1fr; gap: 2px; }
+  }
+
+  /* ── THE INSTALL, ASSEMBLING (.asm) ────────────────────────────────────
+     Five real lines type themselves, and each one builds something in the
+     host window beside it. Everything reveals off `beat` classes the
+     component sets, so the whole thing reads correctly frozen at any beat —
+     which is exactly what reduced-motion renders (fully assembled, still). */
+  .asm {
+    margin-top: 30px; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.08fr);
+    gap: clamp(18px, 2.4vw, 32px); align-items: stretch;
+  }
+  .asm__code { display: flex; flex-direction: column; border: 1px solid var(--line); border-radius: 18px; background: var(--surf-1); overflow: hidden; min-width: 0; }
+  .asm__codebar { display: flex; justify-content: space-between; gap: 10px; padding: 12px 18px; border-bottom: 1px solid var(--line); font-size: 12px; color: var(--muted); }
+  .asm__ver { color: var(--accent); }
+  .asm__pre { padding: 20px 18px; font-size: 12.5px; line-height: 1.85; overflow-x: auto; display: flex; flex-direction: column; }
+  .asm__line {
+    display: block; white-space: pre; color: var(--muted-2);
+    opacity: .26; filter: blur(.4px);
+    transition: opacity .35s ease, color .35s ease, filter .35s ease;
+  }
+  /* Token-derived, not a pinned grey: the retired .embeda__pre used #c9cec6,
+     which is code-on-black and all but invisible on paper. */
+  .asm__line.is-in { opacity: 1; filter: none; color: color-mix(in srgb, var(--fg) 84%, transparent); }
+  .asm__note {
+    margin: 0 18px 16px; padding: 11px 13px; border-radius: 10px; font-size: 11.5px; line-height: 1.5;
+    border: 1px solid color-mix(in srgb, var(--accent) 32%, transparent);
+    background: color-mix(in srgb, var(--accent) 8%, transparent);
+    color: color-mix(in srgb, var(--accent) 80%, var(--fg));
+    animation: mach-head .45s cubic-bezier(.2,.8,.2,1) both;
+  }
+  .asm__note b { font-weight: 400; opacity: .7; margin-right: 4px; }
+  .asm__docs { display: block; margin-top: auto; padding: 13px 18px; border-top: 1px solid var(--line); font-size: 13px; color: var(--accent); }
+
+  /* the host page */
+  .asm__host { border: 1px solid var(--line); border-radius: 18px; background: var(--surf-1); overflow: hidden; min-width: 0; display: flex; flex-direction: column; }
+  .asm__chrome { display: flex; align-items: center; gap: 12px; padding: 11px 14px; border-bottom: 1px solid var(--line); background: color-mix(in srgb, var(--fg) 3%, transparent); }
+  .asm__dots { display: inline-flex; gap: 5px; }
+  .asm__dots i { width: 8px; height: 8px; border-radius: 999px; background: color-mix(in srgb, var(--fg) 18%, transparent); }
+  .asm__url { flex: 1; font-size: 11px; color: var(--muted); padding: 4px 12px; border-radius: 999px; background: color-mix(in srgb, var(--fg) 6%, transparent); }
+  .asm__wallet {
+    font-size: 10px; letter-spacing: .05em; padding: 4px 10px; border-radius: 999px; white-space: nowrap;
+    border: 1px solid var(--line); color: var(--muted-2);
+    transition: color .4s, border-color .4s, background .4s;
+  }
+  .asm__wallet.is-on {
+    color: color-mix(in srgb, var(--accent) 85%, var(--fg));
+    border-color: color-mix(in srgb, var(--accent) 50%, transparent);
+    background: color-mix(in srgb, var(--accent) 10%, transparent);
+  }
+  .asm__page { position: relative; flex: 1; min-height: 300px; padding: 20px; display: grid; grid-template-columns: 1fr 1fr; gap: 12px; align-content: start; }
+  .asm__sk { display: block; border-radius: 8px; background: color-mix(in srgb, var(--fg) 5%, transparent); }
+  .asm__sk--h { grid-column: 1 / -1; height: 16px; width: 42%; }
+  .asm__sk--a, .asm__sk--b { height: 82px; }
+  .asm__sk--c { grid-column: 1 / -1; height: 10px; }
+  .asm__sk--d { grid-column: 1 / -1; height: 10px; width: 62%; }
+
+  /* the wire: host wallet (top-right) → the bubble (bottom-right) */
+  .asm__wire {
+    position: absolute; right: 34px; top: 0; bottom: 66px; width: 1.5px;
+    background: linear-gradient(180deg, transparent, color-mix(in srgb, var(--accent) 60%, transparent));
+    opacity: 0; transform: scaleY(.2); transform-origin: top;
+    transition: opacity .45s ease, transform .55s cubic-bezier(.2,.8,.2,1);
+  }
+  .asm__wire.is-on { opacity: 1; transform: scaleY(1); }
+
+  .asm__turn {
+    /* clears the bubble's 46px + 18px corner — the widget should sit beside
+       the turn it produced, not on top of it */
+    grid-column: 1 / -1; margin-top: 10px; margin-right: 58px; display: flex; flex-direction: column; gap: 7px;
+    padding: 14px; border-radius: 12px; border: 1px solid var(--line);
+    background: color-mix(in srgb, var(--fg) 3%, transparent);
+    opacity: 0; transform: translateY(8px);
+    transition: opacity .5s ease, transform .5s cubic-bezier(.2,.8,.2,1);
+  }
+  .asm__turn.is-on { opacity: 1; transform: none; }
+  .asm__ask { font-size: 13px; color: var(--fg); }
+  .asm__built { font-size: 10.5px; color: var(--muted); letter-spacing: .03em; }
+  .asm__receipt { font-size: 10.5px; color: color-mix(in srgb, var(--accent) 78%, var(--fg)); letter-spacing: .03em; }
+
+  .asm__bubble {
+    position: absolute; right: 18px; bottom: 18px; height: 46px; width: 46px; border-radius: 999px;
+    display: flex; align-items: center; justify-content: center;
+    background: var(--accent); color: var(--ink);
+    box-shadow: 0 10px 30px -8px color-mix(in srgb, var(--accent) 65%, transparent);
+    opacity: 0; transform: scale(.4);
+    transition: opacity .4s ease, transform .5s cubic-bezier(.2,1.4,.4,1);
+  }
+  .asm__bubble.is-on { opacity: 1; transform: none; }
+  .asm__bubbleicon { display: flex; }
+  .asm__marks {
+    position: absolute; right: 54px; top: 50%; transform: translateY(-50%) translateX(8px);
+    display: inline-flex; opacity: 0;
+    transition: opacity .4s ease, transform .4s cubic-bezier(.2,.8,.2,1);
+  }
+  .asm__marks.is-on { opacity: 1; transform: translateY(-50%); }
+  .asm__marks i {
+    display: flex; align-items: center; justify-content: center; height: 26px; width: 26px;
+    border-radius: 999px; border: 1px solid var(--line-2); background: var(--surf-2);
+    color: var(--fg); box-shadow: 0 0 0 2px var(--surf-1);
+  }
+  .asm__marks i + i { margin-left: -6px; }
+
+  @media (max-width: 900px) {
+    .asm { grid-template-columns: 1fr; }
+    .asm__page { min-height: 260px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .asm__line, .asm__wallet, .asm__wire, .asm__turn, .asm__bubble, .asm__marks { transition: none; }
+    .asm__note { animation: none; }
+  }
+
+  /* ── THE LOOP BAND (.loopband) — rescued from the retired TxPipeline ───
+     Lives inside the host section now, because the loop is a host's payoff:
+     the asks the chat couldn't answer are the tools their MCP is missing. */
+  .loopband {
+    margin-top: 28px; display: grid; grid-template-columns: minmax(0, 1fr) minmax(280px, 400px);
+    gap: clamp(20px, 3vw, 44px); align-items: center;
+    border: 1px solid var(--line); border-radius: 18px; padding: clamp(22px, 3vw, 34px);
+    background: linear-gradient(120deg, color-mix(in srgb, var(--accent) 5%, transparent), transparent 58%), var(--surf-1);
+  }
+  .loopband__eyebrow { display: inline-flex; align-items: center; gap: 9px; font-size: 11px; letter-spacing: .16em; color: var(--accent); }
+  .loopband__eyebrow b { font-weight: 400; opacity: .7; }
+  .loopband__h3 { font-family: var(--font-serif); font-weight: 500; font-optical-sizing: auto; font-size: clamp(20px, 2.2vw, 27px); line-height: 1.2; letter-spacing: -.012em; margin-top: 12px; color: var(--fg); max-width: 24ch; }
+  .loopband__sub { margin-top: 11px; max-width: 54ch; font-size: 14px; line-height: 1.6; color: var(--muted); text-wrap: pretty; }
+  .loopband__demo { display: flex; flex-direction: column; gap: 8px; padding: 18px; border: 1px solid var(--line); border-radius: 14px; background: color-mix(in srgb, var(--fg) 3%, transparent); font-size: 12px; }
+  .loopband__dead { color: var(--muted-2); text-decoration: line-through; text-decoration-color: color-mix(in srgb, var(--sell) 60%, transparent); }
+  .loopband__arrow { color: var(--muted-2); font-size: 13px; }
+  .loopband__fix { color: var(--fg); }
+  .loopband__fix b { color: var(--accent); font-weight: 400; }
+  .loopband__meta { font-size: 10.5px; color: var(--muted-2); letter-spacing: .04em; margin-top: 2px; }
+  @media (max-width: 900px) { .loopband { grid-template-columns: 1fr; } }
+
+  /* ── THE SPREAD (.spread) — intent links as distribution ───────────────
+     One link, four surfaces, receipts coming back. The travelling packets are
+     a short dash on a duplicated path with an animated stroke-dashoffset:
+     pure CSS, no rAF, and one reduced-motion rule stills every wire. */
+  .spread { padding: clamp(80px, 10vh, 124px) 0 clamp(56px, 7vh, 80px); }
+  .spread__grid { display: grid; grid-template-columns: minmax(0, 6fr) minmax(0, 5fr); gap: clamp(32px, 4.5vw, 64px); align-items: center; max-width: 1220px; margin: 0 auto; }
+  .spread__eyebrow { font-size: 12px; letter-spacing: .18em; color: var(--muted-2); }
+  .spread__h2 {
+    font-family: var(--font-serif); font-weight: 500; font-optical-sizing: auto;
+    font-size: clamp(28px, 3.7vw, 44px); letter-spacing: -.014em; line-height: 1.05;
+    margin-top: 12px; color: var(--fg);
+  }
+  .spread__sub { margin-top: 15px; max-width: 58ch; font-size: 15px; line-height: 1.6; color: var(--muted); text-wrap: pretty; }
+  .spread__chips { margin-top: 26px; display: flex; flex-wrap: wrap; gap: 9px; }
+  .spread__ctas { margin-top: 26px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .spread__note { font-size: 11px; color: var(--muted-2); }
+
+  .spread__stage { min-width: 0; display: flex; flex-direction: column; gap: 16px; }
+  .spread__svg { width: 100%; height: auto; overflow: visible; }
+  .spread__wire { fill: none; stroke: color-mix(in srgb, var(--fg) 11%, transparent); stroke-width: 1; }
+  .spread__out, .spread__back { fill: none; stroke-width: 2; stroke-linecap: round; }
+  .spread__out {
+    stroke: var(--accent); stroke-dasharray: 7 340; stroke-dashoffset: 347;
+    animation: spread-out 3.2s linear infinite; animation-delay: calc(var(--i) * .38s);
+  }
+  .spread__back {
+    stroke: #e8c468; stroke-dasharray: 5 340; stroke-dashoffset: 0;
+    animation: spread-back 3.2s linear infinite; animation-delay: calc(var(--i) * .38s + 1.5s);
+  }
+  @keyframes spread-out { from { stroke-dashoffset: 347; } to { stroke-dashoffset: 0; } }
+  @keyframes spread-back { from { stroke-dashoffset: 0; } to { stroke-dashoffset: 345; } }
+  .spread__node { fill: var(--surf-2); stroke: color-mix(in srgb, var(--fg) 22%, transparent); stroke-width: 1; }
+  .spread__nlabel { fill: var(--fg); font-size: 11px; }
+  .spread__nsub { fill: var(--muted-2); font-size: 9.5px; }
+  .spread__link { fill: color-mix(in srgb, var(--accent) 12%, transparent); stroke: color-mix(in srgb, var(--accent) 55%, transparent); stroke-width: 1; }
+  .spread__linktext { fill: color-mix(in srgb, var(--accent) 88%, var(--fg)); font-size: 12px; }
+  .spread__linkdot { fill: var(--accent); }
+  .spread__legend { display: flex; flex-direction: column; gap: 6px; font-size: 10.5px; color: var(--muted-2); }
+  .spread__key { display: inline-flex; align-items: center; gap: 8px; }
+  .spread__key i { width: 14px; height: 2px; border-radius: 2px; flex-shrink: 0; }
+  .spread__key--out i { background: var(--accent); }
+  .spread__key--back i { background: #e8c468; }
+
+  .spread__econ { margin-top: 6px; display: flex; flex-direction: column; gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: 13px; overflow: hidden; }
+  .spread__econ > div { display: grid; grid-template-columns: 58px minmax(0, 1fr); gap: 12px; align-items: baseline; padding: 11px 15px; background: var(--surf-1); }
+  .spread__econ dt { font-size: 14px; color: var(--accent); }
+  .spread__econ dd { font-size: 12px; line-height: 1.5; color: var(--muted); text-wrap: pretty; }
+
+  @media (max-width: 1023px) {
+    .spread__grid { grid-template-columns: 1fr; }
+    .spread__stage { max-width: 520px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .spread__out, .spread__back { animation: none; stroke-dasharray: none; stroke-dashoffset: 0; opacity: .3; }
+  }
+
+  /* ── THE NIGHT SHIFT (.night) ──────────────────────────────────────────
+     Standing intent as a clock that keeps running. The dial loops on one
+     normalized progress value from the component; everything here is
+     presentation, and the reduced-motion branch is handled upstream by
+     pinning that value to 1 (every event fired, hand parked at 06:00). */
+  .night { padding: clamp(80px, 10vh, 124px) 0 clamp(56px, 7vh, 80px); }
+  .night__grid { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: clamp(32px, 4.5vw, 72px); align-items: center; max-width: 1220px; margin: 0 auto; }
+  .night__eyebrow { font-size: 12px; letter-spacing: .18em; color: var(--muted-2); }
+  .night__h2 {
+    font-family: var(--font-serif); font-weight: 500; font-optical-sizing: auto;
+    font-size: clamp(28px, 3.7vw, 44px); letter-spacing: -.014em; line-height: 1.05;
+    margin-top: 12px; color: var(--fg); max-width: 18ch;
+  }
+  .night__sub { margin-top: 15px; max-width: 52ch; font-size: 15px; line-height: 1.6; color: var(--muted); text-wrap: pretty; }
+  .night__points { margin-top: 26px; display: flex; flex-direction: column; gap: 16px; list-style: none; }
+  .night__point { padding-left: 15px; border-left: 1px solid var(--line); font-size: 13.5px; line-height: 1.6; color: var(--muted); text-wrap: pretty; }
+  .night__point strong { display: block; color: var(--fg); font-weight: 600; font-size: 14px; margin-bottom: 3px; }
+
+  .night__stage { min-width: 0; width: 100%; max-width: 560px; margin: 0 auto; display: flex; flex-direction: column; align-items: center; gap: 26px; }
+  .night__dialwrap { position: relative; width: min(300px, 74vw); aspect-ratio: 1; flex-shrink: 0; margin-top: 8px; }
+  .night__hour { fill: var(--muted-2); font-size: 9.5px; letter-spacing: .1em; text-anchor: middle; }
+  .night__dial { width: 100%; height: 100%; overflow: visible; }
+  .night__tick { stroke: color-mix(in srgb, var(--fg) 13%, transparent); stroke-width: 1; }
+  .night__tick.is-major { stroke: color-mix(in srgb, var(--fg) 26%, transparent); stroke-width: 1.4; }
+  .night__rim { fill: none; stroke: color-mix(in srgb, var(--fg) 8%, transparent); stroke-width: 1; }
+  .night__arc { fill: none; stroke: color-mix(in srgb, var(--fg) 17%, transparent); stroke-width: 3; stroke-linecap: round; }
+  .night__arcrun { fill: none; stroke: var(--accent); stroke-width: 3; stroke-linecap: round; filter: drop-shadow(0 0 6px color-mix(in srgb, var(--accent) 55%, transparent)); }
+  .night__evdot { fill: var(--bg); stroke: color-mix(in srgb, var(--fg) 30%, transparent); stroke-width: 1.5; transition: fill .4s, stroke .4s; }
+  .night__evhalo { fill: var(--accent); opacity: 0; transform-box: fill-box; transform-origin: center; }
+  .night__ev.is-fired .night__evdot { fill: var(--accent); stroke: var(--accent); }
+  .night__ev.is-fired .night__evhalo { animation: night-pop 1.6s ease-out; }
+  @keyframes night-pop { 0% { opacity: .5; transform: scale(.35); } 100% { opacity: 0; transform: scale(1.5); } }
+  .night__hand { stroke: var(--fg); stroke-width: 1.2; opacity: .55; }
+  .night__handhead { fill: var(--fg); filter: drop-shadow(0 0 8px color-mix(in srgb, var(--accent) 70%, transparent)); }
+  .night__hub { fill: color-mix(in srgb, var(--fg) 45%, transparent); }
+  .night__face { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; pointer-events: none; }
+  .night__time { font-size: clamp(30px, 4.6vw, 44px); color: var(--fg); letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+  .night__facesub { font-size: 10.5px; letter-spacing: .12em; color: var(--muted-2); text-transform: uppercase; }
+
+  .night__log { list-style: none; width: 100%; display: flex; flex-direction: column; gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; }
+  .night__row {
+    display: grid; grid-template-columns: 52px minmax(0, 1fr) 18px; gap: 12px; align-items: start;
+    padding: 12px 15px; background: var(--surf-1); font-size: 12.5px; color: var(--muted);
+    opacity: .34; transition: opacity .5s ease, background .5s ease;
+  }
+  .night__row.is-in { opacity: 1; background: color-mix(in srgb, var(--accent) 4%, var(--surf-1)); }
+  .night__rtime { color: var(--muted-2); font-size: 11.5px; padding-top: 1px; }
+  .night__rbody { min-width: 0; line-height: 1.5; color: var(--fg); font-size: 12.5px; }
+  .night__rkind { font-size: 10px; letter-spacing: .11em; color: var(--accent); margin-right: 6px; }
+  .night__rmeta { display: block; margin-top: 3px; font-style: normal; font-size: 10.5px; color: var(--muted-2); }
+  .night__rok { color: var(--accent); font-size: 12px; opacity: 0; transition: opacity .4s ease .25s; }
+  .night__row.is-in .night__rok { opacity: 1; }
+  .night__caption { font-size: 11px; color: var(--muted-2); text-align: center; letter-spacing: .03em; }
+
+  .night__tiles { margin: clamp(44px, 6vh, 72px) auto 0; max-width: 1220px; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; }
+  .night__tile {
+    display: flex; flex-direction: column; min-width: 0; padding: 22px 20px 20px;
+    border: 1px solid var(--line); border-radius: 16px; background: var(--surf-1);
+    transition: border-color .2s, transform .2s, background .2s;
+  }
+  .night__tile:hover { border-color: color-mix(in srgb, var(--accent) 45%, transparent); transform: translateY(-3px); background: color-mix(in srgb, var(--accent) 4%, var(--surf-1)); }
+  .night__tlabel { font-size: 10px; letter-spacing: .15em; color: var(--accent); }
+  .night__tt { font-family: 'Archivo', sans-serif; font-weight: 700; font-size: 16.5px; letter-spacing: -.018em; margin-top: 12px; color: var(--fg); }
+  .night__td { margin-top: 8px; font-size: 12.5px; line-height: 1.55; color: var(--muted); flex: 1; text-wrap: pretty; }
+  .night__task { margin-top: 16px; font-size: 11px; color: var(--muted-2); transition: color .2s; }
+  .night__tile:hover .night__task { color: var(--accent); }
+
+  @media (max-width: 1023px) {
+    .night__grid { grid-template-columns: 1fr; }
+    .night__tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  }
+  @media (max-width: 620px) {
+    .night__tiles { grid-template-columns: 1fr; }
+    .night__row { grid-template-columns: 46px minmax(0, 1fr) 16px; gap: 9px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .night__ev.is-fired .night__evhalo { animation: none; }
+    .night__row, .night__rok { transition: none; }
+  }
+
+  /* ── THE MACHINE (.mach) ───────────────────────────────────────────────
+     The landing's runnable model of a turn: pick an ask, watch it walk
+     read → scan → plan → build → guard → sign → settle. Scoped tokens (--m*)
+     so the daylight flip is one block at the bottom of this file; every
+     animation is a fade/slide the reduced-motion guard can null out, and the
+     component itself renders the run complete-and-still in that mode. */
+  .mach {
+    --mpanel: color-mix(in srgb, var(--surf-1) 82%, transparent);
+    --mink: var(--fg);
+    --mmut: var(--muted);
+    --mfaint: var(--muted-2);
+    --mline: var(--line);
+    --mglow: color-mix(in srgb, var(--accent) 22%, transparent);
+    --mread: #8b9df8;
+    --mscan: #62c8f0;
+    --mplan: #e8c468;
+    --mbuild: #b487f0;
+    --mguard: #34e3a0;
+    --msign: #f0876f;
+    --msettle: #34e3a0;
+    padding: clamp(72px, 9vh, 112px) 0 clamp(56px, 7vh, 88px);
+  }
+  .mach__head { max-width: 1220px; margin: 0 auto; }
+  .mach__eyebrow { font-size: 12px; letter-spacing: 0.18em; color: var(--mfaint); }
+  .mach__h2 {
+    font-family: var(--font-serif); font-weight: 500; font-optical-sizing: auto;
+    font-size: clamp(30px, 4.2vw, 50px); letter-spacing: -0.015em; line-height: 1.04;
+    margin-top: 12px; color: var(--mink); max-width: 20ch;
+  }
+  .mach__sub { margin-top: 16px; max-width: 64ch; font-size: 15.5px; line-height: 1.6; color: var(--mmut); text-wrap: pretty; }
+
+  /* the four asks */
+  .mach__tabs { max-width: 1220px; margin: 30px auto 0; display: flex; flex-wrap: wrap; gap: 8px; }
+  .mach__tab {
+    display: inline-flex; align-items: center; gap: 9px;
+    padding: 7px 16px 7px 9px; border-radius: 999px;
+    border: 1px solid var(--mline); background: var(--surf-1);
+    color: var(--mmut); font-size: 13.5px; cursor: pointer;
+    transition: color .2s, border-color .2s, background .2s, transform .2s;
+  }
+  .mach__tab:hover { color: var(--mink); border-color: var(--line-2); transform: translateY(-1px); }
+  .mach__tab.is-on {
+    color: var(--mink); border-color: color-mix(in srgb, var(--accent) 55%, transparent);
+    background: color-mix(in srgb, var(--accent) 9%, var(--surf-1));
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 18%, transparent), 0 6px 22px -12px var(--accent);
+  }
+  .mach__tabname { white-space: nowrap; }
+  .mach__marks { display: inline-flex; align-items: center; flex-shrink: 0; }
+  .mach__mark {
+    position: relative; display: inline-flex; align-items: center; justify-content: center;
+    height: 22px; width: 22px; border-radius: 999px; overflow: hidden;
+    border: 1px solid var(--line-2); background: var(--surf-2); color: var(--mink);
+    box-shadow: 0 0 0 2px var(--surf-1);
+  }
+  .mach__mark + .mach__mark { margin-left: -5px; }
+
+  /* the console */
+  .mach__console {
+    position: relative; max-width: 1220px; margin: 22px auto 0;
+    border: 1px solid var(--mline); border-radius: 22px;
+    background:
+      radial-gradient(120% 90% at 50% -10%, var(--mglow), transparent 62%),
+      var(--mpanel);
+    backdrop-filter: blur(8px);
+    overflow: hidden;
+  }
+  .mach__top { padding: clamp(24px, 3vw, 40px) clamp(20px, 3vw, 40px) 20px; }
+  .mach__ask {
+    font-family: var(--font-serif); font-weight: 500; font-optical-sizing: auto;
+    font-size: clamp(21px, 2.5vw, 32px); line-height: 1.32; letter-spacing: -.01em;
+    color: var(--mink); text-wrap: pretty;
+  }
+  .mach__quote { color: var(--mfaint); }
+  .mach__tok { position: relative; white-space: nowrap; transition: color .35s ease; }
+  .mach__tok::after {
+    content: ''; position: absolute; left: 0; right: 0; bottom: -2px; height: 2px;
+    background: var(--accent); border-radius: 2px;
+    transform: scaleX(0); transform-origin: left; transition: transform .5s cubic-bezier(.2,.8,.2,1);
+  }
+  .mach__tok.is-read { color: color-mix(in srgb, var(--accent) 72%, var(--mink)); }
+  .mach__tok.is-read::after { transform: scaleX(1); }
+  /* the spec the sentence became — chips land one after another as READ runs */
+  .mach__spec { margin-top: 18px; display: flex; flex-wrap: wrap; gap: 7px; min-height: 26px; }
+  .mach__chip {
+    display: inline-flex; align-items: baseline; gap: 7px;
+    padding: 4px 11px; border-radius: 7px; font-size: 11px; color: var(--mmut);
+    border: 1px solid var(--mline); background: color-mix(in srgb, var(--fg) 3%, transparent);
+    opacity: 0; transform: translateY(6px) scale(.96);
+    transition: opacity .4s ease var(--d), transform .4s cubic-bezier(.2,.8,.2,1) var(--d);
+  }
+  .mach__chip b { font-weight: 400; font-size: 9px; letter-spacing: .13em; text-transform: uppercase; color: var(--mfaint); }
+  .mach__spec.is-read .mach__chip { opacity: 1; transform: none; }
+  .mach__premise { margin-top: 18px; font-size: 12px; letter-spacing: .04em; color: var(--mfaint); }
+
+  .mach__bar { height: 2px; background: color-mix(in srgb, var(--fg) 8%, transparent); }
+  .mach__barfill { display: block; height: 100%; background: linear-gradient(90deg, var(--mread), var(--accent)); transition: width .12s linear; }
+
+  .mach__body { display: grid; grid-template-columns: 176px minmax(0, 1fr) minmax(280px, 360px); min-height: 340px; }
+
+  /* the stage rail */
+  .mach__rail {
+    list-style: none; margin: 0; padding: 26px 0 26px 22px;
+    border-right: 1px solid var(--mline);
+    display: flex; flex-direction: column; justify-content: center; gap: 2px;
+    position: relative;
+  }
+  .mach__rail::before {
+    content: ''; position: absolute; left: 27px; top: 34px; bottom: 34px; width: 1px;
+    background: linear-gradient(180deg, transparent, var(--mline) 12%, var(--mline) 88%, transparent);
+  }
+  .mach__stagebtn {
+    display: flex; align-items: center; gap: 12px; width: 100%;
+    padding: 6px 0; background: none; border: 0; cursor: pointer; text-align: left;
+  }
+  .mach__dot {
+    position: relative; z-index: 1; flex-shrink: 0; height: 11px; width: 11px; border-radius: 999px;
+    border: 1px solid var(--line-2); background: var(--surf-1);
+    transition: background .3s, border-color .3s, box-shadow .3s, transform .3s;
+  }
+  .mach__stagekey { font-size: 11px; letter-spacing: .13em; color: var(--mfaint); transition: color .3s; }
+  .mach__stage--read { --sc: var(--mread); }
+  .mach__stage--scan { --sc: var(--mscan); }
+  .mach__stage--plan { --sc: var(--mplan); }
+  .mach__stage--build { --sc: var(--mbuild); }
+  .mach__stage--guard { --sc: var(--mguard); }
+  .mach__stage--sign { --sc: var(--msign); }
+  .mach__stage--settle { --sc: var(--msettle); }
+  .mach__stage.is-done .mach__dot { background: color-mix(in srgb, var(--sc) 50%, transparent); border-color: var(--sc); }
+  .mach__stage.is-done .mach__stagekey { color: var(--mmut); }
+  .mach__stage.is-live .mach__dot {
+    background: var(--sc); border-color: var(--sc); transform: scale(1.28);
+    box-shadow: 0 0 0 4px color-mix(in srgb, var(--sc) 18%, transparent), 0 0 16px var(--sc);
+  }
+  .mach__stage.is-live .mach__stagekey { color: var(--mink); }
+  .mach__stagebtn:hover .mach__stagekey { color: var(--mink); }
+
+  /* the panel */
+  .mach__panel { padding: 30px clamp(20px, 3vw, 40px); display: flex; flex-direction: column; min-width: 0; }
+  .mach__headline {
+    font-family: var(--font-serif); font-weight: 500; font-optical-sizing: auto;
+    font-size: clamp(17px, 1.7vw, 22px); line-height: 1.4; color: var(--mink); max-width: 46ch;
+    animation: mach-head .5s cubic-bezier(.2,.8,.2,1) both;
+  }
+  @keyframes mach-head { from { opacity: 0; transform: translateY(7px); } to { opacity: 1; transform: none; } }
+  .mach__log { margin-top: 18px; display: flex; flex-direction: column; gap: 5px; min-height: 128px; overflow: hidden; }
+  .mach__line {
+    font-size: 12.5px; line-height: 1.5; color: var(--mmut); letter-spacing: .01em;
+    opacity: 0; transform: translateX(-6px); transition: opacity .3s ease, transform .3s cubic-bezier(.2,.8,.2,1);
+    white-space: pre-wrap; word-break: break-word;
+  }
+  .mach__line.is-in { opacity: 1; transform: none; }
+  .mach__line.is-ok { color: color-mix(in srgb, var(--mguard) 78%, var(--fg)); }
+  .mach__line.is-warn { color: var(--mplan); }
+  .mach__outcome { margin-top: auto; padding-top: 20px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; animation: mach-head .5s cubic-bezier(.2,.8,.2,1) both; }
+  .mach__stamp {
+    display: inline-block; padding: 6px 14px; border-radius: 999px;
+    border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
+    background: color-mix(in srgb, var(--accent) 12%, transparent);
+    color: color-mix(in srgb, var(--accent) 82%, var(--fg));
+    font-size: 11.5px; letter-spacing: .1em; text-transform: uppercase;
+  }
+  .mach__stampsub { font-size: 11.5px; color: var(--mfaint); }
+
+  /* ── the route, assembling ─────────────────────────────────────────────
+     One horizontal path: where the money is → the legs → where the ask
+     settles. Each reveal is a class the component sets off the stage TONE it
+     has reached (r-bal … r-done), so the diagram is readable frozen at any
+     stage and needs no clock of its own. */
+  .mach__route {
+    border-left: 1px solid var(--mline); padding: 26px 24px;
+    display: flex; flex-direction: column; gap: 18px; min-width: 0;
+    background: color-mix(in srgb, var(--fg) 1.6%, transparent);
+  }
+  .mach__routetop { display: flex; justify-content: space-between; align-items: baseline; font-size: 10px; letter-spacing: .16em; color: var(--mfaint); }
+  .mach__routestate { color: var(--accent); letter-spacing: .1em; }
+  .mach__nodes { flex: 1; display: grid; grid-template-rows: auto 1fr auto; gap: 6px; }
+
+  .mach__node { display: grid; grid-template-columns: 34px 1fr; grid-template-areas: 'icon name' 'icon sub' 'stamp stamp'; align-items: center; column-gap: 11px; }
+  .mach__nodeicon {
+    grid-area: icon; height: 34px; width: 34px; border-radius: 11px;
+    display: flex; align-items: center; justify-content: center;
+    border: 1px solid var(--mline); background: var(--surf-2); color: var(--mink);
+    transition: border-color .4s, box-shadow .4s;
+  }
+  .mach__nodeletter { font-family: var(--font-mono); font-size: 14px; }
+  .mach__nodename { grid-area: name; font-size: 13.5px; color: var(--mink); line-height: 1.2; }
+  .mach__nodesub { grid-area: sub; font-size: 11px; color: var(--mfaint); line-height: 1.5; transition: color .4s; }
+  .r-bal .mach__node .mach__nodesub { color: var(--mscan); }
+  .r-bal .mach__node .mach__nodeicon { border-color: color-mix(in srgb, var(--mscan) 45%, transparent); }
+
+  .mach__legs { position: relative; display: flex; flex-direction: column; justify-content: center; gap: 12px; padding: 8px 0 8px 46px; min-height: 96px; }
+  .mach__leg { position: relative; display: flex; align-items: center; gap: 10px; }
+  .mach__legwire { position: relative; display: block; width: 3px; height: 26px; border-radius: 3px; background: repeating-linear-gradient(180deg, var(--mline) 0 3px, transparent 3px 7px); overflow: hidden; transition: background .4s; }
+  .r-plan .mach__legwire { background: repeating-linear-gradient(180deg, var(--mplan) 0 3px, transparent 3px 7px); }
+  .r-built .mach__legwire { background: color-mix(in srgb, var(--mbuild) 70%, transparent); }
+  .r-done .mach__legwire { background: var(--accent); }
+  .mach__legspark { position: absolute; left: 0; right: 0; height: 8px; border-radius: 3px; background: var(--accent); opacity: 0; top: -8px; }
+  .r-sign .mach__legspark { opacity: 1; animation: mach-spark 1.5s cubic-bezier(.4,0,.3,1) infinite; animation-delay: calc(var(--i) * .28s); }
+  @keyframes mach-spark { 0% { top: -8px; opacity: 0; } 20% { opacity: 1; } 100% { top: 26px; opacity: 0; } }
+  .mach__leglabel { font-size: 10.5px; color: var(--mfaint); opacity: .45; transition: opacity .4s, color .4s; }
+  .r-plan .mach__leglabel { opacity: 1; color: var(--mmut); }
+
+  .mach__shield {
+    position: absolute; right: 0; top: 50%; transform: translateY(-50%);
+    display: inline-flex; align-items: center; gap: 7px;
+    font-size: 10px; letter-spacing: .1em; color: var(--mfaint);
+    opacity: 0; transition: opacity .5s ease, color .5s;
+  }
+  .r-guard .mach__shield { opacity: 1; color: color-mix(in srgb, var(--mguard) 80%, var(--fg)); }
+  .mach__shieldring { height: 12px; width: 12px; border-radius: 999px; border: 1.5px solid currentColor; border-top-color: transparent; }
+  .r-guard .mach__shieldring { animation: mach-ring 1.4s linear infinite; }
+  .r-done .mach__shieldring { animation: none; border-top-color: currentColor; background: color-mix(in srgb, var(--mguard) 35%, transparent); }
+  @keyframes mach-ring { to { transform: rotate(360deg); } }
+
+  .mach__node--to .mach__nodeicon { border-color: var(--mline); }
+  .r-done .mach__node--to .mach__nodeicon {
+    border-color: color-mix(in srgb, var(--accent) 60%, transparent);
+    box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 12%, transparent);
+  }
+  .mach__stampchip {
+    grid-area: stamp; justify-self: start; margin-top: 10px;
+    padding: 4px 11px; border-radius: 7px; font-size: 11px; letter-spacing: .04em;
+    border: 1px dashed var(--mline); color: var(--mfaint);
+    transform: rotate(-1.2deg); transition: all .45s cubic-bezier(.2,.8,.2,1);
+  }
+  .r-done .mach__stampchip {
+    border-style: solid; border-color: color-mix(in srgb, var(--accent) 55%, transparent);
+    color: color-mix(in srgb, var(--accent) 85%, var(--fg));
+    background: color-mix(in srgb, var(--accent) 10%, transparent);
+    transform: rotate(-1.2deg) scale(1.04);
+  }
+  .mach__routefoot { font-size: 10.5px; line-height: 1.5; color: var(--mfaint); border-top: 1px solid var(--mline); padding-top: 12px; }
+
+  .mach__foot {
+    display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap;
+    padding: 14px clamp(20px, 3vw, 40px); border-top: 1px solid var(--mline);
+    background: color-mix(in srgb, var(--fg) 2.5%, transparent);
+  }
+  .mach__disclose { font-size: 11px; color: var(--mfaint); letter-spacing: .03em; }
+  .mach__acts { display: flex; align-items: center; gap: 10px; }
+  .mach__ctl {
+    display: inline-flex; align-items: center; gap: 6px; padding: 7px 14px; border-radius: 999px;
+    border: 1px solid var(--mline); background: transparent; color: var(--mmut);
+    font-size: 11.5px; letter-spacing: .05em; cursor: pointer; transition: color .2s, border-color .2s;
+  }
+  .mach__ctl:hover { color: var(--mink); border-color: var(--line-2); }
+  .mach__cta {
+    display: inline-flex; align-items: center; gap: 7px; padding: 8px 16px; border-radius: 999px;
+    background: var(--accent); color: var(--ink); font-size: 13px; font-weight: 600;
+    transition: transform .2s, box-shadow .2s;
+  }
+  .mach__cta:hover { transform: translateY(-1px); box-shadow: 0 8px 24px -10px var(--accent); }
+
+  @media (max-width: 1180px) {
+    .mach__body { grid-template-columns: 176px minmax(0, 1fr); }
+    .mach__route { grid-column: 1 / -1; border-left: 0; border-top: 1px solid var(--mline); }
+    .mach__nodes { grid-template-rows: none; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 18px; }
+    .mach__legs { padding: 0; min-height: 0; }
+    .mach__leg { flex-direction: column; gap: 6px; }
+    .mach__legwire { width: 34px; height: 3px; background: repeating-linear-gradient(90deg, var(--mline) 0 3px, transparent 3px 7px); }
+    .r-plan .mach__legwire { background: repeating-linear-gradient(90deg, var(--mplan) 0 3px, transparent 3px 7px); }
+    .mach__legspark { top: 0; bottom: 0; left: -8px; right: auto; width: 8px; height: auto; }
+    .r-sign .mach__legspark { animation-name: mach-spark-x; }
+    @keyframes mach-spark-x { 0% { left: -8px; opacity: 0; } 20% { opacity: 1; } 100% { left: 34px; opacity: 0; } }
+    .mach__shield { position: static; transform: none; justify-content: center; }
+  }
+  @media (max-width: 900px) {
+    .mach__body { grid-template-columns: 1fr; }
+    .mach__nodes { grid-template-columns: 1fr; grid-template-rows: auto auto auto; }
+    .mach__rail {
+      flex-direction: row; overflow-x: auto; padding: 14px 18px; gap: 4px;
+      border-right: 0; border-bottom: 1px solid var(--mline); justify-content: flex-start;
+    }
+    .mach__rail::before { left: 30px; right: 30px; top: auto; bottom: auto; width: auto; height: 1px; top: 50%;
+      background: linear-gradient(90deg, transparent, var(--mline) 12%, var(--mline) 88%, transparent); }
+    .mach__stagebtn { flex-direction: column; gap: 6px; padding: 0 10px; }
+    .mach__stagekey { font-size: 9.5px; }
+    .mach__panel { padding: 24px 20px 28px; }
+    .mach__foot { flex-direction: column; align-items: stretch; }
+    .mach__acts { justify-content: space-between; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .mach__headline, .mach__outcome { animation: none; }
+    .mach__line { transition: none; opacity: 1; transform: none; }
+    .mach__tok::after { transition: none; }
+    .mach__legspark, .mach__shieldring { animation: none !important; }
+    .mach__legspark { opacity: 0 !important; }
+    .mach__chip { transition: none; opacity: 1; transform: none; }
+  }
 
   /* ── FUNDING LAYER (.fundx): the "Buy $2 of AAPL" power example ────────
      Visual-left mirror of TxPipeline: a stylized still of the funding plan
@@ -3208,6 +3918,33 @@
   /* Fusion hero in daylight: the particle rivers become ink on paper — a
      mint-washed stage, deep-emerald core, saturated protocol hues (the
      canvas palette flips in HomeHeroFusion.tsx alongside these). */
+  /* The machine in daylight: the stage hues are tuned for additive light on
+     black, so they wash out on paper — re-ink them to their ink-on-paper
+     siblings. The rest of the console rides --surf/--line/--fg and flips on
+     its own. */
+  /* The return wire's gold is tuned for black; on paper it needs its
+     ink-on-paper sibling or the receipts read as a highlighter smear. */
+  /* Pending night-shift rows dim to .34 on black and still read; on paper
+     that lands as washed-out grey, which looks broken rather than pending. */
+  html[data-theme='light'] .night__row { opacity: .5; }
+  html[data-theme='light'] .night__row.is-in { opacity: 1; }
+  html[data-theme='light'] .spread__back { stroke: #a3720c; }
+  /* Same gold, same reason: the pause glyph's amber is tuned for black. */
+  html[data-theme='light'] .tl__glyph .tl-ring,
+  html[data-theme='light'] .tl__glyph .tl-pip { stroke: #a3720c; }
+  html[data-theme='light'] .sud__err { color: #a3720c; }
+  html[data-theme='light'] .spread__key--back i { background: #a3720c; }
+  html[data-theme='light'] .mach {
+    --mread: #4a5cd0;
+    --mscan: #1f7fa8;
+    --mplan: #a3720c;
+    --mbuild: #7a45c4;
+    --mguard: #0e8f62;
+    --msign: #c4552f;
+    --msettle: #0e8f62;
+    --mpanel: color-mix(in srgb, var(--surf-1) 88%, #ffffff);
+    --mglow: color-mix(in srgb, var(--accent) 13%, transparent);
+  }
   html[data-theme='light'] .fhero {
     --fbg: #f4f9f5;
     --haccent: #0e8f62;

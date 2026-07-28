@@ -1,10 +1,10 @@
 import type { Metadata } from 'next'
 import { SITE } from '@/lib/docs'
 import LinksHero from '@/components/LinksHero'
-import LinkLane from '@/components/LinkLane'
-import FundAnything from '@/components/FundAnything'
-import StandingIntent from '@/components/StandingIntent'
-import TxPipeline from '@/components/TxPipeline'
+import LandingMotion from '@/components/LandingMotion'
+import IntentMachine from '@/components/IntentMachine'
+import LinkEconomy from '@/components/LinkEconomy'
+import NightShift from '@/components/NightShift'
 import EmbedAnywhere from '@/components/EmbedAnywhere'
 import TrustStrip from '@/components/TrustStrip'
 import StayUpToDate from '@/components/StayUpToDate'
@@ -14,9 +14,19 @@ import Footer from '@/components/Footer'
 /** / — the links-first landing (2026-07-22 repositioning): intent links are
  * the product, chat is the link builder. One claim up top — "You have an
  * intent. We do the rest." — then the link economy's live numbers, what a
- * link can carry, the onboarding story, the standing/Guardian value, the
- * trust pipeline, and the host-side embed door. One message per section.
- * Server component so it can export metadata + JSON-LD. */
+ * link can carry, and what happens when someone opens one.
+ *
+ * 2026-07-28 overhaul: the middle of the page used to be five slabs of
+ * copy-beside-a-still (FundAnything, TxPipeline, StandingIntent, LinkLane).
+ * Those stills argued for a machine nobody could see. Now the machine runs
+ * (IntentMachine — it absorbed the funding story AND the quote→build→guard→
+ * sign→receipt pipeline, because both are just stages of one turn), standing
+ * intent is a clock that keeps running (NightShift), and links are drawn as
+ * the distribution channel they are (LinkEconomy). One message per section
+ * still holds; there are simply fewer, louder sections.
+ *
+ * Server component so it can export metadata + JSON-LD; the moving parts are
+ * client children. */
 
 const TITLE = 'Yeetful — You have an intent. We do the rest.'
 const DESCRIPTION =
@@ -55,24 +65,28 @@ export default function HomePage() {
   return (
     <>
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON_LD }} />
+      {/* One scroll listener + one observer for the whole page: stations,
+          decorative parallax, and the one-time section reveals */}
+      <LandingMotion />
       <main className="x-main x-main--fluid">
         {/* The claim + the live link economy */}
         <LinksHero />
 
-        {/* What a link can carry — the six house links, tappable */}
-        <LinkLane />
+        {/* The centerpiece: a runnable model of one turn — four real asks,
+            four different endings. Carries what FundAnything and TxPipeline
+            used to argue separately (funding, and quote → build → guardrails
+            → sign → receipt): they were always stages of the same turn. */}
+        <IntentMachine />
 
-        {/* The onboarding story: "Buy $2 of AAPL" funds itself across chains */}
-        <FundAnything />
+        {/* Distribution: one link, four surfaces, receipts coming back —
+            with the house set tappable */}
+        <LinkEconomy />
 
-        {/* The underlying value: standing intent — jobs, DCA, Guardian —
-            money that moves between your turns */}
-        <StandingIntent />
+        {/* The underlying value: standing intent as a clock that keeps
+            running — jobs, DCA, Guardian, money moving between your turns */}
+        <NightShift />
 
-        {/* The edge: quote → build → guardrails → sign → receipt */}
-        <TxPipeline />
-
-        {/* Hosts: the 5-line embed + host buttons */}
+        {/* Hosts: the 5-line embed + the loop that sharpens their set */}
         <EmbedAnywhere />
 
         {/* Why hosts embed it / why users sign */}
