@@ -52,6 +52,7 @@ import { chainById } from '@/lib/chains'
 import AppModeWorkspace from '@/components/AppModeWorkspace'
 import JobDetailOverlay from '@/components/JobDetailOverlay'
 import ChartOverlay from '@/components/ChartOverlay'
+import ArmSpotGuardButton from '@/components/ArmSpotGuardButton'
 import Link from 'next/link'
 import NavAccount from '@/components/NavAccount'
 import { YeetfulMark } from '@/components/Logo'
@@ -134,7 +135,7 @@ function MintLinkTurn({ ask, mcpsCsv }: { ask: string; mcpsCsv: string }) {
   )
 }
 
-function buildMeta(receipts: unknown, payer: unknown, voteRequest: unknown, voteCandidates?: unknown, routeReport?: unknown, routerTrace?: unknown, voteProposal?: unknown, orderRequest?: unknown, guardrails?: unknown, txRequest?: unknown, workingContext?: unknown, txChain?: unknown, clarify?: unknown, connectWallet?: unknown, connectAsk?: string, portfolio?: unknown, buildPath?: unknown, jobId?: unknown, guardianPolicyId?: unknown, jobToken?: unknown, nfts?: unknown, nftMarket?: unknown, dcaArm?: unknown) {
+function buildMeta(receipts: unknown, payer: unknown, voteRequest: unknown, voteCandidates?: unknown, routeReport?: unknown, routerTrace?: unknown, voteProposal?: unknown, orderRequest?: unknown, guardrails?: unknown, txRequest?: unknown, workingContext?: unknown, txChain?: unknown, clarify?: unknown, connectWallet?: unknown, connectAsk?: string, portfolio?: unknown, buildPath?: unknown, jobId?: unknown, guardianPolicyId?: unknown, jobToken?: unknown, nfts?: unknown, nftMarket?: unknown, dcaArm?: unknown, spotGuardArm?: unknown) {
   const meta: Record<string, unknown> = {}
   if (Array.isArray(receipts) && receipts.length) {
     meta.receipts = receipts
@@ -172,6 +173,7 @@ function buildMeta(receipts: unknown, payer: unknown, voteRequest: unknown, vote
   if (typeof guardianPolicyId === 'string' && guardianPolicyId) meta.guardianPolicyId = guardianPolicyId
   // A DCA autopilot arm offer (one signTypedData) — ArmDcaButton reads this.
   if (dcaArm && typeof dcaArm === 'object') meta.dcaArm = dcaArm
+  if (spotGuardArm && typeof spotGuardArm === 'object') meta.spotGuardArm = spotGuardArm
   // An ambiguous money/governance target the planner refused to guess (RR17)
   // — ClarifyChips reads this; a chip's pick is sent as the next message.
   if (clarify && typeof clarify === 'object') meta.clarify = clarify
@@ -740,7 +742,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
           addMessage(chatId, {
             role: 'assistant',
             content: out.content,
-            meta: buildMeta(out.receipts, out.payer, out.voteRequest, undefined, out.routeReport, out.routerTrace, out.voteProposal, out.orderRequest, undefined, out.txRequest, out.workingContext, out.txChain, out.clarify, undefined, undefined, out.portfolio, out.buildPath, out.jobId, out.guardianPolicyId, out.jobToken, undefined, undefined, out.dcaArm),
+            meta: buildMeta(out.receipts, out.payer, out.voteRequest, undefined, out.routeReport, out.routerTrace, out.voteProposal, out.orderRequest, undefined, out.txRequest, out.workingContext, out.txChain, out.clarify, undefined, undefined, out.portfolio, out.buildPath, out.jobId, out.guardianPolicyId, out.jobToken, undefined, undefined, out.dcaArm, out.spotGuardArm),
           })
           // Same standing-intent rail signal as the manual path.
           if (!embedded && (typeof out.jobId === 'string' || typeof out.guardianPolicyId === 'string')) {
@@ -811,7 +813,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
         addMessage(chatId, {
           role: 'assistant',
           content: data.reply || data.error || 'No response.',
-          meta: buildMeta(data.receipts, data.payer, data.voteRequest, data.voteCandidates, undefined, undefined, data.voteProposal, data.orderRequest, data.guardrails, data.txRequest, data.workingContext, data.txChain, data.clarify, data.connectWallet, userMsg, data.portfolio, data.buildPath, data.jobId, data.guardianPolicyId, data.jobToken, data.nfts, data.nftMarket, data.dcaArm),
+          meta: buildMeta(data.receipts, data.payer, data.voteRequest, data.voteCandidates, undefined, undefined, data.voteProposal, data.orderRequest, data.guardrails, data.txRequest, data.workingContext, data.txChain, data.clarify, data.connectWallet, userMsg, data.portfolio, data.buildPath, data.jobId, data.guardianPolicyId, data.jobToken, data.nfts, data.nftMarket, data.dcaArm, data.spotGuardArm),
         })
         // A standing intent was born this turn (job / DCA schedule / guardian
         // policy): the JobCard renders inline, AND the rail flips to Jobs so
@@ -998,7 +1000,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
     history: { role: string; content: string }[],
     workingContext?: WorkingContext,
   ): Promise<
-    | { kind: 'reply'; content: string; receipts?: unknown; payer?: string; voteRequest?: unknown; voteProposal?: unknown; routeReport?: unknown; routerTrace?: unknown; orderRequest?: unknown; txRequest?: unknown; txChain?: unknown; clarify?: unknown; workingContext?: unknown; portfolio?: unknown; buildPath?: unknown; jobId?: unknown; jobToken?: unknown; guardianPolicyId?: unknown; dcaArm?: unknown }
+    | { kind: 'reply'; content: string; receipts?: unknown; payer?: string; voteRequest?: unknown; voteProposal?: unknown; routeReport?: unknown; routerTrace?: unknown; orderRequest?: unknown; txRequest?: unknown; txChain?: unknown; clarify?: unknown; workingContext?: unknown; portfolio?: unknown; buildPath?: unknown; jobId?: unknown; jobToken?: unknown; guardianPolicyId?: unknown; dcaArm?: unknown; spotGuardArm?: unknown }
     | { kind: 'plan'; data: { plan: unknown; payments: PaymentToSign[]; listedOnly: unknown; notes?: unknown; turnId?: unknown; capabilities?: unknown } }
   > => {
     clearRouterTrace()
@@ -1027,7 +1029,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
     const reader = res.body.getReader()
     const decoder = new TextDecoder()
     let buf = ''
-    let reply: { kind: 'reply'; content: string; receipts?: unknown; payer?: string; voteRequest?: unknown; voteProposal?: unknown; routeReport?: unknown; routerTrace?: unknown; orderRequest?: unknown; txRequest?: unknown; txChain?: unknown; clarify?: unknown; workingContext?: unknown; portfolio?: unknown; buildPath?: unknown; jobId?: unknown; jobToken?: unknown; guardianPolicyId?: unknown; dcaArm?: unknown } | null = null
+    let reply: { kind: 'reply'; content: string; receipts?: unknown; payer?: string; voteRequest?: unknown; voteProposal?: unknown; routeReport?: unknown; routerTrace?: unknown; orderRequest?: unknown; txRequest?: unknown; txChain?: unknown; clarify?: unknown; workingContext?: unknown; portfolio?: unknown; buildPath?: unknown; jobId?: unknown; jobToken?: unknown; guardianPolicyId?: unknown; dcaArm?: unknown; spotGuardArm?: unknown } | null = null
     for (;;) {
       const { done, value } = await reader.read()
       if (done) break
@@ -1077,6 +1079,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
             jobToken: event.jobToken,
             guardianPolicyId: event.guardianPolicyId,
             dcaArm: event.dcaArm,
+            spotGuardArm: event.spotGuardArm,
           }
         } else if (event.type === 'error') {
           const message = typeof event.message === 'string' ? event.message : 'Auto-router failed'
@@ -1622,6 +1625,13 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
                         const arm = (msg.meta as { dcaArm?: unknown } | undefined)?.dcaArm
                         return arm && typeof arm === 'object' && typeof (arm as { scheduleId?: unknown }).scheduleId === 'string' ? (
                           <ArmDcaButton offer={arm as import('@/components/ArmDcaButton').DcaArmOfferWire} />
+                        ) : null
+                      })()}
+                    {msg.role === 'assistant' &&
+                      (() => {
+                        const arm = (msg.meta as { spotGuardArm?: unknown } | undefined)?.spotGuardArm
+                        return arm && typeof arm === 'object' && typeof (arm as { policyId?: unknown }).policyId === 'string' ? (
+                          <ArmSpotGuardButton offer={arm as import('@/components/ArmSpotGuardButton').SpotGuardArmOfferWire} />
                         ) : null
                       })()}
                     {msg.role === 'assistant' &&

@@ -62,6 +62,11 @@ const CORPUS: Entry[] = [
   { ask: 'Swap 0.004 ETH from base to ethereum', source: 'briefing unstick chip (mainnet dest)', expect: 'action' },
   { ask: 'Swap $50 of USDC for ETH on Base', source: 'briefing idle-USDC chip', expect: 'action' },
 
+  // Spot Guardian (briefing chip + manage verbs)
+  { ask: 'Protect my spot ETH with a 10% stop loss', source: 'briefing spot-guard chip', expect: 'action' },
+  { ask: 'Protect 0.5 spot ETH with a stop loss at $1500', source: 'spot-guard sized variant', expect: 'action' },
+  { ask: 'cancel my ETH spot protection', source: 'spot-guard manage', expect: 'action' },
+
   // Chart-overlay act-on-it chips (SEND on click since 2026-07-28; rendered
   // for every chartable symbol). The HL-perp row parses as a swap and the
   // route answers the Hyperliquid door chips instead of "unknown token".

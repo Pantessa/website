@@ -51,6 +51,7 @@ import { compileJobAsk } from '@/lib/jobs'
 import { advanceJob, createJob } from '@/lib/jobs-runner'
 import { signJobToken } from '@/lib/job-token'
 import { runDcaTurn } from '@/lib/dca-exec'
+import { runSpotGuardTurn } from '@/lib/spot-guard-exec'
 import {
   aaveAgentOf,
   competingVenueOf,
@@ -878,6 +879,19 @@ async function handleChatTurn(req: NextRequest) {
         // embed visitors have no SIWE session (lib/job-token.ts).
         jobToken: signJobToken(job.id),
         buildPath: 'native-job',
+      })
+    }
+
+    // Spot Guardian — "protect my spot ETH with a 10% stop loss". MUST run
+    // BEFORE the HL guardian gate: its grammar refuses perp-worded asks by
+    // construction, but the HL parser's loose coin slot would read "spot"
+    // as a coin. Arm answers with the one-signature Spend Permission card.
+    const spotTurn = await runSpotGuardTurn(message, walletAddress, nativeTrace)
+    if (spotTurn) {
+      return NextResponse.json({
+        reply: spotTurn.reply,
+        ...(spotTurn.spotGuardArm ? { spotGuardArm: spotTurn.spotGuardArm } : {}),
+        buildPath: spotTurn.buildPath,
       })
     }
 

@@ -116,7 +116,8 @@ export async function managerIsApproved(p: DcaSpendPermission): Promise<boolean>
  *  approveWithSignature from the spender. A wallet that can't back the
  *  permission (EOA, wrong signer, bad domain) reverts here — the arm is
  *  refused and nothing persists. */
-async function simulateApprove(p: DcaSpendPermission, signature: `0x${string}`, spender: `0x${string}`): Promise<{ ok: boolean; reason?: string }> {
+// Exported for the Spot Guardian's arm route — one simulation rulebook.
+export async function simulateApprove(p: DcaSpendPermission, signature: `0x${string}`, spender: `0x${string}`): Promise<{ ok: boolean; reason?: string }> {
   try {
     await baseClient().simulateContract({
       address: SPEND_PERMISSION_MANAGER as `0x${string}`,
