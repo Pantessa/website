@@ -7542,6 +7542,40 @@ async function main() {
       'briefing: mainnet-only donor → stranded named but never chipped',
       stuckMainnetDonor.length === 1 && !stuckMainnetDonor[0].actions,
     )
+    // Stranded ETH is the missing gas itself — named honestly, never
+    // chipped, never a neg nag (the #551 "said out loud" rule); dust ETH
+    // isn't even named.
+    const stuckEth = composeBriefingItems({
+      ...empty,
+      funding: { ...fundingBase, sources: [], stranded: [{ chainId: 1, chainWord: 'Ethereum', token: 'ETH', balance: 0.0018, usd: 3.45 }] },
+    })
+    check(
+      'briefing: sub-floor mainnet ETH → honest "not worth moving", no chip, no nag',
+      stuckEth.length === 1 && !stuckEth[0].actions && stuckEth[0].tone === undefined && /not worth moving/.test(stuckEth[0].value ?? ''),
+      JSON.stringify(stuckEth).slice(0, 160),
+    )
+    check('briefing: dust stranded ETH not even named', composeBriefingItems({
+      ...empty,
+      funding: { ...fundingBase, sources: [], stranded: [{ chainId: 42161, chainWord: 'Arbitrum', token: 'ETH', balance: 0.0004, usd: 0.8 }] },
+    }).length === 0)
+    // Mainnet-stranded USDC: the ~$8 unstick only pays for a real balance —
+    // $12 gets named without a chip, $40 gets the 0.004 ETH donor leg.
+    const mainnetStuckSmall = composeBriefingItems({
+      ...empty,
+      funding: { ...fundingBase, sources: [{ chainId: 8453, chainWord: 'Base', token: 'ETH', balance: 0.004, usd: 7.5 }], stranded: [{ chainId: 1, chainWord: 'Ethereum', token: 'USDC', balance: 12, usd: 12 }] },
+    })
+    const mainnetStuckBig = composeBriefingItems({
+      ...empty,
+      funding: { ...fundingBase, sources: [{ chainId: 8453, chainWord: 'Base', token: 'ETH', balance: 0.004, usd: 7.5 }], stranded: [{ chainId: 1, chainWord: 'Ethereum', token: 'USDC', balance: 40, usd: 40 }] },
+    })
+    const bigChip = mainnetStuckBig[0]?.actions?.[0]
+    const bigCc = bigChip ? parseCrossChainSwap(bigChip.prompt) : null
+    check(
+      'briefing: mainnet unstick gated on balance — $12 named only, $40 chips 0.004 ETH base→ethereum',
+      mainnetStuckSmall.length === 1 && !mainnetStuckSmall[0].actions &&
+        !!bigCc && !('problem' in bigCc) && bigCc.amount === '0.004' && bigCc.originChain === 'base' && bigCc.destinationChain === 'ethereum',
+      bigChip ? bigChip.prompt : 'no chip',
+    )
     // Idle USDC → soft chips, both round-tripping their parsers, chain named.
     const idle = composeBriefingItems({
       ...empty,

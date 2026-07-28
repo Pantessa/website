@@ -56,6 +56,10 @@ const AAVE_HF_WARN = 1.5
 // (the #551 lesson); 0.001 ETH covers an L2 send + destination floor.
 const DONOR_MIN_USD = 3
 const DONOR_CHAINS = new Set([8453, 42161])
+// Stranded ETH is only worth NAMING above this (it's unactionable); a
+// mainnet unstick (~$8 round trip) only pays for a meaningful balance.
+const STRANDED_ETH_NAME_FLOOR_USD = 2
+const MAINNET_UNSTICK_FLOOR_USD = 25
 
 const usd = (n: number) =>
   `$${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
@@ -107,20 +111,44 @@ export function composeBriefingItems(inputs: BriefingInputs): StatRow[] {
       (s) => s.token === 'ETH' && DONOR_CHAINS.has(s.chainId) && s.usd >= DONOR_MIN_USD,
     )
     for (const s of inputs.funding.stranded) {
+      // Stranded ETH IS the gas that's missing — there's no honest chip for
+      // it. Sub-floor mainnet ETH especially: moving it costs more than
+      // it's worth (the #551 lesson, said out loud, tone neutral — a nag
+      // with no action is just noise).
+      if (s.token === 'ETH') {
+        if (s.usd < STRANDED_ETH_NAME_FLOOR_USD) continue
+        rows.push({
+          label: `${usd(s.usd)} ETH on ${s.chainWord} · under the gas floor`,
+          value: 'not worth moving',
+          sub:
+            s.chainId === 1
+              ? 'moving it off mainnet would cost more than it is — it can sit'
+              : 'too small to send anywhere useful — it can sit as gas headroom',
+        })
+        continue
+      }
+      // Stranded stables: a donor chip only when the round-trip is
+      // economical — L2 destinations take a $2 top-up; mainnet's gas floor
+      // (~0.004 ETH) is only worth paying for a meaningful balance.
       const donor = donors.find((d) => d.chainId !== s.chainId)
+      const toMainnet = s.chainId === 1
+      const donorAmount = toMainnet ? '0.004' : '0.001'
+      const chipWorthIt = !!donor && (!toMainnet || s.usd >= MAINNET_UNSTICK_FLOOR_USD)
       rows.push({
         label: `${usd(s.usd)} ${s.token} stuck on ${s.chainWord}`,
         value: 'no gas',
-        sub: donor
-          ? `a little ETH from ${donor.chainWord} unsticks it`
-          : `send a little ETH to ${s.chainWord} to move it`,
+        sub: chipWorthIt
+          ? `a little ETH from ${donor!.chainWord} unsticks it`
+          : toMainnet
+            ? `mainnet gas costs real money — worth topping up only for a bigger balance`
+            : `send a little ETH to ${s.chainWord} to move it`,
         tone: 'neg',
-        ...(donor
+        ...(chipWorthIt
           ? {
               actions: [
                 {
-                  label: `Unstick via ${donor.chainWord}`,
-                  prompt: `Swap 0.001 ETH from ${donor.chainWord.toLowerCase()} to ${s.chainWord.toLowerCase()}`,
+                  label: `Unstick via ${donor!.chainWord}`,
+                  prompt: `Swap ${donorAmount} ETH from ${donor!.chainWord.toLowerCase()} to ${s.chainWord.toLowerCase()}`,
                 },
               ],
             }

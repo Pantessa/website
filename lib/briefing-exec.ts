@@ -96,3 +96,52 @@ export async function briefingTileFor(address: string): Promise<RowsTile | null>
     return null
   }
 }
+
+// ── Public /w snapshot ──────────────────────────────────────────────────────
+// The shareable "run Yeetful on any wallet" page reads the same pipeline
+// plus the multichain portfolio for context. A short per-instance TTL cache
+// keeps a shared link from hammering RPCs/MCPs (generateMetadata + the page
+// body both read it; the affinity-cache precedent).
+
+import { alchemyEnabled, getMultichainPortfolio, type MultichainPortfolio } from './alchemy'
+import type { StatRow } from './splash/types'
+
+export interface WalletSnapshot {
+  address: string
+  rows: StatRow[]
+  needs: number
+  portfolio: MultichainPortfolio | null
+  /** Providers that failed — the page must hedge, never claim "all clear". */
+  failed: string[]
+}
+
+const SNAPSHOT_TTL_MS = 120_000
+const snapshotCache = new Map<string, { at: number; value: Promise<WalletSnapshot> }>()
+
+export function walletSnapshotFor(address: string): Promise<WalletSnapshot> {
+  const key = address.toLowerCase()
+  const hit = snapshotCache.get(key)
+  if (hit && Date.now() - hit.at < SNAPSHOT_TTL_MS) return hit.value
+  const value = (async (): Promise<WalletSnapshot> => {
+    const [inputsR, portfolioR] = await Promise.allSettled([
+      readBriefingInputs(address),
+      alchemyEnabled() ? withTimeout(getMultichainPortfolio(address)) : Promise.resolve(null),
+    ])
+    const inputs =
+      inputsR.status === 'fulfilled'
+        ? inputsR.value
+        : { positions: [], protectedCoins: [], funding: null, aave: null, failed: ['briefing'] }
+    const rows = composeBriefingItems(inputs)
+    return {
+      address: key,
+      rows,
+      needs: rows.filter((r) => r.tone === 'neg').length,
+      portfolio: portfolioR.status === 'fulfilled' ? portfolioR.value : null,
+      failed: [...inputs.failed, ...(portfolioR.status === 'rejected' ? ['portfolio'] : [])],
+    }
+  })()
+  snapshotCache.set(key, { at: Date.now(), value })
+  // A rejected snapshot must not poison the cache window.
+  value.catch(() => snapshotCache.delete(key))
+  return value
+}

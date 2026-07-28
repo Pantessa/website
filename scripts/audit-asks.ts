@@ -55,6 +55,13 @@ const CORPUS: Entry[] = [
   { ask: 'Buy $2 of AAPL', source: 'examples/try + FundAnything', expect: 'action' },
   { ask: 'Quote 100 USDC to WETH on Base — which fee tier is best?', source: 'examples/try', expect: 'planner' },
 
+  // Wallet-briefing chips (the "what Yeetful noticed" tile + /w pages) —
+  // every briefing chip is a complete ask; the guardian/DCA ones are
+  // already covered by the splash rows above.
+  { ask: 'Swap 0.001 ETH from base to arbitrum', source: 'briefing unstick chip (L2 donor)', expect: 'action' },
+  { ask: 'Swap 0.004 ETH from base to ethereum', source: 'briefing unstick chip (mainnet dest)', expect: 'action' },
+  { ask: 'Swap $50 of USDC for ETH on Base', source: 'briefing idle-USDC chip', expect: 'action' },
+
   // Chart-overlay act-on-it chips (SEND on click since 2026-07-28; rendered
   // for every chartable symbol). The HL-perp row parses as a swap and the
   // route answers the Hyperliquid door chips instead of "unknown token".
