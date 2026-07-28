@@ -440,6 +440,7 @@ const hyperliquidSource: SplashSource = {
         value: `${pnl >= 0 ? '+' : ''}$${Math.abs(pnl).toFixed(2)} PnL`,
         sub: `entry $${p.entryPx ?? '—'}${p.liquidationPx ? ` · liq $${p.liquidationPx}` : ''}`,
         tone: pnl >= 0 ? ('pos' as const) : ('neg' as const),
+        chartSymbol: p.coin ?? null,
       }
     })
     // ACTIONS FIRST: each open position gets a real guardian arm + a real

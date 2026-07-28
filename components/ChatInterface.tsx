@@ -50,6 +50,7 @@ import ChainPicker from '@/components/ChainPicker'
 import { chainById } from '@/lib/chains'
 import AppModeWorkspace from '@/components/AppModeWorkspace'
 import JobDetailOverlay from '@/components/JobDetailOverlay'
+import ChartOverlay from '@/components/ChartOverlay'
 import Link from 'next/link'
 import NavAccount from '@/components/NavAccount'
 import { YeetfulMark } from '@/components/Logo'
@@ -1290,6 +1291,10 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
       {/* The rail's job detail card (portaled — renders nothing until a
           jobs-tab row opens it). First-party chat only. */}
       {!embedded && !simple && <JobDetailOverlay />}
+      {/* Chart buttons live inside cards that render on EVERY surface
+          (embed + /i included), so their overlay mounts ungated — a button
+          that no-ops would read as broken. No chrome, no auth inside. */}
+      <ChartOverlay />
 
       {/* Messages area — or, in App Mode, the structured workspace (panels
           fed by the working set; the input below stays docked as the command

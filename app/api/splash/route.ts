@@ -20,6 +20,7 @@ async function dcaTileFor(address: string): Promise<RowsTile | null> {
     return {
       label: `$${s.buyUsd} → ${s.buyToken} ${cadenceLabel(s.cadence)}`,
       sub: `on ${s.chainName}`,
+      chartSymbol: s.buyToken,
       value: s.status === 'paused' ? 'paused' : s.period === 'bought' ? `bought ${periodPhrase(s.cadence)}` : s.period === 'live' ? 'awaiting signature' : 'due now',
       tone: due ? ('pos' as const) : undefined,
       actions: [

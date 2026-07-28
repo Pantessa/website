@@ -32,6 +32,7 @@ import { buildSignableArtifact, isActionIntent, orderRequestOf, txRequestOf, txC
 import { resolveToken, buildCowOrderTypedData, cowOrderAction, buildCowLimitOrder, buildCowSubmitBody, describeCowOrder, describeAmount, formatAtoms, tokenDecimals, tokenLabel, humanToAtoms, applySlippage, COW_APP_DATA_JSON, COW_APP_DATA_HASH, GPV2_SETTLEMENT, type CowQuoteResult } from '../lib/cow'
 import { primeTokenList } from '../lib/token-list'
 import { pairStockToken, stockChipLabel } from '../lib/stock-pairing'
+import { chartPairFor, changePct24h, aggregateCandles, type Candle } from '../lib/charts'
 import { pureChecks, policyCheck, orderValueUsd, buildReport } from '../lib/cow-guardrails'
 import { policyCheckInflow, recipientCheck, validityCheck, MAX_VALID_SEC } from '../lib/tx-guardrails'
 import { guardPlannerArtifact, PERMIT2_ADDRESS } from '../lib/planner-artifact-guard'
@@ -7238,6 +7239,85 @@ async function main() {
       builtOk || policyBlocked,
       !(builtOk || policyBlocked) ? JSON.stringify(q).slice(0, 160) : policyBlocked ? 'policy refused — gate live' : '',
     )
+  }
+
+  // ── Token charts (the uniform chart button + /t pages) ───────────────────
+  console.log('— token charts')
+  {
+    // The resolver is the gate: it decides which rows grow the chart button
+    // AND which symbols the candles proxy will touch. Fail-closed by design.
+    check(
+      'charts: resolver maps majors to Coinbase USD, collapses wrapped aliases',
+      chartPairFor('ETH')?.pair === 'ETH-USD' &&
+        chartPairFor('eth')?.source === 'coinbase' &&
+        chartPairFor('WETH')?.pair === 'ETH-USD' &&
+        chartPairFor('WBTC')?.pair === 'BTC-USD' &&
+        chartPairFor('ETH')?.label === 'ETH / USD',
+    )
+    check(
+      'charts: HL perps chart via hyperliquid, stables + stocks + garbage stay chartless',
+      chartPairFor('HYPE')?.source === 'hyperliquid' &&
+        chartPairFor('SYRUP')?.source === 'hyperliquid' &&
+        chartPairFor('USDC') === null &&
+        chartPairFor('USDG') === null &&
+        // Tokenized stocks are the declared follow-up — this pin flips
+        // consciously when a robinhood candle source lands.
+        chartPairFor('AAPL') === null &&
+        chartPairFor('$$$') === null &&
+        chartPairFor('') === null,
+    )
+    const fakeCandles: Candle[] = Array.from({ length: 30 }, (_, i) => ({
+      t: 1_700_000_000 + i * 3600, o: 100 + i, h: 101 + i, l: 99 + i, c: 100.5 + i, v: 10,
+    }))
+    const agg = aggregateCandles(fakeCandles, 14400)
+    check(
+      'charts: 4h aggregation buckets hourly candles with honest OHLCV',
+      agg.length === 8 &&
+        agg[0].o === fakeCandles[0].o &&
+        agg[agg.length - 1].c === fakeCandles[29].c &&
+        agg.every((c) => c.h >= c.l && c.h >= c.o && c.h >= c.c) &&
+        agg.reduce((s, c) => s + c.v, 0) === 300,
+      `buckets=${agg.length}`,
+    )
+    const nowSec = fakeCandles[29].t
+    const chg = changePct24h(fakeCandles, nowSec)
+    check('charts: 24h change anchors on the candle nearest 24h back', chg !== null && Math.abs(chg - ((129.5 - 105.5) / 105.5) * 100) < 0.01, `chg=${chg}`)
+
+    // Candles proxy: unknown symbols never reach an upstream.
+    const refuse = await fetch(`${BASE}/api/charts/candles?symbol=USDG&tf=1h`)
+    const refuseBody = await refuse.json()
+    check(
+      'charts api: chartless symbol → shape-compatible refusal, no upstream probe',
+      refuse.status === 200 && refuseBody.source === null && refuseBody.candles.length === 0 && refuseBody.error === 'no chart source',
+    )
+    const badSym = await fetch(`${BASE}/api/charts/candles?symbol=%3Cscript%3E&tf=1h`)
+    check('charts api: malformed symbol → 400', badSym.status === 400)
+    // Live feed (Coinbase public). Two honest outcomes: real candles with
+    // sane OHLC ordering, or the named feed-down refusal — never a 500.
+    const live = await fetch(`${BASE}/api/charts/candles?symbol=ETH&tf=1h`)
+    const liveBody = await live.json()
+    const liveCandles = (liveBody.candles ?? []) as Candle[]
+    const liveOk =
+      live.status === 200 &&
+      liveBody.source === 'coinbase' &&
+      liveCandles.length > 20 &&
+      typeof liveBody.last === 'number' &&
+      liveCandles.every((c) => c.h >= c.l && Number.isFinite(c.o) && Number.isFinite(c.v)) &&
+      liveCandles.every((c, i) => i === 0 || c.t > liveCandles[i - 1].t)
+    const feedDown = live.status === 200 && liveBody.error === 'feed unavailable'
+    check('charts api: ETH 1h returns live ascending candles (or the named feed-down)', liveOk || feedDown, feedDown ? 'feed down — refusal shape verified' : `n=${liveCandles.length}`)
+
+    // /t pages: chartable symbol gets the live pair page, chartless symbols
+    // get the honest still-tradable page — both carry prefill CTAs only.
+    const tEth = flat(await (await fetch(`${BASE}/t/ETH`)).text())
+    check(
+      '/t/ETH: pair header + prefill trade CTAs (never auto-send)',
+      /ETH \/ USD/.test(tEth) && tEth.includes('Buy ETH in chat') && tEth.includes(encodeURIComponent('DCA $10 into ETH weekly')) && /Non-custodial/i.test(tEth),
+    )
+    const tUsdg = flat(await (await fetch(`${BASE}/t/USDG`)).text())
+    check('/t/USDG: chartless token stays honest + tradable', tUsdg.includes('No live chart for USDG yet') && tUsdg.includes('Buy USDG in chat'))
+    const tWeth = flat(await (await fetch(`${BASE}/t/weth`)).text())
+    check('/t/weth: alias collapses to the ETH pair', /ETH \/ USD/.test(tWeth))
   }
 
   // ── Cleanup (verified) ────────────────────────────────────────────────────

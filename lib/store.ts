@@ -271,6 +271,11 @@ interface YeetfulStore {
    *  pending signatures). Session state — never persisted. */
   jobDetail: { type: 'job' | 'dca'; id: string } | null
   setJobDetail: (detail: { type: 'job' | 'dca'; id: string } | null) => void
+  /** The token the user asked to see a live chart for (the uniform chart
+   *  button, any surface). Opens ChartOverlay. Session state — never
+   *  persisted. */
+  chartDetail: { symbol: string } | null
+  setChartDetail: (detail: { symbol: string } | null) => void
   /** The chat's left rail (MCPs + chat history) — desktop preference.
    *  Key name predates the merged rail (it was the MCP-only rail's flag);
    *  kept so existing clients don't lose their preference. */
@@ -792,6 +797,8 @@ export const useYeetfulStore = create<YeetfulStore>()(
       setComposerPrefill: (prompt) => set({ composerPrefill: prompt }),
       jobDetail: null,
       setJobDetail: (detail) => set({ jobDetail: detail }),
+      chartDetail: null,
+      setChartDetail: (detail) => set({ chartDetail: detail }),
       mcpRailOpen: true,
       setMcpRailOpen: (open) => set({ mcpRailOpen: open }),
       mobileMcpRailOpen: false,
