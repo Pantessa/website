@@ -7515,12 +7515,28 @@ async function main() {
     // /t pages: chartable symbol gets the live pair page, chartless symbols
     // get the honest still-tradable page — both carry prefill CTAs only.
     const tEth = flat(await (await fetch(`${BASE}/t/ETH`)).text())
+    // The hrefs are the contract (they must round-trip as chat prompts); the
+    // labels are the pin — reword the bar and re-pin here together.
     check(
-      '/t/ETH: pair header + prefill trade CTAs (never auto-send)',
-      /ETH \/ USD/.test(tEth) && tEth.includes('Buy ETH in chat') && tEth.includes(encodeURIComponent('DCA $10 into ETH weekly')) && /Non-custodial/i.test(tEth),
+      '/t/ETH: pair header + prefill trade CTAs in the top bar (never auto-send)',
+      /ETH \/ USD/.test(tEth) &&
+        tEth.includes(`/chat?prompt=${encodeURIComponent('Buy $50 of ETH')}`) &&
+        tEth.includes(`/chat?prompt=${encodeURIComponent('Sell $50 of ETH')}`) &&
+        tEth.includes(`/chat?prompt=${encodeURIComponent('DCA $10 into ETH weekly')}`) &&
+        tEth.includes('prefills chat · you send it') &&
+        /Non-custodial/i.test(tEth),
+    )
+    // Full-bleed shell + the expand control ship in the server HTML: the page
+    // is a chart workspace, not a centered article.
+    check(
+      '/t/ETH: full-bleed shell, no centered column, expand control present',
+      /class="tchart"/.test(tEth) && !/<main className?="x-main"/.test(tEth) && /aria-label="Full screen chart"/.test(tEth),
     )
     const tUsdg = flat(await (await fetch(`${BASE}/t/USDG`)).text())
-    check('/t/USDG: chartless token stays honest + tradable', tUsdg.includes('No live chart for USDG yet') && tUsdg.includes('Buy USDG in chat'))
+    check(
+      '/t/USDG: chartless token stays honest + tradable',
+      tUsdg.includes('No live chart for USDG yet') && tUsdg.includes(`/chat?prompt=${encodeURIComponent('Buy $50 of USDG')}`),
+    )
     const tWeth = flat(await (await fetch(`${BASE}/t/weth`)).text())
     check('/t/weth: alias collapses to the ETH pair', /ETH \/ USD/.test(tWeth))
   }
