@@ -11,7 +11,7 @@ import { fetchPositions } from './hl-guardian-store'
 import { scanFundingSources } from './funding-plan'
 import { callMcpTool } from './mcp-call'
 import { AAVE_MCP } from './aave-exec'
-import { briefingTile, composeBriefingItems, type BriefingInputs } from './briefing'
+import { briefingTile, composeBriefingItems, type BriefingInputs, type FiredEvent } from './briefing'
 import type { RowsTile } from './splash/types'
 
 const PROVIDER_TIMEOUT_MS = 8_000
@@ -32,7 +32,7 @@ export async function readBriefingInputs(address: string): Promise<BriefingInput
   const wallet = address.toLowerCase()
   const failed: string[] = []
 
-  const [positionsR, protectedR, fundingR, aaveR, spotR] = await Promise.allSettled([
+  const [positionsR, protectedR, fundingR, aaveR, spotR, firedR] = await Promise.allSettled([
     withTimeout(fetchPositions(address)),
     prisma.hlGuardianPolicy.findMany({
       where: { wallet, status: { in: ['active', 'triggered'] } },
@@ -44,6 +44,7 @@ export async function readBriefingInputs(address: string): Promise<BriefingInput
       where: { wallet, status: { in: ['active', 'triggered'] } },
       select: { tokenSymbol: true },
     }),
+    readFiredRecently(wallet),
   ])
 
   const positions =
@@ -93,7 +94,9 @@ export async function readBriefingInputs(address: string): Promise<BriefingInput
   const spotProtectedSymbols =
     spotR.status === 'fulfilled' ? spotR.value.map((r) => r.tokenSymbol) : (failed.push('spot-guard-policies'), ['ETH'])
 
-  return { positions, protectedCoins, spotProtectedSymbols, funding, aave, failed }
+  const firedRecently = firedR.status === 'fulfilled' ? firedR.value : (failed.push('fired-events'), [])
+
+  return { firedRecently, positions, protectedCoins, spotProtectedSymbols, funding, aave, failed }
 }
 
 /** The whole pipeline as one fail-soft call for /api/splash (and /w). */
@@ -104,6 +107,63 @@ export async function briefingTileFor(address: string): Promise<RowsTile | null>
   } catch {
     return null
   }
+}
+
+// ── Fired standing intents (7d) — the "while you were away" herald ─────────
+
+const FIRED_WINDOW_MS = 7 * 24 * 3600 * 1000
+
+const agoWord = (d: Date): string => {
+  const days = Math.floor((Date.now() - d.getTime()) / (24 * 3600 * 1000))
+  return days <= 0 ? 'today' : days === 1 ? 'yesterday' : `${days} days ago`
+}
+
+async function readFiredRecently(wallet: string): Promise<FiredEvent[]> {
+  const since = new Date(Date.now() - FIRED_WINDOW_MS)
+  const [guardian, dcaAuto, spot] = await Promise.all([
+    prisma.hlGuardianRun.findMany({
+      where: { wallet, action: 'closed', createdAt: { gte: since } },
+      include: { policy: { select: { coin: true, side: true, kind: true } } },
+      orderBy: { createdAt: 'desc' },
+      take: 3,
+    }),
+    prisma.dcaAutoRun.findMany({
+      where: { wallet, status: 'bought', createdAt: { gte: since } },
+      include: { schedule: { select: { buyToken: true, buyUsd: true } } },
+      orderBy: { createdAt: 'desc' },
+      take: 3,
+    }),
+    prisma.spotGuardRun.findMany({
+      where: { wallet, status: 'sold', createdAt: { gte: since } },
+      include: { policy: { select: { tokenSymbol: true, amountHuman: true } } },
+      orderBy: { createdAt: 'desc' },
+      take: 3,
+    }),
+  ])
+  const events: (FiredEvent & { at: Date })[] = [
+    ...guardian.map((r) => ({
+      kind: 'guardian' as const,
+      label: `${r.policy.kind === 'stop_loss' ? 'Stop-loss' : 'Take-profit'} fired · closed your ${r.policy.coin} ${r.policy.side}`,
+      valueUsd: r.valueUsd,
+      when: agoWord(r.createdAt),
+      at: r.createdAt,
+    })),
+    ...dcaAuto.map((r) => ({
+      kind: 'dca-auto' as const,
+      label: `Autopilot bought $${r.schedule.buyUsd} of ${r.schedule.buyToken}`,
+      valueUsd: r.valueUsd,
+      when: agoWord(r.createdAt),
+      at: r.createdAt,
+    })),
+    ...spot.map((r) => ({
+      kind: 'spot-guard' as const,
+      label: `Spot stop fired · ${r.policy.amountHuman} ${r.policy.tokenSymbol} → USDC in your wallet`,
+      valueUsd: r.valueUsd,
+      when: agoWord(r.createdAt),
+      at: r.createdAt,
+    })),
+  ]
+  return events.sort((a, b) => b.at.getTime() - a.at.getTime()).map(({ at: _at, ...e }) => e)
 }
 
 // ── Public /w snapshot ──────────────────────────────────────────────────────
@@ -139,7 +199,7 @@ export function walletSnapshotFor(address: string): Promise<WalletSnapshot> {
     const inputs =
       inputsR.status === 'fulfilled'
         ? inputsR.value
-        : { positions: [], protectedCoins: [], spotProtectedSymbols: [], funding: null, aave: null, failed: ['briefing'] }
+        : { firedRecently: [], positions: [], protectedCoins: [], spotProtectedSymbols: [], funding: null, aave: null, failed: ['briefing'] }
     const rows = composeBriefingItems(inputs)
     return {
       address: key,

@@ -5,6 +5,7 @@ import {
   SHARE_KINDS,
   dcaShareContent,
   guardianShareContent,
+  spotGuardShareContent,
   jobShareContent,
   txShareContent,
   receiptTweetHref,
@@ -44,7 +45,7 @@ export async function POST(req: NextRequest) {
   }
   const kind = body.kind
   if (!kind || !SHARE_KINDS.has(kind)) {
-    return NextResponse.json({ error: "kind must be 'tx' | 'job' | 'dca' | 'guardian'." }, { status: 400 })
+    return NextResponse.json({ error: "kind must be 'tx' | 'job' | 'dca' | 'guardian' | 'spot-guard'." }, { status: 400 })
   }
 
   let refId: string | null = null
@@ -77,6 +78,15 @@ export async function POST(req: NextRequest) {
       if (!s || s.wallet.toLowerCase() !== wallet) return NextResponse.json({ error: 'Schedule not found.' }, { status: 404 })
       refId = s.id
       content = dcaShareContent(s)
+    } else if (kind === 'spot-guard') {
+      if (!body.refId) return NextResponse.json({ error: 'spot-guard shares need refId.' }, { status: 400 })
+      const p = await prisma.spotGuardPolicy.findUnique({
+        where: { id: body.refId },
+        include: { runs: { orderBy: { createdAt: 'desc' }, take: 1 } },
+      })
+      if (!p || p.wallet.toLowerCase() !== wallet) return NextResponse.json({ error: 'Protection not found.' }, { status: 404 })
+      refId = p.id
+      content = spotGuardShareContent(p, p.runs[0] ?? null)
     } else {
       if (!body.refId) return NextResponse.json({ error: 'guardian shares need refId.' }, { status: 400 })
       const p = await prisma.hlGuardianPolicy.findUnique({

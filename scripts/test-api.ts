@@ -86,6 +86,7 @@ import {
   permissionMatchesPolicy,
   spotTriggerFired,
 } from '../lib/spot-guard'
+import { spotGuardShareContent } from '../lib/share-receipts'
 import {
   buildDcaSpendPermission,
   guardAutoBuy,
@@ -7512,7 +7513,7 @@ async function main() {
     const pos = (over: Partial<BriefingPosition> = {}): BriefingPosition => ({
       coin: 'ETH', side: 'long', positionValueUsd: 412.5, unrealizedPnl: 12.4, leverage: 4, ...over,
     })
-    const empty: BriefingInputs = { positions: [], protectedCoins: [], spotProtectedSymbols: [], funding: null, aave: null, failed: [] }
+    const empty: BriefingInputs = { firedRecently: [], positions: [], protectedCoins: [], spotProtectedSymbols: [], funding: null, aave: null, failed: [] }
 
     // Unprotected position → the loud row, chip round-trips parseGuardianArm.
     const naked = composeBriefingItems({ ...empty, positions: [pos()] })
@@ -7614,6 +7615,18 @@ async function main() {
       ...empty,
       funding: { ...fundingBase, sources: [{ chainId: 8453, chainWord: 'Base', token: 'USDC', balance: 10, usd: 10 }], stranded: [] },
     }).length === 0)
+    // Fired standing intents lead the tile as loud pos rows — never a nag.
+    const firedRows = composeBriefingItems({
+      ...empty,
+      firedRecently: [{ kind: 'guardian', label: 'Stop-loss fired · closed your ETH long', valueUsd: 11.93, when: 'yesterday' }],
+      positions: [pos()],
+    })
+    check(
+      'briefing: fired events lead the tile, pos tone, never counted as needs-you',
+      firedRows.length === 2 && firedRows[0].tone === 'pos' && /fired/.test(firedRows[0].label) && briefingNeedsCount(firedRows) === 1,
+      JSON.stringify(firedRows[0]).slice(0, 160),
+    )
+
     // Spot-guard suggestion: large unwatched Base ETH chips the spot arm
     // (round-trips parseSpotGuardArm); armed → quiet pos row; small → silent.
     const bigEth = { chainId: 8453, chainWord: 'Base', token: 'ETH' as const, balance: 0.22, usd: 412 }
@@ -7737,6 +7750,17 @@ async function main() {
     check('spot guard: pull ≠ allowance refuses', !guardSpotSell({ ...guardBase, pulledAtomic: amount + BigInt(1) }).ok)
     check('spot guard: unclaimed policy refuses (claim-before-build)', !guardSpotSell({ ...guardBase, policy: { ...guardBase.policy, status: 'active' } }).ok)
     check('spot guard: wrap value ≠ pull refuses', !guardSpotSell({ ...guardBase, steps: [{ ...wrapStep, value: (amount - BigInt(1)).toString() }, approveStep, mkSwapStep()] }).ok)
+    // Share receipts: standing vs fired headlines, and the receipt's ask
+    // round-trips the spot arm grammar (a shared receipt sells the exact move).
+    const scStanding = spotGuardShareContent({ tokenSymbol: 'ETH', amountHuman: '0.5', triggerMode: 'price_move_pct', triggerValue: 10, refPrice: 2000, status: 'active' }, null)
+    const scFired = spotGuardShareContent({ tokenSymbol: 'ETH', amountHuman: '0.5', triggerMode: 'price_move_pct', triggerValue: 10, refPrice: 2000, status: 'done' }, { status: 'sold', valueUsd: 912.4, markPrice: 1799.2 })
+    check(
+      'spot share: standing vs fired headlines + ask round-trips the arm grammar',
+      /standing/i.test(scStanding.headline) && scStanding.valueUsd === null &&
+        /fired/i.test(scFired.headline) && scFired.valueUsd === 912.4 &&
+        !!scStanding.ask && parseSpotGuardArm(scStanding.ask) !== null,
+      JSON.stringify({ s: scStanding.headline, f: scFired.headline, ask: scStanding.ask }).slice(0, 200),
+    )
     const permW = buildSpotGuardPermission({ account: OWNER, spender: SPENDER, token: WETH, amountAtoms: amount, nowSec: NOW, salt: BigInt(7) })
     const erc = guardSpotSell({
       ...guardBase,
