@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import { SITE } from '@/lib/docs'
 import LinksHero from '@/components/LinksHero'
 import LinkLane from '@/components/LinkLane'
+import IntentMachine from '@/components/IntentMachine'
 import FundAnything from '@/components/FundAnything'
 import StandingIntent from '@/components/StandingIntent'
 import TxPipeline from '@/components/TxPipeline'
@@ -58,6 +59,10 @@ export default function HomePage() {
       <main className="x-main x-main--fluid">
         {/* The claim + the live link economy */}
         <LinksHero />
+
+        {/* The centerpiece: a runnable model of one turn — four real asks,
+            four different endings */}
+        <IntentMachine />
 
         {/* What a link can carry — the six house links, tappable */}
         <LinkLane />
