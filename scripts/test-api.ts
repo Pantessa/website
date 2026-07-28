@@ -69,7 +69,7 @@ import { classifyOneclickStatus, inflightDepositFromPending, inflightPendingData
 import { sanitizeWorkingContext } from '../lib/working-context'
 import { parseRobinhoodFunding, parseSameChainSwapSegment, JOB_SEGMENT_PARSERS } from '../lib/jobs'
 import { parseMultiSendSegments, parseTransferSegment } from '../lib/transfer-exec'
-import { classifyTurn, moneyShaped } from '../lib/ask-failure'
+import { buildFundsDetail, classifyTurn, FAILURE_PROBE_TOKENS, moneyShaped } from '../lib/ask-failure'
 import { canonicalChainWord, normalizeChainWords } from '../lib/chain-lexicon'
 import { decideFundingTurn, detectBalanceShortfall, fundingPlanUsd, planFundingChips, planStrandedRescue, rankFundingSources, shortRefusalCopy, softenClaimedFailureBlock, type FundingNeed, type FundingSource } from '../lib/funding-plan'
 import { compileDcaBuy, dcaRunChip, parseDcaCreate, parseDcaManage, parseDcaRun, periodKeyFor } from '../lib/dca'
@@ -3445,6 +3445,45 @@ async function main() {
         classifyTurn({ reply: 'refused', blocked: true }).kind === 'blocked' &&
         classifyTurn(null).kind === 'error',
     )
+    // ── The funds-snapshot assembly (pure): counting rules the funded=1
+    // queue depends on. A USDT-only wallet used to log had_funds=false —
+    // indistinguishable from an empty one — so USDT demand had no data; and
+    // multiple token rows sharing a chain (USDC.e today, spendable ETH rows
+    // once the funding scan grows them) must never price that chain's gas
+    // ETH more than once.
+    {
+      const FO = (chainId: number, word: string, usd: number, gasEth: number, token = 'USDC') => ({ chainId, word, token, usd, gasEth })
+      const usdcRow = FO(42161, 'Arbitrum', 10, 0.002)
+      const usdceRow = FO(42161, 'Arbitrum', 5, 0.002, 'USDC.e')
+      const ethRow = { ...FO(8453, 'Base', 100, 0.06, 'ETH'), spendable: true }
+      const built = buildFundsDetail(
+        { origins: [usdcRow, usdceRow, ethRow], gaslessOrigins: [], allScanned: [usdcRow, usdceRow, ethRow], failedOrigins: ['Ethereum'], usdgAtoms: BigInt(4_800_000) },
+        2000,
+        [{ symbol: 'USDT', word: 'Ethereum', usd: 50 }],
+      )
+      check(
+        'ask-failure snapshot: gas priced once per chain, ETH rows never double-count, USDT named with its no-path marker',
+        // 10 + 5 (stables) + 4 (Arb gas once: 0.002×2000) + 120 (Base gas
+        // 0.06×2000 — covers the ETH row, which itself adds nothing) +
+        // 4.80 USDG + 50 USDT = 193.80
+        built.totalUsd === 193.8 &&
+          built.parts.filter((p) => /ETH Arbitrum/.test(p)).length === 1 &&
+          !built.parts.some((p) => /\$100 ETH/.test(p)) &&
+          built.parts.some((p) => p === '$50 USDT Ethereum (no funding path yet)') &&
+          built.parts.some((p) => /unscanned: Ethereum/.test(p)),
+        JSON.stringify(built),
+      )
+      const bare = buildFundsDetail({ origins: [], gaslessOrigins: [], allScanned: [], failedOrigins: [], usdgAtoms: BigInt(0) }, null, [{ symbol: 'USDT', word: 'Base', usd: 7.25 }])
+      check(
+        'ask-failure snapshot: a USDT-only wallet now measures as funded (the demand signal)',
+        bare.totalUsd === 7.25 && bare.parts.length === 1 && /USDT Base \(no funding path yet\)/.test(bare.parts[0]),
+        JSON.stringify(bare),
+      )
+      check(
+        'ask-failure snapshot: probe tokens stay 6-dec on the three funding origins (registry sanity)',
+        [1, 8453, 42161].every((id) => (FAILURE_PROBE_TOKENS[id] ?? []).every((t) => t.decimals === 6 && /^0x[0-9a-fA-F]{40}$/.test(t.address) && t.symbol === 'USDT')),
+      )
+    }
 
     const DEPOSIT = '0x7ff0D96c9f0528f0FF8dd948b2D316806fE3c7f2'
     const USDC_BASE = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913'
