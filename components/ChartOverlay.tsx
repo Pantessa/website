@@ -9,7 +9,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { motion, AnimatePresence } from 'framer-motion'
+import { motion } from 'framer-motion'
 import { ExternalLink, X } from 'lucide-react'
 import { useYeetfulStore } from '@/lib/store'
 import { chartPairFor } from '@/lib/charts'
@@ -51,13 +51,16 @@ export default function ChartOverlay() {
   const chgClass = chg === null ? 'tok__chg--flat' : chg > 0 ? 'tok__chg--up' : chg < 0 ? 'tok__chg--down' : 'tok__chg--flat'
   const chgLabel = chg === null ? '24h —' : `${chg >= 0 ? '▲' : '▼'} ${Math.abs(chg).toFixed(2)}% 24h`
 
+  // Entrance ONLY — an exit animation strands the invisible backdrop over the
+  // whole page when rAF starves (busy real tabs, not just headless: the App
+  // Mode ghost-panel lesson), and a stranded backdrop eats every click. Close
+  // is instant unmount.
   return createPortal(
-    <AnimatePresence>
+    <>
       {chartDetail && pair && (
         <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
           transition={{ duration: 0.15 }}
           className="fixed inset-0 z-[70] flex items-start justify-center overflow-y-auto bg-black/60 p-4 pt-[8vh] backdrop-blur-sm"
           onClick={close}
@@ -134,7 +137,7 @@ export default function ChartOverlay() {
           </div>
         </motion.div>
       )}
-    </AnimatePresence>,
+    </>,
     document.body,
   )
 }
