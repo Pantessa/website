@@ -132,6 +132,26 @@ async function run() {
     check('no account contributes no tile', (await hl.build(call, ADDR, srv('hyperliquid-free', 'Hyperliquid (Free)'))) === null)
   }
 
+  console.log('splash sources — hyperliquid (positions carry the chart symbol)')
+  {
+    const positioned = async () => ({
+      perp: {
+        accountValueUsd: '250.10',
+        withdrawableUsd: '100',
+        positions: [
+          { coin: 'HYPE', szi: '10', unrealizedPnl: '12.5', leverage: { value: 2 }, entryPx: '38.2', liquidationPx: '20.1' },
+          { coin: 'ETH', szi: '-0.1', unrealizedPnl: '-3.1', entryPx: '3500' },
+        ],
+      },
+    })
+    const tile = (await hl.build(positioned, ADDR, srv('hyperliquid-free', 'Hyperliquid (Free)'))) as RowsTile
+    check('positions render as rows', tile.render === 'rows')
+    // The uniform chart button contract: a row whose label isn't a bare
+    // symbol names its coin so the client can offer the chart.
+    check('every position row carries its coin as chartSymbol', tile.rows.length === 2 && tile.rows[0].chartSymbol === 'HYPE' && tile.rows[1].chartSymbol === 'ETH')
+    check('long/short labels intact', /HYPE long 2x/.test(tile.rows[0].label) && /ETH short/.test(tile.rows[1].label))
+  }
+
   console.log('splash sources — aave')
   {
     const positioned = async () => ({
