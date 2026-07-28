@@ -1,5 +1,5 @@
 import prisma from '@/lib/db'
-import { FEE_BEARING_BUILD_PATHS, creatorEarningsUsd, formatEarnedUsd } from '@/lib/fees'
+import { FEE_BEARING_BUILD_PATHS, creatorEarningsUsd, formatEarnedUsd, netFeeBpsFor } from '@/lib/fees'
 import { REAL_TRAFFIC_WHERE } from '@/lib/value-origin'
 import LinksHeroView from '@/components/LinksHeroView'
 
@@ -26,11 +26,14 @@ async function linkStats() {
       }),
     ])
     let movedUsd = 0
-    let feeBearingUsd = 0
+    let creatorUsd = 0
     for (const t of turns) {
       const v = t._sum.valueUsd ?? 0
       movedUsd += v
-      if (t.buildPath && FEE_BEARING_BUILD_PATHS.has(t.buildPath)) feeBearingUsd += v
+      // Per-path net rate — a cross-chain dollar earns half a Uniswap dollar.
+      if (t.buildPath && FEE_BEARING_BUILD_PATHS.has(t.buildPath)) {
+        creatorUsd += creatorEarningsUsd(v, netFeeBpsFor(t.buildPath))
+      }
     }
     const usd = (n: number) =>
       n >= 1000 ? `$${Math.round(n).toLocaleString('en-US')}` : `$${n.toFixed(2)}`
@@ -38,7 +41,7 @@ async function linkStats() {
       links: String(links),
       opens: String(opens),
       movedUsd: usd(movedUsd),
-      creatorUsd: formatEarnedUsd(creatorEarningsUsd(feeBearingUsd)),
+      creatorUsd: formatEarnedUsd(creatorUsd),
     }
   } catch {
     return null

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import prisma from '@/lib/db'
 import { getAuthAddress } from '@/lib/api-key'
-import { FEE_BEARING_BUILD_PATHS, creatorEarningsUsd } from '@/lib/fees'
+import { FEE_BEARING_BUILD_PATHS, creatorEarningsUsd, netFeeBpsFor } from '@/lib/fees'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -27,8 +27,17 @@ export async function POST(req: NextRequest) {
     where: { intentLinkSlug: { in: links.map((l) => l.id) }, outcome: 'signed', valueUsd: { gt: 0 } },
     _sum: { valueUsd: true },
   })
-  const feeBearingUsd = turns.reduce((s, t) => s + (t.buildPath && FEE_BEARING_BUILD_PATHS.has(t.buildPath) ? (t._sum.valueUsd ?? 0) : 0), 0)
-  const earned = creatorEarningsUsd(feeBearingUsd)
+  // Per-path rates — a cross-chain dollar earns half a Uniswap dollar (the
+  // 1Click app-fee split). Must match /api/intent-links exactly or a creator
+  // sees one number and claims another.
+  const earned = turns.reduce(
+    (s, t) =>
+      s +
+      (t.buildPath && FEE_BEARING_BUILD_PATHS.has(t.buildPath)
+        ? creatorEarningsUsd(t._sum.valueUsd ?? 0, netFeeBpsFor(t.buildPath))
+        : 0),
+    0,
+  )
 
   const prior = await prisma.intentLinkClaim.aggregate({
     where: { creator, status: { in: ['requested', 'paid'] } },

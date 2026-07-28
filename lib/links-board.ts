@@ -1,7 +1,7 @@
 import { Prisma } from '@prisma/client'
 import prisma from '@/lib/db'
 import { HOUSE_LINKS } from '@/lib/house-links'
-import { FEE_BEARING_BUILD_PATHS, FEES_LIVE_SINCE, SWAP_FEE_BPS, CREATOR_FEE_SPLIT } from '@/lib/fees'
+import { FEE_BEARING_BUILD_PATHS, FEES_LIVE_SINCE, CREATOR_FEE_SPLIT, netFeeBpsFor } from '@/lib/fees'
 import { INTERNAL_ORIGIN_SQL, INTERNAL_TRAFFIC_WHERE } from '@/lib/value-origin'
 
 // The intent-links board data, shared by /links (the full leaderboard) and
@@ -263,21 +263,28 @@ export async function feeSummary(): Promise<FeeSummary | null> {
       createdAt: { gte: since },
       ...NOT_HARNESS,
     }
+    // Grouped by path: each venue hands over a different NET rate (NEAR
+    // Intents keeps half of its app fee), so one blended multiply would
+    // overstate the treasury on every cross-chain dollar.
     const [all, linked] = await Promise.all([
-      prisma.embedTurn.aggregate({ where: feeWhere, _sum: { valueUsd: true }, _count: true }),
-      prisma.embedTurn.aggregate({
+      prisma.embedTurn.groupBy({ by: ['buildPath'], where: feeWhere, _sum: { valueUsd: true }, _count: { _all: true } }),
+      prisma.embedTurn.groupBy({
+        by: ['buildPath'],
         where: { ...feeWhere, intentLinkSlug: { not: null } },
         _sum: { valueUsd: true },
       }),
     ])
-    const feeBearingUsd = all._sum.valueUsd ?? 0
-    const totalFeeUsd = feeBearingUsd * (SWAP_FEE_BPS / 10_000)
-    const creatorUsd = (linked._sum.valueUsd ?? 0) * (SWAP_FEE_BPS / 10_000) * CREATOR_FEE_SPLIT
+    const feeBearingUsd = all.reduce((s, r) => s + (r._sum.valueUsd ?? 0), 0)
+    const totalFeeUsd = all.reduce((s, r) => s + (r._sum.valueUsd ?? 0) * (netFeeBpsFor(r.buildPath) / 10_000), 0)
+    const creatorUsd = linked.reduce(
+      (s, r) => s + (r._sum.valueUsd ?? 0) * (netFeeBpsFor(r.buildPath) / 10_000) * CREATOR_FEE_SPLIT,
+      0,
+    )
     return {
       feeBearingUsd,
       creatorUsd,
       yeetfulUsd: Math.max(0, totalFeeUsd - creatorUsd),
-      conversions: typeof all._count === 'number' ? all._count : 0,
+      conversions: all.reduce((s, r) => s + r._count._all, 0),
     }
   } catch {
     return null
