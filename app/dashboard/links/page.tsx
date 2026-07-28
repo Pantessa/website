@@ -9,6 +9,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Check, Copy, Link2, Plus, Sparkles } from 'lucide-react'
 import { MINTABLE_MCPS, composeMcps } from '@/lib/intent-links'
+import { formatEarnedUsd } from '@/lib/fees'
 import { getProtocolMark } from '@/components/protocol-marks'
 
 /** The vendored brand glyph for a mintable MCP, sized for a picker chip.
@@ -50,6 +51,10 @@ interface LinkRow {
 
 interface Earnings {
   totalEarnedUsd: number
+  /** All signed notional these links produced — fee-bearing or not. */
+  totalSignedUsd: number
+  /** The slice that took a fee-bearing route — the earnings base. */
+  totalFeeBearingUsd: number
   claimedUsd: number
   claimableUsd: number
   minClaimUsd: number
@@ -672,12 +677,15 @@ export default function DashboardLinksPage() {
         )}
       </div>
 
-      {earnings && earnings.totalEarnedUsd > 0 && (
+      {/* Shown as soon as a link has MOVED money — not only once earnings
+          clear a cent. A creator whose first conversion took a fee-free route
+          needs the accounting, not a missing panel. */}
+      {earnings && (earnings.totalEarnedUsd > 0 || earnings.totalSignedUsd > 0) && (
         <div className="rounded-xl border border-[var(--line)] bg-[var(--surf-1)] px-4 py-3 mb-6 flex flex-wrap items-center gap-x-6 gap-y-2">
           <span className="text-[13px] text-[color:var(--muted)]">
-            Earned <span className="mono text-[color:var(--accent)]">${earnings.totalEarnedUsd.toFixed(2)}</span>
+            Earned <span className="mono text-[color:var(--accent)]">{formatEarnedUsd(earnings.totalEarnedUsd)}</span>
             {' · '}claimed <span className="mono">${earnings.claimedUsd.toFixed(2)}</span>
-            {' · '}claimable <span className="mono text-[color:var(--fg)]">${earnings.claimableUsd.toFixed(2)}</span>
+            {' · '}claimable <span className="mono text-[color:var(--fg)]">{formatEarnedUsd(earnings.claimableUsd)}</span>
           </span>
           <button
             type="button"
@@ -698,7 +706,19 @@ export default function DashboardLinksPage() {
           {claimMsg && <span className="text-[12px] text-[color:var(--muted-2)]">{claimMsg}</span>}
           <span className="text-[11px] text-[color:var(--muted-2)] w-full">
             Half of Yeetful&apos;s 0.20% fee on swaps and stock buys your links produced — sales,
-            transfers, and bridges are always fee-free. Paid as USDC on Base from ${earnings.minClaimUsd}.
+            transfers, stakes, and bridges are always fee-free. Paid as USDC on Base from $
+            {earnings.minClaimUsd}.
+            {/* The honest zero: money moved, none of it through a fee-bearing
+                venue. Without this line the panel just reads $0.00. */}
+            {earnings.totalSignedUsd > 0 && earnings.totalFeeBearingUsd <= 0 && (
+              <>
+                {' '}
+                <span className="text-[color:var(--fg)]">
+                  Your ${earnings.totalSignedUsd.toFixed(2)} moved so far went through fee-free
+                  routes, so it earned nothing — a swap or stock buy is what pays.
+                </span>
+              </>
+            )}
           </span>
         </div>
       )}
@@ -770,8 +790,15 @@ export default function DashboardLinksPage() {
                   <td className="py-2.5 pr-3 text-right mono text-[13px]">
                     {l.signedUsd > 0 ? `$${l.signedUsd.toFixed(2)}` : '—'}
                   </td>
-                  <td className="py-2.5 pr-3 text-right mono text-[13px] text-[color:var(--accent)]">
-                    {l.earnedUsd > 0 ? `$${l.earnedUsd.toFixed(2)}` : '—'}
+                  <td
+                    className="py-2.5 pr-3 text-right mono text-[13px] text-[color:var(--accent)]"
+                    title={
+                      l.earnedUsd <= 0 && l.signedUsd > 0
+                        ? 'Fee-free route — bridges, transfers, stakes and sales move money but earn nothing.'
+                        : undefined
+                    }
+                  >
+                    {l.earnedUsd > 0 ? formatEarnedUsd(l.earnedUsd) : '—'}
                   </td>
                   <td className="py-2.5 text-right whitespace-nowrap">
                     {/* never offer sharing a revoked link — it 404s */}

@@ -238,6 +238,11 @@ export async function buildSignArtifact(
 ): Promise<{ artifact: Record<string, unknown>; guardReport?: unknown; valueUsd: number | null }> {
   if (builder === 'native-cross-chain') {
     const p = params as unknown as CrossChainSwapParams
+    // DELIBERATELY fee-free: the funding plan compiles its rescue legs as
+    // cross-chain steps (lib/funding-plan.ts), and "insufficient funds" must
+    // never cost the user extra to fix. A chat-asked bridge pays the venue
+    // fee (app/api/chat/route.ts); a job leg does not. The guard below is
+    // told to expect NO fee, so an unrequested one refuses the build.
     const raw = (await callMcpTool(NEAR_INTENTS_MCP, 'build_swap', {
       originChain: p.originChain,
       originToken: p.originToken,

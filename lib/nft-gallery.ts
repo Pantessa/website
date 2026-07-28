@@ -54,9 +54,13 @@ export function nftRowActions(n: { name: string | null; identifier: string }, ch
       : `Sell my ${pn} NFT on ${chainLabel}`
   return [
     { label: 'Sell', prompt: sellPrompt },
-    // The recipient is deliberately blank — the user appends an address (or
-    // sends as-is and the native layer asks for the full one-liner).
-    { label: 'Transfer', prompt: `Send my ${pn} NFT on ${chainLabel} to ` },
+    // A COMPLETE ask with the recipient left out — the layer answers "where
+    // should <this NFT> go?" and remembers the NFT (nftTransferPending), so
+    // the user just pastes an address. The chip used to end in a dangling
+    // "to " for the user to complete, but chips auto-send: it fired
+    // half-written, and the address arrived a turn later with nothing tying
+    // it to the NFT (live 2026-07-28).
+    { label: 'Transfer', prompt: `Transfer my ${pn} NFT on ${chainLabel}` },
   ]
 }
 

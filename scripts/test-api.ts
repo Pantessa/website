@@ -37,6 +37,7 @@ import { policyCheckInflow, recipientCheck, validityCheck, MAX_VALID_SEC } from 
 import { guardPlannerArtifact, PERMIT2_ADDRESS } from '../lib/planner-artifact-guard'
 import { parseSwapIntent } from '../lib/swap-intent'
 import { activeLinkCapFor, composeMcps } from '../lib/intent-links'
+import { formatEarnedUsd, netFeeBpsFor, creatorEarningsUsd, FEE_BEARING_BUILD_PATHS, CROSS_CHAIN_FEE_BPS, CROSS_CHAIN_NET_FEE_BPS } from '../lib/fees'
 import { hexLuminance, normalizeAccent, normalizeBg, parseBrandHtml, validateBrandUrl } from '../lib/brand-scan'
 import {
   decideTurnLimit,
@@ -50,7 +51,7 @@ import { isDbChatId } from '../lib/chat-ids'
 import { usdToTokenAmount } from '../lib/usd-probe'
 import { parseRobinhoodBridge, guardRobinhoodBridge, RH_L1_INBOX, ARB_SYS } from '../lib/robinhood-bridge'
 import { parseNftAsk, parseOpenSeaItemUrl, guardNftTransfer, ERC721_ABI as NFT_ERC721_ABI, ERC1155_ABI as NFT_ERC1155_ABI } from '../lib/nft-layer'
-import { parseNftListAsk, parseNftMarketAsk } from '../lib/nft-layer'
+import { parseNftListAsk, parseNftMarketAsk, parseNftTransferFollowUp, nftTransferPending, nftAskFromPending } from '../lib/nft-layer'
 import { nftGalleryChains, nftRowActions } from '../lib/nft-gallery'
 import { groupCollections, marketReplyCopy, offersDisplay, valuationDisplay } from '../lib/nft-market'
 import { nftGalleryOf, nftMarketOf } from '../lib/nft-display'
@@ -1476,8 +1477,13 @@ async function main() {
     await turn({ buildPath: 'native-nft-transfer', valueUsd: 500 }) // moves $500, earns $0
     const after = await fetch(`${BASE}/api/intent-links`, { headers: { cookie: mallorySession } })
     const afterBody = (await after.json()) as {
-      links: Array<{ slug: string; signedUsd: number; earnedUsd: number }>
-      earnings: { totalEarnedUsd: number; claimableUsd: number }
+      links: Array<{ slug: string; signedUsd: number; feeBearingUsd: number; earnedUsd: number }>
+      earnings: {
+        totalEarnedUsd: number
+        totalSignedUsd: number
+        totalFeeBearingUsd: number
+        claimableUsd: number
+      }
     }
     const mine = afterBody.links.find((l) => l.slug === slug)
     check(
@@ -1487,6 +1493,26 @@ async function main() {
     check(
       'intent links: NFT/transfer $ counts as moved but NEVER as earnings',
       !!mine && mine.signedUsd >= 600 && Math.abs(mine.earnedUsd - 0.1) < 0.001,
+    )
+    // A zero must be able to explain itself: the fee-bearing base rides along
+    // so the UI can say "fee-free route" instead of showing a bare $0.00.
+    check(
+      'intent links: the fee-bearing base ships alongside moved $ (per link + total)',
+      !!mine &&
+        Math.abs(mine.feeBearingUsd - 100) < 0.001 &&
+        afterBody.earnings.totalSignedUsd >= 600 &&
+        afterBody.earnings.totalFeeBearingUsd >= 100,
+    )
+    // Sub-cent display: half of 20bps on a $1 test swap is $0.001 — two
+    // decimals would render the tester's own proof-of-life as "$0.00".
+    check(
+      'intent links: sub-cent earnings render the tiny bits, not $0.00',
+      formatEarnedUsd(0) === '$0.00' &&
+        formatEarnedUsd(0.001) === '$0.001' &&
+        formatEarnedUsd(0.0025) === '$0.0025' &&
+        formatEarnedUsd(0.00001) === '<$0.0001' &&
+        formatEarnedUsd(0.1) === '$0.10' &&
+        formatEarnedUsd(12.345) === '$12.35',
     )
     const claim = await fetch(`${BASE}/api/intent-links/claims`, { method: 'POST', headers: M })
     check('intent links: claim below the $10 floor refused (400)', claim.status === 400)
@@ -3453,6 +3479,56 @@ async function main() {
     const nativeBuild = { kind: 'swap_ready', quote: { sell: { amountAtoms: '1000000000000000000' } }, deposit: { address: DEPOSIT }, steps: [{ action: 'send_transaction', tx: { to: DEPOSIT, data: '0x', value: '1000000000000000000', chainId: 8453 } }] }
     check('xchain guard: native transfer to deposit address PASSES', guardCrossChainBuild(nativeBuild, { chainId: 8453 }).ok)
 
+    // ── The venue fee (1Click appFees) ──────────────────────────────────────
+    // It rides the quote, so the DEPOSIT is identical with or without it —
+    // the guard's job is only to police who the fee pays.
+    const ONECLICK_SHARE = '5880ad2b362620fadf759cbceb1cd5737ce8c6ed7fb8e9942881e6731f9247dd'
+    const feeExpect = { recipient: TREASURY_ADDRESS, bps: CROSS_CHAIN_FEE_BPS }
+    const feeSplit = [
+      { recipient: TREASURY_ADDRESS, fee: CROSS_CHAIN_NET_FEE_BPS },
+      { recipient: ONECLICK_SHARE, fee: CROSS_CHAIN_NET_FEE_BPS },
+    ]
+    const feeBuild = { ...goodBuild, appFee: { requested: [{ recipient: TREASURY_ADDRESS, fee: CROSS_CHAIN_FEE_BPS }], applied: feeSplit } }
+    const feeGuard = guardCrossChainBuild(feeBuild, { chainId: 8453, fee: feeExpect })
+    check(
+      'xchain fee: the pinned treasury split PASSES and the deposit is untouched',
+      feeGuard.ok && feeGuard.tx?.to === USDC_BASE && feeGuard.feeBps === CROSS_CHAIN_FEE_BPS && (feeGuard.feeNotes ?? []).length === 0,
+    )
+    check(
+      'xchain fee: an app fee paid to an address we did not pin is REFUSED',
+      !guardCrossChainBuild(
+        { ...goodBuild, appFee: { applied: [{ recipient: '0x000000000000000000000000000000000000dEaD', fee: 10 }, { recipient: ONECLICK_SHARE, fee: 10 }] } },
+        { chainId: 8453, fee: feeExpect },
+      ).ok,
+    )
+    check(
+      'xchain fee: a fee larger than we requested is REFUSED',
+      !guardCrossChainBuild(
+        { ...goodBuild, appFee: { applied: [{ recipient: TREASURY_ADDRESS, fee: 400 }, { recipient: ONECLICK_SHARE, fee: 400 }] } },
+        { chainId: 8453, fee: feeExpect },
+      ).ok,
+    )
+    check(
+      'xchain fee: an UNREQUESTED app fee is REFUSED (job/funding legs stay fee-free)',
+      !guardCrossChainBuild({ ...goodBuild, appFee: { applied: feeSplit } }, { chainId: 8453, fee: null }).ok &&
+        guardCrossChainBuild(goodBuild, { chainId: 8453, fee: null }).ok,
+    )
+    const notApplied = guardCrossChainBuild(goodBuild, { chainId: 8453, fee: feeExpect })
+    check(
+      'xchain fee: a venue that did not apply the fee still SIGNS, quietly (operator note, no user warning, no fee claimed)',
+      notApplied.ok && notApplied.feeBps === 0 && (notApplied.feeNotes ?? []).length === 1 && notApplied.warnings.length === 0,
+    )
+    // The earnings rate is the NET half — 1Click keeps the rest.
+    check(
+      'xchain fee: creator earnings use the per-path NET rate (cross-chain earns half a uniswap dollar)',
+      netFeeBpsFor('native-cross-chain') === CROSS_CHAIN_NET_FEE_BPS &&
+        netFeeBpsFor('native-swap-uniswap') === CROSS_CHAIN_FEE_BPS &&
+        netFeeBpsFor('native-nft-transfer') === 0 &&
+        FEE_BEARING_BUILD_PATHS.has('native-cross-chain') &&
+        Math.abs(creatorEarningsUsd(1000, netFeeBpsFor('native-cross-chain')) - 0.5) < 1e-9 &&
+        Math.abs(creatorEarningsUsd(1000, netFeeBpsFor('native-swap-uniswap')) - 1) < 1e-9,
+    )
+
     // Follow-ups.
     const pend = { kind: 'xchain', data: { amount: '1', originToken: 'USDC', originChain: 'base', destinationToken: 'USDC', destinationChain: 'arbitrum', depositAddress: DEPOSIT } }
     check('xchain follow-up: "cancel" drops it', parseCrossChainFollowUp('cancel', pend)?.kind === 'cancel')
@@ -5013,6 +5089,95 @@ async function main() {
   check('nft parse: sell without a price clarifies (never guesses)', !!nftNoPrice && nftNoPrice.kind === 'problem' && /price/i.test(nftNoPrice.problem), JSON.stringify(nftNoPrice))
   const nftNoTo = parseNftAsk('transfer my pudgy penguin #2489 nft')
   check('nft parse: transfer without a recipient clarifies', !!nftNoTo && nftNoTo.kind === 'problem' && /recipient|go|0x/i.test(nftNoTo.problem), JSON.stringify(nftNoTo))
+  // ── Transfer continuity. "Where should it go?" is a QUESTION, so its answer
+  // is a bare address — which names no NFT. Without a memory that turn fell to
+  // the planner, which "confirmed" the transfer and then invented a failed
+  // ownership lookup for an NFT it had been handed two turns earlier (live
+  // 2026-07-28, from the gallery's Transfer chip).
+  const nftOpen = parseNftAsk('Transfer my Mintbase #42 NFT on Ethereum')
+  check(
+    'nft parse: a recipient-less transfer KEEPS the NFT it parsed',
+    !!nftOpen && nftOpen.kind === 'problem' && nftOpen.awaiting === 'recipient' && nftOpen.partial?.ref === 'Mintbase #42' && nftOpen.partial?.tokenId === '42' && nftOpen.partial?.chainId === 1,
+    JSON.stringify(nftOpen),
+  )
+  // The chip that caused it shipped a dangling "…to " for the user to finish;
+  // chips auto-send, so it fired half-written. Old links still carry it.
+  const nftOpenLegacy = parseNftAsk('Send my Mintbase #42 NFT on Ethereum to ')
+  check(
+    'nft parse: the legacy dangling-"to" chip still parks its NFT',
+    !!nftOpenLegacy && nftOpenLegacy.kind === 'problem' && nftOpenLegacy.partial?.ref === 'Mintbase #42',
+    JSON.stringify(nftOpenLegacy),
+  )
+  check(
+    'nft follow-up: a bare address (or ENS) answers the pending transfer',
+    (() => {
+      const bare = parseNftTransferFollowUp('0x5EaaBd731d2Bc0490C2D47e41858e9b0629455a0')
+      const worded = parseNftTransferFollowUp('send it to vitalik.eth')
+      return bare?.kind === 'recipient' && bare.to === '0x5EaaBd731d2Bc0490C2D47e41858e9b0629455a0' && worded?.kind === 'recipient' && worded.to === 'vitalik.eth'
+    })(),
+  )
+  check(
+    'nft follow-up: fresh asks, questions, and chatter never become a recipient',
+    parseNftTransferFollowUp('what NFTs do I own?') === null &&
+      parseNftTransferFollowUp('sell my Cool Cat #7 for 1 eth') === null &&
+      parseNftTransferFollowUp('how do I do that') === null &&
+      parseNftTransferFollowUp('never mind')?.kind === 'cancel',
+  )
+  // The round trip: park it, answer it, get a buildable transfer back.
+  check(
+    'nft follow-up: parked NFT + pasted address rebuild the full transfer ask',
+    (() => {
+      const open = parseNftAsk('Transfer my Pudgy Penguin #2489 NFT on Base')
+      if (!open || open.kind !== 'problem' || !open.partial) return false
+      const parked = nftTransferPending(open.partial)
+      const resumed = nftAskFromPending(parked.data, '0x2222222222222222222222222222222222222222')
+      return (
+        parked.kind === 'nft-transfer' &&
+        Object.keys(parked.data).length <= 8 &&
+        !!resumed &&
+        resumed.ref === 'Pudgy Penguin #2489' &&
+        resumed.tokenId === '2489' &&
+        resumed.chainId === 8453 &&
+        resumed.to === '0x2222222222222222222222222222222222222222'
+      )
+    })(),
+  )
+  check('nft follow-up: a parked payload with no ref never builds on a guess', nftAskFromPending({ amount: '1' }, '0x2222222222222222222222222222222222222222') === null)
+  // The gallery's own Transfer chip must round-trip its OWN flow: complete ask
+  // in, parked NFT out (a chip that auto-sends can never be half-written).
+  check(
+    'nft gallery: the Transfer chip is a complete ask that parks its NFT',
+    (() => {
+      const chip = nftRowActions({ name: 'Pudgy Penguin', identifier: '2489' }, 'Base', null)[1]
+      if (/\bto\s*$/i.test(chip.prompt)) return false
+      const open = parseNftAsk(chip.prompt)
+      return !!open && open.kind === 'problem' && open.awaiting === 'recipient' && open.partial?.tokenId === '2489' && open.partial?.chainId === 8453
+    })(),
+  )
+  // The live seam: refusal carries the pending, the address completes it.
+  const nftXferOpen = await fetch(`${BASE}/api/chat`, {
+    method: 'POST', headers: { 'content-type': 'application/json', 'x-yf-no-ask-log': '1' },
+    body: JSON.stringify({ message: 'Transfer my Pudgy Penguin #2489 NFT on Base', activeServers: [], walletAddress: '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045' }),
+  }).then((r) => r.json())
+  check(
+    'nft transfer turn: the "where should it go?" refusal parks the NFT',
+    nftXferOpen.workingContext?.pending?.kind === 'nft-transfer' && /Pudgy Penguin #2489/.test(nftXferOpen.workingContext?.pending?.summary ?? ''),
+    JSON.stringify(nftXferOpen).slice(0, 220),
+  )
+  const nftXferResume = await fetch(`${BASE}/api/chat`, {
+    method: 'POST', headers: { 'content-type': 'application/json', 'x-yf-no-ask-log': '1' },
+    body: JSON.stringify({
+      message: '0x2222222222222222222222222222222222222222',
+      activeServers: [],
+      walletAddress: '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045',
+      workingContext: nftXferOpen.workingContext,
+    }),
+  }).then((r) => r.json())
+  check(
+    'nft transfer turn: the pasted address resumes THAT NFT (never the planner)',
+    typeof nftXferResume.reply === 'string' && /pudgy penguin|#2489/i.test(nftXferResume.reply) && !/could\s*n[o']t verify|double-check/i.test(nftXferResume.reply),
+    JSON.stringify(nftXferResume).slice(0, 260),
+  )
   check(
     'nft parse: token swaps + stock sells + bare sends fall through',
     parseNftAsk('sell 1 ETH for USDC') === null &&

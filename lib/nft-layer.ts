@@ -99,7 +99,11 @@ export type NftAsk =
   | (NftAskBase & { kind: 'transfer'; to: string })
   | (NftAskBase & { kind: 'sell'; priceEth: string | null; durationHours: number })
   | (NftAskBase & { kind: 'buy'; maxPriceEth: string | null; cheapest?: boolean })
-  | { kind: 'problem'; problem: string }
+  /** An NFT ask this layer owns but can't build yet. `awaiting` names the ONE
+   *  missing input, and `partial` carries everything already resolved — the
+   *  caller parks it in workingContext so the user's next line completes the
+   *  build instead of starting over. */
+  | { kind: 'problem'; problem: string; awaiting?: 'recipient'; partial?: NftAskBase }
 
 /** Does the message talk about an NFT at all? The layer's cheap claim gate:
  *  the word nft/opensea, a "#123" id, or an address#id pair. Token swaps,
@@ -137,6 +141,11 @@ const COUNT = String.raw`(?:(\d+)\s+(?:of|x|×)\s+)?`
 const CHAIN_TAIL = String.raw`(?:\s+on\s+(?:ethereum|mainnet|base|arbitrum|opensea))*`
 
 const TRANSFER_RE = new RegExp(String.raw`\b(?:transfer|send|gift)\s+${COUNT}(?:my\s+)?${REF}\s+(?:nft\s+)?to\s+${RECIPIENT}`, 'i')
+// The same transfer, WITHOUT a recipient — "transfer my Pudgy #2489", or the
+// gallery chip's older dangling "…NFT on Base to ". The NFT is fully named
+// here; only the destination is missing, so the ref is parsed and carried
+// forward rather than thrown away (see nftTransferPending).
+const TRANSFER_OPEN_RE = new RegExp(String.raw`\b(?:transfer|send|gift)\s+${COUNT}(?:my\s+)?${REF}\s*(?:\s+to)?\s*[.!?]*\s*$`, 'i')
 // Buys have no required terminator ("to …"/"for … eth"), so the grammar
 // anchors to the end of the message — deterministic layers stay narrow.
 const BUY_RE = new RegExp(
@@ -282,9 +291,21 @@ export function parseNftAsk(message: string): NftAsk | null {
     if (!ref) return { kind: 'problem', problem: 'Which NFT? Name it like “send my Pudgy Penguin #2489 to 0x…”.' }
     return { kind: 'transfer', ref, tokenId, contract, chainId, amount: t[1] ?? '1', to: t[3] }
   }
-  // A transfer-shaped ask with no recipient — ours, but unbuildable yet.
+  // A transfer-shaped ask with no recipient — ours, but unbuildable yet. The
+  // NFT itself is usually fully named (the gallery's Transfer chip names it),
+  // so keep what we parsed: `partial` lets the caller remember the NFT while
+  // it asks for the destination, and the user's next line is just an address.
   if (/\b(?:transfer|send|gift)\b/i.test(message) && /\bnfts?\b|#\d+/i.test(message) && !/\bto\s+\S/i.test(message)) {
-    return { kind: 'problem', problem: 'Where should it go? Give me the full ask in one line: “send my <NFT name> #<id> to 0x… (or name.eth)”. Transfers are irreversible, so I build only against an explicit recipient.' }
+    const open = message.match(TRANSFER_OPEN_RE)
+    const parts = open ? refParts(open[2]) : null
+    return {
+      kind: 'problem',
+      problem: parts?.ref
+        ? `Where should ${parts.ref} go? Paste the destination address (0x… or name.eth) and I'll build the transfer. Transfers are irreversible, so I build only against an explicit recipient.`
+        : 'Where should it go? Give me the full ask in one line: “send my <NFT name> #<id> to 0x… (or name.eth)”. Transfers are irreversible, so I build only against an explicit recipient.',
+      awaiting: 'recipient',
+      ...(parts?.ref ? { partial: { ...parts, chainId, amount: open?.[1] ?? '1' } } : {}),
+    }
   }
 
   const s = message.match(SELL_RE)
@@ -329,6 +350,71 @@ export function parseNftAsk(message: string): NftAsk | null {
     return { kind: 'problem', problem: 'Give me the buy in one line: “buy <collection name> #<id>” or “buy the cheapest <collection> nft”, optionally “for up to <amount> ETH”. I resolve it against live OpenSea listings and you sign the exact Seaport fill.' }
   }
   return null
+}
+
+// ── Transfer continuity (workingContext.pending) ───────────────────────────
+//
+// "Where should it go?" is a QUESTION, so the answer is a bare address — and
+// a bare address names no NFT, so without a memory the next turn fell to the
+// planner (live 2026-07-28: the gallery's Transfer chip → "Where should it
+// go?" → a pasted 0x… → the planner "confirmed" the transfer, then invented
+// a failed ownership lookup and asked the user to re-verify an NFT it had
+// been handed two turns earlier). The refusal now parks the resolved NFT and
+// the pasted address completes it — the rh-funding pattern, same discipline:
+// a seam the planner must never freelance.
+
+/** The pending payload the recipient-less refusal attaches. Five keys, well
+ *  under the context sanitizer's cap. */
+export function nftTransferPending(partial: NftAskBase): { kind: string; summary: string; data: Record<string, string> } {
+  return {
+    kind: 'nft-transfer',
+    summary: `NFT transfer awaiting a recipient: ${partial.ref}${partial.chainId ? ` on ${chainById(partial.chainId)?.name ?? partial.chainId}` : ''}`,
+    data: {
+      ref: partial.ref,
+      amount: partial.amount,
+      ...(partial.tokenId ? { tokenId: partial.tokenId } : {}),
+      ...(partial.contract ? { contract: partial.contract } : {}),
+      ...(partial.chainId ? { chainId: String(partial.chainId) } : {}),
+    },
+  }
+}
+
+export type NftTransferFollowUp = { kind: 'recipient'; to: string } | { kind: 'cancel' }
+
+/**
+ * Does this message answer a pending "where should it go?" — i.e. is it just
+ * a destination? Narrow on purpose: a bare (or lightly-worded) address/ENS
+ * and nothing else. A message that names an NFT is a fresh ask and belongs to
+ * parseNftAsk; a question is never a recipient.
+ */
+export function parseNftTransferFollowUp(message: string): NftTransferFollowUp | null {
+  const m = message.trim()
+  if (!m || m.length > 120) return null
+  if (/\?\s*$/.test(m)) return null
+  if (/\b(?:never\s*mind|cancel|forget\s+it|don'?t\s+send|stop)\b/i.test(m)) return { kind: 'cancel' }
+  // A fresh NFT ask (it names one) is not a recipient answer.
+  if (mentionsNft(m)) return null
+  const hit = m.match(
+    new RegExp(String.raw`^(?:(?:send|transfer|it|to|my|the|address|wallet|goes)\s+|[:,\-]\s*)*${RECIPIENT}(?:\s+(?:please|thanks|thx|ty))*\s*[.!]*$`, 'i'),
+  )
+  return hit ? { kind: 'recipient', to: hit[1] } : null
+}
+
+/** Rebuild the full transfer ask from a parked NFT + the recipient just
+ *  given. Null when the parked data lost its ref (never build on a guess). */
+export function nftAskFromPending(data: Record<string, string>, to: string): Extract<NftAsk, { kind: 'transfer' }> | null {
+  const ref = data.ref?.trim()
+  if (!ref) return null
+  const chainId = data.chainId ? Number(data.chainId) : null
+  return {
+    kind: 'transfer',
+    ref,
+    tokenId: data.tokenId ?? null,
+    contract: data.contract ?? null,
+    chainId: chainId && Number.isFinite(chainId) ? chainId : null,
+    amount: data.amount && /^\d+$/.test(data.amount) ? data.amount : '1',
+    to,
+  }
 }
 
 // ── Resolve (anchor the ref against the wallet's real NFTs) ────────────────

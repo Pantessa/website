@@ -42,6 +42,7 @@ import {
   type CrossChainSwapParams,
   type BuiltSwap,
 } from '@/lib/cross-chain-swap'
+import { CROSS_CHAIN_FEE_BPS, TREASURY_ADDRESS } from '@/lib/fees'
 import { prettyChainWord } from '@/lib/chain-lexicon'
 import { arbitrumUsdcBalance, buildHlExecTurn, hlAgentOf, HL_MIN_DEPOSIT_USDC, hlOpenCollateralShortfall, parseHlIntent, type HlOpenShortfall, type HlOrderIntent } from '@/lib/hyperliquid-exec'
 import { parseGuardianArm } from '@/lib/hl-guardian'
@@ -81,7 +82,7 @@ import {
 } from '@/lib/aave-supply'
 import { policyCheck, buildReport } from '@/lib/tx-guardrails'
 import { buildGuardrailedOrder } from '@/lib/cow-build'
-import { parseNftAsk, parseNftListAsk, parseNftMarketAsk, buildNftBuy, buildNftTransfer, buildNftListing } from '@/lib/nft-layer'
+import { parseNftAsk, parseNftListAsk, parseNftMarketAsk, parseNftTransferFollowUp, nftAskFromPending, nftTransferPending, buildNftBuy, buildNftTransfer, buildNftListing } from '@/lib/nft-layer'
 import { chainListSentence, nftGalleryChains, readNftGallery } from '@/lib/nft-gallery'
 import { marketReplyCopy, readNftOffers, readNftWorth } from '@/lib/nft-market'
 import { parseTransferSegment, buildTransferArtifact } from '@/lib/transfer-exec'
@@ -1192,11 +1193,47 @@ async function handleChatTurn(req: NextRequest) {
     //    artifact (SignNftListingButton) and re-verified at the submit relay.
     //    Buys: live-listing resolve → OpenSea fulfillment re-encoded LOCALLY,
     //    target pinned to Seaport 1.6, price re-checked vs floor/cap.
-    const nftAsk = parseNftAsk(message)
+    //    Continuity: a recipient-less transfer parks the resolved NFT in
+    //    workingContext, so the user's next line — a bare address answering
+    //    "where should it go?" — completes THAT transfer here instead of
+    //    reaching the planner, which has no NFT to name and invents one.
+    const pendingNftTransfer =
+      workingContext?.pending && workingContext.pending.kind === 'nft-transfer' ? workingContext.pending : undefined
+    let nftAsk = parseNftAsk(message)
+    if (!nftAsk && pendingNftTransfer) {
+      const fu = parseNftTransferFollowUp(message)
+      if (fu?.kind === 'cancel') {
+        nativeTrace({ type: 'status', label: 'pending nft transfer dropped by the user — nothing was built' })
+        return NextResponse.json({
+          reply: `👍 Dropped it — the ${pendingNftTransfer.data.ref ?? 'NFT'} transfer was never built, so it hasn't moved.`,
+          workingContext: { v: 1, age: 0, ...(workingContext?.scope ? { scope: workingContext.scope } : {}) } satisfies WorkingContext,
+        })
+      }
+      if (fu?.kind === 'recipient') {
+        const resumed = nftAskFromPending(pendingNftTransfer.data, fu.to)
+        if (resumed) {
+          nativeTrace({ type: 'status', label: `recipient answered a pending nft transfer — resuming "${resumed.ref}" → ${fu.to}` })
+          nftAsk = resumed
+        }
+      }
+    }
     if (nftAsk) {
       if (nftAsk.kind === 'problem') {
-        nativeTrace({ type: 'status', label: 'native nft layer claimed the turn — ask incomplete, answering honestly (no build)' })
-        return NextResponse.json({ reply: `🖼️ ${nftAsk.problem}` })
+        nativeTrace({ type: 'status', label: `native nft layer claimed the turn — ask incomplete${nftAsk.awaiting ? ` (awaiting the ${nftAsk.awaiting})` : ''}, answering honestly (no build)` })
+        return NextResponse.json({
+          reply: `🖼️ ${nftAsk.problem}`,
+          // Park the resolved NFT so the answer to the question completes it.
+          ...(nftAsk.awaiting === 'recipient' && nftAsk.partial
+            ? {
+                workingContext: {
+                  v: 1,
+                  age: 0,
+                  ...(workingContext?.scope ? { scope: workingContext.scope } : {}),
+                  pending: nftTransferPending(nftAsk.partial),
+                } satisfies WorkingContext,
+              }
+            : {}),
+        })
       }
       if (!walletAddress) {
         nativeTrace({ type: 'note', level: 'info', label: 'nft ask but no wallet connected — asking to connect before building' })
@@ -1769,7 +1806,7 @@ async function callAgentTool(endpoint: string, tool: string, args: Record<string
  */
 function composeCrossChainReply(
   params: CrossChainSwapParams,
-  guard: { depositAddress?: string; addressExpires?: string | null; warnings: string[] },
+  guard: { depositAddress?: string; addressExpires?: string | null; warnings: string[]; feeBps?: number },
   summary: string,
   walletAddress: string,
 ): string {
@@ -1800,6 +1837,12 @@ function composeCrossChainReply(
   if (recvNum && sellNum > 0 && recv![2].toUpperCase() === sellTok) {
     const pct = Math.round((1 - recvNum / sellNum) * 100)
     if (pct >= 5) lines.push(`- **Rate note:** ~${pct}% of this goes to route costs at this size — larger amounts get a much better rate`)
+  }
+  // The fee rides the venue's own quote (nothing extra to sign), so it's
+  // already inside the "you receive" number — name it rather than let it
+  // read as a worse rate.
+  if (guard.feeBps) {
+    lines.push(`- **Yeetful fee:** ${(guard.feeBps / 100).toFixed(2)}% — taken by the venue out of the amount delivered, no extra transaction`)
   }
   if (guard.depositAddress) {
     lines.push(`- **Deposit address:** one-time, guard-verified — \`${short(guard.depositAddress)}\`${expires ? ` (expires ${expires})` : ''}`)
@@ -1849,6 +1892,12 @@ async function buildCrossChainSwapTurn(
       destinationToken: params.destinationToken,
       amount: params.amount,
       from: walletAddress,
+      // The venue-native fee: 1Click takes it out of the INPUT before the
+      // swap, so the deposit the user signs is unchanged — no extra step,
+      // no second signature. Recipient is PINNED from lib/fees (never from
+      // the model, never from the tool's own suggestion).
+      feeRecipient: TREASURY_ADDRESS,
+      feeBps: CROSS_CHAIN_FEE_BPS,
     })) as BuiltSwap
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'the build failed'
@@ -1858,7 +1907,10 @@ async function buildCrossChainSwapTurn(
     })
   }
 
-  const guard = guardCrossChainBuild(built, { chainId: expectedOriginChainId(params.originChain) })
+  const guard = guardCrossChainBuild(built, {
+    chainId: expectedOriginChainId(params.originChain),
+    fee: { recipient: TREASURY_ADDRESS, bps: CROSS_CHAIN_FEE_BPS },
+  })
   if (!guard.ok || !guard.tx) {
     // A verification failure is a REFUSAL, not a warning — never offer a
     // transfer we couldn't prove is correct.
@@ -1869,6 +1921,7 @@ async function buildCrossChainSwapTurn(
     })
   }
   trace({ type: 'status', label: 'guard verified the deposit transfer — Sign & send card built, awaiting signature' })
+  for (const note of guard.feeNotes ?? []) trace({ type: 'note', level: 'warn', label: `venue fee: ${note}` })
 
   // Price the leg for money-moved and the links board (fail-soft): the
   // quote's own USD figure first, else the origin-chain venue probe. A

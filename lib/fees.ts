@@ -51,20 +51,66 @@ export function swapFeeAtoms(amountIn: bigint, bps: number = SWAP_FEE_BPS): bigi
 /** Fraction of the Yeetful fee the link creator earns. */
 export const CREATOR_FEE_SPLIT = 0.5
 
-/** Build paths whose artifacts CARRY the venue fee — the ONLY paths creator
- *  earnings accrue on. Everything else (bridges, funding, NFTs, transfers,
- *  votes, staking, HL) is fee-free by the conversions-not-movements rule. */
-export const FEE_BEARING_BUILD_PATHS = new Set([
-  'native-swap-uniswap',
-  'native-swap-uniswap-v4',
-  'native-swap-lifi',
-  'native-swap-cow',
-])
+// ── The NEAR Intents (1Click) venue fee ─────────────────────────────────────
+// 1Click carries an `appFees` field on the quote: the fee comes out of the
+// INPUT before the swap, so on EXACT_INPUT (what we always send) the deposit
+// the user signs is UNCHANGED — a venue-native fee with no extra transaction,
+// exactly like CoW's partnerFee and Uniswap's sweepTokenWithFee.
+//
+// The catch: 1Click splits every app fee 50/50 with the protocol. We REQUEST
+// SWAP_FEE_BPS so the user pays the same 0.20% here as everywhere else, and
+// we KEEP half of it. Earnings math must read the net, never the request.
 
-/** Creator earnings on a signed, fee-bearing notional. */
-export function creatorEarningsUsd(valueUsd: number): number {
-  if (!(valueUsd > 0)) return 0
-  return valueUsd * (SWAP_FEE_BPS / 10_000) * CREATOR_FEE_SPLIT
+/** What we ask 1Click for — the user-facing rate, same as every venue. */
+export const CROSS_CHAIN_FEE_BPS = SWAP_FEE_BPS
+
+/** 1Click's cut of every app fee (documented + verified live 2026-07-28). */
+export const ONECLICK_FEE_SPLIT = 0.5
+
+/** What actually reaches the treasury on a cross-chain swap. */
+export const CROSS_CHAIN_NET_FEE_BPS = Math.round(CROSS_CHAIN_FEE_BPS * (1 - ONECLICK_FEE_SPLIT))
+
+/** Yeetful's NET fee in bps per build path — what the treasury keeps after
+ *  the venue's own cut. Uniswap/CoW/LiFi hand over the whole SWAP_FEE_BPS;
+ *  NEAR Intents keeps half. Everything NOT in this map (funding legs, NFTs,
+ *  transfers, votes, staking, HL, sales) is fee-free by the
+ *  conversions-not-movements rule and earns nothing. */
+export const NET_FEE_BPS_BY_BUILD_PATH: Record<string, number> = {
+  'native-swap-uniswap': SWAP_FEE_BPS,
+  'native-swap-uniswap-v4': SWAP_FEE_BPS,
+  'native-swap-lifi': SWAP_FEE_BPS,
+  'native-swap-cow': SWAP_FEE_BPS,
+  'native-cross-chain': CROSS_CHAIN_NET_FEE_BPS,
+}
+
+/** Build paths whose artifacts CARRY a venue fee — the ONLY paths creator
+ *  earnings accrue on. */
+export const FEE_BEARING_BUILD_PATHS = new Set(Object.keys(NET_FEE_BPS_BY_BUILD_PATH))
+
+/** Yeetful's net fee rate for a build path; 0 when the path is fee-free. */
+export function netFeeBpsFor(buildPath: string | null | undefined): number {
+  return (buildPath && NET_FEE_BPS_BY_BUILD_PATH[buildPath]) || 0
+}
+
+/** Creator earnings on a signed, fee-bearing notional — half of what Yeetful
+ *  actually keeps, which is NOT always half of what the user paid (see the
+ *  1Click split above). Callers pass the path's net rate. */
+export function creatorEarningsUsd(valueUsd: number, netBps: number = SWAP_FEE_BPS): number {
+  if (!(valueUsd > 0) || !(netBps > 0)) return 0
+  return valueUsd * (netBps / 10_000) * CREATOR_FEE_SPLIT
+}
+
+/** Display for a creator earning. The split is SUB-CENT at test scale — a $1
+ *  swap earns $0.001 — so two decimals render every early real conversion as
+ *  "$0.00", indistinguishable from a fee-free route that earned nothing at
+ *  all. Exact zero keeps the familiar $0.00; under a cent shows the tiny bits
+ *  (4 decimals, trailing zeros trimmed) so a tester can watch the rail work
+ *  on a dollar; a cent or more is money and rounds like money. */
+export function formatEarnedUsd(n: number): string {
+  if (!(n > 0)) return '$0.00'
+  if (n >= 0.01) return `$${n.toFixed(2)}`
+  if (n < 0.0001) return '<$0.0001'
+  return `$${n.toFixed(4).replace(/0+$/, '')}`
 }
 
 /** Fees went live with the LiFi venue on 2026-07-15 (July 1 gives margin).
