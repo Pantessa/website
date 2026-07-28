@@ -58,6 +58,9 @@ export function classifyTurn(body: Record<string, unknown> | null): TurnClassifi
     !!body.guardianPolicyId ||
     !!body.dcaScheduleId ||
     !!body.connectWallet ||
+    // The native NFT gallery: a real wallet read whose rows are one tap from
+    // a sell/transfer build — an answer, not a wall.
+    !!(body.nfts && typeof body.nfts === 'object') ||
     !!(body.clarify && typeof body.clarify === 'object')
   if (actionable) return { kind: null }
   if (body.blocked) return { kind: 'blocked' }

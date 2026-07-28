@@ -51,6 +51,9 @@ import { isDbChatId } from '../lib/chat-ids'
 import { usdToTokenAmount } from '../lib/usd-probe'
 import { parseRobinhoodBridge, guardRobinhoodBridge, RH_L1_INBOX, ARB_SYS } from '../lib/robinhood-bridge'
 import { parseNftAsk, parseOpenSeaItemUrl, guardNftTransfer, ERC721_ABI as NFT_ERC721_ABI, ERC1155_ABI as NFT_ERC1155_ABI } from '../lib/nft-layer'
+import { parseNftListAsk, parseNftTransferFollowUp, nftTransferPending, nftAskFromPending } from '../lib/nft-layer'
+import { nftGalleryChains, nftRowActions } from '../lib/nft-gallery'
+import { nftGalleryOf } from '../lib/nft-display'
 import { getProtocolMark, YeetfulMark } from '../components/protocol-marks'
 import { splitListingPrice, buildListingComponents, guardListingComponents, openseaAssetUrl, SEAPORT_1_6, guardBuyFulfillment, fulfillmentToCalldata, normalizeOpenseaListing, collectionSlugCandidates } from '../lib/opensea'
 import { keccak256, stringToBytes, decodeFunctionData, parseAbi } from 'viem'
@@ -5035,6 +5038,95 @@ async function main() {
   check('nft parse: sell without a price clarifies (never guesses)', !!nftNoPrice && nftNoPrice.kind === 'problem' && /price/i.test(nftNoPrice.problem), JSON.stringify(nftNoPrice))
   const nftNoTo = parseNftAsk('transfer my pudgy penguin #2489 nft')
   check('nft parse: transfer without a recipient clarifies', !!nftNoTo && nftNoTo.kind === 'problem' && /recipient|go|0x/i.test(nftNoTo.problem), JSON.stringify(nftNoTo))
+  // ── Transfer continuity. "Where should it go?" is a QUESTION, so its answer
+  // is a bare address — which names no NFT. Without a memory that turn fell to
+  // the planner, which "confirmed" the transfer and then invented a failed
+  // ownership lookup for an NFT it had been handed two turns earlier (live
+  // 2026-07-28, from the gallery's Transfer chip).
+  const nftOpen = parseNftAsk('Transfer my Mintbase #42 NFT on Ethereum')
+  check(
+    'nft parse: a recipient-less transfer KEEPS the NFT it parsed',
+    !!nftOpen && nftOpen.kind === 'problem' && nftOpen.awaiting === 'recipient' && nftOpen.partial?.ref === 'Mintbase #42' && nftOpen.partial?.tokenId === '42' && nftOpen.partial?.chainId === 1,
+    JSON.stringify(nftOpen),
+  )
+  // The chip that caused it shipped a dangling "…to " for the user to finish;
+  // chips auto-send, so it fired half-written. Old links still carry it.
+  const nftOpenLegacy = parseNftAsk('Send my Mintbase #42 NFT on Ethereum to ')
+  check(
+    'nft parse: the legacy dangling-"to" chip still parks its NFT',
+    !!nftOpenLegacy && nftOpenLegacy.kind === 'problem' && nftOpenLegacy.partial?.ref === 'Mintbase #42',
+    JSON.stringify(nftOpenLegacy),
+  )
+  check(
+    'nft follow-up: a bare address (or ENS) answers the pending transfer',
+    (() => {
+      const bare = parseNftTransferFollowUp('0x5EaaBd731d2Bc0490C2D47e41858e9b0629455a0')
+      const worded = parseNftTransferFollowUp('send it to vitalik.eth')
+      return bare?.kind === 'recipient' && bare.to === '0x5EaaBd731d2Bc0490C2D47e41858e9b0629455a0' && worded?.kind === 'recipient' && worded.to === 'vitalik.eth'
+    })(),
+  )
+  check(
+    'nft follow-up: fresh asks, questions, and chatter never become a recipient',
+    parseNftTransferFollowUp('what NFTs do I own?') === null &&
+      parseNftTransferFollowUp('sell my Cool Cat #7 for 1 eth') === null &&
+      parseNftTransferFollowUp('how do I do that') === null &&
+      parseNftTransferFollowUp('never mind')?.kind === 'cancel',
+  )
+  // The round trip: park it, answer it, get a buildable transfer back.
+  check(
+    'nft follow-up: parked NFT + pasted address rebuild the full transfer ask',
+    (() => {
+      const open = parseNftAsk('Transfer my Pudgy Penguin #2489 NFT on Base')
+      if (!open || open.kind !== 'problem' || !open.partial) return false
+      const parked = nftTransferPending(open.partial)
+      const resumed = nftAskFromPending(parked.data, '0x2222222222222222222222222222222222222222')
+      return (
+        parked.kind === 'nft-transfer' &&
+        Object.keys(parked.data).length <= 8 &&
+        !!resumed &&
+        resumed.ref === 'Pudgy Penguin #2489' &&
+        resumed.tokenId === '2489' &&
+        resumed.chainId === 8453 &&
+        resumed.to === '0x2222222222222222222222222222222222222222'
+      )
+    })(),
+  )
+  check('nft follow-up: a parked payload with no ref never builds on a guess', nftAskFromPending({ amount: '1' }, '0x2222222222222222222222222222222222222222') === null)
+  // The gallery's own Transfer chip must round-trip its OWN flow: complete ask
+  // in, parked NFT out (a chip that auto-sends can never be half-written).
+  check(
+    'nft gallery: the Transfer chip is a complete ask that parks its NFT',
+    (() => {
+      const chip = nftRowActions({ name: 'Pudgy Penguin', identifier: '2489' }, 'Base', null)[1]
+      if (/\bto\s*$/i.test(chip.prompt)) return false
+      const open = parseNftAsk(chip.prompt)
+      return !!open && open.kind === 'problem' && open.awaiting === 'recipient' && open.partial?.tokenId === '2489' && open.partial?.chainId === 8453
+    })(),
+  )
+  // The live seam: refusal carries the pending, the address completes it.
+  const nftXferOpen = await fetch(`${BASE}/api/chat`, {
+    method: 'POST', headers: { 'content-type': 'application/json', 'x-yf-no-ask-log': '1' },
+    body: JSON.stringify({ message: 'Transfer my Pudgy Penguin #2489 NFT on Base', activeServers: [], walletAddress: '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045' }),
+  }).then((r) => r.json())
+  check(
+    'nft transfer turn: the "where should it go?" refusal parks the NFT',
+    nftXferOpen.workingContext?.pending?.kind === 'nft-transfer' && /Pudgy Penguin #2489/.test(nftXferOpen.workingContext?.pending?.summary ?? ''),
+    JSON.stringify(nftXferOpen).slice(0, 220),
+  )
+  const nftXferResume = await fetch(`${BASE}/api/chat`, {
+    method: 'POST', headers: { 'content-type': 'application/json', 'x-yf-no-ask-log': '1' },
+    body: JSON.stringify({
+      message: '0x2222222222222222222222222222222222222222',
+      activeServers: [],
+      walletAddress: '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045',
+      workingContext: nftXferOpen.workingContext,
+    }),
+  }).then((r) => r.json())
+  check(
+    'nft transfer turn: the pasted address resumes THAT NFT (never the planner)',
+    typeof nftXferResume.reply === 'string' && /pudgy penguin|#2489/i.test(nftXferResume.reply) && !/could\s*n[o']t verify|double-check/i.test(nftXferResume.reply),
+    JSON.stringify(nftXferResume).slice(0, 260),
+  )
   check(
     'nft parse: token swaps + stock sells + bare sends fall through',
     parseNftAsk('sell 1 ETH for USDC') === null &&
@@ -5044,6 +5136,90 @@ async function main() {
   )
   const nftRh = parseNftAsk('sell my pudgy penguin #2489 nft on robinhood chain for 1 eth')
   check('nft parse: robinhood-chain NFT ask answered honestly', !!nftRh && nftRh.kind === 'problem' && /Ethereum, Base/i.test(nftRh.problem), JSON.stringify(nftRh))
+  // ── The gallery READ ("show my NFTs"). Before this layer the house link
+  // /i/my-nfts answered with a planner "visit OpenSea" pointer — the funnel
+  // handing away its own conversion. The gate is deliberately narrow: a
+  // possessive, UNSPECIFIC NFT question and nothing else.
+  check(
+    'nft gallery parse: the wallet-gallery shapes are claimed',
+    ['Show my NFTs', 'show the NFTs in my wallet', 'what NFTs do I own?', 'which nfts do i have', 'list my nfts', 'my collectibles'].every(
+      (m) => parseNftListAsk(m) !== null,
+    ),
+  )
+  const nftListChain = parseNftListAsk('show my nfts on base')
+  check('nft gallery parse: a named chain scopes the read', !!nftListChain && nftListChain.chainId === 8453, JSON.stringify(nftListChain))
+  check(
+    'nft gallery parse: build asks + market questions + non-NFT asks fall through',
+    parseNftListAsk('sell my Pudgy Penguin #2489 for 4.2 ETH') === null &&
+      parseNftListAsk('send my Cool Cat NFT to vitalik.eth') === null &&
+      parseNftListAsk('buy the cheapest milady nft') === null &&
+      parseNftListAsk('list my nfts for sale') === null &&
+      parseNftListAsk('What are my NFTs worth right now — check the floor prices of my collections on OpenSea?') === null &&
+      parseNftListAsk('Are there any offers on the NFTs I own?') === null &&
+      parseNftListAsk('show my portfolio') === null &&
+      parseNftListAsk('what tokens do I own?') === null,
+  )
+  // The gallery answer and the sell/transfer builds share one row shape, so a
+  // row's own chip must come back as a buildable ask — the round-trip that
+  // keeps the card a doorway instead of a dead end.
+  const galleryRow = nftRowActions({ name: 'Pudgy Penguin', identifier: '2489' }, 'Base', 4.2)
+  const galleryResume = parseNftAsk(galleryRow[0].prompt)
+  check(
+    'nft gallery: a row Sell chip round-trips parseNftAsk (name + chain + price)',
+    !!galleryResume && galleryResume.kind === 'sell' && galleryResume.tokenId === '2489' && galleryResume.chainId === 8453 && galleryResume.priceEth === '4.2',
+    JSON.stringify(galleryResume),
+  )
+  check(
+    'nft gallery: an unpriced row still sells (the layer asks for the price)',
+    (() => {
+      const noFloor = parseNftAsk(nftRowActions({ name: 'Cool Cat', identifier: '77' }, 'Ethereum', null)[0].prompt)
+      return !!noFloor && noFloor.kind === 'problem' && /price/i.test(noFloor.problem)
+    })(),
+  )
+  // The chain picker scopes the read; a picker parked off OpenSea's coverage
+  // has nothing to scan (the caller says so rather than silently scanning).
+  check(
+    'nft gallery: chain scoping follows the picker (robinhood → empty scope)',
+    nftGalleryChains(null).length === 3 &&
+      nftGalleryChains(chainById(8453)).map((c) => c.label).join() === 'Base' &&
+      nftGalleryChains(chainById(4663)).length === 0,
+  )
+  // A gallery payload survives the meta round-trip the chat message makes.
+  const galleryDisplay = nftGalleryOf({
+    nfts: { owner: '0x1111111111111111111111111111111111111111', chains: ['Base'], failedChains: [], found: 3, nfts: [{ name: 'Pudgy #1', contract: '0xabc', tokenId: '1', chain: 'Base' }] },
+  })
+  check(
+    'nft gallery: the display contract reads back off message meta',
+    !!galleryDisplay && galleryDisplay.nfts.length === 1 && galleryDisplay.found === 3 && nftGalleryOf({ nfts: { owner: 1 } }) === null,
+    JSON.stringify(galleryDisplay),
+  )
+  // The turn itself: the ask must never come back a bare planner reply.
+  const nftGalleryTurn = await fetch(`${BASE}/api/chat`, {
+    method: 'POST', headers: { 'content-type': 'application/json', 'x-yf-no-ask-log': '1' },
+    body: JSON.stringify({ message: 'Show my NFTs', activeServers: [], walletAddress: '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045' }),
+  }).then((r) => r.json())
+  check(
+    'nft gallery turn: "Show my NFTs" answers with the read, never a visit-OpenSea pointer',
+    !!nftGalleryTurn.nfts &&
+      typeof nftGalleryTurn.nfts.owner === 'string' &&
+      Array.isArray(nftGalleryTurn.nfts.nfts) &&
+      nftGalleryTurn.buildPath === 'native-nft-gallery' &&
+      !/visit\s+opensea|opensea\.io|can't\s+query/i.test(nftGalleryTurn.reply ?? ''),
+    JSON.stringify(nftGalleryTurn).slice(0, 220),
+  )
+  const nftGalleryNoWallet = await fetch(`${BASE}/api/chat`, {
+    method: 'POST', headers: { 'content-type': 'application/json', 'x-yf-no-ask-log': '1' },
+    body: JSON.stringify({ message: 'Show my NFTs', activeServers: [] }),
+  }).then((r) => r.json())
+  check(
+    'nft gallery turn: no wallet asks to connect (never a planner shrug)',
+    nftGalleryNoWallet.connectWallet === true && nftGalleryNoWallet.buildPath === 'native-nft-gallery',
+    JSON.stringify(nftGalleryNoWallet).slice(0, 200),
+  )
+  check(
+    'nft gallery turn: the read counts as actionable (never logged as a wall)',
+    classifyTurn({ reply: 'x', nfts: { owner: '0x1', nfts: [] }, buildPath: 'native-nft-gallery' }).kind === null,
+  )
   // Buy asks: resolve against live listings; the grammar reads #id targets,
   // "cheapest" collection buys, and an explicit ETH cap — and never claims
   // token/stock buys (no NFT marker).
