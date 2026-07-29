@@ -1213,8 +1213,8 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
         {showAppChrome && (
           <Link
             href="/dashboard"
-            aria-label="Yeetful dashboard — keys, embeds, billing"
-            title="Yeetful dashboard — keys, embeds, billing"
+            aria-label="Yeetful dashboard — links, keys, billing"
+            title="Yeetful dashboard — links, keys, billing"
             className="flex-shrink-0 grid place-items-center w-10 h-10 md:w-8 md:h-8 rounded-lg text-white hover:bg-[var(--surf-1)] transition-colors"
           >
             <YeetfulMark size={20} />
@@ -1418,7 +1418,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
             {!currentChat || currentChat.messages.length === 0 ? (
               splashEligible || splashBatches.length > 0 ? (
                 splashSettledEmpty ? (
-                  <EmptyState activeCount={activeServers.length} autoRouter={autoRouter} onPick={runExample} />
+                  <EmptyState activeCount={activeServers.length} autoRouter={autoRouter} onPick={runExample} showLinksHint={!embedded && !simple} />
                 ) : null
               ) : bootHolding ? (
                 // Wallet auto-reconnect / store hydration in flight: the splash may
@@ -1431,7 +1431,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
                 // example gallery here is noise — hold the surface clean.
                 null
               ) : (
-                <EmptyState activeCount={activeServers.length} autoRouter={autoRouter} onPick={runExample} />
+                <EmptyState activeCount={activeServers.length} autoRouter={autoRouter} onPick={runExample} showLinksHint={!embedded && !simple} />
               )
             ) : (
           <>
@@ -1987,10 +1987,13 @@ function EmptyState({
   activeCount,
   autoRouter,
   onPick,
+  showLinksHint,
 }: {
   activeCount: number
   autoRouter: boolean
   onPick: (prompt: string, slug?: string) => void
+  /** First-party chat only — the embed has no rail or mint affordances. */
+  showLinksHint?: boolean
 }) {
   return (
     // flex-1 (not h-full): the thread wrapper is a min-h-full flex column,
@@ -2011,6 +2014,13 @@ function EmptyState({
             : `Your ${activeCount} MCP${activeCount > 1 ? 's' : ''} answer questions free; anything that moves money is compiled into a guarded transaction only your wallet can sign.`}
       </p>
       <ExampleGallery onPick={onPick} />
+      {showLinksHint && (
+        <p className="mt-6 text-[11px] text-[color:var(--muted-2)] max-w-sm">
+          Any ask here can become a shareable intent link — hover a sent message for the{' '}
+          <Link2 className="inline w-3 h-3 align-[-1px]" aria-hidden />
+          {' '}mint icon, or open the rail&apos;s Links tab.
+        </p>
+      )}
     </div>
   )
 }

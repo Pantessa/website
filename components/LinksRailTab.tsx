@@ -10,20 +10,127 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { Check, Copy, ExternalLink, Plus } from 'lucide-react'
+import { Check, Copy, ExternalLink, Plus, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useYeetfulStore } from '@/lib/store'
 import { useSession } from '@/lib/session'
-import { useIntentLinks } from '@/lib/intent-links-ui'
+import { useIntentLinks, type LinkRow } from '@/lib/intent-links-ui'
+import { dismissOnboarding, onboardingDismissed, useOnboardingStatus, type OnboardingStatus } from '@/lib/onboarding'
 import MintLinkModal from '@/components/MintLinkModal'
+
+// One CTA look for every journey step — accent-based so both themes hold
+// (the done-state emerald sweep is #597 Lane U territory; don't add to it).
+const CTA_CLASS =
+  "inline-flex items-center text-[11px] font-medium px-2.5 py-1 rounded-lg border border-[color-mix(in_srgb,var(--accent)_40%,transparent)] text-[color:var(--accent)] hover:bg-[color-mix(in_srgb,var(--accent)_10%,transparent)] transition-colors disabled:opacity-50"
+
+/** The links-first journey, compressed for 248px: five dots, the next step,
+ *  one CTA — wired to act IN PLACE (mint opens the modal, share copies your
+ *  newest link) instead of routing through the dashboard. Same status + same
+ *  dismiss key as the dashboard checklist: done anywhere is done everywhere,
+ *  dismissed anywhere is dismissed everywhere. */
+function JourneyStrip({
+  status,
+  live,
+  onMint,
+  onCopyNewest,
+  copiedNewest,
+  onDismiss,
+}: {
+  status: OnboardingStatus
+  live: LinkRow[]
+  onMint: () => void
+  onCopyNewest: () => void
+  copiedNewest: boolean
+  onDismiss: () => void
+}) {
+  const steps: Array<{ key: keyof OnboardingStatus; label: string; cta: React.ReactNode }> = [
+    {
+      key: 'minted',
+      label: 'Mint your first link',
+      cta: (
+        <button onClick={onMint} className={CTA_CLASS}>
+          Mint a link →
+        </button>
+      ),
+    },
+    {
+      key: 'opened',
+      label: 'Share it — someone opening it ticks this',
+      cta: (
+        <button onClick={onCopyNewest} disabled={live.length === 0} className={CTA_CLASS}>
+          {copiedNewest ? 'Copied — go post it' : 'Copy your link →'}
+        </button>
+      ),
+    },
+    {
+      key: 'connected',
+      label: 'Watch the funnel — a visitor connects',
+      cta: (
+        <Link href="/dashboard/links" className={CTA_CLASS}>
+          Open the funnel →
+        </Link>
+      ),
+    },
+    {
+      key: 'converted',
+      label: 'First conversion — someone signs through it',
+      cta: (
+        <Link href="/links" className={CTA_CLASS}>
+          See the board →
+        </Link>
+      ),
+    },
+    {
+      key: 'claimed',
+      label: 'Claim your earnings',
+      cta: (
+        <Link href="/dashboard/links" className={CTA_CLASS}>
+          Claim →
+        </Link>
+      ),
+    },
+  ]
+  const completed = steps.filter((s) => status[s.key]).length
+  const next = steps.find((s) => !status[s.key])
+  if (!next) return null
+
+  return (
+    <div className="mx-3 mb-2 rounded-xl border border-[var(--line)] bg-[var(--surf-1)] px-3 py-2.5">
+      <div className="flex items-center gap-1.5">
+        <span className="text-[11px] font-medium text-[color:var(--fg)]">First link → first payout</span>
+        <span className="mono text-[10px] text-[color:var(--muted-2)]">{completed}/5</span>
+        <button
+          onClick={onDismiss}
+          aria-label="Dismiss the getting-started journey"
+          className="ml-auto -mr-1 p-0.5 rounded text-[color:var(--muted-2)] hover:text-white transition-colors"
+        >
+          <X className="w-3 h-3" />
+        </button>
+      </div>
+      <div className="mt-1.5 flex items-center gap-1" aria-hidden>
+        {steps.map((s) => (
+          <span
+            key={s.key}
+            className={cn('h-1 flex-1 rounded-full', status[s.key] ? 'bg-[var(--accent)]' : 'bg-[color-mix(in_srgb,var(--fg)_12%,transparent)]')}
+          />
+        ))}
+      </div>
+      <p className="mt-1.5 text-[11px] text-[color:var(--muted-2)]">{next.label}</p>
+      <div className="mt-1">{next.cta}</div>
+    </div>
+  )
+}
 
 function SignedInLinks({ activeSlugs }: { activeSlugs: string[] }) {
   const { links, earnings, reload } = useIntentLinks()
+  const { status, refresh: refreshStatus } = useOnboardingStatus()
+  const [journeyDismissed, setJourneyDismissed] = useState(true)
   const [mintOpen, setMintOpen] = useState(false)
   const [copied, setCopied] = useState<string | null>(null)
   const [handle, setHandle] = useState<string | null>(null)
 
   useEffect(() => {
+    setJourneyDismissed(onboardingDismissed())
     void fetch('/api/intent-links/handle', { cache: 'no-store' })
       .then((r) => (r.ok ? r.json() : null))
       .then((d: { handle: string | null } | null) => setHandle(d?.handle ?? null))
@@ -50,6 +157,20 @@ function SignedInLinks({ activeSlugs }: { activeSlugs: string[] }) {
           Mint a link
         </button>
       </div>
+
+      {status && !journeyDismissed && (
+        <JourneyStrip
+          status={status}
+          live={live}
+          onMint={() => setMintOpen(true)}
+          onCopyNewest={() => live[0] && copy(live[0].slug)}
+          copiedNewest={!!live[0] && copied === live[0].slug}
+          onDismiss={() => {
+            dismissOnboarding()
+            setJourneyDismissed(true)
+          }}
+        />
+      )}
 
       <div className="flex-1 overflow-y-auto px-2 pb-3 space-y-1">
         {links === null && (
@@ -139,7 +260,10 @@ function SignedInLinks({ activeSlugs }: { activeSlugs: string[] }) {
       <MintLinkModal
         open={mintOpen}
         onClose={() => setMintOpen(false)}
-        onMinted={reload}
+        onMinted={() => {
+          reload()
+          refreshStatus()
+        }}
         initialMcps={activeSlugs}
       />
     </>
