@@ -19,6 +19,14 @@
     --mist: var(--line);    /* hairline borders */
     --smoke: var(--muted);  /* muted label text */
     --sell: #E5484D;        /* sell-side / destructive accent */
+    /* Progress-state tokens — the ONE source for run-state color across
+       JobCard, /i, the rail, and receipts (PLAN-progress-ui.md). Values
+       match the tailwind emerald-400/red-400 the surfaces hardcoded, so
+       dark mode is byte-identical; the light block overrides them so
+       done/fail marks finally follow the theme flip. */
+    --done: #34d399;
+    --live: var(--accent);
+    --fail: #f87171;
     /* ── TYPE SYSTEM ──────────────────────────────────
        Single source of truth for the four families so every surface pulls
        from the same place (kills the ad-hoc mono/sans drift on /activity).
@@ -3895,6 +3903,8 @@
        contrast with a --bg ink); the dark stages below keep the bright one. */
     --accent: #0e8f62;
     --sell: #c73e43;
+    --done: #0b7a53;
+    --fail: #c73e43;
   }
   html[data-theme='light'] { color-scheme: light; }
 

@@ -103,7 +103,7 @@ export default function GuardianPolicyCard({ policyId }: { policyId: string }) {
     <div className="mt-2.5 rounded-xl border border-[var(--line)] px-3 py-2.5 space-y-1.5">
       <div className="flex items-center justify-between gap-2 flex-wrap">
         <span className="flex items-center gap-2 text-[12.5px]">
-          <ShieldCheck className={`w-4 h-4 flex-shrink-0 ${p.status === 'active' ? 'text-emerald-400' : 'text-[color:var(--muted-2)]'}`} aria-hidden />
+          <ShieldCheck className={`w-4 h-4 flex-shrink-0 ${p.status === 'active' ? 'text-[color:var(--done)]' : 'text-[color:var(--muted-2)]'}`} aria-hidden />
           <span className="font-medium">
             {kindLabel} · {p.coin} {p.side}
           </span>
@@ -115,13 +115,13 @@ export default function GuardianPolicyCard({ policyId }: { policyId: string }) {
           <span
             className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] font-medium ${
               p.status === 'active'
-                ? 'border-emerald-500/40 text-emerald-400'
+                ? 'border-[color:color-mix(in_srgb,var(--done)_40%,transparent)] text-[color:var(--done)]'
                 : closed
                   ? 'border-sky-500/40 text-sky-400'
                   : 'border-[color:var(--line-2)] text-[color:var(--muted-2)]'
             }`}
           >
-            {p.status === 'active' && <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" aria-hidden />}
+            {p.status === 'active' && <span className="w-1.5 h-1.5 rounded-full bg-[color:var(--done)] animate-pulse" aria-hidden />}
             {closed ? 'closed by guardian' : p.status === 'active' ? 'watching' : p.status}
           </span>
           {p.status === 'active' && (
@@ -145,7 +145,7 @@ export default function GuardianPolicyCard({ policyId }: { policyId: string }) {
           <div className="relative h-1.5 rounded-full overflow-visible"
             style={{
               background:
-                'linear-gradient(90deg, color-mix(in srgb, #f87171 30%, transparent), color-mix(in srgb, #f59e0b 16%, transparent) 35%, color-mix(in srgb, var(--fg) 7%, transparent) 75%)',
+                'linear-gradient(90deg, color-mix(in srgb, var(--fail) 30%, transparent), color-mix(in srgb, #f59e0b 16%, transparent) 35%, color-mix(in srgb, var(--fg) 7%, transparent) 75%)',
             }}
           >
             <span
