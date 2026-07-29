@@ -15,7 +15,7 @@
 // Hand-rolled SVG: hovering a node dims every ribbon that doesn't touch it.
 // No layout reads per frame, nothing animates on a clock.
 
-import { useMemo, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 
 /** What the ribbons measure. Dollars is the page's currency, but one $7.4k
  *  listing can be 79% of all-time notional — by dollars the diagram is a
@@ -61,13 +61,27 @@ const VENUE_LABEL: Record<string, string> = {
 const fmtUsd = (n: number) =>
   n >= 1000 ? `$${Math.round(n).toLocaleString('en-US')}` : n >= 1 ? `$${n.toFixed(2)}` : `$${n.toFixed(4).replace(/0+$/, '')}`
 
-const W = 900
-const COL_L = 214
-const COL_R = 686
+/** The drawing renders at 1:1 with its container: the viewBox width is the
+ *  measured pixel width, so a 13px label is 13px on a 900px card AND on a
+ *  2000px one. The previous fixed 900-unit viewBox scaled with `width: 100%`,
+ *  which on a wide screen inflated every label to ~28px and turned the biggest
+ *  ribbon into a 500px slab — the diagram got bigger without getting clearer. */
 const GAP = 7
-const SPAN = 372
+/** Label gutters in px — the ribbons take whatever is left. Scaled down on
+ *  narrow layouts: a fixed 250 each side left the phone rendering with 160px
+ *  of ribbon between two fat margins. */
+const gutterFor = (w: number) => Math.round(Math.min(250, Math.max(150, w * 0.2)))
+const W_MIN = 660
 /** Enough room for a two-line label; below it the node labels itself on one. */
 const TWO_LINE = 30
+/** Vertical span grows a little with width so a very wide map doesn't read as
+ *  a set of flat wires, but it is bounded — height is not the scarce axis. */
+const spanFor = (w: number) => Math.round(Math.min(470, Math.max(340, w * 0.26)))
+
+/** useLayoutEffect on the client, useEffect on the server — the component only
+ *  ever renders client-side today, but the guard costs nothing and silences
+ *  the SSR warning if that changes. */
+const useIsoLayoutEffect = typeof window !== 'undefined' ? useLayoutEffect : useEffect
 
 interface Node {
   key: string
@@ -84,6 +98,28 @@ export default function ActivityFlow({ edges, total }: { edges: FlowEdge[]; tota
   const [hot, setHot] = useState<string | null>(null)
   const [measure, setMeasure] = useState<Measure>('usd')
   const val = (e: { usd: number; n: number }) => (measure === 'usd' ? e.usd : e.n)
+
+  // Measure the container so the viewBox can match it 1:1. Starts at W_MIN so
+  // the server render and the first client paint agree.
+  const wrapRef = useRef<HTMLDivElement>(null)
+  const [w, setW] = useState(W_MIN)
+  // Measured in a LAYOUT effect first, then kept current by a ResizeObserver.
+  // The synchronous read matters: an observer only delivers on a rendering
+  // step, so relying on it alone leaves the map rendered at W_MIN and scaled
+  // up — which is the exact bug this whole change is fixing.
+  useIsoLayoutEffect(() => {
+    const el = wrapRef.current
+    if (!el) return
+    const read = (px: number) => setW((cur) => (Math.abs(cur - px) > 2 ? Math.max(W_MIN, Math.round(px)) : cur))
+    read(el.getBoundingClientRect().width)
+    const ro = new ResizeObserver(([e]) => read(e.contentRect.width))
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
+  const gutter = gutterFor(w)
+  const COL_L = gutter
+  const COL_R = Math.max(COL_L + 160, w - gutter)
+  const SPAN = spanFor(w)
 
   const model = useMemo(() => {
     const live = edges.filter((e) => e.usd > 0)
@@ -153,14 +189,14 @@ export default function ActivityFlow({ edges, total }: { edges: FlowEdge[]; tota
 
     return { src, ven, ribbons, height: Math.max(src.height, ven.height), sum }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [edges, measure])
+  }, [edges, measure, SPAN])
 
   if (!model) return null
 
   const dim = (k: string, v: string) => (hot && hot !== k && hot !== v ? 0.08 : 1)
 
   return (
-    <div className="flowmap">
+    <div className="flowmap" ref={wrapRef}>
       {/* By dollars one big listing can be 79% of all time; by transactions
           the same data tells you which surfaces people actually use. Both are
           true, so the reader picks. */}
@@ -180,7 +216,7 @@ export default function ActivityFlow({ edges, total }: { edges: FlowEdge[]; tota
           </button>
         ))}
       </div>
-      <svg className="flowmap__svg" viewBox={`0 0 ${W} ${model.height + 8}`} role="img" aria-label="Money moved, by source and venue">
+      <svg className="flowmap__svg" viewBox={`0 0 ${w} ${model.height + 8}`} role="img" aria-label="Money moved, by source and venue">
         <g className="flowmap__ribbons">
           {model.ribbons.map((r, i) => {
             const x0 = COL_L
