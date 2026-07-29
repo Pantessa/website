@@ -67,11 +67,14 @@ const fmtUsd = (n: number) =>
  *  which on a wide screen inflated every label to ~28px and turned the biggest
  *  ribbon into a 500px slab — the diagram got bigger without getting clearer. */
 const GAP = 7
-/** Label gutters in px — the ribbons take whatever is left. Scaled down on
- *  narrow layouts: a fixed 250 each side left the phone rendering with 160px
- *  of ribbon between two fat margins. */
-const gutterFor = (w: number) => Math.round(Math.min(250, Math.max(150, w * 0.2)))
-const W_MIN = 660
+/** Label gutters in px — the ribbons take whatever is left. They're asymmetric
+ *  on purpose: a left label is a name over a value (two short lines), while a
+ *  floored right label puts both on ONE line ("Pre-tagging $111.16 · 21 tx"),
+ *  which is the widest string the drawing has to hold. A symmetric gutter sized
+ *  for the left one let those spill past the card's right edge. */
+const gutterL = (w: number) => Math.round(Math.min(250, Math.max(150, w * 0.19)))
+const gutterR = (w: number) => Math.round(Math.min(300, Math.max(210, w * 0.24)))
+const W_MIN = 720
 /** Enough room for a two-line label; below it the node labels itself on one. */
 const TWO_LINE = 30
 /** Vertical span grows a little with width so a very wide map doesn't read as
@@ -116,9 +119,8 @@ export default function ActivityFlow({ edges, total }: { edges: FlowEdge[]; tota
     ro.observe(el)
     return () => ro.disconnect()
   }, [])
-  const gutter = gutterFor(w)
-  const COL_L = gutter
-  const COL_R = Math.max(COL_L + 160, w - gutter)
+  const COL_L = gutterL(w)
+  const COL_R = Math.max(COL_L + 160, w - gutterR(w))
   const SPAN = spanFor(w)
 
   const model = useMemo(() => {

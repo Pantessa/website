@@ -175,45 +175,56 @@ export default function ActivityOverview({
   const counted = useCountUp(total)
   const heroFigure = total >= 1000 ? `$${Math.round(counted).toLocaleString('en-US')}` : `$${counted.toFixed(2)}`
 
-  // ── the hero: page title left, the number right, one glow over both ──────
+  // ── the hero ─────────────────────────────────────────────────────────────
+  // Was: title parked on the left, the figure floating on the right, and a
+  // paragraph of explanation right-aligned under it. Two things fighting for
+  // the top of the page and neither winning. It's one centred column now, and
+  // the figure IS the hero — everything else is scale around it: the claim
+  // above, what the number contains below, the attended/standing split as a
+  // single bar, and the tape running underneath.
+  const attendedPct =
+    data && data.hero.systemTotalUsd > 0
+      ? Math.round((data.hero.attendedUsd / data.hero.systemTotalUsd) * 100)
+      : 0
   const heroSection = (
-    <section className="relative mb-8">
-      <div
-        aria-hidden
-        className="absolute -inset-x-8 -top-16 -bottom-6 pointer-events-none"
-        style={{
-          background:
-            'radial-gradient(62% 88% at 68% 38%, color-mix(in srgb, var(--accent) 12%, transparent), transparent 72%)',
-        }}
-      />
-      <div className="relative grid grid-cols-1 lg:grid-cols-[1fr_auto] gap-x-12 gap-y-10 items-center">
-        <div className="min-w-0">{header}</div>
-        <div className="lg:text-right px-1 pb-4 lg:pb-0">
-          <p className="mono text-[11px] uppercase tracking-[0.24em] text-[color:var(--muted-2)]">
-            Money moved · whole system · all time
-          </p>
-          {data ? (
-            <div
-              className="text-white tabular-nums mt-2"
-              style={{
-                fontFamily: 'var(--font-serif)',
-                fontSize: 'clamp(56px, 8.5vw, 118px)',
-                lineHeight: 1.02,
-                letterSpacing: '-0.02em',
-                fontWeight: 500,
-              }}
-            >
+    <section className="acthero">
+      <div className="acthero__glow" aria-hidden />
+      <div className="acthero__top">{header}</div>
+
+      <div className="acthero__figure">
+        <p className="acthero__eyebrow mono">Money moved · whole system · all time</p>
+        {data ? (
+          <div className="acthero__num">
+            <span className="acthero__numtext">{heroFigure}</span>
+            <span className="acthero__numglow" aria-hidden>
               {heroFigure}
-            </div>
-          ) : (
-            <div className="animate-pulse rounded-xl bg-white/6 h-24 w-72 mt-3 lg:ml-auto" />
-          )}
-          <p className="mt-3 text-[13px] text-[color:var(--muted)] max-w-[48ch] lg:ml-auto leading-relaxed">
-            Swaps, lending, staking, cross-chain, perps and DAO votes — notional USD of every
-            transaction signed through chat, every embed and the guardian agent, plus every x402 call
-            fee settled on-chain.
-          </p>
-        </div>
+            </span>
+          </div>
+        ) : (
+          <div className="acthero__skel" />
+        )}
+        <p className="acthero__note">
+          Swaps, lending, staking, cross-chain, perps and DAO votes — notional USD of every
+          transaction signed through chat, every embed and the guardian agent, plus every x402 call
+          fee settled on-chain.
+        </p>
+
+        {data && data.hero.systemTotalUsd > 0 && (
+          <div className="acthero__split">
+            <span className="acthero__leg mono">
+              <i className="acthero__legdot acthero__legdot--att" /> {fmtUsd(data.hero.attendedUsd)}{' '}
+              attended
+            </span>
+            <span className="acthero__bar" aria-hidden>
+              <i className="acthero__att" style={{ width: `${attendedPct}%` }} />
+              <i className="acthero__std" style={{ width: `${100 - attendedPct}%` }} />
+            </span>
+            <span className="acthero__leg mono">
+              {fmtUsd(data.hero.standingUsd)} standing{' '}
+              <i className="acthero__legdot acthero__legdot--std" />
+            </span>
+          </div>
+        )}
       </div>
 
       {/* The tape: the newest value events, running. A number this big needs
@@ -273,15 +284,24 @@ export default function ActivityOverview({
     <div className="pb-16">
       {heroSection}
 
-      {/* ── the flow: where it came from, where it went ─────────────────── */}
+      {/* The link economy leads, right under the header — it's the surface
+          the whole page is about, and the sections below explain it. */}
+      {lead}
+
+      {/* ── the flow: where it came from, where it went ───────────────────
+          Head left, map right. Full-bleed the map stretched into shallow
+          wires on a wide display — "too big and stretchy" — so above 1280px
+          the copy takes a quarter and the drawing takes the rest. */}
       {data.flow.length > 0 && (
-        <section className="mb-10">
-          <SectionHead
-            eyebrow="THE SHAPE OF THE MONEY"
-            title="Where every dollar came from, and where it went"
-            sub="Left: what started the ask — someone typing in chat, an intent link opening on a phone, the agent on a host's page, a standing intent firing with nobody watching. Right: the venue the transaction layer built against. Thickness is dollars, and every lane is traced end to end."
-          />
-          <Card>
+        <section className="mb-10 flowsec">
+          <div className="flowsec__copy">
+            <SectionHead
+              eyebrow="THE SHAPE OF THE MONEY"
+              title="Where every dollar came from, and where it went"
+              sub="Left: what started the ask — someone typing in chat, an intent link opening on a phone, the agent on a host's page, a standing intent firing with nobody watching. Right: the venue the transaction layer built against. Thickness is dollars, and every lane is traced end to end."
+            />
+          </div>
+          <Card className="flowsec__card">
             <ActivityFlow edges={data.flow} total={h.systemTotalUsd} />
           </Card>
         </section>
@@ -298,8 +318,6 @@ export default function ActivityOverview({
           <ActivityChains chains={data.chains} />
         </Card>
       </section>
-
-      {lead}
 
       {/* ── attended vs standing: the split that matters ───────────────── */}
       <section className="mb-10">

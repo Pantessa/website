@@ -2941,6 +2941,92 @@
     .stations__tick, .stations__label { transition: none; }
   }
 
+  /* ── /activity: THE HERO (.acthero) ────────────────────────────────────
+     One centred column, with the figure as the hero and everything else as
+     scale around it. The previous split — claim parked left, figure floating
+     right, an explanation paragraph right-aligned under it — had two things
+     fighting for the top of the page and neither winning. */
+  .acthero { position: relative; padding-top: clamp(28px, 5vh, 64px); margin-bottom: 34px; }
+  /* Stays inside the content box. A percentage bleed (-8%) is ~148px each
+     side on a 1850px column, which is more than the page's own gutter — it
+     pushed the document 80px wider than the viewport at 1980. The radial's
+     falloff does the bleeding instead. */
+  .acthero__glow {
+    position: absolute; left: 0; right: 0; top: -20%; bottom: 2%; pointer-events: none;
+    background: radial-gradient(72% 78% at 50% 42%, color-mix(in srgb, var(--accent) 14%, transparent), transparent 74%);
+  }
+  .acthero__top { position: relative; text-align: center; }
+  .acthero__top .hero { padding: 0; }
+  .acthero__top .hero__sub { margin-left: auto; margin-right: auto; max-width: 62ch; }
+  .acthero__top .hero__h1 { margin-left: auto; margin-right: auto; }
+
+  .acthero__figure { position: relative; text-align: center; margin-top: clamp(24px, 4vh, 44px); }
+  .acthero__eyebrow { font-size: 11px; letter-spacing: .24em; text-transform: uppercase; color: var(--muted-2); }
+  /* The figure is stacked twice: the readable text, and a blurred copy behind
+     it that gives the digits a light source instead of a flat fill. */
+  .acthero__num { position: relative; margin-top: 10px; }
+  .acthero__numtext, .acthero__numglow {
+    font-family: var(--font-serif); font-weight: 500; font-optical-sizing: auto;
+    font-size: clamp(64px, 12vw, 176px); line-height: .96; letter-spacing: -.028em;
+    font-variant-numeric: tabular-nums; display: block;
+  }
+  .acthero__numtext {
+    position: relative; z-index: 1; color: var(--fg);
+    background: linear-gradient(180deg, var(--fg) 42%, color-mix(in srgb, var(--fg) 62%, var(--accent)) 100%);
+    -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
+  }
+  .acthero__numglow {
+    position: absolute; inset: 0; z-index: 0; color: var(--accent);
+    filter: blur(38px); opacity: .38; pointer-events: none;
+  }
+  /* Own keyframes, not Tailwind's `pulse` — that one only exists in the
+     output while some component still uses animate-pulse. */
+  .acthero__skel { height: clamp(64px, 12vw, 176px); width: min(420px, 70%); margin: 12px auto 0; border-radius: 18px; background: color-mix(in srgb, var(--fg) 6%, transparent); animation: acthero-pulse 2s ease-in-out infinite; }
+  @keyframes acthero-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .45; } }
+  .acthero__note { margin: 16px auto 0; max-width: 66ch; font-size: 13px; line-height: 1.6; color: var(--muted); text-wrap: pretty; }
+
+  /* attended vs standing, as one bar — the split the whole page is about,
+     stated once at the top before any table argues it. */
+  .acthero__split { margin: 26px auto 0; display: flex; align-items: center; justify-content: center; gap: 14px; flex-wrap: wrap; max-width: 760px; }
+  .acthero__leg { display: inline-flex; align-items: center; gap: 7px; font-size: 11px; color: var(--muted); white-space: nowrap; }
+  .acthero__legdot { width: 7px; height: 7px; border-radius: 999px; }
+  .acthero__legdot--att { background: color-mix(in srgb, var(--fg) 55%, transparent); }
+  .acthero__legdot--std { background: var(--accent); }
+  .acthero__bar { flex: 1; min-width: 160px; height: 6px; border-radius: 999px; overflow: hidden; display: flex; background: color-mix(in srgb, var(--fg) 6%, transparent); }
+  .acthero__att { height: 100%; background: color-mix(in srgb, var(--fg) 34%, transparent); transition: width .8s cubic-bezier(.2,.8,.2,1); }
+  .acthero__std { height: 100%; background: var(--accent); transition: width .8s cubic-bezier(.2,.8,.2,1); }
+  /* Narrow: the two legends wrapped independently and stranded "standing" on
+     its own line. Bar first, both legends under it as one row. */
+  @media (max-width: 760px) {
+    .acthero__split { display: grid; grid-template-columns: 1fr 1fr; gap: 9px 12px; }
+    .acthero__bar { grid-column: 1 / -1; grid-row: 1; min-width: 0; }
+    .acthero__leg { font-size: 10.5px; grid-row: 2; }
+    .acthero__leg:first-of-type { justify-self: start; }
+    .acthero__leg:last-of-type { justify-self: end; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .acthero__att, .acthero__std { transition: none; }
+    .acthero__skel { animation: none; }
+  }
+
+  /* ── /activity: the flow section's split layout (.flowsec) ─────────────
+     Copy left, drawing right. Full-bleed, the map stretched into shallow
+     wires on a wide display; a quarter/three-quarter split keeps the ribbons
+     at a readable run and gives the section head somewhere to live. */
+  .flowsec { display: block; }
+  @media (min-width: 1280px) {
+    .flowsec {
+      display: grid; grid-template-columns: minmax(260px, 1fr) 3fr;
+      gap: clamp(24px, 3vw, 48px); align-items: start;
+    }
+    .flowsec__copy { position: sticky; top: 96px; }
+    /* The head's own type scale assumes a full-width column; in a quarter it
+       needs to come down a step and the measure needs to follow the column. */
+    .flowsec__copy .swtry__h2 { font-size: clamp(24px, 2vw, 32px); }
+    .flowsec__copy .swtry__sub { max-width: none; font-size: 13.5px; }
+    .flowsec__copy .actsec__head { margin-bottom: 0; }
+  }
+
   /* ── /activity: THE TAPE (.tape) ───────────────────────────────────────
      The newest value events, running under the hero figure. A number that big
      needs something beneath it that is visibly still happening. Two identical
@@ -2996,7 +3082,7 @@
     /* Below this the labels collide with the ribbons — let it scroll at a
        readable width rather than compress into mush. */
     .flowmap { overflow-x: auto; }
-    .flowmap__svg { min-width: 660px; }
+    .flowmap__svg { min-width: 720px; }
   }
 
   /* ── /activity: CHAINS BUILT (.chn) ────────────────────────────────────
