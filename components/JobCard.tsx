@@ -56,6 +56,7 @@ export default function JobCard({
   jobId,
   token,
   onStepSigned,
+  onSettled,
 }: {
   jobId: string
   /** Capability token from the turn that compiled the job — the embed path's
@@ -63,6 +64,10 @@ export default function JobCard({
   token?: string
   /** Telemetry hook — fired once per signed step with its value + builder. */
   onStepSigned?: (info: { builder: string; valueUsd?: number | null; detail?: string }) => void
+  /** Fired ONCE when the poll first observes a terminal status — the
+   *  settlement signal /i's arc and embed hosts read. Also fires on mount
+   *  for an already-finished job (a reopened thread), which is truthful. */
+  onSettled?: (info: { jobId: string; status: 'done' | 'failed' | 'canceled'; valueUsd?: number | null }) => void
 }) {
   const [job, setJob] = useState<JobRow | null>(null)
   const [error, setError] = useState('')
@@ -95,10 +100,16 @@ export default function JobCard({
     }
   }, [load])
 
-  // Stop polling once terminal.
+  // Stop polling once terminal — and emit the one-shot settlement signal.
+  const settledFired = useRef(false)
   useEffect(() => {
-    if (job && !ACTIVE.has(job.status) && timer.current) clearInterval(timer.current)
-  }, [job])
+    if (!job || ACTIVE.has(job.status)) return
+    if (timer.current) clearInterval(timer.current)
+    if (!settledFired.current) {
+      settledFired.current = true
+      onSettled?.({ jobId, status: job.status as 'done' | 'failed' | 'canceled', valueUsd: job.valueUsd })
+    }
+  }, [job, jobId, onSettled])
 
   const completeStep = async (seq: number, builder: string, result: Record<string, unknown>, valueUsd?: number | null) => {
     await fetch(`/api/jobs/${jobId}/complete${q}`, {

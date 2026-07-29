@@ -94,6 +94,10 @@ export default function IntentRuntime({
   const [started, setStarted] = useState(false)
   const [built, setBuilt] = useState(false)
   const [signed, setSigned] = useState(false)
+  // The fourth stop: a compiled job reached 'done' (JobCard's one-shot
+  // settlement signal, forwarded as turn outcome 'settled'). Lone artifacts
+  // (a plain swap sign) have no settlement signal — signed stays their 100%.
+  const [settled, setSettled] = useState(false)
   const [blocked, setBlocked] = useState(false)
   // A turn settled with nothing to sign (no funds, plain answer, refusal) —
   // the visitor must never dead-end here: surface the onward paths. Cleared
@@ -230,11 +234,18 @@ export default function IntentRuntime({
       setBuilt(true)
       setSigned(true)
     }
+    if (data.outcome === 'settled') {
+      // No funnel write — EVENT_KINDS has no 'settled' yet (additive-DB
+      // follow-up); the arc treatment is the payoff today.
+      setBuilt(true)
+      setSigned(true)
+      if (data.jobStatus === 'done') setSettled(true)
+    }
     // Keep-the-flow-going bar: any settled turn that produced nothing to sign
     // (answered / refused / error — the no-funds wall) raises it; a build
     // clears it. 'clarify' is excluded — its chips ARE the continuation.
     const o = data.outcome
-    if (o === 'tx-built' || o === 'signed') setFlowNudge(false)
+    if (o === 'tx-built' || o === 'signed' || o === 'settled') setFlowNudge(false)
     else if (typeof o === 'string' && o !== 'clarify') setFlowNudge(true)
   }
 
@@ -505,7 +516,7 @@ export default function IntentRuntime({
             connected → built → signed fills it in thirds. Decorative-only
             (the funnel events are the truth), but it turns the chrome into
             the stage's arc instead of a static border. */}
-        <div aria-hidden className="yprog absolute inset-x-0 bottom-0 rounded-none" style={{ height: '1px', background: 'var(--line)' }}>
+        <div aria-hidden className={`yprog absolute inset-x-0 bottom-0 rounded-none ${settled ? 'yprog--full' : ''}`} style={{ height: '1px', background: 'var(--line)' }}>
           <div className="yprog__fill" style={{ width: signed ? '100%' : built ? '66%' : '33%' }} />
         </div>
       </header>
