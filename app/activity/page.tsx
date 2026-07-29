@@ -43,7 +43,7 @@ async function LinkEconomy() {
   const [board, fees, daily] = await Promise.all([linksBoard(5), feeSummary(), linkDailySeries(30)])
   if (board.byClaims.length === 0 && board.byRecent.length === 0 && !fees) return null
   return (
-    <section className="mb-10">
+    <section>
       <div className="flex items-baseline justify-between gap-4 mb-3 flex-wrap">
         <h2 className="mono text-[11px] uppercase tracking-wider text-[color:var(--muted-2)]">
           The link economy
@@ -131,11 +131,6 @@ export default async function ActivityPage() {
               <h1 className="hero__h1 hero__h1--sm">
                 The system, <em className="hero__em">moving money.</em>
               </h1>
-              <p className="hero__sub">
-                Every surface reports here — intent links, chat, every embedded agent, the guardian,
-                and the x402 payment rail. Watch what gets built, what gets signed, and where the
-                money goes.
-              </p>
             </header>
           }
           lead={<LinkEconomy />}
