@@ -125,7 +125,7 @@ export default function IntentRuntime({
   // Best-effort funnel events — never block or throw into the runtime.
   const posted = useRef(new Set<string>())
   const postEvent = (kind: string, extra?: { valueUsd?: number }) => {
-    const once = kind === 'open' || kind === 'connect'
+    const once = kind === 'open' || kind === 'connect' || kind === 'settled'
     if (once && posted.current.has(kind)) return
     posted.current.add(kind)
     void fetch(`/api/intent-links/${slug}/events`, {
@@ -235,11 +235,12 @@ export default function IntentRuntime({
       setSigned(true)
     }
     if (data.outcome === 'settled') {
-      // No funnel write — EVENT_KINDS has no 'settled' yet (additive-DB
-      // follow-up); the arc treatment is the payoff today.
       setBuilt(true)
       setSigned(true)
-      if (data.jobStatus === 'done') setSettled(true)
+      if (data.jobStatus === 'done') {
+        setSettled(true)
+        postEvent('settled', { valueUsd })
+      }
     }
     // Keep-the-flow-going bar: any settled turn that produced nothing to sign
     // (answered / refused / error — the no-funds wall) raises it; a build
