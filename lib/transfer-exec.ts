@@ -89,7 +89,11 @@ const TRANSFER_MID_RE = new RegExp(
 // Lazy body up to the FIRST "to <recipient>" — trailing words after the
 // recipient ("…to 0x… please") don't break the read.
 const MULTI_SEND_RE = new RegExp(String.raw`\b(?:send|transfer)\s+(?:the\s+)?(.+?)\s+to\s+${RECIPIENT}`, 'i')
-const MULTI_CLAUSE_SPLIT = /\s*,?\s+(?:and|plus)\s+(?:an\s+additional\s+|another\s+|an\s+extra\s+|also\s+)?/i
+// Clauses separate on "and"/"plus" OR a bare comma ("send 1 USDC on base, 2
+// USDC on arbitrum to 0x…" — a list, no conjunction). The comma branch
+// demands whitespace AFTER the comma so a thousands separator is never a
+// split point: "1,000 USDC" has no space and stays one amount.
+const MULTI_CLAUSE_SPLIT = /\s*,?\s+(?:and|plus)\s+(?:an\s+additional\s+|another\s+|an\s+extra\s+|also\s+)?|\s*,\s+/i
 const MULTI_CLAUSE_RE = new RegExp(
   String.raw`^${AMOUNT_OR_ALL}\s+\$?([A-Za-z]{2,12})(?:\s+balance)?(?:\s+(?:on|from)\s+(${CHAIN_WORDS}))?$`,
   'i',

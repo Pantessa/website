@@ -7012,6 +7012,24 @@ async function main() {
       'multi-send parse: single sends and non-sends stay out (null)',
       parseMultiSendSegments(`send 1 USDC on base to ${multiTo}`) === null && parseMultiSendSegments('swap 1 usdc for eth on base') === null,
     )
+    // A comma-separated list with no conjunction is the same intent typed a
+    // different way — it compiled to NOTHING before (the clause splitter only
+    // knew and/plus) and fell to the single-send layer, which took one clause.
+    const multiComma = parseMultiSendSegments(`send 1 USDC on base, 2 USDC on arbitrum to ${multiTo}`)
+    const multiThree = parseMultiSendSegments(`send 1 USDC on base, 2 USDC on arbitrum, 3 USDC on ethereum to ${multiTo}`)
+    check(
+      'multi-send parse: a bare comma separates clauses (list form, no conjunction)',
+      !!multiComma && !('problem' in multiComma) && multiComma.length === 2 && multiComma[0].chainId === 8453 && multiComma[1].chainId === 42161 &&
+        !!multiThree && !('problem' in multiThree) && multiThree.length === 3,
+      JSON.stringify({ multiComma, multiThree }).slice(0, 200),
+    )
+    // The comma branch demands whitespace after the comma, so a thousands
+    // separator is never a split point — "1,000 USDC" stays ONE amount.
+    check(
+      'multi-send parse: a thousands separator is not a clause break ("1,000 USDC" stays single)',
+      parseMultiSendSegments(`send 1,000 USDC on base to ${multiTo}`) === null,
+      JSON.stringify(parseMultiSendSegments(`send 1,000 USDC on base to ${multiTo}`)),
+    )
     const allSingle = parseTransferSegment(`send all my USDC on base to ${multiTo}`)
     check(
       "transfer parse: \"all my USDC\" → the 'all' sentinel (sized from the live balance at build time)",
