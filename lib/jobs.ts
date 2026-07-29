@@ -27,6 +27,7 @@
 // ─────────────────────────────────────────────────────────────────────────
 
 import { parseAaveOp, parseAaveSupply, type AaveOpParams, type AaveSupplyParams } from '@/lib/aave-supply'
+import { parseMorphoLend, parseMorphoOp } from '@/lib/morpho-supply'
 import { parseCrossChainSwap, type CrossChainSwapParams } from '@/lib/cross-chain-swap'
 import { chainAlt, canonicalChainWord, normalizeChainWords } from '@/lib/chain-lexicon'
 import { parseHlIntent, type HlIntent, type HlOrderIntent } from '@/lib/hyperliquid-exec'
@@ -482,6 +483,35 @@ export const JOB_SEGMENT_PARSERS: JobSegmentParser[] = [
       if (aaveOp.otherChain) return { problem: `Aave v4 builds run on Ethereum — I can't repay on ${aaveOp.otherChain}.` }
       const title = aaveOp.max ? `Repay the full ${aaveOp.token.toUpperCase()} debt on Aave v4` : `Repay ${aaveOp.amount} ${aaveOp.token.toUpperCase()} on Aave v4`
       return { steps: [{ kind: 'sign', builder: 'native-aave-repay', title, params: { token: aaveOp.token, amount: aaveOp.amount, max: aaveOp.max } }], title }
+    },
+  },
+  {
+    // Morpho lend/repay segments — the same discipline as the Aave entries:
+    // the compiler has no selected-set context, so only EXPLICIT Morpho asks
+    // compile ("lend 100 USDC on morpho"); weak/bare verbs stay chat-only.
+    // The chain rides the segment (Base default, Ethereum on request); any
+    // other named chain refuses honestly.
+    id: 'morpho-lend',
+    label: 'Morpho lends/repays',
+    parse: (seg) => {
+      const lend = parseMorphoLend(seg)
+      if (!lend || 'problem' in lend || !lend.explicitMorpho || lend.weak) return null
+      if (lend.otherChain) return { problem: `Morpho builds run on Base or Ethereum — I can't lend on ${lend.otherChain}.` }
+      const title = `Lend ${lend.amount} ${lend.token.toUpperCase()} on Morpho (${lend.chainId === 1 ? 'Ethereum' : 'Base'})`
+      return { steps: [{ kind: 'sign', builder: 'native-morpho-lend', title, params: { token: lend.token, amount: lend.amount, chainId: lend.chainId } }], title }
+    },
+  },
+  {
+    id: 'morpho-repay',
+    label: 'Morpho lends/repays',
+    parse: (seg) => {
+      const mop = parseMorphoOp(seg)
+      if (!mop || 'problem' in mop || mop.op !== 'repay' || !mop.explicitMorpho || mop.weak) return null
+      if (mop.otherChain) return { problem: `Morpho builds run on Base or Ethereum — I can't repay on ${mop.otherChain}.` }
+      const title = mop.max
+        ? `Repay the full ${mop.token.toUpperCase()} debt on Morpho (${mop.chainId === 1 ? 'Ethereum' : 'Base'})`
+        : `Repay ${mop.amount} ${mop.token.toUpperCase()} on Morpho (${mop.chainId === 1 ? 'Ethereum' : 'Base'})`
+      return { steps: [{ kind: 'sign', builder: 'native-morpho-repay', title, params: { token: mop.token, amount: mop.amount, max: mop.max, chainId: mop.chainId } }], title }
     },
   },
   {
