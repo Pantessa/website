@@ -132,7 +132,23 @@ import {
   reserveLegIds,
   WITHDRAW_MAX_SENTINEL,
 } from '../lib/aave-supply'
-import { encodeFunctionData, erc20Abi } from 'viem'
+import {
+  parseMorphoLend,
+  parseMorphoOp,
+  morphoCompetingVenueOf,
+  guardMorphoOpBuild,
+  parseMorphoLendFollowUp,
+  parseMorphoOpFollowUp,
+  pickLendMarket,
+  pickCollateralMarket,
+  pickDebtPosition,
+  pickSuppliedPosition,
+  pickBorrowPosition,
+  MORPHO_OP_SELECTORS,
+  MORPHO_SINGLETON,
+  type MorphoOpGuardExpectation,
+} from '../lib/morpho-supply'
+import { encodeFunctionData, erc20Abi, toFunctionSelector } from 'viem'
 import {
   evaluatePolicy,
   formatPx,
@@ -4661,6 +4677,230 @@ async function main() {
     const wamend = parseAaveOpFollowUp('make it 2', wpend)
     check('aave ops follow-up: "make it 2" re-amount keeps the op', wamend?.kind === 'amend' && wamend.params.op === 'withdraw' && wamend.params.amount === '2' && wamend.params.token === 'WETH')
     check('aave ops follow-up: supply pending is not ours', parseAaveOpFollowUp('cancel', { kind: 'aave-supply', data: {} }) === null)
+  }
+
+  // ── Morpho: parse + the TUPLE-BOUND guard (lib/morpho-supply.ts) ──────────
+  // Morpho calldata carries the full MarketParams tuple — the market id
+  // never appears in it — so the guard binds through the tuple: every word
+  // (loanToken, collateralToken, oracle, irm, lltv) must match the market
+  // resolved on-chain. Good plans below are encoded with viem from the
+  // pinned ABI (ground truth, not the guard's own layout table), then
+  // tampered word-by-word.
+  console.log('— morpho native (parse + tuple-bound guard)')
+  {
+    // Parse: lend.
+    const l = parseMorphoLend('lend 100 USDC on morpho')
+    check('morpho parse: "lend 100 USDC on morpho" (Base default)', !!l && !('problem' in l) && l.amount === '100' && l.token === 'USDC' && l.explicitMorpho && l.chainId === 8453 && l.otherChain === null && !l.weak)
+    const l2 = parseMorphoLend('supply 50 USDC to morpho on ethereum')
+    check('morpho parse: named Ethereum → chainId 1', !!l2 && !('problem' in l2) && l2.chainId === 1 && l2.otherChain === null)
+    const l3 = parseMorphoLend('lend 100 USDC on morpho on arbitrum')
+    check('morpho parse: wrong chain surfaces BY NAME', !!l3 && !('problem' in l3) && l3.otherChain === 'arbitrum')
+    check('morpho parse: aave-worded ask NEVER claimed', parseMorphoLend('supply 20 USDC to aave') === null && parseMorphoOp('repay 100 USDC on aave') === null)
+    check('morpho parse: morpho-worded ask never claimed by AAVE (mutual exclusion)', parseAaveSupply('lend 100 USDC on morpho') === null && parseAaveOp('repay 100 USDC on morpho') === null)
+    const lbare = parseMorphoLend('lend 100 USDC')
+    check('morpho parse: bare lending-only verb is NOT weak (set decides at the route)', !!lbare && !('problem' in lbare) && !lbare.explicitMorpho && !lbare.weak)
+    const lweak = parseMorphoLend('deposit 5 USDC')
+    check('morpho parse: bare generic verb → WEAK', !!lweak && !('problem' in lweak) && lweak.weak === true)
+    check('morpho parse: non-Morpho destination → null', parseMorphoLend('deposit 5 USDC to hyperliquid') === null)
+    check('morpho parse: question → null', parseMorphoLend('should i lend 100 USDC on morpho') === null)
+    check('morpho parse: bare "eth" as a TOKEN never flips the chain', (() => { const p = parseMorphoLend('lend 100 USDC on morpho and keep my eth'); return !!p && !('problem' in p) && p.chainId === 8453 })())
+    const lna = parseMorphoLend('lend USDC on morpho')
+    check('morpho parse: missing amount → problem (the one real clarify)', !!lna && 'problem' in lna)
+    check('morpho parse: collateral phrasing is NOT a lend', parseMorphoLend('supply 0.5 cbBTC collateral to morpho') === null)
+    check('morpho rival: aave in the set → named', morphoCompetingVenueOf([{ slug: 'morpho-free', name: 'Morpho (Free)' }, { slug: 'aave-free', name: 'Aave (Free)' }]) === 'Aave (Free)')
+    check('morpho rival: morpho+wallet only → null', morphoCompetingVenueOf([{ slug: 'morpho-free', name: 'Morpho (Free)' }, { slug: 'yeetful-tool-wallet', name: 'Yeetful Wallet' }]) === null)
+
+    // Parse: ops.
+    const b = parseMorphoOp('borrow 50 USDC on morpho')
+    check('morpho ops parse: "borrow 50 USDC on morpho"', !!b && !('problem' in b) && b.op === 'borrow' && b.amount === '50' && !b.max && b.chainId === 8453)
+    const r = parseMorphoOp('repay 25 USDC on morpho')
+    check('morpho ops parse: "repay 25 USDC"', !!r && !('problem' in r) && r.op === 'repay' && r.amount === '25' && !r.max)
+    const rmax = parseMorphoOp('pay off my USDC debt on morpho')
+    check('morpho ops parse: "pay off my USDC debt" → max repay', !!rmax && 'op' in rmax && !('problem' in rmax) && rmax.op === 'repay' && rmax.max)
+    const w = parseMorphoOp('withdraw 100 USDC from morpho')
+    check('morpho ops parse: "withdraw 100 USDC from morpho"', !!w && !('problem' in w) && w.op === 'withdraw' && w.amount === '100')
+    const wmax = parseMorphoOp('withdraw all my USDC from morpho')
+    check('morpho ops parse: "withdraw all my USDC" → max', !!wmax && !('problem' in wmax) && wmax.op === 'withdraw' && wmax.max)
+    const wc = parseMorphoOp('withdraw 0.5 cbBTC collateral from morpho')
+    check('morpho ops parse: collateral withdrawal is its OWN op', !!wc && !('problem' in wc) && wc.op === 'withdraw-collateral' && wc.amount === '0.5' && wc.token === 'cbBTC')
+    const sc = parseMorphoOp('post 0.5 cbBTC as collateral on morpho')
+    check('morpho ops parse: "post … as collateral" → supply-collateral', !!sc && !('problem' in sc) && sc.op === 'supply-collateral' && sc.amount === '0.5')
+    const wbare = parseMorphoOp('withdraw 100 USDC')
+    check('morpho ops parse: bare withdraw → WEAK (set decides)', !!wbare && !('problem' in wbare) && wbare.op === 'withdraw' && wbare.weak === true)
+    check('morpho ops parse: bare withdraw from a non-Morpho source → null', parseMorphoOp('withdraw 100 USDC from binance') === null)
+    check('morpho ops parse: question → null', parseMorphoOp('should I repay my USDC debt on morpho?') === null)
+    const bna = parseMorphoOp('borrow USDC on morpho')
+    check('morpho ops parse: borrow missing amount → problem', !!bna && 'problem' in bna && bna.op === 'borrow')
+    const wchain = parseMorphoOp('repay 5 USDC on morpho on polygon')
+    check('morpho ops parse: unsupported chain surfaces by name', !!wchain && !('problem' in wchain) && wchain.otherChain === 'polygon')
+
+    // The guard vs viem-encoded ground truth. Selectors re-derive from the
+    // ABI signatures first — the pinned table can never drift silently.
+    const sel = (sig: string) => toFunctionSelector(sig).slice(2)
+    const P = '(address,address,address,address,uint256)'
+    check(
+      'morpho guard: pinned selectors re-derive from the ABI signatures',
+      sel(`supply(${P},uint256,uint256,address,bytes)`) === MORPHO_OP_SELECTORS.lend &&
+        sel(`supplyCollateral(${P},uint256,address,bytes)`) === MORPHO_OP_SELECTORS['supply-collateral'] &&
+        sel(`borrow(${P},uint256,uint256,address,address)`) === MORPHO_OP_SELECTORS.borrow &&
+        sel(`repay(${P},uint256,uint256,address,bytes)`) === MORPHO_OP_SELECTORS.repay &&
+        sel(`withdraw(${P},uint256,uint256,address,address)`) === MORPHO_OP_SELECTORS.withdraw &&
+        sel(`withdrawCollateral(${P},uint256,address,address)`) === MORPHO_OP_SELECTORS['withdraw-collateral'],
+    )
+
+    const LOAN = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913' // USDC (Base)
+    const COLL = '0xcbB7C0000aB88B473b1f5aFd9ef808440eed33Bf' // cbBTC (Base)
+    const ORACLE = '0x1111111111111111111111111111111111111111'
+    const IRM = '0x46415998764C29aB2a25CbeA6254146D50D22687'
+    const LLTV = BigInt('860000000000000000')
+    const USER = '0x28C6c06298d514Db089934071355E5743bf21d60'
+    const EVIL = '0x000000000000000000000000000000000000dEaD'
+    const MP = [
+      { name: 'loanToken', type: 'address' }, { name: 'collateralToken', type: 'address' },
+      { name: 'oracle', type: 'address' }, { name: 'irm', type: 'address' }, { name: 'lltv', type: 'uint256' },
+    ]
+    const MORPHO_TEST_ABI = [
+      { name: 'supply', type: 'function', stateMutability: 'nonpayable', inputs: [{ name: 'marketParams', type: 'tuple', components: MP }, { name: 'assets', type: 'uint256' }, { name: 'shares', type: 'uint256' }, { name: 'onBehalf', type: 'address' }, { name: 'data', type: 'bytes' }], outputs: [] },
+      { name: 'withdraw', type: 'function', stateMutability: 'nonpayable', inputs: [{ name: 'marketParams', type: 'tuple', components: MP }, { name: 'assets', type: 'uint256' }, { name: 'shares', type: 'uint256' }, { name: 'onBehalf', type: 'address' }, { name: 'receiver', type: 'address' }], outputs: [] },
+      { name: 'supplyCollateral', type: 'function', stateMutability: 'nonpayable', inputs: [{ name: 'marketParams', type: 'tuple', components: MP }, { name: 'assets', type: 'uint256' }, { name: 'onBehalf', type: 'address' }, { name: 'data', type: 'bytes' }], outputs: [] },
+      { name: 'withdrawCollateral', type: 'function', stateMutability: 'nonpayable', inputs: [{ name: 'marketParams', type: 'tuple', components: MP }, { name: 'assets', type: 'uint256' }, { name: 'onBehalf', type: 'address' }, { name: 'receiver', type: 'address' }], outputs: [] },
+      { name: 'borrow', type: 'function', stateMutability: 'nonpayable', inputs: [{ name: 'marketParams', type: 'tuple', components: MP }, { name: 'assets', type: 'uint256' }, { name: 'shares', type: 'uint256' }, { name: 'onBehalf', type: 'address' }, { name: 'receiver', type: 'address' }], outputs: [] },
+      { name: 'repay', type: 'function', stateMutability: 'nonpayable', inputs: [{ name: 'marketParams', type: 'tuple', components: MP }, { name: 'assets', type: 'uint256' }, { name: 'shares', type: 'uint256' }, { name: 'onBehalf', type: 'address' }, { name: 'data', type: 'bytes' }], outputs: [] },
+    ] as const
+    const tuple = { loanToken: LOAN, collateralToken: COLL, oracle: ORACLE, irm: IRM, lltv: LLTV } as const
+    const atoms = BigInt(1000000)
+    const enc = (fn: string, args: unknown[]) => encodeFunctionData({ abi: MORPHO_TEST_ABI, functionName: fn as 'supply', args: args as never })
+    const mstep = (to: string, data: string, label = 'op') => ({ action: 'send_transaction', label, summary: label, tx: { to, data, value: '0', chainId: 8453 } })
+    const mexp = (op: MorphoOpGuardExpectation['op'], amount: MorphoOpGuardExpectation['amount']): MorphoOpGuardExpectation =>
+      ({ op, chainId: 8453, amount, params: tuple, morpho: MORPHO_SINGLETON, user: USER })
+    /** Tamper one 32-byte word of viem-encoded calldata by index. */
+    const tamper = (data: string, word: number, hex64: string) => {
+      const head = 2 + 8 + word * 64
+      return data.slice(0, head) + hex64 + data.slice(head + 64)
+    }
+    const addrWord = (a: string) => a.toLowerCase().replace(/^0x/, '').padStart(64, '0')
+
+    const lendData = enc('supply', [tuple, atoms, BigInt(0), USER, '0x'])
+    const approveData = encodeFunctionData({ abi: erc20Abi, functionName: 'approve', args: [MORPHO_SINGLETON as `0x${string}`, atoms] })
+    const lendExp = mexp('lend', { kind: 'exact', atoms })
+    check('morpho guard: correct approve→lend PASSES', (() => { const g = guardMorphoOpBuild({ operation: 'lend', steps: [mstep(LOAN, approveData, 'approve'), mstep(MORPHO_SINGLETON, lendData, 'lend')] }, lendExp); return g.ok && g.steps?.length === 2 })())
+    check('morpho guard: no-approve single-step lend PASSES', guardMorphoOpBuild({ operation: 'lend', steps: [mstep(MORPHO_SINGLETON, lendData, 'lend')] }, lendExp).ok)
+    // EVERY tuple word binds — a single swapped word is a different market.
+    const tupleTampers: Array<[string, string]> = [
+      ['loanToken', addrWord(EVIL)], ['collateralToken', addrWord(EVIL)], ['oracle', addrWord(EVIL)],
+      ['irm', addrWord(EVIL)], ['lltv', (LLTV + BigInt(1)).toString(16).padStart(64, '0')],
+    ]
+    check(
+      'morpho guard: EVERY tampered tuple word refuses (loan/collateral/oracle/irm/lltv)',
+      tupleTampers.every(([, hex], i) => !guardMorphoOpBuild({ steps: [mstep(MORPHO_SINGLETON, tamper(lendData, i, hex), 'lend')] }, lendExp).ok),
+    )
+    check('morpho guard: tampered onBehalf refuses', !guardMorphoOpBuild({ steps: [mstep(MORPHO_SINGLETON, tamper(lendData, 7, addrWord(EVIL)), 'lend')] }, lendExp).ok)
+    check('morpho guard: wrong amount refuses', !guardMorphoOpBuild({ steps: [mstep(MORPHO_SINGLETON, enc('supply', [tuple, atoms * BigInt(2), BigInt(0), USER, '0x']), 'lend')] }, lendExp).ok)
+    check('morpho guard: a non-empty callback payload refuses', !guardMorphoOpBuild({ steps: [mstep(MORPHO_SINGLETON, enc('supply', [tuple, atoms, BigInt(0), USER, '0xdeadbeef']), 'lend')] }, lendExp).ok)
+    check('morpho guard: wrong chain refuses', !guardMorphoOpBuild({ steps: [{ ...mstep(MORPHO_SINGLETON, lendData, 'lend'), tx: { to: MORPHO_SINGLETON, data: lendData, value: '0', chainId: 1 } }] }, lendExp).ok)
+    check('morpho guard: native value refuses', !guardMorphoOpBuild({ steps: [{ ...mstep(MORPHO_SINGLETON, lendData, 'lend'), tx: { to: MORPHO_SINGLETON, data: lendData, value: '1', chainId: 8453 } }] }, lendExp).ok)
+    check('morpho guard: a non-singleton target refuses', !guardMorphoOpBuild({ steps: [mstep(USER, lendData, 'lend')] }, lendExp).ok)
+    const evilApprove = encodeFunctionData({ abi: erc20Abi, functionName: 'approve', args: [EVIL as `0x${string}`, atoms] })
+    check('morpho guard: approval to a non-Morpho spender refuses', !guardMorphoOpBuild({ steps: [mstep(LOAN, evilApprove, 'approve'), mstep(MORPHO_SINGLETON, lendData, 'lend')] }, lendExp).ok)
+    check('morpho guard: approval on the WRONG token contract refuses', !guardMorphoOpBuild({ steps: [mstep(COLL, approveData, 'approve'), mstep(MORPHO_SINGLETON, lendData, 'lend')] }, lendExp).ok)
+    const bigApprove = encodeFunctionData({ abi: erc20Abi, functionName: 'approve', args: [MORPHO_SINGLETON as `0x${string}`, atoms * BigInt(2)] })
+    check('morpho guard: an OVER-approve refuses (exact means exact)', !guardMorphoOpBuild({ steps: [mstep(LOAN, bigApprove, 'approve'), mstep(MORPHO_SINGLETON, lendData, 'lend')] }, lendExp).ok)
+
+    // Cross-op smuggling: pinned selector per op.
+    const borrowData = enc('borrow', [tuple, atoms, BigInt(0), USER, USER])
+    check('morpho guard: cross-op calldata (borrow sel on a withdraw) refuses', !guardMorphoOpBuild({ steps: [mstep(MORPHO_SINGLETON, borrowData, 'withdraw')] }, mexp('withdraw', { kind: 'exact', atoms })).ok)
+    check('morpho guard: correct borrow PASSES', guardMorphoOpBuild({ steps: [mstep(MORPHO_SINGLETON, borrowData, 'borrow')] }, mexp('borrow', { kind: 'exact', atoms })).ok)
+    check('morpho guard: borrow receiver tampered refuses', !guardMorphoOpBuild({ steps: [mstep(MORPHO_SINGLETON, tamper(borrowData, 8, addrWord(EVIL)), 'borrow')] }, mexp('borrow', { kind: 'exact', atoms })).ok)
+    const withdrawData = enc('withdraw', [tuple, atoms, BigInt(0), USER, USER])
+    check('morpho guard: a withdraw growing an approve step refuses', !guardMorphoOpBuild({ steps: [mstep(LOAN, approveData, 'approve'), mstep(MORPHO_SINGLETON, withdrawData, 'withdraw')] }, mexp('withdraw', { kind: 'exact', atoms })).ok)
+
+    // Shares-mode: assets 0 + shares set — ONLY for max repay/withdraw.
+    const debt = BigInt(92899677)
+    const shares = BigInt('123456789012345')
+    const repayMaxData = enc('repay', [tuple, BigInt(0), shares, USER, '0x'])
+    const bufferedApprove = encodeFunctionData({ abi: erc20Abi, functionName: 'approve', args: [MORPHO_SINGLETON as `0x${string}`, debt + debt / BigInt(2000) + BigInt(1)] })
+    const repayMaxExp = mexp('repay', { kind: 'max-shares', anchorAtoms: debt })
+    check('morpho guard: shares-mode max repay w/ buffered approve PASSES', guardMorphoOpBuild({ steps: [mstep(LOAN, bufferedApprove, 'approve'), mstep(MORPHO_SINGLETON, repayMaxData, 'repay')] }, repayMaxExp).ok)
+    check('morpho guard: max repay with assets != 0 refuses', !guardMorphoOpBuild({ steps: [mstep(LOAN, bufferedApprove, 'approve'), mstep(MORPHO_SINGLETON, enc('repay', [tuple, debt, shares, USER, '0x']), 'repay')] }, repayMaxExp).ok)
+    check('morpho guard: exact repay that is shares-denominated refuses', !guardMorphoOpBuild({ steps: [mstep(MORPHO_SINGLETON, repayMaxData, 'repay')] }, mexp('repay', { kind: 'exact', atoms: debt })).ok)
+    check('morpho guard: shares-mode on a NON-maxable op (lend) refuses', !guardMorphoOpBuild({ steps: [mstep(MORPHO_SINGLETON, enc('supply', [tuple, BigInt(0), shares, USER, '0x']), 'lend')] }, mexp('lend', { kind: 'max-shares', anchorAtoms: atoms })).ok)
+    const overApprove = encodeFunctionData({ abi: erc20Abi, functionName: 'approve', args: [MORPHO_SINGLETON as `0x${string}`, debt + debt / BigInt(50)] })
+    check('morpho guard: repay-max approve outside the 0.2% window refuses', !guardMorphoOpBuild({ steps: [mstep(LOAN, overApprove, 'approve'), mstep(MORPHO_SINGLETON, repayMaxData, 'repay')] }, repayMaxExp).ok)
+    const underApprove = encodeFunctionData({ abi: erc20Abi, functionName: 'approve', args: [MORPHO_SINGLETON as `0x${string}`, debt - BigInt(1)] })
+    check('morpho guard: repay-max approve UNDER the anchored debt refuses', !guardMorphoOpBuild({ steps: [mstep(LOAN, underApprove, 'approve'), mstep(MORPHO_SINGLETON, repayMaxData, 'repay')] }, repayMaxExp).ok)
+    check('morpho guard: shares-mode max withdraw PASSES (no approve)', guardMorphoOpBuild({ steps: [mstep(MORPHO_SINGLETON, enc('withdraw', [tuple, BigInt(0), shares, USER, USER]), 'withdraw')] }, mexp('withdraw', { kind: 'max-shares', anchorAtoms: atoms })).ok)
+    // Collateral ops: asset-exact always; approve targets the COLLATERAL token.
+    const scData = enc('supplyCollateral', [tuple, atoms, USER, '0x'])
+    const collApprove = encodeFunctionData({ abi: erc20Abi, functionName: 'approve', args: [MORPHO_SINGLETON as `0x${string}`, atoms] })
+    check('morpho guard: approve→supplyCollateral PASSES (collateral-token approve)', guardMorphoOpBuild({ steps: [mstep(COLL, collApprove, 'approve'), mstep(MORPHO_SINGLETON, scData, 'post')] }, mexp('supply-collateral', { kind: 'exact', atoms })).ok)
+    check('morpho guard: supplyCollateral approve on the LOAN token refuses', !guardMorphoOpBuild({ steps: [mstep(LOAN, collApprove, 'approve'), mstep(MORPHO_SINGLETON, scData, 'post')] }, mexp('supply-collateral', { kind: 'exact', atoms })).ok)
+    const wcData = enc('withdrawCollateral', [tuple, atoms, USER, USER])
+    check('morpho guard: correct withdrawCollateral PASSES', guardMorphoOpBuild({ steps: [mstep(MORPHO_SINGLETON, wcData, 'withdraw collateral')] }, mexp('withdraw-collateral', { kind: 'exact', atoms })).ok)
+    check('morpho guard: withdrawCollateral receiver tampered refuses', !guardMorphoOpBuild({ steps: [mstep(MORPHO_SINGLETON, tamper(wcData, 7, addrWord(EVIL)), 'withdraw collateral')] }, mexp('withdraw-collateral', { kind: 'exact', atoms })).ok)
+
+    // Pickers over the agent's own tool-result shapes.
+    const M1 = `0x${'11'.repeat(32)}`
+    const M2 = `0x${'22'.repeat(32)}`
+    const marketRows = [
+      { marketId: M1, curated: true, loan: 'USDC', collateral: 'cbBTC', totalSupplyUsd: 1_440_000_000 },
+      { marketId: M2, curated: true, loan: 'USDC', collateral: 'WETH', totalSupplyUsd: 78_000_000 },
+      { marketId: `0x${'33'.repeat(32)}`, curated: false, loan: 'DAI', collateral: 'WETH' },
+    ]
+    check('morpho pick: lend takes the first (deepest) curated loan match', pickLendMarket(marketRows, 'usdc')?.marketId === M1)
+    check('morpho pick: uncurated markets never picked', pickLendMarket(marketRows, 'DAI') === null)
+    check('morpho pick: collateral market prefers the user’s existing market', pickCollateralMarket(marketRows, 'WETH', [M2])?.marketId === M2 && pickCollateralMarket(marketRows, 'cbBTC', [])?.marketId === M1)
+    const posRows = [
+      { marketId: M1, market: 'USDC / cbBTC (lltv 86.0%)', borrowed: { amount: '150', asset: 'USDC' }, collateral: { amount: '0.01', asset: 'cbBTC' }, borrowingPower: { remaining: '400', asset: 'USDC' } },
+      { marketId: M2, market: 'USDC / WETH (lltv 86.0%)', supplied: { amount: '1200', asset: 'USDC' }, borrowed: { amount: '90', asset: 'USDC' } },
+    ]
+    check('morpho pick: repay anchors to the LARGEST debt market', pickDebtPosition(posRows, 'USDC')?.marketId === M1)
+    check('morpho pick: withdraw anchors to the supplied market', pickSuppliedPosition(posRows, 'USDC')?.marketId === M2 && pickSuppliedPosition(posRows, 'WETH') === null)
+    check('morpho pick: borrow needs collateral + the loan-asset match', pickBorrowPosition(posRows, 'USDC')?.marketId === M1 && pickBorrowPosition(posRows, 'WETH') === null)
+
+    // Follow-ups.
+    const mpend = { kind: 'morpho-lend', data: { amount: '100', token: 'USDC', market: 'USDC / cbBTC', chainId: '8453' } }
+    check('morpho follow-up: "cancel" drops it', parseMorphoLendFollowUp('cancel', mpend)?.kind === 'cancel')
+    check('morpho follow-up: "yes" is a noop (card already there)', parseMorphoLendFollowUp('yes', mpend)?.kind === 'noop')
+    const mamend = parseMorphoLendFollowUp('make it 250', mpend)
+    check('morpho follow-up: "make it 250" re-amount keeps token + chain', mamend?.kind === 'amend' && mamend.params.amount === '250' && mamend.params.token === 'USDC' && mamend.params.chainId === 8453)
+    const opend = { kind: 'morpho-repay', data: { op: 'repay', amount: '25', token: 'USDC', market: 'USDC / cbBTC', chainId: '1' } }
+    const oamend = parseMorphoOpFollowUp('make it 40', opend)
+    check('morpho ops follow-up: amend keeps op + chainId', oamend?.kind === 'amend' && oamend.params.op === 'repay' && oamend.params.amount === '40' && oamend.params.chainId === 1)
+    check('morpho ops follow-up: aave pending is not ours', parseMorphoOpFollowUp('cancel', { kind: 'aave-repay', data: {} }) === null)
+
+    // Jobs: explicit-venue segments compile; lone/weak asks never do.
+    const mjob = compileJobAsk('lend 100 USDC on morpho on ethereum, then repay 50 USDC on morpho')
+    check(
+      'morpho jobs: explicit lend→repay compiles with per-segment chains',
+      !!mjob && !('problem' in mjob) && mjob.steps.length === 2 &&
+        mjob.steps[0].builder === 'native-morpho-lend' && (mjob.steps[0].params as { chainId?: number }).chainId === 1 &&
+        mjob.steps[1].builder === 'native-morpho-repay' && (mjob.steps[1].params as { chainId?: number }).chainId === 8453,
+      mjob && !('problem' in mjob) ? mjob.steps.map((s) => `${s.kind}:${s.builder}`).join(',') : JSON.stringify(mjob),
+    )
+    check('morpho jobs: a LONE lend is not a job (native layer owns it)', compileJobAsk('lend 100 USDC on morpho') === null)
+    const mweak = compileJobAsk('swap 1 USDC for WETH on base, then lend 5 USDC')
+    check('morpho jobs: a venue-less lend segment never compiles as Morpho', !!mweak && 'problem' in mweak && /step 2/i.test(mweak.problem))
+
+    // The door: a full grammar match without the agent answers the add-the-
+    // dapp deep link (prefill, never auto-send) — never the planner.
+    const morphoDoor = await fetch(`${BASE}/api/chat`, {
+      method: 'POST', headers: { 'content-type': 'application/json', 'x-yf-no-ask-log': '1' },
+      body: JSON.stringify({ message: 'lend 20 USDC on morpho', activeServers: [] }),
+    }).then((r) => r.json())
+    check(
+      'morpho door: a lone lend without the agent deep-links the add with the ask ready',
+      typeof morphoDoor.reply === 'string' && morphoDoor.reply.includes('Add Morpho with this ask ready](/chat?mcps=morpho-free&prompt='),
+      JSON.stringify(morphoDoor).slice(0, 220),
+    )
+    const morphoLadder = await fetch(`${BASE}/api/chat`, {
+      method: 'POST', headers: { 'content-type': 'application/json', 'x-yf-no-ask-log': '1' },
+      body: JSON.stringify({ message: 'Swap 0.1 ETH from Base to ETH on Ethereum, then lend 5 USDC on morpho', activeServers: [] }),
+    }).then((r) => r.json())
+    check(
+      'morpho ladder: a compound ask reaches the jobs gate BEFORE the Morpho door steals it',
+      typeof morphoLadder.reply === 'string' && /chains multiple money steps/i.test(morphoLadder.reply) && !/Add Morpho with this ask ready/.test(morphoLadder.reply),
+      JSON.stringify(morphoLadder).slice(0, 220),
+    )
   }
 
   // ── Add-MCP (custom rows): callable row + idempotent re-add ───────────────
