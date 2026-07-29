@@ -6888,6 +6888,36 @@ async function main() {
       typeof compoundLive.reply === 'string' && /chains multiple money steps/i.test(compoundLive.reply) && !/needs the \*\*Aave\*\*|Add Aave with this ask ready/.test(compoundLive.reply),
       JSON.stringify(compoundLive).slice(0, 220),
     )
+    // ── The ladder net (the #595 invariant, generalized) ───────────────────
+    // Every single-venue gate must sit BELOW the jobs compiler: a parser that
+    // matches ONE clause of a compound ask must never claim the whole turn.
+    // #595 was Aave; #586-era probing found the same shape behind every
+    // connector. This drives real compound asks across venue PAIRS over HTTP,
+    // so adding a new gate above the jobs compiler fails here immediately —
+    // behavioral, not a source grep, so it can't rot into a false green.
+    const LADDER_PAIRS: Array<{ label: string; ask: string; thief: RegExp }> = [
+      { label: 'aave+lido', ask: 'supply 5 USDC to aave and stake 0.01 eth on lido', thief: /needs the \*\*Aave\*\*|Add Aave with this ask ready|Staking with Lido runs right here/ },
+      { label: 'morpho+lido', ask: 'lend 100 USDC on morpho and stake 0.5 ETH on lido', thief: /Add Morpho with this ask ready|Staking with Lido runs right here/ },
+      { label: 'morpho+aave', ask: 'lend 100 USDC on morpho and supply 5 USDC to aave', thief: /Add Morpho with this ask ready|Add Aave with this ask ready/ },
+      { label: 'bridge+morpho', ask: 'bridge 5 USDC from base to arbitrum and lend 100 USDC on morpho', thief: /Add Morpho with this ask ready|built-in swap tools cover/ },
+      { label: 'hl+lido', ask: 'deposit 20 usdc to hyperliquid and stake 0.01 eth on lido', thief: /Hyperliquid orders build right here|Staking with Lido runs right here/ },
+    ]
+    const ladderMisses: string[] = []
+    for (const p of LADDER_PAIRS) {
+      const res = await fetch(`${BASE}/api/chat`, {
+        method: 'POST', headers: { 'content-type': 'application/json', 'x-yf-no-ask-log': '1' },
+        body: JSON.stringify({ message: p.ask, activeServers: [] }),
+      }).then((r) => r.json())
+      const reply = typeof res.reply === 'string' ? res.reply : ''
+      const reachedJobs = /chains multiple money steps/i.test(reply)
+      if (!reachedJobs || p.thief.test(reply)) ladderMisses.push(`${p.label}: ${reply.slice(0, 90)}`)
+    }
+    check(
+      'jobs ladder net: every venue PAIR reaches the jobs gate (no single-venue gate claims a compound ask)',
+      ladderMisses.length === 0,
+      ladderMisses.join(' || '),
+    )
+
     const aaveDoor = await fetch(`${BASE}/api/chat`, {
       method: 'POST', headers: { 'content-type': 'application/json', 'x-yf-no-ask-log': '1' },
       body: JSON.stringify({ message: 'supply 20 USDC to aave', activeServers: [] }),
