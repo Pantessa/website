@@ -123,6 +123,8 @@ const ARTIFACT_LABEL: Record<string, string> = {
 const PATH_LABEL: Record<string, string> = {
   'native-aave-supply': 'Native · Aave supply',
   'native-aave-op': 'Native · Aave withdraw/borrow/repay',
+  'native-morpho-lend': 'Native · Morpho lend',
+  'native-morpho-op': 'Native · Morpho borrow/repay/withdraw',
   'native-swap-uniswap': 'Native · Uniswap swap',
   'native-swap-uniswap-v4': 'Native · Uniswap v4 swap',
   'native-swap-cow': 'Native · CoW swap',
