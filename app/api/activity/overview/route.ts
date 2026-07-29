@@ -120,6 +120,30 @@ function txLink(chain: string | null | undefined, storedUrl: string | null): str
   return storedUrl
 }
 
+/** A job step's on-chain receipt, narrowed out of its `result` blob: the hash
+ *  and the chain it settled on, nothing else. Runners write either a bare
+ *  `txHash` or a `txs: [{hash, chainId, title}]` list (multi-tx steps like
+ *  approve → swap → fee); the titles in that list are compiled copy, so only
+ *  hash + chainId are read. Returns null unless BOTH resolve — a hash without
+ *  a known chain can't be linked to the right explorer, and guessing is how
+ *  the write path used to point every chain at basescan. */
+function stepReceipt(result: unknown): { url: string; chain: string } | null {
+  if (!result || typeof result !== 'object') return null
+  const r = result as { txHash?: unknown; txs?: unknown }
+  const list = Array.isArray(r.txs) ? (r.txs as { hash?: unknown; chainId?: unknown }[]) : []
+  const hash = typeof r.txHash === 'string' ? r.txHash : null
+  // The entry matching txHash carries its chain; otherwise take the last tx,
+  // which is the step's headline move (approve → swap → fee ends on the fee).
+  const entry =
+    list.find((t) => typeof t.hash === 'string' && t.hash === hash) ?? list[list.length - 1] ?? null
+  const finalHash = hash ?? (entry && typeof entry.hash === 'string' ? entry.hash : null)
+  const id = entry && typeof entry.chainId === 'number' ? entry.chainId : null
+  if (!finalHash || !TX_HASH_RE.test(finalHash)) return null
+  const appChain = chainById(id)
+  if (!appChain) return null
+  return { url: `${appChain.explorerTx}${finalHash}`, chain: appChain.short }
+}
+
 const r2 = (n: number) => Math.round(n * 100) / 100
 const dayKey = (d: Date) => d.toISOString().slice(0, 10)
 
@@ -260,7 +284,12 @@ export async function GET() {
         createdAt: true,
         steps: {
           orderBy: { seq: 'asc' },
-          select: { seq: true, kind: true, status: true, builder: true, valueUsd: true },
+          // `result` is read for ONE thing: the tx hash and its chain id. A
+          // settled hash is already public on-chain and the receipts feed has
+          // always shipped one — but the blob also holds human titles built
+          // from the compiled params, so it is narrowed by stepReceipt() below
+          // and never forwarded whole.
+          select: { seq: true, kind: true, status: true, builder: true, valueUsd: true, result: true },
         },
       },
     }),
@@ -456,20 +485,27 @@ export async function GET() {
   if (x402Usd > 0) flow.push({ source: 'agents', venue: 'x402', usd: x402Usd, n: x402Agg._count._all })
 
   // ── chains: shape only. A step's public label comes from its builder, so
-  // nothing a user typed can reach this array by construction.
+  // nothing a user typed can reach this array by construction. The one thing
+  // lifted out of `result` is the settled tx hash + its chain, so a completed
+  // step can link to its own receipt on the right explorer.
   const chains = chainJobs
     .filter((j) => j.steps.length > 1)
     .map((j) => ({
       status: j.status,
       usd: r2(j.valueUsd ?? j.steps.reduce((acc, s) => acc + (s.valueUsd ?? 0), 0)),
       at: j.createdAt.toISOString(),
-      steps: j.steps.map((s) => ({
-        kind: s.kind,
-        status: s.status,
-        builder: s.builder,
-        venue: VENUE_OF_PATH[s.builder] ?? JOB_BUILDER_VENUE[s.builder] ?? null,
-        usd: s.valueUsd ?? null,
-      })),
+      steps: j.steps.map((s) => {
+        const receipt = stepReceipt(s.result)
+        return {
+          kind: s.kind,
+          status: s.status,
+          builder: s.builder,
+          venue: VENUE_OF_PATH[s.builder] ?? JOB_BUILDER_VENUE[s.builder] ?? null,
+          usd: s.valueUsd ?? null,
+          chain: receipt?.chain ?? null,
+          txUrl: receipt?.url ?? null,
+        }
+      }),
     }))
 
   return NextResponse.json(
