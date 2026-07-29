@@ -6803,6 +6803,42 @@ async function main() {
       JOB_SEGMENT_PARSERS.length >= 11 && JOB_SEGMENT_PARSERS.every((p) => !!p.id && typeof p.parse === 'function'),
     )
 
+    // ── Bare-"and" intents (the #595 drop through a different connector) ────
+    // Two intents joined by "and" once compiled to NOTHING and fell to the
+    // single-venue gates, where the first parser to match its own clause
+    // claimed the turn and the other intent vanished. The speculative split
+    // is accepted ONLY when every piece parses cleanly on its own.
+    const andTwo = compileJobAsk('lend 100 USDC on morpho and stake 0.5 ETH on lido')
+    const andTwoRev = compileJobAsk('stake 0.5 ETH on lido and lend 100 USDC on morpho')
+    check(
+      'jobs and-split: two venue intents joined by "and" compile as ONE job (either order)',
+      !!andTwo && !('problem' in andTwo) && !('clarify' in andTwo) && andTwo.steps.length === 2 &&
+        !!andTwoRev && !('problem' in andTwoRev) && !('clarify' in andTwoRev) && andTwoRev.steps.length === 2,
+      JSON.stringify({ andTwo, andTwoRev }).slice(0, 200),
+    )
+    const andMixed = compileJobAsk('bridge 5 USDC from base to arbitrum and lend 100 USDC on morpho')
+    check(
+      'jobs and-split: a bridge + venue intent chains (bridge legs keep their wait)',
+      !!andMixed && !('problem' in andMixed) && !('clarify' in andMixed) && andMixed.steps.length === 3,
+      JSON.stringify(andMixed).slice(0, 160),
+    )
+    // The conservatism IS the safety: shapes where "and" lives INSIDE one
+    // intent must be left whole, because at least one piece won't parse.
+    const sendToProbe = '0x6F93fa8B383E51D59DDfC87988AFC964d6ffb5Da'
+    const andMultiSend = compileJobAsk(`send all my USDC on arbitrum and an additional 5 USDC on base to ${sendToProbe}`)
+    check(
+      'jobs and-split: a multi-clause send sharing one recipient stays ONE segment',
+      !!andMultiSend && !('problem' in andMultiSend) && !('clarify' in andMultiSend) && andMultiSend.steps.length === 2 &&
+        andMultiSend.steps.every((s) => s.builder === 'native-transfer'),
+      JSON.stringify(andMultiSend).slice(0, 200),
+    )
+    check(
+      'jobs and-split: unparseable halves reject the split (lone asks still fall to the native layers)',
+      compileJobAsk('buy $10 of AAPL and $10 of TSLA') === null &&
+        compileJobAsk('lend 100 USDC on morpho') === null &&
+        compileJobAsk('stake 0.05 eth on lido') === null,
+    )
+
     // ── Compound-ask precedence (the 2026-07-28 incident): a multi-clause
     // ask whose clauses each match a single-venue parser must compile as ONE
     // job — parseAaveSupply once matched "…then supply 840 USDC to aave"

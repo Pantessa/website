@@ -164,6 +164,56 @@ export function splitJobSegments(message: string): string[] {
     .filter(Boolean)
 }
 
+/** Candidate pieces of a bare-"and" segment ("lend X on morpho and stake Y
+ *  on lido"). Speculative only — expandAndSegments decides whether to use
+ *  them. Also accepts "and also" / ", and". */
+function andSplitCandidates(segment: string): string[] | null {
+  const parts = segment
+    .split(/\s*,?\s+and(?:\s+also)?\s+/i)
+    .map((s) => s.trim())
+    .filter(Boolean)
+  return parts.length >= 2 ? parts : null
+}
+
+/**
+ * Two intents joined by a bare "and" ("lend 100 USDC on morpho and stake 0.5
+ * ETH on lido") used to compile to NOTHING: the ask fell past the jobs gate
+ * to the single-venue layers, each parser matched its OWN clause, and the
+ * first gate to run claimed the turn while the other intent vanished — the
+ * #595 silent-drop through a different connector.
+ *
+ * The split is SPECULATIVE and accepted only when every piece parses cleanly
+ * on its own (steps, never a problem or a clarify). That conservatism is what
+ * makes it safe: shapes where "and" belongs INSIDE one intent — a multi-clause
+ * send sharing a trailing recipient ("send all my USDC on arbitrum and 5 USDC
+ * on base to 0x…"), a pronoun follow-up, "buy $10 of AAPL and $10 of TSLA" —
+ * leave at least one piece unparseable, so the split is rejected and the
+ * segment stays whole, exactly as before.
+ *
+ * When a split DOES succeed it wins over the whole-segment reading, because a
+ * parser matching the full string is matching its own clause and ignoring the
+ * rest — the interpretation that keeps every intent is the honest one.
+ */
+function expandAndSegments(segments: string[], message: string): string[] {
+  const out: string[] = []
+  for (const seg of segments) {
+    const candidates = andSplitCandidates(seg)
+    if (!candidates) {
+      out.push(seg)
+      continue
+    }
+    const allParse = candidates.every((piece) =>
+      JOB_SEGMENT_PARSERS.some((parser) => {
+        const res = parser.parse(piece, { index: 0, fundingSeen: false, nft: null, message })
+        return !!res && !('problem' in res) && !('clarify' in res)
+      }),
+    )
+    if (allParse) out.push(...candidates)
+    else out.push(seg)
+  }
+  return out
+}
+
 // ── Segment registry ───────────────────────────────────────────────────────
 
 /** The NFT an earlier segment named — lets "buy X then send it to 0x…"
@@ -538,7 +588,7 @@ const compilableKinds = (): string => {
  * single asks belong to the native layers directly).
  */
 export function compileJobAsk(message: string): CompiledJob | { problem: string } | { clarify: ClarifyRequest } | null {
-  const segments = splitJobSegments(message)
+  const segments = expandAndSegments(splitJobSegments(message), message)
   // Single asks belong to the native layers — EXCEPT segments that are
   // multi-step on their own: a lone Robinhood funding segment (the MCP-path
   // fallback's bridge-only chips carry no follow-up; the legs + arrival
