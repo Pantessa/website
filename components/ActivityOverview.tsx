@@ -1,10 +1,15 @@
 'use client'
 
-// The /activity overview — the whole system's progress, public. One giant
-// money-moved figure, the cumulative curve, day-by-day flow, the per-venue
-// built→signed conversion board (with brand marks), the per-MCP rails table,
-// and a merged recent-value feed. Data: GET /api/activity/overview (all
-// aggregates + artifact labels — never prompts, never full wallets).
+// The /activity overview — the whole system's progress, public.
+//
+// 2026-07-28 rethink: the page used to open with a big number and then hand
+// you six tables to join in your head. It now leads with the two things that
+// actually explain the number — WHERE the money came from and went (the flow
+// map) and WHAT the system builds that nobody else does (multi-step chains) —
+// and keeps the tables underneath as the detail they always were.
+//
+// Data: GET /api/activity/overview (aggregates + artifact labels — never
+// prompts, never full wallets; chains carry step SHAPE only).
 
 import { useEffect, useRef, useState } from 'react'
 import { ArrowUpRight, ShieldOff } from 'lucide-react'
@@ -12,6 +17,8 @@ import { Card, Kpi, SkeletonCard, SkeletonKpi, timeAgo } from '@/lib/dashboard-u
 import { DailyFlow, MoneyCurve } from '@/components/LazyCharts'
 import type { FlowPoint } from '@/components/ActivityCharts'
 import { ConvRing, Medallion, SectionHead } from '@/components/board-ui'
+import ActivityFlow, { type FlowEdge } from '@/components/ActivityFlow'
+import ActivityChains, { type BuiltChain } from '@/components/ActivityChains'
 
 const POLL_MS = 30_000
 
@@ -76,6 +83,8 @@ interface Overview {
   rails: RailRow[]
   funnel: { turns: number; answered: number; clarify: number; txBuilt: number; signed: number; refused: number }
   recent: RecentEvent[]
+  flow: FlowEdge[]
+  chains: BuiltChain[]
 }
 
 /** What each venue key IS — label + the kind of money it moves. */
@@ -206,6 +215,29 @@ export default function ActivityOverview({
           </p>
         </div>
       </div>
+
+      {/* The tape: the newest value events, running. A number this big needs
+          something under it that is visibly still happening. */}
+      {data && data.recent.length > 0 && (
+        <div className="tape" aria-hidden>
+          <div className="tape__track">
+            {[0, 1].map((copy) => (
+              <div className="tape__run" key={copy}>
+                {data.recent.slice(0, 14).map((e, i) => (
+                  <span className={`tape__item${e.outcome === 'signed' ? ' is-signed' : ''}`} key={`${copy}-${i}`}>
+                    <i className="tape__dot" />
+                    <span className="tape__label">{e.label}</span>
+                    {e.usd != null && e.usd > 0 && (
+                      <span className="tape__usd mono">{e.kind === 'x402' ? fmtFee(e.usd) : fmtUsd(e.usd)}</span>
+                    )}
+                    <span className="tape__age mono">{timeAgo(e.at)}</span>
+                  </span>
+                ))}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </section>
   )
 
@@ -240,6 +272,33 @@ export default function ActivityOverview({
   return (
     <div className="pb-16">
       {heroSection}
+
+      {/* ── the flow: where it came from, where it went ─────────────────── */}
+      {data.flow.length > 0 && (
+        <section className="mb-10">
+          <SectionHead
+            eyebrow="THE SHAPE OF THE MONEY"
+            title="Where every dollar came from, and where it went"
+            sub="Left: what started the ask — someone typing in chat, an intent link opening on a phone, the agent on a host's page, a standing intent firing with nobody watching. Right: the venue the transaction layer built against. Thickness is dollars, and every lane is traced end to end."
+          />
+          <Card>
+            <ActivityFlow edges={data.flow} total={h.systemTotalUsd} />
+          </Card>
+        </section>
+      )}
+
+      {/* ── chains built: the multi-step work, drawn as chains ──────────── */}
+      <section className="mb-10">
+        <SectionHead
+          eyebrow="CHAINS BUILT"
+          title="Almost nothing is one transaction"
+          sub="Real asks compile into chains — bridge, wait for settlement, then buy; set the leverage, open the position, arm the stop. Each row is one compiled chain and what happened to each of its steps. Shape only: no titles, no wallets, nothing anyone typed."
+        />
+        <Card>
+          <ActivityChains chains={data.chains} />
+        </Card>
+      </section>
+
       {lead}
 
       {/* ── attended vs standing: the split that matters ───────────────── */}

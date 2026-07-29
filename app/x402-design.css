@@ -2941,6 +2941,146 @@
     .stations__tick, .stations__label { transition: none; }
   }
 
+  /* ── /activity: THE TAPE (.tape) ───────────────────────────────────────
+     The newest value events, running under the hero figure. A number that big
+     needs something beneath it that is visibly still happening. Two identical
+     runs translate as one track so the loop has no seam; reduced motion parks
+     it and lets the row scroll by hand instead. */
+  .tape {
+    position: relative; margin-top: 26px; overflow: hidden;
+    border-top: 1px solid var(--line); border-bottom: 1px solid var(--line);
+    padding: 11px 0;
+    -webkit-mask-image: linear-gradient(90deg, transparent, #000 6%, #000 94%, transparent);
+    mask-image: linear-gradient(90deg, transparent, #000 6%, #000 94%, transparent);
+  }
+  .tape__track { display: flex; width: max-content; animation: tape-run 64s linear infinite; }
+  .tape__run { display: flex; align-items: center; gap: 30px; padding-right: 30px; }
+  @keyframes tape-run { to { transform: translateX(-50%); } }
+  .tape__item { display: inline-flex; align-items: center; gap: 9px; white-space: nowrap; font-size: 12.5px; color: var(--muted); }
+  .tape__dot { width: 5px; height: 5px; border-radius: 999px; background: color-mix(in srgb, var(--fg) 28%, transparent); flex-shrink: 0; }
+  .tape__item.is-signed .tape__dot { background: var(--accent); box-shadow: 0 0 8px color-mix(in srgb, var(--accent) 70%, transparent); }
+  .tape__item.is-signed .tape__label { color: var(--fg); }
+  .tape__usd { font-size: 12px; color: var(--accent); }
+  .tape__age { font-size: 11px; color: var(--muted-2); }
+  @media (prefers-reduced-motion: reduce) {
+    .tape { overflow-x: auto; }
+    .tape__track { animation: none; }
+  }
+
+  /* ── /activity: THE FLOW MAP (.flowmap) ────────────────────────────────
+     Source → venue, ribbon thickness in dollars. Hovering a node dims every
+     ribbon that doesn't touch it; the opacity is set inline by the component
+     so there's nothing to keep in sync here. */
+  .flowmap { margin-top: 4px; }
+  .flowmap__toggle { display: inline-flex; gap: 1px; margin-bottom: 14px; padding: 2px; border-radius: 999px; border: 1px solid var(--line); background: color-mix(in srgb, var(--fg) 3%, transparent); }
+  .flowmap__opt {
+    padding: 5px 13px; border-radius: 999px; border: 0; background: transparent; cursor: pointer;
+    font-size: 10.5px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted-2);
+    transition: color .2s, background .2s;
+  }
+  .flowmap__opt:hover { color: var(--fg); }
+  .flowmap__opt.is-on { background: color-mix(in srgb, var(--accent) 15%, transparent); color: color-mix(in srgb, var(--accent) 85%, var(--fg)); }
+  .flowmap__svg { width: 100%; height: auto; overflow: visible; display: block; }
+  .flowmap__ribbon { transition: opacity .22s ease; }
+  .flowmap__node { cursor: default; transition: opacity .22s ease; }
+  .flowmap__lab { fill: var(--fg); font-size: 13px; font-family: var(--font-sans); }
+  .flowmap__val { fill: var(--accent); font-size: 11px; }
+  .flowmap__sub { fill: var(--muted-2); font-size: 10px; }
+  .flowmap__foot {
+    display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap;
+    margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--line);
+    font-size: 10.5px; color: var(--muted-2);
+  }
+  .flowmap__hint { color: color-mix(in srgb, var(--fg) 32%, transparent); }
+  @media (max-width: 720px) {
+    /* Below this the labels collide with the ribbons — let it scroll at a
+       readable width rather than compress into mush. */
+    .flowmap { overflow-x: auto; }
+    .flowmap__svg { min-width: 660px; }
+  }
+
+  /* ── /activity: CHAINS BUILT (.chn) ────────────────────────────────────
+     One row per compiled chain: its steps in order, each with the venue mark,
+     the kind glyph (sign / wait / auto) and its own status. */
+  .chn { display: flex; flex-direction: column; }
+  .chn__row {
+    display: grid; grid-template-columns: 140px minmax(0, 1fr) auto; gap: 16px; align-items: center;
+    padding: 14px 0; border-bottom: 1px solid var(--line);
+  }
+  .chn__row:last-of-type { border-bottom: 0; }
+  .chn__meta { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+  .chn__state {
+    font-size: 10px; letter-spacing: .12em; text-transform: uppercase;
+    color: var(--muted-2); align-self: flex-start;
+    padding: 3px 8px; border-radius: 999px; border: 1px solid var(--line);
+  }
+  .chn__row.is-done .chn__state { color: color-mix(in srgb, var(--accent) 85%, var(--fg)); border-color: color-mix(in srgb, var(--accent) 45%, transparent); }
+  .chn__row.is-wait .chn__state { color: #e8c468; border-color: color-mix(in srgb, #e8c468 45%, transparent); }
+  .chn__row.is-fail .chn__state { color: var(--sell); border-color: color-mix(in srgb, var(--sell) 40%, transparent); }
+  .chn__count { font-size: 10.5px; color: var(--muted-2); }
+
+  /* nowrap on purpose: a chain that wraps stops reading as a chain, and the
+     connector then trails off the end of every wrapped line. Long chains
+     scroll instead, with a fade on the right edge to say there's more. */
+  .chn__steps {
+    list-style: none; display: flex; align-items: center; flex-wrap: nowrap; gap: 0;
+    min-width: 0; overflow-x: auto; scrollbar-width: none;
+    -webkit-mask-image: linear-gradient(90deg, #000 92%, transparent);
+    mask-image: linear-gradient(90deg, #000 92%, transparent);
+  }
+  .chn__steps::-webkit-scrollbar { display: none; }
+  .chn__step { position: relative; display: inline-flex; align-items: center; gap: 8px; padding-right: 26px; }
+  /* the connector — the thing that makes it read as a CHAIN and not a list */
+  .chn__step:not(:last-child)::after {
+    content: ''; position: absolute; right: 9px; top: 50%; width: 12px; height: 1.5px;
+    background: color-mix(in srgb, var(--fg) 18%, transparent);
+  }
+  .chn__step.is-done:not(:last-child)::after { background: color-mix(in srgb, var(--accent) 55%, transparent); }
+  .chn__node {
+    position: relative; display: inline-flex; align-items: center; justify-content: center;
+    height: 28px; width: 28px; border-radius: 9px; flex-shrink: 0;
+    border: 1px solid var(--line); background: var(--surf-2); color: var(--fg);
+  }
+  .chn__step.is-done .chn__node { border-color: color-mix(in srgb, var(--accent) 55%, transparent); background: color-mix(in srgb, var(--accent) 10%, var(--surf-2)); }
+  .chn__step.is-failed .chn__node { border-color: color-mix(in srgb, var(--sell) 50%, transparent); }
+  .chn__step.is-offered .chn__node, .chn__step.is-running .chn__node { border-color: color-mix(in srgb, #e8c468 55%, transparent); }
+  .chn__mark { display: flex; }
+  .chn__kind {
+    position: absolute; right: -5px; bottom: -5px; line-height: 1;
+    height: 15px; width: 15px; border-radius: 999px; display: flex; align-items: center; justify-content: center;
+    background: var(--bg); border: 1px solid var(--line); color: var(--muted-2);
+  }
+  .chn__kindsvg { width: 9px; height: 9px; fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
+  .chn__step.is-done .chn__kind { color: var(--accent); }
+  .chn__label { font-size: 12.5px; color: var(--muted); white-space: nowrap; }
+  .chn__step.is-done .chn__label { color: var(--fg); }
+  .chn__usd { font-size: 11px; color: var(--accent); }
+
+  .chn__tail { display: flex; flex-direction: column; align-items: flex-end; gap: 3px; flex-shrink: 0; }
+  .chn__total { font-size: 14px; color: var(--accent); font-variant-numeric: tabular-nums; }
+  .chn__age { font-size: 10.5px; color: var(--muted-2); }
+  .chn__legend { margin-top: 16px; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 18px; font-size: 10.5px; color: var(--muted-2); line-height: 1.5; }
+  .chn__leg { display: inline-flex; align-items: center; gap: 7px; }
+  .chn__legend .chn__kind { position: static; }
+  .chn__legnote { color: color-mix(in srgb, var(--fg) 30%, transparent); }
+  @media (max-width: 860px) {
+    .chn__row { grid-template-columns: 1fr auto; align-items: start; }
+    .chn__steps { grid-column: 1 / -1; }
+  }
+  /* Below this the steps wrap, and a horizontal connector then trails off the
+     end of every wrapped line. Stack them instead: a vertical chain is the
+     shape anyway, and the connector has somewhere honest to go. */
+  @media (max-width: 700px) {
+    .chn__steps {
+      flex-direction: column; align-items: stretch; gap: 9px; overflow-x: visible;
+      -webkit-mask-image: none; mask-image: none;
+    }
+    .chn__step { padding-right: 0; }
+    .chn__step:not(:last-child)::after {
+      right: auto; left: 13.5px; top: 34px; width: 1.5px; height: 9px;
+    }
+  }
+
   /* ── THE CLOSING BAND (.sud) ───────────────────────────────────────────
      "Stay up to date" as the page's last statement rather than a grey box
      bolted to the bottom. Names the three things that actually land in the
@@ -3929,6 +4069,11 @@
   html[data-theme='light'] .night__row { opacity: .5; }
   html[data-theme='light'] .night__row.is-in { opacity: 1; }
   html[data-theme='light'] .spread__back { stroke: #a3720c; }
+  /* The chain rows' amber "awaiting / running" state, same story as the rest
+     of the golds: tuned for black, washed out on paper. */
+  html[data-theme='light'] .chn__row.is-wait .chn__state { color: #a3720c; border-color: color-mix(in srgb, #a3720c 45%, transparent); }
+  html[data-theme='light'] .chn__step.is-offered .chn__node,
+  html[data-theme='light'] .chn__step.is-running .chn__node { border-color: color-mix(in srgb, #a3720c 50%, transparent); }
   /* Same gold, same reason: the pause glyph's amber is tuned for black. */
   html[data-theme='light'] .tl__glyph .tl-ring,
   html[data-theme='light'] .tl__glyph .tl-pip { stroke: #a3720c; }
