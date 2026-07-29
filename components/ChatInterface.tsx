@@ -8,7 +8,7 @@ import { useRouter } from 'next/navigation'
 import { useAccount, useSignTypedData, useConnect } from 'wagmi'
 import { useConnectModal } from '@rainbow-me/rainbowkit'
 import { getHostWalletServerState, getHostWalletState, HOST_WALLET_CONNECTOR_ID, subscribeHostWallet } from '@/lib/host-wallet'
-import { cn } from '@/lib/utils'
+import { cleanServerName, cn } from '@/lib/utils'
 import MessageReceipts from '@/components/MessageReceipts'
 import RouteReport from '@/components/RouteReport'
 import SignVoteButton from '@/components/SignVoteButton'
@@ -1294,7 +1294,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
           ) : (
             activeServers.length > 0 && (
               <span className="text-[11px] text-[color:var(--muted-2)] truncate pl-1">
-                {activeServers.map((s) => s.name).join(' · ')}
+                {activeServers.map((s) => cleanServerName(s.name)).join(' · ')}
               </span>
             )
           )}
