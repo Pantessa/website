@@ -24,6 +24,7 @@ export const dynamic = 'force-dynamic'
 
 const SERIES_DAYS = 90
 const RECENT_LIMIT = 24
+const CHAIN_LIMIT = 8
 
 /** embed_turns.build_path → the venue the native layer built against. */
 const VENUE_OF_PATH: Record<string, string> = {
@@ -41,6 +42,20 @@ const VENUE_OF_PATH: Record<string, string> = {
   'native-job': 'jobs',
   planner: 'planner',
   manual: 'manual',
+}
+
+/** job_steps.builder → venue, for the builders that only ever appear inside a
+ *  chain (VENUE_OF_PATH covers the ones that also tag a standalone turn).
+ *  `wait` is deliberately absent: a wait is a settlement predicate, not a
+ *  venue, and the chain renders it as its own kind of node. */
+const JOB_BUILDER_VENUE: Record<string, string> = {
+  'native-lifi-fund': 'lifi',
+  'native-lifi-swap': 'lifi',
+  'native-swap': 'uniswap',
+  'native-transfer': 'transfer',
+  'native-nft-transfer': 'opensea',
+  'native-nft-list': 'opensea',
+  'native-aave': 'aave',
 }
 
 export interface VenueRow {
@@ -109,6 +124,30 @@ function txLink(chain: string | null | undefined, storedUrl: string | null): str
   return storedUrl
 }
 
+/** A job step's on-chain receipt, narrowed out of its `result` blob: the hash
+ *  and the chain it settled on, nothing else. Runners write either a bare
+ *  `txHash` or a `txs: [{hash, chainId, title}]` list (multi-tx steps like
+ *  approve → swap → fee); the titles in that list are compiled copy, so only
+ *  hash + chainId are read. Returns null unless BOTH resolve — a hash without
+ *  a known chain can't be linked to the right explorer, and guessing is how
+ *  the write path used to point every chain at basescan. */
+function stepReceipt(result: unknown): { url: string; chain: string } | null {
+  if (!result || typeof result !== 'object') return null
+  const r = result as { txHash?: unknown; txs?: unknown }
+  const list = Array.isArray(r.txs) ? (r.txs as { hash?: unknown; chainId?: unknown }[]) : []
+  const hash = typeof r.txHash === 'string' ? r.txHash : null
+  // The entry matching txHash carries its chain; otherwise take the last tx,
+  // which is the step's headline move (approve → swap → fee ends on the fee).
+  const entry =
+    list.find((t) => typeof t.hash === 'string' && t.hash === hash) ?? list[list.length - 1] ?? null
+  const finalHash = hash ?? (entry && typeof entry.hash === 'string' ? entry.hash : null)
+  const id = entry && typeof entry.chainId === 'number' ? entry.chainId : null
+  if (!finalHash || !TX_HASH_RE.test(finalHash)) return null
+  const appChain = chainById(id)
+  if (!appChain) return null
+  return { url: `${appChain.explorerTx}${finalHash}`, chain: appChain.short }
+}
+
 const r2 = (n: number) => Math.round(n * 100) / 100
 const dayKey = (d: Date) => d.toISOString().slice(0, 10)
 
@@ -135,6 +174,8 @@ export async function GET() {
     recentTurns,
     recentReceipts,
     recentGuardian,
+    flowRows,
+    chainJobs,
   ] = await Promise.all([
     // Real traffic only, everywhere embed_turns is aggregated here — localhost
     // dev drives and harness origins write real rows but the PUBLIC activity
@@ -214,6 +255,47 @@ export async function GET() {
       orderBy: { createdAt: 'desc' },
       take: 8,
       select: { valueUsd: true, reason: true, createdAt: true },
+    }),
+    // ── the flow: every signed dollar, by where the ask CAME FROM × which
+    // layer built it. The four source buckets are a clean partition (standing
+    // wins over link so nothing is counted twice), which is what lets the
+    // page draw it as a flow instead of two unrelated tables.
+    prisma.$queryRaw<{ src: string; path: string; usd: number; n: bigint }[]>`
+      SELECT CASE
+               WHEN ${Prisma.raw(STANDING_TURN_SQL)} THEN 'standing'
+               WHEN intent_link_slug IS NOT NULL THEN 'link'
+               WHEN origin_kind = 'embed' THEN 'embed'
+               ELSE 'chat'
+             END AS src,
+             COALESCE(build_path, 'unattributed') AS path,
+             COALESCE(SUM(value_usd), 0)::float AS usd,
+             COUNT(*) AS n
+      FROM embed_turns
+      WHERE outcome = 'signed' AND value_usd > 0 AND NOT ${Prisma.raw(INTERNAL_ORIGIN_SQL)}
+      GROUP BY 1, 2`,
+    // ── chains built: the SHAPE of multi-step work, never its content.
+    // Production-env jobs only (the same rule internal traffic follows — dev
+    // and preview runners write real rows), and the select is deliberately
+    // narrow: no title, no wallet, no params, no artifact. A step's builder +
+    // kind + status is enough to draw the chain and leaks nothing (P1).
+    prisma.job.findMany({
+      where: { originEnv: 'production' },
+      orderBy: { createdAt: 'desc' },
+      take: CHAIN_LIMIT,
+      select: {
+        status: true,
+        valueUsd: true,
+        createdAt: true,
+        steps: {
+          orderBy: { seq: 'asc' },
+          // `result` is read for ONE thing: the tx hash and its chain id. A
+          // settled hash is already public on-chain and the receipts feed has
+          // always shipped one — but the blob also holds human titles built
+          // from the compiled params, so it is narrowed by stepReceipt() below
+          // and never forwarded whole.
+          select: { seq: true, kind: true, status: true, builder: true, valueUsd: true, result: true },
+        },
+      },
     }),
   ])
 
@@ -388,6 +470,48 @@ export async function GET() {
     .sort((a, b) => b.at.localeCompare(a.at))
     .slice(0, RECENT_LIMIT)
 
+  // ── the flow: source → venue, with the two non-turn rails folded in ──────
+  // Guardian closes and x402 call fees never touch embed_turns, so they're
+  // appended as their own edges — otherwise the flow's total wouldn't equal
+  // the hero figure, and a diagram that doesn't add up is worse than none.
+  const flow: { source: string; venue: string; usd: number; n: number }[] = flowRows
+    .map((r) => ({
+      source: r.src,
+      // JOB_BUILDER_VENUE second: some layers only ever tag a turn from inside
+      // a chain (native-nft-list), and an unmapped key renders as a raw
+      // build_path in a public diagram.
+      venue: VENUE_OF_PATH[r.path] ?? JOB_BUILDER_VENUE[r.path] ?? (r.path === 'unattributed' ? 'unattributed' : r.path),
+      usd: r2(r.usd),
+      n: Number(r.n),
+    }))
+    .filter((e) => e.usd > 0)
+  if (guardianUsd > 0) flow.push({ source: 'guardian', venue: 'hyperliquid', usd: guardianUsd, n: guardianAgg._count._all })
+  if (x402Usd > 0) flow.push({ source: 'agents', venue: 'x402', usd: x402Usd, n: x402Agg._count._all })
+
+  // ── chains: shape only. A step's public label comes from its builder, so
+  // nothing a user typed can reach this array by construction. The one thing
+  // lifted out of `result` is the settled tx hash + its chain, so a completed
+  // step can link to its own receipt on the right explorer.
+  const chains = chainJobs
+    .filter((j) => j.steps.length > 1)
+    .map((j) => ({
+      status: j.status,
+      usd: r2(j.valueUsd ?? j.steps.reduce((acc, s) => acc + (s.valueUsd ?? 0), 0)),
+      at: j.createdAt.toISOString(),
+      steps: j.steps.map((s) => {
+        const receipt = stepReceipt(s.result)
+        return {
+          kind: s.kind,
+          status: s.status,
+          builder: s.builder,
+          venue: VENUE_OF_PATH[s.builder] ?? JOB_BUILDER_VENUE[s.builder] ?? null,
+          usd: s.valueUsd ?? null,
+          chain: receipt?.chain ?? null,
+          txUrl: receipt?.url ?? null,
+        }
+      }),
+    }))
+
   return NextResponse.json(
     {
       seriesDays: SERIES_DAYS,
@@ -435,6 +559,8 @@ export async function GET() {
         refused: outcome('refused') + outcome('error') + outcome('credit-gate'),
       },
       recent,
+      flow,
+      chains,
     },
     { headers: { 'cache-control': 'public, s-maxage=30, stale-while-revalidate=120' } },
   )
