@@ -25,6 +25,14 @@ function dayLabel(iso: string): string {
   return `${d.getUTCMonth() + 1}/${d.getUTCDate()}`
 }
 
+// Y axes size themselves to their widest rendered tick label (recharts
+// `width="auto"`) rather than a fixed px value. The old pairing — width={40}
+// with a negative left margin to claw back the dead gutter — drew the axis
+// partly OUTSIDE the container, so any label wider than two digits ("200",
+// "1400") got its leading digit clipped by Box's overflow-hidden. Auto width
+// reclaims the same gutter honestly: no label can outgrow its own axis. The
+// 2px side margins are the rounding allowance — auto width measures a hair
+// under the painted glyph, which would shave the outermost label's last pixel.
 function Box({ height, children }: { height: number; children: React.ReactElement }) {
   return (
     <div className="min-w-0 overflow-hidden">
@@ -88,10 +96,10 @@ export function WalletsOverTime({ daily }: { daily: { day: string; n: number }[]
   const data = daily.map((d) => ({ day: d.day, n: d.n, cum: (run += d.n) }))
   return (
     <Box height={220}>
-      <ComposedChart data={data} margin={{ top: 8, right: 8, left: -22, bottom: 0 }}>
+      <ComposedChart data={data} margin={{ top: 8, right: 8, left: 2, bottom: 0 }}>
         <CartesianGrid stroke={C.grid} vertical={false} />
         <XAxis dataKey="day" tickFormatter={dayLabel} tick={{ fill: C.muted, fontSize: 11 }} axisLine={false} tickLine={false} />
-        <YAxis allowDecimals={false} tick={{ fill: C.muted, fontSize: 11 }} axisLine={false} tickLine={false} width={40} />
+        <YAxis allowDecimals={false} tick={{ fill: C.muted, fontSize: 11 }} axisLine={false} tickLine={false} width="auto" />
         <Tooltip
           contentStyle={C.tooltip}
           labelFormatter={(l) => new Date(l as string).toUTCString().slice(0, 16)}
@@ -111,10 +119,10 @@ export function LinksDaily({ daily }: { daily: { day: string; minted: number; co
   if (daily.length === 0) return <Empty label="No link activity in this window yet." />
   return (
     <Box height={220}>
-      <ComposedChart data={daily} margin={{ top: 8, right: 0, left: -22, bottom: 0 }}>
+      <ComposedChart data={daily} margin={{ top: 8, right: 2, left: 2, bottom: 0 }}>
         <CartesianGrid stroke={C.grid} vertical={false} />
         <XAxis dataKey="day" tickFormatter={dayLabel} tick={{ fill: C.muted, fontSize: 11 }} axisLine={false} tickLine={false} />
-        <YAxis yAxisId="n" allowDecimals={false} tick={{ fill: C.muted, fontSize: 11 }} axisLine={false} tickLine={false} width={40} />
+        <YAxis yAxisId="n" allowDecimals={false} tick={{ fill: C.muted, fontSize: 11 }} axisLine={false} tickLine={false} width="auto" />
         <YAxis
           yAxisId="usd"
           orientation="right"
@@ -122,7 +130,7 @@ export function LinksDaily({ daily }: { daily: { day: string; minted: number; co
           tick={{ fill: C.muted, fontSize: 11 }}
           axisLine={false}
           tickLine={false}
-          width={52}
+          width="auto"
         />
         <Tooltip
           contentStyle={C.tooltip}
@@ -147,7 +155,7 @@ export function ActiveWallets({ daily }: { daily: { day: string; n: number }[] }
   if (daily.length === 0) return <Empty label="No activity in this window." />
   return (
     <Box height={220}>
-      <AreaChart data={daily} margin={{ top: 8, right: 8, left: -22, bottom: 0 }}>
+      <AreaChart data={daily} margin={{ top: 8, right: 8, left: 2, bottom: 0 }}>
         <defs>
           <linearGradient id="activeFill" x1="0" y1="0" x2="0" y2="1">
             <stop offset="0%" stopColor={C.blue} stopOpacity={0.35} />
@@ -156,7 +164,7 @@ export function ActiveWallets({ daily }: { daily: { day: string; n: number }[] }
         </defs>
         <CartesianGrid stroke={C.grid} vertical={false} />
         <XAxis dataKey="day" tickFormatter={dayLabel} tick={{ fill: C.muted, fontSize: 11 }} axisLine={false} tickLine={false} />
-        <YAxis allowDecimals={false} tick={{ fill: C.muted, fontSize: 11 }} axisLine={false} tickLine={false} width={40} />
+        <YAxis allowDecimals={false} tick={{ fill: C.muted, fontSize: 11 }} axisLine={false} tickLine={false} width="auto" />
         <Tooltip
           contentStyle={C.tooltip}
           labelFormatter={(l) => new Date(l as string).toUTCString().slice(0, 16)}
