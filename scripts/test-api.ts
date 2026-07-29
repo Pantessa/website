@@ -148,6 +148,7 @@ import {
   MORPHO_SINGLETON,
   type MorphoOpGuardExpectation,
 } from '../lib/morpho-supply'
+import { assertTokenIdentity } from '../lib/morpho-exec'
 import { encodeFunctionData, erc20Abi, toFunctionSelector } from 'viem'
 import {
   evaluatePolicy,
@@ -4747,6 +4748,31 @@ async function main() {
         sel(`withdraw(${P},uint256,uint256,address,address)`) === MORPHO_OP_SELECTORS.withdraw &&
         sel(`withdrawCollateral(${P},uint256,address,address)`) === MORPHO_OP_SELECTORS['withdraw-collateral'],
     )
+
+    // The symbol→address binding (2026-07-29 audit finding): every check
+    // below this line binds calldata to a RESOLVED tuple, but the tuple's
+    // market is chosen from the agent's own market list. Without an
+    // independent identity read, a hostile MCP answering {loan:'USDC',
+    // marketId:<a real WETH market>} passes every downstream check and the
+    // user signs an approve of the WRONG TOKEN. The chain is the authority.
+    const IDENT_USDC_BASE = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913'
+    const IDENT_WETH_BASE = '0x4200000000000000000000000000000000000006'
+    const identOk = await assertTokenIdentity(8453, IDENT_USDC_BASE, 'USDC', 6).then(() => true).catch(() => false)
+    check('morpho identity: the real USDC address passes as USDC/6 (on-chain read)', identOk)
+    const identWrongToken = await assertTokenIdentity(8453, IDENT_WETH_BASE, 'USDC', 6).then(() => null).catch((e: Error) => e.message)
+    check(
+      'morpho identity: a "USDC" ask pointed at the WETH address REFUSES by name',
+      typeof identWrongToken === 'string' && /WETH/i.test(identWrongToken) && /not USDC/i.test(identWrongToken),
+      String(identWrongToken).slice(0, 160),
+    )
+    const identWrongDecimals = await assertTokenIdentity(8453, IDENT_USDC_BASE, 'USDC', 18).then(() => null).catch((e: Error) => e.message)
+    check(
+      'morpho identity: a lied-about decimals scale REFUSES (never sizes atoms wrong)',
+      typeof identWrongDecimals === 'string' && /6 decimals on-chain/i.test(identWrongDecimals),
+      String(identWrongDecimals).slice(0, 160),
+    )
+    const identEthAlias = await assertTokenIdentity(8453, IDENT_WETH_BASE, 'ETH', 18).then(() => true).catch(() => false)
+    check('morpho identity: "eth" accepts the market\'s WETH (the one documented alias)', identEthAlias)
 
     const LOAN = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913' // USDC (Base)
     const COLL = '0xcbB7C0000aB88B473b1f5aFd9ef808440eed33Bf' // cbBTC (Base)

@@ -138,6 +138,62 @@ export async function resolveMorphoMarketParams(chainId: MorphoChainId, marketId
 
 const eqAddr = (a?: string | null, b?: string | null): boolean => !!a && !!b && a.toLowerCase() === b.toLowerCase()
 
+const ERC20_IDENTITY_ABI = [
+  { name: 'symbol', type: 'function', stateMutability: 'view', inputs: [], outputs: [{ type: 'string' }] },
+  { name: 'decimals', type: 'function', stateMutability: 'view', inputs: [], outputs: [{ type: 'uint8' }] },
+] as const
+
+/** The ONLY symbols we accept as naming a different on-chain symbol: a user
+ *  saying "eth" in a Morpho market means the wrapped token the market uses.
+ *  Deliberately tiny — every entry is a place a lie could hide. */
+const SYMBOL_ALIASES: Record<string, string[]> = { ETH: ['ETH', 'WETH'] }
+
+/**
+ * Bind the market's token ADDRESS to the symbol the user actually said, and
+ * to the decimals we sized the amount with — both read ON-CHAIN from the
+ * token itself.
+ *
+ * Without this the whole symbol→address mapping rests on the MCP's own
+ * strings: a hostile or compromised agent in the user's set could answer
+ * `{loan: 'USDC', marketId: <a REAL market whose loanToken is WETH>}` and
+ * every downstream check would still pass — the tuple resolves honestly from
+ * that id, the guard confirms the calldata matches the resolved tuple, and
+ * the user signs an approve + supply of WETH for an ask that said USDC. A
+ * consistent liar also passes assertInfoMatchesParams. The chain is the only
+ * authority on what a token IS, so we ask it.
+ */
+export async function assertTokenIdentity(
+  chainId: MorphoChainId,
+  address: string,
+  expectedSymbol: string,
+  expectedDecimals: number,
+): Promise<void> {
+  const client = publicClientFor(chainId)
+  if (!client) throw new Error(`No RPC client configured for chain ${chainId}.`)
+  let onChain: { symbol: string; decimals: number }
+  try {
+    const [symbol, decimals] = await Promise.all([
+      client.readContract({ address: address as `0x${string}`, abi: ERC20_IDENTITY_ABI, functionName: 'symbol' }) as Promise<string>,
+      client.readContract({ address: address as `0x${string}`, abi: ERC20_IDENTITY_ABI, functionName: 'decimals' }) as Promise<number>,
+    ])
+    onChain = { symbol, decimals: Number(decimals) }
+  } catch {
+    throw new Error(`Couldn't verify on-chain what token ${address.slice(0, 10)}… is — refusing to build against it.`)
+  }
+  const want = expectedSymbol.toUpperCase()
+  const accepted = SYMBOL_ALIASES[want] ?? [want]
+  if (!accepted.includes(onChain.symbol.toUpperCase())) {
+    throw new Error(
+      `That market's asset is ${onChain.symbol} on-chain, not ${want} — the Morpho agent's answer disagrees with the chain, so I won't build it.`,
+    )
+  }
+  if (onChain.decimals !== expectedDecimals) {
+    throw new Error(
+      `${onChain.symbol} has ${onChain.decimals} decimals on-chain but the Morpho agent reported ${expectedDecimals} — refusing to size an amount against a wrong scale.`,
+    )
+  }
+}
+
 /**
  * The agent's market_info answer must AGREE with the on-chain tuple we
  * resolved — a service answering different addresses than the chain is
@@ -185,6 +241,8 @@ export async function buildMorphoLendArtifact(
   assertInfoMatchesParams(info, tuple)
   const decimals = info.loanAsset?.decimals
   if (typeof decimals !== 'number') throw new Error(`Couldn't read ${token}'s decimals from the Morpho service — refusing to build.`)
+  // The chain decides what that market's loan asset IS — never the agent.
+  await assertTokenIdentity(params.chainId, tuple.loanToken, token, decimals)
   const atoms = humanToAtoms(params.amount, decimals)
   if (!atoms) throw new Error(`“${params.amount}” has more decimal places than ${token} supports (${decimals}).`)
 
@@ -231,6 +289,9 @@ export async function buildMorphoRepayArtifact(
   assertInfoMatchesParams(info, tuple)
   const decimals = info.loanAsset?.decimals
   if (typeof decimals !== 'number') throw new Error(`Couldn't read ${token}'s decimals from the Morpho service — refusing to build.`)
+  // Same binding on the repay path — the debt position's market comes from
+  // the agent too, so the chain must confirm the token before we size atoms.
+  await assertTokenIdentity(params.chainId, tuple.loanToken, token, decimals)
 
   const max = params.max === true || params.amount === null
   const debtHuman = debtPos.borrowed?.amount ?? '0'

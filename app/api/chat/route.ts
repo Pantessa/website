@@ -110,6 +110,7 @@ import {
 } from '@/lib/morpho-supply'
 import {
   assertInfoMatchesParams,
+  assertTokenIdentity,
   impliedLoanPriceUsd,
   morphoChainName,
   resolveMorphoMarketParams,
@@ -2939,12 +2940,30 @@ const morphoStableUsd = (token: string, amount: number): number | null =>
  * against the pinned singleton (the guard's binding tuple), cross-checked
  * against each other. Throws the honest reason on any disagreement.
  */
-async function resolveMorphoMarketForBuild(chainId: 1 | 8453, marketId: string, agent: McpServer) {
+async function resolveMorphoMarketForBuild(
+  chainId: 1 | 8453,
+  marketId: string,
+  agent: McpServer,
+  /** The token the USER named + which side of the market it should be. The
+   *  chain confirms the tuple address really IS that token at that scale —
+   *  without it the whole symbol→address mapping is the agent's word, and a
+   *  consistent liar could point a "USDC" ask at a WETH market. */
+  expect?: { symbol: string; side: 'loan' | 'collateral' },
+) {
   const [info, tuple] = await Promise.all([
     callAgentTool(agent.endpoint!, 'market_info', { chainId, marketId }) as Promise<MorphoMarketInfo>,
     resolveMorphoMarketParams(chainId, marketId),
   ])
   assertInfoMatchesParams(info, tuple)
+  if (expect) {
+    const asset = expect.side === 'loan' ? info.loanAsset : info.collateralAsset
+    const decimals = asset?.decimals
+    if (typeof decimals !== 'number') {
+      throw new Error(`Couldn't read ${expect.symbol}'s decimals from the Morpho service — refusing to build.`)
+    }
+    const addr = expect.side === 'loan' ? tuple.loanToken : tuple.collateralToken
+    await assertTokenIdentity(chainId, addr, expect.symbol, decimals)
+  }
   return { info, tuple }
 }
 
@@ -2996,7 +3015,7 @@ async function buildMorphoLendTurn(
   let info: MorphoMarketInfo
   let tuple: Awaited<ReturnType<typeof resolveMorphoMarketParams>>
   try {
-    ;({ info, tuple } = await resolveMorphoMarketForBuild(params.chainId, row.marketId, agent))
+    ;({ info, tuple } = await resolveMorphoMarketForBuild(params.chainId, row.marketId, agent, { symbol: token, side: 'loan' }))
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'the market lookup failed'
     trace({ type: 'note', level: 'warn', label: `market resolve failed: ${msg.slice(0, 200)}` })
@@ -3222,7 +3241,7 @@ async function buildMorphoOpTurn(
   let info: MorphoMarketInfo
   let tuple: Awaited<ReturnType<typeof resolveMorphoMarketParams>>
   try {
-    ;({ info, tuple } = await resolveMorphoMarketForBuild(params.chainId, marketId!, agent))
+    ;({ info, tuple } = await resolveMorphoMarketForBuild(params.chainId, marketId!, agent, { symbol: token, side: MORPHO_OP_TOOL[op].side }))
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'the market lookup failed'
     trace({ type: 'note', level: 'warn', label: `market resolve failed: ${msg.slice(0, 200)}` })
