@@ -2490,6 +2490,50 @@ async function aaveFundingTurn(
 }
 
 /**
+ * The Morpho twin of aaveFundingTurn — chain-parameterized (Morpho lives on
+ * Base AND Ethereum, Aave v4 only on Ethereum) and anchored to the loan-token
+ * address we resolved on-chain, never a symbol lookup. Returns null when the
+ * wallet is funded (the normal build proceeds) or when the read fails —
+ * fail-open here means the service's own honest refusal still lands.
+ */
+async function morphoFundingTurn(
+  walletAddress: string,
+  loanToken: string,
+  decimals: number,
+  token: string,
+  askAmount: number,
+  chainId: 1 | 8453,
+  followupResume: string,
+  actionLabel: string,
+  trace: (event: unknown) => void,
+) {
+  if (!Number.isFinite(askAmount) || askAmount <= 0) return null
+  const client = publicClientFor(chainId)
+  if (!client) return null
+  let held: number | null = null
+  try {
+    const raw = await client.readContract({ address: loanToken as `0x${string}`, abi: erc20Abi, functionName: 'balanceOf', args: [walletAddress as `0x${string}`] })
+    held = Number(formatUnits(raw, decimals))
+  } catch {
+    return null
+  }
+  if (held === null || held >= askAmount) return null
+  const chainName = morphoChainName(chainId)
+  const offer = await offerFundingPlan({
+    user: walletAddress,
+    need: { chainId, token, amountHuman: Number((askAmount - held).toFixed(6)), followupResume, actionLabel },
+    trace,
+  })
+  if (!offer) return null
+  if ('insufficient' in offer) {
+    return NextResponse.json({
+      reply: `🏦 ${actionLabel[0].toUpperCase()}${actionLabel.slice(1)} needs ${askAmount} ${token} on ${chainName} and the wallet holds ${held}. ${offer.insufficient}`,
+    })
+  }
+  return NextResponse.json({ ...offer, reply: `🌉 ${offer.reply}` })
+}
+
+/**
  * Build an Aave v4 supply into a signable approve→supply chain — the native,
  * deterministic path (never the planner/house model, which sent the token
  * SYMBOL to an address-validated param and fabricated balances in prose).
@@ -3032,6 +3076,22 @@ async function buildMorphoLendTurn(
   if (!atoms) {
     return NextResponse.json({ reply: `🏦 “${params.amount}” has more decimal places than ${token} supports (${decimals}).` })
   }
+
+  // 2b) Short on the loan asset? Offer the fund-then-lend job instead of the
+  // service's bare balance refusal — "insufficient funds isn't an answer,
+  // it's a to-do list". The chip's resume re-enters THIS turn.
+  const morphoFunding = await morphoFundingTurn(
+    walletAddress,
+    tuple.loanToken,
+    decimals,
+    token,
+    Number(params.amount),
+    params.chainId,
+    `lend ${params.amount} ${token} on morpho${params.chainId === 1 ? ' on ethereum' : ''}`,
+    'the Morpho lend',
+    trace,
+  )
+  if (morphoFunding) return morphoFunding
 
   // 3) Build via the agent — the service validates the live balance itself
   //    and refuses with the honest reason (surfaced verbatim).
