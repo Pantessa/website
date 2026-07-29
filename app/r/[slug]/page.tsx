@@ -90,6 +90,11 @@ export default async function ReceiptPage({ params }: Params) {
 
         {/* the receipt */}
         <div className="rounded-2xl border border-[var(--line)] bg-[var(--surf-1)] overflow-hidden">
+          {/* A finished run wears the same progress object as a running one —
+              full and quiet. */}
+          <div className="yprog yprog--full rounded-none" aria-hidden>
+            <div className="yprog__fill" />
+          </div>
           <div className="px-5 pt-5 pb-4 border-b border-dashed border-[var(--line-2)]">
             <h1 className="text-2xl font-semibold text-[color:var(--fg)] leading-snug">{receipt.headline}</h1>
             {receipt.ask && (

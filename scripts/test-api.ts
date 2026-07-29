@@ -6538,6 +6538,13 @@ async function main() {
       progressSurfaces.every((f) => !/emerald-\d|red-400|#f87171/.test(fsMod.readFileSync(f, 'utf8'))),
       progressSurfaces.filter((f) => /emerald-\d|red-400|#f87171/.test(fsMod.readFileSync(f, 'utf8'))).join(','),
     )
+    const yprogSurfaces = ['components/JobCard.tsx', 'components/IntentRuntime.tsx', 'components/JobsRailTab.tsx', 'app/r/[slug]/page.tsx']
+    check(
+      'yprog: the shared progress line is defined once and all four surfaces wear it',
+      designCss.includes('.yprog__fill') && designCss.includes('.yprog--fail') && designCss.includes('.yprog--full') &&
+        yprogSurfaces.every((f) => fsMod.readFileSync(f, 'utf8').includes('yprog')),
+      yprogSurfaces.filter((f) => !fsMod.readFileSync(f, 'utf8').includes('yprog')).join(','),
+    )
 
     // ── Transfer segments (the "swap … then send …" chaining ask) ──────────
     const sendTo = '0x6F93fa8B383E51D59DDfC87988AFC964d6ffb5Da'

@@ -281,6 +281,11 @@ export default function JobsRailTab({ onAct }: { onAct?: () => void }) {
           <span className="flex-1" />
           <span className="mono">{new Date(j.createdAt).toLocaleDateString()}</span>
         </div>
+        {/* The same progress object the JobCard breathes — a rail row is the
+            card at a distance, not a different species. */}
+        <div className={cn('yprog ml-[22px] mt-1.5', j.status === 'failed' && 'yprog--fail', j.status === 'done' && 'yprog--full')}>
+          <div className="yprog__fill" style={{ width: `${j.steps.length ? (doneCount / j.steps.length) * 100 : 0}%` }} />
+        </div>
         {j.status === 'failed' && j.failReason && (
           <p className="ml-[22px] mt-0.5 text-[10px] leading-snug text-[color:var(--fail)] line-clamp-2">{j.failReason}</p>
         )}
