@@ -70,7 +70,7 @@
   }
   /* Activity section header — eyebrow + serif title + sub sit OUTSIDE the
      bordered table, sized like the home landing sections (reuses .swtry__*). */
-  .actsec__head { margin-bottom: 16px; }
+  .actsec__head { margin-bottom: 22px; }
   /* Serif row identity — entity names in stat tables (service / token) read in
      the display serif while their numbers stay mono. */
   .u-name-serif {
@@ -2946,7 +2946,14 @@
      scale around it. The previous split — claim parked left, figure floating
      right, an explanation paragraph right-aligned under it — had two things
      fighting for the top of the page and neither winning. */
-  .acthero { position: relative; padding-top: clamp(28px, 5vh, 64px); margin-bottom: 34px; }
+  /* One rhythm for the whole page instead of a per-section mb-10 (a flat 40px
+     between blocks that all read as one wall). The sections carry no margin of
+     their own now — this rule owns the spacing, so it stays consistent as
+     sections are added or reordered. */
+  .actpage > * + * { margin-top: clamp(64px, 8vh, 108px); }
+  .actpage > .acthero + * { margin-top: clamp(48px, 6vh, 76px); }
+
+  .acthero { position: relative; padding-top: clamp(28px, 5vh, 64px); }
   /* Stays inside the content box. A percentage bleed (-8%) is ~148px each
      side on a 1850px column, which is more than the page's own gutter — it
      pushed the document 80px wider than the viewport at 1980. The radial's
@@ -2991,7 +2998,7 @@
 
   /* attended vs standing, as one bar — the split the whole page is about,
      stated once at the top before any table argues it. */
-  .acthero__split { margin: 26px auto 0; display: flex; align-items: center; justify-content: center; gap: 14px; flex-wrap: wrap; max-width: 760px; }
+  .acthero__split { margin: 34px auto 0; display: flex; align-items: center; justify-content: center; gap: 14px; flex-wrap: wrap; max-width: 760px; }
   .acthero__leg { display: inline-flex; align-items: center; gap: 7px; font-size: 11px; color: var(--muted); white-space: nowrap; }
   .acthero__legdot { width: 7px; height: 7px; border-radius: 999px; }
   .acthero__legdot--att { background: color-mix(in srgb, var(--fg) 55%, transparent); }

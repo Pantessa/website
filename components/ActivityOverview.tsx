@@ -203,12 +203,6 @@ export default function ActivityOverview({
         ) : (
           <div className="acthero__skel" />
         )}
-        <p className="acthero__note">
-          Swaps, lending, staking, cross-chain, perps and DAO votes — notional USD of every
-          transaction signed through chat, every embed and the guardian agent, plus every x402 call
-          fee settled on-chain.
-        </p>
-
         {data && data.hero.systemTotalUsd > 0 && (
           <div className="acthero__split">
             <span className="acthero__leg mono">
@@ -281,7 +275,7 @@ export default function ActivityOverview({
   const railMaxCalls = Math.max(...data.rails.map((r) => r.calls), 1)
 
   return (
-    <div className="pb-16">
+    <div className="actpage pb-16">
       {heroSection}
 
       {/* The link economy leads, right under the header — it's the surface
@@ -293,7 +287,7 @@ export default function ActivityOverview({
           wires on a wide display — "too big and stretchy" — so above 1280px
           the copy takes a quarter and the drawing takes the rest. */}
       {data.flow.length > 0 && (
-        <section className="mb-10 flowsec">
+        <section className="flowsec">
           <div className="flowsec__copy">
             <SectionHead
               eyebrow="THE SHAPE OF THE MONEY"
@@ -308,7 +302,7 @@ export default function ActivityOverview({
       )}
 
       {/* ── chains built: the multi-step work, drawn as chains ──────────── */}
-      <section className="mb-10">
+      <section>
         <SectionHead
           eyebrow="CHAINS BUILT"
           title="Almost nothing is one transaction"
@@ -320,7 +314,7 @@ export default function ActivityOverview({
       </section>
 
       {/* ── attended vs standing: the split that matters ───────────────── */}
-      <section className="mb-10">
+      <section>
         <SectionHead
           eyebrow="WHO MOVED IT"
           title="Attended vs standing"
@@ -360,7 +354,7 @@ export default function ActivityOverview({
       </section>
 
       {/* ── the vitals ─────────────────────────────────────────────────── */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-3 mb-10">
+      <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-3">
         <Kpi label="Tx signed" value={String(h.signedCount)} sub={`${fmtUsd(h.signedUsd)} notional`} />
         <Kpi label="Built, awaiting sig" value={String(h.builtCount)} sub={`${fmtUsd(h.builtUsd)} notional`} />
         <Kpi label="x402 calls settled" value={String(h.x402Count)} sub={`${fmtFee(h.x402Usd)} in fees`} />
@@ -371,7 +365,7 @@ export default function ActivityOverview({
 
       {/* ── the curve + day by day ─────────────────────────────────────── */}
       {data.series.length > 0 && (
-        <div className="grid grid-cols-1 lg:grid-cols-5 gap-4 mb-10 min-w-0">
+        <div className="grid grid-cols-1 lg:grid-cols-5 gap-4 min-w-0">
           <Card className="lg:col-span-3 min-w-0">
             <div className="mb-1">
               <span className="cardh__eyebrow mono">THE CURVE</span>
@@ -390,7 +384,7 @@ export default function ActivityOverview({
       )}
 
       {/* ── where it moves: per-venue conversion board ─────────────────── */}
-      <section className="mb-10">
+      <section>
         <SectionHead
           eyebrow="WHERE IT MOVES"
           title="Money by venue"
@@ -462,7 +456,7 @@ export default function ActivityOverview({
       </section>
 
       {/* ── funnel + rails ─────────────────────────────────────────────── */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-10 min-w-0 items-start">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 min-w-0 items-start">
         <section className="min-w-0 flex flex-col">
           <SectionHead
             eyebrow="THE FUNNEL"
