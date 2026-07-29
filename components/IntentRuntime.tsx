@@ -505,14 +505,8 @@ export default function IntentRuntime({
             connected → built → signed fills it in thirds. Decorative-only
             (the funnel events are the truth), but it turns the chrome into
             the stage's arc instead of a static border. */}
-        <div aria-hidden className="absolute inset-x-0 bottom-0 h-px bg-[var(--line)]">
-          <div
-            className="h-full bg-[color:var(--accent)] transition-[width] duration-700 ease-out"
-            style={{
-              width: signed ? '100%' : built ? '66%' : '33%',
-              boxShadow: '0 0 8px color-mix(in srgb, var(--accent) 55%, transparent)',
-            }}
-          />
+        <div aria-hidden className="yprog absolute inset-x-0 bottom-0 rounded-none" style={{ height: '1px', background: 'var(--line)' }}>
+          <div className="yprog__fill" style={{ width: signed ? '100%' : built ? '66%' : '33%' }} />
         </div>
       </header>
       {/* One focused reading column — the runtime is a single ask on a

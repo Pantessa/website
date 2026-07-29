@@ -3884,6 +3884,18 @@
     .splash__sdkrow { grid-template-columns: 1fr; }
   }
 
+  /* ── .yprog — THE progress line ──────────────────────────────────────
+     One recognizable object for "how far along is this run" everywhere a
+     run shows progress (JobCard, /i, the rail Jobs tab, /r receipts).
+     Width is inline (each surface knows its fraction); color and motion
+     live HERE so every surface breathes the same way. Modifiers:
+     .yprog--fail (a failed run), .yprog--full (a finished run — quiet
+     done-green at 100%, the receipt variant). */
+  .yprog { height: 2px; border-radius: 999px; overflow: hidden; background: color-mix(in srgb, var(--fg) 8%, transparent); }
+  .yprog__fill { height: 100%; border-radius: inherit; background: var(--live); box-shadow: 0 0 8px color-mix(in srgb, var(--live) 45%, transparent); transition: width .7s ease-out; }
+  .yprog--fail .yprog__fill { background: var(--fail); box-shadow: none; }
+  .yprog--full .yprog__fill { width: 100%; background: var(--done); box-shadow: none; }
+
   /* ── LIGHT THEME ─────────────────────────────────── */
   /* The whole site is token-driven (--bg/--fg/--surf/--line + fg-relative
      color-mixes), so light mode is a token flip. data-theme lands on <html>

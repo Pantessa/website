@@ -168,14 +168,8 @@ export default function JobCard({
       </button>
 
       {/* progress — visible even collapsed; the card's heartbeat */}
-      <div className="h-0.5 mx-3 mb-0.5 rounded-full overflow-hidden" style={{ background: 'color-mix(in srgb, var(--fg) 8%, transparent)' }}>
-        <div
-          className="h-full rounded-full transition-[width] duration-700"
-          style={{
-            width: `${job.steps.length ? (doneCount / job.steps.length) * 100 : 0}%`,
-            background: job.status === 'failed' ? 'var(--fail)' : 'var(--live)',
-          }}
-        />
+      <div className={`yprog mx-3 mb-0.5 ${job.status === 'failed' ? 'yprog--fail' : job.status === 'done' ? 'yprog--full' : ''}`}>
+        <div className="yprog__fill" style={{ width: `${job.steps.length ? (doneCount / job.steps.length) * 100 : 0}%` }} />
       </div>
 
       {expanded && (
