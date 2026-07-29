@@ -132,7 +132,7 @@ export function validateRedirect(raw: string): { ok: true; url: string; host: st
   return { ok: true, url: u.toString(), host: u.hostname }
 }
 
-export const EVENT_KINDS = ['open', 'connect', 'built', 'signed'] as const
+export const EVENT_KINDS = ['open', 'connect', 'built', 'signed', 'settled'] as const
 export type IntentEventKind = (typeof EVENT_KINDS)[number]
 
 /** Active-link capacity per plan — the third capacity axis alongside

@@ -1450,6 +1450,12 @@ async function main() {
       body: JSON.stringify({ kind: 'open' }),
     })
     check('intent links: open event accepted unauthenticated', evOk.status === 200)
+    const evSettled = await fetch(`${BASE}/api/intent-links/${slug}/events`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ kind: 'settled', valueUsd: 12.5 }),
+    })
+    check('intent links: settled event accepted (the fourth funnel stop)', evSettled.status === 200)
     const evBad = await fetch(`${BASE}/api/intent-links/${slug}/events`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
@@ -1464,7 +1470,12 @@ async function main() {
     check('intent links: events for an unknown slug → 404', evGhost.status === 404)
 
     const list = await fetch(`${BASE}/api/intent-links`, { headers: { cookie: mallorySession } })
-    const listBody = (await list.json()) as { links: Array<{ slug: string; funnel: { open: number } }> }
+    const listBody = (await list.json()) as { links: Array<{ slug: string; funnel: { open: number; settled?: number } }> }
+    check(
+      'intent links: the funnel aggregates settled',
+      listBody.links.find((l) => l.slug === slug)?.funnel.settled === 1,
+      JSON.stringify(listBody.links.find((l) => l.slug === slug)?.funnel),
+    )
     const row = listBody.links?.find((l) => l.slug === slug)
     check('intent links: creator list shows the link with its funnel', !!row && row.funnel.open >= 1)
 
