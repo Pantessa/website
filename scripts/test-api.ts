@@ -6455,6 +6455,39 @@ async function main() {
       JOB_SEGMENT_PARSERS.length >= 11 && JOB_SEGMENT_PARSERS.every((p) => !!p.id && typeof p.parse === 'function'),
     )
 
+    // ── Compound-ask precedence (the 2026-07-28 incident): a multi-clause
+    // ask whose clauses each match a single-venue parser must compile as ONE
+    // job — parseAaveSupply once matched "…then supply 840 USDC to aave"
+    // inside a compound message and answered the add-Aave door, dropping the
+    // other three steps. The jobs gate now runs before both Aave gates.
+    const compoundAave = compileJobAsk(
+      'Swap 0.10583 ETH from Base to ETH on Ethereum, then Swap 175.73 USDC from Base to USDC on Ethereum, then supply 840.42 USDC to aave, then stake 0.55214 eth on lido',
+    )
+    check(
+      'jobs: the aave+lido compound compiles to 6 steps (bridges + waits + supply + stake)',
+      !!compoundAave && !('problem' in compoundAave) && compoundAave.steps.length === 6 &&
+        compoundAave.steps[4].builder === 'native-aave-supply' && compoundAave.steps[5].builder === 'native-lido',
+      compoundAave && !('problem' in compoundAave) ? compoundAave.steps.map((s) => `${s.kind}:${s.builder}`).join(',') : JSON.stringify(compoundAave),
+    )
+    const compoundLive = await fetch(`${BASE}/api/chat`, {
+      method: 'POST', headers: { 'content-type': 'application/json', 'x-yf-no-ask-log': '1' },
+      body: JSON.stringify({ message: 'Swap 0.1 ETH from Base to ETH on Ethereum, then supply 5 USDC to aave, then stake 0.01 eth on lido', activeServers: [] }),
+    }).then((r) => r.json())
+    check(
+      'jobs ladder: a compound ask reaches the jobs gate BEFORE the Aave door steals it',
+      typeof compoundLive.reply === 'string' && /chains multiple money steps/i.test(compoundLive.reply) && !/needs the \*\*Aave\*\*|Add Aave with this ask ready/.test(compoundLive.reply),
+      JSON.stringify(compoundLive).slice(0, 220),
+    )
+    const aaveDoor = await fetch(`${BASE}/api/chat`, {
+      method: 'POST', headers: { 'content-type': 'application/json', 'x-yf-no-ask-log': '1' },
+      body: JSON.stringify({ message: 'supply 20 USDC to aave', activeServers: [] }),
+    }).then((r) => r.json())
+    check(
+      'aave door: a lone supply without the agent deep-links the add with the ask ready',
+      typeof aaveDoor.reply === 'string' && aaveDoor.reply.includes('Add Aave with this ask ready](/chat?mcps=aave-free&prompt='),
+      JSON.stringify(aaveDoor).slice(0, 220),
+    )
+
     // ── Transfer segments (the "swap … then send …" chaining ask) ──────────
     const sendTo = '0x6F93fa8B383E51D59DDfC87988AFC964d6ffb5Da'
     const tSeg = parseTransferSegment(`send the 1 USDC on arbitrum to ${sendTo}`)

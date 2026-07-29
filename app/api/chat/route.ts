@@ -718,105 +718,6 @@ async function handleChatTurn(req: NextRequest) {
       nativeTrace({ type: 'status', label: `native swap layer: amending the pending ${pendingArtifact.kind} to ${swapFollowUp.intent.sellAmountHuman} ${(swapFollowUp.intent.sellToken ?? '').toUpperCase()} → ${(swapFollowUp.intent.buyToken ?? '').toUpperCase()} on ${pendingVenue === 'uniswap' ? 'Uniswap' : 'CoW'} (${chainById(pendingChainId)?.name})` })
       return await prepareSwapTurn(swapFollowUp.intent, walletAddress, pendingVenue, workingContext, nativeTrace, pendingChainId)
     }
-    // ── Aave supply: NATIVE deterministic build (no confirm round-trips) ────
-    // "add 1 USDC to an Aave pool on Ethereum" once went planner/house-model:
-    // the model sent the SYMBOL where build_supply validates an ADDRESS
-    // (MCP -32602), asked "should I proceed?" three turns running, and
-    // FABRICATED wallet balances in prose (live 2026-07-10; the real balance
-    // was 0). Now: parse → resolve the reserve from the agent's own
-    // `reserves` tool → build_supply → guard → ONE approve→supply card,
-    // built immediately with everything shown. The confirmation is the
-    // signature. Generic "add 1 USDC to a pool" routes here too when the
-    // Aave agent is in the set — no protocol quiz.
-    const aaveAsk = parseAaveSupply(message)
-    if (aaveAsk) {
-      const aaveRead = aaveAgentOf(activeServers)
-      if ('problem' in aaveAsk) {
-        // Clearly an Aave deposit, just under-specified (no amount) — the ONE
-        // clarify that's actually necessary.
-        nativeTrace({ type: 'status', label: 'native aave layer: supply ask under-specified — asking for the amount' })
-        return NextResponse.json({ reply: `🏦 ${aaveAsk.problem}` })
-      }
-      const rivalVenue = aaveAsk.weak ? competingVenueOf(activeServers) : null
-      if (rivalVenue) {
-        // Venue-generic verb ("deposit 5 USDC") and another selected agent
-        // could serve it — don't assume Aave; normal routing decides.
-        nativeTrace({ type: 'note', level: 'info', label: `native aave layer passed: venue-generic verb and ${rivalVenue} is also selected — normal routing decides the venue` })
-      } else if (aaveAsk.explicitAave || aaveRead.agent) {
-        if (!aaveRead.agent) {
-          nativeTrace({ type: 'note', level: 'warn', label: 'native aave layer: supply parsed but no Aave agent in the set — asking the user to add it' })
-          return NextResponse.json({
-            reply: `🏦 Supplying to Aave needs the **Aave** agent in your set — add it from the rail and ask again, and I'll build the deposit for you to sign.`,
-          })
-        }
-        if (!aaveRead.usable) {
-          // An add-MCP shell row (no endpoint) — same honest guard as the
-          // cross-chain agent (routing at it makes the planner hallucinate).
-          nativeTrace({ type: 'note', level: 'warn', label: `native aave layer: ${aaveRead.agent.name} has no callable endpoint (shell row) — refusing honestly` })
-          return NextResponse.json({
-            reply: `🏦 Your **${aaveRead.agent.name}** agent isn't fully connected — no callable tools are registered for it. Re-add it (or pick the Aave agent from the Free tab) and ask again.`,
-          })
-        }
-        if (aaveAsk.otherChain) {
-          nativeTrace({ type: 'note', level: 'info', label: `native aave layer: non-Ethereum chain (${aaveAsk.otherChain}) — Aave v4 is Ethereum-only, no build` })
-          return NextResponse.json({
-            reply: `🏦 Aave v4 is live on **Ethereum only** today — I can't build a supply on ${aaveAsk.otherChain}. Say “supply ${aaveAsk.amount} ${aaveAsk.token.toUpperCase()} to Aave on Ethereum” and I'll prepare it.`,
-          })
-        }
-        nativeTrace({ type: 'status', label: `native aave layer claimed the turn: supply ${aaveAsk.amount} ${aaveAsk.token.toUpperCase()}${aaveAsk.explicitAave ? '' : ' (set-hint: Aave selected)'} — planner bypassed` })
-        return await buildAaveSupplyTurn(aaveRead.agent, aaveAsk, walletAddress, workingContext, message, nativeTrace)
-      } else {
-        // Pool-ish/bare ask with no Aave agent and Aave not named → normal routing.
-        nativeTrace({ type: 'note', level: 'info', label: 'native aave layer passed: supply-shaped ask but no Aave agent in the set — normal routing' })
-      }
-    }
-
-    // ── Aave withdraw / borrow / repay: the same native recipe ──────────────
-    // Anchored to the user's REAL position (portfolio), built via the agent's
-    // build_* tool, every step guardrailed. Borrow runs the agent's `preview`
-    // first so the health-factor impact is shown before signing.
-    const aaveOpAsk = parseAaveOp(message)
-    if (aaveOpAsk) {
-      const aaveRead = aaveAgentOf(activeServers)
-      if ('problem' in aaveOpAsk) {
-        nativeTrace({ type: 'status', label: `native aave layer: ${aaveOpAsk.op} ask under-specified — asking for the amount` })
-        return NextResponse.json({ reply: `🏦 ${aaveOpAsk.problem}` })
-      }
-      const rivalOpVenue = aaveOpAsk.weak ? competingVenueOf(activeServers) : null
-      if (rivalOpVenue) {
-        nativeTrace({ type: 'note', level: 'info', label: `native aave layer passed: venue-generic ${aaveOpAsk.op} and ${rivalOpVenue} is also selected — normal routing decides the venue` })
-      } else if (aaveOpAsk.explicitAave || aaveRead.agent) {
-        if (!aaveRead.agent) {
-          nativeTrace({ type: 'note', level: 'warn', label: `native aave layer: ${aaveOpAsk.op} parsed but no Aave agent in the set — asking the user to add it` })
-          return NextResponse.json({
-            reply: `🏦 A ${aaveOpAsk.op} on Aave needs the **Aave** agent in your set — add it from the rail and ask again, and I'll build it for you to sign.`,
-          })
-        }
-        if (!aaveRead.usable) {
-          nativeTrace({ type: 'note', level: 'warn', label: `native aave layer: ${aaveRead.agent.name} has no callable endpoint (shell row) — refusing honestly` })
-          return NextResponse.json({
-            reply: `🏦 Your **${aaveRead.agent.name}** agent isn't fully connected — no callable tools are registered for it. Re-add it (or pick the Aave agent from the Free tab) and ask again.`,
-          })
-        }
-        if (aaveOpAsk.otherChain) {
-          nativeTrace({ type: 'note', level: 'info', label: `native aave layer: non-Ethereum chain (${aaveOpAsk.otherChain}) — Aave v4 is Ethereum-only, no build` })
-          return NextResponse.json({
-            reply: `🏦 Aave v4 is live on **Ethereum only** today — I can't build a ${aaveOpAsk.op} on ${aaveOpAsk.otherChain}. Say “${aaveOpAsk.op} ${aaveOpAsk.amount ?? 'all my'} ${aaveOpAsk.token.toUpperCase()} on Ethereum” and I'll prepare it.`,
-          })
-        }
-        nativeTrace({ type: 'status', label: `native aave layer claimed the turn: ${aaveOpAsk.op} ${aaveOpAsk.max ? `all ${aaveOpAsk.token.toUpperCase()}` : `${aaveOpAsk.amount} ${aaveOpAsk.token.toUpperCase()}`}${aaveOpAsk.explicitAave ? '' : ' (set-hint: Aave selected)'} — planner bypassed` })
-        return await buildAaveOpTurn(aaveRead.agent, aaveOpAsk, walletAddress, workingContext, message, nativeTrace)
-      } else {
-        // Lending-ish verb with no Aave agent and Aave not named → normal routing.
-        nativeTrace({ type: 'note', level: 'info', label: `native aave layer passed: ${aaveOpAsk.op}-shaped ask but no Aave agent in the set — normal routing` })
-      }
-    }
-    if (!aaveAsk && !aaveOpAsk && /\baave\b/i.test(message)) {
-      // Aave named but neither native parser claimed it — the planner routes
-      // it. This line is the breadcrumb that was missing when a parse miss
-      // sent a build ask to the planner and its -32602 looked like MCP flake.
-      nativeTrace({ type: 'note', level: 'info', label: 'aave named but no imperative supply/withdraw/borrow/repay parse — normal routing (reads are fine here; build asks should say e.g. “supply 5 USDC to aave”)' })
-    }
 
     // DCA — recurring buys ("buy $10 of AAPL every week"), the due-period
     // chip's resume string, and pause/resume/cancel/list. Runs BEFORE the
@@ -882,6 +783,110 @@ async function handleChatTurn(req: NextRequest) {
         jobToken: signJobToken(job.id),
         buildPath: 'native-job',
       })
+    }
+
+    // ── Aave supply: NATIVE deterministic build (no confirm round-trips) ────
+    // LADDER: both Aave gates sit BELOW the jobs compiler — parseAaveSupply
+    // matches its own clause inside a compound "swap …, then supply 840 USDC
+    // to aave, then stake …" and once stole the whole 4-step job (answered
+    // the add-Aave door, dropping the other steps; live 2026-07-28).
+    // "add 1 USDC to an Aave pool on Ethereum" once went planner/house-model:
+    // the model sent the SYMBOL where build_supply validates an ADDRESS
+    // (MCP -32602), asked "should I proceed?" three turns running, and
+    // FABRICATED wallet balances in prose (live 2026-07-10; the real balance
+    // was 0). Now: parse → resolve the reserve from the agent's own
+    // `reserves` tool → build_supply → guard → ONE approve→supply card,
+    // built immediately with everything shown. The confirmation is the
+    // signature. Generic "add 1 USDC to a pool" routes here too when the
+    // Aave agent is in the set — no protocol quiz.
+    const aaveAsk = parseAaveSupply(message)
+    if (aaveAsk) {
+      const aaveRead = aaveAgentOf(activeServers)
+      if ('problem' in aaveAsk) {
+        // Clearly an Aave deposit, just under-specified (no amount) — the ONE
+        // clarify that's actually necessary.
+        nativeTrace({ type: 'status', label: 'native aave layer: supply ask under-specified — asking for the amount' })
+        return NextResponse.json({ reply: `🏦 ${aaveAsk.problem}` })
+      }
+      const rivalVenue = aaveAsk.weak ? competingVenueOf(activeServers) : null
+      if (rivalVenue) {
+        // Venue-generic verb ("deposit 5 USDC") and another selected agent
+        // could serve it — don't assume Aave; normal routing decides.
+        nativeTrace({ type: 'note', level: 'info', label: `native aave layer passed: venue-generic verb and ${rivalVenue} is also selected — normal routing decides the venue` })
+      } else if (aaveAsk.explicitAave || aaveRead.agent) {
+        if (!aaveRead.agent) {
+          nativeTrace({ type: 'note', level: 'warn', label: 'native aave layer: supply parsed but no Aave agent in the set — asking the user to add it' })
+          return NextResponse.json({
+            reply: `🏦 Supplying to Aave runs right here — it just needs the **Aave** dapp in this chat's set. **[Add Aave with this ask ready](/chat?mcps=aave-free&prompt=${encodeURIComponent(message)})** (it prefills — you press send), or add it from the rail and ask again.`,
+          })
+        }
+        if (!aaveRead.usable) {
+          // An add-MCP shell row (no endpoint) — same honest guard as the
+          // cross-chain agent (routing at it makes the planner hallucinate).
+          nativeTrace({ type: 'note', level: 'warn', label: `native aave layer: ${aaveRead.agent.name} has no callable endpoint (shell row) — refusing honestly` })
+          return NextResponse.json({
+            reply: `🏦 Your **${aaveRead.agent.name}** agent isn't fully connected — no callable tools are registered for it. Re-add it (or pick the Aave agent from the Free tab) and ask again.`,
+          })
+        }
+        if (aaveAsk.otherChain) {
+          nativeTrace({ type: 'note', level: 'info', label: `native aave layer: non-Ethereum chain (${aaveAsk.otherChain}) — Aave v4 is Ethereum-only, no build` })
+          return NextResponse.json({
+            reply: `🏦 Aave v4 is live on **Ethereum only** today — I can't build a supply on ${aaveAsk.otherChain}. Say “supply ${aaveAsk.amount} ${aaveAsk.token.toUpperCase()} to Aave on Ethereum” and I'll prepare it.`,
+          })
+        }
+        nativeTrace({ type: 'status', label: `native aave layer claimed the turn: supply ${aaveAsk.amount} ${aaveAsk.token.toUpperCase()}${aaveAsk.explicitAave ? '' : ' (set-hint: Aave selected)'} — planner bypassed` })
+        return await buildAaveSupplyTurn(aaveRead.agent, aaveAsk, walletAddress, workingContext, message, nativeTrace)
+      } else {
+        // Pool-ish/bare ask with no Aave agent and Aave not named → normal routing.
+        nativeTrace({ type: 'note', level: 'info', label: 'native aave layer passed: supply-shaped ask but no Aave agent in the set — normal routing' })
+      }
+    }
+
+    // ── Aave withdraw / borrow / repay: the same native recipe ──────────────
+    // Anchored to the user's REAL position (portfolio), built via the agent's
+    // build_* tool, every step guardrailed. Borrow runs the agent's `preview`
+    // first so the health-factor impact is shown before signing.
+    const aaveOpAsk = parseAaveOp(message)
+    if (aaveOpAsk) {
+      const aaveRead = aaveAgentOf(activeServers)
+      if ('problem' in aaveOpAsk) {
+        nativeTrace({ type: 'status', label: `native aave layer: ${aaveOpAsk.op} ask under-specified — asking for the amount` })
+        return NextResponse.json({ reply: `🏦 ${aaveOpAsk.problem}` })
+      }
+      const rivalOpVenue = aaveOpAsk.weak ? competingVenueOf(activeServers) : null
+      if (rivalOpVenue) {
+        nativeTrace({ type: 'note', level: 'info', label: `native aave layer passed: venue-generic ${aaveOpAsk.op} and ${rivalOpVenue} is also selected — normal routing decides the venue` })
+      } else if (aaveOpAsk.explicitAave || aaveRead.agent) {
+        if (!aaveRead.agent) {
+          nativeTrace({ type: 'note', level: 'warn', label: `native aave layer: ${aaveOpAsk.op} parsed but no Aave agent in the set — asking the user to add it` })
+          return NextResponse.json({
+            reply: `🏦 A ${aaveOpAsk.op} on Aave runs right here — it just needs the **Aave** dapp in this chat's set. **[Add Aave with this ask ready](/chat?mcps=aave-free&prompt=${encodeURIComponent(message)})** (it prefills — you press send), or add it from the rail and ask again.`,
+          })
+        }
+        if (!aaveRead.usable) {
+          nativeTrace({ type: 'note', level: 'warn', label: `native aave layer: ${aaveRead.agent.name} has no callable endpoint (shell row) — refusing honestly` })
+          return NextResponse.json({
+            reply: `🏦 Your **${aaveRead.agent.name}** agent isn't fully connected — no callable tools are registered for it. Re-add it (or pick the Aave agent from the Free tab) and ask again.`,
+          })
+        }
+        if (aaveOpAsk.otherChain) {
+          nativeTrace({ type: 'note', level: 'info', label: `native aave layer: non-Ethereum chain (${aaveOpAsk.otherChain}) — Aave v4 is Ethereum-only, no build` })
+          return NextResponse.json({
+            reply: `🏦 Aave v4 is live on **Ethereum only** today — I can't build a ${aaveOpAsk.op} on ${aaveOpAsk.otherChain}. Say “${aaveOpAsk.op} ${aaveOpAsk.amount ?? 'all my'} ${aaveOpAsk.token.toUpperCase()} on Ethereum” and I'll prepare it.`,
+          })
+        }
+        nativeTrace({ type: 'status', label: `native aave layer claimed the turn: ${aaveOpAsk.op} ${aaveOpAsk.max ? `all ${aaveOpAsk.token.toUpperCase()}` : `${aaveOpAsk.amount} ${aaveOpAsk.token.toUpperCase()}`}${aaveOpAsk.explicitAave ? '' : ' (set-hint: Aave selected)'} — planner bypassed` })
+        return await buildAaveOpTurn(aaveRead.agent, aaveOpAsk, walletAddress, workingContext, message, nativeTrace)
+      } else {
+        // Lending-ish verb with no Aave agent and Aave not named → normal routing.
+        nativeTrace({ type: 'note', level: 'info', label: `native aave layer passed: ${aaveOpAsk.op}-shaped ask but no Aave agent in the set — normal routing` })
+      }
+    }
+    if (!aaveAsk && !aaveOpAsk && /\baave\b/i.test(message)) {
+      // Aave named but neither native parser claimed it — the planner routes
+      // it. This line is the breadcrumb that was missing when a parse miss
+      // sent a build ask to the planner and its -32602 looked like MCP flake.
+      nativeTrace({ type: 'note', level: 'info', label: 'aave named but no imperative supply/withdraw/borrow/repay parse — normal routing (reads are fine here; build asks should say e.g. “supply 5 USDC to aave”)' })
     }
 
     // Rebalance — "rebalance my portfolio" / "put my idle money to work":
