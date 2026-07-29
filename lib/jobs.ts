@@ -164,40 +164,53 @@ export function splitJobSegments(message: string): string[] {
     .filter(Boolean)
 }
 
-/** Candidate pieces of a bare-"and" segment ("lend X on morpho and stake Y
- *  on lido"). Speculative only — expandAndSegments decides whether to use
- *  them. Also accepts "and also" / ", and". */
-function andSplitCandidates(segment: string): string[] | null {
+/**
+ * Connectors people actually use to join two intents in one message, beyond
+ * the explicit then/;/→ the primary splitter knows. Every one of these was
+ * probed and dropped an intent silently before this existed.
+ *
+ * Whitespace is REQUIRED around the symbolic ones so nothing inside a value
+ * is ever cut: "0.5 ETH" survives the period rule (it needs `. ` with a
+ * space), "USDC/cbBTC" survives the slash rule, "+5%" survives the plus.
+ */
+const COMPOUND_CONNECTOR_RE =
+  /\s*(?:,?\s+(?:and\s+)?also\s+|,?\s+and\s+|,?\s+plus\s+|,?\s+followed\s+by\s+|,?\s+after\s+that\s+|\s+\+\s+|\s+&\s+|\s+\/\s+|\.\s+|,\s+|\n+)/i
+
+/** Candidate pieces of a segment joined by one of the connectors above.
+ *  Speculative only — expandCompoundSegments decides whether to use them. */
+function compoundSplitCandidates(segment: string): string[] | null {
   const parts = segment
-    .split(/\s*,?\s+and(?:\s+also)?\s+/i)
+    .split(COMPOUND_CONNECTOR_RE)
     .map((s) => s.trim())
     .filter(Boolean)
   return parts.length >= 2 ? parts : null
 }
 
 /**
- * Two intents joined by a bare "and" ("lend 100 USDC on morpho and stake 0.5
- * ETH on lido") used to compile to NOTHING: the ask fell past the jobs gate
- * to the single-venue layers, each parser matched its OWN clause, and the
- * first gate to run claimed the turn while the other intent vanished — the
- * #595 silent-drop through a different connector.
+ * Two intents joined by anything other than "then" ("lend 100 USDC on morpho
+ * and stake 0.5 ETH on lido", "… plus …", "… also …", two lines, two
+ * sentences) used to compile to NOTHING: the ask fell past the jobs gate to
+ * the single-venue layers, each parser matched its OWN clause, and the first
+ * gate to run claimed the turn while the other intent vanished — the #595
+ * silent-drop through a different connector. Every connector in
+ * COMPOUND_CONNECTOR_RE was probed and reproduced that drop.
  *
  * The split is SPECULATIVE and accepted only when every piece parses cleanly
  * on its own (steps, never a problem or a clarify). That conservatism is what
- * makes it safe: shapes where "and" belongs INSIDE one intent — a multi-clause
- * send sharing a trailing recipient ("send all my USDC on arbitrum and 5 USDC
- * on base to 0x…"), a pronoun follow-up, "buy $10 of AAPL and $10 of TSLA" —
- * leave at least one piece unparseable, so the split is rejected and the
- * segment stays whole, exactly as before.
+ * makes it safe: shapes where a connector belongs INSIDE one intent — a
+ * multi-clause send sharing a trailing recipient ("send all my USDC on
+ * arbitrum and 5 USDC on base to 0x…"), a pronoun follow-up, "buy $10 of AAPL
+ * and $10 of TSLA" — leave at least one piece unparseable, so the split is
+ * rejected and the segment stays whole, exactly as before.
  *
  * When a split DOES succeed it wins over the whole-segment reading, because a
  * parser matching the full string is matching its own clause and ignoring the
  * rest — the interpretation that keeps every intent is the honest one.
  */
-function expandAndSegments(segments: string[], message: string): string[] {
+function expandCompoundSegments(segments: string[], message: string): string[] {
   const out: string[] = []
   for (const seg of segments) {
-    const candidates = andSplitCandidates(seg)
+    const candidates = compoundSplitCandidates(seg)
     if (!candidates) {
       out.push(seg)
       continue
@@ -588,7 +601,7 @@ const compilableKinds = (): string => {
  * single asks belong to the native layers directly).
  */
 export function compileJobAsk(message: string): CompiledJob | { problem: string } | { clarify: ClarifyRequest } | null {
-  const segments = expandAndSegments(splitJobSegments(message), message)
+  const segments = expandCompoundSegments(splitJobSegments(message), message)
   // Single asks belong to the native layers — EXCEPT segments that are
   // multi-step on their own: a lone Robinhood funding segment (the MCP-path
   // fallback's bridge-only chips carry no follow-up; the legs + arrival

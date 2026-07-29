@@ -6816,6 +6816,19 @@ async function main() {
         !!andTwoRev && !('problem' in andTwoRev) && !('clarify' in andTwoRev) && andTwoRev.steps.length === 2,
       JSON.stringify({ andTwo, andTwoRev }).slice(0, 200),
     )
+    // Every connector below was probed and reproduced the same silent drop.
+    // Symbolic ones require surrounding whitespace so nothing inside a value
+    // is ever cut — the decimal/pair guards two checks down prove it.
+    const CONNECTORS = [' plus ', ' also ', ' & ', ' + ', ' / ', ' followed by ', ' after that ', '. ', ', ', '\n']
+    const connectorMisses = CONNECTORS.filter((c) => {
+      const r = compileJobAsk(`lend 100 USDC on morpho${c}stake 0.5 ETH on lido`)
+      return !r || 'problem' in r || 'clarify' in r || r.steps.length !== 2
+    })
+    check(
+      'jobs compound-split: every connector (plus/also/&/+//"/followed by/after that/./,/newline) compiles both intents',
+      connectorMisses.length === 0,
+      `missed: ${JSON.stringify(connectorMisses)}`,
+    )
     const andMixed = compileJobAsk('bridge 5 USDC from base to arbitrum and lend 100 USDC on morpho')
     check(
       'jobs and-split: a bridge + venue intent chains (bridge legs keep their wait)',
@@ -6837,6 +6850,19 @@ async function main() {
       compileJobAsk('buy $10 of AAPL and $10 of TSLA') === null &&
         compileJobAsk('lend 100 USDC on morpho') === null &&
         compileJobAsk('stake 0.05 eth on lido') === null,
+    )
+    // The whitespace requirement on symbolic connectors: a decimal amount, a
+    // market pair, and a percentage must never be cut mid-value.
+    check(
+      'jobs compound-split: decimals, token pairs, and percentages survive the symbolic connectors',
+      compileJobAsk('stake 0.5 ETH on lido') === null &&
+        compileJobAsk('lend 100 USDC on morpho') === null &&
+        (() => {
+          const canon = compileJobAsk(
+            'swap 25 usdc from base to arbitrum, then deposit 24 usdc to hyperliquid, then long $12 of eth on hyperliquid, then protect my eth long with a 5% stop',
+          )
+          return !!canon && !('problem' in canon) && !('clarify' in canon) && canon.steps.length === 6
+        })(),
     )
 
     // ── Compound-ask precedence (the 2026-07-28 incident): a multi-clause
