@@ -4844,6 +4844,17 @@ async function main() {
     const identEthAlias = await assertTokenIdentity(8453, IDENT_WETH_BASE, 'ETH', 18).then(() => true).catch(() => false)
     check('morpho identity: "eth" accepts the market\'s WETH (the one documented alias)', identEthAlias)
 
+    // The funding offer's chip is the contract: its resume must re-enter the
+    // SAME lend turn, on the same chain, or the fund-then-lend loop dead-ends.
+    const fundResumeBase = parseMorphoLend('lend 100 USDC on morpho')
+    const fundResumeEth = parseMorphoLend('lend 0.5 WETH on morpho on ethereum')
+    check(
+      'morpho funding: both chip resume shapes round-trip the lend parser (chain preserved)',
+      !!fundResumeBase && !('problem' in fundResumeBase) && fundResumeBase.chainId === 8453 && fundResumeBase.amount === '100' &&
+        !!fundResumeEth && !('problem' in fundResumeEth) && fundResumeEth.chainId === 1 && fundResumeEth.token === 'WETH',
+      JSON.stringify({ fundResumeBase, fundResumeEth }),
+    )
+
     const LOAN = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913' // USDC (Base)
     const COLL = '0xcbB7C0000aB88B473b1f5aFd9ef808440eed33Bf' // cbBTC (Base)
     const ORACLE = '0x1111111111111111111111111111111111111111'
@@ -7204,6 +7215,22 @@ async function main() {
       'job context: generic derivation — money-moved row formatted, signature note present',
       genericCtx.rows.some((r) => r.value === '$12.50') && /signature/i.test(genericCtx.note ?? ''),
       JSON.stringify(genericCtx),
+    )
+    // A Morpho job asks the Morpho agent for live rows — and only for the
+    // chain its OWN steps target (a Base job never queries mainnet). With no
+    // morpho MCP seeded this returns empty rather than throwing (fail-soft).
+    const morphoCtx = await jobContextFor({
+      wallet: '0x0000000000000000000000000000000000000001',
+      status: 'running',
+      currentStep: 0,
+      valueUsd: null,
+      failReason: null,
+      steps: [{ builder: 'native-morpho-lend', params: { token: 'USDC', amount: '100', chainId: 8453 } }],
+    })
+    check(
+      'job context: a morpho job derives without throwing (fail-soft when the agent is absent)',
+      Array.isArray(morphoCtx.rows) && /running/i.test(morphoCtx.note ?? ''),
+      JSON.stringify(morphoCtx).slice(0, 160),
     )
   }
 
