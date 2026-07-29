@@ -6487,6 +6487,27 @@ async function main() {
       typeof aaveDoor.reply === 'string' && aaveDoor.reply.includes('Add Aave with this ask ready](/chat?mcps=aave-free&prompt='),
       JSON.stringify(aaveDoor).slice(0, 220),
     )
+    // Door audit (Lane O): every gate that needs a missing dapp answers the
+    // deep-link door — a full grammar match must never silently fall to the
+    // planner (guardian did) or refuse without the add link (cross-chain did).
+    const guardianDoor = await fetch(`${BASE}/api/chat`, {
+      method: 'POST', headers: { 'content-type': 'application/json', 'x-yf-no-ask-log': '1' },
+      body: JSON.stringify({ message: 'protect my ETH long with a 5% stop', activeServers: [] }),
+    }).then((r) => r.json())
+    check(
+      'guardian door: an arm ask without the HL agent answers the door (never the planner)',
+      typeof guardianDoor.reply === 'string' && guardianDoor.reply.includes('Add Hyperliquid with this ask ready](/chat?mcps=hyperliquid-free&prompt='),
+      JSON.stringify(guardianDoor).slice(0, 220),
+    )
+    const ccDoor = await fetch(`${BASE}/api/chat`, {
+      method: 'POST', headers: { 'content-type': 'application/json', 'x-yf-no-ask-log': '1' },
+      body: JSON.stringify({ message: 'swap 5 USDC from base to polygon', activeServers: [], walletAddress: '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045' }),
+    }).then((r) => r.json())
+    check(
+      'cross-chain door: no NEAR agent → the refusal carries the add-with-ask deep link',
+      typeof ccDoor.reply === 'string' && ccDoor.reply.includes('Add NEAR Intents with this ask ready](/chat?mcps=near-intents-mcp-yeetful&prompt='),
+      JSON.stringify(ccDoor).slice(0, 220),
+    )
 
     // ── Transfer segments (the "swap … then send …" chaining ask) ──────────
     const sendTo = '0x6F93fa8B383E51D59DDfC87988AFC964d6ffb5Da'

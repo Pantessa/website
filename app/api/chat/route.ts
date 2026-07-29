@@ -927,6 +927,15 @@ async function handleChatTurn(req: NextRequest) {
     // point at the one-signature approval. Requires the Hyperliquid agent in
     // the set so a stray "stop loss" in another context never claims a turn.
     const armAsk = parseGuardianArm(message)
+    if (armAsk && !hlAgentOf(activeServers).agent) {
+      // Full guardian grammar matched but Hyperliquid isn't in the set — the
+      // add-the-dapp door, never a silent fall to the planner (#570/#595
+      // pattern; the grammar's own specificity is the "stray stop loss" guard).
+      nativeTrace({ type: 'note', level: 'warn', label: 'guardian layer: arm ask parsed but no Hyperliquid agent in the set — answering the add-the-dapp door' })
+      return NextResponse.json({
+        reply: `🛡️ Guardian protection runs right here — it just needs the **Hyperliquid** dapp in this chat's set. **[Add Hyperliquid with this ask ready](/chat?mcps=hyperliquid-free&prompt=${encodeURIComponent(message)})** (it prefills — you press send), or add it from the rail and ask again.`,
+      })
+    }
     if (armAsk && hlAgentOf(activeServers).agent) {
       nativeTrace({ type: 'status', label: `guardian layer claimed the turn: ${armAsk.kind} on ${armAsk.coin} (${armAsk.triggerMode} ${armAsk.triggerValue}) — planner bypassed` })
       if (!walletAddress) {
@@ -1467,7 +1476,7 @@ async function handleChatTurn(req: NextRequest) {
         const nativeNames = APP_CHAINS.map((c) => c.name).join(' / ')
         nativeTrace({ type: 'note', level: 'warn', label: `native swap layer declined: cross-chain ask (${xc.chains.join(' → ')}) but no cross-chain agent in the set — pointing at NEAR Intents, no build` })
         return NextResponse.json({
-          reply: `🔗 That swap involves ${named}, and Yeetful's built-in swap tools cover ${nativeNames}. Add the **NEAR Intents (Free)** agent to your set and ask again — it swaps any asset to any asset across ~35 chains with ONE transfer you sign (unfillable swaps auto-refund). Or pick one of the supported chains and I'll build it there.`,
+          reply: `🔗 That swap involves ${named}, and Yeetful's built-in swap tools cover ${nativeNames}. Cross-chain runs on **NEAR Intents (Free)** — any asset to any asset across ~35 chains with ONE transfer you sign (unfillable swaps auto-refund). **[Add NEAR Intents with this ask ready](/chat?mcps=near-intents-mcp-yeetful&prompt=${encodeURIComponent(message)})** (it prefills — you press send), or pick one of the supported chains and I'll build it there.`,
         })
       }
       if (crossChain && ccAgent.agent && !ccAgent.usable) {
