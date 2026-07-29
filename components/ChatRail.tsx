@@ -19,7 +19,7 @@ import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Boxes, Check, Globe, Info, LayoutDashboard, ListChecks, Loader2, MessageSquare, PanelLeftClose, Plus, Trash2 } from 'lucide-react'
+import { Boxes, Check, Globe, Info, LayoutDashboard, Link2, ListChecks, Loader2, MessageSquare, PanelLeftClose, Plus, Trash2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useYeetfulStore } from '@/lib/store'
 import { useSession } from '@/lib/session'
@@ -28,6 +28,7 @@ import { useRunningWork } from '@/lib/use-running-work'
 import BrandIcon from '@/components/BrandIcon'
 import AddMcpModal from '@/components/AddMcpModal'
 import JobsRailTab from '@/components/JobsRailTab'
+import LinksRailTab from '@/components/LinksRailTab'
 
 const RAIL_WIDTH = 248
 
@@ -229,12 +230,16 @@ export default function ChatRail() {
                   )}
                 >
                   <Boxes className="w-3.5 h-3.5" />
-                  MCPs <span className="mono text-[10px] text-[color:var(--muted-2)]">{active.length}</span>
+                  MCPs
                 </button>
-                {/* Three tabs share the 248px rail, ordered by importance:
+                {/* Four tabs share the 248px rail, ordered by importance:
                     MCPs (the working set), Jobs (running work — its badge is
-                    the one number that must interrupt), then Chats (history:
-                    findable, never competing for attention). */}
+                    the one number that must interrupt), Links (the creator's
+                    links — minting lives where the aha happens), then Chats
+                    (history: findable, never competing for attention). The
+                    MCPs inline count went with the fourth tab — actives are
+                    pinned at the top of the list, and the collapsed toolbar
+                    chip still carries the number. */}
                 <button
                   role="tab"
                   aria-selected={railTab === 'jobs'}
@@ -250,6 +255,19 @@ export default function ChatRail() {
                   {badgeCount > 0 && (
                     <span className="mono text-[10px] px-1 rounded-full bg-amber-500/15 text-amber-400">{badgeCount}</span>
                   )}
+                </button>
+                <button
+                  role="tab"
+                  aria-selected={railTab === 'links'}
+                  onClick={() => setRailTab('links')}
+                  title="Your intent links — mint and share from here"
+                  className={cn(
+                    'flex-1 flex items-center justify-center gap-1 rounded-[10px] px-1 py-1.5 text-[11px] font-medium transition-colors',
+                    railTab === 'links' ? 'bg-[var(--surf-2)] text-white' : 'text-[color:var(--muted)] hover:text-white',
+                  )}
+                >
+                  <Link2 className="w-3.5 h-3.5" />
+                  Links
                 </button>
                 <button
                   role="tab"
@@ -277,6 +295,8 @@ export default function ChatRail() {
 
             {railTab === 'jobs' ? (
               <JobsRailTab onAct={closeOnMobile} />
+            ) : railTab === 'links' ? (
+              <LinksRailTab />
             ) : railTab === 'mcps' ? (
               <>
                 {/* Free / Paid segmented toggle */}

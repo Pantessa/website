@@ -24,8 +24,17 @@ function McpMark({ slug, label, size = 14 }: { slug: string; label: string; size
   )
 }
 
+/** Keep only mintable slugs, capped at the picker's 4 — same rule the
+ *  query-prefill path applies. */
+function sanitizePicks(slugs: string[]): string[] {
+  const known = new Set(MINTABLE_MCPS.map((x) => x.slug))
+  return slugs.map((s) => s.trim()).filter((s) => known.has(s)).slice(0, 4)
+}
+
 export function MintLinkForm({
   readQueryPrefill,
+  initialAsk,
+  initialMcps,
   externalError,
   onMinted,
   className,
@@ -33,13 +42,19 @@ export function MintLinkForm({
   /** Read the chat handoff (?ask= + ?mcps=) from the URL once on mount —
    *  the dashboard page's contract with ~10 prefill call sites. */
   readQueryPrefill?: boolean
+  /** Direct prefill for non-URL surfaces (the rail's mint modal). */
+  initialAsk?: string
+  initialMcps?: string[]
   /** A load-level error (the 401 sign-in line) shown in the mint card's
    *  error slot when the form itself hasn't errored. */
   externalError?: string | null
-  onMinted?: () => void
+  /** Fires after a successful mint with the new link — surfaces that want a
+   *  "here's your link" moment (the rail's mint modal) read it; the
+   *  dashboard just reloads its table and ignores the payload. */
+  onMinted?: (link: { slug: string; url: string; ask: string }) => void
   className?: string
 }) {
-  const [ask, setAsk] = useState('')
+  const [ask, setAsk] = useState(() => (initialAsk ?? '').slice(0, 400))
   const [redirectUrl, setRedirectUrl] = useState('')
   // Partner-promo limits — all optional, validated server-side at mint.
   const [expiresAt, setExpiresAt] = useState('')
@@ -52,7 +67,7 @@ export function MintLinkForm({
   // suggested set (composeMcps — same rules the mint API falls back to when
   // nothing is picked). A chat handoff (?ask= + ?mcps=) arrives with the
   // working set that produced the aha already lit.
-  const [pickedMcps, setPickedMcps] = useState<string[]>([])
+  const [pickedMcps, setPickedMcps] = useState<string[]>(() => sanitizePicks(initialMcps ?? []))
 
   // Prefill from the chat's "create intent link" handoff — read once.
   useEffect(() => {
@@ -62,8 +77,7 @@ export function MintLinkForm({
     if (a) setAsk(a.slice(0, 400))
     const m = sp.get('mcps')
     if (m) {
-      const known = new Set(MINTABLE_MCPS.map((x) => x.slug))
-      const picked = m.split(',').map((s) => s.trim()).filter((s) => known.has(s)).slice(0, 4)
+      const picked = sanitizePicks(m.split(','))
       if (picked.length) setPickedMcps(picked)
     }
   }, [readQueryPrefill])
@@ -98,12 +112,13 @@ export function MintLinkForm({
         setMintError(data.error ?? 'Mint failed.')
         return
       }
+      const minted = ask.trim()
       setAsk('')
       setRedirectUrl('')
       setExpiresAt('')
       setMaxSigns('')
       setAllowText('')
-      onMinted?.()
+      onMinted?.({ slug: String(data.slug), url: String(data.url), ask: minted })
     } finally {
       setMinting(false)
     }
