@@ -137,7 +137,9 @@ export function CreatorPagePanel({ className }: { className?: string }) {
           {/* min-w keeps the copy readable — at phone widths the claim
               controls wrap BELOW instead of crushing this column */}
           <div className="min-w-[240px] flex-1">
-            <p className="text-[14px] font-medium text-white">Name your page</p>
+            {/* var(--fg), not text-white — this panel renders on the themed
+                dashboard AND in the rail modal; white vanishes in light mode. */}
+            <p className="text-[14px] font-medium text-[color:var(--fg)]">Name your page</p>
             <p className="text-[12px] text-[color:var(--muted-2)] mt-0.5">
               One name — <span className="mono">/l/your-name</span> — and every link you mint
               lives on one shareable page. Then paste your site and the page wears your brand.

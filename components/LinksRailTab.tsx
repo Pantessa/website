@@ -17,6 +17,7 @@ import { useSession } from '@/lib/session'
 import { useIntentLinks, type LinkRow } from '@/lib/intent-links-ui'
 import { dismissOnboarding, onboardingDismissed, useOnboardingStatus, type OnboardingStatus } from '@/lib/onboarding'
 import MintLinkModal from '@/components/MintLinkModal'
+import CreatorPageModal from '@/components/CreatorPageModal'
 
 // One CTA look for every journey step — accent-based so both themes hold
 // (the done-state emerald sweep is #597 Lane U territory; don't add to it).
@@ -126,15 +127,19 @@ function SignedInLinks({ activeSlugs }: { activeSlugs: string[] }) {
   const { status, refresh: refreshStatus } = useOnboardingStatus()
   const [journeyDismissed, setJourneyDismissed] = useState(true)
   const [mintOpen, setMintOpen] = useState(false)
+  const [pageOpen, setPageOpen] = useState(false)
   const [copied, setCopied] = useState<string | null>(null)
   const [handle, setHandle] = useState<string | null>(null)
 
-  useEffect(() => {
-    setJourneyDismissed(onboardingDismissed())
+  const fetchHandle = () => {
     void fetch('/api/intent-links/handle', { cache: 'no-store' })
       .then((r) => (r.ok ? r.json() : null))
       .then((d: { handle: string | null } | null) => setHandle(d?.handle ?? null))
       .catch(() => {})
+  }
+  useEffect(() => {
+    setJourneyDismissed(onboardingDismissed())
+    fetchHandle()
   }, [])
 
   const copy = (slug: string) => {
@@ -241,13 +246,17 @@ function SignedInLinks({ activeSlugs }: { activeSlugs: string[] }) {
             /l/{handle} — your page
           </a>
         ) : (
-          <Link
-            href="/dashboard/links"
-            className="block text-[11px] text-[color:var(--muted)] hover:text-white transition-colors"
+          // The page build happens IN PLACE too — the modal is the same
+          // CreatorPagePanel the dashboard composes (claim + brand + OG
+          // preview), not a navigation away from the conversation.
+          <button
+            type="button"
+            onClick={() => setPageOpen(true)}
+            className="block w-full text-left text-[11px] text-[color:var(--muted)] hover:text-white transition-colors"
             title="Claim /l/your-name — every link you mint on one shareable page"
           >
             Name your page → one branded page for every link
-          </Link>
+          </button>
         )}
         <Link
           href="/dashboard/links"
@@ -265,6 +274,15 @@ function SignedInLinks({ activeSlugs }: { activeSlugs: string[] }) {
           refreshStatus()
         }}
         initialMcps={activeSlugs}
+      />
+      <CreatorPageModal
+        open={pageOpen}
+        onClose={() => {
+          setPageOpen(false)
+          // The panel manages its own claim state — re-read the handle so a
+          // just-claimed page shows in the footer the moment the modal closes.
+          fetchHandle()
+        }}
       />
     </>
   )
