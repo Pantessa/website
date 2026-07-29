@@ -13,6 +13,7 @@
 // this component by construction. A chain shows its SHAPE; that's the point.
 
 import { getProtocolMark } from '@/components/protocol-marks'
+import { getChainMark } from '@/components/chain-marks'
 import { timeAgo } from '@/lib/dashboard-ui'
 
 export interface ChainStep {
@@ -21,6 +22,10 @@ export interface ChainStep {
   builder: string
   venue: string | null
   usd: number | null
+  /** Short chain name, once the step has settled somewhere. */
+  chain: string | null
+  /** The step's own receipt on that chain's explorer. */
+  txUrl: string | null
 }
 export interface BuiltChain {
   status: string
@@ -93,12 +98,38 @@ const CHAIN_STATE: Record<string, { label: string; cls: string }> = {
 
 const fmtUsd = (n: number) => (n >= 1000 ? `$${Math.round(n).toLocaleString('en-US')}` : `$${n.toFixed(2)}`)
 
-function StepMark({ venue }: { venue: string | null }) {
-  const Mark = venue ? getProtocolMark(venue === 'near-intents' ? 'near' : venue) : null
-  if (!Mark) return null
+/** What goes inside a step's node. Protocol mark first, then the chain it
+ *  settled on, and the kind glyph as the last resort — a node with neither
+ *  used to render as an empty rounded box, which read as a broken image
+ *  rather than as "a wait". */
+function StepFace({ step }: { step: ChainStep }) {
+  const Proto = step.venue ? getProtocolMark(step.venue === 'near-intents' ? 'near' : step.venue) : null
+  if (Proto)
+    return (
+      <>
+        <span className="chn__mark">
+          <Proto size={13} />
+        </span>
+        <b className="chn__kind" aria-hidden>
+          <KindMark kind={step.kind} />
+        </b>
+      </>
+    )
+  const Chain = getChainMark(step.chain?.toLowerCase() ?? null)
+  if (Chain)
+    return (
+      <>
+        <span className="chn__mark">
+          <Chain size={14} />
+        </span>
+        <b className="chn__kind" aria-hidden>
+          <KindMark kind={step.kind} />
+        </b>
+      </>
+    )
   return (
-    <span className="chn__mark">
-      <Mark size={13} />
+    <span className="chn__solokind" aria-hidden>
+      <KindMark kind={step.kind} />
     </span>
   )
 }
@@ -126,18 +157,44 @@ export default function ActivityChains({ chains }: { chains: BuiltChain[] }) {
             </div>
 
             <ol className="chn__steps">
-              {c.steps.map((s, j) => (
-                <li className={`chn__step is-${s.status}`} key={j}>
-                  <span className="chn__node" title={KIND_TITLE[s.kind] ?? s.kind}>
-                    <StepMark venue={s.venue} />
-                    <b className="chn__kind" aria-hidden>
-                      <KindMark kind={s.kind} />
-                    </b>
-                  </span>
-                  <span className="chn__label">{STEP_LABEL[s.builder] ?? s.builder.replace(/^native-/, '')}</span>
-                  {s.usd != null && s.usd > 0 && <span className="chn__usd mono">{fmtUsd(s.usd)}</span>}
-                </li>
-              ))}
+              {c.steps.map((s, j) => {
+                const label = STEP_LABEL[s.builder] ?? s.builder.replace(/^native-/, '')
+                const inner = (
+                  <>
+                    <span className="chn__node" title={KIND_TITLE[s.kind] ?? s.kind}>
+                      <StepFace step={s} />
+                    </span>
+                    <span className="chn__label">{label}</span>
+                    {s.usd != null && s.usd > 0 && <span className="chn__usd mono">{fmtUsd(s.usd)}</span>}
+                    {s.txUrl && (
+                      <span className="chn__ext mono" aria-hidden>
+                        ↗
+                      </span>
+                    )}
+                  </>
+                )
+                return (
+                  <li className={`chn__step is-${s.status}`} key={j}>
+                    {/* A settled step links to its own receipt on the right
+                        chain's explorer — the hash is public the moment it
+                        lands, and the whole page's argument is that you never
+                        have to take our word for it. */}
+                    {s.txUrl ? (
+                      <a
+                        className="chn__link"
+                        href={s.txUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        title={`${label} — view on the ${s.chain} explorer`}
+                      >
+                        {inner}
+                      </a>
+                    ) : (
+                      inner
+                    )}
+                  </li>
+                )
+              })}
             </ol>
 
             <div className="chn__tail">
@@ -156,6 +213,9 @@ export default function ActivityChains({ chains }: { chains: BuiltChain[] }) {
         </span>
         <span className="chn__leg">
           <b className="chn__kind"><KindMark kind="auto" /></b> runs under consent already given
+        </span>
+        <span className="chn__leg">
+          <b className="chn__extleg mono">↗</b> settled — open its receipt on-chain
         </span>
         <span className="chn__legnote">shape only — never the ask</span>
       </p>

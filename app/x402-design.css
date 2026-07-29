@@ -2965,10 +2965,14 @@
   /* The figure is stacked twice: the readable text, and a blurred copy behind
      it that gives the digits a light source instead of a flat fill. */
   .acthero__num { position: relative; margin-top: 10px; }
+  /* line-height 1.12, not .96: `background-clip: text` paints the gradient
+     only inside the element's box, so a tight line box cropped the top of the
+     ascenders — the "$" and the digits were visibly cut off. The box has to
+     contain the ink. */
   .acthero__numtext, .acthero__numglow {
     font-family: var(--font-serif); font-weight: 500; font-optical-sizing: auto;
-    font-size: clamp(64px, 12vw, 176px); line-height: .96; letter-spacing: -.028em;
-    font-variant-numeric: tabular-nums; display: block;
+    font-size: clamp(64px, 12vw, 176px); line-height: 1.12; letter-spacing: -.028em;
+    font-variant-numeric: tabular-nums; display: block; padding-block: .02em;
   }
   .acthero__numtext {
     position: relative; z-index: 1; color: var(--fg);
@@ -3131,6 +3135,19 @@
   .chn__step.is-failed .chn__node { border-color: color-mix(in srgb, var(--sell) 50%, transparent); }
   .chn__step.is-offered .chn__node, .chn__step.is-running .chn__node { border-color: color-mix(in srgb, #e8c468 55%, transparent); }
   .chn__mark { display: flex; }
+  /* A step with neither a protocol mark nor a chain mark shows its kind at
+     full size instead of an empty box with a speck in the corner. */
+  .chn__solokind { display: flex; align-items: center; justify-content: center; color: var(--muted); }
+  .chn__solokind .chn__kindsvg { width: 14px; height: 14px; }
+  .chn__step.is-done .chn__solokind { color: var(--accent); }
+
+  /* a settled step opens its own receipt */
+  .chn__link { display: inline-flex; align-items: center; gap: 8px; border-radius: 8px; transition: opacity .15s; }
+  .chn__link:hover { opacity: .82; }
+  .chn__link:hover .chn__label { color: var(--fg); text-decoration: underline; text-underline-offset: 3px; text-decoration-color: color-mix(in srgb, var(--accent) 55%, transparent); }
+  .chn__ext { font-size: 10px; color: var(--muted-2); transition: color .15s; }
+  .chn__link:hover .chn__ext { color: var(--accent); }
+  .chn__extleg { font-weight: 400; font-size: 10px; color: var(--muted-2); height: 15px; width: 15px; border-radius: 999px; display: inline-flex; align-items: center; justify-content: center; border: 1px solid var(--line); }
   .chn__kind {
     position: absolute; right: -5px; bottom: -5px; line-height: 1;
     height: 15px; width: 15px; border-radius: 999px; display: flex; align-items: center; justify-content: center;

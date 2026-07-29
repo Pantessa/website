@@ -1198,7 +1198,7 @@ async function main() {
   const ov2 = (await (await fetch(`${BASE}/api/activity/overview`)).json()) as {
     hero: { systemTotalUsd: number }
     flow: { source: string; venue: string; usd: number; n: number }[]
-    chains: { status: string; usd: number; at: string; steps: { kind: string; status: string; builder: string; venue: string | null; usd: number | null }[] }[]
+    chains: { status: string; usd: number; at: string; steps: { kind: string; status: string; builder: string; venue: string | null; usd: number | null; chain: string | null; txUrl: string | null }[] }[]
   }
   check(
     'overview: the flow map is a clean partition — its lanes sum to THE number',
@@ -1221,14 +1221,28 @@ async function main() {
     Array.isArray(ov2.chains) && ov2.chains.every((c) => c.steps.length > 1 && typeof c.status === 'string'),
   )
   check(
-    'overview: P1 — chains ship SHAPE only (no title, wallet, params or artifact)',
+    'overview: P1 — chains ship SHAPE only (no title, wallet, params or raw result)',
     ov2.chains.every((c) => {
       const own = Object.keys(c).sort().join(',') === 'at,status,steps,usd'
       const steps = c.steps.every(
-        (s) => Object.keys(s).sort().join(',') === 'builder,kind,status,usd,venue',
+        (s) => Object.keys(s).sort().join(',') === 'builder,chain,kind,status,txUrl,usd,venue',
       )
       return own && steps
     }),
+  )
+  // A step's receipt is ONE narrowed field: an explorer URL ending in the tx
+  // hash. The `result` blob it comes from also holds compiled human titles, so
+  // this pins that nothing else escaped with it.
+  check(
+    'overview: a chain step links to a real explorer tx, or to nothing at all',
+    ov2.chains.every((c) =>
+      c.steps.every((s) => s.txUrl === null || /^https:\/\/[a-z0-9.-]+\/tx\/0x[0-9a-fA-F]{64}$/.test(s.txUrl)),
+    ),
+    JSON.stringify(ov2.chains.flatMap((c) => c.steps.map((s) => s.txUrl)).filter(Boolean).slice(0, 2)),
+  )
+  check(
+    'overview: a linked step names the chain it settled on (never a bare hash)',
+    ov2.chains.every((c) => c.steps.every((s) => (s.txUrl === null) === (s.chain === null))),
   )
   // (No HTML pin for the flow/chains headings: both sections live behind the
   // overview's client fetch, so they are absent from the server-rendered
