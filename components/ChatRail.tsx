@@ -446,13 +446,13 @@ export default function ChatRail() {
             <Link
               href="/dashboard"
               onClick={closeOnMobile}
-              title="Yeetful dashboard — keys, embeds, billing"
+              title="Yeetful dashboard — links, keys, billing"
               className="flex-shrink-0 flex items-center gap-2.5 px-4 py-3 border-t border-[var(--line)] text-[color:var(--muted)] hover:text-white hover:bg-[var(--surf-1)] transition-colors"
             >
               <LayoutDashboard className="w-4 h-4 flex-shrink-0" aria-hidden />
               <span className="flex-1 min-w-0">
                 <span className="block text-xs font-medium">Dashboard</span>
-                <span className="block text-[10px] text-[color:var(--muted-2)]">keys · embeds · billing</span>
+                <span className="block text-[10px] text-[color:var(--muted-2)]">links · keys · billing</span>
               </span>
             </Link>
           </div>
