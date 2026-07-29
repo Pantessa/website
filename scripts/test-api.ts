@@ -161,6 +161,7 @@ import {
   type HlOrderIntent,
 } from '../lib/hyperliquid-exec'
 import { compileJobAsk as compileJobAskFull, type CompiledJob } from '../lib/jobs'
+import { LIVE_JOB_STATUSES, jobStatusWord, statusTone } from '../lib/step-status'
 
 // Harness shim: the pre-pairing checks below narrow on `'problem' in x` only.
 // A stock-pairing clarify folds into a problem-shaped result here (their asks
@@ -6507,6 +6508,35 @@ async function main() {
       'cross-chain door: no NEAR agent → the refusal carries the add-with-ask deep link',
       typeof ccDoor.reply === 'string' && ccDoor.reply.includes('Add NEAR Intents with this ask ready](/chat?mcps=near-intents-mcp-yeetful&prompt='),
       JSON.stringify(ccDoor).slice(0, 220),
+    )
+
+    // ── One progress vocabulary (Lane U, PLAN-progress-ui.md): run-state
+    // color lives in the --done/--live/--fail tokens (both theme blocks —
+    // hardcoded emerald never flipped in light mode), and the word/live-set
+    // module is the single source across JobCard/rail/logs.
+    const fsMod = await import('node:fs')
+    const designCss = fsMod.readFileSync('app/x402-design.css', 'utf8')
+    check(
+      'progress tokens: --done/--fail defined in BOTH the dark root and the light block',
+      (designCss.match(/--done:/g) ?? []).length >= 2 && (designCss.match(/--fail:/g) ?? []).length >= 2 && designCss.includes('--live:'),
+    )
+    check(
+      'step-status: one live-set + canonical words + token tones',
+      LIVE_JOB_STATUSES.length === 3 && jobStatusWord('done') === 'done' && jobStatusWord('waiting_signature') === 'needs your signature' && statusTone('failed') === 'var(--fail)' && statusTone('done') === 'var(--done)',
+    )
+    const progressSurfaces = [
+      'components/JobCard.tsx',
+      'components/SendTxChain.tsx',
+      'components/SendTxButton.tsx',
+      'components/JobsRailTab.tsx',
+      'components/SharedJobLog.tsx',
+      'components/GuardianPolicyCard.tsx',
+      'app/r/[slug]/page.tsx',
+    ]
+    check(
+      'progress surfaces: zero hardcoded emerald/red state colors (tokens only)',
+      progressSurfaces.every((f) => !/emerald-\d|red-400|#f87171/.test(fsMod.readFileSync(f, 'utf8'))),
+      progressSurfaces.filter((f) => /emerald-\d|red-400|#f87171/.test(fsMod.readFileSync(f, 'utf8'))).join(','),
     )
 
     // ── Transfer segments (the "swap … then send …" chaining ask) ──────────

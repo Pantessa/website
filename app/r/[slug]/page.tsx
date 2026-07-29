@@ -82,7 +82,7 @@ export default async function ReceiptPage({ params }: Params) {
             {KIND_LABEL[receipt.kind] ?? 'Receipt'} · shared by its owner
           </span>
           {receipt.standing && (
-            <span className="mono text-[10px] uppercase tracking-widest px-2 py-1 rounded-full border border-emerald-500/40 text-emerald-400">
+            <span className="mono text-[10px] uppercase tracking-widest px-2 py-1 rounded-full border border-[color:color-mix(in_srgb,var(--done)_40%,transparent)] text-[color:var(--done)]">
               runs unattended
             </span>
           )}
@@ -115,7 +115,7 @@ export default async function ReceiptPage({ params }: Params) {
                 const chain = chainById(tx.chainId)
                 return (
                   <div key={tx.hash} className="flex items-center gap-1.5 text-[11px] mono text-[color:var(--muted-2)] min-w-0">
-                    <span className="text-emerald-400 flex-shrink-0">✓</span>
+                    <span className="text-[color:var(--done)] flex-shrink-0">✓</span>
                     {tx.title && <span className="text-[color:var(--muted)] truncate">{tx.title}</span>}
                     <a
                       href={`${chain?.explorerTx ?? 'https://basescan.org/tx/'}${tx.hash}`}
@@ -137,7 +137,7 @@ export default async function ReceiptPage({ params }: Params) {
           {/* the trust line — money surface, zero winks */}
           <div className="px-5 py-3 bg-[color:color-mix(in_srgb,var(--fg)_3%,transparent)] border-t border-[var(--line)] flex items-center justify-between gap-3">
             <span className="inline-flex items-center gap-1.5 text-[11px] text-[color:var(--muted)]">
-              <ShieldCheck className="w-3.5 h-3.5 text-emerald-400 flex-shrink-0" aria-hidden />
+              <ShieldCheck className="w-3.5 h-3.5 text-[color:var(--done)] flex-shrink-0" aria-hidden />
               Deterministic build · fail-closed guards · only {shortWallet(receipt.wallet)} could sign
             </span>
             <span className="mono text-[10px] text-[color:var(--muted-2)] flex-shrink-0">{when}</span>

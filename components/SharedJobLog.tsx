@@ -7,6 +7,7 @@
 
 import { CheckCircle2, XCircle, Circle, ShieldCheck, ExternalLink, Timer } from 'lucide-react'
 import { chainById } from '@/lib/chains'
+import { jobStatusWord } from '@/lib/step-status'
 
 export interface SharedJobStep {
   seq: number
@@ -106,8 +107,8 @@ function fmtTime(d: Date): string {
 }
 
 function StatusIcon({ status, kind }: { status: string; kind: string }) {
-  if (status === 'done') return <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0" aria-hidden />
-  if (status === 'failed') return <XCircle className="w-4 h-4 text-red-400 flex-shrink-0" aria-hidden />
+  if (status === 'done') return <CheckCircle2 className="w-4 h-4 text-[color:var(--done)] flex-shrink-0" aria-hidden />
+  if (status === 'failed') return <XCircle className="w-4 h-4 text-[color:var(--fail)] flex-shrink-0" aria-hidden />
   if (status === 'skipped') return <Circle className="w-3.5 h-3.5 text-[color:var(--line-2)] flex-shrink-0" aria-hidden />
   return <Circle className={`w-3.5 h-3.5 flex-shrink-0 ${kind === 'wait' ? 'text-[color:var(--muted)]' : 'text-[color:var(--line-2)]'}`} aria-hidden />
 }
@@ -122,14 +123,9 @@ export default function SharedJobLog({ job }: { job: SharedJob }) {
   const chains = new Set(steps.flatMap((s) => txsOf(s).map((t) => t.chainId)))
   const duration = fmtDuration(job.updatedAt.getTime() - job.createdAt.getTime())
 
-  const headline =
-    job.status === 'done'
-      ? '✓ complete'
-      : job.status === 'failed'
-        ? 'failed'
-        : job.status === 'canceled'
-          ? 'canceled'
-          : 'in progress'
+  // One vocabulary with JobCard/the rail — the ✓ lives in the tone/icon,
+  // never baked into the copy.
+  const headline = jobStatusWord(job.status)
 
   return (
     <div className="mt-2.5 rounded-xl border border-[var(--line)] overflow-hidden text-left">
@@ -144,7 +140,7 @@ export default function SharedJobLog({ job }: { job: SharedJob }) {
         </span>
         <span
           className={`text-[11px] mono flex-shrink-0 ${
-            job.status === 'done' ? 'text-emerald-400' : job.status === 'failed' ? 'text-red-400' : 'text-[color:var(--muted)]'
+            job.status === 'done' ? 'text-[color:var(--done)]' : job.status === 'failed' ? 'text-[color:var(--fail)]' : 'text-[color:var(--muted)]'
           }`}
         >
           {headline}
@@ -218,7 +214,7 @@ export default function SharedJobLog({ job }: { job: SharedJob }) {
 
               {/* wait/auto outcomes (settlement checks, HL fills) */}
               {note && (
-                <div className={`ml-6 mt-0.5 text-[11px] ${step.status === 'failed' ? 'text-red-400' : 'text-[color:var(--muted-2)]'}`}>
+                <div className={`ml-6 mt-0.5 text-[11px] ${step.status === 'failed' ? 'text-[color:var(--fail)]' : 'text-[color:var(--muted-2)]'}`}>
                   {external ? (
                     <a href={external} target="_blank" rel="noopener noreferrer" className="underline decoration-dotted underline-offset-2 hover:text-[color:var(--fg)]">
                       {note.slice(0, 180)}
@@ -239,7 +235,7 @@ export default function SharedJobLog({ job }: { job: SharedJob }) {
                   <ul className="mt-1 pl-4 space-y-0.5 text-[color:var(--muted-2)] [overflow-wrap:anywhere]">
                     {checks.map((c, i) => (
                       <li key={c.id ?? i}>
-                        <span className={c.ok !== false ? 'text-emerald-400' : 'text-amber-400'}>{c.ok !== false ? '✓' : '⚠'}</span>{' '}
+                        <span className={c.ok !== false ? 'text-[color:var(--done)]' : 'text-amber-400'}>{c.ok !== false ? '✓' : '⚠'}</span>{' '}
                         {c.note ?? c.id}
                       </li>
                     ))}
@@ -253,7 +249,7 @@ export default function SharedJobLog({ job }: { job: SharedJob }) {
         {/* footer: the money-moved line marketing screenshots */}
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1 pt-1.5 border-t border-[var(--line)] text-[11px] mono text-[color:var(--muted-2)]">
           {job.status === 'failed' && job.failReason ? (
-            <span className="text-red-400">{job.failReason.slice(0, 160)}</span>
+            <span className="text-[color:var(--fail)]">{job.failReason.slice(0, 160)}</span>
           ) : (
             <>
               {job.valueUsd != null && job.valueUsd > 0 && (

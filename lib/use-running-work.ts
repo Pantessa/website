@@ -8,6 +8,7 @@
 // light GETs per interval.
 
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { LIVE_JOB_STATUSES } from '@/lib/step-status'
 
 export interface RunningJob {
   id: string
@@ -48,8 +49,9 @@ export interface RunningGuard {
   createdAt: string
 }
 
-/** Job statuses that count as "running now" (the badge's numerator). */
-export const LIVE_JOB_STATUS = new Set(['running', 'waiting_signature', 'waiting_settlement'])
+/** Job statuses that count as "running now" (the badge's numerator) —
+ * derived from the one canonical live-set in lib/step-status. */
+export const LIVE_JOB_STATUS = new Set<string>(LIVE_JOB_STATUSES)
 
 export function useRunningWork(enabled: boolean, intervalMs = 15_000) {
   const [jobs, setJobs] = useState<RunningJob[]>([])
