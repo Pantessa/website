@@ -1649,6 +1649,12 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
                               jobId: (msg.meta as { jobId: string }).jobId,
                             })
                           }}
+                          onSettled={(info) => {
+                            // Additive turn outcome (embed contract): a job
+                            // reached a terminal state. Hosts that don't know
+                            // 'settled' ignore it; /i flips its arc to done.
+                            onEmbedEvent?.('turn', { outcome: 'settled', jobId: info.jobId, jobStatus: info.status, valueUsd: info.valueUsd ?? undefined })
+                          }}
                         />
                       )}
                     {msg.role === 'assistant' &&

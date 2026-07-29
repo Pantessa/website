@@ -6545,6 +6545,12 @@ async function main() {
         yprogSurfaces.every((f) => fsMod.readFileSync(f, 'utf8').includes('yprog')),
       yprogSurfaces.filter((f) => !fsMod.readFileSync(f, 'utf8').includes('yprog')).join(','),
     )
+    check(
+      'settled arc: JobCard one-shot onSettled → ChatInterface forwards outcome settled → /i flips the bar to done',
+      fsMod.readFileSync('components/JobCard.tsx', 'utf8').includes('onSettled') &&
+        fsMod.readFileSync('components/ChatInterface.tsx', 'utf8').includes("outcome: 'settled'") &&
+        fsMod.readFileSync('components/IntentRuntime.tsx', 'utf8').includes("=== 'settled'"),
+    )
 
     // ── Transfer segments (the "swap … then send …" chaining ask) ──────────
     const sendTo = '0x6F93fa8B383E51D59DDfC87988AFC964d6ffb5Da'
