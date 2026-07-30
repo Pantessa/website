@@ -60,6 +60,21 @@ export function AaveMark({ size = 22 }: { size?: number }) {
   )
 }
 
+export function MorphoMark({ size = 22 }: { size?: number }) {
+  // Morpho's two-wing logomark (official header logomark, morpho.org). Four
+  // paths: each wing is a large sweep plus an inner fold the brand itself
+  // renders at 0.8 opacity — keeping that in the monochrome version is what
+  // gives the mark its depth without needing the blue duotone.
+  return (
+    <svg viewBox="0 0 22 20" width={size} height={(size * 20) / 22} fill="currentColor" aria-hidden style={{ display: 'block' }}>
+      <path opacity="0.8" d="M2.5321 13.5905V19.4119C2.5321 19.7702 2.83539 19.919 2.92975 19.9528C3.0241 19.9934 3.34086 20.0813 3.62393 19.8176L8.02782 15.5854C8.40286 15.2251 8.76481 14.8463 9.03681 14.403C9.16483 14.1947 9.2179 14.0773 9.2179 14.0773C9.48752 13.5296 9.48752 13.0023 9.22456 12.4749C8.83382 11.6906 7.83626 10.8928 6.33325 10.1355L3.76547 11.5689C3.0039 12.0016 2.5321 12.7656 2.5321 13.5905Z" />
+      <path d="M0 0.642806V6.74819C0 7.5122 0.512226 8.18831 1.24012 8.40467C3.72033 9.12136 8.04046 10.6629 9.08514 12.9279C9.21983 13.2254 9.30074 13.5162 9.32787 13.8204C10.022 12.5561 10.3388 11.1024 10.1905 9.62844C9.98823 7.53924 8.88286 5.63933 7.15759 4.42908L1.00423 0.122192C0.89638 0.0410568 0.768328 0.000488281 0.640278 0.000488281C0.53243 0.000488281 0.438076 0.0207726 0.336987 0.0748625C0.134785 0.189803 0 0.399404 0 0.642806Z" />
+      <path opacity="0.8" d="M18.9118 13.5905V19.4119C18.9118 19.7702 18.6086 19.919 18.5141 19.9528C18.4199 19.9934 18.1029 20.0813 17.82 19.8176L13.3135 15.487C13.0068 15.1922 12.7139 14.8804 12.4828 14.5231C12.2998 14.2403 12.226 14.0773 12.226 14.0773C11.9564 13.5296 11.9564 13.0023 12.2191 12.4749C12.6101 11.6906 13.6077 10.8928 15.1105 10.1355L17.6784 11.5689C18.4468 12.0016 18.9118 12.7656 18.9118 13.5905Z" />
+      <path d="M21.4481 0.642318V6.74769C21.4481 7.5117 20.9357 8.18782 20.2078 8.40418C17.7277 9.12086 13.4076 10.6624 12.3629 12.9274C12.228 13.2249 12.1471 13.5157 12.1202 13.8199C11.426 12.5556 11.1093 11.1019 11.2576 9.62797C11.4596 7.53874 12.565 5.63886 14.2905 4.4286L20.4439 0.121701C20.5517 0.0405662 20.6797 0 20.8077 0C20.9155 0 21.01 0.0202842 21.1109 0.0743741C21.3132 0.189315 21.4481 0.398914 21.4481 0.642318Z" />
+    </svg>
+  )
+}
+
 export function NearMark({ size = 22 }: { size?: number }) {
   // NEAR Protocol's "N" logomark — the official brandmark (near.org), the
   // positive-glyph form of the rounded-square badge. Square 1:1 mark.
@@ -151,6 +166,7 @@ const REGISTRY: { match: RegExp; Mark: Mark }[] = [
   { match: /(^|[^a-z])cow([^a-z]|$)|cowswap|cow-?protocol/i, Mark: CowMark },
   { match: /snapshot/i, Mark: SnapshotMark },
   { match: /aave/i, Mark: AaveMark },
+  { match: /morpho/i, Mark: MorphoMark },
   // \bnear\b (not /near/) so "near-intents-free" / "NEAR Intents" match but
   // "linear" doesn't.
   { match: /\bnear\b|near-intents/i, Mark: NearMark },
