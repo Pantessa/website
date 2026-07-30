@@ -125,7 +125,15 @@ export default async function Image({ params }: Params) {
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 17, letterSpacing: 4, color: pal.muted }}>
             <div style={{ display: 'flex', width: 8, height: 8, borderRadius: 4, background: pal.accent }} />
-            <span>{brand ? 'POWERED BY YEETFUL' : 'INTENT LINK · TAP TO RUN'}</span>
+            <span>
+              {brand
+                ? 'POWERED BY YEETFUL'
+                : live?.creator
+                  ? live.agent
+                    ? `CALL BY ${live.agent.toUpperCase().slice(0, 18)}`
+                    : 'CALL · TAP TO RUN'
+                  : 'INTENT LINK · TAP TO RUN'}
+            </span>
           </div>
         </div>
 

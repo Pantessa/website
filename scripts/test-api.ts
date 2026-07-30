@@ -1686,6 +1686,18 @@ async function main() {
     // The fee-split disclosure renders on creator-minted /i pages.
     const iPage = await (await fetch(`${BASE}/i/${slug}`)).text()
     check('intent links: /i discloses the creator fee split', /earns half of Yeetful/.test(iPage))
+    // CALL framing (C3): creator links read as a posted call and disclose
+    // the WHOLE deal (lifetime first-touch); house links stay the neutral
+    // pure-Yeetful lockup with no creator fee line.
+    check(
+      'intent links: creator /i wears the CALL framing + lifetime disclosure',
+      />Call</.test(iPage) && /lifetime, first touch/.test(iPage) && /paid calls should say so/.test(iPage),
+    )
+    const houseCallPage = await (await fetch(`${BASE}/i/protected-long`)).text()
+    check(
+      'intent links: house /i stays pure Yeetful — no call framing, no creator fee line',
+      /Intent link/.test(houseCallPage) && !/earns half of Yeetful/.test(houseCallPage) && !/>Call</.test(houseCallPage),
+    )
 
     // Plan cap: free carries 3 active links; this run minted 2, so one more
     // fits and the 4th refuses with the upgrade pointer.
