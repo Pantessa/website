@@ -29,7 +29,7 @@ import { grantViolation, type GrantPolicy } from '../lib/spend-grant'
 import { routerPrompt, parseRouterDecision, selectInferenceProvider, routeMessage, shortlistEndpoints } from '../lib/router'
 import { buildSmartRequest, computeRating, type PlannableEndpoint } from '../lib/endpoint-planner'
 import { buildSignableArtifact, isActionIntent, orderRequestOf, txRequestOf, txChainOf } from '../lib/transaction-layer'
-import { resolveToken, buildCowOrderTypedData, cowOrderAction, buildCowLimitOrder, buildCowSubmitBody, describeCowOrder, describeAmount, formatAtoms, tokenDecimals, tokenLabel, humanToAtoms, applySlippage, COW_APP_DATA_JSON, COW_APP_DATA_HASH, GPV2_SETTLEMENT, type CowQuoteResult } from '../lib/cow'
+import { resolveToken, buildCowOrderTypedData, cowOrderAction, buildCowLimitOrder, buildCowSubmitBody, describeCowOrder, describeAmount, formatAtoms, tokenDecimals, tokenLabel, humanToAtoms, applySlippage, COW_APP_DATA_JSON, COW_APP_DATA_HASH, COW_CANONICAL_APP_DATA_HASHES, cowAppDataJson, cowAppDataHash, cowAppDataBpsOf, GPV2_SETTLEMENT, type CowQuoteResult } from '../lib/cow'
 import { primeTokenList } from '../lib/token-list'
 import { pairStockToken, stockChipLabel } from '../lib/stock-pairing'
 import { chartPairFor, changePct24h, aggregateCandles, type Candle } from '../lib/charts'
@@ -113,7 +113,7 @@ import {
   viaIdOf,
 } from '../lib/share-receipts'
 import { EXAMPLE_PROMPTS } from '../lib/examples'
-import { swapFeeAtoms, SWAP_FEE_BPS, TREASURY_ADDRESS } from '../lib/fees'
+import { swapFeeAtoms, SWAP_FEE_BPS, LINK_SWAP_FEE_BPS, TREASURY_ADDRESS } from '../lib/fees'
 import { APP_CHAINS, chainById, chainNamedIn, explorerTokenUrl, sanitizeChainId } from '../lib/chains'
 import { parseCrossChainSwap, guardCrossChainBuild, expectedOriginChainId, parseCrossChainFollowUp, crossChainPending, crossChainValueUsd } from '../lib/cross-chain-swap'
 import {
@@ -1669,6 +1669,16 @@ async function main() {
       'intent links: lifetime earnings ride totalEarnedUsd (claim parity)',
       Math.abs(life.earnings.totalEarnedUsd - 0.4) < 0.01,
       JSON.stringify(life.earnings),
+    )
+    // C2b: the STAMPED tier wins over the path default — a $100 link-tier
+    // (50bps) referred swap earns $0.25 where the base rate would say $0.10.
+    await turn({ buildPath: 'native-swap-uniswap', walletAddress: referredWallet, valueUsd: 100, intentLinkSlug: undefined, feeBps: 50 })
+    const tierRes = await fetch(`${BASE}/api/intent-links`, { headers: { cookie: mallorySession } })
+    const tierLife = (await tierRes.json()) as { earnings: { referredEarnedUsd: number } }
+    check(
+      'intent links: earnings honor the STAMPED fee tier (a 50bps row earns 2.5x the base rate)',
+      Math.abs(tierLife.earnings.referredEarnedUsd - 0.45) < 0.005,
+      JSON.stringify(tierLife.earnings),
     )
     const claim = await fetch(`${BASE}/api/intent-links/claims`, { method: 'POST', headers: M })
     check('intent links: claim below the $10 floor refused (400)', claim.status === 400)
@@ -5390,6 +5400,24 @@ async function main() {
     'cow: limit order appData hash matches the shipped JSON',
     limit.order.appData === keccak256(stringToBytes(COW_APP_DATA_JSON)) && limit.appDataJson === COW_APP_DATA_JSON,
   )
+  // Two-doc family (C2b): base tier + link tier are the ONLY canonical
+  // docs; the tier reads back from the signed hash and foreign docs are
+  // nobody's — the guard/relay membership pin rests on exactly this.
+  check(
+    'cow: appData is a two-doc family — link tier canonical, tier reads back from the hash, foreign hashes refuse',
+    cowAppDataJson(LINK_SWAP_FEE_BPS).includes(`"bps":${LINK_SWAP_FEE_BPS}`) &&
+      COW_CANONICAL_APP_DATA_HASHES.has(cowAppDataHash(LINK_SWAP_FEE_BPS).toLowerCase()) &&
+      COW_CANONICAL_APP_DATA_HASHES.has(COW_APP_DATA_HASH.toLowerCase()) &&
+      cowAppDataBpsOf(cowAppDataHash(LINK_SWAP_FEE_BPS)) === LINK_SWAP_FEE_BPS &&
+      cowAppDataBpsOf(COW_APP_DATA_HASH) === SWAP_FEE_BPS &&
+      cowAppDataBpsOf(`0x${'ee'.repeat(32)}`) === null &&
+      LINK_SWAP_FEE_BPS === 50,
+  )
+  check(
+    'cow: limit order builds on the link tier when asked',
+    buildCowLimitOrder({ sellToken: 'WETH', buyToken: 'USDC', sellAmount: '500000000000000000', buyAmountAtLeast: '1750000000', from: '0x1111111111111111111111111111111111111111', feeBps: LINK_SWAP_FEE_BPS }).order.appData ===
+      cowAppDataHash(LINK_SWAP_FEE_BPS),
+  )
   check('cow: limit order validTo is in the future', limit.order.validTo > Math.floor(Date.now() / 1000))
   check(
     'cow: limit order summary names the floor',
@@ -6474,6 +6502,18 @@ async function main() {
     body: JSON.stringify({ message: 'swap 2 USDC for WETH', activeServers: [] }),
   }).then((r) => r.json())
   check('native swap: asks to connect a wallet (not a Claude lecture)', typeof nativeNoWallet.reply === 'string' && /connect your wallet/i.test(nativeNoWallet.reply))
+  // C2b: a refresh recipe carrying a NON-canonical fee tier is not ours —
+  // the rebuild refuses instead of silently repricing the signed chain.
+  const refreshBadTier = await fetch(`${BASE}/api/tx/refresh`, {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ kind: 'uniswap-swap', from: owner.address, sellToken: 'USDC', buyToken: 'WETH', amountHuman: '1', chainId: '8453', feeBps: '37' }),
+  })
+  const refreshBadTierBody = (await refreshBadTier.json().catch(() => ({}))) as { error?: string }
+  check(
+    'tx refresh: non-canonical fee tier refused (400) — re-quotes keep the tier they signed',
+    refreshBadTier.status === 400 && /unknown fee tier/i.test(refreshBadTierBody.error ?? ''),
+    JSON.stringify(refreshBadTierBody),
+  )
   // Spot guardian gate: claims BEFORE the HL guardian (whose loose coin slot
   // would read "spot" as a coin) and asks to connect — never a planner fall.
   const spotGate = await fetch(`${BASE}/api/chat`, {

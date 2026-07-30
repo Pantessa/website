@@ -41,6 +41,18 @@ export function swapFeeAtoms(amountIn: bigint, bps: number = SWAP_FEE_BPS): bigi
   return (amountIn * BigInt(bps)) / BigInt(10_000)
 }
 
+/** LINK-originated spot flow pays this tier (decided 2026-07-30,
+ *  HANDOFF-yeetcall-gtm): the /i experience prices at 50bps — still at
+ *  half of what Telegram-bot retail demonstrably pays — while organic
+ *  chat keeps SWAP_FEE_BPS. Omitting the slug isn't an evasion vector:
+ *  it just buys the price anyone gets in chat. Env-clamped [0, 100];
+ *  values ≤ SWAP_FEE_BPS collapse the tier to the base rate. */
+export const LINK_SWAP_FEE_BPS: number = (() => {
+  const raw = Number(process.env.YEETFUL_LINK_SWAP_FEE_BPS ?? '50')
+  if (!Number.isInteger(raw) || raw < 0 || raw > 100) return 50
+  return Math.max(raw, SWAP_FEE_BPS)
+})()
+
 // ── Creator fee-split (intent links) ────────────────────────────────────────
 // Half of the swap fee on link-attributed conversions accrues to the link's
 // creator — the referral rail. Phase 1 is LEDGERED (fees land in the
@@ -90,6 +102,17 @@ export const FEE_BEARING_BUILD_PATHS = new Set(Object.keys(NET_FEE_BPS_BY_BUILD_
 /** Yeetful's net fee rate for a build path; 0 when the path is fee-free. */
 export function netFeeBpsFor(buildPath: string | null | undefined): number {
   return (buildPath && NET_FEE_BPS_BY_BUILD_PATH[buildPath]) || 0
+}
+
+/** Effective NET bps for ONE turn row (C2b): the STAMPED tier when the row
+ *  carries one — CoW/Uniswap hand the whole fee over, so the stamped rate IS
+ *  the net — else the per-path default. Cross-chain keeps the path fallback
+ *  (its stamped rate would be gross; 1Click keeps half). Callers still gate
+ *  on FEE_BEARING_BUILD_PATHS — a stray stamp on a fee-free path earns $0. */
+export function netFeeBpsForTurn(buildPath: string | null | undefined, feeBps: number | null | undefined): number {
+  if (buildPath === 'native-cross-chain') return netFeeBpsFor(buildPath)
+  if (typeof feeBps === 'number' && feeBps > 0) return feeBps
+  return netFeeBpsFor(buildPath)
 }
 
 /** Creator earnings on a signed, fee-bearing notional — half of what Yeetful

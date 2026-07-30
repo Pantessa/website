@@ -3,7 +3,7 @@ import {
   buildCowSubmitBody,
   describeCowOrder,
   COW_API_BASE,
-  COW_APP_DATA_HASH,
+  COW_CANONICAL_APP_DATA_HASHES,
   COW_EXPLORER_CHAIN,
   type CowOrderParameters,
 } from '@/lib/cow'
@@ -60,12 +60,13 @@ export async function POST(req: NextRequest) {
   if (order.validTo <= Math.floor(Date.now() / 1000)) {
     return NextResponse.json({ error: 'Refused: the order is expired — rebuild it.' }, { status: 400 })
   }
-  // The relay only places orders signed over Yeetful's own appData document
-  // (which carries the partner fee when the protocol fee is on) — a client
-  // that re-signed a fee-stripped or hook-injected doc doesn't get relayed.
-  if ((order.appData ?? '').toLowerCase() !== COW_APP_DATA_HASH.toLowerCase()) {
+  // The relay only places orders signed over one of Yeetful's own appData
+  // documents — the base tier or the link tier (C2b two-doc family). A
+  // client that re-signed a fee-stripped, fatter-fee, or hook-injected doc
+  // doesn't get relayed; the tier lives inside the signed hash.
+  if (!COW_CANONICAL_APP_DATA_HASHES.has((order.appData ?? '').toLowerCase())) {
     return NextResponse.json(
-      { error: "Refused: order appData is not the document Yeetful builds with — rebuild through the quote flow." },
+      { error: "Refused: order appData is not a document Yeetful builds with — rebuild through the quote flow." },
       { status: 403 },
     )
   }

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import prisma from '@/lib/db'
 import { getAuthAddress } from '@/lib/api-key'
-import { FEE_BEARING_BUILD_PATHS, creatorEarningsUsd, netFeeBpsFor } from '@/lib/fees'
+import { FEE_BEARING_BUILD_PATHS, creatorEarningsUsd, netFeeBpsForTurn } from '@/lib/fees'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -23,7 +23,7 @@ export async function POST(req: NextRequest) {
   if (links.length === 0) return NextResponse.json({ error: 'No links, no earnings yet.' }, { status: 400 })
 
   const turns = await prisma.embedTurn.groupBy({
-    by: ['buildPath'],
+    by: ['buildPath', 'feeBps'],
     where: { intentLinkSlug: { in: links.map((l) => l.id) }, outcome: 'signed', valueUsd: { gt: 0 } },
     _sum: { valueUsd: true },
   })
@@ -33,7 +33,7 @@ export async function POST(req: NextRequest) {
   const referred = await prisma.referredWallet.findMany({ where: { creator }, select: { wallet: true } })
   const referredTurns = referred.length
     ? await prisma.embedTurn.groupBy({
-        by: ['buildPath'],
+        by: ['buildPath', 'feeBps'],
         where: { walletAddress: { in: referred.map((r) => r.wallet) }, intentLinkSlug: null, outcome: 'signed', valueUsd: { gt: 0 } },
         _sum: { valueUsd: true },
       })
@@ -45,7 +45,7 @@ export async function POST(req: NextRequest) {
     (s, t) =>
       s +
       (t.buildPath && FEE_BEARING_BUILD_PATHS.has(t.buildPath)
-        ? creatorEarningsUsd(t._sum.valueUsd ?? 0, netFeeBpsFor(t.buildPath))
+        ? creatorEarningsUsd(t._sum.valueUsd ?? 0, netFeeBpsForTurn(t.buildPath, t.feeBps))
         : 0),
     0,
   )

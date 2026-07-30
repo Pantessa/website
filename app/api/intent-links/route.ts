@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import prisma from '@/lib/db'
 import { getAuthAddress } from '@/lib/api-key'
 import { activeLinkCapFor, cleanAsk, composeMcps, mintSlug, parseAllowWallets, parseExpiry, parseMaxSigns, sanitizeMcps, sanitizeVariants, validateRedirect } from '@/lib/intent-links'
-import { FEE_BEARING_BUILD_PATHS, creatorEarningsUsd, netFeeBpsFor } from '@/lib/fees'
+import { FEE_BEARING_BUILD_PATHS, creatorEarningsUsd, netFeeBpsForTurn } from '@/lib/fees'
 import { getEffectivePlan } from '@/lib/billing'
 import { isAdminAddress } from '@/lib/admin'
 
@@ -159,7 +159,7 @@ export async function GET(req: NextRequest) {
   // embed_turns (guardrail-priced). Earnings accrue ONLY on fee-bearing
   // build paths — the conversions-not-movements rule from lib/fees.
   const turns = await prisma.embedTurn.groupBy({
-    by: ['intentLinkSlug', 'buildPath'],
+    by: ['intentLinkSlug', 'buildPath', 'feeBps'],
     where: { intentLinkSlug: { in: links.map((l) => l.id) }, outcome: 'signed', valueUsd: { gt: 0 } },
     _sum: { valueUsd: true },
     _count: { _all: true },
@@ -178,7 +178,7 @@ export async function GET(req: NextRequest) {
         feeBearingUsd += v
         // Per PATH, not one blended rate: NEAR Intents splits its app fee
         // with the protocol, so the same $1 earns half what a Uniswap $1 does.
-        earnedUsd += creatorEarningsUsd(v, netFeeBpsFor(t.buildPath))
+        earnedUsd += creatorEarningsUsd(v, netFeeBpsForTurn(t.buildPath, t.feeBps))
       }
     }
     // feeBearingUsd rides along so the UI can tell "$0.00 because nothing
@@ -197,7 +197,7 @@ export async function GET(req: NextRequest) {
   const referred = await prisma.referredWallet.findMany({ where: { creator }, select: { wallet: true } })
   const referredTurns = referred.length
     ? await prisma.embedTurn.groupBy({
-        by: ['buildPath'],
+        by: ['buildPath', 'feeBps'],
         where: { walletAddress: { in: referred.map((r) => r.wallet) }, intentLinkSlug: null, outcome: 'signed', valueUsd: { gt: 0 } },
         _sum: { valueUsd: true },
         _count: { _all: true },
@@ -211,7 +211,7 @@ export async function GET(req: NextRequest) {
     referredSignedUsd += v
     referredSigns += t._count._all
     if (t.buildPath && FEE_BEARING_BUILD_PATHS.has(t.buildPath)) {
-      referredEarnedUsd += creatorEarningsUsd(v, netFeeBpsFor(t.buildPath))
+      referredEarnedUsd += creatorEarningsUsd(v, netFeeBpsForTurn(t.buildPath, t.feeBps))
     }
   }
 
