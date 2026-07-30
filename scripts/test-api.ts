@@ -113,7 +113,7 @@ import {
   viaIdOf,
 } from '../lib/share-receipts'
 import { EXAMPLE_PROMPTS } from '../lib/examples'
-import { swapFeeAtoms, SWAP_FEE_BPS, TREASURY_ADDRESS } from '../lib/fees'
+import { swapFeeAtoms, SWAP_FEE_BPS, TREASURY_ADDRESS, HL_BUILDER_FEE_TENTH_BPS, HL_BUILDER_MAX_FEE_RATE } from '../lib/fees'
 import { APP_CHAINS, chainById, chainNamedIn, explorerTokenUrl, sanitizeChainId } from '../lib/chains'
 import { parseCrossChainSwap, guardCrossChainBuild, expectedOriginChainId, parseCrossChainFollowUp, crossChainPending, crossChainValueUsd } from '../lib/cross-chain-swap'
 import {
@@ -172,10 +172,14 @@ import {
   guardHlLeverageBuild,
   hlActionTypedData,
   hlCollateralTargetUsd,
+  approveBuilderFeeArtifacts,
+  guardHlBuilderFeeApproval,
+  hlApproveBuilderFeeTypedData,
   HL_BRIDGE2_ARBITRUM,
   HL_MIN_DEPOSIT_USDC,
   ARBITRUM_USDC,
   type HlOrderIntent,
+  type HlWireApproveBuilderFeeAction,
 } from '../lib/hyperliquid-exec'
 import { compileJobAsk as compileJobAskFull, type CompiledJob } from '../lib/jobs'
 import { LIVE_JOB_STATUSES, jobStatusWord, statusTone } from '../lib/step-status'
@@ -7191,7 +7195,7 @@ async function main() {
         levNone?.kind === 'open' && levNone.leverage === undefined,
       JSON.stringify({ lev2, levTrail, levAt }),
     )
-    const levSnap = { assetIndex: 7, szDecimals: 2, markPx: 40, positionSzi: 0, maxLeverage: 3, accountLeverage: null }
+    const levSnap = { assetIndex: 7, szDecimals: 2, markPx: 40, positionSzi: 0, maxLeverage: 3, accountLeverage: null, approvedBuilderFeeTenthBps: null }
     const levAction = buildHlLeverageAction(lev2, levSnap)
     check(
       'hl leverage: the updateLeverage action pins asset + cross + the asked multiple, and guards green in range',
@@ -8058,7 +8062,7 @@ async function main() {
       parseHlIntent('long eth') === null && parseHlIntent('swap 1 usdc for eth') === null && parseHlIntent('what is hyperliquid?') === null,
     )
 
-    const snap = { assetIndex: 4, szDecimals: 4, markPx: 3000, positionSzi: 0, maxLeverage: 25, accountLeverage: null }
+    const snap = { assetIndex: 4, szDecimals: 4, markPx: 3000, positionSzi: 0, maxLeverage: 25, accountLeverage: null, approvedBuilderFeeTenthBps: null }
     const openIntent: HlOrderIntent = { kind: 'open', coin: 'ETH', isBuy: true, notionalUsd: 50 }
     const action = buildHlOrderAction(openIntent, snap)
     const ctx = { markPx: 3000, assetIndex: 4, withdrawableUsd: 100, positionSzi: 0 }
@@ -8083,6 +8087,36 @@ async function main() {
     )
     const td = hlActionTypedData(action, 1752440000000)
     check('hl exec: L1 typed data is the phantom agent over the action hash', td.primaryType === 'Agent' && (td.message as { source: string }).source === 'a' && /^0x[0-9a-f]{64}$/.test((td.message as { connectionId: string }).connectionId))
+
+    // Builder fee (HANDOFF-yeetcall-gtm C1): rides INSIDE the signed action —
+    // recipient and rate are pinned both ways, so the signature can never be
+    // redirected onto a foreign fee, and a disabled fee means no field at all.
+    check(
+      'hl fee: 10bps perp builder fee configured; native-hl-exec is fee-bearing',
+      HL_BUILDER_FEE_TENTH_BPS === 100 && HL_BUILDER_MAX_FEE_RATE === '0.1%' &&
+        netFeeBpsFor('native-hl-exec') === 10 && FEE_BEARING_BUILD_PATHS.has('native-hl-exec'),
+    )
+    check(
+      'hl fee: order carries the treasury fee; foreign recipient / off rate / missing field refuse',
+      action.builder?.b === TREASURY_ADDRESS.toLowerCase() && action.builder?.f === HL_BUILDER_FEE_TENTH_BPS &&
+        !guardHlExecBuild(openIntent, { ...action, builder: { b: `0x${'dd'.repeat(20)}`, f: HL_BUILDER_FEE_TENTH_BPS } }, ctx).ok &&
+        !guardHlExecBuild(openIntent, { ...action, builder: { b: TREASURY_ADDRESS.toLowerCase(), f: 50 } }, ctx).ok &&
+        !guardHlExecBuild(openIntent, { ...action, builder: undefined }, ctx).ok,
+    )
+    const feeArt = approveBuilderFeeArtifacts({ nonce: 1752440000000, signatureChainId: 8453, isTestnet: false })
+    check(
+      'hl fee: approval artifacts — user-signed domain, treasury pinned, exact rate; tampers refuse',
+      feeArt.typedData.primaryType === 'HyperliquidTransaction:ApproveBuilderFee' &&
+        (feeArt.typedData.domain as { name?: string }).name === 'HyperliquidSignTransaction' &&
+        (feeArt.typedData.domain as { chainId?: number }).chainId === 8453 &&
+        feeArt.action.signatureChainId === '0x2105' &&
+        feeArt.action.builder === TREASURY_ADDRESS.toLowerCase() &&
+        feeArt.action.maxFeeRate === HL_BUILDER_MAX_FEE_RATE &&
+        guardHlBuilderFeeApproval(feeArt.action, false).ok &&
+        !guardHlBuilderFeeApproval({ ...feeArt.action, builder: `0x${'dd'.repeat(20)}` }, false).ok &&
+        !guardHlBuilderFeeApproval({ ...feeArt.action, maxFeeRate: '1%' }, false).ok &&
+        !guardHlBuilderFeeApproval(feeArt.action, true).ok,
+    )
 
     const depGood = buildHlDeposit({ kind: 'deposit', amountUsdc: 20 }, 25)
     check(
@@ -8135,6 +8169,35 @@ async function main() {
       body: JSON.stringify({ action: levWireAction, nonce: 1752440000000, signature: levStaleSig, from: signer.address, expected: { coin: 'ETH', leverage: 2 } }),
     })
     check('hl submit: leverage update without expected.leverage → 400; stale leverage nonce → 400', relayLevNoExp.status === 400 && relayLevStale.status === 400)
+    // Fee-approval path: a PROPERLY signed approval naming a FOREIGN builder
+    // must die at the relay guard (403) — recovery passes, the pin refuses —
+    // and never reach the venue. Fresh nonce so it's the guard that speaks.
+    const foreignFee: HlWireApproveBuilderFeeAction = {
+      type: 'approveBuilderFee',
+      signatureChainId: '0x2105',
+      hyperliquidChain: 'Mainnet',
+      maxFeeRate: HL_BUILDER_MAX_FEE_RATE,
+      builder: `0x${'dd'.repeat(20)}`,
+      nonce: Date.now(),
+    }
+    const foreignFeeTd = hlApproveBuilderFeeTypedData(foreignFee)
+    const foreignFeeSig = await signer.signTypedData({
+      domain: foreignFeeTd.domain,
+      types: foreignFeeTd.types,
+      primaryType: foreignFeeTd.primaryType,
+      message: { ...foreignFeeTd.message, nonce: BigInt(foreignFee.nonce) },
+    } as Parameters<typeof signer.signTypedData>[0])
+    const relayForeignFee = await fetch(`${BASE}/api/hl/submit`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ action: foreignFee, nonce: foreignFee.nonce, signature: foreignFeeSig, from: signer.address }),
+    })
+    const relayForeignFeeBody = (await relayForeignFee.json().catch(() => ({}))) as { error?: string }
+    check(
+      'hl submit: fee approval for a foreign builder → 403 at the relay guard',
+      relayForeignFee.status === 403 && /different fee recipient/i.test(relayForeignFeeBody.error ?? ''),
+      JSON.stringify(relayForeignFeeBody),
+    )
   }
 
   // ── App Mode panel swap (POST /api/panels/swap) ───────────────────────────

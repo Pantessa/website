@@ -25,6 +25,7 @@ import { encodeFunctionData, erc20Abi, parseUnits } from 'viem'
 import type { Eip712TypedData } from '@/lib/eip712'
 import { buildReport, type GuardrailCheck, type GuardrailReport } from '@/lib/tx-guardrails'
 import { formatPx, formatSz } from '@/lib/hl-guardian'
+import { HL_BUILDER_FEE_TENTH_BPS, HL_BUILDER_MAX_FEE_RATE, TREASURY_ADDRESS } from '@/lib/fees'
 
 // ── Venue constants (verified against official docs 2026-07-13) ────────────
 
@@ -139,6 +140,11 @@ export interface HlMarketSnapshot {
    *  (null = no wallet or the read failed — fail-soft: we then always
    *  offer the updateLeverage step rather than guessing it's already set). */
   accountLeverage: { type: 'cross' | 'isolated'; value: number } | null
+  /** The builder-fee cap this wallet has ALREADY approved for our treasury,
+   *  in tenths of a bp (null = no wallet / read failed / fee disabled —
+   *  fail-soft: the turn then offers the one-time approval signature rather
+   *  than guessing). */
+  approvedBuilderFeeTenthBps: number | null
 }
 
 export interface HlWireOrderAction {
@@ -152,6 +158,10 @@ export interface HlWireOrderAction {
     t: { limit: { tif: 'Ioc' } }
   }[]
   grouping: 'na'
+  /** Venue-native builder fee: b = the fee recipient (OUR treasury, guarded),
+   *  f = the fee in tenths of a bp (venue perp cap 100 = 0.1%). Absent when
+   *  the fee is env-disabled. */
+  builder?: { b: string; f: number }
 }
 
 /** The venue's updateLeverage L1 action — signed exactly like an order
@@ -242,6 +252,10 @@ export function buildHlOrderAction(intent: HlOrderIntent, snap: HlMarketSnapshot
       },
     ],
     grouping: 'na',
+    // The venue-native interface fee (HANDOFF-yeetcall-gtm): rides inside the
+    // signed action, so the guard pins recipient AND rate — the signature
+    // cannot be redirected onto someone else's fee.
+    ...(HL_BUILDER_FEE_TENTH_BPS > 0 ? { builder: { b: TREASURY_ADDRESS.toLowerCase(), f: HL_BUILDER_FEE_TENTH_BPS } } : {}),
   }
 }
 
@@ -258,6 +272,99 @@ export function hlActionTypedData(action: HlWireAction, nonce: number, isTestnet
     primaryType: 'Agent',
     message: { source: isTestnet ? 'b' : 'a', connectionId },
   }
+}
+
+// ── Builder-fee approval (one-time, user-signed) ────────────────────────────
+// Unlike orders (phantom-agent over the msgpack hash), approveBuilderFee is a
+// USER-SIGNED action: EIP-712 under the HyperliquidSignTransaction domain
+// whose chainId must equal the action's signatureChainId — so the CLIENT
+// builds it (it knows the wallet's chain) with this pure builder, and the
+// relay re-derives the same payload FROM the action to recover the signer.
+// Same never-drift discipline as the guardian's approveAgentArtifacts.
+
+export interface HlWireApproveBuilderFeeAction {
+  type: 'approveBuilderFee'
+  signatureChainId: string
+  hyperliquidChain: 'Mainnet' | 'Testnet'
+  maxFeeRate: string
+  builder: string
+  nonce: number
+}
+
+/** Typed data derived from the ACTION alone — the relay's recovery source.
+ *  (The uint64 nonce must be signed as a BigInt; viem serializes it back to
+ *  the same bytes the venue hashes.) */
+export function hlApproveBuilderFeeTypedData(action: HlWireApproveBuilderFeeAction): Eip712TypedData {
+  return {
+    domain: {
+      name: 'HyperliquidSignTransaction',
+      version: '1',
+      chainId: parseInt(action.signatureChainId, 16),
+      verifyingContract: '0x0000000000000000000000000000000000000000',
+    },
+    types: {
+      'HyperliquidTransaction:ApproveBuilderFee': [
+        { name: 'hyperliquidChain', type: 'string' },
+        { name: 'maxFeeRate', type: 'string' },
+        { name: 'builder', type: 'address' },
+        { name: 'nonce', type: 'uint64' },
+      ],
+    },
+    primaryType: 'HyperliquidTransaction:ApproveBuilderFee',
+    message: {
+      hyperliquidChain: action.hyperliquidChain,
+      maxFeeRate: action.maxFeeRate,
+      builder: action.builder,
+      nonce: action.nonce,
+    },
+  }
+}
+
+/** The exact approval the client signs: OUR treasury at OUR rate, nothing
+ *  configurable from the outside but the wallet's chain. */
+export function approveBuilderFeeArtifacts(input: { nonce: number; signatureChainId: number; isTestnet: boolean }): {
+  action: HlWireApproveBuilderFeeAction
+  typedData: Eip712TypedData
+} {
+  const action: HlWireApproveBuilderFeeAction = {
+    type: 'approveBuilderFee',
+    signatureChainId: `0x${input.signatureChainId.toString(16)}`,
+    hyperliquidChain: input.isTestnet ? 'Testnet' : 'Mainnet',
+    maxFeeRate: HL_BUILDER_MAX_FEE_RATE,
+    builder: TREASURY_ADDRESS.toLowerCase(),
+    nonce: input.nonce,
+  }
+  return { action, typedData: hlApproveBuilderFeeTypedData(action) }
+}
+
+/** Relay-side guard for a submitted approval (fail closed): the signature
+ *  must cap fees for OUR treasury at EXACTLY our configured rate — a looser
+ *  cap or a foreign recipient never reaches the venue. */
+export function guardHlBuilderFeeApproval(action: HlWireApproveBuilderFeeAction, isTestnet: boolean): GuardrailReport {
+  const checks: GuardrailCheck[] = []
+  const block = (id: string, ok: boolean, okNote: string, badNote: string) =>
+    checks.push({ id, level: 'block', ok, note: ok ? okNote : badNote })
+  block('fee-shape', action.type === 'approveBuilderFee', 'Builder-fee approval only — no order rides in this signature.', 'Malformed approval action — refusing.')
+  block('fee-enabled', HL_BUILDER_FEE_TENTH_BPS > 0, 'Builder fee is enabled.', 'Builder fee is disabled — nothing to approve.')
+  block(
+    'fee-recipient',
+    action.builder?.toLowerCase() === TREASURY_ADDRESS.toLowerCase(),
+    'Fee recipient pinned to the Yeetful treasury.',
+    'Approval names a different fee recipient — refusing.',
+  )
+  block(
+    'fee-rate',
+    action.maxFeeRate === HL_BUILDER_MAX_FEE_RATE,
+    `Caps the fee at ${HL_BUILDER_MAX_FEE_RATE} — exactly what orders carry, within the venue's 0.1% perp cap.`,
+    `Approval rate ${action.maxFeeRate} ≠ the configured ${HL_BUILDER_MAX_FEE_RATE} — refusing.`,
+  )
+  block(
+    'fee-network',
+    action.hyperliquidChain === (isTestnet ? 'Testnet' : 'Mainnet'),
+    `${action.hyperliquidChain} approval matches the venue network.`,
+    'Approval network does not match the venue — refusing.',
+  )
+  return buildReport(0, checks)
 }
 
 // ── Guard (fail closed; runs at BUILD and again at SUBMIT) ──────────────────
@@ -281,6 +388,24 @@ export function guardHlExecBuild(intent: HlOrderIntent, action: HlWireOrderActio
   if (order) {
     block('asset-pinned', order.a === ctx.assetIndex, `Asset pinned to ${intent.coin} (index ${ctx.assetIndex}).`, `Order asset ${order.a} ≠ ${intent.coin}'s live index ${ctx.assetIndex}.`)
     block('ioc-only', order.t.limit?.tif === 'Ioc', 'Immediate-or-cancel — nothing rests.', 'Only IOC orders are built here.')
+    // Builder fee pinned BOTH ways: when configured the action must carry
+    // exactly OUR recipient at exactly OUR rate (≤ the venue's 0.1% perp
+    // cap); when env-disabled no builder field may ride at all. A foreign
+    // address or a fatter fee here means the action isn't ours — refuse.
+    const feeOk =
+      HL_BUILDER_FEE_TENTH_BPS > 0
+        ? action.builder?.b?.toLowerCase() === TREASURY_ADDRESS.toLowerCase() &&
+          action.builder.f === HL_BUILDER_FEE_TENTH_BPS &&
+          action.builder.f <= 100
+        : action.builder === undefined
+    block(
+      'builder-fee',
+      feeOk,
+      HL_BUILDER_FEE_TENTH_BPS > 0
+        ? `${HL_BUILDER_MAX_FEE_RATE} builder fee to the Yeetful treasury — venue-enforced on the fill; it funds creator kickbacks.`
+        : 'No builder fee configured — none rides the order.',
+      'Order carries an unexpected builder fee (wrong recipient or rate) — refusing.',
+    )
     const px = Number(order.p)
     const bound = (HL_EXEC_SLIPPAGE_BPS + 10) / 10_000
     block('price-bounded', px > 0 && Math.abs(px - ctx.markPx) / ctx.markPx <= bound, `Limit ${order.p} within ${HL_EXEC_SLIPPAGE_BPS}bps of mark ${ctx.markPx}.`, `Limit ${order.p} strays >${HL_EXEC_SLIPPAGE_BPS}bps from mark ${ctx.markPx}.`)
@@ -357,7 +482,7 @@ export function hlAgentOf<T extends { slug: string; name: string; endpoint?: str
 export async function fetchHlSnapshot(coin: string, wallet: string | undefined, isTestnet = false): Promise<HlMarketSnapshot & { withdrawableUsd: number }> {
   const { InfoClient, HttpTransport } = await import('@nktkas/hyperliquid')
   const info = new InfoClient({ transport: new HttpTransport({ isTestnet }) })
-  const [meta, mids, state, active] = await Promise.all([
+  const [meta, mids, state, active, approvedFee] = await Promise.all([
     info.meta(),
     info.allMids(),
     wallet ? info.clearinghouseState({ user: wallet as `0x${string}` }) : Promise.resolve(null),
@@ -365,6 +490,11 @@ export async function fetchHlSnapshot(coin: string, wallet: string | undefined, 
     // flat). Fail-soft: null just means an explicit-leverage ask always
     // offers the updateLeverage signature instead of skipping it.
     wallet ? info.activeAssetData({ user: wallet as `0x${string}`, coin }).catch(() => null) : Promise.resolve(null),
+    // The builder-fee cap already approved for OUR treasury (venue unit:
+    // tenths of a bp). Fail-soft null → the turn offers the approval step.
+    wallet && HL_BUILDER_FEE_TENTH_BPS > 0
+      ? info.maxBuilderFee({ user: wallet as `0x${string}`, builder: TREASURY_ADDRESS.toLowerCase() as `0x${string}` }).catch(() => null)
+      : Promise.resolve(null),
   ])
   const assetIndex = meta.universe.findIndex((u) => u.name === coin)
   if (assetIndex < 0) throw new Error(`${coin} is not a Hyperliquid perp`)
@@ -378,6 +508,7 @@ export async function fetchHlSnapshot(coin: string, wallet: string | undefined, 
     positionSzi: pos ? Number(pos.position.szi) : 0,
     maxLeverage: meta.universe[assetIndex].maxLeverage,
     accountLeverage: active?.leverage ? { type: active.leverage.type, value: Number(active.leverage.value) } : null,
+    approvedBuilderFeeTenthBps: typeof approvedFee === 'number' && Number.isFinite(approvedFee) ? approvedFee : null,
     withdrawableUsd: state ? Number(state.withdrawable) : 0,
   }
 }
@@ -512,6 +643,20 @@ export async function buildHlExecTurn(
     trace({ type: 'note', level: 'warn', label: `native hl layer: ${intent.kind} refused — ${bad.join(' · ')}` })
     return { reply: `🚫 ${bad.join(' ')}`, guardrails: guard }
   }
+  // One-time builder-fee approval: needed when the fee is on and the wallet
+  // hasn't yet capped it for our treasury (unknown reads offer it too —
+  // approving an already-approved cap is harmless; skipping a needed one
+  // bounces the order at the venue). The CLIENT builds the typed data (it
+  // knows the wallet's chainId); we ship only the facts.
+  const needsFeeApproval =
+    HL_BUILDER_FEE_TENTH_BPS > 0 &&
+    (snap.approvedBuilderFeeTenthBps == null || snap.approvedBuilderFeeTenthBps < HL_BUILDER_FEE_TENTH_BPS)
+  const feePhrase =
+    HL_BUILDER_FEE_TENTH_BPS > 0
+      ? needsFeeApproval
+        ? ` Includes the ${HL_BUILDER_MAX_FEE_RATE} builder fee — first tap approves that cap (one-time), then the order.`
+        : ` Includes the ${HL_BUILDER_MAX_FEE_RATE} builder fee (cap already approved).`
+      : ''
   const nonce = Date.now()
   const typedData = hlActionTypedData(action, nonce)
   const o = action.orders[0]
@@ -519,13 +664,20 @@ export async function buildHlExecTurn(
   const levTag = intent.kind === 'open' && intent.leverage ? ` at ${intent.leverage}x (cross)` : ''
   const summary = `${verb} ${o.s} ${intent.coin}${levTag} on Hyperliquid — IOC at ≤${HL_EXEC_SLIPPAGE_BPS}bps from mark ${snap.markPx} (~$${guard.valueUsd})${intent.kind === 'close' ? ', reduce-only' : ''}.`
   const warns = guard.checks.filter((c) => !c.ok && c.level === 'warn').map((c) => ` ⚠️ ${c.note}`).join('')
-  trace({ type: 'status', label: `native hl layer: built ${summary}${pre ? ' (+ leverage pre-step)' : ''}` })
+  trace({ type: 'status', label: `native hl layer: built ${summary}${pre ? ' (+ leverage pre-step)' : ''}${needsFeeApproval ? ' (+ fee-cap approval)' : ''}` })
   return {
-    reply: `🔏 ${summary}${levPhrase}${warns}`,
+    reply: `🔏 ${summary}${levPhrase}${feePhrase}${warns}`,
     orderRequest: {
       protocol: 'hyperliquid',
       typedData,
-      hl: { action, nonce, isTestnet: false, expected: { coin: intent.coin, kind: intent.kind, isBuy: o.b }, ...(pre ? { pre } : {}) },
+      hl: {
+        action,
+        nonce,
+        isTestnet: false,
+        expected: { coin: intent.coin, kind: intent.kind, isBuy: o.b },
+        ...(pre ? { pre } : {}),
+        ...(needsFeeApproval ? { feeApproval: { builder: TREASURY_ADDRESS.toLowerCase(), maxFeeRate: HL_BUILDER_MAX_FEE_RATE, feeTenthBps: HL_BUILDER_FEE_TENTH_BPS } } : {}),
+      },
     },
     guardrails: guard,
     buildPath: 'native-hl-exec',

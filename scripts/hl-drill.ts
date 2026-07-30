@@ -208,7 +208,7 @@ async function main() {
   say(`opening ~$${POSITION_USD} ETH long (IOC, guarded by lib/hyperliquid-exec)`)
   const [meta, mids, chState] = await Promise.all([info.meta(), info.allMids(), info.clearinghouseState({ user: burner.address })])
   const ethIdx = meta.universe.findIndex((u) => u.name === 'ETH')
-  const snap = { assetIndex: ethIdx, szDecimals: meta.universe[ethIdx].szDecimals, markPx: Number(mids.ETH), positionSzi: 0, maxLeverage: meta.universe[ethIdx].maxLeverage, accountLeverage: null }
+  const snap = { assetIndex: ethIdx, szDecimals: meta.universe[ethIdx].szDecimals, markPx: Number(mids.ETH), positionSzi: 0, maxLeverage: meta.universe[ethIdx].maxLeverage, accountLeverage: null, approvedBuilderFeeTenthBps: null }
   const intent: HlOrderIntent = { kind: 'open', coin: 'ETH', isBuy: true, notionalUsd: POSITION_USD }
   const action = buildHlOrderAction(intent, snap)
   const guard = guardHlExecBuild(intent, action, { markPx: snap.markPx, assetIndex: ethIdx, withdrawableUsd: Number(chState.withdrawable), positionSzi: 0 })
