@@ -6442,6 +6442,20 @@ async function main() {
     body: JSON.stringify({ message: 'swap 2 USDC for WETH', activeServers: [] }),
   }).then((r) => r.json())
   check('native swap: asks to connect a wallet (not a Claude lecture)', typeof nativeNoWallet.reply === 'string' && /connect your wallet/i.test(nativeNoWallet.reply))
+  // Curated-beats-dynamic (C6 squat fix, live 2026-07-30): a token squatting
+  // a real stock ticker on a PERMISSIONLESS target-chain list must never
+  // hijack the stock ask off Robinhood Chain — "Buy $10 of AAPL" routes to
+  // the stock path (build or funding cascade), never a dead target-chain
+  // quote. Live check against the real Base list (where the squat exists).
+  const stockSquat = await fetch(`${BASE}/api/chat`, {
+    method: 'POST', headers: { 'content-type': 'application/json', 'x-yf-no-ask-log': '1' },
+    body: JSON.stringify({ message: 'Buy $10 of AAPL', activeServers: [], walletAddress: owner.address }),
+  }).then((r) => r.json())
+  check(
+    'native swap: stock ticker squatted on Base still routes to the stock path',
+    typeof stockSquat.reply === 'string' && !/Couldn't build the swap/i.test(stockSquat.reply) && /robinhood|usdg|usdc|bridge|holding/i.test(stockSquat.reply),
+    JSON.stringify(stockSquat.reply ?? '').slice(0, 200),
+  )
   // Spot guardian gate: claims BEFORE the HL guardian (whose loose coin slot
   // would read "spot" as a coin) and asks to connect — never a planner fall.
   const spotGate = await fetch(`${BASE}/api/chat`, {
