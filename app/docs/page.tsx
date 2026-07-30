@@ -126,9 +126,7 @@ const STEPS = [
 
 const ELSEWHERE = [
   { href: 'https://www.npmjs.com/package/yeetful', label: 'yeetful on npm', sub: 'the embed helper plus x402 client/server helpers — MIT, TypeScript', ext: true },
-  { href: 'https://github.com/Yeetful', label: 'Yeetful on GitHub', sub: 'the SDK, free MCPs, embed demos, and the rest — open source', ext: true },
-  { href: 'https://uniswap-embed.yeetful.com/', label: 'Uniswap fork + the chat', sub: 'a live proof-of-concept: the embed mounted on a fork of the Uniswap interface', ext: true },
-  { href: 'https://cow-embed.yeetful.com/', label: 'CoW Swap fork + the chat', sub: 'the same install on a fork of CoW Swap — the widget streams the connected wallet in', ext: true },
+  { href: 'https://github.com/Yeetful', label: 'Yeetful on GitHub', sub: 'the SDK, free MCPs, and the rest — open source', ext: true },
   { href: '/activity', label: 'Network activity', sub: 'every settled call on the network, anonymized and on-chain verifiable', ext: false },
 ]
 

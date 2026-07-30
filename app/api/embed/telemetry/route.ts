@@ -87,6 +87,24 @@ export async function POST(req: NextRequest) {
     }
   }
 
+  const intentLinkSlug =
+    typeof body.intentLinkSlug === 'string' && INTENT_SLUG_RE.test(body.intentLinkSlug)
+      ? body.intentLinkSlug
+      : undefined
+  // The SIGNING wallet — address-shaped only, lowercased. Self-reported like
+  // the rest of the beacon; it keys lifetime referral earnings, the same
+  // trust level as the valueUsd/outcome it rides beside.
+  const walletAddress =
+    typeof body.walletAddress === 'string' && /^0x[0-9a-fA-F]{40}$/.test(body.walletAddress)
+      ? body.walletAddress.toLowerCase()
+      : undefined
+  // The fee tier the artifact carried (C2b: 20 organic / 50 link) — earnings
+  // read this over the per-path default. Integer bps, venue-cap bounded.
+  const feeBps =
+    typeof body.feeBps === 'number' && Number.isInteger(body.feeBps) && body.feeBps >= 0 && body.feeBps <= 100
+      ? body.feeBps
+      : undefined
+
   try {
     await prisma.embedTurn.create({
       data: {
@@ -107,15 +125,33 @@ export async function POST(req: NextRequest) {
         originKind,
         // /i/<slug> attribution — slug-shaped only; creator fee-split
         // earnings compute read-time from fee-bearing signed rows.
-        intentLinkSlug:
-          typeof body.intentLinkSlug === 'string' && INTENT_SLUG_RE.test(body.intentLinkSlug)
-            ? body.intentLinkSlug
-            : undefined,
+        intentLinkSlug,
+        walletAddress,
+        feeBps,
       },
     })
   } catch {
     // telemetry never breaks a host page
     return NextResponse.json({ ok: false }, { status: 202 })
+  }
+
+  // First-touch lifetime referral (HANDOFF-yeetcall-gtm C2): the first link
+  // a wallet SIGNS through claims it for that link's creator, forever.
+  // Write-once (createMany skipDuplicates — a second link never re-claims),
+  // self-referrals excluded (a creator signing their own link earns nothing
+  // extra), and always fail-soft: referral stamping never breaks telemetry.
+  if (outcome === 'signed' && intentLinkSlug && walletAddress) {
+    try {
+      const link = await prisma.intentLink.findUnique({ where: { id: intentLinkSlug }, select: { creator: true } })
+      if (link?.creator && link.creator !== walletAddress) {
+        await prisma.referredWallet.createMany({
+          data: [{ wallet: walletAddress, creator: link.creator, intentLinkSlug }],
+          skipDuplicates: true,
+        })
+      }
+    } catch {
+      /* fail-soft */
+    }
   }
   return NextResponse.json({ ok: true })
 }

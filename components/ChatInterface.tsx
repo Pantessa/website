@@ -797,6 +797,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
             turnId,
             embedKey,
             embedOrigin,
+            intentLinkSlug, // /i-originated turns price spot flow at the link tier (C2b)
           }),
         })
         data = await res.json()
@@ -871,6 +872,23 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
     const v = (source as { buildPath?: unknown } | null | undefined)?.buildPath
     return typeof v === 'string' && v ? v : undefined
   }
+  // The fee tier the ARTIFACT actually carried (C2b: 20 organic / 50 link),
+  // read from the artifact itself — the v3 refresh recipe or the CoW appData
+  // — never a parallel field that could drift from the signed bytes.
+  const feeBpsOf = (source: unknown): number | undefined => {
+    const m = source as
+      | { txChain?: { refresh?: { params?: { feeBps?: unknown } } }; orderRequest?: { appDataJson?: unknown } }
+      | null
+      | undefined
+    const fromChain = m?.txChain?.refresh?.params?.feeBps
+    if (typeof fromChain === 'string' && /^\d{1,3}$/.test(fromChain)) return Number(fromChain)
+    const appData = m?.orderRequest?.appDataJson
+    if (typeof appData === 'string') {
+      const match = appData.match(/"partnerFee":\{"bps":(\d{1,3})/)
+      if (match) return Number(match[1])
+    }
+    return undefined
+  }
   // One session id per first-party mount — same role embedSession plays for embeds.
   const [chatSession] = useState(() =>
     typeof crypto !== 'undefined' && 'randomUUID' in crypto
@@ -878,9 +896,11 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
       : `s-${Math.random().toString(36).slice(2)}${Date.now().toString(36)}`,
   )
   const postEmbedTelemetry = (payload: Record<string, unknown>) => {
+    // The signing wallet rides every beacon — it keys first-touch lifetime
+    // referral earnings (HANDOFF-yeetcall-gtm C2) server-side.
     const body = embedded
       ? embedKey && embedSession
-        ? { key: embedKey, sessionId: embedSession, page: embedOrigin, ...payload }
+        ? { key: embedKey, sessionId: embedSession, page: embedOrigin, walletAddress: address, ...payload }
         : null // keyless third-party embeds record nothing
       : payload.outcome === 'tx-built' || payload.outcome === 'signed'
         ? {
@@ -888,6 +908,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
             sessionId: chatSession,
             page: typeof window !== 'undefined' ? window.location.href : undefined,
             intentLinkSlug,
+            walletAddress: address,
             ...payload,
             prompt: undefined,
             detail: undefined,
@@ -958,7 +979,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
       jobId: data && typeof data.jobId === 'string' ? data.jobId : undefined,
     })
   }
-  const reportEmbedSigned = (info: { artifact: string; chain?: string; txUrl?: string; detail?: string; valueUsd?: number; buildPath?: string; jobId?: string }) => {
+  const reportEmbedSigned = (info: { artifact: string; chain?: string; txUrl?: string; detail?: string; valueUsd?: number; buildPath?: string; feeBps?: number; jobId?: string }) => {
     onEmbedEvent?.('turn', { outcome: 'signed', artifact: info.artifact, valueUsd: info.valueUsd })
     postEmbedTelemetry({ outcome: 'signed', ...info })
   }
@@ -1027,6 +1048,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
         selectedChainId,
         embedKey,
         embedOrigin,
+        intentLinkSlug, // /i-originated turns price spot flow at the link tier (C2b)
       }),
     })
     if (!res.body) {
@@ -1610,6 +1632,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
                                   detail: info.orderUid?.slice(0, 60),
                                   valueUsd: guardrailUsdOf(msg.meta),
                                   buildPath: buildPathOf(msg.meta),
+                                  feeBps: feeBpsOf(msg.meta),
                                 })
                               }}
                             />
@@ -1628,6 +1651,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
                                   detail: info.detail?.slice(0, 60),
                                   valueUsd: info.valueUsd ?? guardrailUsdOf(msg.meta),
                                   buildPath: buildPathOf(msg.meta),
+                                  feeBps: feeBpsOf(msg.meta),
                                 })
                               }}
                             />
@@ -1648,6 +1672,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
                                 detail: (info as { orderUid?: string }).orderUid?.slice(0, 60),
                                 valueUsd: guardrailUsdOf(msg.meta),
                                 buildPath: buildPathOf(msg.meta),
+                                feeBps: feeBpsOf(msg.meta),
                               })
                             }}
                           />
@@ -1706,7 +1731,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
                               // source of truth) so Robinhood/Arbitrum/etc. link to
                               // the right explorer, not a basescan fallback.
                               const explorer = chainById(chainId)?.explorerTx ?? 'https://basescan.org/tx/'
-                              reportEmbedSigned({ artifact: 'tx', chain: chainLabel(chainId), txUrl: `${explorer}${hash}`, valueUsd: guardrailUsdOf(msg.meta), buildPath: buildPathOf(msg.meta) })
+                              reportEmbedSigned({ artifact: 'tx', chain: chainLabel(chainId), txUrl: `${explorer}${hash}`, valueUsd: guardrailUsdOf(msg.meta), buildPath: buildPathOf(msg.meta), feeBps: feeBpsOf(msg.meta) })
                               // Durable signing log → the message's DB meta
                               // (the /p share page renders it with explorer links).
                               if (currentChatId) recordSignedTxs(currentChatId, msg.id, [{ hash, chainId, title: builtTx.action ?? 'transaction' }])
@@ -1731,6 +1756,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
                                 txUrl: `${explorer}${hash}`,
                                 valueUsd: guardrailUsdOf(msg.meta),
                                 buildPath: buildPathOf(msg.meta),
+                                feeBps: feeBpsOf(msg.meta),
                               })
                               // Every confirmed step (approve AND swap AND fee)
                               // → durable meta.signed for the share page's log.

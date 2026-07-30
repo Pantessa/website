@@ -790,12 +790,30 @@ model EmbedTurn {
   buildPath      String?  @map("build_path") // which layer built the artifact: native-* | planner | manual (lib/build-path.ts)
   originKind     String?  @map("origin_kind") // chat | embed | job-step | dca-run (lib/value-origin.ts) — attended vs standing; null = legacy row, classified at read time
   intentLinkSlug String?  @map("intent_link_slug") // /i/<slug> attribution — creator fee-split accrues on fee-bearing signed turns
+  walletAddress  String?  @map("wallet_address") // the SIGNING wallet (lowercased, self-reported like the rest of the beacon) — lifetime referral earnings key off it; null = legacy row
+  feeBps         Int?     @map("fee_bps") // the fee tier the ARTIFACT actually carried (C2b: 20 organic / 50 link) — earnings read this over the per-path default; null = legacy row at the path rate
   createdAt      DateTime @default(now()) @map("created_at")
 
   @@index([ownerAddress, createdAt])
   @@index([embedKeyId, createdAt])
   @@index([sessionId, createdAt])
+  @@index([walletAddress, createdAt])
   @@map("embed_turns")
+}
+
+// First-touch lifetime referral (HANDOFF-yeetcall-gtm C2): the FIRST link a
+// wallet ever signs through claims that wallet for its creator, forever —
+// later fee-bearing turns by the wallet WITHOUT a direct link attribution
+// accrue to this creator (direct intentLinkSlug attribution always wins
+// per-turn). One row per wallet, written once, never updated.
+model ReferredWallet {
+  wallet         String   @id // lowercased signer
+  creator        String // lowercased creator wallet (from the link at stamp time)
+  intentLinkSlug String   @map("intent_link_slug") // the claiming link
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  @@index([creator])
+  @@map("referred_wallets")
 }
 
 /// One chat turn that ENDED IN A WALL on a money-shaped ask — no signable

@@ -39,6 +39,9 @@ export interface GuardrailedOrderParams {
   receiver?: string
   /** Swap mode only; validated by the caller against MAX_SLIPPAGE_BPS. */
   slippageBps?: number
+  /** Fee tier for the appData doc (default SWAP_FEE_BPS; link-originated
+   *  turns pass LINK_SWAP_FEE_BPS). Guard-pinned to the two-doc family. */
+  feeBps?: number
 }
 
 export interface GuardrailedOrder {
@@ -68,6 +71,7 @@ export async function buildGuardrailedOrder(params: GuardrailedOrderParams): Pro
           buyAmountAtLeast: params.buyAmountAtLeast ?? '',
           from: params.from,
           receiver: params.receiver,
+          feeBps: params.feeBps,
         })
       : await fetchCowQuote({
           chainId,
@@ -76,6 +80,7 @@ export async function buildGuardrailedOrder(params: GuardrailedOrderParams): Pro
           sellAmountBeforeFee: params.sellAmount,
           from: params.from,
           receiver: params.receiver,
+          feeBps: params.feeBps,
         })
   if (params.mode === 'swap') quote = applySlippage(quote, params.slippageBps ?? 50)
 

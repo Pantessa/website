@@ -46,10 +46,19 @@ export function LinkEarningsPanel({
         Claim USDC
       </button>
       {claimMsg && <span className="text-[12px] text-[color:var(--muted-2)]">{claimMsg}</span>}
+      {(earnings.referredWallets ?? 0) > 0 && (
+        <span className="text-[12px] text-[color:var(--muted)]">
+          Lifetime rail: <span className="mono text-[color:var(--fg)]">{earnings.referredWallets}</span> wallet
+          {earnings.referredWallets === 1 ? '' : 's'} your links brought
+          {' · '}earned <span className="mono text-[color:var(--accent)]">{formatEarnedUsd(earnings.referredEarnedUsd ?? 0)}</span> on
+          their later trades
+        </span>
+      )}
       <span className="text-[11px] text-[color:var(--muted-2)] w-full">
-        Half of Yeetful&apos;s 0.20% fee on swaps and stock buys your links produced — sales,
-        transfers, stakes, and bridges are always fee-free. Paid as USDC on Base from $
-        {earnings.minClaimUsd}.
+        Half of Yeetful&apos;s venue fee on swaps and stock buys — from your links, and from
+        every later fee-bearing trade by wallets your links first brought (lifetime, first
+        touch). Sales, transfers, stakes, and bridges are always fee-free. Paid as USDC on
+        Base from ${earnings.minClaimUsd}.
         {/* The honest zero: money moved, none of it through a fee-bearing
             venue. Without this line the panel just reads $0.00. */}
         {earnings.totalSignedUsd > 0 && earnings.totalFeeBearingUsd <= 0 && (
