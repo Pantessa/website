@@ -42,7 +42,9 @@ import {
   type CrossChainSwapParams,
   type BuiltSwap,
 } from '@/lib/cross-chain-swap'
-import { CROSS_CHAIN_FEE_BPS, TREASURY_ADDRESS } from '@/lib/fees'
+import { CROSS_CHAIN_FEE_BPS, LINK_SWAP_FEE_BPS, TREASURY_ADDRESS } from '@/lib/fees'
+import { INTENT_SLUG_RE } from '@/lib/intent-links'
+import prismaDb from '@/lib/db'
 import { prettyChainWord } from '@/lib/chain-lexicon'
 import { arbitrumUsdcBalance, buildHlExecTurn, hlAgentOf, HL_MIN_DEPOSIT_USDC, hlOpenCollateralShortfall, parseHlIntent, type HlOpenShortfall, type HlOrderIntent } from '@/lib/hyperliquid-exec'
 import { parseGuardianArm } from '@/lib/hl-guardian'
@@ -402,6 +404,22 @@ async function handleChatTurn(req: NextRequest) {
     // sanitized + age-expired here. Follow-ups resolve against THIS, not
     // regexes over the last reply's prose.
     const workingContext = sanitizeWorkingContext(body.workingContext)
+    // /i-originated turns carry their link slug (C2b): link-priced SPOT flow
+    // pays LINK_SWAP_FEE_BPS while organic chat keeps the base rate. The
+    // slug is validated against the DB (exists + not revoked); anything else
+    // — malformed, unknown, lookup failure — falls OPEN to the organic rate,
+    // which is the price anyone can get in chat anyway, so omission is not
+    // an evasion vector. LiFi + cross-chain + jobs keep their own rates
+    // (conscious C2b scope cut, documented in HANDOFF-yeetcall-gtm).
+    const turnLinkSlug: string | undefined =
+      typeof body.intentLinkSlug === 'string' && INTENT_SLUG_RE.test(body.intentLinkSlug) ? body.intentLinkSlug : undefined
+    let swapFeeBps: number | undefined
+    if (turnLinkSlug) {
+      const link = await prismaDb.intentLink
+        .findUnique({ where: { id: turnLinkSlug }, select: { revoked: true } })
+        .catch(() => null)
+      if (link && !link.revoked) swapFeeBps = LINK_SWAP_FEE_BPS
+    }
     const activeServers: McpServer[] = Array.isArray(body.activeServers) ? body.activeServers : []
     // Client-supplied turn id → the manual path records its reasoning to
     // route_trace_lines so the in-chat engine terminal can poll it live.
@@ -665,7 +683,7 @@ async function handleChatTurn(req: NextRequest) {
             type: 'status',
             label: `funding layer: follow-up on the unfunded ${buySym} buy — fresh scan, re-running “buy $${buyUsd} of ${buySym}” on Robinhood Chain (planner bypassed)`,
           })
-          return await prepareSwapTurn(rerun, walletAddress, 'uniswap', workingContext, nativeTrace, ROBINHOOD_CHAIN_ID)
+          return await prepareSwapTurn(rerun, walletAddress, 'uniswap', workingContext, nativeTrace, ROBINHOOD_CHAIN_ID, swapFeeBps)
         }
       }
     }
@@ -802,7 +820,7 @@ async function handleChatTurn(req: NextRequest) {
       // data carries chainId for non-Base builds) — never silently back on Base.
       const pendingChainId = sanitizeChainId(Number(pendingArtifact.data.chainId)) ?? DEFAULT_CHAIN_ID
       nativeTrace({ type: 'status', label: `native swap layer: amending the pending ${pendingArtifact.kind} to ${swapFollowUp.intent.sellAmountHuman} ${(swapFollowUp.intent.sellToken ?? '').toUpperCase()} → ${(swapFollowUp.intent.buyToken ?? '').toUpperCase()} on ${pendingVenue === 'uniswap' ? 'Uniswap' : 'CoW'} (${chainById(pendingChainId)?.name})` })
-      return await prepareSwapTurn(swapFollowUp.intent, walletAddress, pendingVenue, workingContext, nativeTrace, pendingChainId)
+      return await prepareSwapTurn(swapFollowUp.intent, walletAddress, pendingVenue, workingContext, nativeTrace, pendingChainId, swapFeeBps)
     }
 
     // DCA — recurring buys ("buy $10 of AAPL every week"), the due-period
@@ -1711,7 +1729,7 @@ async function handleChatTurn(req: NextRequest) {
           : 'swap ask (pair not fully parsed yet)'
         const chainVia = buildChain.id !== targetChain.id ? 'stock list, inferred' : namedNative ? 'named in the message' : pickerChain ? 'from the chain picker' : 'default'
         nativeTrace({ type: 'status', label: `native swap layer claimed the turn: ${pair} on ${venue === 'uniswap' ? 'Uniswap' : 'CoW'} (${buildChain.name}, ${chainVia}) — planner bypassed` })
-        return await prepareSwapTurn(swapIntent, walletAddress, venue, workingContext, nativeTrace, buildChain.id)
+        return await prepareSwapTurn(swapIntent, walletAddress, venue, workingContext, nativeTrace, buildChain.id, swapFeeBps)
       }
       // crossChain + a usable cross-chain agent → build it NATIVELY (deterministic
       // build_swap + guardrails + Sign button), never via the planner/house
@@ -3492,7 +3510,7 @@ function hlPerpDoor(symbol: string | undefined, amount: { usd?: string; human?: 
   }
 }
 
-async function prepareSwapTurn(intent: SwapIntent, walletAddress: string | undefined, venue: 'uniswap' | 'cow' = 'cow', ctx?: WorkingContext, trace: (event: unknown) => void = () => {}, chainId: number = DEFAULT_CHAIN_ID) {
+async function prepareSwapTurn(intent: SwapIntent, walletAddress: string | undefined, venue: 'uniswap' | 'cow' = 'cow', ctx?: WorkingContext, trace: (event: unknown) => void = () => {}, chainId: number = DEFAULT_CHAIN_ID, feeBps?: number) {
   const chain = chainById(chainId) ?? chainById(DEFAULT_CHAIN_ID)!
   chainId = chain.id
   // Warm the chain's dynamic token map (official Uniswap list) so UNI/AAVE/
@@ -3964,6 +3982,7 @@ async function prepareSwapTurn(intent: SwapIntent, walletAddress: string | undef
         amountHuman: intent.sellAmountHuman,
         from: walletAddress,
         chainId,
+        feeBps,
       })
       if (uni.blocked) {
         const reasons = uni.guardrails.checks.filter((c) => !c.ok && c.level === 'block').map((c) => c.note).join(' ')
@@ -3995,7 +4014,7 @@ async function prepareSwapTurn(intent: SwapIntent, walletAddress: string | undef
             refresh: {
               kind: 'uniswap-swap',
               stepIndex: 1,
-              params: { sellToken: intent.sellToken, buyToken: intent.buyToken, amountHuman: intent.sellAmountHuman, chainId: String(chainId) },
+              params: { sellToken: intent.sellToken, buyToken: intent.buyToken, amountHuman: intent.sellAmountHuman, chainId: String(chainId), ...(feeBps !== undefined ? { feeBps: String(feeBps) } : {}) },
             },
           },
           buildPath: 'native-swap-uniswap',
@@ -4020,7 +4039,7 @@ async function prepareSwapTurn(intent: SwapIntent, walletAddress: string | undef
           refresh: {
             kind: 'uniswap-swap',
             stepIndex: 0,
-            params: { sellToken: intent.sellToken, buyToken: intent.buyToken, amountHuman: intent.sellAmountHuman, chainId: String(chainId) },
+            params: { sellToken: intent.sellToken, buyToken: intent.buyToken, amountHuman: intent.sellAmountHuman, chainId: String(chainId), ...(feeBps !== undefined ? { feeBps: String(feeBps) } : {}) },
           },
         },
         buildPath: 'native-swap-uniswap',
@@ -4059,6 +4078,7 @@ async function prepareSwapTurn(intent: SwapIntent, walletAddress: string | undef
       sellAmount,
       buyAmountAtLeast,
       from: walletAddress,
+      feeBps,
     })
     if (built.blocked || !built.artifact || built.artifact.kind !== 'eip712-order') {
       const reasons = built.guardrails.checks

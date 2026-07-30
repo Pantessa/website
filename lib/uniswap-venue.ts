@@ -159,6 +159,10 @@ export interface UniswapSwapParams {
    *  schedule owner) — every override MUST be re-verified by the caller's own
    *  independent calldata guard against the intended owner. */
   recipient?: string
+  /** Fee tier in bps (default SWAP_FEE_BPS; link-originated turns pass
+   *  LINK_SWAP_FEE_BPS). Rides the sweepTokenWithFee split — and must ride
+   *  the refresh recipe too, or a re-quote silently reprices to the base. */
+  feeBps?: number
 }
 
 export interface UniswapBuilt {
@@ -240,8 +244,9 @@ export async function buildUniswapSwap(params: UniswapSwapParams): Promise<Unisw
   // Yeetful fee (lib/fees.ts) via the router's NATIVE fee path: output lands
   // on the router, sweepTokenWithFee splits it user/treasury in the SAME
   // multicall. Fee off (bps 0) → the classic direct-to-payer build.
-  const feeOn = SWAP_FEE_BPS > 0
-  const feeAtomsOnMin = feeOn ? swapFeeAtoms(minOut) : BigInt(0)
+  const feeBps = params.feeBps ?? SWAP_FEE_BPS
+  const feeOn = feeBps > 0
+  const feeAtomsOnMin = feeOn ? swapFeeAtoms(minOut, feeBps) : BigInt(0)
   const minOutAfterFee = minOut - feeAtomsOnMin
 
   const swapCall = encodeFunctionData({
@@ -267,7 +272,7 @@ export async function buildUniswapSwap(params: UniswapSwapParams): Promise<Unisw
       encodeFunctionData({
         abi: SWAP_ROUTER_02_ABI,
         functionName: 'sweepTokenWithFee',
-        args: [buyAddr as `0x${string}`, minOut, recipient, BigInt(SWAP_FEE_BPS), TREASURY_ADDRESS],
+        args: [buyAddr as `0x${string}`, minOut, recipient, BigInt(feeBps), TREASURY_ADDRESS],
       }),
     )
   }
@@ -317,7 +322,7 @@ export async function buildUniswapSwap(params: UniswapSwapParams): Promise<Unisw
     level: 'warn',
     ok: true,
     note: feeOn
-      ? `Yeetful fee: ${SWAP_FEE_BPS / 100}% of the output (below Uniswap's 0.25% interface fee), split by the router's own sweepTokenWithFee to the Yeetful treasury — visible in the multicall, minimum received shown post-fee.`
+      ? `Yeetful fee: ${feeBps / 100}% of the output, split by the router's own sweepTokenWithFee to the Yeetful treasury — visible in the multicall, minimum received shown post-fee.`
       : 'No Yeetful fee on this swap.',
   }
   // Recipient pin: the classic build pays the payer (self-check). An override
@@ -352,7 +357,7 @@ export async function buildUniswapSwap(params: UniswapSwapParams): Promise<Unisw
   // Honest minimum: what the USER receives after the treasury sweep, not the
   // pool-level bound.
   const minHuman = formatAtoms(minOutAfterFee.toString(), buyDec)
-  const feeNote = feeOn ? `, incl. ${SWAP_FEE_BPS / 100}% Yeetful fee on the output` : ''
+  const feeNote = feeOn ? `, incl. ${feeBps / 100}% Yeetful fee on the output` : ''
   const summary = `Swap ${inHuman} ${tokenLabel(params.sellToken, chainId)} → ~${outHuman} ${tokenLabel(params.buyToken, chainId)} via Uniswap v3 on ${chain.name} (${best.fee / 100}bps pool), min received ${minHuman} (${slippageBps}bps slippage${feeNote})`
 
   return { summary, guardrails, blocked: !guardrails.ok, swapTx, approveTx, minimumOut: minHuman, validUntil: deadline }

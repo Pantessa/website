@@ -1667,6 +1667,16 @@ async function main() {
       Math.abs(life.earnings.totalEarnedUsd - 0.4) < 0.01,
       JSON.stringify(life.earnings),
     )
+    // C2b: the STAMPED tier wins over the path default — a $100 link-tier
+    // (50bps) referred swap earns $0.25 where the base rate would say $0.10.
+    await turn({ buildPath: 'native-swap-uniswap', walletAddress: referredWallet, valueUsd: 100, intentLinkSlug: undefined, feeBps: 50 })
+    const tierRes = await fetch(`${BASE}/api/intent-links`, { headers: { cookie: mallorySession } })
+    const tierLife = (await tierRes.json()) as { earnings: { referredEarnedUsd: number } }
+    check(
+      'intent links: earnings honor the STAMPED fee tier (a 50bps row earns 2.5x the base rate)',
+      Math.abs(tierLife.earnings.referredEarnedUsd - 0.45) < 0.005,
+      JSON.stringify(tierLife.earnings),
+    )
     const claim = await fetch(`${BASE}/api/intent-links/claims`, { method: 'POST', headers: M })
     check('intent links: claim below the $10 floor refused (400)', claim.status === 400)
 
@@ -6489,6 +6499,18 @@ async function main() {
     body: JSON.stringify({ message: 'swap 2 USDC for WETH', activeServers: [] }),
   }).then((r) => r.json())
   check('native swap: asks to connect a wallet (not a Claude lecture)', typeof nativeNoWallet.reply === 'string' && /connect your wallet/i.test(nativeNoWallet.reply))
+  // C2b: a refresh recipe carrying a NON-canonical fee tier is not ours —
+  // the rebuild refuses instead of silently repricing the signed chain.
+  const refreshBadTier = await fetch(`${BASE}/api/tx/refresh`, {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ kind: 'uniswap-swap', from: owner.address, sellToken: 'USDC', buyToken: 'WETH', amountHuman: '1', chainId: '8453', feeBps: '37' }),
+  })
+  const refreshBadTierBody = (await refreshBadTier.json().catch(() => ({}))) as { error?: string }
+  check(
+    'tx refresh: non-canonical fee tier refused (400) — re-quotes keep the tier they signed',
+    refreshBadTier.status === 400 && /unknown fee tier/i.test(refreshBadTierBody.error ?? ''),
+    JSON.stringify(refreshBadTierBody),
+  )
   // Spot guardian gate: claims BEFORE the HL guardian (whose loose coin slot
   // would read "spot" as a coin) and asks to connect — never a planner fall.
   const spotGate = await fetch(`${BASE}/api/chat`, {

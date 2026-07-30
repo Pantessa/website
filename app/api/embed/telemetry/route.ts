@@ -98,6 +98,12 @@ export async function POST(req: NextRequest) {
     typeof body.walletAddress === 'string' && /^0x[0-9a-fA-F]{40}$/.test(body.walletAddress)
       ? body.walletAddress.toLowerCase()
       : undefined
+  // The fee tier the artifact carried (C2b: 20 organic / 50 link) — earnings
+  // read this over the per-path default. Integer bps, venue-cap bounded.
+  const feeBps =
+    typeof body.feeBps === 'number' && Number.isInteger(body.feeBps) && body.feeBps >= 0 && body.feeBps <= 100
+      ? body.feeBps
+      : undefined
 
   try {
     await prisma.embedTurn.create({
@@ -121,6 +127,7 @@ export async function POST(req: NextRequest) {
         // earnings compute read-time from fee-bearing signed rows.
         intentLinkSlug,
         walletAddress,
+        feeBps,
       },
     })
   } catch {

@@ -791,6 +791,7 @@ model EmbedTurn {
   originKind     String?  @map("origin_kind") // chat | embed | job-step | dca-run (lib/value-origin.ts) — attended vs standing; null = legacy row, classified at read time
   intentLinkSlug String?  @map("intent_link_slug") // /i/<slug> attribution — creator fee-split accrues on fee-bearing signed turns
   walletAddress  String?  @map("wallet_address") // the SIGNING wallet (lowercased, self-reported like the rest of the beacon) — lifetime referral earnings key off it; null = legacy row
+  feeBps         Int?     @map("fee_bps") // the fee tier the ARTIFACT actually carried (C2b: 20 organic / 50 link) — earnings read this over the per-path default; null = legacy row at the path rate
   createdAt      DateTime @default(now()) @map("created_at")
 
   @@index([ownerAddress, createdAt])

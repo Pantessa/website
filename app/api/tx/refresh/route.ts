@@ -16,6 +16,7 @@ import { buildLifiSwap, NoLifiRouteError } from '@/lib/lifi-venue'
 import { buildLifiBridgeLeg, type FundingLeg } from '@/lib/lifi-bridge'
 import { ensureTokenList } from '@/lib/token-list'
 import { sanitizeChainId, publicClientFor, DEFAULT_CHAIN_ID } from '@/lib/chains'
+import { LINK_SWAP_FEE_BPS, SWAP_FEE_BPS } from '@/lib/fees'
 
 /** Dry-run the rebuilt swap before offering it. A tx that reverts at
  *  estimation must NEVER reach the wallet: MetaMask's estimate fails too and
@@ -59,6 +60,20 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: `unknown refresh kind "${String(body.kind)}"` }, { status: 400 })
   }
   const from = typeof body.from === 'string' && /^0x[0-9a-fA-F]{40}$/.test(body.from) ? body.from : null
+
+  // Fee tier the ORIGINAL build carried (C2b): the rebuild must re-quote at
+  // the SAME tier — without this a link-priced chain silently reprices to
+  // the base rate on refresh. Recipe params ride as strings; only the two
+  // canonical tiers rebuild, anything else is not a Yeetful recipe.
+  const feeBps =
+    body.feeBps === undefined
+      ? undefined
+      : typeof body.feeBps === 'string' && /^[0-9]{1,3}$/.test(body.feeBps) && [SWAP_FEE_BPS, LINK_SWAP_FEE_BPS].includes(Number(body.feeBps))
+        ? Number(body.feeBps)
+        : null
+  if (feeBps === null) {
+    return NextResponse.json({ error: 'unknown fee tier' }, { status: 400 })
+  }
 
   // Funding-bridge legs (the Robinhood funding job) refresh from their own
   // recipe shape: {leg, usd} — the builder re-quotes the cross-chain route,
@@ -158,7 +173,7 @@ export async function POST(req: NextRequest) {
       }
       return NextResponse.json({ tx: v4.steps[0].tx, summary: v4.summary, guardrails: v4.guardrails, validUntil: v4.steps[0].validUntil ?? null })
     }
-    const uni = await buildUniswapSwap({ sellToken, buyToken, amountHuman, from, chainId })
+    const uni = await buildUniswapSwap({ sellToken, buyToken, amountHuman, from, chainId, feeBps })
     if (uni.blocked) {
       const reasons = uni.guardrails.checks.filter((c) => !c.ok && c.level === 'block').map((c) => c.note).join(' ')
       return NextResponse.json({ blocked: true, blockKind: 'policy', reasons: reasons || 'a safety check failed', guardrails: uni.guardrails })

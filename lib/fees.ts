@@ -104,6 +104,17 @@ export function netFeeBpsFor(buildPath: string | null | undefined): number {
   return (buildPath && NET_FEE_BPS_BY_BUILD_PATH[buildPath]) || 0
 }
 
+/** Effective NET bps for ONE turn row (C2b): the STAMPED tier when the row
+ *  carries one — CoW/Uniswap hand the whole fee over, so the stamped rate IS
+ *  the net — else the per-path default. Cross-chain keeps the path fallback
+ *  (its stamped rate would be gross; 1Click keeps half). Callers still gate
+ *  on FEE_BEARING_BUILD_PATHS — a stray stamp on a fee-free path earns $0. */
+export function netFeeBpsForTurn(buildPath: string | null | undefined, feeBps: number | null | undefined): number {
+  if (buildPath === 'native-cross-chain') return netFeeBpsFor(buildPath)
+  if (typeof feeBps === 'number' && feeBps > 0) return feeBps
+  return netFeeBpsFor(buildPath)
+}
+
 /** Creator earnings on a signed, fee-bearing notional — half of what Yeetful
  *  actually keeps, which is NOT always half of what the user paid (see the
  *  1Click split above). Callers pass the path's net rate. */
