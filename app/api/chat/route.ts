@@ -1708,10 +1708,30 @@ async function handleChatTurn(req: NextRequest) {
           // Warm BOTH lists first — a dynamic-only token on the target chain
           // (unwarmed → resolves null) must not read as "not a token here".
           await Promise.all([ensureTokenList(targetChain.id).catch(() => {}), ensureTokenList(ROBINHOOD_CHAIN_ID).catch(() => {})])
-          const pairing = !resolveToken(swapIntent.buyToken, targetChain.id) ? pairStockToken(swapIntent.buyToken, ROBINHOOD_CHAIN_ID) : null
+          // CURATED beats dynamic on ticker collisions: 4663's STOCK list is
+          // pinned; the target chain's Uniswap list is PERMISSIONLESS, and a
+          // token squatting a real ticker there must never hijack a stock ask
+          // (live 2026-07-30: an "AAPL" appeared on Base's list and "Buy $10
+          // of AAPL" stopped routing to Robinhood Chain — dead CoW quote
+          // today, a FAKE fill the day the squat has liquidity). EXACT stock
+          // tickers only — 4663's infra tokens (WETH/ETH/USDG) must never
+          // pull generic buys to the stock chain, and a user who wants the
+          // same-named target-chain token names the chain (namedNative wins).
+          const exactStock = (() => {
+            // 4663's list = stocks + exactly two infra classes (wrapped gas,
+            // stables) — resolving there to a non-infra address IS the stock
+            // proof. Derived, not hardcoded, so list growth keeps it honest.
+            const addr = resolveToken(swapIntent.buyToken, ROBINHOOD_CHAIN_ID)
+            if (!addr) return false
+            const rh = chainById(ROBINHOOD_CHAIN_ID)!
+            const wethAddr = resolveToken('WETH', ROBINHOOD_CHAIN_ID)
+            const isInfra = addr.toLowerCase() === (wethAddr ?? '').toLowerCase() || rh.stables[addr.toLowerCase()] !== undefined
+            return !isInfra
+          })()
+          const pairing = !exactStock && !resolveToken(swapIntent.buyToken, targetChain.id) ? pairStockToken(swapIntent.buyToken, ROBINHOOD_CHAIN_ID) : null
           // 'ok' with a null resolve = the list never warmed (pairing fails
           // open) — that must NOT retarget arbitrary unknown tokens to 4663.
-          const isStock = pairing !== null && (!!resolveToken(swapIntent.buyToken, ROBINHOOD_CHAIN_ID) || pairing.kind === 'paired' || pairing.kind === 'suggest')
+          const isStock = exactStock || (pairing !== null && (!!resolveToken(swapIntent.buyToken, ROBINHOOD_CHAIN_ID) || pairing.kind === 'paired' || pairing.kind === 'suggest'))
           if (isStock) {
             buildChain = chainById(ROBINHOOD_CHAIN_ID)!
             nativeTrace({ type: 'status', label: `stock-chain inference: “${swapIntent.buyToken.toUpperCase()}” isn't a ${targetChain.name} token but matches Robinhood Chain's stock list — building there` })
