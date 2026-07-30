@@ -117,7 +117,9 @@ export function composeBriefingItems(inputs: BriefingInputs): StatRow[] {
       rows.push({
         label: `${coin} ${p.side} · no downside protection`,
         value: usd(p.positionValueUsd),
-        sub: `${p.leverage}x · PnL ${signedUsd(p.unrealizedPnl)} · a 10% stop watches it for you`,
+        // The downside AUDIT (C4): name the dollar cost of the bad day, not
+        // just the missing guard — "protection" is abstract, "$418" is not.
+        sub: `${p.leverage}x · PnL ${signedUsd(p.unrealizedPnl)} · no stop armed — a 20% move against costs ${usd(p.positionValueUsd * 0.2)}`,
         tone: 'neg',
         chartSymbol: coin,
         actions: [
@@ -200,7 +202,8 @@ export function composeBriefingItems(inputs: BriefingInputs): StatRow[] {
         rows.push({
           label: `${usd(s.usd)} of ETH on ${s.chainWord} · unwatched`,
           value: 'no stop loss',
-          sub: 'one signature arms a spot stop — if it dumps, USDC lands in your wallet',
+          // Same downside audit as perps: the bad day gets a dollar figure.
+          sub: `no stop armed — a 20% dump costs ${usd(s.usd * 0.2)}; one signature arms a stop that sells to USDC in your wallet`,
           tone: 'neg',
           chartSymbol: 'ETH',
           actions: [{ label: 'Protect spot ETH', prompt: 'Protect my spot ETH with a 10% stop loss' }],
