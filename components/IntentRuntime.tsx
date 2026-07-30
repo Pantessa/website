@@ -320,8 +320,11 @@ export default function IntentRuntime({
             ) : (
               <>
                 <YeetfulMark size={18} />
+                {/* CALL framing (C3): creator links read as a posted call —
+                    the thing a KOL shares. House links (creator=null) keep
+                    the neutral "Intent link" lockup, pure Yeetful (pinned). */}
                 <span className="mono text-[11px] uppercase tracking-widest text-[color:var(--muted-2)]">
-                  Intent link{agent ? ` · from ${agent}` : ''}
+                  {hasCreator ? <>Call{agent ? ` · by ${agent}` : ''}</> : <>Intent link{agent ? ` · from ${agent}` : ''}</>}
                 </span>
               </>
             )}
@@ -379,9 +382,17 @@ export default function IntentRuntime({
             </p>
           )}
           {hasCreator && (
+            // The disclosure badge (C3): the counter-position to undisclosed
+            // KOL shilling — a paid call says it's paid, and says the WHOLE
+            // deal (lifetime first-touch, the #607 rail). Rate-agnostic on
+            // purpose ("half of Yeetful's fee") — the tier varies by origin.
             <p className="mono text-[11px] text-[color:var(--muted-2)] mt-10 pt-4 border-t border-[var(--line)] max-w-md">
-              The creator of this link earns half of Yeetful&apos;s 0.20% conversion fee. Sales,
-              transfers, and bridges are always fee-free.
+              {/* {' '} is load-bearing: SWC drops a line-leading space after
+                  an expression (the standing JSX entity-space gotcha). */}
+              {agent ? `${agent} posted this call — its creator` : 'The creator of this call'}
+              {' '}earns half of Yeetful&apos;s fee on the trades it produces, and on later trades from wallets it brings
+              (lifetime, first touch) — disclosed here because paid calls should say so. Receipts live
+              on-chain. Sales, transfers, and bridges are always fee-free.
             </p>
           )}
         </div>

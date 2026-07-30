@@ -29,7 +29,7 @@ import { grantViolation, type GrantPolicy } from '../lib/spend-grant'
 import { routerPrompt, parseRouterDecision, selectInferenceProvider, routeMessage, shortlistEndpoints } from '../lib/router'
 import { buildSmartRequest, computeRating, type PlannableEndpoint } from '../lib/endpoint-planner'
 import { buildSignableArtifact, isActionIntent, orderRequestOf, txRequestOf, txChainOf } from '../lib/transaction-layer'
-import { resolveToken, buildCowOrderTypedData, cowOrderAction, buildCowLimitOrder, buildCowSubmitBody, describeCowOrder, describeAmount, formatAtoms, tokenDecimals, tokenLabel, humanToAtoms, applySlippage, COW_APP_DATA_JSON, COW_APP_DATA_HASH, GPV2_SETTLEMENT, type CowQuoteResult } from '../lib/cow'
+import { resolveToken, buildCowOrderTypedData, cowOrderAction, buildCowLimitOrder, buildCowSubmitBody, describeCowOrder, describeAmount, formatAtoms, tokenDecimals, tokenLabel, humanToAtoms, applySlippage, COW_APP_DATA_JSON, COW_APP_DATA_HASH, COW_CANONICAL_APP_DATA_HASHES, cowAppDataJson, cowAppDataHash, cowAppDataBpsOf, GPV2_SETTLEMENT, type CowQuoteResult } from '../lib/cow'
 import { primeTokenList } from '../lib/token-list'
 import { pairStockToken, stockChipLabel } from '../lib/stock-pairing'
 import { chartPairFor, changePct24h, aggregateCandles, type Candle } from '../lib/charts'
@@ -113,7 +113,7 @@ import {
   viaIdOf,
 } from '../lib/share-receipts'
 import { EXAMPLE_PROMPTS } from '../lib/examples'
-import { swapFeeAtoms, SWAP_FEE_BPS, TREASURY_ADDRESS, HL_BUILDER_FEE_TENTH_BPS, HL_BUILDER_MAX_FEE_RATE } from '../lib/fees'
+import { swapFeeAtoms, SWAP_FEE_BPS, LINK_SWAP_FEE_BPS, TREASURY_ADDRESS, HL_BUILDER_FEE_TENTH_BPS, HL_BUILDER_MAX_FEE_RATE } from '../lib/fees'
 import { APP_CHAINS, chainById, chainNamedIn, explorerTokenUrl, sanitizeChainId } from '../lib/chains'
 import { parseCrossChainSwap, guardCrossChainBuild, expectedOriginChainId, parseCrossChainFollowUp, crossChainPending, crossChainValueUsd } from '../lib/cross-chain-swap'
 import {
@@ -1642,12 +1642,66 @@ async function main() {
         formatEarnedUsd(0.1) === '$0.10' &&
         formatEarnedUsd(12.345) === '$12.35',
     )
+    // Lifetime attribution (HANDOFF-yeetcall-gtm C2): the first link a wallet
+    // SIGNS through claims it for that creator; the wallet's later
+    // UNattributed fee-bearing turns accrue to the creator forever; direct
+    // link attribution wins per-turn; the creator's own wallet never claims
+    // itself. The referred wallet must be RANDOM per run — referred_wallets
+    // keys on the wallet globally, so a constant address gets claimed by the
+    // FIRST run's mallory forever and every rerun sees zero rows (caught
+    // live 2026-07-30; also the phantom-wallet-metric lesson: random rows
+    // stay inert).
+    const referredWallet = privateKeyToAccount(generatePrivateKey()).address.toLowerCase()
+    await turn({ buildPath: 'native-swap-uniswap', walletAddress: referredWallet, valueUsd: 50 }) // stamps first touch (+$0.05 direct)
+    await turn({ buildPath: 'native-swap-uniswap', walletAddress: mallory.address, valueUsd: 50 }) // self-referral: excluded (+$0.05 direct)
+    await turn({ buildPath: 'native-swap-uniswap', walletAddress: referredWallet, valueUsd: 200, intentLinkSlug: undefined }) // later trade, no link → referral $0.20
+    await turn({ buildPath: 'native-nft-transfer', walletAddress: referredWallet, valueUsd: 999, intentLinkSlug: undefined }) // fee-free later trade → $0
+    const lifeRes = await fetch(`${BASE}/api/intent-links`, { headers: { cookie: mallorySession } })
+    const life = (await lifeRes.json()) as {
+      earnings: { referredWallets: number; referredEarnedUsd: number; referredSignedUsd: number; totalEarnedUsd: number }
+    }
+    check(
+      'intent links: first-touch stamps ONE referred wallet (self-referral excluded)',
+      life.earnings.referredWallets === 1,
+      JSON.stringify(life.earnings),
+    )
+    check(
+      'intent links: referred later-trade accrues at the path rate; fee-free moves earn $0',
+      Math.abs(life.earnings.referredEarnedUsd - 0.2) < 0.005 && life.earnings.referredSignedUsd >= 1199,
+    )
+    check(
+      'intent links: lifetime earnings ride totalEarnedUsd (claim parity)',
+      Math.abs(life.earnings.totalEarnedUsd - 0.4) < 0.01,
+      JSON.stringify(life.earnings),
+    )
+    // C2b: the STAMPED tier wins over the path default — a $100 link-tier
+    // (50bps) referred swap earns $0.25 where the base rate would say $0.10.
+    await turn({ buildPath: 'native-swap-uniswap', walletAddress: referredWallet, valueUsd: 100, intentLinkSlug: undefined, feeBps: 50 })
+    const tierRes = await fetch(`${BASE}/api/intent-links`, { headers: { cookie: mallorySession } })
+    const tierLife = (await tierRes.json()) as { earnings: { referredEarnedUsd: number } }
+    check(
+      'intent links: earnings honor the STAMPED fee tier (a 50bps row earns 2.5x the base rate)',
+      Math.abs(tierLife.earnings.referredEarnedUsd - 0.45) < 0.005,
+      JSON.stringify(tierLife.earnings),
+    )
     const claim = await fetch(`${BASE}/api/intent-links/claims`, { method: 'POST', headers: M })
     check('intent links: claim below the $10 floor refused (400)', claim.status === 400)
 
     // The fee-split disclosure renders on creator-minted /i pages.
     const iPage = await (await fetch(`${BASE}/i/${slug}`)).text()
     check('intent links: /i discloses the creator fee split', /earns half of Yeetful/.test(iPage))
+    // CALL framing (C3): creator links read as a posted call and disclose
+    // the WHOLE deal (lifetime first-touch); house links stay the neutral
+    // pure-Yeetful lockup with no creator fee line.
+    check(
+      'intent links: creator /i wears the CALL framing + lifetime disclosure',
+      />Call</.test(iPage) && /lifetime, first touch/.test(iPage) && /paid calls should say so/.test(iPage),
+    )
+    const houseCallPage = await (await fetch(`${BASE}/i/protected-long`)).text()
+    check(
+      'intent links: house /i stays pure Yeetful — no call framing, no creator fee line',
+      /Intent link/.test(houseCallPage) && !/earns half of Yeetful/.test(houseCallPage) && !/>Call</.test(houseCallPage),
+    )
 
     // Plan cap: free carries 3 active links; this run minted 2, so one more
     // fits and the 4th refuses with the upgrade pointer.
@@ -5362,6 +5416,24 @@ async function main() {
     'cow: limit order appData hash matches the shipped JSON',
     limit.order.appData === keccak256(stringToBytes(COW_APP_DATA_JSON)) && limit.appDataJson === COW_APP_DATA_JSON,
   )
+  // Two-doc family (C2b): base tier + link tier are the ONLY canonical
+  // docs; the tier reads back from the signed hash and foreign docs are
+  // nobody's — the guard/relay membership pin rests on exactly this.
+  check(
+    'cow: appData is a two-doc family — link tier canonical, tier reads back from the hash, foreign hashes refuse',
+    cowAppDataJson(LINK_SWAP_FEE_BPS).includes(`"bps":${LINK_SWAP_FEE_BPS}`) &&
+      COW_CANONICAL_APP_DATA_HASHES.has(cowAppDataHash(LINK_SWAP_FEE_BPS).toLowerCase()) &&
+      COW_CANONICAL_APP_DATA_HASHES.has(COW_APP_DATA_HASH.toLowerCase()) &&
+      cowAppDataBpsOf(cowAppDataHash(LINK_SWAP_FEE_BPS)) === LINK_SWAP_FEE_BPS &&
+      cowAppDataBpsOf(COW_APP_DATA_HASH) === SWAP_FEE_BPS &&
+      cowAppDataBpsOf(`0x${'ee'.repeat(32)}`) === null &&
+      LINK_SWAP_FEE_BPS === 50,
+  )
+  check(
+    'cow: limit order builds on the link tier when asked',
+    buildCowLimitOrder({ sellToken: 'WETH', buyToken: 'USDC', sellAmount: '500000000000000000', buyAmountAtLeast: '1750000000', from: '0x1111111111111111111111111111111111111111', feeBps: LINK_SWAP_FEE_BPS }).order.appData ===
+      cowAppDataHash(LINK_SWAP_FEE_BPS),
+  )
   check('cow: limit order validTo is in the future', limit.order.validTo > Math.floor(Date.now() / 1000))
   check(
     'cow: limit order summary names the floor',
@@ -6446,6 +6518,32 @@ async function main() {
     body: JSON.stringify({ message: 'swap 2 USDC for WETH', activeServers: [] }),
   }).then((r) => r.json())
   check('native swap: asks to connect a wallet (not a Claude lecture)', typeof nativeNoWallet.reply === 'string' && /connect your wallet/i.test(nativeNoWallet.reply))
+  // Curated-beats-dynamic (C6 squat fix, live 2026-07-30): a token squatting
+  // a real stock ticker on a PERMISSIONLESS target-chain list must never
+  // hijack the stock ask off Robinhood Chain — "Buy $10 of AAPL" routes to
+  // the stock path (build or funding cascade), never a dead target-chain
+  // quote. Live check against the real Base list (where the squat exists).
+  const stockSquat = await fetch(`${BASE}/api/chat`, {
+    method: 'POST', headers: { 'content-type': 'application/json', 'x-yf-no-ask-log': '1' },
+    body: JSON.stringify({ message: 'Buy $10 of AAPL', activeServers: [], walletAddress: owner.address }),
+  }).then((r) => r.json())
+  check(
+    'native swap: stock ticker squatted on Base still routes to the stock path',
+    typeof stockSquat.reply === 'string' && !/Couldn't build the swap/i.test(stockSquat.reply) && /robinhood|usdg|usdc|bridge|holding/i.test(stockSquat.reply),
+    JSON.stringify(stockSquat.reply ?? '').slice(0, 200),
+  )
+  // C2b: a refresh recipe carrying a NON-canonical fee tier is not ours —
+  // the rebuild refuses instead of silently repricing the signed chain.
+  const refreshBadTier = await fetch(`${BASE}/api/tx/refresh`, {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ kind: 'uniswap-swap', from: owner.address, sellToken: 'USDC', buyToken: 'WETH', amountHuman: '1', chainId: '8453', feeBps: '37' }),
+  })
+  const refreshBadTierBody = (await refreshBadTier.json().catch(() => ({}))) as { error?: string }
+  check(
+    'tx refresh: non-canonical fee tier refused (400) — re-quotes keep the tier they signed',
+    refreshBadTier.status === 400 && /unknown fee tier/i.test(refreshBadTierBody.error ?? ''),
+    JSON.stringify(refreshBadTierBody),
+  )
   // Spot guardian gate: claims BEFORE the HL guardian (whose loose coin slot
   // would read "spot" as a coin) and asks to connect — never a planner fall.
   const spotGate = await fetch(`${BASE}/api/chat`, {
@@ -8348,6 +8446,30 @@ async function main() {
       'briefing: unprotected position → neg row + guardian chip that round-trips',
       naked.length === 1 && naked[0].tone === 'neg' && !!nakedArm && nakedArm.coin === 'ETH' && nakedArm.kind === 'stop_loss' && nakedArm.triggerValue === 10,
       JSON.stringify(naked).slice(0, 200),
+    )
+    // The downside AUDIT (C4): the bad day gets a dollar figure — 20% of the
+    // $412.50 position is $82.50, named in the sub. The crash-day thread
+    // generator greps exactly this shape ("no stop armed — … costs $X").
+    check(
+      'briefing: unprotected sub names the −20% dollar cost (the downside audit)',
+      /no stop armed — a 20% move against costs \$82\.50/.test(naked[0].sub ?? ''),
+      naked[0].sub,
+    )
+    // Spot flavor of the same audit: unwatched Base ETH above the floor.
+    const spotNaked = composeBriefingItems({
+      ...empty,
+      funding: {
+        readChains: ['Base'],
+        failedChains: [],
+        sources: [{ token: 'ETH', chainId: 8453, chainWord: 'Base', balance: 0.14, usd: 500 }],
+        stranded: [],
+      },
+    })
+    const spotRow = spotNaked.find((r) => /unwatched/.test(r.label))
+    check(
+      'briefing: unwatched spot ETH sub names the −20% dollar cost',
+      !!spotRow && /no stop armed — a 20% dump costs \$100\.00/.test(spotRow.sub ?? ''),
+      JSON.stringify(spotRow ?? spotNaked).slice(0, 200),
     )
     // Protected position → quiet pos row, NO chip (active guardian never nags).
     const guarded = composeBriefingItems({ ...empty, positions: [pos()], protectedCoins: ['eth'] })

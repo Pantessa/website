@@ -23,6 +23,10 @@ export interface GuardedSwapParams {
   amountHuman: string
   from: string
   chainId: number
+  /** Fee tier in bps (default SWAP_FEE_BPS; link-originated turns pass
+   *  LINK_SWAP_FEE_BPS). Threads to the v3 build AND the refresh recipe so
+   *  re-quotes keep the tier. v4 has no venue-fee mechanism — unaffected. */
+  feeBps?: number
 }
 
 export type GuardedSwapResult =
@@ -54,12 +58,18 @@ export async function buildGuardedSwap(params: GuardedSwapParams): Promise<Guard
   await ensureTokenList(chainId)
   const sell = sellToken.toUpperCase()
   const buy = buyToken.toUpperCase()
-  const refreshParams = { sellToken, buyToken, amountHuman, chainId: String(chainId) }
+  const refreshParams = {
+    sellToken,
+    buyToken,
+    amountHuman,
+    chainId: String(chainId),
+    ...(params.feeBps !== undefined ? { feeBps: String(params.feeBps) } : {}),
+  }
 
   // ── Uniswap v3 (the default venue on every first-class chain) ────────────
   let uni: UniswapBuilt | null = null
   try {
-    uni = await buildUniswapSwap({ sellToken, buyToken, amountHuman, from, chainId })
+    uni = await buildUniswapSwap({ sellToken, buyToken, amountHuman, from, chainId, feeBps: params.feeBps })
   } catch (err) {
     if (!(err instanceof NoV3PoolError && chain.uniswapV4)) throw err
   }
