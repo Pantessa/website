@@ -41,6 +41,14 @@ export interface Earnings {
   claimedUsd: number
   claimableUsd: number
   minClaimUsd: number
+  /** Lifetime referral rail (C2): wallets first-touched by these links, and
+   *  what their later UNattributed fee-bearing turns earned (already inside
+   *  totalEarnedUsd — surfaced separately so the creator can see the rail
+   *  working). Optional: older cached responses may lack them. */
+  referredWallets?: number
+  referredEarnedUsd?: number
+  referredSignedUsd?: number
+  referredSigns?: number
 }
 
 export interface Brand {

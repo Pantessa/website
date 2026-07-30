@@ -27,10 +27,21 @@ export async function POST(req: NextRequest) {
     where: { intentLinkSlug: { in: links.map((l) => l.id) }, outcome: 'signed', valueUsd: { gt: 0 } },
     _sum: { valueUsd: true },
   })
+  // Lifetime referral component — the SAME union as /api/intent-links
+  // (referred wallets' unattributed fee-bearing turns; direct link
+  // attribution wins per-turn, so the two legs never overlap).
+  const referred = await prisma.referredWallet.findMany({ where: { creator }, select: { wallet: true } })
+  const referredTurns = referred.length
+    ? await prisma.embedTurn.groupBy({
+        by: ['buildPath'],
+        where: { walletAddress: { in: referred.map((r) => r.wallet) }, intentLinkSlug: null, outcome: 'signed', valueUsd: { gt: 0 } },
+        _sum: { valueUsd: true },
+      })
+    : []
   // Per-path rates — a cross-chain dollar earns half a Uniswap dollar (the
   // 1Click app-fee split). Must match /api/intent-links exactly or a creator
   // sees one number and claims another.
-  const earned = turns.reduce(
+  const earned = [...turns, ...referredTurns].reduce(
     (s, t) =>
       s +
       (t.buildPath && FEE_BEARING_BUILD_PATHS.has(t.buildPath)

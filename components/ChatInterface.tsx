@@ -878,9 +878,11 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
       : `s-${Math.random().toString(36).slice(2)}${Date.now().toString(36)}`,
   )
   const postEmbedTelemetry = (payload: Record<string, unknown>) => {
+    // The signing wallet rides every beacon — it keys first-touch lifetime
+    // referral earnings (HANDOFF-yeetcall-gtm C2) server-side.
     const body = embedded
       ? embedKey && embedSession
-        ? { key: embedKey, sessionId: embedSession, page: embedOrigin, ...payload }
+        ? { key: embedKey, sessionId: embedSession, page: embedOrigin, walletAddress: address, ...payload }
         : null // keyless third-party embeds record nothing
       : payload.outcome === 'tx-built' || payload.outcome === 'signed'
         ? {
@@ -888,6 +890,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
             sessionId: chatSession,
             page: typeof window !== 'undefined' ? window.location.href : undefined,
             intentLinkSlug,
+            walletAddress: address,
             ...payload,
             prompt: undefined,
             detail: undefined,

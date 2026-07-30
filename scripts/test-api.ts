@@ -1638,6 +1638,35 @@ async function main() {
         formatEarnedUsd(0.1) === '$0.10' &&
         formatEarnedUsd(12.345) === '$12.35',
     )
+    // Lifetime attribution (HANDOFF-yeetcall-gtm C2): the first link a wallet
+    // SIGNS through claims it for that creator; the wallet's later
+    // UNattributed fee-bearing turns accrue to the creator forever; direct
+    // link attribution wins per-turn; the creator's own wallet never claims
+    // itself. Fabricated address-shaped wallet — random mallory per run keeps
+    // rows inert (the phantom-wallet-metric lesson).
+    const referredWallet = `0x${'ab'.repeat(19)}01`
+    await turn({ buildPath: 'native-swap-uniswap', walletAddress: referredWallet, valueUsd: 50 }) // stamps first touch (+$0.05 direct)
+    await turn({ buildPath: 'native-swap-uniswap', walletAddress: mallory.address, valueUsd: 50 }) // self-referral: excluded (+$0.05 direct)
+    await turn({ buildPath: 'native-swap-uniswap', walletAddress: referredWallet, valueUsd: 200, intentLinkSlug: undefined }) // later trade, no link → referral $0.20
+    await turn({ buildPath: 'native-nft-transfer', walletAddress: referredWallet, valueUsd: 999, intentLinkSlug: undefined }) // fee-free later trade → $0
+    const lifeRes = await fetch(`${BASE}/api/intent-links`, { headers: { cookie: mallorySession } })
+    const life = (await lifeRes.json()) as {
+      earnings: { referredWallets: number; referredEarnedUsd: number; referredSignedUsd: number; totalEarnedUsd: number }
+    }
+    check(
+      'intent links: first-touch stamps ONE referred wallet (self-referral excluded)',
+      life.earnings.referredWallets === 1,
+      JSON.stringify(life.earnings),
+    )
+    check(
+      'intent links: referred later-trade accrues at the path rate; fee-free moves earn $0',
+      Math.abs(life.earnings.referredEarnedUsd - 0.2) < 0.005 && life.earnings.referredSignedUsd >= 1199,
+    )
+    check(
+      'intent links: lifetime earnings ride totalEarnedUsd (claim parity)',
+      Math.abs(life.earnings.totalEarnedUsd - 0.4) < 0.01,
+      JSON.stringify(life.earnings),
+    )
     const claim = await fetch(`${BASE}/api/intent-links/claims`, { method: 'POST', headers: M })
     check('intent links: claim below the $10 floor refused (400)', claim.status === 400)
 
