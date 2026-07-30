@@ -18,7 +18,7 @@ import {
   type GuardrailCheck,
   type GuardrailReport,
 } from '@/lib/tx-guardrails'
-import { formatAtoms, tokenLabel, COW_APP_DATA_HASH, type CowQuoteResult, type CowOrderParameters } from '@/lib/cow'
+import { formatAtoms, tokenLabel, cowAppDataBpsOf, type CowQuoteResult, type CowOrderParameters } from '@/lib/cow'
 import { SWAP_FEE_BPS, TREASURY_ADDRESS } from '@/lib/fees'
 
 // Re-export the core's types/builders so existing CoW call sites and tests
@@ -81,14 +81,19 @@ function feeCheck(order: CowOrderParameters): GuardrailCheck {
  *  protocol fee is on). A quote whose appDataHash differs signed someone
  *  else's document (fee stripped or hooks injected) — refuse, never offer. */
 function appDataCheck(order: CowOrderParameters): GuardrailCheck {
-  const ok = (order.appData ?? '').toLowerCase() === COW_APP_DATA_HASH.toLowerCase()
+  // Two-doc family (C2b): the base tier and the link tier are BOTH ours;
+  // anything else signed someone else's document. The note names the exact
+  // rate this order carries — the tier is inside the signed hash, so it can
+  // never be restated after the fact.
+  const bps = cowAppDataBpsOf(order.appData)
+  const ok = bps !== null
   return {
     id: 'app-data',
     level: 'block',
     ok,
     note: ok
-      ? SWAP_FEE_BPS > 0
-        ? `Order carries Yeetful's appData: CoW settles a ${SWAP_FEE_BPS / 100}% partner fee to the treasury (${TREASURY_ADDRESS.slice(0, 6)}…${TREASURY_ADDRESS.slice(-4)}) inside the protocol — no extra step to sign.`
+      ? bps > 0
+        ? `Order carries Yeetful's appData: CoW settles a ${bps / 100}% partner fee to the treasury (${TREASURY_ADDRESS.slice(0, 6)}…${TREASURY_ADDRESS.slice(-4)}) inside the protocol — no extra step to sign.`
         : "Order carries Yeetful's appData attribution."
       : 'Order appData is not the document Yeetful builds with — refusing (fee/hook tampering).',
   }

@@ -13,7 +13,7 @@
 // ─────────────────────────────────────────────────────────────────────────
 import { dynamicTokenBySymbol, dynamicTokenByAddress, dynamicTokenByName } from '@/lib/token-list'
 import { chainById } from '@/lib/chains'
-import { SWAP_FEE_BPS, TREASURY_ADDRESS } from '@/lib/fees'
+import { LINK_SWAP_FEE_BPS, SWAP_FEE_BPS, TREASURY_ADDRESS } from '@/lib/fees'
 
 import { keccak256, stringToBytes } from 'viem'
 
@@ -148,6 +148,10 @@ export interface CowQuoteParams {
   receiver?: string
   /** Seconds the order stays valid (default 20 min). */
   validForSec?: number
+  /** Fee tier for the appData doc (default SWAP_FEE_BPS; link-originated
+   *  turns pass LINK_SWAP_FEE_BPS). Must be a canonical tier — the guard
+   *  refuses anything outside the two-doc family. */
+  feeBps?: number
 }
 
 /** The normalized order parameters returned by CoW's /quote (the signable set). */
@@ -180,20 +184,49 @@ export interface CowQuoteResult {
 /** The appData document we attribute orders with. `order.appData` signs its
  *  keccak-256 hash; submission carries the full JSON. When the protocol fee
  *  is on (lib/fees.ts), the doc carries CoW's NATIVE partner-fee field — the
- *  protocol itself settles SWAP_FEE_BPS of the buy amount to the Yeetful
+ *  protocol itself settles the bps of the buy amount to the Yeetful
  *  treasury at execution; nothing extra to sign, no separate transfer step.
  *  Schema 1.3.0 + this exact partnerFee shape verified live against the Base
- *  orderbook 2026-07-20 (quote accepted, appDataHash echoed). EXACT-string
- *  discipline: every site (quote request, limit-order hash, submit body)
- *  reads THIS constant, and the guard pins order.appData to its keccak. */
-export const COW_APP_DATA_JSON =
-  SWAP_FEE_BPS > 0
-    ? `{"version":"1.3.0","appCode":"Yeetful","metadata":{"partnerFee":{"bps":${SWAP_FEE_BPS},"recipient":"${TREASURY_ADDRESS}"}}}`
+ *  orderbook 2026-07-20 (quote accepted, appDataHash echoed).
+ *
+ *  TWO-DOC FAMILY (HANDOFF-yeetcall-gtm C2b): the fee is TIERED — organic
+ *  chat at SWAP_FEE_BPS, link-originated flow at LINK_SWAP_FEE_BPS — so
+ *  there are exactly two canonical documents. EXACT-string discipline
+ *  survives: every build site derives its doc from cowAppDataJson(bps),
+ *  and the guard + submit relay pin order.appData to MEMBERSHIP in
+ *  COW_CANONICAL_APP_DATA_HASHES — never to an unrecognized doc. */
+export function cowAppDataJson(bps: number = SWAP_FEE_BPS): string {
+  return bps > 0
+    ? `{"version":"1.3.0","appCode":"Yeetful","metadata":{"partnerFee":{"bps":${bps},"recipient":"${TREASURY_ADDRESS}"}}}`
     : '{"version":"1.1.0","appCode":"Yeetful"}'
+}
 
-/** keccak-256 of the appData doc — what a Yeetful-built order's `appData`
- *  field MUST equal (guard + submit relay both pin it). */
-export const COW_APP_DATA_HASH = keccak256(stringToBytes(COW_APP_DATA_JSON))
+export function cowAppDataHash(bps: number = SWAP_FEE_BPS): string {
+  return keccak256(stringToBytes(cowAppDataJson(bps)))
+}
+
+/** The default-tier doc/hash — the organic-chat rate (backwards-compatible
+ *  names; existing call sites read these). */
+export const COW_APP_DATA_JSON = cowAppDataJson()
+export const COW_APP_DATA_HASH = cowAppDataHash()
+
+/** Every appData hash Yeetful builds with (lowercased): the base tier and
+ *  the link tier. A signed order whose appData is outside this set signed
+ *  someone ELSE's document — fee-stripped, fatter-fee, or hook-injected —
+ *  and never relays. */
+export const COW_CANONICAL_APP_DATA_HASHES: ReadonlySet<string> = new Set(
+  [SWAP_FEE_BPS, LINK_SWAP_FEE_BPS].map((bps) => cowAppDataHash(bps).toLowerCase()),
+)
+
+/** Which tier a signed order's appData hash belongs to — null when it is
+ *  not a Yeetful document (refuse). Lets guards NAME the rate they saw. */
+export function cowAppDataBpsOf(appDataHash: string | undefined): number | null {
+  const h = (appDataHash ?? '').toLowerCase()
+  for (const bps of [SWAP_FEE_BPS, LINK_SWAP_FEE_BPS]) {
+    if (cowAppDataHash(bps).toLowerCase() === h) return bps
+  }
+  return null
+}
 
 /**
  * Fetch a live CoW quote for a sell order. Throws with a readable message on a
@@ -224,7 +257,7 @@ export async function fetchCowQuote(params: CowQuoteParams): Promise<CowQuoteRes
     signingScheme: 'eip712' as const,
     onchainOrder: false,
     priceQuality: 'optimal' as const,
-    appData: COW_APP_DATA_JSON,
+    appData: cowAppDataJson(params.feeBps),
   }
 
   const res = await fetch(`${apiBase}/api/v1/quote`, {
@@ -259,7 +292,7 @@ export async function fetchCowQuote(params: CowQuoteParams): Promise<CowQuoteRes
     buyTokenBalance: String(q.buyTokenBalance ?? 'erc20'),
   }
 
-  return { chainId, from: data.from ?? params.from, order, quoteId: data.id, appDataJson: COW_APP_DATA_JSON }
+  return { chainId, from: data.from ?? params.from, order, quoteId: data.id, appDataJson: cowAppDataJson(params.feeBps) }
 }
 
 /**
@@ -292,6 +325,9 @@ export interface CowLimitOrderParams {
   validForSec?: number
   /** Limit orders default to partially fillable (fill-or-kill = false). */
   partiallyFillable?: boolean
+  /** Fee tier for the appData doc (default SWAP_FEE_BPS; link turns pass
+   *  LINK_SWAP_FEE_BPS). */
+  feeBps?: number
 }
 
 /**
@@ -322,14 +358,14 @@ export function buildCowLimitOrder(params: CowLimitOrderParams): CowQuoteResult 
     sellAmount: params.sellAmount,
     buyAmount: params.buyAmountAtLeast,
     validTo,
-    appData: keccak256(stringToBytes(COW_APP_DATA_JSON)),
+    appData: cowAppDataHash(params.feeBps),
     feeAmount: '0',
     kind: 'sell',
     partiallyFillable: params.partiallyFillable ?? true,
     sellTokenBalance: 'erc20',
     buyTokenBalance: 'erc20',
   }
-  return { chainId, from: params.from.toLowerCase(), order, appDataJson: COW_APP_DATA_JSON }
+  return { chainId, from: params.from.toLowerCase(), order, appDataJson: cowAppDataJson(params.feeBps) }
 }
 
 /** The EIP-712 Order type — the canonical GPv2 order struct. `kind` and the
