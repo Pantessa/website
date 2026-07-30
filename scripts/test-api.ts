@@ -1642,9 +1642,12 @@ async function main() {
     // SIGNS through claims it for that creator; the wallet's later
     // UNattributed fee-bearing turns accrue to the creator forever; direct
     // link attribution wins per-turn; the creator's own wallet never claims
-    // itself. Fabricated address-shaped wallet — random mallory per run keeps
-    // rows inert (the phantom-wallet-metric lesson).
-    const referredWallet = `0x${'ab'.repeat(19)}01`
+    // itself. The referred wallet must be RANDOM per run — referred_wallets
+    // keys on the wallet globally, so a constant address gets claimed by the
+    // FIRST run's mallory forever and every rerun sees zero rows (caught
+    // live 2026-07-30; also the phantom-wallet-metric lesson: random rows
+    // stay inert).
+    const referredWallet = privateKeyToAccount(generatePrivateKey()).address.toLowerCase()
     await turn({ buildPath: 'native-swap-uniswap', walletAddress: referredWallet, valueUsd: 50 }) // stamps first touch (+$0.05 direct)
     await turn({ buildPath: 'native-swap-uniswap', walletAddress: mallory.address, valueUsd: 50 }) // self-referral: excluded (+$0.05 direct)
     await turn({ buildPath: 'native-swap-uniswap', walletAddress: referredWallet, valueUsd: 200, intentLinkSlug: undefined }) // later trade, no link → referral $0.20
