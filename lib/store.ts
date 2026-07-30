@@ -258,10 +258,11 @@ interface YeetfulStore {
   setChatPublic: (chatId: string, isPublic: boolean) => Promise<Chat | null>
 
   // UI state
-  /** Which tab the (single) left rail shows — MCPs are primary; chat history
-   *  and running work (jobs + recurring buys) live behind their own tabs. */
-  railTab: 'mcps' | 'chats' | 'jobs'
-  setRailTab: (tab: 'mcps' | 'chats' | 'jobs') => void
+  /** Which tab the (single) left rail shows — MCPs are primary; chat history,
+   *  running work (jobs + recurring buys), and the creator's intent links
+   *  live behind their own tabs. */
+  railTab: 'mcps' | 'chats' | 'jobs' | 'links'
+  setRailTab: (tab: 'mcps' | 'chats' | 'jobs' | 'links') => void
   /** A prompt a rail row wants in the composer (e.g. a due recurring buy's
    *  run chip). Prefill only — the user always sends it themselves. NOT
    *  persisted: it's a one-shot handoff, consumed (and cleared) by the chat. */

@@ -8,7 +8,7 @@ import { useRouter } from 'next/navigation'
 import { useAccount, useSignTypedData, useConnect } from 'wagmi'
 import { useConnectModal } from '@rainbow-me/rainbowkit'
 import { getHostWalletServerState, getHostWalletState, HOST_WALLET_CONNECTOR_ID, subscribeHostWallet } from '@/lib/host-wallet'
-import { cn } from '@/lib/utils'
+import { cleanServerName, cn } from '@/lib/utils'
 import MessageReceipts from '@/components/MessageReceipts'
 import RouteReport from '@/components/RouteReport'
 import SignVoteButton from '@/components/SignVoteButton'
@@ -52,6 +52,7 @@ import { chainById } from '@/lib/chains'
 import AppModeWorkspace from '@/components/AppModeWorkspace'
 import JobDetailOverlay from '@/components/JobDetailOverlay'
 import ChartOverlay from '@/components/ChartOverlay'
+import MintLinkModal from '@/components/MintLinkModal'
 import ArmSpotGuardButton from '@/components/ArmSpotGuardButton'
 import Link from 'next/link'
 import NavAccount from '@/components/NavAccount'
@@ -115,13 +116,14 @@ function CopyTurn({ text, dark }: { text: string; dark?: boolean }) {
 }
 
 /** Hover mint affordance on USER turns — an aha becomes a shareable intent
- *  link: /dashboard/links opens prefilled with this ask + the working set
- *  that produced it. Sits left of the copy button. */
-function MintLinkTurn({ ask, mcpsCsv }: { ask: string; mcpsCsv: string }) {
-  const href = `/dashboard/links?ask=${encodeURIComponent(ask.slice(0, 400))}${mcpsCsv ? `&mcps=${encodeURIComponent(mcpsCsv)}` : ''}`
+ *  link, minted IN PLACE: the modal opens prefilled with this ask + the
+ *  working set that produced it (no dashboard detour mid-conversation).
+ *  Sits left of the copy button. */
+function MintLinkTurn({ onMint }: { onMint: () => void }) {
   return (
-    <a
-      href={href}
+    <button
+      type="button"
+      onClick={onMint}
       aria-label="Create an intent link from this ask"
       title="Create an intent link — share this ask as one tap"
       className={cn(
@@ -131,7 +133,7 @@ function MintLinkTurn({ ask, mcpsCsv }: { ask: string; mcpsCsv: string }) {
       )}
     >
       <Link2 className="w-3.5 h-3.5" />
-    </a>
+    </button>
   )
 }
 
@@ -319,10 +321,15 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
   // A reopen chip names what it opens: clicking "MCPs"/"Chats" opens the rail
   // on that tab — no more anonymous panel icons. The chips only render while
   // the rail is closed; open, the rail's own tabs sit right there instead.
-  const openRail = (tab: 'mcps' | 'chats' | 'jobs') => {
+  const openRail = (tab: 'mcps' | 'chats' | 'jobs' | 'links') => {
     setRailTab(tab)
     isNarrow ? setMobileMcpRailOpen(true) : setMcpRailOpen(true)
   }
+
+  // The in-app mint moment: a user-bubble hover icon or a receipt's "mint as
+  // link" opens the SAME MintLinkForm the dashboard composes, prefilled with
+  // that ask + the working set — the conversation never navigates away.
+  const [mintPrefill, setMintPrefill] = useState<{ ask: string; mcps: string[] } | null>(null)
 
   // "New chat" → drop to the bare /chat surface, which resets to a fresh
   // session (currentChatId=null, default fleet seeded) with the row minted
@@ -1206,8 +1213,8 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
         {showAppChrome && (
           <Link
             href="/dashboard"
-            aria-label="Yeetful dashboard — keys, embeds, billing"
-            title="Yeetful dashboard — keys, embeds, billing"
+            aria-label="Yeetful dashboard — links, keys, billing"
+            title="Yeetful dashboard — links, keys, billing"
             className="flex-shrink-0 grid place-items-center w-10 h-10 md:w-8 md:h-8 rounded-lg text-white hover:bg-[var(--surf-1)] transition-colors"
           >
             <YeetfulMark size={20} />
@@ -1228,6 +1235,9 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
             rail's own MCPs/Chats tabs are visible right below). */}
         {!railVisible && (
           <div className="chatreopen flex-shrink-0 flex items-center gap-1.5">
+            {/* Four chips can't all carry words at phone widths (the #570
+                drill pattern) — below md the words drop, icons + counts stay,
+                titles/aria keep them named. */}
             <button
               onClick={() => openRail('mcps')}
               aria-label="Show the MCP rail"
@@ -1235,7 +1245,8 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
               className="flex-shrink-0 flex items-center gap-1.5 px-2.5 min-h-[40px] md:min-h-[32px] rounded-lg border bg-[var(--surf-1)] border-[var(--line)] text-[color:var(--muted)] hover:text-white hover:border-[var(--line-2)] transition-colors"
             >
               <Boxes className="w-4 h-4" />
-              <span className="text-[11px] whitespace-nowrap font-medium mono">MCPS · {activeServers.length}</span>
+              <span className="text-[11px] whitespace-nowrap font-medium mono max-md:hidden">MCPS · {activeServers.length}</span>
+              <span className="text-[11px] whitespace-nowrap font-medium mono md:hidden">{activeServers.length}</span>
             </button>
             <button
               onClick={() => openRail('jobs')}
@@ -1244,9 +1255,21 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
               className="flex-shrink-0 flex items-center gap-1.5 px-2.5 min-h-[40px] md:min-h-[32px] rounded-lg border bg-[var(--surf-1)] border-[var(--line)] text-[color:var(--muted)] hover:text-white hover:border-[var(--line-2)] transition-colors"
             >
               <ListChecks className="w-4 h-4" />
-              <span className="text-[11px] whitespace-nowrap font-medium mono">
+              <span className="text-[11px] whitespace-nowrap font-medium mono max-md:hidden">
                 JOBS{runningBadge > 0 ? ` · ${runningBadge}` : ''}
               </span>
+              {runningBadge > 0 && (
+                <span className="text-[11px] whitespace-nowrap font-medium mono md:hidden">{runningBadge}</span>
+              )}
+            </button>
+            <button
+              onClick={() => openRail('links')}
+              aria-label="Show your intent links"
+              title="Your intent links — mint and share from here"
+              className="flex-shrink-0 flex items-center gap-1.5 px-2.5 min-h-[40px] md:min-h-[32px] rounded-lg border bg-[var(--surf-1)] border-[var(--line)] text-[color:var(--muted)] hover:text-white hover:border-[var(--line-2)] transition-colors"
+            >
+              <Link2 className="w-4 h-4" />
+              <span className="text-[11px] whitespace-nowrap font-medium mono max-md:hidden">LINKS</span>
             </button>
             <button
               onClick={() => openRail('chats')}
@@ -1255,7 +1278,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
               className="flex-shrink-0 flex items-center gap-1.5 px-2.5 min-h-[40px] md:min-h-[32px] rounded-lg border bg-[var(--surf-1)] border-[var(--line)] text-[color:var(--muted)] hover:text-white hover:border-[var(--line-2)] transition-colors"
             >
               <MessageSquare className="w-4 h-4" />
-              <span className="text-[11px] whitespace-nowrap font-medium mono">CHATS</span>
+              <span className="text-[11px] whitespace-nowrap font-medium mono max-md:hidden">CHATS</span>
             </button>
           </div>
         )}
@@ -1271,7 +1294,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
           ) : (
             activeServers.length > 0 && (
               <span className="text-[11px] text-[color:var(--muted-2)] truncate pl-1">
-                {activeServers.map((s) => s.name).join(' · ')}
+                {activeServers.map((s) => cleanServerName(s.name)).join(' · ')}
               </span>
             )
           )}
@@ -1315,6 +1338,16 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
           (embed + /i included), so their overlay mounts ungated — a button
           that no-ops would read as broken. No chrome, no auth inside. */}
       <ChartOverlay onAsk={sendFromOverlay} />
+      {/* The mint-in-place modal (portaled) — opened by MintLinkTurn and the
+          receipt chip; both gate on !embedded, so it never mounts in embeds. */}
+      {!embedded && (
+        <MintLinkModal
+          open={mintPrefill !== null}
+          onClose={() => setMintPrefill(null)}
+          initialAsk={mintPrefill?.ask}
+          initialMcps={mintPrefill?.mcps}
+        />
+      )}
 
       {/* Messages area — or, in App Mode, the structured workspace (panels
           fed by the working set; the input below stays docked as the command
@@ -1385,7 +1418,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
             {!currentChat || currentChat.messages.length === 0 ? (
               splashEligible || splashBatches.length > 0 ? (
                 splashSettledEmpty ? (
-                  <EmptyState activeCount={activeServers.length} autoRouter={autoRouter} onPick={runExample} />
+                  <EmptyState activeCount={activeServers.length} autoRouter={autoRouter} onPick={runExample} showLinksHint={!embedded && !simple} />
                 ) : null
               ) : bootHolding ? (
                 // Wallet auto-reconnect / store hydration in flight: the splash may
@@ -1398,7 +1431,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
                 // example gallery here is noise — hold the surface clean.
                 null
               ) : (
-                <EmptyState activeCount={activeServers.length} autoRouter={autoRouter} onPick={runExample} />
+                <EmptyState activeCount={activeServers.length} autoRouter={autoRouter} onPick={runExample} showLinksHint={!embedded && !simple} />
               )
             ) : (
           <>
@@ -1504,7 +1537,11 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
                         a visitor remixing an ask into their OWN link is the
                         viral loop, not workspace chrome. */}
                     {msg.role === 'user' && !embedded && (
-                      <MintLinkTurn ask={msg.content} mcpsCsv={activeServers.map((s) => s.slug).join(',')} />
+                      <MintLinkTurn
+                        onMint={() =>
+                          setMintPrefill({ ask: msg.content, mcps: activeServers.map((s) => s.slug) })
+                        }
+                      />
                     )}
                     {msg.role === 'assistant' ? (
                       <ChatMarkdown content={msg.content} />
@@ -1715,8 +1752,8 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
                           <ShareReceiptButton kind="tx" chatId={currentChatId} messageId={msg.dbId} />
                           {/* The aha→link loop closes itself: the receipt that
                               just proved the ask offers to become an intent
-                              link (same /dashboard/links prefill handoff as the
-                              user-bubble mint icon). */}
+                              link, minted in place (same modal as the
+                              user-bubble mint icon — no dashboard detour). */}
                           {!embedded &&
                             (() => {
                               let ask = ''
@@ -1727,17 +1764,19 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
                                 }
                               }
                               if (!ask) return null
-                              const mcpsCsv = activeServers.map((s) => s.slug).join(',')
-                              const href = `/dashboard/links?ask=${encodeURIComponent(ask.slice(0, 400))}${mcpsCsv ? `&mcps=${encodeURIComponent(mcpsCsv)}` : ''}`
+                              const receiptAsk = ask
                               return (
-                                <a
-                                  href={href}
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setMintPrefill({ ask: receiptAsk, mcps: activeServers.map((s) => s.slug) })
+                                  }
                                   title="Mint this ask as an intent link — one tap for anyone you share it with"
                                   className="inline-flex items-center gap-1 text-[10.5px] mono text-[color:var(--muted-2)] hover:text-[color:var(--fg)] transition-colors"
                                 >
                                   <Link2 className="w-3 h-3" aria-hidden />
                                   mint as link
-                                </a>
+                                </button>
                               )
                             })()}
                         </div>
@@ -1954,10 +1993,13 @@ function EmptyState({
   activeCount,
   autoRouter,
   onPick,
+  showLinksHint,
 }: {
   activeCount: number
   autoRouter: boolean
   onPick: (prompt: string, slug?: string) => void
+  /** First-party chat only — the embed has no rail or mint affordances. */
+  showLinksHint?: boolean
 }) {
   return (
     // flex-1 (not h-full): the thread wrapper is a min-h-full flex column,
@@ -1978,6 +2020,13 @@ function EmptyState({
             : `Your ${activeCount} MCP${activeCount > 1 ? 's' : ''} answer questions free; anything that moves money is compiled into a guarded transaction only your wallet can sign.`}
       </p>
       <ExampleGallery onPick={onPick} />
+      {showLinksHint && (
+        <p className="mt-6 text-[11px] text-[color:var(--muted-2)] max-w-sm">
+          Any ask here can become a shareable intent link — hover a sent message for the{' '}
+          <Link2 className="inline w-3 h-3 align-[-1px]" aria-hidden />
+          {' '}mint icon, or open the rail&apos;s Links tab.
+        </p>
+      )}
     </div>
   )
 }

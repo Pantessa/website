@@ -19,8 +19,8 @@ import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Boxes, Check, Globe, Info, LayoutDashboard, ListChecks, Loader2, MessageSquare, PanelLeftClose, Plus, Trash2 } from 'lucide-react'
-import { cn } from '@/lib/utils'
+import { Boxes, Check, Globe, Info, LayoutDashboard, Link2, ListChecks, Loader2, MessageSquare, PanelLeftClose, Plus, Trash2 } from 'lucide-react'
+import { cleanServerName, cn } from '@/lib/utils'
 import { useYeetfulStore } from '@/lib/store'
 import { useSession } from '@/lib/session'
 import { fleetRank } from '@/lib/free-fleet'
@@ -28,6 +28,7 @@ import { useRunningWork } from '@/lib/use-running-work'
 import BrandIcon from '@/components/BrandIcon'
 import AddMcpModal from '@/components/AddMcpModal'
 import JobsRailTab from '@/components/JobsRailTab'
+import LinksRailTab from '@/components/LinksRailTab'
 
 const RAIL_WIDTH = 248
 
@@ -95,8 +96,6 @@ export default function ChatRail() {
       : rest.filter((s) => s.gated !== false)
   }, [servers, activeServerIds, freeView])
 
-  const freeCount = useMemo(() => servers.filter((s) => s.gated === false).length, [servers])
-
   const persist = (next: string[]) => {
     setActiveServerIds(next)
     if (currentChatId) updateChatServers(currentChatId, next)
@@ -163,7 +162,7 @@ export default function ChatRail() {
         <BrandIcon server={server} size={22} />
       </span>
       <span className="flex-1 min-w-0">
-        <span className="block text-xs font-medium truncate">{server.name}</span>
+        <span className="block text-xs font-medium truncate">{cleanServerName(server.name)}</span>
         {server.gated !== false && (
           <span className="block text-[10px] mono text-[color:var(--muted-2)]">
             {`$${server.priceUsd}/call`}
@@ -219,51 +218,48 @@ export default function ChatRail() {
                 role="tablist"
                 aria-label="Rail view"
               >
-                <button
-                  role="tab"
-                  aria-selected={railTab === 'mcps'}
-                  onClick={() => setRailTab('mcps')}
-                  className={cn(
-                    'flex-1 flex items-center justify-center gap-1 rounded-[10px] px-1 py-1.5 text-[11px] font-medium transition-colors',
-                    railTab === 'mcps' ? 'bg-[var(--surf-2)] text-white' : 'text-[color:var(--muted)] hover:text-white',
-                  )}
-                >
-                  <Boxes className="w-3.5 h-3.5" />
-                  MCPs <span className="mono text-[10px] text-[color:var(--muted-2)]">{active.length}</span>
-                </button>
-                {/* Three tabs share the 248px rail, ordered by importance:
+                {/* Four tabs share the 248px rail, ordered by importance:
                     MCPs (the working set), Jobs (running work — its badge is
-                    the one number that must interrupt), then Chats (history:
-                    findable, never competing for attention). */}
-                <button
-                  role="tab"
-                  aria-selected={railTab === 'jobs'}
-                  onClick={() => setRailTab('jobs')}
-                  title="Jobs and recurring buys running on this wallet"
-                  className={cn(
-                    'flex-1 flex items-center justify-center gap-1 rounded-[10px] px-1 py-1.5 text-[11px] font-medium transition-colors',
-                    railTab === 'jobs' ? 'bg-[var(--surf-2)] text-white' : 'text-[color:var(--muted)] hover:text-white',
-                  )}
-                >
-                  <ListChecks className="w-3.5 h-3.5" />
-                  Jobs
-                  {badgeCount > 0 && (
-                    <span className="mono text-[10px] px-1 rounded-full bg-amber-500/15 text-amber-400">{badgeCount}</span>
-                  )}
-                </button>
-                <button
-                  role="tab"
-                  aria-selected={railTab === 'chats'}
-                  onClick={() => setRailTab('chats')}
-                  title="Your chat history"
-                  className={cn(
-                    'flex-1 flex items-center justify-center gap-1 rounded-[10px] px-1 py-1.5 text-[11px] font-medium transition-colors',
-                    railTab === 'chats' ? 'bg-[var(--surf-2)] text-white' : 'text-[color:var(--muted)] hover:text-white',
-                  )}
-                >
-                  <MessageSquare className="w-3.5 h-3.5" />
-                  Chats
-                </button>
+                    the one number that must interrupt), Links (the creator's
+                    links — minting lives where the aha happens), then Chats
+                    (history: findable, never competing for attention).
+                    QUIET CHROME: only the ACTIVE tab wears its word; the
+                    rest are icons (Jobs keeps its needs-you badge in every
+                    state). Four worded tabs at this width read as crowd —
+                    the label tells you where you ARE, the icons where you
+                    can go. Titles + aria keep every tab named. */}
+                {(
+                  [
+                    { tab: 'mcps' as const, label: 'MCPs', title: 'Your MCP set', Icon: Boxes, badge: 0 },
+                    { tab: 'jobs' as const, label: 'Jobs', title: 'Jobs and recurring buys running on this wallet', Icon: ListChecks, badge: badgeCount },
+                    { tab: 'links' as const, label: 'Links', title: 'Your intent links — mint and share from here', Icon: Link2, badge: 0 },
+                    { tab: 'chats' as const, label: 'Chats', title: 'Your chat history', Icon: MessageSquare, badge: 0 },
+                  ]
+                ).map(({ tab, label, title, Icon, badge }) => {
+                  const selected = railTab === tab
+                  return (
+                    <button
+                      key={tab}
+                      role="tab"
+                      aria-selected={selected}
+                      aria-label={label}
+                      onClick={() => setRailTab(tab)}
+                      title={title}
+                      className={cn(
+                        'flex items-center justify-center gap-1 rounded-[10px] py-1.5 text-[11px] font-medium transition-colors',
+                        selected
+                          ? 'flex-1 px-2 bg-[var(--surf-2)] text-white'
+                          : 'flex-none px-2.5 text-[color:var(--muted)] hover:text-white',
+                      )}
+                    >
+                      <Icon className="w-3.5 h-3.5" />
+                      {selected && label}
+                      {badge > 0 && (
+                        <span className="mono text-[10px] px-1 rounded-full bg-amber-500/15 text-amber-400">{badge}</span>
+                      )}
+                    </button>
+                  )
+                })}
               </div>
               <button
                 className="apprail__toggle flex-shrink-0"
@@ -277,9 +273,13 @@ export default function ChatRail() {
 
             {railTab === 'jobs' ? (
               <JobsRailTab onAct={closeOnMobile} />
+            ) : railTab === 'links' ? (
+              <LinksRailTab />
             ) : railTab === 'mcps' ? (
               <>
-                {/* Free / Paid segmented toggle */}
+                {/* Free / Paid segmented toggle — no counts: the list below
+                    IS the answer, and the number was one more thing to read
+                    before any content. */}
                 <div className="px-3 pb-2">
                   <div className="flex rounded-xl border border-[var(--line)] bg-[var(--surf-1)] p-0.5" role="tablist" aria-label="MCP pricing view">
                     <button
@@ -291,7 +291,7 @@ export default function ChatRail() {
                         freeView ? 'bg-[var(--surf-2)] text-white' : 'text-[color:var(--muted)] hover:text-white',
                       )}
                     >
-                      Free <span className="mono text-[10px] text-[color:var(--muted-2)]">{freeCount}</span>
+                      Free
                     </button>
                     <button
                       role="tab"
@@ -305,19 +305,12 @@ export default function ChatRail() {
                       Paid
                     </button>
                   </div>
-                  {/* Bring-your-own — the modal discovers tools from the server and
-                      lets the user star what a new account should ping first. */}
-                  <button
-                    type="button"
-                    onClick={() => setAddOpen(true)}
-                    className="mt-2 w-full flex items-center justify-center gap-1.5 rounded-xl border border-dashed border-[var(--line-2)] px-2 py-2 text-[11px] font-medium text-[color:var(--muted)] hover:text-white hover:border-[var(--muted-2)] hover:bg-white/[0.03] transition-colors"
-                  >
-                    <Plus className="w-3.5 h-3.5" strokeWidth={2.5} />
-                    Add your own MCP
-                  </button>
                 </div>
 
-                {/* The scrolling list: actives pinned on top, then the view */}
+                {/* The scrolling list: actives pinned on top, then the view.
+                    "Add your own" rides the END of the list — a rare action
+                    shouldn't hold premium space above every row (Nate's
+                    crowding report, 2026-07-29). */}
                 <div className="flex-1 overflow-y-auto px-2 pb-3 space-y-0.5">
                   {active.length > 0 && (
                     <>
@@ -335,6 +328,17 @@ export default function ChatRail() {
                       {freeView ? 'All free MCPs are in your set.' : 'No paid MCPs loaded.'}
                     </p>
                   )}
+                  {/* Bring-your-own — the modal discovers tools from the server
+                      and lets the user star what a new account should ping
+                      first. */}
+                  <button
+                    type="button"
+                    onClick={() => setAddOpen(true)}
+                    className="mt-1.5 w-full flex items-center justify-center gap-1.5 rounded-xl border border-dashed border-[var(--line-2)] px-2 py-2 text-[11px] font-medium text-[color:var(--muted)] hover:text-white hover:border-[var(--muted-2)] hover:bg-white/[0.03] transition-colors"
+                  >
+                    <Plus className="w-3.5 h-3.5" strokeWidth={2.5} />
+                    Add your own MCP
+                  </button>
                 </div>
 
                 <p className="px-3 pb-3 text-[10px] leading-relaxed text-[color:var(--muted-2)] border-t border-[var(--line)] pt-2">
@@ -426,13 +430,13 @@ export default function ChatRail() {
             <Link
               href="/dashboard"
               onClick={closeOnMobile}
-              title="Yeetful dashboard — keys, embeds, billing"
+              title="Yeetful dashboard — links, keys, billing"
               className="flex-shrink-0 flex items-center gap-2.5 px-4 py-3 border-t border-[var(--line)] text-[color:var(--muted)] hover:text-white hover:bg-[var(--surf-1)] transition-colors"
             >
               <LayoutDashboard className="w-4 h-4 flex-shrink-0" aria-hidden />
               <span className="flex-1 min-w-0">
                 <span className="block text-xs font-medium">Dashboard</span>
-                <span className="block text-[10px] text-[color:var(--muted-2)]">keys · embeds · billing</span>
+                <span className="block text-[10px] text-[color:var(--muted-2)]">links · keys · billing</span>
               </span>
             </Link>
           </div>

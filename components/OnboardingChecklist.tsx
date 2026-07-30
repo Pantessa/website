@@ -11,45 +11,14 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { CheckCircle2, Circle, X } from 'lucide-react'
 import { Card } from '@/lib/dashboard-ui'
-
-// v3: the chat/embed-era checklist (ask/sign/job/embed) was retired with the
-// links-first repositioning — a fresh key so everyone sees the new flow
-// once, even if they dismissed an older one.
-const DISMISS_KEY = 'yf_onboarding_dismissed_v3'
-
-interface OnboardingStatus {
-  minted: boolean
-  opened: boolean
-  connected: boolean
-  converted: boolean
-  claimed: boolean
-}
-
-const EMPTY: OnboardingStatus = {
-  minted: false,
-  opened: false,
-  connected: false,
-  converted: false,
-  claimed: false,
-}
+import { dismissOnboarding, onboardingDismissed, useOnboardingStatus } from '@/lib/onboarding'
 
 export default function OnboardingChecklist() {
-  const [status, setStatus] = useState<OnboardingStatus | null>(null)
+  const { status } = useOnboardingStatus()
   const [dismissed, setDismissed] = useState(false)
 
   useEffect(() => {
-    try {
-      setDismissed(localStorage.getItem(DISMISS_KEY) === '1')
-    } catch {
-      /* storage blocked — just show it */
-    }
-  }, [])
-
-  useEffect(() => {
-    fetch('/api/dashboard/onboarding', { cache: 'no-store' })
-      .then((r) => (r.ok ? r.json() : null))
-      .then((d) => setStatus(d ?? EMPTY))
-      .catch(() => setStatus(EMPTY))
+    setDismissed(onboardingDismissed())
   }, [])
 
   // Hold until the live state arrives — painting five unchecked steps and
@@ -101,11 +70,7 @@ export default function OnboardingChecklist() {
   const next = steps.find((s) => !s.done)
 
   const dismiss = () => {
-    try {
-      localStorage.setItem(DISMISS_KEY, '1')
-    } catch {
-      /* ignore */
-    }
+    dismissOnboarding()
     setDismissed(true)
   }
 
