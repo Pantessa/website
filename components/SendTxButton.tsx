@@ -188,7 +188,7 @@ export default function SendTxButton({
               <span key={s.key} className="inline-flex items-center gap-1">
                 {i > 0 && <span className="text-[color:var(--line-2)] px-0.5">—</span>}
                 {st === 'done' ? (
-                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                  <CheckCircle2 className="w-3.5 h-3.5 text-[color:var(--done)]" />
                 ) : st === 'active' ? (
                   <Loader2 className="w-3.5 h-3.5 animate-spin text-[color:var(--fg)]" />
                 ) : (
@@ -211,14 +211,14 @@ export default function SendTxButton({
 
       {status === 'confirmed' ? (
         <div className="flex items-center gap-2 text-[12px]">
-          <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0" />
-          <span className="text-emerald-400 font-medium">Confirmed on-chain</span>
+          <CheckCircle2 className="w-4 h-4 text-[color:var(--done)] flex-shrink-0" />
+          <span className="text-[color:var(--done)] font-medium">Confirmed on-chain</span>
           {summary && <span className="text-[color:var(--muted)] truncate">— {summary}</span>}
         </div>
       ) : status === 'reverted' ? (
         <div className="flex items-center gap-2 text-[12px]">
-          <XCircle className="w-4 h-4 text-red-400 flex-shrink-0" />
-          <span className="text-red-400 font-medium">Transaction reverted</span>
+          <XCircle className="w-4 h-4 text-[color:var(--fail)] flex-shrink-0" />
+          <span className="text-[color:var(--fail)] font-medium">Transaction reverted</span>
           {hash && (
             <a href={`${explorer}${hash}`} target="_blank" rel="noopener noreferrer"
               className="inline-flex items-center gap-1 text-[color:var(--muted)] underline decoration-dotted underline-offset-2 hover:text-[color:var(--fg)]">
@@ -237,7 +237,7 @@ export default function SendTxButton({
             {inFlight ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <PenLine className="w-3.5 h-3.5" />}
             {status === 'signing' ? 'Sign in wallet…' : status === 'broadcast' ? 'Waiting for confirmation…' : status === 'error' ? `Retry — sign & send ${tx.action ?? 'transaction'}` : `Sign & send ${tx.action ?? 'transaction'}`}
           </button>
-          {error && <span className="text-[12px] text-red-400">{error}</span>}
+          {error && <span className="text-[12px] text-[color:var(--fail)]">{error}</span>}
         </div>
       )}
     </div>

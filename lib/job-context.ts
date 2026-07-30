@@ -17,6 +17,7 @@ import { alchemyEnabled, getMultichainPortfolio } from '@/lib/alchemy'
 import { chainById } from '@/lib/chains'
 import { cadenceLabel, periodPhrase, type DcaCadence } from '@/lib/dca'
 import type { DcaScheduleView } from '@/lib/dca-exec'
+import type { MorphoPositionRow } from '@/lib/morpho-supply'
 
 export interface JobContextRow {
   label: string
@@ -147,6 +148,56 @@ async function lidoRows(wallet: string): Promise<JobContextRow[]> {
   return rows
 }
 
+// ── Morpho: per-market supply / collateral / debt + health factor ───────────
+// Morpho is market-scoped (no single "portfolio"), so rows name their market
+// and we cap at the two most relevant. Chain ids come from the job's OWN step
+// params — a job built on Base never queries mainnet.
+
+interface MorphoPositionPayload {
+  positions?: MorphoPositionRow[]
+}
+
+async function morphoRows(wallet: string, chainIds: number[]): Promise<JobContextRow[]> {
+  const base = await mcpBaseFor(/morpho/i)
+  if (!base || chainIds.length === 0) return []
+  const rows: JobContextRow[] = []
+  for (const chainId of chainIds.slice(0, 2)) {
+    const data = (await callMcpTool(base, 'position', { user: wallet, chainId }, { timeoutMs: PROVIDER_TIMEOUT_MS })) as MorphoPositionPayload
+    for (const p of (data.positions ?? []).slice(0, 2)) {
+      const market = p.market ?? 'Morpho market'
+      if (p.supplied?.amount && p.supplied.asset) {
+        rows.push({
+          label: `${p.supplied.asset} lent · ${market}`,
+          value: `${p.supplied.amount} ${p.supplied.asset}`,
+          sub: p.supplied.apy ? `earning ${p.supplied.apy} APY` : undefined,
+          tone: 'pos',
+        })
+      }
+      if (p.collateral?.amount && p.collateral.asset) {
+        rows.push({ label: `${p.collateral.asset} collateral`, value: `${p.collateral.amount} ${p.collateral.asset}`, tone: 'pos' })
+      }
+      if (p.borrowed?.amount && p.borrowed.asset) {
+        rows.push({
+          label: `${p.borrowed.asset} borrowed`,
+          value: `${p.borrowed.amount} ${p.borrowed.asset}`,
+          sub: p.borrowed.apy ? `${p.borrowed.apy} APY accruing` : undefined,
+          tone: 'neg',
+        })
+      }
+      const hf = p.healthFactor
+      if (typeof hf === 'number' && Number.isFinite(hf) && p.borrowed?.amount) {
+        rows.push({
+          label: 'Health factor',
+          value: hf.toFixed(2),
+          sub: hf < 1.5 ? 'getting close to liquidation' : 'comfortable',
+          tone: hf < 1.5 ? 'neg' : 'pos',
+        })
+      }
+    }
+  }
+  return rows
+}
+
 // ── Aave: net position, earned interest, health factor ──────────────────────
 
 interface AavePortfolioPayload {
@@ -258,10 +309,15 @@ export async function jobContextFor(job: JobLike): Promise<JobContext> {
   const builders = new Set(job.steps.map((s) => s.builder))
   const hlCoins = new Set<string>()
   const buySymbols = new Set<string>()
+  const morphoChains = new Set<number>()
   for (const s of job.steps) {
     if (HL_BUILDERS.has(s.builder)) {
       const coin = (s.params as { coin?: unknown } | null)?.coin
       if (typeof coin === 'string') hlCoins.add(coin.toUpperCase())
+    }
+    if (s.builder === 'native-morpho-lend' || s.builder === 'native-morpho-repay') {
+      const cid = (s.params as { chainId?: unknown } | null)?.chainId
+      if (cid === 1 || cid === 8453) morphoChains.add(cid)
     }
     if (SWAP_BUILDERS.has(s.builder)) {
       const sym = buyTokenOf(s.params)
@@ -273,6 +329,9 @@ export async function jobContextFor(job: JobLike): Promise<JobContext> {
   if ([...builders].some((b) => HL_BUILDERS.has(b))) tasks.push(withTimeout(hlRows(job.wallet, hlCoins)))
   if (builders.has('native-lido')) tasks.push(withTimeout(lidoRows(job.wallet)))
   if (builders.has('native-aave-supply') || builders.has('native-aave-repay')) tasks.push(withTimeout(aaveRows(job.wallet)))
+  if (builders.has('native-morpho-lend') || builders.has('native-morpho-repay')) {
+    tasks.push(withTimeout(morphoRows(job.wallet, [...morphoChains])))
+  }
   if (buySymbols.size > 0) tasks.push(withTimeout(holdingRows(job.wallet, buySymbols)))
 
   const settled = await Promise.allSettled(tasks)

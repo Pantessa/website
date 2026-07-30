@@ -7,7 +7,7 @@ export const dynamic = 'force-dynamic'
 
 /**
  * Best-effort funnel events from the /i runtime (POST, unauthenticated —
- * the visitor has no session yet at 'open'). kind: open|connect|built|signed.
+ * the visitor has no session yet at 'open'). kind: open|connect|built|signed|settled.
  *
  * Scope note: these power the CREATOR'S per-link funnel only. valueUsd here
  * is client-reported and never feeds the global money-moved metric — that
@@ -32,7 +32,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ slu
 
   const wallet = typeof body.wallet === 'string' && /^0x[0-9a-fA-F]{40}$/.test(body.wallet) ? body.wallet.toLowerCase() : null
   const valueUsd =
-    (kind === 'built' || kind === 'signed') && typeof body.valueUsd === 'number' && isFinite(body.valueUsd) && body.valueUsd >= 0 && body.valueUsd < 10_000_000
+    (kind === 'built' || kind === 'signed' || kind === 'settled') && typeof body.valueUsd === 'number' && isFinite(body.valueUsd) && body.valueUsd >= 0 && body.valueUsd < 10_000_000
       ? body.valueUsd
       : null
 

@@ -198,15 +198,15 @@ export default function SendTxChain({
             <li key={i} className="text-[12px]">
               <div className="flex items-center gap-2">
                 {isDone ? (
-                  <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0" />
+                  <CheckCircle2 className="w-4 h-4 text-[color:var(--done)] flex-shrink-0" />
                 ) : isCurrent && phase === 'refreshing' ? (
                   <Loader2 className="w-4 h-4 animate-spin text-[color:var(--fg)] flex-shrink-0" />
                 ) : isCurrent && phase === 'blocked' ? (
-                  <ShieldX className="w-4 h-4 text-red-400 flex-shrink-0" />
+                  <ShieldX className="w-4 h-4 text-[color:var(--fail)] flex-shrink-0" />
                 ) : (
                   <Circle className={`w-3.5 h-3.5 flex-shrink-0 ${isCurrent ? 'text-[color:var(--fg)]' : 'text-[color:var(--line-2)]'}`} />
                 )}
-                <span className={isDone ? 'text-emerald-400' : isCurrent ? 'text-[color:var(--fg)]' : 'text-[color:var(--muted-2)]'}>
+                <span className={isDone ? 'text-[color:var(--done)]' : isCurrent ? 'text-[color:var(--fg)]' : 'text-[color:var(--muted-2)]'}>
                   {step.title}
                 </span>
                 {isDone && hashes[i] && (
@@ -226,7 +226,7 @@ export default function SendTxChain({
                 <div className="ml-6 text-[11px] text-[color:var(--muted)]">Re-quoting with a fresh price…</div>
               )}
               {isCurrent && phase === 'blocked' && (
-                <div className="ml-6 text-[11px] text-red-400">
+                <div className="ml-6 text-[11px] text-[color:var(--fail)]">
                   Withheld — {note}. This step was not signed{i > 0 ? '; your earlier confirmed steps stand' : ''}.
                 </div>
               )}
@@ -246,8 +246,8 @@ export default function SendTxChain({
 
       {phase === 'done' && (
         <div className="flex items-center gap-2 text-[12px]">
-          <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0" />
-          <span className="text-emerald-400 font-medium">Done — every step confirmed on-chain</span>
+          <CheckCircle2 className="w-4 h-4 text-[color:var(--done)] flex-shrink-0" />
+          <span className="text-[color:var(--done)] font-medium">Done — every step confirmed on-chain</span>
           {chain.summary && <span className="text-[color:var(--muted)] truncate">— {chain.summary}</span>}
         </div>
       )}

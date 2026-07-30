@@ -120,7 +120,10 @@ export async function GET(req: NextRequest) {
     _sum: { valueUsd: true },
   })
   const funnelOf = (slug: string) => {
-    const f = { open: 0, connect: 0, built: 0, signed: 0, valueUsd: 0 }
+    // 'settled' is the fourth stop (a compiled job reached done — the /i
+    // arc's settlement signal); valueUsd stays counted at 'signed' so the
+    // money-moved number never double-counts a run.
+    const f = { open: 0, connect: 0, built: 0, signed: 0, settled: 0, valueUsd: 0 }
     for (const e of events) {
       if (e.slug !== slug) continue
       if (e.kind === 'open') f.open += e._count._all
@@ -129,7 +132,7 @@ export async function GET(req: NextRequest) {
       else if (e.kind === 'signed') {
         f.signed += e._count._all
         f.valueUsd += e._sum.valueUsd ?? 0
-      }
+      } else if (e.kind === 'settled') f.settled += e._count._all
     }
     return f
   }

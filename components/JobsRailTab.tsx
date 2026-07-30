@@ -25,6 +25,7 @@ import { cadenceLabel, dcaRunChip, type DcaCadence } from '@/lib/dca'
 import ShareReceiptButton from '@/components/ShareReceiptButton'
 import { ChartHoverButton } from '@/components/TokenChartButton'
 import { LIVE_JOB_STATUS, useRunningWork, type RunningGuard, type RunningJob, type RunningSchedule } from '@/lib/use-running-work'
+import { jobStatusWord } from '@/lib/step-status'
 
 function IconBtn({ label, danger, onClick, children }: { label: string; danger?: boolean; onClick: () => void; children: React.ReactNode }) {
   return (
@@ -34,7 +35,7 @@ function IconBtn({ label, danger, onClick, children }: { label: string; danger?:
       aria-label={label}
       className={cn(
         'grid h-6 w-6 place-items-center rounded-md text-[color:var(--muted-2)] transition-colors',
-        danger ? 'hover:text-red-400 hover:bg-red-400/10' : 'hover:text-white hover:bg-[var(--surf-1)]',
+        danger ? 'hover:text-[color:var(--fail)] hover:bg-[color:color-mix(in_srgb,var(--fail)_10%,transparent)]' : 'hover:text-white hover:bg-[var(--surf-1)]',
       )}
     >
       {children}
@@ -43,20 +44,11 @@ function IconBtn({ label, danger, onClick, children }: { label: string; danger?:
 }
 
 function jobDot(status: string) {
-  if (status === 'done') return <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 flex-shrink-0" aria-hidden />
-  if (status === 'failed') return <XCircle className="w-3.5 h-3.5 text-red-400 flex-shrink-0" aria-hidden />
+  if (status === 'done') return <CheckCircle2 className="w-3.5 h-3.5 text-[color:var(--done)] flex-shrink-0" aria-hidden />
+  if (status === 'failed') return <XCircle className="w-3.5 h-3.5 text-[color:var(--fail)] flex-shrink-0" aria-hidden />
   if (status === 'waiting_signature') return <PenLine className="w-3.5 h-3.5 text-[color:var(--accent)] flex-shrink-0" aria-hidden />
   if (LIVE_JOB_STATUS.has(status)) return <Loader2 className="w-3.5 h-3.5 animate-spin text-[color:var(--muted)] flex-shrink-0" aria-hidden />
   return <ShieldCheck className="w-3.5 h-3.5 text-[color:var(--muted-2)] flex-shrink-0" aria-hidden />
-}
-
-const jobStatusWord: Record<string, string> = {
-  running: 'running',
-  waiting_signature: 'needs your signature',
-  waiting_settlement: 'settling…',
-  done: 'done',
-  failed: 'failed',
-  canceled: 'canceled',
 }
 
 function scheduleState(s: RunningSchedule): { word: string; tone: string } {
@@ -64,20 +56,20 @@ function scheduleState(s: RunningSchedule): { word: string; tone: string } {
   // Autopilot rows mirror the guardian doctrine: a HEALTHY armed schedule
   // never nags — only an error reads as needs-you.
   if (s.mode === 'auto') {
-    if (s.autoError) return { word: 'autopilot — needs you', tone: 'text-red-400' }
-    if (s.period === 'bought') return { word: 'autopilot — bought this period', tone: 'text-emerald-400' }
-    return { word: 'autopilot — armed', tone: 'text-emerald-400' }
+    if (s.autoError) return { word: 'autopilot — needs you', tone: 'text-[color:var(--fail)]' }
+    if (s.period === 'bought') return { word: 'autopilot — bought this period', tone: 'text-[color:var(--done)]' }
+    return { word: 'autopilot — armed', tone: 'text-[color:var(--done)]' }
   }
-  if (s.period === 'bought') return { word: 'bought this period', tone: 'text-emerald-400' }
+  if (s.period === 'bought') return { word: 'bought this period', tone: 'text-[color:var(--done)]' }
   if (s.period === 'live') return { word: 'buy prepared — sign it', tone: 'text-[color:var(--accent)]' }
   return { word: 'due now', tone: 'text-amber-400' }
 }
 
 function guardState(g: RunningGuard): { word: string; tone: string } {
-  if (g.status === 'active') return { word: 'watching', tone: 'text-emerald-400' }
+  if (g.status === 'active') return { word: 'watching', tone: 'text-[color:var(--done)]' }
   if (g.status === 'paused') return { word: 'paused', tone: 'text-[color:var(--muted-2)]' }
   if (g.status === 'triggered') return { word: 'fired — closing', tone: 'text-[color:var(--accent)]' }
-  return { word: g.status, tone: 'text-red-400' }
+  return { word: g.status, tone: 'text-[color:var(--fail)]' }
 }
 
 function guardLabel(g: RunningGuard): string {
@@ -166,7 +158,7 @@ export default function JobsRailTab({ onAct }: { onAct?: () => void }) {
         className="px-2.5 py-2 rounded-xl hover:bg-[var(--surf-1)] transition-colors cursor-pointer"
       >
         <div className="flex items-center gap-2">
-          <ShieldCheck className={cn('w-3.5 h-3.5 flex-shrink-0', g.status === 'active' ? 'text-emerald-400' : 'text-[color:var(--muted-2)]')} aria-hidden />
+          <ShieldCheck className={cn('w-3.5 h-3.5 flex-shrink-0', g.status === 'active' ? 'text-[color:var(--done)]' : 'text-[color:var(--muted-2)]')} aria-hidden />
           <span className="flex-1 min-w-0 text-xs font-medium truncate">{guardLabel(g)}</span>
           <span className={cn('text-[10px] mono whitespace-nowrap', st.tone)}>{st.word}</span>
         </div>
@@ -283,14 +275,19 @@ export default function JobsRailTab({ onAct }: { onAct?: () => void }) {
         </div>
         <div className="ml-[22px] mt-0.5 flex items-center gap-2 text-[10px] text-[color:var(--muted-2)]">
           <span className="mono">
-            {doneCount}/{j.steps.length} · {jobStatusWord[j.status] ?? j.status}
+            {doneCount}/{j.steps.length} · {jobStatusWord(j.status)}
           </span>
           {j.valueUsd != null && j.valueUsd > 0 && <span className="mono">${j.valueUsd.toFixed(2)}</span>}
           <span className="flex-1" />
           <span className="mono">{new Date(j.createdAt).toLocaleDateString()}</span>
         </div>
+        {/* The same progress object the JobCard breathes — a rail row is the
+            card at a distance, not a different species. */}
+        <div className={cn('yprog ml-[22px] mt-1.5', j.status === 'failed' && 'yprog--fail', j.status === 'done' && 'yprog--full')}>
+          <div className="yprog__fill" style={{ width: `${j.steps.length ? (doneCount / j.steps.length) * 100 : 0}%` }} />
+        </div>
         {j.status === 'failed' && j.failReason && (
-          <p className="ml-[22px] mt-0.5 text-[10px] leading-snug text-red-400/90 line-clamp-2">{j.failReason}</p>
+          <p className="ml-[22px] mt-0.5 text-[10px] leading-snug text-[color:var(--fail)] line-clamp-2">{j.failReason}</p>
         )}
       </div>
     )

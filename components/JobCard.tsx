@@ -17,6 +17,7 @@ import SignNftListingButton from '@/components/SignNftListingButton'
 import SpendPolicyFix, { type PolicyBlockInfo } from '@/components/SpendPolicyFix'
 import ShareReceiptButton from '@/components/ShareReceiptButton'
 import { orderRequestOf, txChainOf, txRequestOf } from '@/lib/transaction-layer'
+import { LIVE_JOB_STATUSES, jobStatusWord } from '@/lib/step-status'
 
 interface StepRow {
   seq: number
@@ -39,11 +40,11 @@ interface JobRow {
   steps: StepRow[]
 }
 
-const ACTIVE = new Set(['running', 'waiting_signature', 'waiting_settlement'])
+const ACTIVE = new Set<string>(LIVE_JOB_STATUSES)
 
 function StepIcon({ step, isCurrent }: { step: StepRow; isCurrent: boolean }) {
-  if (step.status === 'done') return <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0" aria-hidden />
-  if (step.status === 'failed') return <XCircle className="w-4 h-4 text-red-400 flex-shrink-0" aria-hidden />
+  if (step.status === 'done') return <CheckCircle2 className="w-4 h-4 text-[color:var(--done)] flex-shrink-0" aria-hidden />
+  if (step.status === 'failed') return <XCircle className="w-4 h-4 text-[color:var(--fail)] flex-shrink-0" aria-hidden />
   if (step.status === 'offered') return <PenLine className="w-4 h-4 text-[color:var(--fg)] flex-shrink-0" aria-hidden />
   if (step.status === 'running' || (isCurrent && step.kind === 'wait'))
     return <Loader2 className="w-4 h-4 animate-spin text-[color:var(--muted)] flex-shrink-0" aria-hidden />
@@ -55,6 +56,7 @@ export default function JobCard({
   jobId,
   token,
   onStepSigned,
+  onSettled,
 }: {
   jobId: string
   /** Capability token from the turn that compiled the job — the embed path's
@@ -62,6 +64,10 @@ export default function JobCard({
   token?: string
   /** Telemetry hook — fired once per signed step with its value + builder. */
   onStepSigned?: (info: { builder: string; valueUsd?: number | null; detail?: string }) => void
+  /** Fired ONCE when the poll first observes a terminal status — the
+   *  settlement signal /i's arc and embed hosts read. Also fires on mount
+   *  for an already-finished job (a reopened thread), which is truthful. */
+  onSettled?: (info: { jobId: string; status: 'done' | 'failed' | 'canceled'; valueUsd?: number | null }) => void
 }) {
   const [job, setJob] = useState<JobRow | null>(null)
   const [error, setError] = useState('')
@@ -94,10 +100,16 @@ export default function JobCard({
     }
   }, [load])
 
-  // Stop polling once terminal.
+  // Stop polling once terminal — and emit the one-shot settlement signal.
+  const settledFired = useRef(false)
   useEffect(() => {
-    if (job && !ACTIVE.has(job.status) && timer.current) clearInterval(timer.current)
-  }, [job])
+    if (!job || ACTIVE.has(job.status)) return
+    if (timer.current) clearInterval(timer.current)
+    if (!settledFired.current) {
+      settledFired.current = true
+      onSettled?.({ jobId, status: job.status as 'done' | 'failed' | 'canceled', valueUsd: job.valueUsd })
+    }
+  }, [job, jobId, onSettled])
 
   const completeStep = async (seq: number, builder: string, result: Record<string, unknown>, valueUsd?: number | null) => {
     await fetch(`/api/jobs/${jobId}/complete${q}`, {
@@ -127,18 +139,7 @@ export default function JobCard({
   if (!job) return <p className="mt-2 text-[12px] text-[color:var(--muted-2)]">Loading job…</p>
 
   const doneCount = job.steps.filter((s) => s.status === 'done').length
-  const statusLine =
-    job.status === 'done'
-      ? 'complete'
-      : job.status === 'failed'
-        ? 'failed'
-        : job.status === 'canceled'
-          ? 'canceled'
-          : job.status === 'waiting_signature'
-            ? 'your signature'
-            : job.status === 'waiting_settlement'
-              ? 'settling…'
-              : 'running'
+  const statusLine = jobStatusWord(job.status)
   const live = ACTIVE.has(job.status)
 
   return (
@@ -159,16 +160,16 @@ export default function JobCard({
           <span
             className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] font-medium ${
               job.status === 'done'
-                ? 'border-emerald-500/40 text-emerald-400'
+                ? 'border-[color:color-mix(in_srgb,var(--done)_40%,transparent)] text-[color:var(--done)]'
                 : job.status === 'failed'
-                  ? 'border-red-500/40 text-red-400'
+                  ? 'border-[color:color-mix(in_srgb,var(--fail)_40%,transparent)] text-[color:var(--fail)]'
                   : job.status === 'waiting_signature'
                     ? 'border-[color:color-mix(in_srgb,var(--accent)_45%,transparent)] text-[color:var(--accent)]'
                     : 'border-[color:var(--line-2)] text-[color:var(--muted)]'
             }`}
           >
             {live && job.status !== 'waiting_signature' && (
-              <span className="w-1.5 h-1.5 rounded-full animate-pulse" style={{ background: 'var(--accent)' }} aria-hidden />
+              <span className="w-1.5 h-1.5 rounded-full animate-pulse" style={{ background: 'var(--live)' }} aria-hidden />
             )}
             {job.status === 'done' && <CheckCircle2 className="w-3 h-3" aria-hidden />}
             {statusLine}
@@ -178,14 +179,8 @@ export default function JobCard({
       </button>
 
       {/* progress — visible even collapsed; the card's heartbeat */}
-      <div className="h-0.5 mx-3 mb-0.5 rounded-full overflow-hidden" style={{ background: 'color-mix(in srgb, var(--fg) 8%, transparent)' }}>
-        <div
-          className="h-full rounded-full transition-[width] duration-700"
-          style={{
-            width: `${job.steps.length ? (doneCount / job.steps.length) * 100 : 0}%`,
-            background: job.status === 'failed' ? '#f87171' : 'var(--accent)',
-          }}
-        />
+      <div className={`yprog mx-3 mb-0.5 ${job.status === 'failed' ? 'yprog--fail' : job.status === 'done' ? 'yprog--full' : ''}`}>
+        <div className="yprog__fill" style={{ width: `${job.steps.length ? (doneCount / job.steps.length) * 100 : 0}%` }} />
       </div>
 
       {expanded && (
@@ -213,8 +208,8 @@ export default function JobCard({
             // progress reads as a line filling in, not floating icons — the
             // segment above an icon turns emerald the moment the step before
             // it lands.
-            const railUp = prevDone ? 'bg-emerald-500/60' : 'bg-[var(--line)]'
-            const railDown = step.status === 'done' ? 'bg-emerald-500/60' : 'bg-[var(--line)]'
+            const railUp = prevDone ? 'bg-[color:color-mix(in_srgb,var(--done)_60%,transparent)]' : 'bg-[var(--line)]'
+            const railDown = step.status === 'done' ? 'bg-[color:color-mix(in_srgb,var(--done)_60%,transparent)]' : 'bg-[var(--line)]'
             return (
               <div key={step.seq} className={`flex gap-2 rounded-lg px-2 ${isCurrent ? 'bg-[color:color-mix(in_srgb,var(--fg)_4%,transparent)]' : ''}`}>
                 <div className="flex flex-col items-center w-4 flex-shrink-0 self-stretch">
@@ -231,7 +226,7 @@ export default function JobCard({
                     )}
                   </div>
                   {resultNote && (
-                    <div className={`text-[11.5px] ${step.status === 'failed' ? 'text-red-400' : 'text-[color:var(--muted-2)]'}`}>{resultNote.slice(0, 180)}</div>
+                    <div className={`text-[11.5px] ${step.status === 'failed' ? 'text-[color:var(--fail)]' : 'text-[color:var(--muted-2)]'}`}>{resultNote.slice(0, 180)}</div>
                   )}
                   {/* A spend-policy refusal is fixable in place: the failed step
                       persisted the structured block, so offer the exact policy
@@ -295,7 +290,7 @@ export default function JobCard({
           <div className="flex items-center justify-between pt-1.5 mt-1 border-t border-[var(--line)]">
             {job.status === 'done' ? (
               <span className="inline-flex items-center gap-3 flex-wrap">
-                <span className="inline-flex items-center gap-1.5 text-[11px] text-emerald-400">
+                <span className="inline-flex items-center gap-1.5 text-[11px] text-[color:var(--done)]">
                   <CheckCircle2 className="w-3.5 h-3.5" aria-hidden />
                   <span>
                     <span className="mono font-semibold">${(job.valueUsd ?? 0).toFixed(2)}</span> moved — every step receipted.
@@ -312,7 +307,7 @@ export default function JobCard({
               </span>
             )}
             {ACTIVE.has(job.status) && (
-              <button onClick={() => void cancel()} className="text-[11px] mono text-[color:var(--muted-2)] hover:text-red-400 transition-colors">
+              <button onClick={() => void cancel()} className="text-[11px] mono text-[color:var(--muted-2)] hover:text-[color:var(--fail)] transition-colors">
                 cancel
               </button>
             )}

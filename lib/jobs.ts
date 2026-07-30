@@ -27,6 +27,7 @@
 // ─────────────────────────────────────────────────────────────────────────
 
 import { parseAaveOp, parseAaveSupply, type AaveOpParams, type AaveSupplyParams } from '@/lib/aave-supply'
+import { parseMorphoLend, parseMorphoOp } from '@/lib/morpho-supply'
 import { parseCrossChainSwap, type CrossChainSwapParams } from '@/lib/cross-chain-swap'
 import { chainAlt, canonicalChainWord, normalizeChainWords } from '@/lib/chain-lexicon'
 import { parseHlIntent, type HlIntent, type HlOrderIntent } from '@/lib/hyperliquid-exec'
@@ -161,6 +162,69 @@ export function splitJobSegments(message: string): string[] {
     .split(/\s*(?:→|;|,?\s*(?:and\s+)?\bthen\b)\s*/i)
     .map((s) => s.trim())
     .filter(Boolean)
+}
+
+/**
+ * Connectors people actually use to join two intents in one message, beyond
+ * the explicit then/;/→ the primary splitter knows. Every one of these was
+ * probed and dropped an intent silently before this existed.
+ *
+ * Whitespace is REQUIRED around the symbolic ones so nothing inside a value
+ * is ever cut: "0.5 ETH" survives the period rule (it needs `. ` with a
+ * space), "USDC/cbBTC" survives the slash rule, "+5%" survives the plus.
+ */
+const COMPOUND_CONNECTOR_RE =
+  /\s*(?:,?\s+(?:and\s+)?also\s+|,?\s+and\s+|,?\s+plus\s+|,?\s+followed\s+by\s+|,?\s+after\s+that\s+|\s+\+\s+|\s+&\s+|\s+\/\s+|\.\s+|,\s+|\n+)/i
+
+/** Candidate pieces of a segment joined by one of the connectors above.
+ *  Speculative only — expandCompoundSegments decides whether to use them. */
+function compoundSplitCandidates(segment: string): string[] | null {
+  const parts = segment
+    .split(COMPOUND_CONNECTOR_RE)
+    .map((s) => s.trim())
+    .filter(Boolean)
+  return parts.length >= 2 ? parts : null
+}
+
+/**
+ * Two intents joined by anything other than "then" ("lend 100 USDC on morpho
+ * and stake 0.5 ETH on lido", "… plus …", "… also …", two lines, two
+ * sentences) used to compile to NOTHING: the ask fell past the jobs gate to
+ * the single-venue layers, each parser matched its OWN clause, and the first
+ * gate to run claimed the turn while the other intent vanished — the #595
+ * silent-drop through a different connector. Every connector in
+ * COMPOUND_CONNECTOR_RE was probed and reproduced that drop.
+ *
+ * The split is SPECULATIVE and accepted only when every piece parses cleanly
+ * on its own (steps, never a problem or a clarify). That conservatism is what
+ * makes it safe: shapes where a connector belongs INSIDE one intent — a
+ * multi-clause send sharing a trailing recipient ("send all my USDC on
+ * arbitrum and 5 USDC on base to 0x…"), a pronoun follow-up, "buy $10 of AAPL
+ * and $10 of TSLA" — leave at least one piece unparseable, so the split is
+ * rejected and the segment stays whole, exactly as before.
+ *
+ * When a split DOES succeed it wins over the whole-segment reading, because a
+ * parser matching the full string is matching its own clause and ignoring the
+ * rest — the interpretation that keeps every intent is the honest one.
+ */
+function expandCompoundSegments(segments: string[], message: string): string[] {
+  const out: string[] = []
+  for (const seg of segments) {
+    const candidates = compoundSplitCandidates(seg)
+    if (!candidates) {
+      out.push(seg)
+      continue
+    }
+    const allParse = candidates.every((piece) =>
+      JOB_SEGMENT_PARSERS.some((parser) => {
+        const res = parser.parse(piece, { index: 0, fundingSeen: false, nft: null, message })
+        return !!res && !('problem' in res) && !('clarify' in res)
+      }),
+    )
+    if (allParse) out.push(...candidates)
+    else out.push(seg)
+  }
+  return out
 }
 
 // ── Segment registry ───────────────────────────────────────────────────────
@@ -485,6 +549,35 @@ export const JOB_SEGMENT_PARSERS: JobSegmentParser[] = [
     },
   },
   {
+    // Morpho lend/repay segments — the same discipline as the Aave entries:
+    // the compiler has no selected-set context, so only EXPLICIT Morpho asks
+    // compile ("lend 100 USDC on morpho"); weak/bare verbs stay chat-only.
+    // The chain rides the segment (Base default, Ethereum on request); any
+    // other named chain refuses honestly.
+    id: 'morpho-lend',
+    label: 'Morpho lends/repays',
+    parse: (seg) => {
+      const lend = parseMorphoLend(seg)
+      if (!lend || 'problem' in lend || !lend.explicitMorpho || lend.weak) return null
+      if (lend.otherChain) return { problem: `Morpho builds run on Base or Ethereum — I can't lend on ${lend.otherChain}.` }
+      const title = `Lend ${lend.amount} ${lend.token.toUpperCase()} on Morpho (${lend.chainId === 1 ? 'Ethereum' : 'Base'})`
+      return { steps: [{ kind: 'sign', builder: 'native-morpho-lend', title, params: { token: lend.token, amount: lend.amount, chainId: lend.chainId } }], title }
+    },
+  },
+  {
+    id: 'morpho-repay',
+    label: 'Morpho lends/repays',
+    parse: (seg) => {
+      const mop = parseMorphoOp(seg)
+      if (!mop || 'problem' in mop || mop.op !== 'repay' || !mop.explicitMorpho || mop.weak) return null
+      if (mop.otherChain) return { problem: `Morpho builds run on Base or Ethereum — I can't repay on ${mop.otherChain}.` }
+      const title = mop.max
+        ? `Repay the full ${mop.token.toUpperCase()} debt on Morpho (${mop.chainId === 1 ? 'Ethereum' : 'Base'})`
+        : `Repay ${mop.amount} ${mop.token.toUpperCase()} on Morpho (${mop.chainId === 1 ? 'Ethereum' : 'Base'})`
+      return { steps: [{ kind: 'sign', builder: 'native-morpho-repay', title, params: { token: mop.token, amount: mop.amount, max: mop.max, chainId: mop.chainId } }], title }
+    },
+  },
+  {
     id: 'guardian',
     label: 'guardian protection',
     parse: (seg) => {
@@ -508,7 +601,7 @@ const compilableKinds = (): string => {
  * single asks belong to the native layers directly).
  */
 export function compileJobAsk(message: string): CompiledJob | { problem: string } | { clarify: ClarifyRequest } | null {
-  const segments = splitJobSegments(message)
+  const segments = expandCompoundSegments(splitJobSegments(message), message)
   // Single asks belong to the native layers — EXCEPT segments that are
   // multi-step on their own: a lone Robinhood funding segment (the MCP-path
   // fallback's bridge-only chips carry no follow-up; the legs + arrival

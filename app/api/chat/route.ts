@@ -83,6 +83,39 @@ import {
   type AavePortfolioPosition,
   type PickedReserve,
 } from '@/lib/aave-supply'
+import {
+  morphoAgentOf,
+  morphoCompetingVenueOf,
+  parseMorphoLend,
+  parseMorphoLendFollowUp,
+  morphoLendPending,
+  parseMorphoOp,
+  parseMorphoOpFollowUp,
+  morphoOpPending,
+  guardMorphoOpBuild,
+  pickLendMarket,
+  pickCollateralMarket,
+  pickSuppliedPosition,
+  pickDebtPosition,
+  pickCollateralPosition,
+  pickBorrowPosition,
+  MORPHO_SINGLETON,
+  MORPHO_OP_PENDING_KINDS,
+  type MorphoLendParams,
+  type MorphoOpParams,
+  type MorphoAmountRule,
+  type MorphoBuiltPlan,
+  type MorphoMarketRow,
+  type MorphoPositionRow,
+} from '@/lib/morpho-supply'
+import {
+  assertInfoMatchesParams,
+  assertTokenIdentity,
+  impliedLoanPriceUsd,
+  morphoChainName,
+  resolveMorphoMarketParams,
+  type MorphoMarketInfo,
+} from '@/lib/morpho-exec'
 import { policyCheck, buildReport } from '@/lib/tx-guardrails'
 import { buildGuardrailedOrder } from '@/lib/cow-build'
 import { parseNftAsk, parseNftListAsk, parseNftMarketAsk, parseNftTransferFollowUp, nftAskFromPending, nftTransferPending, buildNftBuy, buildNftTransfer, buildNftListing } from '@/lib/nft-layer'
@@ -692,6 +725,59 @@ async function handleChatTurn(req: NextRequest) {
       }
     }
 
+    // Morpho follow-ups against a pending (already-built) lend/op — the same
+    // deterministic cancel / amend / affirm contract as the Aave blocks above.
+    const pendingMorphoLend =
+      workingContext?.pending && workingContext.pending.kind === 'morpho-lend' ? workingContext.pending : undefined
+    if (pendingMorphoLend) {
+      const fu = parseMorphoLendFollowUp(message, pendingMorphoLend)
+      if (fu?.kind === 'cancel') {
+        const p = pendingMorphoLend.data
+        return NextResponse.json({
+          reply: `👍 Dropped the Morpho lend — ${p.amount} ${(p.token ?? '').toUpperCase()} was never signed, so nothing moved.`,
+          workingContext: { v: 1, age: 0, ...(workingContext?.scope ? { scope: workingContext.scope } : {}) } satisfies WorkingContext,
+        })
+      }
+      if (fu?.kind === 'noop') {
+        return NextResponse.json({
+          reply: `🔏 The lend is built above — sign the step(s) in the card to send it. Say “cancel” to drop it.`,
+        })
+      }
+      if (fu?.kind === 'amend') {
+        const morphoRead = morphoAgentOf(activeServers)
+        if (morphoRead.agent && morphoRead.usable) {
+          nativeTrace({ type: 'status', label: `native morpho layer: amending the pending lend to ${fu.params.amount} ${fu.params.token.toUpperCase()}` })
+          return await buildMorphoLendTurn(morphoRead.agent, fu.params, walletAddress, workingContext, message, nativeTrace)
+        }
+      }
+    }
+    const pendingMorphoOp =
+      workingContext?.pending && (MORPHO_OP_PENDING_KINDS as readonly string[]).includes(workingContext.pending.kind)
+        ? workingContext.pending
+        : undefined
+    if (pendingMorphoOp) {
+      const fu = parseMorphoOpFollowUp(message, pendingMorphoOp)
+      if (fu?.kind === 'cancel') {
+        const p = pendingMorphoOp.data
+        return NextResponse.json({
+          reply: `👍 Dropped the Morpho ${p.op} — ${p.amount === 'all' ? 'all your' : p.amount} ${(p.token ?? '').toUpperCase()} was never signed, so nothing moved.`,
+          workingContext: { v: 1, age: 0, ...(workingContext?.scope ? { scope: workingContext.scope } : {}) } satisfies WorkingContext,
+        })
+      }
+      if (fu?.kind === 'noop') {
+        return NextResponse.json({
+          reply: `🔏 The ${pendingMorphoOp.data.op} is built above — sign the step(s) in the card to send it. Say “cancel” to drop it.`,
+        })
+      }
+      if (fu?.kind === 'amend') {
+        const morphoRead = morphoAgentOf(activeServers)
+        if (morphoRead.agent && morphoRead.usable) {
+          nativeTrace({ type: 'status', label: `native morpho layer: amending the pending ${fu.params.op} to ${fu.params.max ? `all ${fu.params.token.toUpperCase()}` : `${fu.params.amount} ${fu.params.token.toUpperCase()}`}` })
+          return await buildMorphoOpTurn(morphoRead.agent, fu.params, walletAddress, workingContext, message, nativeTrace)
+        }
+      }
+    }
+
     const pendingArtifact =
       workingContext?.pending && (workingContext.pending.kind === 'swap' || workingContext.pending.kind === 'order')
         ? workingContext.pending
@@ -889,6 +975,98 @@ async function handleChatTurn(req: NextRequest) {
       nativeTrace({ type: 'note', level: 'info', label: 'aave named but no imperative supply/withdraw/borrow/repay parse — normal routing (reads are fine here; build asks should say e.g. “supply 5 USDC to aave”)' })
     }
 
+    // ── Morpho lend: the same NATIVE deterministic recipe as Aave ───────────
+    // LADDER: both Morpho gates sit BELOW the jobs compiler — single-venue
+    // gates NEVER go above it (the 2026-07-28 incident: parseAaveSupply
+    // matched its own clause inside a compound ask and stole the whole job).
+    // They also sit BELOW the Aave gates, whose OTHER_VENUE_RE lists morpho
+    // (and ours lists aave) — venue-worded asks are mutually exclusive; bare
+    // verbs go to whichever venue's agent is in the set, Aave first by
+    // seniority. Recipe: parse → market from the agent's own `markets` →
+    // OUR on-chain idToMarketParams tuple resolve → build_lend → the
+    // tuple-bound guard → ONE approve→lend card. The confirmation is the
+    // signature.
+    const morphoAsk = parseMorphoLend(message)
+    if (morphoAsk) {
+      const morphoRead = morphoAgentOf(activeServers)
+      if ('problem' in morphoAsk) {
+        nativeTrace({ type: 'status', label: 'native morpho layer: lend ask under-specified — asking for the amount' })
+        return NextResponse.json({ reply: `🏦 ${morphoAsk.problem}` })
+      }
+      const rivalVenue = morphoAsk.weak ? morphoCompetingVenueOf(activeServers) : null
+      if (rivalVenue) {
+        nativeTrace({ type: 'note', level: 'info', label: `native morpho layer passed: venue-generic verb and ${rivalVenue} is also selected — normal routing decides the venue` })
+      } else if (morphoAsk.explicitMorpho || morphoRead.agent) {
+        if (!morphoRead.agent) {
+          nativeTrace({ type: 'note', level: 'warn', label: 'native morpho layer: lend parsed but no Morpho agent in the set — asking the user to add it' })
+          return NextResponse.json({
+            reply: `🏦 Lending on Morpho runs right here — it just needs the **Morpho** dapp in this chat's set. **[Add Morpho with this ask ready](/chat?mcps=morpho-free&prompt=${encodeURIComponent(message)})** (it prefills — you press send), or add it from the rail and ask again.`,
+          })
+        }
+        if (!morphoRead.usable) {
+          nativeTrace({ type: 'note', level: 'warn', label: `native morpho layer: ${morphoRead.agent.name} has no callable endpoint (shell row) — refusing honestly` })
+          return NextResponse.json({
+            reply: `🏦 Your **${morphoRead.agent.name}** agent isn't fully connected — no callable tools are registered for it. Re-add it (or pick the Morpho agent from the Free tab) and ask again.`,
+          })
+        }
+        if (morphoAsk.otherChain) {
+          nativeTrace({ type: 'note', level: 'info', label: `native morpho layer: unsupported chain (${morphoAsk.otherChain}) — Morpho builds run on Base or Ethereum, no build` })
+          return NextResponse.json({
+            reply: `🏦 Morpho runs on **Base and Ethereum** here — I can't build a lend on ${morphoAsk.otherChain}. Say “lend ${morphoAsk.amount} ${morphoAsk.token.toUpperCase()} on Morpho on Base” and I'll prepare it.`,
+          })
+        }
+        nativeTrace({ type: 'status', label: `native morpho layer claimed the turn: lend ${morphoAsk.amount} ${morphoAsk.token.toUpperCase()} on ${morphoChainName(morphoAsk.chainId)}${morphoAsk.explicitMorpho ? '' : ' (set-hint: Morpho selected)'} — planner bypassed` })
+        return await buildMorphoLendTurn(morphoRead.agent, morphoAsk, walletAddress, workingContext, message, nativeTrace)
+      } else {
+        nativeTrace({ type: 'note', level: 'info', label: 'native morpho layer passed: lend-shaped ask but no Morpho agent in the set — normal routing' })
+      }
+    }
+
+    // ── Morpho borrow / repay / withdraw / collateral: the same recipe ──────
+    // Anchored to the user's REAL position (the agent's `position` tool),
+    // built via the matching build_* tool, every step re-verified by the
+    // tuple-bound guard.
+    const morphoOpAsk = parseMorphoOp(message)
+    if (morphoOpAsk) {
+      const morphoRead = morphoAgentOf(activeServers)
+      if ('problem' in morphoOpAsk) {
+        nativeTrace({ type: 'status', label: `native morpho layer: ${morphoOpAsk.op} ask under-specified — asking for the amount` })
+        return NextResponse.json({ reply: `🏦 ${morphoOpAsk.problem}` })
+      }
+      const rivalOpVenue = morphoOpAsk.weak ? morphoCompetingVenueOf(activeServers) : null
+      if (rivalOpVenue) {
+        nativeTrace({ type: 'note', level: 'info', label: `native morpho layer passed: venue-generic ${morphoOpAsk.op} and ${rivalOpVenue} is also selected — normal routing decides the venue` })
+      } else if (morphoOpAsk.explicitMorpho || morphoRead.agent) {
+        if (!morphoRead.agent) {
+          nativeTrace({ type: 'note', level: 'warn', label: `native morpho layer: ${morphoOpAsk.op} parsed but no Morpho agent in the set — asking the user to add it` })
+          return NextResponse.json({
+            reply: `🏦 A ${morphoOpAsk.op.replace(/-/g, ' ')} on Morpho runs right here — it just needs the **Morpho** dapp in this chat's set. **[Add Morpho with this ask ready](/chat?mcps=morpho-free&prompt=${encodeURIComponent(message)})** (it prefills — you press send), or add it from the rail and ask again.`,
+          })
+        }
+        if (!morphoRead.usable) {
+          nativeTrace({ type: 'note', level: 'warn', label: `native morpho layer: ${morphoRead.agent.name} has no callable endpoint (shell row) — refusing honestly` })
+          return NextResponse.json({
+            reply: `🏦 Your **${morphoRead.agent.name}** agent isn't fully connected — no callable tools are registered for it. Re-add it (or pick the Morpho agent from the Free tab) and ask again.`,
+          })
+        }
+        if (morphoOpAsk.otherChain) {
+          nativeTrace({ type: 'note', level: 'info', label: `native morpho layer: unsupported chain (${morphoOpAsk.otherChain}) — Morpho builds run on Base or Ethereum, no build` })
+          return NextResponse.json({
+            reply: `🏦 Morpho runs on **Base and Ethereum** here — I can't build a ${morphoOpAsk.op.replace(/-/g, ' ')} on ${morphoOpAsk.otherChain}. Name Base or Ethereum and I'll prepare it.`,
+          })
+        }
+        nativeTrace({ type: 'status', label: `native morpho layer claimed the turn: ${morphoOpAsk.op} ${morphoOpAsk.max ? `all ${morphoOpAsk.token.toUpperCase()}` : `${morphoOpAsk.amount} ${morphoOpAsk.token.toUpperCase()}`} on ${morphoChainName(morphoOpAsk.chainId)}${morphoOpAsk.explicitMorpho ? '' : ' (set-hint: Morpho selected)'} — planner bypassed` })
+        return await buildMorphoOpTurn(morphoRead.agent, morphoOpAsk, walletAddress, workingContext, message, nativeTrace)
+      } else {
+        nativeTrace({ type: 'note', level: 'info', label: `native morpho layer passed: ${morphoOpAsk.op}-shaped ask but no Morpho agent in the set — normal routing` })
+      }
+    }
+    if (!morphoAsk && !morphoOpAsk && /\bmorpho\b/i.test(message)) {
+      // Morpho named but neither native parser claimed it — breadcrumb for
+      // the same parse-miss-looks-like-MCP-flake failure class as Aave's.
+      nativeTrace({ type: 'note', level: 'info', label: 'morpho named but no imperative lend/borrow/repay/withdraw/collateral parse — normal routing (reads are fine here; build asks should say e.g. “lend 100 USDC on morpho”)' })
+    }
+
     // Rebalance — "rebalance my portfolio" / "put my idle money to work":
     // the full multi-chain read (funding scan + live Aave/Lido rates) turned
     // into ONE batch offered as chips; every resume compiles under the jobs
@@ -927,6 +1105,15 @@ async function handleChatTurn(req: NextRequest) {
     // point at the one-signature approval. Requires the Hyperliquid agent in
     // the set so a stray "stop loss" in another context never claims a turn.
     const armAsk = parseGuardianArm(message)
+    if (armAsk && !hlAgentOf(activeServers).agent) {
+      // Full guardian grammar matched but Hyperliquid isn't in the set — the
+      // add-the-dapp door, never a silent fall to the planner (#570/#595
+      // pattern; the grammar's own specificity is the "stray stop loss" guard).
+      nativeTrace({ type: 'note', level: 'warn', label: 'guardian layer: arm ask parsed but no Hyperliquid agent in the set — answering the add-the-dapp door' })
+      return NextResponse.json({
+        reply: `🛡️ Guardian protection runs right here — it just needs the **Hyperliquid** dapp in this chat's set. **[Add Hyperliquid with this ask ready](/chat?mcps=hyperliquid-free&prompt=${encodeURIComponent(message)})** (it prefills — you press send), or add it from the rail and ask again.`,
+      })
+    }
     if (armAsk && hlAgentOf(activeServers).agent) {
       nativeTrace({ type: 'status', label: `guardian layer claimed the turn: ${armAsk.kind} on ${armAsk.coin} (${armAsk.triggerMode} ${armAsk.triggerValue}) — planner bypassed` })
       if (!walletAddress) {
@@ -1467,7 +1654,7 @@ async function handleChatTurn(req: NextRequest) {
         const nativeNames = APP_CHAINS.map((c) => c.name).join(' / ')
         nativeTrace({ type: 'note', level: 'warn', label: `native swap layer declined: cross-chain ask (${xc.chains.join(' → ')}) but no cross-chain agent in the set — pointing at NEAR Intents, no build` })
         return NextResponse.json({
-          reply: `🔗 That swap involves ${named}, and Yeetful's built-in swap tools cover ${nativeNames}. Add the **NEAR Intents (Free)** agent to your set and ask again — it swaps any asset to any asset across ~35 chains with ONE transfer you sign (unfillable swaps auto-refund). Or pick one of the supported chains and I'll build it there.`,
+          reply: `🔗 That swap involves ${named}, and Yeetful's built-in swap tools cover ${nativeNames}. Cross-chain runs on **NEAR Intents (Free)** — any asset to any asset across ~35 chains with ONE transfer you sign (unfillable swaps auto-refund). **[Add NEAR Intents with this ask ready](/chat?mcps=near-intents-mcp-yeetful&prompt=${encodeURIComponent(message)})** (it prefills — you press send), or pick one of the supported chains and I'll build it there.`,
         })
       }
       if (crossChain && ccAgent.agent && !ccAgent.usable) {
@@ -2202,40 +2389,44 @@ async function buildLidoStakeTurn(
 
 /** The ledger/policy host Aave builds are attributed to. */
 const AAVE_POLICY_HOST = 'aave-mcp.yeetful.com'
+/** The ledger/policy host Morpho builds are attributed to. */
+const MORPHO_POLICY_HOST = 'morpho-mcp.yeetful.com'
 
 /**
- * The spend-policy gate at the point of signing, shared by every Aave op —
- * builds the guardrails report (guardrails.valueUsd = the money-moved
- * headline metric), ledgers a policy denial, and returns the refusal
- * response when the policy blocks.
+ * The spend-policy gate at the point of signing, shared by every Aave AND
+ * Morpho op — builds the guardrails report (guardrails.valueUsd = the
+ * money-moved headline metric), ledgers a policy denial, and returns the
+ * refusal response when the policy blocks.
  */
 async function aavePolicyGate(
   valueUsd: number | null,
   walletAddress: string,
   opLabel: string,
   buildNote: string,
+  host: string = AAVE_POLICY_HOST,
+  serviceName: string = 'Aave',
 ): Promise<{ guardrails: ReturnType<typeof buildReport>; blocked: NextResponse | null }> {
   const grant = await getActiveGrant(walletAddress.toLowerCase())
   const policy = grant ? toPolicy(grant) : null
   const spentToday = grant ? await spentTodayUsd(grant.id) : 0
-  const { check: polCheck, violation } = policyCheck(valueUsd, policy, spentToday, AAVE_POLICY_HOST, 0, { selfSigned: true })
+  const { check: polCheck, violation } = policyCheck(valueUsd, policy, spentToday, host, 0, { selfSigned: true })
   const guardrails = buildReport(
     valueUsd,
     [
-      { id: 'aave-build', level: 'block', ok: true, note: buildNote },
+      { id: `${serviceName.toLowerCase()}-build`, level: 'block', ok: true, note: buildNote },
       polCheck,
     ],
-    violation ? { violation, valueUsd, host: AAVE_POLICY_HOST } : null,
+    violation ? { violation, valueUsd, host } : null,
   )
   if (violation && grant) {
     await recordLedger({
       grantId: grant.id,
       orgId: grant.orgId ?? undefined,
-      host: AAVE_POLICY_HOST,
-      serviceName: 'Aave',
+      host,
+      serviceName,
       amountUsd: 0,
       ok: false,
-      note: `blocked: ${violation} (aave ${opLabel})`,
+      note: `blocked: ${violation} (${serviceName.toLowerCase()} ${opLabel})`,
     })
   }
   const blocked = !guardrails.ok
@@ -2293,6 +2484,50 @@ async function aaveFundingTurn(
   if ('insufficient' in offer) {
     return NextResponse.json({
       reply: `🏦 ${actionLabel[0].toUpperCase()}${actionLabel.slice(1)} needs ${askAmount} ${token} on Ethereum and the wallet holds ${held}. ${offer.insufficient}`,
+    })
+  }
+  return NextResponse.json({ ...offer, reply: `🌉 ${offer.reply}` })
+}
+
+/**
+ * The Morpho twin of aaveFundingTurn — chain-parameterized (Morpho lives on
+ * Base AND Ethereum, Aave v4 only on Ethereum) and anchored to the loan-token
+ * address we resolved on-chain, never a symbol lookup. Returns null when the
+ * wallet is funded (the normal build proceeds) or when the read fails —
+ * fail-open here means the service's own honest refusal still lands.
+ */
+async function morphoFundingTurn(
+  walletAddress: string,
+  loanToken: string,
+  decimals: number,
+  token: string,
+  askAmount: number,
+  chainId: 1 | 8453,
+  followupResume: string,
+  actionLabel: string,
+  trace: (event: unknown) => void,
+) {
+  if (!Number.isFinite(askAmount) || askAmount <= 0) return null
+  const client = publicClientFor(chainId)
+  if (!client) return null
+  let held: number | null = null
+  try {
+    const raw = await client.readContract({ address: loanToken as `0x${string}`, abi: erc20Abi, functionName: 'balanceOf', args: [walletAddress as `0x${string}`] })
+    held = Number(formatUnits(raw, decimals))
+  } catch {
+    return null
+  }
+  if (held === null || held >= askAmount) return null
+  const chainName = morphoChainName(chainId)
+  const offer = await offerFundingPlan({
+    user: walletAddress,
+    need: { chainId, token, amountHuman: Number((askAmount - held).toFixed(6)), followupResume, actionLabel },
+    trace,
+  })
+  if (!offer) return null
+  if ('insufficient' in offer) {
+    return NextResponse.json({
+      reply: `🏦 ${actionLabel[0].toUpperCase()}${actionLabel.slice(1)} needs ${askAmount} ${token} on ${chainName} and the wallet holds ${held}. ${offer.insufficient}`,
     })
   }
   return NextResponse.json({ ...offer, reply: `🌉 ${offer.reply}` })
@@ -2732,6 +2967,487 @@ async function buildAaveOpTurn(
       ...(ctx?.scope ? { scope: ctx.scope } : {}),
       ...(ctx?.offers ? { offers: ctx.offers } : {}),
       pending: aaveOpPending(params, picked.spokeName, summary),
+    } satisfies WorkingContext,
+  })
+}
+
+// ── Morpho lend / borrow / repay / withdraw / collateral (native) ────────────
+
+/** Loan assets in curated Morpho markets are mostly stables — price 1:1 for
+ *  those, never guess anything else (null = unpriced, not $0). */
+const morphoStableUsd = (token: string, amount: number): number | null =>
+  /^(USDC|USDT|DAI|USDG|USDE)$/i.test(token) && Number.isFinite(amount) ? Number(amount.toFixed(2)) : null
+
+/**
+ * Resolve one Morpho market end-to-end for a build: the agent's market_info
+ * (addresses, decimals, APYs) + OUR OWN on-chain idToMarketParams read
+ * against the pinned singleton (the guard's binding tuple), cross-checked
+ * against each other. Throws the honest reason on any disagreement.
+ */
+async function resolveMorphoMarketForBuild(
+  chainId: 1 | 8453,
+  marketId: string,
+  agent: McpServer,
+  /** The token the USER named + which side of the market it should be. The
+   *  chain confirms the tuple address really IS that token at that scale —
+   *  without it the whole symbol→address mapping is the agent's word, and a
+   *  consistent liar could point a "USDC" ask at a WETH market. */
+  expect?: { symbol: string; side: 'loan' | 'collateral' },
+) {
+  const [info, tuple] = await Promise.all([
+    callAgentTool(agent.endpoint!, 'market_info', { chainId, marketId }) as Promise<MorphoMarketInfo>,
+    resolveMorphoMarketParams(chainId, marketId),
+  ])
+  assertInfoMatchesParams(info, tuple)
+  if (expect) {
+    const asset = expect.side === 'loan' ? info.loanAsset : info.collateralAsset
+    const decimals = asset?.decimals
+    if (typeof decimals !== 'number') {
+      throw new Error(`Couldn't read ${expect.symbol}'s decimals from the Morpho service — refusing to build.`)
+    }
+    const addr = expect.side === 'loan' ? tuple.loanToken : tuple.collateralToken
+    await assertTokenIdentity(chainId, addr, expect.symbol, decimals)
+  }
+  return { info, tuple }
+}
+
+/**
+ * Build a Morpho lend into a signable approve→lend chain — the native,
+ * deterministic path. Resolves the market from the agent's `markets` tool,
+ * resolves the FULL MarketParams tuple on-chain OURSELVES, calls
+ * `build_lend`, and GUARDRAILS every returned step with the tuple-bound
+ * guard (lib/morpho-supply.ts). No confirmation round-trip — signing is the
+ * confirmation.
+ */
+async function buildMorphoLendTurn(
+  agent: McpServer,
+  params: MorphoLendParams,
+  walletAddress: string | undefined,
+  ctx?: WorkingContext,
+  originalMessage?: string,
+  trace: (event: unknown) => void = () => {},
+) {
+  const token = params.token.toUpperCase()
+  const chainName = morphoChainName(params.chainId)
+  if (!walletAddress) {
+    trace({ type: 'note', level: 'info', label: 'no wallet connected — asking to connect before building' })
+    return NextResponse.json({
+      reply: '🏦 Connect your wallet to lend on Morpho — the deposit is built for your address and you sign it yourself.',
+      connectWallet: true,
+      ...(originalMessage ? { connectAsk: originalMessage } : {}),
+    })
+  }
+
+  // 1) The market, from the agent's own curated list (sorted by size).
+  let row: MorphoMarketRow | null = null
+  try {
+    const res = (await callAgentTool(agent.endpoint!, 'markets', { chainId: params.chainId })) as { markets?: MorphoMarketRow[] }
+    row = pickLendMarket(res?.markets ?? [], token)
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'the lookup failed'
+    trace({ type: 'receipt', receipt: { name: agent.name, endpoint: 'markets', priceUsd: 0, ok: false, note: msg.slice(0, 200) } })
+    return NextResponse.json({ reply: `🏦 Couldn't read Morpho's market list: ${msg}` })
+  }
+  if (!row?.marketId) {
+    trace({ type: 'note', level: 'warn', label: `${token} is not the loan asset of any curated market on ${chainName} — no build` })
+    return NextResponse.json({
+      reply: `🏦 ${token} isn't the loan asset of any curated Morpho market on ${chainName} right now — ask “what can I lend on Morpho?” to see what's listed.`,
+    })
+  }
+
+  // 2) The binding tuple — market_info + our own on-chain resolve.
+  let info: MorphoMarketInfo
+  let tuple: Awaited<ReturnType<typeof resolveMorphoMarketParams>>
+  try {
+    ;({ info, tuple } = await resolveMorphoMarketForBuild(params.chainId, row.marketId, agent, { symbol: token, side: 'loan' }))
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'the market lookup failed'
+    trace({ type: 'note', level: 'warn', label: `market resolve failed: ${msg.slice(0, 200)}` })
+    return NextResponse.json({ reply: `🏦 ${msg}` })
+  }
+  const marketLabel = info.market ?? `${row.loan}/${row.collateral}`
+  trace({ type: 'select', service: agent.name, endpoint: `${marketLabel} market · tools/call markets → build_lend`, priceUsd: 0, reason: 'native morpho lend layer — tuple resolved on-chain, market from the curated list' })
+
+  const decimals = info.loanAsset?.decimals
+  if (typeof decimals !== 'number') {
+    return NextResponse.json({ reply: `🏦 Couldn't read ${token}'s decimals from the Morpho service — nothing was built.` })
+  }
+  const atoms = humanToAtoms(params.amount, decimals)
+  if (!atoms) {
+    return NextResponse.json({ reply: `🏦 “${params.amount}” has more decimal places than ${token} supports (${decimals}).` })
+  }
+
+  // 2b) Short on the loan asset? Offer the fund-then-lend job instead of the
+  // service's bare balance refusal — "insufficient funds isn't an answer,
+  // it's a to-do list". The chip's resume re-enters THIS turn.
+  const morphoFunding = await morphoFundingTurn(
+    walletAddress,
+    tuple.loanToken,
+    decimals,
+    token,
+    Number(params.amount),
+    params.chainId,
+    `lend ${params.amount} ${token} on morpho${params.chainId === 1 ? ' on ethereum' : ''}`,
+    'the Morpho lend',
+    trace,
+  )
+  if (morphoFunding) return morphoFunding
+
+  // 3) Build via the agent — the service validates the live balance itself
+  //    and refuses with the honest reason (surfaced verbatim).
+  let built: MorphoBuiltPlan
+  try {
+    built = (await callAgentTool(agent.endpoint!, 'build_lend', {
+      user: walletAddress,
+      chainId: params.chainId,
+      marketId: row.marketId,
+      amount: params.amount,
+    })) as MorphoBuiltPlan
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'the build failed'
+    trace({ type: 'receipt', receipt: { name: agent.name, endpoint: 'build_lend', priceUsd: 0, ok: false, note: msg.slice(0, 200) } })
+    return NextResponse.json({ reply: `🏦 Couldn't build the lend: ${msg}` })
+  }
+
+  // 4) Guard — nothing is offered unless every step verifies.
+  const guard = guardMorphoOpBuild(built, {
+    op: 'lend',
+    chainId: params.chainId,
+    amount: { kind: 'exact', atoms: BigInt(atoms) },
+    params: tuple,
+    morpho: MORPHO_SINGLETON,
+    user: walletAddress,
+  })
+  if (!guard.ok || !guard.steps) {
+    trace({ type: 'note', level: 'warn', label: `guard REFUSED the lend build: ${guard.reasons.join(' ').slice(0, 200)}` })
+    return NextResponse.json({
+      reply: `🚫 I built the lend but refused it — the transaction didn't verify: ${guard.reasons.join(' ')} Nothing to sign.`,
+      blocked: true,
+    })
+  }
+  trace({ type: 'status', label: `guard verified every step — ${guard.steps.length === 2 ? 'approve → lend' : 'lend'} card built, awaiting signature` })
+
+  // 5) Money-moved value + the spend-policy gate at the point of signing.
+  const price = impliedLoanPriceUsd(row, info)
+  const valueUsd = price !== null ? Number(params.amount) * price : morphoStableUsd(token, Number(params.amount))
+  const { guardrails, blocked } = await aavePolicyGate(
+    valueUsd,
+    walletAddress,
+    'lend',
+    `Build verified: the steps move exactly ${params.amount} ${token} into the Morpho ${marketLabel} market, credited to your wallet.`,
+    MORPHO_POLICY_HOST,
+    'Morpho',
+  )
+  if (blocked) return blocked
+
+  const apy = info.supplyApy ?? row.supplyApy
+  const usd = valueUsd !== null ? ` (≈$${valueUsd.toFixed(2)})` : ''
+  const summary = `Lend ${params.amount} ${token}${usd} to the Morpho ${marketLabel} market on ${chainName}${apy ? ` — earning ${apy} APY` : ''}`
+  const stepsNote =
+    guard.steps.length > 1
+      ? `Sign the ${token} approval in the card below, and the lend appears automatically once it confirms — nothing to retype.`
+      : 'One signature in the card below sends it.'
+  const warns = guard.warnings.map((w) => `⚠️ ${w}`).join('\n')
+  return NextResponse.json({
+    reply:
+      `🔏 ${summary}\n` +
+      `— Market: \`${row.marketId}\` · ${token} \`${tuple.loanToken}\` (tuple verified on-chain against the Morpho contract)\n` +
+      `— The deposit credits ${walletAddress} and starts earning immediately; withdraw any time.\n` +
+      `${stepsNote}${warns ? `\n${warns}` : ''}`,
+    txChain: { summary, steps: guard.steps },
+    buildPath: 'native-morpho-lend',
+    guardrails,
+    workingContext: {
+      v: 1 as const,
+      age: 0,
+      ...(ctx?.scope ? { scope: ctx.scope } : {}),
+      ...(ctx?.offers ? { offers: ctx.offers } : {}),
+      pending: morphoLendPending(params, marketLabel, summary),
+    } satisfies WorkingContext,
+  })
+}
+
+/** The build_* tool per op, and which side of the market the amount is in. */
+const MORPHO_OP_TOOL: Record<MorphoOpParams['op'], { tool: string; side: 'loan' | 'collateral' }> = {
+  borrow: { tool: 'build_borrow', side: 'loan' },
+  repay: { tool: 'build_repay', side: 'loan' },
+  withdraw: { tool: 'build_withdraw', side: 'loan' },
+  'withdraw-collateral': { tool: 'build_withdraw_collateral', side: 'collateral' },
+  'supply-collateral': { tool: 'build_supply_collateral', side: 'collateral' },
+}
+
+/**
+ * Build a Morpho borrow / repay / withdraw / withdraw-collateral /
+ * supply-collateral into a signable chain — the same native recipe as lend,
+ * anchored to the user's REAL position: the agent's `position` names the
+ * market the funds actually sit in (never "the deepest market"), the tuple
+ * is resolved on-chain ourselves, the matching build_* tool constructs the
+ * steps, and the tuple-bound guard verifies every one. Signing is the
+ * confirmation.
+ */
+async function buildMorphoOpTurn(
+  agent: McpServer,
+  params: MorphoOpParams,
+  walletAddress: string | undefined,
+  ctx?: WorkingContext,
+  originalMessage?: string,
+  trace: (event: unknown) => void = () => {},
+) {
+  const token = params.token.toUpperCase()
+  const op = params.op
+  const opWords = op.replace(/-/g, ' ')
+  const chainName = morphoChainName(params.chainId)
+  if (!walletAddress) {
+    trace({ type: 'note', level: 'info', label: 'no wallet connected — asking to connect before building' })
+    return NextResponse.json({
+      reply: `🏦 Connect your wallet to ${opWords} — the transaction is built for your address and position, and you sign it yourself.`,
+      connectWallet: true,
+      ...(originalMessage ? { connectAsk: originalMessage } : {}),
+    })
+  }
+
+  // 1) Anchor to the user's real position (posting collateral reads it
+  //    fail-soft — a first-time post has no position yet).
+  let positions: MorphoPositionRow[] = []
+  try {
+    const res = (await callAgentTool(agent.endpoint!, 'position', { user: walletAddress, chainId: params.chainId })) as { positions?: MorphoPositionRow[] }
+    positions = res?.positions ?? []
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'the lookup failed'
+    trace({ type: 'receipt', receipt: { name: agent.name, endpoint: 'position', priceUsd: 0, ok: false, note: msg.slice(0, 200) } })
+    if (op !== 'supply-collateral') {
+      return NextResponse.json({ reply: `🏦 Couldn't read your Morpho position: ${msg}` })
+    }
+  }
+
+  let anchor: MorphoPositionRow | null = null
+  let marketId: string | null = null
+  if (op === 'withdraw') {
+    anchor = pickSuppliedPosition(positions, token)
+    if (!anchor) {
+      trace({ type: 'note', level: 'info', label: `no ${token} supplied on Morpho — honest reply, no build` })
+      return NextResponse.json({
+        reply: `🏦 You don't have any ${token} lent on Morpho (${chainName}) — nothing to withdraw. Ask “show my Morpho position” to see what's there.`,
+      })
+    }
+    if (!params.max && Number(params.amount) > Number(anchor.supplied?.amount ?? 0)) {
+      return NextResponse.json({
+        reply: `🏦 Your supplied ${token} on Morpho is ${anchor.supplied?.amount} (asked: ${params.amount}) — say “withdraw all my ${token} from Morpho” and I'll build the full withdrawal.`,
+      })
+    }
+    marketId = anchor.marketId!
+  } else if (op === 'repay') {
+    anchor = pickDebtPosition(positions, token)
+    if (!anchor) {
+      trace({ type: 'note', level: 'info', label: `no ${token} debt on Morpho — honest reply, no build` })
+      return NextResponse.json({
+        reply: `🏦 You don't have any ${token} debt on Morpho (${chainName}) — nothing to repay. Ask “show my Morpho position” to see what's outstanding.`,
+      })
+    }
+    if (!params.max && Number(params.amount) > Number(anchor.borrowed?.amount ?? 0)) {
+      return NextResponse.json({
+        reply: `🏦 Your ${token} debt on Morpho is ${anchor.borrowed?.amount} (asked: ${params.amount}) — say “repay all my ${token} debt on Morpho” and I'll build the full repayment, accrued interest included.`,
+      })
+    }
+    marketId = anchor.marketId!
+  } else if (op === 'withdraw-collateral') {
+    anchor = pickCollateralPosition(positions, token)
+    if (!anchor) {
+      trace({ type: 'note', level: 'info', label: `no ${token} collateral on Morpho — honest reply, no build` })
+      return NextResponse.json({
+        reply: `🏦 You don't have any ${token} posted as collateral on Morpho (${chainName}) — nothing to withdraw.`,
+      })
+    }
+    if (!params.max && Number(params.amount) > Number(anchor.collateral?.amount ?? 0)) {
+      return NextResponse.json({
+        reply: `🏦 Your posted ${token} collateral on Morpho is ${anchor.collateral?.amount} (asked: ${params.amount}).`,
+      })
+    }
+    marketId = anchor.marketId!
+  } else if (op === 'borrow') {
+    anchor = pickBorrowPosition(positions, token)
+    if (!anchor) {
+      const anyCollateral = positions.some((p) => Number(p.collateral?.amount ?? 0) > 0)
+      return NextResponse.json({
+        reply: anyCollateral
+          ? `🏦 ${token} isn't the loan asset of the Morpho markets where you hold collateral — ask “what can I borrow on Morpho?” to see what your collateral unlocks.`
+          : `🏦 Borrowing on Morpho needs collateral posted first — you have none on ${chainName} yet. Post some (e.g. “post 0.5 WETH as collateral on Morpho”), then borrow against it.`,
+      })
+    }
+    marketId = anchor.marketId!
+  } else {
+    // supply-collateral: prefer a market the user already has a position in
+    // with this collateral, else the deepest curated market taking it.
+    let marketsRows: MorphoMarketRow[]
+    try {
+      const res = (await callAgentTool(agent.endpoint!, 'markets', { chainId: params.chainId })) as { markets?: MorphoMarketRow[] }
+      marketsRows = res?.markets ?? []
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'the lookup failed'
+      trace({ type: 'receipt', receipt: { name: agent.name, endpoint: 'markets', priceUsd: 0, ok: false, note: msg.slice(0, 200) } })
+      return NextResponse.json({ reply: `🏦 Couldn't read Morpho's market list: ${msg}` })
+    }
+    const posIds = positions.filter((p) => typeof p.marketId === 'string').map((p) => p.marketId!)
+    const row = pickCollateralMarket(marketsRows, token, posIds)
+    if (!row?.marketId) {
+      return NextResponse.json({
+        reply: `🏦 ${token} isn't the collateral asset of any curated Morpho market on ${chainName} right now — ask “what can I borrow against ${token} on Morpho?” to see what's listed.`,
+      })
+    }
+    marketId = row.marketId
+  }
+
+  // 2) The binding tuple — market_info + our own on-chain resolve.
+  let info: MorphoMarketInfo
+  let tuple: Awaited<ReturnType<typeof resolveMorphoMarketParams>>
+  try {
+    ;({ info, tuple } = await resolveMorphoMarketForBuild(params.chainId, marketId!, agent, { symbol: token, side: MORPHO_OP_TOOL[op].side }))
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'the market lookup failed'
+    trace({ type: 'note', level: 'warn', label: `market resolve failed: ${msg.slice(0, 200)}` })
+    return NextResponse.json({ reply: `🏦 ${msg}` })
+  }
+  const marketLabel = info.market ?? anchor?.market ?? token
+  const side = MORPHO_OP_TOOL[op].side
+  const sideAsset = side === 'loan' ? info.loanAsset : info.collateralAsset
+  // The position row's asset symbol matched `token`; the market's own asset
+  // on that side must agree, or we're not looking at the same market.
+  if ((sideAsset?.symbol ?? '').toUpperCase() !== token) {
+    trace({ type: 'note', level: 'warn', label: `market ${side} asset ${sideAsset?.symbol} != ${token} — refusing to build` })
+    return NextResponse.json({
+      reply: `🏦 The resolved Morpho market's ${side} asset (${sideAsset?.symbol ?? '?'}) doesn't match ${token}, so I won't build the ${opWords}. Nothing to sign.`,
+    })
+  }
+  const decimals = sideAsset?.decimals
+  if (typeof decimals !== 'number') {
+    return NextResponse.json({ reply: `🏦 Couldn't read ${token}'s decimals from the Morpho service — nothing was built.` })
+  }
+  trace({ type: 'select', service: agent.name, endpoint: `${marketLabel} market · tools/call position → ${MORPHO_OP_TOOL[op].tool}`, priceUsd: 0, reason: `native morpho ${op} layer — anchored to your real position, tuple resolved on-chain` })
+
+  let atoms: string | null = null
+  if (!params.max) {
+    atoms = humanToAtoms(params.amount!, decimals)
+    if (!atoms) {
+      return NextResponse.json({ reply: `🏦 “${params.amount}” has more decimal places than ${token} supports (${decimals}).` })
+    }
+  }
+
+  // 3) Build via the agent with the RESOLVED market id.
+  let built: MorphoBuiltPlan & { healthFactorAfter?: number | null; warning?: string }
+  try {
+    built = (await callAgentTool(agent.endpoint!, MORPHO_OP_TOOL[op].tool, {
+      user: walletAddress,
+      chainId: params.chainId,
+      marketId,
+      amount: params.max ? 'max' : params.amount,
+    })) as MorphoBuiltPlan & { healthFactorAfter?: number | null; warning?: string }
+  } catch (err) {
+    // The service validates balances, borrowing power, liquidity, and health
+    // server-side — surface its reason verbatim, never a model's guess.
+    const msg = err instanceof Error ? err.message : 'the build failed'
+    trace({ type: 'receipt', receipt: { name: agent.name, endpoint: MORPHO_OP_TOOL[op].tool, priceUsd: 0, ok: false, note: msg.slice(0, 200) } })
+    return NextResponse.json({ reply: `🏦 Couldn't build the ${opWords}: ${msg}` })
+  }
+
+  // 4) Guard — the amount rule per op. Max repay/withdraw ride the
+  //    shares-mode encoding (assets 0, shares set — clears exactly as
+  //    interest drifts); a max collateral withdrawal is asset-exact at the
+  //    anchored full amount (collateral doesn't accrue).
+  const anchorHuman =
+    op === 'repay' ? anchor?.borrowed?.amount : op === 'withdraw' ? anchor?.supplied?.amount : anchor?.collateral?.amount
+  let amountRule: MorphoAmountRule
+  if (!params.max) {
+    amountRule = { kind: 'exact', atoms: BigInt(atoms!) }
+  } else if (op === 'repay' || op === 'withdraw') {
+    const anchorAtoms = humanToAtoms(anchorHuman ?? '0', decimals)
+    if (!anchorAtoms) {
+      return NextResponse.json({ reply: `🏦 Couldn't anchor your ${token} position (${anchorHuman}) — refusing to build the ${opWords}.` })
+    }
+    amountRule = { kind: 'max-shares', anchorAtoms: BigInt(anchorAtoms) }
+  } else {
+    const fullAtoms = humanToAtoms(anchorHuman ?? '0', decimals)
+    if (!fullAtoms) {
+      return NextResponse.json({ reply: `🏦 Couldn't anchor your ${token} collateral (${anchorHuman}) — refusing to build the ${opWords}.` })
+    }
+    amountRule = { kind: 'exact', atoms: BigInt(fullAtoms) }
+  }
+  const guard = guardMorphoOpBuild(built, {
+    op,
+    chainId: params.chainId,
+    amount: amountRule,
+    params: tuple,
+    morpho: MORPHO_SINGLETON,
+    user: walletAddress,
+  })
+  if (!guard.ok || !guard.steps) {
+    trace({ type: 'note', level: 'warn', label: `guard REFUSED the ${op} build: ${guard.reasons.join(' ').slice(0, 200)}` })
+    return NextResponse.json({
+      reply: `🚫 I built the ${opWords} but refused it — the transaction didn't verify: ${guard.reasons.join(' ')} Nothing to sign.`,
+      blocked: true,
+    })
+  }
+  trace({ type: 'status', label: `guard verified every step — ${op} card built, awaiting signature` })
+
+  // 5) Money-moved value + the spend-policy gate at the point of signing.
+  const amountNum = params.max ? Number(anchorHuman ?? 0) : Number(params.amount)
+  const valueUsd = side === 'loan' ? morphoStableUsd(token, amountNum) : null
+  const amountText = params.max
+    ? op === 'repay'
+      ? `your full ${token} debt (~${anchorHuman}, accrued interest included)`
+      : `all your ${token} (~${anchorHuman})`
+    : `${params.amount} ${token}`
+  const { guardrails, blocked } = await aavePolicyGate(
+    valueUsd,
+    walletAddress,
+    op,
+    `Build verified: the steps ${opWords} exactly ${amountText} on the Morpho ${marketLabel} market, ${op === 'repay' ? 'paying down your own debt' : op === 'supply-collateral' ? 'credited to your wallet' : 'moving only to/for your wallet'}.`,
+    MORPHO_POLICY_HOST,
+    'Morpho',
+  )
+  if (blocked) return blocked
+
+  // 6) One self-advancing card, everything shown — signing is the confirmation.
+  const usd = valueUsd !== null ? ` (≈$${valueUsd.toFixed(2)})` : ''
+  const hf = typeof built.healthFactorAfter === 'number' ? built.healthFactorAfter : null
+  let summary: string
+  let detail: string
+  if (op === 'withdraw') {
+    summary = `Withdraw ${amountText}${usd} from the Morpho ${marketLabel} market on ${chainName} back to your wallet`
+    detail = `— The funds land in ${walletAddress}.`
+  } else if (op === 'borrow') {
+    const apy = info.borrowApy ? `${info.borrowApy} borrow APY` : "the market's live borrow APY"
+    summary = `Borrow ${amountText}${usd} from the Morpho ${marketLabel} market on ${chainName} against your collateral — ${apy}`
+    detail = `— The borrowed ${token} lands in ${walletAddress}; interest accrues until you repay.${hf !== null ? `\n— Health factor after: ${hf} (1.00 is liquidation)` : ''}`
+  } else if (op === 'repay') {
+    summary = `Repay ${amountText}${usd} on the Morpho ${marketLabel} market on ${chainName}`
+    detail = `— Pays down your own debt${params.max ? ' — clears it in full (repaid by shares, so it clears exactly; the approval carries a ~0.05% interest buffer)' : ''}.`
+  } else if (op === 'withdraw-collateral') {
+    summary = `Withdraw ${amountText} of collateral${usd} from the Morpho ${marketLabel} market on ${chainName}`
+    detail = `— The ${token} lands back in ${walletAddress}.`
+  } else {
+    summary = `Post ${amountText} as collateral${usd} in the Morpho ${marketLabel} market on ${chainName}`
+    detail = `— Collateral doesn't earn; it unlocks borrowing ${info.loanAsset?.symbol ?? 'the loan asset'} against it.`
+  }
+  const stepsNote =
+    guard.steps.length > 1
+      ? `Sign the ${token} approval in the card below, and the ${opWords} appears automatically once it confirms — nothing to retype.`
+      : 'One signature in the card below sends it.'
+  const warns = [...guard.warnings, ...(built.warning ? [built.warning] : [])].map((w) => `⚠️ ${w}`).join('\n')
+  return NextResponse.json({
+    reply:
+      `🔏 ${summary}\n` +
+      `— Market: \`${marketId}\` · ${token} \`${side === 'loan' ? tuple.loanToken : tuple.collateralToken}\` (tuple verified on-chain against the Morpho contract)\n` +
+      `${detail}\n` +
+      `${stepsNote}${warns ? `\n${warns}` : ''}`,
+    txChain: { summary, steps: guard.steps },
+    buildPath: 'native-morpho-op',
+    guardrails,
+    workingContext: {
+      v: 1 as const,
+      age: 0,
+      ...(ctx?.scope ? { scope: ctx.scope } : {}),
+      ...(ctx?.offers ? { offers: ctx.offers } : {}),
+      pending: morphoOpPending(params, marketLabel, summary),
     } satisfies WorkingContext,
   })
 }

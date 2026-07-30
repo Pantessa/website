@@ -26,6 +26,8 @@ import {
 import { publicClientFor, primaryStable } from '@/lib/chains'
 import { erc20Abi, formatEther } from 'viem'
 import { buildAaveRepayArtifact, buildAaveSupplyArtifact } from '@/lib/aave-exec'
+import { buildMorphoLendArtifact, buildMorphoRepayArtifact } from '@/lib/morpho-exec'
+import type { MorphoChainId } from '@/lib/morpho-supply'
 import { buildGuardedSwap } from '@/lib/swap-exec'
 import type { PolicyBlock } from '@/lib/tx-guardrails'
 import { buildLifiBridgeLeg, checkChainArrival, ROBINHOOD_CHAIN_ID, type ChainArrival, type FundingLeg } from '@/lib/lifi-bridge'
@@ -321,6 +323,23 @@ export async function buildSignArtifact(
       builder === 'native-aave-supply'
         ? await buildAaveSupplyArtifact(wallet, { token: p.token, amount: p.amount ?? '' })
         : await buildAaveRepayArtifact(wallet, p)
+    return {
+      artifact: { txChain: built.txChain, summary: built.summary },
+      guardReport: built.guardReport,
+      valueUsd: built.valueUsd,
+    }
+  }
+  if (builder === 'native-morpho-lend' || builder === 'native-morpho-repay') {
+    // Morpho steps ride the same fail-closed recipe chat uses
+    // (lib/morpho-exec): market from the agent's own tools, the FULL
+    // MarketParams tuple resolved on-chain by us, every step re-verified by
+    // the tuple-bound guard. Built fresh at offer time.
+    const p = params as { token: string; amount: string | null; max?: boolean; chainId?: number }
+    const chainId: MorphoChainId = Number(p.chainId) === 1 ? 1 : 8453
+    const built =
+      builder === 'native-morpho-lend'
+        ? await buildMorphoLendArtifact(wallet, { token: p.token, amount: p.amount ?? '', chainId })
+        : await buildMorphoRepayArtifact(wallet, { token: p.token, amount: p.amount, max: p.max, chainId })
     return {
       artifact: { txChain: built.txChain, summary: built.summary },
       guardReport: built.guardReport,

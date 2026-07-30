@@ -19,6 +19,14 @@
     --mist: var(--line);    /* hairline borders */
     --smoke: var(--muted);  /* muted label text */
     --sell: #E5484D;        /* sell-side / destructive accent */
+    /* Progress-state tokens — the ONE source for run-state color across
+       JobCard, /i, the rail, and receipts (PLAN-progress-ui.md). Values
+       match the tailwind emerald-400/red-400 the surfaces hardcoded, so
+       dark mode is byte-identical; the light block overrides them so
+       done/fail marks finally follow the theme flip. */
+    --done: #34d399;
+    --live: var(--accent);
+    --fail: #f87171;
     /* ── TYPE SYSTEM ──────────────────────────────────
        Single source of truth for the four families so every surface pulls
        from the same place (kills the ad-hoc mono/sans drift on /activity).
@@ -4126,6 +4134,18 @@
     .splash__sdkrow { grid-template-columns: 1fr; }
   }
 
+  /* ── .yprog — THE progress line ──────────────────────────────────────
+     One recognizable object for "how far along is this run" everywhere a
+     run shows progress (JobCard, /i, the rail Jobs tab, /r receipts).
+     Width is inline (each surface knows its fraction); color and motion
+     live HERE so every surface breathes the same way. Modifiers:
+     .yprog--fail (a failed run), .yprog--full (a finished run — quiet
+     done-green at 100%, the receipt variant). */
+  .yprog { height: 2px; border-radius: 999px; overflow: hidden; background: color-mix(in srgb, var(--fg) 8%, transparent); }
+  .yprog__fill { height: 100%; border-radius: inherit; background: var(--live); box-shadow: 0 0 8px color-mix(in srgb, var(--live) 45%, transparent); transition: width .7s ease-out; }
+  .yprog--fail .yprog__fill { background: var(--fail); box-shadow: none; }
+  .yprog--full .yprog__fill { width: 100%; background: var(--done); box-shadow: none; }
+
   /* ── LIGHT THEME ─────────────────────────────────── */
   /* The whole site is token-driven (--bg/--fg/--surf/--line + fg-relative
      color-mixes), so light mode is a token flip. data-theme lands on <html>
@@ -4145,6 +4165,8 @@
        contrast with a --bg ink); the dark stages below keep the bright one. */
     --accent: #0e8f62;
     --sell: #c73e43;
+    --done: #0b7a53;
+    --fail: #c73e43;
   }
   html[data-theme='light'] { color-scheme: light; }
 
