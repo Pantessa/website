@@ -1,0 +1,14 @@
+# Yeetful — security contact (RFC 9116)
+# Served at /.well-known/security.txt via a rewrite in next.config.ts.
+#
+# Yeetful is non-custodial: user wallets sign every transaction and we never
+# hold keys or funds. If you believe you have found a vulnerability, or you
+# maintain a blocklist and are evaluating one of our domains, please reach
+# out before publishing or listing — we answer.
+
+Contact: mailto:nate@yeetful.com
+Expires: 2027-07-30T00:00:00.000Z
+Preferred-Languages: en
+Canonical: https://www.yeetful.com/.well-known/security.txt
+Canonical: https://yeetful.com/.well-known/security.txt
+Policy: https://yeetful.com/docs/trust

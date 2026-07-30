@@ -21,7 +21,15 @@ const nextConfig: NextConfig = {
   // Design system lives as static files in public/design-system/. Next doesn't
   // auto-resolve a directory index, so serve the overview at the clean URL.
   async rewrites() {
-    return [{ source: '/design-system', destination: '/design-system/index.html' }]
+    return [
+      { source: '/design-system', destination: '/design-system/index.html' },
+      // RFC 9116 security contact. Next doesn't serve dotfolders out of
+      // public/, so the file lives at public/security.txt and is rewritten
+      // to its well-known path. Added 2026-07-30: a researcher or blocklist
+      // maintainer evaluating a Yeetful domain should have a documented way
+      // to reach us BEFORE listing it.
+      { source: '/.well-known/security.txt', destination: '/security.txt' },
+    ]
   },
   // /embed is the embeddable chat — third-party sites iframe it (embed
   // contract v1, see /docs/embed). frame-ancestors * allows any parent for
