@@ -8370,6 +8370,30 @@ async function main() {
       naked.length === 1 && naked[0].tone === 'neg' && !!nakedArm && nakedArm.coin === 'ETH' && nakedArm.kind === 'stop_loss' && nakedArm.triggerValue === 10,
       JSON.stringify(naked).slice(0, 200),
     )
+    // The downside AUDIT (C4): the bad day gets a dollar figure — 20% of the
+    // $412.50 position is $82.50, named in the sub. The crash-day thread
+    // generator greps exactly this shape ("no stop armed — … costs $X").
+    check(
+      'briefing: unprotected sub names the −20% dollar cost (the downside audit)',
+      /no stop armed — a 20% move against costs \$82\.50/.test(naked[0].sub ?? ''),
+      naked[0].sub,
+    )
+    // Spot flavor of the same audit: unwatched Base ETH above the floor.
+    const spotNaked = composeBriefingItems({
+      ...empty,
+      funding: {
+        readChains: ['Base'],
+        failedChains: [],
+        sources: [{ token: 'ETH', chainId: 8453, chainWord: 'Base', balance: 0.14, usd: 500 }],
+        stranded: [],
+      },
+    })
+    const spotRow = spotNaked.find((r) => /unwatched/.test(r.label))
+    check(
+      'briefing: unwatched spot ETH sub names the −20% dollar cost',
+      !!spotRow && /no stop armed — a 20% dump costs \$100\.00/.test(spotRow.sub ?? ''),
+      JSON.stringify(spotRow ?? spotNaked).slice(0, 200),
+    )
     // Protected position → quiet pos row, NO chip (active guardian never nags).
     const guarded = composeBriefingItems({ ...empty, positions: [pos()], protectedCoins: ['eth'] })
     check(
