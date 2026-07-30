@@ -5,34 +5,13 @@
 // docs landing keeps EmbedDemo, which shows the widget's behaviour rather
 // than its install — different job, different page.
 //
-// Under it: the two live fork demos (proof-of-concept forks of open-source
-// interfaces — labelled clearly as test cases: no partnership, no
-// endorsement; protocol logos are Nate-directed, 2026-07-09, vendored from
-// the fork repos) and the learning loop, which is a host's payoff.
+// Under it: the learning loop, which is a host's payoff. (The two live fork
+// demos — forks of the Uniswap and CoW Swap interfaces with the chat mounted
+// — were REMOVED 2026-07-30 at Nate's direction after a trademark flag. Do
+// not reinstate third-party-branded demos here; the install claim is carried
+// by EmbedAssemble, which uses nobody else's marks.)
 
 import EmbedAssemble from '@/components/EmbedAssemble'
-import { UniswapMark, CowMark } from '@/components/protocol-marks'
-
-const DEMOS: { name: string; url: string; host: string; blurb: string; logo: React.ReactNode; logoClass: string }[] = [
-  {
-    name: 'Uniswap interface + Yeetful chat',
-    url: 'https://uniswap-embed.yeetful.com/',
-    host: 'uniswap-embed.yeetful.com',
-    blurb:
-      'A fork of the open-source Uniswap interface with the chat mounted in ~25 lines. It auto-connects the page’s wallet, answers with your address, and quotes WETH→USDC through the free MCP.',
-    logo: <UniswapMark />,
-    logoClass: 'embeda__demologo--uni',
-  },
-  {
-    name: 'CoW Swap + Yeetful chat',
-    url: 'https://cow-embed.yeetful.com/',
-    host: 'cow-embed.yeetful.com',
-    blurb:
-      'A fork of the open-source CoW Swap interface. The widget streams the connected wallet into the chat; quotes and MEV-docs answers run through the CoW MCP.',
-    logo: <CowMark />,
-    logoClass: 'embeda__demologo--cow',
-  },
-]
 
 export default function EmbedAnywhere() {
   return (
@@ -50,23 +29,6 @@ export default function EmbedAnywhere() {
       </div>
 
       <EmbedAssemble />
-
-      {/* real forks, running right now — the install claim, kept honest */}
-      <div className="embeda__demos">
-        {DEMOS.map((d) => (
-          <a className="embeda__demo" href={d.url} target="_blank" rel="noreferrer" key={d.url}>
-            <div className="embeda__demotop">
-              <span className="embeda__demoid">
-                <span className={`embeda__demologo ${d.logoClass}`}>{d.logo}</span>
-                <span className="embeda__demoname">{d.name}</span>
-              </span>
-              <span className="embeda__demotag mono">LIVE DEMO</span>
-            </div>
-            <p className="embeda__demoblurb">{d.blurb}</p>
-            <span className="embeda__demohost mono">{d.host} ↗</span>
-          </a>
-        ))}
-      </div>
 
       {/* The loop TxPipeline used to carry (retired 2026-07-28 when the
           machine absorbed the pipeline): usage feeds the host's analytics,
@@ -95,11 +57,6 @@ export default function EmbedAnywhere() {
         </div>
       </div>
 
-      <p className="embeda__disclaimer">
-        Both demos are proof-of-concept forks of open-source interfaces, built to show the
-        install. They are test cases only — not partnerships, and not affiliated with or
-        endorsed by Uniswap Labs or CoW DAO. Logos identify the forked interfaces.
-      </p>
       <p className="embeda__next mono">
         On the roadmap: the same agent in Discord · Telegram · X
       </p>
