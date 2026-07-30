@@ -25,9 +25,12 @@ export default function DashboardLinksPage() {
         link; this table is your funnel.
       </p>
 
-      <MintLinkForm readQueryPrefill externalError={loadError} onMinted={reload} className="mb-8" />
-
+      {/* The page comes first: naming it (and branding it) is the thing every
+          minted link then lands on, so it leads instead of sitting under the
+          mint form where a fresh creator scrolls past it. */}
       <CreatorPagePanel className="mb-6" />
+
+      <MintLinkForm readQueryPrefill externalError={loadError} onMinted={reload} className="mb-8" />
 
       {earnings && (earnings.totalEarnedUsd > 0 || earnings.totalSignedUsd > 0) && (
         <LinkEarningsPanel earnings={earnings} onClaimed={reload} className="mb-6" />
