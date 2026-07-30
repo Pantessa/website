@@ -41,6 +41,29 @@ export function swapFeeAtoms(amountIn: bigint, bps: number = SWAP_FEE_BPS): bigi
   return (amountIn * BigInt(bps)) / BigInt(10_000)
 }
 
+// ── Hyperliquid builder fee (perp orders) ───────────────────────────────────
+// HL's venue-native interface fee: orders carry `builder: {b, f}` where f is
+// in TENTHS of a basis point (f=10 → 1bp; venue cap f=100 → 10bps → "0.1%"
+// on perps). The user approves the cap ONCE (a user-signed
+// approveBuilderFee action); after that every guarded perp order pays the
+// fee from the fill, venue-enforced — no extra transaction. The builder
+// account must hold ≥100 USDC of HL perps account value to receive fees
+// (venue rule — an owner-funded prerequisite, checked in the drill).
+
+/** HL builder fee in the venue's tenths-of-a-bp unit. Default 100 = 10bps =
+ *  the venue's perp cap (decided 2026-07-30, HANDOFF-yeetcall-gtm). Env
+ *  override clamped to [0, 100] — the venue rejects more; 0 disables (no
+ *  builder field rides the order at all). */
+export const HL_BUILDER_FEE_TENTH_BPS: number = (() => {
+  const raw = Number(process.env.YEETFUL_HL_BUILDER_FEE_TENTH_BPS ?? '100')
+  if (!Number.isInteger(raw) || raw < 0 || raw > 100) return 100
+  return raw
+})()
+
+/** The approval's maxFeeRate string — approve EXACTLY what we charge, never
+ *  a looser cap (f=100 → "0.1%"; 1% = 1000 units). */
+export const HL_BUILDER_MAX_FEE_RATE = `${HL_BUILDER_FEE_TENTH_BPS / 1000}%`
+
 /** LINK-originated spot flow pays this tier (decided 2026-07-30,
  *  HANDOFF-yeetcall-gtm): the /i experience prices at 50bps — still at
  *  half of what Telegram-bot retail demonstrably pays — while organic
@@ -84,8 +107,9 @@ export const CROSS_CHAIN_NET_FEE_BPS = Math.round(CROSS_CHAIN_FEE_BPS * (1 - ONE
 
 /** Yeetful's NET fee in bps per build path — what the treasury keeps after
  *  the venue's own cut. Uniswap/CoW/LiFi hand over the whole SWAP_FEE_BPS;
- *  NEAR Intents keeps half. Everything NOT in this map (funding legs, NFTs,
- *  transfers, votes, staking, HL, sales) is fee-free by the
+ *  NEAR Intents keeps half; HL perp orders carry the builder fee (f/10 bps,
+ *  all ours). Everything NOT in this map (funding legs, NFTs, transfers,
+ *  votes, staking, guardian protection closes, sales) is fee-free by the
  *  conversions-not-movements rule and earns nothing. */
 export const NET_FEE_BPS_BY_BUILD_PATH: Record<string, number> = {
   'native-swap-uniswap': SWAP_FEE_BPS,
@@ -93,11 +117,15 @@ export const NET_FEE_BPS_BY_BUILD_PATH: Record<string, number> = {
   'native-swap-lifi': SWAP_FEE_BPS,
   'native-swap-cow': SWAP_FEE_BPS,
   'native-cross-chain': CROSS_CHAIN_NET_FEE_BPS,
+  'native-hl-exec': HL_BUILDER_FEE_TENTH_BPS / 10,
 }
 
 /** Build paths whose artifacts CARRY a venue fee — the ONLY paths creator
- *  earnings accrue on. */
-export const FEE_BEARING_BUILD_PATHS = new Set(Object.keys(NET_FEE_BPS_BY_BUILD_PATH))
+ *  earnings accrue on. Derived from the map's POSITIVE entries so an
+ *  env-disabled fee (0) drops its path here too. */
+export const FEE_BEARING_BUILD_PATHS = new Set(
+  Object.entries(NET_FEE_BPS_BY_BUILD_PATH).filter(([, bps]) => bps > 0).map(([path]) => path),
+)
 
 /** Yeetful's net fee rate for a build path; 0 when the path is fee-free. */
 export function netFeeBpsFor(buildPath: string | null | undefined): number {

@@ -69,6 +69,11 @@ export interface Eip712OrderRequest {
       typedData: unknown
       expected: { coin: string; leverage: number }
     }
+    /** One-time builder-fee cap approval the card signs BEFORE everything
+     *  else when the wallet hasn't approved it yet. Facts only — the CLIENT
+     *  builds the user-signed typed data (it knows the wallet's chainId) via
+     *  approveBuilderFeeArtifacts; the relay re-derives and re-guards. */
+    feeApproval?: { builder: string; maxFeeRate: string; feeTenthBps: number }
   }
 }
 

@@ -31,6 +31,11 @@ const VENUE_OF_PATH: Record<string, string> = {
   'native-swap-uniswap': 'uniswap',
   'native-swap-uniswap-v4': 'uniswap',
   'native-swap-cow': 'cow',
+  // LiFi-settled swaps (the Robinhood-Chain stock path) tag their own turns,
+  // not just job steps — without this the public flow map printed the raw
+  // build_path as a "venue" (surfaced 2026-07-30 by a real signed $12 stock
+  // swap; JOB_BUILDER_VENUE already used 'lifi' for the in-chain builders).
+  'native-swap-lifi': 'lifi',
   'native-aave-supply': 'aave',
   'native-aave-op': 'aave',
   'native-morpho-lend': 'morpho',

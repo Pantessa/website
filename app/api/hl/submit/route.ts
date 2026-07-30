@@ -3,11 +3,14 @@ import { recoverTypedDataAddress } from 'viem'
 import { splitSignature } from '@/lib/hl-guardian'
 import {
   fetchHlSnapshot,
+  guardHlBuilderFeeApproval,
   guardHlExecBuild,
   guardHlLeverageBuild,
   hlActionTypedData,
+  hlApproveBuilderFeeTypedData,
   HL_EXEC_POLICY_HOST,
   type HlWireAction,
+  type HlWireApproveBuilderFeeAction,
   type HlWireLeverageAction,
   type HlWireOrderAction,
 } from '@/lib/hyperliquid-exec'
@@ -28,7 +31,7 @@ export const dynamic = 'force-dynamic'
 // No SIWE needed: the recovered signature IS the auth.
 export async function POST(req: NextRequest) {
   const body = (await req.json().catch(() => ({}))) as {
-    action?: HlWireAction
+    action?: HlWireAction | HlWireApproveBuilderFeeAction
     nonce?: number
     signature?: string
     from?: string
@@ -36,21 +39,88 @@ export async function POST(req: NextRequest) {
     expected?: { coin?: string; kind?: string; isBuy?: boolean; leverage?: number }
   }
   const { action, nonce, signature, from, expected } = body
-  if (!action || typeof nonce !== 'number' || typeof signature !== 'string' || typeof from !== 'string' || !expected?.coin) {
+  const isFeeApproval = (action as { type?: string } | undefined)?.type === 'approveBuilderFee'
+  if (!action || typeof nonce !== 'number' || typeof signature !== 'string' || typeof from !== 'string' || (!isFeeApproval && !expected?.coin)) {
     return NextResponse.json({ error: 'action, nonce, signature, from and expected are required.' }, { status: 400 })
   }
   const isLeverage = action.type === 'updateLeverage'
-  if (isLeverage) {
-    if (typeof expected.leverage !== 'number') {
-      return NextResponse.json({ error: 'expected.leverage is required for a leverage update.' }, { status: 400 })
+  if (!isFeeApproval) {
+    if (isLeverage) {
+      if (typeof expected?.leverage !== 'number') {
+        return NextResponse.json({ error: 'expected.leverage is required for a leverage update.' }, { status: 400 })
+      }
+    } else if (expected?.kind !== 'open' && expected?.kind !== 'close') {
+      return NextResponse.json({ error: 'expected.kind must be open|close.' }, { status: 400 })
     }
-  } else if (expected.kind !== 'open' && expected.kind !== 'close') {
-    return NextResponse.json({ error: 'expected.kind must be open|close.' }, { status: 400 })
   }
   const isTestnet = body.isTestnet === true
 
+  // ── One-time builder-fee cap approval — USER-SIGNED, not phantom-agent ──
+  // Recovery derives the HyperliquidSignTransaction typed data from the
+  // action itself (signatureChainId lives INSIDE the signed bytes, so it
+  // can't be swapped after the fact), then the guard pins recipient + rate.
+  if (isFeeApproval) {
+    const fa = action as HlWireApproveBuilderFeeAction
+    const td = hlApproveBuilderFeeTypedData(fa)
+    let feeSigner: string
+    try {
+      feeSigner = await recoverTypedDataAddress({
+        domain: td.domain as Parameters<typeof recoverTypedDataAddress>[0]['domain'],
+        types: td.types,
+        primaryType: td.primaryType,
+        message: td.message,
+        signature: signature as `0x${string}`,
+      })
+    } catch {
+      return NextResponse.json({ error: 'Signature does not verify against this approval.' }, { status: 403 })
+    }
+    if (feeSigner.toLowerCase() !== from.toLowerCase()) {
+      return NextResponse.json({ error: 'Signature recovers to a different wallet than `from`.' }, { status: 403 })
+    }
+    if (fa.nonce !== nonce || Math.abs(Date.now() - nonce) > 120_000) {
+      return NextResponse.json({ error: 'This approval is stale — ask again for a fresh build.' }, { status: 400 })
+    }
+    const feeGuard = guardHlBuilderFeeApproval(fa, isTestnet)
+    if (!feeGuard.ok) {
+      const bad = feeGuard.checks.filter((c) => !c.ok && c.level === 'block').map((c) => c.note)
+      return NextResponse.json({ error: `Refused at submit: ${bad.join(' ')}` }, { status: 403 })
+    }
+    const feeGrant = await getActiveGrant(from.toLowerCase())
+    if (feeGrant?.paused) {
+      await recordLedger({ grantId: feeGrant.id, host: HL_EXEC_POLICY_HOST, amountUsd: 0, ok: false, note: 'blocked: ACCOUNT_FROZEN (hl fee approval)', orgId: feeGrant.orgId ?? undefined })
+      return NextResponse.json({ error: 'Your account kill switch is ON — unpause it to trade.' }, { status: 403 })
+    }
+    const feeApiUrl = isTestnet ? 'https://api.hyperliquid-testnet.xyz' : 'https://api.hyperliquid.xyz'
+    const feeRes = await fetch(`${feeApiUrl}/exchange`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ action: fa, nonce, signature: splitSignature(signature) }),
+    })
+    const feeVenue = (await feeRes.json().catch(() => null)) as { status?: string; response?: unknown } | null
+    if (!feeRes.ok || feeVenue?.status !== 'ok') {
+      const msg = typeof feeVenue?.response === 'string' ? feeVenue.response : `venue rejected the approval (HTTP ${feeRes.status})`
+      return NextResponse.json({ error: msg }, { status: 502 })
+    }
+    // Not money moved — the cap only lets future fills carry the fee.
+    if (feeGrant) {
+      await recordLedger({
+        grantId: feeGrant.id,
+        host: HL_EXEC_POLICY_HOST,
+        serviceName: 'Hyperliquid',
+        amountUsd: 0,
+        ok: true,
+        note: `hl builder-fee cap approved: ${fa.maxFeeRate}`,
+        orgId: feeGrant.orgId ?? undefined,
+      }).catch(() => {})
+    }
+    return NextResponse.json({ status: 'builder-fee-approved', maxFeeRate: fa.maxFeeRate })
+  }
+  if (!expected?.coin) {
+    return NextResponse.json({ error: 'expected is required.' }, { status: 400 })
+  }
+
   // 1 — recover the signer from OUR typed-data derivation of the action.
-  const typedData = hlActionTypedData(action, nonce, isTestnet)
+  const typedData = hlActionTypedData(action as HlWireAction, nonce, isTestnet)
   let signer: string
   try {
     signer = await recoverTypedDataAddress({
