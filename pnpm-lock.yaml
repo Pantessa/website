@@ -109,6 +109,9 @@ devDependencies:
   autoprefixer:
     specifier: ^10.0.1
     version: 10.5.0(postcss@8.5.10)
+  dotenv:
+    specifier: ^16.4.1
+    version: 16.6.1
   eslint:
     specifier: ^9
     version: 9.39.4
@@ -6413,6 +6416,11 @@ packages:
     resolution: {integrity: sha512-vwEppIphpFdvaMCaHfCEv9IgwcxMljMw2TnAQBB4VWPvzXQLTb82jwmdOKzlEVUL3gNFT4l4TPKO+Bn+sqcrVQ==}
     engines: {node: '>=12'}
     dev: false
+
+  /dotenv@16.6.1:
+    resolution: {integrity: sha512-uBq4egWHTcTt33a72vpSG0z3HnPuIl6NqYcTrKEg2azoEyl2hpW0zqlxysq2pK9HlDIHyHyakeYaYnSAwd8bow==}
+    engines: {node: '>=12'}
+    dev: true
 
   /dunder-proto@1.0.1:
     resolution: {integrity: sha512-KIN/nDJBQRcXw0MLVhZE9iQHmG68qAVIBg9CqmUYjmQIhgij9U5MFvrqkUL5FbtyyzZuOeOt0zdeRe4UY7ct+A==}

@@ -77,6 +77,7 @@
     "@types/react-dom": "^19",
     "@web3icons/core": "^4.0.53",
     "autoprefixer": "^10.0.1",
+    "dotenv": "^16.4.1",
     "eslint": "^9",
     "eslint-config-next": "16.2.7",
     "postcss": "^8",
