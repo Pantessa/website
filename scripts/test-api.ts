@@ -39,6 +39,12 @@ import { guardPlannerArtifact, PERMIT2_ADDRESS } from '../lib/planner-artifact-g
 import { parseSwapIntent, swapClarify } from '../lib/swap-intent'
 import { activeLinkCapFor, composeMcps } from '../lib/intent-links'
 import { formatEarnedUsd, netFeeBpsFor, creatorEarningsUsd, FEE_BEARING_BUILD_PATHS, CROSS_CHAIN_FEE_BPS, CROSS_CHAIN_NET_FEE_BPS } from '../lib/fees'
+import { BUILD_PATHS, venueOfBuildPath } from '../lib/build-path'
+
+/** A venue label is a product name ('uniswap'); a build path is an internal
+ *  one ('native-swap-lifi', 'app-mode-swap'). The public /activity payload must
+ *  never print the latter where the former belongs. */
+const isRawBuildPath = (venue: string) => venue.startsWith('native-') || venue.startsWith('app-mode-')
 import { hexLuminance, normalizeAccent, normalizeBg, parseBrandHtml, validateBrandUrl } from '../lib/brand-scan'
 import { brandBloomTint, brandCtaStyle, brandThemeStyle } from '../lib/brand-theme'
 import {
@@ -1220,6 +1226,7 @@ async function main() {
   const ov2 = (await (await fetch(`${BASE}/api/activity/overview`)).json()) as {
     hero: { systemTotalUsd: number }
     flow: { source: string; venue: string; usd: number; n: number }[]
+    venues: { venue: string; built: number; signed: number; builtUsd: number; signedUsd: number }[]
     chains: { status: string; usd: number; at: string; steps: { kind: string; status: string; builder: string; venue: string | null; usd: number | null; chain: string | null; txUrl: string | null }[] }[]
   }
   check(
@@ -1233,10 +1240,31 @@ async function main() {
     ov2.flow.every(
       (e) =>
         ['chat', 'embed', 'link', 'standing', 'guardian', 'agents'].includes(e.source) &&
-        !e.venue.startsWith('native-') &&
+        !isRawBuildPath(e.venue) &&
         e.usd > 0 &&
         e.n > 0,
     ),
+    JSON.stringify(ov2.flow.filter((e) => isRawBuildPath(e.venue)).slice(0, 3)),
+  )
+  // Same contract on the venue table — it reads the same column and used to
+  // have its own weaker fallback (`?? build_path`), so the NFT layer showed up
+  // there as a raw `native-nft-transfer` "venue".
+  check(
+    'overview: every venue row names a resolved venue (never a raw build_path)',
+    ov2.venues.every((v) => !isRawBuildPath(v.venue)),
+    JSON.stringify(ov2.venues.filter((v) => isRawBuildPath(v.venue)).map((v) => v.venue)),
+  )
+  // The two checks above can only catch a leak whose build_path happens to be
+  // in the DB today. This one is data-independent: EVERY declared build path
+  // must resolve, so adding one without a venue fails here (and at tsc, since
+  // VENUE_OF_BUILD_PATH is a total Record<BuildPath, string>).
+  check(
+    'overview: every declared build path resolves to a venue that is not itself a build path',
+    BUILD_PATHS.every((p) => {
+      const venue = venueOfBuildPath(p)
+      return typeof venue === 'string' && venue.length > 0 && !isRawBuildPath(venue)
+    }),
+    JSON.stringify(BUILD_PATHS.filter((p) => !venueOfBuildPath(p) || isRawBuildPath(venueOfBuildPath(p)!))),
   )
   check(
     'overview: chains carry ordered multi-step shape',

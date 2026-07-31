@@ -46,6 +46,7 @@ const VENUE_LABEL: Record<string, string> = {
   aave: 'Aave',
   'near-intents': 'NEAR Intents',
   hyperliquid: 'Hyperliquid',
+  morpho: 'Morpho',
   lido: 'Lido',
   lifi: 'LiFi · stocks',
   jobs: 'Jobs API',
@@ -55,7 +56,10 @@ const VENUE_LABEL: Record<string, string> = {
   planner: 'Planner-routed',
   manual: 'Direct tools',
   x402: 'MCP call fees',
-  unattributed: 'Pre-tagging',
+  // Not only pre-tagging history any more: surface-only build paths (App Mode)
+  // and anything unmapped bucket here too, so the label states the fact rather
+  // than the cause. Matches ActivityOverview's VENUE_META copy.
+  unattributed: 'Unattributed',
 }
 
 const fmtUsd = (n: number) =>
@@ -69,7 +73,7 @@ const fmtUsd = (n: number) =>
 const GAP = 7
 /** Label gutters in px — the ribbons take whatever is left. They're asymmetric
  *  on purpose: a left label is a name over a value (two short lines), while a
- *  floored right label puts both on ONE line ("Pre-tagging $111.16 · 21 tx"),
+ *  floored right label puts both on ONE line ("Unattributed $111.16 · 21 tx"),
  *  which is the widest string the drawing has to hold. A symmetric gutter sized
  *  for the left one let those spill past the card's right edge. */
 const gutterL = (w: number) => Math.round(Math.min(250, Math.max(150, w * 0.19)))
