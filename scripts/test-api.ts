@@ -64,7 +64,8 @@ import { parseNftListAsk, parseNftMarketAsk, parseNftTransferFollowUp, nftTransf
 import { nftGalleryChains, nftRowActions } from '../lib/nft-gallery'
 import { groupCollections, marketReplyCopy, offersDisplay, valuationDisplay } from '../lib/nft-market'
 import { nftGalleryOf, nftMarketOf } from '../lib/nft-display'
-import { getProtocolMark, YeetfulMark } from '../components/protocol-marks'
+import { getProtocolMark, YeetfulMark, MorphoMark } from '../components/protocol-marks'
+import { ogMarkSvg } from '../lib/og-marks'
 import { splitListingPrice, buildListingComponents, guardListingComponents, openseaAssetUrl, SEAPORT_1_6, guardBuyFulfillment, fulfillmentToCalldata, normalizeOpenseaListing, normalizeOpenseaOffer, collectionSlugCandidates } from '../lib/opensea'
 import { keccak256, stringToBytes, decodeFunctionData, parseAbi } from 'viem'
 import { isCacheable, routeCacheKey, getCached, setCached, clearRouteCache } from '../lib/route-cache'
@@ -6411,6 +6412,22 @@ async function main() {
   check(
     'brand mark: yeetful-claude is NOT captured (keeps its Anthropic icon)',
     getProtocolMark('anthropic', 'yeetful-claude', 'yeetful-claude', 'Yeetful · Claude') === null,
+  )
+  // Morpho: the seeded row (`morpho-free` / "Morpho (Free)") and the
+  // `morpho` venue label on /activity all resolve to the vendored wing mark
+  // instead of an Archivo "M" lettermark.
+  check(
+    'brand mark: morpho resolves to the vendored mark on every identifier',
+    getProtocolMark(undefined, 'morpho-free', 'morpho-free', 'Morpho (Free)') === MorphoMark &&
+      getProtocolMark('morpho') === MorphoMark &&
+      getProtocolMark(undefined, undefined, undefined, 'Morpho') === MorphoMark,
+  )
+  // og-marks mirrors the registry by hand — a mark that renders in the rail
+  // but not on a share card is the drift this pins.
+  const ogMorpho = ogMarkSvg('morpho-free Morpho (Free)', '#fff', 44)
+  check(
+    'og mark: morpho mirrors the vendored mark (4 wing paths, aspect kept)',
+    !!ogMorpho && (ogMorpho.match(/<path/g) ?? []).length === 4 && ogMorpho.includes('viewBox="0 0 22 20"') && ogMorpho.includes('height="40"'),
   )
   // Seaport order math: fee splits sum exactly; the independent guard refuses
   // payouts outside offerer + published fee recipients.
