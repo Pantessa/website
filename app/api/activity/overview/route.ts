@@ -3,6 +3,10 @@ import { Prisma } from '@prisma/client'
 import prisma from '@/lib/db'
 import { chainById, chainByKey, type AppChain } from '@/lib/chains'
 import { INTERNAL_ORIGIN_SQL, REAL_TRAFFIC_WHERE, STANDING_TURN_SQL, STANDING_TURN_WHERE } from '@/lib/value-origin'
+// venueOfBuildPath returns null rather than echoing its input, so no raw
+// build_path can reach this public payload: every call site below picks an
+// explicit fall-through instead (lib/build-path.ts owns the mapping).
+import { UNATTRIBUTED_VENUE, venueOfBuildPath } from '@/lib/build-path'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -25,43 +29,6 @@ export const dynamic = 'force-dynamic'
 const SERIES_DAYS = 90
 const RECENT_LIMIT = 24
 const CHAIN_LIMIT = 8
-
-/** embed_turns.build_path → the venue the native layer built against. */
-const VENUE_OF_PATH: Record<string, string> = {
-  'native-swap-uniswap': 'uniswap',
-  'native-swap-uniswap-v4': 'uniswap',
-  'native-swap-cow': 'cow',
-  // LiFi-settled swaps (the Robinhood-Chain stock path) tag their own turns,
-  // not just job steps — without this the public flow map printed the raw
-  // build_path as a "venue" (surfaced 2026-07-30 by a real signed $12 stock
-  // swap; JOB_BUILDER_VENUE already used 'lifi' for the in-chain builders).
-  'native-swap-lifi': 'lifi',
-  'native-aave-supply': 'aave',
-  'native-aave-op': 'aave',
-  'native-morpho-lend': 'morpho',
-  'native-morpho-op': 'morpho',
-  'native-cross-chain': 'near-intents',
-  'native-hl-guardian': 'hyperliquid',
-  'native-hl-exec': 'hyperliquid',
-  'native-lido': 'lido',
-  'native-job': 'jobs',
-  planner: 'planner',
-  manual: 'manual',
-}
-
-/** job_steps.builder → venue, for the builders that only ever appear inside a
- *  chain (VENUE_OF_PATH covers the ones that also tag a standalone turn).
- *  `wait` is deliberately absent: a wait is a settlement predicate, not a
- *  venue, and the chain renders it as its own kind of node. */
-const JOB_BUILDER_VENUE: Record<string, string> = {
-  'native-lifi-fund': 'lifi',
-  'native-lifi-swap': 'lifi',
-  'native-swap': 'uniswap',
-  'native-transfer': 'transfer',
-  'native-nft-transfer': 'opensea',
-  'native-nft-list': 'opensea',
-  'native-aave': 'aave',
-}
 
 export interface VenueRow {
   venue: string
@@ -384,7 +351,7 @@ export async function GET() {
   // ── per-venue built → signed (embed_turns) + the guardian's own lane ──────
   const venues = new Map<string, VenueRow>()
   for (const row of pathAgg) {
-    const venue = VENUE_OF_PATH[row.buildPath ?? ''] ?? (row.buildPath ? row.buildPath : 'unattributed')
+    const venue = venueOfBuildPath(row.buildPath) ?? UNATTRIBUTED_VENUE
     const v = venues.get(venue) ?? { venue, built: 0, signed: 0, builtUsd: 0, signedUsd: 0 }
     if (row.outcome === 'tx-built') {
       v.built += row._count._all
@@ -444,7 +411,7 @@ export async function GET() {
       label: t.detail ?? BUILD_PATH_LABEL[t.buildPath ?? ''] ?? ARTIFACT_LABEL[t.artifact ?? ''] ?? 'Transaction',
       outcome: t.outcome,
       chain: chainName(t.chain),
-      venue: VENUE_OF_PATH[t.buildPath ?? ''] ?? null,
+      venue: venueOfBuildPath(t.buildPath),
       usd: t.valueUsd,
       // Only signed turns have a real on-chain tx; rebuild the link on the
       // correct explorer (fixes non-Base chains the write path mislabeled).
@@ -482,10 +449,10 @@ export async function GET() {
   const flow: { source: string; venue: string; usd: number; n: number }[] = flowRows
     .map((r) => ({
       source: r.src,
-      // JOB_BUILDER_VENUE second: some layers only ever tag a turn from inside
-      // a chain (native-nft-list), and an unmapped key renders as a raw
-      // build_path in a public diagram.
-      venue: VENUE_OF_PATH[r.path] ?? JOB_BUILDER_VENUE[r.path] ?? (r.path === 'unattributed' ? 'unattributed' : r.path),
+      // Anything unmapped — a legacy NULL build_path (already coalesced to
+      // 'unattributed' in SQL), a surface-only tag, a path added without a
+      // venue — buckets rather than printing its internal name.
+      venue: venueOfBuildPath(r.path) ?? UNATTRIBUTED_VENUE,
       usd: r2(r.usd),
       n: Number(r.n),
     }))
@@ -509,7 +476,9 @@ export async function GET() {
           kind: s.kind,
           status: s.status,
           builder: s.builder,
-          venue: VENUE_OF_PATH[s.builder] ?? JOB_BUILDER_VENUE[s.builder] ?? null,
+          // A step keeps null (no protocol mark) rather than an 'unattributed'
+          // node: `wait` steps are predicates, not venues.
+          venue: venueOfBuildPath(s.builder),
           usd: s.valueUsd ?? null,
           chain: receipt?.chain ?? null,
           txUrl: receipt?.url ?? null,

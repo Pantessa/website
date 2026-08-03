@@ -95,12 +95,19 @@ const VENUE_META: Record<string, { label: string; sub: string }> = {
   'near-intents': { label: 'NEAR Intents', sub: 'cross-chain swaps' },
   hyperliquid: { label: 'Hyperliquid', sub: 'perps' },
   guardian: { label: 'HL Guardian', sub: 'autonomous stop-loss / take-profit' },
+  morpho: { label: 'Morpho', sub: 'lend · borrow · repay' },
   lido: { label: 'Lido', sub: 'ETH staking' },
+  lifi: { label: 'LiFi', sub: 'tokenized-stock settlement' },
+  opensea: { label: 'OpenSea', sub: 'NFT sales · transfers' },
+  transfer: { label: 'Transfers', sub: 'token sends' },
   jobs: { label: 'Jobs API', sub: 'headless builds' },
   snapshot: { label: 'Snapshot', sub: 'DAO votes' },
+  x402: { label: 'MCP call fees', sub: 'x402 agent calls' },
   planner: { label: 'Planner-routed', sub: 'model-picked MCP tools' },
   manual: { label: 'Direct tools', sub: 'hand-called MCP tools' },
-  unattributed: { label: 'Unattributed', sub: 'built before per-layer tagging' },
+  // Legacy rows with no build_path, plus surface-only paths (App Mode) whose
+  // venue the row never recorded — see lib/build-path.ts.
+  unattributed: { label: 'Unattributed', sub: 'venue not recorded' },
 }
 
 /** $1,234 above a grand, cents below — money reads at a glance either way. */
