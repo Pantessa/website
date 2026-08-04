@@ -128,35 +128,43 @@ export function MorphoMark({ size = 22 }: { size?: number }) {
 }
 
 export function YeetfulMark({ size = 22 }: { size?: number }) {
-  // Pantessa's "Tessera" mark, compact cut — the inner course of the mosaic
-  // (16 tiles) parting around the one stone (same lattice as
-  // components/Logo.tsx and public/design-system/assets/yeetful-mark.svg).
-  // Used for the first-party `yeetful-tool-*` internal MCPs so they carry the
-  // brand mark. Pure `currentColor` art — stone included — so it inverts with
-  // the tile like every other mark here.
+  // Pantessa's "Tessera" mark, compact pavé cut — four lozenge tesserae
+  // pinwheeling around the one stone (same lattice as components/Logo.tsx and
+  // public/design-system/assets/yeetful-mark.svg). Used for the first-party
+  // `yeetful-tool-*` internal MCPs so they carry the brand mark. Pure
+  // `currentColor` art — stone included — so it inverts with the tile like
+  // every other mark here.
   const S = Math.SQRT1_2
-  const p = 24
-  const cells: Array<[number, number]> = []
-  for (let i = -2; i <= 2; i++)
-    for (let j = -2; j <= 2; j++) {
-      if (Math.max(Math.abs(i), Math.abs(j)) < 2) continue
-      cells.push([100 + (i - j) * p * S, 100 + (i + j) * p * S])
-    }
+  const U = 30
+  const G = 5.5
+  // C4 pinwheel of 1x2 lozenges: orbit of the domino spanning cells (1,0)-(1,1).
+  const pieces: Array<[number, number, number, number]> = [
+    [1, 0.5, 1, 2],
+    [-0.5, 1, 2, 1],
+    [-1, -0.5, 1, 2],
+    [0.5, -1, 2, 1],
+    [0, 0, 1, 1],
+  ]
   return (
-    <svg viewBox="8 8 184 184" width={size} height={size} fill="none" aria-hidden style={{ display: 'block' }}>
-      {cells.map(([x, y], k) => (
-        <rect
-          key={k}
-          x={-10.5}
-          y={-10.5}
-          width={21}
-          height={21}
-          rx={3.5}
-          fill="currentColor"
-          transform={`translate(${x.toFixed(2)} ${y.toFixed(2)}) rotate(45)`}
-        />
-      ))}
-      <rect x={-15} y={-15} width={30} height={30} rx={5} fill="currentColor" transform="translate(100 100) rotate(45)" />
+    <svg viewBox="34 34 132 132" width={size} height={size} fill="none" aria-hidden style={{ display: 'block' }}>
+      {pieces.map(([ci, cj, li, lj], k) => {
+        const x = 100 + (ci - cj) * U * S
+        const y = 100 + (ci + cj) * U * S
+        const w = li * U - G
+        const h = lj * U - G
+        return (
+          <rect
+            key={k}
+            x={-w / 2}
+            y={-h / 2}
+            width={w}
+            height={h}
+            rx={4.5}
+            fill="currentColor"
+            transform={`translate(${x.toFixed(2)} ${y.toFixed(2)}) rotate(45)`}
+          />
+        )
+      })}
     </svg>
   )
 }

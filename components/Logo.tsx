@@ -1,10 +1,10 @@
 // components/Logo.tsx
-// Pantessa — "The Tessera" mark + wordmark.
-// A mosaic diamond condenses toward its center and parts around a void; the
-// one tessera floats there — pan (all) + tessera (tile): every dapp a tile,
-// together one picture. Tiles inherit `currentColor` so the mark flips with
-// the theme; the stone rides the site accent (emerald on dark, deep emerald
-// on light) unless a `stone` color is passed.
+// Pantessa — "The Tessera" mark + wordmark, pavé cut.
+// A diamond of packed tesserae — mixed lozenges and squares set around one
+// stone — pan (all) + tessera (tile): every dapp a tile, together one
+// picture. Tiles inherit `currentColor` so the mark flips with the theme;
+// the stone rides the site accent (emerald on dark, deep emerald on light)
+// unless a `stone` color is passed.
 
 import * as React from "react";
 
@@ -12,38 +12,65 @@ type MarkProps = {
   size?: number;
   className?: string;
   title?: string;
-  /** 'full' = both courses (40 tesserae) + stone; 'compact' = inner course +
-   *  stone, which stays crisp below ~40px. 'auto' picks by size. */
+  /** 'full' = the 5×5 pavé quilt (17 pieces); 'compact' = the 5-piece
+   *  pinwheel cut, which stays crisp below ~40px. 'auto' picks by size. */
   detail?: "auto" | "full" | "compact";
   /** Stone (the one tessera) fill. Defaults to the site accent. */
   stone?: string;
 };
 
-// Rotated tile lattice: screen = ((i-j)·p·S, (i+j)·p·S), tiles at 45°.
-// The 3×3 center block is the void; ring m=2 is the inner course (16 tiles),
-// ring m=3 the outer (24 tiles). Same numbers as the brand masters.
+// Rotated tile lattice: cell (i,j) → screen ((i−j)·u·S, (i+j)·u·S); pieces
+// are drawn at 45°, so a Chebyshev-square region of cells reads as a screen
+// diamond. A "domino" spans two adjacent cells → a 1×2 lozenge. Packings are
+// exact C4 pinwheels (rotate 90° in lattice = (i,j) → (−j,i)).
 const S = Math.SQRT1_2;
-const PITCH = 24;
-const INNER_TILE = 21;
-const OUTER_TILE = 13;
-const STONE = 30;
+const U = 30; // lattice cell
+const G = 5.5; // grout
+const RX = 4.5;
 
-function courses(full: boolean) {
-  const cells: Array<{ x: number; y: number; a: number; rx: number }> = [];
-  const max = full ? 3 : 2;
-  for (let i = -max; i <= max; i++) {
-    for (let j = -max; j <= max; j++) {
-      const m = Math.max(Math.abs(i), Math.abs(j));
-      if (m < 2) continue;
-      cells.push({
-        x: 100 + (i - j) * PITCH * S,
-        y: 100 + (i + j) * PITCH * S,
-        a: m === 2 ? INNER_TILE : OUTER_TILE,
-        rx: m === 2 ? 3.5 : 2.8,
-      });
-    }
-  }
-  return cells;
+type Cell = [number, number];
+type Piece = { ci: number; cj: number; li: number; lj: number };
+
+const rot90 = ([i, j]: Cell): Cell => [-j, i];
+function orbit4(d: [Cell, Cell]): [Cell, Cell][] {
+  const out: [Cell, Cell][] = [d];
+  for (let k = 0; k < 3; k++) out.push([rot90(out[k][0]), rot90(out[k][1])]);
+  return out;
+}
+const dominoPiece = ([a, b]: [Cell, Cell]): Piece => ({
+  ci: (a[0] + b[0]) / 2,
+  cj: (a[1] + b[1]) / 2,
+  li: Math.abs(a[0] - b[0]) + 1,
+  lj: Math.abs(a[1] - b[1]) + 1,
+});
+const singlePiece = ([i, j]: Cell): Piece => ({ ci: i, cj: j, li: 1, lj: 1 });
+
+// Full quilt: 8 dominoes + 8 singles on the 5×5 diamond.
+const QUILT: Piece[] = [
+  ...orbit4([[1, 0], [2, 0]] as [Cell, Cell]).map(dominoPiece),
+  ...orbit4([[1, 1], [1, 2]] as [Cell, Cell]).map(dominoPiece),
+  ...([[2, 1], [-1, 2], [-2, -1], [1, -2], [2, 2], [-2, 2], [-2, -2], [2, -2]] as Cell[]).map(singlePiece),
+];
+// Compact cut: 4 dominoes pinwheeling on the 3×3 diamond.
+const CHUNK: Piece[] = orbit4([[1, 0], [1, 1]] as [Cell, Cell]).map(dominoPiece);
+
+function pieceRect(p: Piece, fill: string, key: number) {
+  const x = 100 + (p.ci - p.cj) * U * S;
+  const y = 100 + (p.ci + p.cj) * U * S;
+  const w = p.li * U - G;
+  const h = p.lj * U - G;
+  return (
+    <rect
+      key={key}
+      x={-w / 2}
+      y={-h / 2}
+      width={w}
+      height={h}
+      rx={RX}
+      fill={fill}
+      transform={`translate(${x.toFixed(2)} ${y.toFixed(2)}) rotate(45)`}
+    />
+  );
 }
 
 export function YeetfulMark({
@@ -54,8 +81,9 @@ export function YeetfulMark({
   stone = "var(--accent, #3ECF8E)",
 }: MarkProps) {
   const full = detail === "full" || (detail === "auto" && size >= 40);
-  // Full-mark tips reach ~±111 from center; the compact course ~±83.
-  const r = full ? 118 : 92;
+  const pieces = full ? QUILT : CHUNK;
+  // Quilt extent ≈ ±103 from center; the compact cut ≈ ±62.
+  const r = full ? 112 : 66;
   return (
     <svg
       width={size}
@@ -66,27 +94,8 @@ export function YeetfulMark({
       role="img"
       aria-label={title}
     >
-      {courses(full).map((c, k) => (
-        <rect
-          key={k}
-          x={-c.a / 2}
-          y={-c.a / 2}
-          width={c.a}
-          height={c.a}
-          rx={c.rx}
-          fill="currentColor"
-          transform={`translate(${c.x.toFixed(2)} ${c.y.toFixed(2)}) rotate(45)`}
-        />
-      ))}
-      <rect
-        x={-STONE / 2}
-        y={-STONE / 2}
-        width={STONE}
-        height={STONE}
-        rx={5}
-        fill={stone}
-        transform="translate(100 100) rotate(45)"
-      />
+      {pieces.map((p, k) => pieceRect(p, "currentColor", k))}
+      {pieceRect(singlePiece([0, 0]), stone, -1)}
     </svg>
   );
 }
