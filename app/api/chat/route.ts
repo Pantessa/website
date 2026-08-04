@@ -928,6 +928,7 @@ async function handleChatTurn(req: NextRequest) {
           nativeTrace({ type: 'note', level: 'warn', label: 'native aave layer: supply parsed but no Aave agent in the set — asking the user to add it' })
           return NextResponse.json({
             reply: `🏦 Supplying to Aave runs right here — it just needs the **Aave** dapp in this chat's set. **[Add Aave with this ask ready](/chat?mcps=aave-free&prompt=${encodeURIComponent(message)})** (it prefills — you press send), or add it from the rail and ask again.`,
+            door: { mcps: 'aave-free' },
           })
         }
         if (!aaveRead.usable) {
@@ -971,6 +972,7 @@ async function handleChatTurn(req: NextRequest) {
           nativeTrace({ type: 'note', level: 'warn', label: `native aave layer: ${aaveOpAsk.op} parsed but no Aave agent in the set — asking the user to add it` })
           return NextResponse.json({
             reply: `🏦 A ${aaveOpAsk.op} on Aave runs right here — it just needs the **Aave** dapp in this chat's set. **[Add Aave with this ask ready](/chat?mcps=aave-free&prompt=${encodeURIComponent(message)})** (it prefills — you press send), or add it from the rail and ask again.`,
+            door: { mcps: 'aave-free' },
           })
         }
         if (!aaveRead.usable) {
@@ -1025,6 +1027,7 @@ async function handleChatTurn(req: NextRequest) {
           nativeTrace({ type: 'note', level: 'warn', label: 'native morpho layer: lend parsed but no Morpho agent in the set — asking the user to add it' })
           return NextResponse.json({
             reply: `🏦 Lending on Morpho runs right here — it just needs the **Morpho** dapp in this chat's set. **[Add Morpho with this ask ready](/chat?mcps=morpho-free&prompt=${encodeURIComponent(message)})** (it prefills — you press send), or add it from the rail and ask again.`,
+            door: { mcps: 'morpho-free' },
           })
         }
         if (!morphoRead.usable) {
@@ -1065,6 +1068,7 @@ async function handleChatTurn(req: NextRequest) {
           nativeTrace({ type: 'note', level: 'warn', label: `native morpho layer: ${morphoOpAsk.op} parsed but no Morpho agent in the set — asking the user to add it` })
           return NextResponse.json({
             reply: `🏦 A ${morphoOpAsk.op.replace(/-/g, ' ')} on Morpho runs right here — it just needs the **Morpho** dapp in this chat's set. **[Add Morpho with this ask ready](/chat?mcps=morpho-free&prompt=${encodeURIComponent(message)})** (it prefills — you press send), or add it from the rail and ask again.`,
+            door: { mcps: 'morpho-free' },
           })
         }
         if (!morphoRead.usable) {
@@ -1136,6 +1140,7 @@ async function handleChatTurn(req: NextRequest) {
       nativeTrace({ type: 'note', level: 'warn', label: 'guardian layer: arm ask parsed but no Hyperliquid agent in the set — answering the add-the-dapp door' })
       return NextResponse.json({
         reply: `🛡️ Guardian protection runs right here — it just needs the **Hyperliquid** dapp in this chat's set. **[Add Hyperliquid with this ask ready](/chat?mcps=hyperliquid-free&prompt=${encodeURIComponent(message)})** (it prefills — you press send), or add it from the rail and ask again.`,
+        door: { mcps: 'hyperliquid-free' },
       })
     }
     if (armAsk && hlAgentOf(activeServers).agent) {
@@ -1149,15 +1154,27 @@ async function handleChatTurn(req: NextRequest) {
         const approveHint = armed.status === 409 && /delegation/i.test(armed.error)
           ? ' Approve it on the [Guardian dashboard](/dashboard/guardian) — one signature, the agent key can trade but never withdraw, and it expires on its own.'
           : ''
-        return NextResponse.json({ reply: `🛡️ ${armed.error}${approveHint}` })
+        return NextResponse.json({ reply: `🛡️ ${armed.error}${approveHint}`, buildPath: 'native-hl-guardian' })
       }
       const p = armed.policy
-      nativeTrace({ type: 'status', label: `guardian layer: ${armed.resumed ? 'resumed' : 'armed'} ${p.kind} on ${p.coin} (${p.triggerMode} ${p.triggerValue})` })
+      nativeTrace({ type: 'status', label: `guardian layer: ${armed.affirmed ? 'affirmed' : armed.resumed ? 'resumed' : 'armed'} ${p.kind} on ${p.coin} (${p.triggerMode} ${p.triggerValue})` })
       const armLabel = p.kind === 'stop_loss' ? 'Stop-loss' : 'Take-profit'
+      const triggerCopy = p.triggerMode === 'price' ? `the mark crosses ${p.triggerValue}` : `price moves ${p.triggerValue}% ${p.kind === 'stop_loss' ? 'against' : 'for'} you from entry`
+      if (armed.affirmed) {
+        // The exact protection asked for is already armed — that's a satisfied
+        // intent, not a wall (the old copy told the user to dismantle it).
+        return NextResponse.json({
+          reply:
+            `🛡️ **Already on it.** Your ${p.coin} ${p.side} has exactly this protection armed — a ${armLabel.toLowerCase()} that closes reduce-only when ${triggerCopy}. ` +
+            `It's watching now; pause or remove it any time from Protections in the rail or the [Guardian dashboard](/dashboard/guardian). (${armed.positionNote}.)`,
+          guardianPolicyId: p.id,
+          buildPath: 'native-hl-guardian',
+        })
+      }
       return NextResponse.json({
         reply:
           `🛡️ **${armed.resumed ? 'Resumed.' : 'Armed.'}** ${armed.resumed ? `Your paused ${armLabel.toLowerCase()}` : armLabel} on your ${p.coin} ${p.side}${armed.resumed ? ' is watching again' : ''}: closes reduce-only when ` +
-          `${p.triggerMode === 'price' ? `the mark crosses ${p.triggerValue}` : `price moves ${p.triggerValue}% ${p.kind === 'stop_loss' ? 'against' : 'for'} you from entry`}. ` +
+          `${triggerCopy}. ` +
           `(${armed.positionNote}.)`,
         guardianPolicyId: p.id,
         buildPath: 'native-hl-guardian',
@@ -1192,6 +1209,7 @@ async function handleChatTurn(req: NextRequest) {
       nativeTrace({ type: 'note', level: 'warn', label: 'lido-shaped stake ask but no usable Lido MCP in the set — offering the add-Lido door (planner never claims venue-worded builds)' })
       return NextResponse.json({
         reply: `🌊 Staking with Lido runs right here — it just needs the **Lido** dapp in this chat's set. **[Add Lido with this ask ready](/chat?mcps=lido-free&prompt=${encodeURIComponent(message)})** (it prefills — you press send), or add it from the rail and ask again.`,
+        door: { mcps: 'lido-free' },
       })
     }
 
@@ -1260,6 +1278,7 @@ async function handleChatTurn(req: NextRequest) {
       nativeTrace({ type: 'note', level: 'warn', label: 'hl-shaped ask but no usable Hyperliquid agent in the set — offering the add-Hyperliquid door' })
       return NextResponse.json({
         reply: `📈 Hyperliquid orders build right here — they just need the **Hyperliquid** dapp in this chat's set. **[Add Hyperliquid with this ask ready](/chat?mcps=hyperliquid-free&prompt=${encodeURIComponent(message)})** (it prefills — you press send), or add it from the rail and ask again.`,
+        door: { mcps: 'hyperliquid-free' },
       })
     }
 
@@ -1475,8 +1494,11 @@ async function handleChatTurn(req: NextRequest) {
         return NextResponse.json({
           reply: `🖼️ ${nftAsk.problem}`,
           // Park the resolved NFT so the answer to the question completes it.
+          // `awaiting` marks the turn as a HELD QUESTION for the ask-failure
+          // classifier — the next line finishes it, so it's not a wall.
           ...(nftAsk.awaiting === 'recipient' && nftAsk.partial
             ? {
+                awaiting: 'recipient',
                 workingContext: {
                   v: 1,
                   age: 0,
@@ -1679,6 +1701,7 @@ async function handleChatTurn(req: NextRequest) {
         nativeTrace({ type: 'note', level: 'warn', label: `native swap layer declined: cross-chain ask (${xc.chains.join(' → ')}) but no cross-chain agent in the set — pointing at NEAR Intents, no build` })
         return NextResponse.json({
           reply: `🔗 That swap involves ${named}, and Pantessa's built-in swap tools cover ${nativeNames}. Cross-chain runs on **NEAR Intents (Free)** — any asset to any asset across ~35 chains with ONE transfer you sign (unfillable swaps auto-refund). **[Add NEAR Intents with this ask ready](/chat?mcps=near-intents-mcp-yeetful&prompt=${encodeURIComponent(message)})** (it prefills — you press send), or pick one of the supported chains and I'll build it there.`,
+          door: { mcps: 'near-intents-mcp-yeetful' },
         })
       }
       if (crossChain && ccAgent.agent && !ccAgent.usable) {
