@@ -199,7 +199,7 @@ function CreateAccountModal({
         {step === 'email' && (
           <form onSubmit={sendCode}>
             <div className="ca__icon"><Mail width={20} height={20} /></div>
-            <h2 className="ca__title">Sign in to Yeetful</h2>
+            <h2 className="ca__title">Sign in to Pantessa</h2>
 
             {/* Connect an existing wallet — top of the list. Closes this modal
                 and opens the wagmi connect modal. Default: connectAndSignIn

@@ -10,7 +10,7 @@ export const dynamic = 'force-dynamic'
  * The ask-failure feed — money-shaped asks that ended in a wall, newest
  * first, with the funds snapshot taken at failure time (lib/ask-failure.ts).
  * Admin-gated. `?funded=1` keeps only rows where the wallet demonstrably
- * held movable money (the product-gap queue); `?external=1` drops Yeetful's
+ * held movable money (the product-gap queue); `?external=1` drops Pantessa's
  * own test wallets; `?days=N` bounds the window (default 14, max 90).
  */
 export async function GET(req: NextRequest) {

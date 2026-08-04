@@ -1,5 +1,5 @@
 // ─────────────────────────────────────────────────────────────────────────
-//  App chain registry — the single source of truth for the chains Yeetful
+//  App chain registry — the single source of truth for the chains Pantessa
 //  treats as first-class: the chat chain picker, the splash card scoping,
 //  the native swap layer's per-chain routers/tokens, and the wagmi config
 //  all read THIS list. Adding a chain here lights it up everywhere (picker,

@@ -13,7 +13,7 @@ import { Analytics } from "@vercel/analytics/next"
 // Matches the SITE convention used by robots.ts / sitemap.ts / blog.
 const SITE = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://yeetful.com'
 
-const TITLE = 'Yeetful — Every dapp. One chat.'
+const TITLE = 'Pantessa — Every dapp. One chat.'
 // Meta description (Google truncates ~150–160 chars).
 const DESCRIPTION =
   'Compose free MCPs — Uniswap, Snapshot, CoW, Hyperliquid — or your own into one agent that swaps, votes, and answers. Your wallet signs. Every call receipted.'
@@ -26,8 +26,8 @@ export const metadata: Metadata = {
   metadataBase: new URL(SITE),
   title: TITLE,
   description: DESCRIPTION,
-  keywords: ['MCP', 'Model Context Protocol', 'x402', 'agentic payments', 'USDC', 'Base', 'AI agents', 'Yeetful'],
-  authors: [{ name: 'Yeetful' }],
+  keywords: ['MCP', 'Model Context Protocol', 'x402', 'agentic payments', 'USDC', 'Base', 'AI agents', 'Pantessa'],
+  authors: [{ name: 'Pantessa' }],
   // Icons are file-based: app/icon.svg, app/icon.png, app/apple-icon.png —
   // Next App Router auto-generates the <link> tags, so no metadata.icons needed.
   // Card images are file-based too: app/opengraph-image.tsx + app/twitter-image.tsx
@@ -37,7 +37,7 @@ export const metadata: Metadata = {
     description: SOCIAL_DESCRIPTION,
     type: 'website',
     url: SITE,
-    siteName: 'Yeetful',
+    siteName: 'Pantessa',
   },
   twitter: {
     card: 'summary_large_image',

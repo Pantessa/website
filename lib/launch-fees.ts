@@ -8,7 +8,7 @@
 // env. It never throws into a chat turn — fee routing must not break payments.
 //
 // Economic note: the cut is paid by the house settlement wallet (PRIVATE_KEY),
-// so for now this is meaningful for Yeetful-OPERATED MCPs (we share our own
+// so for now this is meaningful for Pantessa-OPERATED MCPs (we share our own
 // service revenue). Routing a cut from a third-party service's own PAYMENT_ADDRESS
 // belongs in the x402-services service-kit — a follow-up.
 //

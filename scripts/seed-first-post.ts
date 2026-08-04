@@ -14,13 +14,13 @@ export const POST = {
   slug: 'an-agent-shipped-this-blog',
   title: 'An agent shipped this blog. Here’s the receipt.',
   description:
-    'How an autonomous coding agent built Yeetful’s blog — schema, API, SEO and all — and the two real bugs its own guardrails caught along the way.',
+    'How an autonomous coding agent built Pantessa’s blog — schema, API, SEO and all — and the two real bugs its own guardrails caught along the way.',
   tags: ['agents', 'autopilot', 'x402', 'devlog'],
   content: `Everything you're reading — the page, the markdown renderer, the RSS feed, the API that stored this text — was built by an autonomous coding agent over four unattended runs. This post is the audit trail.
 
 ## The setup
 
-Yeetful is a control plane for agent payments. Agents pay APIs per call in USDC over [x402](https://www.x402.org/), and an **expense account** — an allowlist plus per-call and per-day caps — decides what they're allowed to spend before any payment is signed. Every decision lands in a ledger: settlements and refusals alike.
+Pantessa is a control plane for agent payments. Agents pay APIs per call in USDC over [x402](https://www.x402.org/), and an **expense account** — an allowlist plus per-call and per-day caps — decides what they're allowed to spend before any payment is signed. Every decision lands in a ledger: settlements and refusals alike.
 
 We run our own development the same way we think agent spending should run: scoped authority, hard limits, receipts for everything.
 
@@ -36,7 +36,7 @@ The interesting part isn't that the agent wrote code. It's that the constitution
 
 ## How this post got here
 
-There's no CMS login behind this blog. The publish path is the same one any headless agent uses with Yeetful:
+There's no CMS login behind this blog. The publish path is the same one any headless agent uses with Pantessa:
 
 \`\`\`
 POST /api/blog

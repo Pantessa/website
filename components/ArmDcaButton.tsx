@@ -3,7 +3,7 @@
 // The DCA autopilot arm card — ONE signTypedData and the schedule buys
 // itself each period. The copy leads with what the CONTRACT enforces (the
 // wallet's own code caps the pull), because that's the whole trust story:
-// arming never hands over keys, and the cap holds regardless of Yeetful.
+// arming never hands over keys, and the cap holds regardless of Pantessa.
 
 import { useState } from 'react'
 import { useAccount, useSignTypedData, useSwitchChain } from 'wagmi'

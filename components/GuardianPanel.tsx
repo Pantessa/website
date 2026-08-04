@@ -230,7 +230,7 @@ export default function GuardianPanel() {
               </p>
             ) : (
               <p className="text-[13px] mt-1 text-[color:var(--muted-2)]">
-                One signature approves a Yeetful-held agent key on your Hyperliquid account. The key can close
+                One signature approves a Pantessa-held agent key on your Hyperliquid account. The key can close
                 positions under your policies — it can <strong>never withdraw</strong>. Revocable here (or in the HL
                 app) any time; expires automatically after 90 days.
               </p>

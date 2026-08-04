@@ -4,9 +4,9 @@
  *
  *   DATABASE_URL=… npx tsx scripts/seed-cow-swap-service.ts
  *
- * The "CoW Agent" — Yeetful's reference safe-transaction-building service:
+ * The "CoW Agent" — Pantessa's reference safe-transaction-building service:
  * market swaps + limit orders on Base via CoW Protocol (quote → EIP-712 order
- * the USER signs; Yeetful never custodies), plus CoW DAO Snapshot voting via
+ * the USER signs; Pantessa never custodies), plus CoW DAO Snapshot voting via
  * the existing governance flow. A directory row is what makes it shortlistable
  * (lib/shortlist.ts only accepts real McpServer rows) and star-able on
  * /servers. `callable` stays FALSE until A2c wires swap intents into the chat
@@ -22,7 +22,7 @@ const SERVICE = {
   slug: 'cow-swap',
   name: 'CoW Swap',
   description:
-    'Safe transaction building for CoW Protocol on Base: ask for a swap in English and get a real CoW quote built into the exact EIP-712 order you sign — market swaps and limit orders (name your price, fee from surplus). Orders settle via CoW solvers with MEV protection; Yeetful builds and receipts, your wallet signs. Includes CoW DAO governance: vote on cow.eth Snapshot proposals from chat.',
+    'Safe transaction building for CoW Protocol on Base: ask for a swap in English and get a real CoW quote built into the exact EIP-712 order you sign — market swaps and limit orders (name your price, fee from surplus). Orders settle via CoW solvers with MEV protection; Pantessa builds and receipts, your wallet signs. Includes CoW DAO governance: vote on cow.eth Snapshot proposals from chat.',
   category: 'Trading',
   kind: 'data',
   priceUsd: '0',
@@ -48,7 +48,7 @@ const ENDPOINTS = [
     maxPriceUsd: null,
     scheme: 'exact',
     network: 'Base',
-    provider: 'Yeetful',
+    provider: 'Pantessa',
     position: 0,
   },
 ]

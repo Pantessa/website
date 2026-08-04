@@ -30,7 +30,7 @@ ${key ? `  key: '${key}',\n` : ''}  mcps: ${mcpsLiteral(mcps)},
  * verify step. */
 export function embedClaudePrompt(key: string | null, mcps: string[] = DEFAULT_EMBED_MCPS): string {
   const list = mcpsLiteral(mcps)
-  return `Install the Yeetful embeddable chat (an agent that composes MCPs — swaps, DAO votes, live data — and signs with the user's own wallet) into this app.
+  return `Install the Pantessa embeddable chat (an agent that composes MCPs — swaps, DAO votes, live data — and signs with the user's own wallet) into this app.
 
 1. Install the SDK: \`npm i yeetful\` (needs yeetful >= 0.10).
 2. Mount it once wherever the app initializes client-side:
@@ -53,7 +53,7 @@ ${key ? `     key: '${key}',  // public embed key — attributes usage to our ac
 ${
   key
     ? '4. Do not move the key to an env secret — it is a publishable identifier, safe in page source.'
-    : '4. Optional: mint a public embed key at https://www.yeetful.com/dashboard (Embed Yeetful card) and add key: \'yfe_…\' to the mount — it attributes usage to your account and unlocks embed analytics.'
+    : '4. Optional: mint a public embed key at https://www.yeetful.com/dashboard (Embed Pantessa card) and add key: \'yfe_…\' to the mount — it attributes usage to your account and unlocks embed analytics.'
 }
 5. Verify: run the app, open the chat bubble, and ask "what is WETH trading at?" — the answer should include a $0 receipt line. Docs: https://www.yeetful.com/docs/embed`
 }

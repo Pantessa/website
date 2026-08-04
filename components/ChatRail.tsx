@@ -430,7 +430,7 @@ export default function ChatRail() {
             <Link
               href="/dashboard"
               onClick={closeOnMobile}
-              title="Yeetful dashboard — links, keys, billing"
+              title="Pantessa dashboard — links, keys, billing"
               className="flex-shrink-0 flex items-center gap-2.5 px-4 py-3 border-t border-[var(--line)] text-[color:var(--muted)] hover:text-white hover:bg-[var(--surf-1)] transition-colors"
             >
               <LayoutDashboard className="w-4 h-4 flex-shrink-0" aria-hidden />

@@ -212,7 +212,7 @@ export async function runDcaAutoToggleTurn(message: string, wallet: string | und
     return {
       reply:
         `🤖 **Autopilot off:** ${label} is back to confirm-mode — nothing buys without your signature. ` +
-        `Yeetful stops pulling immediately; the on-chain permission stays yours to revoke from your wallet whenever you like. “Make my ${s.buyToken} dca autonomous” re-arms it.`,
+        `Pantessa stops pulling immediately; the on-chain permission stays yours to revoke from your wallet whenever you like. “Make my ${s.buyToken} dca autonomous” re-arms it.`,
       buildPath: 'native-dca-auto',
       dcaScheduleId: s.id,
     }
@@ -276,7 +276,7 @@ export async function runDcaAutoToggleTurn(message: string, wallet: string | und
   trace({ type: 'status', label: `dca autopilot: arm offer for schedule ${s.id.slice(0, 8)} (allowance $${s.buyUsd}/${s.cadence})` })
   return {
     reply:
-      `🤖 **Put ${label} on autopilot.** One signature arms it: your wallet's own contract caps Yeetful's pull at **exactly $${s.buyUsd} per ${s.cadence}** — never more, expiring in a year, revocable on-chain any time. ` +
+      `🤖 **Put ${label} on autopilot.** One signature arms it: your wallet's own contract caps Pantessa's pull at **exactly $${s.buyUsd} per ${s.cadence}** — never more, expiring in a year, revocable on-chain any time. ` +
       `Each due period the buy executes itself through the same guarded venue route you sign today, the ${s.buyToken} lands straight in YOUR wallet, and the receipt shows up in your rail. Review and sign below.`,
     buildPath: 'native-dca-auto',
     dcaScheduleId: s.id,

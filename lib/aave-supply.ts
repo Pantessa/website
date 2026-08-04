@@ -26,7 +26,7 @@ import { chainAlt } from '@/lib/chain-lexicon'
 import type { TxChainStep } from '@/lib/transaction-layer'
 
 // ── The working set's Aave-capable agent ────────────────────────────────────
-// Matched on slug/name so custom modal-added rows ("Aave MCP · Yeetful")
+// Matched on slug/name so custom modal-added rows ("Aave MCP · Pantessa")
 // count too. Descriptions are excluded — other MCPs mention Aave in passing.
 export const AAVE_MCP_RE = /\baave\b/i
 

@@ -47,7 +47,7 @@ export async function GET(_req: NextRequest, { params }: Params) {
 }
 
 /** Claim this MCP. SIWE only. Verified by signing in with the MCP's x402 payTo
- *  receiver (read from its own endpoint), or by a Yeetful admin. */
+ *  receiver (read from its own endpoint), or by a Pantessa admin. */
 export async function POST(_req: NextRequest, { params }: Params) {
   const { slug } = await params
   const addr = await getSessionAddress()
@@ -82,7 +82,7 @@ export async function POST(_req: NextRequest, { params }: Params) {
   return NextResponse.json({ claimed: true, owner: ownerView(owner) }, { status: 201 })
 }
 
-/** Release a claim. SIWE only; the owner or a Yeetful admin. */
+/** Release a claim. SIWE only; the owner or a Pantessa admin. */
 export async function DELETE(_req: NextRequest, { params }: Params) {
   const { slug } = await params
   const addr = await getSessionAddress()

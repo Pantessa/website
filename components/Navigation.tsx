@@ -196,7 +196,7 @@ export default function Navigation() {
             brochure. mounted-gated (via showDashboardCta) keeps SSR at "/". */}
         <Link className="logo" href={showDashboardCta ? '/dashboard' : '/'}>
           <YeetfulMark size={24} />
-          <span className="logo__word">yeetful</span>
+          <span className="logo__word">pantessa</span>
         </Link>
 
         {/* Brochure tabs only outside the dashboard — inside, the left rail

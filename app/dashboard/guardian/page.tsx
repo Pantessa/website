@@ -14,7 +14,7 @@ export default function DashboardGuardianPage() {
       <h1 className="dash__h1">Guardian</h1>
       <p className="dash__sub">
         Give your agent a job, not your keys. The guardian watches your Hyperliquid positions around the clock and
-        closes them when your rules say so — through the same deterministic build + guardrail gate as every Yeetful
+        closes them when your rules say so — through the same deterministic build + guardrail gate as every Pantessa
         transaction, with a receipt for every decision. Your wallet keeps custody; the delegation expires on its own
         and revokes in one click.
       </p>

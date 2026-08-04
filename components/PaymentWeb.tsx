@@ -6,7 +6,7 @@
 // budget guardrail partway, turn red, and bounce back to the wallet — money
 // the guardrail saved, not spent. Static scene is declarative SVG; beams run
 // on a rAF loop; the particle field is compositor-driven CSS. Design package:
-// SPEC/IMPLEMENTATION in the "Yeetful hero" handoff (2026-06-13).
+// SPEC/IMPLEMENTATION in the "Pantessa hero" handoff (2026-06-13).
 
 import { useEffect, useRef, type RefObject } from 'react'
 

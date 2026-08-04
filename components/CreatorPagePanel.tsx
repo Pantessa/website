@@ -234,7 +234,7 @@ export function CreatorPagePanel({ className }: { className?: string }) {
             )}
             {/* White-label: paste the site, the page wears its logo + colors.
                 No pickers, no uploads — the scan does the whole thing, and
-                the page keeps its "Powered by Yeetful" mark. */}
+                the page keeps its "Powered by Pantessa" mark. */}
             {brand ? (
               <span className="inline-flex flex-wrap items-center gap-2">
                 {brand.logo && (
@@ -256,7 +256,7 @@ export function CreatorPagePanel({ className }: { className?: string }) {
                     title={`accent ${brand.accent}`}
                   />
                 )}
-                <span className="text-[11px] text-[color:var(--muted-2)]">— your page wears it, powered by Yeetful</span>
+                <span className="text-[11px] text-[color:var(--muted-2)]">— your page wears it, powered by Pantessa</span>
                 <button
                   type="button"
                   onClick={() => void removeBrand()}

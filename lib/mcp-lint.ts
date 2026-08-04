@@ -228,7 +228,7 @@ function affordancesDimension(server: { description: string }, plannable: Planna
   // Signing hygiene: build-don't-execute; custody smells are a hard flag.
   const custody = /private key|we sign|signs? on your behalf|custod|executes? the (swap|trade|transaction)/i.test(hay)
   checks.push({ ok: !custody, note: custody ? '⚠ CUSTODY SMELL — descriptions suggest the service signs/executes with its own keys' : 'signing hygiene: build-don\'t-execute language (or no signables)' })
-  if (custody) fixes.push('SAFETY: the service appears to sign/execute itself. Yeetful routes signables to the USER\'s wallet — restructure to return unsigned payloads (build-don\'t-execute).')
+  if (custody) fixes.push('SAFETY: the service appears to sign/execute itself. Pantessa routes signables to the USER\'s wallet — restructure to return unsigned payloads (build-don\'t-execute).')
 
   const score = clamp01(0.4 * (ctxReady ? 1 : 0) + 0.2 * (escapeHatch ? 1 : 0) + 0.4 * (custody ? 0 : 1))
   return { key: 'affordances', weight: 10, score, checks }

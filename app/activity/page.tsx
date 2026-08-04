@@ -11,7 +11,7 @@ import { linksBoard, feeSummary, linkDailySeries } from '@/lib/links-board'
 // Public system overview — the whole money story on one page: every dollar
 // the system moved (swaps, lending, staking, cross-chain, votes + x402
 // fees) broken down by venue and MCP, the intent-links board, and the fee
-// split (creators' half vs Yeetful's). Server shell owns the SEO surface
+// split (creators' half vs Pantessa's). Server shell owns the SEO surface
 // and the link-economy section; the overview polls /api/activity/overview
 // (aggregates + artifact labels only — the privacy filtering happens
 // server-side, never in the client).
@@ -20,11 +20,11 @@ export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
 export const metadata: Metadata = {
-  title: 'Network activity — money moved · Yeetful',
+  title: 'Network activity — money moved · Pantessa',
   description:
-    'The Yeetful system, live: notional USD moved through signed transactions across every venue — swaps, lending, staking, cross-chain — plus the intent-links board and the fees the link economy pays creators.',
+    'The Pantessa system, live: notional USD moved through signed transactions across every venue — swaps, lending, staking, cross-chain — plus the intent-links board and the fees the link economy pays creators.',
   openGraph: {
-    title: 'Yeetful network activity',
+    title: 'Pantessa network activity',
     description:
       'Money moved through the whole system, live — per-venue flow, the intent-links board, and where the fees go.',
     type: 'website',
@@ -82,7 +82,7 @@ async function LinkEconomy() {
           </div>
           <div className="rounded-lg border border-[var(--line)] bg-[var(--surf-1)] px-4 py-3">
             <p className="mono text-[10.5px] uppercase tracking-wider text-[color:var(--muted-2)]">
-              Fees to Yeetful
+              Fees to Pantessa
             </p>
             <p className="mono text-[20px] tabular-nums text-[color:var(--fg)] mt-1">
               {fmtUsd(fees.yeetfulUsd)}

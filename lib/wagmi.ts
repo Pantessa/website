@@ -63,7 +63,7 @@ const connectors = [
         ],
       },
     ],
-    { appName: 'Yeetful', projectId },
+    { appName: 'Pantessa', projectId },
   ),
   ...(cdpEnabled ? [cdpEmbeddedConnector] : []),
   // Host-wallet bridge connector for /embed (wallet contract v1.1) — registered

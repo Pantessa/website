@@ -1,5 +1,5 @@
 // ─────────────────────────────────────────────────────────────────────────
-//  The thinking tools — Yeetful's OWN reasoning helpers, named.
+//  The thinking tools — Pantessa's OWN reasoning helpers, named.
 //
 //  This registry is the `yeetful-tool-*` naming pass (board card B4): the
 //  router's decisions have always streamed as raw trace events

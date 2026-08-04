@@ -28,9 +28,9 @@ import Footer from '@/components/Footer'
  * Server component so it can export metadata + JSON-LD; the moving parts are
  * client children. */
 
-const TITLE = 'Yeetful — You have an intent. We do the rest.'
+const TITLE = 'Pantessa — You have an intent. We do the rest.'
 const DESCRIPTION =
-  'Mint a link that carries an ask — buy a stock, stake ETH, set a recurring buy. Whoever opens it connects their own wallet; Yeetful scans, funds across chains, builds guarded transactions, and receipts every move. Killer onboarding for any dapp; creators earn on the conversions their links produce.'
+  'Mint a link that carries an ask — buy a stock, stake ETH, set a recurring buy. Whoever opens it connects their own wallet; Pantessa scans, funds across chains, builds guarded transactions, and receipts every move. Killer onboarding for any dapp; creators earn on the conversions their links produce.'
 
 export const metadata: Metadata = {
   title: TITLE,
@@ -44,20 +44,20 @@ const JSON_LD = JSON.stringify([
   {
     '@context': 'https://schema.org',
     '@type': 'WebSite',
-    name: 'Yeetful',
+    name: 'Pantessa',
     url: SITE,
     description: DESCRIPTION,
   },
   {
     '@context': 'https://schema.org',
     '@type': 'SoftwareApplication',
-    name: 'Yeetful intent links',
+    name: 'Pantessa intent links',
     applicationCategory: 'FinanceApplication',
     operatingSystem: 'Web',
     description:
-      'Short links that carry a plain-English ask — buy a tokenized stock, stake ETH, set a recurring buy, protect a position. Opening one connects the visitor’s own wallet; Yeetful compiles the ask into guarded on-chain transactions (deterministic builders, fail-closed checks, cross-chain funding included), the visitor signs, and every move is receipted. Creators earn half of Yeetful’s 0.20% conversion fee; the chat doubles as the link builder and embeds on any site.',
+      'Short links that carry a plain-English ask — buy a tokenized stock, stake ETH, set a recurring buy, protect a position. Opening one connects the visitor’s own wallet; Pantessa compiles the ask into guarded on-chain transactions (deterministic builders, fail-closed checks, cross-chain funding included), the visitor signs, and every move is receipted. Creators earn half of Pantessa’s 0.20% conversion fee; the chat doubles as the link builder and embeds on any site.',
     offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD' },
-    provider: { '@type': 'Organization', name: 'Yeetful', url: SITE },
+    provider: { '@type': 'Organization', name: 'Pantessa', url: SITE },
   },
 ])
 

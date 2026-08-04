@@ -141,7 +141,7 @@ export const MACHINE_RUNS: MachineRun[] = [
         key: 'SIGN',
         tone: 'sign',
         ms: 1700,
-        head: 'Your wallet pops. Yeetful holds no keys — it never has.',
+        head: 'Your wallet pops. Pantessa holds no keys — it never has.',
         lines: [
           '> step 1/3  signed 0x7d1a…88bc',
           '> step 2/3  signed 0x44e0…19af · arrived in 14s',
@@ -250,7 +250,7 @@ export const MACHINE_RUNS: MachineRun[] = [
           '✓ Guardian ARMED · stop at −5% ($34.71)',
           '> checked every minute by cron · fail-closed guard',
           '> fired 2026-07-14 on a real ETH stop: filled, $11.93, 10/10 checks',
-          '> revoke the key any time · Yeetful never custodies',
+          '> revoke the key any time · Pantessa never custodies',
         ],
       },
     ],

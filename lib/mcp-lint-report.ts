@@ -29,7 +29,7 @@ export interface RoutabilityReport {
  * UPGRADE session on the MCP's own codebase — the "fix it with Claude Code"
  * section of the routability panel. Self-contained: carries the failing
  * checks, the fix list, and the conventions the linter grades against, so
- * the MCP developer needs zero Yeetful context to act on it.
+ * the MCP developer needs zero Pantessa context to act on it.
  */
 export function buildUpgradePrompt(report: RoutabilityReport): string {
   const failing = report.dimensions
@@ -42,7 +42,7 @@ export function buildUpgradePrompt(report: RoutabilityReport): string {
     .join('\n')
 
   return [
-    `You are upgrading the MCP service "${report.name}" so an AI router can reliably discover, choose, and call its tools. Yeetful's Reason Router just graded it ${report.score}/100 (${report.grade}). I'll point you at the service's codebase; audit it against the findings below and implement the fixes.`,
+    `You are upgrading the MCP service "${report.name}" so an AI router can reliably discover, choose, and call its tools. Pantessa's Reason Router just graded it ${report.score}/100 (${report.grade}). I'll point you at the service's codebase; audit it against the findings below and implement the fixes.`,
     '',
     '## Failing checks',
     failing || '(all dimension checks passed — only polish remains)',
@@ -61,6 +61,6 @@ export function buildUpgradePrompt(report: RoutabilityReport): string {
     '',
     'Start by reading the tool/endpoint definitions and their input schemas, then apply the fixes smallest-first. After each change, restate which failing check it clears.',
     '',
-    "Audit before you build: if a fix describes a capability the service ALREADY provides (e.g. an escape hatch or identity param that exists but the grader missed), do NOT duplicate it — say so, skip it, and note it back as a likely router-side scoring gap on Yeetful rather than an MCP deficiency. Only change what this service actually controls.",
+    "Audit before you build: if a fix describes a capability the service ALREADY provides (e.g. an escape hatch or identity param that exists but the grader missed), do NOT duplicate it — say so, skip it, and note it back as a likely router-side scoring gap on Pantessa rather than an MCP deficiency. Only change what this service actually controls.",
   ].join('\n')
 }

@@ -18,7 +18,7 @@ export async function generateMetadata({ params }: Params): Promise<Metadata> {
   const { symbol } = await params
   const norm = normalizeChartSymbol(symbol)
   const pair = chartPairFor(norm)
-  const title = pair ? `${pair.label} live chart — Yeetful` : `${norm || 'Token'} — Yeetful`
+  const title = pair ? `${pair.label} live chart — Pantessa` : `${norm || 'Token'} — Pantessa`
   const description = pair
     ? `Live ${pair.label} candles, and one sentence to act on it — swap, DCA, or protect, signed only by your wallet.`
     : `Trade ${norm} from one sentence in chat — guarded, signed only by your wallet.`

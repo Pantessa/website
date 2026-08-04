@@ -13,7 +13,7 @@ import type { RouterTraceEvent } from '@/lib/store'
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
-export const metadata: Metadata = { title: 'Incident · Yeetful', robots: { index: false } }
+export const metadata: Metadata = { title: 'Incident · Pantessa', robots: { index: false } }
 
 type Params = { params: Promise<{ id: string }> }
 

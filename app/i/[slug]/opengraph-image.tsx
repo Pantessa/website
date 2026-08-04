@@ -7,13 +7,13 @@ import { brandOgPalette, normalizeHex } from '@/lib/brand-theme'
 // Social card for an intent link (/i/<slug>) — the ASK is the hero: the
 // sentence in serif quotes, the one-tap promise under it, the guardrail
 // strip as the footer. Same palette + fonts as the /p and /r cards so every
-// Yeetful link on a timeline reads as one family. A creator's white-label
+// Pantessa link on a timeline reads as one family. A creator's white-label
 // brand re-inks the whole card (bg/logo/accent, luminance-derived text) so
 // their links look like THEIR links in the feed — house links stay pure
-// Yeetful, byte-identical to before.
+// Pantessa, byte-identical to before.
 
 export const runtime = 'nodejs'
-export const alt = 'A Yeetful intent link — one tap from ask to signed.'
+export const alt = 'A Pantessa intent link — one tap from ask to signed.'
 export const size = { width: 1200, height: 630 }
 export const contentType = 'image/png'
 
@@ -131,8 +131,8 @@ export default async function Image({ params }: Params) {
                   creator card used to read as a plain powered-by. */}
               {brand
                 ? live?.creator
-                  ? 'CALL · POWERED BY YEETFUL'
-                  : 'POWERED BY YEETFUL'
+                  ? 'CALL · POWERED BY PANTESSA'
+                  : 'POWERED BY PANTESSA'
                 : live?.creator
                   ? live.agent
                     ? `CALL BY ${live.agent.toUpperCase().slice(0, 18)}`

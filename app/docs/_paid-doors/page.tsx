@@ -38,7 +38,7 @@ export default function PaidDoorsDocsPage() {
       </p>
       <h1 className="docs__h1">One MCP, two doors</h1>
       <p className="docs__lead">
-        Every Yeetful MCP serves a <strong>free door</strong> at <code>/mcp</code> — rate-limited,
+        Every Pantessa MCP serves a <strong>free door</strong> at <code>/mcp</code> — rate-limited,
         no account. Some add a <strong>paid door</strong> at <code>/paid/mcp</code>:{' '}
         <em>identical tools</em>, no rate limit, no API key, no sign-up — your agent pays per
         call in USDC on Base over <Link href="/docs/x402">x402</Link>. If your agent has a wallet,

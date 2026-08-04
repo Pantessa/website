@@ -21,7 +21,7 @@ export default function FundingPage() {
       <h1 className="docs__h1">Funding (USDC on Base)</h1>
       <p className="docs__lead">
         Your agent pays per call in <strong>USDC on Base</strong>. Funding is just getting some USDC
-        to the wallet your agent signs with — there&apos;s no deposit into Yeetful, and no custody.
+        to the wallet your agent signs with — there&apos;s no deposit into Pantessa, and no custody.
         Your <Link href="/docs/expense-account">spend grant</Link> draws against that balance.
       </p>
 

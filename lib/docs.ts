@@ -36,9 +36,9 @@ export const DOCS_PAGES: DocsPage[] = [
   {
     slug: '',
     title: 'Overview',
-    seoTitle: 'Yeetful docs — the non-custodial back office for autonomous money',
+    seoTitle: 'Pantessa docs — the non-custodial back office for autonomous money',
     description:
-      'Say what should happen, once. Yeetful compiles it into deterministic guarded transactions only your own wallet can sign — priced, capped, receipted, killable. Three doors: embed it, trust it, pay it.',
+      'Say what should happen, once. Pantessa compiles it into deterministic guarded transactions only your own wallet can sign — priced, capped, receipted, killable. Three doors: embed it, trust it, pay it.',
     ready: true,
   },
 
@@ -48,7 +48,7 @@ export const DOCS_PAGES: DocsPage[] = [
     title: 'Intent links',
     seoTitle: 'Intent links — a link that carries an ask',
     description:
-      'Mint a short link that carries a plain-English ask. Whoever opens it connects their own wallet, Yeetful builds the guarded path, they sign. Funnels, A/B phrasings, storefronts, and partner limits.',
+      'Mint a short link that carries a plain-English ask. Whoever opens it connects their own wallet, Pantessa builds the guarded path, they sign. Funnels, A/B phrasings, storefronts, and partner limits.',
     ready: true,
     door: 'creator',
   },
@@ -57,7 +57,7 @@ export const DOCS_PAGES: DocsPage[] = [
     title: 'Creator earnings',
     seoTitle: 'Creator earnings — half the fee on your conversions',
     description:
-      'Creators earn half of Yeetful’s 0.20% fee on the fee-bearing conversions their links produce — server-truth accounting, sales and transfers never charged, claims paid as USDC on Base from $10.',
+      'Creators earn half of Pantessa’s 0.20% fee on the fee-bearing conversions their links produce — server-truth accounting, sales and transfers never charged, claims paid as USDC on Base from $10.',
     ready: true,
     door: 'creator',
   },
@@ -68,16 +68,16 @@ export const DOCS_PAGES: DocsPage[] = [
     title: 'Site buttons',
     seoTitle: 'Site buttons — a money button any site can wear',
     description:
-      'Generate a copy-paste HTML button that carries an ask. Visitors tap it, sign with their own wallet on Yeetful, and return to your site — no script, no iframe, no keys.',
+      'Generate a copy-paste HTML button that carries an ask. Visitors tap it, sign with their own wallet on Pantessa, and return to your site — no script, no iframe, no keys.',
     ready: true,
     door: 'host',
   },
   {
     slug: 'embed',
     title: 'Embed the chat',
-    seoTitle: 'Embed the Yeetful chat — five lines on your own site',
+    seoTitle: 'Embed the Pantessa chat — five lines on your own site',
     description:
-      'Mount the full Yeetful chat on any site in five lines — guarded transactions, receipts, and signing with the wallet already connected to your page. Embed keys, postMessage API, telemetry.',
+      'Mount the full Pantessa chat on any site in five lines — guarded transactions, receipts, and signing with the wallet already connected to your page. Embed keys, postMessage API, telemetry.',
     ready: true,
     door: 'host',
   },
@@ -86,7 +86,7 @@ export const DOCS_PAGES: DocsPage[] = [
   {
     slug: 'first-five-minutes',
     title: 'Your first five minutes',
-    seoTitle: 'Your first five minutes with Yeetful',
+    seoTitle: 'Your first five minutes with Pantessa',
     description:
       'Land, ask, sign, then tell it once — the path from a free first ask to a standing intent, with a guarded transaction and a receipt at every step. No wallet needed to start.',
     ready: true,
@@ -95,7 +95,7 @@ export const DOCS_PAGES: DocsPage[] = [
   {
     slug: 'trust',
     title: 'Trust: the guardrails',
-    seoTitle: 'Why you can sign what Yeetful builds',
+    seoTitle: 'Why you can sign what Pantessa builds',
     description:
       'What non-custodial means here: the model never writes calldata, every build is re-checked fail-closed, priced, and receipted, your wallet is the only thing that can sign, and one switch stops everything.',
     ready: true,
@@ -106,7 +106,7 @@ export const DOCS_PAGES: DocsPage[] = [
     title: 'Native venues & guards',
     seoTitle: 'The transaction layer — venues, builders, and guards',
     description:
-      'Every venue Yeetful builds natively — CoW, Uniswap v3/v4, NEAR Intents bridges, Aave, Hyperliquid, Snapshot — and the guard that re-derives each artifact before your wallet ever sees it.',
+      'Every venue Pantessa builds natively — CoW, Uniswap v3/v4, NEAR Intents bridges, Aave, Hyperliquid, Snapshot — and the guard that re-derives each artifact before your wallet ever sees it.',
     ready: true,
     door: 'user',
   },
@@ -151,7 +151,7 @@ export const DOCS_PAGES: DocsPage[] = [
     title: 'Snapshot DAO voting',
     seoTitle: 'Snapshot voting — browse proposals and vote from chat',
     description:
-      'Browse live Snapshot DAO proposals in the Yeetful chat and cast a vote your own wallet signs (EIP-712) — pay-per-call over x402 on Base, no API key.',
+      'Browse live Snapshot DAO proposals in the Pantessa chat and cast a vote your own wallet signs (EIP-712) — pay-per-call over x402 on Base, no API key.',
     ready: true,
     door: 'user',
   },
@@ -160,7 +160,7 @@ export const DOCS_PAGES: DocsPage[] = [
     title: 'Create an account (email)',
     seoTitle: 'Create an account — email wallet, no extension',
     description:
-      'Sign up with just an email: Yeetful creates a Coinbase non-custodial wallet you control, no extension needed. Once connected it works exactly like MetaMask.',
+      'Sign up with just an email: Pantessa creates a Coinbase non-custodial wallet you control, no extension needed. Once connected it works exactly like MetaMask.',
     ready: true,
     door: 'user',
   },
@@ -171,7 +171,7 @@ export const DOCS_PAGES: DocsPage[] = [
     title: 'Paid MCP doors (x402)',
     seoTitle: 'Paid doors — pay-per-call MCPs, no API key',
     description:
-      'Every Yeetful MCP has a free door; some add a paid one. Same tools, no API key, no account: your agent pays per call in USDC on Base over x402. Try fund_and_build for $0.02.',
+      'Every Pantessa MCP has a free door; some add a paid one. Same tools, no API key, no account: your agent pays per call in USDC on Base over x402. Try fund_and_build for $0.02.',
     ready: false, // links-first purge 2026-07-22 — functionality live, docs demoted
     door: 'agent',
   },
@@ -198,7 +198,7 @@ export const DOCS_PAGES: DocsPage[] = [
     title: 'Agents & budgets',
     seoTitle: 'Agents & budgets — a daily cap for every connected app',
     description:
-      'On Yeetful an agent IS an API key: give each connected app a per-day USD budget the SDK pre-flights via /api/agent/policy and enforces before paying.',
+      'On Pantessa an agent IS an API key: give each connected app a per-day USD budget the SDK pre-flights via /api/agent/policy and enforces before paying.',
     ready: false, // links-first purge 2026-07-22 — functionality live, docs demoted
     door: 'agent',
   },
@@ -207,7 +207,7 @@ export const DOCS_PAGES: DocsPage[] = [
     title: 'Teams & organizations',
     seoTitle: 'Teams — a shared expense account for your whole org',
     description:
-      'Yeetful organizations: invite teammates by wallet address, share agent keys, set a two-level budget (org daily cap over per-key budgets), export the report.',
+      'Pantessa organizations: invite teammates by wallet address, share agent keys, set a two-level budget (org daily cap over per-key budgets), export the report.',
     ready: false, // links-first purge 2026-07-22 — functionality live, docs demoted
     door: 'agent',
   },
@@ -223,7 +223,7 @@ export const DOCS_PAGES: DocsPage[] = [
   {
     slug: 'ledger-sync',
     title: 'Dashboard ledger sync',
-    seoTitle: 'Ledger sync — agent receipts on your Yeetful dashboard',
+    seoTitle: 'Ledger sync — agent receipts on your Pantessa dashboard',
     description:
       'Mint a yf_ API key, set YEETFUL_GRANT_ID, and every settlement and denial your agent makes lands in your yeetful.com dashboard audit feed.',
     ready: false, // links-first purge 2026-07-22 — functionality live, docs demoted
@@ -243,7 +243,7 @@ export const DOCS_PAGES: DocsPage[] = [
     title: 'Funding (USDC on Base)',
     seoTitle: 'Funding — get USDC on Base for x402 calls',
     description:
-      'How to fund a Yeetful account with USDC on Base: where to get it, how much to keep (EIP-3009 is gasless), mainnet vs Base Sepolia, and what happens if you run dry.',
+      'How to fund a Pantessa account with USDC on Base: where to get it, how much to keep (EIP-3009 is gasless), mainnet vs Base Sepolia, and what happens if you run dry.',
     ready: false, // links-first purge 2026-07-22 — functionality live, docs demoted
     door: 'agent',
   },
@@ -252,14 +252,14 @@ export const DOCS_PAGES: DocsPage[] = [
     title: 'Router: the paid catalog',
     seoTitle: 'Router — route MCP calls by plain-English ask',
     description:
-      'Router is Yeetful’s MCP routing engine: ask in plain English, it weighs every route, picks the cheapest proven one under your cap, and your agent pays per call.',
+      'Router is Pantessa’s MCP routing engine: ask in plain English, it weighs every route, picks the cheapest proven one under your cap, and your agent pays per call.',
     ready: false, // links-first purge 2026-07-22 — functionality live, docs demoted
     door: 'agent',
   },
   {
     slug: 'claude-code',
     title: 'Add with Claude Code',
-    seoTitle: 'Add Yeetful to your agent with one Claude prompt',
+    seoTitle: 'Add Pantessa to your agent with one Claude prompt',
     description:
       'Paste one prompt into Claude Code and it wires the yeetful SDK into your agent, then walks you through minting an API key and copying your grant id.',
     ready: false, // links-first purge 2026-07-22 — functionality live, docs demoted
@@ -279,14 +279,14 @@ export const DOCS_PAGES: DocsPage[] = [
     title: 'Track MCP earnings',
     seoTitle: 'Track MCP earnings — report paid calls to your dashboard',
     description:
-      'Add one async, non-blocking call to your MCP and every paid request shows up on your Yeetful dashboard: total earned, last 30 days, calls served, and paying agents.',
+      'Add one async, non-blocking call to your MCP and every paid request shows up on your Pantessa dashboard: total earned, last 30 days, calls served, and paying agents.',
     ready: false, // links-first purge 2026-07-22 — functionality live, docs demoted
     door: 'agent',
   },
   {
     slug: 'launchpad',
     title: 'Launchpad: claim & launch',
-    seoTitle: 'Yeetful launchpad — claim your MCP and launch its token',
+    seoTitle: 'Pantessa launchpad — claim your MCP and launch its token',
     description:
       'Own a piece of an MCP. Claim it by signing in with the wallet it is paid to, launch a token, and earn a share of every paid call in USDC as agents use it.',
     // Token launching shelved 2026-07-15 — UI removed everywhere, code kept
@@ -298,18 +298,18 @@ export const DOCS_PAGES: DocsPage[] = [
   {
     slug: 'terms',
     title: 'Terms of Service',
-    seoTitle: 'Terms of Service — Yeetful',
+    seoTitle: 'Terms of Service — Pantessa',
     description:
-      'The terms for using Yeetful: a non-custodial control plane for agent payments. Acceptable use, crypto risk, third-party services, disclaimers, and liability.',
+      'The terms for using Pantessa: a non-custodial control plane for agent payments. Acceptable use, crypto risk, third-party services, disclaimers, and liability.',
     ready: true,
     group: 'legal',
   },
   {
     slug: 'privacy',
     title: 'Privacy Policy',
-    seoTitle: 'Privacy Policy — Yeetful',
+    seoTitle: 'Privacy Policy — Pantessa',
     description:
-      'What Yeetful collects and why: wallet addresses, email/social sign-in via Coinbase CDP, usage receipts, and on-chain data. How it is used, shared, and kept.',
+      'What Pantessa collects and why: wallet addresses, email/social sign-in via Coinbase CDP, usage receipts, and on-chain data. How it is used, shared, and kept.',
     ready: true,
     group: 'legal',
   },
@@ -344,8 +344,8 @@ export function docsJsonLd(page: DocsPage): string {
       headline: page.seoTitle,
       description: page.description,
       url,
-      author: { '@type': 'Organization', name: 'Yeetful', url: SITE },
-      publisher: { '@type': 'Organization', name: 'Yeetful', url: SITE },
+      author: { '@type': 'Organization', name: 'Pantessa', url: SITE },
+      publisher: { '@type': 'Organization', name: 'Pantessa', url: SITE },
     },
     {
       '@context': 'https://schema.org',

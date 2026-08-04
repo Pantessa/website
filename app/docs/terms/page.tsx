@@ -20,9 +20,9 @@ export default function TermsPage() {
       </p>
       <h1 className="docs__h1">Terms of Service</h1>
       <p className="docs__lead">
-        These terms govern your use of Yeetful. Yeetful is a <strong>non-custodial</strong> control
+        These terms govern your use of Pantessa. Pantessa is a <strong>non-custodial</strong> control
         plane and routing engine for agent payments — you connect or create your own wallet, and you
-        pay third-party services directly. Please read these terms carefully; by using Yeetful you
+        pay third-party services directly. Please read these terms carefully; by using Pantessa you
         agree to them.
       </p>
 
@@ -32,24 +32,24 @@ export default function TermsPage() {
         </p>
         <p>
           These Terms of Service (&ldquo;Terms&rdquo;) are a binding agreement between you and{' '}
-          <strong>Yeetful Inc.</strong> (&ldquo;Yeetful,&rdquo; &ldquo;we,&rdquo;
-          &ldquo;us&rdquo;), governing your access to and use of the Yeetful website, dashboard,
+          <strong>Pantessa Inc.</strong> (&ldquo;Pantessa,&rdquo; &ldquo;we,&rdquo;
+          &ldquo;us&rdquo;), governing your access to and use of the Pantessa website, dashboard,
           SDK, APIs, and related services (together, the &ldquo;Service&rdquo;). If you use the
           Service on behalf of an organization, you represent that you are authorized to bind that
           organization, and &ldquo;you&rdquo; includes that organization.
         </p>
 
-        <h2>1. What Yeetful is (and is not)</h2>
+        <h2>1. What Pantessa is (and is not)</h2>
         <p>
-          Yeetful lets AI agents pay for inference and data per call in USDC on the Base network
+          Pantessa lets AI agents pay for inference and data per call in USDC on the Base network
           using the <a href="https://www.x402.org">x402</a> standard, and provides spend controls
           (allowlists, per-call and per-day budgets, a freeze switch), receipts, and a routing
           engine that selects third-party MCP services on your behalf.
         </p>
         <p>
-          Yeetful is <strong>non-custodial</strong>. We do not take custody of your funds, private
+          Pantessa is <strong>non-custodial</strong>. We do not take custody of your funds, private
           keys, or crypto-assets. Payments settle directly from your wallet to third-party services
-          on a public blockchain. Yeetful is not a bank, money transmitter, exchange, broker,
+          on a public blockchain. Pantessa is not a bank, money transmitter, exchange, broker,
           custodian, or investment adviser, and the Service is not a financial product.
         </p>
 
@@ -95,7 +95,7 @@ export default function TermsPage() {
           </li>
           <li>
             infringe intellectual-property or privacy rights, or violate the terms of any
-            third-party service you reach through Yeetful;
+            third-party service you reach through Pantessa;
           </li>
           <li>
             use the Service to generate or distribute unlawful content, or to build a competing
@@ -111,13 +111,13 @@ export default function TermsPage() {
         <p>
           Calls are paid in USDC on Base. You fund and control your own wallet. Per-call prices are
           set by the third-party MCP services you choose or that the routing engine selects, not by
-          Yeetful, and may change at any time. Blockchain transactions are{' '}
+          Pantessa, and may change at any time. Blockchain transactions are{' '}
           <strong>irreversible</strong>; once signed and settled, a payment cannot be undone by us.
           You are responsible for network fees, for keeping sufficient balance, and for any taxes
           arising from your use.
         </p>
         <p>
-          Spend controls are enforced on a best-effort basis for the payments Yeetful executes or
+          Spend controls are enforced on a best-effort basis for the payments Pantessa executes or
           observes; they are not a guarantee against loss, and on externally-signed transactions
           they are advisory. You remain responsible for what your agents and keys authorize.
         </p>
@@ -150,7 +150,7 @@ export default function TermsPage() {
         <h2>9. Intellectual property</h2>
         <p>
           The Service, including its software, design, and content (excluding your content and
-          open-source components), is owned by Yeetful or its licensors and protected by law. We
+          open-source components), is owned by Pantessa or its licensors and protected by law. We
           grant you a limited, non-exclusive, non-transferable, revocable right to use the Service
           under these Terms. Our SDK and other components released under an open-source license are
           governed by that license. You retain ownership of content you submit, and grant us a
@@ -177,19 +177,19 @@ export default function TermsPage() {
 
         <h2>12. Limitation of liability</h2>
         <p>
-          To the maximum extent permitted by law, Yeetful and its affiliates, officers, and agents
+          To the maximum extent permitted by law, Pantessa and its affiliates, officers, and agents
           will not be liable for any indirect, incidental, special, consequential, exemplary, or
           punitive damages, or for any loss of profits, data, goodwill, or crypto-assets, arising
           out of or relating to the Service. To the maximum extent permitted by law, our total
           aggregate liability for all claims relating to the Service will not exceed the greater of
-          the amount of fees you paid to Yeetful (as distinct from third-party services) in the
+          the amount of fees you paid to Pantessa (as distinct from third-party services) in the
           three months before the claim, or <strong>USD $100</strong>. Some jurisdictions do not
           allow certain limitations, so some of the above may not apply to you.
         </p>
 
         <h2>13. Indemnification</h2>
         <p>
-          You agree to indemnify and hold harmless Yeetful and its affiliates from any claims,
+          You agree to indemnify and hold harmless Pantessa and its affiliates from any claims,
           losses, and expenses (including reasonable legal fees) arising from your use of the
           Service, your content, or your violation of these Terms or applicable law.
         </p>

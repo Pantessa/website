@@ -9,7 +9,7 @@ import Footer from '@/components/Footer'
  * checkout are the PricingPlans client child. The same plan config powers
  * the dashboard plan page, so numbers can't drift. */
 
-const TITLE = 'Pricing — Yeetful'
+const TITLE = 'Pricing — Pantessa'
 const DESCRIPTION =
   'Three plans metered in YEET credits, with a generous free tier. House-model answers spend credits; on-chain calls stay pay-per-call from your own wallet. Monthly billing via Stripe.'
 
@@ -24,11 +24,11 @@ export const metadata: Metadata = {
 const JSON_LD = JSON.stringify({
   '@context': 'https://schema.org',
   '@type': 'Product',
-  name: 'Yeetful embeddable agent chat',
+  name: 'Pantessa embeddable agent chat',
   description: DESCRIPTION,
   offers: PLANS.map((p) => ({
     '@type': 'Offer',
-    name: `Yeetful ${p.name}`,
+    name: `Pantessa ${p.name}`,
     price: String(p.priceUsd),
     priceCurrency: 'USD',
   })),
@@ -37,7 +37,7 @@ const JSON_LD = JSON.stringify({
 const FAQ: { q: string; a: string }[] = [
   {
     q: 'How do creator kickbacks work?',
-    a: "Yeetful takes a 0.20% fee on fee-bearing swap conversions — and when the conversion came through your intent link, half of that fee is yours. Earnings accrue automatically from server-truth signed turns; claims open at $10 and pay out in USDC on Base. Every plan earns the same split; plans differ only in how many links can be active at once.",
+    a: "Pantessa takes a 0.20% fee on fee-bearing swap conversions — and when the conversion came through your intent link, half of that fee is yours. Earnings accrue automatically from server-truth signed turns; claims open at $10 and pay out in USDC on Base. Every plan earns the same split; plans differ only in how many links can be active at once.",
   },
   {
     q: 'What is a YEET credit?',
@@ -69,7 +69,7 @@ export default function PricingPage() {
               the embeddable chat. Plans meter <strong>active links</strong> and{' '}
               <strong>YEET credits</strong>; on-chain calls stay pay-per-call from your users&rsquo;
               own wallets. And every plan earns: creators keep{' '}
-              <strong>half of Yeetful&rsquo;s 0.20% fee</strong> on their links&rsquo; conversions.
+              <strong>half of Pantessa&rsquo;s 0.20% fee</strong> on their links&rsquo; conversions.
             </p>
           </div>
 
@@ -86,7 +86,7 @@ export default function PricingPage() {
 
           <p className="pricing__enterprise">
             Running a top-ten venue or need custom terms?{' '}
-            <a href="mailto:hello@yeetful.com?subject=Yeetful%20Enterprise">Talk to us</a> — SSO,
+            <a href="mailto:hello@yeetful.com?subject=Pantessa%20Enterprise">Talk to us</a> — SSO,
             custom credit pools, and co-marketing live there.
           </p>
         </section>

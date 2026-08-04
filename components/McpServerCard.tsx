@@ -79,7 +79,7 @@ export default function McpServerCard({ server }: McpServerCardProps) {
       <div className="card__foot">
         <div className="card__badges">
           {server.gated === false ? (
-            <span className="badge badge--price mono" style={{ color: ACCENT, borderColor: ACCENT }} title="No payment gate — free MCP by Yeetful, rate-limited">
+            <span className="badge badge--price mono" style={{ color: ACCENT, borderColor: ACCENT }} title="No payment gate — free MCP by Pantessa, rate-limited">
               FREE
             </span>
           ) : (
@@ -89,7 +89,7 @@ export default function McpServerCard({ server }: McpServerCardProps) {
             <span
               className="badge mono"
               style={{ color: ACCENT, borderColor: ACCENT }}
-              title={`${server.reputation.settled} settled paid calls via Yeetful`}
+              title={`${server.reputation.settled} settled paid calls via Pantessa`}
             >
               ✓ {Math.round(server.reputation.settleRate * 100)}% · {server.reputation.settled}
             </span>

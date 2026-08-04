@@ -1,6 +1,6 @@
 'use client'
 
-// The embeddable chat surface (/embed) — the full Yeetful chat (receipts,
+// The embeddable chat surface (/embed) — the full Pantessa chat (receipts,
 // guardrails, sign/order/tx buttons) rendered chrome-less inside a
 // cross-origin iframe, scoped to a caller-selected MCP set. Guests chat
 // immediately (burner mode). Signing: with an SDK-0.9 host the HOST page's
@@ -267,11 +267,11 @@ export default function EmbedChat({
           target="_blank"
           rel="noopener noreferrer"
           className="flex-shrink-0 inline-flex items-center gap-1.5 no-underline"
-          title="Open the full Yeetful chat"
+          title="Open the full Pantessa chat"
         >
           <YeetfulMark size={16} />
           <span className="text-[12px] font-semibold text-[color:var(--fg)]" style={{ fontFamily: 'var(--font-display)' }}>
-            Yeetful chat
+            Pantessa chat
           </span>
         </a>
         {resolved.map((server) => (

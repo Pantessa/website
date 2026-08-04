@@ -21,7 +21,7 @@ export default function CreatorEarningsDocsPage() {
       <h1 className="docs__h1">Creator earnings</h1>
       <p className="docs__lead">
         When someone signs a conversion through your <Link href="/docs/links">intent link</Link>,
-        you earn <strong>half of Yeetful&apos;s 0.20% fee</strong> — 10 basis points of the
+        you earn <strong>half of Pantessa&apos;s 0.20% fee</strong> — 10 basis points of the
         notional. A $100 stock buy through your link earns you $0.10; a creator whose audience
         moves $100k through their links has earned $100. No token, no points: a cut of real fees
         on real conversions.
@@ -31,7 +31,7 @@ export default function CreatorEarningsDocsPage() {
         <h2>What earns — and what never does</h2>
         <p>
           The rule is <strong>conversions, not movements</strong>. The fee exists only where
-          Yeetful&apos;s routing chose a price for the signer — one asset becoming another
+          Pantessa&apos;s routing chose a price for the signer — one asset becoming another
           through the guarded venue cascade:
         </p>
         <ul>
@@ -78,9 +78,9 @@ export default function CreatorEarningsDocsPage() {
         <h2>Disclosure</h2>
         <p>
           Every creator-minted link page tells the visitor plainly: <em>&ldquo;The creator of
-          this link earns half of Yeetful&apos;s 0.20% conversion fee. Sales, transfers, and
+          this link earns half of Pantessa&apos;s 0.20% conversion fee. Sales, transfers, and
           bridges are always fee-free.&rdquo;</em> The visitor&apos;s price is identical with or
-          without your link — your cut comes out of Yeetful&apos;s fee, not on top of it.
+          without your link — your cut comes out of Pantessa&apos;s fee, not on top of it.
         </p>
       </div>
     </>

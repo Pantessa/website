@@ -18,7 +18,7 @@ export const FREE_FLEET_SLUGS = [
 // The default working set a brand-new visitor lands on in chat: Uniswap +
 // Snapshot + Hyperliquid (each carries a connected-wallet splash source, so a
 // fresh view with a wallet immediately renders the dashboard building itself)
-// PLUS Yeetful Wallet, the internal tool (yeetful-tool-*) that answers "show
+// PLUS Pantessa Wallet, the internal tool (yeetful-tool-*) that answers "show
 // my portfolio" and re-reads fresh balances after a swap settles. CoW is in
 // the browsable fleet but left out of the auto-on set to keep the splash
 // focused. NOTE: /embed caps its working set at 4 (EmbedChat MAX_MCPS) —
@@ -42,7 +42,7 @@ export const FREE_FLEET_FALLBACK: McpServer[] = [
     slug: 'uniswap-free',
     name: 'Uniswap (Free)',
     description:
-      'Uniswap v3 + v4 on Base, free and non-gated: live quotes across every fee tier (QuoterV2), spot prices, pool state, and deterministic swap-transaction building the user signs. Builds only — never holds keys, never submits. Rate-limited. By Yeetful.',
+      'Uniswap v3 + v4 on Base, free and non-gated: live quotes across every fee tier (QuoterV2), spot prices, pool state, and deterministic swap-transaction building the user signs. Builds only — never holds keys, never submits. Rate-limited. By Pantessa.',
     category: 'Trading',
     websiteUrl: 'https://github.com/Yeetful/free-mcps',
     color: null,
@@ -59,7 +59,7 @@ export const FREE_FLEET_FALLBACK: McpServer[] = [
     slug: 'snapshot-free',
     name: 'Snapshot DAO (Free)',
     description:
-      'Snapshot DAO governance, free and non-gated: browse spaces, proposals, and votes, then build the EIP-712 vote the user signs with their own wallet and relay it to the sequencer. The server never signs, never holds keys. Rate-limited. By Yeetful.',
+      'Snapshot DAO governance, free and non-gated: browse spaces, proposals, and votes, then build the EIP-712 vote the user signs with their own wallet and relay it to the sequencer. The server never signs, never holds keys. Rate-limited. By Pantessa.',
     category: 'Data',
     websiteUrl: 'https://github.com/Yeetful/free-mcps',
     color: null,
@@ -76,7 +76,7 @@ export const FREE_FLEET_FALLBACK: McpServer[] = [
     slug: 'cow-free',
     name: 'CoW Protocol (Free)',
     description:
-      'CoW Protocol, free and non-gated: live order-book quotes, MEV-protected swap + limit orders built into the exact EIP-712 order the user signs, open orders, trade history, portfolio, solver competition, and the official CoW docs (bundled, searchable). Builds only — never holds keys, never submits unsigned. Rate-limited. By Yeetful.',
+      'CoW Protocol, free and non-gated: live order-book quotes, MEV-protected swap + limit orders built into the exact EIP-712 order the user signs, open orders, trade history, portfolio, solver competition, and the official CoW docs (bundled, searchable). Builds only — never holds keys, never submits unsigned. Rate-limited. By Pantessa.',
     category: 'Trading',
     websiteUrl: 'https://github.com/Yeetful/free-mcps',
     color: null,
@@ -93,7 +93,7 @@ export const FREE_FLEET_FALLBACK: McpServer[] = [
     slug: 'hyperliquid-free',
     name: 'Hyperliquid (Free)',
     description:
-      'Hyperliquid, free and non-gated: live perp + spot markets, prices, orderbooks, candles, funding, and the full per-address account surface — positions, PnL, open orders, fills — plus a real-time settlement watch. Read-only by construction. Rate-limited. By Yeetful.',
+      'Hyperliquid, free and non-gated: live perp + spot markets, prices, orderbooks, candles, funding, and the full per-address account surface — positions, PnL, open orders, fills — plus a real-time settlement watch. Read-only by construction. Rate-limited. By Pantessa.',
     category: 'Trading',
     websiteUrl: 'https://github.com/Yeetful/free-mcps',
     color: null,
@@ -110,7 +110,7 @@ export const FREE_FLEET_FALLBACK: McpServer[] = [
     slug: 'opensea-free',
     name: 'OpenSea NFTs (Free)',
     description:
-      'OpenSea NFTs, free and non-gated: wallet NFT portfolios with images across Ethereum/Base/Arbitrum, collection floor prices and stats, live listings and best offers, plus construction-only NFT transactions — ERC-721/1155 transfers, Seaport sell listings the user signs gasless, cancels, and guarded buys. Ownership verified on-chain before any build; never holds keys, never signs. Rate-limited. By Yeetful.',
+      'OpenSea NFTs, free and non-gated: wallet NFT portfolios with images across Ethereum/Base/Arbitrum, collection floor prices and stats, live listings and best offers, plus construction-only NFT transactions — ERC-721/1155 transfers, Seaport sell listings the user signs gasless, cancels, and guarded buys. Ownership verified on-chain before any build; never holds keys, never signs. Rate-limited. By Pantessa.',
     category: 'NFTs',
     websiteUrl: 'https://github.com/Yeetful/free-mcps',
     color: null,
@@ -125,9 +125,9 @@ export const FREE_FLEET_FALLBACK: McpServer[] = [
   {
     id: 'yeetful-tool-wallet',
     slug: 'yeetful-tool-wallet',
-    name: 'Yeetful Wallet',
+    name: 'Pantessa Wallet',
     description:
-      'Multichain wallet reads — an internal Yeetful tool: USD-priced whole-wallet portfolios across 9 top EVM chains (rendered as a rich card in chat), gas balances, precise token balances, recent transfers with scam-symbol flagging, and transaction confirmation status. The fresh-data layer after any swap or transfer settles. Read-only by construction. Rate-limited. By Yeetful.',
+      'Multichain wallet reads — an internal Pantessa tool: USD-priced whole-wallet portfolios across 9 top EVM chains (rendered as a rich card in chat), gas balances, precise token balances, recent transfers with scam-symbol flagging, and transaction confirmation status. The fresh-data layer after any swap or transfer settles. Read-only by construction. Rate-limited. By Pantessa.',
     category: 'Wallets',
     websiteUrl: 'https://github.com/Yeetful/free-mcps',
     color: null,

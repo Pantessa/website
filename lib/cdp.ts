@@ -47,7 +47,7 @@ export async function getExpenseSmartAccount() {
   })
 }
 
-/** The account that pulls from the permission (Yeetful's spender). Any on-chain
+/** The account that pulls from the permission (Pantessa's spender). Any on-chain
  *  account works; a CDP-managed one keeps signing server-side. */
 export async function getSpenderAccount() {
   return cdp().evm.getOrCreateAccount({ name: 'yeetful-spender' })

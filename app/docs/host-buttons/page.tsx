@@ -24,7 +24,7 @@ export default function HostButtonsDocsPage() {
         <Link href="/links/embed">button generator</Link> mints an{' '}
         <Link href="/docs/links">intent link</Link> with your site as the return URL and hands
         you a copy-paste HTML snippet — <strong>no script, no iframe, no keys</strong>. Visitors
-        tap it, sign with their own wallet on Yeetful, and a &ldquo;Return to your site&rdquo;
+        tap it, sign with their own wallet on Pantessa, and a &ldquo;Return to your site&rdquo;
         button brings them back.
       </p>
 
@@ -65,7 +65,7 @@ export default function HostButtonsDocsPage() {
 
         <h2>Want the whole chat instead?</h2>
         <p>
-          A button hands visitors to Yeetful and back. If you want the full experience{' '}
+          A button hands visitors to Pantessa and back. If you want the full experience{' '}
           <em>inside</em> your site — the chat mounted on your page, signing with the wallet
           your page already has connected — that&apos;s the five-line{' '}
           <Link href="/docs/embed">embed</Link>. Buttons for reach, embed for depth; they share

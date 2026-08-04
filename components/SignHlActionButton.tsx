@@ -211,7 +211,7 @@ export default function SignHlActionButton({
             className="inline-flex items-center gap-1.5 text-[12px] font-medium px-3 py-1.5 max-lg:min-h-10 rounded-full border border-[var(--line-2)] text-[color:var(--muted)] hover:text-white hover:border-white disabled:opacity-50 transition-colors"
             title={
               feeStep
-                ? `One-time approval capping the builder fee at ${feeStep.maxFeeRate} for Yeetful — after this, orders carry it with no extra signature`
+                ? `One-time approval capping the builder fee at ${feeStep.maxFeeRate} for Pantessa — after this, orders carry it with no extra signature`
                 : pre
                   ? `Sign the ${pre.expected.leverage}x leverage update first, then the order`
                   : 'Sign this Hyperliquid order with your wallet and execute it'

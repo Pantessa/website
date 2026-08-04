@@ -50,7 +50,7 @@ export async function POST(req: NextRequest) {
       ? { product: productId }
       : {
           product_data: {
-            name: `Yeetful ${plan.name}`,
+            name: `Pantessa ${plan.name}`,
             description: `${plan.credits.toLocaleString()} YEET credits / month — ${plan.tagline}`,
           },
         }),

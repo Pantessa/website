@@ -188,7 +188,7 @@ export async function runGovernanceTurn(opts: {
   intent: GovernanceIntent
   walletAddress?: string
   emit: GovEmit
-  /** Optional paid summarizer (Yeetful Claude): turns the gathered facts into a
+  /** Optional paid summarizer (Pantessa Claude): turns the gathered facts into a
    *  conversational overview. Returns null when unavailable/blocked → free template. */
   synthesize?: (prompt: string) => Promise<string | null>
   /** The previous turns' structured state (RR2) — the space we were operating
@@ -309,7 +309,7 @@ export async function runGovernanceTurn(opts: {
     const where = spaceName ? ` in **${spaceName}**` : ''
     const tail = `Say e.g. “vote For on ${proposals[0].title}” — or just “vote For on 1” — and I’ll prepare the EIP-712 signature.`
 
-    // Conversational overview via Yeetful Claude (paid) when available; the
+    // Conversational overview via Pantessa Claude (paid) when available; the
     // structured list (titles + ids) is always appended so the user can act.
     if (synthesize) {
       const facts = proposals.slice(0, 10).map((p) => `- ${p.title}`).join('\n')
@@ -417,7 +417,7 @@ export async function runGovernanceTurn(opts: {
   const from = agentSignerAddress()
 
   // Build the EIP-712 (the general signing tool's input) + sign server-side.
-  const td = buildVoteTypedData({ from, space, proposalId: target.id, choice, reason: 'Cast by my Yeetful agent.' })
+  const td = buildVoteTypedData({ from, space, proposalId: target.id, choice, reason: 'Cast by my Pantessa agent.' })
   emit({ type: 'eip712', scheme: 'eip712', signer: `agent ${from.slice(0, 6)}…`, summary: `${describeTypedData(td)} — ${choiceLabel} on “${target.title}”` })
 
   // Agent mode: sign server-side + relay.

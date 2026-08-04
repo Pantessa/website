@@ -1,7 +1,7 @@
 #!/usr/bin/env tsx
 // Seed the FREE (non-gated) first-party funding-planner MCP —
 // `yeetful-tool-funding` (repo Yeetful/free-mcps, service
-// `yeetful-tool-funding`; the yeetful-tool-* prefix marks internal Yeetful
+// `yeetful-tool-funding`; the yeetful-tool-* prefix marks internal Pantessa
 // utility MCPs) — as a directory row with one mcp_endpoints child per TOOL,
 // mirroring seed-yeetful-tool-wallet.ts exactly. priceUsd '0' = explicitly
 // free.
@@ -47,12 +47,12 @@ const user = () =>
 const SERVICE = {
   slug: 'yeetful-tool-funding',
   // Display name only — the slug and funding-mcp.yeetful.com stay put so
-  // nothing referencing them breaks (renamed from "Yeetful Funding Planner",
+  // nothing referencing them breaks (renamed from "Pantessa Funding Planner",
   // 2026-07-28: the service is growing past funding into the finance layer —
   // the website's rebalance read wears this card).
-  name: 'Yeetful Finance',
+  name: 'Pantessa Finance',
   description:
-    '"Insufficient funds" is an offer, never a wall: when any action can\'t be funded (a stake, a supply, a deposit, a swap), this planner scans the wallet\'s movable ETH + USDC across Base/Arbitrum/Ethereum and returns an EXECUTABLE cross-chain funding plan — ordered NEAR Intents legs (same-token first, then stables), a destination gas leg when the wallet couldn\'t even sign the follow-up, and honest per-chain numbers when the whole wallet can\'t cover it. Construction-only: reads balances and prices, never signs, never submits; legs execute via the NEAR Intents MCP under its own deposit-address guard. Keyless, rate-limited. By Yeetful.',
+    '"Insufficient funds" is an offer, never a wall: when any action can\'t be funded (a stake, a supply, a deposit, a swap), this planner scans the wallet\'s movable ETH + USDC across Base/Arbitrum/Ethereum and returns an EXECUTABLE cross-chain funding plan — ordered NEAR Intents legs (same-token first, then stables), a destination gas leg when the wallet couldn\'t even sign the follow-up, and honest per-chain numbers when the whole wallet can\'t cover it. Construction-only: reads balances and prices, never signs, never submits; legs execute via the NEAR Intents MCP under its own deposit-address guard. Keyless, rate-limited. By Pantessa.',
   category: 'Wallets',
   kind: 'data',
   priceUsd: '0',
@@ -154,7 +154,7 @@ async function main() {
       priceUsd: '0',
       scheme: 'exact',
       network: 'multichain',
-      provider: 'Yeetful (free)',
+      provider: 'Pantessa (free)',
       position: i,
       parameters: t.params.length ? (t.params as unknown as object) : Prisma.DbNull,
     })),

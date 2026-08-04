@@ -89,7 +89,7 @@ export default function SpendPolicyPage() {
         </p>
         <ul>
           <li>
-            <strong>Yeetful&apos;s native venues</strong> (the Uniswap/LiFi/CoW/Aave/Hyperliquid/
+            <strong>Pantessa&apos;s native venues</strong> (the Uniswap/LiFi/CoW/Aave/Hyperliquid/
             OpenSea build layers) — you sign every one of those transactions yourself.
           </li>
           <li>
@@ -151,13 +151,13 @@ export default function SpendPolicyPage() {
         <h2>Where enforcement lives</h2>
         <ul>
           <li>
-            <strong>Chats and embeds Yeetful runs</strong> — enforced server-side at the build
+            <strong>Chats and embeds Pantessa runs</strong> — enforced server-side at the build
             gate and again at any submit relay. Instant and hard.
           </li>
           <li>
             <strong>External SDK agents</strong> paying from their own wallet — enforced by the
             SDK&apos;s grant in-process, refreshed from{' '}
-            <code>GET /api/agent/policy</code>. Yeetful cannot intercept another wallet&apos;s
+            <code>GET /api/agent/policy</code>. Pantessa cannot intercept another wallet&apos;s
             transfer in flight; the hard on-chain stop for adversarial cases is what Coinbase
             Spend Permissions add.
           </li>

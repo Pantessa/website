@@ -18,7 +18,7 @@ export async function POST(req: NextRequest) {
     try {
       const res = await fetch(url, {
         signal: controller.signal,
-        headers: { 'User-Agent': 'Yeetful-MetaFetcher/1.0' },
+        headers: { 'User-Agent': 'Pantessa-MetaFetcher/1.0' },
       })
       clearTimeout(timeout)
 

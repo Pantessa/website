@@ -16,7 +16,7 @@ export const POST = {
   slug: 'agentic-finance-from-one-prompt',
   title: 'Agentic finance runs on glue: one prompt, any on-chain action',
   description:
-    'Agents can now act on-chain from a single prompt. Yeetful is the glue — combining MCPs, live data, and a security layer that makes transactions bulletproof.',
+    'Agents can now act on-chain from a single prompt. Pantessa is the glue — combining MCPs, live data, and a security layer that makes transactions bulletproof.',
   tags: ['agentic-finance', 'mcp', 'x402', 'agents', 'security'],
   content: `Agentic finance stopped being a thesis this year. Exchanges ship MCP toolkits, chains run their own MCP servers, and the estimate floating around the desks is that most crypto trading volume is already machine-driven. An AI agent with a wallet can quote a swap, check a DAO proposal, or read funding rates — each through a different crypto MCP server, each from a plain-English prompt.
 
@@ -36,13 +36,13 @@ That single prompt touches a DEX for the quote, a price feed for sanity, a gover
 
 This is the product: **anything on-chain, from one prompt, whether a human typed it or an agent did.** The model reasons; the MCPs act; something in the middle has to stitch it together and keep it safe.
 
-That middle layer is Yeetful.
+That middle layer is Pantessa.
 
 ## Combining MCPs is where the leverage is
 
 Every crypto MCP server is an island. Uniswap's tools don't know Snapshot exists; Snapshot's don't know your swap just changed your voting power. An agent doing real work bounces from MCP to MCP to endpoint — quote here, resolve a token list there, check proposal state, build the transaction, settle — with as little human intervention as the risk allows.
 
-Yeetful's router does the bouncing. It reads the whole catalog, picks the right server *and* the right endpoint, fills the parameters (including who's asking — your address flows through as context, so "my open orders" just works), and pays per call in USDC over x402 when the data costs money. Swap on Uniswap while voting on any Snapshot DAO — including Uniswap's own — in the same turn, from the same sentence.
+Pantessa's router does the bouncing. It reads the whole catalog, picks the right server *and* the right endpoint, fills the parameters (including who's asking — your address flows through as context, so "my open orders" just works), and pays per call in USDC over x402 when the data costs money. Swap on Uniswap while voting on any Snapshot DAO — including Uniswap's own — in the same turn, from the same sentence.
 
 Agents that combine tools this way aren't a niche. They're where the whole industry is pointed:
 
@@ -52,7 +52,7 @@ Agents that combine tools this way aren't a niche. They're where the whole indus
 
 ## The security layer is the product
 
-An agent that can touch four MCPs in one turn can also lose your money four ways in one turn. So Yeetful's focus is the part everyone else calls a follow-up: making the transaction path bulletproof.
+An agent that can touch four MCPs in one turn can also lose your money four ways in one turn. So Pantessa's focus is the part everyone else calls a follow-up: making the transaction path bulletproof.
 
 - **Guardrails fire on every step, not just the first.** A multi-step chain — approve, then swap — re-quotes at the moment each step advances and re-runs policy on the fresh numbers. Stale quotes don't get signed.
 - **Signatures break the loop.** The agent plans and builds; it never holds your keys. Anything that moves funds or casts a vote stops and waits for a signature.
@@ -63,7 +63,7 @@ Bulletproof isn't a vibe. It's re-checking the transaction every time the world 
 
 ## Making MCPs more powerful than they shipped
 
-Most MCP servers were built to answer one tool call, not to survive an agent economy. Yeetful adds the missing pieces from the outside: we grade every server in the catalog on whether an agent can actually route to it — schemas, parameter hints, planner behavior — and overlay what's missing, so a server with thin docs still gets picked correctly and called safely. The better the MCPs get, the more one prompt can do; the more one prompt can do, the more the security layer matters.
+Most MCP servers were built to answer one tool call, not to survive an agent economy. Pantessa adds the missing pieces from the outside: we grade every server in the catalog on whether an agent can actually route to it — schemas, parameter hints, planner behavior — and overlay what's missing, so a server with thin docs still gets picked correctly and called safely. The better the MCPs get, the more one prompt can do; the more one prompt can do, the more the security layer matters.
 
 ## Where this goes
 

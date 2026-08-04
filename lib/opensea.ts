@@ -25,7 +25,7 @@ export const OPENSEA_FEE_RECIPIENT = '0x0000a26b00c1f0Df003000390027140000fAa719
 const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000'
 const ZERO_HASH = '0x0000000000000000000000000000000000000000000000000000000000000000'
 
-/** ChainId ↔ OpenSea chain slug (the three chains OpenSea + Yeetful share). */
+/** ChainId ↔ OpenSea chain slug (the three chains OpenSea + Pantessa share). */
 export const OPENSEA_CHAINS: Record<number, string> = { 1: 'ethereum', 8453: 'base', 42161: 'arbitrum' }
 export const openseaSlugOf = (chainId: number): string | null => OPENSEA_CHAINS[chainId] ?? null
 export const openseaChainIdOf = (slug: string): number | null => {

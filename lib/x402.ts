@@ -7,7 +7,7 @@ import type { PrivateKeyAccount } from "viem/accounts";
  * The published `x402-fetch` (v1.2.0) only implements x402 **v1**. Our two
  * upstreams disagree on protocol version:
  *
- *   - Yeetful Anthropic MCP → x402 **v1** (network "base", `maxAmountRequired`,
+ *   - Pantessa Anthropic MCP → x402 **v1** (network "base", `maxAmountRequired`,
  *     payment sent in the `X-PAYMENT` header, flat `{scheme, network, payload}`).
  *   - TripAdvisor (paysponge) → x402 **v2** (CAIP-2 network "eip155:8453",
  *     `amount`, payment sent in the `PAYMENT-SIGNATURE` header, payload wrapped

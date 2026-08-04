@@ -35,7 +35,7 @@ export async function POST(req: NextRequest) {
   const handle = normalizeHandle(String(body.handle ?? ''))
   if (!handle) {
     return NextResponse.json(
-      { error: 'Handles are 3–20 characters of a–z, 0–9, and hyphens (no edge hyphens), and can’t shadow a Yeetful page.' },
+      { error: 'Handles are 3–20 characters of a–z, 0–9, and hyphens (no edge hyphens), and can’t shadow a Pantessa page.' },
       { status: 400 },
     )
   }

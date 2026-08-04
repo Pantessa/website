@@ -114,7 +114,7 @@ export default function ClaimMcp({ slug, ownerAddress }: { slug: string; ownerAd
   // Signed in.
   if (requiredWallet === undefined) return <p style={note}>Checking the MCP&apos;s payee…</p>
   if (requiredWallet === null) {
-    return <p style={note}>This MCP can&apos;t be self-verified — it needs admin verification. Contact Yeetful.</p>
+    return <p style={note}>This MCP can&apos;t be self-verified — it needs admin verification. Contact Pantessa.</p>
   }
 
   const matches = address === requiredWallet.toLowerCase()

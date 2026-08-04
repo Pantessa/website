@@ -11,11 +11,11 @@ import { ogMarkSvg } from '@/lib/og-marks'
 //
 // The card is the receipt: the chat's ask as a big serif quote, the money
 // moved as the emerald payoff line, and the agents that did the work as a
-// medallion chain fusing into the Yeetful core (the fusion hero's language,
+// medallion chain fusing into the Pantessa core (the fusion hero's language,
 // same palette + fonts as app/opengraph-image.tsx).
 
 export const runtime = 'nodejs'
-export const alt = 'A shared Yeetful chat — guarded transactions from plain English.'
+export const alt = 'A shared Pantessa chat — guarded transactions from plain English.'
 export const size = { width: 1200, height: 630 }
 export const contentType = 'image/png'
 
@@ -61,7 +61,7 @@ export default async function Image({ params }: Params) {
   const moved = moneyMovedOf(jobs as Awaited<ReturnType<typeof getJobs>>)
   const agents = servers.display.slice(0, 3)
 
-  const title = chat?.title ?? 'A shared Yeetful chat'
+  const title = chat?.title ?? 'A shared Pantessa chat'
   // The serif quote scales down as the ask gets longer (titles are already
   // truncated at share time, so two steps cover the range).
   const titleSize = title.length > 34 ? 58 : 72
@@ -104,7 +104,7 @@ export default async function Image({ params }: Params) {
           <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src={toDataUri(MARK)} width={46} height={46} alt="" />
-            <span style={{ color: INK, fontSize: 34, fontWeight: 600, letterSpacing: -1.2 }}>yeetful</span>
+            <span style={{ color: INK, fontSize: 34, fontWeight: 600, letterSpacing: -1.2 }}>pantessa</span>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 17, letterSpacing: 4, color: MUTED }}>
             <div style={{ display: 'flex', width: 8, height: 8, borderRadius: 4, background: ACCENT }} />

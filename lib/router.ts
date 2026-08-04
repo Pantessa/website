@@ -163,7 +163,7 @@ export interface RouteOptions {
  * paying our OWN MCP is a from==to x402 self-transfer that the token rejects —
  * routing inference to a third-party payTo (ChatGPT) keeps payer ≠ payTo and
  * lets the call settle. Override with DEFAULT_INFERENCE_SLUG when the payer is
- * NOT the Yeetful payTo (e.g. prod), to prefer our flat-priced MCP again.
+ * NOT the Pantessa payTo (e.g. prod), to prefer our flat-priced MCP again.
  */
 const DEFAULT_INFERENCE_SLUG = process.env.DEFAULT_INFERENCE_SLUG || 'chatgpt'
 
@@ -417,7 +417,7 @@ export function routerPrompt(
 
   const convo = conversationBlock(history)
   return [
-    `You are Yeetful's routing engine. You decide which paid MCP/x402 endpoints (if any) to call to best answer a user, then explain the choice. You may work in STEPS: if a call needs an id/address/code you don't have (e.g. a DAO id, a token contract, an airport code), first call a lookup/search endpoint to resolve it, then on the next step call the data endpoint with the resolved value.`,
+    `You are Pantessa's routing engine. You decide which paid MCP/x402 endpoints (if any) to call to best answer a user, then explain the choice. You may work in STEPS: if a call needs an id/address/code you don't have (e.g. a DAO id, a token contract, an airport code), first call a lookup/search endpoint to resolve it, then on the next step call the data endpoint with the resolved value.`,
     ...(convo ? [convo] : []),
     `The user asked${history.length ? ' (interpret it in the context of the conversation above)' : ''}:\n"""${message}"""`,
     ...(observed ? [observed] : []),
@@ -697,9 +697,9 @@ export async function routeMessage(opts: RouteOptions): Promise<RouterDecision> 
           if (art) {
             const verdict = guardPlannerArtifact(art, { from: opts.userAddress ?? null })
             if (!verdict.ok) {
-              addNote(`Refused a ${sp.serverName} transaction that failed Yeetful's guardrails: ${verdict.reasons.join(' ')}`, 'warn')
+              addNote(`Refused a ${sp.serverName} transaction that failed Pantessa's guardrails: ${verdict.reasons.join(' ')}`, 'warn')
               context.push(
-                `### GUARDRAIL REFUSAL — ${sp.serverName}\nThe tool returned a signable transaction Yeetful REFUSED to offer: ${verdict.reasons.join(' ')}\nNothing was signed or offered. Tell the user plainly why it was refused.`,
+                `### GUARDRAIL REFUSAL — ${sp.serverName}\nThe tool returned a signable transaction Pantessa REFUSED to offer: ${verdict.reasons.join(' ')}\nNothing was signed or offered. Tell the user plainly why it was refused.`,
               )
               continue
             }

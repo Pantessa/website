@@ -40,7 +40,7 @@ const SERVICES = [
     slug: 'uniswap-free',
     name: 'Uniswap (Free)',
     description:
-      'Uniswap v3 + v4 on Base, free and non-gated: live quotes across every fee tier (QuoterV2), spot prices, pool state, and deterministic swap-transaction building the user signs. Builds only — never holds keys, never submits. Rate-limited. By Yeetful.',
+      'Uniswap v3 + v4 on Base, free and non-gated: live quotes across every fee tier (QuoterV2), spot prices, pool state, and deterministic swap-transaction building the user signs. Builds only — never holds keys, never submits. Rate-limited. By Pantessa.',
     category: 'Trading',
     kind: 'data',
     priceUsd: '0',
@@ -96,7 +96,7 @@ const SERVICES = [
     slug: 'snapshot-free',
     name: 'Snapshot DAO (Free)',
     description:
-      'Snapshot DAO governance, free and non-gated: browse spaces, proposals, and votes, then build the EIP-712 vote the user signs with their own wallet and relay it to the sequencer. The server never signs, never holds keys. Rate-limited. By Yeetful.',
+      'Snapshot DAO governance, free and non-gated: browse spaces, proposals, and votes, then build the EIP-712 vote the user signs with their own wallet and relay it to the sequencer. The server never signs, never holds keys. Rate-limited. By Pantessa.',
     category: 'Data',
     kind: 'data',
     priceUsd: '0',
@@ -196,7 +196,7 @@ async function main() {
         priceUsd: '0',
         scheme: 'exact',
         network: 'Base',
-        provider: 'Yeetful (free)',
+        provider: 'Pantessa (free)',
         position: i,
         // plannable:false ⇒ parameters DbNull — the tool stays visible on the
         // server page but the endpoint planner can never construct it (POSTs

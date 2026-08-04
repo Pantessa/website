@@ -64,7 +64,7 @@ export async function POST(req: NextRequest) {
   // Fee tier the ORIGINAL build carried (C2b): the rebuild must re-quote at
   // the SAME tier — without this a link-priced chain silently reprices to
   // the base rate on refresh. Recipe params ride as strings; only the two
-  // canonical tiers rebuild, anything else is not a Yeetful recipe.
+  // canonical tiers rebuild, anything else is not a Pantessa recipe.
   const feeBps =
     body.feeBps === undefined
       ? undefined

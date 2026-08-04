@@ -67,7 +67,7 @@ export default function FirstFiveMinutesPage() {
         <h2>Minute 3 — sign it</h2>
         <p>
           Connect any wallet and sign. Your wallet is the only thing that can sign — there is no
-          deposit, no Yeetful balance, no key we hold. Every signed move lands as a receipt in
+          deposit, no Pantessa balance, no key we hold. Every signed move lands as a receipt in
           the chat and on <Link href="/activity">the public activity feed</Link>, linked to the
           transaction on-chain.
         </p>
@@ -91,7 +91,7 @@ export default function FirstFiveMinutesPage() {
         <h2>Where to go from here</h2>
         <ul>
           <li>
-            <Link href="/docs/trust">Trust: the guardrails</Link> — why a signature on a Yeetful
+            <Link href="/docs/trust">Trust: the guardrails</Link> — why a signature on a Pantessa
             artifact is safe to give.
           </li>
           <li>

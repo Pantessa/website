@@ -5,8 +5,8 @@ import Footer from '@/components/Footer'
 import { walletSnapshotFor, type WalletSnapshot } from '@/lib/briefing-exec'
 import { chartPairFor } from '@/lib/charts'
 
-// /w/<address> — "run Yeetful on any wallet." A public, read-only briefing
-// of what Yeetful notices in a wallet (public chain data only): open perp
+// /w/<address> — "run Pantessa on any wallet." A public, read-only briefing
+// of what Pantessa notices in a wallet (public chain data only): open perp
 // positions and whether visible protection exists, stranded/idle stables,
 // HF drift, top holdings. Every suggestion links to /chat?prompt= — a URL
 // never fires a turn (the prefill contract); the visitor runs the ask on
@@ -24,13 +24,13 @@ const fmtUsd = (n: number) =>
 
 export async function generateMetadata({ params }: Params): Promise<Metadata> {
   const { address } = await params
-  if (!isAddress(address)) return { title: 'Wallet briefing — Yeetful' }
+  if (!isAddress(address)) return { title: 'Wallet briefing — Pantessa' }
   const snap = await walletSnapshotFor(address).catch(() => null)
-  const title = `What Yeetful noticed in ${short(address)} — wallet briefing`
+  const title = `What Pantessa noticed in ${short(address)} — wallet briefing`
   const description =
     snap && snap.needs > 0
-      ? `${snap.needs} thing${snap.needs === 1 ? '' : 's'} need attention in this wallet — unprotected positions, stuck funds, idle stables. Yeetful builds the fix; only the owner's wallet can sign it.`
-      : 'A live read of this wallet — positions, protection, idle funds. Run Yeetful on your own wallet: it notices, you sign.'
+      ? `${snap.needs} thing${snap.needs === 1 ? '' : 's'} need attention in this wallet — unprotected positions, stuck funds, idle stables. Pantessa builds the fix; only the owner's wallet can sign it.`
+      : 'A live read of this wallet — positions, protection, idle funds. Run Pantessa on your own wallet: it notices, you sign.'
   return { title, description, openGraph: { title, description } }
 }
 
@@ -114,10 +114,10 @@ export default async function WalletBriefingPage({ params }: Params) {
           wallet briefing · live read
         </p>
         <h1 className="mt-1 font-serif text-[26px] leading-tight">
-          What Yeetful noticed in <span className="mono text-[22px]">{short(address)}</span>
+          What Pantessa noticed in <span className="mono text-[22px]">{short(address)}</span>
         </h1>
         <p className="mt-2 max-w-xl text-[13px] text-[color:var(--muted)]">
-          Public chain data, read live. Yeetful turns each line into a guarded transaction —
+          Public chain data, read live. Pantessa turns each line into a guarded transaction —
           only the owner's wallet can sign it. Tap a suggestion to try the same move on{' '}
           <em>your</em> wallet.
         </p>
@@ -170,7 +170,7 @@ export default async function WalletBriefingPage({ params }: Params) {
         )}
 
         <section className="mt-10 rounded-2xl border border-[var(--line-2)] bg-[var(--surf-1)] px-5 py-4">
-          <p className="text-[14px] font-medium">This is what Yeetful sees in a wallet.</p>
+          <p className="text-[14px] font-medium">This is what Pantessa sees in a wallet.</p>
           <p className="mt-1 text-[12.5px] text-[color:var(--muted)]">
             Connect yours and get the same briefing live in chat — protection, funding fixes, and
             recurring buys, each one a transaction only you can sign.

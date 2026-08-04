@@ -54,7 +54,7 @@ function resolveReceipt(r: ReceiptLike, servers: McpServer[]): McpServer | null 
 /**
  * Every MCP that took part in an assistant turn, in receipt order (settled
  * calls first), deduped — a multi-MCP turn (swap quote + proposal read) gets
- * its avatars stacked like coins. Inference-engine receipts ("Yeetful ·
+ * its avatars stacked like coins. Inference-engine receipts ("Pantessa ·
  * House") aren't catalog servers, so they drop out naturally. A turn with no
  * resolvable receipts falls back to `fallback` (the active working set): when
  * you're talking TO an agent, its mark shows even on a pure-inference turn.

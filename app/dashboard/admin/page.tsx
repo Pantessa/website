@@ -296,7 +296,7 @@ export default function AdminPage() {
           <ShieldAlert className="w-7 h-7" />
         </div>
         <h1 className="text-xl font-semibold text-white mb-2">Not authorized</h1>
-        <p className="text-sm text-[color:var(--muted)]">The adoption dashboard is limited to Yeetful admins.</p>
+        <p className="text-sm text-[color:var(--muted)]">The adoption dashboard is limited to Pantessa admins.</p>
       </div>
     )
   }

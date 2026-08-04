@@ -144,7 +144,7 @@ async function main() {
   )
   check('creator /i discloses the lifetime first-touch split', creatorHtml.includes('lifetime, first touch') && creatorHtml.includes('paid calls should say so'))
   check(
-    'house /i stays pure Yeetful — no call framing, no creator fee line',
+    'house /i stays pure Pantessa — no call framing, no creator fee line',
     !/>Call</.test(houseHtml) && !houseHtml.includes('lifetime, first touch') && houseHtml.includes('Intent link'),
   )
 

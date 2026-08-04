@@ -47,7 +47,7 @@ const SERVICE = {
   slug: 'opensea-free',
   name: 'OpenSea NFTs (Free)',
   description:
-    'OpenSea NFTs, free and non-gated: the NFTs a wallet owns (with images) across Ethereum, Base, and Arbitrum, NFT + collection detail, floor prices and stats, live listings and best offers — plus construction-only NFT transactions for BOTH ERC-721 and ERC-1155: transfers (ownership verified on-chain first), Seaport 1.6 sell listings the user signs gasless (payouts derived from the collection’s live fee schedule, re-validated at the relay), listing cancels, and guarded buys of live listings with locally re-encoded calldata. Never holds keys, never signs, never submits on-chain. Rate-limited. By Yeetful.',
+    'OpenSea NFTs, free and non-gated: the NFTs a wallet owns (with images) across Ethereum, Base, and Arbitrum, NFT + collection detail, floor prices and stats, live listings and best offers — plus construction-only NFT transactions for BOTH ERC-721 and ERC-1155: transfers (ownership verified on-chain first), Seaport 1.6 sell listings the user signs gasless (payouts derived from the collection’s live fee schedule, re-validated at the relay), listing cancels, and guarded buys of live listings with locally re-encoded calldata. Never holds keys, never signs, never submits on-chain. Rate-limited. By Pantessa.',
   category: 'NFTs',
   kind: 'data',
   priceUsd: '0',
@@ -204,7 +204,7 @@ async function main() {
       priceUsd: '0',
       scheme: 'exact',
       network: 'ethereum',
-      provider: 'Yeetful (free)',
+      provider: 'Pantessa (free)',
       position: i,
       featured: t.featured === true,
       parameters: t.params.length ? (t.params as unknown as object) : Prisma.DbNull,

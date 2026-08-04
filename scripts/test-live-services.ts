@@ -5,7 +5,7 @@
  * Sends realistic, service-specific user questions through the BURNER auto-router
  * (POST /api/chat { autoRouter: true }) — the exact path the chat UI uses, so
  * every turn ALSO streams to the public /activity live feed. Rotates the
- * inference engine per turn (ChatGPT / DeepSeek / Gemini / Claude (non-Yeetful);
+ * inference engine per turn (ChatGPT / DeepSeek / Gemini / Claude (non-Pantessa);
  * Groq is listed-only and expected to fall back) via the `inferenceSlug` pin.
  *
  *   npm run test:live                 # hit local http://localhost:3000

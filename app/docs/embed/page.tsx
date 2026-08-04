@@ -21,7 +21,7 @@ export default function EmbedDocsPage() {
       </p>
       <h1 className="docs__h1">Embed the chat</h1>
       <p className="docs__lead">
-        Drop the full Yeetful chat into your own site as an iframe — scoped to the MCPs you
+        Drop the full Pantessa chat into your own site as an iframe — scoped to the MCPs you
         pick, with transaction building, guardrails, receipts, and wallet signing intact.
         Visitors chat immediately as guests (no sign-in); signing a swap or vote connects a
         wallet inside the frame.
@@ -80,7 +80,7 @@ export default function EmbedDocsPage() {
 { source: 'yeetful-embed', v: 1, type: 'event', name: 'order-signed',     // notable moments
   data: { orderUid: '0x…', explorerUrl: 'https://explorer.cow.fi/…' } }`}</code>
         </pre>
-        <p>Your page → embed (send to the iframe&apos;s contentWindow, targeting the Yeetful origin):</p>
+        <p>Your page → embed (send to the iframe&apos;s contentWindow, targeting the Pantessa origin):</p>
         <pre>
           <code>{`{ source: 'yeetful-embed', v: 1, type: 'address', address: '0x…' | null } // update wallet context
 { source: 'yeetful-embed', v: 1, type: 'theme', theme: 'dark' | 'light' }
@@ -200,7 +200,7 @@ mountYeetfulChat({
             may embed it. Scope what the chat can do with <code>mcps</code>, not the frame.
           </li>
           <li>
-            Guests run in burner mode: Yeetful&apos;s house wallet pays free-tier calls, so the
+            Guests run in burner mode: Pantessa&apos;s house wallet pays free-tier calls, so the
             chat answers with zero setup. Paid MCPs and swap/vote signatures use the bridged
             host wallet (v1.1) or a wallet your visitor connects inside the frame.
           </li>

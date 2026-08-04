@@ -40,7 +40,7 @@ interface NightEvent {
   meta: string
 }
 
-/** Four things Yeetful really does between turns — one per capability, so the
+/** Four things Pantessa really does between turns — one per capability, so the
  *  log isn't four flavours of the same job. */
 const EVENTS: NightEvent[] = [
   {
@@ -193,7 +193,7 @@ export default function NightShift() {
           </h2>
           <p className="night__sub">
             Recurring buys, stop-loss protections and multi-step jobs keep working between your
-            turns. Yeetful is the non-custodial back office for autonomous money: it builds,
+            turns. Pantessa is the non-custodial back office for autonomous money: it builds,
             guard-checks and receipts every move — and holds nothing.
           </p>
           <ul className="night__points">

@@ -1,6 +1,6 @@
 'use client'
 
-// CHAINS BUILT — the thing that makes Yeetful different, finally visible.
+// CHAINS BUILT — the thing that makes Pantessa different, finally visible.
 // Almost nothing worth asking for is one transaction, so the system compiles
 // multi-step chains: bridge → wait for settlement → buy; set leverage → open →
 // arm the stop. Each row here is one real chain, drawn as its steps: a signing

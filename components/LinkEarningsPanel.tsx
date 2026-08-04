@@ -55,7 +55,7 @@ export function LinkEarningsPanel({
         </span>
       )}
       <span className="text-[11px] text-[color:var(--muted-2)] w-full">
-        Half of Yeetful&apos;s venue fee on swaps and stock buys — from your links, and from
+        Half of Pantessa&apos;s venue fee on swaps and stock buys — from your links, and from
         every later fee-bearing trade by wallets your links first brought (lifetime, first
         touch). Sales, transfers, stakes, and bridges are always fee-free. Paid as USDC on
         Base from ${earnings.minClaimUsd}.

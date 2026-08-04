@@ -1,7 +1,7 @@
 'use client'
 
 // Recharts pieces for /dashboard/treasury — loaded lazily via LazyCharts.
-// The stacked daily chart splits inflow by PAYER KIND (tester = Yeetful's own
+// The stacked daily chart splits inflow by PAYER KIND (tester = Pantessa's own
 // wallets, wild = real users), matching the yellow/green wallet badges: green
 // bars are the number that matters during the leak phase.
 
@@ -21,7 +21,7 @@ import { useChartColors, useSiteTheme } from '@/components/chart-theme'
 
 export interface FeePoint {
   day: string
-  /** Inflow from Yeetful's own test wallets (yellow). */
+  /** Inflow from Pantessa's own test wallets (yellow). */
   testerUsd: number
   /** Inflow from wallets in the wild (green). */
   wildUsd: number
