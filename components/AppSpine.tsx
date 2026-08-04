@@ -32,9 +32,10 @@ const TABS: { tab: RailTab; label: string; title: string; Icon: typeof Boxes }[]
   { tab: 'chats', label: 'CHATS', title: 'Your chat history', Icon: MessageSquare },
 ]
 
-export default function AppSpine() {
+export default function AppSpine({ surface = 'chat' }: { surface?: 'chat' | 'dashboard' }) {
   const router = useRouter()
   const { railTab, setRailTab, mcpRailOpen, setMcpRailOpen } = useYeetfulStore()
+  const onDashboard = surface === 'dashboard'
 
   // The spine is display-hidden below lg, but hidden still means mounted —
   // gate the poll on the breakpoint so the mobile surfaces keep their own
@@ -49,7 +50,23 @@ export default function AppSpine() {
   }, [])
   const { badgeCount } = useRunningWork(enabled)
 
+  // The dashboard's floating rail-reopen pill is pinned to the viewport's
+  // left edge — flag the spine's presence so CSS can shift it clear.
+  useEffect(() => {
+    if (!onDashboard) return
+    document.documentElement.setAttribute('data-spine', '1')
+    return () => document.documentElement.removeAttribute('data-spine')
+  }, [onDashboard])
+
   const pick = (tab: RailTab) => {
+    // From the dashboard a tab icon is a shortcut INTO chat: land there with
+    // the drawer already open on that tab.
+    if (onDashboard) {
+      setRailTab(tab)
+      setMcpRailOpen(true)
+      router.push('/chat')
+      return
+    }
     if (railTab === tab && mcpRailOpen) {
       setMcpRailOpen(false)
     } else {
@@ -60,7 +77,12 @@ export default function AppSpine() {
 
   return (
     <aside
-      className="max-lg:hidden flex-shrink-0 h-full w-14 flex flex-col items-center border-r border-[var(--line)] bg-[var(--surf-1)]"
+      className={cn(
+        'max-lg:hidden flex-shrink-0 w-14 flex flex-col items-center border-r border-[var(--line)] bg-[var(--surf-1)]',
+        // Chat's shell is height-constrained (h-dvh flex), so the spine just
+        // fills it; the dashboard PAGE scrolls, so the spine rides sticky.
+        onDashboard ? 'sticky top-0 h-dvh self-start' : 'h-full',
+      )}
       aria-label="Workspace"
     >
       {/* Brand seat — the product's home is the chat. */}
@@ -85,7 +107,7 @@ export default function AppSpine() {
         </button>
 
         {TABS.map(({ tab, label, title, Icon }) => {
-          const selected = railTab === tab && mcpRailOpen
+          const selected = !onDashboard && railTab === tab && mcpRailOpen
           return (
             <button
               key={tab}
@@ -118,13 +140,22 @@ export default function AppSpine() {
 
       <div className="flex-1" />
 
-      {/* The labeled way out — same destination as the old pinned rail row. */}
+      {/* The labeled way out — same destination as the old pinned rail row.
+          On the dashboard itself it wears the you-are-here state. */}
       <Link
         href="/dashboard"
         title="Pantessa dashboard — links, keys, billing"
         aria-label="Pantessa dashboard"
-        className="w-12 flex flex-col items-center gap-0.5 py-1.5 mb-2 rounded-lg text-[color:var(--muted)] hover:text-white hover:bg-[var(--surf-2)] transition-colors"
+        className={cn(
+          'relative w-12 flex flex-col items-center gap-0.5 py-1.5 mb-2 rounded-lg transition-colors',
+          onDashboard
+            ? 'bg-[var(--surf-2)] text-white'
+            : 'text-[color:var(--muted)] hover:text-white hover:bg-[var(--surf-2)]',
+        )}
       >
+        {onDashboard && (
+          <span aria-hidden className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-6 rounded-full bg-[var(--accent)]" />
+        )}
         <LayoutDashboard className="w-[18px] h-[18px]" />
         <span className="mono text-[9px] font-medium tracking-wide">DASH</span>
       </Link>

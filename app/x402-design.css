@@ -1204,6 +1204,18 @@
   }
 
   /* ── DASHBOARD SHELL ─────────────────────────────── */
+  /* ── ONE SHELL: the spine + the dashboard grid side by side. The spine is
+     a sticky full-viewport column (the component brings its own position);
+     .dash keeps its own grid untouched inside the flex row. ── */
+  .dashshell { display: flex; align-items: stretch; }
+  .dashshell > .dash { flex: 1; min-width: 0; }
+  /* The floating rail-reopen pill pins to the viewport's left edge — with
+     the spine present it would land ON the spine; shift it clear. (The
+     spine only renders ≥1024px.) */
+  @media (min-width: 1024px) {
+    :root[data-spine] .apprail__reopen { left: 72px; }
+  }
+
   .dash {
     /* Portal surfaces use the full viewport (D3) — gutters, no maxw cap. */
     max-width: none; margin: 0 auto; padding: 0 32px;
