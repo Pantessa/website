@@ -49,7 +49,7 @@ import { prettyChainWord } from '@/lib/chain-lexicon'
 import { arbitrumUsdcBalance, buildHlExecTurn, hlAgentOf, HL_MIN_DEPOSIT_USDC, hlOpenCollateralShortfall, parseHlIntent, type HlOpenShortfall, type HlOrderIntent } from '@/lib/hyperliquid-exec'
 import { parseGuardianArm } from '@/lib/hl-guardian'
 import { armGuardianPolicy } from '@/lib/hl-guardian-store'
-import { compileJobAsk } from '@/lib/jobs'
+import { compileJobAsk, stampSwapFeeTier } from '@/lib/jobs'
 import { advanceJob, createJob } from '@/lib/jobs-runner'
 import { signJobToken } from '@/lib/job-token'
 import { runDcaTurn } from '@/lib/dca-exec'
@@ -192,6 +192,9 @@ async function hlAutoFundedJobTurn(
   message: string,
   walletAddress: string,
   nativeTrace: (event: unknown) => void,
+  /** Link fee tier of the turn (validated in POST) — stamped onto any
+   *  native-swap legs the funded job compiles (lib/jobs stampSwapFeeTier). */
+  linkFeeBps?: number,
 ): Promise<NextResponse | null> {
   const fundedAsk = `deposit ${short.depositUsdc} USDC to Hyperliquid, then ${message.trim()}`
   const arbUsdc = await arbitrumUsdcBalance(walletAddress).catch(() => null)
@@ -229,7 +232,7 @@ async function hlAutoFundedJobTurn(
     type: 'status',
     label: `hl auto-fund: open is under-collateralized ($${short.withdrawableUsd.toFixed(2)} withdrawable vs ~$${short.notionalUsd} notional) — compiled the funded job directly: ${compiled.title.slice(0, 160)}`,
   })
-  const job = await createJob(walletAddress, compiled)
+  const job = await createJob(walletAddress, stampSwapFeeTier(compiled, linkFeeBps))
   await advanceJob(job).catch(() => {})
   const gasLegNote = /\b(?:to|for) eth on arbitrum\b/i.test(resume) ? ' (plus a little Arbitrum ETH so the deposit can pay its own gas)' : ''
   return NextResponse.json({
@@ -869,14 +872,17 @@ async function handleChatTurn(req: NextRequest) {
       if (leadStep?.builder === 'native-hl-exec' && (leadStep.params as { kind?: string }).kind === 'open') {
         const short = await hlOpenCollateralShortfall(leadStep.params as unknown as HlOrderIntent, walletAddress)
         if (short) {
-          const autoTurn = await hlAutoFundedJobTurn(short, message, walletAddress, nativeTrace)
+          const autoTurn = await hlAutoFundedJobTurn(short, message, walletAddress, nativeTrace, swapFeeBps)
           if (autoTurn) return autoTurn
           // No plan available (scan/price down) — fall through to the job;
           // the step's own guard explains itself if it can't build.
         }
       }
       nativeTrace({ type: 'status', label: `jobs layer claimed the turn: ${jobAsk.steps.length}-step job — ${jobAsk.title} — planner bypassed` })
-      const job = await createJob(walletAddress, jobAsk)
+      // C2b closes over jobs: a link-priced turn's compiled swaps carry the
+      // same tier its one-shot would (stamped into step params; the runner
+      // re-validates against the canonical tier before building).
+      const job = await createJob(walletAddress, stampSwapFeeTier(jobAsk, swapFeeBps))
       // Kick the first step inline so the card opens with something to sign.
       await advanceJob(job).catch(() => {})
       return NextResponse.json({
@@ -1233,7 +1239,7 @@ async function handleChatTurn(req: NextRequest) {
         if (hlIntent.kind === 'open' && walletAddress) {
           const short = await hlOpenCollateralShortfall(hlIntent, walletAddress)
           if (short) {
-            const autoTurn = await hlAutoFundedJobTurn(short, message, walletAddress, nativeTrace)
+            const autoTurn = await hlAutoFundedJobTurn(short, message, walletAddress, nativeTrace, swapFeeBps)
             if (autoTurn) return autoTurn
           }
         }
