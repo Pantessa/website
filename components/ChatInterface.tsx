@@ -4,7 +4,7 @@ import { analytics } from '@/lib/analytics'
 import { feeBpsOfArtifact } from '@/lib/fees'
 import { Fragment, useState, useRef, useEffect, useSyncExternalStore } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Send, Zap, Check, Loader2, Bot, User, Boxes, ListChecks, MessageSquare, PanelRight, Sparkles, Copy, Plus, Link2 } from 'lucide-react'
+import { Send, Zap, Check, Loader2, Bot, User, Boxes, ListChecks, MessageSquare, PanelRight, Copy, Plus, Link2 } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { useAccount, useSignTypedData, useConnect } from 'wagmi'
 import { useConnectModal } from '@rainbow-me/rainbowkit'
@@ -40,7 +40,7 @@ import { useSession } from '@/lib/session'
 import { latestWorkingContext, type WorkingContext } from '@/lib/working-context'
 import { EXAMPLE_PROMPTS, TRY_PROMPTS } from '@/lib/examples'
 import { GUEST_TRIAL_LIMIT, bumpGuestTurns, guestTurnsUsed } from '@/lib/guest-trial'
-import SampleCallDemo from '@/components/SampleCallDemo'
+import EmptyState from '@/components/chat/EmptyState'
 import { SplashDashboard } from '@/components/SplashDashboard'
 import ChatLoader from '@/components/ChatLoader'
 import { splashCapable } from '@/lib/splash/types'
@@ -1970,78 +1970,6 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
           Enter to send · Shift+Enter for newline
         </p>
       </div>
-    </div>
-  )
-}
-
-// One-tap example asks: a click SENDS the turn (the caller passes runExample).
-// Asking is free — anything transactional still ends at the wallet signature —
-// so the chip is the whole first turn, not a writing prompt.
-function ExampleGallery({ onPick }: { onPick: (prompt: string, slug?: string) => void }) {
-  return (
-    <div className="mt-7 w-full max-w-md">
-      <p className="mono text-[11px] uppercase tracking-wider text-[color:var(--muted-2)] mb-2">
-        Run one — a tap sends it
-      </p>
-      <div className="flex flex-wrap justify-center gap-2">
-        {EXAMPLE_PROMPTS.map((ex) => (
-          <button
-            key={ex.label}
-            type="button"
-            onClick={() => onPick(ex.prompt, ex.slug)}
-            title={ex.prompt}
-            className="group flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full border border-[var(--line)] text-[color:var(--muted)] hover:text-white hover:border-[color:var(--accent)]/45 hover:bg-white/5 transition-colors"
-          >
-            <Send className="w-3 h-3 text-[color:var(--muted-2)] group-hover:text-[color:var(--accent)] transition-colors" />
-            {ex.label}
-          </button>
-        ))}
-      </div>
-      <div className="flex justify-center">
-        <SampleCallDemo />
-      </div>
-    </div>
-  )
-}
-
-function EmptyState({
-  activeCount,
-  autoRouter,
-  onPick,
-  showLinksHint,
-}: {
-  activeCount: number
-  autoRouter: boolean
-  onPick: (prompt: string, slug?: string) => void
-  /** First-party chat only — the embed has no rail or mint affordances. */
-  showLinksHint?: boolean
-}) {
-  return (
-    // flex-1 (not h-full): the thread wrapper is a min-h-full flex column,
-    // so percentage heights don't resolve — growing into the free space
-    // keeps the vertical centering instead.
-    <div className="flex flex-col items-center justify-center flex-1 text-center py-20">
-      <div className="w-16 h-16 rounded-2xl bg-[var(--accent)]/15 border border-[var(--accent)]/50 flex items-center justify-center mb-6">
-        <Sparkles className="w-8 h-8" style={{ color: 'var(--accent)' }} />
-      </div>
-      <h3 className="text-white font-semibold mb-2" style={{ fontFamily: 'var(--font-serif)', fontSize: '1.5rem' }}>
-        Say what should happen.
-      </h3>
-      <p className="text-[color:var(--muted)] text-sm max-w-sm">
-        {autoRouter
-          ? 'Auto Router picks the right MCP for each ask and shows its work. Anything that moves money is compiled into a guarded transaction — only your wallet can sign it.'
-          : activeCount === 0
-            ? 'Pick MCPs from the rail, or just ask — swaps, schedules, stop-losses, and portfolios are built in. Only your wallet can sign what comes back.'
-            : `Your ${activeCount} MCP${activeCount > 1 ? 's' : ''} answer questions free; anything that moves money is compiled into a guarded transaction only your wallet can sign.`}
-      </p>
-      <ExampleGallery onPick={onPick} />
-      {showLinksHint && (
-        <p className="mt-6 text-[11px] text-[color:var(--muted-2)] max-w-sm">
-          Any ask here can become a shareable intent link — hover a sent message for the{' '}
-          <Link2 className="inline w-3 h-3 align-[-1px]" aria-hidden />
-          {' '}mint icon, or open the rail&apos;s Links tab.
-        </p>
-      )}
     </div>
   )
 }
