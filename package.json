@@ -39,7 +39,9 @@
     "eval:full": "tsx scripts/eval-routing.ts --full",
     "eval:conversations": "tsx scripts/eval-conversations.ts",
     "db:tag": "tsx scripts/tag-capabilities.ts",
-    "db:embed": "tsx scripts/embed-catalog.ts"
+    "db:embed": "tsx scripts/embed-catalog.ts",
+    "guard:test": "tsx guard-sdk/run-tests.ts",
+    "guard:sync": "tsx scripts/guard-sync-check.ts"
   },
   "dependencies": {
     "@coinbase/cdp-core": "^0.0.111",
