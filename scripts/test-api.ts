@@ -3869,6 +3869,9 @@ async function main() {
       netFeeBpsFor('native-cross-chain') === CROSS_CHAIN_NET_FEE_BPS &&
         netFeeBpsFor('native-swap-uniswap') === CROSS_CHAIN_FEE_BPS &&
         netFeeBpsFor('native-nft-transfer') === 0 &&
+        // v4 honesty: no fee mechanism in the v4 builder → no accrual claim
+        netFeeBpsFor('native-swap-uniswap-v4') === 0 &&
+        !FEE_BEARING_BUILD_PATHS.has('native-swap-uniswap-v4') &&
         FEE_BEARING_BUILD_PATHS.has('native-cross-chain') &&
         Math.abs(creatorEarningsUsd(1000, netFeeBpsFor('native-cross-chain')) - 0.5) < 1e-9 &&
         Math.abs(creatorEarningsUsd(1000, netFeeBpsFor('native-swap-uniswap')) - 1) < 1e-9,
