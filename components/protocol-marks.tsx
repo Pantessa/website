@@ -16,7 +16,7 @@
 //      `foo-free`, `foo-mcp`, etc. That's the whole wiring — every surface
 //      (BrandIcon and the hero) picks it up automatically.
 
-import { useId, type ComponentType } from 'react'
+import { type ComponentType } from 'react'
 
 export type Mark = ComponentType<{ size?: number }>
 
@@ -128,32 +128,35 @@ export function MorphoMark({ size = 22 }: { size?: number }) {
 }
 
 export function YeetfulMark({ size = 22 }: { size?: number }) {
-  // Pantessa's own agent-graph "Y" mark — three nodes wired to a central hub
-  // (identical geometry to components/Logo.tsx and
-  // public/design-system/assets/yeetful-mark.svg). Used for the first-party
-  // `yeetful-tool-*` internal MCPs so they carry the brand mark instead of a
-  // bare Archivo "Y" lettermark. Pure `currentColor` art, so it inverts with
-  // the tile like every other mark here. The mask punches the hub center out
-  // where the spokes converge; a per-instance id keeps multiple marks on one
-  // page from colliding.
-  const maskId = `yf-hub-${useId().replace(/:/g, '')}`
+  // Pantessa's "Tessera" mark, compact cut — the inner course of the mosaic
+  // (16 tiles) parting around the one stone (same lattice as
+  // components/Logo.tsx and public/design-system/assets/yeetful-mark.svg).
+  // Used for the first-party `yeetful-tool-*` internal MCPs so they carry the
+  // brand mark. Pure `currentColor` art — stone included — so it inverts with
+  // the tile like every other mark here.
+  const S = Math.SQRT1_2
+  const p = 24
+  const cells: Array<[number, number]> = []
+  for (let i = -2; i <= 2; i++)
+    for (let j = -2; j <= 2; j++) {
+      if (Math.max(Math.abs(i), Math.abs(j)) < 2) continue
+      cells.push([100 + (i - j) * p * S, 100 + (i + j) * p * S])
+    }
   return (
-    <svg viewBox="0 0 40 40" width={size} height={size} fill="none" aria-hidden style={{ display: 'block' }}>
-      <mask id={maskId}>
-        <rect width="40" height="40" fill="#fff" />
-        <circle cx="20" cy="20" r="1.9" fill="#000" />
-      </mask>
-      <g mask={`url(#${maskId})`} stroke="currentColor" strokeWidth={2.2} strokeLinecap="round">
-        <line x1="20" y1="20" x2="9" y2="9" />
-        <line x1="20" y1="20" x2="31" y2="9" />
-        <line x1="20" y1="20" x2="20" y2="33" />
-      </g>
-      <g fill="currentColor">
-        <circle cx="9" cy="9" r="4.4" />
-        <circle cx="31" cy="9" r="4.4" />
-        <circle cx="20" cy="33" r="4.4" />
-      </g>
-      <circle cx="20" cy="20" r="3" fill="none" stroke="currentColor" strokeWidth={2.2} />
+    <svg viewBox="8 8 184 184" width={size} height={size} fill="none" aria-hidden style={{ display: 'block' }}>
+      {cells.map(([x, y], k) => (
+        <rect
+          key={k}
+          x={-10.5}
+          y={-10.5}
+          width={21}
+          height={21}
+          rx={3.5}
+          fill="currentColor"
+          transform={`translate(${x.toFixed(2)} ${y.toFixed(2)}) rotate(45)`}
+        />
+      ))}
+      <rect x={-15} y={-15} width={30} height={30} rx={5} fill="currentColor" transform="translate(100 100) rotate(45)" />
     </svg>
   )
 }

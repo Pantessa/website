@@ -1,7 +1,10 @@
 // components/Logo.tsx
-// Pantessa — agent-graph "Y" mark + wordmark.
-// The mark is single-color and inherits the current text color via `currentColor`,
-// so it turns white on a dark nav and black on a light surface automatically.
+// Pantessa — "The Tessera" mark + wordmark.
+// A mosaic diamond condenses toward its center and parts around a void; the
+// one tessera floats there — pan (all) + tessera (tile): every dapp a tile,
+// together one picture. Tiles inherit `currentColor` so the mark flips with
+// the theme; the stone rides the site accent (emerald on dark, deep emerald
+// on light) unless a `stone` color is passed.
 
 import * as React from "react";
 
@@ -9,42 +12,81 @@ type MarkProps = {
   size?: number;
   className?: string;
   title?: string;
+  /** 'full' = both courses (40 tesserae) + stone; 'compact' = inner course +
+   *  stone, which stays crisp below ~40px. 'auto' picks by size. */
+  detail?: "auto" | "full" | "compact";
+  /** Stone (the one tessera) fill. Defaults to the site accent. */
+  stone?: string;
 };
 
-export function YeetfulMark({ size = 28, className, title = "Pantessa" }: MarkProps) {
-  // Unique mask id per instance so multiple logos on one page don't collide.
-  const uid = React.useId().replace(/:/g, "");
-  const maskId = `yf-hub-${uid}`;
+// Rotated tile lattice: screen = ((i-j)·p·S, (i+j)·p·S), tiles at 45°.
+// The 3×3 center block is the void; ring m=2 is the inner course (16 tiles),
+// ring m=3 the outer (24 tiles). Same numbers as the brand masters.
+const S = Math.SQRT1_2;
+const PITCH = 24;
+const INNER_TILE = 21;
+const OUTER_TILE = 13;
+const STONE = 30;
+
+function courses(full: boolean) {
+  const cells: Array<{ x: number; y: number; a: number; rx: number }> = [];
+  const max = full ? 3 : 2;
+  for (let i = -max; i <= max; i++) {
+    for (let j = -max; j <= max; j++) {
+      const m = Math.max(Math.abs(i), Math.abs(j));
+      if (m < 2) continue;
+      cells.push({
+        x: 100 + (i - j) * PITCH * S,
+        y: 100 + (i + j) * PITCH * S,
+        a: m === 2 ? INNER_TILE : OUTER_TILE,
+        rx: m === 2 ? 3.5 : 2.8,
+      });
+    }
+  }
+  return cells;
+}
+
+export function YeetfulMark({
+  size = 28,
+  className,
+  title = "Pantessa",
+  detail = "auto",
+  stone = "var(--accent, #3ECF8E)",
+}: MarkProps) {
+  const full = detail === "full" || (detail === "auto" && size >= 40);
+  // Full-mark tips reach ~±111 from center; the compact course ~±83.
+  const r = full ? 118 : 92;
   return (
     <svg
       width={size}
       height={size}
-      viewBox="0 0 40 40"
+      viewBox={`${100 - r} ${100 - r} ${2 * r} ${2 * r}`}
       fill="none"
       className={className}
       role="img"
       aria-label={title}
     >
-      <mask id={maskId}>
-        <rect width="40" height="40" fill="#fff" />
-        <circle cx="20" cy="20" r="1.9" fill="#000" />
-      </mask>
-      <g
-        mask={`url(#${maskId})`}
-        stroke="currentColor"
-        strokeWidth={2.2}
-        strokeLinecap="round"
-      >
-        <line x1="20" y1="20" x2="9" y2="9" />
-        <line x1="20" y1="20" x2="31" y2="9" />
-        <line x1="20" y1="20" x2="20" y2="33" />
-      </g>
-      <g fill="currentColor">
-        <circle cx="9" cy="9" r="4.4" />
-        <circle cx="31" cy="9" r="4.4" />
-        <circle cx="20" cy="33" r="4.4" />
-      </g>
-      <circle cx="20" cy="20" r="3" fill="none" stroke="currentColor" strokeWidth={2.2} />
+      {courses(full).map((c, k) => (
+        <rect
+          key={k}
+          x={-c.a / 2}
+          y={-c.a / 2}
+          width={c.a}
+          height={c.a}
+          rx={c.rx}
+          fill="currentColor"
+          transform={`translate(${c.x.toFixed(2)} ${c.y.toFixed(2)}) rotate(45)`}
+        />
+      ))}
+      <rect
+        x={-STONE / 2}
+        y={-STONE / 2}
+        width={STONE}
+        height={STONE}
+        rx={5}
+        fill={stone}
+        transform="translate(100 100) rotate(45)"
+      />
     </svg>
   );
 }
@@ -52,7 +94,7 @@ export function YeetfulMark({ size = 28, className, title = "Pantessa" }: MarkPr
 type LogoProps = {
   /** Mark height in px. Wordmark scales from this. */
   size?: number;
-  /** Show the "yeetful" wordmark next to the mark. */
+  /** Show the "pantessa" wordmark next to the mark. */
   withWordmark?: boolean;
   className?: string;
 };
@@ -73,7 +115,6 @@ export function Logo({ size = 28, withWordmark = true, className }: LogoProps) {
       {withWordmark && (
         <span
           style={{
-            // Falls back to Geist Mono; swap for your own --font-* var if different.
             fontFamily:
               'var(--font-geist-mono, "Geist Mono", ui-monospace, monospace)',
             fontWeight: 500,
@@ -82,7 +123,7 @@ export function Logo({ size = 28, withWordmark = true, className }: LogoProps) {
             lineHeight: 1,
           }}
         >
-          yeetful
+          pantessa
         </span>
       )}
     </span>
