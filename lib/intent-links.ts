@@ -210,3 +210,25 @@ export function parseAllowWallets(raw: unknown): { ok: true; wallets: string[] }
   if (out.size > 500) return { ok: false, reason: 'allowWallets is capped at 500 wallets' }
   return { ok: true, wallets: [...out] }
 }
+
+// ── The lockup word (C3) ────────────────────────────────────────────────────
+// A creator-minted link IS a posted CALL — the thing a KOL shares — and a
+// house link stays the neutral "Intent link". The word shipped on the
+// unbranded splash only: a WHITE-LABELED creator page kept its brand lockup
+// and silently dropped the framing, and the in-chat header said "intent
+// link" on every link forever (found live 2026-08-03 against prod, on a
+// branded creator link). One source now, read by every /i surface.
+
+/** The eyebrow word a link's lockup wears. */
+export function linkLockupWord(hasCreator: boolean): 'Call' | 'Intent link' {
+  return hasCreator ? 'Call' : 'Intent link'
+}
+
+/** …with the attribution suffix: a call is posted BY its author, a neutral
+ *  link merely comes FROM one. Empty agent → the bare word. */
+export function linkLockup(hasCreator: boolean, agent?: string | null): string {
+  const word = linkLockupWord(hasCreator)
+  const who = (agent ?? '').trim()
+  if (!who) return word
+  return `${word} · ${hasCreator ? 'by' : 'from'} ${who}`
+}

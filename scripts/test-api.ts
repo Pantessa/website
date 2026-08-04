@@ -37,7 +37,7 @@ import { pureChecks, policyCheck, orderValueUsd, buildReport } from '../lib/cow-
 import { policyCheckInflow, recipientCheck, validityCheck, MAX_VALID_SEC } from '../lib/tx-guardrails'
 import { guardPlannerArtifact, PERMIT2_ADDRESS } from '../lib/planner-artifact-guard'
 import { parseSwapIntent, swapClarify } from '../lib/swap-intent'
-import { activeLinkCapFor, composeMcps } from '../lib/intent-links'
+import { activeLinkCapFor, composeMcps, linkLockup, linkLockupWord } from '../lib/intent-links'
 import { formatEarnedUsd, netFeeBpsFor, creatorEarningsUsd, FEE_BEARING_BUILD_PATHS, CROSS_CHAIN_FEE_BPS, CROSS_CHAIN_NET_FEE_BPS } from '../lib/fees'
 import { BUILD_PATHS, venueOfBuildPath } from '../lib/build-path'
 
@@ -1730,6 +1730,21 @@ async function main() {
     check(
       'intent links: house /i stays pure Yeetful — no call framing, no creator fee line',
       /Intent link/.test(houseCallPage) && !/earns half of Yeetful/.test(houseCallPage) && !/>Call</.test(houseCallPage),
+    )
+    // The lockup WORD is one source (lib/intent-links) because the rendered
+    // check above only covers an UNBRANDED creator page: a white-labeled
+    // splash kept the brand lockup and dropped the framing entirely, live in
+    // prod, and the in-chat header said "intent link" on every call. Driving
+    // the branded splash headlessly needs a scanned logo (open internet), so
+    // the pure pin is what stands between here and that regression.
+    check(
+      'intent links: the lockup word is creator-derived (a call is BY its author, a neutral link is FROM one)',
+      linkLockupWord(true) === 'Call' &&
+        linkLockupWord(false) === 'Intent link' &&
+        linkLockup(true, 'mallory') === 'Call · by mallory' &&
+        linkLockup(false, 'mallory') === 'Intent link · from mallory' &&
+        linkLockup(true, '') === 'Call' &&
+        linkLockup(false, null) === 'Intent link',
     )
 
     // Plan cap: free carries 3 active links; this run minted 2, so one more

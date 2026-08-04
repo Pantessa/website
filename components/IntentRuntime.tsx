@@ -32,7 +32,7 @@ import { YeetfulMark } from '@/components/Logo'
 import { useSession } from '@/lib/session'
 import { cdpEnabled } from '@/lib/cdp-embedded'
 import { brandBloomTint, brandCtaStyle, brandThemeStyle, type LinkBrand } from '@/lib/brand-theme'
-import { isTransferShaped } from '@/lib/intent-links'
+import { isTransferShaped, linkLockup, linkLockupWord } from '@/lib/intent-links'
 import { useYeetfulStore, McpServer } from '@/lib/store'
 import { CATALOG } from '@/lib/mcp-data'
 import { FREE_FLEET_FALLBACK } from '@/lib/free-fleet'
@@ -301,7 +301,10 @@ export default function IntentRuntime({
         <div
           className={`relative max-w-3xl mx-auto px-4 py-16 min-h-dvh flex flex-col items-center justify-center text-center transition-opacity duration-700 ${autoStarting ? 'opacity-0' : 'opacity-100'}`}
         >
-          <div className="flex items-center gap-2 mb-8">
+          {/* flex-wrap: the branded creator lockup is four segments wide
+              (logo · brand · CALL · powered-by) and 375px is the drill
+              width — wrapping centered beats a clipped row. */}
+          <div className="flex flex-wrap justify-center items-center gap-2 mb-8">
             {brand?.logo ? (
               <>
                 {/* the creator's mark (data URI from our DB, capped at scan) */}
@@ -310,11 +313,18 @@ export default function IntentRuntime({
                 <span className="mono text-[11px] uppercase tracking-widest text-[color:var(--muted-2)]">
                   {brand.name ?? brand.domain}
                 </span>
-                <span className="mono text-[11px] text-[color:var(--muted-2)]" aria-hidden>
-                  ·
+                {/* Each separator travels WITH the segment it introduces, so
+                    a wrapped lockup never strands a lone "·" at a line end. */}
+                {/* CALL framing survives the white label: a branded creator
+                    page is still a posted call, and the brand lockup used to
+                    swallow the word entirely. The Powered-by chip stays
+                    always-on either way (pinned). */}
+                <span className="mono text-[11px] uppercase tracking-widest text-[color:var(--muted-2)] whitespace-nowrap">
+                  <span aria-hidden>· </span>
+                  {linkLockupWord(hasCreator)}
                 </span>
-                <span className="inline-flex items-center gap-1.5 mono text-[10.5px] uppercase tracking-widest text-[color:var(--muted-2)]">
-                  Powered by <YeetfulMark size={13} /> Yeetful
+                <span className="inline-flex items-center gap-1.5 mono text-[10.5px] uppercase tracking-widest text-[color:var(--muted-2)] whitespace-nowrap">
+                  <span aria-hidden>·</span> Powered by <YeetfulMark size={13} /> Yeetful
                 </span>
               </>
             ) : (
@@ -324,7 +334,7 @@ export default function IntentRuntime({
                     the thing a KOL shares. House links (creator=null) keep
                     the neutral "Intent link" lockup, pure Yeetful (pinned). */}
                 <span className="mono text-[11px] uppercase tracking-widest text-[color:var(--muted-2)]">
-                  {hasCreator ? <>Call{agent ? ` · by ${agent}` : ''}</> : <>Intent link{agent ? ` · from ${agent}` : ''}</>}
+                  {linkLockup(hasCreator, agent)}
                 </span>
               </>
             )}
@@ -406,7 +416,7 @@ export default function IntentRuntime({
         <div className="flex items-center gap-2 mb-8">
           <YeetfulMark size={18} />
           <span className="mono text-[11px] uppercase tracking-widest text-[color:var(--muted-2)]">
-            Intent link{agent ? ` · from ${agent}` : ''}
+            {linkLockup(hasCreator, agent)}
           </span>
         </div>
         <h1 className="text-xl font-semibold text-[color:var(--fg)] mb-3">
@@ -485,7 +495,12 @@ export default function IntentRuntime({
               )}
               <div className="min-w-0">
                 <p className="mono text-[10px] uppercase tracking-widest text-[color:var(--muted-2)] leading-none">
-                  {brand ? `${brand.name ?? brand.domain} · intent link · powered by Yeetful` : `Intent link${agent ? ` · from ${agent}` : ''}`}
+                  {/* The framing has to survive the splash: a visitor spends
+                      the whole run under this header, and it read "intent
+                      link" on posted calls too. */}
+                  {brand
+                    ? `${brand.name ?? brand.domain} · ${linkLockupWord(hasCreator).toLowerCase()} · powered by Yeetful`
+                    : linkLockup(hasCreator, agent)}
                 </p>
                 <p
                   className="mt-1 text-[15px] leading-tight text-[color:var(--fg)] truncate"
