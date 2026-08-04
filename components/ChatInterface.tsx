@@ -1304,9 +1304,15 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
             </span>
           ) : (
             activeServers.length > 0 && (
-              <span className="text-[11px] text-[color:var(--muted-2)] truncate pl-1">
+              // The working-set line is a DOOR, not dead text — it names the
+              // agents on duty and opens the set for editing.
+              <button
+                onClick={() => openRail('mcps')}
+                title="Your working set — click to edit"
+                className="text-[11px] text-[color:var(--muted-2)] truncate pl-1 text-left hover:text-white transition-colors"
+              >
                 {activeServers.map((s) => cleanServerName(s.name)).join(' · ')}
-              </span>
+              </button>
             )
           )}
           </div>

@@ -16,7 +16,10 @@ import { isAdminAddress } from '@/lib/admin'
 // Earnings retired from the rail (pages stay routable by URL).
 export const DASH_SECTIONS = [
   { href: '/dashboard', label: 'Overview', icon: LayoutDashboard, exact: true },
-  { href: '/chat', label: 'App', icon: MessageSquare, exact: false },
+  // Post-pivot language: the chat IS the product ("App" was the App-mode-era
+  // word). On desktop the spine also carries this door; this row keeps chat
+  // reachable from the MOBILE drawer, where the spine doesn't render.
+  { href: '/chat', label: 'Chat', icon: MessageSquare, exact: false },
   { href: '/dashboard/links', label: 'Intent links', icon: Link2, exact: false },
   { href: '/dashboard/guardian', label: 'Guardian', icon: ShieldCheck, exact: false },
   { href: '/dashboard/embeds', label: 'Embeds', icon: Globe, exact: false },

@@ -129,8 +129,8 @@ export default function AppSpine({ surface = 'chat' }: { surface?: 'chat' | 'das
               <Icon className="w-[18px] h-[18px]" />
               <span className="mono text-[9px] font-medium tracking-wide">{label}</span>
               {tab === 'jobs' && badgeCount > 0 && (
-                <span className="absolute top-0 right-0.5 mono text-[9px] px-1 rounded-full bg-amber-500/15 text-amber-400">
-                  {badgeCount}
+                <span className="absolute -top-0.5 right-0 mono text-[9px] leading-4 px-1 rounded-full bg-amber-500/15 text-amber-400 ring-1 ring-[var(--surf-1)]">
+                  {badgeCount > 99 ? '99+' : badgeCount}
                 </span>
               )}
             </button>
