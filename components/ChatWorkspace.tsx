@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { useAccount } from 'wagmi'
 import ChatInterface from '@/components/ChatInterface'
 import ChatRail from '@/components/ChatRail'
+import AppSpine from '@/components/AppSpine'
 import ChatSignInGate from '@/components/ChatSignInGate'
 import RouterEngineWindow from '@/components/RouterEngineWindow'
 import { useAppShellMode } from '@/components/AppShell'
@@ -172,7 +173,12 @@ export default function ChatWorkspace({ chatId }: { chatId?: string }) {
 
   return (
     <div className={`relative flex ${chrome ? 'h-dvh' : 'h-[calc(100dvh-4rem)]'}`}>
-      {/* The single left rail: MCPs (primary tab) + chat history (Chats tab). */}
+      {/* The spine (desktop): brand seat + workspace destinations + the way
+          out to the dashboard. Mounted by the SHELL, not ChatInterface, so
+          /embed and /i can never inherit it. */}
+      <AppSpine />
+      {/* The drawer: the spine's contextual panel — working set, running
+          work, links, history. */}
       <div className="relative flex-shrink-0">
         <ChatRail />
       </div>

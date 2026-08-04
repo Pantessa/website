@@ -316,9 +316,10 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
   }, [])
   const railVisible = isNarrow ? mobileMcpRailOpen : mcpRailOpen
   // The collapsed JOBS chip's count — running jobs + recurring buys needing
-  // you. Polled only while the chip is actually visible (rail closed,
-  // first-party chat); the open rail runs its own instance for its tab badge.
-  const { badgeCount: runningBadge } = useRunningWork(!railVisible && !embedded && !simple)
+  // you. The chips are mobile-only now (the spine carries the desktop badge),
+  // so this instance polls only while the chip is actually visible: overlay
+  // closed, first-party chat, below lg.
+  const { badgeCount: runningBadge } = useRunningWork(!railVisible && !embedded && !simple && isNarrow)
   // A reopen chip names what it opens: clicking "MCPs"/"Chats" opens the rail
   // on that tab — no more anonymous panel icons. The chips only render while
   // the rail is closed; open, the rail's own tabs sit right there instead.
@@ -1217,34 +1218,34 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
           mode, where IntentRuntime's own header carries the ask. */}
       {!embedded && !simple && (
       <div className="flex-shrink-0 px-3 py-2.5 border-b border-[var(--line)] bg-black/40 flex items-center gap-2">
-        {/* Home mark — a PERMANENT, predictable path back to the dashboard
-            (it used to appear only while the chats sidebar was collapsed,
-            which read as chrome shuffling around). */}
+        {/* Home mark — MOBILE only now: on desktop the spine's brand seat +
+            DASH item carry both directions permanently. */}
         {showAppChrome && (
           <Link
             href="/dashboard"
             aria-label="Pantessa dashboard — links, keys, billing"
             title="Pantessa dashboard — links, keys, billing"
-            className="flex-shrink-0 grid place-items-center w-10 h-10 md:w-8 md:h-8 rounded-lg text-white hover:bg-[var(--surf-1)] transition-colors"
+            className="lg:hidden flex-shrink-0 grid place-items-center w-10 h-10 md:w-8 md:h-8 rounded-lg text-white hover:bg-[var(--surf-1)] transition-colors"
           >
             <YeetfulMark size={20} />
           </Link>
         )}
-        {/* New chat — always visible, so starting fresh never means hunting
-            through the Chats tab. Lands on the bare /chat surface. */}
+        {/* New chat — mobile only: the spine's NEW item owns it on desktop.
+            Lands on the bare /chat surface. */}
         <button
           onClick={startNewChat}
           aria-label="Start a new chat"
           title="Start a new chat"
-          className="flex-shrink-0 flex items-center gap-1.5 px-2.5 min-h-[40px] md:min-h-[32px] rounded-lg border bg-[var(--surf-1)] border-[var(--line)] text-[color:var(--muted)] hover:text-white hover:border-[var(--line-2)] transition-colors"
+          className="lg:hidden flex-shrink-0 flex items-center gap-1.5 px-2.5 min-h-[40px] md:min-h-[32px] rounded-lg border bg-[var(--surf-1)] border-[var(--line)] text-[color:var(--muted)] hover:text-white hover:border-[var(--line-2)] transition-colors"
         >
           <Plus className="w-4 h-4" />
           <span className="text-[11px] whitespace-nowrap font-medium mono">NEW</span>
         </button>
-        {/* Labeled reopen chips — only while the rail is collapsed (open, the
-            rail's own MCPs/Chats tabs are visible right below). */}
+        {/* Labeled reopen chips — mobile, while the overlay drawer is closed.
+            Desktop reopening is the spine's job (always visible), so the
+            chips never render ≥lg. */}
         {!railVisible && (
-          <div className="chatreopen flex-shrink-0 flex items-center gap-1.5">
+          <div className="lg:hidden chatreopen flex-shrink-0 flex items-center gap-1.5">
             {/* Four chips can't all carry words at phone widths (the #570
                 drill pattern) — below md the words drop, icons + counts stay,
                 titles/aria keep them named. */}
