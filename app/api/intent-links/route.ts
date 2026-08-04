@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { Prisma } from '@prisma/client'
 import prisma from '@/lib/db'
 import { getAuthAddress } from '@/lib/api-key'
 import { activeLinkCapFor, cleanAsk, composeMcps, mintSlug, parseAllowWallets, parseExpiry, parseMaxSigns, sanitizeMcps, sanitizeVariants, validateRedirect } from '@/lib/intent-links'
@@ -215,6 +216,47 @@ export async function GET(req: NextRequest) {
     }
   }
 
+  // Per-week cadence (the 30-day out-earn instrument, HANDOFF-gtm-runway):
+  // the KOL retention question is "did this week here beat this week's
+  // ref-code payout?" — so earnings need a time axis, not just a lifetime
+  // total. Raw SQL does ONLY the date_trunc bucketing; the money math stays
+  // in lib/fees (one source, same per-path/per-tier rules as above). Zero
+  // DDL — read-time from embed_turns.created_at, last ~5 ISO weeks.
+  const weekSince = new Date(Date.now() - 35 * 86_400_000)
+  type WeekRow = { wk: Date; build_path: string | null; fee_bps: number | null; v: number; n: bigint }
+  const slugList = links.map((l) => l.id)
+  const directWeekly: WeekRow[] = slugList.length
+    ? await prisma.$queryRaw<WeekRow[]>`
+        SELECT date_trunc('week', created_at) AS wk, build_path, fee_bps,
+               coalesce(sum(value_usd), 0)::float AS v, count(*) AS n
+        FROM embed_turns
+        WHERE intent_link_slug IN (${Prisma.join(slugList)}) AND outcome = 'signed'
+          AND value_usd > 0 AND created_at >= ${weekSince}
+        GROUP BY 1, 2, 3`
+    : []
+  const referredWeekly: WeekRow[] = referred.length
+    ? await prisma.$queryRaw<WeekRow[]>`
+        SELECT date_trunc('week', created_at) AS wk, build_path, fee_bps,
+               coalesce(sum(value_usd), 0)::float AS v, count(*) AS n
+        FROM embed_turns
+        WHERE wallet_address IN (${Prisma.join(referred.map((r) => r.wallet))})
+          AND intent_link_slug IS NULL AND outcome = 'signed'
+          AND value_usd > 0 AND created_at >= ${weekSince}
+        GROUP BY 1, 2, 3`
+    : []
+  const weekMap = new Map<string, { weekStart: string; earnedUsd: number; signedUsd: number; signs: number }>()
+  for (const r of [...directWeekly, ...referredWeekly]) {
+    const key = r.wk.toISOString().slice(0, 10)
+    const w = weekMap.get(key) ?? { weekStart: key, earnedUsd: 0, signedUsd: 0, signs: 0 }
+    w.signedUsd += r.v
+    w.signs += Number(r.n)
+    if (r.build_path && FEE_BEARING_BUILD_PATHS.has(r.build_path)) {
+      w.earnedUsd += creatorEarningsUsd(r.v, netFeeBpsForTurn(r.build_path, r.fee_bps))
+    }
+    weekMap.set(key, w)
+  }
+  const weekly = [...weekMap.values()].sort((a, b) => (a.weekStart < b.weekStart ? 1 : -1))
+
   const totalEarnedUsd = money.reduce((s, m) => s + m.earnedUsd, 0) + referredEarnedUsd
   const totalSignedUsd = money.reduce((s, m) => s + m.signedUsd, 0)
   const totalFeeBearingUsd = money.reduce((s, m) => s + m.feeBearingUsd, 0)
@@ -254,6 +296,8 @@ export async function GET(req: NextRequest) {
       referredEarnedUsd,
       referredSignedUsd,
       referredSigns,
+      // Newest week first; direct + rail merged per ISO week (UTC).
+      weekly,
     },
   })
 }
