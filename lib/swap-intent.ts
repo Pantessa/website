@@ -154,15 +154,42 @@ const LIMIT_RE = new RegExp(
   String.raw`\b(?:sell|swap)\s+${AMOUNT}\s*${TOKEN}\s+(?:for|at|when(?:\s+it)?\s+hits?)\s+(?:at\s+least\s+)?${AMOUNT}\s*${TOKEN}\b`,
   'i',
 )
+// "limit … buy 1 UNI for/with/using (at most) 4 USDC" — the BUY-led mirror,
+// and the operands INVERT: the first amount is what you RECEIVE (the order's
+// minimum buy), the second is what you SPEND. Live 2026-08-03: "place a limit
+// order to buy 1 UNI for 4 USDC on base" matched neither the sell-led grammar
+// nor the clarify fallback, so it reached the planner — which said it couldn't
+// execute orders and then recommended Uniswap, CoW Swap and 1inch BY NAME.
+// A competitor referral on a money ask, for a swap we build natively.
+// NO bare "at" here (the sell form's third connector): "buy 10 UNI at 3 USDC"
+// reads as a PER-UNIT price, and the sell-led convention is TOTAL — claiming
+// it would rest a 3-USDC order while the user believes they placed a 30-USDC
+// one. Ambiguous phrasing earns the clarify, which names both amounts.
+const LIMIT_BUY_RE = new RegExp(
+  String.raw`\bbuy\s+${AMOUNT}\s*${TOKEN}\s+(?:for|with|using)\s+(?:at\s+most\s+|no\s+more\s+than\s+|under\s+)?${AMOUNT}\s*${TOKEN}\b`,
+  'i',
+)
+/**
+ * The example phrasings the limit clarify offers — BOTH operand orders, and
+ * both must round-trip this parser (harness-pinned). A clarify that suggests
+ * an unparsable phrasing is a dead-end with extra steps.
+ */
+export const LIMIT_EXAMPLES = ['sell 0.5 WETH for at least 1750 USDC', 'buy 1 UNI for at most 4 USDC'] as const
 // "swap USDC for WETH" — a pair with no amount → ask how much.
 const PAIR_NO_AMOUNT_RE = new RegExp(
   String.raw`\b(?:swap|convert|trade)\s+${TOKEN}\s+(?:for|to|into)\s+${TOKEN}\b`,
   'i',
 )
 // Swap-ish enough to clarify (imperative + a number somewhere) — plain
-// questions like "what is a swap?" fall through to normal routing.
-const swapish = (message: string) =>
-  PAIR_NO_AMOUNT_RE.test(message) || (/\b(?:swap|convert)\b|\bsell\b/i.test(message) && /\d/.test(message))
+// questions like "what is a swap?" fall through to normal routing. `buy`
+// counts only under an explicit "limit" (opts.includeBuy): a buy-led limit
+// ask that misses the grammar must still clarify instead of reaching the
+// planner, but widening the GENERAL fallback would let this gate claim buys
+// that belong to other layers (perp buys, NFT buys, stock share counts) —
+// this predicate runs outside the OTHER_VENUE guard.
+const swapish = (message: string, opts: { includeBuy?: boolean } = {}) =>
+  PAIR_NO_AMOUNT_RE.test(message) ||
+  ((opts.includeBuy ? /\b(?:swap|convert|sell|buy)\b/i : /\b(?:swap|convert)\b|\bsell\b/i).test(message) && /\d/.test(message))
 
 export function parseSwapIntent(message: string): SwapIntent {
   const wantsLimit = /\blimit\b/i.test(message)
@@ -179,11 +206,24 @@ export function parseSwapIntent(message: string): SwapIntent {
         buyToken: m[4],
       }
     }
-    if (swapish(message)) {
+    // Buy-led: the amounts arrive in the OPPOSITE order — group 1/2 is the
+    // buy side (the minimum you'll accept), group 3/4 is what you spend.
+    // Checked second so a message carrying both verbs keeps the sell reading.
+    const bm = message.match(LIMIT_BUY_RE)
+    if (bm) {
       return {
         isSwap: true,
-        problem:
-          'For a limit order, name the full price — e.g. “limit order: sell 0.5 WETH for at least 1750 USDC”.',
+        mode: 'limit',
+        sellAmountHuman: bm[3],
+        sellToken: bm[4],
+        buyAmountAtLeastHuman: bm[1],
+        buyToken: bm[2],
+      }
+    }
+    if (swapish(message, { includeBuy: true })) {
+      return {
+        isSwap: true,
+        problem: `For a limit order, name both sides — e.g. “limit order: ${LIMIT_EXAMPLES[0]}” or “limit order: ${LIMIT_EXAMPLES[1]}”.`,
       }
     }
     return NOT_SWAP
