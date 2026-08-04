@@ -48,6 +48,10 @@ export interface Earnings {
   referredWallets?: number
   referredEarnedUsd?: number
   referredSignedUsd?: number
+  /** Per-ISO-week cadence (newest first, last ~5 weeks; direct + rail
+   *  merged) — the 30-day out-earn instrument: one week here vs the same
+   *  week's ref-code payout. Optional: older cached responses lack it. */
+  weekly?: { weekStart: string; earnedUsd: number; signedUsd: number; signs: number }[]
   referredSigns?: number
 }
 

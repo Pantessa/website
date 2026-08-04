@@ -54,6 +54,21 @@ export function LinkEarningsPanel({
           their later trades
         </span>
       )}
+      {/* The out-earn instrument: one week here vs the same week's ref-code
+          payout. Shown once any recent week carried money — a creator
+          deciding whether to keep posting reads cadence, not lifetime. */}
+      {(earnings.weekly?.some((w) => w.signedUsd > 0) ?? false) && (
+        <span className="text-[12px] text-[color:var(--muted)] w-full">
+          By week (vs your ref codes):{' '}
+          {earnings.weekly!.map((w) => (
+            <span key={w.weekStart} className="mr-3 whitespace-nowrap">
+              <span className="mono text-[color:var(--muted-2)]">wk {w.weekStart.slice(5)}</span>{' '}
+              <span className="mono text-[color:var(--accent)]">{formatEarnedUsd(w.earnedUsd)}</span>
+              <span className="text-[color:var(--muted-2)]"> · ${Math.round(w.signedUsd)} moved</span>
+            </span>
+          ))}
+        </span>
+      )}
       <span className="text-[11px] text-[color:var(--muted-2)] w-full">
         Half of Pantessa&apos;s venue fee on swaps and stock buys — from your links, and from
         every later fee-bearing trade by wallets your links first brought (lifetime, first

@@ -1660,6 +1660,25 @@ async function main() {
         afterBody.earnings.totalSignedUsd >= 600 &&
         afterBody.earnings.totalFeeBearingUsd >= 100,
     )
+    // The out-earn instrument: earnings carry a per-week axis (same money
+    // math, bucketed read-time). The turns just posted land in the CURRENT
+    // ISO week: its earnings include the fee-bearing $0.10 and its moved $
+    // includes the fee-free $500 — the fee rules survive the bucketing.
+    {
+      const weekly = (afterBody.earnings as { weekly?: { weekStart: string; earnedUsd: number; signedUsd: number; signs: number }[] }).weekly
+      const thisWeek = weekly?.[0]
+      check(
+        'intent links: earnings.weekly buckets the same money math by ISO week (newest first, current week carries the fixture)',
+        Array.isArray(weekly) &&
+          weekly.length >= 1 &&
+          !!thisWeek &&
+          thisWeek.earnedUsd >= 0.1 - 0.001 &&
+          thisWeek.signedUsd >= 600 &&
+          thisWeek.signs >= 2 &&
+          weekly.every((w, i) => i === 0 || w.weekStart < weekly[i - 1].weekStart),
+        JSON.stringify(weekly),
+      )
+    }
     // Sub-cent display: half of 20bps on a $1 test swap is $0.001 — two
     // decimals would render the tester's own proof-of-life as "$0.00".
     check(
