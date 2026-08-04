@@ -40,15 +40,15 @@ const KIND_LABEL: Record<string, string> = {
 export async function generateMetadata({ params }: Params) {
   const { slug } = await params
   const r = await getReceipt(slug)
-  if (!r) return { title: 'Receipt · Yeetful', robots: { index: false, follow: false } }
-  const title = `${r.headline} · Yeetful receipt`
+  if (!r) return { title: 'Receipt · Pantessa', robots: { index: false, follow: false } }
+  const title = `${r.headline} · Pantessa receipt`
   const description = r.standing
     ? 'A standing order, set up in one sentence. It runs whether anyone is at the keyboard or not — guarded, receipted, killable.'
     : 'Built, guarded, and signed from one chat ask. The wallet that shared this stayed the only signer.'
   return {
     title,
     description,
-    openGraph: { title, description, siteName: 'Yeetful', type: 'article' },
+    openGraph: { title, description, siteName: 'Pantessa', type: 'article' },
     twitter: { card: 'summary_large_image', title, description },
     robots: { index: false, follow: false },
   }
@@ -156,7 +156,7 @@ export default async function ReceiptPage({ params }: Params) {
             className="flex items-center gap-2 px-4 py-2 rounded-full bg-[var(--accent)] text-black text-sm font-semibold hover:opacity-90 transition-opacity"
           >
             <YeetfulMark size={16} />
-            <span>{receipt.ask ? 'Do this yourself' : 'Try Yeetful'}</span>
+            <span>{receipt.ask ? 'Do this yourself' : 'Try Pantessa'}</span>
           </Link>
           {receipt.ask && (
             <p className="text-[11px] text-[color:var(--muted-2)] text-center">
@@ -188,7 +188,7 @@ export default async function ReceiptPage({ params }: Params) {
             )}
           </div>
           <p className="mt-3 text-[11px] text-[color:var(--muted-2)] text-center mono">
-            Yeetful — the non-custodial back office for autonomous money.
+            Pantessa — the non-custodial back office for autonomous money.
           </p>
         </div>
       </div>

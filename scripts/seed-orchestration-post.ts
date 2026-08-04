@@ -30,7 +30,7 @@ export const POST = {
 
 That's one sentence. Until now it was also three apps, a bridge UI you double-check twice, a perps exchange, a price alert you promise yourself you'll act on, and five signatures with addresses you paste in at 1 a.m. The hard part of DeFi was never the signing. It was the seventeen tabs.
 
-As of this release, that sentence is the whole interface. Yeetful compiles it into an ordered job, builds each transaction deterministically, gates every one behind the same guardrails, and walks you through the signatures one at a time. When the last step is a standing instruction — "protect it" — a guardian keeps watching after you close the tab.
+As of this release, that sentence is the whole interface. Pantessa compiles it into an ordered job, builds each transaction deterministically, gates every one behind the same guardrails, and walks you through the signatures one at a time. When the last step is a standing instruction — "protect it" — a guardian keeps watching after you close the tab.
 
 ## What a job is
 

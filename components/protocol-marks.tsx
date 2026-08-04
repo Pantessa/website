@@ -128,7 +128,7 @@ export function MorphoMark({ size = 22 }: { size?: number }) {
 }
 
 export function YeetfulMark({ size = 22 }: { size?: number }) {
-  // Yeetful's own agent-graph "Y" mark — three nodes wired to a central hub
+  // Pantessa's own agent-graph "Y" mark — three nodes wired to a central hub
   // (identical geometry to components/Logo.tsx and
   // public/design-system/assets/yeetful-mark.svg). Used for the first-party
   // `yeetful-tool-*` internal MCPs so they carry the brand mark instead of a
@@ -175,10 +175,10 @@ const REGISTRY: { match: RegExp; Mark: Mark }[] = [
   { match: /opensea|seaport/i, Mark: OpenseaMark },
   { match: /morpho/i, Mark: MorphoMark },
   // First-party internal MCPs (the documented `yeetful-tool-*` prefix, plus
-  // their display names) — carry Yeetful's own mark. Deliberately narrow so it
+  // their display names) — carry Pantessa's own mark. Deliberately narrow so it
   // never catches `yeetful-claude` (the paid Anthropic inference MCP, which
   // keeps its Anthropic icon via ICON_SLUG in BrandIcon).
-  { match: /yeetful-tool|yeetful (wallet|funding)/i, Mark: YeetfulMark },
+  { match: /yeetful-tool|(yeetful|pantessa) (wallet|funding)/i, Mark: YeetfulMark },
 ]
 
 /** Resolve a vendored protocol mark from any of a server's identifiers.

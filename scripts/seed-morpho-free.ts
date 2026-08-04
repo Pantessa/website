@@ -56,7 +56,7 @@ const SERVICE = {
   slug: 'morpho-free',
   name: 'Morpho (Free)',
   description:
-    'Morpho (Blue) lending on Base and Ethereum, computed from on-chain state, free and non-gated: curated markets with live supply/borrow APYs, per-market deep-dives, full account positions (supplied, collateral, debt, health factor), health-factor previews, and construction-only build_* tools that return UNSIGNED approve→act transactions the user signs — lend, post/withdraw collateral, borrow, repay, withdraw. Never holds keys, never signs, never submits. Rate-limited. By Yeetful.',
+    'Morpho (Blue) lending on Base and Ethereum, computed from on-chain state, free and non-gated: curated markets with live supply/borrow APYs, per-market deep-dives, full account positions (supplied, collateral, debt, health factor), health-factor previews, and construction-only build_* tools that return UNSIGNED approve→act transactions the user signs — lend, post/withdraw collateral, borrow, repay, withdraw. Never holds keys, never signs, never submits. Rate-limited. By Pantessa.',
   category: 'DeFi',
   kind: 'data',
   priceUsd: '0',
@@ -189,7 +189,7 @@ async function main() {
       priceUsd: '0',
       scheme: 'exact',
       network: 'base',
-      provider: 'Yeetful (free)',
+      provider: 'Pantessa (free)',
       position: i,
       featured: t.featured === true,
       parameters: t.params.length ? (t.params as unknown as object) : Prisma.DbNull,

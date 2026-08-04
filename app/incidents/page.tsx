@@ -10,7 +10,7 @@ import { listIncidents } from '@/lib/incidents'
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
-export const metadata: Metadata = { title: 'Routing incidents · Yeetful', robots: { index: false } }
+export const metadata: Metadata = { title: 'Routing incidents · Pantessa', robots: { index: false } }
 
 /** open → amber, dispatched → blue, pr_open → accent, resolved → muted. */
 function statusColor(s: string): string {

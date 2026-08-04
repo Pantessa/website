@@ -1,7 +1,7 @@
 'use client'
 
 // Admin-only "Delete Server" control at the very bottom of a service detail page.
-// Only Yeetful admin wallets (isAdminAddress — the client sees OWNER_WALLETS) ever
+// Only Pantessa admin wallets (isAdminAddress — the client sees OWNER_WALLETS) ever
 // see it; the DELETE /api/servers/[slug] route re-checks the session server-side,
 // so a hidden button is a courtesy, never the gate. Two-step confirm because the
 // delete is irreversible (drops the endpoint surface, ratings, and owner claim).

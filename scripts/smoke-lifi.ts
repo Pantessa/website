@@ -2,7 +2,7 @@
 //  Live LiFi venue smoke — READ-ONLY. Quotes 1 USDG → AAPL on Robinhood
 //  Chain (4663) through the real builder (li.quest HTTP + on-chain reads +
 //  estimateGas simulation) and asserts the guard accepts the live quote and
-//  the 0.20% Yeetful fee rides as its own decodable transfer step. Nothing
+//  the 0.20% Pantessa fee rides as its own decodable transfer step. Nothing
 //  is signed, nothing is sent, nothing is spent.
 //
 //  Run: npx tsx scripts/smoke-lifi.ts   (needs network; LIFI_API_KEY optional)

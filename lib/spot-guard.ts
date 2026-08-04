@@ -43,7 +43,7 @@ const HEX_ADDR = /^0x[0-9a-fA-F]{40}$/
 export interface BuildSpotPermissionInput {
   /** The policy owner's wallet — must BE a smart wallet (the grantor). */
   account: string
-  /** Yeetful's CDP-managed spender. */
+  /** Pantessa's CDP-managed spender. */
   spender: string
   /** The protected asset: an ERC-20 address, or the native sentinel. */
   token: string
@@ -182,7 +182,7 @@ export interface PolicyTerms {
 export function permissionMatchesPolicy(p: SpotSpendPermission, t: PolicyTerms): { ok: boolean; problems: string[] } {
   const problems: string[] = []
   if (p.account.toLowerCase() !== t.ownerWallet.toLowerCase()) problems.push('permission account is not the policy owner')
-  if (p.spender.toLowerCase() !== t.spender.toLowerCase()) problems.push('permission spender is not the bound Yeetful spender')
+  if (p.spender.toLowerCase() !== t.spender.toLowerCase()) problems.push('permission spender is not the bound Pantessa spender')
   if (p.token.toLowerCase() !== t.tokenAddress.toLowerCase()) problems.push('permission token is not the protected asset')
   if (p.allowance !== t.amountAtoms) problems.push('allowance must be exactly the protected amount')
   if (p.period !== p.end - p.start) problems.push('period must span the whole permission life (one-shot pull)')

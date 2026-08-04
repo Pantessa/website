@@ -1,5 +1,5 @@
 // components/Logo.tsx
-// Yeetful — agent-graph "Y" mark + wordmark.
+// Pantessa — agent-graph "Y" mark + wordmark.
 // The mark is single-color and inherits the current text color via `currentColor`,
 // so it turns white on a dark nav and black on a light surface automatically.
 
@@ -11,7 +11,7 @@ type MarkProps = {
   title?: string;
 };
 
-export function YeetfulMark({ size = 28, className, title = "Yeetful" }: MarkProps) {
+export function YeetfulMark({ size = 28, className, title = "Pantessa" }: MarkProps) {
   // Unique mask id per instance so multiple logos on one page don't collide.
   const uid = React.useId().replace(/:/g, "");
   const maskId = `yf-hub-${uid}`;

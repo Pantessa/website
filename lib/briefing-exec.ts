@@ -167,7 +167,7 @@ async function readFiredRecently(wallet: string): Promise<FiredEvent[]> {
 }
 
 // ── Public /w snapshot ──────────────────────────────────────────────────────
-// The shareable "run Yeetful on any wallet" page reads the same pipeline
+// The shareable "run Pantessa on any wallet" page reads the same pipeline
 // plus the multichain portfolio for context. A short per-instance TTL cache
 // keeps a shared link from hammering RPCs/MCPs (generateMetadata + the page
 // body both read it; the affinity-cache precedent).

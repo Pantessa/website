@@ -1,4 +1,4 @@
-You are an automated fixer for the **Yeetful sharp router** (an x402 MCP routing
+You are an automated fixer for the **Pantessa sharp router** (an x402 MCP routing
 engine). A routing call failed in production. Investigate and fix it.
 
 ## The incident

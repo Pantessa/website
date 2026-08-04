@@ -56,7 +56,7 @@ export default function OnboardingChecklist() {
     },
     {
       label: 'Claim your earnings',
-      hint: 'You keep half of Yeetful\'s 0.20% fee on your links\' conversions. Claims open at $10, paid in USDC on Base.',
+      hint: 'You keep half of Pantessa\'s 0.20% fee on your links\' conversions. Claims open at $10, paid in USDC on Base.',
       done: status.claimed,
       href: '/dashboard/links',
       cta: 'Claim',

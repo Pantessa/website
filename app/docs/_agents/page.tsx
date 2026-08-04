@@ -23,7 +23,7 @@ export default function AgentsDocsPage() {
         Your spend controls have two sides. <strong>Approvals</strong> decide which{' '}
         <em>services</em>{' '}money may flow to — the per-service toggles that shape your grant&apos;s
         allowlist. <strong>Agents</strong> decide which <em>apps</em> may spend on your behalf —
-        and on Yeetful, an agent <strong>is</strong> an API key.
+        and on Pantessa, an agent <strong>is</strong> an API key.
       </p>
 
       <div className="docs__prose">
@@ -120,7 +120,7 @@ pay.agentBudget() // { keyId, label, perDayUsd, spentTodayUsd, remainingTodayUsd
         <h2>Where enforcement actually lives</h2>
         <p>
           Budgets are <strong>advisory at the rails</strong>: the agent pays x402 challenges from
-          its <em>own wallet</em>, so Yeetful cannot block a payment in flight. The SDK is the
+          its <em>own wallet</em>, so Pantessa cannot block a payment in flight. The SDK is the
           enforcement point — it reads the policy and refuses locally, the same trust model as the
           grant itself. That&apos;s the right tool for governing <em>your own</em> agents (runaway
           loops, bugs, prompt-injected tool calls). Hard, adversarial enforcement arrives with
@@ -150,9 +150,9 @@ pay.agentBudget() // { keyId, label, perDayUsd, spentTodayUsd, remainingTodayUsd
         </p>
         <ul>
           <li>
-            <strong>Chats Yeetful executes</strong> (the burner and the wallet-plan gate) —{' '}
+            <strong>Chats Pantessa executes</strong> (the burner and the wallet-plan gate) —{' '}
             <strong>hard, server-side refusal</strong>. The payment is blocked before it settles and
-            the denial is ledgered. Takes effect <strong>instantly</strong>, because Yeetful controls
+            the denial is ledgered. Takes effect <strong>instantly</strong>, because Pantessa controls
             that rail.
           </li>
           <li>

@@ -20,7 +20,7 @@ export default function RouterDocsPage() {
       </p>
       <h1 className="docs__h1">Router: the routing engine</h1>
       <p className="docs__lead">
-        Router is Yeetful&apos;s routing engine. You ask for something in plain English; it
+        Router is Pantessa&apos;s routing engine. You ask for something in plain English; it
         weighs every MCP route that can answer, picks the <strong>cheapest proven route under your
         cap</strong>, sends the call, and your agent pays for it per call in USDC on Base —{' '}
         <strong>one key, no per-provider accounts</strong>. See it move on the{' '}
@@ -33,7 +33,7 @@ export default function RouterDocsPage() {
           You never name an endpoint or fill a parameter. Send a request the way you&apos;d say it —{' '}
           <em>&quot;live ETH price&quot;</em>, <em>&quot;scrape this pricing page&quot;</em>,{' '}
           <em>&quot;cheapest flight SFO→JFK&quot;</em> — from the{' '}
-          <Link href="/chat">Yeetful chat</Link> or through the{' '}
+          <Link href="/chat">Pantessa chat</Link> or through the{' '}
           <code>yeetful</code> SDK. Router does the rest.
         </p>
 
@@ -72,7 +72,7 @@ export default function RouterDocsPage() {
           allowlist plus per-call, per-day, and lifetime USD caps. If the best route for a request
           is still priced over your cap, Router <strong>drops the call</strong>: it is refused
           before any payment is signed, $0 is spent, and the denial is recorded. The guardrail saves
-          money by <em>not</em> spending it. For chats Yeetful runs, this is a server-side hard
+          money by <em>not</em> spending it. For chats Pantessa runs, this is a server-side hard
           refusal; for SDK agents paying their own wallet it is enforced in the SDK.
         </p>
 
@@ -113,7 +113,7 @@ export default function RouterDocsPage() {
         <h2>What the engine is, exactly</h2>
         <p>
           Under the hood the router is <code>lib/endpoint-planner.ts</code> plus a single planning
-          inference call in the chat orchestrator, executing through Yeetful&apos;s version-aware
+          inference call in the chat orchestrator, executing through Pantessa&apos;s version-aware
           x402 client. The price/proven ranking above is deterministic; matching your exact words to
           the right endpoint and filling its parameters is the planning model&apos;s job, and the
           request is built so a missing-required or unresolved path token <em>refuses</em> rather

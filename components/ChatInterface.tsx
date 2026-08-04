@@ -1,6 +1,7 @@
 'use client'
 
 import { analytics } from '@/lib/analytics'
+import { feeBpsOfArtifact } from '@/lib/fees'
 import { Fragment, useState, useRef, useEffect, useSyncExternalStore } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Send, Zap, Check, Loader2, Bot, User, Boxes, ListChecks, MessageSquare, PanelRight, Sparkles, Copy, Plus, Link2 } from 'lucide-react'
@@ -872,23 +873,10 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
     const v = (source as { buildPath?: unknown } | null | undefined)?.buildPath
     return typeof v === 'string' && v ? v : undefined
   }
-  // The fee tier the ARTIFACT actually carried (C2b: 20 organic / 50 link),
-  // read from the artifact itself — the v3 refresh recipe or the CoW appData
-  // — never a parallel field that could drift from the signed bytes.
-  const feeBpsOf = (source: unknown): number | undefined => {
-    const m = source as
-      | { txChain?: { refresh?: { params?: { feeBps?: unknown } } }; orderRequest?: { appDataJson?: unknown } }
-      | null
-      | undefined
-    const fromChain = m?.txChain?.refresh?.params?.feeBps
-    if (typeof fromChain === 'string' && /^\d{1,3}$/.test(fromChain)) return Number(fromChain)
-    const appData = m?.orderRequest?.appDataJson
-    if (typeof appData === 'string') {
-      const match = appData.match(/"partnerFee":\{"bps":(\d{1,3})/)
-      if (match) return Number(match[1])
-    }
-    return undefined
-  }
+  // The fee tier the ARTIFACT actually carried (C2b: 20 organic / 50 link) —
+  // the ONE shared reader (lib/fees.feeBpsOfArtifact), also used by JobCard
+  // so job-step beacons price like one-shots.
+  const feeBpsOf = feeBpsOfArtifact
   // One session id per first-party mount — same role embedSession plays for embeds.
   const [chatSession] = useState(() =>
     typeof crypto !== 'undefined' && 'randomUUID' in crypto
@@ -1235,8 +1223,8 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
         {showAppChrome && (
           <Link
             href="/dashboard"
-            aria-label="Yeetful dashboard — links, keys, billing"
-            title="Yeetful dashboard — links, keys, billing"
+            aria-label="Pantessa dashboard — links, keys, billing"
+            title="Pantessa dashboard — links, keys, billing"
             className="flex-shrink-0 grid place-items-center w-10 h-10 md:w-8 md:h-8 rounded-lg text-white hover:bg-[var(--surf-1)] transition-colors"
           >
             <YeetfulMark size={20} />
@@ -1311,7 +1299,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
               read here). The wiring is kept for a later revival. */}
           {autoRouter ? (
             <span className="text-[11px] text-[color:var(--muted-2)] whitespace-nowrap pl-1">
-              Sharp routing — Yeetful picks the best MCP for each message
+              Sharp routing — Pantessa picks the best MCP for each message
             </span>
           ) : (
             activeServers.length > 0 && (
@@ -1708,6 +1696,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
                               detail: info.detail?.slice(0, 60),
                               valueUsd: info.valueUsd ?? undefined,
                               buildPath: info.builder,
+                              feeBps: info.feeBps,
                               jobId: (msg.meta as { jobId: string }).jobId,
                             })
                           }}
@@ -1944,7 +1933,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
               simple
                 ? 'Ask a follow-up, or tweak the ask…'
                 : autoRouter
-                ? 'Ask anything — Yeetful routes it to the best MCP…'
+                ? 'Ask anything — Pantessa routes it to the best MCP…'
                 : activeServers.length > 1
                   ? `Ask your ${activeServers.length} agents anything…`
                   : activeServers.length === 1

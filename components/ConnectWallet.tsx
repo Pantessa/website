@@ -5,7 +5,7 @@ import { Wallet, ChevronDown } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 /**
- * Top-right connect button that matches Yeetful's zinc/dark aesthetic.
+ * Top-right connect button that matches Pantessa's zinc/dark aesthetic.
  * - Disconnected: solid white "Connect Wallet" pill with wallet icon
  * - Wrong network: red "Wrong network" pill
  * - Connected: compact address pill (truncated 0x1234…abcd) + tiny chain chip,

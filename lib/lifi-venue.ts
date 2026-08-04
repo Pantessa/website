@@ -198,7 +198,7 @@ export interface LifiGuardExpectations {
   sellToken: string
   /** Atoms sent INTO the LiFi swap (asked amount minus fee). */
   swapAtoms: bigint
-  /** Atoms of the Yeetful fee transfer (0 = no fee step expected). */
+  /** Atoms of the Pantessa fee transfer (0 = no fee step expected). */
   feeAtoms: bigint
   treasury: string
 }
@@ -281,7 +281,7 @@ export function guardLifiBuild(steps: LifiBuiltStep[], exp: LifiGuardExpectation
         reasons.push(`The fee step calls "${dec.functionName}", not transfer — refusing.`)
       } else {
         const [to, amount] = dec.args as [string, bigint]
-        if (!eqAddr(to, exp.treasury)) reasons.push('The fee transfer does not pay the Yeetful treasury — refusing.')
+        if (!eqAddr(to, exp.treasury)) reasons.push('The fee transfer does not pay the Pantessa treasury — refusing.')
         if (amount !== exp.feeAtoms) reasons.push('The fee transfer is not exactly the disclosed fee amount — refusing.')
       }
     } catch {
@@ -370,7 +370,7 @@ export async function fetchLifiQuote(params: {
 export async function buildLifiSwap(params: LifiSwapParams): Promise<LifiBuilt> {
   const slippageBps = params.slippageBps ?? 50
   const chain = chainById(params.chainId)
-  if (!chain) throw new Error(`Chain ${params.chainId} isn't one of Yeetful's supported chains.`)
+  if (!chain) throw new Error(`Chain ${params.chainId} isn't one of Pantessa's supported chains.`)
   const chainId = chain.id
   const routers = lifiRoutersFor(chainId)
   if (routers.length === 0) throw new Error(`LiFi settlement isn't allowlisted on ${chain.name}.`)
@@ -428,8 +428,8 @@ export async function buildLifiSwap(params: LifiSwapParams): Promise<LifiBuilt> 
       ourQuote === null
         ? 'No independent on-chain quote available to cross-check LiFi’s price (RPC unavailable) — relying on simulation + the sign-time re-quote.'
         : priceOk
-          ? `LiFi's fill (${formatAtoms(toAmount.toString(), buyDec)} ${buyLabel}) verified against Yeetful's own on-chain quote (${formatAtoms(ourQuote.toString(), buyDec)} ${buyLabel}) — within ${LIFI_MAX_QUOTE_SHORTFALL_BPS / 100}%.`
-          : `LiFi's fill (${formatAtoms(toAmount.toString(), buyDec)} ${buyLabel}) pays more than ${LIFI_MAX_QUOTE_SHORTFALL_BPS / 100}% below Yeetful's own on-chain quote (${formatAtoms(ourQuote.toString(), buyDec)} ${buyLabel}) — refusing a bad fill.`,
+          ? `LiFi's fill (${formatAtoms(toAmount.toString(), buyDec)} ${buyLabel}) verified against Pantessa's own on-chain quote (${formatAtoms(ourQuote.toString(), buyDec)} ${buyLabel}) — within ${LIFI_MAX_QUOTE_SHORTFALL_BPS / 100}%.`
+          : `LiFi's fill (${formatAtoms(toAmount.toString(), buyDec)} ${buyLabel}) pays more than ${LIFI_MAX_QUOTE_SHORTFALL_BPS / 100}% below Pantessa's own on-chain quote (${formatAtoms(ourQuote.toString(), buyDec)} ${buyLabel}) — refusing a bad fill.`,
   }
 
   // Allowance read: LiFi pulls the sell token via approvalAddress.
@@ -474,7 +474,7 @@ export async function buildLifiSwap(params: LifiSwapParams): Promise<LifiBuilt> 
   if (feeAtoms > BigInt(0)) {
     steps.push({
       label: 'fee',
-      title: `Yeetful fee — ${formatAtoms(feeAtoms.toString(), sellDec)} ${sellLabel} (${SWAP_FEE_BPS / 100}%)`,
+      title: `Pantessa fee — ${formatAtoms(feeAtoms.toString(), sellDec)} ${sellLabel} (${SWAP_FEE_BPS / 100}%)`,
       tx: {
         to: sellAddr,
         data: encodeFunctionData({ abi: erc20Abi, functionName: 'transfer', args: [TREASURY_ADDRESS, feeAtoms] }),
@@ -553,8 +553,8 @@ export async function buildLifiSwap(params: LifiSwapParams): Promise<LifiBuilt> 
     ok: true,
     note:
       feeAtoms > BigInt(0)
-        ? `Yeetful fee: ${formatAtoms(feeAtoms.toString(), sellDec)} ${sellLabel} (${SWAP_FEE_BPS / 100}% of the input, below Uniswap's 0.25% interface fee) — its own visible transfer step to the Yeetful treasury.`
-        : 'No Yeetful fee on this swap (amount below fee resolution).',
+        ? `Pantessa fee: ${formatAtoms(feeAtoms.toString(), sellDec)} ${sellLabel} (${SWAP_FEE_BPS / 100}% of the input, below Uniswap's 0.25% interface fee) — its own visible transfer step to the Pantessa treasury.`
+        : 'No Pantessa fee on this swap (amount below fee resolution).',
   }
   const allowanceCheck: GuardrailCheck = {
     id: 'allowance',
@@ -589,7 +589,7 @@ export async function buildLifiSwap(params: LifiSwapParams): Promise<LifiBuilt> 
   const outHuman = formatAtoms(toAmount.toString(), buyDec)
   const minHuman = formatAtoms(toAmountMin.toString(), buyDec)
   const feeHuman = feeAtoms > BigInt(0) ? formatAtoms(feeAtoms.toString(), sellDec) : '0'
-  const summary = `Swap ${params.amountHuman} ${sellLabel} → ~${outHuman} ${buyLabel} on ${chain.name} via its own settlement venue (LiFi-routed, tool: ${quote.tool}), min received ${minHuman}${feeAtoms > BigInt(0) ? `, incl. ${feeHuman} ${sellLabel} Yeetful fee (${SWAP_FEE_BPS / 100}%)` : ''}`
+  const summary = `Swap ${params.amountHuman} ${sellLabel} → ~${outHuman} ${buyLabel} on ${chain.name} via its own settlement venue (LiFi-routed, tool: ${quote.tool}), min received ${minHuman}${feeAtoms > BigInt(0) ? `, incl. ${feeHuman} ${sellLabel} Pantessa fee (${SWAP_FEE_BPS / 100}%)` : ''}`
 
   return {
     summary,

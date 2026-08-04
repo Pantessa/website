@@ -1,13 +1,13 @@
 'use client'
 
-// Dashboard · Treasury — what Yeetful has actually collected. Admin-only:
+// Dashboard · Treasury — what Pantessa has actually collected. Admin-only:
 // /api/admin/treasury enforces the allowlist server-side; this page mirrors
 // the check client-side for a clean "not authorized" panel.
 //
 // Headline lane = ON-CHAIN inflow to the treasury address (swap fees arrive
 // as their own transfer step in the sell token and are persisted nowhere in
 // the DB — the chain is the only honest ledger). Secondary lane = x402
-// settlements against Yeetful-owned services (the attributable DB view of a
+// settlements against Pantessa-owned services (the attributable DB view of a
 // subset of that same money — the lanes are never summed). Every payer is
 // badged tester (yellow) vs wild (green).
 
@@ -100,7 +100,7 @@ export default function TreasuryPage() {
           <ShieldAlert className="w-7 h-7" />
         </div>
         <h1 className="text-xl font-semibold text-white mb-2">Not authorized</h1>
-        <p className="text-sm text-[color:var(--muted)]">The treasury dashboard is limited to Yeetful admins.</p>
+        <p className="text-sm text-[color:var(--muted)]">The treasury dashboard is limited to Pantessa admins.</p>
       </div>
     )
   }
@@ -269,13 +269,13 @@ export default function TreasuryPage() {
 
       {/* x402 ledger lane */}
       <Card className="mt-3">
-        <CardTitle>x402 settlements · Yeetful services ({data.x402.recent.length})</CardTitle>
+        <CardTitle>x402 settlements · Pantessa services ({data.x402.recent.length})</CardTitle>
         <p className="text-xs text-[color:var(--muted-2)] mt-0.5 mb-3">
           Settled paid calls against *.yeetful.com services, attributed via the payer’s spend grant. The
           same money is visible on-chain above — this is the who-paid-for-what view, not a second total.
         </p>
         {data.x402.recent.length === 0 ? (
-          <p className="text-xs text-[color:var(--muted-2)] py-4">No settled x402 calls against Yeetful services yet.</p>
+          <p className="text-xs text-[color:var(--muted-2)] py-4">No settled x402 calls against Pantessa services yet.</p>
         ) : (
           <div className="overflow-x-auto -mx-1 px-1">
             <table className="w-full text-sm min-w-[560px]">

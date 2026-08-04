@@ -6,14 +6,14 @@ import ChatWorkspace from '@/components/ChatWorkspace'
 // without this they fell back to the generic site card. One sentence per
 // surface (STORY.md): say what should happen; sign what it builds.
 
-const TITLE = 'Yeetful Chat — say what should happen. Sign what it builds.'
+const TITLE = 'Pantessa Chat — say what should happen. Sign what it builds.'
 const DESCRIPTION =
-  'One composer for every dapp: swaps, recurring buys, stop-losses, fund-then-act jobs. Yeetful compiles the sentence into guarded transactions — your wallet stays the only signer.'
+  'One composer for every dapp: swaps, recurring buys, stop-losses, fund-then-act jobs. Pantessa compiles the sentence into guarded transactions — your wallet stays the only signer.'
 
 export const metadata: Metadata = {
   title: TITLE,
   description: DESCRIPTION,
-  openGraph: { title: TITLE, description: DESCRIPTION, siteName: 'Yeetful', type: 'website' },
+  openGraph: { title: TITLE, description: DESCRIPTION, siteName: 'Pantessa', type: 'website' },
   twitter: { card: 'summary_large_image', title: TITLE, description: DESCRIPTION },
 }
 

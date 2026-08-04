@@ -55,7 +55,7 @@ const SERVICE = {
   slug: 'cow-free',
   name: 'CoW Protocol (Free)',
   description:
-    'CoW Protocol, free and non-gated: live order-book quotes, MEV-protected swap + limit orders built into the exact EIP-712 order the user signs, open orders, trade history, portfolio, solver competition, and the official CoW docs (bundled, searchable). Mainnet, Gnosis, Arbitrum, Base + more. Builds only — never holds keys, never submits unsigned. Rate-limited. By Yeetful.',
+    'CoW Protocol, free and non-gated: live order-book quotes, MEV-protected swap + limit orders built into the exact EIP-712 order the user signs, open orders, trade history, portfolio, solver competition, and the official CoW docs (bundled, searchable). Mainnet, Gnosis, Arbitrum, Base + more. Builds only — never holds keys, never submits unsigned. Rate-limited. By Pantessa.',
   category: 'Trading',
   kind: 'data',
   priceUsd: '0',
@@ -246,7 +246,7 @@ async function main() {
       priceUsd: '0',
       scheme: 'exact',
       network: 'Base',
-      provider: 'Yeetful (free)',
+      provider: 'Pantessa (free)',
       position: i,
       parameters: t.plannable === false ? Prisma.DbNull : (t.params as unknown as object),
     })),

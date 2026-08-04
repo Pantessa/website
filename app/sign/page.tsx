@@ -11,13 +11,13 @@ import SignHandoff from '@/components/SignHandoff'
 
 const TITLE = 'Review & sign — an agent prepared this ask'
 const DESCRIPTION =
-  'An AI agent planned this action. Yeetful rebuilds it with deterministic guarded builders — the model never writes calldata — and your wallet is the only thing that can sign it.'
+  'An AI agent planned this action. Pantessa rebuilds it with deterministic guarded builders — the model never writes calldata — and your wallet is the only thing that can sign it.'
 
 export const metadata: Metadata = {
   title: TITLE,
   description: DESCRIPTION,
   robots: { index: false, follow: false },
-  openGraph: { title: TITLE, description: DESCRIPTION, siteName: 'Yeetful', type: 'website' },
+  openGraph: { title: TITLE, description: DESCRIPTION, siteName: 'Pantessa', type: 'website' },
   twitter: { card: 'summary_large_image', title: TITLE, description: DESCRIPTION },
 }
 

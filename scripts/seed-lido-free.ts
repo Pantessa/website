@@ -45,7 +45,7 @@ const SERVICE = {
   slug: 'lido-free',
   name: 'Lido (Free)',
   description:
-    'Lido liquid staking on Ethereum, free and non-gated: protocol stats with live staking APR, full per-address positions (stETH + wstETH balances, staked value in ETH and USD), EARNINGS history from Lido’s reward backend (lifetime rewards, average APR, daily rebases), withdrawal-queue tracking with wait estimates, and construction-only build_* tools that return UNSIGNED transactions the user signs — stake, wrap/unwrap, request withdrawal, claim. Never holds keys, never signs, never submits. Rate-limited. By Yeetful.',
+    'Lido liquid staking on Ethereum, free and non-gated: protocol stats with live staking APR, full per-address positions (stETH + wstETH balances, staked value in ETH and USD), EARNINGS history from Lido’s reward backend (lifetime rewards, average APR, daily rebases), withdrawal-queue tracking with wait estimates, and construction-only build_* tools that return UNSIGNED transactions the user signs — stake, wrap/unwrap, request withdrawal, claim. Never holds keys, never signs, never submits. Rate-limited. By Pantessa.',
   category: 'DeFi',
   kind: 'data',
   priceUsd: '0',
@@ -179,7 +179,7 @@ async function main() {
       priceUsd: '0',
       scheme: 'exact',
       network: 'ethereum',
-      provider: 'Yeetful (free)',
+      provider: 'Pantessa (free)',
       position: i,
       featured: t.featured === true,
       parameters: t.params.length ? (t.params as unknown as object) : Prisma.DbNull,

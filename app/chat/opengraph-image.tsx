@@ -9,7 +9,7 @@ import { join } from 'node:path'
 // file would ship NO image (the /p lesson) — hence the explicit card.
 
 export const runtime = 'nodejs'
-export const alt = 'Yeetful chat — say what should happen; sign what it builds.'
+export const alt = 'Pantessa chat — say what should happen; sign what it builds.'
 export const size = { width: 1200, height: 630 }
 export const contentType = 'image/png'
 
@@ -60,7 +60,7 @@ export default async function Image() {
           <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src={toDataUri(MARK)} width={46} height={46} alt="" />
-            <span style={{ color: INK, fontSize: 34, fontWeight: 600, letterSpacing: -1.2 }}>yeetful</span>
+            <span style={{ color: INK, fontSize: 34, fontWeight: 600, letterSpacing: -1.2 }}>pantessa</span>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 17, letterSpacing: 4, color: MUTED }}>
             <div style={{ display: 'flex', width: 8, height: 8, borderRadius: 4, background: ACCENT }} />

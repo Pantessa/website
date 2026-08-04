@@ -76,7 +76,7 @@ export default function EmbedDemo() {
           {live ? (
             <iframe
               src={EMBED_SRC}
-              title="Yeetful embedded chat — live"
+              title="Pantessa embedded chat — live"
               className="edemo__iframe"
               allow="clipboard-write"
             />
@@ -84,7 +84,7 @@ export default function EmbedDemo() {
             <div className="edemo__chat" aria-hidden>
               <div className="edemo__chathead">
                 <span className="edemo__chatdot" />
-                <span className="mono">YEETFUL · {DEFAULT_EMBED_MCPS.length} MCPS READY</span>
+                <span className="mono">PANTESSA · {DEFAULT_EMBED_MCPS.length} MCPS READY</span>
               </div>
               <div className="edemo__msgs">
                 <div className="edemo__msg edemo__msg--user">swap 20 USDC for WETH</div>

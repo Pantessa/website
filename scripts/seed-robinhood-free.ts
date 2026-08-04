@@ -85,7 +85,7 @@ const SERVICE = {
   slug: 'robinhood-free',
   name: 'Robinhood Chain (Free)',
   description:
-    "Tokenized stocks & ETFs on Robinhood Chain (chain id 4663), free and non-gated: live Chainlink prices with corporate-action multipliers, whole-wallet portfolios (AAPL/TSLA/SPY/… + USDG), Morpho lending & borrowing (markets, positions, health factor), stock-token swap quotes with a Chainlink cross-check, the canonical Ethereum bridge, and construction-only build_* tools that return UNSIGNED transactions the user signs — swap (direct Uniswap v4, or LiFi settlement for venue-gated stock pools with a 0.2% Yeetful fee as an explicit step), lend, post collateral, borrow, repay, withdraw, bridge. Swap builds are re-decoded and guard-verified before they are returned; lending builds fail closed on health factor. Never holds keys, never signs, never submits on-chain. PLUS the Robinhood brokerage crypto surface (the user's real Robinhood app account via the Crypto Trading API): accounts, holdings, tradable pairs, live bid/ask, pre-trade cost estimates, and fail-closed two-step order placement — bring your own Robinhood API credentials (per-request headers); without them brokerage tools return setup instructions. Rate-limited. By Yeetful.",
+    "Tokenized stocks & ETFs on Robinhood Chain (chain id 4663), free and non-gated: live Chainlink prices with corporate-action multipliers, whole-wallet portfolios (AAPL/TSLA/SPY/… + USDG), Morpho lending & borrowing (markets, positions, health factor), stock-token swap quotes with a Chainlink cross-check, the canonical Ethereum bridge, and construction-only build_* tools that return UNSIGNED transactions the user signs — swap (direct Uniswap v4, or LiFi settlement for venue-gated stock pools with a 0.2% Pantessa fee as an explicit step), lend, post collateral, borrow, repay, withdraw, bridge. Swap builds are re-decoded and guard-verified before they are returned; lending builds fail closed on health factor. Never holds keys, never signs, never submits on-chain. PLUS the Robinhood brokerage crypto surface (the user's real Robinhood app account via the Crypto Trading API): accounts, holdings, tradable pairs, live bid/ask, pre-trade cost estimates, and fail-closed two-step order placement — bring your own Robinhood API credentials (per-request headers); without them brokerage tools return setup instructions. Rate-limited. By Pantessa.",
   category: 'DeFi',
   kind: 'data',
   priceUsd: '0',
@@ -161,7 +161,7 @@ const TOOLS: Array<{ name: string; description: string; params: Param[]; feature
     name: 'build_swap',
     featured: true,
     description:
-      "Prepare an UNSIGNED swap on Robinhood Chain — buy or sell tokenized stocks (AAPL, TSLA, NVDA, …) against USDG, or any quoted pair. Two settlement paths, picked automatically: pools that execute directly get ONE Universal Router Uniswap v4 swap (exact-amount Permit2 approvals only when live allowances are short); venue-gated stock pools — which only clear through Robinhood's backend-signed DexAggregator — build through LiFi's whitelisted router instead, with a 0.2% Yeetful fee as an explicit transfer step. Either way the build is re-decoded and guard-verified (pinned addresses, exact amounts, independent price check, simulation) before it's returned, and balances are checked first. 'Buy AAPL with 500 USDG' / 'buy 5 USDG of AAPL' — stock swaps ARE buildable here.",
+      "Prepare an UNSIGNED swap on Robinhood Chain — buy or sell tokenized stocks (AAPL, TSLA, NVDA, …) against USDG, or any quoted pair. Two settlement paths, picked automatically: pools that execute directly get ONE Universal Router Uniswap v4 swap (exact-amount Permit2 approvals only when live allowances are short); venue-gated stock pools — which only clear through Robinhood's backend-signed DexAggregator — build through LiFi's whitelisted router instead, with a 0.2% Pantessa fee as an explicit transfer step. Either way the build is re-decoded and guard-verified (pinned addresses, exact amounts, independent price check, simulation) before it's returned, and balances are checked first. 'Buy AAPL with 500 USDG' / 'buy 5 USDG of AAPL' — stock swaps ARE buildable here.",
     params: [
       user('the wallet that swaps, receives the output, and signs'),
       token('sellToken', 'Token to sell'),
@@ -348,7 +348,7 @@ async function main() {
       priceUsd: '0',
       scheme: 'exact',
       network: 'robinhood-chain',
-      provider: 'Yeetful (free)',
+      provider: 'Pantessa (free)',
       position: i,
       featured: t.featured === true,
       parameters: t.params.length ? (t.params as unknown as object) : Prisma.DbNull,

@@ -154,7 +154,7 @@ export function short(s: string): string {
 }
 
 /**
- * Tester-vs-wild wallet badge for the admin views: YELLOW = one of Yeetful's
+ * Tester-vs-wild wallet badge for the admin views: YELLOW = one of Pantessa's
  * own test wallets (lib/admin TEST_WALLETS), GREEN = a wallet from the wild.
  * The colors are the contract — Nate scans for green.
  */

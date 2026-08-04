@@ -2,13 +2,13 @@
 //  Spend grant — the policy primitive behind the "agent expense account."
 //
 //  A grant is a SCOPED authorization: which hostnames may be paid, a per-call
-//  and per-day cap, and an expiry. Yeetful enforces it before any x402 payment
+//  and per-day cap, and an expiry. Pantessa enforces it before any x402 payment
 //  is signed and ledgers every decision (lib/db SpendLedgerEntry).
 //
 //  This is POLICY, not custody. Today the grant gates the house burner
 //  (lib/agent-wallet.ts). In production the same grant maps to a Coinbase Smart
 //  Wallet Spend Permission / ERC-4337 session key scoped to the cap — so the
-//  user's own wallet contract enforces it and Yeetful never holds the funds.
+//  user's own wallet contract enforces it and Pantessa never holds the funds.
 //
 //  Ported from the demo/ prototype (demo/lib/grant.ts) and made pure +
 //  DB-agnostic: the checks take the already-computed `spentTodayUsd` so the

@@ -23,7 +23,7 @@ const ENDPOINTS = [
     maxPriceUsd: null,
     scheme: 'exact',
     network: 'Base',
-    provider: 'Yeetful',
+    provider: 'Pantessa',
     position: 0,
   },
 ]

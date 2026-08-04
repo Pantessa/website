@@ -17,6 +17,7 @@ import SignNftListingButton from '@/components/SignNftListingButton'
 import SpendPolicyFix, { type PolicyBlockInfo } from '@/components/SpendPolicyFix'
 import ShareReceiptButton from '@/components/ShareReceiptButton'
 import { orderRequestOf, txChainOf, txRequestOf } from '@/lib/transaction-layer'
+import { feeBpsOfArtifact } from '@/lib/fees'
 import { LIVE_JOB_STATUSES, jobStatusWord } from '@/lib/step-status'
 
 interface StepRow {
@@ -63,7 +64,7 @@ export default function JobCard({
    *  auth (no SIWE session in an iframe visitor). Appended as ?t=. */
   token?: string
   /** Telemetry hook — fired once per signed step with its value + builder. */
-  onStepSigned?: (info: { builder: string; valueUsd?: number | null; detail?: string }) => void
+  onStepSigned?: (info: { builder: string; valueUsd?: number | null; detail?: string; feeBps?: number }) => void
   /** Fired ONCE when the poll first observes a terminal status — the
    *  settlement signal /i's arc and embed hosts read. Also fires on mount
    *  for an already-finished job (a reopened thread), which is truthful. */
@@ -117,7 +118,10 @@ export default function JobCard({
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ seq, result }),
     }).catch(() => {})
-    onStepSigned?.({ builder, valueUsd, detail: String(result.detail ?? result.txHash ?? '') })
+    // The fee tier read from the signed step's OWN artifact (the shared
+    // lib/fees reader) — job-step beacons price like one-shots (C2b).
+    const stepArtifact = job?.steps.find((s) => s.seq === seq)?.artifact
+    onStepSigned?.({ builder, valueUsd, detail: String(result.detail ?? result.txHash ?? ''), feeBps: feeBpsOfArtifact(stepArtifact) })
     void load()
   }
 

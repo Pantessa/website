@@ -461,7 +461,7 @@ export default function LinksHeroView({ stats }: { stats: LinkHeroStats | null }
         <p className="fhero__lede">
           Mint a link that carries an ask — &ldquo;Buy $10 of AAPL&rdquo;, &ldquo;Stake ETH with
           Lido&rdquo;, &ldquo;DCA $25 weekly&rdquo;. Whoever opens it connects their own wallet and
-          Yeetful scans, funds across chains, builds, and guard-checks the whole path. They sign.
+          Pantessa scans, funds across chains, builds, and guard-checks the whole path. They sign.
           Done. The transaction onboarding flow, nailed — for your dapp, or for the audience you
           teach.
         </p>

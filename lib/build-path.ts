@@ -7,7 +7,7 @@
  * /dashboard/embeds rolls it into a per-layer built → signed breakdown —
  * "which layer creates transactions, and which layer's builds die unsigned".
  *
- * - native-*  — Yeetful's deterministic guardrailed builders (the parse →
+ * - native-*  — Pantessa's deterministic guardrailed builders (the parse →
  *               verified-tool-call → guard recipes in app/api/chat/route.ts +
  *               lib/aave-supply.ts / lib/aave-ops.ts / lib/uniswap-venue.ts /
  *               lib/cow-build.ts / lib/cross-chain-swap.ts).

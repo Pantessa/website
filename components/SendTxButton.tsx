@@ -3,7 +3,7 @@
 // "Send transaction" — the generic renderer for `evm-tx` artifacts: a
 // prebuilt on-chain transaction (Uniswap swap, transfer, mint, approve…) the
 // USER broadcasts from their own wallet. The venue-agnostic sibling of
-// SignOrderButton (CoW's off-chain orders): Yeetful built the calldata
+// SignOrderButton (CoW's off-chain orders): Pantessa built the calldata
 // deterministically; the wallet signs and pays gas; nothing is custodied.
 //
 // Progress stepper: Sign → Broadcast → Confirmed, with the transaction's

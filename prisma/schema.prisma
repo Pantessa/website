@@ -1,4 +1,4 @@
-// Yeetful — x402 MCP directory.
+// Pantessa — x402 MCP directory.
 // learn more about it in the docs: https://pris.ly/d/prisma-schema
 
 generator client {
@@ -210,8 +210,8 @@ model McpOwner {
   ownerAddress String   @map("owner_address") // lowercased, SIWE-verified
   /// How ownership was proven. 'receiver' = signed in with the wallet the MCP's
   /// x402 `payTo` is set to (read from its own 402 challenge — proves control of
-  /// the account that collects the MCP's revenue). 'admin' = a Yeetful admin
-  /// verified it (endpoint unreadable / shared-gateway payee / Yeetful's own).
+  /// the account that collects the MCP's revenue). 'admin' = a Pantessa admin
+  /// verified it (endpoint unreadable / shared-gateway payee / Pantessa's own).
   verifiedVia  String   @default("receiver") @map("verified_via")
   /// The endpoint host ownership was checked against (e.g. anthropic.yeetful.com).
   verifiedHost String?  @map("verified_host")
@@ -341,7 +341,7 @@ model OrgMember {
 }
 
 /// An "agent expense account": a scoped, wallet-owned authorization to pay x402
-/// endpoints up to a budget. It's POLICY, not custody — Yeetful enforces the
+/// endpoints up to a budget. It's POLICY, not custody — Pantessa enforces the
 /// caps + allowlist and ledgers every decision; the funds move from the payer
 /// (today the house burner; later a Coinbase Spend Permission / session key
 /// scoped to this grant) straight to the seller. See lib/spend-grant.ts.
@@ -372,7 +372,7 @@ model SpendGrant {
   status    String   @default("active") // active | revoked | expired
   /// Kill switch: a reversible freeze of the whole expense account (distinct
   /// from status:revoked, which is permanent and drops the grant from
-  /// getActiveGrant). When true, every chat path Yeetful executes HARD-refuses
+  /// getActiveGrant). When true, every chat path Pantessa executes HARD-refuses
   /// with ACCOUNT_FROZEN and /api/agent/policy reports halted; the SDK refuses
   /// too. Toggled SIWE-only (owner / org admin).
   paused    Boolean  @default(false) @map("paused")
@@ -853,7 +853,7 @@ model AskFailure {
 }
 
 /// One Hyperliquid agent-wallet delegation: the user's one-time approveAgent
-/// signature authorizing a Yeetful-held agent key to TRADE their HL account
+/// signature authorizing a Pantessa-held agent key to TRADE their HL account
 /// (the venue bars agent keys from withdrawing — custody stays with the
 /// user). The key is generated per delegation and stored AES-256-GCM
 /// encrypted (GUARDIAN_KEY_SECRET); expiry is venue-enforced via the

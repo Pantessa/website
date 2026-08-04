@@ -1,7 +1,7 @@
 // ─────────────────────────────────────────────────────────────────────────
-//  Transaction guardrails — the VENUE-NEUTRAL core (a Yeetful tool, per the
+//  Transaction guardrails — the VENUE-NEUTRAL core (a Pantessa tool, per the
 //  taxonomy: Uniswap tools are Uniswap-specific, CoW tools are CoW-specific,
-//  Yeetful tools are the cross-app transaction layer). Every venue's build
+//  Pantessa tools are the cross-app transaction layer). Every venue's build
 //  runs the SAME checks before an artifact is offered for signature:
 //    · recipient must be the requesting wallet
 //    · validity window must be sane

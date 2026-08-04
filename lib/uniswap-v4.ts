@@ -522,7 +522,7 @@ export async function buildUniswapV4Swap(params: UniswapV4SwapParams): Promise<U
   const slippageBps = params.slippageBps ?? 50
   const deadlineSec = params.deadlineSec ?? 600
   const chain = chainById(params.chainId)
-  if (!chain) throw new Error(`Chain ${params.chainId} isn't one of Yeetful's supported chains.`)
+  if (!chain) throw new Error(`Chain ${params.chainId} isn't one of Pantessa's supported chains.`)
   const v4 = chain.uniswapV4
   if (!v4) throw new Error(`Uniswap v4 isn't wired on ${chain.name}.`)
   const chainId = chain.id

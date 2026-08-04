@@ -163,7 +163,7 @@ async function run() {
       ],
       borrows: [{ token: { symbol: 'WETH' }, debt: '0.2', debtUsd: '$500.00', borrowApyPct: 2.9 }],
     })
-    const tile = (await aave.build(positioned, ADDR, srv('aave-mcp-yeetful', 'Aave MCP · Yeetful'))) as RowsTile
+    const tile = (await aave.build(positioned, ADDR, srv('aave-mcp-yeetful', 'Aave MCP · Pantessa'))) as RowsTile
     check('aave position → rows render', tile.render === 'rows')
     check('headline is the net balance', tile.headline?.value === '$1,204.50')
     check('supply row carries earned interest', tile.rows.some((r) => /USDC supplied/.test(r.label) && /12\.40 earned/.test(r.sub ?? '')))
@@ -172,7 +172,7 @@ async function run() {
     check('repay prompt when borrowing', tile.prompts.some((p) => /repay/i.test(p.prompt)))
 
     const empty = async () => ({ note: 'No Aave v4 positions for this address.', positions: [], supplies: [], borrows: [] })
-    check('no position contributes no tile', (await aave.build(empty, ADDR, srv('aave-mcp-yeetful', 'Aave MCP · Yeetful'))) === null)
+    check('no position contributes no tile', (await aave.build(empty, ADDR, srv('aave-mcp-yeetful', 'Aave MCP · Pantessa'))) === null)
   }
 
   console.log('affinity — uniswap router probe (pure)')
@@ -330,7 +330,7 @@ async function run() {
     check('uniswap matches by name', uni.match(srv('uniswap-free', 'Uniswap (Free)')))
     check('snapshot matches by name', snap.match(srv('snapshot-free', 'Snapshot DAO (Free)')))
     check('uniswap does not match snapshot', !uni.match(srv('snapshot-free', 'Snapshot DAO (Free)')))
-    check('aave matches the custom add-MCP row', aave.match(srv('aave-mcp-yeetful', 'Aave MCP · Yeetful')))
+    check('aave matches the custom add-MCP row', aave.match(srv('aave-mcp-yeetful', 'Aave MCP · Pantessa')))
     check('aave does not match uniswap', !aave.match(srv('uniswap-free', 'Uniswap (Free)')))
     const rh = SPLASH_SOURCES.find((s) => s.id === 'robinhood')!
     check('robinhood matches the seeded row', rh.match(srv('robinhood-free', 'Robinhood Chain (Free)')))

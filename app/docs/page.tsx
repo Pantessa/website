@@ -5,7 +5,7 @@ import EmbedDemo from '@/components/EmbedDemo'
 import EmbedInstall from '@/components/EmbedInstall'
 import { DOCS_PAGES, DOORS, docsJsonLd, docsUrl, doorPages } from '@/lib/docs'
 
-// The /docs landing — told story-first: Yeetful is the non-custodial back
+// The /docs landing — told story-first: Pantessa is the non-custodial back
 // office for autonomous money, and the docs open three doors for three
 // readers — embed it (hosts), trust it (users), pay it (agent devs). The
 // intent→build→receipt spine and the $0 jobs curl stay; the embed demo
@@ -30,7 +30,7 @@ const DOOR_CARDS = [
     title: 'The chat on your site, in five lines',
     lead: (
       <>
-        Mount the full Yeetful chat on any page — guarded builds, receipts, and signing with the
+        Mount the full Pantessa chat on any page — guarded builds, receipts, and signing with the
         wallet <strong>already connected to your site</strong> (<code>wallet: &apos;auto&apos;</code>).
         A publishable <code>yfe_</code> key attributes every session to your dashboard: funnel,
         dead-ends, money moved.
@@ -60,7 +60,7 @@ const DOOR_CARDS = [
     lead: (
       <>
         Mint <code>/i/&lt;slug&gt;</code> links that carry a plain-English ask. Whoever opens
-        one connects <strong>their own wallet</strong>, Yeetful builds the guarded path, they
+        one connects <strong>their own wallet</strong>, Pantessa builds the guarded path, they
         sign — and you earn half of the 0.20% fee on every conversion your link produces, with
         a live funnel to prove it.
       </>
@@ -126,7 +126,7 @@ const STEPS = [
 
 const ELSEWHERE = [
   { href: 'https://www.npmjs.com/package/yeetful', label: 'yeetful on npm', sub: 'the embed helper plus x402 client/server helpers — MIT, TypeScript', ext: true },
-  { href: 'https://github.com/Yeetful', label: 'Yeetful on GitHub', sub: 'the SDK, free MCPs, and the rest — open source', ext: true },
+  { href: 'https://github.com/Yeetful', label: 'Pantessa on GitHub', sub: 'the SDK, free MCPs, and the rest — open source', ext: true },
   { href: '/activity', label: 'Network activity', sub: 'every settled call on the network, anonymized and on-chain verifiable', ext: false },
 ]
 
@@ -136,12 +136,12 @@ export default function DocsIndexPage() {
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: docsJsonLd(PAGE) }} />
 
       {/* ── Hero ── */}
-      <p className="splash__eyebrow mono">BUILD ON YEETFUL</p>
+      <p className="splash__eyebrow mono">BUILD ON PANTESSA</p>
       <h1 className="splash__h1">
         The non-custodial back office <em className="hero__em">for autonomous money.</em>
       </h1>
       <p className="splash__lead">
-        Tell Yeetful what should happen — once. It compiles the sentence into deterministic,
+        Tell Pantessa what should happen — once. It compiles the sentence into deterministic,
         guard-checked transactions; <strong>your own wallet is the only thing that can
         sign</strong>; every build is priced, capped, receipted, and killable. These docs open
         three doors: <Link href="/docs/links">earn with it</Link> as a creator,{' '}

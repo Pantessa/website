@@ -31,11 +31,11 @@ export default function EmbedsSummaryCard() {
   if (keys.length === 0) {
     return (
       <Card className="mb-6">
-        <CardTitle serif eyebrow="EMBED YEETFUL — THE 2-MINUTE INSTALL">
+        <CardTitle serif eyebrow="EMBED PANTESSA — THE 2-MINUTE INSTALL">
           One agent on your site
         </CardTitle>
         <p className="mt-3 text-[13.5px] leading-relaxed text-[color:var(--muted)] max-w-[70ch]">
-          Put the full Yeetful chat — compose MCPs, guardrails, receipts, signing with the
+          Put the full Pantessa chat — compose MCPs, guardrails, receipts, signing with the
           visitor&rsquo;s own wallet — on any site. Create a{' '}
           <strong className="text-white font-medium">public embed key</strong> (safe in page
           source), paste one prompt into Claude, and your embeds report back here.

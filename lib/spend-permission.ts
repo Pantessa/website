@@ -1,4 +1,4 @@
-// Pure mapping: a Yeetful SpendGrant → the on-chain Coinbase Spend Permission
+// Pure mapping: a Pantessa SpendGrant → the on-chain Coinbase Spend Permission
 // that backs it. The grant's per-day USD cap becomes a SpendPermission allowance
 // over a 1-day period on Base, so the wallet contract caps spend regardless of
 // the SDK — the hard stop the advisory pause/budget points at.

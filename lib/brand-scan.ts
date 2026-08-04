@@ -134,7 +134,7 @@ export function normalizeBg(raw: string | null | undefined): string | null {
 /** Normalize an accent color for the storefront: #rgb/#rrggbb only, and
  *  never near-white or near-black — those are backgrounds, not accents, and
  *  would paint invisible buttons in one theme or the other. Returns null
- *  when unusable (the caller falls back to Yeetful's default accent, or to
+ *  when unusable (the caller falls back to Pantessa's default accent, or to
  *  client-side logo sampling). */
 export function normalizeAccent(raw: string | null | undefined): string | null {
   const hex = normalizeHex(raw)

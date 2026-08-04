@@ -1,5 +1,5 @@
 // ─────────────────────────────────────────────────────────────────────────
-//  Native venue policy hosts — the SYNTHETIC hosts Yeetful's own guarded
+//  Native venue policy hosts — the SYNTHETIC hosts Pantessa's own guarded
 //  transaction layers attribute spend to (lib/uniswap-venue, lib/lifi-venue,
 //  lib/cow-guardrails, the Aave gate, HL exec). They are not MCP endpoints,
 //  so an allowlist derived from the directory can never contain them — every
@@ -34,8 +34,8 @@ export const HOUSE_INFERENCE_HOSTS = ['api.anthropic.com'] as const
 /** Friendly names — "uniswap.yeetful.com" reads as a mystery third party
  *  when it's really the native swap layer. */
 export const VENUE_HOST_LABELS: Record<string, string> = {
-  'uniswap.yeetful.com': "Yeetful's native Uniswap venue",
-  'lifi.yeetful.com': "Yeetful's LiFi settlement venue",
+  'uniswap.yeetful.com': "Pantessa's native Uniswap venue",
+  'lifi.yeetful.com': "Pantessa's LiFi settlement venue",
   'api.cow.fi': 'the CoW Swap venue',
   'aave-mcp.yeetful.com': 'the Aave agent',
   'api.hyperliquid.xyz': 'the Hyperliquid venue',
@@ -43,5 +43,5 @@ export const VENUE_HOST_LABELS: Record<string, string> = {
   // Labeled but NOT in NATIVE_VENUE_HOSTS above: a send to an arbitrary
   // recipient is exactly what a curated allowlist should get to gate — the
   // SpendPolicyFix card offers the allow when a curated account blocks it.
-  'transfer.yeetful.com': "Yeetful's native token sends",
+  'transfer.yeetful.com': "Pantessa's native token sends",
 }

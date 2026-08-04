@@ -152,7 +152,7 @@ export function brandCtaStyle(brand: LinkBrand | null | undefined): CSSPropertie
 /**
  * The ambient bloom behind a branded splash. An accent-tinted radial LIFTS
  * a surface only when the accent is lighter than the bg — the fusion-core
- * glow on Yeetful's own dark pages. Paint a darker accent over a light
+ * glow on Pantessa's own dark pages. Paint a darker accent over a light
  * brand and the same gradient becomes a smudge across the middle of the
  * page: it reads as a grey screen sitting on top of the design (live on
  * Robinhood's #ccff00 splash, 2026-07-28). So a bloom that would darken is

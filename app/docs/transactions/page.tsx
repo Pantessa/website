@@ -74,7 +74,7 @@ export default function TransactionsDocsPage() {
       </p>
       <h1 className="docs__h1">The transaction layer</h1>
       <p className="docs__lead">
-        Yeetful builds transactions with per-venue builders and a shared guard — the model that
+        Pantessa builds transactions with per-venue builders and a shared guard — the model that
         understood your ask <strong>never writes calldata, amounts, or addresses</strong>. It
         picks a builder; the builder derives the artifact from live venue state; the guard
         re-checks it before your wallet ever sees it. When a check fails, you get the reason,

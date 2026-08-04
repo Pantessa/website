@@ -1,6 +1,6 @@
 // ─────────────────────────────────────────────────────────────────────────
 //  CoW venue adapter for the guardrail core (lib/tx-guardrails — the
-//  venue-neutral Yeetful layer). This file owns ONLY what's CoW-specific:
+//  venue-neutral Pantessa layer). This file owns ONLY what's CoW-specific:
 //  fee-share semantics, the VaultRelayer allowance + balance reads, the
 //  stable-leg USD valuation of a GPv2 order, and the policy host CoW spend
 //  is attributed to. Recipient/validity/policy checks come from the core so
@@ -77,7 +77,7 @@ function feeCheck(order: CowOrderParameters): GuardrailCheck {
 }
 
 /** The order must sign OUR appData doc — order.appData is the keccak of the
- *  exact JSON Yeetful attributes orders with (incl. the partner fee when the
+ *  exact JSON Pantessa attributes orders with (incl. the partner fee when the
  *  protocol fee is on). A quote whose appDataHash differs signed someone
  *  else's document (fee stripped or hooks injected) — refuse, never offer. */
 function appDataCheck(order: CowOrderParameters): GuardrailCheck {
@@ -93,9 +93,9 @@ function appDataCheck(order: CowOrderParameters): GuardrailCheck {
     ok,
     note: ok
       ? bps > 0
-        ? `Order carries Yeetful's appData: CoW settles a ${bps / 100}% partner fee to the treasury (${TREASURY_ADDRESS.slice(0, 6)}…${TREASURY_ADDRESS.slice(-4)}) inside the protocol — no extra step to sign.`
-        : "Order carries Yeetful's appData attribution."
-      : 'Order appData is not the document Yeetful builds with — refusing (fee/hook tampering).',
+        ? `Order carries Pantessa's appData: CoW settles a ${bps / 100}% partner fee to the treasury (${TREASURY_ADDRESS.slice(0, 6)}…${TREASURY_ADDRESS.slice(-4)}) inside the protocol — no extra step to sign.`
+        : "Order carries Pantessa's appData attribution."
+      : 'Order appData is not the document Pantessa builds with — refusing (fee/hook tampering).',
   }
 }
 

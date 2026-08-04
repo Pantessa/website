@@ -49,7 +49,7 @@ import { prettyChainWord } from '@/lib/chain-lexicon'
 import { arbitrumUsdcBalance, buildHlExecTurn, hlAgentOf, HL_MIN_DEPOSIT_USDC, hlOpenCollateralShortfall, parseHlIntent, type HlOpenShortfall, type HlOrderIntent } from '@/lib/hyperliquid-exec'
 import { parseGuardianArm } from '@/lib/hl-guardian'
 import { armGuardianPolicy } from '@/lib/hl-guardian-store'
-import { compileJobAsk } from '@/lib/jobs'
+import { compileJobAsk, stampSwapFeeTier } from '@/lib/jobs'
 import { advanceJob, createJob } from '@/lib/jobs-runner'
 import { signJobToken } from '@/lib/job-token'
 import { runDcaTurn } from '@/lib/dca-exec'
@@ -192,6 +192,9 @@ async function hlAutoFundedJobTurn(
   message: string,
   walletAddress: string,
   nativeTrace: (event: unknown) => void,
+  /** Link fee tier of the turn (validated in POST) — stamped onto any
+   *  native-swap legs the funded job compiles (lib/jobs stampSwapFeeTier). */
+  linkFeeBps?: number,
 ): Promise<NextResponse | null> {
   const fundedAsk = `deposit ${short.depositUsdc} USDC to Hyperliquid, then ${message.trim()}`
   const arbUsdc = await arbitrumUsdcBalance(walletAddress).catch(() => null)
@@ -229,7 +232,7 @@ async function hlAutoFundedJobTurn(
     type: 'status',
     label: `hl auto-fund: open is under-collateralized ($${short.withdrawableUsd.toFixed(2)} withdrawable vs ~$${short.notionalUsd} notional) — compiled the funded job directly: ${compiled.title.slice(0, 160)}`,
   })
-  const job = await createJob(walletAddress, compiled)
+  const job = await createJob(walletAddress, stampSwapFeeTier(compiled, linkFeeBps))
   await advanceJob(job).catch(() => {})
   const gasLegNote = /\b(?:to|for) eth on arbitrum\b/i.test(resume) ? ' (plus a little Arbitrum ETH so the deposit can pay its own gas)' : ''
   return NextResponse.json({
@@ -610,11 +613,11 @@ async function handleChatTurn(req: NextRequest) {
       })
     }
 
-    // ── Swap intent: Yeetful-NATIVE transaction building ──────────────────────
+    // ── Swap intent: Pantessa-NATIVE transaction building ──────────────────────
     // Swap building is a first-party capability — the core product — not an
     // MCP the user must shortlist (Nate, 2026-07-02: "pull the swap tools out
     // as our own custom yeetful tools"). Any chat can say "swap 100 USDC for
-    // WETH"; Yeetful picks the VENUE and each venue stays venue-pure:
+    // WETH"; Pantessa picks the VENUE and each venue stays venue-pure:
     //   · Uniswap — when the user says "uniswap" or has Uniswap active
     //     without CoW → on-chain SwapRouter02 tx (evm-tx → SendTxButton),
     //     approval to SwapRouter02.
@@ -869,14 +872,17 @@ async function handleChatTurn(req: NextRequest) {
       if (leadStep?.builder === 'native-hl-exec' && (leadStep.params as { kind?: string }).kind === 'open') {
         const short = await hlOpenCollateralShortfall(leadStep.params as unknown as HlOrderIntent, walletAddress)
         if (short) {
-          const autoTurn = await hlAutoFundedJobTurn(short, message, walletAddress, nativeTrace)
+          const autoTurn = await hlAutoFundedJobTurn(short, message, walletAddress, nativeTrace, swapFeeBps)
           if (autoTurn) return autoTurn
           // No plan available (scan/price down) — fall through to the job;
           // the step's own guard explains itself if it can't build.
         }
       }
       nativeTrace({ type: 'status', label: `jobs layer claimed the turn: ${jobAsk.steps.length}-step job — ${jobAsk.title} — planner bypassed` })
-      const job = await createJob(walletAddress, jobAsk)
+      // C2b closes over jobs: a link-priced turn's compiled swaps carry the
+      // same tier its one-shot would (stamped into step params; the runner
+      // re-validates against the canonical tier before building).
+      const job = await createJob(walletAddress, stampSwapFeeTier(jobAsk, swapFeeBps))
       // Kick the first step inline so the card opens with something to sign.
       await advanceJob(job).catch(() => {})
       return NextResponse.json({
@@ -1251,7 +1257,7 @@ async function handleChatTurn(req: NextRequest) {
         if (hlIntent.kind === 'open' && walletAddress) {
           const short = await hlOpenCollateralShortfall(hlIntent, walletAddress)
           if (short) {
-            const autoTurn = await hlAutoFundedJobTurn(short, message, walletAddress, nativeTrace)
+            const autoTurn = await hlAutoFundedJobTurn(short, message, walletAddress, nativeTrace, swapFeeBps)
             if (autoTurn) return autoTurn
           }
         }
@@ -1694,7 +1700,7 @@ async function handleChatTurn(req: NextRequest) {
         const nativeNames = APP_CHAINS.map((c) => c.name).join(' / ')
         nativeTrace({ type: 'note', level: 'warn', label: `native swap layer declined: cross-chain ask (${xc.chains.join(' → ')}) but no cross-chain agent in the set — pointing at NEAR Intents, no build` })
         return NextResponse.json({
-          reply: `🔗 That swap involves ${named}, and Yeetful's built-in swap tools cover ${nativeNames}. Cross-chain runs on **NEAR Intents (Free)** — any asset to any asset across ~35 chains with ONE transfer you sign (unfillable swaps auto-refund). **[Add NEAR Intents with this ask ready](/chat?mcps=near-intents-mcp-yeetful&prompt=${encodeURIComponent(message)})** (it prefills — you press send), or pick one of the supported chains and I'll build it there.`,
+          reply: `🔗 That swap involves ${named}, and Pantessa's built-in swap tools cover ${nativeNames}. Cross-chain runs on **NEAR Intents (Free)** — any asset to any asset across ~35 chains with ONE transfer you sign (unfillable swaps auto-refund). **[Add NEAR Intents with this ask ready](/chat?mcps=near-intents-mcp-yeetful&prompt=${encodeURIComponent(message)})** (it prefills — you press send), or pick one of the supported chains and I'll build it there.`,
           door: { mcps: 'near-intents-mcp-yeetful' },
         })
       }
@@ -1818,7 +1824,7 @@ async function handleChatTurn(req: NextRequest) {
     // can't be auto-called lands in `notes` so the reply can say WHY.
     const notes: string[] = []
     if (isHouseInference(synthesizer)) {
-      notes.push('No inference agent selected — the answer was written by Yeetful’s house model (free). Add **Yeetful · Claude** or **ChatGPT** for a paid, receipted engine.')
+      notes.push('No inference agent selected — the answer was written by Pantessa’s house model (free). Add **Yeetful · Claude** or **ChatGPT** for a paid, receipted engine.')
     }
     let smart: PlannableEndpoint[] = []
     if (listedOnly.length > 0) {
@@ -1858,11 +1864,11 @@ async function handleChatTurn(req: NextRequest) {
           // cap vs the system-wide daily breaker (lib/billing.ts).
           const reply =
             credit.gate === 'house'
-              ? `🪙 Yeetful’s house inference is at its daily safety cap — back at midnight UTC. Standing jobs, DCA and guardian protections keep running (they don’t use the model). A paid engine like **Yeetful · Claude** works right now, pay-per-call from your wallet.`
+              ? `🪙 Pantessa’s house inference is at its daily safety cap — back at midnight UTC. Standing jobs, DCA and guardian protections keep running (they don’t use the model). A paid engine like **Yeetful · Claude** works right now, pay-per-call from your wallet.`
               : credit.gate === 'daily'
                 ? `🪙 That’s the free plan’s daily chat limit — it resets at midnight UTC (your monthly credits are fine). Upgrade at **yeetful.com/pricing** for no daily cap, or add a paid engine and keep going pay-per-call.`
                 : embedBill
-                  ? `🪙 This site’s Yeetful plan is out of included answers for the month. The chat resumes when the plan renews or the site upgrades — or connect a paid engine and pay per call from your own wallet.`
+                  ? `🪙 This site’s Pantessa plan is out of included answers for the month. The chat resumes when the plan renews or the site upgrades — or connect a paid engine and pay per call from your own wallet.`
                   : `🪙 You’ve used all **${credit.allowance.toLocaleString()} YEET credits** on the ${credit.planName} plan this month. Upgrade at **yeetful.com/pricing** for more — or add a paid engine like **Yeetful · Claude** and keep going pay-per-call from your wallet.`
           return NextResponse.json({
             reply,
@@ -2131,7 +2137,7 @@ function composeCrossChainReply(
   // already inside the "you receive" number — name it rather than let it
   // read as a worse rate.
   if (guard.feeBps) {
-    lines.push(`- **Yeetful fee:** ${(guard.feeBps / 100).toFixed(2)}% — taken by the venue out of the amount delivered, no extra transaction`)
+    lines.push(`- **Pantessa fee:** ${(guard.feeBps / 100).toFixed(2)}% — taken by the venue out of the amount delivered, no extra transaction`)
   }
   if (guard.depositAddress) {
     lines.push(`- **Deposit address:** one-time, guard-verified — \`${short(guard.depositAddress)}\`${expires ? ` (expires ${expires})` : ''}`)
@@ -3516,14 +3522,14 @@ async function buildMorphoOpTurn(
 // ── Swap intent ───────────────────────────────────────────────────────────────
 
 /**
- * Resolve a swap intent into a guardrailed, signable action — Yeetful's NATIVE
+ * Resolve a swap intent into a guardrailed, signable action — Pantessa's NATIVE
  * transaction tool (no service needs to be shortlisted). Venue-pure builds:
  * 'uniswap' → on-chain SwapRouter02 tx (txRequest → SendTxButton, approve to
  * SwapRouter02 attached when allowance is short); 'cow' → EIP-712 order
  * (orderRequest → SignOrderButton). Amounts convert to atoms via the token's
  * real decimals, never model-guessed. Refuses cleanly on unknown tokens or
  * ambiguous asks; guardrail blocks surface with their reasons and the
- * artifact is withheld. The user signs — funds never touch Yeetful.
+ * artifact is withheld. The user signs — funds never touch Pantessa.
  */
 /** Hyperliquid door for unknown-token refusals (2026-07-28): a symbol that
  *  isn't a spot token on any first-class chain but IS a chartable HL perp
@@ -3547,7 +3553,7 @@ function hlPerpDoor(symbol: string | undefined, amount: { usd?: string; human?: 
         : `${side} $50 of ${sym} on hyperliquid`,
   })
   return {
-    reply: `🔄 ${sym} isn't a spot token on Yeetful's chains — it trades as a **perp on Hyperliquid**. Pick a side and I'll build the guarded order (you sign it; funds never leave your wallet).`,
+    reply: `🔄 ${sym} isn't a spot token on Pantessa's chains — it trades as a **perp on Hyperliquid**. Pick a side and I'll build the guarded order (you sign it; funds never leave your wallet).`,
     clarify: { question: `Trade ${sym} on Hyperliquid?`, options: wantsSell ? [mk('short'), mk('long')] : [mk('long'), mk('short')] },
     buildPath: 'native-swap-hl-door',
   }
@@ -4017,7 +4023,7 @@ async function prepareSwapTurn(intent: SwapIntent, walletAddress: string | undef
   //    resting limit orders are an order-book feature, so those stay on CoW
   //    with a note). Uniswap-pure build; cross-app guardrails inside.
   if (venue === 'uniswap' && (intent.mode ?? 'swap') === 'swap') {
-    trace({ type: 'select', service: 'Uniswap (native venue)', endpoint: `quote → SwapRouter02 tx build on ${chain.name}`, priceUsd: 0, reason: 'native swap layer — Yeetful builds the tx deterministically, guardrails before anything is offered' })
+    trace({ type: 'select', service: 'Uniswap (native venue)', endpoint: `quote → SwapRouter02 tx build on ${chain.name}`, priceUsd: 0, reason: 'native swap layer — Pantessa builds the tx deterministically, guardrails before anything is offered' })
     try {
       const uni = await buildUniswapSwap({
         sellToken: intent.sellToken,
@@ -4111,7 +4117,7 @@ async function prepareSwapTurn(intent: SwapIntent, walletAddress: string | undef
     trace({ type: 'note', level: 'info', label: 'limit order re-routed to the CoW order book — Uniswap v3 has no native resting orders' })
   }
 
-  trace({ type: 'select', service: 'CoW Protocol (native venue)', endpoint: `quote → EIP-712 ${intent.mode === 'limit' ? 'limit ' : ''}order build on ${chain.name}`, priceUsd: 0, reason: 'native swap layer — Yeetful builds the order deterministically, guardrails before anything is offered' })
+  trace({ type: 'select', service: 'CoW Protocol (native venue)', endpoint: `quote → EIP-712 ${intent.mode === 'limit' ? 'limit ' : ''}order build on ${chain.name}`, priceUsd: 0, reason: 'native swap layer — Pantessa builds the order deterministically, guardrails before anything is offered' })
   try {
     const built = await buildGuardrailedOrder({
       mode: intent.mode ?? 'swap',
@@ -4171,7 +4177,7 @@ async function prepareUniswapV4Turn(
   trace: (event: unknown) => void,
 ) {
   const chain = chainById(chainId)!
-  trace({ type: 'select', service: 'Uniswap v4 (native venue)', endpoint: `V4 Quoter → Universal Router build on ${chain.name}`, priceUsd: 0, reason: 'v4 fallback — the pair has no v3 pool; Yeetful builds + verifies the router calldata deterministically' })
+  trace({ type: 'select', service: 'Uniswap v4 (native venue)', endpoint: `V4 Quoter → Universal Router build on ${chain.name}`, priceUsd: 0, reason: 'v4 fallback — the pair has no v3 pool; Pantessa builds + verifies the router calldata deterministically' })
   try {
     const uni = await buildUniswapV4Swap({
       sellToken: intent.sellToken!,
@@ -4253,7 +4259,7 @@ async function prepareUniswapV4Turn(
  * address is pinned, the approval is exact-amount, LiFi's price is checked
  * against our own independent v4 quote, and the swap is simulated before
  * anything is offered (lib/lifi-venue.ts). The chain carries a 0.20%
- * Yeetful fee as its own visible transfer step (lib/fees.ts).
+ * Pantessa fee as its own visible transfer step (lib/fees.ts).
  */
 async function prepareLifiTurn(
   intent: SwapIntent,
@@ -4264,7 +4270,7 @@ async function prepareLifiTurn(
   gateReason: string,
 ) {
   const chain = chainById(chainId)!
-  trace({ type: 'select', service: 'LiFi (native settlement venue)', endpoint: `li.quest quote → pinned-router build on ${chain.name}`, priceUsd: 0, reason: 'the pool only fills through the chain\'s own venue — LiFi wraps it; Yeetful pins the router, cross-checks the price on-chain, and simulates before offering' })
+  trace({ type: 'select', service: 'LiFi (native settlement venue)', endpoint: `li.quest quote → pinned-router build on ${chain.name}`, priceUsd: 0, reason: 'the pool only fills through the chain\'s own venue — LiFi wraps it; Pantessa pins the router, cross-checks the price on-chain, and simulates before offering' })
   try {
     const built = await buildLifiSwap({
       sellToken: intent.sellToken!,
@@ -4287,7 +4293,7 @@ async function prepareLifiTurn(
     const buy = intent.buyToken!.toUpperCase()
     trace({ type: 'status', label: `guardrails passed — ${built.steps.length}-step LiFi card built (${intent.sellAmountHuman} ${sell} → ${buy} through ${chain.name}'s own venue), awaiting signature` })
     return NextResponse.json({
-      reply: `🔏 ${built.summary}\n🔗 This pair only settles through ${chain.name}'s own swap venue, so the trade routes via LiFi — Yeetful pinned the settlement contract, price-checked the fill against its own on-chain quote, and dry-ran it. The card below carries every step${built.feeHuman !== '0' ? `, including the ${built.feeHuman} ${sell} Yeetful fee as its own visible transfer` : ''}.${warns.length ? `\n${warns.join('\n')}` : ''}`,
+      reply: `🔏 ${built.summary}\n🔗 This pair only settles through ${chain.name}'s own swap venue, so the trade routes via LiFi — Pantessa pinned the settlement contract, price-checked the fill against its own on-chain quote, and dry-ran it. The card below carries every step${built.feeHuman !== '0' ? `, including the ${built.feeHuman} ${sell} Pantessa fee as its own visible transfer` : ''}.${warns.length ? `\n${warns.join('\n')}` : ''}`,
       txChain: {
         summary: built.summary,
         steps: built.steps,
@@ -4904,9 +4910,9 @@ async function runWithBurner(
               // grants, unknown chains, non-CoW generic orders all refuse).
               const verdict = guardPlannerArtifact(art, { from: userAddress ?? null })
               if (!verdict.ok) {
-                notes.push(`Refused a ${ep.serverName} transaction that failed Yeetful's guardrails.`)
+                notes.push(`Refused a ${ep.serverName} transaction that failed Pantessa's guardrails.`)
                 contextBlocks.push(
-                  `### GUARDRAIL REFUSAL — ${ep.serverName}\nThe tool returned a signable transaction Yeetful REFUSED to offer: ${verdict.reasons.join(' ')}\nNothing was signed or offered. Tell the user plainly why it was refused — never present it as signable.`,
+                  `### GUARDRAIL REFUSAL — ${ep.serverName}\nThe tool returned a signable transaction Pantessa REFUSED to offer: ${verdict.reasons.join(' ')}\nNothing was signed or offered. Tell the user plainly why it was refused — never present it as signable.`,
                 )
                 continue
               }
@@ -5123,7 +5129,7 @@ export function streamAutoRouter(
           } satisfies TraceStep)
 
           // Optional paid summary (item 1): the free Snapshot reads gather the
-          // facts; Yeetful Claude phrases them conversationally. This is a REAL
+          // facts; Pantessa Claude phrases them conversationally. This is a REAL
           // burner-paid inference call — shown as select → pay → receipt in the
           // terminal — gated by the spend policy. Free template if unavailable.
           const govReceipts: Receipt[] = []
@@ -5801,10 +5807,10 @@ function buildPrompt(message: string, contextBlocks: string[], history: Conversa
     const capBlock = capabilities
       ? `${capabilities}\n\nIf the user asks what they can do, what this is, what's available, or how to use it, answer by naming the connected agents above and summarizing what each can do — concisely, one short line per agent. Never pad the list with capabilities no connected agent provides.\n\n`
       : ''
-    return `You are Yeetful, a concise assistant. Continue the conversation and answer the user's latest message directly, using the earlier turns for context.\n\n${capBlock}${walletLine ? `${walletLine}\n\n` : ''}${ctxBlock ? `${ctxBlock}\n\n` : ''}${convoBlock}User: ${message}`
+    return `You are Pantessa, a concise assistant. Continue the conversation and answer the user's latest message directly, using the earlier turns for context.\n\n${capBlock}${walletLine ? `${walletLine}\n\n` : ''}${ctxBlock ? `${ctxBlock}\n\n` : ''}${convoBlock}User: ${message}`
   }
   return [
-    `You are Yeetful, a concise assistant. Use the live data below (fetched and paid for over x402) to answer.`,
+    `You are Pantessa, a concise assistant. Use the live data below (fetched and paid for over x402) to answer.`,
     `Cite specifics from the data. If the data doesn't cover it, say so briefly.`,
     // Even with data in hand, a capability/meta ask ("what can I do here?") must
     // describe ALL connected agents — not just whichever one the planner happened

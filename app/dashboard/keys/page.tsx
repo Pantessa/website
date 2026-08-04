@@ -2,7 +2,7 @@
 
 // Dashboard · API Keys — BOTH credential types on one page (Stripe's
 // secret/publishable split), embed keys FIRST (they're the front door):
-//   · Publishable embed keys (`yfe_`) — put the Yeetful agent on your own
+//   · Publishable embed keys (`yfe_`) — put the Pantessa agent on your own
 //     site. Attribution-only identifiers that live in host page source and
 //     bill embed usage to this account. No read/spend authority by design.
 //   · Secret API keys (`yf_`) — Bearer credentials for headless agents on
@@ -55,7 +55,7 @@ export default function DashboardKeysPage() {
       <h1 className="dash__h1">API Keys</h1>
       <p className="dash__sub">
         Two kinds of keys, two different jobs. <strong className="text-white font-medium">Embed
-        keys</strong> (<code>yfe_…</code>) put the Yeetful agent on your website — publishable, safe
+        keys</strong> (<code>yfe_…</code>) put the Pantessa agent on your website — publishable, safe
         to ship in page source. <strong className="text-white font-medium">Secret API keys</strong>{' '}
         (<code>yf_…</code>) are for headless agents — they track your agents&apos; x402 payment
         usage and put it under your spend policy. Never expose a secret key in a browser.

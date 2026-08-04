@@ -86,7 +86,7 @@ export default function DashboardOverviewPage() {
   }
 
   // The account-level kill switch: freeze every payment under this grant
-  // (reversible). Hard-enforced on the chat rails Yeetful executes.
+  // (reversible). Hard-enforced on the chat rails Pantessa executes.
   const toggleFreeze = async (grantId: string, paused: boolean) => {
     setFreezing(true)
     try {
@@ -309,7 +309,7 @@ export default function DashboardOverviewPage() {
         {g?.paused && (
           <p className="mt-2 text-xs text-amber-400 flex items-center gap-1.5">
             <Pause className="w-3.5 h-3.5 flex-shrink-0" /> Account frozen — every payment under it is
-            refused until you resume. Chats Yeetful runs are hard-stopped; external SDK agents stop on
+            refused until you resume. Chats Pantessa runs are hard-stopped; external SDK agents stop on
             their next policy check.
           </p>
         )}

@@ -102,7 +102,7 @@ export default function FailuresPage() {
           <ShieldAlert className="w-7 h-7" />
         </div>
         <h1 className="text-xl font-semibold text-white mb-2">Not authorized</h1>
-        <p className="text-sm text-[color:var(--muted)]">The failure log is limited to Yeetful admins.</p>
+        <p className="text-sm text-[color:var(--muted)]">The failure log is limited to Pantessa admins.</p>
       </div>
     )
   }
@@ -125,7 +125,7 @@ export default function FailuresPage() {
           <button className={`btn btn--sm ${fundedOnly ? 'btn--solid' : ''}`} onClick={() => setFundedOnly((v) => !v)} title="Only failures where the wallet demonstrably held movable funds">
             had funds
           </button>
-          <button className={`btn btn--sm ${external ? 'btn--solid' : ''}`} onClick={() => setExternal((v) => !v)} title="Hide Yeetful test wallets">
+          <button className={`btn btn--sm ${external ? 'btn--solid' : ''}`} onClick={() => setExternal((v) => !v)} title="Hide Pantessa test wallets">
             external
           </button>
           <button className="btn btn--sm" onClick={() => void load()} title="Refresh">

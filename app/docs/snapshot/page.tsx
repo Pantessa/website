@@ -23,7 +23,7 @@ export default function SnapshotDocsPage() {
         <Link href="/servers/yeetful-snapshot">Yeetful · Snapshot</Link>{' '}is a paid MCP
         service that puts DAO governance in the chat: <strong>browse</strong> live proposals,
         then <strong>cast a vote your own wallet signs</strong>. The vote is an off-chain
-        EIP-712 message — Yeetful builds it, <em>you</em>{' '}sign it, because Snapshot voting
+        EIP-712 message — Pantessa builds it, <em>you</em>{' '}sign it, because Snapshot voting
         power is bound to your address. Pay-per-call in USDC on Base, no API key.
       </p>
 
@@ -51,7 +51,7 @@ export default function SnapshotDocsPage() {
         </p>
         <p>
           Click it and your connected wallet signs the message — the same one-tap signature you
-          use anywhere else, no gas, no transaction. Yeetful relays the signed vote to Snapshot
+          use anywhere else, no gas, no transaction. Pantessa relays the signed vote to Snapshot
           and shows you a receipt linking to the proposal. Connect the wallet that holds the
           voting power: the button refuses to sign if the connected address doesn&apos;t match the
           voter baked into the message.
@@ -70,10 +70,10 @@ export default function SnapshotDocsPage() {
         <h2>Why you sign, not us</h2>
         <p>
           Snapshot tallies votes by the signer&apos;s on-chain voting power, so a vote is only
-          meaningful when <em>your</em> wallet signs it. Yeetful never holds your key and never
+          meaningful when <em>your</em> wallet signs it. Pantessa never holds your key and never
           signs on your behalf — it only <strong>constructs</strong> the message and{' '}
           <strong>relays</strong>{' '}the result. Your signature is the authorization; the relay
-          carries no extra trust. It&apos;s the same principle as everything else here: Yeetful
+          carries no extra trust. It&apos;s the same principle as everything else here: Pantessa
           is the control plane, not the custodian.
         </p>
 

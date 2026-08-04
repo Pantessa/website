@@ -1,5 +1,5 @@
 // ─────────────────────────────────────────────────────────────────────────
-//  Yeetful · x402 Directory — SELF-CONTAINED design artifact
+//  Pantessa · x402 Directory — SELF-CONTAINED design artifact
 //
 //  Paste this whole file into Claude (claude.ai → new chat → "build me an
 //  artifact from this") together with a screenshot of the real /  page.
@@ -166,7 +166,7 @@ export default function YeetfulDirectory() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 h-14 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <div className="w-6 h-6 rounded-lg bg-white text-zinc-950 grid place-items-center text-xs font-black">Y</div>
-            <span className="font-semibold tracking-tight">yeetful</span>
+            <span className="font-semibold tracking-tight">pantessa</span>
             <span className="ml-2 text-[10px] uppercase tracking-widest text-zinc-600">x402 directory</span>
           </div>
           <nav className="flex items-center gap-4 text-sm text-zinc-400">

@@ -3,7 +3,7 @@
 // The Spot Guardian arm card — ONE signTypedData and the protection goes
 // live. The copy leads with what the CONTRACT enforces: a one-shot
 // permission for exactly the protected amount, capped by the wallet's own
-// SpendPermissionManager regardless of Yeetful. Mirrors ArmDcaButton.
+// SpendPermissionManager regardless of Pantessa. Mirrors ArmDcaButton.
 
 import { useState } from 'react'
 import { useAccount, useSignTypedData, useSwitchChain } from 'wagmi'
@@ -98,7 +98,7 @@ export default function ArmSpotGuardButton({ offer }: { offer: SpotGuardArmOffer
             One-shot cap: {offer.enforced.amountHuman} {offer.enforced.tokenSymbol}, {offer.enforced.triggerLabel} — enforced by your wallet&rsquo;s own contract
           </div>
           <div>
-            Watched every minute. If it fires, the sale routes through the same guardrails as every Yeetful swap and the USDC lands in
+            Watched every minute. If it fires, the sale routes through the same guardrails as every Pantessa swap and the USDC lands in
             your wallet. Nothing can pull more than the amount you sign, ever. Cancel in chat or revoke on-chain any time.
           </div>
         </div>

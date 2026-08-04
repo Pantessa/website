@@ -81,7 +81,7 @@ export default function EmbedsPanel() {
     <div className="flex flex-col gap-4 mb-6 min-w-0">
       <Card>
         <div className="flex items-start justify-between gap-4 flex-wrap">
-          <CardTitle serif eyebrow="EMBED YEETFUL — THE 2-MINUTE INSTALL">
+          <CardTitle serif eyebrow="EMBED PANTESSA — THE 2-MINUTE INSTALL">
             One agent on your site
           </CardTitle>
           {primary && (
@@ -94,7 +94,7 @@ export default function EmbedsPanel() {
         {!primary ? (
           <div className="mt-3">
             <p className="text-[13.5px] leading-relaxed text-[color:var(--muted)] max-w-[70ch]">
-              Put the full Yeetful chat — compose MCPs, guardrails, receipts, signing with the
+              Put the full Pantessa chat — compose MCPs, guardrails, receipts, signing with the
               visitor&rsquo;s own wallet — on any site. Create a <strong className="text-white font-medium">public embed key</strong>{' '}
               (safe in page source), paste one prompt into Claude, and your embeds report back here
               with every site and every turn.

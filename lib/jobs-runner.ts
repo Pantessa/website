@@ -14,6 +14,7 @@ import { crossChainValueUsd, expectedOriginChainId, guardCrossChainBuild, type B
 import { buildHlExecTurn, type HlIntent } from '@/lib/hyperliquid-exec'
 import { armGuardianPolicy } from '@/lib/hl-guardian-store'
 import type { GuardianArmAsk } from '@/lib/hl-guardian'
+import { LINK_SWAP_FEE_BPS } from '@/lib/fees'
 import type { CompiledJob } from '@/lib/jobs'
 import {
   guardLidoStakeBuild,
@@ -304,8 +305,13 @@ export async function buildSignArtifact(
     // the exact builders + guardrails chat and the swap panel use). Built
     // fresh at offer time: after a funding leg settles, the balance the
     // venue simulation checks is the real, funded one.
-    const p = params as { sellToken: string; buyToken: string; amountHuman: string; chainId: number }
-    const built = await buildGuardedSwap({ sellToken: p.sellToken, buyToken: p.buyToken, amountHuman: p.amountHuman, from: wallet, chainId: Number(p.chainId) })
+    const p = params as { sellToken: string; buyToken: string; amountHuman: string; chainId: number; feeBps?: number }
+    // Only the canonical link tier rides through (stamped server-side at
+    // compile when the turn carried a live link slug — lib/jobs
+    // stampSwapFeeTier); anything else falls OPEN to the base rate, the same
+    // posture as the slug validation in chat POST.
+    const feeBps = Number(p.feeBps) === LINK_SWAP_FEE_BPS ? LINK_SWAP_FEE_BPS : undefined
+    const built = await buildGuardedSwap({ sellToken: p.sellToken, buyToken: p.buyToken, amountHuman: p.amountHuman, from: wallet, chainId: Number(p.chainId), feeBps })
     if (!built.ok) throwRefusal(built.reasons, built.guardrails)
     return {
       artifact: { txChain: built.txChain, summary: built.summary },

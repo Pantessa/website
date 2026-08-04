@@ -68,7 +68,7 @@ export default function DashboardApprovalsPage() {
       <p className="dash__sub">
         Every agent is enabled out of the gate — your caps are the protection. Turning one off
         means your expense account refuses to pay it (toggles are enforcement, not décor), and
-        Yeetful&rsquo;s own guarded venues stay allowed either way since you sign those
+        Pantessa&rsquo;s own guarded venues stay allowed either way since you sign those
         transactions yourself. Changing the set voids a signed grant until you re-sign on the
         Overview.
       </p>

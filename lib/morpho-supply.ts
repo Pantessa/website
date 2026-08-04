@@ -31,7 +31,7 @@ import { chainAlt } from '@/lib/chain-lexicon'
 import type { TxChainStep } from '@/lib/transaction-layer'
 
 // ── The working set's Morpho-capable agent ──────────────────────────────────
-// Matched on slug/name so custom modal-added rows ("Morpho MCP · Yeetful")
+// Matched on slug/name so custom modal-added rows ("Morpho MCP · Pantessa")
 // count too. Descriptions are excluded — other MCPs mention Morpho in passing
 // (the robinhood MCP's Morpho-on-4663 lending is a different deployment).
 export const MORPHO_MCP_RE = /\bmorpho\b/i

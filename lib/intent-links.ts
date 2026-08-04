@@ -46,7 +46,7 @@ export const MINTABLE_MCPS: Array<{ slug: string; label: string }> = [
   { slug: 'lido-free', label: 'Lido' },
   { slug: 'aave', label: 'Aave' },
   { slug: 'near-intents-mcp-yeetful', label: 'NEAR Intents (bridging)' },
-  { slug: 'yeetful-tool-wallet', label: 'Yeetful Wallet' },
+  { slug: 'yeetful-tool-wallet', label: 'Pantessa Wallet' },
 ]
 
 /** Validate a caller-chosen MCP list: known slugs only, capped, deduped. */

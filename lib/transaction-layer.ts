@@ -4,7 +4,7 @@
 //  Read-routing (lib/router) fetches data. This layer turns an action intent
 //  + a tool's return into a SIGNABLE artifact the user/agent approves — the
 //  point where the spend grant / controls / receipts become powerful and
-//  Yeetful is in the path.
+//  Pantessa is in the path.
 //
 //  The Snapshot vote flow is the working prototype: the snapshot MCP's
 //  `prepare_vote` returns a `sign_vote` payload (EIP-712 typed data) that

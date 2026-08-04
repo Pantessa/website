@@ -12,16 +12,16 @@ export const dynamic = 'force-dynamic'
 const SITE = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://yeetful.com'
 
 export const metadata: Metadata = {
-  title: 'Blog — Yeetful',
+  title: 'Blog — Pantessa',
   description:
     'Notes from the agent-payments control plane: spend-controlled x402, agent expense accounts, and what our autopilot ships.',
   alternates: { canonical: `${SITE}/blog` },
   openGraph: {
     type: 'website',
-    title: 'Blog — Yeetful',
+    title: 'Blog — Pantessa',
     description: 'Notes from the agent-payments control plane.',
     url: `${SITE}/blog`,
-    siteName: 'Yeetful',
+    siteName: 'Pantessa',
   },
 }
 
@@ -71,10 +71,10 @@ export default async function BlogIndexPage() {
   const jsonLd = {
     '@context': 'https://schema.org',
     '@type': 'Blog',
-    name: 'Yeetful Blog',
+    name: 'Pantessa Blog',
     url: `${SITE}/blog`,
     description: metadata.description,
-    publisher: { '@type': 'Organization', name: 'Yeetful', url: SITE },
+    publisher: { '@type': 'Organization', name: 'Pantessa', url: SITE },
     blogPost: posts.map((p) => ({
       '@type': 'BlogPosting',
       headline: p.title,

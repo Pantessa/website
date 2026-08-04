@@ -31,7 +31,7 @@ export const POST = {
 
 ## A shared account, two budget ceilings
 
-Teams don't share a wallet by passing a private key around. On Yeetful an [organization](/docs/teams) is a shared expense account: add a teammate by wallet address — the address **is** the invite — and the org's API keys are the org's credentials, not any one person's.
+Teams don't share a wallet by passing a private key around. On Pantessa an [organization](/docs/teams) is a shared expense account: add a teammate by wallet address — the address **is** the invite — and the org's API keys are the org's credentials, not any one person's.
 
 The budget is now two-level. Each agent keeps its own per-day allowance, and the org sits **above** them with a daily cap of its own, summed across every agent in it. Five agents at $5/day each, but a $15/day org ceiling? The sixteenth dollar of the day is refused no matter which agent asks for it. Over *either* level stops the payment.
 
@@ -50,7 +50,7 @@ Flip it back and spend resumes — the history is intact, nothing was destroyed.
 
 As hard as the rail allows — and we'll tell you exactly where the line is.
 
-For a chat Yeetful runs, the freeze is a **server-side hard stop**: the payment never leaves. For an external agent paying x402 from its own wallet, we can't reach into the transaction — what we *can* do is make the SDK refuse to sign. \`yeetful\` 0.5 loads your policy before the first payment and again on every ledger sync, and throws \`OVER_ORG_BUDGET\`, \`AGENT_PAUSED\`, or \`ACCOUNT_FROZEN\` — receipted like any other decision — the moment one applies:
+For a chat Pantessa runs, the freeze is a **server-side hard stop**: the payment never leaves. For an external agent paying x402 from its own wallet, we can't reach into the transaction — what we *can* do is make the SDK refuse to sign. \`yeetful\` 0.5 loads your policy before the first payment and again on every ledger sync, and throws \`OVER_ORG_BUDGET\`, \`AGENT_PAUSED\`, or \`ACCOUNT_FROZEN\` — receipted like any other decision — the moment one applies:
 
 \`\`\`
 pay.orgBudget() // { name, perDayUsd, spentTodayUsd, overBudget }

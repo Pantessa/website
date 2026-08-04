@@ -98,7 +98,7 @@ Authorization: Bearer yf_…   // an ORG key
           The honesty clause from <Link href="/docs/agents">Agents &amp; budgets</Link> applies
           doubly here: org caps are enforced by the <strong>SDK</strong>, which reads this policy
           and refuses locally. They&apos;re advisory at the rails — the agent pays from its own
-          wallet, so Yeetful can&apos;t block it on-chain. Hard enforcement arrives with Coinbase
+          wallet, so Pantessa can&apos;t block it on-chain. Hard enforcement arrives with Coinbase
           Spend Permissions, where the on-chain allowance is the cap.
         </p>
 

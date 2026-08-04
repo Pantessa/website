@@ -2,7 +2,7 @@ import type { Metadata } from 'next'
 import Link from 'next/link'
 import { DOCS_PAGES, docsJsonLd, docsUrl } from '@/lib/docs'
 
-// The user door's lead page: why a signature on a Yeetful artifact is safe
+// The user door's lead page: why a signature on a Pantessa artifact is safe
 // to give. Trust-critical — plain statements, no jokes, every claim checked
 // against the code that enforces it (lib/tx-guardrails, lib/spend-grant,
 // lib/approvals, lib/fees).
@@ -23,9 +23,9 @@ export default function TrustDocsPage() {
       <p className="docs__crumbs mono">
         <Link href="/docs">DOCS</Link> <span>/</span> TRUST: THE GUARDRAILS
       </p>
-      <h1 className="docs__h1">Why you can sign what Yeetful builds</h1>
+      <h1 className="docs__h1">Why you can sign what Pantessa builds</h1>
       <p className="docs__lead">
-        Yeetful is non-custodial: it never holds your keys or your funds. It produces
+        Pantessa is non-custodial: it never holds your keys or your funds. It produces
         transaction artifacts — built deterministically, re-checked fail-closed, priced, and
         receipted — and <strong>your wallet is the only thing that can sign them</strong>. This
         page is the full trust model, claim by claim.
@@ -35,14 +35,14 @@ export default function TrustDocsPage() {
         <h2>What non-custodial means here</h2>
         <ul>
           <li>
-            <strong>No deposits.</strong> There is no Yeetful balance to fund. Your assets stay
+            <strong>No deposits.</strong> There is no Pantessa balance to fund. Your assets stay
             in your wallet until a transaction you signed moves them.
           </li>
           <li>
-            <strong>No keys.</strong> Yeetful cannot spend on your behalf. Every transaction,
+            <strong>No keys.</strong> Pantessa cannot spend on your behalf. Every transaction,
             order, and vote is offered to your wallet and moves only with your signature. Even
             the <Link href="/docs/embedded-wallet">email sign-up</Link> creates a Coinbase
-            non-custodial wallet that you control, not Yeetful.
+            non-custodial wallet that you control, not Pantessa.
           </li>
           <li>
             <strong>One narrow exception, by explicit delegation:</strong>{' '}
@@ -74,7 +74,7 @@ export default function TrustDocsPage() {
 
         <h2>Nothing stale ever reaches your wallet</h2>
         <p>
-          Quotes and calldata expire. Yeetful treats that as a safety property: artifacts carry
+          Quotes and calldata expire. Pantessa treats that as a safety property: artifacts carry
           their validity window, multi-step chains advance automatically and re-quote steps at
           offer time, and anything past its deadline is <strong>rebuilt, not re-offered</strong>.
           You are never handed dead calldata that could settle at a stale price.
@@ -84,7 +84,7 @@ export default function TrustDocsPage() {
         <p>
           Every artifact carries its USD value, and every decision — built, signed, or refused —
           lands as a receipt on your <Link href="/dashboard">dashboard</Link>, with build
-          decisions traced live on <Link href="/activity">/activity</Link>. When Yeetful charges
+          decisions traced live on <Link href="/activity">/activity</Link>. When Pantessa charges
           a fee (0.20% on fee-bearing swap venues, below Uniswap&apos;s 0.25% interface fee), it
           appears in the artifact as its own labeled transfer step — never hidden inside
           slippage.
@@ -109,7 +109,7 @@ export default function TrustDocsPage() {
 
         <h2>Standing intents follow the same rules</h2>
         <p>
-          The things Yeetful does <em>between</em> your visits never escape the model above:
+          The things Pantessa does <em>between</em> your visits never escape the model above:
         </p>
         <ul>
           <li>
@@ -134,7 +134,7 @@ export default function TrustDocsPage() {
         <h2>What you are trusting, exactly</h2>
         <p>
           Not prices — they are fetched live and re-checked. Not the model — it cannot write a
-          transaction. Not Yeetful with your funds — it never has them. You are trusting one
+          transaction. Not Pantessa with your funds — it never has them. You are trusting one
           thing: that the guard doctrine holds — <strong>artifacts verify or die</strong> — and
           every build argues its case in public on <Link href="/activity">/activity</Link> so you
           can watch it hold.

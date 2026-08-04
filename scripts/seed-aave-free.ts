@@ -50,7 +50,7 @@ const SERVICE = {
   slug: 'aave-free',
   name: 'Aave (Free)',
   description:
-    'Aave v4 lending on Ethereum via the official AaveKit API, free and non-gated: markets + pools with live supply/borrow APYs, full account portfolios (health factor, earned interest, accrued debt), health-factor previews, and construction-only build_* tools that return UNSIGNED approve→act transactions the user signs — supply, withdraw, borrow, repay, collateral toggles. Never holds keys, never signs, never submits. Rate-limited. By Yeetful.',
+    'Aave v4 lending on Ethereum via the official AaveKit API, free and non-gated: markets + pools with live supply/borrow APYs, full account portfolios (health factor, earned interest, accrued debt), health-factor previews, and construction-only build_* tools that return UNSIGNED approve→act transactions the user signs — supply, withdraw, borrow, repay, collateral toggles. Never holds keys, never signs, never submits. Rate-limited. By Pantessa.',
   category: 'DeFi',
   kind: 'data',
   priceUsd: '0',
@@ -223,7 +223,7 @@ async function main() {
       priceUsd: '0',
       scheme: 'exact',
       network: 'ethereum',
-      provider: 'Yeetful (free)',
+      provider: 'Pantessa (free)',
       position: i,
       featured: t.featured === true,
       parameters: t.params.length ? (t.params as unknown as object) : Prisma.DbNull,

@@ -9,7 +9,7 @@ export const dynamic = 'force-dynamic'
 
 // The connected agent's standing orders, fetched with its own key. Bearer-only
 // by design — this is the SDK's pre-flight ("may I still pay, and how much?"),
-// not a browser surface. The agent pays from its own wallet, so Yeetful can't
+// not a browser surface. The agent pays from its own wallet, so Pantessa can't
 // hard-block at the rails; the SDK fetches this and refuses locally, the same
 // trust model as the grant itself. Hard enforcement arrives with Coinbase
 // Spend Permissions, where the on-chain allowance is the cap.

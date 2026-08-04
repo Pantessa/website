@@ -20,7 +20,7 @@ export default function PrivacyPage() {
       </p>
       <h1 className="docs__h1">Privacy Policy</h1>
       <p className="docs__lead">
-        Yeetful is non-custodial and collects as little as it can to run the Service. This policy
+        Pantessa is non-custodial and collects as little as it can to run the Service. This policy
         explains what we collect, why, who we share it with, and what stays public on-chain.
       </p>
 
@@ -29,8 +29,8 @@ export default function PrivacyPage() {
           <strong>Last updated:</strong> {UPDATED}
         </p>
         <p>
-          This Privacy Policy describes how <strong>Yeetful Inc.</strong>{' '}
-          (&ldquo;Yeetful,&rdquo; &ldquo;we&rdquo;) handles information when you use the Yeetful
+          This Privacy Policy describes how <strong>Pantessa Inc.</strong>{' '}
+          (&ldquo;Pantessa,&rdquo; &ldquo;we&rdquo;) handles information when you use the Pantessa
           website, dashboard, SDK, and APIs (the &ldquo;Service&rdquo;). By using the Service you
           agree to this policy. It works alongside our <Link href="/docs/terms">Terms of Service</Link>.
         </p>
@@ -67,7 +67,7 @@ export default function PrivacyPage() {
           embedded-wallet authentication. When you choose &ldquo;Continue with Google&rdquo; or
           &ldquo;Continue with X,&rdquo; you authenticate with that provider, which returns a limited
           set of profile information (typically email, name, and an account identifier) used to
-          create or sign you into your Yeetful embedded wallet. We use this only to authenticate you,
+          create or sign you into your Pantessa embedded wallet. We use this only to authenticate you,
           create your account, and contact you about the Service. We do not post to your social
           accounts or access your contacts. Your use of Google or X is also governed by their own
           privacy policies, and your use of the embedded wallet by Coinbase&rsquo;s privacy policy.

@@ -54,7 +54,7 @@ const MARK_NAMES: Record<string, string> = {
   'snapshot-free': 'Snapshot',
   'cow-free': 'CoW',
   'near-intents-mcp-yeetful': 'NEAR Intents',
-  'yeetful-tool-wallet': 'Yeetful wallet',
+  'yeetful-tool-wallet': 'Pantessa wallet',
 }
 
 /** The marks a house-link chip wears — the apps this ask actually runs

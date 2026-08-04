@@ -124,7 +124,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       const message = createSiweMessage({
         domain: window.location.host,
         address: getAddress(walletAddress),
-        statement: 'Sign in to Yeetful. This proves you own this wallet — no funds are moved.',
+        statement: 'Sign in to Pantessa. This proves you own this wallet — no funds are moved.',
         uri: window.location.origin,
         version: '1',
         chainId,

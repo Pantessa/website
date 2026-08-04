@@ -23,7 +23,7 @@ export default function LinksDocsPage() {
         An intent link is a short URL — <code>yeetful.com/i/&lt;slug&gt;</code> — that carries an
         ask as a plain sentence: <em>&ldquo;Buy $10 of AAPL&rdquo;</em>,{' '}
         <em>&ldquo;Stake 0.05 ETH with Lido&rdquo;</em>, <em>&ldquo;DCA $25 into ETH
-        weekly&rdquo;</em>. Whoever opens it connects <strong>their own wallet</strong>, Yeetful
+        weekly&rdquo;</em>. Whoever opens it connects <strong>their own wallet</strong>, Pantessa
         scans, funds across chains, and builds the guarded path — and they sign, or nothing
         happens. You have an intent; we do the rest.
       </p>
@@ -56,7 +56,7 @@ export default function LinksDocsPage() {
         <ul>
           <li>
             The link carries a <strong>sentence only</strong> — never calldata, artifacts, or
-            addresses. Yeetful rebuilds the action from scratch with deterministic builders on
+            addresses. Pantessa rebuilds the action from scratch with deterministic builders on
             the other side, so nothing a link contains can execute by itself.
           </li>
           <li>
