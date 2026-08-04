@@ -36,7 +36,7 @@ import { chartPairFor, changePct24h, aggregateCandles, type Candle } from '../li
 import { pureChecks, policyCheck, orderValueUsd, buildReport } from '../lib/cow-guardrails'
 import { policyCheckInflow, recipientCheck, validityCheck, MAX_VALID_SEC } from '../lib/tx-guardrails'
 import { guardPlannerArtifact, PERMIT2_ADDRESS } from '../lib/planner-artifact-guard'
-import { parseSwapIntent, swapClarify } from '../lib/swap-intent'
+import { LIMIT_EXAMPLES, parseSwapIntent, swapClarify } from '../lib/swap-intent'
 import { activeLinkCapFor, composeMcps, linkLockup, linkLockupWord } from '../lib/intent-links'
 import { formatEarnedUsd, netFeeBpsFor, creatorEarningsUsd, FEE_BEARING_BUILD_PATHS, CROSS_CHAIN_FEE_BPS, CROSS_CHAIN_NET_FEE_BPS } from '../lib/fees'
 import { BUILD_PATHS, venueOfBuildPath } from '../lib/build-path'
@@ -5738,6 +5738,51 @@ async function main() {
   check('swap intent: limit parse carries the named price', li.isSwap && li.mode === 'limit' && li.buyAmountAtLeastHuman === '1750' && li.buyToken === 'USDC')
   const li2 = parseSwapIntent('limit: sell 1 WETH when it hits 3500 USDC')
   check('swap intent: "when it hits" limit phrasing', li2.isSwap && li2.mode === 'limit' && li2.buyAmountAtLeastHuman === '3500')
+  // Buy-led limits (live 2026-08-03: "place a limit order to buy 1 UNI for 4
+  // USDC on base" matched neither the sell-led grammar nor the clarify, fell
+  // to the planner, and got Uniswap/CoW/1inch recommended BY NAME). The
+  // operands INVERT — the amount named first is what you RECEIVE.
+  const lb = parseSwapIntent('place a limit order to buy 1 UNI for 4 USDC on base')
+  check(
+    'swap intent: buy-led limit inverts the operands (spend 4 USDC, receive ≥1 UNI)',
+    lb.isSwap && lb.mode === 'limit' && !lb.problem && lb.sellAmountHuman === '4' && lb.sellToken === 'USDC' && lb.buyAmountAtLeastHuman === '1' && lb.buyToken === 'UNI',
+  )
+  const ls = parseSwapIntent('limit sell 5 USDC for 2 UNI on base')
+  check(
+    'swap intent: the sell-led operand order is unchanged (spend 5 USDC, receive ≥2 UNI)',
+    ls.isSwap && ls.mode === 'limit' && !ls.problem && ls.sellAmountHuman === '5' && ls.sellToken === 'USDC' && ls.buyAmountAtLeastHuman === '2' && ls.buyToken === 'UNI',
+  )
+  const lb2 = parseSwapIntent('limit order: buy 2 WETH for at most 6000 USDC')
+  check(
+    'swap intent: "at most" buy-side ceiling parses',
+    lb2.mode === 'limit' && lb2.sellAmountHuman === '6000' && lb2.sellToken === 'USDC' && lb2.buyAmountAtLeastHuman === '2',
+  )
+  check(
+    'swap intent: "with"/"using" buy-side connectors parse',
+    parseSwapIntent('limit buy 1 UNI with 4 USDC').sellAmountHuman === '4' && parseSwapIntent('limit buy 1 UNI using 4 USDC').sellToken === 'USDC',
+  )
+  // A bare "at" on the buy side reads as a PER-UNIT price while the sell-led
+  // convention is TOTAL — never claimed, always clarified.
+  const lat = parseSwapIntent('limit buy 10 UNI at 3 USDC')
+  check('swap intent: per-unit-sounding "buy N at P" clarifies instead of resting a 10× -smaller order', lat.isSwap && lat.mode === undefined && !!lat.problem)
+  // No buy-led limit reaches the planner: an unparsed one still clarifies.
+  const lc = parseSwapIntent('limit order to buy 5 shares of AAPL')
+  check('swap intent: unparsed buy-led limit clarifies (never the planner)', lc.isSwap && !!lc.problem)
+  check(
+    'swap intent: the limit clarify names BOTH operand orders, and both round-trip',
+    lc.problem!.includes(LIMIT_EXAMPLES[0]) &&
+      lc.problem!.includes(LIMIT_EXAMPLES[1]) &&
+      LIMIT_EXAMPLES.every((ex) => {
+        const r = parseSwapIntent(`limit order: ${ex}`)
+        return r.isSwap && r.mode === 'limit' && !r.problem && !!r.sellAmountHuman && !!r.sellToken && !!r.buyAmountAtLeastHuman && !!r.buyToken
+      }),
+  )
+  // The buy-inclusive clarify is LIMIT-ONLY — widening the general fallback
+  // would claim buys that belong to other layers.
+  check(
+    'swap intent: "buy" in the clarify fallback stays scoped to limit asks',
+    parseSwapIntent('buy $12 of ETH on hyperliquid').isSwap === false && parseSwapIntent('buy AAPL with 500 USDG on robinhood').isSwap === false,
+  )
   check('swap intent: pair without amount clarifies', parseSwapIntent('swap USDC for WETH').problem !== undefined)
   check('swap intent: plain question falls through', parseSwapIntent('what is a swap?').isSwap === false)
   check('swap intent: price question falls through', parseSwapIntent('what is the price of ETH').isSwap === false)

@@ -183,6 +183,12 @@ const CORPUS: Entry[] = [
   { ask: 'add 1 USDC to an Aave pool on Ethereum', source: 'seed/aave', expect: 'any' },
   { ask: 'Swap 100 USDC for WETH', source: 'seed/cow', expect: 'action' },
   { ask: 'Place a limit order: sell 0.5 WETH when it hits 3500 USDC', source: 'seed/cow', expect: 'action' },
+  // Limit orders, BOTH operand orders (live 2026-08-03: the buy-led form fell
+  // to the planner, which recommended Uniswap/CoW Swap/1inch by name).
+  { ask: 'place a limit order to buy 1 UNI for 4 USDC on base', source: 'live 2026-08-03 (buy-led limit)', expect: 'action' },
+  { ask: 'limit sell 5 USDC for 2 UNI on base', source: 'live 2026-08-03 (sell-led control)', expect: 'action' },
+  { ask: 'limit order: buy 2 WETH for at most 6000 USDC', source: 'limit clarify example (buy-led)', expect: 'action' },
+  { ask: 'limit order: sell 0.5 WETH for at least 1750 USDC', source: 'limit clarify example (sell-led)', expect: 'action' },
 
   // Transfers (Nate's live phrasing, #473)
   { ask: 'send 1 USDC on arbitrum to 0x1111111111111111111111111111111111111111', source: 'live/#473', expect: 'action' },
