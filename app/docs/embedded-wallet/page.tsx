@@ -21,7 +21,7 @@ export default function EmbeddedWalletPage() {
       <h1 className="docs__h1">Create an account (email)</h1>
       <p className="docs__lead">
         Not everyone has a wallet extension. <strong>&ldquo;Create an account&rdquo;</strong> lets a
-        newcomer sign up with just an email — Yeetful spins up a Coinbase{' '}
+        newcomer sign up with just an email — Pantessa spins up a Coinbase{' '}
         <strong>non-custodial</strong> wallet they fully control, no extension, no seed phrase. Once
         it&apos;s connected it behaves <em>exactly</em> like MetaMask.
       </p>

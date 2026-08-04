@@ -53,7 +53,7 @@ const SERVICE = {
   slug: 'hyperliquid-free',
   name: 'Hyperliquid (Free)',
   description:
-    'Hyperliquid, free and non-gated: live perp + spot markets, prices, L2 orderbooks, candles, funding (with cross-venue predictions), and the full per-address account surface — positions, margin, PnL, open orders, fills, USDC ledger — plus await_settlement, a real-time WebSocket watch that returns the moment an order fills. Read-only by construction (never touches /exchange, nothing signable). Rate-limited. By Yeetful.',
+    'Hyperliquid, free and non-gated: live perp + spot markets, prices, L2 orderbooks, candles, funding (with cross-venue predictions), and the full per-address account surface — positions, margin, PnL, open orders, fills, USDC ledger — plus await_settlement, a real-time WebSocket watch that returns the moment an order fills. Read-only by construction (never touches /exchange, nothing signable). Rate-limited. By Pantessa.',
   category: 'Trading',
   kind: 'data',
   priceUsd: '0',
@@ -225,7 +225,7 @@ async function main() {
       priceUsd: '0',
       scheme: 'exact',
       network: 'Hyperliquid',
-      provider: 'Yeetful (free)',
+      provider: 'Pantessa (free)',
       position: i,
       parameters: t.plannable === false ? Prisma.DbNull : (t.params as unknown as object),
     })),

@@ -27,7 +27,7 @@ function cleanAsk(raw: string): string {
 const CONTRACT = [
   {
     title: 'The agent wrote a sentence, not a transaction.',
-    body: 'This link carries only the ask above. Yeetful rebuilds it from scratch with deterministic builders — no AI wrote the calldata, and nothing an agent puts in a link can execute by itself.',
+    body: 'This link carries only the ask above. Pantessa rebuilds it from scratch with deterministic builders — no AI wrote the calldata, and nothing an agent puts in a link can execute by itself.',
   },
   {
     title: 'Every build is guarded, priced, and receipted.',
@@ -35,7 +35,7 @@ const CONTRACT = [
   },
   {
     title: 'Your wallet is the only thing that can sign.',
-    body: 'Yeetful holds no keys and no funds. Review what gets built, then sign it — or close this tab and nothing happens.',
+    body: 'Pantessa holds no keys and no funds. Review what gets built, then sign it — or close this tab and nothing happens.',
   },
 ]
 

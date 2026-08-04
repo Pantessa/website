@@ -112,7 +112,7 @@ export default function LinksSummaryCard() {
             <Link2 className="w-4 h-4 text-[color:var(--accent)]" /> Your intent links
           </p>
           <p className="text-xs text-[color:var(--muted-2)] mt-0.5">
-            A sentence anyone can act on — you keep half of Yeetful&apos;s 0.20% fee on the
+            A sentence anyone can act on — you keep half of Pantessa&apos;s 0.20% fee on the
             conversions your links produce.{' '}
             <Link href="/dashboard/links" className="underline underline-offset-2 decoration-dotted hover:text-white">
               Open Intent links →

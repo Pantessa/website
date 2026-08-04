@@ -50,7 +50,7 @@ That's the real stepping stone to automation: not a smarter prompt, but an agent
 
 ## Guardrails are the unlock, not the brake
 
-An agent with an unbounded wallet is a liability. So Yeetful puts a spend-approval layer in front of every payment: an **expense account** with an allowlist of services it may pay, a per-call cap, a daily cap, and a freeze switch that stops everything cold. Approvals are enforcement, not decoration — turn a service off and the next payment to it is refused before a cent moves. Every settle and every refusal lands in a [ledger](/activity) you can read.
+An agent with an unbounded wallet is a liability. So Pantessa puts a spend-approval layer in front of every payment: an **expense account** with an allowlist of services it may pay, a per-call cap, a daily cap, and a freeze switch that stops everything cold. Approvals are enforcement, not decoration — turn a service off and the next payment to it is refused before a cent moves. Every settle and every refusal lands in a [ledger](/activity) you can read.
 
 The thesis fits on one line: per-call pricing is fine; unbounded authorization is how an agent empties a wallet politely.
 

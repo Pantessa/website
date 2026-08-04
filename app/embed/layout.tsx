@@ -7,7 +7,7 @@ import './embed.css'
 // CSS (full-height + light-theme variable overrides) and keeps the iframe
 // out of search indexes.
 export const metadata: Metadata = {
-  title: 'Yeetful chat',
+  title: 'Pantessa chat',
   robots: { index: false, follow: false },
 }
 

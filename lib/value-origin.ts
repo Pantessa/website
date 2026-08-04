@@ -90,7 +90,7 @@ const INTERNAL_TLD_RE = /\.(test|localhost|local|example|invalid)$/
 /** This project's own Vercel previews (team slug / git-branch prefix). */
 const OWN_PREVIEW_RE = /^website-git-.*\.vercel\.app$|-nate-4683s-projects\.vercel\.app$/
 
-/** True when an embed_turns origin is Yeetful's own dev/test traffic. */
+/** True when an embed_turns origin is Pantessa's own dev/test traffic. */
 export function isInternalOrigin(origin: string | null | undefined): boolean {
   if (!origin) return false
   let host: string

@@ -81,10 +81,10 @@ function checkTx(tx: EvmTxRequest, from: string | null, reasons: string[], warni
     return
   }
   if (sanitizeChainId(tx.chainId) === null) {
-    reasons.push(`Chain ${tx.chainId ?? '(unspecified)'} isn't a Yeetful app chain — refusing a transaction we can't attribute to a known network.`)
+    reasons.push(`Chain ${tx.chainId ?? '(unspecified)'} isn't a Pantessa app chain — refusing a transaction we can't attribute to a known network.`)
   }
   if (eqAddr(tx.to, PERMIT2_ADDRESS)) {
-    reasons.push('Targets Permit2 (the token-allowance root). External tools never get to route your allowances — Yeetful builds its own permits.')
+    reasons.push('Targets Permit2 (the token-allowance root). External tools never get to route your allowances — Pantessa builds its own permits.')
   }
   const value = (() => {
     try {
@@ -102,7 +102,7 @@ function checkTx(tx: EvmTxRequest, from: string | null, reasons: string[], warni
     // harmless; anything else is a plain transfer an external tool has no
     // business building — the native send layer decodes + prices those.
     if (value !== null && value > BigInt(0) && !eqAddr(tx.to, from)) {
-      reasons.push(`Sends native currency to ${tx.to} — an external tool built a plain transfer. Ask me to "send X to …" and Yeetful's guarded transfer layer builds it instead.`)
+      reasons.push(`Sends native currency to ${tx.to} — an external tool built a plain transfer. Ask me to "send X to …" and Pantessa's guarded transfer layer builds it instead.`)
     }
     return
   }
@@ -117,7 +117,7 @@ function checkTx(tx: EvmTxRequest, from: string | null, reasons: string[], warni
       const dest = words.length >= 2 ? wordAddr(words[0]) : null
       if (!dest || !from || !eqAddr(dest, from)) {
         reasons.push(
-          `ERC-20 transfer to ${dest ?? 'an undecodable recipient'} — not the requesting wallet. External tools don't move your tokens to third parties; use Yeetful's guarded send instead.`,
+          `ERC-20 transfer to ${dest ?? 'an undecodable recipient'} — not the requesting wallet. External tools don't move your tokens to third parties; use Pantessa's guarded send instead.`,
         )
       }
       break
@@ -139,7 +139,7 @@ function checkTx(tx: EvmTxRequest, from: string | null, reasons: string[], warni
     case SEL_721_SAFE_TRANSFER_DATA:
     case SEL_1155_SAFE_TRANSFER:
     case SEL_1155_BATCH_TRANSFER:
-      reasons.push('transferFrom-family calldata from an external tool — Yeetful’s native NFT/transfer layers own those moves (with ownership + recipient verification).')
+      reasons.push('transferFrom-family calldata from an external tool — Pantessa’s native NFT/transfer layers own those moves (with ownership + recipient verification).')
       break
     case SEL_SET_APPROVAL_FOR_ALL:
       reasons.push('setApprovalForAll — hands an operator your entire collection. Refused from external tools; OpenSea listings get the pinned-conduit approval via the native NFT layer.')
@@ -167,7 +167,7 @@ export function guardPlannerArtifact(art: SignableArtifact, ctx: { from: string 
       // shapes the payload and Snapshot validates sig + voting power.
       break
     case 'eip712-order': {
-      // Every intent protocol Yeetful supports is built natively (CoW,
+      // Every intent protocol Pantessa supports is built natively (CoW,
       // Seaport, Hyperliquid) with its own pinned guard. A generic typed-data
       // payload from a directory MCP could just as well be a Permit2 grant or
       // a Seaport listing paying someone else — refuse everything except a

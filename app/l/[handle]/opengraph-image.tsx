@@ -11,7 +11,7 @@ import { brandOgPalette, normalizeHex } from '@/lib/brand-theme'
 // the house dark card. Same fonts + footer family as the /i and /p cards.
 
 export const runtime = 'nodejs'
-export const alt = 'A Yeetful creator page — links that move money.'
+export const alt = 'A Pantessa creator page — links that move money.'
 export const size = { width: 1200, height: 630 }
 export const contentType = 'image/png'
 
@@ -129,7 +129,7 @@ export default async function Image({ params }: Params) {
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 17, letterSpacing: 4, color: pal.muted }}>
             <div style={{ display: 'flex', width: 8, height: 8, borderRadius: 4, background: pal.accent }} />
-            <span>{brand ? 'POWERED BY YEETFUL' : 'CREATOR PAGE'}</span>
+            <span>{brand ? 'POWERED BY PANTESSA' : 'CREATOR PAGE'}</span>
           </div>
         </div>
 

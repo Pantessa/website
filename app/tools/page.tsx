@@ -7,11 +7,11 @@ import ThinkingToolsBoard from '@/components/ThinkingToolsBoard'
 // /api/tools/stats for live aggregates.
 
 export const metadata: Metadata = {
-  title: 'The thinking tools — watch the router decide · Yeetful',
+  title: 'The thinking tools — watch the router decide · Pantessa',
   description:
-    'The reasoning tools inside the Yeetful Reason Router: which MCP answers, which endpoint runs, what gets resolved, what gets stopped — live, named, and learning from settled receipts.',
+    'The reasoning tools inside the Pantessa Reason Router: which MCP answers, which endpoint runs, what gets resolved, what gets stopped — live, named, and learning from settled receipts.',
   openGraph: {
-    title: 'Yeetful thinking tools',
+    title: 'Pantessa thinking tools',
     description:
       'Which MCP answers, which endpoint runs, what gets stopped — the router’s decisions, live and named.',
     type: 'website',
@@ -29,7 +29,7 @@ export default function ToolsPage() {
           </h1>
           <p className="hero__sub">
             The hard part isn&apos;t calling an MCP — it&apos;s picking the right one, building the
-            request, and knowing when to stop. Those decisions are Yeetful&apos;s own tools. Here they
+            request, and knowing when to stop. Those decisions are Pantessa&apos;s own tools. Here they
             are, named, live, and getting smarter from settled receipts.
           </p>
         </header>

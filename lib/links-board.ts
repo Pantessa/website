@@ -248,7 +248,7 @@ export interface FeeSummary {
   feeBearingUsd: number
   /** Estimated fees accrued to link creators (their half, link-attributed). */
   creatorUsd: number
-  /** Estimated fees accrued to Yeetful (everything else). */
+  /** Estimated fees accrued to Pantessa (everything else). */
   yeetfulUsd: number
   conversions: number
 }

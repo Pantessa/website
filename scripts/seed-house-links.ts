@@ -19,8 +19,8 @@ async function main() {
     const mcps = composeMcps(ask).join(',')
     await prisma.intentLink.upsert({
       where: { id: h.slug },
-      create: { id: h.slug, ask, mcps, creator: null, agent: 'Yeetful', revoked: false },
-      update: { ask, mcps, agent: 'Yeetful', revoked: false },
+      create: { id: h.slug, ask, mcps, creator: null, agent: 'Pantessa', revoked: false },
+      update: { ask, mcps, agent: 'Pantessa', revoked: false },
     })
     console.log(`✓ /i/${h.slug} — "${ask}" [${mcps}]`)
   }

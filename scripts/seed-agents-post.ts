@@ -44,7 +44,7 @@ One deliberate wrinkle: budgets are edited with your wallet session only. The ke
 
 ## The SDK does the refusing
 
-Honesty first: your agent pays x402 challenges from its **own wallet**, so Yeetful can't reach in and block a payment in flight. What we can do is make the SDK refuse to sign one. \`yeetful\` 0.4 asks one question before the first payment:
+Honesty first: your agent pays x402 challenges from its **own wallet**, so Pantessa can't reach in and block a payment in flight. What we can do is make the SDK refuse to sign one. \`yeetful\` 0.4 asks one question before the first payment:
 
 \`\`\`
 GET /api/agent/policy

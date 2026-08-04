@@ -51,7 +51,7 @@ const ENDPOINTS = [
     maxPriceUsd: null,
     scheme: 'exact',
     network: 'Base',
-    provider: 'Yeetful',
+    provider: 'Pantessa',
     position: 0,
     // ⚠️ Param schemas make an endpoint PLANNER-CALLABLE regardless of the
     // server's `callable` flag (the planner gates on "has params", learned

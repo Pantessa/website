@@ -52,7 +52,7 @@ const USERS: Row[] = [
   {
     g: 'pen',
     t: 'Nothing moves without your signature',
-    d: 'Yeetful holds no keys and never has. The wallet that pops is yours, and the transaction it shows is the one that gets sent.',
+    d: 'Pantessa holds no keys and never has. The wallet that pops is yours, and the transaction it shows is the one that gets sent.',
     href: '/docs',
   },
   {

@@ -13,7 +13,7 @@
 // ─────────────────────────────────────────────────────────────────────────
 
 export const GRANT_DOMAIN = {
-  name: 'Yeetful Spend Grant',
+  name: 'Pantessa Spend Grant',
   version: '1',
   chainId: 8453, // Base
 } as const

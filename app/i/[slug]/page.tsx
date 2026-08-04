@@ -37,21 +37,21 @@ async function getLink(slug: string) {
 export async function generateMetadata({ params }: Params): Promise<Metadata> {
   const { slug } = await params
   const link = await getLink(slug)
-  if (!link) return { title: 'Intent link · Yeetful', robots: { index: false, follow: false } }
-  const title = `${link.ask} · Yeetful`
+  if (!link) return { title: 'Intent link · Pantessa', robots: { index: false, follow: false } }
+  const title = `${link.ask} · Pantessa`
   const description =
-    'One tap from ask to signed. Yeetful compiles this into guarded transactions — deterministic builders, fail-closed checks, receipts — and your wallet is the only thing that can sign.'
+    'One tap from ask to signed. Pantessa compiles this into guarded transactions — deterministic builders, fail-closed checks, receipts — and your wallet is the only thing that can sign.'
   return {
     title,
     description,
     robots: { index: false, follow: false },
-    openGraph: { title, description, siteName: 'Yeetful', type: 'website' },
+    openGraph: { title, description, siteName: 'Pantessa', type: 'website' },
     twitter: { card: 'summary_large_image', title, description },
   }
 }
 
 /** The creator's white-label brand (creator_handles) — the splash wears it,
- *  powered by Yeetful. House links (creator=null) stay pure Yeetful. */
+ *  powered by Pantessa. House links (creator=null) stay pure Pantessa. */
 async function getBrand(creator: string | null) {
   if (!creator) return null
   try {

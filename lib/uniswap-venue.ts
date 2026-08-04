@@ -1,7 +1,7 @@
 // ─────────────────────────────────────────────────────────────────────────
 //  Uniswap venue adapter — the Uniswap-ONLY half of the native swap tool
 //  (taxonomy: venue code stays venue-specific; lib/tx-guardrails is the
-//  cross-app Yeetful layer this plugs into). In-process for the website's
+//  cross-app Pantessa layer this plugs into). In-process for the website's
 //  native path, exactly like the CoW adapter; the external productization is
 //  the Uniswap MCP (Yeetful/x402-services services/uniswap), which this
 //  mirrors: fresh QuoterV2 quote across every v3 fee tier → amountOutMinimum
@@ -189,7 +189,7 @@ export async function buildUniswapSwap(params: UniswapSwapParams): Promise<Unisw
   const deadlineSec = params.deadlineSec ?? 600
   const chainId = params.chainId ?? 8453
   const chain = chainById(chainId)
-  if (!chain) throw new Error(`Chain ${chainId} isn't one of Yeetful's supported chains.`)
+  if (!chain) throw new Error(`Chain ${chainId} isn't one of Pantessa's supported chains.`)
   if (!chain.uniswap) throw new Error(`Uniswap isn't wired on ${chain.name} yet — pick another chain.`)
   const { swapRouter02, quoterV2 } = chain.uniswap
   // Registry client first — it carries the per-chain rpcUrl overrides
@@ -241,7 +241,7 @@ export async function buildUniswapSwap(params: UniswapSwapParams): Promise<Unisw
   const minOut = (best.amountOut * BigInt(10_000 - slippageBps)) / BigInt(10_000)
   const deadline = Math.floor(Date.now() / 1000) + deadlineSec
 
-  // Yeetful fee (lib/fees.ts) via the router's NATIVE fee path: output lands
+  // Pantessa fee (lib/fees.ts) via the router's NATIVE fee path: output lands
   // on the router, sweepTokenWithFee splits it user/treasury in the SAME
   // multicall. Fee off (bps 0) → the classic direct-to-payer build.
   const feeBps = params.feeBps ?? SWAP_FEE_BPS
@@ -322,8 +322,8 @@ export async function buildUniswapSwap(params: UniswapSwapParams): Promise<Unisw
     level: 'warn',
     ok: true,
     note: feeOn
-      ? `Yeetful fee: ${feeBps / 100}% of the output, split by the router's own sweepTokenWithFee to the Yeetful treasury — visible in the multicall, minimum received shown post-fee.`
-      : 'No Yeetful fee on this swap.',
+      ? `Pantessa fee: ${feeBps / 100}% of the output, split by the router's own sweepTokenWithFee to the Pantessa treasury — visible in the multicall, minimum received shown post-fee.`
+      : 'No Pantessa fee on this swap.',
   }
   // Recipient pin: the classic build pays the payer (self-check). An override
   // reports where proceeds land — the overriding executor's own independent
@@ -357,7 +357,7 @@ export async function buildUniswapSwap(params: UniswapSwapParams): Promise<Unisw
   // Honest minimum: what the USER receives after the treasury sweep, not the
   // pool-level bound.
   const minHuman = formatAtoms(minOutAfterFee.toString(), buyDec)
-  const feeNote = feeOn ? `, incl. ${feeBps / 100}% Yeetful fee on the output` : ''
+  const feeNote = feeOn ? `, incl. ${feeBps / 100}% Pantessa fee on the output` : ''
   const summary = `Swap ${inHuman} ${tokenLabel(params.sellToken, chainId)} → ~${outHuman} ${tokenLabel(params.buyToken, chainId)} via Uniswap v3 on ${chain.name} (${best.fee / 100}bps pool), min received ${minHuman} (${slippageBps}bps slippage${feeNote})`
 
   return { summary, guardrails, blocked: !guardrails.ok, swapTx, approveTx, minimumOut: minHuman, validUntil: deadline }

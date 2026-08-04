@@ -89,7 +89,7 @@ export default function TokenPanel({
 
         <div className="svc__detail">
           {/* Performance (McpStats) shelved 2026-06-25: nearly no MCPs have wired
-              the Yeetful SDK to report usage, so the card was all zeros. Re-add
+              the Pantessa SDK to report usage, so the card was all zeros. Re-add
               <McpStats slug={slug} /> here when usage reporting is rethought. */}
 
           {/* How it trades — Flaunch puts the token on a Uniswap v4 pool at launch. */}

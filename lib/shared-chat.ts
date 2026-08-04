@@ -1,7 +1,7 @@
 // Server-side data helpers for the public share page (/p/[slug]) and its
 // social card (opengraph-image). One place resolves the chat, its jobs
 // (money moved), and the MCP set that powered it — so the page header, the
-// per-turn avatars, the "Try Yeetful" handoff link, and the OG image all
+// per-turn avatars, the "Try Pantessa" handoff link, and the OG image all
 // tell the same story.
 
 import prisma from '@/lib/db'

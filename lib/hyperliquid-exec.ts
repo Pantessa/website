@@ -349,7 +349,7 @@ export function guardHlBuilderFeeApproval(action: HlWireApproveBuilderFeeAction,
   block(
     'fee-recipient',
     action.builder?.toLowerCase() === TREASURY_ADDRESS.toLowerCase(),
-    'Fee recipient pinned to the Yeetful treasury.',
+    'Fee recipient pinned to the Pantessa treasury.',
     'Approval names a different fee recipient — refusing.',
   )
   block(
@@ -402,7 +402,7 @@ export function guardHlExecBuild(intent: HlOrderIntent, action: HlWireOrderActio
       'builder-fee',
       feeOk,
       HL_BUILDER_FEE_TENTH_BPS > 0
-        ? `${HL_BUILDER_MAX_FEE_RATE} builder fee to the Yeetful treasury — venue-enforced on the fill; it funds creator kickbacks.`
+        ? `${HL_BUILDER_MAX_FEE_RATE} builder fee to the Pantessa treasury — venue-enforced on the fill; it funds creator kickbacks.`
         : 'No builder fee configured — none rides the order.',
       'Order carries an unexpected builder fee (wrong recipient or rate) — refusing.',
     )

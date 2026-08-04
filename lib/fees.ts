@@ -1,5 +1,5 @@
 // ─────────────────────────────────────────────────────────────────────────
-//  Yeetful protocol fees — the single source of truth. Every fee-bearing
+//  Pantessa protocol fees — the single source of truth. Every fee-bearing
 //  venue imports the treasury address and the fee rate from HERE — never a
 //  local constant, never a model-supplied value. Fee-bearing venues today:
 //  LiFi (explicit transfer step), Uniswap v3 (router-native
@@ -15,7 +15,7 @@
 
 const ADDR_RE = /^0x[0-9a-fA-F]{40}$/
 
-/** Yeetful's fee treasury. Env-overridable (YEETFUL_TREASURY) so staging can
+/** Pantessa's fee treasury. Env-overridable (YEETFUL_TREASURY) so staging can
  *  point at a burner; an invalid override falls back to the pinned default
  *  rather than silently shipping fees to a typo. */
 export const TREASURY_ADDRESS: `0x${string}` =
@@ -83,7 +83,7 @@ export const LINK_SWAP_FEE_BPS: number = (() => {
 // out as USDC-on-Base claims). Phase 2 points the venue fee recipient at a
 // per-creator deterministic split contract — same math, on-chain enforced.
 
-/** Fraction of the Yeetful fee the link creator earns. */
+/** Fraction of the Pantessa fee the link creator earns. */
 export const CREATOR_FEE_SPLIT = 0.5
 
 // ── The NEAR Intents (1Click) venue fee ─────────────────────────────────────
@@ -105,7 +105,7 @@ export const ONECLICK_FEE_SPLIT = 0.5
 /** What actually reaches the treasury on a cross-chain swap. */
 export const CROSS_CHAIN_NET_FEE_BPS = Math.round(CROSS_CHAIN_FEE_BPS * (1 - ONECLICK_FEE_SPLIT))
 
-/** Yeetful's NET fee in bps per build path — what the treasury keeps after
+/** Pantessa's NET fee in bps per build path — what the treasury keeps after
  *  the venue's own cut. Uniswap/CoW/LiFi hand over the whole SWAP_FEE_BPS;
  *  NEAR Intents keeps half; HL perp orders carry the builder fee (f/10 bps,
  *  all ours). Everything NOT in this map (funding legs, NFTs, transfers,
@@ -127,7 +127,7 @@ export const FEE_BEARING_BUILD_PATHS = new Set(
   Object.entries(NET_FEE_BPS_BY_BUILD_PATH).filter(([, bps]) => bps > 0).map(([path]) => path),
 )
 
-/** Yeetful's net fee rate for a build path; 0 when the path is fee-free. */
+/** Pantessa's net fee rate for a build path; 0 when the path is fee-free. */
 export function netFeeBpsFor(buildPath: string | null | undefined): number {
   return (buildPath && NET_FEE_BPS_BY_BUILD_PATH[buildPath]) || 0
 }
@@ -143,7 +143,7 @@ export function netFeeBpsForTurn(buildPath: string | null | undefined, feeBps: n
   return netFeeBpsFor(buildPath)
 }
 
-/** Creator earnings on a signed, fee-bearing notional — half of what Yeetful
+/** Creator earnings on a signed, fee-bearing notional — half of what Pantessa
  *  actually keeps, which is NOT always half of what the user paid (see the
  *  1Click split above). Callers pass the path's net rate. */
 export function creatorEarningsUsd(valueUsd: number, netBps: number = SWAP_FEE_BPS): number {

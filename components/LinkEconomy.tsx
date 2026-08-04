@@ -41,7 +41,7 @@ export default function LinkEconomy() {
           <p className="spread__sub">
             Mint a short link that carries an ask. Whoever opens it connects their own wallet and
             the path builds itself — guarded, signed only by them, receipted — then they&rsquo;re
-            handed back to wherever the link lives. Creators earn half of Yeetful&rsquo;s 0.20% fee
+            handed back to wherever the link lives. Creators earn half of Pantessa&rsquo;s 0.20% fee
             on the conversions their links produce.
           </p>
 
@@ -111,7 +111,7 @@ export default function LinkEconomy() {
           <dl className="spread__econ">
             <div>
               <dt className="mono">0.20%</dt>
-              <dd>Yeetful&rsquo;s fee on a fee-bearing conversion</dd>
+              <dd>Pantessa&rsquo;s fee on a fee-bearing conversion</dd>
             </div>
             <div>
               <dt className="mono">½</dt>

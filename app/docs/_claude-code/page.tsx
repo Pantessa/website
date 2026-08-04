@@ -22,7 +22,7 @@ export default function ClaudeCodePage() {
       <p className="docs__crumbs mono">
         <Link href="/docs">DOCS</Link> <span>/</span> ADD WITH CLAUDE CODE
       </p>
-      <h1 className="docs__h1">Add Yeetful to your agent with one prompt</h1>
+      <h1 className="docs__h1">Add Pantessa to your agent with one prompt</h1>
       <p className="docs__lead">
         Paste the prompt below into Claude Code (or any capable coding agent) in your project. It
         wires the SDK in — working with whatever wallet your agent already uses, including a
@@ -79,11 +79,11 @@ export default function ClaudeCodePage() {
       </div>
 
       <div className="docs__prose">
-        <h2>Why route a Coinbase agent through Yeetful?</h2>
+        <h2>Why route a Coinbase agent through Pantessa?</h2>
         <p>
-          CDP gives your agent a wallet; Yeetful gives it <strong>spending policy</strong> — the
+          CDP gives your agent a wallet; Pantessa gives it <strong>spending policy</strong> — the
           allowlist, the budgets, the typed refusals, and a receipt trail your dashboard (and
-          your team) can audit. The two compose: CDP signs, Yeetful decides whether it should.
+          your team) can audit. The two compose: CDP signs, Pantessa decides whether it should.
           When you want hard on-chain guarantees on top, the same grant terms are built to map
           onto Coinbase Spend Permissions — that&apos;s the direction of travel for the{' '}
           <Link href="/docs/expense-account">expense account</Link>.

@@ -36,7 +36,7 @@ export const dynamic = 'force-dynamic'
  *     job steps + guardian protective closes.
  *
  * `?days=7|14|30` picks the window (default 14). `?external=1` drops
- * Yeetful's own test wallets so the leak-phase numbers are honest.
+ * Pantessa's own test wallets so the leak-phase numbers are honest.
  * Everything is aggregate SQL — nothing fetches whole tables into JS.
  */
 

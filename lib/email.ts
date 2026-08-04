@@ -8,7 +8,7 @@
 // yeetful.com. Replies route to a human via EMAIL_REPLY_TO.
 
 const RESEND_API_KEY = process.env.RESEND_API_KEY
-const FROM = process.env.EMAIL_FROM ?? 'Yeetful <onboarding@yeetful.com>'
+const FROM = process.env.EMAIL_FROM ?? 'Pantessa <onboarding@yeetful.com>'
 const REPLY_TO = process.env.EMAIL_REPLY_TO ?? 'nate@yeetful.com'
 const SITE = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://yeetful.com'
 
@@ -59,10 +59,10 @@ export async function sendEmail({
 export function verifyEmailHtml(token: string): { subject: string; html: string } {
   const url = `${SITE}/api/subscribe/verify?token=${encodeURIComponent(token)}`
   return {
-    subject: 'Confirm your email · Yeetful',
+    subject: 'Confirm your email · Pantessa',
     html: `<div style="font-family:system-ui,sans-serif;max-width:480px">
       <h2>One click to confirm</h2>
-      <p>Tap below to confirm this email and start getting Yeetful updates.</p>
+      <p>Tap below to confirm this email and start getting Pantessa updates.</p>
       <p><a href="${url}" style="display:inline-block;background:#34E0A1;color:#0b0b0c;padding:10px 18px;border-radius:8px;text-decoration:none;font-weight:600">Confirm email</a></p>
       <p style="color:#888;font-size:12px">If you didn't sign up, ignore this email.</p>
     </div>`,
@@ -70,9 +70,9 @@ export function verifyEmailHtml(token: string): { subject: string; html: string 
 }
 
 export const WELCOME_EMAIL = {
-  subject: "You're in · Yeetful",
+  subject: "You're in · Pantessa",
   html: `<div style="font-family:system-ui,sans-serif;max-width:480px">
-    <h2>Welcome to Yeetful</h2>
+    <h2>Welcome to Pantessa</h2>
     <p>You're on the list — expect occasional updates on agent expense accounts, new x402 services, and what we're shipping.</p>
     <p><a href="${SITE}">yeetful.com</a></p>
   </div>`,
@@ -96,7 +96,7 @@ export function onboardingEmail(opts: { name?: string } = {}): {
   const text = [
     hi,
     '',
-    'Yeetful gives your AI agent an expense account: an allowlist plus per-call and per-day USDC budgets, enforced before any payment is signed. Connect a wallet, set the rules, and every call your agent makes is paid per-use on Base — with a receipt for each one.',
+    'Pantessa gives your AI agent an expense account: an allowlist plus per-call and per-day USDC budgets, enforced before any payment is signed. Connect a wallet, set the rules, and every call your agent makes is paid per-use on Base — with a receipt for each one.',
     '',
     'One thing to do now: open your dashboard, connect a wallet, and set your first budget.',
     `→ ${dashboard}`,
@@ -109,14 +109,14 @@ export function onboardingEmail(opts: { name?: string } = {}): {
   ].join('\n')
 
   const html = `<div style="font-family:system-ui,sans-serif;max-width:480px;color:#0b0b0c;line-height:1.55">
-    <p style="font-size:13px;font-weight:600;letter-spacing:-0.02em;margin:0 0 20px">yeetful</p>
+    <p style="font-size:13px;font-weight:600;letter-spacing:-0.02em;margin:0 0 20px">pantessa</p>
     <h2 style="margin:0 0 16px">An expense account for your agent.</h2>
     <p>${hi}</p>
-    <p>Yeetful gives your AI agent an expense account: an allowlist plus per-call and per-day USDC budgets, enforced <em>before</em> any payment is signed. Connect a wallet, set the rules, and every call your agent makes is paid per-use on Base — with a receipt for each one.</p>
+    <p>Pantessa gives your AI agent an expense account: an allowlist plus per-call and per-day USDC budgets, enforced <em>before</em> any payment is signed. Connect a wallet, set the rules, and every call your agent makes is paid per-use on Base — with a receipt for each one.</p>
     <p>One thing to do now: open your dashboard, connect a wallet, and set your first budget.</p>
     <p><a href="${dashboard}" style="display:inline-block;background:#34E0A1;color:#0b0b0c;padding:10px 18px;border-radius:8px;text-decoration:none;font-weight:600">Open your dashboard →</a></p>
     <p style="color:#888;font-size:13px">Minting your first intent link takes about a minute — the <a href="${docs}">guide</a> has it. No invoices, no API-key sprawl, no surprise bill at 2am.</p>
-    <p>— Nate, yeetful</p>
+    <p>— Nate, pantessa</p>
   </div>`
 
   return { subject, html, text }

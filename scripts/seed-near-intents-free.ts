@@ -52,7 +52,7 @@ const SERVICE = {
   slug: 'near-intents-free',
   name: 'NEAR Intents (Free)',
   description:
-    'Cross-chain swaps via the official NEAR Intents 1Click API, free and non-gated: any asset to any other across ~35 chains (~190 assets — USDC Base→Arbitrum, ETH→SOL, USDC→BTC…) with ONE transfer the user signs. Dry-run quotes, then a one-time deposit address + the single unsigned transfer; solvers deliver on the destination chain automatically, tracked to SUCCESS with explorer links. Unfillable swaps auto-refund. Never holds keys, never signs. Rate-limited. By Yeetful.',
+    'Cross-chain swaps via the official NEAR Intents 1Click API, free and non-gated: any asset to any other across ~35 chains (~190 assets — USDC Base→Arbitrum, ETH→SOL, USDC→BTC…) with ONE transfer the user signs. Dry-run quotes, then a one-time deposit address + the single unsigned transfer; solvers deliver on the destination chain automatically, tracked to SUCCESS with explorer links. Unfillable swaps auto-refund. Never holds keys, never signs. Rate-limited. By Pantessa.',
   category: 'Trading',
   kind: 'data',
   priceUsd: '0',
@@ -170,7 +170,7 @@ async function main() {
       priceUsd: '0',
       scheme: 'exact',
       network: 'multichain',
-      provider: 'Yeetful (free)',
+      provider: 'Pantessa (free)',
       position: i,
       parameters: t.params.length ? (t.params as unknown as object) : Prisma.DbNull,
     })),

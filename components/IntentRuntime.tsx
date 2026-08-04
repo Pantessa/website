@@ -43,7 +43,7 @@ const CONTRACT = [
   {
     icon: ShieldCheck,
     title: 'Deterministic builders',
-    body: 'Yeetful rebuilds this ask from scratch — no AI writes the calldata, and a link can never smuggle a transaction.',
+    body: 'Pantessa rebuilds this ask from scratch — no AI writes the calldata, and a link can never smuggle a transaction.',
   },
   {
     icon: ReceiptText,
@@ -82,7 +82,7 @@ export default function IntentRuntime({
    *  reaches the client. */
   restricted?: boolean
   /** The creator's white-label brand — the splash wears it (bg + accent +
-   *  logo, powered by Yeetful); the post-connect runtime keeps the chat
+   *  logo, powered by Pantessa); the post-connect runtime keeps the chat
    *  legible and takes only the accent + a logo chip. */
   brand?: LinkBrand | null
 }) {
@@ -285,7 +285,7 @@ export default function IntentRuntime({
     const walletResolving = walletStatus === 'connecting' || walletStatus === 'reconnecting'
     return (
       // The splash wears the creator's brand wholesale (bg + accent + logo,
-      // scoped here) — the post-connect chat keeps Yeetful's own legibility.
+      // scoped here) — the post-connect chat keeps Pantessa's own legibility.
       <main className="relative min-h-dvh overflow-hidden" style={brandThemeStyle(brand)}>
         {/* One soft bloom behind the ask — the fusion-core glow. It has to
             LIFT: on a light brand an accent-tinted radial darkens the middle
@@ -324,7 +324,7 @@ export default function IntentRuntime({
                   {linkLockupWord(hasCreator)}
                 </span>
                 <span className="inline-flex items-center gap-1.5 mono text-[10.5px] uppercase tracking-widest text-[color:var(--muted-2)] whitespace-nowrap">
-                  <span aria-hidden>·</span> Powered by <YeetfulMark size={13} /> Yeetful
+                  <span aria-hidden>·</span> Powered by <YeetfulMark size={13} /> Pantessa
                 </span>
               </>
             ) : (
@@ -332,7 +332,7 @@ export default function IntentRuntime({
                 <YeetfulMark size={18} />
                 {/* CALL framing (C3): creator links read as a posted call —
                     the thing a KOL shares. House links (creator=null) keep
-                    the neutral "Intent link" lockup, pure Yeetful (pinned). */}
+                    the neutral "Intent link" lockup, pure Pantessa (pinned). */}
                 <span className="mono text-[11px] uppercase tracking-widest text-[color:var(--muted-2)]">
                   {linkLockup(hasCreator, agent)}
                 </span>
@@ -395,12 +395,12 @@ export default function IntentRuntime({
             // The disclosure badge (C3): the counter-position to undisclosed
             // KOL shilling — a paid call says it's paid, and says the WHOLE
             // deal (lifetime first-touch, the #607 rail). Rate-agnostic on
-            // purpose ("half of Yeetful's fee") — the tier varies by origin.
+            // purpose ("half of Pantessa's fee") — the tier varies by origin.
             <p className="mono text-[11px] text-[color:var(--muted-2)] mt-10 pt-4 border-t border-[var(--line)] max-w-md">
               {/* {' '} is load-bearing: SWC drops a line-leading space after
                   an expression (the standing JSX entity-space gotcha). */}
               {agent ? `${agent} posted this call — its creator` : 'The creator of this call'}
-              {' '}earns half of Yeetful&apos;s fee on the trades it produces, and on later trades from wallets it brings
+              {' '}earns half of Pantessa&apos;s fee on the trades it produces, and on later trades from wallets it brings
               (lifetime, first touch) — disclosed here because paid calls should say so. Receipts live
               on-chain. Sales, transfers, and bridges are always fee-free.
             </p>
@@ -443,7 +443,7 @@ export default function IntentRuntime({
     // inside ChatInterface. Simple mode keeps the surface to ONE focused ask:
     // no workspace toolbar, no splash cards, URL stays on /i/<slug>.
     // Brand carries over as ACCENT + the logo chip only — the chat thread
-    // keeps Yeetful's bg for legibility; the fade-in meets the splash's
+    // keeps Pantessa's bg for legibility; the fade-in meets the splash's
     // fade-out so the handoff reads as one motion, not a hard cut.
     <div
       className="relative h-dvh flex flex-col overflow-hidden yf-runtime-in"
@@ -483,8 +483,8 @@ export default function IntentRuntime({
             <div className="flex items-center gap-3 min-w-0">
               <Link
                 href="/"
-                title="Yeetful home"
-                aria-label="Yeetful home"
+                title="Pantessa home"
+                aria-label="Pantessa home"
                 className="flex-shrink-0 grid place-items-center w-8 h-8 rounded-lg text-white hover:bg-[var(--surf-1)] transition-colors"
               >
                 <YeetfulMark size={18} />
@@ -499,7 +499,7 @@ export default function IntentRuntime({
                       the whole run under this header, and it read "intent
                       link" on posted calls too. */}
                   {brand
-                    ? `${brand.name ?? brand.domain} · ${linkLockupWord(hasCreator).toLowerCase()} · powered by Yeetful`
+                    ? `${brand.name ?? brand.domain} · ${linkLockupWord(hasCreator).toLowerCase()} · powered by Pantessa`
                     : linkLockup(hasCreator, agent)}
                 </p>
                 <p

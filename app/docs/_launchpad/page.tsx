@@ -8,7 +8,7 @@ import CopyBlock from '@/components/CopyBlock'
 // shows up on their dashboard with one paste. Kept here (not inline JSX) so the
 // text streams into the SSR HTML and stays crawlable.
 const TRACK_EARNINGS_PROMPT = `Install the yeetful SDK in this MCP server and wire it up so I can track its
-earnings on my Yeetful dashboard:
+earnings on my Pantessa dashboard:
 
 1. Run: npm install yeetful
 2. Wrap the x402-paid handler with yeetful's server helper so every settled
@@ -56,7 +56,7 @@ export default function LaunchpadDocsPage() {
           its own per-call revenue (default <strong>10%</strong>), in exchange for distribution and
           a token that capitalizes its future earnings. The agent paying for the call is{' '}
           <strong>not</strong>{' '}surcharged: it pays the same price it would anywhere. That&apos;s the
-          point — Yeetful routes agents to the best, cheapest MCP, so a markup would defeat the
+          point — Pantessa routes agents to the best, cheapest MCP, so a markup would defeat the
           whole thing.
         </p>
 
@@ -64,7 +64,7 @@ export default function LaunchpadDocsPage() {
         <p>
           Claiming binds the MCP to your wallet — the creator-of-record for its token. You prove you
           operate it by signing in with the wallet it&apos;s <strong>paid to</strong>: the x402{' '}
-          <code>payTo</code>{' '}receiver in your MCP&apos;s own config. Yeetful reads that address
+          <code>payTo</code>{' '}receiver in your MCP&apos;s own config. Pantessa reads that address
           straight from your MCP&apos;s 402 challenge — so only whoever collects its revenue can
           claim it. No file, no DNS, no deploy.
         </p>
@@ -75,7 +75,7 @@ export default function LaunchpadDocsPage() {
           </li>
           <li>Connect the wallet your MCP is paid to (its x402 receiver) and sign in.</li>
           <li>
-            Click <strong>Claim</strong>. Yeetful checks your wallet against the <code>payTo</code>{' '}
+            Click <strong>Claim</strong>. Pantessa checks your wallet against the <code>payTo</code>{' '}
             the MCP itself returns — match, and it&apos;s yours.
           </li>
         </ol>
@@ -86,7 +86,7 @@ export default function LaunchpadDocsPage() {
         <p className="mono" style={{ color: 'var(--smoke)' }}>
           Don&apos;t control the payee wallet — e.g. your MCP runs behind a shared gateway whose
           address you don&apos;t hold? It needs <strong>admin verification</strong>; reach out and
-          Yeetful will verify it.
+          Pantessa will verify it.
         </p>
 
         <h2>Step 2 — Launch the token</h2>
@@ -102,7 +102,7 @@ export default function LaunchpadDocsPage() {
         </pre>
         <p>
           <strong>Today this is a contract call, not yet a button.</strong> On testnet a launch is
-          run against the factory on Base Sepolia (Yeetful can run it for you, or you call it
+          run against the factory on Base Sepolia (Pantessa can run it for you, or you call it
           directly), after which the token + vault addresses are linked to your service so the panel
           shows the live token. A one-click <em>Launch</em> button is the next step.
         </p>

@@ -834,7 +834,7 @@ const walletSource: SplashSource = {
   build: (_call, address, server, chain) => buildMultichainTiles(address, server, chain),
 }
 
-// ── Yeetful Finance (yeetful-tool-funding) → the idle-capital read ───────────
+// ── Pantessa Finance (yeetful-tool-funding) → the idle-capital read ───────────
 // The rebalance planner's card face: where money sits idle across the scan
 // chains, what the live venue rates would pay, and ONE chip whose ask
 // round-trips parseRebalanceAsk (the offer turn re-plans at click time, so
@@ -943,7 +943,7 @@ const SOURCE_PREVIEWS: Record<string, { message: string; prompts: SuggestedPromp
   },
   finance: {
     message:
-      'Yeetful Finance reads where your money sits across Base, Arbitrum, and Ethereum — and when the math beats the gas, turns idle balances into ONE signed batch (bridge → supply → stake). Quiet right now means nothing is worth moving.',
+      'Pantessa Finance reads where your money sits across Base, Arbitrum, and Ethereum — and when the math beats the gas, turns idle balances into ONE signed batch (bridge → supply → stake). Quiet right now means nothing is worth moving.',
     prompts: [
       // Each round-trips a real parser (rebalance ×2, the funding-scan read
       // routes via the planner to the MCP's own scan tool).
@@ -953,7 +953,7 @@ const SOURCE_PREVIEWS: Record<string, { message: string; prompts: SuggestedPromp
     ],
   },
   robinhood: {
-    message: 'Nothing on Robinhood Chain yet — buy a tokenized stock and Yeetful funds the chain from your Base USDC on the way (gas included), all in one guided job.',
+    message: 'Nothing on Robinhood Chain yet — buy a tokenized stock and Pantessa funds the chain from your Base USDC on the way (gas included), all in one guided job.',
     prompts: [
       // The killer ask leads: an unfunded buy triggers the funding plan
       // (Base USDC → gas + USDG → the stock, compiled into a job).

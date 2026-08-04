@@ -29,7 +29,7 @@
 //       ~96% of the input is a bad or hostile route → refuse. The gas leg
 //       is priced against the venue quoters' own ETH/USD read (fail-soft:
 //       no probe = warn, a live probe undercut by >10% = refuse).
-//  No Yeetful fee on funding legs — the fee lives on the swap that follows
+//  No Pantessa fee on funding legs — the fee lives on the swap that follows
 //  (lib/fees.ts via lib/lifi-venue.ts), never on moving your own money in.
 //
 //  Arrival verification: each built leg records the DESTINATION balance
@@ -398,7 +398,7 @@ export async function buildLifiBridgeLeg(params: { leg: FundingLeg; usd: number;
     throw new Error(`"${params.token}" isn't a supported funding token — USDC, USDC.e, or ETH only.`)
   }
   const usdg = primaryStable(ROBINHOOD_CHAIN_ID)!
-  // Stables are the $1 unit; an ETH sell sizes at build time off Yeetful's
+  // Stables are the $1 unit; an ETH sell sizes at build time off Pantessa's
   // own venue-quoter read, so a chip minted yesterday still moves today's
   // right amount of ETH.
   let sellAtoms: bigint
@@ -476,7 +476,7 @@ export async function buildLifiBridgeLeg(params: { leg: FundingLeg; usd: number;
   const validUntil = Math.floor(Date.now() / 1000) + LIFI_QUOTE_TTL_SEC
 
   // Price sanity. Stable USDG leg: dollar→dollar, min-out floor in the same
-  // 6-dec unit. ETH-sold USDG leg: the sell was sized off Yeetful's own
+  // 6-dec unit. ETH-sold USDG leg: the sell was sized off Pantessa's own
   // ETH/USD read, so the guaranteed USDG (≈ dollars) must land within the
   // priced-leg tolerance of the ask. Gas leg: value the guaranteed ETH
   // against our own venue-quoter ETH/USD read (fail-soft — a dead probe
@@ -501,8 +501,8 @@ export async function buildLifiBridgeLeg(params: { leg: FundingLeg; usd: number;
       level: 'block',
       ok,
       note: ok
-        ? `Guaranteed ≥ ${formatAtoms(toAmountMin.toString(), destDecimals)} ${destSymbol} for $${params.usd} of ETH (sized at Yeetful's own on-chain read).`
-        : `The route guarantees only ~$${minOutUsd.toFixed(2)} of ${destSymbol} for $${params.usd} of ETH — more than ${(10_000 - GAS_LEG_MIN_OUT_BPS) / 100}% short of Yeetful's own on-chain read, refusing.`,
+        ? `Guaranteed ≥ ${formatAtoms(toAmountMin.toString(), destDecimals)} ${destSymbol} for $${params.usd} of ETH (sized at Pantessa's own on-chain read).`
+        : `The route guarantees only ~$${minOutUsd.toFixed(2)} of ${destSymbol} for $${params.usd} of ETH — more than ${(10_000 - GAS_LEG_MIN_OUT_BPS) / 100}% short of Pantessa's own on-chain read, refusing.`,
     }
   } else {
     const probe = await usdPerToken(ROBINHOOD_CHAIN_ID, 'ETH').catch(() => null)
@@ -516,8 +516,8 @@ export async function buildLifiBridgeLeg(params: { leg: FundingLeg; usd: number;
         level: 'block',
         ok,
         note: ok
-          ? `Guaranteed ≥ ${formatAtoms(toAmountMin.toString(), 18)} ETH (~$${minOutUsd.toFixed(2)} at Yeetful's own on-chain read) for the $${params.usd} gas leg.`
-          : `The route guarantees only ~$${minOutUsd.toFixed(2)} of ETH for $${params.usd} — more than ${(10_000 - GAS_LEG_MIN_OUT_BPS) / 100}% short of Yeetful's own on-chain read, refusing.`,
+          ? `Guaranteed ≥ ${formatAtoms(toAmountMin.toString(), 18)} ETH (~$${minOutUsd.toFixed(2)} at Pantessa's own on-chain read) for the $${params.usd} gas leg.`
+          : `The route guarantees only ~$${minOutUsd.toFixed(2)} of ETH for $${params.usd} — more than ${(10_000 - GAS_LEG_MIN_OUT_BPS) / 100}% short of Pantessa's own on-chain read, refusing.`,
       }
     }
   }

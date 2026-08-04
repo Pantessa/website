@@ -69,13 +69,13 @@ async function getStorefront(rawHandle: string) {
 export async function generateMetadata({ params }: Params): Promise<Metadata> {
   const { handle } = await params
   const store = await getStorefront(handle)
-  if (!store) return { title: 'Creator page · Yeetful', robots: { index: false, follow: false } }
-  const title = `@${store.handle} — links that move money · Yeetful`
+  if (!store) return { title: 'Creator page · Pantessa', robots: { index: false, follow: false } }
+  const title = `@${store.handle} — links that move money · Pantessa`
   const description = `${store.links.length} intent link${store.links.length === 1 ? '' : 's'} by @${store.handle}. Tap one, connect your own wallet, and the path builds itself — guarded, signed only by you, receipted.`
   return {
     title,
     description,
-    openGraph: { title, description, siteName: 'Yeetful', type: 'profile' },
+    openGraph: { title, description, siteName: 'Pantessa', type: 'profile' },
     twitter: { card: 'summary_large_image', title, description },
   }
 }
@@ -95,7 +95,7 @@ export default async function StorefrontPage({ params }: Params) {
   const brand = store.brand
 
   // A branded page re-themes in place, scoped to this main — the site
-  // chrome (nav/footer) stays Yeetful. fullBleed paints the bg past
+  // chrome (nav/footer) stays Pantessa. fullBleed paints the bg past
   // .x-main's centered gutters (box-shadow spread + clip-path), so the
   // color runs edge to edge without touching layout.
   const themeStyle = brandThemeStyle(brand, { fullBleed: true })
@@ -130,7 +130,7 @@ export default async function StorefrontPage({ params }: Params) {
               className="ml-auto inline-flex items-center gap-1.5 mono text-[10.5px] uppercase tracking-widest text-[color:var(--muted-2)] hover:text-[color:var(--fg)] transition-colors"
               title="Non-custodial intent links — the visitor's wallet is the only signer"
             >
-              Powered by <YeetfulMark size={13} /> Yeetful
+              Powered by <YeetfulMark size={13} /> Pantessa
             </a>
           </div>
           <h1 className="text-3xl font-semibold text-[color:var(--fg)] mb-2">@{store.handle}</h1>

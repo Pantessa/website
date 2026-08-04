@@ -8,10 +8,10 @@ import { factsOf, maskAddressTokens } from '@/lib/share-receipts'
 // card. Standing receipts lead with NOBODY WAS AT THE KEYBOARD (the product's
 // best screenshot is the one where no one was watching); attended receipts
 // lead with the ask-to-signature story. Same palette + fonts as the /p card
-// so every Yeetful link on a timeline reads as one family.
+// so every Pantessa link on a timeline reads as one family.
 
 export const runtime = 'nodejs'
-export const alt = 'A Yeetful receipt — built, guarded, and signed from plain English.'
+export const alt = 'A Pantessa receipt — built, guarded, and signed from plain English.'
 export const size = { width: 1200, height: 630 }
 export const contentType = 'image/png'
 
@@ -57,7 +57,7 @@ export default async function Image({ params }: Params) {
   }
   const live = receipt && !receipt.revoked ? receipt : null
 
-  const headline = live?.headline ?? 'A Yeetful receipt'
+  const headline = live?.headline ?? 'A Pantessa receipt'
   // Read-time mask for pre-masking rows — no full addresses on the card.
   const ask = live?.ask ? maskAddressTokens(live.ask) : null
   const standing = live?.standing ?? false
@@ -102,7 +102,7 @@ export default async function Image({ params }: Params) {
           <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src={toDataUri(MARK)} width={46} height={46} alt="" />
-            <span style={{ color: INK, fontSize: 34, fontWeight: 600, letterSpacing: -1.2 }}>yeetful</span>
+            <span style={{ color: INK, fontSize: 34, fontWeight: 600, letterSpacing: -1.2 }}>pantessa</span>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 17, letterSpacing: 4, color: standing ? ACCENT : MUTED }}>
             <div style={{ display: 'flex', width: 8, height: 8, borderRadius: 4, background: ACCENT }} />

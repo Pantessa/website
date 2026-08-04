@@ -31,7 +31,7 @@ export default function DcaDocsPage() {
       <h1 className="docs__h1">Recurring buys: one tap per buy, or none at all</h1>
       <p className="docs__lead">
         Say <Link href={ask('buy $10 of ETH every week')}>&ldquo;buy $10 of ETH every week&rdquo;</Link>{' '}
-        and Yeetful keeps a schedule. What happens when a buy comes due depends on your wallet:
+        and Pantessa keeps a schedule. What happens when a buy comes due depends on your wallet:
         every wallet gets <strong>confirm-mode</strong> — the buy is built fresh and waits for
         your signature, one tap. Smart wallets can go further and arm{' '}
         <strong>autopilot</strong> — one signature caps the spend on-chain, and each period the
@@ -49,7 +49,7 @@ export default function DcaDocsPage() {
           <li>
             <strong>Each period is built fresh.</strong> When a buy is due, chat and the rail
             show a one-tap chip. Tapping it builds the swap <em>at that moment</em> — live
-            quote, the same venue cascade and guardrails as any Yeetful swap — and your wallet
+            quote, the same venue cascade and guardrails as any Pantessa swap — and your wallet
             signs it. Nothing is pre-built, so nothing goes stale.
           </li>
           <li>
@@ -106,7 +106,7 @@ export default function DcaDocsPage() {
             </tr>
             <tr>
               <td>Spender</td>
-              <td>One named Yeetful executor address. No one else can use the permission.</td>
+              <td>One named Pantessa executor address. No one else can use the permission.</td>
             </tr>
             <tr>
               <td>Expiry</td>
@@ -116,9 +116,9 @@ export default function DcaDocsPage() {
         </table>
         <p>
           The crucial part: that cap is enforced by <strong>your wallet&rsquo;s own contract</strong>{' '}
-          (Coinbase&rsquo;s audited SpendPermissionManager), on-chain. If Yeetful&rsquo;s servers
+          (Coinbase&rsquo;s audited SpendPermissionManager), on-chain. If Pantessa&rsquo;s servers
           were compromised tomorrow, the attacker&rsquo;s ceiling would still be your $10 this
-          week — and you can revoke the permission from your wallet at any moment, no Yeetful
+          week — and you can revoke the permission from your wallet at any moment, no Pantessa
           involvement required.
         </p>
         <h3>What an autopilot buy actually does</h3>
@@ -136,13 +136,13 @@ export default function DcaDocsPage() {
           </li>
           <li>
             <strong>Swap, output straight to you.</strong>{' '}The bought token lands in your
-            wallet, never in Yeetful&rsquo;s. A receipt row appears in your rail — same as a
+            wallet, never in Pantessa&rsquo;s. A receipt row appears in your rail — same as a
             buy you signed yourself.
           </li>
         </ol>
         <p>
           Buys route through the same venues and carry the same visible 0.20% fee as any
-          Yeetful swap. If you buy a period manually, autopilot notices and stands down — no
+          Pantessa swap. If you buy a period manually, autopilot notices and stands down — no
           double buys across tiers either. The <Link href="/docs/spend-policy">kill switch</Link>{' '}
           pauses pulls instantly, and{' '}
           <Link href={ask('turn off my dca autopilot')}>&ldquo;turn off autopilot&rdquo;</Link> drops the
@@ -154,8 +154,8 @@ export default function DcaDocsPage() {
           A regular wallet (an EOA — MetaMask, a hardware wallet, an embedded email wallet) has
           exactly one credential: its private key. There is no such thing as delegating{' '}
           <em>part</em>{' '}of an EOA — any key or session that can sign a $10 swap can sign a
-          full-balance transfer. So &ldquo;let Yeetful buy for me&rdquo; from an EOA would mean
-          Yeetful holding a key to everything, which is custody with extra steps. We don&rsquo;t
+          full-balance transfer. So &ldquo;let Pantessa buy for me&rdquo; from an EOA would mean
+          Pantessa holding a key to everything, which is custody with extra steps. We don&rsquo;t
           do that — it&rsquo;s the same reason the{' '}
           <Link href="/docs/guardian">Guardian</Link> only works on Hyperliquid, where the venue
           itself scopes delegated keys to trading-only.
@@ -185,7 +185,7 @@ export default function DcaDocsPage() {
               <td>Armed: nobody — the permission covers it</td>
             </tr>
             <tr>
-              <td>What Yeetful can spend</td>
+              <td>What Pantessa can spend</td>
               <td>Nothing, ever, without your signature</td>
               <td>At most $X per period, contract-enforced</td>
             </tr>

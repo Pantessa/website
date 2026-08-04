@@ -49,9 +49,9 @@ async function getServer(slug: string) {
 export async function generateMetadata({ params }: Params): Promise<Metadata> {
   const { slug } = await params
   const server = await getServer(slug)
-  if (!server) return { title: 'Service not found — Yeetful' }
+  if (!server) return { title: 'Service not found — Pantessa' }
   return {
-    title: server.gated === false ? `${server.name} — free MCP on Yeetful` : `${server.name} — x402 agent on Yeetful`,
+    title: server.gated === false ? `${server.name} — free MCP on Pantessa` : `${server.name} — x402 agent on Pantessa`,
     description: server.description,
   }
 }

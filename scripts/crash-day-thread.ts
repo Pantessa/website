@@ -61,7 +61,7 @@ async function main() {
     )
   })
   console.log(
-    `${entries.length + 2}/ Yeetful watches so you don't have to: a guarded stop, armed in one signature, your keys the whole time. Paste YOUR address:\n${base}/w/\n`,
+    `${entries.length + 2}/ Pantessa watches so you don't have to: a guarded stop, armed in one signature, your keys the whole time. Paste YOUR address:\n${base}/w/\n`,
   )
   console.log('────────────────────────────────────────────────────────────')
   console.log(`\n${entries.length} wallet(s) with unprotected exposure; costs named: ${entries.map((e) => e.cost).join(', ')}`)

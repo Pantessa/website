@@ -1,6 +1,6 @@
-# Yeetful Design System
+# Pantessa Design System
 
-**Single source of truth** for the Yeetful design system. These files are:
+**Single source of truth** for the Pantessa design system. These files are:
 
 1. **Served by the website** at `/design-system/` (static, from `public/`), and
 2. **Mirrored into Claude Design** (claude.ai/design) via the `DesignSync` tool +

@@ -5,9 +5,9 @@
 // single copy-paste survives intact.
 
 /** PAYER — wire the spend-controlled x402 payer into an agent project. */
-export const PAYER_CLAUDE_PROMPT = `Add Yeetful spend-controlled x402 payments to this agent project.
+export const PAYER_CLAUDE_PROMPT = `Add Pantessa spend-controlled x402 payments to this agent project.
 
-Yeetful gives an agent an "expense account": an allowlist of hosts plus
+Pantessa gives an agent an "expense account": an allowlist of hosts plus
 per-call/per-day USDC budgets, enforced locally BEFORE any payment is
 signed, with a receipt for every decision. Docs: https://yeetful.com/docs
 
@@ -55,7 +55,7 @@ Do the following, asking me to confirm anything ambiguous:
    YEETFUL_API_KEY, and YEETFUL_GRANT_ID to .env; make sure .env is
    gitignored; add the three keys to .env.example with placeholder values.
 
-4. Now walk me through the two Yeetful dashboard steps INTERACTIVELY —
+4. Now walk me through the two Pantessa dashboard steps INTERACTIVELY —
    one at a time, waiting for me to confirm each before continuing:
    a. Tell me to open https://yeetful.com/dashboard/keys, connect my
       wallet, sign in, and mint an API key. Remind me the yf_ secret is
@@ -75,9 +75,9 @@ hosts speak x402 v1 or v2, no extra handling is needed — the SDK detects
 the protocol version per challenge.`
 
 /** PAYEE — wire earn-tracking into an MCP server's settlement path. */
-export const PAYEE_CLAUDE_PROMPT = `Add Yeetful earn-tracking to this MCP server using the yeetful SDK.
+export const PAYEE_CLAUDE_PROMPT = `Add Pantessa earn-tracking to this MCP server using the yeetful SDK.
 
-Goal: after each PAID request settles, report it to Yeetful so my earnings show
+Goal: after each PAID request settles, report it to Pantessa so my earnings show
 up on my dashboard. It must NEVER slow down, block, or break the response.
 
 1) INSTALL THE SDK

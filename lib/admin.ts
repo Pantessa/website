@@ -15,7 +15,7 @@ export const OWNER_WALLETS = [
   '0x66268791b55e1f5fa585d990326519f101407257',
 ] as const
 
-/** Hardcoded internal testing wallets (lowercased). These are Yeetful's own
+/** Hardcoded internal testing wallets (lowercased). These are Pantessa's own
  *  test wallets — not real external adopters. The admin dashboard flags them so
  *  a "TEST" badge (and the External-only filter) can separate our own dogfooding
  *  noise from genuine external usage. Includes the two OWNER_WALLETS above. */
@@ -40,7 +40,7 @@ export const TEST_WALLETS = [
 
 const TEST_WALLET_SET = new Set<string>(TEST_WALLETS)
 
-/** True for Yeetful's own testing wallets (owner + hardcoded test list). Used
+/** True for Pantessa's own testing wallets (owner + hardcoded test list). Used
  *  by the admin dashboard to flag internal dogfooding vs external adopters. */
 export function isTestWallet(addr: string | null | undefined): boolean {
   if (!addr) return false

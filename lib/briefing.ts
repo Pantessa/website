@@ -1,5 +1,5 @@
 // ─────────────────────────────────────────────────────────────────────────
-//  Wallet briefing — "what Yeetful noticed" (2026-07-28).
+//  Wallet briefing — "what Pantessa noticed" (2026-07-28).
 //
 //  The cohort data (#482) says the funnel bleeds BEFORE the first ask: the
 //  product only shows its depth after someone types a good prompt. The
@@ -265,8 +265,8 @@ export function briefingTile(rows: StatRow[]): RowsTile | null {
   return {
     id: 'briefing',
     mcpSlug: 'yeetful',
-    mcpName: 'Yeetful',
-    title: 'What Yeetful noticed',
+    mcpName: 'Pantessa',
+    title: 'What Pantessa noticed',
     subtitle: 'live read of this wallet — tap a chip to act, your wallet signs',
     render: 'rows',
     headline:

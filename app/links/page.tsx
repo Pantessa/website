@@ -23,7 +23,7 @@ const DESCRIPTION =
 export const metadata: Metadata = {
   title: TITLE,
   description: DESCRIPTION,
-  openGraph: { title: TITLE, description: DESCRIPTION, siteName: 'Yeetful', type: 'website' },
+  openGraph: { title: TITLE, description: DESCRIPTION, siteName: 'Pantessa', type: 'website' },
   twitter: { card: 'summary_large_image', title: TITLE, description: DESCRIPTION },
 }
 
@@ -47,7 +47,7 @@ export default async function LinksLeaderboardPage() {
           <p className="text-[15px] leading-relaxed text-[color:var(--muted)] max-w-xl mb-4">
             Mint a link that carries an ask — &ldquo;Buy $12 of AAPL&rdquo;, &ldquo;DCA $25 into ETH
             weekly&rdquo;. Whoever opens it connects a wallet and the path builds itself: guarded,
-            signed only by their own wallet, receipted. Creators earn half of Yeetful&apos;s 0.20%
+            signed only by their own wallet, receipted. Creators earn half of Pantessa&apos;s 0.20%
             fee on the conversions their link produces.
           </p>
           <div className="flex items-center gap-3 mb-12 flex-wrap">

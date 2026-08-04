@@ -25,7 +25,7 @@ function buttonSnippet(origin: string, minted: Minted, label: string, badge: boo
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')}</a>`
   if (!badge) return a
-  return `<div style="display:inline-flex;flex-direction:column;align-items:center;gap:6px">\n  ${a}\n  <span style="font:500 10.5px/1.2 ui-monospace,monospace;letter-spacing:.04em;color:#8a8a8a">NON-CUSTODIAL · THEIR WALLET SIGNS · YEETFUL</span>\n</div>`
+  return `<div style="display:inline-flex;flex-direction:column;align-items:center;gap:6px">\n  ${a}\n  <span style="font:500 10.5px/1.2 ui-monospace,monospace;letter-spacing:.04em;color:#8a8a8a">NON-CUSTODIAL · THEIR WALLET SIGNS · PANTESSA</span>\n</div>`
 }
 
 export default function ButtonGenerator() {
@@ -192,7 +192,7 @@ export default function ButtonGenerator() {
               </a>
               {badge && (
                 <span className="mono text-[10.5px] tracking-wider text-[color:var(--muted-2)]">
-                  NON-CUSTODIAL · THEIR WALLET SIGNS · YEETFUL
+                  NON-CUSTODIAL · THEIR WALLET SIGNS · PANTESSA
                 </span>
               )}
             </div>

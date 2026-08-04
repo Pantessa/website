@@ -55,19 +55,19 @@ async function getPost(slug: string) {
 export async function generateMetadata({ params }: Params): Promise<Metadata> {
   const { slug } = await params
   const found = await getPost(slug)
-  if (!found) return { title: 'Not found — Yeetful' }
+  if (!found) return { title: 'Not found — Pantessa' }
   const { post } = found
   const url = `${SITE}/blog/${post.slug}`
   // A draft an admin is previewing must never leak into search: no canonical,
   // no OG, and an explicit noindex. Only published posts carry SEO metadata.
   if (!post.published) {
     return {
-      title: `[DRAFT] ${post.title} — Yeetful Blog`,
+      title: `[DRAFT] ${post.title} — Pantessa Blog`,
       robots: { index: false, follow: false, nocache: true },
     }
   }
   return {
-    title: `${post.title} — Yeetful Blog`,
+    title: `${post.title} — Pantessa Blog`,
     description: post.description,
     alternates: { canonical: url },
     openGraph: {
@@ -75,7 +75,7 @@ export async function generateMetadata({ params }: Params): Promise<Metadata> {
       title: post.title,
       description: post.description,
       url,
-      siteName: 'Yeetful',
+      siteName: 'Pantessa',
       publishedTime: post.publishedAt?.toISOString(),
       modifiedTime: post.updatedAt.toISOString(),
       tags: post.tags,
@@ -103,8 +103,8 @@ export default async function BlogPostPage({ params }: Params) {
     url: `${SITE}/blog/${post.slug}`,
     datePublished: post.publishedAt?.toISOString(),
     dateModified: post.updatedAt.toISOString(),
-    author: { '@type': 'Organization', name: 'Yeetful', url: SITE },
-    publisher: { '@type': 'Organization', name: 'Yeetful', url: SITE },
+    author: { '@type': 'Organization', name: 'Pantessa', url: SITE },
+    publisher: { '@type': 'Organization', name: 'Pantessa', url: SITE },
     keywords: post.tags.join(', '),
     ...(post.coverImageUrl ? { image: post.coverImageUrl } : {}),
     mainEntityOfPage: { '@type': 'WebPage', '@id': `${SITE}/blog/${post.slug}` },

@@ -1,4 +1,4 @@
-# Redesigning Yeetful in Claude design
+# Redesigning Pantessa in Claude design
 
 The goal: keep the **exact structure** of the directory home, make it **prettier**,
 then port the result back into the real components.

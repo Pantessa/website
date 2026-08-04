@@ -1,7 +1,7 @@
 #!/usr/bin/env tsx
 // Seed the FREE (non-gated) first-party multichain Wallet MCP —
 // `yeetful-tool-wallet` (repo Yeetful/free-mcps, service `yeetful-tool-wallet`;
-// the yeetful-tool-* prefix marks internal Yeetful utility MCPs) — as a directory row with one
+// the yeetful-tool-* prefix marks internal Pantessa utility MCPs) — as a directory row with one
 // mcp_endpoints child per TOOL, mirroring seed-hyperliquid-free.ts exactly.
 // priceUsd '0' = explicitly free; calls skip the 402 handshake but stay
 // policy-gated + ledgered.
@@ -52,9 +52,9 @@ const chains = () =>
 
 const SERVICE = {
   slug: 'yeetful-tool-wallet',
-  name: 'Yeetful Wallet',
+  name: 'Pantessa Wallet',
   description:
-    'Multichain wallet reads, free and non-gated: USD-priced whole-wallet portfolios across 10 top EVM chains (Ethereum, Base, Arbitrum, Optimism, Polygon, BNB, Avalanche, Scroll, Gnosis, Robinhood Chain), native gas balances, precise per-token balances, recent transfers with scam-symbol flagging, and transaction confirmation status. The fresh-data layer after any swap or transfer settles. Read-only by construction. Rate-limited. By Yeetful.',
+    'Multichain wallet reads, free and non-gated: USD-priced whole-wallet portfolios across 10 top EVM chains (Ethereum, Base, Arbitrum, Optimism, Polygon, BNB, Avalanche, Scroll, Gnosis, Robinhood Chain), native gas balances, precise per-token balances, recent transfers with scam-symbol flagging, and transaction confirmation status. The fresh-data layer after any swap or transfer settles. Read-only by construction. Rate-limited. By Pantessa.',
   category: 'Wallets',
   kind: 'data',
   priceUsd: '0',
@@ -157,7 +157,7 @@ async function main() {
       priceUsd: '0',
       scheme: 'exact',
       network: 'multichain',
-      provider: 'Yeetful (free)',
+      provider: 'Pantessa (free)',
       position: i,
       parameters: t.params.length ? (t.params as unknown as object) : Prisma.DbNull,
     })),

@@ -111,7 +111,7 @@ export async function POST(req: Request) {
     // No/invalid wallet → no splash (caller falls back to the normal empty state).
     return NextResponse.json({ address: '', tiles: [] })
   }
-  // Wallet-alone tiles (no MCP behind them): the briefing ("what Yeetful
+  // Wallet-alone tiles (no MCP behind them): the briefing ("what Pantessa
   // noticed" — unprotected positions, stranded/idle funds, HF drift) leads,
   // then recurring buys — so what NEEDS the user surfaces even before any
   // server card resolves. Both fail-soft in parallel.

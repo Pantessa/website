@@ -36,7 +36,7 @@ export default function WelcomeNudge() {
     <div className="mb-4 flex items-center gap-3 rounded-xl border border-emerald-500/30 bg-emerald-500/[0.06] px-4 py-2.5">
       <Sparkles className="w-4 h-4 text-emerald-400 flex-shrink-0" />
       <p className="text-xs text-white min-w-0 flex-1">
-        Welcome to Yeetful — from your first ask to money moved in a few steps.{' '}
+        Welcome to Pantessa — from your first ask to money moved in a few steps.{' '}
         <a href="#get-started" className="underline underline-offset-2 decoration-dotted hover:text-emerald-300">
           Get started ↓
         </a>

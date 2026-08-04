@@ -22,18 +22,18 @@ type Params = { params: Promise<{ slug: string }> }
 export async function generateMetadata({ params }: Params) {
   const { slug } = await params
   const chat = await getSharedChat(slug)
-  if (!chat) return { title: 'Shared chat · Yeetful', robots: { index: false, follow: false } }
+  if (!chat) return { title: 'Shared chat · Pantessa', robots: { index: false, follow: false } }
   const jobs = await getJobs(chat.messages)
   const moved = moneyMovedOf(jobs)
   const description =
     moved > 0
-      ? `$${moved.toFixed(2)} moved on-chain from one chat — every step guarded, signed, and receipted. Shared via Yeetful.`
-      : 'A real Yeetful chat — guarded transactions from plain English. Shared read-only.'
-  const title = `${chat.title} · Shared on Yeetful`
+      ? `$${moved.toFixed(2)} moved on-chain from one chat — every step guarded, signed, and receipted. Shared via Pantessa.`
+      : 'A real Pantessa chat — guarded transactions from plain English. Shared read-only.'
+  const title = `${chat.title} · Shared on Pantessa`
   return {
     title,
     description,
-    openGraph: { title, description, siteName: 'Yeetful', type: 'article' },
+    openGraph: { title, description, siteName: 'Pantessa', type: 'article' },
     twitter: { card: 'summary_large_image', title, description },
     robots: { index: false, follow: false },
   }
@@ -134,10 +134,10 @@ export default async function SharedChatPage({ params }: Params) {
             <Link
               href={tryHref}
               className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-white text-zinc-950 text-xs font-semibold hover:bg-zinc-200 transition-colors"
-              title="Open Yeetful chat with these agents enabled and this chat's opening ask ready to run"
+              title="Open Pantessa chat with these agents enabled and this chat's opening ask ready to run"
             >
               <YeetfulMark size={16} />
-              <span>Try Yeetful</span>
+              <span>Try Pantessa</span>
             </Link>
           </div>
         </div>
@@ -188,14 +188,14 @@ export default async function SharedChatPage({ params }: Params) {
         {/* Handoff — the share page is an entry point, so close with the ask. */}
         <div className="mt-10 mb-2 flex flex-col items-center gap-3">
           <p className="text-[11px] text-[color:var(--muted-2)] text-center mono">
-            Shared via Yeetful — every dapp, one chat. Your wallet signs, every call receipted.
+            Shared via Pantessa — every dapp, one chat. Your wallet signs, every call receipted.
           </p>
           <Link
             href={tryHref}
             className="flex items-center gap-2 px-4 py-2 rounded-full bg-[var(--accent)] text-black text-sm font-semibold hover:opacity-90 transition-opacity"
           >
             <YeetfulMark size={16} />
-            <span>{display.length > 0 ? 'Run this chat yourself' : 'Try Yeetful'}</span>
+            <span>{display.length > 0 ? 'Run this chat yourself' : 'Try Pantessa'}</span>
           </Link>
         </div>
       </div>

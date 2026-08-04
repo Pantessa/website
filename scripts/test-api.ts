@@ -1718,18 +1718,18 @@ async function main() {
 
     // The fee-split disclosure renders on creator-minted /i pages.
     const iPage = await (await fetch(`${BASE}/i/${slug}`)).text()
-    check('intent links: /i discloses the creator fee split', /earns half of Yeetful/.test(iPage))
+    check('intent links: /i discloses the creator fee split', /earns half of Pantessa/.test(iPage))
     // CALL framing (C3): creator links read as a posted call and disclose
     // the WHOLE deal (lifetime first-touch); house links stay the neutral
-    // pure-Yeetful lockup with no creator fee line.
+    // pure-Pantessa lockup with no creator fee line.
     check(
       'intent links: creator /i wears the CALL framing + lifetime disclosure',
       />Call</.test(iPage) && /lifetime, first touch/.test(iPage) && /paid calls should say so/.test(iPage),
     )
     const houseCallPage = await (await fetch(`${BASE}/i/protected-long`)).text()
     check(
-      'intent links: house /i stays pure Yeetful — no call framing, no creator fee line',
-      /Intent link/.test(houseCallPage) && !/earns half of Yeetful/.test(houseCallPage) && !/>Call</.test(houseCallPage),
+      'intent links: house /i stays pure Pantessa — no call framing, no creator fee line',
+      /Intent link/.test(houseCallPage) && !/earns half of Pantessa/.test(houseCallPage) && !/>Call</.test(houseCallPage),
     )
     // The lockup WORD is one source (lib/intent-links) because the rendered
     // check above only covers an UNBRANDED creator page: a white-labeled
@@ -1948,7 +1948,7 @@ async function main() {
     check('brand: accent PATCH validates (#6633cc lands, near-white refused)', bAccent.status === 200 && bAccentBad.status === 400)
     const brandedHtml = flat(await (await fetch(`${BASE}/l/harness-store`)).text())
     check(
-      'brand: the /l page wears the accent and keeps the Powered by Yeetful mark',
+      'brand: the /l page wears the accent and keeps the Powered by Pantessa mark',
       brandedHtml.includes('--accent:#6633cc') && brandedHtml.includes('Powered by'),
     )
     // Background: the page re-themes wholesale — dark bg derives near-white
@@ -1971,11 +1971,11 @@ async function main() {
     )
     check('brand: the /l page carries the tweet-this-page share link', bgHtml.includes('twitter.com/intent/tweet'))
     // The creator's brand rides onto their /i splash pages too (bg + accent
-    // scoped to the splash) — house links (creator=null) stay pure Yeetful.
+    // scoped to the splash) — house links (creator=null) stay pure Pantessa.
     const brandedIPage = redirected.slug ? flat(await (await fetch(`${BASE}/i/${redirected.slug}`)).text()) : ''
     check('brand: the creator brand re-themes their /i splash (bg carried)', brandedIPage.includes('--bg:#052b65'))
     const houseIPage = flat(await (await fetch(`${BASE}/i/buy-aapl`)).text())
-    check('brand: house links stay pure Yeetful (no brand bg on their /i splash)', !houseIPage.includes('--bg:#'))
+    check('brand: house links stay pure Pantessa (no brand bg on their /i splash)', !houseIPage.includes('--bg:#'))
     const bClear = await fetch(`${BASE}/api/intent-links/brand`, { method: 'DELETE', headers: { cookie: mallorySession } })
     const unbrandedHtml = flat(await (await fetch(`${BASE}/l/harness-store`)).text())
     check(
@@ -2605,7 +2605,7 @@ async function main() {
   check('wallet plan: allowed host passes the gate (reaches network probe)', ungated.status === 502)
 
   // Kill switch HARD enforcement: freeze the account, and the SAME allowed host
-  // is now refused server-side (not advisory) — Yeetful executes this rail, so
+  // is now refused server-side (not advisory) — Pantessa executes this rail, so
   // it can actually stop it. Then unfreeze (resume restores the rail).
   await fetch(`${BASE}/api/grants/${grant.id}`, { method: 'PATCH', headers: CJ, body: JSON.stringify({ paused: true }) })
   const frozen = await fetch(`${BASE}/api/chat`, {
@@ -4021,7 +4021,7 @@ async function main() {
     const goodSteps: LifiBuiltStep[] = [
       { label: 'approve', title: 'Approve USDG to LiFi', tx: { to: USDG, data: approveData, value: '0', chainId: 4663, action: 'approve' } },
       { label: 'swap', title: 'Swap 99.8 USDG → AAPL', tx: { to: ROUTER, data: '0x5fd9ae2e' + 'ab'.repeat(200), value: '0', chainId: 4663, action: 'swap' }, validUntil: Math.floor(Date.now() / 1000) + 90 },
-      { label: 'fee', title: 'Yeetful fee', tx: { to: USDG, data: feeData, value: '0', chainId: 4663, action: 'transfer' } },
+      { label: 'fee', title: 'Pantessa fee', tx: { to: USDG, data: feeData, value: '0', chainId: 4663, action: 'transfer' } },
     ]
     check('lifi guard: well-formed approve→swap→fee chain PASSES', guardLifiBuild(goodSteps, exp).ok)
     check('lifi guard: swap+fee (allowance in place) PASSES', guardLifiBuild([goodSteps[1], goodSteps[2]], exp).ok)
@@ -4677,7 +4677,7 @@ async function main() {
     check('aave parse: bare question form ("should I…") → null', parseAaveSupply('should i supply 100 USDC') === null)
     // Set-aware disambiguation for weak verbs.
     check('aave rival: hyperliquid in the set → named', competingVenueOf([{ slug: 'aave', name: 'Aave' }, { slug: 'hyperliquid-free', name: 'Hyperliquid (Free)' }]) === 'Hyperliquid (Free)')
-    check('aave rival: wallet+aave only → null (Aave is the only venue)', competingVenueOf([{ slug: 'aave', name: 'Aave' }, { slug: 'yeetful-tool-wallet', name: 'Yeetful Wallet' }]) === null)
+    check('aave rival: wallet+aave only → null (Aave is the only venue)', competingVenueOf([{ slug: 'aave', name: 'Aave' }, { slug: 'yeetful-tool-wallet', name: 'Pantessa Wallet' }]) === null)
 
     // Reserve pick — Main (deepest + collateral-enabled) wins; shapes from a
     // live reserves probe 2026-07-10.
@@ -4881,7 +4881,7 @@ async function main() {
     check('morpho parse: missing amount → problem (the one real clarify)', !!lna && 'problem' in lna)
     check('morpho parse: collateral phrasing is NOT a lend', parseMorphoLend('supply 0.5 cbBTC collateral to morpho') === null)
     check('morpho rival: aave in the set → named', morphoCompetingVenueOf([{ slug: 'morpho-free', name: 'Morpho (Free)' }, { slug: 'aave-free', name: 'Aave (Free)' }]) === 'Aave (Free)')
-    check('morpho rival: morpho+wallet only → null', morphoCompetingVenueOf([{ slug: 'morpho-free', name: 'Morpho (Free)' }, { slug: 'yeetful-tool-wallet', name: 'Yeetful Wallet' }]) === null)
+    check('morpho rival: morpho+wallet only → null', morphoCompetingVenueOf([{ slug: 'morpho-free', name: 'Morpho (Free)' }, { slug: 'yeetful-tool-wallet', name: 'Pantessa Wallet' }]) === null)
 
     // Parse: ops.
     const b = parseMorphoOp('borrow 50 USDC on morpho')
@@ -5310,7 +5310,7 @@ async function main() {
       buyToken: '0x4200000000000000000000000000000000000006',
       receiver: '0x1111111111111111111111111111111111111111',
       sellAmount: '100000000', buyAmount: '25000000000000000',
-      // Yeetful's real appData hash — the app-data guard block-refuses
+      // Pantessa's real appData hash — the app-data guard block-refuses
       // anything else (fee stripping / hook injection).
       validTo: 1893456000, appData: keccak256(stringToBytes(COW_APP_DATA_JSON)), feeAmount: '250000',
       kind: 'sell', partiallyFillable: false, sellTokenBalance: 'erc20', buyTokenBalance: 'erc20',
@@ -6460,14 +6460,14 @@ async function main() {
       guardNftTransfer({ to: nftContract, data: xfer1155, value: '0', chainId: 1 }, { ...exp721, standard: 'erc1155', tokenId: '77', amount: BigInt(3) }).ok === true &&
       guardNftTransfer({ to: nftContract, data: xfer1155, value: '0', chainId: 1 }, { ...exp721, standard: 'erc1155', tokenId: '77', amount: BigInt(2) }).ok === false,
   )
-  // Brand marks: the first-party `yeetful-tool-*` internal MCPs carry Yeetful's
+  // Brand marks: the first-party `yeetful-tool-*` internal MCPs carry Pantessa's
   // own mark (rail + server pages), while `yeetful-claude` KEEPS its Anthropic
   // icon (resolved via ICON_SLUG, not a protocol mark). getProtocolMark is the
   // step-1 winner in BrandIcon, so this is what decides which glyph shows.
   check(
-    'brand mark: yeetful-tool-* MCPs resolve to the Yeetful mark',
-    getProtocolMark(undefined, 'yeetful-tool-wallet', 'yeetful-tool-wallet', 'Yeetful Wallet') === YeetfulMark &&
-      getProtocolMark(undefined, 'yeetful-tool-funding', 'yeetful-tool-funding', 'Yeetful Funding Planner') === YeetfulMark,
+    'brand mark: yeetful-tool-* MCPs resolve to the Pantessa mark',
+    getProtocolMark(undefined, 'yeetful-tool-wallet', 'yeetful-tool-wallet', 'Pantessa Wallet') === YeetfulMark &&
+      getProtocolMark(undefined, 'yeetful-tool-funding', 'yeetful-tool-funding', 'Pantessa Funding Planner') === YeetfulMark,
   )
   check(
     'brand mark: yeetful-claude is NOT captured (keeps its Anthropic icon)',
@@ -6605,7 +6605,7 @@ async function main() {
   check('native nft: robinhood-chain ask answered honestly (no build)', typeof nftRhHttp.reply === 'string' && /Ethereum, Base/i.test(nftRhHttp.reply), JSON.stringify(nftRhHttp).slice(0, 200))
 
   // Native swap tool: fires with NO service shortlisted (Nate 2026-07-02 —
-  // swap building is Yeetful's own tool, not gated on CoW being active).
+  // swap building is Pantessa's own tool, not gated on CoW being active).
   // Deterministic paths only (clarify + connect-wallet); the live build is a
   // manual smoke (real CoW quote).
   const nativeClarify = await fetch(`${BASE}/api/chat`, {
@@ -6860,7 +6860,7 @@ async function main() {
   // Cross-chain agent resolution — an add-MCP shell (endpoint:null, no tools)
   // must read as present-but-unusable, never routed at (live 2026-07-09: the
   // planner hallucinated 1inch/Across/Stargate venue chips for a shell row).
-  const shellRow = { slug: 'near-intents-mcp-yeetful', name: 'NEAR Intents MCP · Yeetful', description: null, endpoint: null }
+  const shellRow = { slug: 'near-intents-mcp-yeetful', name: 'NEAR Intents MCP · Pantessa', description: null, endpoint: null }
   const seededRow = { slug: 'near-intents-free', name: 'NEAR Intents (Free)', description: 'Cross-chain swaps…', endpoint: 'https://near-intents.yeetful.com/mcp' }
   check('cross-chain agent: shell row detected but NOT usable', (() => { const r = crossChainAgentOf([shellRow]); return r.agent === shellRow && r.usable === false })())
   check('cross-chain agent: seeded row usable', (() => { const r = crossChainAgentOf([seededRow]); return r.agent === seededRow && r.usable === true })())
@@ -8535,7 +8535,7 @@ async function main() {
     )
   }
 
-  // ── Wallet briefing (pure composer — the "what Yeetful noticed" tile) ─────
+  // ── Wallet briefing (pure composer — the "what Pantessa noticed" tile) ─────
   console.log('— wallet briefing')
   {
     const pos = (over: Partial<BriefingPosition> = {}): BriefingPosition => ({

@@ -54,7 +54,7 @@ export function AppRailHeader() {
       </button>
       <Link href="/dashboard" className="apprail__home" aria-label="Dashboard home">
         <YeetfulMark size={20} />
-        <span className="apprail__word">yeetful</span>
+        <span className="apprail__word">pantessa</span>
       </Link>
     </div>
   )

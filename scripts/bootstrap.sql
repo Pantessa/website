@@ -1,4 +1,4 @@
--- Yeetful bootstrap: creates all tables matching prisma/schema.prisma and
+-- Pantessa bootstrap: creates all tables matching prisma/schema.prisma and
 -- seeds mcp_servers with the 16 default MCP servers that were previously
 -- hard-coded in prisma/seed.ts.
 --

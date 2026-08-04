@@ -10,7 +10,7 @@ import { join } from 'node:path'
 // Fonts are embedded from assets/og-fonts (static TTF instances of the same
 // Google-Fonts families the site loads: Newsreader 500 + Geist 500/600).
 
-export const alt = 'Yeetful — Mega dapps are here. Every dapp, one chat.'
+export const alt = 'Pantessa — Mega dapps are here. Every dapp, one chat.'
 export const size = { width: 1200, height: 630 }
 export const contentType = 'image/png'
 
@@ -167,7 +167,7 @@ export default async function Image() {
           <div style={{ display: 'flex', alignItems: 'center', gap: 22 }}>
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src={toDataUri(MARK)} width={82} height={82} alt="" />
-            <span style={{ color: INK, fontSize: 62, fontWeight: 600, letterSpacing: -2.5 }}>yeetful</span>
+            <span style={{ color: INK, fontSize: 62, fontWeight: 600, letterSpacing: -2.5 }}>pantessa</span>
           </div>
           <div style={{ display: 'flex', marginTop: 20, fontSize: 25, letterSpacing: 6.5, color: '#8a9186' }}>
             <span>EVERY DAPP</span>

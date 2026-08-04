@@ -29,7 +29,7 @@ export async function GET(_req: NextRequest, { params }: Params) {
 }
 
 /**
- * Delete a service from the directory. Yeetful ADMIN ONLY (SIWE session, checked
+ * Delete a service from the directory. Pantessa ADMIN ONLY (SIWE session, checked
  * against isAdminAddress) — the "Delete Server" control on the detail page hits
  * this. Cascades the endpoint surface + approvals via Prisma relations; the
  * slug-keyed side rows (owner claim + ratings) have no FK, so we drop them

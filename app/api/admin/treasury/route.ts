@@ -10,7 +10,7 @@ export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
 /**
- * Treasury — what Yeetful has actually COLLECTED, admin-gated.
+ * Treasury — what Pantessa has actually COLLECTED, admin-gated.
  *
  * Two lanes, deliberately not summed into one number:
  *
@@ -22,20 +22,20 @@ export const dynamic = 'force-dynamic'
  *     (a fee taken in a stock token) shows unpriced and stays out of USD
  *     totals rather than being guessed.
  *
- *   · x402 ledger — spend_ledger settlements against Yeetful-OWNED services
+ *   · x402 ledger — spend_ledger settlements against Pantessa-OWNED services
  *     (host *.yeetful.com; opensea.io / paysponge / etc. are users paying
  *     THIRD PARTIES through their expense accounts — spend, not our
  *     revenue). This is the attributable view (grant → owner wallet), and a
  *     subset of the same money visible on-chain — never add the lanes.
  *
- * Every payer is classified tester (Yeetful's own wallets, lib/admin
+ * Every payer is classified tester (Pantessa's own wallets, lib/admin
  * TEST_WALLETS) vs wild, so the trend shows whether real users are paying.
  */
 
 const WINDOWS = new Set([30, 90])
 
 // The treasury address is an old wallet — it received unrelated transfers
-// years before Yeetful existed. Only inflow since FEES_LIVE_SINCE
+// years before Pantessa existed. Only inflow since FEES_LIVE_SINCE
 // (lib/fees.ts — shared with the public /activity fee strip) counts.
 
 /** 4-decimal rounding — sub-cent fees are the norm at test-trade sizes. */

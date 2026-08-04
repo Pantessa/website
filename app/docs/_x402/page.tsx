@@ -101,7 +101,7 @@ export default function X402Page() {
 
         <h2>Networks</h2>
         <p>
-          USDC on Base is the default everywhere on Yeetful; the client also resolves Base
+          USDC on Base is the default everywhere on Pantessa; the client also resolves Base
           Sepolia, Ethereum, Optimism, Arbitrum, and Polygon, plus any <code>eip155:*</code> id a
           v2 challenge presents. Restrict with <code>allowedNetworks</code> if your agent should
           only ever pay on specific chains.
@@ -116,7 +116,7 @@ export default function X402Page() {
           how you <em>sell</em> to agents rather than buy.
         </p>
         <p>
-          The first thing worth paying: Yeetful&apos;s own{' '}
+          The first thing worth paying: Pantessa&apos;s own{' '}
           <Link href="/docs/paid-doors">paid MCP doors</Link> — the same tools as the free doors
           with no rate limit and no API key, starting at $0.02 a call.
         </p>

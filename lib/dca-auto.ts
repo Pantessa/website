@@ -7,7 +7,7 @@
 //  contract, the same address on every supported chain) caps what our
 //  spender can ever pull, regardless of anything in this codebase. Each due
 //  period the sweep pulls that exact amount, swaps it through the SAME
-//  guarded venue builder as every other Yeetful swap with the output pinned
+//  guarded venue builder as every other Pantessa swap with the output pinned
 //  to the OWNER's wallet, and records a receipt. Disarm = we stop pulling;
 //  on-chain revoke is always the user's nuclear option.
 //
@@ -82,7 +82,7 @@ const HEX_ADDR = /^0x[0-9a-fA-F]{40}$/
 export interface BuildPermissionInput {
   /** The schedule owner's wallet — must BE a smart wallet (the grantor). */
   account: string
-  /** Yeetful's CDP-managed spender. */
+  /** Pantessa's CDP-managed spender. */
   spender: string
   /** The chain's canonical USDC. */
   token: string
@@ -205,7 +205,7 @@ export interface PermissionScheduleTerms {
 export function permissionMatchesSchedule(p: DcaSpendPermission, t: PermissionScheduleTerms): { ok: boolean; problems: string[] } {
   const problems: string[] = []
   if (p.account.toLowerCase() !== t.ownerWallet.toLowerCase()) problems.push('permission account is not the schedule owner')
-  if (p.spender.toLowerCase() !== t.spender.toLowerCase()) problems.push('permission spender is not the bound Yeetful spender')
+  if (p.spender.toLowerCase() !== t.spender.toLowerCase()) problems.push('permission spender is not the bound Pantessa spender')
   if (p.token.toLowerCase() !== t.usdcAddress.toLowerCase()) problems.push("permission token is not the chain's canonical USDC")
   if (p.allowance !== usdcAtomic(t.buyUsd)) problems.push(`allowance must be exactly $${t.buyUsd} per period`)
   if (p.period !== PERIOD_SECONDS[t.cadence]) problems.push(`period must be exactly the ${t.cadence} window`)

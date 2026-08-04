@@ -184,7 +184,7 @@ export interface CowQuoteResult {
 /** The appData document we attribute orders with. `order.appData` signs its
  *  keccak-256 hash; submission carries the full JSON. When the protocol fee
  *  is on (lib/fees.ts), the doc carries CoW's NATIVE partner-fee field — the
- *  protocol itself settles the bps of the buy amount to the Yeetful
+ *  protocol itself settles the bps of the buy amount to the Pantessa
  *  treasury at execution; nothing extra to sign, no separate transfer step.
  *  Schema 1.3.0 + this exact partnerFee shape verified live against the Base
  *  orderbook 2026-07-20 (quote accepted, appDataHash echoed).
@@ -197,8 +197,8 @@ export interface CowQuoteResult {
  *  COW_CANONICAL_APP_DATA_HASHES — never to an unrecognized doc. */
 export function cowAppDataJson(bps: number = SWAP_FEE_BPS): string {
   return bps > 0
-    ? `{"version":"1.3.0","appCode":"Yeetful","metadata":{"partnerFee":{"bps":${bps},"recipient":"${TREASURY_ADDRESS}"}}}`
-    : '{"version":"1.1.0","appCode":"Yeetful"}'
+    ? `{"version":"1.3.0","appCode":"Pantessa","metadata":{"partnerFee":{"bps":${bps},"recipient":"${TREASURY_ADDRESS}"}}}`
+    : '{"version":"1.1.0","appCode":"Pantessa"}'
 }
 
 export function cowAppDataHash(bps: number = SWAP_FEE_BPS): string {
@@ -210,7 +210,7 @@ export function cowAppDataHash(bps: number = SWAP_FEE_BPS): string {
 export const COW_APP_DATA_JSON = cowAppDataJson()
 export const COW_APP_DATA_HASH = cowAppDataHash()
 
-/** Every appData hash Yeetful builds with (lowercased): the base tier and
+/** Every appData hash Pantessa builds with (lowercased): the base tier and
  *  the link tier. A signed order whose appData is outside this set signed
  *  someone ELSE's document — fee-stripped, fatter-fee, or hook-injected —
  *  and never relays. */
@@ -219,7 +219,7 @@ export const COW_CANONICAL_APP_DATA_HASHES: ReadonlySet<string> = new Set(
 )
 
 /** Which tier a signed order's appData hash belongs to — null when it is
- *  not a Yeetful document (refuse). Lets guards NAME the rate they saw. */
+ *  not a Pantessa document (refuse). Lets guards NAME the rate they saw. */
 export function cowAppDataBpsOf(appDataHash: string | undefined): number | null {
   const h = (appDataHash ?? '').toLowerCase()
   for (const bps of [SWAP_FEE_BPS, LINK_SWAP_FEE_BPS]) {

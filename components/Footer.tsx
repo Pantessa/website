@@ -91,10 +91,10 @@ export default function Footer() {
           <div className="footer__brand">
             <Link className="logo" href="/">
               <YeetfulMark size={20} />
-              <span className="logo__word">yeetful</span>
+              <span className="logo__word">pantessa</span>
             </Link>
             <p className="footer__tag">
-              You have an intent — we do the rest. A link carries the ask; Yeetful builds
+              You have an intent — we do the rest. A link carries the ask; Pantessa builds
               guarded transactions only your wallet can sign, and keeps working between
               your turns.
             </p>
@@ -135,7 +135,7 @@ export default function Footer() {
         </div>
 
         <div className="footer__bottom">
-          <span className="mono">© 2026 YEETFUL INC.</span>
+          <span className="mono">© 2026 PANTESSA INC.</span>
           <div className="footer__bottomright">
             <span className="mono">NON-CUSTODIAL · YOUR WALLET SIGNS</span>
             <ThemeToggle />
@@ -145,7 +145,7 @@ export default function Footer() {
 
       {/* Oversized wordmark bleeding off the bottom edge */}
       <div className="footer__wordmark" aria-hidden>
-        <span>yeetful</span>
+        <span>pantessa</span>
       </div>
     </footer>
   )
