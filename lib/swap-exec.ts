@@ -24,8 +24,8 @@ export interface GuardedSwapParams {
   from: string
   chainId: number
   /** Fee tier in bps (default SWAP_FEE_BPS; link-originated turns pass
-   *  LINK_SWAP_FEE_BPS). Threads to the v3 build AND the refresh recipe so
-   *  re-quotes keep the tier. v4 has no venue-fee mechanism — unaffected. */
+   *  LINK_SWAP_FEE_BPS). Threads to the v3 AND v4 builds AND the refresh
+   *  recipe so re-quotes keep the tier. LiFi keeps its own fee step. */
   feeBps?: number
 }
 
@@ -92,7 +92,7 @@ export async function buildGuardedSwap(params: GuardedSwapParams): Promise<Guard
 
   // ── v4 fallback (chain pins it; tokenized-stock pools live there) ────────
   try {
-    const v4 = await buildUniswapV4Swap({ sellToken, buyToken, amountHuman, from, chainId })
+    const v4 = await buildUniswapV4Swap({ sellToken, buyToken, amountHuman, from, chainId, feeBps: params.feeBps })
     if (v4.blocked) return { ok: false, blockKind: 'policy', reasons: blockedOf(v4.guardrails), guardrails: v4.guardrails, policyBlock: v4.guardrails.policyBlock }
     return {
       ok: true,

@@ -8,17 +8,25 @@
 //  Build recipe, deterministic end to end (no model text anywhere):
 //    1. Quote via the chain's pinned V4 Quoter across the standard no-hook
 //       pool keys (fee/tickSpacing pairs) — best amountOut wins.
-//    2. Encode ONE Universal Router `execute` with exactly the V4_SWAP
-//       command: SWAP_EXACT_IN_SINGLE → SETTLE_ALL → TAKE_ALL. TAKE_ALL
+//    2. Encode ONE Universal Router `execute`. Fee off: exactly the V4_SWAP
+//       command, SWAP_EXACT_IN_SINGLE → SETTLE_ALL → TAKE_ALL — TAKE_ALL
 //       credits the transaction SENDER, so the recipient is the payer by
-//       construction — there is no recipient field to get wrong.
+//       construction. Fee on (the default, lib/fees.ts): the output lands
+//       on the router (TAKE → ADDRESS_THIS) and two more router commands
+//       split it — PAY_PORTION sends feeBps to the Yeetful treasury, SWEEP
+//       sends the rest to MSG_SENDER with the post-fee minimum enforced.
+//       Both recipients are SENTINELS or the pinned treasury — still no
+//       free-form recipient field to get wrong. This is the v4 mirror of
+//       v3's router-native sweepTokenWithFee split.
 //    3. v4 pulls funds through Permit2, so an ERC-20 sell may need up to two
 //       approvals (token→Permit2, then Permit2→Universal Router), both for
 //       EXACTLY the asked amount — assembled as one SendTxChain.
 //    4. GUARD: decode the calldata we just built and refuse unless every
 //       field verifies (pinned router, exact amounts, quoted pool key, no
-//       hooks, zero native value) — same fail-closed shape as the v3 /
-//       cross-chain / Aave guards. A guard failure withholds the artifact.
+//       hooks, zero native value, and — fee on — the treasury-pinned
+//       PAY_PORTION at a canonical tier plus the sender-sentinel SWEEP) —
+//       same fail-closed shape as the v3 / cross-chain / Aave guards. A
+//       guard failure withholds the artifact.
 //
 //  Only no-hook pools are scanned: a hooked pool's contract can reorder
 //  economics mid-swap, so we refuse rather than route through code we
@@ -39,6 +47,7 @@ import {
   type GuardrailReport,
 } from '@/lib/tx-guardrails'
 import { getActiveGrant, recordLedger, spentTodayUsd, toPolicy } from '@/lib/grant-store'
+import { LINK_SWAP_FEE_BPS, SWAP_FEE_BPS, TREASURY_ADDRESS, swapFeeAtoms } from '@/lib/fees'
 
 // Standard v4 fee → tickSpacing pairs (mirrors v3's tier scan; v4 has no
 // enumerable tier list, these are the factory-conventional no-hook keys).
@@ -54,13 +63,35 @@ const ZERO_HOOKS = '0x0000000000000000000000000000000000000000' as const
 // Universal Router command + v4-periphery action bytes (Uniswap/universal-router
 // Commands.sol, v4-periphery Actions.sol — stable protocol constants).
 const UR_COMMAND_V4_SWAP = 0x10
+const UR_COMMAND_SWEEP = 0x04
+const UR_COMMAND_PAY_PORTION = 0x06
 const ACTION_SWAP_EXACT_IN_SINGLE = 0x06
 const ACTION_SETTLE_ALL = 0x0c
+const ACTION_TAKE = 0x0e
 const ACTION_TAKE_ALL = 0x0f
-/** The exact action sequence we build AND the only one the guard accepts. */
-const V4_ACTIONS = `0x${[ACTION_SWAP_EXACT_IN_SINGLE, ACTION_SETTLE_ALL, ACTION_TAKE_ALL]
-  .map((b) => b.toString(16).padStart(2, '0'))
-  .join('')}` as `0x${string}`
+
+// Recipient sentinels — the same two values in BOTH layers we touch
+// (universal-router Constants.sol and v4-periphery ActionConstants.sol):
+// address(1) = "the transaction sender", address(2) = "the router itself".
+// Using sentinels keeps the no-free-form-recipient property: the only
+// literal address anywhere in a fee build is the pinned treasury.
+const SENTINEL_MSG_SENDER = '0x0000000000000000000000000000000000000001' as const
+const SENTINEL_ADDRESS_THIS = '0x0000000000000000000000000000000000000002' as const
+/** ActionConstants.OPEN_DELTA — TAKE's "the full credit" amount. */
+const OPEN_DELTA = BigInt(0)
+
+const hexByte = (b: number) => b.toString(16).padStart(2, '0')
+/** Fee-off action sequence (and the only one the guard accepts fee-off). */
+const V4_ACTIONS = `0x${[ACTION_SWAP_EXACT_IN_SINGLE, ACTION_SETTLE_ALL, ACTION_TAKE_ALL].map(hexByte).join('')}` as `0x${string}`
+/** Fee-on action sequence: the output is TAKEn to the router so the
+ *  PAY_PORTION/SWEEP commands have a balance to split. The swap action's own
+ *  amountOutMinimum still enforces the slippage bound; SWEEP re-enforces the
+ *  post-fee minimum for the user's share. */
+const V4_ACTIONS_FEE = `0x${[ACTION_SWAP_EXACT_IN_SINGLE, ACTION_SETTLE_ALL, ACTION_TAKE].map(hexByte).join('')}` as `0x${string}`
+/** Fee-off command list: the single V4_SWAP. */
+const UR_COMMANDS = `0x${hexByte(UR_COMMAND_V4_SWAP)}` as `0x${string}`
+/** Fee-on command list: V4_SWAP, then the router-native output split. */
+const UR_COMMANDS_FEE = `0x${[UR_COMMAND_V4_SWAP, UR_COMMAND_PAY_PORTION, UR_COMMAND_SWEEP].map(hexByte).join('')}` as `0x${string}`
 
 const UINT128_MAX = (BigInt(1) << BigInt(128)) - BigInt(1)
 const UINT160_MAX = (BigInt(1) << BigInt(160)) - BigInt(1)
@@ -165,6 +196,10 @@ const EXACT_IN_SINGLE_PARAM = {
   ],
 } as const
 const CURRENCY_AMOUNT_PARAMS = [{ type: 'address' }, { type: 'uint256' }] as const
+/** TAKE(currency, recipient, amount) — also PAY_PORTION(token, recipient,
+ *  bips) and SWEEP(token, recipient, amountMin): all three decode as
+ *  (address, address, uint256). */
+const ADDRESS_ADDRESS_UINT_PARAMS = [{ type: 'address' }, { type: 'address' }, { type: 'uint256' }] as const
 const ACTIONS_ENVELOPE_PARAMS = [{ type: 'bytes' }, { type: 'bytes[]' }] as const
 
 export interface V4PoolKey {
@@ -206,10 +241,16 @@ export interface V4SwapPlan {
   amountIn: bigint
   minOut: bigint
   deadline: number
+  /** Yeetful fee in bps (lib/fees.ts tiers). 0/omitted = the classic
+   *  fee-free encoding, byte-identical to the pre-fee builder. */
+  feeBps?: number
 }
 
-/** Encode the ONE Universal Router call: V4_SWAP → swap, settle, take. */
+/** Encode the ONE Universal Router call. Fee off: V4_SWAP → swap, settle,
+ *  take-all. Fee on: the take lands on the router and PAY_PORTION/SWEEP
+ *  split the output treasury/sender inside the same execute. */
 export function encodeV4SwapCalldata(plan: V4SwapPlan): `0x${string}` {
+  const feeOn = (plan.feeBps ?? 0) > 0
   const currencyIn = plan.zeroForOne ? plan.poolKey.currency0 : plan.poolKey.currency1
   const currencyOut = plan.zeroForOne ? plan.poolKey.currency1 : plan.poolKey.currency0
   const swapParams = encodeAbiParameters(
@@ -225,12 +266,35 @@ export function encodeV4SwapCalldata(plan: V4SwapPlan): `0x${string}` {
     ],
   )
   const settleParams = encodeAbiParameters([...CURRENCY_AMOUNT_PARAMS], [currencyIn, plan.amountIn])
-  const takeParams = encodeAbiParameters([...CURRENCY_AMOUNT_PARAMS], [currencyOut, plan.minOut])
-  const v4Input = encodeAbiParameters([...ACTIONS_ENVELOPE_PARAMS], [V4_ACTIONS, [swapParams, settleParams, takeParams]])
+  const takeParams = feeOn
+    ? // Full output credit to the ROUTER — the split commands below pay it out.
+      encodeAbiParameters([...ADDRESS_ADDRESS_UINT_PARAMS], [currencyOut, SENTINEL_ADDRESS_THIS, OPEN_DELTA])
+    : encodeAbiParameters([...CURRENCY_AMOUNT_PARAMS], [currencyOut, plan.minOut])
+  const v4Input = encodeAbiParameters(
+    [...ACTIONS_ENVELOPE_PARAMS],
+    [feeOn ? V4_ACTIONS_FEE : V4_ACTIONS, [swapParams, settleParams, takeParams]],
+  )
+  if (!feeOn) {
+    return encodeFunctionData({
+      abi: UNIVERSAL_ROUTER_ABI,
+      functionName: 'execute',
+      args: [UR_COMMANDS, [v4Input], BigInt(plan.deadline)],
+    })
+  }
+  const feeBps = plan.feeBps as number
+  const payPortionInput = encodeAbiParameters(
+    [...ADDRESS_ADDRESS_UINT_PARAMS],
+    [currencyOut, TREASURY_ADDRESS, BigInt(feeBps)],
+  )
+  // The user's minimum, post-fee — SWEEP reverts below it (InsufficientToken).
+  const sweepInput = encodeAbiParameters(
+    [...ADDRESS_ADDRESS_UINT_PARAMS],
+    [currencyOut, SENTINEL_MSG_SENDER, plan.minOut - swapFeeAtoms(plan.minOut, feeBps)],
+  )
   return encodeFunctionData({
     abi: UNIVERSAL_ROUTER_ABI,
     functionName: 'execute',
-    args: [`0x${UR_COMMAND_V4_SWAP.toString(16).padStart(2, '0')}`, [v4Input], BigInt(plan.deadline)],
+    args: [UR_COMMANDS_FEE, [v4Input, payPortionInput, sweepInput], BigInt(plan.deadline)],
   })
 }
 
@@ -256,6 +320,11 @@ export interface V4GuardExpectations {
   poolKey: V4PoolKey
   /** The exact Permit2 expiration the builder stamped (unix sec). */
   permit2Expiration: number
+  /** Yeetful fee the build was priced at, in bps. 0/omitted = the classic
+   *  fee-free shape is the ONLY one accepted; positive = the PAY_PORTION/
+   *  SWEEP shape is REQUIRED, the recipient must be the pinned treasury,
+   *  and the rate must sit in the canonical two-tier family. */
+  feeBps?: number
 }
 
 export interface V4GuardResult {
@@ -320,7 +389,15 @@ export function guardUniswapV4Build(steps: V4BuiltStep[], exp: V4GuardExpectatio
     }
   }
 
-  // The swap step: ONE Universal Router execute, command V4_SWAP only.
+  // The swap step: ONE Universal Router execute. Fee off: command V4_SWAP
+  // only. Fee on: exactly V4_SWAP → PAY_PORTION → SWEEP — either shape
+  // appearing when the OTHER was priced refuses (a fee leg nobody priced is
+  // as wrong as a missing one).
+  const feeBps = exp.feeBps ?? 0
+  const feeOn = feeBps > 0
+  if (feeOn && ![SWAP_FEE_BPS, LINK_SWAP_FEE_BPS].includes(feeBps)) {
+    reasons.push(`Fee rate ${feeBps}bps is outside the canonical tiers — refusing.`)
+  }
   const tx = swap.tx
   if (!eqAddr(tx.to, exp.universalRouter)) reasons.push('The swap is not addressed to the pinned Universal Router.')
   if (tx.chainId !== exp.chainId) reasons.push(`The swap targets chain ${tx.chainId}, not ${exp.chainId}.`)
@@ -328,19 +405,51 @@ export function guardUniswapV4Build(steps: V4BuiltStep[], exp: V4GuardExpectatio
   try {
     const dec = decodeFunctionData({ abi: UNIVERSAL_ROUTER_ABI, data: tx.data as `0x${string}` })
     const [commands, inputs, deadline] = dec.args as [`0x${string}`, readonly `0x${string}`[], bigint]
-    if (commands.toLowerCase() !== `0x${UR_COMMAND_V4_SWAP.toString(16).padStart(2, '0')}`) {
-      reasons.push(`Router commands are ${commands}, not the single V4_SWAP — refusing.`)
+    if (commands.toLowerCase() !== (feeOn ? UR_COMMANDS_FEE : UR_COMMANDS)) {
+      reasons.push(
+        feeOn
+          ? `Router commands are ${commands}, not V4_SWAP→PAY_PORTION→SWEEP — refusing.`
+          : `Router commands are ${commands}, not the single V4_SWAP — refusing.`,
+      )
     }
-    if (inputs.length !== 1) reasons.push(`Expected exactly one router input, got ${inputs.length}.`)
+    if (inputs.length !== (feeOn ? 3 : 1)) reasons.push(`Expected ${feeOn ? 3 : 1} router input(s), got ${inputs.length}.`)
     if (deadline <= BigInt(Math.floor(Date.now() / 1000))) reasons.push('The swap deadline is already in the past.')
+    if (feeOn && inputs.length === 3) {
+      // PAY_PORTION(token, recipient, bips): the output token, the PINNED
+      // treasury (compared against lib/fees' own constant, never a caller
+      // field), exactly the priced tier.
+      try {
+        const [pToken, pRecipient, pBips] = decodeAbiParameters([...ADDRESS_ADDRESS_UINT_PARAMS], inputs[1]) as [string, string, bigint]
+        if (!eqAddr(pToken, exp.buyToken)) reasons.push('PAY_PORTION is for a different token than the buy token.')
+        if (!eqAddr(pRecipient, TREASURY_ADDRESS)) reasons.push('The fee recipient is not the Yeetful treasury — refusing.')
+        if (pBips !== BigInt(feeBps)) reasons.push(`PAY_PORTION bips (${pBips}) is not the priced fee (${feeBps}).`)
+      } catch {
+        reasons.push('Could not decode the PAY_PORTION input — refusing.')
+      }
+      // SWEEP(token, recipient, amountMin): the rest of the output to the
+      // SENDER sentinel — the payer by construction — with the post-fee
+      // minimum enforced on-chain.
+      try {
+        const [sToken, sRecipient, sMin] = decodeAbiParameters([...ADDRESS_ADDRESS_UINT_PARAMS], inputs[2]) as [string, string, bigint]
+        if (!eqAddr(sToken, exp.buyToken)) reasons.push('SWEEP is for a different token than the buy token.')
+        if (!eqAddr(sRecipient, SENTINEL_MSG_SENDER)) reasons.push('SWEEP does not pay the transaction sender — refusing.')
+        if (sMin !== exp.minOut - swapFeeAtoms(exp.minOut, feeBps)) reasons.push('The SWEEP minimum is not the post-fee quoted bound.')
+      } catch {
+        reasons.push('Could not decode the SWEEP input — refusing.')
+      }
+    }
     const input = inputs[0]
     if (input) {
       const [actions, params] = decodeAbiParameters([...ACTIONS_ENVELOPE_PARAMS], input) as [
         `0x${string}`,
         readonly `0x${string}`[],
       ]
-      if (actions.toLowerCase() !== V4_ACTIONS) {
-        reasons.push(`v4 actions are ${actions}, not swap→settle-all→take-all — refusing.`)
+      if (actions.toLowerCase() !== (feeOn ? V4_ACTIONS_FEE : V4_ACTIONS)) {
+        reasons.push(
+          feeOn
+            ? `v4 actions are ${actions}, not swap→settle-all→take(router) — refusing.`
+            : `v4 actions are ${actions}, not swap→settle-all→take-all — refusing.`,
+        )
       } else if (params.length !== 3) {
         reasons.push(`Expected 3 action params, got ${params.length}.`)
       } else {
@@ -372,9 +481,24 @@ export function guardUniswapV4Build(steps: V4BuiltStep[], exp: V4GuardExpectatio
         const [settleCur, settleAmt] = decodeAbiParameters([...CURRENCY_AMOUNT_PARAMS], params[1]) as [string, bigint]
         if (!eqAddr(settleCur, exp.sellToken)) reasons.push('SETTLE_ALL is for a different currency than the sell token.')
         if (settleAmt !== exp.amountIn) reasons.push('SETTLE_ALL max does not match the swap amount.')
-        const [takeCur, takeAmt] = decodeAbiParameters([...CURRENCY_AMOUNT_PARAMS], params[2]) as [string, bigint]
-        if (!eqAddr(takeCur, exp.buyToken)) reasons.push('TAKE_ALL is for a different currency than the buy token.')
-        if (takeAmt !== exp.minOut) reasons.push('TAKE_ALL minimum does not match the quoted bound.')
+        if (feeOn) {
+          // TAKE(currency, recipient, amount): full credit to the ROUTER
+          // sentinel only — an explicit address here would divert the whole
+          // output before the split. The slippage bound lives in the swap
+          // action's amountOutMinimum (verified above) and in SWEEP's min.
+          try {
+            const [takeCur, takeRecipient, takeAmt] = decodeAbiParameters([...ADDRESS_ADDRESS_UINT_PARAMS], params[2]) as [string, string, bigint]
+            if (!eqAddr(takeCur, exp.buyToken)) reasons.push('TAKE is for a different currency than the buy token.')
+            if (!eqAddr(takeRecipient, SENTINEL_ADDRESS_THIS)) reasons.push('TAKE does not credit the router for the fee split — refusing.')
+            if (takeAmt !== OPEN_DELTA) reasons.push('TAKE must take the full credit (OPEN_DELTA) — refusing.')
+          } catch {
+            reasons.push('Could not decode the TAKE params — refusing.')
+          }
+        } else {
+          const [takeCur, takeAmt] = decodeAbiParameters([...CURRENCY_AMOUNT_PARAMS], params[2]) as [string, bigint]
+          if (!eqAddr(takeCur, exp.buyToken)) reasons.push('TAKE_ALL is for a different currency than the buy token.')
+          if (takeAmt !== exp.minOut) reasons.push('TAKE_ALL minimum does not match the quoted bound.')
+        }
       }
     }
   } catch {
@@ -500,6 +624,11 @@ export interface UniswapV4SwapParams {
   chainId: number
   slippageBps?: number
   deadlineSec?: number
+  /** Fee tier in bps (default SWAP_FEE_BPS; link-originated turns pass
+   *  LINK_SWAP_FEE_BPS) — same contract as the v3 builder. Rides the
+   *  Universal Router's PAY_PORTION/SWEEP split and must ride the refresh
+   *  recipe too so a re-quote keeps the tier. 0 = fee off. */
+  feeBps?: number
 }
 
 export interface UniswapV4Built {
@@ -593,6 +722,14 @@ export async function buildUniswapV4Swap(params: UniswapV4SwapParams): Promise<U
   const permit2Expiration = deadline + 3600
   const poolKey: V4PoolKey = { currency0, currency1, fee: best.fee, tickSpacing: best.tickSpacing, hooks: ZERO_HOOKS }
 
+  // Yeetful fee (lib/fees.ts) via the router's own PAY_PORTION/SWEEP split —
+  // the v4 mirror of v3's sweepTokenWithFee. Fee off (bps 0) → the classic
+  // take-all build.
+  const feeBps = params.feeBps ?? SWAP_FEE_BPS
+  const feeOn = feeBps > 0
+  const feeAtomsOnMin = feeOn ? swapFeeAtoms(minOut, feeBps) : BigInt(0)
+  const minOutAfterFee = minOut - feeAtomsOnMin
+
   // Quoting is NOT executing: Robinhood's tokenized-stock pools price fine on
   // the Quoter but a direct Universal Router swap bare-reverts (their stock
   // venue is the backend-signed DexAggregator, not public UR calls). Refuse
@@ -656,7 +793,7 @@ export async function buildUniswapV4Swap(params: UniswapV4SwapParams): Promise<U
     title: `Swap ${params.amountHuman} ${sellLabel} → ${buyLabel}`,
     tx: {
       to: v4.universalRouter,
-      data: encodeV4SwapCalldata({ poolKey, zeroForOne, amountIn, minOut, deadline }),
+      data: encodeV4SwapCalldata({ poolKey, zeroForOne, amountIn, minOut, deadline, feeBps: feeOn ? feeBps : 0 }),
       value: '0',
       chainId,
       action: 'swap',
@@ -676,14 +813,23 @@ export async function buildUniswapV4Swap(params: UniswapV4SwapParams): Promise<U
     minOut,
     poolKey,
     permit2Expiration,
+    feeBps: feeOn ? feeBps : 0,
   })
   const calldataCheck: GuardrailCheck = {
     id: 'calldata',
     level: 'block',
     ok: guard.ok,
     note: guard.ok
-      ? `Calldata verified: Universal Router ${v4.universalRouter.slice(0, 8)}…, exactly ${params.amountHuman} ${sellLabel} in, output to the payer (no-hook ${best.fee / 100}bps pool).`
+      ? `Calldata verified: Universal Router ${v4.universalRouter.slice(0, 8)}…, exactly ${params.amountHuman} ${sellLabel} in, output to the payer${feeOn ? ' minus the treasury split' : ''} (no-hook ${best.fee / 100}bps pool).`
       : `Build failed verification: ${guard.reasons.join(' ')}`,
+  }
+  const feeCheck: GuardrailCheck = {
+    id: 'fee',
+    level: 'warn',
+    ok: true,
+    note: feeOn
+      ? `Yeetful fee: ${feeBps / 100}% of the output, split by the router's own PAY_PORTION command to the Yeetful treasury — visible in the router calldata, minimum received shown post-fee.`
+      : 'No Yeetful fee on this swap.',
   }
 
   const approvalNote =
@@ -697,7 +843,7 @@ export async function buildUniswapV4Swap(params: UniswapV4SwapParams): Promise<U
   const allowanceCheck: GuardrailCheck = { id: 'allowance', level: 'warn', ok: steps.length === 1, note: approvalNote }
 
   // ── Cross-app guardrails: identical gate to v3, same policy host. ─────────
-  const checks: GuardrailCheck[] = [recipientCheck(from, from), validityCheck(deadline), allowanceCheck, calldataCheck]
+  const checks: GuardrailCheck[] = [recipientCheck(from, from), validityCheck(deadline), allowanceCheck, calldataCheck, feeCheck]
   const valueUsd = stableUsd(chainId, sellAddr, amountIn) ?? stableUsd(chainId, buyAddr, best.amountOut)
   const grant = await getActiveGrant(from.toLowerCase())
   const policy = grant ? toPolicy(grant) : null
@@ -718,8 +864,11 @@ export async function buildUniswapV4Swap(params: UniswapV4SwapParams): Promise<U
   }
 
   const outHuman = formatAtoms(best.amountOut.toString(), buyDec)
-  const minHuman = formatAtoms(minOut.toString(), buyDec)
-  const summary = `Swap ${formatAtoms(amountIn.toString(), sellDec)} ${sellLabel} → ~${outHuman} ${buyLabel} via Uniswap v4 on ${chain.name} (${best.fee / 100}bps pool), min received ${minHuman} (${slippageBps}bps slippage)`
+  // Honest minimum: what the USER receives after the treasury split, not the
+  // pool-level bound (v3's convention).
+  const minHuman = formatAtoms(minOutAfterFee.toString(), buyDec)
+  const feeNote = feeOn ? `, incl. ${feeBps / 100}% Yeetful fee on the output` : ''
+  const summary = `Swap ${formatAtoms(amountIn.toString(), sellDec)} ${sellLabel} → ~${outHuman} ${buyLabel} via Uniswap v4 on ${chain.name} (${best.fee / 100}bps pool), min received ${minHuman} (${slippageBps}bps slippage${feeNote})`
 
   return { summary, guardrails, blocked: !guardrails.ok, steps, minimumOut: minHuman, poolFee: best.fee }
 }
