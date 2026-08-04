@@ -11,6 +11,7 @@ import { PanelLeftClose } from 'lucide-react'
 import { useSession } from '@/lib/session'
 import { useAppSidebar } from '@/lib/app-sidebar'
 import AppSpine from '@/components/AppSpine'
+import DashAskBar from '@/components/DashAskBar'
 import DashboardSidebar from '@/components/DashboardSidebar'
 import DashboardMobileNav from '@/components/DashboardMobileNav'
 import DashboardAccount from '@/components/DashboardAccount'
@@ -78,7 +79,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         </aside>
         {/* Mobile: compact bar + hamburger drawer (replaces the horizontal row). */}
         <DashboardMobileNav pathname={pathname} address={address} />
-        <main className="dash__main">{children}</main>
+        <main className="dash__main">
+          {children}
+          <DashAskBar />
+        </main>
       </div>
     </div>
   )

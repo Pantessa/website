@@ -1307,6 +1307,10 @@
   .dash__link:hover { color: var(--fg); background: var(--surf-1); }
   .dash__link.is-on { color: var(--fg); background: var(--surf-2); }
   .dash__main { padding: 24px 0 64px; min-width: 0; }
+  /* Ask-from-anywhere: sticky command bar riding the bottom of every
+     dashboard page. Sits at the END of .dash__main, so sticky pulls it into
+     view pinned above the viewport's bottom edge while the page scrolls. */
+  .dashask { position: sticky; bottom: 20px; z-index: 20; margin-top: 40px; }
   .dash__h1 { font-family: 'Archivo', sans-serif; font-weight: 800; font-size: 24px; letter-spacing: -0.02em; margin-bottom: 6px; }
   .dash__sub { font-size: 13px; color: var(--muted-2); margin-bottom: 20px; max-width: 64ch; line-height: 1.5; }
 

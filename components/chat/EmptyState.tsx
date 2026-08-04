@@ -59,7 +59,10 @@ export default function EmptyState({
       </div>
       {/* The chat voice face (Fraunces) — not the site serif; the thread and
           the invitation should speak in the same type. */}
-      <h3 className="text-white font-semibold mb-2" style={{ fontFamily: 'var(--font-chat-display)', fontSize: '1.5rem' }}>
+      <h3
+        className="text-white font-semibold mb-2"
+        style={{ fontFamily: 'var(--font-chat-display)', fontSize: '1.75rem', letterSpacing: '-0.01em' }}
+      >
         Say what should happen.
       </h3>
       <p className="text-[color:var(--muted)] text-sm max-w-sm">

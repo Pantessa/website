@@ -1217,7 +1217,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
           in the embed — EmbedChat renders its own slim header — and in simple
           mode, where IntentRuntime's own header carries the ask. */}
       {!embedded && !simple && (
-      <div className="flex-shrink-0 px-3 py-2.5 border-b border-[var(--line)] bg-black/40 flex items-center gap-2">
+      <div className="flex-shrink-0 px-3 py-2.5 border-b border-[var(--line)] flex items-center gap-2">
         {/* Home mark — MOBILE only now: on desktop the spine's brand seat +
             DASH item carry both directions permanently. */}
         {showAppChrome && (
@@ -1909,20 +1909,21 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
         </div>
       </div>
 
-      {/* Input area. Simple mode (the /i link runtime) docks the composer as
-          a free-floating pill: no full-width border-t — on a mostly-empty
-          stage that rule read as a stray line hanging under the chat — and
-          the keyboard hint only fades in once the composer has focus. */}
+      {/* Input area — the command bar. First-party chat and the /i runtime
+          float it as a free-standing pill: no full-width border-t (the pill
+          itself is the boundary; the rule read as a stray line) and the
+          keyboard hint only fades in once the composer has focus. The embed
+          keeps the bordered treatment — hosts' look stays put. */}
       <div
         className={cn(
           'flex-shrink-0 p-4 max-lg:pb-[max(1rem,env(safe-area-inset-bottom))]',
-          simple ? 'group/composer pb-5' : 'border-t border-[var(--line)]',
+          embedded ? 'border-t border-[var(--line)]' : 'group/composer pb-5',
         )}
       >
         <div
           className={cn(
             'flex items-center gap-3 py-2 pl-4 pr-2 rounded-full border border-[var(--line)] bg-[color-mix(in_srgb,var(--surf-1)_85%,transparent)] backdrop-blur-md transition-[border-color,box-shadow] duration-200 focus-within:border-[color:var(--accent)]/45 focus-within:shadow-[0_0_0_4px_rgba(52,227,160,0.07),0_0_24px_rgba(52,227,160,0.06)]',
-            simple && 'shadow-[0_10px_36px_-14px_rgba(0,0,0,0.55)]',
+            !embedded && 'shadow-[0_10px_36px_-14px_rgba(0,0,0,0.55)]',
           )}
         >
           <textarea
@@ -1965,7 +1966,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
         <p
           className={cn(
             'text-[11px] text-[color:var(--muted-2)] mt-2 text-center mono',
-            simple && 'opacity-0 transition-opacity duration-300 group-focus-within/composer:opacity-100',
+            !embedded && 'opacity-0 transition-opacity duration-300 group-focus-within/composer:opacity-100',
           )}
         >
           Enter to send · Shift+Enter for newline
