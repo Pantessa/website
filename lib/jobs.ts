@@ -56,6 +56,23 @@ export interface CompiledJob {
   steps: CompiledStep[]
 }
 
+/**
+ * Stamp the link fee tier onto every native-swap step of a compiled job.
+ * A link-originated turn's ONE-SHOT swap prices at LINK_SWAP_FEE_BPS (#608);
+ * without this, the SAME ask compiled as a job (fund-then-buy, compound
+ * swaps) silently kept the base rate — a link's flagship multi-step path
+ * under-attributed its creator. Chat POST validates the slug and passes the
+ * tier; the runner re-validates the stamped value against the canonical
+ * tier before building. No feeBps → the compiled job unchanged.
+ */
+export function stampSwapFeeTier(compiled: CompiledJob, feeBps: number | undefined): CompiledJob {
+  if (!feeBps) return compiled
+  return {
+    ...compiled,
+    steps: compiled.steps.map((s) => (s.builder === 'native-swap' ? { ...s, params: { ...s.params, feeBps } } : s)),
+  }
+}
+
 // ── Robinhood funding plan ──────────────────────────────────────────────────
 // "Fund robinhood chain with $12 from base including gas, then buy $10 of
 // AAPL" — the exact resume string the chat route's funding-offer chips emit

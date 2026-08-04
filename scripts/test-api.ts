@@ -188,7 +188,7 @@ import {
   type HlOrderIntent,
   type HlWireApproveBuilderFeeAction,
 } from '../lib/hyperliquid-exec'
-import { compileJobAsk as compileJobAskFull, type CompiledJob } from '../lib/jobs'
+import { compileJobAsk as compileJobAskFull, stampSwapFeeTier, type CompiledJob } from '../lib/jobs'
 import { LIVE_JOB_STATUSES, jobStatusWord, statusTone } from '../lib/step-status'
 
 // Harness shim: the pre-pairing checks below narrow on `'problem' in x` only.
@@ -5478,6 +5478,65 @@ async function main() {
     buildCowLimitOrder({ sellToken: 'WETH', buyToken: 'USDC', sellAmount: '500000000000000000', buyAmountAtLeast: '1750000000', from: '0x1111111111111111111111111111111111111111', feeBps: LINK_SWAP_FEE_BPS }).order.appData ===
       cowAppDataHash(LINK_SWAP_FEE_BPS),
   )
+  // C2b closes over JOBS (#608 follow-up): a link-priced turn's compiled
+  // swaps carry the tier its one-shot would — stamped into native-swap step
+  // params only, everything else untouched, and a tier-less compile is the
+  // SAME object (no-op).
+  {
+    const mixed = compileJobAskFull('swap 5 USDC from base to arbitrum, then swap 3 USDC for ETH on arbitrum')
+    const ok = mixed && !('problem' in mixed) && !('clarify' in mixed)
+    const stamped = ok ? stampSwapFeeTier(mixed, LINK_SWAP_FEE_BPS) : null
+    const swapSteps = stamped ? stamped.steps.filter((s) => s.builder === 'native-swap') : []
+    const otherSteps = stamped ? stamped.steps.filter((s) => s.builder !== 'native-swap') : []
+    check(
+      'jobs fee tier: stampSwapFeeTier stamps native-swap steps only; no tier → the same compiled object',
+      !!stamped &&
+        swapSteps.length === 1 &&
+        swapSteps.every((s) => (s.params as { feeBps?: number }).feeBps === LINK_SWAP_FEE_BPS) &&
+        otherSteps.length > 0 &&
+        otherSteps.every((s) => (s.params as { feeBps?: number }).feeBps === undefined) &&
+        (ok ? stampSwapFeeTier(mixed, undefined) === mixed : false),
+    )
+  }
+  // The live seam: a compound swap ask carrying a live link slug compiles a
+  // job whose native-swap steps carry the LINK tier in their stored params;
+  // the same ask organic stays unstamped. House slug 'dca-eth' is the
+  // always-live fixture (seeded, never revoked). Jobs are canceled after —
+  // the fixture wallet is the 0x1111… test constant, nobody's rail.
+  {
+    const W = '0x1111111111111111111111111111111111111111'
+    const mkJob = (withSlug: boolean) =>
+      fetch(`${BASE}/api/chat`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-yf-no-ask-log': '1' },
+        body: JSON.stringify({
+          message: 'swap 5 USDC for ETH on base, then swap 3 USDC for ETH on base',
+          activeServers: [],
+          walletAddress: W,
+          ...(withSlug ? { intentLinkSlug: 'dca-eth' } : {}),
+        }),
+      }).then((r) => r.json() as Promise<{ jobId?: string; jobToken?: string }>)
+    const readSteps = async (j: { jobId?: string; jobToken?: string }) => {
+      if (!j.jobId) return null
+      const t = encodeURIComponent(j.jobToken ?? '')
+      const res = (await (await fetch(`${BASE}/api/jobs/${j.jobId}?t=${t}`)).json()) as {
+        job?: { steps?: { builder: string; params?: { feeBps?: unknown } }[] }
+      }
+      await fetch(`${BASE}/api/jobs/${j.jobId}?t=${t}`, { method: 'DELETE' }).catch(() => {})
+      return res.job?.steps ?? null
+    }
+    const linked = await readSteps(await mkJob(true))
+    const organic = await readSteps(await mkJob(false))
+    const linkedSwaps = (linked ?? []).filter((s) => s.builder === 'native-swap')
+    check(
+      'jobs fee tier: a link-slug turn stores native-swap steps at the LINK tier; the organic twin stays unstamped',
+      linkedSwaps.length === 2 &&
+        linkedSwaps.every((s) => Number(s.params?.feeBps) === LINK_SWAP_FEE_BPS) &&
+        !!organic &&
+        organic.filter((s) => s.builder === 'native-swap').every((s) => s.params?.feeBps === undefined),
+      JSON.stringify({ linked: linked?.map((s) => s.params?.feeBps), organic: organic?.map((s) => s.params?.feeBps) }),
+    )
+  }
   check('cow: limit order validTo is in the future', limit.order.validTo > Math.floor(Date.now() / 1000))
   check(
     'cow: limit order summary names the floor',

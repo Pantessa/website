@@ -132,6 +132,25 @@ export function netFeeBpsFor(buildPath: string | null | undefined): number {
   return (buildPath && NET_FEE_BPS_BY_BUILD_PATH[buildPath]) || 0
 }
 
+/** The fee tier an ARTIFACT actually carries (C2b: 20 organic / 50 link),
+ *  read from the artifact itself — the v3 refresh recipe or the CoW appData
+ *  — never a parallel field that could drift from the signed bytes. One
+ *  reader for every sign surface (ChatInterface one-shots, JobCard steps). */
+export function feeBpsOfArtifact(source: unknown): number | undefined {
+  const m = source as
+    | { txChain?: { refresh?: { params?: { feeBps?: unknown } } }; orderRequest?: { appDataJson?: unknown } }
+    | null
+    | undefined
+  const fromChain = m?.txChain?.refresh?.params?.feeBps
+  if (typeof fromChain === 'string' && /^\d{1,3}$/.test(fromChain)) return Number(fromChain)
+  const appData = m?.orderRequest?.appDataJson
+  if (typeof appData === 'string') {
+    const match = appData.match(/"partnerFee":\{"bps":(\d{1,3})/)
+    if (match) return Number(match[1])
+  }
+  return undefined
+}
+
 /** Effective NET bps for ONE turn row (C2b): the STAMPED tier when the row
  *  carries one — CoW/Uniswap hand the whole fee over, so the stamped rate IS
  *  the net — else the per-path default. Cross-chain keeps the path fallback
