@@ -66,7 +66,14 @@ export function classifyTurn(body: Record<string, unknown> | null): TurnClassifi
     // The NFT market reads (floors + value estimate, live bids) — same: a
     // real read whose rows are one tap from a listing build.
     !!(body.nftMarket && typeof body.nftMarket === 'object') ||
-    !!(body.clarify && typeof body.clarify === 'object')
+    !!(body.clarify && typeof body.clarify === 'object') ||
+    // The add-the-dapp door (#570 pattern): the ask is right, one click adds
+    // the missing MCP with the ask preserved — an answer, not a wall. Every
+    // door site stamps `door` so real door hits stop polluting this queue.
+    !!(body.door && typeof body.door === 'object') ||
+    // A held question: the turn parked context and waits for ONE input (an
+    // NFT transfer awaiting its recipient) — the next line completes it.
+    (typeof body.awaiting === 'string' && body.awaiting.length > 0)
   if (actionable) return { kind: null }
   if (body.blocked) return { kind: 'blocked' }
   if (typeof body.error === 'string' && body.error) return { kind: 'error' }

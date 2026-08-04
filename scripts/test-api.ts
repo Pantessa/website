@@ -3746,6 +3746,14 @@ async function main() {
         classifyTurn({ reply: 'connect first', connectWallet: true }).kind === null,
     )
     check(
+      'ask-failure: a door and a held question are answers, not walls',
+      classifyTurn({ reply: 'add the dapp', door: { mcps: 'lido-free' } }).kind === null &&
+        classifyTurn({ reply: 'where should it go?', awaiting: 'recipient' }).kind === null &&
+        // the guards stay strict: a truthy-but-wrong shape is not a pass
+        classifyTurn({ reply: 'x', door: 'lido-free' }).kind === 'planner-answer' &&
+        classifyTurn({ reply: 'x', awaiting: '' }).kind === 'planner-answer',
+    )
+    check(
       'ask-failure: walls classify by the layer that answered',
       classifyTurn({ reply: 'sorry, no idea' }).kind === 'planner-answer' &&
         classifyTurn({ reply: 'cannot', buildPath: 'native-transfer' }).kind === 'native-wall' &&
@@ -5998,6 +6006,11 @@ async function main() {
     nftXferOpen.workingContext?.pending?.kind === 'nft-transfer' && /Pudgy Penguin #2489/.test(nftXferOpen.workingContext?.pending?.summary ?? ''),
     JSON.stringify(nftXferOpen).slice(0, 220),
   )
+  check(
+    'nft transfer turn: the held question stamps `awaiting` and classifies as an answer, not a wall',
+    nftXferOpen.awaiting === 'recipient' && classifyTurn(nftXferOpen).kind === null,
+    JSON.stringify({ awaiting: nftXferOpen.awaiting }),
+  )
   const nftXferResume = await fetch(`${BASE}/api/chat`, {
     method: 'POST', headers: { 'content-type': 'application/json', 'x-yf-no-ask-log': '1' },
     body: JSON.stringify({
@@ -6899,6 +6912,18 @@ async function main() {
         dupeActive.action === 'refuse' && /already armed and watching — pause or remove/.test(dupeActive.message) &&
         dupeFiring.action === 'refuse' && /take profit on ETH is executing right now/.test(dupeFiring.message),
     )
+    // Term-aware dupes (live 2026-07-30: asking for the EXACT stop already
+    // armed got "pause or remove it first" — a wall on a satisfied intent).
+    const sameTerms = { triggerMode: 'price_move_pct' as const, triggerValue: 10 }
+    const dupeSame = planForExistingPolicy('active', 'stop_loss', 'SYRUP', sameTerms, sameTerms)
+    const dupeConflict = planForExistingPolicy('active', 'stop_loss', 'SYRUP', sameTerms, { triggerMode: 'price_move_pct', triggerValue: 5 })
+    const dupeModeSwap = planForExistingPolicy('active', 'stop_loss', 'SYRUP', sameTerms, { triggerMode: 'price', triggerValue: 10 })
+    check(
+      'guardian: active dupe with the SAME terms AFFIRMS; a conflict names both sets of terms',
+      dupeSame.action === 'affirm' &&
+        dupeConflict.action === 'refuse' && /closes 10% against you from entry/.test(dupeConflict.message) && /re-arm 5% against you from entry instead/.test(dupeConflict.message) &&
+        dupeModeSwap.action === 'refuse' && /re-arm when the mark crosses 10 instead/.test(dupeModeSwap.message),
+    )
     const sl: GuardianPolicyParams = { coin: 'SYRUP', side: 'long', kind: 'stop_loss', triggerMode: 'price_move_pct', triggerValue: 10 }
     const pos: GuardianPosition = { coin: 'SYRUP', szi: 700, entryPx: 0.14175 }
     check(
@@ -7134,6 +7159,11 @@ async function main() {
       typeof aaveDoor.reply === 'string' && aaveDoor.reply.includes('Add Aave with this ask ready](/chat?mcps=aave-free&prompt='),
       JSON.stringify(aaveDoor).slice(0, 220),
     )
+    check(
+      'aave door: the turn stamps `door` so the ask-failure classifier counts it as an answer',
+      aaveDoor.door?.mcps === 'aave-free' && classifyTurn(aaveDoor).kind === null,
+      JSON.stringify(aaveDoor.door),
+    )
     // Door audit (Lane O): every gate that needs a missing dapp answers the
     // deep-link door — a full grammar match must never silently fall to the
     // planner (guardian did) or refuse without the add link (cross-chain did).
@@ -7145,6 +7175,11 @@ async function main() {
       'guardian door: an arm ask without the HL agent answers the door (never the planner)',
       typeof guardianDoor.reply === 'string' && guardianDoor.reply.includes('Add Hyperliquid with this ask ready](/chat?mcps=hyperliquid-free&prompt='),
       JSON.stringify(guardianDoor).slice(0, 220),
+    )
+    check(
+      'guardian door: stamps `door` and classifies as an answer',
+      guardianDoor.door?.mcps === 'hyperliquid-free' && classifyTurn(guardianDoor).kind === null,
+      JSON.stringify(guardianDoor.door),
     )
     const ccDoor = await fetch(`${BASE}/api/chat`, {
       method: 'POST', headers: { 'content-type': 'application/json', 'x-yf-no-ask-log': '1' },

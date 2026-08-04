@@ -301,20 +301,50 @@ export function splitSignature(sig: string): { r: string; s: string; v: 27 | 28 
 
 // ── Duplicate-policy plan ───────────────────────────────────────────────────
 
-export type DupePolicyPlan = { action: 'resume' } | { action: 'refuse'; message: string }
+export type DupePolicyPlan = { action: 'resume' } | { action: 'affirm' } | { action: 'refuse'; message: string }
+
+/** The terms a dupe comparison runs on — the existing row's vs the ask's. */
+export interface DupePolicyTerms {
+  triggerMode: GuardianTriggerMode
+  triggerValue: number
+}
+
+const describeTrigger = (kind: GuardianPolicyKind, t: DupePolicyTerms) =>
+  t.triggerMode === 'price' ? `when the mark crosses ${t.triggerValue}` : `${t.triggerValue}% ${kind === 'stop_loss' ? 'against' : 'for'} you from entry`
 
 /**
  * What an arm ask should do when a policy of the same kind already exists on
  * the coin. A PAUSED row resumes — the ask is exactly that protection, and
  * the old blanket refusal ("already armed — pause or retire it first") was a
- * contradiction and a dead end when the row was already paused. Live rows
- * refuse with copy that matches their actual state.
+ * contradiction and a dead end when the row was already paused. An ACTIVE row
+ * with the SAME terms affirms: the user asked for the protection they already
+ * have, and "pause or remove it first" told them to dismantle it (live
+ * 2026-07-30: "protect my SYRUP long with a 10% stop" against an armed 10%
+ * stop logged as a wall). Only a real conflict refuses, and the refusal names
+ * both sets of terms so the user can decide which one they meant.
  */
-export function planForExistingPolicy(status: string, kind: GuardianPolicyKind, coin: string): DupePolicyPlan {
+export function planForExistingPolicy(
+  status: string,
+  kind: GuardianPolicyKind,
+  coin: string,
+  existing?: DupePolicyTerms,
+  asked?: DupePolicyTerms
+): DupePolicyPlan {
   const label = kind === 'stop_loss' ? 'stop loss' : 'take profit'
   if (status === 'paused') return { action: 'resume' }
   if (status === 'triggered') {
     return { action: 'refuse', message: `The ${label} on ${coin} is executing right now — check the Guardian dashboard.` }
+  }
+  if (existing && asked && existing.triggerMode === asked.triggerMode && existing.triggerValue === asked.triggerValue) {
+    return { action: 'affirm' }
+  }
+  if (existing && asked) {
+    return {
+      action: 'refuse',
+      message:
+        `A ${label} on ${coin} is already armed and watching — it closes ${describeTrigger(kind, existing)}. ` +
+        `Pause or remove it first (Protections in the rail, or the Guardian dashboard) to re-arm ${describeTrigger(kind, asked)} instead.`,
+    }
   }
   return { action: 'refuse', message: `A ${label} on ${coin} is already armed and watching — pause or remove it first.` }
 }

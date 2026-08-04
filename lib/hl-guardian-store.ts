@@ -404,7 +404,15 @@ async function recordRun(
 import { evaluatePolicy as evalForArm, type GuardianArmAsk } from '@/lib/hl-guardian'
 
 export type ArmResult =
-  | { ok: true; resumed?: boolean; policy: { id: string; coin: string; side: string; kind: string; triggerMode: string; triggerValue: number }; positionNote: string }
+  | {
+      ok: true
+      resumed?: boolean
+      /** The ask's exact protection was ALREADY armed — nothing changed, the
+       *  existing policy satisfies the intent (idempotent for job steps). */
+      affirmed?: boolean
+      policy: { id: string; coin: string; side: string; kind: string; triggerMode: string; triggerValue: number }
+      positionNote: string
+    }
   | { ok: false; status: number; error: string }
 
 /**
@@ -442,8 +450,22 @@ export async function armGuardianPolicy(wallet: string, ask: GuardianArmAsk): Pr
     where: { wallet: w, coin: ask.coin, kind: ask.kind, status: { in: ['active', 'paused', 'triggered'] } },
   })
   if (dupe) {
-    const plan = planForExistingPolicy(dupe.status, ask.kind, ask.coin)
+    const plan = planForExistingPolicy(
+      dupe.status,
+      ask.kind,
+      ask.coin,
+      { triggerMode: dupe.triggerMode as GuardianArmAsk['triggerMode'], triggerValue: dupe.triggerValue },
+      { triggerMode: ask.triggerMode, triggerValue: ask.triggerValue }
+    )
     if (plan.action === 'refuse') return { ok: false, status: 409, error: plan.message }
+    if (plan.action === 'affirm') {
+      return {
+        ok: true,
+        affirmed: true,
+        policy: { id: dupe.id, coin: dupe.coin, side: dupe.side, kind: dupe.kind, triggerMode: dupe.triggerMode, triggerValue: dupe.triggerValue },
+        positionNote,
+      }
+    }
     // Paused → resume as the freshly-validated ask: trigger, side, and
     // delegation re-derived live (a stale side would dead-letter the sweep's
     // lost-flip check; the arm validations above already ran on this trigger).
