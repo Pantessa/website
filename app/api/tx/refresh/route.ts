@@ -159,7 +159,7 @@ export async function POST(req: NextRequest) {
     if (body.kind === 'uniswap-v4-swap') {
       // v4 chains re-quote the FINAL step; the builder re-reads both Permit2
       // hops, so "approvals not visible yet" comes back as pending → retry.
-      const v4 = await buildUniswapV4Swap({ sellToken, buyToken, amountHuman, from, chainId })
+      const v4 = await buildUniswapV4Swap({ sellToken, buyToken, amountHuman, from, chainId, feeBps })
       if (v4.blocked) {
         const reasons = v4.guardrails.checks.filter((c) => !c.ok && c.level === 'block').map((c) => c.note).join(' ')
         return NextResponse.json({ blocked: true, blockKind: 'policy', reasons: reasons || 'a safety check failed', guardrails: v4.guardrails })
