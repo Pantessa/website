@@ -4101,7 +4101,7 @@ async function prepareSwapTurn(intent: SwapIntent, walletAddress: string | undef
       // fill never reach here — v4 is strictly the fallback.
       if (err instanceof NoV3PoolError && chain.uniswapV4) {
         trace({ type: 'status', label: `no v3 pool for the pair on ${chain.name} — trying the Uniswap v4 fallback (tokenized-stock pools live there)` })
-        return await prepareUniswapV4Turn(intent, walletAddress, chainId, ctx, trace)
+        return await prepareUniswapV4Turn(intent, walletAddress, chainId, ctx, trace, feeBps)
       }
       const msg = err instanceof Error ? err.message : 'quote failed'
       trace({ type: 'note', level: 'warn', label: `Uniswap build failed: ${msg.slice(0, 200)}` })
@@ -4175,6 +4175,7 @@ async function prepareUniswapV4Turn(
   chainId: number,
   ctx: WorkingContext | undefined,
   trace: (event: unknown) => void,
+  feeBps?: number,
 ) {
   const chain = chainById(chainId)!
   trace({ type: 'select', service: 'Uniswap v4 (native venue)', endpoint: `V4 Quoter → Universal Router build on ${chain.name}`, priceUsd: 0, reason: 'v4 fallback — the pair has no v3 pool; Pantessa builds + verifies the router calldata deterministically' })
@@ -4185,6 +4186,7 @@ async function prepareUniswapV4Turn(
       amountHuman: intent.sellAmountHuman!,
       from: walletAddress,
       chainId,
+      feeBps,
     })
     if (uni.blocked) {
       const reasons = uni.guardrails.checks.filter((c) => !c.ok && c.level === 'block').map((c) => c.note).join(' ')
@@ -4221,7 +4223,9 @@ async function prepareUniswapV4Turn(
         refresh: {
           kind: 'uniswap-v4-swap',
           stepIndex: uni.steps.length - 1,
-          params: { sellToken: intent.sellToken!, buyToken: intent.buyToken!, amountHuman: intent.sellAmountHuman!, chainId: String(chainId) },
+          // feeBps rides the recipe (C2b): the re-quote keeps the tier, and
+          // the client's telemetry stamp reads the tier from HERE.
+          params: { sellToken: intent.sellToken!, buyToken: intent.buyToken!, amountHuman: intent.sellAmountHuman!, chainId: String(chainId), ...(feeBps !== undefined ? { feeBps: String(feeBps) } : {}) },
         },
       },
       buildPath: 'native-swap-uniswap-v4',

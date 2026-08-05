@@ -113,14 +113,11 @@ export const CROSS_CHAIN_NET_FEE_BPS = Math.round(CROSS_CHAIN_FEE_BPS * (1 - ONE
  *  conversions-not-movements rule and earns nothing. */
 export const NET_FEE_BPS_BY_BUILD_PATH: Record<string, number> = {
   'native-swap-uniswap': SWAP_FEE_BPS,
-  // v4 fee honesty (2026-08-04): the v4 builder has NO venue fee mechanism —
-  // one Universal Router execute, no sweep/PAY_PORTION leg, and the
-  // fail-closed guard pins that command list. The old SWAP_FEE_BPS entry
-  // accrued creator earnings on fees never collected. 0 until the UR fee is
-  // actually wired (its own PR + a signed stock-swap drill); the LiFi
-  // settlement path — most tradable stock flow — carries the 0.20% stock
-  // fee regardless.
-  'native-swap-uniswap-v4': 0,
+  // v4 fee wired 2026-08-04 (the follow-through on the fee-honesty zero):
+  // the builder now carries the Universal Router's own PAY_PORTION/SWEEP
+  // split — treasury-pinned, tier-pinned, verified fail-closed by
+  // guardUniswapV4Build — so the map may claim the fee again.
+  'native-swap-uniswap-v4': SWAP_FEE_BPS,
   'native-swap-lifi': SWAP_FEE_BPS,
   'native-swap-cow': SWAP_FEE_BPS,
   'native-cross-chain': CROSS_CHAIN_NET_FEE_BPS,
