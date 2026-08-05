@@ -1211,9 +1211,15 @@
   .dashshell > .dash { flex: 1; min-width: 0; }
   /* The floating rail-reopen pill pins to the viewport's left edge — with
      the spine present it would land ON the spine; shift it clear. (The
-     spine only renders ≥1024px.) */
+     spine column only renders ≥1024px.) */
   @media (min-width: 1024px) {
     :root[data-spine] .apprail__reopen { left: 72px; }
+  }
+  /* Below lg the spine is a FIXED bottom bar — dashboard pages reserve its
+     height, and the ask-from-anywhere pill rides just above it. */
+  @media (max-width: 1023px) {
+    :root[data-spine] .dash__main { padding-bottom: calc(96px + env(safe-area-inset-bottom)); }
+    :root[data-spine] .dashask { bottom: calc(60px + env(safe-area-inset-bottom)); }
   }
 
   .dash {
