@@ -3,9 +3,9 @@
 // One hook answering "what's running on this wallet right now?" — jobs
 // (multi-step runs) + DCA schedules (recurring buys) + guardian protections
 // (autonomous stop-loss/take-profit), polled gently while a surface shows
-// them. Both the rail's Jobs tab and the collapsed JOBS chip use it; at most
-// one instance of each mounts at a time, so the poll load stays at a few
-// light GETs per interval.
+// them. The app spine (column ≥lg, bottom bar below) is THE badge instance
+// on first-party surfaces; JobsRailTab consumes it separately for its own
+// row data while the jobs drawer is open.
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { LIVE_JOB_STATUSES } from '@/lib/step-status'

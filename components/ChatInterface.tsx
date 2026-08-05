@@ -4,7 +4,7 @@ import { analytics } from '@/lib/analytics'
 import { feeBpsOfArtifact } from '@/lib/fees'
 import { Fragment, useState, useRef, useEffect, useSyncExternalStore } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Send, Zap, Check, Loader2, Bot, User, Boxes, ListChecks, MessageSquare, PanelRight, Copy, Plus, Link2 } from 'lucide-react'
+import { Send, Zap, Check, Loader2, Bot, User, PanelRight, Copy, Link2 } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { useAccount, useSignTypedData, useConnect } from 'wagmi'
 import { useConnectModal } from '@rainbow-me/rainbowkit'
@@ -35,7 +35,6 @@ import PaymentConfirm from '@/components/PaymentConfirm'
 import { voteRequestOf, voteCandidatesOf, voteProposalOf } from '@/lib/snapshot-vote'
 import { clarifyRequestOf } from '@/lib/clarify'
 import { useYeetfulStore, type RouterTraceEvent } from '@/lib/store'
-import { useRunningWork } from '@/lib/use-running-work'
 import { useSession } from '@/lib/session'
 import { latestWorkingContext, type WorkingContext } from '@/lib/working-context'
 import { EXAMPLE_PROMPTS, TRY_PROMPTS } from '@/lib/examples'
@@ -303,9 +302,9 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
   const { chrome: appChrome } = useAppShellMode()
   const showAppChrome = appChrome && !embedded
 
-  // Reactive rail-open state so the toolbar can surface the labeled reopen
-  // chips only while the rail is tucked away (the collapse toggle otherwise
-  // lives at the TOP of the rail, next to its MCPs/Chats tabs).
+  // The breakpoint decides WHICH drawer-open flag a toolbar door drives:
+  // desktop's persisted preference vs the mobile overlay's transient flag.
+  // (The running-work badge poll lives on the spine now — the ONE instance.)
   const [isNarrow, setIsNarrow] = useState(false)
   useEffect(() => {
     const mql = window.matchMedia('(max-width: 1023px)')
@@ -314,15 +313,6 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
     mql.addEventListener('change', on)
     return () => mql.removeEventListener('change', on)
   }, [])
-  const railVisible = isNarrow ? mobileMcpRailOpen : mcpRailOpen
-  // The collapsed JOBS chip's count — running jobs + recurring buys needing
-  // you. The chips are mobile-only now (the spine carries the desktop badge),
-  // so this instance polls only while the chip is actually visible: overlay
-  // closed, first-party chat, below lg.
-  const { badgeCount: runningBadge } = useRunningWork(!railVisible && !embedded && !simple && isNarrow)
-  // A reopen chip names what it opens: clicking "MCPs"/"Chats" opens the rail
-  // on that tab — no more anonymous panel icons. The chips only render while
-  // the rail is closed; open, the rail's own tabs sit right there instead.
   const openRail = (tab: 'mcps' | 'chats' | 'jobs' | 'links') => {
     setRailTab(tab)
     isNarrow ? setMobileMcpRailOpen(true) : setMcpRailOpen(true)
@@ -333,13 +323,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
   // that ask + the working set — the conversation never navigates away.
   const [mintPrefill, setMintPrefill] = useState<{ ask: string; mcps: string[] } | null>(null)
 
-  // "New chat" → drop to the bare /chat surface, which resets to a fresh
-  // session (currentChatId=null, default fleet seeded) with the row minted
-  // lazily on first send. Mirrors the rail's own New Chat button so the two
-  // stay in lockstep; a top-level button just makes it reachable without
-  // hunting through the Chats tab.
   const router = useRouter()
-  const startNewChat = () => router.push('/chat')
 
   const [input, setInput] = useState('')
 
@@ -1230,69 +1214,10 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
             <YeetfulMark size={20} />
           </Link>
         )}
-        {/* New chat — mobile only: the spine's NEW item owns it on desktop.
-            Lands on the bare /chat surface. */}
-        <button
-          onClick={startNewChat}
-          aria-label="Start a new chat"
-          title="Start a new chat"
-          className="lg:hidden flex-shrink-0 flex items-center gap-1.5 px-2.5 min-h-[40px] md:min-h-[32px] rounded-lg border bg-[var(--surf-1)] border-[var(--line)] text-[color:var(--muted)] hover:text-white hover:border-[var(--line-2)] transition-colors"
-        >
-          <Plus className="w-4 h-4" />
-          <span className="text-[11px] whitespace-nowrap font-medium mono">NEW</span>
-        </button>
-        {/* Labeled reopen chips — mobile, while the overlay drawer is closed.
-            Desktop reopening is the spine's job (always visible), so the
-            chips never render ≥lg. */}
-        {!railVisible && (
-          <div className="lg:hidden chatreopen flex-shrink-0 flex items-center gap-1.5">
-            {/* Four chips can't all carry words at phone widths (the #570
-                drill pattern) — below md the words drop, icons + counts stay,
-                titles/aria keep them named. */}
-            <button
-              onClick={() => openRail('mcps')}
-              aria-label="Show the MCP rail"
-              title="Show your MCP set"
-              className="flex-shrink-0 flex items-center gap-1.5 px-2.5 min-h-[40px] md:min-h-[32px] rounded-lg border bg-[var(--surf-1)] border-[var(--line)] text-[color:var(--muted)] hover:text-white hover:border-[var(--line-2)] transition-colors"
-            >
-              <Boxes className="w-4 h-4" />
-              <span className="text-[11px] whitespace-nowrap font-medium mono max-md:hidden">MCPS · {activeServers.length}</span>
-              <span className="text-[11px] whitespace-nowrap font-medium mono md:hidden">{activeServers.length}</span>
-            </button>
-            <button
-              onClick={() => openRail('jobs')}
-              aria-label="Show jobs and recurring buys running on this wallet"
-              title="Jobs and recurring buys running on this wallet"
-              className="flex-shrink-0 flex items-center gap-1.5 px-2.5 min-h-[40px] md:min-h-[32px] rounded-lg border bg-[var(--surf-1)] border-[var(--line)] text-[color:var(--muted)] hover:text-white hover:border-[var(--line-2)] transition-colors"
-            >
-              <ListChecks className="w-4 h-4" />
-              <span className="text-[11px] whitespace-nowrap font-medium mono max-md:hidden">
-                JOBS{runningBadge > 0 ? ` · ${runningBadge}` : ''}
-              </span>
-              {runningBadge > 0 && (
-                <span className="text-[11px] whitespace-nowrap font-medium mono md:hidden">{runningBadge}</span>
-              )}
-            </button>
-            <button
-              onClick={() => openRail('links')}
-              aria-label="Show your intent links"
-              title="Your intent links — mint and share from here"
-              className="flex-shrink-0 flex items-center gap-1.5 px-2.5 min-h-[40px] md:min-h-[32px] rounded-lg border bg-[var(--surf-1)] border-[var(--line)] text-[color:var(--muted)] hover:text-white hover:border-[var(--line-2)] transition-colors"
-            >
-              <Link2 className="w-4 h-4" />
-              <span className="text-[11px] whitespace-nowrap font-medium mono max-md:hidden">LINKS</span>
-            </button>
-            <button
-              onClick={() => openRail('chats')}
-              aria-label="Show your chat history"
-              title="Show your chat history"
-              className="flex-shrink-0 flex items-center gap-1.5 px-2.5 min-h-[40px] md:min-h-[32px] rounded-lg border bg-[var(--surf-1)] border-[var(--line)] text-[color:var(--muted)] hover:text-white hover:border-[var(--line-2)] transition-colors"
-            >
-              <MessageSquare className="w-4 h-4" />
-              <span className="text-[11px] whitespace-nowrap font-medium mono max-md:hidden">CHATS</span>
-            </button>
-          </div>
-        )}
+        {/* NEW + the four reopen chips are GONE from the toolbar on every
+            breakpoint — the spine column owns them ≥lg and the bottom bar
+            owns them below (the old chip row was the mobile header's
+            horizontal-overflow bug: nine flex-shrink-0 items vs 375px). */}
         <div className="flex-1 min-w-0 flex items-center">
           {/* Auto Router + the spending-policy master switch are DISABLED for
               now — the toggles are hidden and the features behave as if they
@@ -1334,7 +1259,11 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
           {/* The Chat|App ModeToggle came off the toolbar (nav rethink,
               2026-07-17) — App Mode stays in-tree behind ?mode=app. */}
           <ChainPicker />
-          <EmbedThisChat slugs={activeServers.map((s) => s.slug)} />
+          {/* Embedding is a desk job — the control stays off the phone
+              header (Share keeps its seat everywhere; sharing is mobile). */}
+          <div className="max-lg:hidden flex-shrink-0">
+            <EmbedThisChat slugs={activeServers.map((s) => s.slug)} />
+          </div>
           <ShareButton />
           {showAppChrome && (
             <div className="flex-shrink-0 pl-1">

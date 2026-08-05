@@ -19,12 +19,11 @@ import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Boxes, Check, Globe, Info, LayoutDashboard, Link2, ListChecks, Loader2, MessageSquare, PanelLeftClose, Plus, Trash2 } from 'lucide-react'
+import { Check, Globe, Info, Loader2, MessageSquare, PanelLeftClose, Plus, Trash2 } from 'lucide-react'
 import { cleanServerName, cn } from '@/lib/utils'
 import { useYeetfulStore } from '@/lib/store'
 import { useSession } from '@/lib/session'
 import { fleetRank } from '@/lib/free-fleet'
-import { useRunningWork } from '@/lib/use-running-work'
 import BrandIcon from '@/components/BrandIcon'
 import AddMcpModal from '@/components/AddMcpModal'
 import JobsRailTab from '@/components/JobsRailTab'
@@ -76,11 +75,6 @@ export default function ChatRail() {
   // Desktop: the persisted preference.
   const open = isMobile ? mobileMcpRailOpen : mcpRailOpen
 
-  // Running work (jobs + recurring buys) — the Jobs tab's badge on the
-  // MOBILE tab strip. Desktop's badge lives on the always-visible spine, so
-  // this instance only polls while the mobile overlay is actually open (the
-  // collapsed toolbar chip runs its own, also mobile-gated).
-  const { badgeCount } = useRunningWork(open && isMobile)
 
   const active = useMemo(
     () =>
@@ -212,84 +206,33 @@ export default function ChatRail() {
           transition={{ duration: 0.25, ease: 'easeInOut' }}
           className="flex-shrink-0 border-r border-[var(--line)] bg-black/20 overflow-hidden h-full max-lg:absolute max-lg:inset-y-0 max-lg:left-0 max-lg:z-40 max-lg:bg-[#0b0b0c] max-lg:shadow-[8px_0_32px_rgba(0,0,0,0.55)]"
         >
-          <div className="flex flex-col h-full" style={{ width: RAIL_WIDTH }}>
-            {/* Header. Desktop: the drawer is the spine's contextual panel —
-                the spine carries the tabs, so the drawer just names what it's
-                showing + holds the one collapse control. Mobile (<lg): no
-                spine, so the tab strip lives here, in the overlay itself. */}
-            {isMobile ? (
-              <div className="flex items-center gap-1 px-2 pt-3 pb-2">
-                <div
-                  className="flex-1 flex rounded-xl border border-[var(--line)] bg-[var(--surf-1)] p-0.5"
-                  role="tablist"
-                  aria-label="Rail view"
-                >
-                  {/* QUIET CHROME: only the ACTIVE tab wears its word; the
-                      rest are icons (Jobs keeps its needs-you badge in every
-                      state). Titles + aria keep every tab named. */}
-                  {(
-                    [
-                      { tab: 'mcps' as const, label: 'MCPs', title: 'Your MCP set', Icon: Boxes, badge: 0 },
-                      { tab: 'jobs' as const, label: 'Jobs', title: 'Jobs and recurring buys running on this wallet', Icon: ListChecks, badge: badgeCount },
-                      { tab: 'links' as const, label: 'Links', title: 'Your intent links — mint and share from here', Icon: Link2, badge: 0 },
-                      { tab: 'chats' as const, label: 'Chats', title: 'Your chat history', Icon: MessageSquare, badge: 0 },
-                    ]
-                  ).map(({ tab, label, title, Icon, badge }) => {
-                    const selected = railTab === tab
-                    return (
-                      <button
-                        key={tab}
-                        role="tab"
-                        aria-selected={selected}
-                        aria-label={label}
-                        onClick={() => setRailTab(tab)}
-                        title={title}
-                        className={cn(
-                          'flex items-center justify-center gap-1 rounded-[10px] py-1.5 text-[11px] font-medium transition-colors',
-                          selected
-                            ? 'flex-1 px-2 bg-[var(--surf-2)] text-white'
-                            : 'flex-none px-2.5 text-[color:var(--muted)] hover:text-white',
-                        )}
-                      >
-                        <Icon className="w-3.5 h-3.5" />
-                        {selected && label}
-                        {badge > 0 && (
-                          <span className="mono text-[10px] px-1 rounded-full bg-amber-500/15 text-amber-400">{badge}</span>
-                        )}
-                      </button>
-                    )
-                  })}
-                </div>
-                <button
-                  className="apprail__toggle flex-shrink-0"
-                  onClick={() => setMobileMcpRailOpen(false)}
-                  aria-label="Collapse the rail"
-                  title="Collapse"
-                >
-                  <PanelLeftClose width={17} height={17} />
-                </button>
-              </div>
-            ) : (
-              <div className="flex items-center gap-1 px-3 pt-3 pb-2">
-                <span className="flex-1 mono text-[11px] uppercase tracking-wider text-[color:var(--muted-2)] truncate">
-                  {railTab === 'mcps'
-                    ? 'Your MCP set'
-                    : railTab === 'jobs'
-                      ? 'Running work'
-                      : railTab === 'links'
-                        ? 'Intent links'
-                        : 'Chat history'}
-                </span>
-                <button
-                  className="apprail__toggle flex-shrink-0"
-                  onClick={() => setMcpRailOpen(false)}
-                  aria-label="Collapse the drawer"
-                  title="Collapse"
-                >
-                  <PanelLeftClose width={17} height={17} />
-                </button>
-              </div>
-            )}
+          {/* max-lg pb: the overlay spans the full viewport height, and the
+              fixed bottom bar (z-50) rides over its lowest 48px — keep the
+              drawer's own content clear of it. */}
+          <div className="flex flex-col h-full max-lg:pb-[calc(48px+env(safe-area-inset-bottom))]" style={{ width: RAIL_WIDTH }}>
+            {/* Header — identical on every breakpoint now: the spine carries
+                the tabs everywhere (column ≥lg, bottom bar below), so the
+                drawer just names what it's showing + holds the one collapse
+                control. */}
+            <div className="flex items-center gap-1 px-3 pt-3 pb-2">
+              <span className="flex-1 mono text-[11px] uppercase tracking-wider text-[color:var(--muted-2)] truncate">
+                {railTab === 'mcps'
+                  ? 'Your MCP set'
+                  : railTab === 'jobs'
+                    ? 'Running work'
+                    : railTab === 'links'
+                      ? 'Intent links'
+                      : 'Chat history'}
+              </span>
+              <button
+                className="apprail__toggle flex-shrink-0"
+                onClick={() => (isMobile ? setMobileMcpRailOpen(false) : setMcpRailOpen(false))}
+                aria-label="Collapse the drawer"
+                title="Collapse"
+              >
+                <PanelLeftClose width={17} height={17} />
+              </button>
+            </div>
 
             {railTab === 'jobs' ? (
               <JobsRailTab onAct={closeOnMobile} />
@@ -445,22 +388,8 @@ export default function ChatRail() {
               </>
             )}
 
-            {/* Pinned dashboard entry — mobile only: on desktop the spine's
-                DASH item is the permanent, labeled way out. */}
-            {isMobile && (
-              <Link
-                href="/dashboard"
-                onClick={closeOnMobile}
-                title="Pantessa dashboard — links, keys, billing"
-                className="flex-shrink-0 flex items-center gap-2.5 px-4 py-3 border-t border-[var(--line)] text-[color:var(--muted)] hover:text-white hover:bg-[var(--surf-1)] transition-colors"
-              >
-                <LayoutDashboard className="w-4 h-4 flex-shrink-0" aria-hidden />
-                <span className="flex-1 min-w-0">
-                  <span className="block text-xs font-medium">Dashboard</span>
-                  <span className="block text-[10px] text-[color:var(--muted-2)]">links · keys · billing</span>
-                </span>
-              </Link>
-            )}
+            {/* (The old pinned Dashboard row is gone on every breakpoint —
+                the spine's DASH item is the permanent, labeled way out.) */}
           </div>
         </motion.aside>
       )}

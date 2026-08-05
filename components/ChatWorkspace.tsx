@@ -172,7 +172,9 @@ export default function ChatWorkspace({ chatId }: { chatId?: string }) {
   const { chrome } = useAppShellMode()
 
   return (
-    <div className={`relative flex ${chrome ? 'h-dvh' : 'h-[calc(100dvh-4rem)]'}`}>
+    // max-lg pb reserves the fixed bottom bar's height (48px + safe area) so
+    // the composer never hides behind it.
+    <div className={`relative flex max-lg:pb-[calc(48px+env(safe-area-inset-bottom))] ${chrome ? 'h-dvh' : 'h-[calc(100dvh-4rem)]'}`}>
       {/* The spine (desktop): brand seat + workspace destinations + the way
           out to the dashboard. Mounted by the SHELL, not ChatInterface, so
           /embed and /i can never inherit it. */}
