@@ -13,7 +13,7 @@
 //       credits the transaction SENDER, so the recipient is the payer by
 //       construction. Fee on (the default, lib/fees.ts): the output lands
 //       on the router (TAKE → ADDRESS_THIS) and two more router commands
-//       split it — PAY_PORTION sends feeBps to the Yeetful treasury, SWEEP
+//       split it — PAY_PORTION sends feeBps to the Pantessa treasury, SWEEP
 //       sends the rest to MSG_SENDER with the post-fee minimum enforced.
 //       Both recipients are SENTINELS or the pinned treasury — still no
 //       free-form recipient field to get wrong. This is the v4 mirror of
@@ -241,7 +241,7 @@ export interface V4SwapPlan {
   amountIn: bigint
   minOut: bigint
   deadline: number
-  /** Yeetful fee in bps (lib/fees.ts tiers). 0/omitted = the classic
+  /** Pantessa fee in bps (lib/fees.ts tiers). 0/omitted = the classic
    *  fee-free encoding, byte-identical to the pre-fee builder. */
   feeBps?: number
 }
@@ -320,7 +320,7 @@ export interface V4GuardExpectations {
   poolKey: V4PoolKey
   /** The exact Permit2 expiration the builder stamped (unix sec). */
   permit2Expiration: number
-  /** Yeetful fee the build was priced at, in bps. 0/omitted = the classic
+  /** Pantessa fee the build was priced at, in bps. 0/omitted = the classic
    *  fee-free shape is the ONLY one accepted; positive = the PAY_PORTION/
    *  SWEEP shape is REQUIRED, the recipient must be the pinned treasury,
    *  and the rate must sit in the canonical two-tier family. */
@@ -421,7 +421,7 @@ export function guardUniswapV4Build(steps: V4BuiltStep[], exp: V4GuardExpectatio
       try {
         const [pToken, pRecipient, pBips] = decodeAbiParameters([...ADDRESS_ADDRESS_UINT_PARAMS], inputs[1]) as [string, string, bigint]
         if (!eqAddr(pToken, exp.buyToken)) reasons.push('PAY_PORTION is for a different token than the buy token.')
-        if (!eqAddr(pRecipient, TREASURY_ADDRESS)) reasons.push('The fee recipient is not the Yeetful treasury — refusing.')
+        if (!eqAddr(pRecipient, TREASURY_ADDRESS)) reasons.push('The fee recipient is not the Pantessa treasury — refusing.')
         if (pBips !== BigInt(feeBps)) reasons.push(`PAY_PORTION bips (${pBips}) is not the priced fee (${feeBps}).`)
       } catch {
         reasons.push('Could not decode the PAY_PORTION input — refusing.')
@@ -722,7 +722,7 @@ export async function buildUniswapV4Swap(params: UniswapV4SwapParams): Promise<U
   const permit2Expiration = deadline + 3600
   const poolKey: V4PoolKey = { currency0, currency1, fee: best.fee, tickSpacing: best.tickSpacing, hooks: ZERO_HOOKS }
 
-  // Yeetful fee (lib/fees.ts) via the router's own PAY_PORTION/SWEEP split —
+  // Pantessa fee (lib/fees.ts) via the router's own PAY_PORTION/SWEEP split —
   // the v4 mirror of v3's sweepTokenWithFee. Fee off (bps 0) → the classic
   // take-all build.
   const feeBps = params.feeBps ?? SWAP_FEE_BPS
@@ -828,8 +828,8 @@ export async function buildUniswapV4Swap(params: UniswapV4SwapParams): Promise<U
     level: 'warn',
     ok: true,
     note: feeOn
-      ? `Yeetful fee: ${feeBps / 100}% of the output, split by the router's own PAY_PORTION command to the Yeetful treasury — visible in the router calldata, minimum received shown post-fee.`
-      : 'No Yeetful fee on this swap.',
+      ? `Pantessa fee: ${feeBps / 100}% of the output, split by the router's own PAY_PORTION command to the Pantessa treasury — visible in the router calldata, minimum received shown post-fee.`
+      : 'No Pantessa fee on this swap.',
   }
 
   const approvalNote =
@@ -867,7 +867,7 @@ export async function buildUniswapV4Swap(params: UniswapV4SwapParams): Promise<U
   // Honest minimum: what the USER receives after the treasury split, not the
   // pool-level bound (v3's convention).
   const minHuman = formatAtoms(minOutAfterFee.toString(), buyDec)
-  const feeNote = feeOn ? `, incl. ${feeBps / 100}% Yeetful fee on the output` : ''
+  const feeNote = feeOn ? `, incl. ${feeBps / 100}% Pantessa fee on the output` : ''
   const summary = `Swap ${formatAtoms(amountIn.toString(), sellDec)} ${sellLabel} → ~${outHuman} ${buyLabel} via Uniswap v4 on ${chain.name} (${best.fee / 100}bps pool), min received ${minHuman} (${slippageBps}bps slippage${feeNote})`
 
   return { summary, guardrails, blocked: !guardrails.ok, steps, minimumOut: minHuman, poolFee: best.fee }
