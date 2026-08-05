@@ -156,7 +156,7 @@ import {
   type MorphoOpGuardExpectation,
 } from '../lib/morpho-supply'
 import { assertTokenIdentity } from '../lib/morpho-exec'
-import { encodeFunctionData, erc20Abi, toFunctionSelector } from 'viem'
+import { decodeAbiParameters, encodeAbiParameters, encodeFunctionData, erc20Abi, toFunctionSelector } from 'viem'
 import {
   evaluatePolicy,
   formatPx,
@@ -3896,9 +3896,10 @@ async function main() {
       netFeeBpsFor('native-cross-chain') === CROSS_CHAIN_NET_FEE_BPS &&
         netFeeBpsFor('native-swap-uniswap') === CROSS_CHAIN_FEE_BPS &&
         netFeeBpsFor('native-nft-transfer') === 0 &&
-        // v4 honesty: no fee mechanism in the v4 builder → no accrual claim
-        netFeeBpsFor('native-swap-uniswap-v4') === 0 &&
-        !FEE_BEARING_BUILD_PATHS.has('native-swap-uniswap-v4') &&
+        // v4 fee wired (PAY_PORTION/SWEEP split, treasury-pinned in the
+        // guard) → the map claims the full base tier again
+        netFeeBpsFor('native-swap-uniswap-v4') === SWAP_FEE_BPS &&
+        FEE_BEARING_BUILD_PATHS.has('native-swap-uniswap-v4') &&
         FEE_BEARING_BUILD_PATHS.has('native-cross-chain') &&
         Math.abs(creatorEarningsUsd(1000, netFeeBpsFor('native-cross-chain')) - 0.5) < 1e-9 &&
         Math.abs(creatorEarningsUsd(1000, netFeeBpsFor('native-swap-uniswap')) - 1) < 1e-9,
@@ -4009,6 +4010,50 @@ async function main() {
     check('v4 guard: Permit2 grant to a non-router spender is refused', !guardUniswapV4Build([goodSteps[0], { ...goodSteps[1], tx: { ...goodSteps[1].tx, data: evilPermit } }, goodSteps[2]], exp).ok)
     const approveToStranger = { ...goodSteps[0], tx: { ...goodSteps[0].tx, to: '0x000000000000000000000000000000000000dEaD' } }
     check('v4 guard: approval step to an unknown contract is refused', !guardUniswapV4Build([approveToStranger, goodSteps[1], goodSteps[2]], exp).ok)
+
+    // ── The fee split: v4's mirror of v3's sweepTokenWithFee. The router's
+    // own PAY_PORTION/SWEEP commands split the output treasury/sender; the
+    // guard pins the treasury address, the canonical two-tier family, the
+    // sender sentinel, and the post-fee minimum — and refuses fee legs
+    // nobody priced as hard as a missing split.
+    const DEAD = '0x000000000000000000000000000000000000dEaD' as `0x${string}`
+    const SENDER_SENTINEL = '0x0000000000000000000000000000000000000001' as `0x${string}`
+    const expFee: V4GuardExpectations = { ...exp, feeBps: SWAP_FEE_BPS }
+    const feeSwap = (data: `0x${string}`): V4BuiltStep[] => [goodSteps[0], goodSteps[1], { ...goodSteps[2], tx: { ...goodSteps[2].tx, data } }]
+    const feeData = encodeV4SwapCalldata({ poolKey, zeroForOne: true, amountIn, minOut, deadline, feeBps: SWAP_FEE_BPS })
+    const linkData = encodeV4SwapCalldata({ poolKey, zeroForOne: true, amountIn, minOut, deadline, feeBps: LINK_SWAP_FEE_BPS })
+    check('v4 fee: fee-bearing build PASSES at the base tier', guardUniswapV4Build(feeSwap(feeData), expFee).ok)
+    check('v4 fee: link-tier build PASSES', guardUniswapV4Build(feeSwap(linkData), { ...exp, feeBps: LINK_SWAP_FEE_BPS }).ok)
+    check('v4 fee: fee legs NOBODY priced are refused (fee-free expectation)', !guardUniswapV4Build(feeSwap(feeData), exp).ok)
+    check('v4 fee: a MISSING split is refused when the build was priced with one', !guardUniswapV4Build(goodSteps, expFee).ok)
+    check('v4 fee: tier mismatch is refused (link calldata vs base expectation)', !guardUniswapV4Build(feeSwap(linkData), expFee).ok)
+    const oddTier = encodeV4SwapCalldata({ poolKey, zeroForOne: true, amountIn, minOut, deadline, feeBps: 37 })
+    check('v4 fee: a rate outside the canonical tiers is refused even when "expected"', !guardUniswapV4Build(feeSwap(oddTier), { ...exp, feeBps: 37 }).ok)
+
+    // Tampered splits — hand-patched calldata, so the guard faces an
+    // adversary rather than our own encoder.
+    const urAbi = [{ name: 'execute', type: 'function', stateMutability: 'payable', inputs: [{ name: 'commands', type: 'bytes' }, { name: 'inputs', type: 'bytes[]' }, { name: 'deadline', type: 'uint256' }], outputs: [] }] as const
+    const aau = [{ type: 'address' }, { type: 'address' }, { type: 'uint256' }] as const
+    const patchFee = (patch: { pay?: [`0x${string}`, `0x${string}`, bigint]; sweep?: [`0x${string}`, `0x${string}`, bigint]; take?: [`0x${string}`, `0x${string}`, bigint] }): `0x${string}` => {
+      const dec = decodeFunctionData({ abi: urAbi, data: feeData })
+      const [commands, inputs, dl] = dec.args as [`0x${string}`, readonly `0x${string}`[], bigint]
+      const next = [...inputs]
+      if (patch.pay) next[1] = encodeAbiParameters([...aau], patch.pay)
+      if (patch.sweep) next[2] = encodeAbiParameters([...aau], patch.sweep)
+      if (patch.take) {
+        const [actions, params] = decodeAbiParameters([{ type: 'bytes' }, { type: 'bytes[]' }], inputs[0]) as [`0x${string}`, readonly `0x${string}`[]]
+        const nextParams = [...params]
+        nextParams[2] = encodeAbiParameters([...aau], patch.take)
+        next[0] = encodeAbiParameters([{ type: 'bytes' }, { type: 'bytes[]' }], [actions, nextParams])
+      }
+      return encodeFunctionData({ abi: urAbi, functionName: 'execute', args: [commands, next, dl] })
+    }
+    const sweepMinAfterFee = minOut - swapFeeAtoms(minOut, SWAP_FEE_BPS)
+    check('v4 fee: PAY_PORTION to a NON-treasury recipient is refused', !guardUniswapV4Build(feeSwap(patchFee({ pay: [AAPL, DEAD, BigInt(SWAP_FEE_BPS)] })), expFee).ok)
+    check('v4 fee: PAY_PORTION bips drift is refused', !guardUniswapV4Build(feeSwap(patchFee({ pay: [AAPL, TREASURY_ADDRESS, BigInt(9_999)] })), expFee).ok)
+    check('v4 fee: SWEEP away from the sender sentinel is refused', !guardUniswapV4Build(feeSwap(patchFee({ sweep: [AAPL, DEAD, sweepMinAfterFee] })), expFee).ok)
+    check('v4 fee: a weakened SWEEP minimum is refused', !guardUniswapV4Build(feeSwap(patchFee({ sweep: [AAPL, SENDER_SENTINEL, BigInt(0)] })), expFee).ok)
+    check('v4 fee: TAKE diverted off the router sentinel is refused', !guardUniswapV4Build(feeSwap(patchFee({ take: [AAPL, DEAD, BigInt(0)] })), expFee).ok)
   }
 
   // ── LiFi settlement venue: fee math + the pinning guard ───────────────────
