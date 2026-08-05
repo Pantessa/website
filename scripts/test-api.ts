@@ -81,6 +81,7 @@ import { sanitizeWorkingContext } from '../lib/working-context'
 import { parseRobinhoodFunding, parseSameChainSwapSegment, JOB_SEGMENT_PARSERS } from '../lib/jobs'
 import { parseMultiSendSegments, parseTransferSegment } from '../lib/transfer-exec'
 import { buildFundsDetail, classifyTurn, FAILURE_PROBE_TOKENS, moneyShaped } from '../lib/ask-failure'
+import { guardSyncDrift } from './guard-sync-check'
 import { canonicalChainWord, normalizeChainWords } from '../lib/chain-lexicon'
 import { decideFundingTurn, detectBalanceShortfall, fundingPlanUsd, planFundingChips, planStrandedRescue, promisableCapacityUsd, rankFundingSources, shortRefusalCopy, softenClaimedFailureBlock, type FundingNeed, type FundingSource } from '../lib/funding-plan'
 import { compileDcaBuy, dcaRunChip, parseDcaCreate, parseDcaManage, parseDcaRun, periodKeyFor } from '../lib/dca'
@@ -309,6 +310,11 @@ async function main() {
 
   // ── Grants ────────────────────────────────────────────────────────────────
   console.log('— grants')
+  // The @yeetful/guard extraction (guard-sdk/) carries FULL COPIES of the
+  // pure guard modules; this is the drift tripwire — the open-core package
+  // must stay the same code that guards production, or the extraction is a
+  // marketing lie. Its own unit suite runs via `npm run guard:test`.
+  check('guard-sdk: package copies in sync with lib/ (no drift)', guardSyncDrift().length === 0, guardSyncDrift().join(' | '))
   const badCaps = await fetch(`${BASE}/api/grants`, {
     method: 'POST',
     headers: CJ,
