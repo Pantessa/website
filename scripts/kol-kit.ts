@@ -5,7 +5,7 @@
  * with their byline), the OG preview, and a filled DM ready to paste.
  *
  *   npx tsx scripts/kol-kit.ts --handle cryptojoe --ask "Long $50 of ETH on Hyperliquid, then protect my ETH long with a 5% stop"
- *   flags: --base https://www.yeetful.com   (default prod)
+ *   flags: --base https://www.pantessa.com   (default prod)
  *          --dry                            (print without minting)
  *
  * Mints as the .env.local burner (OWNER_WALLETS admin → uncapped, house
@@ -22,7 +22,7 @@ const arg = (name: string, dflt: string): string => {
   return i > -1 && process.argv[i + 1] ? process.argv[i + 1] : dflt
 }
 const DRY = process.argv.includes('--dry')
-const BASE = arg('base', 'https://www.yeetful.com')
+const BASE = arg('base', 'https://www.pantessa.com')
 const HANDLE = arg('handle', '').replace(/^@/, '')
 const ASK = arg('ask', '')
 

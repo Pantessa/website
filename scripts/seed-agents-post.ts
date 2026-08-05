@@ -10,7 +10,7 @@
  * script. When the owner is ready — ideally after `yeetful` 0.4 is on npm,
  * since the post presents 0.4 as available — publishing is one command:
  *
- *   curl -X PATCH https://www.yeetful.com/api/blog/give-your-agent-an-allowance \
+ *   curl -X PATCH https://www.pantessa.com/api/blog/give-your-agent-an-allowance \
  *     -H 'authorization: Bearer yf_…' -H 'content-type: application/json' \
  *     -d '{"published": true}'
  *

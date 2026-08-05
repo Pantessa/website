@@ -9,7 +9,7 @@ export const PAYER_CLAUDE_PROMPT = `Add Pantessa spend-controlled x402 payments 
 
 Pantessa gives an agent an "expense account": an allowlist of hosts plus
 per-call/per-day USDC budgets, enforced locally BEFORE any payment is
-signed, with a receipt for every decision. Docs: https://yeetful.com/docs
+signed, with a receipt for every decision. Docs: https://www.pantessa.com/docs
 
 Do the following, asking me to confirm anything ambiguous:
 
@@ -35,15 +35,15 @@ Do the following, asking me to confirm anything ambiguous:
    export const pay = yeetful({
      wallet,
      grant: {
-       id: process.env.YEETFUL_GRANT_ID,
+       id: process.env.PANTESSA_GRANT_ID,
        allow: [], // TODO: add the exact hostnames this agent may pay
        perCallUsd: 0.05,
        perDayUsd: 2,
      },
-     apiKey: process.env.YEETFUL_API_KEY,
+     apiKey: process.env.PANTESSA_API_KEY,
      // www origin on purpose: fetch drops auth headers on cross-origin
      // redirects, and the apex currently redirects to www.
-     ledgerUrl: 'https://www.yeetful.com',
+     ledgerUrl: 'https://www.pantessa.com',
      onEvent: (m) => console.log('[yeetful]', m),
    })
 
@@ -52,18 +52,18 @@ Do the following, asking me to confirm anything ambiguous:
    short-lived scripts exit.
 
 3. Env setup: add PRIVATE_KEY (or wire the existing CDP signer),
-   YEETFUL_API_KEY, and YEETFUL_GRANT_ID to .env; make sure .env is
+   PANTESSA_API_KEY, and PANTESSA_GRANT_ID to .env; make sure .env is
    gitignored; add the three keys to .env.example with placeholder values.
 
 4. Now walk me through the two Pantessa dashboard steps INTERACTIVELY —
    one at a time, waiting for me to confirm each before continuing:
-   a. Tell me to open https://yeetful.com/dashboard/keys, connect my
+   a. Tell me to open https://www.pantessa.com/dashboard/keys, connect my
       wallet, sign in, and mint an API key. Remind me the yf_ secret is
       shown only once. Wait for me to paste nothing — I'll put it in .env
       myself — then continue when I say done.
-   b. Tell me to copy YEETFUL_GRANT_ID from the "Your expense account"
+   b. Tell me to copy PANTESSA_GRANT_ID from the "Your expense account"
       chip on that same page into .env, and to flip ON the agents I trust
-      at https://yeetful.com/dashboard/approvals. Continue when I say done.
+      at https://www.pantessa.com/dashboard/approvals. Continue when I say done.
 
 5. Verify without spending: run the agent against one free (non-402)
    allowlisted endpoint, confirm a $0 "settled" receipt logs and a ledger
@@ -81,7 +81,7 @@ Goal: after each PAID request settles, report it to Pantessa so my earnings show
 up on my dashboard. It must NEVER slow down, block, or break the response.
 
 1) INSTALL THE SDK
-   - npm i yeetful   (or the project's package manager)
+   - npm i pantessa   (or the project's package manager)
    - import { reportUsage } from 'yeetful/server'
    reportUsage is fire-and-forget by design: it never throws, has a built-in
    timeout, and resolves false on any failure — so it can't slow or break the
@@ -97,8 +97,8 @@ up on my dashboard. It must NEVER slow down, block, or break the response.
 
 3) THE CALL
    reportUsage({
-     apiKey: process.env.YEETFUL_API_KEY,    // required
-     mcp: process.env.YEETFUL_MCP_SLUG,      // required — my server's slug on yeetful.com
+     apiKey: process.env.PANTESSA_API_KEY,    // required
+     mcp: process.env.PANTESSA_MCP_SLUG,      // required — my server's slug on yeetful.com
      amountUsd,   // the call's price in US dollars as a NUMBER, e.g. 0.005
                   //   (your configured price — NOT on-chain atomic/USDC base units)
      payer,       // the paying agent's wallet address, if the settlement exposes it
@@ -108,14 +108,14 @@ up on my dashboard. It must NEVER slow down, block, or break the response.
      network: 'base',   // the chain you settled on (human name, not a CAIP-2 id)
      txHash,      // the settlement tx hash, if available
    })
-   - Only call it when YEETFUL_API_KEY and YEETFUL_MCP_SLUG are both set; if either
+   - Only call it when PANTESSA_API_KEY and PANTESSA_MCP_SLUG are both set; if either
      is missing, skip the report so the server still runs un-tracked.
 
 4) CONFIG (read from env; put in .env, never commit)
-   - YEETFUL_API_KEY  — mint at https://www.yeetful.com/dashboard/keys (the yf_…
+   - PANTESSA_API_KEY  — mint at https://www.pantessa.com/dashboard/keys (the yf_…
                         secret is shown once)
-   - YEETFUL_MCP_SLUG — copy from your dashboard's "My MCP servers", or the last
-                        path segment of https://www.yeetful.com/servers/<slug>
+   - PANTESSA_MCP_SLUG — copy from your dashboard's "My MCP servers", or the last
+                        path segment of https://www.pantessa.com/servers/<slug>
 
 FINISH BY: documenting both vars in .env.example, then running the project's
 typecheck/build (and tests, if present) to confirm nothing broke.`

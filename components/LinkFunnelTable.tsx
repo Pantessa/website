@@ -8,6 +8,7 @@ import { useState } from 'react'
 import { Check, Copy, Link2 } from 'lucide-react'
 import { formatEarnedUsd } from '@/lib/fees'
 import type { LinkRow } from '@/lib/intent-links-ui'
+import { absoluteUrl } from '@/lib/site-url'
 
 export function LinkFunnelTable({ links, onChanged }: { links: LinkRow[]; onChanged?: () => void }) {
   const [copied, setCopied] = useState<string | null>(null)
@@ -100,7 +101,7 @@ export function LinkFunnelTable({ links, onChanged }: { links: LinkRow[]; onChan
                 {/* never offer sharing a revoked link — it 404s */}
                 {!l.revoked && (
                   <a
-                    href={`https://twitter.com/intent/tweet?text=${encodeURIComponent(`“${l.ask}” — tap it, connect your wallet, done.`)}&url=${encodeURIComponent(`https://yeetful.com/i/${l.slug}`)}`}
+                    href={`https://twitter.com/intent/tweet?text=${encodeURIComponent(`“${l.ask}” — tap it, connect your wallet, done.`)}&url=${encodeURIComponent(absoluteUrl(`/i/${l.slug}`))}`}
                     target="_blank"
                     rel="noopener noreferrer"
                     title="Tweet this link — the card wears your brand"

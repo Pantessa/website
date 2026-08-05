@@ -3,7 +3,7 @@ import prisma from '@/lib/db'
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
-const SITE = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://yeetful.com'
+import { SITE_URL as SITE } from '@/lib/site-url'
 
 function esc(s: string): string {
   return s

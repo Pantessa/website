@@ -2,7 +2,7 @@ import type { MetadataRoute } from 'next'
 import prisma from '@/lib/db'
 import { readyPages } from '@/lib/docs'
 
-const SITE = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://yeetful.com'
+import { SITE_URL as SITE } from '@/lib/site-url'
 
 // Sitemap: static surfaces + the callable service detail pages + published
 // posts (lastModified from updatedAt so crawlers re-fetch edited content).

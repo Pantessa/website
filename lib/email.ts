@@ -10,7 +10,7 @@
 const RESEND_API_KEY = process.env.RESEND_API_KEY
 const FROM = process.env.EMAIL_FROM ?? 'Pantessa <onboarding@yeetful.com>'
 const REPLY_TO = process.env.EMAIL_REPLY_TO ?? 'nate@yeetful.com'
-const SITE = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://yeetful.com'
+import { SITE_URL as SITE } from './site-url'
 
 export function emailEnabled(): boolean {
   return !!RESEND_API_KEY

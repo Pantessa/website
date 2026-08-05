@@ -30,7 +30,7 @@ export default function EmbedDocsPage() {
       <div className="docs__prose">
         <h2>The iframe URL</h2>
         <pre>
-          <code>{`https://www.yeetful.com/embed
+          <code>{`https://www.pantessa.com/embed
   ?mcps=cow-free,snapshot-free     # comma-separated directory slugs (max 4)
   &key=yfe_…                       # your PUBLIC embed key (dashboard → Keys)
   &address=0xYourUsersWallet       # optional wallet-address context
@@ -90,7 +90,7 @@ export default function EmbedDocsPage() {
 
         <h2>Wallet bridge (contract v1.1)</h2>
         <p>
-          With <code>yeetful/embed</code> ≥ 0.9.0 the SDK can relay your page&apos;s EIP-1193
+          With <code>pantessa/embed</code> the SDK can relay your page&apos;s EIP-1193
           provider into the iframe, so the embedded chat is <em>really</em>{' '}wallet-connected —
           swap orders, transactions, and paid-call payments all sign through the user&apos;s own
           wallet, <strong>prompting on your page</strong>, never inside the frame. JSON-RPC rides
@@ -125,13 +125,13 @@ export default function EmbedDocsPage() {
 
         <h2>Or use the SDK</h2>
         <p>
-          The <code>yeetful</code> npm package ships an embed helper that builds the iframe,
+          The <code>pantessa</code> npm package ships an embed helper that builds the iframe,
           wires the origin checks, and keeps the address context in sync:
         </p>
         <pre>
-          <code>{`import { mountYeetfulChat } from 'yeetful/embed'
+          <code>{`import { mountPantessaChat } from 'pantessa/embed'
 
-mountYeetfulChat({
+mountPantessaChat({
   container: document.getElementById('chat')!,
   key: 'yfe_…',              // your public embed key (>= 0.10; optional)
   mcps: ['cow-free', 'snapshot-free'],
@@ -173,7 +173,7 @@ mountYeetfulChat({
           MCP set active and an ask <strong>prefilled but never auto-sent</strong>:
         </p>
         <pre>
-          <code>{`https://www.yeetful.com/chat
+          <code>{`https://www.pantessa.com/chat
   ?mcps=robinhood-free                       # your MCP set, same slugs as the embed
   &prompt=Buy%20%242%20of%20AAPL             # prefilled — the visitor presses send`}</code>
         </pre>

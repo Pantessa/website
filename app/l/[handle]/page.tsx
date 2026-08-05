@@ -6,6 +6,7 @@ import { getSessionAddress } from '@/lib/auth'
 import { brandCtaStyle, brandThemeStyle } from '@/lib/brand-theme'
 import Footer from '@/components/Footer'
 import { YeetfulMark } from '@/components/Logo'
+import { absoluteUrl } from '@/lib/site-url'
 
 // /l/<handle> — a creator's storefront: their active intent links as one
 // public page (the "linktree of money"). Pure read surface over
@@ -100,7 +101,7 @@ export default async function StorefrontPage({ params }: Params) {
   // color runs edge to edge without touching layout.
   const themeStyle = brandThemeStyle(brand, { fullBleed: true })
 
-  const pageUrl = `https://yeetful.com/l/${store.handle}`
+  const pageUrl = absoluteUrl(`/l/${store.handle}`)
   const tweetHref = `https://twitter.com/intent/tweet?text=${encodeURIComponent(`Links that move money — @${store.handle}`)}&url=${encodeURIComponent(pageUrl)}`
 
   return (

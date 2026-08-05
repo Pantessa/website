@@ -11,7 +11,7 @@
  *
  *   YF_API_KEY=yf_…  npx tsx scripts/x402-payer-demo.ts
  *   (or .env.local PRIVATE_KEY → SIWE mints a demo key for you)
- *   flags: --base https://www.yeetful.com   --ask "…"   --job "…"
+ *   flags: --base https://www.pantessa.com   --ask "…"   --job "…"
  */
 import fs from 'node:fs'
 import { privateKeyToAccount } from 'viem/accounts'
@@ -21,7 +21,7 @@ const arg = (name: string, dflt: string): string => {
   const i = process.argv.indexOf(`--${name}`)
   return i > -1 && process.argv[i + 1] ? process.argv[i + 1] : dflt
 }
-const BASE = arg('base', 'https://www.yeetful.com')
+const BASE = arg('base', 'https://www.pantessa.com')
 const ASK = arg('ask', 'What are the top crypto news headlines right now?')
 const JOB = arg(
   'job',

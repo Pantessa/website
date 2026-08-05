@@ -211,6 +211,7 @@ import {
   type LidoBuiltStake,
 } from '../lib/lido-stake'
 import { classifyLegacyTurn, INTERNAL_ORIGIN_SQL, isInternalOrigin, STANDING_TURN_SQL } from '../lib/value-origin'
+import { SITE_URL } from '../lib/site-url'
 import { PLAN_BY_ID, planCreditsFor, ALLOWANCE_CUTOFF } from '../lib/plans'
 import { FREE_DAILY_TURN_CAP, HOUSE_DAILY_TURN_CAP } from '../lib/billing'
 
@@ -1338,7 +1339,8 @@ async function main() {
   )
   check(
     'value-origin: real traffic never classifies internal (prod, third-party hosts, foreign vercel.app)',
-    !isInternalOrigin('https://www.yeetful.com') &&
+    !isInternalOrigin('https://www.pantessa.com') &&
+      !isInternalOrigin('https://www.yeetful.com') &&
       !isInternalOrigin('https://yeetful.com') &&
       !isInternalOrigin('https://app.uniswap.org') &&
       !isInternalOrigin('https://someones-dapp.vercel.app') &&
@@ -1484,6 +1486,32 @@ async function main() {
     'router: canonical → site root',
     /<link[^>]+rel="canonical"[^>]+href="https?:\/\/[^"/]+\/?"/.test(homeHtml),
   )
+  // ── The public origin is ONE value (lib/site-url) ────────────────────────
+  // It used to be a `?? '<literal>'` copied into nine files, and the copies
+  // had drifted apex-vs-www. With the env var unset the apex copies won, so
+  // canonical / og:url / sitemap / robots / RSS all advertised a host that
+  // only redirects — and anything sending an auth header to it lost the
+  // header, because fetch drops Authorization across a cross-origin redirect.
+  // These checks are the pin: they fail if a literal creeps back, or if
+  // SITE_URL stops being a canonical origin.
+  check(
+    'site-url: SITE_URL is a canonical origin (https, no trailing slash, not a redirecting host)',
+    /^https:\/\/[a-z0-9.-]+$/.test(SITE_URL) &&
+      !SITE_URL.endsWith('/') &&
+      !/\byeetful\.com$/.test(new URL(SITE_URL).hostname),
+  )
+  {
+    const siteHost = new URL(SITE_URL).hostname
+    const canonicalHref = /<link[^>]+rel="canonical"[^>]+href="([^"]+)"/.exec(homeHtml)?.[1] ?? ''
+    const ogUrl = /<meta[^>]+property="og:url"[^>]+content="([^"]+)"/.exec(homeHtml)?.[1] ?? ''
+    // Local runs serve from localhost, so only assert agreement when the
+    // harness is pointed at a real deployment.
+    const deployed = !/^https?:\/\/(localhost|127\.0\.0\.1)/.test(BASE)
+    check(
+      'site-url: canonical + og:url agree with SITE_URL on a deployed host',
+      !deployed || (new URL(canonicalHref).hostname === siteHost && new URL(ogUrl).hostname === siteHost),
+    )
+  }
   check('router: og:image present (social card)', /<meta[^>]+property="og:image"/.test(homeHtml))
   // The links-first repositioning (2026-07-22, HANDOFF-links-first.md) leads
   // with the intent claim: "You have an intent. We do the rest." Retitle and
@@ -1494,6 +1522,11 @@ async function main() {
   )
   const sitemapXml = await (await fetch(`${BASE}/sitemap.xml`)).text()
   check('sitemap: site root is listed', /<loc>https?:\/\/[^</]+\/?<\/loc>/.test(sitemapXml))
+  check(
+    'sitemap + robots never advertise the pre-rebrand origin',
+    !/yeetful\.com/.test(sitemapXml) &&
+      !/yeetful\.com/.test(await (await fetch(`${BASE}/robots.txt`)).text()),
+  )
 
   // ── /sign — the agent → human handoff seam ────────────────────────────────
   // External agents mint /sign?ask=<sentence> links; the page must render the

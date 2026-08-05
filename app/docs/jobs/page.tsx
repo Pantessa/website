@@ -40,7 +40,7 @@ export default function JobsDocsPage() {
           nothing, signs nothing, and costs nothing. It&rsquo;s the test mode <em>and</em> the
           docs playground:
         </p>
-        <pre>{`curl -s https://www.yeetful.com/api/jobs \\
+        <pre>{`curl -s https://www.pantessa.com/api/jobs \\
   -H "authorization: Bearer $YF_API_KEY" \\
   -H "content-type: application/json" \\
   -d '{

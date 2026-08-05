@@ -12,6 +12,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { Check, Copy, Link2, X } from 'lucide-react'
 import Link from 'next/link'
 import { MintLinkForm } from '@/components/MintLinkForm'
+import { absoluteUrl } from '@/lib/site-url'
 
 interface Minted {
   slug: string
@@ -114,7 +115,7 @@ export default function MintLinkModal({
                   </div>
                   <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
                     <a
-                      href={`https://twitter.com/intent/tweet?text=${encodeURIComponent(`“${minted.ask}” — tap it, connect your wallet, done.`)}&url=${encodeURIComponent(`https://yeetful.com${minted.url}`)}`}
+                      href={`https://twitter.com/intent/tweet?text=${encodeURIComponent(`“${minted.ask}” — tap it, connect your wallet, done.`)}&url=${encodeURIComponent(absoluteUrl(minted.url))}`}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="mono text-[12px] text-[color:var(--muted)] hover:text-[color:var(--fg)] underline"

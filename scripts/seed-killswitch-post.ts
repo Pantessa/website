@@ -10,7 +10,7 @@
  * presents 0.5 as available), so publishing is one command whenever the owner
  * is ready:
  *
- *   curl -X PATCH https://www.yeetful.com/api/blog/freeze-your-agents-spend \
+ *   curl -X PATCH https://www.pantessa.com/api/blog/freeze-your-agents-spend \
  *     -H 'authorization: Bearer yf_…' -H 'content-type: application/json' \
  *     -d '{"published": true}'
  *

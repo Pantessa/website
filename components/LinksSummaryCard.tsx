@@ -13,6 +13,7 @@ import { useEffect, useState } from 'react'
 import { Check, Copy, Link2, Plus } from 'lucide-react'
 import { Card } from '@/lib/dashboard-ui'
 import { formatEarnedUsd } from '@/lib/fees'
+import { absoluteUrl } from '@/lib/site-url'
 
 interface LinksApi {
   links: {
@@ -41,7 +42,7 @@ interface HandleApi {
 
 /** Per-link share intent — the ask IS the tweet (dynamic OG wears the brand). */
 const tweetLinkHref = (ask: string, url: string) =>
-  `https://twitter.com/intent/tweet?text=${encodeURIComponent(`“${ask}” — tap it, connect your wallet, done.`)}&url=${encodeURIComponent(`https://yeetful.com${url}`)}`
+  `https://twitter.com/intent/tweet?text=${encodeURIComponent(`“${ask}” — tap it, connect your wallet, done.`)}&url=${encodeURIComponent(absoluteUrl(url))}`
 
 const usd = (n: number) => (n >= 1000 ? `$${Math.round(n).toLocaleString('en-US')}` : `$${n.toFixed(2)}`)
 
@@ -158,7 +159,7 @@ export default function LinksSummaryCard() {
                 aria-label="Copy your page URL"
                 title="Copy your page URL"
                 onClick={() => {
-                  void navigator.clipboard?.writeText(`https://yeetful.com/l/${me.handle}`).then(() => {
+                  void navigator.clipboard?.writeText(absoluteUrl(`/l/${me.handle}`)).then(() => {
                     setCopiedPage(true)
                     setTimeout(() => setCopiedPage(false), 1500)
                   })
@@ -168,7 +169,7 @@ export default function LinksSummaryCard() {
                 {copiedPage ? <Check className="w-3.5 h-3.5 text-[color:var(--accent)]" /> : <Copy className="w-3.5 h-3.5" />}
               </button>
               <a
-                href={`https://twitter.com/intent/tweet?text=${encodeURIComponent(`Links that move money — @${me.handle}`)}&url=${encodeURIComponent(`https://yeetful.com/l/${me.handle}`)}`}
+                href={`https://twitter.com/intent/tweet?text=${encodeURIComponent(`Links that move money — @${me.handle}`)}&url=${encodeURIComponent(absoluteUrl(`/l/${me.handle}`))}`}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="mono text-[11px] px-2 py-1 rounded-md border border-[var(--line)] text-[color:var(--muted)] hover:text-white hover:border-[var(--line-2)] transition-colors"

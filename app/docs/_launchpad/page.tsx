@@ -13,8 +13,8 @@ earnings on my Pantessa dashboard:
 1. Run: npm install yeetful
 2. Wrap the x402-paid handler with yeetful's server helper so every settled
    call is reported to the hosted ledger.
-3. Read YEETFUL_API_KEY and YEETFUL_GRANT_ID from the environment and pass them
-   as { apiKey, ledgerUrl: 'https://www.yeetful.com' } so receipts sync.
+3. Read PANTESSA_API_KEY and PANTESSA_GRANT_ID from the environment and pass them
+   as { apiKey, ledgerUrl: 'https://www.pantessa.com' } so receipts sync.
 4. Print a one-line confirmation showing the server is reporting earnings.
 
 I'll mint the yf_ API key at yeetful.com/dashboard/keys and claim this MCP at

@@ -64,7 +64,7 @@ async function main() {
       count: inc.count,
       lastError: inc.lastError,
       exampleTurnId: inc.exampleTurnId,
-      incidentUrl: `https://www.yeetful.com/incidents/${inc.id}`,
+      incidentUrl: `https://www.pantessa.com/incidents/${inc.id}`,
       branch,
     }
     writeFileSync(join(process.cwd(), 'incident.json'), JSON.stringify(payload, null, 2))

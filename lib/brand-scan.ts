@@ -151,7 +151,7 @@ async function boundedFetch(url: string): Promise<Response> {
     return await fetch(url, {
       signal: ctl.signal,
       redirect: 'follow',
-      headers: { 'user-agent': 'YeetfulBrandScan/1 (+https://yeetful.com)', accept: '*/*' },
+      headers: { 'user-agent': 'PantessaBrandScan/1 (+https://www.pantessa.com)', accept: '*/*' },
     })
   } finally {
     clearTimeout(timer)
