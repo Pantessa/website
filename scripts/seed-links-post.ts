@@ -8,7 +8,7 @@
  * Publishing stays owner-gated: the API route requires a wallet on
  * ADMIN_WALLETS, so when Nate is ready it's one command:
  *
- *   curl -X PATCH https://www.yeetful.com/api/blog/onboarding-is-a-link-problem \
+ *   curl -X PATCH https://www.pantessa.com/api/blog/onboarding-is-a-link-problem \
  *     -H 'authorization: Bearer yf_…' -H 'content-type: application/json' \
  *     -d '{"published": true}'
  *

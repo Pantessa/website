@@ -3,7 +3,11 @@
 // every surface picks it up. `ready: false` entries are hidden everywhere
 // until their iteration ships them (no dead links mid-run).
 
-export const SITE = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://yeetful.com'
+import { SITE_URL } from './site-url'
+
+/** Re-exported: docs pages have imported `SITE` from here since before
+ *  lib/site-url existed. */
+export const SITE = SITE_URL
 
 export interface DocsPage {
   slug: string // '' = the /docs landing

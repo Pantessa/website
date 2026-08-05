@@ -213,7 +213,7 @@ export default function DocsIndexPage() {
             <Link href="/docs/jobs">Jobs page</Link> shows the real response.
           </p>
         </div>
-        <pre className="splash__code mono">{`curl -s https://www.yeetful.com/api/jobs \\
+        <pre className="splash__code mono">{`curl -s https://www.pantessa.com/api/jobs \\
   -H "authorization: Bearer $YF_API_KEY" \\
   -H "content-type: application/json" \\
   -d '{"ask": "swap 5 usdc from base to arbitrum, then deposit 5 usdc to hyperliquid", "dryRun": true}'`}</pre>

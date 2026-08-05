@@ -11,7 +11,7 @@ import { Analytics } from "@vercel/analytics/next"
 
 
 // Matches the SITE convention used by robots.ts / sitemap.ts / blog.
-const SITE = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://yeetful.com'
+import { SITE_URL as SITE } from '@/lib/site-url'
 
 const TITLE = 'Pantessa — Every dapp. One chat.'
 // Meta description (Google truncates ~150–160 chars).

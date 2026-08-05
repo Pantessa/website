@@ -5,6 +5,7 @@
 // tell the same story.
 
 import prisma from '@/lib/db'
+import { SITE_URL } from '@/lib/site-url'
 import type { McpServer } from '@/lib/store'
 import { receiptsOf } from '@/lib/responding-mcp'
 import { viaIdOf } from '@/lib/share-receipts'
@@ -149,7 +150,7 @@ export function shareTweetHrefOf(slug: string, messages: Array<{ role: string; c
   const text = ask
     ? `Lazy transactions are here!\n\n"${ask}" on @yeetful_ai`
     : 'Lazy transactions are here! Watch a real guarded run on @yeetful_ai'
-  const site = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://www.yeetful.com'
+  const site = SITE_URL
   // The shared URL carries the sharer's short id so arrivals attribute back
   // to the share (the id is a one-way hash — never the wallet).
   const params = new URLSearchParams({ text, url: `${site}/p/${slug}${via ? `?via=${via}` : ''}` })

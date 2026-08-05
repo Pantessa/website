@@ -15,9 +15,9 @@ function mcpsLiteral(mcps: string[]): string {
 }
 
 export function embedSnippet(key: string | null, mcps: string[] = DEFAULT_EMBED_MCPS): string {
-  return `import { mountYeetfulChat } from 'yeetful/embed'
+  return `import { mountPantessaChat } from 'pantessa/embed'
 
-mountYeetfulChat({
+mountPantessaChat({
   mode: 'bubble',
 ${key ? `  key: '${key}',\n` : ''}  mcps: ${mcpsLiteral(mcps)},
   wallet: 'auto', // the host page's wallet signs
@@ -32,28 +32,28 @@ export function embedClaudePrompt(key: string | null, mcps: string[] = DEFAULT_E
   const list = mcpsLiteral(mcps)
   return `Install the Pantessa embeddable chat (an agent that composes MCPs — swaps, DAO votes, live data — and signs with the user's own wallet) into this app.
 
-1. Install the SDK: \`npm i yeetful\` (needs yeetful >= 0.10).
+1. Install the SDK: \`npm i pantessa\` (needs pantessa >= 1.0).
 2. Mount it once wherever the app initializes client-side:
 
-   import { mountYeetfulChat } from 'yeetful/embed'
+   import { mountPantessaChat } from 'pantessa/embed'
 
-   mountYeetfulChat({
+   mountPantessaChat({
      mode: 'bubble',            // or 'inline' with { container }
-${key ? `     key: '${key}',  // public embed key — attributes usage to our account\n` : ''}     mcps: ${list},  // swap for slugs from https://www.yeetful.com/servers
+${key ? `     key: '${key}',  // public embed key — attributes usage to our account\n` : ''}     mcps: ${list},  // swap for slugs from https://www.pantessa.com/servers
      wallet: 'auto',            // bridges the page's connected wallet; signatures pop in the user's own wallet
    })
 
    No bundler? Use a module script instead:
    <script type="module">
-     import { mountYeetfulChat } from 'https://esm.sh/yeetful@^0.10/embed'
-     mountYeetfulChat({ mode: 'bubble', ${key ? `key: '${key}', ` : ''}mcps: ${list}, wallet: 'auto' })
+     import { mountPantessaChat } from 'https://esm.sh/pantessa@^1/embed'
+     mountPantessaChat({ mode: 'bubble', ${key ? `key: '${key}', ` : ''}mcps: ${list}, wallet: 'auto' })
    </script>
 
-3. If the app ships a Content-Security-Policy, add https://www.yeetful.com to frame-src (the chat runs in an iframe on that origin).
+3. If the app ships a Content-Security-Policy, add https://www.pantessa.com to frame-src (the chat runs in an iframe on that origin).
 ${
   key
     ? '4. Do not move the key to an env secret — it is a publishable identifier, safe in page source.'
-    : '4. Optional: mint a public embed key at https://www.yeetful.com/dashboard (Embed Pantessa card) and add key: \'yfe_…\' to the mount — it attributes usage to your account and unlocks embed analytics.'
+    : '4. Optional: mint a public embed key at https://www.pantessa.com/dashboard (Embed Pantessa card) and add key: \'yfe_…\' to the mount — it attributes usage to your account and unlocks embed analytics.'
 }
-5. Verify: run the app, open the chat bubble, and ask "what is WETH trading at?" — the answer should include a $0 receipt line. Docs: https://www.yeetful.com/docs/embed`
+5. Verify: run the app, open the chat bubble, and ask "what is WETH trading at?" — the answer should include a $0 receipt line. Docs: https://www.pantessa.com/docs/embed`
 }

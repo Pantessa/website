@@ -41,8 +41,8 @@ export default function EarnPage() {
         </p>
         <pre>
           <code>{`# .env — never commit this
-YEETFUL_API_KEY=yf_…
-YEETFUL_MCP_SLUG=your-server-slug   # dashboard › My MCP servers (copy), or the /servers/<slug> URL`}</code>
+PANTESSA_API_KEY=yf_…
+PANTESSA_MCP_SLUG=your-server-slug   # dashboard › My MCP servers (copy), or the /servers/<slug> URL`}</code>
         </pre>
 
         <h2>2. Report each paid call — non-blocking</h2>
@@ -59,14 +59,14 @@ YEETFUL_MCP_SLUG=your-server-slug   # dashboard › My MCP servers (copy), or th
           (on serverless, hand it to <code>waitUntil</code>).
         </p>
         <pre>
-          <code>{`npm i yeetful
+          <code>{`npm i pantessa
 
 import { reportUsage } from 'yeetful/server'
 
 // right after the x402 payment settles, in your handler:
 reportUsage({
-  apiKey: process.env.YEETFUL_API_KEY,
-  mcp: process.env.YEETFUL_MCP_SLUG,
+  apiKey: process.env.PANTESSA_API_KEY,
+  mcp: process.env.PANTESSA_MCP_SLUG,
   amountUsd: 0.005,   // dollars, NOT on-chain atomic/USDC units
   payer,              // the paying agent's wallet, if known
   tool: 'list_proposals',
@@ -81,13 +81,13 @@ reportUsage({
         <pre>
           <code>{`function reportEarning(fields) {
   // fire-and-forget: never throws, never blocks the response
-  fetch('https://www.yeetful.com/api/mcp/receipts', {
+  fetch('https://www.pantessa.com/api/mcp/receipts', {
     method: 'POST',
     headers: {
-      authorization: \`Bearer \${process.env.YEETFUL_API_KEY}\`,
+      authorization: \`Bearer \${process.env.PANTESSA_API_KEY}\`,
       'content-type': 'application/json',
     },
-    body: JSON.stringify({ mcp: process.env.YEETFUL_MCP_SLUG, ...fields }),
+    body: JSON.stringify({ mcp: process.env.PANTESSA_MCP_SLUG, ...fields }),
   }).catch(() => {}) // earnings telemetry — never affect the user
 }
 

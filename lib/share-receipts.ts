@@ -16,6 +16,7 @@ import { createHash } from 'node:crypto'
 import { chainById } from '@/lib/chains'
 import { cadenceLabel, type DcaCadence } from '@/lib/dca'
 import { signedTxsOf } from '@/components/SignedTxLines'
+import { SITE_URL } from './site-url'
 
 export interface ShareFact {
   label: string
@@ -229,7 +230,7 @@ export function txLinesOf(json: unknown): ShareTxLine[] {
 
 // ── Outbound links ───────────────────────────────────────────────────────────
 
-const site = () => process.env.NEXT_PUBLIC_SITE_URL ?? 'https://www.yeetful.com'
+const site = () => SITE_URL
 
 /** The public permalink, via param included — the link IS the tracer. */
 export function shareReceiptUrl(id: string, via: string): string {

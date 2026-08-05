@@ -7,7 +7,7 @@
  *
  *   npx tsx scripts/content-digest.ts                        # burner, 24h
  *   npx tsx scripts/content-digest.ts --wallet 0x… --hours 48
- *   flags: --base https://www.yeetful.com
+ *   flags: --base https://www.pantessa.com
  *
  * Reads Neon directly (read-only): signed turns by the wallet, guardian
  * fires, DCA runs, and existing /r share receipts (their links ride the
@@ -24,7 +24,7 @@ const arg = (name: string, dflt: string): string => {
 }
 
 async function main() {
-  const BASE = arg('base', 'https://www.yeetful.com')
+  const BASE = arg('base', 'https://www.pantessa.com')
   const HOURS = Number(arg('hours', '24'))
   const env = Object.fromEntries(
     fs.readFileSync('.env.local', 'utf8').split('\n').filter((l) => l.includes('=') && !l.startsWith('#')).map((l) => [l.slice(0, l.indexOf('=')), l.slice(l.indexOf('=') + 1)]),

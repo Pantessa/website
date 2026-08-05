@@ -9,7 +9,7 @@
  * Groq is listed-only and expected to fall back) via the `inferenceSlug` pin.
  *
  *   npm run test:live                 # hit local http://localhost:3000
- *   npm run test:live -- --base=https://www.yeetful.com
+ *   npm run test:live -- --base=https://www.pantessa.com
  *   npm run test:live -- --only=1     # run a single case (1-indexed)
  *   npm run test:live -- --delay=4000 # ms between turns (default 3000)
  *   npm run test:live -- --dry        # print the plan + balance, send NOTHING

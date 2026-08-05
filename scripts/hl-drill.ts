@@ -20,7 +20,7 @@
  *   npx tsx scripts/hl-drill.ts --live     # executes; each leg prints before it fires
  *   flags: --bridge-usd 25 --gas-usd 3 --position-usd 12 --stop-pct 0.1
  *          --skip-bridge (funds already on Arbitrum) --skip-deposit
- *          --base https://www.yeetful.com
+ *          --base https://www.pantessa.com
  */
 import fs from 'node:fs'
 import { createPublicClient, createWalletClient, encodeFunctionData, erc20Abi, formatEther, formatUnits, http, parseUnits } from 'viem'
@@ -48,7 +48,7 @@ const BRIDGE_USD = Number(arg('bridge-usd', '25'))
 const GAS_USD = Number(arg('gas-usd', '3'))
 const POSITION_USD = Number(arg('position-usd', '12'))
 const STOP_PCT = Number(arg('stop-pct', '0.1'))
-const PROD = arg('base', 'https://www.yeetful.com')
+const PROD = arg('base', 'https://www.pantessa.com')
 const MCP = 'https://near-intents.yeetful.com'
 
 const env = Object.fromEntries(

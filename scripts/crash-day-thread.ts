@@ -3,7 +3,7 @@
  * The crash-day thread generator (HANDOFF-yeetcall-gtm C4) — pre-written
  * red-day content, run BY THE OWNER when the market is down:
  *
- *   npx tsx scripts/crash-day-thread.ts 0xabc… 0xdef… [--base https://www.yeetful.com]
+ *   npx tsx scripts/crash-day-thread.ts 0xabc… 0xdef… [--base https://www.pantessa.com]
  *
  * For each PUBLIC wallet it runs the real briefing composer (read-only:
  * live HL positions + balances + guardian/spot-guard policy existence) and
@@ -21,7 +21,7 @@ config({ path: '.env.local' })
 async function main() {
   const args = process.argv.slice(2)
   const baseIdx = args.indexOf('--base')
-  const base = baseIdx > -1 ? args[baseIdx + 1] : 'https://www.yeetful.com'
+  const base = baseIdx > -1 ? args[baseIdx + 1] : 'https://www.pantessa.com'
   const wallets = args.filter((a, i) => /^0x[0-9a-fA-F]{40}$/.test(a) && i !== baseIdx + 1)
   if (wallets.length === 0) {
     console.error('usage: npx tsx scripts/crash-day-thread.ts <wallet…> [--base url]')

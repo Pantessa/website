@@ -9,6 +9,7 @@
 import { useEffect, useState } from 'react'
 import type { Brand } from '@/lib/intent-links-ui'
 import { sampleBrandColors } from '@/lib/brand-sample'
+import { absoluteUrl } from '@/lib/site-url'
 
 export function CreatorPagePanel({ className }: { className?: string }) {
   // The public page name (/l/<handle>) — opt-in storefront for these links.
@@ -194,7 +195,7 @@ export function CreatorPagePanel({ className }: { className?: string }) {
                 /l/{myHandle}
               </a>
               <a
-                href={`https://twitter.com/intent/tweet?text=${encodeURIComponent(`Links that move money — @${myHandle}`)}&url=${encodeURIComponent(`https://yeetful.com/l/${myHandle}`)}`}
+                href={`https://twitter.com/intent/tweet?text=${encodeURIComponent(`Links that move money — @${myHandle}`)}&url=${encodeURIComponent(absoluteUrl(`/l/${myHandle}`))}`}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="mono text-[12px] text-[color:var(--muted)] hover:text-[color:var(--fg)] underline"

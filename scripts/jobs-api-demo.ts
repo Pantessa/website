@@ -9,7 +9,7 @@
  *
  *   YF_API_KEY=yf_…      npx tsx scripts/jobs-api-demo.ts        # Bearer key (mint at /dashboard/keys)
  *   (or .env.local PRIVATE_KEY → SIWE, the wallet-native path)
- *   flags: --base https://www.yeetful.com   --ask "…"   --live (create for real)
+ *   flags: --base https://www.pantessa.com   --ask "…"   --live (create for real)
  */
 import fs from 'node:fs'
 import { privateKeyToAccount } from 'viem/accounts'
@@ -19,7 +19,7 @@ const arg = (name: string, dflt: string): string => {
   const i = process.argv.indexOf(`--${name}`)
   return i > -1 && process.argv[i + 1] ? process.argv[i + 1] : dflt
 }
-const BASE = arg('base', 'https://www.yeetful.com')
+const BASE = arg('base', 'https://www.pantessa.com')
 const ASK = arg(
   'ask',
   'deposit 12 usdc to hyperliquid, then long $12 of eth on hyperliquid, then protect my eth long with a 5% stop',

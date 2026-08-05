@@ -191,7 +191,7 @@ Do this:
 1. Group the dead-end asks: which are MISSING TOOLS on my MCP (an ask my API could answer but no tool exposes), which are missing PARAMS/schemas, which are docs questions my corpus doesn't cover, and which need an MCP I haven't added to my set.
 2. For missing tools/params: implement them on my MCP server. Every tool needs a machine-readable input schema and a one-line description a router can rank — run \`npm run mcp:lint\` from the Pantessa website repo against my MCP and fix everything it flags below an A.
 3. For docs gaps: add the missing pages to my docs corpus and rebuild it.
-4. For set gaps: tell me which Pantessa directory MCPs (https://www.yeetful.com/servers) to add to my embed's mcps=[...] list.
+4. For set gaps: tell me which Pantessa directory MCPs (https://www.pantessa.com/servers) to add to my embed's mcps=[...] list.
 5. Re-run mcp:lint and give me a before/after routability score.`
 }
 

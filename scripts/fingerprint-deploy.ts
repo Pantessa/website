@@ -7,7 +7,7 @@
  * TIER a link buys, the CALL framing a creator page wears, the downside line
  * a briefing names, the share cards that render.
  *
- *   BASE=https://www.yeetful.com npm run fingerprint:deploy
+ *   BASE=https://www.pantessa.com npm run fingerprint:deploy
  *   W_WALLET=0x…  a wallet with ≥$100 of Base ETH (the spot-guard floor)
  *   W4_WALLET=0x… a 4663 wallet holding USDG (else a whale is auto-picked)
  *   ASK="buy $5 of UNI on base"   sized to what the burner can fund
@@ -30,7 +30,7 @@ import { PrismaClient } from '@prisma/client'
 import { composeMcps } from '../lib/intent-links'
 import { SWAP_FEE_BPS, LINK_SWAP_FEE_BPS, NET_FEE_BPS_BY_BUILD_PATH, TREASURY_ADDRESS } from '../lib/fees'
 
-const BASE = process.env.BASE ?? 'https://www.yeetful.com'
+const BASE = process.env.BASE ?? 'https://www.pantessa.com'
 /** Sized to what the burner can fund — an ask that outruns the balance lands
  *  the funding plan, which is a correct answer but not a fee artifact. */
 const SWAP_ASK = process.env.ASK ?? 'buy $5 of UNI on base'

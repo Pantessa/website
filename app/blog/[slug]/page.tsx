@@ -33,7 +33,7 @@ const mdComponents: Components = {
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
-const SITE = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://yeetful.com'
+import { SITE_URL as SITE } from '@/lib/site-url'
 
 type Params = { params: Promise<{ slug: string }> }
 

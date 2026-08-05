@@ -9,6 +9,7 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import { Copy, Check, Cable } from 'lucide-react'
+import { SITE_URL } from '@/lib/site-url'
 
 export interface ConnectAgentCardProps {
   /** The owner's active expense-account grant id (null = no grant yet). */
@@ -40,7 +41,7 @@ const res = await pay('https://tripadvisor.x402.paysponge.com/api/v1/location/se
 export default function ConnectAgentCard({
   grantId,
   hasKeys,
-  ledgerUrl = 'https://yeetful.com',
+  ledgerUrl = SITE_URL,
 }: ConnectAgentCardProps) {
   const [copied, setCopied] = useState(false)
   const [idCopied, setIdCopied] = useState(false)
