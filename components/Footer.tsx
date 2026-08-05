@@ -90,7 +90,7 @@ export default function Footer() {
         <div className="footer__cols">
           <div className="footer__brand">
             <Link className="logo" href="/">
-              <YeetfulMark size={20} />
+              <YeetfulMark size={28} />
               <span className="logo__word">pantessa</span>
             </Link>
             <p className="footer__tag">
