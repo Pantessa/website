@@ -74,7 +74,7 @@ export const WELCOME_EMAIL = {
   html: `<div style="font-family:system-ui,sans-serif;max-width:480px">
     <h2>Welcome to Pantessa</h2>
     <p>You're on the list — expect occasional updates on agent expense accounts, new x402 services, and what we're shipping.</p>
-    <p><a href="${SITE}">yeetful.com</a></p>
+    <p><a href="${SITE}">pantessa.com</a></p>
   </div>`,
 }
 

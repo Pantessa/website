@@ -121,7 +121,7 @@ export default function PaidDoorsDocsPage() {
         <p>
           The paid door serves the same tools without the rate limit. It answers{' '}
           <code>402 Payment Required</code> with a price — <strong>$0.02 per call</strong> — and{' '}
-          <code>createPaymentClient</code> from the <code>yeetful</code> npm package handles the
+          <code>createPaymentClient</code> from the <code>pantessa</code> npm package handles the
           challenge: it signs a gasless EIP-3009 USDC authorization and retries. Your wallet
           needs a few cents of <Link href="/docs/funding">USDC on Base</Link>; no ETH, no key
           minting, no account.
@@ -130,7 +130,7 @@ export default function PaidDoorsDocsPage() {
           <code>{`import { createWalletClient, http } from 'viem'
 import { base } from 'viem/chains'
 import { privateKeyToAccount } from 'viem/accounts'
-import { createPaymentClient } from 'yeetful/client'
+import { createPaymentClient } from 'pantessa/client'
 
 const wallet = createWalletClient({
   account: privateKeyToAccount(process.env.PRIVATE_KEY as \`0x\${string}\`),
@@ -164,7 +164,7 @@ console.log(await res.text())`}</code>
           underneath, plus policy:
         </p>
         <pre>
-          <code>{`import { yeetful } from 'yeetful/agent'
+          <code>{`import { pantessa } from 'pantessa/agent'
 
 const pay = yeetful({
   wallet,

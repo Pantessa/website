@@ -241,7 +241,7 @@ export default async function Image({ params }: Params) {
           <span style={{ color: MUTED, letterSpacing: 3.5 }}>EVERY DAPP · ONE CHAT</span>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <span style={{ color: MUTED }}>Run it yourself</span>
-            <span style={{ color: ACCENT, fontWeight: 600 }}>yeetful.com/chat</span>
+            <span style={{ color: ACCENT, fontWeight: 600 }}>pantessa.com/chat</span>
           </div>
         </div>
       </div>

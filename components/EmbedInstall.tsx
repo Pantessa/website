@@ -58,7 +58,7 @@ export default function EmbedInstall({
             THE INSTALL — FIVE LINES, ANY SITE
           </span>
           <span className="mono text-[11px] text-[color:var(--muted-2)] whitespace-nowrap">
-            npm i yeetful
+            npm i pantessa
           </span>
         </div>
       )}

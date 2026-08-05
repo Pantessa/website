@@ -125,7 +125,7 @@ const STEPS = [
 ]
 
 const ELSEWHERE = [
-  { href: 'https://www.npmjs.com/package/yeetful', label: 'yeetful on npm', sub: 'the embed helper plus x402 client/server helpers — MIT, TypeScript', ext: true },
+  { href: 'https://www.npmjs.com/package/pantessa', label: 'yeetful on npm', sub: 'the embed helper plus x402 client/server helpers — MIT, TypeScript', ext: true },
   { href: 'https://github.com/Yeetful', label: 'Pantessa on GitHub', sub: 'the SDK, free MCPs, and the rest — open source', ext: true },
   { href: '/activity', label: 'Network activity', sub: 'every settled call on the network, anonymized and on-chain verifiable', ext: false },
 ]
@@ -244,13 +244,13 @@ export default function DocsIndexPage() {
         <div>
           <p className="splash__kicker mono">ONE PACKAGE</p>
           <p className="splash__npmlead">
-            Everything ships in the <code>yeetful</code> npm package — <code>yeetful/embed</code>{' '}
+            Everything ships in the <code>pantessa</code> npm package — <code>pantessa/embed</code>{' '}
             mounts the full chat on your site in five lines (see{' '}
             <Link href="/docs/embed">the embed docs</Link>), with agent-payment and MCP-earnings
             helpers included for the deep end. MIT, TypeScript.
           </p>
         </div>
-        <pre className="splash__code mono">npm install yeetful</pre>
+        <pre className="splash__code mono">npm install pantessa</pre>
       </div>
 
       {/* ── Go deeper, door by door ── */}

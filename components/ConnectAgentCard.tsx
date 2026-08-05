@@ -21,7 +21,7 @@ export interface ConnectAgentCardProps {
 }
 
 export function agentSnippet(grantId: string, ledgerUrl: string): string {
-  return `import { yeetful } from 'yeetful/agent'
+  return `import { pantessa } from 'pantessa/agent'
 
 const pay = yeetful({
   wallet, // a viem WalletClient (small funded burner)
@@ -109,7 +109,7 @@ export default function ConnectAgentCard({
         {snippet}
       </pre>
       <p className="text-[11px] text-[color:var(--muted-2)] mt-2.5">
-        <code className="mono">npm install yeetful</code> · set{' '}
+        <code className="mono">npm install pantessa</code> · set{' '}
         <code className="mono">YEETFUL_API_KEY</code>{' '}in your agent&apos;s env (mint above) ·{' '}
         <Link
           href="/docs"
@@ -128,7 +128,7 @@ export default function ConnectAgentCard({
         </a>{' '}
         ·{' '}
         <a
-          href="https://www.npmjs.com/package/yeetful"
+          href="https://www.npmjs.com/package/pantessa"
           target="_blank"
           rel="noopener noreferrer"
           className="underline decoration-dotted underline-offset-2 hover:text-white transition-colors"

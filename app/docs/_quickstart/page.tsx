@@ -38,7 +38,7 @@ export default function QuickstartPage() {
       <div className="docs__prose">
         <h2>1. Install</h2>
         <pre>
-          <code>{`npm install yeetful viem`}</code>
+          <code>{`npm install pantessa viem`}</code>
         </pre>
         <p>
           <code>viem</code> is a peer dependency, so the SDK stays light and tracks whatever viem
@@ -68,7 +68,7 @@ const wallet = createWalletClient({
 
         <h2>3. The expense account</h2>
         <pre>
-          <code>{`import { yeetful, GrantError } from 'yeetful/agent'
+          <code>{`import { pantessa, GrantError } from 'pantessa/agent'
 
 const pay = yeetful({
   wallet,
@@ -112,7 +112,7 @@ const pay = yeetful({
           </li>
           <li>
             <Link href="/docs/ledger-sync">Dashboard ledger sync</Link> — see this agent&apos;s
-            receipts on yeetful.com
+            receipts on pantessa.com
           </li>
           <li>
             <a href="https://github.com/Yeetful/example-agent">Yeetful/example-agent</a> — this

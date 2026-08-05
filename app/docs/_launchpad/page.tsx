@@ -10,14 +10,14 @@ import CopyBlock from '@/components/CopyBlock'
 const TRACK_EARNINGS_PROMPT = `Install the yeetful SDK in this MCP server and wire it up so I can track its
 earnings on my Pantessa dashboard:
 
-1. Run: npm install yeetful
+1. Run: npm install pantessa
 2. Wrap the x402-paid handler with yeetful's server helper so every settled
    call is reported to the hosted ledger.
 3. Read PANTESSA_API_KEY and PANTESSA_GRANT_ID from the environment and pass them
    as { apiKey, ledgerUrl: 'https://www.pantessa.com' } so receipts sync.
 4. Print a one-line confirmation showing the server is reporting earnings.
 
-I'll mint the yf_ API key at yeetful.com/dashboard/keys and claim this MCP at
+I'll mint the yf_ API key at pantessa.com/dashboard/keys and claim this MCP at
 its service page first.`
 
 const PAGE = DOCS_PAGES.find((p) => p.slug === 'launchpad')!
@@ -70,7 +70,7 @@ export default function LaunchpadDocsPage() {
         </p>
         <ol>
           <li>
-            Open your service page at <code>yeetful.com/servers/&lt;your-mcp&gt;</code> and find the{' '}
+            Open your service page at <code>pantessa.com/servers/&lt;your-mcp&gt;</code> and find the{' '}
             <strong>Token</strong> panel.
           </li>
           <li>Connect the wallet your MCP is paid to (its x402 receiver) and sign in.</li>
@@ -129,7 +129,7 @@ export default function LaunchpadDocsPage() {
         </p>
         <CopyBlock text={TRACK_EARNINGS_PROMPT} label="Copy prompt" />
         <p>
-          Prefer to do it by hand? It&apos;s one dependency — <code>npm install yeetful</code> — then
+          Prefer to do it by hand? It&apos;s one dependency — <code>npm install pantessa</code> — then
           report each paid call to the hosted ledger with your <code>yf_</code> key. See{' '}
           <Link href="/docs/ledger-sync">Dashboard ledger sync</Link> for the full wiring.
         </p>

@@ -136,7 +136,7 @@ export default async function Image() {
           }}
         >
           <span style={{ color: MUTED, letterSpacing: 3.5 }}>GUARDED · SIGNED · RECEIPTED</span>
-          <span style={{ color: ACCENT, fontWeight: 600 }}>yeetful.com/chat</span>
+          <span style={{ color: ACCENT, fontWeight: 600 }}>pantessa.com/chat</span>
         </div>
       </div>
     ),

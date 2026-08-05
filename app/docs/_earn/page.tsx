@@ -61,7 +61,7 @@ PANTESSA_MCP_SLUG=your-server-slug   # dashboard › My MCP servers (copy), or t
         <pre>
           <code>{`npm i pantessa
 
-import { reportUsage } from 'yeetful/server'
+import { reportUsage } from 'pantessa/server'
 
 // right after the x402 payment settles, in your handler:
 reportUsage({

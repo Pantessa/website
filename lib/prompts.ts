@@ -13,13 +13,13 @@ signed, with a receipt for every decision. Docs: https://www.pantessa.com/docs
 
 Do the following, asking me to confirm anything ambiguous:
 
-1. Install: npm install yeetful viem (or the pnpm/yarn equivalent this
+1. Install: npm install pantessa viem (or the pnpm/yarn equivalent this
    repo already uses).
 
 2. Find where this project makes HTTP calls to paid or x402 APIs. Create a
    single shared payer in src/lib/pay.ts (adjust path to repo conventions):
 
-   import { yeetful } from 'yeetful/agent'
+   import { pantessa } from 'pantessa/agent'
    import { createWalletClient, http } from 'viem'
    import { base } from 'viem/chains'
    import { privateKeyToAccount } from 'viem/accounts'
@@ -82,7 +82,7 @@ up on my dashboard. It must NEVER slow down, block, or break the response.
 
 1) INSTALL THE SDK
    - npm i pantessa   (or the project's package manager)
-   - import { reportUsage } from 'yeetful/server'
+   - import { reportUsage } from 'pantessa/server'
    reportUsage is fire-and-forget by design: it never throws, has a built-in
    timeout, and resolves false on any failure — so it can't slow or break the
    response. Don't hand-roll an HTTP call; use this.
@@ -98,7 +98,7 @@ up on my dashboard. It must NEVER slow down, block, or break the response.
 3) THE CALL
    reportUsage({
      apiKey: process.env.PANTESSA_API_KEY,    // required
-     mcp: process.env.PANTESSA_MCP_SLUG,      // required — my server's slug on yeetful.com
+     mcp: process.env.PANTESSA_MCP_SLUG,      // required — my server's slug on pantessa.com
      amountUsd,   // the call's price in US dollars as a NUMBER, e.g. 0.005
                   //   (your configured price — NOT on-chain atomic/USDC base units)
      payer,       // the paying agent's wallet address, if the settlement exposes it

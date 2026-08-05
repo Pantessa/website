@@ -110,8 +110,8 @@ export default function X402Page() {
         <h2>Using the primitives directly</h2>
         <p>
           The agent wrapper sits on a plain x402 toolkit you can use without grants:{' '}
-          <code>createPaymentClient({'{ wallet }'})</code> from <code>yeetful/client</code> for
-          auto-paying fetch, and <code>withPayment()</code> from <code>yeetful/next</code> (or{' '}
+          <code>createPaymentClient({'{ wallet }'})</code> from <code>pantessa/client</code> for
+          auto-paying fetch, and <code>withPayment()</code> from <code>pantessa/next</code> (or{' '}
           <code>gate()</code> / the Express middleware) to charge for your own routes — that&apos;s
           how you <em>sell</em> to agents rather than buy.
         </p>

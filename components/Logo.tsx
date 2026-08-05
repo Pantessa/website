@@ -52,7 +52,7 @@ export function YeetfulMark({ size = 28, className, title = "Pantessa" }: MarkPr
 type LogoProps = {
   /** Mark height in px. Wordmark scales from this. */
   size?: number;
-  /** Show the "yeetful" wordmark next to the mark. */
+  /** Show the "pantessa" wordmark next to the mark. */
   withWordmark?: boolean;
   className?: string;
 };

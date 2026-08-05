@@ -8,6 +8,9 @@ const GROUPS: { title: string; links: FooterLink[] }[] = [
   {
     title: 'Community',
     links: [
+      // Social handles keep the pre-rebrand names ON PURPOSE — those accounts
+      // have not been renamed (the `pantessa` GitHub org does not exist), so
+      // pointing at a new handle would turn a working link into a 404.
       { label: 'X / Twitter', href: 'https://x.com/yeetful_ai', ext: true },
       { label: 'Telegram', href: 'https://t.me/yeetful', ext: true },
       { label: 'GitHub', href: 'https://github.com/Yeetful', ext: true },
@@ -42,7 +45,7 @@ const GROUPS: { title: string; links: FooterLink[] }[] = [
       { label: 'Docs', href: '/docs' },
       { label: 'Embed Anywhere', href: '/docs/embed' },
       { label: 'Creator Earnings', href: '/docs/creator-earnings' },
-      { label: 'SDK on npm', href: 'https://www.npmjs.com/package/yeetful', ext: true },
+      { label: 'SDK on npm', href: 'https://www.npmjs.com/package/pantessa', ext: true },
     ],
   },
 ]
