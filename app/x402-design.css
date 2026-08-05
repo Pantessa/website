@@ -1204,6 +1204,18 @@
   }
 
   /* ── DASHBOARD SHELL ─────────────────────────────── */
+  /* ── ONE SHELL: the spine + the dashboard grid side by side. The spine is
+     a sticky full-viewport column (the component brings its own position);
+     .dash keeps its own grid untouched inside the flex row. ── */
+  .dashshell { display: flex; align-items: stretch; }
+  .dashshell > .dash { flex: 1; min-width: 0; }
+  /* The floating rail-reopen pill pins to the viewport's left edge — with
+     the spine present it would land ON the spine; shift it clear. (The
+     spine only renders ≥1024px.) */
+  @media (min-width: 1024px) {
+    :root[data-spine] .apprail__reopen { left: 72px; }
+  }
+
   .dash {
     /* Portal surfaces use the full viewport (D3) — gutters, no maxw cap. */
     max-width: none; margin: 0 auto; padding: 0 32px;
@@ -1295,6 +1307,10 @@
   .dash__link:hover { color: var(--fg); background: var(--surf-1); }
   .dash__link.is-on { color: var(--fg); background: var(--surf-2); }
   .dash__main { padding: 24px 0 64px; min-width: 0; }
+  /* Ask-from-anywhere: sticky command bar riding the bottom of every
+     dashboard page. Sits at the END of .dash__main, so sticky pulls it into
+     view pinned above the viewport's bottom edge while the page scrolls. */
+  .dashask { position: sticky; bottom: 20px; z-index: 20; margin-top: 40px; }
   .dash__h1 { font-family: 'Archivo', sans-serif; font-weight: 800; font-size: 24px; letter-spacing: -0.02em; margin-bottom: 6px; }
   .dash__sub { font-size: 13px; color: var(--muted-2); margin-bottom: 20px; max-width: 64ch; line-height: 1.5; }
 

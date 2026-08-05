@@ -4,7 +4,7 @@ import { analytics } from '@/lib/analytics'
 import { feeBpsOfArtifact } from '@/lib/fees'
 import { Fragment, useState, useRef, useEffect, useSyncExternalStore } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Send, Zap, Check, Loader2, Bot, User, Boxes, ListChecks, MessageSquare, PanelRight, Sparkles, Copy, Plus, Link2 } from 'lucide-react'
+import { Send, Zap, Check, Loader2, Bot, User, Boxes, ListChecks, MessageSquare, PanelRight, Copy, Plus, Link2 } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { useAccount, useSignTypedData, useConnect } from 'wagmi'
 import { useConnectModal } from '@rainbow-me/rainbowkit'
@@ -40,7 +40,7 @@ import { useSession } from '@/lib/session'
 import { latestWorkingContext, type WorkingContext } from '@/lib/working-context'
 import { EXAMPLE_PROMPTS, TRY_PROMPTS } from '@/lib/examples'
 import { GUEST_TRIAL_LIMIT, bumpGuestTurns, guestTurnsUsed } from '@/lib/guest-trial'
-import SampleCallDemo from '@/components/SampleCallDemo'
+import EmptyState from '@/components/chat/EmptyState'
 import { SplashDashboard } from '@/components/SplashDashboard'
 import ChatLoader from '@/components/ChatLoader'
 import { splashCapable } from '@/lib/splash/types'
@@ -316,9 +316,10 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
   }, [])
   const railVisible = isNarrow ? mobileMcpRailOpen : mcpRailOpen
   // The collapsed JOBS chip's count — running jobs + recurring buys needing
-  // you. Polled only while the chip is actually visible (rail closed,
-  // first-party chat); the open rail runs its own instance for its tab badge.
-  const { badgeCount: runningBadge } = useRunningWork(!railVisible && !embedded && !simple)
+  // you. The chips are mobile-only now (the spine carries the desktop badge),
+  // so this instance polls only while the chip is actually visible: overlay
+  // closed, first-party chat, below lg.
+  const { badgeCount: runningBadge } = useRunningWork(!railVisible && !embedded && !simple && isNarrow)
   // A reopen chip names what it opens: clicking "MCPs"/"Chats" opens the rail
   // on that tab — no more anonymous panel icons. The chips only render while
   // the rail is closed; open, the rail's own tabs sit right there instead.
@@ -1216,35 +1217,35 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
           in the embed — EmbedChat renders its own slim header — and in simple
           mode, where IntentRuntime's own header carries the ask. */}
       {!embedded && !simple && (
-      <div className="flex-shrink-0 px-3 py-2.5 border-b border-[var(--line)] bg-black/40 flex items-center gap-2">
-        {/* Home mark — a PERMANENT, predictable path back to the dashboard
-            (it used to appear only while the chats sidebar was collapsed,
-            which read as chrome shuffling around). */}
+      <div className="flex-shrink-0 px-3 py-2.5 border-b border-[var(--line)] flex items-center gap-2">
+        {/* Home mark — MOBILE only now: on desktop the spine's brand seat +
+            DASH item carry both directions permanently. */}
         {showAppChrome && (
           <Link
             href="/dashboard"
             aria-label="Pantessa dashboard — links, keys, billing"
             title="Pantessa dashboard — links, keys, billing"
-            className="flex-shrink-0 grid place-items-center w-10 h-10 md:w-8 md:h-8 rounded-lg text-white hover:bg-[var(--surf-1)] transition-colors"
+            className="lg:hidden flex-shrink-0 grid place-items-center w-10 h-10 md:w-8 md:h-8 rounded-lg text-white hover:bg-[var(--surf-1)] transition-colors"
           >
             <YeetfulMark size={20} />
           </Link>
         )}
-        {/* New chat — always visible, so starting fresh never means hunting
-            through the Chats tab. Lands on the bare /chat surface. */}
+        {/* New chat — mobile only: the spine's NEW item owns it on desktop.
+            Lands on the bare /chat surface. */}
         <button
           onClick={startNewChat}
           aria-label="Start a new chat"
           title="Start a new chat"
-          className="flex-shrink-0 flex items-center gap-1.5 px-2.5 min-h-[40px] md:min-h-[32px] rounded-lg border bg-[var(--surf-1)] border-[var(--line)] text-[color:var(--muted)] hover:text-white hover:border-[var(--line-2)] transition-colors"
+          className="lg:hidden flex-shrink-0 flex items-center gap-1.5 px-2.5 min-h-[40px] md:min-h-[32px] rounded-lg border bg-[var(--surf-1)] border-[var(--line)] text-[color:var(--muted)] hover:text-white hover:border-[var(--line-2)] transition-colors"
         >
           <Plus className="w-4 h-4" />
           <span className="text-[11px] whitespace-nowrap font-medium mono">NEW</span>
         </button>
-        {/* Labeled reopen chips — only while the rail is collapsed (open, the
-            rail's own MCPs/Chats tabs are visible right below). */}
+        {/* Labeled reopen chips — mobile, while the overlay drawer is closed.
+            Desktop reopening is the spine's job (always visible), so the
+            chips never render ≥lg. */}
         {!railVisible && (
-          <div className="chatreopen flex-shrink-0 flex items-center gap-1.5">
+          <div className="lg:hidden chatreopen flex-shrink-0 flex items-center gap-1.5">
             {/* Four chips can't all carry words at phone widths (the #570
                 drill pattern) — below md the words drop, icons + counts stay,
                 titles/aria keep them named. */}
@@ -1303,9 +1304,15 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
             </span>
           ) : (
             activeServers.length > 0 && (
-              <span className="text-[11px] text-[color:var(--muted-2)] truncate pl-1">
+              // The working-set line is a DOOR, not dead text — it names the
+              // agents on duty and opens the set for editing.
+              <button
+                onClick={() => openRail('mcps')}
+                title="Your working set — click to edit"
+                className="text-[11px] text-[color:var(--muted-2)] truncate pl-1 text-left hover:text-white transition-colors"
+              >
                 {activeServers.map((s) => cleanServerName(s.name)).join(' · ')}
-              </span>
+              </button>
             )
           )}
           </div>
@@ -1908,20 +1915,21 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
         </div>
       </div>
 
-      {/* Input area. Simple mode (the /i link runtime) docks the composer as
-          a free-floating pill: no full-width border-t — on a mostly-empty
-          stage that rule read as a stray line hanging under the chat — and
-          the keyboard hint only fades in once the composer has focus. */}
+      {/* Input area — the command bar. First-party chat and the /i runtime
+          float it as a free-standing pill: no full-width border-t (the pill
+          itself is the boundary; the rule read as a stray line) and the
+          keyboard hint only fades in once the composer has focus. The embed
+          keeps the bordered treatment — hosts' look stays put. */}
       <div
         className={cn(
           'flex-shrink-0 p-4 max-lg:pb-[max(1rem,env(safe-area-inset-bottom))]',
-          simple ? 'group/composer pb-5' : 'border-t border-[var(--line)]',
+          embedded ? 'border-t border-[var(--line)]' : 'group/composer pb-5',
         )}
       >
         <div
           className={cn(
             'flex items-center gap-3 py-2 pl-4 pr-2 rounded-full border border-[var(--line)] bg-[color-mix(in_srgb,var(--surf-1)_85%,transparent)] backdrop-blur-md transition-[border-color,box-shadow] duration-200 focus-within:border-[color:var(--accent)]/45 focus-within:shadow-[0_0_0_4px_rgba(52,227,160,0.07),0_0_24px_rgba(52,227,160,0.06)]',
-            simple && 'shadow-[0_10px_36px_-14px_rgba(0,0,0,0.55)]',
+            !embedded && 'shadow-[0_10px_36px_-14px_rgba(0,0,0,0.55)]',
           )}
         >
           <textarea
@@ -1964,84 +1972,12 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
         <p
           className={cn(
             'text-[11px] text-[color:var(--muted-2)] mt-2 text-center mono',
-            simple && 'opacity-0 transition-opacity duration-300 group-focus-within/composer:opacity-100',
+            !embedded && 'opacity-0 transition-opacity duration-300 group-focus-within/composer:opacity-100',
           )}
         >
           Enter to send · Shift+Enter for newline
         </p>
       </div>
-    </div>
-  )
-}
-
-// One-tap example asks: a click SENDS the turn (the caller passes runExample).
-// Asking is free — anything transactional still ends at the wallet signature —
-// so the chip is the whole first turn, not a writing prompt.
-function ExampleGallery({ onPick }: { onPick: (prompt: string, slug?: string) => void }) {
-  return (
-    <div className="mt-7 w-full max-w-md">
-      <p className="mono text-[11px] uppercase tracking-wider text-[color:var(--muted-2)] mb-2">
-        Run one — a tap sends it
-      </p>
-      <div className="flex flex-wrap justify-center gap-2">
-        {EXAMPLE_PROMPTS.map((ex) => (
-          <button
-            key={ex.label}
-            type="button"
-            onClick={() => onPick(ex.prompt, ex.slug)}
-            title={ex.prompt}
-            className="group flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full border border-[var(--line)] text-[color:var(--muted)] hover:text-white hover:border-[color:var(--accent)]/45 hover:bg-white/5 transition-colors"
-          >
-            <Send className="w-3 h-3 text-[color:var(--muted-2)] group-hover:text-[color:var(--accent)] transition-colors" />
-            {ex.label}
-          </button>
-        ))}
-      </div>
-      <div className="flex justify-center">
-        <SampleCallDemo />
-      </div>
-    </div>
-  )
-}
-
-function EmptyState({
-  activeCount,
-  autoRouter,
-  onPick,
-  showLinksHint,
-}: {
-  activeCount: number
-  autoRouter: boolean
-  onPick: (prompt: string, slug?: string) => void
-  /** First-party chat only — the embed has no rail or mint affordances. */
-  showLinksHint?: boolean
-}) {
-  return (
-    // flex-1 (not h-full): the thread wrapper is a min-h-full flex column,
-    // so percentage heights don't resolve — growing into the free space
-    // keeps the vertical centering instead.
-    <div className="flex flex-col items-center justify-center flex-1 text-center py-20">
-      <div className="w-16 h-16 rounded-2xl bg-[var(--accent)]/15 border border-[var(--accent)]/50 flex items-center justify-center mb-6">
-        <Sparkles className="w-8 h-8" style={{ color: 'var(--accent)' }} />
-      </div>
-      <h3 className="text-white font-semibold mb-2" style={{ fontFamily: 'var(--font-serif)', fontSize: '1.5rem' }}>
-        Say what should happen.
-      </h3>
-      <p className="text-[color:var(--muted)] text-sm max-w-sm">
-        {autoRouter
-          ? 'Auto Router picks the right MCP for each ask and shows its work. Anything that moves money is compiled into a guarded transaction — only your wallet can sign it.'
-          : activeCount === 0
-            ? 'Pick MCPs from the rail, or just ask — swaps, schedules, stop-losses, and portfolios are built in. Only your wallet can sign what comes back.'
-            : `Your ${activeCount} MCP${activeCount > 1 ? 's' : ''} answer questions free; anything that moves money is compiled into a guarded transaction only your wallet can sign.`}
-      </p>
-      <ExampleGallery onPick={onPick} />
-      {showLinksHint && (
-        <p className="mt-6 text-[11px] text-[color:var(--muted-2)] max-w-sm">
-          Any ask here can become a shareable intent link — hover a sent message for the{' '}
-          <Link2 className="inline w-3 h-3 align-[-1px]" aria-hidden />
-          {' '}mint icon, or open the rail&apos;s Links tab.
-        </p>
-      )}
     </div>
   )
 }

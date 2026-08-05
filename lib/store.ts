@@ -145,6 +145,10 @@ function fromApiChat(c: ApiChat, existing?: Chat): Chat {
   }
 }
 
+/** The rail/drawer destinations — shared by the drawer itself, the spine's
+ *  tab icons, and the toolbar's mobile reopen chips. */
+export type RailTab = 'mcps' | 'chats' | 'jobs' | 'links'
+
 interface YeetfulStore {
   // MCP Servers
   servers: McpServer[]
@@ -261,8 +265,8 @@ interface YeetfulStore {
   /** Which tab the (single) left rail shows — MCPs are primary; chat history,
    *  running work (jobs + recurring buys), and the creator's intent links
    *  live behind their own tabs. */
-  railTab: 'mcps' | 'chats' | 'jobs' | 'links'
-  setRailTab: (tab: 'mcps' | 'chats' | 'jobs' | 'links') => void
+  railTab: RailTab
+  setRailTab: (tab: RailTab) => void
   /** A prompt a rail row wants in the composer (e.g. a due recurring buy's
    *  run chip). Prefill only — the user always sends it themselves. NOT
    *  persisted: it's a one-shot handoff, consumed (and cleared) by the chat. */
