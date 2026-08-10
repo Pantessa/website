@@ -2,7 +2,7 @@ import { ImageResponse } from 'next/og'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { getSharedChat, getJobs, getChatServers, moneyMovedOf } from '@/lib/shared-chat'
-import { ogMarkSvg } from '@/lib/og-marks'
+import { ogMarkSvg, pangolinMarkSvg } from '@/lib/og-marks'
 
 // Social card for a shared chat (/p/[slug]) — without this file the segment's
 // generateMetadata ships og:title/description but NO image (the root
@@ -37,18 +37,8 @@ const AMBIENT = `<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="63
   <rect width="1200" height="630" fill="url(#amb)"/>
 </svg>`
 
-// The hub mark from app/icon.svg (same lockup as the root card).
-const MARK = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 52 52" fill="none">
-  <rect x="0.75" y="0.75" width="50.5" height="50.5" rx="11.5" fill="#0B0E0D" stroke="rgba(255,255,255,0.16)" stroke-width="1.5"/>
-  <g transform="translate(6 5)">
-    <mask id="hub"><rect width="40" height="40" fill="#fff"/><circle cx="20" cy="20" r="1.9" fill="#000"/></mask>
-    <g mask="url(#hub)" stroke="#ffffff" stroke-width="2.2" stroke-linecap="round">
-      <line x1="20" y1="20" x2="9" y2="9"/><line x1="20" y1="20" x2="31" y2="9"/><line x1="20" y1="20" x2="20" y2="33"/>
-    </g>
-    <g fill="#ffffff"><circle cx="9" cy="9" r="4.4"/><circle cx="31" cy="9" r="4.4"/><circle cx="20" cy="33" r="4.4"/></g>
-    <circle cx="20" cy="20" r="3" fill="none" stroke="${ACCENT}" stroke-width="2.2"/>
-  </g>
-</svg>`
+// The house mark comes from lib/og-marks — ONE source across every OG card.
+const MARK = pangolinMarkSvg(ACCENT)
 
 type Params = { params: Promise<{ slug: string }> }
 
