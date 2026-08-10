@@ -3,6 +3,7 @@ import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import prisma from '@/lib/db'
 import { brandOgPalette, normalizeHex } from '@/lib/brand-theme'
+import { pangolinMarkSvg } from '@/lib/og-marks'
 
 // Social card for a creator page (/l/<handle>) — the handle is the hero,
 // the link count + dollars moved are the proof line. Wears the creator's
@@ -31,18 +32,6 @@ const ambient = (accent: string) => {
   <rect width="1200" height="630" fill="url(#amb)"/>
 </svg>`
 }
-
-const mark = (accent: string) => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 52 52" fill="none">
-  <rect x="0.75" y="0.75" width="50.5" height="50.5" rx="11.5" fill="#0B0E0D" stroke="rgba(255,255,255,0.16)" stroke-width="1.5"/>
-  <g transform="translate(6 5)">
-    <mask id="hub"><rect width="40" height="40" fill="#fff"/><circle cx="20" cy="20" r="1.9" fill="#000"/></mask>
-    <g mask="url(#hub)" stroke="#ffffff" stroke-width="2.2" stroke-linecap="round">
-      <line x1="20" y1="20" x2="9" y2="9"/><line x1="20" y1="20" x2="31" y2="9"/><line x1="20" y1="20" x2="20" y2="33"/>
-    </g>
-    <g fill="#ffffff"><circle cx="9" cy="9" r="4.4"/><circle cx="31" cy="9" r="4.4"/><circle cx="20" cy="33" r="4.4"/></g>
-    <circle cx="20" cy="20" r="3" fill="none" stroke="${accent}" stroke-width="2.2"/>
-  </g>
-</svg>`
 
 type Params = { params: Promise<{ handle: string }> }
 
@@ -121,7 +110,7 @@ export default async function Image({ params }: Params) {
               <img src={brand.logo} width={46} height={46} alt="" style={{ borderRadius: 10 }} />
             ) : (
               // eslint-disable-next-line @next/next/no-img-element
-              <img src={toDataUri(mark(pal.branded ? pal.accent : '#34e3a0'))} width={46} height={46} alt="" />
+              <img src={toDataUri(pangolinMarkSvg(pal.branded ? pal.accent : undefined))} width={46} height={46} alt="" />
             )}
             <span style={{ color: pal.ink, fontSize: 34, fontWeight: 600, letterSpacing: -1.2 }}>
               {brand ? (brand.name ?? brand.domain ?? 'pantessa') : 'pantessa'}
