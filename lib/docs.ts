@@ -229,7 +229,7 @@ export const DOCS_PAGES: DocsPage[] = [
     title: 'Dashboard ledger sync',
     seoTitle: 'Ledger sync — agent receipts on your Pantessa dashboard',
     description:
-      'Mint a yf_ API key, set YEETFUL_GRANT_ID, and every settlement and denial your agent makes lands in your yeetful.com dashboard audit feed.',
+      'Mint a yf_ API key, set YEETFUL_GRANT_ID, and every settlement and denial your agent makes lands in your pantessa.com dashboard audit feed.',
     ready: false, // links-first purge 2026-07-22 — functionality live, docs demoted
     door: 'agent',
   },

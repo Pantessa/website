@@ -30,7 +30,7 @@ export default function ExpenseAccountPage() {
         <h2>The grant</h2>
         <pre>
           <code>{`grant: {
-  id: 'cmq…',                // optional: a yeetful.com grant this mirrors (enables ledger sync)
+  id: 'cmq…',                // optional: a pantessa.com grant this mirrors (enables ledger sync)
   allow: ['tripadvisor.x402.paysponge.com'], // exact hostnames this agent may pay
   perCallUsd: 0.05,          // max for any single call
   perDayUsd: 2,              // rolling UTC-day budget
@@ -115,7 +115,7 @@ export default function ExpenseAccountPage() {
           <em>your own</em> agents. It is not an adversarial guarantee: code that bypasses{' '}
           <code>pay()</code> bypasses the grant. For hard guarantees, back the grant with an
           on-chain Coinbase Spend Permission so the wallet contract caps spend no matter what the
-          process does. The <Link href="/dashboard">yeetful.com dashboard</Link> is the control
+          process does. The <Link href="/dashboard">pantessa.com dashboard</Link> is the control
           plane for both: approvals derive the allowlist, caps are EIP-712-signable, and every
           receipt lands in the <Link href="/docs/ledger-sync">hosted ledger</Link>. Whether these
           caps apply at all is the master <Link href="/docs/spend-policy">spend-policy switch</Link>.

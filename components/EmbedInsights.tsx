@@ -283,7 +283,7 @@ export default function EmbedInsights() {
                 {fmtUsd(g.windowBuiltUsd)} <span className="text-[color:var(--muted-2)]">built awaiting signature · {data.windowDays}d ({g.windowBuiltCount})</span>
               </span>
               <span>
-                {fmtUsd(g.chatSignedUsd)} <span className="text-[color:var(--muted-2)]">via yeetful.com chat ({g.chatSignedCount})</span>
+                {fmtUsd(g.chatSignedUsd)} <span className="text-[color:var(--muted-2)]">via pantessa.com chat ({g.chatSignedCount})</span>
               </span>
               {t.signedUsd > 0 && (
                 <span>

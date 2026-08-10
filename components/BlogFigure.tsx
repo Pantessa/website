@@ -190,7 +190,7 @@ function LinkAnatomy() {
       {/* the URL bar */}
       <rect x={30} y={26} width={W - 60} height={46} rx={10} className="blogfig__panel" />
       <text x={48} y={54} fontFamily={MONO} fontSize="14" className="blogfig__t-dim">
-        yeetful.com/i/
+        pantessa.com/i/
         <tspan className="blogfig__t-accent">buy-aapl</tspan>
       </text>
       <text x={W - 48} y={54} textAnchor="end" fontFamily={MONO} fontSize="11" className="blogfig__t-dim">

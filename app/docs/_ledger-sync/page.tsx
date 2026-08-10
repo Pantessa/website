@@ -21,7 +21,7 @@ export default function LedgerSyncPage() {
       <h1 className="docs__h1">Dashboard ledger sync</h1>
       <p className="docs__lead">
         With an API key and a hosted grant id, every receipt your agent emits — settlements{' '}
-        <strong>and</strong> denials — POSTs to your yeetful.com ledger. Budgets, charts, and the
+        <strong>and</strong> denials — POSTs to your pantessa.com ledger. Budgets, charts, and the
         audit feed on the <Link href="/dashboard">dashboard</Link> then include headless agents,
         not just chat.
       </p>
@@ -29,7 +29,7 @@ export default function LedgerSyncPage() {
       <div className="docs__prose">
         <h2>1. Mint a key, copy your grant id</h2>
         <p>
-          Sign in at <Link href="/dashboard/keys">yeetful.com/dashboard/keys</Link> and mint a
+          Sign in at <Link href="/dashboard/keys">pantessa.com/dashboard/keys</Link> and mint a
           key. The <code>yf_…</code> secret is shown <strong>once</strong>. The same page shows
           your expense account&apos;s grant id (<code>YEETFUL_GRANT_ID</code>) with a one-click
           copy.
@@ -84,7 +84,7 @@ await pay.flushLedger() // drain pending syncs before a short-lived script exits
           <li>
             <strong>Enforcement stays local.</strong> The hosted grant id is the sync{' '}
             <em>target</em> — the allowlist and caps your agent enforces are the ones in code.
-            Dashboard approval toggles gate chat payments on yeetful.com, not your SDK calls.
+            Dashboard approval toggles gate chat payments on pantessa.com, not your SDK calls.
           </li>
         </ul>
 

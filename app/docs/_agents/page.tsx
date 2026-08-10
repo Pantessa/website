@@ -31,7 +31,7 @@ export default function AgentsDocsPage() {
         <p>
           Anything paying through the <code>yeetful</code> SDK authenticates with a{' '}
           <code>yf_…</code> key minted at{' '}
-          <Link href="/dashboard/keys">yeetful.com/dashboard/keys</Link>. That key is the agent&apos;s
+          <Link href="/dashboard/keys">pantessa.com/dashboard/keys</Link>. That key is the agent&apos;s
           identity: every receipt it syncs is attributed to it in the ledger, and the{' '}
           <Link href="/dashboard/agents">Agents tab</Link> shows each key with a spent-today meter
           built from exactly those rows. One app, one key — revoke the key and the agent is
@@ -100,7 +100,7 @@ Authorization: Bearer yf_…
         <h2>What the SDK does with it</h2>
         <p>
           Per-key budgets are enforced by the SDK from <strong>0.4</strong> on — install the latest
-          with <code>npm install yeetful@latest</code> (currently <strong>0.6.0</strong>).
+          with <code>npm install pantessa@latest</code> (currently <strong>1.0.0</strong>).
         </p>
         <pre>
           <code>{`const pay = yeetful({ wallet, grant: { id: 'your-grant-id', /* … */ }, apiKey: process.env.YEETFUL_API_KEY })

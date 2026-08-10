@@ -20,7 +20,7 @@ export default function LinksDocsPage() {
       </p>
       <h1 className="docs__h1">Intent links</h1>
       <p className="docs__lead">
-        An intent link is a short URL — <code>yeetful.com/i/&lt;slug&gt;</code> — that carries an
+        An intent link is a short URL — <code>pantessa.com/i/&lt;slug&gt;</code> — that carries an
         ask as a plain sentence: <em>&ldquo;Buy $10 of AAPL&rdquo;</em>,{' '}
         <em>&ldquo;Stake 0.05 ETH with Lido&rdquo;</em>, <em>&ldquo;DCA $25 into ETH
         weekly&rdquo;</em>. Whoever opens it connects <strong>their own wallet</strong>, Pantessa

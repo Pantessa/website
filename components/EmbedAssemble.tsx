@@ -21,9 +21,9 @@ import { UniswapMark, SnapshotMark, YeetfulMark } from '@/components/protocol-ma
 /** The real install, split so each line can own a beat. Line 0 (the import)
  *  lands with the panel; the rest each buy something visible. */
 const LINES: string[] = [
-  "import { mountYeetfulChat } from 'yeetful/embed'",
+  "import { mountPantessaChat } from 'pantessa/embed'",
   '',
-  'mountYeetfulChat({',
+  'mountPantessaChat({',
   "  mode: 'bubble',",
   "  mcps: ['uniswap-free', 'snapshot-free'],",
   "  wallet: 'auto', // the host page's wallet signs",
@@ -102,7 +102,7 @@ export default function EmbedAssemble() {
       {/* the five lines, typing */}
       <div className="asm__code">
         <div className="asm__codebar mono">
-          <span>npm i yeetful</span>
+          <span>npm i pantessa</span>
           <span className="asm__ver">v0.9</span>
         </div>
         <pre className="asm__pre mono">

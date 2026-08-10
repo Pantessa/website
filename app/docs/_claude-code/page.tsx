@@ -62,7 +62,7 @@ export default function ClaudeCodePage() {
             <ArrowUpRight className="w-3.5 h-3.5 opacity-60" />
           </span>
           <span className="docs__carddesc">
-            yeetful.com/dashboard/keys — the yf_ secret shows once; the same page has your
+            pantessa.com/dashboard/keys — the yf_ secret shows once; the same page has your
             YEETFUL_GRANT_ID with one-click copy.
           </span>
         </Link>

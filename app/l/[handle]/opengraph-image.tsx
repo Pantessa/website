@@ -124,7 +124,7 @@ export default async function Image({ params }: Params) {
               <img src={toDataUri(mark(pal.branded ? pal.accent : '#34e3a0'))} width={46} height={46} alt="" />
             )}
             <span style={{ color: pal.ink, fontSize: 34, fontWeight: 600, letterSpacing: -1.2 }}>
-              {brand ? (brand.name ?? brand.domain ?? 'yeetful') : 'yeetful'}
+              {brand ? (brand.name ?? brand.domain ?? 'pantessa') : 'pantessa'}
             </span>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 17, letterSpacing: 4, color: pal.muted }}>
@@ -189,7 +189,7 @@ export default async function Image({ params }: Params) {
               </div>
             ))}
           </div>
-          <span style={{ color: pal.accent, fontWeight: 600, fontSize: 21 }}>yeetful.com</span>
+          <span style={{ color: pal.accent, fontWeight: 600, fontSize: 21 }}>pantessa.com</span>
         </div>
       </div>
     ),

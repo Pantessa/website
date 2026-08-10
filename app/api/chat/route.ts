@@ -1866,10 +1866,10 @@ async function handleChatTurn(req: NextRequest) {
             credit.gate === 'house'
               ? `🪙 Pantessa’s house inference is at its daily safety cap — back at midnight UTC. Standing jobs, DCA and guardian protections keep running (they don’t use the model). A paid engine like **Yeetful · Claude** works right now, pay-per-call from your wallet.`
               : credit.gate === 'daily'
-                ? `🪙 That’s the free plan’s daily chat limit — it resets at midnight UTC (your monthly credits are fine). Upgrade at **yeetful.com/pricing** for no daily cap, or add a paid engine and keep going pay-per-call.`
+                ? `🪙 That’s the free plan’s daily chat limit — it resets at midnight UTC (your monthly credits are fine). Upgrade at **pantessa.com/pricing** for no daily cap, or add a paid engine and keep going pay-per-call.`
                 : embedBill
                   ? `🪙 This site’s Pantessa plan is out of included answers for the month. The chat resumes when the plan renews or the site upgrades — or connect a paid engine and pay per call from your own wallet.`
-                  : `🪙 You’ve used all **${credit.allowance.toLocaleString()} YEET credits** on the ${credit.planName} plan this month. Upgrade at **yeetful.com/pricing** for more — or add a paid engine like **Yeetful · Claude** and keep going pay-per-call from your wallet.`
+                  : `🪙 You’ve used all **${credit.allowance.toLocaleString()} YEET credits** on the ${credit.planName} plan this month. Upgrade at **pantessa.com/pricing** for more — or add a paid engine like **Yeetful · Claude** and keep going pay-per-call from your wallet.`
           return NextResponse.json({
             reply,
             planGate: { plan: credit.plan, upgradeUrl: '/pricing', gate: credit.gate ?? 'monthly' },
@@ -1877,7 +1877,7 @@ async function handleChatTurn(req: NextRequest) {
         }
         if (!embedBill && credit.remaining <= Math.max(25, Math.ceil(credit.allowance * 0.1))) {
           notes.push(
-            `YEET credits running low — ${credit.remaining.toLocaleString()} left this month on the ${credit.planName} plan. Upgrade at yeetful.com/pricing.`,
+            `YEET credits running low — ${credit.remaining.toLocaleString()} left this month on the ${credit.planName} plan. Upgrade at pantessa.com/pricing.`,
           )
         }
       }
