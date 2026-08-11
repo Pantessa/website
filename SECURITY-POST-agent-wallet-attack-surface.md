@@ -1,7 +1,7 @@
 # DRAFT — The Agent Wallet Attack Surface
 
 > **Status: DRAFT for Nate.** Written by the runway loop (2026-08-04), never
-> auto-published. Companion artifact: `guard-sdk/` (@yeetful/guard). Voice
+> auto-published. Companion artifact: `guard-sdk/` (@pantessa/guard). Voice
 > target: the build-in-public thread style — receipts, not FUD. Numbers and
 > PR references are real; verify links before publishing.
 
@@ -121,7 +121,7 @@ both directions).
 
 ## The open-core part
 
-We extracted this layer into **@yeetful/guard** — the venue-neutral core:
+We extracted this layer into **@pantessa/guard** — the venue-neutral core:
 the spend-policy engine, the artifact guardrails, the delegated-execution
 gate, the cross-chain deposit guard, the token-identity binding. Pure
 TypeScript, I/O injected, no keys, runs its whole suite offline. In our

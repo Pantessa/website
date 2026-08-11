@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { Check, Plus, ExternalLink, ArrowUpRight, Star } from 'lucide-react'
 import { McpServer, useYeetfulStore } from '@/lib/store'
 import BrandIcon from '@/components/BrandIcon'
+import { cleanServerName } from '@/lib/utils'
 
 const ACCENT = '#3ECF8E'
 const MAX_SHORTLIST = 3
@@ -33,9 +34,9 @@ export default function McpServerCard({ server }: McpServerCardProps) {
                 href={`/servers/${server.slug}`}
                 className="card__link"
                 onClick={(e) => e.stopPropagation()}
-                title={`${server.name} — endpoints & pricing`}
+                title={`${cleanServerName(server.name)} — endpoints & pricing`}
               >
-                {server.name}
+                {cleanServerName(server.name)}
               </Link>
             </h3>
             <span className="card__cat mono">{server.category}</span>
@@ -121,7 +122,7 @@ export default function McpServerCard({ server }: McpServerCardProps) {
               className="card__more mono"
               href={`/chat?try=${server.slug}`}
               onClick={(e) => e.stopPropagation()}
-              title={`Try ${server.name} in chat`}
+              title={`Try ${cleanServerName(server.name)} in chat`}
             >
               Try in chat
               <ArrowUpRight width={11} height={11} />
@@ -134,7 +135,7 @@ export default function McpServerCard({ server }: McpServerCardProps) {
               target="_blank"
               rel="noopener noreferrer"
               onClick={(e) => e.stopPropagation()}
-              title={`See info for ${server.name}`}
+              title={`See info for ${cleanServerName(server.name)}`}
             >
               <ExternalLink width={13} height={13} />
             </a>

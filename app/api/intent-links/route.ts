@@ -159,9 +159,13 @@ export async function GET(req: NextRequest) {
   // Server-truth money: signed turns attributed to these links in
   // embed_turns (guardrail-priced). Earnings accrue ONLY on fee-bearing
   // build paths — the conversions-not-movements rule from lib/fees.
+  // isInternal: false — drill/harness rows must never mint claimable money.
+  // Flag-only on purpose (not the origin patterns): a creator's own localhost
+  // test sign has always accrued in their scoped view; only stamped internal
+  // runs are excluded. Must stay in lockstep with /api/intent-links/claims.
   const turns = await prisma.embedTurn.groupBy({
     by: ['intentLinkSlug', 'buildPath', 'feeBps'],
-    where: { intentLinkSlug: { in: links.map((l) => l.id) }, outcome: 'signed', valueUsd: { gt: 0 } },
+    where: { intentLinkSlug: { in: links.map((l) => l.id) }, outcome: 'signed', valueUsd: { gt: 0 }, isInternal: false },
     _sum: { valueUsd: true },
     _count: { _all: true },
   })
@@ -199,7 +203,13 @@ export async function GET(req: NextRequest) {
   const referredTurns = referred.length
     ? await prisma.embedTurn.groupBy({
         by: ['buildPath', 'feeBps'],
-        where: { walletAddress: { in: referred.map((r) => r.wallet) }, intentLinkSlug: null, outcome: 'signed', valueUsd: { gt: 0 } },
+        where: {
+          walletAddress: { in: referred.map((r) => r.wallet) },
+          intentLinkSlug: null,
+          outcome: 'signed',
+          valueUsd: { gt: 0 },
+          isInternal: false,
+        },
         _sum: { valueUsd: true },
         _count: { _all: true },
       })
@@ -231,7 +241,7 @@ export async function GET(req: NextRequest) {
                coalesce(sum(value_usd), 0)::float AS v, count(*) AS n
         FROM embed_turns
         WHERE intent_link_slug IN (${Prisma.join(slugList)}) AND outcome = 'signed'
-          AND value_usd > 0 AND created_at >= ${weekSince}
+          AND value_usd > 0 AND NOT is_internal AND created_at >= ${weekSince}
         GROUP BY 1, 2, 3`
     : []
   const referredWeekly: WeekRow[] = referred.length
@@ -241,7 +251,7 @@ export async function GET(req: NextRequest) {
         FROM embed_turns
         WHERE wallet_address IN (${Prisma.join(referred.map((r) => r.wallet))})
           AND intent_link_slug IS NULL AND outcome = 'signed'
-          AND value_usd > 0 AND created_at >= ${weekSince}
+          AND value_usd > 0 AND NOT is_internal AND created_at >= ${weekSince}
         GROUP BY 1, 2, 3`
     : []
   const weekMap = new Map<string, { weekStart: string; earnedUsd: number; signedUsd: number; signs: number }>()

@@ -80,7 +80,9 @@ function sweepFeeBips(data: string): number | null {
 async function driveChat(ask: string, wallet: string, servers: unknown[], slug?: string): Promise<ChatBody> {
   const res = await fetch(`${BASE}/api/chat`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json', 'x-yf-no-ask-log': '1' },
+    // x-yf-internal-run: prod-pointed drill — anything this request causes to
+    // be recorded must be stamped internal (lib/value-origin.ts rule).
+    headers: { 'content-type': 'application/json', 'x-yf-no-ask-log': '1', 'x-yf-internal-run': '1' },
     body: JSON.stringify({ message: ask, activeServers: servers, history: [], walletAddress: wallet, ...(slug ? { intentLinkSlug: slug } : {}) }),
   })
   return (await res.json()) as ChatBody

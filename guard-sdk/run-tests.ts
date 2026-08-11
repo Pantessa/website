@@ -1,5 +1,5 @@
 #!/usr/bin/env tsx
-// @yeetful/guard — self-contained unit suite. Every check either ports a pin
+// @pantessa/guard — self-contained unit suite. Every check either ports a pin
 // from the app's standing harness (scripts/test-api.ts) or replays the
 // attack the module was built against. No network, no keys, no DB.
 import { encodeFunctionData, erc20Abi } from 'viem'

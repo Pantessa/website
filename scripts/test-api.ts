@@ -174,6 +174,8 @@ import {
 import {
   parseHlIntent,
   buildHlOrderAction,
+  builderEligibleFromAccountValue,
+  HL_BUILDER_MIN_ACCOUNT_USD,
   guardHlExecBuild,
   buildHlDeposit,
   buildHlLeverageAction,
@@ -210,7 +212,15 @@ import {
   LIDO_WSTETH_MAINNET,
   type LidoBuiltStake,
 } from '../lib/lido-stake'
-import { classifyLegacyTurn, INTERNAL_ORIGIN_SQL, isInternalOrigin, STANDING_TURN_SQL } from '../lib/value-origin'
+import {
+  classifyLegacyTurn,
+  INTERNAL_ORIGIN_SQL,
+  INTERNAL_TRAFFIC_WHERE,
+  isInternalOrigin,
+  isInternalTurn,
+  STANDING_TURN_SQL,
+} from '../lib/value-origin'
+import { cleanServerName } from '../lib/utils'
 import { SITE_URL } from '../lib/site-url'
 import { PLAN_BY_ID, planCreditsFor, ALLOWANCE_CUTOFF } from '../lib/plans'
 import { FREE_DAILY_TURN_CAP, HOUSE_DAILY_TURN_CAP } from '../lib/billing'
@@ -878,6 +888,58 @@ async function main() {
     (ins.transactions as { buildPath: string | null }[])?.some((x) => x.buildPath === 'native-swap-uniswap'),
   )
 
+  // ── Internal-run stamping (the 2026-08-11 harness-honesty rule) ───────────
+  // A prod-pointed drill's rows carry a REAL origin (the first-party lane
+  // requires one), so the stamp — header, body flag, or harness- sessionId —
+  // is the only marker the scoreboard filters can see. The route echoes the
+  // stamp so a drill can assert its rows can never read as growth.
+  const intHdr = await fetch(`${BASE}/api/embed/telemetry`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-yf-internal-run': '1' },
+    body: JSON.stringify({
+      key: ek.key, sessionId: 'drill-hdr-1', page: 'https://harness-embed.test/swap',
+      outcome: 'signed', artifact: 'tx', valueUsd: 1349,
+    }),
+  })
+  check('telemetry: x-yf-internal-run header stamps + echoes internal', intHdr.status === 200 && (await intHdr.json()).internal === true)
+  const intBody = await fetch(`${BASE}/api/embed/telemetry`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      key: ek.key, sessionId: 'drill-body-1', page: 'https://harness-embed.test/swap',
+      outcome: 'tx-built', artifact: 'tx', internalRun: true,
+    }),
+  })
+  check('telemetry: internalRun body flag stamps (the sendBeacon path — no headers)', intBody.status === 200 && (await intBody.json()).internal === true)
+  const intSess = await fetch(`${BASE}/api/embed/telemetry`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      key: ek.key, sessionId: 'harness-belt-1', page: 'https://harness-embed.test/swap', outcome: 'answered',
+    }),
+  })
+  check('telemetry: harness- sessionId prefix stamps (belt for pre-header fixtures)', intSess.status === 200 && (await intSess.json()).internal === true)
+  const intOrganic = await fetch(`${BASE}/api/embed/telemetry`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      key: ek.key, sessionId: 'organic-visitor-1', page: 'https://harness-embed.test/swap', outcome: 'answered',
+    }),
+  })
+  check('telemetry: an organic beacon is never stamped internal', intOrganic.status === 200 && (await intOrganic.json()).internal === undefined)
+  // The prod-drill shape end to end: first-party lane + our own (real) origin
+  // + the header. The row records stamped — and the write-once referral
+  // claimer skips internal runs (a drill must never permanently attribute a
+  // wallet to a creator).
+  const intFp = await fetch(`${BASE}/api/embed/telemetry`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-yf-internal-run': '1' },
+    body: JSON.stringify({
+      firstParty: true, sessionId: 'drill-fp-1', page: `${BASE}/chat`, outcome: 'signed', artifact: 'tx', valueUsd: 1349,
+    }),
+  })
+  check('telemetry: a first-party drill beacon (real origin) records stamped internal', intFp.status === 200 && (await intFp.json()).internal === true)
+
   const ekGone = await fetch(`${BASE}/api/embed-keys/${ek.id}?purge=1`, { method: 'DELETE', headers: C })
   const ekAfter = await (await fetch(`${BASE}/api/embed-keys`, { headers: C })).json()
   const insAfter = await (await fetch(`${BASE}/api/embeds/insights`, { headers: C })).json()
@@ -897,6 +959,47 @@ async function main() {
   check('cohorts: no auth → 401', cohNoAuth.status === 401)
   const cohNonAdmin = await fetch(`${BASE}/api/admin/cohorts?days=7&external=1`, { headers: C })
   check('cohorts: signed-in non-admin → 403', cohNonAdmin.status === 403)
+  // The GTM arc (§2.2): shape + within-source monotonicity, read as a REAL
+  // admin — the .env.local burner is an owner wallet, so this is a genuine
+  // SIWE, not a forged session. Skipped (pass) when no burner key is around.
+  {
+    const envFs = await import('node:fs')
+    const pkRaw = (() => {
+      try {
+        return envFs.readFileSync('.env.local', 'utf8').match(/^PRIVATE_KEY=(.*)$/m)?.[1]?.trim().replace(/^"|"$/g, '') ?? null
+      } catch {
+        return null
+      }
+    })()
+    if (pkRaw) {
+      const burner = privateKeyToAccount((pkRaw.startsWith('0x') ? pkRaw : `0x${pkRaw}`) as `0x${string}`)
+      const adminSession = await signIn(burner)
+      const arcRes = await fetch(`${BASE}/api/admin/cohorts?days=30`, { headers: { cookie: adminSession } })
+      const arcBody = (await arcRes.json()) as {
+        arc?: { total: Record<string, number>; bySource: ({ source: string } & Record<string, number>)[] }
+      }
+      const stops = ['arrived', 'asked', 'built', 'signed'] as const
+      const sourcesOk =
+        Array.isArray(arcBody.arc?.bySource) &&
+        arcBody.arc!.bySource.every(
+          (r) =>
+            ['house link', 'creator link', 'embed', 'direct'].includes(r.source) &&
+            // each stop is a subset of the previous within a source cohort
+            stops.every((k, i) => i === 0 || r[k] <= r[stops[i - 1]]) &&
+            r.returned <= r.arrived,
+        )
+      const totalsOk =
+        !!arcBody.arc &&
+        stops.every((k) => arcBody.arc!.total[k] === arcBody.arc!.bySource.reduce((s, r) => s + r[k], 0))
+      check(
+        'gtm arc: admin read → five stops per source, monotone within each source, totals = Σ sources',
+        arcRes.status === 200 && sourcesOk && totalsOk,
+        JSON.stringify(arcBody.arc).slice(0, 300),
+      )
+    } else {
+      check('gtm arc: skipped — no burner key in .env.local', true)
+    }
+  }
 
   // ── Treasury (admin-only) ─────────────────────────────────────────────────
   // Fees-collected view (/dashboard/treasury): on-chain inflow + x402 ledger.
@@ -1095,6 +1198,22 @@ async function main() {
       pricingHtml.includes('25 active intent links') &&
       pricingHtml.includes('Unlimited intent links'),
   )
+
+  // /rebrand — the public record of the Yeetful → Pantessa rename (the §1.1
+  // disclosure anchor cited by the MetaMask/Blockaid/SEAL drafts). A security
+  // reviewer must find both brand names, the open appeal number, and the
+  // retired-fork admission in the served HTML, no JS required.
+  const rebrandRes = await fetch(`${BASE}/rebrand`)
+  const rebrandHtml = await rebrandRes.text()
+  check(
+    'rebrand: public record names both brands, the appeal, the retired fork',
+    rebrandRes.status === 200 &&
+      rebrandHtml.includes('Yeetful is now Pantessa') &&
+      rebrandHtml.includes('273376') &&
+      rebrandHtml.includes('uniswap-embed.yeetful.com'),
+  )
+  const footerHomeHtml = await (await fetch(`${BASE}/`)).text()
+  check('rebrand: reachable from the footer on every page', footerHomeHtml.includes('href="/rebrand"'))
 
   // Payees: the wallet's claimed MCP servers (dashboard Agents → My MCP servers).
   // SIWE-only; a fresh wallet has claimed nothing, so an empty array.
@@ -1348,6 +1467,36 @@ async function main() {
       !isInternalOrigin('https://my.test-app.com') &&
       !isInternalOrigin(null) &&
       !isInternalOrigin('not a url'),
+  )
+  // Display-name brand map (Q4, §1.5): Neon-seeded rows rename on the
+  // owner's clock and the `Yeetful · Claude` family can never rename in
+  // data (code IN-lists) — so the word renders as Pantessa at display
+  // time via cleanServerName, suffixes still stripped, third-party names
+  // untouched. Drawer rows, responder strip, directory cards, and the
+  // /servers detail H1 all route through it.
+  check(
+    'brand map: cleanServerName renders every Yeetful-worded name as Pantessa',
+    cleanServerName('Yeetful Wallet') === 'Pantessa Wallet' &&
+      cleanServerName('Yeetful Finance (Free)') === 'Pantessa Finance' &&
+      cleanServerName('NEAR Intents MCP · Yeetful') === 'NEAR Intents' &&
+      cleanServerName('Yeetful · Claude') === 'Pantessa · Claude' &&
+      cleanServerName('Hyperliquid (Free)') === 'Hyperliquid' &&
+      cleanServerName('SomeDapp Tools') === 'SomeDapp Tools',
+  )
+  // The stamped flag (2026-08-11 audit): a prod-pointed drill's origin looks
+  // exactly like a stranger's — the first-party lane requires it — so all
+  // three mirrors must treat is_internal as internal alongside the patterns.
+  check(
+    'value-origin: isInternalTurn — the flag marks internal even on a real prod origin',
+    isInternalTurn({ origin: 'https://www.pantessa.com', isInternal: true }) &&
+      !isInternalTurn({ origin: 'https://www.pantessa.com', isInternal: false }) &&
+      !isInternalTurn({ origin: 'https://www.pantessa.com' }) &&
+      isInternalTurn({ origin: 'http://localhost:3477' }),
+  )
+  check(
+    'value-origin: both query mirrors carry the is_internal flag',
+    INTERNAL_ORIGIN_SQL.startsWith('(is_internal OR ') &&
+      (INTERNAL_TRAFFIC_WHERE.OR as Record<string, unknown>[]).some((c) => c.isInternal === true),
   )
   check(
     'value-origin: the internal-origin SQL mirror names all three families',
@@ -1660,7 +1809,12 @@ async function main() {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           firstParty: true,
-          sessionId: `harness-ilink-${Date.now()}`,
+          // fixture-, NOT harness-: these beacons simulate ORGANIC stranger
+          // signs (referral + earnings paths must fire); the harness- prefix
+          // would auto-stamp them internal and the write-once referral
+          // claimer correctly skips internal runs. Their localhost origin
+          // still keeps them out of every public read.
+          sessionId: `fixture-ilink-${Date.now()}`,
           page: `${BASE}/i/${slug}`,
           outcome: 'signed',
           artifact: 'tx',
@@ -1765,11 +1919,30 @@ async function main() {
     // (50bps) referred swap earns $0.25 where the base rate would say $0.10.
     await turn({ buildPath: 'native-swap-uniswap', walletAddress: referredWallet, valueUsd: 100, intentLinkSlug: undefined, feeBps: 50 })
     const tierRes = await fetch(`${BASE}/api/intent-links`, { headers: { cookie: mallorySession } })
-    const tierLife = (await tierRes.json()) as { earnings: { referredEarnedUsd: number } }
+    const tierLife = (await tierRes.json()) as {
+      earnings: { referredEarnedUsd: number; totalEarnedUsd: number; referredSignedUsd: number }
+    }
     check(
       'intent links: earnings honor the STAMPED fee tier (a 50bps row earns 2.5x the base rate)',
       Math.abs(tierLife.earnings.referredEarnedUsd - 0.45) < 0.005,
       JSON.stringify(tierLife.earnings),
+    )
+    // Internal runs mint NOTHING: stamped drill turns — direct-attributed or
+    // referred — move neither earnings nor the moved-$ sums, so a prod drill
+    // can never create claimable USDC (claims parity rides the same
+    // isInternal predicate in /api/intent-links/claims).
+    await turn({ buildPath: 'native-swap-uniswap', valueUsd: 4000, internalRun: true })
+    await turn({ buildPath: 'native-swap-uniswap', walletAddress: referredWallet, valueUsd: 4000, intentLinkSlug: undefined, internalRun: true })
+    const drillRes = await fetch(`${BASE}/api/intent-links`, { headers: { cookie: mallorySession } })
+    const drillLife = (await drillRes.json()) as {
+      earnings: { referredEarnedUsd: number; totalEarnedUsd: number; referredSignedUsd: number }
+    }
+    check(
+      'intent links: stamped internal turns mint NOTHING (earnings + moved $ unchanged)',
+      Math.abs(drillLife.earnings.referredEarnedUsd - tierLife.earnings.referredEarnedUsd) < 0.001 &&
+        Math.abs(drillLife.earnings.totalEarnedUsd - tierLife.earnings.totalEarnedUsd) < 0.001 &&
+        Math.abs(drillLife.earnings.referredSignedUsd - tierLife.earnings.referredSignedUsd) < 0.001,
+      JSON.stringify(drillLife.earnings),
     )
     const claim = await fetch(`${BASE}/api/intent-links/claims`, { method: 'POST', headers: M })
     check('intent links: claim below the $10 floor refused (400)', claim.status === 400)
@@ -8537,12 +8710,35 @@ async function main() {
         netFeeBpsFor('native-hl-exec') === 10 && FEE_BEARING_BUILD_PATHS.has('native-hl-exec'),
     )
     check(
-      'hl fee: order carries the treasury fee; foreign recipient / off rate / missing field refuse',
+      'hl fee: order carries the treasury fee; foreign recipient / off rate refuse',
       action.builder?.b === TREASURY_ADDRESS.toLowerCase() && action.builder?.f === HL_BUILDER_FEE_TENTH_BPS &&
         !guardHlExecBuild(openIntent, { ...action, builder: { b: `0x${'dd'.repeat(20)}`, f: HL_BUILDER_FEE_TENTH_BPS } }, ctx).ok &&
-        !guardHlExecBuild(openIntent, { ...action, builder: { b: TREASURY_ADDRESS.toLowerCase(), f: 50 } }, ctx).ok &&
-        !guardHlExecBuild(openIntent, { ...action, builder: undefined }, ctx).ok,
+        !guardHlExecBuild(openIntent, { ...action, builder: { b: TREASURY_ADDRESS.toLowerCase(), f: 50 } }, ctx).ok,
     )
+    // Q2 self-heal (§1.2): an UNFUNDED builder must never wall the flagship.
+    // The build-time decision omits the fee (two-shape family: exactly ours,
+    // or absent — never foreign), the guard notes the omission, and the
+    // eligibility rule sits exactly on the venue's $100 builder floor.
+    {
+      const freeAction = buildHlOrderAction(openIntent, snap, { builderFee: false })
+      const freeGuard = guardHlExecBuild(openIntent, freeAction, ctx)
+      check(
+        'hl fee self-heal: builderFee:false builds NO builder field and the guard passes it with the omission note',
+        freeAction.builder === undefined &&
+          freeGuard.ok &&
+          /omitted this build/.test(freeGuard.checks.find((c) => c.id === 'builder-fee')?.note ?? ''),
+        JSON.stringify(freeGuard.checks.find((c) => c.id === 'builder-fee')),
+      )
+      check(
+        'hl fee self-heal: eligibility sits exactly on the venue floor; NaN and $0 are ineligible',
+        HL_BUILDER_MIN_ACCOUNT_USD === 100 &&
+          builderEligibleFromAccountValue(100) &&
+          builderEligibleFromAccountValue(250.5) &&
+          !builderEligibleFromAccountValue(99.99) &&
+          !builderEligibleFromAccountValue(0) &&
+          !builderEligibleFromAccountValue(NaN),
+      )
+    }
     const feeArt = approveBuilderFeeArtifacts({ nonce: 1752440000000, signatureChainId: 8453, isTestnet: false })
     check(
       'hl fee: approval artifacts — user-signed domain, treasury pinned, exact rate; tampers refuse',

@@ -1,4 +1,4 @@
-// @yeetful/guard — the fail-closed guard layer under Pantessa's transaction
+// @pantessa/guard — the fail-closed guard layer under Pantessa's transaction
 // engine, extracted open-core. Every module here was built against a live
 // incident, not a hypothetical; provenance is in each file's header.
 //

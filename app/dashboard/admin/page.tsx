@@ -71,9 +71,20 @@ interface Overview {
   }[]
 }
 
+interface ArcStops {
+  arrived: number
+  asked: number
+  built: number
+  signed: number
+  returned: number
+}
+
 interface Cohort {
   windowDays: number
   external: boolean
+  /** §2.2: the five-stop arc, strangers only (harness + test wallets always
+   *  excluded server-side). Optional: older cached responses lack it. */
+  arc?: { total: ArcStops; bySource: ({ source: string } & ArcStops)[] }
   funnel: { key: string; label: string; value: number }[]
   moneyMovedUsd: number
   movedEvents: number
@@ -402,6 +413,56 @@ export default function AdminPage() {
           sub={t.declineRate != null ? `${Math.round(t.declineRate * 100)}% declined` : 'no calls yet'}
         />
       </div>
+
+      {/* THE GTM ARC (§2.2) — the one screen GTM is judged by. Strangers
+          only: harness-stamped turns + test wallets are excluded on the
+          server, unconditionally — this table never counts us. */}
+      <Card className="mt-3">
+        <CardTitle>The arc · strangers only ({cohort?.windowDays ?? days}d) — arrived → asked → built → signed → returned</CardTitle>
+        {cohort?.arc ? (
+          <div className="overflow-x-auto">
+            <table className="w-full text-[12px] mt-1">
+              <thead>
+                <tr className="text-left text-[color:var(--muted-2)] mono text-[10.5px] uppercase tracking-wider">
+                  <th className="py-1 pr-3 font-normal">source</th>
+                  {(['arrived', 'asked', 'built', 'signed', 'returned'] as const).map((k) => (
+                    <th key={k} className="py-1 pr-3 font-normal text-right">{k}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {cohort.arc.bySource.map((r) => (
+                  <tr key={r.source} className="border-t border-[var(--line)]">
+                    <td className="py-1.5 pr-3 text-[color:var(--muted)]">{r.source}</td>
+                    {(['arrived', 'asked', 'built', 'signed', 'returned'] as const).map((k) => (
+                      <td key={k} className="py-1.5 pr-3 mono text-right">{r[k]}</td>
+                    ))}
+                  </tr>
+                ))}
+                <tr className="border-t border-[var(--line-2)] font-medium">
+                  <td className="py-1.5 pr-3">all strangers</td>
+                  {(['arrived', 'asked', 'built', 'signed', 'returned'] as const).map((k, i, keys) => {
+                    const v = cohort.arc!.total[k]
+                    const prev = i === 0 ? null : cohort.arc!.total[keys[i - 1]]
+                    const pct = prev ? ` (${Math.round((v / prev) * 100)}%)` : ''
+                    return (
+                      <td key={k} className="py-1.5 pr-3 mono text-right">
+                        {v}
+                        {prev != null && prev > 0 && <span className="text-[color:var(--muted-2)] text-[10.5px]">{pct}</span>}
+                      </td>
+                    )
+                  })}
+                </tr>
+              </tbody>
+            </table>
+            <p className="text-[11px] text-[color:var(--muted-2)] mt-2">
+              Wallet-attributed server truth only; sources are first touch. A drill or test wallet can never appear here.
+            </p>
+          </div>
+        ) : (
+          <p className="text-xs text-[color:var(--muted-2)] py-4">Arc data unavailable.</p>
+        )}
+      </Card>
 
       {/* Milestone funnel — links-first key points */}
       <Card className="mt-3">
