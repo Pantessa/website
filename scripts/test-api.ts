@@ -220,6 +220,7 @@ import {
   isInternalTurn,
   STANDING_TURN_SQL,
 } from '../lib/value-origin'
+import { cleanServerName } from '../lib/utils'
 import { SITE_URL } from '../lib/site-url'
 import { PLAN_BY_ID, planCreditsFor, ALLOWANCE_CUTOFF } from '../lib/plans'
 import { FREE_DAILY_TURN_CAP, HOUSE_DAILY_TURN_CAP } from '../lib/billing'
@@ -1425,6 +1426,21 @@ async function main() {
       !isInternalOrigin('https://my.test-app.com') &&
       !isInternalOrigin(null) &&
       !isInternalOrigin('not a url'),
+  )
+  // Display-name brand map (Q4, §1.5): Neon-seeded rows rename on the
+  // owner's clock and the `Yeetful · Claude` family can never rename in
+  // data (code IN-lists) — so the word renders as Pantessa at display
+  // time via cleanServerName, suffixes still stripped, third-party names
+  // untouched. Drawer rows, responder strip, directory cards, and the
+  // /servers detail H1 all route through it.
+  check(
+    'brand map: cleanServerName renders every Yeetful-worded name as Pantessa',
+    cleanServerName('Yeetful Wallet') === 'Pantessa Wallet' &&
+      cleanServerName('Yeetful Finance (Free)') === 'Pantessa Finance' &&
+      cleanServerName('NEAR Intents MCP · Yeetful') === 'NEAR Intents' &&
+      cleanServerName('Yeetful · Claude') === 'Pantessa · Claude' &&
+      cleanServerName('Hyperliquid (Free)') === 'Hyperliquid' &&
+      cleanServerName('SomeDapp Tools') === 'SomeDapp Tools',
   )
   // The stamped flag (2026-08-11 audit): a prod-pointed drill's origin looks
   // exactly like a stranger's — the first-party lane requires it — so all
