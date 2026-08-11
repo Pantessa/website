@@ -174,6 +174,8 @@ import {
 import {
   parseHlIntent,
   buildHlOrderAction,
+  builderEligibleFromAccountValue,
+  HL_BUILDER_MIN_ACCOUNT_USD,
   guardHlExecBuild,
   buildHlDeposit,
   buildHlLeverageAction,
@@ -8553,12 +8555,35 @@ async function main() {
         netFeeBpsFor('native-hl-exec') === 10 && FEE_BEARING_BUILD_PATHS.has('native-hl-exec'),
     )
     check(
-      'hl fee: order carries the treasury fee; foreign recipient / off rate / missing field refuse',
+      'hl fee: order carries the treasury fee; foreign recipient / off rate refuse',
       action.builder?.b === TREASURY_ADDRESS.toLowerCase() && action.builder?.f === HL_BUILDER_FEE_TENTH_BPS &&
         !guardHlExecBuild(openIntent, { ...action, builder: { b: `0x${'dd'.repeat(20)}`, f: HL_BUILDER_FEE_TENTH_BPS } }, ctx).ok &&
-        !guardHlExecBuild(openIntent, { ...action, builder: { b: TREASURY_ADDRESS.toLowerCase(), f: 50 } }, ctx).ok &&
-        !guardHlExecBuild(openIntent, { ...action, builder: undefined }, ctx).ok,
+        !guardHlExecBuild(openIntent, { ...action, builder: { b: TREASURY_ADDRESS.toLowerCase(), f: 50 } }, ctx).ok,
     )
+    // Q2 self-heal (§1.2): an UNFUNDED builder must never wall the flagship.
+    // The build-time decision omits the fee (two-shape family: exactly ours,
+    // or absent — never foreign), the guard notes the omission, and the
+    // eligibility rule sits exactly on the venue's $100 builder floor.
+    {
+      const freeAction = buildHlOrderAction(openIntent, snap, { builderFee: false })
+      const freeGuard = guardHlExecBuild(openIntent, freeAction, ctx)
+      check(
+        'hl fee self-heal: builderFee:false builds NO builder field and the guard passes it with the omission note',
+        freeAction.builder === undefined &&
+          freeGuard.ok &&
+          /omitted this build/.test(freeGuard.checks.find((c) => c.id === 'builder-fee')?.note ?? ''),
+        JSON.stringify(freeGuard.checks.find((c) => c.id === 'builder-fee')),
+      )
+      check(
+        'hl fee self-heal: eligibility sits exactly on the venue floor; NaN and $0 are ineligible',
+        HL_BUILDER_MIN_ACCOUNT_USD === 100 &&
+          builderEligibleFromAccountValue(100) &&
+          builderEligibleFromAccountValue(250.5) &&
+          !builderEligibleFromAccountValue(99.99) &&
+          !builderEligibleFromAccountValue(0) &&
+          !builderEligibleFromAccountValue(NaN),
+      )
+    }
     const feeArt = approveBuilderFeeArtifacts({ nonce: 1752440000000, signatureChainId: 8453, isTestnet: false })
     check(
       'hl fee: approval artifacts — user-signed domain, treasury pinned, exact rate; tampers refuse',
