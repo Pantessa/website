@@ -15,6 +15,7 @@ import { computeReputation, recentPings } from '@/lib/reputation'
 import type { RoutabilityReport } from '@/lib/mcp-lint-report'
 import { getSessionAddress } from '@/lib/auth'
 import { isAdminAddress } from '@/lib/admin'
+import { cleanServerName } from '@/lib/utils'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -51,7 +52,10 @@ export async function generateMetadata({ params }: Params): Promise<Metadata> {
   const server = await getServer(slug)
   if (!server) return { title: 'Service not found — Pantessa' }
   return {
-    title: server.gated === false ? `${server.name} — free MCP on Pantessa` : `${server.name} — x402 agent on Pantessa`,
+    title:
+      server.gated === false
+        ? `${cleanServerName(server.name)} — free MCP on Pantessa`
+        : `${cleanServerName(server.name)} — x402 agent on Pantessa`,
     description: server.description,
   }
 }
@@ -150,7 +154,7 @@ export default async function ServiceDetailPage({ params }: Params) {
               />
             </div>
             <div className="svc__title">
-              <h1 className="svc__name">{server.name}</h1>
+              <h1 className="svc__name">{cleanServerName(server.name)}</h1>
               <div className="svc__meta">
                 <span className="badge badge--dir mono">{server.category}</span>
                 {server.gated === false ? (

@@ -97,6 +97,28 @@ async function main() {
     }
   }
 
+  console.log('\n── mcp_servers descriptions (prose — "By Yeetful." on every fleet card) ──')
+  for (const srv of await prisma.mcpServer.findMany({
+    where: { description: { contains: 'yeetful', mode: 'insensitive' } },
+    select: { slug: true, description: true },
+    orderBy: { slug: 'asc' },
+  })) {
+    const before = srv.description ?? ''
+    const next = rewrite(before)
+    if (next === before) continue // only host/infra mentions — KEEP-guarded
+    // Descriptions are one long line, so the blog-style 150-char preview
+    // would hide a tail change ("… By Yeetful.") — window the first diff.
+    let at = 0
+    while (at < before.length && before[at] === next[at]) at++
+    const win = (s: string) => `${at > 60 ? '…' : ''}${s.slice(Math.max(0, at - 60), at + 90)}`
+    console.log(`   ${srv.slug}\n     - ${win(before)}\n     + ${win(next)}`)
+    total++
+    if (APPLY) {
+      await prisma.mcpServer.update({ where: { slug: srv.slug }, data: { description: next } })
+      console.log('   ✅ updated')
+    }
+  }
+
   console.log('\n── mcp_servers (display names only — slugs are identifiers) ──')
   const NAMES: Record<string, string> = {
     'yeetful-tool-wallet': 'Pantessa Wallet',
