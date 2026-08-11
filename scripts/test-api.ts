@@ -1096,6 +1096,22 @@ async function main() {
       pricingHtml.includes('Unlimited intent links'),
   )
 
+  // /rebrand — the public record of the Yeetful → Pantessa rename (the §1.1
+  // disclosure anchor cited by the MetaMask/Blockaid/SEAL drafts). A security
+  // reviewer must find both brand names, the open appeal number, and the
+  // retired-fork admission in the served HTML, no JS required.
+  const rebrandRes = await fetch(`${BASE}/rebrand`)
+  const rebrandHtml = await rebrandRes.text()
+  check(
+    'rebrand: public record names both brands, the appeal, the retired fork',
+    rebrandRes.status === 200 &&
+      rebrandHtml.includes('Yeetful is now Pantessa') &&
+      rebrandHtml.includes('273376') &&
+      rebrandHtml.includes('uniswap-embed.yeetful.com'),
+  )
+  const footerHomeHtml = await (await fetch(`${BASE}/`)).text()
+  check('rebrand: reachable from the footer on every page', footerHomeHtml.includes('href="/rebrand"'))
+
   // Payees: the wallet's claimed MCP servers (dashboard Agents → My MCP servers).
   // SIWE-only; a fresh wallet has claimed nothing, so an empty array.
   const mineNoAuth = await fetch(`${BASE}/api/mcp/mine`)
