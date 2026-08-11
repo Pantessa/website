@@ -26,6 +26,9 @@ const GROUPS: { title: string; links: FooterLink[] }[] = [
       { label: 'Blog', href: '/blog' },
       { label: 'Terms', href: '/docs/terms' },
       { label: 'Privacy', href: '/docs/privacy' },
+      // The public record of the 2026-08-05 rename — kept in the footer so
+      // security reviewers can find it from any page (§1.1 disclosure).
+      { label: 'Formerly Yeetful', href: '/rebrand' },
     ],
   },
   {
