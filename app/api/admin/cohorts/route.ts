@@ -45,13 +45,21 @@ const WINDOWS = new Set([7, 14, 30])
 const ROW_CAP = 300
 
 /** Every wallet-attributable arrival signal — shared by the milestone view
- *  and the GTM arc so "arrived" means the same thing on both. */
-const ADDRS_UNION = Prisma.sql`
+ *  and the GTM arc so "arrived" means the same thing on both. The arc passes
+ *  prodJobsOnly: local harness runs create REAL jobs rows for throwaway
+ *  wallets (originEnv 'dev' — no VERCEL_ENV locally), and each gate run was
+ *  inflating the arc's arrivals (caught by the arc's own harness check going
+ *  red between two suite runs, 2026-08-12). */
+function addrsUnion(opts?: { prodJobsOnly?: boolean }) {
+  const jobsLine = opts?.prodJobsOnly
+    ? Prisma.sql`SELECT lower(wallet), created_at FROM jobs WHERE origin_env = 'production'`
+    : Prisma.sql`SELECT lower(wallet), created_at FROM jobs`
+  return Prisma.sql`
       SELECT lower(owner_address) AS a, created_at FROM chats WHERE owner_address IS NOT NULL
       UNION ALL SELECT lower(owner_address), created_at FROM embed_turns WHERE owner_address IS NOT NULL
       UNION ALL SELECT lower(address), created_at FROM agent_toggle_events WHERE address IS NOT NULL
       UNION ALL SELECT lower(owner_address), created_at FROM wallet_working_sets
-      UNION ALL SELECT lower(wallet), created_at FROM jobs
+      UNION ALL ${jobsLine}
       UNION ALL SELECT lower(wallet), created_at FROM dca_schedules
       UNION ALL SELECT lower(wallet), created_at FROM hl_guardian_policies
       UNION ALL SELECT lower(owner_address), created_at FROM api_keys
@@ -64,13 +72,14 @@ const ADDRS_UNION = Prisma.sql`
       UNION ALL SELECT lower(creator), created_at FROM intent_links WHERE creator IS NOT NULL
       UNION ALL SELECT lower(wallet), created_at FROM intent_link_events WHERE wallet IS NOT NULL
 `
+}
 
 /** The milestone CTEs, shared by the funnel + the per-wallet rows. `excl` is
  *  always non-empty ('' sentinel) so `<> ALL(...)` types cleanly. */
 function milestoneCtes(days: number, excl: string[]) {
   return Prisma.sql`
     WITH addrs AS (
-      ${ADDRS_UNION}
+      ${addrsUnion()}
     ),
     fs AS (SELECT a, min(created_at) AS first_seen FROM addrs WHERE a <> ALL(${excl}) GROUP BY a),
     recent AS (SELECT a, first_seen FROM fs WHERE first_seen >= now() - make_interval(days => ${days}::int)),
@@ -193,7 +202,7 @@ function arcQuery(days: number) {
       WHERE c.owner_address IS NOT NULL
     ),
     addrs AS (
-      ${ADDRS_UNION}
+      ${addrsUnion({ prodJobsOnly: true })}
     ),
     fs AS (SELECT a, min(created_at) AS first_seen FROM addrs WHERE a <> ALL(${excl}) GROUP BY a),
     recent AS (SELECT a, first_seen FROM fs WHERE first_seen >= now() - make_interval(days => ${days}::int)),
@@ -210,7 +219,8 @@ function arcQuery(days: number) {
         SELECT a, created_at FROM user_msgs
         WHERE meta ?| array['txRequest', 'txChain', 'orderRequest', 'jobId', 'guardianPolicyId', 'dcaScheduleId']
         UNION ALL
-        SELECT lower(j.wallet), s.created_at FROM job_steps s JOIN jobs j ON j.id = s.job_id WHERE s.kind = 'sign'
+        SELECT lower(j.wallet), s.created_at FROM job_steps s JOIN jobs j ON j.id = s.job_id
+        WHERE s.kind = 'sign' AND j.origin_env = 'production'
       ) z GROUP BY 1
     ),
     signed_arc AS (
@@ -218,7 +228,7 @@ function arcQuery(days: number) {
         SELECT a, created_at AS t FROM user_msgs WHERE jsonb_exists(meta, 'signed')
         UNION ALL
         SELECT lower(j.wallet), s.updated_at FROM job_steps s JOIN jobs j ON j.id = s.job_id
-        WHERE s.kind = 'sign' AND s.status = 'done'
+        WHERE s.kind = 'sign' AND s.status = 'done' AND j.origin_env = 'production'
         UNION ALL
         SELECT a, created_at FROM turns WHERE outcome = 'signed'
       ) z GROUP BY 1
@@ -241,8 +251,11 @@ function arcQuery(days: number) {
     )
     SELECT coalesce(s.src, 'direct') AS source,
            count(*)::int AS arrived,
-           count(*) FILTER (WHERE ak.t IS NOT NULL)::int AS asked,
-           count(*) FILTER (WHERE b.t IS NOT NULL)::int AS built,
+           -- cumulative stops: a wallet that built or signed necessarily
+           -- asked — the ask just wasn't attributable. Monotone by
+           -- construction, so an attribution gap can never invert the arc.
+           count(*) FILTER (WHERE least(ak.t, b.t, sg.t) IS NOT NULL)::int AS asked,
+           count(*) FILTER (WHERE least(b.t, sg.t) IS NOT NULL)::int AS built,
            count(*) FILTER (WHERE sg.t IS NOT NULL)::int AS signed,
            count(*) FILTER (WHERE coalesce(ad.d, 0) >= 2)::int AS returned
     FROM recent r
