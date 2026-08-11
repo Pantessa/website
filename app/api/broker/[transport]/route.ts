@@ -12,7 +12,7 @@
 // pinned mechanically (assertNoTxMaterial) on every outbound payload.
 import { createMcpHandler } from 'mcp-handler'
 import { z } from 'zod'
-import { openIntent, chooseOption, handoffIntent, intentStatus, closeIntent } from '@/lib/broker-exec'
+import { openIntent, chooseOption, handoffIntent, intentStatus, closeIntent, executeIntent } from '@/lib/broker-exec'
 
 export const maxDuration = 60
 
@@ -109,6 +109,22 @@ const handler = createMcpHandler(
         inputSchema: { intent_id: z.string().min(4).max(24) },
       },
       async ({ intent_id }) => guarded(() => handoffIntent(intent_id)),
+    )
+
+    server.registerTool(
+      'broker_execute',
+      {
+        title: 'Execute it yourself (agent-signed, sequenced)',
+        description:
+          'The x402-payer path: when YOUR wallet holds the funds and the key, the desk compiles the working ask into a multi-leg job ' +
+          'owned by that wallet and returns the job id + capability token + drive recipe. You fetch each leg from the job API as the runner ' +
+          'builds it (guarded, policy-checked, one leg at a time), sign and broadcast it with your own key, and post completion; wait legs verify ' +
+          'on-chain arrival before the next leg builds, so the order stays synced around settlement. Only compiles SEQUENCED flows ' +
+          '(fund → wait → act); the intent must have been opened with your wallet. Completion is advancement, not proof — lying fails the job ' +
+          'closed one leg later. No transaction material travels through this MCP surface.',
+        inputSchema: { intent_id: z.string().min(4).max(24) },
+      },
+      async ({ intent_id }) => guarded(() => executeIntent(intent_id)),
     )
 
     server.registerTool(

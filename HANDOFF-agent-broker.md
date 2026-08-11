@@ -55,13 +55,41 @@ per the #549 honesty rule) with an honest no-route-covers-it verdict.
 **Harness:** 9 new checks in `scripts/test-api.ts` (§ agent broker desk),
 including the wire-level hex scan and revoked-link refusal.
 
-## Deliberately NOT in v0
+## v0.5 — the x402-payer path (agent-signed, sequenced) — SHIPPED
 
-- **Agent-side signing** (returning guarded artifacts to agents holding
-  their own keys under spend policy). The API shape supports it later; the
-  hands contract ("nothing you receive can execute by itself") holds until
-  we consciously decide otherwise. That decision deserves its own security
-  review (`/security-audit`).
+Nate's follow-up: *"can the two agents go back and forth signing multiple
+transactions in synced order, awaiting funds before the next transaction?"*
+**Yes — and the sequencer already existed.** `broker_execute` compiles the
+working ask through the SAME jobs compiler human asks use, creates the job
+owned by the AGENT's wallet, kicks the first build, and returns the job id
++ capability token + drive recipe. The agent then drives the EXISTING job
+API (the channel embed browsers use, #414): poll → the runner builds the
+current leg fresh (guarded, policy-checked) → agent signs with its own key
+and broadcasts → posts completion → the runner's wait leg verifies on-chain
+arrival before the next leg builds. Synced order around settlement is the
+runner's existing contract, not new code.
+
+Two design properties carry the safety:
+- **Completion is advancement, not proof** (the complete-route's own
+  words): a lying agent fails its own job closed one leg later, at the next
+  wait verification or build balance check.
+- **The MCP surface stays sentence-clean.** Artifacts travel ONLY on the
+  token-gated job API — the leak pin (`assertNoTxMaterial` + the harness's
+  raw-wire hex scan) still holds on every broker tool.
+
+Drill: `scripts/broker-exec-drill.ts` — DRY by default (throwaway key,
+stops at the sign moment printing only the artifact's SHAPE);
+`AGENT_KEY=0x… LIVE=1` is the real sequenced flow and moves real money —
+owner's call.
+
+## Deliberately still open
+
+- **Spend-policy fencing tuned for agents.** Execute-path jobs inherit the
+  standard build/guard/policy gates keyed by the agent wallet (open-by-
+  default `['*']` + $200/$200 caps). A dedicated agent-tier policy (per-
+  intent caps, desk-level kill switch, x402-payment-verified identity)
+  should land before this is advertised. Run `/security-audit` on the
+  execute path before any public listing.
 - **x402 pricing on the desk.** The two-door pattern (free + paid) exists
   in mcp-kit; wiring payment is a config decision once the loop proves out.
 - **Webhooks.** Polling `broker_status` is enough for v0; push
@@ -72,12 +100,14 @@ including the wire-level hex scan and revoked-link refusal.
 
 ## Where this could go (the roadmap sketch)
 
-1. **Prove the loop** — one external agent (Claude with the hands MCP +
-   this desk, or agent-examples' lazy-trader) completing a real signed buy
-   through a brokered link. The demo clip: two agents negotiate, a human
-   taps sign.
-2. **Price it** — x402 on `broker_open` (pennies) + the existing link-tier
-   bps on signed volume. The desk inherits the whole fee stack.
+1. **Prove the loop** — (a) human path: a real signed buy through a
+   brokered link; (b) agent path: `AGENT_KEY=… LIVE=1 broker-exec-drill`
+   with a funded key completing a real 2-leg flow autonomously. The demo
+   clip: two agents close a trade end to end, no human in the loop —
+   or one tap when the money is the human's.
+2. **Price it** — x402 on `broker_open`/`broker_execute` (pennies) + the
+   existing link-tier bps on signed volume. The payer address doubles as
+   the agent's identity for policy. The desk inherits the whole fee stack.
 3. **Publish it** — the hands MCP already ships in free-mcps; the desk is
    its stateful sibling. List both on the MCP registries; "give your agent
    a trading desk" is the launch story.

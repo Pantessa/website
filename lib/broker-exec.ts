@@ -12,6 +12,9 @@
 import prisma from '@/lib/db'
 import { mintSlug, composeMcps } from '@/lib/intent-links'
 import { scanFundingSources } from '@/lib/funding-plan'
+import { compileJobAsk } from '@/lib/jobs'
+import { advanceJob, createJob, getJobWithSteps, cancelJob } from '@/lib/jobs-runner'
+import { signJobToken } from '@/lib/job-token'
 import {
   planIntent,
   cleanAgentName,
@@ -173,6 +176,8 @@ export interface StatusResult {
   url: string | null
   funnel: { open: number; connect: number; built: number; signed: number; settled: number }
   signedUsd: number
+  /** Present on the agent-signed path: per-leg progress from the runner. */
+  job?: { id: string; status: string; currentStep: number; legs: { seq: number; kind: string; status: string; title: string }[] }
   say: string
 }
 
@@ -205,12 +210,30 @@ export async function intentStatus(intentId: string): Promise<StatusResult> {
   let state = row.state as BrokerState
   if (state === 'handed_off' && funnel.signed > 0) state = 'signed'
   if (state !== 'closed' && funnel.settled > 0) state = 'settled'
+
+  // The agent-signed path: fold the runner's truth in.
+  let jobInfo: StatusResult['job']
+  if (row.jobId) {
+    const job = await getJobWithSteps(row.jobId)
+    if (job) {
+      jobInfo = {
+        id: job.id,
+        status: job.status,
+        currentStep: job.currentStep,
+        legs: job.steps.map((s) => ({ seq: s.seq, kind: s.kind, status: s.status, title: s.title })),
+      }
+      if (state === 'executing' && job.status === 'done') state = 'settled'
+      if (state === 'executing' && job.status === 'canceled') state = 'closed'
+    }
+  }
   if (state !== row.state) {
     await prisma.brokerIntent.update({ where: { id: row.id }, data: { state } })
   }
 
   const say =
-    state === 'settled'
+    state === 'executing'
+      ? `Executing — leg ${(jobInfo?.currentStep ?? 0) + 1}/${jobInfo?.legs.length ?? '?'} (${jobInfo?.status ?? 'running'}). The runner holds the order; drive the current leg off the job API.`
+      : state === 'settled'
       ? 'Settled — the receipt lives on the sign side.'
       : state === 'signed'
         ? `Signed — $${Math.round(signedUsd * 100) / 100} moved through the guarded path.`
@@ -231,7 +254,87 @@ export async function intentStatus(intentId: string): Promise<StatusResult> {
     url: row.linkSlug ? `${SITE}/i/${row.linkSlug}` : null,
     funnel,
     signedUsd: Math.round(signedUsd * 100) / 100,
+    ...(jobInfo ? { job: jobInfo } : {}),
     say,
+  }
+  assertNoTxMaterial(out)
+  return out
+}
+
+export interface ExecuteResult {
+  intentId: string
+  state: BrokerState
+  jobId: string
+  steps: { seq: number; kind: string; note: string }[]
+  drive: {
+    poll: string
+    complete: string
+    how: string[]
+  }
+  say: string
+}
+
+/** The x402-payer path: the agent signs the legs ITSELF, in the synced
+ *  order the runner enforces, waiting on settlement between legs.
+ *
+ *  The working ask is compiled by the SAME jobs compiler human asks use;
+ *  the job is owned by the AGENT's wallet; the desk hands back the job id
+ *  + capability token + the drive recipe. Artifacts never travel through
+ *  this MCP surface — the agent fetches each leg from the job API (the
+ *  channel embed browsers already use, #414), signs with its own key, and
+ *  posts completion. The runner treats completion as advancement, not
+ *  proof: the next wait step / build's balance checks re-verify on-chain,
+ *  so a lying agent fails its own job closed one leg later. Every build
+ *  passes the same deterministic builders + fail-closed guards + spend
+ *  policy as a human turn. */
+export async function executeIntent(intentId: string): Promise<ExecuteResult> {
+  const row = await mustIntent(intentId)
+  if (row.state !== 'open') throw new Error(`Intent ${intentId} is ${row.state} — execution starts from an open intent.`)
+  if (!row.wallet)
+    throw new Error(
+      'broker_execute needs the wallet that will SIGN — re-open the intent passing your agent wallet address. ' +
+        'For human signing, use broker_handoff instead.',
+    )
+
+  const compiled = compileJobAsk(row.ask)
+  if (!compiled || 'problem' in compiled || 'clarify' in compiled) {
+    const why = compiled && 'problem' in compiled ? compiled.problem : compiled && 'clarify' in compiled ? 'it needs a clarification first' : 'it is a single-step ask'
+    throw new Error(
+      `"${row.ask}" does not compile to a multi-step job (${why}). ` +
+        'The agent-signed path exists for SEQUENCED flows (fund → wait for arrival → act). ' +
+        'For single steps or clarifications, negotiate further or use broker_handoff.',
+    )
+  }
+
+  const job = await createJob(row.wallet, compiled, 'broker')
+  // Kick the first build inline (the chat/jobs-API/DCA pattern) so leg 0 is
+  // offered by the time the agent's first poll lands; the cron advances the
+  // rest, including the waits between legs.
+  await advanceJob(job).catch(() => {})
+  const token = signJobToken(job.id)
+  await prisma.brokerIntent.update({
+    where: { id: row.id },
+    data: { state: 'executing', jobId: job.id },
+  })
+
+  const out: ExecuteResult = {
+    intentId: row.id,
+    state: 'executing',
+    jobId: job.id,
+    steps: compiled.steps.map((s, i) => ({ seq: i, kind: s.kind, note: s.title })),
+    drive: {
+      poll: `${SITE}/api/jobs/${job.id}?t=${token}`,
+      complete: `${SITE}/api/jobs/${job.id}/complete?t=${token}`,
+      how: [
+        'GET poll — the runner builds the CURRENT leg fresh (guarded, policy-checked) and serves its unsigned artifact there; later legs stay unbuilt until their turn.',
+        'Sign the artifact with the wallet this intent was opened for, broadcast it yourself, then POST {seq, result:{txHash}} to complete.',
+        'Wait legs verify on-chain arrival before the next leg builds — completion is advancement, not proof; lying fails the job closed one leg later.',
+        'broker_status mirrors per-leg progress; broker_close cancels the job.',
+      ],
+    },
+    say:
+      `Compiled to a ${compiled.steps.length}-leg job owned by ${row.wallet}. ` +
+      'Drive it leg by leg off the job API — the runner enforces the order and the waits between legs.',
   }
   assertNoTxMaterial(out)
   return out
@@ -247,6 +350,9 @@ export async function closeIntent(intentId: string): Promise<{ intentId: string;
   }
   if (row.linkSlug) {
     await prisma.intentLink.update({ where: { id: row.linkSlug }, data: { revoked: true } }).catch(() => {})
+  }
+  if (row.jobId && row.wallet) {
+    await cancelJob(row.jobId, row.wallet).catch(() => {})
   }
   if (row.state !== 'closed') {
     await prisma.brokerIntent.update({ where: { id: row.id }, data: { state: 'closed' } })

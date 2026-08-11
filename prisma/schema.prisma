@@ -1270,6 +1270,7 @@ model BrokerIntent {
   state     String   @default("open")
   plan      Json
   linkSlug  String?  @map("link_slug") // bound /i/<slug> after handoff
+  jobId     String?  @map("job_id") // bound job after broker_execute (agent-signed path)
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 

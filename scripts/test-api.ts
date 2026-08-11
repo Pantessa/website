@@ -9367,18 +9367,64 @@ async function main() {
       `kind=${weather.payload?.plan?.quote?.kind}`,
     )
 
-    // The wire-level pin: nothing any call returned carries 64+ hex chars
-    // (calldata/typed-data/signature material). Wallet addresses (40) pass.
-    const allRaw = [caps.raw, open.raw, chosen.raw, hand.raw, hand2.raw, status.raw, weather.raw].join('\n')
+    // The agent-signed path: a SEQUENCED ask compiles to a job owned by the
+    // agent's wallet; the MCP returns ids + the drive recipe, never artifacts.
+    const seqAsk = 'swap 1 USDC for ETH on base, then send 0.5 USDC on base to 0x2222222222222222222222222222222222222222'
+    const execOpen = await call('broker_open', {
+      ask: seqAsk,
+      wallet: '0x1111111111111111111111111111111111111111',
+      agent: 'harness',
+    })
+    const execRes = await call('broker_execute', { intent_id: execOpen.payload.intentId })
+    const drive = execRes.payload?.drive
+    check(
+      'broker: execute compiles the sequenced ask to an agent-owned job + drive recipe',
+      !execRes.isError &&
+        typeof execRes.payload?.jobId === 'string' &&
+        (execRes.payload.steps?.length ?? 0) >= 2 &&
+        typeof drive?.poll === 'string' &&
+        drive.poll.includes('?t='),
+      `${execRes.payload?.steps?.length} legs`,
+    )
+    const jobPoll = await fetch((drive.poll as string).replace(/^https?:\/\/[^/]+/, BASE))
+    const jobBody = (await jobPoll.json()) as { job?: { steps?: unknown[] } }
+    check(
+      'broker: the capability token drives the job API (the artifact channel)',
+      jobPoll.status === 200 && Array.isArray(jobBody.job?.steps) && (jobBody.job?.steps?.length ?? 0) >= 2,
+    )
+
+    const single = await call('broker_open', { ask: 'Buy $15 of AAPL', agent: 'harness' })
+    const singleExec = await call('broker_execute', { intent_id: single.payload.intentId })
+    check(
+      'broker: execute refuses single-step and wallet-less intents honestly',
+      singleExec.isError && /wallet that will SIGN|does not compile/i.test(String(singleExec.payload)),
+    )
+
+    // The wire-level pin: nothing any MCP call returned carries 0x-prefixed
+    // 64+ hex runs (calldata/typed-data/signature material). Wallet
+    // addresses (40) and the bare-hex capability token pass.
+    const allRaw = [caps.raw, open.raw, chosen.raw, hand.raw, hand2.raw, status.raw, weather.raw, execOpen.raw, execRes.raw, singleExec.raw].join('\n')
     check('broker: no transaction material on the wire (64+ hex scan)', !/0x[0-9a-fA-F]{64,}/.test(allRaw))
 
     const closed = await call('broker_close', { intent_id: intentId })
     const closedW = await call('broker_close', { intent_id: weather.payload.intentId })
+    const closedE = await call('broker_close', { intent_id: execOpen.payload.intentId })
+    const closedS = await call('broker_close', { intent_id: single.payload.intentId })
+    const jobAfter = ((await (
+      await fetch((drive.poll as string).replace(/^https?:\/\/[^/]+/, BASE))
+    ).json()) as { job?: { status?: string } }).job ?? {}
     const linkGone = await fetch(`${BASE}/i/${(hand.payload.url as string).split('/').pop()}`)
     const linkHtml = flat(await linkGone.text())
     check(
-      'broker: close revokes the link (runtime refuses) and closes both intents',
-      !closed.isError && closed.payload.state === 'closed' && !closedW.isError && !/Connect & build/i.test(linkHtml),
+      'broker: close revokes the link, cancels the job, closes every intent',
+      !closed.isError &&
+        closed.payload.state === 'closed' &&
+        !closedW.isError &&
+        !closedE.isError &&
+        !closedS.isError &&
+        jobAfter.status === 'canceled' &&
+        !/Connect & build/i.test(linkHtml),
+      `job=${jobAfter.status}`,
     )
   }
 
