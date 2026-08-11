@@ -1,4 +1,4 @@
-# @yeetful/guard
+# @pantessa/guard
 
 **Fail-closed transaction guards for agent wallets.** Agents and models
 *propose*; deterministic code *verifies*; only the user's wallet signs.
@@ -59,10 +59,53 @@ the composed transaction actually does*. Four classes we have caught live:
 - **The copies can't drift.** In the Pantessa repo, `guard:sync` enforces
   byte-parity between this package and the modules guarding production.
 
+## Quickstart
+
+```bash
+npm install @pantessa/guard viem
+```
+
+Gate an agent's spend against a scoped policy — and notice the shape:
+you pass the policy row and today's spend; the package never opens a
+database, and a gate that cannot evaluate REFUSES:
+
+```ts
+import { grantViolation, type GrantPolicy } from '@pantessa/guard'
+
+const policy: GrantPolicy = {
+  id: 'grant-1',
+  allow: ['api.example.com'],
+  perCallUsd: 5,
+  perDayUsd: 20,
+  expiresAt: new Date(Date.now() + 86_400_000),
+  status: 'active',
+  spendPolicyEnabled: true,
+}
+const violation = grantViolation(policy, 'api.example.com', 3.5, /* spentTodayUsd */ 12)
+if (violation) throw new Error(`refused: ${violation}`) // 'OVER_PER_CALL' | 'BUDGET_EXCEEDED' | … | 'POLICY_ERROR'
+```
+
+Bind a tool-claimed token to what the chain says it is (the
+consistent-liar defense) — the reader is injected, so any client works:
+
+```ts
+import { assertTokenIdentity } from '@pantessa/guard'
+import { createPublicClient, http } from 'viem'
+import { base } from 'viem/chains'
+
+const client = createPublicClient({ chain: base, transport: http() })
+// Throws unless the address's on-chain symbol()/decimals() match the claim.
+await assertTokenIdentity(client, '0x8335…2913', 'USDC', 6)
+```
+
+See `examples/quickstart.ts` for a complete, compile-checked version of
+both, plus the delegated-execution gate.
+
 ## Status
 
-`0.1.0` — extraction of the venue-neutral core. Not yet published to npm.
-The venue-specific builders (Uniswap v3/v4 calldata verification, CoW
-appData family pinning, Seaport fee-schedule re-derivation) remain in the
-app; they extract next if there's interest. Talk to us if you're building
-an agent wallet and want this under yours.
+`0.1.0` — extraction of the venue-neutral core, publish-prepped (dry-run
+verified; publishing is an owner decision). The venue-specific builders
+(Uniswap v3/v4 calldata verification, CoW appData family pinning,
+Seaport fee-schedule re-derivation) remain in the app; they extract next
+if there's interest. Talk to us if you're building an agent wallet and
+want this under yours.

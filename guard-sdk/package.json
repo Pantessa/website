@@ -1,12 +1,15 @@
 {
-  "name": "@yeetful/guard",
+  "name": "@pantessa/guard",
   "version": "0.1.0",
   "description": "Fail-closed transaction guards for agent wallets: spend policy, artifact verification, delegated-execution guardrails. Agents propose; deterministic code verifies; only the user signs.",
   "license": "MIT",
   "type": "module",
   "main": "src/index.ts",
   "types": "src/index.ts",
-  "files": ["src", "README.md"],
+  "files": [
+    "src",
+    "README.md"
+  ],
   "scripts": {
     "test": "tsx run-tests.ts"
   },
@@ -15,5 +18,19 @@
   },
   "devDependencies": {
     "tsx": "^4"
-  }
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Yeetful/website.git",
+    "directory": "guard-sdk"
+  },
+  "homepage": "https://www.pantessa.com",
+  "keywords": [
+    "agent-wallet",
+    "transaction-guard",
+    "fail-closed",
+    "spend-policy",
+    "web3-security",
+    "mcp"
+  ]
 }
