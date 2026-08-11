@@ -57,6 +57,18 @@ export async function POST(req: NextRequest) {
   const outcome = typeof body.outcome === 'string' && OUTCOMES.has(body.outcome) ? body.outcome : null
   const origin = sightingOrigin(body.page, req.headers.get('referer'))
 
+  // Internal-run marker (2026-08-11 audit: prod-pointed drills write rows the
+  // origin filters can't see — the first-party lane REQUIRES a real origin).
+  // Self-reported on purpose: flagging yourself internal only removes the row
+  // from our own scoreboard, so there is nothing to gain by spoofing it.
+  // Every prod-pointed script sends the header on every request (standing
+  // rule, lib/value-origin.ts); the harness- sessionId prefix is the belt for
+  // fixtures that predate the header.
+  const internalRun =
+    req.headers.get('x-yf-internal-run') === '1' ||
+    body.internalRun === true ||
+    (sessionId?.startsWith('harness-') ?? false)
+
   // First-party lane: yeetful.com's own chat, keyless by nature. Only
   // value-bearing outcomes, only from our own origin, never a prompt.
   const firstParty =
@@ -128,6 +140,7 @@ export async function POST(req: NextRequest) {
         intentLinkSlug,
         walletAddress,
         feeBps,
+        isInternal: internalRun,
       },
     })
   } catch {
@@ -140,7 +153,10 @@ export async function POST(req: NextRequest) {
   // Write-once (createMany skipDuplicates — a second link never re-claims),
   // self-referrals excluded (a creator signing their own link earns nothing
   // extra), and always fail-soft: referral stamping never breaks telemetry.
-  if (outcome === 'signed' && intentLinkSlug && walletAddress) {
+  // Internal runs never claim referrals: referred_wallets is write-once and
+  // lifetime — a drill signing through a link must not permanently attribute
+  // a real wallet to a creator.
+  if (outcome === 'signed' && intentLinkSlug && walletAddress && !internalRun) {
     try {
       const link = await prisma.intentLink.findUnique({ where: { id: intentLinkSlug }, select: { creator: true } })
       if (link?.creator && link.creator !== walletAddress) {
@@ -153,5 +169,7 @@ export async function POST(req: NextRequest) {
       /* fail-soft */
     }
   }
-  return NextResponse.json({ ok: true })
+  // `internal` echoes the stamp so drills (and the harness) can assert their
+  // rows can never read as growth.
+  return NextResponse.json(internalRun ? { ok: true, internal: true } : { ok: true })
 }

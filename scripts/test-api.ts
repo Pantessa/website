@@ -212,7 +212,14 @@ import {
   LIDO_WSTETH_MAINNET,
   type LidoBuiltStake,
 } from '../lib/lido-stake'
-import { classifyLegacyTurn, INTERNAL_ORIGIN_SQL, isInternalOrigin, STANDING_TURN_SQL } from '../lib/value-origin'
+import {
+  classifyLegacyTurn,
+  INTERNAL_ORIGIN_SQL,
+  INTERNAL_TRAFFIC_WHERE,
+  isInternalOrigin,
+  isInternalTurn,
+  STANDING_TURN_SQL,
+} from '../lib/value-origin'
 import { SITE_URL } from '../lib/site-url'
 import { PLAN_BY_ID, planCreditsFor, ALLOWANCE_CUTOFF } from '../lib/plans'
 import { FREE_DAILY_TURN_CAP, HOUSE_DAILY_TURN_CAP } from '../lib/billing'
@@ -880,6 +887,58 @@ async function main() {
     (ins.transactions as { buildPath: string | null }[])?.some((x) => x.buildPath === 'native-swap-uniswap'),
   )
 
+  // ── Internal-run stamping (the 2026-08-11 harness-honesty rule) ───────────
+  // A prod-pointed drill's rows carry a REAL origin (the first-party lane
+  // requires one), so the stamp — header, body flag, or harness- sessionId —
+  // is the only marker the scoreboard filters can see. The route echoes the
+  // stamp so a drill can assert its rows can never read as growth.
+  const intHdr = await fetch(`${BASE}/api/embed/telemetry`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-yf-internal-run': '1' },
+    body: JSON.stringify({
+      key: ek.key, sessionId: 'drill-hdr-1', page: 'https://harness-embed.test/swap',
+      outcome: 'signed', artifact: 'tx', valueUsd: 1349,
+    }),
+  })
+  check('telemetry: x-yf-internal-run header stamps + echoes internal', intHdr.status === 200 && (await intHdr.json()).internal === true)
+  const intBody = await fetch(`${BASE}/api/embed/telemetry`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      key: ek.key, sessionId: 'drill-body-1', page: 'https://harness-embed.test/swap',
+      outcome: 'tx-built', artifact: 'tx', internalRun: true,
+    }),
+  })
+  check('telemetry: internalRun body flag stamps (the sendBeacon path — no headers)', intBody.status === 200 && (await intBody.json()).internal === true)
+  const intSess = await fetch(`${BASE}/api/embed/telemetry`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      key: ek.key, sessionId: 'harness-belt-1', page: 'https://harness-embed.test/swap', outcome: 'answered',
+    }),
+  })
+  check('telemetry: harness- sessionId prefix stamps (belt for pre-header fixtures)', intSess.status === 200 && (await intSess.json()).internal === true)
+  const intOrganic = await fetch(`${BASE}/api/embed/telemetry`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      key: ek.key, sessionId: 'organic-visitor-1', page: 'https://harness-embed.test/swap', outcome: 'answered',
+    }),
+  })
+  check('telemetry: an organic beacon is never stamped internal', intOrganic.status === 200 && (await intOrganic.json()).internal === undefined)
+  // The prod-drill shape end to end: first-party lane + our own (real) origin
+  // + the header. The row records stamped — and the write-once referral
+  // claimer skips internal runs (a drill must never permanently attribute a
+  // wallet to a creator).
+  const intFp = await fetch(`${BASE}/api/embed/telemetry`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-yf-internal-run': '1' },
+    body: JSON.stringify({
+      firstParty: true, sessionId: 'drill-fp-1', page: `${BASE}/chat`, outcome: 'signed', artifact: 'tx', valueUsd: 1349,
+    }),
+  })
+  check('telemetry: a first-party drill beacon (real origin) records stamped internal', intFp.status === 200 && (await intFp.json()).internal === true)
+
   const ekGone = await fetch(`${BASE}/api/embed-keys/${ek.id}?purge=1`, { method: 'DELETE', headers: C })
   const ekAfter = await (await fetch(`${BASE}/api/embed-keys`, { headers: C })).json()
   const insAfter = await (await fetch(`${BASE}/api/embeds/insights`, { headers: C })).json()
@@ -1367,6 +1426,21 @@ async function main() {
       !isInternalOrigin(null) &&
       !isInternalOrigin('not a url'),
   )
+  // The stamped flag (2026-08-11 audit): a prod-pointed drill's origin looks
+  // exactly like a stranger's — the first-party lane requires it — so all
+  // three mirrors must treat is_internal as internal alongside the patterns.
+  check(
+    'value-origin: isInternalTurn — the flag marks internal even on a real prod origin',
+    isInternalTurn({ origin: 'https://www.pantessa.com', isInternal: true }) &&
+      !isInternalTurn({ origin: 'https://www.pantessa.com', isInternal: false }) &&
+      !isInternalTurn({ origin: 'https://www.pantessa.com' }) &&
+      isInternalTurn({ origin: 'http://localhost:3477' }),
+  )
+  check(
+    'value-origin: both query mirrors carry the is_internal flag',
+    INTERNAL_ORIGIN_SQL.startsWith('(is_internal OR ') &&
+      (INTERNAL_TRAFFIC_WHERE.OR as Record<string, unknown>[]).some((c) => c.isInternal === true),
+  )
   check(
     'value-origin: the internal-origin SQL mirror names all three families',
     INTERNAL_ORIGIN_SQL.includes('localhost') &&
@@ -1678,7 +1752,12 @@ async function main() {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           firstParty: true,
-          sessionId: `harness-ilink-${Date.now()}`,
+          // fixture-, NOT harness-: these beacons simulate ORGANIC stranger
+          // signs (referral + earnings paths must fire); the harness- prefix
+          // would auto-stamp them internal and the write-once referral
+          // claimer correctly skips internal runs. Their localhost origin
+          // still keeps them out of every public read.
+          sessionId: `fixture-ilink-${Date.now()}`,
           page: `${BASE}/i/${slug}`,
           outcome: 'signed',
           artifact: 'tx',
@@ -1783,11 +1862,30 @@ async function main() {
     // (50bps) referred swap earns $0.25 where the base rate would say $0.10.
     await turn({ buildPath: 'native-swap-uniswap', walletAddress: referredWallet, valueUsd: 100, intentLinkSlug: undefined, feeBps: 50 })
     const tierRes = await fetch(`${BASE}/api/intent-links`, { headers: { cookie: mallorySession } })
-    const tierLife = (await tierRes.json()) as { earnings: { referredEarnedUsd: number } }
+    const tierLife = (await tierRes.json()) as {
+      earnings: { referredEarnedUsd: number; totalEarnedUsd: number; referredSignedUsd: number }
+    }
     check(
       'intent links: earnings honor the STAMPED fee tier (a 50bps row earns 2.5x the base rate)',
       Math.abs(tierLife.earnings.referredEarnedUsd - 0.45) < 0.005,
       JSON.stringify(tierLife.earnings),
+    )
+    // Internal runs mint NOTHING: stamped drill turns — direct-attributed or
+    // referred — move neither earnings nor the moved-$ sums, so a prod drill
+    // can never create claimable USDC (claims parity rides the same
+    // isInternal predicate in /api/intent-links/claims).
+    await turn({ buildPath: 'native-swap-uniswap', valueUsd: 4000, internalRun: true })
+    await turn({ buildPath: 'native-swap-uniswap', walletAddress: referredWallet, valueUsd: 4000, intentLinkSlug: undefined, internalRun: true })
+    const drillRes = await fetch(`${BASE}/api/intent-links`, { headers: { cookie: mallorySession } })
+    const drillLife = (await drillRes.json()) as {
+      earnings: { referredEarnedUsd: number; totalEarnedUsd: number; referredSignedUsd: number }
+    }
+    check(
+      'intent links: stamped internal turns mint NOTHING (earnings + moved $ unchanged)',
+      Math.abs(drillLife.earnings.referredEarnedUsd - tierLife.earnings.referredEarnedUsd) < 0.001 &&
+        Math.abs(drillLife.earnings.totalEarnedUsd - tierLife.earnings.totalEarnedUsd) < 0.001 &&
+        Math.abs(drillLife.earnings.referredSignedUsd - tierLife.earnings.referredSignedUsd) < 0.001,
+      JSON.stringify(drillLife.earnings),
     )
     const claim = await fetch(`${BASE}/api/intent-links/claims`, { method: 'POST', headers: M })
     check('intent links: claim below the $10 floor refused (400)', claim.status === 400)

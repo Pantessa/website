@@ -22,9 +22,11 @@ export async function POST(req: NextRequest) {
   const links = await prisma.intentLink.findMany({ where: { creator }, select: { id: true } })
   if (links.length === 0) return NextResponse.json({ error: 'No links, no earnings yet.' }, { status: 400 })
 
+  // isInternal: false — the same drill-row exclusion as /api/intent-links
+  // (claimable USDC must never accrue from internal runs); keep in lockstep.
   const turns = await prisma.embedTurn.groupBy({
     by: ['buildPath', 'feeBps'],
-    where: { intentLinkSlug: { in: links.map((l) => l.id) }, outcome: 'signed', valueUsd: { gt: 0 } },
+    where: { intentLinkSlug: { in: links.map((l) => l.id) }, outcome: 'signed', valueUsd: { gt: 0 }, isInternal: false },
     _sum: { valueUsd: true },
   })
   // Lifetime referral component — the SAME union as /api/intent-links
@@ -34,7 +36,13 @@ export async function POST(req: NextRequest) {
   const referredTurns = referred.length
     ? await prisma.embedTurn.groupBy({
         by: ['buildPath', 'feeBps'],
-        where: { walletAddress: { in: referred.map((r) => r.wallet) }, intentLinkSlug: null, outcome: 'signed', valueUsd: { gt: 0 } },
+        where: {
+          walletAddress: { in: referred.map((r) => r.wallet) },
+          intentLinkSlug: null,
+          outcome: 'signed',
+          valueUsd: { gt: 0 },
+          isInternal: false,
+        },
         _sum: { valueUsd: true },
       })
     : []
