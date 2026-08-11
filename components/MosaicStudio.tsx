@@ -266,6 +266,17 @@ export default function MosaicStudio({ from }: { from?: string }) {
         return
       }
       const info = json as ReadResult
+      if (info.slices.length === 0) {
+        // An honest empty (nothing priced, or a wallet that IS the stable) —
+        // keep the editor as it stands instead of blanking it.
+        setReadErr(
+          info.totalUsd > 0
+            ? 'That wallet is all stable already — nothing to tile. Shape something aspirational instead.'
+            : "Nothing priced on Base, Ethereum, or Arbitrum for that wallet — shape the tiles by hand.",
+        )
+        setReadInfo(info)
+        return
+      }
       loadShape(info.slices, info.chain)
       setParentSlug(null)
       setReadInfo(info)

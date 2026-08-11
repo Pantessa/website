@@ -19,6 +19,13 @@ export const dynamic = 'force-dynamic'
 
 const ADDRESS_RE = /^0x[0-9a-fA-F]{40}$/
 
+/** 120s per-address cache (the /w briefing precedent) — an unauthenticated
+ *  read must not be a free lever on the shared Alchemy key. Small and
+ *  process-local: correctness is unaffected (suggestions are display math). */
+const READ_TTL_MS = 120_000
+const READ_CACHE_MAX = 500
+const readCache = new Map<string, { at: number; body: unknown }>()
+
 const CHAIN_WORDS: MosaicChainWord[] = ['base', 'ethereum', 'arbitrum']
 /** Alchemy HoldingRow.chain label → mosaic chain word (Robinhood Chain rows
  *  fall out here on purpose — v1 tiles the three EVM majors only, matching
@@ -64,6 +71,13 @@ export async function GET(req: NextRequest) {
   if (!alchemyEnabled()) {
     return NextResponse.json({ error: 'The portfolio read is not configured on this deploy.' }, { status: 503 })
   }
+
+  const cacheKey = address.toLowerCase()
+  const hit = readCache.get(cacheKey)
+  if (hit && Date.now() - hit.at < READ_TTL_MS) {
+    return NextResponse.json(hit.body)
+  }
+
   const portfolio = await getMultichainPortfolio(address).catch(() => null)
   if (!portfolio) {
     return NextResponse.json({ error: "Couldn't read that wallet just now — try again in a minute." }, { status: 503 })
@@ -128,10 +142,22 @@ export async function GET(req: NextRequest) {
     pcts = integerPcts(entries.map((e) => e.usd))
   }
 
-  return NextResponse.json({
-    chain,
-    totalUsd: round2(totalUsd),
-    slices: entries.map((e, i) => ({ pct: pcts[i], token: e.token })),
-    holdings,
-  })
+  // The grammar refuses one-tile shapes, and this suggestion promises
+  // "mintable as-is" — a single-token wallet gets a small stable rail carved
+  // out (a starting point to edit, not a claim about what's held). A wallet
+  // that is 100% the stable already has nothing to tile — suggest nothing.
+  let slices = entries.map((e, i) => ({ pct: pcts[i], token: e.token }))
+  if (slices.length === 1) {
+    slices = slices[0].token === MOSAIC_STABLE || slices[0].pct < 6
+      ? []
+      : [{ pct: slices[0].pct - 5, token: slices[0].token }, { pct: 5, token: MOSAIC_STABLE }]
+  }
+
+  const body = { chain, totalUsd: round2(totalUsd), slices, holdings }
+  readCache.set(cacheKey, { at: Date.now(), body })
+  if (readCache.size > READ_CACHE_MAX) {
+    const oldest = readCache.keys().next().value
+    if (oldest) readCache.delete(oldest)
+  }
+  return NextResponse.json(body)
 }

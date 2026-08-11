@@ -65,6 +65,20 @@ const SLICE_RE = /(\d+(?:\.\d+)?)\s*%\s*(?:of\s+)?\$?([A-Za-z]{2,12})\b/g
 
 const CHAIN_ON_RE = /\bon\s+([a-z][a-z ]{2,20})\b/i
 
+/** The chain word is only ACCEPTED at the end of the ask (where
+ *  mosaicAskString writes it) — harvesting "on ethereum" out of trailing
+ *  prose once re-routed a plan to the wrong chain. Mid-sentence chain words
+ *  fall back to the dominant-chain pick, which is safe by construction. */
+const CHAIN_AT_END_RE = /\bon\s+([a-z]+)\s*["'.!?]*\s*$/i
+
+/** A tile ask must be ONLY a tile ask. Any other money instruction riding
+ *  the same message ("tile …, then send 1 USDC to 0x…") gets a named
+ *  refusal — the jobs compiler nulls on the unparseable tile segment, so
+ *  without this guard the mosaic gate would claim the turn and SILENTLY
+ *  DROP the rest (the #595/#597 partial-match bug, reintroduced). */
+const OTHER_MONEY_VERB_RE =
+  /\b(?:send|transfer|swap|sell|buy|bridge|stake|unstake|deposit|withdraw|long|short|supply|lend|repay|borrow|protect|list|vote|convert)\b/i
+
 const MOSAIC_CHAINS: Record<string, MosaicChainWord> = {
   base: 'base',
   ethereum: 'ethereum',
@@ -133,25 +147,37 @@ export function parseMosaicAsk(message: string): MosaicAsk | { problem: string }
     return { problem: `Your tiles add to ${trimNum(sum)}% — a mosaic covers the whole wall. Make them sum to 100.` }
   }
 
-  // Chain word: scan every "on <word>" (typo-tolerant via the lexicon) and
-  // take the first that names a first-class chain. Robinhood Chain is a
-  // NAMED refusal, not a silent drop — stock tiling is queued, not built.
-  let chainWord: MosaicChainWord | undefined
+  // Robinhood named ANYWHERE is a refusal, not a silent drop — stock tiling
+  // is queued, not built. (Scanned everywhere on purpose: the refusal must
+  // fire even when the chain word sits mid-sentence.)
   const normalized = normalizeChainWords(message)
   for (const m of normalized.matchAll(new RegExp(CHAIN_ON_RE.source, 'gi'))) {
     const raw = m[1].toLowerCase().trim()
     const canon = canonicalChainWord(raw) ?? raw
-    if (/^robinhood/.test(canon)) {
+    if (/^robinhood/.test(canon) || /^robinhood/.test(canon.split(' ')[0])) {
       return {
         problem:
           'Tiling runs on Base, Ethereum, or Arbitrum for now — tokenized-stock tiles on Robinhood Chain are queued, not built. Name one of the three or leave the chain out.',
       }
     }
-    const hit = MOSAIC_CHAINS[canon] ?? MOSAIC_CHAINS[canon.split(' ')[0]]
-    if (hit) {
-      chainWord = hit
-      break
+  }
+
+  // One ask, one shape: refuse any other money instruction riding along —
+  // claiming it and dropping the rest would be the silent partial-match bug.
+  const withoutSlices = message.replace(new RegExp(SLICE_RE.source, 'g'), ' ')
+  if (OTHER_MONEY_VERB_RE.test(withoutSlices)) {
+    const verb = withoutSlices.match(OTHER_MONEY_VERB_RE)?.[0]
+    return {
+      problem: `A mosaic message carries ONE shape and nothing else — the "${verb}" part won't ride along silently. Run the tile first, then send the rest as its own ask.`,
     }
+  }
+
+  // Chain word, accepted only at the end (the canonical position).
+  let chainWord: MosaicChainWord | undefined
+  const end = normalized.match(CHAIN_AT_END_RE)
+  if (end) {
+    const canon = canonicalChainWord(end[1].toLowerCase()) ?? end[1].toLowerCase()
+    chainWord = MOSAIC_CHAINS[canon]
   }
 
   return { slices, chainWord }
@@ -357,6 +383,13 @@ export function planMosaic(inputs: MosaicPlanInputs): MosaicPlan {
   if (totalBuys > stableFuel && totalBuys > 0) {
     const scale = Math.max(0, stableFuel / totalBuys)
     for (const b of buys) b.usd = round2(b.usd * scale)
+    // The table must show what the legs will actually do — scaled sizes,
+    // not the pre-scale wish.
+    for (const r of rows) {
+      if (r.action !== 'buy') continue
+      const b = buys.find((x) => x.token === r.token)
+      if (b) r.deltaUsd = b.usd
+    }
     notes.push('Buys are sized to the sell proceeds with 0.5% settlement headroom — a shape, not a promise.')
   }
 
@@ -396,6 +429,10 @@ export function planMosaic(inputs: MosaicPlanInputs): MosaicPlan {
  *  grammar is \d+(\.\d+)? so no commas, no exponents, no trailing dot. */
 export function fmtUnits(n: number): string {
   if (!Number.isFinite(n) || n <= 0) return '0'
+  // Meme-token balances can exceed 1e21 units, where String()/toFixed both
+  // fall into exponent form and the leg would fail its own compile check —
+  // BigInt keeps plain digits (sub-unit dust is noise at this magnitude).
+  if (n >= 1e15) return BigInt(Math.floor(n)).toString()
   if (n >= 1000) return String(Math.round(n * 100) / 100)
   // 6 significant-ish decimals, never exponent form.
   const s = n.toFixed(Math.max(0, 6 - Math.max(0, Math.floor(Math.log10(n)) + 1)))

@@ -9570,10 +9570,31 @@ async function main() {
     )
 
     // Grammar-safe numbers: the same-chain-swap segment is \d+(\.\d+)?, so an
-    // exponent-form amount would silently break the round-trip above.
+    // exponent-form amount would silently break the round-trip above. The
+    // top end matters too — meme-token balances pass 1e21 units, where
+    // String()/toFixed both go exponent (the BigInt path pins this).
     check(
       'mosaic: fmtUnits never emits exponent form (grammar-safe amounts)',
-      [1e-7, 0.000015, 0.5, 1234.5678].every((n) => !fmtUnits(n).includes('e')) && fmtUnits(1e-7) === '0',
+      [1e-7, 0.000015, 0.5, 1234.5678, 2e21, 9.9e15].every((n) => !/e/i.test(fmtUnits(n))) && fmtUnits(1e-7) === '0',
+    )
+
+    // One ask, one shape (#595/#597): another money instruction riding the
+    // tile message is a NAMED refusal — never a silent drop of the rest.
+    // (compileJobAsk nulls on the unparseable tile segment, so without this
+    // guard the mosaic gate would claim the compound and eat the send.)
+    const rideAlong = parseMosaicAsk('tile my wallet 50% eth, 50% usdc then send 1 USDC on base to 0x9Cc09aD0d6832ffBBFB1b70F1d9E5D0a6d00892A')
+    check(
+      'mosaic: a ride-along money clause refuses by name, never drops silently',
+      rideAlong != null && 'problem' in rideAlong && /send/.test(rideAlong.problem),
+    )
+
+    // The chain word is accepted only at the ask's END (the canonical
+    // position mosaicAskString writes) — trailing prose once re-routed a
+    // plan: "saw it on ethereum twitter" must NOT pick Ethereum.
+    const proseChain = parseMosaicAsk('tile my wallet 50% eth, 50% usdc with a shape I saw on ethereum somewhere')
+    check(
+      'mosaic: mid-prose chain words fall back to the dominant-chain pick',
+      proseChain != null && !('problem' in proseChain) && proseChain.chainWord === undefined,
     )
 
     // A shape is an instruction, not permission to liquidate: the biggest

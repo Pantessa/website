@@ -6,6 +6,7 @@ import { activeLinkCapFor, cleanAsk, composeMcps, mintSlug, parseAllowWallets, p
 import { FEE_BEARING_BUILD_PATHS, creatorEarningsUsd, netFeeBpsForTurn } from '@/lib/fees'
 import { getEffectivePlan } from '@/lib/billing'
 import { isAdminAddress } from '@/lib/admin'
+import { isMosaicAsk } from '@/lib/mosaic'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -77,7 +78,10 @@ export async function POST(req: NextRequest) {
     const id = mintSlug()
     try {
       const link = await prisma.intentLink.create({
-        data: { id, ask, variants, mcps, creator, agent, redirectUrl, expiresAt: expiry.date, maxSigns: maxSigns.max, allowWallets: allow.wallets },
+        // A tile-grammar ask minted through THIS door is still a mosaic —
+        // stamp kind so the gallery/fork surfaces see it (the /api/mosaics
+        // door is the structured way in, not the only one).
+        data: { id, ask, variants, mcps, creator, agent, redirectUrl, expiresAt: expiry.date, maxSigns: maxSigns.max, allowWallets: allow.wallets, kind: isMosaicAsk(ask) ? 'mosaic' : null },
       })
       return NextResponse.json({
         slug: link.id,
