@@ -82,7 +82,9 @@ async function main() {
     try {
       const res = await fetch(`${BASE}/api/chat`, {
         method: 'POST',
-        headers: { 'content-type': 'application/json', 'x-yf-no-ask-log': '1' },
+        // x-yf-internal-run: prod-pointed drill — anything this request causes
+        // to be recorded must be stamped internal (lib/value-origin.ts rule).
+        headers: { 'content-type': 'application/json', 'x-yf-no-ask-log': '1', 'x-yf-internal-run': '1' },
         body: JSON.stringify({ message: link.ask, activeServers, history: [], walletAddress: wallet }),
       })
       const body = (await res.json()) as Record<string, unknown> & { reply?: string }
