@@ -222,7 +222,50 @@ export function guardHlLeverageBuild(
  * position on close), price from mark shaded by the slippage bound. Throws
  * on inconsistent inputs rather than guessing.
  */
-export function buildHlOrderAction(intent: HlOrderIntent, snap: HlMarketSnapshot): HlWireOrderAction {
+/** The venue's builder floor: an account must hold at least this much HL
+ *  perps account value to RECEIVE builder fees — below it the venue rejects
+ *  the user's fee-cap approval ("Builder has insufficient balance to be
+ *  approved") and every perp build used to WALL there (live 2026-08-04→11,
+ *  treasury at $0.00: the flagship YeetCall ask was dead in prod). */
+export const HL_BUILDER_MIN_ACCOUNT_USD = 100
+
+/** Pure eligibility rule — split out so the self-heal decision is pinnable. */
+export function builderEligibleFromAccountValue(accountValueUsd: number): boolean {
+  return Number.isFinite(accountValueUsd) && accountValueUsd >= HL_BUILDER_MIN_ACCOUNT_USD
+}
+
+// ~60s cache per network: the probe runs on EVERY perp build; the treasury's
+// account value doesn't move fast, and a stale "eligible" at worst re-walls
+// one build a minute after a withdrawal.
+const builderEligibleCache = new Map<string, { at: number; eligible: boolean }>()
+
+/**
+ * Can OUR treasury actually receive builder fees right now? (Q2 self-heal,
+ * HANDOFF-gtm-bulletproof §1.2.) THROWS on probe failure — the caller keeps
+ * the fee (and therefore the wall) only when the probe itself errors:
+ * fail-closed on ambiguity, fee-free on a confirmed-ineligible builder, fee
+ * resumes automatically once the account is funded.
+ */
+export async function builderFeeEligible(isTestnet = false): Promise<boolean> {
+  const key = isTestnet ? 'testnet' : 'mainnet'
+  const hit = builderEligibleCache.get(key)
+  if (hit && Date.now() - hit.at < 60_000) return hit.eligible
+  const { InfoClient, HttpTransport } = await import('@nktkas/hyperliquid')
+  const info = new InfoClient({ transport: new HttpTransport({ isTestnet }) })
+  const state = await info.clearinghouseState({ user: TREASURY_ADDRESS.toLowerCase() as `0x${string}` })
+  const eligible = builderEligibleFromAccountValue(Number(state.marginSummary.accountValue))
+  builderEligibleCache.set(key, { at: Date.now(), eligible })
+  return eligible
+}
+
+export function buildHlOrderAction(
+  intent: HlOrderIntent,
+  snap: HlMarketSnapshot,
+  /** builderFee: the build-time self-heal decision. Default = the env config
+   *  (back-compat for every existing caller); pass false when the treasury
+   *  is verifiably below the venue's builder floor. */
+  opts?: { builderFee?: boolean },
+): HlWireOrderAction {
   let isBuy: boolean
   let sizeUnits: number
   let reduceOnly: boolean
@@ -255,7 +298,9 @@ export function buildHlOrderAction(intent: HlOrderIntent, snap: HlMarketSnapshot
     // The venue-native interface fee (HANDOFF-yeetcall-gtm): rides inside the
     // signed action, so the guard pins recipient AND rate — the signature
     // cannot be redirected onto someone else's fee.
-    ...(HL_BUILDER_FEE_TENTH_BPS > 0 ? { builder: { b: TREASURY_ADDRESS.toLowerCase(), f: HL_BUILDER_FEE_TENTH_BPS } } : {}),
+    ...((opts?.builderFee ?? HL_BUILDER_FEE_TENTH_BPS > 0) && HL_BUILDER_FEE_TENTH_BPS > 0
+      ? { builder: { b: TREASURY_ADDRESS.toLowerCase(), f: HL_BUILDER_FEE_TENTH_BPS } }
+      : {}),
   }
 }
 
@@ -388,21 +433,26 @@ export function guardHlExecBuild(intent: HlOrderIntent, action: HlWireOrderActio
   if (order) {
     block('asset-pinned', order.a === ctx.assetIndex, `Asset pinned to ${intent.coin} (index ${ctx.assetIndex}).`, `Order asset ${order.a} ≠ ${intent.coin}'s live index ${ctx.assetIndex}.`)
     block('ioc-only', order.t.limit?.tif === 'Ioc', 'Immediate-or-cancel — nothing rests.', 'Only IOC orders are built here.')
-    // Builder fee pinned BOTH ways: when configured the action must carry
-    // exactly OUR recipient at exactly OUR rate (≤ the venue's 0.1% perp
-    // cap); when env-disabled no builder field may ride at all. A foreign
-    // address or a fatter fee here means the action isn't ours — refuse.
-    const feeOk =
-      HL_BUILDER_FEE_TENTH_BPS > 0
-        ? action.builder?.b?.toLowerCase() === TREASURY_ADDRESS.toLowerCase() &&
-          action.builder.f === HL_BUILDER_FEE_TENTH_BPS &&
-          action.builder.f <= 100
-        : action.builder === undefined
+    // Builder fee pinned to a two-shape family: when configured the action
+    // carries EITHER exactly OUR recipient at exactly OUR rate (≤ the venue's
+    // 0.1% perp cap) OR no builder field at all — the Q2 self-heal builds
+    // fee-free while the treasury sits under the venue's builder floor, and
+    // an omitted fee costs us revenue, never the user (a stripped field also
+    // breaks the phantom-agent signature, so this loosens nothing at the
+    // venue). A FOREIGN address or an off rate is never ours — refuse. When
+    // env-disabled no builder field may ride at all.
+    const ourFee =
+      action.builder?.b?.toLowerCase() === TREASURY_ADDRESS.toLowerCase() &&
+      action.builder.f === HL_BUILDER_FEE_TENTH_BPS &&
+      action.builder.f <= 100
+    const feeOk = HL_BUILDER_FEE_TENTH_BPS > 0 ? ourFee || action.builder === undefined : action.builder === undefined
     block(
       'builder-fee',
       feeOk,
       HL_BUILDER_FEE_TENTH_BPS > 0
-        ? `${HL_BUILDER_MAX_FEE_RATE} builder fee to the Pantessa treasury — venue-enforced on the fill; it funds creator kickbacks.`
+        ? action.builder
+          ? `${HL_BUILDER_MAX_FEE_RATE} builder fee to the Pantessa treasury — venue-enforced on the fill; it funds creator kickbacks.`
+          : 'Builder fee omitted this build — the treasury is below the venue\'s builder floor, so the order runs fee-free until it is funded.'
         : 'No builder fee configured — none rides the order.',
       'Order carries an unexpected builder fee (wrong recipient or rate) — refusing.',
     )
@@ -606,7 +656,28 @@ export async function buildHlExecTurn(
   }
 
   const snap = await fetchHlSnapshot(intent.coin, walletAddress)
-  const action = buildHlOrderAction(intent, snap)
+  // Q2 self-heal (HANDOFF-gtm-bulletproof §1.2): before attaching the
+  // builder fee, ask the venue whether our treasury can actually RECEIVE it.
+  // Confirmed-ineligible → build WITHOUT the fee (traced below) so the
+  // flagship never walls on OUR unfunded account; the fee resumes on its own
+  // once the treasury is funded. A probe ERROR keeps the fee — ambiguity
+  // keeps the wall (fail-closed), never a silent revenue leak.
+  let feeOn = HL_BUILDER_FEE_TENTH_BPS > 0
+  if (feeOn) {
+    try {
+      if (!(await builderFeeEligible())) {
+        feeOn = false
+        trace({
+          type: 'note',
+          level: 'warn',
+          label: `native hl layer: builder fee OMITTED — treasury HL account is below the venue's $${HL_BUILDER_MIN_ACCOUNT_USD} builder floor; the order builds fee-free and the fee resumes automatically once it is funded`,
+        })
+      }
+    } catch {
+      /* probe failed — keep the fee; the approval wall is the fail-closed state */
+    }
+  }
+  const action = buildHlOrderAction(intent, snap, { builderFee: feeOn })
   let guard = guardHlExecBuild(intent, action, {
     markPx: snap.markPx,
     assetIndex: snap.assetIndex,
@@ -649,14 +720,12 @@ export async function buildHlExecTurn(
   // bounces the order at the venue). The CLIENT builds the typed data (it
   // knows the wallet's chainId); we ship only the facts.
   const needsFeeApproval =
-    HL_BUILDER_FEE_TENTH_BPS > 0 &&
-    (snap.approvedBuilderFeeTenthBps == null || snap.approvedBuilderFeeTenthBps < HL_BUILDER_FEE_TENTH_BPS)
-  const feePhrase =
-    HL_BUILDER_FEE_TENTH_BPS > 0
-      ? needsFeeApproval
-        ? ` Includes the ${HL_BUILDER_MAX_FEE_RATE} builder fee — first tap approves that cap (one-time), then the order.`
-        : ` Includes the ${HL_BUILDER_MAX_FEE_RATE} builder fee (cap already approved).`
-      : ''
+    feeOn && (snap.approvedBuilderFeeTenthBps == null || snap.approvedBuilderFeeTenthBps < HL_BUILDER_FEE_TENTH_BPS)
+  const feePhrase = feeOn
+    ? needsFeeApproval
+      ? ` Includes the ${HL_BUILDER_MAX_FEE_RATE} builder fee — first tap approves that cap (one-time), then the order.`
+      : ` Includes the ${HL_BUILDER_MAX_FEE_RATE} builder fee (cap already approved).`
+    : ''
   const nonce = Date.now()
   const typedData = hlActionTypedData(action, nonce)
   const o = action.orders[0]
