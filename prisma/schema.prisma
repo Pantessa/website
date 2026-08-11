@@ -1016,7 +1016,7 @@ model DcaSchedule {
   permissionSig      String?   @map("permission_sig") // the user's one-time EIP-712 signature
   permissionHash     String?   @map("permission_hash") // manager.getHash(permission) — read from the CONTRACT, never computed locally
   permissionApproved Boolean   @default(false) @map("permission_approved") // approveWithSignature landed on-chain
-  spender            String?   // the CDP-managed spender bound at arm time (lowercased)
+  spender            String? // the CDP-managed spender bound at arm time (lowercased)
   armNetwork         String?   @map("arm_network") // base | base-sepolia
   armedAt            DateTime? @map("armed_at")
   autoError          String?   @map("auto_error") // last sweep failure — the ONLY thing that badges needs-you
@@ -1121,13 +1121,13 @@ model WalletArrival {
 /// MINT time and stored here (never read from the runtime query string), and
 /// renders post-receipt as an explicit "Return to <host>" button.
 model IntentLink {
-  id          String   @id // short slug — /i/<id>
-  ask         String // the sentence (sanitized at mint)
-  variants    String[] @default([]) // A/B alternate phrasings (≤3); index 0 = ask
-  mcps        String? // comma-separated slugs auto-composed from the intent
-  creator     String? // lowercased wallet (SIWE-verified at mint)
-  agent       String? // optional byline shown on the runtime page
-  redirectUrl String?  @map("redirect_url")
+  id           String    @id // short slug — /i/<id>
+  ask          String // the sentence (sanitized at mint)
+  variants     String[]  @default([]) // A/B alternate phrasings (≤3); index 0 = ask
+  mcps         String? // comma-separated slugs auto-composed from the intent
+  creator      String? // lowercased wallet (SIWE-verified at mint)
+  agent        String? // optional byline shown on the runtime page
+  redirectUrl  String?   @map("redirect_url")
   // Partner-promo limits (all optional): a link can expire, cap its total
   // SERVER-TRUTH signs (embed_turns, never client events), and reserve
   // itself for an allowlist of wallets (targeting, not a security boundary
@@ -1135,8 +1135,8 @@ model IntentLink {
   expiresAt    DateTime? @map("expires_at")
   maxSigns     Int?      @map("max_signs")
   allowWallets String[]  @default([]) @map("allow_wallets")
-  revoked     Boolean  @default(false)
-  createdAt   DateTime @default(now()) @map("created_at")
+  revoked      Boolean   @default(false)
+  createdAt    DateTime  @default(now()) @map("created_at")
 
   @@index([creator, createdAt])
   @@map("intent_links")
@@ -1146,9 +1146,9 @@ model IntentLink {
 /// active links (the storefront). Opt-in by claiming keeps the leaderboard's
 /// privacy rule intact: no wallet is ever the key to a public page.
 model CreatorHandle {
-  handle    String   @id // lowercase slug — /l/<handle>
-  creator   String   @unique // lowercased wallet (SIWE-verified at claim)
-  createdAt DateTime @default(now()) @map("created_at")
+  handle         String    @id // lowercase slug — /l/<handle>
+  creator        String    @unique // lowercased wallet (SIWE-verified at claim)
+  createdAt      DateTime  @default(now()) @map("created_at")
   // White-label brand, scanned from the creator's own site URL (one paste,
   // no form): logo stored as a size-capped data URI so the page never
   // hotlinks or re-fetches a foreign host at render time.
@@ -1255,4 +1255,24 @@ model SpotGuardRun {
   @@unique([policyId]) // one-shot: a policy fires at most once
   @@index([wallet, createdAt])
   @@map("spot_guard_runs")
+}
+
+// A brokered intent from the agent desk (/api/broker MCP): an external
+// agent's ask, its negotiation plan, and the sign link it was handed off
+// to. States move rightward only: open → handed_off → signed → settled,
+// or → closed. plan is the serialized BrokerPlan (sentences only — the
+// leak check upstream guarantees no transaction material lands here).
+model BrokerIntent {
+  id        String   @id // mintSlug(10)
+  ask       String // the current working sentence
+  wallet    String? // lowercased 0x… the agent negotiated for, if any
+  agent     String? // sanitized self-reported agent name
+  state     String   @default("open")
+  plan      Json
+  linkSlug  String?  @map("link_slug") // bound /i/<slug> after handoff
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([state, createdAt])
+  @@map("broker_intents")
 }

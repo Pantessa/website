@@ -1,0 +1,142 @@
+// /api/broker/mcp — the agent desk. Pantessa's transaction layer, opened to
+// OTHER agents over MCP (Streamable HTTP).
+//
+// An external agent says "I need $15 of AAPL" and the desk talks back:
+// which guarded layer will build it, which dapps ride along, whether the
+// wallet can fund it (real multi-chain scan), and which funding routes
+// exist — every option a resume-sentence that re-enters the same parse
+// ladder human asks use. Close = a durable sign link for the agent's human
+// (connect-to-act; their wallet is the only signer), then broker_status
+// reports the server-truth funnel back so the agent finally learns whether
+// its human signed. The desk NEVER returns transaction material — that is
+// pinned mechanically (assertNoTxMaterial) on every outbound payload.
+import { createMcpHandler } from 'mcp-handler'
+import { z } from 'zod'
+import { openIntent, chooseOption, handoffIntent, intentStatus, closeIntent } from '@/lib/broker-exec'
+
+export const maxDuration = 60
+
+function ok(payload: unknown) {
+  return { content: [{ type: 'text' as const, text: JSON.stringify(payload) }] }
+}
+
+async function guarded<T>(run: () => Promise<T>) {
+  try {
+    return ok(await run())
+  } catch (e) {
+    return {
+      content: [{ type: 'text' as const, text: e instanceof Error ? e.message : 'Call failed.' }],
+      isError: true,
+    }
+  }
+}
+
+const CAPABILITIES = [
+  'Buy tokenized stocks (AAPL, TSLA, NVDA…) on Robinhood Chain — with automatic cross-chain funding when the money sits on Base/Ethereum/Arbitrum',
+  "Swap tokens (Uniswap v3/v4, CoW incl. MEV-protected + limit orders) — dollar-denominated asks welcome ('swap $5 of ETH')",
+  "Recurring buys — 'buy $10 of AAPL every week' becomes a DCA schedule",
+  'Protect a Hyperliquid position — stop-loss / take-profit the Guardian watches every minute',
+  'Cross-chain moves (NEAR Intents), Robinhood Chain bridging, Aave, Lido staking, NFT transfers + Seaport listings, Snapshot votes',
+]
+
+const handler = createMcpHandler(
+  (server) => {
+    server.registerTool(
+      'broker_capabilities',
+      {
+        title: 'The desk, and how to trade with it',
+        description:
+          'START HERE. What the guarded transaction layer can compile a plain-English ask into, and the negotiation loop: ' +
+          'broker_open (parse + quote + funding scan) → broker_choose (rewrite the working sentence via offered options) → ' +
+          'broker_handoff (mint the sign link for your human) → broker_status (server-truth funnel: opened, connected, built, signed, settled). ' +
+          'Sentences in, sentences and links out — nothing this desk returns can execute by itself.',
+        inputSchema: {},
+      },
+      async () =>
+        guarded(async () => ({
+          capabilities: CAPABILITIES,
+          loop: ['broker_open', 'broker_choose (optional, repeatable)', 'broker_handoff', 'broker_status'],
+          contract:
+            'Non-custodial by construction: deterministic builders write every transaction (no model writes calldata), ' +
+            'each build is guard-checked fail-closed and receipted, and the human wallet on the other side of the sign link is the only signer. ' +
+            'The desk never returns calldata, typed data, or deposit addresses to a calling agent.',
+        })),
+    )
+
+    server.registerTool(
+      'broker_open',
+      {
+        title: 'Open a brokered intent',
+        description:
+          'Open the negotiation for one plain-sentence ask (e.g. "Buy $15 of AAPL"). Optional wallet (the human wallet ' +
+          'this intent is for — pass their 0x address, never a guess) triggers a REAL multi-chain funding scan, and a short wallet gets ' +
+          'funding-route options. Returns the quote (which guarded layer claims the ask, the dapp set, funding verdict) plus options and next steps.',
+        inputSchema: {
+          ask: z.string().min(3).max(400).describe('The action as one plain sentence.'),
+          wallet: z
+            .string()
+            .regex(/^0x[0-9a-fA-F]{40}$/)
+            .optional()
+            .describe('The human wallet this intent is for (funding scan is read-only).'),
+          agent: z.string().max(40).optional().describe('Your agent name, shown as the byline on the sign link.'),
+        },
+      },
+      async ({ ask, wallet, agent }) => guarded(() => openIntent({ ask, wallet, agent })),
+    )
+
+    server.registerTool(
+      'broker_choose',
+      {
+        title: 'Choose an option',
+        description:
+          'Pick one offered option by id (funding route, proceed, or walk away). The option rewrites the working sentence and the desk re-quotes — ' +
+          'there is no other negotiation channel, by design.',
+        inputSchema: {
+          intent_id: z.string().min(4).max(24),
+          option_id: z.string().min(1).max(24),
+        },
+      },
+      async ({ intent_id, option_id }) => guarded(() => chooseOption(intent_id, option_id)),
+    )
+
+    server.registerTool(
+      'broker_handoff',
+      {
+        title: 'Mint the sign link',
+        description:
+          'Close the negotiation into a durable pantessa.com/i/<slug> sign link carrying the working sentence. Hand it to your human: ' +
+          'they connect their own wallet, the guarded layer rebuilds and checks the ask from scratch, and only their signature moves anything. Idempotent.',
+        inputSchema: { intent_id: z.string().min(4).max(24) },
+      },
+      async ({ intent_id }) => guarded(() => handoffIntent(intent_id)),
+    )
+
+    server.registerTool(
+      'broker_close',
+      {
+        title: 'Walk away',
+        description:
+          'Close the intent at any stage before a signature: revokes the bound sign link (it refuses new opens and leaves every board). ' +
+          'Signed or settled intents stay as they are.',
+        inputSchema: { intent_id: z.string().min(4).max(24) },
+      },
+      async ({ intent_id }) => guarded(() => closeIntent(intent_id)),
+    )
+
+    server.registerTool(
+      'broker_status',
+      {
+        title: 'Did my human sign?',
+        description:
+          'The feedback loop: server-truth funnel for the sign link (opened → connected → built → signed → settled, with signed USD from ' +
+          'guardrail-priced turns). Poll after handoff; states only move forward.',
+        inputSchema: { intent_id: z.string().min(4).max(24) },
+      },
+      async ({ intent_id }) => guarded(() => intentStatus(intent_id)),
+    )
+  },
+  {},
+  { basePath: '/api/broker' },
+)
+
+export { handler as GET, handler as POST, handler as DELETE }

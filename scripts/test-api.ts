@@ -9275,6 +9275,113 @@ async function main() {
     check('/t/weth: alias collapses to the ETH pair', /ETH \/ USD/.test(tWeth))
   }
 
+  // ── Agent broker desk (/api/broker/mcp) ──────────────────────────────────
+  // The MCP surface other agents negotiate with. Sentences in, sentences and
+  // sign links out — the leak check below pins the no-transaction-material
+  // contract on the raw wire bytes, not just on our own types.
+  console.log('— agent broker desk')
+  {
+    const MCP_URL = `${BASE}/api/broker/mcp`
+    let rpcId = 0
+    let mcpSession: string | null = null
+    const rpc = async (method: string, params?: unknown): Promise<{ raw: string; result?: any }> => {
+      const res = await fetch(MCP_URL, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          accept: 'application/json, text/event-stream',
+          ...(mcpSession ? { 'mcp-session-id': mcpSession } : {}),
+        },
+        body: JSON.stringify({ jsonrpc: '2.0', id: ++rpcId, method, params }),
+      })
+      mcpSession = res.headers.get('mcp-session-id') ?? mcpSession
+      const raw = await res.text()
+      // Streamable HTTP answers as SSE frames; the payload rides a data: line.
+      const data = raw
+        .split('\n')
+        .filter((l) => l.startsWith('data:'))
+        .map((l) => l.slice(5).trim())
+        .find((l) => l.includes(`"id":${rpcId}`))
+      return { raw, result: data ? JSON.parse(data).result : undefined }
+    }
+    const call = async (name: string, args: Record<string, unknown> = {}) => {
+      const { raw, result } = await rpc('tools/call', { name, arguments: args })
+      const text: string = result?.content?.find((c: any) => c.type === 'text')?.text ?? ''
+      return { raw, isError: !!result?.isError, payload: text && !result?.isError ? JSON.parse(text) : text }
+    }
+
+    await rpc('initialize', {
+      protocolVersion: '2025-03-26',
+      capabilities: {},
+      clientInfo: { name: 'harness', version: '0' },
+    })
+    await rpc('notifications/initialized')
+
+    const caps = await call('broker_capabilities')
+    check(
+      'broker: capabilities carries the contract + loop',
+      !caps.isError &&
+        Array.isArray(caps.payload.loop) &&
+        /never returns calldata/i.test(caps.payload.contract ?? ''),
+    )
+
+    const open = await call('broker_open', { ask: 'Buy $15 of AAPL', agent: 'harness' })
+    const plan = open.payload?.plan
+    check(
+      'broker: open quotes the stock ask through a native gate as an action',
+      !open.isError && plan?.quote?.kind === 'action' && typeof open.payload.intentId === 'string',
+      `gate=${plan?.quote?.gate}`,
+    )
+    check(
+      'broker: composed dapp set rides the quote (robinhood in the mcps)',
+      Array.isArray(plan?.quote?.mcps) && plan.quote.mcps.some((m: string) => /robinhood/.test(m)),
+      String(plan?.quote?.mcps),
+    )
+    const intentId = open.payload.intentId as string
+
+    const chosen = await call('broker_choose', { intent_id: intentId, option_id: 'proceed' })
+    check(
+      'broker: choose(proceed) re-quotes the same working sentence',
+      !chosen.isError && chosen.payload?.plan?.ask === 'Buy $15 of AAPL' && chosen.payload.state === 'open',
+    )
+
+    const hand = await call('broker_handoff', { intent_id: intentId })
+    const slugMatch = typeof hand.payload?.url === 'string' && /\/i\/[a-z0-9]+$/i.test(hand.payload.url)
+    const hand2 = await call('broker_handoff', { intent_id: intentId })
+    check(
+      'broker: handoff mints a durable /i sign link, idempotently',
+      !hand.isError && slugMatch && hand2.payload?.url === hand.payload.url,
+      hand.payload?.url,
+    )
+
+    const status = await call('broker_status', { intent_id: intentId })
+    check(
+      'broker: status reports handed_off with an untouched funnel',
+      !status.isError && status.payload?.state === 'handed_off' && status.payload.funnel?.signed === 0,
+    )
+
+    const weather = await call('broker_open', { ask: 'what is the weather in Lisbon' })
+    check(
+      'broker: non-money ask quotes as planner (cannot move money), never an action',
+      !weather.isError && weather.payload?.plan?.quote?.kind === 'planner',
+      `kind=${weather.payload?.plan?.quote?.kind}`,
+    )
+
+    // The wire-level pin: nothing any call returned carries 64+ hex chars
+    // (calldata/typed-data/signature material). Wallet addresses (40) pass.
+    const allRaw = [caps.raw, open.raw, chosen.raw, hand.raw, hand2.raw, status.raw, weather.raw].join('\n')
+    check('broker: no transaction material on the wire (64+ hex scan)', !/0x[0-9a-fA-F]{64,}/.test(allRaw))
+
+    const closed = await call('broker_close', { intent_id: intentId })
+    const closedW = await call('broker_close', { intent_id: weather.payload.intentId })
+    const linkGone = await fetch(`${BASE}/i/${(hand.payload.url as string).split('/').pop()}`)
+    const linkHtml = flat(await linkGone.text())
+    check(
+      'broker: close revokes the link (runtime refuses) and closes both intents',
+      !closed.isError && closed.payload.state === 'closed' && !closedW.isError && !/Connect & build/i.test(linkHtml),
+    )
+  }
+
   // ── Cleanup (verified) ────────────────────────────────────────────────────
   console.log('— cleanup')
   const delChat = await fetch(`${BASE}/api/chats/${chat.id}`, { method: 'DELETE', headers: C })

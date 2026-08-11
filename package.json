@@ -61,6 +61,7 @@
     "framer-motion": "^11.13.1",
     "jose": "^6.2.3",
     "lucide-react": "^0.468.0",
+    "mcp-handler": "1.1.0",
     "next": "16.2.7",
     "qrcode.react": "^4.2.0",
     "react": "^19.0.0",
@@ -72,9 +73,11 @@
     "tailwind-merge": "^2.5.5",
     "viem": "^2.21.40",
     "wagmi": "^2.14.0",
+    "zod": "^3.25.0",
     "zustand": "^5.0.2"
   },
   "devDependencies": {
+    "@modelcontextprotocol/sdk": "1.26.0",
     "@types/node": "^22",
     "@types/react": "^19",
     "@types/react-dom": "^19",
