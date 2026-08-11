@@ -959,6 +959,47 @@ async function main() {
   check('cohorts: no auth → 401', cohNoAuth.status === 401)
   const cohNonAdmin = await fetch(`${BASE}/api/admin/cohorts?days=7&external=1`, { headers: C })
   check('cohorts: signed-in non-admin → 403', cohNonAdmin.status === 403)
+  // The GTM arc (§2.2): shape + within-source monotonicity, read as a REAL
+  // admin — the .env.local burner is an owner wallet, so this is a genuine
+  // SIWE, not a forged session. Skipped (pass) when no burner key is around.
+  {
+    const envFs = await import('node:fs')
+    const pkRaw = (() => {
+      try {
+        return envFs.readFileSync('.env.local', 'utf8').match(/^PRIVATE_KEY=(.*)$/m)?.[1]?.trim().replace(/^"|"$/g, '') ?? null
+      } catch {
+        return null
+      }
+    })()
+    if (pkRaw) {
+      const burner = privateKeyToAccount((pkRaw.startsWith('0x') ? pkRaw : `0x${pkRaw}`) as `0x${string}`)
+      const adminSession = await signIn(burner)
+      const arcRes = await fetch(`${BASE}/api/admin/cohorts?days=30`, { headers: { cookie: adminSession } })
+      const arcBody = (await arcRes.json()) as {
+        arc?: { total: Record<string, number>; bySource: ({ source: string } & Record<string, number>)[] }
+      }
+      const stops = ['arrived', 'asked', 'built', 'signed'] as const
+      const sourcesOk =
+        Array.isArray(arcBody.arc?.bySource) &&
+        arcBody.arc!.bySource.every(
+          (r) =>
+            ['house link', 'creator link', 'embed', 'direct'].includes(r.source) &&
+            // each stop is a subset of the previous within a source cohort
+            stops.every((k, i) => i === 0 || r[k] <= r[stops[i - 1]]) &&
+            r.returned <= r.arrived,
+        )
+      const totalsOk =
+        !!arcBody.arc &&
+        stops.every((k) => arcBody.arc!.total[k] === arcBody.arc!.bySource.reduce((s, r) => s + r[k], 0))
+      check(
+        'gtm arc: admin read → five stops per source, monotone within each source, totals = Σ sources',
+        arcRes.status === 200 && sourcesOk && totalsOk,
+        JSON.stringify(arcBody.arc).slice(0, 300),
+      )
+    } else {
+      check('gtm arc: skipped — no burner key in .env.local', true)
+    }
+  }
 
   // ── Treasury (admin-only) ─────────────────────────────────────────────────
   // Fees-collected view (/dashboard/treasury): on-chain inflow + x402 ledger.
