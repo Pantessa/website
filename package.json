@@ -20,6 +20,7 @@
     "audit:funding": "tsx scripts/audit-funding.ts",
     "preflight:house": "tsx scripts/preflight-house.ts",
     "fingerprint:deploy": "tsx scripts/fingerprint-deploy.ts",
+    "drill:kickback": "tsx scripts/kickback-drill.ts",
     "vendor:icons": "tsx scripts/vendor-token-icons.ts",
     "db:receivers": "tsx scripts/backfill-receivers.ts",
     "probe:callable": "tsx scripts/probe-callable.ts",
