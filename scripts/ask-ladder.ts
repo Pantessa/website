@@ -17,6 +17,7 @@ import { parseAaveSupply, parseAaveOp } from '../lib/aave-supply'
 import { parseDcaRun, parseDcaCreate, parseDcaManage } from '../lib/dca'
 import { compileJobAsk } from '../lib/jobs'
 import { parseRebalanceAsk } from '../lib/rebalance'
+import { parseMosaicAsk } from '../lib/mosaic'
 import { parseGuardianArm } from '../lib/hl-guardian'
 import { parseSpotGuardArm, parseSpotGuardManage } from '../lib/spot-guard'
 import { isLidoGuidedAsk, parseLidoStake } from '../lib/lido-stake'
@@ -63,6 +64,17 @@ export function simulateLadder(message: string): Outcome {
     if ('problem' in job) return { gate: 'jobs', kind: 'clarify', note: job.problem }
     if ('clarify' in job) return { gate: 'jobs', kind: 'clarify', note: String((job as { clarify: unknown }).clarify) }
     return { gate: 'jobs', kind: 'action', note: `${(job as { steps: unknown[] }).steps?.length ?? '?'} steps` }
+  }
+
+  // Mosaic sits AFTER jobs (a compound "tile …, then …" keeps its claim)
+  // and BEFORE rebalance, mirroring the route. Its turn is a live-scan tile
+  // plan whose legs are same-chain-swap sentences the jobs compiler
+  // re-parses — the harness round-trips them.
+  const mosaic = parseMosaicAsk(message)
+  if (mosaic) {
+    return 'problem' in mosaic
+      ? { gate: 'mosaic', kind: 'clarify', note: mosaic.problem }
+      : { gate: 'mosaic', kind: 'action', note: 'scan → tile plan' }
   }
 
   // Rebalance sits AFTER jobs (compound asks keep their claim) and BEFORE
