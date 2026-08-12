@@ -6,10 +6,10 @@ import { getEffectivePlan } from '@/lib/billing'
 import { isAdminAddress } from '@/lib/admin'
 import {
   MOSAIC_CHAIN_IDS,
-  mosaicAskString,
+  composeMosaicAsk,
   parseMosaicAsk,
+  sanitizeMosaicSlices,
   type MosaicChainWord,
-  type MosaicSlice,
 } from '@/lib/mosaic'
 import { REAL_TRAFFIC_WHERE } from '@/lib/value-origin'
 
@@ -32,11 +32,6 @@ export const dynamic = 'force-dynamic'
  * with one POST and no browser.
  */
 
-/** Mirrors the slice symbol rule in lib/mosaic's grammar — validated BEFORE
- *  composing so a token like "ETH on robinhood" can't smuggle words into the
- *  stored sentence and survive the round-trip by accident. */
-const SLICE_TOKEN_RE = /^[A-Za-z]{2,12}$/
-
 export async function POST(req: NextRequest) {
   const addr = await getAuthAddress(req)
   if (!addr) return NextResponse.json({ error: 'Sign in (or send a yf_ API key) to mint a mosaic.' }, { status: 401 })
@@ -49,26 +44,11 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Invalid JSON.' }, { status: 400 })
   }
 
-  // Structured slices in — each validated against the SAME shape the grammar
-  // parses back out, and pcts rounded to the 2dp the sentence will carry so
-  // the round-trip equality check below can be exact, not fuzzy.
-  const rawSlices = Array.isArray(body.slices) ? body.slices : null
-  if (!rawSlices || rawSlices.length === 0) {
-    return NextResponse.json({ error: 'slices must be a non-empty array of { pct, token }.' }, { status: 400 })
-  }
-  const slices: MosaicSlice[] = []
-  for (const raw of rawSlices) {
-    const s = raw as { pct?: unknown; token?: unknown }
-    const pct = typeof s?.pct === 'number' && Number.isFinite(s.pct) ? Math.round(s.pct * 100) / 100 : null
-    const token = typeof s?.token === 'string' ? s.token.trim().toUpperCase() : ''
-    if (pct == null) return NextResponse.json({ error: 'Every slice needs a numeric pct.' }, { status: 400 })
-    if (!SLICE_TOKEN_RE.test(token)) {
-      return NextResponse.json(
-        { error: `"${String(s?.token ?? '')}" isn't a tile symbol — letters only, 2–12 characters (the swap-grammar rule).` },
-        { status: 400 },
-      )
-    }
-    slices.push({ pct, token })
+  // Structured slices in — sanitizeMosaicSlices is the shared rulebook (the
+  // agent desk's broker_tile runs the exact same one).
+  const slices = sanitizeMosaicSlices(body.slices)
+  if ('problem' in slices) {
+    return NextResponse.json({ error: slices.problem }, { status: 400 })
   }
 
   let chainWord: MosaicChainWord | undefined
@@ -98,31 +78,14 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  // THE round-trip pin: compose the canonical sentence, re-parse it, and
-  // refuse with the grammar's own problem verbatim. The grammar is the one
-  // rulebook (sum-to-100, 1–100% per tile, ≤8 tiles, no dupes, Robinhood
-  // refusal) — this route never restates its rules, it just runs them.
-  const ask = cleanAsk(mosaicAskString(slices, chainWord))
-  const parsed = parseMosaicAsk(ask)
-  if (!parsed) {
-    // mosaicAskString always writes the trigger verb, so a null parse means
-    // the composer and the grammar have drifted — a build bug, not bad input.
-    return NextResponse.json({ error: 'The composed ask lost its own trigger — this is a bug worth reporting, nothing was minted.' }, { status: 400 })
+  // THE round-trip pin + equality belt, shared with every other mint door
+  // (composeMosaicAsk composes, re-parses through the grammar's one
+  // rulebook, and proves the sentence carries back exactly what was sent).
+  const composed = composeMosaicAsk(slices, chainWord)
+  if ('problem' in composed) {
+    return NextResponse.json({ error: composed.problem }, { status: 400 })
   }
-  if ('problem' in parsed) {
-    return NextResponse.json({ error: parsed.problem }, { status: 400 })
-  }
-  // Belt on top of the pin: the sentence must carry back EXACTLY the tiles
-  // and chain it was sent — a slice the grammar read differently (or
-  // dropped) means the stored link would execute a different shape than the
-  // caller approved.
-  const roundTrips =
-    parsed.slices.length === slices.length &&
-    parsed.slices.every((s, i) => s.token === slices[i].token && s.pct === slices[i].pct) &&
-    (parsed.chainWord ?? undefined) === chainWord
-  if (!roundTrips) {
-    return NextResponse.json({ error: 'The shape did not survive its own round-trip — nothing was minted. Check each token symbol and pct.' }, { status: 400 })
-  }
+  const ask = cleanAsk(composed.ask)
 
   const agent = body.agent ? cleanAsk(String(body.agent)).slice(0, 40) : null
 

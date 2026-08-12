@@ -198,6 +198,54 @@ export function isMosaicAsk(ask: string): boolean {
   return parsed != null && !('problem' in parsed)
 }
 
+/** Structured slices from an untrusted caller (the mint API, the agent
+ *  desk) → grammar-shaped slices, or a named problem. Pcts round to the
+ *  2dp the sentence will carry so composeMosaicAsk's equality belt can be
+ *  exact; token symbols must already be the swap-grammar alphabet so a
+ *  "token" can't smuggle words into the composed sentence. */
+export function sanitizeMosaicSlices(raw: unknown): MosaicSlice[] | { problem: string } {
+  if (!Array.isArray(raw) || raw.length === 0) {
+    return { problem: 'slices must be a non-empty array of { pct, token }.' }
+  }
+  const out: MosaicSlice[] = []
+  for (const item of raw) {
+    const s = item as { pct?: unknown; token?: unknown }
+    const pct = typeof s?.pct === 'number' && Number.isFinite(s.pct) ? Math.round(s.pct * 100) / 100 : null
+    const token = typeof s?.token === 'string' ? s.token.trim().toUpperCase() : ''
+    if (pct == null) return { problem: 'Every slice needs a numeric pct.' }
+    if (!/^[A-Za-z]{2,12}$/.test(token)) {
+      return { problem: `"${String(s?.token ?? '')}" isn't a tile symbol — letters only, 2–12 characters (the swap-grammar rule).` }
+    }
+    out.push({ pct, token })
+  }
+  return out
+}
+
+/** Compose the canonical sentence AND prove it: re-parse, run the grammar's
+ *  own rulebook (sum-to-100, tile counts, dupes, Robinhood refusal), and
+ *  belt-check that the sentence carries back EXACTLY the tiles and chain it
+ *  was given — a stored link must never execute a different shape than the
+ *  caller approved. One rulebook for every mint door. */
+export function composeMosaicAsk(
+  slices: MosaicSlice[],
+  chainWord?: MosaicChainWord,
+): { ask: string } | { problem: string } {
+  const ask = mosaicAskString(slices, chainWord)
+  const parsed = parseMosaicAsk(ask)
+  if (!parsed) {
+    return { problem: 'The composed ask lost its own trigger — this is a bug worth reporting, nothing was minted.' }
+  }
+  if ('problem' in parsed) return { problem: parsed.problem }
+  const roundTrips =
+    parsed.slices.length === slices.length &&
+    parsed.slices.every((s, i) => s.token === slices[i].token && s.pct === slices[i].pct) &&
+    (parsed.chainWord ?? undefined) === chainWord
+  if (!roundTrips) {
+    return { problem: 'The shape did not survive its own round-trip — nothing was minted. Check each token symbol and pct.' }
+  }
+  return { ask }
+}
+
 // ── The planner ─────────────────────────────────────────────────────────────
 
 export interface MosaicHolding {

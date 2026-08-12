@@ -23,6 +23,7 @@ import {
   type BrokerPlan,
   type BrokerState,
 } from '@/lib/broker'
+import { MOSAIC_CHAIN_IDS, composeMosaicAsk, sanitizeMosaicSlices, type MosaicChainWord } from '@/lib/mosaic'
 
 const SITE = (process.env.NEXT_PUBLIC_SITE_URL ?? 'https://www.pantessa.com').replace(/\/$/, '')
 
@@ -164,6 +165,89 @@ export async function handoffIntent(intentId: string): Promise<HandoffResult> {
     say:
       'Give this link to your human. They connect their own wallet, Pantessa rebuilds and guard-checks the ask, ' +
       'and only their signature moves anything. Poll broker_status to learn when they sign.',
+  }
+  assertNoTxMaterial(out)
+  return out
+}
+
+export interface TileResult {
+  intentId: string
+  state: BrokerState
+  url: string
+  ask: string
+  /** The human-side fork door — their editor pre-filled with this shape. */
+  forkUrl: string
+  quote: BrokerPlan['quote']
+  contract: string
+  say: string
+}
+
+/** MOSAIC on the desk: an agent hands its human a PORTFOLIO as a button.
+ *
+ *  Slices in (percentages and symbols only — the same sanitize + compose +
+ *  re-parse rulebook as the human mint API), one durable /i link out, bound
+ *  to a broker intent so broker_status reports the sign-side truth back.
+ *  The shape compiles PER-WALLET at open time: every human who opens the
+ *  link gets the same sentence diffed against their own holdings by the
+ *  deterministic planner — the desk never sees a balance, an address, or a
+ *  plan, just the sentence. */
+export async function tileIntent(opts: { slices: unknown; chain?: unknown; agent?: unknown }): Promise<TileResult> {
+  const slices = sanitizeMosaicSlices(opts.slices)
+  if ('problem' in slices) throw new Error(slices.problem)
+
+  let chainWord: MosaicChainWord | undefined
+  if (opts.chain != null) {
+    const c = typeof opts.chain === 'string' ? opts.chain.toLowerCase() : ''
+    if (!(c in MOSAIC_CHAIN_IDS)) {
+      throw new Error("chain must be 'base', 'ethereum', or 'arbitrum' — or leave it out and each wallet tiles its own dominant chain.")
+    }
+    chainWord = c as MosaicChainWord
+  }
+
+  const composed = composeMosaicAsk(slices, chainWord)
+  if ('problem' in composed) throw new Error(composed.problem)
+  const agent = cleanAgentName(opts.agent)
+
+  // planIntent quotes the sentence through the REAL gate ladder — a tile
+  // ask lands on the mosaic gate as an action, and the dapp set rides back.
+  const plan = planIntent(composed.ask)
+
+  const slug = mintSlug()
+  await prisma.intentLink.create({
+    data: {
+      id: slug,
+      ask: plan.ask,
+      variants: [plan.ask],
+      mcps: composeMcps(plan.ask).join(',') || null,
+      creator: null,
+      agent: agent ? `${agent} (agent desk)` : 'agent desk',
+      kind: 'mosaic',
+    },
+  })
+  const row = await prisma.brokerIntent.create({
+    data: {
+      id: mintSlug(10),
+      ask: plan.ask,
+      wallet: null,
+      agent,
+      state: 'handed_off',
+      plan: plan as object,
+      linkSlug: slug,
+    },
+  })
+
+  const out: TileResult = {
+    intentId: row.id,
+    state: 'handed_off',
+    url: `${SITE}/i/${slug}`,
+    ask: plan.ask,
+    forkUrl: `${SITE}/mosaic?from=${slug}`,
+    quote: plan.quote,
+    contract: CONTRACT,
+    say:
+      'Give this link to your human. Every wallet that opens it gets this same shape compiled into ITS OWN batch — ' +
+      'sells first, then buys, built and guard-checked at sign time, signed step by step. ' +
+      'Poll broker_status to learn when they sign; the fork door lets them tweak the shape before minting their own.',
   }
   assertNoTxMaterial(out)
   return out

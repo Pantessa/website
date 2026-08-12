@@ -87,7 +87,7 @@ import { decideFundingTurn, detectBalanceShortfall, fundingPlanUsd, planFundingC
 import { compileDcaBuy, dcaRunChip, parseDcaCreate, parseDcaManage, parseDcaRun, periodKeyFor } from '../lib/dca'
 import { briefingNeedsCount, briefingTile, composeBriefingItems, type BriefingInputs, type BriefingPosition } from '../lib/briefing'
 import { moveAsk, parseRebalanceAsk, planRebalance, type RebalanceInputs } from '../lib/rebalance'
-import { fmtUnits, MOSAIC_STABLE, mosaicAskString, parseMosaicAsk, planMosaic, type MosaicHolding } from '../lib/mosaic'
+import { fmtUnits, isMosaicAsk, MOSAIC_STABLE, mosaicAskString, parseMosaicAsk, planMosaic, type MosaicHolding } from '../lib/mosaic'
 import { simulateLadder } from './ask-ladder'
 import {
   buildSpotGuardPermission,
@@ -9819,16 +9819,61 @@ async function main() {
       singleExec.isError && /wallet that will SIGN|does not compile/i.test(String(singleExec.payload)),
     )
 
+    // broker_tile — MOSAIC on the desk: slices in, a kind='mosaic' /i link
+    // out, bound to a broker intent so the funnel reports back. The ask on
+    // the wire must round-trip the tile grammar (the sign side's rulebook).
+    const tile = await call('broker_tile', {
+      slices: [{ pct: 60, token: 'ETH' }, { pct: 40, token: 'USDC' }],
+      chain: 'base',
+      agent: 'harness',
+    })
+    const tileSlug = tile.isError ? '' : String(tile.payload.url ?? '').split('/').pop() ?? ''
+    check(
+      'broker: tile mints a mosaic sign link + fork door off sanitized slices',
+      !tile.isError &&
+        typeof tile.payload?.intentId === 'string' &&
+        /\/i\/.+/.test(String(tile.payload?.url)) &&
+        String(tile.payload?.forkUrl ?? '').includes(`/mosaic?from=${tileSlug}`) &&
+        tile.payload?.quote?.gate === 'mosaic' &&
+        isMosaicAsk(String(tile.payload?.ask)),
+      String(tile.payload?.ask ?? tile.payload).slice(0, 80),
+    )
+    const tileGallery = (await (await fetch(`${BASE}/api/mosaics?slug=${tileSlug}`)).json()) as {
+      rows?: { agent?: string | null; slices?: unknown[] }[]
+    }
+    check(
+      "broker: the tile link lands on the mosaic gallery (kind='mosaic') with the desk byline",
+      (tileGallery.rows?.length ?? 0) === 1 &&
+        /agent desk/.test(tileGallery.rows?.[0]?.agent ?? '') &&
+        (tileGallery.rows?.[0]?.slices?.length ?? 0) === 2,
+    )
+    const tileStatus = await call('broker_status', { intent_id: tile.payload.intentId })
+    check(
+      'broker: tile intent reports handed_off with the bound link',
+      !tileStatus.isError && tileStatus.payload?.state === 'handed_off' && String(tileStatus.payload?.url ?? '').includes(tileSlug),
+    )
+    const tileBad = await call('broker_tile', { slices: [{ pct: 60, token: 'ETH' }, { pct: 30, token: 'USDC' }] })
+    check(
+      'broker: a 90% shape refuses with the grammar problem verbatim',
+      tileBad.isError && /90%/.test(String(tileBad.payload)),
+    )
+
     // The wire-level pin: nothing any MCP call returned carries 0x-prefixed
     // 64+ hex runs (calldata/typed-data/signature material). Wallet
     // addresses (40) and the bare-hex capability token pass.
-    const allRaw = [caps.raw, open.raw, chosen.raw, hand.raw, hand2.raw, status.raw, weather.raw, execOpen.raw, execRes.raw, singleExec.raw].join('\n')
+    const allRaw = [caps.raw, open.raw, chosen.raw, hand.raw, hand2.raw, status.raw, weather.raw, execOpen.raw, execRes.raw, singleExec.raw, tile.raw, tileStatus.raw, tileBad.raw].join('\n')
     check('broker: no transaction material on the wire (64+ hex scan)', !/0x[0-9a-fA-F]{64,}/.test(allRaw))
 
     const closed = await call('broker_close', { intent_id: intentId })
     const closedW = await call('broker_close', { intent_id: weather.payload.intentId })
     const closedE = await call('broker_close', { intent_id: execOpen.payload.intentId })
     const closedS = await call('broker_close', { intent_id: single.payload.intentId })
+    const closedT = await call('broker_close', { intent_id: tile.payload.intentId })
+    const tileGalleryAfter = (await (await fetch(`${BASE}/api/mosaics?slug=${tileSlug}`)).json()) as { rows?: unknown[] }
+    check(
+      'broker: closing the tile intent revokes its link off the mosaic wall',
+      !closedT.isError && (tileGalleryAfter.rows?.length ?? 0) === 0,
+    )
     const jobAfter = ((await (
       await fetch((drive.poll as string).replace(/^https?:\/\/[^/]+/, BASE))
     ).json()) as { job?: { status?: string } }).job ?? {}
