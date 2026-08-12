@@ -87,7 +87,7 @@ import { decideFundingTurn, detectBalanceShortfall, fundingPlanUsd, planFundingC
 import { compileDcaBuy, dcaRunChip, parseDcaCreate, parseDcaManage, parseDcaRun, periodKeyFor } from '../lib/dca'
 import { briefingNeedsCount, briefingTile, composeBriefingItems, type BriefingInputs, type BriefingPosition } from '../lib/briefing'
 import { moveAsk, parseRebalanceAsk, planRebalance, type RebalanceInputs } from '../lib/rebalance'
-import { fmtUnits, isMosaicAsk, MOSAIC_STABLE, mosaicAskString, parseMosaicAsk, planMosaic, type MosaicHolding } from '../lib/mosaic'
+import { fmtUnits, isMosaicAsk, MOSAIC_STABLE, mosaicAskString, mosaicStableFor, parseMosaicAsk, planMosaic, type MosaicHolding } from '../lib/mosaic'
 import { simulateLadder } from './ask-ladder'
 import {
   buildSpotGuardPermission,
@@ -9503,9 +9503,72 @@ async function main() {
     check('mosaic: tiles that miss 100 refuse naming the sum', /80%/.test(problemOf('tile my wallet 50% ETH, 30% USDC')))
     check("mosaic: one tile isn't a shape — named problem, not a silent drop", /One tile/.test(problemOf('tile my wallet 100% ETH')))
     check('mosaic: duplicate tile refused by name', /ETH appears twice/.test(problemOf('tile my wallet 50% ETH, 50% ETH')))
+    // Stock tiles are LIVE (loop iteration 2): 'on robinhood' parses to a
+    // real chain word — the old queued-refusal pin flipped consciously.
+    const rhParsed = parseMosaicAsk('tile my wallet 50% AAPL, 50% USDG on robinhood')
     check(
-      'mosaic: robinhood chain → the named queued refusal (stock tiling is queued, not built)',
-      /queued, not built/.test(problemOf('tile my wallet 50% AAPL, 50% USDG on robinhood')),
+      "mosaic: 'on robinhood' parses — stock tiles are a lane, not a refusal",
+      rhParsed != null && !('problem' in rhParsed) && rhParsed.chainWord === 'robinhood',
+    )
+    check(
+      "mosaic: the stable rail is per-chain — USDG on robinhood, USDC elsewhere",
+      mosaicStableFor('robinhood') === 'USDG' && mosaicStableFor('base') === 'USDC',
+    )
+
+    // A stock shape against a USDG wallet: buys sized in USDG, and the
+    // joined legs round-trip the jobs compiler WITH stock pairing (the 4663
+    // list is primed the same way the stock-pairing section does it).
+    primeTokenList(4663, [
+      {
+        tokens: [
+          { chainId: 4663, address: '0xaF3D76f1834A1d425780943C99Ea8A608f8a93f9', symbol: 'AAPL', decimals: 18, name: 'Apple' },
+          { chainId: 4663, address: '0x5b68Af1E93a96e7E52D9F43d4CcC0D8b3E93bE39', symbol: 'TSLA', decimals: 18, name: 'Tesla' },
+          { chainId: 4663, address: '0x556CccE7E5152F9d5aA26E9e9DE44b0d64eB2B79', symbol: 'USDG', decimals: 6, name: 'Global Dollar' },
+        ],
+      },
+    ])
+    const rhPlan = planMosaic({
+      slices: [
+        { pct: 40, token: 'AAPL' },
+        { pct: 30, token: 'TSLA' },
+        { pct: 30, token: 'USDG' },
+      ],
+      chainWord: 'robinhood',
+      holdings: [{ symbol: 'USDG', balance: 600, priceUsd: 1, valueUsd: 600 }],
+    })
+    check(
+      'mosaic: a USDG wallet tiles into stocks — buys on the USDG rail, biggest first',
+      rhPlan.kind === 'plan' &&
+        rhPlan.legs.length === 2 &&
+        rhPlan.legs[0] === 'swap 240.00 USDG for AAPL on robinhood' &&
+        rhPlan.legs[1] === 'swap 180.00 USDG for TSLA on robinhood',
+      rhPlan.kind === 'plan' ? rhPlan.legs.join(' | ') : rhPlan.kind,
+    )
+    if (rhPlan.kind === 'plan') {
+      const rhJob = compileJobAsk(rhPlan.legs.join(' then '))
+      check(
+        'mosaic: stock legs round-trip the jobs compiler with ticker pairing',
+        rhJob != null && !('problem' in rhJob) && !('clarify' in rhJob) && (rhJob as { steps: unknown[] }).steps.length === 2,
+      )
+    }
+
+    // Sell-side stock tiling waits on a price feed: a HELD stock tile that
+    // Alchemy can't price refuses BY NAME instead of planning around a
+    // number nobody has.
+    const rhUnpriced = planMosaic({
+      slices: [
+        { pct: 50, token: 'AAPL' },
+        { pct: 50, token: 'USDG' },
+      ],
+      chainWord: 'robinhood',
+      holdings: [
+        { symbol: 'AAPL', balance: 3, priceUsd: null, valueUsd: null },
+        { symbol: 'USDG', balance: 100, priceUsd: 1, valueUsd: 100 },
+      ],
+    })
+    check(
+      'mosaic: an unpriced held stock tile refuses by name (sell-side waits on the feed)',
+      rhUnpriced.kind === 'problem' && /AAPL/.test(rhUnpriced.problem),
     )
 
     // The canonical-string pin: mosaicAskString is what mints, forks, and the

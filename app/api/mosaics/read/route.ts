@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { alchemyEnabled, getMultichainPortfolio } from '@/lib/alchemy'
-import { MOSAIC_CHAIN_LABELS, MOSAIC_STABLE, type MosaicChainWord } from '@/lib/mosaic'
+import { MOSAIC_CHAIN_LABELS, mosaicStableFor, type MosaicChainWord } from '@/lib/mosaic'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -26,10 +26,11 @@ const READ_TTL_MS = 120_000
 const READ_CACHE_MAX = 500
 const readCache = new Map<string, { at: number; body: unknown }>()
 
-const CHAIN_WORDS: MosaicChainWord[] = ['base', 'ethereum', 'arbitrum']
-/** Alchemy HoldingRow.chain label → mosaic chain word (Robinhood Chain rows
- *  fall out here on purpose — v1 tiles the three EVM majors only, matching
- *  the grammar's own Robinhood refusal). */
+const CHAIN_WORDS: MosaicChainWord[] = ['base', 'ethereum', 'arbitrum', 'robinhood']
+/** Alchemy HoldingRow.chain label → mosaic chain word. Robinhood Chain rows
+ *  count too (stock tiles are live) — though Alchemy prices little there,
+ *  so a 4663 wallet rarely dominates a priced suggestion; honest, not a
+ *  gap: the sign-side plan is what actually prices the shape. */
 const WORD_BY_LABEL = new Map<string, MosaicChainWord>(
   CHAIN_WORDS.map((w) => [MOSAIC_CHAIN_LABELS[w], w]),
 )
@@ -126,9 +127,9 @@ export async function GET(req: NextRequest) {
   const pickedUsd = entries.reduce((a, e) => a + e.usd, 0)
   const remainderUsd = totalUsd - pickedUsd
   if (remainderUsd > 0) {
-    const rail = entries.find((e) => e.token === MOSAIC_STABLE)
+    const rail = entries.find((e) => e.token === mosaicStableFor(chain))
     if (rail) rail.usd += remainderUsd
-    else entries.push({ token: MOSAIC_STABLE, usd: remainderUsd })
+    else entries.push({ token: mosaicStableFor(chain), usd: remainderUsd })
   }
 
   // Integer pcts summing to exactly 100. A 0% tile can only be a dust-sized
@@ -148,9 +149,9 @@ export async function GET(req: NextRequest) {
   // that is 100% the stable already has nothing to tile — suggest nothing.
   let slices = entries.map((e, i) => ({ pct: pcts[i], token: e.token }))
   if (slices.length === 1) {
-    slices = slices[0].token === MOSAIC_STABLE || slices[0].pct < 6
+    slices = slices[0].token === mosaicStableFor(chain) || slices[0].pct < 6
       ? []
-      : [{ pct: slices[0].pct - 5, token: slices[0].token }, { pct: 5, token: MOSAIC_STABLE }]
+      : [{ pct: slices[0].pct - 5, token: slices[0].token }, { pct: 5, token: mosaicStableFor(chain) }]
   }
 
   const body = { chain, totalUsd: round2(totalUsd), slices, holdings }

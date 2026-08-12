@@ -51,7 +51,7 @@ export interface MosaicAsk {
   chainWord?: MosaicChainWord
 }
 
-export type MosaicChainWord = 'base' | 'ethereum' | 'arbitrum'
+export type MosaicChainWord = 'base' | 'ethereum' | 'arbitrum' | 'robinhood'
 
 /** The trigger verb. Deliberately disjoint from every other gate: rebalance
  *  wants "rebalance"/"to work", the swap layer wants "swap", DCA wants a
@@ -69,7 +69,7 @@ const CHAIN_ON_RE = /\bon\s+([a-z][a-z ]{2,20})\b/i
  *  mosaicAskString writes it) — harvesting "on ethereum" out of trailing
  *  prose once re-routed a plan to the wrong chain. Mid-sentence chain words
  *  fall back to the dominant-chain pick, which is safe by construction. */
-const CHAIN_AT_END_RE = /\bon\s+([a-z]+)\s*["'.!?]*\s*$/i
+const CHAIN_AT_END_RE = /\bon\s+([a-z]+(?:\s+chain)?)\s*["'.!?]*\s*$/i
 
 /** A tile ask must be ONLY a tile ask. Any other money instruction riding
  *  the same message ("tile …, then send 1 USDC to 0x…") gets a named
@@ -85,24 +85,33 @@ const MOSAIC_CHAINS: Record<string, MosaicChainWord> = {
   mainnet: 'ethereum',
   arbitrum: 'arbitrum',
   arb: 'arbitrum',
+  robinhood: 'robinhood',
+  'robinhood chain': 'robinhood',
 }
 
 export const MOSAIC_CHAIN_IDS: Record<MosaicChainWord, number> = {
   base: 8453,
   ethereum: 1,
   arbitrum: 42161,
+  robinhood: 4663,
 }
 
 export const MOSAIC_CHAIN_LABELS: Record<MosaicChainWord, string> = {
   base: 'Base',
   ethereum: 'Ethereum',
   arbitrum: 'Arbitrum',
+  robinhood: 'Robinhood Chain',
 }
 
-/** The settlement rail: sells land here, buys spend from here. USDC on all
- *  three v1 chains. Not configurable per-ask by design — one rail keeps the
- *  conservation math honest. */
+/** The settlement rail: sells land here, buys spend from here. USDC on the
+ *  EVM majors, USDG on Robinhood Chain (its native dollar — 6 decimals, but
+ *  decimals are the builder's business; the sentence only carries the
+ *  word). One rail per chain keeps the conservation math honest. */
 export const MOSAIC_STABLE = 'USDC'
+
+export function mosaicStableFor(chainWord: MosaicChainWord): 'USDC' | 'USDG' {
+  return chainWord === 'robinhood' ? 'USDG' : 'USDC'
+}
 
 const EXAMPLE = 'tile my wallet 50% ETH, 30% USDC, 20% wstETH'
 
@@ -147,20 +156,7 @@ export function parseMosaicAsk(message: string): MosaicAsk | { problem: string }
     return { problem: `Your tiles add to ${trimNum(sum)}% — a mosaic covers the whole wall. Make them sum to 100.` }
   }
 
-  // Robinhood named ANYWHERE is a refusal, not a silent drop — stock tiling
-  // is queued, not built. (Scanned everywhere on purpose: the refusal must
-  // fire even when the chain word sits mid-sentence.)
   const normalized = normalizeChainWords(message)
-  for (const m of normalized.matchAll(new RegExp(CHAIN_ON_RE.source, 'gi'))) {
-    const raw = m[1].toLowerCase().trim()
-    const canon = canonicalChainWord(raw) ?? raw
-    if (/^robinhood/.test(canon) || /^robinhood/.test(canon.split(' ')[0])) {
-      return {
-        problem:
-          'Tiling runs on Base, Ethereum, or Arbitrum for now — tokenized-stock tiles on Robinhood Chain are queued, not built. Name one of the three or leave the chain out.',
-      }
-    }
-  }
 
   // One ask, one shape: refuse any other money instruction riding along —
   // claiming it and dropping the rest would be the silent partial-match bug.
@@ -295,6 +291,7 @@ export const MOSAIC_GAS_RESERVE_ETH: Record<MosaicChainWord, number> = {
   ethereum: 0.002,
   base: 0.0002,
   arbitrum: 0.0002,
+  robinhood: 0.0002,
 }
 
 /** Buys are shaved 0.5% against sell proceeds — solver fees and price float
@@ -311,6 +308,7 @@ const SETTLEMENT_HAIRCUT = 0.995
 export function planMosaic(inputs: MosaicPlanInputs): MosaicPlan {
   const { slices, chainWord, holdings } = inputs
   const chainLabel = MOSAIC_CHAIN_LABELS[chainWord]
+  const stable = mosaicStableFor(chainWord)
   const notes: string[] = []
 
   const bySymbol = new Map<string, MosaicHolding>()
@@ -323,13 +321,13 @@ export function planMosaic(inputs: MosaicPlanInputs): MosaicPlan {
   }
 
   const named = new Set(slices.map((s) => s.token))
-  const railInShape = named.has(MOSAIC_STABLE)
+  const railInShape = named.has(stable)
 
   // Movable = named tiles + the stable rail. Nothing else is ever touched.
   let movableUsd = 0
   const heldUsdOf = new Map<string, number>()
   const unpriced: string[] = []
-  for (const token of [...named, MOSAIC_STABLE]) {
+  for (const token of [...named, stable]) {
     if (heldUsdOf.has(token)) continue
     const h = bySymbol.get(token)
     if (!h) {
@@ -339,7 +337,7 @@ export function planMosaic(inputs: MosaicPlanInputs): MosaicPlan {
     if (h.valueUsd == null || h.priceUsd == null) {
       // Held but unpriced — we cannot size a sell for it. Fail closed by
       // name rather than planning around a number we don't have.
-      if (token !== MOSAIC_STABLE) unpriced.push(token)
+      if (token !== stable) unpriced.push(token)
       heldUsdOf.set(token, 0)
       continue
     }
@@ -365,7 +363,7 @@ export function planMosaic(inputs: MosaicPlanInputs): MosaicPlan {
   if (movableUsd < 10) {
     return {
       kind: 'problem',
-      problem: `Nothing to tile on ${chainLabel} — the shape's tokens (plus ${MOSAIC_STABLE}) come to $${movableUsd.toFixed(2)} there. A mosaic needs at least $10 of movable value in its own tiles.`,
+      problem: `Nothing to tile on ${chainLabel} — the shape's tokens (plus ${stable}) come to $${movableUsd.toFixed(2)} there. A mosaic needs at least $10 of movable value in its own tiles.`,
     }
   }
 
@@ -378,7 +376,7 @@ export function planMosaic(inputs: MosaicPlanInputs): MosaicPlan {
   const untouchedUsd = round2(
     holdings.reduce((a, h) => {
       const key = h.symbol.toUpperCase()
-      if (named.has(key) || key === MOSAIC_STABLE) return a
+      if (named.has(key) || key === stable) return a
       return a + (h.valueUsd ?? 0)
     }, 0),
   )
@@ -393,13 +391,13 @@ export function planMosaic(inputs: MosaicPlanInputs): MosaicPlan {
   const sells: { token: string; usd: number }[] = []
   const buys: { token: string; usd: number }[] = []
 
-  const shape: MosaicSlice[] = railInShape ? slices : [...slices, { pct: 0, token: MOSAIC_STABLE }]
+  const shape: MosaicSlice[] = railInShape ? slices : [...slices, { pct: 0, token: stable }]
   for (const s of shape) {
     const heldUsd = heldUsdOf.get(s.token) ?? 0
     const targetUsd = round2((s.pct / 100) * movableUsd)
     const deltaUsd = round2(targetUsd - heldUsd)
     let action: MosaicRow['action'] = 'hold'
-    if (s.token !== MOSAIC_STABLE) {
+    if (s.token !== stable) {
       if (deltaUsd > band) {
         action = 'buy'
         buys.push({ token: s.token, usd: deltaUsd })
@@ -426,7 +424,7 @@ export function planMosaic(inputs: MosaicPlanInputs): MosaicPlan {
 
   // Conservation with a haircut: buys can only spend held stable plus
   // shaved sell proceeds. Scale down proportionally when short and say so.
-  const stableFuel = (heldUsdOf.get(MOSAIC_STABLE) ?? 0) + sells.reduce((a, s) => a + s.usd, 0) * SETTLEMENT_HAIRCUT
+  const stableFuel = (heldUsdOf.get(stable) ?? 0) + sells.reduce((a, s) => a + s.usd, 0) * SETTLEMENT_HAIRCUT
   const totalBuys = buys.reduce((a, b) => a + b.usd, 0)
   if (totalBuys > stableFuel && totalBuys > 0) {
     const scale = Math.max(0, stableFuel / totalBuys)
@@ -456,11 +454,11 @@ export function planMosaic(inputs: MosaicPlanInputs): MosaicPlan {
     const units = sellAll ? Math.max(0, h.balance - reserve) : s.usd / h.priceUsd
     const amount = fmtUnits(units)
     if (parseFloat(amount) <= 0) continue
-    legs.push(`swap ${amount} ${s.token} for ${MOSAIC_STABLE} on ${chainWord}`)
+    legs.push(`swap ${amount} ${s.token} for ${stable} on ${chainWord}`)
   }
   for (const b of buys) {
     if (b.usd < 1) continue
-    legs.push(`swap ${b.usd.toFixed(2)} ${MOSAIC_STABLE} for ${b.token} on ${chainWord}`)
+    legs.push(`swap ${b.usd.toFixed(2)} ${stable} for ${b.token} on ${chainWord}`)
   }
 
   if (legs.length === 0) {

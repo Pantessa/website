@@ -133,7 +133,8 @@ const handler = createMcpHandler(
         title: 'Hand your human a portfolio (MOSAIC)',
         description:
           'Mint a portfolio SHAPE as a sign link: pass 2–8 percentage slices summing to 100 (letters-only token symbols — ETH, USDC, ' +
-          'wstETH, cbBTC…) and an optional chain (base/ethereum/arbitrum; omitted = each wallet tiles its own dominant chain). The desk ' +
+          'wstETH, cbBTC… — tokenized stocks like AAPL/TSLA on robinhood, where USDG is the rail) and an optional chain ' +
+          '(base/ethereum/arbitrum/robinhood; omitted = each wallet tiles its own dominant chain). The desk ' +
           'composes the canonical tile sentence, proves it through the same grammar the sign side runs, and returns a durable /i link plus ' +
           'a fork door. Every wallet that opens the link gets the SAME sentence compiled into ITS OWN batch — sells then buys, one ' +
           'signature chain, personalized by the deterministic planner. Sentences and links out, as always; poll broker_status for the funnel.',
@@ -143,7 +144,7 @@ const handler = createMcpHandler(
             .min(2)
             .max(8)
             .describe('The shape: [{pct, token}, …], pcts summing to 100.'),
-          chain: z.enum(['base', 'ethereum', 'arbitrum']).optional(),
+          chain: z.enum(['base', 'ethereum', 'arbitrum', 'robinhood']).optional(),
           agent: z.string().max(40).optional().describe('Your agent name — the byline on the link.'),
         },
       },

@@ -18,7 +18,7 @@ import { ensureTokenList, dynamicTokenBySymbol } from './token-list'
 import {
   MOSAIC_CHAIN_IDS,
   MOSAIC_CHAIN_LABELS,
-  MOSAIC_STABLE,
+  mosaicStableFor,
   planMosaic,
   type MosaicAsk,
   type MosaicChainWord,
@@ -28,12 +28,14 @@ import {
 } from './mosaic'
 
 /** Tiles that plan even when the public token list is unreachable — the
- *  majors the swap cascade is known to resolve on all three v1 chains.
+ *  majors the swap cascade is known to resolve on the EVM majors.
  *  Everything else validates against the live list (fail-closed: list down
- *  + exotic tile = named refusal, never a sign-time surprise). */
+ *  + exotic tile = named refusal, never a sign-time surprise). Robinhood
+ *  Chain is stricter on purpose: only USDG and ETH are core there — every
+ *  stock tile must resolve in the warm 4663 list (the AAPLE lesson). */
 const CORE_TILES = new Set(['ETH', 'WETH', 'USDC', 'WSTETH', 'CBBTC', 'WBTC', 'DAI', 'USDT'])
 
-const CHAIN_WORDS: MosaicChainWord[] = ['base', 'ethereum', 'arbitrum']
+const CHAIN_WORDS: MosaicChainWord[] = ['base', 'ethereum', 'arbitrum', 'robinhood']
 
 const usd = (n: number) =>
   `$${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
@@ -81,7 +83,7 @@ export async function mosaicTurnFor(
     portfolio.holdings.reduce((a, h) => {
       if (h.chain !== MOSAIC_CHAIN_LABELS[word]) return a
       const sym = h.symbol.toUpperCase()
-      if (!named.has(sym) && sym !== MOSAIC_STABLE) return a
+      if (!named.has(sym) && sym !== mosaicStableFor(word)) return a
       return a + (h.valueUsd ?? 0)
     }, 0)
 
@@ -96,9 +98,13 @@ export async function mosaicTurnFor(
   await ensureTokenList(chainId).catch(() => {
     listWarm = false
   })
+  const stable = mosaicStableFor(chainWord)
   const unknown: string[] = []
   for (const s of parsed.slices) {
-    if (s.token === 'ETH' || CORE_TILES.has(s.token)) continue
+    if (s.token === 'ETH' || s.token === stable) continue
+    // The EVM majors get a hand-pinned core even when the list is down;
+    // Robinhood Chain does not — every stock tile resolves or refuses.
+    if (chainWord !== 'robinhood' && CORE_TILES.has(s.token)) continue
     const hit = dynamicTokenBySymbol(s.token, chainId)
     if (!hit) unknown.push(s.token)
   }
@@ -106,7 +112,9 @@ export async function mosaicTurnFor(
     return {
       reply: listWarm
         ? `🧩 ${unknown.join(', ')} ${unknown.length > 1 ? "aren't" : "isn't"} a token I can trade on ${chainLabel} — the shape refuses rather than guessing an address. Check the symbol or drop the tile.`
-        : `🧩 The ${chainLabel} token list is unreachable right now, so I can only tile the majors (ETH, USDC, wstETH, cbBTC, WBTC, DAI) — ${unknown.join(', ')} will have to wait a minute.`,
+        : chainWord === 'robinhood'
+          ? `🧩 The Robinhood Chain token list is unreachable right now, so I can only take ${stable} and ETH tiles — ${unknown.join(', ')} will have to wait a minute.`
+          : `🧩 The ${chainLabel} token list is unreachable right now, so I can only tile the majors (ETH, USDC, wstETH, cbBTC, WBTC, DAI) — ${unknown.join(', ')} will have to wait a minute.`,
       buildPath: 'native-mosaic',
     }
   }

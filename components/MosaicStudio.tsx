@@ -51,6 +51,7 @@ const CHAIN_OPTIONS: { value: ChainChoice; label: string }[] = [
   { value: 'base', label: 'Base' },
   { value: 'ethereum', label: 'Ethereum' },
   { value: 'arbitrum', label: 'Arbitrum' },
+  { value: 'robinhood', label: 'Robinhood Chain — stock tiles (USDG rail)' },
 ]
 
 /** Accent share per tile index. Descends so the first (usually biggest)
