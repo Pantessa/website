@@ -76,7 +76,10 @@ export function composeMcps(ask: string): string[] {
   // B" settles through NEAR Intents instead, so the from→to shape doesn't
   // pull Uniswap unless the ask names it.
   const crossChainShape = /\bfrom\s+\w+\s+to\s+\w+\b/.test(a)
-  if (/\b(uniswap|dex)\b/.test(a) || (!crossChainShape && /\b(swaps?|swapping|convert)\b/.test(a))) slugs.push('uniswap-free')
+  // A mosaic ("tile my wallet 50% eth …") compiles to same-chain swap legs,
+  // so the tile verb pulls the swap venue even though no swap word appears.
+  const tileShape = /\b(?:re)?tile\s+my\s+(?:wallet|portfolio|bags?)\b/.test(a)
+  if (/\b(uniswap|dex)\b/.test(a) || tileShape || (!crossChainShape && /\b(swaps?|swapping|convert)\b/.test(a))) slugs.push('uniswap-free')
   if (/\b(cow ?swap|cow ?protocol|cow|limit orders?)\b/.test(a)) slugs.push('cow-free')
   if (/\b(stake|steth|wsteth|lido)\b/.test(a)) slugs.push('lido-free')
   if (/\b(supply|borrow|repay|aave|lend)\b/.test(a)) slugs.push('aave')

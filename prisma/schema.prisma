@@ -1137,9 +1137,16 @@ model IntentLink {
   maxSigns     Int?      @map("max_signs")
   allowWallets String[]  @default([]) @map("allow_wallets")
   revoked      Boolean   @default(false)
+  // MOSAIC lineage: kind stamps executable-allocation links ('mosaic') so
+  // the gallery and the tessera OG card can find them without re-parsing
+  // every ask; parentSlug records fork provenance (one tap "fork this
+  // shape" → a new link that credits its ancestor on the page).
+  kind         String?
+  parentSlug   String?   @map("parent_slug")
   createdAt    DateTime  @default(now()) @map("created_at")
 
   @@index([creator, createdAt])
+  @@index([kind, createdAt])
   @@map("intent_links")
 }
 

@@ -57,6 +57,9 @@ export default async function LinksLeaderboardPage() {
             <Link href="/links/embed" className="btn btn--ghost text-[13px]">
               Put a button on your site
             </Link>
+            <Link href="/mosaic" className="btn btn--ghost text-[13px]">
+              Mint your bags as a Mosaic
+            </Link>
             <Link href="/docs/links" className="btn btn--ghost text-[13px]">
               How it works
             </Link>

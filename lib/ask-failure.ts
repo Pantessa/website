@@ -29,7 +29,7 @@ import { usdPerToken } from '@/lib/usd-probe'
 // amounts, $, addresses/ENS, marketplace URLs, all-sends, and NFT words —
 // the shapes real money asks carry even when no number appears.
 const MONEY_VERB_RE =
-  /\b(?:send|transfer|swap|sell|buy|bridge|stake|unstake|deposit|withdraw|convert|fund|move|need|want|get\s+me|long|short|list|repay|borrow|supply|protect|mint|pay)\b/i
+  /\b(?:send|transfer|swap|sell|buy|bridge|stake|unstake|deposit|withdraw|convert|fund|move|need|want|get\s+me|long|short|list|repay|borrow|supply|protect|mint|pay|(?:re)?tile)\b/i
 const MONEY_EVIDENCE_RE = /\d|\$|0x[0-9a-fA-F]{6,}|\.eth\b|\bnft\b|opensea\.io|\b(?:all|everything|max)\b|\busd[cgte]?\b|\beth\b/i
 
 /** Pure: does this message look like it wanted money to move? */

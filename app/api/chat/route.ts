@@ -55,6 +55,8 @@ import { signJobToken } from '@/lib/job-token'
 import { runDcaTurn } from '@/lib/dca-exec'
 import { parseRebalanceAsk } from '@/lib/rebalance'
 import { rebalanceTurnFor } from '@/lib/rebalance-exec'
+import { parseMosaicAsk } from '@/lib/mosaic'
+import { mosaicTurnFor } from '@/lib/mosaic-exec'
 import { runSpotGuardTurn } from '@/lib/spot-guard-exec'
 import {
   aaveAgentOf,
@@ -1093,6 +1095,31 @@ async function handleChatTurn(req: NextRequest) {
       // Morpho named but neither native parser claimed it — breadcrumb for
       // the same parse-miss-looks-like-MCP-flake failure class as Aave's.
       nativeTrace({ type: 'note', level: 'info', label: 'morpho named but no imperative lend/borrow/repay/withdraw/collateral parse — normal routing (reads are fine here; build asks should say e.g. “lend 100 USDC on morpho”)' })
+    }
+
+    // MOSAIC — "tile my wallet 50% ETH, 30% USDC, 20% wstETH": the
+    // executable-allocation gate. Percentages in, same-chain-swap sentences
+    // out; the joined legs compile through the jobs compiler (the round-trip
+    // IS the guard) into one signature chain personalized to whatever THIS
+    // wallet holds. Runs AFTER jobs (a compound "tile …, then …" keeps its
+    // claim) and BEFORE rebalance — the trigger verb is disjoint from every
+    // other gate; once "tile my wallet" matches, this gate owns the turn
+    // (#597) and malformed shapes get named problems, never the planner.
+    const mosaicAsk = parseMosaicAsk(message)
+    if (mosaicAsk && 'problem' in mosaicAsk) {
+      nativeTrace({ type: 'note', level: 'warn', label: `mosaic layer: shape refused at parse — ${mosaicAsk.problem.slice(0, 120)}` })
+      return NextResponse.json({ reply: `🧩 ${mosaicAsk.problem}`, buildPath: 'native-mosaic' })
+    }
+    if (mosaicAsk) {
+      if (!walletAddress) {
+        return NextResponse.json({
+          reply:
+            '🧩 A mosaic compiles against YOUR holdings — connect your wallet and the same shape becomes your personal batch, signed step by step.',
+          connectWallet: true,
+        })
+      }
+      const mosaicTurn = await mosaicTurnFor(mosaicAsk, walletAddress, nativeTrace, swapFeeBps)
+      return NextResponse.json(mosaicTurn)
     }
 
     // Rebalance — "rebalance my portfolio" / "put my idle money to work":

@@ -12,7 +12,7 @@
 // pinned mechanically (assertNoTxMaterial) on every outbound payload.
 import { createMcpHandler } from 'mcp-handler'
 import { z } from 'zod'
-import { openIntent, chooseOption, handoffIntent, intentStatus, closeIntent, executeIntent } from '@/lib/broker-exec'
+import { openIntent, chooseOption, handoffIntent, intentStatus, closeIntent, executeIntent, tileIntent } from '@/lib/broker-exec'
 
 export const maxDuration = 60
 
@@ -125,6 +125,30 @@ const handler = createMcpHandler(
         inputSchema: { intent_id: z.string().min(4).max(24) },
       },
       async ({ intent_id }) => guarded(() => executeIntent(intent_id)),
+    )
+
+    server.registerTool(
+      'broker_tile',
+      {
+        title: 'Hand your human a portfolio (MOSAIC)',
+        description:
+          'Mint a portfolio SHAPE as a sign link: pass 2–8 percentage slices summing to 100 (letters-only token symbols — ETH, USDC, ' +
+          'wstETH, cbBTC… — tokenized stocks like AAPL/TSLA on robinhood, where USDG is the rail) and an optional chain ' +
+          '(base/ethereum/arbitrum/robinhood; omitted = each wallet tiles its own dominant chain). The desk ' +
+          'composes the canonical tile sentence, proves it through the same grammar the sign side runs, and returns a durable /i link plus ' +
+          'a fork door. Every wallet that opens the link gets the SAME sentence compiled into ITS OWN batch — sells then buys, one ' +
+          'signature chain, personalized by the deterministic planner. Sentences and links out, as always; poll broker_status for the funnel.',
+        inputSchema: {
+          slices: z
+            .array(z.object({ pct: z.number().positive().max(100), token: z.string().regex(/^[A-Za-z]{2,12}$/) }))
+            .min(2)
+            .max(8)
+            .describe('The shape: [{pct, token}, …], pcts summing to 100.'),
+          chain: z.enum(['base', 'ethereum', 'arbitrum', 'robinhood']).optional(),
+          agent: z.string().max(40).optional().describe('Your agent name — the byline on the link.'),
+        },
+      },
+      async ({ slices, chain, agent }) => guarded(() => tileIntent({ slices, chain, agent })),
     )
 
     server.registerTool(

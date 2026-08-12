@@ -87,6 +87,8 @@ import { decideFundingTurn, detectBalanceShortfall, fundingPlanUsd, planFundingC
 import { compileDcaBuy, dcaRunChip, parseDcaCreate, parseDcaManage, parseDcaRun, periodKeyFor } from '../lib/dca'
 import { briefingNeedsCount, briefingTile, composeBriefingItems, type BriefingInputs, type BriefingPosition } from '../lib/briefing'
 import { moveAsk, parseRebalanceAsk, planRebalance, type RebalanceInputs } from '../lib/rebalance'
+import { fmtUnits, isMosaicAsk, MOSAIC_STABLE, mosaicAskString, mosaicStableFor, parseMosaicAsk, planMosaic, type MosaicHolding } from '../lib/mosaic'
+import { simulateLadder } from './ask-ladder'
 import {
   buildSpotGuardPermission,
   guardSpotSell,
@@ -1214,6 +1216,9 @@ async function main() {
   )
   const footerHomeHtml = await (await fetch(`${BASE}/`)).text()
   check('rebrand: reachable from the footer on every page', footerHomeHtml.includes('href="/rebrand"'))
+  check('mosaic: reachable from the footer on every page', footerHomeHtml.includes('href="/mosaic"'))
+  const linksPageHtml = await (await fetch(`${BASE}/links`)).text()
+  check('mosaic: the /links board cross-links the wall', linksPageHtml.includes('href="/mosaic"'))
 
   // Payees: the wallet's claimed MCP servers (dashboard Agents → My MCP servers).
   // SIWE-only; a fresh wallet has claimed nothing, so an empty array.
@@ -9471,6 +9476,290 @@ async function main() {
     check('/t/weth: alias collapses to the ETH pair', /ETH \/ USD/.test(tWeth))
   }
 
+  // ── Mosaic links (executable allocations) ─────────────────────────────────
+  // A shape ("tile my wallet 50% ETH, 30% USDC, 20% wstETH") is the whole
+  // wire format: percentages in, same-chain-swap SENTENCES out. Two safety
+  // contracts get pinned here. Grammar: once the trigger verb matches, the
+  // gate OWNS the turn (named problems, never a silent planner fall — the
+  // #597 partial-match rule). Planner: every emitted leg MUST round-trip
+  // lib/jobs.ts, so a leg that stops compiling is a red build here, not a
+  // live 404 at sign time.
+  console.log('— mosaic links')
+  {
+    const shapeOf = (m: string) => {
+      const p = parseMosaicAsk(m)
+      return p && !('problem' in p) ? p : null
+    }
+    const problemOf = (m: string) => {
+      const p = parseMosaicAsk(m)
+      return p && 'problem' in p ? p.problem : ''
+    }
+
+    const happy = shapeOf('tile my wallet 50% ETH, 30% USDC, 20% wstETH')
+    check(
+      'mosaic: happy path parses three tiles, symbols uppercased, no chain word',
+      happy?.slices.length === 3 &&
+        happy.slices[0].pct === 50 &&
+        happy.slices[2].token === 'WSTETH' &&
+        happy.chainWord === undefined,
+    )
+    check('mosaic: tiles that miss 100 refuse naming the sum', /80%/.test(problemOf('tile my wallet 50% ETH, 30% USDC')))
+    check("mosaic: one tile isn't a shape — named problem, not a silent drop", /One tile/.test(problemOf('tile my wallet 100% ETH')))
+    check('mosaic: duplicate tile refused by name', /ETH appears twice/.test(problemOf('tile my wallet 50% ETH, 50% ETH')))
+    // Stock tiles are LIVE (loop iteration 2): 'on robinhood' parses to a
+    // real chain word — the old queued-refusal pin flipped consciously.
+    const rhParsed = parseMosaicAsk('tile my wallet 50% AAPL, 50% USDG on robinhood')
+    check(
+      "mosaic: 'on robinhood' parses — stock tiles are a lane, not a refusal",
+      rhParsed != null && !('problem' in rhParsed) && rhParsed.chainWord === 'robinhood',
+    )
+    check(
+      "mosaic: the stable rail is per-chain — USDG on robinhood, USDC elsewhere",
+      mosaicStableFor('robinhood') === 'USDG' && mosaicStableFor('base') === 'USDC',
+    )
+
+    // A stock shape against a USDG wallet: buys sized in USDG, and the
+    // joined legs round-trip the jobs compiler WITH stock pairing (the 4663
+    // list is primed the same way the stock-pairing section does it).
+    primeTokenList(4663, [
+      {
+        tokens: [
+          { chainId: 4663, address: '0xaF3D76f1834A1d425780943C99Ea8A608f8a93f9', symbol: 'AAPL', decimals: 18, name: 'Apple' },
+          { chainId: 4663, address: '0x5b68Af1E93a96e7E52D9F43d4CcC0D8b3E93bE39', symbol: 'TSLA', decimals: 18, name: 'Tesla' },
+          { chainId: 4663, address: '0x556CccE7E5152F9d5aA26E9e9DE44b0d64eB2B79', symbol: 'USDG', decimals: 6, name: 'Global Dollar' },
+        ],
+      },
+    ])
+    const rhPlan = planMosaic({
+      slices: [
+        { pct: 40, token: 'AAPL' },
+        { pct: 30, token: 'TSLA' },
+        { pct: 30, token: 'USDG' },
+      ],
+      chainWord: 'robinhood',
+      holdings: [{ symbol: 'USDG', balance: 600, priceUsd: 1, valueUsd: 600 }],
+    })
+    check(
+      'mosaic: a USDG wallet tiles into stocks — buys on the USDG rail, biggest first',
+      rhPlan.kind === 'plan' &&
+        rhPlan.legs.length === 2 &&
+        rhPlan.legs[0] === 'swap 240.00 USDG for AAPL on robinhood' &&
+        rhPlan.legs[1] === 'swap 180.00 USDG for TSLA on robinhood',
+      rhPlan.kind === 'plan' ? rhPlan.legs.join(' | ') : rhPlan.kind,
+    )
+    if (rhPlan.kind === 'plan') {
+      const rhJob = compileJobAsk(rhPlan.legs.join(' then '))
+      check(
+        'mosaic: stock legs round-trip the jobs compiler with ticker pairing',
+        rhJob != null && !('problem' in rhJob) && !('clarify' in rhJob) && (rhJob as { steps: unknown[] }).steps.length === 2,
+      )
+    }
+
+    // Sell-side stock tiling waits on a price feed: a HELD stock tile that
+    // Alchemy can't price refuses BY NAME instead of planning around a
+    // number nobody has.
+    const rhUnpriced = planMosaic({
+      slices: [
+        { pct: 50, token: 'AAPL' },
+        { pct: 50, token: 'USDG' },
+      ],
+      chainWord: 'robinhood',
+      holdings: [
+        { symbol: 'AAPL', balance: 3, priceUsd: null, valueUsd: null },
+        { symbol: 'USDG', balance: 100, priceUsd: 1, valueUsd: 100 },
+      ],
+    })
+    check(
+      'mosaic: an unpriced held stock tile refuses by name (sell-side waits on the feed)',
+      rhUnpriced.kind === 'problem' && /AAPL/.test(rhUnpriced.problem),
+    )
+
+    // The canonical-string pin: mosaicAskString is what mints, forks, and the
+    // agent door all write — it must survive its own parser, chain word or not.
+    const rtBare = shapeOf(mosaicAskString([{ pct: 50, token: 'ETH' }, { pct: 50, token: 'USDC' }]))
+    const rtChain = shapeOf(mosaicAskString([{ pct: 33.5, token: 'eth' }, { pct: 66.5, token: 'usdc' }], 'arbitrum'))
+    check(
+      'mosaic: mosaicAskString round-trips parseMosaicAsk (with and without the chain word)',
+      rtBare?.slices.length === 2 &&
+        rtBare.chainWord === undefined &&
+        rtChain?.slices[0].pct === 33.5 &&
+        rtChain.slices[0].token === 'ETH' &&
+        rtChain.chainWord === 'arbitrum',
+    )
+
+    // Ladder order pins: the tile ask lands on its own gate, and the rebalance
+    // gate (which sits just BELOW mosaic) keeps its claim untouched.
+    const lad = simulateLadder('tile my wallet 50% eth, 50% usdc')
+    check('mosaic: ladder — tile ask claims the mosaic gate as an action', lad.gate === 'mosaic' && lad.kind === 'action', `gate=${lad.gate}`)
+    const ladReb = simulateLadder('rebalance my portfolio')
+    check('mosaic: ladder — rebalance keeps its own gate (order pin)', ladReb.gate === 'rebalance')
+
+    // THE round-trip pin: a fabricated over-ETH wallet through the pure
+    // planner → sell legs before buy legs, and the joined sentence compiles
+    // via the jobs compiler into exactly legs.length steps. This is the whole
+    // safety contract — the exec shell refuses when this ever misses.
+    const heavy: MosaicHolding[] = [
+      { symbol: 'ETH', balance: 0.9, priceUsd: 3500, valueUsd: 3150, native: true },
+      { symbol: 'USDC', balance: 200, priceUsd: 1, valueUsd: 200 },
+      { symbol: 'SPAMX', balance: 1_000_000, priceUsd: 0.000001, valueUsd: 1 },
+    ]
+    const shaped = planMosaic({
+      slices: [{ pct: 50, token: 'ETH' }, { pct: 30, token: 'USDC' }, { pct: 20, token: 'WSTETH' }],
+      chainWord: 'base',
+      holdings: heavy,
+    })
+    const legs = shaped.kind === 'plan' ? shaped.legs : []
+    const legsCompiled = legs.length ? compileJobAsk(legs.join(' then ')) : null
+    check(
+      'mosaic: planner sells before buys and every leg round-trips the jobs compiler',
+      shaped.kind === 'plan' &&
+        legs.length === 2 &&
+        /^swap 0\.42\d+ ETH for USDC on base$/.test(legs[0]) &&
+        legs[1] === `swap 669.86 ${MOSAIC_STABLE} for WSTETH on base` &&
+        !!legsCompiled &&
+        !('problem' in legsCompiled) &&
+        legsCompiled.steps.length === legs.length,
+      legs.join(' | '),
+    )
+
+    // The quiet case: an already-in-shape wallet gets an honest "nothing
+    // worth moving", never a gas-eating micro-batch. The native gas keep-back
+    // is still said out loud.
+    const calm: MosaicHolding[] = [
+      { symbol: 'ETH', balance: 0.2, priceUsd: 2500, valueUsd: 500, native: true },
+      { symbol: 'USDC', balance: 500, priceUsd: 1, valueUsd: 500 },
+    ]
+    const quiet = planMosaic({ slices: [{ pct: 50, token: 'ETH' }, { pct: 50, token: 'USDC' }], chainWord: 'base', holdings: calm })
+    check(
+      'mosaic: already-in-shape wallet plans quiet (no legs) and names the gas keep-back',
+      quiet.kind === 'quiet' && !('legs' in quiet) && quiet.notes.some((n) => /stays back for gas/.test(n)),
+    )
+
+    // Grammar-safe numbers: the same-chain-swap segment is \d+(\.\d+)?, so an
+    // exponent-form amount would silently break the round-trip above. The
+    // top end matters too — meme-token balances pass 1e21 units, where
+    // String()/toFixed both go exponent (the BigInt path pins this).
+    check(
+      'mosaic: fmtUnits never emits exponent form (grammar-safe amounts)',
+      [1e-7, 0.000015, 0.5, 1234.5678, 2e21, 9.9e15].every((n) => !/e/i.test(fmtUnits(n))) && fmtUnits(1e-7) === '0',
+    )
+
+    // One ask, one shape (#595/#597): another money instruction riding the
+    // tile message is a NAMED refusal — never a silent drop of the rest.
+    // (compileJobAsk nulls on the unparseable tile segment, so without this
+    // guard the mosaic gate would claim the compound and eat the send.)
+    const rideAlong = parseMosaicAsk('tile my wallet 50% eth, 50% usdc then send 1 USDC on base to 0x9Cc09aD0d6832ffBBFB1b70F1d9E5D0a6d00892A')
+    check(
+      'mosaic: a ride-along money clause refuses by name, never drops silently',
+      rideAlong != null && 'problem' in rideAlong && /send/.test(rideAlong.problem),
+    )
+
+    // The chain word is accepted only at the ask's END (the canonical
+    // position mosaicAskString writes) — trailing prose once re-routed a
+    // plan: "saw it on ethereum twitter" must NOT pick Ethereum.
+    const proseChain = parseMosaicAsk('tile my wallet 50% eth, 50% usdc with a shape I saw on ethereum somewhere')
+    check(
+      'mosaic: mid-prose chain words fall back to the dominant-chain pick',
+      proseChain != null && !('problem' in proseChain) && proseChain.chainWord === undefined,
+    )
+
+    // A shape is an instruction, not permission to liquidate: the biggest
+    // holding sitting OUTSIDE the shape never becomes a leg — it is named in
+    // the notes and left exactly where it is.
+    const spamHeavy: MosaicHolding[] = [
+      { symbol: 'PEPE', balance: 1_000_000_000, priceUsd: 0.000005, valueUsd: 5000 },
+      { symbol: 'ETH', balance: 0.2, priceUsd: 2500, valueUsd: 500, native: true },
+      { symbol: 'USDC', balance: 100, priceUsd: 1, valueUsd: 100 },
+    ]
+    const spamPlan = planMosaic({ slices: [{ pct: 50, token: 'ETH' }, { pct: 50, token: 'USDC' }], chainWord: 'base', holdings: spamHeavy })
+    check(
+      'mosaic: unnamed holdings never become legs — named in the notes, left alone',
+      spamPlan.kind === 'plan' &&
+        spamPlan.legs.every((l) => !l.includes('PEPE')) &&
+        spamPlan.notes.some((n) => /outside the shape stays/.test(n)),
+    )
+
+    // ── The HTTP door (/api/mosaics) ──────────────────────────────────────
+    const mosaicNoAuth = await fetch(`${BASE}/api/mosaics`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ slices: [{ pct: 60, token: 'ETH' }, { pct: 40, token: 'USDC' }] }),
+    })
+    check('mosaic api: mint without session → 401', mosaicNoAuth.status === 401)
+
+    const tiler = privateKeyToAccount(generatePrivateKey())
+    const tilerSession = await signIn(tiler)
+    const TJ = { 'content-type': 'application/json', cookie: tilerSession }
+    const mintShape = [{ pct: 60, token: 'ETH' }, { pct: 40, token: 'USDC' }]
+    const mosaicMint = await fetch(`${BASE}/api/mosaics`, {
+      method: 'POST',
+      headers: TJ,
+      body: JSON.stringify({ slices: mintShape, chain: 'base', agent: 'harness' }),
+    })
+    const mosaicRow = (await mosaicMint.json()) as { slug?: string; url?: string; ask?: string }
+    check(
+      'mosaic api: mint returns slug + /i url + the canonical ask',
+      mosaicMint.status === 200 && !!mosaicRow.slug && mosaicRow.url === `/i/${mosaicRow.slug}` && mosaicRow.ask === mosaicAskString(mintShape, 'base'),
+      mosaicRow.ask,
+    )
+    const mSlug = mosaicRow.slug ?? 'missing'
+
+    const oneRead = await fetch(`${BASE}/api/mosaics?slug=${mSlug}`)
+    const oneBody = (await oneRead.json()) as {
+      rows?: Array<{ slug: string; slices?: Array<{ pct: number; token: string }>; chainWord?: string | null; parentSlug?: string | null }>
+    }
+    const one = oneBody.rows?.[0]
+    check(
+      'mosaic api: single-slug read returns the row with its parsed slices',
+      oneRead.status === 200 &&
+        oneBody.rows?.length === 1 &&
+        one?.slug === mSlug &&
+        one.slices?.length === 2 &&
+        one.slices[0].pct === 60 &&
+        one.slices[0].token === 'ETH' &&
+        one.chainWord === 'base',
+    )
+
+    const forkMint = await fetch(`${BASE}/api/mosaics`, {
+      method: 'POST',
+      headers: TJ,
+      body: JSON.stringify({ slices: [{ pct: 50, token: 'ETH' }, { pct: 50, token: 'USDC' }], chain: 'base', parentSlug: mSlug }),
+    })
+    const forkRow = (await forkMint.json()) as { slug?: string }
+    const fSlug = forkRow.slug ?? 'missing'
+    const forkRead = await fetch(`${BASE}/api/mosaics?slug=${fSlug}`)
+    const forkBody = (await forkRead.json()) as { rows?: Array<{ parentSlug?: string | null }> }
+    check(
+      'mosaic api: fork mints with parent lineage on the row',
+      forkMint.status === 200 && !!forkRow.slug && forkBody.rows?.[0]?.parentSlug === mSlug,
+    )
+
+    const gallery = await fetch(`${BASE}/api/mosaics`)
+    const galleryBody = (await gallery.json()) as { rows?: Array<{ slug: string; forks?: number }> }
+    const parentInGallery = galleryBody.rows?.find((r) => r.slug === mSlug)
+    check(
+      'mosaic api: gallery lists both fresh rows, parent counts its fork',
+      gallery.status === 200 && !!parentInGallery && (galleryBody.rows ?? []).some((r) => r.slug === fSlug) && (parentInGallery.forks ?? 0) >= 1,
+    )
+
+    const badSum = await fetch(`${BASE}/api/mosaics`, {
+      method: 'POST',
+      headers: TJ,
+      body: JSON.stringify({ slices: [{ pct: 50, token: 'ETH' }, { pct: 40, token: 'USDC' }] }),
+    })
+    const badSumText = await badSum.text()
+    check('mosaic api: 90% shape refused 400 quoting the parse problem verbatim', badSum.status === 400 && /90%/.test(badSumText))
+
+    const badAddr = await fetch(`${BASE}/api/mosaics/read?address=not-an-address`)
+    check('mosaic api: read with a garbage address → 400', badAddr.status === 400)
+
+    // Cleanup: links get REVOKED through the same door the creator dashboard
+    // uses — never deleted (the funnel history stays honest).
+    const rv1 = await fetch(`${BASE}/api/intent-links/${mSlug}`, { method: 'DELETE', headers: { cookie: tilerSession } })
+    const rv2 = await fetch(`${BASE}/api/intent-links/${fSlug}`, { method: 'DELETE', headers: { cookie: tilerSession } })
+    check('mosaic api: both minted links revoked (cleanup)', rv1.status === 200 && rv2.status === 200)
+  }
+
   // ── Agent broker desk (/api/broker/mcp) ──────────────────────────────────
   // The MCP surface other agents negotiate with. Sentences in, sentences and
   // sign links out — the leak check below pins the no-transaction-material
@@ -9596,16 +9885,61 @@ async function main() {
       singleExec.isError && /wallet that will SIGN|does not compile/i.test(String(singleExec.payload)),
     )
 
+    // broker_tile — MOSAIC on the desk: slices in, a kind='mosaic' /i link
+    // out, bound to a broker intent so the funnel reports back. The ask on
+    // the wire must round-trip the tile grammar (the sign side's rulebook).
+    const tile = await call('broker_tile', {
+      slices: [{ pct: 60, token: 'ETH' }, { pct: 40, token: 'USDC' }],
+      chain: 'base',
+      agent: 'harness',
+    })
+    const tileSlug = tile.isError ? '' : String(tile.payload.url ?? '').split('/').pop() ?? ''
+    check(
+      'broker: tile mints a mosaic sign link + fork door off sanitized slices',
+      !tile.isError &&
+        typeof tile.payload?.intentId === 'string' &&
+        /\/i\/.+/.test(String(tile.payload?.url)) &&
+        String(tile.payload?.forkUrl ?? '').includes(`/mosaic?from=${tileSlug}`) &&
+        tile.payload?.quote?.gate === 'mosaic' &&
+        isMosaicAsk(String(tile.payload?.ask)),
+      String(tile.payload?.ask ?? tile.payload).slice(0, 80),
+    )
+    const tileGallery = (await (await fetch(`${BASE}/api/mosaics?slug=${tileSlug}`)).json()) as {
+      rows?: { agent?: string | null; slices?: unknown[] }[]
+    }
+    check(
+      "broker: the tile link lands on the mosaic gallery (kind='mosaic') with the desk byline",
+      (tileGallery.rows?.length ?? 0) === 1 &&
+        /agent desk/.test(tileGallery.rows?.[0]?.agent ?? '') &&
+        (tileGallery.rows?.[0]?.slices?.length ?? 0) === 2,
+    )
+    const tileStatus = await call('broker_status', { intent_id: tile.payload.intentId })
+    check(
+      'broker: tile intent reports handed_off with the bound link',
+      !tileStatus.isError && tileStatus.payload?.state === 'handed_off' && String(tileStatus.payload?.url ?? '').includes(tileSlug),
+    )
+    const tileBad = await call('broker_tile', { slices: [{ pct: 60, token: 'ETH' }, { pct: 30, token: 'USDC' }] })
+    check(
+      'broker: a 90% shape refuses with the grammar problem verbatim',
+      tileBad.isError && /90%/.test(String(tileBad.payload)),
+    )
+
     // The wire-level pin: nothing any MCP call returned carries 0x-prefixed
     // 64+ hex runs (calldata/typed-data/signature material). Wallet
     // addresses (40) and the bare-hex capability token pass.
-    const allRaw = [caps.raw, open.raw, chosen.raw, hand.raw, hand2.raw, status.raw, weather.raw, execOpen.raw, execRes.raw, singleExec.raw].join('\n')
+    const allRaw = [caps.raw, open.raw, chosen.raw, hand.raw, hand2.raw, status.raw, weather.raw, execOpen.raw, execRes.raw, singleExec.raw, tile.raw, tileStatus.raw, tileBad.raw].join('\n')
     check('broker: no transaction material on the wire (64+ hex scan)', !/0x[0-9a-fA-F]{64,}/.test(allRaw))
 
     const closed = await call('broker_close', { intent_id: intentId })
     const closedW = await call('broker_close', { intent_id: weather.payload.intentId })
     const closedE = await call('broker_close', { intent_id: execOpen.payload.intentId })
     const closedS = await call('broker_close', { intent_id: single.payload.intentId })
+    const closedT = await call('broker_close', { intent_id: tile.payload.intentId })
+    const tileGalleryAfter = (await (await fetch(`${BASE}/api/mosaics?slug=${tileSlug}`)).json()) as { rows?: unknown[] }
+    check(
+      'broker: closing the tile intent revokes its link off the mosaic wall',
+      !closedT.isError && (tileGalleryAfter.rows?.length ?? 0) === 0,
+    )
     const jobAfter = ((await (
       await fetch((drive.poll as string).replace(/^https?:\/\/[^/]+/, BASE))
     ).json()) as { job?: { status?: string } }).job ?? {}
