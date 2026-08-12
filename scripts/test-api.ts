@@ -1215,6 +1215,21 @@ async function main() {
   const footerHomeHtml = await (await fetch(`${BASE}/`)).text()
   check('rebrand: reachable from the footer on every page', footerHomeHtml.includes('href="/rebrand"'))
 
+  // Old-origin fence (L2-Q2 embed-origin audit): the app must never emit
+  // links to the OLD apex/www origin — lib/site-url.ts canonicalizes,
+  // snippets emit `mountPantessaChat`, Stripe URLs ride billingOrigin().
+  // `*.yeetful.com` MCP/policy hosts are legitimate frozen wire identifiers
+  // (the regex skips subdomains), /rebrand cites the old domain on purpose
+  // (not fenced), and mailto stays on yeetful.com until §1.3's DNS lands
+  // (stripped before the test).
+  {
+    const OLD_ORIGIN_RE = /https?:\/\/(www\.)?yeetful\.com(?![\w.-])/
+    for (const path of ['/docs/embed', '/links/embed', '/sitemap.xml', '/robots.txt']) {
+      const body = (await (await fetch(`${BASE}${path}`)).text()).replace(/mailto:[^"'<\s]+/g, '')
+      check(`old-origin fence: ${path} emits no apex/www yeetful.com links`, !OLD_ORIGIN_RE.test(body))
+    }
+  }
+
   // Payees: the wallet's claimed MCP servers (dashboard Agents → My MCP servers).
   // SIWE-only; a fresh wallet has claimed nothing, so an empty array.
   const mineNoAuth = await fetch(`${BASE}/api/mcp/mine`)
