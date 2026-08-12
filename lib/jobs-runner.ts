@@ -32,7 +32,6 @@ import type { MorphoChainId } from '@/lib/morpho-supply'
 import { buildGuardedSwap } from '@/lib/swap-exec'
 import type { PolicyBlock } from '@/lib/tx-guardrails'
 import { buildLifiBridgeLeg, checkChainArrival, ROBINHOOD_CHAIN_ID, type ChainArrival, type FundingLeg } from '@/lib/lifi-bridge'
-import { buildLifiSwap } from '@/lib/lifi-venue'
 import { ensureTokenList } from '@/lib/token-list'
 import { buildTransferArtifact, type TransferSegment } from '@/lib/transfer-exec'
 import { buildNftBuy, buildNftTransfer, buildNftListing, ERC721_ABI as NFT_ERC721_ABI, ERC1155_ABI as NFT_ERC1155_ABI, type NftAsk } from '@/lib/nft-layer'
@@ -383,8 +382,12 @@ export async function buildSignArtifact(
     // The buy that the funding legs exist for. The USDG amount resolves from
     // the LIVE Robinhood Chain balance at offer time — bridge fees mean the
     // arrived amount is slightly under the asked dollars, and a job step
-    // must never offer a swap the wallet can't fund.
-    const p = params as { buyUsd: number; buyToken: string; chainId?: number }
+    // must never offer a swap the wallet can't fund. The builder id is
+    // historical (existing job rows carry it): the build itself runs the
+    // SHARED venue cascade (v3 → v4 → LiFi), not LiFi directly — the stocks
+    // trade on seeded v3 pools now, and a pinned LiFi fill reverted live
+    // under its own quote (InsufficientAmountOut) where v3 filled fine.
+    const p = params as { buyUsd: number; buyToken: string; chainId?: number; feeBps?: number }
     const chainId = Number(p.chainId ?? ROBINHOOD_CHAIN_ID)
     const client = publicClientFor(chainId)
     const stable = primaryStable(chainId)
@@ -397,20 +400,11 @@ export async function buildSignArtifact(
     }
     const amountHuman = Math.min(buyUsd, Math.floor(balanceUsd * 100) / 100).toFixed(2)
     await ensureTokenList(chainId) // AAPL/TSLA/… resolve from the official list
-    const built = await buildLifiSwap({ sellToken: stable.symbol, buyToken: p.buyToken, amountHuman, from: wallet, chainId })
-    if (built.blocked) {
-      const reasons = built.guardrails.checks.filter((c) => !c.ok && c.level === 'block').map((c) => c.note).join(' ')
-      throwRefusal(reasons || 'a safety check refused the swap', built.guardrails)
-    }
+    const feeBps = Number(p.feeBps) === LINK_SWAP_FEE_BPS ? LINK_SWAP_FEE_BPS : undefined
+    const built = await buildGuardedSwap({ sellToken: stable.symbol, buyToken: p.buyToken, amountHuman, from: wallet, chainId, feeBps })
+    if (!built.ok) throwRefusal(built.reasons, built.guardrails)
     return {
-      artifact: {
-        txChain: {
-          summary: built.summary,
-          steps: built.steps,
-          refresh: { kind: 'lifi-swap', stepIndex: built.swapStepIndex, params: { sellToken: stable.symbol, buyToken: p.buyToken, amountHuman, chainId: String(chainId) } },
-        },
-        summary: built.summary,
-      },
+      artifact: { txChain: built.txChain, summary: built.summary },
       guardReport: built.guardrails,
       valueUsd: built.guardrails.valueUsd ?? Number(amountHuman),
     }
