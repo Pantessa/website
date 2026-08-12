@@ -190,5 +190,15 @@ export async function GET(req: NextRequest) {
     })
   }
 
+  // The wall ranks by REAL signed money first (the honest number — internal
+  // traffic already excluded above), forks as the tiebreak, then freshness —
+  // a shape that moved a dollar beats a shape that was merely minted.
+  rows.sort(
+    (a, b) =>
+      b.signedUsd - a.signedUsd ||
+      b.forks - a.forks ||
+      new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+  )
+
   return NextResponse.json({ rows })
 }

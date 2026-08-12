@@ -1216,6 +1216,9 @@ async function main() {
   )
   const footerHomeHtml = await (await fetch(`${BASE}/`)).text()
   check('rebrand: reachable from the footer on every page', footerHomeHtml.includes('href="/rebrand"'))
+  check('mosaic: reachable from the footer on every page', footerHomeHtml.includes('href="/mosaic"'))
+  const linksPageHtml = await (await fetch(`${BASE}/links`)).text()
+  check('mosaic: the /links board cross-links the wall', linksPageHtml.includes('href="/mosaic"'))
 
   // Payees: the wallet's claimed MCP servers (dashboard Agents → My MCP servers).
   // SIWE-only; a fresh wallet has claimed nothing, so an empty array.
