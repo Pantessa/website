@@ -2027,6 +2027,14 @@ async function main() {
     const board = await fetch(`${BASE}/links`)
     const boardHtml = await board.text()
     check('intent links: /links leaderboard renders with the mint CTA', board.status === 200 && /Mint yours/.test(boardHtml) && /dollars moved/i.test(boardHtml))
+    // The mint CTA is the composer ITSELF (the mint stage — the share-card
+    // replica a stranger types into, pre-sign-in), not a button to a form
+    // behind the dashboard wall: the card's promise line + the folded
+    // fine-print disclosure must SSR on the public page.
+    check(
+      'intent links: /links carries the mint stage (card promise + folded fine print)',
+      boardHtml.includes('Connect a wallet and the path builds itself.') && /Fine print/.test(boardHtml),
+    )
     check('intent links: leaderboard never leaks a wallet address', !/0x[0-9a-fA-F]{40}/.test(boardHtml))
     check('intent links: leaderboard links to the host button generator', boardHtml.includes('/links/embed'))
     // Tabs: finished flows (claims) is the default rank; dollars is the

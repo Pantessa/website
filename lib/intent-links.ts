@@ -60,8 +60,8 @@ export function sanitizeMcps(raw: unknown): string[] | null {
 /** Auto-compose the MCP set from the intent's shape. The native layers parse
  *  most asks with no MCP at all — these slugs mainly pull the right splash
  *  cards + reads into the runtime so the build has its context. Doubles as
- *  the creator form's "Decide for me" suggester, so every rule here shows
- *  its work as lit chips. */
+ *  the mint stage's live "runs on" row (MintLinkForm mirrors it on every
+ *  keystroke), so every rule here shows its work as lit pills. */
 export function composeMcps(ask: string): string[] {
   const a = ask.toLowerCase()
   const slugs: string[] = []

@@ -4,7 +4,7 @@ import Footer from '@/components/Footer'
 import { YeetfulMark } from '@/components/Logo'
 import HouseLinkChip from '@/components/HouseLinkChip'
 import IntentLinksBoard from '@/components/IntentLinksBoard'
-import SignInFlowLink from '@/components/SignInFlowLink'
+import { MintLinkForm } from '@/components/MintLinkForm'
 import { creatorPages, linksBoard, liveHouseLinks } from '@/lib/links-board'
 
 // /links — the public leaderboard: intent links ranked by FINISHED flows
@@ -50,10 +50,16 @@ export default async function LinksLeaderboardPage() {
             signed only by their own wallet, receipted. Creators earn half of Pantessa&apos;s 0.20%
             fee on the conversions their link produces.
           </p>
+          {/* Mint yours — the composer itself, not a button to a form behind
+              sign-in. A stranger writes the sentence right here and watches
+              the card their link will wear assemble; the mint press is the
+              sign-in door (guestDoor), carrying the ask through to the
+              studio. This is the system's first CTA — it performs. */}
+          <h2 className="mono text-[11px] uppercase tracking-wider text-[color:var(--muted-2)] mb-3">
+            Mint yours
+          </h2>
+          <MintLinkForm guestDoor className="mb-6" />
           <div className="flex items-center gap-3 mb-12 flex-wrap">
-            <SignInFlowLink href="/dashboard/links" className="btn btn--solid text-[13px]">
-              Mint yours
-            </SignInFlowLink>
             <Link href="/links/embed" className="btn btn--ghost text-[13px]">
               Put a button on your site
             </Link>
