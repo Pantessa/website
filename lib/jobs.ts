@@ -57,7 +57,9 @@ export interface CompiledJob {
 }
 
 /**
- * Stamp the link fee tier onto every native-swap step of a compiled job.
+ * Stamp the link fee tier onto every swap-building step of a compiled job
+ * (native-swap, plus the funded-buy native-lifi-swap — which builds through
+ * the same venue cascade despite its historical id).
  * A link-originated turn's ONE-SHOT swap prices at LINK_SWAP_FEE_BPS (#608);
  * without this, the SAME ask compiled as a job (fund-then-buy, compound
  * swaps) silently kept the base rate — a link's flagship multi-step path
@@ -69,7 +71,7 @@ export function stampSwapFeeTier(compiled: CompiledJob, feeBps: number | undefin
   if (!feeBps) return compiled
   return {
     ...compiled,
-    steps: compiled.steps.map((s) => (s.builder === 'native-swap' ? { ...s, params: { ...s.params, feeBps } } : s)),
+    steps: compiled.steps.map((s) => (s.builder === 'native-swap' || s.builder === 'native-lifi-swap' ? { ...s, params: { ...s.params, feeBps } } : s)),
   }
 }
 

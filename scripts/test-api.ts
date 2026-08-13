@@ -5786,23 +5786,41 @@ async function main() {
       cowAppDataHash(LINK_SWAP_FEE_BPS),
   )
   // C2b closes over JOBS (#608 follow-up): a link-priced turn's compiled
-  // swaps carry the tier its one-shot would — stamped into native-swap step
-  // params only, everything else untouched, and a tier-less compile is the
-  // SAME object (no-op).
+  // swaps carry the tier its one-shot would — stamped into swap-building
+  // steps only (native-swap + the funded-buy native-lifi-swap), everything
+  // else untouched, and a tier-less compile is the SAME object (no-op).
   {
+    const SWAP_STAMP_BUILDERS = new Set(['native-swap', 'native-lifi-swap'])
     const mixed = compileJobAskFull('swap 5 USDC from base to arbitrum, then swap 3 USDC for ETH on arbitrum')
     const ok = mixed && !('problem' in mixed) && !('clarify' in mixed)
     const stamped = ok ? stampSwapFeeTier(mixed, LINK_SWAP_FEE_BPS) : null
-    const swapSteps = stamped ? stamped.steps.filter((s) => s.builder === 'native-swap') : []
-    const otherSteps = stamped ? stamped.steps.filter((s) => s.builder !== 'native-swap') : []
+    const swapSteps = stamped ? stamped.steps.filter((s) => SWAP_STAMP_BUILDERS.has(s.builder)) : []
+    const otherSteps = stamped ? stamped.steps.filter((s) => !SWAP_STAMP_BUILDERS.has(s.builder)) : []
     check(
-      'jobs fee tier: stampSwapFeeTier stamps native-swap steps only; no tier → the same compiled object',
+      'jobs fee tier: stampSwapFeeTier stamps swap-building steps only; no tier → the same compiled object',
       !!stamped &&
         swapSteps.length === 1 &&
         swapSteps.every((s) => (s.params as { feeBps?: number }).feeBps === LINK_SWAP_FEE_BPS) &&
         otherSteps.length > 0 &&
         otherSteps.every((s) => (s.params as { feeBps?: number }).feeBps === undefined) &&
         (ok ? stampSwapFeeTier(mixed, undefined) === mixed : false),
+    )
+    // The funded stock buy is link GTM's flagship path — its buy step now
+    // builds through the shared venue cascade (the pinned-LiFi fill reverted
+    // live under its own quote, 2026-08-12) and must carry the link tier the
+    // one-shot would, so the creator's kickback survives the funding detour.
+    const funded = compileJobAskFull('Fund robinhood chain with $12 from base including gas, then buy $10 of AAPL')
+    const fundedOk = funded && !('problem' in funded) && !('clarify' in funded)
+    const fundedStamped = fundedOk ? stampSwapFeeTier(funded, LINK_SWAP_FEE_BPS) : null
+    check(
+      'jobs fee tier: the funded-buy (native-lifi-swap) step takes the link stamp; funding legs stay unstamped',
+      !!fundedStamped &&
+        fundedStamped.steps.filter((s) => s.builder === 'native-lifi-swap').length === 1 &&
+        fundedStamped.steps.every((s) =>
+          s.builder === 'native-lifi-swap'
+            ? (s.params as { feeBps?: number }).feeBps === LINK_SWAP_FEE_BPS
+            : (s.params as { feeBps?: number }).feeBps === undefined,
+        ),
     )
   }
   // The live seam: a compound swap ask carrying a live link slug compiles a
