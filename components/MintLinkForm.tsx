@@ -22,6 +22,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { Check, ChevronDown, Copy, Plus, Settings2 } from 'lucide-react'
+import { STARTER_ASKS, useTypedAsk } from '@/components/typed-asks'
 import { MINTABLE_MCPS, composeMcps } from '@/lib/intent-links'
 import { getProtocolMark } from '@/components/protocol-marks'
 import { PantessaMark } from '@/components/Logo'
@@ -47,55 +48,6 @@ function McpMark({ slug, label, size = 13 }: { slug: string; label: string; size
 function sanitizePicks(slugs: string[]): string[] {
   const known = new Set(MINTABLE_MCPS.map((x) => x.slug))
   return slugs.map((s) => s.trim()).filter((s) => known.has(s)).slice(0, 4)
-}
-
-/** Starter asks — every one is a shape a native layer parses to a real
- *  artifact (the same family the house links carry), so a tapped example
- *  never dead-ends. Doubles as the empty card's typewriter reel. */
-const STARTER_ASKS = [
-  'Buy $12 of AAPL',
-  'DCA $25 into ETH weekly',
-  'Stake 0.05 ETH with Lido',
-  'Tile my wallet 50% ETH, 30% USDC, 20% wstETH',
-]
-
-/** The ghost typewriter on the empty card: type an example, hold, wipe,
- *  next. One timeout chain, torn down whenever the creator starts writing.
- *  Reduced-motion readers get the first example as a static placeholder. */
-function useGhostAsk(active: boolean): string {
-  const [ghost, setGhost] = useState('')
-  useEffect(() => {
-    if (!active) return
-    if (matchMedia('(prefers-reduced-motion: reduce)').matches) {
-      setGhost(STARTER_ASKS[0])
-      return () => setGhost('')
-    }
-    let idx = 0
-    let len = 0
-    let dir: 1 | -1 = 1
-    let t: ReturnType<typeof setTimeout>
-    const tick = () => {
-      const full = STARTER_ASKS[idx]
-      len += dir
-      setGhost(full.slice(0, len))
-      let delay = dir === 1 ? 52 : 18
-      if (dir === 1 && len === full.length) {
-        dir = -1
-        delay = 2100
-      } else if (dir === -1 && len === 0) {
-        dir = 1
-        idx = (idx + 1) % STARTER_ASKS.length
-        delay = 420
-      }
-      t = setTimeout(tick, delay)
-    }
-    t = setTimeout(tick, 600)
-    return () => {
-      clearTimeout(t)
-      setGhost('')
-    }
-  }, [active])
-  return ghost
 }
 
 interface Minted {
@@ -181,7 +133,7 @@ export function MintLinkForm({
     [manualMcps, ask, askReady],
   )
 
-  const ghost = useGhostAsk(ask === '' && !minted)
+  const ghost = useTypedAsk(ask === '' && !minted)
 
   // The ask grows like a sentence, not a box — height follows content.
   useEffect(() => {

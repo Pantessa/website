@@ -14,6 +14,7 @@
 import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { ArrowRight } from 'lucide-react'
+import { HERO_ASKS, useTypedAsk } from '@/components/typed-asks'
 import { getProtocolMark } from '@/components/protocol-marks'
 import { useSiteTheme } from '@/components/chart-theme'
 import SignInFlowLink from '@/components/SignInFlowLink'
@@ -399,6 +400,11 @@ function FusionCanvas({
 }
 
 export default function LinksHeroView({ stats }: { stats: LinkHeroStats | null }) {
+  // The claim performs instead of asserting: line one IS a cycling intent,
+  // typed live (the mint stage's reel, short entries only — a long ask
+  // wraps at display size and bounces the layout). SSR paints the full
+  // first ask, so the crawler and the first frame both read a sentence.
+  const typedAsk = useTypedAsk(true, HERO_ASKS)
   const pulseRef = useRef(0)
   const sectionRef = useRef<HTMLElement>(null)
   const captionRef = useRef<HTMLParagraphElement>(null)
@@ -454,16 +460,17 @@ export default function LinksHeroView({ stats }: { stats: LinkHeroStats | null }
           Intent links <span>·</span> non-custodial <span>·</span> <b>your wallet signs</b>
         </div>
         <h1 className="fhero__h1 fhero__h1--links">
-          You have an intent.
-          <br />
-          <span className="fhero__em">We do the rest.</span>
+          <span className="fhero__typedline">
+            <span className="fhero__tq">&ldquo;</span>
+            <span className="fhero__em">{typedAsk}</span>
+            <i className="fhero__tcaret" aria-hidden="true" />
+            <span className="fhero__tq">&rdquo;</span>
+          </span>
+          We do the rest.
         </h1>
         <p className="fhero__lede">
-          Mint a link that carries an ask — &ldquo;Buy $10 of AAPL&rdquo;, &ldquo;Stake ETH with
-          Lido&rdquo;, &ldquo;DCA $25 weekly&rdquo;. Whoever opens it connects their own wallet and
-          Pantessa scans, funds across chains, builds, and guard-checks the whole path. They sign.
-          Done. The transaction onboarding flow, nailed — for your dapp, or for the audience you
-          teach.
+          Mint the ask as a link. Whoever opens it connects their own wallet — Pantessa funds,
+          builds, and guard-checks the whole path. They sign. Done.
         </p>
         <div className="fhero__ctas">
           <Link className="btn btn--solid" href="/i/buy-aapl">

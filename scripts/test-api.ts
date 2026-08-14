@@ -1689,6 +1689,14 @@ async function main() {
     'home: descriptive <title> (the links-first claim)',
     /<title>[^<]*(You have an intent|[Ww]e do the rest|intent link)[^<]*<\/title>/.test(homeHtml),
   )
+  // The hero h1 PERFORMS the claim: line one cycles the ask reel
+  // (components/typed-asks.ts) and SSR paints the full first entry, so the
+  // first frame and the crawler both read a real sentence — never an empty
+  // typed slot. Re-order the reel and this pin re-pins with it.
+  check(
+    "home: hero types the reel (first ask SSR'd in the h1)",
+    homeHtml.includes('Buy $12 of AAPL') && /We do the rest\./.test(homeHtml),
+  )
   const sitemapXml = await (await fetch(`${BASE}/sitemap.xml`)).text()
   check('sitemap: site root is listed', /<loc>https?:\/\/[^</]+\/?<\/loc>/.test(sitemapXml))
   check(
