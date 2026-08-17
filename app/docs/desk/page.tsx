@@ -111,6 +111,18 @@ export default function DeskDocsPage() {
           human-handoff loop above is the front door, and it is live today.
         </p>
 
+        <h2>What it costs</h2>
+        <p>
+          The desk is <strong>free to call</strong> by default — Pantessa earns the link-tier fee on
+          the signed volume it clears, not on the calls. When an operator turns on the paid door, the
+          value tools (<code>broker_open</code>, <code>broker_execute</code>, <code>broker_send</code>,{' '}
+          <code>broker_tile</code>) cost a few cents in USDC per call over x402, while capabilities,
+          status, and close stay free. <code>broker_capabilities</code> always advertises the current
+          price, so an agent knows before it calls. Your x402 payer address is your desk identity —
+          the same address that carries your caps and your{' '}
+          <Link href="/docs/desk">track record</Link>.
+        </p>
+
         <h2>The safety contract</h2>
         <p>
           This is the whole point, so it is mechanical, not a promise: the desk re-checks that no

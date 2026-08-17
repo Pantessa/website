@@ -56,6 +56,7 @@ import {
 } from '../lib/broker-policy'
 import { buildDelivery, mintCallbackSecret, signWebhook, validateCallbackUrl } from '../lib/broker-webhook'
 import { agentHandleFor } from '../lib/agent-record'
+import { deskPricing, priceForTool, pricingBlock } from '../lib/broker-pricing'
 import {
   clientIpFrom,
   decideTurnLimit,
@@ -3059,6 +3060,40 @@ async function main() {
       const allBad = bad.every((u) => validateCallbackUrl(u).ok === false)
       const good = validateCallbackUrl('https://hooks.example.com/pantessa')
       return allBad && good.ok === true
+    })(),
+  )
+  check(
+    'broker M6: desk pricing is fail-closed to free; a valid pay-to flips it to x402 per-call',
+    (() => {
+      const prior = {
+        addr: process.env.BROKER_PAYMENT_ADDRESS,
+        price: process.env.BROKER_X402_PRICE_USD,
+      }
+      try {
+        // Unset / malformed → free, and priced tools cost nothing.
+        delete process.env.BROKER_PAYMENT_ADDRESS
+        const free = deskPricing().mode === 'free' && priceForTool('broker_open') === null && (pricingBlock() as { model?: string }).model === 'free'
+        process.env.BROKER_PAYMENT_ADDRESS = 'not-an-address'
+        const stillFree = deskPricing().mode === 'free'
+        // Valid pay-to → paid, value tools priced, control/discovery free.
+        process.env.BROKER_PAYMENT_ADDRESS = '0x' + '1'.repeat(40)
+        process.env.BROKER_X402_PRICE_USD = '0.05'
+        const p = deskPricing()
+        const paid =
+          p.mode === 'paid' &&
+          p.priceUsd === '0.05' &&
+          priceForTool('broker_open') === '0.05' &&
+          priceForTool('broker_execute') === '0.05' &&
+          priceForTool('broker_status') === null &&
+          priceForTool('broker_close') === null &&
+          (pricingBlock() as { model?: string }).model === 'x402-per-call'
+        return free && stillFree && paid
+      } finally {
+        if (prior.addr === undefined) delete process.env.BROKER_PAYMENT_ADDRESS
+        else process.env.BROKER_PAYMENT_ADDRESS = prior.addr
+        if (prior.price === undefined) delete process.env.BROKER_X402_PRICE_USD
+        else process.env.BROKER_X402_PRICE_USD = prior.price
+      }
     })(),
   )
   check(
@@ -9973,6 +10008,10 @@ async function main() {
       !caps.isError &&
         Array.isArray(caps.payload.loop) &&
         /never returns calldata/i.test(caps.payload.contract ?? ''),
+    )
+    check(
+      'broker M6: capabilities advertises the pricing block (free door in this env)',
+      !caps.isError && caps.payload?.pricing?.model === 'free' && Array.isArray(caps.payload?.tools),
     )
 
     const open = await call('broker_open', { ask: 'Buy $15 of AAPL', agent: 'harness' })

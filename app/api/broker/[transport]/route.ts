@@ -15,6 +15,7 @@ import { createMcpHandler } from 'mcp-handler'
 import { z } from 'zod'
 import { openIntent, chooseOption, handoffIntent, intentStatus, closeIntent, executeIntent, tileIntent, sendToInbox } from '@/lib/broker-exec'
 import { clientIpFrom, bumpAndCheckBrokerCall } from '@/lib/turn-limits'
+import { pricingBlock } from '@/lib/broker-pricing'
 
 export const maxDuration = 60
 
@@ -58,6 +59,8 @@ const handler = createMcpHandler(
         guarded(async () => ({
           capabilities: CAPABILITIES,
           loop: ['broker_open', 'broker_choose (optional, repeatable)', 'broker_handoff', 'broker_status'],
+          tools: ['broker_open', 'broker_choose', 'broker_handoff', 'broker_execute', 'broker_send', 'broker_tile', 'broker_status', 'broker_close'],
+          pricing: pricingBlock(),
           contract:
             'Non-custodial by construction: deterministic builders write every transaction (no model writes calldata), ' +
             'each build is guard-checked fail-closed and receipted, and the human wallet on the other side of the sign link is the only signer. ' +

@@ -33,6 +33,28 @@ The desk's agent-signed path is fail-closed: it serves only when
 the **hands** MCP first (it is live today with no gating); list the desk once it
 is enabled in prod, so a first caller never hits a paused surface.
 
+## Turning on desk pricing (owner + one follow-on)
+
+The desk (`com.pantessa/desk`) is free to call by default and advertises that in
+`broker_capabilities` (`pricing.model = "free"`). The pricing config already
+exists (`lib/broker-pricing.ts`, fail-closed to free); flipping it to paid is
+config + one route:
+
+1. Set on Vercel: `BROKER_PAYMENT_ADDRESS=0x…` (the treasury pay-to),
+   `BROKER_X402_PRICE_USD` (default `0.02`), `BROKER_X402_NETWORK` (default
+   `base`). With the address set, `broker_capabilities` flips to
+   `pricing.model = "x402-per-call"` and names the priced tools + endpoint.
+2. **Follow-on route (not yet built):** add `/api/broker/paid/[transport]`
+   wrapping the SAME handler behind the x402 payment challenge (the two-door
+   pattern in `@yeetful/mcp-kit`'s `x402.ts` — `loadX402DoorConfig` +
+   `paymentProxy`). This pulls `@x402/next` + `@coinbase/x402` into the website
+   and needs a CDP facilitator, so it is a deliberate deploy step, not an
+   autonomous one. The **x402 payer address becomes the agent's `agent_key`
+   identity** — payment and identity are the same fact.
+
+Until step 2 ships, pricing is advertised but the free door is the only door —
+never a paid path that serves for nothing.
+
 ## Keeping these current
 
 Bump `version` when the tool set changes, and keep the `tools` arrays in sync
