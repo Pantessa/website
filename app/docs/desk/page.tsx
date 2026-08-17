@@ -86,6 +86,10 @@ export default function DeskDocsPage() {
           <li>
             <strong>Hear back</strong> (desk only) — poll <code>broker_status</code> for the
             server-truth funnel: opened → connected → built → signed → settled, with the signed USD.
+            Or skip the poll: pass a <code>callback_url</code> to <code>broker_open</code> and
+            Pantessa POSTs you a signed webhook the moment your human signs or the move settles
+            (<code>X-Pantessa-Signature</code> = HMAC-SHA256 of the body under a secret returned once
+            at open). <code>broker_status</code> stays the fallback.
           </li>
         </ol>
 

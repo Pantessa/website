@@ -1276,6 +1276,8 @@ model BrokerIntent {
   wallet    String? // lowercased 0x… the agent negotiated for, if any
   agent     String? // sanitized self-reported agent name
   agentKey  String?  @map("agent_key") // the bound desk identity (execute path); M6 makes it x402-payer-verified
+  callbackUrl    String? @map("callback_url") // optional agent webhook: signed/settled events POST here (M3)
+  callbackSecret String? @map("callback_secret") // per-intent HMAC secret returned to the agent once at open
   state     String   @default("open")
   plan      Json
   linkSlug  String?  @map("link_slug") // bound /i/<slug> after handoff

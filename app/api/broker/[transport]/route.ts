@@ -90,9 +90,18 @@ const handler = createMcpHandler(
               'Your desk identity string. Required ONLY for the agent-signed broker_execute path (it binds the ' +
                 'intent to you and is capped); human handoff needs none. (Later becomes your x402-payer identity.)',
             ),
+          callback_url: z
+            .string()
+            .url()
+            .optional()
+            .describe(
+              'Optional https webhook. Signed/settled events for this intent POST here (HMAC-signed with a secret ' +
+                'returned once in the response) so you learn your human signed without polling. broker_status stays the fallback.',
+            ),
         },
       },
-      async ({ ask, wallet, agent, agent_key }) => guarded(() => openIntent({ ask, wallet, agent, agentKey: agent_key })),
+      async ({ ask, wallet, agent, agent_key, callback_url }) =>
+        guarded(() => openIntent({ ask, wallet, agent, agentKey: agent_key, callbackUrl: callback_url })),
     )
 
     server.registerTool(

@@ -54,6 +54,7 @@ import {
   deskEnabled,
   DESK_MAX_INTENT_USD,
 } from '../lib/broker-policy'
+import { buildDelivery, mintCallbackSecret, signWebhook, validateCallbackUrl } from '../lib/broker-webhook'
 import {
   clientIpFrom,
   decideTurnLimit,
@@ -3039,6 +3040,47 @@ async function main() {
         cleanAgentKey('a') === null && // too short
         cleanAgentKey('desk-key-123') === 'desk-key-123' &&
         cleanAgentKey('bad key!!') === 'badkey'
+      )
+    })(),
+  )
+  check(
+    'broker M3: callback URL SSRF fence — https public only, no localhost/IP/creds/http',
+    (() => {
+      const bad = [
+        'http://example.com/hook', // not https
+        'https://localhost/hook',
+        'https://127.0.0.1/hook',
+        'https://10.0.0.1/hook',
+        'https://user:pass@example.com/hook', // credentials
+        'https://example.com:8080/hook', // non-default port
+        'not-a-url',
+      ]
+      const allBad = bad.every((u) => validateCallbackUrl(u).ok === false)
+      const good = validateCallbackUrl('https://hooks.example.com/pantessa')
+      return allBad && good.ok === true
+    })(),
+  )
+  check(
+    'broker M3: webhook signature is a deterministic HMAC over the raw body',
+    (() => {
+      const secret = mintCallbackSecret()
+      if (!/^whsec_[0-9a-f]{48}$/.test(secret)) return false
+      const ev = {
+        intentId: 'abc123',
+        event: 'signed' as const,
+        ask: 'Buy $15 of AAPL',
+        url: 'https://www.pantessa.com/i/xyz',
+        valueUsd: 15,
+        deliveryId: 'deliv1',
+        at: 1_700_000_000_000,
+      }
+      const { body, headers } = buildDelivery(secret, ev)
+      const expect = `sha256=${signWebhook(secret, body)}`
+      // deterministic, matches, and the secret never rides in the payload body
+      return (
+        headers['x-pantessa-signature'] === expect &&
+        headers['x-pantessa-event'] === 'signed' &&
+        !body.includes(secret)
       )
     })(),
   )
@@ -10026,6 +10068,30 @@ async function main() {
       overCapExec.isError && /desk caps|over/i.test(String(overCapExec.payload)),
     )
     await call('broker_close', { intent_id: overCap.payload.intentId })
+
+    // M3 — the webhook opt-in. A private/SSRF callback is refused server-side;
+    // a good https one binds and returns the signing secret ONCE.
+    const cbBad = await call('broker_open', {
+      ask: 'Buy $15 of AAPL',
+      agent: 'harness',
+      callback_url: 'http://10.0.0.1/hook',
+    })
+    check(
+      'broker M3: broker_open refuses a private/non-https callback_url (SSRF fence)',
+      cbBad.isError && /callback_url rejected/i.test(String(cbBad.payload)),
+    )
+    const cbGood = await call('broker_open', {
+      ask: 'Buy $15 of AAPL',
+      agent: 'harness',
+      callback_url: 'https://hooks.example.com/pantessa',
+    })
+    check(
+      'broker M3: broker_open binds a good callback and returns the signing secret once',
+      !cbGood.isError &&
+        cbGood.payload?.callback?.url === 'https://hooks.example.com/pantessa' &&
+        /^whsec_[0-9a-f]{48}$/.test(String(cbGood.payload?.callback?.secret ?? '')),
+    )
+    await call('broker_close', { intent_id: cbGood.payload.intentId })
 
     // broker_tile — MOSAIC on the desk: slices in, a kind='mosaic' /i link
     // out, bound to a broker intent so the funnel reports back. The ask on
