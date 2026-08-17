@@ -10191,6 +10191,15 @@ async function main() {
       'broker M5: the addressed intent shows in the recipient inbox with its sender',
       inboxPage.status === 200 && /Buy \$15 of AAPL/.test(inboxHtml) && /Harness Bot/.test(inboxHtml) && /Review/.test(inboxHtml),
     )
+    // U1 — the rail feed: the same item rides GET /api/inbox for the badge.
+    const inboxApi = await fetch(`${BASE}/api/inbox?wallet=${inboxWallet}`)
+    const inboxItems = ((await inboxApi.json()) as { items?: { ask?: string; from?: string | null }[] }).items ?? []
+    check(
+      'broker U1: /api/inbox serves the addressed intent for the rail badge',
+      inboxApi.status === 200 && inboxItems.some((i) => i.ask === 'Buy $15 of AAPL' && i.from === 'Harness Bot'),
+    )
+    const inboxBad = await fetch(`${BASE}/api/inbox?wallet=nope`)
+    check('broker U1: /api/inbox refuses a malformed wallet', inboxBad.status === 400)
     // The bound /i link is gated to the recipient (allowWallets set).
     const allowed = await fetch(`${BASE}/api/intent-links/${String(sent.payload.url).split('/').pop()}/allowed?wallet=${inboxWallet}`)
     const allowedOther = await fetch(`${BASE}/api/intent-links/${String(sent.payload.url).split('/').pop()}/allowed?wallet=0x6666666666666666666666666666666666666666`)

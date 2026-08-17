@@ -17,14 +17,14 @@
 // Clicking the row BODY opens the job detail card (store.jobDetail): the
 // live position/PnL around the job + its step card — for any job kind.
 
-import { CalendarClock, CheckCircle2, Loader2, Pause, PenLine, Play, ShieldCheck, Trash2, XCircle, ZapOff } from 'lucide-react'
+import { CalendarClock, CheckCircle2, Inbox as InboxIcon, Loader2, Pause, PenLine, Play, ShieldCheck, Trash2, XCircle, ZapOff } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { cn } from '@/lib/utils'
 import { useYeetfulStore } from '@/lib/store'
 import { cadenceLabel, dcaRunChip, type DcaCadence } from '@/lib/dca'
 import ShareReceiptButton from '@/components/ShareReceiptButton'
 import { ChartHoverButton } from '@/components/TokenChartButton'
-import { LIVE_JOB_STATUS, useRunningWork, type RunningGuard, type RunningJob, type RunningSchedule } from '@/lib/use-running-work'
+import { LIVE_JOB_STATUS, useRunningWork, type InboxIntent, type RunningGuard, type RunningJob, type RunningSchedule } from '@/lib/use-running-work'
 import { jobStatusWord } from '@/lib/step-status'
 
 function IconBtn({ label, danger, onClick, children }: { label: string; danger?: boolean; onClick: () => void; children: React.ReactNode }) {
@@ -80,7 +80,7 @@ function guardLabel(g: RunningGuard): string {
 export default function JobsRailTab({ onAct }: { onAct?: () => void }) {
   const router = useRouter()
   const { setComposerPrefill, setJobDetail } = useYeetfulStore()
-  const { jobs, schedules, guards, signedOut, loaded, refresh } = useRunningWork(true)
+  const { jobs, schedules, guards, inbox, signedOut, loaded, refresh } = useRunningWork(true)
 
   // A row's action lands in the composer — never auto-sends.
   const prefill = (prompt: string) => {
@@ -103,15 +103,49 @@ export default function JobsRailTab({ onAct }: { onAct?: () => void }) {
     )
   }
 
+  // Intents ADDRESSED to the connected wallet (M5) — the U1 receiving moment.
+  // One tap opens the guarded /i runtime; the signature is the only gate. The
+  // section renders even signed-out: the inbox rides connect-to-act (#553),
+  // so a connected-but-unsigned wallet still sees what arrived for it.
+  const InboxSection = () =>
+    inbox.length === 0 ? null : (
+      <>
+        <p className="px-2.5 pt-1 pb-1 text-[10px] mono uppercase tracking-wider text-[color:var(--muted-2)]">For you</p>
+        {inbox.map((it: InboxIntent) => (
+          <button
+            key={it.slug}
+            onClick={() => {
+              router.push(`/i/${it.slug}`)
+              onAct?.()
+            }}
+            className="group w-full rounded-lg px-2.5 py-2 text-left transition-colors hover:bg-white/5"
+          >
+            <span className="flex items-start gap-2">
+              <InboxIcon className="mt-0.5 h-3.5 w-3.5 flex-shrink-0 text-[color:var(--accent)]" />
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-xs font-medium">{it.ask}</span>
+                <span className="block text-[10px] text-[color:var(--muted-2)]">
+                  {it.from ? `from ${it.from}` : 'addressed to this wallet'} · tap to review &amp; sign
+                </span>
+              </span>
+            </span>
+          </button>
+        ))}
+      </>
+    )
+
   if (signedOut) {
     return (
-      <p className="px-3 py-6 text-center text-xs text-[color:var(--muted-2)]">
-        Sign in with your wallet to see the jobs and recurring buys armed on it.
-      </p>
+      <div className="flex-1 overflow-y-auto px-2 pb-3">
+        <InboxSection />
+        <p className="px-3 py-6 text-center text-xs text-[color:var(--muted-2)]">
+          Sign in with your wallet to see the jobs and recurring buys armed on it.
+        </p>
+      </div>
     )
   }
 
-  if (jobs.length === 0 && schedules.length === 0 && guards.length === 0) {
+  if (jobs.length === 0 && schedules.length === 0 && guards.length === 0 && inbox.length === 0) {
     return (
       <p className="px-3 py-6 text-xs leading-relaxed text-[color:var(--muted-2)]">
         Nothing running yet. Recurring buys (“buy $10 of AAPL every week”),
@@ -297,9 +331,10 @@ export default function JobsRailTab({ onAct }: { onAct?: () => void }) {
 
   return (
     <div className="flex-1 overflow-y-auto px-2 pb-3">
+      <InboxSection />
       {guards.length > 0 && (
         <>
-          <p className="px-2.5 pt-1 pb-1 text-[10px] mono uppercase tracking-wider text-[color:var(--muted-2)]">Protections</p>
+          <p className={cn('px-2.5 pb-1 text-[10px] mono uppercase tracking-wider text-[color:var(--muted-2)]', inbox.length > 0 ? 'pt-2' : 'pt-1')}>Protections</p>
           {guards.map((g) => (
             <GuardRow key={g.id} g={g} />
           ))}
