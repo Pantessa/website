@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import { DOCS_PAGES, docsJsonLd, docsUrl } from '@/lib/docs'
+import DeskTranscript from '@/components/DeskTranscript'
 
 const PAGE = DOCS_PAGES.find((p) => p.slug === 'desk')!
 
@@ -27,6 +28,10 @@ export default function DeskDocsPage() {
         the agent&apos;s own key, under caps) is the only signer. Nothing this surface hands your
         agent can execute by itself.
       </p>
+
+      <div className="my-6">
+        <DeskTranscript />
+      </div>
 
       <div className="docs__prose">
         <h2>Two doors</h2>

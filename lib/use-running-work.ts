@@ -8,6 +8,7 @@
 // row data while the jobs drawer is open.
 
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { useAccount } from 'wagmi'
 import { LIVE_JOB_STATUSES } from '@/lib/step-status'
 
 export interface RunningJob {
@@ -53,21 +54,38 @@ export interface RunningGuard {
  * derived from the one canonical live-set in lib/step-status. */
 export const LIVE_JOB_STATUS = new Set<string>(LIVE_JOB_STATUSES)
 
+/** An intent someone ADDRESSED to the connected wallet (M5) — waiting on
+ *  exactly one thing: this wallet's signature. Always counts on the badge. */
+export interface InboxIntent {
+  slug: string
+  ask: string
+  from: string | null
+  createdAt: string
+}
+
 export function useRunningWork(enabled: boolean, intervalMs = 15_000) {
   const [jobs, setJobs] = useState<RunningJob[]>([])
   const [schedules, setSchedules] = useState<RunningSchedule[]>([])
   const [guards, setGuards] = useState<RunningGuard[]>([])
+  const [inbox, setInbox] = useState<InboxIntent[]>([])
   const [signedOut, setSignedOut] = useState(false)
   const [loaded, setLoaded] = useState(false)
   const timer = useRef<ReturnType<typeof setInterval> | null>(null)
+  // The inbox keys off the CONNECTED wallet, not the session — receiving
+  // rides connect-to-act (#553): you see what's addressed to you on connect
+  // alone, and the signature stays the only gate.
+  const { address } = useAccount()
 
   const refresh = useCallback(async () => {
     try {
-      const [jr, sr, gr] = await Promise.all([
+      const [jr, sr, gr, ir] = await Promise.all([
         fetch('/api/jobs', { cache: 'no-store' }),
         fetch('/api/dca', { cache: 'no-store' }),
         fetch('/api/guardian/policies', { cache: 'no-store' }),
+        address ? fetch(`/api/inbox?wallet=${address}`, { cache: 'no-store' }) : Promise.resolve(null),
       ])
+      if (ir?.ok) setInbox(((await ir.json()) as { items: InboxIntent[] }).items ?? [])
+      else if (!address) setInbox([])
       if (jr.status === 401 || sr.status === 401) {
         setSignedOut(true)
         setLoaded(true)
@@ -81,7 +99,7 @@ export function useRunningWork(enabled: boolean, intervalMs = 15_000) {
     } catch {
       /* transient miss — keep the last state */
     }
-  }, [])
+  }, [address])
 
   useEffect(() => {
     if (!enabled) return
@@ -103,5 +121,17 @@ export function useRunningWork(enabled: boolean, intervalMs = 15_000) {
   // Guardians are set-and-forget: an active protection is healthy standing
   // state, so it never nags the badge — only an errored one does.
   const guardAlerts = guards.filter((g) => g.status === 'error')
-  return { jobs, schedules, guards, activeJobs, badgeCount: activeJobs.length + needsYou.length + guardAlerts.length, signedOut, loaded, refresh }
+  // Inbox items ALWAYS count: an addressed intent is waiting on exactly one
+  // thing — this wallet's signature. It leaves the count when signed/revoked.
+  return {
+    jobs,
+    schedules,
+    guards,
+    inbox,
+    activeJobs,
+    badgeCount: activeJobs.length + needsYou.length + guardAlerts.length + inbox.length,
+    signedOut,
+    loaded,
+    refresh,
+  }
 }

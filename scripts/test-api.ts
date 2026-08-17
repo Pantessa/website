@@ -2288,6 +2288,46 @@ async function main() {
     const bearerRevoke = await fetch(`${BASE}/api/intent-links/${bearerLink.slug}`, { method: 'DELETE', headers: B })
     check('intent links: the key owner revokes it (capacity restored)', bearerRevoke.status === 200)
 
+    // U3 — human send: minting with a recipient ADDRESSES the link (inbox +
+    // allowlist target + sender label); a junk recipient refuses at mint.
+    const u3Recipient = '0x7777777777777777777777777777777777777777'
+    const sentMint = await fetch(`${BASE}/api/intent-links`, {
+      method: 'POST',
+      headers: BJ,
+      body: JSON.stringify({ ask: 'Buy $5 of AAPL, sent by a friend', recipient: u3Recipient }),
+    })
+    const sentMintData = (await sentMint.json()) as { slug?: string; recipient?: string; inboxUrl?: string }
+    const u3Inbox = ((await (await fetch(`${BASE}/api/inbox?wallet=${u3Recipient}`)).json()) as { items?: { slug?: string; from?: string | null }[] }).items ?? []
+    const u3Row = u3Inbox.find((i) => i.slug === sentMintData.slug)
+    check(
+      'intent links U3: a human mint with recipient lands in their inbox with the sender named',
+      sentMint.status === 200 &&
+        sentMintData.recipient === u3Recipient &&
+        sentMintData.inboxUrl === `/inbox/${u3Recipient}` &&
+        !!u3Row &&
+        typeof u3Row.from === 'string' &&
+        u3Row.from.length > 0,
+    )
+    const u3Allowed = await fetch(`${BASE}/api/intent-links/${sentMintData.slug}/allowed?wallet=${u3Recipient}`)
+    check(
+      'intent links U3: the addressed mint targets its recipient (allowlist)',
+      ((await u3Allowed.json()) as { allowed?: boolean }).allowed === true,
+    )
+    const badRecipMint = await fetch(`${BASE}/api/intent-links`, {
+      method: 'POST',
+      headers: BJ,
+      body: JSON.stringify({ ask: 'Buy $5 of AAPL, sent nowhere', recipient: '@no-such-handle-ever' }),
+    })
+    check('intent links U3: an unknown handle refuses at mint (400, named)', badRecipMint.status === 400)
+    await fetch(`${BASE}/api/intent-links/${sentMintData.slug}`, { method: 'DELETE', headers: B })
+
+    // U4 — the desk transcript strip rides /docs/desk (the ten-second aha).
+    const deskDocs = flat(await (await fetch(`${BASE}/docs/desk`)).text())
+    check(
+      'docs U4: /docs/desk carries the replayable desk-session transcript',
+      /data-desk-transcript/.test(deskDocs) && /two agents, one human signature/i.test(deskDocs),
+    )
+
     // House links: the seeded canonical set (deterministic slugs,
     // creator=null — earns nothing, belongs to no dashboard). The landing
     // lane + the /links start-here strip point at these forever.
@@ -10190,6 +10230,33 @@ async function main() {
     check(
       'broker M5: the addressed intent shows in the recipient inbox with its sender',
       inboxPage.status === 200 && /Buy \$15 of AAPL/.test(inboxHtml) && /Harness Bot/.test(inboxHtml) && /Review/.test(inboxHtml),
+    )
+    // U1 — the rail feed: the same item rides GET /api/inbox for the badge.
+    const inboxApi = await fetch(`${BASE}/api/inbox?wallet=${inboxWallet}`)
+    const inboxItems = ((await inboxApi.json()) as { items?: { ask?: string; from?: string | null }[] }).items ?? []
+    check(
+      'broker U1: /api/inbox serves the addressed intent for the rail badge',
+      inboxApi.status === 200 && inboxItems.some((i) => i.ask === 'Buy $15 of AAPL' && i.from === 'Harness Bot'),
+    )
+    const inboxBad = await fetch(`${BASE}/api/inbox?wallet=nope`)
+    check('broker U1: /api/inbox refuses a malformed wallet', inboxBad.status === 400)
+
+    // U2 — the closed-loop receipt seam: the /i page of a desk-bound
+    // (addressed) link serializes the notify prop (sender label + push mode)
+    // into its RSC payload; the runtime shows it after signing. A plain link
+    // must NOT carry a notify label.
+    const sentSlug = String(sent.payload.url).split('/').pop()
+    const sentPage = await fetch(`${BASE}/i/${sentSlug}`)
+    const sentPageHtml = await sentPage.text()
+    check(
+      'broker U2: an addressed link page carries the sender label for the signed banner',
+      sentPage.status === 200 && /Harness Bot/.test(sentPageHtml) && /"push":false/.test(sentPageHtml.replace(/\\/g, '')),
+    )
+    const plainPage = await fetch(`${BASE}/i/${(hand.payload.url as string).split('/').pop()}`)
+    const plainHtml = await plainPage.text()
+    check(
+      'broker U2: a plain handoff link still resolves its desk sender (agent byline), never a false push',
+      plainPage.status === 200 && !/"push":true/.test(plainHtml.replace(/\\/g, '')),
     )
     // The bound /i link is gated to the recipient (allowWallets set).
     const allowed = await fetch(`${BASE}/api/intent-links/${String(sent.payload.url).split('/').pop()}/allowed?wallet=${inboxWallet}`)

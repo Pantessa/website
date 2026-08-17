@@ -7,6 +7,7 @@ import { FEE_BEARING_BUILD_PATHS, creatorEarningsUsd, netFeeBpsForTurn } from '@
 import { getEffectivePlan } from '@/lib/billing'
 import { isAdminAddress } from '@/lib/admin'
 import { isMosaicAsk } from '@/lib/mosaic'
+import { resolveRecipient } from '@/lib/inbox'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -25,7 +26,7 @@ export async function POST(req: NextRequest) {
   if (!addr) return NextResponse.json({ error: 'Sign in to mint an intent link.' }, { status: 401 })
   const creator = addr.toLowerCase()
 
-  let body: { ask?: string; agent?: string; redirectUrl?: string; mcps?: unknown; variants?: unknown; expiresAt?: unknown; maxSigns?: unknown; allowWallets?: unknown }
+  let body: { ask?: string; agent?: string; redirectUrl?: string; mcps?: unknown; variants?: unknown; expiresAt?: unknown; maxSigns?: unknown; allowWallets?: unknown; recipient?: unknown }
   try {
     body = await req.json()
   } catch {
@@ -58,6 +59,22 @@ export async function POST(req: NextRequest) {
   const allow = parseAllowWallets(body.allowWallets)
   if (!allow.ok) return NextResponse.json({ error: allow.reason }, { status: 400 })
 
+  // U3 — human send: an optional recipient (0x wallet or claimed @handle)
+  // ADDRESSES the link. It lands in their /inbox and the allowlist targets
+  // them (the signature stays the only real gate). The sender label is the
+  // creator's claimed handle when they have one, else their short address —
+  // the recipient always sees WHO sent it, never an anonymous ask.
+  let recipient: string | null = null
+  let senderLabel: string | null = null
+  if (body.recipient != null && body.recipient !== '') {
+    const r = await resolveRecipient(body.recipient)
+    if (!r.ok) return NextResponse.json({ error: r.reason }, { status: 400 })
+    recipient = r.recipient.wallet
+    if (recipient === creator) return NextResponse.json({ error: 'That recipient is you — share the plain link instead.' }, { status: 400 })
+    const myHandle = await prisma.creatorHandle.findUnique({ where: { creator }, select: { handle: true } }).catch(() => null)
+    senderLabel = myHandle ? `@${myHandle.handle}` : `${creator.slice(0, 6)}…${creator.slice(-4)}`
+  }
+
   // Capacity gate (soft): active links per plan, mirroring standing-intent
   // tiers. Existing links are never touched — the cap gates NEW mints only.
   // Admin wallets mint uncapped (demo/marketing links, not plan-gated usage).
@@ -81,7 +98,22 @@ export async function POST(req: NextRequest) {
         // A tile-grammar ask minted through THIS door is still a mosaic —
         // stamp kind so the gallery/fork surfaces see it (the /api/mosaics
         // door is the structured way in, not the only one).
-        data: { id, ask, variants, mcps, creator, agent, redirectUrl, expiresAt: expiry.date, maxSigns: maxSigns.max, allowWallets: allow.wallets, kind: isMosaicAsk(ask) ? 'mosaic' : null },
+        data: {
+          id,
+          ask,
+          variants,
+          mcps,
+          creator,
+          agent,
+          redirectUrl,
+          expiresAt: expiry.date,
+          maxSigns: maxSigns.max,
+          // An addressed link targets its recipient; explicit allowlists merge.
+          allowWallets: recipient ? [...new Set([...allow.wallets, recipient])] : allow.wallets,
+          recipient,
+          senderLabel,
+          kind: isMosaicAsk(ask) ? 'mosaic' : null,
+        },
       })
       return NextResponse.json({
         slug: link.id,
@@ -93,6 +125,7 @@ export async function POST(req: NextRequest) {
         expiresAt: link.expiresAt,
         maxSigns: link.maxSigns,
         allowCount: link.allowWallets.length,
+        ...(link.recipient ? { recipient: link.recipient, inboxUrl: `/inbox/${link.recipient}` } : {}),
       })
     } catch (e) {
       const unique = e instanceof Error && 'code' in e && (e as { code?: string }).code === 'P2002'
