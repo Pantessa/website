@@ -87,6 +87,13 @@ export async function createDelegation(wallet: string, signatureChainId: number)
   const w = wallet.toLowerCase()
   // One live delegation per wallet: retire any pending leftovers first.
   await prisma.hlGuardianDelegation.updateMany({ where: { wallet: w, status: 'pending' }, data: { status: 'revoked' } })
+  // Pending rows are transient by nature (the offered nonce is a timestamp
+  // the venue stops accepting within a day; the key inside was never
+  // approved by anyone) — sweep the stale ones so abandoned mints (a closed
+  // tab, the harness's throwaway wallets) never accumulate. Fail-soft.
+  await prisma.hlGuardianDelegation
+    .deleteMany({ where: { status: 'pending', createdAt: { lt: new Date(Date.now() - 24 * 60 * 60 * 1000) } } })
+    .catch(() => {})
   const pk = generatePrivateKey()
   const agentAddress = privateKeyToAccount(pk).address.toLowerCase()
   const nonce = Date.now()
@@ -135,6 +142,49 @@ export async function activateDelegation(id: string, wallet: string, signature: 
   }
   await prisma.hlGuardianDelegation.update({ where: { id }, data: { status: 'active', approvedAt: new Date() } })
   return { ok: true }
+}
+
+/**
+ * The wallet's LIVE delegation on the given network, or null: active,
+ * unexpired, same HL chain. The one row the delegated-execution relay may
+ * sign with (lib/hyperliquid-exec: wallet-agnostic execution).
+ */
+export async function getActiveDelegation(wallet: string, isTestnet: boolean) {
+  return prisma.hlGuardianDelegation.findFirst({
+    where: {
+      wallet: wallet.toLowerCase(),
+      status: 'active',
+      hlChain: isTestnet ? 'Testnet' : 'Mainnet',
+      expiresAt: { gt: new Date() },
+    },
+    orderBy: { createdAt: 'desc' },
+  })
+}
+
+/**
+ * Sign an L1 action's phantom-agent typed data with the wallet's delegated
+ * agent key — the SAME bytes a direct wallet signature would cover (the
+ * relay re-derives the typed data from action+nonce, so what the agent
+ * signs is what the guard just approved). Key in memory for the sign only.
+ * Throws when the row was encrypted by another env's secret (never ours to
+ * use — the guardian sweep's "stand aside" rule).
+ */
+export async function signL1ActionWithDelegation(
+  delegation: { agentKeyEnc: string; agentAddress: string },
+  typedData: { domain: object; types: object; primaryType: string; message: object },
+): Promise<`0x${string}`> {
+  const agent = privateKeyToAccount(decryptAgentKey(delegation.agentKeyEnc))
+  if (agent.address.toLowerCase() !== delegation.agentAddress.toLowerCase()) {
+    throw new Error('delegated agent key does not match its recorded address')
+  }
+  return agent.signTypedData(typedData as Parameters<typeof agent.signTypedData>[0])
+}
+
+/** The venue no longer knows this agent (removed in the HL app, or expired
+ *  venue-side ahead of our clock) — retire the row so the client offers a
+ *  fresh "enable trading" instead of looping on a dead key. */
+export async function retireDelegation(id: string): Promise<void> {
+  await prisma.hlGuardianDelegation.update({ where: { id }, data: { status: 'revoked' } }).catch(() => {})
 }
 
 /** Local revoke: the loop stands down immediately. (The venue-side approval

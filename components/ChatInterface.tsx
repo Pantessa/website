@@ -6,7 +6,7 @@ import { Fragment, useState, useRef, useEffect, useSyncExternalStore } from 'rea
 import { motion, AnimatePresence } from 'framer-motion'
 import { Send, Zap, Check, Loader2, Bot, User, PanelRight, Copy, Link2 } from 'lucide-react'
 import { useRouter } from 'next/navigation'
-import { useAccount, useSignTypedData, useConnect } from 'wagmi'
+import { useAccount, useSignTypedData, useConnect, useSwitchChain } from 'wagmi'
 import { useConnectModal } from '@rainbow-me/rainbowkit'
 import { getHostWalletServerState, getHostWalletState, HOST_WALLET_CONNECTOR_ID, subscribeHostWallet } from '@/lib/host-wallet'
 import { cleanServerName, cn } from '@/lib/utils'
@@ -390,6 +390,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
   const walletSettled = walletStatus === 'connected' || walletStatus === 'disconnected'
   const bootHolding = !walletSettled && !bootHoldElapsed
   const { signTypedDataAsync } = useSignTypedData()
+  const { switchChainAsync } = useSwitchChain()
   // Effective wallet context for /api/chat: an embed-provided address wins,
   // else the connected account. Context alone never signs anything.
   const effectiveAddress = contextAddress ?? (isConnected ? address : undefined)
@@ -1107,6 +1108,11 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
     for (const p of data.payments) {
       i += 1
       setStatus(`Sign payment ${i}/${data.payments.length} in your wallet — ${p.name} ($${p.priceUsd})`)
+      // The EIP-3009 domain carries the payment chain — MetaMask refuses
+      // typed data whose domain.chainId isn't the wallet's ACTIVE chain (the
+      // 2026-08-17 HL finding, same class), so align the wallet first.
+      // Best-effort: a wallet that can't switch still gets the prompt.
+      await switchChainAsync({ chainId: p.signing.domain.chainId }).catch(() => {})
       signatures[p.id] = await signTypedDataAsync({
         domain: p.signing.domain,
         types: p.signing.types,

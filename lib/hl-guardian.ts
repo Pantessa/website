@@ -228,7 +228,11 @@ export function guardGuardianClose(
  *  venue-enforced; the venue caps at 180 days. */
 export const GUARDIAN_DELEGATION_DAYS = 90
 
-export const GUARDIAN_AGENT_NAME = 'yeetful-guardian'
+// The name the venue shows under the user's API wallets. One agent per
+// wallet serves BOTH the guardian sweep and delegated chat execution
+// (hyperliquid-exec: wallet-agnostic execution), so it wears the product
+// name, not a feature's. Rows minted under the old name keep working.
+export const GUARDIAN_AGENT_NAME = 'pantessa'
 
 export interface ApproveAgentInput {
   agentAddress: string

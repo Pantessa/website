@@ -59,6 +59,9 @@ const KIND_LABEL: Record<string, string> = {
   'native-wall': 'native wall',
   blocked: 'guard blocked',
   error: 'error',
+  // lib/wallet-refusal.ts: the artifact was built + guarded, then the WALLET
+  // said no (the 2026-08-17 MetaMask chainId-1337 class) — had_funds TRUE.
+  'wallet-refused': 'wallet refused',
 }
 
 export default function FailuresPage() {
