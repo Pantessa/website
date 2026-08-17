@@ -48,6 +48,13 @@ const isRawBuildPath = (venue: string) => venue.startsWith('native-') || venue.s
 import { hexLuminance, normalizeAccent, normalizeBg, parseBrandHtml, validateBrandUrl } from '../lib/brand-scan'
 import { brandBloomTint, brandCtaStyle, brandThemeStyle } from '../lib/brand-theme'
 import {
+  assertAgentIdentity,
+  assertUnderDeskCap,
+  cleanAgentKey,
+  deskEnabled,
+  DESK_MAX_INTENT_USD,
+} from '../lib/broker-policy'
+import {
   clientIpFrom,
   decideTurnLimit,
   hashIp,
@@ -2975,6 +2982,63 @@ async function main() {
         !keys[0].includes('203.0.113.9') &&
         keys[1] === 'w:0xabcdef0123456789abcdef0123456789abcdef01' &&
         limitKeysFor(null, undefined).length === 0
+      )
+    })(),
+  )
+  check(
+    'broker M1: desk kill switch is fail-closed (true→open, false/unset→closed)',
+    (() => {
+      const prior = process.env.BROKER_DESK_ENABLED
+      try {
+        process.env.BROKER_DESK_ENABLED = 'true'
+        const open = deskEnabled() === true
+        process.env.BROKER_DESK_ENABLED = 'false'
+        const off = deskEnabled() === false
+        delete process.env.BROKER_DESK_ENABLED
+        const unset = deskEnabled() === false // fail-closed when unset
+        return open && off && unset
+      } finally {
+        if (prior === undefined) delete process.env.BROKER_DESK_ENABLED
+        else process.env.BROKER_DESK_ENABLED = prior
+      }
+    })(),
+  )
+  check(
+    'broker M1: identity gate + cap + agent_key sanitize behave',
+    (() => {
+      let idRefused = false
+      try {
+        assertAgentIdentity(null)
+      } catch {
+        idRefused = true
+      }
+      let idOk = true
+      try {
+        assertAgentIdentity('desk-abc')
+      } catch {
+        idOk = false
+      }
+      let overRefused = false
+      try {
+        assertUnderDeskCap(DESK_MAX_INTENT_USD + 1)
+      } catch {
+        overRefused = true
+      }
+      let underOk = true
+      try {
+        assertUnderDeskCap(DESK_MAX_INTENT_USD)
+        assertUnderDeskCap(null) // unpriceable ask passes the cap gate
+      } catch {
+        underOk = false
+      }
+      return (
+        idRefused &&
+        idOk &&
+        overRefused &&
+        underOk &&
+        cleanAgentKey('a') === null && // too short
+        cleanAgentKey('desk-key-123') === 'desk-key-123' &&
+        cleanAgentKey('bad key!!') === 'badkey'
       )
     })(),
   )
@@ -9908,6 +9972,7 @@ async function main() {
       ask: seqAsk,
       wallet: '0x1111111111111111111111111111111111111111',
       agent: 'harness',
+      agent_key: 'harness-desk-key',
     })
     const execRes = await call('broker_execute', { intent_id: execOpen.payload.intentId })
     const drive = execRes.payload?.drive
@@ -9933,6 +9998,34 @@ async function main() {
       'broker: execute refuses single-step and wallet-less intents honestly',
       singleExec.isError && /wallet that will SIGN|does not compile/i.test(String(singleExec.payload)),
     )
+
+    // M1 — the agent-tier fence. The agent-signed path refuses an unidentified
+    // caller BY NAME: same sequenced ask + wallet, but no agent_key bound.
+    const noId = await call('broker_open', {
+      ask: seqAsk,
+      wallet: '0x3333333333333333333333333333333333333333',
+      agent: 'harness',
+    })
+    const noIdExec = await call('broker_execute', { intent_id: noId.payload.intentId })
+    check(
+      'broker M1: agent-signed execute refuses an intent with no bound identity, by name',
+      noIdExec.isError && /bound agent identity|agent_key/i.test(String(noIdExec.payload)),
+    )
+    await call('broker_close', { intent_id: noId.payload.intentId })
+
+    // M1 — the per-intent notional cap on the agent-signed path (default $500).
+    const overCap = await call('broker_open', {
+      ask: 'swap $9000 USDC for ETH on base, then send 0.5 USDC on base to 0x2222222222222222222222222222222222222222',
+      wallet: '0x4444444444444444444444444444444444444444',
+      agent: 'harness',
+      agent_key: 'harness-desk-key',
+    })
+    const overCapExec = await call('broker_execute', { intent_id: overCap.payload.intentId })
+    check(
+      'broker M1: agent-signed execute refuses an intent over the desk cap',
+      overCapExec.isError && /desk caps|over/i.test(String(overCapExec.payload)),
+    )
+    await call('broker_close', { intent_id: overCap.payload.intentId })
 
     // broker_tile — MOSAIC on the desk: slices in, a kind='mosaic' /i link
     // out, bound to a broker intent so the funnel reports back. The ask on

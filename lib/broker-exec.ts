@@ -19,10 +19,12 @@ import {
   planIntent,
   cleanAgentName,
   cleanWallet,
+  askUsd,
   assertNoTxMaterial,
   type BrokerPlan,
   type BrokerState,
 } from '@/lib/broker'
+import { assertDeskOpen, assertAgentIdentity, assertUnderDeskCap, cleanAgentKey } from '@/lib/broker-policy'
 import { MOSAIC_CHAIN_IDS, composeMosaicAsk, sanitizeMosaicSlices, type MosaicChainWord } from '@/lib/mosaic'
 
 const SITE = (process.env.NEXT_PUBLIC_SITE_URL ?? 'https://www.pantessa.com').replace(/\/$/, '')
@@ -45,9 +47,12 @@ export async function openIntent(opts: {
   ask: string
   wallet?: unknown
   agent?: unknown
+  agentKey?: unknown
 }): Promise<OpenResult> {
+  assertDeskOpen()
   const wallet = cleanWallet(opts.wallet)
   const agent = cleanAgentName(opts.agent)
+  const agentKey = cleanAgentKey(opts.agentKey)
   const scan = wallet ? await scanFundingSources(wallet).catch(() => null) : null
   const plan = planIntent(opts.ask, scan)
 
@@ -57,6 +62,7 @@ export async function openIntent(opts: {
       ask: plan.ask,
       wallet,
       agent,
+      agentKey,
       state: 'open',
       plan: plan as object,
     },
@@ -81,6 +87,7 @@ export async function openIntent(opts: {
  *  resume re-enters the same parse ladder — no other negotiation channel
  *  exists, by design. */
 export async function chooseOption(intentId: string, optionId: string): Promise<OpenResult> {
+  assertDeskOpen()
   const row = await mustIntent(intentId)
   if (row.state !== 'open') throw new Error(`Intent ${intentId} is ${row.state} — choosing is over.`)
   const prior = row.plan as unknown as BrokerPlan
@@ -127,6 +134,7 @@ export interface HandoffResult {
  *  guarded runtime (connect-to-act, funding cascade, receipts) and the
  *  broker gets the funnel to report back. */
 export async function handoffIntent(intentId: string): Promise<HandoffResult> {
+  assertDeskOpen()
   const row = await mustIntent(intentId)
   if (row.state === 'closed') throw new Error(`Intent ${intentId} is closed.`)
   if (row.linkSlug) {
@@ -192,6 +200,7 @@ export interface TileResult {
  *  deterministic planner — the desk never sees a balance, an address, or a
  *  plan, just the sentence. */
 export async function tileIntent(opts: { slices: unknown; chain?: unknown; agent?: unknown }): Promise<TileResult> {
+  assertDeskOpen()
   const slices = sanitizeMosaicSlices(opts.slices)
   if ('problem' in slices) throw new Error(slices.problem)
 
@@ -372,6 +381,7 @@ export interface ExecuteResult {
  *  passes the same deterministic builders + fail-closed guards + spend
  *  policy as a human turn. */
 export async function executeIntent(intentId: string): Promise<ExecuteResult> {
+  assertDeskOpen()
   const row = await mustIntent(intentId)
   if (row.state !== 'open') throw new Error(`Intent ${intentId} is ${row.state} — execution starts from an open intent.`)
   if (!row.wallet)
@@ -379,6 +389,12 @@ export async function executeIntent(intentId: string): Promise<ExecuteResult> {
       'broker_execute needs the wallet that will SIGN — re-open the intent passing your agent wallet address. ' +
         'For human signing, use broker_handoff instead.',
     )
+  // The agent-signed path is the one with no human in the loop: it requires a
+  // bound identity (refused by name otherwise), and the intent's notional
+  // must sit under the desk cap. Human handoff above carries neither gate —
+  // a human signature is its own ceiling.
+  assertAgentIdentity(row.agentKey)
+  assertUnderDeskCap(askUsd(row.ask))
 
   const compiled = compileJobAsk(row.ask)
   if (!compiled || 'problem' in compiled || 'clarify' in compiled) {

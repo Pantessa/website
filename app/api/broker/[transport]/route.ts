@@ -10,9 +10,11 @@
 // reports the server-truth funnel back so the agent finally learns whether
 // its human signed. The desk NEVER returns transaction material — that is
 // pinned mechanically (assertNoTxMaterial) on every outbound payload.
+import { NextRequest, NextResponse } from 'next/server'
 import { createMcpHandler } from 'mcp-handler'
 import { z } from 'zod'
 import { openIntent, chooseOption, handoffIntent, intentStatus, closeIntent, executeIntent, tileIntent } from '@/lib/broker-exec'
+import { clientIpFrom, bumpAndCheckBrokerCall } from '@/lib/turn-limits'
 
 export const maxDuration = 60
 
@@ -79,9 +81,18 @@ const handler = createMcpHandler(
             .optional()
             .describe('The human wallet this intent is for (funding scan is read-only).'),
           agent: z.string().max(40).optional().describe('Your agent name, shown as the byline on the sign link.'),
+          agent_key: z
+            .string()
+            .min(6)
+            .max(80)
+            .optional()
+            .describe(
+              'Your desk identity string. Required ONLY for the agent-signed broker_execute path (it binds the ' +
+                'intent to you and is capped); human handoff needs none. (Later becomes your x402-payer identity.)',
+            ),
         },
       },
-      async ({ ask, wallet, agent }) => guarded(() => openIntent({ ask, wallet, agent })),
+      async ({ ask, wallet, agent, agent_key }) => guarded(() => openIntent({ ask, wallet, agent, agentKey: agent_key })),
     )
 
     server.registerTool(
@@ -179,4 +190,20 @@ const handler = createMcpHandler(
   { basePath: '/api/broker' },
 )
 
-export { handler as GET, handler as POST, handler as DELETE }
+// The MCP surface is unauthenticated by design (any agent negotiates), so
+// tool CALLS (POST) ride an hourly per-IP fence — one script can't spam
+// intent rows or amplify the funding scan. Loopback (harness/dev) is exempt.
+// GET/DELETE (the SSE stream + cancel) pass through untouched. Fail-open: a
+// limiter hiccup never takes the desk down.
+async function limitedPost(req: NextRequest): Promise<Response> {
+  const tripped = await bumpAndCheckBrokerCall(clientIpFrom(req.headers))
+  if (tripped) {
+    return NextResponse.json(
+      { error: 'The agent desk hourly rate limit for this connection is reached. Try again within the hour.' },
+      { status: 429 },
+    )
+  }
+  return handler(req)
+}
+
+export { handler as GET, limitedPost as POST, handler as DELETE }
