@@ -30,10 +30,11 @@ export interface DocsPage {
 }
 
 /** Door display metadata — one place for the labels the sidebar + landing share. */
-export const DOORS: Array<{ id: 'host' | 'user' | 'creator'; label: string; reader: string }> = [
+export const DOORS: Array<{ id: 'host' | 'user' | 'creator' | 'agent'; label: string; reader: string }> = [
   { id: 'creator', label: 'Earn with it', reader: 'for creators' },
   { id: 'host', label: 'Embed it', reader: 'for hosts' },
   { id: 'user', label: 'Trust it', reader: 'for users' },
+  { id: 'agent', label: 'Give it hands', reader: 'for agent devs' },
 ]
 
 export const DOCS_PAGES: DocsPage[] = [
@@ -169,7 +170,16 @@ export const DOCS_PAGES: DocsPage[] = [
     door: 'user',
   },
 
-  // ── PAY IT · for agent devs ─────────────────────────────────────────────
+  // ── GIVE IT HANDS · for agent devs ──────────────────────────────────────
+  {
+    slug: 'desk',
+    title: 'Give your agent hands',
+    seoTitle: 'Give your agent hands — the Pantessa desk over MCP',
+    description:
+      'Connect any agent to Pantessa over MCP and it can move money safely: it plans in plain sentences, a human (or its own key) signs, and no AI ever writes calldata. The hands MCP for one-shot handoffs, the desk for a negotiation loop that talks back.',
+    ready: true,
+    door: 'agent',
+  },
   {
     slug: 'paid-doors',
     title: 'Paid MCP doors (x402)',
