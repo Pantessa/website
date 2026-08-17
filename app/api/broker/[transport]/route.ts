@@ -10,9 +10,12 @@
 // reports the server-truth funnel back so the agent finally learns whether
 // its human signed. The desk NEVER returns transaction material — that is
 // pinned mechanically (assertNoTxMaterial) on every outbound payload.
+import { NextRequest, NextResponse } from 'next/server'
 import { createMcpHandler } from 'mcp-handler'
 import { z } from 'zod'
-import { openIntent, chooseOption, handoffIntent, intentStatus, closeIntent, executeIntent, tileIntent } from '@/lib/broker-exec'
+import { openIntent, chooseOption, handoffIntent, intentStatus, closeIntent, executeIntent, tileIntent, sendToInbox } from '@/lib/broker-exec'
+import { clientIpFrom, bumpAndCheckBrokerCall } from '@/lib/turn-limits'
+import { pricingBlock } from '@/lib/broker-pricing'
 
 export const maxDuration = 60
 
@@ -56,6 +59,8 @@ const handler = createMcpHandler(
         guarded(async () => ({
           capabilities: CAPABILITIES,
           loop: ['broker_open', 'broker_choose (optional, repeatable)', 'broker_handoff', 'broker_status'],
+          tools: ['broker_open', 'broker_choose', 'broker_handoff', 'broker_execute', 'broker_send', 'broker_tile', 'broker_status', 'broker_close'],
+          pricing: pricingBlock(),
           contract:
             'Non-custodial by construction: deterministic builders write every transaction (no model writes calldata), ' +
             'each build is guard-checked fail-closed and receipted, and the human wallet on the other side of the sign link is the only signer. ' +
@@ -79,9 +84,27 @@ const handler = createMcpHandler(
             .optional()
             .describe('The human wallet this intent is for (funding scan is read-only).'),
           agent: z.string().max(40).optional().describe('Your agent name, shown as the byline on the sign link.'),
+          agent_key: z
+            .string()
+            .min(6)
+            .max(80)
+            .optional()
+            .describe(
+              'Your desk identity string. Required ONLY for the agent-signed broker_execute path (it binds the ' +
+                'intent to you and is capped); human handoff needs none. (Later becomes your x402-payer identity.)',
+            ),
+          callback_url: z
+            .string()
+            .url()
+            .optional()
+            .describe(
+              'Optional https webhook. Signed/settled events for this intent POST here (HMAC-signed with a secret ' +
+                'returned once in the response) so you learn your human signed without polling. broker_status stays the fallback.',
+            ),
         },
       },
-      async ({ ask, wallet, agent }) => guarded(() => openIntent({ ask, wallet, agent })),
+      async ({ ask, wallet, agent, agent_key, callback_url }) =>
+        guarded(() => openIntent({ ask, wallet, agent, agentKey: agent_key, callbackUrl: callback_url })),
     )
 
     server.registerTool(
@@ -152,6 +175,27 @@ const handler = createMcpHandler(
     )
 
     server.registerTool(
+      'broker_send',
+      {
+        title: 'Send an intent to a wallet (the inbox)',
+        description:
+          'Address an intent TO a recipient — a 0x wallet or a claimed @handle — instead of handing back a link. It lands ' +
+          'in their pantessa.com/inbox where one tap opens the guarded runtime; only their own signature moves anything, ' +
+          'and they never had to ask. Phrase the ask as one plain sentence with amounts. Returns the inbox URL + the /i ' +
+          'link; poll broker_status to learn when they sign. No transaction material crosses this surface.',
+        inputSchema: {
+          ask: z.string().min(3).max(400).describe('The action as one plain sentence, amounts included.'),
+          recipient: z.string().min(2).max(64).describe('Who it is for: a 0x wallet address, or a claimed @handle.'),
+          sender_label: z.string().max(60).optional().describe('Who it is from — shown in the recipient’s inbox (e.g. your agent or app name).'),
+          agent: z.string().max(40).optional().describe('Your agent name, the byline on the link.'),
+          agent_key: z.string().min(6).max(80).optional().describe('Your desk identity — attributes this send to your track record.'),
+        },
+      },
+      async ({ ask, recipient, sender_label, agent, agent_key }) =>
+        guarded(() => sendToInbox({ ask, recipient, senderLabel: sender_label, agent, agentKey: agent_key })),
+    )
+
+    server.registerTool(
       'broker_close',
       {
         title: 'Walk away',
@@ -179,4 +223,20 @@ const handler = createMcpHandler(
   { basePath: '/api/broker' },
 )
 
-export { handler as GET, handler as POST, handler as DELETE }
+// The MCP surface is unauthenticated by design (any agent negotiates), so
+// tool CALLS (POST) ride an hourly per-IP fence — one script can't spam
+// intent rows or amplify the funding scan. Loopback (harness/dev) is exempt.
+// GET/DELETE (the SSE stream + cancel) pass through untouched. Fail-open: a
+// limiter hiccup never takes the desk down.
+async function limitedPost(req: NextRequest): Promise<Response> {
+  const tripped = await bumpAndCheckBrokerCall(clientIpFrom(req.headers))
+  if (tripped) {
+    return NextResponse.json(
+      { error: 'The agent desk hourly rate limit for this connection is reached. Try again within the hour.' },
+      { status: 429 },
+    )
+  }
+  return handler(req)
+}
+
+export { handler as GET, limitedPost as POST, handler as DELETE }

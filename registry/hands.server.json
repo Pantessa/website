@@ -1,0 +1,25 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-07-09/server.schema.json",
+  "name": "com.pantessa/hands",
+  "description": "Give your agent money-hands that can't steal: scan a wallet's movable money, plan an action Pantessa can build (stock buys, swaps, recurring buys, stop-losses, staking, votes), and hand its human ONE sign link where the guarded build happens and their own wallet signs. Never returns calldata or artifacts.",
+  "version": "0.1.0",
+  "homepage": "https://www.pantessa.com/docs/desk",
+  "repository": {
+    "url": "https://github.com/Yeetful/free-mcps",
+    "source": "github",
+    "subfolder": "services/hands"
+  },
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://hands-mcp.yeetful.com/mcp"
+    }
+  ],
+  "tools": [
+    "what_pantessa_can_do",
+    "scan_wallet",
+    "prepare_handoff",
+    "plan_stock_buy",
+    "mint_intent_link"
+  ]
+}

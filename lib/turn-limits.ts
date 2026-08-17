@@ -116,6 +116,42 @@ export async function bumpAndCheckUnsignedTurn(
   }
 }
 
+/** The agent broker desk (/api/broker/mcp) is unauthenticated by design —
+ *  any agent can negotiate — so an hourly per-IP fence keeps one machine
+ *  from spamming intent rows or amplifying the real multi-chain funding scan
+ *  broker_open runs on a caller-named wallet. Its own bucket (`b:<hash>`),
+ *  generous for a busy agent, a hard stop for a script. Loopback (harness,
+ *  local dev) is exempt, exactly like the unsigned-turn fence. */
+export const BROKER_IP_HOURLY_CAP = 200
+
+/** Bump this IP's broker window and report whether it tripped the cap.
+ *  Returns false on loopback (no platform IP) and on any store hiccup —
+ *  fail-open, like the rest of this module. */
+export async function bumpAndCheckBrokerCall(ip: string | null): Promise<boolean> {
+  if (!ip) return false
+  const key = `b:${hashIp(ip)}`
+  try {
+    const { default: prisma } = await import('@/lib/db')
+    const windowStart = hourStartUTC()
+    const rows = await prisma.$queryRaw<{ count: number }[]>`
+      INSERT INTO unsigned_turn_windows (key, window_start, count)
+      VALUES (${key}, ${windowStart}, 1)
+      ON CONFLICT (key, window_start)
+      DO UPDATE SET count = unsigned_turn_windows.count + 1
+      RETURNING count
+    `
+    if (Math.random() < 0.02) {
+      void prisma
+        .$executeRaw`DELETE FROM unsigned_turn_windows WHERE window_start < now() - interval '3 hours'`.catch(
+        () => {},
+      )
+    }
+    return Number(rows[0]?.count ?? 0) > BROKER_IP_HOURLY_CAP
+  } catch {
+    return false
+  }
+}
+
 /** The polite wall — a reply, never a bare 429. Signing in lifts the guest
  *  caps (a signed session rides its own plan limits), which also feeds the
  *  keep-this-thread loop. */

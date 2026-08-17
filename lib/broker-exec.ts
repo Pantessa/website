@@ -19,10 +19,15 @@ import {
   planIntent,
   cleanAgentName,
   cleanWallet,
+  askUsd,
   assertNoTxMaterial,
   type BrokerPlan,
   type BrokerState,
 } from '@/lib/broker'
+import { assertDeskOpen, assertAgentIdentity, assertUnderDeskCap, cleanAgentKey } from '@/lib/broker-policy'
+import { validateCallbackUrl, mintCallbackSecret, deliverWebhook } from '@/lib/broker-webhook'
+import { agentHandleFor } from '@/lib/agent-record'
+import { sendIntent } from '@/lib/inbox'
 import { MOSAIC_CHAIN_IDS, composeMosaicAsk, sanitizeMosaicSlices, type MosaicChainWord } from '@/lib/mosaic'
 
 const SITE = (process.env.NEXT_PUBLIC_SITE_URL ?? 'https://www.pantessa.com').replace(/\/$/, '')
@@ -33,6 +38,12 @@ export interface OpenResult {
   plan: BrokerPlan
   contract: string
   next: string[]
+  /** Present when the agent opened with a callback_url — the signing secret
+   *  is returned ONCE here so the agent can verify webhook signatures. */
+  callback?: { url: string; secret: string; note: string }
+  /** Present when the intent is bound to an agent identity — the agent's
+   *  public, shareable track record (money moved, signs, first/last seen). */
+  recordUrl?: string
 }
 
 const CONTRACT =
@@ -45,9 +56,26 @@ export async function openIntent(opts: {
   ask: string
   wallet?: unknown
   agent?: unknown
+  agentKey?: unknown
+  callbackUrl?: unknown
 }): Promise<OpenResult> {
+  assertDeskOpen()
   const wallet = cleanWallet(opts.wallet)
   const agent = cleanAgentName(opts.agent)
+  const agentKey = cleanAgentKey(opts.agentKey)
+
+  // Optional push channel: validate the callback URL (SSRF fence) and mint a
+  // per-intent signing secret returned ONCE below.
+  let callbackUrl: string | null = null
+  let callbackSecret: string | null = null
+  if (opts.callbackUrl != null && opts.callbackUrl !== '') {
+    if (typeof opts.callbackUrl !== 'string') throw new Error('callback_url must be a string URL.')
+    const v = validateCallbackUrl(opts.callbackUrl)
+    if (!v.ok) throw new Error(v.reason)
+    callbackUrl = v.url
+    callbackSecret = mintCallbackSecret()
+  }
+
   const scan = wallet ? await scanFundingSources(wallet).catch(() => null) : null
   const plan = planIntent(opts.ask, scan)
 
@@ -57,6 +85,10 @@ export async function openIntent(opts: {
       ask: plan.ask,
       wallet,
       agent,
+      agentKey,
+      agentKeyHash: agentKey ? agentHandleFor(agentKey) : null,
+      callbackUrl,
+      callbackSecret,
       state: 'open',
       plan: plan as object,
     },
@@ -70,8 +102,20 @@ export async function openIntent(opts: {
     next: [
       'broker_choose with an option id to rewrite the working ask (funding routes are real resume-sentences)',
       'broker_handoff to mint the sign link for your human',
-      'broker_status any time after handoff to learn whether they signed',
+      callbackUrl
+        ? 'broker_status still polls, but a signed/settled webhook will POST to your callback_url too'
+        : 'broker_status any time after handoff to learn whether they signed',
     ],
+    ...(callbackUrl && callbackSecret
+      ? {
+          callback: {
+            url: callbackUrl,
+            secret: callbackSecret,
+            note: 'Saved once. Verify each webhook: X-Pantessa-Signature = "sha256=" + HMAC-SHA256(rawBody, this secret). Signed/settled events for this intent POST here; broker_status remains the fallback.',
+          },
+        }
+      : {}),
+    ...(agentKey ? { recordUrl: `${SITE}/agents/${agentHandleFor(agentKey)}` } : {}),
   }
   assertNoTxMaterial(out)
   return out
@@ -81,6 +125,7 @@ export async function openIntent(opts: {
  *  resume re-enters the same parse ladder — no other negotiation channel
  *  exists, by design. */
 export async function chooseOption(intentId: string, optionId: string): Promise<OpenResult> {
+  assertDeskOpen()
   const row = await mustIntent(intentId)
   if (row.state !== 'open') throw new Error(`Intent ${intentId} is ${row.state} — choosing is over.`)
   const prior = row.plan as unknown as BrokerPlan
@@ -127,6 +172,7 @@ export interface HandoffResult {
  *  guarded runtime (connect-to-act, funding cascade, receipts) and the
  *  broker gets the funnel to report back. */
 export async function handoffIntent(intentId: string): Promise<HandoffResult> {
+  assertDeskOpen()
   const row = await mustIntent(intentId)
   if (row.state === 'closed') throw new Error(`Intent ${intentId} is closed.`)
   if (row.linkSlug) {
@@ -192,6 +238,7 @@ export interface TileResult {
  *  deterministic planner — the desk never sees a balance, an address, or a
  *  plan, just the sentence. */
 export async function tileIntent(opts: { slices: unknown; chain?: unknown; agent?: unknown }): Promise<TileResult> {
+  assertDeskOpen()
   const slices = sanitizeMosaicSlices(opts.slices)
   if ('problem' in slices) throw new Error(slices.problem)
 
@@ -372,6 +419,7 @@ export interface ExecuteResult {
  *  passes the same deterministic builders + fail-closed guards + spend
  *  policy as a human turn. */
 export async function executeIntent(intentId: string): Promise<ExecuteResult> {
+  assertDeskOpen()
   const row = await mustIntent(intentId)
   if (row.state !== 'open') throw new Error(`Intent ${intentId} is ${row.state} — execution starts from an open intent.`)
   if (!row.wallet)
@@ -379,6 +427,12 @@ export async function executeIntent(intentId: string): Promise<ExecuteResult> {
       'broker_execute needs the wallet that will SIGN — re-open the intent passing your agent wallet address. ' +
         'For human signing, use broker_handoff instead.',
     )
+  // The agent-signed path is the one with no human in the loop: it requires a
+  // bound identity (refused by name otherwise), and the intent's notional
+  // must sit under the desk cap. Human handoff above carries neither gate —
+  // a human signature is its own ceiling.
+  assertAgentIdentity(row.agentKey)
+  assertUnderDeskCap(askUsd(row.ask))
 
   const compiled = compileJobAsk(row.ask)
   if (!compiled || 'problem' in compiled || 'clarify' in compiled) {
@@ -444,6 +498,101 @@ export async function closeIntent(intentId: string): Promise<{ intentId: string;
   const out = { intentId: row.id, state: 'closed' as BrokerState, say: 'Closed. Any sign link is revoked.' }
   assertNoTxMaterial(out)
   return out
+}
+
+export interface SendResult {
+  intentId: string
+  state: BrokerState
+  url: string
+  inboxUrl: string
+  recipient: string
+  handle?: string
+  ask: string
+  say: string
+}
+
+/** The wallet inbox (M5): address an intent TO a recipient wallet/handle. It
+ *  lands in their /inbox where one tap opens the guarded /i runtime and only
+ *  their signature moves anything — no negotiation, no polling, and the
+ *  recipient never had to ask. Bound to a broker intent (like tile/handoff)
+ *  so broker_status reports back and it counts on the agent's track record. */
+export async function sendToInbox(opts: {
+  ask: string
+  recipient: unknown
+  senderLabel?: unknown
+  agent?: unknown
+  agentKey?: unknown
+}): Promise<SendResult> {
+  assertDeskOpen()
+  const agent = cleanAgentName(opts.agent)
+  const agentKey = cleanAgentKey(opts.agentKey)
+  const senderLabel = typeof opts.senderLabel === 'string' ? opts.senderLabel : agent ?? undefined
+
+  const sent = await sendIntent(SITE, {
+    ask: typeof opts.ask === 'string' ? opts.ask : '',
+    recipientRaw: opts.recipient,
+    senderLabel,
+    agent: agent ?? undefined,
+  })
+
+  const row = await prisma.brokerIntent.create({
+    data: {
+      id: mintSlug(10),
+      ask: sent.ask,
+      wallet: sent.recipient,
+      agent,
+      agentKey,
+      agentKeyHash: agentKey ? agentHandleFor(agentKey) : null,
+      state: 'handed_off',
+      plan: { ask: sent.ask, addressed: true } as object,
+      linkSlug: sent.slug,
+    },
+  })
+
+  const out: SendResult = {
+    intentId: row.id,
+    state: 'handed_off',
+    url: sent.url,
+    inboxUrl: sent.inboxUrl,
+    recipient: sent.recipient,
+    ...(sent.handle ? { handle: sent.handle } : {}),
+    ask: sent.ask,
+    say:
+      `Delivered to ${sent.handle ? `@${sent.handle}` : sent.recipient}'s inbox. ` +
+      'They open it, Pantessa rebuilds and guard-checks the ask, and only their own signature moves anything. ' +
+      'Poll broker_status to learn when they sign.',
+  }
+  assertNoTxMaterial(out)
+  return out
+}
+
+/** The push channel (M3): when a signed/settled event lands for a link bound
+ *  to a broker intent that opted into a callback, POST the signed webhook.
+ *  Best-effort and fail-soft — the caller (the events route) fires this
+ *  without awaiting, so a flaky endpoint never touches the event write. */
+export async function fireIntentWebhook(
+  slug: string,
+  kind: 'signed' | 'settled',
+  valueUsd: number | null,
+): Promise<void> {
+  try {
+    const row = await prisma.brokerIntent.findFirst({
+      where: { linkSlug: slug, callbackUrl: { not: null }, callbackSecret: { not: null } },
+      select: { id: true, ask: true, linkSlug: true, callbackUrl: true, callbackSecret: true },
+    })
+    if (!row?.callbackUrl || !row.callbackSecret) return
+    await deliverWebhook(row.callbackUrl, row.callbackSecret, {
+      intentId: row.id,
+      event: kind,
+      ask: row.ask,
+      url: row.linkSlug ? `${SITE}/i/${row.linkSlug}` : null,
+      valueUsd,
+      deliveryId: mintSlug(16),
+      at: Date.now(),
+    })
+  } catch {
+    // fail-soft — the loop is best-effort; broker_status remains the truth
+  }
 }
 
 async function mustIntent(intentId: string) {

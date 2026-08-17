@@ -68,6 +68,21 @@ const DOOR_CARDS = [
     href: '/docs/links',
     cta: 'Intent links',
   },
+  {
+    id: 'agent' as const,
+    kicker: 'GIVE IT HANDS · FOR AGENT DEVS',
+    title: 'Money-hands for your agent, over MCP',
+    lead: (
+      <>
+        Connect any agent to Pantessa over MCP and it can move money safely: it plans in{' '}
+        <strong>plain sentences</strong>, a human (or its own key, under caps) signs, and{' '}
+        <strong>no AI ever writes calldata</strong>. The hands MCP for one-shot handoffs, the desk
+        for a negotiation loop that tells you when your human signed.
+      </>
+    ),
+    href: '/docs/desk',
+    cta: 'Give your agent hands',
+  },
 ]
 
 const STEPS = [
@@ -144,9 +159,10 @@ export default function DocsIndexPage() {
         Tell Pantessa what should happen — once. It compiles the sentence into deterministic,
         guard-checked transactions; <strong>your own wallet is the only thing that can
         sign</strong>; every build is priced, capped, receipted, and killable. These docs open
-        three doors: <Link href="/docs/links">earn with it</Link> as a creator,{' '}
-        <Link href="/docs/embed">embed it</Link> on your site, or{' '}
-        <Link href="/docs/trust">trust it</Link> with your signature.
+        four doors: <Link href="/docs/links">earn with it</Link> as a creator,{' '}
+        <Link href="/docs/embed">embed it</Link> on your site,{' '}
+        <Link href="/docs/trust">trust it</Link> with your signature, or{' '}
+        <Link href="/docs/desk">give your agent hands</Link>.
       </p>
       <div className="splash__ctas">
         <Link href="/docs/jobs" className="btn btn--solid">
@@ -160,7 +176,7 @@ export default function DocsIndexPage() {
       {/* ── The three doors ── */}
       <div className="svc__section">
         <div className="svc__sectionhead">
-          <h2 className="svc__h2">Three doors, three readers</h2>
+          <h2 className="svc__h2">Four doors, four readers</h2>
         </div>
         <div className="splash__steps">
           {DOOR_CARDS.map((d) => (

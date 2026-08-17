@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import prisma from '@/lib/db'
 import { EVENT_KINDS, INTENT_SLUG_RE, type IntentEventKind } from '@/lib/intent-links'
+import { fireIntentWebhook } from '@/lib/broker-exec'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -44,5 +45,14 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ slu
       : null
 
   await prisma.intentLinkEvent.create({ data: { slug, kind, wallet, valueUsd, variant } })
+
+  // The agent-desk push channel (M3): if this link was minted by a broker
+  // intent that opted into a callback_url, POST it a signed webhook so the
+  // calling agent learns its human signed without polling. Fire-and-forget —
+  // never let a flaky endpoint touch the event write.
+  if (kind === 'signed' || kind === 'settled') {
+    void fireIntentWebhook(slug, kind, valueUsd)
+  }
+
   return NextResponse.json({ ok: true })
 }

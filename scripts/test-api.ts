@@ -48,6 +48,16 @@ const isRawBuildPath = (venue: string) => venue.startsWith('native-') || venue.s
 import { hexLuminance, normalizeAccent, normalizeBg, parseBrandHtml, validateBrandUrl } from '../lib/brand-scan'
 import { brandBloomTint, brandCtaStyle, brandThemeStyle } from '../lib/brand-theme'
 import {
+  assertAgentIdentity,
+  assertUnderDeskCap,
+  cleanAgentKey,
+  deskEnabled,
+  DESK_MAX_INTENT_USD,
+} from '../lib/broker-policy'
+import { buildDelivery, mintCallbackSecret, signWebhook, validateCallbackUrl } from '../lib/broker-webhook'
+import { agentHandleFor } from '../lib/agent-record'
+import { deskPricing, priceForTool, pricingBlock } from '../lib/broker-pricing'
+import {
   clientIpFrom,
   decideTurnLimit,
   hashIp,
@@ -2975,6 +2985,147 @@ async function main() {
         !keys[0].includes('203.0.113.9') &&
         keys[1] === 'w:0xabcdef0123456789abcdef0123456789abcdef01' &&
         limitKeysFor(null, undefined).length === 0
+      )
+    })(),
+  )
+  check(
+    'broker M1: desk kill switch is fail-closed (true→open, false/unset→closed)',
+    (() => {
+      const prior = process.env.BROKER_DESK_ENABLED
+      try {
+        process.env.BROKER_DESK_ENABLED = 'true'
+        const open = deskEnabled() === true
+        process.env.BROKER_DESK_ENABLED = 'false'
+        const off = deskEnabled() === false
+        delete process.env.BROKER_DESK_ENABLED
+        const unset = deskEnabled() === false // fail-closed when unset
+        return open && off && unset
+      } finally {
+        if (prior === undefined) delete process.env.BROKER_DESK_ENABLED
+        else process.env.BROKER_DESK_ENABLED = prior
+      }
+    })(),
+  )
+  check(
+    'broker M1: identity gate + cap + agent_key sanitize behave',
+    (() => {
+      let idRefused = false
+      try {
+        assertAgentIdentity(null)
+      } catch {
+        idRefused = true
+      }
+      let idOk = true
+      try {
+        assertAgentIdentity('desk-abc')
+      } catch {
+        idOk = false
+      }
+      let overRefused = false
+      try {
+        assertUnderDeskCap(DESK_MAX_INTENT_USD + 1)
+      } catch {
+        overRefused = true
+      }
+      let underOk = true
+      try {
+        assertUnderDeskCap(DESK_MAX_INTENT_USD)
+        assertUnderDeskCap(null) // unpriceable ask passes the cap gate
+      } catch {
+        underOk = false
+      }
+      return (
+        idRefused &&
+        idOk &&
+        overRefused &&
+        underOk &&
+        cleanAgentKey('a') === null && // too short
+        cleanAgentKey('desk-key-123') === 'desk-key-123' &&
+        cleanAgentKey('bad key!!') === 'badkey'
+      )
+    })(),
+  )
+  check(
+    'broker M3: callback URL SSRF fence — https public only, no localhost/IP/creds/http',
+    (() => {
+      const bad = [
+        'http://example.com/hook', // not https
+        'https://localhost/hook',
+        'https://127.0.0.1/hook',
+        'https://10.0.0.1/hook',
+        'https://user:pass@example.com/hook', // credentials
+        'https://example.com:8080/hook', // non-default port
+        'not-a-url',
+      ]
+      const allBad = bad.every((u) => validateCallbackUrl(u).ok === false)
+      const good = validateCallbackUrl('https://hooks.example.com/pantessa')
+      return allBad && good.ok === true
+    })(),
+  )
+  check(
+    'broker M6: desk pricing is fail-closed to free; a valid pay-to flips it to x402 per-call',
+    (() => {
+      const prior = {
+        addr: process.env.BROKER_PAYMENT_ADDRESS,
+        price: process.env.BROKER_X402_PRICE_USD,
+      }
+      try {
+        // Unset / malformed → free, and priced tools cost nothing.
+        delete process.env.BROKER_PAYMENT_ADDRESS
+        const free = deskPricing().mode === 'free' && priceForTool('broker_open') === null && (pricingBlock() as { model?: string }).model === 'free'
+        process.env.BROKER_PAYMENT_ADDRESS = 'not-an-address'
+        const stillFree = deskPricing().mode === 'free'
+        // Valid pay-to → paid, value tools priced, control/discovery free.
+        process.env.BROKER_PAYMENT_ADDRESS = '0x' + '1'.repeat(40)
+        process.env.BROKER_X402_PRICE_USD = '0.05'
+        const p = deskPricing()
+        const paid =
+          p.mode === 'paid' &&
+          p.priceUsd === '0.05' &&
+          priceForTool('broker_open') === '0.05' &&
+          priceForTool('broker_execute') === '0.05' &&
+          priceForTool('broker_status') === null &&
+          priceForTool('broker_close') === null &&
+          (pricingBlock() as { model?: string }).model === 'x402-per-call'
+        return free && stillFree && paid
+      } finally {
+        if (prior.addr === undefined) delete process.env.BROKER_PAYMENT_ADDRESS
+        else process.env.BROKER_PAYMENT_ADDRESS = prior.addr
+        if (prior.price === undefined) delete process.env.BROKER_X402_PRICE_USD
+        else process.env.BROKER_X402_PRICE_USD = prior.price
+      }
+    })(),
+  )
+  check(
+    'broker M4: agent handle is a stable, collision-distinct sha256 prefix (never the raw key)',
+    (() => {
+      const h1 = agentHandleFor('harness-desk-key')
+      const h2 = agentHandleFor('harness-desk-key')
+      const h3 = agentHandleFor('some-other-agent')
+      return /^[0-9a-f]{16}$/.test(h1) && h1 === h2 && h1 !== h3 && !h1.includes('harness')
+    })(),
+  )
+  check(
+    'broker M3: webhook signature is a deterministic HMAC over the raw body',
+    (() => {
+      const secret = mintCallbackSecret()
+      if (!/^whsec_[0-9a-f]{48}$/.test(secret)) return false
+      const ev = {
+        intentId: 'abc123',
+        event: 'signed' as const,
+        ask: 'Buy $15 of AAPL',
+        url: 'https://www.pantessa.com/i/xyz',
+        valueUsd: 15,
+        deliveryId: 'deliv1',
+        at: 1_700_000_000_000,
+      }
+      const { body, headers } = buildDelivery(secret, ev)
+      const expect = `sha256=${signWebhook(secret, body)}`
+      // deterministic, matches, and the secret never rides in the payload body
+      return (
+        headers['x-pantessa-signature'] === expect &&
+        headers['x-pantessa-event'] === 'signed' &&
+        !body.includes(secret)
       )
     })(),
   )
@@ -9858,6 +10009,10 @@ async function main() {
         Array.isArray(caps.payload.loop) &&
         /never returns calldata/i.test(caps.payload.contract ?? ''),
     )
+    check(
+      'broker M6: capabilities advertises the pricing block (free door in this env)',
+      !caps.isError && caps.payload?.pricing?.model === 'free' && Array.isArray(caps.payload?.tools),
+    )
 
     const open = await call('broker_open', { ask: 'Buy $15 of AAPL', agent: 'harness' })
     const plan = open.payload?.plan
@@ -9908,6 +10063,7 @@ async function main() {
       ask: seqAsk,
       wallet: '0x1111111111111111111111111111111111111111',
       agent: 'harness',
+      agent_key: 'harness-desk-key',
     })
     const execRes = await call('broker_execute', { intent_id: execOpen.payload.intentId })
     const drive = execRes.payload?.drive
@@ -9933,6 +10089,117 @@ async function main() {
       'broker: execute refuses single-step and wallet-less intents honestly',
       singleExec.isError && /wallet that will SIGN|does not compile/i.test(String(singleExec.payload)),
     )
+
+    // M1 — the agent-tier fence. The agent-signed path refuses an unidentified
+    // caller BY NAME: same sequenced ask + wallet, but no agent_key bound.
+    const noId = await call('broker_open', {
+      ask: seqAsk,
+      wallet: '0x3333333333333333333333333333333333333333',
+      agent: 'harness',
+    })
+    const noIdExec = await call('broker_execute', { intent_id: noId.payload.intentId })
+    check(
+      'broker M1: agent-signed execute refuses an intent with no bound identity, by name',
+      noIdExec.isError && /bound agent identity|agent_key/i.test(String(noIdExec.payload)),
+    )
+    await call('broker_close', { intent_id: noId.payload.intentId })
+
+    // M1 — the per-intent notional cap on the agent-signed path (default $500).
+    const overCap = await call('broker_open', {
+      ask: 'swap $9000 USDC for ETH on base, then send 0.5 USDC on base to 0x2222222222222222222222222222222222222222',
+      wallet: '0x4444444444444444444444444444444444444444',
+      agent: 'harness',
+      agent_key: 'harness-desk-key',
+    })
+    const overCapExec = await call('broker_execute', { intent_id: overCap.payload.intentId })
+    check(
+      'broker M1: agent-signed execute refuses an intent over the desk cap',
+      overCapExec.isError && /desk caps|over/i.test(String(overCapExec.payload)),
+    )
+    await call('broker_close', { intent_id: overCap.payload.intentId })
+
+    // M3 — the webhook opt-in. A private/SSRF callback is refused server-side;
+    // a good https one binds and returns the signing secret ONCE.
+    const cbBad = await call('broker_open', {
+      ask: 'Buy $15 of AAPL',
+      agent: 'harness',
+      callback_url: 'http://10.0.0.1/hook',
+    })
+    check(
+      'broker M3: broker_open refuses a private/non-https callback_url (SSRF fence)',
+      cbBad.isError && /callback_url rejected/i.test(String(cbBad.payload)),
+    )
+    const cbGood = await call('broker_open', {
+      ask: 'Buy $15 of AAPL',
+      agent: 'harness',
+      callback_url: 'https://hooks.example.com/pantessa',
+    })
+    check(
+      'broker M3: broker_open binds a good callback and returns the signing secret once',
+      !cbGood.isError &&
+        cbGood.payload?.callback?.url === 'https://hooks.example.com/pantessa' &&
+        /^whsec_[0-9a-f]{48}$/.test(String(cbGood.payload?.callback?.secret ?? '')),
+    )
+    await call('broker_close', { intent_id: cbGood.payload.intentId })
+
+    // M4 — the track record. Opening with an identity returns the agent's
+    // public record URL, and that page renders the honest counts.
+    const recOpen = await call('broker_open', { ask: 'Buy $15 of AAPL', agent: 'Harness Agent', agent_key: 'harness-desk-key' })
+    const expectHandle = agentHandleFor('harness-desk-key')
+    check(
+      'broker M4: broker_open with an identity returns the agent record URL',
+      !recOpen.isError && String(recOpen.payload?.recordUrl ?? '').endsWith(`/agents/${expectHandle}`),
+    )
+    const recPage = await fetch(`${BASE}/agents/${expectHandle}`)
+    const recHtml = flat(await recPage.text())
+    check(
+      'broker M4: the record page renders the agent, the handle, and honest stats',
+      recPage.status === 200 &&
+        /clears through Pantessa/i.test(recHtml) &&
+        recHtml.includes(expectHandle) &&
+        /Money moved/i.test(recHtml),
+    )
+    const recMissing = await fetch(`${BASE}/agents/${'0'.repeat(16)}`)
+    check('broker M4: an unknown agent handle 404s (no phantom records)', recMissing.status === 404)
+    await call('broker_close', { intent_id: recOpen.payload.intentId })
+
+    // M5 — the wallet inbox. broker_send addresses an intent to a wallet; it
+    // lands in that wallet's /inbox, one tap from the guarded /i runtime.
+    const inboxWallet = '0x5555555555555555555555555555555555555555'
+    const sendBad = await call('broker_send', { ask: 'Buy $15 of AAPL', recipient: 'not a wallet', agent: 'harness' })
+    check(
+      'broker M5: broker_send refuses a recipient that is neither wallet nor claimed handle',
+      sendBad.isError && /neither a 0x wallet|is required|No wallet is claimed/i.test(String(sendBad.payload)),
+    )
+    const sent = await call('broker_send', {
+      ask: 'Buy $15 of AAPL',
+      recipient: inboxWallet,
+      sender_label: 'Harness Bot',
+      agent: 'harness',
+      agent_key: 'harness-desk-key',
+    })
+    check(
+      'broker M5: broker_send addresses the intent and returns the inbox + /i URLs',
+      !sent.isError &&
+        sent.payload?.recipient === inboxWallet &&
+        String(sent.payload?.inboxUrl ?? '').endsWith(`/inbox/${inboxWallet}`) &&
+        /\/i\//.test(String(sent.payload?.url ?? '')),
+    )
+    const inboxPage = await fetch(`${BASE}/inbox/${inboxWallet}`)
+    const inboxHtml = flat(await inboxPage.text())
+    check(
+      'broker M5: the addressed intent shows in the recipient inbox with its sender',
+      inboxPage.status === 200 && /Buy \$15 of AAPL/.test(inboxHtml) && /Harness Bot/.test(inboxHtml) && /Review/.test(inboxHtml),
+    )
+    // The bound /i link is gated to the recipient (allowWallets set).
+    const allowed = await fetch(`${BASE}/api/intent-links/${String(sent.payload.url).split('/').pop()}/allowed?wallet=${inboxWallet}`)
+    const allowedOther = await fetch(`${BASE}/api/intent-links/${String(sent.payload.url).split('/').pop()}/allowed?wallet=0x6666666666666666666666666666666666666666`)
+    check(
+      'broker M5: the addressed link targets the recipient (allowlist set to them)',
+      ((await allowed.json()) as { allowed?: boolean }).allowed === true &&
+        ((await allowedOther.json()) as { allowed?: boolean }).allowed === false,
+    )
+    await call('broker_close', { intent_id: sent.payload.intentId })
 
     // broker_tile — MOSAIC on the desk: slices in, a kind='mosaic' /i link
     // out, bound to a broker intent so the funnel reports back. The ask on

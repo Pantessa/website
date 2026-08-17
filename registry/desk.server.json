@@ -1,0 +1,28 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-07-09/server.schema.json",
+  "name": "com.pantessa/desk",
+  "description": "Pantessa's transaction desk, opened to other agents. Open an intent in plain English, negotiate funding routes, hand your human a sign link, and poll back to learn whether they signed. Sentences and links in and out — never calldata. Includes an agent-signed path for sequenced flows the agent drives with its own key under per-intent caps.",
+  "version": "0.1.0",
+  "homepage": "https://www.pantessa.com/docs/desk",
+  "repository": {
+    "url": "https://github.com/Yeetful/website",
+    "source": "github",
+    "subfolder": "app/api/broker"
+  },
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://www.pantessa.com/api/broker/mcp"
+    }
+  ],
+  "tools": [
+    "broker_capabilities",
+    "broker_open",
+    "broker_choose",
+    "broker_handoff",
+    "broker_execute",
+    "broker_tile",
+    "broker_status",
+    "broker_close"
+  ]
+}
