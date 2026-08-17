@@ -54,6 +54,8 @@ interface Minted {
   slug: string
   url: string
   ask: string
+  /** U3 — set when the link was ADDRESSED: it's already in this wallet's inbox. */
+  recipient?: string
 }
 
 export function MintLinkForm({
@@ -90,6 +92,7 @@ export function MintLinkForm({
   const [expiresAt, setExpiresAt] = useState('')
   const [maxSigns, setMaxSigns] = useState('')
   const [allowText, setAllowText] = useState('')
+  const [sendTo, setSendTo] = useState('')
   const [finePrintOpen, setFinePrintOpen] = useState(false)
   const [minting, setMinting] = useState(false)
   const [mintError, setMintError] = useState<string | null>(null)
@@ -169,6 +172,7 @@ export function MintLinkForm({
                 .map((s) => s.trim())
                 .filter(Boolean)
             : undefined,
+          recipient: sendTo.trim() || undefined,
         }),
       })
       const data = await res.json()
@@ -176,12 +180,18 @@ export function MintLinkForm({
         setMintError(data.error ?? 'Mint failed.')
         return
       }
-      const link = { slug: String(data.slug), url: String(data.url), ask: ask.trim() }
+      const link = {
+        slug: String(data.slug),
+        url: String(data.url),
+        ask: ask.trim(),
+        ...(data.recipient ? { recipient: String(data.recipient) } : {}),
+      }
       setAsk('')
       setRedirectUrl('')
       setExpiresAt('')
       setMaxSigns('')
       setAllowText('')
+      setSendTo('')
       setManualMcps(null)
       setPickerOpen(false)
       setFinePrintOpen(false)
@@ -231,7 +241,9 @@ export function MintLinkForm({
             {minted.url}
           </button>
           <p className="mintstage__promise">
-            Anyone who opens it connects a wallet and the path builds itself.
+            {minted.recipient
+              ? `Delivered — it's already in ${minted.recipient.slice(0, 6)}…${minted.recipient.slice(-4)}'s Pantessa inbox. They tap, the path builds, only they can sign.`
+              : 'Anyone who opens it connects a wallet and the path builds itself.'}
           </p>
         </div>
         <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2">
@@ -419,6 +431,23 @@ export function MintLinkForm({
           Half of Pantessa&apos;s 0.20% fee on every conversion is yours.
         </span>
         {error && <span className="text-[13px] text-amber-400 basis-full">{error}</span>}
+      </div>
+
+      {/* U3 — human send: address the link TO someone instead of (or as well
+          as) sharing it. It lands in their /inbox with your handle/address as
+          the sender; the allowlist targets them, their signature stays the
+          only gate. First-class, not fine print — sending IS the product. */}
+      <div className="mt-4">
+        <label className="mono text-[11px] uppercase tracking-wider text-[color:var(--muted-2)] block">
+          Send it to someone (optional — lands in their Pantessa inbox)
+        </label>
+        <input
+          value={sendTo}
+          onChange={(e) => setSendTo(e.target.value)}
+          placeholder="0x… or @handle"
+          spellCheck={false}
+          className="mt-1.5 w-full max-w-md rounded-lg border border-[var(--line)] bg-[var(--bg)] px-3 py-2 text-sm text-[color:var(--fg)] focus:outline-none focus:border-[var(--accent)]"
+        />
       </div>
 
       {/* Fine print — the partner-promo knobs (return URL / expiry / sign

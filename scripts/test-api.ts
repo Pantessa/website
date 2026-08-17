@@ -2288,6 +2288,39 @@ async function main() {
     const bearerRevoke = await fetch(`${BASE}/api/intent-links/${bearerLink.slug}`, { method: 'DELETE', headers: B })
     check('intent links: the key owner revokes it (capacity restored)', bearerRevoke.status === 200)
 
+    // U3 — human send: minting with a recipient ADDRESSES the link (inbox +
+    // allowlist target + sender label); a junk recipient refuses at mint.
+    const u3Recipient = '0x7777777777777777777777777777777777777777'
+    const sentMint = await fetch(`${BASE}/api/intent-links`, {
+      method: 'POST',
+      headers: BJ,
+      body: JSON.stringify({ ask: 'Buy $5 of AAPL, sent by a friend', recipient: u3Recipient }),
+    })
+    const sentMintData = (await sentMint.json()) as { slug?: string; recipient?: string; inboxUrl?: string }
+    const u3Inbox = ((await (await fetch(`${BASE}/api/inbox?wallet=${u3Recipient}`)).json()) as { items?: { slug?: string; from?: string | null }[] }).items ?? []
+    const u3Row = u3Inbox.find((i) => i.slug === sentMintData.slug)
+    check(
+      'intent links U3: a human mint with recipient lands in their inbox with the sender named',
+      sentMint.status === 200 &&
+        sentMintData.recipient === u3Recipient &&
+        sentMintData.inboxUrl === `/inbox/${u3Recipient}` &&
+        !!u3Row &&
+        typeof u3Row.from === 'string' &&
+        u3Row.from.length > 0,
+    )
+    const u3Allowed = await fetch(`${BASE}/api/intent-links/${sentMintData.slug}/allowed?wallet=${u3Recipient}`)
+    check(
+      'intent links U3: the addressed mint targets its recipient (allowlist)',
+      ((await u3Allowed.json()) as { allowed?: boolean }).allowed === true,
+    )
+    const badRecipMint = await fetch(`${BASE}/api/intent-links`, {
+      method: 'POST',
+      headers: BJ,
+      body: JSON.stringify({ ask: 'Buy $5 of AAPL, sent nowhere', recipient: '@no-such-handle-ever' }),
+    })
+    check('intent links U3: an unknown handle refuses at mint (400, named)', badRecipMint.status === 400)
+    await fetch(`${BASE}/api/intent-links/${sentMintData.slug}`, { method: 'DELETE', headers: B })
+
     // House links: the seeded canonical set (deterministic slugs,
     // creator=null — earns nothing, belongs to no dashboard). The landing
     // lane + the /links start-here strip point at these forever.
