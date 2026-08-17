@@ -2321,6 +2321,13 @@ async function main() {
     check('intent links U3: an unknown handle refuses at mint (400, named)', badRecipMint.status === 400)
     await fetch(`${BASE}/api/intent-links/${sentMintData.slug}`, { method: 'DELETE', headers: B })
 
+    // U4 — the desk transcript strip rides /docs/desk (the ten-second aha).
+    const deskDocs = flat(await (await fetch(`${BASE}/docs/desk`)).text())
+    check(
+      'docs U4: /docs/desk carries the replayable desk-session transcript',
+      /data-desk-transcript/.test(deskDocs) && /two agents, one human signature/i.test(deskDocs),
+    )
+
     // House links: the seeded canonical set (deterministic slugs,
     // creator=null — earns nothing, belongs to no dashboard). The landing
     // lane + the /links start-here strip point at these forever.
