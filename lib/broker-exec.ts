@@ -26,6 +26,7 @@ import {
 } from '@/lib/broker'
 import { assertDeskOpen, assertAgentIdentity, assertUnderDeskCap, cleanAgentKey } from '@/lib/broker-policy'
 import { validateCallbackUrl, mintCallbackSecret, deliverWebhook } from '@/lib/broker-webhook'
+import { agentHandleFor } from '@/lib/agent-record'
 import { MOSAIC_CHAIN_IDS, composeMosaicAsk, sanitizeMosaicSlices, type MosaicChainWord } from '@/lib/mosaic'
 
 const SITE = (process.env.NEXT_PUBLIC_SITE_URL ?? 'https://www.pantessa.com').replace(/\/$/, '')
@@ -39,6 +40,9 @@ export interface OpenResult {
   /** Present when the agent opened with a callback_url — the signing secret
    *  is returned ONCE here so the agent can verify webhook signatures. */
   callback?: { url: string; secret: string; note: string }
+  /** Present when the intent is bound to an agent identity — the agent's
+   *  public, shareable track record (money moved, signs, first/last seen). */
+  recordUrl?: string
 }
 
 const CONTRACT =
@@ -81,6 +85,7 @@ export async function openIntent(opts: {
       wallet,
       agent,
       agentKey,
+      agentKeyHash: agentKey ? agentHandleFor(agentKey) : null,
       callbackUrl,
       callbackSecret,
       state: 'open',
@@ -109,6 +114,7 @@ export async function openIntent(opts: {
           },
         }
       : {}),
+    ...(agentKey ? { recordUrl: `${SITE}/agents/${agentHandleFor(agentKey)}` } : {}),
   }
   assertNoTxMaterial(out)
   return out

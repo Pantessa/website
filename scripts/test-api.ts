@@ -55,6 +55,7 @@ import {
   DESK_MAX_INTENT_USD,
 } from '../lib/broker-policy'
 import { buildDelivery, mintCallbackSecret, signWebhook, validateCallbackUrl } from '../lib/broker-webhook'
+import { agentHandleFor } from '../lib/agent-record'
 import {
   clientIpFrom,
   decideTurnLimit,
@@ -3058,6 +3059,15 @@ async function main() {
       const allBad = bad.every((u) => validateCallbackUrl(u).ok === false)
       const good = validateCallbackUrl('https://hooks.example.com/pantessa')
       return allBad && good.ok === true
+    })(),
+  )
+  check(
+    'broker M4: agent handle is a stable, collision-distinct sha256 prefix (never the raw key)',
+    (() => {
+      const h1 = agentHandleFor('harness-desk-key')
+      const h2 = agentHandleFor('harness-desk-key')
+      const h3 = agentHandleFor('some-other-agent')
+      return /^[0-9a-f]{16}$/.test(h1) && h1 === h2 && h1 !== h3 && !h1.includes('harness')
     })(),
   )
   check(
@@ -10092,6 +10102,27 @@ async function main() {
         /^whsec_[0-9a-f]{48}$/.test(String(cbGood.payload?.callback?.secret ?? '')),
     )
     await call('broker_close', { intent_id: cbGood.payload.intentId })
+
+    // M4 — the track record. Opening with an identity returns the agent's
+    // public record URL, and that page renders the honest counts.
+    const recOpen = await call('broker_open', { ask: 'Buy $15 of AAPL', agent: 'Harness Agent', agent_key: 'harness-desk-key' })
+    const expectHandle = agentHandleFor('harness-desk-key')
+    check(
+      'broker M4: broker_open with an identity returns the agent record URL',
+      !recOpen.isError && String(recOpen.payload?.recordUrl ?? '').endsWith(`/agents/${expectHandle}`),
+    )
+    const recPage = await fetch(`${BASE}/agents/${expectHandle}`)
+    const recHtml = flat(await recPage.text())
+    check(
+      'broker M4: the record page renders the agent, the handle, and honest stats',
+      recPage.status === 200 &&
+        /clears through Pantessa/i.test(recHtml) &&
+        recHtml.includes(expectHandle) &&
+        /Money moved/i.test(recHtml),
+    )
+    const recMissing = await fetch(`${BASE}/agents/${'0'.repeat(16)}`)
+    check('broker M4: an unknown agent handle 404s (no phantom records)', recMissing.status === 404)
+    await call('broker_close', { intent_id: recOpen.payload.intentId })
 
     // broker_tile — MOSAIC on the desk: slices in, a kind='mosaic' /i link
     // out, bound to a broker intent so the funnel reports back. The ask on
