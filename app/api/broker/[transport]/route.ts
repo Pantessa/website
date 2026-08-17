@@ -13,7 +13,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createMcpHandler } from 'mcp-handler'
 import { z } from 'zod'
-import { openIntent, chooseOption, handoffIntent, intentStatus, closeIntent, executeIntent, tileIntent } from '@/lib/broker-exec'
+import { openIntent, chooseOption, handoffIntent, intentStatus, closeIntent, executeIntent, tileIntent, sendToInbox } from '@/lib/broker-exec'
 import { clientIpFrom, bumpAndCheckBrokerCall } from '@/lib/turn-limits'
 
 export const maxDuration = 60
@@ -169,6 +169,27 @@ const handler = createMcpHandler(
         },
       },
       async ({ slices, chain, agent }) => guarded(() => tileIntent({ slices, chain, agent })),
+    )
+
+    server.registerTool(
+      'broker_send',
+      {
+        title: 'Send an intent to a wallet (the inbox)',
+        description:
+          'Address an intent TO a recipient — a 0x wallet or a claimed @handle — instead of handing back a link. It lands ' +
+          'in their pantessa.com/inbox where one tap opens the guarded runtime; only their own signature moves anything, ' +
+          'and they never had to ask. Phrase the ask as one plain sentence with amounts. Returns the inbox URL + the /i ' +
+          'link; poll broker_status to learn when they sign. No transaction material crosses this surface.',
+        inputSchema: {
+          ask: z.string().min(3).max(400).describe('The action as one plain sentence, amounts included.'),
+          recipient: z.string().min(2).max(64).describe('Who it is for: a 0x wallet address, or a claimed @handle.'),
+          sender_label: z.string().max(60).optional().describe('Who it is from — shown in the recipient’s inbox (e.g. your agent or app name).'),
+          agent: z.string().max(40).optional().describe('Your agent name, the byline on the link.'),
+          agent_key: z.string().min(6).max(80).optional().describe('Your desk identity — attributes this send to your track record.'),
+        },
+      },
+      async ({ ask, recipient, sender_label, agent, agent_key }) =>
+        guarded(() => sendToInbox({ ask, recipient, senderLabel: sender_label, agent, agentKey: agent_key })),
     )
 
     server.registerTool(

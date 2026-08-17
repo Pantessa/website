@@ -1143,10 +1143,17 @@ model IntentLink {
   // shape" → a new link that credits its ancestor on the page).
   kind         String?
   parentSlug   String?   @map("parent_slug")
+  // The wallet inbox (M5): when an intent is ADDRESSED to someone, recipient
+  // is their lowercased wallet and senderLabel names who sent it. Addressed
+  // links appear in that wallet's /inbox; allowWallets is set to [recipient]
+  // so the /i CTA targets them (the signature is still the real gate).
+  recipient    String? // lowercased wallet an intent is addressed TO
+  senderLabel  String?   @map("sender_label")
   createdAt    DateTime  @default(now()) @map("created_at")
 
   @@index([creator, createdAt])
   @@index([kind, createdAt])
+  @@index([recipient, createdAt])
   @@map("intent_links")
 }
 

@@ -10124,6 +10124,44 @@ async function main() {
     check('broker M4: an unknown agent handle 404s (no phantom records)', recMissing.status === 404)
     await call('broker_close', { intent_id: recOpen.payload.intentId })
 
+    // M5 — the wallet inbox. broker_send addresses an intent to a wallet; it
+    // lands in that wallet's /inbox, one tap from the guarded /i runtime.
+    const inboxWallet = '0x5555555555555555555555555555555555555555'
+    const sendBad = await call('broker_send', { ask: 'Buy $15 of AAPL', recipient: 'not a wallet', agent: 'harness' })
+    check(
+      'broker M5: broker_send refuses a recipient that is neither wallet nor claimed handle',
+      sendBad.isError && /neither a 0x wallet|is required|No wallet is claimed/i.test(String(sendBad.payload)),
+    )
+    const sent = await call('broker_send', {
+      ask: 'Buy $15 of AAPL',
+      recipient: inboxWallet,
+      sender_label: 'Harness Bot',
+      agent: 'harness',
+      agent_key: 'harness-desk-key',
+    })
+    check(
+      'broker M5: broker_send addresses the intent and returns the inbox + /i URLs',
+      !sent.isError &&
+        sent.payload?.recipient === inboxWallet &&
+        String(sent.payload?.inboxUrl ?? '').endsWith(`/inbox/${inboxWallet}`) &&
+        /\/i\//.test(String(sent.payload?.url ?? '')),
+    )
+    const inboxPage = await fetch(`${BASE}/inbox/${inboxWallet}`)
+    const inboxHtml = flat(await inboxPage.text())
+    check(
+      'broker M5: the addressed intent shows in the recipient inbox with its sender',
+      inboxPage.status === 200 && /Buy \$15 of AAPL/.test(inboxHtml) && /Harness Bot/.test(inboxHtml) && /Review/.test(inboxHtml),
+    )
+    // The bound /i link is gated to the recipient (allowWallets set).
+    const allowed = await fetch(`${BASE}/api/intent-links/${String(sent.payload.url).split('/').pop()}/allowed?wallet=${inboxWallet}`)
+    const allowedOther = await fetch(`${BASE}/api/intent-links/${String(sent.payload.url).split('/').pop()}/allowed?wallet=0x6666666666666666666666666666666666666666`)
+    check(
+      'broker M5: the addressed link targets the recipient (allowlist set to them)',
+      ((await allowed.json()) as { allowed?: boolean }).allowed === true &&
+        ((await allowedOther.json()) as { allowed?: boolean }).allowed === false,
+    )
+    await call('broker_close', { intent_id: sent.payload.intentId })
+
     // broker_tile — MOSAIC on the desk: slices in, a kind='mosaic' /i link
     // out, bound to a broker intent so the funnel reports back. The ask on
     // the wire must round-trip the tile grammar (the sign side's rulebook).

@@ -27,6 +27,7 @@ import {
 import { assertDeskOpen, assertAgentIdentity, assertUnderDeskCap, cleanAgentKey } from '@/lib/broker-policy'
 import { validateCallbackUrl, mintCallbackSecret, deliverWebhook } from '@/lib/broker-webhook'
 import { agentHandleFor } from '@/lib/agent-record'
+import { sendIntent } from '@/lib/inbox'
 import { MOSAIC_CHAIN_IDS, composeMosaicAsk, sanitizeMosaicSlices, type MosaicChainWord } from '@/lib/mosaic'
 
 const SITE = (process.env.NEXT_PUBLIC_SITE_URL ?? 'https://www.pantessa.com').replace(/\/$/, '')
@@ -495,6 +496,72 @@ export async function closeIntent(intentId: string): Promise<{ intentId: string;
     await prisma.brokerIntent.update({ where: { id: row.id }, data: { state: 'closed' } })
   }
   const out = { intentId: row.id, state: 'closed' as BrokerState, say: 'Closed. Any sign link is revoked.' }
+  assertNoTxMaterial(out)
+  return out
+}
+
+export interface SendResult {
+  intentId: string
+  state: BrokerState
+  url: string
+  inboxUrl: string
+  recipient: string
+  handle?: string
+  ask: string
+  say: string
+}
+
+/** The wallet inbox (M5): address an intent TO a recipient wallet/handle. It
+ *  lands in their /inbox where one tap opens the guarded /i runtime and only
+ *  their signature moves anything — no negotiation, no polling, and the
+ *  recipient never had to ask. Bound to a broker intent (like tile/handoff)
+ *  so broker_status reports back and it counts on the agent's track record. */
+export async function sendToInbox(opts: {
+  ask: string
+  recipient: unknown
+  senderLabel?: unknown
+  agent?: unknown
+  agentKey?: unknown
+}): Promise<SendResult> {
+  assertDeskOpen()
+  const agent = cleanAgentName(opts.agent)
+  const agentKey = cleanAgentKey(opts.agentKey)
+  const senderLabel = typeof opts.senderLabel === 'string' ? opts.senderLabel : agent ?? undefined
+
+  const sent = await sendIntent(SITE, {
+    ask: typeof opts.ask === 'string' ? opts.ask : '',
+    recipientRaw: opts.recipient,
+    senderLabel,
+    agent: agent ?? undefined,
+  })
+
+  const row = await prisma.brokerIntent.create({
+    data: {
+      id: mintSlug(10),
+      ask: sent.ask,
+      wallet: sent.recipient,
+      agent,
+      agentKey,
+      agentKeyHash: agentKey ? agentHandleFor(agentKey) : null,
+      state: 'handed_off',
+      plan: { ask: sent.ask, addressed: true } as object,
+      linkSlug: sent.slug,
+    },
+  })
+
+  const out: SendResult = {
+    intentId: row.id,
+    state: 'handed_off',
+    url: sent.url,
+    inboxUrl: sent.inboxUrl,
+    recipient: sent.recipient,
+    ...(sent.handle ? { handle: sent.handle } : {}),
+    ask: sent.ask,
+    say:
+      `Delivered to ${sent.handle ? `@${sent.handle}` : sent.recipient}'s inbox. ` +
+      'They open it, Pantessa rebuilds and guard-checks the ask, and only their own signature moves anything. ' +
+      'Poll broker_status to learn when they sign.',
+  }
   assertNoTxMaterial(out)
   return out
 }

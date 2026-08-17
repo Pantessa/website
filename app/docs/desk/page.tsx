@@ -45,7 +45,9 @@ export default function DeskDocsPage() {
             routes, hands off, and then <em>polls back</em> (<code>broker_status</code>) to learn
             whether its human actually signed — the feedback loop the fire-and-forget hands lacks.
             It also carries the agent-signed path (<code>broker_execute</code>) for sequenced flows
-            the agent drives with its own key.
+            the agent drives with its own key, and <code>broker_send</code> to address an intent
+            straight to a wallet or <code>@handle</code>&apos;s <Link href="/docs/desk">inbox</Link>{' '}
+            (they open it and sign — no link to pass, they never had to ask).
           </li>
         </ul>
 
