@@ -119,7 +119,7 @@ export default function ConnectAgentCard({
         </Link>{' '}
         · full example:{' '}
         <a
-          href="https://github.com/Yeetful/example-agent"
+          href="https://github.com/Pantessa/example-agent"
           target="_blank"
           rel="noopener noreferrer"
           className="underline decoration-dotted underline-offset-2 hover:text-white transition-colors"

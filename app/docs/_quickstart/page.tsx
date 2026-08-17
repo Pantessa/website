@@ -115,7 +115,7 @@ const pay = yeetful({
             receipts on pantessa.com
           </li>
           <li>
-            <a href="https://github.com/Yeetful/example-agent">Yeetful/example-agent</a> — this
+            <a href="https://github.com/Pantessa/example-agent">Pantessa/example-agent</a> — this
             quickstart as a runnable repo with a free demo mode
           </li>
         </ul>
