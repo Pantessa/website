@@ -10200,6 +10200,24 @@ async function main() {
     )
     const inboxBad = await fetch(`${BASE}/api/inbox?wallet=nope`)
     check('broker U1: /api/inbox refuses a malformed wallet', inboxBad.status === 400)
+
+    // U2 — the closed-loop receipt seam: the /i page of a desk-bound
+    // (addressed) link serializes the notify prop (sender label + push mode)
+    // into its RSC payload; the runtime shows it after signing. A plain link
+    // must NOT carry a notify label.
+    const sentSlug = String(sent.payload.url).split('/').pop()
+    const sentPage = await fetch(`${BASE}/i/${sentSlug}`)
+    const sentPageHtml = await sentPage.text()
+    check(
+      'broker U2: an addressed link page carries the sender label for the signed banner',
+      sentPage.status === 200 && /Harness Bot/.test(sentPageHtml) && /"push":false/.test(sentPageHtml.replace(/\\/g, '')),
+    )
+    const plainPage = await fetch(`${BASE}/i/${(hand.payload.url as string).split('/').pop()}`)
+    const plainHtml = await plainPage.text()
+    check(
+      'broker U2: a plain handoff link still resolves its desk sender (agent byline), never a false push',
+      plainPage.status === 200 && !/"push":true/.test(plainHtml.replace(/\\/g, '')),
+    )
     // The bound /i link is gated to the recipient (allowWallets set).
     const allowed = await fetch(`${BASE}/api/intent-links/${String(sent.payload.url).split('/').pop()}/allowed?wallet=${inboxWallet}`)
     const allowedOther = await fetch(`${BASE}/api/intent-links/${String(sent.payload.url).split('/').pop()}/allowed?wallet=0x6666666666666666666666666666666666666666`)

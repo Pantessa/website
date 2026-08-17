@@ -20,7 +20,7 @@ import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useAccount } from 'wagmi'
 import { useConnectModal } from '@rainbow-me/rainbowkit'
-import { ArrowRight, ExternalLink, Fingerprint, Link2, MessageSquare, ReceiptText, ShieldCheck, Zap } from 'lucide-react'
+import { ArrowRight, BellRing, ExternalLink, Fingerprint, Link2, MessageSquare, ReceiptText, ShieldCheck, Zap } from 'lucide-react'
 import ChatInterface from '@/components/ChatInterface'
 import ChatLoader from '@/components/ChatLoader'
 import { SignatureWaitModal } from '@/components/SignatureWaitTakeover'
@@ -67,6 +67,7 @@ export default function IntentRuntime({
   hasCreator = false,
   restricted = false,
   brand = null,
+  notify = null,
 }: {
   slug: string
   ask: string
@@ -85,6 +86,10 @@ export default function IntentRuntime({
    *  logo, powered by Pantessa); the post-connect runtime keeps the chat
    *  legible and takes only the accent + a logo chip. */
   brand?: LinkBrand | null
+  /** U2 — desk-bound / addressed links close the loop on screen: who sent
+   *  this, and whether they're webhook-notified (push) or watching the
+   *  status feed. Label + mode only; never a URL. */
+  notify?: { label: string; push: boolean } | null
 }) {
   const { address, isConnected, status: walletStatus } = useAccount()
   const { openConnectModal } = useConnectModal()
@@ -579,6 +584,23 @@ export default function IntentRuntime({
                 <Link2 className="w-4 h-4" /> MAKE YOUR OWN LINK
               </SignInFlowLink>
             </div>
+          </div>
+        </div>
+      )}
+      {/* U2 — the closed loop, on screen: this link came from an agent (or a
+          sender), and the signature just reached them. Push = the M3 webhook
+          fired at the signed event; feed = broker_status server truth. The
+          invisible back-and-forth, made visible at the aha moment. */}
+      {signed && notify && (
+        <div className="relative flex-shrink-0 border-t border-[var(--line)] bg-[color-mix(in_srgb,var(--bg)_92%,transparent)] backdrop-blur px-4 py-2.5">
+          <div className="max-w-3xl mx-auto flex items-center gap-2.5">
+            <BellRing className="w-4 h-4 flex-shrink-0 text-[color:var(--accent)]" />
+            <span className="text-[13px] text-[color:var(--muted)]">
+              <strong className="text-[color:var(--fg)]">{notify.label}</strong>{' '}
+              {notify.push
+                ? 'was notified the moment you signed — the loop is closed.'
+                : 'can see this signature on their status feed — the loop is closed.'}
+            </span>
           </div>
         </div>
       )}

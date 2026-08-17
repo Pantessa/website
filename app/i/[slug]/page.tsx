@@ -50,6 +50,26 @@ export async function generateMetadata({ params }: Params): Promise<Metadata> {
   }
 }
 
+/** U2 — the closed loop, named on the receipt. When this link is DESK-BOUND
+ *  (a broker intent minted it) or addressed (M5 senderLabel), the sender
+ *  learns about the signature: via the M3 webhook when a callback is bound
+ *  (push), else via broker_status server truth (feed). The runtime shows the
+ *  honest variant after signing; only a label + mode cross the wire — never
+ *  the callback URL. */
+async function getNotify(link: { id: string; senderLabel: string | null; agent: string | null }) {
+  try {
+    const intent = await prisma.brokerIntent.findFirst({
+      where: { linkSlug: link.id },
+      select: { callbackUrl: true, agent: true },
+    })
+    const label = link.senderLabel ?? intent?.agent ?? link.agent
+    if (!intent && !link.senderLabel) return null
+    return { label: label ?? 'The agent that sent this', push: !!intent?.callbackUrl }
+  } catch {
+    return null
+  }
+}
+
 /** The creator's white-label brand (creator_handles) — the splash wears it,
  *  powered by Pantessa. House links (creator=null) stay pure Pantessa. */
 async function getBrand(creator: string | null) {
@@ -68,6 +88,7 @@ export default async function IntentLinkPage({ params }: Params) {
   const link = await getLink(slug)
   if (!link) notFound()
   const brand = await getBrand(link.creator)
+  const notify = await getNotify(link)
   // A/B: one phrasing per visit, picked server-side (index 0 = the base
   // ask). The chosen phrasing IS the ask for this visit — every runtime
   // gate (transfer shape included) applies to what's actually shown — and
@@ -86,6 +107,7 @@ export default async function IntentLinkPage({ params }: Params) {
       hasCreator={!!link.creator}
       restricted={link.allowWallets.length > 0}
       brand={brand}
+      notify={notify}
     />
   )
 }
