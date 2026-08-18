@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { recoverTypedDataAddress } from 'viem'
+import { recoverMessageAddress, recoverTypedDataAddress } from 'viem'
 import { splitSignature } from '@/lib/hl-guardian'
+import { getActiveDelegation, retireDelegation, signL1ActionWithDelegation } from '@/lib/hl-guardian-store'
 import {
   fetchHlSnapshot,
   guardHlBuilderFeeApproval,
@@ -8,6 +9,7 @@ import {
   guardHlLeverageBuild,
   hlActionTypedData,
   hlApproveBuilderFeeTypedData,
+  hlConsentMessage,
   HL_EXEC_POLICY_HOST,
   type HlWireAction,
   type HlWireApproveBuilderFeeAction,
@@ -29,20 +31,48 @@ export const dynamic = 'force-dynamic'
 //      → refuse; stale quotes die here, not on the venue);
 //   3. re-gate the wallet's spend policy + kill switch at submit time.
 // No SIWE needed: the recovered signature IS the auth.
+//
+// TWO ways the wallet can say yes to an L1 action (orders + leverage):
+//   direct    — { signature }: the wallet signed our phantom-agent typed data
+//               (domain chainId 1337) itself. Works in wallets that don't
+//               police the EIP-712 domain chain (Rabby, raw keys).
+//   delegated — { mode: 'delegated', consentSignature }: the wallet signed
+//               the personal_sign CONSENT text over the action's own hash
+//               (chain-agnostic — MetaMask refuses 1337 typed data outright,
+//               see lib/hyperliquid-exec), and the wallet's ACTIVE Pantessa
+//               agent (the guardian delegation) signs the same bytes here.
+//               No delegation → 409 { code: 'delegation-required' } and the
+//               client offers the one-time "enable trading" approval.
+// Both converge on the same guard + policy + venue relay below.
 export async function POST(req: NextRequest) {
   const body = (await req.json().catch(() => ({}))) as {
     action?: HlWireAction | HlWireApproveBuilderFeeAction
     nonce?: number
     signature?: string
+    mode?: 'direct' | 'delegated'
+    consentSignature?: string
     from?: string
     isTestnet?: boolean
     expected?: { coin?: string; kind?: string; isBuy?: boolean; leverage?: number }
   }
-  const { action, nonce, signature, from, expected } = body
+  const { action, nonce, from, expected } = body
+  const delegated = body.mode === 'delegated'
   const isFeeApproval = (action as { type?: string } | undefined)?.type === 'approveBuilderFee'
-  if (!action || typeof nonce !== 'number' || typeof signature !== 'string' || typeof from !== 'string' || (!isFeeApproval && !expected?.coin)) {
-    return NextResponse.json({ error: 'action, nonce, signature, from and expected are required.' }, { status: 400 })
+  const proof = delegated ? body.consentSignature : body.signature
+  if (
+    !action ||
+    typeof nonce !== 'number' ||
+    typeof proof !== 'string' ||
+    typeof from !== 'string' ||
+    (!isFeeApproval && !expected?.coin) ||
+    (delegated && isFeeApproval)
+  ) {
+    return NextResponse.json(
+      { error: delegated ? 'action, nonce, consentSignature, from and expected are required.' : 'action, nonce, signature, from and expected are required.' },
+      { status: 400 },
+    )
   }
+  const signature = proof
   const isLeverage = action.type === 'updateLeverage'
   if (!isFeeApproval) {
     if (isLeverage) {
@@ -119,22 +149,51 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'expected is required.' }, { status: 400 })
   }
 
-  // 1 — recover the signer from OUR typed-data derivation of the action.
+  // 1 — recover the signer. Direct: from OUR typed-data derivation of the
+  //     action. Delegated: from OUR consent-text derivation of the same
+  //     action (the text carries the action hash, so consent binds bytes),
+  //     then the wallet's live delegation must exist for the agent to sign.
   const typedData = hlActionTypedData(action as HlWireAction, nonce, isTestnet)
   let signer: string
-  try {
-    signer = await recoverTypedDataAddress({
-      domain: typedData.domain as Parameters<typeof recoverTypedDataAddress>[0]['domain'],
-      types: typedData.types,
-      primaryType: typedData.primaryType,
-      message: typedData.message,
-      signature: signature as `0x${string}`,
+  let delegation: Awaited<ReturnType<typeof getActiveDelegation>> = null
+  if (delegated) {
+    const consent = hlConsentMessage({
+      from,
+      action: action as HlWireAction,
+      nonce,
+      isTestnet,
+      expected: { coin: expected!.coin!, kind: expected?.kind, isBuy: expected?.isBuy, leverage: expected?.leverage },
     })
-  } catch {
-    return NextResponse.json({ error: 'Signature does not verify against this action.' }, { status: 403 })
-  }
-  if (signer.toLowerCase() !== from.toLowerCase()) {
-    return NextResponse.json({ error: 'Signature recovers to a different wallet than `from`.' }, { status: 403 })
+    try {
+      signer = await recoverMessageAddress({ message: consent, signature: signature as `0x${string}` })
+    } catch {
+      return NextResponse.json({ error: 'Consent signature does not verify against this action.' }, { status: 403 })
+    }
+    if (signer.toLowerCase() !== from.toLowerCase()) {
+      return NextResponse.json({ error: 'Consent recovers to a different wallet than `from`.' }, { status: 403 })
+    }
+    delegation = await getActiveDelegation(from, isTestnet)
+    if (!delegation) {
+      return NextResponse.json(
+        { error: 'No active Pantessa agent on this Hyperliquid account — enable trading once, then retry.', code: 'delegation-required' },
+        { status: 409 },
+      )
+    }
+  } else {
+    try {
+      signer = await recoverTypedDataAddress({
+        domain: typedData.domain as Parameters<typeof recoverTypedDataAddress>[0]['domain'],
+        types: typedData.types,
+        primaryType: typedData.primaryType,
+        message: typedData.message,
+        signature: signature as `0x${string}`,
+      })
+    } catch {
+      return NextResponse.json({ error: 'Signature does not verify against this action.' }, { status: 403 })
+    }
+    if (signer.toLowerCase() !== from.toLowerCase()) {
+      return NextResponse.json({ error: 'Signature recovers to a different wallet than `from`.' }, { status: 403 })
+    }
   }
   // Nonce staleness: HL rejects old nonces anyway; refuse clearly first.
   if (Math.abs(Date.now() - nonce) > 120_000) {
@@ -182,18 +241,35 @@ export async function POST(req: NextRequest) {
     }
   }
 
+  // The venue signature: the wallet's own, or — after consent + guard + policy
+  // all passed — the delegated agent's over the SAME typed data.
+  let venueSignature = signature
+  if (delegation) {
+    try {
+      venueSignature = await signL1ActionWithDelegation(delegation, typedData)
+    } catch (e) {
+      return NextResponse.json({ error: `Delegated signing unavailable: ${(e as Error).message}` }, { status: 503 })
+    }
+  }
+
   // Relay to the venue.
   const apiUrl = isTestnet ? 'https://api.hyperliquid-testnet.xyz' : 'https://api.hyperliquid.xyz'
   const res = await fetch(`${apiUrl}/exchange`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ action, nonce, signature: splitSignature(signature) }),
+    body: JSON.stringify({ action, nonce, signature: splitSignature(venueSignature) }),
   })
   const venue = (await res.json().catch(() => null)) as
     | { status?: string; response?: { data?: { statuses?: unknown[] } } | string }
     | null
   if (!res.ok || venue?.status !== 'ok') {
     const msg = typeof venue?.response === 'string' ? venue.response : `venue rejected the order (HTTP ${res.status})`
+    // The venue no longer recognizes the agent (removed in the HL app, or
+    // never approved): retire the row and hand the client the enable door.
+    if (delegation && /does not exist|not approved|api wallet|agent/i.test(msg)) {
+      await retireDelegation(delegation.id)
+      return NextResponse.json({ error: `${msg} — enable trading again to mint a fresh Pantessa agent.`, code: 'delegation-required' }, { status: 409 })
+    }
     return NextResponse.json({ error: msg }, { status: 502 })
   }
   // Leverage set: no fill statuses — 'ok' from the venue IS the receipt.
@@ -206,7 +282,7 @@ export async function POST(req: NextRequest) {
         serviceName: 'Hyperliquid',
         amountUsd: 0,
         ok: true,
-        note: `hl leverage set: ${coin} ${expected.leverage}x cross`,
+        note: `hl leverage set: ${coin} ${expected.leverage}x cross${delegation ? ' (delegated agent)' : ''}`,
         orgId: grant.orgId ?? undefined,
       }).catch(() => {})
     }
@@ -228,7 +304,7 @@ export async function POST(req: NextRequest) {
       serviceName: 'Hyperliquid',
       amountUsd: guard.valueUsd ?? 0,
       ok: true,
-      note: `hl ${expected.kind} ${filled ? 'filled' : 'placed'}: ${coin}`,
+      note: `hl ${expected.kind} ${filled ? 'filled' : 'placed'}: ${coin}${delegation ? ' (delegated agent)' : ''}`,
       orgId: grant.orgId ?? undefined,
     }).catch(() => {})
   }

@@ -319,6 +319,92 @@ export function hlActionTypedData(action: HlWireAction, nonce: number, isTestnet
   }
 }
 
+// ── Wallet-agnostic execution: delegated signing + per-action consent ──────
+// The venue's chainId-1337 phantom-agent domain is exactly what MetaMask
+// (and any wallet enforcing EIP-712 domain hygiene) REFUSES to sign: the
+// wallet is never "on" chain 1337, so eth_signTypedData_v4 fails before a
+// popup ever opens — `Provided chainId "1337" must match the active chainId
+// "4663"`. Found live 2026-08-17 on the flagship "Close SYRUP" chip: every
+// user-signed HL order/leverage/close was unsignable from MetaMask, on any
+// chain, forever. The venue's own answer (its "Enable trading" step) is an
+// approved AGENT key that signs L1 actions on the user's behalf; ours is
+// the guardian's delegation, reused — one agent per wallet, venue-capped to
+// trade-only, never withdraw. The user's per-action say-so becomes a
+// personal_sign CONSENT over the action's own hash: chain-agnostic in every
+// wallet, recovered server-side, and only then does the agent key sign the
+// SAME bytes. One signature per action, same as before; a wallet that can
+// sign 1337 directly still may.
+
+export interface HlConsentInput {
+  from: string
+  action: HlWireAction
+  nonce: number
+  isTestnet: boolean
+  expected: { coin: string; kind?: string; isBuy?: boolean; leverage?: number }
+}
+
+export const HL_CONSENT_HEADER = 'Pantessa · Hyperliquid'
+
+/** One human line for the consent text, derived from the ACTION (the
+ *  numbers the venue will see) plus the caller's expected coin/kind — both
+ *  are re-guarded server-side, so a lie in either dies before the venue. */
+export function hlActionSummary(action: HlWireAction, expected: HlConsentInput['expected']): string {
+  const coin = expected.coin.toUpperCase()
+  if (action.type === 'updateLeverage') {
+    return `set ${action.leverage}x ${action.isCross ? 'cross' : 'isolated'} leverage on ${coin}`
+  }
+  const o = action.orders[0]
+  if (!o) return `${expected.kind ?? 'order'} ${coin}`
+  const verb = expected.kind === 'close' ? 'close' : o.b ? 'buy (long)' : 'sell (short)'
+  const tail = o.r ? ', reduce-only' : ''
+  return `${verb} ${o.s} ${coin} @ ≤${o.p} IOC${tail}`
+}
+
+/**
+ * The exact personal_sign text the wallet shows. Line-keyed so a human can
+ * read it and a server can re-derive it byte-for-byte from the action: the
+ * `Hash` line is the venue's own L1 action hash over (action, nonce), so the
+ * consent binds these bytes and no others.
+ */
+export function hlConsentMessage(input: HlConsentInput): string {
+  const connectionId = createL1ActionHash({ action: input.action as unknown as Record<string, unknown>, nonce: input.nonce })
+  return [
+    HL_CONSENT_HEADER,
+    `Action: ${hlActionSummary(input.action, input.expected)}`,
+    `Wallet: ${input.from.toLowerCase()}`,
+    `Network: ${input.isTestnet ? 'Testnet' : 'Mainnet'}`,
+    `Nonce: ${input.nonce}`,
+    `Hash: ${connectionId}`,
+    'Signing lets the Pantessa agent you approved submit exactly this action — nothing else, and it can never withdraw.',
+  ].join('\n')
+}
+
+/** The wallet said "wrong chain for this typed data" — MetaMask's wording
+ *  (`Provided chainId "1337" must match the active chainId "4663"`) plus the
+ *  generic shapes other wallets use. NOT a user rejection. */
+export function isChainMismatchSignError(message: string): boolean {
+  return /must match the active chainId|chain ?id.*(?:mismatch|does not match|doesn't match)|(?:mismatch|does not match).*chain ?id/i.test(message)
+}
+
+export function isUserRejectedSignError(message: string): boolean {
+  return /rejected|denied|declined|cancell?ed/i.test(message)
+}
+
+export type HlSignPath = 'direct' | 'delegated'
+export type HlSignFailure = 'declined' | 'switch-to-delegated' | 'error'
+
+/**
+ * Pure decision after a DIRECT typed-data sign attempt failed: a wallet that
+ * enforces domain.chainId (MetaMask) gets the delegated path — silently, in
+ * the same gesture, since its refusal never opened a popup; a human "no"
+ * stays a "no"; anything else is an error to show.
+ */
+export function classifyHlSignFailure(message: string): HlSignFailure {
+  if (isUserRejectedSignError(message)) return 'declined'
+  if (isChainMismatchSignError(message)) return 'switch-to-delegated'
+  return 'error'
+}
+
 // ── Builder-fee approval (one-time, user-signed) ────────────────────────────
 // Unlike orders (phantom-agent over the msgpack hash), approveBuilderFee is a
 // USER-SIGNED action: EIP-712 under the HyperliquidSignTransaction domain

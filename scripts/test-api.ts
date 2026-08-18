@@ -77,7 +77,7 @@ import { nftGalleryOf, nftMarketOf } from '../lib/nft-display'
 import { getProtocolMark, YeetfulMark, MorphoMark } from '../components/protocol-marks'
 import { ogMarkSvg, pangolinMarkSvg } from '../lib/og-marks'
 import { splitListingPrice, buildListingComponents, guardListingComponents, openseaAssetUrl, SEAPORT_1_6, guardBuyFulfillment, fulfillmentToCalldata, normalizeOpenseaListing, normalizeOpenseaOffer, collectionSlugCandidates } from '../lib/opensea'
-import { keccak256, stringToBytes, decodeFunctionData, parseAbi } from 'viem'
+import { keccak256, stringToBytes, decodeFunctionData, parseAbi, recoverTypedDataAddress } from 'viem'
 import { isCacheable, routeCacheKey, getCached, setCached, clearRouteCache } from '../lib/route-cache'
 import { routeSavings } from '../lib/route-telemetry'
 import { portfolioFromToolResult, portfolioOf } from '../lib/portfolio-display'
@@ -197,12 +197,20 @@ import {
   approveBuilderFeeArtifacts,
   guardHlBuilderFeeApproval,
   hlApproveBuilderFeeTypedData,
+  hlConsentMessage,
+  hlActionSummary,
+  classifyHlSignFailure,
+  isChainMismatchSignError,
+  HL_CONSENT_HEADER,
   HL_BRIDGE2_ARBITRUM,
   HL_MIN_DEPOSIT_USDC,
   ARBITRUM_USDC,
   type HlOrderIntent,
   type HlWireApproveBuilderFeeAction,
 } from '../lib/hyperliquid-exec'
+import { createL1ActionHash } from '@nktkas/hyperliquid/signing'
+import { isReportableWalletError, WALLET_REFUSAL_KIND } from '../lib/wallet-refusal'
+import { encryptAgentKey, signL1ActionWithDelegation } from '../lib/hl-guardian-store'
 import { compileJobAsk as compileJobAskFull, stampSwapFeeTier, type CompiledJob } from '../lib/jobs'
 import { LIVE_JOB_STATUSES, jobStatusWord, statusTone } from '../lib/step-status'
 
@@ -9078,6 +9086,222 @@ async function main() {
       'hl submit: fee approval for a foreign builder → 403 at the relay guard',
       relayForeignFee.status === 403 && /different fee recipient/i.test(relayForeignFeeBody.error ?? ''),
       JSON.stringify(relayForeignFeeBody),
+    )
+
+    // ── Wallet-agnostic execution (2026-08-17: the MetaMask chainId-1337 wall) ──
+    // The phantom-agent domain IS 1337 (venue constant) — the very thing
+    // MetaMask refuses to sign on any chain. Pin the fact so nobody "fixes"
+    // the domain, then pin the door around it: consent text binds the venue's
+    // own action hash; the wallet-error classifier routes MetaMask's exact
+    // wording to the delegated path and a human "no" nowhere.
+    check(
+      'hl delegated: phantom-agent domain is the venue constant 1337 (why MetaMask refuses it)',
+      (td.domain as { chainId?: number }).chainId === 1337 && td.primaryType === 'Agent',
+    )
+    const consentExpected = { coin: 'ETH', kind: 'open' as const, isBuy: true }
+    const consent = hlConsentMessage({ from: signer.address, action, nonce: 1752440000000, isTestnet: false, expected: consentExpected })
+    const consentHash = createL1ActionHash({ action: action as unknown as Record<string, unknown>, nonce: 1752440000000 })
+    check(
+      'hl delegated: consent text = header + action summary + wallet + network + nonce + the L1 action hash; a different nonce = a different text',
+      consent.startsWith(`${HL_CONSENT_HEADER}\n`) &&
+        consent.includes(`Hash: ${consentHash}`) &&
+        consent.includes(`Wallet: ${signer.address.toLowerCase()}`) &&
+        consent.includes('Network: Mainnet') &&
+        consent.includes(`Action: ${hlActionSummary(action, consentExpected)}`) &&
+        /buy \(long\) [\d.]+ ETH @ ≤[\d.]+ IOC/.test(hlActionSummary(action, consentExpected)) &&
+        hlActionSummary({ type: 'updateLeverage', asset: 0, isCross: true, leverage: 3 }, { coin: 'eth' }) === 'set 3x cross leverage on ETH' &&
+        hlConsentMessage({ from: signer.address, action, nonce: 1752440000001, isTestnet: false, expected: consentExpected }) !== consent,
+      consent,
+    )
+    check(
+      'hl delegated: MetaMask "must match the active chainId" → switch-to-delegated; user rejection → declined; anything else → error',
+      classifyHlSignFailure('An internal error was received. Details: Provided chainId "1337" must match the active chainId "4663" Version: viem@2.48.1') === 'switch-to-delegated' &&
+        isChainMismatchSignError('chainId mismatch: expected 1 got 1337') &&
+        classifyHlSignFailure('User rejected the request.') === 'declined' &&
+        classifyHlSignFailure('User denied message signature.') === 'declined' &&
+        classifyHlSignFailure('Internal JSON-RPC error.') === 'error' &&
+        !isChainMismatchSignError('User rejected the request.'),
+    )
+    // The agent-signing half, offline: an encrypted-at-rest agent key signs
+    // the SAME phantom-agent typed data a direct wallet would, and the venue-
+    // side recovery lands on the agent — what the venue maps back to the
+    // user. (Custody secret set inline for the pure round trip; a row
+    // encrypted under a different secret refuses.)
+    {
+      process.env.GUARDIAN_KEY_SECRET ??= 'harness-custody-secret-not-prod'
+      const agentPk = generatePrivateKey()
+      const agentAddress = privateKeyToAccount(agentPk).address
+      const agentSig = await signL1ActionWithDelegation({ agentKeyEnc: encryptAgentKey(agentPk), agentAddress }, td)
+      const agentRecovered = await recoverTypedDataAddress({
+        domain: td.domain as Parameters<typeof recoverTypedDataAddress>[0]['domain'],
+        types: td.types,
+        primaryType: td.primaryType,
+        message: td.message,
+        signature: agentSig,
+      })
+      let wrongAddrRefused = false
+      try {
+        await signL1ActionWithDelegation({ agentKeyEnc: encryptAgentKey(agentPk), agentAddress: signer.address }, td)
+      } catch {
+        wrongAddrRefused = true
+      }
+      check(
+        'hl delegated: the encrypted agent key signs the phantom-agent typed data and recovers to the agent; a key≠address row refuses',
+        agentRecovered.toLowerCase() === agentAddress.toLowerCase() && wrongAddrRefused,
+      )
+    }
+    // The relay's delegated mode: consent must recover to `from`; a wallet
+    // with no live Pantessa agent gets the 409 door (never a silent 502).
+    const stranger = privateKeyToAccount(generatePrivateKey())
+    const consentBySigner = await signer.signMessage({ message: consent })
+    const consentByStranger = await stranger.signMessage({ message: consent })
+    const delegatedWrong = await fetch(`${BASE}/api/hl/submit`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ mode: 'delegated', action, nonce: 1752440000000, consentSignature: consentByStranger, from: signer.address, expected: consentExpected }),
+    })
+    const delegatedNoAgent = await fetch(`${BASE}/api/hl/submit`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ mode: 'delegated', action, nonce: 1752440000000, consentSignature: consentBySigner, from: signer.address, expected: consentExpected }),
+    })
+    const delegatedNoAgentBody = (await delegatedNoAgent.json().catch(() => ({}))) as { code?: string; error?: string }
+    const delegatedTampered = await fetch(`${BASE}/api/hl/submit`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      // Same consent signature, different action bytes → the re-derived text differs → recovery lands elsewhere.
+      body: JSON.stringify({ mode: 'delegated', action: { ...action, orders: [{ ...action.orders[0], s: '9.9' }] }, nonce: 1752440000000, consentSignature: consentBySigner, from: signer.address, expected: consentExpected }),
+    })
+    const delegatedFee = await fetch(`${BASE}/api/hl/submit`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ mode: 'delegated', action: foreignFee, nonce: foreignFee.nonce, consentSignature: consentBySigner, from: signer.address }),
+    })
+    check(
+      'hl submit delegated: stranger consent → 403; tampered action → 403; fee approval never delegated → 400; no live agent → 409 delegation-required',
+      delegatedWrong.status === 403 &&
+        delegatedTampered.status === 403 &&
+        delegatedFee.status === 400 &&
+        delegatedNoAgent.status === 409 &&
+        delegatedNoAgentBody.code === 'delegation-required',
+      `${delegatedWrong.status}/${delegatedTampered.status}/${delegatedFee.status}/${delegatedNoAgent.status} ${JSON.stringify(delegatedNoAgentBody)}`,
+    )
+    // The connect-only "enable trading" door: mint returns typed data on the
+    // WALLET's chain (the whole point — every wallet signs its own chain);
+    // activation is signature-gated (a stranger's signature activates
+    // nothing); a bad-shape mint is a 400. GUARDIAN_KEY_SECRET must be set
+    // locally for the mint (prod has it) — a 500 naming it is a config warn.
+    const delegGetNone = await fetch(`${BASE}/api/hl/delegation?wallet=${signer.address}`)
+    const delegGetBad = await fetch(`${BASE}/api/hl/delegation?wallet=nope`)
+    const delegMintBad = await fetch(`${BASE}/api/hl/delegation`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ from: signer.address }) })
+    const delegMint = await fetch(`${BASE}/api/hl/delegation`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ from: signer.address, signatureChainId: 4663 }),
+    })
+    const delegMintBody = (await delegMint.json().catch(() => ({}))) as { id?: string; active?: boolean; agentAddress?: string; typedData?: { domain?: { chainId?: number; name?: string }; primaryType?: string; message?: Record<string, unknown> }; error?: string }
+    check(
+      'hl delegation: GET unknown wallet → active:false; bad wallet → 400; mint without chain → 400',
+      delegGetNone.status === 200 && ((await delegGetNone.json()) as { active?: boolean }).active === false && delegGetBad.status === 400 && delegMintBad.status === 400,
+    )
+    if (delegMint.status === 500 && /GUARDIAN_KEY_SECRET/.test(delegMintBody.error ?? '')) {
+      console.log('  ⚠️  hl delegation: mint skipped — GUARDIAN_KEY_SECRET unset locally (set any ≥16-char value in .env.local; prod has its own)')
+    } else {
+      check(
+        'hl delegation: connect-only mint → pending agent + approveAgent typed data on the WALLET\'s chain (4663), agent named pantessa',
+        delegMint.status === 200 &&
+          !!delegMintBody.id &&
+          delegMintBody.active === false &&
+          delegMintBody.typedData?.domain?.chainId === 4663 &&
+          delegMintBody.typedData?.domain?.name === 'HyperliquidSignTransaction' &&
+          delegMintBody.typedData?.primaryType === 'HyperliquidTransaction:ApproveAgent' &&
+          String(delegMintBody.typedData?.message?.agentName ?? '').startsWith('pantessa valid_until ') &&
+          String(delegMintBody.typedData?.message?.agentAddress ?? '') === delegMintBody.agentAddress,
+        JSON.stringify(delegMintBody).slice(0, 300),
+      )
+      const mintTd = delegMintBody.typedData!
+      const approveByStranger = await stranger.signTypedData({
+        domain: mintTd.domain,
+        types: { 'HyperliquidTransaction:ApproveAgent': [{ name: 'hyperliquidChain', type: 'string' }, { name: 'agentAddress', type: 'address' }, { name: 'agentName', type: 'string' }, { name: 'nonce', type: 'uint64' }] },
+        primaryType: 'HyperliquidTransaction:ApproveAgent',
+        message: { ...mintTd.message, nonce: BigInt(mintTd.message!.nonce as number) },
+      } as Parameters<typeof stranger.signTypedData>[0])
+      const activateWrong = await fetch(`${BASE}/api/hl/delegation`, {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ id: delegMintBody.id, from: signer.address, signature: approveByStranger }),
+      })
+      const activateMissing = await fetch(`${BASE}/api/hl/delegation`, {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ id: 'nope', from: signer.address, signature: approveByStranger }),
+      })
+      const stillNone = (await (await fetch(`${BASE}/api/hl/delegation?wallet=${signer.address}`)).json()) as { active?: boolean }
+      check(
+        'hl delegation: a stranger\'s approveAgent signature activates nothing (403); unknown id → 404; wallet still has no live agent',
+        activateWrong.status === 403 && activateMissing.status === 404 && stillNone.active === false,
+        `${activateWrong.status}/${activateMissing.status}`,
+      )
+    }
+    // The wallet-refusal beacon: a built + guarded artifact the WALLET refused
+    // lands in the ask-failure queue as had_funds TRUE; human rejections and
+    // harness runs (x-yf-no-ask-log) never do.
+    check(
+      'wallet refusal: MetaMask chainId wall is reportable; user rejections are not',
+      isReportableWalletError('An internal error was received. Details: Provided chainId "1337" must match the active chainId "4663"') &&
+        !isReportableWalletError('User rejected the request.') &&
+        !isReportableWalletError('MetaMask Tx Signature: User denied transaction signature.') &&
+        WALLET_REFUSAL_KIND === 'wallet-refused',
+    )
+    const refusalInternal = await fetch(`${BASE}/api/ask-failures/wallet`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-yf-no-ask-log': '1' },
+      body: JSON.stringify({ wallet: signer.address, artifact: 'hl-order', ask: 'close 1 ETH', detail: 'Provided chainId "1337" must match the active chainId "4663"' }),
+    })
+    const refusalRejected = await fetch(`${BASE}/api/ask-failures/wallet`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ wallet: signer.address, artifact: 'hl-order', ask: 'close 1 ETH', detail: 'User rejected the request.' }),
+    })
+    const refusalShape = await fetch(`${BASE}/api/ask-failures/wallet`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ artifact: 'nope', detail: 'x' }),
+    })
+    check(
+      'wallet refusal beacon: internal-run header → skipped; user rejection → skipped; bad shape → dropped; all 202, never an error',
+      refusalInternal.status === 202 && ((await refusalInternal.json()) as { skipped?: string }).skipped === 'internal' &&
+        refusalRejected.status === 202 && ((await refusalRejected.json()) as { skipped?: string }).skipped === 'rejection' &&
+        refusalShape.status === 202 && ((await refusalShape.json()) as { dropped?: string }).dropped === 'shape',
+    )
+  }
+
+  // ── Typed-data domain-chain audit (the 2026-08-17 class, pinned) ────────
+  // MetaMask refuses eth_signTypedData_v4 whose domain.chainId isn't the
+  // wallet's ACTIVE chain. Every component that asks a wallet for a typed-
+  // data signature must therefore either (a) switch the wallet onto the
+  // domain's chain first, or (b) sit on the allowlist with a reason: the
+  // domain has no chainId (Snapshot), the domain IS the wallet's own chain
+  // (approveAgent / builder fee), or the venue's chain is unswitchable and
+  // the component owns the delegated door (HL L1 actions). A new signer
+  // that does neither fails here — before a stranger's wallet finds it.
+  {
+    const fs = await import('node:fs')
+    const path = await import('node:path')
+    const walk = (dir: string): string[] =>
+      fs.readdirSync(dir, { withFileTypes: true }).flatMap((d) => (d.isDirectory() ? walk(path.join(dir, d.name)) : d.name.endsWith('.tsx') ? [path.join(dir, d.name)] : []))
+    const signers = [...walk('components'), ...walk('app')].filter((f) => /signTypedDataAsync\(/.test(fs.readFileSync(f, 'utf8')))
+    const ALLOW: Record<string, string> = {
+      'components/SignHlActionButton.tsx': 'HL phantom-agent domain is 1337 (unswitchable) — owns the delegated door; builder-fee domain = wallet chain',
+      'components/GuardianPanel.tsx': 'approveAgent domain = the wallet\'s own chain by construction',
+      'components/SignVoteButton.tsx': 'Snapshot domain carries no chainId',
+      'components/VoteChoiceButtons.tsx': 'Snapshot domain carries no chainId',
+    }
+    const offenders = signers.filter((f) => !(f in ALLOW) && !/switchChainAsync\(/.test(fs.readFileSync(f, 'utf8')))
+    check(
+      `typed-data audit: every signTypedData caller aligns the wallet chain first or is allowlisted with a reason (${signers.length} signers)`,
+      signers.length >= 8 && offenders.length === 0,
+      offenders.length ? `unaligned: ${offenders.join(', ')}` : signers.map((f) => path.basename(f)).join(' '),
     )
   }
 

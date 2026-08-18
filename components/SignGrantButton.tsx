@@ -10,7 +10,7 @@
 
 import { analytics } from '@/lib/analytics'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { useSignTypedData } from 'wagmi'
+import { useSignTypedData, useSwitchChain } from 'wagmi'
 import { Loader2, PenLine, ShieldCheck } from 'lucide-react'
 
 /** JSON-safe typed data as served by GET /api/grants/[id]/signature. */
@@ -52,6 +52,7 @@ export default function SignGrantButton({
   refreshKey?: unknown
 }) {
   const { signTypedDataAsync } = useSignTypedData()
+  const { switchChainAsync } = useSwitchChain()
   const [typedData, setTypedData] = useState<GrantTypedDataJson | null>(null)
   const [signed, setSigned] = useState<boolean | null>(null)
   const [signing, setSigning] = useState(false)
@@ -87,6 +88,10 @@ export default function SignGrantButton({
     setSigning(true)
     setError('')
     try {
+      // The domain carries chainId — MetaMask refuses typed data whose
+      // domain.chainId isn't the wallet's ACTIVE chain, so align first
+      // (best-effort; the prompt still fires if the wallet can't switch).
+      await switchChainAsync({ chainId: typedData.domain.chainId }).catch(() => {})
       // wagmi/viem accept the converted payload directly.
       const signature = await signTypedDataAsync(
         toSignable(typedData) as Parameters<typeof signTypedDataAsync>[0],
