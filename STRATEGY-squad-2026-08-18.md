@@ -563,3 +563,68 @@ must say "needs a smart wallet" BEFORE the signature, not revert after.
   not this lane's.
 - **The desk's public name and x402 price** — owner items from
   HANDOFF-agent-economy §3; B1/B2 run free.
+
+---
+
+## §8 Round 2 — H1 premortem: assume 6 of 10 strangers failed. Why?
+
+*Method: read the /i runtime (`components/IntentRuntime.tsx`), the swap
+gate + `prepareSwapTurn` (`app/api/chat/route.ts` ~L1701–1810, ~L3985),
+the Uniswap builder (`lib/uniswap-venue.ts`), `SendTxChain`/`SendTxButton`,
+`lib/wallet-refusal.ts`, `lib/wagmi.ts`, `lib/cdp-embedded.ts`; live CoW
+quotes on Base; prod page probes. Ranked by likelihood on a STRANGER's
+machine. "Seen?" = does `/dashboard/failures` (or the /i funnel) show it.*
+
+**First, one fact that reshapes the whole list:** the H1 link does NOT
+touch CoW. The venue rule (`route.ts` ~L1798) is `uniswap` when the
+message says uniswap OR when Uniswap is in the working set and CoW isn't;
+`composeMcps("Swap $20 of USDC to ETH on Base")` yields `uniswap-free`
+only. So H1 = Uniswap v3 on Base, exact-amount `approve` to SwapRouter02
++ `swap` (with `unwrapWETH9`), two `eth_sendTransaction`s in one
+self-advancing card. And "on Base" in the sentence means the picker is
+irrelevant: a chain named in the message wins (`namedNative`,
+`route.ts` ~L1718).
+
+| # | Failure on the stranger's machine | Seen in /dashboard/failures? | Smallest pre-drill fix |
+|---|---|---|---|
+| 1 | **USDC on Base but ZERO ETH on Base for gas.** `prepareSwapTurn` pre-reads only the SELL token balance for ERC-20 sells (`route.ts` ~L3985: `needTotal` adds a gas floor only when `isEthSell`). The approve tx is built and offered; MetaMask shows "insufficient funds" / the send fails. | **NOT seen.** `SendTxButton` catches the error and paints it red locally; only `SignHlActionButton` calls `reportWalletRefusal` (`grep -rl wallet-refusal components` → one file). The /i funnel shows built-not-signed and nothing else. | GTM: the screen adds "…and a little ETH on Base for gas". QA (small): pre-read native balance for ERC-20 sells and answer with the #549 stranded-funds copy ("your USDC's there — send a little ETH to Base"). QA (small, high value): wire `reportWalletRefusal` into `SendTxButton` for artifacts `tx`/`tx-chain` (and `SignOrderButton` for `cow-order`) so wallet-side failures land as `wallet-refused` rows BEFORE the drill. |
+| 2 | **Two prompts, one is "Spending cap request".** Step 1 is an exact-amount `approve(SwapRouter02, 20 USDC)` (`lib/uniswap-venue.ts:311` — good: not unlimited). MetaMask renders it as a spending-cap screen with an editable cap; a stranger reads it as "the payment" or edits it. Then step 2 **auto-fires** the moment step 1 confirms (`SendTxChain` `autoFire={i > 0}`), i.e. ~2s later on Base, while they're still reading the first receipt → "why is it asking again / is this a drainer?" | Partially: a rejected step 2 = built-not-signed in the funnel; the words aren't captured. | GTM: say it on the call before they click — "two prompts: approve exactly $20, then the swap; the second appears by itself." UI/UX: the chain card already lists both steps up front; add one line under step 1: "Next: the swap will pop up automatically once this confirms." |
+| 3 | **Chain switch prompt before anything else.** Wallet is on Ethereum/Arbitrum; `SendTxButton` calls `switchChainAsync` → MetaMask "Allow this site to switch the network?" — a stranger who declines gets "Switch the wallet to Base and retry" (`SendTxButton` ~L83). Some MetaMask versions bundle switch+send; the /i page has no chain picker in simple mode. | Not seen (client-side error, no beacon). | GTM: screen already implies Base; tell them "it'll ask to switch to Base — say yes." Covered by fix #1's refusal wiring. |
+| 4 | **The door offers email/Google, and email is unproven.** The /i CTA "Connect & build my path" opens the unified modal (`CreateAccountButton walletConnectOnly`) — wallet lead + Google + email. A tester who picks email hits the OTP lane that has never been received on pantessa.com (no MX/DKIM). | Not seen at all (no wallet, no ask, no row). | GTM: the DM says "your own MetaMask"; on the call, point at the wallet lane. UI/UX (policy call): on /i, until MX lands, either hide the email lane or label it "beta". Owner: prove OTP once (THE WEEK item 5). |
+| 5 | **"Did it work?" — no visible ETH arrival.** After both steps the card says "Done — every step confirmed on-chain" + explorer links; the /i runtime shows the signed/settled banner and the "Sign in & save" bar. Nothing on the page says "you now hold 0.0105 ETH (was 0)". Testers open MetaMask to check, or ask. | Not a failure row; shows as signed. | UI/UX (small): after `settled`, one line from the wallet tool: "ETH on Base: 0.0105 (+0.0105) · USDC: 5.00 (−20.00)" — the chat already re-reads balances post-swap via the Pantessa Wallet tool; the /i simple mode doesn't surface it. GTM: on the call, have them open MetaMask's activity — and note that as a friction. |
+| 6 | **"Sign in & save" reads as a THIRD signature.** Post-receipt bar → SIWE `personal_sign`. A stranger who just signed two txs sees a message-signature request and thinks something went wrong. | Not seen. | GTM: don't push it; if they click, explain it's optional and keeps the thread. UI/UX: copy already says "Want to keep it?"; consider "optional" in the label. |
+| 7 | **The disclosure scares them off** — `/rebrand` in the DM ("we were blocklisted") loses some yeses before the link is opened. Note: the /i page itself carries NO "Formerly Yeetful"/`/rebrand` link (simple mode has no footer; verified on prod HTML), so a tester who Googles finds the aggregator listing without our framing. | Not seen (never arrived). | GTM: keep the disclosure (honesty > yes-rate; it also filters for the honest testers we want) and COUNT the "no because of rebrand" separately — that number is the cost of the blocklist, and it belongs in the MetaMask issue. UI/UX (tiny): a one-line "Formerly Yeetful — read why" link in the /i footer so the page carries its own framing. |
+| 8 | **Rabby / two injected wallets.** `injectedWallet` + `metaMaskWallet` are both listed; with MetaMask AND Rabby installed, Rabby's "default wallet" takeover means the "MetaMask" entry opens Rabby (or vice-versa) and the tester signs from the wrong account (the 07-23 "Yeeterson" class — the popup wallet ≠ the connected wallet). | Not seen; the swap is built for the connected address, the other wallet just fails/has no funds. | GTM: screen asks WHICH wallet, and "only one wallet extension on"; on the call, read the connected address aloud against MetaMask. |
+| 9 | **Mobile.** No WalletConnect project id in the local env (`NEXT_PUBLIC_WC_PROJECT_ID` unset locally; prod unknown) → on a phone the only working path may be "open the link inside MetaMask mobile's browser". A tester who opens the DM link in Safari sees a modal with no wallet that can connect. | Not seen. | GTM: "desktop, please" in the DM — or "open it in the MetaMask app's browser". Owner/QA: verify WC on prod (`NEXT_PUBLIC_WC_PROJECT_ID`) — if unset, that's a one-line env. |
+| 10 | **MetaMask "likely to fail" sim race.** Mitigated: `SendTxButton` waits 750 ms after a chain switch before opening the sheet, and `SendTxChain` waits for allowance visibility before re-quoting step 2 (`SendTxChain` ~L57). Residual: the swap step is refreshed (`POST /api/tx/refresh`) right before it fires — if the re-quote fails it falls back to the prebuilt calldata whose slippage bound may revert on a moved price. | A REVERT is visible (status `reverted` on the card, tx hash on-chain) but still not a failures row. | GTM: coach "if it says likely to fail, wait two seconds and confirm anyway; if it reverts, tell me." Covered by fix #1's refusal wiring for the error text. |
+
+Also considered and ruled OUT for H1: a $20 CoW order not filling — H1
+doesn't route to CoW (above). For the record, live CoW quotes on Base
+today (USDC→WETH, `priceQuality: optimal`): **$20 → feeAmount 0.0023
+USDC (0.01%)**, $50 → 0.0023, $100 → 0.0023; no
+`SellAmountDoesNotCoverFee` at $20 (that error fires when the network fee
+exceeds the sell amount — on Base the network fee is ~$0.002); market
+orders are fill-or-kill per batch, our order `validFor` is 1200s
+(`lib/cow.ts:256`), so a $20 order that isn't matched in 20 minutes
+EXPIRES rather than fills badly. Fee math does not push the size up.
+
+**Size: $20 stays.** Numbers: Uniswap v3 USDC/WETH 0.05% pool on Base
+has depth to fill $20 with negligible impact; gas for approve+swap on
+Base ≈ $0.01–0.05; our link-tier fee at 50 bps = $0.10 (0.20% organic =
+$0.04); CoW's network fee at $20 is $0.002. Nothing in the fill math
+favors $50. What $50 WOULD do is shrink the pool of yeses ("$50 USDC
+already on Base" is a harder screen than $25) without buying a better
+signal — H1's output is a signature + a wall log, not volume. Raise to
+$50 only for a tester who volunteers it.
+
+**Routed findings (mirrored into `squad-2026-08-18/ideation.md`):**
+- QA-1: ERC-20 sell turns don't pre-read gas ETH → offered approve fails
+  in the wallet with nothing logged. QA-2: `SendTxButton`/`SendTxChain`/
+  `SignOrderButton` don't call `reportWalletRefusal` — only
+  `SignHlActionButton` does; the H1 path is blind to wallet-side failure.
+- UI/UX-1: post-settle balance line on /i. UI/UX-2: "next step fires
+  automatically" hint under step 1. UI/UX-3: `/rebrand` link in the /i
+  footer. UI/UX-4: email lane on /i while OTP is unproven.
+- GTM-1: the screen = "MetaMask or Rabby (one extension on), ≥$25 USDC
+  AND some ETH on Base, desktop." GTM-2: pre-brief the two prompts + the
+  Base switch. GTM-3: count "no because of rebrand" as its own number.
