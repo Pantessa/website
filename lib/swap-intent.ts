@@ -30,6 +30,10 @@ export interface SwapIntent {
   buyAmountAtLeastHuman?: string
   /** Set when the message is clearly a swap ask but under-specified. */
   problem?: string
+  /** A price-triggered sell with no amount ("sell my eth when it hits
+   *  $4000") — the named USD price. The clarify offers limit-order chips at
+   *  this price whose resumes round-trip LIMIT_RE. */
+  limitPriceUsd?: string
 }
 
 const NOT_SWAP: SwapIntent = { isSwap: false }
@@ -113,6 +117,14 @@ const BUY_DOLLAR_RE = new RegExp(
   String.raw`\bbuy\s+${FILLER}${USD_AMOUNT}(?:\s+worth)?\s+(?:(?:of|in)\s+(?:shares?\s+(?:of|in)\s+)?|shares?\s+(?:of|in)\s+)${TOKEN}(?:\s+(?:with|using)\s+${TOKEN})?`,
   'i',
 )
+// "buy $20 eth on base" — the "of"-less dollar buy strangers actually type
+// (squad 2026-08-18 ask inventory: fell to the planner). Same shape, the
+// connector dropped; the token slot must hold a real symbol (never
+// "with"/"worth"/a chain word), checked at the call site.
+const BUY_DOLLAR_BARE_RE = new RegExp(
+  String.raw`\bbuy\s+${FILLER}${USD_AMOUNT}\s+${TOKEN}\b(?:\s+(?:with|using)\s+${TOKEN})?`,
+  'i',
+)
 // "buy 5 shares of AAPL" — a share-COUNT ask. Buys here are sized in what
 // you spend, not what you receive (exact-output stock swaps aren't wired),
 // so this clarifies deterministically toward the dollar phrasing instead of
@@ -191,8 +203,33 @@ const swapish = (message: string, opts: { includeBuy?: boolean } = {}) =>
   PAIR_NO_AMOUNT_RE.test(message) ||
   ((opts.includeBuy ? /\b(?:swap|convert|sell|buy)\b/i : /\b(?:swap|convert)\b|\bsell\b/i).test(message) && /\d/.test(message))
 
+// "sell my eth when it hits $4000" / "sell 0.5 ETH if it reaches $4k" — a
+// price-triggered sell without the word "limit" and (usually) without an
+// amount. Squad 2026-08-18 ask inventory: fell to the prose clarify. It is a
+// CoW limit order in disguise (a line ABOVE market; a line below market is a
+// stop — the Spot Guardian's job), so it clarifies with limit chips at the
+// named price instead of "say the amount and pair".
+const PRICE_TRIGGER_SELL_RE = new RegExp(
+  String.raw`\bsell\s+(?:all\s+(?:of\s+)?)?(?:my\s+)?(?:${AMOUNT}\s*)?${TOKEN}\s+(?:when|if|once|as\s+soon\s+as)\s+(?:it|the\s+price|price)\s+(?:hits?|reach(?:es)?|gets?\s+to|touch(?:es)?|is\s+at|goes\s+(?:above|over|to))\s+\$?(\d+(?:\.\d+)?)\s*(k)?\b`,
+  'i',
+)
+
 export function parseSwapIntent(message: string): SwapIntent {
   const wantsLimit = /\blimit\b/i.test(message)
+
+  if (!wantsLimit && !OTHER_VENUE_RE.test(message)) {
+    const pt = message.match(PRICE_TRIGGER_SELL_RE)
+    if (pt && claimableBareToken(pt[2])) {
+      const price = String(Number(pt[3]) * (pt[4] ? 1000 : 1))
+      return {
+        isSwap: true,
+        sellToken: pt[2],
+        ...(pt[1] ? { sellAmountHuman: pt[1] } : {}),
+        limitPriceUsd: price,
+        problem: `A sell at a named price is a limit order — say it as one: “limit order: sell 0.1 ${pt[2].toUpperCase()} for at least ${Number((0.1 * Number(price)).toFixed(2))} USDC”. (If $${price} is BELOW today's price, that's a stop — “protect my spot ${pt[2].toUpperCase()} if it drops to $${price}”.)`,
+      }
+    }
+  }
 
   if (wantsLimit) {
     const m = message.match(LIMIT_RE)
@@ -254,6 +291,10 @@ export function parseSwapIntent(message: string): SwapIntent {
       // sellToken stays unset when no spend token is named — the route fills
       // in the chain's primary stable (USDC on Base, USDG on Robinhood).
       return { isSwap: true, mode: 'swap', sellAmountUsd: usdOf(bm, 1), buyToken: bm[3], sellToken: bm[4] }
+    }
+    const bb = message.match(BUY_DOLLAR_BARE_RE)
+    if (bb && claimableBareToken(bb[3]) && !/^(?:with|using|worth|shares?)$/i.test(bb[3]) && !/\b(?:every|each|daily|weekly|monthly)\b/i.test(message)) {
+      return { isSwap: true, mode: 'swap', sellAmountUsd: usdOf(bb, 1), buyToken: bb[3], sellToken: bb[4] }
     }
     const sm = message.match(BUY_SHARES_COUNT_RE)
     if (sm) {
@@ -328,6 +369,22 @@ export function swapClarify(intent: SwapIntent, opts: { targets?: string[] } = {
   const sell = intent.sellToken?.toUpperCase()
   const buy = intent.buyToken?.toUpperCase()
   const amountless = !intent.sellAmountHuman && !intent.sellAmountUsd
+  // Price-triggered sell ("sell my eth when it hits $4000") → limit chips at
+  // that price; every resume is the LIMIT_RE contract, USDC as the receive
+  // side (the route resolves the chain stable at build).
+  if (intent.limitPriceUsd && sell) {
+    const price = Number(intent.limitPriceUsd)
+    const sizes = intent.sellAmountHuman ? [Number(intent.sellAmountHuman)] : [0.05, 0.1, 0.25]
+    const opt = (units: number) => ({
+      label: `Sell ${units} ${sell} at $${price}`,
+      resume: `limit order: sell ${units} ${sell} for at least ${Number((units * price).toFixed(2))} USDC`,
+    })
+    return {
+      reply: `A sell at a named price is a **limit order** (CoW fills it if the market gets there; nothing moves until then). Pick a size at $${price}, or say one — “limit order: sell 0.1 ${sell} for at least ${Number((0.1 * price).toFixed(2))} USDC”. If $${price} is below today's price, you want a stop instead: “protect my spot ${sell} if it drops to $${price}”.`,
+      question: `Sell how much ${sell} at $${price}?`,
+      options: sizes.length === 1 ? [opt(sizes[0]), { label: 'Not now', resume: 'Never mind — leave my funds where they are.' }] : sizes.map(opt),
+    }
+  }
   // Pair known, amount missing ("swap USDC for WETH") → preset $ amounts.
   if (sell && buy && amountless) {
     return {

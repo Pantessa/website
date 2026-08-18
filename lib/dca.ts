@@ -68,11 +68,15 @@ const CREATE_RE =
   /\b(?:buy|dca(?:\s+in(?:to)?)?|dollar[\s-]cost[\s-]average)\s+\$(\d+(?:\.\d+)?)(?:\s+(?:worth|of|into|in))*\s+\$?([A-Za-z]{2,12})\b/i
 const CREATE_TOKEN_UNITS_RE =
   /\b(?:buy|dca(?:\s+in(?:to)?)?|dollar[\s-]cost[\s-]average)\s+(\d+(?:\.\d+)?)\s+([A-Za-z]{2,12})\b/i
+// The noun form strangers type: "set up a weekly $10 ETH buy", "a $10 ETH
+// purchase every week" (squad 2026-08-18 ask inventory — fell to the
+// planner). Same contract: dollars + token + cadence, verb trailing.
+const CREATE_NOUN_RE = /\$(\d+(?:\.\d+)?)(?:\s+(?:worth|of|in))*\s+\$?([A-Za-z]{2,12})\s+(?:buy|purchase|dca)\b/i
 
 export function parseDcaCreate(message: string): DcaCreateAsk | { problem: string } | null {
   const cadence = parseCadence(message)
   if (!cadence) return null
-  const m = message.match(CREATE_RE)
+  const m = message.match(CREATE_RE) ?? message.match(CREATE_NOUN_RE)
   if (!m) {
     // Recurring intent but token-unit sizing — refuse honestly rather than
     // guess a price ("buy 10 AAPL every week" ≠ a fixed dollar spend).

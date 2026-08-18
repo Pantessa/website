@@ -130,11 +130,14 @@ export interface SpotGuardAsk {
 }
 
 const PERP_WORDS = /\b(?:long|short|perp(?:s|etual)?|position|hyperliquid|hl)\b/i
-const SPOT_MARKER = /\bspot\b|\bin\s+my\s+wallet\b/i
+// "on Base" is spot evidence too: perps live on no chain, and the spot
+// guardian runs on Base only (WALLET-MATRIX §4 row 6 — "Protect my ETH on
+// Base with a 10% stop" — fell to the HL guardian door before, squad 2026-08-18).
+const SPOT_MARKER = /\bspot\b|\bin\s+my\s+wallet\b|\bon\s+base\b/i
 const PROTECT_SHAPE = /\bprotect\b|\bstop[\s-]?loss\b/i
 
 const SPOT_ARM_RE =
-  /\bprotect\s+(?:the\s+|my\s+)?(?:(\d+(?:\.\d+)?)\s+)?(?:spot\s+)?([a-zA-Z]{2,10})(?:\s+in\s+my\s+wallet)?\s+(?:with|at|using)?\s*(?:a\s+)?(?:(\d+(?:\.\d+)?)\s*%\s*(?:stop[\s-]?loss|drop)|stop[\s-]?loss\s+(?:at|@)\s+\$?(\d+(?:\.\d+)?)|if\s+it\s+drops\s+to\s+\$?(\d+(?:\.\d+)?))/i
+  /\bprotect\s+(?:the\s+|my\s+)?(?:(\d+(?:\.\d+)?)\s+)?(?:spot\s+)?([a-zA-Z]{2,10})(?:\s+in\s+my\s+wallet|\s+on\s+base)?\s+(?:with|at|using)?\s*(?:a\s+)?(?:(\d+(?:\.\d+)?)\s*%\s*(?:stop(?:[\s-]?loss)?|drop)|stop[\s-]?loss\s+(?:at|@)\s+\$?(\d+(?:\.\d+)?)|if\s+it\s+drops\s+to\s+\$?(\d+(?:\.\d+)?))/i
 
 export function parseSpotGuardArm(message: string): SpotGuardAsk | null {
   if (!SPOT_MARKER.test(message)) return null

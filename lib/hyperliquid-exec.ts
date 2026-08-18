@@ -68,9 +68,52 @@ export interface HlDepositIntent {
   amountUsdc: number
 }
 
-export type HlIntent = HlOrderIntent | HlDepositIntent
+/** A perp OPEN that named the coin and side (and maybe leverage) but no
+ *  size — "I want to buy some HYPE and 2x long" (the funded miss of
+ *  2026-08-12: it fell to the planner, which offered prose chips that
+ *  parsed under nothing). The route answers with size chips whose resumes
+ *  round-trip into a full HlOrderIntent; the jobs compiler refuses it by
+ *  name (a step needs a size). Never reaches the builder. */
+export interface HlUnsizedIntent {
+  kind: 'open-unsized'
+  coin: string
+  isBuy: boolean
+  leverage?: number
+}
+
+export type HlIntent = HlOrderIntent | HlDepositIntent | HlUnsizedIntent
 
 const VENUE = String.raw`(?:on\s+)?(?:hyperliquid|hl)\b`
+// Leverage words are PERP evidence on their own — spot has no "2x long".
+// A leverage-worded ask without the venue word is still unambiguously ours
+// (the venue-less "long eth" stays the router's: no leverage, no venue).
+const LEVERAGE_RES = [
+  // "2x long", "3x leveraged short", "2x buy"
+  /\b(\d{1,3}(?:\.\d+)?)\s*x\s+(?:leveraged?\s+)?(?:long|short|buy|sell)\b/,
+  // "long … with 3x (leverage)", "at 5x", "using 2x margin"
+  /\b(?:with|at|using)\s+(\d{1,3}(?:\.\d+)?)\s*x(?:\s+(?:leverage|margin))?\b/,
+  // "short 2x on BTC", "long 3x leverage"
+  /\b(?:long|short)\s+(\d{1,3}(?:\.\d+)?)\s*x(?:\s+(?:leverage|margin))?\b/,
+]
+// Words the loose coin slot must never take for a coin: grammar, venue and
+// chain words. (A nonsense coin still gets refused BY NAME by the venue
+// snapshot before anything is built — this fence just keeps chips honest.)
+const NOT_A_COIN = new Set([
+  'the', 'a', 'an', 'my', 'some', 'it', 'all', 'every', 'more', 'position', 'positions', 'perp', 'perps', 'long', 'short',
+  'and', 'then', 'now', 'me', 'this', 'that', 'in', 'on', 'to', 'of', 'with', 'at', 'for', 'into', 'usd', 'usdc', 'dollars',
+  'dip', 'top', 'market', 'leverage', 'leveraged', 'margin', 'futures', 'perpetual', 'perpetuals',
+  'hyperliquid', 'hl', 'base', 'ethereum', 'mainnet', 'arbitrum', 'robinhood', 'chain',
+])
+
+/** The leverage named anywhere in the (normalized) message, or undefined. */
+function leverageIn(m: string): number | undefined {
+  for (const re of LEVERAGE_RES) {
+    const lev = m.match(re)
+    const n = lev ? Number(lev[1]) : NaN
+    if (Number.isFinite(n) && n > 0) return n
+  }
+  return undefined
+}
 // Filler tolerance (the aave-parse lesson): let "please", "for me", "now",
 // "a", "my" pepper the phrase without breaking the match.
 const FILLER = String.raw`(?:\s+(?:please|for me|now|right away))*`
@@ -83,7 +126,13 @@ const FILLER = String.raw`(?:\s+(?:please|for me|now|right away))*`
  */
 export function parseHlIntent(message: string): HlIntent | null {
   const m = message.toLowerCase().replace(/\s+/g, ' ').trim()
-  if (!new RegExp(VENUE).test(m)) return null
+  const venueWorded = new RegExp(VENUE).test(m)
+  const leverage = leverageIn(m)
+  // Venue word OR a leverage phrase — one of the two must be there.
+  if (!venueWorded && leverage === undefined) return null
+  // Venue-less leverage asks: the deposit/close shapes below all demand the
+  // venue word (they end in VENUE), so only the open shapes are reachable.
+  const venueTail = venueWorded ? String.raw`\s*${VENUE}` : ''
 
   // deposit 20 usdc to hyperliquid / deposit $20 into hl
   const dep = m.match(new RegExp(String.raw`\bdeposit\s+\$?([\d.]+)\s*(?:usdc?|dollars?)?\s+(?:in|in ?to|to|on)\s+(?:hyperliquid|hl)\b`))
@@ -99,22 +148,18 @@ export function parseHlIntent(message: string): HlIntent | null {
   }
 
   // long 0.01 eth on hyperliquid / short $50 of btc on hl / buy 10 syrup perp on hyperliquid
+  // Leverage rides in two spots: leading "2x long …" (the landing ask —
+  // "I want a 2X Long $12 of HYPE…") or trailing "with/at 3x (leverage)".
+  // Decimals are CAPTURED so the guard can refuse them by name — dropping
+  // "2.5x" silently would trade at the account's setting instead.
+  const withLev = leverage !== undefined ? { leverage } : {}
   const open = m.match(
     new RegExp(
-      String.raw`\b(long|short|buy|sell)${FILLER}\s+(?:\$([\d.]+)(?:\s+(?:of|worth of))?\s+([a-z0-9]{2,10})|([\d.]+)\s+([a-z0-9]{2,10}))\s*(?:perp)?\s*${VENUE}`,
+      String.raw`\b(long|short|buy|sell)${FILLER}\s+(?:\$([\d.]+)(?:\s+(?:of|worth of))?\s+([a-z0-9]{2,10})|([\d.]+)\s+([a-z0-9]{2,10}))\s*(?:perp)?${venueTail}`,
     ),
   )
   if (open) {
     const isBuy = open[1] === 'long' || open[1] === 'buy'
-    // Leverage rides in two spots: leading "2x long …" (the landing ask —
-    // "I want a 2X Long $12 of HYPE…") or trailing "with/at 3x (leverage)".
-    // Decimals are CAPTURED here so the guard can refuse them by name —
-    // dropping "2.5x" silently would trade at the account's setting instead.
-    const lev =
-      m.match(/\b(\d{1,3}(?:\.\d+)?)\s*x\s+(?:long|short|buy|sell)\b/) ??
-      m.match(/\b(?:with|at|using)\s+(\d{1,3}(?:\.\d+)?)\s*x(?:\s+(?:leverage|margin))?\b/)
-    const leverage = lev ? Number(lev[1]) : undefined
-    const withLev = leverage && Number.isFinite(leverage) && leverage > 0 ? { leverage } : {}
     if (open[2] && open[3]) {
       const notionalUsd = Number(open[2])
       if (Number.isFinite(notionalUsd) && notionalUsd > 0) return { kind: 'open', coin: open[3].toUpperCase(), isBuy, notionalUsd, ...withLev }
@@ -123,7 +168,36 @@ export function parseHlIntent(message: string): HlIntent | null {
       if (Number.isFinite(sizeUnits) && sizeUnits > 0) return { kind: 'open', coin: open[5].toUpperCase(), isBuy, sizeUnits, ...withLev }
     }
   }
+
+  // Unsized open — side + coin, no amount: "buy some HYPE and 2x long",
+  // "2x long HYPE", "long hype on hyperliquid", "go long on ETH with 3x".
+  // Only when a leverage phrase or the venue word made the perp intent
+  // unambiguous (checked above). The coin slot is loose on purpose (the
+  // venue's own snapshot refuses unknown coins by name later); stopwords
+  // are fenced so "long position" never becomes coin POSITION.
+  const unsized = m.match(
+    /\b(long|short|buy|sell)(?:\s+(?:some|a bit of|a little|more|into|on|in|the|a|position|positions|perps?|\d{1,3}(?:\.\d+)?\s*x|leveraged?|leverage))*\s+([a-z0-9]{2,10})\b/,
+  )
+  if (unsized) {
+    const word = unsized[2]
+    if (!NOT_A_COIN.has(word) && !/^\d/.test(word) && !/^\$?[\d.]+$/.test(word)) {
+      const isBuy = unsized[1] === 'long' || unsized[1] === 'buy'
+      return { kind: 'open-unsized', coin: word.toUpperCase(), isBuy, ...withLev }
+    }
+  }
   return null
+}
+
+/** The size chips for an unsized open — the exact strings the HL layer
+ *  parses back into a full order (chip = contract). Presets sit above the
+ *  venue's $10 minimum; the leverage the user named rides every chip. */
+export function hlUnsizedChips(intent: HlUnsizedIntent): { label: string; resume: string }[] {
+  const side = intent.isBuy ? 'long' : 'short'
+  const lev = intent.leverage ? `${intent.leverage}x ` : ''
+  return [12, 25, 50].map((usd) => ({
+    label: `${lev}${side[0].toUpperCase()}${side.slice(1)} $${usd} of ${intent.coin}`,
+    resume: `${lev}${side} $${usd} of ${intent.coin} on hyperliquid`,
+  }))
 }
 
 // ── Order action build (deterministic) ──────────────────────────────────────
@@ -722,6 +796,11 @@ export async function buildHlExecTurn(
 ): Promise<HlExecTurn> {
   if (!walletAddress) {
     return { reply: '📈 Connect your wallet first — Hyperliquid orders are signed by YOUR wallet (it is your HL account).' }
+  }
+  if (intent.kind === 'open-unsized') {
+    // The route answers these with size chips before ever building; a caller
+    // that lands here anyway gets the same honest ask, never a guess.
+    return { reply: `📈 How much ${intent.coin}? Name a size — e.g. "${hlUnsizedChips(intent)[0].resume}".` }
   }
 
   if (intent.kind === 'deposit') {

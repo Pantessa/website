@@ -91,6 +91,9 @@ const usd = (n: number) =>
 export interface RebalanceTurn {
   reply: string
   clarify?: { question: string; options: { label: string; resume: string }[] }
+  /** True when the wallet was read and nothing clears the floors — the
+   *  quiet IS the answer (the ask-failure log treats it as answered). */
+  quiet?: boolean
   buildPath: string
 }
 
@@ -123,6 +126,7 @@ export async function rebalanceTurnFor(
         `💸 **Nothing worth moving right now.** Live read across ${chainsLine}:\n` +
         (noteLines ? `${noteLines}\n` : '- no idle balances above the floors — small money is cheaper left where it sits\n') +
         `Gas and solver fees are real; a rebalance only gets offered when the yearly math clearly beats them. Rates float — this is live math, not financial advice.`,
+      quiet: true,
       buildPath: 'native-rebalance',
     }
   }
