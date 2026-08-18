@@ -46,6 +46,16 @@ const CORPUS: Entry[] = [
   { ask: 'I need $50 of USDG on Robinhood, can you make that happen?', source: 'live 2026-07-23 (screenshot)', expect: 'action' },
   { ask: 'I need $20 in USDG on robinhood', source: 'live 2026-07-23 variant', expect: 'action' },
 
+  // Live funded misses 2026-08-12 (the /dashboard/failures funded=1 queue).
+  // The flagship shape without a size: an unsized HL open answers SIZE CHIPS
+  // (clarify-ok — the resumes round-trip into full 2x orders); the sized
+  // venue-less form and the size chips themselves are actions.
+  { ask: 'I want to buy some HYPE and 2x long', source: 'live 2026-08-12 (funded, fell to the planner)', expect: 'clarify-ok' },
+  { ask: '2x long $12 of HYPE', source: 'live 2026-08-12 variant (leverage is venue evidence)', expect: 'action' },
+  { ask: '2x long $12 of HYPE on hyperliquid', source: 'hl unsized size chip', expect: 'action' },
+  { ask: 'short 2x on BTC', source: 'live 2026-08-12 variant', expect: 'clarify-ok' },
+  { ask: 'tile my wallet 42% ETH, 39% DAI, 19% CETH on ethereum', source: 'live 2026-08-12 (mosaic, cETH resolves on mainnet)', expect: 'action' },
+
   // lib/examples.ts EXAMPLE_PROMPTS + TRY_PROMPTS
   { ask: 'Swap $1 of ETH to USDC', source: 'examples', expect: 'action' },
   { ask: "What's in my wallet?", source: 'examples', expect: 'planner' },

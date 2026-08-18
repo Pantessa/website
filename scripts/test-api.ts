@@ -185,6 +185,7 @@ import {
 } from '../lib/hl-guardian'
 import {
   parseHlIntent,
+  hlUnsizedChips,
   buildHlOrderAction,
   builderEligibleFromAccountValue,
   HL_BUILDER_MIN_ACCOUNT_USD,
@@ -204,6 +205,7 @@ import {
   HL_CONSENT_HEADER,
   HL_BRIDGE2_ARBITRUM,
   HL_MIN_DEPOSIT_USDC,
+  HL_MIN_ORDER_USD,
   ARBITRUM_USDC,
   type HlOrderIntent,
   type HlWireApproveBuilderFeeAction,
@@ -4226,6 +4228,51 @@ async function main() {
         classifyTurn({ reply: 'refused', blocked: true }).kind === 'blocked' &&
         classifyTurn(null).kind === 'error',
     )
+    // A native layer's QUIET verdict (mosaic already in shape, rebalance
+    // below the floors) is an answer — two "Already in shape" replies sat on
+    // the funded queue 2026-08-12. The flag is fenced to native buildPaths:
+    // a planner reply can't declare itself quiet.
+    check(
+      'ask-failure: a native quiet verdict is answered, not a wall — and only a native layer may say so',
+      classifyTurn({ reply: 'Already in shape.', quiet: true, buildPath: 'native-mosaic' }).kind === null &&
+        classifyTurn({ reply: 'Nothing worth moving.', quiet: true, buildPath: 'native-rebalance' }).kind === null &&
+        classifyTurn({ reply: 'meh', quiet: true }).kind === 'planner-answer' &&
+        classifyTurn({ reply: 'meh', quiet: 'yes', buildPath: 'native-mosaic' }).kind === 'native-wall',
+    )
+    // The 2026-08-12 funded rows, replayed read-only against the wallets that
+    // hit them (nothing signed): the CETH mosaic (cETH resolves on the mainnet
+    // list and the wallet holds it — a within-band read is the honest end,
+    // never a wall) and the 0.05-ETH Lido ask from a wallet that can only
+    // afford a smaller stake (the affordable size rides as chips; every lido
+    // refusal is attributed to its layer).
+    {
+      const fleet = await fetch(`${BASE}/api/servers?free=1`).then((r) => r.json() as Promise<{ slug: string; endpoint: string | null }[]>).catch(() => [])
+      const rows = (slugs: string[]) => fleet.filter((s) => slugs.includes(s.slug))
+      const cethMosaic = await fetch(`${BASE}/api/chat`, {
+        method: 'POST', headers: { 'content-type': 'application/json', 'x-yf-no-ask-log': '1' },
+        body: JSON.stringify({ message: 'tile my wallet 42% ETH, 39% DAI, 19% CETH on ethereum', activeServers: rows(['uniswap', 'yeetful-tool-wallet']), walletAddress: '0x66268791b55e1f5fa585d990326519f101407257', history: [] }),
+      }).then((r) => r.json() as Promise<Record<string, unknown>>)
+      check(
+        'funded-row replay: the CETH mosaic answers from the mosaic layer with a plan, chips or an honest quiet — never a wall (CETH resolves, no aliasing)',
+        cethMosaic.buildPath === 'native-mosaic' && classifyTurn(cethMosaic).kind === null && !/isn't a token I can trade/.test(String(cethMosaic.reply)),
+        JSON.stringify(cethMosaic).slice(0, 300),
+      )
+      const lidoRow = rows(['lido-free'])
+      const lidoSmall = await fetch(`${BASE}/api/chat`, {
+        method: 'POST', headers: { 'content-type': 'application/json', 'x-yf-no-ask-log': '1' },
+        body: JSON.stringify({ message: 'Stake 0.05 ETH with Lido', activeServers: [...rows(['uniswap', 'yeetful-tool-wallet', 'near-intents-mcp-yeetful']), ...lidoRow], walletAddress: '0xb74db8eb4aebca066614e0f425d125fe6cad131f', history: [] }),
+      }).then((r) => r.json() as Promise<Record<string, unknown>>)
+      const lidoOpts = ((lidoSmall.clarify as { options?: { resume: string }[] } | undefined)?.options ?? [])
+      const lidoBare = !lidoSmall.txRequest && !lidoSmall.jobId && !lidoSmall.clarify
+      check(
+        'funded-row replay: "Stake 0.05 ETH with Lido" from the under-funded wallet is attributed to the lido layer, and any chip it offers round-trips parseLidoStake',
+        lidoRow.length === 0 ||
+          ((lidoBare ? lidoSmall.buildPath === 'native-lido' : true) &&
+            /^🌊|^🌉|^🔏/.test(String(lidoSmall.reply)) &&
+            lidoOpts.filter((o) => /stake/i.test(o.resume)).every((o) => { const p = parseLidoStake(o.resume); return !!p && !('problem' in p) })),
+        JSON.stringify(lidoSmall).slice(0, 300),
+      )
+    }
     // ── The funds-snapshot assembly (pure): counting rules the funded=1
     // queue depends on. A USDT-only wallet used to log had_funds=false —
     // indistinguishable from an empty one — so USDT demand had no data; and
@@ -8925,8 +8972,72 @@ async function main() {
     )
     check(
       'hl exec: never claims venue-less or swap asks',
-      parseHlIntent('long eth') === null && parseHlIntent('swap 1 usdc for eth') === null && parseHlIntent('what is hyperliquid?') === null,
+      parseHlIntent('long eth') === null && parseHlIntent('swap 1 usdc for eth') === null && parseHlIntent('what is hyperliquid?') === null &&
+        parseHlIntent('buy some eth') === null && parseHlIntent('sell $50 of ETH') === null && parseHlIntent('buy $12 of AAPL') === null,
     )
+    // ── Unsized opens (the funded miss of 2026-08-12) ─────────────────────
+    // "I want to buy some HYPE and 2x long" fell to the planner, whose chips
+    // were prose that parsed under nothing. A leverage phrase is perp
+    // evidence on its own (spot has no "2x long"); side + coin without a
+    // size is an unsized open the route answers with size chips whose
+    // resumes round-trip into full orders. The jobs compiler refuses the
+    // shape by name (a step needs a size); the builder never sees it.
+    {
+      const flagship = parseHlIntent('I want to buy some HYPE and 2x long')
+      const chips = flagship?.kind === 'open-unsized' ? hlUnsizedChips(flagship) : []
+      check(
+        'hl unsized: "buy some HYPE and 2x long" → open-unsized HYPE long @2x; every size chip round-trips into a full 2x order',
+        flagship?.kind === 'open-unsized' && flagship.coin === 'HYPE' && flagship.isBuy === true && flagship.leverage === 2 &&
+          chips.length === 3 &&
+          chips.every((c) => {
+            const back = parseHlIntent(c.resume) as HlOrderIntent | null
+            return back?.kind === 'open' && back.coin === 'HYPE' && back.isBuy === true && back.leverage === 2 && (back.notionalUsd ?? 0) >= HL_MIN_ORDER_USD
+          }),
+        JSON.stringify({ flagship, chips }),
+      )
+      const venueLessSized = parseHlIntent('2x long $12 of HYPE') as HlOrderIntent | null
+      const shortLev = parseHlIntent('short 2x on BTC')
+      const venueUnsized = parseHlIntent('long hype on hyperliquid')
+      const plannerChip = parseHlIntent('I want to open a 2x leveraged long position on HYPE perpetual futures on Hyperliquid')
+      check(
+        'hl unsized: leverage alone is venue evidence (sized + unsized), venue word alone still yields an unsized open, grammar/venue/chain words never become coins',
+        venueLessSized?.kind === 'open' && venueLessSized.notionalUsd === 12 && venueLessSized.leverage === 2 &&
+          shortLev?.kind === 'open-unsized' && shortLev.coin === 'BTC' && shortLev.isBuy === false && shortLev.leverage === 2 &&
+          venueUnsized?.kind === 'open-unsized' && venueUnsized.coin === 'HYPE' && venueUnsized.leverage === undefined &&
+          plannerChip?.kind === 'open-unsized' && plannerChip.coin === 'HYPE' &&
+          parseHlIntent('long on hyperliquid') === null && parseHlIntent('2x long on base') === null && parseHlIntent('buy the dip 2x long') === null,
+        JSON.stringify({ venueLessSized, shortLev, venueUnsized, plannerChip }),
+      )
+      const unsizedJob = compileJobAsk('buy some HYPE and 2x long, then deposit 12 usdc to hyperliquid')
+      check(
+        'hl unsized: inside a compound ask the jobs compiler refuses the sizeless step BY NAME (never a half-claimed job)',
+        !!unsizedJob && 'problem' in unsizedJob && /Step 1/.test(unsizedJob.problem) && /no size/.test(unsizedJob.problem) && /2x long \$12 of HYPE on hyperliquid/.test(unsizedJob.problem),
+        JSON.stringify(unsizedJob),
+      )
+      const hlLive = await fetch(`${BASE}/api/servers?free=1`).then((r) => r.json() as Promise<{ slug: string; endpoint: string | null }[]>).catch(() => [])
+      const hlRow = hlLive.find((s) => s.slug === 'hyperliquid-free')
+      const unsizedTurn = await fetch(`${BASE}/api/chat`, {
+        method: 'POST', headers: { 'content-type': 'application/json', 'x-yf-no-ask-log': '1' },
+        body: JSON.stringify({ message: 'I want to buy some HYPE and 2x long', activeServers: hlRow ? [hlRow] : [], walletAddress: owner.address, history: [] }),
+      }).then((r) => r.json() as Promise<Record<string, unknown>>)
+      const unsizedOpts = ((unsizedTurn.clarify as { options?: { resume: string }[] } | undefined)?.options ?? [])
+      check(
+        'hl unsized (route): the flagship ask answers HL size chips from the native layer — never planner prose; the turn is answered, not a wall',
+        (hlRow
+          ? unsizedTurn.buildPath === 'native-hl-exec' && unsizedOpts.length === 3 && unsizedOpts.every((o) => (parseHlIntent(o.resume) as HlOrderIntent | null)?.kind === 'open')
+          : /mcps=hyperliquid-free/.test(String(unsizedTurn.reply))) && classifyTurn(unsizedTurn).kind === null,
+        JSON.stringify(unsizedTurn).slice(0, 300),
+      )
+      const unsizedDoor = await fetch(`${BASE}/api/chat`, {
+        method: 'POST', headers: { 'content-type': 'application/json', 'x-yf-no-ask-log': '1' },
+        body: JSON.stringify({ message: 'I want to buy some HYPE and 2x long', activeServers: [], history: [] }),
+      }).then((r) => r.json() as Promise<Record<string, unknown>>)
+      check(
+        'hl unsized (route): without the Hyperliquid MCP the flagship ask gets the add door with the ask ready',
+        /Add Hyperliquid with this ask ready\]\(\/chat\?mcps=hyperliquid-free&prompt=/.test(String(unsizedDoor.reply)) && classifyTurn(unsizedDoor).kind === null,
+        JSON.stringify(unsizedDoor).slice(0, 300),
+      )
+    }
 
     const snap = { assetIndex: 4, szDecimals: 4, markPx: 3000, positionSzi: 0, maxLeverage: 25, accountLeverage: null, approvedBuilderFeeTenthBps: null }
     const openIntent: HlOrderIntent = { kind: 'open', coin: 'ETH', isBuy: true, notionalUsd: 50 }

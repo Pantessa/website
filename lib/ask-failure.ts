@@ -73,7 +73,13 @@ export function classifyTurn(body: Record<string, unknown> | null): TurnClassifi
     !!(body.door && typeof body.door === 'object') ||
     // A held question: the turn parked context and waits for ONE input (an
     // NFT transfer awaiting its recipient) — the next line completes it.
-    (typeof body.awaiting === 'string' && body.awaiting.length > 0)
+    (typeof body.awaiting === 'string' && body.awaiting.length > 0) ||
+    // A QUIET verdict from a native layer that READ the wallet and found
+    // nothing worth moving (a mosaic already in shape, a rebalance whose
+    // deltas gas would eat). Nothing to sign IS the correct answer — logging
+    // it as a wall put two "Already in shape" replies on the funded queue
+    // (2026-08-12). Only a native layer may say so (buildPath fenced).
+    (body.quiet === true && typeof body.buildPath === 'string' && body.buildPath.startsWith('native'))
   if (actionable) return { kind: null }
   if (body.blocked) return { kind: 'blocked' }
   if (typeof body.error === 'string' && body.error) return { kind: 'error' }

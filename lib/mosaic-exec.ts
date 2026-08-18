@@ -46,6 +46,9 @@ export interface MosaicTurn {
   jobToken?: string
   clarify?: { question: string; options: { label: string; resume: string }[] }
   connectWallet?: boolean
+  /** True when the wallet was read and is already within band — nothing to
+   *  move is the answer (the ask-failure log treats it as answered). */
+  quiet?: boolean
   buildPath: string
 }
 
@@ -153,6 +156,7 @@ export async function mosaicTurnFor(
         `🧩 **Already in shape.** ${usd(plan.movableUsd)} movable on ${chainLabel} sits within the band of your mosaic:\n\n${table}\n` +
         (noteLines ? `${noteLines}\n` : '') +
         `Nothing worth moving — a tile only fires when the delta beats the gas.`,
+      quiet: true,
       buildPath: 'native-mosaic',
     }
   }

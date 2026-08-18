@@ -46,7 +46,7 @@ import { CROSS_CHAIN_FEE_BPS, LINK_SWAP_FEE_BPS, TREASURY_ADDRESS } from '@/lib/
 import { INTENT_SLUG_RE } from '@/lib/intent-links'
 import prismaDb from '@/lib/db'
 import { prettyChainWord } from '@/lib/chain-lexicon'
-import { arbitrumUsdcBalance, buildHlExecTurn, hlAgentOf, HL_MIN_DEPOSIT_USDC, hlOpenCollateralShortfall, parseHlIntent, type HlOpenShortfall, type HlOrderIntent } from '@/lib/hyperliquid-exec'
+import { arbitrumUsdcBalance, buildHlExecTurn, hlAgentOf, HL_MIN_DEPOSIT_USDC, hlOpenCollateralShortfall, hlUnsizedChips, parseHlIntent, type HlOpenShortfall, type HlOrderIntent } from '@/lib/hyperliquid-exec'
 import { parseGuardianArm } from '@/lib/hl-guardian'
 import { armGuardianPolicy } from '@/lib/hl-guardian-store'
 import { compileJobAsk, stampSwapFeeTier } from '@/lib/jobs'
@@ -1249,6 +1249,19 @@ async function handleChatTurn(req: NextRequest) {
     if (hlIntent) {
       const hlAgent = hlAgentOf(activeServers)
       if (hlAgent.agent && hlAgent.usable) {
+        // Unsized open ("buy some HYPE and 2x long" — the funded miss of
+        // 2026-08-12 that fell to the planner): the side, coin and leverage
+        // are the ask; the size is the one missing input. Chips, not prose —
+        // every resume round-trips parseHlIntent into a full order.
+        if (hlIntent.kind === 'open-unsized') {
+          const chips = hlUnsizedChips(hlIntent)
+          nativeTrace({ type: 'status', label: `native hl layer claimed the turn: unsized ${hlIntent.isBuy ? 'long' : 'short'} on ${hlIntent.coin}${hlIntent.leverage ? ` at ${hlIntent.leverage}x` : ''} — asking for the size with chips` })
+          return NextResponse.json({
+            reply: `📈 ${hlIntent.leverage ? `${hlIntent.leverage}x ` : ''}${hlIntent.isBuy ? 'long' : 'short'} on **${hlIntent.coin}** — how much? Pick a size and I'll build the guarded Hyperliquid order (you sign it; funds never leave your wallet).`,
+            clarify: { question: `How much ${hlIntent.coin}?`, options: chips },
+            buildPath: 'native-hl-exec',
+          })
+        }
         // Universal funding plan: an under-funded deposit (above the bridge
         // minimum — smaller ones the build refuses on its own) offers to move
         // USDC over via NEAR Intents instead of building a blocked artifact.
@@ -2339,6 +2352,7 @@ async function guideLidoStakeTurn(
     reply:
       `🌊 Staking on Lido takes ETH on Ethereum, and this wallet holds ${ethBal} ETH there.${already} ` +
       `Fund the wallet and ask again — I'll size the stake to your balance.`,
+    buildPath: 'native-lido',
   })
 }
 
@@ -2389,7 +2403,27 @@ async function lidoFundingTurn(
       askEth !== null
         ? `Staking ${askEth} ETH really needs ~${targetEth} ETH on Ethereum once mainnet gas is counted, and ${holding}.`
         : `Staking on Lido needs at least ~${targetEth} ETH on Ethereum once mainnet gas is counted, and ${holding}.`
-    return NextResponse.json({ reply: `🌊 ${askNote} ${offer.insufficient}` })
+    // Use-what-you-have (the funded miss of 2026-08-12: "Stake 0.05 ETH"
+    // walled a wallet holding 0.0063 ETH on mainnet — enough for a SMALLER
+    // stake, which nobody offered). When the wallet's own mainnet ETH clears
+    // the economical floor, the refusal carries the affordable stake as
+    // chips whose resumes round-trip parseLidoStake — never a dead end.
+    const affordable = suggestedStakeEth(String(balEth))
+    if (affordable && askEth !== null && Number(affordable) < askEth) {
+      trace({ type: 'status', label: `lido layer: ${askEth} ETH is out of reach, but ${affordable} ETH is stakeable from mainnet now — offering it as a chip` })
+      return NextResponse.json({
+        reply: `🌊 ${askNote} ${offer.insufficient} You **can** stake ${affordable} ETH right now from what's already on Ethereum (gas buffer kept).`,
+        clarify: {
+          question: `Stake ${affordable} ETH instead?`,
+          options: [
+            { label: `Stake ${affordable} ETH on Lido`, resume: `Stake ${affordable} ETH on Lido${receive === 'wstETH' ? ' as wstETH' : ''}` },
+            { label: 'Not now', resume: 'Never mind — leave my funds where they are.' },
+          ],
+        },
+        buildPath: 'native-lido',
+      })
+    }
+    return NextResponse.json({ reply: `🌊 ${askNote} ${offer.insufficient}`, buildPath: 'native-lido' })
   }
   const tinyNote =
     askEth !== null && askEth < LIDO_MIN_STAKE_ETH
@@ -2433,7 +2467,7 @@ async function buildLidoStakeTurn(
     if (!resolved) {
       const funded = balEth !== null ? await lidoFundingTurn(walletAddress, balEth, null, params.receive, trace) : null
       if (funded) return funded
-      return NextResponse.json({ reply: '🌊 Nothing left to stake — your mainnet ETH balance is at (or below) the gas buffer.' })
+      return NextResponse.json({ reply: '🌊 Nothing left to stake — your mainnet ETH balance is at (or below) the gas buffer.', buildPath: 'native-lido' })
     }
     amountEth = resolved
   } else if (balEth !== null && Number.isFinite(Number(amountEth)) && balEth < Number(amountEth) + Number(LIDO_GAS_BUFFER_ETH)) {
