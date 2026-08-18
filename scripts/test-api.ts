@@ -173,6 +173,7 @@ import {
   type MorphoOpGuardExpectation,
 } from '../lib/morpho-supply'
 import { assertTokenIdentity } from '../lib/morpho-exec'
+import { splitSimpleReply } from '../lib/simple-reply'
 import { decodeAbiParameters, encodeAbiParameters, encodeFunctionData, erc20Abi, toFunctionSelector } from 'viem'
 import {
   evaluatePolicy,
@@ -9602,6 +9603,37 @@ async function main() {
     check(
       'sign cards: switch refusal → named chain + "Switch to <chain> & retry" button; HL "Must deposit" → human line with the deposit ask',
       /switchNeeded/.test(sendTxSrc) && /& retry`/.test(sendTxSrc) && /must deposit/i.test(hlBtnSrc) && /deposit 10 usdc to hyperliquid/.test(hlBtnSrc),
+    )
+    // The moment of truth on /i (squad r5, Visuals' H1 storyboard): the
+    // current step's sign/send button is THE primary CTA (one shared class
+    // on the three sign buttons), the built reply leads with the human line
+    // on the simple surface, the /i door says "Connect a wallet" (no stalled
+    // "Starting…"), the CTA leads the cards on phones, and the mint stage
+    // eyebrow matches the OG card.
+    const orderBtnSrc = fs.readFileSync('components/SignOrderButton.tsx', 'utf8')
+    const doorSrc = fs.readFileSync('components/CreateAccountButton.tsx', 'utf8')
+    const runtimeSrc = fs.readFileSync('components/IntentRuntime.tsx', 'utf8')
+    const mintSrc = fs.readFileSync('components/MintLinkForm.tsx', 'utf8')
+    check(
+      'moment of truth: SIGN_CTA_CLASS on SendTxButton + SignOrderButton + SignHlActionButton (no ghost sign buttons)',
+      [sendTxSrc, orderBtnSrc, hlBtnSrc].every((src) => /className=\{SIGN_CTA_CLASS\}/.test(src) && !/rounded-full border border-\[var\(--line-2\)\] text-\[color:var\(--muted\)\] hover:text-white hover:border-white/.test(src)),
+    )
+    const sr = splitSimpleReply(
+      "🔏 Swap 20 USDC → ~0.010555 ETH via Uniswap v3 on Base (1bps pool), min received 0.01045 (50bps slippage, incl. 0.5% Pantessa fee on the output)\n🔗 Two steps in the card below — sign the USDC approval, and the swap appears automatically once it confirms (re-quoted fresh). Nothing to retype.\n⚠️ Approve USDC to Uniswap's SwapRouter02 first — the approve transaction is attached.",
+    )
+    const srRun = splitSimpleReply('🔏 Swap 12 USDG → ~0.0512 AAPL on Robinhood Chain via its own settlement venue (LiFi-routed, tool: relay), min received 0.05, incl. 0.024 USDG Pantessa fee (0.2%) 🔗 One step.')
+    check(
+      'simple reply split: human lead (trade · chain · fee · your wallet signs) + 3 detail lines; LiFi shape; plain answers pass through',
+      sr?.lead === 'Swap 20 USDC → ~0.010555 ETH · on Base · fee 0.5% · your wallet signs' && sr?.details.length === 3 && !/🔏|🔗|⚠️/u.test(sr!.details.join(' ')) &&
+        srRun?.lead === 'Swap 12 USDG → ~0.0512 AAPL · on Robinhood Chain · fee 0.2% · your wallet signs' && srRun?.details.length === 2 &&
+        splitSimpleReply('Here is a plain answer.') === null,
+      JSON.stringify({ a: sr?.lead, b: srRun?.lead }),
+    )
+    check(
+      '/i door + splash + mint stage: walletConnectOnly title "Connect a wallet", no "Starting…" stall, CTA leads the cards ≤sm, eyebrow says YOUR WALLET SIGNS',
+      /walletConnectOnly \? 'Connect a wallet' : 'Sign in to Pantessa'/.test(doorSrc) && !/'Starting…'/.test(doorSrc) &&
+        /className="mt-10 max-sm:order-1"/.test(runtimeSrc) && /max-sm:order-3/.test(runtimeSrc) &&
+        /INTENT LINK · YOUR WALLET SIGNS/.test(mintSrc) && !/TAP TO RUN/.test(mintSrc),
     )
     check(
       `wallet-refusal audit: every money sign/send button files wallet refusals (${senders.length} senders)`,

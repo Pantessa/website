@@ -16,6 +16,7 @@ import { Loader2, PenLine, CheckCircle2, Circle, ExternalLink, XCircle } from 'l
 import type { EvmTxRequest } from '@/lib/transaction-layer'
 import { chainById } from '@/lib/chains'
 import { reportWalletRefusal, type WalletArtifact } from '@/lib/wallet-refusal'
+import { SIGN_CTA_CLASS } from '@/lib/sign-cta'
 
 type Status = 'idle' | 'signing' | 'broadcast' | 'confirmed' | 'reverted' | 'error'
 
@@ -265,7 +266,7 @@ export default function SendTxButton({
           <button
             onClick={() => void send()}
             disabled={inFlight}
-            className="inline-flex items-center gap-1.5 text-[12px] font-medium px-3 py-1.5 max-lg:min-h-10 rounded-full border border-[var(--line-2)] text-[color:var(--muted)] hover:text-white hover:border-white disabled:opacity-50 transition-colors"
+            className={SIGN_CTA_CLASS}
             title={`Sign and broadcast this ${tx.action ?? 'transaction'} from your wallet`}
           >
             {inFlight ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <PenLine className="w-3.5 h-3.5" />}

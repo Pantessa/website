@@ -43,6 +43,7 @@ import {
   type HlWireAction,
 } from '@/lib/hyperliquid-exec'
 import { reportWalletRefusal, type WalletArtifact } from '@/lib/wallet-refusal'
+import { SIGN_CTA_CLASS } from '@/lib/sign-cta'
 
 type Status = 'idle' | 'signing' | 'submitting' | 'enabling' | 'filled' | 'error'
 type Delegation = 'unknown' | 'active' | 'none'
@@ -397,7 +398,7 @@ export default function SignHlActionButton({
             onClick={() => void (feeStep ? signFee() : pre ? signPre() : sign())}
             disabled={inFlight}
             data-hl-path={delegation === 'active' ? 'delegated' : needsEnable ? 'enable' : 'direct'}
-            className="inline-flex items-center gap-1.5 text-[12px] font-medium px-3 py-1.5 max-lg:min-h-10 rounded-full border border-[var(--line-2)] text-[color:var(--muted)] hover:text-white hover:border-white disabled:opacity-50 transition-colors"
+            className={SIGN_CTA_CLASS}
             title={buttonTitle}
           >
             {inFlight ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : needsEnable ? <ShieldCheck className="w-3.5 h-3.5" /> : <PenLine className="w-3.5 h-3.5" />}

@@ -351,7 +351,10 @@ export default function IntentRuntime({
             &ldquo;{ask}&rdquo;
           </h1>
 
-          <div className="mt-10 grid grid-cols-1 sm:grid-cols-3 gap-3 w-full max-w-2xl text-left">
+          {/* ≤sm the CTA leads and the three contract cards follow (flex
+              order): on a phone the cards pushed the door below the fold —
+              the recruit saw guardrail prose and no button. */}
+          <div className="mt-10 grid grid-cols-1 sm:grid-cols-3 gap-3 w-full max-w-2xl text-left max-sm:order-3 max-sm:mt-8">
             {CONTRACT.map((c) => (
               <div
                 key={c.title}
@@ -368,7 +371,7 @@ export default function IntentRuntime({
             ))}
           </div>
 
-          <div className="mt-10">
+          <div className="mt-10 max-sm:order-1">
             {autoStarting ? (
               <ChatLoader compact lines={['wallet connected — building your path']} />
             ) : walletResolving ? (
@@ -391,7 +394,7 @@ export default function IntentRuntime({
             )}
           </div>
           {!autoStarting && !walletResolving && (
-            <p className="text-[12px] text-[color:var(--muted-2)] mt-4 max-w-md">
+            <p className="text-[12px] text-[color:var(--muted-2)] mt-4 max-w-md max-sm:order-2">
               Connecting runs the scan and the build for your wallet — signing stays yours
               {transferShaped ? '. This ask involves a transfer, so nothing runs until you press send.' : '.'}
             </p>
@@ -401,7 +404,7 @@ export default function IntentRuntime({
             // KOL shilling — a paid call says it's paid, and says the WHOLE
             // deal (lifetime first-touch, the #607 rail). Rate-agnostic on
             // purpose ("half of Pantessa's fee") — the tier varies by origin.
-            <p className="mono text-[11px] text-[color:var(--muted-2)] mt-10 pt-4 border-t border-[var(--line)] max-w-md">
+            <p className="mono text-[11px] text-[color:var(--muted-2)] mt-10 pt-4 border-t border-[var(--line)] max-w-md max-sm:order-4">
               {/* {' '} is load-bearing: SWC drops a line-leading space after
                   an expression (the standing JSX entity-space gotcha). */}
               {agent ? `${agent} posted this call — its creator` : 'The creator of this call'}
@@ -414,7 +417,7 @@ export default function IntentRuntime({
               has no site footer, and a first-time visitor who saw the old
               name on a blocklist page deserves the same disclosure here
               (squad round 2, ideation premortem). */}
-          <p className={`mono text-[10.5px] uppercase tracking-widest text-[color:var(--muted-2)] ${hasCreator ? 'mt-4' : 'mt-10 pt-4 border-t border-[var(--line)] max-w-md w-full'}`}>
+          <p className={`mono text-[10.5px] uppercase tracking-widest text-[color:var(--muted-2)] max-sm:order-5 ${hasCreator ? 'mt-4' : 'mt-10 pt-4 border-t border-[var(--line)] max-w-md w-full'}`}>
             <Link href="/rebrand" className="hover:text-[color:var(--fg)] underline decoration-dotted underline-offset-2">
               Pantessa · formerly Yeetful
             </Link>

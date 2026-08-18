@@ -290,7 +290,9 @@ export function MintLinkForm({
             pantessa
           </span>
           <span className="mintstage__eyebrow mono">
-            <i className="mintstage__dot" /> CALL · TAP TO RUN
+            {/* mirrors the /i OG eyebrow (Visuals r2): the model, not a
+                "tap to run" hint — nothing runs without the wallet's signature */}
+            <i className="mintstage__dot" /> INTENT LINK · YOUR WALLET SIGNS
           </span>
         </div>
 
