@@ -15,6 +15,7 @@ import { useAccount, usePublicClient, useSendTransaction, useSwitchChain } from 
 import { Loader2, PenLine, CheckCircle2, Circle, ExternalLink, XCircle } from 'lucide-react'
 import type { EvmTxRequest } from '@/lib/transaction-layer'
 import { chainById } from '@/lib/chains'
+import { reportWalletRefusal, type WalletArtifact } from '@/lib/wallet-refusal'
 
 type Status = 'idle' | 'signing' | 'broadcast' | 'confirmed' | 'reverted' | 'error'
 
@@ -36,6 +37,8 @@ export default function SendTxButton({
   summary,
   autoFire = false,
   onConfirmed,
+  refusalArtifact = 'tx',
+  refusalBuildPath,
 }: {
   tx: EvmTxRequest
   summary?: string
@@ -46,6 +49,11 @@ export default function SendTxButton({
   /** Fires once when the receipt lands with status success — SendTxChain
    *  advances the multi-step card on this. */
   onConfirmed?: (hash: string) => void
+  /** Wallet-refusal beacon tag: 'tx' for a lone card, 'tx-chain' when this
+   *  step sits inside SendTxChain (the artifact the row is filed under). */
+  refusalArtifact?: WalletArtifact
+  /** Build-path attribution for the refusal row (e.g. native-swap-uniswap). */
+  refusalBuildPath?: string
 }) {
   const { address, isConnected, connector, chain: connectedChain } = useAccount()
   const { sendTransactionAsync } = useSendTransaction()
@@ -79,7 +87,15 @@ export default function SendTxButton({
       if (connectedChain?.id !== chainId) {
         try {
           await switchChainAsync({ chainId })
-        } catch {
+        } catch (e) {
+          // A refused/failed network switch is a wallet wall too (a wallet
+          // that can't reach chain 4663, say) — log it; a plain "no" is not.
+          reportWalletRefusal({
+            wallet: address, artifact: refusalArtifact, buildPath: refusalBuildPath,
+            connector: connector?.id ?? connector?.name, chainId: connectedChain?.id,
+            ask: `${summary ?? tx.action ?? 'transaction'} (switch to ${chainInfo?.name ?? `chain ${chainId}`})`,
+            detail: e instanceof Error ? e.message.split('\n')[0] : String(e),
+          })
           setError(`Switch the wallet to ${chainInfo?.name ?? `chain ${chainId}`} and retry — this transaction is built for that network.`)
           setStatus('error')
           return
@@ -140,6 +156,19 @@ export default function SendTxButton({
           setError('Couldn’t verify the receipt after 10 minutes — check the explorer link above; if it shows success, the transfer landed.')
         })()
         return
+      }
+      // The wallet (or its RPC estimate) refused a built + guarded tx: the
+      // #1 predicted stranger failure is "approve fails — USDC present, zero
+      // ETH for gas", which lives only in this red text unless it's filed.
+      // Fire-and-forget; human rejections are dropped inside the beacon.
+      // Only pre-broadcast errors are the wallet's — a revert after a hash
+      // is the chain's, and reads as 'reverted' above.
+      if (!txHash) {
+        reportWalletRefusal({
+          wallet: address, artifact: refusalArtifact, buildPath: refusalBuildPath,
+          connector: connector?.id ?? connector?.name, chainId: connectedChain?.id,
+          ask: summary ?? tx.action ?? 'transaction', detail: msg,
+        })
       }
       setError(
         /rejected|denied/i.test(msg)

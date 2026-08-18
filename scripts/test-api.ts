@@ -1986,6 +1986,9 @@ async function main() {
     // Simple-mode shell: /i is a focused full-screen landing — the brochure
     // top nav must not render on it (Navigation returns null on /i/).
     check('intent links: /i page carries no brochure nav', !pageHtml.includes('nav__tab'))
+    // /i has no site footer, so the rebrand disclosure every other page
+    // carries in its footer rides the splash instead (squad 2026-08-18 r2).
+    check('intent links: /i splash carries the "formerly Yeetful" /rebrand pointer', pageHtml.includes('href="/rebrand"') && /formerly Yeetful/i.test(pageHtml))
     const ghostPage = await fetch(`${BASE}/i/zzzz9999`)
     check('intent links: /i unknown slug → 404', ghostPage.status === 404)
 
@@ -9542,6 +9545,32 @@ async function main() {
       `typed-data audit: every signTypedData caller aligns the wallet chain first or is allowlisted with a reason (${signers.length} signers)`,
       signers.length >= 8 && offenders.length === 0,
       offenders.length ? `unaligned: ${offenders.join(', ')}` : signers.map((f) => path.basename(f)).join(' '),
+    )
+    // Wallet-refusal wiring audit (squad 2026-08-18 r2): every component
+    // that asks the wallet to sign or send (signTypedDataAsync /
+    // sendTransactionAsync) must file non-rejection wallet errors through
+    // reportWalletRefusal, or the #1 predicted stranger failure ("approve
+    // fails — USDC present, zero ETH for gas") lives only in one browser's
+    // red text and never reaches /dashboard/failures.
+    const senders = [...walk('components'), ...walk('app')].filter((f) => /(signTypedDataAsync|sendTransactionAsync)\(/.test(fs.readFileSync(f, 'utf8')))
+    // Allowlisted = consciously queued, not exempt: each entry names WHY it
+    // can wait (dashboard/arm surfaces a stranger never meets on /i, x402
+    // payment sigs, votes). Wire and delete the entry; never add one silently.
+    const REFUSAL_ALLOW: Record<string, string> = {
+      'components/GuardianPanel.tsx': 'dashboard arm surface, not a stranger sign path (queued)',
+      'components/ArmDcaButton.tsx': 'spend-permission arm (autopilot DCA) — queued',
+      'components/ArmSpotGuardButton.tsx': 'spend-permission arm (spot guardian) — queued',
+      'components/SignGrantButton.tsx': 'dashboard grant signature — queued',
+      'components/SignNftListingButton.tsx': 'Seaport listing (opensea-listing artifact exists) — queued',
+      'components/ChatInterface.tsx': 'x402 payment sigs (EIP-3009) — not a native artifact; queued',
+      'components/SignVoteButton.tsx': 'Snapshot vote — no money moves (queued)',
+      'components/VoteChoiceButtons.tsx': 'Snapshot vote — no money moves (queued)',
+    }
+    const unwired = senders.filter((f) => !(f in REFUSAL_ALLOW) && !/reportWalletRefusal\(/.test(fs.readFileSync(f, 'utf8')))
+    check(
+      `wallet-refusal audit: every money sign/send button files wallet refusals (${senders.length} senders)`,
+      senders.length >= 8 && unwired.length === 0,
+      unwired.length ? `unwired: ${unwired.join(', ')}` : senders.filter((f) => !(f in REFUSAL_ALLOW)).map((f) => path.basename(f)).join(' '),
     )
   }
 

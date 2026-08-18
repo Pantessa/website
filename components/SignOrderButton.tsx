@@ -15,6 +15,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useAccount, useSignTypedData, useSwitchChain } from 'wagmi'
 import { Loader2, PenLine, CheckCircle2, Circle, ExternalLink } from 'lucide-react'
 import type { Eip712OrderRequest } from '@/lib/transaction-layer'
+import { reportWalletRefusal } from '@/lib/wallet-refusal'
 
 type Status = 'idle' | 'signing' | 'placing' | 'open' | 'filled' | 'error'
 
@@ -50,7 +51,7 @@ export default function SignOrderButton({
    *  embed bridge relays it to the host page as an 'order-signed' event. */
   onPlaced?: (info: { orderUid: string | null; explorerUrl: string | null }) => void
 }) {
-  const { address, isConnected } = useAccount()
+  const { address, isConnected, connector, chain: connectedChain } = useAccount()
   const { signTypedDataAsync } = useSignTypedData()
   const { switchChainAsync } = useSwitchChain()
   const [status, setStatus] = useState<Status>('idle')
@@ -119,9 +120,23 @@ export default function SignOrderButton({
       // reports it as "User rejected"). No-op when already on Base; same
       // switch-then-act idiom as LaunchToken/StakeToken.
       await switchChainAsync({ chainId }).catch(() => {})
-      const signature = await signTypedDataAsync(
-        typedData as unknown as Parameters<typeof signTypedDataAsync>[0],
-      )
+      let signature: `0x${string}`
+      try {
+        signature = await signTypedDataAsync(
+          typedData as unknown as Parameters<typeof signTypedDataAsync>[0],
+        )
+      } catch (e) {
+        // The WALLET refused the typed data (chain mismatch, unsupported
+        // method, estimate…) — file it as a wallet-refused row so it reaches
+        // /dashboard/failures; a human "no" is dropped inside the beacon.
+        // Relay errors below are the order book's, not the wallet's.
+        reportWalletRefusal({
+          wallet: address, artifact: 'cow-order', buildPath: 'native-swap-cow',
+          connector: connector?.id ?? connector?.name, chainId: connectedChain?.id,
+          ask: summary ?? 'CoW order', detail: e instanceof Error ? e.message.split('\n')[0] : String(e),
+        })
+        throw e
+      }
       setStatus('placing')
       const res = await fetch('/api/cow/submit', {
         method: 'POST',

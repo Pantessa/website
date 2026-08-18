@@ -410,6 +410,15 @@ export default function IntentRuntime({
               on-chain. Sales, transfers, and bridges are always fee-free.
             </p>
           )}
+          {/* The rebrand pointer every other page carries in its footer — /i
+              has no site footer, and a first-time visitor who saw the old
+              name on a blocklist page deserves the same disclosure here
+              (squad round 2, ideation premortem). */}
+          <p className={`mono text-[10.5px] uppercase tracking-widest text-[color:var(--muted-2)] ${hasCreator ? 'mt-4' : 'mt-10 pt-4 border-t border-[var(--line)] max-w-md w-full'}`}>
+            <Link href="/rebrand" className="hover:text-[color:var(--fg)] underline decoration-dotted underline-offset-2">
+              Pantessa · formerly Yeetful
+            </Link>
+          </p>
         </div>
       </main>
     )
@@ -613,8 +622,10 @@ export default function IntentRuntime({
         <div className="relative flex-shrink-0 border-t border-[var(--line)] bg-[color-mix(in_srgb,var(--bg)_92%,transparent)] backdrop-blur px-4 py-3">
           <div className="max-w-3xl mx-auto flex flex-wrap items-center justify-between gap-3">
             <span className="text-[13px] text-[color:var(--muted)]">
-              Signed and receipted. Want to keep it? Sign in to save this chat and see the
-              receipt on your dashboard — one signature, nothing moves.
+              <strong className="text-[color:var(--fg)] font-medium">Optional — </strong>
+              you&apos;re done here; the money moved. Sign in only if you want this chat and
+              receipt kept on your dashboard{' '}
+              (one wallet signature, nothing moves).
             </span>
             <button
               type="button"
