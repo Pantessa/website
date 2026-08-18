@@ -1109,6 +1109,32 @@ async function main() {
           !afterRestamp.some((w) => w.address.toLowerCase() === w2.address.toLowerCase()),
         `organicArrived=${organicArrived}`,
       )
+
+      // Watchable failures feed (squad 2026-08-18 r3): the drill has this
+      // open beside a recruit — `?kind=wallet-refused` slices one kind,
+      // `?internal=1` opts INTO stamped harness rows (hidden by default,
+      // counted in internalHidden), and the reader tolerates a DB without
+      // the is_internal column (never a 500). The page mirrors these params
+      // in its URL (?funded=1&kind=…&internal=1) — pinned at the source
+      // since the toggles are client-rendered.
+      const feedRes = await fetch(`${BASE}/api/admin/ask-failures?days=30&kind=wallet-refused`, { headers: { cookie: adminSession } })
+      const feedBody = (await feedRes.json()) as { kind?: string | null; counts?: { internalHidden?: number }; failures?: Array<{ kind: string; internal?: boolean }> }
+      const feedInternal = await fetch(`${BASE}/api/admin/ask-failures?days=30&internal=1&kind=nope`, { headers: { cookie: adminSession } })
+      const feedInternalBody = (await feedInternal.json()) as { kind?: string | null; counts?: { internalHidden?: number } }
+      check(
+        'ask-failures feed: ?kind=wallet-refused slices to that kind, rows carry the internal tag, unknown kinds are ignored, ?internal=1 zeroes internalHidden',
+        feedRes.status === 200 && feedBody.kind === 'wallet-refused' &&
+          (feedBody.failures ?? []).every((r) => r.kind === 'wallet-refused' && typeof r.internal === 'boolean') &&
+          typeof feedBody.counts?.internalHidden === 'number' &&
+          feedInternal.status === 200 && feedInternalBody.kind === null && feedInternalBody.counts?.internalHidden === 0,
+        JSON.stringify({ kind: feedBody.kind, n: feedBody.failures?.length, hidden: feedBody.counts?.internalHidden }),
+      )
+      const failuresPageSrc = envFs.readFileSync('app/dashboard/failures/page.tsx', 'utf8')
+      check(
+        'ask-failures page: URL ⇄ toggles (?funded=1 / ?kind= / ?internal=1 read on mount, written back) + live poll pill',
+        /q\.get\('funded'\)/.test(failuresPageSrc) && /q\.get\('kind'\)/.test(failuresPageSrc) && /q\.get\('internal'\)/.test(failuresPageSrc) &&
+          /replaceState/.test(failuresPageSrc) && /useLivePoll\(/.test(failuresPageSrc) && /<LivePill/.test(failuresPageSrc),
+      )
     } else {
       check('gtm arc: skipped — no burner key in .env.local', true)
     }

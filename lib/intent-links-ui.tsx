@@ -91,6 +91,34 @@ export function useIntentLinks() {
   useEffect(() => {
     reload()
   }, [reload])
+  // Watchable funnel: the creator studio + rail Links tab keep this open
+  // while a recruit walks a link — re-read every 30s while the tab is
+  // visible (paused hidden), and stamp updatedAt for the live pill.
+  const [updatedAt, setUpdatedAt] = useState<number | null>(null)
+  useEffect(() => {
+    if (typeof document === 'undefined') return
+    let timer: ReturnType<typeof setInterval> | null = null
+    const tick = () => {
+      if (document.visibilityState === 'hidden') return
+      reload()
+      setUpdatedAt(Date.now())
+    }
+    const start = () => {
+      if (!timer) timer = setInterval(tick, 30_000)
+    }
+    const stop = () => {
+      if (timer) clearInterval(timer)
+      timer = null
+    }
+    const onVis = () => (document.visibilityState === 'visible' ? (tick(), start()) : stop())
+    setUpdatedAt(Date.now())
+    start()
+    document.addEventListener('visibilitychange', onVis)
+    return () => {
+      stop()
+      document.removeEventListener('visibilitychange', onVis)
+    }
+  }, [reload])
 
-  return { links, earnings, loadError, reload }
+  return { links, earnings, loadError, reload, updatedAt }
 }
