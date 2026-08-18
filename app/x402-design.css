@@ -4354,6 +4354,21 @@
   html[data-theme='light'] .border-emerald-500\/40 { border-color: color-mix(in srgb, var(--accent) 50%, transparent); }
   html[data-theme='light'] .ring-emerald-400 { --tw-ring-color: var(--accent); }
 
+  /* Same class of bug, other hues: amber-400 (#fbbf24) reads 1.7:1 on paper,
+     red-400 3.0:1, sky-400 1.9:1 — dark-stage inks that never flipped
+     (35 amber + 48 red + sky uses across the tree, incl. the /i transfer
+     warning + rail/job/guardian status lines). Repoint the TEXT utilities at
+     the deep light-mode kin; tinted bg/border alphas already read fine. */
+  html[data-theme='light'] .text-amber-300,
+  html[data-theme='light'] .text-amber-400,
+  html[data-theme='light'] .text-amber-500 { color: #8f5e0a; }
+  html[data-theme='light'] .text-amber-400\/80 { color: color-mix(in srgb, #8f5e0a 80%, transparent); }
+  html[data-theme='light'] .text-amber-400\/90 { color: color-mix(in srgb, #8f5e0a 90%, transparent); }
+  html[data-theme='light'] .text-red-400,
+  html[data-theme='light'] .text-red-500 { color: var(--fail); }
+  html[data-theme='light'] .text-sky-400,
+  html[data-theme='light'] .text-sky-500 { color: #0b5fa5; }
+
   /* ── FOOTER THEME TOGGLE ─────────────────────────── */
   .themetog {
     display: inline-flex; align-items: center; gap: 2px;
@@ -4596,3 +4611,43 @@
     .mintstage { padding: 18px 16px 14px; }
     .mintstage__eyebrow { display: none; }
   }
+
+  /* ── .desktx — the desk transcript strip (/docs/desk; the launch clip's
+     storyboard). Terminal on a token surface (never bg-black — paper gets a
+     paper terminal), role inks as theme-aware tokens, the caret blinks, the
+     signed line lands with a pulse, the SIGNED verdict wears --done. All
+     motion is opt-out under prefers-reduced-motion. */
+  .desktx {
+    --desktx-agent: #7cc4ff;
+    --desktx-human: #f5c451;
+    background: color-mix(in srgb, var(--fg) 4%, var(--bg));
+    transition: box-shadow .6s ease;
+  }
+  .desktx--signed { box-shadow: 0 0 0 1px color-mix(in srgb, var(--done) 35%, transparent), 0 0 28px color-mix(in srgb, var(--done) 12%, transparent); }
+  html[data-theme='light'] .desktx { --desktx-agent: #0b5fa5; --desktx-human: #8f5e0a; }
+  .desktx__who--agent { color: var(--desktx-agent); }
+  .desktx__who--desk { color: var(--accent); }
+  .desktx__who--human { color: var(--desktx-human); }
+  .desktx__line { animation: desktx-land .32s ease-out both; }
+  .desktx__line--beat { color: var(--fg); animation: desktx-land .32s ease-out both, desktx-beat 1.1s ease-out .05s; }
+  .desktx__line--done { color: var(--done); }
+  .desktx__line--done .desktx__who--desk { color: var(--done); }
+  .desktx__caret { display: inline-block; color: var(--muted-2); animation: desktx-blink 1s steps(1) infinite; }
+  .desktx__caret--held { animation: none; opacity: .5; }
+  @keyframes desktx-land { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: none; } }
+  @keyframes desktx-blink { 50% { opacity: 0; } }
+  @keyframes desktx-beat {
+    0% { text-shadow: 0 0 0 transparent; }
+    18% { text-shadow: 0 0 14px color-mix(in srgb, var(--done) 70%, transparent); color: var(--done); }
+    100% { text-shadow: 0 0 0 transparent; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .desktx, .desktx__line, .desktx__line--beat, .desktx__caret { animation: none; transition: none; }
+  }
+
+  /* ── .yenter — a quiet entrance for bars that appear at a moment (the /i
+     signed-state "X was notified" + "Sign in & save" bars). Entrance ONLY —
+     never an exit (exit animations + starved rAF leave ghosts). */
+  .yenter { animation: yenter .32s ease-out both; }
+  @keyframes yenter { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+  @media (prefers-reduced-motion: reduce) { .yenter { animation: none; } }

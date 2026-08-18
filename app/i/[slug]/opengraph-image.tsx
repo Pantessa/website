@@ -83,7 +83,10 @@ export default async function Image({ params }: Params) {
   }
   const live = link && !link.revoked ? link : null
   const ask = live?.ask ?? 'One tap from ask to signed'
-  const askSize = ask.length > 80 ? 44 : ask.length > 44 ? 56 : 72
+  // Size ladder with a 64 step: a 27–44 char ask at 72px (the H1 drill's
+  // "Swap $20 of USDC to ETH on Base") wrapped with a one-word widow; at 64
+  // it sits on one line. Asks ≤26 chars (every house link) are untouched.
+  const askSize = ask.length > 80 ? 44 : ask.length > 44 ? 56 : ask.length > 26 ? 64 : 72
 
   // MOSAIC pick: kind:'mosaic' stamps new mints, but rows minted before the
   // column carry the grammar in the ask alone — a successful parse is the
@@ -98,9 +101,14 @@ export default async function Image({ params }: Params) {
   // Mosaic cards skip the fetch entirely — they wear the house palette in
   // v1, so reading the brand row would be a query spent on nothing.
   let brand = null
+  // WHOSE link: a claimed @handle names the sender on the card (the unfurl
+  // is the first thing a DM'd stranger sees — "from @nate" beats an
+  // anonymous "CALL"). Read off the same row as the brand.
+  let handle: string | null = null
   if (live?.creator && !mosaic) {
     try {
       const row = await prisma.creatorHandle.findUnique({ where: { creator: live.creator } })
+      if (row?.handle) handle = row.handle
       brand = brandFromRow(row) // rule 7: denied third-party brands render as house
     } catch {
       brand = null
@@ -319,21 +327,29 @@ export default async function Image({ params }: Params) {
               {/* The share card is the thing that lands in a feed, so the
                   CALL framing has to outrank the white label — a branded
                   creator card used to read as a plain powered-by. */}
+              {/* Reconciled with GTM's stranger-eye read (2026-08-18): a
+                  creator link says WHOSE ("FROM @HANDLE" — "CALL BY" read
+                  as a trade tip), and the old tap-to-run eyebrow hinted auto-run, which it
+                  isn't — the wallet signs. The eyebrow now says so. */}
               {brand
                 ? live?.creator
-                  ? 'CALL · POWERED BY PANTESSA'
+                  ? handle
+                    ? `FROM @${handle.toUpperCase().slice(0, 16)} · POWERED BY PANTESSA`
+                    : 'CALL · POWERED BY PANTESSA'
                   : 'POWERED BY PANTESSA'
                 : live?.creator
                   ? live.agent
-                    ? `CALL BY ${live.agent.toUpperCase().slice(0, 18)}`
-                    : 'CALL · TAP TO RUN'
-                  : 'INTENT LINK · TAP TO RUN'}
+                    ? `CALL BY ${live.agent.toUpperCase().slice(0, 18)} · YOUR WALLET SIGNS`
+                    : handle
+                      ? `FROM @${handle.toUpperCase().slice(0, 16)} · YOUR WALLET SIGNS`
+                      : 'CALL · YOUR WALLET SIGNS'
+                  : 'INTENT LINK · YOUR WALLET SIGNS'}
             </span>
           </div>
         </div>
 
         {/* the ask — the hero */}
-        <div style={{ position: 'absolute', top: 200, left: 64, right: 64, display: 'flex', flexDirection: 'column' }}>
+        <div style={{ position: 'absolute', top: 190, left: 64, right: 64, display: 'flex', flexDirection: 'column' }}>
           <div
             style={{
               display: 'flex',
@@ -349,11 +365,15 @@ export default async function Image({ params }: Params) {
           >
             <span>“{ask}”</span>
           </div>
+          {/* The promise + the contract pills are sized for the UNFURL — an
+              iMessage/Telegram thumbnail is ~300px wide (0.25×): 30px read
+              as 7.5px there, invisible. 38/23px put "your wallet signs" in
+              the thumbnail, where the stranger decides whether to tap. */}
           <div
             style={{
               display: 'flex',
-              marginTop: 30,
-              fontSize: 30,
+              marginTop: 28,
+              fontSize: 38,
               fontWeight: 600,
               letterSpacing: -0.5,
               // the tri-color gradient is tuned for the house dark card — a
@@ -368,6 +388,11 @@ export default async function Image({ params }: Params) {
             }}
           >
             <span>Connect a wallet and the path builds itself.</span>
+          </div>
+          {/* the non-custodial line, verbatim from the /i splash's third card
+              — the unfurl and the page say the same sentence */}
+          <div style={{ display: 'flex', marginTop: 14, fontSize: 26, color: pal.muted }}>
+            <span>Nothing moves until you sign — in your own wallet.</span>
           </div>
         </div>
 
@@ -391,15 +416,15 @@ export default async function Image({ params }: Params) {
                   display: 'flex',
                   alignItems: 'center',
                   gap: 9,
-                  padding: '9px 16px',
+                  padding: '10px 18px',
                   borderRadius: 999,
                   border: pal.branded ? `1.5px solid rgba(${pal.inkRgb},0.28)` : '1.5px solid rgba(255,255,255,0.14)',
                   background: pal.branded ? `rgba(${pal.inkRgb},0.05)` : 'rgba(255,255,255,0.03)',
-                  fontSize: 19,
+                  fontSize: 23,
                   color: pal.ink,
                 }}
               >
-                <div style={{ display: 'flex', width: 8, height: 8, borderRadius: 4, background: pal.accent }} />
+                <div style={{ display: 'flex', width: 9, height: 9, borderRadius: 5, background: pal.accent }} />
                 <span>{label}</span>
               </div>
             ))}
