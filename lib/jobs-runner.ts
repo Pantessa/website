@@ -66,13 +66,17 @@ const OFFER_TTL_MS = 30 * 60_000
 /** A wait that hasn't settled in this long fails the job (refunds surface). */
 const WAIT_TIMEOUT_MS = 45 * 60_000
 
-export async function createJob(wallet: string, compiled: CompiledJob, source = 'chat') {
+/** Create a job. `opts.internal` stamps `jobs.is_internal` (lib/internal-run.ts):
+ *  our own harness/drill runs create REAL jobs rows for throwaway wallets,
+ *  and the GTM arc must never read one as an arrival, a build, or a sign. */
+export async function createJob(wallet: string, compiled: CompiledJob, source = 'chat', opts?: { internal?: boolean }) {
   const job = await prisma.job.create({
     data: {
       wallet: wallet.toLowerCase(),
       title: compiled.title,
       source,
       originEnv: jobsEnv(),
+      isInternal: opts?.internal === true,
       steps: {
         create: compiled.steps.map((s, i) => ({
           seq: i,

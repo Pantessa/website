@@ -56,6 +56,9 @@ import {
 } from '../lib/broker-policy'
 import { buildDelivery, mintCallbackSecret, signWebhook, validateCallbackUrl } from '../lib/broker-webhook'
 import { agentHandleFor } from '../lib/agent-record'
+import { addrsUnion, arcQuery } from '../lib/gtm-arc'
+import { isInternalRun, INTERNAL_RUN_HEADER } from '../lib/internal-run'
+import { deskExecuteConsentMessage, cleanSenderLabel } from '../lib/broker-exec'
 import { deskPricing, priceForTool, pricingBlock } from '../lib/broker-pricing'
 import {
   clientIpFrom,
@@ -263,7 +266,11 @@ function getCookie(res: Response, name: string): string | null {
   return null
 }
 
+/** Every wallet this suite signed in with — the end-of-suite "no stranger
+ *  left behind" pin reads exactly these back off the cohorts view. */
+const SIGNED_IN_WALLETS = new Set<string>()
 async function signIn(account: PrivateKeyAccount): Promise<string> {
+  SIGNED_IN_WALLETS.add(account.address.toLowerCase())
   const nonceRes = await fetch(`${BASE}/api/auth/nonce`)
   const nonceCookie = getCookie(nonceRes, 'yf_siwe_nonce')
   const { nonce } = await nonceRes.json()
@@ -292,11 +299,28 @@ const flat = (html: string) => html.replace(/<!--.*?-->/g, '')
 
 // Chat probes below deliberately provoke refusals and fall-throughs — mark
 // them so the ask-failure log (lib/ask-failure.ts) skips harness traffic.
+//
+// HARNESS HONESTY (the arrival-table extension of Q3, 2026-08-18): every
+// request this suite makes to BASE carries `x-yf-internal-run: 1`, so every
+// intent_links / wallet_working_sets / jobs row it mints is stamped
+// is_internal and the GTM arc never counts a throwaway wallet as an arrival.
+// Two deliberate exceptions: (1) /api/embed/telemetry keeps its PER-PROBE
+// stamps — the referral fixtures there simulate ORGANIC strangers and the
+// belt would silently break them (the Q3 lesson); (2) a probe that must look
+// organic on purpose sends `x-yf-organic-probe: 1`, which the wrapper strips
+// and honors (the arc pin below proves an organic mint DOES arrive).
+const ORGANIC_PROBE = 'x-yf-organic-probe'
 const realFetch = globalThis.fetch
 globalThis.fetch = ((input: Parameters<typeof realFetch>[0], init?: RequestInit) => {
   const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
   if (typeof url === 'string' && url.includes('/api/chat')) {
     init = { ...(init ?? {}), headers: { ...((init?.headers as Record<string, string>) ?? {}), 'x-yf-no-ask-log': '1' } }
+  }
+  if (typeof url === 'string' && url.startsWith(BASE) && !url.includes('/api/embed/telemetry')) {
+    const h = { ...((init?.headers as Record<string, string>) ?? {}) }
+    if (h[ORGANIC_PROBE] === '1') delete h[ORGANIC_PROBE]
+    else if (!('x-yf-internal-run' in h)) h['x-yf-internal-run'] = '1'
+    init = { ...(init ?? {}), headers: h }
   }
   return realFetch(input, init)
 }) as typeof fetch
@@ -1016,9 +1040,92 @@ async function main() {
         arcRes.status === 200 && sourcesOk && totalsOk,
         JSON.stringify(arcBody.arc).slice(0, 300),
       )
+
+      // ── Honest denominator (2026-08-18): the arrival tables carry the Q3
+      // stamp. A stamped mint/write NEVER arrives; an organic one DOES — and
+      // the organic probe wallet is then re-stamped so this run leaves no
+      // durable "stranger" behind (the wallet_working_sets stamp is sticky-on).
+      const walletsOf = async () => {
+        const r = await fetch(`${BASE}/api/admin/cohorts?days=30`, { headers: { cookie: adminSession } })
+        const b = (await r.json()) as { wallets?: { address: string; links?: number }[] }
+        return b.wallets ?? []
+      }
+      const w1 = privateKeyToAccount(generatePrivateKey())
+      const w1Session = await signIn(w1)
+      const stampedMint = await fetch(`${BASE}/api/intent-links`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', cookie: w1Session },
+        body: JSON.stringify({ ask: 'Swap $5 of ETH to USDC' }),
+      })
+      const stampedMintBody = (await stampedMint.json()) as { slug?: string; internal?: boolean }
+      const stampedWs = await fetch(`${BASE}/api/working-set`, {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json', cookie: w1Session },
+        body: JSON.stringify({ serviceIds: [] }),
+      })
+      const stampedWsBody = (await stampedWs.json()) as { internal?: boolean }
+      const afterStamped = await walletsOf()
+      check(
+        'arrivals: a stamped intent-link mint + working-set write echo internal:true and the wallet NEVER arrives (cohorts wallets)',
+        stampedMint.status === 200 && stampedMintBody.internal === true && !!stampedMintBody.slug &&
+          stampedWs.status === 200 && stampedWsBody.internal === true &&
+          !afterStamped.some((w) => w.address.toLowerCase() === w1.address.toLowerCase()),
+        `wallets=${afterStamped.length}`,
+      )
+      const w2 = privateKeyToAccount(generatePrivateKey())
+      const w2Session = await signIn(w2)
+      const organicWs = await fetch(`${BASE}/api/working-set`, {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json', cookie: w2Session, [ORGANIC_PROBE]: '1' },
+        body: JSON.stringify({ serviceIds: [] }),
+      })
+      const organicWsBody = (await organicWs.json()) as { internal?: boolean }
+      const afterOrganic = await walletsOf()
+      const organicArrived = afterOrganic.some((w) => w.address.toLowerCase() === w2.address.toLowerCase())
+      // Re-stamp the organic wallet (sticky-on) so the suite leaves no stranger.
+      const restamp = await fetch(`${BASE}/api/working-set`, {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json', cookie: w2Session },
+        body: JSON.stringify({ serviceIds: [] }),
+      })
+      const afterRestamp = await walletsOf()
+      check(
+        'arrivals: an unstamped organic working-set write DOES arrive (no internal echo); a later stamped write flips it out (sticky-on)',
+        organicWs.status === 200 && organicWsBody.internal !== true && organicArrived &&
+          restamp.status === 200 &&
+          !afterRestamp.some((w) => w.address.toLowerCase() === w2.address.toLowerCase()),
+        `organicArrived=${organicArrived}`,
+      )
     } else {
       check('gtm arc: skipped — no burner key in .env.local', true)
     }
+  }
+  // Pure pins on the arc SQL + the signal reader — the digest and dashboard
+  // share these strings, so a regression here is a regression on both.
+  {
+    const union = addrsUnion({ prodJobsOnly: true }).sql
+    const unionAll = addrsUnion().sql
+    const arc = arcQuery(30).sql
+    check(
+      'arrivals: addrsUnion + arcQuery exclude is_internal rows on intent_links, wallet_working_sets, jobs (+ job_steps joins, embed_turns owners)',
+      /FROM intent_links WHERE creator IS NOT NULL AND NOT is_internal/.test(union) &&
+        /FROM wallet_working_sets WHERE NOT is_internal/.test(union) &&
+        /FROM jobs WHERE origin_env = 'production' AND NOT is_internal/.test(union) &&
+        /FROM jobs WHERE NOT is_internal/.test(unionAll) &&
+        /FROM embed_turns WHERE owner_address IS NOT NULL AND NOT is_internal/.test(union) &&
+        (arc.match(/j\.origin_env = 'production' AND NOT j\.is_internal/g) ?? []).length === 2 &&
+        /e\.kind = 'connect' AND NOT il\.is_internal/.test(arc),
+    )
+    check(
+      'arrivals: isInternalRun reads the header (Headers + plain record) and the body flag, and nothing else',
+      isInternalRun(new Headers({ [INTERNAL_RUN_HEADER]: '1' })) &&
+        isInternalRun({ 'x-yf-internal-run': '1' }) &&
+        isInternalRun(null, { internalRun: true }) &&
+        !isInternalRun(new Headers({ [INTERNAL_RUN_HEADER]: 'yes' })) &&
+        !isInternalRun(null, { internalRun: 'true' }) &&
+        !isInternalRun(null, null) &&
+        !isInternalRun({}, {}),
+    )
   }
 
   // ── Treasury (admin-only) ─────────────────────────────────────────────────
@@ -9258,14 +9365,16 @@ async function main() {
       headers: { 'content-type': 'application/json', 'x-yf-no-ask-log': '1' },
       body: JSON.stringify({ wallet: signer.address, artifact: 'hl-order', ask: 'close 1 ETH', detail: 'Provided chainId "1337" must match the active chainId "4663"' }),
     })
+    // These two must reach the rejection/shape gates, so they opt out of the
+    // suite-wide internal-run stamp (which would short-circuit them first).
     const refusalRejected = await fetch(`${BASE}/api/ask-failures/wallet`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: { 'content-type': 'application/json', [ORGANIC_PROBE]: '1' },
       body: JSON.stringify({ wallet: signer.address, artifact: 'hl-order', ask: 'close 1 ETH', detail: 'User rejected the request.' }),
     })
     const refusalShape = await fetch(`${BASE}/api/ask-failures/wallet`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: { 'content-type': 'application/json', [ORGANIC_PROBE]: '1' },
       body: JSON.stringify({ artifact: 'nope', detail: 'x' }),
     })
     check(
@@ -10323,22 +10432,54 @@ async function main() {
     // The agent-signed path: a SEQUENCED ask compiles to a job owned by the
     // agent's wallet; the MCP returns ids + the drive recipe, never artifacts.
     const seqAsk = 'swap 1 USDC for ETH on base, then send 0.5 USDC on base to 0x2222222222222222222222222222222222222222'
+    // The agent's OWN wallet — a real key, because the execute path now
+    // demands proof of the wallet (2026-08-18 audit: an unproven wallet let
+    // any caller plant a needs-you job in a stranger's Jobs rail).
+    const agentWallet = privateKeyToAccount(generatePrivateKey())
     const execOpen = await call('broker_open', {
       ask: seqAsk,
-      wallet: '0x1111111111111111111111111111111111111111',
+      wallet: agentWallet.address,
       agent: 'harness',
       agent_key: 'harness-desk-key',
     })
-    const execRes = await call('broker_execute', { intent_id: execOpen.payload.intentId })
+    const execIntentId = execOpen.payload.intentId as string
+    const noProof = await call('broker_execute', { intent_id: execIntentId })
+    check(
+      'broker: execute WITHOUT wallet_signature is refused by name (schema) — no job row for an unproven wallet',
+      noProof.isError && /wallet_signature/i.test(String(noProof.payload)),
+      String(noProof.payload).slice(0, 120),
+    )
+    const impostor = privateKeyToAccount(generatePrivateKey())
+    const impostorSig = await impostor.signMessage({ message: deskExecuteConsentMessage(execIntentId, agentWallet.address) })
+    const wrongWallet = await call('broker_execute', { intent_id: execIntentId, wallet_signature: impostorSig })
+    check(
+      "broker: execute with another wallet's signature over the consent text is refused (recovers to a different wallet)",
+      wrongWallet.isError && /recovers to/i.test(String(wrongWallet.payload)),
+      String(wrongWallet.payload).slice(0, 120),
+    )
+    const otherIntentSig = await agentWallet.signMessage({ message: deskExecuteConsentMessage('someotherid', agentWallet.address) })
+    const wrongIntent = await call('broker_execute', { intent_id: execIntentId, wallet_signature: otherIntentSig })
+    check(
+      'broker: a consent signed for a DIFFERENT intent id does not transfer (bound to intent + wallet)',
+      wrongIntent.isError && /recovers to|does not verify/i.test(String(wrongIntent.payload)),
+    )
+    const execSig = await agentWallet.signMessage({ message: deskExecuteConsentMessage(execIntentId, agentWallet.address) })
+    const execRes = await call('broker_execute', { intent_id: execIntentId, wallet_signature: execSig })
     const drive = execRes.payload?.drive
     check(
-      'broker: execute compiles the sequenced ask to an agent-owned job + drive recipe',
+      'broker: execute with the wallet\'s own consent signature compiles the sequenced ask to an agent-owned job + drive recipe',
       !execRes.isError &&
         typeof execRes.payload?.jobId === 'string' &&
         (execRes.payload.steps?.length ?? 0) >= 2 &&
         typeof drive?.poll === 'string' &&
         drive.poll.includes('?t='),
       `${execRes.payload?.steps?.length} legs`,
+    )
+    check(
+      'broker: the consent text is intent+wallet bound, human-readable, and carries no hex material',
+      deskExecuteConsentMessage('abc', '0xABCDEF0000000000000000000000000000000001').includes('Intent: abc') &&
+        deskExecuteConsentMessage('abc', '0xABCDEF0000000000000000000000000000000001').includes('Wallet: 0xabcdef0000000000000000000000000000000001') &&
+        !/0x[0-9a-fA-F]{64,}/.test(deskExecuteConsentMessage('abc', agentWallet.address)),
     )
     const jobPoll = await fetch((drive.poll as string).replace(/^https?:\/\/[^/]+/, BASE))
     const jobBody = (await jobPoll.json()) as { job?: { steps?: unknown[] } }
@@ -10348,7 +10489,7 @@ async function main() {
     )
 
     const single = await call('broker_open', { ask: 'Buy $15 of AAPL', agent: 'harness' })
-    const singleExec = await call('broker_execute', { intent_id: single.payload.intentId })
+    const singleExec = await call('broker_execute', { intent_id: single.payload.intentId, wallet_signature: execSig })
     check(
       'broker: execute refuses single-step and wallet-less intents honestly',
       singleExec.isError && /wallet that will SIGN|does not compile/i.test(String(singleExec.payload)),
@@ -10361,7 +10502,7 @@ async function main() {
       wallet: '0x3333333333333333333333333333333333333333',
       agent: 'harness',
     })
-    const noIdExec = await call('broker_execute', { intent_id: noId.payload.intentId })
+    const noIdExec = await call('broker_execute', { intent_id: noId.payload.intentId, wallet_signature: execSig })
     check(
       'broker M1: agent-signed execute refuses an intent with no bound identity, by name',
       noIdExec.isError && /bound agent identity|agent_key/i.test(String(noIdExec.payload)),
@@ -10375,7 +10516,7 @@ async function main() {
       agent: 'harness',
       agent_key: 'harness-desk-key',
     })
-    const overCapExec = await call('broker_execute', { intent_id: overCap.payload.intentId })
+    const overCapExec = await call('broker_execute', { intent_id: overCap.payload.intentId, wallet_signature: execSig })
     check(
       'broker M1: agent-signed execute refuses an intent over the desk cap',
       overCapExec.isError && /desk caps|over/i.test(String(overCapExec.payload)),
@@ -10464,6 +10605,27 @@ async function main() {
     )
     const inboxBad = await fetch(`${BASE}/api/inbox?wallet=nope`)
     check('broker U1: /api/inbox refuses a malformed wallet', inboxBad.status === 400)
+    // An agent byline can never wear the marks Pantessa stamps itself: human
+    // sends carry `@handle` (claimed, server-stamped) or a 0x short address.
+    const impersonate = await call('broker_send', {
+      ask: 'Buy $15 of AAPL',
+      recipient: inboxWallet,
+      sender_label: '@nategeier',
+      agent: 'harness',
+    })
+    const impInbox = ((await (await fetch(`${BASE}/api/inbox?wallet=${inboxWallet}`)).json()) as { items?: { slug?: string; from?: string | null }[] }).items ?? []
+    const impSlug = String(impersonate.payload?.url ?? '').split('/').pop()
+    const impItem = impInbox.find((i) => i.slug === impSlug)
+    check(
+      'broker M5: sender_label "@handle" / "0x…" shapes are stripped — an agent cannot impersonate a claimed handle in the inbox',
+      !impersonate.isError && !!impItem && impItem.from === 'nategeier' &&
+        cleanSenderLabel('@@nate') === 'nate' &&
+        cleanSenderLabel('0x6626…7257 Nate') === 'Nate' &&
+        cleanSenderLabel('0xabcdef') === null &&
+        cleanSenderLabel('  Harness  Bot ') === 'Harness Bot',
+      `from=${impItem?.from}`,
+    )
+    if (impersonate.payload?.intentId) await call('broker_close', { intent_id: impersonate.payload.intentId })
 
     // U2 — the closed-loop receipt seam: the /i page of a desk-bound
     // (addressed) link serializes the notify prop (sender label + push mode)
@@ -10579,6 +10741,45 @@ async function main() {
     'all rows cleaned (keys, grants+ledger, chats, orgs)',
     delChat.status === 200 && delGrant.status === 200 && left.every((l) => Array.isArray(l) && l.length === 0),
   )
+
+  // ── Honest denominator, suite-wide (2026-08-18) ───────────────────────────
+  // A full test:api run must not move ANY stage of the GTM arc. Per-wallet
+  // instead of per-total (sibling runs on the shared DB would race a totals
+  // diff): every wallet this suite signed in with is read back through the
+  // SAME milestone CTEs the dashboard/arc use (`?only=` is admin-gated), and
+  // none may appear as an arrival — the burner is a TEST_WALLET (the arc
+  // excludes it by name; it never counts as a stranger) and is skipped here.
+  {
+    const envFs = await import('node:fs')
+    const pkRaw = (() => {
+      try {
+        return envFs.readFileSync('.env.local', 'utf8').match(/^PRIVATE_KEY=(.*)$/m)?.[1]?.trim().replace(/^"|"$/g, '') ?? null
+      } catch {
+        return null
+      }
+    })()
+    if (pkRaw) {
+      const burner = privateKeyToAccount((pkRaw.startsWith('0x') ? pkRaw : `0x${pkRaw}`) as `0x${string}`)
+      const adminSession = await signIn(burner)
+      const throwaways = [...SIGNED_IN_WALLETS].filter((a) => a !== burner.address.toLowerCase())
+      const leaked: string[] = []
+      for (let i = 0; i < throwaways.length; i += 64) {
+        const slice = throwaways.slice(i, i + 64)
+        const r = await fetch(`${BASE}/api/admin/cohorts?days=1&only=${slice.join(',')}`, { headers: { cookie: adminSession } })
+        const b = (await r.json()) as { wallets?: ({ address: string } & Record<string, unknown>)[] }
+        for (const w of b.wallets ?? []) {
+          leaked.push(
+            `${w.address.slice(0, 10)}…(surface=${w.surface ?? '-'} toggle=${w.firstToggle ? 'y' : '-'} standing=${w.standingKind ?? '-'} links=${w.links ?? 0} via=${w.via ?? '-'})`,
+          )
+        }
+      }
+      check(
+        `arrivals: a full suite run leaves NO throwaway wallet as an arrival on the cohorts/arc view (${throwaways.length} wallets read back)`,
+        leaked.length === 0,
+        leaked.length ? `LEAKED ${leaked.length}: ${leaked.slice(0, 8).join(' ')}` : '',
+      )
+    }
+  }
 
   console.log(`\n${pass} passed, ${fail} failed\n`)
   process.exit(fail ? 1 : 0)

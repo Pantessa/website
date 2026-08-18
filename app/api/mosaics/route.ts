@@ -12,6 +12,7 @@ import {
   type MosaicChainWord,
 } from '@/lib/mosaic'
 import { REAL_TRAFFIC_WHERE } from '@/lib/value-origin'
+import { isInternalRun } from '@/lib/internal-run'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -118,9 +119,11 @@ export async function POST(req: NextRequest) {
           agent,
           kind: 'mosaic',
           parentSlug,
+          // Our own harness/drill mint (lib/internal-run.ts) — never an arrival.
+          isInternal: isInternalRun(req.headers, body),
         },
       })
-      return NextResponse.json({ slug: link.id, url: `/i/${link.id}`, ask: link.ask })
+      return NextResponse.json({ slug: link.id, url: `/i/${link.id}`, ask: link.ask, ...(isInternalRun(req.headers, body) ? { internal: true } : {}) })
     } catch (e) {
       const unique = e instanceof Error && 'code' in e && (e as { code?: string }).code === 'P2002'
       if (!unique) throw e

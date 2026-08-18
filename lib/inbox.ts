@@ -48,7 +48,7 @@ export interface SentIntent {
  *  allowWallets set. Returns the /i link and the recipient's inbox URL. */
 export async function sendIntent(
   site: string,
-  opts: { ask: string; recipientRaw: unknown; senderLabel?: string; mcps?: string[]; agent?: string },
+  opts: { ask: string; recipientRaw: unknown; senderLabel?: string; mcps?: string[]; agent?: string; internal?: boolean },
 ): Promise<SentIntent> {
   const ask = cleanAsk(opts.ask)
   if (!ask || ask.length < 3) throw new Error('The intent must be a plain sentence (amounts included).')
@@ -72,6 +72,8 @@ export async function sendIntent(
       recipient,
       senderLabel,
       allowWallets: [recipient],
+      // Our own harness/drill send (lib/internal-run.ts) — never an arrival.
+      isInternal: opts.internal === true,
     },
   })
 

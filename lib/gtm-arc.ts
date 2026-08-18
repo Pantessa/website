@@ -17,14 +17,18 @@ import { INTERNAL_ORIGIN_SQL } from '@/lib/value-origin'
  *  inflating the arc's arrivals (caught by the arc's own harness check going
  *  red between two suite runs, 2026-08-12). */
 export function addrsUnion(opts?: { prodJobsOnly?: boolean }) {
+  // is_internal (lib/internal-run.ts): our own harness/drill rows on the
+  // arrival tables — intent_links, wallet_working_sets, jobs (+ embed_turns
+  // via Q3) — never count as an arrival. The 2026-08-17 audit: 690 wallets /
+  // 3,026 links in 30d were us; the curve matched gate-run days exactly.
   const jobsLine = opts?.prodJobsOnly
-    ? Prisma.sql`SELECT lower(wallet), created_at FROM jobs WHERE origin_env = 'production'`
-    : Prisma.sql`SELECT lower(wallet), created_at FROM jobs`
+    ? Prisma.sql`SELECT lower(wallet), created_at FROM jobs WHERE origin_env = 'production' AND NOT is_internal`
+    : Prisma.sql`SELECT lower(wallet), created_at FROM jobs WHERE NOT is_internal`
   return Prisma.sql`
-      SELECT lower(owner_address) AS a, created_at FROM chats WHERE owner_address IS NOT NULL
-      UNION ALL SELECT lower(owner_address), created_at FROM embed_turns WHERE owner_address IS NOT NULL
+      SELECT lower(owner_address) AS a, created_at FROM chats WHERE owner_address IS NOT NULL AND NOT is_internal
+      UNION ALL SELECT lower(owner_address), created_at FROM embed_turns WHERE owner_address IS NOT NULL AND NOT is_internal
       UNION ALL SELECT lower(address), created_at FROM agent_toggle_events WHERE address IS NOT NULL
-      UNION ALL SELECT lower(owner_address), created_at FROM wallet_working_sets
+      UNION ALL SELECT lower(owner_address), created_at FROM wallet_working_sets WHERE NOT is_internal
       UNION ALL ${jobsLine}
       UNION ALL SELECT lower(wallet), created_at FROM dca_schedules
       UNION ALL SELECT lower(wallet), created_at FROM hl_guardian_policies
@@ -35,8 +39,9 @@ export function addrsUnion(opts?: { prodJobsOnly?: boolean }) {
       -- honest version of that signal.
       UNION ALL SELECT lower(address), created_at FROM org_members
       UNION ALL SELECT lower(owner_address), created_at FROM spend_grants WHERE owner_address NOT LIKE 'org:%'
-      UNION ALL SELECT lower(creator), created_at FROM intent_links WHERE creator IS NOT NULL
-      UNION ALL SELECT lower(wallet), created_at FROM intent_link_events WHERE wallet IS NOT NULL
+      UNION ALL SELECT lower(creator), created_at FROM intent_links WHERE creator IS NOT NULL AND NOT is_internal
+      UNION ALL SELECT lower(wallet), created_at FROM intent_link_events e WHERE wallet IS NOT NULL
+        AND NOT EXISTS (SELECT 1 FROM intent_links il WHERE il.id = e.slug AND il.is_internal)
 `
 }
 
@@ -77,7 +82,7 @@ export function arcQuery(days: number) {
     user_msgs AS (
       SELECT lower(c.owner_address) AS a, m.created_at, m.role, m.meta
       FROM messages m JOIN chats c ON c.id = m.chat_id
-      WHERE c.owner_address IS NOT NULL
+      WHERE c.owner_address IS NOT NULL AND NOT c.is_internal
     ),
     addrs AS (
       ${addrsUnion({ prodJobsOnly: true })}
@@ -98,7 +103,7 @@ export function arcQuery(days: number) {
         WHERE meta ?| array['txRequest', 'txChain', 'orderRequest', 'jobId', 'guardianPolicyId', 'dcaScheduleId']
         UNION ALL
         SELECT lower(j.wallet), s.created_at FROM job_steps s JOIN jobs j ON j.id = s.job_id
-        WHERE s.kind = 'sign' AND j.origin_env = 'production'
+        WHERE s.kind = 'sign' AND j.origin_env = 'production' AND NOT j.is_internal
       ) z GROUP BY 1
     ),
     signed_arc AS (
@@ -106,7 +111,7 @@ export function arcQuery(days: number) {
         SELECT a, created_at AS t FROM user_msgs WHERE jsonb_exists(meta, 'signed')
         UNION ALL
         SELECT lower(j.wallet), s.updated_at FROM job_steps s JOIN jobs j ON j.id = s.job_id
-        WHERE s.kind = 'sign' AND s.status = 'done' AND j.origin_env = 'production'
+        WHERE s.kind = 'sign' AND s.status = 'done' AND j.origin_env = 'production' AND NOT j.is_internal
         UNION ALL
         SELECT a, created_at FROM turns WHERE outcome = 'signed'
       ) z GROUP BY 1
@@ -122,7 +127,7 @@ export function arcQuery(days: number) {
         SELECT lower(e.wallet) AS a, e.created_at AS t,
                CASE WHEN il.creator IS NULL THEN 'house link' ELSE 'creator link' END AS src
         FROM intent_link_events e JOIN intent_links il ON il.id = e.slug
-        WHERE e.wallet IS NOT NULL AND e.kind = 'connect'
+        WHERE e.wallet IS NOT NULL AND e.kind = 'connect' AND NOT il.is_internal
         UNION ALL
         SELECT a, created_at, 'embed' FROM turns WHERE is_embed
       ) z ORDER BY a, t ASC

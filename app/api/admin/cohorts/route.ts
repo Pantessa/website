@@ -62,7 +62,7 @@ function milestoneCtes(days: number, excl: string[]) {
     chat_fp AS (
       SELECT lower(c.owner_address) AS a, min(m.created_at) AS t
       FROM messages m JOIN chats c ON c.id = m.chat_id
-      WHERE m.role = 'user' AND c.owner_address IS NOT NULL
+      WHERE m.role = 'user' AND c.owner_address IS NOT NULL AND NOT c.is_internal
       GROUP BY 1
     ),
     -- Embed-surface turn: first turn under an embed key this wallet OWNS
@@ -82,11 +82,11 @@ function milestoneCtes(days: number, excl: string[]) {
       SELECT a, min(t) AS t FROM (
         SELECT lower(c.owner_address) AS a, m.created_at AS t
         FROM messages m JOIN chats c ON c.id = m.chat_id
-        WHERE c.owner_address IS NOT NULL AND jsonb_exists(m.meta, 'signed')
+        WHERE c.owner_address IS NOT NULL AND jsonb_exists(m.meta, 'signed') AND NOT c.is_internal
         UNION ALL
         SELECT lower(j.wallet), s.updated_at
         FROM job_steps s JOIN jobs j ON j.id = s.job_id
-        WHERE s.kind = 'sign' AND s.status = 'done'
+        WHERE s.kind = 'sign' AND s.status = 'done' AND NOT j.is_internal
       ) z GROUP BY 1
     ),
     -- Wallet-attributable money moved: signed job steps + guardian closes.
@@ -94,7 +94,7 @@ function milestoneCtes(days: number, excl: string[]) {
       SELECT a, sum(usd)::float AS usd, count(*)::int AS n FROM (
         SELECT lower(j.wallet) AS a, coalesce(s.value_usd, 0) AS usd
         FROM job_steps s JOIN jobs j ON j.id = s.job_id
-        WHERE s.kind = 'sign' AND s.status = 'done'
+        WHERE s.kind = 'sign' AND s.status = 'done' AND NOT j.is_internal
         UNION ALL
         SELECT lower(wallet), coalesce(value_usd, 0)
         FROM hl_guardian_runs WHERE action = 'closed'
@@ -102,7 +102,7 @@ function milestoneCtes(days: number, excl: string[]) {
     ),
     standing AS (
       SELECT a, min(t) AS t, (array_agg(kind ORDER BY t))[1] AS kind FROM (
-        SELECT lower(wallet) AS a, created_at AS t, 'job'::text AS kind FROM jobs
+        SELECT lower(wallet) AS a, created_at AS t, 'job'::text AS kind FROM jobs WHERE NOT is_internal
         UNION ALL SELECT lower(wallet), created_at, 'dca' FROM dca_schedules
         UNION ALL SELECT lower(wallet), created_at, 'guardian' FROM hl_guardian_policies
       ) z GROUP BY 1
@@ -122,7 +122,7 @@ function milestoneCtes(days: number, excl: string[]) {
     -- signed conversion (server truth: embed_turns, never client events).
     minted AS (
       SELECT lower(creator) AS a, min(created_at) AS t, count(*)::int AS n
-      FROM intent_links WHERE creator IS NOT NULL GROUP BY 1
+      FROM intent_links WHERE creator IS NOT NULL AND NOT is_internal GROUP BY 1
     ),
     link_open AS (
       SELECT lower(il.creator) AS a, min(e.created_at) AS t
@@ -170,6 +170,16 @@ export async function GET(req: NextRequest) {
   const days = WINDOWS.has(raw) ? raw : 14
   const external = req.nextUrl.searchParams.get('external') === '1'
   const excl = external ? Array.from(TEST_WALLETS) : ['']
+  // ?only=0x…,0x… (admin-only like the rest): restrict the per-wallet rows to
+  // named addresses — the harness's per-wallet "did this suite leave a
+  // stranger behind?" pin reads exactly the wallets it signed in with,
+  // race-free against sibling runs on the shared DB. Empty = the usual cap.
+  const only = (req.nextUrl.searchParams.get('only') ?? '')
+    .split(',')
+    .map((a) => a.trim().toLowerCase())
+    .filter((a) => /^0x[0-9a-f]{40}$/.test(a))
+    .slice(0, 64)
+  const onlyWhere = only.length ? Prisma.sql`WHERE r.a = ANY(${only})` : Prisma.empty
 
   const base = milestoneCtes(days, excl)
   const [funnelRows, walletRows, linksDaily, arcRows] = await Promise.all([
@@ -211,6 +221,7 @@ export async function GET(req: NextRequest) {
              coalesce(h.origins, '{}') AS embed_origins
       ${JOINS}
       LEFT JOIN hosts h ON h.a = r.a
+      ${onlyWhere}
       ORDER BY r.first_seen DESC
       LIMIT ${ROW_CAP}
     `),

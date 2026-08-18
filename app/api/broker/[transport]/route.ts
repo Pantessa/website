@@ -16,11 +16,20 @@ import { z } from 'zod'
 import { openIntent, chooseOption, handoffIntent, intentStatus, closeIntent, executeIntent, tileIntent, sendToInbox } from '@/lib/broker-exec'
 import { clientIpFrom, bumpAndCheckBrokerCall } from '@/lib/turn-limits'
 import { pricingBlock } from '@/lib/broker-pricing'
+import { isInternalRun } from '@/lib/internal-run'
 
 export const maxDuration = 60
 
 function ok(payload: unknown) {
   return { content: [{ type: 'text' as const, text: JSON.stringify(payload) }] }
+}
+
+/** The per-call desk options, read off the MCP request the transport hands
+ *  every tool callback (`extra.requestInfo.headers`): our own harness/drill
+ *  calls carry x-yf-internal-run so the rows they mint never read as growth. */
+function callOpts(extra: unknown) {
+  const headers = (extra as { requestInfo?: { headers?: Record<string, string | string[] | undefined> } } | undefined)?.requestInfo?.headers
+  return { internal: isInternalRun(headers ?? null) }
 }
 
 async function guarded<T>(run: () => Promise<T>) {
@@ -131,7 +140,7 @@ const handler = createMcpHandler(
           'they connect their own wallet, the guarded layer rebuilds and checks the ask from scratch, and only their signature moves anything. Idempotent.',
         inputSchema: { intent_id: z.string().min(4).max(24) },
       },
-      async ({ intent_id }) => guarded(() => handoffIntent(intent_id)),
+      async ({ intent_id }, extra) => guarded(() => handoffIntent(intent_id, callOpts(extra))),
     )
 
     server.registerTool(
@@ -144,10 +153,19 @@ const handler = createMcpHandler(
           'builds it (guarded, policy-checked, one leg at a time), sign and broadcast it with your own key, and post completion; wait legs verify ' +
           'on-chain arrival before the next leg builds, so the order stays synced around settlement. Only compiles SEQUENCED flows ' +
           '(fund → wait → act); the intent must have been opened with your wallet. Completion is advancement, not proof — lying fails the job ' +
-          'closed one leg later. No transaction material travels through this MCP surface.',
-        inputSchema: { intent_id: z.string().min(4).max(24) },
+          'closed one leg later. No transaction material travels through this MCP surface. ' +
+          'wallet_signature PROVES the wallet: personal_sign (EIP-191) over the exact consent text ' +
+          '"Pantessa agent desk — execute consent\\nIntent: <intent_id>\\nWallet: <lowercased wallet>\\nSigning lets the desk compile this intent into a job owned by this wallet. It moves nothing by itself; every leg still needs this wallet\'s own signature." ' +
+          '— the desk recovers the signer and refuses any wallet but the one the intent was opened for.',
+        inputSchema: {
+          intent_id: z.string().min(4).max(24),
+          wallet_signature: z
+            .string()
+            .regex(/^0x[0-9a-fA-F]{130}$/)
+            .describe('personal_sign over the consent text (see description) by the wallet this intent was opened for.'),
+        },
       },
-      async ({ intent_id }) => guarded(() => executeIntent(intent_id)),
+      async ({ intent_id, wallet_signature }, extra) => guarded(() => executeIntent(intent_id, wallet_signature, callOpts(extra))),
     )
 
     server.registerTool(
@@ -171,7 +189,7 @@ const handler = createMcpHandler(
           agent: z.string().max(40).optional().describe('Your agent name — the byline on the link.'),
         },
       },
-      async ({ slices, chain, agent }) => guarded(() => tileIntent({ slices, chain, agent })),
+      async ({ slices, chain, agent }, extra) => guarded(() => tileIntent({ slices, chain, agent }, callOpts(extra))),
     )
 
     server.registerTool(
@@ -191,8 +209,8 @@ const handler = createMcpHandler(
           agent_key: z.string().min(6).max(80).optional().describe('Your desk identity — attributes this send to your track record.'),
         },
       },
-      async ({ ask, recipient, sender_label, agent, agent_key }) =>
-        guarded(() => sendToInbox({ ask, recipient, senderLabel: sender_label, agent, agentKey: agent_key })),
+      async ({ ask, recipient, sender_label, agent, agent_key }, extra) =>
+        guarded(() => sendToInbox({ ask, recipient, senderLabel: sender_label, agent, agentKey: agent_key }, callOpts(extra))),
     )
 
     server.registerTool(
