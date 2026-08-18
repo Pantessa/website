@@ -338,6 +338,7 @@ globalThis.fetch = ((input: Parameters<typeof realFetch>[0], init?: RequestInit)
   return realFetch(input, init)
 }) as typeof fetch
 
+const SUITE_STARTED_AT = Date.now()
 async function main() {
   console.log(`\nTesting the spend-account API @ ${BASE}\n`)
   const owner = privateKeyToAccount(generatePrivateKey())
@@ -10906,18 +10907,27 @@ async function main() {
       for (let i = 0; i < throwaways.length; i += 64) {
         const slice = throwaways.slice(i, i + 64)
         const r = await fetch(`${BASE}/api/admin/cohorts?days=1&only=${slice.join(',')}`, { headers: { cookie: adminSession } })
-        const b = (await r.json()) as { wallets?: ({ address: string } & Record<string, unknown>)[] }
+        const b = (await r.json()) as { wallets?: ({ address: string; firstSeen?: string } & Record<string, unknown>)[] }
         for (const w of b.wallets ?? []) {
+          // A REAL wallet the suite merely replayed read-only (QA drives
+          // 0xb74d…/0x6626… through chat bodies) has an ORGANIC first_seen
+          // from before this run — that is not a leak. Only a wallet whose
+          // first arrival is at/after suite start was minted BY the suite.
+          const firstSeen = Date.parse(String(w.firstSeen ?? ''))
+          if (Number.isFinite(firstSeen) && firstSeen < SUITE_STARTED_AT - 60_000) continue
           leaked.push(
             `${w.address.slice(0, 10)}…(surface=${w.surface ?? '-'} toggle=${w.firstToggle ? 'y' : '-'} standing=${w.standingKind ?? '-'} links=${w.links ?? 0} via=${w.via ?? '-'})`,
           )
         }
       }
       check(
-        `arrivals: a full suite run leaves NO throwaway wallet as an arrival on the cohorts/arc view (${throwaways.length} wallets read back)`,
+        `arrivals: a full suite run leaves NO wallet it minted as an arrival on the cohorts/arc view (${throwaways.length} wallets read back; pre-run organic first_seen = replayed real wallet, not a leak)`,
         leaked.length === 0,
         leaked.length ? `LEAKED ${leaked.length}: ${leaked.slice(0, 8).join(' ')}` : '',
       )
+      const daysEcho = (await (await fetch(`${BASE}/api/admin/cohorts?days=1&only=${throwaways.slice(0, 1).join(',') || '0x0000000000000000000000000000000000000001'}`, { headers: { cookie: adminSession } })).json()) as { windowDays?: number }
+      const daysBad = (await (await fetch(`${BASE}/api/admin/cohorts?days=999&only=0x0000000000000000000000000000000000000001`, { headers: { cookie: adminSession } })).json()) as { windowDays?: number }
+      check('cohorts: ?days= is honored for any 1..90 (days=1 → 1, not the 14d default); out of range falls to 14', daysEcho.windowDays === 1 && daysBad.windowDays === 14)
       // ask_failures: the admin feed hides internal-run rows by default and
       // labels them under ?internal=1 (the stamped refusal beacon above).
       const afDefault = (await (await fetch(`${BASE}/api/admin/ask-failures?days=1`, { headers: { cookie: adminSession } })).json()) as { failures?: { internal?: boolean; prompt?: string }[] }

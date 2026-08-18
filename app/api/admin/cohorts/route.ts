@@ -166,8 +166,11 @@ export async function GET(req: NextRequest) {
   if (!addr) return NextResponse.json({ error: 'Not signed in.' }, { status: 401 })
   if (!isAdminAddress(addr)) return NextResponse.json({ error: 'Forbidden.' }, { status: 403 })
 
+  // ?days= honors any 1..90 (the UI offers 7/14/30; the harness's per-wallet
+  // pin reads days=1 — it used to fall silently to 14d, so an organic
+  // arrival from last week read as a leak).
   const raw = Number(req.nextUrl.searchParams.get('days'))
-  const days = WINDOWS.has(raw) ? raw : 14
+  const days = WINDOWS.has(raw) ? raw : Number.isInteger(raw) && raw >= 1 && raw <= 90 ? raw : 14
   const external = req.nextUrl.searchParams.get('external') === '1'
   const excl = external ? Array.from(TEST_WALLETS) : ['']
   // ?only=0x…,0x… (admin-only like the rest): restrict the per-wallet rows to
