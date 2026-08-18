@@ -4273,6 +4273,103 @@ async function main() {
         JSON.stringify(lidoSmall).slice(0, 300),
       )
     }
+
+    // ── Stranger phrasings (squad 2026-08-18, Ideation's ask inventory) ──
+    // The sentences the ten-strangers drill will actually type. Each either
+    // lands on its native gate (grammar grown) or gets a named clarify whose
+    // chips round-trip — never planner prose. Pinned at the parse + ladder
+    // level so a regex edit can't quietly hand them back to the planner.
+    {
+      const bareBuy = parseSwapIntent('buy $20 eth on base')
+      const bareBuyBad = parseSwapIntent('buy $20 with usdc')
+      check(
+        'strangers: "buy $20 eth on base" (no "of") is the dollar buy; "buy $20 with usdc" never claims a token named WITH',
+        bareBuy.isSwap && bareBuy.mode === 'swap' && bareBuy.sellAmountUsd === '20' && bareBuy.buyToken?.toLowerCase() === 'eth' && !bareBuy.sellToken &&
+          !bareBuyBad.isSwap && simulateLadder('buy $20 eth on base').gate === 'swap' && simulateLadder('buy $20 eth every week').gate === 'dca',
+        JSON.stringify({ bareBuy, bareBuyBad }),
+      )
+      const nounDca = parseDcaCreate('set up a weekly $10 ETH buy')
+      check(
+        'strangers: "set up a weekly $10 ETH buy" (noun form) → DCA create; the verb form still parses',
+        !!nounDca && !('problem' in nounDca) && nounDca.buyUsd === 10 && nounDca.buyToken === 'ETH' && nounDca.cadence === 'week' &&
+          simulateLadder('set up a weekly $10 ETH buy').gate === 'dca' && simulateLadder('buy $10 of ETH every week').gate === 'dca',
+        JSON.stringify(nounDca),
+      )
+      const makeWallet = parseMosaicAsk('make my wallet 60% ETH 40% USDC')
+      check(
+        'strangers: "make/set/rebalance my wallet 60% ETH 40% USDC" is a mosaic; "rebalance my portfolio" (no tiles) stays the rebalance layer\'s',
+        !!makeWallet && !('problem' in makeWallet) && makeWallet.slices.length === 2 &&
+          simulateLadder('make my wallet 60% ETH 40% USDC').gate === 'mosaic' &&
+          simulateLadder('rebalance my wallet to 50% ETH 50% USDC').gate === 'mosaic' &&
+          parseMosaicAsk('rebalance my portfolio') === null && simulateLadder('rebalance my portfolio').gate === 'rebalance' &&
+          isMosaicAsk(mosaicAskString(makeWallet.slices)),
+        JSON.stringify(makeWallet),
+      )
+      const dollarSend = parseTransferSegment('send $5 to nate.eth', { fallbackChainId: null })
+      const dollarSendChips = dollarSend && 'problem' in dollarSend ? (dollarSend.chips ?? []) : []
+      check(
+        'strangers: "send $5 to nate.eth" = 5 USDC, chain asked with chips whose resumes round-trip the parser as complete sends',
+        !!dollarSend && 'problem' in dollarSend && /5 USDC/.test(dollarSend.problem) && dollarSendChips.length === 3 &&
+          dollarSendChips.every((c) => { const p = parseTransferSegment(c.resume, { fallbackChainId: null }); return !!p && !('problem' in p) && p.token.toUpperCase() === 'USDC' && p.amountHuman === '5' && p.to === 'nate.eth' }) &&
+          simulateLadder('send $5 to nate.eth').gate === 'transfer',
+        JSON.stringify(dollarSend),
+      )
+      const handleSend = parseTransferSegment('send 5 USDC on base to @nate', { fallbackChainId: null })
+      check(
+        'strangers: "send 5 USDC to @handle" refuses BY NAME (a handle is not a payable address) and points at the addressed-link door',
+        !!handleSend && 'problem' in handleSend && /@nate/.test(handleSend.problem) && /0x address or an ENS/.test(handleSend.problem) && /\/links/.test(handleSend.problem) &&
+          simulateLadder('send 5 USDC to @nate').gate === 'transfer',
+        JSON.stringify(handleSend),
+      )
+      const priceSell = parseSwapIntent('sell my eth when it hits $4000')
+      const priceChips = swapClarify(priceSell)
+      const sizedPriceSell = parseSwapIntent('sell 0.5 ETH if it reaches $4k')
+      const sizedChips = swapClarify(sizedPriceSell)
+      check(
+        'strangers: "sell my eth when it hits $4000" → limit-order chips at that price; every resume round-trips as a complete limit order; a sized ask keeps its size',
+        priceSell.isSwap && !!priceSell.problem && priceSell.limitPriceUsd === '4000' && !!priceChips && priceChips.options.length === 3 &&
+          priceChips.options.every((o) => { const p = parseSwapIntent(o.resume); return p.mode === 'limit' && p.sellToken?.toUpperCase() === 'ETH' && p.buyToken?.toUpperCase() === 'USDC' && !p.problem }) &&
+          sizedPriceSell.limitPriceUsd === '4000' && sizedPriceSell.sellAmountHuman === '0.5' && !!sizedChips && sizedChips.options[0].resume === 'limit order: sell 0.5 ETH for at least 2000 USDC' &&
+          simulateLadder('sell my eth when it hits $4000').gate === 'swap' && simulateLadder('sell my eth when it hits $4000').kind === 'clarify',
+        JSON.stringify({ priceSell, chips: priceChips?.options, sizedChips: sizedChips?.options }),
+      )
+      const spotOnBase = parseSpotGuardArm('Protect my ETH on Base with a 10% stop')
+      check(
+        'strangers: "Protect my ETH on Base with a 10% stop" (WALLET-MATRIX row 6) is the SPOT guardian, not the HL door; perp-worded asks still refuse',
+        !!spotOnBase && spotOnBase.token === 'ETH' && spotOnBase.triggerMode === 'price_move_pct' && spotOnBase.triggerValue === 10 &&
+          simulateLadder('Protect my ETH on Base with a 10% stop').gate === 'spot-guard' &&
+          parseSpotGuardArm('protect my HYPE long on base with a 5% stop') === null &&
+          simulateLadder('protect my SYRUP long with a 10% stop').gate === 'guardian',
+        JSON.stringify(spotOnBase),
+      )
+      // The route: a chain-less send answers CHIPS from the transfer layer.
+      const sendTurn = await fetch(`${BASE}/api/chat`, {
+        method: 'POST', headers: { 'content-type': 'application/json', 'x-yf-no-ask-log': '1' },
+        body: JSON.stringify({ message: 'send $5 to nate.eth', activeServers: [], walletAddress: owner.address, history: [] }),
+      }).then((r) => r.json() as Promise<Record<string, unknown>>)
+      const sendOpts = ((sendTurn.clarify as { options?: { resume: string }[] } | undefined)?.options ?? [])
+      check(
+        'strangers (route): "send $5 to nate.eth" answers chain chips from the transfer layer, attributed, answered — not a wall',
+        sendTurn.buildPath === 'native-transfer' && sendOpts.length === 3 && classifyTurn(sendTurn).kind === null,
+        JSON.stringify(sendTurn).slice(0, 300),
+      )
+      // The route: the spot guardian refuses an EOA BY NAME before any
+      // signature — a Spend Permission an EOA signs can never be spent (the
+      // manager pulls through the smart wallet's execute()), so an arm here
+      // would look armed and never fire. `owner` is a fresh EOA.
+      const eoaArm = await fetch(`${BASE}/api/chat`, {
+        method: 'POST', headers: { 'content-type': 'application/json', 'x-yf-no-ask-log': '1' },
+        body: JSON.stringify({ message: 'Protect my spot ETH with a 10% stop loss', activeServers: [], walletAddress: owner.address, history: [] }),
+      }).then((r) => r.json() as Promise<Record<string, unknown>>)
+      const eoaReply = String(eoaArm.reply ?? '')
+      check(
+        'spot guardian (route): an EOA wallet is refused by name BEFORE any signature (needs a smart wallet); nothing armed, no policy row, provisioning gate stays upstream',
+        eoaArm.buildPath === 'native-spot-guard' && !eoaArm.spotGuardArm &&
+          (/needs a smart wallet/.test(eoaReply) || /aren’t provisioned in this environment/.test(eoaReply)) &&
+          !/ready to arm/i.test(eoaReply),
+        JSON.stringify(eoaArm).slice(0, 300),
+      )
+    }
     // ── The funds-snapshot assembly (pure): counting rules the funded=1
     // queue depends on. A USDT-only wallet used to log had_funds=false —
     // indistinguishable from an empty one — so USDT demand had no data; and

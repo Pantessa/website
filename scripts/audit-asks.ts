@@ -56,6 +56,17 @@ const CORPUS: Entry[] = [
   { ask: 'short 2x on BTC', source: 'live 2026-08-12 variant', expect: 'clarify-ok' },
   { ask: 'tile my wallet 42% ETH, 39% DAI, 19% CETH on ethereum', source: 'live 2026-08-12 (mosaic, cETH resolves on mainnet)', expect: 'action' },
 
+  // Stranger phrasings (squad 2026-08-18, Ideation's ask inventory) — what
+  // the ten-strangers drill will type. Grammar grown where the shape was
+  // small; real gaps clarify with chips that round-trip (clarify-ok).
+  { ask: 'buy $20 eth on base', source: 'stranger inventory ("of"-less dollar buy)', expect: 'action' },
+  { ask: 'set up a weekly $10 ETH buy', source: 'stranger inventory (DCA noun form)', expect: 'action' },
+  { ask: 'make my wallet 60% ETH 40% USDC', source: 'stranger inventory (mosaic synonym)', expect: 'action' },
+  { ask: 'send $5 to nate.eth', source: 'stranger inventory (dollar send → USDC, chain chips)', expect: 'clarify-ok' },
+  { ask: 'send 5 USDC to @nate', source: 'stranger inventory (handle is not payable — named refusal)', expect: 'clarify-ok' },
+  { ask: 'sell my eth when it hits $4000', source: 'stranger inventory (price-triggered sell → limit chips)', expect: 'clarify-ok' },
+  { ask: 'Protect my ETH on Base with a 10% stop', source: 'WALLET-MATRIX §4 row 6 (spot guardian, chain word = spot)', expect: 'action' },
+
   // lib/examples.ts EXAMPLE_PROMPTS + TRY_PROMPTS
   { ask: 'Swap $1 of ETH to USDC', source: 'examples', expect: 'action' },
   { ask: "What's in my wallet?", source: 'examples', expect: 'planner' },

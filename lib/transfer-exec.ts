@@ -148,14 +148,49 @@ export function parseMultiSendSegments(segment: string): TransferSegment[] | { p
  * picker, like the swap layer) — job segments pass nothing and stay strict:
  * a compiled step must never guess its chain.
  */
+// "send $5 to nate.eth" — a DOLLAR send names no token: the dollar IS the
+// chain's stable (USDC; USDG on Robinhood Chain). Squad 2026-08-18 ask
+// inventory: this fell to the planner. An explicit stable word may ride
+// along ("send $5 usdc to …").
+const DOLLAR_SEND_RE = new RegExp(
+  String.raw`\b(?:send|transfer)\s+\$(\d+(?:\.\d+)?)(?:\s+(?:in\s+|of\s+)?(usdc|usdg|usdt|dai))?\s+(?:on\s+(${CHAIN_WORDS})\s+)?to\s+${RECIPIENT}(?:\s+on\s+(${CHAIN_WORDS}))?\b`,
+  'i',
+)
+// "send 5 USDC to @nate" — a creator handle is NOT a payable address (the
+// inbox addresses INTENTS to handles; tokens need a 0x/ENS). Named refusal.
+const HANDLE_SEND_RE = new RegExp(String.raw`\b(?:send|transfer)\s+(?:the\s+)?(?:\$?\d+(?:\.\d+)?|all(?:\s+(?:of\s+)?(?:my|the))?|my\s+entire)\s+\$?[A-Za-z]{0,12}.{0,24}?\bto\s+(@[a-zA-Z0-9_]{2,32})\b`, 'i')
+
+/** The chain chips a chain-less send offers — every resume round-trips
+ *  parseTransferSegment (chip = contract). */
+export function transferChainChips(amountWord: string, token: string, to: string): { label: string; resume: string }[] {
+  const tok = token.toUpperCase()
+  const chains: [string, string][] = tok === 'USDG' ? [['Robinhood Chain', 'robinhood']] : [['Base', 'base'], ['Ethereum', 'ethereum'], ['Arbitrum', 'arbitrum']]
+  return chains.map(([label, word]) => ({ label: `${label}`, resume: `send ${amountWord === 'all your' ? 'all my' : amountWord} ${tok} on ${word} to ${to}` }))
+}
+
 export function parseTransferSegment(
   segment: string,
   opts?: { fallbackChainId?: number | null },
-): TransferSegment | { problem: string } | null {
+): TransferSegment | { problem: string; chips?: { label: string; resume: string }[] } | null {
   // NFT-shaped sends ("send my Pudgy #2489 to 0x…") belong to the NFT layer.
   if (mentionsNft(segment)) return null
-  const m = normalizeChainWords(segment).match(TRANSFER_MID_RE)
-  if (!m) return null
+  const normalized = normalizeChainWords(segment)
+  const handle = normalized.match(HANDLE_SEND_RE)
+  if (handle) {
+    return {
+      problem: `${handle[1]} is a Pantessa handle, not a payable address — tokens need a 0x address or an ENS name (“send 5 USDC on Base to nate.eth”). To hand ${handle[1]} something to SIGN instead, mint the ask as a link addressed to them from /links.`,
+    }
+  }
+  let m = normalized.match(TRANSFER_MID_RE)
+  let dollarToken: string | null = null
+  if (!m) {
+    const d = normalized.match(DOLLAR_SEND_RE)
+    if (!d) return null
+    // Re-shape onto the mid-form tuple: [_, amount, token, chainMid, to, chainTail]
+    const stableWord = d[2]?.toUpperCase() ?? (/robinhood/i.test(`${d[3] ?? ''} ${d[5] ?? ''}`) ? 'USDG' : 'USDC')
+    dollarToken = stableWord
+    m = [d[0], d[1], stableWord, d[3], d[4], d[5]] as unknown as RegExpMatchArray
+  }
   const [, amountRaw, token, chainMid, to, chainTail] = m
   const amountHuman = amountOf(amountRaw)
   if (amountHuman !== 'all' && !(Number(amountHuman) > 0)) return null
@@ -169,7 +204,8 @@ export function parseTransferSegment(
   }
   if (!chain) {
     return {
-      problem: `Which chain should ${amountWord} ${token.toUpperCase()} leave from? Name it explicitly — e.g. "send ${amountWord} ${token.toUpperCase()} on Base to ${to.slice(0, 10)}…" — a transfer must never guess its chain.`,
+      problem: `${dollarToken ? `$${amountHuman} is ${amountHuman} ${dollarToken} here. ` : ''}Which chain should ${amountWord} ${token.toUpperCase()} leave from? Name it explicitly — e.g. "send ${amountWord} ${token.toUpperCase()} on Base to ${to.slice(0, 10)}…" — a transfer must never guess its chain.`,
+      chips: transferChainChips(amountWord, token, to),
     }
   }
   return { amountHuman, token, to, chainId: chain.id, chainName: chain.name }

@@ -132,6 +132,7 @@ import { buildLifiSwap, NoLifiRouteError } from '@/lib/lifi-venue'
 import { GAS_TOPUP_ETH, parseRhFundingFollowUp, planDownsizedRobinhoodBuy, planRobinhoodFundingAdvice, readFundingShortfall, rhFundingPending, robinhoodBuyNeedUsd, ROBINHOOD_CHAIN_ID } from '@/lib/lifi-bridge'
 import { describeInflightDeposit, inflightPendingData } from '@/lib/inflight-funding'
 import { resolveToken, tokenDecimals, humanToAtoms } from '@/lib/cow'
+import { COW_VAULT_RELAYER } from '@/lib/cow-guardrails'
 import { chartPairFor } from '@/lib/charts'
 import { ensureTokenList } from '@/lib/token-list'
 import { pairStockToken, stockChipLabel } from '@/lib/stock-pairing'
@@ -1677,7 +1678,13 @@ async function handleChatTurn(req: NextRequest) {
     const transferAsk = parseTransferSegment(message, { fallbackChainId: selectedChainId })
     if (transferAsk && 'problem' in transferAsk) {
       nativeTrace({ type: 'status', label: 'native transfer layer claimed the turn — ask incomplete, answering honestly (no build)' })
-      return NextResponse.json({ reply: `💸 ${transferAsk.problem}` })
+      // A chain-less send offers the chains as chips (resumes round-trip the
+      // parser) — a chip beats prose homework; other problems stay named.
+      return NextResponse.json({
+        reply: `💸 ${transferAsk.problem}`,
+        ...(transferAsk.chips?.length ? { clarify: { question: 'Which chain?', options: transferAsk.chips } } : {}),
+        buildPath: 'native-transfer',
+      })
     }
     if (transferAsk) {
       if (!walletAddress) {
@@ -4049,6 +4056,48 @@ async function prepareSwapTurn(intent: SwapIntent, walletAddress: string | undef
           }
           if (offer) return NextResponse.json({ ...offer, reply: `🌉 ${offer.reply}` })
           // null → scan/price unavailable; the venue build below fails closed
+        } else if (!isEthSell) {
+          // The #1 predicted stranger failure (squad 2026-08-18 premortem):
+          // $25 USDC and ZERO ETH on Base → an approve→swap chain whose first
+          // tx can't be paid for; the wallet errors and nothing in the chat
+          // said why. ERC-20 sells need native gas on the swap chain the same
+          // way ETH sells carry the floor above — pre-read it, and when it's
+          // short answer the funding path (gas-only probe: a gas leg from
+          // another chain, the stranded-USDC rescue, or the honest naming),
+          // never a chain the wallet cannot sign.
+          const gasWei = await client.getBalance({ address: walletAddress as `0x${string}` })
+          const gasFloor = DEST_GAS_FLOOR_ETH[chainId] ?? 0.0002
+          const gasHeld = Number(gasWei) / 1e18
+          // A CoW order is gasless ONLY once the VaultRelayer allowance is in
+          // place — with it, a zero-ETH wallet can still sign and settle; without
+          // it the approve tx needs gas exactly like the Uniswap chain does.
+          let gaslessCow = false
+          if (gasHeld < gasFloor && venue === 'cow') {
+            const sellAtoms = BigInt(humanToAtoms(intent.sellAmountHuman, sellDec) ?? '0')
+            const allowance = await client.readContract({ address: sellAddr as `0x${string}`, abi: erc20Abi, functionName: 'allowance', args: [walletAddress as `0x${string}`, COW_VAULT_RELAYER as `0x${string}`] }).catch(() => BigInt(0))
+            gaslessCow = sellAtoms > BigInt(0) && allowance >= sellAtoms
+          }
+          if (gasHeld < gasFloor && !gaslessCow) {
+            const buySym = intent.buyToken.toUpperCase()
+            trace({ type: 'note', level: 'warn', label: `native swap layer: ${sellSym} covers the sell but ${chain.name} holds ${gasHeld.toFixed(6)} ETH for gas (< ${gasFloor}) — the approve/swap couldn't be paid for; asking the funding layer for a gas leg` })
+            const gasOffer = await offerFundingPlan({
+              user: walletAddress,
+              need: {
+                chainId,
+                token: sellSym,
+                amountHuman: 0,
+                followupResume: `swap ${intent.sellAmountHuman} ${sellSym} for ${buySym} on ${FUNDING_CHAIN_WORD[chainId]}`,
+                actionLabel: 'the swap',
+              },
+              trace,
+            })
+            const gasLine = `Your ${intent.sellAmountHuman} ${sellSym} is on ${chain.name}, but the wallet holds ${gasHeld > 0 ? `only ${gasHeld.toFixed(6).replace(/\.?0+$/, '')}` : 'no'} ETH there — the approve + swap can't be paid for (about ${gasFloor} ETH covers it).`
+            if (gasOffer && 'insufficient' in gasOffer) {
+              return NextResponse.json({ reply: `⛽ ${gasLine} ${gasOffer.insufficient} Send a little ETH to ${chain.name} and ask again.`, buildPath: 'native-swap-gas' })
+            }
+            if (gasOffer) return NextResponse.json({ ...gasOffer, reply: `⛽ ${gasLine} ${gasOffer.reply}` })
+            // null → scan unavailable; the venue build below fails closed on its own
+          }
         }
       }
     } catch {
