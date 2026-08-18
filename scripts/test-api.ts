@@ -7312,11 +7312,26 @@ async function main() {
     'app/l/[handle]/opengraph-image.tsx',
     'app/p/[slug]/opengraph-image.tsx',
     'app/r/[slug]/opengraph-image.tsx',
+    'app/agents/[handle]/opengraph-image.tsx',
   ].map((f) => ({ f, src: ogFs.readFileSync(f, 'utf8') }))
   check(
-    'og cards: all six draw the house mark from lib/og-marks, none inline one',
+    'og cards: all seven draw the house mark from lib/og-marks, none inline one',
     ogCards.every((c) => c.src.includes('pangolinMarkSvg')) &&
       ogCards.every((c) => !c.src.includes('mask id="hub"')),
+  )
+  // The /i unfurl is the first thing a DM'd stranger sees (the H1 drill).
+  // GTM's stranger-eye read: say WHOSE ("FROM @HANDLE", never a "CALL BY"
+  // trade-tip), never hint auto-run ("TAP TO RUN" → "YOUR WALLET SIGNS"),
+  // and state non-custodial in words once. Pinned on the source — the
+  // PNG can't be grepped.
+  const iCard = ogCards.find((c) => c.f.startsWith('app/i/'))!.src
+  check(
+    'og /i card: eyebrow says FROM @HANDLE + YOUR WALLET SIGNS, non-custodial stated in words, no TAP TO RUN',
+    iCard.includes('FROM @${handle.toUpperCase()') &&
+      iCard.includes("'INTENT LINK · YOUR WALLET SIGNS'") &&
+      iCard.includes('Nothing moves until you sign — in your own wallet.') &&
+      !iCard.includes('TAP TO RUN') &&
+      !iCard.includes("'CALL · TAP TO RUN'"),
   )
 
   // Seaport order math: fee splits sum exactly; the independent guard refuses
