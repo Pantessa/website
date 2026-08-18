@@ -2512,6 +2512,29 @@ async function main() {
       'docs U4: /docs/desk carries the replayable desk-session transcript',
       /data-desk-transcript/.test(deskDocs) && /two agents, one human signature/i.test(deskDocs),
     )
+    // Squad visuals: the strip is the launch clip's storyboard — replay +
+    // pause affordances, the .yprog progress line, and role inks as THEME
+    // TOKENS (never sky-/amber-400 — ~1.8:1 on paper). SSR paints the empty
+    // terminal (armed on scroll-into-view; the client clock lands lines).
+    check(
+      'docs U4: the desk transcript ships replay + pause, the .yprog arc, and token role inks',
+      /aria-label="Replay the session"/.test(deskDocs) &&
+        /aria-label="(Pause|Resume) the session"/.test(deskDocs) &&
+        /data-desk-state=/.test(deskDocs) &&
+        /class="[^"]*\bdesktx\b/.test(deskDocs) &&
+        /class="[^"]*\byprog\b/.test(deskDocs.slice(deskDocs.indexOf('data-desk-transcript'))) &&
+        !/data-desk-transcript[\s\S]{0,4000}text-(sky|amber)-\d/.test(deskDocs),
+    )
+    // The light-mode remap now covers amber/red/sky text utilities the way
+    // it covers emerald — a hardcoded dark-stage ink must never ship
+    // unflipped again (the 37-file --done lesson).
+    const designCss = await readFile(new URL('../app/x402-design.css', import.meta.url), 'utf8')
+    check(
+      'theme: light-mode remaps exist for text-amber-400 / text-red-400 / text-sky-400',
+      /html\[data-theme='light'\] \.text-amber-400/.test(designCss) &&
+        /html\[data-theme='light'\] \.text-red-400/.test(designCss) &&
+        /html\[data-theme='light'\] \.text-sky-400/.test(designCss),
+    )
 
     // House links: the seeded canonical set (deterministic slugs,
     // creator=null — earns nothing, belongs to no dashboard). The landing
@@ -7300,11 +7323,26 @@ async function main() {
     'app/l/[handle]/opengraph-image.tsx',
     'app/p/[slug]/opengraph-image.tsx',
     'app/r/[slug]/opengraph-image.tsx',
+    'app/agents/[handle]/opengraph-image.tsx',
   ].map((f) => ({ f, src: ogFs.readFileSync(f, 'utf8') }))
   check(
-    'og cards: all six draw the house mark from lib/og-marks, none inline one',
+    'og cards: all seven draw the house mark from lib/og-marks, none inline one',
     ogCards.every((c) => c.src.includes('pangolinMarkSvg')) &&
       ogCards.every((c) => !c.src.includes('mask id="hub"')),
+  )
+  // The /i unfurl is the first thing a DM'd stranger sees (the H1 drill).
+  // GTM's stranger-eye read: say WHOSE ("FROM @HANDLE", never a "CALL BY"
+  // trade-tip), never hint auto-run ("TAP TO RUN" → "YOUR WALLET SIGNS"),
+  // and state non-custodial in words once. Pinned on the source — the
+  // PNG can't be grepped.
+  const iCard = ogCards.find((c) => c.f.startsWith('app/i/'))!.src
+  check(
+    'og /i card: eyebrow says FROM @HANDLE + YOUR WALLET SIGNS, non-custodial stated in words, no TAP TO RUN',
+    iCard.includes('FROM @${handle.toUpperCase()') &&
+      iCard.includes("'INTENT LINK · YOUR WALLET SIGNS'") &&
+      iCard.includes('Nothing moves until you sign — in your own wallet.') &&
+      !iCard.includes('TAP TO RUN') &&
+      !iCard.includes("'CALL · TAP TO RUN'"),
   )
 
   // Seaport order math: fee splits sum exactly; the independent guard refuses
@@ -10696,6 +10734,18 @@ async function main() {
     )
     const recMissing = await fetch(`${BASE}/agents/${'0'.repeat(16)}`)
     check('broker M4: an unknown agent handle 404s (no phantom records)', recMissing.status === 404)
+    // Squad visuals: a shared record renders a CARD in the feed (og:image +
+    // twitter:image PNGs), not a bare link — same house palette as /i and /l.
+    const recOg = await fetch(`${BASE}/agents/${expectHandle}/opengraph-image`)
+    const recTw = await fetch(`${BASE}/agents/${expectHandle}/twitter-image`)
+    check(
+      'agents OG: /agents/<handle> serves og + twitter PNG cards and declares them',
+      recOg.status === 200 &&
+        (recOg.headers.get('content-type') ?? '').includes('image/png') &&
+        recTw.status === 200 &&
+        /twitter:card"[^>]+summary_large_image|summary_large_image[^>]+twitter:card/.test(recHtml) &&
+        /\/agents\/[0-9a-f]+\/opengraph-image/.test(recHtml),
+    )
     await call('broker_close', { intent_id: recOpen.payload.intentId })
 
     // M5 — the wallet inbox. broker_send addresses an intent to a wallet; it

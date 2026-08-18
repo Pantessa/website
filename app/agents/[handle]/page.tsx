@@ -25,12 +25,21 @@ export async function generateMetadata({ params }: Params): Promise<Metadata> {
   const rec = await getAgentRecord(handle).catch(() => null)
   if (!rec) return { title: 'Agent track record — Pantessa' }
   const name = rec.displayName ?? `Agent ${rec.handle.slice(0, 8)}`
-  const title = `${name} — cleared ${fmtUsd(rec.moneyMovedUsd)} through Pantessa`
+  // A zero record never headlines "$0.00" — say what it is until it isn't.
+  const title =
+    rec.moneyMovedUsd > 0
+      ? `${name} — cleared ${fmtUsd(rec.moneyMovedUsd)} through Pantessa`
+      : `${name} — agent track record on Pantessa`
   const description =
     rec.signedTurns > 0
       ? `${name} brokered ${rec.intents} intent${rec.intents === 1 ? '' : 's'} through Pantessa's guarded desk — ${rec.signedTurns} signed, ${fmtUsd(rec.moneyMovedUsd)} moved, every transaction guard-checked and signed by a human. A public, non-custodial track record.`
       : `${name} is brokering intents through Pantessa's guarded desk. Public, non-custodial track record — every transaction guard-checked, only a human signs.`
-  return { title, description, openGraph: { title, description, type: 'profile' } }
+  return {
+    title,
+    description,
+    openGraph: { title, description, type: 'profile' },
+    twitter: { card: 'summary_large_image', title, description },
+  }
 }
 
 function Stat({ label, value, sub }: { label: string; value: string; sub?: string }) {
