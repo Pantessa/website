@@ -137,7 +137,7 @@ export default function SignHlActionButton({
       : msg
 
   const fail = (e: unknown, fallback: string, artifact: WalletArtifact, ask: string) => {
-    const msg = e instanceof Error ? e.message : ''
+    const msg = e instanceof Error ? walletErrorWords(e) : ''
     setError(isUserRejectedSignError(msg) ? 'Signature request declined.' : humanizeVenueError(msg) || fallback)
     setStatus('error')
     if (msg && (e as { fromWallet?: boolean } | null)?.fromWallet && !isUserRejectedSignError(msg)) {

@@ -43,29 +43,41 @@ export interface WalletRefusalReport {
  * line wins; the generic viem line is a last resort. Never throws.
  */
 export function walletErrorWords(e: unknown): string {
-  const GENERIC = /^an internal error was received\.?$|^an unknown rpc error occurred\.?$|^request failed\.?$/i
+  // Wrapper text at any layer — viem's, MetaMask's -32603 envelope, the
+  // provider's — never the wallet's words. Extend when a new wrapper appears.
+  const GENERIC =
+    /^(an internal error was received|an unknown rpc error occurred|request failed|internal json-rpc error|internal error|rpc error|execution error|error)\.?$|^details:\s*$/i
   const seen = new Set<unknown>()
-  const out: string[] = []
-  const push = (v: unknown) => {
-    if (typeof v !== 'string') return
-    const first = v.split('\n').map((l) => l.trim()).find(Boolean) ?? ''
-    if (first) out.push(first)
+  // Candidates carry depth + whether they came out of a `data.message` —
+  // the node/wallet's own text nests DEEPEST (MetaMask -32603: generic top
+  // message, "insufficient funds for gas…" in cause.data.message), so the
+  // deepest data.message wins, then the deepest specific line of any kind.
+  const cands: Array<{ text: string; depth: number; fromData: boolean }> = []
+  const first = (v: unknown) => (typeof v === 'string' ? (v.split('\n').map((l) => l.trim()).find(Boolean) ?? '') : '')
+  const push = (v: unknown, depth: number, fromData: boolean) => {
+    const t = first(v).replace(/^Details:\s*/i, '')
+    if (t) cands.push({ text: t, depth, fromData })
   }
   const walk = (x: unknown, depth: number) => {
-    if (!x || typeof x !== 'object' || seen.has(x) || depth > 6) return
+    if (!x || typeof x !== 'object' || seen.has(x) || depth > 8) return
     seen.add(x)
     const o = x as Record<string, unknown>
-    push((o.data as Record<string, unknown> | undefined)?.message)
-    push(o.details)
-    push(o.shortMessage)
-    push(o.message)
+    push((o.data as Record<string, unknown> | undefined)?.message, depth, true)
+    push(o.details, depth, false)
+    push(o.shortMessage, depth, false)
+    push(o.message, depth, false)
     walk(o.cause, depth + 1)
     walk(o.data, depth + 1)
+    walk(o.error, depth + 1)
   }
-  if (typeof e === 'string') push(e)
+  if (typeof e === 'string') push(e, 0, false)
   else walk(e, 0)
-  const specific = out.find((l) => !GENERIC.test(l) && !/^Details:\s*$/i.test(l))
-  return (specific ?? out[0] ?? 'Wallet error (no message)').replace(/^Details:\s*/i, '').slice(0, 400)
+  const specific = cands.filter((c) => !GENERIC.test(c.text))
+  const pick =
+    [...specific].filter((c) => c.fromData).sort((a, b) => b.depth - a.depth)[0] ??
+    [...specific].sort((a, b) => b.depth - a.depth)[0] ??
+    cands[0]
+  return (pick?.text ?? 'Wallet error (no message)').slice(0, 400)
 }
 
 /** Pure: is this wallet error worth a row? Human rejections are not. */

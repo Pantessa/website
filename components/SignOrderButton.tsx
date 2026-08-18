@@ -161,7 +161,7 @@ export default function SignOrderButton({
       setStatus('open')
       onPlaced?.({ orderUid: placedOrderUid, explorerUrl: placedExplorerUrl })
     } catch (e) {
-      const msg = e instanceof Error ? e.message : 'Signing failed.'
+      const msg = e instanceof Error ? walletErrorWords(e) : 'Signing failed.'
       setError(
         /rejected|denied/i.test(msg)
           ? 'Signature rejected in the wallet — nothing was placed. (If you didn’t cancel: check the wallet is on Base.)'

@@ -134,7 +134,10 @@ export default function SendTxButton({
       setStatus(receipt.status === 'success' ? 'confirmed' : 'reverted')
       if (receipt.status === 'success') onConfirmed?.(txHash)
     } catch (e) {
-      const msg = e instanceof Error ? e.message.split('\n')[0] : 'Transaction failed.'
+      // The card shows the wallet's own words too (same helper as the beacon):
+      // viem's wrapper line hid "insufficient funds for gas" behind
+      // "An internal error was received." (QA r4).
+      const msg = e instanceof Error ? walletErrorWords(e) : 'Transaction failed.'
       if (/timed out while waiting/i.test(msg) && txHash) {
         // A wait timeout is NOT a failure — the tx is broadcast and usually
         // mines fine. Don't paint it red; keep watching in the background so

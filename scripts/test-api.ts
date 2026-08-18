@@ -9532,13 +9532,25 @@ async function main() {
         cause: Object.assign(new Error('Internal JSON-RPC error.'), { data: { message: 'Provided chainId "1337" must match the active chainId "4663"' } }),
       })
       const nodeShaped = Object.assign(new Error('An unknown RPC error occurred.'), { cause: { data: { message: 'insufficient funds for gas * price + value' } } })
+      // QA r4's exact MetaMask -32603 shape as viem hands it to the card: the
+      // OUTER details = the provider's generic "Internal JSON-RPC error.", the
+      // wallet's words nested in cause.data.message — the deepest data.message
+      // must win over the shallower generic details.
+      const mm32603 = Object.assign(new Error('An internal error was received.\n\nRequest Arguments:\n  from: 0x5eaa…\n  to: 0x8335…\n\nDetails: Internal JSON-RPC error.\nVersion: viem@2.x'), {
+        shortMessage: 'An internal error was received.',
+        details: 'Internal JSON-RPC error.',
+        code: -32603,
+        cause: Object.assign(new Error('Internal JSON-RPC error.'), { code: -32603, data: { code: -32000, message: 'insufficient funds for gas * price + value: have 0 want 21000000000000' } }),
+      })
       check(
         'wallet refusal words: viem-wrapped MetaMask error → the wallet\'s line; node error → its data.message; plain strings + bare errors pass through',
         walletErrorWords(viemShaped) === 'Provided chainId "1337" must match the active chainId "4663"' &&
           walletErrorWords(nodeShaped) === 'insufficient funds for gas * price + value' &&
+          walletErrorWords(mm32603) === 'insufficient funds for gas * price + value: have 0 want 21000000000000' &&
+          walletErrorWords(new Error('Internal JSON-RPC error.')) === 'Internal JSON-RPC error.' &&
           walletErrorWords(new Error('MetaMask Tx Signature: User denied transaction signature.')) === 'MetaMask Tx Signature: User denied transaction signature.' &&
           walletErrorWords('plain') === 'plain' && walletErrorWords(null) === 'Wallet error (no message)',
-        JSON.stringify([walletErrorWords(viemShaped), walletErrorWords(nodeShaped)]),
+        JSON.stringify([walletErrorWords(viemShaped), walletErrorWords(nodeShaped), walletErrorWords(mm32603)]),
       )
     }
     const refusalInternal = await fetch(`${BASE}/api/ask-failures/wallet`, {
