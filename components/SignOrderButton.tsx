@@ -15,6 +15,8 @@ import { useEffect, useRef, useState } from 'react'
 import { useAccount, useSignTypedData, useSwitchChain } from 'wagmi'
 import { Loader2, PenLine, CheckCircle2, Circle, ExternalLink } from 'lucide-react'
 import type { Eip712OrderRequest } from '@/lib/transaction-layer'
+import { reportWalletRefusal, walletErrorWords } from '@/lib/wallet-refusal'
+import { SIGN_CTA_CLASS } from '@/lib/sign-cta'
 
 type Status = 'idle' | 'signing' | 'placing' | 'open' | 'filled' | 'error'
 
@@ -50,7 +52,7 @@ export default function SignOrderButton({
    *  embed bridge relays it to the host page as an 'order-signed' event. */
   onPlaced?: (info: { orderUid: string | null; explorerUrl: string | null }) => void
 }) {
-  const { address, isConnected } = useAccount()
+  const { address, isConnected, connector, chain: connectedChain } = useAccount()
   const { signTypedDataAsync } = useSignTypedData()
   const { switchChainAsync } = useSwitchChain()
   const [status, setStatus] = useState<Status>('idle')
@@ -119,9 +121,23 @@ export default function SignOrderButton({
       // reports it as "User rejected"). No-op when already on Base; same
       // switch-then-act idiom as LaunchToken/StakeToken.
       await switchChainAsync({ chainId }).catch(() => {})
-      const signature = await signTypedDataAsync(
-        typedData as unknown as Parameters<typeof signTypedDataAsync>[0],
-      )
+      let signature: `0x${string}`
+      try {
+        signature = await signTypedDataAsync(
+          typedData as unknown as Parameters<typeof signTypedDataAsync>[0],
+        )
+      } catch (e) {
+        // The WALLET refused the typed data (chain mismatch, unsupported
+        // method, estimate…) — file it as a wallet-refused row so it reaches
+        // /dashboard/failures; a human "no" is dropped inside the beacon.
+        // Relay errors below are the order book's, not the wallet's.
+        reportWalletRefusal({
+          wallet: address, artifact: 'cow-order', buildPath: 'native-swap-cow',
+          connector: connector?.id ?? connector?.name, chainId: connectedChain?.id,
+          ask: summary ?? 'CoW order', detail: walletErrorWords(e),
+        })
+        throw e
+      }
       setStatus('placing')
       const res = await fetch('/api/cow/submit', {
         method: 'POST',
@@ -145,7 +161,7 @@ export default function SignOrderButton({
       setStatus('open')
       onPlaced?.({ orderUid: placedOrderUid, explorerUrl: placedExplorerUrl })
     } catch (e) {
-      const msg = e instanceof Error ? e.message : 'Signing failed.'
+      const msg = e instanceof Error ? walletErrorWords(e) : 'Signing failed.'
       setError(
         /rejected|denied/i.test(msg)
           ? 'Signature rejected in the wallet — nothing was placed. (If you didn’t cancel: check the wallet is on Base.)'
@@ -222,11 +238,11 @@ export default function SignOrderButton({
           <button
             onClick={() => void sign()}
             disabled={inFlight}
-            className="inline-flex items-center gap-1.5 text-[12px] font-medium px-3 py-1.5 max-lg:min-h-10 rounded-full border border-[var(--line-2)] text-[color:var(--muted)] hover:text-white hover:border-white disabled:opacity-50 transition-colors"
+            className={SIGN_CTA_CLASS}
             title="Sign this CoW order with your wallet and place it on the order book"
           >
             {inFlight ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <PenLine className="w-3.5 h-3.5" />}
-            {status === 'signing' ? 'Sign in wallet…' : status === 'placing' ? 'Placing order…' : status === 'error' ? 'Retry — sign & place order' : 'Sign & place order'}
+            {status === 'signing' ? 'Confirm in your wallet…' : status === 'placing' ? 'Placing order…' : status === 'error' ? 'Retry — sign & place order' : 'Sign & place order'}
           </button>
           {error && <span className="text-[12px] text-red-400">{error}</span>}
         </div>

@@ -37,7 +37,7 @@ import { pureChecks, policyCheck, orderValueUsd, buildReport } from '../lib/cow-
 import { policyCheckInflow, recipientCheck, validityCheck, MAX_VALID_SEC } from '../lib/tx-guardrails'
 import { guardPlannerArtifact, PERMIT2_ADDRESS } from '../lib/planner-artifact-guard'
 import { LIMIT_EXAMPLES, parseSwapIntent, swapClarify } from '../lib/swap-intent'
-import { activeLinkCapFor, composeMcps, linkLockup, linkLockupWord } from '../lib/intent-links'
+import { activeLinkCapFor, composeMcps, linkEyebrow, linkLockup, linkLockupWord } from '../lib/intent-links'
 import { formatEarnedUsd, netFeeBpsFor, creatorEarningsUsd, FEE_BEARING_BUILD_PATHS, CROSS_CHAIN_FEE_BPS, CROSS_CHAIN_NET_FEE_BPS } from '../lib/fees'
 import { BUILD_PATHS, venueOfBuildPath } from '../lib/build-path'
 
@@ -173,6 +173,7 @@ import {
   type MorphoOpGuardExpectation,
 } from '../lib/morpho-supply'
 import { assertTokenIdentity } from '../lib/morpho-exec'
+import { splitSimpleReply } from '../lib/simple-reply'
 import { decodeAbiParameters, encodeAbiParameters, encodeFunctionData, erc20Abi, toFunctionSelector } from 'viem'
 import {
   evaluatePolicy,
@@ -213,7 +214,7 @@ import {
   type HlWireApproveBuilderFeeAction,
 } from '../lib/hyperliquid-exec'
 import { createL1ActionHash } from '@nktkas/hyperliquid/signing'
-import { isReportableWalletError, WALLET_REFUSAL_KIND } from '../lib/wallet-refusal'
+import { isReportableWalletError, walletErrorWords, WALLET_REFUSAL_KIND } from '../lib/wallet-refusal'
 import { encryptAgentKey, signL1ActionWithDelegation } from '../lib/hl-guardian-store'
 import { compileJobAsk as compileJobAskFull, stampSwapFeeTier, type CompiledJob } from '../lib/jobs'
 import { LIVE_JOB_STATUSES, jobStatusWord, statusTone } from '../lib/step-status'
@@ -1110,6 +1111,32 @@ async function main() {
           !afterRestamp.some((w) => w.address.toLowerCase() === w2.address.toLowerCase()),
         `organicArrived=${organicArrived}`,
       )
+
+      // Watchable failures feed (squad 2026-08-18 r3): the drill has this
+      // open beside a recruit — `?kind=wallet-refused` slices one kind,
+      // `?internal=1` opts INTO stamped harness rows (hidden by default,
+      // counted in internalHidden), and the reader tolerates a DB without
+      // the is_internal column (never a 500). The page mirrors these params
+      // in its URL (?funded=1&kind=…&internal=1) — pinned at the source
+      // since the toggles are client-rendered.
+      const feedRes = await fetch(`${BASE}/api/admin/ask-failures?days=30&kind=wallet-refused`, { headers: { cookie: adminSession } })
+      const feedBody = (await feedRes.json()) as { kind?: string | null; counts?: { internalHidden?: number }; failures?: Array<{ kind: string; internal?: boolean }> }
+      const feedInternal = await fetch(`${BASE}/api/admin/ask-failures?days=30&internal=1&kind=nope`, { headers: { cookie: adminSession } })
+      const feedInternalBody = (await feedInternal.json()) as { kind?: string | null; counts?: { internalHidden?: number } }
+      check(
+        'ask-failures feed: ?kind=wallet-refused slices to that kind, rows carry the internal tag, unknown kinds are ignored, ?internal=1 zeroes internalHidden',
+        feedRes.status === 200 && feedBody.kind === 'wallet-refused' &&
+          (feedBody.failures ?? []).every((r) => r.kind === 'wallet-refused' && typeof r.internal === 'boolean') &&
+          typeof feedBody.counts?.internalHidden === 'number' &&
+          feedInternal.status === 200 && feedInternalBody.kind === null && feedInternalBody.counts?.internalHidden === 0,
+        JSON.stringify({ kind: feedBody.kind, n: feedBody.failures?.length, hidden: feedBody.counts?.internalHidden }),
+      )
+      const failuresPageSrc = envFs.readFileSync('app/dashboard/failures/page.tsx', 'utf8')
+      check(
+        'ask-failures page: URL ⇄ toggles (?funded=1 / ?kind= / ?internal=1 read on mount, written back) + live poll pill',
+        /q\.get\('funded'\)/.test(failuresPageSrc) && /q\.get\('kind'\)/.test(failuresPageSrc) && /q\.get\('internal'\)/.test(failuresPageSrc) &&
+          /replaceState/.test(failuresPageSrc) && /useLivePoll\(/.test(failuresPageSrc) && /<LivePill/.test(failuresPageSrc),
+      )
     } else {
       check('gtm arc: skipped — no burner key in .env.local', true)
     }
@@ -1384,6 +1411,31 @@ async function main() {
     for (const path of ['/docs/embed', '/links/embed', '/sitemap.xml', '/robots.txt']) {
       const body = (await (await fetch(`${BASE}${path}`)).text()).replace(/mailto:[^"'<\s]+/g, '')
       check(`old-origin fence: ${path} emits no apex/www yeetful.com links`, !OLD_ORIGIN_RE.test(body))
+    }
+  }
+
+  // SWC entity-space fence (squad 2026-08-18 UI/UX drill): a text node that
+  // follows an inline element and CONTAINS an HTML entity (&apos; &rsquo; …)
+  // loses its leading space at compile time — "<code>scan_wallet</code>reads"
+  // shipped on /docs/desk, /docs/embed and /pricing. The rendered HTML is the
+  // only place the bug is visible; the fix is `{' '}` after the element.
+  // Prose pages only — chat/dashboard bodies are client-rendered.
+  {
+    // Glued = a letter, an opening paren/quote, or a spaced em dash sitting
+    // directly on the closing tag. Punctuation like `</a>.` / `</code>,` is
+    // legitimate and stays out of the class.
+    const ENTITY_SPACE_RE = /<\/(em|strong|a|code)>(?:[A-Za-z(]|—|“|&ldquo;)/g
+    const PROSE_PATHS = [
+      '/', '/pricing', '/links', '/links/embed', '/rebrand', '/mosaic',
+      '/docs', '/docs/desk', '/docs/embed', '/docs/links', '/docs/jobs', '/docs/trust',
+      '/docs/first-five-minutes', '/docs/host-buttons', '/docs/embedded-wallet',
+      '/docs/creator-earnings', '/docs/spend-policy', '/docs/transactions',
+      '/docs/privacy', '/docs/terms', '/docs/dca', '/docs/guardian', '/docs/snapshot',
+    ]
+    for (const path of PROSE_PATHS) {
+      const body = await (await fetch(`${BASE}${path}`)).text()
+      const hits = body.match(ENTITY_SPACE_RE) ?? []
+      check(`entity-space fence: ${path} has no glued inline-element text`, hits.length === 0, hits.slice(0, 3).join(' '))
     }
   }
 
@@ -1962,6 +2014,9 @@ async function main() {
     // Simple-mode shell: /i is a focused full-screen landing — the brochure
     // top nav must not render on it (Navigation returns null on /i/).
     check('intent links: /i page carries no brochure nav', !pageHtml.includes('nav__tab'))
+    // /i has no site footer, so the rebrand disclosure every other page
+    // carries in its footer rides the splash instead (squad 2026-08-18 r2).
+    check('intent links: /i splash carries the "formerly Yeetful" /rebrand pointer', pageHtml.includes('href="/rebrand"') && /formerly Yeetful/i.test(pageHtml))
     const ghostPage = await fetch(`${BASE}/i/zzzz9999`)
     check('intent links: /i unknown slug → 404', ghostPage.status === 404)
 
@@ -2133,14 +2188,28 @@ async function main() {
     // CALL framing (C3): creator links read as a posted call and disclose
     // the WHOLE deal (lifetime first-touch); house links stay the neutral
     // pure-Pantessa lockup with no creator fee line.
+    // r6 (Ideation N3): the eyebrow mirrors the OG card — WHOSE + the model,
+    // never "call · by" jargon. mallory has no claimed handle here, so the
+    // creator page reads "Call · your wallet signs"; the house link reads
+    // "Intent link · your wallet signs".
     check(
       'intent links: creator /i wears the CALL framing + lifetime disclosure',
-      />Call</.test(iPage) && /lifetime, first touch/.test(iPage) && /paid calls should say so/.test(iPage),
+      />Call · your wallet signs</.test(iPage) && !/Call · by/.test(iPage) && /lifetime, first touch/.test(iPage) && /paid calls should say so/.test(iPage),
     )
     const houseCallPage = await (await fetch(`${BASE}/i/protected-long`)).text()
     check(
       'intent links: house /i stays pure Pantessa — no call framing, no creator fee line',
-      /Intent link/.test(houseCallPage) && !/earns half of Pantessa/.test(houseCallPage) && !/>Call</.test(houseCallPage),
+      />Intent link · from Pantessa · your wallet signs</.test(houseCallPage) && !/earns half of Pantessa/.test(houseCallPage) && !/>Call/.test(houseCallPage),
+    )
+    check(
+      'intent links: linkEyebrow mirrors the OG card (From @handle / Call by agent / Intent link · from sender · your wallet signs)',
+      linkEyebrow({ hasCreator: true, handle: 'nate' }) === 'From @nate · your wallet signs' &&
+        linkEyebrow({ hasCreator: true, handle: '@nate', agent: 'Risk Bot' }) === 'From @nate · your wallet signs' &&
+        linkEyebrow({ hasCreator: true, agent: 'Risk Bot' }) === 'Call by Risk Bot · your wallet signs' &&
+        linkEyebrow({ hasCreator: true }) === 'Call · your wallet signs' &&
+        linkEyebrow({ hasCreator: false, agent: 'Risk Bot' }) === 'Intent link · from Risk Bot · your wallet signs' &&
+        linkEyebrow({ hasCreator: false }) === 'Intent link · your wallet signs' &&
+        linkEyebrow({ hasCreator: true, handle: 'nate' }, '') === 'From @nate',
     )
     // The lockup WORD is one source (lib/intent-links) because the rendered
     // check above only covers an UNBRANDED creator page: a white-labeled
@@ -9454,6 +9523,37 @@ async function main() {
         !isReportableWalletError('MetaMask Tx Signature: User denied transaction signature.') &&
         WALLET_REFUSAL_KIND === 'wallet-refused',
     )
+    // The row must carry the wallet's WORDS, not viem's wrapper (QA r3 found
+    // "An internal error was received." stored as the reply): the real text
+    // sits in .details / .data.message / .cause — first specific line wins.
+    {
+      const viemShaped = Object.assign(new Error('An internal error was received.\n\nRequest Arguments:\n  from: 0x…\n\nDetails: Provided chainId "1337" must match the active chainId "4663"\nVersion: viem@2.x'), {
+        shortMessage: 'An internal error was received.',
+        details: 'Provided chainId "1337" must match the active chainId "4663"',
+        cause: Object.assign(new Error('Internal JSON-RPC error.'), { data: { message: 'Provided chainId "1337" must match the active chainId "4663"' } }),
+      })
+      const nodeShaped = Object.assign(new Error('An unknown RPC error occurred.'), { cause: { data: { message: 'insufficient funds for gas * price + value' } } })
+      // QA r4's exact MetaMask -32603 shape as viem hands it to the card: the
+      // OUTER details = the provider's generic "Internal JSON-RPC error.", the
+      // wallet's words nested in cause.data.message — the deepest data.message
+      // must win over the shallower generic details.
+      const mm32603 = Object.assign(new Error('An internal error was received.\n\nRequest Arguments:\n  from: 0x5eaa…\n  to: 0x8335…\n\nDetails: Internal JSON-RPC error.\nVersion: viem@2.x'), {
+        shortMessage: 'An internal error was received.',
+        details: 'Internal JSON-RPC error.',
+        code: -32603,
+        cause: Object.assign(new Error('Internal JSON-RPC error.'), { code: -32603, data: { code: -32000, message: 'insufficient funds for gas * price + value: have 0 want 21000000000000' } }),
+      })
+      check(
+        'wallet refusal words: viem-wrapped MetaMask error → the wallet\'s line; node error → its data.message; plain strings + bare errors pass through',
+        walletErrorWords(viemShaped) === 'Provided chainId "1337" must match the active chainId "4663"' &&
+          walletErrorWords(nodeShaped) === 'insufficient funds for gas * price + value' &&
+          walletErrorWords(mm32603) === 'insufficient funds for gas * price + value: have 0 want 21000000000000' &&
+          walletErrorWords(new Error('Internal JSON-RPC error.')) === 'Internal JSON-RPC error.' &&
+          walletErrorWords(new Error('MetaMask Tx Signature: User denied transaction signature.')) === 'MetaMask Tx Signature: User denied transaction signature.' &&
+          walletErrorWords('plain') === 'plain' && walletErrorWords(null) === 'Wallet error (no message)',
+        JSON.stringify([walletErrorWords(viemShaped), walletErrorWords(nodeShaped), walletErrorWords(mm32603)]),
+      )
+    }
     const refusalInternal = await fetch(`${BASE}/api/ask-failures/wallet`, {
       method: 'POST',
       headers: { 'content-type': 'application/json', 'x-yf-no-ask-log': '1' },
@@ -9518,6 +9618,82 @@ async function main() {
       `typed-data audit: every signTypedData caller aligns the wallet chain first or is allowlisted with a reason (${signers.length} signers)`,
       signers.length >= 8 && offenders.length === 0,
       offenders.length ? `unaligned: ${offenders.join(', ')}` : signers.map((f) => path.basename(f)).join(' '),
+    )
+    // Wallet-refusal wiring audit (squad 2026-08-18 r2): every component
+    // that asks the wallet to sign or send (signTypedDataAsync /
+    // sendTransactionAsync) must file non-rejection wallet errors through
+    // reportWalletRefusal, or the #1 predicted stranger failure ("approve
+    // fails — USDC present, zero ETH for gas") lives only in one browser's
+    // red text and never reaches /dashboard/failures.
+    const senders = [...walk('components'), ...walk('app')].filter((f) => /(signTypedDataAsync|sendTransactionAsync)\(/.test(fs.readFileSync(f, 'utf8')))
+    // Allowlisted = consciously queued, not exempt: each entry names WHY it
+    // can wait (dashboard/arm surfaces a stranger never meets on /i, x402
+    // payment sigs, votes). Wire and delete the entry; never add one silently.
+    const REFUSAL_ALLOW: Record<string, string> = {
+      'components/GuardianPanel.tsx': 'dashboard arm surface, not a stranger sign path (queued)',
+      'components/ArmDcaButton.tsx': 'spend-permission arm (autopilot DCA) — queued',
+      'components/ArmSpotGuardButton.tsx': 'spend-permission arm (spot guardian) — queued',
+      'components/SignGrantButton.tsx': 'dashboard grant signature — queued',
+      'components/SignNftListingButton.tsx': 'Seaport listing (opensea-listing artifact exists) — queued',
+      'components/ChatInterface.tsx': 'x402 payment sigs (EIP-3009) — not a native artifact; queued',
+      'components/SignVoteButton.tsx': 'Snapshot vote — no money moves (queued)',
+      'components/VoteChoiceButtons.tsx': 'Snapshot vote — no money moves (queued)',
+    }
+    const unwired = senders.filter((f) => !(f in REFUSAL_ALLOW) && !/reportWalletRefusal\(/.test(fs.readFileSync(f, 'utf8')))
+    // Sign-card copy pins (squad r4): a refused network switch names the
+    // chain and turns the button into "Switch to <chain> & retry" (never
+    // just red text); the venue's raw "Must deposit" on the HL delegated
+    // door becomes the honest line + the chat's own deposit ask.
+    const sendTxSrc = fs.readFileSync('components/SendTxButton.tsx', 'utf8')
+    const hlBtnSrc = fs.readFileSync('components/SignHlActionButton.tsx', 'utf8')
+    check(
+      'sign cards: switch refusal → named chain + "Switch to <chain> & retry" button; HL "Must deposit" → human line with the deposit ask',
+      /switchNeeded/.test(sendTxSrc) && /& retry`/.test(sendTxSrc) && /must deposit/i.test(hlBtnSrc) && /deposit 10 usdc to hyperliquid/.test(hlBtnSrc),
+    )
+    // The moment of truth on /i (squad r5, Visuals' H1 storyboard): the
+    // current step's sign/send button is THE primary CTA (one shared class
+    // on the three sign buttons), the built reply leads with the human line
+    // on the simple surface, the /i door says "Connect a wallet" (no stalled
+    // "Starting…"), the CTA leads the cards on phones, and the mint stage
+    // eyebrow matches the OG card.
+    const orderBtnSrc = fs.readFileSync('components/SignOrderButton.tsx', 'utf8')
+    const doorSrc = fs.readFileSync('components/CreateAccountButton.tsx', 'utf8')
+    const runtimeSrc = fs.readFileSync('components/IntentRuntime.tsx', 'utf8')
+    const mintSrc = fs.readFileSync('components/MintLinkForm.tsx', 'utf8')
+    check(
+      'moment of truth: SIGN_CTA_CLASS on SendTxButton + SignOrderButton + SignHlActionButton (no ghost sign buttons)',
+      [sendTxSrc, orderBtnSrc, hlBtnSrc].every((src) => /className=\{SIGN_CTA_CLASS\}/.test(src) && !/rounded-full border border-\[var\(--line-2\)\] text-\[color:var\(--muted\)\] hover:text-white hover:border-white/.test(src)),
+    )
+    const sr = splitSimpleReply(
+      "🔏 Swap 20 USDC → ~0.010555 ETH via Uniswap v3 on Base (1bps pool), min received 0.01045 (50bps slippage, incl. 0.5% Pantessa fee on the output)\n🔗 Two steps in the card below — sign the USDC approval, and the swap appears automatically once it confirms (re-quoted fresh). Nothing to retype.\n⚠️ Approve USDC to Uniswap's SwapRouter02 first — the approve transaction is attached.",
+    )
+    const srRun = splitSimpleReply('🔏 Swap 12 USDG → ~0.0512 AAPL on Robinhood Chain via its own settlement venue (LiFi-routed, tool: relay), min received 0.05, incl. 0.024 USDG Pantessa fee (0.2%) 🔗 One step.')
+    check(
+      'simple reply split: human lead (trade · chain · fee · your wallet signs) + 3 detail lines; LiFi shape; plain answers pass through',
+      sr?.lead === 'Swap 20 USDC → ~0.010555 ETH · on Base · fee 0.5% · your wallet signs' && sr?.details.length === 3 && !/🔏|🔗|⚠️/u.test(sr!.details.join(' ')) &&
+        srRun?.lead === 'Swap 12 USDG → ~0.0512 AAPL · on Robinhood Chain · fee 0.2% · your wallet signs' && srRun?.details.length === 2 &&
+        splitSimpleReply('Here is a plain answer.') === null,
+      JSON.stringify({ a: sr?.lead, b: srRun?.lead }),
+    )
+    // r6 (Ideation N1/N2): the in-flight label is "Confirm in your wallet…"
+    // on EVERY sign button (never "Sign in wallet…" — reads as a login), and
+    // the /i header exit ramps render only on receipt / flow-nudge.
+    const signSrcs = ['SendTxButton', 'SignOrderButton', 'SignHlActionButton', 'ArmDcaButton', 'ArmSpotGuardButton', 'SignNftListingButton', 'SignVoteButton'].map((n) => fs.readFileSync(`components/${n}.tsx`, 'utf8'))
+    check(
+      'sign buttons: in-flight label reads "Confirm in your wallet…" everywhere; /i exit ramps gated on signed || flowNudge',
+      signSrcs.every((src) => /Confirm in your wallet…/.test(src) && !/Sign in wallet…/.test(src)) &&
+        /\{\(signed \|\| flowNudge\) && \(/.test(runtimeSrc) && /MAKE A LINK/.test(runtimeSrc),
+    )
+    check(
+      '/i door + splash + mint stage: walletConnectOnly title "Connect a wallet", no "Starting…" stall, CTA leads the cards ≤sm, eyebrow says YOUR WALLET SIGNS',
+      /walletConnectOnly \? 'Connect a wallet' : 'Sign in to Pantessa'/.test(doorSrc) && !/'Starting…'/.test(doorSrc) &&
+        /className="mt-10 max-sm:order-1"/.test(runtimeSrc) && /max-sm:order-3/.test(runtimeSrc) &&
+        /INTENT LINK · YOUR WALLET SIGNS/.test(mintSrc) && !/TAP TO RUN/.test(mintSrc),
+    )
+    check(
+      `wallet-refusal audit: every money sign/send button files wallet refusals (${senders.length} senders)`,
+      senders.length >= 8 && unwired.length === 0,
+      unwired.length ? `unwired: ${unwired.join(', ')}` : senders.filter((f) => !(f in REFUSAL_ALLOW)).map((f) => path.basename(f)).join(' '),
     )
   }
 

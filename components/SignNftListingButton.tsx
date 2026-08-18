@@ -177,7 +177,7 @@ export default function SignNftListingButton({
             {status === 'approving'
               ? 'Approving in wallet…'
               : status === 'signing'
-                ? 'Sign in wallet…'
+                ? 'Confirm in your wallet…'
                 : status === 'placing'
                   ? 'Placing listing…'
                   : status === 'error'

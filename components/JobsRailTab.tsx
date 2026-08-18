@@ -125,7 +125,11 @@ export default function JobsRailTab({ onAct }: { onAct?: () => void }) {
               <span className="min-w-0 flex-1">
                 <span className="block truncate text-xs font-medium">{it.ask}</span>
                 <span className="block text-[10px] text-[color:var(--muted-2)]">
-                  {it.from ? `from ${it.from}` : 'addressed to this wallet'} · tap to review &amp; sign
+                  {/* JS string, not JSX text: the SWC entity-space bug ate the
+                      space before "·" when this read `&amp;` (rendered
+                      "Risk Bot· tap"). */}
+                  {it.from ? `from ${it.from}` : 'addressed to this wallet'}
+                  {' · tap to review & sign'}
                 </span>
               </span>
             </span>

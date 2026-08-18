@@ -235,3 +235,31 @@ export function linkLockup(hasCreator: boolean, agent?: string | null): string {
   if (!who) return word
   return `${word} · ${hasCreator ? 'by' : 'from'} ${who}`
 }
+
+/**
+ * The /i eyebrow, aligned to the OG card (Visuals r2 / squad r6): WHOSE it
+ * is + the model — never "call · by" KOL jargon. Rules mirror
+ * app/i/[slug]/opengraph-image.tsx: a creator with a CLAIMED handle is
+ * `From @handle`; a creator without one keeps the posted-call word (`Call by
+ * <agent>` / `Call`); a house link is `Intent link` (`· from <sender>` when
+ * addressed); every variant ends in `· your wallet signs` unless the caller
+ * swaps the tail (a branded splash says `· powered by Pantessa`). Rendered
+ * uppercase by the mono eyebrow class.
+ */
+export function linkEyebrow(
+  o: { hasCreator: boolean; handle?: string | null; agent?: string | null },
+  tail: string = 'your wallet signs',
+): string {
+  const handle = (o.handle ?? '').trim().replace(/^@/, '')
+  const who = (o.agent ?? '').trim()
+  const head = o.hasCreator
+    ? handle
+      ? `From @${handle}`
+      : who
+        ? `Call by ${who}`
+        : 'Call'
+    : who
+      ? `Intent link · from ${who}`
+      : 'Intent link'
+  return tail ? `${head} · ${tail}` : head
+}

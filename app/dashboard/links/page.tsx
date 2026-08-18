@@ -12,9 +12,10 @@ import { LinkEarningsPanel } from '@/components/LinkEarningsPanel'
 import { LinkFunnelTable } from '@/components/LinkFunnelTable'
 import { MintLinkForm } from '@/components/MintLinkForm'
 import { useIntentLinks } from '@/lib/intent-links-ui'
+import { LivePill } from '@/components/LivePill'
 
 export default function DashboardLinksPage() {
-  const { links, earnings, loadError, reload } = useIntentLinks()
+  const { links, earnings, loadError, reload, updatedAt } = useIntentLinks()
 
   return (
     <div className="max-w-4xl">
@@ -36,7 +37,16 @@ export default function DashboardLinksPage() {
         <LinkEarningsPanel earnings={earnings} onClaimed={reload} className="mb-6" />
       )}
 
-      {links && links.length > 0 && <LinkFunnelTable links={links} onChanged={reload} />}
+      {links && links.length > 0 && (
+        <>
+          {/* the funnel is the scoreboard during a drill — it re-reads
+              itself every 30s while this tab is visible */}
+          <div className="flex items-center justify-end mb-2">
+            <LivePill updatedAt={updatedAt} />
+          </div>
+          <LinkFunnelTable links={links} onChanged={reload} />
+        </>
+      )}
       {links && links.length === 0 && !loadError && (
         <p className="text-[13px] text-[color:var(--muted-2)]">
           No links yet — mint the first one above. The ask you'd paste in chat is exactly the ask
