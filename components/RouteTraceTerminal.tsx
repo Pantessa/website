@@ -34,7 +34,7 @@ export default function RouteTraceTerminal({
         <p className="text-[color:var(--muted-2)]">
           {emptyHint ?? (
             <>
-              <span style={{ color: 'var(--accent)' }}>$</span> idle — send a message and the engine&apos;s routing
+              <span style={{ color: 'var(--accent)' }}>$</span>{' '}idle — send a message and the engine&apos;s routing
               decisions stream here.
             </>
           )}

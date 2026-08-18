@@ -178,7 +178,7 @@ export default function LiveRoutingFeed() {
             className="h-[420px]"
             emptyHint={
               <>
-                <span style={{ color: 'var(--accent)' }}>$</span> idle — the engine&apos;s routing decisions stream
+                <span style={{ color: 'var(--accent)' }}>$</span>{' '}idle — the engine&apos;s routing decisions stream
                 here as agents pay across the network.
               </>
             }

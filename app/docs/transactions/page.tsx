@@ -70,7 +70,7 @@ export default function TransactionsDocsPage() {
     <>
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: docsJsonLd(PAGE) }} />
       <p className="docs__crumbs mono">
-        <Link href="/docs">DOCS</Link> <span>/</span> NATIVE VENUES &amp; GUARDS
+        <Link href="/docs">DOCS</Link> <span>/</span>{' '}NATIVE VENUES &amp; GUARDS
       </p>
       <h1 className="docs__h1">The transaction layer</h1>
       <p className="docs__lead">

@@ -456,9 +456,9 @@ export function MintLinkForm({
         type="button"
         onClick={() => setFinePrintOpen((o) => !o)}
         aria-expanded={finePrintOpen}
-        className="mt-4 inline-flex items-center gap-1.5 mono text-[11px] uppercase tracking-wider text-[color:var(--muted-2)] hover:text-[color:var(--fg)] transition-colors"
+        className="mt-4 inline-flex items-center gap-1.5 mono text-[11px] uppercase tracking-wider text-left text-[color:var(--muted-2)] hover:text-[color:var(--fg)] transition-colors"
       >
-        <ChevronDown className={`w-3.5 h-3.5 transition-transform${finePrintOpen ? ' rotate-180' : ''}`} />
+        <ChevronDown className={`w-3.5 h-3.5 flex-shrink-0 transition-transform${finePrintOpen ? ' rotate-180' : ''}`} />
         Fine print — return URL · expiry · sign cap · allowlist
       </button>
       {finePrintOpen && (

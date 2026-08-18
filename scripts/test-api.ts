@@ -1386,6 +1386,31 @@ async function main() {
     }
   }
 
+  // SWC entity-space fence (squad 2026-08-18 UI/UX drill): a text node that
+  // follows an inline element and CONTAINS an HTML entity (&apos; &rsquo; …)
+  // loses its leading space at compile time — "<code>scan_wallet</code>reads"
+  // shipped on /docs/desk, /docs/embed and /pricing. The rendered HTML is the
+  // only place the bug is visible; the fix is `{' '}` after the element.
+  // Prose pages only — chat/dashboard bodies are client-rendered.
+  {
+    // Glued = a letter, an opening paren/quote, or a spaced em dash sitting
+    // directly on the closing tag. Punctuation like `</a>.` / `</code>,` is
+    // legitimate and stays out of the class.
+    const ENTITY_SPACE_RE = /<\/(em|strong|a|code)>(?:[A-Za-z(]|—|“|&ldquo;)/g
+    const PROSE_PATHS = [
+      '/', '/pricing', '/links', '/links/embed', '/rebrand', '/mosaic',
+      '/docs', '/docs/desk', '/docs/embed', '/docs/links', '/docs/jobs', '/docs/trust',
+      '/docs/first-five-minutes', '/docs/host-buttons', '/docs/embedded-wallet',
+      '/docs/creator-earnings', '/docs/spend-policy', '/docs/transactions',
+      '/docs/privacy', '/docs/terms', '/docs/dca', '/docs/guardian', '/docs/snapshot',
+    ]
+    for (const path of PROSE_PATHS) {
+      const body = await (await fetch(`${BASE}${path}`)).text()
+      const hits = body.match(ENTITY_SPACE_RE) ?? []
+      check(`entity-space fence: ${path} has no glued inline-element text`, hits.length === 0, hits.slice(0, 3).join(' '))
+    }
+  }
+
   // Payees: the wallet's claimed MCP servers (dashboard Agents → My MCP servers).
   // SIWE-only; a fresh wallet has claimed nothing, so an empty array.
   const mineNoAuth = await fetch(`${BASE}/api/mcp/mine`)

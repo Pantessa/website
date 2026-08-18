@@ -180,13 +180,16 @@ function TileSection({
   return (
     <div className="flex flex-1 flex-col">
       {((tile.title && tile.title !== tile.mcpName) || tile.subtitle) && (
-        <div className="mb-3 flex items-baseline justify-between gap-2">
+        // Wraps at narrow widths: the title never breaks word-per-line and a
+        // long subtitle drops to its own line instead of overflowing the card
+        // (375px drill — "WHAT / PANTESSA / NOTICED" beside a clipped hint).
+        <div className="mb-3 flex flex-wrap items-baseline justify-between gap-x-2 gap-y-0.5">
           {tile.title && tile.title !== tile.mcpName ? (
-            <p className="mono text-[10px] uppercase tracking-wider text-[color:var(--muted-2)]">{tile.title}</p>
+            <p className="mono whitespace-nowrap text-[10px] uppercase tracking-wider text-[color:var(--muted-2)]">{tile.title}</p>
           ) : (
             <span />
           )}
-          {tile.subtitle && <span className="mono flex-shrink-0 text-[10px] text-[color:var(--muted-2)]">{tile.subtitle}</span>}
+          {tile.subtitle && <span className="mono min-w-0 text-[10px] text-[color:var(--muted-2)]">{tile.subtitle}</span>}
         </div>
       )}
       {tile.render === 'holdings' && <HoldingsBody tile={tile} onPick={onPick} />}

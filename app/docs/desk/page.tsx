@@ -74,7 +74,7 @@ export default function DeskDocsPage() {
         <h2>The loop</h2>
         <ol>
           <li>
-            <strong>Scan</strong> — <code>scan_wallet</code> reads a wallet&apos;s movable money
+            <strong>Scan</strong> — <code>scan_wallet</code>{' '}reads a wallet&apos;s movable money
             across Base, Arbitrum, and Ethereum (gas-reserve aware), so your plan is grounded in
             what the human actually holds.
           </li>

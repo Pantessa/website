@@ -32,7 +32,7 @@ export default function TermsPage() {
         </p>
         <p>
           These Terms of Service (&ldquo;Terms&rdquo;) are a binding agreement between you and{' '}
-          <strong>Pantessa Inc.</strong> (&ldquo;Pantessa,&rdquo; &ldquo;we,&rdquo;
+          <strong>Pantessa Inc.</strong>{' '}(&ldquo;Pantessa,&rdquo; &ldquo;we,&rdquo;
           &ldquo;us&rdquo;), governing your access to and use of the Pantessa website, dashboard,
           SDK, APIs, and related services (together, the &ldquo;Service&rdquo;). If you use the
           Service on behalf of an organization, you represent that you are authorized to bind that

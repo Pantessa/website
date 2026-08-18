@@ -66,7 +66,7 @@ export default function HostButtonsDocsPage() {
         <h2>Want the whole chat instead?</h2>
         <p>
           A button hands visitors to Pantessa and back. If you want the full experience{' '}
-          <em>inside</em> your site — the chat mounted on your page, signing with the wallet
+          <em>inside</em>{' '}your site — the chat mounted on your page, signing with the wallet
           your page already has connected — that&apos;s the five-line{' '}
           <Link href="/docs/embed">embed</Link>. Buttons for reach, embed for depth; they share
           the same guarded transaction layer.

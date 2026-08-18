@@ -233,7 +233,10 @@ function CreateAccountModal({
                   aria-label={p.label}
                   title={p.label}
                 >
-                  <GoogleGlyph />
+                  {/* Visible label, not glyph-only: with a single provider the
+                      icon-row design read as a wide empty button with a "G"
+                      in it (375px stranger drill, squad 2026-08-18). */}
+                  <GoogleGlyph /> {p.label}
                 </button>
               ))}
             </div>
