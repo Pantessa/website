@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import prisma from '@/lib/db'
+import { brandFromRow } from '@/lib/brand-denylist'
 import { getSessionAddress } from '@/lib/auth'
 import { brandCtaStyle, brandThemeStyle } from '@/lib/brand-theme'
 import Footer from '@/components/Footer'
@@ -26,10 +27,8 @@ async function getStorefront(rawHandle: string) {
     if (!row) return null
     // White-label brand — scanned from the creator's own site (one paste on
     // the dashboard). Logo is a stored data URI: no foreign fetch at render.
-    const brand =
-      row.brandDomain || row.brandLogo || row.brandAccent || row.brandBg
-        ? { domain: row.brandDomain, name: row.brandName, logo: row.brandLogo, accent: row.brandAccent, bg: row.brandBg }
-        : null
+    // (rule 7: a denied third-party brand renders as house — lib/brand-denylist)
+    const brand = brandFromRow(row)
     const links = await prisma.intentLink.findMany({
       where: { creator: row.creator, revoked: false },
       orderBy: { createdAt: 'desc' },

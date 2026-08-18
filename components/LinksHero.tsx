@@ -14,8 +14,15 @@ import LinksHeroView from '@/components/LinksHeroView'
 async function linkStats() {
   try {
     const [links, opens, turns] = await Promise.all([
-      prisma.intentLink.count({ where: { revoked: false } }),
-      prisma.intentLinkEvent.count({ where: { kind: 'open' } }),
+      // Honest reader (2026-08-18): a public claim never counts our own
+      // harness/drill mints (intent_links.is_internal) or the opens posted
+      // against them — the raw counts were 141 links / 1,638 opens of which
+      // ~95% were us. Same rule as the money figures below.
+      prisma.intentLink.count({ where: { revoked: false, isInternal: false } }),
+      prisma.$queryRaw<{ n: bigint }[]>`
+        SELECT count(*)::bigint AS n FROM intent_link_events e
+        WHERE e.kind = 'open'
+          AND NOT EXISTS (SELECT 1 FROM intent_links il WHERE il.id = e.slug AND il.is_internal)`.then((r) => Number(r[0]?.n ?? 0)),
       // REAL_TRAFFIC_WHERE: the homepage is a public claim, so harness and
       // localhost turns must never count toward it (the same rule every other
       // public money read follows).

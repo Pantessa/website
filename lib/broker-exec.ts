@@ -29,6 +29,7 @@ import { validateCallbackUrl, mintCallbackSecret, deliverWebhook } from '@/lib/b
 import { agentHandleFor } from '@/lib/agent-record'
 import { sendIntent } from '@/lib/inbox'
 import { MOSAIC_CHAIN_IDS, composeMosaicAsk, sanitizeMosaicSlices, type MosaicChainWord } from '@/lib/mosaic'
+import { recoverMessageAddress } from 'viem'
 
 const SITE = (process.env.NEXT_PUBLIC_SITE_URL ?? 'https://www.pantessa.com').replace(/\/$/, '')
 
@@ -46,6 +47,13 @@ export interface OpenResult {
   recordUrl?: string
 }
 
+/** Per-call desk options read from the MCP request (lib/internal-run.ts):
+ *  `internal` = our own harness/drill call — every intent_links / jobs row the
+ *  call mints is stamped so the GTM arc never counts it as an arrival. */
+export interface DeskCallOpts {
+  internal?: boolean
+}
+
 const CONTRACT =
   'Sentences in, sentences and sign links out. The desk never returns calldata, typed data, or deposit addresses; ' +
   'the guarded deterministic builders rebuild every action from scratch on the sign side, and the human wallet is the only signer.'
@@ -58,7 +66,7 @@ export async function openIntent(opts: {
   agent?: unknown
   agentKey?: unknown
   callbackUrl?: unknown
-}): Promise<OpenResult> {
+}, call?: DeskCallOpts): Promise<OpenResult> {
   assertDeskOpen()
   const wallet = cleanWallet(opts.wallet)
   const agent = cleanAgentName(opts.agent)
@@ -91,6 +99,7 @@ export async function openIntent(opts: {
       callbackSecret,
       state: 'open',
       plan: plan as object,
+      isInternal: call?.internal === true,
     },
   })
 
@@ -171,7 +180,7 @@ export interface HandoffResult {
  *  intent. The link is a full /i intent link, so the human gets the entire
  *  guarded runtime (connect-to-act, funding cascade, receipts) and the
  *  broker gets the funnel to report back. */
-export async function handoffIntent(intentId: string): Promise<HandoffResult> {
+export async function handoffIntent(intentId: string, call?: DeskCallOpts): Promise<HandoffResult> {
   assertDeskOpen()
   const row = await mustIntent(intentId)
   if (row.state === 'closed') throw new Error(`Intent ${intentId} is closed.`)
@@ -196,6 +205,7 @@ export async function handoffIntent(intentId: string): Promise<HandoffResult> {
       mcps: composeMcps(row.ask).join(',') || null,
       creator: null,
       agent: row.agent ? `${row.agent} (agent desk)` : 'agent desk',
+      isInternal: call?.internal === true,
     },
   })
   await prisma.brokerIntent.update({
@@ -237,7 +247,7 @@ export interface TileResult {
  *  link gets the same sentence diffed against their own holdings by the
  *  deterministic planner — the desk never sees a balance, an address, or a
  *  plan, just the sentence. */
-export async function tileIntent(opts: { slices: unknown; chain?: unknown; agent?: unknown }): Promise<TileResult> {
+export async function tileIntent(opts: { slices: unknown; chain?: unknown; agent?: unknown }, call?: DeskCallOpts): Promise<TileResult> {
   assertDeskOpen()
   const slices = sanitizeMosaicSlices(opts.slices)
   if ('problem' in slices) throw new Error(slices.problem)
@@ -269,6 +279,7 @@ export async function tileIntent(opts: { slices: unknown; chain?: unknown; agent
       creator: null,
       agent: agent ? `${agent} (agent desk)` : 'agent desk',
       kind: 'mosaic',
+      isInternal: call?.internal === true,
     },
   })
   const row = await prisma.brokerIntent.create({
@@ -280,6 +291,7 @@ export async function tileIntent(opts: { slices: unknown; chain?: unknown; agent
       state: 'handed_off',
       plan: plan as object,
       linkSlug: slug,
+      isInternal: call?.internal === true,
     },
   })
 
@@ -418,7 +430,7 @@ export interface ExecuteResult {
  *  so a lying agent fails its own job closed one leg later. Every build
  *  passes the same deterministic builders + fail-closed guards + spend
  *  policy as a human turn. */
-export async function executeIntent(intentId: string): Promise<ExecuteResult> {
+export async function executeIntent(intentId: string, walletSignature: unknown, call?: DeskCallOpts): Promise<ExecuteResult> {
   assertDeskOpen()
   const row = await mustIntent(intentId)
   if (row.state !== 'open') throw new Error(`Intent ${intentId} is ${row.state} — execution starts from an open intent.`)
@@ -433,6 +445,14 @@ export async function executeIntent(intentId: string): Promise<ExecuteResult> {
   // a human signature is its own ceiling.
   assertAgentIdentity(row.agentKey)
   assertUnderDeskCap(askUsd(row.ask))
+  // The wallet must be PROVEN, not merely named (2026-08-18 squad audit): a
+  // job is listed in its wallet's Jobs rail with a needs-you badge, so an
+  // unproven wallet let any caller plant a sign request in a stranger's rail
+  // ("swap … then send … to 0xATTACKER"). The agent holds the key on this
+  // path by definition, so it signs the desk's consent text — bound to THIS
+  // intent id + wallet — and the desk recovers the signer before any job row
+  // exists. Single-use by construction: the intent must still be `open`.
+  await assertWalletProof(row.id, row.wallet, walletSignature)
 
   const compiled = compileJobAsk(row.ask)
   if (!compiled || 'problem' in compiled || 'clarify' in compiled) {
@@ -444,7 +464,7 @@ export async function executeIntent(intentId: string): Promise<ExecuteResult> {
     )
   }
 
-  const job = await createJob(row.wallet, compiled, 'broker')
+  const job = await createJob(row.wallet, compiled, 'broker', { internal: call?.internal === true })
   // Kick the first build inline (the chat/jobs-API/DCA pattern) so leg 0 is
   // offered by the time the agent's first poll lands; the cron advances the
   // rest, including the waits between legs.
@@ -522,17 +542,18 @@ export async function sendToInbox(opts: {
   senderLabel?: unknown
   agent?: unknown
   agentKey?: unknown
-}): Promise<SendResult> {
+}, call?: DeskCallOpts): Promise<SendResult> {
   assertDeskOpen()
   const agent = cleanAgentName(opts.agent)
   const agentKey = cleanAgentKey(opts.agentKey)
-  const senderLabel = typeof opts.senderLabel === 'string' ? opts.senderLabel : agent ?? undefined
+  const senderLabel = cleanSenderLabel(opts.senderLabel) ?? agent ?? undefined
 
   const sent = await sendIntent(SITE, {
     ask: typeof opts.ask === 'string' ? opts.ask : '',
     recipientRaw: opts.recipient,
     senderLabel,
     agent: agent ?? undefined,
+    internal: call?.internal === true,
   })
 
   const row = await prisma.brokerIntent.create({
@@ -546,6 +567,7 @@ export async function sendToInbox(opts: {
       state: 'handed_off',
       plan: { ask: sent.ask, addressed: true } as object,
       linkSlug: sent.slug,
+      isInternal: call?.internal === true,
     },
   })
 
@@ -593,6 +615,61 @@ export async function fireIntentWebhook(
   } catch {
     // fail-soft — the loop is best-effort; broker_status remains the truth
   }
+}
+
+/** The consent text the agent's wallet signs (personal_sign) to prove it
+ *  owns the wallet an agent-signed intent is bound to. Pure + exported so
+ *  agents/harnesses build the identical bytes. */
+export function deskExecuteConsentMessage(intentId: string, wallet: string): string {
+  return [
+    'Pantessa agent desk — execute consent',
+    `Intent: ${intentId}`,
+    `Wallet: ${wallet.toLowerCase()}`,
+    'Signing lets the desk compile this intent into a job owned by this wallet. It moves nothing by itself; every leg still needs this wallet\'s own signature.',
+  ].join('\n')
+}
+
+async function assertWalletProof(intentId: string, wallet: string, signature: unknown): Promise<void> {
+  const refuse = (why: string): never => {
+    throw new Error(
+      `broker_execute needs wallet_signature — ${why}. Sign the exact text of deskExecuteConsentMessage(intent_id, wallet) ` +
+        '(personal_sign / EIP-191) with the wallet you opened the intent for; the desk recovers the signer and refuses any other. ' +
+        'For human signing, use broker_handoff — it needs no wallet proof.',
+    )
+  }
+  if (typeof signature !== 'string' || !/^0x[0-9a-fA-F]{130}$/.test(signature)) return refuse('a 65-byte 0x signature over the consent text is required')
+  let signer: string
+  try {
+    signer = await recoverMessageAddress({ message: deskExecuteConsentMessage(intentId, wallet), signature: signature as `0x${string}` })
+  } catch {
+    return refuse('the signature does not verify against the consent text')
+  }
+  if (signer.toLowerCase() !== wallet.toLowerCase()) return refuse(`the signature recovers to ${signer.toLowerCase()}, not the intent's wallet`)
+}
+
+/** An agent-supplied inbox byline can never wear the marks Pantessa stamps
+ *  itself: human sends carry `@handle` (a CLAIMED handle, stamped server-side
+ *  from the sender's SIWE wallet) or a 0x… short address. Strip those shapes
+ *  so "from @nategeier" can only ever mean the real claimed handle sent it. */
+export function cleanSenderLabel(raw: unknown): string | null {
+  if (typeof raw !== 'string') return null
+  // NFKC first: fullwidth ＠ (U+FF20), small ﹫ (U+FE6B) etc. fold to '@',
+  // fullwidth digits/letters fold to ASCII — a homoglyph is the same mark.
+  let s = raw.normalize('NFKC').replace(/\s+/g, ' ').trim()
+  // Strip-until-stable: "@@ @nategeier" must not survive a single pass
+  // (QA 2026-08-18 bypass).
+  for (let prev = ''; prev !== s; ) {
+    prev = s
+    s = s.replace(/^@+/, '').replace(/^0x[0-9a-fA-F]{4,}(…|\.\.\.)?[0-9a-fA-F]*/, '').trim()
+  }
+  s = s.slice(0, 60).trim()
+  // Belt: after normalization the label may carry NO at-sign of any kind and
+  // no 0x-hex run anywhere — refuse rather than reshape (the two Pantessa-
+  // stamped marks are exactly those shapes).
+  if (/[@\u0040\uFF20\uFE6B]/u.test(s) || /0x[0-9a-fA-F]{4,}/.test(s)) {
+    throw new Error('sender_label may not contain an @-handle or a 0x address — those marks are stamped by Pantessa for claimed handles and human senders only. Use your agent or app name.')
+  }
+  return s || null
 }
 
 async function mustIntent(intentId: string) {

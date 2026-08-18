@@ -30,6 +30,11 @@ export async function getWorkingSet(ownerAddress: string): Promise<string[]> {
 export async function setWorkingSet(
   ownerAddress: string,
   ids: string[],
+  /** `internal` stamps `wallet_working_sets.is_internal` (lib/internal-run.ts)
+   *  so the GTM arc never reads a harness wallet's write-through as an
+   *  arrival. Sticky-on: an internal write flags the row for good (the wallet
+   *  IS a throwaway); an organic write never un-flags it. */
+  opts?: { internal?: boolean },
 ): Promise<string[]> {
   const addr = ownerAddress.toLowerCase()
 
@@ -51,8 +56,10 @@ export async function setWorkingSet(
 
   const stored = await prisma.walletWorkingSet.upsert({
     where: { ownerAddress: addr },
-    create: { ownerAddress: addr, serviceIds: valid },
-    update: { serviceIds: valid },
+    create: { ownerAddress: addr, serviceIds: valid, isInternal: opts?.internal === true },
+    // A wallet that EVER wrote its set from an internal run IS a throwaway:
+    // the stamp is sticky-on, never cleared by a later unstamped write.
+    update: { serviceIds: valid, ...(opts?.internal ? { isInternal: true } : {}) },
     select: { serviceIds: true },
   })
   return stored.serviceIds

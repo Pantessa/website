@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSessionAddress } from '@/lib/auth'
 import { getWorkingSet, setWorkingSet } from '@/lib/working-set'
+import { isInternalRun } from '@/lib/internal-run'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -25,5 +26,8 @@ export async function PUT(req: NextRequest) {
   }
   const ids = body.serviceIds.filter((x: unknown): x is string => typeof x === 'string')
 
-  return NextResponse.json({ serviceIds: await setWorkingSet(addr, ids) })
+  // Our own harness/drill write (lib/internal-run.ts): every gate run
+  // upserts working sets for throwaway wallets — never an arrival.
+  const internalRun = isInternalRun(req.headers, body)
+  return NextResponse.json({ serviceIds: await setWorkingSet(addr, ids, { internal: internalRun }), ...(internalRun ? { internal: true } : {}) })
 }

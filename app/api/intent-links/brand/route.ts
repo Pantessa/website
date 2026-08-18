@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import prisma from '@/lib/db'
 import { getAuthAddress } from '@/lib/api-key'
 import { fetchLogoDataUri, hexLuminance, normalizeAccent, normalizeBg, scanBrand, validateBrandUrl } from '@/lib/brand-scan'
+import { deniedBrandReason, isDeniedBrandHost } from '@/lib/brand-denylist'
 
 // White-label brand for the creator's /l/<handle> page. One paste, no form:
 // POST {url} scans the creator's own site (theme-color, site name, icons),
@@ -46,9 +47,18 @@ export async function POST(req: NextRequest) {
   }
   const v = validateBrandUrl(String(body.url ?? ''))
   if (!v.ok) return NextResponse.json({ error: v.reason }, { status: 400 })
+  // Rule 7: never wear a third-party financial brand — refused BEFORE the
+  // scan (no fetch to the denied host either), by name.
+  if (isDeniedBrandHost(v.url.hostname)) {
+    return NextResponse.json({ error: deniedBrandReason(v.url.hostname), denied: true }, { status: 403 })
+  }
 
   const scanned = await scanBrand(v.url)
   if (!scanned.ok) return NextResponse.json({ error: scanned.reason }, { status: 502 })
+  // The scan follows redirects — re-check the FINAL host too.
+  if (isDeniedBrandHost(scanned.domain)) {
+    return NextResponse.json({ error: deniedBrandReason(scanned.domain), denied: true }, { status: 403 })
+  }
 
   // First candidate that actually fetches as a real image wins (a declared
   // apple-touch-icon can 404; the ladder just moves on). Cap the attempts —

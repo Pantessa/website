@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import prisma from '@/lib/db'
 import { bumpAndCheckBrokerCall, clientIpFrom } from '@/lib/turn-limits'
 import { WALLET_REFUSAL_KIND, isReportableWalletError } from '@/lib/wallet-refusal'
+import { isInternalRun } from '@/lib/internal-run'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -18,10 +19,14 @@ const cap = (v: unknown, n: number): string | null => (typeof v === 'string' && 
 const ARTIFACTS = new Set(['hl-order', 'hl-leverage', 'hl-agent', 'cow-order', 'tx', 'tx-chain', 'vote', 'opensea-listing'])
 
 export async function POST(req: NextRequest) {
-  if (req.headers.get('x-yf-no-ask-log') === '1' || req.headers.get('x-yf-internal-run') === '1') {
+  if (req.headers.get('x-yf-no-ask-log') === '1') {
     return NextResponse.json({ ok: true, skipped: 'internal' }, { status: 202 })
   }
   const body = (await req.json().catch(() => ({}))) as Record<string, unknown>
+  // Internal-run drills (lib/internal-run.ts) still write — STAMPED, so the
+  // matrix drill's refusals are visible under the dashboard's internal
+  // toggle but never read as a stranger's wall.
+  const internalRun = isInternalRun(req.headers, body)
   const artifact = typeof body.artifact === 'string' && ARTIFACTS.has(body.artifact) ? body.artifact : null
   const detail = cap(body.detail, 400)
   const ask = cap(body.ask, 300)
@@ -45,10 +50,11 @@ export async function POST(req: NextRequest) {
         hadFunds: true,
         fundsUsd: valueUsd,
         fundsDetail: `wallet refused at signing${connector ? ` · ${connector}` : ''}${chainId ? ` · wallet on chain ${chainId}` : ''} — the artifact was built and guarded; the wallet was the wall.`,
+        isInternal: internalRun,
       },
       select: { id: true },
     })
-    return NextResponse.json({ ok: true, id: row.id }, { status: 202 })
+    return NextResponse.json({ ok: true, id: row.id, ...(internalRun ? { internal: true } : {}) }, { status: 202 })
   } catch {
     return NextResponse.json({ ok: false, dropped: 'store' }, { status: 202 })
   }
