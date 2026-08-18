@@ -56,7 +56,13 @@ export type MosaicChainWord = 'base' | 'ethereum' | 'arbitrum' | 'robinhood'
 /** The trigger verb. Deliberately disjoint from every other gate: rebalance
  *  wants "rebalance"/"to work", the swap layer wants "swap", DCA wants a
  *  cadence. "tile my wallet" belongs to nobody else. */
-const MOSAIC_TRIGGER_RE = /\b(?:re)?tile\s+my\s+(?:wallet|portfolio|bags?)\b/i
+// "tile my wallet …" is the canonical verb (mosaicAskString writes it).
+// Strangers also say "make/set/split my wallet 60% ETH 40% USDC" (squad
+// 2026-08-18 ask inventory — fell to the planner): those synonyms count ONLY
+// when a percent tile follows, so "rebalance my portfolio" (no tiles) stays
+// the rebalance layer's.
+const MOSAIC_TRIGGER_RE =
+  /\b(?:(?:re)?tile\s+my\s+(?:wallet|portfolio|bags?)\b|(?:make|set|shape|split|allocate|rebalance)\s+my\s+(?:wallet|portfolio|bags?)\s+(?:to\s+|into\s+|as\s+)?(?=\d+(?:\.\d+)?\s*%))/i
 
 /** "50% eth", "12.5% of WSTETH" — symbol rules mirror the same-chain-swap
  *  segment ([A-Za-z]{2,12}) so a slice that parses here can always become a

@@ -46,7 +46,7 @@ import { CROSS_CHAIN_FEE_BPS, LINK_SWAP_FEE_BPS, TREASURY_ADDRESS } from '@/lib/
 import { INTENT_SLUG_RE } from '@/lib/intent-links'
 import prismaDb from '@/lib/db'
 import { prettyChainWord } from '@/lib/chain-lexicon'
-import { arbitrumUsdcBalance, buildHlExecTurn, hlAgentOf, HL_MIN_DEPOSIT_USDC, hlOpenCollateralShortfall, parseHlIntent, type HlOpenShortfall, type HlOrderIntent } from '@/lib/hyperliquid-exec'
+import { arbitrumUsdcBalance, buildHlExecTurn, hlAgentOf, HL_MIN_DEPOSIT_USDC, hlOpenCollateralShortfall, hlUnsizedChips, parseHlIntent, type HlOpenShortfall, type HlOrderIntent } from '@/lib/hyperliquid-exec'
 import { parseGuardianArm } from '@/lib/hl-guardian'
 import { armGuardianPolicy } from '@/lib/hl-guardian-store'
 import { compileJobAsk, stampSwapFeeTier } from '@/lib/jobs'
@@ -133,6 +133,7 @@ import { buildLifiSwap, NoLifiRouteError } from '@/lib/lifi-venue'
 import { GAS_TOPUP_ETH, parseRhFundingFollowUp, planDownsizedRobinhoodBuy, planRobinhoodFundingAdvice, readFundingShortfall, rhFundingPending, robinhoodBuyNeedUsd, ROBINHOOD_CHAIN_ID } from '@/lib/lifi-bridge'
 import { describeInflightDeposit, inflightPendingData } from '@/lib/inflight-funding'
 import { resolveToken, tokenDecimals, humanToAtoms } from '@/lib/cow'
+import { COW_VAULT_RELAYER } from '@/lib/cow-guardrails'
 import { chartPairFor } from '@/lib/charts'
 import { ensureTokenList } from '@/lib/token-list'
 import { pairStockToken, stockChipLabel } from '@/lib/stock-pairing'
@@ -1256,6 +1257,19 @@ async function handleChatTurn(req: NextRequest) {
     if (hlIntent) {
       const hlAgent = hlAgentOf(activeServers)
       if (hlAgent.agent && hlAgent.usable) {
+        // Unsized open ("buy some HYPE and 2x long" — the funded miss of
+        // 2026-08-12 that fell to the planner): the side, coin and leverage
+        // are the ask; the size is the one missing input. Chips, not prose —
+        // every resume round-trips parseHlIntent into a full order.
+        if (hlIntent.kind === 'open-unsized') {
+          const chips = hlUnsizedChips(hlIntent)
+          nativeTrace({ type: 'status', label: `native hl layer claimed the turn: unsized ${hlIntent.isBuy ? 'long' : 'short'} on ${hlIntent.coin}${hlIntent.leverage ? ` at ${hlIntent.leverage}x` : ''} — asking for the size with chips` })
+          return NextResponse.json({
+            reply: `📈 ${hlIntent.leverage ? `${hlIntent.leverage}x ` : ''}${hlIntent.isBuy ? 'long' : 'short'} on **${hlIntent.coin}** — how much? Pick a size and I'll build the guarded Hyperliquid order (you sign it; funds never leave your wallet).`,
+            clarify: { question: `How much ${hlIntent.coin}?`, options: chips },
+            buildPath: 'native-hl-exec',
+          })
+        }
         // Universal funding plan: an under-funded deposit (above the bridge
         // minimum — smaller ones the build refuses on its own) offers to move
         // USDC over via NEAR Intents instead of building a blocked artifact.
@@ -1671,7 +1685,13 @@ async function handleChatTurn(req: NextRequest) {
     const transferAsk = parseTransferSegment(message, { fallbackChainId: selectedChainId })
     if (transferAsk && 'problem' in transferAsk) {
       nativeTrace({ type: 'status', label: 'native transfer layer claimed the turn — ask incomplete, answering honestly (no build)' })
-      return NextResponse.json({ reply: `💸 ${transferAsk.problem}` })
+      // A chain-less send offers the chains as chips (resumes round-trip the
+      // parser) — a chip beats prose homework; other problems stay named.
+      return NextResponse.json({
+        reply: `💸 ${transferAsk.problem}`,
+        ...(transferAsk.chips?.length ? { clarify: { question: 'Which chain?', options: transferAsk.chips } } : {}),
+        buildPath: 'native-transfer',
+      })
     }
     if (transferAsk) {
       if (!walletAddress) {
@@ -2346,6 +2366,7 @@ async function guideLidoStakeTurn(
     reply:
       `🌊 Staking on Lido takes ETH on Ethereum, and this wallet holds ${ethBal} ETH there.${already} ` +
       `Fund the wallet and ask again — I'll size the stake to your balance.`,
+    buildPath: 'native-lido',
   })
 }
 
@@ -2396,7 +2417,27 @@ async function lidoFundingTurn(
       askEth !== null
         ? `Staking ${askEth} ETH really needs ~${targetEth} ETH on Ethereum once mainnet gas is counted, and ${holding}.`
         : `Staking on Lido needs at least ~${targetEth} ETH on Ethereum once mainnet gas is counted, and ${holding}.`
-    return NextResponse.json({ reply: `🌊 ${askNote} ${offer.insufficient}` })
+    // Use-what-you-have (the funded miss of 2026-08-12: "Stake 0.05 ETH"
+    // walled a wallet holding 0.0063 ETH on mainnet — enough for a SMALLER
+    // stake, which nobody offered). When the wallet's own mainnet ETH clears
+    // the economical floor, the refusal carries the affordable stake as
+    // chips whose resumes round-trip parseLidoStake — never a dead end.
+    const affordable = suggestedStakeEth(String(balEth))
+    if (affordable && askEth !== null && Number(affordable) < askEth) {
+      trace({ type: 'status', label: `lido layer: ${askEth} ETH is out of reach, but ${affordable} ETH is stakeable from mainnet now — offering it as a chip` })
+      return NextResponse.json({
+        reply: `🌊 ${askNote} ${offer.insufficient} You **can** stake ${affordable} ETH right now from what's already on Ethereum (gas buffer kept).`,
+        clarify: {
+          question: `Stake ${affordable} ETH instead?`,
+          options: [
+            { label: `Stake ${affordable} ETH on Lido`, resume: `Stake ${affordable} ETH on Lido${receive === 'wstETH' ? ' as wstETH' : ''}` },
+            { label: 'Not now', resume: 'Never mind — leave my funds where they are.' },
+          ],
+        },
+        buildPath: 'native-lido',
+      })
+    }
+    return NextResponse.json({ reply: `🌊 ${askNote} ${offer.insufficient}`, buildPath: 'native-lido' })
   }
   const tinyNote =
     askEth !== null && askEth < LIDO_MIN_STAKE_ETH
@@ -2440,7 +2481,7 @@ async function buildLidoStakeTurn(
     if (!resolved) {
       const funded = balEth !== null ? await lidoFundingTurn(walletAddress, balEth, null, params.receive, trace) : null
       if (funded) return funded
-      return NextResponse.json({ reply: '🌊 Nothing left to stake — your mainnet ETH balance is at (or below) the gas buffer.' })
+      return NextResponse.json({ reply: '🌊 Nothing left to stake — your mainnet ETH balance is at (or below) the gas buffer.', buildPath: 'native-lido' })
     }
     amountEth = resolved
   } else if (balEth !== null && Number.isFinite(Number(amountEth)) && balEth < Number(amountEth) + Number(LIDO_GAS_BUFFER_ETH)) {
@@ -4022,6 +4063,48 @@ async function prepareSwapTurn(intent: SwapIntent, walletAddress: string | undef
           }
           if (offer) return NextResponse.json({ ...offer, reply: `🌉 ${offer.reply}` })
           // null → scan/price unavailable; the venue build below fails closed
+        } else if (!isEthSell) {
+          // The #1 predicted stranger failure (squad 2026-08-18 premortem):
+          // $25 USDC and ZERO ETH on Base → an approve→swap chain whose first
+          // tx can't be paid for; the wallet errors and nothing in the chat
+          // said why. ERC-20 sells need native gas on the swap chain the same
+          // way ETH sells carry the floor above — pre-read it, and when it's
+          // short answer the funding path (gas-only probe: a gas leg from
+          // another chain, the stranded-USDC rescue, or the honest naming),
+          // never a chain the wallet cannot sign.
+          const gasWei = await client.getBalance({ address: walletAddress as `0x${string}` })
+          const gasFloor = DEST_GAS_FLOOR_ETH[chainId] ?? 0.0002
+          const gasHeld = Number(gasWei) / 1e18
+          // A CoW order is gasless ONLY once the VaultRelayer allowance is in
+          // place — with it, a zero-ETH wallet can still sign and settle; without
+          // it the approve tx needs gas exactly like the Uniswap chain does.
+          let gaslessCow = false
+          if (gasHeld < gasFloor && venue === 'cow') {
+            const sellAtoms = BigInt(humanToAtoms(intent.sellAmountHuman, sellDec) ?? '0')
+            const allowance = await client.readContract({ address: sellAddr as `0x${string}`, abi: erc20Abi, functionName: 'allowance', args: [walletAddress as `0x${string}`, COW_VAULT_RELAYER as `0x${string}`] }).catch(() => BigInt(0))
+            gaslessCow = sellAtoms > BigInt(0) && allowance >= sellAtoms
+          }
+          if (gasHeld < gasFloor && !gaslessCow) {
+            const buySym = intent.buyToken.toUpperCase()
+            trace({ type: 'note', level: 'warn', label: `native swap layer: ${sellSym} covers the sell but ${chain.name} holds ${gasHeld.toFixed(6)} ETH for gas (< ${gasFloor}) — the approve/swap couldn't be paid for; asking the funding layer for a gas leg` })
+            const gasOffer = await offerFundingPlan({
+              user: walletAddress,
+              need: {
+                chainId,
+                token: sellSym,
+                amountHuman: 0,
+                followupResume: `swap ${intent.sellAmountHuman} ${sellSym} for ${buySym} on ${FUNDING_CHAIN_WORD[chainId]}`,
+                actionLabel: 'the swap',
+              },
+              trace,
+            })
+            const gasLine = `Your ${intent.sellAmountHuman} ${sellSym} is on ${chain.name}, but the wallet holds ${gasHeld > 0 ? `only ${gasHeld.toFixed(6).replace(/\.?0+$/, '')}` : 'no'} ETH there — the approve + swap can't be paid for (about ${gasFloor} ETH covers it).`
+            if (gasOffer && 'insufficient' in gasOffer) {
+              return NextResponse.json({ reply: `⛽ ${gasLine} ${gasOffer.insufficient} Send a little ETH to ${chain.name} and ask again.`, buildPath: 'native-swap-gas' })
+            }
+            if (gasOffer) return NextResponse.json({ ...gasOffer, reply: `⛽ ${gasLine} ${gasOffer.reply}` })
+            // null → scan unavailable; the venue build below fails closed on its own
+          }
         }
       }
     } catch {

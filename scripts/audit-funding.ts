@@ -73,6 +73,10 @@ const tokenUsdOf = (token: string) => (token.toUpperCase() === 'ETH' ? ETH_USD :
 // ── The needs — one per native layer that rides the generic funding path ──
 const HL_NEED: FundingNeed = { chainId: 42161, token: 'USDC', amountHuman: 5, followupResume: '', actionLabel: 'the Hyperliquid position' }
 const LIDO_NEED: FundingNeed = { chainId: 1, token: 'ETH', amountHuman: 0.002, followupResume: 'stake 0.002 ETH on Lido', actionLabel: 'the stake' }
+// The swap gate's GAS-ONLY probe (squad 2026-08-18, the #1 predicted
+// stranger failure): the sell token is covered on the swap chain, ETH for
+// the approve+swap is not. amountHuman 0 = "token covered, check gas".
+const SWAP_GAS_NEED: FundingNeed = { chainId: 8453, token: 'USDC', amountHuman: 0, followupResume: 'swap 20 USDC for ETH on base', actionLabel: 'the swap' }
 const NFT_NEED: FundingNeed = {
   chainId: 8453,
   token: 'ETH',
@@ -96,6 +100,18 @@ interface Scenario {
 }
 
 const SCENARIOS: Scenario[] = [
+  {
+    name: 'THE PREDICTED STRANGER WALL — $25 USDC on Base, ZERO ETH anywhere → swap USDC→ETH on Base (gas-only probe): honest refusal naming the stranded USDC',
+    need: SWAP_GAS_NEED,
+    reads: [R(8453, 0, 25), R(42161, 0, 0), R(1, 0, 0)],
+    expect: 'refusal',
+  },
+  {
+    name: '$25 USDC on Base, no Base gas, $3 ETH on Arbitrum → swap on Base (gas-only probe): a gas leg from the donor chain, chips compile',
+    need: SWAP_GAS_NEED,
+    reads: [R(8453, 0, 25), R(42161, 0.0015, 0), R(1, 0, 0)],
+    expect: 'offer',
+  },
   {
     name: 'empty wallet → HL deposit',
     need: HL_NEED,

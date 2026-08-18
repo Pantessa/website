@@ -30,7 +30,7 @@ import { parseAaveOp, parseAaveSupply, type AaveOpParams, type AaveSupplyParams 
 import { parseMorphoLend, parseMorphoOp } from '@/lib/morpho-supply'
 import { parseCrossChainSwap, type CrossChainSwapParams } from '@/lib/cross-chain-swap'
 import { chainAlt, canonicalChainWord, normalizeChainWords } from '@/lib/chain-lexicon'
-import { parseHlIntent, type HlIntent, type HlOrderIntent } from '@/lib/hyperliquid-exec'
+import { hlUnsizedChips, parseHlIntent, type HlIntent, type HlOrderIntent } from '@/lib/hyperliquid-exec'
 import { parseGuardianArm, type GuardianArmAsk } from '@/lib/hl-guardian'
 import { parseLidoStake } from '@/lib/lido-stake'
 import { fundingAltUsdcFor, GAS_LEG_USD } from '@/lib/lifi-bridge'
@@ -509,6 +509,9 @@ export const JOB_SEGMENT_PARSERS: JobSegmentParser[] = [
     parse: (seg) => {
       const hl = parseHlIntent(seg)
       if (!hl) return null
+      if (hl.kind === 'open-unsized') {
+        return { problem: `names a ${hl.isBuy ? 'long' : 'short'} on ${hl.coin} but no size — say e.g. "${hlUnsizedChips(hl)[0].resume}".` }
+      }
       if (hl.kind === 'deposit') {
         const title = `Deposit ${hl.amountUsdc} USDC to Hyperliquid`
         return {
