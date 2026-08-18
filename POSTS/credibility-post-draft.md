@@ -135,4 +135,4 @@ like to hear what it fails on.
 - [ ] `@pantessa/guard` is published (the post links it).
 - [ ] The NEW MetaMask issue is filed and linked (not the closed one).
 - [ ] Numbers re-run via `npm run digest:gtm` the same morning.
-- [ ] `/rebrand` no longer says the appeal is "open at #273376".
+- [ ] `/rebrand` links the NEW issue (the "closed on a misread" copy shipped 2026-08-18; the placeholder needs the link).

@@ -285,10 +285,11 @@ channel used in the response log below.
 
 ## After posting (round 2)
 
-- Once A′ is filed, **update `/rebrand`** (app/rebrand/page.tsx ~L107–113 and
-  the verify table row ~L168): it currently says the appeal is *open* at
-  #273376 — link the new issue and note the first was closed on a misread.
-  (Flagged to the UI/UX lane in squad-2026-08-18/gtm.md.)
+- `/rebrand` (app/rebrand/page.tsx) now says #273376 was **closed on
+  2026-07-30 after the wrong domains were checked** and that a new request is
+  being filed (squad GTM branch, 2026-08-18; harness-pinned). Once A′ is
+  filed, replace the placeholder sentence + the verify-table row with the
+  new issue link (a `TODO(owner)` comment marks both spots).
 - Track responses below. Delisting = `isRemoval:true` for the host in
   `/v1/diffsSince/<lastUpdated>` (`npm run digest:gtm` watches this daily) and
   the line disappearing from SEAL `domain.txt`.
