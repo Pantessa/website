@@ -59,6 +59,8 @@ export async function mosaicTurnFor(
   wallet: string,
   trace?: (e: unknown) => void,
   swapFeeBps?: number,
+  /** Our own harness/drill turn (lib/internal-run.ts) — stamps the job. */
+  internalRun = false,
 ): Promise<MosaicTurn> {
   if (!alchemyEnabled()) {
     return {
@@ -191,7 +193,7 @@ export async function mosaicTurnFor(
   }
 
   const titled = { ...compiled, title: `Tile the wallet on ${chainLabel} (${plan.legs.length} legs)` }
-  const job = await createJob(wallet, stampSwapFeeTier(titled, swapFeeBps ?? 0))
+  const job = await createJob(wallet, stampSwapFeeTier(titled, swapFeeBps ?? 0), 'chat', { internal: internalRun })
   await advanceJob(job).catch(() => {})
 
   trace?.({

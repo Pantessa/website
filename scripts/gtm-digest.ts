@@ -169,15 +169,17 @@ async function main() {
   if (fails.length === 0) say('- (none — either nobody is trying, or nothing walls them)')
 
   // ── The link economy ───────────────────────────────────────────────────
+  // Link economy — organic mints only: is_internal rows are our own harness/
+  // drill mints (lib/internal-run.ts); the raw count was ~95% us (08-17 audit).
   const [links7, linksAll, claims, handles] = await Promise.all([
-    prisma.intentLink.count({ where: { createdAt: { gte: new Date(Date.now() - 7 * 86_400_000) } } }),
-    prisma.intentLink.count(),
+    prisma.intentLink.count({ where: { isInternal: false, createdAt: { gte: new Date(Date.now() - 7 * 86_400_000) } } }),
+    prisma.intentLink.count({ where: { isInternal: false } }),
     prisma.intentLinkClaim.count(),
     prisma.creatorHandle.count(),
   ])
   say()
   say('## The link economy')
-  say(`- links minted: ${links7} this week (${linksAll} lifetime) · claims EVER: ${claims} · handles: ${handles}`)
+  say(`- links minted (organic — is_internal excluded): ${links7} this week (${linksAll} lifetime) · claims EVER: ${claims} · handles: ${handles}`)
 
   // ── Reputation watch ───────────────────────────────────────────────────
   const [mm, seal] = await Promise.all([metamaskFeed(), sealFeed()])

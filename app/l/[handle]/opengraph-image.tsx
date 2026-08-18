@@ -2,6 +2,7 @@ import { ImageResponse } from 'next/og'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import prisma from '@/lib/db'
+import { brandFromRow } from '@/lib/brand-denylist'
 import { brandOgPalette, normalizeHex } from '@/lib/brand-theme'
 import { pangolinMarkSvg } from '@/lib/og-marks'
 
@@ -44,9 +45,7 @@ export default async function Image({ params }: Params) {
   try {
     const row = await prisma.creatorHandle.findUnique({ where: { handle } })
     if (row) {
-      if (row.brandDomain || row.brandLogo || row.brandAccent || row.brandBg) {
-        brand = { domain: row.brandDomain, name: row.brandName, logo: row.brandLogo, accent: row.brandAccent, bg: row.brandBg }
-      }
+      brand = brandFromRow(row) // rule 7: denied third-party brands render as house
       const links = await prisma.intentLink.findMany({
         where: { creator: row.creator, revoked: false },
         select: { id: true },

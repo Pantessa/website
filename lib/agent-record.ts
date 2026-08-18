@@ -10,7 +10,7 @@
 //   1. The raw agent_key is NEVER exposed. The public handle is a hash prefix
 //      (agentHandleFor) — the key becomes the x402-payer credential in M6, so
 //      it must not leak in a URL.
-//   2. Money moved is REAL money only. The embed_turns join composes
+//   2. Money moved is REAL money only, and intents are ORGANIC only (broker_intents.is_internal excluded). The embed_turns join composes
 //      REAL_TRAFFIC_WHERE (the is_internal + internal-origin exclusion), the
 //      same predicate every public scoreboard uses — an agent's record can
 //      never be inflated by our own harness.
@@ -45,8 +45,10 @@ export interface AgentRecord {
 export async function getAgentRecord(handle: string): Promise<AgentRecord | null> {
   if (!/^[0-9a-f]{16}$/.test(handle)) return null
 
+  // is_internal excluded: our own harness/drill intents (lib/internal-run.ts)
+  // never headline a public record — a handle with only internal intents 404s.
   const intents = await prisma.brokerIntent.findMany({
-    where: { agentKeyHash: handle },
+    where: { agentKeyHash: handle, isInternal: false },
     select: { agent: true, linkSlug: true, createdAt: true, updatedAt: true },
     orderBy: { createdAt: 'asc' },
   })

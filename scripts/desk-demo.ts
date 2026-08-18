@@ -51,7 +51,7 @@ function parsePayload(res: unknown): Record<string, unknown> {
 
 async function main() {
   const client = new Client({ name: 'demo-agent', version: '0.1.0' })
-  await client.connect(new StreamableHTTPClientTransport(new URL(`${BASE}/api/broker/mcp`)))
+  await client.connect(new StreamableHTTPClientTransport(new URL(`${BASE}/api/broker/mcp`), { requestInit: { headers: { 'x-yf-internal-run': '1' } } }))
   const call = async (name: string, args: Record<string, unknown> = {}) =>
     parsePayload(await client.callTool({ name, arguments: args }))
 

@@ -57,6 +57,7 @@ import { parseRebalanceAsk } from '@/lib/rebalance'
 import { rebalanceTurnFor } from '@/lib/rebalance-exec'
 import { parseMosaicAsk } from '@/lib/mosaic'
 import { mosaicTurnFor } from '@/lib/mosaic-exec'
+import { isInternalRun } from '@/lib/internal-run'
 import { runSpotGuardTurn } from '@/lib/spot-guard-exec'
 import {
   aaveAgentOf,
@@ -197,6 +198,8 @@ async function hlAutoFundedJobTurn(
   /** Link fee tier of the turn (validated in POST) — stamped onto any
    *  native-swap legs the funded job compiles (lib/jobs stampSwapFeeTier). */
   linkFeeBps?: number,
+  /** Our own harness/drill turn (lib/internal-run.ts) — stamps the job. */
+  internalRun = false,
 ): Promise<NextResponse | null> {
   const fundedAsk = `deposit ${short.depositUsdc} USDC to Hyperliquid, then ${message.trim()}`
   const arbUsdc = await arbitrumUsdcBalance(walletAddress).catch(() => null)
@@ -234,7 +237,7 @@ async function hlAutoFundedJobTurn(
     type: 'status',
     label: `hl auto-fund: open is under-collateralized ($${short.withdrawableUsd.toFixed(2)} withdrawable vs ~$${short.notionalUsd} notional) — compiled the funded job directly: ${compiled.title.slice(0, 160)}`,
   })
-  const job = await createJob(walletAddress, stampSwapFeeTier(compiled, linkFeeBps))
+  const job = await createJob(walletAddress, stampSwapFeeTier(compiled, linkFeeBps), 'chat', { internal: internalRun })
   await advanceJob(job).catch(() => {})
   const gasLegNote = /\b(?:to|for) eth on arbitrum\b/i.test(resume) ? ' (plus a little Arbitrum ETH so the deposit can pay its own gas)' : ''
   return NextResponse.json({
@@ -371,6 +374,7 @@ export async function POST(req: NextRequest) {
       reply: typeof data?.reply === 'string' ? data.reply : null,
       kind,
       buildPath: typeof data?.buildPath === 'string' ? data.buildPath : null,
+      internal: isInternalRun(req.headers, reqBody),
     })
     // The scan is RPC-heavy — run it after the reply is on the wire.
     if (failureId && wallet) after(() => attachFundsSnapshot(failureId, wallet))
@@ -383,6 +387,9 @@ export async function POST(req: NextRequest) {
 async function handleChatTurn(req: NextRequest) {
   try {
     const body = await req.json()
+    // Our own harness/drill turn (lib/internal-run.ts): every job this turn
+    // creates is stamped so the GTM arc never reads it as a stranger.
+    const internalRun = isInternalRun(req.headers, body)
 
     // ── Phase 2 (wallet): execute with client-provided signatures ────────────
     if (body.phase === 'execute') {
@@ -834,7 +841,7 @@ async function handleChatTurn(req: NextRequest) {
     // SCHEDULE, never a one-shot swap that quietly drops "every week". Each
     // due period compiles a one-step job (native-swap builder — same venue
     // cascade + guardrails as any swap), confirm-mode only.
-    const dcaTurn = await runDcaTurn(message, walletAddress, selectedChainId, nativeTrace)
+    const dcaTurn = await runDcaTurn(message, walletAddress, selectedChainId, nativeTrace, internalRun)
     if (dcaTurn) return NextResponse.json(dcaTurn)
 
     // Multi-step JOBS — a compound ask ("bridge …, then deposit …, then long
@@ -874,7 +881,7 @@ async function handleChatTurn(req: NextRequest) {
       if (leadStep?.builder === 'native-hl-exec' && (leadStep.params as { kind?: string }).kind === 'open') {
         const short = await hlOpenCollateralShortfall(leadStep.params as unknown as HlOrderIntent, walletAddress)
         if (short) {
-          const autoTurn = await hlAutoFundedJobTurn(short, message, walletAddress, nativeTrace, swapFeeBps)
+          const autoTurn = await hlAutoFundedJobTurn(short, message, walletAddress, nativeTrace, swapFeeBps, internalRun)
           if (autoTurn) return autoTurn
           // No plan available (scan/price down) — fall through to the job;
           // the step's own guard explains itself if it can't build.
@@ -884,7 +891,7 @@ async function handleChatTurn(req: NextRequest) {
       // C2b closes over jobs: a link-priced turn's compiled swaps carry the
       // same tier its one-shot would (stamped into step params; the runner
       // re-validates against the canonical tier before building).
-      const job = await createJob(walletAddress, stampSwapFeeTier(jobAsk, swapFeeBps))
+      const job = await createJob(walletAddress, stampSwapFeeTier(jobAsk, swapFeeBps), 'chat', { internal: internalRun })
       // Kick the first step inline so the card opens with something to sign.
       await advanceJob(job).catch(() => {})
       return NextResponse.json({
@@ -1118,7 +1125,7 @@ async function handleChatTurn(req: NextRequest) {
           connectWallet: true,
         })
       }
-      const mosaicTurn = await mosaicTurnFor(mosaicAsk, walletAddress, nativeTrace, swapFeeBps)
+      const mosaicTurn = await mosaicTurnFor(mosaicAsk, walletAddress, nativeTrace, swapFeeBps, internalRun)
       return NextResponse.json(mosaicTurn)
     }
 
@@ -1284,7 +1291,7 @@ async function handleChatTurn(req: NextRequest) {
         if (hlIntent.kind === 'open' && walletAddress) {
           const short = await hlOpenCollateralShortfall(hlIntent, walletAddress)
           if (short) {
-            const autoTurn = await hlAutoFundedJobTurn(short, message, walletAddress, nativeTrace, swapFeeBps)
+            const autoTurn = await hlAutoFundedJobTurn(short, message, walletAddress, nativeTrace, swapFeeBps, internalRun)
             if (autoTurn) return autoTurn
           }
         }

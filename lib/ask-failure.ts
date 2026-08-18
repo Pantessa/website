@@ -91,6 +91,8 @@ export async function recordAskFailure(params: {
   reply: string | null
   kind: NonNullable<TurnClassification['kind']>
   buildPath: string | null
+  /** Our own harness/drill turn (lib/internal-run.ts) — stamped, hidden by default. */
+  internal?: boolean
 }): Promise<string | null> {
   try {
     const row = await prisma.askFailure.create({
@@ -100,6 +102,7 @@ export async function recordAskFailure(params: {
         reply: params.reply ? cap(params.reply, 500) : null,
         kind: params.kind,
         buildPath: params.buildPath,
+        isInternal: params.internal === true,
       },
       select: { id: true },
     })
