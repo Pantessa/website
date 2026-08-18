@@ -37,7 +37,7 @@ import { pureChecks, policyCheck, orderValueUsd, buildReport } from '../lib/cow-
 import { policyCheckInflow, recipientCheck, validityCheck, MAX_VALID_SEC } from '../lib/tx-guardrails'
 import { guardPlannerArtifact, PERMIT2_ADDRESS } from '../lib/planner-artifact-guard'
 import { LIMIT_EXAMPLES, parseSwapIntent, swapClarify } from '../lib/swap-intent'
-import { activeLinkCapFor, composeMcps, linkLockup, linkLockupWord } from '../lib/intent-links'
+import { activeLinkCapFor, composeMcps, linkEyebrow, linkLockup, linkLockupWord } from '../lib/intent-links'
 import { formatEarnedUsd, netFeeBpsFor, creatorEarningsUsd, FEE_BEARING_BUILD_PATHS, CROSS_CHAIN_FEE_BPS, CROSS_CHAIN_NET_FEE_BPS } from '../lib/fees'
 import { BUILD_PATHS, venueOfBuildPath } from '../lib/build-path'
 
@@ -214,7 +214,7 @@ import {
   type HlWireApproveBuilderFeeAction,
 } from '../lib/hyperliquid-exec'
 import { createL1ActionHash } from '@nktkas/hyperliquid/signing'
-import { isReportableWalletError, WALLET_REFUSAL_KIND } from '../lib/wallet-refusal'
+import { isReportableWalletError, walletErrorWords, WALLET_REFUSAL_KIND } from '../lib/wallet-refusal'
 import { encryptAgentKey, signL1ActionWithDelegation } from '../lib/hl-guardian-store'
 import { compileJobAsk as compileJobAskFull, stampSwapFeeTier, type CompiledJob } from '../lib/jobs'
 import { LIVE_JOB_STATUSES, jobStatusWord, statusTone } from '../lib/step-status'
@@ -2187,14 +2187,28 @@ async function main() {
     // CALL framing (C3): creator links read as a posted call and disclose
     // the WHOLE deal (lifetime first-touch); house links stay the neutral
     // pure-Pantessa lockup with no creator fee line.
+    // r6 (Ideation N3): the eyebrow mirrors the OG card — WHOSE + the model,
+    // never "call · by" jargon. mallory has no claimed handle here, so the
+    // creator page reads "Call · your wallet signs"; the house link reads
+    // "Intent link · your wallet signs".
     check(
       'intent links: creator /i wears the CALL framing + lifetime disclosure',
-      />Call</.test(iPage) && /lifetime, first touch/.test(iPage) && /paid calls should say so/.test(iPage),
+      />Call · your wallet signs</.test(iPage) && !/Call · by/.test(iPage) && /lifetime, first touch/.test(iPage) && /paid calls should say so/.test(iPage),
     )
     const houseCallPage = await (await fetch(`${BASE}/i/protected-long`)).text()
     check(
       'intent links: house /i stays pure Pantessa — no call framing, no creator fee line',
-      /Intent link/.test(houseCallPage) && !/earns half of Pantessa/.test(houseCallPage) && !/>Call</.test(houseCallPage),
+      />Intent link · from Pantessa · your wallet signs</.test(houseCallPage) && !/earns half of Pantessa/.test(houseCallPage) && !/>Call/.test(houseCallPage),
+    )
+    check(
+      'intent links: linkEyebrow mirrors the OG card (From @handle / Call by agent / Intent link · from sender · your wallet signs)',
+      linkEyebrow({ hasCreator: true, handle: 'nate' }) === 'From @nate · your wallet signs' &&
+        linkEyebrow({ hasCreator: true, handle: '@nate', agent: 'Risk Bot' }) === 'From @nate · your wallet signs' &&
+        linkEyebrow({ hasCreator: true, agent: 'Risk Bot' }) === 'Call by Risk Bot · your wallet signs' &&
+        linkEyebrow({ hasCreator: true }) === 'Call · your wallet signs' &&
+        linkEyebrow({ hasCreator: false, agent: 'Risk Bot' }) === 'Intent link · from Risk Bot · your wallet signs' &&
+        linkEyebrow({ hasCreator: false }) === 'Intent link · your wallet signs' &&
+        linkEyebrow({ hasCreator: true, handle: 'nate' }, '') === 'From @nate',
     )
     // The lockup WORD is one source (lib/intent-links) because the rendered
     // check above only covers an UNBRANDED creator page: a white-labeled
@@ -9508,6 +9522,25 @@ async function main() {
         !isReportableWalletError('MetaMask Tx Signature: User denied transaction signature.') &&
         WALLET_REFUSAL_KIND === 'wallet-refused',
     )
+    // The row must carry the wallet's WORDS, not viem's wrapper (QA r3 found
+    // "An internal error was received." stored as the reply): the real text
+    // sits in .details / .data.message / .cause — first specific line wins.
+    {
+      const viemShaped = Object.assign(new Error('An internal error was received.\n\nRequest Arguments:\n  from: 0x…\n\nDetails: Provided chainId "1337" must match the active chainId "4663"\nVersion: viem@2.x'), {
+        shortMessage: 'An internal error was received.',
+        details: 'Provided chainId "1337" must match the active chainId "4663"',
+        cause: Object.assign(new Error('Internal JSON-RPC error.'), { data: { message: 'Provided chainId "1337" must match the active chainId "4663"' } }),
+      })
+      const nodeShaped = Object.assign(new Error('An unknown RPC error occurred.'), { cause: { data: { message: 'insufficient funds for gas * price + value' } } })
+      check(
+        'wallet refusal words: viem-wrapped MetaMask error → the wallet\'s line; node error → its data.message; plain strings + bare errors pass through',
+        walletErrorWords(viemShaped) === 'Provided chainId "1337" must match the active chainId "4663"' &&
+          walletErrorWords(nodeShaped) === 'insufficient funds for gas * price + value' &&
+          walletErrorWords(new Error('MetaMask Tx Signature: User denied transaction signature.')) === 'MetaMask Tx Signature: User denied transaction signature.' &&
+          walletErrorWords('plain') === 'plain' && walletErrorWords(null) === 'Wallet error (no message)',
+        JSON.stringify([walletErrorWords(viemShaped), walletErrorWords(nodeShaped)]),
+      )
+    }
     const refusalInternal = await fetch(`${BASE}/api/ask-failures/wallet`, {
       method: 'POST',
       headers: { 'content-type': 'application/json', 'x-yf-no-ask-log': '1' },
@@ -9628,6 +9661,15 @@ async function main() {
         srRun?.lead === 'Swap 12 USDG → ~0.0512 AAPL · on Robinhood Chain · fee 0.2% · your wallet signs' && srRun?.details.length === 2 &&
         splitSimpleReply('Here is a plain answer.') === null,
       JSON.stringify({ a: sr?.lead, b: srRun?.lead }),
+    )
+    // r6 (Ideation N1/N2): the in-flight label is "Confirm in your wallet…"
+    // on EVERY sign button (never "Sign in wallet…" — reads as a login), and
+    // the /i header exit ramps render only on receipt / flow-nudge.
+    const signSrcs = ['SendTxButton', 'SignOrderButton', 'SignHlActionButton', 'ArmDcaButton', 'ArmSpotGuardButton', 'SignNftListingButton', 'SignVoteButton'].map((n) => fs.readFileSync(`components/${n}.tsx`, 'utf8'))
+    check(
+      'sign buttons: in-flight label reads "Confirm in your wallet…" everywhere; /i exit ramps gated on signed || flowNudge',
+      signSrcs.every((src) => /Confirm in your wallet…/.test(src) && !/Sign in wallet…/.test(src)) &&
+        /\{\(signed \|\| flowNudge\) && \(/.test(runtimeSrc) && /MAKE A LINK/.test(runtimeSrc),
     )
     check(
       '/i door + splash + mint stage: walletConnectOnly title "Connect a wallet", no "Starting…" stall, CTA leads the cards ≤sm, eyebrow says YOUR WALLET SIGNS',

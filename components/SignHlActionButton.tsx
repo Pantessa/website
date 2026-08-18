@@ -42,7 +42,7 @@ import {
   isUserRejectedSignError,
   type HlWireAction,
 } from '@/lib/hyperliquid-exec'
-import { reportWalletRefusal, type WalletArtifact } from '@/lib/wallet-refusal'
+import { reportWalletRefusal, walletErrorWords, type WalletArtifact } from '@/lib/wallet-refusal'
 import { SIGN_CTA_CLASS } from '@/lib/sign-cta'
 
 type Status = 'idle' | 'signing' | 'submitting' | 'enabling' | 'filled' | 'error'
@@ -141,7 +141,7 @@ export default function SignHlActionButton({
     setError(isUserRejectedSignError(msg) ? 'Signature request declined.' : humanizeVenueError(msg) || fallback)
     setStatus('error')
     if (msg && (e as { fromWallet?: boolean } | null)?.fromWallet && !isUserRejectedSignError(msg)) {
-      reportWalletRefusal({ ...walletMeta(), artifact, ask, detail: msg, buildPath: 'native-hl-exec' })
+      reportWalletRefusal({ ...walletMeta(), artifact, ask, detail: walletErrorWords(e), buildPath: 'native-hl-exec' })
     }
   }
 
@@ -259,7 +259,7 @@ export default function SignHlActionButton({
       if (classifyHlSignFailure(msg) !== 'switch-to-delegated') throw e
       // Log the wall as a data point (which wallets police the domain chain),
       // then take the door the venue itself designed.
-      reportWalletRefusal({ ...walletMeta(), artifact: step.artifact, ask: `${hlActionSummary(step.action, step.expected)} (direct typed-data path — switched to delegated)`, detail: msg, buildPath: 'native-hl-exec' })
+      reportWalletRefusal({ ...walletMeta(), artifact: step.artifact, ask: `${hlActionSummary(step.action, step.expected)} (direct typed-data path — switched to delegated)`, detail: walletErrorWords(e), buildPath: 'native-hl-exec' })
       // Re-read (the mount-time read may still be in flight): no agent on
       // file → the one-time approval first, in this same gesture.
       const check = await fetch(`/api/hl/delegation?wallet=${address}`, { cache: 'no-store' }).then((r) => (r.ok ? r.json() : null)).catch(() => null)
@@ -334,7 +334,7 @@ export default function SignHlActionButton({
     ? status === 'enabling'
       ? 'Approve the Pantessa agent in your wallet…'
       : status === 'signing'
-        ? 'Sign in wallet…'
+        ? 'Confirm in your wallet…'
         : feeStep
           ? 'Approving fee cap…'
           : pre

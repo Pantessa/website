@@ -73,14 +73,16 @@ async function getNotify(link: { id: string; senderLabel: string | null; agent: 
 
 /** The creator's white-label brand (creator_handles) — the splash wears it,
  *  powered by Pantessa. House links (creator=null) stay pure Pantessa. */
-async function getBrand(creator: string | null) {
-  if (!creator) return null
+async function getBrand(creator: string | null): Promise<{ brand: ReturnType<typeof brandFromRow>; handle: string | null }> {
+  if (!creator) return { brand: null, handle: null }
   try {
     const row = await prisma.creatorHandle.findUnique({ where: { creator } })
     // (rule 7: a denied third-party brand renders as house — lib/brand-denylist)
-    return brandFromRow(row)
+    // The claimed handle rides too: the eyebrow says WHOSE (From @handle),
+    // mirroring the OG card, without any brand scan.
+    return { brand: brandFromRow(row), handle: row?.handle ?? null }
   } catch {
-    return null
+    return { brand: null, handle: null }
   }
 }
 
@@ -88,7 +90,7 @@ export default async function IntentLinkPage({ params }: Params) {
   const { slug } = await params
   const link = await getLink(slug)
   if (!link) notFound()
-  const brand = await getBrand(link.creator)
+  const { brand, handle: creatorHandle } = await getBrand(link.creator)
   const notify = await getNotify(link)
   // A/B: one phrasing per visit, picked server-side (index 0 = the base
   // ask). The chosen phrasing IS the ask for this visit — every runtime
@@ -106,6 +108,7 @@ export default async function IntentLinkPage({ params }: Params) {
       agent={link.agent ?? ''}
       redirectUrl={link.redirectUrl ?? ''}
       hasCreator={!!link.creator}
+      creatorHandle={creatorHandle}
       restricted={link.allowWallets.length > 0}
       brand={brand}
       notify={notify}

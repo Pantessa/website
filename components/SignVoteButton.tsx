@@ -105,7 +105,7 @@ export default function SignVoteButton({ vote }: { vote: VoteRequest }) {
           ) : (
             <PenLine className="w-3.5 h-3.5" />
           )}
-          {status === 'signing' ? 'Sign in wallet…' : status === 'relaying' ? 'Submitting…' : 'Sign & cast vote'}
+          {status === 'signing' ? 'Confirm in your wallet…' : status === 'relaying' ? 'Submitting…' : 'Sign & cast vote'}
         </button>
         {error && <span className="text-[12px] text-red-400">{error}</span>}
       </div>

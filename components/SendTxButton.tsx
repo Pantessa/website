@@ -15,7 +15,7 @@ import { useAccount, usePublicClient, useSendTransaction, useSwitchChain } from 
 import { Loader2, PenLine, CheckCircle2, Circle, ExternalLink, XCircle } from 'lucide-react'
 import type { EvmTxRequest } from '@/lib/transaction-layer'
 import { chainById } from '@/lib/chains'
-import { reportWalletRefusal, type WalletArtifact } from '@/lib/wallet-refusal'
+import { reportWalletRefusal, walletErrorWords, type WalletArtifact } from '@/lib/wallet-refusal'
 import { SIGN_CTA_CLASS } from '@/lib/sign-cta'
 
 type Status = 'idle' | 'signing' | 'broadcast' | 'confirmed' | 'reverted' | 'error'
@@ -99,7 +99,7 @@ export default function SendTxButton({
             wallet: address, artifact: refusalArtifact, buildPath: refusalBuildPath,
             connector: connector?.id ?? connector?.name, chainId: connectedChain?.id,
             ask: `${summary ?? tx.action ?? 'transaction'} (switch to ${chainInfo?.name ?? `chain ${chainId}`})`,
-            detail: e instanceof Error ? e.message.split('\n')[0] : String(e),
+            detail: walletErrorWords(e),
           })
           setError(`This transaction is built for ${chainInfo?.name ?? `chain ${chainId}`} — switch the wallet to it (the button below asks again), then it signs.`)
           setSwitchNeeded(true)
@@ -173,7 +173,7 @@ export default function SendTxButton({
         reportWalletRefusal({
           wallet: address, artifact: refusalArtifact, buildPath: refusalBuildPath,
           connector: connector?.id ?? connector?.name, chainId: connectedChain?.id,
-          ask: summary ?? tx.action ?? 'transaction', detail: msg,
+          ask: summary ?? tx.action ?? 'transaction', detail: walletErrorWords(e),
         })
       }
       setError(
@@ -271,7 +271,7 @@ export default function SendTxButton({
           >
             {inFlight ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <PenLine className="w-3.5 h-3.5" />}
             {status === 'signing'
-              ? 'Sign in wallet…'
+              ? 'Confirm in your wallet…'
               : status === 'broadcast'
                 ? 'Waiting for confirmation…'
                 : status === 'error' && switchNeeded

@@ -33,6 +33,41 @@ export interface WalletRefusalReport {
   chainId?: number
 }
 
+/**
+ * Pure: the wallet's ACTUAL words out of a wrapped error. viem wraps RPC
+ * failures (InternalRpcError etc.) so `e.message` leads with the generic
+ * "An internal error was received." and the diagnosable text — MetaMask's
+ * `Provided chainId "1337" must match the active chainId "4663"`, the node's
+ * "insufficient funds for gas" — sits in `.details` / `.data.message` /
+ * `.cause.…` / `.shortMessage`. Walk that chain, first non-empty specific
+ * line wins; the generic viem line is a last resort. Never throws.
+ */
+export function walletErrorWords(e: unknown): string {
+  const GENERIC = /^an internal error was received\.?$|^an unknown rpc error occurred\.?$|^request failed\.?$/i
+  const seen = new Set<unknown>()
+  const out: string[] = []
+  const push = (v: unknown) => {
+    if (typeof v !== 'string') return
+    const first = v.split('\n').map((l) => l.trim()).find(Boolean) ?? ''
+    if (first) out.push(first)
+  }
+  const walk = (x: unknown, depth: number) => {
+    if (!x || typeof x !== 'object' || seen.has(x) || depth > 6) return
+    seen.add(x)
+    const o = x as Record<string, unknown>
+    push((o.data as Record<string, unknown> | undefined)?.message)
+    push(o.details)
+    push(o.shortMessage)
+    push(o.message)
+    walk(o.cause, depth + 1)
+    walk(o.data, depth + 1)
+  }
+  if (typeof e === 'string') push(e)
+  else walk(e, 0)
+  const specific = out.find((l) => !GENERIC.test(l) && !/^Details:\s*$/i.test(l))
+  return (specific ?? out[0] ?? 'Wallet error (no message)').replace(/^Details:\s*/i, '').slice(0, 400)
+}
+
 /** Pure: is this wallet error worth a row? Human rejections are not. */
 export function isReportableWalletError(message: string): boolean {
   const m = message.trim()

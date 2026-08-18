@@ -119,7 +119,7 @@ export default function ArmSpotGuardButton({ offer }: { offer: SpotGuardArmOffer
             title="Sign the one-shot spending permission that arms this protection"
           >
             {inFlight ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <PenLine className="w-3.5 h-3.5" />}
-            {status === 'signing' ? 'Sign in wallet…' : status === 'arming' ? 'Arming…' : status === 'error' ? 'Retry — sign & arm protection' : 'Sign & arm protection'}
+            {status === 'signing' ? 'Confirm in your wallet…' : status === 'arming' ? 'Arming…' : status === 'error' ? 'Retry — sign & arm protection' : 'Sign & arm protection'}
           </button>
           {error && <span className="text-[12px] text-red-400">{error}</span>}
         </div>

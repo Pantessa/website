@@ -15,7 +15,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useAccount, useSignTypedData, useSwitchChain } from 'wagmi'
 import { Loader2, PenLine, CheckCircle2, Circle, ExternalLink } from 'lucide-react'
 import type { Eip712OrderRequest } from '@/lib/transaction-layer'
-import { reportWalletRefusal } from '@/lib/wallet-refusal'
+import { reportWalletRefusal, walletErrorWords } from '@/lib/wallet-refusal'
 import { SIGN_CTA_CLASS } from '@/lib/sign-cta'
 
 type Status = 'idle' | 'signing' | 'placing' | 'open' | 'filled' | 'error'
@@ -134,7 +134,7 @@ export default function SignOrderButton({
         reportWalletRefusal({
           wallet: address, artifact: 'cow-order', buildPath: 'native-swap-cow',
           connector: connector?.id ?? connector?.name, chainId: connectedChain?.id,
-          ask: summary ?? 'CoW order', detail: e instanceof Error ? e.message.split('\n')[0] : String(e),
+          ask: summary ?? 'CoW order', detail: walletErrorWords(e),
         })
         throw e
       }
@@ -242,7 +242,7 @@ export default function SignOrderButton({
             title="Sign this CoW order with your wallet and place it on the order book"
           >
             {inFlight ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <PenLine className="w-3.5 h-3.5" />}
-            {status === 'signing' ? 'Sign in wallet…' : status === 'placing' ? 'Placing order…' : status === 'error' ? 'Retry — sign & place order' : 'Sign & place order'}
+            {status === 'signing' ? 'Confirm in your wallet…' : status === 'placing' ? 'Placing order…' : status === 'error' ? 'Retry — sign & place order' : 'Sign & place order'}
           </button>
           {error && <span className="text-[12px] text-red-400">{error}</span>}
         </div>
