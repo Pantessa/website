@@ -103,7 +103,7 @@ function milestoneCtes(days: number, excl: string[]) {
     standing AS (
       SELECT a, min(t) AS t, (array_agg(kind ORDER BY t))[1] AS kind FROM (
         SELECT lower(wallet) AS a, created_at AS t, 'job'::text AS kind FROM jobs WHERE NOT is_internal
-        UNION ALL SELECT lower(wallet), created_at, 'dca' FROM dca_schedules
+        UNION ALL SELECT lower(wallet), created_at, 'dca' FROM dca_schedules WHERE NOT is_internal
         UNION ALL SELECT lower(wallet), created_at, 'guardian' FROM hl_guardian_policies
       ) z GROUP BY 1
     ),

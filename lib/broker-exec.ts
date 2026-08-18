@@ -66,7 +66,7 @@ export async function openIntent(opts: {
   agent?: unknown
   agentKey?: unknown
   callbackUrl?: unknown
-}): Promise<OpenResult> {
+}, call?: DeskCallOpts): Promise<OpenResult> {
   assertDeskOpen()
   const wallet = cleanWallet(opts.wallet)
   const agent = cleanAgentName(opts.agent)
@@ -99,6 +99,7 @@ export async function openIntent(opts: {
       callbackSecret,
       state: 'open',
       plan: plan as object,
+      isInternal: call?.internal === true,
     },
   })
 
@@ -290,6 +291,7 @@ export async function tileIntent(opts: { slices: unknown; chain?: unknown; agent
       state: 'handed_off',
       plan: plan as object,
       linkSlug: slug,
+      isInternal: call?.internal === true,
     },
   })
 
@@ -565,6 +567,7 @@ export async function sendToInbox(opts: {
       state: 'handed_off',
       plan: { ask: sent.ask, addressed: true } as object,
       linkSlug: sent.slug,
+      isInternal: call?.internal === true,
     },
   })
 

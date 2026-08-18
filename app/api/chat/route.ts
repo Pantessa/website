@@ -374,6 +374,7 @@ export async function POST(req: NextRequest) {
       reply: typeof data?.reply === 'string' ? data.reply : null,
       kind,
       buildPath: typeof data?.buildPath === 'string' ? data.buildPath : null,
+      internal: isInternalRun(req.headers, reqBody),
     })
     // The scan is RPC-heavy — run it after the reply is on the wire.
     if (failureId && wallet) after(() => attachFundsSnapshot(failureId, wallet))
@@ -840,7 +841,7 @@ async function handleChatTurn(req: NextRequest) {
     // SCHEDULE, never a one-shot swap that quietly drops "every week". Each
     // due period compiles a one-step job (native-swap builder — same venue
     // cascade + guardrails as any swap), confirm-mode only.
-    const dcaTurn = await runDcaTurn(message, walletAddress, selectedChainId, nativeTrace)
+    const dcaTurn = await runDcaTurn(message, walletAddress, selectedChainId, nativeTrace, internalRun)
     if (dcaTurn) return NextResponse.json(dcaTurn)
 
     // Multi-step JOBS — a compound ask ("bridge …, then deposit …, then long

@@ -116,7 +116,7 @@ type ClaimResult =
  *  failed or was canceled is reclaimable (an unsigned failure must not eat
  *  the period). */
 async function claimDcaRun(
-  schedule: { id: string; wallet: string; buyUsd: number; buyToken: string; sellToken: string; chainId: number; cadence: DcaCadence },
+  schedule: { id: string; wallet: string; buyUsd: number; buyToken: string; sellToken: string; chainId: number; cadence: DcaCadence; isInternal?: boolean },
   periodKey: string,
 ): Promise<ClaimResult> {
   const where = { scheduleId_periodKey: { scheduleId: schedule.id, periodKey } }
@@ -143,7 +143,8 @@ async function claimDcaRun(
       if (!existing) throw new Error('period claim failed')
     }
   }
-  const job = await createJob(schedule.wallet, compileDcaBuy(schedule), `dca:${schedule.id}`)
+  // A job minted by an internal schedule is internal (the wallet IS a throwaway).
+  const job = await createJob(schedule.wallet, compileDcaBuy(schedule), `dca:${schedule.id}`, { internal: schedule.isInternal === true })
   const attach = await prisma.dcaRun.updateMany({
     where: { scheduleId: schedule.id, periodKey, jobId: existing.jobId ?? null },
     data: { jobId: job.id },
@@ -202,6 +203,9 @@ export async function runDcaTurn(
   wallet: string | undefined,
   selectedChainId: number | null | undefined,
   trace: Trace,
+  /** Our own harness/drill turn (lib/internal-run.ts) — stamps the schedule
+   *  (and, through claimDcaRun, every job it mints). */
+  internalRun = false,
 ): Promise<DcaTurn | null> {
   // ── Autopilot toggles FIRST — "turn off my dca autopilot" must never read
   //    as the manage grammar's cancel. Lazy import keeps the module graph
@@ -321,6 +325,7 @@ export async function runDcaTurn(
         buyToken: create.buyToken,
         sellToken: stable.symbol,
         chainId,
+        isInternal: internalRun,
       },
     })
     // The first period is due NOW — offer the first guarded buy immediately,

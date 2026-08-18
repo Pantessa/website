@@ -851,12 +851,18 @@ model AskFailure {
   kind        String // planner-answer | native-wall | blocked | error
   buildPath   String?  @map("build_path")
   hadFunds    Boolean? @map("had_funds") // null until the async scan lands
+  /// Our own harness/drill wall (lib/internal-run.ts): prod-pointed drills
+  /// that don't opt out with x-yf-no-ask-log still write rows — stamped, so
+  /// /dashboard/failures hides them by default (a drill's wall is not a
+  /// stranger's wall).
+  isInternal  Boolean  @default(false) @map("is_internal")
   fundsUsd    Float?   @map("funds_usd") // movable USD seen across scanned chains
   fundsDetail String?  @map("funds_detail") // human per-chain summary
   createdAt   DateTime @default(now()) @map("created_at")
 
   @@index([createdAt])
   @@index([hadFunds, createdAt])
+  @@index([isInternal, createdAt])
   @@map("ask_failures")
 }
 
@@ -1013,6 +1019,11 @@ model DcaSchedule {
   buyToken  String   @map("buy_token") // symbol — resolved per-build from the chain's official token list
   sellToken String   @map("sell_token") // the chain's primary stable at creation (USDC / USDG)
   chainId   Int      @map("chain_id")
+  /// Our own harness/drill schedule (lib/internal-run.ts): the first "DCA …
+  /// weekly" turn WRITES a schedule (+ its period job); the GTM arc reads
+  /// dca_schedules as an arrival, so a gate run must never count. Jobs the
+  /// schedule mints inherit the flag.
+  isInternal Boolean @default(false) @map("is_internal")
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
@@ -1301,6 +1312,9 @@ model BrokerIntent {
   agent     String? // sanitized self-reported agent name
   agentKey  String?  @map("agent_key") // the bound desk identity (execute path); M6 makes it x402-payer-verified
   agentKeyHash   String? @map("agent_key_hash") // sha256(agentKey)[:16] — the PUBLIC track-record handle (raw key never exposed)
+  /// Our own harness/drill intent (lib/internal-run.ts): the public /agents
+  /// record excludes it — a gate run must never headline the credit bureau.
+  isInternal     Boolean @default(false) @map("is_internal")
   callbackUrl    String? @map("callback_url") // optional agent webhook: signed/settled events POST here (M3)
   callbackSecret String? @map("callback_secret") // per-intent HMAC secret returned to the agent once at open
   state     String   @default("open")
@@ -1312,5 +1326,6 @@ model BrokerIntent {
 
   @@index([state, createdAt])
   @@index([agentKeyHash])
+  @@index([isInternal])
   @@map("broker_intents")
 }

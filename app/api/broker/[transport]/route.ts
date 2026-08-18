@@ -112,8 +112,8 @@ const handler = createMcpHandler(
             ),
         },
       },
-      async ({ ask, wallet, agent, agent_key, callback_url }) =>
-        guarded(() => openIntent({ ask, wallet, agent, agentKey: agent_key, callbackUrl: callback_url })),
+      async ({ ask, wallet, agent, agent_key, callback_url }, extra) =>
+        guarded(() => openIntent({ ask, wallet, agent, agentKey: agent_key, callbackUrl: callback_url }, callOpts(extra))),
     )
 
     server.registerTool(

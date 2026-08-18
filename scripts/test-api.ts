@@ -59,6 +59,7 @@ import { agentHandleFor } from '../lib/agent-record'
 import { addrsUnion, arcQuery } from '../lib/gtm-arc'
 import { isInternalRun, INTERNAL_RUN_HEADER } from '../lib/internal-run'
 import { deskExecuteConsentMessage, cleanSenderLabel } from '../lib/broker-exec'
+import { brandFromRow, isDeniedBrandHost, THIRD_PARTY_BRAND_HOSTS } from '../lib/brand-denylist'
 import { deskPricing, priceForTool, pricingBlock } from '../lib/broker-pricing'
 import {
   clientIpFrom,
@@ -266,8 +267,9 @@ function getCookie(res: Response, name: string): string | null {
   return null
 }
 
-/** Every wallet this suite signed in with — the end-of-suite "no stranger
- *  left behind" pin reads exactly these back off the cohorts view. */
+/** Every wallet this suite signed in with OR drove a chat turn for — the
+ *  end-of-suite "no stranger left behind" pin reads exactly these back off
+ *  the cohorts view. */
 const SIGNED_IN_WALLETS = new Set<string>()
 async function signIn(account: PrivateKeyAccount): Promise<string> {
   SIGNED_IN_WALLETS.add(account.address.toLowerCase())
@@ -315,6 +317,17 @@ globalThis.fetch = ((input: Parameters<typeof realFetch>[0], init?: RequestInit)
   const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
   if (typeof url === 'string' && url.includes('/api/chat')) {
     init = { ...(init ?? {}), headers: { ...((init?.headers as Record<string, string>) ?? {}), 'x-yf-no-ask-log': '1' } }
+    // Connect-to-act turns carry the wallet in the BODY (no SIWE) — record it
+    // so the end-of-suite "no stranger left" pin reads those wallets back too
+    // (chat turns write jobs / dca_schedules / chats for them).
+    if (typeof init.body === 'string') {
+      try {
+        const w = (JSON.parse(init.body) as { walletAddress?: unknown }).walletAddress
+        if (typeof w === 'string' && /^0x[0-9a-fA-F]{40}$/.test(w)) SIGNED_IN_WALLETS.add(w.toLowerCase())
+      } catch {
+        /* not JSON */
+      }
+    }
   }
   if (typeof url === 'string' && url.startsWith(BASE) && !url.includes('/api/embed/telemetry')) {
     const h = { ...((init?.headers as Record<string, string>) ?? {}) }
@@ -1107,14 +1120,27 @@ async function main() {
     const unionAll = addrsUnion().sql
     const arc = arcQuery(30).sql
     check(
-      'arrivals: addrsUnion + arcQuery exclude is_internal rows on intent_links, wallet_working_sets, jobs (+ job_steps joins, embed_turns owners)',
+      'arrivals: addrsUnion + arcQuery exclude is_internal rows on intent_links, wallet_working_sets, jobs, dca_schedules, chats (+ messages/job_steps joins, embed_turns owners)',
       /FROM intent_links WHERE creator IS NOT NULL AND NOT is_internal/.test(union) &&
         /FROM wallet_working_sets WHERE NOT is_internal/.test(union) &&
+        /FROM dca_schedules WHERE NOT is_internal/.test(union) &&
+        /FROM chats WHERE owner_address IS NOT NULL AND NOT is_internal/.test(union) &&
+        /WHERE c\.owner_address IS NOT NULL AND NOT c\.is_internal/.test(arc) &&
         /FROM jobs WHERE origin_env = 'production' AND NOT is_internal/.test(union) &&
         /FROM jobs WHERE NOT is_internal/.test(unionAll) &&
         /FROM embed_turns WHERE owner_address IS NOT NULL AND NOT is_internal/.test(union) &&
         (arc.match(/j\.origin_env = 'production' AND NOT j\.is_internal/g) ?? []).length === 2 &&
         /e\.kind = 'connect' AND NOT il\.is_internal/.test(arc),
+    )
+    // The homepage hero strip ("Links live" / "Opens") is a public claim on a
+    // STATIC route (baked at build) — no live delta to observe, so pin the
+    // reader contract at the source: both counts must go through is_internal.
+    const heroSrc = await readFile(new URL('../components/LinksHero.tsx', import.meta.url), 'utf8')
+    check(
+      'hero strip: "Links live" + "Opens" read through the honest reader (intent_links.is_internal; opens exclude internal links)',
+      /intentLink\.count\(\{ where: \{ revoked: false, isInternal: false \} \}\)/.test(heroSrc) &&
+        /NOT EXISTS \(SELECT 1 FROM intent_links il WHERE il\.id = e\.slug AND il\.is_internal\)/.test(heroSrc) &&
+        /REAL_TRAFFIC_WHERE/.test(heroSrc),
     )
     check(
       'arrivals: isInternalRun reads the header (Headers + plain record) and the body flag, and nothing else',
@@ -2335,6 +2361,39 @@ async function main() {
     check('brand: branding without a claimed handle → 409', bNoHandle.status === 409)
     const bBadUrl = await fetch(`${BASE}/api/intent-links/brand`, { method: 'POST', headers: M, body: JSON.stringify({ url: 'https://localhost/x' }) })
     check('brand: a non-public URL refuses at the gate (400, never fetched)', bBadUrl.status === 400)
+    // Rule 7 — never wear a third-party financial brand (2026-08-18: /l/yeet
+    // was found live wearing Robinhood from a scan drill). The write site
+    // refuses by name BEFORE any fetch; the render side falls back to house
+    // for any stored row whose domain is denied (data left for the owner).
+    const bDenied = await fetch(`${BASE}/api/intent-links/brand`, { method: 'POST', headers: M, body: JSON.stringify({ url: 'https://app.uniswap.org/swap' }) })
+    const bDeniedBody = (await bDenied.json()) as { error?: string; denied?: boolean }
+    const bDenied2 = await fetch(`${BASE}/api/intent-links/brand`, { method: 'POST', headers: M, body: JSON.stringify({ url: 'https://robinhood.com/' }) })
+    check(
+      'brand rule 7: scanning a denied third-party financial brand (uniswap.org subdomain, robinhood.com) is refused 403 by name, never fetched',
+      bDenied.status === 403 && bDeniedBody.denied === true && /never wears a third-party financial brand/.test(bDeniedBody.error ?? '') && bDenied2.status === 403,
+    )
+    const rowRobinhood = { brandDomain: 'robinhood.com', brandName: 'Robinhood', brandLogo: 'data:image/png;base64,AAAA', brandAccent: '#526700', brandBg: '#ccff00' }
+    const rowStripe = { brandDomain: 'stripe.com', brandName: 'Stripe', brandLogo: 'data:image/png;base64,AAAA', brandAccent: '#635bff', brandBg: null }
+    check(
+      'brand rule 7: brandFromRow renders HOUSE for a denied stored row (Robinhood, swap.cow.fi, www.metamask.io, opensea.io) and the brand for an allowed one; venue policy hosts are covered',
+      brandFromRow(rowRobinhood) === null &&
+        brandFromRow({ ...rowStripe, brandDomain: 'swap.cow.fi' }) === null &&
+        brandFromRow({ ...rowStripe, brandDomain: 'www.metamask.io' }) === null &&
+        brandFromRow({ ...rowStripe, brandDomain: 'https://opensea.io/collection/x' }) === null &&
+        brandFromRow(rowStripe)?.domain === 'stripe.com' &&
+        brandFromRow({ brandDomain: null, brandName: null, brandLogo: null, brandAccent: null, brandBg: null }) === null &&
+        isDeniedBrandHost('api.hyperliquid.xyz') && isDeniedBrandHost('lido.fi') && isDeniedBrandHost('pro.coinbase.com') &&
+        !isDeniedBrandHost('notrobinhood.com') && !isDeniedBrandHost('pantessa.com') && !isDeniedBrandHost('uniswap.yeetful.com') &&
+        THIRD_PARTY_BRAND_HOSTS.includes('robinhood.com'),
+    )
+    // Every public render site goes through brandFromRow — no raw row → brand
+    // construction survives (the four sites: /l page + OG, /i page + OG).
+    const renderSites = ['app/l/[handle]/page.tsx', 'app/l/[handle]/opengraph-image.tsx', 'app/i/[slug]/page.tsx', 'app/i/[slug]/opengraph-image.tsx']
+    const renderSrc = await Promise.all(renderSites.map((f) => readFile(new URL(`../${f}`, import.meta.url), 'utf8')))
+    check(
+      'brand rule 7: all four public render sites read the brand ONLY via brandFromRow (no raw creator_handles → brand construction)',
+      renderSrc.every((src) => src.includes('brandFromRow(') && !src.includes('{ domain: row.brandDomain')),
+    )
     const bAccent = await fetch(`${BASE}/api/intent-links/brand`, { method: 'PATCH', headers: M, body: JSON.stringify({ accent: '#6633cc' }) })
     const bAccentBad = await fetch(`${BASE}/api/intent-links/brand`, { method: 'PATCH', headers: M, body: JSON.stringify({ accent: '#ffffff' }) })
     check('brand: accent PATCH validates (#6633cc lands, near-white refused)', bAccent.status === 200 && bAccentBad.status === 400)
@@ -9326,6 +9385,40 @@ async function main() {
           String(delegMintBody.typedData?.message?.agentAddress ?? '') === delegMintBody.agentAddress,
         JSON.stringify(delegMintBody).slice(0, 300),
       )
+      // Idempotent retry (QA 2026-08-18): the same wallet + chain within the
+      // reuse window gets the SAME pending row + byte-identical typed data —
+      // no second row; a different signing chain mints a fresh one.
+      const delegRetry = await fetch(`${BASE}/api/hl/delegation`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ from: signer.address, signatureChainId: 4663 }),
+      })
+      const delegRetryBody = (await delegRetry.json().catch(() => ({}))) as { id?: string; agentAddress?: string; typedData?: unknown; reused?: boolean }
+      const delegOtherChain = await fetch(`${BASE}/api/hl/delegation`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ from: signer.address, signatureChainId: 8453 }),
+      })
+      const delegOtherBody = (await delegOtherChain.json().catch(() => ({}))) as { id?: string; typedData?: { domain?: { chainId?: number } } }
+      check(
+        'hl delegation: a retry for the same wallet+chain returns the SAME pending row (id, agent, typed data; reused:true) — no row spam; another chain mints fresh',
+        delegRetry.status === 200 &&
+          delegRetryBody.id === delegMintBody.id &&
+          delegRetryBody.agentAddress === delegMintBody.agentAddress &&
+          delegRetryBody.reused === true &&
+          JSON.stringify(delegRetryBody.typedData) === JSON.stringify(delegMintBody.typedData) &&
+          delegOtherChain.status === 200 &&
+          !!delegOtherBody.id && delegOtherBody.id !== delegMintBody.id && delegOtherBody.typedData?.domain?.chainId === 8453,
+      )
+      // Re-mint on 4663 for the activation probes below (the 8453 mint above
+      // superseded it — one pending row per wallet at a time).
+      const delegBack = await fetch(`${BASE}/api/hl/delegation`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ from: signer.address, signatureChainId: 4663 }),
+      })
+      const delegBackBody = (await delegBack.json().catch(() => ({}))) as typeof delegMintBody
+      Object.assign(delegMintBody, delegBackBody)
       const mintTd = delegMintBody.typedData!
       const approveByStranger = await stranger.signTypedData({
         domain: mintTd.domain,
@@ -9365,6 +9458,19 @@ async function main() {
       headers: { 'content-type': 'application/json', 'x-yf-no-ask-log': '1' },
       body: JSON.stringify({ wallet: signer.address, artifact: 'hl-order', ask: 'close 1 ETH', detail: 'Provided chainId "1337" must match the active chainId "4663"' }),
     })
+    // x-yf-internal-run WITHOUT the opt-out: the row is written but STAMPED
+    // (a matrix drill's refusal is visible under the dashboard's internal
+    // toggle, never as a stranger's wall).
+    const refusalStamped = await fetch(`${BASE}/api/ask-failures/wallet`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ wallet: signer.address, artifact: 'hl-order', ask: 'close 1 ETH (stamped drill)', detail: 'Provided chainId "1337" must match the active chainId "4663"' }),
+    })
+    const refusalStampedBody = (await refusalStamped.json()) as { ok?: boolean; internal?: boolean; id?: string }
+    check(
+      'wallet refusal beacon: an internal-run drill row is written STAMPED (202, internal:true) — hidden from /dashboard/failures by default',
+      refusalStamped.status === 202 && refusalStampedBody.ok === true && refusalStampedBody.internal === true && !!refusalStampedBody.id,
+    )
     // These two must reach the rejection/shape gates, so they opt out of the
     // suite-wide internal-run stamp (which would short-circuit them first).
     const refusalRejected = await fetch(`${BASE}/api/ask-failures/wallet`, {
@@ -10342,13 +10448,14 @@ async function main() {
     const MCP_URL = `${BASE}/api/broker/mcp`
     let rpcId = 0
     let mcpSession: string | null = null
-    const rpc = async (method: string, params?: unknown): Promise<{ raw: string; result?: any }> => {
+    const rpc = async (method: string, params?: unknown, extraHeaders: Record<string, string> = {}): Promise<{ raw: string; result?: any }> => {
       const res = await fetch(MCP_URL, {
         method: 'POST',
         headers: {
           'content-type': 'application/json',
           accept: 'application/json, text/event-stream',
           ...(mcpSession ? { 'mcp-session-id': mcpSession } : {}),
+          ...extraHeaders,
         },
         body: JSON.stringify({ jsonrpc: '2.0', id: ++rpcId, method, params }),
       })
@@ -10362,8 +10469,8 @@ async function main() {
         .find((l) => l.includes(`"id":${rpcId}`))
       return { raw, result: data ? JSON.parse(data).result : undefined }
     }
-    const call = async (name: string, args: Record<string, unknown> = {}) => {
-      const { raw, result } = await rpc('tools/call', { name, arguments: args })
+    const call = async (name: string, args: Record<string, unknown> = {}, extraHeaders: Record<string, string> = {}) => {
+      const { raw, result } = await rpc('tools/call', { name, arguments: args }, extraHeaders)
       const text: string = result?.content?.find((c: any) => c.type === 'text')?.text ?? ''
       return { raw, isError: !!result?.isError, payload: text && !result?.isError ? JSON.parse(text) : text }
     }
@@ -10549,8 +10656,20 @@ async function main() {
 
     // M4 — the track record. Opening with an identity returns the agent's
     // public record URL, and that page renders the honest counts.
-    const recOpen = await call('broker_open', { ask: 'Buy $15 of AAPL', agent: 'Harness Agent', agent_key: 'harness-desk-key' })
-    const expectHandle = agentHandleFor('harness-desk-key')
+    // Internal-run intents (this suite's default) NEVER headline the public
+    // credit bureau: a fresh identity opened under the stamp has no record.
+    const internalKey = `harness-internal-${Date.now()}`
+    const recInternal = await call('broker_open', { ask: 'Buy $15 of AAPL', agent: 'Harness Agent', agent_key: internalKey })
+    const recInternalPage = await fetch(`${BASE}/agents/${agentHandleFor(internalKey)}`)
+    check(
+      'broker M4: an identity whose intents are all internal-run has NO public record (404) — the harness never headlines /agents',
+      !recInternal.isError && recInternalPage.status === 404,
+    )
+    await call('broker_close', { intent_id: recInternal.payload.intentId })
+    // The organic path renders (opt this one call out of the suite stamp).
+    const organicKey = `harness-organic-${Date.now()}`
+    const recOpen = await call('broker_open', { ask: 'Buy $15 of AAPL', agent: 'Harness Agent', agent_key: organicKey }, { [ORGANIC_PROBE]: '1' })
+    const expectHandle = agentHandleFor(organicKey)
     check(
       'broker M4: broker_open with an identity returns the agent record URL',
       !recOpen.isError && String(recOpen.payload?.recordUrl ?? '').endsWith(`/agents/${expectHandle}`),
@@ -10777,6 +10896,16 @@ async function main() {
         `arrivals: a full suite run leaves NO throwaway wallet as an arrival on the cohorts/arc view (${throwaways.length} wallets read back)`,
         leaked.length === 0,
         leaked.length ? `LEAKED ${leaked.length}: ${leaked.slice(0, 8).join(' ')}` : '',
+      )
+      // ask_failures: the admin feed hides internal-run rows by default and
+      // labels them under ?internal=1 (the stamped refusal beacon above).
+      const afDefault = (await (await fetch(`${BASE}/api/admin/ask-failures?days=1`, { headers: { cookie: adminSession } })).json()) as { failures?: { internal?: boolean; prompt?: string }[] }
+      const afAll = (await (await fetch(`${BASE}/api/admin/ask-failures?days=1&internal=1`, { headers: { cookie: adminSession } })).json()) as { failures?: { internal?: boolean; prompt?: string }[] }
+      check(
+        'ask_failures: /api/admin/ask-failures hides is_internal rows by default; ?internal=1 shows them labelled internal:true',
+        (afDefault.failures ?? []).every((f) => f.internal !== true) &&
+          (afAll.failures ?? []).some((f) => f.internal === true && /stamped drill/.test(f.prompt ?? '')),
+        `default=${afDefault.failures?.length} all=${afAll.failures?.length}`,
       )
     }
   }

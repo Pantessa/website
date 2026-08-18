@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import { notFound } from 'next/navigation'
 import prisma from '@/lib/db'
+import { brandFromRow } from '@/lib/brand-denylist'
 import { INTENT_SLUG_RE } from '@/lib/intent-links'
 import IntentRuntime from '@/components/IntentRuntime'
 
@@ -76,8 +77,8 @@ async function getBrand(creator: string | null) {
   if (!creator) return null
   try {
     const row = await prisma.creatorHandle.findUnique({ where: { creator } })
-    if (!row || !(row.brandDomain || row.brandLogo || row.brandAccent || row.brandBg)) return null
-    return { domain: row.brandDomain, name: row.brandName, logo: row.brandLogo, accent: row.brandAccent, bg: row.brandBg }
+    // (rule 7: a denied third-party brand renders as house — lib/brand-denylist)
+    return brandFromRow(row)
   } catch {
     return null
   }

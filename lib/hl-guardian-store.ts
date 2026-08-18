@@ -83,10 +83,35 @@ export async function getDelegation(wallet: string) {
  * (plus the matching /exchange action body, kept server-side on the row via
  * re-derivation — nonce and validUntil are stored).
  */
+/** A pending mint is reusable for this long: retries of the same wallet on
+ *  the same chain get the SAME row + typed data back instead of a fresh one
+ *  (QA 2026-08-18: every direct→delegated fallback retry minted another
+ *  pending row — cheap DB spam, and the user re-signed a different agent). */
+export const PENDING_DELEGATION_REUSE_MS = 20 * 60_000
+
 export async function createDelegation(wallet: string, signatureChainId: number) {
   const w = wallet.toLowerCase()
-  // One live delegation per wallet: retire any pending leftovers first.
-  await prisma.hlGuardianDelegation.updateMany({ where: { wallet: w, status: 'pending' }, data: { status: 'revoked' } })
+  const hlChain = guardianIsTestnet() ? 'Testnet' : 'Mainnet'
+  // Idempotent within the reuse window: same wallet + same signing chain +
+  // same venue → hand back the pending row already offered (typed data
+  // re-derived from it, byte-identical to the first offer).
+  const reuse = await prisma.hlGuardianDelegation.findFirst({
+    where: { wallet: w, status: 'pending', sigChainId: signatureChainId, hlChain, createdAt: { gt: new Date(Date.now() - PENDING_DELEGATION_REUSE_MS) } },
+    orderBy: { createdAt: 'desc' },
+  })
+  if (reuse) {
+    const { typedData } = approveAgentArtifacts({
+      agentAddress: reuse.agentAddress,
+      nonce: Number(reuse.nonce),
+      validUntil: reuse.expiresAt.getTime(),
+      signatureChainId,
+      isTestnet: hlChain === 'Testnet',
+    })
+    return { id: reuse.id, agentAddress: reuse.agentAddress, typedData, reused: true as const }
+  }
+  // One live delegation per wallet: a pending row was never approved by
+  // anyone, so a superseded one is deleted outright (never accumulates).
+  await prisma.hlGuardianDelegation.deleteMany({ where: { wallet: w, status: 'pending' } })
   // Pending rows are transient by nature (the offered nonce is a timestamp
   // the venue stops accepting within a day; the key inside was never
   // approved by anyone) — sweep the stale ones so abandoned mints (a closed
@@ -103,15 +128,15 @@ export async function createDelegation(wallet: string, signatureChainId: number)
       wallet: w,
       agentAddress,
       agentKeyEnc: encryptAgentKey(pk),
-      hlChain: guardianIsTestnet() ? 'Testnet' : 'Mainnet',
+      hlChain,
       status: 'pending',
       nonce: BigInt(nonce),
       sigChainId: signatureChainId,
       expiresAt: new Date(validUntil),
     },
   })
-  const { typedData } = approveAgentArtifacts({ agentAddress, nonce, validUntil, signatureChainId, isTestnet: guardianIsTestnet() })
-  return { id: row.id, agentAddress, typedData }
+  const { typedData } = approveAgentArtifacts({ agentAddress, nonce, validUntil, signatureChainId, isTestnet: hlChain === 'Testnet' })
+  return { id: row.id, agentAddress, typedData, reused: false as const }
 }
 
 /**

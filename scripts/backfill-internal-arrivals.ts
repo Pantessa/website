@@ -27,6 +27,13 @@
 //   jobs
 //     J1  origin_env = 'dev'   (a local machine — never a stranger)
 //     J2  wallet in the fixture placeholder set (0x1111…, 0x2222…, 0x3333…, 0x4444…)
+//   dca_schedules
+//     D1  origin_env = 'dev'   (local machine)
+//     D2  fixture placeholder wallets or H3 throwaway creators
+//   broker_intents
+//     B1  harness identities/bylines (the public /agents record excludes them)
+//   ask_failures
+//     A1  fixture/throwaway wallets or drill prompts (the admin feed hides stamped rows)
 //   chats
 //     C1  title = 'test:api receipts' (the one fixture the suite never cleaned)
 //     C2  owner is an H3 throwaway creator or a W2 owner
@@ -41,6 +48,7 @@
 import { PrismaClient, Prisma } from '@prisma/client'
 import { TEST_WALLETS } from '../lib/admin'
 import { INTERNAL_ORIGIN_SQL } from '../lib/value-origin'
+import { agentHandleFor } from '../lib/agent-record'
 
 const APPLY = process.argv.includes('--apply')
 const prisma = new PrismaClient()
@@ -114,6 +122,10 @@ const RULES: Rule[] = [
   { table: 'wallet_working_sets', id: 'W2', note: 'bare {} write-through, no other footprint, pre-2026-07-23', where: Prisma.sql`owner_address IN (${BARE_WORKING_SETS})` },
   { table: 'jobs', id: 'J1', note: "origin_env = 'dev' (local machine)", where: Prisma.sql`origin_env = 'dev'` },
   { table: 'jobs', id: 'J2', note: 'fixture placeholder wallets', where: Prisma.sql`lower(wallet) = ANY(${FIXTURE_WALLETS})` },
+  { table: 'dca_schedules', id: 'D1', note: "origin_env = 'dev' (local machine)", where: Prisma.sql`origin_env = 'dev'` },
+  { table: 'dca_schedules', id: 'D2', note: 'fixture placeholder wallets or H3 throwaway creators', where: Prisma.sql`(lower(wallet) = ANY(${FIXTURE_WALLETS}) OR lower(wallet) IN (${THROWAWAY_CREATORS}))` },
+  { table: 'broker_intents', id: 'B1', note: "harness identities/bylines (agent or agent_key LIKE 'harness%', 'Harness Agent')", where: Prisma.sql`(coalesce(agent, '') ILIKE 'harness%' OR coalesce(agent_key, '') ILIKE 'harness%' OR agent_key_hash = ${agentHandleFor('harness-desk-key')})` },
+  { table: 'ask_failures', id: 'A1', note: 'fixture placeholder wallets or H3 throwaway creators, or [drill] prompts', where: Prisma.sql`(lower(coalesce(wallet, '')) = ANY(${FIXTURE_WALLETS}) OR lower(coalesce(wallet, '')) IN (${THROWAWAY_CREATORS}) OR prompt LIKE 'DRILL %' OR prompt ILIKE '%(stamped drill)%')` },
   { table: 'chats', id: 'C1', note: "title = 'test:api receipts'", where: Prisma.sql`title = 'test:api receipts'` },
   { table: 'chats', id: 'C2', note: 'owner is an H3 throwaway creator or a W2 owner', where: Prisma.sql`(lower(owner_address) IN (${THROWAWAY_CREATORS}) OR lower(owner_address) IN (${BARE_WORKING_SETS}))` },
   {
@@ -128,7 +140,7 @@ async function main() {
   console.log(`backfill-internal-arrivals — ${APPLY ? 'APPLY (writing)' : 'DRY RUN (counts only; pass --apply to write)'}\n`)
 
   const totals = new Map<string, { before: number; flagged: number; would: number }>()
-  for (const t of ['intent_links', 'wallet_working_sets', 'jobs', 'chats', 'embed_turns']) {
+  for (const t of ['intent_links', 'wallet_working_sets', 'jobs', 'dca_schedules', 'broker_intents', 'ask_failures', 'chats', 'embed_turns']) {
     const [{ n, f }] = await prisma.$queryRaw<{ n: bigint; f: bigint }[]>(
       Prisma.sql`SELECT count(*)::bigint AS n, count(*) FILTER (WHERE is_internal)::bigint AS f FROM ${Prisma.raw(t)}`,
     )

@@ -30,7 +30,7 @@ export function addrsUnion(opts?: { prodJobsOnly?: boolean }) {
       UNION ALL SELECT lower(address), created_at FROM agent_toggle_events WHERE address IS NOT NULL
       UNION ALL SELECT lower(owner_address), created_at FROM wallet_working_sets WHERE NOT is_internal
       UNION ALL ${jobsLine}
-      UNION ALL SELECT lower(wallet), created_at FROM dca_schedules
+      UNION ALL SELECT lower(wallet), created_at FROM dca_schedules WHERE NOT is_internal
       UNION ALL SELECT lower(wallet), created_at FROM hl_guardian_policies
       UNION ALL SELECT lower(owner_address), created_at FROM api_keys
       -- agent_approvals is deliberately absent: a preference toggle is not an
