@@ -1370,7 +1370,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
             {!currentChat || currentChat.messages.length === 0 ? (
               splashEligible || splashBatches.length > 0 ? (
                 splashSettledEmpty ? (
-                  <EmptyState activeCount={activeServers.length} autoRouter={autoRouter} onPick={runExample} showLinksHint={!embedded && !simple} />
+                  <EmptyState activeCount={activeServers.length} autoRouter={autoRouter} onPick={runExample} showLinksHint={!embedded && !simple} guestBannerPad={!embedded && !simple && sessionStatus === 'guest'} />
                 ) : null
               ) : bootHolding ? (
                 // Wallet auto-reconnect / store hydration in flight: the splash may
@@ -1383,7 +1383,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
                 // example gallery here is noise — hold the surface clean.
                 null
               ) : (
-                <EmptyState activeCount={activeServers.length} autoRouter={autoRouter} onPick={runExample} showLinksHint={!embedded && !simple} />
+                <EmptyState activeCount={activeServers.length} autoRouter={autoRouter} onPick={runExample} showLinksHint={!embedded && !simple} guestBannerPad={!embedded && !simple && sessionStatus === 'guest'} />
               )
             ) : (
           <>

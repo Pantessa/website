@@ -45,15 +45,21 @@ export default function EmptyState({
   autoRouter,
   onPick,
   showLinksHint,
+  guestBannerPad,
 }: {
   activeCount: number
   autoRouter: boolean
   onPick: (prompt: string, slug?: string) => void
   /** First-party chat only — the embed has no rail or mint affordances. */
   showLinksHint?: boolean
+  /** The guest sign-in banner (ChatSignInGate) floats over the thread above
+   *  the composer; on short mobile viewports it covered the last example
+   *  chip. Reserve its height below the gallery so every chip stays
+   *  reachable by scrolling (below lg only — desktop has the room). */
+  guestBannerPad?: boolean
 }) {
   return (
-    <div className="flex flex-col items-center justify-center flex-1 text-center py-20">
+    <div className={`flex flex-col items-center justify-center flex-1 text-center py-20${guestBannerPad ? ' max-lg:pb-44' : ''}`}>
       <div className="w-16 h-16 rounded-2xl bg-[var(--accent)]/15 border border-[var(--accent)]/50 flex items-center justify-center mb-6">
         <Sparkles className="w-8 h-8" style={{ color: 'var(--accent)' }} />
       </div>

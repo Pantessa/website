@@ -67,12 +67,16 @@ export default function SendTxButton({
   const [status, setStatus] = useState<Status>('idle')
   const [error, setError] = useState('')
   const [hash, setHash] = useState<string | null>(null)
+  // The wallet refused the network switch: the inline line names the chain
+  // and the button itself becomes the "switch & retry" — never just red text.
+  const [switchNeeded, setSwitchNeeded] = useState(false)
 
   const chainInfo = chainById(chainId)
   const explorer = chainInfo?.explorerTx ?? TX_EXPLORER[chainId] ?? 'https://basescan.org/tx/'
 
   const send = async () => {
     setError('')
+    setSwitchNeeded(false)
     if (!isConnected || !address) {
       setError('Connect your wallet first.')
       return
@@ -96,7 +100,8 @@ export default function SendTxButton({
             ask: `${summary ?? tx.action ?? 'transaction'} (switch to ${chainInfo?.name ?? `chain ${chainId}`})`,
             detail: e instanceof Error ? e.message.split('\n')[0] : String(e),
           })
-          setError(`Switch the wallet to ${chainInfo?.name ?? `chain ${chainId}`} and retry — this transaction is built for that network.`)
+          setError(`This transaction is built for ${chainInfo?.name ?? `chain ${chainId}`} — switch the wallet to it (the button below asks again), then it signs.`)
+          setSwitchNeeded(true)
           setStatus('error')
           return
         }
@@ -264,7 +269,15 @@ export default function SendTxButton({
             title={`Sign and broadcast this ${tx.action ?? 'transaction'} from your wallet`}
           >
             {inFlight ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <PenLine className="w-3.5 h-3.5" />}
-            {status === 'signing' ? 'Sign in wallet…' : status === 'broadcast' ? 'Waiting for confirmation…' : status === 'error' ? `Retry — sign & send ${tx.action ?? 'transaction'}` : `Sign & send ${tx.action ?? 'transaction'}`}
+            {status === 'signing'
+              ? 'Sign in wallet…'
+              : status === 'broadcast'
+                ? 'Waiting for confirmation…'
+                : status === 'error' && switchNeeded
+                  ? `Switch to ${chainInfo?.name ?? `chain ${chainId}`} & retry`
+                  : status === 'error'
+                    ? `Retry — sign & send ${tx.action ?? 'transaction'}`
+                    : `Sign & send ${tx.action ?? 'transaction'}`}
           </button>
           {error && <span className="text-[12px] text-[color:var(--fail)]">{error}</span>}
         </div>

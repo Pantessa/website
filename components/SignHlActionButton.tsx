@@ -122,9 +122,22 @@ export default function SignHlActionButton({
     }
   }
 
+  /** Venue strings → the honest human line. Hyperliquid answers EVERY L1
+   *  action on an account with no deposit — even approving the trading
+   *  agent — with the raw "Must deposit before performing actions"; a fresh
+   *  wallet on the delegated door met exactly that (QA strict-wallet drive,
+   *  squad 2026-08-18). The deposit ask below round-trips the chat's own HL
+   *  deposit grammar (lib/hyperliquid-exec.ts parseHlIntent) → guarded USDC
+   *  transfer to the official bridge; in organic traffic the build's
+   *  has-collateral guard offers it before any card renders. */
+  const humanizeVenueError = (msg: string): string =>
+    /must deposit/i.test(msg)
+      ? 'Your Hyperliquid account has no deposit yet, so the venue refuses every action — including approving the trading agent. Ask the chat to “deposit 10 usdc to hyperliquid” first (a plain USDC transfer to the official bridge on Arbitrum, credited in under a minute), then press this again.'
+      : msg
+
   const fail = (e: unknown, fallback: string, artifact: WalletArtifact, ask: string) => {
     const msg = e instanceof Error ? e.message : ''
-    setError(isUserRejectedSignError(msg) ? 'Signature request declined.' : msg || fallback)
+    setError(isUserRejectedSignError(msg) ? 'Signature request declined.' : humanizeVenueError(msg) || fallback)
     setStatus('error')
     if (msg && (e as { fromWallet?: boolean } | null)?.fromWallet && !isUserRejectedSignError(msg)) {
       reportWalletRefusal({ ...walletMeta(), artifact, ask, detail: msg, buildPath: 'native-hl-exec' })

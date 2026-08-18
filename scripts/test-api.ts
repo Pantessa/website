@@ -9593,6 +9593,16 @@ async function main() {
       'components/VoteChoiceButtons.tsx': 'Snapshot vote — no money moves (queued)',
     }
     const unwired = senders.filter((f) => !(f in REFUSAL_ALLOW) && !/reportWalletRefusal\(/.test(fs.readFileSync(f, 'utf8')))
+    // Sign-card copy pins (squad r4): a refused network switch names the
+    // chain and turns the button into "Switch to <chain> & retry" (never
+    // just red text); the venue's raw "Must deposit" on the HL delegated
+    // door becomes the honest line + the chat's own deposit ask.
+    const sendTxSrc = fs.readFileSync('components/SendTxButton.tsx', 'utf8')
+    const hlBtnSrc = fs.readFileSync('components/SignHlActionButton.tsx', 'utf8')
+    check(
+      'sign cards: switch refusal → named chain + "Switch to <chain> & retry" button; HL "Must deposit" → human line with the deposit ask',
+      /switchNeeded/.test(sendTxSrc) && /& retry`/.test(sendTxSrc) && /must deposit/i.test(hlBtnSrc) && /deposit 10 usdc to hyperliquid/.test(hlBtnSrc),
+    )
     check(
       `wallet-refusal audit: every money sign/send button files wallet refusals (${senders.length} senders)`,
       senders.length >= 8 && unwired.length === 0,
