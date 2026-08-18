@@ -141,7 +141,7 @@ const STEPS = [
 
 const ELSEWHERE = [
   { href: 'https://www.npmjs.com/package/pantessa', label: 'yeetful on npm', sub: 'the embed helper plus x402 client/server helpers — MIT, TypeScript', ext: true },
-  { href: 'https://github.com/Yeetful', label: 'Pantessa on GitHub', sub: 'the SDK, free MCPs, and the rest — open source', ext: true },
+  { href: 'https://github.com/Pantessa', label: 'Pantessa on GitHub', sub: 'the SDK, free MCPs, and the rest — open source', ext: true },
   { href: '/activity', label: 'Network activity', sub: 'every settled call on the network, anonymized and on-chain verifiable', ext: false },
 ]
 

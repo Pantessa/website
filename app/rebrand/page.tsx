@@ -72,12 +72,16 @@ export default function RebrandPage() {
               API-key prefixes (<span className="mono text-[13px]">yf_</span> /{' '}
               <span className="mono text-[13px]">yfe_</span>), and the embed&apos;s postMessage
               source string. These are wire identifiers baked into installed integrations and
-              stored allowlists; renaming them would break software our users already run. The
-              GitHub org remains{' '}
-              <a className="text-[color:var(--accent)] hover:underline underline-offset-2" href="https://github.com/Yeetful" {...ext}>
-                github.com/Yeetful
+              stored allowlists; renaming them would break software our users already run.
+            </li>
+            <li>
+              <span className="text-[color:var(--fg)]">The GitHub org (August 17, 2026).</span>{' '}
+              Renamed from github.com/Yeetful to{' '}
+              <a className="text-[color:var(--accent)] hover:underline underline-offset-2" href="https://github.com/Pantessa" {...ext}>
+                github.com/Pantessa
               </a>
-              .
+              . Same repositories, same history, same maintainers; GitHub redirects the old
+              org name to the new one.
             </li>
           </ul>
 
@@ -155,8 +159,8 @@ export default function RebrandPage() {
                   <td className="text-[color:var(--fg)] whitespace-nowrap">The retired forks</td>
                   <td>
                     <span className="mono">uniswap-embed</span> and <span className="mono">cowswap</span>{' '}
-                    sit archived (read-only) on github.com/Yeetful; both deployments return
-                    nothing
+                    sit archived (read-only) on github.com/Pantessa (formerly github.com/Yeetful);
+                    both deployments return nothing
                   </td>
                 </tr>
                 <tr>
