@@ -653,9 +653,22 @@ async function assertWalletProof(intentId: string, wallet: string, signature: un
  *  so "from @nategeier" can only ever mean the real claimed handle sent it. */
 export function cleanSenderLabel(raw: unknown): string | null {
   if (typeof raw !== 'string') return null
-  let s = raw.replace(/\s+/g, ' ').trim()
-  s = s.replace(/^@+/, '').replace(/^0x[0-9a-fA-F]{4,}(…|\.\.\.)?[0-9a-fA-F]*/, '').trim()
+  // NFKC first: fullwidth ＠ (U+FF20), small ﹫ (U+FE6B) etc. fold to '@',
+  // fullwidth digits/letters fold to ASCII — a homoglyph is the same mark.
+  let s = raw.normalize('NFKC').replace(/\s+/g, ' ').trim()
+  // Strip-until-stable: "@@ @nategeier" must not survive a single pass
+  // (QA 2026-08-18 bypass).
+  for (let prev = ''; prev !== s; ) {
+    prev = s
+    s = s.replace(/^@+/, '').replace(/^0x[0-9a-fA-F]{4,}(…|\.\.\.)?[0-9a-fA-F]*/, '').trim()
+  }
   s = s.slice(0, 60).trim()
+  // Belt: after normalization the label may carry NO at-sign of any kind and
+  // no 0x-hex run anywhere — refuse rather than reshape (the two Pantessa-
+  // stamped marks are exactly those shapes).
+  if (/[@\u0040\uFF20\uFE6B]/u.test(s) || /0x[0-9a-fA-F]{4,}/.test(s)) {
+    throw new Error('sender_label may not contain an @-handle or a 0x address — those marks are stamped by Pantessa for claimed handles and human senders only. Use your agent or app name.')
+  }
   return s || null
 }
 

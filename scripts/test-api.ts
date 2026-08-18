@@ -10741,9 +10741,30 @@ async function main() {
         cleanSenderLabel('@@nate') === 'nate' &&
         cleanSenderLabel('0x6626…7257 Nate') === 'Nate' &&
         cleanSenderLabel('0xabcdef') === null &&
-        cleanSenderLabel('  Harness  Bot ') === 'Harness Bot',
+        cleanSenderLabel('  Harness  Bot ') === 'Harness Bot' &&
+        // QA bypasses (2026-08-18): multi-pass "@@ @nategeier" and fullwidth ＠
+        cleanSenderLabel('@@ @nategeier') === 'nategeier' &&
+        cleanSenderLabel('\uFF20nategeier') === 'nategeier' &&
+        cleanSenderLabel('\uFF20\uFF20 \uFF20nategeier') === 'nategeier' &&
+        (() => { try { cleanSenderLabel('Nate \uFF20pantessa'); return false } catch { return true } })() &&
+        (() => { try { cleanSenderLabel('sent by 0xdeadbeef1234'); return false } catch { return true } })(),
       `from=${impItem?.from}`,
     )
+    // Wire-level: the two bypass strings through broker_send itself.
+    const impFull = await call('broker_send', { ask: 'Buy $15 of AAPL', recipient: inboxWallet, sender_label: '\uFF20nategeier', agent: 'harness' })
+    const impMulti = await call('broker_send', { ask: 'Buy $15 of AAPL', recipient: inboxWallet, sender_label: '@@ @nategeier', agent: 'harness' })
+    const impMid = await call('broker_send', { ask: 'Buy $15 of AAPL', recipient: inboxWallet, sender_label: 'Nate \uFF20pantessa', agent: 'harness' })
+    const impInbox2 = ((await (await fetch(`${BASE}/api/inbox?wallet=${inboxWallet}`)).json()) as { items?: { slug?: string; from?: string | null }[] }).items ?? []
+    const fromOf = (r: { payload?: { url?: string } }) => impInbox2.find((i) => i.slug === String(r.payload?.url ?? '').split('/').pop())?.from
+    check(
+      'broker M5: fullwidth ＠ and "@@ @handle" bypasses land as the bare word; a mid-label at-sign is REFUSED (never stored)',
+      !impFull.isError && fromOf(impFull) === 'nategeier' &&
+        !impMulti.isError && fromOf(impMulti) === 'nategeier' &&
+        impMid.isError && /may not contain an @-handle/.test(String(impMid.payload)) &&
+        !impInbox2.some((i) => /[@\uFF20]/.test(i.from ?? '')),
+      `full=${fromOf(impFull)} multi=${fromOf(impMulti)}`,
+    )
+    for (const r of [impFull, impMulti]) if (r.payload?.intentId) await call('broker_close', { intent_id: r.payload.intentId })
     if (impersonate.payload?.intentId) await call('broker_close', { intent_id: impersonate.payload.intentId })
 
     // U2 — the closed-loop receipt seam: the /i page of a desk-bound
