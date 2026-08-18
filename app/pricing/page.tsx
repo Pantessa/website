@@ -69,7 +69,7 @@ export default function PricingPage() {
               the embeddable chat. Plans meter <strong>active links</strong> and{' '}
               <strong>YEET credits</strong>; on-chain calls stay pay-per-call from your users&rsquo;
               own wallets. And every plan earns: creators keep{' '}
-              <strong>half of Pantessa&rsquo;s 0.20% fee</strong> on their links&rsquo; conversions.
+              <strong>half of Pantessa&rsquo;s 0.20% fee</strong>{' '}on their links&rsquo; conversions.
             </p>
           </div>
 

@@ -21,7 +21,7 @@ export default function SpendPolicyPage() {
     <>
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: docsJsonLd(PAGE) }} />
       <p className="docs__crumbs mono">
-        <Link href="/docs">DOCS</Link> <span>/</span> SPEND POLICY &amp; CAPS
+        <Link href="/docs">DOCS</Link> <span>/</span>{' '}SPEND POLICY &amp; CAPS
       </p>
       <h1 className="docs__h1">Spend policy: open by default, capped by default</h1>
       <p className="docs__lead">
@@ -155,7 +155,7 @@ export default function SpendPolicyPage() {
             gate and again at any submit relay. Instant and hard.
           </li>
           <li>
-            <strong>External SDK agents</strong> paying from their own wallet — enforced by the
+            <strong>External SDK agents</strong>{' '}paying from their own wallet — enforced by the
             SDK&apos;s grant in-process, refreshed from{' '}
             <code>GET /api/agent/policy</code>. Pantessa cannot intercept another wallet&apos;s
             transfer in flight; the hard on-chain stop for adversarial cases is what Coinbase

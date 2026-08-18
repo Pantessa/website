@@ -42,7 +42,8 @@ import {
   isUserRejectedSignError,
   type HlWireAction,
 } from '@/lib/hyperliquid-exec'
-import { reportWalletRefusal, type WalletArtifact } from '@/lib/wallet-refusal'
+import { reportWalletRefusal, walletErrorWords, type WalletArtifact } from '@/lib/wallet-refusal'
+import { SIGN_CTA_CLASS } from '@/lib/sign-cta'
 
 type Status = 'idle' | 'signing' | 'submitting' | 'enabling' | 'filled' | 'error'
 type Delegation = 'unknown' | 'active' | 'none'
@@ -122,12 +123,25 @@ export default function SignHlActionButton({
     }
   }
 
+  /** Venue strings → the honest human line. Hyperliquid answers EVERY L1
+   *  action on an account with no deposit — even approving the trading
+   *  agent — with the raw "Must deposit before performing actions"; a fresh
+   *  wallet on the delegated door met exactly that (QA strict-wallet drive,
+   *  squad 2026-08-18). The deposit ask below round-trips the chat's own HL
+   *  deposit grammar (lib/hyperliquid-exec.ts parseHlIntent) → guarded USDC
+   *  transfer to the official bridge; in organic traffic the build's
+   *  has-collateral guard offers it before any card renders. */
+  const humanizeVenueError = (msg: string): string =>
+    /must deposit/i.test(msg)
+      ? 'Your Hyperliquid account has no deposit yet, so the venue refuses every action — including approving the trading agent. Ask the chat to “deposit 10 usdc to hyperliquid” first (a plain USDC transfer to the official bridge on Arbitrum, credited in under a minute), then press this again.'
+      : msg
+
   const fail = (e: unknown, fallback: string, artifact: WalletArtifact, ask: string) => {
     const msg = e instanceof Error ? e.message : ''
-    setError(isUserRejectedSignError(msg) ? 'Signature request declined.' : msg || fallback)
+    setError(isUserRejectedSignError(msg) ? 'Signature request declined.' : humanizeVenueError(msg) || fallback)
     setStatus('error')
     if (msg && (e as { fromWallet?: boolean } | null)?.fromWallet && !isUserRejectedSignError(msg)) {
-      reportWalletRefusal({ ...walletMeta(), artifact, ask, detail: msg, buildPath: 'native-hl-exec' })
+      reportWalletRefusal({ ...walletMeta(), artifact, ask, detail: walletErrorWords(e), buildPath: 'native-hl-exec' })
     }
   }
 
@@ -245,7 +259,7 @@ export default function SignHlActionButton({
       if (classifyHlSignFailure(msg) !== 'switch-to-delegated') throw e
       // Log the wall as a data point (which wallets police the domain chain),
       // then take the door the venue itself designed.
-      reportWalletRefusal({ ...walletMeta(), artifact: step.artifact, ask: `${hlActionSummary(step.action, step.expected)} (direct typed-data path — switched to delegated)`, detail: msg, buildPath: 'native-hl-exec' })
+      reportWalletRefusal({ ...walletMeta(), artifact: step.artifact, ask: `${hlActionSummary(step.action, step.expected)} (direct typed-data path — switched to delegated)`, detail: walletErrorWords(e), buildPath: 'native-hl-exec' })
       // Re-read (the mount-time read may still be in flight): no agent on
       // file → the one-time approval first, in this same gesture.
       const check = await fetch(`/api/hl/delegation?wallet=${address}`, { cache: 'no-store' }).then((r) => (r.ok ? r.json() : null)).catch(() => null)
@@ -320,7 +334,7 @@ export default function SignHlActionButton({
     ? status === 'enabling'
       ? 'Approve the Pantessa agent in your wallet…'
       : status === 'signing'
-        ? 'Sign in wallet…'
+        ? 'Confirm in your wallet…'
         : feeStep
           ? 'Approving fee cap…'
           : pre
@@ -384,7 +398,7 @@ export default function SignHlActionButton({
             onClick={() => void (feeStep ? signFee() : pre ? signPre() : sign())}
             disabled={inFlight}
             data-hl-path={delegation === 'active' ? 'delegated' : needsEnable ? 'enable' : 'direct'}
-            className="inline-flex items-center gap-1.5 text-[12px] font-medium px-3 py-1.5 max-lg:min-h-10 rounded-full border border-[var(--line-2)] text-[color:var(--muted)] hover:text-white hover:border-white disabled:opacity-50 transition-colors"
+            className={SIGN_CTA_CLASS}
             title={buttonTitle}
           >
             {inFlight ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : needsEnable ? <ShieldCheck className="w-3.5 h-3.5" /> : <PenLine className="w-3.5 h-3.5" />}

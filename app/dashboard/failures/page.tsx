@@ -14,6 +14,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { ShieldAlert, RefreshCw } from 'lucide-react'
 import { useSession } from '@/lib/session'
 import { isAdminAddress } from '@/lib/admin'
+import { LivePill, useLivePoll } from '@/components/LivePill'
 
 interface FailureRow {
   id: string
@@ -21,21 +22,45 @@ interface FailureRow {
   prompt: string
   reply: string | null
   kind: string
-  internal?: boolean
   buildPath: string | null
   hadFunds: boolean | null
   fundsUsd: number | null
   fundsDetail: string | null
   createdAt: string
+  /** ask_failures.is_internal (harness/drill stamp) — false when the column
+   *  isn't there yet; the API tolerates its absence. */
+  internal?: boolean
 }
 
 interface Feed {
   days: number
-  counts: { total: number; funded: number; broke: number; unknown: number }
+  kind: string | null
+  counts: { total: number; funded: number; broke: number; unknown: number; internalHidden?: number }
   failures: FailureRow[]
 }
 
 const WINDOWS = [7, 14, 30] as const
+const POLL_MS = 25_000
+
+// URL ⇄ toggles: `?funded=1`, `?kind=wallet-refused`, `?internal=1` are
+// READ on mount and WRITTEN back on every toggle, so a watch link
+// (/dashboard/failures?funded=1&kind=wallet-refused) opens on the right
+// slice and the address bar always names what you're looking at.
+function readParams(): { funded: boolean; kind: string | null; internal: boolean } {
+  if (typeof window === 'undefined') return { funded: false, kind: null, internal: false }
+  const q = new URLSearchParams(window.location.search)
+  const kind = q.get('kind')
+  return { funded: q.get('funded') === '1', kind: kind && kind in KIND_LABEL ? kind : null, internal: q.get('internal') === '1' }
+}
+function writeParams(p: { funded: boolean; kind: string | null; internal: boolean }) {
+  if (typeof window === 'undefined') return
+  const q = new URLSearchParams(window.location.search)
+  p.funded ? q.set('funded', '1') : q.delete('funded')
+  p.kind ? q.set('kind', p.kind) : q.delete('kind')
+  p.internal ? q.set('internal', '1') : q.delete('internal')
+  const qs = q.toString()
+  window.history.replaceState(null, '', `${window.location.pathname}${qs ? `?${qs}` : ''}`)
+}
 
 const short = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`
 const when = (iso: string) => {
@@ -71,17 +96,31 @@ export default function FailuresPage() {
   const [days, setDays] = useState<(typeof WINDOWS)[number]>(14)
   const [fundedOnly, setFundedOnly] = useState(false)
   const [external, setExternal] = useState(false)
-  // Internal-run rows (our own drills, is_internal) are hidden unless toggled.
+  const [kind, setKind] = useState<string | null>(null)
   const [showInternal, setShowInternal] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [open, setOpen] = useState<string | null>(null)
 
-  const load = useCallback(async () => {
-    setLoading(true)
+  // Hydrate the toggles from the URL once (client-only read).
+  const [paramsRead, setParamsRead] = useState(false)
+  useEffect(() => {
+    const p = readParams()
+    setFundedOnly(p.funded)
+    setKind(p.kind)
+    setShowInternal(p.internal)
+    setParamsRead(true)
+  }, [])
+  useEffect(() => {
+    if (paramsRead) writeParams({ funded: fundedOnly, kind, internal: showInternal })
+  }, [paramsRead, fundedOnly, kind, showInternal])
+
+  const load = useCallback(async (quiet = false) => {
+    if (!quiet) setLoading(true)
     setError(null)
     try {
-      const res = await fetch(`/api/admin/ask-failures?days=${days}${fundedOnly ? '&funded=1' : ''}${external ? '&external=1' : ''}${showInternal ? '&internal=1' : ''}`, { cache: 'no-store' })
+      const qs = `days=${days}${fundedOnly ? '&funded=1' : ''}${external ? '&external=1' : ''}${kind ? `&kind=${encodeURIComponent(kind)}` : ''}${showInternal ? '&internal=1' : ''}`
+      const res = await fetch(`/api/admin/ask-failures?${qs}`, { cache: 'no-store' })
       if (!res.ok) {
         setFeed(null)
         setError(res.status === 403 ? 'This wallet is not an admin.' : `The failures API returned ${res.status}.`)
@@ -92,14 +131,19 @@ export default function FailuresPage() {
       setFeed(null)
       setError('Could not reach the failures API.')
     } finally {
-      setLoading(false)
+      if (!quiet) setLoading(false)
     }
-  }, [days, fundedOnly, external, showInternal])
+  }, [days, fundedOnly, external, kind, showInternal])
 
+  const admin = isAdminAddress(address)
   useEffect(() => {
-    if (isAdminAddress(address)) void load()
+    if (!paramsRead) return
+    if (admin) void load()
     else setLoading(false)
-  }, [address, load])
+  }, [admin, load, paramsRead])
+  // Watchable: quiet re-poll every 25s while the tab is visible (the drill
+  // has this page open beside a recruit's wallet).
+  const { updatedAt } = useLivePoll(() => load(true), POLL_MS, admin && paramsRead)
 
   if (address && !isAdminAddress(address)) {
     return (
@@ -134,12 +178,24 @@ export default function FailuresPage() {
           <button className={`btn btn--sm ${external ? 'btn--solid' : ''}`} onClick={() => setExternal((v) => !v)} title="Hide Pantessa test wallets">
             external
           </button>
-          <button className={`btn btn--sm ${showInternal ? 'btn--solid' : ''}`} onClick={() => setShowInternal((v) => !v)} title="Show rows written by our own internal-run drills (is_internal) — hidden by default">
+          <button
+            className={`btn btn--sm ${kind === 'wallet-refused' ? 'btn--solid' : ''}`}
+            onClick={() => setKind((k) => (k === 'wallet-refused' ? null : 'wallet-refused'))}
+            title="Only rows where the artifact was built + guarded and the WALLET refused it (?kind=wallet-refused)"
+          >
+            wallet refused
+          </button>
+          <button
+            className={`btn btn--sm ${showInternal ? 'btn--solid' : ''}`}
+            onClick={() => setShowInternal((v) => !v)}
+            title="Show rows stamped as our own harness/drill traffic (is_internal) — hidden by default"
+          >
             internal
           </button>
-          <button className="btn btn--sm" onClick={() => void load()} title="Refresh">
+          <button className="btn btn--sm" onClick={() => void load()} title="Refresh now">
             <RefreshCw className="w-3.5 h-3.5" />
           </button>
+          <LivePill updatedAt={updatedAt} />
         </div>
       </div>
 
@@ -149,6 +205,11 @@ export default function FailuresPage() {
           <span className="text-[color:var(--accent,#34E0A1)]"><strong className="tabular-nums">{feed.counts.funded}</strong> had funds</span>
           <span><strong className="tabular-nums">{feed.counts.broke}</strong> broke</span>
           <span><strong className="tabular-nums">{feed.counts.unknown}</strong> unscanned</span>
+          {!!feed.counts.internalHidden && (
+            <span className="text-[color:var(--muted-2)]" title="Stamped is_internal — toggle 'internal' to see them">
+              {feed.counts.internalHidden} internal hidden
+            </span>
+          )}
         </div>
       )}
 
@@ -194,7 +255,14 @@ export default function FailuresPage() {
                     )}
                   </td>
                   <td className="px-3 py-2 whitespace-nowrap font-mono text-xs text-[color:var(--muted)]">{r.wallet ? short(r.wallet) : 'guest'}</td>
-                  <td className="px-3 py-2 whitespace-nowrap text-xs text-[color:var(--muted)]">{KIND_LABEL[r.kind] ?? r.kind}{r.internal ? <span className="ml-1 mono text-[10px] uppercase tracking-wider text-[color:var(--muted-2)]" title="Written by an internal-run drill (is_internal)">· internal</span> : null}</td>
+                  <td className="px-3 py-2 whitespace-nowrap text-xs text-[color:var(--muted)]">
+                    {KIND_LABEL[r.kind] ?? r.kind}
+                    {r.internal && (
+                      <span className="ml-1.5 inline-flex px-1.5 py-0.5 rounded-full text-[9px] uppercase tracking-wider bg-[var(--surf-1)] text-[color:var(--muted-2)]" title="Our own harness/drill traffic (is_internal)">
+                        internal
+                      </span>
+                    )}
+                  </td>
                   <td className="px-3 py-2 whitespace-nowrap"><FundsBadge row={r} /></td>
                 </tr>
               ))}

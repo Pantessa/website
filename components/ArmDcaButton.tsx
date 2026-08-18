@@ -122,7 +122,7 @@ export default function ArmDcaButton({ offer }: { offer: DcaArmOfferWire }) {
             title="Sign the one-time spending permission that arms this schedule"
           >
             {inFlight ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <PenLine className="w-3.5 h-3.5" />}
-            {status === 'signing' ? 'Sign in wallet…' : status === 'arming' ? 'Arming…' : status === 'error' ? 'Retry — sign & arm autopilot' : 'Sign & arm autopilot'}
+            {status === 'signing' ? 'Confirm in your wallet…' : status === 'arming' ? 'Arming…' : status === 'error' ? 'Retry — sign & arm autopilot' : 'Sign & arm autopilot'}
           </button>
           {error && <span className="text-[12px] text-red-400">{error}</span>}
         </div>

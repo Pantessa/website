@@ -22,6 +22,8 @@ import GuardianPolicyCard from '@/components/GuardianPolicyCard'
 import ArmDcaButton from '@/components/ArmDcaButton'
 import SendTxButton from '@/components/SendTxButton'
 import SendTxChain from '@/components/SendTxChain'
+import SimpleArtifactReply from '@/components/chat/SimpleArtifactReply'
+import { splitSimpleReply } from '@/lib/simple-reply'
 import { orderRequestOf, txRequestOf, txChainOf } from '@/lib/transaction-layer'
 import { portfolioOf } from '@/lib/portfolio-display'
 import { nftGalleryOf, nftMarketOf } from '@/lib/nft-display'
@@ -1370,7 +1372,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
             {!currentChat || currentChat.messages.length === 0 ? (
               splashEligible || splashBatches.length > 0 ? (
                 splashSettledEmpty ? (
-                  <EmptyState activeCount={activeServers.length} autoRouter={autoRouter} onPick={runExample} showLinksHint={!embedded && !simple} />
+                  <EmptyState activeCount={activeServers.length} autoRouter={autoRouter} onPick={runExample} showLinksHint={!embedded && !simple} guestBannerPad={!embedded && !simple && sessionStatus === 'guest'} />
                 ) : null
               ) : bootHolding ? (
                 // Wallet auto-reconnect / store hydration in flight: the splash may
@@ -1383,7 +1385,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
                 // example gallery here is noise — hold the surface clean.
                 null
               ) : (
-                <EmptyState activeCount={activeServers.length} autoRouter={autoRouter} onPick={runExample} showLinksHint={!embedded && !simple} />
+                <EmptyState activeCount={activeServers.length} autoRouter={autoRouter} onPick={runExample} showLinksHint={!embedded && !simple} guestBannerPad={!embedded && !simple && sessionStatus === 'guest'} />
               )
             ) : (
           <>
@@ -1496,7 +1498,17 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
                       />
                     )}
                     {msg.role === 'assistant' ? (
-                      <ChatMarkdown content={msg.content} />
+                      // /i (simple) leads with the human line and folds the
+                      // router/pool detail — the chat + embed print the reply
+                      // unchanged (lib/simple-reply.ts; memory intent-link-
+                      // simple-mode). Only artifact-bearing replies split.
+                      (() => {
+                        const split =
+                          simple && (txChainOf(msg.meta) || txRequestOf(msg.meta) || orderRequestOf(msg.meta))
+                            ? splitSimpleReply(msg.content)
+                            : null
+                        return split ? <SimpleArtifactReply split={split} /> : <ChatMarkdown content={msg.content} />
+                      })()
                     ) : (
                       <pre className="whitespace-pre-wrap [font-family:var(--font-chat-body)] [overflow-wrap:anywhere]">{msg.content}</pre>
                     )}

@@ -99,7 +99,11 @@ export default function ChatSignInGate() {
 
   // ── Non-blocking banner: guests keep the whole chat interactive ──────────
   return (
-    <div className="pointer-events-none absolute bottom-28 inset-x-0 z-40 flex justify-center px-4">
+    // bottom-28 clears the composer on desktop; below lg the shell adds the
+    // 48px bottom tab bar (+ safe area) under the composer, so the banner
+    // must ride that much higher or it sits ON the input (375px drill,
+    // squad 2026-08-18).
+    <div className="pointer-events-none absolute bottom-28 max-lg:bottom-[calc(7.25rem+48px+env(safe-area-inset-bottom))] inset-x-0 z-40 flex justify-center px-4">
       <div className="pointer-events-auto flex flex-wrap items-center justify-center gap-x-4 gap-y-2 max-w-2xl rounded-2xl border border-[var(--line)] bg-[var(--surf-1)] backdrop-blur-md px-4 py-2.5 shadow-[0_8px_32px_rgba(0,0,0,0.35)]">
         <p className="flex items-center gap-2 text-xs text-[color:var(--muted)]">
           <Sparkles className="w-3.5 h-3.5 flex-shrink-0 text-[color:var(--accent)]" />

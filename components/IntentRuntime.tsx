@@ -32,7 +32,7 @@ import { YeetfulMark } from '@/components/Logo'
 import { useSession } from '@/lib/session'
 import { cdpEnabled } from '@/lib/cdp-embedded'
 import { brandBloomTint, brandCtaStyle, brandThemeStyle, type LinkBrand } from '@/lib/brand-theme'
-import { isTransferShaped, linkLockup, linkLockupWord } from '@/lib/intent-links'
+import { isTransferShaped, linkEyebrow } from '@/lib/intent-links'
 import { useYeetfulStore, McpServer } from '@/lib/store'
 import { CATALOG } from '@/lib/mcp-data'
 import { FREE_FLEET_FALLBACK } from '@/lib/free-fleet'
@@ -65,6 +65,7 @@ export default function IntentRuntime({
   agent,
   redirectUrl,
   hasCreator = false,
+  creatorHandle = null,
   restricted = false,
   brand = null,
   notify = null,
@@ -78,6 +79,8 @@ export default function IntentRuntime({
   agent: string
   redirectUrl: string
   hasCreator?: boolean
+  /** The creator's CLAIMED /l handle, when any — the eyebrow says WHOSE. */
+  creatorHandle?: string | null
   /** The link carries a wallet allowlist — the connected wallet must pass
    *  the membership probe before the ask auto-runs. The list itself never
    *  reaches the client. */
@@ -335,7 +338,7 @@ export default function IntentRuntime({
                     always-on either way (pinned). */}
                 <span className="mono text-[11px] uppercase tracking-widest text-[color:var(--muted-2)] whitespace-nowrap">
                   <span aria-hidden>· </span>
-                  {linkLockupWord(hasCreator)}
+                  {linkEyebrow({ hasCreator, handle: creatorHandle, agent }, '')}
                 </span>
                 <span className="inline-flex items-center gap-1.5 mono text-[10.5px] uppercase tracking-widest text-[color:var(--muted-2)] whitespace-nowrap">
                   <span aria-hidden>·</span> Powered by <YeetfulMark size={13} /> Pantessa
@@ -348,7 +351,7 @@ export default function IntentRuntime({
                     the thing a KOL shares. House links (creator=null) keep
                     the neutral "Intent link" lockup, pure Pantessa (pinned). */}
                 <span className="mono text-[11px] uppercase tracking-widest text-[color:var(--muted-2)]">
-                  {linkLockup(hasCreator, agent)}
+                  {linkEyebrow({ hasCreator, handle: creatorHandle, agent })}
                 </span>
               </>
             )}
@@ -360,7 +363,10 @@ export default function IntentRuntime({
             &ldquo;{ask}&rdquo;
           </h1>
 
-          <div className="mt-10 grid grid-cols-1 sm:grid-cols-3 gap-3 w-full max-w-2xl text-left">
+          {/* ≤sm the CTA leads and the three contract cards follow (flex
+              order): on a phone the cards pushed the door below the fold —
+              the recruit saw guardrail prose and no button. */}
+          <div className="mt-10 grid grid-cols-1 sm:grid-cols-3 gap-3 w-full max-w-2xl text-left max-sm:order-3 max-sm:mt-8">
             {CONTRACT.map((c) => (
               <div
                 key={c.title}
@@ -377,7 +383,7 @@ export default function IntentRuntime({
             ))}
           </div>
 
-          <div className="mt-10">
+          <div className="mt-10 max-sm:order-1">
             {autoStarting ? (
               <ChatLoader compact lines={['wallet connected — building your path']} />
             ) : walletResolving ? (
@@ -400,7 +406,7 @@ export default function IntentRuntime({
             )}
           </div>
           {!autoStarting && !walletResolving && (
-            <p className="text-[12px] text-[color:var(--muted-2)] mt-4 max-w-md">
+            <p className="text-[12px] text-[color:var(--muted-2)] mt-4 max-w-md max-sm:order-2">
               Connecting runs the scan and the build for your wallet — signing stays yours
               {transferShaped ? '. This ask involves a transfer, so nothing runs until you press send.' : '.'}
             </p>
@@ -410,7 +416,7 @@ export default function IntentRuntime({
             // KOL shilling — a paid call says it's paid, and says the WHOLE
             // deal (lifetime first-touch, the #607 rail). Rate-agnostic on
             // purpose ("half of Pantessa's fee") — the tier varies by origin.
-            <p className="mono text-[11px] text-[color:var(--muted-2)] mt-10 pt-4 border-t border-[var(--line)] max-w-md">
+            <p className="mono text-[11px] text-[color:var(--muted-2)] mt-10 pt-4 border-t border-[var(--line)] max-w-md max-sm:order-4">
               {/* {' '} is load-bearing: SWC drops a line-leading space after
                   an expression (the standing JSX entity-space gotcha). */}
               {agent ? `${agent} posted this call — its creator` : 'The creator of this call'}
@@ -419,6 +425,15 @@ export default function IntentRuntime({
               on-chain. Sales, transfers, and bridges are always fee-free.
             </p>
           )}
+          {/* The rebrand pointer every other page carries in its footer — /i
+              has no site footer, and a first-time visitor who saw the old
+              name on a blocklist page deserves the same disclosure here
+              (squad round 2, ideation premortem). */}
+          <p className={`mono text-[10.5px] uppercase tracking-widest text-[color:var(--muted-2)] max-sm:order-5 ${hasCreator ? 'mt-4' : 'mt-10 pt-4 border-t border-[var(--line)] max-w-md w-full'}`}>
+            <Link href="/rebrand" className="hover:text-[color:var(--fg)] underline decoration-dotted underline-offset-2">
+              Pantessa · formerly Yeetful
+            </Link>
+          </p>
         </div>
       </main>
     )
@@ -430,7 +445,7 @@ export default function IntentRuntime({
         <div className="flex items-center gap-2 mb-8">
           <YeetfulMark size={18} />
           <span className="mono text-[11px] uppercase tracking-widest text-[color:var(--muted-2)]">
-            {linkLockup(hasCreator, agent)}
+            {linkEyebrow({ hasCreator, handle: creatorHandle, agent })}
           </span>
         </div>
         <h1 className="text-xl font-semibold text-[color:var(--fg)] mb-3">
@@ -513,8 +528,8 @@ export default function IntentRuntime({
                       the whole run under this header, and it read "intent
                       link" on posted calls too. */}
                   {brand
-                    ? `${brand.name ?? brand.domain} · ${linkLockupWord(hasCreator).toLowerCase()} · powered by Pantessa`
-                    : linkLockup(hasCreator, agent)}
+                    ? `${brand.name ?? brand.domain} · ${linkEyebrow({ hasCreator, handle: creatorHandle, agent }, '').toLowerCase()} · powered by Pantessa`
+                    : linkEyebrow({ hasCreator, handle: creatorHandle, agent })}
                 </p>
                 <p
                   className="mt-1 text-[15px] leading-tight text-[color:var(--fg)] truncate"
@@ -536,12 +551,20 @@ export default function IntentRuntime({
               {/* Share this run — the owner-gated chat share (renders once
                   the visitor's link chat persists). */}
               <ShareButton />
-              <SignInFlowLink href={mintHref} className={`${chipClass} max-sm:hidden`}>
-                <Link2 className="w-4 h-4" /> MAKE A LINK
-              </SignInFlowLink>
-              <Link href="/chat" className={`${chipClass} max-sm:hidden`}>
-                <MessageSquare className="w-4 h-4" /> OPEN THE APP
-              </Link>
+              {/* Exit ramps stay off the header while the ask is building or
+                  awaiting the signature (the one job on this surface); they
+                  return on the receipt — or when a turn settled with nothing
+                  to sign (the flow-nudge bar carries them then too). */}
+              {(signed || flowNudge) && (
+                <>
+                  <SignInFlowLink href={mintHref} className={`${chipClass} max-sm:hidden`}>
+                    <Link2 className="w-4 h-4" /> MAKE A LINK
+                  </SignInFlowLink>
+                  <Link href="/chat" className={`${chipClass} max-sm:hidden`}>
+                    <MessageSquare className="w-4 h-4" /> OPEN THE APP
+                  </Link>
+                </>
+              )}
               {/* Dashboard / wallet / sign-out live in the account pill — a
                   bare "Dashboard" button would dead-end signed-out visitors. */}
               <NavAccount />
@@ -622,8 +645,10 @@ export default function IntentRuntime({
         <div className="yenter relative flex-shrink-0 border-t border-[var(--line)] bg-[color-mix(in_srgb,var(--bg)_92%,transparent)] backdrop-blur px-4 py-3">
           <div className="max-w-3xl mx-auto flex flex-wrap items-center justify-between gap-3">
             <span className="text-[13px] text-[color:var(--muted)]">
-              Signed and receipted. Want to keep it? Sign in to save this chat and see the
-              receipt on your dashboard — one signature, nothing moves.
+              <strong className="text-[color:var(--fg)] font-medium">Optional — </strong>
+              you&apos;re done here; the money moved. Sign in only if you want this chat and
+              receipt kept on your dashboard{' '}
+              (one wallet signature, nothing moves).
             </span>
             <button
               type="button"

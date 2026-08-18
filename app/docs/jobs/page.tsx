@@ -199,7 +199,7 @@ npx tsx scripts/jobs-api-demo.ts --live     # actually creates the job`}</pre>
           </li>
           <li>
             <strong>Bad asks refuse honestly:</strong> a single-step ask belongs to the{' '}
-            <Link href="/docs/transactions">native layer</Link> (400 tells you so), and a
+            <Link href="/docs/transactions">native layer</Link>{' '}(400 tells you so), and a
             compound ask with an uncompilable segment names the exact step it couldn&rsquo;t
             build instead of improvising one.
           </li>
@@ -218,7 +218,7 @@ dca $25 into ETH daily on base`}</pre>
           week and the period lapses; the schedule never buys behind your back and never
           double-buys a period. Manage it in the same sentence register:{' '}
           <code>pause my AAPL dca</code>, <code>resume my dca</code>,{' '}
-          <code>cancel my ETH dca</code>, <code>list my recurring buys</code> — or from the Jobs
+          <code>cancel my ETH dca</code>, <code>list my recurring buys</code>{' '}— or from the Jobs
           tab in the chat rail. Sizing is dollar-denominated on purpose: a schedule&apos;s
           contract is a fixed spend per period, so token-unit asks get an honest correction
           instead of a guessed price.

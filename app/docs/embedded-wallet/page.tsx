@@ -22,7 +22,7 @@ export default function EmbeddedWalletPage() {
       <p className="docs__lead">
         Not everyone has a wallet extension. <strong>&ldquo;Create an account&rdquo;</strong> lets a
         newcomer sign up with just an email — Pantessa spins up a Coinbase{' '}
-        <strong>non-custodial</strong> wallet they fully control, no extension, no seed phrase. Once
+        <strong>non-custodial</strong>{' '}wallet they fully control, no extension, no seed phrase. Once
         it&apos;s connected it behaves <em>exactly</em> like MetaMask.
       </p>
 

@@ -36,7 +36,7 @@ export default function LinksDocsPage() {
         </p>
         <ul>
           <li>
-            <strong>Type the ask</strong> in the mint form — amounts included. The right MCPs
+            <strong>Type the ask</strong>{' '}in the mint form — amounts included. The right MCPs
             attach themselves from the ask&apos;s shape (stocks pull Robinhood Chain, perps pull
             Hyperliquid), or pick up to four yourself.
           </li>
@@ -64,7 +64,7 @@ export default function LinksDocsPage() {
             until the visitor taps it; nothing moves until their wallet signs.
           </li>
           <li>
-            <strong>Transfer-shaped asks never auto-run.</strong> &ldquo;Send X to
+            <strong>Transfer-shaped asks never auto-run.</strong>{' '}&ldquo;Send X to
             0x…&rdquo; is the phishing shape — those land prefilled and wait for a deliberate
             press of send.
           </li>
@@ -98,7 +98,7 @@ export default function LinksDocsPage() {
             <strong>Expiry</strong> — the link dies at the clock, exactly like a revoked link.
           </li>
           <li>
-            <strong>Sign caps</strong> — &ldquo;dies after 1000 signs&rdquo;, counted from
+            <strong>Sign caps</strong>{' '}— &ldquo;dies after 1000 signs&rdquo;, counted from
             server-truth signed transactions (client-side tricks can&apos;t burn or extend it).
           </li>
           <li>
@@ -110,7 +110,7 @@ export default function LinksDocsPage() {
         <h2>Your public page</h2>
         <p>
           Claim a handle on the dashboard and every active link you hold appears on{' '}
-          <code>/l/&lt;handle&gt;</code> — one shareable page of everything you&apos;ve
+          <code>/l/&lt;handle&gt;</code>{' '}— one shareable page of everything you&apos;ve
           published. Opt-in by design: a wallet address is never the key to a public page, and
           releasing the handle kills the page. Revoking any link 404s it instantly while its
           history and earnings stay.

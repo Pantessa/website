@@ -43,8 +43,10 @@ export async function generateMetadata({ params }: Params): Promise<Metadata> {
 function InboxRow({ item }: { item: InboxItem }) {
   const from = item.senderLabel ?? item.agent ?? 'someone'
   return (
-    <div className="flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3">
-      <div className="min-w-0 flex-1">
+    <div className="flex flex-wrap items-center gap-x-4 gap-y-2.5 px-4 py-3">
+      {/* min-w keeps the ask from being crushed into a word-per-line column
+          beside the CTA at 375px — below ~14rem the button wraps under. */}
+      <div className="min-w-[14rem] flex-1">
         <div className="text-[15px] text-[color:var(--fg)]">{item.ask}</div>
         <div className="mt-0.5 text-[12px] text-[color:var(--muted)]">
           from <span className="text-[color:var(--fg)]">{from}</span> · {ago(item.createdAt)}
