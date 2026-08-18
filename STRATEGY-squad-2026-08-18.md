@@ -628,3 +628,85 @@ $50 only for a tester who volunteers it.
 - GTM-1: the screen = "MetaMask or Rabby (one extension on), ≥$25 USDC
   AND some ETH on Base, desktop." GTM-2: pre-brief the two prompts + the
   Base switch. GTM-3: count "no because of rebrand" as its own number.
+
+---
+
+## §9 Round 2 — B1 named targets (verified live 2026-08-18)
+
+*Every row verified with `gh api` this morning: repo exists, `pushed_at`
+after 2026-06-19, active human contributors in the window, and a real
+wallet/tx surface or a stated need. Names are GitHub logins as they
+appear in the commit/PR history. Nothing here is from memory.*
+
+**⛔ PRECONDITION (owner, one minute): `BROKER_DESK_ENABLED=true` on the
+website Vercel project.** Prod `broker_open` refuses today. Seven of the
+ten targets below have agents that SIGN WITH THEIR OWN KEY — for them the
+honest pitch is the DESK (`broker_execute` agent-signed legs behind the
+independent guard, `broker_status`/webhooks, `/agents/<hash>` record),
+not the hands human-handoff. Do not send a single DM in rows 1–5, 7, 8
+until the flip is live and re-curled. Rows 6, 9, 10 (already human-signs
+believers) can be reached with the hands door today.
+
+**Ecosystem facts that changed the list (verified):** `goat-sdk/goat` is
+ARCHIVED (read-only, last push 07-02) — dropped. `elizaos-plugins` org is
+EMPTY (0 repos; plugin-evm/hyperliquid/lifi/coinbase all 404) — the wallet
+code lives in `elizaOS/eliza` `plugins/plugin-wallet`. `coinbase/x402` is
+now a dev fork; the canonical repo is `x402-foundation/x402`.
+`daydreamsai/daydreams` last push 03-01 — dropped. `modelcontextprotocol/servers`
+no longer takes community listings — the paths are
+registry.modelcontextprotocol.io (our `registry/*.server.json`) and
+`punkpeye/awesome-mcp-servers` (348 PRs merged in 30d; CONTRIBUTING
+fast-tracks agent-authored PRs). OpenClaw is real and large
+(`openclaw/openclaw` 386k★, `openclaw/clawhub` registry, both pushed
+08-18); its wallet skills are third-party.
+
+| # | Target (repo · pushed_at) | Who (login · what they did in-window) | Signs today? | Why they'd care — specifically |
+|---|---|---|---|---|
+| 1 | `x402-foundation/x402` · 08-18 | **@phdargen** — PR #3124 "spend controls" merged 08-13 (per-asset caps + allowlist enforced BEFORE payment signing), #3133 SIWX origin bind; also maintains coinbase/agentkit. **@CarsonRoscoe** — settlement-pending state #3083, Go SVM #3141 (08-17) | Own key (EIP-712 x402 payments) | He just shipped client-side spend caps for agents — the same problem one layer up. The desk is where an x402 agent hands the VALUE leg (swap/stake/perp) to a human wallet or signs it behind an independent re-decode instead of under a cap. |
+| 2 | `coinbase/agentkit` · 08-13 (⚠ default-branch commits stopped 03-23; activity is PR branches) | **@SashaMIT** — ~15 security PRs 08-16 (exact Permit2 amountIn/allowance, EIP-712 bind checks on 0x, slippage caps on enso/jupiter, wait-for-receipt on baseAccount), mostly unmerged. **@ADWilkinson** — #1442 OfframpActionProvider, #1438 Peer Cash (open 08-14/16). Skip the TaskMarket PR swarm (#1419–1453) — farmed. | Own key (CDP server wallet / Privy / eth-account) | SashaMIT is hand-fixing "independent guard re-decodes every build" bugs one provider at a time — our guard is the generalization. ADWilkinson builds money-OUT flows a human should sign. Contributor outreach, not maintainer (no community PR merged in 60d). |
+| 3 | `Virtual-Protocol/acp-cli` · 08-18 | **@psmiratisu** — HL TP/SL management + margin (#86, 08-12). **@andrew-virtuals** — optional builder code for the trade command (#84, 08-11), README. **@Zuhwa** — Privy config, releases 08-12/08-18 | Own key (Privy-backed agent wallet, P256 signer under a restricted/unrestricted policy) | Direct overlap with our HL Guardian + builder-fee work; their "restricted policy" signer is where a re-decoding guard slots; the desk's `/agents/<hash>` record maps to their agent cards. They will want agent-signed legs — pitch guard-as-check + human handoff for above-policy asks. |
+| 4 | `BlockRunAI/Franklin` · 08-17 (★546) | **@1bcMax** — releases 3.37–3.39, Polymarket e2e preflight (07-25→08-13). **@KillerQueen-Z** — #122 portfolio routing (08-07) | Own key (local `~/.blockrun/` wallet signs x402 + trades) | README: "proposes trade plans you approve before a cent moves" — the approve-then-agent-signs loop is exactly where the human's OWN wallet should sign the value leg; free MCP = a zero-cost venue set for their trading arena. |
+| 5 | `elizaOS/eliza` `plugins/plugin-wallet` · 08-18 | **@lalalune** (Shaw) — merging + tests on the wallet plugin daily (08-17/18). (`byt61` — dozens of `fix(wallet)` commits, possibly an agent account) | Own key (`EVM_PRIVATE_KEY` local, or the "Steward" server signer); writes default to `mode=prepare` then confirm — still the agent's key | Their prepare-then-confirm is the right instinct with the wrong signer; a Pantessa sign link gives eliza agents a HUMAN-signed leg for the venues Steward doesn't cover (Li.Fi/Uniswap V3/Aerodrome builds with no independent re-decode today). Base/Clanker swap logic already merged — a Base-native door fits. |
+| 6 | `agenthill/vaultpilot-mcp` · 08-16 | **@szhygulin** (owner; 08-06 second-LLM check optional; fail-closed submit gate 07-26). **@graciangabriel8** — swap/security refactors 07-26 | **No** — human signs on Ledger via WalletConnect/HID; agent proposes; prepare↔send fingerprint + 4byte check | Closest philosophical twin (human signs, independent decode, fail-closed). Their README lists a hosted MCP endpoint as unshipped roadmap; ours exists. Ask = cross-listing + mutual threat-model review, not "switch". Reachable with hands today. |
+| 7 | `lopushok9/Agent-Layer` · 08-16 | **@lopushok9** — sole author; 0.1.95 on 08-16; 08-15 "Add Uniswap LP pool and position discovery"; ships as a Claude Code plugin marketplace AND a ClawHub plugin | Local wallet runtime signs on the user's machine under policy (agent gets capabilities, not keys) | Same thesis, same hosts (Claude Code + OpenClaw), overlapping asks (swaps, yield, tokenized stocks → our Robinhood 4663 lane). "We're the guarded tx layer under your wallet runtime." |
+| 8 | `ChainGPT-org/chaingpt-claude-skill` · 08-17 | **@ceoguy** — 08-10 `feat(mcp): chaingpt_signals_feed`; 06-29 plugin fixes | Own key (agent EOA with per-tx/daily caps + ERC-4337 caps; policy file "outside the model's reach") | 154 tools incl. CoW/1inch swaps, Aave/Lido/Morpho, Hyperliquid + Drift perps, x402, DCA — the same verb set, guarded by CAPS not by decode. They will have hit the MetaMask/HL-1337 class for human users; the delegated door is a story they'll recognize. |
+| 9 | `EkuboProtocol/wallet` · 08-18 | **@moodysalem** (Moody Salem, ex-Uniswap core; sole committer, daily) — 08-18 "Add a Base endpoint that answers the whole signing path", policy `review` effect, release 1.3.1 | Wallet app signs locally under policy; agents reach it over an MCP bridge (agent never holds the key) | He builds "the wallet that decides"; we build "what the agent asks the wallet to sign" (guarded per-venue builds). Pitch: Pantessa sign links / desk as a build source his policy can `review`. High-signal, low-volume; will read a threat model. Hands door works today. |
+| 10 | `internet-court/internet-court-skill` · 08-11 (★3.7k) | **@rasca** — sole author; v0.2.0 08-11 (Solana + refreshed vendored MetaMask smart-accounts-kit / x402-erc7710 / agentic-wallet / Privy connectors) | Delegated (ERC-7710 permissions granted by the human's smart account; agent signs within them) | A Claude Code trust-layer plugin that catalogs "how agents get money hands"; our model (agent proposes a sentence, human EOA signs, guard verifies) is the OTHER answer to his question — a natural catalog row and a drop-in vendored skill. |
+
+**Adjacent (worth one DM each, lower fit):** `erc-8004/erc-8004-contracts`
+(★231, 08-15 — **@marcoderossi90 added Robinhood Chain 4663 to the
+registry three days ago**; our `/agents/<hash>` record is a natural 8004
+reputation feed and we are one of the few with real signed flows on
+4663); `altananetwork/altana-sdk` (08-17, session-key delegation MCP on
+BNB/EVM — @dhernz/@gabonaut; on-thesis, tiny); `tkhq/turnkey-agent-skills`
+(borderline: main last commit 05-19, one open PR 08-17).
+
+**Listing paths (no owner gate except the official registry):**
+`punkpeye/awesome-mcp-servers` PR (fast-tracked if agent-authored);
+`BankrBot/skills` PR — their `uniswap-driver` skill already sells the
+"plan → deep link → human signs on the Uniswap UI" pattern, so a `pantessa`
+skill (sentence → `/i` sign link, guarded, multi-venue) sits beside it
+(maintainers **@saltoriousSIG**, **@0xsnackbaker** merging catalog PRs
+08-11/14); ClawHub (OpenClaw registry) once a skill wrapper exists;
+registry.modelcontextprotocol.io via `registry/*.server.json` (owner —
+namespace verification).
+
+### The 3-line ask, in Nate's voice (two variants — pick by the "signs today?" column)
+
+**For rows 1–5, 7, 8 (agent signs with its own key today) — send AFTER the desk flip:**
+> Your agent already signs. Ours never lets the model write calldata: it states the intent over MCP, we compile + independently re-decode it fail-closed, and either the human's own wallet signs the link or your agent signs its own legs behind that guard, with a signed webhook back and a public track record page nobody can fake.
+> Free right now: `claude mcp add --transport http pantessa-desk https://www.pantessa.com/api/broker/mcp` — call `broker_capabilities`, then `broker_open` with "Swap $20 of USDC to ETH on Base".
+> I'd like 30 minutes on a call this week to watch you wire it and hear what your users would need. Background first: pantessa.com/rebrand (we were Yeetful; an old demo host got blocklisted; the guard is our answer).
+
+**For rows 6, 9, 10 (already human-signs) — hands works today, no flip needed:**
+> You already believe the human should sign. Ours is the other half: a plain sentence compiles to a guarded build for the human's wallet, an independent guard re-decodes it, they sign from any wallet via a link — no Ledger-only, no calldata ever crosses the MCP wire.
+> One line: `claude mcp add --transport http pantessa-hands https://hands-mcp.yeetful.com/mcp`, then `prepare_handoff` for "Swap $20 of USDC to ETH on Base".
+> Would you look at the threat model and tell me where it's wrong? Docs: pantessa.com/docs/desk · background: pantessa.com/rebrand.
+
+Per-row one-liner to prepend (the specific reason, so it isn't a blast):
+1 phdargen — "saw #3124 spend controls land; this is the same problem one layer up." · 2 SashaMIT — "you're fixing exact-allowance/EIP-712-bind bugs provider by provider; we generalized that into one guard." · 3 psmiratisu/andrew-virtuals — "your HL TP/SL + builder-code work is our Guardian + builder fee, from the other side." · 4 1bcMax — "'you approve before a cent moves' — we make the approval a wallet signature." · 5 lalalune — "plugin-wallet's prepare-then-confirm, with the human's key doing the confirm." · 6 szhygulin — "your roadmap says hosted MCP endpoint; ours is live — want to cross-list?" · 7 lopushok9 — "same hosts (Claude Code + ClawHub), same asks incl. tokenized stocks — we're the guarded tx layer under a wallet runtime." · 8 ceoguy — "154 tools guarded by caps; ours re-decodes every build — and we hit the MetaMask/HL-1337 wall you'll have hit." · 9 moodysalem — "your Base signing-path endpoint just shipped; we're a build source your policy could `review`." · 10 rasca — "your catalog lists how agents get money hands; here's the human-EOA-signs answer as a vendored skill."
+
+**Metric for B1 (unchanged):** three of the ten (a) call `prepare_handoff`
+or `broker_open` from a key/IP that isn't ours and (b) reply with what's
+missing. Count "can my agent sign?" replies as desk demand. Cost: ~6
+founder-hours; the ten DMs are personal, not a template blast.
