@@ -710,3 +710,65 @@ Per-row one-liner to prepend (the specific reason, so it isn't a blast):
 or `broker_open` from a key/IP that isn't ours and (b) reply with what's
 missing. Count "can my agent sign?" replies as desk demand. Cost: ~6
 founder-hours; the ten DMs are personal, not a template blast.
+
+---
+
+## §10 Round 3 — premortem scorecard (stranger-eye review of what the code lanes shipped)
+
+*Reviewed: uiux.md r1–r5 (#653 @ b5d631b), visuals.md r1–r2 (#651), qa.md
+r1–r3 (#652), security.md r1–r3 (#650), gtm.md r1–r3 (#648), the frames in
+`shots-uiux/h1-r5/` + `shots-visuals/h1/` (+ CLIP-STORYBOARD.md), and the
+integration branch `squad/integration-2026-08-18` @ 990d8c7 read-only
+(NOTE: it carries uiux **r4** fe3f606, not r5 b5d631b — the door title,
+mobile CTA order and accent CTA below are on #653 but NOT yet in the
+integration proof). Verdicts are from code on the branches, not from the
+lane claims.*
+
+| # | Failure mode (§8) | Verdict | Evidence / what remains |
+|---|---|---|---|
+| 1 | USDC but no ETH for gas → offered approve fails in the wallet, invisible | **CLOSED** | #652: `prepareSwapTurn` reads native gas for ERC-20 sells → funding layer's gas-only answer (`native-swap-gas`, "⛽ Your 20 USDC is on Base, but the wallet holds no ETH there…"), pinned in audit:funding. #653 r2: `reportWalletRefusal` wired into `SendTxButton` (pre-broadcast + refused switch, artifacts tx/tx-chain) + `SignOrderButton`; QA r3 drove -32603 → row `wallet-refused`, had_funds TRUE, connector + chain; 4001 user-reject → no row (correct). |
+| 2 | Two prompts / "Spending cap request" / swap auto-fires | **MITIGATED** | #653 r2 hint under step 1 ("Once this confirms, the next step … opens in your wallet automatically — no button hunt", frame 04/05 ✓); r5 makes the step's sign button THE accent CTA (frame 05 ✓). Remains: MetaMask's own "Spending cap request" screen wording is theirs — GTM pre-brief covers it (WEDGE-KIT §script). |
+| 3 | Chain switch prompt refused → dead end | **CLOSED** | #653 r4: switch refusal → inline chain name + "Switch to <chain> & retry" button, and the refusal is logged (`SendTxButton` ~L98). |
+| 4 | /i door offers email/Google; email OTP unproven | **MITIGATED** | #653 r5: door titled "Connect a wallet" + wallet icon when `walletConnectOnly` (`CreateAccountButton.tsx:204`), wallet lane leads, email button no longer stuck on "Starting…". Remains: email is still offered on /i and OTP has never been received on pantessa.com (no MX) — a tester who picks it dead-ends. Owner: prove OTP (THE WEEK item 5) or hide the lane on /i (product call, UI/UX). |
+| 5 | "Did it work?" — no visible ETH arrival | **MITIGATED** | #653 r2: done-receipt line shows amount out ("→ ~0.0052 ETH, min received …") — a quote, not a balance; no post-settle RPC read (UI/UX declined the RPC). Remains: the stranger still opens MetaMask to confirm. Owner of the residual: UI/UX (one balance read post-`settled`), low priority for the drill — GTM script has them open the wallet's activity anyway. |
+| 6 | "Sign in & save" reads as a third signature | **CLOSED** | #653 r2: bar reads "Optional — you're done here; the money moved…" (`IntentRuntime.tsx:628`). |
+| 7 | /rebrand disclosure; /i page carried no rebrand link | **CLOSED** (page) / **process** (DM) | #653 r2: "Pantessa · formerly Yeetful" → /rebrand on the /i splash AND runtime (`IntentRuntime.tsx:422,428`, frame 01 ✓). #648: /rebrand copy corrected (first issue closed on a misread; new issue pending). GTM keeps the disclosure in the DM + counts "no because of rebrand" (WEDGE-KIT tally). |
+| 8 | Rabby + MetaMask both injected → wrong account signs | **OPEN (process only)** | No code change; WEDGE-KIT screen now says "one wallet extension only (MetaMask or Rabby, not both)". Acceptable for a watched drill; owner of the residual: none needed this week. |
+| 9 | Mobile / WalletConnect | **OPEN (owner)** | QA r1 verified `NEXT_PUBLIC_WC_PROJECT_ID` is NOT set on prod — the connect modal offers only Browser Wallet / MetaMask / Coinbase; phones must use MetaMask mobile's in-app browser. #653 r5 puts the /i CTA above the fold on ≤sm (`max-sm:order-1`, frame dark-375/01 ✓ — the r5 frame, not the visuals' older one). Owner: set the env or keep "desktop or MetaMask mobile browser" in the DM. |
+| 10 | "likely to fail" sim race / revert | **MITIGATED** | Unchanged code (750 ms post-switch wait + allowance-visibility wait); the estimate error text now lands as a `wallet-refused` row. Remains (QA r3 finding): the row's `reply` stores viem's wrapper "An internal error was received." — the wallet's actual words (`error.details` / `data.message` / `cause.message`) are LOST. Owner: UI/UX, one-line fix in `SendTxButton` (`detail: msg` → prefer details/cause). Not a drill blocker (Nate is watching the screen). |
+
+**NEW — things a stranger would still trip on that no lane caught (from the frames):**
+- **N1 (UI/UX, tiny):** the in-flight sign button reads **"Sign in wallet…"** (frame 05, `SendTxButton.tsx:274`) — a stranger who just saw a "Connect a wallet" door and will later see "Sign in & save" reads this as a LOGIN step. "Confirm in your wallet…" is unambiguous.
+- **N2 (UI/UX, low):** the built state's header carries **"MAKE A LINK" and "OPEN THE APP"** chips (frames 02–06) — two exit ramps sitting above the one card the stranger must finish; "OPEN THE APP" drops them into /chat and the card is gone. Hide both until `settled` on /i, or demote to the footer.
+- **N3 (Visuals × UI/UX, low):** vocabulary mismatch between the DM unfurl and the page — the OG card now says "FROM @HANDLE · YOUR WALLET SIGNS", the /i splash eyebrow still says "**CALL** · BY @HANDLE" (`linkLockup`, frame 01) and the fee disclosure says "The creator of this call…". "Call" is KOL vocabulary; a stranger from a DM doesn't know what a "call" is. Align to "INTENT LINK · FROM @HANDLE" (house links already say "Intent link").
+- **N4 (QA/coordinator, process):** the integration proof (990d8c7) predates uiux r5 — the door title, mobile CTA order and accent CTA are unproven in combination. Re-cut integration with b5d631b before anything deploys.
+- **N5 (coordinator/Nate, merge order):** #650 × #653 overlap on `/api/admin/ask-failures` + `/dashboard/failures` (both add `?internal=1`; QA r3 resolved it on the integration branch — "#653's structure on #650's typed column, raw reader retired") — whoever merges second must carry that resolution; QA recommends #653 rebases onto #650 and drops `internalIdsSince`. #651 must adopt `brandFromRow` on `app/i/[slug]/opengraph-image.tsx` or it re-inlines the brand read and drops #650's rule-7 fence.
+
+### §10.1 The ONE recommendation, re-issued for tomorrow morning
+
+**Unchanged: the watched $20 USDC→ETH swap on Base, one tester at a time.**
+The premortem is 6 closed / 3 mitigated / 1 open-owner; every closed
+item is on an OPEN squad PR, so the drill's go/no-go is a merge+deploy
+list, not a build list.
+
+**Go/no-go for the first watched session (in this order):**
+
+MUST be merged to main AND deployed (verify `www.pantessa.com` serves them — e.g. the /i splash shows "Pantessa · formerly Yeetful" and the door says "Connect a wallet"):
+1. **#652 (QA)** — gas pre-read for ERC-20 sells (`native-swap-gas`) + the funded-row drains + Spot Guardian EOA refusal + stranger-phrasing fixes. Without it, premortem #1 is a silent wall.
+2. **#653 (UI/UX) INCLUDING r5 b5d631b** — wallet-refusal beacon on the H1 sign path, hint line, "Connect a wallet" door, /rebrand link on /i, save bar copy, mobile CTA order, accent CTA. Rebase onto #650 first (N5) or carry the integration resolution.
+3. **#650 (Security)** — `is_internal` on the arrival tables + `ask_failures` + `wallet-refusal` beacon stamping (so the drill's own probes don't pollute the failures queue), rule-7 brand denylist. Merge before #653.
+4. **#651 (Visuals)** — the OG unfurl the DM will show ("FROM @HANDLE · YOUR WALLET SIGNS", "Nothing moves until you sign"); with `brandFromRow` adopted (N5).
+   (#648, #649 are docs — merge any time.)
+
+Owner env/data steps BEFORE the first DM:
+5. Mint the H1 link on `/links` under Nate's CLAIMED @handle (else the unfurl/eyebrow has no WHOSE — visuals r2), and a mirror `Swap $20 of ETH to USDC on Base` for ETH-only testers.
+6. Open `/dashboard/failures?funded=1&kind=wallet-refused` (r3 reads the URL, 25s poll) + `/dashboard/links` (30s poll) in two tabs.
+7. Run `scripts/backfill-internal-arrivals.ts --apply` (after #650 deploys) so the arc/hero stop counting harness — optional for the drill, required before quoting any number.
+8. `UPDATE creator_handles … WHERE handle='yeet'` (the Robinhood-branded test page — rule 7; code already renders house post-#650) — do it before any screenshot leaves the room.
+
+Optional (improve the session, don't gate it):
+9. `NEXT_PUBLIC_WC_PROJECT_ID` on Vercel (phones) — else "desktop or MetaMask mobile browser" in the DM.
+10. N1 "Confirm in your wallet…", N2 hide the header chips on /i until settled, N3 "Intent link · from @handle" — ten-minute UI/UX follow-ups; nice for the clip, not for the drill.
+11. Prove the email OTP once (THE WEEK 5) — until then the DM says "your own MetaMask" and the door leads with the wallet.
+
+NOT gates (explicitly): the NEW MetaMask issue (file it, but the drill doesn't wait), the HL fee env, mail/MX, the Neon rebrand script, `BROKER_DESK_ENABLED` (B plays only). If items 1–4 can't all land tomorrow, run the first session anyway on today's prod with the GTM pre-brief covering #1/#3/#7 by voice — the point is to watch a stranger, and the wall log will be Nate's eyes for one day.
