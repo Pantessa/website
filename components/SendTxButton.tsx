@@ -15,6 +15,8 @@ import { useAccount, usePublicClient, useSendTransaction, useSwitchChain } from 
 import { Loader2, PenLine, CheckCircle2, Circle, ExternalLink, XCircle } from 'lucide-react'
 import type { EvmTxRequest } from '@/lib/transaction-layer'
 import { chainById } from '@/lib/chains'
+import { reportWalletRefusal, walletErrorWords, type WalletArtifact } from '@/lib/wallet-refusal'
+import { SIGN_CTA_CLASS } from '@/lib/sign-cta'
 
 type Status = 'idle' | 'signing' | 'broadcast' | 'confirmed' | 'reverted' | 'error'
 
@@ -36,6 +38,8 @@ export default function SendTxButton({
   summary,
   autoFire = false,
   onConfirmed,
+  refusalArtifact = 'tx',
+  refusalBuildPath,
 }: {
   tx: EvmTxRequest
   summary?: string
@@ -46,6 +50,11 @@ export default function SendTxButton({
   /** Fires once when the receipt lands with status success — SendTxChain
    *  advances the multi-step card on this. */
   onConfirmed?: (hash: string) => void
+  /** Wallet-refusal beacon tag: 'tx' for a lone card, 'tx-chain' when this
+   *  step sits inside SendTxChain (the artifact the row is filed under). */
+  refusalArtifact?: WalletArtifact
+  /** Build-path attribution for the refusal row (e.g. native-swap-uniswap). */
+  refusalBuildPath?: string
 }) {
   const { address, isConnected, connector, chain: connectedChain } = useAccount()
   const { sendTransactionAsync } = useSendTransaction()
@@ -59,12 +68,16 @@ export default function SendTxButton({
   const [status, setStatus] = useState<Status>('idle')
   const [error, setError] = useState('')
   const [hash, setHash] = useState<string | null>(null)
+  // The wallet refused the network switch: the inline line names the chain
+  // and the button itself becomes the "switch & retry" — never just red text.
+  const [switchNeeded, setSwitchNeeded] = useState(false)
 
   const chainInfo = chainById(chainId)
   const explorer = chainInfo?.explorerTx ?? TX_EXPLORER[chainId] ?? 'https://basescan.org/tx/'
 
   const send = async () => {
     setError('')
+    setSwitchNeeded(false)
     if (!isConnected || !address) {
       setError('Connect your wallet first.')
       return
@@ -79,8 +92,17 @@ export default function SendTxButton({
       if (connectedChain?.id !== chainId) {
         try {
           await switchChainAsync({ chainId })
-        } catch {
-          setError(`Switch the wallet to ${chainInfo?.name ?? `chain ${chainId}`} and retry — this transaction is built for that network.`)
+        } catch (e) {
+          // A refused/failed network switch is a wallet wall too (a wallet
+          // that can't reach chain 4663, say) — log it; a plain "no" is not.
+          reportWalletRefusal({
+            wallet: address, artifact: refusalArtifact, buildPath: refusalBuildPath,
+            connector: connector?.id ?? connector?.name, chainId: connectedChain?.id,
+            ask: `${summary ?? tx.action ?? 'transaction'} (switch to ${chainInfo?.name ?? `chain ${chainId}`})`,
+            detail: walletErrorWords(e),
+          })
+          setError(`This transaction is built for ${chainInfo?.name ?? `chain ${chainId}`} — switch the wallet to it (the button below asks again), then it signs.`)
+          setSwitchNeeded(true)
           setStatus('error')
           return
         }
@@ -112,7 +134,10 @@ export default function SendTxButton({
       setStatus(receipt.status === 'success' ? 'confirmed' : 'reverted')
       if (receipt.status === 'success') onConfirmed?.(txHash)
     } catch (e) {
-      const msg = e instanceof Error ? e.message.split('\n')[0] : 'Transaction failed.'
+      // The card shows the wallet's own words too (same helper as the beacon):
+      // viem's wrapper line hid "insufficient funds for gas" behind
+      // "An internal error was received." (QA r4).
+      const msg = e instanceof Error ? walletErrorWords(e) : 'Transaction failed.'
       if (/timed out while waiting/i.test(msg) && txHash) {
         // A wait timeout is NOT a failure — the tx is broadcast and usually
         // mines fine. Don't paint it red; keep watching in the background so
@@ -140,6 +165,19 @@ export default function SendTxButton({
           setError('Couldn’t verify the receipt after 10 minutes — check the explorer link above; if it shows success, the transfer landed.')
         })()
         return
+      }
+      // The wallet (or its RPC estimate) refused a built + guarded tx: the
+      // #1 predicted stranger failure is "approve fails — USDC present, zero
+      // ETH for gas", which lives only in this red text unless it's filed.
+      // Fire-and-forget; human rejections are dropped inside the beacon.
+      // Only pre-broadcast errors are the wallet's — a revert after a hash
+      // is the chain's, and reads as 'reverted' above.
+      if (!txHash) {
+        reportWalletRefusal({
+          wallet: address, artifact: refusalArtifact, buildPath: refusalBuildPath,
+          connector: connector?.id ?? connector?.name, chainId: connectedChain?.id,
+          ask: summary ?? tx.action ?? 'transaction', detail: walletErrorWords(e),
+        })
       }
       setError(
         /rejected|denied/i.test(msg)
@@ -231,11 +269,19 @@ export default function SendTxButton({
           <button
             onClick={() => void send()}
             disabled={inFlight}
-            className="inline-flex items-center gap-1.5 text-[12px] font-medium px-3 py-1.5 max-lg:min-h-10 rounded-full border border-[var(--line-2)] text-[color:var(--muted)] hover:text-white hover:border-white disabled:opacity-50 transition-colors"
+            className={SIGN_CTA_CLASS}
             title={`Sign and broadcast this ${tx.action ?? 'transaction'} from your wallet`}
           >
             {inFlight ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <PenLine className="w-3.5 h-3.5" />}
-            {status === 'signing' ? 'Sign in wallet…' : status === 'broadcast' ? 'Waiting for confirmation…' : status === 'error' ? `Retry — sign & send ${tx.action ?? 'transaction'}` : `Sign & send ${tx.action ?? 'transaction'}`}
+            {status === 'signing'
+              ? 'Confirm in your wallet…'
+              : status === 'broadcast'
+                ? 'Waiting for confirmation…'
+                : status === 'error' && switchNeeded
+                  ? `Switch to ${chainInfo?.name ?? `chain ${chainId}`} & retry`
+                  : status === 'error'
+                    ? `Retry — sign & send ${tx.action ?? 'transaction'}`
+                    : `Sign & send ${tx.action ?? 'transaction'}`}
           </button>
           {error && <span className="text-[12px] text-[color:var(--fail)]">{error}</span>}
         </div>

@@ -113,13 +113,13 @@ export default function TrustDocsPage() {
         </p>
         <ul>
           <li>
-            <strong><Link href="/docs/jobs">Jobs</Link></strong> — a compound intent compiles
+            <strong><Link href="/docs/jobs">Jobs</Link></strong>{' '}— a compound intent compiles
             into steps, but each transaction is built fresh when it&apos;s offered and{' '}
             <strong>you sign every one</strong>. Settlement between steps is verified
             server-side, never assumed.
           </li>
           <li>
-            <strong>Recurring buys (DCA)</strong> — &ldquo;buy $10 of AAPL every week&rdquo;
+            <strong>Recurring buys (DCA)</strong>{' '}— &ldquo;buy $10 of AAPL every week&rdquo;
             creates a schedule, not an authorization. Each due period compiles a one-step job you
             sign; miss a week and it lapses rather than buying behind your back. See{' '}
             <Link href="/docs/jobs">Jobs</Link>.

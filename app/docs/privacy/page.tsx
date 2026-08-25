@@ -43,10 +43,10 @@ export default function PrivacyPage() {
           permanent by design.
         </p>
         <p>
-          <strong>Sign-in &amp; account data.</strong> When you sign in or create an embedded wallet,
+          <strong>Sign-in &amp; account data.</strong>{' '}When you sign in or create an embedded wallet,
           authentication is handled by Coinbase Developer Platform (&ldquo;CDP&rdquo;). Depending on
           the method, we or CDP receive: your <strong>email address</strong> (email sign-in), or
-          basic profile details from <strong>Google or X</strong> single sign-on (such as your name,
+          basic profile details from <strong>Google or X</strong>{' '}single sign-on (such as your name,
           email, and a provider account identifier). We never receive your Google, X, or wallet
           password, and the embedded wallet&rsquo;s private keys are held in CDP&rsquo;s secure
           infrastructure, not by us.

@@ -95,11 +95,11 @@ export default function FirstFiveMinutesPage() {
             artifact is safe to give.
           </li>
           <li>
-            <Link href="/docs/jobs">Jobs: standing intents</Link> — multi-step asks, recurring
+            <Link href="/docs/jobs">Jobs: standing intents</Link>{' '}— multi-step asks, recurring
             buys, and what &ldquo;tell it once&rdquo; compiles into.
           </li>
           <li>
-            <Link href="/docs/embed">Embed the chat</Link> — this whole thing on your own site, in
+            <Link href="/docs/embed">Embed the chat</Link>{' '}— this whole thing on your own site, in
             five lines, signing with your page&apos;s wallet.
           </li>
         </ul>

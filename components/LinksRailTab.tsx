@@ -18,6 +18,7 @@ import { useIntentLinks, type LinkRow } from '@/lib/intent-links-ui'
 import { dismissOnboarding, onboardingDismissed, useOnboardingStatus, type OnboardingStatus } from '@/lib/onboarding'
 import MintLinkModal from '@/components/MintLinkModal'
 import CreatorPageModal from '@/components/CreatorPageModal'
+import { LivePill } from '@/components/LivePill'
 
 // One CTA look for every journey step — accent-based so both themes hold
 // (the done-state emerald sweep is #597 Lane U territory; don't add to it).
@@ -123,7 +124,7 @@ function JourneyStrip({
 }
 
 function SignedInLinks({ activeSlugs }: { activeSlugs: string[] }) {
-  const { links, earnings, reload } = useIntentLinks()
+  const { links, earnings, reload, updatedAt } = useIntentLinks()
   const { status, refresh: refreshStatus } = useOnboardingStatus()
   const [journeyDismissed, setJourneyDismissed] = useState(true)
   const [mintOpen, setMintOpen] = useState(false)
@@ -258,12 +259,16 @@ function SignedInLinks({ activeSlugs }: { activeSlugs: string[] }) {
             Name your page → one branded page for every link
           </button>
         )}
-        <Link
-          href="/dashboard/links"
-          className="block text-[10px] text-[color:var(--muted-2)] hover:text-[color:var(--muted)] transition-colors"
-        >
-          Funnels, branding{earnings && earnings.totalEarnedUsd > 0 ? ', earnings' : ''} → Intent links
-        </Link>
+        <div className="flex items-center justify-between gap-2">
+          <Link
+            href="/dashboard/links"
+            className="block text-[10px] text-[color:var(--muted-2)] hover:text-[color:var(--muted)] transition-colors"
+          >
+            Funnels, branding{earnings && earnings.totalEarnedUsd > 0 ? ', earnings' : ''} → Intent links
+          </Link>
+          {/* the funnel re-reads itself every 30s while visible */}
+          {links && links.length > 0 && <LivePill updatedAt={updatedAt} className="flex-shrink-0" />}
+        </div>
       </div>
 
       <MintLinkModal

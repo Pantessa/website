@@ -198,8 +198,10 @@ function CreateAccountModal({
 
         {step === 'email' && (
           <form onSubmit={sendCode}>
-            <div className="ca__icon"><Mail width={20} height={20} /></div>
-            <h2 className="ca__title">Sign in to Pantessa</h2>
+            {/* Connect-to-act surfaces (/i): the door is a WALLET door — no
+                "sign in", no mail icon; connecting IS the whole step. */}
+            <div className="ca__icon">{walletConnectOnly ? <Wallet width={20} height={20} /> : <Mail width={20} height={20} />}</div>
+            <h2 className="ca__title">{walletConnectOnly ? 'Connect a wallet' : 'Sign in to Pantessa'}</h2>
 
             {/* Connect an existing wallet — top of the list. Closes this modal
                 and opens the wagmi connect modal. Default: connectAndSignIn
@@ -233,7 +235,10 @@ function CreateAccountModal({
                   aria-label={p.label}
                   title={p.label}
                 >
-                  <GoogleGlyph />
+                  {/* Visible label, not glyph-only: with a single provider the
+                      icon-row design read as a wide empty button with a "G"
+                      in it (375px stranger drill, squad 2026-08-18). */}
+                  <GoogleGlyph /> {p.label}
                 </button>
               ))}
             </div>
@@ -255,9 +260,12 @@ function CreateAccountModal({
               className="ca__input"
             />
             {error && <p className="ca__error" role="alert">{error}</p>}
-            <button type="submit" className="ca__submit" disabled={busy || !isInitialized}>
-              {busy ? <Loader2 className="ca__spin" width={16} height={16} /> : null}
-              {!isInitialized ? 'Starting…' : busy ? 'Sending…' : 'Continue with email'}
+            {/* While the embedded-wallet SDK boots the submit is a real
+                loading state ("Preparing the email lane…" + spinner), never a
+                disabled button stuck on "Starting…" — that read as broken. */}
+            <button type="submit" className="ca__submit" disabled={busy || !isInitialized} aria-busy={busy || !isInitialized}>
+              {busy || !isInitialized ? <Loader2 className="ca__spin" width={16} height={16} /> : null}
+              {!isInitialized ? 'Preparing the email lane…' : busy ? 'Sending…' : 'Continue with email'}
             </button>
 
             <p className="ca__consent">

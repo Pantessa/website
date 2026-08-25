@@ -236,7 +236,22 @@ export default function SendTxChain({
                   {/* keyed by step so the inner Sign→Broadcast→Confirmed stepper resets per step.
                       Steps after the first auto-request the wallet signature on mount — the user
                       already committed by signing step 1; popup follows popup, no button hunt. */}
-                  <SendTxButton key={i} tx={step.tx} summary={step.title} autoFire={i > 0} onConfirmed={(hash) => void advance(i, hash)} />
+                  <SendTxButton
+                    key={i}
+                    tx={step.tx}
+                    summary={step.title}
+                    autoFire={i > 0}
+                    onConfirmed={(hash) => void advance(i, hash)}
+                    refusalArtifact="tx-chain"
+                    refusalBuildPath={chain.refresh?.kind}
+                  />
+                  {/* The auto-advance reads as "why twice?" to a first-timer:
+                      say up front that the next popup follows on its own. */}
+                  {i < steps.length - 1 && (
+                    <div className="mt-1 text-[11px] text-[color:var(--muted-2)]">
+                      Once this confirms, the next step ({steps[i + 1].title}) opens in your wallet automatically — no button hunt.
+                    </div>
+                  )}
                 </div>
               )}
             </li>
@@ -245,10 +260,15 @@ export default function SendTxChain({
       </ol>
 
       {phase === 'done' && (
-        <div className="flex items-center gap-2 text-[12px]">
-          <CheckCircle2 className="w-4 h-4 text-[color:var(--done)] flex-shrink-0" />
-          <span className="text-[color:var(--done)] font-medium">Done — every step confirmed on-chain</span>
-          {chain.summary && <span className="text-[color:var(--muted)] truncate">— {chain.summary}</span>}
+        <div className="text-[12px]">
+          <div className="flex items-center gap-2">
+            <CheckCircle2 className="w-4 h-4 text-[color:var(--done)] flex-shrink-0" />
+            <span className="text-[color:var(--done)] font-medium">Done — every step confirmed on-chain</span>
+          </div>
+          {/* The receipt line WRAPS (was truncate): the summary carries the
+              amount out ("→ ~0.0052 ETH, min received …") — the closest thing
+              to "you now hold X" without a fresh balance RPC. */}
+          {chain.summary && <div className="mt-0.5 ml-6 text-[color:var(--muted)]">{chain.summary}</div>}
         </div>
       )}
     </div>

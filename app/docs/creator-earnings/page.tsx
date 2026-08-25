@@ -70,7 +70,7 @@ export default function CreatorEarningsDocsPage() {
         <p>
           Active links mirror the plan tiers: <strong>3</strong> on Builder ($0),{' '}
           <strong>25</strong> on Growth, <strong>unlimited</strong> on Scale — see{' '}
-          <Link href="/pricing">pricing</Link>. The cap only gates <em>new</em> mints: links
+          <Link href="/pricing">pricing</Link>. The cap only gates <em>new</em>{' '}mints: links
           you&apos;ve shared keep working forever, revoking one frees a slot instantly, and a
           revoked link&apos;s funnel and earnings history are never destroyed.
         </p>
@@ -79,7 +79,7 @@ export default function CreatorEarningsDocsPage() {
         <p>
           Every creator-minted link page tells the visitor plainly: <em>&ldquo;The creator of
           this link earns half of Pantessa&apos;s 0.20% conversion fee. Sales, transfers, and
-          bridges are always fee-free.&rdquo;</em> The visitor&apos;s price is identical with or
+          bridges are always fee-free.&rdquo;</em>{' '}The visitor&apos;s price is identical with or
           without your link — your cut comes out of Pantessa&apos;s fee, not on top of it.
         </p>
       </div>
