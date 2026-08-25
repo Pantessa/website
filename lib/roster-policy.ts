@@ -50,8 +50,6 @@ export const ROSTER_MAX_MANDATE_CHARS = 300
 export const ROSTER_MAX_PENDING_PROPOSALS = 3
 /** Trailing-24h proposal-estimate budget, as a multiple of the slot cap. */
 export const ROSTER_DAILY_BUDGET_MULT = 3
-/** Consecutive declines that bench the agent. */
-export const ROSTER_BENCH_DECLINE_STREAK = 3
 
 // ---------------------------------------------------------------------------
 // Kill switch (fail-closed)
@@ -230,10 +228,15 @@ export function proposalBudgetRefusal(kind: 'pending-full' | 'daily-budget', cap
     : `This slot's daily mandate budget ($${capUsd * ROSTER_DAILY_BUDGET_MULT} = ${ROSTER_DAILY_BUDGET_MULT}× the $${capUsd} cap, trailing 24h of estimates) is spent. Resubmit tomorrow or ask the wallet owner to raise the cap.`
 }
 
-/** Pure bench decision: ANY over-cap attempt benches immediately (probing
- *  the cap is itself the offense); otherwise a decline streak benches. */
-export function decideBench(i: { consecutiveDeclines: number; capBreach: boolean }): boolean {
-  return i.capBreach || i.consecutiveDeclines >= ROSTER_BENCH_DECLINE_STREAK
+/** Pure bench decision: ANY over-cap attempt benches immediately — probing
+ *  the cap is itself the offense. That is the ONLY auto-bench trigger:
+ *  decline-streak benching was KILLED by the ideation judges (2026-08-25) —
+ *  a decline is a signal, not an offense; a quota-based propose right (M3)
+ *  may meter noisy agents later. `consecutiveDeclines` is accepted (and
+ *  ignored) so callers can keep passing their streak counters without a
+ *  breaking change when M3 lands. */
+export function decideBench(i: { capBreach: boolean; consecutiveDeclines?: number }): boolean {
+  return i.capBreach
 }
 
 // ---------------------------------------------------------------------------

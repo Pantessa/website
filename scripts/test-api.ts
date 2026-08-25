@@ -67,7 +67,6 @@ import {
   rosterFireConsentMessage,
   rosterHireConsentMessage,
   verifyRosterConsent,
-  ROSTER_BENCH_DECLINE_STREAK,
   ROSTER_DAILY_BUDGET_MULT,
   ROSTER_MAX_MANDATE_CHARS,
   ROSTER_MAX_PENDING_PROPOSALS,
@@ -3590,7 +3589,7 @@ async function main() {
     })(),
   )
   check(
-    'roster: aggregate fences — pending-full, daily budget (3× cap / 24h), and the bench decision',
+    'roster: aggregate fences — pending-full, daily budget (3× cap / 24h); bench on cap breach ONLY (decline-streak benching killed)',
     (() => {
       const full = decideProposalBudget({ estUsd: 5, capUsd: 50, pendingCount: ROSTER_MAX_PENDING_PROPOSALS, sum24hUsd: 5 })
       const budget = decideProposalBudget({ estUsd: 10, capUsd: 50, pendingCount: 0, sum24hUsd: 50 * ROSTER_DAILY_BUDGET_MULT + 1 })
@@ -3599,9 +3598,8 @@ async function main() {
         full === 'pending-full' &&
         budget === 'daily-budget' &&
         fine === null &&
-        decideBench({ consecutiveDeclines: 0, capBreach: true }) && // probing the cap benches immediately
-        decideBench({ consecutiveDeclines: ROSTER_BENCH_DECLINE_STREAK, capBreach: false }) &&
-        !decideBench({ consecutiveDeclines: ROSTER_BENCH_DECLINE_STREAK - 1, capBreach: false })
+        decideBench({ capBreach: true }) && // probing the cap benches immediately
+        !decideBench({ capBreach: false, consecutiveDeclines: 99 }) // declines NEVER bench (ideation judges, 2026-08-25)
       )
     })(),
   )
