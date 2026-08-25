@@ -104,7 +104,7 @@ export default function RebrandPage() {
               archived the repositories in public view, removed every link from our product,
               and adopted a standing internal rule: never host or brand anything that looks
               like someone else&apos;s product. The listed subdomain serves nothing today and
-              never will again. An appeal to correct the record is open at{' '}
+              never will again. Our first removal request,{' '}
               <a
                 className="text-[color:var(--accent)] hover:underline underline-offset-2"
                 href="https://github.com/MetaMask/eth-phishing-detect/issues/273376"
@@ -112,7 +112,12 @@ export default function RebrandPage() {
               >
                 MetaMask/eth-phishing-detect#273376
               </a>
-              .
+              , was closed on 2026-07-30 after the wrong domains were checked (the two we had
+              explicitly placed out of scope, not the listed subdomain); the entry is still live
+              on both lists as of 2026-08-18. A new removal request is being filed under our
+              name and will be linked here the moment it exists.
+              {/* TODO(owner): once Draft A′ (DISCLOSURE-REBRAND.md) is posted, replace this
+                  sentence with a link to the new issue and update the table row below. */}
             </p>
           </div>
 
@@ -165,7 +170,11 @@ export default function RebrandPage() {
                 </tr>
                 <tr>
                   <td className="text-[color:var(--fg)] whitespace-nowrap">The appeal</td>
-                  <td>MetaMask eth-phishing-detect issue 273376, filed by us, in our name</td>
+                  <td>
+                    MetaMask eth-phishing-detect issue 273376, filed by us, in our name — closed
+                    2026-07-30 on a misread of the domain; a new request is being filed (link
+                    to follow here)
+                  </td>
                 </tr>
               </tbody>
             </table>

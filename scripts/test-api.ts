@@ -1384,8 +1384,12 @@ async function main() {
 
   // /rebrand — the public record of the Yeetful → Pantessa rename (the §1.1
   // disclosure anchor cited by the MetaMask/Blockaid/SEAL drafts). A security
-  // reviewer must find both brand names, the open appeal number, and the
-  // retired-fork admission in the served HTML, no JS required.
+  // reviewer must find both brand names, the appeal number, and the
+  // retired-fork admission in the served HTML, no JS required. Since
+  // 2026-08-18 the page must ALSO be honest that #273376 was CLOSED (on a
+  // misread of the domain — the maintainer checked the out-of-scope hosts)
+  // and that a new request is being filed; a public record that calls a dead
+  // issue "open" is exactly the kind of stale claim a reviewer catches first.
   const rebrandRes = await fetch(`${BASE}/rebrand`)
   const rebrandHtml = await rebrandRes.text()
   check(
@@ -1394,6 +1398,12 @@ async function main() {
       rebrandHtml.includes('Yeetful is now Pantessa') &&
       rebrandHtml.includes('273376') &&
       rebrandHtml.includes('uniswap-embed.yeetful.com'),
+  )
+  check(
+    'rebrand: the first removal request is stated as CLOSED (misread) with a new one being filed — never "open"',
+    !/appeal to correct the record is open/i.test(rebrandHtml) &&
+      /was closed on 2026-07-30/.test(rebrandHtml) &&
+      /new removal request is being filed/i.test(rebrandHtml),
   )
   const footerHomeHtml = await (await fetch(`${BASE}/`)).text()
   check('rebrand: reachable from the footer on every page', footerHomeHtml.includes('href="/rebrand"'))
