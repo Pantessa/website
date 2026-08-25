@@ -222,6 +222,47 @@ export function decideProposalBudget(i: {
   return null
 }
 
+/**
+ * The DB-backed aggregate fence (CONTRACTS v1 §4.4 — REQUIRED for R2):
+ * counts the slot's UNDECIDED proposals (open/handed_off broker intents
+ * whose bound link has no signed event) and the trailing-24h sum of
+ * proposal estimates (the ask's own $ figure — the only sentences that can
+ * bind are explicitly $-priced, so the figure is the estimate), adds THIS
+ * proposal's estimate, and throws the named refusal when a fence trips.
+ *
+ * Wire in lib/roster-propose.ts bindProposalAtOpen, after decideProposalGate:
+ *   await assertProposalBudget(slot.id, slot.capUsd, estUsd)
+ *
+ * Fails OPEN on store hiccups (fence semantics, like the rp: bucket): the
+ * per-proposal cap — fail-closed — remains the hard promise; this bounds
+ * evasion via many small proposals.
+ */
+export async function assertProposalBudget(slotId: string, capUsd: number, estUsd: number | null): Promise<void> {
+  let pendingCount = 0
+  let sum24hUsd = estUsd ?? 0
+  try {
+    const { default: prisma } = await import('@/lib/db')
+    const rows = await prisma.$queryRaw<{ pending: number; sum24: number }[]>`
+      SELECT
+        count(*) FILTER (
+          WHERE state IN ('open', 'handed_off')
+            AND NOT EXISTS (
+              SELECT 1 FROM intent_link_events e WHERE e.slug = broker_intents.link_slug AND e.kind = 'signed'
+            )
+        )::int AS pending,
+        coalesce(sum((substring(ask from '\\$\\s?([0-9]+(?:\\.[0-9]+)?)'))::float)
+          FILTER (WHERE created_at > now() - interval '24 hours'), 0)::float AS sum24
+      FROM broker_intents WHERE roster_slot_id = ${slotId}
+    `
+    pendingCount = Number(rows[0]?.pending ?? 0)
+    sum24hUsd += Number(rows[0]?.sum24 ?? 0)
+  } catch {
+    return // fail-open: fence, not promise
+  }
+  const tripped = decideProposalBudget({ estUsd, capUsd, pendingCount, sum24hUsd })
+  if (tripped) throw new Error(proposalBudgetRefusal(tripped, capUsd))
+}
+
 export function proposalBudgetRefusal(kind: 'pending-full' | 'daily-budget', capUsd: number): string {
   return kind === 'pending-full'
     ? `This slot already has ${ROSTER_MAX_PENDING_PROPOSALS} undecided proposals — the wallet owner decides those first. Stacking more is refused.`
