@@ -74,6 +74,7 @@ import {
 import { cleanAgentKeyHash, cleanCapUsd, parseMandate, MANDATE_KIND_LABELS, ROSTER_MAX_CAP_USD } from '../lib/roster'
 import { buildDelivery, mintCallbackSecret, signWebhook, validateCallbackUrl } from '../lib/broker-webhook'
 import { agentHandleFor } from '../lib/agent-record'
+import { qualifiesForBoard, rankLeagueRows } from '../lib/league'
 import { addrsUnion, arcQuery } from '../lib/gtm-arc'
 import { isInternalRun, INTERNAL_RUN_HEADER } from '../lib/internal-run'
 import { deskExecuteConsentMessage, cleanSenderLabel } from '../lib/broker-exec'
@@ -3789,6 +3790,88 @@ async function main() {
       body: JSON.stringify({ slotId, wallet: employer.address }),
     })
     check('roster R1: the signed-in owner removes fired history — drill row released', ((await gone.json()) as { deleted?: boolean }).deleted === true)
+  }
+  // ── THE ROSTER (HANDOFF-roster R3/R6, visuals lane): flag + league pins ──
+  console.log('— roster league (lib/league)')
+  check(
+    'roster: ROSTER_ENABLED kill switch is fail-closed (true→on, false/unset→off)',
+    (() => {
+      const prior = process.env.ROSTER_ENABLED
+      try {
+        process.env.ROSTER_ENABLED = 'true'
+        const on = rosterEnabled() === true
+        process.env.ROSTER_ENABLED = 'false'
+        const off = rosterEnabled() === false
+        delete process.env.ROSTER_ENABLED
+        const unset = rosterEnabled() === false // fail-closed when unset
+        return on && off && unset
+      } finally {
+        if (prior === undefined) delete process.env.ROSTER_ENABLED
+        else process.env.ROSTER_ENABLED = prior
+      }
+    })(),
+  )
+  check(
+    'roster: league standings rank real money first, then signed, then intents; ranks 1..n stable',
+    (() => {
+      const row = (handle: string, moneyMovedUsd: number, signedTurns: number, intents: number) => ({
+        handle,
+        displayName: null,
+        mandateKind: null,
+        moneyMovedUsd,
+        signedTurns,
+        walletsServed: 0,
+        intents,
+        maxDrawdownPct: null,
+        lastSeen: new Date(0),
+      })
+      const ranked = rankLeagueRows([
+        row('cccc', 5, 9, 1), // less money loses to more money despite more signs
+        row('aaaa', 10, 1, 1),
+        row('bbbb', 10, 2, 1), // money tie → more signed wins
+        row('eeee', 5, 9, 2), // full-figure tie broken by intents…
+        row('dddd', 5, 9, 1), // …then by handle (cccc before dddd)
+      ])
+      return (
+        ranked.map((r) => r.handle).join(',') === 'bbbb,aaaa,eeee,cccc,dddd' &&
+        ranked.map((r) => r.rank).join(',') === '1,2,3,4,5'
+      )
+    })(),
+  )
+  check(
+    'roster: the board takes only agents a real human has signed for (harness residue never ranks)',
+    qualifiesForBoard({ signedTurns: 1 }) === true && qualifiesForBoard({ signedTurns: 0 }) === false,
+  )
+  // Route fence: the /agents standings index + the /roster front-door preview
+  // are fail-closed behind ROSTER_ENABLED — a server without the flag serves
+  // 404 on both (and on the standings OG card), which for /agents is exactly
+  // today's behavior (the segment had no index page). A flag-on server serves
+  // the real pages instead; the hallmark strings only render from the gated
+  // branch. Per-handle record pages are NOT flag-gated and stay unchanged.
+  {
+    const [agentsRes, rosterRes, ogRes] = await Promise.all([
+      fetch(`${BASE}/agents`),
+      fetch(`${BASE}/roster`),
+      fetch(`${BASE}/agents/opengraph-image`),
+    ])
+    const agentsHtml = await agentsRes.text()
+    const rosterHtml = await rosterRes.text()
+    const agentsOn = agentsRes.status === 200 && agentsHtml.includes('The standings are signatures')
+    const rosterOn = rosterRes.status === 200 && rosterHtml.includes('You keep the only pen')
+    check(
+      'roster: the /agents standings index is fail-closed — 404 without the flag, the real table only with it',
+      agentsRes.status === 404 || agentsOn,
+    )
+    check(
+      'roster: /roster front-door preview is fail-closed the same way',
+      rosterRes.status === 404 || rosterOn,
+    )
+    check(
+      'roster: the standings OG card gates with its page (no data ahead of the flip)',
+      agentsRes.status === 404
+        ? ogRes.status === 404
+        : ogRes.status === 200 && (ogRes.headers.get('content-type') ?? '').includes('image/png'),
+    )
   }
 
   check(
