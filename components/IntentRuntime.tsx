@@ -112,6 +112,15 @@ export default function IntentRuntime({
   // the moment any turn actually builds.
   const [flowNudge, setFlowNudge] = useState(false)
   const [sigDismissed, setSigDismissed] = useState(false)
+  // wagmi sits in 'reconnecting' until every connector settles; a relay that
+  // never answers (offline WalletConnect/CDP init) left the splash on
+  // "checking for a connected wallet" with NO door forever. After a beat the
+  // door renders regardless — a connected wallet still auto-starts.
+  const [walletWaitOver, setWalletWaitOver] = useState(false)
+  useEffect(() => {
+    const t = setTimeout(() => setWalletWaitOver(true), 4000)
+    return () => clearTimeout(t)
+  }, [])
   const [prompt, setPrompt] = useState<{ text: string; send: boolean; at: number } | null>(null)
   // The post-receipt SIWE round-trip renders the waiting card only for a
   // sign-in the visitor ASKED for (the save bar) — never on arrival.
@@ -290,7 +299,7 @@ export default function IntentRuntime({
     // and a found wallet auto-starts the runtime — both moments read as a
     // stall or a hard cut without a stage direction. The loader IS the
     // stage direction: checking → found → fade → the chat takes over.
-    const walletResolving = walletStatus === 'connecting' || walletStatus === 'reconnecting'
+    const walletResolving = (walletStatus === 'connecting' || walletStatus === 'reconnecting') && !walletWaitOver
     return (
       // The splash wears the creator's brand wholesale (bg + accent + logo,
       // scoped here) — the post-connect chat keeps Pantessa's own legibility.
@@ -615,7 +624,7 @@ export default function IntentRuntime({
           fired at the signed event; feed = broker_status server truth. The
           invisible back-and-forth, made visible at the aha moment. */}
       {signed && notify && (
-        <div className="relative flex-shrink-0 border-t border-[var(--line)] bg-[color-mix(in_srgb,var(--bg)_92%,transparent)] backdrop-blur px-4 py-2.5">
+        <div className="yenter relative flex-shrink-0 border-t border-[var(--line)] bg-[color-mix(in_srgb,var(--bg)_92%,transparent)] backdrop-blur px-4 py-2.5">
           <div className="max-w-3xl mx-auto flex items-center gap-2.5">
             <BellRing className="w-4 h-4 flex-shrink-0 text-[color:var(--accent)]" />
             <span className="text-[13px] text-[color:var(--muted)]">
@@ -633,7 +642,7 @@ export default function IntentRuntime({
           live in a local chat; signing in adopts it into the DB
           (session.tsx → adoptLocalChat). */}
       {signed && needsSignIn && (
-        <div className="relative flex-shrink-0 border-t border-[var(--line)] bg-[color-mix(in_srgb,var(--bg)_92%,transparent)] backdrop-blur px-4 py-3">
+        <div className="yenter relative flex-shrink-0 border-t border-[var(--line)] bg-[color-mix(in_srgb,var(--bg)_92%,transparent)] backdrop-blur px-4 py-3">
           <div className="max-w-3xl mx-auto flex flex-wrap items-center justify-between gap-3">
             <span className="text-[13px] text-[color:var(--muted)]">
               <strong className="text-[color:var(--fg)] font-medium">Optional — </strong>
