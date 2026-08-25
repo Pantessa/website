@@ -28,6 +28,7 @@ import BrandIcon from '@/components/BrandIcon'
 import AddMcpModal from '@/components/AddMcpModal'
 import JobsRailTab from '@/components/JobsRailTab'
 import LinksRailTab from '@/components/LinksRailTab'
+import TeamRailTab from '@/components/TeamRailTab'
 
 const RAIL_WIDTH = 248
 
@@ -222,7 +223,9 @@ export default function ChatRail() {
                     ? 'Running work'
                     : railTab === 'links'
                       ? 'Intent links'
-                      : 'Chat history'}
+                      : railTab === 'team'
+                        ? 'Your team'
+                        : 'Chat history'}
               </span>
               <button
                 className="apprail__toggle flex-shrink-0"
@@ -238,6 +241,8 @@ export default function ChatRail() {
               <JobsRailTab onAct={closeOnMobile} />
             ) : railTab === 'links' ? (
               <LinksRailTab />
+            ) : railTab === 'team' ? (
+              <TeamRailTab />
             ) : railTab === 'mcps' ? (
               <>
                 {/* Free / Paid segmented toggle — no counts: the list below

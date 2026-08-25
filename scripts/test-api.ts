@@ -71,6 +71,7 @@ import {
   ROSTER_MAX_MANDATE_CHARS,
   ROSTER_MAX_PENDING_PROPOSALS,
 } from '../lib/roster-policy'
+import { cleanAgentKeyHash, cleanCapUsd, parseMandate, MANDATE_KIND_LABELS, ROSTER_MAX_CAP_USD } from '../lib/roster'
 import { buildDelivery, mintCallbackSecret, signWebhook, validateCallbackUrl } from '../lib/broker-webhook'
 import { agentHandleFor } from '../lib/agent-record'
 import { addrsUnion, arcQuery } from '../lib/gtm-arc'
@@ -3622,6 +3623,174 @@ async function main() {
       return folded && longRefused && emptyRefused
     })(),
   )
+  // ── THE ROSTER R1 (lib/roster + /api/roster) — mandate grammar + slots ───
+  console.log('— roster R1 (lib/roster + /api/roster)')
+  check(
+    'roster R1: the four launch mandates parse to their kinds and the CANONICAL text round-trips idempotently',
+    (() => {
+      const cases: [string, string][] = [
+        ['tile my wallet 60% ETH, 40% USDC', 'shape'],
+        ['keep me 60/40 ETH/USDC', 'shape'], // natural phrasing (ideation) → tile canonical
+        ['buy $25 of ETH weekly', 'dca'],
+        ['protect my ETH in my wallet with a 10% stop', 'protect'],
+        ['supply 25 USDC to aave', 'yield'],
+        ['stake 0.5 ETH on lido', 'yield'],
+      ]
+      return cases.every(([text, kind]) => {
+        const p = parseMandate(text)
+        if ('problem' in p) return false
+        if (p.kind !== kind) return false
+        // The stored sentence is the executor's own canonical form — parsing
+        // it AGAIN must land identically (what a hired proposal compiles from).
+        const rt = parseMandate(p.mandateText)
+        return !('problem' in rt) && rt.kind === p.kind && rt.mandateText === p.mandateText && MANDATE_KIND_LABELS[p.kind].length > 0
+      })
+    })(),
+  )
+  check(
+    'roster R1: garbage refuses BY NAME (all four grammars listed); un-executable flagships refuse by name too',
+    (() => {
+      const garbage = parseMandate('do a backflip with my money please')
+      const conditional = parseMandate('buy $25 of ETH weekly, double on red weeks') // no DCA conditional executor (ideation)
+      const hunt = parseMandate('hunt stable yield, boring only') // no yield-hunt executor (ideation)
+      return (
+        'problem' in garbage &&
+        /tile my wallet/.test(garbage.problem) &&
+        /weekly/.test(garbage.problem) &&
+        /stop/.test(garbage.problem) &&
+        /aave|lido/i.test(garbage.problem) &&
+        'problem' in conditional &&
+        /aren't executable yet|silently ignored/.test(conditional.problem) &&
+        'problem' in hunt &&
+        /isn't an executable mandate yet/.test(hunt.problem)
+      )
+    })(),
+  )
+  check(
+    'roster R1: slot-cap sanitize + agent-hash shape — over-cap refuses by name, hash is 16-hex or nothing',
+    (() => {
+      const over = cleanCapUsd(ROSTER_MAX_CAP_USD + 1)
+      return (
+        cleanCapUsd(null) === 200 &&
+        cleanCapUsd('50') === 50 &&
+        typeof over === 'object' &&
+        /cap at \$/.test(over.problem) &&
+        typeof cleanCapUsd(-3) === 'object' &&
+        cleanAgentKeyHash('AB12CD34EF56AB12') === 'ab12cd34ef56ab12' &&
+        cleanAgentKeyHash('0x' + 'a'.repeat(16)) === null && // 0x-prefixed ≠ the handle shape
+        cleanAgentKeyHash('short') === null
+      )
+    })(),
+  )
+  // The live flow: draft → (private) → hire consent → sign → hired → fire.
+  {
+    const employer = privateKeyToAccount(generatePrivateKey())
+    SIGNED_IN_WALLETS.add(employer.address.toLowerCase())
+    const agentHash = agentHandleFor('roster-r1-drill-agent')
+    const J = { 'content-type': 'application/json' }
+    const post = await fetch(`${BASE}/api/roster`, {
+      method: 'POST',
+      headers: J,
+      body: JSON.stringify({ wallet: employer.address, mandate: 'buy $25 of ETH weekly', capUsd: 50 }),
+    })
+    const posted = (await post.json()) as { slot?: { id: string; status: string; mandateText: string }; internal?: boolean; error?: string }
+    check(
+      'roster R1: connect-to-act draft mint — pending, canonical text stored, internal-run stamp echoed',
+      post.status === 200 && posted.slot?.status === 'pending' && posted.slot.mandateText === 'buy $25 of ETH weekly' && posted.internal === true,
+      posted.error ?? '',
+    )
+    const slotId = posted.slot?.id ?? 'missing'
+    const pubList = (await (await fetch(`${BASE}/api/roster?wallet=${employer.address}`)).json()) as { slots?: { id: string }[] }
+    check(
+      'roster R1: a pending draft is PRIVATE — the public roster never lists it (T1)',
+      (pubList.slots ?? []).every((s) => s.id !== slotId),
+    )
+    const badMint = await fetch(`${BASE}/api/roster/hire`, {
+      method: 'POST',
+      headers: J,
+      body: JSON.stringify({ slotId, wallet: employer.address, agentKeyHash: 'roster-r1-drill-agent' }),
+    })
+    check('roster R1: hiring with a raw agent key (not the 16-hex handle) refuses by name (T8)', badMint.status === 400 && /16-hex|never its raw key/.test(((await badMint.json()) as { error?: string }).error ?? ''))
+    const mint = await fetch(`${BASE}/api/roster/hire`, {
+      method: 'POST',
+      headers: J,
+      body: JSON.stringify({ slotId, wallet: employer.address, agentKeyHash: agentHash }),
+    })
+    const minted = (await mint.json()) as { consentText?: string; error?: string }
+    check(
+      'roster R1: hire consent text is server-composed — carries slot + agent hash + nonce, NEVER the mandate sentence (T9)',
+      mint.status === 200 &&
+        !!minted.consentText &&
+        minted.consentText.includes(`Slot: ${slotId}`) &&
+        minted.consentText.includes(`Agent: ${agentHash}`) &&
+        /Nonce: [0-9a-f]{32}/.test(minted.consentText) &&
+        !minted.consentText.includes('buy $25 of ETH weekly'),
+      minted.error ?? '',
+    )
+    // Without consent: no signature at all → still pending; mallory's
+    // signature over the same text → refused, still pending.
+    const malloryAcct = privateKeyToAccount(generatePrivateKey())
+    const wrongSig = await malloryAcct.signMessage({ message: minted.consentText ?? '' })
+    const wrongHire = await fetch(`${BASE}/api/roster/hire`, {
+      method: 'POST',
+      headers: J,
+      body: JSON.stringify({ slotId, wallet: employer.address, signature: wrongSig }),
+    })
+    check(
+      "roster R1: hire WITHOUT the wallet's own consent refuses — a stranger's signature recovers and is named",
+      wrongHire.status === 401 && /recovers to/.test(((await wrongHire.json()) as { error?: string }).error ?? ''),
+    )
+    const rightSig = await employer.signMessage({ message: minted.consentText ?? '' })
+    const hire = await fetch(`${BASE}/api/roster/hire`, {
+      method: 'POST',
+      headers: J,
+      body: JSON.stringify({ slotId, wallet: employer.address, signature: rightSig }),
+    })
+    const hired = (await hire.json()) as { slot?: { status: string; agentKeyHash: string | null }; error?: string }
+    const pubAfter = (await (await fetch(`${BASE}/api/roster?wallet=${employer.address}`)).json()) as { slots?: { id: string; status: string }[] }
+    check(
+      'roster R1: the hire consent signature flips pending → hired and the slot goes PUBLIC',
+      hire.status === 200 && hired.slot?.status === 'hired' && hired.slot.agentKeyHash === agentHash && (pubAfter.slots ?? []).some((s) => s.id === slotId && s.status === 'hired'),
+      hired.error ?? '',
+    )
+    // Replay: the hire nonce died on success — re-submitting the same
+    // signature must refuse (slot no longer pending + nonce cleared).
+    const replay = await fetch(`${BASE}/api/roster/hire`, {
+      method: 'POST',
+      headers: J,
+      body: JSON.stringify({ slotId, wallet: employer.address, signature: rightSig }),
+    })
+    check('roster R1: a spent hire consent cannot replay (nonce single-use, state machine forward-only)', replay.status === 409)
+    // Fire via the consent door (connect-to-act — no SIWE needed to leave).
+    const fMint = await fetch(`${BASE}/api/roster/fire`, {
+      method: 'POST',
+      headers: J,
+      body: JSON.stringify({ slotId, wallet: employer.address }),
+    })
+    const fMinted = (await fMint.json()) as { consentText?: string }
+    const fSig = await employer.signMessage({ message: fMinted.consentText ?? '' })
+    const fired = await fetch(`${BASE}/api/roster/fire`, {
+      method: 'POST',
+      headers: J,
+      body: JSON.stringify({ slotId, wallet: employer.address, signature: fSig }),
+    })
+    const firedBody = (await fired.json()) as { slot?: { status: string }; error?: string }
+    const pubFired = (await (await fetch(`${BASE}/api/roster?wallet=${employer.address}`)).json()) as { slots?: { id: string }[] }
+    check(
+      'roster R1: fire consent retires the slot (terminal) and it leaves the public roster',
+      fired.status === 200 && firedBody.slot?.status === 'fired' && (pubFired.slots ?? []).every((s) => s.id !== slotId),
+      firedBody.error ?? '',
+    )
+    // Release the row: the signed-in owner may remove fired history.
+    const employerSession = await signIn(employer)
+    const gone = await fetch(`${BASE}/api/roster/fire`, {
+      method: 'POST',
+      headers: { ...J, cookie: employerSession },
+      body: JSON.stringify({ slotId, wallet: employer.address }),
+    })
+    check('roster R1: the signed-in owner removes fired history — drill row released', ((await gone.json()) as { deleted?: boolean }).deleted === true)
+  }
+
   check(
     'broker M3: webhook signature is a deterministic HMAC over the raw body',
     (() => {
