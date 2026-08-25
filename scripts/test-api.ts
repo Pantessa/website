@@ -11850,6 +11850,37 @@ async function main() {
         victimSlot.ok,
       )
 
+      // 8 — the aggregate fence (§4.4, security r3): a slot bounds UNDECIDED
+      // proposals (3) and its trailing-24h estimate sum (3× cap) — both
+      // refuse BY NAME, and a budget trip never benches (cap breach only).
+      const sB = await hireSlot(employer2, 'buy $25 of ETH weekly', 10)
+      const budgetProps: string[] = []
+      let threeOk = true
+      for (let i = 0; i < 3; i++) {
+        const r = await call('broker_open', { ask: 'Buy $9 of AAPL', agent_key: rosterAgentKey, wallet: employer2.address })
+        if (r.isError) threeOk = false
+        else budgetProps.push(String(r.payload.intentId))
+      }
+      const fourth = await call('broker_open', { ask: 'Buy $9 of AAPL', agent_key: rosterAgentKey, wallet: employer2.address })
+      check(
+        'roster R2 §4.4: the 4th undecided proposal refuses by name (3 pending max)',
+        threeOk && fourth.isError && /already has 3 undecided proposals/.test(String(fourth.payload)),
+        fourth.isError ? String(fourth.payload).slice(0, 100) : 'no refusal',
+      )
+      for (const id of budgetProps) await call('broker_close', { intent_id: id })
+      const overBudget = await call('broker_open', { ask: 'Buy $9 of AAPL', agent_key: rosterAgentKey, wallet: employer2.address })
+      const slotAfterBudget = ((await (await fetch(`${BASE}/api/roster?wallet=${employer2.address}`)).json()) as {
+        slots?: { id: string; status: string }[]
+      }).slots ?? []
+      check(
+        'roster R2 §4.4: the 3×cap trailing-24h budget refuses by name once pending clears — and a budget trip never benches',
+        overBudget.isError &&
+          /daily mandate budget \(\$30 = 3× the \$10 cap/.test(String(overBudget.payload)) &&
+          slotAfterBudget.some((s) => s.id === sB.slotId && s.status === 'hired'),
+        overBudget.isError ? String(overBudget.payload).slice(0, 100) : 'no refusal',
+      )
+      check('roster R2 §4.4: budget slot released (fire)', await fireSlot(employer2, sB.slotId))
+
       // Release every roster drill row: fire staffed slots, then SIWE-owned
       // removal of fired history + leftover drafts.
       await fireSlot(victim, victimSlot.slotId)

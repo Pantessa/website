@@ -29,7 +29,7 @@
 
 import prisma from '@/lib/db'
 import { MANDATE_KIND_LABELS, type MandateKind, type SlotStatus } from '@/lib/roster-client'
-import { assertUnderSlotCap } from '@/lib/roster-policy'
+import { assertProposalBudget, assertUnderSlotCap } from '@/lib/roster-policy'
 import { moneyShaped } from '@/lib/ask-failure'
 
 export interface RosterBadge {
@@ -149,6 +149,13 @@ export async function bindProposalAtOpen(
     if (slot.status === 'hired' && /caps proposals at|could not be priced/.test(String(e))) await benchSlot(slot.id)
     throw e
   }
+  // Aggregate fence (CONTRACTS §4.4, REQUIRED — security r3): a per-proposal
+  // cap alone invites death-by-a-thousand-small-proposals, so a slot also
+  // bounds UNDECIDED proposals (3) and its trailing-24h estimate sum
+  // (3× cap). Refuses by name; fence semantics (fail-open in the helper) —
+  // the per-proposal cap above stays the fail-closed promise. A budget trip
+  // never benches: only a cap BREACH is an offense.
+  await assertProposalBudget(slot.id, slot.capUsd, estUsd)
   return { slot, badge: slotBadge(slot) }
 }
 
