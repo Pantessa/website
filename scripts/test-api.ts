@@ -55,6 +55,7 @@ import {
   DESK_MAX_INTENT_USD,
 } from '../lib/broker-policy'
 import {
+  assertProposalBudget,
   assertRosterOpen,
   assertUnderSlotCap,
   cleanMandateInput,
@@ -3586,6 +3587,20 @@ async function main() {
         underOk = false
       }
       return overRefused && nullMoneyRefused && underOk
+    })(),
+  )
+  check(
+    'roster R2: assertProposalBudget (DB-backed §4.4 fence) — clean slot passes, fence errors fail open',
+    await (async () => {
+      // An unknown slot has 0 pending and no 24h spend — a $10 proposal under
+      // a $50 cap must pass without throwing (and a store hiccup fails OPEN,
+      // exercised implicitly when the column is absent in a stale DB).
+      try {
+        await assertProposalBudget(`no-such-slot-${Date.now()}`, 50, 10)
+        return true
+      } catch {
+        return false
+      }
     })(),
   )
   check(
