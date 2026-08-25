@@ -124,11 +124,20 @@ export default function JobsRailTab({ onAct }: { onAct?: () => void }) {
               <InboxIcon className="mt-0.5 h-3.5 w-3.5 flex-shrink-0 text-[color:var(--accent)]" />
               <span className="min-w-0 flex-1">
                 <span className="block truncate text-xs font-medium">{it.ask}</span>
+                {/* THE ROSTER (R2): a hired agent's proposal wears its
+                    mandate badge — the card says WHICH mandate is speaking.
+                    Canonical DB-stored text only (T2). */}
+                {it.roster && (
+                  <span className="mt-0.5 block truncate text-[10px]">
+                    <span className="mono uppercase tracking-wider text-[color:var(--accent)]">{it.roster.label}</span>
+                    <span className="text-[color:var(--muted-2)]">{` · "${it.roster.mandate}" · $${it.roster.capUsd} cap`}</span>
+                  </span>
+                )}
                 <span className="block text-[10px] text-[color:var(--muted-2)]">
                   {/* JS string, not JSX text: the SWC entity-space bug ate the
                       space before "·" when this read `&amp;` (rendered
                       "Risk Bot· tap"). */}
-                  {it.from ? `from ${it.from}` : 'addressed to this wallet'}
+                  {it.from ? `from ${it.from}` : it.roster ? 'from your hired agent' : 'addressed to this wallet'}
                   {' · tap to review & sign'}
                 </span>
               </span>

@@ -120,13 +120,25 @@ export async function POST(req: NextRequest) {
     .deleteMany({ where: { status: 'pending', createdAt: { lt: new Date(Date.now() - ROSTER_DRAFT_TTL_MS) } } })
     .catch(() => {})
 
-  // Standing squat fence: non-fired slots per wallet, refused by name.
-  const held = await prisma.rosterSlot.count({ where: { walletAddress: w, status: { not: 'fired' } } }).catch(() => 0)
+  // Standing squat fence (security finding R2-1): the quota counts ONLY the
+  // states that required the wallet's own signature (hired/benched) — a
+  // squatter's connect-to-act drafts must never block the true owner.
+  const held = await prisma.rosterSlot.count({ where: { walletAddress: w, status: { in: ['hired', 'benched'] } } }).catch(() => 0)
   if (held >= ROSTER_MAX_SLOTS_PER_WALLET) {
     return NextResponse.json(
-      { error: `This wallet already holds ${held} roster slots (the cap is ${ROSTER_MAX_SLOTS_PER_WALLET}) — fire or remove one first.` },
+      { error: `This wallet already holds ${held} staffed roster slots (the cap is ${ROSTER_MAX_SLOTS_PER_WALLET}) — fire one first.` },
       { status: 409 },
     )
+  }
+  // Pending drafts are bounded by ROLLING-DELETE-OLDEST, never refusal
+  // (R2-1): the true owner can always draft; a squatter only ever churns
+  // their own junk out of the window.
+  const pending = await prisma.rosterSlot
+    .findMany({ where: { walletAddress: w, status: 'pending' }, select: { id: true }, orderBy: { createdAt: 'asc' } })
+    .catch(() => [] as { id: string }[])
+  if (pending.length >= ROSTER_MAX_SLOTS_PER_WALLET) {
+    const evict = pending.slice(0, pending.length - ROSTER_MAX_SLOTS_PER_WALLET + 1).map((p) => p.id)
+    await prisma.rosterSlot.deleteMany({ where: { id: { in: evict }, status: 'pending' } }).catch(() => {})
   }
 
   const slot = await prisma.rosterSlot.create({

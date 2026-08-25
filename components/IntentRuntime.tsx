@@ -69,6 +69,7 @@ export default function IntentRuntime({
   restricted = false,
   brand = null,
   notify = null,
+  roster = null,
 }: {
   slug: string
   ask: string
@@ -93,6 +94,10 @@ export default function IntentRuntime({
    *  this, and whether they're webhook-notified (push) or watching the
    *  status feed. Label + mode only; never a URL. */
   notify?: { label: string; push: boolean } | null
+  /** THE ROSTER (R2): a proposal from a HIRED agent wears its mandate —
+   *  kind label + the canonical (grammar-constrained, DB-stored) mandate
+   *  sentence + the cap the wallet's hire consent named. */
+  roster?: { label: string; mandate: string; capUsd: number } | null
 }) {
   const { address, isConnected, status: walletStatus } = useAccount()
   const { openConnectModal } = useConnectModal()
@@ -356,6 +361,19 @@ export default function IntentRuntime({
               </>
             )}
           </div>
+          {/* THE ROSTER (R2): the slot badge — which mandate is speaking.
+              DB-stored canonical text only (threat T2). */}
+          {roster && (
+            <div className="mb-6 inline-flex flex-wrap items-center justify-center gap-x-2 gap-y-1 rounded-full border border-[var(--line)] bg-[var(--surf-1)] px-3.5 py-1.5 max-w-2xl">
+              <span className="mono text-[10px] uppercase tracking-widest text-[color:var(--accent)]">
+                {roster.label} mandate
+              </span>
+              <span aria-hidden className="text-[color:var(--muted-2)]">·</span>
+              <span className="text-[11px] text-[color:var(--muted)] truncate max-w-[16rem]">&ldquo;{roster.mandate}&rdquo;</span>
+              <span aria-hidden className="text-[color:var(--muted-2)]">·</span>
+              <span className="mono text-[10px] text-[color:var(--muted-2)]">${roster.capUsd} cap</span>
+            </div>
+          )}
           <h1
             className="text-[clamp(1.9rem,4.6vw,3.2rem)] leading-[1.12] font-medium text-[color:var(--fg)] max-w-2xl [text-wrap:balance]"
             style={{ fontFamily: 'var(--font-serif)' }}

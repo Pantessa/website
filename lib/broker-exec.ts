@@ -25,9 +25,11 @@ import {
   type BrokerState,
 } from '@/lib/broker'
 import { assertDeskOpen, assertAgentIdentity, assertUnderDeskCap, cleanAgentKey } from '@/lib/broker-policy'
-import { validateCallbackUrl, mintCallbackSecret, deliverWebhook } from '@/lib/broker-webhook'
+import { validateCallbackUrl, mintCallbackSecret, deliverWebhook, notifyEligible } from '@/lib/broker-webhook'
 import { agentHandleFor } from '@/lib/agent-record'
 import { sendIntent } from '@/lib/inbox'
+import { bindProposalAtOpen, recheckSlotAtBuild, type RosterBadge } from '@/lib/roster-propose'
+import { moneyShaped } from '@/lib/ask-failure'
 import { MOSAIC_CHAIN_IDS, composeMosaicAsk, sanitizeMosaicSlices, type MosaicChainWord } from '@/lib/mosaic'
 import { recoverMessageAddress } from 'viem'
 
@@ -45,6 +47,10 @@ export interface OpenResult {
   /** Present when the intent is bound to an agent identity — the agent's
    *  public, shareable track record (money moved, signs, first/last seen). */
   recordUrl?: string
+  /** THE ROSTER (R2): present when the presented agent_key hashed to a
+   *  HIRED mandate slot — the proposal already auto-addressed to the
+   *  employer wallet's inbox as a signable card wearing this badge. */
+  roster?: { slotId: string; badge: RosterBadge; url: string; inboxUrl: string; recipient: string }
 }
 
 /** Per-call desk options read from the MCP request (lib/internal-run.ts):
@@ -87,6 +93,66 @@ export async function openIntent(opts: {
   const scan = wallet ? await scanFundingSources(wallet).catch(() => null) : null
   const plan = planIntent(opts.ask, scan)
 
+  // THE ROSTER (R2): the desk derives the hash from the PRESENTED key
+  // itself — a hired mandate slot binds the proposal, gates it (cap at
+  // open, fail-closed on unpriceable money asks; benched/fired refuse by
+  // name; a cap breach benches), and auto-addresses it to the employer
+  // wallet's inbox as a signable card wearing the slot badge.
+  const agentKeyHash = agentKey ? agentHandleFor(agentKey) : null
+  const binding = await bindProposalAtOpen(agentKeyHash, wallet, plan.ask, askUsd(plan.ask))
+
+  if (binding) {
+    const sent = await sendIntent(SITE, {
+      ask: plan.ask,
+      recipientRaw: binding.slot.walletAddress,
+      senderLabel: agent ?? undefined,
+      agent: agent ?? undefined,
+      internal: call?.internal === true,
+      rosterSlotId: binding.slot.id,
+    })
+    const row = await prisma.brokerIntent.create({
+      data: {
+        id: mintSlug(10),
+        ask: plan.ask,
+        wallet: binding.slot.walletAddress,
+        agent,
+        agentKey,
+        agentKeyHash,
+        callbackUrl,
+        callbackSecret,
+        state: 'handed_off',
+        plan: { ...plan, roster: { slotId: binding.slot.id } } as object,
+        linkSlug: sent.slug,
+        rosterSlotId: binding.slot.id,
+        isInternal: call?.internal === true,
+      },
+    })
+    const out: OpenResult = {
+      intentId: row.id,
+      state: 'handed_off',
+      plan,
+      contract: CONTRACT,
+      roster: { slotId: binding.slot.id, badge: binding.badge, url: sent.url, inboxUrl: sent.inboxUrl, recipient: sent.recipient },
+      next: [
+        `This desk identity is HIRED for the "${binding.badge.label}" mandate on ${sent.recipient} — the proposal is already in their inbox as a signable card (cap $${binding.badge.capUsd} per proposal).`,
+        'Poll broker_status to learn when they sign. Only their own signature moves anything.',
+        callbackUrl ? 'A signed/settled webhook will POST to your callback_url too.' : 'Bind a callback_url at open next time for a push instead of polling.',
+      ],
+      ...(callbackUrl && callbackSecret
+        ? {
+            callback: {
+              url: callbackUrl,
+              secret: callbackSecret,
+              note: 'Saved once. Verify each webhook: X-Pantessa-Signature = "sha256=" + HMAC-SHA256(rawBody, this secret).',
+            },
+          }
+        : {}),
+      ...(agentKeyHash ? { recordUrl: `${SITE}/agents/${agentKeyHash}` } : {}),
+    }
+    assertNoTxMaterial(out)
+    return out
+  }
+
   const row = await prisma.brokerIntent.create({
     data: {
       id: mintSlug(10),
@@ -94,7 +160,7 @@ export async function openIntent(opts: {
       wallet,
       agent,
       agentKey,
-      agentKeyHash: agentKey ? agentHandleFor(agentKey) : null,
+      agentKeyHash,
       callbackUrl,
       callbackSecret,
       state: 'open',
@@ -445,6 +511,12 @@ export async function executeIntent(intentId: string, walletSignature: unknown, 
   // a human signature is its own ceiling.
   assertAgentIdentity(row.agentKey)
   assertUnderDeskCap(askUsd(row.ask))
+  // THE ROSTER (R2, T5): a roster-bound intent re-checks its slot at the
+  // BUILD gate — a fire that landed after open refuses here, and the slot
+  // cap re-applies against the build's own price (fail-closed when a
+  // money-shaped ask can't be priced). Defensive: roster proposals normally
+  // hand off to the employer's inbox rather than reaching this path.
+  if (row.rosterSlotId) await recheckSlotAtBuild(row.rosterSlotId, askUsd(row.ask), moneyShaped(row.ask))
   // The wallet must be PROVEN, not merely named (2026-08-18 squad audit): a
   // job is listed in its wallet's Jobs rail with a needs-you badge, so an
   // unproven wallet let any caller plant a sign request in a stranger's rail
@@ -600,9 +672,10 @@ export async function fireIntentWebhook(
   try {
     const row = await prisma.brokerIntent.findFirst({
       where: { linkSlug: slug, callbackUrl: { not: null }, callbackSecret: { not: null } },
-      select: { id: true, ask: true, linkSlug: true, callbackUrl: true, callbackSecret: true },
+      select: { id: true, ask: true, linkSlug: true, callbackUrl: true, callbackSecret: true, isInternal: true },
     })
-    if (!row?.callbackUrl || !row.callbackSecret) return
+    // Stamped intents never notify (R2) — one rule, shared with getNotify.
+    if (!notifyEligible(row) || !row?.callbackUrl || !row.callbackSecret) return
     await deliverWebhook(row.callbackUrl, row.callbackSecret, {
       intentId: row.id,
       event: kind,

@@ -13,6 +13,7 @@
 
 import prisma from '@/lib/db'
 import { cleanAsk, composeMcps, mintSlug, INTENT_SLUG_RE } from '@/lib/intent-links'
+import { MANDATE_KIND_LABELS } from '@/lib/roster-client'
 
 const WALLET_RE = /^0x[0-9a-fA-F]{40}$/
 const HANDLE_RE = /^[a-z0-9-]{2,32}$/
@@ -48,7 +49,7 @@ export interface SentIntent {
  *  allowWallets set. Returns the /i link and the recipient's inbox URL. */
 export async function sendIntent(
   site: string,
-  opts: { ask: string; recipientRaw: unknown; senderLabel?: string; mcps?: string[]; agent?: string; internal?: boolean },
+  opts: { ask: string; recipientRaw: unknown; senderLabel?: string; mcps?: string[]; agent?: string; internal?: boolean; rosterSlotId?: string },
 ): Promise<SentIntent> {
   const ask = cleanAsk(opts.ask)
   if (!ask || ask.length < 3) throw new Error('The intent must be a plain sentence (amounts included).')
@@ -72,6 +73,9 @@ export async function sendIntent(
       recipient,
       senderLabel,
       allowWallets: [recipient],
+      // THE ROSTER (R2): a hired agent's proposal binds to its mandate slot
+      // (badge on the card, fire-cascade revocation, build re-check).
+      rosterSlotId: opts.rosterSlotId ?? null,
       // Our own harness/drill send (lib/internal-run.ts) — never an arrival.
       isInternal: opts.internal === true,
     },
@@ -93,6 +97,10 @@ export interface InboxItem {
   senderLabel: string | null
   agent: string | null
   createdAt: Date
+  /** THE ROSTER (R2): present when the sender is a HIRED agent proposing
+   *  under a mandate slot — the card wears the mandate, not just a byline.
+   *  mandate is the CANONICAL grammar-constrained sentence (safe to render). */
+  roster?: { slotId: string; kind: string; label: string; mandate: string; capUsd: number }
 }
 
 /** The unsigned intents addressed to a wallet — newest first. An item leaves
@@ -107,7 +115,7 @@ export async function inboxFor(wallet: string): Promise<InboxItem[]> {
       revoked: false,
       OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
     },
-    select: { id: true, ask: true, senderLabel: true, agent: true, createdAt: true },
+    select: { id: true, ask: true, senderLabel: true, agent: true, createdAt: true, rosterSlotId: true },
     orderBy: { createdAt: 'desc' },
     take: 100,
   })
@@ -119,9 +127,41 @@ export async function inboxFor(wallet: string): Promise<InboxItem[]> {
     select: { slug: true },
   })
   const signedSlugs = new Set(signed.map((s) => s.slug))
+
+  // Slot badges for roster proposals — one query, joined in memory. The
+  // MANDATE_KIND_LABELS mirror lives in roster-client (client-safe).
+  const slotIds = [...new Set(links.map((l) => l.rosterSlotId).filter((s): s is string => !!s))]
+  const slots = slotIds.length
+    ? await prisma.rosterSlot
+        .findMany({ where: { id: { in: slotIds } }, select: { id: true, mandateText: true, mandateKind: true, capUsd: true } })
+        .catch(() => [])
+    : []
+  const KIND_LABELS: Record<string, string> = MANDATE_KIND_LABELS
+  const slotById = new Map(slots.map((s) => [s.id, s]))
+
   return links
     .filter((l) => !signedSlugs.has(l.id))
-    .map((l) => ({ slug: l.id, ask: l.ask, senderLabel: l.senderLabel, agent: l.agent, createdAt: l.createdAt }))
+    .map((l) => {
+      const slot = l.rosterSlotId ? slotById.get(l.rosterSlotId) : undefined
+      return {
+        slug: l.id,
+        ask: l.ask,
+        senderLabel: l.senderLabel,
+        agent: l.agent,
+        createdAt: l.createdAt,
+        ...(slot
+          ? {
+              roster: {
+                slotId: slot.id,
+                kind: slot.mandateKind,
+                label: KIND_LABELS[slot.mandateKind] ?? slot.mandateKind,
+                mandate: slot.mandateText.slice(0, 120),
+                capUsd: slot.capUsd,
+              },
+            }
+          : {}),
+      }
+    })
 }
 
 /** Pure guard so callers can validate a slug before hitting the DB. */

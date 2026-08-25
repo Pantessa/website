@@ -12,6 +12,7 @@ import {
   rosterFireConsentMessage,
   verifyRosterConsent,
 } from '@/lib/roster-policy'
+import { fireCascade } from '@/lib/roster-propose'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -58,8 +59,11 @@ export async function POST(req: NextRequest) {
       data: { status: 'fired', consentNonce: null, consentAction: null, consentExpiresAt: null },
       select: { id: true, status: true, agentKeyHash: true, mandateKind: true },
     })
-    // R2 will cascade here: revoke every open addressed intent bound to the
-    // slot (threat T5) — nothing to cascade in R1, no proposals exist yet.
+    // T5 cascade (R2): a fired agent's pending cards vanish — every UNSIGNED
+    // addressed link bound to the slot revokes (the /i runtime's revoked-link
+    // refusal walls anyone mid-flow) and its broker intents close. Signed
+    // history is never touched.
+    await fireCascade(slot.id)
     return NextResponse.json({ slot: fired })
   }
 

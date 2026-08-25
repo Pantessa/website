@@ -1171,6 +1171,10 @@ model IntentLink {
   // so the /i CTA targets them (the signature is still the real gate).
   recipient    String? // lowercased wallet an intent is addressed TO
   senderLabel  String?   @map("sender_label")
+  // THE ROSTER (R2): a proposal from a HIRED agent binds to its mandate
+  // slot — the /i header + inbox card wear the slot badge, and firing the
+  // slot cascades revocation over its unsigned addressed links (T5).
+  rosterSlotId String?   @map("roster_slot_id")
   // Our own harness/drill mint (lib/internal-run.ts): every test:api run
   // mints links from throwaway wallets, which inflated the GTM arc's
   // "arrived" denominator by hundreds per gate run (2026-08-17 audit). The
@@ -1182,6 +1186,7 @@ model IntentLink {
   @@index([kind, createdAt])
   @@index([recipient, createdAt])
   @@index([isInternal, createdAt])
+  @@index([rosterSlotId])
   @@map("intent_links")
 }
 
@@ -1321,12 +1326,17 @@ model BrokerIntent {
   plan           Json
   linkSlug       String?  @map("link_slug") // bound /i/<slug> after handoff
   jobId          String?  @map("job_id") // bound job after broker_execute (agent-signed path)
+  /// THE ROSTER (R2): set when the presented agent_key hashed to a hired
+  /// mandate slot — the proposal auto-addressed to the employer's inbox and
+  /// the build gate re-checks this slot (fired-agent race, T5).
+  rosterSlotId   String?  @map("roster_slot_id")
   createdAt      DateTime @default(now()) @map("created_at")
   updatedAt      DateTime @updatedAt @map("updated_at")
 
   @@index([state, createdAt])
   @@index([agentKeyHash])
   @@index([isInternal])
+  @@index([rosterSlotId])
   @@map("broker_intents")
 }
 
