@@ -11747,6 +11747,14 @@ async function main() {
         'roster R2: the /i runtime header wears the slot badge (mandate + cap, DB-stored canonical text)',
         /"roster":\{"label":"Recurring buy","mandate":"buy \$25 of ETH weekly","capUsd":50\}/.test(rosterPageHtml),
       )
+      // The inbox PAGE row wears the same badge strings (QA demo-proof
+      // finding: the data rode the API but only /i rendered it). Server-
+      // rendered, so plain HTML — not the RSC payload.
+      const inboxPageHtml = flat(await (await fetch(`${BASE}/inbox/${employer2.address}`)).text())
+      check(
+        'roster R2: the inbox row wears the mandate badge (same strings as the /i pill)',
+        /Recurring buy mandate/.test(inboxPageHtml) && /buy \$25 of ETH weekly/.test(inboxPageHtml) && /\$50 cap/.test(inboxPageHtml),
+      )
 
       // 2 — an UNHIRED agent_key opens a plain desk intent: no addressing.
       const un = await call('broker_open', { ask: 'Buy $15 of AAPL', agent_key: 'never-hired-key', wallet: employer2.address })
