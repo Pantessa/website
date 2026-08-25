@@ -137,6 +137,27 @@ export async function runSpotGuardTurn(message: string, wallet: string | undefin
   const owner = wallet.toLowerCase() as `0x${string}`
   const dec = native ? 18 : (tokenDecimals(sym, chainId) ?? 18)
 
+  // Smart-wallet check (ported from the DCA autopilot arm, squad 2026-08-18):
+  // the one-shot Spend Permission is enforced by the WALLET's own contract —
+  // the SpendPermissionManager pulls via the smart wallet's execute(). An EOA
+  // has no code to enforce it with, so a permission it signs can never be
+  // spent: the sweep would arm a protection that NEVER fires. Every front
+  // door we ship mints an EOA today (MetaMask, CDP createOnLogin:'eoa',
+  // Coinbase eoaOnly), so this refuses by name BEFORE a signature is asked
+  // for. Fail closed: an unreadable code slot refuses too.
+  const code = await client.getCode({ address: owner }).catch(() => undefined)
+  if (!code || code === '0x') {
+    trace({ type: 'note', level: 'warn', label: `spot guardian: ${owner.slice(0, 10)}… has no contract code (EOA) — a Spend Permission it signs could never be spent; refusing by name, nothing armed` })
+    return {
+      reply:
+        `🛡️ **Spot protection needs a smart wallet.** The stop works through a one-shot Spend Permission that your wallet's own contract enforces — that's what keeps it non-custodial (I hold a one-time allowance for exactly the protected amount, never your keys). ` +
+        `This wallet is a regular EOA, so there's no contract to enforce it with: an arm here would look armed and could never fire, so nothing was armed. ` +
+        `A Coinbase Smart Wallet can arm this today; EOA support (EIP-7702 upgrades) is on the way.` +
+        (native ? ` If the ${sym} sits on a Hyperliquid perp instead, "protect my ${sym} long with a ${ask.triggerMode === 'price_move_pct' ? ask.triggerValue : 10}% stop" arms the Guardian there.` : ''),
+      buildPath: 'native-spot-guard',
+    }
+  }
+
   // Live balance — the protected amount must exist at arm time.
   let balanceAtoms: bigint
   try {

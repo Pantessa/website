@@ -89,7 +89,9 @@ export function simulateLadder(message: string): Outcome {
   const lido = parseLidoStake(message)
   if (lido) return 'problem' in lido ? { gate: 'lido', kind: 'clarify', note: lido.problem } : { gate: 'lido', kind: 'action' }
 
-  if (parseHlIntent(message)) return { gate: 'hyperliquid', kind: 'action' }
+  const hl = parseHlIntent(message)
+  // An unsized open answers size chips (resumes round-trip into full orders).
+  if (hl) return hl.kind === 'open-unsized' ? { gate: 'hyperliquid', kind: 'clarify', note: 'unsized → size chips' } : { gate: 'hyperliquid', kind: 'action' }
 
   const rb = parseRobinhoodBridge(message)
   if (rb) return 'problem' in rb ? { gate: 'rh-bridge', kind: 'clarify', note: rb.problem } : { gate: 'rh-bridge', kind: 'action' }
