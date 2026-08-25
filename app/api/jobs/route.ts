@@ -3,6 +3,7 @@ import prisma from '@/lib/db'
 import { getAuthAddress } from '@/lib/api-key'
 import { compileJobAsk } from '@/lib/jobs'
 import { advanceJob, buildSignArtifact, createJob } from '@/lib/jobs-runner'
+import { isInternalRun } from '@/lib/internal-run'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -79,8 +80,10 @@ export async function POST(req: NextRequest) {
     })
   }
 
-  const job = await createJob(addr, compiled, 'api')
+  // Our own harness/drill run (lib/internal-run.ts) — the arc never counts it.
+  const job = await createJob(addr, compiled, 'api', { internal: isInternalRun(req.headers, body) })
   await advanceJob(job).catch(() => {})
   const fresh = await prisma.job.findUnique({ where: { id: job.id }, include: { steps: { orderBy: { seq: 'asc' } } } })
-  return NextResponse.json({ job: fresh }, { status: 201 })
+  const internalRun = isInternalRun(req.headers, body)
+  return NextResponse.json({ job: fresh, ...(internalRun ? { internal: true } : {}) }, { status: 201 })
 }

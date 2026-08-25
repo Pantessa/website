@@ -111,9 +111,12 @@ export default function DeskDocsPage() {
         </p>
         <p>
           Because this path has no human in the loop, it runs under a tighter fence: it requires a
-          bound identity (<code>agent_key</code>, refused by name without one), a per-intent
-          notional cap, and a desk-level kill switch. The agent-signed path is rolling out — the
-          human-handoff loop above is the front door, and it is live today.
+          bound identity (<code>agent_key</code>, refused by name without one), <em>proof of the
+          wallet</em> (<code>wallet_signature</code>{' '}— a personal_sign over the desk&apos;s consent
+          text for that intent id + wallet; the desk recovers the signer, so nobody can compile a
+          job into a wallet they don&apos;t hold), a per-intent notional cap, and a desk-level kill
+          switch. The agent-signed path is rolling out — the human-handoff loop above is the front
+          door, and it is live today.
         </p>
 
         <h2>What it costs</h2>

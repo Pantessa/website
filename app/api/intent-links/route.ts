@@ -8,6 +8,7 @@ import { getEffectivePlan } from '@/lib/billing'
 import { isAdminAddress } from '@/lib/admin'
 import { isMosaicAsk } from '@/lib/mosaic'
 import { resolveRecipient } from '@/lib/inbox'
+import { isInternalRun } from '@/lib/internal-run'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -35,6 +36,9 @@ export async function POST(req: NextRequest) {
 
   const ask = cleanAsk(body.ask ?? '')
   if (ask.length < 8) return NextResponse.json({ error: 'The ask must be a plain sentence (at least 8 characters).' }, { status: 400 })
+  // Our own harness/drill mint (lib/internal-run.ts): the link works exactly
+  // the same, but the GTM arc never counts its creator as an arrival.
+  const internalRun = isInternalRun(req.headers, body)
 
   let redirectUrl: string | null = null
   if (body.redirectUrl) {
@@ -113,6 +117,7 @@ export async function POST(req: NextRequest) {
           recipient,
           senderLabel,
           kind: isMosaicAsk(ask) ? 'mosaic' : null,
+          isInternal: internalRun,
         },
       })
       return NextResponse.json({
@@ -126,6 +131,9 @@ export async function POST(req: NextRequest) {
         maxSigns: link.maxSigns,
         allowCount: link.allowWallets.length,
         ...(link.recipient ? { recipient: link.recipient, inboxUrl: `/inbox/${link.recipient}` } : {}),
+        // Echo the stamp so drills (and the harness) can assert their rows
+        // can never read as growth — the telemetry route's `internal` twin.
+        ...(internalRun ? { internal: true } : {}),
       })
     } catch (e) {
       const unique = e instanceof Error && 'code' in e && (e as { code?: string }).code === 'P2002'

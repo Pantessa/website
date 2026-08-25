@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import prisma from '@/lib/db'
 import { getSessionAddress } from '@/lib/auth'
+import { isInternalRun } from '@/lib/internal-run'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -30,8 +31,10 @@ export async function POST(req: NextRequest) {
     ? body.activeServerIds.filter((x: unknown): x is string => typeof x === 'string')
     : []
 
+  // Our own harness/drill chat (lib/internal-run.ts) — the arc never counts it.
+  const internalRun = isInternalRun(req.headers, body)
   const chat = await prisma.chat.create({
-    data: { ownerAddress: addr, title, activeServerIds },
+    data: { ownerAddress: addr, title, activeServerIds, isInternal: internalRun },
   })
-  return NextResponse.json(chat, { status: 201 })
+  return NextResponse.json({ ...chat, ...(internalRun ? { internal: true } : {}) }, { status: 201 })
 }

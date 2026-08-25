@@ -18,6 +18,7 @@
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
 import { generatePrivateKey, privateKeyToAccount } from 'viem/accounts'
+import { deskExecuteConsentMessage } from '../lib/broker-exec'
 
 const BASE = (process.env.BASE ?? 'http://localhost:3000').replace(/\/$/, '')
 const LIVE = process.env.LIVE === '1'
@@ -56,18 +57,23 @@ async function main() {
   say('agent', `sequenced ask: "${ASK}"`)
 
   const client = new Client({ name: 'payer-agent', version: '0.1.0' })
-  await client.connect(new StreamableHTTPClientTransport(new URL(`${BASE}/api/broker/mcp`)))
+  await client.connect(new StreamableHTTPClientTransport(new URL(`${BASE}/api/broker/mcp`), { requestInit: { headers: { 'x-yf-internal-run': '1' } } }))
 
   const open = parsePayload(
     await client.callTool({
       name: 'broker_open',
-      arguments: { ask: ASK, wallet: account.address, agent: 'payer-agent' },
+      // agent_key binds the desk identity (M1); the wallet is PROVEN below by
+      // signing the desk's consent text with this same key.
+      arguments: { ask: ASK, wallet: account.address, agent: 'payer-agent', agent_key: 'payer-agent-drill-key' },
     }),
   )
   const intentId = open.intentId as string
   say('desk', (open.plan as any).say)
 
-  const exec = parsePayload(await client.callTool({ name: 'broker_execute', arguments: { intent_id: intentId } }))
+  const walletSignature = await account.signMessage({ message: deskExecuteConsentMessage(intentId, account.address) })
+  const exec = parsePayload(
+    await client.callTool({ name: 'broker_execute', arguments: { intent_id: intentId, wallet_signature: walletSignature } }),
+  )
   const steps = exec.steps as { seq: number; kind: string; note: string }[]
   say('desk', exec.say as string)
   for (const s of steps) say('desk', `  leg ${s.seq}: [${s.kind}] ${s.note}`)

@@ -21,6 +21,7 @@ interface FailureRow {
   prompt: string
   reply: string | null
   kind: string
+  internal?: boolean
   buildPath: string | null
   hadFunds: boolean | null
   fundsUsd: number | null
@@ -70,6 +71,8 @@ export default function FailuresPage() {
   const [days, setDays] = useState<(typeof WINDOWS)[number]>(14)
   const [fundedOnly, setFundedOnly] = useState(false)
   const [external, setExternal] = useState(false)
+  // Internal-run rows (our own drills, is_internal) are hidden unless toggled.
+  const [showInternal, setShowInternal] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [open, setOpen] = useState<string | null>(null)
@@ -78,7 +81,7 @@ export default function FailuresPage() {
     setLoading(true)
     setError(null)
     try {
-      const res = await fetch(`/api/admin/ask-failures?days=${days}${fundedOnly ? '&funded=1' : ''}${external ? '&external=1' : ''}`, { cache: 'no-store' })
+      const res = await fetch(`/api/admin/ask-failures?days=${days}${fundedOnly ? '&funded=1' : ''}${external ? '&external=1' : ''}${showInternal ? '&internal=1' : ''}`, { cache: 'no-store' })
       if (!res.ok) {
         setFeed(null)
         setError(res.status === 403 ? 'This wallet is not an admin.' : `The failures API returned ${res.status}.`)
@@ -91,7 +94,7 @@ export default function FailuresPage() {
     } finally {
       setLoading(false)
     }
-  }, [days, fundedOnly, external])
+  }, [days, fundedOnly, external, showInternal])
 
   useEffect(() => {
     if (isAdminAddress(address)) void load()
@@ -130,6 +133,9 @@ export default function FailuresPage() {
           </button>
           <button className={`btn btn--sm ${external ? 'btn--solid' : ''}`} onClick={() => setExternal((v) => !v)} title="Hide Pantessa test wallets">
             external
+          </button>
+          <button className={`btn btn--sm ${showInternal ? 'btn--solid' : ''}`} onClick={() => setShowInternal((v) => !v)} title="Show rows written by our own internal-run drills (is_internal) — hidden by default">
+            internal
           </button>
           <button className="btn btn--sm" onClick={() => void load()} title="Refresh">
             <RefreshCw className="w-3.5 h-3.5" />
@@ -188,7 +194,7 @@ export default function FailuresPage() {
                     )}
                   </td>
                   <td className="px-3 py-2 whitespace-nowrap font-mono text-xs text-[color:var(--muted)]">{r.wallet ? short(r.wallet) : 'guest'}</td>
-                  <td className="px-3 py-2 whitespace-nowrap text-xs text-[color:var(--muted)]">{KIND_LABEL[r.kind] ?? r.kind}</td>
+                  <td className="px-3 py-2 whitespace-nowrap text-xs text-[color:var(--muted)]">{KIND_LABEL[r.kind] ?? r.kind}{r.internal ? <span className="ml-1 mono text-[10px] uppercase tracking-wider text-[color:var(--muted-2)]" title="Written by an internal-run drill (is_internal)">· internal</span> : null}</td>
                   <td className="px-3 py-2 whitespace-nowrap"><FundsBadge row={r} /></td>
                 </tr>
               ))}

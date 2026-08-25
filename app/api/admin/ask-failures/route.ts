@@ -22,12 +22,16 @@ export async function GET(req: NextRequest) {
   const days = Number.isFinite(daysRaw) && daysRaw >= 1 && daysRaw <= 90 ? Math.floor(daysRaw) : 14
   const fundedOnly = req.nextUrl.searchParams.get('funded') === '1'
   const external = req.nextUrl.searchParams.get('external') === '1'
+  // Internal-run rows (is_internal — our own drills) are HIDDEN by default;
+  // ?internal=1 shows them (labelled `internal: true` per row).
+  const showInternal = req.nextUrl.searchParams.get('internal') === '1'
 
   const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000)
   const rows = await prisma.askFailure.findMany({
     where: {
       createdAt: { gte: since },
       ...(fundedOnly ? { hadFunds: true } : {}),
+      ...(showInternal ? {} : { isInternal: false }),
     },
     orderBy: { createdAt: 'desc' },
     take: 400,
@@ -39,5 +43,5 @@ export async function GET(req: NextRequest) {
     broke: filtered.filter((r) => r.hadFunds === false).length,
     unknown: filtered.filter((r) => r.hadFunds == null).length,
   }
-  return NextResponse.json({ days, counts, failures: filtered.slice(0, 200) })
+  return NextResponse.json({ days, counts, internal: showInternal, failures: filtered.slice(0, 200).map((r) => ({ ...r, internal: r.isInternal })) })
 }

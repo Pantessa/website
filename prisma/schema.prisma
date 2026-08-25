@@ -272,10 +272,15 @@ model Chat {
   publicAt   DateTime? @map("public_at")
 
   messages  Message[]
+  // Our own harness/drill chat (lib/internal-run.ts): the GTM arc reads
+  // chats + messages as "arrived"/"asked"/"built"/"signed" — a gate run's
+  // fixture chats must never move a stage. Messages inherit via the join.
+  isInternal Boolean  @default(false) @map("is_internal")
   createdAt DateTime  @default(now()) @map("created_at")
   updatedAt DateTime  @updatedAt @map("updated_at")
 
   @@index([ownerAddress])
+  @@index([isInternal])
   @@map("chats")
 }
 
@@ -631,9 +636,11 @@ model WalletWorkingSet {
   id           String   @id @default(cuid())
   ownerAddress String   @unique @map("owner_address") // lowercased, SIWE-verified
   serviceIds   String[] @map("service_ids") // McpServer ids, ordered
+  isInternal   Boolean  @default(false) @map("is_internal") // our own harness/drill run (lib/internal-run.ts) — the GTM arc's arrival tables exclude it
   createdAt    DateTime @default(now()) @map("created_at")
   updatedAt    DateTime @updatedAt @map("updated_at")
 
+  @@index([isInternal])
   @@map("wallet_working_sets")
 }
 
@@ -844,12 +851,18 @@ model AskFailure {
   kind        String // planner-answer | native-wall | blocked | error
   buildPath   String?  @map("build_path")
   hadFunds    Boolean? @map("had_funds") // null until the async scan lands
+  /// Our own harness/drill wall (lib/internal-run.ts): prod-pointed drills
+  /// that don't opt out with x-yf-no-ask-log still write rows — stamped, so
+  /// /dashboard/failures hides them by default (a drill's wall is not a
+  /// stranger's wall).
+  isInternal  Boolean  @default(false) @map("is_internal")
   fundsUsd    Float?   @map("funds_usd") // movable USD seen across scanned chains
   fundsDetail String?  @map("funds_detail") // human per-chain summary
   createdAt   DateTime @default(now()) @map("created_at")
 
   @@index([createdAt])
   @@index([hadFunds, createdAt])
+  @@index([isInternal, createdAt])
   @@map("ask_failures")
 }
 
@@ -941,6 +954,9 @@ model Job {
   /// Shared-DB env fence (the guardian lesson): only the creating env's
   /// runner advances a job. 'production' | 'preview' | 'dev'.
   originEnv   String   @default("dev") @map("origin_env")
+  /// Our own harness/drill run (lib/internal-run.ts) — stamped at createJob;
+  /// the GTM arc never counts a stamped job as an arrival, build, or sign.
+  isInternal  Boolean  @default(false) @map("is_internal")
   valueUsd    Float?   @map("value_usd") // rollup of step notionals (money moved)
   failReason  String?  @map("fail_reason")
   createdAt   DateTime @default(now()) @map("created_at")
@@ -950,6 +966,7 @@ model Job {
 
   @@index([wallet, createdAt])
   @@index([status])
+  @@index([isInternal, originEnv])
   @@map("jobs")
 }
 
@@ -1002,6 +1019,11 @@ model DcaSchedule {
   buyToken  String   @map("buy_token") // symbol — resolved per-build from the chain's official token list
   sellToken String   @map("sell_token") // the chain's primary stable at creation (USDC / USDG)
   chainId   Int      @map("chain_id")
+  /// Our own harness/drill schedule (lib/internal-run.ts): the first "DCA …
+  /// weekly" turn WRITES a schedule (+ its period job); the GTM arc reads
+  /// dca_schedules as an arrival, so a gate run must never count. Jobs the
+  /// schedule mints inherit the flag.
+  isInternal Boolean @default(false) @map("is_internal")
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
@@ -1149,11 +1171,17 @@ model IntentLink {
   // so the /i CTA targets them (the signature is still the real gate).
   recipient    String? // lowercased wallet an intent is addressed TO
   senderLabel  String?   @map("sender_label")
+  // Our own harness/drill mint (lib/internal-run.ts): every test:api run
+  // mints links from throwaway wallets, which inflated the GTM arc's
+  // "arrived" denominator by hundreds per gate run (2026-08-17 audit). The
+  // arc + digest exclude stamped rows; the link itself still works.
+  isInternal   Boolean   @default(false) @map("is_internal")
   createdAt    DateTime  @default(now()) @map("created_at")
 
   @@index([creator, createdAt])
   @@index([kind, createdAt])
   @@index([recipient, createdAt])
+  @@index([isInternal, createdAt])
   @@map("intent_links")
 }
 
@@ -1284,6 +1312,9 @@ model BrokerIntent {
   agent     String? // sanitized self-reported agent name
   agentKey  String?  @map("agent_key") // the bound desk identity (execute path); M6 makes it x402-payer-verified
   agentKeyHash   String? @map("agent_key_hash") // sha256(agentKey)[:16] — the PUBLIC track-record handle (raw key never exposed)
+  /// Our own harness/drill intent (lib/internal-run.ts): the public /agents
+  /// record excludes it — a gate run must never headline the credit bureau.
+  isInternal     Boolean @default(false) @map("is_internal")
   callbackUrl    String? @map("callback_url") // optional agent webhook: signed/settled events POST here (M3)
   callbackSecret String? @map("callback_secret") // per-intent HMAC secret returned to the agent once at open
   state     String   @default("open")
@@ -1295,5 +1326,6 @@ model BrokerIntent {
 
   @@index([state, createdAt])
   @@index([agentKeyHash])
+  @@index([isInternal])
   @@map("broker_intents")
 }
