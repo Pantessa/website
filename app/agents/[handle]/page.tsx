@@ -4,6 +4,8 @@ import { notFound } from 'next/navigation'
 import Footer from '@/components/Footer'
 import { getAgentRecord, type AgentRecord } from '@/lib/agent-record'
 import { MANDATE_LABELS, mandateKindForHandle, rosterEnabled } from '@/lib/league'
+import prisma from '@/lib/db'
+import { PAPER_LABEL } from '@/lib/roster-tryouts'
 
 // /agents/<handle> — an agent's PUBLIC track record: how much real money moved
 // through the guarded path under its identity, how many intents its humans
@@ -63,6 +65,21 @@ export default async function AgentRecordPage({ params }: Params) {
   // page is byte-identical with ROSTER_ENABLED off, and renders nothing until
   // roster slots exist (lib/league mandateKindForHandle is the R1 seam).
   const mandate = rosterEnabled() ? await mandateKindForHandle(rec.handle).catch(() => null) : null
+  // M6 forward-paper tryouts — flag-gated AND data-gated (page byte-identical
+  // with the roster off or no tryouts). PAPER IS STRUCTURAL: this read joins
+  // its own tables only, and the section is visually separate from the
+  // record tiles above — paper never blends into the signed record (§1.1-2;
+  // the OG card never reads it).
+  const tryouts = rosterEnabled()
+    ? await prisma.rosterTryout
+        .findMany({
+          where: { agentKeyHash: rec.handle, isInternal: false },
+          orderBy: { createdAt: 'desc' },
+          take: 10,
+          select: { id: true, mandateText: true, mandateKind: true, status: true, startedAt: true, reviewAt: true, _count: { select: { marks: true } } },
+        })
+        .catch(() => [])
+    : []
 
   return (
     <>
@@ -103,6 +120,27 @@ export default async function AgentRecordPage({ params }: Params) {
             No signed activity yet — this agent has brokered intents, but no human has signed one through
             Pantessa so far. The record fills in as they do.
           </p>
+        ) : null}
+
+        {tryouts.length > 0 ? (
+          <section className="mt-10 rounded-2xl border border-dashed border-[var(--line-2)] bg-[var(--surf-1)] p-5">
+            <p className="mono text-[10px] uppercase tracking-widest text-[color:var(--muted-2)]">Paper</p>
+            {/* §1.4 header label — VERBATIM on every surface. */}
+            <p className="mt-1 text-[13px] font-semibold text-[color:var(--fg)]">{PAPER_LABEL}</p>
+            <ul className="mt-3 space-y-2">
+              {tryouts.map((t) => (
+                <li key={t.id} className="text-[13px] text-[color:var(--muted)]">
+                  <span className="mono text-[10px] uppercase tracking-wide text-[color:var(--muted-2)]">{t.status}</span>{' '}
+                  &ldquo;{t.mandateText}&rdquo; · {t._count.marks} paper proposal{t._count.marks === 1 ? '' : 's'} ·{' '}
+                  {fmtDate(t.startedAt)}–{fmtDate(t.reviewAt)}
+                </li>
+              ))}
+            </ul>
+            <p className="mt-3 text-[12px] text-[color:var(--muted-2)]">
+              Paper never counts above: the record tiles read real signed turns only. Promoting a tryout runs the
+              normal hire flow (fresh consent) — nothing transfers from paper.
+            </p>
+          </section>
         ) : null}
 
         <p className="mt-8 text-[13px] text-[color:var(--muted)]">
