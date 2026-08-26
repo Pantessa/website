@@ -49,6 +49,7 @@ const CAPABILITIES = [
   "Recurring buys — 'buy $10 of AAPL every week' becomes a DCA schedule",
   'Protect a Hyperliquid position — stop-loss / take-profit the Guardian watches every minute',
   'Cross-chain moves (NEAR Intents), Robinhood Chain bridging, Aave, Lido staking, NFT transfers + Seaport listings, Snapshot votes',
+  'FIND WORK: GET /api/roster/feed lists open mandate slots humans posted (kind, mandate sentence, cap — never their wallet). broker_open with slot_token courts a listing; getting HIRED (their signature) makes your future opens auto-address to their inbox.',
 ]
 
 const handler = createMcpHandler(
@@ -110,10 +111,20 @@ const handler = createMcpHandler(
               'Optional https webhook. Signed/settled events for this intent POST here (HMAC-signed with a secret ' +
                 'returned once in the response) so you learn your human signed without polling. broker_status stays the fallback.',
             ),
+          slot_token: z
+            .string()
+            .min(6)
+            .max(24)
+            .optional()
+            .describe(
+              'Target a LISTED open mandate slot from GET /api/roster/feed. Resolves server-side to the employer ' +
+                'wallet (the feed never carries addresses) and the open proceeds through every normal gate. ' +
+                'Pass ONE target: slot_token or wallet, not both.',
+            ),
         },
       },
-      async ({ ask, wallet, agent, agent_key, callback_url }, extra) =>
-        guarded(() => openIntent({ ask, wallet, agent, agentKey: agent_key, callbackUrl: callback_url }, callOpts(extra))),
+      async ({ ask, wallet, agent, agent_key, callback_url, slot_token }, extra) =>
+        guarded(() => openIntent({ ask, wallet, agent, agentKey: agent_key, callbackUrl: callback_url, slotToken: slot_token }, callOpts(extra))),
     )
 
     server.registerTool(

@@ -74,10 +74,20 @@ import {
 } from '../lib/roster-policy'
 import { cleanAgentKeyHash, cleanCapUsd, parseMandate, MANDATE_KIND_LABELS, ROSTER_MAX_CAP_USD } from '../lib/roster'
 import { decideProposalGate } from '../lib/roster-propose'
+import { decideManagerMove, stackingRefusal, undecidedProposalFor } from '../lib/roster-manager'
 import { markPeriodKey, parseMarkAsk, tryoutReportCard, PAPER_LABEL, TRYOUT_BANNED_PHRASES } from '../lib/roster-tryouts'
 import { buildDelivery, mintCallbackSecret, notifyEligible, signWebhook, validateCallbackUrl } from '../lib/broker-webhook'
 import { agentHandleFor } from '../lib/agent-record'
-import { qualifiesForBoard, rankLeagueRows } from '../lib/league'
+import {
+  foundingHandles,
+  orderOpeningRoster,
+  qualifiesForBoard,
+  rankLeagueRows,
+  showOrdinals,
+  ORDINALS_MIN_QUALIFIED,
+} from '../lib/league'
+import { DOCS_PAGES } from '../lib/docs'
+import prisma from '../lib/db'
 import { addrsUnion, arcQuery } from '../lib/gtm-arc'
 import { isInternalRun, INTERNAL_RUN_HEADER } from '../lib/internal-run'
 import { deskExecuteConsentMessage, cleanSenderLabel } from '../lib/broker-exec'
@@ -3940,12 +3950,21 @@ async function main() {
       tryouts?: { id: string; status: string; marks: { quoteAtReview: { quoteOut?: number } | null }[] }[]
     }).tryouts?.find((x) => x.id === tryoutId)
     check(
+      // WRITE-ONCE on BOTH capture outcomes (integration 2026-08-26): when the
+      // review-time quote lands, the second capture must not change it; when
+      // the quote fail-softs (a 429'd public RPC mid-suite — the composed
+      // gate's own load can starve it), the second capture must ALSO leave it
+      // null — a number must never be invented after the status flip. The
+      // strict captured-quote path is separately proven by the report-card
+      // pin below whenever the RPC answered.
       'tryouts: the lazy review capture is WRITE-ONCE — reviewed once, the second capture changes no quote',
       rev1.status === 200 &&
         rev2.status === 200 &&
         after1?.status === 'reviewed' &&
-        (after1?.marks[0]?.quoteAtReview?.quoteOut ?? 0) > 0 &&
-        after2?.marks[0]?.quoteAtReview?.quoteOut === after1?.marks[0]?.quoteAtReview?.quoteOut,
+        (after1?.marks[0]?.quoteAtReview == null
+          ? after2?.marks[0]?.quoteAtReview == null
+          : (after1.marks[0].quoteAtReview.quoteOut ?? 0) > 0 &&
+            after2?.marks[0]?.quoteAtReview?.quoteOut === after1.marks[0].quoteAtReview.quoteOut),
       JSON.stringify({ r1: rev1.status, r2: rev2.status, s: after1?.status, q1: after1?.marks[0]?.quoteAtReview?.quoteOut, q2: after2?.marks[0]?.quoteAtReview?.quoteOut }),
     )
     check(
@@ -3989,32 +4008,105 @@ async function main() {
     })(),
   )
   check(
-    'roster: league standings rank real money first, then signed, then intents; ranks 1..n stable',
+    'roster §2.4: standings order = employers → signed → clean-cap → tenure → handle; NEVER volume USD',
     (() => {
-      const row = (handle: string, moneyMovedUsd: number, signedTurns: number, intents: number) => ({
+      const row = (
+        handle: string,
+        walletsServed: number,
+        signedTurns: number,
+        capBreaches: number,
+        firstSignedAt: Date | null,
+        moneyMovedUsd = 0,
+      ) => ({
         handle,
         displayName: null,
         mandateKind: null,
         moneyMovedUsd,
         signedTurns,
-        walletsServed: 0,
-        intents,
+        walletsServed,
+        intents: 1,
+        firstSignedAt,
+        capBreaches,
+        founding: false,
         maxDrawdownPct: null,
         lastSeen: new Date(0),
       })
+      const d1 = new Date('2026-01-01')
+      const d2 = new Date('2026-02-01')
       const ranked = rankLeagueRows([
-        row('cccc', 5, 9, 1), // less money loses to more money despite more signs
-        row('aaaa', 10, 1, 1),
-        row('bbbb', 10, 2, 1), // money tie → more signed wins
-        row('eeee', 5, 9, 2), // full-figure tie broken by intents…
-        row('dddd', 5, 9, 1), // …then by handle (cccc before dddd)
+        // a whale-wash row: HUGE volume, one employer — must NOT lead (§2.4)
+        row('aaaa', 1, 40, 0, d1, 900_000),
+        row('bbbb', 3, 2, 0, d2), // most employers wins outright
+        row('cccc', 1, 40, 1, d1), // signed tie w/ dddd broken by clean cap record
+        row('dddd', 1, 40, 0, d2), // zero breaches beats cccc despite later tenure
+        row('eeee', 1, 40, 0, d1), // ties aaaa on all keys → earlier… same date → handle tail
       ])
       return (
-        ranked.map((r) => r.handle).join(',') === 'bbbb,aaaa,eeee,cccc,dddd' &&
+        ranked.map((r) => r.handle).join(',') === 'bbbb,aaaa,eeee,dddd,cccc' &&
         ranked.map((r) => r.rank).join(',') === '1,2,3,4,5'
       )
     })(),
   )
+  check(
+    'roster §2.3: ordinals suppressed below 5 qualified; opening roster orders by tenure asc',
+    (() => {
+      const mk = (handle: string, firstSignedAt: Date | null) => ({
+        rank: 0,
+        handle,
+        displayName: null,
+        mandateKind: null,
+        moneyMovedUsd: 0,
+        signedTurns: 1,
+        walletsServed: 1,
+        intents: 1,
+        firstSignedAt,
+        capBreaches: 0,
+        founding: false,
+        maxDrawdownPct: null,
+        lastSeen: new Date(0),
+      })
+      const opening = orderOpeningRoster([
+        mk('bbbb', new Date('2026-03-01')),
+        mk('aaaa', new Date('2026-01-01')),
+        mk('cccc', new Date('2026-03-01')), // date tie → handle tail keeps it deterministic
+      ])
+      return (
+        ORDINALS_MIN_QUALIFIED === 5 &&
+        showOrdinals(4) === false &&
+        showOrdinals(5) === true &&
+        showOrdinals(0) === false &&
+        opening.map((r) => r.handle).join(',') === 'aaaa,bbbb,cccc'
+      )
+    })(),
+  )
+  // Founding badge (FOUNDING-MANAGERS.md): owner-set rows round-trip through
+  // the one read path; fixture cleaned in finally. Needs direct DB creds —
+  // the harness process reads env only (no .env.local), so without
+  // DATABASE_URL this drills the fail-soft read path instead (never a red:
+  // the blog-suite precedent for cred-gated checks).
+  if (process.env.DATABASE_URL) {
+    const fixture = 'f0f0f0f0f0f0f0f0'
+    let ok = false
+    try {
+      await prisma.foundingAgent.upsert({
+        where: { agentKeyHash: fixture },
+        create: { agentKeyHash: fixture, label: 'harness fixture' },
+        update: {},
+      })
+      const set = await foundingHandles([fixture, 'aaaaaaaaaaaaaaaa'])
+      ok = set.has(fixture) && !set.has('aaaaaaaaaaaaaaaa')
+    } finally {
+      await prisma.foundingAgent.deleteMany({ where: { agentKeyHash: fixture } }).catch(() => {})
+    }
+    const gone = !(await foundingHandles([fixture])).has(fixture)
+    check('roster: founding badge — owner-set row round-trips and the fixture cleans up', ok && gone)
+  } else {
+    // No creds: the read path must fail SOFT (empty set), never throw — the
+    // badge can only ever disappear, not break a page.
+    const soft = await foundingHandles(['f0f0f0f0f0f0f0f0'])
+    check('roster: founding badge read path fails soft without DB creds (empty set, no throw)', soft.size === 0)
+    console.log('  (founding round-trip skipped: DATABASE_URL unset for the harness process)')
+  }
   check(
     'roster: the board takes only agents a real human has signed for (harness residue never ranks)',
     qualifiesForBoard({ signedTurns: 1 }) === true && qualifiesForBoard({ signedTurns: 0 }) === false,
@@ -4026,21 +4118,39 @@ async function main() {
   // the real pages instead; the hallmark strings only render from the gated
   // branch. Per-handle record pages are NOT flag-gated and stay unchanged.
   {
-    const [agentsRes, rosterRes, ogRes] = await Promise.all([
+    const [agentsRes, rosterRes, ogRes, docsRes] = await Promise.all([
       fetch(`${BASE}/agents`),
       fetch(`${BASE}/roster`),
       fetch(`${BASE}/agents/opengraph-image`),
+      fetch(`${BASE}/docs/roster`),
     ])
     const agentsHtml = await agentsRes.text()
     const rosterHtml = await rosterRes.text()
-    const agentsOn = agentsRes.status === 200 && agentsHtml.includes('The standings are signatures')
-    const rosterOn = rosterRes.status === 200 && rosterHtml.includes('You keep the only pen')
+    const docsHtml = await docsRes.text()
+    // §2.6 copy fences ride the hallmark: the required phrase must be on the
+    // board, and the banned standings words must not (checked as rendered
+    // words — the page copy carries none of them in any mode).
+    const agentsOn =
+      agentsRes.status === 200 &&
+      agentsHtml.includes('The standings are signatures') &&
+      /real signed history — never projections/i.test(agentsHtml) &&
+      !/top performer|returns|APY/i.test(agentsHtml)
+    const rosterOn =
+      rosterRes.status === 200 &&
+      rosterHtml.includes('You keep the only pen') &&
+      // wave 2: the page carries the how-it-works strip + the proof transcript
+      rosterHtml.includes('How it works') &&
+      rosterHtml.includes('data-roster-transcript')
+    const docsOn =
+      docsRes.status === 200 &&
+      docsHtml.includes('Hire agents for your money') &&
+      docsHtml.includes('data-roster-transcript')
     check(
       'roster: the /agents standings index is fail-closed — 404 without the flag, the real table only with it',
       agentsRes.status === 404 || agentsOn,
     )
     check(
-      'roster: /roster front-door preview is fail-closed the same way',
+      'roster: /roster front-door preview is fail-closed the same way (hero + how-it-works + transcript)',
       rosterRes.status === 404 || rosterOn,
     )
     check(
@@ -4048,6 +4158,16 @@ async function main() {
       agentsRes.status === 404
         ? ogRes.status === 404
         : ogRes.status === 200 && (ogRes.headers.get('content-type') ?? '').includes('image/png'),
+    )
+    check(
+      'roster: /docs/roster (the transcript doc) is fail-closed with the same flag',
+      docsRes.status === 404 || docsOn,
+    )
+    // The dark doc must not leak through the docs registry (sidebar/doors/
+    // sitemap render from DOCS_PAGES) — registering it is an owner flip step.
+    check(
+      'roster: /docs/roster stays OUT of DOCS_PAGES until the flip',
+      !DOCS_PAGES.some((p) => p.slug === 'roster'),
     )
   }
 
@@ -11866,6 +11986,93 @@ async function main() {
     )
     await call('broker_close', { intent_id: sent.payload.intentId })
 
+    // ── WAVE-2 discovery: opt-in open-slots feed + slot_token targeting ────
+    {
+      const J = { 'content-type': 'application/json' }
+      const lister = privateKeyToAccount(generatePrivateKey())
+      SIGNED_IN_WALLETS.add(lister.address.toLowerCase())
+      const mkSlot = async (organic: boolean) => {
+        const r = await fetch(`${BASE}/api/roster`, {
+          method: 'POST',
+          headers: organic ? { ...J, [ORGANIC_PROBE]: '1' } : J,
+          body: JSON.stringify({ wallet: lister.address, mandate: 'buy $25 of ETH weekly', capUsd: 50 }),
+        })
+        return ((await r.json()) as { slot?: { id: string } }).slot?.id ?? ''
+      }
+      const listSlot = async (slotId: string) => {
+        const mint = await fetch(`${BASE}/api/roster/list`, { method: 'POST', headers: J, body: JSON.stringify({ slotId, wallet: lister.address }) })
+        const minted = (await mint.json()) as { consentText?: string }
+        const sig = await lister.signMessage({ message: minted.consentText ?? '' })
+        const done = await fetch(`${BASE}/api/roster/list`, { method: 'POST', headers: J, body: JSON.stringify({ slotId, wallet: lister.address, signature: sig }) })
+        return { minted, done: (await done.json()) as { slot?: { listed?: boolean; listToken?: string | null }; error?: string }, status: done.status }
+      }
+      const organicSlot = await mkSlot(true) // unflagged so the public feed can serve it; released below
+      const internalSlot = await mkSlot(false) // suite-stamped — must NEVER reach the feed (T-D4)
+
+      // Listing requires the owner's consent: mallory's signature refuses.
+      const preMint = await fetch(`${BASE}/api/roster/list`, { method: 'POST', headers: J, body: JSON.stringify({ slotId: organicSlot, wallet: lister.address }) })
+      const preMinted = (await preMint.json()) as { consentText?: string }
+      const malSig = await mallory.signMessage({ message: preMinted.consentText ?? '' })
+      const malList = await fetch(`${BASE}/api/roster/list`, { method: 'POST', headers: J, body: JSON.stringify({ slotId: organicSlot, wallet: lister.address, signature: malSig }) })
+      check(
+        "roster discovery: the list consent is server-composed (says 'publishes', hashes the mandate) and a stranger's signature cannot list (T-D2)",
+        preMint.status === 200 &&
+          /publishes this mandate/.test(preMinted.consentText ?? '') &&
+          (preMinted.consentText ?? '').includes(`Slot: ${organicSlot}`) &&
+          !(preMinted.consentText ?? '').includes('buy $25 of ETH weekly') &&
+          malList.status === 401,
+      )
+      const orgListed = await listSlot(organicSlot)
+      const intListed = await listSlot(internalSlot)
+      const orgToken = orgListed.done.slot?.listToken ?? ''
+      const intToken = intListed.done.slot?.listToken ?? ''
+      const feed = await fetch(`${BASE}/api/roster/feed`)
+      const feedBody = (await feed.json()) as { slots?: { slotToken?: string; mandate?: string }[] }
+      const feedJson = JSON.stringify(feedBody.slots ?? [])
+      check(
+        'roster discovery: the owner-listed slot serves on the feed; a stamped (internal) listing NEVER does (T-D4)',
+        feed.status === 200 &&
+          orgListed.done.slot?.listed === true &&
+          /^[A-Za-z0-9_-]{6,24}$/.test(orgToken) &&
+          feedJson.includes(orgToken) &&
+          intToken.length > 0 &&
+          !feedJson.includes(intToken),
+        orgListed.done.error ?? '',
+      )
+      check(
+        'roster discovery: the feed NEVER carries a wallet address — the token is the only handle (T-D1)',
+        !/0x[0-9a-fA-F]{40}/.test(feedJson),
+      )
+      // Token-targeted open lands identically to wallet-targeted; the wallet
+      // is disclosed only at this engagement. Conflicting targets refuse.
+      const tokOpen = await call('broker_open', { ask: 'Buy $15 of AAPL', agent: 'harness', slot_token: orgToken })
+      const walOpen = await call('broker_open', { ask: 'Buy $15 of AAPL', agent: 'harness', wallet: lister.address })
+      check(
+        'roster discovery: broker_open via slot_token == wallet-targeted (same ask/state) + discovery block names the engagement wallet (T-D6)',
+        !tokOpen.isError &&
+          !walOpen.isError &&
+          tokOpen.payload?.state === walOpen.payload?.state &&
+          tokOpen.payload?.plan?.ask === walOpen.payload?.plan?.ask &&
+          tokOpen.payload?.discovery?.wallet === lister.address.toLowerCase() &&
+          tokOpen.payload?.discovery?.slotToken === orgToken,
+      )
+      const conflict = await call('broker_open', { ask: 'Buy $15 of AAPL', agent: 'harness', slot_token: orgToken, wallet: '0x7777777777777777777777777777777777777777' })
+      const badTok = await call('broker_open', { ask: 'Buy $15 of AAPL', agent: 'harness', slot_token: 'nosuchtoken1' })
+      check(
+        'roster discovery: token+conflicting wallet refuses; an unknown/unlisted token refuses by name',
+        conflict.isError && /disagree/.test(String(conflict.payload)) && badTok.isError && /No open listing/.test(String(badTok.payload)),
+      )
+      for (const r of [tokOpen, walOpen]) if (r.payload?.intentId) await call('broker_close', { intent_id: r.payload.intentId })
+      // Release the drill rows (pending slots delete for the session owner —
+      // this also proves fire/delete still works on a LISTED slot).
+      const listerSession = await signIn(lister)
+      for (const id of [organicSlot, internalSlot]) {
+        await fetch(`${BASE}/api/roster/fire`, { method: 'POST', headers: { ...J, cookie: listerSession }, body: JSON.stringify({ slotId: id, wallet: lister.address }) })
+      }
+      const feedAfter = JSON.stringify(((await (await fetch(`${BASE}/api/roster/feed`)).json()) as { slots?: unknown[] }).slots ?? [])
+      check('roster discovery: deleting the slot pulls its listing from the feed — drill rows released', !feedAfter.includes(orgToken))
+    }
+
     // broker_tile — MOSAIC on the desk: slices in, a kind='mosaic' /i link
     // out, bound to a broker intent so the funnel reports back. The ask on
     // the wire must round-trip the tile grammar (the sign side's rulebook).
@@ -11913,7 +12120,7 @@ async function main() {
       const J = { 'content-type': 'application/json' }
       const rosterAgentKey = 'roster-r2-desk-agent'
       const rosterHash = agentHandleFor(rosterAgentKey)
-      const hireSlot = async (acct: PrivateKeyAccount, mandate: string, capUsd: number) => {
+      const hireSlot = async (acct: PrivateKeyAccount, mandate: string, capUsd: number, hash = rosterHash) => {
         const p = await fetch(`${BASE}/api/roster`, {
           method: 'POST',
           headers: J,
@@ -11924,7 +12131,7 @@ async function main() {
         const m = await fetch(`${BASE}/api/roster/hire`, {
           method: 'POST',
           headers: J,
-          body: JSON.stringify({ slotId: slot.id, wallet: acct.address, agentKeyHash: rosterHash }),
+          body: JSON.stringify({ slotId: slot.id, wallet: acct.address, agentKeyHash: hash }),
         })
         const consentText = ((await m.json()) as { consentText?: string }).consentText ?? ''
         const sig = await acct.signMessage({ message: consentText })
@@ -12132,6 +12339,73 @@ async function main() {
         overBudget.isError ? String(overBudget.payload).slice(0, 100) : 'no refusal',
       )
       check('roster R2 §4.4: budget slot released (fire)', await fireSlot(employer2, sB.slotId))
+
+      // 9 — the First Manager (wave 2): the house Rebalancer's brain + its
+      // run through the real desk door.
+      console.log('— roster manager (lib/roster-manager + the desk door)')
+      const managerKey = 'house-manager-drill-key'
+      const managerHash = agentHandleFor(managerKey)
+      const shapeSlot = { id: 'slot-m', status: 'hired', mandateKind: 'shape', mandateText: 'tile my wallet 60% ETH, 40% USDC', agentKeyHash: managerHash, capUsd: 500 }
+      const holdingsOf = (ethUsd: number, usdcUsd: number) => [
+        { symbol: 'ETH', balance: ethUsd / 2000, priceUsd: 2000, valueUsd: ethUsd },
+        { symbol: 'USDC', balance: usdcUsd, priceUsd: 1, valueUsd: usdcUsd },
+      ]
+      check(
+        'manager: within band proposes NOTHING ("Already in shape" — the mosaic quiet class)',
+        (() => {
+          const v = decideManagerMove({ slot: shapeSlot, myAgentKeyHash: managerHash, chainWord: 'base', holdings: holdingsOf(600, 400) })
+          return v.kind === 'in-shape' && /Already in shape|nothing worth/i.test(v.note)
+        })(),
+      )
+      const drifted = decideManagerMove({ slot: shapeSlot, myAgentKeyHash: managerHash, chainWord: 'base', holdings: holdingsOf(800, 200) })
+      check(
+        'manager: drift proposes exactly ONE $-priced desk ask targeting the largest drift leg',
+        drifted.kind === 'propose' &&
+          // The literal $ figure IS the price the desk's askUsd reads — the
+          // R2 fail-closed rule would wall an unpriced money ask at open.
+          /^Swap \$\d+(?:\.\d+)? of ETH to USDC on base$/.test(drifted.ask) &&
+          drifted.driftUsd > 0,
+        drifted.kind === 'propose' ? drifted.ask : drifted.note,
+      )
+      check(
+        'manager: wrong-kind / unhired / foreign-hire slots refuse before the desk is even knocked on',
+        (() => {
+          const dca = decideManagerMove({ slot: { ...shapeSlot, mandateKind: 'dca' }, myAgentKeyHash: managerHash, chainWord: 'base', holdings: [] })
+          const fired = decideManagerMove({ slot: { ...shapeSlot, status: 'fired' }, myAgentKeyHash: managerHash, chainWord: 'base', holdings: [] })
+          const foreign = decideManagerMove({ slot: { ...shapeSlot, agentKeyHash: 'deadbeefdeadbeef' }, myAgentKeyHash: managerHash, chainWord: 'base', holdings: [] })
+          return (
+            dca.kind === 'refuse' && /SHAPE mandates only/.test(dca.note) &&
+            fired.kind === 'refuse' && /fired/.test(fired.note) &&
+            foreign.kind === 'refuse' && /different agent identity/.test(foreign.note)
+          )
+        })(),
+      )
+      // The live run: hire the manager into a shape slot, open its proposed
+      // ask through the real door → addressed with the Shape badge; a second
+      // look while the card is undecided → the one-card fence; fire → the
+      // server's FIRED refusal surfaced.
+      const sM = await hireSlot(employer2, 'tile my wallet 60% ETH, 40% USDC', 500, managerHash)
+      const mOpen = drifted.kind === 'propose'
+        ? await call('broker_open', { ask: drifted.ask, agent: 'Pantessa Rebalancer', agent_key: managerKey, wallet: employer2.address })
+        : { isError: true, payload: 'no drift ask', raw: '' }
+      check(
+        "manager: the drift proposal lands ADDRESSED through the real desk door wearing the Shape badge",
+        sM.ok && !mOpen.isError && mOpen.payload?.roster?.slotId === sM.slotId && mOpen.payload?.roster?.badge?.label === 'Shape',
+        mOpen.isError ? String(mOpen.payload).slice(0, 100) : '',
+      )
+      const mInbox = ((await (await fetch(`${BASE}/api/inbox?wallet=${employer2.address}`)).json()) as {
+        items?: { slug: string; roster?: { slotId?: string } }[]
+      }).items ?? []
+      const mUndecided = undecidedProposalFor(mInbox, sM.slotId)
+      check(
+        'manager: a second run while the proposal is undecided refuses to stack (one card at a time)',
+        mUndecided !== null && /one card at a time/.test(stackingRefusal(mUndecided?.slug ?? '')),
+      )
+      check('manager: slot released (fire — cascade clears the card)', await fireSlot(employer2, sM.slotId))
+      const mFiredTry = drifted.kind === 'propose'
+        ? await call('broker_open', { ask: drifted.ask, agent_key: managerKey, wallet: employer2.address })
+        : { isError: false, payload: {}, raw: '' }
+      check('manager: after the fire, the server refusal is surfaced by name (FIRED, terminal)', mFiredTry.isError && /FIRED/.test(String(mFiredTry.payload)))
 
       // Release every roster drill row: fire staffed slots, then SIWE-owned
       // removal of fired history + leftover drafts.

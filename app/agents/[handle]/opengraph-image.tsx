@@ -3,6 +3,7 @@ import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { brandOgPalette } from '@/lib/brand-theme'
 import { getAgentRecord } from '@/lib/agent-record'
+import { foundingHandles } from '@/lib/league'
 import { pangolinMarkSvg } from '@/lib/og-marks'
 
 // Social card for an agent's public track record (/agents/<handle>). Until
@@ -36,6 +37,12 @@ type Params = { params: Promise<{ handle: string }> }
 export default async function Image({ params }: Params) {
   const { handle } = await params
   const rec = await getAgentRecord(handle).catch(() => null)
+  // Founding Manager variant (FOUNDING-MANAGERS.md): a flat accent pill in the
+  // header — cosmetic + historical, never a rank. Satori-safe (flex + solid
+  // colors only); zero founding rows today ⇒ byte-identical card.
+  const founding = rec
+    ? (await foundingHandles([rec.handle]).catch(() => new Set<string>())).has(rec.handle)
+    : false
   const pal = brandOgPalette(null)
   const name = rec ? (rec.displayName ?? `Agent ${rec.handle.slice(0, 8)}`) : 'Agent track record'
   const tiles = rec
@@ -66,9 +73,28 @@ export default async function Image({ params }: Params) {
             <img src={toDataUri(pangolinMarkSvg())} width={46} height={46} alt="" />
             <span style={{ color: pal.ink, fontSize: 34, fontWeight: 600, letterSpacing: -1.2 }}>pantessa</span>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 17, letterSpacing: 4, color: pal.muted }}>
-            <div style={{ display: 'flex', width: 8, height: 8, borderRadius: 4, background: pal.accent }} />
-            <span>AGENT TRACK RECORD</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+            {founding && (
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  padding: '7px 16px',
+                  borderRadius: 999,
+                  background: pal.accent,
+                  color: pal.bg,
+                  fontSize: 16,
+                  fontWeight: 600,
+                  letterSpacing: 3,
+                }}
+              >
+                <span>FOUNDING</span>
+              </div>
+            )}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 17, letterSpacing: 4, color: pal.muted }}>
+              <div style={{ display: 'flex', width: 8, height: 8, borderRadius: 4, background: pal.accent }} />
+              <span>AGENT TRACK RECORD</span>
+            </div>
           </div>
         </div>
 

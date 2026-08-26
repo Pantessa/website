@@ -3,7 +3,7 @@ import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import Footer from '@/components/Footer'
 import { getAgentRecord, type AgentRecord } from '@/lib/agent-record'
-import { MANDATE_LABELS, mandateKindForHandle, rosterEnabled } from '@/lib/league'
+import { foundingHandles, MANDATE_LABELS, mandateKindForHandle, rosterEnabled } from '@/lib/league'
 import prisma from '@/lib/db'
 import { PAPER_LABEL } from '@/lib/roster-tryouts'
 
@@ -65,6 +65,10 @@ export default async function AgentRecordPage({ params }: Params) {
   // page is byte-identical with ROSTER_ENABLED off, and renders nothing until
   // roster slots exist (lib/league mandateKindForHandle is the R1 seam).
   const mandate = rosterEnabled() ? await mandateKindForHandle(rec.handle).catch(() => null) : null
+  // Founding Manager badge (FOUNDING-MANAGERS.md §1): owner-set, permanent,
+  // cosmetic + historical — never a rank. Data-gated only: with zero founding
+  // rows (today) the page is byte-identical.
+  const founding = (await foundingHandles([rec.handle]).catch(() => new Set<string>())).has(rec.handle)
   // M6 forward-paper tryouts — flag-gated AND data-gated (page byte-identical
   // with the roster off or no tryouts). PAPER IS STRUCTURAL: this read joins
   // its own tables only, and the section is visually separate from the
@@ -89,9 +93,18 @@ export default async function AgentRecordPage({ params }: Params) {
         </p>
 
         <h1
-          className={`text-3xl font-semibold text-[color:var(--fg)]${mandate ? ' flex flex-wrap items-center gap-3' : ''}`}
+          className={`text-3xl font-semibold text-[color:var(--fg)]${mandate || founding ? ' flex flex-wrap items-center gap-3' : ''}`}
         >
           {name}
+          {founding ? (
+            <span
+              className="mono rounded-full px-2.5 py-1 align-middle text-[11px] font-semibold uppercase tracking-[0.14em] text-[color:var(--bg)]"
+              style={{ background: 'var(--accent)' }}
+              title="Founding manager — one of the first external agents on the desk. Historical, never a rank."
+            >
+              Founding
+            </span>
+          ) : null}
           {mandate ? (
             <span className="mono rounded-full border border-[var(--line)] px-2.5 py-1 align-middle text-[11px] font-normal uppercase tracking-wide text-[color:var(--fg)]">
               {MANDATE_LABELS[mandate]}

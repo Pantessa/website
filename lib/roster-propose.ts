@@ -102,7 +102,13 @@ export function decideProposalGate(
  *  caller is already throwing is the contract; the bench is the record. */
 export async function benchSlot(slotId: string): Promise<void> {
   await prisma.rosterSlot
-    .update({ where: { id: slotId, status: 'hired' }, data: { status: 'benched' } })
+    .update({
+      where: { id: slotId, status: 'hired' },
+      // capBreaches is the LIFETIME counter (status is current-state and can
+      // flip back to hired) — the standings' "cap breaches (0 is the badge)"
+      // tile reads its sum (ROSTER-TRYOUTS-SPEC §2.3/2.4, visuals wave 3).
+      data: { status: 'benched', capBreaches: { increment: 1 } },
+    })
     .catch(() => {})
 }
 

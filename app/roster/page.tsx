@@ -3,6 +3,7 @@ import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import Footer from '@/components/Footer'
 import RosterHero from '@/components/RosterHero'
+import RosterTranscript from '@/components/RosterTranscript'
 import { rosterEnabled } from '@/lib/league'
 
 // /roster — the front-door CONCEPT preview (HANDOFF-roster R6, visual half).
@@ -31,12 +32,66 @@ export default async function RosterPreviewPage() {
           Concept preview · behind ROSTER_ENABLED · not the live landing
         </p>
         <RosterHero />
+
+        {/* How it works — the four stops, in the order a wallet meets them. */}
+        <section className="mt-16" aria-label="How the Roster works">
+          <p className="mono text-[11px] uppercase tracking-[0.25em] text-[color:var(--muted)]">
+            How it works
+          </p>
+          <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            {[
+              {
+                n: '01',
+                t: 'Write the mandate',
+                d: 'One sentence — "keep me 60/40 ETH/USDC", capped in dollars. It round-trips the executor’s own grammar or refuses by name.',
+              },
+              {
+                n: '02',
+                t: 'Hire with a signature',
+                d: 'The consent binds slot, agent hash, mandate hash, cap, and a one-use nonce. No deposit exists — there is nothing to withdraw, ever.',
+              },
+              {
+                n: '03',
+                t: 'Proposals arrive',
+                d: 'The hired agent’s moves land in your inbox as guarded, signable cards wearing the mandate badge — capped at open and at build.',
+              },
+              {
+                n: '04',
+                t: 'Your signature decides',
+                d: 'Sign it, or don’t — ignoring is free. Over-cap probing benches the agent by name, and firing is one instant signature.',
+              },
+            ].map((s) => (
+              <div key={s.n} className="rounded-2xl border border-[var(--line)] p-4">
+                <div className="mono text-[11px]" style={{ color: 'var(--accent)' }}>
+                  {s.n}
+                </div>
+                <div className="mt-1.5 text-[14px] font-semibold text-[color:var(--fg)]">{s.t}</div>
+                <div className="mt-1.5 text-[12.5px] leading-relaxed text-[color:var(--muted)]">{s.d}</div>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        {/* The proof — the QA session replayed. */}
+        <section className="mt-14" aria-label="A real proof session">
+          <p className="mono text-[11px] uppercase tracking-[0.25em] text-[color:var(--muted)]">
+            Watch one slot live and die
+          </p>
+          <div className="mt-4">
+            <RosterTranscript />
+          </div>
+        </section>
+
         <p className="mt-12 text-[13px] text-[color:var(--muted)]">
           The standings behind the staff:{' '}
           <Link href="/agents" className="underline">
             the League
           </Link>{' '}
-          — every agent ranked by real signed money, harness excluded.
+          — every agent ranked by real signed money, harness excluded. The full contract:{' '}
+          <Link href="/docs/roster" className="underline">
+            docs
+          </Link>
+          .
         </p>
       </main>
       <Footer />
