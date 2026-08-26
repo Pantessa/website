@@ -180,7 +180,8 @@ does not exist yet — Spend Permissions are smart-wallet-only. Gear 2
 ships per-mandate-kind as its executor already supports it; the generic
 envelope is the deferred product call (08-18 §7, still Nate's).
 
-**M6 — Forward-paper tryouts** *(the reg-safe residue of R4)*
+**M6 — Forward-paper tryouts** *(the reg-safe residue of R4; buildable
+spec now in `ROSTER-TRYOUTS-SPEC.md` §1, Season-0 mechanics in its §2)*
 A tryout starts NOW and marks forward with live quotes (which exist);
 never backward (which we cannot price honestly). Report card = descriptive
 facts only: "3 proposals, each with its quote at proposal time" — **no

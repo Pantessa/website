@@ -116,6 +116,10 @@ export async function POST(req: NextRequest) {
     where: { id: slot.id },
     data: {
       status: 'hired',
+      // WAVE-2 discovery (T-D5): a filled slot leaves the public feed —
+      // product truth and exposure hygiene in one write.
+      listed: false,
+      listToken: null,
       consentNonce: null,
       consentAction: null,
       consentExpiresAt: null,

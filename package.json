@@ -19,6 +19,7 @@
     "audit:asks": "tsx scripts/audit-asks.ts",
     "audit:funding": "tsx scripts/audit-funding.ts",
     "preflight:house": "tsx scripts/preflight-house.ts",
+    "manager:once": "tsx scripts/house-manager.ts",
     "fingerprint:deploy": "tsx scripts/fingerprint-deploy.ts",
     "drill:kickback": "tsx scripts/kickback-drill.ts",
     "digest:gtm": "tsx scripts/gtm-digest.ts",

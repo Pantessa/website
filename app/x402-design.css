@@ -4632,6 +4632,9 @@
   .desktx__line--beat { color: var(--fg); animation: desktx-land .32s ease-out both, desktx-beat 1.1s ease-out .05s; }
   .desktx__line--done { color: var(--done); }
   .desktx__line--done .desktx__who--desk { color: var(--done); }
+  /* A fence holding, by name (RosterTranscript: over-cap bench, fired-terminal). */
+  .desktx__line--wall { color: var(--sell); }
+  .desktx__line--wall .desktx__who--desk { color: var(--sell); }
   .desktx__caret { display: inline-block; color: var(--muted-2); animation: desktx-blink 1s steps(1) infinite; }
   .desktx__caret--held { animation: none; opacity: .5; }
   @keyframes desktx-land { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: none; } }
