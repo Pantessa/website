@@ -11705,6 +11705,93 @@ async function main() {
     )
     await call('broker_close', { intent_id: sent.payload.intentId })
 
+    // ── WAVE-2 discovery: opt-in open-slots feed + slot_token targeting ────
+    {
+      const J = { 'content-type': 'application/json' }
+      const lister = privateKeyToAccount(generatePrivateKey())
+      SIGNED_IN_WALLETS.add(lister.address.toLowerCase())
+      const mkSlot = async (organic: boolean) => {
+        const r = await fetch(`${BASE}/api/roster`, {
+          method: 'POST',
+          headers: organic ? { ...J, [ORGANIC_PROBE]: '1' } : J,
+          body: JSON.stringify({ wallet: lister.address, mandate: 'buy $25 of ETH weekly', capUsd: 50 }),
+        })
+        return ((await r.json()) as { slot?: { id: string } }).slot?.id ?? ''
+      }
+      const listSlot = async (slotId: string) => {
+        const mint = await fetch(`${BASE}/api/roster/list`, { method: 'POST', headers: J, body: JSON.stringify({ slotId, wallet: lister.address }) })
+        const minted = (await mint.json()) as { consentText?: string }
+        const sig = await lister.signMessage({ message: minted.consentText ?? '' })
+        const done = await fetch(`${BASE}/api/roster/list`, { method: 'POST', headers: J, body: JSON.stringify({ slotId, wallet: lister.address, signature: sig }) })
+        return { minted, done: (await done.json()) as { slot?: { listed?: boolean; listToken?: string | null }; error?: string }, status: done.status }
+      }
+      const organicSlot = await mkSlot(true) // unflagged so the public feed can serve it; released below
+      const internalSlot = await mkSlot(false) // suite-stamped — must NEVER reach the feed (T-D4)
+
+      // Listing requires the owner's consent: mallory's signature refuses.
+      const preMint = await fetch(`${BASE}/api/roster/list`, { method: 'POST', headers: J, body: JSON.stringify({ slotId: organicSlot, wallet: lister.address }) })
+      const preMinted = (await preMint.json()) as { consentText?: string }
+      const malSig = await mallory.signMessage({ message: preMinted.consentText ?? '' })
+      const malList = await fetch(`${BASE}/api/roster/list`, { method: 'POST', headers: J, body: JSON.stringify({ slotId: organicSlot, wallet: lister.address, signature: malSig }) })
+      check(
+        "roster discovery: the list consent is server-composed (says 'publishes', hashes the mandate) and a stranger's signature cannot list (T-D2)",
+        preMint.status === 200 &&
+          /publishes this mandate/.test(preMinted.consentText ?? '') &&
+          (preMinted.consentText ?? '').includes(`Slot: ${organicSlot}`) &&
+          !(preMinted.consentText ?? '').includes('buy $25 of ETH weekly') &&
+          malList.status === 401,
+      )
+      const orgListed = await listSlot(organicSlot)
+      const intListed = await listSlot(internalSlot)
+      const orgToken = orgListed.done.slot?.listToken ?? ''
+      const intToken = intListed.done.slot?.listToken ?? ''
+      const feed = await fetch(`${BASE}/api/roster/feed`)
+      const feedBody = (await feed.json()) as { slots?: { slotToken?: string; mandate?: string }[] }
+      const feedJson = JSON.stringify(feedBody.slots ?? [])
+      check(
+        'roster discovery: the owner-listed slot serves on the feed; a stamped (internal) listing NEVER does (T-D4)',
+        feed.status === 200 &&
+          orgListed.done.slot?.listed === true &&
+          /^[A-Za-z0-9_-]{6,24}$/.test(orgToken) &&
+          feedJson.includes(orgToken) &&
+          intToken.length > 0 &&
+          !feedJson.includes(intToken),
+        orgListed.done.error ?? '',
+      )
+      check(
+        'roster discovery: the feed NEVER carries a wallet address — the token is the only handle (T-D1)',
+        !/0x[0-9a-fA-F]{40}/.test(feedJson),
+      )
+      // Token-targeted open lands identically to wallet-targeted; the wallet
+      // is disclosed only at this engagement. Conflicting targets refuse.
+      const tokOpen = await call('broker_open', { ask: 'Buy $15 of AAPL', agent: 'harness', slot_token: orgToken })
+      const walOpen = await call('broker_open', { ask: 'Buy $15 of AAPL', agent: 'harness', wallet: lister.address })
+      check(
+        'roster discovery: broker_open via slot_token == wallet-targeted (same ask/state) + discovery block names the engagement wallet (T-D6)',
+        !tokOpen.isError &&
+          !walOpen.isError &&
+          tokOpen.payload?.state === walOpen.payload?.state &&
+          tokOpen.payload?.plan?.ask === walOpen.payload?.plan?.ask &&
+          tokOpen.payload?.discovery?.wallet === lister.address.toLowerCase() &&
+          tokOpen.payload?.discovery?.slotToken === orgToken,
+      )
+      const conflict = await call('broker_open', { ask: 'Buy $15 of AAPL', agent: 'harness', slot_token: orgToken, wallet: '0x7777777777777777777777777777777777777777' })
+      const badTok = await call('broker_open', { ask: 'Buy $15 of AAPL', agent: 'harness', slot_token: 'nosuchtoken1' })
+      check(
+        'roster discovery: token+conflicting wallet refuses; an unknown/unlisted token refuses by name',
+        conflict.isError && /disagree/.test(String(conflict.payload)) && badTok.isError && /No open listing/.test(String(badTok.payload)),
+      )
+      for (const r of [tokOpen, walOpen]) if (r.payload?.intentId) await call('broker_close', { intent_id: r.payload.intentId })
+      // Release the drill rows (pending slots delete for the session owner —
+      // this also proves fire/delete still works on a LISTED slot).
+      const listerSession = await signIn(lister)
+      for (const id of [organicSlot, internalSlot]) {
+        await fetch(`${BASE}/api/roster/fire`, { method: 'POST', headers: { ...J, cookie: listerSession }, body: JSON.stringify({ slotId: id, wallet: lister.address }) })
+      }
+      const feedAfter = JSON.stringify(((await (await fetch(`${BASE}/api/roster/feed`)).json()) as { slots?: unknown[] }).slots ?? [])
+      check('roster discovery: deleting the slot pulls its listing from the feed — drill rows released', !feedAfter.includes(orgToken))
+    }
+
     // broker_tile — MOSAIC on the desk: slices in, a kind='mosaic' /i link
     // out, bound to a broker intent so the funnel reports back. The ask on
     // the wire must round-trip the tile grammar (the sign side's rulebook).

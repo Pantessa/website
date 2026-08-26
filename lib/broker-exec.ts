@@ -51,6 +51,10 @@ export interface OpenResult {
    *  HIRED mandate slot — the proposal already auto-addressed to the
    *  employer wallet's inbox as a signable card wearing this badge. */
   roster?: { slotId: string; badge: RosterBadge; url: string; inboxUrl: string; recipient: string }
+  /** WAVE-2 discovery: present when this open was targeted by a slot_token
+   *  from the public feed — the one place the employer wallet is disclosed
+   *  (engagement-time, never in the feed itself; security T-D1). */
+  discovery?: { slotToken: string; kind: string; mandate: string; capUsd: number; wallet: string }
 }
 
 /** Per-call desk options read from the MCP request (lib/internal-run.ts):
@@ -72,11 +76,39 @@ export async function openIntent(opts: {
   agent?: unknown
   agentKey?: unknown
   callbackUrl?: unknown
+  slotToken?: unknown
 }, call?: DeskCallOpts): Promise<OpenResult> {
   assertDeskOpen()
-  const wallet = cleanWallet(opts.wallet)
+  let wallet = cleanWallet(opts.wallet)
   const agent = cleanAgentName(opts.agent)
   const agentKey = cleanAgentKey(opts.agentKey)
+
+  // WAVE-2 discovery (security T-D1/T-D6): slot_token targets a LISTED open
+  // mandate slot from /api/roster/feed. The token resolves server-side to
+  // the employer wallet — the feed itself never carries an address; the
+  // wallet is disclosed only here, at engagement, on an auditable open.
+  // ADDITIVE alongside `wallet`: after resolution the open proceeds through
+  // every existing gate exactly as a wallet-targeted open.
+  let discovery: OpenResult['discovery']
+  if (opts.slotToken != null && opts.slotToken !== '') {
+    const token = typeof opts.slotToken === 'string' ? opts.slotToken.trim() : ''
+    if (!/^[A-Za-z0-9_-]{6,24}$/.test(token)) throw new Error('slot_token is not a valid listing token.')
+    const slot = await prisma.rosterSlot.findUnique({ where: { listToken: token } }).catch(() => null)
+    if (!slot || !slot.listed || slot.status !== 'pending' || slot.isInternal) {
+      throw new Error('No open listing matches this slot_token — it may have been unlisted, filled, or removed. Pull /api/roster/feed again.')
+    }
+    if (wallet && wallet !== slot.walletAddress) {
+      throw new Error('slot_token and wallet disagree — pass ONE target: the token from the feed, or a wallet you were given directly.')
+    }
+    wallet = slot.walletAddress
+    discovery = {
+      slotToken: token,
+      kind: slot.mandateKind,
+      mandate: slot.mandateText.slice(0, 120),
+      capUsd: slot.capUsd,
+      wallet: slot.walletAddress,
+    }
+  }
 
   // Optional push channel: validate the callback URL (SSRF fence) and mint a
   // per-intent signing secret returned ONCE below.
@@ -133,6 +165,7 @@ export async function openIntent(opts: {
       plan,
       contract: CONTRACT,
       roster: { slotId: binding.slot.id, badge: binding.badge, url: sent.url, inboxUrl: sent.inboxUrl, recipient: sent.recipient },
+      ...(discovery ? { discovery } : {}),
       next: [
         `This desk identity is HIRED for the "${binding.badge.label}" mandate on ${sent.recipient} — the proposal is already in their inbox as a signable card (cap $${binding.badge.capUsd} per proposal).`,
         'Poll broker_status to learn when they sign. Only their own signature moves anything.',
@@ -174,7 +207,13 @@ export async function openIntent(opts: {
     state: 'open',
     plan,
     contract: CONTRACT,
+    ...(discovery ? { discovery } : {}),
     next: [
+      ...(discovery
+        ? [
+            `This open courts the "${discovery.kind}" listing ${discovery.slotToken} — mandate "${discovery.mandate}", cap $${discovery.capUsd}/proposal. broker_send your pitch to ${discovery.wallet}, or hand off a sign link; if they like your record they hire you (their signature) and your future opens auto-address under the mandate.`,
+          ]
+        : []),
       'broker_choose with an option id to rewrite the working ask (funding routes are real resume-sentences)',
       'broker_handoff to mint the sign link for your human',
       callbackUrl
