@@ -47,20 +47,35 @@ export interface LeagueRow {
   displayName: string | null
   /** Mandate category once slots exist (R1/R2); null = open play today. */
   mandateKind: MandateKindT | null
-  /** Real signed USD through this agent's links (REAL_TRAFFIC_WHERE). */
+  /** Real signed USD through this agent's links (REAL_TRAFFIC_WHERE).
+   *  Displayed on record pages/OG totals — NEVER a rank key (§2.4:
+   *  volume ranking is whale-wash bait). */
   moneyMovedUsd: number
   signedTurns: number
   /** Distinct signing wallets served (real traffic; legacy null-wallet rows
-   *  can't be attributed to a wallet and don't count). */
+   *  can't be attributed to a wallet and don't count). §2.4 rank key 1. */
   walletsServed: number
   intents: number
+  /** Tenure — the agent's FIRST real signed turn (§2.3: un-gameable by
+   *  spending money). Null can only occur for unqualified rows. */
+  firstSignedAt: Date | null
+  /** Lifetime cap breaches across the agent's slots (benchSlot's counter,
+   *  non-internal slots only). 0 is the badge (§2.3). */
+  capBreaches: number
+  /** Founding Manager badge (FOUNDING-MANAGERS.md) — cosmetic + historical,
+   *  owner-set only, never a rank input. */
+  founding: boolean
   /** Drawdown honesty line — needs the R4 tryout/mark machinery. Null until
    *  marks exist; the column renders as a slot, never a fake zero. */
   maxDrawdownPct: number | null
   lastSeen: Date
 }
 
-/** The season banner — one source so the page and the OG card agree. */
+/** The season banner — THE single source (page, OG card, docs). §2.5:
+ *  preseason has no scheduled end; Season 1 begins on the first UTC Monday
+ *  after ≥5 qualified agents AND ≥1 external agent with a real non-house
+ *  hire — an OWNER flip of this constant (seasons are windowed reads;
+ *  boundaries delete nothing, the lifetime record is permanent). */
 export const SEASON_LABEL = 'Season 0 — preseason'
 
 /** Mandate category for a record page's badge. R1's roster_slots are the
@@ -92,18 +107,51 @@ type UnrankedRow = Omit<LeagueRow, 'rank'>
  *  is a REAL_TRAFFIC signed turn. */
 export const qualifiesForBoard = (r: Pick<UnrankedRow, 'signedTurns'>) => r.signedTurns > 0
 
-/** Standings order, pure and pinned: real money first, then signed count,
- *  then intents brokered; handle breaks ties so the table is stable. */
+/** Season 0 board mechanics (ROSTER-TRYOUTS-SPEC §2.3): rank ORDINALS are
+ *  suppressed below this many qualified agents — with two agents a volume
+ *  rank is a coin-flip advertisement at peak sybil pressure. Below the bar
+ *  the board is "The opening roster", tenure-ordered. */
+export const ORDINALS_MIN_QUALIFIED = 5
+export const showOrdinals = (qualified: number) => qualified >= ORDINALS_MIN_QUALIFIED
+
+/** Standings order, pure and pinned — the §2.4 tie-break sequence:
+ *  (1) distinct real employer wallets desc; (2) signed proposals desc;
+ *  (3) zero cap breaches before any breach; (4) tenure asc (earlier first
+ *  signature = longer proven); (5) handle-hash lexicographic as the final
+ *  total order. NEVER by volume USD (whale-wash resistant), never by
+ *  returns (killed). */
 export function rankLeagueRows(rows: UnrankedRow[]): LeagueRow[] {
   return [...rows]
     .sort(
       (a, b) =>
-        b.moneyMovedUsd - a.moneyMovedUsd ||
+        b.walletsServed - a.walletsServed ||
         b.signedTurns - a.signedTurns ||
-        b.intents - a.intents ||
+        (a.capBreaches === 0 ? 0 : 1) - (b.capBreaches === 0 ? 0 : 1) ||
+        (a.firstSignedAt?.getTime() ?? Infinity) - (b.firstSignedAt?.getTime() ?? Infinity) ||
         a.handle.localeCompare(b.handle),
     )
     .map((r, i) => ({ ...r, rank: i + 1 }))
+}
+
+/** The <5-qualified board (§2.3): "a roster, not a race" — tenure order
+ *  (first real signature ascending), handle as the deterministic tail. */
+export function orderOpeningRoster(rows: LeagueRow[]): LeagueRow[] {
+  return [...rows].sort(
+    (a, b) =>
+      (a.firstSignedAt?.getTime() ?? Infinity) - (b.firstSignedAt?.getTime() ?? Infinity) ||
+      a.handle.localeCompare(b.handle),
+  )
+}
+
+/** The Founding Manager set for a batch of handles (FOUNDING-MANAGERS.md):
+ *  owner-set rows only (scripts/set-founding-agent.ts) — the product never
+ *  writes here. Fail-soft to empty. */
+export async function foundingHandles(handles: string[]): Promise<Set<string>> {
+  if (handles.length === 0) return new Set()
+  const rows = await prisma.foundingAgent
+    .findMany({ where: { agentKeyHash: { in: handles } }, select: { agentKeyHash: true } })
+    .catch(() => [] as { agentKeyHash: string }[])
+  return new Set(rows.map((r) => r.agentKeyHash))
 }
 
 /** Build the public standings. Reads only server truth; every figure is the
@@ -142,23 +190,42 @@ export async function getLeagueStandings(): Promise<LeagueStandings> {
   }
 
   const allSlugs = [...slugOwner.keys()]
-  const turns = allSlugs.length
-    ? await prisma.embedTurn.findMany({
-        where: { intentLinkSlug: { in: allSlugs }, outcome: 'signed', ...REAL_TRAFFIC_WHERE },
-        select: { intentLinkSlug: true, valueUsd: true, walletAddress: true },
-      })
-    : []
+  const handles = [...byHandle.keys()]
+  const [turns, breachRows, founding] = await Promise.all([
+    allSlugs.length
+      ? prisma.embedTurn.findMany({
+          where: { intentLinkSlug: { in: allSlugs }, outcome: 'signed', ...REAL_TRAFFIC_WHERE },
+          select: { intentLinkSlug: true, valueUsd: true, walletAddress: true, createdAt: true },
+        })
+      : Promise.resolve([]),
+    // Lifetime cap breaches per agent — the benchSlot counter summed over the
+    // agent's NON-INTERNAL slots (status is current-state only; the counter
+    // survives a re-hire).
+    handles.length
+      ? prisma.rosterSlot
+          .groupBy({
+            by: ['agentKeyHash'],
+            where: { agentKeyHash: { in: handles }, isInternal: false },
+            _sum: { capBreaches: true },
+          })
+          .catch(() => [] as { agentKeyHash: string | null; _sum: { capBreaches: number | null } }[])
+      : Promise.resolve([]),
+    foundingHandles(handles),
+  ])
 
-  const money = new Map<string, { usd: number; signed: number; wallets: Set<string> }>()
+  const money = new Map<string, { usd: number; signed: number; wallets: Set<string>; first: Date | null }>()
   for (const t of turns) {
     const handle = slugOwner.get(t.intentLinkSlug as string)
     if (!handle) continue
-    const cur = money.get(handle) ?? { usd: 0, signed: 0, wallets: new Set<string>() }
+    const cur = money.get(handle) ?? { usd: 0, signed: 0, wallets: new Set<string>(), first: null }
     cur.usd += t.valueUsd ?? 0
     cur.signed += 1
     if (t.walletAddress) cur.wallets.add(t.walletAddress.toLowerCase())
+    if (!cur.first || t.createdAt < cur.first) cur.first = t.createdAt
     money.set(handle, cur)
   }
+  const breaches = new Map<string, number>()
+  for (const b of breachRows) if (b.agentKeyHash) breaches.set(b.agentKeyHash, b._sum.capBreaches ?? 0)
 
   const unranked = [...byHandle.entries()].map(([handle, a]) => {
     const m = money.get(handle)
@@ -170,6 +237,9 @@ export async function getLeagueStandings(): Promise<LeagueStandings> {
       signedTurns: m?.signed ?? 0,
       walletsServed: m?.wallets.size ?? 0,
       intents: a.intents,
+      firstSignedAt: m?.first ?? null,
+      capBreaches: breaches.get(handle) ?? 0,
+      founding: founding.has(handle),
       maxDrawdownPct: null, // R4 marks fill this in
       lastSeen: a.lastSeen,
     }
