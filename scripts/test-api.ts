@@ -74,6 +74,7 @@ import {
 } from '../lib/roster-policy'
 import { cleanAgentKeyHash, cleanCapUsd, parseMandate, MANDATE_KIND_LABELS, ROSTER_MAX_CAP_USD } from '../lib/roster'
 import { decideProposalGate } from '../lib/roster-propose'
+import { decideManagerMove, stackingRefusal, undecidedProposalFor } from '../lib/roster-manager'
 import { buildDelivery, mintCallbackSecret, notifyEligible, signWebhook, validateCallbackUrl } from '../lib/broker-webhook'
 import { agentHandleFor } from '../lib/agent-record'
 import { qualifiesForBoard, rankLeagueRows } from '../lib/league'
@@ -11839,7 +11840,7 @@ async function main() {
       const J = { 'content-type': 'application/json' }
       const rosterAgentKey = 'roster-r2-desk-agent'
       const rosterHash = agentHandleFor(rosterAgentKey)
-      const hireSlot = async (acct: PrivateKeyAccount, mandate: string, capUsd: number) => {
+      const hireSlot = async (acct: PrivateKeyAccount, mandate: string, capUsd: number, hash = rosterHash) => {
         const p = await fetch(`${BASE}/api/roster`, {
           method: 'POST',
           headers: J,
@@ -11850,7 +11851,7 @@ async function main() {
         const m = await fetch(`${BASE}/api/roster/hire`, {
           method: 'POST',
           headers: J,
-          body: JSON.stringify({ slotId: slot.id, wallet: acct.address, agentKeyHash: rosterHash }),
+          body: JSON.stringify({ slotId: slot.id, wallet: acct.address, agentKeyHash: hash }),
         })
         const consentText = ((await m.json()) as { consentText?: string }).consentText ?? ''
         const sig = await acct.signMessage({ message: consentText })
@@ -12058,6 +12059,73 @@ async function main() {
         overBudget.isError ? String(overBudget.payload).slice(0, 100) : 'no refusal',
       )
       check('roster R2 §4.4: budget slot released (fire)', await fireSlot(employer2, sB.slotId))
+
+      // 9 — the First Manager (wave 2): the house Rebalancer's brain + its
+      // run through the real desk door.
+      console.log('— roster manager (lib/roster-manager + the desk door)')
+      const managerKey = 'house-manager-drill-key'
+      const managerHash = agentHandleFor(managerKey)
+      const shapeSlot = { id: 'slot-m', status: 'hired', mandateKind: 'shape', mandateText: 'tile my wallet 60% ETH, 40% USDC', agentKeyHash: managerHash, capUsd: 500 }
+      const holdingsOf = (ethUsd: number, usdcUsd: number) => [
+        { symbol: 'ETH', balance: ethUsd / 2000, priceUsd: 2000, valueUsd: ethUsd },
+        { symbol: 'USDC', balance: usdcUsd, priceUsd: 1, valueUsd: usdcUsd },
+      ]
+      check(
+        'manager: within band proposes NOTHING ("Already in shape" — the mosaic quiet class)',
+        (() => {
+          const v = decideManagerMove({ slot: shapeSlot, myAgentKeyHash: managerHash, chainWord: 'base', holdings: holdingsOf(600, 400) })
+          return v.kind === 'in-shape' && /Already in shape|nothing worth/i.test(v.note)
+        })(),
+      )
+      const drifted = decideManagerMove({ slot: shapeSlot, myAgentKeyHash: managerHash, chainWord: 'base', holdings: holdingsOf(800, 200) })
+      check(
+        'manager: drift proposes exactly ONE $-priced desk ask targeting the largest drift leg',
+        drifted.kind === 'propose' &&
+          // The literal $ figure IS the price the desk's askUsd reads — the
+          // R2 fail-closed rule would wall an unpriced money ask at open.
+          /^Swap \$\d+(?:\.\d+)? of ETH to USDC on base$/.test(drifted.ask) &&
+          drifted.driftUsd > 0,
+        drifted.kind === 'propose' ? drifted.ask : drifted.note,
+      )
+      check(
+        'manager: wrong-kind / unhired / foreign-hire slots refuse before the desk is even knocked on',
+        (() => {
+          const dca = decideManagerMove({ slot: { ...shapeSlot, mandateKind: 'dca' }, myAgentKeyHash: managerHash, chainWord: 'base', holdings: [] })
+          const fired = decideManagerMove({ slot: { ...shapeSlot, status: 'fired' }, myAgentKeyHash: managerHash, chainWord: 'base', holdings: [] })
+          const foreign = decideManagerMove({ slot: { ...shapeSlot, agentKeyHash: 'deadbeefdeadbeef' }, myAgentKeyHash: managerHash, chainWord: 'base', holdings: [] })
+          return (
+            dca.kind === 'refuse' && /SHAPE mandates only/.test(dca.note) &&
+            fired.kind === 'refuse' && /fired/.test(fired.note) &&
+            foreign.kind === 'refuse' && /different agent identity/.test(foreign.note)
+          )
+        })(),
+      )
+      // The live run: hire the manager into a shape slot, open its proposed
+      // ask through the real door → addressed with the Shape badge; a second
+      // look while the card is undecided → the one-card fence; fire → the
+      // server's FIRED refusal surfaced.
+      const sM = await hireSlot(employer2, 'tile my wallet 60% ETH, 40% USDC', 500, managerHash)
+      const mOpen = drifted.kind === 'propose'
+        ? await call('broker_open', { ask: drifted.ask, agent: 'Pantessa Rebalancer', agent_key: managerKey, wallet: employer2.address })
+        : { isError: true, payload: 'no drift ask', raw: '' }
+      check(
+        "manager: the drift proposal lands ADDRESSED through the real desk door wearing the Shape badge",
+        sM.ok && !mOpen.isError && mOpen.payload?.roster?.slotId === sM.slotId && mOpen.payload?.roster?.badge?.label === 'Shape',
+        mOpen.isError ? String(mOpen.payload).slice(0, 100) : '',
+      )
+      const mInbox = ((await (await fetch(`${BASE}/api/inbox?wallet=${employer2.address}`)).json()) as {
+        items?: { slug: string; roster?: { slotId?: string } }[]
+      }).items ?? []
+      const mUndecided = undecidedProposalFor(mInbox, sM.slotId)
+      check(
+        'manager: a second run while the proposal is undecided refuses to stack (one card at a time)',
+        mUndecided !== null && /one card at a time/.test(stackingRefusal(mUndecided?.slug ?? '')),
+      )
+      check('manager: slot released (fire — cascade clears the card)', await fireSlot(employer2, sM.slotId))
+      const mFiredTry = drifted.kind === 'propose'
+        ? await call('broker_open', { ask: drifted.ask, agent_key: managerKey, wallet: employer2.address })
+        : { isError: false, payload: {}, raw: '' }
+      check('manager: after the fire, the server refusal is surfaced by name (FIRED, terminal)', mFiredTry.isError && /FIRED/.test(String(mFiredTry.payload)))
 
       // Release every roster drill row: fire staffed slots, then SIWE-owned
       // removal of fired history + leftover drafts.
