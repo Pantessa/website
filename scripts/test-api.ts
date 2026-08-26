@@ -78,6 +78,7 @@ import { decideManagerMove, stackingRefusal, undecidedProposalFor } from '../lib
 import { buildDelivery, mintCallbackSecret, notifyEligible, signWebhook, validateCallbackUrl } from '../lib/broker-webhook'
 import { agentHandleFor } from '../lib/agent-record'
 import { qualifiesForBoard, rankLeagueRows } from '../lib/league'
+import { DOCS_PAGES } from '../lib/docs'
 import { addrsUnion, arcQuery } from '../lib/gtm-arc'
 import { isInternalRun, INTERNAL_RUN_HEADER } from '../lib/internal-run'
 import { deskExecuteConsentMessage, cleanSenderLabel } from '../lib/broker-exec'
@@ -3866,21 +3867,32 @@ async function main() {
   // the real pages instead; the hallmark strings only render from the gated
   // branch. Per-handle record pages are NOT flag-gated and stay unchanged.
   {
-    const [agentsRes, rosterRes, ogRes] = await Promise.all([
+    const [agentsRes, rosterRes, ogRes, docsRes] = await Promise.all([
       fetch(`${BASE}/agents`),
       fetch(`${BASE}/roster`),
       fetch(`${BASE}/agents/opengraph-image`),
+      fetch(`${BASE}/docs/roster`),
     ])
     const agentsHtml = await agentsRes.text()
     const rosterHtml = await rosterRes.text()
+    const docsHtml = await docsRes.text()
     const agentsOn = agentsRes.status === 200 && agentsHtml.includes('The standings are signatures')
-    const rosterOn = rosterRes.status === 200 && rosterHtml.includes('You keep the only pen')
+    const rosterOn =
+      rosterRes.status === 200 &&
+      rosterHtml.includes('You keep the only pen') &&
+      // wave 2: the page carries the how-it-works strip + the proof transcript
+      rosterHtml.includes('How it works') &&
+      rosterHtml.includes('data-roster-transcript')
+    const docsOn =
+      docsRes.status === 200 &&
+      docsHtml.includes('Hire agents for your money') &&
+      docsHtml.includes('data-roster-transcript')
     check(
       'roster: the /agents standings index is fail-closed — 404 without the flag, the real table only with it',
       agentsRes.status === 404 || agentsOn,
     )
     check(
-      'roster: /roster front-door preview is fail-closed the same way',
+      'roster: /roster front-door preview is fail-closed the same way (hero + how-it-works + transcript)',
       rosterRes.status === 404 || rosterOn,
     )
     check(
@@ -3888,6 +3900,16 @@ async function main() {
       agentsRes.status === 404
         ? ogRes.status === 404
         : ogRes.status === 200 && (ogRes.headers.get('content-type') ?? '').includes('image/png'),
+    )
+    check(
+      'roster: /docs/roster (the transcript doc) is fail-closed with the same flag',
+      docsRes.status === 404 || docsOn,
+    )
+    // The dark doc must not leak through the docs registry (sidebar/doors/
+    // sitemap render from DOCS_PAGES) — registering it is an owner flip step.
+    check(
+      'roster: /docs/roster stays OUT of DOCS_PAGES until the flip',
+      !DOCS_PAGES.some((p) => p.slug === 'roster'),
     )
   }
 
