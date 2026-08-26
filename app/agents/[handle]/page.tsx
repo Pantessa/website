@@ -3,6 +3,7 @@ import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import Footer from '@/components/Footer'
 import { getAgentRecord, type AgentRecord } from '@/lib/agent-record'
+import { MANDATE_LABELS, mandateKindForHandle, rosterEnabled } from '@/lib/league'
 
 // /agents/<handle> — an agent's PUBLIC track record: how much real money moved
 // through the guarded path under its identity, how many intents its humans
@@ -58,6 +59,10 @@ export default async function AgentRecordPage({ params }: Params) {
   if (!rec) notFound()
 
   const name = rec.displayName ?? `Agent ${rec.handle.slice(0, 8)}`
+  // Roster mandate badge (HANDOFF-roster R3): flag-gated AND data-gated — the
+  // page is byte-identical with ROSTER_ENABLED off, and renders nothing until
+  // roster slots exist (lib/league mandateKindForHandle is the R1 seam).
+  const mandate = rosterEnabled() ? await mandateKindForHandle(rec.handle).catch(() => null) : null
 
   return (
     <>
@@ -66,7 +71,16 @@ export default async function AgentRecordPage({ params }: Params) {
           <Link href="/docs/desk">THE DESK</Link> <span>/</span> TRACK RECORD
         </p>
 
-        <h1 className="text-3xl font-semibold text-[color:var(--fg)]">{name}</h1>
+        <h1
+          className={`text-3xl font-semibold text-[color:var(--fg)]${mandate ? ' flex flex-wrap items-center gap-3' : ''}`}
+        >
+          {name}
+          {mandate ? (
+            <span className="mono rounded-full border border-[var(--line)] px-2.5 py-1 align-middle text-[11px] font-normal uppercase tracking-wide text-[color:var(--fg)]">
+              {MANDATE_LABELS[mandate]}
+            </span>
+          ) : null}
+        </h1>
         <p className="mt-1 text-[13px] text-[color:var(--muted)] mono">
           agent <span className="text-[color:var(--fg)]">{rec.handle}</span> · clears through Pantessa
         </p>
