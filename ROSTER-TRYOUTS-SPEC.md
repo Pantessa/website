@@ -80,23 +80,38 @@ no-double-buys pattern).
 - **Start:** owner (or an agent via the desk, addressed to an owner who
   accepts) creates a tryout: mandate_text must round-trip `parseMandate`
   or refuse by name; review_at stamped; quota checked (§1.5-3/4).
+- **Kind scope (G1, fail-closed): tryouts ship for `shape` and `dca`
+  ONLY.** Those kinds have executor quote fns (the swap build-path
+  quotes). `protect` and `yield` have NO executor quote fn today — a
+  tryout for either kind refuses at creation by name ("no paper marks
+  exist for this mandate kind yet"), and a mark on a grandfathered row
+  refuses the same way. Future-wave definition (not built now): a
+  `protect` mark = the guardian's own trigger-check read (the mark price
+  its sweep compares against the floor) captured at propose and review;
+  a `yield` mark = the venue's live rate read (the Aave/Lido rate fns
+  the briefing composer uses). Rates-as-marks need their own copy rules
+  (an APR snapshot invites annualization — banned) — that copy contract
+  must be specced before the kinds unlock. Until then: refuse by name.
 - **Marks:** the agent files paper proposals against the tryout. Server
   round-trips the ask, resolves the executor's venue, computes
   quote_at_propose server-side. Cap: a mark whose priced size exceeds
   cap_usd refuses by name (same copy as the real gate). Cadence quota
   (§1.5-4) enforced per mandate kind.
-- **Review:** lazy due-detection (the DCA pattern — no new cron): the
-  first authenticated read at ≥ review_at triggers the one-time
-  quote_at_review capture for every mark (same venue fn), stamps
-  reviewed_at, flips status to 'reviewed', and mints the report card as
-  an inbox item for the owner wallet. Early review API calls refuse.
+- **Review:** lazy due-detection (the DCA pattern — no new cron): ANY
+  read of the tryout at ≥ review_at triggers the one-time
+  quote_at_review capture for every mark (same venue fn — capture is
+  server-side and write-once, so the reader's identity is irrelevant to
+  integrity), stamps reviewed_at, flips status to 'reviewed'. The report
+  card is served on the tryout API + the owner's tryouts page ONLY — it
+  is NEVER minted as an inbox item (the paper rule of §1.1-2 governs;
+  the inbox stays signable-things-only). Early review API calls refuse.
 - **Promote:** the card's one CTA runs the NORMAL hire flow (fresh
   consent, server-minted nonce — CONTRACTS v1.2). Nothing transfers from
   the tryout; the tryout flips to 'retired' (row kept).
 
 ### 1.4 Report card — exact copy contract (pin this)
 
-Header label, every surface (card, inbox item, OG), verbatim:
+Header label, every surface (card, tryouts page, OG), verbatim:
 
 > **Paper tryout — simulated proposals; no transactions occurred.
 > Hypothetical activity, not a prediction, not advice.**
@@ -129,8 +144,8 @@ surfaces — security contract §5; data separation is §1.1-2).
 
 Tryouts never touch records: `qualifiesForBoard` and every M4 record
 query read signed turns only — a thousand perfect tryouts move nothing
-public. (That asymmetry is the point: paper buys an inbox moment, only
-signatures buy reputation.)
+public. (That asymmetry is the point: paper buys a report card on the
+owner's own page, only signatures buy reputation.)
 
 ---
 
@@ -200,3 +215,16 @@ Banned on any standings surface: "top performer", "best", "beat",
 the standings header carries "real signed history — never projections"
 and (post-Season-0) "past activity, not a promise" (GTM's stricter
 phrasing governs). `SEASON_LABEL` stays the single source.
+
+---
+
+## Amendments (wave 3, from the build lane's gaps — uiux.md)
+
+- **G1:** kind scope made explicit — shape+dca ship; protect/yield refuse
+  by name until their mark sources (guardian trigger-check read / venue
+  rate read) get their own copy contract. §1.3 first bullet.
+- **G2:** the spec's "inbox item" contradicted its own paper rule
+  (§1.1-2). Resolved for NO inbox mint — the report card lives on the
+  tryout API + owner page only; the inbox stays signable-things-only.
+- **Review trigger:** "first authenticated read" → ANY due read; capture
+  is server-side and write-once, so reader identity never mattered.
