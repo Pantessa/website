@@ -116,8 +116,10 @@ export async function POST(req: NextRequest) {
 
   // Opportunistic self-clean: unhired drafts die after the draft TTL (the
   // pending-delegation pattern) — a squatter's junk never accumulates.
+  // LISTED slots are exempt: the list consent is the owner's signature, so
+  // a listed slot is a proven job listing, not a squattable draft (T-D2).
   void prisma.rosterSlot
-    .deleteMany({ where: { status: 'pending', createdAt: { lt: new Date(Date.now() - ROSTER_DRAFT_TTL_MS) } } })
+    .deleteMany({ where: { status: 'pending', listed: false, createdAt: { lt: new Date(Date.now() - ROSTER_DRAFT_TTL_MS) } } })
     .catch(() => {})
 
   // Standing squat fence (security finding R2-1): the quota counts ONLY the
@@ -133,12 +135,14 @@ export async function POST(req: NextRequest) {
   // Pending drafts are bounded by ROLLING-DELETE-OLDEST, never refusal
   // (R2-1): the true owner can always draft; a squatter only ever churns
   // their own junk out of the window.
+  // LISTED slots never evict here either — otherwise a squatter flooding
+  // drafts could churn the owner's SIGNED public listing out of the window.
   const pending = await prisma.rosterSlot
-    .findMany({ where: { walletAddress: w, status: 'pending' }, select: { id: true }, orderBy: { createdAt: 'asc' } })
+    .findMany({ where: { walletAddress: w, status: 'pending', listed: false }, select: { id: true }, orderBy: { createdAt: 'asc' } })
     .catch(() => [] as { id: string }[])
   if (pending.length >= ROSTER_MAX_SLOTS_PER_WALLET) {
     const evict = pending.slice(0, pending.length - ROSTER_MAX_SLOTS_PER_WALLET + 1).map((p) => p.id)
-    await prisma.rosterSlot.deleteMany({ where: { id: { in: evict }, status: 'pending' } }).catch(() => {})
+    await prisma.rosterSlot.deleteMany({ where: { id: { in: evict }, status: 'pending', listed: false } }).catch(() => {})
   }
 
   const slot = await prisma.rosterSlot.create({

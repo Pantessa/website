@@ -60,10 +60,10 @@ export function rosterEnabled(): boolean {
   return process.env.ROSTER_ENABLED === 'true'
 }
 
-/** Guard a roster WRITE. `action: 'fire'` is always allowed — the exit door
- *  never closes, kill switch or not. */
-export function assertRosterOpen(action?: 'create' | 'hire' | 'fire' | 'propose'): void {
-  if (action === 'fire') return
+/** Guard a roster WRITE. `action: 'fire'` and `'unlist'` are always allowed
+ *  — exits that REDUCE exposure never close, kill switch or not. */
+export function assertRosterOpen(action?: 'create' | 'hire' | 'fire' | 'propose' | 'list' | 'unlist'): void {
+  if (action === 'fire' || action === 'unlist') return
   if (!rosterEnabled())
     throw new Error(
       'The Pantessa roster is not open yet. Existing hires can still be viewed and FIRED at any time — firing is never walled.',
@@ -109,6 +109,33 @@ export function rosterHireConsentMessage(i: HireConsentInput): string {
     `Nonce: ${i.nonce}`,
     `Expires: ${i.expiresAt.toISOString()}`,
     'Signing hires this agent into this mandate slot. It moves nothing by itself; every proposal still needs this wallet\'s own signature.',
+  ].join('\n')
+}
+
+export interface ListConsentInput {
+  slotId: string
+  wallet: string
+  /** mandateHash(canonical sentence) — never the sentence (T9). */
+  mandateHash: string
+  capUsd: number
+  nonce: string
+  expiresAt: Date
+}
+
+/** The exact text a wallet personal_signs to LIST a slot on the public
+ *  open-slots feed (WAVE-2 discovery, T-D2). Publishing owner data is a
+ *  state change, so it is owner-signed; the text says exactly what goes
+ *  public — and that the wallet address never does. */
+export function rosterListConsentMessage(i: ListConsentInput): string {
+  return [
+    'Pantessa roster — list consent',
+    `Slot: ${i.slotId}`,
+    `Wallet: ${i.wallet.toLowerCase()}`,
+    `Mandate: ${i.mandateHash}`,
+    `Cap: $${i.capUsd} per proposal`,
+    `Nonce: ${i.nonce}`,
+    `Expires: ${i.expiresAt.toISOString()}`,
+    'Signing publishes this mandate on the public open-slots feed — its kind, sentence, and cap, NEVER your wallet address — until you unlist, hire, or delete the slot. It moves nothing by itself.',
   ].join('\n')
 }
 
@@ -306,6 +333,32 @@ export async function bumpAndCheckRosterPost(ip: string | null): Promise<boolean
       RETURNING count
     `
     return Number(rows[0]?.count ?? 0) > ROSTER_POST_HOURLY_IP_CAP
+  } catch {
+    return false
+  }
+}
+
+/** Per-IP hourly cap on the public open-slots feed (reads are cheap but the
+ *  feed must not be a bulk-recon endpoint — T-D3). */
+export const ROSTER_FEED_HOURLY_IP_CAP = 120
+
+/** Feed-read fence: own `rf:` bucket in unsigned_turn_windows — same
+ *  trust boundary and fail-open semantics as the `rp:` write fence. */
+export async function bumpAndCheckRosterFeed(ip: string | null): Promise<boolean> {
+  if (!ip) return false
+  try {
+    const { default: prisma } = await import('@/lib/db')
+    const windowStart = new Date()
+    windowStart.setUTCMinutes(0, 0, 0)
+    const key = `rf:${hashIp(ip)}`
+    const rows = await prisma.$queryRaw<{ count: number }[]>`
+      INSERT INTO unsigned_turn_windows (key, window_start, count)
+      VALUES (${key}, ${windowStart}, 1)
+      ON CONFLICT (key, window_start)
+      DO UPDATE SET count = unsigned_turn_windows.count + 1
+      RETURNING count
+    `
+    return Number(rows[0]?.count ?? 0) > ROSTER_FEED_HOURLY_IP_CAP
   } catch {
     return false
   }

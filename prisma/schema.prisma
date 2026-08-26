@@ -1362,6 +1362,14 @@ model RosterSlot {
   consentNonce     String?   @map("consent_nonce")
   consentAction    String?   @map("consent_action")
   consentExpiresAt DateTime? @map("consent_expires_at")
+  /// WAVE-2 discovery: opt-in public job listing. `listed` flips true only
+  /// via the owner's signed 'list' consent (which also exempts the draft
+  /// from the 24h purge — a listed slot is owner-PROVEN, not a squattable
+  /// draft). `listToken` is the feed's public handle — the wallet NEVER
+  /// rides the feed (T-D1); the token resolves server-side at broker_open
+  /// and dies on unlist/hire/delete.
+  listed           Boolean   @default(false)
+  listToken        String?   @unique @map("list_token")
   /// Our own harness/drill slot (lib/internal-run.ts): no scoreboard, league,
   /// or track record may ever count it.
   isInternal       Boolean   @default(false) @map("is_internal")
