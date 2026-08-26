@@ -76,7 +76,15 @@ import { cleanAgentKeyHash, cleanCapUsd, parseMandate, MANDATE_KIND_LABELS, ROST
 import { decideProposalGate } from '../lib/roster-propose'
 import { buildDelivery, mintCallbackSecret, notifyEligible, signWebhook, validateCallbackUrl } from '../lib/broker-webhook'
 import { agentHandleFor } from '../lib/agent-record'
-import { qualifiesForBoard, rankLeagueRows } from '../lib/league'
+import {
+  foundingHandles,
+  orderOpeningRoster,
+  qualifiesForBoard,
+  rankLeagueRows,
+  showOrdinals,
+  ORDINALS_MIN_QUALIFIED,
+} from '../lib/league'
+import prisma from '../lib/db'
 import { addrsUnion, arcQuery } from '../lib/gtm-arc'
 import { isInternalRun, INTERNAL_RUN_HEADER } from '../lib/internal-run'
 import { deskExecuteConsentMessage, cleanSenderLabel } from '../lib/broker-exec'
@@ -3828,32 +3836,105 @@ async function main() {
     })(),
   )
   check(
-    'roster: league standings rank real money first, then signed, then intents; ranks 1..n stable',
+    'roster §2.4: standings order = employers → signed → clean-cap → tenure → handle; NEVER volume USD',
     (() => {
-      const row = (handle: string, moneyMovedUsd: number, signedTurns: number, intents: number) => ({
+      const row = (
+        handle: string,
+        walletsServed: number,
+        signedTurns: number,
+        capBreaches: number,
+        firstSignedAt: Date | null,
+        moneyMovedUsd = 0,
+      ) => ({
         handle,
         displayName: null,
         mandateKind: null,
         moneyMovedUsd,
         signedTurns,
-        walletsServed: 0,
-        intents,
+        walletsServed,
+        intents: 1,
+        firstSignedAt,
+        capBreaches,
+        founding: false,
         maxDrawdownPct: null,
         lastSeen: new Date(0),
       })
+      const d1 = new Date('2026-01-01')
+      const d2 = new Date('2026-02-01')
       const ranked = rankLeagueRows([
-        row('cccc', 5, 9, 1), // less money loses to more money despite more signs
-        row('aaaa', 10, 1, 1),
-        row('bbbb', 10, 2, 1), // money tie → more signed wins
-        row('eeee', 5, 9, 2), // full-figure tie broken by intents…
-        row('dddd', 5, 9, 1), // …then by handle (cccc before dddd)
+        // a whale-wash row: HUGE volume, one employer — must NOT lead (§2.4)
+        row('aaaa', 1, 40, 0, d1, 900_000),
+        row('bbbb', 3, 2, 0, d2), // most employers wins outright
+        row('cccc', 1, 40, 1, d1), // signed tie w/ dddd broken by clean cap record
+        row('dddd', 1, 40, 0, d2), // zero breaches beats cccc despite later tenure
+        row('eeee', 1, 40, 0, d1), // ties aaaa on all keys → earlier… same date → handle tail
       ])
       return (
-        ranked.map((r) => r.handle).join(',') === 'bbbb,aaaa,eeee,cccc,dddd' &&
+        ranked.map((r) => r.handle).join(',') === 'bbbb,aaaa,eeee,dddd,cccc' &&
         ranked.map((r) => r.rank).join(',') === '1,2,3,4,5'
       )
     })(),
   )
+  check(
+    'roster §2.3: ordinals suppressed below 5 qualified; opening roster orders by tenure asc',
+    (() => {
+      const mk = (handle: string, firstSignedAt: Date | null) => ({
+        rank: 0,
+        handle,
+        displayName: null,
+        mandateKind: null,
+        moneyMovedUsd: 0,
+        signedTurns: 1,
+        walletsServed: 1,
+        intents: 1,
+        firstSignedAt,
+        capBreaches: 0,
+        founding: false,
+        maxDrawdownPct: null,
+        lastSeen: new Date(0),
+      })
+      const opening = orderOpeningRoster([
+        mk('bbbb', new Date('2026-03-01')),
+        mk('aaaa', new Date('2026-01-01')),
+        mk('cccc', new Date('2026-03-01')), // date tie → handle tail keeps it deterministic
+      ])
+      return (
+        ORDINALS_MIN_QUALIFIED === 5 &&
+        showOrdinals(4) === false &&
+        showOrdinals(5) === true &&
+        showOrdinals(0) === false &&
+        opening.map((r) => r.handle).join(',') === 'aaaa,bbbb,cccc'
+      )
+    })(),
+  )
+  // Founding badge (FOUNDING-MANAGERS.md): owner-set rows round-trip through
+  // the one read path; fixture cleaned in finally. Needs direct DB creds —
+  // the harness process reads env only (no .env.local), so without
+  // DATABASE_URL this drills the fail-soft read path instead (never a red:
+  // the blog-suite precedent for cred-gated checks).
+  if (process.env.DATABASE_URL) {
+    const fixture = 'f0f0f0f0f0f0f0f0'
+    let ok = false
+    try {
+      await prisma.foundingAgent.upsert({
+        where: { agentKeyHash: fixture },
+        create: { agentKeyHash: fixture, label: 'harness fixture' },
+        update: {},
+      })
+      const set = await foundingHandles([fixture, 'aaaaaaaaaaaaaaaa'])
+      ok = set.has(fixture) && !set.has('aaaaaaaaaaaaaaaa')
+    } finally {
+      await prisma.foundingAgent.deleteMany({ where: { agentKeyHash: fixture } }).catch(() => {})
+    }
+    const gone = !(await foundingHandles([fixture])).has(fixture)
+    check('roster: founding badge — owner-set row round-trips and the fixture cleans up', ok && gone)
+  } else {
+    // No creds: the read path must fail SOFT (empty set), never throw — the
+    // badge can only ever disappear, not break a page.
+    const soft = await foundingHandles(['f0f0f0f0f0f0f0f0'])
+    check('roster: founding badge read path fails soft without DB creds (empty set, no throw)', soft.size === 0)
+    console.log('  (founding round-trip skipped: DATABASE_URL unset for the harness process)')
+  }
   check(
     'roster: the board takes only agents a real human has signed for (harness residue never ranks)',
     qualifiesForBoard({ signedTurns: 1 }) === true && qualifiesForBoard({ signedTurns: 0 }) === false,
@@ -3872,7 +3953,14 @@ async function main() {
     ])
     const agentsHtml = await agentsRes.text()
     const rosterHtml = await rosterRes.text()
-    const agentsOn = agentsRes.status === 200 && agentsHtml.includes('The standings are signatures')
+    // §2.6 copy fences ride the hallmark: the required phrase must be on the
+    // board, and the banned standings words must not (checked as rendered
+    // words — the page copy carries none of them in any mode).
+    const agentsOn =
+      agentsRes.status === 200 &&
+      agentsHtml.includes('The standings are signatures') &&
+      /real signed history — never projections/i.test(agentsHtml) &&
+      !/top performer|returns|APY/i.test(agentsHtml)
     const rosterOn = rosterRes.status === 200 && rosterHtml.includes('You keep the only pen')
     check(
       'roster: the /agents standings index is fail-closed — 404 without the flag, the real table only with it',

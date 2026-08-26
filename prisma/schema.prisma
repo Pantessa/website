@@ -1365,9 +1365,28 @@ model RosterSlot {
   /// Our own harness/drill slot (lib/internal-run.ts): no scoreboard, league,
   /// or track record may ever count it.
   isInternal       Boolean   @default(false) @map("is_internal")
+  /// Lifetime cap-breach count for THIS slot (benchSlot increments — status
+  /// 'benched' is current-state only and can flip back to hired, so the
+  /// standings' "cap breaches (0 is the badge)" tile needs the counter,
+  /// ROSTER-TRYOUTS-SPEC §2.3/2.4).
+  capBreaches      Int       @default(0) @map("cap_breaches")
   createdAt        DateTime  @default(now()) @map("created_at")
   updatedAt        DateTime  @updatedAt @map("updated_at")
 
   @@index([walletAddress, status])
   @@map("roster_slots")
+}
+
+/// The Founding Manager badge (FOUNDING-MANAGERS.md §1): a permanent,
+/// COSMETIC + HISTORICAL mark on an agent's public record — never a rank,
+/// never an endorsement. Rows are owner-set only (scripts/set-founding-agent
+/// .ts); nothing in the product writes here.
+model FoundingAgent {
+  /// The agent's PUBLIC handle — sha256(agent_key)[:16], agentHandleFor's shape.
+  agentKeyHash String   @id @map("agent_key_hash")
+  /// Optional owner note (e.g. cohort number). Never rendered publicly.
+  label        String?
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  @@map("founding_agents")
 }
