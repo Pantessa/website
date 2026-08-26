@@ -20,7 +20,9 @@ export async function GET(req: NextRequest) {
       createdAt: i.createdAt,
       // THE ROSTER (R2): the slot badge — the card says WHICH mandate is
       // proposing, not just who. Canonical DB-stored text only (T2).
-      ...(i.roster ? { roster: { kind: i.roster.kind, label: i.roster.label, mandate: i.roster.mandate, capUsd: i.roster.capUsd } } : {}),
+      // slotId rides too: the manager's one-card-at-a-time fence keys on it
+      // (slot ids are short slugs, not secrets — the slot is public once hired).
+      ...(i.roster ? { roster: { slotId: i.roster.slotId, kind: i.roster.kind, label: i.roster.label, mandate: i.roster.mandate, capUsd: i.roster.capUsd } } : {}),
     })),
   })
 }
