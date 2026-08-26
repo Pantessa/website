@@ -19,16 +19,22 @@
 import { useEffect } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { Boxes, LayoutDashboard, Link2, ListChecks, MessageSquare, Plus } from 'lucide-react'
+import { Boxes, LayoutDashboard, Link2, ListChecks, MessageSquare, Plus, Users } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useYeetfulStore, type RailTab } from '@/lib/store'
 import { useRunningWork } from '@/lib/use-running-work'
+import { rosterEnabledClient } from '@/lib/roster-client'
 import { YeetfulMark } from '@/components/Logo'
 
 const TABS: { tab: RailTab; label: string; title: string; Icon: typeof Boxes }[] = [
   { tab: 'mcps', label: 'MCPS', title: 'Your MCP set', Icon: Boxes },
   { tab: 'jobs', label: 'JOBS', title: 'Jobs and recurring buys running on this wallet', Icon: ListChecks },
   { tab: 'links', label: 'LINKS', title: 'Your intent links — mint and share from here', Icon: Link2 },
+  // THE ROSTER (R1) — invisible until the owner flips NEXT_PUBLIC_ROSTER_ENABLED
+  // (prod ships dark; the API is separately fail-closed behind ROSTER_ENABLED).
+  ...(rosterEnabledClient()
+    ? [{ tab: 'team' as RailTab, label: 'TEAM', title: "Your wallet's staff — mandate slots, hire and fire agents", Icon: Users }]
+    : []),
   { tab: 'chats', label: 'CHATS', title: 'Your chat history', Icon: MessageSquare },
 ]
 

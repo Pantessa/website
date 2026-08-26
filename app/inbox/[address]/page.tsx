@@ -48,6 +48,18 @@ function InboxRow({ item }: { item: InboxItem }) {
           beside the CTA at 375px — below ~14rem the button wraps under. */}
       <div className="min-w-[14rem] flex-1">
         <div className="text-[15px] text-[color:var(--fg)]">{item.ask}</div>
+        {/* THE ROSTER (R2): the row wears the mandate badge — same strings
+            as the /i runtime pill (label · canonical mandate · cap). Theme
+            tokens only, so light/dark both come free (T2: DB-stored text). */}
+        {item.roster && (
+          <div className="mt-1 inline-flex max-w-full flex-wrap items-center gap-x-1.5 gap-y-0.5 rounded-full border border-[var(--line)] bg-[var(--surf-1)] px-2.5 py-0.5">
+            <span className="mono text-[10px] uppercase tracking-widest text-[color:var(--accent)]">{item.roster.label} mandate</span>
+            <span aria-hidden className="text-[color:var(--muted-2)]">·</span>
+            <span className="truncate text-[11px] text-[color:var(--muted)]">&ldquo;{item.roster.mandate}&rdquo;</span>
+            <span aria-hidden className="text-[color:var(--muted-2)]">·</span>
+            <span className="mono text-[10px] text-[color:var(--muted-2)]">${item.roster.capUsd} cap</span>
+          </div>
+        )}
         <div className="mt-0.5 text-[12px] text-[color:var(--muted)]">
           from <span className="text-[color:var(--fg)]">{from}</span> · {ago(item.createdAt)}
         </div>

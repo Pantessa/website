@@ -271,13 +271,13 @@ model Chat {
   publicSlug String?   @unique @map("public_slug")
   publicAt   DateTime? @map("public_at")
 
-  messages  Message[]
+  messages   Message[]
   // Our own harness/drill chat (lib/internal-run.ts): the GTM arc reads
   // chats + messages as "arrived"/"asked"/"built"/"signed" — a gate run's
   // fixture chats must never move a stage. Messages inherit via the join.
-  isInternal Boolean  @default(false) @map("is_internal")
-  createdAt DateTime  @default(now()) @map("created_at")
-  updatedAt DateTime  @updatedAt @map("updated_at")
+  isInternal Boolean   @default(false) @map("is_internal")
+  createdAt  DateTime  @default(now()) @map("created_at")
+  updatedAt  DateTime  @updatedAt @map("updated_at")
 
   @@index([ownerAddress])
   @@index([isInternal])
@@ -1008,24 +1008,24 @@ model JobStep {
 /// guardrails as any swap), so every buy is built fresh at offer time and
 /// individually signed. Missed periods lapse silently — no catch-up buys.
 model DcaSchedule {
-  id        String   @id @default(cuid())
-  wallet    String // lowercased owner (connected wallet at creation)
-  status    String   @default("active") // active | paused | canceled
+  id         String   @id @default(cuid())
+  wallet     String // lowercased owner (connected wallet at creation)
+  status     String   @default("active") // active | paused | canceled
   /// Shared-DB env fence (the guardian/jobs lesson): schedules only surface
   /// and run in the env that created them. 'production' | 'preview' | 'dev'.
-  originEnv String   @default("dev") @map("origin_env")
-  cadence   String // day | week | month (UTC calendar periods)
-  buyUsd    Float    @map("buy_usd")
-  buyToken  String   @map("buy_token") // symbol — resolved per-build from the chain's official token list
-  sellToken String   @map("sell_token") // the chain's primary stable at creation (USDC / USDG)
-  chainId   Int      @map("chain_id")
+  originEnv  String   @default("dev") @map("origin_env")
+  cadence    String // day | week | month (UTC calendar periods)
+  buyUsd     Float    @map("buy_usd")
+  buyToken   String   @map("buy_token") // symbol — resolved per-build from the chain's official token list
+  sellToken  String   @map("sell_token") // the chain's primary stable at creation (USDC / USDG)
+  chainId    Int      @map("chain_id")
   /// Our own harness/drill schedule (lib/internal-run.ts): the first "DCA …
   /// weekly" turn WRITES a schedule (+ its period job); the GTM arc reads
   /// dca_schedules as an arrival, so a gate run must never count. Jobs the
   /// schedule mints inherit the flag.
-  isInternal Boolean @default(false) @map("is_internal")
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
+  isInternal Boolean  @default(false) @map("is_internal")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
 
   /// Autonomous tier (Spend Permissions). 'confirm' = the user signs every
   /// buy (the default, works for any wallet). 'auto' = the user's SMART
@@ -1171,6 +1171,10 @@ model IntentLink {
   // so the /i CTA targets them (the signature is still the real gate).
   recipient    String? // lowercased wallet an intent is addressed TO
   senderLabel  String?   @map("sender_label")
+  // THE ROSTER (R2): a proposal from a HIRED agent binds to its mandate
+  // slot — the /i header + inbox card wear the slot badge, and firing the
+  // slot cascades revocation over its unsigned addressed links (T5).
+  rosterSlotId String?   @map("roster_slot_id")
   // Our own harness/drill mint (lib/internal-run.ts): every test:api run
   // mints links from throwaway wallets, which inflated the GTM arc's
   // "arrived" denominator by hundreds per gate run (2026-08-17 audit). The
@@ -1182,6 +1186,7 @@ model IntentLink {
   @@index([kind, createdAt])
   @@index([recipient, createdAt])
   @@index([isInternal, createdAt])
+  @@index([rosterSlotId])
   @@map("intent_links")
 }
 
@@ -1306,26 +1311,63 @@ model SpotGuardRun {
 // or → closed. plan is the serialized BrokerPlan (sentences only — the
 // leak check upstream guarantees no transaction material lands here).
 model BrokerIntent {
-  id        String   @id // mintSlug(10)
-  ask       String // the current working sentence
-  wallet    String? // lowercased 0x… the agent negotiated for, if any
-  agent     String? // sanitized self-reported agent name
-  agentKey  String?  @map("agent_key") // the bound desk identity (execute path); M6 makes it x402-payer-verified
-  agentKeyHash   String? @map("agent_key_hash") // sha256(agentKey)[:16] — the PUBLIC track-record handle (raw key never exposed)
+  id             String   @id // mintSlug(10)
+  ask            String // the current working sentence
+  wallet         String? // lowercased 0x… the agent negotiated for, if any
+  agent          String? // sanitized self-reported agent name
+  agentKey       String?  @map("agent_key") // the bound desk identity (execute path); M6 makes it x402-payer-verified
+  agentKeyHash   String?  @map("agent_key_hash") // sha256(agentKey)[:16] — the PUBLIC track-record handle (raw key never exposed)
   /// Our own harness/drill intent (lib/internal-run.ts): the public /agents
   /// record excludes it — a gate run must never headline the credit bureau.
-  isInternal     Boolean @default(false) @map("is_internal")
-  callbackUrl    String? @map("callback_url") // optional agent webhook: signed/settled events POST here (M3)
-  callbackSecret String? @map("callback_secret") // per-intent HMAC secret returned to the agent once at open
-  state     String   @default("open")
-  plan      Json
-  linkSlug  String?  @map("link_slug") // bound /i/<slug> after handoff
-  jobId     String?  @map("job_id") // bound job after broker_execute (agent-signed path)
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
+  isInternal     Boolean  @default(false) @map("is_internal")
+  callbackUrl    String?  @map("callback_url") // optional agent webhook: signed/settled events POST here (M3)
+  callbackSecret String?  @map("callback_secret") // per-intent HMAC secret returned to the agent once at open
+  state          String   @default("open")
+  plan           Json
+  linkSlug       String?  @map("link_slug") // bound /i/<slug> after handoff
+  jobId          String?  @map("job_id") // bound job after broker_execute (agent-signed path)
+  /// THE ROSTER (R2): set when the presented agent_key hashed to a hired
+  /// mandate slot — the proposal auto-addressed to the employer's inbox and
+  /// the build gate re-checks this slot (fired-agent race, T5).
+  rosterSlotId   String?  @map("roster_slot_id")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
 
   @@index([state, createdAt])
   @@index([agentKeyHash])
   @@index([isInternal])
+  @@index([rosterSlotId])
   @@map("broker_intents")
+}
+
+// THE ROSTER (R1) — a wallet's mandate slots: job listings for AI agents.
+// A slot is a CANONICAL SENTENCE (parseMandate-proven to round-trip its
+// executor's grammar — threat T2: raw input is parsed then dropped), a
+// per-proposal dollar cap, and — once hired via personal_sign consent —
+// the agent's public track-record handle (agentHandleFor shape). States
+// move one way: pending → hired → benched ⇄ hired → fired (terminal;
+// re-hire = a new row). Drafts ('pending') are INERT: they publish
+// nowhere, address nothing, and self-clean after 24h unhired. The wallet
+// keeps the only pen: a slot never holds funds or keys.
+model RosterSlot {
+  id               String    @id // mintSlug(10)
+  walletAddress    String    @map("wallet_address") // lowercased employer wallet
+  mandateText      String    @map("mandate_text") // CANONICAL mandate sentence — re-parses with the executor's own grammar
+  mandateKind      String    @map("mandate_kind") // shape | dca | protect | yield
+  agentKeyHash     String?   @map("agent_key_hash") // agent's PUBLIC handle (sha256(agent_key)[:16]); set at hire-consent mint, active only once status='hired'
+  capUsd           Float     @default(200) @map("cap_usd") // per-proposal ceiling the hire consent named
+  status           String    @default("pending") // pending | hired | benched | fired
+  /// Single-use consent nonce + expiry + which action it was minted for
+  /// (hire|fire). Cleared on success; never serialized to any GET.
+  consentNonce     String?   @map("consent_nonce")
+  consentAction    String?   @map("consent_action")
+  consentExpiresAt DateTime? @map("consent_expires_at")
+  /// Our own harness/drill slot (lib/internal-run.ts): no scoreboard, league,
+  /// or track record may ever count it.
+  isInternal       Boolean   @default(false) @map("is_internal")
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
+
+  @@index([walletAddress, status])
+  @@map("roster_slots")
 }

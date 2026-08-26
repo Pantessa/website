@@ -147,7 +147,7 @@ function fromApiChat(c: ApiChat, existing?: Chat): Chat {
 
 /** The rail/drawer destinations — shared by the drawer itself, the spine's
  *  tab icons, and the toolbar's mobile reopen chips. */
-export type RailTab = 'mcps' | 'chats' | 'jobs' | 'links'
+export type RailTab = 'mcps' | 'chats' | 'jobs' | 'links' | 'team'
 
 interface YeetfulStore {
   // MCP Servers

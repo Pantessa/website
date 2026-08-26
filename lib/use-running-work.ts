@@ -61,6 +61,9 @@ export interface InboxIntent {
   ask: string
   from: string | null
   createdAt: string
+  /** THE ROSTER (R2): present when a HIRED agent proposed this under a
+   *  mandate slot — the card wears the mandate, not just a byline. */
+  roster?: { kind: string; label: string; mandate: string; capUsd: number }
 }
 
 export function useRunningWork(enabled: boolean, intervalMs = 15_000) {

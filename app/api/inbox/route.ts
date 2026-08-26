@@ -13,6 +13,14 @@ export async function GET(req: NextRequest) {
   if (!/^0x[0-9a-fA-F]{40}$/.test(wallet)) return NextResponse.json({ error: 'Bad wallet.' }, { status: 400 })
   const items = await inboxFor(wallet).catch(() => [])
   return NextResponse.json({
-    items: items.map((i) => ({ slug: i.slug, ask: i.ask, from: i.senderLabel ?? i.agent ?? null, createdAt: i.createdAt })),
+    items: items.map((i) => ({
+      slug: i.slug,
+      ask: i.ask,
+      from: i.senderLabel ?? i.agent ?? null,
+      createdAt: i.createdAt,
+      // THE ROSTER (R2): the slot badge — the card says WHICH mandate is
+      // proposing, not just who. Canonical DB-stored text only (T2).
+      ...(i.roster ? { roster: { kind: i.roster.kind, label: i.roster.label, mandate: i.roster.mandate, capUsd: i.roster.capUsd } } : {}),
+    })),
   })
 }

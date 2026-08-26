@@ -3,6 +3,8 @@ import { notFound } from 'next/navigation'
 import prisma from '@/lib/db'
 import { brandFromRow } from '@/lib/brand-denylist'
 import { INTENT_SLUG_RE } from '@/lib/intent-links'
+import { notifyEligible } from '@/lib/broker-webhook'
+import { MANDATE_KIND_LABELS, type MandateKind } from '@/lib/roster-client'
 import IntentRuntime from '@/components/IntentRuntime'
 
 // /i/<slug> — an intent link's runtime. The link row carries the ASK (a
@@ -61,11 +63,35 @@ async function getNotify(link: { id: string; senderLabel: string | null; agent: 
   try {
     const intent = await prisma.brokerIntent.findFirst({
       where: { linkSlug: link.id },
-      select: { callbackUrl: true, agent: true },
+      select: { callbackUrl: true, agent: true, isInternal: true },
     })
     const label = link.senderLabel ?? intent?.agent ?? link.agent
     if (!intent && !link.senderLabel) return null
-    return { label: label ?? 'The agent that sent this', push: !!intent?.callbackUrl }
+    // Stamped intents never notify (R2) — the push claim rides the same
+    // rule as the webhook itself (lib/broker-webhook notifyEligible).
+    return { label: label ?? 'The agent that sent this', push: notifyEligible(intent) }
+  } catch {
+    return null
+  }
+}
+
+/** THE ROSTER (R2): a proposal from a HIRED agent wears its mandate on the
+ *  runtime header — kind + the canonical (grammar-constrained) sentence +
+ *  the cap the wallet consented to. DB-stored text only, never a query
+ *  param (threat T2). */
+async function getRosterBadge(rosterSlotId: string | null) {
+  if (!rosterSlotId) return null
+  try {
+    const slot = await prisma.rosterSlot.findUnique({
+      where: { id: rosterSlotId },
+      select: { mandateText: true, mandateKind: true, capUsd: true },
+    })
+    if (!slot) return null
+    return {
+      label: MANDATE_KIND_LABELS[slot.mandateKind as MandateKind] ?? slot.mandateKind,
+      mandate: slot.mandateText.slice(0, 120),
+      capUsd: slot.capUsd,
+    }
   } catch {
     return null
   }
@@ -92,6 +118,7 @@ export default async function IntentLinkPage({ params }: Params) {
   if (!link) notFound()
   const { brand, handle: creatorHandle } = await getBrand(link.creator)
   const notify = await getNotify(link)
+  const roster = await getRosterBadge(link.rosterSlotId)
   // A/B: one phrasing per visit, picked server-side (index 0 = the base
   // ask). The chosen phrasing IS the ask for this visit — every runtime
   // gate (transfer shape included) applies to what's actually shown — and
@@ -112,6 +139,7 @@ export default async function IntentLinkPage({ params }: Params) {
       restricted={link.allowWallets.length > 0}
       brand={brand}
       notify={notify}
+      roster={roster}
     />
   )
 }

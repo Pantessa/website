@@ -72,7 +72,9 @@ import {
   ROSTER_MAX_MANDATE_CHARS,
   ROSTER_MAX_PENDING_PROPOSALS,
 } from '../lib/roster-policy'
-import { buildDelivery, mintCallbackSecret, signWebhook, validateCallbackUrl } from '../lib/broker-webhook'
+import { cleanAgentKeyHash, cleanCapUsd, parseMandate, MANDATE_KIND_LABELS, ROSTER_MAX_CAP_USD } from '../lib/roster'
+import { decideProposalGate } from '../lib/roster-propose'
+import { buildDelivery, mintCallbackSecret, notifyEligible, signWebhook, validateCallbackUrl } from '../lib/broker-webhook'
 import { agentHandleFor } from '../lib/agent-record'
 import { addrsUnion, arcQuery } from '../lib/gtm-arc'
 import { isInternalRun, INTERNAL_RUN_HEADER } from '../lib/internal-run'
@@ -3637,6 +3639,174 @@ async function main() {
       return folded && longRefused && emptyRefused
     })(),
   )
+  // ── THE ROSTER R1 (lib/roster + /api/roster) — mandate grammar + slots ───
+  console.log('— roster R1 (lib/roster + /api/roster)')
+  check(
+    'roster R1: the four launch mandates parse to their kinds and the CANONICAL text round-trips idempotently',
+    (() => {
+      const cases: [string, string][] = [
+        ['tile my wallet 60% ETH, 40% USDC', 'shape'],
+        ['keep me 60/40 ETH/USDC', 'shape'], // natural phrasing (ideation) → tile canonical
+        ['buy $25 of ETH weekly', 'dca'],
+        ['protect my ETH in my wallet with a 10% stop', 'protect'],
+        ['supply 25 USDC to aave', 'yield'],
+        ['stake 0.5 ETH on lido', 'yield'],
+      ]
+      return cases.every(([text, kind]) => {
+        const p = parseMandate(text)
+        if ('problem' in p) return false
+        if (p.kind !== kind) return false
+        // The stored sentence is the executor's own canonical form — parsing
+        // it AGAIN must land identically (what a hired proposal compiles from).
+        const rt = parseMandate(p.mandateText)
+        return !('problem' in rt) && rt.kind === p.kind && rt.mandateText === p.mandateText && MANDATE_KIND_LABELS[p.kind].length > 0
+      })
+    })(),
+  )
+  check(
+    'roster R1: garbage refuses BY NAME (all four grammars listed); un-executable flagships refuse by name too',
+    (() => {
+      const garbage = parseMandate('do a backflip with my money please')
+      const conditional = parseMandate('buy $25 of ETH weekly, double on red weeks') // no DCA conditional executor (ideation)
+      const hunt = parseMandate('hunt stable yield, boring only') // no yield-hunt executor (ideation)
+      return (
+        'problem' in garbage &&
+        /tile my wallet/.test(garbage.problem) &&
+        /weekly/.test(garbage.problem) &&
+        /stop/.test(garbage.problem) &&
+        /aave|lido/i.test(garbage.problem) &&
+        'problem' in conditional &&
+        /aren't executable yet|silently ignored/.test(conditional.problem) &&
+        'problem' in hunt &&
+        /isn't an executable mandate yet/.test(hunt.problem)
+      )
+    })(),
+  )
+  check(
+    'roster R1: slot-cap sanitize + agent-hash shape — over-cap refuses by name, hash is 16-hex or nothing',
+    (() => {
+      const over = cleanCapUsd(ROSTER_MAX_CAP_USD + 1)
+      return (
+        cleanCapUsd(null) === 200 &&
+        cleanCapUsd('50') === 50 &&
+        typeof over === 'object' &&
+        /cap at \$/.test(over.problem) &&
+        typeof cleanCapUsd(-3) === 'object' &&
+        cleanAgentKeyHash('AB12CD34EF56AB12') === 'ab12cd34ef56ab12' &&
+        cleanAgentKeyHash('0x' + 'a'.repeat(16)) === null && // 0x-prefixed ≠ the handle shape
+        cleanAgentKeyHash('short') === null
+      )
+    })(),
+  )
+  // The live flow: draft → (private) → hire consent → sign → hired → fire.
+  {
+    const employer = privateKeyToAccount(generatePrivateKey())
+    SIGNED_IN_WALLETS.add(employer.address.toLowerCase())
+    const agentHash = agentHandleFor('roster-r1-drill-agent')
+    const J = { 'content-type': 'application/json' }
+    const post = await fetch(`${BASE}/api/roster`, {
+      method: 'POST',
+      headers: J,
+      body: JSON.stringify({ wallet: employer.address, mandate: 'buy $25 of ETH weekly', capUsd: 50 }),
+    })
+    const posted = (await post.json()) as { slot?: { id: string; status: string; mandateText: string }; internal?: boolean; error?: string }
+    check(
+      'roster R1: connect-to-act draft mint — pending, canonical text stored, internal-run stamp echoed',
+      post.status === 200 && posted.slot?.status === 'pending' && posted.slot.mandateText === 'buy $25 of ETH weekly' && posted.internal === true,
+      posted.error ?? '',
+    )
+    const slotId = posted.slot?.id ?? 'missing'
+    const pubList = (await (await fetch(`${BASE}/api/roster?wallet=${employer.address}`)).json()) as { slots?: { id: string }[] }
+    check(
+      'roster R1: a pending draft is PRIVATE — the public roster never lists it (T1)',
+      (pubList.slots ?? []).every((s) => s.id !== slotId),
+    )
+    const badMint = await fetch(`${BASE}/api/roster/hire`, {
+      method: 'POST',
+      headers: J,
+      body: JSON.stringify({ slotId, wallet: employer.address, agentKeyHash: 'roster-r1-drill-agent' }),
+    })
+    check('roster R1: hiring with a raw agent key (not the 16-hex handle) refuses by name (T8)', badMint.status === 400 && /16-hex|never its raw key/.test(((await badMint.json()) as { error?: string }).error ?? ''))
+    const mint = await fetch(`${BASE}/api/roster/hire`, {
+      method: 'POST',
+      headers: J,
+      body: JSON.stringify({ slotId, wallet: employer.address, agentKeyHash: agentHash }),
+    })
+    const minted = (await mint.json()) as { consentText?: string; error?: string }
+    check(
+      'roster R1: hire consent text is server-composed — carries slot + agent hash + nonce, NEVER the mandate sentence (T9)',
+      mint.status === 200 &&
+        !!minted.consentText &&
+        minted.consentText.includes(`Slot: ${slotId}`) &&
+        minted.consentText.includes(`Agent: ${agentHash}`) &&
+        /Nonce: [0-9a-f]{32}/.test(minted.consentText) &&
+        !minted.consentText.includes('buy $25 of ETH weekly'),
+      minted.error ?? '',
+    )
+    // Without consent: no signature at all → still pending; mallory's
+    // signature over the same text → refused, still pending.
+    const malloryAcct = privateKeyToAccount(generatePrivateKey())
+    const wrongSig = await malloryAcct.signMessage({ message: minted.consentText ?? '' })
+    const wrongHire = await fetch(`${BASE}/api/roster/hire`, {
+      method: 'POST',
+      headers: J,
+      body: JSON.stringify({ slotId, wallet: employer.address, signature: wrongSig }),
+    })
+    check(
+      "roster R1: hire WITHOUT the wallet's own consent refuses — a stranger's signature recovers and is named",
+      wrongHire.status === 401 && /recovers to/.test(((await wrongHire.json()) as { error?: string }).error ?? ''),
+    )
+    const rightSig = await employer.signMessage({ message: minted.consentText ?? '' })
+    const hire = await fetch(`${BASE}/api/roster/hire`, {
+      method: 'POST',
+      headers: J,
+      body: JSON.stringify({ slotId, wallet: employer.address, signature: rightSig }),
+    })
+    const hired = (await hire.json()) as { slot?: { status: string; agentKeyHash: string | null }; error?: string }
+    const pubAfter = (await (await fetch(`${BASE}/api/roster?wallet=${employer.address}`)).json()) as { slots?: { id: string; status: string }[] }
+    check(
+      'roster R1: the hire consent signature flips pending → hired and the slot goes PUBLIC',
+      hire.status === 200 && hired.slot?.status === 'hired' && hired.slot.agentKeyHash === agentHash && (pubAfter.slots ?? []).some((s) => s.id === slotId && s.status === 'hired'),
+      hired.error ?? '',
+    )
+    // Replay: the hire nonce died on success — re-submitting the same
+    // signature must refuse (slot no longer pending + nonce cleared).
+    const replay = await fetch(`${BASE}/api/roster/hire`, {
+      method: 'POST',
+      headers: J,
+      body: JSON.stringify({ slotId, wallet: employer.address, signature: rightSig }),
+    })
+    check('roster R1: a spent hire consent cannot replay (nonce single-use, state machine forward-only)', replay.status === 409)
+    // Fire via the consent door (connect-to-act — no SIWE needed to leave).
+    const fMint = await fetch(`${BASE}/api/roster/fire`, {
+      method: 'POST',
+      headers: J,
+      body: JSON.stringify({ slotId, wallet: employer.address }),
+    })
+    const fMinted = (await fMint.json()) as { consentText?: string }
+    const fSig = await employer.signMessage({ message: fMinted.consentText ?? '' })
+    const fired = await fetch(`${BASE}/api/roster/fire`, {
+      method: 'POST',
+      headers: J,
+      body: JSON.stringify({ slotId, wallet: employer.address, signature: fSig }),
+    })
+    const firedBody = (await fired.json()) as { slot?: { status: string }; error?: string }
+    const pubFired = (await (await fetch(`${BASE}/api/roster?wallet=${employer.address}`)).json()) as { slots?: { id: string }[] }
+    check(
+      'roster R1: fire consent retires the slot (terminal) and it leaves the public roster',
+      fired.status === 200 && firedBody.slot?.status === 'fired' && (pubFired.slots ?? []).every((s) => s.id !== slotId),
+      firedBody.error ?? '',
+    )
+    // Release the row: the signed-in owner may remove fired history.
+    const employerSession = await signIn(employer)
+    const gone = await fetch(`${BASE}/api/roster/fire`, {
+      method: 'POST',
+      headers: { ...J, cookie: employerSession },
+      body: JSON.stringify({ slotId, wallet: employer.address }),
+    })
+    check('roster R1: the signed-in owner removes fired history — drill row released', ((await gone.json()) as { deleted?: boolean }).deleted === true)
+  }
+
   check(
     'broker M3: webhook signature is a deterministic HMAC over the raw body',
     (() => {
@@ -11490,6 +11660,266 @@ async function main() {
       'broker: a 90% shape refuses with the grammar problem verbatim',
       tileBad.isError && /90%/.test(String(tileBad.payload)),
     )
+
+    // ── THE ROSTER R2 — proposals→inbox binding (lib/roster-propose) ──────
+    console.log('— roster R2 (proposals→inbox binding)')
+    {
+      const employer2 = privateKeyToAccount(generatePrivateKey())
+      SIGNED_IN_WALLETS.add(employer2.address.toLowerCase())
+      const J = { 'content-type': 'application/json' }
+      const rosterAgentKey = 'roster-r2-desk-agent'
+      const rosterHash = agentHandleFor(rosterAgentKey)
+      const hireSlot = async (acct: PrivateKeyAccount, mandate: string, capUsd: number) => {
+        const p = await fetch(`${BASE}/api/roster`, {
+          method: 'POST',
+          headers: J,
+          body: JSON.stringify({ wallet: acct.address, mandate, capUsd }),
+        })
+        const slot = ((await p.json()) as { slot?: { id: string } }).slot
+        if (!slot) return { slotId: '', ok: false }
+        const m = await fetch(`${BASE}/api/roster/hire`, {
+          method: 'POST',
+          headers: J,
+          body: JSON.stringify({ slotId: slot.id, wallet: acct.address, agentKeyHash: rosterHash }),
+        })
+        const consentText = ((await m.json()) as { consentText?: string }).consentText ?? ''
+        const sig = await acct.signMessage({ message: consentText })
+        const h = await fetch(`${BASE}/api/roster/hire`, {
+          method: 'POST',
+          headers: J,
+          body: JSON.stringify({ slotId: slot.id, wallet: acct.address, signature: sig }),
+        })
+        return { slotId: slot.id, ok: h.status === 200 }
+      }
+      const fireSlot = async (acct: PrivateKeyAccount, slotId: string) => {
+        const m = await fetch(`${BASE}/api/roster/fire`, {
+          method: 'POST',
+          headers: J,
+          body: JSON.stringify({ slotId, wallet: acct.address }),
+        })
+        const consentText = ((await m.json()) as { consentText?: string }).consentText
+        if (!consentText) return true // SIWE/pending path resolved in one step
+        const sig = await acct.signMessage({ message: consentText })
+        const f = await fetch(`${BASE}/api/roster/fire`, {
+          method: 'POST',
+          headers: J,
+          body: JSON.stringify({ slotId, wallet: acct.address, signature: sig }),
+        })
+        return f.status === 200
+      }
+
+      // 1 — a hired agent's open AUTO-ADDRESSES with the slot badge. The
+      // callback_url is bound on purpose: pin 6 proves a STAMPED intent
+      // never claims a push even with a callback in place.
+      const s1 = await hireSlot(employer2, 'buy $25 of ETH weekly', 50)
+      const prop = await call('broker_open', {
+        ask: 'Buy $15 of AAPL',
+        agent: 'Rebalancer',
+        agent_key: rosterAgentKey,
+        wallet: employer2.address,
+        callback_url: 'https://hooks.example.com/roster',
+      })
+      const employerLower = employer2.address.toLowerCase()
+      check(
+        "roster R2: a hired agent's desk open auto-addresses to the employer inbox wearing the slot badge",
+        s1.ok &&
+          !prop.isError &&
+          prop.payload?.state === 'handed_off' &&
+          prop.payload?.roster?.slotId === s1.slotId &&
+          prop.payload?.roster?.badge?.label === 'Recurring buy' &&
+          String(prop.payload?.roster?.inboxUrl ?? '').endsWith(`/inbox/${employerLower}`),
+        prop.isError ? String(prop.payload).slice(0, 120) : '',
+      )
+      const rosterSlug = String(prop.payload?.roster?.url ?? '').split('/').pop() ?? ''
+      const rosterInbox = ((await (await fetch(`${BASE}/api/inbox?wallet=${employer2.address}`)).json()) as {
+        items?: { slug: string; roster?: { label?: string; mandate?: string; capUsd?: number } }[]
+      }).items ?? []
+      const rosterItem = rosterInbox.find((i) => i.slug === rosterSlug)
+      check(
+        'roster R2: the inbox card carries the mandate badge (kind label + canonical sentence + cap)',
+        rosterItem?.roster?.label === 'Recurring buy' && rosterItem.roster.mandate === 'buy $25 of ETH weekly' && rosterItem.roster.capUsd === 50,
+      )
+      // The runtime header badge rides the RSC payload (the splash mounts
+      // client-side — same contract as the U2 notify pin): the page must
+      // serialize the DB-stored canonical mandate + cap into the roster prop.
+      const rosterPageHtml = (await (await fetch(`${BASE}/i/${rosterSlug}`)).text()).replace(/\\/g, '')
+      check(
+        'roster R2: the /i runtime header wears the slot badge (mandate + cap, DB-stored canonical text)',
+        /"roster":\{"label":"Recurring buy","mandate":"buy \$25 of ETH weekly","capUsd":50\}/.test(rosterPageHtml),
+      )
+      // The inbox PAGE row wears the same badge strings (QA demo-proof
+      // finding: the data rode the API but only /i rendered it). Server-
+      // rendered, so plain HTML — not the RSC payload.
+      const inboxPageHtml = flat(await (await fetch(`${BASE}/inbox/${employer2.address}`)).text())
+      check(
+        'roster R2: the inbox row wears the mandate badge (same strings as the /i pill)',
+        /Recurring buy mandate/.test(inboxPageHtml) && /buy \$25 of ETH weekly/.test(inboxPageHtml) && /\$50 cap/.test(inboxPageHtml),
+      )
+
+      // 2 — an UNHIRED agent_key opens a plain desk intent: no addressing.
+      const un = await call('broker_open', { ask: 'Buy $15 of AAPL', agent_key: 'never-hired-key', wallet: employer2.address })
+      check(
+        'roster R2: an unhired agent_key does NOT auto-address — plain open, no roster block',
+        !un.isError && un.payload?.state === 'open' && un.payload?.roster === undefined,
+      )
+      if (un.payload?.intentId) await call('broker_close', { intent_id: un.payload.intentId })
+
+      // 3 — over-cap at OPEN refuses by name AND benches (cap breach is the
+      // only bench trigger).
+      const over = await call('broker_open', { ask: 'Buy $500 of AAPL', agent_key: rosterAgentKey, wallet: employer2.address })
+      const slotsAfterBreach = ((await (await fetch(`${BASE}/api/roster?wallet=${employer2.address}`)).json()) as {
+        slots?: { id: string; status: string }[]
+      }).slots ?? []
+      check(
+        'roster R2: an over-cap proposal refuses BY NAME at open and BENCHES the slot',
+        over.isError && /caps proposals at \$50/.test(String(over.payload)) && slotsAfterBreach.some((s) => s.id === s1.slotId && s.status === 'benched'),
+        String(over.payload).slice(0, 120),
+      )
+      // 4 — a benched slot refuses new proposals by name.
+      const benchedTry = await call('broker_open', { ask: 'Buy $15 of AAPL', agent_key: rosterAgentKey, wallet: employer2.address })
+      check('roster R2: a BENCHED slot refuses new proposals by name', benchedTry.isError && /BENCHED/.test(String(benchedTry.payload)))
+      check('roster R2: benched slot released (fire)', await fireSlot(employer2, s1.slotId))
+
+      // 5 — the fired-agent race (T5): fire lands AFTER the proposal was
+      // addressed → the cascade revokes the pending card and the /i runtime
+      // walls; a new proposal refuses by name.
+      const s3 = await hireSlot(employer2, 'supply 25 USDC to aave', 50)
+      // NB: the proposal must carry a dollar price — 'supply 20 USDC to
+      // aave' has no $ figure, and the open gate FAILS CLOSED on unpriceable
+      // money asks (proven by the build-gate pin below).
+      const prop3 = await call('broker_open', { ask: 'Buy $15 of AAPL', agent_key: rosterAgentKey, wallet: employer2.address })
+      const slug3 = String(prop3.payload?.roster?.url ?? '').split('/').pop() ?? ''
+      const firedOk = await fireSlot(employer2, s3.slotId)
+      const inboxAfterFire = ((await (await fetch(`${BASE}/api/inbox?wallet=${employer2.address}`)).json()) as {
+        items?: { slug: string }[]
+      }).items ?? []
+      const linkAfterFire = await fetch(`${BASE}/i/${slug3}`)
+      check(
+        'roster R2: firing CASCADES — the pending proposal leaves the inbox and its /i link revokes (T5 human path)',
+        s3.ok && !prop3.isError && firedOk && !inboxAfterFire.some((i) => i.slug === slug3) && linkAfterFire.status === 404,
+        `link=${linkAfterFire.status}`,
+      )
+      const firedTry = await call('broker_open', { ask: 'Buy $15 of AAPL', agent_key: rosterAgentKey, wallet: employer2.address })
+      check('roster R2: a FIRED slot refuses new proposals by name (terminal)', firedTry.isError && /FIRED/.test(String(firedTry.payload)))
+
+      // 6 — the BUILD gate, mocked build (pure decideProposalGate) + the
+      // notify rule: stamped intents never notify.
+      check(
+        'roster R2: the build gate re-checks status + cap off the build price — fired refuses (race), over-cap refuses by name, unpriceable money fails closed',
+        (() => {
+          const throws = (fn: () => void, re: RegExp) => {
+            try {
+              fn()
+              return false
+            } catch (e) {
+              return re.test(String(e))
+            }
+          }
+          const hired = { status: 'hired', capUsd: 50, mandateKind: 'dca' }
+          let passes = true
+          try {
+            decideProposalGate(hired, 25, true, 'build') // under cap → proceeds
+            decideProposalGate(hired, null, false, 'build') // non-money unpriceable → proceeds
+          } catch {
+            passes = false
+          }
+          return (
+            passes &&
+            throws(() => decideProposalGate(hired, 75, true, 'build'), /Refused at build.*caps proposals at \$50/) &&
+            throws(() => decideProposalGate(hired, null, true, 'build'), /could not be priced/) &&
+            throws(() => decideProposalGate({ ...hired, status: 'fired' }, 25, true, 'build'), /Refused at build.*FIRED/) &&
+            throws(() => decideProposalGate({ ...hired, status: 'benched' }, 25, true, 'build'), /Refused at build.*BENCHED/)
+          )
+        })(),
+      )
+      check(
+        'roster R2: stamped intents never notify — notifyEligible refuses internal even with a callback bound; the internal proposal page never claims a push',
+        notifyEligible({ isInternal: true, callbackUrl: 'https://hooks.example.com/x' }) === false &&
+          notifyEligible({ isInternal: false, callbackUrl: 'https://hooks.example.com/x' }) === true &&
+          notifyEligible({ isInternal: false, callbackUrl: null }) === false &&
+          !/"push":true/.test(rosterPageHtml.replace(/\\/g, '')),
+      )
+
+      // 7 — R2-1 (security finding): a squatter's connect-to-act drafts
+      // never block the true owner — quota counts hired/benched only, and
+      // pending rows roll (delete-oldest, never refuse).
+      const victim = privateKeyToAccount(generatePrivateKey())
+      SIGNED_IN_WALLETS.add(victim.address.toLowerCase())
+      for (let i = 0; i < 12; i++) {
+        await fetch(`${BASE}/api/roster`, {
+          method: 'POST',
+          headers: J,
+          body: JSON.stringify({ wallet: victim.address, mandate: 'buy $10 of ETH weekly' }),
+        })
+      }
+      const victimSlot = await hireSlot(victim, 'stake 0.5 ETH on lido', 40)
+      check(
+        'roster R2-1: 12 squatter drafts against a wallet — the owner can still draft AND hire (quota counts staffed slots only; drafts roll)',
+        victimSlot.ok,
+      )
+
+      // 8 — the aggregate fence (§4.4, security r3): a slot bounds UNDECIDED
+      // proposals (3) and its trailing-24h estimate sum (3× cap) — both
+      // refuse BY NAME, and a budget trip never benches (cap breach only).
+      const sB = await hireSlot(employer2, 'buy $25 of ETH weekly', 10)
+      const budgetProps: string[] = []
+      let threeOk = true
+      for (let i = 0; i < 3; i++) {
+        const r = await call('broker_open', { ask: 'Buy $9 of AAPL', agent_key: rosterAgentKey, wallet: employer2.address })
+        if (r.isError) threeOk = false
+        else budgetProps.push(String(r.payload.intentId))
+      }
+      const fourth = await call('broker_open', { ask: 'Buy $9 of AAPL', agent_key: rosterAgentKey, wallet: employer2.address })
+      check(
+        'roster R2 §4.4: the 4th undecided proposal refuses by name (3 pending max)',
+        threeOk && fourth.isError && /already has 3 undecided proposals/.test(String(fourth.payload)),
+        fourth.isError ? String(fourth.payload).slice(0, 100) : 'no refusal',
+      )
+      for (const id of budgetProps) await call('broker_close', { intent_id: id })
+      const overBudget = await call('broker_open', { ask: 'Buy $9 of AAPL', agent_key: rosterAgentKey, wallet: employer2.address })
+      const slotAfterBudget = ((await (await fetch(`${BASE}/api/roster?wallet=${employer2.address}`)).json()) as {
+        slots?: { id: string; status: string }[]
+      }).slots ?? []
+      check(
+        'roster R2 §4.4: the 3×cap trailing-24h budget refuses by name once pending clears — and a budget trip never benches',
+        overBudget.isError &&
+          /daily mandate budget \(\$30 = 3× the \$10 cap/.test(String(overBudget.payload)) &&
+          slotAfterBudget.some((s) => s.id === sB.slotId && s.status === 'hired'),
+        overBudget.isError ? String(overBudget.payload).slice(0, 100) : 'no refusal',
+      )
+      check('roster R2 §4.4: budget slot released (fire)', await fireSlot(employer2, sB.slotId))
+
+      // Release every roster drill row: fire staffed slots, then SIWE-owned
+      // removal of fired history + leftover drafts.
+      await fireSlot(victim, victimSlot.slotId)
+      for (const [acct, key] of [
+        [employer2, null],
+        [victim, null],
+      ] as [PrivateKeyAccount, null][]) {
+        void key
+        const session = await signIn(acct)
+        const mine = ((await (
+          await fetch(`${BASE}/api/roster?wallet=${acct.address}`, { headers: { cookie: session } })
+        ).json()) as { slots?: { id: string }[] }).slots ?? []
+        for (const s of mine) {
+          await fetch(`${BASE}/api/roster/fire`, {
+            method: 'POST',
+            headers: { ...J, cookie: session },
+            body: JSON.stringify({ slotId: s.id, wallet: acct.address }),
+          })
+          await fetch(`${BASE}/api/roster/fire`, {
+            method: 'POST',
+            headers: { ...J, cookie: session },
+            body: JSON.stringify({ slotId: s.id, wallet: acct.address }),
+          })
+        }
+        const after = ((await (
+          await fetch(`${BASE}/api/roster?wallet=${acct.address}`, { headers: { cookie: session } })
+        ).json()) as { slots?: unknown[] }).slots ?? []
+        check(`roster R2: drill rows released for ${acct.address.slice(0, 8)}…`, after.length === 0)
+      }
+      if (prop.payload?.intentId) await call('broker_close', { intent_id: prop.payload.intentId })
+    }
 
     // The wire-level pin: nothing any MCP call returned carries 0x-prefixed
     // 64+ hex runs (calldata/typed-data/signature material). Wallet

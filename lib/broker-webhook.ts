@@ -99,3 +99,15 @@ export async function deliverWebhook(url: string, secret: string, ev: WebhookEve
 function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms))
 }
+
+/** "Stamped intents never notify" (R2): our own harness/drill intents
+ *  (is_internal via lib/internal-run.ts) must not fire agent webhooks or
+ *  claim "the agent was notified" on the /i banner — the notification
+ *  channel is a REAL-traffic artifact, exactly like referrals and creator
+ *  earnings. Pure so both call sites (fireIntentWebhook + the /i page's
+ *  getNotify) and the harness share one rule. */
+export function notifyEligible(intent: { isInternal?: boolean | null; callbackUrl?: string | null } | null | undefined): boolean {
+  if (!intent) return false
+  if (intent.isInternal === true) return false
+  return !!intent.callbackUrl
+}
