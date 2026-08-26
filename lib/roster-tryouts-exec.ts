@@ -15,6 +15,7 @@
 //   · append-only — there is no delete anywhere in this module (§1.5-3).
 
 import prisma from '@/lib/db'
+import { Prisma } from '@prisma/client'
 import { mintSlug } from '@/lib/intent-links'
 import { parseMandate } from '@/lib/roster'
 import { assertUnderSlotCap, mandateHash } from '@/lib/roster-policy'
@@ -201,17 +202,26 @@ export async function captureReview(tryoutId: string, opts?: { forceDueForIntern
     // A pair that stopped pricing keeps a null review quote — the card says
     // "not yet captured"; it never invents a number.
     if (!quoted) continue
-    // Write-once: the JS null-guard above skips captured marks, and the
-    // whole pass only runs while status='running' (the update below flips
-    // it) — a second captureReview early-returns before reaching here.
-    await prisma.rosterTryoutMark.update({
-      where: { id: m.id },
+    // Write-once, DB-ENFORCED (security wave-3 audit): the JS null-guard
+    // above has a TOCTOU window when two lazy captures race off concurrent
+    // GETs — both read null, both quote, second write clobbers the first.
+    // The updateMany predicate makes the store itself refuse the second
+    // write, so the FIRST captured number is the number, forever.
+    await prisma.rosterTryoutMark.updateMany({
+      // DbNull: an unwritten quote_at_review is a database NULL (the app
+      // never writes a JSON-null there — AnyNull silently matched nothing).
+      where: { id: m.id, quoteAtReview: { equals: Prisma.DbNull } },
       data: { quoteAtReview: quoted.quote as object },
     })
   }
-  return prisma.rosterTryout.update({
+  // Same race on the status flip: a guarded update() throws P2025 when a
+  // concurrent capture won — updateMany is a no-op instead, and the fresh
+  // re-read returns whichever capture landed.
+  await prisma.rosterTryout.updateMany({
     where: { id: tryoutId, status: 'running' },
     data: { status: 'reviewed', reviewedAt: new Date() },
-    select: TRYOUT_SELECT,
   })
+  const fresh = await prisma.rosterTryout.findUnique({ where: { id: tryoutId }, select: TRYOUT_SELECT })
+  if (!fresh) throw new Error('No such tryout.')
+  return fresh
 }
