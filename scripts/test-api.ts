@@ -54,6 +54,24 @@ import {
   deskEnabled,
   DESK_MAX_INTENT_USD,
 } from '../lib/broker-policy'
+import {
+  assertProposalBudget,
+  assertRosterOpen,
+  assertUnderSlotCap,
+  cleanMandateInput,
+  consentExpired,
+  decideBench,
+  decideProposalBudget,
+  mandateHash,
+  mintRosterNonce,
+  rosterEnabled,
+  rosterFireConsentMessage,
+  rosterHireConsentMessage,
+  verifyRosterConsent,
+  ROSTER_DAILY_BUDGET_MULT,
+  ROSTER_MAX_MANDATE_CHARS,
+  ROSTER_MAX_PENDING_PROPOSALS,
+} from '../lib/roster-policy'
 import { buildDelivery, mintCallbackSecret, signWebhook, validateCallbackUrl } from '../lib/broker-webhook'
 import { agentHandleFor } from '../lib/agent-record'
 import { addrsUnion, arcQuery } from '../lib/gtm-arc'
@@ -3422,6 +3440,201 @@ async function main() {
       const h2 = agentHandleFor('harness-desk-key')
       const h3 = agentHandleFor('some-other-agent')
       return /^[0-9a-f]{16}$/.test(h1) && h1 === h2 && h1 !== h3 && !h1.includes('harness')
+    })(),
+  )
+  // --- ROSTER (overnight 2026-08-25) — security policy fences, CONTRACTS v1 ---
+  check(
+    'roster: kill switch fail-closed; FIRE is exempt even while disabled',
+    (() => {
+      const prior = process.env.ROSTER_ENABLED
+      try {
+        delete process.env.ROSTER_ENABLED
+        const closedUnset = rosterEnabled() === false
+        let hireWalled = false
+        try {
+          assertRosterOpen('hire')
+        } catch {
+          hireWalled = true
+        }
+        let fireOpen = true
+        try {
+          assertRosterOpen('fire') // the exit door never closes
+        } catch {
+          fireOpen = false
+        }
+        process.env.ROSTER_ENABLED = 'true'
+        let hireOpen = true
+        try {
+          assertRosterOpen('hire')
+        } catch {
+          hireOpen = false
+        }
+        process.env.ROSTER_ENABLED = 'TRUE' // exact-match only, like the desk
+        const strict = rosterEnabled() === false
+        return closedUnset && hireWalled && fireOpen && hireOpen && strict
+      } finally {
+        if (prior === undefined) delete process.env.ROSTER_ENABLED
+        else process.env.ROSTER_ENABLED = prior
+      }
+    })(),
+  )
+  check(
+    'roster: hire consent signs over slot + agent hash + mandate hash + cap + nonce + expiry, never a raw key or sentence',
+    (() => {
+      const nonce = mintRosterNonce()
+      const msg = rosterHireConsentMessage({
+        slotId: 'slot_abc',
+        wallet: '0xABCDEF0000000000000000000000000000000001',
+        agentKeyHash: agentHandleFor('harness-desk-key'),
+        mandateHash: mandateHash('DCA $25 into ETH weekly'),
+        capUsd: 50,
+        nonce,
+        expiresAt: new Date('2026-08-26T00:00:00Z'),
+      })
+      const fire = rosterFireConsentMessage({
+        slotId: 'slot_abc',
+        wallet: '0xABCDEF0000000000000000000000000000000001',
+        nonce,
+        expiresAt: new Date('2026-08-26T00:00:00Z'),
+      })
+      return (
+        msg.includes('Slot: slot_abc') &&
+        msg.includes('Wallet: 0xabcdef0000000000000000000000000000000001') && // canonical lowercase
+        msg.includes(`Agent: ${agentHandleFor('harness-desk-key')}`) &&
+        msg.includes(`Mandate: ${mandateHash('DCA $25 into ETH weekly')}`) &&
+        msg.includes('Cap: $50 per proposal') &&
+        msg.includes(`Nonce: ${nonce}`) &&
+        msg.includes('Expires: 2026-08-26T00:00:00.000Z') &&
+        !msg.includes('harness-desk-key') && // raw agent key never in the signed bytes (T8)
+        !msg.includes('DCA $25') && // the sentence rides as a hash, never text (T9)
+        fire.includes('Slot: slot_abc') &&
+        fire.includes('fires the agent') &&
+        /^[0-9a-f]{16}$/.test(mandateHash('x')) &&
+        consentExpired(new Date(Date.now() - 1000)) &&
+        !consentExpired(new Date(Date.now() + 60_000)) &&
+        consentExpired(null) && // unreadable expiry fails closed
+        consentExpired('garbage')
+      )
+    })(),
+  )
+  check(
+    'roster: consent verify recovers the signer — right wallet passes, wrong wallet / reused-slot text / garbage refuse',
+    await (async () => {
+      const employer = privateKeyToAccount(generatePrivateKey())
+      const nonce = mintRosterNonce()
+      const input = {
+        slotId: 'slot_verify',
+        wallet: employer.address,
+        agentKeyHash: agentHandleFor('harness-desk-key'),
+        mandateHash: mandateHash('keep me 60/40 ETH/USDC'),
+        capUsd: 100,
+        nonce,
+        expiresAt: new Date(Date.now() + 60_000),
+      }
+      const msg = rosterHireConsentMessage(input)
+      const sig = await employer.signMessage({ message: msg })
+      let ok = true
+      try {
+        await verifyRosterConsent(msg, employer.address, sig)
+      } catch {
+        ok = false
+      }
+      // Cross-slot reuse: the SAME signature against a different slot's text.
+      const otherMsg = rosterHireConsentMessage({ ...input, slotId: 'slot_other' })
+      let crossRefused = false
+      try {
+        await verifyRosterConsent(otherMsg, employer.address, sig)
+      } catch (e) {
+        crossRefused = /recovers to|does not verify/i.test(String(e))
+      }
+      // A different wallet presenting the real signature.
+      const mallory2 = privateKeyToAccount(generatePrivateKey())
+      let walletRefused = false
+      try {
+        await verifyRosterConsent(msg, mallory2.address, sig)
+      } catch (e) {
+        walletRefused = /recovers to/i.test(String(e))
+      }
+      let garbageRefused = false
+      try {
+        await verifyRosterConsent(msg, employer.address, '0x1234')
+      } catch (e) {
+        garbageRefused = /65-byte/i.test(String(e))
+      }
+      return ok && crossRefused && walletRefused && garbageRefused
+    })(),
+  )
+  check(
+    'roster: slot cap fails CLOSED on unpriceable money asks; open/build stages named; over-cap refuses by name',
+    (() => {
+      let overRefused = false
+      try {
+        assertUnderSlotCap(51, 50, { moneyShaped: true, stage: 'open', slotLabel: 'DCA lane' })
+      } catch (e) {
+        overRefused = /open/.test(String(e)) && /\$50/.test(String(e)) && /DCA lane/.test(String(e))
+      }
+      let nullMoneyRefused = false
+      try {
+        assertUnderSlotCap(null, 50, { moneyShaped: true, stage: 'build' })
+      } catch (e) {
+        nullMoneyRefused = /build/.test(String(e)) && /could not be priced/i.test(String(e))
+      }
+      let underOk = true
+      try {
+        assertUnderSlotCap(50, 50, { moneyShaped: true, stage: 'build' }) // at-cap passes
+        assertUnderSlotCap(null, 50, { moneyShaped: false, stage: 'open' }) // non-money null passes
+      } catch {
+        underOk = false
+      }
+      return overRefused && nullMoneyRefused && underOk
+    })(),
+  )
+  check(
+    'roster R2: assertProposalBudget (DB-backed §4.4 fence) — clean slot passes, fence errors fail open',
+    await (async () => {
+      // An unknown slot has 0 pending and no 24h spend — a $10 proposal under
+      // a $50 cap must pass without throwing (and a store hiccup fails OPEN,
+      // exercised implicitly when the column is absent in a stale DB).
+      try {
+        await assertProposalBudget(`no-such-slot-${Date.now()}`, 50, 10)
+        return true
+      } catch {
+        return false
+      }
+    })(),
+  )
+  check(
+    'roster: aggregate fences — pending-full, daily budget (3× cap / 24h); bench on cap breach ONLY (decline-streak benching killed)',
+    (() => {
+      const full = decideProposalBudget({ estUsd: 5, capUsd: 50, pendingCount: ROSTER_MAX_PENDING_PROPOSALS, sum24hUsd: 5 })
+      const budget = decideProposalBudget({ estUsd: 10, capUsd: 50, pendingCount: 0, sum24hUsd: 50 * ROSTER_DAILY_BUDGET_MULT + 1 })
+      const fine = decideProposalBudget({ estUsd: 10, capUsd: 50, pendingCount: 1, sum24hUsd: 60 })
+      return (
+        full === 'pending-full' &&
+        budget === 'daily-budget' &&
+        fine === null &&
+        decideBench({ capBreach: true }) && // probing the cap benches immediately
+        !decideBench({ capBreach: false, consecutiveDeclines: 99 }) // declines NEVER bench (ideation judges, 2026-08-25)
+      )
+    })(),
+  )
+  check(
+    'roster: mandate input hygiene — NFKC fold, control chars stripped, over-length REFUSED (never truncated)',
+    (() => {
+      const folded = cleanMandateInput('ＤＣＡ $25  into\nETH  weekly') === 'DCA $25 into ETH weekly'
+      let longRefused = false
+      try {
+        cleanMandateInput('x'.repeat(ROSTER_MAX_MANDATE_CHARS + 1))
+      } catch (e) {
+        longRefused = /over the/.test(String(e))
+      }
+      let emptyRefused = false
+      try {
+        cleanMandateInput('   ')
+      } catch {
+        emptyRefused = true
+      }
+      return folded && longRefused && emptyRefused
     })(),
   )
   check(
