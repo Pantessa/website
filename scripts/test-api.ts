@@ -75,6 +75,7 @@ import {
 import { cleanAgentKeyHash, cleanCapUsd, parseMandate, MANDATE_KIND_LABELS, ROSTER_MAX_CAP_USD } from '../lib/roster'
 import { decideProposalGate } from '../lib/roster-propose'
 import { decideManagerMove, stackingRefusal, undecidedProposalFor } from '../lib/roster-manager'
+import { markPeriodKey, parseMarkAsk, tryoutReportCard, PAPER_LABEL, TRYOUT_BANNED_PHRASES } from '../lib/roster-tryouts'
 import { buildDelivery, mintCallbackSecret, notifyEligible, signWebhook, validateCallbackUrl } from '../lib/broker-webhook'
 import { agentHandleFor } from '../lib/agent-record'
 import {
@@ -85,8 +86,8 @@ import {
   showOrdinals,
   ORDINALS_MIN_QUALIFIED,
 } from '../lib/league'
-import prisma from '../lib/db'
 import { DOCS_PAGES } from '../lib/docs'
+import prisma from '../lib/db'
 import { addrsUnion, arcQuery } from '../lib/gtm-arc'
 import { isInternalRun, INTERNAL_RUN_HEADER } from '../lib/internal-run'
 import { deskExecuteConsentMessage, cleanSenderLabel } from '../lib/broker-exec'
@@ -3816,6 +3817,175 @@ async function main() {
       body: JSON.stringify({ slotId, wallet: employer.address }),
     })
     check('roster R1: the signed-in owner removes fired history — drill row released', ((await gone.json()) as { deleted?: boolean }).deleted === true)
+  }
+
+  // ── M6 forward-paper tryouts (lib/roster-tryouts + /api/roster/tryouts) ──
+  console.log('— roster tryouts (M6 forward-paper)')
+  check(
+    'tryouts: the report card renders both quote numbers side by side and NEVER computes across them (banned phrases + delta + quote-line %)',
+    (() => {
+      const q = (out: number) => ({ pair: 'ETH/USDC', side: 'sell' as const, amountIn: 20, quoteOut: out, unit: 'USD per ETH' })
+      const card = tryoutReportCard({
+        mandateText: 'tile my wallet 60% ETH, 40% USDC',
+        startedAt: new Date('2026-08-01T00:00:00Z'),
+        reviewAt: new Date('2026-08-08T00:00:00Z'),
+        reviewedAt: new Date('2026-08-08T01:00:00Z'),
+        marks: [{ seq: 1, askText: 'Swap $20 of ETH to USDC on base', proposedAt: new Date('2026-08-02T00:00:00Z'), venue: 'Uniswap v3 ETH/USDC', quoteAtPropose: q(2000.12), quoteAtReview: q(1875.5) }],
+        kindCount90d: 2,
+      })
+      const quoteLines = card.split('\n').slice(3).join('\n')
+      const delta = Math.abs(2000.12 - 1875.5).toFixed(2) // 124.62 — must never appear
+      return (
+        card.startsWith(PAPER_LABEL) &&
+        card.includes('2000.12') &&
+        card.includes('1875.5') &&
+        card.includes('run 2 tryouts of this mandate kind in the last 90 days') &&
+        TRYOUT_BANNED_PHRASES.every((p) => !card.toLowerCase().includes(p)) &&
+        !card.includes(delta) &&
+        !quoteLines.includes('%')
+      )
+    })(),
+  )
+  check(
+    'tryouts: the mark grammar is the canonical proposal sentence — one $-priced leg, one side the stable; everything else refuses',
+    (() => {
+      const ok = parseMarkAsk('Swap $20 of ETH to USDC on base')
+      const both = parseMarkAsk('Swap $20 of USDC to DAI on base')
+      const none = parseMarkAsk('Swap $20 of ETH to WBTC on base')
+      const junk = parseMarkAsk('buy the dip')
+      return (
+        !('problem' in ok) && ok.quoteToken === 'ETH' && ok.side === 'sell' && ok.amountUsd === 20 &&
+        'problem' in both && 'problem' in none && 'problem' in junk
+      )
+    })(),
+  )
+  check(
+    "tryouts: marks are bounded by the mandate's OWN cadence — dca rides its period key, everything else one per UTC day",
+    markPeriodKey('dca', 'buy $25 of ETH weekly') === markPeriodKey('dca', 'buy $25 of ETH weekly') &&
+      markPeriodKey('shape', 'tile my wallet 60% ETH, 40% USDC') === markPeriodKey('shape', 'tile my wallet 60% ETH, 40% USDC') &&
+      markPeriodKey('dca', 'buy $25 of ETH weekly') !== markPeriodKey('shape', 'tile my wallet 60% ETH, 40% USDC'),
+  )
+  {
+    const J = { 'content-type': 'application/json' }
+    const paperWallet = privateKeyToAccount(generatePrivateKey()).address.toLowerCase()
+    SIGNED_IN_WALLETS.add(paperWallet)
+    const paperAgent = agentHandleFor(`tryout-drill-${Date.now()}`)
+    const create = await fetch(`${BASE}/api/roster/tryouts`, {
+      method: 'POST',
+      headers: J,
+      body: JSON.stringify({ wallet: paperWallet, agentKeyHash: paperAgent, mandate: 'tile my wallet 60% ETH, 40% USDC', capUsd: 50 }),
+    })
+    const created = (await create.json()) as { paper?: string; tryout?: { id: string; startedAt: string; reviewAt: string; mandateText: string }; internal?: boolean; error?: string }
+    const t = created.tryout
+    check(
+      'tryouts: create stores the canonical mandate, wears the verbatim Paper label, and stamps review_at = started_at + 7 days exactly',
+      create.status === 200 &&
+        created.paper === PAPER_LABEL &&
+        created.internal === true &&
+        t?.mandateText === 'tile my wallet 60% ETH, 40% USDC' &&
+        new Date(t!.reviewAt).getTime() - new Date(t!.startedAt).getTime() === 7 * 24 * 60 * 60 * 1000,
+      created.error ?? '',
+    )
+    const tryoutId = t?.id ?? 'missing'
+    // §1.5-1 — the payload contributes ONLY the sentence: quote-shaped
+    // fields are ignored because the schema never reads them.
+    const mark = await fetch(`${BASE}/api/roster/tryouts`, {
+      method: 'POST',
+      headers: J,
+      body: JSON.stringify({ tryoutId, ask: 'Swap $20 of ETH to USDC on base', quoteOut: 999999, quote_at_propose: { quoteOut: 999999 } }),
+    })
+    const marked = (await mark.json()) as { paper?: string; mark?: { quoteAtPropose?: { quoteOut?: number }; venue?: string; periodKey?: string }; error?: string }
+    check(
+      'tryouts: a mark is SERVER-quoted through the executor quote path — a live number, never the payload\'s',
+      mark.status === 200 &&
+        marked.paper === PAPER_LABEL &&
+        (marked.mark?.quoteAtPropose?.quoteOut ?? 0) > 0 &&
+        marked.mark?.quoteAtPropose?.quoteOut !== 999999 &&
+        /Uniswap/i.test(marked.mark?.venue ?? ''),
+      marked.error ?? `quote=${marked.mark?.quoteAtPropose?.quoteOut}`,
+    )
+    const markAgain = await fetch(`${BASE}/api/roster/tryouts`, {
+      method: 'POST',
+      headers: J,
+      body: JSON.stringify({ tryoutId, ask: 'Swap $10 of ETH to USDC on base' }),
+    })
+    check('tryouts: a second mark in the same period refuses by name (§1.5-4)', markAgain.status === 400 && /already has its mark for the current period/.test(((await markAgain.json()) as { error?: string }).error ?? ''))
+    const overCap = await fetch(`${BASE}/api/roster/tryouts`, {
+      method: 'POST',
+      headers: J,
+      body: JSON.stringify({ tryoutId: t?.id, ask: 'Swap $80 of ETH to USDC on base' }),
+    })
+    check('tryouts: an over-cap mark refuses with the REAL gate\'s copy', overCap.status === 400 && /caps proposals at \$50/.test(((await overCap.json()) as { error?: string }).error ?? ''))
+    // G1 (spec gap, fail-closed): kinds with no executor quote fn refuse marks.
+    const protectTry = await fetch(`${BASE}/api/roster/tryouts`, {
+      method: 'POST',
+      headers: J,
+      body: JSON.stringify({ wallet: paperWallet, agentKeyHash: paperAgent, mandate: 'protect my spot ETH with a 10% stop', capUsd: 50 }),
+    })
+    const protectId = ((await protectTry.json()) as { tryout?: { id: string } }).tryout?.id
+    const protectMark = await fetch(`${BASE}/api/roster/tryouts`, {
+      method: 'POST',
+      headers: J,
+      body: JSON.stringify({ tryoutId: protectId, ask: 'Swap $10 of ETH to USDC on base' }),
+    })
+    check(
+      'tryouts: a mandate kind with no executor quote path refuses marks by name (spec gap G1, fail-closed)',
+      !!protectId && protectMark.status === 400 && /no executor quote path is defined/.test(((await protectMark.json()) as { error?: string }).error ?? ''),
+    )
+    // §1.5-2 — early review refuses by name; review_at is immutable.
+    const early = await fetch(`${BASE}/api/roster/tryouts/review`, { method: 'POST', headers: J, body: JSON.stringify({ tryoutId }) })
+    const stillT = ((await (await fetch(`${BASE}/api/roster/tryouts?wallet=${paperWallet}`)).json()) as { tryouts?: { id: string; reviewAt: string; status: string }[] }).tryouts?.find((x) => x.id === tryoutId)
+    check(
+      'tryouts: early review refuses BY NAME and review_at is immutable (+7d fixed at creation)',
+      early.status === 409 && /Too early/.test(((await early.json()) as { error?: string }).error ?? '') && stillT?.reviewAt === t?.reviewAt && stillT?.status === 'running',
+    )
+    // Write-once capture: forceDue is an INTERNAL-only door (this row is
+    // stamped); a second capture changes nothing.
+    const rev1 = await fetch(`${BASE}/api/roster/tryouts/review`, { method: 'POST', headers: J, body: JSON.stringify({ tryoutId, forceDue: true }) })
+    const after1 = ((await (await fetch(`${BASE}/api/roster/tryouts?wallet=${paperWallet}`)).json()) as {
+      tryouts?: { id: string; status: string; marks: { quoteAtReview: { quoteOut?: number } | null }[]; card: string }[]
+    }).tryouts?.find((x) => x.id === tryoutId)
+    const rev2 = await fetch(`${BASE}/api/roster/tryouts/review`, { method: 'POST', headers: J, body: JSON.stringify({ tryoutId, forceDue: true }) })
+    const after2 = ((await (await fetch(`${BASE}/api/roster/tryouts?wallet=${paperWallet}`)).json()) as {
+      tryouts?: { id: string; status: string; marks: { quoteAtReview: { quoteOut?: number } | null }[] }[]
+    }).tryouts?.find((x) => x.id === tryoutId)
+    check(
+      // WRITE-ONCE on BOTH capture outcomes (integration 2026-08-26): when the
+      // review-time quote lands, the second capture must not change it; when
+      // the quote fail-softs (a 429'd public RPC mid-suite — the composed
+      // gate's own load can starve it), the second capture must ALSO leave it
+      // null — a number must never be invented after the status flip. The
+      // strict captured-quote path is separately proven by the report-card
+      // pin below whenever the RPC answered.
+      'tryouts: the lazy review capture is WRITE-ONCE — reviewed once, the second capture changes no quote',
+      rev1.status === 200 &&
+        rev2.status === 200 &&
+        after1?.status === 'reviewed' &&
+        (after1?.marks[0]?.quoteAtReview == null
+          ? after2?.marks[0]?.quoteAtReview == null
+          : (after1.marks[0].quoteAtReview.quoteOut ?? 0) > 0 &&
+            after2?.marks[0]?.quoteAtReview?.quoteOut === after1.marks[0].quoteAtReview.quoteOut),
+      JSON.stringify({ r1: rev1.status, r2: rev2.status, s: after1?.status, q1: after1?.marks[0]?.quoteAtReview?.quoteOut, q2: after2?.marks[0]?.quoteAtReview?.quoteOut }),
+    )
+    check(
+      'tryouts: the report card carries the verbatim Paper label and both server quotes',
+      (after1?.card ?? '').startsWith(PAPER_LABEL) && /quote then: .+ · quote at review: .+/.test(after1?.card ?? ''),
+    )
+    // PAPER IS STRUCTURAL — nothing real was touched: no inbox item exists
+    // for the wallet, and the agent hash has NO track record page (tryouts
+    // never mint a broker intent, so /agents/<hash> 404s).
+    const paperInbox = ((await (await fetch(`${BASE}/api/inbox?wallet=${paperWallet}`)).json()) as { items?: unknown[] }).items ?? []
+    const recordPage = await fetch(`${BASE}/agents/${paperAgent}`)
+    check(
+      'tryouts: paper never touches records, standings, or the inbox — no inbox items, no track record minted',
+      paperInbox.length === 0 && recordPage.status === 404,
+      `inbox=${paperInbox.length} record=${recordPage.status}`,
+    )
+    // Public agent reads exclude internal drill rows (§1.5-5).
+    const publicRead = ((await (await fetch(`${BASE}/api/roster/tryouts?agent=${paperAgent}`)).json()) as { tryouts?: unknown[] }).tryouts ?? []
+    check('tryouts: stamped drill rows are excluded from the public per-agent read (§1.5-5)', publicRead.length === 0)
+    // Append-only by spec — no delete API exists; the drill rows stay
+    // stamped internal (excluded from every public surface).
   }
   // ── THE ROSTER (HANDOFF-roster R3/R6, visuals lane): flag + league pins ──
   console.log('— roster league (lib/league)')

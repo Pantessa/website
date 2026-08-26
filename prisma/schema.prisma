@@ -1398,3 +1398,52 @@ model FoundingAgent {
 
   @@map("founding_agents")
 }
+
+// M6 forward-paper tryouts (ROSTER-TRYOUTS-SPEC §1). PAPER IS STRUCTURAL:
+// these two tables are the ONLY place a tryout exists — never intent_links,
+// never broker_intents, never inbox items, never embed_turns; record and
+// standings queries never join them. A mark stores quote NUMBERS from the
+// executor's own read-only quote path — never calldata. Append-only: no
+// delete API exists ('retired' keeps the row — survivorship rule §1.5-3).
+model RosterTryout {
+  id           String    @id // mintSlug(10)
+  wallet       String // owner wallet (connect-to-act reads, rule 6)
+  agentKeyHash String    @map("agent_key_hash") // M4 identity hash — never the raw key
+  mandateText  String    @map("mandate_text") // CANONICAL recompose from parseMandate (T2)
+  mandateKind  String    @map("mandate_kind")
+  mandateHash  String    @map("mandate_hash") // sha256(canonical)[:16]
+  capUsd       Float     @default(200) @map("cap_usd") // caps paper marks with the real gate's copy
+  status       String    @default("running") // running | reviewed | retired — append-only
+  startedAt    DateTime  @default(now()) @map("started_at")
+  /// FIXED AT CREATION = started_at + 7 days. IMMUTABLE — no update path
+  /// exists anywhere (cherry-picked review time, §1.5-2).
+  reviewAt     DateTime  @map("review_at")
+  reviewedAt   DateTime? @map("reviewed_at") // actual capture moment — shown on the card
+  isInternal   Boolean   @default(false) @map("is_internal")
+  createdAt    DateTime  @default(now()) @map("created_at")
+
+  marks RosterTryoutMark[]
+
+  @@index([agentKeyHash, mandateKind, status])
+  @@index([wallet, createdAt])
+  @@map("roster_tryouts")
+}
+
+model RosterTryoutMark {
+  id             String   @id // mintSlug(10)
+  tryoutId       String   @map("tryout_id")
+  seq            Int
+  proposedAt     DateTime @default(now()) @map("proposed_at")
+  askText        String   @map("ask_text") // canonical proposal sentence — grammar round-trip required
+  venue          String // the executor quote path's venue label
+  routeRef       String   @map("route_ref") // pool/route the quote came from (auditability, §1.5-5)
+  quoteAtPropose Json     @map("quote_at_propose") // {pair, side, amountIn, quoteOut, unit} — SERVER-computed (§1.5-1)
+  quoteAtReview  Json?    @map("quote_at_review") // same shape, same fn, WRITE-ONCE at review
+  periodKey      String?  @map("period_key") // cadence dedupe — dca per period, others per UTC day (§1.5-4)
+  isInternal     Boolean  @default(false) @map("is_internal")
+
+  tryout RosterTryout @relation(fields: [tryoutId], references: [id], onDelete: Cascade)
+
+  @@unique([tryoutId, periodKey])
+  @@map("roster_tryout_marks")
+}
