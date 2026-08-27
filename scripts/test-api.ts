@@ -92,6 +92,7 @@ import { addrsUnion, arcQuery } from '../lib/gtm-arc'
 import { isInternalRun, INTERNAL_RUN_HEADER } from '../lib/internal-run'
 import { deskExecuteConsentMessage, cleanSenderLabel } from '../lib/broker-exec'
 import { brandFromRow, isDeniedBrandHost, THIRD_PARTY_BRAND_HOSTS } from '../lib/brand-denylist'
+import { BRAND_PRESETS, colorFieldError, presetFor } from '../lib/brand-presets'
 import { deskPricing, priceForTool, pricingBlock } from '../lib/broker-pricing'
 import {
   clientIpFrom,
@@ -2535,12 +2536,84 @@ async function main() {
       bgHtml.includes('box-shadow:0 0 0 100vmax #052b65') && bgHtml.includes('clip-path:inset(0 -100vmax)'),
     )
     check('brand: the /l page carries the tweet-this-page share link', bgHtml.includes('twitter.com/intent/tweet'))
-    // The creator's brand rides onto their /i splash pages too (bg + accent
-    // scoped to the splash) — house links (creator=null) stay pure Pantessa.
+
     const brandedIPage = redirected.slug ? flat(await (await fetch(`${BASE}/i/${redirected.slug}`)).text()) : ''
     check('brand: the creator brand re-themes their /i splash (bg carried)', brandedIPage.includes('--bg:#052b65'))
     const houseIPage = flat(await (await fetch(`${BASE}/i/buy-aapl`)).text())
     check('brand: house links stay pure Pantessa (no brand bg on their /i splash)', !houseIPage.includes('--bg:#'))
+    // ── Colors without a third party (the /dashboard/customize studio) ─────
+    // Rule 7 refuses someone else's IDENTITY (logo, name, domain), never a
+    // color. So the palette is a first-class control: presets + free hex,
+    // no scan involved. Every preset has to survive the render math, or a
+    // creator taps one and the page ignores half of it.
+    check(
+      'customize: every preset is renderable — bg parses, accent passes the accent gate, and the pair clears the contrast guard (>0.18 luminance apart)',
+      BRAND_PRESETS.length >= 6 &&
+        BRAND_PRESETS.every(
+          (p) =>
+            normalizeBg(p.bg) === p.bg &&
+            normalizeAccent(p.accent) === p.accent &&
+            Math.abs((hexLuminance(p.bg) ?? 0) - (hexLuminance(p.accent) ?? 0)) > 0.18,
+        ) &&
+        new Set(BRAND_PRESETS.map((p) => p.id)).size === BRAND_PRESETS.length,
+    )
+    check(
+      'customize: presetFor round-trips a stored pair (and is null for a hand-picked one)',
+      presetFor(BRAND_PRESETS[0].bg, BRAND_PRESETS[0].accent)?.id === BRAND_PRESETS[0].id &&
+        presetFor(BRAND_PRESETS[0].bg.toUpperCase(), BRAND_PRESETS[0].accent) !== null &&
+        presetFor('#052b65', '#6633cc') === null &&
+        presetFor(null, null) === null,
+    )
+    check(
+      'customize: the hex field states the accent rule before the server does (near-white/near-black refused, junk refused, a real hex accepted for both roles)',
+      colorFieldError('accent', '#ffffff') !== null &&
+        colorFieldError('accent', '#000000') !== null &&
+        colorFieldError('accent', 'zebra') !== null &&
+        colorFieldError('accent', '#38bdf8') === null &&
+        colorFieldError('bg', '#ffffff') === null &&
+        colorFieldError('bg', '#0f172a') === null,
+    )
+    // A preset applied through the real API paints the real page — this is
+    // the "skin it, no site attached" path end to end (no logo, no domain,
+    // no scan: brandFromRow still returns a brand, made only of colors).
+    const preset = BRAND_PRESETS[0]
+    const bPreset = await fetch(`${BASE}/api/intent-links/brand`, {
+      method: 'PATCH',
+      headers: M,
+      body: JSON.stringify({ bg: preset.bg, accent: preset.accent }),
+    })
+    const presetHtml = flat(await (await fetch(`${BASE}/l/harness-store`)).text())
+    check(
+      'customize: a preset applied with no site attached re-themes the page and KEEPS its accent (the contrast guard does not swap it)',
+      bPreset.status === 200 &&
+        presetHtml.includes(`--bg:${preset.bg}`) &&
+        presetHtml.includes(`--accent:${preset.accent}`) &&
+        presetHtml.includes('Powered by'),
+    )
+    // The section exists and both surfaces read the SAME state machine —
+    // a second copy of the claim/scan/color calls is how they drift.
+    const railSrc = await readFile(new URL('../components/DashboardSidebar.tsx', import.meta.url), 'utf8')
+    check(
+      'customize: the dashboard rail carries the Customize page section pointing at /dashboard/customize',
+      /href: '\/dashboard\/customize', label: 'Customize page'/.test(railSrc),
+    )
+    const [studioSrc, panelSrc] = await Promise.all([
+      readFile(new URL('../components/CreatorPageStudio.tsx', import.meta.url), 'utf8'),
+      readFile(new URL('../components/CreatorPagePanel.tsx', import.meta.url), 'utf8'),
+    ])
+    check(
+      'customize: the studio and the compact panel share useCreatorPage (neither builds its own fetch to the brand API)',
+      studioSrc.includes('useCreatorPage()') &&
+        panelSrc.includes('useCreatorPage()') &&
+        !studioSrc.includes("fetch('/api/intent-links/brand'") &&
+        !panelSrc.includes("fetch('/api/intent-links/brand'"),
+    )
+    check(
+      'customize: the studio names the rule-7 line on the logo step, and never restricts colors',
+      /refused here by name/.test(studioSrc) && /colors above are\s+never restricted/i.test(studioSrc.replace(/\n\s+/g, ' ')),
+    )
+    // The creator's brand rides onto their /i splash pages too (bg + accent
+    // scoped to the splash) — house links (creator=null) stay pure Pantessa.
     const bClear = await fetch(`${BASE}/api/intent-links/brand`, { method: 'DELETE', headers: { cookie: mallorySession } })
     const unbrandedHtml = flat(await (await fetch(`${BASE}/l/harness-store`)).text())
     check(

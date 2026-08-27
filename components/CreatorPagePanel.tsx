@@ -5,131 +5,41 @@
 // and once it exists the preview IS the real /l share card (the OG PNG),
 // i.e. exactly what a feed will show. Extracted from /dashboard/links so the
 // same guided moment can open from other surfaces.
+//
+// The state lives in useCreatorPage (lib/creator-page) — shared verbatim with
+// the full studio at /dashboard/customize, which this panel links out to for
+// the colors. Two surfaces, one set of calls and refusals.
 
-import { useEffect, useState } from 'react'
-import type { Brand } from '@/lib/intent-links-ui'
-import { sampleBrandColors } from '@/lib/brand-sample'
+import { useState } from 'react'
+import Link from 'next/link'
+import { useCreatorPage } from '@/lib/creator-page'
 import { absoluteUrl } from '@/lib/site-url'
 
-export function CreatorPagePanel({ className }: { className?: string }) {
-  // The public page name (/l/<handle>) — opt-in storefront for these links.
-  const [myHandle, setMyHandle] = useState<string | null>(null)
+export function CreatorPagePanel({
+  className,
+  /** Set on the studio's own surface, where a link back to it is noise. */
+  hideStudioLink,
+}: {
+  className?: string
+  hideStudioLink?: boolean
+}) {
+  const page = useCreatorPage()
+  const { myHandle, handleMsg, claiming, brand, branding, brandMsg, palette, ogNonce } = page
+  // Local input drafts — the hook owns the server state, these own the fields.
   const [handleInput, setHandleInput] = useState('')
-  // A claim refusal, with the taken page's URL when the API knows it — the
-  // "@x is taken" case where x is YOUR page under another wallet needs the
-  // link, or the page is unfindable.
-  const [handleMsg, setHandleMsg] = useState<{ text: string; url?: string } | null>(null)
-  const [claiming, setClaiming] = useState(false)
-  // White-label brand for the /l page — one pasted URL, no form.
-  const [brand, setBrand] = useState<Brand | null>(null)
   const [brandUrl, setBrandUrl] = useState('')
-  const [branding, setBranding] = useState(false)
-  const [brandMsg, setBrandMsg] = useState<string | null>(null)
-  // Cache-buster for the live share-card preview (the real /l OG PNG) —
-  // bumped on every claim/brand mutation so the card repaints in place.
-  const [ogNonce, setOgNonce] = useState(0)
-  // Every brand color the scan surfaced (declared + logo-sampled) — the
-  // one-tap background swatches shown right after a scan.
-  const [palette, setPalette] = useState<string[]>([])
-
-  useEffect(() => {
-    void fetch('/api/intent-links/handle', { cache: 'no-store' })
-      .then((r) => (r.ok ? r.json() : null))
-      .then((d: { handle: string | null; brand?: Brand | null } | null) => {
-        if (d?.handle) setMyHandle(d.handle)
-        setBrand(d?.brand ?? null)
-      })
-      .catch(() => {})
-  }, [])
 
   const claimHandle = async () => {
-    if (claiming || !handleInput.trim()) return
-    setClaiming(true)
-    setHandleMsg(null)
-    try {
-      const res = await fetch('/api/intent-links/handle', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ handle: handleInput.trim() }),
-      })
-      const data = (await res.json()) as { handle?: string; error?: string; url?: string }
-      if (!res.ok) {
-        setHandleMsg({ text: data.error ?? 'Claim failed.', url: data.url })
-        return
-      }
-      setMyHandle(data.handle ?? null)
-      setHandleInput('')
-      setHandleMsg(null)
-      setOgNonce((n) => n + 1)
-    } finally {
-      setClaiming(false)
-    }
+    if (await page.claim(handleInput)) setHandleInput('')
   }
 
-  // One paste → scan → save. Colors the site didn't declare get sampled
-  // from the just-stored logo on canvas here (bg from the edge ring,
-  // accent from the colorful interior) and PATCHed back. Everything found
-  // lands in the swatch row so the background is a one-tap switch.
   const matchSite = async () => {
-    if (branding || !brandUrl.trim()) return
-    setBranding(true)
-    setBrandMsg(null)
-    try {
-      const res = await fetch('/api/intent-links/brand', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ url: brandUrl.trim() }),
-      })
-      const data = (await res.json()) as { error?: string; brand?: Brand | null; palette?: string[]; needsSample?: boolean }
-      if (!res.ok) {
-        setBrandMsg(data.error ?? 'Scan failed — try again.')
-        return
-      }
-      let b = data.brand ?? null
-      const swatches = [...(data.palette ?? [])]
-      if (data.needsSample && b?.logo) {
-        const sampled = await sampleBrandColors(b.logo)
-        for (const c of [sampled.bg, sampled.accent]) if (c && !swatches.includes(c)) swatches.push(c)
-        const patch: { bg?: string; accent?: string } = {}
-        if (!b.bg && sampled.bg) patch.bg = sampled.bg
-        if (!b.accent && sampled.accent) patch.accent = sampled.accent
-        if (Object.keys(patch).length) {
-          const pr = await fetch('/api/intent-links/brand', {
-            method: 'PATCH',
-            headers: { 'content-type': 'application/json' },
-            body: JSON.stringify(patch),
-          })
-          const pd = (await pr.json()) as { brand?: Brand | null }
-          if (pr.ok && pd.brand) b = pd.brand
-        }
-      }
-      setBrand(b)
-      setPalette(swatches)
-      setBrandUrl('')
-      setOgNonce((n) => n + 1)
-    } finally {
-      setBranding(false)
-    }
+    if (await page.matchSite(brandUrl)) setBrandUrl('')
   }
 
-  const setBg = async (bg: string) => {
-    const res = await fetch('/api/intent-links/brand', {
-      method: 'PATCH',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ bg }),
-    })
-    const data = (await res.json()) as { brand?: Brand | null }
-    if (res.ok && data.brand) setBrand(data.brand)
-    setOgNonce((n) => n + 1)
-  }
+  const setBg = (bg: string) => page.setColors({ bg })
 
-  const removeBrand = async () => {
-    await fetch('/api/intent-links/brand', { method: 'DELETE' })
-    setBrand(null)
-    setPalette([])
-    setBrandMsg(null)
-    setOgNonce((n) => n + 1)
-  }
+  const removeBrand = () => page.removeBrand()
 
   return (
     <div className={`rounded-xl border border-[var(--line)] bg-[var(--surf-1)] px-4 py-4${className ? ` ${className}` : ''}`}>
@@ -202,6 +112,16 @@ export function CreatorPagePanel({ className }: { className?: string }) {
               >
                 tweet it
               </a>
+              {!hideStudioLink && (
+                // The colors (and everything else) have their own section now
+                // — this row is the compact surface, that one is the studio.
+                <Link
+                  href="/dashboard/customize"
+                  className="mono text-[12px] text-[color:var(--muted)] underline hover:text-[color:var(--fg)]"
+                >
+                  customize
+                </Link>
+              )}
               <span className="inline-flex items-center gap-2 ml-auto">
                 <input
                   value={handleInput}

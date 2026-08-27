@@ -158,10 +158,10 @@ export default async function StorefrontPage({ params }: Params) {
                 + Mint another link
               </Link>
               <Link
-                href="/dashboard/links"
+                href="/dashboard/customize"
                 className="text-[12.5px] text-[color:var(--muted)] hover:text-[color:var(--fg)] underline underline-offset-2 decoration-dotted"
               >
-                {brand ? 'Change the brand' : 'Brand it with your site'}
+                Customize this page
               </Link>
               <a
                 href={tweetHref}
