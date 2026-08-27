@@ -112,7 +112,7 @@ import { nftGalleryChains, nftRowActions } from '../lib/nft-gallery'
 import { groupCollections, marketReplyCopy, offersDisplay, valuationDisplay } from '../lib/nft-market'
 import { nftGalleryOf, nftMarketOf } from '../lib/nft-display'
 import { getProtocolMark, YeetfulMark, MorphoMark } from '../components/protocol-marks'
-import { ogMarkSvg, pangolinMarkSvg } from '../lib/og-marks'
+import { ogMarkSvg, sealMarkSvg } from '../lib/og-marks'
 import { splitListingPrice, buildListingComponents, guardListingComponents, openseaAssetUrl, SEAPORT_1_6, guardBuyFulfillment, fulfillmentToCalldata, normalizeOpenseaListing, normalizeOpenseaOffer, collectionSlugCandidates } from '../lib/opensea'
 import { keccak256, stringToBytes, decodeFunctionData, parseAbi, recoverTypedDataAddress } from 'viem'
 import { isCacheable, routeCacheKey, getCached, setCached, clearRouteCache } from '../lib/route-cache'
@@ -8386,25 +8386,24 @@ async function main() {
     'og mark: morpho mirrors the vendored mark (4 wing paths, aspect kept)',
     !!ogMorpho && (ogMorpho.match(/<path/g) ?? []).length === 4 && ogMorpho.includes('viewBox="0 0 22 20"') && ogMorpho.includes('height="40"'),
   )
-  // The pangolin is the house mark on EVERY share card. It used to be copied
-  // inline per card, which is how five cards kept shipping the retired hub
-  // glyph after the rebrand — these pin the one source and the re-inking.
-  const pgHouse = pangolinMarkSvg()
-  const pgBrand = pangolinMarkSvg('#ff4198')
-  const pgPlate = (svg: string) => svg.match(/<path d="M 66\.3 80\.4[^>]*>/)?.[0] ?? ''
+  // The Open Seal is the house mark on EVERY share card. Marks used to be
+  // copied inline per card, which is how five cards kept shipping the retired
+  // hub glyph after a rebrand — these pin the one source and the re-inking.
+  const sealHouse = sealMarkSvg()
+  const sealBrand = sealMarkSvg('#ff4198')
   check(
-    'pangolin mark: satori-safe (self-contained svg, no external refs)',
-    pgHouse.startsWith('<svg') &&
-      pgHouse.includes('viewBox="0 0 128 128"') &&
-      !/<image|xlink:href/.test(pgHouse) &&
-      !/https?:\/\/(?!www\.w3\.org)/.test(pgHouse),
+    'seal mark: satori-safe (self-contained svg, no external refs)',
+    sealHouse.startsWith('<svg') &&
+      sealHouse.includes('viewBox="0 0 128 128"') &&
+      !/<image|xlink:href|<text|<mask/.test(sealHouse) &&
+      !/https?:\/\/(?!www\.w3\.org)/.test(sealHouse),
   )
   check(
-    'pangolin mark: the accent re-inks the set tessera and nothing else',
-    pgPlate(pgHouse).includes('#34e3a0') &&
-      pgPlate(pgBrand).includes('#ff4198') &&
-      !pgBrand.replace(pgPlate(pgBrand), '').includes('#ff4198') &&
-      pgHouse.replace(pgPlate(pgHouse), '') === pgBrand.replace(pgPlate(pgBrand), ''),
+    'seal mark: the accent re-inks the whole turning and nothing else',
+    sealHouse.includes('#34e3a0') &&
+      sealBrand.includes('#ff4198') &&
+      !sealBrand.includes('#34e3a0') &&
+      sealHouse.split('#34e3a0').join('ACCENT') === sealBrand.split('#ff4198').join('ACCENT'),
   )
   // Drift guard: a card that re-inlines its own mark silently stops tracking
   // the brand. Every OG card must import the shared helper and hold no glyph.
@@ -8420,7 +8419,7 @@ async function main() {
   ].map((f) => ({ f, src: ogFs.readFileSync(f, 'utf8') }))
   check(
     'og cards: all seven draw the house mark from lib/og-marks, none inline one',
-    ogCards.every((c) => c.src.includes('pangolinMarkSvg')) &&
+    ogCards.every((c) => c.src.includes('sealMarkSvg')) &&
       ogCards.every((c) => !c.src.includes('mask id="hub"')),
   )
   // The /i unfurl is the first thing a DM'd stranger sees (the H1 drill).

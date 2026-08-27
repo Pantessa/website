@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import prisma from '@/lib/db'
 import { brandFromRow } from '@/lib/brand-denylist'
 import { brandOgPalette, normalizeHex } from '@/lib/brand-theme'
-import { pangolinMarkSvg } from '@/lib/og-marks'
+import { sealMarkSvg } from '@/lib/og-marks'
 
 // Social card for a creator page (/l/<handle>) — the handle is the hero,
 // the link count + dollars moved are the proof line. Wears the creator's
@@ -109,7 +109,7 @@ export default async function Image({ params }: Params) {
               <img src={brand.logo} width={46} height={46} alt="" style={{ borderRadius: 10 }} />
             ) : (
               // eslint-disable-next-line @next/next/no-img-element
-              <img src={toDataUri(pangolinMarkSvg(pal.branded ? pal.accent : undefined))} width={46} height={46} alt="" />
+              <img src={toDataUri(sealMarkSvg(pal.branded ? pal.accent : undefined))} width={46} height={46} alt="" />
             )}
             <span style={{ color: pal.ink, fontSize: 34, fontWeight: 600, letterSpacing: -1.2 }}>
               {brand ? (brand.name ?? brand.domain ?? 'pantessa') : 'pantessa'}

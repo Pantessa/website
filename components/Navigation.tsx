@@ -198,7 +198,7 @@ export default function Navigation() {
           {/* The pangolin's ink box is 1.6× wider than tall, so a nominal size
               renders ~0.56× that in visual height — it needs a bigger number
               than the old square Y mark did to carry the same weight. */}
-          <YeetfulMark size={34} />
+          <YeetfulMark size={26} />
           <span className="logo__word">pantessa</span>
         </Link>
 

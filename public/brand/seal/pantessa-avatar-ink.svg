@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="Pantessa">
-  <rect width="128" height="128" rx="28" fill="#0B0E0D"/>
+  <rect width="128" height="128" fill="#0B0E0D"/>
   <g transform="translate(64 64) scale(0.76) translate(-64 -64)">
   <circle cx="64" cy="64" r="58" fill="none" stroke="#3ECF8E" stroke-width="1.35"/>
   <circle cx="64" cy="64" r="55.5" fill="none" stroke="#3ECF8E" stroke-width="0.83" opacity="0.65"/>
