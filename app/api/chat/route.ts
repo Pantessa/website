@@ -130,6 +130,7 @@ import { parseTransferSegment, buildTransferArtifact } from '@/lib/transfer-exec
 import { buildUniswapSwap, NoV3PoolError } from '@/lib/uniswap-venue'
 import { buildUniswapV4Swap, NoV4PoolError, GatedV4PoolError } from '@/lib/uniswap-v4'
 import { buildLifiSwap, NoLifiRouteError } from '@/lib/lifi-venue'
+import { fundChipFor } from '@/lib/onramp'
 import { GAS_TOPUP_ETH, parseRhFundingFollowUp, planDownsizedRobinhoodBuy, planRobinhoodFundingAdvice, readFundingShortfall, rhFundingPending, robinhoodBuyNeedUsd, ROBINHOOD_CHAIN_ID } from '@/lib/lifi-bridge'
 import { describeInflightDeposit, inflightPendingData } from '@/lib/inflight-funding'
 import { resolveToken, tokenDecimals, humanToAtoms } from '@/lib/cow'
@@ -3997,11 +3998,31 @@ async function prepareSwapTurn(intent: SwapIntent, walletAddress: string | undef
           level: 'warn',
           label: `funding layer: ${rhStable.symbol} short on ${chain.name} and the scan (${advice.copy}) can't cover the ~$${needUsd} plan — honest refusal, no build`,
         })
+        // The one true dead end: no artifact, just homework. When the on-ramp
+        // door is open, offer it — the chip names THIS ask and carries it as
+        // its resume, so the trip through Coinbase doesn't lose the intent.
+        const rhFundChip = fundChipFor({
+          needUsd,
+          actionLabel: acquiring ? `get $${buyUsd} of ${rhStable.symbol}` : `buy $${buyUsd} of ${buySym}`,
+          // Restated canonically, never echoed: the resume must round-trip the
+          // parse ladder, and the house phrasing provably does (audit:asks).
+          resume: acquiring ? `I need $${buyUsd} of ${rhStable.symbol}` : `Buy $${buyUsd} of ${buySym}`,
+        })
         return NextResponse.json({
           reply:
             `🌉 Here's where this stands: ${acquiring ? 'you asked for' : 'the buy needs'} ~$${buyUsd} of ${rhStable.symbol} on ${chain.name} and the wallet holds ~$${holdingUsd.toFixed(2)} there. ` +
             `Across the chains I can bridge from I see: ${advice.copy} — not enough yet for the ~$${needUsd} plan${includeGas ? ' (gas leg included)' : ''}. ` +
-            `Here's what unlocks it: top up USDC or ETH on Base, Ethereum, or Arbitrum (or ${rhStable.symbol} on ${chain.name}), tell me when it's there, and I'll pick it up from that point — nothing was built or spent in the meantime.${inflightSuffix}`,
+            (rhFundChip
+              ? `You can add it with a card or bank below — it lands as USDC on Base and I'll bridge it the rest of the way. The preset is a little over the plan so card fees don't leave you short.${inflightSuffix}`
+              : `Here's what unlocks it: top up USDC or ETH on Base, Ethereum, or Arbitrum (or ${rhStable.symbol} on ${chain.name}), tell me when it's there, and I'll pick it up from that point — nothing was built or spent in the meantime.${inflightSuffix}`),
+          ...(rhFundChip
+            ? {
+                clarify: {
+                  question: 'Add the funds and run it?',
+                  options: [rhFundChip, { label: 'Not now', resume: 'Never mind — leave my funds where they are.' }],
+                },
+              }
+            : {}),
           workingContext: pendingFunding,
         })
       } else if (acquiring) {

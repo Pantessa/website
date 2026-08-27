@@ -15,12 +15,48 @@
 //  model decides per turn.
 // ─────────────────────────────────────────────────────────────────────────
 
+/** A chip that must put money in the wallet BEFORE its resume can succeed.
+ *  Set only by lib/onramp (server-side); a planner can emit the shape too, so
+ *  clarifyOf clamps every field rather than trusting it. */
+export interface ClarifyFundAction {
+  /** Dollars to preset in the hosted on-ramp. */
+  presetFiatUsd: number
+  /** Ticker the on-ramp delivers. */
+  asset: string
+  /** Destination chain — must be one our funding scan can confirm arrival on. */
+  network: 'base' | 'ethereum' | 'arbitrum'
+}
+
 export interface ClarifyOption {
   /** The choice as the user would say it — the chip label. */
   label: string
   /** The user's request fully resolved with this choice — sent as the next
    *  user message when the chip is clicked. */
   resume: string
+  /** When present the chip opens the on-ramp FIRST and fires `resume` on
+   *  return, so the ask survives the trip off-site. The resume is still a
+   *  normal message — nothing downstream knows funding happened. */
+  fund?: ClarifyFundAction
+}
+
+const FUND_NETWORKS = ['base', 'ethereum', 'arbitrum'] as const
+/** Ceiling on a preset. A clamp, not a product limit: it exists so a bad
+ *  payload can never render a chip offering to charge someone thousands. */
+const MAX_FUND_USD = 500
+
+/** Narrow an option's fund action, or undefined. Fails closed on anything
+ *  unexpected — a dropped fund field degrades the chip to a plain resume,
+ *  which is the pre-on-ramp behaviour and always safe. */
+function fundActionOf(raw: unknown): ClarifyFundAction | undefined {
+  if (!raw || typeof raw !== 'object') return undefined
+  const f = raw as Record<string, unknown>
+  const usd = typeof f.presetFiatUsd === 'number' ? f.presetFiatUsd : NaN
+  if (!Number.isFinite(usd) || usd <= 0 || usd > MAX_FUND_USD) return undefined
+  const network = FUND_NETWORKS.find((n) => n === f.network)
+  if (!network) return undefined
+  const asset = typeof f.asset === 'string' ? f.asset.trim().slice(0, 12) : ''
+  if (!asset) return undefined
+  return { presetFiatUsd: Math.round(usd), asset, network }
 }
 
 export interface ClarifyRequest {
@@ -49,7 +85,10 @@ export function clarifyOf(raw: unknown): ClarifyRequest | null {
     if (typeof opt.label !== 'string' || typeof opt.resume !== 'string') continue
     const label = opt.label.trim().slice(0, MAX_CHARS)
     const resume = opt.resume.trim().slice(0, MAX_CHARS * 2)
-    if (label && resume) options.push({ label, resume })
+    if (label && resume) {
+      const fund = fundActionOf(opt.fund)
+      options.push(fund ? { label, resume, fund } : { label, resume })
+    }
     if (options.length >= MAX_OPTIONS) break
   }
   if (options.length < 2) return null // one option is not a question
