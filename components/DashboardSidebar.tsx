@@ -6,7 +6,7 @@
 
 import Link from 'next/link'
 import { useEffect, useRef } from 'react'
-import { LayoutDashboard, KeyRound, Bot, ToggleRight, Activity, Building2, LineChart, MessageSquare, BookOpen, AlertTriangle, CreditCard, Globe, ShieldAlert, ShieldCheck, Users, Landmark, Link2 } from 'lucide-react'
+import { LayoutDashboard, KeyRound, Bot, ToggleRight, Activity, Building2, LineChart, MessageSquare, BookOpen, AlertTriangle, CreditCard, Globe, Palette, ShieldAlert, ShieldCheck, Users, Landmark, Link2 } from 'lucide-react'
 import { isAdminAddress } from '@/lib/admin'
 
 // Links-first order (Nate, 2026-07-22): App rides right under Overview,
@@ -21,6 +21,10 @@ export const DASH_SECTIONS = [
   // reachable from the MOBILE drawer, where the spine doesn't render.
   { href: '/chat', label: 'Chat', icon: MessageSquare, exact: false },
   { href: '/dashboard/links', label: 'Intent links', icon: Link2, exact: false },
+  // The creator page's own door (2026-08-27, Nate): customizing /l used to be
+  // one row at the top of Intent links, which is where creators scrolled past
+  // it. Sits directly under the links it dresses.
+  { href: '/dashboard/customize', label: 'Customize page', icon: Palette, exact: false },
   { href: '/dashboard/guardian', label: 'Guardian', icon: ShieldCheck, exact: false },
   { href: '/dashboard/embeds', label: 'Embeds', icon: Globe, exact: false },
   { href: '/dashboard/agents', label: 'Agents', icon: Bot, exact: false },
