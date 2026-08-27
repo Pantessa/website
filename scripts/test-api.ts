@@ -130,6 +130,8 @@ import { parseMultiSendSegments, parseTransferSegment } from '../lib/transfer-ex
 import { buildFundsDetail, classifyTurn, FAILURE_PROBE_TOKENS, moneyShaped } from '../lib/ask-failure'
 import { guardSyncDrift } from './guard-sync-check'
 import { canonicalChainWord, normalizeChainWords } from '../lib/chain-lexicon'
+import { clampFundUsd, fundChipFor, onrampUrl, planFundUsd, ONRAMP_MIN_USD } from '../lib/onramp'
+import { clarifyOf } from '../lib/clarify'
 import { decideFundingTurn, detectBalanceShortfall, fundingPlanUsd, planFundingChips, planStrandedRescue, promisableCapacityUsd, rankFundingSources, shortRefusalCopy, softenClaimedFailureBlock, type FundingNeed, type FundingSource } from '../lib/funding-plan'
 import { compileDcaBuy, dcaRunChip, parseDcaCreate, parseDcaManage, parseDcaRun, periodKeyFor } from '../lib/dca'
 import { briefingNeedsCount, briefingTile, composeBriefingItems, type BriefingInputs, type BriefingPosition } from '../lib/briefing'
@@ -5162,6 +5164,64 @@ async function main() {
         /Send a little ETH/.test(refusalStranded) && !/found no movable/.test(refusalStranded),
       refusalStranded,
     )
+    // ── The on-ramp door (lib/onramp). The empty wallet was the ONE refusal
+    // that shipped no artifact; these pin the arithmetic and the fail-closed
+    // rule so a half-configured door can never render a button that 500s.
+    {
+      const wasEnabled = process.env.ONRAMP_ENABLED
+      const wasId = process.env.CDP_API_KEY_ID
+      const wasSecret = process.env.CDP_API_KEY_SECRET
+
+      check('onramp: a preset never lands under Coinbase\'s floor', planFundUsd(1) === ONRAMP_MIN_USD && planFundUsd(0) === ONRAMP_MIN_USD)
+      check('onramp: the preset clears the plan after card fees (headroom + round up)', planFundUsd(12) === 14 && planFundUsd(100) === 110, `${planFundUsd(12)}/${planFundUsd(100)}`)
+
+      process.env.ONRAMP_ENABLED = 'false'
+      check(
+        'onramp: the door FAILS CLOSED — unconfigured offers no chip at all',
+        fundChipFor({ needUsd: 12, actionLabel: 'buy $10 of AAPL', resume: 'Buy $10 of AAPL' }) === null,
+      )
+
+      process.env.ONRAMP_ENABLED = 'true'
+      process.env.CDP_API_KEY_ID = 'test-id'
+      process.env.CDP_API_KEY_SECRET = 'test-secret'
+      const chip = fundChipFor({ needUsd: 12, actionLabel: 'buy $10 of AAPL', resume: 'Buy $10 of AAPL' })
+      check(
+        'onramp: the chip NAMES the intent and carries it as the resume (the ask survives the trip off-site)',
+        !!chip && chip.label.includes('buy $10 of AAPL') && chip.label.includes('$14') && chip.resume === 'Buy $10 of AAPL' && chip.fund?.network === 'base',
+        JSON.stringify(chip),
+      )
+      check(
+        'onramp: the server CLAMPS the client preset, never re-plans it (rendered $14 must not charge $16)',
+        clampFundUsd(14) === 14 && clampFundUsd(1) === ONRAMP_MIN_USD && clampFundUsd(9_999) === 500,
+        `${clampFundUsd(14)}/${clampFundUsd(1)}/${clampFundUsd(9_999)}`,
+      )
+      check(
+        'onramp: the hosted URL carries the session token and the preset',
+        onrampUrl({ sessionToken: 'tok_1', presetFiatUsd: 14 }).includes('sessionToken=tok_1') &&
+          onrampUrl({ sessionToken: 'tok_1', presetFiatUsd: 14 }).includes('presetFiatAmount=14'),
+      )
+
+      // clarifyOf is the one narrowing point, and a planner can emit this
+      // shape too — a hostile fund payload must degrade to a plain chip,
+      // never render an offer to charge someone thousands.
+      const hostile = clarifyOf({
+        question: 'Add funds?',
+        options: [
+          { label: 'Add', resume: 'Buy $10 of AAPL', fund: { presetFiatUsd: 99999, asset: 'USDC', network: 'base' } },
+          { label: 'Bad chain', resume: 'Buy $10 of AAPL', fund: { presetFiatUsd: 20, asset: 'USDC', network: 'solana' } },
+        ],
+      })
+      check(
+        'onramp: clarifyOf clamps a hostile fund payload (over-cap and unknown chain both drop to plain chips)',
+        !!hostile && hostile.options[0].fund === undefined && hostile.options[1].fund === undefined,
+        JSON.stringify(hostile),
+      )
+
+      process.env.ONRAMP_ENABLED = wasEnabled
+      process.env.CDP_API_KEY_ID = wasId
+      process.env.CDP_API_KEY_SECRET = wasSecret
+    }
+
     const refusalEmpty = shortRefusalCopy({
       chainsRead: 'Base, Arbitrum and Ethereum', need: hlNeed, needUsd: 8, sourceSummary: '', stranded: [], movableTotalUsd: 0,
     })

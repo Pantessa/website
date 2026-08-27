@@ -152,6 +152,34 @@ export async function bumpAndCheckBrokerCall(ip: string | null): Promise<boolean
   }
 }
 
+/** Minting an on-ramp session token is unauthenticated by necessity — the
+ *  wallet funding itself has not signed anything yet (connect-to-act, #553) —
+ *  and every call burns CDP quota against a caller-named address. A real
+ *  person funds once or twice; this cap only ever catches a script. Its own
+ *  bucket (`o:<hash>`), separate from the broker's. */
+export const ONRAMP_IP_HOURLY_CAP = 30
+
+/** Bump this IP's on-ramp window and report whether it tripped the cap.
+ *  Loopback exempt and fail-open, exactly like the broker fence. */
+export async function bumpAndCheckOnrampSession(ip: string | null): Promise<boolean> {
+  if (!ip) return false
+  const key = `o:${hashIp(ip)}`
+  try {
+    const { default: prisma } = await import('@/lib/db')
+    const windowStart = hourStartUTC()
+    const rows = await prisma.$queryRaw<{ count: number }[]>`
+      INSERT INTO unsigned_turn_windows (key, window_start, count)
+      VALUES (${key}, ${windowStart}, 1)
+      ON CONFLICT (key, window_start)
+      DO UPDATE SET count = unsigned_turn_windows.count + 1
+      RETURNING count
+    `
+    return Number(rows[0]?.count ?? 0) > ONRAMP_IP_HOURLY_CAP
+  } catch {
+    return false
+  }
+}
+
 /** The polite wall — a reply, never a bare 429. Signing in lifts the guest
  *  caps (a signed session rides its own plan limits), which also feeds the
  *  keep-this-thread loop. */
