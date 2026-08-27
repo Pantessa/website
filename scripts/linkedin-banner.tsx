@@ -103,9 +103,9 @@ function Eyebrow({ s, text }: { s: number; text: string }) {
   )
 }
 
-/** The h1, as one line: the quoted ask in the gradient italic, the payoff in
- *  ink — the landing hero's exact construction. */
-function Claim({ s, size }: { s: number; size: number }) {
+/** The h1, as one line: a gradient-italic lead + an ink tail — the landing
+ *  hero's exact construction (there the lead is the typed ask). */
+function Claim({ s, size, lead, tail }: { s: number; size: number; lead: string; tail: string }) {
   return (
     <div
       style={{
@@ -126,26 +126,39 @@ function Claim({ s, size }: { s: number; size: number }) {
           paddingRight: 4 * s,
         }}
       >
-        &ldquo;{ASK}&rdquo;
+        {lead}
       </span>
-      <span style={{ color: INK, paddingLeft: 12 * s }}>We do the rest.</span>
+      <span style={{ color: INK, paddingLeft: 12 * s }}>{tail}</span>
     </div>
   )
 }
 
+/** The three lines in play for the company page. A is the site's own
+ *  construction — the quoted ask DEMONSTRATES the product in three words,
+ *  and the eyebrow carries the category for a reader who has never heard of
+ *  an intent link. B says it in plain English. C leads with the category. */
+export const TAGLINES = {
+  a: { lead: `\u201C${ASK}\u201D`, tail: 'We do the rest.', eyebrow: 'ONCHAIN EXECUTION · NON-CUSTODIAL · YOUR WALLET SIGNS', size: 46 },
+  b: { lead: 'Say what you want.', tail: 'We build the transaction.', eyebrow: 'NON-CUSTODIAL · YOUR WALLET IS THE ONLY SIGNATURE', size: 42 },
+  c: { lead: 'The transaction layer', tail: 'for AI agents.', eyebrow: 'INTENT IN · GUARDED, SIGNABLE TRANSACTION OUT', size: 44 },
+} as const
+
 /** A — the claim. The eyebrow carries the qualifier a first-time visitor
  *  needs (non-custodial), the line carries the product. */
-function ClaimBanner({ s, padTop = 0 }: { s: number; padTop?: number }) {
-  return (
-    <Shell s={s} padTop={padTop}>
-      <div style={{ display: 'flex', flexDirection: 'column' }}>
-        <Eyebrow s={s} text="INTENT LINKS · NON-CUSTODIAL · YOUR WALLET SIGNS" />
-        <div style={{ display: 'flex', marginTop: 17 * s }}>
-          <Claim s={s} size={46} />
+function claimBanner(key: keyof typeof TAGLINES) {
+  const t = TAGLINES[key]
+  return function ClaimBanner({ s, padTop = 0 }: { s: number; padTop?: number }) {
+    return (
+      <Shell s={s} padTop={padTop}>
+        <div style={{ display: 'flex', flexDirection: 'column' }}>
+          <Eyebrow s={s} text={t.eyebrow} />
+          <div style={{ display: 'flex', marginTop: 17 * s }}>
+            <Claim s={s} size={t.size} lead={t.lead} tail={t.tail} />
+          </div>
         </div>
-      </div>
-    </Shell>
-  )
+      </Shell>
+    )
+  }
 }
 
 /** B — the lockup: mark + wordmark + the one-line claim, for a more classic
@@ -186,7 +199,7 @@ function MinimalBanner({ s, padTop = 0 }: { s: number; padTop?: number }) {
   return (
     <Shell s={s} padTop={padTop}>
       <div style={{ display: 'flex' }}>
-        <Claim s={s} size={52} />
+        <Claim s={s} size={52} lead={TAGLINES.a.lead} tail={TAGLINES.a.tail} />
       </div>
     </Shell>
   )
@@ -301,8 +314,10 @@ async function main() {
     { name: 'Geist', data: sansSemi, weight: 600 as const, style: 'normal' as const },
   ]
   const out = join(process.cwd(), 'brand', 'linkedin')
-  await render(ClaimBanner, 2, fonts, join(out, 'pantessa-linkedin-cover.png'))
-  await render(ClaimBanner, 1, fonts, join(out, 'pantessa-linkedin-cover@1x.png'))
+  await render(claimBanner('a'), 2, fonts, join(out, 'pantessa-linkedin-cover.png'))
+  await render(claimBanner('a'), 1, fonts, join(out, 'pantessa-linkedin-cover@1x.png'))
+  await render(claimBanner('b'), 2, fonts, join(out, 'pantessa-linkedin-cover-tagline-b.png'))
+  await render(claimBanner('c'), 2, fonts, join(out, 'pantessa-linkedin-cover-tagline-c.png'))
   await render(LockupBanner, 2, fonts, join(out, 'pantessa-linkedin-cover-lockup.png'))
   await render(MinimalBanner, 2, fonts, join(out, 'pantessa-linkedin-cover-minimal.png'))
 }
