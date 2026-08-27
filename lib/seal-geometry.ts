@@ -13,24 +13,36 @@
 // draw from it, and public/brand/seal/generate.js mirrors the same constants
 // for the standalone asset kit (if a constant changes here, mirror it there).
 //
-// Two weights, the "ladder" rule borrowed from real currency (lace at portrait
-// size, one bold turn on the coin edge):
-//   defined — 6 passes per band at full weight; hero art down to ~48 px.
-//   bold    — 4 heavier passes, deeper waves; icons, tiles, favicons below 48.
+// Three weights, the "ladder" rule borrowed from real currency (lace at
+// portrait size, one bold turn on the coin edge):
+//   defined — 6 passes per band at full weight; hero art, 96 px and up.
+//   bold    — 4 heavier passes, deeper waves; 40–95 px.
+//   icon    — the essence: ONE heavy outer ring + a single two-pass woven
+//             band (three strokes total). Anything under 40 px — headers,
+//             tiles, favicons — where the lacier cuts haze into a fuzzy
+//             circle.
 
-export type SealWeight = 'defined' | 'bold'
+export type SealWeight = 'defined' | 'bold' | 'icon'
 
 type Ring = { d: string; w: number; op: number }
 type Circ = { r: number; w: number; op: number }
 export type SealArt = { rings: Ring[]; circles: Circ[] }
 
-const CFG: Record<SealWeight, { wM: number; aM: number; nC: number }> = {
+const CFG: Record<'defined' | 'bold', { wM: number; aM: number; nC: number }> = {
   defined: { wM: 1, aM: 1, nC: 6 },
   bold: { wM: 1.5, aM: 1.1, nC: 4 },
 }
 
 /** Size (px) below which callers should switch to the bold cut. */
-export const SEAL_BOLD_BELOW = 48
+export const SEAL_BOLD_BELOW = 96
+
+/** Size (px) below which callers should switch to the icon cut. */
+export const SEAL_ICON_BELOW = 40
+
+/** The ladder, as a function: pick the right cut for a rendered size. */
+export function sealWeightFor(size: number): SealWeight {
+  return size < SEAL_ICON_BELOW ? 'icon' : size < SEAL_BOLD_BELOW ? 'bold' : 'defined'
+}
 
 function ringPath(R: number, A: number, k: number, phi: number): string {
   const N = 140
@@ -49,6 +61,20 @@ const cache: Partial<Record<SealWeight, SealArt>> = {}
 export function sealArt(weight: SealWeight): SealArt {
   const hit = cache[weight]
   if (hit) return hit
+  if (weight === 'icon') {
+    // The essence cut: one heavy ring, one two-pass woven band, open heart.
+    // Three strokes — at 26 px each still renders ≥ 1.4 px, so the weave
+    // resolves instead of hazing.
+    const art: SealArt = {
+      rings: [
+        { d: ringPath(34, 11, 7, 0), w: 8, op: 1 },
+        { d: ringPath(34, 11, 7, Math.PI), w: 8, op: 1 },
+      ],
+      circles: [{ r: 56, w: 7, op: 1 }],
+    }
+    cache[weight] = art
+    return art
+  }
   const { wM, aM, nC } = CFG[weight]
   const rings: Ring[] = []
   const band = (R: number, A: number, k: number, n: number, w: number, op: number) => {

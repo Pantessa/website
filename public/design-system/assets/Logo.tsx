@@ -9,16 +9,16 @@
 // OPEN on purpose: nothing sits in the middle because the middle is where the
 // signature goes — a seal with a blank center is a seal awaiting countersign.
 //
-// Every stroke rides `currentColor`. Below 48 px the mark switches to the
-// bold cut (fewer, heavier passes) so the turning survives icon sizes — the
-// ladder rule real currency uses: lace at portrait size, one bold turn on the
-// coin edge.
+// Every stroke rides `currentColor`. The cut follows the size ladder
+// automatically (defined ≥96 px, bold 40–95, icon below 40 — three strokes
+// that stay crisp in a header) — the rule real currency uses: lace at
+// portrait size, one bold turn on the coin edge.
 
 import * as React from "react";
 
-type SealWeight = "defined" | "bold";
+type SealWeight = "defined" | "bold" | "icon";
 
-const CFG: Record<SealWeight, { wM: number; aM: number; nC: number }> = {
+const CFG: Record<"defined" | "bold", { wM: number; aM: number; nC: number }> = {
   defined: { wM: 1, aM: 1, nC: 6 },
   bold: { wM: 1.5, aM: 1.1, nC: 4 },
 };
@@ -37,6 +37,15 @@ function ringPath(R: number, A: number, k: number, phi: number): string {
 }
 
 function sealArt(weight: SealWeight) {
+  if (weight === "icon") {
+    return {
+      rings: [
+        { d: ringPath(34, 11, 7, 0), w: 8, op: 1 },
+        { d: ringPath(34, 11, 7, Math.PI), w: 8, op: 1 },
+      ],
+      circles: [{ r: 56, w: 7, op: 1 }],
+    };
+  }
   const { wM, aM, nC } = CFG[weight];
   const rings: { d: string; w: number; op: number }[] = [];
   const band = (R: number, A: number, k: number, n: number, w: number, op: number) => {
@@ -73,7 +82,7 @@ export function PantessaMark({
   accent = null,
   weight,
 }: MarkProps) {
-  const cut: SealWeight = weight ?? (size < 48 ? "bold" : "defined");
+  const cut: SealWeight = weight ?? (size < 40 ? "icon" : size < 96 ? "bold" : "defined");
   const art = sealArt(cut);
   const ink = accent ?? "currentColor";
   return (

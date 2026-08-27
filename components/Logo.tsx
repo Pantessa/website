@@ -12,17 +12,18 @@
 // countersign. (White-label surfaces can seat a creator's mark in it.)
 //
 // Every stroke rides `currentColor`, so the seal is white on the dark nav,
-// ink on paper, or a creator's accent — one component, no second file. Below
-// 48 px it automatically switches to the bold cut (fewer, heavier passes) so
-// the turning survives icon sizes; that "ladder" is the rule real currency
-// uses — lace at portrait size, one bold turn on the coin edge.
+// ink on paper, or a creator's accent — one component, no second file. The
+// cut follows the size ladder automatically (defined ≥96 px, bold 40–95,
+// icon below 40 — three strokes that stay crisp in a header); that ladder is
+// the rule real currency uses — lace at portrait size, one bold turn on the
+// coin edge.
 //
 // Geometry is generated, not hand-drawn — lib/seal-geometry.ts is the one
 // source. Full asset kit (green/black/white SVGs + social PNGs) and the
 // standalone generator live in public/brand/seal/.
 
 import * as React from "react";
-import { sealArt, SEAL_BOLD_BELOW, type SealWeight } from "../lib/seal-geometry";
+import { sealArt, sealWeightFor, type SealWeight } from "../lib/seal-geometry";
 
 /** The house emerald. Mirrors `--accent` in app/x402-design.css. */
 export const SEAL_ACCENT = "#3ECF8E";
@@ -38,7 +39,7 @@ type MarkProps = {
    *  the right answer almost everywhere. A white-label surface can pass the
    *  creator's accent to re-ink the whole turning. */
   accent?: string | null;
-  /** Force a cut; by default it follows the size ladder (bold below 48 px). */
+  /** Force a cut; by default it follows the size ladder (icon < 40 px, bold 40–95, defined ≥ 96). */
   weight?: SealWeight;
 };
 
@@ -49,7 +50,7 @@ export function PantessaMark({
   accent = null,
   weight,
 }: MarkProps) {
-  const cut: SealWeight = weight ?? (size < SEAL_BOLD_BELOW ? "bold" : "defined");
+  const cut: SealWeight = weight ?? sealWeightFor(size);
   const art = sealArt(cut);
   const ink = accent ?? "currentColor";
   return (

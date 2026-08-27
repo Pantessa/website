@@ -7,9 +7,11 @@
 // circles, OPEN at the heart: the middle is where the signature goes.
 //
 // Mirrors lib/seal-geometry.ts — if a constant changes there, change it here.
-// Two weights (the currency "ladder"): DEFINED (6 passes, hero → ~48px) and
-// BOLD (4 heavier passes, icons/avatars/favicons below 48px). The ceremonial
-// files add the microprint ring — screens ≥ 96px and print only.
+// Three weights (the currency "ladder"): DEFINED (6 passes, ≥96px), BOLD
+// (4 heavier passes, 40–95px), and ICON (one heavy ring + one two-pass woven
+// band — three strokes; anything under 40px: headers, tiles, favicons,
+// avatars-in-feeds). The ceremonial files add the microprint ring — screens
+// ≥ 96px and print only.
 const fs = require('fs');
 const path = require('path');
 
@@ -36,6 +38,13 @@ function ringPath(R, A, k, phi) {
 }
 
 function body(weight, color) {
+  if (weight === 'icon') {
+    // The essence cut: one heavy ring, one two-pass woven band, open heart.
+    let s = `  <circle cx="64" cy="64" r="56" fill="none" stroke="${color}" stroke-width="7"/>\n`;
+    s += `  <path d="${ringPath(34, 11, 7, 0)}" fill="none" stroke="${color}" stroke-width="8"/>\n`;
+    s += `  <path d="${ringPath(34, 11, 7, Math.PI)}" fill="none" stroke="${color}" stroke-width="8"/>\n`;
+    return s;
+  }
   const { wM, aM, nC } = CFG[weight];
   let s = '';
   s += `  <circle cx="64" cy="64" r="58" fill="none" stroke="${color}" stroke-width="${(0.9 * wM).toFixed(2)}"/>\n`;
@@ -74,7 +83,7 @@ function avatar(bg, color) {
   return svg(
     `  <rect width="128" height="128" fill="${bg}"/>\n` +
       '  <g transform="translate(64 64) scale(0.76) translate(-64 -64)">\n' +
-      body('bold', color) +
+      body('icon', color) +
       '  </g>\n',
     'Pantessa',
   );
@@ -85,7 +94,7 @@ function appIcon(rx) {
   return svg(
     `  <rect width="128" height="128" rx="${rx}" fill="${CHIP_INK}"/>\n` +
       '  <g transform="translate(64 64) scale(0.76) translate(-64 -64)">\n' +
-      body('bold', GREEN_DARK) +
+      body('icon', GREEN_DARK) +
       '  </g>\n',
     'Pantessa',
   );
@@ -98,11 +107,16 @@ const files = {
   'pantessa-seal-dark.svg': mark('defined', GREEN_DARK, 'Pantessa'),
   'pantessa-seal-black.svg': mark('defined', INK, 'Pantessa'),
   'pantessa-seal-white.svg': mark('defined', WHITE, 'Pantessa'),
-  // the bold cut (icons, tiles, anything under 48px)
+  // the bold cut (40–95px)
   'pantessa-seal-bold.svg': mark('bold', GREEN_PAPER, 'Pantessa'),
   'pantessa-seal-bold-dark.svg': mark('bold', GREEN_DARK, 'Pantessa'),
   'pantessa-seal-bold-black.svg': mark('bold', INK, 'Pantessa'),
   'pantessa-seal-bold-white.svg': mark('bold', WHITE, 'Pantessa'),
+  // the icon cut (headers, tiles, favicons — anything under 40px)
+  'pantessa-seal-icon.svg': mark('icon', GREEN_PAPER, 'Pantessa'),
+  'pantessa-seal-icon-dark.svg': mark('icon', GREEN_DARK, 'Pantessa'),
+  'pantessa-seal-icon-black.svg': mark('icon', INK, 'Pantessa'),
+  'pantessa-seal-icon-white.svg': mark('icon', WHITE, 'Pantessa'),
   // ceremonial — microprint ring; ≥96px and print ONLY
   'pantessa-seal-microprint.svg': svg(body('defined', GREEN_PAPER) + microprint(GREEN_PAPER), 'Pantessa'),
   'pantessa-seal-microprint-dark.svg': svg(body('defined', GREEN_DARK) + microprint(GREEN_DARK), 'Pantessa'),

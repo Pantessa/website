@@ -30,10 +30,15 @@ Real currency is magnification-aware: lace at portrait size, one bold turn on
 the coin edge. Same rule here:
 
 - **defined** (`pantessa-seal*.svg`) — 6 passes per band, full weight.
-  Hero art, share cards, anything **≥ 48 px**.
+  Hero art and print, anything **≥ 96 px**.
 - **bold** (`pantessa-seal-bold*.svg`) — 4 heavier passes, deeper waves.
-  Icons, tiles, avatars, favicons — **anything under 48 px**.
-  `components/Logo.tsx` switches automatically at 48.
+  **40–95 px**.
+- **icon** (`pantessa-seal-icon*.svg`) — the essence: one heavy outer ring +
+  a single two-pass woven band, three strokes total. Headers, tiles,
+  favicons, avatars-in-feeds — **anything under 40 px** (the lacier cuts haze
+  into a fuzzy circle there). `components/Logo.tsx` walks the ladder
+  automatically (icon < 40, bold 40–95, defined ≥ 96); avatars, app icon and
+  favicon chips in this kit are cut at icon weight.
 - **microprint** (`pantessa-seal-microprint*.svg`) — the ceremonial cut with
   the banknote microtext ring. Screens **≥ 96 px** and print only; never a
   favicon. (Uses `<textPath>` — not satori-safe, so never in an OG card.)
@@ -51,7 +56,8 @@ Single-ink line art — one color per file, so re-inking is trivial:
 ## Files
 
 - `pantessa-seal[-dark|-black|-white].svg` — the mark, transparent ground.
-- `pantessa-seal-bold[-dark|-black|-white].svg` — the small-size cut.
+- `pantessa-seal-bold[-dark|-black|-white].svg` — the mid-size cut.
+- `pantessa-seal-icon[-dark|-black|-white].svg` — the small-size cut.
 - `pantessa-seal-microprint[-dark].svg` — ceremonial.
 - `pantessa-avatar-{ink,paper,black-on-white,white-on-black}.svg` — full-bleed
   square social avatars (safe under circular crops).
@@ -73,7 +79,8 @@ done
 ## Don'ts
 
 - Don't put the microprint cut anywhere it renders under 96 px.
-- Don't use the defined cut below 48 px — it hazes; that's what bold is for.
+- Don't use the defined cut below 96 px or ANY lacy cut below 40 — they
+  haze into a fuzzy circle; that's what the icon cut is for.
 - Don't fill the open heart on house surfaces — the void is the meaning.
   (White-label /l pages MAY seat the creator's mark in it; that's the one
   sanctioned tenant.)

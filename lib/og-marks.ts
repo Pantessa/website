@@ -103,8 +103,9 @@ export function ogMarkSvg(hay: string, color: string, box: number): string | nul
 // The mark is the Open Seal (2026-08-27): three bands of guilloché turning,
 // open at the heart. Satori can't run the React component, so the strokes are
 // rendered to a raw string here via the shared lib/seal-geometry.ts — the one
-// geometry source — at the BOLD cut (card marks render well under 48 px of
-// effective size). Single-ink line art, so the accent re-inks the whole
+// geometry source — at the ICON cut: in a real unfurl the whole 1200×630 card
+// shows ~500 px wide, so the mark's effective size is tiny and the lacier
+// cuts haze into a fuzzy circle. Single-ink line art, so the accent re-inks the whole
 // turning: house cards get the emerald, branded cards the creator's hue.
 
 import { sealSvgBody } from './seal-geometry'
@@ -122,7 +123,7 @@ export function sealMarkSvg(accent = '#34e3a0'): string {
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" fill="none">
   <rect x="2" y="2" width="124" height="124" rx="27" fill="#0B0E0D" stroke="rgba(255,255,255,0.16)" stroke-width="3.5"/>
   <g transform="translate(64 64) scale(0.78) translate(-64 -64)">
-    ${sealSvgBody('bold', accent)}
+    ${sealSvgBody('icon', accent)}
   </g>
 </svg>`
 }

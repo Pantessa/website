@@ -136,8 +136,9 @@ export function YeetfulMark({ size = 22 }: { size?: number }) {
   //
   // Single-ink: every stroke rides `currentColor`, so the mark inverts with
   // its tile like every other vendored mark in this file. Tile sizes sit well
-  // under the 48 px ladder threshold, so this always draws the bold cut.
-  const art = sealArt('bold')
+  // under the 40 px ladder threshold, so this always draws the icon cut —
+  // three strokes that stay crisp instead of hazing.
+  const art = sealArt('icon')
   return (
     <svg viewBox="0 0 128 128" width={size} height={size} fill="none" aria-hidden style={{ display: 'block' }}>
       {art.circles.map((c) => (
