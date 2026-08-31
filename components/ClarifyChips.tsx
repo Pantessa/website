@@ -9,18 +9,21 @@
 // perfectly normal turn (working context, guardrails, sign flow all see
 // nothing special). Generalizes VoteCandidates' proven pattern.
 //
-// A chip carrying `fund` (lib/onramp) is the same contract with one extra
-// beat: the wallet is empty, so the resume CANNOT succeed yet. The chip opens
-// the hosted on-ramp first and then offers the very same resume — the ask
-// survives the trip off-site, which is the whole point. We deliberately do NOT
+// A chip carrying `fund` (lib/onramp) is the same contract with two extra
+// beats: the wallet is empty, so the resume CANNOT succeed yet. The chip takes
+// a free signature naming the destination wallet (CDP requires the on-ramp
+// route to know who is asking; an empty wallet can pay no gas but can still
+// sign), opens the hosted on-ramp, and then offers the very same resume — the
+// ask survives the trip off-site, which is the whole point. We deliberately do NOT
 // try to detect completion: Coinbase settles in another tab on its own clock,
 // so guessing produces a resume that fires too early and walls the user a
 // second time. The user tells us, we re-scan, the funding layer decides.
 
 import { useState } from 'react'
 import { HelpCircle, ChevronRight, CreditCard, Loader2 } from 'lucide-react'
-import { useAccount } from 'wagmi'
+import { useAccount, useSignMessage } from 'wagmi'
 import type { ClarifyRequest, ClarifyOption } from '@/lib/clarify'
+import { onrampConsentMessage } from '@/lib/onramp'
 
 export default function ClarifyChips({
   clarify,
@@ -32,6 +35,7 @@ export default function ClarifyChips({
   disabled?: boolean
 }) {
   const { address } = useAccount()
+  const { signMessageAsync } = useSignMessage()
   const [funding, setFunding] = useState<number | null>(null)
   const [opened, setOpened] = useState<number | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -49,10 +53,34 @@ export default function ClarifyChips({
     // (the same lesson as the Coinbase popup-after-await signature bug).
     const tab = window.open('', '_blank')
     try {
+      // Prove the wallet before asking CDP for a token (their integration
+      // review required it). personal_sign costs no gas, which is the only
+      // reason an EMPTY wallet can do it — and the text names the destination,
+      // so the prompt doubles as a confirmation of where the money lands.
+      // Signs the values the SERVER will use: clarifyOf has already rounded
+      // and range-clamped them, so the server's clamp is a no-op here, and if
+      // it ever were not the re-derived consent would fail to match — closed.
+      const issuedAt = Date.now()
+      let signature: string
+      try {
+        signature = await signMessageAsync({
+          message: onrampConsentMessage({ ...o.fund, address, issuedAt }),
+        })
+      } catch (e) {
+        tab?.close()
+        const why = e instanceof Error ? e.message : ''
+        setError(
+          /reject|denied|declined|cancell?ed/i.test(why)
+            ? 'Funding needs that signature to confirm the destination wallet — it costs nothing and moves nothing.'
+            : 'Could not confirm the destination wallet with your signature.',
+        )
+        return
+      }
+
       const res = await fetch('/api/onramp/session', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ address, ...o.fund }),
+        body: JSON.stringify({ address, ...o.fund, issuedAt, signature }),
       })
       const data = (await res.json()) as { url?: string; error?: string }
       if (!res.ok || !data.url) {
