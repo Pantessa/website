@@ -109,6 +109,47 @@ export function fundChipFor(params: FundChipParams): ClarifyOption | null {
   }
 }
 
+/** How long a consent signature stays good. Long enough to read the wallet
+ *  prompt and think, short enough that a captured signature is worthless by
+ *  the time it is replayed. */
+export const ONRAMP_CONSENT_TTL_MS = 10 * 60_000
+
+export interface OnrampConsentInput {
+  address: string
+  presetFiatUsd: number
+  asset: string
+  network: OnrampNetwork
+  /** Client clock, echoed back with the signature. Bounds the replay window. */
+  issuedAt: number
+}
+
+/**
+ * The exact personal_sign text the wallet shows, and the exact text the server
+ * re-derives to recover the signer. Line-keyed so a human can read every fact
+ * it binds — CDP's integration review (case 500PC00000kDVUv, 2026-08-28)
+ * called the unauthenticated route spoofable, and this is the answer: proof
+ * that whoever asked for a session token controls the address it delivers to.
+ *
+ * personal_sign, not a transaction: the wallet being funded is empty by
+ * definition, so it can pay no gas. It can still sign, which costs nothing and
+ * is the only ownership proof available before there are funds — the same
+ * consent-over-a-free-signature shape the HL delegated door uses.
+ *
+ * Deliberately NOT SIWE: signing in is how you KEEP a thread (#553), and this
+ * wallet has not transacted yet. This proves address control for ONE funding
+ * session and mints no session of its own.
+ */
+export function onrampConsentMessage(input: OnrampConsentInput): string {
+  return [
+    'Pantessa — fund this wallet',
+    `Wallet: ${input.address.toLowerCase()}`,
+    `Amount: $${input.presetFiatUsd} USD`,
+    `Asset: ${input.asset} on ${input.network}`,
+    `Issued: ${new Date(input.issuedAt).toISOString()}`,
+    'Signing opens a Coinbase Onramp session that can only deliver funds TO this wallet. It moves nothing out and costs no gas.',
+  ].join('\n')
+}
+
 /** The hosted Onramp URL. The session token is mandatory (Coinbase enforced
  *  this from 2025-07-31 — a bare URL is rejected), so this takes one rather
  *  than making it optional and failing at their door. */

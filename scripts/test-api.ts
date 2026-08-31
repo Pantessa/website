@@ -114,7 +114,7 @@ import { nftGalleryOf, nftMarketOf } from '../lib/nft-display'
 import { getProtocolMark, YeetfulMark, MorphoMark } from '../components/protocol-marks'
 import { ogMarkSvg, pangolinMarkSvg } from '../lib/og-marks'
 import { splitListingPrice, buildListingComponents, guardListingComponents, openseaAssetUrl, SEAPORT_1_6, guardBuyFulfillment, fulfillmentToCalldata, normalizeOpenseaListing, normalizeOpenseaOffer, collectionSlugCandidates } from '../lib/opensea'
-import { keccak256, stringToBytes, decodeFunctionData, parseAbi, recoverTypedDataAddress } from 'viem'
+import { keccak256, stringToBytes, decodeFunctionData, parseAbi, recoverMessageAddress, recoverTypedDataAddress } from 'viem'
 import { isCacheable, routeCacheKey, getCached, setCached, clearRouteCache } from '../lib/route-cache'
 import { routeSavings } from '../lib/route-telemetry'
 import { portfolioFromToolResult, portfolioOf } from '../lib/portfolio-display'
@@ -130,7 +130,16 @@ import { parseMultiSendSegments, parseTransferSegment } from '../lib/transfer-ex
 import { buildFundsDetail, classifyTurn, FAILURE_PROBE_TOKENS, moneyShaped } from '../lib/ask-failure'
 import { guardSyncDrift } from './guard-sync-check'
 import { canonicalChainWord, normalizeChainWords } from '../lib/chain-lexicon'
-import { clampFundUsd, fundChipFor, onrampUrl, planFundUsd, ONRAMP_MIN_USD } from '../lib/onramp'
+import {
+  clampFundUsd,
+  fundChipFor,
+  onrampConsentMessage,
+  onrampUrl,
+  planFundUsd,
+  ONRAMP_ASSET,
+  ONRAMP_CONSENT_TTL_MS,
+  ONRAMP_MIN_USD,
+} from '../lib/onramp'
 import { clarifyOf } from '../lib/clarify'
 import { decideFundingTurn, detectBalanceShortfall, fundingPlanUsd, planFundingChips, planStrandedRescue, promisableCapacityUsd, rankFundingSources, shortRefusalCopy, softenClaimedFailureBlock, type FundingNeed, type FundingSource } from '../lib/funding-plan'
 import { compileDcaBuy, dcaRunChip, parseDcaCreate, parseDcaManage, parseDcaRun, periodKeyFor } from '../lib/dca'
@@ -5217,9 +5226,127 @@ async function main() {
         JSON.stringify(hostile),
       )
 
+      // ── Wallet proof (CDP integration review, case 500PC00000kDVUv). The
+      // route mints a real Coinbase session token, so "who asked" has to be
+      // answerable before we spend one. personal_sign is the only proof an
+      // EMPTY wallet can give — it costs no gas — and these pin that the
+      // consent binds every value the session is minted from.
+      {
+        const funder = privateKeyToAccount(generatePrivateKey())
+        const base = {
+          address: funder.address,
+          presetFiatUsd: 14,
+          asset: ONRAMP_ASSET,
+          network: 'base' as const,
+          issuedAt: Date.now(),
+        }
+        const consent = onrampConsentMessage(base)
+        check(
+          'onramp consent: the text NAMES what it authorises (wallet, amount, asset, chain) and says it can only deliver IN',
+          consent.includes(funder.address.toLowerCase()) &&
+            consent.includes('$14 USD') &&
+            consent.includes('USDC on base') &&
+            /only deliver funds TO this wallet/.test(consent) &&
+            /costs no gas/.test(consent),
+          consent,
+        )
+        // Every field is load-bearing: if any could be swapped after signing,
+        // the signature would authorise a session it never saw.
+        check(
+          'onramp consent: changing ANY bound field changes the text (amount, asset, chain, wallet, time)',
+          onrampConsentMessage({ ...base, presetFiatUsd: 500 }) !== consent &&
+            onrampConsentMessage({ ...base, asset: 'ETH' }) !== consent &&
+            onrampConsentMessage({ ...base, network: 'ethereum' }) !== consent &&
+            onrampConsentMessage({ ...base, address: '0x' + '1'.repeat(40) }) !== consent &&
+            onrampConsentMessage({ ...base, issuedAt: base.issuedAt + 60_000 }) !== consent,
+        )
+        check(
+          'onramp consent: address casing cannot fork the text (a checksummed and a lowercase caller sign the same bytes)',
+          onrampConsentMessage({ ...base, address: funder.address.toUpperCase().replace('0X', '0x') }) === consent,
+        )
+        // The round trip the route performs: recover from OUR derivation of
+        // the text, and refuse anyone who is not the wallet being funded.
+        const sig = await funder.signMessage({ message: consent })
+        const recovered = await recoverMessageAddress({ message: consent, signature: sig })
+        check(
+          'onramp consent: a signature over the consent recovers to the wallet being funded',
+          recovered.toLowerCase() === funder.address.toLowerCase(),
+          recovered,
+        )
+        const impostor = privateKeyToAccount(generatePrivateKey())
+        const impostorSig = await impostor.signMessage({ message: consent })
+        const impostorRecovered = await recoverMessageAddress({ message: consent, signature: impostorSig })
+        check(
+          'onramp consent: someone else signing the SAME text recovers to themselves — the route refuses on address mismatch',
+          impostorRecovered.toLowerCase() === impostor.address.toLowerCase() &&
+            impostorRecovered.toLowerCase() !== funder.address.toLowerCase(),
+        )
+        // A signature captured for a $14 session must not mint a $500 one.
+        const recoveredOnTamper = await recoverMessageAddress({
+          message: onrampConsentMessage({ ...base, presetFiatUsd: 500 }),
+          signature: sig,
+        }).catch(() => '0xfailed')
+        check(
+          'onramp consent: replaying a signature against a RAISED amount does not recover the funder (tamper fails closed)',
+          recoveredOnTamper.toLowerCase() !== funder.address.toLowerCase(),
+          recoveredOnTamper,
+        )
+        check(
+          'onramp consent: the replay window is bounded and short',
+          ONRAMP_CONSENT_TTL_MS > 0 && ONRAMP_CONSENT_TTL_MS <= 15 * 60_000,
+          String(ONRAMP_CONSENT_TTL_MS),
+        )
+      }
+
       process.env.ONRAMP_ENABLED = wasEnabled
       process.env.CDP_API_KEY_ID = wasId
       process.env.CDP_API_KEY_SECRET = wasSecret
+    }
+
+    // The live door, over HTTP. Whether or not this deployment has the on-ramp
+    // configured (unconfigured fails closed at 503, before auth), the
+    // invariant is the same and is the one CDP asked for: an unsigned or
+    // wrongly-signed request NEVER receives a session URL.
+    {
+      const stranger = privateKeyToAccount(generatePrivateKey())
+      const fundBody = { address: stranger.address, presetFiatUsd: 14, asset: 'USDC', network: 'base' }
+      const post = async (body: Record<string, unknown>) => {
+        const r = await fetch(`${BASE}/api/onramp/session`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', 'x-yf-no-ask-log': '1' },
+          body: JSON.stringify(body),
+        })
+        return { status: r.status, data: (await r.json().catch(() => ({}))) as { url?: string } }
+      }
+
+      const unsigned = await post(fundBody)
+      check(
+        'onramp route: an UNSIGNED request never gets a funding URL',
+        !unsigned.data.url && unsigned.status !== 200,
+        `${unsigned.status}`,
+      )
+
+      const issuedAt = Date.now()
+      const wrongWalletSig = await privateKeyToAccount(generatePrivateKey()).signMessage({
+        message: onrampConsentMessage({ ...fundBody, network: 'base', address: stranger.address, issuedAt }),
+      })
+      const spoofed = await post({ ...fundBody, issuedAt, signature: wrongWalletSig })
+      check(
+        'onramp route: a valid signature from a DIFFERENT wallet never gets a funding URL',
+        !spoofed.data.url && spoofed.status !== 200,
+        `${spoofed.status}`,
+      )
+
+      const staleAt = Date.now() - (ONRAMP_CONSENT_TTL_MS + 60_000)
+      const staleSig = await stranger.signMessage({
+        message: onrampConsentMessage({ ...fundBody, network: 'base', address: stranger.address, issuedAt: staleAt }),
+      })
+      const stale = await post({ ...fundBody, issuedAt: staleAt, signature: staleSig })
+      check(
+        'onramp route: an EXPIRED consent never gets a funding URL, even correctly signed',
+        !stale.data.url && stale.status !== 200,
+        `${stale.status}`,
+      )
     }
 
     const refusalEmpty = shortRefusalCopy({
