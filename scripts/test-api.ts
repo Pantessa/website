@@ -89,6 +89,7 @@ import {
 } from '../lib/league'
 import { DOCS_PAGES } from '../lib/docs'
 import prisma from '../lib/db'
+import { identiconCells } from '../components/ManagerMark'
 import { addrsUnion, arcQuery } from '../lib/gtm-arc'
 import { isInternalRun, INTERNAL_RUN_HEADER } from '../lib/internal-run'
 import { deskExecuteConsentMessage, cleanSenderLabel } from '../lib/broker-exec'
@@ -4221,6 +4222,26 @@ async function main() {
     'roster: the board takes only agents a real human has signed for (harness residue never ranks)',
     qualifiesForBoard({ signedTurns: 1 }) === true && qualifiesForBoard({ signedTurns: 0 }) === false,
   )
+  check(
+    'roster: manager identicon is deterministic, col-mirrored, and never faceless',
+    (() => {
+      const a = identiconCells('a1b2c3d4e5f60718')
+      const b = identiconCells('a1b2c3d4e5f60718')
+      const c = identiconCells('ffffffffffffffff')
+      const zero = identiconCells('0000000000000000') // nothing lights → fallback face
+      const mirrored = (cells: ReturnType<typeof identiconCells>) =>
+        cells.every((cell) => cells.some((m) => m.y === cell.y && m.x === 3 - cell.x && m.strong === cell.strong))
+      return (
+        JSON.stringify(a) === JSON.stringify(b) &&
+        JSON.stringify(a) !== JSON.stringify(c) &&
+        a.length > 0 &&
+        zero.length === 4 &&
+        mirrored(a) &&
+        mirrored(c) &&
+        identiconCells('not-a-handle').length === 4 // malformed → the fallback face, never a throw
+      )
+    })(),
+  )
   // Route fence: the /agents standings index + the /roster front-door preview
   // are fail-closed behind ROSTER_ENABLED — a server without the flag serves
   // 404 on both (and on the standings OG card), which for /agents is exactly
@@ -4250,7 +4271,10 @@ async function main() {
       rosterHtml.includes('You keep the only pen') &&
       // wave 2: the page carries the how-it-works strip + the proof transcript
       rosterHtml.includes('How it works') &&
-      rosterHtml.includes('data-roster-transcript')
+      rosterHtml.includes('data-roster-transcript') &&
+      // first-hire sprint: the "Meet your first manager" strip fronts the
+      // house Rebalancer with the three-beat hire framing en route
+      rosterHtml.includes('Meet your first manager')
     const docsOn =
       docsRes.status === 200 &&
       docsHtml.includes('Hire agents for your money') &&

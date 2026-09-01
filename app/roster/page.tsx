@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import Footer from '@/components/Footer'
+import ManagerRow from '@/components/ManagerRow'
 import RosterHero from '@/components/RosterHero'
 import RosterTranscript from '@/components/RosterTranscript'
 import { rosterEnabled } from '@/lib/league'
@@ -35,6 +36,39 @@ export default async function RosterPreviewPage() {
           Concept preview · behind ROSTER_ENABLED · not the live landing
         </p>
         <RosterHero />
+
+        {/* Meet your first manager — the FIRST HIRE strip (sprint 08-26): the
+            house Rebalancer as a face, not a hash. The CTA targets the
+            storefront section's #managers anchor (UI/UX's "Managers" section
+            on this page; until it mounts, the link is a harmless no-scroll).
+            The optional env hash lights the record trust anchor — reconcile
+            the var name with UI/UX's house-identity env. */}
+        <section className="mt-14" aria-label="Meet your first manager">
+          <p className="mono text-[11px] uppercase tracking-[0.25em] text-[color:var(--muted)]">
+            Meet your first manager
+          </p>
+          <div className="mt-4">
+            <ManagerRow
+              name="The Rebalancer"
+              house
+              handle={process.env.ROSTER_HOUSE_AGENT_HASH ?? null}
+              kinds={['shape']}
+              cta={
+                <a
+                  href="#managers"
+                  className="mono rounded-full px-4 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-[color:var(--bg)]"
+                  style={{ background: 'var(--accent)' }}
+                >
+                  Hire it
+                </a>
+              }
+            />
+          </div>
+          <p className="mt-2 text-[12px] text-[color:var(--muted)]">
+            The house shape-keeper: give it a target like &ldquo;keep me 60/40 ETH/USDC&rdquo; and it
+            watches the drift — every fix arrives as a card only you can sign.
+          </p>
+        </section>
 
         {/* How it works — the four stops, in the order a wallet meets them. */}
         <section className="mt-16" aria-label="How the Roster works">
