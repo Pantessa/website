@@ -76,6 +76,7 @@ import { cleanAgentKeyHash, cleanCapUsd, parseMandate, MANDATE_KIND_LABELS, ROST
 import { decideProposalGate } from '../lib/roster-propose'
 import { decideManagerMove, stackingRefusal, undecidedProposalFor } from '../lib/roster-manager'
 import { markPeriodKey, parseMarkAsk, reviewFlipDecision, tryoutReportCard, PAPER_LABEL, TRYOUT_BANNED_PHRASES } from '../lib/roster-tryouts'
+import { houseManagerRow, resolveHouseManager, HOUSE_MANAGER_ID } from '../lib/roster-managers'
 import { buildDelivery, mintCallbackSecret, notifyEligible, signWebhook, validateCallbackUrl } from '../lib/broker-webhook'
 import { agentHandleFor } from '../lib/agent-record'
 import {
@@ -88,6 +89,7 @@ import {
 } from '../lib/league'
 import { DOCS_PAGES } from '../lib/docs'
 import prisma from '../lib/db'
+import { identiconCells } from '../components/ManagerMark'
 import { addrsUnion, arcQuery } from '../lib/gtm-arc'
 import { isInternalRun, INTERNAL_RUN_HEADER } from '../lib/internal-run'
 import { deskExecuteConsentMessage, cleanSenderLabel } from '../lib/broker-exec'
@@ -3903,6 +3905,115 @@ async function main() {
     check('roster R1: the signed-in owner removes fired history — drill row released', ((await gone.json()) as { deleted?: boolean }).deleted === true)
   }
 
+  // ── THE STOREFRONT (lib/roster-managers + /api/roster/managers) ──────────
+  console.log('— roster storefront (FIRST HIRE)')
+  check(
+    'storefront: env-absent house row is an honest, NOT-hireable "coming soon"; env-present is hireable; resolve of an absent house is null',
+    (() => {
+      const dark = houseManagerRow(null)
+      const lit = houseManagerRow('some-house-key')
+      return (
+        dark.id === HOUSE_MANAGER_ID &&
+        dark.hireable === false &&
+        /Coming soon/.test(dark.note ?? '') &&
+        lit.hireable === true &&
+        lit.house === true &&
+        resolveHouseManager(null) === null &&
+        resolveHouseManager('some-house-key')?.agentKeyHash === agentHandleFor('some-house-key')
+      )
+    })(),
+  )
+  {
+    const J = { 'content-type': 'application/json' }
+    const boss = privateKeyToAccount(generatePrivateKey())
+    SIGNED_IN_WALLETS.add(boss.address.toLowerCase())
+    // The server env carries HOUSE_MANAGER_KEY (.env.local — same belt as
+    // ROSTER_ENABLED); the expected hash comes from reading it back, never
+    // from the wire (the raw key must not cross it).
+    const houseKeyLocal = (await readFile('.env.local', 'utf8')).match(/^HOUSE_MANAGER_KEY=(.*)$/m)?.[1]?.trim() ?? ''
+    const list = await fetch(`${BASE}/api/roster/managers`)
+    const listed = ((await list.json()) as { managers?: { id: string; name: string; hireable: boolean; house: boolean; kinds: string[] }[] }).managers ?? []
+    const houseRow = listed.find((r) => r.id === HOUSE_MANAGER_ID)
+    check(
+      'storefront: the managers list serves the house row first, hireable, shape-serving — and never a hash or raw key on the wire',
+      list.status === 200 &&
+        listed[0]?.id === HOUSE_MANAGER_ID &&
+        houseRow?.hireable === true &&
+        houseRow.kinds.includes('shape') &&
+        !JSON.stringify(listed).includes(houseKeyLocal) &&
+        !JSON.stringify(listed).includes(agentHandleFor(houseKeyLocal)),
+      `first=${listed[0]?.id}`,
+    )
+    // Prefilled hire round-trips: slot → hire step 1 with the MANAGER ID →
+    // consent binds the env-derived hash → sign → hired to exactly it.
+    const mk = await fetch(`${BASE}/api/roster`, {
+      method: 'POST',
+      headers: J,
+      body: JSON.stringify({ wallet: boss.address, mandate: 'tile my wallet 60% ETH, 40% USDC', capUsd: 50 }),
+    })
+    const slotId = ((await mk.json()) as { slot?: { id: string } }).slot?.id ?? 'missing'
+    const mint = await fetch(`${BASE}/api/roster/hire`, {
+      method: 'POST',
+      headers: J,
+      body: JSON.stringify({ slotId, wallet: boss.address, managerId: HOUSE_MANAGER_ID }),
+    })
+    const minted = (await mint.json()) as { consentText?: string; error?: string }
+    const sig = await boss.signMessage({ message: minted.consentText ?? '' })
+    const hired = await fetch(`${BASE}/api/roster/hire`, {
+      method: 'POST',
+      headers: J,
+      body: JSON.stringify({ slotId, wallet: boss.address, signature: sig }),
+    })
+    const hiredBody = (await hired.json()) as { slot?: { agentKeyHash?: string | null }; error?: string }
+    check(
+      'storefront: the prefilled hire round-trips — managerId resolves SERVER-side and the slot hires to the env-derived hash',
+      mint.status === 200 &&
+        (minted.consentText ?? '').includes(`Agent: ${agentHandleFor(houseKeyLocal)}`) &&
+        hired.status === 200 &&
+        hiredBody.slot?.agentKeyHash === agentHandleFor(houseKeyLocal),
+      minted.error ?? hiredBody.error ?? '',
+    )
+    // A client-supplied HASH is not a manager id — refused by name; so is
+    // any unlisted id (nothing outside the server's own list resolves).
+    const mk2 = await fetch(`${BASE}/api/roster`, {
+      method: 'POST',
+      headers: J,
+      body: JSON.stringify({ wallet: boss.address, mandate: 'buy $25 of ETH weekly', capUsd: 50 }),
+    })
+    const slot2 = ((await mk2.json()) as { slot?: { id: string } }).slot?.id ?? 'missing'
+    const hashAsId = await fetch(`${BASE}/api/roster/hire`, {
+      method: 'POST',
+      headers: J,
+      body: JSON.stringify({ slotId: slot2, wallet: boss.address, managerId: agentHandleFor(houseKeyLocal) }),
+    })
+    const foundingSpoof = await fetch(`${BASE}/api/roster/hire`, {
+      method: 'POST',
+      headers: J,
+      body: JSON.stringify({ slotId: slot2, wallet: boss.address, managerId: `founding-${agentHandleFor('never-a-founder')}` }),
+    })
+    check(
+      'storefront: a client-supplied hash (or unlisted founding id) is NOT a manager id — refused by name, consent never minted',
+      hashAsId.status === 400 &&
+        /a raw hash is not a manager id/.test(((await hashAsId.json()) as { error?: string }).error ?? '') &&
+        foundingSpoof.status === 400,
+    )
+    // Release the drill rows (fire → fired-history delete, the R1 pattern).
+    const bossSession = await signIn(boss)
+    for (const sid of [slotId, slot2]) {
+      for (let i = 0; i < 2; i++) {
+        await fetch(`${BASE}/api/roster/fire`, {
+          method: 'POST',
+          headers: { ...J, cookie: bossSession },
+          body: JSON.stringify({ slotId: sid, wallet: boss.address }),
+        })
+      }
+    }
+    const bossLeft = ((await (
+      await fetch(`${BASE}/api/roster?wallet=${boss.address}`, { headers: { cookie: bossSession } })
+    ).json()) as { slots?: unknown[] }).slots ?? []
+    check('storefront: drill rows released', bossLeft.length === 0)
+  }
+
   // ── M6 forward-paper tryouts (lib/roster-tryouts + /api/roster/tryouts) ──
   console.log('— roster tryouts (M6 forward-paper)')
   check(
@@ -4206,6 +4317,26 @@ async function main() {
     'roster: the board takes only agents a real human has signed for (harness residue never ranks)',
     qualifiesForBoard({ signedTurns: 1 }) === true && qualifiesForBoard({ signedTurns: 0 }) === false,
   )
+  check(
+    'roster: manager identicon is deterministic, col-mirrored, and never faceless',
+    (() => {
+      const a = identiconCells('a1b2c3d4e5f60718')
+      const b = identiconCells('a1b2c3d4e5f60718')
+      const c = identiconCells('ffffffffffffffff')
+      const zero = identiconCells('0000000000000000') // nothing lights → fallback face
+      const mirrored = (cells: ReturnType<typeof identiconCells>) =>
+        cells.every((cell) => cells.some((m) => m.y === cell.y && m.x === 3 - cell.x && m.strong === cell.strong))
+      return (
+        JSON.stringify(a) === JSON.stringify(b) &&
+        JSON.stringify(a) !== JSON.stringify(c) &&
+        a.length > 0 &&
+        zero.length === 4 &&
+        mirrored(a) &&
+        mirrored(c) &&
+        identiconCells('not-a-handle').length === 4 // malformed → the fallback face, never a throw
+      )
+    })(),
+  )
   // Route fence: the /agents standings index + the /roster front-door preview
   // are fail-closed behind ROSTER_ENABLED — a server without the flag serves
   // 404 on both (and on the standings OG card), which for /agents is exactly
@@ -4235,7 +4366,10 @@ async function main() {
       rosterHtml.includes('You keep the only pen') &&
       // wave 2: the page carries the how-it-works strip + the proof transcript
       rosterHtml.includes('How it works') &&
-      rosterHtml.includes('data-roster-transcript')
+      rosterHtml.includes('data-roster-transcript') &&
+      // first-hire sprint: the "Meet your first manager" strip fronts the
+      // house Rebalancer with the three-beat hire framing en route
+      rosterHtml.includes('Meet your first manager')
     const docsOn =
       docsRes.status === 200 &&
       docsHtml.includes('Hire agents for your money') &&

@@ -16,8 +16,21 @@ import { useAccount, useSignMessage } from 'wagmi'
 import { Loader2, Plus, UserX } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { MANDATE_KIND_LABELS, ROSTER_DEFAULT_CAP_USD, type MandateKind } from '@/lib/roster-client'
+import ManagerMark from '@/components/ManagerMark'
+import HireConsentFrame from '@/components/HireConsentFrame'
 
 type Preview = { kind: MandateKind; mandateText: string; summary: string } | { problem: string }
+
+interface Manager {
+  id: string
+  name: string
+  house: boolean
+  hireable: boolean
+  kinds: MandateKind[]
+  recordUrl: string | null
+  founding: boolean
+  note?: string
+}
 
 interface Slot {
   id: string
@@ -50,6 +63,11 @@ export default function TeamRailTab() {
   const [posting, setPosting] = useState(false)
   // Per-slot hire input + in-flight flags.
   const [hireHash, setHireHash] = useState<Record<string, string>>({})
+  // THE STOREFRONT (FIRST HIRE sprint): hireable managers, server-listed.
+  // Selecting one prefills every pending slot's hire — the client only ever
+  // sends the server-validated manager id, never a hash.
+  const [managers, setManagers] = useState<Manager[]>([])
+  const [selectedManager, setSelectedManager] = useState<Manager | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
 
   // Live validation runs SERVER-SIDE (the grammar chain is server-only —
@@ -80,6 +98,19 @@ export default function TeamRailTab() {
     }, 350)
     return () => clearTimeout(t)
   }, [mandate])
+
+  // The storefront list — server-composed; fail-soft to an empty section.
+  useEffect(() => {
+    void (async () => {
+      try {
+        const res = await fetch('/api/roster/managers')
+        const data = (await res.json()) as { managers?: Manager[] }
+        if (res.ok && data.managers) setManagers(data.managers)
+      } catch {
+        /* fail-soft */
+      }
+    })()
+  }, [])
 
   const refresh = useCallback(async () => {
     if (!address) return
@@ -129,10 +160,16 @@ export default function TeamRailTab() {
     setError(null)
     try {
       // Step 1 — the server mints nonce + expiry and returns the exact bytes.
+      // A selected storefront manager sends its SERVER-VALIDATED id; the
+      // hash input is the advanced fallback for unlisted agents.
       const mint = await fetch('/api/roster/hire', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ slotId: slot.id, wallet: address, agentKeyHash }),
+        body: JSON.stringify(
+          selectedManager
+            ? { slotId: slot.id, wallet: address, managerId: selectedManager.id }
+            : { slotId: slot.id, wallet: address, agentKeyHash },
+        ),
       })
       const minted = (await mint.json()) as { consentText?: string; error?: string }
       if (!mint.ok || !minted.consentText) throw new Error(minted.error ?? 'Could not start the hire.')
@@ -187,12 +224,81 @@ export default function TeamRailTab() {
     }
   }
 
+  // Rendered in BOTH branches: a stranger from /roster's storefront must be
+  // able to browse managers before connecting (selection survives connect).
+  const managersSection = managers.length > 0 && (
+    <div className="px-1 pt-2 space-y-1">
+      <p className="mono text-[9px] uppercase tracking-wider text-[color:var(--muted-2)] px-0.5">Managers</p>
+      {managers.map((m) => (
+        <div
+          key={m.id}
+          role={m.hireable ? 'button' : undefined}
+          tabIndex={m.hireable ? 0 : undefined}
+          onClick={() => m.hireable && setSelectedManager((cur) => (cur?.id === m.id ? null : m))}
+          onKeyDown={(e) => {
+            if (m.hireable && (e.key === 'Enter' || e.key === ' ')) {
+              e.preventDefault()
+              setSelectedManager((cur) => (cur?.id === m.id ? null : m))
+            }
+          }}
+          className={cn(
+            'rounded-xl border px-2.5 py-2 space-y-0.5 transition-colors',
+            m.hireable ? 'cursor-pointer' : 'opacity-70',
+            selectedManager?.id === m.id
+              ? 'border-[var(--accent)] bg-[var(--surf-2)]'
+              : 'border-[var(--line)] bg-[var(--surf-1)] hover:border-[var(--line-2)]',
+          )}
+        >
+          <div className="flex items-center gap-2">
+            {/* Visuals' mark treatment (feat/hire-visuals) in the compact
+                rail geometry — pangolin tile for house, identicon otherwise. */}
+            <ManagerMark house={m.house} handle={m.id.startsWith('founding-') ? m.id.slice(9) : null} size={22} />
+            <span className="text-xs font-medium text-white flex-1 truncate">{m.name}</span>
+            {m.house && (
+              <span className="mono text-[8px] uppercase tracking-wider px-1 py-0.5 rounded bg-black/30 border border-[var(--line)] text-[color:var(--accent)]">house</span>
+            )}
+            {m.founding && (
+              <span className="mono text-[8px] uppercase tracking-wider px-1 py-0.5 rounded bg-black/30 border border-[var(--line)] text-[color:var(--muted)]">founding</span>
+            )}
+          </div>
+          <p className="mono text-[9px] text-[color:var(--muted-2)]">
+            {m.kinds.length > 0 ? m.kinds.map((k) => MANDATE_KIND_LABELS[k] ?? k).join(' · ') : 'no mandates served yet'}
+            {m.recordUrl && (
+              <>
+                {' · '}
+                <a href={m.recordUrl} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} className="underline hover:text-white">
+                  record
+                </a>
+              </>
+            )}
+          </p>
+          {m.note && <p className="text-[9px] text-[color:var(--muted-2)]">{m.note}</p>}
+        </div>
+      ))}
+      {/* Visuals' hire-moment frame (feat/hire-visuals): names who is being
+          hired + the whole contract in three beats. The consent bytes are
+          still the API's — this only frames the moment. */}
+      {selectedManager && (
+        <HireConsentFrame
+          name={selectedManager.name}
+          house={selectedManager.house}
+          handle={selectedManager.id.startsWith('founding-') ? selectedManager.id.slice(9) : null}
+        >
+          <p className="text-[10px] text-[color:var(--muted-2)]">
+            Post a mandate above or pick a pending slot below, then Hire — one personal_sign.
+          </p>
+        </HireConsentFrame>
+      )}
+    </div>
+  )
+
   if (!address) {
     return (
-      <div className="flex-1 px-3 py-6">
-        <p className="text-xs text-[color:var(--muted-2)]">
+      <div className="flex-1 overflow-y-auto px-2 py-3 space-y-2">
+        <p className="px-1.5 text-xs text-[color:var(--muted-2)]">
           Connect your wallet to build its staff — mandate slots live on the wallet, not an account.
         </p>
+        {managersSection}
       </div>
     )
   }
@@ -224,6 +330,11 @@ export default function TeamRailTab() {
         </button>
       </div>
 
+      {/* ── THE STOREFRONT: hireable managers, house first. Tap to select —
+          every pending slot's Hire then sends the server-validated manager
+          id (never a hash). ── */}
+      {managersSection}
+
       {error && <p className="px-1.5 text-[10px] leading-relaxed text-[color:var(--fail)]">{error}</p>}
 
       {/* ── Slot rows ── */}
@@ -249,18 +360,27 @@ export default function TeamRailTab() {
           </p>
           {slot.status === 'pending' && (
             <div className="flex items-center gap-1.5">
-              <input
-                value={hireHash[slot.id] ?? ''}
-                onChange={(e) => setHireHash((h) => ({ ...h, [slot.id]: e.target.value }))}
-                placeholder="agent handle (16 hex, see /agents)"
-                className="flex-1 min-w-0 rounded-lg border border-[var(--line)] bg-black/30 px-2 py-1 text-[10px] mono text-white placeholder:text-[color:var(--muted-2)] focus:outline-none"
-              />
+              {/* A selected storefront manager prefills the hire — no hash
+                  pasting; the input is the advanced fallback. */}
+              {!selectedManager && (
+                <input
+                  value={hireHash[slot.id] ?? ''}
+                  onChange={(e) => setHireHash((h) => ({ ...h, [slot.id]: e.target.value }))}
+                  placeholder="agent handle (16 hex, see /agents)"
+                  className="flex-1 min-w-0 rounded-lg border border-[var(--line)] bg-black/30 px-2 py-1 text-[10px] mono text-white placeholder:text-[color:var(--muted-2)] focus:outline-none"
+                />
+              )}
+              {selectedManager && (
+                <span className="flex-1 min-w-0 truncate text-[10px] text-[color:var(--muted)]">
+                  Hiring <span className="text-white">{selectedManager.name}</span>
+                </span>
+              )}
               <button
                 onClick={() => hire(slot)}
-                disabled={busy === slot.id || !/^[0-9a-f]{16}$/i.test((hireHash[slot.id] ?? '').trim())}
+                disabled={busy === slot.id || (!selectedManager && !/^[0-9a-f]{16}$/i.test((hireHash[slot.id] ?? '').trim()))}
                 className="rounded-lg bg-[var(--surf-2)] border border-[var(--line-2)] px-2.5 py-1 text-[10px] font-semibold text-white hover:border-[var(--accent)] transition-colors disabled:opacity-50"
               >
-                {busy === slot.id ? 'Signing…' : 'Hire'}
+                {busy === slot.id ? 'Signing…' : selectedManager ? `Hire ${selectedManager.house ? 'Rebalancer' : 'agent'}` : 'Hire'}
               </button>
             </div>
           )}

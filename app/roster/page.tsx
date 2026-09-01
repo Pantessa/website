@@ -2,9 +2,11 @@ import type { Metadata } from 'next'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import Footer from '@/components/Footer'
+import ManagerRow from '@/components/ManagerRow'
 import RosterHero from '@/components/RosterHero'
 import RosterTranscript from '@/components/RosterTranscript'
 import { rosterEnabled } from '@/lib/league'
+import { listManagers } from '@/lib/roster-managers'
 
 // /roster — the front-door CONCEPT preview (HANDOFF-roster R6, visual half).
 // The hero lives here as a standalone page behind ROSTER_ENABLED so Nate can
@@ -25,6 +27,12 @@ export async function generateMetadata(): Promise<Metadata> {
 
 export default async function RosterPreviewPage() {
   if (!rosterEnabled()) notFound()
+  const managers = await listManagers().catch(() => [])
+  // ONE house-identity env: HOUSE_MANAGER_KEY (the manager script's own key;
+  // the hash is DERIVED server-side — a second hash env would drift). The
+  // record trust anchor lights only when a real record exists.
+  const houseHandle = managers.find((m) => m.house)?.recordUrl?.split('/').pop() ?? null
+  const handleOf = (m: (typeof managers)[number]) => m.recordUrl?.split('/').pop() ?? null
   return (
     <>
       <main className="mx-auto max-w-5xl px-4 py-14 sm:px-6">
@@ -32,6 +40,39 @@ export default async function RosterPreviewPage() {
           Concept preview · behind ROSTER_ENABLED · not the live landing
         </p>
         <RosterHero />
+
+        {/* Meet your first manager — the FIRST HIRE strip (sprint 08-26): the
+            house Rebalancer as a face, not a hash. The CTA targets the
+            storefront section's #managers anchor (UI/UX's "Managers" section
+            on this page; until it mounts, the link is a harmless no-scroll).
+            The optional env hash lights the record trust anchor — reconcile
+            the var name with UI/UX's house-identity env. */}
+        <section className="mt-14" aria-label="Meet your first manager">
+          <p className="mono text-[11px] uppercase tracking-[0.25em] text-[color:var(--muted)]">
+            Meet your first manager
+          </p>
+          <div className="mt-4">
+            <ManagerRow
+              name="The Rebalancer"
+              house
+              handle={houseHandle}
+              kinds={['shape']}
+              cta={
+                <a
+                  href="#managers"
+                  className="mono rounded-full px-4 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-[color:var(--bg)]"
+                  style={{ background: 'var(--accent)' }}
+                >
+                  Hire it
+                </a>
+              }
+            />
+          </div>
+          <p className="mt-2 text-[12px] text-[color:var(--muted)]">
+            The house shape-keeper: give it a target like &ldquo;keep me 60/40 ETH/USDC&rdquo; and it
+            watches the drift — every fix arrives as a card only you can sign.
+          </p>
+        </section>
 
         {/* How it works — the four stops, in the order a wallet meets them. */}
         <section className="mt-16" aria-label="How the Roster works">
@@ -70,6 +111,55 @@ export default async function RosterPreviewPage() {
               </div>
             ))}
           </div>
+        </section>
+
+        {/* THE STOREFRONT — hireable managers, house first (FIRST HIRE
+            sprint). Server-composed: the house identity is the env-key hash
+            (never shipped to the client raw), founding rows are owner-set.
+            Hiring happens in the Team tab — every row routes there. */}
+        <section className="mt-16" id="managers" aria-label="Hireable managers">
+          <p className="mono text-[11px] uppercase tracking-[0.25em] text-[color:var(--muted)]">
+            The managers
+          </p>
+          <div className="mt-4 space-y-3">
+            {managers.map((m) => (
+              <div key={m.id} className={m.hireable ? undefined : 'opacity-70'}>
+                <ManagerRow
+                  name={m.name}
+                  house={m.house}
+                  founding={m.founding}
+                  handle={handleOf(m)}
+                  kinds={m.kinds}
+                  cta={
+                    m.hireable ? (
+                      <Link
+                        href="/chat?tab=team"
+                        className="mono rounded-full px-4 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-[color:var(--bg)]"
+                        style={{ background: 'var(--accent)' }}
+                      >
+                        Hire it
+                      </Link>
+                    ) : (
+                      <span className="mono text-[10px] uppercase tracking-wide text-[color:var(--muted)]">Coming soon</span>
+                    )
+                  }
+                />
+                {m.note && <p className="mt-1 px-1 text-[12px] text-[color:var(--muted)]">{m.note}</p>}
+              </div>
+            ))}
+            {managers.length === 0 && (
+              <p className="text-[13px] text-[color:var(--muted)]">
+                No managers are listed yet — the storefront fills as the house Rebalancer arms and founding agents earn records.
+              </p>
+            )}
+          </div>
+          <p className="mt-3 text-[12.5px] text-[color:var(--muted)]">
+            Hiring happens in the{' '}
+            <Link href="/chat?tab=team" className="underline">
+              Team tab
+            </Link>{' '}
+            — one signature, fire any time.
+          </p>
         </section>
 
         {/* The proof — the QA session replayed. */}

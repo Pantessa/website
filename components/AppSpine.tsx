@@ -55,6 +55,22 @@ export default function AppSpine({ surface = 'chat' }: { surface?: 'chat' | 'das
   // gone — so this is always enabled while the shell is up.
   const { badgeCount } = useRunningWork(true)
 
+  // Deep link (FIRST HIRE): /chat?tab=team (or any tab name) opens the
+  // drawer on that tab — the storefront's "hire from the Team tab" door
+  // lands the visitor IN the hire flow, not on a docs page. Read once off
+  // location (AppSpine mounts outside any Suspense boundary); unknown or
+  // flag-hidden tab names are simply not in TABS and do nothing.
+  useEffect(() => {
+    if (onDashboard) return
+    const tab = new URLSearchParams(window.location.search).get('tab')
+    if (tab && TABS.some((t) => t.tab === tab)) {
+      setRailTab(tab as RailTab)
+      if (window.matchMedia('(max-width: 1023px)').matches) setMobileMcpRailOpen(true)
+      else setMcpRailOpen(true)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   // The dashboard's floating rail-reopen pill and the mobile page paddings
   // key off the spine's presence — flag it on the document element.
   useEffect(() => {
