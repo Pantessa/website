@@ -32,6 +32,7 @@ import { bindProposalAtOpen, recheckSlotAtBuild, type RosterBadge } from '@/lib/
 import { moneyShaped } from '@/lib/ask-failure'
 import { MOSAIC_CHAIN_IDS, composeMosaicAsk, sanitizeMosaicSlices, type MosaicChainWord } from '@/lib/mosaic'
 import { recoverMessageAddress } from 'viem'
+import { COUNTED_EVENT_WHERE, reverifyPendingForSlug } from '@/lib/link-receipt-verify'
 
 const SITE = (process.env.NEXT_PUBLIC_SITE_URL ?? 'https://www.pantessa.com').replace(/\/$/, '')
 
@@ -438,9 +439,15 @@ export async function intentStatus(intentId: string): Promise<StatusResult> {
   let signedUsd = 0
 
   if (row.linkSlug) {
+    // Receipt verification (2026-09-01): the status poll IS the lazy
+    // re-check moment — pending events get another chain read, and a
+    // newly verified one fires its deferred webhook here.
+    await reverifyPendingForSlug(row.linkSlug, (slug, kind, v) => fireIntentWebhook(slug, kind, v))
     const events = await prisma.intentLinkEvent.groupBy({
       by: ['kind'],
-      where: { slug: row.linkSlug },
+      // Only COUNTED events (verified/attested/legacy-NULL) flip anything —
+      // an unverified client beacon must not move broker_status (T-R1/2).
+      where: { slug: row.linkSlug, ...COUNTED_EVENT_WHERE },
       _count: { _all: true },
     })
     for (const e of events) {

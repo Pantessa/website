@@ -496,7 +496,7 @@ export type ArmResult =
  * coin, a trigger that doesn't fire the instant it's armed, and no duplicate
  * armed policy of the same kind on the coin.
  */
-export async function armGuardianPolicy(wallet: string, ask: GuardianArmAsk): Promise<ArmResult> {
+export async function armGuardianPolicy(wallet: string, ask: GuardianArmAsk, opts?: { internal?: boolean }): Promise<ArmResult> {
   const w = wallet.toLowerCase()
   if (!Number.isFinite(ask.triggerValue) || ask.triggerValue <= 0 || (ask.triggerMode === 'price_move_pct' && ask.triggerValue >= 100)) {
     return { ok: false, status: 400, error: 'The trigger must be a positive number (a percent below 100, or an absolute price).' }
@@ -557,7 +557,8 @@ export async function armGuardianPolicy(wallet: string, ask: GuardianArmAsk): Pr
   }
 
   const row = await prisma.hlGuardianPolicy.create({
-    data: { delegationId: delegation.id, wallet: w, coin: ask.coin, side: pos.side, kind: ask.kind, triggerMode: ask.triggerMode, triggerValue: ask.triggerValue },
+    // isInternal: our own harness/drill arm (arrival hygiene, 2026-09-01).
+    data: { delegationId: delegation.id, wallet: w, coin: ask.coin, side: pos.side, kind: ask.kind, triggerMode: ask.triggerMode, triggerValue: ask.triggerValue, isInternal: opts?.internal === true },
   })
   return {
     ok: true,

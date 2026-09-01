@@ -219,7 +219,7 @@ export async function advanceJob(job: JobWithSteps): Promise<void> {
     const claim = await prisma.jobStep.updateMany({ where: { id: step.id, status: 'pending' }, data: { status: 'running' } })
     if (claim.count !== 1) return
     if (step.builder === 'native-hl-guardian') {
-      const armed = await armGuardianPolicy(fresh.wallet, step.params as unknown as GuardianArmAsk)
+      const armed = await armGuardianPolicy(fresh.wallet, step.params as unknown as GuardianArmAsk, { internal: fresh.isInternal === true })
       if (!armed.ok) {
         await prisma.jobStep.update({ where: { id: step.id }, data: { status: 'failed', result: { error: armed.error } } })
         await failJob(fresh.id, `"${step.title}": ${armed.error}`)

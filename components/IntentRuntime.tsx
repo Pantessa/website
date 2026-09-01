@@ -146,7 +146,7 @@ export default function IntentRuntime({
 
   // Best-effort funnel events — never block or throw into the runtime.
   const posted = useRef(new Set<string>())
-  const postEvent = (kind: string, extra?: { valueUsd?: number }) => {
+  const postEvent = (kind: string, extra?: { valueUsd?: number; txHash?: string; chainId?: number }) => {
     const once = kind === 'open' || kind === 'connect' || kind === 'settled'
     if (once && posted.current.has(kind)) return
     posted.current.add(kind)
@@ -247,12 +247,17 @@ export default function IntentRuntime({
   const onTurnEvent = (name: string, data?: Record<string, unknown>) => {
     if (name !== 'turn' || !data) return
     const valueUsd = typeof data.valueUsd === 'number' ? data.valueUsd : undefined
+    // Receipt verification (2026-09-01): the signed beacon carries the tx
+    // hash + chain so the server can verify the receipt on-chain before
+    // the event fires anything (lib/receipt-verify).
+    const txHash = typeof data.txUrl === 'string' ? data.txUrl.match(/0x[0-9a-fA-F]{64}/)?.[0] : undefined
+    const chainId = typeof data.chainId === 'number' ? data.chainId : undefined
     if (data.outcome === 'tx-built') {
       postEvent('built', { valueUsd })
       setBuilt(true)
     }
     if (data.outcome === 'signed') {
-      postEvent('signed', { valueUsd })
+      postEvent('signed', { valueUsd, txHash, chainId })
       setBuilt(true)
       setSigned(true)
     }
@@ -261,7 +266,7 @@ export default function IntentRuntime({
       setSigned(true)
       if (data.jobStatus === 'done') {
         setSettled(true)
-        postEvent('settled', { valueUsd })
+        postEvent('settled', { valueUsd, txHash, chainId })
       }
     }
     // Keep-the-flow-going bar: any settled turn that produced nothing to sign

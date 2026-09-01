@@ -135,6 +135,10 @@ const RULES: Rule[] = [
   { table: 'ask_failures', id: 'A1', note: 'fixture placeholder wallets or H3 throwaway creators, or [drill] prompts', where: Prisma.sql`(lower(coalesce(wallet, '')) = ANY(${FIXTURE_WALLETS}) OR lower(coalesce(wallet, '')) IN (${THROWAWAY_CREATORS}) OR prompt LIKE 'DRILL %' OR prompt ILIKE '%(stamped drill)%')` },
   { table: 'chats', id: 'C1', note: "title = 'test:api receipts'", where: Prisma.sql`title = 'test:api receipts'` },
   { table: 'chats', id: 'C2', note: 'owner is an H3 throwaway creator or a W2 owner', where: Prisma.sql`(lower(owner_address) IN (${THROWAWAY_CREATORS}) OR lower(owner_address) IN (${BARE_WORKING_SETS}))` },
+  { table: 'intent_link_events', id: 'V1', note: "events of is_internal links (the slug's own link is stamped)", where: Prisma.sql`slug IN (SELECT id FROM intent_links WHERE is_internal)` },
+  { table: 'intent_link_events', id: 'V2', note: 'fixture placeholder wallets or H3 throwaway creators', where: Prisma.sql`(lower(coalesce(wallet, '')) = ANY(${FIXTURE_WALLETS}) OR lower(coalesce(wallet, '')) IN (${THROWAWAY_CREATORS}))` },
+  { table: 'agent_toggle_events', id: 'AT1', note: 'fixture placeholder wallets or H3 throwaway creators (guest/null toggles are left alone — they can be real strangers)', where: Prisma.sql`(lower(coalesce(address, '')) = ANY(${FIXTURE_WALLETS}) OR lower(coalesce(address, '')) IN (${THROWAWAY_CREATORS}))` },
+  { table: 'hl_guardian_policies', id: 'GP1', note: 'fixture placeholder wallets or H3 throwaway creators (owner TEST_WALLETS stay — real activity)', where: Prisma.sql`(lower(wallet) = ANY(${FIXTURE_WALLETS}) OR lower(wallet) IN (${THROWAWAY_CREATORS}))` },
   {
     table: 'embed_turns',
     id: 'E1',
@@ -147,7 +151,7 @@ async function main() {
   console.log(`backfill-internal-arrivals — ${APPLY ? 'APPLY (writing)' : 'DRY RUN (counts only; pass --apply to write)'}\n`)
 
   const totals = new Map<string, { before: number; flagged: number; would: number }>()
-  for (const t of ['intent_links', 'wallet_working_sets', 'jobs', 'dca_schedules', 'broker_intents', 'ask_failures', 'chats', 'embed_turns']) {
+  for (const t of ['intent_links', 'wallet_working_sets', 'jobs', 'dca_schedules', 'broker_intents', 'ask_failures', 'chats', 'intent_link_events', 'agent_toggle_events', 'hl_guardian_policies', 'embed_turns']) {
     const [{ n, f }] = await prisma.$queryRaw<{ n: bigint; f: bigint }[]>(
       Prisma.sql`SELECT count(*)::bigint AS n, count(*) FILTER (WHERE is_internal)::bigint AS f FROM ${Prisma.raw(t)}`,
     )

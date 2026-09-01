@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import prisma from '@/lib/db'
+import { isInternalRun } from '@/lib/internal-run'
 import { getSessionAddress } from '@/lib/auth'
 import type { GuardianArmAsk } from '@/lib/hl-guardian'
 import { armGuardianPolicy } from '@/lib/hl-guardian-store'
@@ -51,7 +52,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'coin, kind (stop_loss|take_profit) and triggerMode (price_move_pct|price) are required.' }, { status: 400 })
   }
 
-  const result = await armGuardianPolicy(addr, { coin, kind, triggerMode, triggerValue })
+  const result = await armGuardianPolicy(addr, { coin, kind, triggerMode, triggerValue }, { internal: isInternalRun(req.headers, body as Record<string, unknown>) })
   if (!result.ok) return NextResponse.json({ error: result.error }, { status: result.status })
   return NextResponse.json({ policy: result.policy })
 }
