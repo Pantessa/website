@@ -17,6 +17,10 @@
     {
       "path": "/api/cron/spot-guard",
       "schedule": "* * * * *"
+    },
+    {
+      "path": "/api/cron/roster",
+      "schedule": "*/5 * * * *"
     }
   ],
   "functions": {

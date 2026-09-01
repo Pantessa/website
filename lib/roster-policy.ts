@@ -60,10 +60,11 @@ export function rosterEnabled(): boolean {
   return process.env.ROSTER_ENABLED === 'true'
 }
 
-/** Guard a roster WRITE. `action: 'fire'` and `'unlist'` are always allowed
- *  — exits that REDUCE exposure never close, kill switch or not. */
-export function assertRosterOpen(action?: 'create' | 'hire' | 'fire' | 'propose' | 'list' | 'unlist'): void {
-  if (action === 'fire' || action === 'unlist') return
+/** Guard a roster WRITE. `action: 'fire'`, `'unlist'`, and `'decline'` are
+ *  always allowed — exits that REDUCE exposure or say NO never close, kill
+ *  switch or not. */
+export function assertRosterOpen(action?: 'create' | 'hire' | 'fire' | 'propose' | 'list' | 'unlist' | 'decline'): void {
+  if (action === 'fire' || action === 'unlist' || action === 'decline') return
   if (!rosterEnabled())
     throw new Error(
       'The Pantessa roster is not open yet. Existing hires can still be viewed and FIRED at any time — firing is never walled.',
@@ -136,6 +137,21 @@ export function rosterListConsentMessage(i: ListConsentInput): string {
     `Nonce: ${i.nonce}`,
     `Expires: ${i.expiresAt.toISOString()}`,
     'Signing publishes this mandate on the public open-slots feed — its kind, sentence, and cap, NEVER your wallet address — until you unlist, hire, or delete the slot. It moves nothing by itself.',
+  ].join('\n')
+}
+
+/** The decline verb's consent text (FIRST-HIRE sprint) — deliberately
+ *  STATELESS (no server nonce): declining is idempotent, single-object
+ *  (the slug is in the signed bytes), and value-free, so a replay can only
+ *  re-decline the same already-declined card. This keeps the door open to
+ *  connect-to-act recipients who never SIWE'd — declining must be easier
+ *  than ignoring. A session owner skips the signature entirely. */
+export function inboxDeclineConsentMessage(slug: string, wallet: string): string {
+  return [
+    'Pantessa inbox — decline',
+    `Link: ${slug}`,
+    `Wallet: ${wallet.toLowerCase()}`,
+    'Signing declines this proposal card. It removes the card and tells the sender no; it moves nothing and never benches the agent.',
   ].join('\n')
 }
 

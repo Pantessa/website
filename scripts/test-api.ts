@@ -75,7 +75,7 @@ import {
 import { cleanAgentKeyHash, cleanCapUsd, parseMandate, MANDATE_KIND_LABELS, ROSTER_MAX_CAP_USD } from '../lib/roster'
 import { decideProposalGate } from '../lib/roster-propose'
 import { decideManagerMove, stackingRefusal, undecidedProposalFor } from '../lib/roster-manager'
-import { markPeriodKey, parseMarkAsk, tryoutReportCard, PAPER_LABEL, TRYOUT_BANNED_PHRASES } from '../lib/roster-tryouts'
+import { markPeriodKey, parseMarkAsk, reviewFlipDecision, tryoutReportCard, PAPER_LABEL, TRYOUT_BANNED_PHRASES } from '../lib/roster-tryouts'
 import { houseManagerRow, resolveHouseManager, HOUSE_MANAGER_ID } from '../lib/roster-managers'
 import { buildDelivery, mintCallbackSecret, notifyEligible, signWebhook, validateCallbackUrl } from '../lib/broker-webhook'
 import { agentHandleFor } from '../lib/agent-record'
@@ -4017,6 +4017,13 @@ async function main() {
   // ── M6 forward-paper tryouts (lib/roster-tryouts + /api/roster/tryouts) ──
   console.log('— roster tryouts (M6 forward-paper)')
   check(
+    'tryouts: the review flip is all-or-stay-running — a zero-quote (or partial) capture pass never freezes permanent nulls behind `reviewed`',
+    reviewFlipDecision([]) === true && // no marks: reviews trivially
+      reviewFlipDecision([{ captured: true }, { captured: true }]) === true &&
+      reviewFlipDecision([{ captured: true }, { captured: false }]) === false && // partial: keep retrying
+      reviewFlipDecision([{ captured: false }]) === false, // zero-quote outage: stay running
+  )
+  check(
     'tryouts: the report card renders both quote numbers side by side and NEVER computes across them (banned phrases + delta + quote-line %)',
     (() => {
       const q = (out: number) => ({ pair: 'ETH/USDC', side: 'sell' as const, amountIn: 20, quoteOut: out, unit: 'USD per ETH' })
@@ -4134,33 +4141,37 @@ async function main() {
       'tryouts: early review refuses BY NAME and review_at is immutable (+7d fixed at creation)',
       early.status === 409 && /Too early/.test(((await early.json()) as { error?: string }).error ?? '') && stillT?.reviewAt === t?.reviewAt && stillT?.status === 'running',
     )
-    // Write-once capture: forceDue is an INTERNAL-only door (this row is
-    // stamped); a second capture changes nothing.
-    const rev1 = await fetch(`${BASE}/api/roster/tryouts/review`, { method: 'POST', headers: J, body: JSON.stringify({ tryoutId, forceDue: true }) })
-    const after1 = ((await (await fetch(`${BASE}/api/roster/tryouts?wallet=${paperWallet}`)).json()) as {
-      tryouts?: { id: string; status: string; marks: { quoteAtReview: { quoteOut?: number } | null }[]; card: string }[]
-    }).tryouts?.find((x) => x.id === tryoutId)
+    // Write-once capture under the ZERO-QUOTE FENCE (security sprint
+    // 2026-08-26): a capture pass whose venue quote fail-softs (a 429'd
+    // public RPC mid-suite) now leaves the tryout RUNNING — never a
+    // permanent-null `reviewed` — and the next pass retries. So the pin
+    // retries the capture a few times; once `reviewed`, EVERY mark holds a
+    // real quote (the flip condition guarantees it) and a further capture
+    // changes nothing. A persistent outage passes the FENCE branch instead:
+    // still running, quote still null, nothing frozen.
+    type TryoutRead = { tryouts?: { id: string; status: string; marks: { quoteAtReview: { quoteOut?: number } | null }[]; card: string }[] }
+    const readTryout = async () =>
+      ((await (await fetch(`${BASE}/api/roster/tryouts?wallet=${paperWallet}`)).json()) as TryoutRead).tryouts?.find((x) => x.id === tryoutId)
+    let revStatus = 0
+    let after1 = await readTryout()
+    for (let i = 0; i < 4 && after1?.status !== 'reviewed'; i++) {
+      const rev = await fetch(`${BASE}/api/roster/tryouts/review`, { method: 'POST', headers: J, body: JSON.stringify({ tryoutId, forceDue: true }) })
+      revStatus = rev.status
+      after1 = await readTryout()
+      if (after1?.status !== 'reviewed') await new Promise((r) => setTimeout(r, 800))
+    }
     const rev2 = await fetch(`${BASE}/api/roster/tryouts/review`, { method: 'POST', headers: J, body: JSON.stringify({ tryoutId, forceDue: true }) })
-    const after2 = ((await (await fetch(`${BASE}/api/roster/tryouts?wallet=${paperWallet}`)).json()) as {
-      tryouts?: { id: string; status: string; marks: { quoteAtReview: { quoteOut?: number } | null }[] }[]
-    }).tryouts?.find((x) => x.id === tryoutId)
+    const after2 = await readTryout()
     check(
-      // WRITE-ONCE on BOTH capture outcomes (integration 2026-08-26): when the
-      // review-time quote lands, the second capture must not change it; when
-      // the quote fail-softs (a 429'd public RPC mid-suite — the composed
-      // gate's own load can starve it), the second capture must ALSO leave it
-      // null — a number must never be invented after the status flip. The
-      // strict captured-quote path is separately proven by the report-card
-      // pin below whenever the RPC answered.
-      'tryouts: the lazy review capture is WRITE-ONCE — reviewed once, the second capture changes no quote',
-      rev1.status === 200 &&
+      'tryouts: the lazy review capture is WRITE-ONCE and the zero-quote fence never freezes nulls — reviewed ⇒ every quote real + immutable; outage ⇒ still running',
+      revStatus === 200 &&
         rev2.status === 200 &&
-        after1?.status === 'reviewed' &&
-        (after1?.marks[0]?.quoteAtReview == null
-          ? after2?.marks[0]?.quoteAtReview == null
-          : (after1.marks[0].quoteAtReview.quoteOut ?? 0) > 0 &&
-            after2?.marks[0]?.quoteAtReview?.quoteOut === after1.marks[0].quoteAtReview.quoteOut),
-      JSON.stringify({ r1: rev1.status, r2: rev2.status, s: after1?.status, q1: after1?.marks[0]?.quoteAtReview?.quoteOut, q2: after2?.marks[0]?.quoteAtReview?.quoteOut }),
+        (after1?.status === 'reviewed'
+          ? (after1.marks[0]?.quoteAtReview?.quoteOut ?? 0) > 0 &&
+            after2?.status === 'reviewed' &&
+            after2?.marks[0]?.quoteAtReview?.quoteOut === after1.marks[0]?.quoteAtReview?.quoteOut
+          : after1?.status === 'running' && after1?.marks[0]?.quoteAtReview == null),
+      JSON.stringify({ r2: rev2.status, s: after1?.status, q1: after1?.marks[0]?.quoteAtReview?.quoteOut, q2: after2?.marks[0]?.quoteAtReview?.quoteOut }),
     )
     check(
       'tryouts: the report card carries the verbatim Paper label and both server quotes',
@@ -12465,6 +12476,76 @@ async function main() {
       }
       const feedAfter = JSON.stringify(((await (await fetch(`${BASE}/api/roster/feed`)).json()) as { slots?: unknown[] }).slots ?? [])
       check('roster discovery: deleting the slot pulls its listing from the feed — drill rows released', !feedAfter.includes(orgToken))
+    }
+
+    // ── FIRST-HIRE sprint: the manager cron + the decline verb ─────────────
+    {
+      const cronAnon = await fetch(`${BASE}/api/cron/roster`)
+      const cronWrong = await fetch(`${BASE}/api/cron/roster`, { headers: { authorization: 'Bearer wrong' } })
+      check(
+        'roster cron: no/wrong CRON_SECRET → 401 (fail closed, guardian pattern)',
+        cronAnon.status === 401 && cronWrong.status === 401,
+      )
+      if (process.env.CRON_SECRET) {
+        const cronOk = await fetch(`${BASE}/api/cron/roster`, { headers: { authorization: `Bearer ${process.env.CRON_SECRET}`, 'x-yf-internal-run': '1' } })
+        const cronBody = (await cronOk.json()) as { live?: boolean; internal?: unknown }
+        check(
+          'roster cron: authorized sweep is LIVE by definition — the internal-run header cannot stamp it',
+          cronOk.status === 200 && cronBody.live === true && cronBody.internal === undefined,
+        )
+      }
+
+      // The decline verb: an addressed card can be declined by its recipient
+      // (session or stateless consent), leaves the inbox, frees the stacking
+      // fence, and the sender reads `declined` — never silence, never a bench.
+      const recipient = privateKeyToAccount(generatePrivateKey())
+      SIGNED_IN_WALLETS.add(recipient.address.toLowerCase())
+      const J2 = { 'content-type': 'application/json' }
+      const sent2 = await call('broker_send', { ask: 'Buy $15 of AAPL', recipient: recipient.address, agent: 'harness' })
+      const sentSlug2 = String(sent2.payload?.url ?? '').split('/').pop() ?? ''
+      const declineAnon = await fetch(`${BASE}/api/roster/decline`, { method: 'POST', headers: J2, body: JSON.stringify({ slug: sentSlug2, wallet: recipient.address }) })
+      const declineAnonBody = (await declineAnon.json()) as { consentText?: string }
+      check(
+        'roster decline: unauthenticated decline refuses (public inbox slugs must not be a griefing verb) and serves the consent text',
+        !sent2.isError && declineAnon.status === 401 && /Pantessa inbox — decline/.test(declineAnonBody.consentText ?? '') && (declineAnonBody.consentText ?? '').includes(sentSlug2),
+      )
+      const malDecline = await fetch(`${BASE}/api/roster/decline`, {
+        method: 'POST',
+        headers: J2,
+        body: JSON.stringify({ slug: sentSlug2, wallet: recipient.address, signature: await mallory.signMessage({ message: declineAnonBody.consentText ?? '' }) }),
+      })
+      const foreign = await fetch(`${BASE}/api/roster/decline`, {
+        method: 'POST',
+        headers: J2,
+        body: JSON.stringify({ slug: sentSlug2, wallet: mallory.address }),
+      })
+      check(
+        "roster decline: a stranger's signature refuses; a non-recipient wallet refuses (403)",
+        malDecline.status === 401 && foreign.status === 403,
+      )
+      const goodSig = await recipient.signMessage({ message: declineAnonBody.consentText ?? '' })
+      const declined = await fetch(`${BASE}/api/roster/decline`, {
+        method: 'POST',
+        headers: J2,
+        body: JSON.stringify({ slug: sentSlug2, wallet: recipient.address, signature: goodSig }),
+      })
+      const inboxAfterDecline = ((await (await fetch(`${BASE}/api/inbox?wallet=${recipient.address}`)).json()) as { items?: { slug: string }[] }).items ?? []
+      const statusAfter = await call('broker_status', { intent_id: sent2.payload.intentId })
+      const again = await fetch(`${BASE}/api/roster/decline`, {
+        method: 'POST',
+        headers: J2,
+        body: JSON.stringify({ slug: sentSlug2, wallet: recipient.address, signature: goodSig }),
+      })
+      check(
+        'roster decline: consent decline pulls the card from the inbox, the sender reads `declined` (never silence), replay is a harmless no-op',
+        declined.status === 200 &&
+          inboxAfterDecline.every((i) => i.slug !== sentSlug2) &&
+          !statusAfter.isError &&
+          statusAfter.payload?.state === 'declined' &&
+          /said no|Declined/i.test(String(statusAfter.payload?.say ?? '')) &&
+          again.status === 200,
+        JSON.stringify({ d: declined.status, s: statusAfter.payload?.state }),
+      )
     }
 
     // broker_tile — MOSAIC on the desk: slices in, a kind='mosaic' /i link

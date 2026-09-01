@@ -25,6 +25,7 @@ import {
   MARKABLE_KINDS,
   markPeriodKey,
   parseMarkAsk,
+  reviewFlipDecision,
   TRYOUT_DAYS,
   TRYOUT_MAX_RUNNING_PER_KIND,
   type TryoutQuote,
@@ -214,13 +215,21 @@ export async function captureReview(tryoutId: string, opts?: { forceDueForIntern
       data: { quoteAtReview: quoted.quote as object },
     })
   }
-  // Same race on the status flip: a guarded update() throws P2025 when a
-  // concurrent capture won — updateMany is a no-op instead, and the fresh
-  // re-read returns whichever capture landed.
-  await prisma.rosterTryout.updateMany({
-    where: { id: tryoutId, status: 'running' },
-    data: { status: 'reviewed', reviewedAt: new Date() },
-  })
+  // Zero-quote fence (security sprint 2026-08-26): flip to `reviewed` only
+  // when EVERY mark holds its review quote (reviewFlipDecision, pinned) —
+  // a pass that priced nothing must leave the tryout `running` so the next
+  // read retries, instead of freezing permanent nulls behind the status
+  // gate. Re-read AFTER the capture pass: earlier passes' captures count.
+  const captured = await prisma.rosterTryoutMark.findMany({ where: { tryoutId }, select: { quoteAtReview: true } })
+  if (reviewFlipDecision(captured.map((m) => ({ captured: m.quoteAtReview != null })))) {
+    // Same race on the status flip: a guarded update() throws P2025 when a
+    // concurrent capture won — updateMany is a no-op instead, and the fresh
+    // re-read returns whichever capture landed.
+    await prisma.rosterTryout.updateMany({
+      where: { id: tryoutId, status: 'running' },
+      data: { status: 'reviewed', reviewedAt: new Date() },
+    })
+  }
   const fresh = await prisma.rosterTryout.findUnique({ where: { id: tryoutId }, select: TRYOUT_SELECT })
   if (!fresh) throw new Error('No such tryout.')
   return fresh
