@@ -96,6 +96,41 @@ curl -s -X POST https://www.pantessa.com/api/roster -H 'content-type: applicatio
 And in a browser: the rail shows the **TEAM** tab; the storefront lists the
 house Rebalancer (post-sprint-merge behavior).
 
+## 2b. Make hired slots self-serve — the roster cron + the house manager
+
+**Without this step, every hire goes silent** — premortem #2
+(ROSTER-STRATEGY §6: "Hired, then silence. The slot sits empty a week — an
+employee who never shows up"). A hire is only a promise until something
+proposes into it.
+
+- **`/api/cron/roster`** (Security lane, this sprint): registered in
+  vercel.json **live-by-default, 5-min cadence**, gated by `CRON_SECRET`
+  exactly like the guardian/DCA crons (Vercel sends
+  `Authorization: Bearer $CRON_SECRET`; **no CRON_SECRET set = route
+  disabled** — the fail-closed default). Env needed: `CRON_SECRET` is
+  ALREADY on Vercel (the guardian verified it, ~07-13);
+  **`HOUSE_MANAGER_KEY` is required** (step 2's table) or the cron has no
+  identity to propose with.
+- **Verify:**
+
+```sh
+curl -s -o /dev/null -w '%{http_code}\n' \
+  -H "Authorization: Bearer $CRON_SECRET" https://www.pantessa.com/api/cron/roster   # 200
+# then: hire the house Rebalancer on a test slot and watch the inbox —
+# a badged proposal (or a within-band silent pass) within ~5 minutes.
+```
+
+- **🔴 RED LETTER — `manager:once` stamps `is_internal` unless `--live`.**
+  A bare `npm run manager:once` is a DRILL: its proposals are
+  internal-stamped, which means they never notify, never enter records,
+  and a REAL stranger's hire served that way is a **records-ghost** — the
+  human sees a card, signs it, and the signature builds nobody's record.
+  For any real (non-test) hired slot the manager must run **`--live`**
+  (which drops the stamp). Rule of thumb: test wallet → bare; stranger →
+  `--live`, no exceptions.
+- Decline verb: ⟨pending — Security's sprint diff defines the shape;
+  fold the exact command/route name here when security.md shows it⟩.
+
 ## 3. Preflight the whole product against prod
 
 ```sh
