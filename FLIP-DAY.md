@@ -128,8 +128,15 @@ curl -s -o /dev/null -w '%{http_code}\n' \
   For any real (non-test) hired slot the manager must run **`--live`**
   (which drops the stamp). Rule of thumb: test wallet → bare; stranger →
   `--live`, no exceptions.
-- Decline verb: ⟨pending — Security's sprint diff defines the shape;
-  fold the exact command/route name here when security.md shows it⟩.
+- **Decline verb** (Security #677): `POST /api/roster/decline
+  {slug, wallet}` — with a SIWE session cookie it declines in one step;
+  sessionless it returns 401 + `consentText` (personal_sign it, resend
+  with `signature`; stateless — no nonce round-trip, safe because a
+  decline is idempotent, single-object, value-free). 200 → the card is
+  gone, the sender's `broker_status` reads `declined`, the 3-proposal
+  stacking fence frees a slot, and it **never benches** — declining is a
+  human verb, not a verdict. Nothing for flip morning to configure; it's
+  the answer to "how does a stranger say no" on the watched calls.
 
 ## 3. Preflight the whole product against prod
 
