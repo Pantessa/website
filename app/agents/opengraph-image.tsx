@@ -2,7 +2,7 @@ import { ImageResponse } from 'next/og'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { brandOgPalette } from '@/lib/brand-theme'
-import { pangolinMarkSvg } from '@/lib/og-marks'
+import { gemMarkSvg } from '@/lib/og-marks'
 import { getLeagueStandings, rosterEnabled, SEASON_LABEL } from '@/lib/league'
 
 // Social card for the /agents standings index — same house family as the
@@ -69,7 +69,7 @@ export default async function Image() {
         <div style={{ position: 'absolute', top: 48, left: 64, right: 64, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={toDataUri(pangolinMarkSvg())} width={46} height={46} alt="" />
+            <img src={toDataUri(gemMarkSvg())} width={46} height={46} alt="" />
             <span style={{ color: pal.ink, fontSize: 34, fontWeight: 600, letterSpacing: -1.2 }}>pantessa</span>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 17, letterSpacing: 4, color: pal.muted }}>

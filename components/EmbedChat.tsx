@@ -269,7 +269,7 @@ export default function EmbedChat({
           className="flex-shrink-0 inline-flex items-center gap-1.5 no-underline"
           title="Open the full Pantessa chat"
         >
-          <YeetfulMark size={16} />
+          <YeetfulMark size={13} />
           <span className="text-[12px] font-semibold text-[color:var(--fg)]" style={{ fontFamily: 'var(--font-display)' }}>
             Pantessa chat
           </span>

@@ -155,7 +155,7 @@ export default async function ReceiptPage({ params }: Params) {
             href={tryHref}
             className="flex items-center gap-2 px-4 py-2 rounded-full bg-[var(--accent)] text-black text-sm font-semibold hover:opacity-90 transition-opacity"
           >
-            <YeetfulMark size={16} />
+            <YeetfulMark size={13} />
             <span>{receipt.ask ? 'Do this yourself' : 'Try Pantessa'}</span>
           </Link>
           {receipt.ask && (

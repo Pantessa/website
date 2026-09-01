@@ -53,7 +53,7 @@ export function AppRailHeader() {
         <PanelLeftClose width={17} height={17} />
       </button>
       <Link href="/dashboard" className="apprail__home" aria-label="Dashboard home">
-        <YeetfulMark size={30} />
+        <YeetfulMark size={25} />
         <span className="apprail__word">pantessa</span>
       </Link>
     </div>
@@ -69,7 +69,7 @@ function AppRailReopen() {
         <PanelLeft width={17} height={17} />
       </button>
       <Link href="/dashboard" className="apprail__homeicon" aria-label="Dashboard home">
-        <YeetfulMark size={30} />
+        <YeetfulMark size={25} />
       </Link>
     </div>
   )

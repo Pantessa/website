@@ -1,7 +1,7 @@
 import { ImageResponse } from 'next/og'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { pangolinMarkSvg } from '@/lib/og-marks'
+import { gemMarkSvg } from '@/lib/og-marks'
 
 // Social card for the site (og:image + twitter:image via app/twitter-image.tsx).
 // The Mega-dapps pivot card, drawn in the fusion hero's language: protocol
@@ -78,7 +78,7 @@ const ART = `<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" v
 </svg>`
 
 // The house mark comes from lib/og-marks — ONE source across every OG card.
-const MARK = pangolinMarkSvg(ACCENT)
+const MARK = gemMarkSvg(ACCENT)
 
 const toDataUri = (svg: string) => `data:image/svg+xml;base64,${Buffer.from(svg).toString('base64')}`
 

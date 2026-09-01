@@ -25,7 +25,7 @@ export default function LinksEmbedPage() {
       <main className="x-main">
         <section className="max-w-2xl mx-auto px-4 py-16">
           <div className="flex items-center gap-2 mb-6">
-            <YeetfulMark size={18} />
+            <YeetfulMark size={15} />
             <span className="mono text-[11px] uppercase tracking-widest text-[color:var(--muted-2)]">
               Intent links · host button
             </span>

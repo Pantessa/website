@@ -346,12 +346,12 @@ export default function IntentRuntime({
                   {linkEyebrow({ hasCreator, handle: creatorHandle, agent }, '')}
                 </span>
                 <span className="inline-flex items-center gap-1.5 mono text-[10.5px] uppercase tracking-widest text-[color:var(--muted-2)] whitespace-nowrap">
-                  <span aria-hidden>·</span> Powered by <YeetfulMark size={13} /> Pantessa
+                  <span aria-hidden>·</span> Powered by <YeetfulMark size={12} /> Pantessa
                 </span>
               </>
             ) : (
               <>
-                <YeetfulMark size={18} />
+                <YeetfulMark size={15} />
                 {/* CALL framing (C3): creator links read as a posted call —
                     the thing a KOL shares. House links (creator=null) keep
                     the neutral "Intent link" lockup, pure Pantessa (pinned). */}
@@ -461,7 +461,7 @@ export default function IntentRuntime({
     return (
       <main className="min-h-dvh max-w-xl mx-auto px-4 py-12 flex flex-col justify-center">
         <div className="flex items-center gap-2 mb-8">
-          <YeetfulMark size={18} />
+          <YeetfulMark size={15} />
           <span className="mono text-[11px] uppercase tracking-widest text-[color:var(--muted-2)]">
             {linkEyebrow({ hasCreator, handle: creatorHandle, agent })}
           </span>
@@ -534,7 +534,7 @@ export default function IntentRuntime({
                 aria-label="Pantessa home"
                 className="flex-shrink-0 grid place-items-center w-8 h-8 rounded-lg text-white hover:bg-[var(--surf-1)] transition-colors"
               >
-                <YeetfulMark size={18} />
+                <YeetfulMark size={15} />
               </Link>
               {brand?.logo && (
                 // eslint-disable-next-line @next/next/no-img-element

@@ -163,7 +163,7 @@ export default function EmbedAssemble() {
               </i>
             </span>
             <span className="asm__bubbleicon">
-              <YeetfulMark size={17} />
+              <YeetfulMark size={14} />
             </span>
           </div>
         </div>

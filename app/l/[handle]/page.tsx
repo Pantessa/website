@@ -119,7 +119,7 @@ export default async function StorefrontPage({ params }: Params) {
               </>
             ) : (
               <>
-                <YeetfulMark size={18} />
+                <YeetfulMark size={15} />
                 <span className="mono text-[11px] uppercase tracking-widest text-[color:var(--muted-2)]">
                   Creator page
                 </span>
@@ -130,7 +130,7 @@ export default async function StorefrontPage({ params }: Params) {
               className="ml-auto inline-flex items-center gap-1.5 mono text-[10.5px] uppercase tracking-widest text-[color:var(--muted-2)] hover:text-[color:var(--fg)] transition-colors"
               title="Non-custodial intent links — the visitor's wallet is the only signer"
             >
-              Powered by <YeetfulMark size={13} /> Pantessa
+              Powered by <YeetfulMark size={12} /> Pantessa
             </a>
           </div>
           <h1 className="text-3xl font-semibold text-[color:var(--fg)] mb-2">@{store.handle}</h1>

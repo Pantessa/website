@@ -195,10 +195,10 @@ export default function Navigation() {
         {/* Logged in, the logo leads back into the app; otherwise to the
             brochure. mounted-gated (via showDashboardCta) keeps SSR at "/". */}
         <Link className="logo" href={showDashboardCta ? '/dashboard' : '/'}>
-          {/* The pangolin's ink box is 1.6× wider than tall, so a nominal size
-              renders ~0.56× that in visual height — it needs a bigger number
-              than the old square Y mark did to carry the same weight. */}
-          <YeetfulMark size={34} />
+          {/* The gem's ink box is 112×88 in the 128 grid, so a nominal size
+              renders ~0.69× that in visual height — retuned from the pangolin
+              era's 34 to keep the same visual weight. */}
+          <YeetfulMark size={28} />
           <span className="logo__word">pantessa</span>
         </Link>
 

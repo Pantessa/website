@@ -136,7 +136,7 @@ export default function AppSpine({ surface = 'chat' }: { surface?: 'chat' | 'das
           aria-label="Pantessa chat"
           className="grid place-items-center w-full h-14 flex-shrink-0 border-b border-[var(--line)] text-white hover:bg-[var(--surf-2)] transition-colors"
         >
-          <YeetfulMark size={30} />
+          <YeetfulMark size={25} />
         </Link>
 
         <div className="flex flex-col items-center gap-1 pt-2 w-full px-1">
