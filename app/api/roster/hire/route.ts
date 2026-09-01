@@ -3,6 +3,7 @@ import prisma from '@/lib/db'
 import { isInternalRun } from '@/lib/internal-run'
 import { cleanAgentKeyHash } from '@/lib/roster'
 import { resolveManagerId } from '@/lib/roster-managers'
+import { logRosterRefusal } from '@/lib/roster-observe'
 import {
   assertRosterOpen,
   bumpAndCheckRosterPost,
@@ -73,10 +74,9 @@ export async function POST(req: NextRequest) {
     if (body.managerId != null) {
       const resolved = await resolveManagerId(body.managerId)
       if (!resolved) {
-        return NextResponse.json(
-          { error: 'managerId must be one of the storefront\'s own ids (see /api/roster/managers) — a raw hash is not a manager id, and unlisted ids refuse.' },
-          { status: 400 },
-        )
+        const error = 'managerId must be one of the storefront\'s own ids (see /api/roster/managers) — a raw hash is not a manager id, and unlisted ids refuse.'
+        logRosterRefusal(req.headers, { surface: 'hire', ask: `managerId=${String(body.managerId).slice(0, 40)} slot=${slot.id}`, wallet: w, error })
+        return NextResponse.json({ error }, { status: 400 })
       }
       agentKeyHash = resolved.agentKeyHash
     } else {
@@ -125,6 +125,9 @@ export async function POST(req: NextRequest) {
   try {
     await verifyRosterConsent(message, w, body.signature)
   } catch (e) {
+    // Observability (doors run): a hire whose SIGNATURE failed is a
+    // stranger stuck at the very last door — the queue must see it.
+    logRosterRefusal(req.headers, { surface: 'hire', ask: `consent slot=${slot.id}`, wallet: w, error: (e as Error).message })
     return NextResponse.json({ error: (e as Error).message }, { status: 401 })
   }
 

@@ -77,6 +77,7 @@ import { decideProposalGate } from '../lib/roster-propose'
 import { decideManagerMove, stackingRefusal, undecidedProposalFor } from '../lib/roster-manager'
 import { markPeriodKey, parseMarkAsk, reviewFlipDecision, tryoutReportCard, PAPER_LABEL, TRYOUT_BANNED_PHRASES } from '../lib/roster-tryouts'
 import { houseManagerRow, resolveHouseManager, HOUSE_MANAGER_ID } from '../lib/roster-managers'
+import { walletLineup, walletLaneHint, wcConfigured, WC_APP_METADATA } from '../lib/wallet-lineup'
 import { buildDelivery, mintCallbackSecret, notifyEligible, signWebhook, validateCallbackUrl } from '../lib/broker-webhook'
 import { agentHandleFor } from '../lib/agent-record'
 import {
@@ -364,6 +365,15 @@ const ORGANIC_PROBE = 'x-yf-organic-probe'
 const realFetch = globalThis.fetch
 globalThis.fetch = ((input: Parameters<typeof realFetch>[0], init?: RequestInit) => {
   const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
+  // Roster + desk probes deliberately provoke refusals by the hundred — the
+  // roster observability choke (lib/roster-observe, doors run) honors the
+  // same opt-out. A pin that WANTS a row sends the header as '0' (the
+  // server only honors '1'; present-but-'0' survives this belt).
+  if (typeof url === 'string' && (url.includes('/api/roster') || url.includes('/api/broker'))) {
+    const h = { ...((init?.headers as Record<string, string>) ?? {}) }
+    if (!('x-yf-no-ask-log' in h)) h['x-yf-no-ask-log'] = '1'
+    init = { ...(init ?? {}), headers: h }
+  }
   if (typeof url === 'string' && url.includes('/api/chat')) {
     init = { ...(init ?? {}), headers: { ...((init?.headers as Record<string, string>) ?? {}), 'x-yf-no-ask-log': '1' } }
     // Connect-to-act turns carry the wallet in the BODY (no SIWE) — record it
@@ -3904,6 +3914,30 @@ async function main() {
     })
     check('roster R1: the signed-in owner removes fired history — drill row released', ((await gone.json()) as { deleted?: boolean }).deleted === true)
   }
+
+  // ── The doors: WalletConnect lane (lib/wallet-lineup) ────────────────────
+  console.log('— wallet lineup (WC lane, doors run)')
+  check(
+    'wallet lineup: env absent = EXACTLY today\'s connectors (injected/MetaMask/Coinbase, in order); a real WC id adds the two WC lanes; the placeholder never counts',
+    (() => {
+      const dark = walletLineup(null)
+      const placeholder = walletLineup('YOUR_WALLETCONNECT_PROJECT_ID')
+      const lit = walletLineup('abc123realprojectid')
+      return (
+        JSON.stringify(dark) === JSON.stringify(['injected', 'metaMask', 'coinbase']) &&
+        JSON.stringify(placeholder) === JSON.stringify(dark) &&
+        JSON.stringify(lit) === JSON.stringify(['injected', 'metaMask', 'coinbase', 'rainbow', 'walletConnect']) &&
+        wcConfigured(undefined) === false &&
+        wcConfigured('abc123realprojectid') === true &&
+        // the modal lane's one env-sensitive line: absent = today's copy,
+        // present names the mobile-QR path; WC metadata is the site's own.
+        !/WalletConnect/.test(walletLaneHint(null)) &&
+        /QR/.test(walletLaneHint('abc123realprojectid')) &&
+        WC_APP_METADATA.appName === 'Pantessa' &&
+        WC_APP_METADATA.appUrl === 'https://www.pantessa.com'
+      )
+    })(),
+  )
 
   // ── THE STOREFRONT (lib/roster-managers + /api/roster/managers) ──────────
   console.log('— roster storefront (FIRST HIRE)')
@@ -12381,6 +12415,12 @@ async function main() {
       'broker U2: a plain handoff link still resolves its desk sender (agent byline), never a false push',
       plainPage.status === 200 && !/"push":true/.test(plainHtml.replace(/\\/g, '')),
     )
+    // Doors run: a NON-addressed link carries no recipient — the runtime's
+    // Decline verb never lights on a plain link.
+    check(
+      'doors: a plain /i link serializes recipient:null (no Decline door)',
+      /"recipient":null/.test(plainHtml.replace(/\\/g, '')),
+    )
     // The bound /i link is gated to the recipient (allowWallets set).
     const allowed = await fetch(`${BASE}/api/intent-links/${String(sent.payload.url).split('/').pop()}/allowed?wallet=${inboxWallet}`)
     const allowedOther = await fetch(`${BASE}/api/intent-links/${String(sent.payload.url).split('/').pop()}/allowed?wallet=0x6666666666666666666666666666666666666666`)
@@ -12672,6 +12712,12 @@ async function main() {
       check(
         'roster R2: the /i runtime header wears the slot badge (mandate + cap, DB-stored canonical text)',
         /"roster":\{"label":"Recurring buy","mandate":"buy \$25 of ETH weekly","capUsd":50\}/.test(rosterPageHtml),
+      )
+      // Doors run: the addressed page serializes its recipient, so the
+      // runtime's DECLINE verb can light for exactly that wallet.
+      check(
+        'doors: an addressed /i page carries the recipient in its RSC payload (the Decline door\'s gate)',
+        new RegExp(`"recipient":"${employerLower}"`).test(rosterPageHtml),
       )
       // The inbox PAGE row wears the same badge strings (QA demo-proof
       // finding: the data rode the API but only /i rendered it). Server-
@@ -13017,6 +13063,36 @@ async function main() {
         (afDefault.failures ?? []).every((f) => f.internal !== true) &&
           (afAll.failures ?? []).some((f) => f.internal === true && /stamped drill/.test(f.prompt ?? '')),
         `default=${afDefault.failures?.length} all=${afAll.failures?.length}`,
+      )
+      // Roster observability (doors run): a REAL mandate refusal writes a
+      // kind='roster' row through lib/roster-observe. The belt adds
+      // x-yf-no-ask-log:'1' to every /api/roster call (this suite provokes
+      // refusals by the hundred — the queue stayed empty of them, proven by
+      // afAll above containing no roster rows before this probe); sending
+      // '0' opts THIS one probe back in, internal-stamped.
+      const rosterProbe = `do a cartwheel with my money ${Date.now()}`
+      const rp = await fetch(`${BASE}/api/roster`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-yf-no-ask-log': '0' },
+        body: JSON.stringify({ wallet: '0x9999999999999999999999999999999999999999', mandate: rosterProbe }),
+      })
+      await new Promise((r) => setTimeout(r, 400)) // the write is fire-and-forget
+      const afRoster = (await (
+        await fetch(`${BASE}/api/admin/ask-failures?days=1&internal=1`, { headers: { cookie: adminSession } })
+      ).json()) as { failures?: { internal?: boolean; kind?: string; prompt?: string; buildPath?: string | null; build_path?: string | null }[] }
+      const rosterRow = (afRoster.failures ?? []).find((f) => f.kind === 'roster' && (f.prompt ?? '').includes(rosterProbe))
+      check(
+        "roster observability: a refused mandate lands in ask_failures as kind 'roster' (surface-tagged, internal-stamped, no-ask-log honored)",
+        rp.status === 400 &&
+          !!rosterRow &&
+          rosterRow.internal === true &&
+          (rosterRow.prompt ?? '').startsWith('[roster:mandate]') &&
+          // the belt held: every roster row in the window is internal-stamped
+          // (this suite provokes refusals by the hundred — an unstamped row
+          // would mean the opt-out or the stamp leaked; runs on the shared DB
+          // stack probe rows, so count is not asserted)
+          (afRoster.failures ?? []).filter((f) => f.kind === 'roster').every((f) => f.internal === true),
+        `row=${rosterRow ? 'found' : 'missing'} rosterRows=${(afRoster.failures ?? []).filter((f) => f.kind === 'roster').length}`,
       )
     }
   }

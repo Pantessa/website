@@ -88,6 +88,10 @@ const KIND_LABEL: Record<string, string> = {
   // lib/wallet-refusal.ts: the artifact was built + guarded, then the WALLET
   // said no (the 2026-08-17 MetaMask chainId-1337 class) — had_funds TRUE.
   'wallet-refused': 'wallet refused',
+  // lib/roster-observe.ts (doors run): roster surfaces walling — mandate
+  // grammar refusals, hire consent failures, manager proposals hitting
+  // bench/cap/fired, decline auth failures. build_path = roster-<surface>.
+  roster: 'roster wall',
 }
 
 export default function FailuresPage() {

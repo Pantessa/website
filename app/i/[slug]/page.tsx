@@ -140,6 +140,7 @@ export default async function IntentLinkPage({ params }: Params) {
       brand={brand}
       notify={notify}
       roster={roster}
+      recipient={link.recipient ?? null}
     />
   )
 }

@@ -29,7 +29,8 @@ function ok(payload: unknown) {
  *  calls carry x-yf-internal-run so the rows they mint never read as growth. */
 function callOpts(extra: unknown) {
   const headers = (extra as { requestInfo?: { headers?: Record<string, string | string[] | undefined> } } | undefined)?.requestInfo?.headers
-  return { internal: isInternalRun(headers ?? null) }
+  const noLogRaw = headers?.['x-yf-no-ask-log']
+  return { internal: isInternalRun(headers ?? null), noLog: (Array.isArray(noLogRaw) ? noLogRaw[0] : noLogRaw) === '1' }
 }
 
 async function guarded<T>(run: () => Promise<T>) {
