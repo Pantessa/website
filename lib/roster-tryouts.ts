@@ -144,6 +144,18 @@ export function tryoutReportCard(t: TryoutCardInput): string {
   return lines.join('\n')
 }
 
+/** The review-flip decision, pure + pinned (security sprint 2026-08-26):
+ *  a tryout flips to `reviewed` only when EVERY mark holds its review
+ *  quote. A capture pass that priced nothing (RPC outage at review time)
+ *  used to flip anyway — a permanent-null `reviewed` no later read could
+ *  repair, since the status gate stops future captures. Staying `running`
+ *  lets the next read retry; per-mark write-once (DbNull-guarded) still
+ *  holds, and marks stopped at review_at, so nothing else grows. A tryout
+ *  with no marks at all reviews trivially. */
+export function reviewFlipDecision(marks: { captured: boolean }[]): boolean {
+  return marks.every((m) => m.captured)
+}
+
 /** §1.4's banned list — exported so the harness pins the composer against
  *  it. "%" is banned as quote-pair arithmetic; mandate text may legally
  *  carry tile percents, so the pin checks the QUOTE LINES, not the header. */

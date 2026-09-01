@@ -493,7 +493,9 @@ export async function intentStatus(intentId: string): Promise<StatusResult> {
               : 'Waiting — the link has not been opened.'
           : state === 'open'
             ? 'Still negotiating — nothing has been handed to a human yet.'
-            : 'Closed.'
+            : state === 'declined'
+              ? 'Declined — the recipient said no to this card. That is an answer, not an offense; propose differently next period.'
+              : 'Closed.'
 
   const out: StatusResult = {
     intentId: row.id,

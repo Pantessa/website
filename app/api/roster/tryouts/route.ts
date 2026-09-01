@@ -3,7 +3,7 @@ import prisma from '@/lib/db'
 import { isInternalRun } from '@/lib/internal-run'
 import { cleanCapUsd } from '@/lib/roster'
 import { cleanAgentKeyHash } from '@/lib/roster-client'
-import { assertRosterOpen, bumpAndCheckRosterPost, clientIpFrom, ROSTER_RATE_WALL } from '@/lib/roster-policy'
+import { assertRosterOpen, bumpAndCheckRosterFeed, bumpAndCheckRosterPost, clientIpFrom, ROSTER_RATE_WALL } from '@/lib/roster-policy'
 import { captureReview, createTryout, fileMark } from '@/lib/roster-tryouts-exec'
 import { PAPER_LABEL, tryoutReportCard, type TryoutCardMark, type TryoutQuote } from '@/lib/roster-tryouts'
 
@@ -72,6 +72,14 @@ export async function POST(req: NextRequest) {
 }
 
 export async function GET(req: NextRequest) {
+  // Read fence (security wave-3 follow-up, now that the rf: helper is on
+  // main): this GET can trigger the lazy review capture — live venue
+  // quotes, i.e. RPC — and fans out per-row 90d counts. Unmetered, a hot
+  // loop is an RPC amplifier; the rf: bucket is the feed-read fence, so
+  // reads never spend the owner's rp: write budget.
+  if (await bumpAndCheckRosterFeed(clientIpFrom(req.headers))) {
+    return NextResponse.json({ error: ROSTER_RATE_WALL }, { status: 429 })
+  }
   const wallet = (req.nextUrl.searchParams.get('wallet') ?? '').trim().toLowerCase()
   const agent = cleanAgentKeyHash(req.nextUrl.searchParams.get('agent'))
   if (!WALLET_RE.test(wallet) && !agent) return NextResponse.json({ error: 'Pass ?wallet=0x… or ?agent=<hash>.' }, { status: 400 })
