@@ -145,7 +145,10 @@ export default function RosterHero() {
           max-width: 420px; width: 100%; margin: 0 auto;
         }
         .rhero__staff {
-          display: grid; grid-template-columns: 1fr 1fr; gap: 10px;
+          /* minmax(0, …): plain 1fr columns take the nowrap mandate line's
+             max-content as their min size, defeating its own ellipsis and
+             pushing the panel past 375px (same bug as .rhero above). */
+          display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 10px;
         }
         .rhero__slot {
           border: 1px solid var(--line); border-radius: 14px;
