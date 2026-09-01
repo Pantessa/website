@@ -52,10 +52,15 @@ the first managers get founding terms.*
 
 **What a founding manager must do:**
 
-- **Wire the desk** — `claude mcp add --transport http pantessa-desk
-  https://www.pantessa.com/api/broker/mcp`; call `broker_capabilities`;
-  open one real bound proposal. (Human-signs-philosophy builders can start
-  on the hands door instead — rows 6/9/10.)
+- **Clone the template** — the abstract "wire the desk" step is now a
+  repo: `agent-examples/agents/roster-manager-template` (own key, public
+  API only, dry-run by default — clone to first proposal in five minutes;
+  README is the contract). Their integration work is: swap the `plan()`
+  stub for their own logic. Chat-first builders can still
+  `claude mcp add --transport http pantessa-desk
+  https://www.pantessa.com/api/broker/mcp` and drive the same loop by
+  hand; human-signs-philosophy builders start on the hands door (rows
+  6/9/10).
 - **Work ONE mandate kind** — pick a lane (see §3 fits) and serve it:
   proposals must carry a dollar figure (unpriceable money-shaped asks
   refuse by name), stay under the slot cap, and survive the two-stage
@@ -191,11 +196,12 @@ after the desk flip:**
 > kickback on wallets you bring, a founding badge, and one guaranteed
 > real hire — my own capped wallet employs your agent day one, and I
 > watch the integration on a call with you.
-> Wire it in one line: `claude mcp add --transport http pantessa-desk
-> https://www.pantessa.com/api/broker/mcp` → `broker_capabilities` → docs
-> at pantessa.com/docs/roster. Background first, read it before you
-> decide: pantessa.com/rebrand (we were Yeetful; an old demo host got
-> blocklisted). Say no freely.
+> Clone it running in five minutes: github.com/Yeetful/agent-examples →
+> `agents/roster-manager-template` (own key, public API only, dry-run by
+> default — discover a listed slot, open a priced proposal, hear back;
+> your logic replaces one stub) · docs at pantessa.com/docs/roster.
+> Background first, read it before you decide: pantessa.com/rebrand (we
+> were Yeetful; an old demo host got blocklisted). Say no freely.
 
 **Variant B — rows 6, 9, 10 (human-signs believers). Works today, no
 flip:**
@@ -211,9 +217,20 @@ flip:**
 > like 30 minutes to watch you wire it and to hear where the threat model
 > is wrong.
 > One line today: `claude mcp add --transport http pantessa-hands
-> https://hands-mcp.yeetful.com/mcp` → `prepare_handoff` · docs:
-> pantessa.com/docs/roster · full background first: pantessa.com/rebrand.
-> Say no freely.
+> https://hands-mcp.yeetful.com/mcp` → `prepare_handoff` — and when you
+> want the full manager loop, the clone-and-run template is
+> github.com/Yeetful/agent-examples `agents/roster-manager-template` ·
+> docs: pantessa.com/docs/roster · full background first:
+> pantessa.com/rebrand. Say no freely.
+
+**What the template unblocks (per §3's table):** it turns the DM's ask
+from "integrate against our docs" into "clone, two envs, watch it run" —
+which mainly de-risks the seven own-key desk rows (**1, 2, 3, 4, 5, 7,
+8**): their integration cost drops to replacing one `plan()` stub, and
+Franklin/eliza/Agent-Layer can evaluate the loop in dry-run BEFORE the
+prod desk flip. It does NOT remove the flip gate (live proposals against
+prod still need `BROKER_DESK_ENABLED`), and rows 6/9/10 still lead with
+the hands door — for them the template is the second call, not the first.
 
 *(Numbers discipline: "zero rake / 70% / 3–10" are the strategy's PROPOSED
 terms — if Nate's §2 blanks differ, the DMs change before sending. Never
