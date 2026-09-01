@@ -42,7 +42,10 @@ export default function HireConsentFrame({
         One signature. Fire anytime. It can only propose.
       </p>
       <p className="mt-1 text-[12px] leading-relaxed text-[color:var(--muted)]">
-        Every move it proposes{capUsd != null ? ` (capped at $${capUsd} each)` : ''} lands in your
+        {/* the space rides INSIDE the conditional — a text node opening on a
+            new JSX line loses its leading space (the SWC entity-space class,
+            caught live in the 375 shot: ")lands") */}
+        Every move it proposes{capUsd != null ? ` (capped at $${capUsd} each) ` : ' '}lands in your
         inbox as a guarded, signable card — nothing happens without this wallet&apos;s signature,
         and there is never anything to withdraw.
       </p>
