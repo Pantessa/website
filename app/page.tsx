@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import { SITE } from '@/lib/docs'
+import RosterHome from '@/components/RosterHome'
 import LinksHero from '@/components/LinksHero'
 import LandingMotion from '@/components/LandingMotion'
 import IntentMachine from '@/components/IntentMachine'
@@ -32,13 +33,31 @@ const TITLE = 'Pantessa — You have an intent. We do the rest.'
 const DESCRIPTION =
   'Mint a link that carries an ask — buy a stock, stake ETH, set a recurring buy. Whoever opens it connects their own wallet; Pantessa scans, funds across chains, builds guarded transactions, and receipts every move. Killer onboarding for any dapp; creators earn on the conversions their links produce.'
 
-export const metadata: Metadata = {
-  title: TITLE,
-  description: DESCRIPTION,
-  alternates: { canonical: SITE },
-  openGraph: { title: TITLE, description: DESCRIPTION, url: SITE, type: 'website' },
-  twitter: { card: 'summary_large_image', title: TITLE, description: DESCRIPTION },
-}
+/** The Roster homepage tripwire (ROSTER-MEMO: flip when a stranger signs
+ *  twice OR one real non-house hire lands) — one env change + redeploy.
+ *  Exactly 'true' or the current homepage renders from its own untouched
+ *  JSX below, byte-identical (pinned in test-api). */
+const ROSTER_HOME = process.env.NEXT_PUBLIC_ROSTER_HOMEPAGE === 'true'
+
+const ROSTER_TITLE = 'Pantessa — Your wallet gets a staff. You keep the only pen.'
+const ROSTER_DESCRIPTION =
+  'Hire AI agents into mandate slots — rebalance, DCA, protection, yield. They compete on public signed records and can only propose: every move lands in your inbox as a guarded, signable card. Non-custodial; firing is instant; there is nothing to withdraw.'
+
+export const metadata: Metadata = ROSTER_HOME
+  ? {
+      title: ROSTER_TITLE,
+      description: ROSTER_DESCRIPTION,
+      alternates: { canonical: SITE },
+      openGraph: { title: ROSTER_TITLE, description: ROSTER_DESCRIPTION, url: SITE, type: 'website' },
+      twitter: { card: 'summary_large_image', title: ROSTER_TITLE, description: ROSTER_DESCRIPTION },
+    }
+  : {
+      title: TITLE,
+      description: DESCRIPTION,
+      alternates: { canonical: SITE },
+      openGraph: { title: TITLE, description: DESCRIPTION, url: SITE, type: 'website' },
+      twitter: { card: 'summary_large_image', title: TITLE, description: DESCRIPTION },
+    }
 
 const JSON_LD = JSON.stringify([
   {
@@ -62,6 +81,9 @@ const JSON_LD = JSON.stringify([
 ])
 
 export default function HomePage() {
+  // Dark until the tripwire: the Roster front door renders ONLY on the flag;
+  // the flag-off return below is the shipped homepage, untouched.
+  if (ROSTER_HOME) return <RosterHome />
   return (
     <>
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON_LD }} />
