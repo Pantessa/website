@@ -7,7 +7,6 @@ import RosterHero from '@/components/RosterHero'
 import RosterTranscript from '@/components/RosterTranscript'
 import { rosterEnabled } from '@/lib/league'
 import { listManagers } from '@/lib/roster-managers'
-import { MANDATE_KIND_LABELS } from '@/lib/roster-client'
 
 // /roster — the front-door CONCEPT preview (HANDOFF-roster R6, visual half).
 // The hero lives here as a standalone page behind ROSTER_ENABLED so Nate can
@@ -29,6 +28,11 @@ export async function generateMetadata(): Promise<Metadata> {
 export default async function RosterPreviewPage() {
   if (!rosterEnabled()) notFound()
   const managers = await listManagers().catch(() => [])
+  // ONE house-identity env: HOUSE_MANAGER_KEY (the manager script's own key;
+  // the hash is DERIVED server-side — a second hash env would drift). The
+  // record trust anchor lights only when a real record exists.
+  const houseHandle = managers.find((m) => m.house)?.recordUrl?.split('/').pop() ?? null
+  const handleOf = (m: (typeof managers)[number]) => m.recordUrl?.split('/').pop() ?? null
   return (
     <>
       <main className="mx-auto max-w-5xl px-4 py-14 sm:px-6">
@@ -51,7 +55,7 @@ export default async function RosterPreviewPage() {
             <ManagerRow
               name="The Rebalancer"
               house
-              handle={process.env.ROSTER_HOUSE_AGENT_HASH ?? null}
+              handle={houseHandle}
               kinds={['shape']}
               cta={
                 <a
@@ -113,48 +117,34 @@ export default async function RosterPreviewPage() {
             sprint). Server-composed: the house identity is the env-key hash
             (never shipped to the client raw), founding rows are owner-set.
             Hiring happens in the Team tab — every row routes there. */}
-        <section className="mt-16" aria-label="Hireable managers">
+        <section className="mt-16" id="managers" aria-label="Hireable managers">
           <p className="mono text-[11px] uppercase tracking-[0.25em] text-[color:var(--muted)]">
-            Meet your first manager
+            The managers
           </p>
-          <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <div className="mt-4 space-y-3">
             {managers.map((m) => (
-              <div key={m.id} className={`rounded-2xl border border-[var(--line)] p-4${m.hireable ? '' : ' opacity-70'}`}>
-                <div className="flex items-center gap-2">
-                  <span className="text-[14px] font-semibold text-[color:var(--fg)] flex-1">{m.name}</span>
-                  {m.house && (
-                    <span className="mono text-[9px] uppercase tracking-wider rounded-full border border-[var(--line)] px-2 py-0.5" style={{ color: 'var(--accent)' }}>
-                      house
-                    </span>
-                  )}
-                  {m.founding && (
-                    <span className="mono text-[9px] uppercase tracking-wider rounded-full border border-[var(--line)] px-2 py-0.5 text-[color:var(--muted)]">
-                      founding
-                    </span>
-                  )}
-                </div>
-                <p className="mt-1.5 mono text-[11px] text-[color:var(--muted)]">
-                  {m.kinds.length > 0 ? m.kinds.map((k) => MANDATE_KIND_LABELS[k] ?? k).join(' · ') : 'no mandates served yet'}
-                </p>
-                {m.note ? (
-                  <p className="mt-2 text-[12.5px] leading-relaxed text-[color:var(--muted)]">{m.note}</p>
-                ) : (
-                  <p className="mt-2 text-[12.5px] leading-relaxed text-[color:var(--muted)]">
-                    {m.recordUrl ? (
-                      <>
-                        <Link href={m.recordUrl} className="underline">
-                          Real track record
-                        </Link>{' '}
-                        — signed history, harness excluded.{' '}
-                      </>
-                    ) : null}
-                    Hire from the{' '}
-                    <Link href="/chat?tab=team" className="underline">
-                      Team tab
-                    </Link>{' '}
-                    — one signature, fire any time.
-                  </p>
-                )}
+              <div key={m.id} className={m.hireable ? undefined : 'opacity-70'}>
+                <ManagerRow
+                  name={m.name}
+                  house={m.house}
+                  founding={m.founding}
+                  handle={handleOf(m)}
+                  kinds={m.kinds}
+                  cta={
+                    m.hireable ? (
+                      <Link
+                        href="/chat?tab=team"
+                        className="mono rounded-full px-4 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-[color:var(--bg)]"
+                        style={{ background: 'var(--accent)' }}
+                      >
+                        Hire it
+                      </Link>
+                    ) : (
+                      <span className="mono text-[10px] uppercase tracking-wide text-[color:var(--muted)]">Coming soon</span>
+                    )
+                  }
+                />
+                {m.note && <p className="mt-1 px-1 text-[12px] text-[color:var(--muted)]">{m.note}</p>}
               </div>
             ))}
             {managers.length === 0 && (
@@ -163,6 +153,13 @@ export default async function RosterPreviewPage() {
               </p>
             )}
           </div>
+          <p className="mt-3 text-[12.5px] text-[color:var(--muted)]">
+            Hiring happens in the{' '}
+            <Link href="/chat?tab=team" className="underline">
+              Team tab
+            </Link>{' '}
+            — one signature, fire any time.
+          </p>
         </section>
 
         {/* The proof — the QA session replayed. */}

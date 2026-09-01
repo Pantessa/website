@@ -16,6 +16,8 @@ import { useAccount, useSignMessage } from 'wagmi'
 import { Loader2, Plus, UserX } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { MANDATE_KIND_LABELS, ROSTER_DEFAULT_CAP_USD, type MandateKind } from '@/lib/roster-client'
+import ManagerMark from '@/components/ManagerMark'
+import HireConsentFrame from '@/components/HireConsentFrame'
 
 type Preview = { kind: MandateKind; mandateText: string; summary: string } | { problem: string }
 
@@ -248,6 +250,9 @@ export default function TeamRailTab() {
           )}
         >
           <div className="flex items-center gap-2">
+            {/* Visuals' mark treatment (feat/hire-visuals) in the compact
+                rail geometry — pangolin tile for house, identicon otherwise. */}
+            <ManagerMark house={m.house} handle={m.id.startsWith('founding-') ? m.id.slice(9) : null} size={22} />
             <span className="text-xs font-medium text-white flex-1 truncate">{m.name}</span>
             {m.house && (
               <span className="mono text-[8px] uppercase tracking-wider px-1 py-0.5 rounded bg-black/30 border border-[var(--line)] text-[color:var(--accent)]">house</span>
@@ -268,11 +273,22 @@ export default function TeamRailTab() {
             )}
           </p>
           {m.note && <p className="text-[9px] text-[color:var(--muted-2)]">{m.note}</p>}
-          {selectedManager?.id === m.id && (
-            <p className="text-[9px] text-[color:var(--accent)]">Selected — post or pick a pending slot below, then Hire.</p>
-          )}
         </div>
       ))}
+      {/* Visuals' hire-moment frame (feat/hire-visuals): names who is being
+          hired + the whole contract in three beats. The consent bytes are
+          still the API's — this only frames the moment. */}
+      {selectedManager && (
+        <HireConsentFrame
+          name={selectedManager.name}
+          house={selectedManager.house}
+          handle={selectedManager.id.startsWith('founding-') ? selectedManager.id.slice(9) : null}
+        >
+          <p className="text-[10px] text-[color:var(--muted-2)]">
+            Post a mandate above or pick a pending slot below, then Hire — one personal_sign.
+          </p>
+        </HireConsentFrame>
+      )}
     </div>
   )
 
