@@ -96,7 +96,7 @@ function mcpBaseOf(endpoint: string | null, childUrl: string | null): string | n
  * no spend, no auth. The chat UI paints this before the first keystroke.
  */
 export async function POST(req: Request) {
-  let body: { address?: string; servers?: Pick<McpServer, 'slug'>[]; manualSlugs?: string[]; chain?: string }
+  let body: { address?: string; servers?: Pick<McpServer, 'slug'>[]; manualSlugs?: string[]; chain?: string; serversOnly?: boolean }
   try {
     body = await req.json()
   } catch {
@@ -114,11 +114,17 @@ export async function POST(req: Request) {
   // Wallet-alone tiles (no MCP behind them): the briefing ("what Pantessa
   // noticed" — unprotected positions, stranded/idle funds, HF drift) leads,
   // then recurring buys — so what NEEDS the user surfaces even before any
-  // server card resolves. Both fail-soft in parallel.
-  const [briefTile, dcaTile] = await Promise.all([
-    briefingTileFor(address).catch(() => null),
-    dcaTileFor(address),
-  ])
+  // server card resolves. Both fail-soft in parallel. `serversOnly` skips
+  // them: a delta refetch from an already-painted splash (an MCP toggled
+  // onto the grid) wants JUST the new servers' tiles — the wallet tiles are
+  // already on screen, and the briefing scan is the slow half of the call.
+  const serversOnly = body.serversOnly === true
+  const [briefTile, dcaTile] = serversOnly
+    ? [null, null]
+    : await Promise.all([
+        briefingTileFor(address).catch(() => null),
+        dcaTileFor(address),
+      ])
   const walletTiles = [...(briefTile ? [briefTile] : []), ...(dcaTile ? [dcaTile] : [])]
   const slugs = [
     ...new Set((Array.isArray(body.servers) ? body.servers : []).map((s) => s?.slug).filter((s): s is string => !!s)),
