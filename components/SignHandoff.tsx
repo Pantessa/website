@@ -55,7 +55,7 @@ export default function SignHandoff({ ask, mcps, agent }: { ask: string; mcps: s
   return (
     <main className="min-h-[calc(100vh-4rem)] max-w-xl mx-auto px-4 py-12 flex flex-col">
       <div className="flex items-center gap-2 mb-8">
-        <YeetfulMark size={18} />
+        <YeetfulMark size={15} />
         <span className="mono text-[11px] uppercase tracking-widest text-[color:var(--muted-2)]">
           Agent handoff · review &amp; sign
         </span>

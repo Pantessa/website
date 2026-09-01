@@ -64,7 +64,7 @@ export default function ManagerMark({
           color: 'var(--fg)',
         }}
       >
-        <PantessaMark size={Math.round(size * 0.66)} />
+        <PantessaMark size={Math.round(size * 0.72)} />
       </span>
     )
   }

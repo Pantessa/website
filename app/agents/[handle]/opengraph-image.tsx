@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { brandOgPalette } from '@/lib/brand-theme'
 import { getAgentRecord } from '@/lib/agent-record'
 import { foundingHandles } from '@/lib/league'
-import { pangolinMarkSvg } from '@/lib/og-marks'
+import { gemMarkSvg } from '@/lib/og-marks'
 
 // Social card for an agent's public track record (/agents/<handle>). Until
 // now the page shipped og:title only — a shared record rendered as a bare
@@ -70,7 +70,7 @@ export default async function Image({ params }: Params) {
         <div style={{ position: 'absolute', top: 48, left: 64, right: 64, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={toDataUri(pangolinMarkSvg())} width={46} height={46} alt="" />
+            <img src={toDataUri(gemMarkSvg())} width={46} height={46} alt="" />
             <span style={{ color: pal.ink, fontSize: 34, fontWeight: 600, letterSpacing: -1.2 }}>pantessa</span>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>

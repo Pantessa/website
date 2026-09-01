@@ -2,7 +2,7 @@ import { ImageResponse } from 'next/og'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { getSharedChat, getJobs, getChatServers, moneyMovedOf } from '@/lib/shared-chat'
-import { ogMarkSvg, pangolinMarkSvg } from '@/lib/og-marks'
+import { ogMarkSvg, gemMarkSvg } from '@/lib/og-marks'
 
 // Social card for a shared chat (/p/[slug]) — without this file the segment's
 // generateMetadata ships og:title/description but NO image (the root
@@ -38,7 +38,7 @@ const AMBIENT = `<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="63
 </svg>`
 
 // The house mark comes from lib/og-marks — ONE source across every OG card.
-const MARK = pangolinMarkSvg(ACCENT)
+const MARK = gemMarkSvg(ACCENT)
 
 type Params = { params: Promise<{ slug: string }> }
 

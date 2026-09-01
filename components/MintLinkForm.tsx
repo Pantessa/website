@@ -223,7 +223,7 @@ export function MintLinkForm({
           <div className="mintstage__glow" aria-hidden="true" />
           <div className="mintstage__head">
             <span className="mintstage__lockup">
-              <PantessaMark size={22} className="mintstage__mark" />
+              <PantessaMark size={18} className="mintstage__mark" />
               pantessa
             </span>
             <span className="mintstage__eyebrow mono">
@@ -286,7 +286,7 @@ export function MintLinkForm({
         <div className="mintstage__glow" aria-hidden="true" />
         <div className="mintstage__head">
           <span className="mintstage__lockup">
-            <PantessaMark size={22} className="mintstage__mark" />
+            <PantessaMark size={18} className="mintstage__mark" />
             pantessa
           </span>
           <span className="mintstage__eyebrow mono">

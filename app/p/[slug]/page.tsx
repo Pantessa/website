@@ -136,7 +136,7 @@ export default async function SharedChatPage({ params }: Params) {
               className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-white text-zinc-950 text-xs font-semibold hover:bg-zinc-200 transition-colors"
               title="Open Pantessa chat with these agents enabled and this chat's opening ask ready to run"
             >
-              <YeetfulMark size={16} />
+              <YeetfulMark size={13} />
               <span>Try Pantessa</span>
             </Link>
           </div>
@@ -194,7 +194,7 @@ export default async function SharedChatPage({ params }: Params) {
             href={tryHref}
             className="flex items-center gap-2 px-4 py-2 rounded-full bg-[var(--accent)] text-black text-sm font-semibold hover:opacity-90 transition-opacity"
           >
-            <YeetfulMark size={16} />
+            <YeetfulMark size={13} />
             <span>{display.length > 0 ? 'Run this chat yourself' : 'Try Pantessa'}</span>
           </Link>
         </div>

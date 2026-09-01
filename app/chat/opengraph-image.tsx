@@ -1,7 +1,7 @@
 import { ImageResponse } from 'next/og'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { pangolinMarkSvg } from '@/lib/og-marks'
+import { gemMarkSvg } from '@/lib/og-marks'
 
 // Social card for /chat — the deep-link surface (?prompt= handoffs from
 // shares, splash chips, docs examples all land here). The card shows the
@@ -32,7 +32,7 @@ const AMBIENT = `<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="63
 </svg>`
 
 // The house mark comes from lib/og-marks — ONE source across every OG card.
-const MARK = pangolinMarkSvg(ACCENT)
+const MARK = gemMarkSvg(ACCENT)
 
 export default async function Image() {
   const fonts = join(process.cwd(), 'assets', 'og-fonts')

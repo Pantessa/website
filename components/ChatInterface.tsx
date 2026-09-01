@@ -1219,7 +1219,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
             title="Pantessa dashboard — links, keys, billing"
             className="lg:hidden flex-shrink-0 grid place-items-center w-10 h-10 md:w-8 md:h-8 rounded-lg text-white hover:bg-[var(--surf-1)] transition-colors"
           >
-            <YeetfulMark size={20} />
+            <YeetfulMark size={17} />
           </Link>
         )}
         {/* NEW + the four reopen chips are GONE from the toolbar on every

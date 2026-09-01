@@ -51,6 +51,14 @@
        deliberate, readable hierarchy. */
     --font-chat-display: 'Fraunces', 'Newsreader', 'Iowan Old Style', 'Palatino Linotype', Palatino, Georgia, 'Times New Roman', serif;
     --font-chat-body: 'Hanken Grotesk', 'Geist', system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    /* The Emerald Cut's facet ramp, deep → bright (lib/gem-geometry.ts reads
+       these as --gem-1..5 with dark fallbacks). Light mode flips the whole
+       ramp toward the paper accent so the stone keeps contrast on white. */
+    --gem-1: #0B6B4A;
+    --gem-2: #0F8156;
+    --gem-3: #159B68;
+    --gem-4: #27B67A;
+    --gem-5: #3ECF8E;
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   html { -webkit-text-size-adjust: 100%; -webkit-tap-highlight-color: transparent; }
@@ -112,7 +120,7 @@
     width: 26px; height: 26px; border-radius: 7px; background: var(--fg); color: var(--bg);
     display: grid; place-items: center; flex-shrink: 0;
   }
-  .logo__word { font-family: 'Archivo', sans-serif; font-weight: 800; font-size: 19px; letter-spacing: -0.03em; }
+  .logo__word { font-family: var(--font-chat-display); font-weight: 600; font-size: 20px; letter-spacing: -0.015em; }
   .nav__tabs { display: flex; align-items: center; gap: 4px; }
   .nav__tab {
     position: relative;
@@ -4189,6 +4197,11 @@
     --sell: #c73e43;
     --done: #0b7a53;
     --fail: #c73e43;
+    --gem-1: #084A33;
+    --gem-2: #0A5C40;
+    --gem-3: #0C7A52;
+    --gem-4: #0D8158;
+    --gem-5: #0e8f62;
   }
   html[data-theme='light'] { color-scheme: light; }
 

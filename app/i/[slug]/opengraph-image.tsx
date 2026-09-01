@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import prisma from '@/lib/db'
 import { brandFromRow } from '@/lib/brand-denylist'
 import { brandOgPalette, hexLuminance, normalizeHex } from '@/lib/brand-theme'
-import { pangolinMarkSvg } from '@/lib/og-marks'
+import { gemMarkSvg } from '@/lib/og-marks'
 import { parseMosaicAsk } from '@/lib/mosaic'
 
 // Social card for an intent link (/i/<slug>) — the ASK is the hero: the
@@ -159,7 +159,7 @@ export default async function Image({ params }: Params) {
           >
             <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={toDataUri(pangolinMarkSvg())} width={46} height={46} alt="" />
+              <img src={toDataUri(gemMarkSvg())} width={46} height={46} alt="" />
               <span style={{ color: pal.ink, fontSize: 34, fontWeight: 600, letterSpacing: -1.2 }}>pantessa</span>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 17, letterSpacing: 4, color: pal.muted }}>
@@ -243,7 +243,7 @@ export default async function Image({ params }: Params) {
           >
             <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={toDataUri(pangolinMarkSvg())} width={36} height={36} alt="" />
+              <img src={toDataUri(gemMarkSvg())} width={36} height={36} alt="" />
               <div style={{ display: 'flex', fontSize: 21 }}>
                 <span style={{ color: pal.accent, fontWeight: 600 }}>pantessa.com</span>
                 <span style={{ color: pal.muted }}>{' — connect a wallet, sign the whole shape'}</span>
@@ -315,7 +315,7 @@ export default async function Image({ params }: Params) {
               <img src={brand.logo} width={46} height={46} alt="" style={{ borderRadius: 10 }} />
             ) : (
               // eslint-disable-next-line @next/next/no-img-element
-              <img src={toDataUri(pangolinMarkSvg(pal.branded ? pal.accent : undefined))} width={46} height={46} alt="" />
+              <img src={toDataUri(gemMarkSvg(pal.branded ? pal.accent : undefined))} width={46} height={46} alt="" />
             )}
             <span style={{ color: pal.ink, fontSize: 34, fontWeight: 600, letterSpacing: -1.2 }}>
               {brand ? (brand.name ?? brand.domain ?? 'pantessa') : 'pantessa'}
