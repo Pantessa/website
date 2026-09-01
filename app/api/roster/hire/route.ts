@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import prisma from '@/lib/db'
 import { isInternalRun } from '@/lib/internal-run'
 import { cleanAgentKeyHash } from '@/lib/roster'
+import { resolveManagerId } from '@/lib/roster-managers'
 import {
   assertRosterOpen,
   bumpAndCheckRosterPost,
@@ -40,7 +41,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: ROSTER_RATE_WALL }, { status: 429 })
   }
 
-  let body: { slotId?: unknown; wallet?: unknown; agentKeyHash?: unknown; signature?: unknown; internalRun?: unknown }
+  let body: { slotId?: unknown; wallet?: unknown; agentKeyHash?: unknown; managerId?: unknown; signature?: unknown; internalRun?: unknown }
   try {
     body = await req.json()
   } catch {
@@ -64,7 +65,23 @@ export async function POST(req: NextRequest) {
 
   // ── Step 1: mint the consent text ────────────────────────────────────────
   if (body.signature == null) {
-    const agentKeyHash = cleanAgentKeyHash(body.agentKeyHash)
+    // THE STOREFRONT path (FIRST HIRE sprint): a SERVER-VALIDATED manager id
+    // instead of a pasted hash. The id resolves only against the server's
+    // own list (house env hash / owner-set founding rows) — a bare hash, or
+    // anything not on the list, refuses BY NAME and never reaches consent.
+    let agentKeyHash: string | null = null
+    if (body.managerId != null) {
+      const resolved = await resolveManagerId(body.managerId)
+      if (!resolved) {
+        return NextResponse.json(
+          { error: 'managerId must be one of the storefront\'s own ids (see /api/roster/managers) — a raw hash is not a manager id, and unlisted ids refuse.' },
+          { status: 400 },
+        )
+      }
+      agentKeyHash = resolved.agentKeyHash
+    } else {
+      agentKeyHash = cleanAgentKeyHash(body.agentKeyHash)
+    }
     if (!agentKeyHash) {
       return NextResponse.json(
         { error: "agentKeyHash must be the agent's public 16-hex track-record handle (see /agents) — never its raw key." },

@@ -5,6 +5,8 @@ import Footer from '@/components/Footer'
 import RosterHero from '@/components/RosterHero'
 import RosterTranscript from '@/components/RosterTranscript'
 import { rosterEnabled } from '@/lib/league'
+import { listManagers } from '@/lib/roster-managers'
+import { MANDATE_KIND_LABELS } from '@/lib/roster-client'
 
 // /roster — the front-door CONCEPT preview (HANDOFF-roster R6, visual half).
 // The hero lives here as a standalone page behind ROSTER_ENABLED so Nate can
@@ -25,6 +27,7 @@ export async function generateMetadata(): Promise<Metadata> {
 
 export default async function RosterPreviewPage() {
   if (!rosterEnabled()) notFound()
+  const managers = await listManagers().catch(() => [])
   return (
     <>
       <main className="mx-auto max-w-5xl px-4 py-14 sm:px-6">
@@ -69,6 +72,62 @@ export default async function RosterPreviewPage() {
                 <div className="mt-1.5 text-[12.5px] leading-relaxed text-[color:var(--muted)]">{s.d}</div>
               </div>
             ))}
+          </div>
+        </section>
+
+        {/* THE STOREFRONT — hireable managers, house first (FIRST HIRE
+            sprint). Server-composed: the house identity is the env-key hash
+            (never shipped to the client raw), founding rows are owner-set.
+            Hiring happens in the Team tab — every row routes there. */}
+        <section className="mt-16" aria-label="Hireable managers">
+          <p className="mono text-[11px] uppercase tracking-[0.25em] text-[color:var(--muted)]">
+            Meet your first manager
+          </p>
+          <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
+            {managers.map((m) => (
+              <div key={m.id} className={`rounded-2xl border border-[var(--line)] p-4${m.hireable ? '' : ' opacity-70'}`}>
+                <div className="flex items-center gap-2">
+                  <span className="text-[14px] font-semibold text-[color:var(--fg)] flex-1">{m.name}</span>
+                  {m.house && (
+                    <span className="mono text-[9px] uppercase tracking-wider rounded-full border border-[var(--line)] px-2 py-0.5" style={{ color: 'var(--accent)' }}>
+                      house
+                    </span>
+                  )}
+                  {m.founding && (
+                    <span className="mono text-[9px] uppercase tracking-wider rounded-full border border-[var(--line)] px-2 py-0.5 text-[color:var(--muted)]">
+                      founding
+                    </span>
+                  )}
+                </div>
+                <p className="mt-1.5 mono text-[11px] text-[color:var(--muted)]">
+                  {m.kinds.length > 0 ? m.kinds.map((k) => MANDATE_KIND_LABELS[k] ?? k).join(' · ') : 'no mandates served yet'}
+                </p>
+                {m.note ? (
+                  <p className="mt-2 text-[12.5px] leading-relaxed text-[color:var(--muted)]">{m.note}</p>
+                ) : (
+                  <p className="mt-2 text-[12.5px] leading-relaxed text-[color:var(--muted)]">
+                    {m.recordUrl ? (
+                      <>
+                        <Link href={m.recordUrl} className="underline">
+                          Real track record
+                        </Link>{' '}
+                        — signed history, harness excluded.{' '}
+                      </>
+                    ) : null}
+                    Hire from the{' '}
+                    <Link href="/chat?tab=team" className="underline">
+                      Team tab
+                    </Link>{' '}
+                    — one signature, fire any time.
+                  </p>
+                )}
+              </div>
+            ))}
+            {managers.length === 0 && (
+              <p className="text-[13px] text-[color:var(--muted)]">
+                No managers are listed yet — the storefront fills as the house Rebalancer arms and founding agents earn records.
+              </p>
+            )}
           </div>
         </section>
 
