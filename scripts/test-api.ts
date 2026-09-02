@@ -145,6 +145,7 @@ import {
   ONRAMP_MIN_USD,
 } from '../lib/onramp'
 import { clarifyOf } from '../lib/clarify'
+import { fundingPathOf } from '../lib/funding-path'
 import { decideFundingTurn, detectBalanceShortfall, fundingPlanUsd, planFundingChips, planStrandedRescue, promisableCapacityUsd, rankFundingSources, shortRefusalCopy, softenClaimedFailureBlock, type FundingNeed, type FundingSource } from '../lib/funding-plan'
 import { compileDcaBuy, dcaRunChip, parseDcaCreate, parseDcaManage, parseDcaRun, periodKeyFor } from '../lib/dca'
 import { briefingNeedsCount, briefingTile, composeBriefingItems, type BriefingInputs, type BriefingPosition } from '../lib/briefing'
@@ -6648,6 +6649,66 @@ async function main() {
       JSON.stringify(usdceUnder),
     )
     check('rh-funding follow-up: "I have $10 USDC.e on arbitrum" → recheck', parseRhFundingFollowUp('I have $10 USDC.e on arbitrum')?.kind === 'recheck')
+
+    // ── Funding-path visualization (lib/funding-path): the route card the
+    // user PICKS from is derived from the resume string — the chip IS the
+    // contract, so the drawing can never diverge from what the click runs.
+    // SYNC GUARD: every planner-emitted chip above must parse, so a grammar
+    // change that breaks the visualization fails here, loudly, not as a
+    // silent fallback to plain text chips in production.
+    const pathChips = [
+      ...(chips ?? []), ...(altChips ?? []), ...(comboChips ?? []), ...(bridgeOnlyChips ?? []), ...(usdceChips ?? []),
+      ...(covered.kind === 'chips' ? covered.chips : []),
+      ...(rescue.kind === 'gas-stranded' && rescue.chips ? rescue.chips.filter((c) => !/never mind/i.test(c.resume)) : []),
+    ]
+    check(
+      'funding path: every planner-emitted chip resume parses into a drawable route',
+      pathChips.length >= 10 && pathChips.every((c) => fundingPathOf(c.resume) !== null),
+      JSON.stringify(pathChips.filter((c) => fundingPathOf(c.resume) === null).map((c) => c.resume)),
+    )
+    const leadPath = chips ? fundingPathOf(chips[0].resume) : null
+    check(
+      'funding path: the lead fund chip draws origin → Robinhood Chain (USDG + gas) → the buy',
+      !!leadPath && leadPath.nodes.map((n) => n.title).join(' | ') === 'Ethereum | Robinhood Chain | Buy $5 of NVDA' &&
+        leadPath.nodes[0].detail === '$7 USDC' && leadPath.nodes[1].detail === 'USDG + gas' &&
+        leadPath.nodes[2].kind === 'action' && leadPath.arrows.join(' | ') === 'bridge | then',
+      JSON.stringify(leadPath),
+    )
+    const rescuePath = rescue.kind === 'gas-stranded' && rescue.chips ? fundingPathOf(rescue.chips[0].resume) : null
+    check(
+      'funding path: the donor-topup route folds — Base → Arbitrum → Robinhood Chain → the buy, no repeated stop',
+      !!rescuePath && rescuePath.nodes.map((n) => n.title).join(' | ') === 'Base | Arbitrum | Robinhood Chain | Buy $10 of GOOGL' &&
+        rescuePath.nodes[0].detail === `${GAS_TOPUP_ETH} ETH` &&
+        rescuePath.nodes[1].detail === '$11 USDC' && rescuePath.arrows.join(' | ') === 'bridge | bridge | then',
+      JSON.stringify(rescuePath),
+    )
+    // The universal planner's two leg shapes: a destination-chain conversion
+    // draws a same-chain swap; a cross-chain leg draws bridge + swap.
+    const vizNeed: FundingNeed = { chainId: 8453, token: 'ETH', amountHuman: 0.004, followupResume: 'buy the cheapest 0x1234 nft on base', actionLabel: 'the buy' }
+    const vizSame = planFundingChips(vizNeed, 12, [{ chainId: 8453, chainWord: 'Base', token: 'USDC', balance: 20, usd: 20 }])
+    const vizSamePath = vizSame.kind === 'offer' ? fundingPathOf(vizSame.chips[0].resume) : null
+    check(
+      'funding path: a destination-chain conversion draws Base —swap→ Base (ETH) → the buy',
+      !!vizSamePath && vizSamePath.nodes.map((n) => n.title).join(' | ') === 'Base | Base | Buy the cheapest 0x1234 nft on base' &&
+        vizSamePath.nodes[1].detail === 'ETH' && vizSamePath.arrows[0] === 'swap',
+      JSON.stringify(vizSamePath),
+    )
+    const vizCross = planFundingChips(vizNeed, 12, [{ chainId: 1, chainWord: 'Ethereum', token: 'USDC', balance: 30, usd: 30 }])
+    const vizCrossPath = vizCross.kind === 'offer' ? fundingPathOf(vizCross.chips[0].resume) : null
+    check(
+      'funding path: a cross-chain leg draws Ethereum —bridge + swap→ Base (ETH) → the buy',
+      !!vizCrossPath && vizCrossPath.nodes.map((n) => n.title).join(' | ') === 'Ethereum | Base | Buy the cheapest 0x1234 nft on base' &&
+        vizCrossPath.arrows[0] === 'bridge + swap' && vizCrossPath.nodes[1].detail === 'ETH',
+      JSON.stringify(vizCrossPath),
+    )
+    // Non-funding resumes stay plain chips: "Not now", planner clarifies,
+    // vote options — the visualization must never claim a turn it can't draw.
+    check(
+      'funding path: non-funding resumes return null (plain chips, never a bogus route)',
+      fundingPathOf('Never mind — leave my funds where they are.') === null &&
+        fundingPathOf('Vote FOR on proposal 12 in the uniswap DAO') === null &&
+        fundingPathOf('Swap 5 USDC for ETH on saturn') === null,
+    )
 
     // ── Native ETH as a funding source (2026-07-28): the most common
     // stranger wallet — ETH, no stables — used to wall the flagship stock
