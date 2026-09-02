@@ -100,14 +100,45 @@ export async function getJobWithSteps(id: string) {
 type JobWithSteps = NonNullable<Awaited<ReturnType<typeof getJobWithSteps>>>
 
 /** One cron tick: advance every live job of THIS env. */
+/** A live job this old is abandoned. Aged-out jobs must LEAVE the cron
+ *  window: 32 zombies (oldest 2026-07-15) camped at the head of the
+ *  oldest-first take-20 window on prod, so a job created today never got
+ *  its settlement wait polled again after the one inline check at
+ *  signature time — the flagship fund-then-buy sat at "Funds arrive on
+ *  Robinhood Chain" with the money already there (live 2026-09-02; fast
+ *  Base origins always miss the inline check, slow Ethereum origins
+ *  usually don't — which is why only Base-origin jobs stuck). Nothing is
+ *  signed or spent by aging out: unsigned steps are simply never offered
+ *  again, and a re-ask rebuilds the whole path fresh. */
+export const JOB_MAX_AGE_MS = 7 * 24 * 60 * 60_000
+
 export async function advanceJobs(limit = 20): Promise<{ touched: number; notes: string[] }> {
   const notes: string[] = []
-  const jobs = await prisma.job.findMany({
-    where: { status: { in: ['running', 'waiting_settlement', 'waiting_signature'] }, originEnv: jobsEnv() },
+  const aged = await prisma.job.updateMany({
+    where: { status: { in: ['running', 'waiting_settlement', 'waiting_signature'] }, originEnv: jobsEnv(), createdAt: { lt: new Date(Date.now() - JOB_MAX_AGE_MS) } },
+    data: { status: 'failed', failReason: 'expired — the job sat untouched for 7 days; nothing was signed or spent. Ask again to rebuild it fresh.' },
+  })
+  if (aged.count > 0) notes.push(`aged out ${aged.count} abandoned job(s)`)
+  // Settlement checks lead the window — a waiting_settlement job is one a
+  // user has already SIGNED and is watching; waiting_signature re-arms can
+  // wait a tick. Without the split, twenty offer-refresh rebuilds could
+  // starve the one arrival poll that matters.
+  const settling = await prisma.job.findMany({
+    where: { status: { in: ['running', 'waiting_settlement'] }, originEnv: jobsEnv() },
     include: { steps: { orderBy: { seq: 'asc' } } },
     orderBy: { createdAt: 'asc' },
     take: limit,
   })
+  const signing =
+    settling.length < limit
+      ? await prisma.job.findMany({
+          where: { status: 'waiting_signature', originEnv: jobsEnv() },
+          include: { steps: { orderBy: { seq: 'asc' } } },
+          orderBy: { createdAt: 'asc' },
+          take: limit - settling.length,
+        })
+      : []
+  const jobs = [...settling, ...signing]
   for (const job of jobs) {
     try {
       await advanceJob(job)
@@ -193,11 +224,10 @@ export async function advanceJob(job: JobWithSteps): Promise<void> {
         })
         if (claim.count !== 1) return
       }
-      if (step.expiresAt && step.expiresAt < new Date()) {
-        await prisma.jobStep.update({ where: { id: step.id }, data: { status: 'failed', result: { error: 'settlement timeout' } } })
-        await failJob(fresh.id, `"${step.title}" timed out — unfilled swaps auto-refund to your wallet.`)
-        return
-      }
+      // Evaluate BEFORE the timeout: funds that actually arrived must never
+      // read "timed out" just because the poller was late getting to the
+      // job (the 2026-09-02 starved-queue class — a wait can sit unpolled
+      // past its whole window with the money already there).
       const settled = await evaluateWait(fresh, step.seq)
       if (settled.done) {
         await prisma.jobStep.update({ where: { id: step.id }, data: { status: 'done', result: settled.result as object } })
@@ -207,6 +237,11 @@ export async function advanceJob(job: JobWithSteps): Promise<void> {
       if (settled.failed) {
         await prisma.jobStep.update({ where: { id: step.id }, data: { status: 'failed', result: settled.result as object } })
         await failJob(fresh.id, `"${step.title}": ${settled.failed}`)
+        return
+      }
+      if (step.expiresAt && step.expiresAt < new Date()) {
+        await prisma.jobStep.update({ where: { id: step.id }, data: { status: 'failed', result: { error: 'settlement timeout' } } })
+        await failJob(fresh.id, `"${step.title}" timed out — unfilled swaps auto-refund to your wallet.`)
         return
       }
       if (fresh.status !== 'waiting_settlement') {

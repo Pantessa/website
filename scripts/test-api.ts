@@ -9875,6 +9875,104 @@ async function main() {
     const problemBody = await problemAsk.json()
     check('jobs api: unparseable segment → 400 problem passthrough (honest refusal)', problemAsk.status === 400 && /step 2/i.test(problemBody.error ?? ''))
 
+    // ── Jobs cron window: age-out + settlement-first (the 2026-09-02
+    // starved queue). 32 zombie jobs camped in the oldest-first take-20
+    // window on prod, so a freshly signed bridge's settlement wait was
+    // NEVER polled again after the one inline check at signature time —
+    // "Funds arrive on Robinhood Chain" sat forever with the money already
+    // there. The drill fences a private originEnv so advanceJobs sees ONLY
+    // the seeded rows.
+    if (!process.env.DATABASE_URL) {
+      // The blog-suite precedent for cred-gated checks: the harness runs
+      // creds-less by default (Prisma reads .env, not .env.local, and the
+      // engine caches a failed init) — run `DATABASE_URL=… npm run
+      // test:api` for the full drill.
+      check('jobs cron drill: skipped — no DATABASE_URL for the harness process', true)
+    } else {
+      const { advanceJobs, JOB_MAX_AGE_MS } = await import('../lib/jobs-runner')
+      const FENCE = `drill-starve-${Date.now()}`
+      const prevEnv = process.env.VERCEL_ENV
+      process.env.VERCEL_ENV = FENCE
+      const DRILL_WALLET = '0x00000000000000000000000000000000000c0ffe'
+      try {
+        const zombie = await prisma.job.create({
+          data: { wallet: DRILL_WALLET, title: 'drill zombie', source: 'drill', status: 'waiting_signature', currentStep: 0, originEnv: FENCE, createdAt: new Date(Date.now() - JOB_MAX_AGE_MS - 3_600_000) },
+        })
+        const signing = await prisma.job.create({
+          data: {
+            wallet: DRILL_WALLET, title: 'drill signing', source: 'drill', status: 'waiting_signature', currentStep: 0, originEnv: FENCE, createdAt: new Date(Date.now() - 3_600_000),
+            steps: { create: [{ seq: 0, kind: 'sign', builder: 'native-lifi-fund', title: 'sign me', status: 'offered', params: {}, expiresAt: new Date(Date.now() + 600_000) }] },
+          },
+        })
+        const settling = await prisma.job.create({
+          data: {
+            wallet: DRILL_WALLET, title: 'drill settling', source: 'drill', status: 'waiting_settlement', currentStep: 1, originEnv: FENCE,
+            steps: {
+              create: [
+                { seq: 0, kind: 'sign', builder: 'native-lifi-fund', title: 'signed', status: 'done', params: {} },
+                { seq: 1, kind: 'wait', builder: 'wait', title: 'arrive', status: 'running', params: {}, waitPredicate: { kind: 'chain-arrival', fromSteps: [0] }, expiresAt: new Date(Date.now() + 600_000) },
+              ],
+            },
+          },
+        })
+        await advanceJobs(1)
+        const [zombieAfter, signingAfter, settlingAfter] = await Promise.all([
+          prisma.job.findUnique({ where: { id: zombie.id } }),
+          prisma.job.findUnique({ where: { id: signing.id } }),
+          prisma.job.findUnique({ where: { id: settling.id } }),
+        ])
+        check(
+          'jobs cron: a 7-day abandoned job ages OUT of the window by name (nothing signed or spent)',
+          zombieAfter?.status === 'failed' && /expired/.test(zombieAfter.failReason ?? '') && /nothing was signed/.test(zombieAfter.failReason ?? ''),
+          zombieAfter?.failReason ?? zombieAfter?.status ?? 'missing',
+        )
+        // The settling job's wait has no arrival expectations, so being
+        // TOUCHED fails it by name — the proof it led the window past an
+        // OLDER waiting_signature job even at limit 1.
+        check(
+          'jobs cron: settlement waits lead the window — evaluated ahead of an older signature job',
+          settlingAfter?.status === 'failed' && /no arrival expectations/.test(settlingAfter.failReason ?? '') && signingAfter?.status === 'waiting_signature',
+          JSON.stringify({ settling: settlingAfter?.failReason ?? settlingAfter?.status, signing: signingAfter?.status }),
+        )
+        // The JobCard poll advances its OWN mid-settlement job inline (the
+        // open card never depends on the cron window). Token door, GET only.
+        // The poll advance is fenced to the SERVER's own env (originEnv
+        // rule), so this row rides 'dev' — invisible to the fenced
+        // advanceJobs above, cleaned by id below. Token minting needs the
+        // server's SESSION_SECRET — same .env.local belt as
+        // HOUSE_MANAGER_KEY above.
+        if (!process.env.SESSION_SECRET) {
+          const s = (await readFile('.env.local', 'utf8').catch(() => '')).match(/^SESSION_SECRET=(.*)$/m)?.[1]?.trim().replace(/^"|"$/g, '')
+          if (s) process.env.SESSION_SECRET = s
+        }
+        const { signJobToken } = await import('../lib/job-token')
+        const settling2 = await prisma.job.create({
+          data: {
+            wallet: DRILL_WALLET, title: 'drill poll', source: 'drill', status: 'waiting_settlement', currentStep: 1, originEnv: 'dev',
+            steps: {
+              create: [
+                { seq: 0, kind: 'sign', builder: 'native-lifi-fund', title: 'signed', status: 'done', params: {} },
+                { seq: 1, kind: 'wait', builder: 'wait', title: 'arrive', status: 'running', params: {}, waitPredicate: { kind: 'chain-arrival', fromSteps: [0] }, expiresAt: new Date(Date.now() + 600_000) },
+              ],
+            },
+          },
+        })
+        const polled = await fetch(`${BASE}/api/jobs/${settling2.id}?t=${signJobToken(settling2.id)}`)
+        const polledBody = (await polled.json()) as { job?: { status?: string; failReason?: string | null } }
+        check(
+          'jobs poll: GET /api/jobs/[id] advances a mid-settlement job inline (watcher-driven, cron-independent)',
+          polled.status === 200 && polledBody.job?.status === 'failed' && /no arrival expectations/.test(polledBody.job?.failReason ?? ''),
+          JSON.stringify({ status: polled.status, job: polledBody.job?.status, reason: polledBody.job?.failReason }),
+        )
+        await prisma.job.deleteMany({ where: { OR: [{ originEnv: FENCE }, { id: settling2.id }] } })
+        check('jobs cron drill: fenced rows released', (await prisma.job.count({ where: { OR: [{ originEnv: FENCE }, { id: settling2.id }] } })) === 0)
+      } finally {
+        if (prevEnv === undefined) delete process.env.VERCEL_ENV
+        else process.env.VERCEL_ENV = prevEnv
+        await prisma.job.deleteMany({ where: { OR: [{ originEnv: FENCE }, { wallet: DRILL_WALLET, title: 'drill poll' }] } }).catch(() => {})
+      }
+    }
+
     const jobsBefore = await (await fetch(`${BASE}/api/jobs`, { headers: C })).json()
     const CANON_ASK = 'deposit 12 usdc to hyperliquid, then long $12 of eth on hyperliquid, then protect my eth long with a 5% stop'
     const dry = await fetch(`${BASE}/api/jobs`, { method: 'POST', headers: CJ, body: JSON.stringify({ ask: CANON_ASK, dryRun: true }) })
