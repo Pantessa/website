@@ -1847,6 +1847,36 @@ async function main() {
     check('featured: PATCH as non-admin → 403', nonAdminStar.status === 403)
   }
 
+  // ── Splash delta refetch (serversOnly) ─────────────────────────────────────
+  // When an MCP is toggled onto an ALREADY-painted splash, the client fetches
+  // just that server's tiles with serversOnly:true — the wallet-alone tiles
+  // (briefing + recurring buys) are already on screen and must NOT ride the
+  // delta response (they'd duplicate on merge, and recomputing the briefing
+  // is the slow half of the scan). Toggling an MCP off fetches nothing at all.
+  console.log('— splash delta refetch (serversOnly)')
+  {
+    const noServers = await fetch(`${BASE}/api/splash`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ address: owner.address, servers: [], serversOnly: true }),
+    })
+    const noServersBody = (await noServers.json()) as { address?: string; tiles?: unknown[] }
+    check(
+      'splash: serversOnly suppresses the wallet-alone tiles (empty set → zero tiles)',
+      noServers.status === 200 && noServersBody.address === owner.address && Array.isArray(noServersBody.tiles) && noServersBody.tiles.length === 0,
+    )
+    const unknownSlug = await fetch(`${BASE}/api/splash`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ address: owner.address, servers: [{ slug: 'no-such-mcp-slug' }], serversOnly: true }),
+    })
+    const unknownBody = (await unknownSlug.json()) as { tiles?: unknown[] }
+    check(
+      'splash: serversOnly with an unknown slug settles empty (no wallet tiles, no crash)',
+      unknownSlug.status === 200 && Array.isArray(unknownBody.tiles) && unknownBody.tiles.length === 0,
+    )
+  }
+
   // ── Switchboard route preview (public, read-only, no spend) ───────────────
   // Guards the routing lever the /switchboard "try a route" demo renders: the
   // contract shape, the $0.05 ceiling, and the proven-gate invariant — the pick

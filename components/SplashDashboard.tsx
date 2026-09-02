@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import Link from 'next/link'
 import { motion, useReducedMotion } from 'framer-motion'
 import { ArrowDownLeft, ArrowUpRight, ChevronDown, Clock, ExternalLink, Info, RefreshCw, Repeat, Vote, Wallet } from 'lucide-react'
@@ -50,7 +50,11 @@ export function SplashDashboard({
 }) {
   const [tiles, setTiles] = useState<SplashTile[] | null>(null)
   const [loading, setLoading] = useState(false)
-  // Bumped by a tile's Retry button to force a fresh scan.
+  // MCPs toggled onto an ALREADY-painted grid whose scan is still in flight —
+  // each renders a branded skeleton card in the slot where its real card will
+  // land. The existing cards never leave the screen for a delta scan.
+  const [pending, setPending] = useState<McpServer[]>([])
+  // Bumped by a tile's Retry button to force a fresh full scan.
   const [reload, setReload] = useState(0)
   // The chain picker's selection — cards re-scan scoped to it (null = all).
   const selectedChainId = useYeetfulStore((s) => s.selectedChainId)
@@ -73,33 +77,138 @@ export function SplashDashboard({
   // in-flight fetch and leaving the skeleton up forever.
   const key = `${address ?? ''}|${relevant.map((s) => s.id).sort().join(',')}|${relevantManual.slice().sort().join(',')}|${chainKey}`
 
+  // What the settled tiles actually cover: the wallet|chain surface plus each
+  // server's manual status at fetch time. A set change diffs against this —
+  // a server toggled OFF loses its tiles instantly (no fetch: the remaining
+  // cards are still true), a server toggled ON fetches JUST its own tiles
+  // (`serversOnly` skips the wallet briefing already on screen) and merges in
+  // behind a placeholder card. Only a wallet/chain change — or Retry —
+  // invalidates everything and takes the full-scan loader.
+  const coveredRef = useRef<{ base: string; byId: Map<string, { slug: string; manual: boolean }> } | null>(null)
+  // State mirror so the diff effect can read the current tiles without
+  // depending on them (a tiles dep would re-run the effect on every merge).
+  const tilesRef = useRef<SplashTile[] | null>(null)
+  const commitTiles = (next: SplashTile[] | null) => {
+    tilesRef.current = next
+    setTiles(next)
+  }
+  const lastReloadRef = useRef(reload)
+
   useEffect(() => {
     if (!address || relevant.length === 0) {
-      setTiles(null)
+      coveredRef.current = null
+      commitTiles(null)
+      setPending([])
       return
     }
     let alive = true
-    setLoading(true)
-    setTiles(null)
+    const base = `${address}|${chainKey}`
+    const covered = coveredRef.current
+    const forceFull = reload !== lastReloadRef.current
+    lastReloadRef.current = reload
+
+    if (forceFull || !covered || covered.base !== base) {
+      // Full scan: first paint, a different wallet, the chain picker, or an
+      // error tile's Retry. Everything on screen is stale here, so the
+      // clear-and-loader treatment is honest.
+      setLoading(true)
+      commitTiles(null)
+      setPending([])
+      const scanned = relevant.map((s) => ({ id: s.id, slug: s.slug }))
+      fetch('/api/splash', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ address, servers: relevant, manualSlugs: relevantManual, ...(chainKey ? { chain: chainKey } : {}) }),
+      })
+        .then((r) => r.json())
+        .then((data: { tiles?: SplashTile[] }) => {
+          if (!alive) return
+          const next = Array.isArray(data.tiles) ? data.tiles : []
+          coveredRef.current = {
+            base,
+            byId: new Map(scanned.map((s) => [s.id, { slug: s.slug, manual: relevantManual.includes(s.slug) }])),
+          }
+          commitTiles(next)
+          onResolve?.(next.length)
+        })
+        .catch(() => {
+          if (!alive) return
+          // Transport failure: settle empty but leave `covered` unset, so the
+          // next set change retries the whole scan instead of merging deltas
+          // into a grid that never painted.
+          commitTiles([])
+          onResolve?.(0)
+        })
+        .finally(() => {
+          if (alive) setLoading(false)
+        })
+      return () => {
+        alive = false
+      }
+    }
+
+    // Same wallet + chain — only the SET changed. Removals are local and
+    // instant: drop the toggled-off MCPs' tiles, keep everything else put.
+    const relevantIds = new Set(relevant.map((s) => s.id))
+    const removedSlugs = new Set<string>()
+    for (const [id, v] of covered.byId) {
+      if (!relevantIds.has(id)) {
+        removedSlugs.add(v.slug)
+        covered.byId.delete(id)
+      }
+    }
+    if (removedSlugs.size > 0) {
+      const next = (tilesRef.current ?? []).filter((t) => !removedSlugs.has(t.mcpSlug))
+      commitTiles(next)
+      onResolve?.(next.length)
+    }
+    // Additions — and manual-status flips, which change whether a quiet
+    // wallet still earns a preview card — fetch just their own tiles.
+    const fresh = relevant.filter((s) => {
+      const had = covered.byId.get(s.id)
+      return !had || had.manual !== relevantManual.includes(s.slug)
+    })
+    if (fresh.length === 0) {
+      setPending((prev) => (prev.length ? [] : prev))
+      return
+    }
+    setPending(fresh)
+    // Provisional count while the placeholder is up: a delta add is a
+    // hand-toggle (always earns at least a preview card), and reporting it
+    // now keeps the caller's settled-empty state from sharing the screen
+    // with the skeleton. The settle below re-reports the real number.
+    onResolve?.((tilesRef.current?.length ?? 0) + fresh.length)
     fetch('/api/splash', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ address, servers: relevant, manualSlugs: relevantManual, ...(chainKey ? { chain: chainKey } : {}) }),
+      body: JSON.stringify({
+        address,
+        servers: fresh,
+        manualSlugs: relevantManual.filter((slug) => fresh.some((s) => s.slug === slug)),
+        serversOnly: true,
+        ...(chainKey ? { chain: chainKey } : {}),
+      }),
     })
       .then((r) => r.json())
       .then((data: { tiles?: SplashTile[] }) => {
         if (!alive) return
-        const next = Array.isArray(data.tiles) ? data.tiles : []
-        setTiles(next)
+        const freshSlugs = new Set(fresh.map((s) => s.slug))
+        // Belt on the serversOnly contract: only the asked-for MCPs' tiles
+        // merge, so wallet-level tiles can never duplicate.
+        const add = (Array.isArray(data.tiles) ? data.tiles : []).filter((t) => freshSlugs.has(t.mcpSlug))
+        const next = [...(tilesRef.current ?? []).filter((t) => !freshSlugs.has(t.mcpSlug)), ...add]
+        for (const s of fresh) covered.byId.set(s.id, { slug: s.slug, manual: relevantManual.includes(s.slug) })
+        commitTiles(next)
         onResolve?.(next.length)
+        setPending([])
       })
       .catch(() => {
+        // The added MCP's scan failed in transport: keep the cards we have,
+        // drop the placeholder. `covered` is untouched, so the next toggle
+        // retries it.
         if (!alive) return
-        setTiles([])
-        onResolve?.(0)
-      })
-      .finally(() => {
-        if (alive) setLoading(false)
+        setPending([])
+        onResolve?.(tilesRef.current?.length ?? 0)
       })
     return () => {
       alive = false
@@ -109,7 +218,7 @@ export function SplashDashboard({
 
   // Nothing to show — let the caller render its normal empty state.
   if (!address || relevant.length === 0) return null
-  if (!loading && tiles && tiles.length === 0) return null
+  if (!loading && tiles && tiles.length === 0 && pending.length === 0) return null
 
   return (
     <div className="w-full">
@@ -138,6 +247,17 @@ export function SplashDashboard({
                 <TileCard tiles={group} onPick={onPick} onRetry={() => setReload((n) => n + 1)} />
               </div>
             ))}
+            {/* A just-toggled MCP loads IN PLACE: its branded skeleton takes
+                the grid slot its card will fill, and the settled cards around
+                it never flinch. (An MCP re-scanning behind an existing card —
+                the manual-flip case — keeps that card instead of doubling.) */}
+            {pending
+              .filter((s) => !tiles.some((t) => t.mcpSlug === s.slug))
+              .map((s) => (
+                <div key={s.id} className="min-w-0">
+                  <PendingTileCard server={s} />
+                </div>
+              ))}
           </div>
         )}
 
@@ -255,6 +375,28 @@ export function TileCard({
           multi-section card doesn't pay a divider+chips band per section.
           Capped at 4 so a multi-tile card's union stays a tidy row. */}
       <PromptChips prompts={dedupePrompts(group.flatMap((t) => t.prompts)).slice(0, 4)} slug={head.mcpSlug} onPick={onPick} />
+    </div>
+  )
+}
+
+/** The in-place loading card for an MCP just toggled onto a painted grid:
+ *  same card shell as TileCard, the MCP's real logo + name in the header, a
+ *  pulsing body where its data will land. The rest of the grid stays put —
+ *  adding an MCP never sends the whole splash back to the loader. */
+function PendingTileCard({ server }: { server: McpServer }) {
+  return (
+    <div className="relative flex h-full flex-col overflow-hidden rounded-2xl border border-[var(--line)] bg-[var(--surf-1)] p-4 text-left">
+      <div aria-hidden className="pointer-events-none absolute inset-x-4 top-0 h-px bg-gradient-to-r from-transparent via-white/15 to-transparent" />
+      <div className="mb-3 flex items-center gap-2">
+        <BrandIcon server={server} size={20} />
+        <h3 className="truncate text-sm font-semibold text-white">{server.name}</h3>
+      </div>
+      <div aria-hidden className="space-y-2">
+        <div className="h-7 w-32 animate-pulse rounded bg-white/10" />
+        <div className="h-4 w-full animate-pulse rounded bg-white/5" />
+        <div className="h-4 w-3/4 animate-pulse rounded bg-white/5" />
+      </div>
+      <p className="mt-auto pt-4 text-[10px] text-[color:var(--muted-2)]">Scanning your wallet…</p>
     </div>
   )
 }
