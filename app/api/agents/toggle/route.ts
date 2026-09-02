@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import prisma from '@/lib/db'
 import { getSessionAddress } from '@/lib/auth'
+import { isInternalRun } from '@/lib/internal-run'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -23,7 +24,8 @@ export async function POST(req: NextRequest) {
 
   try {
     await prisma.agentToggleEvent.create({
-      data: { slug, active: body.active, address },
+      // isInternal: our own harness/drill toggle (arrival hygiene, 2026-09-01).
+      data: { slug, active: body.active, address, isInternal: isInternalRun(req.headers, body) },
     })
   } catch {
     // Telemetry must never surface as an error to the toggling user.

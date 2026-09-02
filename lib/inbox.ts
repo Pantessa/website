@@ -14,6 +14,7 @@
 import prisma from '@/lib/db'
 import { cleanAsk, composeMcps, mintSlug, INTENT_SLUG_RE } from '@/lib/intent-links'
 import { MANDATE_KIND_LABELS } from '@/lib/roster-client'
+import { COUNTED_EVENT_WHERE } from '@/lib/link-receipt-verify'
 
 const WALLET_RE = /^0x[0-9a-fA-F]{40}$/
 const HANDLE_RE = /^[a-z0-9-]{2,32}$/
@@ -122,8 +123,10 @@ export async function inboxFor(wallet: string): Promise<InboxItem[]> {
   if (links.length === 0) return []
 
   // Drop anything already signed (server truth from the funnel events).
+  // Only COUNTED signed events drop a card (receipt verification,
+  // 2026-09-01): a spoofed beacon must not silently clear someone's inbox.
   const signed = await prisma.intentLinkEvent.findMany({
-    where: { slug: { in: links.map((l) => l.id) }, kind: 'signed' },
+    where: { slug: { in: links.map((l) => l.id) }, kind: 'signed', ...COUNTED_EVENT_WHERE },
     select: { slug: true },
   })
   const signedSlugs = new Set(signed.map((s) => s.slug))

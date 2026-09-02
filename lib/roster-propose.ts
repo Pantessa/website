@@ -31,6 +31,7 @@ import prisma from '@/lib/db'
 import { MANDATE_KIND_LABELS, type MandateKind, type SlotStatus } from '@/lib/roster-client'
 import { assertProposalBudget, assertUnderSlotCap } from '@/lib/roster-policy'
 import { moneyShaped } from '@/lib/ask-failure'
+import { COUNTED_EVENT_WHERE } from '@/lib/link-receipt-verify'
 
 export interface RosterBadge {
   slotId: string
@@ -192,8 +193,11 @@ export async function fireCascade(slotId: string): Promise<void> {
     })
     if (links.length > 0) {
       const slugs = links.map((l) => l.id)
+      // Only COUNTED signed events protect a link from the fire cascade
+      // (receipt verification, 2026-09-01): a spoofed beacon must not keep
+      // a fired agent's card alive.
       const signed = await prisma.intentLinkEvent.findMany({
-        where: { slug: { in: slugs }, kind: 'signed' },
+        where: { slug: { in: slugs }, kind: 'signed', ...COUNTED_EVENT_WHERE },
         select: { slug: true },
       })
       const signedSet = new Set(signed.map((s) => s.slug))

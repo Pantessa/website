@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse, after } from 'next/server'
 import { attachFundsSnapshot, classifyTurn, moneyShaped, recordAskFailure } from '@/lib/ask-failure'
+import { recordTurnExpectations } from '@/lib/link-receipt-verify'
 import { erc20Abi, formatEther, formatUnits, getAddress, isAddress, parseEther } from 'viem'
 import { openseaEnabled, openseaSlugOf } from '@/lib/opensea'
 import { getPaidFetch, hasAgentWallet } from '@/lib/agent-wallet'
@@ -360,9 +361,17 @@ export async function POST(req: NextRequest) {
   const res = await handleChatTurn(new NextRequest(req.nextUrl, { method: 'POST', headers: req.headers, body: raw }))
   try {
     if (!raw || !res.headers.get('content-type')?.includes('application/json')) return res
+    const reqBody = JSON.parse(raw) as Record<string, unknown>
+    // Receipt verification (2026-09-01): record the built artifact's
+    // {to, selector, chainId} for /i turns — the binding target a later
+    // signed beacon's tx hash is verified against (lib/receipt-verify).
+    // Runs for harness probes too (their signed drills verify like anyone).
+    if (typeof reqBody.intentLinkSlug === 'string') {
+      const artifactData = (await res.clone().json().catch(() => null)) as Record<string, unknown> | null
+      after(() => recordTurnExpectations(reqBody, artifactData))
+    }
     // The API harness provokes walls on purpose — its probes opt out.
     if (req.headers.get('x-yf-no-ask-log') === '1') return res
-    const reqBody = JSON.parse(raw) as Record<string, unknown>
     const message = typeof reqBody.message === 'string' ? reqBody.message : ''
     if (reqBody.phase === 'execute' || !message.trim() || !moneyShaped(message)) return res
     const data = (await res.clone().json().catch(() => null)) as Record<string, unknown> | null
@@ -1184,7 +1193,7 @@ async function handleChatTurn(req: NextRequest) {
       if (!walletAddress) {
         return NextResponse.json({ reply: '🛡️ Connect your wallet first — the guardian watches YOUR Hyperliquid positions.' })
       }
-      const armed = await armGuardianPolicy(walletAddress, armAsk)
+      const armed = await armGuardianPolicy(walletAddress, armAsk, { internal: internalRun })
       if (!armed.ok) {
         nativeTrace({ type: 'note', level: 'warn', label: `guardian layer: arming refused — ${armed.error.slice(0, 140)}` })
         const approveHint = armed.status === 409 && /delegation/i.test(armed.error)

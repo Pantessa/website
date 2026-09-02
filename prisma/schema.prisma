@@ -515,6 +515,8 @@ model AgentToggleEvent {
   slug      String // the McpServer.slug toggled (no FK: guests toggle static-catalog slugs too)
   active    Boolean // true = added to runner, false = removed
   address   String? // lowercased wallet if signed in, else null
+  /// Our own harness/drill toggle (lib/internal-run.ts) — arrival hygiene.
+  isInternal Boolean @default(false) @map("is_internal")
   createdAt DateTime @default(now()) @map("created_at")
 
   @@index([slug])
@@ -908,6 +910,8 @@ model HlGuardianPolicy {
   triggerValue Float     @map("trigger_value")
   status       String    @default("active") // active | paused | triggered | done | error
   lastChecked  DateTime? @map("last_checked")
+  /// Our own harness/drill policy (lib/internal-run.ts) — arrival hygiene.
+  isInternal   Boolean   @default(false) @map("is_internal")
   createdAt    DateTime  @default(now()) @map("created_at")
 
   delegation HlGuardianDelegation @relation(fields: [delegationId], references: [id], onDelete: Cascade)
@@ -1219,10 +1223,45 @@ model IntentLinkEvent {
   variant   Int? // which phrasing this visit saw (0 = the base ask)
   wallet    String? // lowercased, when known (connect and later)
   valueUsd  Float?   @map("value_usd") // guardrail-priced, signed/built turns
+  /// On-chain receipt verification (security 2026-09-01). NULL = legacy
+  /// (pre-feature — keeps counting). New signed/settled rows carry:
+  ///   'verified'   — receipt read on-chain, from == wallet, hash single-use,
+  ///                  to+selector matched the link's own built artifact
+  ///   'attested'   — non-EVM-tx class (order/hl/vote/nft/job), server-derived
+  ///                  from the link's ask; venue reads are the next tranche
+  ///   'unverified' — hashless, RPC down, or receipt not yet indexed;
+  ///                  COUNTS NOTHING, FIRES NOTHING; lazily re-checked ≤7d
+  ///   'mismatch'   — spoof (wrong from, reverted, reused hash, wrong
+  ///                  target); terminal, never counts
+  txHash       String?   @map("tx_hash")
+  chainId      Int?      @map("chain_id")
+  verification String?
+  verifiedAt   DateTime? @map("verified_at")
+  /// Our own harness/drill event (lib/internal-run.ts): wallet-bearing
+  /// events read as GTM-arc arrivals — a gate run must never count.
+  isInternal   Boolean   @default(false) @map("is_internal")
   createdAt DateTime @default(now()) @map("created_at")
 
   @@index([slug, kind])
   @@map("intent_link_events")
+}
+
+/// The link's own built-artifact expectations (security 2026-09-01): the
+/// chat route's response choke records {to, selector, chainId} for every
+/// tx/txChain built on an /i turn, keyed by (slug, wallet). Receipt
+/// verification binds a claimed tx hash to THESE — a real tx pointed at
+/// any other target is a mismatch. Rows are hygiene-pruned after 7d.
+model IntentLinkExpectation {
+  id        String   @id @default(cuid())
+  slug      String
+  wallet    String // lowercased signer the artifact was built for
+  chainId   Int      @map("chain_id")
+  toAddr    String   @map("to_addr") // lowercased tx.to
+  selector  String? // first 4 bytes of calldata ('0x…8 hex'); null = native send
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([slug, wallet])
+  @@map("intent_link_expectations")
 }
 
 /// A creator payout request against accrued intent-link earnings (half of

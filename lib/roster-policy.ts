@@ -290,7 +290,11 @@ export async function assertProposalBudget(slotId: string, capUsd: number, estUs
         count(*) FILTER (
           WHERE state IN ('open', 'handed_off')
             AND NOT EXISTS (
+              -- Only COUNTED signed events decide (receipt verification,
+              -- 2026-09-01 — keep in sync with COUNTED_EVENT_SQL in
+              -- lib/receipt-verify; inlined so this module stays light).
               SELECT 1 FROM intent_link_events e WHERE e.slug = broker_intents.link_slug AND e.kind = 'signed'
+                AND (e.verification IS NULL OR e.verification IN ('verified','attested'))
             )
         )::int AS pending,
         coalesce(sum((substring(ask from '\\$\\s?([0-9]+(?:\\.[0-9]+)?)'))::float)

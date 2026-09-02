@@ -134,7 +134,7 @@ const handler = createMcpHandler(
         title: 'Choose an option',
         description:
           'Pick one offered option by id (funding route, proceed, or walk away). The option rewrites the working sentence and the desk re-quotes — ' +
-          'there is no other negotiation channel, by design.',
+          'the ONLY way to rewrite an ask, by design. (broker_send is delivery, not negotiation: courting a listing runs open → send your pitch → the human hires.)',
         inputSchema: {
           intent_id: z.string().min(4).max(24),
           option_id: z.string().min(1).max(24),

@@ -955,8 +955,10 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
       jobId: data && typeof data.jobId === 'string' ? data.jobId : undefined,
     })
   }
-  const reportEmbedSigned = (info: { artifact: string; chain?: string; txUrl?: string; detail?: string; valueUsd?: number; buildPath?: string; feeBps?: number; jobId?: string }) => {
-    onEmbedEvent?.('turn', { outcome: 'signed', artifact: info.artifact, valueUsd: info.valueUsd })
+  const reportEmbedSigned = (info: { artifact: string; chain?: string; chainId?: number; txUrl?: string; detail?: string; valueUsd?: number; buildPath?: string; feeBps?: number; jobId?: string }) => {
+    // txUrl + chainId ride the turn event so /i's signed beacon can carry
+    // the tx hash for on-chain receipt verification (2026-09-01).
+    onEmbedEvent?.('turn', { outcome: 'signed', artifact: info.artifact, valueUsd: info.valueUsd, txUrl: info.txUrl, chainId: info.chainId })
     postEmbedTelemetry({ outcome: 'signed', ...info })
   }
 
@@ -1674,7 +1676,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
                               // source of truth) so Robinhood/Arbitrum/etc. link to
                               // the right explorer, not a basescan fallback.
                               const explorer = chainById(chainId)?.explorerTx ?? 'https://basescan.org/tx/'
-                              reportEmbedSigned({ artifact: 'tx', chain: chainLabel(chainId), txUrl: `${explorer}${hash}`, valueUsd: guardrailUsdOf(msg.meta), buildPath: buildPathOf(msg.meta), feeBps: feeBpsOf(msg.meta) })
+                              reportEmbedSigned({ artifact: 'tx', chain: chainLabel(chainId), chainId, txUrl: `${explorer}${hash}`, valueUsd: guardrailUsdOf(msg.meta), buildPath: buildPathOf(msg.meta), feeBps: feeBpsOf(msg.meta) })
                               // Durable signing log → the message's DB meta
                               // (the /p share page renders it with explorer links).
                               if (currentChatId) recordSignedTxs(currentChatId, msg.id, [{ hash, chainId, title: builtTx.action ?? 'transaction' }])
@@ -1696,6 +1698,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
                               reportEmbedSigned({
                                 artifact: 'tx-chain',
                                 chain: chainLabel(chainId),
+                                chainId,
                                 txUrl: `${explorer}${hash}`,
                                 valueUsd: guardrailUsdOf(msg.meta),
                                 buildPath: buildPathOf(msg.meta),

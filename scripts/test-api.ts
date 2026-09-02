@@ -93,6 +93,7 @@ import prisma from '../lib/db'
 import { identiconCells } from '../components/ManagerMark'
 import { addrsUnion, arcQuery } from '../lib/gtm-arc'
 import { isInternalRun, INTERNAL_RUN_HEADER } from '../lib/internal-run'
+import { COUNTED_EVENT_SQL, COUNTED_EVENT_WHERE, decideReceiptVerdict, expectedReceiptClass, extractTxHash } from '../lib/link-receipt-verify'
 import { deskExecuteConsentMessage, cleanSenderLabel } from '../lib/broker-exec'
 import { brandFromRow, isDeniedBrandHost, THIRD_PARTY_BRAND_HOSTS } from '../lib/brand-denylist'
 import { BRAND_PRESETS, colorFieldError, presetFor } from '../lib/brand-presets'
@@ -12658,6 +12659,124 @@ async function main() {
           again.status === 200,
         JSON.stringify({ d: declined.status, s: statusAfter.payload?.state }),
       )
+    }
+
+    // ── RECEIPT VERIFICATION (overnight 2026-09-01, T-R1..T-R7) ────────────
+    check(
+      'receipts: the pure verdict matrix — reuse/reverted/wrong-from/wrong-target = mismatch; RPC-dark or no expectations = unverified; exact match = verified',
+      (() => {
+        const W = '0x1111111111111111111111111111111111111111'
+        const exp = [{ toAddr: '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', selector: '0x12345678' }]
+        const tx = { from: W, to: '0xAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA', input: '0x12345678deadbeef' }
+        return (
+          decideReceiptVerdict({ wallet: W, tx, receiptStatus: 'success', expectations: exp, hashReused: false }) === 'verified' &&
+          decideReceiptVerdict({ wallet: W, tx, receiptStatus: 'success', expectations: exp, hashReused: true }) === 'mismatch' &&
+          decideReceiptVerdict({ wallet: W, tx: { ...tx, from: '0x2222222222222222222222222222222222222222' }, receiptStatus: 'success', expectations: exp, hashReused: false }) === 'mismatch' &&
+          decideReceiptVerdict({ wallet: W, tx, receiptStatus: 'reverted', expectations: exp, hashReused: false }) === 'mismatch' &&
+          decideReceiptVerdict({ wallet: W, tx: { ...tx, to: '0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb' }, receiptStatus: 'success', expectations: exp, hashReused: false }) === 'mismatch' &&
+          decideReceiptVerdict({ wallet: W, tx: { ...tx, input: '0x99999999' }, receiptStatus: 'success', expectations: exp, hashReused: false }) === 'mismatch' &&
+          decideReceiptVerdict({ wallet: W, tx: null, receiptStatus: null, expectations: exp, hashReused: false }) === 'unverified' && // RPC dark: delay, never mint (T-R4)
+          decideReceiptVerdict({ wallet: W, tx: { ...tx, from: '0x3333333333333333333333333333333333333333' }, receiptStatus: null, expectations: exp, hashReused: false }) === 'mismatch' && // foreign sender is decisive even with no receipt
+          decideReceiptVerdict({ wallet: W, tx, receiptStatus: 'success', expectations: [], hashReused: false }) === 'unverified' && // no artifact on record
+          decideReceiptVerdict({ wallet: null, tx, receiptStatus: 'success', expectations: exp, hashReused: false }) === 'mismatch' && // signer-less claim never binds
+          // a later successful chain read flips the SAME facts to verified — the re-check path (T-R4)
+          decideReceiptVerdict({ wallet: W, tx, receiptStatus: 'success', expectations: exp, hashReused: false }) === 'verified'
+        )
+      })(),
+    )
+    check(
+      'receipts: class comes from the SERVER reading of the ask (T-R5) — jobs/cadence/mosaic/hl/vote/nft/order attested lanes, evm-tx default; legacy NULL counts',
+      expectedReceiptClass('swap 1 USDC from base to arbitrum, then send the 1 USDC on arbitrum to 0x2055555555555555555555555555555555555555') === 'job' &&
+        expectedReceiptClass('buy $10 of AAPL every week') === 'job' &&
+        expectedReceiptClass('anything', 'mosaic') === 'job' &&
+        expectedReceiptClass('Protect my ETH long with a 5% stop loss') === 'hl' &&
+        expectedReceiptClass('Vote yes on the snapshot proposal') === 'vote' &&
+        expectedReceiptClass('Sell my Pudgy NFT on opensea') === 'nft' &&
+        expectedReceiptClass('place a limit order: 0.1 ETH at 4000') === 'order' &&
+        expectedReceiptClass('Buy $15 of AAPL') === 'evm-tx' &&
+        extractTxHash(`https://basescan.org/tx/0x${'ab'.repeat(32)}`) === `0x${'ab'.repeat(32)}` &&
+        extractTxHash('junk') === null &&
+        COUNTED_EVENT_WHERE.OR.some((c) => 'verification' in c && c.verification === null) &&
+        /verification IS NULL/.test(COUNTED_EVENT_SQL),
+    )
+    {
+      // Fail-closed end to end: a fabricated signed beacon (no tx at all,
+      // T-R1) flips NOTHING — broker_status stays handed_off, the inbox
+      // card stays, and the response says so.
+      const rcptWallet = privateKeyToAccount(generatePrivateKey())
+      SIGNED_IN_WALLETS.add(rcptWallet.address.toLowerCase())
+      const J3 = { 'content-type': 'application/json' }
+      const rSent = await call('broker_send', { ask: 'Buy $15 of AAPL', recipient: rcptWallet.address, agent: 'harness' })
+      const rSlug = String(rSent.payload?.url ?? '').split('/').pop() ?? ''
+      const fab = await fetch(`${BASE}/api/intent-links/${rSlug}/events`, {
+        method: 'POST',
+        headers: J3,
+        body: JSON.stringify({ kind: 'signed', wallet: rcptWallet.address, valueUsd: 15 }),
+      })
+      const fabBody = (await fab.json()) as { verification?: string }
+      const stFab = await call('broker_status', { intent_id: rSent.payload.intentId })
+      const inboxFab = ((await (await fetch(`${BASE}/api/inbox?wallet=${rcptWallet.address}`)).json()) as { items?: { slug: string }[] }).items ?? []
+      check(
+        'receipts T-R1: a fabricated hashless signed beacon stores unverified — status does NOT flip, the inbox card does NOT drop',
+        !rSent.isError && fab.status === 200 && fabBody.verification === 'unverified' &&
+          !stFab.isError && stFab.payload?.state === 'handed_off' &&
+          inboxFab.some((i) => i.slug === rSlug),
+        JSON.stringify({ v: fabBody.verification, s: stFab.payload?.state }),
+      )
+      // T-R2: a spoofed hash pointing at someone ELSE's real Base tx. Best
+      // effort to fetch a live foreign tx; RPC-dark degrades to the same
+      // fail-closed invariant (unverified — still counts nothing).
+      let foreignHash: string | null = null
+      try {
+        const { createPublicClient: cpc, http: viemHttp } = await import('viem')
+        const { base: baseChain } = await import('viem/chains')
+        const pub = cpc({ chain: baseChain, transport: viemHttp('https://base-rpc.publicnode.com') })
+        // An AGED block — a latest-block tx can lag receipt propagation on
+        // the server's own RPC and degrade the assert to the unverified arm.
+        const tip = await pub.getBlockNumber()
+        const blk = await pub.getBlock({ blockNumber: tip - BigInt(5000) })
+        // transactions[0] is the OP-stack L1-deposit SYSTEM tx — skip it;
+        // a real user tx is the honest spoof material.
+        foreignHash = (blk.transactions[1] ?? blk.transactions[0] ?? null) as string | null
+      } catch {
+        /* RPC dark — the unverified branch still proves fail-closed */
+      }
+      const spoof = await fetch(`${BASE}/api/intent-links/${rSlug}/events`, {
+        method: 'POST',
+        headers: J3,
+        body: JSON.stringify({ kind: 'signed', wallet: rcptWallet.address, valueUsd: 15, txHash: foreignHash ?? `0x${'99'.repeat(32)}`, chainId: 8453 }),
+      })
+      const spoofBody = (await spoof.json()) as { verification?: string }
+      const stSpoof = await call('broker_status', { intent_id: rSent.payload.intentId })
+      const inboxSpoof = ((await (await fetch(`${BASE}/api/inbox?wallet=${rcptWallet.address}`)).json()) as { items?: { slug: string }[] }).items ?? []
+      check(
+        "receipts T-R2: a spoofed hash (someone else's real tx / unknown hash) never counts — mismatch or unverified, status still handed_off, card still in the inbox; the status poll ran the lazy re-check without minting anything",
+        spoof.status === 200 &&
+          (spoofBody.verification === 'mismatch' || spoofBody.verification === 'unverified') &&
+          !stSpoof.isError && stSpoof.payload?.state === 'handed_off' &&
+          inboxSpoof.some((i) => i.slug === rSlug),
+        JSON.stringify({ v: spoofBody.verification, s: stSpoof.payload?.state, live: !!foreignHash }),
+      )
+      // T-R5 attested lane: a non-EVM-tx-class link (vote) counts on the
+      // server's own class read — signed drops the card, status flips.
+      const vSent = await call('broker_send', { ask: 'Vote yes on the snapshot proposal', recipient: rcptWallet.address, agent: 'harness' })
+      const vSlug = String(vSent.payload?.url ?? '').split('/').pop() ?? ''
+      const att = await fetch(`${BASE}/api/intent-links/${vSlug}/events`, {
+        method: 'POST',
+        headers: J3,
+        body: JSON.stringify({ kind: 'signed', wallet: rcptWallet.address }),
+      })
+      const attBody = (await att.json()) as { verification?: string }
+      const stAtt = await call('broker_status', { intent_id: vSent.payload.intentId })
+      const inboxAtt = ((await (await fetch(`${BASE}/api/inbox?wallet=${rcptWallet.address}`)).json()) as { items?: { slug: string }[] }).items ?? []
+      check(
+        "receipts T-R5: a vote-class link attests (no EVM receipt exists) — counted: status flips to signed, the card drops; class came from the ask, not the client",
+        att.status === 200 && attBody.verification === 'attested' &&
+          !stAtt.isError && stAtt.payload?.state === 'signed' &&
+          inboxAtt.every((i) => i.slug !== vSlug),
+        JSON.stringify({ v: attBody.verification, s: stAtt.payload?.state }),
+      )
+      for (const r of [rSent, vSent]) if (r.payload?.intentId) await call('broker_close', { intent_id: r.payload.intentId })
     }
 
     // broker_tile — MOSAIC on the desk: slices in, a kind='mosaic' /i link
