@@ -60,7 +60,7 @@ const SERVICE = {
   kind: 'data',
   priceUsd: '0',
   networks: ['Ethereum', 'Base', 'Arbitrum', 'Gnosis'],
-  websiteUrl: 'https://github.com/Yeetful/free-mcps',
+  websiteUrl: 'https://github.com/Pantessa/free-mcps',
   // callable:false like snapshot-free/uniswap-free — free MCP rows are
   // PLANNER-driven: the endpoint planner picks among the mcp_endpoints
   // children below (a callable data row without a wired `tool` matches none

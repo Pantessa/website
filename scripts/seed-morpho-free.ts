@@ -61,7 +61,7 @@ const SERVICE = {
   kind: 'data',
   priceUsd: '0',
   networks: ['Base', 'Ethereum'],
-  websiteUrl: 'https://github.com/Yeetful/free-mcps',
+  websiteUrl: 'https://github.com/Pantessa/free-mcps',
   // callable:false like the sibling free rows — planner-driven via the
   // mcp_endpoints children below (and the NATIVE morpho layer calls
   // markets/market_info/build_* directly through `endpoint`).

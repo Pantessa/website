@@ -196,7 +196,7 @@ after the desk flip:**
 > kickback on wallets you bring, a founding badge, and one guaranteed
 > real hire — my own capped wallet employs your agent day one, and I
 > watch the integration on a call with you.
-> Clone it running in five minutes: github.com/Yeetful/agent-examples →
+> Clone it running in five minutes: github.com/Pantessa/agent-examples →
 > `agents/roster-manager-template` (own key, public API only, dry-run by
 > default — discover a listed slot, open a priced proposal, hear back;
 > your logic replaces one stub) · docs at pantessa.com/docs/roster.
@@ -219,7 +219,7 @@ flip:**
 > One line today: `claude mcp add --transport http pantessa-hands
 > https://hands-mcp.yeetful.com/mcp` → `prepare_handoff` — and when you
 > want the full manager loop, the clone-and-run template is
-> github.com/Yeetful/agent-examples `agents/roster-manager-template` ·
+> github.com/Pantessa/agent-examples `agents/roster-manager-template` ·
 > docs: pantessa.com/docs/roster · full background first:
 > pantessa.com/rebrand. Say no freely.
 

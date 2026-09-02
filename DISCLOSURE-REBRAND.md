@@ -18,7 +18,8 @@ Status of the supporting facts, verified 2026-08-11:
 - MetaMask stalelist and SEAL `domain.txt` both still carry
   `uniswap-embed.yeetful.com`; `pantessa.com` and `yeetful.com` are clean on both.
 - Both fork deployments are deleted (404); both repos are archived on
-  github.com/Yeetful.
+  github.com/Pantessa (the org renamed from Yeetful 2026-08-17; the old org
+  URL now 404s, though old repo URLs still 301 until the name is reclaimed).
 - `pantessa@1.0.0` and `yeetful@0.11.0` are live on npm.
 
 ---
@@ -36,7 +37,7 @@ Status of the supporting facts, verified 2026-08-11:
 > - Both fork deployments (`uniswap-embed.yeetful.com` and the CoW fork) are
 >   **deleted** — the hosts serve nothing and return no content.
 > - Both source repositories are **archived read-only** on our GitHub org
->   (github.com/Yeetful) so the history stays inspectable.
+>   (github.com/Pantessa) so the history stays inspectable.
 > - Every link to them was removed from our product, and we adopted a
 >   standing internal policy: never host or brand an interface that looks
 >   like someone else's product. We understand why the listing happened;
@@ -109,7 +110,7 @@ the request payload)
 > understand exactly why it was listed.
 >
 > Current state, verifiable now: the deployment is **deleted** (the host
-> serves nothing), the source repo is **archived** on github.com/Yeetful,
+> serves nothing), the source repo is **archived** on github.com/Pantessa,
 > and our standing policy is to never host third-party-branded interfaces.
 > A parallel appeal is open with MetaMask
 > (eth-phishing-detect#273376).
