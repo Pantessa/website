@@ -50,7 +50,7 @@ const SERVICE = {
   kind: 'data',
   priceUsd: '0',
   networks: ['Ethereum'],
-  websiteUrl: 'https://github.com/Yeetful/free-mcps',
+  websiteUrl: 'https://github.com/Pantessa/free-mcps',
   // callable:false like the sibling free rows — planner-driven via the
   // mcp_endpoints children below.
   callable: false,

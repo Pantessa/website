@@ -59,7 +59,7 @@ const SERVICE = {
   kind: 'data',
   priceUsd: '0',
   networks: ['Ethereum', 'Base', 'Arbitrum', 'Optimism', 'Polygon', 'BNB Chain', 'Avalanche', 'Scroll', 'Gnosis', 'Robinhood Chain'],
-  websiteUrl: 'https://github.com/Yeetful/free-mcps',
+  websiteUrl: 'https://github.com/Pantessa/free-mcps',
   // callable:false like the sibling free rows — free MCP rows are
   // PLANNER-driven: the endpoint planner picks among the mcp_endpoints
   // children below.

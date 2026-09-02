@@ -113,8 +113,8 @@ control verb — is live end to end, and SDK 0.5 makes both the org budget
 
 | # | Item | PR |
 |---|------|----|
-| 1+2 | Kill switch: reversible agent pause + account freeze (backend + dashboard + docs) | [#99](https://github.com/Yeetful/website/pull/99) |
-| 3 | SDK 0.5 — org budgets + remote pause enforcement | [sdk#6](https://github.com/Yeetful/sdk/pull/6) |
+| 1+2 | Kill switch: reversible agent pause + account freeze (backend + dashboard + docs) | [#99](https://github.com/Pantessa/website/pull/99) |
+| 3 | SDK 0.5 — org budgets + remote pause enforcement | [sdk#6](https://github.com/Pantessa/sdk/pull/6) |
 | 4 | Exit verification | (this entry — no code PR) |
 
 **Merge notes**: #99 and sdk#6 are INDEPENDENT (no stacked chain — the
@@ -143,7 +143,7 @@ test:api 80 → 88. sdk#6: 0.4.0 → 0.5.0, NOT published (owner publishes npm).
   output — harness pages added post-build 404; use the preview `web` dev
   config (compiles on demand) or rebuild.
 
-### Item 3 — SDK 0.5: org budgets + remote pause ✅ (2026-06-13) — [sdk#6](https://github.com/Yeetful/sdk/pull/6)
+### Item 3 — SDK 0.5: org budgets + remote pause ✅ (2026-06-13) — [sdk#6](https://github.com/Pantessa/sdk/pull/6)
 
 Branch `sdk-0.5-org-pause` off SDK main (separate repo — npm has 0.4.0).
 Mirrors the proven 0.4 per-key pattern for two new policy fields: the `org`
@@ -162,7 +162,7 @@ org, agent} on policy + echo) — so when #99 + sdk#6 are both live the contract
 lines up. Both PRs merge independently; SDK degrades open if the deployed API
 predates the fields.
 
-### Item 2 — Kill switch dashboard + docs ✅ (2026-06-13) — [#99](https://github.com/Yeetful/website/pull/99) (kill-switch PR, items 1+2)
+### Item 2 — Kill switch dashboard + docs ✅ (2026-06-13) — [#99](https://github.com/Pantessa/website/pull/99) (kill-switch PR, items 1+2)
 
 Same `kill-switch` branch as item 1 → ONE PR (#99, base main, independent —
 the SDK half is item 3 in ../sdk). Agents tab: per-agent Pause/Resume toggle
@@ -310,11 +310,11 @@ model, the APIs, the dashboard, and the docs.
 
 | # | Item | PR |
 |---|------|----|
-| 1 | Schema + org core (roles, SIWE-only CRUD) | [#94](https://github.com/Yeetful/website/pull/94) |
-| 2 | Org-scoped spending + two-level budget API | [#95](https://github.com/Yeetful/website/pull/95) |
-| 3 | Dashboard org switcher + members page | [#96](https://github.com/Yeetful/website/pull/96) |
-| 4 | Org-scoped tabs + budget meter/editor UI | [#97](https://github.com/Yeetful/website/pull/97) |
-| 5 | Expense report + /docs/teams | [#98](https://github.com/Yeetful/website/pull/98) |
+| 1 | Schema + org core (roles, SIWE-only CRUD) | [#94](https://github.com/Pantessa/website/pull/94) |
+| 2 | Org-scoped spending + two-level budget API | [#95](https://github.com/Pantessa/website/pull/95) |
+| 3 | Dashboard org switcher + members page | [#96](https://github.com/Pantessa/website/pull/96) |
+| 4 | Org-scoped tabs + budget meter/editor UI | [#97](https://github.com/Pantessa/website/pull/97) |
+| 5 | Expense report + /docs/teams | [#98](https://github.com/Pantessa/website/pull/98) |
 | 6 | Exit verification | (this entry — no code PR) |
 
 **Merge notes — THE CHAIN IS STACKED, land in order #94 → #95 → #96 →
@@ -344,7 +344,7 @@ future runs**: SDK 0.5 consumes the policy `org` block (refuse locally on
 org overBudget); Spend Permissions (Run 12, needs owner CDP creds);
 alerts/kill-switch now have an org to hang off.
 
-### Item 5 — The expense report + /docs/teams ✅ (2026-06-13) — [#98](https://github.com/Yeetful/website/pull/98), STACKED on #97
+### Item 5 — The expense report + /docs/teams ✅ (2026-06-13) — [#98](https://github.com/Pantessa/website/pull/98), STACKED on #97
 
 Branch `org-report` off `org-tabs`. Merge chain: #94 → #95 → #96 → #97 → #98.
 
@@ -366,7 +366,7 @@ page flags are inside intentional overflow-x scrollers; scrollWidth 375
 — note for future sweeps: exclude elements inside overflow-x:auto
 ancestors from the rect scan).
 
-### Item 4 — Dashboard org scope + two-level budget UI ✅ (2026-06-13) — [#97](https://github.com/Yeetful/website/pull/97), STACKED on #96
+### Item 4 — Dashboard org scope + two-level budget UI ✅ (2026-06-13) — [#97](https://github.com/Pantessa/website/pull/97), STACKED on #96
 
 Branch `org-tabs` off `org-dashboard`. Merge chain: #94 → #95 → #96 → #97.
 
@@ -389,7 +389,7 @@ needs apiKeyId→key→mintedBy OR ledger rows synced by SIWE members (no
 key) — decide attribution semantics there (key-based is honest:
 "per-agent" is the org truth; "per-member" = who MINTED the key).
 
-### Item 3 — Dashboard: org switcher + members ✅ (2026-06-13) — [#96](https://github.com/Yeetful/website/pull/96), STACKED on #95
+### Item 3 — Dashboard: org switcher + members ✅ (2026-06-13) — [#96](https://github.com/Pantessa/website/pull/96), STACKED on #95
 
 Branch `org-dashboard` off `org-spend`. Merge chain: #94 → #95 → #96
 (each PR targets its base branch and auto-retargets as bases land).
@@ -414,7 +414,7 @@ and pass ?org= next; OrgSwitcher calls router.refresh() on pick which
 does NOT refetch client useEffect fetches — item 4 pages should key
 their fetch effects on activeOrgId instead.
 
-### Item 2 — Org-scoped spending objects ✅ (2026-06-13) — [#95](https://github.com/Yeetful/website/pull/95), STACKED on #94
+### Item 2 — Org-scoped spending objects ✅ (2026-06-13) — [#95](https://github.com/Pantessa/website/pull/95), STACKED on #94
 
 Branch `org-spend` off `org-core` (item 2 needs item 1's schema/lib —
 PR #95 targets the org-core branch and auto-retargets to main when #94
@@ -446,7 +446,7 @@ as `org:cu…xxxx` (acceptable, but consider a friendlier label when a
 public org row first appears). SDK 0.5 follow-up: consume the org block
 (refuse locally when org overBudget).
 
-### Item 1 — Schema + org core ✅ (2026-06-13) — [#94](https://github.com/Yeetful/website/pull/94)
+### Item 1 — Schema + org core ✅ (2026-06-13) — [#94](https://github.com/Pantessa/website/pull/94)
 
 Branch `org-core`. Schema PUSHED TO NEON (additive; re-push says "already
 in sync", zero loss warnings): `organizations` (incl. `per_day_usd` — the
@@ -599,11 +599,11 @@ sells it, the dashboard surfaces it, and the launch post is drafted.
 
 | # | Item | PR |
 |---|------|----|
-| 1 | SDK 0.4.0 per-agent budgets | [sdk#5](https://github.com/Yeetful/sdk/pull/5) (pre-completed, MERGED) |
-| 2 | /docs/agents — Agents & budgets | [#89](https://github.com/Yeetful/website/pull/89) |
-| 3 | /developers refresh (Connect Agent funnel) | [#90](https://github.com/Yeetful/website/pull/90) |
-| 4 | Dashboard connected-agents KPI tile | [#91](https://github.com/Yeetful/website/pull/91) |
-| 5 | Launch-post draft (seed script) | [#92](https://github.com/Yeetful/website/pull/92) |
+| 1 | SDK 0.4.0 per-agent budgets | [sdk#5](https://github.com/Pantessa/sdk/pull/5) (pre-completed, MERGED) |
+| 2 | /docs/agents — Agents & budgets | [#89](https://github.com/Pantessa/website/pull/89) |
+| 3 | /developers refresh (Connect Agent funnel) | [#90](https://github.com/Pantessa/website/pull/90) |
+| 4 | Dashboard connected-agents KPI tile | [#91](https://github.com/Pantessa/website/pull/91) |
+| 5 | Launch-post draft (seed script) | [#92](https://github.com/Pantessa/website/pull/92) |
 | 6 | Exit verification + summary | (this entry — no code PR) |
 
 **Merge notes**: #89–#92 are independent, no shared files, any order.
@@ -714,7 +714,7 @@ naive scan and must be excluded by ancestor overflow check).
 
 ### Item 1 — SDK 0.4.0 per-agent budgets ✅ (2026-06-12, pre-completed)
 
-Found ALREADY DONE at run start: [sdk#5](https://github.com/Yeetful/sdk/pull/5)
+Found ALREADY DONE at run start: [sdk#5](https://github.com/Pantessa/sdk/pull/5)
 (branch `agent-key-budgets`) was opened by the prior session and MERGED to
 sdk main before this run launched. Scope matches the queue item exactly:
 policy pre-flight at construction (degrades open on fetch failure),
@@ -818,12 +818,12 @@ a Claude Code onboarding funnel, and a GitHub-style signed-in portal.
 
 | # | Item | PR |
 |---|------|----|
-| 1 | Docs foundation (full-width shell + registry) | [#71](https://github.com/Yeetful/website/pull/71) |
-| 2 | Core SDK pages (quickstart/grants/ledger/x402) | [#72](https://github.com/Yeetful/website/pull/72) |
-| 3 | Claude Code onboarding page + prompt | [#73](https://github.com/Yeetful/website/pull/73) |
-| 4 | Nav/footer/sitemap wire-up | [#74](https://github.com/Yeetful/website/pull/74) |
-| 5 | Signed-in portal shell (/ → dashboard, fluid) | [#75](https://github.com/Yeetful/website/pull/75) |
-| 6 | Exit verification + summary | [#76](https://github.com/Yeetful/website/pull/76) |
+| 1 | Docs foundation (full-width shell + registry) | [#71](https://github.com/Pantessa/website/pull/71) |
+| 2 | Core SDK pages (quickstart/grants/ledger/x402) | [#72](https://github.com/Pantessa/website/pull/72) |
+| 3 | Claude Code onboarding page + prompt | [#73](https://github.com/Pantessa/website/pull/73) |
+| 4 | Nav/footer/sitemap wire-up | [#74](https://github.com/Pantessa/website/pull/74) |
+| 5 | Signed-in portal shell (/ → dashboard, fluid) | [#75](https://github.com/Pantessa/website/pull/75) |
+| 6 | Exit verification + summary | [#76](https://github.com/Pantessa/website/pull/76) |
 
 **Merge order**: #71→#74 merged mid-run; remaining #75 → #76.
 
@@ -1109,14 +1109,14 @@ a 26-combo mobile exit sweep.
 
 | # | Item | PR |
 |---|------|----|
-| 1 | Public activity API (privacy-proofed) | [#61](https://github.com/Yeetful/website/pull/61) |
-| 2 | /activity page + nav tab | [#62](https://github.com/Yeetful/website/pull/62) |
-| 3 | Home network pulse + perf pass | [#63](https://github.com/Yeetful/website/pull/63) |
-| 4 | Dashboard sub-pages mobile | [#64](https://github.com/Yeetful/website/pull/64) |
-| 5 | Chat mobile-first (overlay sidebar) | [#65](https://github.com/Yeetful/website/pull/65) |
-| 6 | Home + directory polish | [#66](https://github.com/Yeetful/website/pull/66) |
-| 7 | Dev/blog/servers audit (no code needed) | [#67](https://github.com/Yeetful/website/pull/67) |
-| 8 | Foundation sweep + exit table | [#68](https://github.com/Yeetful/website/pull/68) |
+| 1 | Public activity API (privacy-proofed) | [#61](https://github.com/Pantessa/website/pull/61) |
+| 2 | /activity page + nav tab | [#62](https://github.com/Pantessa/website/pull/62) |
+| 3 | Home network pulse + perf pass | [#63](https://github.com/Pantessa/website/pull/63) |
+| 4 | Dashboard sub-pages mobile | [#64](https://github.com/Pantessa/website/pull/64) |
+| 5 | Chat mobile-first (overlay sidebar) | [#65](https://github.com/Pantessa/website/pull/65) |
+| 6 | Home + directory polish | [#66](https://github.com/Pantessa/website/pull/66) |
+| 7 | Dev/blog/servers audit (no code needed) | [#67](https://github.com/Pantessa/website/pull/67) |
+| 8 | Foundation sweep + exit table | [#68](https://github.com/Pantessa/website/pull/68) |
 
 **Merge order**: #61→#62→#63 (stacked chain, merged mid-run), #64, #65
 (merged mid-run), then #66→#67→#68 (stacked).
@@ -1411,11 +1411,11 @@ zero changes to shipped code for testability.
 
 | # | Item | PR |
 |---|------|----|
-| 1 | Mobile hamburger nav (portaled drawer) | [#52](https://github.com/Yeetful/website/pull/52) |
-| 2 | Dashboard sidebar + route split (incl. /dashboard/keys) | [#53](https://github.com/Yeetful/website/pull/53) |
-| 3 | Dashboard mobile section bar | [#54](https://github.com/Yeetful/website/pull/54) |
-| 4 | Key-page links (/dashboard/keys canonical) | [#55](https://github.com/Yeetful/website/pull/55) |
-| 5 | 375px audit (hero grid fix + tap targets) | [#56](https://github.com/Yeetful/website/pull/56) |
+| 1 | Mobile hamburger nav (portaled drawer) | [#52](https://github.com/Pantessa/website/pull/52) |
+| 2 | Dashboard sidebar + route split (incl. /dashboard/keys) | [#53](https://github.com/Pantessa/website/pull/53) |
+| 3 | Dashboard mobile section bar | [#54](https://github.com/Pantessa/website/pull/54) |
+| 4 | Key-page links (/dashboard/keys canonical) | [#55](https://github.com/Pantessa/website/pull/55) |
+| 5 | 375px audit (hero grid fix + tap targets) | [#56](https://github.com/Pantessa/website/pull/56) |
 
 **Merge order: #52 → #53 → #54 → #55 → #56** (one stacked chain; each contains the previous).
 
@@ -1431,11 +1431,11 @@ zero changes to shipped code for testability.
 
 | # | Item | PR |
 |---|------|----|
-| 1 | BlogPost model + publish API | [#46](https://github.com/Yeetful/website/pull/46) |
-| 2 | Public /blog UI (SEO first-class) | [#47](https://github.com/Yeetful/website/pull/47) |
-| 3 | Vercel Blob uploads | [#48](https://github.com/Yeetful/website/pull/48) |
-| 4 | RSS + sitemap + robots | [#49](https://github.com/Yeetful/website/pull/49) |
-| 5 | First post | [#50](https://github.com/Yeetful/website/pull/50) |
+| 1 | BlogPost model + publish API | [#46](https://github.com/Pantessa/website/pull/46) |
+| 2 | Public /blog UI (SEO first-class) | [#47](https://github.com/Pantessa/website/pull/47) |
+| 3 | Vercel Blob uploads | [#48](https://github.com/Pantessa/website/pull/48) |
+| 4 | RSS + sitemap + robots | [#49](https://github.com/Pantessa/website/pull/49) |
+| 5 | First post | [#50](https://github.com/Pantessa/website/pull/50) |
 
 **Merge order (one stacked chain)**: #42 (Run 3 harness — prerequisite) → #46 → #47 → #48 → #49 → #50. Run 3's #43–#45 remain open and independent.
 
@@ -1451,11 +1451,11 @@ zero changes to shipped code for testability.
 
 | # | Item | PR |
 |---|------|----|
-| 1 | test:api harness (25 checks) | [#42](https://github.com/Yeetful/website/pull/42) |
-| 2 | Runner-feed duplicate-key fix | [#43](https://github.com/Yeetful/website/pull/43) |
-| 3 | SDK 0.3 ripple | [example-agent#1](https://github.com/Yeetful/example-agent/pull/1) · [demo#2](https://github.com/Yeetful/demo/pull/2) |
-| 4 | Ingest auto-wire probe + wipe-on-empty fix | [#44](https://github.com/Yeetful/website/pull/44) |
-| 5 | Stale BlockRun URL fix-up | [#45](https://github.com/Yeetful/website/pull/45) |
+| 1 | test:api harness (25 checks) | [#42](https://github.com/Pantessa/website/pull/42) |
+| 2 | Runner-feed duplicate-key fix | [#43](https://github.com/Pantessa/website/pull/43) |
+| 3 | SDK 0.3 ripple | [example-agent#1](https://github.com/Pantessa/example-agent/pull/1) · [demo#2](https://github.com/Pantessa/demo/pull/2) |
+| 4 | Ingest auto-wire probe + wipe-on-empty fix | [#44](https://github.com/Pantessa/website/pull/44) |
+| 5 | Stale BlockRun URL fix-up | [#45](https://github.com/Pantessa/website/pull/45) |
 
 **Merge order**: #42 → #43 → #44 → #45 (all independent); example-agent#1 + demo#2 any time.
 
@@ -1471,13 +1471,13 @@ zero changes to shipped code for testability.
 
 | # | Item | PR |
 |---|------|----|
-| 1 | API-key management UI | [#34](https://github.com/Yeetful/website/pull/34) |
-| 2 | "Connect an agent" card | [#35](https://github.com/Yeetful/website/pull/35) — stacked on #34, merge #34 first |
-| 3 | "Sign grant" wallet button | [#36](https://github.com/Yeetful/website/pull/36) |
-| 4 | Chat payments-footer dedup | [#37](https://github.com/Yeetful/website/pull/37) |
-| 5 | Directory refresh + Claude seed (prod DB) | [#38](https://github.com/Yeetful/website/pull/38) — DB changes already live |
-| 6 | Responsive pass | [#39](https://github.com/Yeetful/website/pull/39) |
-| 7 | /developers page | [#40](https://github.com/Yeetful/website/pull/40) |
+| 1 | API-key management UI | [#34](https://github.com/Pantessa/website/pull/34) |
+| 2 | "Connect an agent" card | [#35](https://github.com/Pantessa/website/pull/35) — stacked on #34, merge #34 first |
+| 3 | "Sign grant" wallet button | [#36](https://github.com/Pantessa/website/pull/36) |
+| 4 | Chat payments-footer dedup | [#37](https://github.com/Pantessa/website/pull/37) |
+| 5 | Directory refresh + Claude seed (prod DB) | [#38](https://github.com/Pantessa/website/pull/38) — DB changes already live |
+| 6 | Responsive pass | [#39](https://github.com/Pantessa/website/pull/39) |
+| 7 | /developers page | [#40](https://github.com/Pantessa/website/pull/40) |
 
 **Suggested merge order**: #34 → #35 → #36 → #37 → #38 → #39 → #40. All independent except #35 (stacks on #34). NOTE: #33 (inference providers, targets main) shares files with #36/#37/#38 — merge autopilot→main AFTER #33, or vice versa; the ingest-map hunk in #38 is identical to #33's so it merges clean.
 
@@ -1498,7 +1498,7 @@ zero changes to shipped code for testability.
 | 2 | EIP-712 grant signing (server) | website#27 |
 | 3 | Service detail page /servers/[slug] | website#28 |
 | 4 | Cost-at-volume warnings | website#29 |
-| 5 | Example integration | github.com/Yeetful/example-agent |
+| 5 | Example integration | github.com/Pantessa/example-agent |
 | 6 | Receipts → Message.meta + footnotes | website#30 |
 
 Follow-ups merged same day: #31 (Details links), #32 (autopilot→main),

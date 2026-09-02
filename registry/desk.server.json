@@ -5,7 +5,7 @@
   "version": "0.1.0",
   "homepage": "https://www.pantessa.com/docs/desk",
   "repository": {
-    "url": "https://github.com/Yeetful/website",
+    "url": "https://github.com/Pantessa/website",
     "source": "github",
     "subfolder": "app/api/broker"
   },

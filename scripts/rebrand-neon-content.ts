@@ -29,6 +29,9 @@ const APPLY = process.argv.includes('--apply')
 
 /** Ordered, longest-first so a specific phrase wins over the bare brand word. */
 const RULES: Array<[RegExp, string]> = [
+  // The GitHub org renamed Yeetful → Pantessa 2026-08-17; github.com/Yeetful
+  // itself 404s, and old repo URLs only 301 until the name is reclaimed.
+  [/github\.com\/Yeetful\b/g, 'github.com/Pantessa'],
   // The SDK package is published as `pantessa`; `yeetful` is deprecated, so a
   // blog post telling a reader to install it hands them a dead dependency.
   [/npm install yeetful@latest` \(0\.5\)/g, 'npm install pantessa@latest`'],
@@ -43,7 +46,7 @@ const RULES: Array<[RegExp, string]> = [
 ]
 
 /** Guard: never rewrite a line that names infrastructure. */
-const KEEP = [/[a-z0-9-]+\.yeetful\.com/i, /yeetful-embed/, /github\.com\/Yeetful/i, /@yeetful\.com/i]
+const KEEP = [/[a-z0-9-]+\.yeetful\.com/i, /yeetful-embed/, /@yeetful\.com/i]
 
 function rewrite(text: string): string {
   return text
@@ -115,6 +118,23 @@ async function main() {
     total++
     if (APPLY) {
       await prisma.mcpServer.update({ where: { slug: srv.slug }, data: { description: next } })
+      console.log('   ✅ updated')
+    }
+  }
+
+  console.log('\n── mcp_servers website links (seeded pre-rename — they point at the old GitHub org) ──')
+  for (const srv of await prisma.mcpServer.findMany({
+    where: { websiteUrl: { contains: 'github.com/yeetful', mode: 'insensitive' } },
+    select: { slug: true, websiteUrl: true },
+    orderBy: { slug: 'asc' },
+  })) {
+    const before = srv.websiteUrl ?? ''
+    const next = before.replace(/github\.com\/Yeetful\b/gi, 'github.com/Pantessa')
+    if (next === before) continue
+    console.log(`   ${srv.slug}\n     - ${before}\n     + ${next}`)
+    total++
+    if (APPLY) {
+      await prisma.mcpServer.update({ where: { slug: srv.slug }, data: { websiteUrl: next } })
       console.log('   ✅ updated')
     }
   }

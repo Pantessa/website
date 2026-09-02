@@ -45,7 +45,7 @@ const SERVICES = [
     kind: 'data',
     priceUsd: '0',
     networks: ['Base'],
-    websiteUrl: 'https://github.com/Yeetful/free-mcps',
+    websiteUrl: 'https://github.com/Pantessa/free-mcps',
     base: UNISWAP_BASE,
     tools: [
       {
@@ -101,7 +101,7 @@ const SERVICES = [
     kind: 'data',
     priceUsd: '0',
     networks: ['Base', 'Ethereum'],
-    websiteUrl: 'https://github.com/Yeetful/free-mcps',
+    websiteUrl: 'https://github.com/Pantessa/free-mcps',
     base: SNAPSHOT_BASE,
     tools: [
       {
