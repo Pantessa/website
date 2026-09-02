@@ -10,19 +10,17 @@ import { createConfig, http } from 'wagmi'
 import { mainnet, base, baseSepolia, arbitrum } from 'wagmi/chains'
 import { cdpEmbeddedConnector, cdpEnabled } from '@/lib/cdp-embedded'
 import { hostWalletConnector } from '@/lib/host-wallet'
+import { walletLineup, WC_APP_METADATA, type WalletLaneId } from '@/lib/wallet-lineup'
 
 // WalletConnect Cloud project ID — create one at https://cloud.reown.com and
 // add it to .env.local as NEXT_PUBLIC_WC_PROJECT_ID (needed for the
-// WalletConnect / mobile-QR option).
+// WalletConnect / mobile-QR option). The lineup decision itself lives in
+// lib/wallet-lineup.ts (pure) so the harness pins BOTH env states:
+// absent = exactly today's connectors, present = the WC v2 lanes join.
 const projectId =
   process.env.NEXT_PUBLIC_WC_PROJECT_ID ?? 'YOUR_WALLETCONNECT_PROJECT_ID'
 
-// WalletConnect-based wallets (WalletConnect, Rainbow, most mobile wallets)
-// init the WC SignClient, which touches browser-only `indexedDB` during SSR —
-// a fatal unhandledRejection under Next 16. They also don't work without a real
-// project ID. So only enable them when one is configured; extension wallets
-// (Coinbase, MetaMask, injected) work without WalletConnect.
-const wcEnabled = !!process.env.NEXT_PUBLIC_WC_PROJECT_ID && projectId !== 'YOUR_WALLETCONNECT_PROJECT_ID'
+const lineup = walletLineup(process.env.NEXT_PUBLIC_WC_PROJECT_ID)
 
 /**
  * Coinbase Wallet pinned to the **EOA** flow (no Smart Wallet).
@@ -50,20 +48,29 @@ coinbaseWallet.preference = 'eoaOnly'
 // The CDP embedded-wallet connector ("create an account") is appended as a plain
 // wagmi connector, not a RainbowKit modal entry — it's driven by a dedicated CTA
 // (see lib/cdp-embedded.ts). Only included when NEXT_PUBLIC_CDP_PROJECT_ID is set.
+// lane id → RainbowKit wallet factory. The ORDER comes from walletLineup —
+// the pinned pure decision — so env-absent is byte-identical to before.
+// (Factory param signatures differ per wallet; connectorsForWallets supplies
+// them — the list type is what matters here.)
+const WALLET_FACTORIES: Record<WalletLaneId, Parameters<typeof connectorsForWallets>[0][number]['wallets'][number]> = {
+  injected: injectedWallet,
+  metaMask: metaMaskWallet,
+  coinbase: coinbaseWallet,
+  rainbow: rainbowWallet,
+  walletConnect: walletConnectWallet,
+}
+
 const connectors = [
   ...connectorsForWallets(
     [
       {
         groupName: 'Recommended',
-        wallets: [
-          injectedWallet,
-          metaMaskWallet,
-          coinbaseWallet,
-          ...(wcEnabled ? [rainbowWallet, walletConnectWallet] : []),
-        ],
+        wallets: lineup.map((id) => WALLET_FACTORIES[id]),
       },
     ],
-    { appName: 'Pantessa', projectId },
+    // The site's own metadata rides the WC v2 pairing screen (a mobile
+    // wallet shows appName/description/icon before the user approves).
+    { projectId, ...WC_APP_METADATA },
   ),
   ...(cdpEnabled ? [cdpEmbeddedConnector] : []),
   // Host-wallet bridge connector for /embed (wallet contract v1.1) — registered

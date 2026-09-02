@@ -76,6 +76,13 @@ export default function ChatRail() {
   // Desktop: the persisted preference.
   const open = isMobile ? mobileMcpRailOpen : mcpRailOpen
 
+  // The HIRE moment needs ONE focused surface on a phone (visuals' 390px
+  // drive, doors run): below lg the TEAM tab opens as a FULL-WIDTH takeover
+  // instead of a partial overlay floating over the clipped chat. Other tabs
+  // keep the familiar 248px drawer.
+  const teamTakeover = isMobile && railTab === 'team'
+  const panelWidth = teamTakeover ? '100vw' : RAIL_WIDTH
+
 
   const active = useMemo(
     () =>
@@ -202,7 +209,7 @@ export default function ChatRail() {
       {open && (
         <motion.aside
           initial={{ width: 0, opacity: 0 }}
-          animate={{ width: RAIL_WIDTH, opacity: 1 }}
+          animate={{ width: panelWidth, opacity: 1 }}
           exit={{ width: 0, opacity: 0 }}
           transition={{ duration: 0.25, ease: 'easeInOut' }}
           className="flex-shrink-0 border-r border-[var(--line)] bg-black/20 overflow-hidden h-full max-lg:absolute max-lg:inset-y-0 max-lg:left-0 max-lg:z-40 max-lg:bg-[#0b0b0c] max-lg:shadow-[8px_0_32px_rgba(0,0,0,0.55)]"
@@ -210,7 +217,7 @@ export default function ChatRail() {
           {/* max-lg pb: the overlay spans the full viewport height, and the
               fixed bottom bar (z-50) rides over its lowest 48px — keep the
               drawer's own content clear of it. */}
-          <div className="flex flex-col h-full max-lg:pb-[calc(48px+env(safe-area-inset-bottom))]" style={{ width: RAIL_WIDTH }}>
+          <div className="flex flex-col h-full max-lg:pb-[calc(48px+env(safe-area-inset-bottom))]" style={{ width: teamTakeover ? '100%' : RAIL_WIDTH }}>
             {/* Header — identical on every breakpoint now: the spine carries
                 the tabs everywhere (column ≥lg, bottom bar below), so the
                 drawer just names what it's showing + holds the one collapse

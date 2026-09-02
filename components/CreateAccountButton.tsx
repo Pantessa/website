@@ -13,6 +13,7 @@ import {
   useIsInitialized,
 } from '@coinbase/cdp-hooks'
 import { Loader2, Mail, ArrowLeft, X, Wallet } from 'lucide-react'
+import { walletLaneHint } from '@/lib/wallet-lineup'
 import { cn } from '@/lib/utils'
 import { useSession } from '@/lib/session'
 import { OAUTH_INTENT_KEY } from '@/components/CdpOAuthReturn'
@@ -218,6 +219,12 @@ function CreateAccountModal({
             >
               <Wallet width={16} height={16} /> Connect a wallet
             </button>
+            {/* The lane's one env-sensitive line (lib/wallet-lineup): with a
+                WC project id the door names the mobile-QR path; without one
+                this renders today's copy — byte-identical lineup, pinned. */}
+            <p className="mt-1.5 text-center text-[11px] leading-snug text-[color:var(--muted-2)]">
+              {walletLaneHint(process.env.NEXT_PUBLIC_WC_PROJECT_ID)}
+            </p>
 
             <div className="ca__or" aria-hidden="true">
               <span />or<span />

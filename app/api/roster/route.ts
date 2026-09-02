@@ -4,6 +4,7 @@ import { getAuthAddress } from '@/lib/api-key'
 import { mintSlug } from '@/lib/intent-links'
 import { isInternalRun } from '@/lib/internal-run'
 import { cleanCapUsd, parseMandate } from '@/lib/roster'
+import { logRosterRefusal } from '@/lib/roster-observe'
 import {
   assertRosterOpen,
   bumpAndCheckRosterPost,
@@ -91,11 +92,22 @@ export async function POST(req: NextRequest) {
   // Preview mode: the composer's live validation. The server runs the ONE
   // parser (the grammar chain is server-only — the client never forks it);
   // nothing is written, so the rate fence's bump above is the only cost.
+  // Previews never log a failure — a half-typed sentence is not a wall.
   if (body.preview === true) {
     if ('problem' in parsed) return NextResponse.json({ preview: { problem: parsed.problem } })
     return NextResponse.json({ preview: { kind: parsed.kind, mandateText: parsed.mandateText, summary: parsed.summary } })
   }
-  if ('problem' in parsed) return NextResponse.json({ error: parsed.problem }, { status: 400 })
+  if ('problem' in parsed) {
+    // Observability (doors run): a REAL mint attempt that the grammar
+    // refused is exactly the premortem's invisible mode — log it.
+    logRosterRefusal(req.headers, {
+      surface: 'mandate',
+      ask: cleaned,
+      wallet: typeof body.wallet === 'string' ? body.wallet : null,
+      error: parsed.problem,
+    })
+    return NextResponse.json({ error: parsed.problem }, { status: 400 })
+  }
 
   // The write fence sits AFTER the preview branch: previews write nothing
   // and parse ≤300 anchored-regex chars, so they don't spend the hourly

@@ -29,6 +29,7 @@ import { validateCallbackUrl, mintCallbackSecret, deliverWebhook, notifyEligible
 import { agentHandleFor } from '@/lib/agent-record'
 import { sendIntent } from '@/lib/inbox'
 import { bindProposalAtOpen, recheckSlotAtBuild, type RosterBadge } from '@/lib/roster-propose'
+import { logRosterRefusalDirect } from '@/lib/roster-observe'
 import { moneyShaped } from '@/lib/ask-failure'
 import { MOSAIC_CHAIN_IDS, composeMosaicAsk, sanitizeMosaicSlices, type MosaicChainWord } from '@/lib/mosaic'
 import { recoverMessageAddress } from 'viem'
@@ -62,6 +63,9 @@ export interface OpenResult {
  *  call mints is stamped so the GTM arc never counts it as an arrival. */
 export interface DeskCallOpts {
   internal?: boolean
+  /** x-yf-no-ask-log on the MCP request — the harness belt: probe refusals
+   *  never land in the ask_failures queue (lib/roster-observe honors it). */
+  noLog?: boolean
 }
 
 const CONTRACT =
@@ -131,7 +135,24 @@ export async function openIntent(opts: {
   // name; a cap breach benches), and auto-addresses it to the employer
   // wallet's inbox as a signable card wearing the slot badge.
   const agentKeyHash = agentKey ? agentHandleFor(agentKey) : null
-  const binding = await bindProposalAtOpen(agentKeyHash, wallet, plan.ask, askUsd(plan.ask))
+  let binding
+  try {
+    binding = await bindProposalAtOpen(agentKeyHash, wallet, plan.ask, askUsd(plan.ask))
+  } catch (e) {
+    // Observability (doors run): a hired manager's proposal walling (bench,
+    // cap, fired, unpriceable) is exactly the invisible mode the failures
+    // queue exists for — log through the one choke point, then refuse as
+    // before (the agent still gets the named refusal verbatim).
+    logRosterRefusalDirect({
+      surface: 'propose',
+      ask: plan.ask,
+      wallet,
+      error: e instanceof Error ? e.message : String(e),
+      internal: call?.internal === true,
+      noLog: call?.noLog === true,
+    })
+    throw e
+  }
 
   if (binding) {
     const sent = await sendIntent(SITE, {

@@ -18,7 +18,8 @@
 
 import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
-import { useAccount } from 'wagmi'
+import { useAccount, useSignMessage } from 'wagmi'
+import { declineCard } from '@/lib/decline-client'
 import { useConnectModal } from '@rainbow-me/rainbowkit'
 import { ArrowRight, BellRing, ExternalLink, Fingerprint, Link2, MessageSquare, ReceiptText, ShieldCheck, Zap } from 'lucide-react'
 import ChatInterface from '@/components/ChatInterface'
@@ -70,6 +71,7 @@ export default function IntentRuntime({
   brand = null,
   notify = null,
   roster = null,
+  recipient = null,
 }: {
   slug: string
   ask: string
@@ -98,6 +100,9 @@ export default function IntentRuntime({
    *  kind label + the canonical (grammar-constrained, DB-stored) mandate
    *  sentence + the cap the wallet's hire consent named. */
   roster?: { label: string; mandate: string; capUsd: number } | null
+  /** The wallet this card is ADDRESSED to (M5), lowercased — lights the
+   *  Decline verb for exactly that wallet (doors run). Null = plain link. */
+  recipient?: string | null
 }) {
   const { address, isConnected, status: walletStatus } = useAccount()
   const { openConnectModal } = useConnectModal()
@@ -107,6 +112,24 @@ export default function IntentRuntime({
   const [started, setStarted] = useState(false)
   const [built, setBuilt] = useState(false)
   const [signed, setSigned] = useState(false)
+  // The Decline verb (doors run) — addressed cards only, recipient only.
+  const { signMessageAsync } = useSignMessage()
+  const [declined, setDeclined] = useState(false)
+  const [declining, setDeclining] = useState(false)
+  const [declineError, setDeclineError] = useState<string | null>(null)
+  const runDecline = async () => {
+    if (!address || !recipient || declining) return
+    setDeclining(true)
+    setDeclineError(null)
+    try {
+      await declineCard(slug, address, signMessageAsync)
+      setDeclined(true)
+    } catch (e) {
+      setDeclineError((e as Error).message)
+    } finally {
+      setDeclining(false)
+    }
+  }
   // The fourth stop: a compiled job reached 'done' (JobCard's one-shot
   // settlement signal, forwarded as turn outcome 'settled'). Lone artifacts
   // (a plain swap sign) have no settlement signal — signed stays their 100%.
@@ -380,6 +403,29 @@ export default function IntentRuntime({
           >
             &ldquo;{ask}&rdquo;
           </h1>
+
+          {/* The DECLINE verb (doors run): an addressed card offers its
+              recipient a real "no" — session declines in one tap, otherwise
+              one personal_sign over the server's own consent bytes. Ignoring
+              stays free; declining frees the sender's stacking fence and
+              never benches the agent. */}
+          {recipient && address?.toLowerCase() === recipient && !signed && !declined && (
+            <button
+              type="button"
+              onClick={() => void runDecline()}
+              disabled={declining}
+              className="mt-4 text-[12px] text-[color:var(--muted-2)] underline underline-offset-2 hover:text-[color:var(--fail)] transition-colors disabled:opacity-50"
+            >
+              {declining ? 'Declining…' : 'Decline this card — the sender sees "declined", not silence'}
+            </button>
+          )}
+          {declined && (
+            <p className="mt-4 text-[13px] text-[color:var(--muted)]">
+              Declined — this card left your inbox and the sender was told. Nothing moved; the agent is not
+              penalized and may propose differently next period.
+            </p>
+          )}
+          {declineError && <p className="mt-2 text-[12px] text-[color:var(--fail)]">{declineError}</p>}
 
           {/* ≤sm the CTA leads and the three contract cards follow (flex
               order): on a phone the cards pushed the door below the fold —

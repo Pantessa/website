@@ -19,6 +19,9 @@
 
 import { CalendarClock, CheckCircle2, Inbox as InboxIcon, Loader2, Pause, PenLine, Play, ShieldCheck, Trash2, XCircle, ZapOff } from 'lucide-react'
 import { useRouter } from 'next/navigation'
+import { useState } from 'react'
+import { useAccount, useSignMessage } from 'wagmi'
+import { declineCard } from '@/lib/decline-client'
 import { cn } from '@/lib/utils'
 import { useYeetfulStore } from '@/lib/store'
 import { cadenceLabel, dcaRunChip, type DcaCadence } from '@/lib/dca'
@@ -81,6 +84,26 @@ export default function JobsRailTab({ onAct }: { onAct?: () => void }) {
   const router = useRouter()
   const { setComposerPrefill, setJobDetail } = useYeetfulStore()
   const { jobs, schedules, guards, inbox, signedOut, loaded, refresh } = useRunningWork(true)
+  const { address } = useAccount()
+  const { signMessageAsync } = useSignMessage()
+
+  // Declined cards vanish immediately (the poll confirms within 15s); the
+  // set keeps a mid-poll ghost from flashing back.
+  const [declinedSlugs, setDeclinedSlugs] = useState<Set<string>>(new Set())
+  const [decliningSlug, setDecliningSlug] = useState<string | null>(null)
+  const declineInbox = async (slug: string) => {
+    if (!address || decliningSlug) return
+    setDecliningSlug(slug)
+    try {
+      await declineCard(slug, address, signMessageAsync)
+      setDeclinedSlugs((s) => new Set(s).add(slug))
+      refresh()
+    } catch {
+      /* refusal shown by the wallet/server dialog path; the card stays */
+    } finally {
+      setDecliningSlug(null)
+    }
+  }
 
   // A row's action lands in the composer — never auto-sends.
   const prefill = (prompt: string) => {
@@ -108,17 +131,26 @@ export default function JobsRailTab({ onAct }: { onAct?: () => void }) {
   // section renders even signed-out: the inbox rides connect-to-act (#553),
   // so a connected-but-unsigned wallet still sees what arrived for it.
   const InboxSection = () =>
-    inbox.length === 0 ? null : (
+    inbox.filter((it) => !declinedSlugs.has(it.slug)).length === 0 ? null : (
       <>
         <p className="px-2.5 pt-1 pb-1 text-[10px] mono uppercase tracking-wider text-[color:var(--muted-2)]">For you</p>
-        {inbox.map((it: InboxIntent) => (
-          <button
+        {inbox.filter((it) => !declinedSlugs.has(it.slug)).map((it: InboxIntent) => (
+          <div
             key={it.slug}
+            role="button"
+            tabIndex={0}
             onClick={() => {
               router.push(`/i/${it.slug}`)
               onAct?.()
             }}
-            className="group w-full rounded-lg px-2.5 py-2 text-left transition-colors hover:bg-white/5"
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault()
+                router.push(`/i/${it.slug}`)
+                onAct?.()
+              }
+            }}
+            className="group w-full cursor-pointer rounded-lg px-2.5 py-2 text-left transition-colors hover:bg-white/5"
           >
             <span className="flex items-start gap-2">
               <InboxIcon className="mt-0.5 h-3.5 w-3.5 flex-shrink-0 text-[color:var(--accent)]" />
@@ -141,8 +173,19 @@ export default function JobsRailTab({ onAct }: { onAct?: () => void }) {
                   {' · tap to review & sign'}
                 </span>
               </span>
+              {/* The DECLINE verb (doors run) — before this, an ignored card
+                  blocked its manager forever (the one-card fence). One tap:
+                  session declines silently; otherwise one personal_sign over
+                  the server's own consent bytes. Never benches the agent. */}
+              <IconBtn
+                label="Decline — the card leaves your inbox; the sender sees 'declined', not silence"
+                danger
+                onClick={() => void declineInbox(it.slug)}
+              >
+                {decliningSlug === it.slug ? <Loader2 className="h-3 w-3 animate-spin" /> : <XCircle className="h-3 w-3" />}
+              </IconBtn>
             </span>
-          </button>
+          </div>
         ))}
       </>
     )

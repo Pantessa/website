@@ -9,6 +9,7 @@ import {
   ROSTER_RATE_WALL,
   verifyRosterConsent,
 } from '@/lib/roster-policy'
+import { logRosterRefusal } from '@/lib/roster-observe'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -72,6 +73,10 @@ export async function POST(req: NextRequest) {
     try {
       await verifyRosterConsent(inboxDeclineConsentMessage(slug, w), w, body.signature)
     } catch (e) {
+      // Observability (doors run): a recipient who tried to say NO and got
+      // stuck is a door problem the queue must see (griefing probes land
+      // here too — the wallet column names them).
+      logRosterRefusal(req.headers, { surface: 'decline', ask: `decline ${slug}`, wallet: w, error: (e as Error).message })
       return NextResponse.json({ error: (e as Error).message }, { status: 401 })
     }
   }

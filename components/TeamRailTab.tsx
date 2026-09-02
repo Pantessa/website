@@ -67,7 +67,23 @@ export default function TeamRailTab() {
   // Selecting one prefills every pending slot's hire — the client only ever
   // sends the server-validated manager id, never a hash.
   const [managers, setManagers] = useState<Manager[]>([])
-  const [selectedManager, setSelectedManager] = useState<Manager | null>(null)
+  // Selection survives the CONNECT door (visuals' 390px finding: tapping a
+  // manager while disconnected, then connecting, must not lose the choice —
+  // the drawer can remount around the wallet modal on a phone). Session-
+  // scoped on purpose: a per-tab convenience, never durable state.
+  const [selectedManager, setSelectedManagerState] = useState<Manager | null>(null)
+  const setSelectedManager = (next: Manager | null | ((cur: Manager | null) => Manager | null)) => {
+    setSelectedManagerState((cur) => {
+      const v = typeof next === 'function' ? next(cur) : next
+      try {
+        if (v) sessionStorage.setItem('yf-selected-manager', v.id)
+        else sessionStorage.removeItem('yf-selected-manager')
+      } catch {
+        /* storage blocked — selection still works for this mount */
+      }
+      return v
+    })
+  }
   const [busy, setBusy] = useState<string | null>(null)
 
   // Live validation runs SERVER-SIDE (the grammar chain is server-only —
@@ -105,7 +121,18 @@ export default function TeamRailTab() {
       try {
         const res = await fetch('/api/roster/managers')
         const data = (await res.json()) as { managers?: Manager[] }
-        if (res.ok && data.managers) setManagers(data.managers)
+        if (res.ok && data.managers) {
+          setManagers(data.managers)
+          // Restore a pre-connect selection (validated against the fresh
+          // server list — a stale id simply restores nothing).
+          try {
+            const savedId = sessionStorage.getItem('yf-selected-manager')
+            const saved = savedId ? data.managers.find((m) => m.id === savedId && m.hireable) : null
+            if (saved) setSelectedManagerState((cur) => cur ?? saved)
+          } catch {
+            /* storage blocked */
+          }
+        }
       } catch {
         /* fail-soft */
       }
