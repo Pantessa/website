@@ -96,6 +96,19 @@ export class NoLifiRouteError extends Error {
   }
 }
 
+/** LiFi "can't fill this" classifier — matched messages become
+ *  NoLifiRouteError (the venue cascade's honest refusal; the funding gas
+ *  leg's escalation trigger). Live shapes: "No possible route", "No
+ *  available quotes for the requested transfer", and "None of the available
+ *  routes could successfully generate a tx" (2026-09-02 — the $1.50 gas leg
+ *  fell under the route minimum and the last shape surfaced as a generic
+ *  build error instead of a route refusal). Anything else — auth, rate
+ *  limits, 5xx — stays a plain error: those are OUR problem, not a missing
+ *  route. */
+export function isLifiNoRouteMessage(msg: string): boolean {
+  return /no (?:possible )?routes?|no (?:available )?quotes?|not found|none of the available routes/i.test(msg)
+}
+
 // ── The LiFi quote (narrowed to the fields we verify) ───────────────────────
 
 export interface LifiQuote {
@@ -352,7 +365,7 @@ export async function fetchLifiQuote(params: {
   const body = (await res.json().catch(() => null)) as { message?: string } | null
   if (!res.ok) {
     const msg = body?.message ?? `HTTP ${res.status}`
-    if (/no (?:possible )?route|no quotes?|not found/i.test(msg)) throw new NoLifiRouteError(`LiFi found no route: ${msg}`)
+    if (isLifiNoRouteMessage(msg)) throw new NoLifiRouteError(`LiFi found no route: ${msg}`)
     throw new Error(`LiFi quote failed: ${msg}`)
   }
   const quote = narrowQuote(body)
