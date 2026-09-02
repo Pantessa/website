@@ -4428,6 +4428,45 @@ async function main() {
       'roster: /docs/roster stays OUT of DOCS_PAGES until the flip',
       !DOCS_PAGES.some((p) => p.slug === 'roster'),
     )
+    // /roster's own OG card gates with the page (the DM-thumbnail card,
+    // overnight 09-01) — before it existed the page fell to the generic
+    // site card, so a 200 here must be a PNG and a flag-off server 404s.
+    const rosterOgRes = await fetch(`${BASE}/roster/opengraph-image`)
+    check(
+      'roster: the /roster OG card gates with its page',
+      rosterRes.status === 404
+        ? rosterOgRes.status === 404
+        : rosterOgRes.status === 200 && (rosterOgRes.headers.get('content-type') ?? '').includes('image/png'),
+    )
+  }
+
+  // ── THE HOMEPAGE TRIPWIRE (overnight 09-01, visuals): the Roster front
+  // door is BUILT DARK behind NEXT_PUBLIC_ROSTER_HOMEPAGE. The critical pin:
+  // with the flag off (every deploy until the tripwire), `/` is the shipped
+  // links-first homepage — its hallmark present, the roster variant's marker
+  // ABSENT. With the flag on, the roster front door renders whole (hero +
+  // storefront strip + transcript + the §2.2 Season-0 narrative, no counts).
+  {
+    const homeRes = await fetch(`${BASE}/`)
+    const homeHtml = await homeRes.text()
+    const currentHome =
+      homeRes.status === 200 &&
+      homeHtml.includes('You have an intent') &&
+      !homeHtml.includes('data-roster-home') &&
+      !homeHtml.includes('You keep the only pen')
+    const rosterHome =
+      homeRes.status === 200 &&
+      homeHtml.includes('data-roster-home') &&
+      homeHtml.includes('You keep the only pen') &&
+      homeHtml.includes('The staff is hiring') &&
+      homeHtml.includes('data-roster-transcript') &&
+      homeHtml.includes('The standings are signatures') &&
+      // §2.2 discipline: the narrative, never a pathetic count
+      !/\b0 (signed|agents|managers)\b/.test(homeHtml)
+    check(
+      'roster homepage: flag off = the shipped homepage (no roster marker); flag on = the whole front door',
+      currentHome || rosterHome,
+    )
   }
 
   check(
