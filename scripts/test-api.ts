@@ -125,8 +125,8 @@ import { portfolioFromToolResult, portfolioOf } from '../lib/portfolio-display'
 import { jobContextFor } from '../lib/job-context'
 import { crossChainAgentOf, detectCrossChain, swapWorkingContext } from '../lib/swap-intent'
 import { encodeV4SwapCalldata, guardUniswapV4Build, type V4BuiltStep, type V4GuardExpectations, type V4PoolKey } from '../lib/uniswap-v4'
-import { guardLifiBuild, verifyLifiQuoteEcho, lifiPriceAcceptable, lifiRoutersFor, type LifiBuiltStep, type LifiGuardExpectations, type LifiQuote } from '../lib/lifi-venue'
-import { clampNativeSellAtoms, FUNDING_ALT_USDC, fundingAltUsdcFor, fundingNeedUsd, GAS_TOPUP_ETH, guardLifiBridgeBuild, lifiBridgeRoutersFor, parseRhFundingFollowUp, planDownsizedRobinhoodBuy, planRobinhoodFundingAdvice, planRobinhoodFundingChips, rhFundingPending, robinhoodBuyNeedUsd, verifyLifiBridgeEcho, type FundingOrigin, type LifiBridgeExpectations, type LifiBridgeStep } from '../lib/lifi-bridge'
+import { guardLifiBuild, isLifiNoRouteMessage, verifyLifiQuoteEcho, lifiPriceAcceptable, lifiRoutersFor, type LifiBuiltStep, type LifiGuardExpectations, type LifiQuote } from '../lib/lifi-venue'
+import { clampNativeSellAtoms, FUNDING_ALT_USDC, fundingAltUsdcFor, fundingNeedUsd, GAS_LEG_LADDER_USD, GAS_LEG_USD, GAS_TOPUP_ETH, guardLifiBridgeBuild, lifiBridgeRoutersFor, parseRhFundingFollowUp, planDownsizedRobinhoodBuy, planRobinhoodFundingAdvice, planRobinhoodFundingChips, rhFundingPending, robinhoodBuyNeedUsd, verifyLifiBridgeEcho, type FundingOrigin, type LifiBridgeExpectations, type LifiBridgeStep } from '../lib/lifi-bridge'
 import { classifyOneclickStatus, inflightDepositFromPending, inflightPendingData, inflightSettlingNote } from '../lib/inflight-funding'
 import { sanitizeWorkingContext } from '../lib/working-context'
 import { parseRobinhoodFunding, parseSameChainSwapSegment, JOB_SEGMENT_PARSERS } from '../lib/jobs'
@@ -6281,7 +6281,27 @@ async function main() {
     check('bridge: Base LiFi diamond allowlisted by default', lifiBridgeRoutersFor(8453).some((r) => r.toLowerCase() === DIAMOND.toLowerCase()))
     check('bridge: unknown origin chain has NO allowlist (fails closed)', lifiBridgeRoutersFor(999999).length === 0)
 
-    check('bridge: funding need = buy + 4% margin + gas leg, rounded to $0.50', fundingNeedUsd(10, true) === 12 && fundingNeedUsd(10, false) === 10.5)
+    check('bridge: funding need = buy + 4% margin + gas leg, rounded to $0.50', fundingNeedUsd(10, true) === 12.5 && fundingNeedUsd(10, false) === 10.5)
+
+    // The 2026-09-02 wall: LiFi's small-transfer floor rose above the $1.50
+    // gas leg and the failure surfaced as a generic error, stranding a
+    // compiled fund-then-buy job at step 1. The classifier turns LiFi's
+    // "can't fill" shapes into NoLifiRouteError; the ladder is the builder's
+    // self-heal for jobs that froze the old size into their step params.
+    check(
+      'lifi no-route classifier: every live "can\'t fill" shape matches, real errors do not',
+      isLifiNoRouteMessage('No possible route found') &&
+        isLifiNoRouteMessage('No available quotes for the requested transfer') &&
+        isLifiNoRouteMessage('None of the available routes could successfully generate a tx') &&
+        !isLifiNoRouteMessage('Internal server error') &&
+        !isLifiNoRouteMessage('Unauthorized'),
+    )
+    check(
+      'gas leg: base size sits on the ladder, ladder ascends and stays bounded',
+      GAS_LEG_USD === GAS_LEG_LADDER_USD[0] &&
+        GAS_LEG_LADDER_USD.every((u, i) => i === 0 || u > GAS_LEG_LADDER_USD[i - 1]) &&
+        GAS_LEG_LADDER_USD[GAS_LEG_LADDER_USD.length - 1] <= 5,
+    )
 
     const sellAtoms = BigInt(10_500_000) // $10.50 USDC
     const bexp: LifiBridgeExpectations = {
@@ -6398,7 +6418,7 @@ async function main() {
         (fundJob.steps[0].params as { leg?: string }).leg === 'gas' &&
         fundJob.steps[1].builder === 'native-lifi-fund' &&
         (fundJob.steps[1].params as { leg?: string; usd?: number }).leg === 'usdg' &&
-        (fundJob.steps[1].params as { usd?: number }).usd === 10.5 &&
+        (fundJob.steps[1].params as { usd?: number }).usd === 10 &&
         fundJob.steps[2].kind === 'wait' &&
         JSON.stringify(fundJob.steps[2].waitPredicate) === JSON.stringify({ kind: 'chain-arrival', fromSteps: [0, 1] }) &&
         fundJob.steps[3].builder === 'native-lifi-swap' &&
@@ -6427,7 +6447,7 @@ async function main() {
         (ethJob.steps[0].params as { origin?: number }).origin === 1 &&
         (ethJob.steps[1].params as { origin?: number; leg?: string }).origin === 1 &&
         (ethJob.steps[1].params as { leg?: string }).leg === 'usdg' &&
-        (ethJob.steps[1].params as { usd?: number }).usd === 5.5,
+        (ethJob.steps[1].params as { usd?: number }).usd === 5,
     )
     // A combined two-origin ask: each fund segment gets its own legs +
     // arrival wait; the gas leg rides ONLY the first segment.
@@ -6578,7 +6598,7 @@ async function main() {
     const downsizedAcqJob = downsizedAcq ? compileJobAsk(downsizedAcq.chips[0].resume) : null
     check(
       'funding downsize: an acquisition counts the held USDG and compiles bridge-only',
-      !!downsizedAcq && downsizedAcq.buyUsd === 13 && /Land \$13 of it instead/.test(downsizedAcq.chips[0].label) &&
+      !!downsizedAcq && downsizedAcq.buyUsd === 12.5 && /Land \$12\.5 of it instead/.test(downsizedAcq.chips[0].label) &&
         !/then buy/.test(downsizedAcq.chips[0].resume) && !!downsizedAcqJob && !('problem' in downsizedAcqJob),
       JSON.stringify(downsizedAcq),
     )

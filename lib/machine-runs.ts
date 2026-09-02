@@ -70,7 +70,7 @@ export const MACHINE_RUNS: MachineRun[] = [
     graph: {
       from: { name: 'Base', sub: '$9.77 USDC', mark: 'base' },
       to: { name: 'Robinhood Chain', sub: '0 USDG', mark: 'robinhood-free' },
-      legs: [{ label: '$1.50 → gas ETH' }, { label: '$9.00 → USDG' }],
+      legs: [{ label: '$2.00 → gas ETH' }, { label: '$8.50 → USDG' }],
       terminal: '0.0231 AAPL',
     },
     stages: [
@@ -105,9 +105,9 @@ export const MACHINE_RUNS: MachineRun[] = [
         ms: 2000,
         head: '“Insufficient funds” isn’t an answer. It’s a to-do list.',
         lines: [
-          '> 1  bridge $1.50 Base USDC → gas ETH on 4663',
-          '> 2  bridge $9.00 Base USDC → USDG on 4663',
-          '> 3  buy ~$8.60 of AAPL once it settles',
+          '> 1  bridge $2.00 Base USDC → gas ETH on 4663',
+          '> 2  bridge $8.50 Base USDC → USDG on 4663',
+          '> 3  buy ~$8.10 of AAPL once it settles',
           '> compiled as ONE job · you sign each step',
         ],
       },

@@ -43,7 +43,7 @@ import { decodeFunctionData, encodeFunctionData, erc20Abi, formatEther, parseEth
 import { chainById, primaryStable, publicClientFor } from '@/lib/chains'
 import { chainAlt } from '@/lib/chain-lexicon'
 import { formatAtoms } from '@/lib/cow'
-import { fetchLifiQuote, LIFI_POLICY_HOST, LIFI_QUOTE_TTL_SEC } from '@/lib/lifi-venue'
+import { fetchLifiQuote, LIFI_POLICY_HOST, LIFI_QUOTE_TTL_SEC, NoLifiRouteError } from '@/lib/lifi-venue'
 import { usdPerToken } from '@/lib/usd-probe'
 import { buildReport, policyCheck, recipientCheck, validityCheck, type GuardrailCheck, type GuardrailReport } from '@/lib/tx-guardrails'
 import { getActiveGrant, recordLedger, spentTodayUsd, toPolicy } from '@/lib/grant-store'
@@ -127,9 +127,22 @@ export function clampNativeSellAtoms(sellAtoms: bigint, balanceWei: bigint, keep
   return null
 }
 
-/** Dollars converted to native ETH on Robinhood Chain for gas — ~0.0008 ETH,
- *  enough for many Orbit-chain transactions (observed live: $2 → 0.00105). */
-export const GAS_LEG_USD = 1.5
+/** Dollars converted to native ETH on Robinhood Chain for gas — enough for
+ *  many Orbit-chain transactions (observed live: $2 → ~0.0008 ETH). Sized to
+ *  clear LiFi's small-transfer floor: the old $1.50 leg started getting
+ *  "none of the available routes could successfully generate a tx" while $2
+ *  filled via relaydepository (live 2026-09-02 — a stranger's flagship
+ *  fund-then-buy job walled on step 1). */
+export const GAS_LEG_USD = 2
+/** Escalation ladder for the gas leg when LiFi's minimum drifts above the
+ *  asked size — buildLifiBridgeLeg retries a no-quote gas leg at each size
+ *  above the ask, in order, and gives up honestly past the last rung. Jobs
+ *  compiled before a floor change carry the old dollar size in their step
+ *  params forever, so the BUILDER must self-heal, not just the constant
+ *  (probed live 2026-09-02: $1.50 → no quotes, $2 relaydepository, $5
+ *  across). Gas-leg-only: a value leg moves the user's exact dollars and
+ *  never resizes itself. */
+export const GAS_LEG_LADDER_USD = [2, 2.5, 3, 5] as const
 /** A Robinhood Chain wallet at/above this much native ETH doesn't need the
  *  gas leg (an Orbit swap chain costs well under a tenth of it). */
 export const RH_GAS_FLOOR_WEI = parseEther('0.0002')
@@ -401,14 +414,15 @@ export async function buildLifiBridgeLeg(params: { leg: FundingLeg; usd: number;
   // Stables are the $1 unit; an ETH sell sizes at build time off Pantessa's
   // own venue-quoter read, so a chip minted yesterday still moves today's
   // right amount of ETH.
-  let sellAtoms: bigint
+  let ethUsdRead: number | null = null
   if (nativeSell) {
     const probe = await usdPerToken(8453, 'ETH').catch(() => null)
     if (!probe) throw new Error("Couldn't price ETH to size the funding leg — try again in a moment.")
-    sellAtoms = parseEther((params.usd / probe.usd).toFixed(8))
-  } else {
-    sellAtoms = BigInt(Math.round(params.usd * 10 ** sell.decimals))
+    ethUsdRead = probe.usd
   }
+  const sizeSellAtoms = (usd: number): bigint =>
+    nativeSell ? parseEther((usd / ethUsdRead!).toFixed(8)) : BigInt(Math.round(usd * 10 ** sell.decimals))
+  let sellAtoms = sizeSellAtoms(params.usd)
   const gasLeg = params.leg === 'gas'
   const destinationToken = gasLeg ? NATIVE_TOKEN : usdg.address
   const destSymbol = gasLeg ? 'ETH' : usdg.symbol
@@ -437,6 +451,52 @@ export async function buildLifiBridgeLeg(params: { leg: FundingLeg; usd: number;
       sellAtoms = clamped
     }
   }
+  // Quote — with the gas-leg escalation ladder. A gas leg whose asked size
+  // sits under LiFi's live route minimum retries at each GAS_LEG_LADDER_USD
+  // rung above the ask instead of stranding the job (live 2026-09-02: a
+  // compiled job's $1.50 gas leg got "none of the available routes could
+  // successfully generate a tx" while $2 filled — old jobs carry the old
+  // size in their step params forever, so the constant alone can't fix
+  // them). Escalation never promises past the wallet's real balance, and a
+  // value leg (the user's exact dollars) never resizes — its no-route still
+  // throws for the runner to surface.
+  const quoteSizesUsd = gasLeg ? [params.usd, ...GAS_LEG_LADDER_USD.filter((u) => u > params.usd)] : [params.usd]
+  let quote: Awaited<ReturnType<typeof fetchLifiQuote>> | null = null
+  let escalatedFromUsd: number | null = null
+  let lastNoRoute: NoLifiRouteError | null = null
+  for (const usd of quoteSizesUsd) {
+    let atoms = sellAtoms
+    if (usd !== params.usd) {
+      atoms = sizeSellAtoms(usd)
+      if (atoms + keepbackWei > sellBalance) break
+    }
+    try {
+      quote = await fetchLifiQuote({
+        chainId: originId,
+        toChainId: ROBINHOOD_CHAIN_ID,
+        sellAddr: sell.address,
+        buyAddr: destinationToken,
+        swapAtoms: atoms,
+        from,
+        slippageBps: 50,
+      })
+      if (usd !== params.usd) {
+        escalatedFromUsd = params.usd
+        params = { ...params, usd }
+        sellAtoms = atoms
+      }
+      break
+    } catch (err) {
+      if (!gasLeg || !(err instanceof NoLifiRouteError)) throw err
+      lastNoRoute = err
+    }
+  }
+  if (!quote) {
+    throw new Error(
+      `LiFi has no route for the gas leg from ${origin.name} right now (no quote at ${quoteSizesUsd.map((u) => `$${u}`).join(', ')}) — ${lastNoRoute?.message ?? 'the wallet cannot fund a larger try'}. Try again shortly.`,
+    )
+  }
+
   const funded = sellBalance >= sellAtoms + keepbackWei
   const balanceCheck: GuardrailCheck = {
     id: 'balance',
@@ -445,19 +505,9 @@ export async function buildLifiBridgeLeg(params: { leg: FundingLeg; usd: number;
     note: funded
       ? clampedFromUsd !== null
         ? `Sized to what the wallet holds: ~$${params.usd} of ${sell.symbol} on ${origin.name} (the $${clampedFromUsd} ask, less fees already paid by earlier legs; gas keep-back kept).`
-        : `The wallet holds ${formatAtoms(sellBalance.toString(), sell.decimals)} ${sell.symbol} on ${origin.name} — covered${nativeSell ? ' (gas keep-back included)' : ''}.`
+        : `The wallet holds ${formatAtoms(sellBalance.toString(), sell.decimals)} ${sell.symbol} on ${origin.name} — covered${nativeSell ? ' (gas keep-back included)' : ''}${escalatedFromUsd !== null ? ` (gas leg sized up from $${escalatedFromUsd} to $${params.usd} — LiFi's route minimum)` : ''}.`
       : `Insufficient ${sell.symbol} on ${origin.name}: this leg needs $${params.usd}${nativeSell ? ' plus a gas keep-back' : ''} but the wallet holds ${formatAtoms(sellBalance.toString(), sell.decimals)}.`,
   }
-
-  const quote = await fetchLifiQuote({
-    chainId: originId,
-    toChainId: ROBINHOOD_CHAIN_ID,
-    sellAddr: sell.address,
-    buyAddr: destinationToken,
-    swapAtoms: sellAtoms,
-    from,
-    slippageBps: 50,
-  })
 
   const exp: LifiBridgeExpectations = {
     originChainId: originId,
