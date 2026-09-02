@@ -7,7 +7,10 @@ export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
 /** Kinds the feed can filter on (lib/ask-failure.ts + lib/wallet-refusal.ts). */
-const KINDS = new Set(['planner-answer', 'native-wall', 'blocked', 'error', 'wallet-refused'])
+// 'roster' joined in the doors run (lib/roster-observe writes it; the
+// failures page offers the filter — QA integration fix: the allowlist had
+// lagged, so ?kind=roster silently nulled).
+const KINDS = new Set(['planner-answer', 'native-wall', 'blocked', 'error', 'wallet-refused', 'roster'])
 
 /**
  * The ask-failure feed — money-shaped asks that ended in a wall, newest
