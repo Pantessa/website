@@ -267,6 +267,13 @@ interface YeetfulStore {
    *  live behind their own tabs. */
   railTab: RailTab
   setRailTab: (tab: RailTab) => void
+  /** What the chat surface's MAIN screen shows. 'links' renders the public
+   *  /links board page in place of the thread (the spine's LINKS destination
+   *  is a real place, not just a drawer); anything that returns to the
+   *  conversation — another tab, a send, a new chat — resets to 'chat'.
+   *  Session-only, never persisted: a reload always leads with the chat. */
+  mainView: 'chat' | 'links'
+  setMainView: (view: 'chat' | 'links') => void
   /** A prompt a rail row wants in the composer (e.g. a due recurring buy's
    *  run chip). Prefill only — the user always sends it themselves. NOT
    *  persisted: it's a one-shot handoff, consumed (and cleared) by the chat. */
@@ -798,6 +805,8 @@ export const useYeetfulStore = create<YeetfulStore>()(
       // session's job left open.
       railTab: 'mcps',
       setRailTab: (tab) => set({ railTab: tab }),
+      mainView: 'chat',
+      setMainView: (view) => set({ mainView: view }),
       composerPrefill: null,
       setComposerPrefill: (prompt) => set({ composerPrefill: prompt }),
       jobDetail: null,

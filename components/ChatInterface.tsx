@@ -52,6 +52,7 @@ import EmbedThisChat from '@/components/EmbedThisChat'
 import ChainPicker from '@/components/ChainPicker'
 import { chainById } from '@/lib/chains'
 import AppModeWorkspace from '@/components/AppModeWorkspace'
+import LinksWorkspace from '@/components/LinksWorkspace'
 import JobDetailOverlay from '@/components/JobDetailOverlay'
 import ChartOverlay from '@/components/ChartOverlay'
 import MintLinkModal from '@/components/MintLinkModal'
@@ -282,6 +283,8 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
     recordSignedTxs,
     railTab,
     setRailTab,
+    mainView,
+    setMainView,
     composerPrefill,
     setComposerPrefill,
     autoRouter,
@@ -340,6 +343,13 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
   // App Mode's transcript view-switch: a command-bar send opens the transcript
   // over the panels; the pill flips back. Reset when the mode or chat changes.
   const appMode = workspaceMode === 'app' && !embedded && !simple
+  // The spine's LINKS destination: the main screen renders the public
+  // /links board (LinksWorkspace) in place of the thread. AND-ed with
+  // railTab so any rail-tab change — including the auto-flip to Jobs when a
+  // turn births a standing intent — naturally returns the conversation
+  // even if mainView goes stale. Never on /embed or /i (no spine there,
+  // but belt-and-suspenders).
+  const linksMode = mainView === 'links' && railTab === 'links' && !embedded && !simple
   const [appTranscriptOpen, setAppTranscriptOpen] = useState(false)
   // Reset only on mode flips — NOT on currentChatId: a command-bar send mints
   // the chat id right after opening the transcript, and a chat-id-keyed reset
@@ -582,7 +592,11 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
   // workspace face scrolls panels, not the thread — growing tiles there must
   // not yank the view to the bottom.
   hasThreadRef.current =
-    ((currentChat?.messages.length ?? 0) > 0 || loading) && !(appMode && !appTranscriptOpen)
+    ((currentChat?.messages.length ?? 0) > 0 || loading) &&
+    !(appMode && !appTranscriptOpen) &&
+    // The links board scrolls like a page, top-down — its content resolving
+    // (the board fetch landing) must never yank the view to the bottom.
+    !linksMode
 
   // `loading` in the deps re-pins the view when the reply lands AND when a
   // send starts. Instant (not smooth): a smooth scroll animates toward a
@@ -618,6 +632,21 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
       scroller.removeEventListener('scroll', onScroll)
     }
   }, [])
+
+  // View flips between the thread and the links board reuse ONE scroller:
+  // the board reads top-down (start at 0), and coming back to a
+  // conversation re-pins to the newest turn instead of stranding the reader
+  // wherever the board left the scroll.
+  useEffect(() => {
+    const el = scrollerRef.current
+    if (!el) return
+    if (linksMode) {
+      el.scrollTop = 0
+    } else if (hasThreadRef.current) {
+      pinnedRef.current = true
+      el.scrollTop = el.scrollHeight
+    }
+  }, [linksMode])
 
   // Deep-link prefill: /chat?try=<slug> (toggle that agent + prefill its example
   // ask) or /chat?q=<text> (just prefill). Fires once the catalog has loaded,
@@ -687,6 +716,10 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
     // (same markup, every artifact behavior intact) — the workspace is one tap
     // away and the answer is never invisible behind the panels.
     if (workspaceMode === 'app' && !embedded) setAppTranscriptOpen(true)
+    // A send from the docked composer while the links board is up returns
+    // the main screen to the conversation — the reply must never stream
+    // invisibly behind the board.
+    if (mainView === 'links') setMainView('chat')
 
     let chatId = currentChatId
     // Guest dead-id guard: a guest's chats are ephemeral (local only), so a
@@ -1317,6 +1350,17 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
             report. min-h-full + flex-col so centered empty states (flex-1 /
             h-full children) still fill the viewport. */}
         <div ref={threadRef} className="min-h-full flex flex-col space-y-4">
+        {/* The LINKS destination: the public /links page rendered as the
+            main screen (board on top, mint composer in place) — the spine's
+            LINKS tab is a real place, not just a drawer. Branch INSIDE the
+            thread wrapper so the stick-to-bottom ResizeObserver keeps
+            observing one node across view flips (hasThreadRef gates it off
+            while the board is up). The docked composer below stays live; a
+            send flips the main screen back to the conversation. */}
+        {linksMode ? (
+          <LinksWorkspace />
+        ) : (
+          <>
         {appMode && appTranscriptOpen && (
           <div className="sticky top-0 z-10 flex justify-center">
             <button
@@ -1860,6 +1904,9 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
 
           </>
             )}
+          </>
+        )}
+          {/* end of the chat face — the linksMode ternary's else branch */}
           </>
         )}
         </div>
