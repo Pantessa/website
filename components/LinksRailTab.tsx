@@ -37,6 +37,7 @@ function JourneyStrip({
   onCopyNewest,
   copiedNewest,
   onDismiss,
+  onBoard,
 }: {
   status: OnboardingStatus
   live: LinkRow[]
@@ -44,6 +45,9 @@ function JourneyStrip({
   onCopyNewest: () => void
   copiedNewest: boolean
   onDismiss: () => void
+  /** Opens the /links board in the chat's MAIN screen — the rail sits on
+   *  the chat surface, so the board is one view-flip away, not a navigation. */
+  onBoard: () => void
 }) {
   const steps: Array<{ key: keyof OnboardingStatus; label: string; cta: React.ReactNode }> = [
     {
@@ -77,9 +81,9 @@ function JourneyStrip({
       key: 'converted',
       label: 'First conversion — someone signs through it',
       cta: (
-        <Link href="/links" className={CTA_CLASS}>
+        <button onClick={onBoard} className={CTA_CLASS}>
           See the board →
-        </Link>
+        </button>
       ),
     },
     {
@@ -124,6 +128,7 @@ function JourneyStrip({
 }
 
 function SignedInLinks({ activeSlugs }: { activeSlugs: string[] }) {
+  const { setMainView } = useYeetfulStore()
   const { links, earnings, reload, updatedAt } = useIntentLinks()
   const { status, refresh: refreshStatus } = useOnboardingStatus()
   const [journeyDismissed, setJourneyDismissed] = useState(true)
@@ -175,6 +180,7 @@ function SignedInLinks({ activeSlugs }: { activeSlugs: string[] }) {
             dismissOnboarding()
             setJourneyDismissed(true)
           }}
+          onBoard={() => setMainView('links')}
         />
       )}
 

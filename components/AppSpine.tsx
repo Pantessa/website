@@ -43,6 +43,8 @@ export default function AppSpine({ surface = 'chat' }: { surface?: 'chat' | 'das
   const {
     railTab,
     setRailTab,
+    mainView,
+    setMainView,
     mcpRailOpen,
     setMcpRailOpen,
     mobileMcpRailOpen,
@@ -65,6 +67,7 @@ export default function AppSpine({ surface = 'chat' }: { surface?: 'chat' | 'das
     const tab = new URLSearchParams(window.location.search).get('tab')
     if (tab && TABS.some((t) => t.tab === tab)) {
       setRailTab(tab as RailTab)
+      setMainView(tab === 'links' ? 'links' : 'chat')
       if (window.matchMedia('(max-width: 1023px)').matches) setMobileMcpRailOpen(true)
       else setMcpRailOpen(true)
     }
@@ -79,18 +82,34 @@ export default function AppSpine({ surface = 'chat' }: { surface?: 'chat' | 'das
     return () => document.documentElement.removeAttribute('data-spine')
   }, [onDashboard])
 
+  // LINKS is a destination, not just a drawer: picking it renders the
+  // public /links board in the chat's MAIN screen (LinksWorkspace); picking
+  // any other tab returns the main screen to the conversation. The collapse
+  // gesture (clicking the tab you're on) is also the way back.
+  const mainViewFor = (tab: RailTab): 'chat' | 'links' => (tab === 'links' ? 'links' : 'chat')
+
   // Desktop: the drawer is the in-flow panel (persisted open state).
   const pickDesktop = (tab: RailTab) => {
     if (onDashboard) {
       setRailTab(tab)
+      setMainView(mainViewFor(tab))
       setMcpRailOpen(true)
       router.push('/chat')
       return
     }
     if (railTab === tab && mcpRailOpen) {
-      setMcpRailOpen(false)
+      // Lit LINKS tab with the board already gone (a send flipped the main
+      // screen back to the thread): the click means "show me the board
+      // again", not collapse. Every other lit-tab click stays a collapse.
+      if (tab === 'links' && mainView !== 'links') {
+        setMainView('links')
+      } else {
+        setMcpRailOpen(false)
+        setMainView('chat')
+      }
     } else {
       setRailTab(tab)
+      setMainView(mainViewFor(tab))
       setMcpRailOpen(true)
     }
   }
@@ -99,14 +118,22 @@ export default function AppSpine({ surface = 'chat' }: { surface?: 'chat' | 'das
   const pickMobile = (tab: RailTab) => {
     if (onDashboard) {
       setRailTab(tab)
+      setMainView(mainViewFor(tab))
       setMobileMcpRailOpen(true)
       router.push('/chat')
       return
     }
     if (railTab === tab && mobileMcpRailOpen) {
-      setMobileMcpRailOpen(false)
+      if (tab === 'links' && mainView !== 'links') {
+        setMainView('links')
+        setMobileMcpRailOpen(false) // reveal the board — the overlay covers it on phones
+      } else {
+        setMobileMcpRailOpen(false)
+        setMainView('chat')
+      }
     } else {
       setRailTab(tab)
+      setMainView(mainViewFor(tab))
       setMobileMcpRailOpen(true)
     }
   }
@@ -141,7 +168,12 @@ export default function AppSpine({ surface = 'chat' }: { surface?: 'chat' | 'das
 
         <div className="flex flex-col items-center gap-1 pt-2 w-full px-1">
           <button
-            onClick={() => router.push('/chat')}
+            onClick={() => {
+              // NEW always lands on the conversation, whatever the main
+              // screen was showing.
+              setMainView('chat')
+              router.push('/chat')
+            }}
             title="Start a new chat"
             aria-label="Start a new chat"
             className="w-12 flex flex-col items-center gap-0.5 py-1.5 rounded-lg text-[color:var(--muted)] hover:text-white hover:bg-[var(--surf-2)] transition-colors"
@@ -208,7 +240,12 @@ export default function AppSpine({ surface = 'chat' }: { surface?: 'chat' | 'das
         aria-label="Workspace"
       >
         <button
-          onClick={() => router.push('/chat')}
+          onClick={() => {
+            // NEW always lands on the conversation, whatever the main
+            // screen was showing.
+            setMainView('chat')
+            router.push('/chat')
+          }}
           title="Start a new chat"
           aria-label="Start a new chat"
           className="flex-1 min-h-[48px] flex flex-col items-center justify-center gap-0.5 text-[color:var(--muted)]"
