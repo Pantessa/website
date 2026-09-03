@@ -5546,6 +5546,29 @@ async function main() {
           ONRAMP_CONSENT_TTL_MS > 0 && ONRAMP_CONSENT_TTL_MS <= 15 * 60_000,
           String(ONRAMP_CONSENT_TTL_MS),
         )
+
+        // ── WIRING. The server can offer a perfect fund chip and the UI can
+        // silently drop it: #675 rewrote ClarifyChips and deleted the whole
+        // funding branch, so for days the chat emitted fund chips that
+        // rendered as plain text and re-sent the ask into the same
+        // empty-wallet wall the on-ramp exists to fix. Nothing caught it,
+        // because every unit above still passed. The chip is only real if the
+        // component that renders clarify options CONSUMES `fund` and calls the
+        // route — so pin that, at the source.
+        const chipFs = await import('node:fs')
+        const chipSrc = chipFs.readFileSync('components/ClarifyChips.tsx', 'utf8')
+        check(
+          'onramp wiring: the clarify surface still CONSUMES o.fund (a fund chip is not a plain chip)',
+          /o\.fund/.test(chipSrc),
+        )
+        check(
+          'onramp wiring: the clarify surface still CALLS the on-ramp route',
+          chipSrc.includes('/api/onramp/session'),
+        )
+        check(
+          'onramp wiring: the clarify surface still SIGNS the consent (an unsigned call is refused 401 by the route)',
+          chipSrc.includes('onrampConsentMessage') && /signMessageAsync/.test(chipSrc),
+        )
       }
 
       process.env.ONRAMP_ENABLED = wasEnabled
