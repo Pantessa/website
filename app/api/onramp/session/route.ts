@@ -113,8 +113,15 @@ export async function POST(req: NextRequest) {
     )
   }
 
+  // Signing and calling are separated on purpose. Collapsing both into one
+  // catch made every failure an indistinguishable 502 — a malformed API key
+  // secret and a project without Onramp access looked identical from the
+  // outside, which cost two rounds of guessing on 2026-08-27. The upstream
+  // STATUS is safe to surface (it is not a body and carries no account
+  // detail) and it is the single fact that tells those two apart.
+  let jwt: string
   try {
-    const jwt = await generateJwt({
+    jwt = await generateJwt({
       apiKeyId: process.env.CDP_API_KEY_ID!,
       apiKeySecret: process.env.CDP_API_KEY_SECRET!,
       requestMethod: 'POST',
@@ -122,7 +129,17 @@ export async function POST(req: NextRequest) {
       requestPath: CDP_PATH,
       expiresIn: 120,
     })
+  } catch (e) {
+    // Never the credential itself — only its shape, which is what is wrong.
+    const why = e instanceof Error ? e.message : 'unknown'
+    console.error(`[onramp] JWT signing failed (check CDP_API_KEY_SECRET format): ${why}`)
+    return NextResponse.json(
+      { error: 'On-ramp credentials are not usable.', stage: 'sign', detail: why.slice(0, 200) },
+      { status: 503 },
+    )
+  }
 
+  try {
     const res = await fetch(`https://${CDP_HOST}${CDP_PATH}`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${jwt}`, 'Content-Type': 'application/json' },
@@ -131,10 +148,15 @@ export async function POST(req: NextRequest) {
     })
 
     if (!res.ok) {
-      // Never echo Coinbase's body — it can carry account detail. The status
-      // is enough to tell a misconfiguration from a transient failure.
-      console.error(`[onramp] session token failed: ${res.status}`)
-      return NextResponse.json({ error: 'Could not start the funding session.' }, { status: 502 })
+      // The body can carry account detail, so it is logged and never returned.
+      // 401 = the key is rejected. 403 = the key is fine but this project has
+      // no Onramp access (trial mode / not approved). 400 = our payload.
+      const body = await res.text().catch(() => '')
+      console.error(`[onramp] session token failed: ${res.status} ${body.slice(0, 400)}`)
+      return NextResponse.json(
+        { error: 'Could not start the funding session.', stage: 'cdp', upstreamStatus: res.status },
+        { status: 502 },
+      )
     }
 
     const data = (await res.json()) as { token?: string }
@@ -146,7 +168,12 @@ export async function POST(req: NextRequest) {
       url: onrampUrl({ sessionToken: data.token, presetFiatUsd, asset, network }),
       presetFiatUsd,
     })
-  } catch {
-    return NextResponse.json({ error: 'Could not start the funding session.' }, { status: 502 })
+  } catch (e) {
+    const why = e instanceof Error ? e.message : 'unknown'
+    console.error(`[onramp] session token request threw: ${why}`)
+    return NextResponse.json(
+      { error: 'Could not start the funding session.', stage: 'network', detail: why.slice(0, 200) },
+      { status: 502 },
+    )
   }
 }
