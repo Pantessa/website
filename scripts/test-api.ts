@@ -126,7 +126,7 @@ import { jobContextFor } from '../lib/job-context'
 import { crossChainAgentOf, detectCrossChain, swapWorkingContext } from '../lib/swap-intent'
 import { encodeV4SwapCalldata, guardUniswapV4Build, type V4BuiltStep, type V4GuardExpectations, type V4PoolKey } from '../lib/uniswap-v4'
 import { guardLifiBuild, isLifiNoRouteMessage, verifyLifiQuoteEcho, lifiPriceAcceptable, lifiRoutersFor, type LifiBuiltStep, type LifiGuardExpectations, type LifiQuote } from '../lib/lifi-venue'
-import { clampNativeSellAtoms, FUNDING_ALT_USDC, fundingAltUsdcFor, fundingNeedUsd, GAS_LEG_LADDER_USD, GAS_LEG_USD, GAS_TOPUP_ETH, guardLifiBridgeBuild, lifiBridgeRoutersFor, parseRhFundingFollowUp, planDownsizedRobinhoodBuy, planRobinhoodFundingAdvice, planRobinhoodFundingChips, rhFundingPending, robinhoodBuyNeedUsd, verifyLifiBridgeEcho, type FundingOrigin, type LifiBridgeExpectations, type LifiBridgeStep } from '../lib/lifi-bridge'
+import { clampNativeSellAtoms, FUNDING_ALT_USDC, fundingAltUsdcFor, fundingNeedUsd, fundingSourceSymbols, offChainStableSource, ROBINHOOD_CHAIN_ID, GAS_LEG_LADDER_USD, GAS_LEG_USD, GAS_TOPUP_ETH, guardLifiBridgeBuild, lifiBridgeRoutersFor, parseRhFundingFollowUp, planDownsizedRobinhoodBuy, planRobinhoodFundingAdvice, planRobinhoodFundingChips, rhFundingPending, robinhoodBuyNeedUsd, verifyLifiBridgeEcho, type FundingOrigin, type LifiBridgeExpectations, type LifiBridgeStep } from '../lib/lifi-bridge'
 import { classifyOneclickStatus, inflightDepositFromPending, inflightPendingData, inflightSettlingNote } from '../lib/inflight-funding'
 import { sanitizeWorkingContext } from '../lib/working-context'
 import { parseRobinhoodFunding, parseSameChainSwapSegment, JOB_SEGMENT_PARSERS } from '../lib/jobs'
@@ -5717,6 +5717,97 @@ async function main() {
     check('swap intent: "$20 in USDG" variant parses too', needIn.isSwap && !needIn.problem && needIn.sellAmountUsd === '20')
     const getMe = parseSwapIntent('get me $20 worth of AAPL')
     check('swap intent: "get me $20 worth of AAPL" rides the dollar-buy shape', getMe.isSwap && !getMe.problem && getMe.sellAmountUsd === '20' && getMe.buyToken?.toUpperCase() === 'AAPL')
+    // ── Off-chain source ── the live 2026-09-03 wall: "Convert 1 USDC to 1
+    // USDG on robinhood" answered "I don't know the token USDC on Robinhood
+    // Chain" while the wallet held USDC on Base. Two faults, both pinned
+    // here: the buy token was LOST to the amount sitting in front of it, and
+    // a dollar-parity funding source was read as an unknown token instead of
+    // as the ask naming its own origin.
+    const convertParity = parseSwapIntent('Convert 1 USDC to 1 USDG on robinhood')
+    check(
+      'swap intent: "Convert 1 USDC to 1 USDG" keeps the buy token (an amount on the buy side never eats it)',
+      convertParity.isSwap &&
+        !convertParity.problem &&
+        convertParity.mode === 'swap' &&
+        convertParity.sellAmountHuman === '1' &&
+        convertParity.sellToken?.toUpperCase() === 'USDC' &&
+        convertParity.buyToken?.toUpperCase() === 'USDG' &&
+        convertParity.buyAmountNamedHuman === '1',
+      JSON.stringify(convertParity),
+    )
+    // The named output is RECORDED, never promised — builds are exact-input.
+    const convertUneven = parseSwapIntent('swap 1 ETH for 3000 USDC')
+    check(
+      'swap intent: a buy-side amount on a non-parity pair still builds exact-input (token kept, amount recorded only)',
+      convertUneven.mode === 'swap' && convertUneven.sellAmountHuman === '1' && convertUneven.sellToken?.toUpperCase() === 'ETH' && convertUneven.buyToken?.toUpperCase() === 'USDC' && convertUneven.buyAmountNamedHuman === '3000',
+      JSON.stringify(convertUneven),
+    )
+    check(
+      'swap intent: the LIMIT grammar still owns a priced second amount (the word "limit" wins)',
+      parseSwapIntent('limit order: sell 0.5 WETH for at least 1750 USDC').mode === 'limit',
+    )
+    check(
+      'swap intent: "swap 1 USDC to arbitrum" still reads as a cross-chain move, not a token named ARBITRUM',
+      !!parseSwapIntent('swap 1 USDC to arbitrum').problem,
+    )
+
+    // The funding scan can only SOURCE what readFundingShortfall reads —
+    // naming a symbol it can't see would promise money the chips can't spend.
+    const srcSyms = fundingSourceSymbols()
+    check(
+      'off-chain source: the sourceable set is derived from the scan (USDC + USDC.e + ETH, never USDT/DAI)',
+      srcSyms.includes('USDC') && srcSyms.includes('ETH') && srcSyms.includes('USDC.E') && !srcSyms.includes('USDT') && !srcSyms.includes('DAI'),
+      srcSyms.join(','),
+    )
+    const offChain = offChainStableSource({ chainId: ROBINHOOD_CHAIN_ID, sellSymbol: 'USDC', knownOnChain: false, amountHuman: '1' })
+    check(
+      'off-chain source: USDC spent on Robinhood Chain restates as $1 of USDG (the funding plan owns it, not a refusal)',
+      offChain?.sourceSymbol === 'USDC' && offChain?.stableSymbol === 'USDG' && offChain?.usd === 1,
+      JSON.stringify(offChain),
+    )
+    check(
+      'off-chain source: a dollar-denominated convert restates the same way',
+      offChainStableSource({ chainId: ROBINHOOD_CHAIN_ID, sellSymbol: 'USDC', knownOnChain: false, amountUsd: '20' })?.usd === 20,
+    )
+    check(
+      'off-chain source: bridged USDC.e counts (the scan reads it on Arbitrum)',
+      offChainStableSource({ chainId: ROBINHOOD_CHAIN_ID, sellSymbol: 'USDC.e', knownOnChain: false, amountHuman: '5' })?.usd === 5,
+    )
+    check(
+      'off-chain source: a token the destination DOES know is never claimed (normal same-chain sell)',
+      offChainStableSource({ chainId: ROBINHOOD_CHAIN_ID, sellSymbol: 'USDG', knownOnChain: true, amountHuman: '5' }) === null,
+    )
+    check(
+      'off-chain source: a genuinely unknown symbol keeps the honest refusal',
+      offChainStableSource({ chainId: ROBINHOOD_CHAIN_ID, sellSymbol: 'FOOBAR', knownOnChain: false, amountHuman: '5' }) === null,
+    )
+    check(
+      'off-chain source: ETH is a funding source but not a PARITY one — no price-free restatement',
+      offChainStableSource({ chainId: ROBINHOOD_CHAIN_ID, sellSymbol: 'ETH', knownOnChain: false, amountHuman: '1' }) === null,
+    )
+    check(
+      'off-chain source: only Robinhood Chain (the one destination with live-probed LiFi routes in)',
+      offChainStableSource({ chainId: 8453, sellSymbol: 'USDG', knownOnChain: false, amountHuman: '5' }) === null,
+    )
+    check(
+      'off-chain source: no amount named → falls through rather than guessing a size',
+      offChainStableSource({ chainId: ROBINHOOD_CHAIN_ID, sellSymbol: 'USDC', knownOnChain: false }) === null,
+    )
+    // A conversion moves NAMED money: held USDG must not shrink or cancel
+    // the bridge (creditUsd 0), while a top-up still nets against it.
+    check(
+      'off-chain source: a conversion sizes off the ask alone, a top-up nets against held USDG',
+      robinhoodBuyNeedUsd(10, 0, false) > robinhoodBuyNeedUsd(10, 8, false),
+    )
+    // Every conversion chip must still be a COMPILING contract.
+    const convertOrigin: FundingOrigin = { chainId: 8453, word: 'Base', token: 'USDC', usd: 20, gasEth: 0.01 }
+    const convertChips = planRobinhoodFundingChips({ origins: [convertOrigin], needUsd: fundingNeedUsd(1, true), gasIncluded: true, followup: '' })
+    check(
+      'off-chain source: the conversion chips compile as funding jobs (resume round-trips parseRobinhoodFunding)',
+      !!convertChips && convertChips.length > 0 && convertChips.every((c) => !!parseRobinhoodFunding(c.resume.split(', then ')[0])),
+      JSON.stringify(convertChips?.map((c) => c.resume)),
+    )
+
     const wantSwap = parseSwapIntent('I want to swap 1 USDC for WETH')
     check('swap intent: "I want to swap 1 USDC for WETH" keeps the market grammar (need-verbs never hijack)', wantSwap.isSwap && wantSwap.sellAmountHuman === '1' && wantSwap.sellToken === 'USDC')
     check('swap intent: "I want to send all my USDC…" is NOT a swap (transfer territory)', parseSwapIntent('I want to send all my USDC on arbitrum to nate.eth').isSwap === false)

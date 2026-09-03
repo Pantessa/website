@@ -1116,3 +1116,79 @@ export function parseRhFundingFollowUp(message: string): RhFundingFollowUp | nul
   if (assertVerb.test(m) && (fundingNoun.test(m) || originWord.test(m))) return { kind: 'recheck' }
   return null
 }
+
+// ── Off-chain source inference (pure) ──────────────────────────────────────
+
+/** The token symbols readFundingShortfall can actually SOURCE from an origin
+ *  chain — derived from what it reads, never a hand-typed list, so a symbol
+ *  named here is one the chips can really spend. USDT/DAI are deliberately
+ *  absent: the scan doesn't read them, and promising money we can't see is
+ *  the same lie as denying money we can. */
+export function fundingSourceSymbols(): string[] {
+  const out = new Set<string>(['ETH'])
+  for (const chainId of FUNDING_ORIGIN_CHAINS) {
+    if (chainById(chainId)?.tokens.USDC) out.add('USDC')
+    const alt = fundingAltUsdcFor(chainId)
+    if (alt) out.add(alt.symbol.toUpperCase())
+  }
+  return [...out]
+}
+
+/** Origin symbols that are a $1 unit — their named amount IS its dollar
+ *  value, so the ask can be restated in the destination's own stable
+ *  without a price probe. ETH is a funding source but not a parity one. */
+function parityFundingSymbol(symbol: string): string | null {
+  const sym = symbol.trim().toUpperCase()
+  return fundingSourceSymbols().includes(sym) && sym !== 'ETH' ? sym : null
+}
+
+export interface OffChainStableSource {
+  /** What the user named as the spend side ("USDC"). */
+  sourceSymbol: string
+  /** The destination chain's own $1 unit, which the plan spends instead. */
+  stableSymbol: string
+  /** The dollars the named amount is worth (parity, so no price probe). */
+  usd: number
+}
+
+/**
+ * "Convert 1 USDC to 1 USDG on robinhood" (live 2026-09-03) answered
+ * *"I don't know the token USDC on Robinhood Chain"* — true, and useless:
+ * USDC is the exact token the funding plan below bridges FROM, and that
+ * wallet was holding it on Base. A spend token that doesn't exist on the
+ * destination but IS a dollar-parity funding source isn't an unknown
+ * token — it's the ask naming its own origin, one chain over.
+ *
+ * Restate it in the destination's $1 unit ("$1 of USDG on Robinhood Chain")
+ * and the existing funding plan owns the turn: it scans Base, Ethereum and
+ * Arbitrum for that USDC, ranks the origins, adds a gas leg ONLY when the
+ * destination wallet can't already pay Orbit gas, and compiles the pick
+ * into a job the user signs step by step.
+ *
+ * Null when the symbol isn't sourceable, the destination has no stable of
+ * its own, the ask is a limit order (no funding plan behind those), or no
+ * dollar amount was named — every one of those falls through to the honest
+ * unknown-token refusal rather than guessing.
+ */
+export function offChainStableSource(params: {
+  chainId: number
+  sellSymbol: string | undefined
+  /** True when the destination chain already knows the symbol — then it is
+   *  a normal same-chain sell and this gate must not claim it. */
+  knownOnChain: boolean
+  amountHuman?: string
+  amountUsd?: string
+}): OffChainStableSource | null {
+  const { chainId, sellSymbol, knownOnChain, amountHuman, amountUsd } = params
+  // Robinhood Chain is the only destination the funding plan lands on
+  // (FUNDING_ORIGIN_CHAINS bridge TO it, live-probed). Widening this
+  // without a probed route would offer a path that can't build.
+  if (chainId !== ROBINHOOD_CHAIN_ID || knownOnChain || !sellSymbol) return null
+  const stable = primaryStable(chainId)
+  if (!stable) return null
+  const sourceSymbol = parityFundingSymbol(sellSymbol)
+  if (!sourceSymbol || sourceSymbol === stable.symbol.toUpperCase()) return null
+  const usd = Number(amountUsd ?? amountHuman)
+  if (!Number.isFinite(usd) || usd <= 0) return null
+  return { sourceSymbol, stableSymbol: stable.symbol, usd: Number(usd.toFixed(2)) }
+}
