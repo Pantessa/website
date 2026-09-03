@@ -401,7 +401,7 @@ export default function ChatRail() {
             )}
 
             {/* (The old pinned Dashboard row is gone on every breakpoint —
-                the spine's DASH item is the permanent, labeled way out.) */}
+                the spine's SETTINGS item is the permanent, labeled way out.) */}
           </div>
         </motion.aside>
       )}

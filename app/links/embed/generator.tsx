@@ -1,4 +1,5 @@
 'use client'
+import { LINKS_STUDIO_HREF } from '@/lib/links-href'
 
 // The host button generator form. Mints an intent link through the same
 // POST /api/intent-links door as the dashboard (SIWE-gated, ask sanitized,
@@ -217,8 +218,8 @@ export default function ButtonGenerator() {
             </pre>
             <p className="mt-2 text-[12px] text-[color:var(--muted-2)]">
               Track opens, connects, builds, and signs — and what you earned on conversions — on{' '}
-              <a href="/dashboard/links" className="text-[color:var(--accent)] hover:underline">
-                your links dashboard
+              <a href={LINKS_STUDIO_HREF} className="text-[color:var(--accent)] hover:underline">
+                your links studio
               </a>
               .
             </p>

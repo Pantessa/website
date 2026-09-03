@@ -17,11 +17,11 @@
 // (/links) render the stage signed-out — the mint press becomes the unified
 // sign-in door (rule 6: CreateAccountButton / connectAndSignIn, never raw
 // RainbowKit) with redirectTo carrying the typed ask + picks back into
-// /dashboard/links, where the query prefill re-lights everything.
+// the links studio, where the query prefill re-lights everything.
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
-import { Check, ChevronDown, Copy, Plus, Settings2 } from 'lucide-react'
+import { Check, ChevronDown, Copy, FlaskConical, Plus, Settings2 } from 'lucide-react'
 import { STARTER_ASKS, useTypedAsk } from '@/components/typed-asks'
 import { MINTABLE_MCPS, composeMcps } from '@/lib/intent-links'
 import { getProtocolMark } from '@/components/protocol-marks'
@@ -30,6 +30,7 @@ import { useSession } from '@/lib/session'
 import { cdpEnabled } from '@/lib/cdp-embedded'
 import CreateAccountButton from '@/components/CreateAccountButton'
 import { absoluteUrl } from '@/lib/site-url'
+import { LINKS_STUDIO_HREF, linksStudioHref } from '@/lib/links-href'
 
 /** The vendored brand glyph for a mintable MCP, sized for a card pill.
  *  Marks render in `currentColor`, so they inherit the pill's ink. */
@@ -211,9 +212,16 @@ export function MintLinkForm({
 
   const error = mintError ?? externalError ?? null
 
-  // Where a guest's sign-in lands: the dashboard studio with everything they
+  // Where a guest's sign-in lands: the links studio with everything they
   // just wrote re-lit through the existing query-prefill contract.
-  const handoffHref = `/dashboard/links?ask=${encodeURIComponent(ask.trim())}${picks.length ? `&mcps=${encodeURIComponent(picks.join(','))}` : ''}`
+  // "Test it out": the ask + the EXACT dapp set the link will carry, opened
+  // as a normal chat. Same ?prompt= + ?mcps= handoff the landing's examples
+  // use, so the rehearsal runs the same working set a visitor's /i page
+  // composes. Prefill only — a URL never fires a turn (#586) — and it opens
+  // in a new tab so the stage you just composed is still here when you come
+  // back to press Mint.
+  const testHref = `/chat?prompt=${encodeURIComponent(ask.trim())}${picks.length ? `&mcps=${encodeURIComponent(picks.join(','))}` : ''}`
+  const handoffHref = linksStudioHref({ ask, mcps: picks })
 
   // ── The share moment (inline) ──────────────────────────────────────────────
   if (minted) {
@@ -256,7 +264,7 @@ export function MintLinkForm({
             tweet it
           </a>
           <Link
-            href="/dashboard/links"
+            href={LINKS_STUDIO_HREF}
             className="mono text-[12px] text-[color:var(--muted)] hover:text-[color:var(--fg)] underline"
           >
             watch the funnel
@@ -428,6 +436,19 @@ export function MintLinkForm({
           >
             <Plus className="w-4 h-4" /> {minting ? 'Minting…' : 'Mint this link'}
           </button>
+        )}
+        {/* Run it before you commit to it. Nothing mints, nothing is
+            shared — it is the same ask, on the same dapps, in a chat. */}
+        {askReady && (
+          <a
+            href={testHref}
+            target="_blank"
+            rel="noopener noreferrer"
+            title="Open this ask in a chat (new tab) — see it run before you mint it"
+            className="btn btn--ghost inline-flex items-center gap-1.5 text-[13px]"
+          >
+            <FlaskConical className="w-4 h-4" /> Test it out
+          </a>
         )}
         <span className="text-[12px] text-[color:var(--muted-2)]">
           Half of Pantessa&apos;s 0.20% fee on every conversion is yours.

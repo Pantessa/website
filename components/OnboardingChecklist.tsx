@@ -9,6 +9,7 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
+import { LINKS_STUDIO_HREF, linksStudioHref } from '@/lib/links-href'
 import { CheckCircle2, Circle, X } from 'lucide-react'
 import { Card } from '@/lib/dashboard-ui'
 import { dismissOnboarding, onboardingDismissed, useOnboardingStatus } from '@/lib/onboarding'
@@ -30,21 +31,21 @@ export default function OnboardingChecklist() {
       label: 'Mint your first link',
       hint: 'One sentence — "Buy $5 of AAPL", "DCA $25 into ETH weekly" — becomes a link anyone can act on. We\'ll prefill an ask.',
       done: status.minted,
-      href: `/dashboard/links?ask=${encodeURIComponent('Buy $5 of AAPL')}`,
+      href: linksStudioHref({ ask: 'Buy $5 of AAPL' }),
       cta: 'Mint a link',
     },
     {
       label: 'Share it',
       hint: 'Post it, DM it, drop it in your community. The moment someone opens it, this ticks.',
       done: status.opened,
-      href: '/dashboard/links',
+      href: LINKS_STUDIO_HREF,
       cta: 'Copy your link',
     },
     {
       label: 'Watch the funnel',
       hint: 'Opens → connects → built → signed, per link, live on your links page. Ticks when a visitor connects a wallet.',
       done: status.connected,
-      href: '/dashboard/links',
+      href: LINKS_STUDIO_HREF,
       cta: 'Open the funnel',
     },
     {
@@ -58,7 +59,7 @@ export default function OnboardingChecklist() {
       label: 'Claim your earnings',
       hint: 'You keep half of Pantessa\'s 0.20% fee on your links\' conversions. Claims open at $10, paid in USDC on Base.',
       done: status.claimed,
-      href: '/dashboard/links',
+      href: LINKS_STUDIO_HREF,
       cta: 'Claim',
     },
   ]

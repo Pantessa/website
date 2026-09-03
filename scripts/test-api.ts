@@ -2057,6 +2057,28 @@ async function main() {
     })
     check('intent links: mint without session → 401', noAuth.status === 401)
 
+    // ── The studio has ONE address (2026-09-03) ────────────────────────────
+    // Minting lived on /dashboard/links AND in the app's LINKS tab; the
+    // dashboard one won every CTA by default. The studio is the app view
+    // now and the old route redirects — carrying the ?ask= handoff, or a
+    // creator arriving from a receipt/onboarding CTA loses their sentence.
+    const studioMoved = await fetch(`${BASE}/dashboard/links`, { redirect: 'manual' })
+    check(
+      'links studio: /dashboard/links redirects into the app LINKS tab',
+      [307, 308, 302].includes(studioMoved.status) &&
+        (studioMoved.headers.get('location') ?? '').includes('/chat?tab=links'),
+    )
+    const studioPrefill = await fetch(`${BASE}/dashboard/links?ask=${encodeURIComponent('Buy $5 of AAPL')}&mcps=robinhood-free`, {
+      redirect: 'manual',
+    })
+    const studioLoc = studioPrefill.headers.get('location') ?? ''
+    check(
+      'links studio: the redirect carries the ask + mcps handoff through',
+      studioLoc.includes('tab=links') &&
+        studioLoc.includes(encodeURIComponent('Buy $5 of AAPL')) &&
+        studioLoc.includes('mcps=robinhood-free'),
+    )
+
     const badRedirect = await fetch(`${BASE}/api/intent-links`, {
       method: 'POST',
       headers: { 'content-type': 'application/json', cookie: mallorySession },
@@ -4944,7 +4966,7 @@ async function main() {
   // intent link (the aha→link loop). Prefill handoff only — nothing auto-runs.
   check(
     'receipt page offers "Mint this as a link" with the ask prefilled',
-    receiptHtml.includes('/dashboard/links?ask=') && receiptHtml.includes('Mint this as a link'),
+    /\/chat\?tab=links&(amp;)?ask=/.test(receiptHtml) && receiptHtml.includes('Mint this as a link'),
   )
   const ogRes = await fetch(`${BASE}/r/${mintedShare.id}/opengraph-image`)
   check(

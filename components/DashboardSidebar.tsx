@@ -6,7 +6,7 @@
 
 import Link from 'next/link'
 import { useEffect, useRef } from 'react'
-import { LayoutDashboard, KeyRound, Bot, ToggleRight, Activity, Building2, LineChart, MessageSquare, BookOpen, AlertTriangle, CreditCard, Globe, Palette, ShieldAlert, ShieldCheck, Users, Landmark, Link2 } from 'lucide-react'
+import { LayoutDashboard, KeyRound, Bot, ToggleRight, Activity, Building2, LineChart, MessageSquare, BookOpen, AlertTriangle, CreditCard, Globe, Palette, ShieldAlert, ShieldCheck, Users, Landmark } from 'lucide-react'
 import { isAdminAddress } from '@/lib/admin'
 
 // Links-first order (Nate, 2026-07-22): App rides right under Overview,
@@ -20,10 +20,12 @@ export const DASH_SECTIONS = [
   // word). On desktop the spine also carries this door; this row keeps chat
   // reachable from the MOBILE drawer, where the spine doesn't render.
   { href: '/chat', label: 'Chat', icon: MessageSquare, exact: false },
-  { href: '/dashboard/links', label: 'Intent links', icon: Link2, exact: false },
+  // Intent links is NOT here (2026-09-03, Nate): the link center is the
+  // app's LINKS destination now (the spine's LINKS tab), not a dashboard
+  // section. /dashboard/links redirects there. The dashboard is settings.
   // The creator page's own door (2026-08-27, Nate): customizing /l used to be
   // one row at the top of Intent links, which is where creators scrolled past
-  // it. Sits directly under the links it dresses.
+  // it. Sits with the rest of the account surfaces.
   { href: '/dashboard/customize', label: 'Customize page', icon: Palette, exact: false },
   { href: '/dashboard/guardian', label: 'Guardian', icon: ShieldCheck, exact: false },
   { href: '/dashboard/embeds', label: 'Embeds', icon: Globe, exact: false },

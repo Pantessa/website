@@ -38,7 +38,7 @@ function JourneyStrip({
   onCopyNewest,
   copiedNewest,
   onDismiss,
-  onBoard,
+  onStudio,
 }: {
   status: OnboardingStatus
   live: LinkRow[]
@@ -46,9 +46,10 @@ function JourneyStrip({
   onCopyNewest: () => void
   copiedNewest: boolean
   onDismiss: () => void
-  /** Opens the /links board in the chat's MAIN screen — the rail sits on
-   *  the chat surface, so the board is one view-flip away, not a navigation. */
-  onBoard: () => void
+  /** Opens the links STUDIO in the chat's MAIN screen — the rail sits on
+   *  the chat surface, so the funnel and the earnings are one view-flip
+   *  away, not a navigation to another page. */
+  onStudio: () => void
 }) {
   const steps: Array<{ key: keyof OnboardingStatus; label: string; cta: React.ReactNode }> = [
     {
@@ -73,27 +74,27 @@ function JourneyStrip({
       key: 'connected',
       label: 'Watch the funnel — a visitor connects',
       cta: (
-        <Link href="/dashboard/links" className={CTA_CLASS}>
+        <button onClick={onStudio} className={CTA_CLASS}>
           Open the funnel →
-        </Link>
+        </button>
       ),
     },
     {
       key: 'converted',
       label: 'First conversion — someone signs through it',
       cta: (
-        <button onClick={onBoard} className={CTA_CLASS}>
+        <Link href="/links" className={CTA_CLASS}>
           See the board →
-        </button>
+        </Link>
       ),
     },
     {
       key: 'claimed',
       label: 'Claim your earnings',
       cta: (
-        <Link href="/dashboard/links" className={CTA_CLASS}>
+        <button onClick={onStudio} className={CTA_CLASS}>
           Claim →
-        </Link>
+        </button>
       ),
     },
   ]
@@ -181,7 +182,7 @@ function SignedInLinks({ activeSlugs }: { activeSlugs: string[] }) {
             dismissOnboarding()
             setJourneyDismissed(true)
           }}
-          onBoard={() => setMainView('links')}
+          onStudio={() => setMainView('links')}
         />
       )}
 
@@ -246,8 +247,9 @@ function SignedInLinks({ activeSlugs }: { activeSlugs: string[] }) {
         ))}
       </div>
 
-      {/* The creator-page + funnel doors — the full studio stays on the
-          dashboard; the rail is the daily glance. */}
+      {/* The creator-page + funnel doors. The full studio is the LINKS
+          main screen now (one view-flip, no navigation) — the rail is the
+          daily glance beside it. */}
       <div className="px-3 pb-3 pt-2 border-t border-[var(--line)] space-y-1.5">
         {handle ? (
           <a
@@ -273,12 +275,13 @@ function SignedInLinks({ activeSlugs }: { activeSlugs: string[] }) {
           </button>
         )}
         <div className="flex items-center justify-between gap-2">
-          <Link
-            href="/dashboard/links"
-            className="block text-[10px] text-[color:var(--muted-2)] hover:text-[color:var(--muted)] transition-colors"
+          <button
+            type="button"
+            onClick={() => setMainView('links')}
+            className="flex-1 min-w-0 text-left text-[10px] text-[color:var(--muted-2)] hover:text-[color:var(--muted)] transition-colors"
           >
-            Funnels, branding{earnings && earnings.totalEarnedUsd > 0 ? ', earnings' : ''} → Intent links
-          </Link>
+            Funnels, branding{earnings && earnings.totalEarnedUsd > 0 ? ', earnings' : ''} → your links
+          </button>
           {/* the funnel re-reads itself every 30s while visible */}
           {links && links.length > 0 && <LivePill updatedAt={updatedAt} className="flex-shrink-0" />}
         </div>

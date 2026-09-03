@@ -18,6 +18,7 @@ import { HERO_ASKS, useTypedAsk } from '@/components/typed-asks'
 import { getProtocolMark } from '@/components/protocol-marks'
 import { useSiteTheme } from '@/components/chart-theme'
 import SignInFlowLink from '@/components/SignInFlowLink'
+import { LINKS_STUDIO_HREF } from '@/lib/links-href'
 
 export interface LinkHeroStats {
   links: string
@@ -476,7 +477,7 @@ export default function LinksHeroView({ stats }: { stats: LinkHeroStats | null }
           <Link className="btn btn--solid" href="/i/buy-aapl">
             Try a live link
           </Link>
-          <SignInFlowLink className="btn btn--ghost" href="/dashboard/links">
+          <SignInFlowLink className="btn btn--ghost" href={LINKS_STUDIO_HREF}>
             Mint yours
           </SignInFlowLink>
           <Link

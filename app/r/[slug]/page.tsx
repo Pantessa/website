@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import { linksStudioHref } from '@/lib/links-href'
 import { notFound } from 'next/navigation'
 import { ExternalLink, Link2, ShieldCheck } from 'lucide-react'
 import { YeetfulMark } from '@/components/Logo'
@@ -174,11 +175,11 @@ export default async function ReceiptPage({ params }: Params) {
               <span>Share</span>
             </a>
             {/* Receipt → link: the viewer mints their OWN copy of this ask as
-                an intent link (/dashboard/links prefill — sign-in gated there,
+                an intent link (the studio's ?ask= prefill — sign-in gated there,
                 minted under the viewer's wallet, never the sharer's). */}
             {receipt.ask && (
               <Link
-                href={`/dashboard/links?ask=${encodeURIComponent(receipt.ask)}`}
+                href={linksStudioHref({ ask: receipt.ask })}
                 className="flex items-center gap-2 px-3 py-1.5 rounded-full border border-[var(--line)] bg-[var(--surf-1)] text-[color:var(--fg)] text-xs font-semibold hover:bg-[var(--surf-2)] transition-colors"
                 title="Your own copy of this ask, as a one-tap link you can share"
               >

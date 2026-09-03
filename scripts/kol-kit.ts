@@ -81,7 +81,7 @@ async function main() {
   const url = `${BASE}/i/${body.slug}`
   console.log(`minted for @${HANDLE}: ${url}`)
   console.log(`OG preview:        ${url}/opengraph-image`)
-  console.log(`funnel (yours):    ${BASE}/dashboard/links`)
+  console.log(`funnel (yours):    ${BASE}/chat?tab=links`)
   console.log(`\n── PASTE-READY DM ──────────────────────────────\n`)
   console.log(dm(HANDLE, url))
 }

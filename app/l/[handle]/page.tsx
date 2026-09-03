@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
+import { LINKS_STUDIO_HREF, linksStudioHref } from '@/lib/links-href'
 import { notFound } from 'next/navigation'
 import prisma from '@/lib/db'
 import { brandFromRow } from '@/lib/brand-denylist'
@@ -152,7 +153,7 @@ export default async function StorefrontPage({ params }: Params) {
                 Your page
               </span>
               <Link
-                href={`/dashboard/links?ask=${encodeURIComponent('Buy $5 of AAPL')}`}
+                href={linksStudioHref({ ask: 'Buy $5 of AAPL' })}
                 className="text-[12.5px] font-medium text-[color:var(--accent)] hover:underline underline-offset-2"
               >
                 + Mint another link
@@ -210,7 +211,7 @@ export default async function StorefrontPage({ params }: Params) {
           <div className="mt-10 flex flex-wrap items-center gap-3">
             {/* branded pages repaint the solid pill in the creator's accent —
                 the stock fg-on-bg fill goes dark-blob on saturated brand bgs */}
-            <Link href="/dashboard/links" className="btn btn--solid text-[13px]" style={brandCtaStyle(brand)}>
+            <Link href={LINKS_STUDIO_HREF} className="btn btn--solid text-[13px]" style={brandCtaStyle(brand)}>
               Make your own page
             </Link>
             <Link href="/links" className="btn btn--ghost text-[13px]">

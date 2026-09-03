@@ -108,7 +108,7 @@ The scary version of this idea is a URL that executes. That's phishing with bett
 
 Onboarding advice usually amounts to *explain it better*. The alternative is to need less explaining: take the outcome, own every step between, and hand back a receipt.
 
-Open one of the house links above and watch what happens after you connect — the funding plan is usually the moment it lands. Then [mint your own](/dashboard/links), put a [button on your site](/links/embed), or read [how it works](/docs/links).
+Open one of the house links above and watch what happens after you connect — the funding plan is usually the moment it lands. Then [mint your own](/chat?tab=links), put a [button on your site](/links/embed), or read [how it works](/docs/links).
 
 You have an intent. We do the rest.`,
 }
