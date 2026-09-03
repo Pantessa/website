@@ -405,10 +405,20 @@ scripts/                    harnesses, audits, drills, seeds (see above)
 Worth reading before large changes: [`GUARDRAILS.md`](GUARDRAILS.md) (what the
 guards actually enforce), [`THREAT-MODEL.md`](THREAT-MODEL.md),
 [`WALLET-MATRIX.md`](WALLET-MATRIX.md) (artifact × wallet coverage), and
-[`PRICING.md`](PRICING.md). The routing design doc
-(`ARCHITECTURE-reason-router.md`) and the working-state handoff (`CLAUDE.md`)
-live one level up in the workspace alongside the sibling repos, not in this
-one.
+[`STORY.md`](STORY.md) (the positioning every surface has to agree with).
+
+### A note on internal design notes
+
+Comments throughout the codebase cite planning documents by bare filename —
+`HANDOFF-*.md`, `ROADMAP-*.md`, `ROSTER-*.md`, `AUTOPILOT.md`,
+`FOUNDING-MANAGERS.md`, `PRICING.md`, `KICKBACK-DRILL.md`,
+`ARCHITECTURE-reason-router.md`, `CLAUDE.md`. **Those are internal working
+notes and do not live in this repository.** They sit one level up in the
+private workspace alongside the sibling repos. The citation is kept because it
+records *why* a decision was made and is useful to anyone with workspace
+access; if you are reading this repo on its own, treat such a reference as
+provenance rather than a link you can follow. Everything needed to understand,
+build, run, and verify the code is in this repo.
 
 ---
 

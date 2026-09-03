@@ -51,7 +51,7 @@ That's the whole pitch, applied to ourselves: give an agent narrow, revocable au
 
 Four runs. Twenty-four pull requests across four repositories. Two prod-data incidents caught by the rules that were written to catch them, zero caused. One [SDK release](https://www.npmjs.com/package/yeetful). One blog, including the words you're reading.
 
-Every iteration is logged in the repo — branch, verification evidence, and the caveats the agent flagged when it couldn't prove something. If you want the unedited version, the constitution and progress logs live in the codebase as AUTOPILOT.md.
+Every iteration is logged — branch, verification evidence, and the caveats the agent flagged when it couldn't prove something. The unedited constitution and progress logs are internal working notes; the parts worth publishing land here.
 
 ## What's next
 
