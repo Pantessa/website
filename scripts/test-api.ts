@@ -107,6 +107,7 @@ import {
   UNSIGNED_WALLET_HOURLY_CAP,
 } from '../lib/turn-limits'
 import { HOUSE_LINKS, houseLinkMarks } from '../lib/house-links'
+import { EXPLAINER_VIDEO, explainerPosterUrl, explainerWatchUrl, isoDuration } from '../lib/explainer-video'
 import { isDbChatId } from '../lib/chat-ids'
 import { usdToTokenAmount } from '../lib/usd-probe'
 import { parseRobinhoodBridge, guardRobinhoodBridge, RH_L1_INBOX, ARB_SYS } from '../lib/robinhood-bridge'
@@ -2814,6 +2815,15 @@ async function main() {
         /html\[data-theme='light'\] \.text-red-400/.test(designCss) &&
         /html\[data-theme='light'\] \.text-sky-400/.test(designCss),
     )
+    // Full-bleed bands (.filmband) reach the viewport edges with 50% - 50vw,
+    // which overshoots the content box by half a classic scrollbar. The
+    // stylesheet's old comment promised a body overflow-x guard that never
+    // existed; this is the guard, and it must stay clip (not hidden) so the
+    // viewport remains the scroll container.
+    check(
+      'layout: the viewport clips its x axis so full-bleed bands never mint a horizontal scrollbar',
+      /html \{ overflow-x: clip; \}/.test(designCss) && /\.filmband::before, \.filmband::after \{[^}]*left: calc\(50% - 50vw\)/.test(designCss),
+    )
 
     // House links: the seeded canonical set (deterministic slugs,
     // creator=null — earns nothing, belongs to no dashboard). The landing
@@ -2826,6 +2836,32 @@ async function main() {
     check(
       'house links: the landing link lane renders with tappable house links',
       homeHtml.includes('A link that moves money.') && homeHtml.includes('/i/buy-aapl'),
+    )
+    // The explainer under the spread is a FACADE (components/ExplainerVideo):
+    // poster + play control ship in the HTML and the YouTube iframe mounts
+    // only on press — a landing page must never pay for a player most
+    // visitors won't start. The VideoObject JSON-LD rides the same record
+    // (lib/explainer-video), so the page and search results can't disagree.
+    check(
+      'explainer: the landing spread carries the video facade, not a YouTube iframe',
+      homeHtml.includes(`data-video="${EXPLAINER_VIDEO.id}"`) &&
+        homeHtml.includes('EXPLAINER · 6:47') &&
+        homeHtml.includes(EXPLAINER_VIDEO.headline) &&
+        homeHtml.includes(explainerWatchUrl) &&
+        !/<iframe[^>]+youtube/i.test(homeHtml),
+    )
+    check(
+      'explainer: the home page declares a VideoObject for the same upload',
+      homeHtml.includes('"@type":"VideoObject"') &&
+        homeHtml.includes(`"duration":"${isoDuration(EXPLAINER_VIDEO.seconds)}"`) &&
+        homeHtml.includes(`"uploadDate":"${EXPLAINER_VIDEO.uploadDate}"`),
+    )
+    // The poster is YouTube's own thumbnail served first-party through
+    // next/image — prove a real build's optimizer accepts the host.
+    const posterRes = await fetch(`${BASE}/_next/image?url=${encodeURIComponent(explainerPosterUrl)}&w=1080&q=75`)
+    check(
+      'explainer: the poster serves first-party through the image optimizer',
+      posterRes.status === 200 && (posterRes.headers.get('content-type') ?? '').startsWith('image/'),
     )
     // House-link chips wear the marks of the apps their ask runs through
     // (HouseLinkChip) — derived from composeMcps + declared venue marks, so
