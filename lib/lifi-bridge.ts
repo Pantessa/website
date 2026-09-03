@@ -181,12 +181,69 @@ export function lifiBridgeRoutersFor(chainId: number): `0x${string}`[] {
   return DEFAULT_BRIDGE_ROUTERS[chainId] ?? []
 }
 
+/** What ONE LiFi leg onto Robinhood Chain costs FLAT, whatever its size —
+ *  the number a percentage margin cannot express. Probed live 2026-09-03
+ *  (Base USDC → USDG), where the loss barely moves across two orders of
+ *  magnitude:
+ *
+ *      $1 → $0.16    $1.50 → $0.17   $3 → $0.18    $5 → $0.21
+ *      $10 → $0.29   $20 → $0.20     $50 → $0.30   $100 → $0.46
+ *
+ *  The shortfall is fixed; the PERCENTAGE is what moves — and the
+ *  percentage is exactly what STABLE_LEG_MIN_OUT_BPS measures. Carried with
+ *  headroom over the worst sample so a busy-gas hour doesn't reopen the
+ *  hole. */
+export const LIFI_LEG_FLAT_USD = 0.35
+
+/** The smallest VALUE leg whose flat cost still clears the parity guard —
+ *  derived FROM that guard, so moving the floor moves this with it.
+ *
+ *  Below it the guard refuses every single time, which means the chip was
+ *  never fillable: live 2026-09-03 a "$1.5 from Base" chip compiled into a
+ *  job that died on step 1 with *"the route guarantees only 1.329574 USDG
+ *  for $1.5 — more than 4% below dollar parity, refusing a bad fill"*. The
+ *  guard was right; the OFFER was the bug. Verified against the real
+ *  builder the same day: $1.50 blocked, $3 blocked, $5 / $5.50 / $6 / $8 /
+ *  $12 all passed.
+ *
+ *  A value leg moves the user's exact dollars, so — unlike the gas leg's
+ *  GAS_LEG_LADDER_USD — it must never resize itself at build time. The
+ *  floor therefore lives in the PLANNER: we decline to offer sizes that
+ *  cannot fill, and say why. */
+export const MIN_VALUE_LEG_USD = Math.ceil(LIFI_LEG_FLAT_USD / (1 - STABLE_LEG_MIN_OUT_BPS / 10_000))
+
+/** The value a funding segment actually bridges: a gas-bearing segment
+ *  carries the gas leg's dollars on top (lib/jobs subtracts GAS_LEG_USD to
+ *  size the USDG leg), so the parity floor applies to what's LEFT. */
+export const valueLegUsd = (fundUsd: number, gasIncluded: boolean) => Number((fundUsd - (gasIncluded ? GAS_LEG_USD : 0)).toFixed(2))
+
+/** Can this funding segment actually fill? The one predicate every chip
+ *  passes before it's offered. */
+export const fillableLeg = (fundUsd: number, gasIncluded: boolean) => valueLegUsd(fundUsd, gasIncluded) >= MIN_VALUE_LEG_USD
+
 /** The dollars a funding plan must convert to cover a buy: the buy amount
  *  plus bridge-fee headroom, plus the gas leg when the destination wallet
- *  has no ETH. Rounded UP to the next $0.50 so chip labels read clean. */
+ *  has no ETH. Rounded UP to the next $0.50 so chip labels read clean.
+ *  The value portion is floored at MIN_VALUE_LEG_USD — a smaller plan is
+ *  not a cheaper plan, it's an unfillable one. */
 export function fundingNeedUsd(buyUsd: number, includeGas: boolean): number {
-  const raw = buyUsd * (1 + FUNDING_MARGIN_BPS / 10_000) + (includeGas ? GAS_LEG_USD : 0)
-  return Math.ceil(raw * 2) / 2
+  const value = Math.max(buyUsd * (1 + FUNDING_MARGIN_BPS / 10_000), MIN_VALUE_LEG_USD)
+  return Math.ceil((value + (includeGas ? GAS_LEG_USD : 0)) * 2) / 2
+}
+
+/** The buy size at which fundingNeedUsd stops being floored — below this
+ *  the plan bridges MORE than the ask, which is a thing to SAY, never to
+ *  do quietly. */
+export const MIN_UNFLOORED_BUY_USD = MIN_VALUE_LEG_USD / (1 + FUNDING_MARGIN_BPS / 10_000)
+
+/** One voice for "your ask is under the bridge's flat cost". Null when the
+ *  ask clears on its own — the common case says nothing extra. */
+export function minLegNote(buyUsd: number): string | null {
+  if (buyUsd >= MIN_UNFLOORED_BUY_USD) return null
+  return (
+    `Moving money between chains costs about $${LIFI_LEG_FLAT_USD.toFixed(2)} flat no matter the size, so $${buyUsd} would arrive more than ` +
+    `${(10_000 - STABLE_LEG_MIN_OUT_BPS) / 100}% light and I'd refuse the fill. The smallest move that lands clean is ~$${MIN_VALUE_LEG_USD} — the rest stays yours as ${primaryStable(ROBINHOOD_CHAIN_ID)?.symbol ?? 'the chain stable'} on Robinhood Chain.`
+  )
 }
 
 /** The dollars a Robinhood Chain buy must BRIDGE: the buy minus the USDG the
@@ -845,18 +902,27 @@ export function planRobinhoodFundingChips(params: {
   // the whole plan on its own. "Covers" means the origin's PROMISABLE
   // capacity (originCapUsd), not its raw row — an ETH row spending its
   // whole movable balance across two legs was a mid-job wall.
+  // Nothing below the parity floor is offerable at all — a sub-minimum leg
+  // is a chip that compiles into a job and dies on step 1 (live 2026-09-03).
+  if (!fillableLeg(needUsd, gasIncluded)) return null
   const best = origins.find((o) => originCapUsd(o, gasIncluded) >= needUsd)
   if (best) {
     const bestCap = originCapUsd(best, gasIncluded)
-    chips.push({ label: `Just enough (~$${needUsd} from ${originLabel(best)})`, resume: withFollowup([fundSegment(needUsd, best.word, gasIncluded, best.token)]) })
+    // At the floor the plan is bigger than the ask, so "just enough" would
+    // be the wrong words for the right number — name it for what it is.
+    const atFloor = valueLegUsd(needUsd, gasIncluded) <= MIN_VALUE_LEG_USD
+    chips.push({
+      label: `${atFloor ? 'Smallest clean move' : 'Just enough'} (~$${needUsd} from ${originLabel(best)})`,
+      resume: withFollowup([fundSegment(needUsd, best.word, gasIncluded, best.token)]),
+    })
     // Half/all only when they're sensible whole-balance moves — a $15k
     // balance covering a $7 need doesn't get a $7.5k chip (same 10× rule
     // as lib/funding-plan's all-in cap). "All" is the full PROMISABLE
     // capacity, never the raw ETH row.
     const sensible = best.usd <= needUsd * 10
     const half = Math.floor(bestCap / 2)
-    if (sensible && half > needUsd) chips.push({ label: `Half my ${best.word} ${best.token} ($${half})`, resume: withFollowup([fundSegment(half, best.word, gasIncluded, best.token)]) })
-    if (sensible && bestCap > needUsd) chips.push({ label: `All my ${best.word} ${best.token} ($${bestCap})`, resume: withFollowup([fundSegment(bestCap, best.word, gasIncluded, best.token)]) })
+    if (sensible && half > needUsd && fillableLeg(half, gasIncluded)) chips.push({ label: `Half my ${best.word} ${best.token} ($${half})`, resume: withFollowup([fundSegment(half, best.word, gasIncluded, best.token)]) })
+    if (sensible && bestCap > needUsd && fillableLeg(bestCap, gasIncluded)) chips.push({ label: `All my ${best.word} ${best.token} ($${bestCap})`, resume: withFollowup([fundSegment(bestCap, best.word, gasIncluded, best.token)]) })
     const alt = origins.find((o) => o !== best && originCapUsd(o, gasIncluded) >= needUsd)
     if (alt) chips.push({ label: `Use ${originLabel(alt)} instead (~$${needUsd})`, resume: withFollowup([fundSegment(needUsd, alt.word, gasIncluded, alt.token)]) })
     return chips.slice(0, 4)
@@ -877,6 +943,10 @@ export function planRobinhoodFundingChips(params: {
       const take = Math.min(originCapUsd(o, first && gasIncluded), remaining)
       if (first && gasIncluded && take <= GAS_LEG_USD + 1) continue
       if (take <= 0) continue
+      // Each leg pays the flat bridge cost SEPARATELY, so each must clear
+      // the parity floor on its own — splitting a fillable total into two
+      // unfillable halves is the same dead offer, twice.
+      if (!fillableLeg(take, first && gasIncluded)) return null
       segs.push(fundSegment(take, o.word, first && gasIncluded, o.token))
       words.push(originLabel(o))
       remaining = Number((remaining - take).toFixed(2))
@@ -1040,9 +1110,12 @@ export function planDownsizedRobinhoodBuy(params: {
   // Invert fundingNeedUsd, then floor to a clean quarter-dollar label.
   const maxRaw = holdingUsd + (capUsd - gasLeg) / (1 + FUNDING_MARGIN_BPS / 10_000)
   let max = Math.floor(maxRaw * 4) / 4
-  // Only a genuine downsize, and only a meaningful one: at least a dollar
-  // AND at least a tenth of what was asked.
-  if (!(max < buyUsd) || max < Math.max(1, buyUsd * 0.1)) return null
+  // Only a genuine downsize, and only a meaningful one: at least a tenth of
+  // what was asked, and never under the size at which fundingNeedUsd starts
+  // flooring — a "$3 instead" counter-offer whose plan bridges $9 reads as
+  // arithmetic nobody asked for. Under that, the honest refusal (which
+  // NAMES the flat cost) is the better answer.
+  if (!(max < buyUsd) || max < Math.max(MIN_UNFLOORED_BUY_USD, buyUsd * 0.1)) return null
   // fundingNeedUsd rounds UP to $0.50 — the floored candidate can still
   // overshoot the cap by a rounding step, so verify against the real chip
   // planner and step down (bounded) until it fits.

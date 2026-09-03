@@ -132,7 +132,7 @@ import { buildUniswapSwap, NoV3PoolError } from '@/lib/uniswap-venue'
 import { buildUniswapV4Swap, NoV4PoolError, GatedV4PoolError } from '@/lib/uniswap-v4'
 import { buildLifiSwap, NoLifiRouteError } from '@/lib/lifi-venue'
 import { fundChipFor } from '@/lib/onramp'
-import { fundingSourceSymbols, GAS_TOPUP_ETH, offChainStableSource, parseRhFundingFollowUp, planDownsizedRobinhoodBuy, planRobinhoodFundingAdvice, readFundingShortfall, rhFundingPending, robinhoodBuyNeedUsd, ROBINHOOD_CHAIN_ID } from '@/lib/lifi-bridge'
+import { fundingSourceSymbols, GAS_TOPUP_ETH, minLegNote, offChainStableSource, valueLegUsd, parseRhFundingFollowUp, planDownsizedRobinhoodBuy, planRobinhoodFundingAdvice, readFundingShortfall, rhFundingPending, robinhoodBuyNeedUsd, ROBINHOOD_CHAIN_ID } from '@/lib/lifi-bridge'
 import { describeInflightDeposit, inflightPendingData } from '@/lib/inflight-funding'
 import { resolveToken, tokenDecimals, humanToAtoms } from '@/lib/cow'
 import { COW_VAULT_RELAYER } from '@/lib/cow-guardrails'
@@ -4005,6 +4005,11 @@ async function prepareSwapTurn(intent: SwapIntent, walletAddress: string | undef
         // "say check again" would be noise.
         const inflightSuffix =
           inflight && !(inflight.status === 'settled' && advice.kind !== 'none') ? ` Also — ${inflight.note}` : ''
+        // When the ask is under the bridge's FLAT cost the plan moves more
+        // than was asked — the one thing that must never happen quietly.
+        // minLegNote says the arithmetic out loud wherever the plan appears.
+        const floorNote = minLegNote(buyUsd)
+        const floorSuffix = floorNote ? ` ${floorNote}` : ''
         // Any of the three outcomes leaves the buy PENDING — a typed
         // follow-up ("I have $10 USDC on arbitrum", "sent the ETH, check
         // again") re-runs this exact ask with a fresh scan instead of
@@ -4027,14 +4032,14 @@ async function prepareSwapTurn(intent: SwapIntent, walletAddress: string | undef
           return NextResponse.json({
             reply: convertingFrom
               ? `🌉 **We can make this happen.** ${convertingFrom} doesn't exist on ${chain.name} — ${rhStable.symbol} is its dollar — so the ${convertingFrom} has to come from where you actually hold it. You're holding **${holdingsSummary}**, ` +
-                `so I'll convert $${buyUsd} of it into ${rhStable.symbol}${includeGas ? ' and drop in a little ETH for gas (you have none on ' + chain.name + ' yet)' : ` (you already have gas on ${chain.name}, so nothing extra moves)`}${acquiring ? '' : `, then buy the ${buySym}`}. ` +
-                `Lands in seconds — one job, you sign each step.${inflightSuffix}`
+                `so I'll convert $${floorNote ? valueLegUsd(needUsd, includeGas) : buyUsd} of it into ${rhStable.symbol}${includeGas ? ' and drop in a little ETH for gas (you have none on ' + chain.name + ' yet)' : ` (you already have gas on ${chain.name}, so nothing extra moves)`}${acquiring ? '' : `, then buy the ${buySym}`}. ` +
+                `Lands in seconds — one job, you sign each step.${floorSuffix}${inflightSuffix}`
               : acquiring
               ? `🌉 **We can make this happen.** You asked for $${buyUsd} of ${rhStable.symbol} on ${chain.name} and you're at ~$${holdingUsd.toFixed(2)} there — but you're holding **${holdingsSummary}**, so I'll convert enough to close the gap${includeGas ? ' (a little ETH for gas included)' : ''}, ` +
-                `landing on ${chain.name} in seconds. One job, you sign each step.${inflightSuffix}`
+                `landing on ${chain.name} in seconds. One job, you sign each step.${floorSuffix}${inflightSuffix}`
               : `🌉 **We can make this happen.** You're holding **${holdingsSummary}** — ` +
                 `this buy needs ~$${buyUsd} of ${rhStable.symbol} on ${chain.name} and you're at ~$${holdingUsd.toFixed(2)} there, so I'll convert some of it${includeGas ? ', drop in a little ETH for gas,' : ''} ` +
-                `and buy the ${buySym} — all in one job you sign step by step, funds arriving on ${chain.name} in seconds.${inflightSuffix}`,
+                `and buy the ${buySym} — all in one job you sign step by step, funds arriving on ${chain.name} in seconds.${floorSuffix}${inflightSuffix}`,
             clarify: { question: 'Fund it from another chain?', options: options.slice(0, 4) },
             buildPath: 'native-lifi-fund-offer',
             workingContext: pendingFunding,
@@ -4101,7 +4106,7 @@ async function prepareSwapTurn(intent: SwapIntent, walletAddress: string | undef
         return NextResponse.json({
           reply:
             `🌉 Here's where this stands: ${acquiring ? 'you asked for' : 'the buy needs'} ~$${buyUsd} of ${rhStable.symbol} on ${chain.name} and the wallet holds ~$${holdingUsd.toFixed(2)} there. ` +
-            `Across the chains I can bridge from I see: ${advice.copy} — not enough yet for the ~$${needUsd} plan${includeGas ? ' (gas leg included)' : ''}. ` +
+            `Across the chains I can bridge from I see: ${advice.copy} — not enough yet for the ~$${needUsd} plan${includeGas ? ' (gas leg included)' : ''}.${floorSuffix} ` +
             (rhFundChip
               ? `You can add it with a card or bank below — it lands as USDC on Base and I'll bridge it the rest of the way. The preset is a little over the plan so card fees don't leave you short.${inflightSuffix}`
               : `Here's what unlocks it: top up USDC or ETH on Base, Ethereum, or Arbitrum (or ${rhStable.symbol} on ${chain.name}), tell me when it's there, and I'll pick it up from that point — nothing was built or spent in the meantime.${inflightSuffix}`),
