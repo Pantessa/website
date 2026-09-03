@@ -2261,46 +2261,202 @@
     .ep__price { font-size: 11.5px; }
   }
 
-  /* Create-account (CDP embedded wallet) modal */
+  /* ── The door ────────────────────────────────────────────────────────
+     Unified sign-in modal (wallet lead · Google · email OTP — rule 6).
+
+     The composition is the brand's own metaphor: an emerald cut is nested
+     step facets descending to an open TABLE — "the flat plane where a
+     signature lands" (components/Logo.tsx). So the door leads with the
+     stone, the panel carries a faceted top edge and a bloom of emerald
+     light, and the lanes step down from the primary (connect) to the
+     make-me-one lanes below one divider.
+
+     Every color is a token or a color-mix off one, so the paper theme is a
+     flip — only the bloom's alpha is re-pinned (emerald light on white
+     needs a fraction of the strength it needs on black). */
   .ca { position: fixed; inset: 0; z-index: 200; display: grid; place-items: center; padding: 20px; }
-  .ca__backdrop { position: absolute; inset: 0; background: rgba(0,0,0,.66); backdrop-filter: blur(4px); border: none; }
-  .ca__panel { position: relative; width: 100%; max-width: 400px; background: var(--surf-1); border: 1px solid var(--line); border-radius: 18px; padding: 28px 26px 22px; box-shadow: 0 24px 60px rgba(0,0,0,.55); }
-  .ca__close { position: absolute; top: 14px; right: 14px; width: 30px; height: 30px; display: grid; place-items: center; border-radius: 8px; color: var(--muted); }
+  .ca__backdrop {
+    position: absolute; inset: 0; border: none; cursor: pointer;
+    background: radial-gradient(120% 90% at 50% 40%, rgba(0,0,0,.5) 0%, rgba(0,0,0,.82) 100%);
+    backdrop-filter: blur(6px) saturate(.75);
+    animation: ca-veil .22s ease-out;
+  }
+  /* The stone's light. Sits behind the panel, unclipped, so the door reads
+     as lit from within rather than pasted onto black. */
+  .ca__glow {
+    position: absolute; left: 50%; top: 50%; translate: -50% -50%;
+    width: min(620px, 100vw); height: min(700px, 100vh); pointer-events: none;
+    background:
+      /* the crown catching light, right behind the stone */
+      radial-gradient(30% 20% at 50% 33%, color-mix(in oklch, var(--accent) 30%, transparent) 0%, transparent 72%),
+      /* and the wash the whole panel sits in */
+      radial-gradient(58% 52% at 50% 52%, color-mix(in oklch, var(--accent) 12%, transparent) 0%, transparent 74%);
+    filter: blur(40px);
+    animation: ca-bloom .5s ease-out both;
+  }
+  .ca__panel {
+    position: relative; width: 100%; max-width: 396px; overflow: hidden;
+    background:
+      linear-gradient(180deg, color-mix(in oklch, var(--surf-2) 62%, var(--surf-1)) 0%, var(--surf-1) 46%);
+    border: 1px solid var(--line);
+    border-radius: 20px;
+    padding: 30px 26px 20px;
+    box-shadow:
+      0 32px 70px -12px rgba(0,0,0,.62),
+      0 0 0 1px color-mix(in oklch, var(--accent) 7%, transparent),
+      inset 0 1px 0 color-mix(in oklch, var(--fg) 7%, transparent);
+    animation: ca-rise .28s cubic-bezier(.16,1,.3,1) both;
+  }
+  /* The faceted top edge — a facet catching light across the crown. */
+  .ca__panel::before {
+    content: ''; position: absolute; top: 0; left: 14%; right: 14%; height: 1px; z-index: 1;
+    background: linear-gradient(90deg, transparent, color-mix(in oklch, var(--accent) 72%, transparent), transparent);
+  }
+  .ca__close {
+    position: absolute; top: 13px; right: 13px; width: 30px; height: 30px;
+    display: grid; place-items: center; border-radius: 9px; color: var(--muted-2);
+    transition: background .15s, color .15s;
+  }
   .ca__close:hover { background: var(--surf-2); color: var(--fg); }
-  .ca__icon { width: 40px; height: 40px; border-radius: 11px; display: grid; place-items: center; background: color-mix(in oklch, var(--accent) 16%, transparent); color: var(--accent); margin-bottom: 14px; }
-  .ca__title { font-size: 20px; font-weight: 600; letter-spacing: -.01em; }
+
+  /* Header — the stone, the name, the promise. */
+  .ca__crest { display: grid; place-items: center; margin-bottom: 15px; }
+  .ca__gem { filter: drop-shadow(0 3px 12px color-mix(in oklch, var(--accent) 42%, transparent)); }
+  .ca__title { font-size: 21px; font-weight: 600; letter-spacing: -.015em; text-align: center; line-height: 1.2; }
+  /* The one line that answers "is this safe?" before anything is clicked —
+     the security model, stated on the door itself. */
+  .ca__promise {
+    margin: 8px auto 0; max-width: 30ch; text-align: center;
+    font-size: 12.5px; line-height: 1.5; color: var(--muted);
+  }
+  .ca__promise strong { color: var(--fg); font-weight: 600; }
   .ca__sub { margin-top: 7px; font-size: 13.5px; line-height: 1.55; color: var(--muted); }
+
+  /* Lane 1 — connect. The product's real front door, so it wears the fill. */
+  .ca__wallet {
+    position: relative; width: 100%; padding: 13px 14px;
+    display: inline-flex; align-items: center; justify-content: center; gap: 9px;
+    background: var(--accent); color: var(--ink);
+    border: 1px solid transparent; border-radius: 12px;
+    font-size: 14.5px; font-weight: 600; letter-spacing: -.005em;
+    box-shadow: 0 6px 20px -8px color-mix(in oklch, var(--accent) 75%, transparent);
+    transition: filter .15s, transform .15s, box-shadow .15s;
+  }
+  .ca__wallet:hover { filter: brightness(1.07); transform: translateY(-1px); box-shadow: 0 10px 26px -8px color-mix(in oklch, var(--accent) 80%, transparent); }
+  .ca__wallet:active { transform: translateY(0); }
+  .ca__wallet--lead { margin-top: 20px; }
+  .ca__walletarrow { margin-left: 1px; opacity: .72; transition: transform .15s; }
+  .ca__wallet:hover .ca__walletarrow { transform: translateX(2px); }
+  /* Which wallets actually work here, as chips rather than a run-on line —
+     names come from walletLineup() so the lineup has ONE source. */
+  /* The lane strip — the wallets that can sign here, as their own logos.
+     The marks are full-bleed square tiles, so the tile IS the clip. */
+  .ca__lanes {
+    display: flex; justify-content: center; align-items: center; gap: 9px;
+    margin-top: 14px;
+  }
+  .ca__lane {
+    width: 26px; height: 26px; border-radius: 7px; overflow: hidden;
+    display: grid; place-items: center; list-style: none;
+    box-shadow: 0 0 0 1px color-mix(in oklch, var(--fg) 12%, transparent);
+    /* Resting slightly desaturated so the strip reads as a quiet credential
+       row rather than four logos competing with the connect button above it;
+       full color on hover. */
+    filter: saturate(.82);
+    opacity: .88;
+    transition: opacity .15s, filter .15s, transform .15s;
+  }
+  .ca__lanes:hover .ca__lane { opacity: 1; filter: none; }
+  .ca__lane:hover { transform: translateY(-1px); }
+
+  /* One divider, and it says which half is yours. */
+  .ca__or {
+    display: flex; align-items: center; gap: 12px; margin: 22px 0 15px;
+    font-size: 10.5px; letter-spacing: .1em; text-transform: uppercase; color: var(--muted-2);
+  }
+  .ca__or span { flex: 1; height: 1px; background: linear-gradient(90deg, transparent, var(--line), transparent); }
+
+  /* Lane 2 — Google. Lane 3 — email. Secondary to connect, but full doors. */
+  .ca__providers { display: flex; flex-direction: column; gap: 9px; }
+  .ca__oauth {
+    width: 100%; padding: 12px;
+    display: inline-flex; align-items: center; justify-content: center; gap: 9px;
+    background: color-mix(in oklch, var(--fg) 4%, transparent);
+    border: 1px solid var(--line-2); border-radius: 12px;
+    font-size: 14px; font-weight: 600; color: var(--fg);
+    transition: background .15s, border-color .15s;
+  }
+  .ca__oauth:hover:not(:disabled) { background: var(--surf-2); border-color: var(--fg); }
+  .ca__oauth:disabled { opacity: .55; cursor: not-allowed; }
+
+  /* The email lane is ONE row — field + accent submit — not label/field/
+     button stacked. Same reach, ~120px less door. */
+  .ca__emailrow {
+    display: flex; align-items: stretch; gap: 8px; margin-top: 9px;
+  }
   .ca__label { display: block; margin-top: 18px; margin-bottom: 7px; font-size: 12px; font-weight: 600; color: var(--muted); }
-  .ca__input { width: 100%; padding: 12px 14px; background: var(--bg); border: 1px solid var(--line); border-radius: 11px; color: var(--fg); font-size: 15px; outline: none; transition: border-color .15s; }
-  .ca__input:focus { border-color: var(--accent); }
-  .ca__input--otp { font-family: 'Geist Mono', ui-monospace, monospace; letter-spacing: .32em; text-align: center; font-size: 20px; }
-  .ca__error { margin-top: 10px; font-size: 12.5px; color: var(--sell); }
-  .ca__submit { width: 100%; margin-top: 16px; padding: 13px; display: inline-flex; align-items: center; justify-content: center; gap: 8px; background: var(--accent); color: var(--ink); border-radius: 11px; font-size: 14.5px; font-weight: 600; transition: filter .15s; }
+  .ca__input {
+    width: 100%; padding: 12px 14px;
+    background: var(--bg); border: 1px solid var(--line-2); border-radius: 12px;
+    color: var(--fg); font-size: 14.5px; outline: none;
+    transition: border-color .15s, box-shadow .15s;
+  }
+  .ca__input::placeholder { color: var(--muted-2); }
+  .ca__input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in oklch, var(--accent) 18%, transparent); }
+  .ca__input--otp { font-family: 'Geist Mono', ui-monospace, monospace; letter-spacing: .38em; text-indent: .38em; text-align: center; font-size: 22px; padding: 15px 14px; }
+  .ca__input--spaced { margin-top: 20px; }
+  /* The stone breathes while the embedded wallet is provisioned — a wait with
+     a heartbeat reads as working; a bare spinner reads as stalled. */
+  .ca__gem--pulse { animation: ca-breathe 2.2s ease-in-out infinite; }
+  @keyframes ca-breathe { 0%, 100% { opacity: .72; scale: .96; } 50% { opacity: 1; scale: 1; } }
+  /* Compact accent submit that lives beside the field. */
+  .ca__go {
+    flex: 0 0 auto; width: 46px; display: grid; place-items: center;
+    background: var(--accent); color: var(--ink);
+    border-radius: 12px; transition: filter .15s, opacity .15s;
+  }
+  .ca__go:hover:not(:disabled) { filter: brightness(1.07); }
+  .ca__go:disabled { opacity: .5; cursor: not-allowed; }
+  .ca__error { margin-top: 10px; font-size: 12.5px; color: var(--sell); text-align: center; }
+  /* Full-width submit — still used by the OTP step, where it is the only act. */
+  .ca__submit {
+    width: 100%; margin-top: 16px; padding: 13px;
+    display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+    background: var(--accent); color: var(--ink); border-radius: 12px;
+    font-size: 14.5px; font-weight: 600; transition: filter .15s;
+  }
   .ca__submit:hover:not(:disabled) { filter: brightness(1.08); }
   .ca__submit:disabled { opacity: .6; cursor: not-allowed; }
-  .ca__fine { margin-top: 13px; font-size: 11.5px; color: var(--muted-2); text-align: center; }
-  /* "or" divider + the wallet hand-off button in the unified sign-in modal. */
-  .ca__or { display: flex; align-items: center; gap: 12px; margin: 16px 0 12px; font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted-2); }
-  .ca__or span { flex: 1; height: 1px; background: var(--line); }
-  .ca__wallet { width: 100%; padding: 12px; display: inline-flex; align-items: center; justify-content: center; gap: 8px; border: 1px solid var(--line-2); border-radius: 11px; font-size: 14px; font-weight: 600; color: var(--fg); transition: background .15s, border-color .15s; }
-  .ca__wallet:hover { background: var(--surf-2); border-color: var(--fg); }
-  .ca__wallet--lead { margin-top: 18px; }
-  /* Social (Google/Apple/X) buttons in the unified sign-in modal. */
-  .ca__providers { display: flex; flex-direction: column; gap: 8px; margin-top: 16px; }
-  .ca__oauth { width: 100%; padding: 12px; display: inline-flex; align-items: center; justify-content: center; gap: 8px; border: 1px solid var(--line-2); border-radius: 11px; font-size: 14px; font-weight: 600; color: var(--fg); transition: background .15s, border-color .15s; }
-  .ca__oauth:hover:not(:disabled) { background: var(--surf-2); border-color: var(--fg); }
-  .ca__oauth:disabled { opacity: .6; cursor: not-allowed; }
-  .ca__consent { margin-top: 14px; font-size: 11px; line-height: 1.5; color: var(--muted-2); text-align: center; }
+  .ca__fine { margin-top: 11px; font-size: 11.5px; color: var(--muted-2); text-align: center; }
+  .ca__consent { margin-top: 18px; padding-top: 14px; border-top: 1px solid color-mix(in oklch, var(--line) 60%, transparent); font-size: 11px; line-height: 1.5; color: var(--muted-2); text-align: center; }
   .ca__consent a { color: var(--muted); text-decoration: underline; text-underline-offset: 2px; }
   .ca__consent a:hover { color: var(--fg); }
   .ca__back { display: inline-flex; align-items: center; gap: 5px; margin-bottom: 12px; font-size: 12.5px; color: var(--muted); }
   .ca__back:hover { color: var(--fg); }
   .ca__resend { width: 100%; margin-top: 10px; font-size: 12.5px; color: var(--muted); }
   .ca__resend:hover:not(:disabled) { color: var(--fg); }
-  .ca__connecting { display: grid; place-items: center; gap: 14px; padding: 26px 0 10px; text-align: center; }
+  .ca__connecting { display: grid; place-items: center; gap: 16px; padding: 30px 0 14px; text-align: center; }
   .ca__spin { animation: ca-spin 1s linear infinite; }
   .ca__spin--lg { color: var(--accent); }
   @keyframes ca-spin { to { transform: rotate(360deg); } }
+  @keyframes ca-veil { from { opacity: 0; } to { opacity: 1; } }
+  @keyframes ca-bloom { from { opacity: 0; scale: .92; } to { opacity: 1; scale: 1; } }
+  @keyframes ca-rise { from { opacity: 0; transform: translateY(12px) scale(.985); } to { opacity: 1; transform: none; } }
+  /* Emerald light on paper needs a fraction of its strength on black, and the
+     panel's inner highlight becomes a shadow. */
+  :root[data-theme='light'] .ca__backdrop { background: radial-gradient(120% 90% at 50% 40%, rgba(16,21,18,.34) 0%, rgba(16,21,18,.58) 100%); }
+  :root[data-theme='light'] .ca__glow { opacity: .42; }
+  :root[data-theme='light'] .ca__panel {
+    box-shadow:
+      0 32px 70px -14px rgba(16,21,18,.26),
+      0 0 0 1px color-mix(in oklch, var(--accent) 9%, transparent),
+      inset 0 1px 0 rgba(255,255,255,.7);
+  }
+  :root[data-theme='light'] .ca__gem { filter: drop-shadow(0 3px 10px color-mix(in oklch, var(--accent) 26%, transparent)); }
+  @media (max-width: 380px) {
+    .ca__panel { padding: 26px 18px 18px; }
+    .ca__lane { font-size: 10px; padding: 3px 7px; }
+  }
 
   /* Keyboard focus — accent rings on the custom-styled interactive controls.
      globals.css has a faint white :focus-visible fallback; these make the key

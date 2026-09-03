@@ -12,8 +12,10 @@ import {
   useSignInWithOAuth,
   useIsInitialized,
 } from '@coinbase/cdp-hooks'
-import { Loader2, Mail, ArrowLeft, X, Wallet } from 'lucide-react'
-import { walletLaneHint } from '@/lib/wallet-lineup'
+import { Loader2, ArrowLeft, ArrowRight, X, Wallet } from 'lucide-react'
+import { walletLaneChips } from '@/lib/wallet-lineup'
+import { WALLET_MARKS } from '@/components/wallet-marks'
+import { PantessaMark } from '@/components/Logo'
 import { cn } from '@/lib/utils'
 import { useSession } from '@/lib/session'
 import { OAUTH_INTENT_KEY } from '@/components/CdpOAuthReturn'
@@ -192,6 +194,9 @@ function CreateAccountModal({
   return createPortal(
     <div className="ca">
       <button className="ca__backdrop" aria-label="Close" onClick={onClose} />
+      {/* The stone's light — behind the panel, unclipped, so the door reads as
+          lit from within rather than pasted onto black. */}
+      <div className="ca__glow" aria-hidden="true" />
       <div className="ca__panel" role="dialog" aria-modal="true" aria-label="Sign in or create an account">
         <button className="ca__close" aria-label="Dismiss" onClick={onClose}>
           <X width={16} height={16} />
@@ -199,15 +204,29 @@ function CreateAccountModal({
 
         {step === 'email' && (
           <form onSubmit={sendCode}>
-            {/* Connect-to-act surfaces (/i): the door is a WALLET door — no
-                "sign in", no mail icon; connecting IS the whole step. */}
-            <div className="ca__icon">{walletConnectOnly ? <Wallet width={20} height={20} /> : <Mail width={20} height={20} />}</div>
+            {/* The stone leads. An emerald cut is nested step facets around an
+                open table — the flat plane where a signature lands — which is
+                what this door is, so the mark carries the header instead of a
+                stock envelope glyph. */}
+            <div className="ca__crest">
+              <PantessaMark size={68} className="ca__gem" />
+            </div>
+            {/* Connect-to-act surfaces (/i) never say "sign in": connecting IS
+                the whole step there (rule 6). */}
             <h2 className="ca__title">{walletConnectOnly ? 'Connect a wallet' : 'Sign in to Pantessa'}</h2>
+            {/* The security model, stated on the door itself. A first-time
+                visitor's real question is "is this safe?", and answering it
+                before anything is clicked is the whole point of this line. */}
+            <p className="ca__promise">
+              <strong>Your wallet is the only signer.</strong> We never hold your funds or your keys.
+            </p>
 
-            {/* Connect an existing wallet — top of the list. Closes this modal
-                and opens the wagmi connect modal. Default: connectAndSignIn
-                fires SIWE once connected. walletConnectOnly (connect-to-act
-                surfaces): connect IS the whole step — no signature request. */}
+            {/* Lane 1 — connect an existing wallet. It wears the accent fill
+                because it IS the product's front door (rule 6: wallet lead).
+                Closes this modal and opens the wagmi connect modal. Default:
+                connectAndSignIn fires SIWE once connected. walletConnectOnly
+                (connect-to-act surfaces): connect IS the whole step — no
+                signature request. */}
             <button
               type="button"
               className="ca__wallet ca__wallet--lead"
@@ -217,20 +236,33 @@ function CreateAccountModal({
                 onClose()
               }}
             >
-              <Wallet width={16} height={16} /> Connect a wallet
+              <Wallet width={17} height={17} /> Connect a wallet
+              <ArrowRight className="ca__walletarrow" width={15} height={15} />
             </button>
-            {/* The lane's one env-sensitive line (lib/wallet-lineup): with a
-                WC project id the door names the mobile-QR path; without one
-                this renders today's copy — byte-identical lineup, pinned. */}
-            <p className="mt-1.5 text-center text-[11px] leading-snug text-[color:var(--muted-2)]">
-              {walletLaneHint(process.env.NEXT_PUBLIC_WC_PROJECT_ID)}
-            </p>
+            {/* Which wallets actually sign here — as their own logos, which
+                are read at a glance where a row of names has to be parsed.
+                Lanes come from walletLineup() via walletLaneChips, so the
+                lineup keeps its ONE source: with a WC project id the QR lanes
+                join and their logos appear for free. Decorative to the eye,
+                named to a screen reader. */}
+            <ul className="ca__lanes" aria-label="Wallets you can sign in with">
+              {walletLaneChips(process.env.NEXT_PUBLIC_WC_PROJECT_ID).map(({ id, name }) => {
+                const Mark = WALLET_MARKS[id]
+                return (
+                  <li key={id} className="ca__lane" title={name}>
+                    <Mark size={26} />
+                    <span className="sr-only">{name}</span>
+                  </li>
+                )
+              })}
+            </ul>
 
-            <div className="ca__or" aria-hidden="true">
-              <span />or<span />
-            </div>
+            {/* ONE divider, and it names which half is yours — the wallet lane
+                assumes you have one; everything below MAKES you one. Two bare
+                "OR"s read as three competing choices. */}
+            <div className="ca__or"><span />new here?<span /></div>
 
-            {/* Social sign-in (CDP) — each redirects to the provider. */}
+            {/* Lane 2 — social sign-in (CDP). Redirects to the provider. */}
             <div className="ca__providers">
               {OAUTH_PROVIDERS.map((p) => (
                 <button
@@ -250,30 +282,46 @@ function CreateAccountModal({
               ))}
             </div>
 
-            <div className="ca__or" aria-hidden="true">
-              <span />or<span />
+            {/* Lane 3 — email OTP, as ONE row (field + accent submit) rather
+                than label/field/full-width-button stacked. Same reach, ~120px
+                less door. The submit still carries the SDK-boot loading state:
+                a spinner + "preparing" copy below, never a disabled button
+                stuck on "Starting…" (that read as broken). */}
+            <div className="ca__emailrow">
+              <label className="sr-only" htmlFor="ca-email">Email</label>
+              <input
+                ref={inputRef}
+                id="ca-email"
+                type="email"
+                autoComplete="email"
+                inputMode="email"
+                placeholder="you@example.com"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                className="ca__input"
+                aria-describedby="ca-email-hint"
+              />
+              <button
+                type="submit"
+                className="ca__go"
+                disabled={busy || !isInitialized}
+                aria-busy={busy || !isInitialized}
+                aria-label="Continue with email"
+                title="Continue with email"
+              >
+                {busy || !isInitialized
+                  ? <Loader2 className="ca__spin" width={17} height={17} />
+                  : <ArrowRight width={18} height={18} />}
+              </button>
             </div>
-
-            <label className="ca__label" htmlFor="ca-email">Email</label>
-            <input
-              ref={inputRef}
-              id="ca-email"
-              type="email"
-              autoComplete="email"
-              inputMode="email"
-              placeholder="you@example.com"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className="ca__input"
-            />
             {error && <p className="ca__error" role="alert">{error}</p>}
-            {/* While the embedded-wallet SDK boots the submit is a real
-                loading state ("Preparing the email lane…" + spinner), never a
-                disabled button stuck on "Starting…" — that read as broken. */}
-            <button type="submit" className="ca__submit" disabled={busy || !isInitialized} aria-busy={busy || !isInitialized}>
-              {busy || !isInitialized ? <Loader2 className="ca__spin" width={16} height={16} /> : null}
-              {!isInitialized ? 'Preparing the email lane…' : busy ? 'Sending…' : 'Continue with email'}
-            </button>
+            <p id="ca-email-hint" className="ca__fine">
+              {!isInitialized
+                ? 'Preparing the email lane…'
+                : busy
+                  ? 'Sending your code…'
+                  : "We'll email you a 6-digit code — no password, no extension."}
+            </p>
 
             <p className="ca__consent">
               By continuing you agree to our{' '}
@@ -288,11 +336,14 @@ function CreateAccountModal({
             <button type="button" className="ca__back" onClick={() => { setStep('email'); setError(null) }}>
               <ArrowLeft width={14} height={14} /> Back
             </button>
-            <h2 className="ca__title">Enter your code</h2>
-            <p className="ca__sub">
-              We sent a 6-digit code to <strong>{email}</strong>. Enter it to continue.
+            <div className="ca__crest">
+              <PantessaMark size={40} className="ca__gem" />
+            </div>
+            <h2 className="ca__title">Check your email</h2>
+            <p className="ca__promise">
+              We sent a 6-digit code to <strong>{email}</strong>.
             </p>
-            <label className="ca__label" htmlFor="ca-otp">Verification code</label>
+            <label className="sr-only" htmlFor="ca-otp">Verification code</label>
             <input
               ref={inputRef}
               id="ca-otp"
@@ -303,10 +354,10 @@ function CreateAccountModal({
               placeholder="123456"
               value={otp}
               onChange={(e) => setOtp(e.target.value.replace(/\D/g, ''))}
-              className="ca__input ca__input--otp"
+              className="ca__input ca__input--otp ca__input--spaced"
               aria-describedby="ca-otp-hint"
             />
-            <p id="ca-otp-hint" className="ca__fine">Enter the 6-digit code we emailed you.</p>
+            <p id="ca-otp-hint" className="ca__fine">Enter it here to finish — the code expires shortly.</p>
             {error && <p className="ca__error" role="alert">{error}</p>}
             <button type="submit" className="ca__submit" disabled={busy}>
               {busy ? <Loader2 className="ca__spin" width={16} height={16} /> : null}
@@ -320,8 +371,9 @@ function CreateAccountModal({
 
         {step === 'connecting' && (
           <div className="ca__connecting">
-            <Loader2 className="ca__spin ca__spin--lg" width={28} height={28} />
+            <PantessaMark size={44} className="ca__gem ca__gem--pulse" />
             <p className="ca__sub">Setting up your wallet…</p>
+            <Loader2 className="ca__spin" width={18} height={18} />
           </div>
         )}
       </div>
