@@ -16,12 +16,13 @@
 // you're already looking at collapses the drawer. From the dashboard a tab
 // icon is a shortcut INTO chat, landing with that drawer tab open.
 
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { Boxes, LayoutDashboard, Link2, ListChecks, MessageSquare, Plus, Users } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useYeetfulStore, type RailTab } from '@/lib/store'
+import { useSession } from '@/lib/session'
 import { useRunningWork } from '@/lib/use-running-work'
 import { rosterEnabledClient } from '@/lib/roster-client'
 import { YeetfulMark } from '@/components/Logo'
@@ -52,6 +53,11 @@ export default function AppSpine({ surface = 'chat' }: { surface?: 'chat' | 'das
   } = useYeetfulStore()
   const onDashboard = surface === 'dashboard'
 
+  // The live connected wallet (NOT the SIWE session — under connect-to-act a
+  // visitor runs on connect alone), so the reset below fires at the moment the
+  // user actually names themselves.
+  const { walletAddress } = useSession()
+
   // THE one running-work poll on first-party surfaces: the column and the
   // bar render from this single mount, and the drawer/toolbar instances are
   // gone — so this is always enabled while the shell is up.
@@ -62,10 +68,12 @@ export default function AppSpine({ surface = 'chat' }: { surface?: 'chat' | 'das
   // lands the visitor IN the hire flow, not on a docs page. Read once off
   // location (AppSpine mounts outside any Suspense boundary); unknown or
   // flag-hidden tab names are simply not in TABS and do nothing.
+  const deepLinkedRef = useRef(false)
   useEffect(() => {
     if (onDashboard) return
     const tab = new URLSearchParams(window.location.search).get('tab')
     if (tab && TABS.some((t) => t.tab === tab)) {
+      deepLinkedRef.current = true
       setRailTab(tab as RailTab)
       setMainView(tab === 'links' ? 'links' : 'chat')
       if (window.matchMedia('(max-width: 1023px)').matches) setMobileMcpRailOpen(true)
@@ -73,6 +81,32 @@ export default function AppSpine({ surface = 'chat' }: { surface?: 'chat' | 'das
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  // A WALLET ARRIVING IS A FIRST LOOK — lead with the MCP set.
+  //
+  // railTab is already session-only (store v6), so a fresh load leads with
+  // MCPs. But a turn that births a standing intent flips the rail to Jobs
+  // (ChatInterface), and two of the empty state's starter chips do exactly
+  // that ("DCA $10 into AAPL weekly", "Protect my Hyperliquid position") —
+  // so a newcomer who taps one and THEN connects to sign meets Jobs as their
+  // first view of the rail. Connecting (or switching to another account) is a
+  // new person's first look: snap back to MCPs, the composable set that IS
+  // the product's front door. An already-connected user who arms a job still
+  // gets carried to Jobs — their address didn't change.
+  //
+  // The ?tab= deep link wins over the auto-reconnect that follows it.
+  const lastWalletRef = useRef<string | null>(null)
+  useEffect(() => {
+    const prev = lastWalletRef.current
+    lastWalletRef.current = walletAddress
+    if (!walletAddress || walletAddress === prev) return
+    if (deepLinkedRef.current) {
+      deepLinkedRef.current = false
+      return
+    }
+    setRailTab('mcps')
+    setMainView('chat')
+  }, [walletAddress, setRailTab, setMainView])
 
   // The dashboard's floating rail-reopen pill and the mobile page paddings
   // key off the spine's presence — flag it on the document element.
