@@ -284,6 +284,12 @@
   .x-main { max-width: var(--maxw); margin: 0 auto; padding: 0 28px; }
   /* landing page: full-bleed to match the hero (other pages keep the column) */
   .x-main--fluid { max-width: none; padding: 0 clamp(24px, 4vw, 64px); }
+  /* Full-bleed bands (.filmband, .heroweb) reach the viewport edges with
+     50% - 50vw, which overshoots the content box by half a classic scrollbar
+     (overlay scrollbars: zero). Clip the viewport's x axis so that can never
+     become a horizontal scrollbar — clip, not hidden, so the viewport stays
+     the scroll container and sticky/fixed chrome is untouched. */
+  html { overflow-x: clip; }
 
   /* ── HERO (shared) ───────────────────────────────── */
   .hero { padding: 84px 0 64px; }
@@ -3559,7 +3565,7 @@
      One link, four surfaces, receipts coming back. The travelling packets are
      a short dash on a duplicated path with an animated stroke-dashoffset:
      pure CSS, no rAF, and one reduced-motion rule stills every wire. */
-  .spread { padding: clamp(80px, 10vh, 124px) 0 clamp(56px, 7vh, 80px); }
+  .spread { padding: clamp(80px, 10vh, 124px) 0 0; }
   .spread__grid { display: grid; grid-template-columns: minmax(0, 6fr) minmax(0, 5fr); gap: clamp(32px, 4.5vw, 64px); align-items: center; max-width: 1220px; margin: 0 auto; }
   .spread__eyebrow { font-size: 12px; letter-spacing: .18em; color: var(--muted-2); }
   .spread__h2 {
@@ -3611,18 +3617,67 @@
     .spread__out, .spread__back { animation: none; stroke-dasharray: none; stroke-dashoffset: 0; opacity: .3; }
   }
 
-  /* The explainer under the spread (.film) — a facade, not an embed: the
-     poster and a play control are plain markup; the YouTube player mounts
-     on press. The overlay colors are literals, not tokens, on purpose: the
-     poster is a dark screen recording in BOTH themes, so its scrim, type and
-     play control are tuned to the picture, not to the page behind it. */
-  .spread__film { margin: clamp(44px, 6vh, 72px) auto 0; max-width: 980px; }
+  /* ── THE SCREENING ROOM (.filmband) — the explainer, as a band that closes
+     the spread. Full-bleed backdrop without touching layout: the two pseudo-
+     elements reach the viewport edges via 50% - 50vw (body's overflow-x guard
+     absorbs the scrollbar delta); ::before carries the surface, hairlines and
+     film grain (an inline feTurbulence tile, alpha-scaled in the SVG so it
+     needs no blend mode), ::after a dot grid vignetted around the frame. The
+     aura is a transform-only drift on its own element, so the slow motion is
+     composited, never repainted. The frame (.film) is a facade: poster +
+     play control as markup, the YouTube player only on press. The overlay
+     colors on the poster are literals on purpose — it's a dark screen
+     recording in BOTH themes, so its scrim, type and play control are tuned
+     to the picture, not the page. */
+  .filmband {
+    position: relative; isolation: isolate;
+    margin-top: clamp(64px, 9vh, 112px);
+    padding: clamp(72px, 10vh, 128px) 0 clamp(80px, 11vh, 140px);
+  }
+  .filmband::before, .filmband::after {
+    content: ''; position: absolute; top: 0; bottom: 0;
+    left: calc(50% - 50vw); right: calc(50% - 50vw);
+    z-index: -1; pointer-events: none;
+  }
+  .filmband::before {
+    background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='240'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3CfeComponentTransfer%3E%3CfeFuncA type='linear' slope='.10'/%3E%3C/feComponentTransfer%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23g)'/%3E%3C/svg%3E") 0 0 / 240px 240px repeat, color-mix(in srgb, var(--fg) 3.5%, var(--bg));
+    border-top: 1px solid var(--line); border-bottom: 1px solid var(--line);
+  }
+  .filmband::after {
+    background: radial-gradient(circle, color-mix(in srgb, var(--fg) 15%, transparent) 1px, transparent 1.4px) 50% 50% / 22px 22px;
+    -webkit-mask-image: radial-gradient(58% 72% at 50% 50%, #000 28%, transparent 100%);
+    mask-image: radial-gradient(58% 72% at 50% 50%, #000 28%, transparent 100%);
+  }
+  .filmband__aura {
+    position: absolute; left: 50%; top: 50%; width: min(1500px, 150%); aspect-ratio: 2 / 1;
+    z-index: -1; pointer-events: none; transform: translate(-50%, -50%);
+    background:
+      radial-gradient(40% 55% at 34% 40%, color-mix(in srgb, var(--accent) 17%, transparent), transparent 70%),
+      radial-gradient(36% 50% at 68% 66%, color-mix(in srgb, #e8c468 12%, transparent), transparent 70%);
+    animation: filmband-drift 24s ease-in-out infinite alternate; will-change: transform;
+  }
+  @keyframes filmband-drift {
+    from { transform: translate(-52%, -49%) scale(1); }
+    to { transform: translate(-48%, -51%) scale(1.06); }
+  }
+  .filmband__in { position: relative; }
+  .filmband__head { max-width: 62ch; margin: 0 auto clamp(30px, 4.5vh, 44px); text-align: center; }
+  .filmband__eyebrow { font-size: 12px; letter-spacing: .18em; color: var(--muted-2); }
+  .filmband__h3 {
+    font-family: var(--font-serif); font-weight: 500; font-optical-sizing: auto;
+    font-size: clamp(26px, 3.2vw, 40px); letter-spacing: -.014em; line-height: 1.06;
+    margin-top: 12px; color: var(--fg);
+  }
+  .filmband__sub { margin: 14px auto 0; max-width: 56ch; font-size: 15px; line-height: 1.6; color: var(--muted); text-wrap: pretty; }
+
+  .film { margin: 0 auto; max-width: 980px; }
   .film__frame {
     position: relative; aspect-ratio: 16 / 9; border-radius: 18px; overflow: hidden; isolation: isolate;
-    background: #0b0f0d; border: 1px solid var(--line-2);
+    background: #0b0f0d; border: 1px solid color-mix(in srgb, var(--fg) 16%, transparent);
     box-shadow:
-      0 40px 90px -36px color-mix(in srgb, var(--accent) 38%, transparent),
-      0 24px 60px -30px rgba(0, 0, 0, .55);
+      inset 0 1px 0 rgba(255, 255, 255, .07),
+      0 44px 96px -36px color-mix(in srgb, var(--accent) 40%, transparent),
+      0 26px 64px -30px rgba(0, 0, 0, .6);
   }
   .film__player { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; display: block; background: #000; }
   .film__poster { position: absolute; inset: 0; display: block; color: #fff; cursor: pointer; outline: none; }
@@ -3659,18 +3714,23 @@
   .film__poster:hover .film__play,
   .film__poster:focus-visible .film__play { transform: scale(1.07); box-shadow: 0 14px 36px rgba(0, 0, 0, .5), 0 0 0 16px rgba(62, 207, 142, .18); }
   .film__cap {
-    margin: 14px 4px 0; display: flex; justify-content: space-between; align-items: baseline; gap: 8px 24px; flex-wrap: wrap;
-    font-size: 11px; letter-spacing: .02em; line-height: 1.5; color: var(--muted-2); text-wrap: pretty;
+    margin: 16px 4px 0; display: flex; justify-content: space-between; align-items: baseline; gap: 8px 24px; flex-wrap: wrap;
+    font-size: 10.5px; letter-spacing: .08em; line-height: 1.6; color: var(--muted-2);
   }
-  .film__cap a { color: var(--muted); text-decoration: none; border-bottom: 1px solid color-mix(in srgb, var(--fg) 18%, transparent); white-space: nowrap; }
+  .film__rec { display: flex; flex-wrap: wrap; gap: 0 .6em; }
+  .film__rec > span { white-space: nowrap; }
+  .film__rec > span:not(:last-child)::after { content: '·'; margin-left: .6em; color: color-mix(in srgb, var(--fg) 30%, transparent); }
+  .film__cap a { color: var(--muted); text-decoration: none; letter-spacing: .02em; border-bottom: 1px solid color-mix(in srgb, var(--fg) 18%, transparent); white-space: nowrap; }
   .film__cap a:hover { color: var(--fg); border-color: var(--fg); }
   @media (max-width: 640px) {
     .film__frame { border-radius: 14px; }
     .film__play { width: 58px; height: 58px; margin: -29px 0 0 -29px; }
     .film__play svg { width: 22px; height: 22px; }
     .film__meta { max-width: 82%; }
+    .film__cap { letter-spacing: .05em; }
   }
   @media (prefers-reduced-motion: reduce) {
+    .filmband__aura { animation: none; }
     .film__img, .film__play { transition: none; }
     .film__poster:hover .film__img, .film__poster:focus-visible .film__img { transform: none; }
     .film__poster:hover .film__play, .film__poster:focus-visible .film__play { transform: none; }
@@ -4457,7 +4517,16 @@
   html[data-theme='light'] .night__row { opacity: .5; }
   html[data-theme='light'] .night__row.is-in { opacity: 1; }
   html[data-theme='light'] .spread__back { stroke: #a3720c; }
-  html[data-theme='light'] .film__frame { box-shadow: 0 32px 70px -36px color-mix(in srgb, var(--accent) 30%, transparent), 0 18px 44px -30px rgba(0, 0, 0, .28); }
+  html[data-theme='light'] .film__frame { box-shadow: inset 0 1px 0 rgba(255, 255, 255, .5), 0 34px 76px -36px color-mix(in srgb, var(--accent) 32%, transparent), 0 20px 48px -30px rgba(0, 0, 0, .3); }
+  /* The screening room on paper: the aura and grid are tuned for black —
+     the same mixes on white read as a stain and a screen door. */
+  html[data-theme='light'] .filmband::before { background-color: color-mix(in srgb, var(--fg) 2.5%, var(--bg)); }
+  html[data-theme='light'] .filmband::after { background-image: radial-gradient(circle, color-mix(in srgb, var(--fg) 11%, transparent) 1px, transparent 1.4px); }
+  html[data-theme='light'] .filmband__aura {
+    background:
+      radial-gradient(40% 55% at 34% 40%, color-mix(in srgb, var(--accent) 11%, transparent), transparent 70%),
+      radial-gradient(36% 50% at 68% 66%, color-mix(in srgb, #a3720c 8%, transparent), transparent 70%);
+  }
   /* The chain rows' amber "awaiting / running" state, same story as the rest
      of the golds: tuned for black, washed out on paper. */
   html[data-theme='light'] .chn__row.is-wait .chn__state { color: #a3720c; border-color: color-mix(in srgb, #a3720c 45%, transparent); }

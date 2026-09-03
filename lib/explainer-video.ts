@@ -6,8 +6,11 @@
 export const EXPLAINER_VIDEO = {
   id: 'G8yVO_Y_E1I',
   title: 'How Pantessa’s Intent Links Work',
-  /** The one-liner under the frame — what the viewer will actually see. */
-  blurb: 'Overview, then a live run: “Buy $12 of AAPL on Robinhood Chain” from a plain sentence to a signed fill.',
+  /** The band's own head — the section's claim, echoed as an invitation. */
+  headline: 'Watch a link move money.',
+  /** The one line under it — what the viewer will actually see. */
+  blurb:
+    'Six minutes: what an intent link is, then a real $12 AAPL buy on Robinhood Chain — from a plain sentence to a signed fill.',
   /** Search-facing summary for the VideoObject. */
   description:
     'Pantessa — you have an intent, we do the rest. An overview of intent links, then one run end to end: buying $12 of tokenized AAPL on Robinhood Chain from a plain sentence — the wallet scan, the cross-chain funding leg, the guarded build, the signature in the visitor’s own wallet, the receipt.',
@@ -39,4 +42,13 @@ export function isoDuration(seconds: number): string {
   const m = Math.floor(seconds / 60)
   const s = seconds % 60
   return `PT${m ? `${m}M` : ''}${s}S`
+}
+
+/** "2026-09-03T08:33:36-07:00" → "Sep 3, 2026". Read off the date part
+ *  alone, so a server in one zone and a browser in another can't disagree
+ *  and trip hydration. */
+export function publishedLabel(iso: string): string {
+  const [y, m, d] = iso.slice(0, 10).split('-').map(Number)
+  const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+  return `${MONTHS[m - 1]} ${d}, ${y}`
 }

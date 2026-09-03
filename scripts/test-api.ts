@@ -2815,6 +2815,15 @@ async function main() {
         /html\[data-theme='light'\] \.text-red-400/.test(designCss) &&
         /html\[data-theme='light'\] \.text-sky-400/.test(designCss),
     )
+    // Full-bleed bands (.filmband) reach the viewport edges with 50% - 50vw,
+    // which overshoots the content box by half a classic scrollbar. The
+    // stylesheet's old comment promised a body overflow-x guard that never
+    // existed; this is the guard, and it must stay clip (not hidden) so the
+    // viewport remains the scroll container.
+    check(
+      'layout: the viewport clips its x axis so full-bleed bands never mint a horizontal scrollbar',
+      /html \{ overflow-x: clip; \}/.test(designCss) && /\.filmband::before, \.filmband::after \{[^}]*left: calc\(50% - 50vw\)/.test(designCss),
+    )
 
     // House links: the seeded canonical set (deterministic slugs,
     // creator=null — earns nothing, belongs to no dashboard). The landing
@@ -2837,6 +2846,7 @@ async function main() {
       'explainer: the landing spread carries the video facade, not a YouTube iframe',
       homeHtml.includes(`data-video="${EXPLAINER_VIDEO.id}"`) &&
         homeHtml.includes('EXPLAINER · 6:47') &&
+        homeHtml.includes(EXPLAINER_VIDEO.headline) &&
         homeHtml.includes(explainerWatchUrl) &&
         !/<iframe[^>]+youtube/i.test(homeHtml),
     )
