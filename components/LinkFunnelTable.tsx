@@ -26,20 +26,26 @@ export function LinkFunnelTable({ links, onChanged }: { links: LinkRow[]; onChan
         <thead>
           <tr className="mono text-[10.5px] uppercase tracking-wider text-[color:var(--muted-2)] text-left">
             <th className="py-2 pr-3 font-medium">Link</th>
-            <th className="py-2 pr-3 font-medium text-right">Opens</th>
-            <th className="py-2 pr-3 font-medium text-right">Connects</th>
-            <th className="py-2 pr-3 font-medium text-right">Built</th>
-            <th className="py-2 pr-3 font-medium text-right">Signed</th>
-            <th className="py-2 pr-3 font-medium text-right">$ moved</th>
-            <th className="py-2 pr-3 font-medium text-right">Earned</th>
+            <th className="py-2 pr-3 font-medium text-right whitespace-nowrap">Opens</th>
+            <th className="py-2 pr-3 font-medium text-right whitespace-nowrap">Connects</th>
+            <th className="py-2 pr-3 font-medium text-right whitespace-nowrap">Built</th>
+            <th className="py-2 pr-3 font-medium text-right whitespace-nowrap">Signed</th>
+            <th className="py-2 pr-3 font-medium text-right whitespace-nowrap">$ moved</th>
+            <th className="py-2 pr-3 font-medium text-right whitespace-nowrap">Earned</th>
             <th className="py-2 font-medium text-right"></th>
           </tr>
         </thead>
         <tbody>
           {links.map((l) => (
             <tr key={l.slug} className="border-t border-[var(--line)]">
-              <td className="py-2.5 pr-3 min-w-0">
-                <div className="flex items-center gap-2">
+              {/* w-full + max-w-0: in an auto-layout table a cell grows to its
+                  content, so the ask cell never truncated and a long ask pushed
+                  "$ moved" and "Earned" off the right edge — the two columns
+                  the creator is actually here for. This pins the ask cell to
+                  the leftover width; the flex row and the ask span carry
+                  min-w-0 so they are actually allowed to shrink into it. */}
+              <td className="py-2.5 pr-3 w-full max-w-0">
+                <div className="flex items-center gap-2 min-w-0">
                   <button
                     type="button"
                     onClick={() => copy(l.slug)}
@@ -49,7 +55,9 @@ export function LinkFunnelTable({ links, onChanged }: { links: LinkRow[]; onChan
                     {copied === l.slug ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
                     /i/{l.slug}
                   </button>
-                  <span className="text-[13px] text-[color:var(--muted)] truncate">{l.ask}</span>
+                  <span className="text-[13px] text-[color:var(--muted)] truncate min-w-0" title={l.ask}>
+                    {l.ask}
+                  </span>
                   {l.redirectUrl && (
                     <span title={`Returns to ${l.redirectUrl}`} className="flex-shrink-0">
                       <Link2 className="w-3 h-3 text-[color:var(--muted-2)]" />
@@ -80,15 +88,15 @@ export function LinkFunnelTable({ links, onChanged }: { links: LinkRow[]; onChan
                   </div>
                 )}
               </td>
-              <td className="py-2.5 pr-3 text-right mono text-[13px]">{l.funnel.open}</td>
-              <td className="py-2.5 pr-3 text-right mono text-[13px]">{l.funnel.connect}</td>
-              <td className="py-2.5 pr-3 text-right mono text-[13px]">{l.funnel.built}</td>
-              <td className="py-2.5 pr-3 text-right mono text-[13px]">{l.funnel.signed}</td>
-              <td className="py-2.5 pr-3 text-right mono text-[13px]">
+              <td className="py-2.5 pr-3 text-right mono text-[13px] tabular-nums whitespace-nowrap">{l.funnel.open}</td>
+              <td className="py-2.5 pr-3 text-right mono text-[13px] tabular-nums whitespace-nowrap">{l.funnel.connect}</td>
+              <td className="py-2.5 pr-3 text-right mono text-[13px] tabular-nums whitespace-nowrap">{l.funnel.built}</td>
+              <td className="py-2.5 pr-3 text-right mono text-[13px] tabular-nums whitespace-nowrap">{l.funnel.signed}</td>
+              <td className="py-2.5 pr-3 text-right mono text-[13px] tabular-nums whitespace-nowrap">
                 {l.signedUsd > 0 ? `$${l.signedUsd.toFixed(2)}` : '—'}
               </td>
               <td
-                className="py-2.5 pr-3 text-right mono text-[13px] text-[color:var(--accent)]"
+                className="py-2.5 pr-3 text-right mono text-[13px] tabular-nums whitespace-nowrap text-[color:var(--accent)]"
                 title={
                   l.earnedUsd <= 0 && l.signedUsd > 0
                     ? 'Fee-free route — bridges, transfers, stakes and sales move money but earn nothing.'

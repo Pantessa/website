@@ -12,6 +12,7 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { Check, Copy, ExternalLink, Plus, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { formatEarnedUsd } from '@/lib/fees'
 import { useYeetfulStore } from '@/lib/store'
 import { useSession } from '@/lib/session'
 import { useIntentLinks, type LinkRow } from '@/lib/intent-links-ui'
@@ -233,7 +234,13 @@ function SignedInLinks({ activeSlugs }: { activeSlugs: string[] }) {
             <span className="block text-[11px] truncate mt-0.5">{l.ask}</span>
             <span className="block mono text-[10px] text-[color:var(--muted-2)] mt-0.5">
               {l.funnel.open} opens · {l.funnel.signed} signed
-              {l.signedUsd > 0 ? ` · $${l.signedUsd.toFixed(2)}` : ''}
+              {l.signedUsd > 0 ? ` · $${l.signedUsd.toFixed(2)} moved` : ''}
+              {/* what the row EARNED you — the reason to keep sharing it.
+                  Fee-free routes (bridges, transfers, stakes, sales) move
+                  money and earn nothing, so this shows only when it's real. */}
+              {l.earnedUsd > 0 && (
+                <span className="text-[color:var(--accent)]"> · {formatEarnedUsd(l.earnedUsd)} earned</span>
+              )}
             </span>
           </div>
         ))}
