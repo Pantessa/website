@@ -5459,6 +5459,25 @@ async function main() {
         onrampUrl({ sessionToken: 'tok_1', presetFiatUsd: 14 }).includes('sessionToken=tok_1') &&
           onrampUrl({ sessionToken: 'tok_1', presetFiatUsd: 14 }).includes('presetFiatAmount=14'),
       )
+      // The experience is NOT implied by the /buy/ path. Without an explicit
+      // defaultExperience, a signed-in Coinbase user lands in SEND — the
+      // transfer-your-existing-balance flow, whose "add a payment method" is
+      // bank/wire only. Card, Apple Pay and Google Pay exist solely on the BUY
+      // side, so the whole point of the chip ("add funds with a card") dies one
+      // step after the handoff. Observed live 2026-09-03.
+      check(
+        'onramp: the hosted URL asks for the BUY experience, never SEND (card/Apple Pay live only on buy)',
+        onrampUrl({ sessionToken: 'tok_1', presetFiatUsd: 14 }).includes('defaultExperience=buy'),
+        onrampUrl({ sessionToken: 'tok_1', presetFiatUsd: 14 }),
+      )
+      // Region-varying. This project's buy-options API returns CARD +
+      // FIAT_WALLET + ACH_BANK_ACCOUNT + APPLE_PAY for US/USD but only CARD +
+      // FIAT_WALLET for PT — pinning one would offer a method some users
+      // cannot pay with, so we let Coinbase's own picker decide.
+      check(
+        'onramp: the hosted URL does NOT pin a payment method (availability is per-country)',
+        !onrampUrl({ sessionToken: 'tok_1', presetFiatUsd: 14 }).includes('defaultPaymentMethod'),
+      )
 
       // clarifyOf is the one narrowing point, and a planner can emit this
       // shape too — a hostile fund payload must degrade to a plain chip,

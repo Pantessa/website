@@ -165,5 +165,22 @@ export function onrampUrl(params: {
   u.searchParams.set('fiatCurrency', 'USD')
   u.searchParams.set('defaultAsset', params.asset ?? ONRAMP_ASSET)
   u.searchParams.set('defaultNetwork', params.network ?? 'base')
+  // BUY, not SEND. Coinbase's two experiences are selected by this parameter,
+  // and WITHOUT it a signed-in Coinbase user lands in the transfer flow:
+  // "Send USDC", sourced from their existing Coinbase balance. Observed live
+  // 2026-09-03 — the funding chip opened a send screen whose only "add a
+  // payment method" options were bank account and wire, because that is the
+  // Coinbase ACCOUNT funding flow, not the on-ramp checkout. Card, Apple Pay
+  // and Google Pay live on the BUY side, so a user with no Coinbase balance
+  // hit a dead end one step after we handed them off.
+  //
+  // The path already says /buy/, which is exactly why this was easy to miss:
+  // the path does not decide the experience, this does.
+  u.searchParams.set('defaultExperience', 'buy')
+  // defaultPaymentMethod is deliberately NOT set. Coinbase's own picker shows
+  // what is actually available where the user is, and that varies: for this
+  // project the buy options API returns CARD + FIAT_WALLET + ACH_BANK_ACCOUNT
+  // + APPLE_PAY for US/USD, but only CARD + FIAT_WALLET for PT (no Apple Pay,
+  // no ACH). Pinning APPLE_PAY would offer a method half our users cannot use.
   return u.toString()
 }
