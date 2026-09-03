@@ -47,7 +47,10 @@ export async function linksBoard(limit = 10): Promise<LinksBoard> {
     // The recent tab reads MINTS, not turns: the newest live creator links.
     // House seeds (creator null) stay on their curated start-here strip, and
     // allowlist-reserved promo links stay off — a public row that refuses
-    // whoever taps it is a dead-end, not a demo.
+    // whoever taps it is a dead-end, not a demo. Internal mints stay off too:
+    // NOT_HARNESS only fences the turn side, and every test:api run mints from
+    // a throwaway wallet against the shared DB, so the mint side needs the
+    // isInternal flag or the board reads as ten identical bot rows.
     const [signed, recent] = await Promise.all([
       prisma.embedTurn.groupBy({
         by: ['intentLinkSlug'],
@@ -60,6 +63,7 @@ export async function linksBoard(limit = 10): Promise<LinksBoard> {
       prisma.intentLink.findMany({
         where: {
           revoked: false,
+          isInternal: false,
           creator: { not: null },
           allowWallets: { isEmpty: true },
           OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],

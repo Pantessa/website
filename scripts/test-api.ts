@@ -2375,9 +2375,35 @@ async function main() {
       (/Most claimed/.test(boardHtml) && /Dollars moved/.test(boardHtml) && /Recently minted/.test(boardHtml)) ||
         /The board is empty/.test(boardHtml),
     )
-    // The recent tab reads MINTS (not turns), so this run's freshly minted
-    // active links must reach the page data with no sign required.
-    check('intent links: recently-minted tab surfaces a fresh mint pre-sign', boardHtml.includes('Stake some ETH for me'))
+    // The recent tab reads MINTS (not turns), so it needs its OWN internal
+    // fence: NOT_HARNESS filters the TURN side only, and the harness's fetch
+    // wrapper stamps every mint internal. This pin used to assert the
+    // opposite — that a harness mint SURFACES — and so enshrined the bug it
+    // was meant to guard: on 2026-09-03 the live board's newest ten rows were
+    // ten identical "Swap $5 of ETH to USDC" harness mints from throwaway
+    // wallets, which reads as bot spam on the front door of the links pitch.
+    check('intent links: internal mints never reach the recently-minted tab', !boardHtml.includes('Stake some ETH for me'))
+    // …and the tab is fenced, not broken: an ORGANIC row does surface. The
+    // fixture is written straight to the table (the mint route would stamp it
+    // internal) and deleted below — never revoked-and-left, because the GTM
+    // arc counts intent_links by is_internal alone and a lingering unflagged
+    // row would inflate the arrival denominator by one wallet per run.
+    // Prisma reads .env, not .env.local, so the harness process may hold no
+    // DATABASE_URL — the same guard the founding + jobs-cron drills use (a
+    // failed engine init is cached, so an unguarded call poisons the rest).
+    if (process.env.DATABASE_URL) {
+      const recentFixtureId = `fixt-rec-${Math.random().toString(36).slice(2, 8)}`
+      const recentFixtureAsk = `Swap $3 of ETH to USDC — recent-tab fixture ${recentFixtureId}`
+      await prisma.intentLink.create({
+        data: { id: recentFixtureId, ask: recentFixtureAsk, creator: mallory.address.toLowerCase(), isInternal: false },
+      })
+      const organicHtml = await (await fetch(`${BASE}/links`)).text()
+      await prisma.intentLink.deleteMany({ where: { id: recentFixtureId } })
+      check('intent links: recently-minted tab surfaces an organic mint pre-sign', organicHtml.includes(recentFixtureAsk))
+      check('intent links: recent-tab fixture released', (await prisma.intentLink.count({ where: { id: recentFixtureId } })) === 0)
+    } else {
+      check('intent links: organic recent-tab round-trip skipped — no DATABASE_URL for the harness process', true)
+    }
     // The fake $600 this section signed above must NEVER rank the public
     // board — harness- sessions are excluded server-side.
     check('intent links: harness turns never rank the public board', !boardHtml.includes(`/i/${slug}`))
@@ -12485,12 +12511,19 @@ async function main() {
       forkMint.status === 200 && !!forkRow.slug && forkBody.rows?.[0]?.parentSlug === mSlug,
     )
 
+    // The public gallery is a RANKING, so it fences internal rows — these
+    // mints are the harness's own. Fork counting keeps its coverage on the
+    // targeted ?slug= read, which answers for the row it names.
     const gallery = await fetch(`${BASE}/api/mosaics`)
     const galleryBody = (await gallery.json()) as { rows?: Array<{ slug: string; forks?: number }> }
-    const parentInGallery = galleryBody.rows?.find((r) => r.slug === mSlug)
     check(
-      'mosaic api: gallery lists both fresh rows, parent counts its fork',
-      gallery.status === 200 && !!parentInGallery && (galleryBody.rows ?? []).some((r) => r.slug === fSlug) && (parentInGallery.forks ?? 0) >= 1,
+      'mosaic api: internal mints never reach the public gallery',
+      gallery.status === 200 && !(galleryBody.rows ?? []).some((r) => r.slug === mSlug || r.slug === fSlug),
+    )
+    const parentRead = (await (await fetch(`${BASE}/api/mosaics?slug=${mSlug}`)).json()) as { rows?: Array<{ slug: string; forks?: number }> }
+    check(
+      'mosaic api: ?slug= answers for the named row and counts its fork',
+      parentRead.rows?.[0]?.slug === mSlug && (parentRead.rows?.[0]?.forks ?? 0) >= 1,
     )
 
     const badSum = await fetch(`${BASE}/api/mosaics`, {
