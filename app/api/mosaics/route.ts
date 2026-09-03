@@ -142,8 +142,16 @@ export async function POST(req: NextRequest) {
 export async function GET(req: NextRequest) {
   const slugParam = req.nextUrl.searchParams.get('slug')?.trim() || null
 
+  // The GALLERY fences internal rows the way REAL_TRAFFIC_WHERE fences the
+  // money below: the harness mints mosaics too and only revokes them at the
+  // end of a run, so one interrupted run is one harness tile in the public
+  // gallery — the bet the /links recent tab lost. A ?slug= read is a
+  // targeted lookup, not a ranking (it backs the link page's own stats
+  // strip), so it still answers for the row it names, internal or not.
   const links = await prisma.intentLink.findMany({
-    where: { kind: 'mosaic', revoked: false, ...(slugParam ? { id: slugParam } : {}) },
+    where: slugParam
+      ? { kind: 'mosaic', revoked: false, id: slugParam }
+      : { kind: 'mosaic', revoked: false, isInternal: false },
     orderBy: { createdAt: 'desc' },
     take: 24,
   })
