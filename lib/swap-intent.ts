@@ -28,6 +28,11 @@ export interface SwapIntent {
   buyToken?: string
   /** Limit orders only: the minimum acceptable buy amount (the named price). */
   buyAmountAtLeastHuman?: string
+  /** Market asks that name an amount on the BUY side too ("convert 1 USDC
+   *  to 1 USDG"). Recorded, never promised — builds are exact-input, and an
+   *  exact-output swap is a different artifact. Its job is to stop the buy
+   *  TOKEN from being lost to the number sitting in front of it. */
+  buyAmountNamedHuman?: string
   /** Set when the message is clearly a swap ask but under-specified. */
   problem?: string
   /** A price-triggered sell with no amount ("sell my eth when it hits
@@ -96,9 +101,17 @@ const FILLER = String.raw`(?:(?:about|around|roughly|approximately|approx\.?|~)\
 const USD_AMOUNT = String.raw`(?:\$\s?(\d+(?:\.\d+)?)|(\d+(?:\.\d+)?)\s?(?:dollars?|usd|bucks?))`
 const usdOf = (m: RegExpMatchArray, i: number) => m[i] ?? m[i + 1]
 
-// "swap/sell/convert/trade 100 USDC for/to/into WETH"
+// "swap/sell/convert/trade 100 USDC for/to/into WETH". The buy side may
+// carry its OWN amount ("convert 1 USDC to 1 USDG" — users restate the
+// parity they expect; live 2026-09-03 that phrasing lost the buy token
+// entirely and fell to the bare-sell branch). Builds are exact-INPUT, so
+// the named output is recorded (buyAmountNamedHuman) and never promised —
+// but losing the buy token to it was strictly worse: the ask then defaulted
+// its own target and, for a stable pair, refused itself as sell==buy. A
+// PRICED reading of that second number is the limit grammar, which only
+// claims when the word "limit" is present (LIMIT_RE, checked first).
 const MARKET_RE = new RegExp(
-  String.raw`\b(?:swap|sell|convert|trade)\s+${AMOUNT}\s*${TOKEN}\s+(?:for|to|into)\s+${TOKEN}\b`,
+  String.raw`\b(?:swap|sell|convert|trade)\s+${AMOUNT}\s*${TOKEN}\s+(?:for|to|into)\s+(?:${AMOUNT}\s*)?${TOKEN}\b`,
   'i',
 )
 // "swap (about) $1 (worth) of/in ETH for/to/into USDG" — dollar-denominated
@@ -272,14 +285,21 @@ export function parseSwapIntent(message: string): SwapIntent {
     // Building a token literally named "ARBITRUM" is a dead-end (or worse);
     // this is a cross-chain move missing its origin — say exactly that.
     // Four-letter-and-under words (eth, sol, base) stay tokens: too ambiguous.
-    const destChain = m[3].length >= 5 ? canonicalChainWord(m[3]) : null
+    const destChain = m[4].length >= 5 ? canonicalChainWord(m[4]) : null
     if (destChain) {
       return {
         isSwap: true,
         problem: `Which chain should the ${m[1]} ${m[2].toUpperCase()} come FROM? That looks like a cross-chain move — say e.g. “swap ${m[1]} ${m[2].toUpperCase()} from Base to ${destChain}” and I'll build it.`,
       }
     }
-    return { isSwap: true, mode: 'swap', sellAmountHuman: m[1], sellToken: m[2], buyToken: m[3] }
+    return {
+      isSwap: true,
+      mode: 'swap',
+      sellAmountHuman: m[1],
+      sellToken: m[2],
+      buyToken: m[4],
+      ...(m[3] ? { buyAmountNamedHuman: m[3] } : {}),
+    }
   }
   if (!OTHER_VENUE_RE.test(message)) {
     const dm = message.match(DOLLAR_MARKET_RE)

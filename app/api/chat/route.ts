@@ -132,7 +132,7 @@ import { buildUniswapSwap, NoV3PoolError } from '@/lib/uniswap-venue'
 import { buildUniswapV4Swap, NoV4PoolError, GatedV4PoolError } from '@/lib/uniswap-v4'
 import { buildLifiSwap, NoLifiRouteError } from '@/lib/lifi-venue'
 import { fundChipFor } from '@/lib/onramp'
-import { GAS_TOPUP_ETH, parseRhFundingFollowUp, planDownsizedRobinhoodBuy, planRobinhoodFundingAdvice, readFundingShortfall, rhFundingPending, robinhoodBuyNeedUsd, ROBINHOOD_CHAIN_ID } from '@/lib/lifi-bridge'
+import { fundingSourceSymbols, GAS_TOPUP_ETH, offChainStableSource, parseRhFundingFollowUp, planDownsizedRobinhoodBuy, planRobinhoodFundingAdvice, readFundingShortfall, rhFundingPending, robinhoodBuyNeedUsd, ROBINHOOD_CHAIN_ID } from '@/lib/lifi-bridge'
 import { describeInflightDeposit, inflightPendingData } from '@/lib/inflight-funding'
 import { resolveToken, tokenDecimals, humanToAtoms } from '@/lib/cow'
 import { COW_VAULT_RELAYER } from '@/lib/cow-guardrails'
@@ -1796,7 +1796,13 @@ async function handleChatTurn(req: NextRequest) {
           !swapIntent.problem &&
           swapIntent.buyToken &&
           swapIntent.buyToken.toUpperCase() !== 'ETH' &&
-          (!swapIntent.sellToken || !!resolveToken(swapIntent.sellToken, ROBINHOOD_CHAIN_ID))
+          // The spend side must make sense on 4663 — as one of ITS tokens,
+          // or as money the funding plan can bridge in from Base/Ethereum/
+          // Arbitrum ("convert 25 USDC to AAPL": USDC is not a 4663 token,
+          // it is the origin the plan spends from).
+          (!swapIntent.sellToken ||
+            !!resolveToken(swapIntent.sellToken, ROBINHOOD_CHAIN_ID) ||
+            fundingSourceSymbols().includes(swapIntent.sellToken.toUpperCase()))
         ) {
           // Warm BOTH lists first — a dynamic-only token on the target chain
           // (unwarmed → resolves null) must not read as "not a token here".
@@ -1825,9 +1831,26 @@ async function handleChatTurn(req: NextRequest) {
           // 'ok' with a null resolve = the list never warmed (pairing fails
           // open) — that must NOT retarget arbitrary unknown tokens to 4663.
           const isStock = exactStock || (pairing !== null && (!!resolveToken(swapIntent.buyToken, ROBINHOOD_CHAIN_ID) || pairing.kind === 'paired' || pairing.kind === 'suggest'))
-          if (isStock) {
+          // USDG is Robinhood Chain's OWN dollar and exists on no other
+          // registry chain, so "convert 1 USDC to USDG" with the picker on
+          // Base would aim at a chain where the target doesn't exist and
+          // dead-end in "I don't know the token USDG on Base". The infra
+          // exclusion above is what keeps generic buys off 4663; the
+          // chain's primary stable is the one infra token that can only
+          // MEAN 4663, so it retargets like a stock ticker does.
+          const rhStableSym = primaryStable(ROBINHOOD_CHAIN_ID)?.symbol.toUpperCase()
+          const wantsRhStable =
+            !!rhStableSym &&
+            swapIntent.buyToken.toUpperCase() === rhStableSym &&
+            !resolveToken(swapIntent.buyToken, targetChain.id)
+          if (isStock || wantsRhStable) {
             buildChain = chainById(ROBINHOOD_CHAIN_ID)!
-            nativeTrace({ type: 'status', label: `stock-chain inference: “${swapIntent.buyToken.toUpperCase()}” isn't a ${targetChain.name} token but matches Robinhood Chain's stock list — building there` })
+            nativeTrace({
+              type: 'status',
+              label: wantsRhStable
+                ? `chain inference: “${swapIntent.buyToken.toUpperCase()}” is Robinhood Chain's own dollar and isn't a ${targetChain.name} token — building there`
+                : `stock-chain inference: “${swapIntent.buyToken.toUpperCase()}” isn't a ${targetChain.name} token but matches Robinhood Chain's stock list — building there`,
+            })
           }
         }
         const uniActive = activeServers.some((s) => s.slug === 'uniswap' || /uniswap/i.test(s.name))
@@ -3749,6 +3772,52 @@ async function prepareSwapTurn(intent: SwapIntent, walletAddress: string | undef
       }
     }
   }
+  // ── Off-chain source ── "Convert 1 USDC to 1 USDG on robinhood" (live
+  // 2026-09-03) answered "I don't know the token USDC on Robinhood Chain".
+  // True, and useless: USDC is the exact token the funding plan below
+  // BRIDGES FROM, and the wallet was holding it on Base. A spend token that
+  // doesn't exist on the destination but IS a dollar-parity funding source
+  // isn't an unknown token — it's the ask naming its own origin, one chain
+  // over. Restate it in the destination's own $1 unit and let the funding
+  // plan own the turn: it scans Base, Ethereum and Arbitrum for that money,
+  // ranks the origins, adds a gas leg ONLY when the wallet can't already pay
+  // Orbit gas there, and compiles the pick into a job signed step by step.
+  //
+  // A CONVERSION is not an acquisition: the user is moving named money, not
+  // topping up to a target, so `convertingFrom` tells the funding block
+  // below to size the plan off the ask alone — never off USDG already held
+  // (which would answer "covered already" to someone who asked to move
+  // their USDC, and is why the flag exists rather than a plain rewrite).
+  let convertingFrom: string | null = null
+  if (!intent.problem && intent.mode !== 'limit' && intent.sellToken && tokenDecimals(intent.sellToken, chainId) === null) {
+    const source = offChainStableSource({
+      chainId,
+      sellSymbol: intent.sellToken,
+      knownOnChain: false,
+      amountHuman: intent.sellAmountHuman,
+      amountUsd: intent.sellAmountUsd,
+    })
+    if (source) {
+      convertingFrom = source.sourceSymbol
+      trace({
+        type: 'status',
+        label: `native swap layer: “${source.sourceSymbol}” isn't a ${chain.name} token — it's what the funding plan bridges FROM, so the ask restates as $${source.usd} of ${source.stableSymbol} on ${chain.name} and the origin scan (Base / Ethereum / Arbitrum) owns the turn`,
+      })
+      intent = {
+        ...intent,
+        sellToken: source.stableSymbol,
+        // The destination stable IS the $1 unit, so the parity amount needs
+        // no price probe — and setting it skips the dollar-sizing gate,
+        // which would have refused on the same unknown symbol.
+        sellAmountHuman: source.usd.toFixed(2),
+        sellAmountUsd: undefined,
+        // A bare "convert 1 USDC" (no target named) on the stock chain means
+        // the chain's own dollar — the bare-sell default above already filled
+        // this in, but a rewrite must never leave the buy side empty.
+        buyToken: intent.buyToken ?? source.stableSymbol,
+      }
+    }
+  }
   // Dollar-denominated asks ("swap $1 worth of ETH for USDG", "buy $5 of
   // AAPL"): resolve the $ amount into a token amount BEFORE the gate below,
   // via the same venue quoters the build uses (lib/usd-probe.ts). A "buy $X"
@@ -3889,16 +3958,24 @@ async function prepareSwapTurn(intent: SwapIntent, walletAddress: string | undef
   if (rhStable && intent.sellToken.toUpperCase() === rhStable.symbol.toUpperCase()) {
     try {
       const shortfall = await readFundingShortfall(walletAddress)
-      if (shortfall.usdgAtoms < BigInt(sellAmount)) {
+      // A conversion claims the turn even when the USDG is already there —
+      // "convert 1 USDC to USDG" asks to MOVE named money, and answering
+      // "covered already, you hold $5" would be a refusal dressed as good
+      // news. Top-ups (the acquisition grammar) keep the holding gate.
+      if (shortfall.usdgAtoms < BigInt(sellAmount) || convertingFrom) {
         const buyUsd = Number(Number(intent.sellAmountHuman).toFixed(2)) // USDG is the $1 unit of account
         const buySym = intent.buyToken.toUpperCase()
         const holdingUsd = Number(shortfall.usdgAtoms) / 10 ** rhStable.decimals
+        // What the plan may count as already-covered. Zero for a conversion:
+        // the named source is the money to move, so held USDG neither
+        // shrinks the bridge nor cancels it.
+        const creditUsd = convertingFrom ? 0 : holdingUsd
         const includeGas = !shortfall.hasGas
         // Buys subtract the held USDG too — the buy spends what's already
         // there plus what lands. Ignoring it demanded a ~$12.5 bridge from a
         // wallet holding $12 movable + $0.48 held, and the flagship
         // "Buy $12 of AAPL" ask walled three times (live 2026-07-27).
-        const needUsd = robinhoodBuyNeedUsd(buyUsd, holdingUsd, includeGas)
+        const needUsd = robinhoodBuyNeedUsd(buyUsd, creditUsd, includeGas)
         const advice = planRobinhoodFundingAdvice({
           scan: shortfall,
           needUsd,
@@ -3948,7 +4025,11 @@ async function prepareSwapTurn(intent: SwapIntent, walletAddress: string | undef
             label: `funding layer claimed the turn: ${rhStable.symbol} short on ${chain.name} (holds ~$${holdingUsd.toFixed(2)}, needs $${buyUsd}) but the wallet holds ${holdingsSummary} — offering the funding plan (${includeGas ? 'gas leg included' : 'gas already covered'})`,
           })
           return NextResponse.json({
-            reply: acquiring
+            reply: convertingFrom
+              ? `🌉 **We can make this happen.** ${convertingFrom} doesn't exist on ${chain.name} — ${rhStable.symbol} is its dollar — so the ${convertingFrom} has to come from where you actually hold it. You're holding **${holdingsSummary}**, ` +
+                `so I'll convert $${buyUsd} of it into ${rhStable.symbol}${includeGas ? ' and drop in a little ETH for gas (you have none on ' + chain.name + ' yet)' : ` (you already have gas on ${chain.name}, so nothing extra moves)`}${acquiring ? '' : `, then buy the ${buySym}`}. ` +
+                `Lands in seconds — one job, you sign each step.${inflightSuffix}`
+              : acquiring
               ? `🌉 **We can make this happen.** You asked for $${buyUsd} of ${rhStable.symbol} on ${chain.name} and you're at ~$${holdingUsd.toFixed(2)} there — but you're holding **${holdingsSummary}**, so I'll convert enough to close the gap${includeGas ? ' (a little ETH for gas included)' : ''}, ` +
                 `landing on ${chain.name} in seconds. One job, you sign each step.${inflightSuffix}`
               : `🌉 **We can make this happen.** You're holding **${holdingsSummary}** — ` +
@@ -3979,7 +4060,7 @@ async function prepareSwapTurn(intent: SwapIntent, walletAddress: string | undef
         // partial read could lowball a wallet whose money hid behind a
         // failed RPC.
         if (shortfall.failedOrigins.length === 0) {
-          const downsized = planDownsizedRobinhoodBuy({ scan: shortfall, buyUsd, holdingUsd, includeGas, buySym, acquiring })
+          const downsized = planDownsizedRobinhoodBuy({ scan: shortfall, buyUsd, holdingUsd: creditUsd, includeGas, buySym, acquiring })
           if (downsized) {
             trace({
               type: 'status',
@@ -4034,7 +4115,7 @@ async function prepareSwapTurn(intent: SwapIntent, walletAddress: string | undef
             : {}),
           workingContext: pendingFunding,
         })
-      } else if (acquiring) {
+      } else if (acquiring && !convertingFrom) {
         const holdingUsd = Number(shortfall.usdgAtoms) / 10 ** rhStable.decimals
         trace({ type: 'status', label: `funding layer: acquisition target already covered (~$${holdingUsd.toFixed(2)} ${rhStable.symbol} on ${chain.name}) — nothing to move` })
         return NextResponse.json({
