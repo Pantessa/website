@@ -34,6 +34,33 @@ export function walletLaneHint(projectId: string | null | undefined): string {
     : 'MetaMask, Coinbase, or any installed browser wallet.'
 }
 
+/** Human names for the lanes. The sign-in door shows each lane as its brand
+ *  LOGO (components/wallet-marks) — a logo is read at a glance where a name
+ *  has to be parsed — so these carry the accessible name behind the mark. */
+export const WALLET_LANE_NAMES: Record<WalletLaneId, string> = {
+  metaMask: 'MetaMask',
+  coinbase: 'Coinbase Wallet',
+  rainbow: 'Rainbow',
+  walletConnect: 'WalletConnect',
+  injected: 'Any browser wallet',
+}
+
+/** The lanes the sign-in door draws as a logo strip, in display order.
+ *  Derived from walletLineup() so the lineup keeps ONE source: adding a lane
+ *  adds its logo for free. */
+export function walletLaneChips(
+  projectId: string | null | undefined,
+): { id: WalletLaneId; name: string }[] {
+  const lanes = walletLineup(projectId)
+  const branded = lanes.filter((id) => id !== 'injected')
+  // WalletConnect already means "any wallet", so the injected catch-all beside
+  // it is redundant. Without WC the catch-all is load-bearing — it is how
+  // someone on a non-MetaMask extension knows their wallet works here.
+  const withCatchAll = lanes.includes('injected') && !lanes.includes('walletConnect')
+  const ids: WalletLaneId[] = withCatchAll ? [...branded, 'injected'] : branded
+  return ids.map((id) => ({ id, name: WALLET_LANE_NAMES[id] }))
+}
+
 /** WC pairing-screen metadata — the site's own identity, single source. */
 export const WC_APP_METADATA = {
   appName: 'Pantessa',
