@@ -126,7 +126,7 @@ import { jobContextFor } from '../lib/job-context'
 import { crossChainAgentOf, detectCrossChain, swapWorkingContext } from '../lib/swap-intent'
 import { encodeV4SwapCalldata, guardUniswapV4Build, type V4BuiltStep, type V4GuardExpectations, type V4PoolKey } from '../lib/uniswap-v4'
 import { guardLifiBuild, isLifiNoRouteMessage, verifyLifiQuoteEcho, lifiPriceAcceptable, lifiRoutersFor, type LifiBuiltStep, type LifiGuardExpectations, type LifiQuote } from '../lib/lifi-venue'
-import { clampNativeSellAtoms, FUNDING_ALT_USDC, fundingAltUsdcFor, fundingNeedUsd, fundingSourceSymbols, offChainStableSource, ROBINHOOD_CHAIN_ID, GAS_LEG_LADDER_USD, GAS_LEG_USD, GAS_TOPUP_ETH, guardLifiBridgeBuild, lifiBridgeRoutersFor, parseRhFundingFollowUp, planDownsizedRobinhoodBuy, planRobinhoodFundingAdvice, planRobinhoodFundingChips, rhFundingPending, robinhoodBuyNeedUsd, verifyLifiBridgeEcho, type FundingOrigin, type LifiBridgeExpectations, type LifiBridgeStep } from '../lib/lifi-bridge'
+import { clampNativeSellAtoms, fillableLeg, FUNDING_ALT_USDC, fundingAltUsdcFor, fundingNeedUsd, fundingSourceSymbols, LIFI_LEG_FLAT_USD, MIN_VALUE_LEG_USD, minLegNote, offChainStableSource, ROBINHOOD_CHAIN_ID, STABLE_LEG_MIN_OUT_BPS, GAS_LEG_LADDER_USD, GAS_LEG_USD, GAS_TOPUP_ETH, guardLifiBridgeBuild, lifiBridgeRoutersFor, parseRhFundingFollowUp, planDownsizedRobinhoodBuy, planRobinhoodFundingAdvice, planRobinhoodFundingChips, rhFundingPending, robinhoodBuyNeedUsd, verifyLifiBridgeEcho, type FundingOrigin, type LifiBridgeExpectations, type LifiBridgeStep } from '../lib/lifi-bridge'
 import { classifyOneclickStatus, inflightDepositFromPending, inflightPendingData, inflightSettlingNote } from '../lib/inflight-funding'
 import { sanitizeWorkingContext } from '../lib/working-context'
 import { parseRobinhoodFunding, parseSameChainSwapSegment, JOB_SEGMENT_PARSERS } from '../lib/jobs'
@@ -5800,6 +5800,83 @@ async function main() {
       robinhoodBuyNeedUsd(10, 0, false) > robinhoodBuyNeedUsd(10, 8, false),
     )
     // Every conversion chip must still be a COMPILING contract.
+    // ── Minimum fillable leg ── live 2026-09-03: the "$1.5 from Base" chip
+    // compiled into a job that DIED on step 1 — "only 1.329574 USDG for $1.5,
+    // more than 4% below dollar parity". The guard was right; the OFFER was
+    // the bug. A LiFi leg costs ~$0.16–0.46 FLAT at every size probed from $1
+    // to $100, so the percentage loss is what moves, and under the floor it
+    // can never clear. Never offer what can't fill.
+    check(
+      'min leg: the floor is DERIVED from the parity guard (flat cost / the guard tolerance)',
+      MIN_VALUE_LEG_USD === Math.ceil(LIFI_LEG_FLAT_USD / (1 - STABLE_LEG_MIN_OUT_BPS / 10_000)) && MIN_VALUE_LEG_USD >= 6,
+      String(MIN_VALUE_LEG_USD),
+    )
+    check(
+      'min leg: a leg AT the floor clears parity, a leg below it cannot (the arithmetic the guard applies)',
+      MIN_VALUE_LEG_USD - LIFI_LEG_FLAT_USD >= MIN_VALUE_LEG_USD * (STABLE_LEG_MIN_OUT_BPS / 10_000) &&
+        3 - LIFI_LEG_FLAT_USD < 3 * (STABLE_LEG_MIN_OUT_BPS / 10_000),
+    )
+    check(
+      'min leg: fundingNeedUsd floors the VALUE portion, and the gas leg rides on top of it',
+      fundingNeedUsd(1, false) >= MIN_VALUE_LEG_USD && fundingNeedUsd(1, true) >= MIN_VALUE_LEG_USD + GAS_LEG_USD,
+      `${fundingNeedUsd(1, false)} / ${fundingNeedUsd(1, true)}`,
+    )
+    check(
+      'min leg: a leg big enough on its own is NOT inflated (the flagship $12 buy is untouched)',
+      fundingNeedUsd(12, true) === 14.5 && fundingNeedUsd(50, false) === 52,
+      `${fundingNeedUsd(12, true)} / ${fundingNeedUsd(50, false)}`,
+    )
+    // The exact dead chip from the incident, at the exact size.
+    check(
+      'min leg: the $1.5 chip that died on step 1 is never offered again',
+      planRobinhoodFundingChips({ origins: [{ chainId: 8453, word: 'Base', token: 'USDC', usd: 20, gasEth: 0.01 }], needUsd: 1.5, gasIncluded: false, followup: '' }) === null,
+    )
+    check(
+      'min leg: every chip offered clears the floor on its own value portion (half/all included)',
+      (planRobinhoodFundingChips({ origins: [{ chainId: 8453, word: 'Base', token: 'USDC', usd: 40, gasEth: 0.01 }], needUsd: fundingNeedUsd(1, true), gasIncluded: true, followup: '' }) ?? []).every((c) => {
+        const f = parseRobinhoodFunding(c.resume.split(', then ')[0])
+        return !!f && fillableLeg(f.fundUsd, f.gasIncluded)
+      }),
+    )
+    // A fillable TOTAL split into unfillable halves is the same dead offer,
+    // twice — each leg pays the flat cost separately.
+    check(
+      'min leg: a combine whose legs fall under the floor is refused, not split',
+      planRobinhoodFundingChips({
+        origins: [
+          { chainId: 8453, word: 'Base', token: 'USDC', usd: 10, gasEth: 0.01 },
+          { chainId: 1, word: 'Ethereum', token: 'USDC', usd: 5, gasEth: 0.01 },
+        ],
+        needUsd: 14,
+        gasIncluded: false,
+        followup: '',
+      }) === null,
+    )
+    check(
+      'min leg: a combine whose legs BOTH clear the floor still compiles',
+      (() => {
+        const c = planRobinhoodFundingChips({
+          origins: [
+            { chainId: 8453, word: 'Base', token: 'USDC', usd: 12, gasEth: 0.01 },
+            { chainId: 1, word: 'Ethereum', token: 'USDC', usd: 12, gasEth: 0.01 },
+          ],
+          needUsd: 22,
+          gasIncluded: false,
+          followup: '',
+        })
+        return !!c && c.length > 0 && c[0].resume.split(', then ').every((seg) => { const f = parseRobinhoodFunding(seg); return !!f && fillableLeg(f.fundUsd, f.gasIncluded) })
+      })(),
+    )
+    check(
+      'min leg: the downsize never counter-offers a buy the floor would silently inflate',
+      planDownsizedRobinhoodBuy({ scan: { origins: [{ chainId: 8453, word: 'Base', token: 'USDC', usd: 6, gasEth: 0.01 }] }, buyUsd: 25, holdingUsd: 0, includeGas: false, buySym: 'AAPL', acquiring: false }) === null,
+    )
+    check(
+      'min leg: the note says the flat cost out loud below the floor, and stays silent above it',
+      (minLegNote(1) ?? '').includes(String(MIN_VALUE_LEG_USD)) && minLegNote(50) === null,
+      String(minLegNote(1)),
+    )
+
     const convertOrigin: FundingOrigin = { chainId: 8453, word: 'Base', token: 'USDC', usd: 20, gasEth: 0.01 }
     const convertChips = planRobinhoodFundingChips({ origins: [convertOrigin], needUsd: fundingNeedUsd(1, true), gasIncluded: true, followup: '' })
     check(
@@ -6566,24 +6643,27 @@ async function main() {
     // The chip planner: multi-origin ranking, and every resume string is
     // the contract — each must round-trip through compileJobAsk.
     const O = (chainId: number, word: string, usd: number, gasEth = 0.01, token = 'USDC'): FundingOrigin => ({ chainId, word, token, usd, gasEth })
-    const chipOrigins = [O(1, 'Ethereum', 15), O(8453, 'Base', 3)]
-    const chips = planRobinhoodFundingChips({ origins: chipOrigins, needUsd: 7, gasIncluded: true, followup: 'buy $5 of NVDA' })
+    // Sizes sit above MIN_VALUE_LEG_USD throughout: a sub-floor plan is
+    // refused outright now (it could never fill), so a fixture under it
+    // would test the floor instead of the shape it's here to guard.
+    const chipOrigins = [O(1, 'Ethereum', 30), O(8453, 'Base', 6)]
+    const chips = planRobinhoodFundingChips({ origins: chipOrigins, needUsd: 13, gasIncluded: true, followup: 'buy $5 of NVDA' })
     check(
       'funding chips: richest covering origin leads and every resume compiles',
-      !!chips && chips.length >= 2 && /Ethereum/.test(chips[0].label) && /~\$7/.test(chips[0].label) &&
+      !!chips && chips.length >= 2 && /Ethereum/.test(chips[0].label) && /~\$13/.test(chips[0].label) &&
         chips.every((c) => {
           const j = compileJobAsk(c.resume)
           return !!j && !('problem' in j)
         }),
       JSON.stringify(chips),
     )
-    const altChips = planRobinhoodFundingChips({ origins: [O(8453, 'Base', 20), O(1, 'Ethereum', 10)], needUsd: 7, gasIncluded: false, followup: 'buy $5 of NVDA' })
+    const altChips = planRobinhoodFundingChips({ origins: [O(8453, 'Base', 30), O(1, 'Ethereum', 20)], needUsd: 13, gasIncluded: false, followup: 'buy $5 of NVDA' })
     check(
       'funding chips: a second covering origin gets an "instead" chip',
       !!altChips && altChips.some((c) => /Use Ethereum instead/.test(c.label)),
       JSON.stringify(altChips),
     )
-    const comboChips = planRobinhoodFundingChips({ origins: [O(1, 'Ethereum', 5), O(8453, 'Base', 4)], needUsd: 8.5, gasIncluded: true, followup: 'buy $5 of NVDA' })
+    const comboChips = planRobinhoodFundingChips({ origins: [O(1, 'Ethereum', 12), O(8453, 'Base', 10)], needUsd: 21, gasIncluded: true, followup: 'buy $5 of NVDA' })
     const comboChipJob = comboChips ? compileJobAsk(comboChips[0].resume) : null
     check(
       'funding chips: no single origin covers → one combined chip that compiles (gas on leg 1)',
@@ -6597,13 +6677,13 @@ async function main() {
     check('funding chips: the whole wallet short → null (caller writes the honest refusal)', planRobinhoodFundingChips({ origins: [O(1, 'Ethereum', 3)], needUsd: 12, gasIncluded: true, followup: '' }) === null)
     // The 10× sanity cap (live 2026-07-17: a whale scan offered a $7.5k
     // half-balance chip against a $7 need).
-    const whaleChips = planRobinhoodFundingChips({ origins: [O(8453, 'Base', 15112), O(1, 'Ethereum', 142)], needUsd: 7, gasIncluded: true, followup: 'buy $5 of NVDA' })
+    const whaleChips = planRobinhoodFundingChips({ origins: [O(8453, 'Base', 15112), O(1, 'Ethereum', 142)], needUsd: 13, gasIncluded: true, followup: 'buy $5 of NVDA' })
     check(
       'funding chips: a whale balance skips half/all (10× cap) but keeps the alternative origin',
       !!whaleChips && !whaleChips.some((c) => /Half|All/.test(c.label)) && whaleChips.some((c) => /Use Ethereum instead/.test(c.label)),
       JSON.stringify(whaleChips),
     )
-    const bridgeOnlyChips = planRobinhoodFundingChips({ origins: chipOrigins, needUsd: 7, gasIncluded: true, followup: '' })
+    const bridgeOnlyChips = planRobinhoodFundingChips({ origins: chipOrigins, needUsd: 13, gasIncluded: true, followup: '' })
     check(
       'funding chips: bridge-only resumes (no follow-up) still compile as jobs',
       !!bridgeOnlyChips && bridgeOnlyChips.every((c) => {
@@ -6620,7 +6700,7 @@ async function main() {
     // NEAR Intents bridge to Robinhood Chain (a chain NEAR can't reach).
     const covered = planRobinhoodFundingAdvice({
       scan: { origins: chipOrigins, gaslessOrigins: [], allScanned: chipOrigins, failedOrigins: [] },
-      needUsd: 7, gasIncluded: true, followup: 'buy $5 of NVDA',
+      needUsd: 13, gasIncluded: true, followup: 'buy $5 of NVDA',
     })
     check('funding advice: signable USDC covers → the chips outcome (unchanged behavior)', covered.kind === 'chips' && covered.chips.length >= 2)
     const stranded = O(42161, 'Arbitrum', 12, 0)
@@ -6684,12 +6764,12 @@ async function main() {
       JSON.stringify({ downsized, job: downsizedJob && !('problem' in downsizedJob) ? downsizedJob.steps.map((s) => `${s.kind}:${s.builder}`) : downsizedJob }),
     )
     const downsizedAcq = planDownsizedRobinhoodBuy({
-      scan: { origins: [O(8453, 'Base', 10)] }, buyUsd: 50, holdingUsd: 5, includeGas: true, buySym: 'USDG', acquiring: true,
+      scan: { origins: [O(8453, 'Base', 20)] }, buyUsd: 50, holdingUsd: 5, includeGas: true, buySym: 'USDG', acquiring: true,
     })
     const downsizedAcqJob = downsizedAcq ? compileJobAsk(downsizedAcq.chips[0].resume) : null
     check(
       'funding downsize: an acquisition counts the held USDG and compiles bridge-only',
-      !!downsizedAcq && downsizedAcq.buyUsd === 12.5 && /Land \$12\.5 of it instead/.test(downsizedAcq.chips[0].label) &&
+      !!downsizedAcq && downsizedAcq.buyUsd === 22.25 && /Land \$22\.25 of it instead/.test(downsizedAcq.chips[0].label) &&
         !/then buy/.test(downsizedAcq.chips[0].resume) && !!downsizedAcqJob && !('problem' in downsizedAcqJob),
       JSON.stringify(downsizedAcq),
     )
@@ -6706,8 +6786,8 @@ async function main() {
     // carry the "using usdc.e" clause, and every one compiles with the
     // token in BOTH legs' params (the gas leg sells the same origin token —
     // a USDC.e-only wallet has no native USDC to pay the gas leg with).
-    const usdceOrigin = O(42161, 'Arbitrum', 12, 0.01, 'USDC.e')
-    const usdceChips = planRobinhoodFundingChips({ origins: [usdceOrigin], needUsd: 7, gasIncluded: true, followup: 'buy $5 of NVDA' })
+    const usdceOrigin = O(42161, 'Arbitrum', 20, 0.01, 'USDC.e')
+    const usdceChips = planRobinhoodFundingChips({ origins: [usdceOrigin], needUsd: 13, gasIncluded: true, followup: 'buy $5 of NVDA' })
     const usdceJob = usdceChips ? compileJobAsk(usdceChips[0].resume) : null
     check(
       'funding chips: a USDC.e origin is offered, named, and compiles with the token in both legs',
@@ -6781,7 +6861,7 @@ async function main() {
     check(
       'funding path: the lead fund chip draws origin → Robinhood Chain (USDG + gas) → the buy',
       !!leadPath && leadPath.nodes.map((n) => n.title).join(' | ') === 'Ethereum | Robinhood Chain | Buy $5 of NVDA' &&
-        leadPath.nodes[0].detail === '$7 USDC' && leadPath.nodes[1].detail === 'USDG + gas' &&
+        leadPath.nodes[0].detail === '$13 USDC' && leadPath.nodes[1].detail === 'USDG + gas' &&
         leadPath.nodes[2].kind === 'action' && leadPath.arrows.join(' | ') === 'bridge | then',
       JSON.stringify(leadPath),
     )
@@ -6888,21 +6968,28 @@ async function main() {
     // own L1 fee came out of the keep-back leg 2 re-checks in full, and the
     // job died mid-flight with $1.5 already bridged. A gas-included plan may
     // only promise an ETH row's capacity MINUS the per-chain headroom.
-    const ethTight = O(1, 'Ethereum', 8, 0.0063, 'ETH')
+    // Sized so the HEADROOM is what decides: the need clears the parity
+    // floor either way, and only the $1 mainnet two-leg keep-back separates
+    // the gas-included null from the gas-free offer.
+    const ethTight = O(1, 'Ethereum', 11, 0.0063, 'ETH')
     check(
       'funding chips: a gas-included plan never promises an ETH row\'s whole movable balance (two legs, one balance)',
-      planRobinhoodFundingChips({ origins: [ethTight], needUsd: 8, gasIncluded: true, followup: 'buy $6.25 of AAPL' }) === null,
+      planRobinhoodFundingChips({ origins: [ethTight], needUsd: 11, gasIncluded: true, followup: 'buy $8.65 of AAPL' }) === null,
     )
     check(
       'funding chips: the same ETH row still covers a single-leg (gas-free) plan at full size',
-      planRobinhoodFundingChips({ origins: [ethTight], needUsd: 8, gasIncluded: false, followup: 'buy $6.25 of AAPL' }) !== null,
+      planRobinhoodFundingChips({ origins: [ethTight], needUsd: 11, gasIncluded: false, followup: 'buy $8.65 of AAPL' }) !== null,
     )
+    // The counter-offer this wallet used to get was a ~$7 plan — under the
+    // parity floor, i.e. exactly the chip that compiled and died on step 1
+    // (live 2026-09-03). Once the gas leg and the $1 keep-back come out of
+    // an $11 ETH row there is no fillable bridge left, so the honest
+    // refusal (which NAMES the flat cost) is the right answer, not a
+    // smaller number that can't clear either.
     const ethDownsized = planDownsizedRobinhoodBuy({ scan: { origins: [ethTight] }, buyUsd: 12, holdingUsd: 0, includeGas: true, buySym: 'AAPL', acquiring: false })
-    const ethDownJob = ethDownsized ? compileJobAsk(ethDownsized.chips[0].resume) : null
     check(
-      'funding downsize: the live wallet shape ($8 Ethereum ETH, gas leg) sizes under the headroom and compiles',
-      !!ethDownsized && ethDownsized.needUsd <= 7 && ethDownsized.buyUsd <= 5.25 &&
-        !!ethDownJob && !('problem' in ethDownJob),
+      'funding downsize: a wallet whose remaining capacity is under the parity floor gets the refusal, not a dead counter-offer',
+      ethDownsized === null,
       JSON.stringify(ethDownsized),
     )
     const ethAllChips = planRobinhoodFundingChips({ origins: [O(8453, 'Base', 20, 0.011, 'ETH')], needUsd: 13.5, gasIncluded: true, followup: 'buy $12 of AAPL' })
