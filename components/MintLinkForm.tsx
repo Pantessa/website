@@ -21,7 +21,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
-import { Check, ChevronDown, Copy, Plus, Settings2 } from 'lucide-react'
+import { Check, ChevronDown, Copy, FlaskConical, Plus, Settings2 } from 'lucide-react'
 import { STARTER_ASKS, useTypedAsk } from '@/components/typed-asks'
 import { MINTABLE_MCPS, composeMcps } from '@/lib/intent-links'
 import { getProtocolMark } from '@/components/protocol-marks'
@@ -213,6 +213,13 @@ export function MintLinkForm({
 
   // Where a guest's sign-in lands: the dashboard studio with everything they
   // just wrote re-lit through the existing query-prefill contract.
+  // "Test it out": the ask + the EXACT dapp set the link will carry, opened
+  // as a normal chat. Same ?prompt= + ?mcps= handoff the landing's examples
+  // use, so the rehearsal runs the same working set a visitor's /i page
+  // composes. Prefill only — a URL never fires a turn (#586) — and it opens
+  // in a new tab so the stage you just composed is still here when you come
+  // back to press Mint.
+  const testHref = `/chat?prompt=${encodeURIComponent(ask.trim())}${picks.length ? `&mcps=${encodeURIComponent(picks.join(','))}` : ''}`
   const handoffHref = `/dashboard/links?ask=${encodeURIComponent(ask.trim())}${picks.length ? `&mcps=${encodeURIComponent(picks.join(','))}` : ''}`
 
   // ── The share moment (inline) ──────────────────────────────────────────────
@@ -428,6 +435,19 @@ export function MintLinkForm({
           >
             <Plus className="w-4 h-4" /> {minting ? 'Minting…' : 'Mint this link'}
           </button>
+        )}
+        {/* Run it before you commit to it. Nothing mints, nothing is
+            shared — it is the same ask, on the same dapps, in a chat. */}
+        {askReady && (
+          <a
+            href={testHref}
+            target="_blank"
+            rel="noopener noreferrer"
+            title="Open this ask in a chat (new tab) — see it run before you mint it"
+            className="btn btn--ghost inline-flex items-center gap-1.5 text-[13px]"
+          >
+            <FlaskConical className="w-4 h-4" /> Test it out
+          </a>
         )}
         <span className="text-[12px] text-[color:var(--muted-2)]">
           Half of Pantessa&apos;s 0.20% fee on every conversion is yours.
