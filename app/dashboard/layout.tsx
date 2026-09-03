@@ -64,7 +64,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   return (
     <div className="dashshell">
       {/* The shared spine — same component chat mounts, dashboard flavor:
-          tab icons are shortcuts into chat, DASH wears the active state. */}
+          tab icons are shortcuts into chat, SETTINGS wears the active state. */}
       <AppSpine surface="dashboard" />
       <div className="dash">
         {/* Desktop: persistent left rail — sections up top, account pinned to

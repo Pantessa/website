@@ -4,6 +4,7 @@ import Footer from '@/components/Footer'
 import ActivityOverview from '@/components/ActivityOverview'
 import IntentLinksBoard from '@/components/IntentLinksBoard'
 import SignInFlowLink from '@/components/SignInFlowLink'
+import { LINKS_STUDIO_HREF } from '@/lib/links-href'
 import LiveRoutingFeed from '@/components/LiveRoutingFeed'
 import { LinksDaily } from '@/components/LazyCharts'
 import { linksBoard, feeSummary, linkDailySeries } from '@/lib/links-board'
@@ -107,7 +108,7 @@ async function LinkEconomy() {
       <p className="mono text-[11px] text-[color:var(--muted-2)] mt-3">
         Dollars are guardrail-priced signed notional — the same source as the figures above. Every
         row is a live link.{' '}
-        <SignInFlowLink href="/dashboard/links" className="text-[color:var(--accent)] hover:underline underline-offset-2">
+        <SignInFlowLink href={LINKS_STUDIO_HREF} className="text-[color:var(--accent)] hover:underline underline-offset-2">
           Mint yours
         </SignInFlowLink>
         .

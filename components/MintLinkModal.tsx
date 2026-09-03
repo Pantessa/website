@@ -3,15 +3,16 @@
 // "Mint a link" from inside the app — the same MintLinkForm the dashboard
 // composes, in a modal the chat rail can open. After a successful mint the
 // modal becomes the share moment: the /i URL with copy + tweet, and the door
-// to the full funnel. Rendered through a portal — the rail animates width
-// with overflow hidden, which would clip a fixed child.
+// to the full funnel — which is the LINKS main screen one flip away, not a
+// page on the dashboard. Rendered through a portal — the rail animates
+// width with overflow hidden, which would clip a fixed child.
 
 import { useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Check, Copy, Link2, X } from 'lucide-react'
-import Link from 'next/link'
 import { MintLinkForm } from '@/components/MintLinkForm'
+import { useYeetfulStore } from '@/lib/store'
 import { absoluteUrl } from '@/lib/site-url'
 
 interface Minted {
@@ -36,6 +37,7 @@ export default function MintLinkModal({
 }) {
   const [minted, setMinted] = useState<Minted | null>(null)
   const [copied, setCopied] = useState(false)
+  const { setMainView } = useYeetfulStore()
 
   const close = () => {
     setMinted(null)
@@ -122,12 +124,16 @@ export default function MintLinkModal({
                     >
                       tweet it
                     </a>
-                    <Link
-                      href="/dashboard/links"
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setMainView('links')
+                        close()
+                      }}
                       className="mono text-[12px] text-[color:var(--muted)] hover:text-[color:var(--fg)] underline"
                     >
                       watch the funnel
-                    </Link>
+                    </button>
                     <button
                       type="button"
                       onClick={() => setMinted(null)}

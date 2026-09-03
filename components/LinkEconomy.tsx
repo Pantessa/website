@@ -10,6 +10,7 @@
 // The section is a server component: nothing here needs a client bundle.
 
 import Link from 'next/link'
+import { LINKS_STUDIO_HREF } from '@/lib/links-href'
 import HouseLinkChip from '@/components/HouseLinkChip'
 import { HOUSE_LINKS } from '@/lib/house-links'
 
@@ -54,7 +55,7 @@ export default function LinkEconomy() {
           </div>
 
           <div className="spread__ctas">
-            <Link href="/dashboard/links" className="btn btn--solid text-[13px]">
+            <Link href={LINKS_STUDIO_HREF} className="btn btn--solid text-[13px]">
               Mint yours
             </Link>
             <Link href="/links" className="btn btn--ghost text-[13px]">

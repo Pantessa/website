@@ -18,6 +18,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
+import { linksStudioHref } from '@/lib/links-href'
 import { useAccount, useSignMessage } from 'wagmi'
 import { declineCard } from '@/lib/decline-client'
 import { useConnectModal } from '@rainbow-me/rainbowkit'
@@ -313,7 +314,7 @@ export default function IntentRuntime({
   // link" opens the mint board prefilled with THIS ask + set (remixing is
   // the loop); SignInFlowLink gives guests the unified sign-in door with
   // redirectTo, per the sign-in UX contract.
-  const mintHref = `/dashboard/links?ask=${encodeURIComponent(ask.slice(0, 400))}${mcps ? `&mcps=${encodeURIComponent(mcps)}` : ''}`
+  const mintHref = linksStudioHref({ ask, mcps: mcps || undefined })
   const chipClass =
     'flex items-center gap-1.5 px-2.5 min-h-[32px] rounded-lg border bg-[var(--surf-1)] border-[var(--line)] text-[color:var(--muted)] hover:text-white hover:border-[var(--line-2)] transition-colors mono text-[11px] font-medium whitespace-nowrap'
 

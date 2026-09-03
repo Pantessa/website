@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
+import { LINKS_STUDIO_HREF } from '@/lib/links-href'
 import { DOCS_PAGES, docsJsonLd, docsUrl } from '@/lib/docs'
 
 const PAGE = DOCS_PAGES.find((p) => p.slug === 'links')!
@@ -32,7 +33,7 @@ export default function LinksDocsPage() {
         <h2>Mint one</h2>
         <p>
           Three ways, all landing on{' '}
-          <Link href="/dashboard/links">Dashboard · Intent links</Link>:
+          <Link href={LINKS_STUDIO_HREF}>the links studio (the app&apos;s LINKS tab)</Link>:
         </p>
         <ul>
           <li>

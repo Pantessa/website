@@ -3,7 +3,7 @@
 // The app spine: the product's constant across chat and dashboard. On
 // desktop (≥lg) it's a persistent icon COLUMN — brand seat on top, the
 // workspace destinations (new chat, MCPs, jobs, links, history) as labeled
-// icons, the way out to the dashboard pinned at the bottom. Below lg the
+// icons, the way out to settings (the dashboard) pinned at the bottom. Below lg the
 // SAME destinations render as a fixed bottom TAB BAR — the phone-native
 // shape of the same spine. One component, one badge poll, two postures.
 //
@@ -19,7 +19,7 @@
 import { useEffect } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { Boxes, LayoutDashboard, Link2, ListChecks, MessageSquare, Plus, Users } from 'lucide-react'
+import { Boxes, Link2, ListChecks, MessageSquare, Plus, Settings, Users } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useYeetfulStore, type RailTab } from '@/lib/store'
 import { useRunningWork } from '@/lib/use-running-work'
@@ -212,11 +212,13 @@ export default function AppSpine({ surface = 'chat' }: { surface?: 'chat' | 'das
 
         <div className="flex-1" />
 
-        {/* The labeled way out — on the dashboard it wears the active state. */}
+        {/* The labeled way out. The dashboard is settings now — the links
+            studio moved into the spine's LINKS tab — so the seat says so and
+            wears a gear. On the dashboard it wears the active state. */}
         <Link
           href="/dashboard"
-          title="Pantessa dashboard — links, keys, billing"
-          aria-label="Pantessa dashboard"
+          title="Settings — creator page, keys, billing, account"
+          aria-label="Settings"
           className={cn(
             'relative w-12 flex flex-col items-center gap-0.5 py-1.5 mb-2 rounded-lg transition-colors',
             onDashboard
@@ -227,8 +229,8 @@ export default function AppSpine({ surface = 'chat' }: { surface?: 'chat' | 'das
           {onDashboard && (
             <span aria-hidden className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-6 rounded-full bg-[var(--accent)]" />
           )}
-          <LayoutDashboard className="w-[18px] h-[18px]" />
-          <span className="mono text-[9px] font-medium tracking-wide">DASH</span>
+          <Settings className="w-[18px] h-[18px]" />
+          <span className="mono text-[9px] font-medium tracking-wide">SETTINGS</span>
         </Link>
       </aside>
 
@@ -280,8 +282,8 @@ export default function AppSpine({ surface = 'chat' }: { surface?: 'chat' | 'das
         })}
         <Link
           href="/dashboard"
-          title="Pantessa dashboard — links, keys, billing"
-          aria-label="Pantessa dashboard"
+          title="Settings — creator page, keys, billing, account"
+          aria-label="Settings"
           className={cn(
             'relative flex-1 min-h-[48px] flex flex-col items-center justify-center gap-0.5 transition-colors',
             onDashboard ? 'text-white' : 'text-[color:var(--muted)]',
@@ -290,8 +292,8 @@ export default function AppSpine({ surface = 'chat' }: { surface?: 'chat' | 'das
           {onDashboard && (
             <span aria-hidden className="absolute top-0 left-1/2 -translate-x-1/2 w-6 h-0.5 rounded-full bg-[var(--accent)]" />
           )}
-          <LayoutDashboard className="w-[18px] h-[18px]" />
-          <span className="mono text-[9px] font-medium tracking-wide">DASH</span>
+          <Settings className="w-[18px] h-[18px]" />
+          <span className="mono text-[9px] font-medium tracking-wide">SETTINGS</span>
         </Link>
       </nav>
     </>

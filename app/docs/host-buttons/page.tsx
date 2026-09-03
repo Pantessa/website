@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
+import { LINKS_STUDIO_HREF } from '@/lib/links-href'
 import { DOCS_PAGES, docsJsonLd, docsUrl } from '@/lib/docs'
 
 const PAGE = DOCS_PAGES.find((p) => p.slug === 'host-buttons')!
@@ -58,7 +59,7 @@ export default function HostButtonsDocsPage() {
         <h2>Tracking &amp; earnings</h2>
         <p>
           The button&apos;s funnel (opens → connects → builds → signs → dollars) lives on{' '}
-          <Link href="/dashboard/links">your links dashboard</Link>, and fee-bearing conversions
+          <Link href={LINKS_STUDIO_HREF}>your links studio</Link>, and fee-bearing conversions
           accrue <Link href="/docs/creator-earnings">creator earnings</Link> like any other
           link.
         </p>

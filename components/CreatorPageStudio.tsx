@@ -1,7 +1,7 @@
 'use client'
 
 // The full customize surface for /l/<handle> — one place to find every knob
-// the creator page has, because the compact panel on /dashboard/links buried
+// the creator page has, because the compact panel in the links studio buried
 // them in a single row. Three steps, in the order a creator actually cares:
 // name it, color it, then (optionally) put your own logo on it.
 //
@@ -15,6 +15,7 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
+import { LINKS_STUDIO_HREF } from '@/lib/links-href'
 import { BRAND_PRESETS, presetFor } from '@/lib/brand-presets'
 import { useCreatorPage } from '@/lib/creator-page'
 import { absoluteUrl } from '@/lib/site-url'
@@ -300,7 +301,7 @@ export default function CreatorPageStudio() {
             reset to the house look
           </button>
           <Link
-            href="/dashboard/links"
+            href={LINKS_STUDIO_HREF}
             className="text-[12px] text-[color:var(--muted)] underline decoration-dotted underline-offset-2 hover:text-[color:var(--fg)]"
           >
             Mint a link →

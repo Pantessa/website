@@ -81,9 +81,16 @@ function PublicBoard() {
 export default function LinksWorkspace() {
   const { address, status } = useSession()
 
+  // The chat→mint handoff (?ask= + ?mcps=), which /dashboard/links used to
+  // own and now redirects here with. Only honoured when an ask is actually
+  // present: /chat carries its own ?mcps= for the working set, and a bare
+  // one must not pre-light the mint stage's dapp row.
+  const carriesHandoff =
+    typeof window !== 'undefined' && !!new URLSearchParams(window.location.search).get('ask')
+
   // Hold the flip until the session settles — `address` is null while
   // status === 'loading', and rendering the public board for a beat before
   // swapping to the studio reads as a glitch.
   if (status === 'loading') return <ChatLoader inline />
-  return address ? <LinksStudioView inApp /> : <PublicBoard />
+  return address ? <LinksStudioView inApp readQueryPrefill={carriesHandoff} /> : <PublicBoard />
 }

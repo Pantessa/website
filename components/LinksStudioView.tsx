@@ -1,14 +1,15 @@
 'use client'
 
-// The creator's links studio — ONE markup source for /dashboard/links and
-// the chat surface's LINKS destination (LinksWorkspace), so the two can
-// never drift. It is the creator's own page: name it, mint into it, watch
-// the funnel, claim the earnings.
+// The creator's links studio — THE link center. It is the app's LINKS
+// destination (AppSpine → LinksWorkspace), which is now the only place the
+// product mints from: name your page, mint into it, watch the funnel, claim
+// the earnings. It used to live on /dashboard/links as well, and minting in
+// two surfaces meant every CTA had to pick one; that route now redirects
+// here (lib/links-href), and the dashboard is settings.
 //
-// The public leaderboard (LinksBoardView) is still one tap away from both
-// surfaces, but it is not what "my links" should open onto — a creator
-// signing in to check their own funnel was landing on everyone else's
-// board instead.
+// The public leaderboard (LinksBoardView) is still one tap away, but it is
+// not what "my links" should open onto — a creator signing in to check their
+// own funnel was landing on everyone else's board instead.
 
 import Link from 'next/link'
 import { CreatorPagePanel } from '@/components/CreatorPagePanel'

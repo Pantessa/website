@@ -3,8 +3,8 @@
 // A flow-preserving CTA: renders as a plain link when the visitor is signed
 // in, and as the unified sign-in modal (wallet / Google / email) when they
 // are not — with redirectTo set to the link's own target, so completing
-// sign-in lands the user INSIDE the flow they tapped ("Mint yours" →
-// /dashboard/links), never bounced to the landing page by the dashboard's
+// sign-in lands the user INSIDE the flow they tapped ("Mint yours" → the
+// links studio), never bounced to the landing page by the dashboard's
 // signed-out redirect. The sign-in UX contract (CLAUDE.md): flow CTAs never
 // open raw RainbowKit and never strand a user mid-task.
 

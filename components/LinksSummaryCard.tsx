@@ -5,10 +5,11 @@
 // earned (half the 0.20% fee on fee-bearing conversions) — plus the links
 // themselves as a paginated copy-paste table (newest first, one tap to put
 // the full /i URL on the clipboard). Reads the same owner API as
-// /dashboard/links, so the numbers can't drift. Fail-soft: any fetch
+// the links studio, so the numbers can't drift. Fail-soft: any fetch
 // problem renders the mint door alone rather than an error.
 
 import Link from 'next/link'
+import { LINKS_STUDIO_HREF, linksStudioHref } from '@/lib/links-href'
 import { useEffect, useState } from 'react'
 import { Check, Copy, Link2, Plus } from 'lucide-react'
 import { Card } from '@/lib/dashboard-ui'
@@ -117,13 +118,13 @@ export default function LinksSummaryCard() {
           <p className="text-xs text-[color:var(--muted-2)] mt-0.5">
             A sentence anyone can act on — you keep half of Pantessa&apos;s 0.20% fee on the
             conversions your links produce.{' '}
-            <Link href="/dashboard/links" className="underline underline-offset-2 decoration-dotted hover:text-white">
-              Open Intent links →
+            <Link href={LINKS_STUDIO_HREF} className="underline underline-offset-2 decoration-dotted hover:text-white">
+              Open your links →
             </Link>
           </p>
         </div>
         <Link
-          href={`/dashboard/links?ask=${encodeURIComponent('Buy $5 of AAPL')}`}
+          href={linksStudioHref({ ask: 'Buy $5 of AAPL' })}
           className="flex-shrink-0 inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 max-lg:min-h-11 rounded-lg border border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/10 transition-colors"
         >
           <Plus className="w-3.5 h-3.5" /> Mint a link
@@ -149,7 +150,7 @@ export default function LinksSummaryCard() {
               {!me.brand && (
                 <>
                   {' · '}
-                  <Link href="/dashboard/links" className="underline underline-offset-2 decoration-dotted hover:text-white">
+                  <Link href={LINKS_STUDIO_HREF} className="underline underline-offset-2 decoration-dotted hover:text-white">
                     brand it with your site
                   </Link>
                 </>
@@ -187,7 +188,7 @@ export default function LinksSummaryCard() {
               Name a public page — <span className="mono">/l/your-name</span> — and every link you mint lives on it.
             </span>
             <Link
-              href="/dashboard/links"
+              href={LINKS_STUDIO_HREF}
               className="ml-auto text-[12px] font-medium text-[color:var(--accent)] hover:underline underline-offset-2"
             >
               Claim your page →
@@ -242,7 +243,7 @@ export default function LinksSummaryCard() {
       )}
 
       {/* The links themselves, newest first — copy-paste central. Same funnel
-          columns as /dashboard/links, slimmed to what matters at a glance. */}
+          columns as the links studio, slimmed to what matters at a glance. */}
       {live.length > 0 &&
         (() => {
           const pages = Math.max(1, Math.ceil(live.length / PAGE_SIZE))

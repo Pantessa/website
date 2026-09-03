@@ -1246,12 +1246,12 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
       {!embedded && !simple && (
       <div className="flex-shrink-0 px-3 py-2.5 border-b border-[var(--line)] flex items-center gap-2">
         {/* Home mark — MOBILE only now: on desktop the spine's brand seat +
-            DASH item carry both directions permanently. */}
+            SETTINGS item carry both directions permanently. */}
         {showAppChrome && (
           <Link
             href="/dashboard"
-            aria-label="Pantessa dashboard — links, keys, billing"
-            title="Pantessa dashboard — links, keys, billing"
+            aria-label="Pantessa settings — creator page, keys, billing"
+            title="Pantessa settings — creator page, keys, billing"
             className="lg:hidden flex-shrink-0 grid place-items-center w-10 h-10 md:w-8 md:h-8 rounded-lg text-white hover:bg-[var(--surf-1)] transition-colors"
           >
             <YeetfulMark size={17} />

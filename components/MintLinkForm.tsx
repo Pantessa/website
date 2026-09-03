@@ -17,7 +17,7 @@
 // (/links) render the stage signed-out — the mint press becomes the unified
 // sign-in door (rule 6: CreateAccountButton / connectAndSignIn, never raw
 // RainbowKit) with redirectTo carrying the typed ask + picks back into
-// /dashboard/links, where the query prefill re-lights everything.
+// the links studio, where the query prefill re-lights everything.
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
@@ -30,6 +30,7 @@ import { useSession } from '@/lib/session'
 import { cdpEnabled } from '@/lib/cdp-embedded'
 import CreateAccountButton from '@/components/CreateAccountButton'
 import { absoluteUrl } from '@/lib/site-url'
+import { LINKS_STUDIO_HREF, linksStudioHref } from '@/lib/links-href'
 
 /** The vendored brand glyph for a mintable MCP, sized for a card pill.
  *  Marks render in `currentColor`, so they inherit the pill's ink. */
@@ -211,7 +212,7 @@ export function MintLinkForm({
 
   const error = mintError ?? externalError ?? null
 
-  // Where a guest's sign-in lands: the dashboard studio with everything they
+  // Where a guest's sign-in lands: the links studio with everything they
   // just wrote re-lit through the existing query-prefill contract.
   // "Test it out": the ask + the EXACT dapp set the link will carry, opened
   // as a normal chat. Same ?prompt= + ?mcps= handoff the landing's examples
@@ -220,7 +221,7 @@ export function MintLinkForm({
   // in a new tab so the stage you just composed is still here when you come
   // back to press Mint.
   const testHref = `/chat?prompt=${encodeURIComponent(ask.trim())}${picks.length ? `&mcps=${encodeURIComponent(picks.join(','))}` : ''}`
-  const handoffHref = `/dashboard/links?ask=${encodeURIComponent(ask.trim())}${picks.length ? `&mcps=${encodeURIComponent(picks.join(','))}` : ''}`
+  const handoffHref = linksStudioHref({ ask, mcps: picks })
 
   // ── The share moment (inline) ──────────────────────────────────────────────
   if (minted) {
@@ -263,7 +264,7 @@ export function MintLinkForm({
             tweet it
           </a>
           <Link
-            href="/dashboard/links"
+            href={LINKS_STUDIO_HREF}
             className="mono text-[12px] text-[color:var(--muted)] hover:text-[color:var(--fg)] underline"
           >
             watch the funnel
