@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import { SITE } from '@/lib/docs'
+import { EXPLAINER_VIDEO, explainerEmbedUrl, explainerPosterUrl, explainerWatchUrl, isoDuration } from '@/lib/explainer-video'
 import RosterHome from '@/components/RosterHome'
 import LinksHero from '@/components/LinksHero'
 import LandingMotion from '@/components/LandingMotion'
@@ -77,6 +78,20 @@ const JSON_LD = JSON.stringify([
       'Short links that carry a plain-English ask — buy a tokenized stock, stake ETH, set a recurring buy, protect a position. Opening one connects the visitor’s own wallet; Pantessa compiles the ask into guarded on-chain transactions (deterministic builders, fail-closed checks, cross-chain funding included), the visitor signs, and every move is receipted. Creators earn half of Pantessa’s 0.20% conversion fee; the chat doubles as the link builder and embeds on any site.',
     offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD' },
     provider: { '@type': 'Organization', name: 'Pantessa', url: SITE },
+  },
+  // The explainer under the spread — the same record the facade renders
+  // (lib/explainer-video), so search results and the page can't disagree.
+  {
+    '@context': 'https://schema.org',
+    '@type': 'VideoObject',
+    name: EXPLAINER_VIDEO.title,
+    description: EXPLAINER_VIDEO.description,
+    thumbnailUrl: [explainerPosterUrl],
+    uploadDate: EXPLAINER_VIDEO.uploadDate,
+    duration: isoDuration(EXPLAINER_VIDEO.seconds),
+    embedUrl: explainerEmbedUrl,
+    contentUrl: explainerWatchUrl,
+    publisher: { '@type': 'Organization', name: 'Pantessa', url: SITE },
   },
 ])
 

@@ -62,7 +62,7 @@ export default function LandingMotion() {
     // can't get wedged, not the fancier one.
     const pending = [
       ...document.querySelectorAll<HTMLElement>(
-        '.mach__head, .spread__copy, .night__copy, .embeda__head, .trust__head',
+        '.mach__head, .spread__copy, .spread__film, .night__copy, .embeda__head, .trust__head',
       ),
     ].filter((el) => {
       if (el.getBoundingClientRect().top < window.innerHeight) return false

@@ -7,11 +7,13 @@
 // The traffic is pure CSS: each wire carries a short dash whose offset
 // animates, so a packet appears to travel it. No rAF, no JS, no layout work
 // per frame — and the global reduced-motion guard stills every wire at once.
-// The section is a server component: nothing here needs a client bundle.
+// The section stays a server component; its one client child is the
+// explainer's play facade (ExplainerVideo), which needs a pressed state.
 
 import Link from 'next/link'
 import { LINKS_STUDIO_HREF } from '@/lib/links-href'
 import HouseLinkChip from '@/components/HouseLinkChip'
+import ExplainerVideo from '@/components/ExplainerVideo'
 import { HOUSE_LINKS } from '@/lib/house-links'
 
 /** Where a link ends up. The wire to each is drawn from the same origin, so
@@ -125,6 +127,10 @@ export default function LinkEconomy() {
           </dl>
         </div>
       </div>
+
+      {/* The whole section said out loud, then run for real — a facade, so
+          nothing from YouTube loads until someone presses play. */}
+      <ExplainerVideo />
     </section>
   )
 }

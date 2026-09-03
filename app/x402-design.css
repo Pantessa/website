@@ -3611,6 +3611,71 @@
     .spread__out, .spread__back { animation: none; stroke-dasharray: none; stroke-dashoffset: 0; opacity: .3; }
   }
 
+  /* The explainer under the spread (.film) — a facade, not an embed: the
+     poster and a play control are plain markup; the YouTube player mounts
+     on press. The overlay colors are literals, not tokens, on purpose: the
+     poster is a dark screen recording in BOTH themes, so its scrim, type and
+     play control are tuned to the picture, not to the page behind it. */
+  .spread__film { margin: clamp(44px, 6vh, 72px) auto 0; max-width: 980px; }
+  .film__frame {
+    position: relative; aspect-ratio: 16 / 9; border-radius: 18px; overflow: hidden; isolation: isolate;
+    background: #0b0f0d; border: 1px solid var(--line-2);
+    box-shadow:
+      0 40px 90px -36px color-mix(in srgb, var(--accent) 38%, transparent),
+      0 24px 60px -30px rgba(0, 0, 0, .55);
+  }
+  .film__player { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; display: block; background: #000; }
+  .film__poster { position: absolute; inset: 0; display: block; color: #fff; cursor: pointer; outline: none; }
+  .film__img { object-fit: cover; transition: transform .9s cubic-bezier(.2,.8,.2,1); }
+  .film__poster:hover .film__img,
+  .film__poster:focus-visible .film__img { transform: scale(1.02); }
+  .film__poster:focus-visible::after { content: ''; position: absolute; inset: 0; box-shadow: inset 0 0 0 2px #3ECF8E; pointer-events: none; }
+  /* A dark band over the recording's browser chrome (the least useful 15% of
+     the picture) that the title sits on, and a lighter lift at the foot. */
+  .film__scrim {
+    position: absolute; inset: 0; pointer-events: none;
+    background:
+      linear-gradient(180deg, rgba(4, 8, 6, .9) 0%, rgba(4, 8, 6, .58) 22%, rgba(4, 8, 6, 0) 48%),
+      linear-gradient(0deg, rgba(4, 8, 6, .38) 0%, rgba(4, 8, 6, 0) 28%);
+  }
+  .film__meta {
+    position: absolute; left: clamp(16px, 3%, 30px); top: clamp(14px, 3%, 26px);
+    display: flex; flex-direction: column; gap: 6px; max-width: 70%;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, .55);
+  }
+  .film__kicker { font-size: 10.5px; letter-spacing: .18em; color: #3ECF8E; }
+  .film__title {
+    font-family: var(--font-serif); font-weight: 500; font-optical-sizing: auto;
+    font-size: clamp(17px, 2.3vw, 26px); letter-spacing: -.01em; line-height: 1.1; color: #fff;
+  }
+  .film__play {
+    position: absolute; left: 50%; top: 50%; width: 76px; height: 76px; margin: -38px 0 0 -38px;
+    display: grid; place-items: center; border-radius: 50%;
+    background: #3ECF8E; color: #06110c;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, .45), 0 0 0 10px rgba(62, 207, 142, .14);
+    transition: transform .3s cubic-bezier(.2,.8,.2,1), box-shadow .3s ease;
+  }
+  .film__play svg { margin-left: 3px; }
+  .film__poster:hover .film__play,
+  .film__poster:focus-visible .film__play { transform: scale(1.07); box-shadow: 0 14px 36px rgba(0, 0, 0, .5), 0 0 0 16px rgba(62, 207, 142, .18); }
+  .film__cap {
+    margin: 14px 4px 0; display: flex; justify-content: space-between; align-items: baseline; gap: 8px 24px; flex-wrap: wrap;
+    font-size: 11px; letter-spacing: .02em; line-height: 1.5; color: var(--muted-2); text-wrap: pretty;
+  }
+  .film__cap a { color: var(--muted); text-decoration: none; border-bottom: 1px solid color-mix(in srgb, var(--fg) 18%, transparent); white-space: nowrap; }
+  .film__cap a:hover { color: var(--fg); border-color: var(--fg); }
+  @media (max-width: 640px) {
+    .film__frame { border-radius: 14px; }
+    .film__play { width: 58px; height: 58px; margin: -29px 0 0 -29px; }
+    .film__play svg { width: 22px; height: 22px; }
+    .film__meta { max-width: 82%; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .film__img, .film__play { transition: none; }
+    .film__poster:hover .film__img, .film__poster:focus-visible .film__img { transform: none; }
+    .film__poster:hover .film__play, .film__poster:focus-visible .film__play { transform: none; }
+  }
+
   /* ── THE NIGHT SHIFT (.night) ──────────────────────────────────────────
      Standing intent as a clock that keeps running. The dial loops on one
      normalized progress value from the component; everything here is
@@ -4392,6 +4457,7 @@
   html[data-theme='light'] .night__row { opacity: .5; }
   html[data-theme='light'] .night__row.is-in { opacity: 1; }
   html[data-theme='light'] .spread__back { stroke: #a3720c; }
+  html[data-theme='light'] .film__frame { box-shadow: 0 32px 70px -36px color-mix(in srgb, var(--accent) 30%, transparent), 0 18px 44px -30px rgba(0, 0, 0, .28); }
   /* The chain rows' amber "awaiting / running" state, same story as the rest
      of the golds: tuned for black, washed out on paper. */
   html[data-theme='light'] .chn__row.is-wait .chn__state { color: #a3720c; border-color: color-mix(in srgb, #a3720c 45%, transparent); }
