@@ -23,6 +23,8 @@ interface LinksApi {
     revoked: boolean
     funnel: { open: number; connect: number; built: number; signed: number }
     signedUsd: number
+    /** Creator's accrued half of the fee on this link's fee-bearing signs. */
+    earnedUsd: number
     signsCount: number
   }[]
   earnings: {
@@ -248,20 +250,21 @@ export default function LinksSummaryCard() {
           const rows = live.slice(cur * PAGE_SIZE, (cur + 1) * PAGE_SIZE)
           return (
             <div className="mt-4 overflow-x-auto -mx-1 px-1">
-              <table className="w-full text-sm min-w-[560px]">
+              <table className="w-full text-sm min-w-[640px]">
                 <thead>
                   <tr className="text-left text-[10.5px] uppercase tracking-wider text-[color:var(--muted-2)] mono">
                     <th className="py-1.5 pr-3 font-medium">Link</th>
-                    <th className="py-1.5 pr-3 font-medium text-right">Opens</th>
-                    <th className="py-1.5 pr-3 font-medium text-right">Connects</th>
-                    <th className="py-1.5 pr-3 font-medium text-right">Signed</th>
-                    <th className="py-1.5 pr-0 font-medium text-right">$ moved</th>
+                    <th className="py-1.5 pr-3 font-medium text-right whitespace-nowrap">Opens</th>
+                    <th className="py-1.5 pr-3 font-medium text-right whitespace-nowrap">Connects</th>
+                    <th className="py-1.5 pr-3 font-medium text-right whitespace-nowrap">Signed</th>
+                    <th className="py-1.5 pr-3 font-medium text-right whitespace-nowrap">$ moved</th>
+                    <th className="py-1.5 pr-0 font-medium text-right whitespace-nowrap">Earned</th>
                   </tr>
                 </thead>
                 <tbody className="text-[color:var(--muted)]">
                   {rows.map((l) => (
                     <tr key={l.slug} className="border-t border-[var(--line)]">
-                      <td className="py-2 pr-3 min-w-0">
+                      <td className="py-2 pr-3 w-full max-w-0">
                         <span className="flex items-center gap-1.5 min-w-0">
                           <CopyLinkButton url={l.url} />
                           <a
@@ -280,16 +283,25 @@ export default function LinksSummaryCard() {
                           >
                             {l.url}
                           </Link>
-                          <span className="text-[12.5px] text-[color:var(--fg)] truncate" title={l.ask}>
+                          <span className="text-[12.5px] text-[color:var(--fg)] truncate min-w-0" title={l.ask}>
                             {l.ask}
                           </span>
                         </span>
                       </td>
-                      <td className="py-2 pr-3 text-right mono tabular-nums">{l.funnel.open}</td>
-                      <td className="py-2 pr-3 text-right mono tabular-nums">{l.funnel.connect}</td>
-                      <td className="py-2 pr-3 text-right mono tabular-nums text-white">{l.signsCount || '—'}</td>
-                      <td className="py-2 pr-0 text-right mono tabular-nums text-white">
+                      <td className="py-2 pr-3 text-right mono tabular-nums whitespace-nowrap">{l.funnel.open}</td>
+                      <td className="py-2 pr-3 text-right mono tabular-nums whitespace-nowrap">{l.funnel.connect}</td>
+                      <td className="py-2 pr-3 text-right mono tabular-nums whitespace-nowrap text-white">{l.signsCount || '—'}</td>
+                      <td className="py-2 pr-3 text-right mono tabular-nums whitespace-nowrap text-white">
                         {l.signedUsd > 0 ? usd(l.signedUsd) : '—'}
+                      </td>
+                      {/* What the creator KEPT — moved money that took a
+                          fee-free route earns nothing, and the title says so
+                          rather than leaving a bare dash to read as a bug. */}
+                      <td
+                        className="py-2 pr-0 text-right mono tabular-nums text-[color:var(--accent)]"
+                        title={l.earnedUsd <= 0 && l.signedUsd > 0 ? FEE_FREE_NOTE : undefined}
+                      >
+                        {l.earnedUsd > 0 ? formatEarnedUsd(l.earnedUsd) : '—'}
                       </td>
                     </tr>
                   ))}
