@@ -178,11 +178,11 @@ export const APP_CHAINS: AppChain[] = [
     color: '#ff0420',
     viem: optimism,
     alchemyNet: 'opt-mainnet',
-    // viem's default (mainnet.optimism.io) is a low-rate public endpoint —
-    // same 429 class that hit Base and mainnet, and a throttled read here
-    // makes a funding scan under-report (the failure mode that once hid
-    // $15k on Base). publicnode holds up.
-    rpcUrl: 'https://optimism-rpc.publicnode.com',
+    // NO rpcUrl override: viem's default (mainnet.optimism.io) measured
+    // clean 2026-09-04 — full archive depth, 25 concurrent reads in 0.8s.
+    // The publicnode override that was here first is what broke the initial
+    // live run (see lib/wagmi.ts); the 429 risk it was guarding against is
+    // real on Base/mainnet but was never measured on Optimism.
     words: /\boptim(?:ism|sim|isim)\b/i,
     // Same canonical SwapRouter02 / QuoterV2 addresses as Ethereum and
     // Arbitrum (deployments/10.md); bytecode verified via eth_getCode and a
