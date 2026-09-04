@@ -4108,7 +4108,7 @@ async function prepareSwapTurn(intent: SwapIntent, walletAddress: string | undef
             `🌉 Here's where this stands: ${acquiring ? 'you asked for' : 'the buy needs'} ~$${buyUsd} of ${rhStable.symbol} on ${chain.name} and the wallet holds ~$${holdingUsd.toFixed(2)} there. ` +
             `Across the chains I can bridge from I see: ${advice.copy} — not enough yet for the ~$${needUsd} plan${includeGas ? ' (gas leg included)' : ''}.${floorSuffix} ` +
             (rhFundChip
-              ? `You can add it with a card or bank below — it lands as USDC on Base and I'll bridge it the rest of the way. The preset is a little over the plan so card fees don't leave you short.${inflightSuffix}`
+              ? `You can add it with a card or bank below — it lands as ETH on Base, which covers the gas, and I'll swap and bridge it the rest of the way. The preset is a little over the plan so the card fee and the swap don't leave you short.${inflightSuffix}`
               : `Here's what unlocks it: top up USDC or ETH on Base, Ethereum, or Arbitrum (or ${rhStable.symbol} on ${chain.name}), tell me when it's there, and I'll pick it up from that point — nothing was built or spent in the meantime.${inflightSuffix}`),
           ...(rhFundChip
             ? {

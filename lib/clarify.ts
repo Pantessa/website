@@ -21,10 +21,14 @@
 export interface ClarifyFundAction {
   /** Dollars to preset in the hosted on-ramp. */
   presetFiatUsd: number
-  /** Ticker the on-ramp delivers. */
+  /** Ticker the on-ramp delivers — ETH today, since the wallet being funded
+   *  has no gas and a stable would land unable to move itself. */
   asset: string
-  /** Destination chain — must be one our funding scan can confirm arrival on. */
-  network: 'base' | 'ethereum' | 'arbitrum'
+  /** Destination chain — must be one our funding scan can confirm arrival on
+   *  AND one the provider can deliver to. Mirrors lib/onramp's OnrampNetwork
+   *  (kept as a literal here so clarify stays free of a runtime import; the
+   *  harness pins the two together). */
+  network: 'base' | 'ethereum'
 }
 
 export interface ClarifyOption {
@@ -39,9 +43,14 @@ export interface ClarifyOption {
   fund?: ClarifyFundAction
 }
 
-const FUND_NETWORKS = ['base', 'ethereum', 'arbitrum'] as const
+/** Arbitrum left this list on 2026-09-04 with the switch to Stripe, whose
+ *  destination_network enum has no arbitrum. A chip naming a network the
+ *  provider will reject is a button that fails at their door, so it degrades
+ *  to a plain resume here instead. */
+const FUND_NETWORKS = ['base', 'ethereum'] as const
 /** Ceiling on a preset. A clamp, not a product limit: it exists so a bad
- *  payload can never render a chip offering to charge someone thousands. */
+ *  payload can never render a chip offering to charge someone thousands.
+ *  Mirrors lib/onramp's ONRAMP_MAX_USD; the harness pins them together. */
 const MAX_FUND_USD = 500
 
 /** Narrow an option's fund action, or undefined. Fails closed on anything

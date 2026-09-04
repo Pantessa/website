@@ -4,23 +4,43 @@
 // wallet (and any connected wallet) starts with 0 USDC, so its expense account
 // can't pay an x402 call yet. This surfaces the live USDC-on-Base balance, a
 // low-balance nudge, and the two ways to add funds: receive (QR + address) or
-// buy on Coinbase. The grant's daily cap draws against this balance.
+// buy with a card. The grant's daily cap draws against this balance.
+//
+// The buy path used to be a bare link to pay.coinbase.com. Two things were
+// wrong with it by 2026-09-04: the provider (we moved to Stripe), and the fact
+// that it had quietly stopped working — Coinbase has required a session token
+// since 2025-07-31, so the tokenless URL 302s to a generic /landing page
+// carrying neither the user's address nor an amount. It now goes through our
+// own on-ramp door, which signs a consent naming this wallet and mints a
+// session locked to it.
+//
+// USDC here, not the ETH the chat's fund chip buys: this card exists to top up
+// the balance x402 settles in, and the account it funds is already live rather
+// than empty-and-gasless.
 
 import { useState } from 'react'
-import { useAccount, useReadContract } from 'wagmi'
+import { useAccount, useReadContract, useSignMessage } from 'wagmi'
 import { base } from 'wagmi/chains'
 import { erc20Abi, formatUnits } from 'viem'
 import { QRCodeSVG } from 'qrcode.react'
 import { Card } from '@/lib/dashboard-ui'
-import { Copy, Check, ArrowUpRight, AlertTriangle } from 'lucide-react'
+import { Copy, Check, ArrowUpRight, AlertTriangle, Loader2 } from 'lucide-react'
+import { startOnrampSession } from '@/lib/onramp-client'
 
 // Native USDC on Base (6 decimals) — the token x402 settles in.
 const USDC_BASE = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913' as const
 const LOW_BALANCE_USD = 1
+/** Opening amount for the card purchase. A SUGGESTION, not a cap — Stripe's
+ *  checkout lets the user change it — so it only has to be a sensible first
+ *  number for topping up an expense account, not a computed plan. */
+const TOPUP_PRESET_USD = 25
 
 export default function FundAccountCard() {
   const { address, isConnected } = useAccount()
+  const { signMessageAsync } = useSignMessage()
   const [copied, setCopied] = useState(false)
+  const [buying, setBuying] = useState(false)
+  const [buyError, setBuyError] = useState<string | null>(null)
 
   const { data: raw, isLoading } = useReadContract({
     address: USDC_BASE,
@@ -85,14 +105,32 @@ export default function FundAccountCard() {
             </button>
           </div>
 
-          <a
-            href="https://pay.coinbase.com/buy/select-asset?defaultAsset=USDC&defaultNetwork=base"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="mt-3 inline-flex items-center gap-1.5 text-xs font-medium text-emerald-400 hover:text-emerald-300 transition-colors"
+          {/* Called synchronously off the click — startOnrampSession opens the
+              tab as its first statement, and a popup opened after an await is
+              no longer a user gesture. */}
+          <button
+            onClick={async () => {
+              if (!address || buying) return
+              setBuyError(null)
+              setBuying(true)
+              const res = await startOnrampSession({
+                address,
+                fund: { presetFiatUsd: TOPUP_PRESET_USD, asset: 'USDC', network: 'base' },
+                signMessage: signMessageAsync,
+              })
+              setBuying(false)
+              if (!res.ok) setBuyError(res.error)
+            }}
+            disabled={buying}
+            className="mt-3 inline-flex items-center gap-1.5 text-xs font-medium text-emerald-400 hover:text-emerald-300 disabled:opacity-50 transition-colors"
           >
-            Buy USDC on Coinbase <ArrowUpRight className="w-3.5 h-3.5" />
-          </a>
+            {buying ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
+            Buy USDC with card or bank
+            {buying ? null : <ArrowUpRight className="w-3.5 h-3.5" />}
+          </button>
+          {/* The address + QR above always work, so a closed or region-blocked
+              on-ramp costs the user nothing but this line. */}
+          {buyError && <div className="mt-1.5 text-[11px] text-[color:var(--sell)]">{buyError}</div>}
         </div>
 
         {/* Scan to send from a phone wallet. */}
