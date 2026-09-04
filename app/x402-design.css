@@ -4811,7 +4811,11 @@
     user-select: none;
   }
   .mintstage__quote--lit { color: #f2fbf7; }
-  .mintstage__askbox { position: relative; flex: 1; min-width: 0; margin: 0 2px; }
+  /* the box is a one-cell grid: the mirror (ghost/typed text + the closing
+     quote, in flow) and the textarea stack in the same cell, so the box is
+     as tall as whichever wraps further — never the textarea's lone row */
+  .mintstage__askbox { flex: 1; min-width: 0; margin: 0 2px; display: grid; }
+  .mintstage__askbox > * { grid-area: 1 / 1; min-width: 0; }
   .mintstage__input {
     display: block; width: 100%; resize: none; overflow: hidden;
     background: transparent; border: none; outline: none; padding: 0;
@@ -4821,12 +4825,15 @@
     color: #f2fbf7; caret-color: #34e3a0;
   }
   .mintstage__input:focus-visible { outline: none; }
-  .mintstage__ghost {
-    position: absolute; inset: 0; pointer-events: none; white-space: pre-wrap;
+  .mintstage__mirror {
+    pointer-events: none; white-space: pre-wrap; overflow-wrap: break-word;
     font-family: var(--font-serif); font-style: italic; font-weight: 500;
+    font-optical-sizing: auto;
     font-size: clamp(22px, 4vw, 30px); line-height: 1.2;
     color: rgba(242, 251, 247, 0.34);
   }
+  /* typed: the textarea paints the words; the mirror keeps only the quote */
+  .mintstage__mirror--typed { color: transparent; }
   .mintstage__caret {
     display: inline-block; width: 2px; height: 0.9em; margin-left: 2px;
     background: rgba(52, 227, 160, 0.7); vertical-align: -0.12em;
