@@ -73,10 +73,37 @@ export function RobinhoodChainMark({ size = 20 }: { size?: number }) {
   )
 }
 
+export function OptimismChainMark({ size = 20 }: { size?: number }) {
+  // The official OP mark: two circles ("O" ring and "P" bowl+stem) knocked
+  // out of Optimism red. Drawn with even-odd fills so the counters stay open
+  // at 20px instead of filling in — same disc chrome as the other badges.
+  return (
+    <svg viewBox="0 0 60 60" width={size} height={size} fill="none" aria-hidden style={{ display: 'block' }}>
+      <circle cx="30" cy="30" r="30" fill="#ff0420" />
+      {/* Glyph bbox is x12.5 y11.5 w47.7 h26.4 in the source path space —
+          measured, not guessed. This fits it to a 38pt-wide box centred on the
+          disc so the letterforms never breach the circle at any size. */}
+      <g fill="#ffffff" transform="translate(1.042, 10.323) scale(0.7966)">
+        <path
+          fillRule="evenodd"
+          clipRule="evenodd"
+          d="M21.2 36.9c-2.6 0-4.7-.6-6.3-1.8-1.6-1.3-2.4-3-2.4-5.3 0-.5.1-1.1.2-1.8.3-1.7.8-3.7 1.4-6.1 1.7-6.9 6.1-10.4 13.2-10.4 1.9 0 3.7.3 5.2.9 1.5.6 2.8 1.6 3.6 2.9.9 1.3 1.3 2.8 1.3 4.6 0 .5-.1 1.1-.2 1.8-.4 2.1-.8 4.1-1.4 6.1-.9 3.4-2.4 6-4.5 7.7-2.2 1.6-5.1 2.4-10.1 2.4zm.5-5.1c1.4 0 2.7-.4 3.7-1.3 1-.8 1.8-2.1 2.2-3.9.5-2.1.9-3.9 1.2-5.4.1-.5.2-.9.2-1.4 0-2-1.1-3.1-3.2-3.1-1.5 0-2.7.4-3.7 1.3-1 .8-1.7 2.1-2.1 3.9-.4 1.6-.8 3.4-1.3 5.4-.1.5-.2.9-.2 1.4 0 2.1 1 3.1 3.2 3.1z"
+        />
+        <path
+          fillRule="evenodd"
+          clipRule="evenodd"
+          d="M38.1 36.5c-.3 0-.5-.1-.6-.3-.1-.2-.2-.4-.1-.6l4.6-21.7c0-.3.2-.5.4-.6.2-.2.4-.2.6-.2h8.9c2.5 0 4.5.5 6 1.5 1.5 1.1 2.3 2.6 2.3 4.6 0 .6-.1 1.2-.2 1.8-.6 2.8-1.8 4.8-3.6 6.1-1.8 1.3-4.3 2-7.4 2h-4.5L42.8 36c-.1.3-.2.5-.4.6-.2.2-.4.2-.6.2h-3.7zm11-12.5c1 0 1.9-.3 2.6-.8.8-.6 1.3-1.4 1.5-2.4.1-.4.1-.8.1-1.1 0-.7-.2-1.2-.6-1.6-.4-.4-1.1-.6-2-.6h-4l-1.4 6.5h3.8z"
+        />
+      </g>
+    </svg>
+  )
+}
+
 export const CHAIN_MARKS: Record<string, ChainMark> = {
   ethereum: EthereumChainMark,
   base: BaseChainMark,
   arbitrum: ArbitrumChainMark,
+  optimism: OptimismChainMark,
   robinhood: RobinhoodChainMark,
 }
 

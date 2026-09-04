@@ -7,7 +7,7 @@ import {
   injectedWallet,
 } from '@rainbow-me/rainbowkit/wallets'
 import { createConfig, http } from 'wagmi'
-import { mainnet, base, baseSepolia, arbitrum } from 'wagmi/chains'
+import { mainnet, base, baseSepolia, arbitrum, optimism } from 'wagmi/chains'
 import { cdpEmbeddedConnector, cdpEnabled } from '@/lib/cdp-embedded'
 import { hostWalletConnector } from '@/lib/host-wallet'
 import { walletLineup, WC_APP_METADATA, type WalletLaneId } from '@/lib/wallet-lineup'
@@ -99,12 +99,17 @@ export const wagmiConfig = createConfig({
   // tx cards can switch the wallet + watch receipts on them (SendTxButton needs
   // a configured transport per tx.chainId, and switchChainAsync only knows the
   // chains in this list — the Switch Networks modal mirrors it).
-  chains: [base, baseSepolia, mainnet, arbitrum, robinhoodChain],
+  // Optimism is here for the same reason as Arbitrum: it's a funding origin,
+  // so the wallet must be able to switch there to sign the deposit leg. A
+  // chain the funding scanner can SEE but the wallet can't switch to is a
+  // chip that walls at signature time.
+  chains: [base, baseSepolia, mainnet, arbitrum, optimism, robinhoodChain],
   transports: {
     [base.id]: http(),
     [baseSepolia.id]: http(),
     [mainnet.id]: http('https://ethereum-rpc.publicnode.com'),
     [arbitrum.id]: http(),
+    [optimism.id]: http('https://optimism-rpc.publicnode.com'),
     [robinhoodChain.id]: http(),
   },
   ssr: true,

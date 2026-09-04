@@ -26,6 +26,8 @@ const CHAINS: NetChain[] = [
   { net: 'eth-mainnet', label: 'Ethereum', native: 'ETH', explorerTx: 'https://etherscan.io/tx/' },
   { net: 'base-mainnet', label: 'Base', native: 'ETH', explorerTx: 'https://basescan.org/tx/' },
   { net: 'arb-mainnet', label: 'Arbitrum', native: 'ETH', explorerTx: 'https://arbiscan.io/tx/' },
+  // Data API support (priced holdings + native tokens) probed live 2026-09-04.
+  { net: 'opt-mainnet', label: 'Optimism', native: 'ETH', explorerTx: 'https://optimistic.etherscan.io/tx/' },
   // Arbitrum Orbit L2 (chain 4663, mainnet 2026-07-01) — Data API + Transfers
   // API support probed live 2026-07-13; tokenized stocks trade here on Uniswap.
   { net: 'robinhood-mainnet', label: 'Robinhood Chain', native: 'ETH', explorerTx: 'https://robinhoodchain.blockscout.com/tx/' },

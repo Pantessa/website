@@ -81,7 +81,7 @@ export function stampSwapFeeTier(compiled: CompiledJob, feeBps: number | undefin
 // (prepareSwapTurn detects an unfunded Robinhood Chain buy and proposes the
 // plan). Deterministic on purpose: the chip IS the contract, so the parse
 // stays narrow — "fund robinhood … with $X from <origin> [using usdc.e |
-// using eth]" and nothing looser. Origins: Base, Ethereum, Arbitrum (the
+// using eth]" and nothing looser. Origins: Base, Ethereum, Arbitrum, Optimism (the
 // LiFi-probed set); the "using" clause picks a registry-known bridged
 // variant or native ETH.
 
@@ -102,7 +102,7 @@ export interface RobinhoodFundingAsk {
 // Typo-tolerant chain words (shared lexicon) — captures canonicalize
 // before the keyed lookups below.
 const FUND_RE = new RegExp(
-  String.raw`\bfund\s+robin\s?hoo?d(?:\s?chain)?\s+with\s+\$?(\d+(?:\.\d+)?)\s+from\s+(${chainAlt(['base', 'ethereum', 'arbitrum'])})\b`,
+  String.raw`\bfund\s+robin\s?hoo?d(?:\s?chain)?\s+with\s+\$?(\d+(?:\.\d+)?)\s+from\s+(${chainAlt(['base', 'ethereum', 'arbitrum', 'optimism'])})\b`,
   'i',
 )
 
@@ -112,6 +112,8 @@ const FUND_ORIGINS: Record<string, { id: number; word: string }> = {
   mainnet: { id: 1, word: 'Ethereum' },
   arb: { id: 42161, word: 'Arbitrum' },
   arbitrum: { id: 42161, word: 'Arbitrum' },
+  optimism: { id: 10, word: 'Optimism' },
+  op: { id: 10, word: 'Optimism' },
 }
 
 export function parseRobinhoodFunding(segment: string): RobinhoodFundingAsk | null {
@@ -155,6 +157,8 @@ const SWAP_SEG_CHAINS: Record<string, { id: number; name: string }> = {
   base: { id: 8453, name: 'Base' },
   arbitrum: { id: 42161, name: 'Arbitrum' },
   arb: { id: 42161, name: 'Arbitrum' },
+  optimism: { id: 10, name: 'Optimism' },
+  op: { id: 10, name: 'Optimism' },
   ethereum: { id: 1, name: 'Ethereum' },
   mainnet: { id: 1, name: 'Ethereum' },
   robinhood: { id: 4663, name: 'Robinhood Chain' },
@@ -162,7 +166,7 @@ const SWAP_SEG_CHAINS: Record<string, { id: number; name: string }> = {
 }
 
 const SWAP_SEG_RE = new RegExp(
-  `\\bswap\\s+(\\d+(?:\\.\\d+)?)\\s+\\$?([A-Za-z]{2,12})\\s+(?:for|into|to)\\s+\\$?([A-Za-z]{2,12})\\s+on\\s+(${chainAlt(['base', 'ethereum', 'arbitrum', 'robinhood'])})\\b`,
+  `\\bswap\\s+(\\d+(?:\\.\\d+)?)\\s+\\$?([A-Za-z]{2,12})\\s+(?:for|into|to)\\s+\\$?([A-Za-z]{2,12})\\s+on\\s+(${chainAlt(['base', 'ethereum', 'arbitrum', 'optimism', 'robinhood'])})\\b`,
   'i',
 )
 

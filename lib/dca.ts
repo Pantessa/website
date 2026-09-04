@@ -46,7 +46,7 @@ const DCA_CHAINS: Record<string, number> = {
 
 // Typo-tolerant native-chain words (shared lexicon); the capture
 // canonicalizes before the DCA_CHAINS lookup.
-const CHAIN_WORD_RE = new RegExp(String.raw`\bon\s+(${chainAlt(['base', 'ethereum', 'arbitrum', 'robinhood'])})\b`, 'i')
+const CHAIN_WORD_RE = new RegExp(String.raw`\bon\s+(${chainAlt(['base', 'ethereum', 'arbitrum', 'optimism', 'robinhood'])})\b`, 'i')
 
 const CADENCE_RES: Array<[DcaCadence, RegExp]> = [
   ['day', /\b(?:daily|every\s+day|each\s+day)\b/i],

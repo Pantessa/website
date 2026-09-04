@@ -47,7 +47,7 @@ const flag = (msg: string) => {
 const ETH_USD = 2000
 /** Mirror of lib/funding-plan's per-chain floors the copy/coverage math
  *  keys off (the decision logic itself lives in the imported functions). */
-const GAS_RESERVE_ETH: Record<number, number> = { 1: 0.002, 8453: 0.0002, 42161: 0.0002 }
+const GAS_RESERVE_ETH: Record<number, number> = { 1: 0.002, 8453: 0.0002, 42161: 0.0002, 10: 0.0002 }
 const DUST_USD = 0.5
 const MIN_GAS_LEG_USD = 1.5
 
@@ -110,6 +110,28 @@ const SCENARIOS: Scenario[] = [
     name: '$25 USDC on Base, no Base gas, $3 ETH on Arbitrum → swap on Base (gas-only probe): a gas leg from the donor chain, chips compile',
     need: SWAP_GAS_NEED,
     reads: [R(8453, 0, 25), R(42161, 0.0015, 0), R(1, 0, 0)],
+    expect: 'offer',
+  },
+  // ── Optimism as a funding origin (2026-09-04) ─────────────────────────
+  // OP joined FUNDING_SCAN_CHAINS because 1Click lists native ETH + USDC
+  // there and the near-intents MCP already builds deposits on it. These
+  // pin the three shapes a stranger whose money lives on Optimism hits.
+  {
+    name: 'THE OPTIMISM STRANGER — $20 USDC + gas on Optimism, nothing else → swap on Base: chips compile from OP',
+    need: SWAP_GAS_NEED,
+    reads: [R(10, 0.001, 20), R(8453, 0, 0), R(42161, 0, 0), R(1, 0, 0)],
+    expect: 'offer',
+  },
+  {
+    name: 'gas-stranded Optimism — $20 USDC on Optimism, ZERO OP gas → HL deposit: refusal must NAME the OP dollars',
+    need: HL_NEED,
+    reads: [R(10, 0, 20), R(8453, 0, 0), R(42161, 0, 0), R(1, 0, 0)],
+    expect: 'refusal',
+  },
+  {
+    name: 'Optimism as donor — $20 gasless USDC on Base + $3 ETH on Optimism → HL deposit: donor rescue crosses from OP',
+    need: HL_NEED,
+    reads: [R(10, 0.0015, 0), R(8453, 0, 20), R(42161, 0, 0), R(1, 0, 0)],
     expect: 'offer',
   },
   {

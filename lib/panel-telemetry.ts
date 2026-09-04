@@ -37,5 +37,5 @@ export function postPanelTelemetry(payload: {
 }
 
 export function chainLabelOf(chainId: number): string {
-  return { 1: 'ethereum', 100: 'gnosis', 8453: 'base', 42161: 'arbitrum' }[chainId] ?? String(chainId)
+  return { 1: 'ethereum', 10: 'optimism', 100: 'gnosis', 8453: 'base', 42161: 'arbitrum' }[chainId] ?? String(chainId)
 }

@@ -24,6 +24,9 @@ const COINGECKO_BY_CHAIN: Record<number, string> = {
   8453: 'https://tokens.coingecko.com/base/all.json',
   1: 'https://tokens.coingecko.com/ethereum/all.json',
   42161: 'https://tokens.coingecko.com/arbitrum-one/all.json',
+  // Coingecko's slug is 'optimistic-ethereum', not 'optimism' (which 403s) —
+  // probed 2026-09-04, 862 tokens.
+  10: 'https://tokens.coingecko.com/optimistic-ethereum/all.json',
 }
 
 function listUrlsFor(chainId: number): string[] {

@@ -880,7 +880,7 @@ export const SPLASH_SOURCES: SplashSource[] = [walletSource, uniswapSource, snap
 
 const SOURCE_PREVIEWS: Record<string, { message: string; prompts: SuggestedPrompt[] }> = {
   wallet: {
-    message: 'No holdings found for this wallet yet — once anything lands on Ethereum, Base, or Arbitrum it shows up here.',
+    message: 'No holdings found for this wallet yet — once anything lands on Ethereum, Base, Arbitrum, or Optimism it shows up here.',
     prompts: [
       { label: 'What can you show me?', prompt: 'What can the wallet agent show me about any address?' },
       { label: 'Check gas balances', prompt: 'What are my gas balances across chains?' },

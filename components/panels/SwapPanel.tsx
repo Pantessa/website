@@ -25,6 +25,7 @@ const SUGGESTED: Record<number, string[]> = {
   8453: ['ETH', 'USDC', 'WETH', 'CBBTC'],
   1: ['ETH', 'USDC', 'WETH', 'USDT'],
   42161: ['ETH', 'USDC', 'ARB', 'WETH'],
+  10: ['ETH', 'USDC', 'OP', 'WETH'],
   4663: ['ETH', 'USDG', 'AAPL', 'NVDA', 'TSLA', 'HOOD'],
 }
 

@@ -56,13 +56,14 @@ export const NATIVE_TOKEN = '0x0000000000000000000000000000000000000000' as cons
 /** Origin chains the funding plan scans and bridges from, in scan order.
  *  Each is a first-class lib/chains member holding USDC with a live-probed
  *  LiFi route onto Robinhood Chain. */
-export const FUNDING_ORIGIN_CHAINS = [8453, 1, 42161] as const
+export const FUNDING_ORIGIN_CHAINS = [8453, 1, 42161, 10] as const
 /** The chain word each chip resume uses — the parse contract with
  *  lib/jobs.ts parseRobinhoodFunding (lower-cased in the resume string). */
 export const FUNDING_ORIGIN_WORD: Record<number, string> = {
   8453: 'Base',
   1: 'Ethereum',
   42161: 'Arbitrum',
+  10: 'Optimism',
 }
 /** Bridged-USDC variants the scan ALSO reads, where lib/chains' stables map
  *  knows them. Arbitrum's USDC.e is the one that bites: a wallet holding only
@@ -74,6 +75,21 @@ export const FUNDING_ORIGIN_WORD: Record<number, string> = {
  *  fundingAltUsdcFor cross-checks and drops any the registry forgot. */
 export const FUNDING_ALT_USDC: Record<number, { symbol: string; address: `0x${string}`; decimals: number }> = {
   42161: { symbol: 'USDC.e', address: '0xFF970A61A04b1cA14834A43f5dE4533eBDDB5CC8', decimals: 6 },
+  // Optimism's legacy bridged USDC — same bite as Arbitrum's. Its on-chain
+  // symbol() returns "USDC", but LiFi (and every explorer) names it USDC.e,
+  // and 1Click does NOT list it, so the LiFi lane is the only one that can
+  // move it. Route probed live 2026-09-04: across, same canonical diamond,
+  // 10 USDC.e -> 9.8388 USDG.
+  10: { symbol: 'USDC.e', address: '0x7F5c764cBc14f9669B88837ca1490cCa17c31607', decimals: 6 },
+}
+
+/** "Base, Ethereum, or Arbitrum" — an Oxford-comma list for refusal copy that
+ *  must name the real scan set. One word passes through untouched. */
+export function listWords(words: string[], conj: 'or' | 'and' = 'or'): string {
+  const w = words.filter(Boolean)
+  if (w.length <= 1) return w[0] ?? ''
+  if (w.length === 2) return `${w[0]} ${conj} ${w[1]}`
+  return `${w.slice(0, -1).join(', ')}, ${conj} ${w[w.length - 1]}`
 }
 
 /** The registry-verified alt-USDC for an origin, or null. */
@@ -87,7 +103,7 @@ export function fundingAltUsdcFor(chainId: number): { symbol: string; address: `
 /** Native ETH an origin needs before its USDC is signable there — the
  *  approve + bridge pair must be payable, or the chip is a wall later.
  *  Mainnet's floor is real L1 gas; the L2 floors are cents. */
-const ORIGIN_MIN_GAS_ETH: Record<number, number> = { 1: 0.002, 8453: 0.00003, 42161: 0.00003 }
+const ORIGIN_MIN_GAS_ETH: Record<number, number> = { 1: 0.002, 8453: 0.00003, 42161: 0.00003, 10: 0.00003 }
 /** ETH kept back on an origin when ETH itself is the sell side — the leg's
  *  own signature (and one more after it) must stay payable once the value
  *  leaves. Mirrors lib/funding-plan's GAS_RESERVE_ETH. ETH became a funding
@@ -97,7 +113,7 @@ const ORIGIN_MIN_GAS_ETH: Record<number, number> = { 1: 0.002, 8453: 0.00003, 42
  *  USDG and → gas ETH from all three origins through the SAME canonical
  *  diamond as the USDC legs (probed live 2026-07-28: across /
  *  relaydepository, value = fromAmount exactly, 1–2s). */
-export const ORIGIN_ETH_KEEPBACK: Record<number, number> = { 1: 0.002, 8453: 0.0002, 42161: 0.0002 }
+export const ORIGIN_ETH_KEEPBACK: Record<number, number> = { 1: 0.002, 8453: 0.0002, 42161: 0.0002, 10: 0.0002 }
 /** Sizing headroom when ONE ETH balance funds a gas-included plan — TWO
  *  legs off the same balance. Leg 1's own origin fee is paid out of the
  *  very keep-back leg 2's build re-checks in full, so a plan sized to the
@@ -107,7 +123,7 @@ export const ORIGIN_ETH_KEEPBACK: Record<number, number> = { 1: 0.002, 8453: 0.0
  *  fee). Covers the extra fee plus inter-leg ETH price drift; the sizing
  *  planners subtract it, the scan's movable number stays the true
  *  single-move capacity. */
-export const ETH_TWO_LEG_HEADROOM_USD: Record<number, number> = { 1: 1, 8453: 0.1, 42161: 0.1 }
+export const ETH_TWO_LEG_HEADROOM_USD: Record<number, number> = { 1: 1, 8453: 0.1, 42161: 0.1, 10: 0.1 }
 /** A native-ETH leg's build clamps DOWN to the wallet's real movable
  *  balance when it lands within this fraction of the ask (leg-1 fees and
  *  price drift between signatures shave a mid-flight job's balance; the
@@ -158,7 +174,8 @@ export const GAS_LEG_MIN_OUT_BPS = 9_000
 // The canonical LiFi diamond per origin — the SAME address observed as both
 // transactionRequest.to and approvalAddress on live cross-chain quotes to
 // Robinhood Chain (Base probed 2026-07-15; Ethereum + Arbitrum probed
-// 2026-07-17, across/relaydepository routes, USDG and gas legs both). Env
+// 2026-07-17; Optimism probed 2026-09-04 — USDC, USDC.e, native-ETH value
+// and native-ETH gas legs all across, all the same address). Env
 // LIFI_BRIDGE_ROUTERS (comma-separated) REPLACES the list; an empty result
 // fails closed.
 const LIFI_DIAMOND = '0x1231DEB6f5749EF6cE6943a275A1D3E7486F4EaE' as const
@@ -166,6 +183,7 @@ const DEFAULT_BRIDGE_ROUTERS: Record<number, `0x${string}`[]> = {
   [BASE_CHAIN_ID]: [LIFI_DIAMOND],
   1: [LIFI_DIAMOND],
   42161: [LIFI_DIAMOND],
+  10: [LIFI_DIAMOND],
 }
 
 const ADDR_RE = /^0x[0-9a-fA-F]{40}$/
@@ -1057,7 +1075,10 @@ export function planRobinhoodFundingAdvice(params: {
         )
         .join(', '),
     )
-  else parts.push('no USDC or ETH on Base, Ethereum, or Arbitrum')
+  // Derived, never hardcoded: this sentence names every chain we actually
+  // looked at, so widening FUNDING_ORIGIN_CHAINS can't leave it claiming we
+  // checked three places when we checked four.
+  else parts.push(`no USDC or ETH on ${listWords(FUNDING_ORIGIN_CHAINS.map((c) => FUNDING_ORIGIN_WORD[c]))}`)
   if (scan.failedOrigins.length > 0) parts.push(`couldn't check ${scan.failedOrigins.join(' or ')}`)
   return { kind: 'none', copy: parts.join('; ') }
 }
@@ -1185,7 +1206,7 @@ export function parseRhFundingFollowUp(message: string): RhFundingFollowUp | nul
   }
   const assertVerb = /\b(?:i|we)(?:'ve)?\s+(?:now\s+|just\s+|already\s+|do\s+)?(?:have|hold|got)\b|\b(?:just\s+)?(?:sent|moved|bridged|deposited|funded|added|topped\s*(?:up|off))\b/i
   const fundingNoun = /\b(usdc|usdg|eth|gas|funds?|money)\b/i
-  const originWord = new RegExp(String.raw`\b(${chainAlt(['base', 'ethereum', 'arbitrum', 'robinhood'])})\b`, 'i')
+  const originWord = new RegExp(String.raw`\b(${chainAlt(['base', 'ethereum', 'arbitrum', 'optimism', 'robinhood'])})\b`, 'i')
   if (assertVerb.test(m) && (fundingNoun.test(m) || originWord.test(m))) return { kind: 'recheck' }
   return null
 }

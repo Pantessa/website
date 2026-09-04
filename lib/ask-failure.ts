@@ -127,11 +127,13 @@ export async function recordAskFailure(params: {
 // offered in chips; rows count toward had_funds precisely because "walled
 // while holding money we can't move" is the demand signal being measured.
 // Addresses + 6-dec verified live on all three origins 2026-07-28
-// (Arbitrum's on-chain symbol is USD₮0 — labeled plain USDT here).
+// (Arbitrum's on-chain symbol is USD₮0 — labeled plain USDT here);
+// Optimism's added 2026-09-04, symbol()/decimals() read on-chain.
 export const FAILURE_PROBE_TOKENS: Record<number, { symbol: string; address: `0x${string}`; decimals: number }[]> = {
   1: [{ symbol: 'USDT', address: '0xdAC17F958D2ee523a2206206994597C13D831ec7', decimals: 6 }],
   42161: [{ symbol: 'USDT', address: '0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9', decimals: 6 }],
   8453: [{ symbol: 'USDT', address: '0xfde4C96c8593536E31F229EA8f37b2ADa2699bb2', decimals: 6 }],
+  10: [{ symbol: 'USDT', address: '0x94b008aA00579c1307B0EF2c499aD98a8ce58e58', decimals: 6 }],
 }
 
 export interface UnsupportedHolding {
