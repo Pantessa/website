@@ -7302,6 +7302,23 @@ async function main() {
       })(),
       JSON.stringify(chainByKey('optimism')?.tokens),
     )
+    // "optimism" is an everyday noun: only a chain SLOT may name the chain.
+    check(
+      'optimism: the English word never routes a swap to chain 10, the chain slot still does',
+      chainNamedIn('I have optimism about ETH, swap 10 USDC for ETH') === null &&
+        chainNamedIn('swap 10 USDC for ETH on optimism')?.id === 10 &&
+        chainNamedIn('bridge it from optimsim')?.id === 10 &&
+        chainNamedIn('use the optimism chain')?.id === 10,
+    )
+    // The HL loose coin slot fences every chain word (source-text pin — the
+    // set isn't exported, and "op" must stay OUT: OP is a real HL perp).
+    const hlSrc = await readFile(new URL('../lib/hyperliquid-exec.ts', import.meta.url), 'utf8')
+    const notACoin = hlSrc.match(/const NOT_A_COIN = new Set\(\[([^\]]*)\]\)/)?.[1] ?? ''
+    check(
+      "optimism: HL NOT_A_COIN fences 'optimism' and does NOT fence 'op' (a real perp)",
+      /'optimism'/.test(notACoin) && !/'op'/.test(notACoin),
+      notACoin.replace(/\s+/g, ' ').slice(0, 200),
+    )
     // Every funding origin must be a first-class registry chain AND a chain
     // the WALLET can switch to — otherwise the chip walls at signature time,
     // which is exactly what made Optimism unusable before this change

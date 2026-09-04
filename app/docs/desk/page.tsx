@@ -75,7 +75,7 @@ export default function DeskDocsPage() {
         <ol>
           <li>
             <strong>Scan</strong> — <code>scan_wallet</code>{' '}reads a wallet&apos;s movable money
-            across Base, Arbitrum, and Ethereum (gas-reserve aware), so your plan is grounded in
+            across Base, Arbitrum, Optimism, and Ethereum (gas-reserve aware), so your plan is grounded in
             what the human actually holds.
           </li>
           <li>

@@ -217,7 +217,7 @@ export default function DcaDocsPage() {
             the period and autopilot defers.
           </li>
           <li>
-            <strong>Which chains?</strong>{' '}Confirm-mode: Base, Ethereum, Arbitrum, Robinhood
+            <strong>Which chains?</strong>{' '}Confirm-mode: Base, Ethereum, Arbitrum, Optimism, Robinhood
             Chain. Autopilot: Base first (it&rsquo;s where the Spend Permission contract and deep
             USDC liquidity live); tokenized-stock autopilot on Robinhood Chain is on the
             roadmap.

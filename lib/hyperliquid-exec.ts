@@ -102,7 +102,7 @@ const NOT_A_COIN = new Set([
   'the', 'a', 'an', 'my', 'some', 'it', 'all', 'every', 'more', 'position', 'positions', 'perp', 'perps', 'long', 'short',
   'and', 'then', 'now', 'me', 'this', 'that', 'in', 'on', 'to', 'of', 'with', 'at', 'for', 'into', 'usd', 'usdc', 'dollars',
   'dip', 'top', 'market', 'leverage', 'leveraged', 'margin', 'futures', 'perpetual', 'perpetuals',
-  'hyperliquid', 'hl', 'base', 'ethereum', 'mainnet', 'arbitrum', 'robinhood', 'chain',
+  'hyperliquid', 'hl', 'base', 'ethereum', 'mainnet', 'arbitrum', 'optimism', 'robinhood', 'chain',
 ])
 
 /** The leverage named anywhere in the (normalized) message, or undefined. */
