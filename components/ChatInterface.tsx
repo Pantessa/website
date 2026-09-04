@@ -879,7 +879,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
   const chainLabel = (id: unknown): string | undefined => {
     const n = typeof id === 'string' ? parseInt(id, 16) || Number(id) : typeof id === 'number' ? id : NaN
     if (Number.isNaN(n)) return undefined
-    return { 1: 'ethereum', 100: 'gnosis', 8453: 'base', 42161: 'arbitrum' }[n] ?? String(n)
+    return { 1: 'ethereum', 10: 'optimism', 100: 'gnosis', 8453: 'base', 42161: 'arbitrum' }[n] ?? String(n)
   }
   // The guardrail layer prices every transaction it builds (policy caps are
   // USD) — that notional rides the beacon as valueUsd.

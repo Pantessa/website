@@ -31,14 +31,16 @@
 import { erc20Abi, formatEther, formatUnits } from 'viem'
 import { chainById, publicClientFor } from '@/lib/chains'
 import { chainAlt, canonicalChainWord } from '@/lib/chain-lexicon'
-import { ETH_TWO_LEG_HEADROOM_USD, fundingNeedUsd, planRobinhoodFundingAdvice, readFundingShortfall } from '@/lib/lifi-bridge'
+import { ETH_TWO_LEG_HEADROOM_USD, FUNDING_ORIGIN_CHAINS, FUNDING_ORIGIN_WORD, fundingNeedUsd, listWords, planRobinhoodFundingAdvice, readFundingShortfall } from '@/lib/lifi-bridge'
 import { describeInflightDeposit } from '@/lib/inflight-funding'
 import { usdPerToken } from '@/lib/usd-probe'
 
 /** Chains the scanner reads — the intersection of lib/chains first-class
  *  chains and NEAR Intents' buildable EVM origins. Robinhood Chain is
- *  deliberately absent: its money moves on the LiFi plan (lib/lifi-bridge). */
-export const FUNDING_SCAN_CHAINS = [8453, 42161, 1] as const
+ *  deliberately absent: its money moves on the LiFi plan (lib/lifi-bridge).
+ *  Optimism joined 2026-09-04: 1Click lists native ETH and USDC there with
+ *  live prices, and the near-intents MCP already builds deposits on it. */
+export const FUNDING_SCAN_CHAINS = [8453, 42161, 10, 1] as const
 
 /** The chain word each resume string uses — must stay inside
  *  lib/cross-chain-swap's CHAIN_ALT grammar or the chip won't compile. */
@@ -46,6 +48,7 @@ export const FUNDING_CHAIN_WORD: Record<number, string> = {
   1: 'Ethereum',
   8453: 'Base',
   42161: 'Arbitrum',
+  10: 'Optimism',
 }
 
 /** Solver-fee headroom on the moved amount (NEAR Intents quotes net of fees). */
@@ -59,14 +62,14 @@ const DUST_USD = 0.5
 
 /** ETH kept back on a source chain so the transfer itself can be signed —
  *  an "all my ETH" leg must never strand the wallet gasless mid-plan. */
-const GAS_RESERVE_ETH: Record<number, number> = { 1: 0.002, 8453: 0.0002, 42161: 0.0002 }
+const GAS_RESERVE_ETH: Record<number, number> = { 1: 0.002, 8453: 0.0002, 42161: 0.0002, 10: 0.0002 }
 /** Minimum native ETH a chain needs before an ERC-20 source there is signable. */
-const MIN_GAS_TO_SEND_ETH: Record<number, number> = { 1: 0.001, 8453: 0.00003, 42161: 0.00003 }
+const MIN_GAS_TO_SEND_ETH: Record<number, number> = { 1: 0.001, 8453: 0.00003, 42161: 0.00003, 10: 0.00003 }
 /** Native ETH the DESTINATION wallet needs to sign the follow-up action
  *  (approve + the op). Below it, the plan adds a gas leg — funds that land
  *  where the wallet can't pay gas are stranded, not delivered (live
  *  2026-07-16: a $2 bridge arrived and the stake couldn't fire). */
-export const DEST_GAS_FLOOR_ETH: Record<number, number> = { 1: 0.003, 8453: 0.0002, 42161: 0.0002 }
+export const DEST_GAS_FLOOR_ETH: Record<number, number> = { 1: 0.003, 8453: 0.0002, 42161: 0.0002, 10: 0.0002 }
 /** The smallest gas leg worth quoting. */
 const MIN_GAS_LEG_USD = 1.5
 
@@ -800,7 +803,7 @@ const HELD_RE = new RegExp(`\\b(?:holds?|have|has)\\s+(?:only\\s+)?~?\\$?(\\d+(?
 const TRIGGER_TOKEN_RE = new RegExp(`\\b(?:insufficient|not enough)\\s+(?:balance\\s+of\\s+)?(${TOKEN_SYM})\\b`, 'i')
 const TOKEN_SYM_STRICT_RE = /^(?:[A-Z]{2,6}|[A-Z][a-z]?ETH)$/
 const CHAIN_HINT_RE = new RegExp(
-  String.raw`\bon\s+(${chainAlt(['base', 'ethereum', 'arbitrum', 'robinhood'])}|arbitrum\s+one)\b`,
+  String.raw`\bon\s+(${chainAlt(['base', 'ethereum', 'arbitrum', 'optimism', 'robinhood'])}|arbitrum\s+one)\b`,
   'i',
 )
 
@@ -993,7 +996,7 @@ export async function fundingFallbackForFailures(
           claimed: f.name,
           offer: null,
           contextBlock:
-            `### Funding scan (after the ${f.name} balance check)\nAcross Base, Ethereum, and Arbitrum I can see: ${advice.copy} — the smallest plan for this moves ~$${needUsd} onto Robinhood Chain (bridge fees${includeGas ? ' and a gas leg' : ''} included). ` +
+            `### Funding scan (after the ${f.name} balance check)\nAcross ${listWords(FUNDING_ORIGIN_CHAINS.map((c) => FUNDING_ORIGIN_WORD[c]), 'and')} I can see: ${advice.copy} — the smallest plan for this moves ~$${needUsd} onto Robinhood Chain (bridge fees${includeGas ? ' and a gas leg' : ''} included). ` +
             `The user should know exactly what they hold, per chain, and what the smallest plan needs — and what unlocks the buy (topping up any of those chains, then asking again). ` +
             `Frame it as a checkpoint, not an error: nothing was attempted, signed, or lost — no ❌ or "failed" headlines.${inflightNoneDirective}`,
         }

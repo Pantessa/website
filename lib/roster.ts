@@ -56,6 +56,7 @@ const DCA_CHAIN_WORDS: Record<number, string> = {
   8453: 'base',
   1: 'ethereum',
   42161: 'arbitrum',
+  10: 'optimism',
   4663: 'robinhood',
 }
 

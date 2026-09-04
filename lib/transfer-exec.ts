@@ -67,7 +67,7 @@ const TRANSFER_CHAINS: Record<string, { id: number; name: string }> = {
 // Typo-tolerant native-chain words from the shared lexicon ("Etheruem",
 // "arbitum" are real users, live 2026-07-22); captures canonicalize before
 // the TRANSFER_CHAINS lookup.
-const CHAIN_WORDS = chainAlt(['base', 'ethereum', 'arbitrum', 'robinhood'])
+const CHAIN_WORDS = chainAlt(['base', 'ethereum', 'arbitrum', 'optimism', 'robinhood'])
 const RECIPIENT = String.raw`(0x[0-9a-fA-F]{40}|[a-zA-Z0-9][a-zA-Z0-9-]*\.eth)`
 // A send's amount slot: an explicit number, or an all-flavored phrase
 // ("all my", "all of the", "my entire") that resolves to the live balance
@@ -240,7 +240,7 @@ const shortAddr = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`
 /** Gas kept back by an all-ETH send, per chain (mainnet gas is real money;
  *  L2/Orbit floors are cents). Scale mirrors lib/lifi-bridge's
  *  ORIGIN_MIN_GAS_ETH signing floors. */
-const ALL_SEND_GAS_RESERVE_ETH: Record<number, number> = { 1: 0.002, 8453: 0.0002, 42161: 0.0002, 4663: 0.0002 }
+const ALL_SEND_GAS_RESERVE_ETH: Record<number, number> = { 1: 0.002, 8453: 0.0002, 42161: 0.0002, 10: 0.0002, 4663: 0.0002 }
 
 /** Build a guarded fungible transfer for the USER to sign. */
 export async function buildTransferArtifact(params: TransferSegment, from: string): Promise<TransferBuilt | { problem: string }> {

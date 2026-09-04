@@ -46,6 +46,8 @@ const CHAIN_DISPLAY: Record<string, string> = {
   mainnet: 'Ethereum',
   arbitrum: 'Arbitrum',
   arb: 'Arbitrum',
+  optimism: 'Optimism',
+  op: 'Optimism',
   robinhood: 'Robinhood Chain',
   'robinhood chain': 'Robinhood Chain',
 }

@@ -29,7 +29,7 @@ import { grantViolation, type GrantPolicy } from '../lib/spend-grant'
 import { routerPrompt, parseRouterDecision, selectInferenceProvider, routeMessage, shortlistEndpoints } from '../lib/router'
 import { buildSmartRequest, computeRating, type PlannableEndpoint } from '../lib/endpoint-planner'
 import { buildSignableArtifact, isActionIntent, orderRequestOf, txRequestOf, txChainOf } from '../lib/transaction-layer'
-import { resolveToken, buildCowOrderTypedData, cowOrderAction, buildCowLimitOrder, buildCowSubmitBody, describeCowOrder, describeAmount, formatAtoms, tokenDecimals, tokenLabel, humanToAtoms, applySlippage, COW_APP_DATA_JSON, COW_APP_DATA_HASH, COW_CANONICAL_APP_DATA_HASHES, cowAppDataJson, cowAppDataHash, cowAppDataBpsOf, GPV2_SETTLEMENT, type CowQuoteResult } from '../lib/cow'
+import { resolveToken, COW_API_BASE, buildCowOrderTypedData, cowOrderAction, buildCowLimitOrder, buildCowSubmitBody, describeCowOrder, describeAmount, formatAtoms, tokenDecimals, tokenLabel, humanToAtoms, applySlippage, COW_APP_DATA_JSON, COW_APP_DATA_HASH, COW_CANONICAL_APP_DATA_HASHES, cowAppDataJson, cowAppDataHash, cowAppDataBpsOf, GPV2_SETTLEMENT, type CowQuoteResult } from '../lib/cow'
 import { primeTokenList } from '../lib/token-list'
 import { pairStockToken, stockChipLabel } from '../lib/stock-pairing'
 import { chartPairFor, changePct24h, aggregateCandles, type Candle } from '../lib/charts'
@@ -129,7 +129,7 @@ import { jobContextFor } from '../lib/job-context'
 import { crossChainAgentOf, detectCrossChain, swapWorkingContext } from '../lib/swap-intent'
 import { encodeV4SwapCalldata, guardUniswapV4Build, type V4BuiltStep, type V4GuardExpectations, type V4PoolKey } from '../lib/uniswap-v4'
 import { guardLifiBuild, isLifiNoRouteMessage, verifyLifiQuoteEcho, lifiPriceAcceptable, lifiRoutersFor, type LifiBuiltStep, type LifiGuardExpectations, type LifiQuote } from '../lib/lifi-venue'
-import { clampNativeSellAtoms, fillableLeg, FUNDING_ALT_USDC, fundingAltUsdcFor, fundingNeedUsd, fundingSourceSymbols, LIFI_LEG_FLAT_USD, MIN_VALUE_LEG_USD, minLegNote, offChainStableSource, ROBINHOOD_CHAIN_ID, STABLE_LEG_MIN_OUT_BPS, GAS_LEG_LADDER_USD, GAS_LEG_USD, GAS_TOPUP_ETH, guardLifiBridgeBuild, lifiBridgeRoutersFor, parseRhFundingFollowUp, planDownsizedRobinhoodBuy, planRobinhoodFundingAdvice, planRobinhoodFundingChips, rhFundingPending, robinhoodBuyNeedUsd, verifyLifiBridgeEcho, type FundingOrigin, type LifiBridgeExpectations, type LifiBridgeStep } from '../lib/lifi-bridge'
+import { clampNativeSellAtoms, fillableLeg, FUNDING_ALT_USDC, FUNDING_ORIGIN_CHAINS, FUNDING_ORIGIN_WORD, fundingAltUsdcFor, fundingNeedUsd, listWords, fundingSourceSymbols, LIFI_LEG_FLAT_USD, MIN_VALUE_LEG_USD, minLegNote, offChainStableSource, ROBINHOOD_CHAIN_ID, STABLE_LEG_MIN_OUT_BPS, GAS_LEG_LADDER_USD, GAS_LEG_USD, GAS_TOPUP_ETH, guardLifiBridgeBuild, lifiBridgeRoutersFor, parseRhFundingFollowUp, planDownsizedRobinhoodBuy, planRobinhoodFundingAdvice, planRobinhoodFundingChips, rhFundingPending, robinhoodBuyNeedUsd, verifyLifiBridgeEcho, type FundingOrigin, type LifiBridgeExpectations, type LifiBridgeStep } from '../lib/lifi-bridge'
 import { classifyOneclickStatus, inflightDepositFromPending, inflightPendingData, inflightSettlingNote } from '../lib/inflight-funding'
 import { sanitizeWorkingContext } from '../lib/working-context'
 import { parseRobinhoodFunding, parseSameChainSwapSegment, JOB_SEGMENT_PARSERS } from '../lib/jobs'
@@ -154,7 +154,7 @@ import {
 } from '../lib/onramp'
 import { clarifyOf } from '../lib/clarify'
 import { fundingPathOf } from '../lib/funding-path'
-import { decideFundingTurn, detectBalanceShortfall, fundingPlanUsd, planFundingChips, planStrandedRescue, promisableCapacityUsd, rankFundingSources, shortRefusalCopy, softenClaimedFailureBlock, type FundingNeed, type FundingSource } from '../lib/funding-plan'
+import { decideFundingTurn, detectBalanceShortfall, FUNDING_CHAIN_WORD, FUNDING_SCAN_CHAINS, fundingPlanUsd, planFundingChips, planStrandedRescue, promisableCapacityUsd, rankFundingSources, shortRefusalCopy, softenClaimedFailureBlock, type FundingNeed, type FundingSource } from '../lib/funding-plan'
 import { compileDcaBuy, dcaRunChip, parseDcaCreate, parseDcaManage, parseDcaRun, periodKeyFor } from '../lib/dca'
 import { briefingNeedsCount, briefingTile, composeBriefingItems, type BriefingInputs, type BriefingPosition } from '../lib/briefing'
 import { moveAsk, parseRebalanceAsk, planRebalance, type RebalanceInputs } from '../lib/rebalance'
@@ -195,7 +195,7 @@ import {
 } from '../lib/share-receipts'
 import { EXAMPLE_PROMPTS } from '../lib/examples'
 import { swapFeeAtoms, SWAP_FEE_BPS, LINK_SWAP_FEE_BPS, TREASURY_ADDRESS, HL_BUILDER_FEE_TENTH_BPS, HL_BUILDER_MAX_FEE_RATE } from '../lib/fees'
-import { APP_CHAINS, chainById, chainNamedIn, explorerTokenUrl, sanitizeChainId } from '../lib/chains'
+import { APP_CHAINS, chainById, chainByKey, chainNamedIn, explorerTokenUrl, primaryStable, sanitizeChainId } from '../lib/chains'
 import { parseCrossChainSwap, guardCrossChainBuild, expectedOriginChainId, parseCrossChainFollowUp, crossChainPending, crossChainValueUsd } from '../lib/cross-chain-swap'
 import {
   parseAaveSupply,
@@ -7241,6 +7241,91 @@ async function main() {
         vizCrossPath.arrows[0] === 'bridge + swap' && vizCrossPath.nodes[1].detail === 'ETH',
       JSON.stringify(vizCrossPath),
     )
+    // ── Optimism as a funding origin (2026-09-04) ─────────────────────────
+    // OP joined FUNDING_SCAN_CHAINS + FUNDING_ORIGIN_CHAINS because 1Click
+    // lists native ETH and USDC there (probed live) and LiFi routes OP→4663
+    // through the same canonical diamond. These pin the full path a stranger
+    // whose money lives on Optimism travels: scanned → chip → compiles →
+    // draws. Half-adding a chain (seen by the scanner, unparseable by the
+    // compiler) is the failure this guards.
+    check(
+      'optimism: joined both funding scan sets',
+      FUNDING_SCAN_CHAINS.includes(10 as never) && (FUNDING_ORIGIN_CHAINS as readonly number[]).includes(10) &&
+        FUNDING_CHAIN_WORD[10] === 'Optimism' && FUNDING_ORIGIN_WORD[10] === 'Optimism',
+      JSON.stringify({ scan: FUNDING_SCAN_CHAINS, origins: FUNDING_ORIGIN_CHAINS }),
+    )
+    const opPlan = planFundingChips(
+      { chainId: 8453, token: 'USDC', amountHuman: 10, followupResume: 'swap 10 USDC for ETH on base', actionLabel: 'the swap' },
+      10,
+      [{ chainId: 10, chainWord: 'Optimism', token: 'USDC', balance: 20, usd: 20 }],
+    )
+    const opPath = opPlan.kind === 'offer' ? fundingPathOf(opPlan.chips[0].resume) : null
+    check(
+      'optimism: an OP-only wallet gets chips that compile AND draw Optimism → Base → the swap',
+      opPlan.kind === 'offer' &&
+        opPlan.chips.filter((c) => !/never mind/i.test(c.resume)).every((c) => compileJobAsk(c.resume) !== null) &&
+        !!opPath && opPath.nodes.map((n) => n.title).join(' | ') === 'Optimism | Base | Base' &&
+        opPath.nodes[0].detail === '10 USDC' && opPath.arrows.join(' | ') === 'bridge | swap',
+      JSON.stringify({ kind: opPlan.kind, chips: opPlan.kind === 'offer' ? opPlan.chips.map((c) => c.resume) : [], path: opPath }),
+    )
+    check(
+      'optimism: the jobs compiler reads OP in both the fund and same-chain-swap grammars',
+      parseRobinhoodFunding('fund robinhood chain with $14 from optimism')?.originChainId === 10 &&
+        parseRobinhoodFunding('fund robinhood chain with $14 from optimsim')?.originWord === 'Optimism' &&
+        parseSameChainSwapSegment('swap 20 USDC for WETH on optimism')?.chainId === 10,
+      JSON.stringify(parseRobinhoodFunding('fund robinhood chain with $14 from optimism')),
+    )
+    // The refusal copy is DERIVED from the origin set, so widening the scan
+    // can never leave it claiming we checked three chains when we checked
+    // four. Pinning the derivation, not the frozen sentence.
+    const opRefusal = planRobinhoodFundingAdvice({
+      scan: { origins: [], gaslessOrigins: [], allScanned: [], failedOrigins: [] },
+      needUsd: 20, gasIncluded: true, followup: '',
+    })
+    check(
+      'optimism: the empty-wallet refusal names every scanned origin, Optimism included',
+      opRefusal.kind === 'none' && opRefusal.copy.includes('Base, Ethereum, Arbitrum, or Optimism') &&
+        listWords(['Base']) === 'Base' && listWords(['Base', 'Ethereum']) === 'Base or Ethereum' &&
+        listWords(['A', 'B', 'C'], 'and') === 'A, B, and C',
+      JSON.stringify(opRefusal),
+    )
+    // The registry entry itself: a picker chain with no venue is a dead chip.
+    check(
+      'optimism: registry entry is complete and honest (v3 yes, v4 none, CoW has no OP book)',
+      (() => {
+        const op = chainByKey('optimism')
+        return !!op && op.id === 10 && op.alchemyNet === 'opt-mainnet' && !!op.uniswap && op.uniswapV4 === null &&
+          op.cow === false && !COW_API_BASE[10] &&
+          op.stables['0x0b2c639c533813f4aa9d7837caf62653d097ff85'] === 6 &&
+          op.stables['0x7f5c764cbc14f9669b88837ca1490cca17c31607'] === 6 &&
+          primaryStable(10)?.symbol === 'USDC' && chainNamedIn('bridge it to optimism')?.id === 10
+      })(),
+      JSON.stringify(chainByKey('optimism')?.tokens),
+    )
+    // Every funding origin must be a first-class registry chain AND a chain
+    // the WALLET can switch to — otherwise the chip walls at signature time,
+    // which is exactly what made Optimism unusable before this change
+    // (cross-chain-swap already mapped optimism→10; wagmi didn't carry it,
+    // and switchChainAsync only knows the chains in that list). Read as
+    // source text because importing lib/wagmi pulls browser-only modules.
+    check(
+      'funding origins: every origin is a first-class registry chain',
+      (FUNDING_ORIGIN_CHAINS as readonly number[]).every((id) => chainById(id) !== null) &&
+        (FUNDING_SCAN_CHAINS as readonly number[]).every((id) => chainById(id) !== null),
+      JSON.stringify({ origins: FUNDING_ORIGIN_CHAINS, scan: FUNDING_SCAN_CHAINS }),
+    )
+    const wagmiSrc = await readFile(new URL('../lib/wagmi.ts', import.meta.url), 'utf8')
+    const wagmiChainsLine = wagmiSrc.match(/chains:\s*\[([^\]]*)\]/)?.[1] ?? ''
+    check(
+      'funding origins: lib/wagmi carries a switchable chain for every funding origin',
+      (FUNDING_ORIGIN_CHAINS as readonly number[]).every((id) => {
+        // registry key → the viem/wagmi identifier the config imports
+        const ident = { 1: 'mainnet', 10: 'optimism', 8453: 'base', 42161: 'arbitrum', 4663: 'robinhoodChain' }[id]
+        return !!ident && new RegExp(`\\b${ident}\\b`).test(wagmiChainsLine)
+      }),
+      JSON.stringify({ origins: FUNDING_ORIGIN_CHAINS, wagmiChainsLine: wagmiChainsLine.trim() }),
+    )
+
     // Non-funding resumes stay plain chips: "Not now", planner clarifies,
     // vote options — the visualization must never claim a turn it can't draw.
     check(
@@ -7307,8 +7392,11 @@ async function main() {
     )
     const emptyAdvice = planRobinhoodFundingAdvice({ scan: { origins: [], gaslessOrigins: [], allScanned: [], failedOrigins: [] }, needUsd: 5, gasIncluded: true, followup: '' })
     check(
-      'funding advice: an empty wallet names both scanned tokens',
-      emptyAdvice.kind === 'none' && /no USDC or ETH on Base, Ethereum, or Arbitrum/.test(emptyAdvice.copy),
+      'funding advice: an empty wallet names both scanned tokens on every scanned chain',
+      emptyAdvice.kind === 'none' &&
+        emptyAdvice.copy.includes(`no USDC or ETH on ${listWords(FUNDING_ORIGIN_CHAINS.map((c) => FUNDING_ORIGIN_WORD[c]))}`) &&
+        // …and it really does name each one, not just match its own template.
+        (FUNDING_ORIGIN_CHAINS as readonly number[]).every((c) => emptyAdvice.copy.includes(FUNDING_ORIGIN_WORD[c])),
       JSON.stringify(emptyAdvice),
     )
 
@@ -8544,7 +8632,12 @@ async function main() {
   check('planner guard: bare native send to a third party REFUSES', !guardPlannerArtifact(bareSend, pctx).ok)
   const permit2Call = mkTx({ to: PERMIT2_ADDRESS, data: '0x87517c45' + 'ab'.repeat(128), value: '0', chainId: 8453 })
   check('planner guard: any Permit2 call REFUSES', !guardPlannerArtifact(permit2Call, pctx).ok)
-  const offRegistryChain = mkTx({ to: mallory.address, data: '0x12345678' + 'ab'.repeat(64), value: '0', chainId: 10 })
+  // Polygon: a real chain we deliberately do NOT build on. Asserted against
+  // the registry so this can't silently become a supported id (chainId 10 did
+  // exactly that when Optimism landed).
+  const OFF_REGISTRY_CHAIN_ID = 137
+  check('planner guard: the off-registry fixture chain really is off-registry', chainById(OFF_REGISTRY_CHAIN_ID) === null)
+  const offRegistryChain = mkTx({ to: mallory.address, data: '0x12345678' + 'ab'.repeat(64), value: '0', chainId: OFF_REGISTRY_CHAIN_ID })
   check('planner guard: off-registry chainId REFUSES', !guardPlannerArtifact(offRegistryChain, pctx).ok)
   const noChain = mkTx({ to: mallory.address, data: '0x12345678' + 'ab'.repeat(64), value: '0' })
   check('planner guard: missing chainId REFUSES', !guardPlannerArtifact(noChain, pctx).ok)
@@ -9805,7 +9898,7 @@ async function main() {
   // ── Chain registry + picker (lib/chains) ──────────────────────────────────
   // The registry is the single source of truth for the picker, splash scoping,
   // and per-chain swap builds — every entry must be complete enough to build.
-  check('chains: registry carries base/ethereum/arbitrum/robinhood', JSON.stringify(APP_CHAINS.map((c) => c.key).sort()) === '["arbitrum","base","ethereum","robinhood"]')
+  check('chains: registry carries base/ethereum/arbitrum/optimism/robinhood', JSON.stringify(APP_CHAINS.map((c) => c.key).sort()) === '["arbitrum","base","ethereum","optimism","robinhood"]')
   check('chains: every entry is build-complete (router+quoter, wrapped native, explorer, alchemy net)', APP_CHAINS.every((c) => !!c.uniswap?.swapRouter02 && !!c.uniswap?.quoterV2 && /^0x[0-9a-fA-F]{40}$/.test(c.wrappedNative) && c.explorerTx.startsWith('https://') && !!c.alchemyNet && c.viem.id === c.id))
   check('chains: base keeps the original router constants', chainById(8453)?.uniswap?.swapRouter02 === '0x2626664c2603336E57B271c5C0b26F421741e481' && chainById(8453)?.uniswap?.quoterV2 === '0x3d4e44Eb1374240CE5F1B871ab261CD16335B76a')
   check('chains: v4 fallback pinned ONLY on Robinhood (quoter + Universal Router + Permit2)', chainById(4663)?.uniswapV4?.quoter === '0x8dc178efb8111bb0973dd9d722ebeff267c98f94' && chainById(4663)?.uniswapV4?.universalRouter === '0x8876789976decbfcbbbe364623c63652db8c0904' && chainById(4663)?.uniswapV4?.permit2 === '0x000000000022d473030f116ddee9f6b43ac78ba3' && APP_CHAINS.every((c) => c.id === 4663 || c.uniswapV4 === null))

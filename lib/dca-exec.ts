@@ -280,7 +280,7 @@ export async function runDcaTurn(
       }
     }
     if (!chainId) {
-      return { reply: `📆 I can't find ${create.buyToken} on a first-class chain's official token list (Base, Ethereum, Arbitrum, Robinhood Chain) — name the chain, e.g. "buy $${create.buyUsd} of ${create.buyToken} ${cadenceLabel(create.cadence)} on robinhood".` }
+      return { reply: `📆 I can't find ${create.buyToken} on a first-class chain's official token list (Base, Ethereum, Arbitrum, Optimism, Robinhood Chain) — name the chain, e.g. "buy $${create.buyUsd} of ${create.buyToken} ${cadenceLabel(create.cadence)} on robinhood".` }
     }
     const stable = primaryStable(chainId)
     if (!stable) return { reply: `📆 No spend stable is configured for that chain — I can't size the recurring buy.` }

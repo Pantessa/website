@@ -15,7 +15,7 @@
 // ─────────────────────────────────────────────────────────────────────────
 
 import { defineChain, createPublicClient, http, type Chain, type PublicClient } from 'viem'
-import { base, mainnet, arbitrum } from 'viem/chains'
+import { base, mainnet, arbitrum, optimism } from 'viem/chains'
 
 // Robinhood Chain (Arbitrum Orbit L2, mainnet 2026-07-01) — not in viem's
 // bundled chains yet. lib/wagmi.ts imports this (the definition moved here
@@ -169,6 +169,56 @@ export const APP_CHAINS: AppChain[] = [
       ARB: { address: '0x912CE59144191C1204E64559FE8253a0e49E6548', decimals: 18 },
     },
     explorerTx: 'https://arbiscan.io/tx/',
+  },
+  {
+    id: 10,
+    key: 'optimism',
+    name: 'Optimism',
+    short: 'Optimism',
+    color: '#ff0420',
+    viem: optimism,
+    alchemyNet: 'opt-mainnet',
+    // viem's default (mainnet.optimism.io) is a low-rate public endpoint —
+    // same 429 class that hit Base and mainnet, and a throttled read here
+    // makes a funding scan under-report (the failure mode that once hid
+    // $15k on Base). publicnode holds up.
+    rpcUrl: 'https://optimism-rpc.publicnode.com',
+    words: /\boptim(?:ism|sim|isim)\b/i,
+    // Same canonical SwapRouter02 / QuoterV2 addresses as Ethereum and
+    // Arbitrum (deployments/10.md); bytecode verified via eth_getCode and a
+    // live quoteExactInputSingle (1 USDC -> 0.00039380 WETH, 0.05% pool)
+    // 2026-09-04 before landing here.
+    uniswap: {
+      swapRouter02: '0x68b3465833fb72A70ecDF485E0e4C7bD8665Fc45',
+      quoterV2: '0x61fFE014bA17989E743c5F6cB21bF9697530B21e',
+    },
+    // No v4 fallback needed: v3 has the pools for everything we route here
+    // (the v4 lane exists for Robinhood's stock-only pools).
+    uniswapV4: null,
+    // CoW has no Optimism order book (api.cow.fi/optimism 404s, probed
+    // 2026-09-04) — limit orders stay off this chain, swaps ride v3.
+    cow: false,
+    wrappedNative: '0x4200000000000000000000000000000000000006',
+    // Both USDC deployments live here: native (Circle) and the legacy
+    // bridged one. The bridged contract's on-chain symbol() is literally
+    // "USDC" even though every explorer and LiFi call it USDC.e — a wallet
+    // holding only bridged USDC must never read as "no USDC on Optimism"
+    // (the Arbitrum USDC.e bite, one chain over).
+    stables: {
+      '0x0b2c639c533813f4aa9d7837caf62653d097ff85': 6, // USDC (native)
+      '0x7f5c764cbc14f9669b88837ca1490cca17c31607': 6, // USDC.e (bridged)
+      '0x94b008aa00579c1307b0ef2c499ad98a8ce58e58': 6, // USDT
+      '0xda10009cbd5d07dd0cecc66161fc93d7c9000da1': 18, // DAI
+    },
+    tokens: {
+      USDC: { address: '0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85', decimals: 6 },
+      USDT: { address: '0x94b008aA00579c1307B0EF2c499aD98a8ce58e58', decimals: 6 },
+      DAI: { address: '0xDA10009cBd5D07dd0CeCc66161FC93D7c9000da1', decimals: 18 },
+      WETH: { address: '0x4200000000000000000000000000000000000006', decimals: 18 },
+      ETH: { address: '0x4200000000000000000000000000000000000006', decimals: 18 },
+      OP: { address: '0x4200000000000000000000000000000000000042', decimals: 18 },
+    },
+    explorerTx: 'https://optimistic.etherscan.io/tx/',
   },
   {
     id: 4663,
