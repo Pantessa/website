@@ -212,6 +212,7 @@ import {
   reserveForOp,
   reserveLegIds,
   WITHDRAW_MAX_SENTINEL,
+  resolveSupplyAmount,
 } from '../lib/aave-supply'
 import {
   parseMorphoLend,
@@ -3964,6 +3965,7 @@ async function main() {
         ['buy $25 of ETH weekly', 'dca'],
         ['protect my ETH in my wallet with a 10% stop', 'protect'],
         ['supply 25 USDC to aave', 'yield'],
+        ['supply $20 of USDC to aave at the best rate', 'yield'], // dollar + rate preference survive the canonical round-trip
         ['stake 0.5 ETH on lido', 'yield'],
       ]
       return cases.every(([text, kind]) => {
@@ -7579,6 +7581,34 @@ async function main() {
     check('aave parse: bare with a non-Aave destination → null', parseAaveSupply('deposit 5 USDC to hyperliquid') === null)
     check('aave parse: bare with an unknown destination → null', parseAaveSupply('supply 5 USDC to my savings account') === null)
     check('aave parse: bare question form ("should I…") → null', parseAaveSupply('should i supply 100 USDC') === null)
+
+    // Dollar-denominated + verbless forms — the live 2026-09-04 shared chat
+    // (/p/bAUVA5uz2Axn): "can I fo $2 of USDC on AAVE" fell to the planner,
+    // which invented a spoke (Lido — lists no USDC) and died on build_supply's
+    // 404 three turns later. A stable dollar ask IS the token amount.
+    const live = parseAaveSupply('can I fo $2 of USDC on AAVE')
+    check('aave parse: LIVE "can I fo $2 of USDC on AAVE" → 2 USDC, explicit, not usd-flagged', !!live && !('problem' in live) && live.amount === '2' && live.token === 'USDC' && live.explicitAave && !live.amountIsUsd && !live.weak)
+    const usdSup = parseAaveSupply('supply $100 of USDC on aave')
+    check('aave parse: "supply $100 of USDC on aave" → 100 USDC', !!usdSup && !('problem' in usdSup) && usdSup.amount === '100' && usdSup.token === 'USDC' && !usdSup.amountIsUsd)
+    const usdWeth = parseAaveSupply('supply $50 of WETH to aave')
+    check('aave parse: "$50 of WETH" → amountIsUsd (priced at build from the reserve)', !!usdWeth && !('problem' in usdWeth) && usdWeth.amount === '50' && usdWeth.token === 'WETH' && usdWeth.amountIsUsd === true)
+    const leading = parseAaveSupply('$2 of USDC on aave')
+    check('aave parse: amount-first fragment "$2 of USDC on aave" → supply', !!leading && !('problem' in leading) && leading.amount === '2')
+    const usdBare = parseAaveSupply('deposit $5 of usdc')
+    check('aave parse: bare dollar deposit stays WEAK (set decides)', !!usdBare && !('problem' in usdBare) && usdBare.amount === '5' && usdBare.weak === true)
+    check('aave parse: statement "I have 100 USDC on aave" → null (no intent cue)', parseAaveSupply('I have 100 USDC on aave') === null)
+    check('aave parse: question "what is the rate for 100 USDC on aave" → null', parseAaveSupply('what is the rate for 100 USDC on aave') === null)
+    check('aave parse: verbless form never steals a withdraw', parseAaveSupply('withdraw 100 USDC on aave') === null)
+    check('aave parse: verbless form never steals a stake/swap', parseAaveSupply('stake 100 USDC on aave') === null && parseAaveSupply('swap 100 USDC for ETH on aave') === null)
+    const best = parseAaveSupply('supply 1 USDC to aave at the best rate')
+    check('aave parse: "at the best rate" → bestRate flag', !!best && !('problem' in best) && best.bestRate === true && best.amount === '1')
+    check('aave parse: no rate words → no bestRate flag', !!usdSup && !('problem' in usdSup) && usdSup.bestRate === undefined)
+    // Dollar → token amount from the reserve's own price; never a guess.
+    const rw = resolveSupplyAmount({ amount: '50', token: 'WETH', amountIsUsd: true }, { priceUsd: 4000, decimals: 18 })
+    check('aave usd: $50 of WETH at $4000 = 0.0125 WETH', 'amount' in rw && rw.amount === '0.0125')
+    check('aave usd: unpriced reserve → refuses by name, no build', 'problem' in resolveSupplyAmount({ amount: '50', token: 'WETH', amountIsUsd: true }, { priceUsd: null, decimals: 18 }))
+    check('aave usd: stable is 1:1 even without a price', (() => { const r = resolveSupplyAmount({ amount: '50', token: 'USDC', amountIsUsd: true }, { priceUsd: null, decimals: 6 }); return 'amount' in r && r.amount === '50' })())
+    check('aave usd: token amounts pass through untouched', (() => { const r = resolveSupplyAmount({ amount: '3', token: 'WETH' }, { priceUsd: null, decimals: 18 }); return 'amount' in r && r.amount === '3' })())
     // Set-aware disambiguation for weak verbs.
     check('aave rival: hyperliquid in the set → named', competingVenueOf([{ slug: 'aave', name: 'Aave' }, { slug: 'hyperliquid-free', name: 'Hyperliquid (Free)' }]) === 'Hyperliquid (Free)')
     check('aave rival: wallet+aave only → null (Aave is the only venue)', competingVenueOf([{ slug: 'aave', name: 'Aave' }, { slug: 'yeetful-tool-wallet', name: 'Pantessa Wallet' }]) === null)
@@ -7597,6 +7627,18 @@ async function main() {
     ]
     const picked = pickSupplyReserve(rows, 'usdc')
     check('aave pick: active+collateral Main reserve, decoded onChainId', !!picked && picked.spokeName === 'Main' && picked.decimals === 6 && picked.onChainId === BigInt(7) && !!picked.priceUsd && Math.abs(picked.priceUsd - 1) < 0.01)
+    // "best rate": the highest supply APY among the official supplyable rows
+    // (live 2026-09-04 the real 11.38% was Ethena; the planner pinned it on
+    // the Lido spoke, which lists no USDC). Default pick is unchanged.
+    const ETHENA = '0xba1B3D55D249692b669A164024A838309B7508AF'
+    const ratedRows = [
+      ...rows,
+      { reserveId: Buffer.from(`1::${ETHENA}::4`).toString('base64'), spoke: 'Ethena Ecosystem', spokeAddress: ETHENA, asset: { symbol: 'USDC', address: USDC, decimals: 6 }, canSupply: true, canUseAsCollateral: false, active: true, supplied: '2955000', suppliedUsd: '$2,955,209.17', supplyApyPct: 11.3754 },
+      { reserveId: 'z', spoke: 'Gold', spokeAddress: ETHENA, asset: { symbol: 'USDC', address: USDC, decimals: 6 }, canSupply: false, active: true, supplyApyPct: 99 },
+    ]
+    const byRate = pickSupplyReserve(ratedRows, 'USDC', { bestRate: true })
+    check('aave pick: bestRate → the highest-APY SUPPLYABLE row (Ethena 11.38%, not the 99% borrow-only leg)', !!byRate && byRate.spokeName === 'Ethena Ecosystem' && byRate.onChainId === BigInt(4) && byRate.supplyApyPct === 11.3754)
+    check('aave pick: default stays the deepest collateral pool with the rated rows present', pickSupplyReserve(ratedRows, 'USDC')?.spokeName === 'Main')
 
     // The guard vs the LIVE-probed plan shape: approve(spoke, atoms) on the
     // token, then supply(onChainId, atoms, user) on the spoke.
@@ -7628,6 +7670,13 @@ async function main() {
     check('aave follow-up: "yes" is a noop (card already there)', parseAaveSupplyFollowUp('yes', apend)?.kind === 'noop')
     const aamend = parseAaveSupplyFollowUp('make it 5', apend)
     check('aave follow-up: "make it 5" re-amount', aamend?.kind === 'amend' && aamend.params.amount === '5' && aamend.params.token === 'USDC')
+    // Live 2026-09-04: "1 USDC, and best rate" — a bare re-statement.
+    const bareFu = parseAaveSupplyFollowUp('1 USDC, and best rate', apend)
+    check('aave follow-up: bare "1 USDC, and best rate" → amend + bestRate', bareFu?.kind === 'amend' && bareFu.params.amount === '1' && bareFu.params.token === 'USDC' && bareFu.params.bestRate === true)
+    const bareUsd = parseAaveSupplyFollowUp('$5 of USDC', apend)
+    check('aave follow-up: bare "$5 of USDC" → amend 5 (stable, no usd flag)', bareUsd?.kind === 'amend' && bareUsd.params.amount === '5' && !bareUsd.params.amountIsUsd)
+    check('aave follow-up: a DIFFERENT token is not an amendment', parseAaveSupplyFollowUp('1 DAI', apend) === null)
+    check('aave follow-up: a bare amount naming another venue is not an amendment', parseAaveSupplyFollowUp('1 USDC to morpho', apend) === null)
   }
 
   // ── Aave withdraw / borrow / repay: parse + position pick + the op guard ──

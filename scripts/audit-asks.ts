@@ -128,6 +128,8 @@ const CORPUS: Entry[] = [
     source: 'splash/hl preview (job)', expect: 'action',
   },
   { ask: 'Supply 10 USDC to Aave on Ethereum', source: 'splash/aave preview', expect: 'action' },
+  { ask: 'can I fo $2 of USDC on AAVE', source: 'live 2026-09-04 /p/bAUVA5uz2Axn (planner invented a spoke)', expect: 'action' },
+  { ask: 'supply $100 of USDC on aave at the best rate', source: 'dollar + rate preference', expect: 'action' },
   { ask: 'Repay all my USDC on Aave', source: 'splash/aave', expect: 'action' },
   { ask: 'Withdraw all my USDC from Aave', source: 'splash/aave', expect: 'action' },
   { ask: 'Stake 0.1 ETH on Lido', source: 'splash/lido', expect: 'action' },

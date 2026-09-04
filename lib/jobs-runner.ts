@@ -362,10 +362,15 @@ export async function buildSignArtifact(
     // reserves resolved from the agent's own list, build_* with resolved
     // addresses, every step re-verified. Built fresh at offer time — after a
     // funding leg settles, the wallet really holds what the build checks.
-    const p = params as { token: string; amount: string | null; max?: boolean }
+    const p = params as { token: string; amount: string | null; max?: boolean; amountIsUsd?: boolean; bestRate?: boolean }
     const built =
       builder === 'native-aave-supply'
-        ? await buildAaveSupplyArtifact(wallet, { token: p.token, amount: p.amount ?? '' })
+        ? await buildAaveSupplyArtifact(wallet, {
+            token: p.token,
+            amount: p.amount ?? '',
+            ...(p.amountIsUsd ? { amountIsUsd: true } : {}),
+            ...(p.bestRate ? { bestRate: true } : {}),
+          })
         : await buildAaveRepayArtifact(wallet, p)
     return {
       artifact: { txChain: built.txChain, summary: built.summary },
