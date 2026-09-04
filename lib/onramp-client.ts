@@ -73,11 +73,11 @@ export async function startOnrampSession(input: {
       tab?.close()
       // Surface the stage/status inline: "Could not start the funding session"
       // alone is unactionable, and this is the one screen an operator actually
-      // sees while wiring the on-ramp up. A region refusal is about the USER,
-      // not our wiring — it already reads as a complete sentence, so it gets
-      // no operator suffix.
+      // sees while wiring the on-ramp up. A region refusal is about the USER
+      // and a stale one is about the CHIP — neither is our wiring, and both
+      // already read as complete sentences, so they get no operator suffix.
       const detail =
-        data.stage === 'region'
+        data.stage === 'region' || data.stage === 'stale'
           ? ''
           : data.upstreamStatus
             ? ` (Stripe ${data.upstreamStatus})`

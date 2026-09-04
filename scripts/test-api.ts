@@ -139,6 +139,7 @@ import { guardSyncDrift } from './guard-sync-check'
 import { canonicalChainWord, normalizeChainWords } from '../lib/chain-lexicon'
 import {
   clampFundUsd,
+  classifyStripeOnrampFailure,
   fundChipFor,
   onrampAssetOf,
   onrampConsentMessage,
@@ -150,6 +151,7 @@ import {
   ONRAMP_MAX_USD,
   ONRAMP_MIN_USD,
   STRIPE_NETWORK,
+  STRIPE_UNSUPPORTABLE_CUSTOMER,
   STRIPE_WALLET_KEY,
 } from '../lib/onramp'
 import { clarifyOf } from '../lib/clarify'
@@ -5682,6 +5684,30 @@ async function main() {
         'onramp: an unknown asset is narrowed away rather than passed to Stripe\'s enum',
         onrampAssetOf('eth') === 'ETH' && onrampAssetOf('USDC') === 'USDC' && onrampAssetOf('DOGE') === null && onrampAssetOf(42) === null,
       )
+      // Stripe's documented refusal for a customer it will not serve. The
+      // first cut of this classifier was a regex for "unsupported" / "not
+      // supported" over message text — and Stripe's actual words are
+      // "unsupportable" and "unable to support". Codes, not prose.
+      const stripeRegion400 = JSON.stringify({
+        error: {
+          type: 'invalid_request_error',
+          code: STRIPE_UNSUPPORTABLE_CUSTOMER,
+          message: "Based on the information provided about the customer, we're currently unable to support them.",
+        },
+      })
+      check(
+        'onramp: Stripe\'s crypto_onramp_unsupportable_customer 400 classifies as REGION (about the user), by code',
+        classifyStripeOnrampFailure(400, stripeRegion400).kind === 'region' &&
+          /still send USDC or ETH/.test(classifyStripeOnrampFailure(400, stripeRegion400).message),
+        JSON.stringify(classifyStripeOnrampFailure(400, stripeRegion400)),
+      )
+      check(
+        'onramp: the same words WITHOUT the code still classify as region (prose fallback), and a bare 400/401/403 do not',
+        classifyStripeOnrampFailure(400, JSON.stringify({ error: { message: 'unable to support this customer' } })).kind === 'region' &&
+          classifyStripeOnrampFailure(400, JSON.stringify({ error: { code: 'parameter_unknown', message: 'Received unknown parameter: wallet_addresses[base]' } })).kind === 'stripe' &&
+          classifyStripeOnrampFailure(401, JSON.stringify({ error: { message: 'Invalid API Key provided' } })).kind === 'stripe' &&
+          classifyStripeOnrampFailure(403, 'not json at all').kind === 'stripe',
+      )
       // ── The Stripe create-session payload. Pinned as a pure value because
       // the alternative is finding out on a live request: Stripe 400s an
       // unrecognised key (verified 2026-09-04 — `wallet_addresses[base]`
@@ -5945,6 +5971,33 @@ async function main() {
         'onramp route: an EXPIRED consent never gets a funding URL, even correctly signed',
         !stale.data.url && stale.status !== 200,
         `${stale.status}`,
+      )
+
+      // A chip persisted before 2026-09-04 carries the old $14 preset (floor
+      // was $5). The server clamps it to today's floor, so the consent it
+      // re-derives can never match what the wallet signed — and the honest
+      // answer is "this button is out of date", not "signature mismatch".
+      // (When the door is closed the route 503s before it gets here.)
+      const oldChip = { ...fundBody, presetFiatUsd: 14 }
+      const oldSig = await stranger.signMessage({
+        message: onrampConsentMessage({ ...oldChip, network: 'base', address: stranger.address, issuedAt }),
+      })
+      const outdated = await post({ ...oldChip, issuedAt, signature: oldSig })
+      // Unknown chain/asset refuse by name too — the alternative (default to
+      // base/ETH, then fail the re-derived signature) blames the wallet for
+      // the client's stale payload.
+      const badNet = await post({ ...fundBody, network: 'solana', issuedAt, signature: oldSig })
+      check(
+        'onramp route: an unknown network is refused BY NAME (400), never by defaulting and failing the signature',
+        !badNet.data.url && (badNet.status === 503 || (badNet.status === 400 && /Base or Ethereum/.test(String((badNet.data as { error?: string }).error)))),
+        `${badNet.status} ${JSON.stringify(badNet.data)}`,
+      )
+      check(
+        'onramp route: a pre-2026-09-04 chip ($14 preset) is refused as OUT OF DATE, never as a signature mismatch',
+        !outdated.data.url &&
+          (outdated.status === 503 ||
+            (outdated.status === 409 && (outdated.data as { stage?: string }).stage === 'stale' && /out of date/.test(String((outdated.data as { error?: string }).error)))),
+        `${outdated.status} ${JSON.stringify(outdated.data)}`,
       )
     }
 

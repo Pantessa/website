@@ -2,10 +2,10 @@ import { NextRequest, NextResponse } from 'next/server'
 import { recoverMessageAddress } from 'viem'
 import {
   clampFundUsd,
+  classifyStripeOnrampFailure,
   onrampAssetOf,
   onrampConsentMessage,
   onrampEnabled,
-  ONRAMP_ASSET,
   ONRAMP_CONSENT_TTL_MS,
   stripeOnrampParams,
   type OnrampNetwork,
@@ -78,14 +78,38 @@ export async function POST(req: NextRequest) {
   if (!/^0x[0-9a-fA-F]{40}$/.test(address)) {
     return NextResponse.json({ error: 'A destination wallet address is required.' }, { status: 400 })
   }
-  const network = NETWORKS.find((n) => n === body.network) ?? 'base'
-  // Narrowed, not trusted: an asset Stripe's enum doesn't carry would be
-  // rejected at their door as a 400 we'd have to explain. Refuse it here,
-  // where we can say what happened.
-  const asset = onrampAssetOf(body.asset) ?? ONRAMP_ASSET
+  // Narrowed, not defaulted. Every legitimate client sends both; a missing or
+  // unknown value is stale or hostile, and silently substituting 'base'/ETH
+  // would only move the failure downstream to a baffling "signature does not
+  // match" (the wallet signed what the client sent, not what we assumed).
+  // Refuse here, by name — and never forward an unknown value to Stripe's
+  // enum, whose 400 we would then have to explain.
+  const network = NETWORKS.find((n) => n === body.network)
+  if (!network) {
+    return NextResponse.json({ error: 'Card funding can deliver to Base or Ethereum only.', stage: 'stale' }, { status: 400 })
+  }
+  const asset = onrampAssetOf(body.asset)
+  if (!asset) {
+    return NextResponse.json({ error: 'Card funding can deliver ETH or USDC only.', stage: 'stale' }, { status: 400 })
+  }
   // Clamp, do NOT re-plan: the chip's amount already carries the headroom, so
   // running planFundUsd again compounds it (rendered $14, charged $16).
-  const presetFiatUsd = clampFundUsd(body.presetFiatUsd)
+  const rawPreset = typeof body.presetFiatUsd === 'number' ? body.presetFiatUsd : Number(body.presetFiatUsd)
+  const presetFiatUsd = clampFundUsd(rawPreset)
+  // If the clamp CHANGED the number, the consent below cannot match: the
+  // wallet signed the client's figure and we would re-derive at ours. Say
+  // what actually happened rather than "signature does not match". The real
+  // case is a chip persisted in a thread before 2026-09-04, when the floor was
+  // $5 and a $12 plan rendered $14 — every legitimate client (clarifyOf rounds
+  // and range-clamps; the dashboard card sends a constant) already sends an
+  // integer inside the bounds, so a mismatch is stale or hostile, and both
+  // get the same polite no.
+  if (presetFiatUsd !== rawPreset) {
+    return NextResponse.json(
+      { error: 'This funding button is out of date — ask again and you\'ll get a fresh one.', stage: 'stale' },
+      { status: 409 },
+    )
+  }
 
   // ── Wallet proof. Runs BEFORE the Stripe call so a spoofed request never
   // costs us a session, and before any of it is logged.
@@ -169,17 +193,10 @@ export async function POST(req: NextRequest) {
       // because it is about the USER and not about us.
       const raw = await res.text().catch(() => '')
       console.error(`[onramp] stripe session failed: ${res.status} ${raw.slice(0, 400)}`)
-      const unsupportedRegion =
-        res.status === 400 && /region|country|not (?:available|supported)|unsupported/i.test(raw)
+      const failure = classifyStripeOnrampFailure(res.status, raw)
       return NextResponse.json(
-        {
-          error: unsupportedRegion
-            ? 'Card funding is not available in your region yet — you can still send USDC or ETH to this wallet on Base, Ethereum, or Arbitrum.'
-            : 'Could not start the funding session.',
-          stage: unsupportedRegion ? 'region' : 'stripe',
-          upstreamStatus: res.status,
-        },
-        { status: unsupportedRegion ? 400 : 502 },
+        { error: failure.message, stage: failure.kind, upstreamStatus: res.status },
+        { status: failure.kind === 'region' ? 400 : 502 },
       )
     }
 
