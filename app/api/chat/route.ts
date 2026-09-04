@@ -66,6 +66,7 @@ import {
   parseAaveSupply,
   parseAaveSupplyFollowUp,
   pickSupplyReserve,
+  resolveSupplyAmount,
   guardAaveSupplyBuild,
   aaveSupplyPending,
   parseAaveOp,
@@ -2739,11 +2740,22 @@ async function buildAaveSupplyTurn(
   // 1) Resolve the reserve from the agent's own reserves list — address,
   //    decimals, APY, and spoke all come from the official API, never a model.
   let picked: PickedReserve | null = null
+  let bestRateNote = ''
+  const eqAddrLoose = (a: string, b: string) => a.toLowerCase() === b.toLowerCase()
   try {
     const res = (await callAgentTool(agent.endpoint!, 'reserves', { symbols: [token], chainId: 1 })) as {
       reserves?: AaveReserveRow[]
     }
-    picked = pickSupplyReserve(res?.reserves ?? [], token)
+    const rows = res?.reserves ?? []
+    picked = pickSupplyReserve(rows, token, { bestRate: params.bestRate === true })
+    // "best rate" — show what the default (deepest, collateral-enabled)
+    // pool pays so the choice is visible, never silent.
+    if (params.bestRate && picked) {
+      const deepest = pickSupplyReserve(rows, token)
+      if (deepest && !eqAddrLoose(deepest.spokeAddress, picked.spokeAddress) && deepest.supplyApyPct !== null) {
+        bestRateNote = `— Picked by rate: ${picked.spokeName} pays ${picked.supplyApyPct?.toFixed(2) ?? '?'}% vs ${deepest.supplyApyPct.toFixed(2)}% on ${deepest.spokeName} (the deepest pool). Both from Aave's official reserve list.`
+      }
+    }
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'the lookup failed'
     trace({ type: 'receipt', receipt: { name: agent.name, endpoint: 'reserves', priceUsd: 0, ok: false, note: msg.slice(0, 200) } })
@@ -2755,7 +2767,17 @@ async function buildAaveSupplyTurn(
       reply: `🏦 ${token} isn't an active, supplyable Aave v4 reserve on Ethereum right now — ask “where can I earn on ${token}?” to see what's listed.`,
     })
   }
-  trace({ type: 'select', service: agent.name, endpoint: `${picked.spokeName} spoke · tools/call reserves → build_supply`, priceUsd: 0, reason: 'native aave supply layer — addresses from the official reserve list' })
+  trace({ type: 'select', service: agent.name, endpoint: `${picked.spokeName} spoke · tools/call reserves → build_supply`, priceUsd: 0, reason: `native aave supply layer — addresses from the official reserve list${params.bestRate ? ' (picked by supply APY)' : ''}` })
+
+  // A dollar ask ("$50 of WETH") becomes a token amount HERE, from the
+  // reserve's own pool totals — stables resolved 1:1 at parse time.
+  const resolvedAmount = resolveSupplyAmount(params, picked)
+  if ('problem' in resolvedAmount) {
+    trace({ type: 'note', level: 'warn', label: `native aave layer: dollar ask on ${token} could not be priced from the reserve — no build` })
+    return NextResponse.json({ reply: `🏦 ${resolvedAmount.problem}` })
+  }
+  if (params.amountIsUsd) trace({ type: 'status', label: `native aave layer: $${params.amount} of ${token} = ${resolvedAmount.amount} ${token} at the pool's own price` })
+  params = { ...params, amount: resolvedAmount.amount, amountIsUsd: undefined }
 
   const atoms = humanToAtoms(params.amount, picked.decimals)
   if (!atoms) {
@@ -2839,6 +2861,7 @@ async function buildAaveSupplyTurn(
     reply:
       `🔏 ${summary}\n` +
       `— Pool: ${picked.spokeName} spoke \`${picked.spokeAddress}\` · ${token} \`${picked.currency}\` (from Aave's official reserve list)\n` +
+      (bestRateNote ? `${bestRateNote}\n` : '') +
       `— The deposit credits ${walletAddress} and starts earning immediately; withdraw any time.\n` +
       `${stepsNote}${warns ? `\n${warns}` : ''}`,
     txChain: { summary, steps: guard.steps },
