@@ -38,6 +38,8 @@ import { policyCheckInflow, recipientCheck, validityCheck, MAX_VALID_SEC } from 
 import { guardPlannerArtifact, PERMIT2_ADDRESS } from '../lib/planner-artifact-guard'
 import { LIMIT_EXAMPLES, parseSwapIntent, swapClarify } from '../lib/swap-intent'
 import { activeLinkCapFor, composeMcps, linkEyebrow, linkLockup, linkLockupWord } from '../lib/intent-links'
+import { DEFAULT_TAB, parseTabParam, tabUrl } from '../lib/app-tab-url'
+import { LINKS_STUDIO_HREF } from '../lib/links-href'
 import { formatEarnedUsd, netFeeBpsFor, creatorEarningsUsd, FEE_BEARING_BUILD_PATHS, CROSS_CHAIN_FEE_BPS, CROSS_CHAIN_NET_FEE_BPS } from '../lib/fees'
 import { BUILD_PATHS, venueOfBuildPath } from '../lib/build-path'
 
@@ -2078,6 +2080,43 @@ async function main() {
       studioLoc.includes('tab=links') &&
         studioLoc.includes(encodeURIComponent('Buy $5 of AAPL')) &&
         studioLoc.includes('mcps=robinhood-free'),
+    )
+
+    // ── The spine's destinations are addressable (2026-09-04) ─────────────
+    // The left tabs used to be pure session state: deep in the links studio,
+    // reload, and you were back on MCPs. `?tab=` is now bidirectional — the
+    // spine mirrors it — so a refresh, a bookmark and a pasted link all land
+    // on the destination you were looking at. These pin the grammar the
+    // spine and every deep link in the product share.
+    check(
+      'app tabs: every spine destination parses out of the URL',
+      (['mcps', 'chats', 'jobs', 'links', 'team'] as const).every((t) => parseTabParam(`?tab=${t}`) === t),
+    )
+    check(
+      'app tabs: an unknown or absent tab resolves to null, never a blank drawer',
+      parseTabParam('?tab=nope') === null && parseTabParam('') === null && parseTabParam('?ask=hi') === null,
+    )
+    check(
+      'app tabs: a destination writes ?tab= onto whichever chat route you are on',
+      tabUrl('links', '/chat', '') === '/chat?tab=links' &&
+        tabUrl('jobs', '/chat/abc123', '') === '/chat/abc123?tab=jobs',
+    )
+    check(
+      'app tabs: the mint handoff (?ask=&mcps=) survives a tab change',
+      (() => {
+        const next = tabUrl('links', '/chat', '?ask=Buy+%245+of+AAPL&mcps=robinhood-free')
+        return next.includes('tab=links') && next.includes('mcps=robinhood-free') && next.includes('AAPL')
+      })(),
+    )
+    check(
+      'app tabs: the resting destination stays OUT of the URL (/chat === /chat?tab=mcps)',
+      tabUrl(DEFAULT_TAB, '/chat', '') === '/chat' &&
+        tabUrl(null, '/chat', '?tab=jobs') === '/chat' &&
+        tabUrl(DEFAULT_TAB, '/chat', '?tab=jobs&ask=x') === '/chat?ask=x',
+    )
+    check(
+      'app tabs: the studio href IS the tab URL — one address, no drift',
+      LINKS_STUDIO_HREF === tabUrl('links', '/chat', ''),
     )
 
     const badRedirect = await fetch(`${BASE}/api/intent-links`, {

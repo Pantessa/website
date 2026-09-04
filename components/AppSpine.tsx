@@ -15,12 +15,19 @@
 // Click grammar: a tab icon opens the drawer on that tab; clicking the tab
 // you're already looking at collapses the drawer. From the dashboard a tab
 // icon is a shortcut INTO chat, landing with that drawer tab open.
+//
+// The destination lives in the URL (`?tab=<name>`, lib/app-tab-url): the
+// spine reads it on arrival and mirrors every change back, so a reload keeps
+// you where you were instead of dropping you on MCPs, and any destination is
+// linkable. Mirroring uses replaceState — the back button stays the way OFF
+// the page, not a tab-undo.
 
-import { useEffect, useRef } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { Boxes, Link2, ListChecks, MessageSquare, Plus, Settings, Users } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { DEFAULT_TAB, parseTabParam, syncTabParam, tabUrl } from '@/lib/app-tab-url'
 import { useYeetfulStore, type RailTab } from '@/lib/store'
 import { useSession } from '@/lib/session'
 import { useRunningWork } from '@/lib/use-running-work'
@@ -63,24 +70,70 @@ export default function AppSpine({ surface = 'chat' }: { surface?: 'chat' | 'das
   // gone — so this is always enabled while the shell is up.
   const { badgeCount } = useRunningWork(true)
 
-  // Deep link (FIRST HIRE): /chat?tab=team (or any tab name) opens the
-  // drawer on that tab — the storefront's "hire from the Team tab" door
-  // lands the visitor IN the hire flow, not on a docs page. Read once off
-  // location (AppSpine mounts outside any Suspense boundary); unknown or
-  // flag-hidden tab names are simply not in TABS and do nothing.
+  // Which posture is live — the URL names one destination, but the two
+  // drawers are separate flags (desktop persists its open state, the mobile
+  // overlay never does), so the mirror below has to know which one counts.
+  const [isNarrow, setIsNarrow] = useState(false)
+  useEffect(() => {
+    const mql = window.matchMedia('(max-width: 1023px)')
+    const on = (e: MediaQueryListEvent) => setIsNarrow(e.matches)
+    setIsNarrow(mql.matches)
+    mql.addEventListener('change', on)
+    return () => mql.removeEventListener('change', on)
+  }, [])
+
+  // URL → spine. `?tab=<name>` (lib/app-tab-url) opens the drawer on that
+  // destination: it's how a reload comes back to where you were, how
+  // /dashboard/links redirects into the studio, and how the storefront's
+  // "hire from the Team tab" door lands the visitor IN the hire flow. Read
+  // off location, not useSearchParams — AppSpine mounts outside any Suspense
+  // boundary, and reading the hook there would opt every chat route out of
+  // static rendering. Unknown or flag-hidden tab names aren't in TABS and do
+  // nothing (the roster stays invisible while it ships dark).
+  const applyTabFromUrl = useCallback(
+    (search: string, { resetWhenAbsent }: { resetWhenAbsent: boolean }): RailTab | null => {
+      const tab = parseTabParam(search)
+      const known = tab && TABS.some((t) => t.tab === tab) ? tab : null
+      if (!known) {
+        // Back/forward off a destination returns to the resting spine; on
+        // ARRIVAL we leave the store alone, so a tab picked before the
+        // navigation (the dashboard's shortcut into chat) survives the hop.
+        if (resetWhenAbsent) {
+          setRailTab(DEFAULT_TAB)
+          setMainView('chat')
+        }
+        return null
+      }
+      setRailTab(known)
+      setMainView(known === 'links' ? 'links' : 'chat')
+      if (window.matchMedia('(max-width: 1023px)').matches) setMobileMcpRailOpen(true)
+      else setMcpRailOpen(true)
+      return known
+    },
+    [setRailTab, setMainView, setMcpRailOpen, setMobileMcpRailOpen],
+  )
+
   const deepLinkedRef = useRef(false)
   useEffect(() => {
     if (onDashboard) return
-    const tab = new URLSearchParams(window.location.search).get('tab')
-    if (tab && TABS.some((t) => t.tab === tab)) {
+    // Only a destination we actually APPLIED counts as a deep link — a
+    // flag-hidden tab name changed nothing, so it must not eat the
+    // wallet-arrival reset below.
+    if (applyTabFromUrl(window.location.search, { resetWhenAbsent: false })) {
       deepLinkedRef.current = true
-      setRailTab(tab as RailTab)
-      setMainView(tab === 'links' ? 'links' : 'chat')
-      if (window.matchMedia('(max-width: 1023px)').matches) setMobileMcpRailOpen(true)
-      else setMcpRailOpen(true)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  // Back/forward across destinations. The spine's own clicks use
+  // replaceState (see syncTabParam), so this only fires for real
+  // navigations — a pushed deep link, or leaving and returning to a chat.
+  useEffect(() => {
+    if (onDashboard) return
+    const onPop = () => applyTabFromUrl(window.location.search, { resetWhenAbsent: true })
+    window.addEventListener('popstate', onPop)
+    return () => window.removeEventListener('popstate', onPop)
+  }, [onDashboard, applyTabFromUrl])
 
   // A WALLET ARRIVING IS A FIRST LOOK — lead with the MCP set.
   //
@@ -122,13 +175,38 @@ export default function AppSpine({ surface = 'chat' }: { surface?: 'chat' | 'das
   // gesture (clicking the tab you're on) is also the way back.
   const mainViewFor = (tab: RailTab): 'chat' | 'links' => (tab === 'links' ? 'links' : 'chat')
 
+  // Spine → URL. The destination the address bar should name: the lit tab
+  // while the drawer is open, and LINKS whenever the board owns the main
+  // screen (on phones it shows with the overlay closed). A collapsed drawer
+  // on the default tab is just the conversation, so the param comes off —
+  // /chat and /chat?tab=mcps restore identically, and shared chat links stay
+  // clean.
+  const drawerOpen = isNarrow ? mobileMcpRailOpen : mcpRailOpen
+  const urlTab: RailTab | null =
+    mainView === 'links' && railTab === 'links' ? 'links' : drawerOpen ? railTab : null
+
+  // Every setRailTab in the app funnels through this one write — the spine's
+  // clicks, the auto-flip to Jobs when a turn births a standing intent, the
+  // rail's own "open the studio". Skips the first run: on arrival the URL is
+  // already the truth (applyTabFromUrl is mid-flight), and writing from
+  // not-yet-applied state would wipe the very param we're restoring.
+  const mirroredRef = useRef(false)
+  useEffect(() => {
+    if (onDashboard) return
+    if (!mirroredRef.current) {
+      mirroredRef.current = true
+      return
+    }
+    syncTabParam(urlTab)
+  }, [urlTab, onDashboard])
+
   // Desktop: the drawer is the in-flow panel (persisted open state).
   const pickDesktop = (tab: RailTab) => {
     if (onDashboard) {
       setRailTab(tab)
       setMainView(mainViewFor(tab))
       setMcpRailOpen(true)
-      router.push('/chat')
+      router.push(tabUrl(tab, '/chat', ''))
       return
     }
     if (railTab === tab && mcpRailOpen) {
@@ -154,7 +232,7 @@ export default function AppSpine({ surface = 'chat' }: { surface?: 'chat' | 'das
       setRailTab(tab)
       setMainView(mainViewFor(tab))
       setMobileMcpRailOpen(true)
-      router.push('/chat')
+      router.push(tabUrl(tab, '/chat', ''))
       return
     }
     if (railTab === tab && mobileMcpRailOpen) {

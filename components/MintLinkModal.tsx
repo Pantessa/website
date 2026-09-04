@@ -37,7 +37,7 @@ export default function MintLinkModal({
 }) {
   const [minted, setMinted] = useState<Minted | null>(null)
   const [copied, setCopied] = useState(false)
-  const { setMainView } = useYeetfulStore()
+  const { setMainView, setRailTab } = useYeetfulStore()
 
   const close = () => {
     setMinted(null)
@@ -127,6 +127,11 @@ export default function MintLinkModal({
                     <button
                       type="button"
                       onClick={() => {
+                        // The board is AND-ed with the rail tab (linksMode),
+                        // so both have to move — opened from a chat bubble
+                        // the rail sits on MCPs, and mainView alone left this
+                        // button doing nothing.
+                        setRailTab('links')
                         setMainView('links')
                         close()
                       }}
