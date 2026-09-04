@@ -276,10 +276,15 @@ most:
 | `ADMIN_WALLETS` | Admin surfaces | Comma-separated addresses |
 | `CRON_SECRET`, `GUARDIAN_KEY_SECRET` | Autonomy layer | Required for jobs / DCA / guardian crons |
 | `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` | Billing | Optional locally |
-| `OPENSEA_API_KEY`, `NEAR_INTENT_API_KEY`, `LIFI_API_KEY`, `ROBINHOOD_*` | Specific venues | Each venue degrades to a named refusal without its key |
+| `OPENSEA_API_KEY` | The NFT layer | Every NFT ask refuses by name without it, rather than guessing |
+| `LIFI_API_KEY` | LiFi quotes | Optional — quotes work keyless; a key raises the rate limit |
 
 Feature flags: `BROKER_DESK_ENABLED` (agent desk, fails closed),
-`ROSTER_ENABLED` / `NEXT_PUBLIC_ROSTER_ENABLED` (in-development surface).
+`ROSTER_ENABLED` / `NEXT_PUBLIC_ROSTER_ENABLED` (in-development surface),
+`ONRAMP_ENABLED` (card / bank on-ramp, needs the CDP keys too).
+
+The NEAR Intents and Robinhood venues reach hosted MCP services that hold
+their own credentials — this app has no env var for either.
 
 ---
 
