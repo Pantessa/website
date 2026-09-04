@@ -2413,9 +2413,48 @@ async function main() {
 
     // Revoke frees capacity — the cap counts ACTIVE links only.
     const thirdSlug = ((await third.json()) as { slug?: string }).slug
+    // …and it TAKES THE LINK DOWN. Give this one a fee-bearing conversion
+    // first, so the two halves of the contract are both under test: the row
+    // must leave the creator's own list (2026-09-04 — a revoked link kept
+    // sitting in the studio table long after its /i page 404'd, which reads
+    // as a button that did nothing), while the money it already earned must
+    // NOT leave with it. Filtering the earnings base instead of the listing
+    // is the tempting one-line version of this change and it would silently
+    // subtract accrued, claimable dollars.
+    await fetch(`${BASE}/api/embed/telemetry`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        firstParty: true,
+        sessionId: `fixture-ilink-revoke-${Date.now()}`,
+        page: `${BASE}/i/${thirdSlug}`,
+        outcome: 'signed',
+        artifact: 'tx',
+        valueUsd: 100,
+        buildPath: 'native-swap-uniswap',
+        intentLinkSlug: thirdSlug,
+      }),
+    })
+    type OwnerList = { links: Array<{ slug: string }>; earnings: { totalEarnedUsd: number; claimableUsd: number } }
+    const ownerList = async () =>
+      (await (await fetch(`${BASE}/api/intent-links`, { headers: { cookie: mallorySession } })).json()) as OwnerList
+    const beforeRevoke = await ownerList()
     const revoke = await fetch(`${BASE}/api/intent-links/${thirdSlug}`, { method: 'DELETE', headers: { cookie: mallorySession } })
     const fifth = await fetch(`${BASE}/api/intent-links`, { method: 'POST', headers: M, body: JSON.stringify({ ask: 'DCA $25 into ETH weekly' }) })
     check('intent links: revoke frees capacity (next mint 200) and needs auth', revoke.status === 200 && fifth.status === 200)
+    const afterRevoke = await ownerList()
+    check(
+      'intent links: a revoked link leaves the creator\'s own list',
+      beforeRevoke.links.some((l) => l.slug === thirdSlug) && !afterRevoke.links.some((l) => l.slug === thirdSlug),
+      JSON.stringify({ before: beforeRevoke.links.map((l) => l.slug), after: afterRevoke.links.map((l) => l.slug), thirdSlug }),
+    )
+    check(
+      'intent links: revoking a link never subtracts what it already earned',
+      beforeRevoke.earnings.totalEarnedUsd >= 0.1 - 1e-9 &&
+        Math.abs(afterRevoke.earnings.totalEarnedUsd - beforeRevoke.earnings.totalEarnedUsd) < 1e-6 &&
+        Math.abs(afterRevoke.earnings.claimableUsd - beforeRevoke.earnings.claimableUsd) < 1e-6,
+      JSON.stringify({ before: beforeRevoke.earnings, after: afterRevoke.earnings }),
+    )
     const strangerRevoke = await fetch(`${BASE}/api/intent-links/${slug}`, { method: 'DELETE' })
     check('intent links: revoking without a session → 401', strangerRevoke.status === 401)
 
@@ -2465,8 +2504,15 @@ async function main() {
         data: { id: recentFixtureId, ask: recentFixtureAsk, creator: mallory.address.toLowerCase(), isInternal: false },
       })
       const organicHtml = await (await fetch(`${BASE}/links`)).text()
+      // …and the same row, revoked, must be OFF the board on the next load:
+      // the leaderboard half of "revoke takes the link down". Same fixture,
+      // one flag flipped — nothing else about it changes, so a row that
+      // stays is the board forgetting to ask.
+      await prisma.intentLink.update({ where: { id: recentFixtureId }, data: { revoked: true } })
+      const revokedHtml = await (await fetch(`${BASE}/links`)).text()
       await prisma.intentLink.deleteMany({ where: { id: recentFixtureId } })
       check('intent links: recently-minted tab surfaces an organic mint pre-sign', organicHtml.includes(recentFixtureAsk))
+      check('intent links: revoking pulls the link off the public board', !revokedHtml.includes(recentFixtureAsk))
       check('intent links: recent-tab fixture released', (await prisma.intentLink.count({ where: { id: recentFixtureId } })) === 0)
     } else {
       check('intent links: organic recent-tab round-trip skipped — no DATABASE_URL for the harness process', true)
@@ -2993,11 +3039,11 @@ async function main() {
 
     // Robust cap-slot freeing: several blocks above and below each need one
     // free mint slot, and a single hardcoded revoke only works once — revoke
-    // ACTIVE links until `need` slots are open (free plan cap = 3).
+    // ACTIVE links until `need` slots are open (free plan cap = 3). The list
+    // route returns live links only, so everything it hands back is active.
     const freeSlots = async (need: number) => {
       const list = await fetch(`${BASE}/api/intent-links`, { headers: { cookie: mallorySession } })
-      const rows = ((await list.json()) as { links?: Array<{ slug: string; revoked: boolean }> }).links ?? []
-      const active = rows.filter((l) => !l.revoked)
+      const active = ((await list.json()) as { links?: Array<{ slug: string }> }).links ?? []
       const excess = active.length - (3 - need)
       for (const l of active.slice(0, Math.max(0, excess))) {
         await fetch(`${BASE}/api/intent-links/${l.slug}`, { method: 'DELETE', headers: { cookie: mallorySession } })
@@ -3128,9 +3174,9 @@ async function main() {
     // board excludes harness- sessions server-side regardless.
     const tail = await fetch(`${BASE}/api/intent-links`, { headers: { cookie: mallorySession } })
     if (tail.status === 200) {
-      const held = ((await tail.json()) as { links?: Array<{ slug: string; revoked: boolean }> }).links ?? []
+      const held = ((await tail.json()) as { links?: Array<{ slug: string }> }).links ?? []
       await Promise.all(
-        held.filter((l) => !l.revoked).map((l) => fetch(`${BASE}/api/intent-links/${l.slug}`, { method: 'DELETE', headers: { cookie: mallorySession } })),
+        held.map((l) => fetch(`${BASE}/api/intent-links/${l.slug}`, { method: 'DELETE', headers: { cookie: mallorySession } })),
       )
     }
   }

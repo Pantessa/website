@@ -165,7 +165,9 @@ export async function GET(req: NextRequest) {
   const [forkRows, turnRows] = await Promise.all([
     prisma.intentLink.groupBy({
       by: ['parentSlug'],
-      where: { parentSlug: { in: slugs } },
+      // A fork its creator took back is not social proof — revoking removes
+      // a link from every public count, this one included.
+      where: { parentSlug: { in: slugs }, revoked: false },
       _count: { _all: true },
     }),
     prisma.embedTurn.groupBy({

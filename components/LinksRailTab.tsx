@@ -157,7 +157,8 @@ function SignedInLinks({ activeSlugs }: { activeSlugs: string[] }) {
     })
   }
 
-  const live = (links ?? []).filter((l) => !l.revoked)
+  // The API lists live links only — revoking removes the row at the source.
+  const live = links ?? []
 
   return (
     <>

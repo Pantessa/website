@@ -143,7 +143,23 @@ export async function POST(req: NextRequest) {
   return NextResponse.json({ error: 'Could not mint a slug — try again.' }, { status: 500 })
 }
 
-/** The creator's links, newest first, each with its funnel aggregates. */
+/**
+ * The creator's LIVE links, newest first, each with its funnel aggregates.
+ *
+ * Revoked links are not listed: revoking is how a creator takes a link back,
+ * and a row that lingers in the studio after the /i page already 404s reads
+ * as a failed button. They leave every public surface the same way
+ * (lib/links-board, /l/<handle>, the mosaic gallery, /inbox — all
+ * `revoked: false`), so one revoke now removes the link everywhere it was
+ * listed.
+ *
+ * MONEY IS NOT A LISTING. The earnings math below still reads EVERY link the
+ * creator owns, revoked included — a signed conversion that already happened
+ * is accrued, claimable money, and taking the link down must never quietly
+ * subtract it. That is also what keeps this route in lockstep with
+ * /api/intent-links/claims, which has always summed all of the creator's
+ * slugs.
+ */
 export async function GET(req: NextRequest) {
   const addr = await getAuthAddress(req)
   if (!addr) return NextResponse.json({ error: 'Sign in to list your intent links.' }, { status: 401 })
@@ -155,6 +171,8 @@ export async function GET(req: NextRequest) {
     take: 100,
   })
   if (links.length === 0) return NextResponse.json({ links: [] })
+  /** What the creator SEES. `links` (all of them) stays the money base. */
+  const listed = links.filter((l) => !l.revoked)
 
   // Grouped by variant too, so A/B links segment their funnel per phrasing;
   // the aggregate funnel sums across variants (legacy null-variant rows
@@ -322,14 +340,13 @@ export async function GET(req: NextRequest) {
   const claimedUsd = claims._sum.amountUsd ?? 0
 
   return NextResponse.json({
-    links: links.map((l) => ({
+    links: listed.map((l) => ({
       slug: l.id,
       url: `/i/${l.id}`,
       ask: l.ask,
       variants: l.variants,
       agent: l.agent,
       redirectUrl: l.redirectUrl,
-      revoked: l.revoked,
       createdAt: l.createdAt,
       expiresAt: l.expiresAt,
       maxSigns: l.maxSigns,
