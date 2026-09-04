@@ -152,11 +152,12 @@ export async function bumpAndCheckBrokerCall(ip: string | null): Promise<boolean
   }
 }
 
-/** Minting an on-ramp session token is unauthenticated by necessity — the
- *  wallet funding itself has not signed anything yet (connect-to-act, #553) —
- *  and every call burns CDP quota against a caller-named address. A real
- *  person funds once or twice; this cap only ever catches a script. Its own
- *  bucket (`o:<hash>`), separate from the broker's. */
+/** Minting an on-ramp session is wallet-proof authenticated (#671: the empty
+ *  wallet personal_signs a consent naming itself), so this fence is no longer
+ *  the only thing standing there — it is defence in depth against a caller
+ *  who owns one throwaway wallet and a loop, since every call burns provider
+ *  quota. A real person funds once or twice; this cap only ever catches a
+ *  script. Its own bucket (`o:<hash>`), separate from the broker's. */
 export const ONRAMP_IP_HOURLY_CAP = 30
 
 /** Bump this IP's on-ramp window and report whether it tripped the cap.

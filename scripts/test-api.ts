@@ -138,12 +138,17 @@ import { canonicalChainWord, normalizeChainWords } from '../lib/chain-lexicon'
 import {
   clampFundUsd,
   fundChipFor,
+  onrampAssetOf,
   onrampConsentMessage,
-  onrampUrl,
   planFundUsd,
+  stripeOnrampParams,
   ONRAMP_ASSET,
   ONRAMP_CONSENT_TTL_MS,
+  ONRAMP_ETH_KEEP_USD,
+  ONRAMP_MAX_USD,
   ONRAMP_MIN_USD,
+  STRIPE_NETWORK,
+  STRIPE_WALLET_KEY,
 } from '../lib/onramp'
 import { clarifyOf } from '../lib/clarify'
 import { fundingPathOf } from '../lib/funding-path'
@@ -5512,55 +5517,134 @@ async function main() {
     // rule so a half-configured door can never render a button that 500s.
     {
       const wasEnabled = process.env.ONRAMP_ENABLED
-      const wasId = process.env.CDP_API_KEY_ID
-      const wasSecret = process.env.CDP_API_KEY_SECRET
+      const wasStripeKey = process.env.STRIPE_SECRET_KEY
 
-      check('onramp: a preset never lands under Coinbase\'s floor', planFundUsd(1) === ONRAMP_MIN_USD && planFundUsd(0) === ONRAMP_MIN_USD)
-      check('onramp: the preset clears the plan after card fees (headroom + round up)', planFundUsd(12) === 14 && planFundUsd(100) === 110, `${planFundUsd(12)}/${planFundUsd(100)}`)
+      // The floor is DERIVED, not chosen, and lib/onramp cannot import the
+      // constants it comes from (lib/lifi-bridge is server-side; lib/onramp is
+      // imported by a client component). So this is where the two are held
+      // together: ~$11 has to SURVIVE to the wallet for a gas-bearing segment
+      // to clear the parity guard, and a preset loses Stripe's onramp fee on
+      // the way in and the ETH keep-back on the way out. If MIN_VALUE_LEG_USD
+      // ever moves, this fails and ONRAMP_MIN_USD gets re-derived on purpose.
+      check(
+        'onramp: the minimum preset still clears the parity floor + gas leg + ETH keep-back',
+        ONRAMP_MIN_USD >= MIN_VALUE_LEG_USD + GAS_LEG_USD + ONRAMP_ETH_KEEP_USD.base,
+        `min=${ONRAMP_MIN_USD} vs value=${MIN_VALUE_LEG_USD}+gas=${GAS_LEG_USD}+keep=${ONRAMP_ETH_KEEP_USD.base}`,
+      )
+      check(
+        'onramp: a preset never lands under that floor, nor under the chain\'s own ETH keep-back',
+        planFundUsd(1) === ONRAMP_MIN_USD &&
+          planFundUsd(0) === ONRAMP_MIN_USD &&
+          planFundUsd(0, 'ethereum') >= ONRAMP_ETH_KEEP_USD.ethereum,
+        `${planFundUsd(0)}/${planFundUsd(0, 'ethereum')}`,
+      )
+      // 12 * 1.15 + 2 = 15.8 → $16;  100 * 1.15 + 2 = 117 (and 114.99999…
+      // in binary float, which is exactly why planFundUsd rounds to cents
+      // BEFORE the ceil — without that this pin reads $118).
+      check(
+        'onramp: the preset clears the plan after the onramp fee, the swap and the gas keep-back',
+        planFundUsd(12) === 16 && planFundUsd(100) === 117,
+        `${planFundUsd(12)}/${planFundUsd(100)}`,
+      )
+      // Mainnet keeps back 0.002 ETH, which is real money — the same plan
+      // costs meaningfully more to fund there, and the preset has to say so.
+      check(
+        'onramp: an Ethereum preset carries L1\'s much larger ETH keep-back',
+        planFundUsd(12, 'ethereum') === 30 && planFundUsd(12, 'ethereum') > planFundUsd(12, 'base'),
+        `${planFundUsd(12, 'ethereum')}`,
+      )
+      check(
+        'onramp: no plan, however large, can preset above the cap',
+        planFundUsd(100_000) === ONRAMP_MAX_USD,
+        String(planFundUsd(100_000)),
+      )
 
       process.env.ONRAMP_ENABLED = 'false'
       check(
         'onramp: the door FAILS CLOSED — unconfigured offers no chip at all',
         fundChipFor({ needUsd: 12, actionLabel: 'buy $10 of AAPL', resume: 'Buy $10 of AAPL' }) === null,
       )
-
+      // Half-configured is still closed: the flag alone must not render a
+      // button whose route answers 503.
       process.env.ONRAMP_ENABLED = 'true'
-      process.env.CDP_API_KEY_ID = 'test-id'
-      process.env.CDP_API_KEY_SECRET = 'test-secret'
+      delete process.env.STRIPE_SECRET_KEY
+      check(
+        'onramp: the flag alone is not enough — no Stripe key, no chip',
+        fundChipFor({ needUsd: 12, actionLabel: 'buy $10 of AAPL', resume: 'Buy $10 of AAPL' }) === null,
+      )
+
+      process.env.STRIPE_SECRET_KEY = 'sk_test_harness'
       const chip = fundChipFor({ needUsd: 12, actionLabel: 'buy $10 of AAPL', resume: 'Buy $10 of AAPL' })
       check(
         'onramp: the chip NAMES the intent and carries it as the resume (the ask survives the trip off-site)',
-        !!chip && chip.label.includes('buy $10 of AAPL') && chip.label.includes('$14') && chip.resume === 'Buy $10 of AAPL' && chip.fund?.network === 'base',
+        !!chip && chip.label.includes('buy $10 of AAPL') && chip.label.includes('$16') && chip.resume === 'Buy $10 of AAPL' && chip.fund?.network === 'base',
         JSON.stringify(chip),
       )
+      // ETH, not a stable: the wallet being funded is EMPTY, so a stable
+      // would land money that cannot pay the gas to move itself — the exact
+      // gas-stranded wall the refusals above have to apologise for.
       check(
-        'onramp: the server CLAMPS the client preset, never re-plans it (rendered $14 must not charge $16)',
-        clampFundUsd(14) === 14 && clampFundUsd(1) === ONRAMP_MIN_USD && clampFundUsd(9_999) === 500,
-        `${clampFundUsd(14)}/${clampFundUsd(1)}/${clampFundUsd(9_999)}`,
+        'onramp: the chip funds with ETH, which pays its own gas on arrival',
+        chip?.fund?.asset === 'ETH' && ONRAMP_ASSET === 'ETH',
+        JSON.stringify(chip?.fund),
       )
       check(
-        'onramp: the hosted URL carries the session token and the preset',
-        onrampUrl({ sessionToken: 'tok_1', presetFiatUsd: 14 }).includes('sessionToken=tok_1') &&
-          onrampUrl({ sessionToken: 'tok_1', presetFiatUsd: 14 }).includes('presetFiatAmount=14'),
+        'onramp: the server CLAMPS the client preset, never re-plans it (rendered $16 must not charge $18)',
+        clampFundUsd(16) === 16 && clampFundUsd(1) === ONRAMP_MIN_USD && clampFundUsd(9_999) === ONRAMP_MAX_USD,
+        `${clampFundUsd(16)}/${clampFundUsd(1)}/${clampFundUsd(9_999)}`,
       )
-      // The experience is NOT implied by the /buy/ path. Without an explicit
-      // defaultExperience, a signed-in Coinbase user lands in SEND — the
-      // transfer-your-existing-balance flow, whose "add a payment method" is
-      // bank/wire only. Card, Apple Pay and Google Pay exist solely on the BUY
-      // side, so the whole point of the chip ("add funds with a card") dies one
-      // step after the handoff. Observed live 2026-09-03.
       check(
-        'onramp: the hosted URL asks for the BUY experience, never SEND (card/Apple Pay live only on buy)',
-        onrampUrl({ sessionToken: 'tok_1', presetFiatUsd: 14 }).includes('defaultExperience=buy'),
-        onrampUrl({ sessionToken: 'tok_1', presetFiatUsd: 14 }),
+        'onramp: an unknown asset is narrowed away rather than passed to Stripe\'s enum',
+        onrampAssetOf('eth') === 'ETH' && onrampAssetOf('USDC') === 'USDC' && onrampAssetOf('DOGE') === null && onrampAssetOf(42) === null,
       )
-      // Region-varying. This project's buy-options API returns CARD +
-      // FIAT_WALLET + ACH_BANK_ACCOUNT + APPLE_PAY for US/USD but only CARD +
-      // FIAT_WALLET for PT — pinning one would offer a method some users
-      // cannot pay with, so we let Coinbase's own picker decide.
+      // ── The Stripe create-session payload. Pinned as a pure value because
+      // the alternative is finding out on a live request: Stripe 400s an
+      // unrecognised key (verified 2026-09-04 — `wallet_addresses[base]`
+      // returns `parameter_unknown`), which would take the funding path down
+      // for everyone at once behind a generic "could not start the session".
+      const FUND_ADDR = '0x' + 'ab'.repeat(20)
+      const form = stripeOnrampParams({ address: FUND_ADDR, presetFiatUsd: 16, asset: 'ETH', network: 'base', customerIp: '203.0.113.7' })
+      // THE asymmetry: the network enum is `base`, the wallet-address key is
+      // `base_network` — different words for the same chain in the same
+      // request. On Ethereum the two agree, which is exactly what makes Base
+      // easy to get wrong, so both lanes are pinned.
       check(
-        'onramp: the hosted URL does NOT pin a payment method (availability is per-country)',
-        !onrampUrl({ sessionToken: 'tok_1', presetFiatUsd: 14 }).includes('defaultPaymentMethod'),
+        'onramp: Stripe\'s wallet-address key is base_network while its network enum is base (the wrong key is a live 400)',
+        STRIPE_WALLET_KEY.base === 'base_network' &&
+          STRIPE_NETWORK.base === 'base' &&
+          form.get('wallet_addresses[base_network]') === FUND_ADDR &&
+          form.get('destination_network') === 'base' &&
+          form.get('wallet_addresses[base]') === null,
+        form.toString(),
+      )
+      check(
+        'onramp: the payload presets the FIAT amount the chip rendered, in USD',
+        form.get('source_amount') === '16' && form.get('source_currency') === 'usd' && form.get('destination_currency') === 'eth',
+        form.toString(),
+      )
+      // Locked on all three axes. The consent the user signed names an
+      // address, an asset and a chain; if the hosted page let them change any
+      // of those, the signature would be authorising a session it never saw.
+      check(
+        'onramp: the payload LOCKS the wallet, the asset and the network — the session can only do what was signed for',
+        form.get('lock_wallet_address') === 'true' &&
+          form.get('destination_currencies[0]') === 'eth' &&
+          form.get('destination_networks[0]') === 'base',
+        form.toString(),
+      )
+      // Stripe answers 400 up front for an unservable region, which is a
+      // better refusal than one delivered after the hand-off. But a faked IP
+      // would produce a wrong region, so it is passed only when real.
+      check(
+        'onramp: a real client IP rides along for region/fraud, and a missing one is never invented',
+        form.get('customer_ip_address') === '203.0.113.7' &&
+          stripeOnrampParams({ address: FUND_ADDR, presetFiatUsd: 16, asset: 'ETH', network: 'base', customerIp: null }).get('customer_ip_address') === null,
+      )
+      const ethForm = stripeOnrampParams({ address: FUND_ADDR, presetFiatUsd: 30, asset: 'ETH', network: 'ethereum' })
+      check(
+        'onramp: the Ethereum lane keys its address under `ethereum` (where enum and key DO agree)',
+        ethForm.get('wallet_addresses[ethereum]') === FUND_ADDR && ethForm.get('destination_network') === 'ethereum',
+        ethForm.toString(),
       )
 
       // clarifyOf is the one narrowing point, and a planner can emit this
@@ -5569,8 +5653,8 @@ async function main() {
       const hostile = clarifyOf({
         question: 'Add funds?',
         options: [
-          { label: 'Add', resume: 'Buy $10 of AAPL', fund: { presetFiatUsd: 99999, asset: 'USDC', network: 'base' } },
-          { label: 'Bad chain', resume: 'Buy $10 of AAPL', fund: { presetFiatUsd: 20, asset: 'USDC', network: 'solana' } },
+          { label: 'Add', resume: 'Buy $10 of AAPL', fund: { presetFiatUsd: 99999, asset: 'ETH', network: 'base' } },
+          { label: 'Bad chain', resume: 'Buy $10 of AAPL', fund: { presetFiatUsd: 20, asset: 'ETH', network: 'solana' } },
         ],
       })
       check(
@@ -5578,17 +5662,34 @@ async function main() {
         !!hostile && hostile.options[0].fund === undefined && hostile.options[1].fund === undefined,
         JSON.stringify(hostile),
       )
+      // Arbitrum was a VALID fund network until 2026-09-04 and is not one at
+      // Stripe, whose destination_network enum has no arbitrum. A stale chip
+      // (or a planner echoing the old shape) must degrade to a plain resume
+      // rather than open a session Stripe will reject at its own door.
+      const staleArb = clarifyOf({
+        question: 'Add funds?',
+        options: [
+          { label: 'Add on Arbitrum', resume: 'Buy $10 of AAPL', fund: { presetFiatUsd: 20, asset: 'ETH', network: 'arbitrum' } },
+          { label: 'Add on Base', resume: 'Buy $10 of AAPL', fund: { presetFiatUsd: 20, asset: 'ETH', network: 'base' } },
+        ],
+      })
+      check(
+        'onramp: arbitrum is no longer a fund network — the stale chip degrades, the Base one still works',
+        !!staleArb && staleArb.options[0].fund === undefined && staleArb.options[1].fund?.network === 'base',
+        JSON.stringify(staleArb),
+      )
 
-      // ── Wallet proof (CDP integration review, case 500PC00000kDVUv). The
-      // route mints a real Coinbase session token, so "who asked" has to be
-      // answerable before we spend one. personal_sign is the only proof an
-      // EMPTY wallet can give — it costs no gas — and these pin that the
-      // consent binds every value the session is minted from.
+      // ── Wallet proof (raised by Coinbase's integration review, case
+      // 500PC00000kDVUv; the finding was about US, so it outlived the switch
+      // to Stripe). The route mints a real payment session, so "who asked"
+      // has to be answerable before we spend one. personal_sign is the only
+      // proof an EMPTY wallet can give — it costs no gas — and these pin that
+      // the consent binds every value the session is minted from.
       {
         const funder = privateKeyToAccount(generatePrivateKey())
         const base = {
           address: funder.address,
-          presetFiatUsd: 14,
+          presetFiatUsd: 16,
           asset: ONRAMP_ASSET,
           network: 'base' as const,
           issuedAt: Date.now(),
@@ -5597,10 +5698,18 @@ async function main() {
         check(
           'onramp consent: the text NAMES what it authorises (wallet, amount, asset, chain) and says it can only deliver IN',
           consent.includes(funder.address.toLowerCase()) &&
-            consent.includes('$14 USD') &&
-            consent.includes('USDC on base') &&
+            consent.includes('$16 USD') &&
+            consent.includes('ETH on base') &&
             /only deliver funds TO this wallet/.test(consent) &&
             /costs no gas/.test(consent),
+          consent,
+        )
+        // The user is being sent to Stripe and the text has to say so — a
+        // consent that names the wrong company is a consent to something the
+        // signer did not read.
+        check(
+          'onramp consent: the text names the provider the user is about to be handed to',
+          /Stripe/.test(consent) && !/Coinbase/.test(consent),
           consent,
         )
         // Every field is load-bearing: if any could be swapped after signing,
@@ -5608,7 +5717,7 @@ async function main() {
         check(
           'onramp consent: changing ANY bound field changes the text (amount, asset, chain, wallet, time)',
           onrampConsentMessage({ ...base, presetFiatUsd: 500 }) !== consent &&
-            onrampConsentMessage({ ...base, asset: 'ETH' }) !== consent &&
+            onrampConsentMessage({ ...base, asset: 'USDC' }) !== consent &&
             onrampConsentMessage({ ...base, network: 'ethereum' }) !== consent &&
             onrampConsentMessage({ ...base, address: '0x' + '1'.repeat(40) }) !== consent &&
             onrampConsentMessage({ ...base, issuedAt: base.issuedAt + 60_000 }) !== consent,
@@ -5656,36 +5765,65 @@ async function main() {
         // rendered as plain text and re-sent the ask into the same
         // empty-wallet wall the on-ramp exists to fix. Nothing caught it,
         // because every unit above still passed. The chip is only real if the
-        // component that renders clarify options CONSUMES `fund` and calls the
-        // route — so pin that, at the source.
+        // component that renders clarify options CONSUMES `fund` and reaches
+        // the route — so pin that, at the source.
+        //
+        // The sign-then-mint dance moved into lib/onramp-client on 2026-09-04
+        // (two surfaces fund a wallet now), so the pins split: the chip must
+        // still consume `fund` and call the starter, and the starter must
+        // still sign the consent and call the route.
         const chipFs = await import('node:fs')
-        const chipSrc = chipFs.readFileSync('components/ClarifyChips.tsx', 'utf8')
+        // Comments stripped before any of these read the source: the FIRST cut
+        // of these pins searched raw text and both failed against this repo's
+        // own prose — the starter's doc comment says "after an `await`" and
+        // the fund card's says "a bare link to pay.coinbase.com". A source pin
+        // that a comment can satisfy (or defeat) is not a pin.
+        const codeOnly = (src: string) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')
+        const chipSrc = codeOnly(chipFs.readFileSync('components/ClarifyChips.tsx', 'utf8'))
+        const starterSrc = codeOnly(chipFs.readFileSync('lib/onramp-client.ts', 'utf8'))
         check(
           'onramp wiring: the clarify surface still CONSUMES o.fund (a fund chip is not a plain chip)',
-          /o\.fund/.test(chipSrc),
+          /o\.fund/.test(chipSrc) && chipSrc.includes('startOnrampSession'),
         )
         check(
-          'onramp wiring: the clarify surface still CALLS the on-ramp route',
-          chipSrc.includes('/api/onramp/session'),
+          'onramp wiring: the shared starter still CALLS the on-ramp route',
+          starterSrc.includes('/api/onramp/session'),
         )
         check(
-          'onramp wiring: the clarify surface still SIGNS the consent (an unsigned call is refused 401 by the route)',
-          chipSrc.includes('onrampConsentMessage') && /signMessageAsync/.test(chipSrc),
+          'onramp wiring: the shared starter still SIGNS the consent (an unsigned call is refused 401 by the route)',
+          starterSrc.includes('onrampConsentMessage') && /signMessage\(/.test(starterSrc),
+        )
+        // The popup must be opened BEFORE the first await or the browser
+        // blocks it — the one ordering constraint the extraction could have
+        // quietly broken for both surfaces at once.
+        check(
+          'onramp wiring: the starter opens the tab BEFORE it awaits anything (a post-await popup is blocked)',
+          starterSrc.indexOf('window.open') < starterSrc.indexOf('await'),
+        )
+        // Every funding surface goes through the signed door. A bare provider
+        // link is how the dashboard card spent months pointing at a
+        // pay.coinbase.com URL that 302s to a generic landing page — no
+        // address, no amount, no purchase.
+        const fundCardSrc = codeOnly(chipFs.readFileSync('components/FundAccountCard.tsx', 'utf8'))
+        check(
+          'onramp wiring: the dashboard fund card uses the signed door, not a bare provider link',
+          fundCardSrc.includes('startOnrampSession') && !/pay\.coinbase\.com/.test(fundCardSrc),
         )
       }
 
       process.env.ONRAMP_ENABLED = wasEnabled
-      process.env.CDP_API_KEY_ID = wasId
-      process.env.CDP_API_KEY_SECRET = wasSecret
+      if (wasStripeKey === undefined) delete process.env.STRIPE_SECRET_KEY
+      else process.env.STRIPE_SECRET_KEY = wasStripeKey
     }
 
     // The live door, over HTTP. Whether or not this deployment has the on-ramp
     // configured (unconfigured fails closed at 503, before auth), the
-    // invariant is the same and is the one CDP asked for: an unsigned or
-    // wrongly-signed request NEVER receives a session URL.
+    // invariant is the same one Coinbase's review asked for and Stripe
+    // inherits: an unsigned or wrongly-signed request NEVER receives a
+    // session URL.
     {
       const stranger = privateKeyToAccount(generatePrivateKey())
-      const fundBody = { address: stranger.address, presetFiatUsd: 14, asset: 'USDC', network: 'base' }
+      const fundBody = { address: stranger.address, presetFiatUsd: 16, asset: ONRAMP_ASSET, network: 'base' }
       const post = async (body: Record<string, unknown>) => {
         const r = await fetch(`${BASE}/api/onramp/session`, {
           method: 'POST',

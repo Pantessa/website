@@ -19,20 +19,20 @@
 // A chip carrying `fund` (lib/onramp) outranks both: the wallet is EMPTY, so
 // no resume can succeed yet and no route exists to draw. It takes a free
 // signature naming the destination wallet (personal_sign — an empty wallet
-// pays no gas but can still prove it is the wallet, which is what the CDP
-// on-ramp route requires), opens the hosted on-ramp, and then offers the very
+// pays no gas but can still prove it is the wallet, which is what the on-ramp
+// route requires), opens the Stripe-hosted on-ramp, and then offers the very
 // same resume: the ask survives the trip off-site, which is the whole point.
-// We deliberately do NOT try to detect completion — Coinbase settles in
-// another tab on its own clock, so guessing fires the resume too early and
-// walls the user a second time. The user tells us, we re-scan, the funding
-// layer decides.
+// We deliberately do NOT try to detect completion — Stripe settles in another
+// tab on its own clock, so guessing fires the resume too early and walls the
+// user a second time. The user tells us, we re-scan, the funding layer
+// decides.
 
 import { useState } from 'react'
 import { HelpCircle, ChevronRight, ArrowRight, CreditCard, Loader2 } from 'lucide-react'
 import { useAccount, useSignMessage } from 'wagmi'
 import type { ClarifyRequest, ClarifyOption } from '@/lib/clarify'
 import { fundingPathOf, type FundingPath } from '@/lib/funding-path'
-import { onrampConsentMessage } from '@/lib/onramp'
+import { startOnrampSession } from '@/lib/onramp-client'
 
 function PathStrip({ path }: { path: FundingPath }) {
   return (
@@ -84,63 +84,14 @@ export default function ClarifyChips({
     }
     setError(null)
     setFunding(i)
-    // Open the tab SYNCHRONOUSLY off the click, before any await: a popup
-    // opened after an await is no longer a user gesture and gets blocked
-    // (the same lesson as the Coinbase popup-after-await signature bug).
-    const tab = window.open('', '_blank')
-    try {
-      // Prove the wallet before asking CDP for a token (their integration
-      // review required it). personal_sign costs no gas, which is the only
-      // reason an EMPTY wallet can do it — and the text names the destination,
-      // so the prompt doubles as a confirmation of where the money lands.
-      // Signs the values the SERVER will use: clarifyOf has already rounded
-      // and range-clamped them, so the server's clamp is a no-op here, and if
-      // it ever were not the re-derived consent would fail to match — closed.
-      const issuedAt = Date.now()
-      let signature: string
-      try {
-        signature = await signMessageAsync({
-          message: onrampConsentMessage({ ...o.fund, address, issuedAt }),
-        })
-      } catch (e) {
-        tab?.close()
-        const why = e instanceof Error ? e.message : ''
-        setError(
-          /reject|denied|declined|cancell?ed/i.test(why)
-            ? 'Funding needs that signature to confirm the destination wallet — it costs nothing and moves nothing.'
-            : 'Could not confirm the destination wallet with your signature.',
-        )
-        return
-      }
-
-      const res = await fetch('/api/onramp/session', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ address, ...o.fund, issuedAt, signature }),
-      })
-      const data = (await res.json()) as { url?: string; error?: string; stage?: string; upstreamStatus?: number }
-      if (!res.ok || !data.url) {
-        tab?.close()
-        // Surface the stage/status inline: "Could not start the funding
-        // session" alone is unactionable, and this is the one screen an
-        // operator actually sees while wiring the on-ramp up.
-        const detail = data.upstreamStatus
-          ? ` (CDP ${data.upstreamStatus})`
-          : data.stage
-            ? ` (${data.stage})`
-            : ''
-        setError(`${data.error ?? 'Could not start the funding session.'}${detail}`)
-        return
-      }
-      if (tab) tab.location.href = data.url
-      else window.location.href = data.url
-      setOpened(i)
-    } catch {
-      tab?.close()
-      setError('Could not start the funding session.')
-    } finally {
-      setFunding(null)
-    }
+    // Called synchronously off the click: startOnrampSession opens the tab as
+    // its first statement, and a popup opened after an await is no longer a
+    // user gesture. It signs the consent, mints the Stripe session and hands
+    // the user off; it never throws.
+    const res = await startOnrampSession({ address, fund: o.fund, signMessage: signMessageAsync })
+    setFunding(null)
+    if (res.ok) setOpened(i)
+    else setError(res.error)
   }
 
   return (
