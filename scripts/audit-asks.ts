@@ -52,6 +52,7 @@ const CORPUS: Entry[] = [
   // venue-less form and the size chips themselves are actions.
   { ask: 'I want to buy some HYPE and 2x long', source: 'live 2026-08-12 (funded, fell to the planner)', expect: 'clarify-ok' },
   { ask: '2x long $12 of HYPE', source: 'live 2026-08-12 variant (leverage is venue evidence)', expect: 'action' },
+  { ask: '2X long $12 of HYPE, then protect my HYPE long with a 5% stop', source: 'typed reel (mint stage ghost, 2026-09-04)', expect: 'action' },
   { ask: '2x long $12 of HYPE on hyperliquid', source: 'hl unsized size chip', expect: 'action' },
   { ask: 'short 2x on BTC', source: 'live 2026-08-12 variant', expect: 'clarify-ok' },
   { ask: 'tile my wallet 42% ETH, 39% DAI, 19% CETH on ethereum', source: 'live 2026-08-12 (mosaic, cETH resolves on mainnet)', expect: 'action' },

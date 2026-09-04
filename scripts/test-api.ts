@@ -160,6 +160,7 @@ import { briefingNeedsCount, briefingTile, composeBriefingItems, type BriefingIn
 import { moveAsk, parseRebalanceAsk, planRebalance, type RebalanceInputs } from '../lib/rebalance'
 import { fmtUnits, isMosaicAsk, MOSAIC_STABLE, mosaicAskString, mosaicStableFor, parseMosaicAsk, planMosaic, type MosaicHolding } from '../lib/mosaic'
 import { simulateLadder } from './ask-ladder'
+import { HERO_ASKS, STARTER_ASKS } from '../components/typed-asks'
 import {
   buildSpotGuardPermission,
   guardSpotSell,
@@ -3033,6 +3034,28 @@ async function main() {
     )
     const hlMeta = (await (await fetch('https://api.hyperliquid.xyz/info', { method: 'POST', headers: CJ, body: JSON.stringify({ type: 'meta' }) })).json()) as { universe?: Array<{ name: string }> }
     check('house links: HYPE is a live Hyperliquid perp (the house ask names it)', !!hlMeta.universe?.some((u) => u.name === 'HYPE'))
+    // The ask reel (components/typed-asks.ts) is what the site TYPES in front
+    // of a visitor — the hero h1 and the mint stage's ghost. Every entry must
+    // claim a real artifact on the route ladder: a typed example that
+    // dead-ends when pasted is a demo of a broken product. The reel leads
+    // with the HYPE flagship (order + guardian), not a recurring buy — the
+    // one example that keeps working after the signature (2026-09-04).
+    const reelDeadEnds = [...new Set([...STARTER_ASKS, ...HERO_ASKS])]
+      .map((ask) => ({ ask, out: simulateLadder(ask) }))
+      .filter((r) => r.out.kind !== 'action')
+    check(
+      'ask reel: every typed example claims an artifact on the ladder (no dead-ends)',
+      reelDeadEnds.length === 0,
+      reelDeadEnds.map((r) => `${r.ask} → ${r.out.gate}/${r.out.kind}`).join('; '),
+    )
+    const reelHype = STARTER_ASKS.find((a) => /HYPE/.test(a)) ?? ''
+    const reelHypeJob = compileJobAsk(reelHype)
+    check(
+      'ask reel: the HYPE flagship compiles as order → guardian (a job, not a bare order with the stop dropped)',
+      !!reelHypeJob && !('problem' in reelHypeJob) && reelHypeJob.steps.length === 2 &&
+        reelHypeJob.steps[0].builder === 'native-hl-exec' && reelHypeJob.steps[1].builder === 'native-hl-guardian' &&
+        HERO_ASKS.some((a) => /HYPE/.test(a)) && !STARTER_ASKS.some((a) => /^DCA/.test(a)),
+    )
     const houseJobPage = await fetch(`${BASE}/i/protected-long`)
     const houseJobHtml = flat(await houseJobPage.text())
     check('house links: /i/protected-long is live with the pure-intent ask', houseJobPage.status === 200 && houseJobHtml.includes('then protect my HYPE long with a 5% stop'))
