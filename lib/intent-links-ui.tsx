@@ -6,6 +6,11 @@
 // without re-declaring the API contract. Funnel values are per-link telemetry
 // (client-reported) — the global money-moved metric stays guardrail-priced in
 // embed_turns and is NOT fed from this.
+//
+// `links` is LIVE links only: revoking takes a link down everywhere, so the
+// route stops listing it and no surface here has to remember to filter. The
+// earnings totals still include what revoked links earned — money outlives
+// the link that made it (app/api/intent-links/route.ts).
 
 import { useCallback, useEffect, useState } from 'react'
 
@@ -16,7 +21,6 @@ export interface LinkRow {
   variants: string[]
   agent: string | null
   redirectUrl: string | null
-  revoked: boolean
   createdAt: string
   expiresAt: string | null
   maxSigns: number | null

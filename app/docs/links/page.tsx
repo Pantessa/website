@@ -113,8 +113,8 @@ export default function LinksDocsPage() {
           Claim a handle on the dashboard and every active link you hold appears on{' '}
           <code>/l/&lt;handle&gt;</code>{' '}— one shareable page of everything you&apos;ve
           published. Opt-in by design: a wallet address is never the key to a public page, and
-          releasing the handle kills the page. Revoking any link 404s it instantly while its
-          history and earnings stay.
+          releasing the handle kills the page. Revoking any link 404s it instantly and takes it
+          off this page, your own table, and the board — what it earned stays yours.
         </p>
       </div>
     </>

@@ -7,10 +7,18 @@ export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
 /**
- * Revoke an intent link (DELETE) — creator-owned only. Revocation is the
- * capacity release (the plan cap counts active links): the /i page 404s from
- * the next load, but the row and its funnel/earnings history stay — accrued
- * creator earnings are never destroyed by revoking.
+ * Revoke an intent link (DELETE) — creator-owned only. Revoking TAKES THE
+ * LINK DOWN: from the next load the /i page 404s, its events/allowed routes
+ * refuse, and the row disappears from every list it was on — the creator's
+ * own studio table and rail (GET /api/intent-links returns live links only),
+ * the public leaderboard, /l/<handle>, the mosaic gallery, and any inbox it
+ * was addressed to. It also releases plan capacity (the cap counts active
+ * links).
+ *
+ * What it does NOT do is unmake money. The row is kept as a soft delete so
+ * the conversions it already produced stay attributed: accrued creator
+ * earnings, claims, and the money-moved history are read from it and must
+ * survive the link coming down.
  */
 export async function DELETE(req: NextRequest, { params }: { params: Promise<{ slug: string }> }) {
   const addr = await getAuthAddress(req)

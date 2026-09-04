@@ -21,7 +21,6 @@ interface LinksApi {
     slug: string
     url: string
     ask: string
-    revoked: boolean
     funnel: { open: number; connect: number; built: number; signed: number }
     signedUsd: number
     /** Creator's accrued half of the fee on this link's fee-bearing signs. */
@@ -102,7 +101,8 @@ export default function LinksSummaryCard() {
   // Hold until settled — a flash of zeros reads as "you have nothing".
   if (!data && !failed) return null
 
-  const live = data?.links.filter((l) => !l.revoked) ?? []
+  // Live links only — the owner API stops listing a link once it's revoked.
+  const live = data?.links ?? []
   const opens = live.reduce((s, l) => s + l.funnel.open, 0)
   const signs = live.reduce((s, l) => s + l.signsCount, 0)
   const movedUsd = live.reduce((s, l) => s + l.signedUsd, 0)

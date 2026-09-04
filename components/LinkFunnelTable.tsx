@@ -3,6 +3,10 @@
 // The per-link funnel table: opens → connects → built → signed → dollars
 // moved → earned, with copy / tweet / revoke on each row. The link is the
 // ad; this table is the creator's scoreboard. Extracted from /dashboard/links.
+//
+// Every row here is LIVE — the API lists live links only, so revoking really
+// does take the row away rather than leaving a dead one behind (the earnings
+// it produced stay in the panel above).
 
 import { useState } from 'react'
 import { Check, Copy, Link2 } from 'lucide-react'
@@ -12,6 +16,9 @@ import { absoluteUrl } from '@/lib/site-url'
 
 export function LinkFunnelTable({ links, onChanged }: { links: LinkRow[]; onChanged?: () => void }) {
   const [copied, setCopied] = useState<string | null>(null)
+  /** Just-revoked slugs, hidden until the reload lands (optimistic). */
+  const [gone, setGone] = useState<string[]>([])
+  const rows = links.filter((l) => !gone.includes(l.slug))
 
   const copy = (slug: string) => {
     void navigator.clipboard.writeText(`${window.location.origin}/i/${slug}`).then(() => {
@@ -19,6 +26,10 @@ export function LinkFunnelTable({ links, onChanged }: { links: LinkRow[]; onChan
       setTimeout(() => setCopied(null), 1500)
     })
   }
+
+  // Revoking the last row leaves a bare header until the reload lands — the
+  // caller's own empty state is the right thing to show for that beat.
+  if (rows.length === 0) return null
 
   return (
     <div className="overflow-x-auto">
@@ -36,7 +47,7 @@ export function LinkFunnelTable({ links, onChanged }: { links: LinkRow[]; onChan
           </tr>
         </thead>
         <tbody>
-          {links.map((l) => (
+          {rows.map((l) => (
             <tr key={l.slug} className="border-t border-[var(--line)]">
               {/* w-full + max-w-0: in an auto-layout table a cell grows to its
                   content, so the ask cell never truncated and a long ask pushed
@@ -106,24 +117,33 @@ export function LinkFunnelTable({ links, onChanged }: { links: LinkRow[]; onChan
                 {l.earnedUsd > 0 ? formatEarnedUsd(l.earnedUsd) : '—'}
               </td>
               <td className="py-2.5 text-right whitespace-nowrap">
-                {/* never offer sharing a revoked link — it 404s */}
-                {!l.revoked && (
-                  <a
-                    href={`https://twitter.com/intent/tweet?text=${encodeURIComponent(`“${l.ask}” — tap it, connect your wallet, done.`)}&url=${encodeURIComponent(absoluteUrl(`/i/${l.slug}`))}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    title="Tweet this link — the card wears your brand"
-                    className="text-[11px] mono text-[color:var(--muted-2)] hover:text-[color:var(--accent)] transition-colors mr-3"
-                  >
-                    tweet
-                  </a>
-                )}
+                <a
+                  href={`https://twitter.com/intent/tweet?text=${encodeURIComponent(`“${l.ask}” — tap it, connect your wallet, done.`)}&url=${encodeURIComponent(absoluteUrl(`/i/${l.slug}`))}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  title="Tweet this link — the card wears your brand"
+                  className="text-[11px] mono text-[color:var(--muted-2)] hover:text-[color:var(--accent)] transition-colors mr-3"
+                >
+                  tweet
+                </a>
                 <button
                   type="button"
-                  title="Revoke — the link stops working; its history and earnings stay"
+                  title="Revoke — the link comes down everywhere; the money it already earned stays yours"
                   onClick={() => {
-                    if (!window.confirm(`Revoke /i/${l.slug}? Anyone holding the link gets a 404. Earnings history stays.`)) return
-                    void fetch(`/api/intent-links/${l.slug}`, { method: 'DELETE' }).then(() => onChanged?.())
+                    if (
+                      !window.confirm(
+                        `Revoke /i/${l.slug}?\n\nThe link stops working, and it leaves this table and the public board. Anything it already earned stays in your balance.`,
+                      )
+                    )
+                      return
+                    // Drop the row on the spot, then reconcile — the list
+                    // re-reads itself every 30s and a row that lingers until
+                    // the next poll is exactly what this button looked broken
+                    // for.
+                    setGone((g) => [...g, l.slug])
+                    void fetch(`/api/intent-links/${l.slug}`, { method: 'DELETE' })
+                      .then(() => onChanged?.())
+                      .catch(() => setGone((g) => g.filter((s) => s !== l.slug)))
                   }}
                   className="text-[11px] mono text-[color:var(--muted-2)] hover:text-red-400 transition-colors"
                 >

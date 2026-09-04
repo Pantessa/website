@@ -71,8 +71,9 @@ export default function CreatorEarningsDocsPage() {
           Active links mirror the plan tiers: <strong>3</strong> on Builder ($0),{' '}
           <strong>25</strong> on Growth, <strong>unlimited</strong> on Scale — see{' '}
           <Link href="/pricing">pricing</Link>. The cap only gates <em>new</em>{' '}mints: links
-          you&apos;ve shared keep working forever, revoking one frees a slot instantly, and a
-          revoked link&apos;s funnel and earnings history are never destroyed.
+          you&apos;ve shared keep working forever, and revoking one frees a slot instantly.
+          Revoking takes the link down everywhere — it 404s, and the row leaves your table and
+          the public board — but what it already earned stays in your balance.
         </p>
 
         <h2>Disclosure</h2>
