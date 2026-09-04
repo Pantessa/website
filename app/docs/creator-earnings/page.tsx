@@ -49,7 +49,7 @@ export default function CreatorEarningsDocsPage() {
           <tbody>
             <tr>
               <td><strong>Uniswap</strong></td>
-              <td>Swaps on Base, Ethereum, Arbitrum, Robinhood Chain (v3, v4 fallback) — including every run of a recurring buy</td>
+              <td>Swaps on Base, Ethereum, Arbitrum, Optimism, Robinhood Chain (v3, v4 fallback) — including every run of a recurring buy</td>
               <td>0.50%</td>
               <td>0.50%</td>
               <td>0.25%</td>
@@ -57,7 +57,7 @@ export default function CreatorEarningsDocsPage() {
             </tr>
             <tr>
               <td><strong>CoW Protocol</strong></td>
-              <td>Swaps and limit orders (the fee rides the signed order&apos;s appData)</td>
+              <td>Swaps and limit orders on Base, Ethereum, Arbitrum (the fee rides the signed order&apos;s appData)</td>
               <td>0.50%</td>
               <td>0.50%</td>
               <td>0.25%</td>
