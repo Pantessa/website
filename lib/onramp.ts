@@ -129,14 +129,22 @@ export const ONRAMP_MIN_USD = 15
 export const ONRAMP_MAX_USD = 500
 
 /** Headroom over the plan, as a fraction of it. Was 10% for a stable bought
- *  through Coinbase; 15% now because an ETH preset is spent three times over
- *  before the plan sees it:
+ *  through Coinbase; 15% now because an ETH preset is spent before the plan
+ *  sees it:
  *
- *    • Stripe's onramp fee comes out of the fiat (their own worked example
- *      returns a $4.04 transaction fee + $0.07 network fee on $100.00),
  *    • ETH drifts between the preset and settlement — minutes, but a card
  *      purchase is not instant and the plan is denominated in dollars,
- *    • the ETH→stable leg pays gas, slippage and our own 20bps.
+ *    • the ETH→stable leg pays gas, slippage and our own 20bps,
+ *    • the origin scan floor()s the movable row to whole dollars.
+ *
+ *  NOT Stripe's fee. The first cut of this comment claimed the onramp fee
+ *  came out of the fiat; the first live session (2026-09-04, PT) showed the
+ *  opposite — "Pay $17.00 · Receive 0.00688 ETH @ $2467.76 (≈ $17.00) ·
+ *  Fees $0.69 · Total $17.69". source_amount converts IN FULL and the fee is
+ *  charged on top, so the card is billed a little more than the chip says
+ *  and the wallet receives exactly the preset's worth. The 15% is kept: it
+ *  was sized with that fee inside it, and the asymmetry below says the
+ *  spare belongs in the user's wallet, not in a tighter constant.
  *
  *  The asymmetry decides the direction to round: over-provisioning leaves the
  *  user ETH in their own wallet, which is theirs and which the next ask can
