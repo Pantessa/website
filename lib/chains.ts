@@ -183,7 +183,11 @@ export const APP_CHAINS: AppChain[] = [
     // makes a funding scan under-report (the failure mode that once hid
     // $15k on Base). publicnode holds up.
     rpcUrl: 'https://optimism-rpc.publicnode.com',
-    words: /\boptim(?:ism|sim|isim)\b/i,
+    // Unlike base/arbitrum, "optimism" is an everyday finance noun ("I have
+    // optimism about ETH") — so only a CHAIN SLOT names the chain: after a
+    // preposition, or before "chain". The lexicon's prep-gated shorts do the
+    // same for sol/btc/op. Pinned in test:api.
+    words: /(?:\b(?:on|from|to|into|onto)\s+optim(?:ism|sim|isim)\b|\boptim(?:ism|sim|isim)\s+chain\b)/i,
     // Same canonical SwapRouter02 / QuoterV2 addresses as Ethereum and
     // Arbitrum (deployments/10.md); bytecode verified via eth_getCode and a
     // live quoteExactInputSingle (1 USDC -> 0.00039380 WETH, 0.05% pool)
