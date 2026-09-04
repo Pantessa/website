@@ -224,6 +224,49 @@ export function stripeOnrampParams(input: {
   return params
 }
 
+/** Stripe's error code when it will not serve the customer the session
+ *  describes — at create time the only "information provided about the
+ *  customer" is the IP we pass, so this is, in practice, the region check
+ *  answering early (docs: "If the user's IP is in a region we can't support,
+ *  we return an HTTP 400 with an appropriate error code"). */
+export const STRIPE_UNSUPPORTABLE_CUSTOMER = 'crypto_onramp_unsupportable_customer'
+
+export type StripeOnrampFailure =
+  /** About the USER: Stripe will not onramp from where they are. A complete
+   *  sentence, no operator suffix. */
+  | { kind: 'region'; message: string }
+  /** About US: key rejected (401), onramp not approved (403), bad payload
+   *  (400), anything else. Generic copy; the status is the diagnostic. */
+  | { kind: 'stripe'; message: string }
+
+/** Classify a non-2xx create-session response. Pure — takes the status and
+ *  the raw body — because the first cut of this lived inline in the route as
+ *  a regex over message text and was WRONG: it looked for "unsupported" and
+ *  "not supported", and Stripe's actual words are "unsupportable" and "unable
+ *  to support". Codes are the contract; prose is a fallback. */
+export function classifyStripeOnrampFailure(status: number, rawBody: string): StripeOnrampFailure {
+  let code = ''
+  let message = ''
+  try {
+    const parsed = JSON.parse(rawBody) as { error?: { code?: unknown; message?: unknown } }
+    code = typeof parsed.error?.code === 'string' ? parsed.error.code : ''
+    message = typeof parsed.error?.message === 'string' ? parsed.error.message : ''
+  } catch {
+    message = rawBody
+  }
+  const unsupportable =
+    status === 400 &&
+    (code === STRIPE_UNSUPPORTABLE_CUSTOMER || /unsupportable|unable to support|region|country/i.test(message))
+  if (unsupportable) {
+    return {
+      kind: 'region',
+      message:
+        "Stripe can't offer card funding from where you are right now — you can still send USDC or ETH to this wallet on Base, Ethereum, or Arbitrum.",
+    }
+  }
+  return { kind: 'stripe', message: 'Could not start the funding session.' }
+}
+
 export interface FundChipParams {
   /** Dollars the smallest plan needs, solver fees included. */
   needUsd: number
