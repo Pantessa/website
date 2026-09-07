@@ -5,11 +5,15 @@ import {
   classifyStripeOnrampFailure,
   onrampAssetOf,
   onrampConsentMessage,
+  onrampCountryFrom,
   onrampEnabled,
+  onrampSourceAmount,
+  onrampSourceCurrencyFor,
   ONRAMP_CONSENT_TTL_MS,
   stripeOnrampParams,
   type OnrampNetwork,
 } from '@/lib/onramp'
+import { usdPerEur } from '@/lib/ecb-fx'
 import { bumpAndCheckOnrampSession, clientIpFrom } from '@/lib/turn-limits'
 
 export const runtime = 'nodejs'
@@ -153,20 +157,52 @@ export async function POST(req: NextRequest) {
     )
   }
 
+  // ── WHICH CURRENCY THE CHECKOUT OPENS IN. Stripe offers exactly two, usd
+  // and eur, and we hardcoded usd — so a customer in Europe was handed a
+  // dollar checkout, watched it fail, and had to find the currency switcher
+  // himself, AFTER a Link login and a KYC pass (observed 2026-09-07). The
+  // currency is a default and not a lock, which is exactly why this went
+  // unnoticed for a week: it never errors server-side. It just spends the
+  // one attempt the user was most likely to make.
+  //
+  // Decided HERE rather than at chip time on purpose. A country only exists
+  // on a request; this is the freshest request in the flow, and it is the
+  // one place BOTH funding surfaces pass through — the chat's fund chip and
+  // the dashboard's Fund-your-account card — so the two cannot drift, and a
+  // chip minted before this shipped still opens the right checkout.
+  //
+  // The AMOUNT converts WITH the currency. `source_amount` carries no
+  // currency of its own, so a euro session handed the plan's dollar figure
+  // charges the EUR/USD spread on top of the plan — about 16% at today's ECB
+  // rate — with nothing on the page saying so. That is also what happens
+  // today to anyone who switches the currency by hand, which is the fix
+  // underneath the fix.
+  const country = onrampCountryFrom(req.headers)
+  const sourceCurrency = onrampSourceCurrencyFor(country)
+  // Only a euro session needs a rate, so a US customer never waits on the ECB
+  // and never depends on it being up.
+  const { rate, via } = sourceCurrency === 'eur' ? await usdPerEur() : { rate: 1, via: 'n/a' as const }
+  const sourceAmount = onrampSourceAmount(presetFiatUsd, sourceCurrency, rate)
+
   // Built by a PURE function so the harness can pin it without spending a
   // live request — in particular the wallet-address key, which is
   // `base_network` and not `base` (Stripe 400s `parameter_unknown` on the
   // wrong one, which would take the whole funding path down at once). The
-  // same function locks the currency, the network and the address, so the
-  // minted session can do exactly what the consent above describes and
-  // nothing else.
+  // same function locks the DESTINATION currency, the network and the
+  // address, so the minted session can do exactly what the consent above
+  // describes and nothing else. The SOURCE currency stays a default the user
+  // can still change — Stripe does not let us lock it, and locking it is not
+  // what we want: it is the guess we open with, not a rule.
   //
   // The IP is passed through, never faked: Stripe uses it for geographic
   // supportability and answers 400 up front when the region can't be served,
   // which is a better answer than letting the user reach the hosted page and
   // be turned away there. clientIpFrom returns null for loopback and
   // header-less requests, and null means we simply don't claim to know.
-  const form = stripeOnrampParams({ address, presetFiatUsd, asset, network, customerIp: ip })
+  const form = stripeOnrampParams({ address, presetFiatUsd, asset, network, customerIp: ip, sourceCurrency, sourceAmount })
+  console.log(
+    `[onramp] session for ${country ?? 'unknown country'} → ${sourceCurrency} ${sourceAmount} (plan $${presetFiatUsd}, rate via ${via})`,
+  )
 
   // Signing and calling were separated in the CDP era because collapsing both
   // into one catch made every failure an indistinguishable 502. Stripe needs
@@ -212,7 +248,7 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    return NextResponse.json({ url: data.redirect_url, presetFiatUsd })
+    return NextResponse.json({ url: data.redirect_url, presetFiatUsd, sourceCurrency, sourceAmount })
   } catch (e) {
     const why = e instanceof Error ? e.message : 'unknown'
     console.error(`[onramp] stripe session request threw: ${why}`)

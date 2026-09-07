@@ -123,6 +123,102 @@ export const STRIPE_WALLET_KEY: Record<OnrampNetwork, string> = {
   ethereum: 'ethereum',
 }
 
+/** Stripe's ENTIRE `source_currency` enum — two values, verified against the
+ *  API reference 2026-09-07. That is what makes the country map below a
+ *  two-way choice rather than a currency table: there is no third answer to
+ *  get wrong, and a European who cannot pay in EUR has only USD left.
+ *
+ *  We used to hardcode `usd`. It is a DEFAULT, not a lock (Stripe: "Users can
+ *  still select a different currency in the onramp UI"), which is exactly how
+ *  the bug hid: a customer in Portugal was shown a dollar checkout, it failed,
+ *  and they had to find the currency switcher themselves. Every step before
+ *  that — the ask, the plan, the consent signature, the KYC — was already
+ *  spent by the time they hit it. */
+export const ONRAMP_SOURCE_CURRENCIES = ['usd', 'eur'] as const
+export type OnrampSourceCurrency = (typeof ONRAMP_SOURCE_CURRENCIES)[number]
+
+/** Where EUR is the better default of the two Stripe offers. Broader than the
+ *  euro area on purpose: Stripe has no PLN, SEK, DKK, CHF or GBP here, so for
+ *  a customer in Warsaw or London the real question is not "is EUR their
+ *  currency" but "which of dollars and euros is their card more likely to
+ *  take" — and in Europe that is euros. Everywhere else on earth defaults to
+ *  USD, which is both Stripe's widest lane and the status quo.
+ *
+ *  ISO-3166-1 alpha-2, upper case, as the geo headers report them. */
+export const ONRAMP_EUR_COUNTRIES: ReadonlySet<string> = new Set([
+  // Euro area
+  'AT', 'BE', 'HR', 'CY', 'EE', 'FI', 'FR', 'DE', 'GR', 'IE',
+  'IT', 'LV', 'LT', 'LU', 'MT', 'NL', 'PT', 'SK', 'SI', 'ES',
+  // EU, own currency — no Stripe onramp lane for any of them
+  'BG', 'CZ', 'DK', 'HU', 'PL', 'RO', 'SE',
+  // EEA / Europe outside the EU
+  'CH', 'GB', 'IS', 'LI', 'NO',
+  // Microstates and unilateral euro users
+  'AD', 'MC', 'ME', 'SM', 'VA', 'XK',
+])
+
+/** Which of Stripe's two fiat currencies to open the checkout in.
+ *
+ *  FAILS OPEN TO USD. An unknown country is the status quo, and the status
+ *  quo is a checkout the user can still switch by hand — whereas guessing EUR
+ *  for someone in Ohio would break a case that works today. */
+export function onrampSourceCurrencyFor(country: string | null | undefined): OnrampSourceCurrency {
+  if (typeof country !== 'string') return 'usd'
+  const cc = country.trim().toUpperCase()
+  return ONRAMP_EUR_COUNTRIES.has(cc) ? 'eur' : 'usd'
+}
+
+/** The customer's country from the edge's own geo headers, or null when the
+ *  platform did not resolve one.
+ *
+ *  Vercel sets `x-vercel-ip-country` on every request; Cloudflare's
+ *  `cf-ipcountry` is read too so a preview behind a different proxy is not
+ *  silently country-less. Both use `XX` (and Cloudflare `T1`, for Tor) to
+ *  mean "could not tell" — which must read as null, not as a country code
+ *  that happens to miss the EUR set. Never trust a client-supplied value:
+ *  this is only ever read from headers the platform writes. */
+export function onrampCountryFrom(headers: Headers): string | null {
+  for (const h of ['x-vercel-ip-country', 'cf-ipcountry']) {
+    const raw = headers.get(h)?.trim().toUpperCase()
+    if (raw && /^[A-Z]{2}$/.test(raw) && raw !== 'XX' && raw !== 'T1') return raw
+  }
+  return null
+}
+
+/** USD per 1 EUR when the live ECB rate is unreachable (lib/ecb-fx).
+ *
+ *  Deliberately BELOW the recent trading range (~1.05-1.20 since 2023), so a
+ *  stale-rate day over-provisions rather than under-funds — the same
+ *  asymmetry as ONRAMP_HEADROOM. At the live 1.16 it presents about 7% more
+ *  euros than the plan strictly needs; at parity it would present about 7%
+ *  fewer, which the preset's own 15% headroom still covers. */
+export const EUR_USD_FALLBACK = 1.08
+
+/** Bounds on any rate we will actually spend. A malformed feed that parsed to
+ *  0.01 would preset thousands of euros; one that parsed to 100 would preset
+ *  pennies and buy nothing. EUR/USD has never left this band. */
+export const EUR_USD_MIN = 0.5
+export const EUR_USD_MAX = 2
+
+/** The `source_amount` for a session, in `currency`.
+ *
+ *  USD is the identity case and MUST stay byte-identical to what shipped
+ *  before this function existed. For EUR the plan is converted at
+ *  `usdPerEur` and rounded UP — Stripe rejects fractional minor units, and
+ *  over-provisioning leaves the user ETH they own while under-provisioning
+ *  burns a card payment to arrive at the same wall.
+ *
+ *  Pure, so the harness pins the arithmetic rather than a live rate. */
+export function onrampSourceAmount(
+  presetFiatUsd: number,
+  currency: OnrampSourceCurrency,
+  usdPerEur: number,
+): number {
+  if (currency === 'usd') return presetFiatUsd
+  const rate = Number.isFinite(usdPerEur) && usdPerEur >= EUR_USD_MIN && usdPerEur <= EUR_USD_MAX ? usdPerEur : EUR_USD_FALLBACK
+  return Math.max(1, Math.ceil(presetFiatUsd / rate))
+}
+
 /** Assets we can both buy at Stripe and plan with downstream. ETH is what the
  *  chip emits (it is the gas); USDC stays valid because the funding scan
  *  reads it and the consent signature has to bind whatever we send. */
@@ -248,11 +344,26 @@ export function stripeOnrampParams(input: {
   /** Real client IP, or null. Stripe uses it for geographic supportability
    *  and fraud; NEVER faked, because a wrong region is a wrong refusal. */
   customerIp?: string | null
+  /** Which of Stripe's two fiat currencies to OPEN the checkout in, from the
+   *  customer's country (onrampSourceCurrencyFor). Defaults to usd, which is
+   *  what shipped before this parameter existed. */
+  sourceCurrency?: OnrampSourceCurrency
+  /** The preset expressed in `sourceCurrency` (onrampSourceAmount). Defaults
+   *  to the USD figure, which is correct precisely when the currency is usd.
+   *
+   *  The two travel TOGETHER for a reason: `source_amount` carries no
+   *  currency of its own, so a currency changed without its amount is not a
+   *  smaller bug than leaving both alone — it is a bigger one. At the live
+   *  ECB rate a "27" that means dollars but is read as euros charges about
+   *  $31, and nothing on the page says so. */
+  sourceAmount?: number
 }): URLSearchParams {
   const { address, presetFiatUsd, asset, network, customerIp } = input
+  const sourceCurrency = input.sourceCurrency ?? 'usd'
+  const sourceAmount = input.sourceAmount ?? presetFiatUsd
   const params = new URLSearchParams({
-    source_currency: 'usd',
-    source_amount: String(presetFiatUsd),
+    source_currency: sourceCurrency,
+    source_amount: String(sourceAmount),
     destination_currency: STRIPE_CURRENCY[asset],
     'destination_currencies[0]': STRIPE_CURRENCY[asset],
     destination_network: STRIPE_NETWORK[network],
@@ -381,7 +492,12 @@ export function onrampConsentMessage(input: OnrampConsentInput): string {
     // their checkout lets the user change. The wallet, asset and chain ARE
     // locked (lock_wallet_address + single-value destination arrays), so the
     // consent must not imply it caps a number it does not cap.
-    `Amount: $${input.presetFiatUsd} USD to start — you can change this at checkout`,
+    // "about", and no claim about WHICH currency: the checkout opens in
+    // dollars or euros depending on where the customer is
+    // (onrampSourceCurrencyFor), so a line promising dollars would be a
+    // promise we break for every European. The VALUE is what is authorised,
+    // and it is a starting value either way.
+    `Amount: about $${input.presetFiatUsd} USD to start — the checkout may price this in your local currency, and you can change it there`,
     `Asset: ${input.asset} on ${input.network}`,
     `Issued: ${new Date(input.issuedAt).toISOString()}`,
     'Signing opens a Stripe checkout that can only deliver funds TO this wallet. It moves nothing out and costs no gas.',

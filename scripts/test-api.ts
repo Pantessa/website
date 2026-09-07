@@ -143,10 +143,18 @@ import {
   fundChipFor,
   onrampAssetOf,
   onrampConsentMessage,
+  onrampCountryFrom,
+  onrampSourceAmount,
+  onrampSourceCurrencyFor,
   planFundUsd,
   stripeOnrampParams,
+  EUR_USD_FALLBACK,
+  EUR_USD_MAX,
+  EUR_USD_MIN,
   ONRAMP_ASSET,
   ONRAMP_CONSENT_TTL_MS,
+  ONRAMP_EUR_COUNTRIES,
+  ONRAMP_SOURCE_CURRENCIES,
   ONRAMP_DEFAULT_NETWORK,
   ONRAMP_ETH_KEEP_USD,
   ONRAMP_NETWORK_LABEL,
@@ -156,6 +164,7 @@ import {
   STRIPE_UNSUPPORTABLE_CUSTOMER,
   STRIPE_WALLET_KEY,
 } from '../lib/onramp'
+import { parseEcbUsdRate } from '../lib/ecb-fx'
 import { clarifyOf } from '../lib/clarify'
 import { fundingPathOf } from '../lib/funding-path'
 import { decideFundingTurn, detectBalanceShortfall, FUNDING_CHAIN_WORD, FUNDING_SCAN_CHAINS, fundingPlanUsd, planFundingChips, planStrandedRescue, promisableCapacityUsd, rankFundingSources, shortRefusalCopy, softenClaimedFailureBlock, type FundingNeed, type FundingSource } from '../lib/funding-plan'
@@ -5813,6 +5822,128 @@ async function main() {
         ethForm.toString(),
       )
 
+      // ── WHICH FIAT THE CHECKOUT OPENS IN (2026-09-07). Stripe's
+      // source_currency enum is exactly two values and we hardcoded one of
+      // them, so a customer in Europe met a dollar checkout, it failed, and
+      // he had to find the currency switcher himself — after a Link login
+      // and a KYC pass. It never errors server-side, which is why it went a
+      // week unnoticed, so the pins below are the only thing that will catch
+      // it coming back.
+      check(
+        'onramp: Stripe offers exactly two source currencies, so the country map is a two-way choice',
+        ONRAMP_SOURCE_CURRENCIES.length === 2 &&
+          ONRAMP_SOURCE_CURRENCIES.includes('usd') &&
+          ONRAMP_SOURCE_CURRENCIES.includes('eur'),
+        ONRAMP_SOURCE_CURRENCIES.join(','),
+      )
+      check(
+        'onramp: Europe opens in EUR — euro area, EU non-euro, and the EEA alike (none has a Stripe lane of its own)',
+        (['PT', 'DE', 'FR', 'IE', 'NL', 'ES', 'IT'] as const).every((c) => onrampSourceCurrencyFor(c) === 'eur') &&
+          (['PL', 'SE', 'DK', 'CZ'] as const).every((c) => onrampSourceCurrencyFor(c) === 'eur') &&
+          (['GB', 'CH', 'NO', 'IS'] as const).every((c) => onrampSourceCurrencyFor(c) === 'eur'),
+        [...ONRAMP_EUR_COUNTRIES].join(','),
+      )
+      check(
+        'onramp: everywhere else opens in USD, and an unknown country FAILS OPEN to USD (never guess EUR for Ohio)',
+        (['US', 'CA', 'JP', 'AU', 'BR', 'IN', 'NG', 'SG'] as const).every((c) => onrampSourceCurrencyFor(c) === 'usd') &&
+          onrampSourceCurrencyFor(null) === 'usd' &&
+          onrampSourceCurrencyFor(undefined) === 'usd' &&
+          onrampSourceCurrencyFor('') === 'usd' &&
+          onrampSourceCurrencyFor('not-a-country') === 'usd',
+      )
+      check(
+        'onramp: the country comes from the EDGE\'s geo headers, lower case tolerated, "could not tell" read as unknown',
+        onrampCountryFrom(new Headers({ 'x-vercel-ip-country': 'pt' })) === 'PT' &&
+          onrampCountryFrom(new Headers({ 'cf-ipcountry': 'DE' })) === 'DE' &&
+          // Vercel wins when both are present: it is the platform actually
+          // serving this route.
+          onrampCountryFrom(new Headers({ 'x-vercel-ip-country': 'US', 'cf-ipcountry': 'DE' })) === 'US' &&
+          // XX (both) and T1 (Cloudflare, Tor) mean unresolved — a code that
+          // merely misses the EUR set would read as a confident USD.
+          onrampCountryFrom(new Headers({ 'x-vercel-ip-country': 'XX' })) === null &&
+          onrampCountryFrom(new Headers({ 'cf-ipcountry': 'T1' })) === null &&
+          onrampCountryFrom(new Headers({ 'x-vercel-ip-country': 'PORTUGAL' })) === null &&
+          onrampCountryFrom(new Headers()) === null,
+      )
+      // THE BUG UNDERNEATH THE BUG. source_amount carries no currency of its
+      // own, so a currency changed WITHOUT its amount charges the EUR/USD
+      // spread on top of the plan — and that is also what happens today to
+      // any user who switches the currency by hand, exactly as this one did.
+      check(
+        'onramp: a EUR preset is CONVERTED, never the dollar figure relabelled (a bare relabel charges the spread)',
+        onrampSourceAmount(27, 'eur', 1.16) === 24 &&
+          onrampSourceAmount(27, 'eur', 1.16) < 27 &&
+          onrampSourceAmount(100, 'eur', 1.25) === 80,
+        `${onrampSourceAmount(27, 'eur', 1.16)}`,
+      )
+      check(
+        'onramp: USD is the identity case — the dollar lane must be byte-identical to what shipped before currencies existed',
+        onrampSourceAmount(27, 'usd', 1.16) === 27 && onrampSourceAmount(15, 'usd', 999) === 15,
+      )
+      check(
+        'onramp: a EUR preset rounds UP (Stripe rejects fractional minor units, and over-provisioning beats a second wall)',
+        onrampSourceAmount(27, 'eur', 1.1622) === 24 && onrampSourceAmount(20, 'eur', 1.0) === 20,
+        `${onrampSourceAmount(27, 'eur', 1.1622)}`,
+      )
+      check(
+        'onramp: an absurd or missing rate falls back rather than presetting thousands of euros against a $25 plan',
+        onrampSourceAmount(25, 'eur', 0.001) === Math.ceil(25 / EUR_USD_FALLBACK) &&
+          onrampSourceAmount(25, 'eur', NaN) === Math.ceil(25 / EUR_USD_FALLBACK) &&
+          onrampSourceAmount(25, 'eur', 500) === Math.ceil(25 / EUR_USD_FALLBACK),
+      )
+      check(
+        'onramp: the FX fallback sits below the trading range, so a stale-rate day over-provisions instead of under-funding',
+        EUR_USD_FALLBACK > EUR_USD_MIN && EUR_USD_FALLBACK < 1.15 && EUR_USD_MIN < 1 && EUR_USD_MAX > 1.25,
+        `${EUR_USD_MIN} < ${EUR_USD_FALLBACK} < ${EUR_USD_MAX}`,
+      )
+      // The ECB's daily cube, as it actually serves it. Pinned against a real
+      // sample so a feed reshape is caught here and not by a European being
+      // quoted a nonsense number.
+      const ECB_SAMPLE =
+        `<gesmes:Envelope><Cube><Cube time='2026-09-05'>` +
+        `<Cube currency='USD' rate='1.1622'/><Cube currency='JPY' rate='171.28'/></Cube></Cube></gesmes:Envelope>`
+      check(
+        'onramp: the ECB daily cube parses to USD-per-EUR, and an out-of-band or shapeless feed parses to null',
+        parseEcbUsdRate(ECB_SAMPLE) === 1.1622 &&
+          parseEcbUsdRate(`<Cube currency="USD" rate="1.09"/>`) === 1.09 &&
+          parseEcbUsdRate(`<Cube currency='JPY' rate='171.28'/>`) === null &&
+          parseEcbUsdRate(`<Cube currency='USD' rate='0.001'/>`) === null &&
+          parseEcbUsdRate('<html>maintenance</html>') === null,
+        `${parseEcbUsdRate(ECB_SAMPLE)}`,
+      )
+      // The payload itself: currency and amount must move together, and the
+      // DESTINATION side must not shift when the source does.
+      const eurForm = stripeOnrampParams({
+        address: FUND_ADDR,
+        presetFiatUsd: 27,
+        asset: 'ETH',
+        network: 'ethereum',
+        sourceCurrency: 'eur',
+        sourceAmount: onrampSourceAmount(27, 'eur', 1.1622),
+      })
+      check(
+        'onramp: a European session opens in EUR at the CONVERTED amount, and still delivers the same locked ETH on the same chain',
+        eurForm.get('source_currency') === 'eur' &&
+          eurForm.get('source_amount') === '24' &&
+          eurForm.get('destination_currency') === 'eth' &&
+          eurForm.get('destination_currencies[0]') === 'eth' &&
+          eurForm.get('destination_networks[0]') === 'ethereum' &&
+          eurForm.get('lock_wallet_address') === 'true',
+        eurForm.toString(),
+      )
+      check(
+        'onramp: omitting the currency is still the USD lane, unchanged — a caller that never heard of currencies cannot break',
+        stripeOnrampParams({ address: FUND_ADDR, presetFiatUsd: 27, asset: 'ETH', network: 'ethereum' }).toString() ===
+          stripeOnrampParams({
+            address: FUND_ADDR,
+            presetFiatUsd: 27,
+            asset: 'ETH',
+            network: 'ethereum',
+            sourceCurrency: 'usd',
+            sourceAmount: 27,
+          }).toString(),
+      )
+
       // clarifyOf is the one narrowing point, and a planner can emit this
       // shape too — a hostile fund payload must degrade to a plain chip,
       // never render an offer to charge someone thousands.
@@ -5876,6 +6007,17 @@ async function main() {
         check(
           'onramp consent: the text names the provider the user is about to be handed to',
           /Stripe/.test(consent) && !/Coinbase/.test(consent),
+          consent,
+        )
+        // The checkout opens in dollars OR euros depending where the signer
+        // is (onrampSourceCurrencyFor), so the consent must not promise a
+        // dollar screen it will not show a European. It authorises a VALUE,
+        // said as a starting one, and says where the number can change.
+        check(
+          'onramp consent: the amount reads as an approximate STARTING value, and promises no particular checkout currency',
+          /about \$16 USD to start/.test(consent) &&
+            /local currency/.test(consent) &&
+            /change it there/.test(consent),
           consent,
         )
         // Every field is load-bearing: if any could be swapped after signing,
