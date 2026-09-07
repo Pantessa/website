@@ -185,10 +185,13 @@ export const ONRAMP_HEADROOM = 0.15
  *  Carried in USD rather than ETH, and carried HIGH, because this module is
  *  pure and has no price feed — the same round-up asymmetry as ONRAMP_HEADROOM
  *  applies. Mainnet: 0.002 ETH keep-back + $1 two-leg headroom + up to $1 to
- *  the floor() — about $7 at $2,500/ETH, $10 at $4,000/ETH. $10 holds through
- *  that range; above it the plan's own 15% headroom is what absorbs the
- *  difference, and a wallet that ends up a dollar short is still gas-funded
- *  and offered the downsized plan, not walled. Was $16 when Ethereum was the
+ *  the floor() — about $7 at $2,500/ETH, $10 at $4,000/ETH. With the plan's
+ *  own 15% headroom on top, the smallest plan ($12.5, the $10 AAPL buy)
+ *  still funds from the landed ETH through ~$5,000/ETH — the harness pins
+ *  $2k–$5k against the real planner — and a wallet that ends up a dollar
+ *  short above that is still gas-funded and offered the downsized plan, not
+ *  walled. Stripe's fee rides ON TOP of the preset (the full source amount
+ *  converts; live 2026-09-04), so nothing here budgets for it. Was $16 when Ethereum was the
  *  lane nobody used (a fence sized for $7,000/ETH); now that it is the DEFAULT
  *  lane, every dollar here is a dollar on every fund chip a stranger sees —
  *  $30 to buy $10 of AAPL reads as broken, $24 reads as a card fee. */

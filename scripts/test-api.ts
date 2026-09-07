@@ -7435,6 +7435,43 @@ async function main() {
         fundingPathOf('Swap 5 USDC for ETH on saturn') === null,
     )
 
+    // ── The on-ramp's LANDING STATE (2026-09-07). The default lane is now
+    // Ethereum mainnet (Stripe walled ETH-on-Base by home address, after
+    // KYC), so the wallet a card purchase produces holds ETH on L1 and
+    // nothing else. This pins the whole arithmetic chain across a RANGE of
+    // ETH prices: the default preset for the flagship $10 AAPL buy (~$12.5
+    // plan, gas leg included) converts in full (Stripe's fee rides ON TOP —
+    // live session 2026-09-04: $17 → 0.00688 ETH, $0.69 fee added; $1 of
+    // slack here for the network fee + drift), minus mainnet's 0.002 ETH
+    // keep-back at that price, must still plan chips whose resumes compile
+    // — or the default chip charges a card to arrive at the same wall it was
+    // minted to remove. The planner subtracts its own $1 two-leg headroom on
+    // top; ONRAMP_ETH_KEEP_USD ($10) is what sizes the preset, and this is
+    // where its "holds through ~$5,000/ETH" claim is held to.
+    {
+      const landingPlanUsd = 12.5
+      const landingPreset = planFundUsd(landingPlanUsd)
+      const landedUsd = landingPreset - 1
+      const results = [2_000, 3_000, 4_000, 5_000].map((ethUsd) => {
+        const movableUsd = Math.floor(landedUsd - 0.002 * ethUsd)
+        const landing = O(1, 'Ethereum', movableUsd, landedUsd / ethUsd, 'ETH')
+        const chips = planRobinhoodFundingChips({ origins: [landing], needUsd: landingPlanUsd, gasIncluded: true, followup: 'buy $10 of AAPL' })
+        const job = chips ? compileJobAsk(chips[0].resume) : null
+        const ok =
+          !!chips && /Ethereum ETH/.test(chips[0].label) && /from ethereum using eth/.test(chips[0].resume) &&
+          !!job && !('problem' in job) &&
+          (job.steps[0].params as { leg?: string; token?: string }).leg === 'gas' &&
+          (job.steps[0].params as { token?: string }).token === 'ETH' &&
+          chips.every((c) => { const j = compileJobAsk(c.resume); return !!j && !('problem' in j) })
+        return { ethUsd, movableUsd, ok, first: chips?.[0]?.label ?? null }
+      })
+      check(
+        'onramp landing: the default preset, converted in full minus the L1 keep-back, funds the $10 AAPL buy FROM ETHEREUM with ETH at $2k–$5k/ETH (chips compile, gas leg first)',
+        ONRAMP_DEFAULT_NETWORK === 'ethereum' && results.every((r) => r.ok),
+        `preset=$${landingPreset} ${JSON.stringify(results)}`,
+      )
+    }
+
     // ── Native ETH as a funding source (2026-07-28): the most common
     // stranger wallet — ETH, no stables — used to wall the flagship stock
     // buy with "no USDC on Base, Ethereum, or Arbitrum". ETH origin rows
