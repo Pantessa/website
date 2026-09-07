@@ -3561,6 +3561,32 @@
   .loopband__meta { font-size: 10.5px; color: var(--muted-2); letter-spacing: .04em; margin-top: 2px; }
   @media (max-width: 900px) { .loopband { grid-template-columns: 1fr; } }
 
+  /* ── SEE IT RUNNING (.liveex) — the live host-app example ─────────────
+     Sits between the assembling install and the loop band: the same five
+     lines, deployed as a product, with the source one click away. */
+  .liveex {
+    margin-top: 28px; display: grid; grid-template-columns: minmax(0, 1fr) minmax(300px, 460px);
+    gap: clamp(20px, 3vw, 44px); align-items: center;
+    border: 1px solid var(--line); border-radius: 18px; padding: clamp(22px, 3vw, 34px);
+    background: linear-gradient(300deg, color-mix(in srgb, var(--accent) 6%, transparent), transparent 55%), var(--surf-1);
+  }
+  .liveex__eyebrow { display: inline-flex; align-items: center; gap: 9px; font-size: 11px; letter-spacing: .16em; color: var(--accent); }
+  .liveex__eyebrow b { font-weight: 400; opacity: .7; }
+  .liveex__h3 { font-family: var(--font-serif); font-weight: 500; font-optical-sizing: auto; font-size: clamp(20px, 2.2vw, 27px); line-height: 1.2; letter-spacing: -.012em; margin-top: 12px; color: var(--fg); max-width: 24ch; }
+  .liveex__sub { margin-top: 11px; max-width: 56ch; font-size: 14px; line-height: 1.6; color: var(--muted); text-wrap: pretty; }
+  .liveex__ctas { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; margin-top: 18px; }
+  .liveex__ctas .btn { padding: 11px 18px; font-size: 14px; }
+  .liveex__docs { font-size: 11px; letter-spacing: .12em; color: var(--muted); text-decoration: none; }
+  .liveex__docs:hover { color: var(--fg); }
+  .liveex__wire { display: flex; flex-direction: column; gap: 9px; padding: 18px; border: 1px solid var(--line); border-radius: 14px; background: color-mix(in srgb, var(--fg) 3%, transparent); font-size: 12px; min-width: 0; }
+  .liveex__k { color: var(--muted-2); }
+  .liveex__line { color: var(--fg); overflow-wrap: anywhere; }
+  .liveex__line b { color: var(--accent); font-weight: 400; }
+  .liveex__proves { list-style: none; margin: 6px 0 0; padding: 10px 0 0; border-top: 1px dashed var(--line); display: flex; flex-direction: column; gap: 5px; font-size: 11px; color: var(--muted); letter-spacing: .02em; }
+  .liveex__proves li::before { content: '✓ '; color: var(--accent); }
+  @media (max-width: 900px) { .liveex { grid-template-columns: 1fr; } }
+  @media (max-width: 640px) { .liveex__eyebrow { display: block; line-height: 1.7; } .liveex__eyebrow b { margin: 0 4px; } }
+
   /* ── THE SPREAD (.spread) — intent links as distribution ───────────────
      One link, four surfaces, receipts coming back. The travelling packets are
      a short dash on a duplicated path with an animated stroke-dashoffset:

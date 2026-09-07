@@ -12,6 +12,7 @@
 // by EmbedAssemble, which uses nobody else's marks.)
 
 import EmbedAssemble from '@/components/EmbedAssemble'
+import LiveExample from '@/components/LiveExample'
 
 export default function EmbedAnywhere() {
   return (
@@ -29,6 +30,10 @@ export default function EmbedAnywhere() {
       </div>
 
       <EmbedAssemble />
+
+      {/* The five lines above, shipped as a whole product on its own domain
+          (our own interface — rule 7 — deployed from agent-examples). */}
+      <LiveExample />
 
       {/* The loop TxPipeline used to carry (retired 2026-07-28 when the
           machine absorbed the pipeline): usage feeds the host's analytics,
