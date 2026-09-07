@@ -268,7 +268,7 @@ most:
 | `USE_DB` | The live directory | `true` → read the DB; unset → static catalog from `lib/mcp-data.ts` |
 | `SESSION_SECRET` | Auth | ≥16 chars; signs SIWE session JWTs |
 | `ANTHROPIC_API_KEY` | Planner fallback | Direct Anthropic API — the planner deliberately never runs through a paid/metered engine |
-| `ALCHEMY_API_KEY` | Multi-chain reads | One key covers Ethereum / Base / Arbitrum |
+| `ALCHEMY_API_KEY` | Multi-chain reads | One key covers Ethereum / Base / Arbitrum / Optimism |
 | `NEXT_PUBLIC_CDP_PROJECT_ID` | Email + social sign-in | Coinbase CDP embedded wallets; allowlist your origin in the CDP portal |
 | `NEXT_PUBLIC_WC_PROJECT_ID` | WalletConnect | Connector hidden when unset |
 | `PRIVATE_KEY` | Server-paid x402 calls | **A funded burner only.** Chat turns can spend from it |
@@ -276,10 +276,16 @@ most:
 | `ADMIN_WALLETS` | Admin surfaces | Comma-separated addresses |
 | `CRON_SECRET`, `GUARDIAN_KEY_SECRET` | Autonomy layer | Required for jobs / DCA / guardian crons |
 | `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` | Billing | Optional locally |
-| `OPENSEA_API_KEY`, `NEAR_INTENT_API_KEY`, `LIFI_API_KEY`, `ROBINHOOD_*` | Specific venues | Each venue degrades to a named refusal without its key |
+| `OPENSEA_API_KEY` | The NFT layer | Every NFT ask refuses by name without it, rather than guessing |
+| `LIFI_API_KEY` | LiFi quotes | Optional — quotes work keyless; a key raises the rate limit |
 
 Feature flags: `BROKER_DESK_ENABLED` (agent desk, fails closed),
-`ROSTER_ENABLED` / `NEXT_PUBLIC_ROSTER_ENABLED` (in-development surface).
+`ROSTER_ENABLED` / `NEXT_PUBLIC_ROSTER_ENABLED` (in-development surface),
+`ONRAMP_ENABLED` (card / bank on-ramp via Stripe crypto onramp — reuses
+`STRIPE_SECRET_KEY`, delivers ETH; needs an approved Stripe onramp application).
+
+The NEAR Intents and Robinhood venues reach hosted MCP services that hold
+their own credentials — this app has no env var for either.
 
 ---
 
