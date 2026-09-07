@@ -309,7 +309,24 @@ export function MintLinkForm({
             &ldquo;
           </span>
           <span className="mintstage__askbox">
-            {ask === '' && <span className="mintstage__ghost" aria-hidden="true">{ghost}<i className="mintstage__caret" /></span>}
+            {/* The mirror sizes the box: the ghost reel (or the typed ask,
+                painted transparent) followed by the closing quote INLINE
+                after the last word — the OG art's shape. The textarea stacks
+                over it in the same grid cell, so a sentence that wraps grows
+                the card instead of running under the promise line, and the
+                quote never strands at the top-right of the row. */}
+            <span className={`mintstage__mirror${ask ? ' mintstage__mirror--typed' : ''}`} aria-hidden="true">
+              {ask === '' ? (
+                <>
+                  {ghost}
+                  <i className="mintstage__caret" />
+                </>
+              ) : (
+                ask
+              )}
+              {'\u200b'}
+              <span className={`mintstage__quote${ask ? ' mintstage__quote--lit' : ''}`}>&rdquo;</span>
+            </span>
             <textarea
               ref={askRef}
               value={ask}
@@ -320,9 +337,6 @@ export function MintLinkForm({
               aria-label="The ask — one plain sentence, amounts included"
               className="mintstage__input"
             />
-          </span>
-          <span className={`mintstage__quote${ask ? ' mintstage__quote--lit' : ''}`} aria-hidden="true">
-            &rdquo;
           </span>
         </div>
 
