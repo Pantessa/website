@@ -109,7 +109,14 @@ export const wagmiConfig = createConfig({
     [baseSepolia.id]: http(),
     [mainnet.id]: http('https://ethereum-rpc.publicnode.com'),
     [arbitrum.id]: http(),
-    [optimism.id]: http('https://optimism-rpc.publicnode.com'),
+    // Optimism keeps viem's default (mainnet.optimism.io) like Base and
+    // Arbitrum do. Pinning publicnode here is what broke the first live OP
+    // run: its free tier answers state older than ~128 blocks with "Archive
+    // requests require a personal token", and at 2s blocks that is ~4
+    // MINUTES of history — wagmi's receipt/simulation reads walk past it and
+    // the approve step dies. Measured 2026-09-04: mainnet.optimism.io serves
+    // full archive depth, 25 concurrent reads in 0.8s, CORS `*`.
+    [optimism.id]: http(),
     [robinhoodChain.id]: http(),
   },
   ssr: true,
