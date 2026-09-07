@@ -179,7 +179,7 @@ function upgradePrompt(d: Insights): string {
     .filter(Boolean)
     .slice(0, 8)
   const abandoned = d.builtNotSigned.length
-  return `My site embeds the Pantessa agent chat (yeetful/embed). Over the last ${d.windowDays} days: ${d.totals.sessions} sessions, ${d.totals.txBuilt} transactions built, ${d.totals.signed} signed, ${d.totals.deadEndSessions} DEAD-END sessions (visitor hit friction and never got a transaction built). Help me fix the dead ends.
+  return `My site embeds the Pantessa agent chat (pantessa/embed). Over the last ${d.windowDays} days: ${d.totals.sessions} sessions, ${d.totals.txBuilt} transactions built, ${d.totals.signed} signed, ${d.totals.deadEndSessions} DEAD-END sessions (visitor hit friction and never got a transaction built). Help me fix the dead ends.
 
 Real visitor asks that dead-ended (verbatim):
 ${deadAsks.length ? deadAsks.map((a) => `- "${a}"`).join('\n') : '- (none recorded yet)'}
