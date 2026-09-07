@@ -47,9 +47,26 @@
 // finally being handed an origin it can spend.
 //
 // Stripe cannot deliver to Robinhood Chain (4663) — no on-ramp reaches a
-// custom Orbit chain. It lands ETH on Base and the existing cascade carries
-// it the rest of the way, so every plan here is denominated on a FUNDING_SCAN
-// chain and the bridge stays the layer that crosses.
+// custom Orbit chain. It lands ETH on a FUNDING_SCAN chain and the existing
+// cascade carries it the rest of the way, so every plan here is denominated
+// on a chain the scan reads and the bridge stays the layer that crosses.
+//
+// ── THE DEFAULT LANE IS ETHEREUM MAINNET, NOT BASE (2026-09-07) ───────────
+// Base was the first default: cheapest gas, the lane every funding chip
+// already used. It lasted three days. Stripe gates each currency+network
+// pair by the customer's HOME ADDRESS, and the first real US session walled
+// AFTER Link login + KYC with "Sorry, ETH (Base) isn't yet supported at your
+// home address" — and, because we lock the session to a single network, the
+// "Choose a different currency" button it offers has nothing to choose. The
+// user paid in attention (a login and an identity check) and got nothing.
+//
+// ETH on Ethereum is the pair Stripe supports most widely, so it is the
+// default; Base stays a valid lane a caller can ask for when it knows the
+// customer can take it. The price of the switch is real and is carried
+// honestly in the numbers below: mainnet keeps back 0.002 ETH instead of
+// 0.0002, so an Ethereum preset is a few dollars higher for the same plan
+// (ONRAMP_ETH_KEEP_USD), and the bridge leg pays L1 gas. Both are cheaper
+// than a KYC round trip that ends at a wall.
 
 import type { ClarifyOption } from '@/lib/clarify'
 
@@ -60,10 +77,25 @@ import type { ClarifyOption } from '@/lib/clarify'
  *  + the non-EVM chains), and Coinbase's did. Offering a network the provider
  *  will reject at their door reads to the user as our bug, so the type is the
  *  fence — lib/clarify's FUND_NETWORKS mirrors it and clamps anything else
- *  back to a plain chip. Base is the lane every chip actually uses; Ethereum
- *  is kept because the funding scan reads it and L1 is where a hand-typed
- *  address most often already is. */
+ *  back to a plain chip. Ethereum is the default lane (ONRAMP_DEFAULT_
+ *  NETWORK); Base is kept as the cheaper lane for a caller that knows the
+ *  customer's address can take it. */
 export type OnrampNetwork = 'base' | 'ethereum'
+
+/** Where a chip delivers unless its caller knows better. Ethereum, not Base —
+ *  see THE DEFAULT LANE in the header: Stripe's per-address support for ETH
+ *  on Base walled a real US customer after KYC, and a locked session cannot
+ *  fall back. Changing this constant changes every fund chip's chain, the
+ *  consent text the wallet shows and the preset arithmetic, so the harness
+ *  pins it by name. */
+export const ONRAMP_DEFAULT_NETWORK: OnrampNetwork = 'ethereum'
+
+/** The chain's name as the reply copy says it ("it lands as ETH on Ethereum").
+ *  Keyed by OnrampNetwork so a new lane cannot ship without its word. */
+export const ONRAMP_NETWORK_LABEL: Record<OnrampNetwork, string> = {
+  base: 'Base',
+  ethereum: 'Ethereum',
+}
 
 /** Stripe's `destination_network` enum value per network. Identity today —
  *  it exists so the wallet-address asymmetry below has a sibling and neither
@@ -152,15 +184,23 @@ export const ONRAMP_HEADROOM = 0.15
  *
  *  Carried in USD rather than ETH, and carried HIGH, because this module is
  *  pure and has no price feed — the same round-up asymmetry as ONRAMP_HEADROOM
- *  applies, and mainnet's 0.002 ETH keep-back is worth anywhere from $6 to
- *  $16 across a plausible price range. Base is the lane that matters; the
- *  mainnet figure is a conservative fence, not a forecast. */
-export const ONRAMP_ETH_KEEP_USD: Record<OnrampNetwork, number> = { base: 2, ethereum: 16 }
+ *  applies. Mainnet: 0.002 ETH keep-back + $1 two-leg headroom + up to $1 to
+ *  the floor() — about $7 at $2,500/ETH, $10 at $4,000/ETH. With the plan's
+ *  own 15% headroom on top, the smallest plan ($12.5, the $10 AAPL buy)
+ *  still funds from the landed ETH through ~$5,000/ETH — the harness pins
+ *  $2k–$5k against the real planner — and a wallet that ends up a dollar
+ *  short above that is still gas-funded and offered the downsized plan, not
+ *  walled. Stripe's fee rides ON TOP of the preset (the full source amount
+ *  converts; live 2026-09-04), so nothing here budgets for it. Was $16 when Ethereum was the
+ *  lane nobody used (a fence sized for $7,000/ETH); now that it is the DEFAULT
+ *  lane, every dollar here is a dollar on every fund chip a stranger sees —
+ *  $30 to buy $10 of AAPL reads as broken, $24 reads as a card fee. */
+export const ONRAMP_ETH_KEEP_USD: Record<OnrampNetwork, number> = { base: 2, ethereum: 10 }
 
 /** What to preset in the on-ramp for a plan that needs `needUsd`. Always at
  *  or above the plan, at or above the derived floor, and never above the
  *  clamp. Pure — the harness pins the arithmetic, not a live quote. */
-export function planFundUsd(needUsd: number, network: OnrampNetwork = 'base'): number {
+export function planFundUsd(needUsd: number, network: OnrampNetwork = ONRAMP_DEFAULT_NETWORK): number {
   const keep = ONRAMP_ETH_KEEP_USD[network] ?? ONRAMP_ETH_KEEP_USD.base
   // No plan to size against. Still never below the keep-back: a preset that
   // cannot even clear it delivers ETH the scan will not offer, which is a
@@ -276,7 +316,9 @@ export interface FundChipParams {
   /** The ask, restated, fired when the user returns from the on-ramp. Must
    *  round-trip the parse ladder like any other resume string. */
   resume: string
-  /** Where the on-ramp should deliver. Base unless the caller knows better. */
+  /** Where the on-ramp should deliver. ONRAMP_DEFAULT_NETWORK (Ethereum)
+   *  unless the caller knows better — Base is cheaper but Stripe refuses it
+   *  for some home addresses, after KYC. */
   network?: OnrampNetwork
 }
 
@@ -285,7 +327,7 @@ export interface FundChipParams {
  *  an addition to an honest answer, never a replacement for one. */
 export function fundChipFor(params: FundChipParams): ClarifyOption | null {
   if (!onrampEnabled()) return null
-  const { needUsd, actionLabel, resume, network = 'base' } = params
+  const { needUsd, actionLabel, resume, network = ONRAMP_DEFAULT_NETWORK } = params
   if (!resume.trim() || !actionLabel.trim()) return null
   const presetFiatUsd = planFundUsd(needUsd, network)
   return {

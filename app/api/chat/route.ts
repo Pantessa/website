@@ -131,7 +131,7 @@ import { parseTransferSegment, buildTransferArtifact } from '@/lib/transfer-exec
 import { buildUniswapSwap, NoV3PoolError } from '@/lib/uniswap-venue'
 import { buildUniswapV4Swap, NoV4PoolError, GatedV4PoolError } from '@/lib/uniswap-v4'
 import { buildLifiSwap, NoLifiRouteError } from '@/lib/lifi-venue'
-import { fundChipFor } from '@/lib/onramp'
+import { fundChipFor, ONRAMP_NETWORK_LABEL } from '@/lib/onramp'
 import { fundingSourceSymbols, GAS_TOPUP_ETH, minLegNote, offChainStableSource, valueLegUsd, parseRhFundingFollowUp, planDownsizedRobinhoodBuy, planRobinhoodFundingAdvice, readFundingShortfall, rhFundingPending, robinhoodBuyNeedUsd, ROBINHOOD_CHAIN_ID } from '@/lib/lifi-bridge'
 import { describeInflightDeposit, inflightPendingData } from '@/lib/inflight-funding'
 import { resolveToken, tokenDecimals, humanToAtoms } from '@/lib/cow'
@@ -4108,7 +4108,7 @@ async function prepareSwapTurn(intent: SwapIntent, walletAddress: string | undef
             `🌉 Here's where this stands: ${acquiring ? 'you asked for' : 'the buy needs'} ~$${buyUsd} of ${rhStable.symbol} on ${chain.name} and the wallet holds ~$${holdingUsd.toFixed(2)} there. ` +
             `Across the chains I can bridge from I see: ${advice.copy} — not enough yet for the ~$${needUsd} plan${includeGas ? ' (gas leg included)' : ''}.${floorSuffix} ` +
             (rhFundChip
-              ? `You can add it with a card or bank below — it lands as ETH on Base, which covers the gas, and I'll swap and bridge it the rest of the way. The preset is a little over the plan so the card fee and the swap don't leave you short.${inflightSuffix}`
+              ? `You can add it with a card or bank below — it lands as ETH on ${ONRAMP_NETWORK_LABEL[rhFundChip.fund?.network ?? 'ethereum']}, which covers the gas, and I'll swap and bridge it the rest of the way. The preset is a little over the plan so the card fee, the gas and the swap don't leave you short.${inflightSuffix}`
               : `Here's what unlocks it: top up USDC or ETH on Base, Ethereum, or Arbitrum (or ${rhStable.symbol} on ${chain.name}), tell me when it's there, and I'll pick it up from that point — nothing was built or spent in the meantime.${inflightSuffix}`),
           ...(rhFundChip
             ? {
