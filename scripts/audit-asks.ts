@@ -112,6 +112,10 @@ const CORPUS: Entry[] = [
   { ask: 'Sell $50 of ETH', source: 'chart overlay sell chip (live 2026-07-28 dead-end)', expect: 'action' },
   { ask: 'DCA $10 into ETH weekly', source: 'chart overlay DCA chip', expect: 'action' },
   { ask: 'Sell $50 of HYPE', source: 'chart overlay sell chip on an HL perp', expect: 'action' },
+  // Whole-holding sells — sized from the live balance at build (live
+  // 2026-09-07: fell to the planner's walkthrough; the numbered twin built).
+  { ask: 'Sell all my AAPL for USDG on Robinhood Chain', source: 'live 2026-09-07 (sell-all → planner walkthrough)', expect: 'action' },
+  { ask: 'sell my entire ETH balance', source: 'sell-all, bare (route buys the chain stable)', expect: 'action' },
 
   // Splash chips (templates instantiated with representative values)
   { ask: 'Swap 5 USDC for ETH on Base', source: 'splash/holdings', expect: 'action' },

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse, after } from 'next/server'
 import { attachFundsSnapshot, classifyTurn, moneyShaped, recordAskFailure } from '@/lib/ask-failure'
 import { recordTurnExpectations } from '@/lib/link-receipt-verify'
-import { erc20Abi, formatEther, formatUnits, getAddress, isAddress, parseEther } from 'viem'
+import { erc20Abi, formatEther, formatUnits, getAddress, isAddress, parseEther, parseUnits } from 'viem'
 import { openseaEnabled, openseaSlugOf } from '@/lib/opensea'
 import { getPaidFetch, hasAgentWallet } from '@/lib/agent-wallet'
 import {
@@ -1816,17 +1816,7 @@ async function handleChatTurn(req: NextRequest) {
           // tickers only — 4663's infra tokens (WETH/ETH/USDG) must never
           // pull generic buys to the stock chain, and a user who wants the
           // same-named target-chain token names the chain (namedNative wins).
-          const exactStock = (() => {
-            // 4663's list = stocks + exactly two infra classes (wrapped gas,
-            // stables) — resolving there to a non-infra address IS the stock
-            // proof. Derived, not hardcoded, so list growth keeps it honest.
-            const addr = resolveToken(swapIntent.buyToken, ROBINHOOD_CHAIN_ID)
-            if (!addr) return false
-            const rh = chainById(ROBINHOOD_CHAIN_ID)!
-            const wethAddr = resolveToken('WETH', ROBINHOOD_CHAIN_ID)
-            const isInfra = addr.toLowerCase() === (wethAddr ?? '').toLowerCase() || rh.stables[addr.toLowerCase()] !== undefined
-            return !isInfra
-          })()
+          const exactStock = isExactRobinhoodStock(swapIntent.buyToken)
           const pairing = !exactStock && !resolveToken(swapIntent.buyToken, targetChain.id) ? pairStockToken(swapIntent.buyToken, ROBINHOOD_CHAIN_ID) : null
           // 'ok' with a null resolve = the list never warmed (pairing fails
           // open) — that must NOT retarget arbitrary unknown tokens to 4663.
@@ -1851,6 +1841,29 @@ async function handleChatTurn(req: NextRequest) {
                 ? `chain inference: “${swapIntent.buyToken.toUpperCase()}” is Robinhood Chain's own dollar and isn't a ${targetChain.name} token — building there`
                 : `stock-chain inference: “${swapIntent.buyToken.toUpperCase()}” isn't a ${targetChain.name} token but matches Robinhood Chain's stock list — building there`,
             })
+          }
+        }
+        // The SELL-side mirror, for bare sells that name no buy side: "sell
+        // all my AAPL" / "sell 5 AAPL" with the picker on Base would build on
+        // a chain where AAPL is at best a permissionless squat (Base's list
+        // has carried one since 2026-07-30 — live 2026-09-07 it turned this
+        // ask into "you don't hold any AAPL on Base"). Same rule as the buy
+        // side: an EXACT stock ticker is curated 4663 truth and beats the
+        // dynamic list; build there (the bare-sell default then buys USDG).
+        // A chain named in the message still wins, as above.
+        if (
+          !namedNative &&
+          buildChain.id === targetChain.id &&
+          targetChain.id !== ROBINHOOD_CHAIN_ID &&
+          swapIntent.mode !== 'limit' &&
+          !swapIntent.problem &&
+          swapIntent.sellToken &&
+          !swapIntent.buyToken
+        ) {
+          await Promise.all([ensureTokenList(targetChain.id).catch(() => {}), ensureTokenList(ROBINHOOD_CHAIN_ID).catch(() => {})])
+          if (isExactRobinhoodStock(swapIntent.sellToken)) {
+            buildChain = chainById(ROBINHOOD_CHAIN_ID)!
+            nativeTrace({ type: 'status', label: `stock-chain inference: selling “${swapIntent.sellToken.toUpperCase()}”, an exact Robinhood Chain stock ticker — building there, not on ${targetChain.name}` })
           }
         }
         const uniActive = activeServers.some((s) => s.slug === 'uniswap' || /uniswap/i.test(s.name))
@@ -3667,7 +3680,43 @@ function hlPerpDoor(symbol: string | undefined, amount: { usd?: string; human?: 
   }
 }
 
+/**
+ * Is this symbol an exact entry on Robinhood Chain's STOCK list? 4663's
+ * list = stocks + exactly two infra classes (wrapped gas, stables) —
+ * resolving there to a non-infra address IS the stock proof. Derived, not
+ * hardcoded, so list growth keeps it honest. Callers warm the 4663 list.
+ */
+function isExactRobinhoodStock(symbol: string): boolean {
+  const addr = resolveToken(symbol, ROBINHOOD_CHAIN_ID)
+  if (!addr) return false
+  const rh = chainById(ROBINHOOD_CHAIN_ID)!
+  const wethAddr = resolveToken('WETH', ROBINHOOD_CHAIN_ID)
+  const isInfra = addr.toLowerCase() === (wethAddr ?? '').toLowerCase() || rh.stables[addr.toLowerCase()] !== undefined
+  return !isInfra
+}
+
+/**
+ * The native swap turn. A whole-holding sell (`intent.sellAll`) is sized
+ * inside the core from the live balance; the resolved figure comes back in
+ * `sized.note` and is appended here as its own guardrail line + a reply
+ * line, so every venue's artifact (CoW order, v3/v4 chain, LiFi chain)
+ * quotes the exact number the user is about to sign — one site, not five.
+ */
 async function prepareSwapTurn(intent: SwapIntent, walletAddress: string | undefined, venue: 'uniswap' | 'cow' = 'cow', ctx?: WorkingContext, trace: (event: unknown) => void = () => {}, chainId: number = DEFAULT_CHAIN_ID, feeBps?: number) {
+  const sized: { note: string | null } = { note: null }
+  const res = await prepareSwapTurnCore(intent, walletAddress, venue, ctx, trace, chainId, feeBps, sized)
+  if (!sized.note) return res
+  const body = (await res.json().catch(() => null)) as Record<string, unknown> | null
+  if (!body) return res
+  const guardrails = body.guardrails as { checks?: unknown[] } | undefined
+  if (guardrails && Array.isArray(guardrails.checks)) {
+    guardrails.checks = [...guardrails.checks, { id: 'sell-all', level: 'warn', ok: true, note: sized.note }]
+  }
+  if (typeof body.reply === 'string' && (body.txChain || body.order || body.txRequest)) body.reply = `${body.reply}\n📏 ${sized.note}`
+  return NextResponse.json(body, { status: res.status })
+}
+
+async function prepareSwapTurnCore(intent: SwapIntent, walletAddress: string | undefined, venue: 'uniswap' | 'cow' = 'cow', ctx?: WorkingContext, trace: (event: unknown) => void = () => {}, chainId: number = DEFAULT_CHAIN_ID, feeBps?: number, sized: { note: string | null } = { note: null }) {
   const chain = chainById(chainId) ?? chainById(DEFAULT_CHAIN_ID)!
   chainId = chain.id
   // Warm the chain's dynamic token map (official Uniswap list) so UNI/AAVE/
@@ -3688,7 +3737,7 @@ async function prepareSwapTurn(intent: SwapIntent, walletAddress: string | undef
   // honest default — ask with chips whose resumes are complete asks (live
   // 2026-07-28: the prose clarify here sent the user through three planner
   // turns and an invalid CoW enum, nothing built).
-  if (!intent.problem && !intent.buyToken && intent.sellToken && (intent.sellAmountHuman || intent.sellAmountUsd)) {
+  if (!intent.problem && !intent.buyToken && intent.sellToken && (intent.sellAmountHuman || intent.sellAmountUsd || intent.sellAll)) {
     const stable = primaryStable(chainId)
     if (stable && intent.sellToken.toUpperCase() !== stable.symbol.toUpperCase()) {
       trace({ type: 'status', label: `native swap layer: no buy side named — defaulting to the chain stable (${stable.symbol} on ${chain.name})` })
@@ -3745,12 +3794,15 @@ async function prepareSwapTurn(intent: SwapIntent, walletAddress: string | undef
         // falls through to the under-specified gate below instead.
         const canResume =
           side === 'buyToken'
-            ? !!intent.sellAmountUsd || (!!intent.sellToken && !!intent.sellAmountHuman)
-            : !!intent.buyToken && (!!intent.sellAmountUsd || !!intent.sellAmountHuman)
+            ? !!intent.sellAmountUsd || (!!intent.sellToken && (!!intent.sellAmountHuman || !!intent.sellAll))
+            : !!intent.buyToken && (!!intent.sellAmountUsd || !!intent.sellAmountHuman || !!intent.sellAll)
         if (!canResume) continue
         const resumeFor = (sym: string) => {
           const buy = side === 'buyToken' ? sym : (intent.buyToken ?? '').toUpperCase()
           const sell = side === 'sellToken' ? sym : (intent.sellToken ?? '').toUpperCase()
+          // A whole-holding sell restates as one ("sell all my APPL" → the
+          // paired ticker) — SELL_ALL_RE round-trips it, sized at build.
+          if (intent.sellAll) return `sell all my ${sell} for ${buy} on robinhood chain`
           if (intent.sellAmountUsd && side === 'buyToken') return `buy $${intent.sellAmountUsd} of ${buy} on robinhood chain`
           if (intent.sellAmountUsd) return `swap $${intent.sellAmountUsd} worth of ${sell} for ${buy} on robinhood chain`
           return `swap ${intent.sellAmountHuman} ${sell} for ${buy} on robinhood chain`
@@ -3861,6 +3913,74 @@ async function prepareSwapTurn(intent: SwapIntent, walletAddress: string | undef
         intent = { ...intent, sellAmountHuman: amountHuman }
       }
     }
+  }
+
+  // ── Whole-holding sells ── "sell all my AAPL for USDG", "sell my entire
+  // ETH balance": the ask names no number, so the number comes from the
+  // chain — the wallet's LIVE balance, read here and pinned into the build
+  // (the transfer layer's 'all' sentinel, #473, mirrored). Native ETH keeps
+  // the swap's own gas floor back (the same floor the funding pre-read
+  // below charges an ETH sell). Zero → refuse BY NAME; an unreadable
+  // balance → refuse too (never size a sell off a guess). The resolved
+  // amount is quoted in the guard notes + the reply so the user sees the
+  // exact figure before signing (sized.note, appended by prepareSwapTurn).
+  if (!intent.problem && intent.sellAll && !intent.sellAmountHuman && intent.sellToken && intent.buyToken && intent.mode !== 'limit') {
+    const sellSym = intent.sellToken.toUpperCase()
+    const dec = tokenDecimals(intent.sellToken, chainId)
+    if (dec === null) {
+      const door = hlPerpDoor(intent.sellToken, {}, true)
+      if (door) {
+        trace({ type: 'status', label: `native swap layer: ${sellSym} is an HL perp, not a spot token — opening the Hyperliquid door` })
+        return NextResponse.json(door)
+      }
+      trace({ type: 'note', level: 'warn', label: `unknown token “${intent.sellToken}” on ${chain.name} — no build` })
+      return NextResponse.json({
+        reply: `🔄 I don't know the token “${intent.sellToken}” on ${chain.name} — use a known symbol (${Object.keys(chain.tokens).filter((s) => s !== 'ETH').join(', ')}, …).`,
+      })
+    }
+    const isEth = sellSym === 'ETH'
+    const sellAddr = isEth ? null : resolveToken(intent.sellToken, chainId)
+    const client = publicClientFor(chainId)
+    if (!client || (!isEth && !sellAddr)) {
+      trace({ type: 'note', level: 'warn', label: `native swap layer: can't read a ${sellSym} balance on ${chain.name} (no RPC client / unresolved token) — refusing to size an all-sell` })
+      return NextResponse.json({
+        reply: `🔄 I can't read your ${sellSym} balance on ${chain.name} right now, so I won't size a sell-everything — say a token amount instead, e.g. “sell 1 ${sellSym} for ${intent.buyToken.toUpperCase()}”.`,
+        buildPath: 'native-swap-balance',
+      })
+    }
+    let balance: bigint
+    try {
+      balance = isEth
+        ? await client.getBalance({ address: walletAddress as `0x${string}` })
+        : ((await client.readContract({ address: sellAddr as `0x${string}`, abi: erc20Abi, functionName: 'balanceOf', args: [walletAddress as `0x${string}`] })) as bigint)
+    } catch {
+      trace({ type: 'note', level: 'warn', label: `native swap layer: ${sellSym} balance read failed on ${chain.name} — refusing to size an all-sell off a guess` })
+      return NextResponse.json({
+        reply: `🔄 I couldn't read your ${sellSym} balance on ${chain.name}, so I won't size a sell-everything off a guess — try again in a moment, or say a token amount (“sell 1 ${sellSym} for ${intent.buyToken.toUpperCase()}”).`,
+        buildPath: 'native-swap-balance',
+      })
+    }
+    if (balance <= BigInt(0)) {
+      trace({ type: 'status', label: `native swap layer: “all my ${sellSym}” on ${chain.name} is 0 — nothing to sell, no build` })
+      const elsewhere = APP_CHAINS.find((c) => c.id !== chainId)?.name ?? 'Ethereum'
+      return NextResponse.json({
+        reply: `🔄 You don't hold any ${sellSym} on ${chain.name} — nothing to sell. (If it's on another chain, name it: “sell all my ${sellSym} on ${elsewhere}”.)`,
+        buildPath: 'native-swap-balance',
+      })
+    }
+    const reserveEth = isEth ? (DEST_GAS_FLOOR_ETH[chainId] ?? 0.0002) : 0
+    const atoms = isEth ? balance - parseUnits(String(reserveEth), 18) : balance
+    if (atoms <= BigInt(0)) {
+      trace({ type: 'status', label: `native swap layer: ${formatUnits(balance, 18)} ETH on ${chain.name} doesn't clear the ${reserveEth} ETH gas reserve an all-sell keeps back — no build` })
+      return NextResponse.json({
+        reply: `🔄 Your ${formatUnits(balance, 18)} ETH on ${chain.name} doesn't clear the ~${reserveEth} ETH an all-sell keeps back for the swap's own gas — nothing to sell.`,
+        buildPath: 'native-swap-balance',
+      })
+    }
+    const amountHuman = formatUnits(atoms, dec)
+    intent = { ...intent, sellAmountHuman: amountHuman }
+    sized.note = `Sized from your live balance: ${amountHuman} ${sellSym} on ${chain.name} — your full holding${isEth ? ` minus a ${reserveEth} ETH gas reserve for the swap itself` : ''}, read at build time and pinned in the calldata.`
+    trace({ type: 'status', label: `native swap layer: “all my ${sellSym}” sized from the live balance — ${amountHuman} ${sellSym} on ${chain.name}${isEth ? ` (${formatUnits(balance, 18)} ETH held, ${reserveEth} kept for gas)` : ''}` })
   }
 
   if (intent.problem || !intent.sellToken || !intent.buyToken || !intent.sellAmountHuman) {
@@ -4159,7 +4279,10 @@ async function prepareSwapTurn(intent: SwapIntent, walletAddress: string | undef
         const held = Number(balanceAtoms) / 10 ** sellDec
         // An ETH sell must also leave gas for the swap itself.
         const needTotal = Number(intent.sellAmountHuman) + (isEthSell ? (DEST_GAS_FLOOR_ETH[chainId] ?? 0.0002) : 0)
-        if (held < needTotal) {
+        // A whole-holding sell was sized off THIS balance a moment ago (the
+        // ETH floor already subtracted) — a float epsilon must never turn it
+        // into a phantom shortfall offer.
+        if (!intent.sellAll && held < needTotal) {
           const buySym = intent.buyToken.toUpperCase()
           const offer = await offerFundingPlan({
             user: walletAddress,
