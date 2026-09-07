@@ -23,8 +23,9 @@ export default function EmbedDocsPage() {
       <p className="docs__lead">
         Drop the full Pantessa chat into your own site as an iframe — scoped to the MCPs you
         pick, with transaction building, guardrails, receipts, and wallet signing intact.
-        Visitors chat immediately as guests (no sign-in); signing a swap or vote connects a
-        wallet inside the frame.
+        Visitors chat immediately as guests (no sign-in). With the SDK&apos;s wallet bridge the
+        wallet already connected to <em>your</em> page signs, prompting on your page; without
+        it, a wallet connects inside the frame.
       </p>
 
       <div className="docs__prose">
@@ -77,9 +78,23 @@ export default function EmbedDocsPage() {
         <pre>
           <code>{`{ source: 'yeetful-embed', v: 1, type: 'ready' }                          // mounted
 { source: 'yeetful-embed', v: 1, type: 'resize', height: 620 }            // content height changed
-{ source: 'yeetful-embed', v: 1, type: 'event', name: 'order-signed',     // notable moments
-  data: { orderUid: '0x…', explorerUrl: 'https://explorer.cow.fi/…' } }`}</code>
+{ source: 'yeetful-embed', v: 1, type: 'event', name: 'turn',             // every chat turn
+  data: { outcome: 'tx-built', artifact: 'tx-chain', valueUsd: 10 } }
+{ source: 'yeetful-embed', v: 1, type: 'event', name: 'order-signed',     // a CoW / Hyperliquid order signed
+  data: { artifact: 'cow-order', valueUsd: 50, txUrl: 'https://explorer.cow.fi/…' } }`}</code>
         </pre>
+        <p>
+          <code>turn</code> fires once per chat turn with{' '}
+          <code>{`{ outcome, artifact?, valueUsd?, txUrl?, chainId?, jobId? }`}</code>. Outcomes:{' '}
+          <code>answered</code> · <code>tx-built</code> (a guarded artifact is on screen —{' '}
+          <code>artifact</code> is <code>tx</code>, <code>tx-chain</code>, <code>job</code>,{' '}
+          <code>cow-order</code>, <code>hl-order</code>, or <code>vote</code>) · <code>signed</code>{' '}
+          (with <code>txUrl</code> + <code>chainId</code> when there is a receipt) ·{' '}
+          <code>settled</code> (a multi-step job finished) · <code>clarify</code> ·{' '}
+          <code>refused</code> (a guardrail held it) · <code>credit-gate</code> ·{' '}
+          <code>error</code>. <code>valueUsd</code>{' '}is the guardrail-priced notional. Enough to
+          drive a host-side activity log or funnel without touching the chat&apos;s internals.
+        </p>
         <p>Your page → embed (send to the iframe&apos;s contentWindow, targeting the Pantessa origin):</p>
         <pre>
           <code>{`{ source: 'yeetful-embed', v: 1, type: 'address', address: '0x…' | null } // update wallet context
@@ -136,13 +151,39 @@ mountPantessaChat({
   key: 'yfe_…',              // your public embed key (>= 0.10; optional)
   mcps: ['cow-free', 'snapshot-free'],
   wallet: 'auto',            // bridge the page's EIP-1193 provider (v1.1);
-                             // or pass a provider / 'off' for address-only context
+                             // or pass a provider (e.g. from wagmi), or false
+                             // for an address-only context via setAddress()
   mode: 'bubble',            // 'bubble' (floating launcher) | 'inline'
+  onEvent: (name, data) => { /* 'turn' | 'order-signed' — see above */ },
 })`}</code>
         </pre>
         <p>
           SDK ≥ 0.10 also reports the page URL (<code>page=</code>) so your dashboard&apos;s{' '}
-          <em>Your embeds</em> list shows exactly which pages run the chat.
+          <em>Your embeds</em> list shows exactly which pages run the chat. The handle it
+          returns carries <code>sendPrompt(text)</code> — any button on your page becomes an
+          ask — plus <code>setAddress</code>, <code>setTheme</code>, <code>open</code>/
+          <code>close</code> (bubble) and <code>destroy</code>.
+        </p>
+        <p>
+          Users pick a wallet <em>after</em> the chat is on screen, and <code>wallet</code> is
+          captured at mount. Hand the SDK a provider that survives that — a small EIP-1193
+          facade that forwards to whichever wallet is selected and emits{' '}
+          <code>accountsChanged</code> / <code>chainChanged</code> itself — rather than
+          remounting the iframe (a remount drops the conversation). The example below does
+          exactly this.
+        </p>
+
+        <h2>A complete host app</h2>
+        <p>
+          <a href="https://github.com/Pantessa/agent-examples/tree/main/agents/robinhood-desk" target="_blank" rel="noopener noreferrer">
+            agent-examples/agents/robinhood-desk
+          </a>{' '}
+          is a standalone portfolio desk for tokenized stocks on Robinhood Chain: it reads
+          holdings and prices from the chain itself, every button is a <code>sendPrompt</code>{' '}
+          into the embed, the visitor&apos;s wallet signs on the host page through the bridge,
+          and the activity log is built from the <code>turn</code>{' '}events above. It ships with a
+          Content-Security-Policy and a jsdom test of the wire, so it doubles as the SDK&apos;s
+          integration check.
         </p>
 
         <h2>What your dashboard sees</h2>

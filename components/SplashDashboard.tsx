@@ -9,6 +9,7 @@ import TokenIcon from '@/components/TokenIcon'
 import { ChartChip, ChartHoverButton } from '@/components/TokenChartButton'
 import VoteChoiceButtons from '@/components/VoteChoiceButtons'
 import { useYeetfulStore, type McpServer } from '@/lib/store'
+import { cleanServerName } from '@/lib/utils'
 import { chainById } from '@/lib/chains'
 import ChatLoader from '@/components/ChatLoader'
 import { splashCapable } from '@/lib/splash/types'
@@ -356,11 +357,11 @@ export function TileCard({
         <Link
           href={`/servers/${head.mcpSlug}`}
           className="group/head flex min-w-0 items-center gap-2"
-          title={`Open ${head.mcpName}'s server page`}
+          title={`Open ${cleanServerName(head.mcpName)}'s server page`}
         >
           <BrandIcon server={iconServer} size={20} />
           <h3 className="truncate text-sm font-semibold text-white underline-offset-4 group-hover/head:underline">
-            {head.mcpName}
+            {cleanServerName(head.mcpName)}
           </h3>
           <ExternalLink className="h-3 w-3 flex-shrink-0 text-[color:var(--muted-2)] opacity-0 transition-opacity group-hover/head:opacity-100" />
         </Link>
@@ -389,7 +390,7 @@ function PendingTileCard({ server }: { server: McpServer }) {
       <div aria-hidden className="pointer-events-none absolute inset-x-4 top-0 h-px bg-gradient-to-r from-transparent via-white/15 to-transparent" />
       <div className="mb-3 flex items-center gap-2">
         <BrandIcon server={server} size={20} />
-        <h3 className="truncate text-sm font-semibold text-white">{server.name}</h3>
+        <h3 className="truncate text-sm font-semibold text-white">{cleanServerName(server.name)}</h3>
       </div>
       <div aria-hidden className="space-y-2">
         <div className="h-7 w-32 animate-pulse rounded bg-white/10" />

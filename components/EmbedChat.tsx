@@ -8,7 +8,7 @@
 // the host page; otherwise an in-iframe wallet connection still works
 // (RainbowKit is provided by the root layout's Providers).
 //
-// ── Embed contract v1 (mirrored by the `yeetful/embed` SDK module) ─────────
+// ── Embed contract v1 (mirrored by the `pantessa/embed` SDK module) ────────
 //   {origin}/embed?mcps=<comma slugs>&address=<0x…>&theme=<dark|light>&host=<parent origin>
 //   All postMessage payloads: { source:'yeetful-embed', v:1, type, ... }
 //   child→parent: 'ready' (once mounted) · 'resize' {height} · 'event' {name,data?}
@@ -49,6 +49,7 @@ import { YeetfulMark } from '@/components/Logo'
 import { useYeetfulStore, type McpServer } from '@/lib/store'
 import { DEFAULT_CHAT_FLEET_SLUGS } from '@/lib/free-fleet'
 import { CATALOG } from '@/lib/mcp-data'
+import { cleanServerName } from '@/lib/utils'
 
 const SOURCE = 'yeetful-embed'
 const V = 1
@@ -283,7 +284,7 @@ export default function EmbedChat({
             <span className="w-3 h-3 grid place-items-center opacity-90">
               <BrandIcon server={server} size={11} />
             </span>
-            <span className="whitespace-nowrap">{server.name}</span>
+            <span className="whitespace-nowrap">{cleanServerName(server.name)}</span>
           </span>
         ))}
         <span className="ml-auto flex-shrink-0 inline-flex items-center gap-2">
