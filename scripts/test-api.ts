@@ -8856,6 +8856,28 @@ async function main() {
   const bs2 = parseSwapIntent('sell 0.25 ETH')
   check('swap intent: "sell 0.25 ETH" unit sell with no buy side', bs2.isSwap && bs2.sellAmountHuman === '0.25' && bs2.sellToken === 'ETH' && bs2.buyToken === undefined && !bs2.problem)
   check('swap intent: stop-words never claim the bare-token slot', parseSwapIntent('sell 2 of my NFTs').sellToken === undefined)
+  // Whole-holding sells (live 2026-09-07: "Sell all my AAPL for USDG on
+  // Robinhood Chain" fell to the planner's walkthrough while the numbered
+  // twin built a guarded txChain). The parse carries the `sellAll`
+  // sentinel and NO number — the route sizes it from the live balance at
+  // build time, the transfer layer's 'all' contract mirrored.
+  const sa = parseSwapIntent('Sell all my AAPL for USDG on Robinhood Chain')
+  check('swap intent: "Sell all my AAPL for USDG" → sellAll sentinel, pair carried, no number', sa.isSwap && sa.sellAll === true && sa.sellToken === 'AAPL' && sa.buyToken === 'USDG' && sa.sellAmountHuman === undefined && sa.sellAmountUsd === undefined && !sa.problem)
+  const sa2 = parseSwapIntent('sell my entire ETH balance')
+  check('swap intent: "sell my entire ETH balance" → sellAll, buy side left to the route', sa2.isSwap && sa2.sellAll === true && sa2.sellToken === 'ETH' && sa2.buyToken === undefined && !sa2.problem)
+  const sa3 = parseSwapIntent('swap all of my USDC for ETH on base')
+  check('swap intent: "swap all of my USDC for ETH" variant', sa3.isSwap && sa3.sellAll === true && sa3.sellToken === 'USDC' && sa3.buyToken === 'ETH')
+  check('swap intent: "sell all my AAPL shares" — the holding noun is decoration', parseSwapIntent('sell all my AAPL shares').sellToken === 'AAPL' && parseSwapIntent('sell the entire AAPL position for USDG').buyToken === 'USDG')
+  check('swap intent: sell-all on a perp venue stays off the spot layer', parseSwapIntent('sell all my HYPE on hyperliquid').isSwap === false)
+  check('swap intent: sell-all never claims NFTs or cadence asks', parseSwapIntent('sell all my NFTs').isSwap === false && parseSwapIntent('sell all my ETH every week').isSwap === false)
+  check('swap intent: sell-all with a chain in the buy slot clarifies as cross-chain (no token named ARBITRUM)', !!parseSwapIntent('sell all my USDC to arbitrum').problem && parseSwapIntent('sell all my USDC to arbitrum').buyToken === undefined)
+  check('swap intent: price-triggered sell-all still earns the limit clarify', parseSwapIntent('sell all my ETH when it hits $4000').limitPriceUsd === '4000')
+  const saClar = swapClarify(parseSwapIntent('sell all my USDC'), { targets: ['ETH', 'CBETH'] })
+  check(
+    'swap clarify: stable sell-all → target chips whose resumes round-trip the sellAll sentinel',
+    !!saClar && saClar.options.length === 2 && saClar.options.every((o) => { const r = parseSwapIntent(o.resume); return r.isSwap && !r.problem && r.sellAll === true && r.sellToken === 'USDC' && !!r.buyToken }),
+  )
+  check('swap clarify: a complete sell-all never chip-clarifies', swapClarify(parseSwapIntent('Sell all my AAPL for USDG on Robinhood Chain')) === null)
   check('swap intent: chain words never claim the bare-token slot', parseSwapIntent('sell 5 arbitrum').sellToken === undefined)
   check('swap intent: bare perp sells stay off the spot venue', parseSwapIntent('sell $50 of ETH on hyperliquid').sellToken === undefined)
   const pn = parseSwapIntent('swap USDC for WETH')
@@ -8897,6 +8919,20 @@ async function main() {
     body: JSON.stringify({ message: 'can i swap about $1 worth of ETH for USDC?', activeServers: [] }),
   }).then((r) => r.json())
   check('native swap: dollar ask asks to connect (not a dead-end clarify)', dollarNoWallet.connectWallet === true, JSON.stringify(dollarNoWallet).slice(0, 200))
+  // Sell-all sizing reads the LIVE balance: a fresh wallet holds no AAPL on
+  // Robinhood Chain, so the layer refuses BY NAME (token + chain), builds
+  // nothing, and never falls to the planner or a chip clarify.
+  const emptyWallet = privateKeyToAccount(generatePrivateKey()).address
+  const sellAllEmpty = await fetch(`${BASE}/api/chat`, {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ message: 'Sell all my AAPL for USDG on Robinhood Chain', activeServers: [], walletAddress: emptyWallet }),
+  }).then((r) => r.json())
+  check(
+    'native swap: "sell all my AAPL" on an empty wallet refuses by name (no build, no clarify, no planner)',
+    typeof sellAllEmpty.reply === 'string' && /don't hold any AAPL on Robinhood Chain/.test(sellAllEmpty.reply) && !sellAllEmpty.txChain && !sellAllEmpty.txRequest && !sellAllEmpty.clarify && sellAllEmpty.buildPath === 'native-swap-balance',
+    JSON.stringify(sellAllEmpty).slice(0, 300),
+  )
+  check('native swap: sell-all with no wallet asks to connect', (await fetch(`${BASE}/api/chat`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ message: 'sell my entire ETH balance', activeServers: [] }) }).then((r) => r.json())).connectWallet === true)
 
   // Native Robinhood bridge layer (pure parse + guard). The planner once
   // invented Stargate/Across chips for these asks (live 2026-07-14) — the

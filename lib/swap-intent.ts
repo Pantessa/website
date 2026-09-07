@@ -33,6 +33,13 @@ export interface SwapIntent {
    *  exact-output swap is a different artifact. Its job is to stop the buy
    *  TOKEN from being lost to the number sitting in front of it. */
   buyAmountNamedHuman?: string
+  /** "sell all my AAPL" / "sell my entire ETH balance" — the whole holding,
+   *  sized from the LIVE balance at build time (the transfer layer's 'all'
+   *  sentinel, mirrored). The parse carries no number: the route reads the
+   *  balance, refuses BY NAME when it's zero, and quotes the resolved amount
+   *  in the guard notes before anything is signed. Never set alongside
+   *  sellAmountHuman / sellAmountUsd on a fresh parse. */
+  sellAll?: true
   /** Set when the message is clearly a swap ask but under-specified. */
   problem?: string
   /** A price-triggered sell with no amount ("sell my eth when it hits
@@ -169,8 +176,25 @@ const SELL_UNIT_NO_TARGET_RE = new RegExp(String.raw`\b(?:swap|sell|convert|trad
 // The no-target token slot must hold a real symbol: filler words ("sell 2 of
 // my NFTs" puts "of" there) and dollar words never claim; chain words are
 // guarded separately (canonicalChainWord, ≥5 chars — eth/base stay tokens).
-const NO_TARGET_STOPWORDS = /^(?:of|my|the|an?|to|for|in|on|at|it|that|this|these|them|some|all|more|worth|usd|dollars?|bucks?|shares?|percent|pct)$/i
+const NO_TARGET_STOPWORDS = /^(?:of|my|the|an?|to|for|in|on|at|it|that|this|these|them|some|all|more|worth|usd|dollars?|bucks?|shares?|percent|pct|nfts?)$/i
 const claimableBareToken = (tok: string) => !NO_TARGET_STOPWORDS.test(tok) && !(tok.length >= 5 && canonicalChainWord(tok))
+// "sell all my AAPL (for USDG)" / "sell my entire ETH balance" / "swap all
+// of my USDC for ETH" — the WHOLE holding, no number in the ask. Live
+// 2026-09-07: "Sell all my AAPL for USDG on Robinhood Chain" fell to the
+// planner (a walkthrough, no artifact) while the same ask with the number
+// typed in built a guarded txChain. The transfer layer has carried this
+// sentinel since #473 ("send all my USDC…"); sells get the same contract:
+// the parse marks `sellAll`, the route sizes it from the live balance at
+// build time. The holding noun after the token ("balance", "shares",
+// "position") is decoration; the buy side is optional exactly like the
+// bare-sell grammars below and may carry its own restated amount (MARKET_RE's
+// buyAmountNamedHuman rule).
+const ALL_OF = String.raw`(?:all\s+(?:of\s+)?(?:my|the|your)\s+|my\s+(?:entire|whole)\s+|(?:the\s+)?entire\s+)`
+const HOLDING_NOUN = String.raw`(?:\s+(?:balance|holdings?|position|bag|tokens?|coins?|shares?|stock))?`
+const SELL_ALL_RE = new RegExp(
+  String.raw`\b(?:swap|sell|convert|trade)\s+${ALL_OF}${TOKEN}${HOLDING_NOUN}(?:\s+(?:for|to|into)\s+(?:${AMOUNT}\s*)?${TOKEN}\b)?`,
+  'i',
+)
 // Dollar amounts on OTHER venues (perps etc.) must not be hijacked into a
 // spot swap — "buy $12 of ETH on hyperliquid" belongs to the HL exec layer.
 const OTHER_VENUE_RE = /\bhyperliquid\b|\bperp(?:s|etual)?\b|\bleverage\b|\b\d+x\b/i
@@ -302,6 +326,29 @@ export function parseSwapIntent(message: string): SwapIntent {
     }
   }
   if (!OTHER_VENUE_RE.test(message)) {
+    // Whole-holding sells. Checked before every sized grammar: none of them
+    // can match (they all need a digit), but the ORDER documents the claim.
+    // A cadence word means a schedule, never a one-shot liquidation.
+    const sa = message.match(SELL_ALL_RE)
+    if (sa && claimableBareToken(sa[1]) && !/\b(?:every|each|daily|weekly|monthly)\b/i.test(message)) {
+      // "sell all my USDC to arbitrum" — the buy slot holds a CHAIN: the
+      // MARKET_RE cross-chain rule, same wording.
+      const destChain = sa[3] && sa[3].length >= 5 ? canonicalChainWord(sa[3]) : null
+      if (destChain) {
+        return {
+          isSwap: true,
+          problem: `Which chain should the ${sa[1].toUpperCase()} come FROM? That looks like a cross-chain move — say e.g. “swap all my ${sa[1].toUpperCase()} from Base to ${destChain}” and I'll build it.`,
+        }
+      }
+      return {
+        isSwap: true,
+        mode: 'swap',
+        sellAll: true,
+        sellToken: sa[1],
+        ...(sa[3] && claimableBareToken(sa[3]) ? { buyToken: sa[3] } : {}),
+        ...(sa[2] && sa[3] ? { buyAmountNamedHuman: sa[2] } : {}),
+      }
+    }
     const dm = message.match(DOLLAR_MARKET_RE)
     if (dm) {
       return { isSwap: true, mode: 'swap', sellAmountUsd: usdOf(dm, 1), sellToken: dm[3], buyToken: dm[4] }
@@ -388,7 +435,8 @@ export function swapClarify(intent: SwapIntent, opts: { targets?: string[] } = {
   if (!intent.isSwap || intent.mode === 'limit') return null
   const sell = intent.sellToken?.toUpperCase()
   const buy = intent.buyToken?.toUpperCase()
-  const amountless = !intent.sellAmountHuman && !intent.sellAmountUsd
+  // A whole-holding sell IS sized — the route reads the balance at build.
+  const amountless = !intent.sellAmountHuman && !intent.sellAmountUsd && !intent.sellAll
   // Price-triggered sell ("sell my eth when it hits $4000") → limit chips at
   // that price; every resume is the LIMIT_RE contract, USDC as the receive
   // side (the route resolves the chain stable at build).
@@ -428,7 +476,7 @@ export function swapClarify(intent: SwapIntent, opts: { targets?: string[] } = {
   // single-option payloads client-side).
   const targets = opts.targets ?? []
   if (sell && !buy && !amountless && targets.length >= 2) {
-    const amountPhrase = intent.sellAmountUsd ? `$${intent.sellAmountUsd} of ${sell}` : `${intent.sellAmountHuman} ${sell}`
+    const amountPhrase = intent.sellAll ? `all my ${sell}` : intent.sellAmountUsd ? `$${intent.sellAmountUsd} of ${sell}` : `${intent.sellAmountHuman} ${sell}`
     return {
       reply: `Swap ${amountPhrase} into what? Pick a target, or name any token (“swap ${amountPhrase} for ETH”).`,
       question: `Buy what with the ${sell}?`,

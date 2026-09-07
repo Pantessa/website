@@ -122,7 +122,7 @@ export function simulateLadder(message: string): Outcome {
     }
     if (!sw.isSwap) return { gate: 'planner', kind: 'planner' }
     if (sw.problem) return { gate: 'swap', kind: 'clarify', note: sw.problem }
-    return { gate: 'swap', kind: 'action', note: `${sw.sellAmountHuman ?? '$' + sw.sellAmountUsd} ${sw.sellToken ?? '(stable)'}→${sw.buyToken}` }
+    return { gate: 'swap', kind: 'action', note: `${sw.sellAll ? 'all (sized live)' : (sw.sellAmountHuman ?? '$' + sw.sellAmountUsd)} ${sw.sellToken ?? '(stable)'}→${sw.buyToken ?? '(stable)'}` }
   }
 
   return { gate: 'planner', kind: 'planner' }
