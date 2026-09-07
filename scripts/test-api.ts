@@ -147,7 +147,9 @@ import {
   stripeOnrampParams,
   ONRAMP_ASSET,
   ONRAMP_CONSENT_TTL_MS,
+  ONRAMP_DEFAULT_NETWORK,
   ONRAMP_ETH_KEEP_USD,
+  ONRAMP_NETWORK_LABEL,
   ONRAMP_MAX_USD,
   ONRAMP_MIN_USD,
   STRIPE_NETWORK,
@@ -5618,10 +5620,28 @@ async function main() {
         ONRAMP_MIN_USD >= MIN_VALUE_LEG_USD + GAS_LEG_USD + ONRAMP_ETH_KEEP_USD.base,
         `min=${ONRAMP_MIN_USD} vs value=${MIN_VALUE_LEG_USD}+gas=${GAS_LEG_USD}+keep=${ONRAMP_ETH_KEEP_USD.base}`,
       )
+      // The DEFAULT lane is Ethereum (2026-09-07): Stripe gates ETH-on-Base by
+      // the customer's home address and walled a real US session after KYC,
+      // and a locked session cannot fall back. Pinned by name because the
+      // constant silently decides every chip's chain, consent text and preset.
+      check(
+        'onramp: the default lane is Ethereum mainnet (Stripe refuses ETH on Base for some home addresses, after KYC)',
+        ONRAMP_DEFAULT_NETWORK === 'ethereum' && ONRAMP_NETWORK_LABEL[ONRAMP_DEFAULT_NETWORK] === 'Ethereum',
+        ONRAMP_DEFAULT_NETWORK,
+      )
+      // The floor was derived on Base; the default lane keeps back more ETH,
+      // so any plan-bearing preset there must clear the same three terms with
+      // mainnet's own keep-back — otherwise the default chip funds a wall.
+      check(
+        'onramp: a plan-bearing preset on the default lane clears the parity floor + gas leg + mainnet keep-back',
+        planFundUsd(MIN_VALUE_LEG_USD + GAS_LEG_USD) >= MIN_VALUE_LEG_USD + GAS_LEG_USD + ONRAMP_ETH_KEEP_USD[ONRAMP_DEFAULT_NETWORK],
+        `${planFundUsd(MIN_VALUE_LEG_USD + GAS_LEG_USD)} vs ${MIN_VALUE_LEG_USD}+${GAS_LEG_USD}+${ONRAMP_ETH_KEEP_USD[ONRAMP_DEFAULT_NETWORK]}`,
+      )
       check(
         'onramp: a preset never lands under that floor, nor under the chain\'s own ETH keep-back',
-        planFundUsd(1) === ONRAMP_MIN_USD &&
-          planFundUsd(0) === ONRAMP_MIN_USD &&
+        planFundUsd(1, 'base') === ONRAMP_MIN_USD &&
+          planFundUsd(0, 'base') === ONRAMP_MIN_USD &&
+          planFundUsd(0) >= ONRAMP_MIN_USD &&
           planFundUsd(0, 'ethereum') >= ONRAMP_ETH_KEEP_USD.ethereum,
         `${planFundUsd(0)}/${planFundUsd(0, 'ethereum')}`,
       )
@@ -5630,15 +5650,17 @@ async function main() {
       // BEFORE the ceil — without that this pin reads $118).
       check(
         'onramp: the preset clears the plan after the onramp fee, the swap and the gas keep-back',
-        planFundUsd(12) === 16 && planFundUsd(100) === 117,
-        `${planFundUsd(12)}/${planFundUsd(100)}`,
+        planFundUsd(12, 'base') === 16 && planFundUsd(100, 'base') === 117,
+        `${planFundUsd(12, 'base')}/${planFundUsd(100, 'base')}`,
       )
       // Mainnet keeps back 0.002 ETH, which is real money — the same plan
-      // costs meaningfully more to fund there, and the preset has to say so.
+      // costs more to fund there, and the preset has to say so: 12 * 1.15 +
+      // 10 = 23.8 → $24. And since Ethereum IS the default, the bare call
+      // must agree with the explicit one.
       check(
-        'onramp: an Ethereum preset carries L1\'s much larger ETH keep-back',
-        planFundUsd(12, 'ethereum') === 30 && planFundUsd(12, 'ethereum') > planFundUsd(12, 'base'),
-        `${planFundUsd(12, 'ethereum')}`,
+        'onramp: an Ethereum preset carries L1\'s larger ETH keep-back, and the bare call IS the Ethereum call',
+        planFundUsd(12, 'ethereum') === 24 && planFundUsd(12, 'ethereum') > planFundUsd(12, 'base') && planFundUsd(12) === planFundUsd(12, 'ethereum'),
+        `${planFundUsd(12, 'ethereum')}/${planFundUsd(12)}`,
       )
       check(
         'onramp: no plan, however large, can preset above the cap',
@@ -5664,8 +5686,16 @@ async function main() {
       const chip = fundChipFor({ needUsd: 12, actionLabel: 'buy $10 of AAPL', resume: 'Buy $10 of AAPL' })
       check(
         'onramp: the chip NAMES the intent and carries it as the resume (the ask survives the trip off-site)',
-        !!chip && chip.label.includes('buy $10 of AAPL') && chip.label.includes('$16') && chip.resume === 'Buy $10 of AAPL' && chip.fund?.network === 'base',
+        !!chip && chip.label.includes('buy $10 of AAPL') && chip.label.includes('$24') && chip.resume === 'Buy $10 of AAPL' && chip.fund?.network === ONRAMP_DEFAULT_NETWORK,
         JSON.stringify(chip),
+      )
+      // A caller that knows the customer can take Base still gets the
+      // cheaper lane — the default is a default, not a fence.
+      const baseChip = fundChipFor({ needUsd: 12, actionLabel: 'buy $10 of AAPL', resume: 'Buy $10 of AAPL', network: 'base' })
+      check(
+        'onramp: a caller can still ask for the Base lane, and its preset is the cheaper one',
+        baseChip?.fund?.network === 'base' && baseChip.label.includes('$16'),
+        JSON.stringify(baseChip),
       )
       // ETH, not a stable: the wallet being funded is EMPTY, so a stable
       // would land money that cannot pay the gas to move itself — the exact
