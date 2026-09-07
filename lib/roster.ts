@@ -209,10 +209,13 @@ export function parseMandate(raw: string): ParsedMandate | { problem: string } {
     if (!aave.explicitAave) {
       return { problem: `Yield mandate: name the venue so the hire is exact — ${MANDATE_EXAMPLES[3]}.` }
     }
-    const canonical = `supply ${aave.amount} ${aave.token} to aave${aave.otherChain ? ` on ${aave.otherChain}` : ''}`
+    const amountWord = aave.amountIsUsd ? `$${aave.amount} of` : aave.amount
+    const canonical = `supply ${amountWord} ${aave.token} to aave${aave.otherChain ? ` on ${aave.otherChain}` : ''}${aave.bestRate ? ' at the best rate' : ''}`
     const rt = parseAaveSupply(canonical)
-    const rtOk = rt != null && !('problem' in rt) && rt.amount === aave.amount && rt.token === aave.token && rt.explicitAave === true
-    return sealed('yield', canonical, `Park ${aave.amount} ${aave.token} at Aave.`, rtOk)
+    const rtOk =
+      rt != null && !('problem' in rt) && rt.amount === aave.amount && rt.token === aave.token && rt.explicitAave === true &&
+      !!rt.amountIsUsd === !!aave.amountIsUsd && !!rt.bestRate === !!aave.bestRate
+    return sealed('yield', canonical, `Park ${amountWord} ${aave.token} at Aave${aave.bestRate ? ' at the best rate' : ''}.`, rtOk)
   }
   if (YIELDISH_RE.test(text)) {
     return { problem: `Yield mandate: name the venue and the amount — ${MANDATE_EXAMPLES[3]}.` }

@@ -559,8 +559,21 @@ export const JOB_SEGMENT_PARSERS: JobSegmentParser[] = [
       const aaveSup = parseAaveSupply(seg)
       if (!aaveSup || 'problem' in aaveSup || !aaveSup.explicitAave || aaveSup.weak) return null
       if (aaveSup.otherChain) return { problem: `Aave v4 builds run on Ethereum — I can't supply on ${aaveSup.otherChain}.` }
-      const title = `Supply ${aaveSup.amount} ${aaveSup.token.toUpperCase()} to Aave v4`
-      return { steps: [{ kind: 'sign', builder: 'native-aave-supply', title, params: { token: aaveSup.token, amount: aaveSup.amount } }], title }
+      const title = `Supply ${aaveSup.amountIsUsd ? `$${aaveSup.amount} of ` : `${aaveSup.amount} `}${aaveSup.token.toUpperCase()} to Aave v4${aaveSup.bestRate ? ' (best rate)' : ''}`
+      return {
+        steps: [{
+          kind: 'sign',
+          builder: 'native-aave-supply',
+          title,
+          params: {
+            token: aaveSup.token,
+            amount: aaveSup.amount,
+            ...(aaveSup.amountIsUsd ? { amountIsUsd: true } : {}),
+            ...(aaveSup.bestRate ? { bestRate: true } : {}),
+          },
+        }],
+        title,
+      }
     },
   },
   {

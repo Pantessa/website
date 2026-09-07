@@ -21,6 +21,7 @@ import {
   pickSupplyReserve,
   parseUsd,
   reserveForOp,
+  resolveSupplyAmount,
   reserveLegIds,
   type AaveAmountRule,
   type AaveBuiltPlan,
@@ -56,10 +57,17 @@ async function readReserves(token: string): Promise<AaveReserveRow[]> {
 }
 
 /** Supply as a job step: reserves → build_supply → guard. Throws honestly. */
-export async function buildAaveSupplyArtifact(wallet: string, params: { token: string; amount: string }): Promise<AaveArtifactBuilt> {
+export async function buildAaveSupplyArtifact(
+  wallet: string,
+  params: { token: string; amount: string; amountIsUsd?: boolean; bestRate?: boolean },
+): Promise<AaveArtifactBuilt> {
   const token = params.token.toUpperCase()
-  const picked = pickSupplyReserve(await readReserves(token), token)
+  const picked = pickSupplyReserve(await readReserves(token), token, { bestRate: params.bestRate === true })
   if (!picked) throw new Error(`${token} isn't an active, supplyable Aave v4 reserve on Ethereum right now.`)
+  // Dollar asks price from the reserve's own pool totals (stables are 1:1).
+  const resolved = resolveSupplyAmount({ amount: params.amount, token, ...(params.amountIsUsd ? { amountIsUsd: true } : {}) }, picked)
+  if ('problem' in resolved) throw new Error(resolved.problem)
+  params = { ...params, amount: resolved.amount }
   const atoms = humanToAtoms(params.amount, picked.decimals)
   if (!atoms) throw new Error(`“${params.amount}” has more decimal places than ${token} supports (${picked.decimals}).`)
 

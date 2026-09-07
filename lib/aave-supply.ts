@@ -52,6 +52,18 @@ const TOKEN = '\\$?[A-Za-z]{2,12}'
 // 2026-07-13: "can I supply 1 more USDC" fell through to the planner, which
 // sent the SYMBOL to build_supply's address-regex param → MCP -32602.
 const FILLER = '(?:(?:more|extra|additional)\\s+)?'
+// "$2" / "2 dollars" / "5 bucks" — group 1 xor group 2 carries the number
+// (the swap layer's USD_AMOUNT shape, #421). Live miss 2026-09-04: "can I
+// fo $2 of USDC on AAVE" and "supply $100 of USDC on aave" both fell to the
+// planner, which INVENTED a spoke address (the Lido spoke, which lists no
+// USDC) and died on build_supply's 404 — the exact failure this layer exists
+// to prevent.
+const USD_AMOUNT = '(?:\\$\\s?(\\d+(?:\\.\\d+)?)|(\\d+(?:\\.\\d+)?)\\s?(?:dollars?|usd|bucks?))'
+const usdOf = (m: RegExpMatchArray, i: number) => m[i] ?? m[i + 1]
+// A dollar ask on a dollar-pegged reserve IS the token amount; anything else
+// is priced from the reserve's own pool totals at build time (resolveSupplyAmount).
+const STABLES = new Set(['USDC', 'USDT', 'DAI', 'USDG', 'GHO', 'USDE', 'PYUSD', 'USDS', 'RLUSD', 'FRAX', 'LUSD', 'USDBC'])
+export const isAaveStable = (token: string) => STABLES.has(token.replace(/^\$/, '').toUpperCase())
 
 // Typo-tolerant Ethereum ("etheraum" seen live) vs. other named chains —
 // both from the shared lexicon (plus the legacy ether[aiu]+m net).
@@ -65,11 +77,34 @@ const OTHER_CHAIN_RE = new RegExp(
 const OTHER_VENUE_RE =
   /\b(?:uniswap|cow\s?swap|curve|balancer|sushi|compound|morpho|pendle|yearn|hyperliquid|venus|spark)\b/i
 
-// "(add|supply|deposit|lend|put|park) <amt> <token> (to|into|in|on) …"
+// "(add|supply|deposit|lend|put|park|invest) <amt> <token> (to|into|in|on) …"
+const SUPPLY_VERB = '(?:add|supply|deposit|lend|put|park|invest)'
 const SUPPLY_RE = new RegExp(
-  `\\b(?:add|supply|deposit|lend|put|park)\\s+(${AMOUNT})\\s+${FILLER}(${TOKEN})\\b`,
+  `\\b${SUPPLY_VERB}\\s+(${AMOUNT})\\s+${FILLER}(${TOKEN})\\b`,
   'i',
 )
+// "supply $2 (worth) of USDC …" / "deposit 5 dollars of usdc …" / "supply $2 USDC".
+const SUPPLY_USD_RE = new RegExp(
+  `\\b${SUPPLY_VERB}\\s+(?:about\\s+|around\\s+|roughly\\s+|like\\s+)?${USD_AMOUNT}(?:\\s+worth)?\\s+(?:(?:of|in)\\s+)?${FILLER}(${TOKEN})\\b`,
+  'i',
+)
+// Aave named as the DESTINATION with an amount + token and no supply verb at
+// all — "can I do $2 of USDC on aave", "2 USDC into aave", "I want $50 of
+// USDC on aave". The verb was a typo live ("fo"), so the shape carries the
+// intent: an intent cue (or the amount leading the sentence), the amount,
+// the token, a preposition, Aave. Statements ("I have 100 USDC on aave")
+// carry no cue and fall through; every other lending/trading verb is
+// excluded so this never steals a withdraw, swap, or stake.
+const GENERIC_AAVE_RE = new RegExp(
+  `(?:${USD_AMOUNT}|(${AMOUNT}))(?:\\s+worth)?\\s+(?:(?:of|in)\\s+)?${FILLER}(${TOKEN})\\s+(?:to|into|in|on|at|with)\\s+(?:an?\\s+|the\\s+|my\\s+)?aave\\b`,
+  'i',
+)
+const INTENT_CUE_RE = /\b(?:can|could|let'?s|please|want(?:s|ed)?|wanna|like|do|fo|go|throw|toss|stick|place|move|invest|earn|get|park|drop)\b/i
+const OTHER_OP_VERB_RE =
+  /\b(?:withdraw|redeem|borrow|repay|pay\s+(?:back|off|down)|swap|sell|buy|convert|trade|bridge|send|transfer|stake|unstake|short|long|claim|have|had|got|holding|hold)\b/i
+// "at the best rate" / "highest apy" / "best-yielding" — pick the spoke by
+// supply APY instead of depth. Live 2026-09-04: "1 USDC, and best rate".
+const BEST_RATE_RE = /\b(?:best|highest|top|max(?:imum)?)(?:\s+available)?[- ](?:rate|apy|apr|yield|interest|return)s?\b|\b(?:best|highest)[- ]yielding\b|\bmost\s+(?:yield|interest)\b/i
 // Aave named anywhere, or generic pool/lending phrasing ("a pool on ethereum").
 const POOLISH_RE = /\b(?:pool|pools|lending|lend|yield|earn(?:ing)?\s+(?:interest|apy))\b/i
 
@@ -92,6 +127,34 @@ export interface AaveSupplyParams {
    *  context) — the SELECTED SET is the only cue, so the route site builds
    *  only when no OTHER selected agent could serve the verb. */
   weak?: boolean
+  /** `amount` is US DOLLARS, not tokens ("$50 of WETH") — the build site
+   *  prices it from the resolved reserve (resolveSupplyAmount). Dollar asks
+   *  on dollar-pegged tokens resolve at parse time and never set this. */
+  amountIsUsd?: true
+  /** The user asked for the best rate — pick the spoke by supply APY. */
+  bestRate?: true
+}
+
+/** Dollar ask → token amount: a stable is 1:1, anything else needs the
+ *  reserve's own price (pool USD ÷ pool tokens). Never a model's number. */
+export function resolveSupplyAmount(
+  params: Pick<AaveSupplyParams, 'amount' | 'token' | 'amountIsUsd'>,
+  picked: Pick<PickedReserve, 'priceUsd' | 'decimals'>,
+): { amount: string } | { problem: string } {
+  if (!params.amountIsUsd) return { amount: params.amount }
+  const token = params.token.toUpperCase()
+  if (isAaveStable(token)) return { amount: params.amount }
+  const usd = Number(params.amount)
+  if (!Number.isFinite(usd) || usd <= 0) return { problem: `“$${params.amount}” isn't an amount I can supply.` }
+  if (picked.priceUsd === null || !(picked.priceUsd > 0)) {
+    return {
+      problem: `I can't price ${token} from Aave's own pool totals right now, so I won't guess how much $${params.amount} is — say the amount in ${token} (e.g. “supply 0.01 ${token} to Aave”).`,
+    }
+  }
+  const places = Math.min(picked.decimals, 8)
+  const amount = (usd / picked.priceUsd).toFixed(places).replace(/\.?0+$/, '')
+  if (!amount || Number(amount) <= 0) return { problem: `$${params.amount} of ${token} rounds to nothing at the pool's price — try a larger amount.` }
+  return { amount }
 }
 
 /**
@@ -104,6 +167,31 @@ export function parseAaveSupply(message: string): AaveSupplyParams | { problem: 
   if (OTHER_VENUE_RE.test(message)) return null
   const explicitAave = /\baave\b/i.test(message)
   const poolish = POOLISH_RE.test(message)
+  const bestRate = BEST_RATE_RE.test(message)
+  const flags = (weak: boolean) => ({ ...(weak ? { weak: true as const } : {}), ...(bestRate ? { bestRate: true as const } : {}) })
+  // Dollar-denominated supply — checked first so "$2" is never read as the
+  // bare digit form's chain/amount. Stables resolve 1:1 right here.
+  const um = message.match(SUPPLY_USD_RE)
+  if (um && (explicitAave || poolish || !QUESTION_START_RE.test(message))) {
+    const utoken = um[3].replace(/^\$/, '')
+    if (!NOT_TOKENS.has(utoken.toLowerCase())) {
+      const rest = message.slice((um.index ?? 0) + um[0].length)
+      const dest = rest.match(/\b(?:to|into|in|on|at)\s+(?:an?\s+|the\s+|my\s+)?([A-Za-z0-9]+)/i)
+      const okDest = explicitAave || poolish || !dest || /^(?:aave|pool|pools|lending|ethereum|eth|mainnet)$/i.test(dest[1])
+      if (okDest) {
+        const other = message.match(OTHER_CHAIN_RE)
+        const uweak = !explicitAave && !poolish && !/^(?:supply|lend)\b/i.test(um[0])
+        return {
+          amount: usdOf(um, 1),
+          token: utoken,
+          explicitAave,
+          otherChain: other && !ETH_RE.test(other[1]) ? other[1].toLowerCase() : null,
+          ...(isAaveStable(utoken) ? {} : { amountIsUsd: true as const }),
+          ...flags(uweak),
+        }
+      }
+    }
+  }
   const m = message.match(SUPPLY_RE)
   let weak = false
   if (!explicitAave && !poolish) {
@@ -131,6 +219,28 @@ export function parseAaveSupply(message: string): AaveSupplyParams | { problem: 
       const t = message.match(SUPPLY_NO_AMOUNT_RE)
       return { problem: `How much ${t ? t[1].replace(/^\$/, '').toUpperCase() : ''} should I supply? Say e.g. “supply 25 USDC to Aave”.`.replace('  ', ' ') }
     }
+    // No supply verb, but Aave is the named destination of an amount + token
+    // with an intent cue ("can I do $2 of USDC on aave") or the amount
+    // leading ("$2 of USDC on aave"). Statements and every other op verb
+    // fall through.
+    if (explicitAave && !QUESTION_START_RE.test(message) && !OTHER_OP_VERB_RE.test(message)) {
+      const g = message.match(GENERIC_AAVE_RE)
+      if (g && (INTENT_CUE_RE.test(message.slice(0, g.index ?? 0)) || (g.index ?? 0) === message.search(/\S/))) {
+        const gtoken = g[4].replace(/^\$/, '')
+        if (!NOT_TOKENS.has(gtoken.toLowerCase())) {
+          const isUsd = g[3] === undefined
+          const other = message.match(OTHER_CHAIN_RE)
+          return {
+            amount: isUsd ? usdOf(g, 1) : g[3],
+            token: gtoken,
+            explicitAave: true,
+            otherChain: other && !ETH_RE.test(other[1]) ? other[1].toLowerCase() : null,
+            ...(isUsd && !isAaveStable(gtoken) ? { amountIsUsd: true as const } : {}),
+            ...flags(false),
+          }
+        }
+      }
+    }
     return null
   }
   const token = m[2].replace(/^\$/, '')
@@ -145,7 +255,7 @@ export function parseAaveSupply(message: string): AaveSupplyParams | { problem: 
     token,
     explicitAave,
     otherChain: other && !ETH_RE.test(other[1]) ? other[1].toLowerCase() : null,
-    ...(weak ? { weak: true } : {}),
+    ...flags(weak),
   }
 }
 
@@ -252,9 +362,24 @@ function toPicked(pick: AaveReserveRow): PickedReserve {
  * deepest pool (Main for USDC — also the collateral-enabled one). Collateral
  * capability breaks ties toward the more useful deposit.
  */
-export function pickSupplyReserve(rows: AaveReserveRow[], token: string): PickedReserve | null {
+export function pickSupplyReserve(
+  rows: AaveReserveRow[],
+  token: string,
+  opts: { bestRate?: boolean } = {},
+): PickedReserve | null {
   const candidates = candidateRows(rows, token).filter((r) => r.canSupply === true)
   if (candidates.length === 0) return null
+  if (opts.bestRate) {
+    // "at the best rate": the highest live supply APY among the official
+    // supplyable rows — still only ever a row from the agent's own list
+    // (live 2026-09-04 the planner paired the best APY with a spoke that
+    // doesn't list the token). Ties keep the default's ordering.
+    const rated = candidates.filter((r) => typeof r.supplyApyPct === 'number')
+    if (rated.length > 0) {
+      const best = rated.reduce((a, b) => ((b.supplyApyPct as number) > (a.supplyApyPct as number) ? b : a))
+      return toPicked(best)
+    }
+  }
   return toPicked(candidates.find((r) => r.canUseAsCollateral === true) ?? candidates[0])
 }
 
@@ -570,6 +695,14 @@ const AMEND_RE = new RegExp(
   `^(?:ok(?:ay)?[,.]?\\s*)?(?:actually[,.]?\\s*)?(?:make\\s+(?:it|that)|change\\s+(?:it|that)(?:\\s+to)?|do)\\s+(${AMOUNT})(?:\\s+[A-Za-z]{2,12})?(?:\\s+instead)?[.!?\\s]*$`,
   'i',
 )
+// Bare "1 USDC" / "1 USDC, and best rate" / "$5 of USDC at the highest apy"
+// against a pending supply — the amount (and rate preference) re-stated
+// without a verb. The token must be the pending one (a different token is
+// a new ask, not an amendment).
+const AMEND_BARE_RE = new RegExp(
+  `^(?:ok(?:ay)?[,.]?\\s*)?(?:${USD_AMOUNT}|(${AMOUNT}))(?:\\s+worth)?\\s+(?:of\\s+)?([A-Za-z]{2,12})(?:[,;]?\\s*(?:and\\s+|at\\s+|with\\s+)?(?:the\\s+)?(?:best|highest|top)[- ](?:rate|apy|apr|yield|interest)s?)?(?:\\s+(?:please|instead))?[.!?\\s]*$`,
+  'i',
+)
 
 export type AaveSupplyFollowUp =
   | { kind: 'cancel' }
@@ -595,6 +728,23 @@ export function parseAaveSupplyFollowUp(
         token: pending.data.token ?? '',
         explicitAave: true,
         otherChain: null,
+        ...(BEST_RATE_RE.test(text) ? { bestRate: true as const } : {}),
+      },
+    }
+  }
+  const bare = text.match(AMEND_BARE_RE)
+  if (bare && (pending.data.token ?? '').toUpperCase() === bare[4].toUpperCase()) {
+    const isUsd = bare[3] === undefined
+    const token = pending.data.token ?? ''
+    return {
+      kind: 'amend',
+      params: {
+        amount: isUsd ? usdOf(bare, 1) : bare[3],
+        token,
+        explicitAave: true,
+        otherChain: null,
+        ...(isUsd && !isAaveStable(token) ? { amountIsUsd: true as const } : {}),
+        ...(BEST_RATE_RE.test(text) ? { bestRate: true as const } : {}),
       },
     }
   }
