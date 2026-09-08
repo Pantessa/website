@@ -115,6 +115,8 @@ import {
 import { HOUSE_LINKS, houseLinkMarks } from '../lib/house-links'
 import { EXPLAINER_VIDEO, explainerPosterUrl, explainerWatchUrl, isoDuration } from '../lib/explainer-video'
 import { isDbChatId } from '../lib/chat-ids'
+import { gasStateFor, mergeChains, type RpcChainRead, type WalletView } from '../lib/wallet-view'
+import { arrivalPhrase, detectArrival, fundWaitExpired, fundWaitKey, pollDelayMs, FUND_WAIT_TTL_MS, FUND_WATCH_MAX_MS } from '../lib/funding-arrival'
 import { usdToTokenAmount } from '../lib/usd-probe'
 import { parseRobinhoodBridge, guardRobinhoodBridge, RH_L1_INBOX, ARB_SYS } from '../lib/robinhood-bridge'
 import { parseNftAsk, parseOpenSeaItemUrl, guardNftTransfer, ERC721_ABI as NFT_ERC721_ABI, ERC1155_ABI as NFT_ERC1155_ABI } from '../lib/nft-layer'
@@ -6821,6 +6823,111 @@ async function main() {
     check('xchain value: quote sell.usd → valueUsd', crossChainValueUsd({ ...goodBuild, quote: { sell: { amountAtoms: '1000000', usd: '0.9998' } } }) === 1)
     check('xchain value: missing usd → null (fail-soft, never guessed)', crossChainValueUsd(goodBuild) === null)
     check('xchain value: junk usd → null', crossChainValueUsd({ ...goodBuild, quote: { sell: { usd: 'n/a' } } }) === null && crossChainValueUsd({ ...goodBuild, quote: { sell: { usd: '0' } } }) === null)
+  }
+
+  // ── Wallet panel + funding arrival (2026-09-08) ───────────────────────────
+  // Born from Nate's own Stripe purchase: $27 of ETH landed on Ethereum and
+  // his CDP embedded wallet answered "Chain not configured" (the chain-list
+  // drift #722 fixed — its pins live in the wallet-lanes block). The panel is
+  // the window an embedded wallet never had; the watcher is the signal the
+  // fund chip never sent.
+  console.log('— wallet panel + funding arrival')
+  {
+    // Gas verdicts — the rule the panel names a stall by.
+    check('wallet gas: tokens + no ETH on Base → none', gasStateFor(8453, 0, 20) === 'none')
+    check('wallet gas: nothing at all → empty (not a problem)', gasStateFor(8453, 0, 0) === 'empty' && gasStateFor(1, 0.00001, 0.1) === 'empty')
+    check('wallet gas: above the floor, under the reserve → low', gasStateFor(1, 0.0015, 0) === 'low' && gasStateFor(8453, 0.0001, 5) === 'low')
+    check('wallet gas: at/above the reserve → ok', gasStateFor(1, 0.002, 0) === 'ok' && gasStateFor(4663, 0.0002, 100) === 'ok')
+
+    // Merge: RPC is the freshness floor, Alchemy supplies prices + the tail.
+    const eth = APP_CHAINS.find((c) => c.id === 1)!
+    const baseC = APP_CHAINS.find((c) => c.id === 8453)!
+    const rpc = new Map<number, RpcChainRead>([
+      [1, { chainId: 1, nativeEth: 0.011178, stable: { symbol: 'USDC', address: eth.tokens.USDC.address, balance: 0 } }],
+      [8453, { chainId: 8453, nativeEth: 0, stable: { symbol: 'USDC', address: baseC.tokens.USDC.address, balance: 20 } }],
+    ])
+    const merged = mergeChains([eth, baseC], rpc, [
+      { symbol: 'ETH', address: '0x0000000000000000000000000000000000000000', balance: '0.0100', priceUsd: 2477, valueUsd: 24.77, native: true, chain: 'Ethereum' },
+      { symbol: 'USDC', address: baseC.tokens.USDC.address, balance: '19.5', priceUsd: 1, valueUsd: 19.5, chain: 'Base' },
+      { symbol: 'DEGEN', address: '0x' + '11'.repeat(20), balance: '1000', priceUsd: 0.004, valueUsd: 4, chain: 'Base' },
+    ], 2477)
+    const mEth = merged[0]
+    const mBase = merged[1]
+    check(
+      'wallet merge: RPC native wins over the index (0.011178 not 0.0100), priced at the probe',
+      mEth.nativeEth === 0.011178 && mEth.holdings[0]?.native === true && mEth.nativeUsd === 27.69 && mEth.totalUsd === 27.69,
+      JSON.stringify({ nativeEth: mEth.nativeEth, nativeUsd: mEth.nativeUsd, total: mEth.totalUsd }),
+    )
+    check(
+      'wallet merge: the RPC stable read replaces the indexed USDC row (20, not 19.5) and the tail token survives',
+      mBase.holdings.find((h) => h.symbol === 'USDC')?.balance === '20' && mBase.holdings.some((h) => h.symbol === 'DEGEN') && mBase.totalUsd === 24,
+      JSON.stringify(mBase.holdings.map((h) => [h.symbol, h.balance, h.valueUsd])),
+    )
+    check('wallet merge: Base holds $24 of tokens with zero ETH → gas none; Ethereum with 0.011 ETH → ok', mBase.gas === 'none' && mEth.gas === 'ok')
+    check('wallet merge: no ETH → no native pseudo-row', !mBase.holdings.some((h) => h.native))
+    const unread = mergeChains([eth], new Map(), [], 2477)[0]
+    check('wallet merge: a chain the RPC did not answer is flagged unread, never rendered as zero', unread.unread === true && unread.holdings.length === 0)
+    const indexOnly = mergeChains([eth], new Map(), [{ symbol: 'ETH', address: '0x0', balance: '0.5', priceUsd: null, valueUsd: 1200, native: true, chain: 'Ethereum' }], null)[0]
+    check('wallet merge: with no RPC read and no price, Alchemy native + its own valueUsd carry the row', indexOnly.nativeEth === 0.5 && indexOnly.nativeUsd === 1200)
+
+    // Arrival detection — the watcher's one rule.
+    check('arrival: dust under the floors is not a delivery', detectArrival({ eth: 0, stable: 0 }, { eth: 0.00005, stable: 0.2 }, 2477) === null)
+    const ethIn = detectArrival({ eth: 0, stable: 0 }, { eth: 0.011178, stable: 0 }, 2477)
+    check('arrival: ETH landing is priced', ethIn?.deltaEth === 0.011178 && ethIn.deltaStable === 0 && ethIn.usd === 27.69, JSON.stringify(ethIn))
+    check('arrival: phrase leads with dollars when priced', ethIn !== null && arrivalPhrase(ethIn) === '$27.69 of ETH (0.0112 ETH)')
+    const unpriced = detectArrival({ eth: 0.001, stable: 0 }, { eth: 0.021, stable: 0 }, null)
+    check('arrival: unpriced ETH still counts, usd null, phrase in ETH', unpriced?.usd === null && unpriced.deltaEth > 0.0199 && arrivalPhrase(unpriced) === '0.0200 ETH')
+    const stableIn = detectArrival({ eth: 0.01, stable: 5 }, { eth: 0.01, stable: 30 }, 2477)
+    check('arrival: a stable landing counts on its own, delta not balance', stableIn?.deltaStable === 25 && stableIn.deltaEth === 0 && stableIn.usd === 25 && arrivalPhrase(stableIn) === '25.00 USDC')
+    check('arrival: a null baseline compares against zero (an empty wallet is why the chip exists)', detectArrival({ eth: null, stable: null }, { eth: 0.005, stable: 0 }, null)?.deltaEth === 0.005)
+    check('arrival: a balance that FELL is not an arrival', detectArrival({ eth: 0.05, stable: 10 }, { eth: 0.01, stable: 2 }, 2477) === null)
+    check('arrival: poll 10s early, 20s later, off after the max', pollDelayMs(0) === 10_000 && pollDelayMs(9 * 60_000) === 10_000 && pollDelayMs(11 * 60_000) === 20_000 && pollDelayMs(FUND_WATCH_MAX_MS) === null)
+    const w = { address: '0x' + 'cd'.repeat(20), network: 'ethereum' as const, resume: 'buy $10 of AAPL', label: 'Add $25', baselineEth: null, baselineStable: null, openedAt: Date.now() - FUND_WAIT_TTL_MS - 1 }
+    check('arrival: a wait older than the TTL is expired; a fresh one is not', fundWaitExpired(w) && !fundWaitExpired({ ...w, openedAt: Date.now() }))
+    check('arrival: the storage key is per lowercased wallet', fundWaitKey('0xABCDEF' + '00'.repeat(17)) === 'yf-fund-wait:0xabcdef' + '00'.repeat(17))
+
+    // The doors: "Wallet details" opens OUR panel; the chip watches.
+    const navSrc = await readFile(new URL('../components/NavAccount.tsx', import.meta.url), 'utf8')
+    const dashSrc = await readFile(new URL('../components/DashboardAccount.tsx', import.meta.url), 'utf8')
+    const chipSrc = await readFile(new URL('../components/ClarifyChips.tsx', import.meta.url), 'utf8')
+    check(
+      'wallet panel: both account menus open WalletPanel from "Wallet details" and keep RainbowKit one step inside as wallet settings',
+      [navSrc, dashSrc].every((src) => src.includes('<WalletPanel') && src.includes('onWalletSettings={openAccountModal}') && /Wallet details/.test(src) && !/onClick=\{\(\) => \{\s*closeNow\(\)\s*openAccountModal\(\)\s*\}\}/.test(src)),
+    )
+    check('fund chip: persists a FundWait when the on-ramp opens, watches it, and continues by itself', chipSrc.includes('saveFundWait(') && chipSrc.includes('useFundingArrival(') && chipSrc.includes('clearFundWait(') && chipSrc.includes("watch.status !== 'arrived'"))
+
+    // Over HTTP: public by address, shape, cache, fences.
+    try {
+      const bad = await fetch(`${BASE}/api/wallet?address=nope`)
+      check('GET /api/wallet: a non-address is 400', bad.status === 400)
+      const addr = '0x' + 'ab'.repeat(20)
+      const r1 = await fetch(`${BASE}/api/wallet?address=${addr}`)
+      const v1 = (await r1.json()) as WalletView
+      check(
+        'GET /api/wallet: 200 with one row per app chain, a gas verdict on each, address echoed',
+        r1.status === 200 && v1.address === addr && v1.chains.length === APP_CHAINS.length && v1.chains.every((c) => ['ok', 'low', 'none', 'empty'].includes(c.gas)) && Array.isArray(v1.activity),
+        JSON.stringify({ status: r1.status, chains: v1.chains?.length, failed: v1.failedChains }),
+      )
+      check('GET /api/wallet: an empty address totals $0 and names every chain as empty (or unread), never as a number it did not read', v1.totalUsd === 0 && v1.chains.every((c) => c.holdings.length === 0))
+      const r2 = await fetch(`${BASE}/api/wallet?address=${addr}`)
+      check('GET /api/wallet: the second read within the TTL is a cache hit', r1.headers.get('x-wallet-cache') === 'miss' && r2.headers.get('x-wallet-cache') === 'hit')
+      const r3 = await fetch(`${BASE}/api/wallet?address=${addr}&fresh=1`)
+      check('GET /api/wallet: fresh=1 inside the 8s gap still serves the cache (no Alchemy amplifier)', r3.headers.get('x-wallet-cache') === 'hit')
+      const b1 = await fetch(`${BASE}/api/wallet/balances?address=${addr}`)
+      const bal = (await b1.json()) as { chains: { key: string; ok: boolean; nativeEth?: number; stable?: { symbol: string } | null }[]; ethUsd: number | null }
+      check(
+        'GET /api/wallet/balances: defaults to ethereum + base, RPC rows carry nativeEth + the chain stable, an ETH price rides along',
+        b1.status === 200 && bal.chains.map((c) => c.key).join(',') === 'ethereum,base' && bal.chains.every((c) => !c.ok || (typeof c.nativeEth === 'number' && c.stable?.symbol === 'USDC')) && (bal.ethUsd === null || bal.ethUsd > 100),
+        JSON.stringify(bal),
+      )
+      const b2 = await fetch(`${BASE}/api/wallet/balances?address=${addr}&chains=robinhood`)
+      const bal2 = (await b2.json()) as { chains: { key: string; ok: boolean; stable?: { symbol: string } | null }[] }
+      check('GET /api/wallet/balances: robinhood reads USDG as the stable', b2.status === 200 && bal2.chains[0]?.key === 'robinhood' && (!bal2.chains[0].ok || bal2.chains[0].stable?.symbol === 'USDG'))
+      const b3 = await fetch(`${BASE}/api/wallet/balances?address=${addr}&chains=solana`)
+      check('GET /api/wallet/balances: an unknown chain is 400, never a guess', b3.status === 400)
+    } catch (e) {
+      check('wallet routes reachable', false, e instanceof Error ? e.message : String(e))
+    }
   }
 
   // ── Uniswap v4 fallback: the calldata guard on the Universal Router build ─
