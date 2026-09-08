@@ -9,6 +9,10 @@ import { isAdminAddress } from '@/lib/admin'
 import { isMosaicAsk } from '@/lib/mosaic'
 import { resolveRecipient } from '@/lib/inbox'
 import { isInternalRun } from '@/lib/internal-run'
+import { outboundHoldCopy, outboundToThirdParty } from '@/lib/content-origin'
+import { deniedBrandNameReason, isDeniedBrandName } from '@/lib/brand-denylist'
+import { assertUnderInboxCap } from '@/lib/broker-policy'
+import { askUsd } from '@/lib/broker'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -48,12 +52,24 @@ export async function POST(req: NextRequest) {
   }
 
   const agent = body.agent ? cleanAsk(String(body.agent)).slice(0, 40) : null
+  // Rule 7 on the byline (SECURITY-AUDIT §C4): a link "by Coinbase Support"
+  // is a phishing prop. Admin wallets (house links carry agent 'Pantessa')
+  // are the one exemption.
+  if (agent && !isAdminAddress(creator) && isDeniedBrandName(agent)) {
+    return NextResponse.json({ error: deniedBrandNameReason(agent, 'byline'), denied: true }, { status: 400 })
+  }
   // Creator-chosen MCPs win (validated against the mintable set); otherwise
   // the composer decides from the ask's shape.
   const mcps = (sanitizeMcps(body.mcps) ?? composeMcps(ask)).join(',')
   // A/B alternate phrasings — each a full ask; the runtime shows one per
   // visit and the funnel segments by which one was shown.
   const variants = sanitizeVariants(body.variants, ask)
+
+  // Content-origin fence (§E5): the link's ask — and EVERY phrasing it can
+  // serve — is read for an outside party (0x / ENS / a send / an NFT sale).
+  // Stored on the row; the /i runtime holds such a link to prefill, and the
+  // mint response says so, so the creator isn't surprised by the extra tap.
+  const outbound = [ask, ...variants].map(outboundToThirdParty).find((v) => v.outbound) ?? { outbound: false, reasons: [] as never[] }
 
   // Partner-promo limits — validated at mint, enforced server-side at run.
   const expiry = parseExpiry(body.expiresAt)
@@ -75,6 +91,12 @@ export async function POST(req: NextRequest) {
     if (!r.ok) return NextResponse.json({ error: r.reason }, { status: 400 })
     recipient = r.recipient.wallet
     if (recipient === creator) return NextResponse.json({ error: 'That recipient is you — share the plain link instead.' }, { status: 400 })
+    // The inbox notional cap applies to human sends too (lib/broker-policy).
+    try {
+      assertUnderInboxCap(askUsd(ask))
+    } catch (e) {
+      return NextResponse.json({ error: (e as Error).message }, { status: 400 })
+    }
     const myHandle = await prisma.creatorHandle.findUnique({ where: { creator }, select: { handle: true } }).catch(() => null)
     senderLabel = myHandle ? `@${myHandle.handle}` : `${creator.slice(0, 6)}…${creator.slice(-4)}`
   }
@@ -117,11 +139,15 @@ export async function POST(req: NextRequest) {
           recipient,
           senderLabel,
           kind: isMosaicAsk(ask) ? 'mosaic' : null,
+          outboundThirdParty: outbound.outbound,
           isInternal: internalRun,
         },
       })
       return NextResponse.json({
         slug: link.id,
+        // What the creator should know: this link will PREFILL for its
+        // visitors (they press send) — never auto-run — because of its shape.
+        ...(outbound.outbound ? { prefillOnly: true, prefillReason: outbound.reasons, note: outboundHoldCopy(outbound) } : {}),
         url: `/i/${link.id}`,
         ask: link.ask,
         variants: link.variants,

@@ -39,6 +39,141 @@ export const USDC_BY_CHAIN: Record<number, { address: string; name: string; vers
   137: { address: "0x3c499c542cef5e3811e1192ce70d8cc03d5c3359", name: "USD Coin", version: "2" },
 };
 
+// ─────────────────────────────────────────────────────────────────────────
+//  PAYMENT BOUNDS (2026-09-08, SECURITY-AUDIT §B1 / §E1)
+//
+//  A 402 challenge is content authored by the SELLER. Until this fence the
+//  payer signed the challenge's `amount`, `asset` and `payTo` verbatim — the
+//  house burner for every auto-paid call, and the USER's wallet in wallet
+//  mode, where the confirm card showed the DIRECTORY price ($0.01) while the
+//  bytes carried whatever the challenge said. A listed "$0.01" endpoint could
+//  ask for a 500 USDC EIP-3009 authorization to any address.
+//
+//  The rule: every payment is bounded by what the directory ADVERTISED
+//  (`priceUsd`) plus a small tolerance, AND by an absolute per-call ceiling,
+//  AND the asset must be the chain's canonical USDC, AND (when the directory
+//  has recorded the seller's receiver) the payee must be that receiver. A
+//  challenge outside the bounds is refused by name BEFORE anything is signed;
+//  the settled amount is the CHALLENGE amount (≤ bounds), never the listed
+//  price, so the ledger is honest. Fail closed: no bounds → no payment.
+// ─────────────────────────────────────────────────────────────────────────
+
+/** Hard per-call ceiling in USD — nothing a directory service asks per call
+ *  clears this, whatever it advertises (the test directory tops out at $1). */
+export const X402_ABSOLUTE_CEILING_USD = 2;
+/** Tolerance over the advertised price (gateways round; a v1 `maxAmountRequired`
+ *  can sit a hair above the listed price). 25% of $0.01 is a quarter cent. */
+export const X402_PRICE_TOLERANCE = 0.25;
+/** Rounding slack in USD for prices near zero (a $0.001 listing is 1000 atomic). */
+export const X402_PRICE_SLACK_USD = 0.001;
+const USDC_DECIMALS = 6;
+
+export type X402RefusalCode = "amount" | "ceiling" | "asset" | "network" | "receiver" | "house-ceiling" | "unbounded";
+
+/** A payment refused by the bounds — the message is user-facing copy. */
+export class X402RefusedError extends Error {
+  readonly code: X402RefusalCode;
+  readonly askedUsd: number | null;
+  constructor(code: X402RefusalCode, message: string, askedUsd: number | null = null) {
+    super(message);
+    this.name = "X402RefusedError";
+    this.code = code;
+    this.askedUsd = askedUsd;
+  }
+}
+
+export function isX402Refusal(err: unknown): err is X402RefusedError {
+  return err instanceof X402RefusedError || (err instanceof Error && err.name === "X402RefusedError");
+}
+
+export interface PaymentBounds {
+  /** The directory's listed price for this call, USD. `0` = a free service:
+   *  any 402 it raises is refused (a "free" row that charges is the attack). */
+  advertisedUsd: number;
+  /** The seller's receiver on record (`mcp_servers.receiver`, lowercased);
+   *  when present the challenge's `payTo` must match it. */
+  receiver?: string | null;
+  /** Service name for the refusal copy. */
+  label?: string;
+  /** House-side reservation hook (burner payments only): called with the
+   *  challenge amount BEFORE signing; a returned string is a refusal. */
+  reserve?: (amountUsd: number) => Promise<string | null>;
+}
+
+export function usdToAtomic(usd: number): bigint {
+  return BigInt(Math.ceil(Math.max(0, usd) * 10 ** USDC_DECIMALS - 1e-9));
+}
+
+export function atomicToUsd(atomic: bigint | string): number {
+  const n = typeof atomic === "string" ? BigInt(atomic) : atomic;
+  return Number(n) / 10 ** USDC_DECIMALS;
+}
+
+/** The largest challenge amount (atomic USDC) the bounds accept for a listed price. */
+export function maxAcceptableAtomic(advertisedUsd: number): bigint {
+  const adv = Number.isFinite(advertisedUsd) && advertisedUsd > 0 ? advertisedUsd : 0;
+  const tolerated = usdToAtomic(adv * (1 + X402_PRICE_TOLERANCE) + X402_PRICE_SLACK_USD);
+  const ceiling = usdToAtomic(X402_ABSOLUTE_CEILING_USD);
+  return tolerated < ceiling ? tolerated : ceiling;
+}
+
+const fmtUsd = (n: number) => `$${n.toFixed(n > 0 && n < 0.01 ? 4 : 2)}`;
+
+/**
+ * Check one chosen `accepts` entry against the bounds. Pure; throws
+ * X402RefusedError with user-facing copy, or returns the checked facts.
+ */
+export function checkChallengeBounds(
+  entry: AcceptsEntry,
+  chainId: number,
+  bounds: PaymentBounds | null | undefined,
+): { amountAtomic: bigint; amountUsd: number; payTo: string; asset: string } {
+  const who = bounds?.label ?? "This service";
+  if (!bounds) {
+    throw new X402RefusedError("unbounded", `${who} raised a payment challenge but no listed price was available to bound it — refused; nothing was signed.`);
+  }
+  const usdc = USDC_BY_CHAIN[chainId];
+  if (!usdc) {
+    throw new X402RefusedError("network", `${who} wants to be paid on a network Pantessa doesn't pay on (chain ${chainId}) — refused; nothing was signed.`);
+  }
+  const rawValue = entry.amount ?? entry.maxAmountRequired;
+  if (!rawValue || !/^\d+$/.test(String(rawValue))) throw new Error("x402 challenge is missing a payment amount.");
+  const amountAtomic = BigInt(rawValue);
+  const amountUsd = atomicToUsd(amountAtomic);
+  const asset = entry.asset ?? usdc.address;
+  if (asset.toLowerCase() !== usdc.address.toLowerCase()) {
+    throw new X402RefusedError("asset", `${who} asked to be paid in a token that isn't USDC on this chain (${asset}) — refused; Pantessa only pays USDC. Nothing was signed.`);
+  }
+  let payTo: string;
+  try {
+    payTo = getAddress(entry.payTo);
+  } catch {
+    throw new Error("x402 challenge payTo is not a valid address.");
+  }
+  if (bounds.receiver && bounds.receiver.toLowerCase() !== payTo.toLowerCase()) {
+    throw new X402RefusedError("receiver", `${who}'s challenge names a different payee (${payTo}) than the receiver on record — refused; nothing was signed.`);
+  }
+  // Listing first: "asked $5.00, listed $0.01" names the discrepancy the
+  // user should know about; the absolute ceiling is the backstop for a
+  // listing that is itself above it.
+  if (amountAtomic > maxAcceptableAtomic(bounds.advertisedUsd) && amountUsd > bounds.advertisedUsd * (1 + X402_PRICE_TOLERANCE) + X402_PRICE_SLACK_USD) {
+    const listed = bounds.advertisedUsd > 0 ? `is listed at ${fmtUsd(bounds.advertisedUsd)}` : "is listed as free";
+    throw new X402RefusedError(
+      "amount",
+      `${who} asked for ${fmtUsd(amountUsd)} per call but ${listed} — refused; nothing was signed. Pantessa pays a listed price (plus a small rounding tolerance), never more.`,
+      amountUsd,
+    );
+  }
+  if (amountAtomic > usdToAtomic(X402_ABSOLUTE_CEILING_USD)) {
+    throw new X402RefusedError(
+      "ceiling",
+      `${who} asked for ${fmtUsd(amountUsd)} per call — above Pantessa's ${fmtUsd(X402_ABSOLUTE_CEILING_USD)} per-call ceiling. Refused; nothing was signed.`,
+      amountUsd,
+    );
+  }
+  return { amountAtomic, amountUsd, payTo, asset: usdc.address };
+}
+
 const TRANSFER_WITH_AUTHORIZATION_TYPES = {
   TransferWithAuthorization: [
     { name: "from", type: "address" },
@@ -146,6 +281,12 @@ export interface PreparedPayment {
   headerName: string; // "PAYMENT-SIGNATURE" (v2) or "X-PAYMENT" (v1)
   payloadTemplate: Record<string, unknown>; // payload.signature is null until finalized
   signing: SigningRequest;
+  /** The CHALLENGE amount in USD (what the signature authorizes) — ≤ the
+   *  bounds by construction. Render THIS on any confirm surface, never the
+   *  directory's listed price. */
+  amountUsd: number;
+  /** Checksummed payee the authorization pays. */
+  payTo: string;
 }
 
 /** Fetch once; return the parsed challenge if it's a 402, else null. */
@@ -177,21 +318,27 @@ export async function getReceiver(input: string, init?: RequestInit): Promise<st
 /**
  * Derive an unsigned payment (header template + typed data) for a given payer
  * address — without signing. Works for both x402 v1 and v2 challenges.
+ *
+ * `bounds` is REQUIRED: the challenge's amount/asset/payee are checked
+ * against the directory's listed price + the absolute ceiling + the chain's
+ * canonical USDC (+ the recorded receiver when known) before any typed data
+ * exists. A challenge outside the bounds throws X402RefusedError with
+ * user-facing copy; nothing is signed.
  */
-export function derivePayment(challenge: Challenge, fromAddress: string): PreparedPayment {
+export function derivePayment(challenge: Challenge, fromAddress: string, bounds: PaymentBounds): PreparedPayment {
   const entry = pickEvmAccepts(challenge.accepts ?? []);
   const chainId = chainIdForNetwork(entry.network);
+  const checked = checkChallengeBounds(entry, chainId, bounds);
   const usdc = USDC_BY_CHAIN[chainId];
+  if (!usdc) throw new X402RefusedError("network", `Unsupported x402 payment chain ${chainId}.`);
 
-  const value = entry.amount ?? entry.maxAmountRequired;
-  if (!value) throw new Error("x402 challenge is missing a payment amount.");
-
-  const asset = entry.asset ?? usdc?.address;
-  if (!asset) throw new Error("x402 challenge is missing the asset address.");
-
-  const name = entry.extra?.name ?? usdc?.name;
-  const version = entry.extra?.version ?? usdc?.version;
-  if (!name || !version) throw new Error("Cannot resolve the USDC EIP-712 domain for signing.");
+  const value = checked.amountAtomic.toString();
+  // The asset is PINNED to the chain's USDC (checked above), so the EIP-712
+  // domain is USDC's own — a challenge's `extra` can't steer the signature
+  // onto another verifying contract's domain.
+  const asset = usdc.address;
+  const name = usdc.name;
+  const version = usdc.version;
 
   const now = Math.floor(Date.now() / 1000);
   // EIP-3009 validity window. `maxTimeoutSeconds` is the gateway's hold hint, but
@@ -205,7 +352,7 @@ export function derivePayment(challenge: Challenge, fromAddress: string): Prepar
   const window = Math.max(entry.maxTimeoutSeconds ?? 300, SIGN_WINDOW_FLOOR_SECONDS);
   const authorization = {
     from: getAddress(fromAddress),
-    to: getAddress(entry.payTo),
+    to: checked.payTo,
     value,
     validAfter: String(now - 600), // tolerate clock skew
     validBefore: String(now + window),
@@ -242,7 +389,17 @@ export function derivePayment(challenge: Challenge, fromAddress: string): Prepar
     headerName,
     payloadTemplate,
     signing: { domain, types: TRANSFER_WITH_AUTHORIZATION_TYPES, primaryType: "TransferWithAuthorization", message: authorization },
+    amountUsd: checked.amountUsd,
+    payTo: checked.payTo,
   };
+}
+
+/** The USD a prepared payment's SIGNATURE authorizes (from the signed value,
+ *  not any side field) — the only honest ledger amount for wallet mode. */
+export function preparedAmountUsd(prepared: Pick<PreparedPayment, "signing"> | null | undefined): number | null {
+  const v = prepared?.signing?.message?.value;
+  if (typeof v !== "string" || !/^\d+$/.test(v)) return null;
+  return atomicToUsd(v);
 }
 
 /** Insert a signature into a prepared payment and base64-encode the header value. */
@@ -274,13 +431,20 @@ export function fetchWithPaymentHeader(
 export async function payAndFetch(
   account: PrivateKeyAccount,
   input: string,
-  init?: RequestInit,
+  init: RequestInit | undefined,
+  bounds: PaymentBounds,
 ): Promise<Response> {
   const first = await fetch(input, init);
   if (first.status !== 402) return first;
 
   const challenge = await readChallenge(first);
-  const prepared = derivePayment(challenge, account.address);
+  // Bounds first — a refusal throws before any typed data is signed.
+  const prepared = derivePayment(challenge, account.address, bounds);
+  // House-side reservation (the daily ceiling) — also before signing.
+  if (bounds.reserve) {
+    const refusal = await bounds.reserve(prepared.amountUsd);
+    if (refusal) throw new X402RefusedError("house-ceiling", refusal, prepared.amountUsd);
+  }
   const m = prepared.signing.message;
   const d = prepared.signing.domain;
   const signature = await account.signTypedData({
@@ -297,7 +461,16 @@ export async function payAndFetch(
     },
   });
 
-  return fetchWithPaymentHeader(input, init, finalizePaymentHeader(prepared, signature));
+  const res = await fetchWithPaymentHeader(input, init, finalizePaymentHeader(prepared, signature));
+  settledAmounts.set(res, prepared.amountUsd);
+  return res;
+}
+
+/** Amount (USD) the payer AUTHORIZED for the response's request — keyed on the
+ *  Response object payAndFetch returned. null = nothing was paid (no 402). */
+const settledAmounts = new WeakMap<Response, number>();
+export function paidAmountUsd(res: Response): number | null {
+  return settledAmounts.get(res) ?? null;
 }
 
 /**

@@ -14,8 +14,10 @@ export const maxDuration = 30
 // capability token (?t=) — the embed path, same trust model as above.
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
-  const tokenOk = verifyJobToken(id, req.nextUrl.searchParams.get('t'))
-  const addr = tokenOk ? (await getJobWithSteps(id))?.wallet : await getAuthAddress(req)
+  // §E6: the capability token binds to the job's wallet + an expiry.
+  const row = await getJobWithSteps(id)
+  const tokenOk = !!row && verifyJobToken(id, req.nextUrl.searchParams.get('t'), row.wallet)
+  const addr = tokenOk ? row?.wallet : await getAuthAddress(req)
   if (!addr) return NextResponse.json({ error: 'Not signed in.' }, { status: 401 })
   const body = (await req.json().catch(() => ({}))) as { seq?: number; result?: Record<string, unknown> }
   if (typeof body.seq !== 'number') return NextResponse.json({ error: 'seq is required.' }, { status: 400 })

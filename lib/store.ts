@@ -29,6 +29,10 @@ export interface McpServer {
   callable?: boolean
   /** false = FREE (non-x402) MCP — no payment gate, rate-limited. Default true (x402-gated). */
   gated?: boolean
+  /** The x402 `payTo` the directory recorded from this server's own 402
+   *  challenge (lowercased; `npm run db:receivers`). When present, lib/x402
+   *  refuses a challenge that names any other payee. */
+  receiver?: string | null
   /** Auto-callable via the endpoint planner (has ≥1 plannable endpoint), even
    *  without being hand-wired. Derived in /api/servers. */
   autoCallable?: boolean

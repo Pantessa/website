@@ -14,8 +14,10 @@ export const maxDuration = 30
 // token (?t=), so embed visitors can retry the job their turn compiled.
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
-  const tokenOk = verifyJobToken(id, req.nextUrl.searchParams.get('t'))
-  const addr = tokenOk ? (await getJobWithSteps(id))?.wallet : await getAuthAddress(req)
+  // §E6: the capability token binds to the job's wallet + an expiry.
+  const row = await getJobWithSteps(id)
+  const tokenOk = !!row && verifyJobToken(id, req.nextUrl.searchParams.get('t'), row.wallet)
+  const addr = tokenOk ? row?.wallet : await getAuthAddress(req)
   if (!addr) return NextResponse.json({ error: 'Not signed in.' }, { status: 401 })
   const res = await retryFailedJob(id, addr)
   if (!res.ok) return NextResponse.json({ error: res.error }, { status: 400 })
