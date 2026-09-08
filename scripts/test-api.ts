@@ -110,7 +110,7 @@ import prisma from '../lib/db'
 import { identiconCells } from '../components/ManagerMark'
 import { addrsUnion, arcQuery } from '../lib/gtm-arc'
 import { isInternalRun, INTERNAL_RUN_HEADER } from '../lib/internal-run'
-import { COUNTED_EVENT_SQL, COUNTED_EVENT_WHERE, decideReceiptVerdict, expectedReceiptClass, extractTxHash } from '../lib/link-receipt-verify'
+import { chainIdOfTurn, CHAT_EXPECTATION_SLUG, COUNTED_EVENT_SQL, COUNTED_EVENT_WHERE, decideReceiptVerdict, expectedReceiptClass, extractTxHash } from '../lib/link-receipt-verify'
 import { deskExecuteConsentMessage, cleanSenderLabel } from '../lib/broker-exec'
 import { brandFromRow, isDeniedBrandHost, isDeniedBrandName, THIRD_PARTY_BRAND_HOSTS } from '../lib/brand-denylist'
 import { fenceToolOutput, hasFencedToolOutput, toolOutputNonce, toolOutputRule } from '../lib/tool-output-fence'
@@ -335,10 +335,17 @@ import {
 } from '../lib/lido-stake'
 import {
   classifyLegacyTurn,
+  COUNTED_TURN_SQL,
+  COUNTED_TURN_WHERE,
+  COUNTED_VERIFICATIONS,
   INTERNAL_ORIGIN_SQL,
   INTERNAL_TRAFFIC_WHERE,
+  isCountedTurn,
+  isDevOrigin,
   isInternalOrigin,
   isInternalTurn,
+  REAL_TRAFFIC_SQL,
+  REAL_TRAFFIC_WHERE,
   STANDING_TURN_SQL,
 } from '../lib/value-origin'
 import { cleanServerName } from '../lib/utils'
@@ -2201,7 +2208,17 @@ async function main() {
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ kind: 'settled', valueUsd: 12.5 }),
     })
-    check('intent links: settled event accepted (the fourth funnel stop)', evSettled.status === 200)
+    // S-2 (2026-09-08): a fabricated settled beacon — no hash, no wallet —
+    // on an EVM-tx-class link is a `mismatch`; it is ACCEPTED (200, the
+    // funnel never errors at a visitor) but it counts nothing, and below the
+    // creator's funnel must not tick for it. The positive tick is pinned on
+    // the DCA link (a job-class link → attested) further down.
+    const evSettledBody = (await evSettled.json()) as { verification?: string }
+    check(
+      'intent links: settled event accepted (the fourth funnel stop) — fabricated, so it stores mismatch',
+      evSettled.status === 200 && evSettledBody.verification === 'mismatch',
+      JSON.stringify(evSettledBody),
+    )
     const evBad = await fetch(`${BASE}/api/intent-links/${slug}/events`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
@@ -2218,8 +2235,8 @@ async function main() {
     const list = await fetch(`${BASE}/api/intent-links`, { headers: { cookie: mallorySession } })
     const listBody = (await list.json()) as { links: Array<{ slug: string; funnel: { open: number; settled?: number } }> }
     check(
-      'intent links: the funnel aggregates settled',
-      listBody.links.find((l) => l.slug === slug)?.funnel.settled === 1,
+      'intent links: the creator funnel counts decisive events only on a counted verdict — the fabricated settled does NOT tick (S-2)',
+      listBody.links.find((l) => l.slug === slug)?.funnel.settled === 0,
       JSON.stringify(listBody.links.find((l) => l.slug === slug)?.funnel),
     )
     const row = listBody.links?.find((l) => l.slug === slug)
@@ -2399,6 +2416,215 @@ async function main() {
     const claim = await fetch(`${BASE}/api/intent-links/claims`, { method: 'POST', headers: M })
     check('intent links: claim below the $10 floor refused (400)', claim.status === 400)
 
+    // ── S-2: MONEY FOLLOWS THE RECEIPT (squad security round 3, 2026-09-08) ──
+    // QA's stranger signed a house-shaped link with a spoofed hash: the #685
+    // verifier stamped the funnel event `mismatch`, and the studio STILL read
+    // "$1.00 moved · $0.0025 claimable" — the telemetry row minted on the
+    // browser's word. Now the write site runs the same verifier and every
+    // reader a stranger can see money on composes COUNTED_TURN_WHERE.
+    {
+      check(
+        'receipt money: pure — COUNTED mirrors agree (Prisma / SQL / row): legacy NULL, verified, attested, dev count; unverified + mismatch never',
+        COUNTED_TURN_WHERE.OR.some((c) => 'verification' in c && c.verification === null) &&
+          /verification IS NULL OR verification IN \('verified','attested','dev'\)/.test(COUNTED_TURN_SQL) &&
+          [...COUNTED_VERIFICATIONS].every((v) => isCountedTurn({ verification: v })) &&
+          isCountedTurn({ verification: null }) && isCountedTurn({}) &&
+          !isCountedTurn({ verification: 'unverified' }) && !isCountedTurn({ verification: 'mismatch' }),
+      )
+      check(
+        'receipt money: pure — REAL_TRAFFIC_* carry BOTH legs (not internal AND receipt-counted), so every public read inherits the fence',
+        REAL_TRAFFIC_WHERE.AND.length === 2 &&
+          JSON.stringify(REAL_TRAFFIC_WHERE.AND[0]) === JSON.stringify({ NOT: INTERNAL_TRAFFIC_WHERE }) &&
+          JSON.stringify(REAL_TRAFFIC_WHERE.AND[1]) === JSON.stringify(COUNTED_TURN_WHERE) &&
+          REAL_TRAFFIC_SQL.includes(INTERNAL_ORIGIN_SQL) && REAL_TRAFFIC_SQL.includes(COUNTED_TURN_SQL),
+      )
+      check(
+        'receipt money: pure — the `dev` stamp is localhost / loopback / fixture-TLD only; this project’s Vercel previews and real hosts verify like production',
+        isDevOrigin('http://localhost:3805') && isDevOrigin('https://harness-embed.test') && isDevOrigin('http://127.0.0.1:3000') &&
+          !isDevOrigin('https://website-git-feat-x-nate-4683s-projects.vercel.app') && !isDevOrigin('https://www.pantessa.com') && !isDevOrigin('junk') && !isDevOrigin(null),
+      )
+      check(
+        'receipt money: pure — chainIdOfTurn reads the beacon chainId, then the stored label (key / decimal / hex), then the explorer host; junk is null (never guess a chain)',
+        chainIdOfTurn({ chain: 'ethereum' }, 8453) === 8453 &&
+          chainIdOfTurn({ chain: 'base' }) === 8453 &&
+          chainIdOfTurn({ chain: 'ethereum' }) === 1 &&
+          chainIdOfTurn({ chain: '42161' }) === 42161 &&
+          chainIdOfTurn({ chain: '0x2105' }) === 8453 &&
+          chainIdOfTurn({ chain: 'multi', txUrl: 'https://basescan.org/tx/0xabc' }) === 8453 &&
+          chainIdOfTurn({ chain: 'hyperliquid' }) === null &&
+          chainIdOfTurn({ chain: 'base' }, 999999) === 8453 &&
+          chainIdOfTurn({}) === null &&
+          CHAT_EXPECTATION_SLUG === '',
+      )
+
+      // A link of the EVM-tx class, capped at ONE sign, so the cap is under
+      // test too (a spoofer could otherwise exhaust a link's cap).
+      const s2Mint = await fetch(`${BASE}/api/intent-links`, { method: 'POST', headers: M, body: JSON.stringify({ ask: 'Swap $2 of ETH to USDC on Base', maxSigns: 1 }) })
+      const s2Slug = ((await s2Mint.json()) as { slug?: string }).slug ?? 'missing'
+      const studio = async () =>
+        (await (await fetch(`${BASE}/api/intent-links`, { headers: { cookie: mallorySession } })).json()) as {
+          links: Array<{ slug: string; signedUsd: number; earnedUsd: number; funnel: { signed: number } }>
+          earnings: { claimableUsd: number; totalEarnedUsd: number; referredWallets: number }
+        }
+      const overview = async () => (await (await fetch(`${BASE}/api/activity/overview`)).json()) as { hero: { systemTotalUsd: number } }
+      const boardHas = async (slugId: string) => (await (await fetch(`${BASE}/links`)).text()).includes(slugId)
+      const s2Before = await studio()
+      const ovBefore = await overview()
+      // The beacon shape a stranger's browser (or curl) sends: FIRST-PARTY,
+      // the deployment's OWN host (x-forwarded-host is what Vercel sets), a
+      // 50bps link-tier fee-bearing swap, a big number. Nothing the harness
+      // can do that a stranger cannot.
+      const PROD_HOST = 'www.pantessa.com'
+      const spoofWallet = privateKeyToAccount(generatePrivateKey()).address.toLowerCase()
+      const beacon = (over: Record<string, unknown>) =>
+        fetch(`${BASE}/api/embed/telemetry`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', 'x-forwarded-host': PROD_HOST },
+          body: JSON.stringify({
+            firstParty: true,
+            sessionId: `fixture-s2-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+            page: `https://${PROD_HOST}/i/${s2Slug}`,
+            outcome: 'signed',
+            artifact: 'tx',
+            chain: 'base',
+            chainId: 8453,
+            valueUsd: 4999,
+            feeBps: 50,
+            buildPath: 'native-swap-uniswap',
+            intentLinkSlug: s2Slug,
+            walletAddress: spoofWallet,
+            ...over,
+          }),
+        }).then(async (r) => ({ status: r.status, body: (await r.json()) as { ok?: boolean; verification?: string; internal?: boolean } }))
+
+      // 1. No hash at all → unverified.
+      const noHash = await beacon({})
+      // 2. A hash no chain has ever seen → unverified (chain says nothing).
+      const ghost = await beacon({ txUrl: `https://basescan.org/tx/0x${'77'.repeat(32)}` })
+      // 3. Someone ELSE's real Base tx (aged block, skip the OP-stack system tx) → mismatch.
+      let foreign: { hash: string; from: string; to: string | null; input: string } | null = null
+      try {
+        const { createPublicClient: cpc, http: viemHttp } = await import('viem')
+        const { base: baseChain } = await import('viem/chains')
+        const pub = cpc({ chain: baseChain, transport: viemHttp('https://base-rpc.publicnode.com') })
+        const tip = await pub.getBlockNumber()
+        const blk = await pub.getBlock({ blockNumber: tip - BigInt(64), includeTransactions: true })
+        const cand = blk.transactions.slice(1).find((t) => typeof t === 'object' && !!t.to && t.from.toLowerCase() !== spoofWallet)
+        if (cand && typeof cand === 'object') foreign = { hash: cand.hash, from: cand.from.toLowerCase(), to: cand.to ? cand.to.toLowerCase() : null, input: cand.input }
+      } catch {
+        /* RPC dark — the unverified branches still prove the fence */
+      }
+      const spoof = await beacon({ txUrl: `https://basescan.org/tx/${foreign?.hash ?? `0x${'99'.repeat(32)}`}` })
+      const s2Mid = await studio()
+      const ovMid = await overview()
+      const s2Row = s2Mid.links.find((l) => l.slug === s2Slug)
+      check(
+        'receipt money: a link-tier signed beacon with no hash / an unknown hash is stored UNVERIFIED — ok:true (never an error at a visitor), verdict echoed',
+        noHash.status === 200 && noHash.body.ok === true && noHash.body.verification === 'unverified' && ghost.body.verification === 'unverified',
+        JSON.stringify({ noHash: noHash.body, ghost: ghost.body }),
+      )
+      check(
+        "receipt money: someone else's real Base tx as the hash is a MISMATCH (RPC-dark degrades to unverified — still nothing)",
+        spoof.status === 200 && (foreign ? spoof.body.verification === 'mismatch' : spoof.body.verification === 'unverified'),
+        JSON.stringify({ v: spoof.body.verification, live: !!foreign }),
+      )
+      check(
+        'receipt money: three $4,999 spoofed signs leave the STUDIO at $0 moved / $0 earned / claimable unchanged / no referred wallet',
+        !!s2Row && s2Row.signedUsd === 0 && s2Row.earnedUsd === 0 &&
+          Math.abs(s2Mid.earnings.claimableUsd - s2Before.earnings.claimableUsd) < 1e-9 &&
+          Math.abs(s2Mid.earnings.totalEarnedUsd - s2Before.earnings.totalEarnedUsd) < 1e-9 &&
+          s2Mid.earnings.referredWallets === s2Before.earnings.referredWallets,
+        JSON.stringify({ row: s2Row, before: s2Before.earnings, mid: s2Mid.earnings }),
+      )
+      check(
+        'receipt money: …and /activity money-moved is byte-stable (a real-origin spoof used to add $4,999 to the public number)',
+        Math.abs(ovMid.hero.systemTotalUsd - ovBefore.hero.systemTotalUsd) < 1e-6,
+        JSON.stringify({ before: ovBefore.hero.systemTotalUsd, mid: ovMid.hero.systemTotalUsd }),
+      )
+      const capAlive = await fetch(`${BASE}/i/${s2Slug}`)
+      check(
+        'receipt money: spoofed signs never burn a link’s sign cap (maxSigns 1, three spoofs, page still live) and never rank it on the board',
+        capAlive.status === 200 && !(await boardHas(s2Slug)),
+      )
+      // The events twin: the creator's funnel reads decisive kinds through
+      // COUNTED_EVENT_WHERE too — the "1 signed" beside "$0 moved" is gone.
+      await fetch(`${BASE}/api/intent-links/${s2Slug}/events`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ kind: 'signed', wallet: spoofWallet, valueUsd: 4999, txHash: `0x${'77'.repeat(32)}`, chainId: 8453 }),
+      })
+      const s2Funnel = (await studio()).links.find((l) => l.slug === s2Slug)?.funnel
+      check('receipt money: an unverified signed EVENT does not tick the studio funnel either (events + turns in lockstep)', s2Funnel?.signed === 0, JSON.stringify(s2Funnel))
+
+      // The keyed-embed lane never gets the `dev` stamp — a public yfe_ key
+      // is in every host page's source, so a fixture-TLD origin proves
+      // nothing there: walletless + hashless = mismatch.
+      // (The first-party localhost lane DOES: that is what keeps the
+      // money-math pins above honest without a real receipt, and the lane is
+      // unreachable on production — the first-party gate needs the
+      // deployment's own host.)
+      const devLane = await fetch(`${BASE}/api/embed/telemetry`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ firstParty: true, sessionId: `fixture-s2-dev-${Date.now()}`, page: `${BASE}/i/${s2Slug}`, outcome: 'signed', artifact: 'tx', valueUsd: 1, intentLinkSlug: s2Slug, walletAddress: spoofWallet, internalRun: true }),
+      }).then(async (r) => (await r.json()) as { verification?: string })
+      check(
+        'receipt money: a first-party beacon from a localhost build stamps `dev` (creator-scoped reads keep it, public reads drop it by origin); on prod that lane is unreachable',
+        devLane.verification === 'dev' && isDevOrigin(BASE) && !isDevOrigin(`https://${PROD_HOST}`),
+        JSON.stringify(devLane),
+      )
+      const spoofCap = await fetch(`${BASE}/i/${s2Slug}`)
+      check('receipt money: a stamped-internal dev sign still counts toward the cap the way it always did (server-truth signs) — the capped page is now 404', spoofCap.status === 404)
+
+      // 4. THE POSITIVE BRANCH: a REAL receipt counts. The foreign tx's own
+      // sender is the "signer", and the artifact this server "built" for it
+      // is that tx's to + selector (recorded straight into the expectations
+      // table — the chat route's recorder needs a live build). Then the SAME
+      // hash a second time is a mismatch (single-use). Both rows + the
+      // expectation + the referral stamp are deleted afterwards.
+      const fsS2 = await import('node:fs')
+      const dbUrlS2 = (() => {
+        try {
+          return process.env.DATABASE_URL ?? fsS2.readFileSync('.env.local', 'utf8').match(/^DATABASE_URL=(.*)$/m)?.[1]?.trim().replace(/^"|"$/g, '') ?? null
+        } catch {
+          return null
+        }
+      })()
+      if (!foreign || !dbUrlS2) {
+        check(`receipt money: verified branch skipped — ${!foreign ? 'Base RPC dark' : 'no DATABASE_URL for the expectation fixture'}`, true)
+      } else {
+        const { PrismaClient } = await import('@prisma/client')
+        const db = new PrismaClient({ datasources: { db: { url: dbUrlS2 } } })
+        const sel = foreign.input.length >= 10 ? foreign.input.slice(0, 10).toLowerCase() : null
+        const verifiedSession = `fixture-s2-real-${Date.now()}`
+        try {
+          const exp = await db.intentLinkExpectation.create({ data: { slug: s2Slug, wallet: foreign.from, chainId: 8453, toAddr: foreign.to ?? '', selector: sel } })
+          const real = await beacon({ walletAddress: foreign.from, txUrl: `https://basescan.org/tx/${foreign.hash}`, sessionId: verifiedSession, valueUsd: 4000 })
+          const s2Real = await studio()
+          const realRow = s2Real.links.find((l) => l.slug === s2Slug)
+          check(
+            'receipt money: a REAL receipt (success, sent by the signing wallet, to the artifact on record) stores VERIFIED and the studio counts it ($4,000 moved → $10 earned at the 50bps link tier)',
+            real.body.verification === 'verified' && !!realRow && realRow.signedUsd === 4000 && Math.abs(realRow.earnedUsd - 10) < 0.001,
+            JSON.stringify({ v: real.body, row: realRow }),
+          )
+          const reused = await beacon({ walletAddress: foreign.from, txUrl: `https://basescan.org/tx/${foreign.hash}`, valueUsd: 4000 })
+          const s2Reuse = await studio()
+          check(
+            'receipt money: the SAME real hash a second time is a MISMATCH (single-use per table) and adds nothing',
+            reused.body.verification === 'mismatch' && s2Reuse.links.find((l) => l.slug === s2Slug)?.signedUsd === 4000,
+            JSON.stringify(reused.body),
+          )
+          await db.intentLinkExpectation.delete({ where: { id: exp.id } }).catch(() => {})
+        } finally {
+          await db.embedTurn.deleteMany({ where: { intentLinkSlug: s2Slug, outcome: 'signed' } }).catch(() => {})
+          await db.intentLinkEvent.deleteMany({ where: { slug: s2Slug, kind: { in: ['signed', 'settled'] } } }).catch(() => {})
+          await db.referredWallet.deleteMany({ where: { wallet: foreign.from, intentLinkSlug: s2Slug } }).catch(() => {})
+          await db.$disconnect().catch(() => {})
+        }
+      }
+      await fetch(`${BASE}/api/intent-links/${s2Slug}`, { method: 'DELETE', headers: { cookie: mallorySession } })
+    }
+
     // The fee-split disclosure renders on creator-minted /i pages.
     const iPage = await (await fetch(`${BASE}/i/${slug}`)).text()
     check('intent links: /i discloses the creator fee split', /earns half of Pantessa/.test(iPage))
@@ -2492,6 +2718,24 @@ async function main() {
     const revoke = await fetch(`${BASE}/api/intent-links/${thirdSlug}`, { method: 'DELETE', headers: { cookie: mallorySession } })
     const fifth = await fetch(`${BASE}/api/intent-links`, { method: 'POST', headers: M, body: JSON.stringify({ ask: 'DCA $25 into ETH weekly' }) })
     check('intent links: revoke frees capacity (next mint 200) and needs auth', revoke.status === 200 && fifth.status === 200)
+    {
+      // The funnel DOES aggregate settled — on a job-class link (a DCA
+      // schedule compiles to a job; the runner's own between-leg arrival
+      // checks are the receipt), a settled event is `attested` and ticks.
+      const fifthSlug = ((await fifth.clone().json().catch(() => ({}))) as { slug?: string }).slug ?? ''
+      const evJobSettled = await fetch(`${BASE}/api/intent-links/${fifthSlug}/events`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ kind: 'settled', wallet: mallory.address, valueUsd: 25 }),
+      })
+      const evJobBody = (await evJobSettled.json()) as { verification?: string }
+      const fifthRow = ((await (await fetch(`${BASE}/api/intent-links`, { headers: { cookie: mallorySession } })).json()) as { links: Array<{ slug: string; funnel: { settled?: number } }> }).links.find((l) => l.slug === fifthSlug)
+      check(
+        'intent links: the funnel aggregates settled on a job-class link (attested ticks; the fabricated evm-tx one did not)',
+        evJobSettled.status === 200 && evJobBody.verification === 'attested' && fifthRow?.funnel.settled === 1,
+        JSON.stringify({ v: evJobBody.verification, funnel: fifthRow?.funnel }),
+      )
+    }
     const afterRevoke = await ownerList()
     check(
       'intent links: a revoked link leaves the creator\'s own list',

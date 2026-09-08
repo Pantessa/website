@@ -375,7 +375,10 @@ export async function POST(req: NextRequest) {
     // {to, selector, chainId} for /i turns — the binding target a later
     // signed beacon's tx hash is verified against (lib/receipt-verify).
     // Runs for harness probes too (their signed drills verify like anyone).
-    if (typeof reqBody.intentLinkSlug === 'string') {
+    // S-2 (2026-09-08): EVERY wallet-bound build records — a first-party
+    // chat / keyed-embed sign verifies against its own build the same way
+    // (key CHAT_EXPECTATION_SLUG), so money follows the receipt everywhere.
+    if (typeof reqBody.walletAddress === 'string') {
       const artifactData = (await res.clone().json().catch(() => null)) as Record<string, unknown> | null
       after(() => recordTurnExpectations(reqBody, artifactData))
     }

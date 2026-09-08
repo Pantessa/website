@@ -5,6 +5,7 @@ import { getAuthAddress } from '@/lib/api-key'
 import { isAdminAddress, isTestWallet, TEST_WALLETS } from '@/lib/admin'
 import { linkDailySeries } from '@/lib/links-board'
 import { addrsUnion, arcQuery } from '@/lib/gtm-arc'
+import { COUNTED_TURN_SQL } from '@/lib/value-origin'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -134,6 +135,7 @@ function milestoneCtes(days: number, excl: string[]) {
              sum(coalesce(t.value_usd, 0))::float AS usd, count(*)::int AS n
       FROM embed_turns t JOIN intent_links il ON il.id = t.intent_link_slug
       WHERE il.creator IS NOT NULL AND t.outcome = 'signed' AND t.value_usd > 0
+        AND ${Prisma.raw(COUNTED_TURN_SQL)}
       GROUP BY 1
     ),
     -- Visitor side: this wallet CONNECTED on someone's /i page — the link

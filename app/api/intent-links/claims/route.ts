@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import prisma from '@/lib/db'
 import { getAuthAddress } from '@/lib/api-key'
 import { FEE_BEARING_BUILD_PATHS, creatorEarningsUsd, netFeeBpsForTurn } from '@/lib/fees'
+import { COUNTED_TURN_WHERE, reverifyPendingTurns } from '@/lib/link-receipt-verify'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -24,9 +25,13 @@ export async function POST(req: NextRequest) {
 
   // isInternal: false — the same drill-row exclusion as /api/intent-links
   // (claimable USDC must never accrue from internal runs); keep in lockstep.
+  // COUNTED_TURN_WHERE (S-2): claimable follows the receipt — same fence,
+  // same lazy re-check as the studio, or a creator sees one number and
+  // claims another.
+  await Promise.race([reverifyPendingTurns({ intentLinkSlug: { in: links.map((l) => l.id) } }), new Promise((r) => setTimeout(r, 3000))])
   const turns = await prisma.embedTurn.groupBy({
     by: ['buildPath', 'feeBps'],
-    where: { intentLinkSlug: { in: links.map((l) => l.id) }, outcome: 'signed', valueUsd: { gt: 0 }, isInternal: false },
+    where: { intentLinkSlug: { in: links.map((l) => l.id) }, outcome: 'signed', valueUsd: { gt: 0 }, isInternal: false, ...COUNTED_TURN_WHERE },
     _sum: { valueUsd: true },
   })
   // Lifetime referral component — the SAME union as /api/intent-links
@@ -42,6 +47,7 @@ export async function POST(req: NextRequest) {
           outcome: 'signed',
           valueUsd: { gt: 0 },
           isInternal: false,
+          ...COUNTED_TURN_WHERE,
         },
         _sum: { valueUsd: true },
       })

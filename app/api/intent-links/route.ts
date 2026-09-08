@@ -13,6 +13,7 @@ import { outboundHoldCopy, outboundToThirdParty } from '@/lib/content-origin'
 import { deniedBrandNameReason, isDeniedBrandName } from '@/lib/brand-denylist'
 import { assertUnderInboxCap } from '@/lib/broker-policy'
 import { askUsd } from '@/lib/broker'
+import { COUNTED_EVENT_WHERE, COUNTED_TURN_SQL, COUNTED_TURN_WHERE, reverifyPendingTurns } from '@/lib/link-receipt-verify'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -203,9 +204,15 @@ export async function GET(req: NextRequest) {
   // Grouped by variant too, so A/B links segment their funnel per phrasing;
   // the aggregate funnel sums across variants (legacy null-variant rows
   // included).
+  // Decisive kinds (signed / settled) only COUNT on a verified/attested/
+  // legacy verdict — the creator's own funnel used to be the one reader of
+  // intent_link_events that skipped COUNTED_EVENT_WHERE (LINKS, round 2).
   const events = await prisma.intentLinkEvent.groupBy({
     by: ['slug', 'kind', 'variant'],
-    where: { slug: { in: links.map((l) => l.id) } },
+    where: {
+      slug: { in: links.map((l) => l.id) },
+      OR: [{ kind: { notIn: ['signed', 'settled'] } }, { AND: [{ kind: { in: ['signed', 'settled'] } }, COUNTED_EVENT_WHERE] }],
+    },
     _count: { _all: true },
     _sum: { valueUsd: true },
   })
@@ -252,9 +259,13 @@ export async function GET(req: NextRequest) {
   // Flag-only on purpose (not the origin patterns): a creator's own localhost
   // test sign has always accrued in their scoped view; only stamped internal
   // runs are excluded. Must stay in lockstep with /api/intent-links/claims.
+  // COUNTED_TURN_WHERE (S-2): money follows the receipt — a signed beacon
+  // whose hash the verifier refuted or could not read mints nothing here,
+  // and the studio poll IS the lazy re-check moment for the pending ones.
+  await Promise.race([reverifyPendingTurns({ intentLinkSlug: { in: links.map((l) => l.id) } }), new Promise((r) => setTimeout(r, 3000))])
   const turns = await prisma.embedTurn.groupBy({
     by: ['intentLinkSlug', 'buildPath', 'feeBps'],
-    where: { intentLinkSlug: { in: links.map((l) => l.id) }, outcome: 'signed', valueUsd: { gt: 0 }, isInternal: false },
+    where: { intentLinkSlug: { in: links.map((l) => l.id) }, outcome: 'signed', valueUsd: { gt: 0 }, isInternal: false, ...COUNTED_TURN_WHERE },
     _sum: { valueUsd: true },
     _count: { _all: true },
   })
@@ -298,6 +309,7 @@ export async function GET(req: NextRequest) {
           outcome: 'signed',
           valueUsd: { gt: 0 },
           isInternal: false,
+          ...COUNTED_TURN_WHERE,
         },
         _sum: { valueUsd: true },
         _count: { _all: true },
@@ -330,7 +342,7 @@ export async function GET(req: NextRequest) {
                coalesce(sum(value_usd), 0)::float AS v, count(*) AS n
         FROM embed_turns
         WHERE intent_link_slug IN (${Prisma.join(slugList)}) AND outcome = 'signed'
-          AND value_usd > 0 AND NOT is_internal AND created_at >= ${weekSince}
+          AND value_usd > 0 AND NOT is_internal AND ${Prisma.raw(COUNTED_TURN_SQL)} AND created_at >= ${weekSince}
         GROUP BY 1, 2, 3`
     : []
   const referredWeekly: WeekRow[] = referred.length
@@ -340,7 +352,7 @@ export async function GET(req: NextRequest) {
         FROM embed_turns
         WHERE wallet_address IN (${Prisma.join(referred.map((r) => r.wallet))})
           AND intent_link_slug IS NULL AND outcome = 'signed'
-          AND value_usd > 0 AND NOT is_internal AND created_at >= ${weekSince}
+          AND value_usd > 0 AND NOT is_internal AND ${Prisma.raw(COUNTED_TURN_SQL)} AND created_at >= ${weekSince}
         GROUP BY 1, 2, 3`
     : []
   const weekMap = new Map<string, { weekStart: string; earnedUsd: number; signedUsd: number; signs: number }>()

@@ -818,6 +818,7 @@ model EmbedTurn {
   walletAddress  String?  @map("wallet_address") // the SIGNING wallet (lowercased, self-reported like the rest of the beacon) — lifetime referral earnings key off it; null = legacy row
   feeBps         Int?     @map("fee_bps") // the fee tier the ARTIFACT actually carried (C2b: 20 organic / 50 link) — earnings read this over the per-path default; null = legacy row at the path rate
   isInternal     Boolean  @default(false) @map("is_internal") // our own drill/harness traffic — stamped at the write site (x-yf-internal-run header / internalRun body / harness- sessionId); origin patterns can't catch prod-pointed runs, so every scoreboard read excludes this too (lib/value-origin.ts)
+  verification   String? // receipt verdict for a `signed` row (squad security S-2, 2026-09-08): verified | attested | unverified | mismatch | dev — lib/link-receipt-verify.ts stamps it at the telemetry write site; NULL = legacy row or a non-signed outcome (counts, T-R6). Money follows the receipt: every reader a stranger can see money on composes COUNTED_TURN_WHERE (lib/value-origin.ts)
   createdAt      DateTime @default(now()) @map("created_at")
 
   @@index([ownerAddress, createdAt])
