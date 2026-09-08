@@ -182,6 +182,9 @@ async function resolveDcaChain(buyToken: string, namedChainId: number | null, se
 
 export interface DcaTurn {
   reply: string
+  /** Set when the turn was a standing-state mutation the session may not
+   *  perform (lib/chat-mutation-gate) — the reply is the sign-in invitation. */
+  signInGate?: import('@/lib/chat-mutation-gate').SignInGate
   jobId?: string
   jobToken?: string
   clarify?: ClarifyRequest
@@ -207,12 +210,17 @@ export async function runDcaTurn(
   /** Our own harness/drill turn (lib/internal-run.ts) — stamps the schedule
    *  (and, through claimDcaRun, every job it mints). */
   internalRun = false,
+  /** Does the SIWE session OWN `wallet`? (lib/chat-mutation-gate). Creating
+   *  a schedule and signing a period's buy stay connect-to-act; pause /
+   *  resume / cancel and the autopilot OFF switch — standing-state
+   *  mutations with no signature — require it. Defaults CLOSED. */
+  walletProven = false,
 ): Promise<DcaTurn | null> {
   // ── Autopilot toggles FIRST — "turn off my dca autopilot" must never read
   //    as the manage grammar's cancel. Lazy import keeps the module graph
   //    acyclic at runtime (dca-auto-exec type-imports DcaTurn from here). ──
   const { runDcaAutoToggleTurn } = await import('@/lib/dca-auto-exec')
-  const auto = await runDcaAutoToggleTurn(message, wallet, trace)
+  const auto = await runDcaAutoToggleTurn(message, wallet, trace, walletProven)
   if (auto) return auto
 
   // ── The due-period chip's resume — one tap → this period's guarded buy ──
@@ -237,7 +245,7 @@ export async function runDcaTurn(
         ? `📆 ${periodPhrase(cadence)[0].toUpperCase()}${periodPhrase(cadence).slice(1)} buy is already prepared — sign it below.`
         : `📆 **${periodPhrase(cadence)[0].toUpperCase()}${periodPhrase(cadence).slice(1)} buy:** $${s.buyUsd} of ${s.buyToken}. Built fresh just now — live quote, guard-checked — sign it below.`
     trace({ type: 'status', label: `dca layer: period ${periodKey} ${claim.state} (job ${claim.jobId.slice(0, 8)})` })
-    return { reply, jobId: claim.jobId, jobToken: signJobToken(claim.jobId), buildPath: 'native-dca', dcaScheduleId: s.id }
+    return { reply, jobId: claim.jobId, jobToken: signJobToken(claim.jobId, s.wallet), buildPath: 'native-dca', dcaScheduleId: s.id }
   }
 
   // ── Create: "buy $10 of AAPL every week" ────────────────────────────────
@@ -358,7 +366,7 @@ export async function runDcaTurn(
     }
     if (claim.state !== 'bought') {
       turn.jobId = claim.jobId
-      turn.jobToken = signJobToken(claim.jobId)
+      turn.jobToken = signJobToken(claim.jobId, schedule.wallet)
     }
     return turn
   }
@@ -368,6 +376,13 @@ export async function runDcaTurn(
   if (!manage) return null
   trace({ type: 'status', label: `dca layer claimed the turn: ${manage.op}${manage.token ? ` ${manage.token}` : ''} — planner bypassed` })
   if (!wallet) return { reply: '📆 Connect your wallet first — recurring buys belong to a wallet.' }
+  // Listing stays a connect-to-act read; pause / resume / cancel change a
+  // standing plan with no signature → the session must own the wallet.
+  if (manage.op !== 'list' && !walletProven) {
+    const { mutationGate } = await import('@/lib/chat-mutation-gate')
+    trace({ type: 'note', level: 'warn', label: `dca layer: ${manage.op} asked but the session does not own the wallet — answering the sign-in gate, nothing changed` })
+    return { ...mutationGate('dca-manage'), buildPath: 'native-dca' }
+  }
   const all = await listDcaSchedules(wallet)
 
   if (manage.op === 'list') {

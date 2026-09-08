@@ -4,6 +4,7 @@ import { resolveEmbedKey, sightingOrigin } from '@/lib/embed-key'
 import { isBuildPath } from '@/lib/build-path'
 import { INTENT_SLUG_RE } from '@/lib/intent-links'
 import type { OriginKind } from '@/lib/value-origin'
+import { COUNTED_VERIFICATIONS, verifyTurnNow } from '@/lib/link-receipt-verify'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -117,8 +118,10 @@ export async function POST(req: NextRequest) {
       ? body.feeBps
       : undefined
 
+  let row: { id: string } | null = null
   try {
-    await prisma.embedTurn.create({
+    row = await prisma.embedTurn.create({
+      select: { id: true },
       data: {
         embedKeyId: resolved?.id ?? '',
         ownerAddress: resolved?.ownerAddress ?? null,
@@ -141,12 +144,28 @@ export async function POST(req: NextRequest) {
         walletAddress,
         feeBps,
         isInternal: internalRun,
+        // Money follows the receipt (S-2): a signed row starts fail-closed
+        // and is promoted below by the same verifier the funnel event gets.
+        verification: outcome === 'signed' ? 'unverified' : undefined,
       },
     })
   } catch {
     // telemetry never breaks a host page
     return NextResponse.json({ ok: false }, { status: 202 })
   }
+
+  // Receipt verification for the MONEY row (squad security S-2, 2026-09-08).
+  // Inline and timeboxed like the funnel event's: a slow RPC leaves the row
+  // `unverified` (counts nothing) for the lazy re-check rather than hanging
+  // the beacon. The verdict rides the response so a drill can assert it.
+  let verification: string | undefined
+  if (outcome === 'signed') {
+    verification = await Promise.race([
+      verifyTurnNow(row.id, body.chainId),
+      new Promise<'unverified'>((r) => setTimeout(() => r('unverified'), 4000)),
+    ]).catch(() => 'unverified')
+  }
+  const counted = !!verification && (COUNTED_VERIFICATIONS as readonly string[]).includes(verification)
 
   // First-touch lifetime referral (HANDOFF-yeetcall-gtm C2): the first link
   // a wallet SIGNS through claims it for that link's creator, forever.
@@ -155,8 +174,10 @@ export async function POST(req: NextRequest) {
   // extra), and always fail-soft: referral stamping never breaks telemetry.
   // Internal runs never claim referrals: referred_wallets is write-once and
   // lifetime — a drill signing through a link must not permanently attribute
-  // a real wallet to a creator.
-  if (outcome === 'signed' && intentLinkSlug && walletAddress && !internalRun) {
+  // a real wallet to a creator. And (S-2) only a COUNTED sign claims one —
+  // a spoofed or unreadable receipt must not bind a wallet to a creator for
+  // life on the beacon's word.
+  if (outcome === 'signed' && counted && intentLinkSlug && walletAddress && !internalRun) {
     try {
       const link = await prisma.intentLink.findUnique({ where: { id: intentLinkSlug }, select: { creator: true } })
       if (link?.creator && link.creator !== walletAddress) {
@@ -171,5 +192,5 @@ export async function POST(req: NextRequest) {
   }
   // `internal` echoes the stamp so drills (and the harness) can assert their
   // rows can never read as growth.
-  return NextResponse.json(internalRun ? { ok: true, internal: true } : { ok: true })
+  return NextResponse.json({ ok: true, ...(internalRun ? { internal: true } : {}), ...(verification ? { verification } : {}) })
 }

@@ -8,9 +8,25 @@
 
 import { Wallet, ShieldAlert, Check, Loader2 } from 'lucide-react'
 
-type Payment = { id: string; name: string; priceUsd: string }
+type Payment = {
+  id: string
+  name: string
+  /** The directory's LISTED price. */
+  priceUsd: string
+  /** What the SIGNATURE authorizes — the 402 challenge's amount, bounded by
+   *  lib/x402 to the listing (+ tolerance) and the per-call ceiling. Render
+   *  this; the listing alone once hid a challenge of any size. */
+  amountUsd?: number
+  /** Checksummed payee the authorization pays. */
+  payTo?: string
+}
 
 const fmt = (n: number) => `$${n.toFixed(n > 0 && n < 0.01 ? 4 : 2)}`
+const amountOf = (p: Payment) => (typeof p.amountUsd === 'number' && Number.isFinite(p.amountUsd) ? p.amountUsd : Number(p.priceUsd) || 0)
+const shortAddr = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`
+/** True when the signed amount sits above the listing (within the tolerance
+ *  lib/x402 allows) — say so, don't hide it behind the list price. */
+const aboveListing = (p: Payment) => amountOf(p) > (Number(p.priceUsd) || 0) + 1e-9
 
 export default function PaymentConfirm({
   payments,
@@ -23,8 +39,9 @@ export default function PaymentConfirm({
   onCancel: () => void
   busy?: boolean
 }) {
-  const total = payments.reduce((s, p) => s + (Number(p.priceUsd) || 0), 0)
+  const total = payments.reduce((s, p) => s + amountOf(p), 0)
   const baseUnits = Math.round(total * 1_000_000) // USDC has 6 decimals
+  const soleRecipient = payments.length === 1 ? payments[0].payTo : undefined
 
   return (
     <div className="max-w-[85vw] lg:max-w-[80%] rounded-2xl rounded-tl-sm border border-[var(--line)] bg-[var(--surf-1)] p-4 space-y-3">
@@ -38,15 +55,30 @@ export default function PaymentConfirm({
         <span className="text-sm text-[color:var(--muted)]">USDC</span>
         <span className="text-[12px] text-[color:var(--muted-2)]">
           · {payments.length} x402 call{payments.length === 1 ? '' : 's'} · from your wallet
+          {soleRecipient ? (
+            <>
+              {' '}· to <span className="font-mono" title={soleRecipient} data-payee={soleRecipient}>{shortAddr(soleRecipient)}</span>
+            </>
+          ) : null}
         </span>
       </div>
 
-      {payments.length > 1 && (
+      {(payments.length > 1 || payments.some(aboveListing)) && (
         <ul className="space-y-1 text-[12px]">
           {payments.map((p) => (
             <li key={p.id} className="flex items-center justify-between gap-3 text-[color:var(--muted)]">
-              <span className="truncate">{p.name}</span>
-              <span className="tabular-nums flex-shrink-0">{fmt(Number(p.priceUsd) || 0)}</span>
+              <span className="truncate">
+                {p.name}
+                {p.payTo && !soleRecipient ? (
+                  <span className="font-mono text-[color:var(--muted-2)]" title={p.payTo} data-payee={p.payTo}>
+                    {' '}→ {shortAddr(p.payTo)}
+                  </span>
+                ) : null}
+              </span>
+              <span className="tabular-nums flex-shrink-0">
+                {fmt(amountOf(p))}
+                {aboveListing(p) ? <span className="ml-1 text-amber-400" data-listed={p.priceUsd}>(listed {fmt(Number(p.priceUsd) || 0)})</span> : null}
+              </span>
             </li>
           ))}
         </ul>

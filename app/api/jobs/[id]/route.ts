@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getAuthAddress } from '@/lib/api-key'
-import { verifyJobToken } from '@/lib/job-token'
+import { jobTokenLooksValid, verifyJobToken } from '@/lib/job-token'
 import { advanceJob, cancelJob, getJobWithSteps, jobsEnv } from '@/lib/jobs-runner'
 
 export const runtime = 'nodejs'
@@ -12,10 +12,13 @@ export const dynamic = 'force-dynamic'
 // job their turn compiled without a session.
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
-  const tokenOk = verifyJobToken(id, req.nextUrl.searchParams.get('t'))
-  const addr = tokenOk ? null : await getAuthAddress(req)
-  if (!tokenOk && !addr) return NextResponse.json({ error: 'Not signed in.' }, { status: 401 })
+  // §E6: the capability token binds to the job's own wallet + an expiry, so
+  // the row is read first and the token verified against it.
+  const t = req.nextUrl.searchParams.get('t')
   let job = await getJobWithSteps(id)
+  const tokenOk = !!job && verifyJobToken(id, t, job.wallet)
+  const addr = tokenOk ? null : await getAuthAddress(req)
+  if (!tokenOk && !addr && !(!job && jobTokenLooksValid(t))) return NextResponse.json({ error: 'Not signed in.' }, { status: 401 })
   if (!job || (!tokenOk && job.wallet !== addr)) return NextResponse.json({ error: 'Not found.' }, { status: 404 })
   // The watcher IS the demand: a poll that finds its job mid-settlement (or
   // stalled mid-run) runs one advance tick inline, so the open card never
@@ -36,8 +39,9 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
 // Cancel (the only mutation; pause/resume can ride later).
 export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
-  const tokenOk = verifyJobToken(id, req.nextUrl.searchParams.get('t'))
-  const addr = tokenOk ? (await getJobWithSteps(id))?.wallet : await getAuthAddress(req)
+  const row = await getJobWithSteps(id)
+  const tokenOk = !!row && verifyJobToken(id, req.nextUrl.searchParams.get('t'), row.wallet)
+  const addr = tokenOk ? row?.wallet : await getAuthAddress(req)
   if (!addr) return NextResponse.json({ error: 'Not signed in.' }, { status: 401 })
   const ok = await cancelJob(id, addr)
   if (!ok) return NextResponse.json({ error: 'Not found (or already finished).' }, { status: 404 })

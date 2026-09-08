@@ -78,6 +78,9 @@ export interface SpotGuardArmOffer {
 export interface SpotGuardTurn {
   reply: string
   spotGuardArm?: SpotGuardArmOffer
+  /** Set when the turn was a manage verb the session may not perform
+   *  (lib/chat-mutation-gate) — the reply is the sign-in invitation. */
+  signInGate?: import('@/lib/chat-mutation-gate').SignInGate
   buildPath: string
 }
 
@@ -99,10 +102,24 @@ function triggerLabel(mode: string, value: number, refPrice: number): string {
  * loose coin slot would happily read "spot" as a coin.
  * Returns null when the message isn't a spot-guard ask.
  */
-export async function runSpotGuardTurn(message: string, wallet: string | undefined, trace: Trace): Promise<SpotGuardTurn | null> {
+export async function runSpotGuardTurn(
+  message: string,
+  wallet: string | undefined,
+  trace: Trace,
+  /** Does the SIWE session OWN `wallet`? Arming ends in the wallet's own
+   *  Spend Permission signature (connect-to-act); pause / resume / retire
+   *  change what watches the wallet with no signature and need it
+   *  (lib/chat-mutation-gate). Defaults CLOSED. */
+  walletProven = false,
+): Promise<SpotGuardTurn | null> {
   const manage = parseSpotGuardManage(message)
   if (manage) {
     if (!wallet) return { reply: '🛡️ Connect your wallet first — spot protections belong to an address.', buildPath: 'native-spot-guard' }
+    if (!walletProven) {
+      const { mutationGate } = await import('@/lib/chat-mutation-gate')
+      trace({ type: 'note', level: 'warn', label: `spot guardian: ${manage.op} asked but the session does not own the wallet — answering the sign-in gate, nothing changed` })
+      return { ...mutationGate('spot-manage'), buildPath: 'native-spot-guard' }
+    }
     return await runManage(manage.op, manage.token, wallet.toLowerCase(), trace)
   }
 

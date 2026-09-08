@@ -1,5 +1,6 @@
 import { privateKeyToAccount, type PrivateKeyAccount } from 'viem/accounts'
-import { payAndFetch } from './x402'
+import { payAndFetch, type PaymentBounds } from './x402'
+import { reserveHouseSpend } from './house-spend'
 
 /**
  * Server-side agent wallet. Loaded once from PRIVATE_KEY and used to pay every
@@ -36,8 +37,17 @@ export function hasAgentWallet(): boolean {
   return !!key && key !== '0xYOUR_PRIVATE_KEY_HERE' && /^0x[0-9a-fA-F]{64}$/.test(key)
 }
 
-/** A fetch that pays x402 challenges (v1 + v2) with the agent wallet. */
-export function getPaidFetch() {
+/**
+ * A fetch that pays x402 challenges (v1 + v2) with the agent wallet.
+ *
+ * `bounds` is REQUIRED (lib/x402 PaymentBounds): the caller declares what the
+ * directory listed for this call, and the payer refuses any challenge above
+ * it — plus the house's own daily ceiling (lib/house-spend), reserved before
+ * the signature exists. A call that "never 402s" declares `advertisedUsd: 0`
+ * so that, the day it does, it is refused rather than paid.
+ */
+export function getPaidFetch(bounds: PaymentBounds) {
   const account = getAgentAccount()
-  return (input: string, init?: RequestInit) => payAndFetch(account, input, init)
+  const withReserve: PaymentBounds = { reserve: reserveHouseSpend, ...bounds }
+  return (input: string, init?: RequestInit) => payAndFetch(account, input, init, withReserve)
 }

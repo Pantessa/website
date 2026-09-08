@@ -46,7 +46,7 @@ import { formatAtoms } from '@/lib/cow'
 import { fetchLifiQuote, LIFI_POLICY_HOST, LIFI_QUOTE_TTL_SEC, NoLifiRouteError } from '@/lib/lifi-venue'
 import { usdPerToken } from '@/lib/usd-probe'
 import { buildReport, policyCheck, recipientCheck, validityCheck, type GuardrailCheck, type GuardrailReport } from '@/lib/tx-guardrails'
-import { getActiveGrant, recordLedger, spentTodayUsd, toPolicy } from '@/lib/grant-store'
+import { getActiveGrant, recordLedger, spentTodayUsd, spentTotalUsd, toPolicy } from '@/lib/grant-store'
 
 export const BASE_CHAIN_ID = 8453
 export const ROBINHOOD_CHAIN_ID = 4663
@@ -707,7 +707,8 @@ export async function buildLifiBridgeLeg(params: { leg: FundingLeg; usd: number;
   const grant = await getActiveGrant(from.toLowerCase())
   const policy = grant ? toPolicy(grant) : null
   const spentToday = grant ? await spentTodayUsd(grant.id) : 0
-  const { check: polCheck, violation } = policyCheck(params.usd, policy, spentToday, LIFI_POLICY_HOST, 0, { selfSigned: true })
+  const spentTotal = grant ? await spentTotalUsd(grant.id) : 0
+  const { check: polCheck, violation } = policyCheck(params.usd, policy, spentToday, LIFI_POLICY_HOST, spentTotal, { selfSigned: true })
   if (violation && grant) {
     await recordLedger({
       grantId: grant.id,
