@@ -165,7 +165,7 @@ export interface RouteOptions {
 
 /**
  * Default inference engine the Reason Router uses to phrase answers.
- * Defaults to ChatGPT (not Yeetful · Claude): the house settlement wallet
+ * Defaults to ChatGPT (not our own paid Claude catalog row): the house settlement wallet
  * (PRIVATE_KEY) is the same address that anthropic.yeetful.com pays out to, so
  * paying our OWN MCP is a from==to x402 self-transfer that the token rejects —
  * routing inference to a third-party payTo (ChatGPT) keeps payer ≠ payTo and
