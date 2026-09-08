@@ -20,6 +20,8 @@
 // can see itself.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { usePathname, useRouter } from 'next/navigation'
+import { useYeetfulStore } from '@/lib/store'
 import { createPortal } from 'react-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useAccount, useSignMessage } from 'wagmi'
@@ -94,7 +96,7 @@ function GasBadge({ gas }: { gas: WalletChainView['gas'] }) {
   )
 }
 
-function ChainRow({ chain, current, landed }: { chain: WalletChainView; current: boolean; landed: number | null }) {
+function ChainRow({ chain, current, landed, onAsk }: { chain: WalletChainView; current: boolean; landed: number | null; onAsk: (prompt: string) => void }) {
   const [open, setOpen] = useState(false)
   const Mark = getChainMark(chain.key)
   const empty = chain.holdings.length === 0
@@ -138,7 +140,7 @@ function ChainRow({ chain, current, landed }: { chain: WalletChainView; current:
       {open && !empty && (
         <div className="border-t border-[var(--line)] px-3.5 py-2 space-y-1">
           {chain.holdings.map((h) => (
-            <div key={`${h.symbol}-${h.address}`} className="flex items-center gap-3 text-[12px]">
+            <div key={`${h.symbol}-${h.address}`} className="flex flex-wrap items-center gap-3 text-[12px]">
               <span className="w-7" />
               <span className="flex-1 min-w-0 flex items-baseline gap-2">
                 <span className="font-medium text-[color:var(--fg)]">{h.symbol}</span>
@@ -146,6 +148,24 @@ function ChainRow({ chain, current, landed }: { chain: WalletChainView; current:
                 {h.native && <span className="text-[10px] uppercase tracking-wide text-[color:var(--muted-2)]">gas</span>}
               </span>
               <span className="mono tabular-nums text-[color:var(--muted)]">{h.valueUsd == null ? 'unpriced' : fmtUsd(h.valueUsd)}</span>
+              {/* "Act on THIS" chips (Robinhood stocks: sell / buy more / DCA;
+                  idle USDG → a stock). A tap prefills the chat composer —
+                  never sends; the wallet signature stays the only gate. */}
+              {h.actions && h.actions.length > 0 && (
+                <span className="basis-full flex flex-wrap gap-1.5 pl-10 pt-0.5">
+                  {h.actions.map((a) => (
+                    <button
+                      key={a.prompt}
+                      type="button"
+                      onClick={() => onAsk(a.prompt)}
+                      title={a.prompt}
+                      className="rounded-full border border-[var(--line)] bg-black/20 px-2.5 py-0.5 text-[11px] text-[color:var(--fg)] hover:border-[color:var(--accent)] hover:text-[color:var(--accent)] transition-colors"
+                    >
+                      {a.label}
+                    </button>
+                  ))}
+                </span>
+              )}
             </div>
           ))}
         </div>
@@ -166,6 +186,22 @@ export default function WalletPanel({
 }) {
   const { address, connector, chain } = useAccount()
   const { signMessageAsync } = useSignMessage()
+  const pathname = usePathname()
+  const router = useRouter()
+  const setComposerPrefill = useYeetfulStore((s) => s.setComposerPrefill)
+  // A row chip lands its ask in the chat composer (prefill only — a chip
+  // never fires a money action; the user reads it and presses enter). On a
+  // chat surface the store prefill is enough; anywhere else, carry it to
+  // /chat via the same ?prompt= contract the landing's examples use.
+  const askFromRow = useCallback(
+    (prompt: string) => {
+      setComposerPrefill(prompt)
+      const onChatSurface = /^\/(chat|i\/|embed|p\/)/.test(pathname ?? '')
+      if (!onChatSurface) router.push(`/chat?prompt=${encodeURIComponent(prompt)}`)
+      onClose()
+    },
+    [setComposerPrefill, pathname, router, onClose],
+  )
   const [view, setView] = useState<WalletView | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -369,7 +405,7 @@ export default function WalletPanel({
                 {view ? (
                   <>
                     {funded.map((c) => (
-                      <ChainRow key={c.id} chain={c} current={chain?.id === c.id} landed={landed.get(c.id) ?? null} />
+                      <ChainRow key={c.id} chain={c} current={chain?.id === c.id} landed={landed.get(c.id) ?? null} onAsk={askFromRow} />
                     ))}
                     {emptyChains.length > 0 && (
                       <div className="px-1 pt-1 text-[11.5px] text-[color:var(--muted-2)]">

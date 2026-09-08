@@ -38,6 +38,12 @@ function listUrlsFor(chainId: number): string[] {
 }
 
 const TTL_MS = 24 * 60 * 60 * 1000
+/** A PARTIAL warm (one source answered, another timed out) is served but
+ *  retried soon — never cached for the full day. 2026-09-08: an 8s blip on
+ *  tokens.uniswap.org left a server with only the CoinGecko 4663 list (100
+ *  rows, no GOOGL), and every stock ask for "GOOGL" refused with "Robinhood
+ *  Chain doesn't list it" until the process restarted. */
+const PARTIAL_TTL_MS = 60 * 1000
 
 export interface TokenInfo {
   address: string
@@ -123,7 +129,8 @@ export async function ensureTokenList(chainId: number = 8453): Promise<void> {
   if (c.inflight) return c.inflight
   c.inflight = (async () => {
     const lists: { tokens?: RawListToken[] }[] = []
-    for (const url of listUrlsFor(chainId)) {
+    const urls = listUrlsFor(chainId)
+    for (const url of urls) {
       try {
         const res = await fetch(url.trim(), { headers: { accept: 'application/json' }, signal: AbortSignal.timeout(8000) })
         if (!res.ok) continue
@@ -134,10 +141,16 @@ export async function ensureTokenList(chainId: number = 8453): Promise<void> {
     }
     const built = buildIndexes(chainId, lists)
     if (Object.keys(built.bySymbol).length > 0) {
-      c.bySymbol = built.bySymbol
-      c.byAddress = built.byAddress
-      c.byName = built.byName
-      c.loadedAt = Date.now()
+      // Never let a partial warm shrink a fuller list already in hand.
+      const partial = lists.length < urls.length
+      if (partial && Object.keys(c.bySymbol).length > Object.keys(built.bySymbol).length) {
+        c.loadedAt = Date.now() - TTL_MS + PARTIAL_TTL_MS
+      } else {
+        c.bySymbol = built.bySymbol
+        c.byAddress = built.byAddress
+        c.byName = built.byName
+        c.loadedAt = partial ? Date.now() - TTL_MS + PARTIAL_TTL_MS : Date.now()
+      }
     }
     c.inflight = null
   })()
