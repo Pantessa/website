@@ -174,6 +174,7 @@ import {
 import { parseEcbUsdRate } from '../lib/ecb-fx'
 import { clarifyOf } from '../lib/clarify'
 import { fundingPathOf, NEVER_MIND_RESUME_RE } from '../lib/funding-path'
+import { SLOW_TURN_CAPTION, SLOW_TURN_MS } from '../lib/turn-status'
 import { decideFundingTurn, detectBalanceShortfall, FUNDING_CHAIN_WORD, FUNDING_SCAN_CHAINS, fundingPlanUsd, planFundingChips, planStrandedRescue, promisableCapacityUsd, rankFundingSources, shortRefusalCopy, softenClaimedFailureBlock, type FundingNeed, type FundingSource } from '../lib/funding-plan'
 import { compileDcaBuy, dcaRunChip, parseDcaCreate, parseDcaManage, parseDcaRun, periodKeyFor } from '../lib/dca'
 import { briefingNeedsCount, briefingTile, composeBriefingItems, type BriefingInputs, type BriefingPosition } from '../lib/briefing'
@@ -4264,15 +4265,16 @@ async function main() {
   // ── The stranger's way back + what a guest ask is for (squad gtm 2026-09-08, round 2) ──
   console.log('— onboarding: connect gate releases; guest asks refund on doors; "Not now" is native; kept threads keep their URL')
   check(
-    'onboarding: the "Connecting…" gate releases only when nothing is still trying — held while the door or the wallet list is up or a connector is mid-handshake; never released once an address is here or when nothing was pending',
+    'onboarding: the "Connecting…" gate releases only when nothing is still trying — held while the door or the wallet list is up, a connector is mid-handshake, or a STORED connection is still restoring (a fresh visitor\'s mount probe restores nothing and never holds it); never released once an address is here or when nothing was pending',
     (() => {
-      const base = { pending: true, hasAddress: false, doorOpen: false, listOpen: false, walletStatus: 'disconnected' as const }
+      const base = { pending: true, hasAddress: false, doorOpen: false, listOpen: false, walletStatus: 'disconnected' as const, storedConnection: false }
       return (
         connectAskReleased(base) === true &&
         connectAskReleased({ ...base, doorOpen: true }) === false &&
         connectAskReleased({ ...base, listOpen: true }) === false &&
         connectAskReleased({ ...base, walletStatus: 'connecting' }) === false &&
-        connectAskReleased({ ...base, walletStatus: 'reconnecting' }) === false &&
+        connectAskReleased({ ...base, walletStatus: 'reconnecting', storedConnection: true }) === false &&
+        connectAskReleased({ ...base, walletStatus: 'reconnecting', storedConnection: false }) === true &&
         connectAskReleased({ ...base, hasAddress: true }) === false &&
         connectAskReleased({ ...base, pending: false }) === false &&
         CONNECT_ASK_RELEASE_GRACE_MS >= 300 && CONNECT_ASK_RELEASE_GRACE_MS <= 2000
@@ -4351,6 +4353,41 @@ async function main() {
         /nothing was built, nothing was spent/i.test(j.reply ?? '') &&
         !/Diagnostics|Yeetful · Claude|house model/i.test(j.reply ?? '') &&
         !(Array.isArray(j.receipts) && j.receipts.length > 0),
+    )
+  }
+  {
+    const srcFs = await import('node:fs')
+    const code = (path: string) => srcFs.readFileSync(path, 'utf8').replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')
+    const chat = code('components/ChatInterface.tsx')
+    const loader = srcFs.readFileSync('components/ChatLoader.tsx', 'utf8')
+    const og = code('app/opengraph-image.tsx')
+    check(
+      'onboarding: a lone loader caption stays on screen — the solo rule outranks the 4-line cycle (doubled class), so the /i splash never reads as a captionless loader',
+      /\.yload__line\.yload__line--solo \{\s*animation: none;\s*opacity: 1;/.test(loader) &&
+        !/(^|[^.])\.yload__line--solo \{/m.test(loader.replace('.yload__line.yload__line--solo {', '')),
+    )
+    check(
+      'onboarding: a long build says what it is doing — after SLOW_TURN_MS the in-turn row names the on-chain reads (server status still wins); the wait is bounded and the caption is honest for every native lane',
+      SLOW_TURN_MS >= 3000 && SLOW_TURN_MS <= 6000 &&
+        /reading balances and live quotes on-chain/.test(SLOW_TURN_CAPTION) &&
+        /status \?\? \(slowTurn \? SLOW_TURN_CAPTION : 'Thinking…'\)/.test(chat) &&
+        /setTimeout\(\(\) => setSlowTurn\(true\), SLOW_TURN_MS\)/.test(chat),
+    )
+    check(
+      'onboarding/security: the connect-ask re-run is first-party only — the embed never re-fires a host-injected ask on connect (until E5\'s server-side fence lands)',
+      /if \(embedded \|\| pendingConnectAsk !== null \|\| !currentChat\) return/.test(chat),
+    )
+    check(
+      'onboarding: the root social card tells the links-first story ("You have an intent. We do the rest." + YOUR WALLET SIGNS), never the pre-07-22 "Mega dapps are here" pitch',
+      /alt = 'Pantessa — You have an intent\. We do the rest\.'/.test(og) &&
+        /You have an intent\./.test(og) && /We do the rest\./.test(og) && /YOUR WALLET SIGNS/.test(og) &&
+        !/Mega dapps/.test(og) && !/EVERY DAPP/.test(og),
+    )
+    const ogr = await fetch(`${BASE}/opengraph-image`)
+    const ogBuf = new Uint8Array(await ogr.arrayBuffer())
+    check(
+      'onboarding: the root social card renders (200 image/png, a real PNG, >20KB) with the new headline in place',
+      ogr.status === 200 && /image\/png/.test(ogr.headers.get('content-type') ?? '') && ogBuf.length > 20_000 && ogBuf[0] === 0x89 && ogBuf[1] === 0x50,
     )
   }
   {

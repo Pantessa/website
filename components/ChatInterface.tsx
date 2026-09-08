@@ -45,6 +45,7 @@ import EmptyState from '@/components/chat/EmptyState'
 import CreateAccountButton from '@/components/CreateAccountButton'
 import { cdpEnabled } from '@/lib/cdp-embedded'
 import { CONNECT_ASK_RELEASE_GRACE_MS, connectAskReleased, hasStoredWalletConnection, shouldRerunConnectAsk } from '@/lib/wallet-reconnect'
+import { SLOW_TURN_CAPTION, SLOW_TURN_MS } from '@/lib/turn-status'
 import { SplashDashboard } from '@/components/SplashDashboard'
 import ChatLoader from '@/components/ChatLoader'
 import { splashCapable } from '@/lib/splash/types'
@@ -1021,6 +1022,19 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
   const { connectAsync: connectForTx, connectors: txConnectors } = useConnect()
   const hostBridge = useSyncExternalStore(subscribeHostWallet, getHostWalletState, getHostWalletServerState)
   const [pendingConnectAsk, setPendingConnectAsk] = useState<string | null>(null)
+  // A native build reads balances + live quotes on-chain and a funding scan
+  // walks five chains — 10–12s of "Thinking…" on a money surface reads as
+  // stuck (MOBILE finding 11 on /i). After SLOW_TURN_MS the row says what
+  // is taking the time; the server's own status (routing/payments) wins.
+  const [slowTurn, setSlowTurn] = useState(false)
+  useEffect(() => {
+    if (!loading) {
+      setSlowTurn(false)
+      return
+    }
+    const t = window.setTimeout(() => setSlowTurn(true), SLOW_TURN_MS)
+    return () => window.clearTimeout(t)
+  }, [loading])
   // The way back: the gate used to read "Connecting…" forever once pressed
   // unless an address landed (door dismissed, wallet not installed, request
   // rejected — QA O-4, reproduced live). lib/wallet-reconnect decides when
@@ -1034,6 +1048,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
       doorOpen: connectDoorOpen,
       listOpen: !!connectModalOpen,
       walletStatus,
+      storedConnection: hasStoredWalletConnection(typeof window === 'undefined' ? null : window.localStorage),
     })
     if (!released) return
     const t = window.setTimeout(() => {
@@ -1069,7 +1084,11 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
   // connect-wallet reply at the end of the thread re-runs its ask once the
   // address is here (lib/wallet-reconnect decides; once per reply).
   useEffect(() => {
-    if (pendingConnectAsk !== null || !currentChat) return
+    // First-party surfaces only: inside the embed the host can inject a
+    // `prompt send:true` ask that lands on the same "connect wallet" reply,
+    // and a third-party-authored ask must never re-fire itself on connect
+    // (SECURITY, until E5's server-side origin fence lands).
+    if (embedded || pendingConnectAsk !== null || !currentChat) return
     const last = currentChat.messages[currentChat.messages.length - 1] ?? null
     if (!last || connectAskConsumed.current.has(last.id)) return
     const ask = shouldRerunConnectAsk({ last, hasAddress: !!effectiveAddress, loading, now: Date.now() })
@@ -2002,7 +2021,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
                 </div>
                 <div className="px-4 py-3 rounded-2xl rounded-tl-sm bg-[var(--surf-1)] border border-[var(--line)] flex items-center gap-2">
                   <Loader2 className="w-4 h-4 text-[color:var(--muted)] animate-spin flex-shrink-0" />
-                  <span className="text-xs text-[color:var(--muted)]">{status ?? 'Thinking…'}</span>
+                  <span className="text-xs text-[color:var(--muted)]">{status ?? (slowTurn ? SLOW_TURN_CAPTION : 'Thinking…')}</span>
                 </div>
               </motion.div>
             )}

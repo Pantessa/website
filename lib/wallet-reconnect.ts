@@ -95,13 +95,20 @@ export function connectAskReleased(input: {
   doorOpen: boolean
   /** RainbowKit's wallet list is on screen. */
   listOpen: boolean
-  /** wagmi's account status — 'connecting' / 'reconnecting' = a connector
-   *  is mid-handshake (an extension popup, a deep link, a QR wait). */
+  /** wagmi's account status — 'connecting' = a connector is mid-handshake
+   *  (an extension popup, a deep link, a QR wait); 'reconnecting' = the
+   *  mount-time restore probe, which with the WalletConnect lane lit runs
+   *  ~9s after load on a fresh page. */
   walletStatus: 'connected' | 'connecting' | 'reconnecting' | 'disconnected'
+  /** hasStoredWalletConnection(): only then can 'reconnecting' land an
+   *  address. A fresh visitor's probe restores nothing — waiting on it held
+   *  "Connecting…" ~4s after the door was dismissed (measured live). */
+  storedConnection: boolean
 }): boolean {
-  const { pending, hasAddress, doorOpen, listOpen, walletStatus } = input
+  const { pending, hasAddress, doorOpen, listOpen, walletStatus, storedConnection } = input
   if (!pending || hasAddress) return false
   if (doorOpen || listOpen) return false
-  if (walletStatus === 'connecting' || walletStatus === 'reconnecting') return false
+  if (walletStatus === 'connecting') return false
+  if (walletStatus === 'reconnecting' && storedConnection) return false
   return true
 }
