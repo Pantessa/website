@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse, after } from 'next/server'
+import { fenceToolOutput, toolOutputNonce, toolOutputRule } from '@/lib/tool-output-fence'
 import { contentOriginOf, hardenReportForOrigin, isThirdPartyOrigin, outboundToThirdParty, rawAddressTokenRefusal, type ContentOrigin } from '@/lib/content-origin'
 import { attachFundsSnapshot, classifyTurn, moneyShaped, recordAskFailure } from '@/lib/ask-failure'
 import { recordTurnExpectations } from '@/lib/link-receipt-verify'
@@ -5047,6 +5048,9 @@ async function executeWithSignatures(
    *  ("what can I do here?") stay grounded when the answer is synthesized here. */
   capabilities = '',
 ) {
+  // Tool output is DATA, not instructions (lib/tool-output-fence): every
+  // service result in this turn's prompts sits between nonce markers.
+  const toolNonce = toolOutputNonce()
   if (!message.trim()) return NextResponse.json({ error: 'message is required' }, { status: 400 })
 
   const receipts: Receipt[] = []
@@ -5111,7 +5115,7 @@ async function executeWithSignatures(
       // to the synthesized text (latest read wins — freshest data).
       const card = portfolioFromToolResult(data)
       if (card) portfolioCard = card
-      contextBlocks.push(`### ${c.name}\n${compactForSynthesis(data, 3500)}`)
+      contextBlocks.push(fenceToolOutput(c.name, compactForSynthesis(data, 3500), toolNonce))
       if (card) contextBlocks.push('NOTE: this portfolio is ALSO rendered as a rich visual card right below your reply — write ONE short summary sentence (total + notable point); do NOT repeat the holdings/table in text.')
       const txHash = decodeSettlement(res)?.transaction
       pushReceipt({ name: c.name, endpoint: c.host, priceUsd: c.priceUsd, txHash, ok: true })
@@ -5226,6 +5230,9 @@ async function runWithBurner(
    *  proposals" needs their address, not the burner's. */
   userAddress?: string,
 ) {
+  // Tool output is DATA, not instructions (lib/tool-output-fence): every
+  // service result in this turn's prompts sits between nonce markers.
+  const toolNonce = toolOutputNonce()
   let traceSeq = 0
   const trace = turnId ? (event: unknown) => recordTraceLine(turnId, traceSeq++, event, 'burner') : () => {}
   trace({ type: 'status', label: 'routing within your selected agents' })
@@ -5270,7 +5277,7 @@ async function runWithBurner(
     try {
       const { json, txHash, paidUsd } = await paidGet(ds.endpoint!, ds.queryParam ?? 'q', message, boundsFor(ds))
       carriedEntities = extractEntities(json, carriedEntities)
-      contextBlocks.push(`### ${ds.name}\n${compactForSynthesis(json, 3500)}`)
+      contextBlocks.push(fenceToolOutput(ds.name, compactForSynthesis(json, 3500), toolNonce))
       receipts.push({ name: ds.name, endpoint: host, priceUsd: ds.priceUsd ?? '0.01', txHash, ok: true })
       if (grant) {
         const settled = paidUsd ?? price
@@ -5318,7 +5325,7 @@ async function runWithBurner(
         carriedEntities = extractEntities(data, carriedEntities)
         const card = portfolioFromToolResult(data)
         if (card) portfolioCard = card
-        contextBlocks.push(`### ${ds.name}\n${compactForSynthesis(data, 3500)}`)
+        contextBlocks.push(fenceToolOutput(ds.name, compactForSynthesis(data, 3500), toolNonce))
         if (card) contextBlocks.push('NOTE: this portfolio is ALSO rendered as a rich visual card right below your reply — write ONE short summary sentence (total + notable point); do NOT repeat the holdings/table in text.')
       }
       receipts.push({ name: ds.name, endpoint: host, priceUsd: ds.priceUsd ?? '0.01', txHash, ok: true })
@@ -5392,7 +5399,7 @@ async function runWithBurner(
             // next to the synthesized text (latest read wins — freshest).
             const card = portfolioFromToolResult(json)
             if (card) portfolioCard = card
-            contextBlocks.push(`### ${ep.serverName}\n${compactForSynthesis(json, 3500)}`)
+            contextBlocks.push(fenceToolOutput(ep.serverName, compactForSynthesis(json, 3500), toolNonce))
             if (card) contextBlocks.push('NOTE: this portfolio is ALSO rendered as a rich visual card right below your reply — write ONE short summary sentence (total + notable point); do NOT repeat the holdings/table in text.')
             receipts.push({ name: ep.serverName, endpoint: host, priceUsd: ep.priceUsd, txHash: dataTx, ok: true })
             trace({ type: 'receipt', receipt: { name: ep.serverName, endpoint: host, priceUsd: ep.priceUsd, txHash: dataTx, ok: true } })
@@ -5425,23 +5432,27 @@ async function runWithBurner(
               }
               // buildPath 'planner': the signable came out of a tool the
               // ENDPOINT PLANNER picked — not a native builder (lib/build-path.ts).
+              // §E3 passthrough honesty: the guard's warnings + who built it
+              // ride the response and the sign card — never dropped.
+              const honesty = { guardWarnings: verdict.warnings, builtBy: ep.serverName }
               if (art.kind === 'eip712-vote') {
-                return NextResponse.json({ reply: `🗳️ ${art.summary}`, receipts, payer: 'the house wallet', voteRequest: art.vote, buildPath: 'planner', notes })
+                return NextResponse.json({ reply: `🗳️ ${art.summary}`, receipts, payer: 'the house wallet', voteRequest: art.vote, buildPath: 'planner', notes, ...honesty })
               }
               if (art.kind === 'eip712-order') {
-                return NextResponse.json({ reply: `🔏 ${art.summary}`, receipts, payer: 'the house wallet', orderRequest: art.order, buildPath: 'planner', notes })
+                return NextResponse.json({ reply: `🔏 ${art.summary}`, receipts, payer: 'the house wallet', orderRequest: art.order, buildPath: 'planner', notes, ...honesty })
               }
               if (art.kind === 'evm-tx-chain') {
                 return NextResponse.json({
-                  reply: `🔏 ${art.summary}\n🔗 ${art.chain.steps.length} steps in the card below — each appears as the previous confirms.`,
+                  reply: `🔏 ${art.summary}\n🔗 ${art.chain.steps.length} steps in the card below — built by ${ep.serverName}, so each step waits for your tap.`,
                   receipts,
                   payer: 'the house wallet',
                   txChain: art.chain,
                   buildPath: 'planner',
                   notes,
+                  ...honesty,
                 })
               }
-              return NextResponse.json({ reply: `🔏 ${art.summary}`, receipts, payer: 'the house wallet', txRequest: art.tx, buildPath: 'planner', notes })
+              return NextResponse.json({ reply: `🔏 ${art.summary}`, receipts, payer: 'the house wallet', txRequest: art.tx, buildPath: 'planner', notes, ...honesty })
             }
           } catch (err) {
             const note = err instanceof Error ? err.message : 'call failed'
@@ -5924,13 +5935,13 @@ export function streamAutoRouter(
             // buildPath 'planner': the Auto-Router engine picked the tool that
             // returned this signable (lib/build-path.ts).
             if (decision.artifact.kind === 'eip712-vote') {
-              send({ type: 'reply', content: `🗳️ ${decision.artifact.summary}`, receipts, payer: 'your wallet', voteRequest: decision.artifact.vote, buildPath: 'planner', trace: trace(), workingContext: carryContext(workingContext, decision.entities) })
+              send({ type: 'reply', content: `🗳️ ${decision.artifact.summary}`, receipts, payer: 'your wallet', voteRequest: decision.artifact.vote, buildPath: 'planner', trace: trace(), workingContext: carryContext(workingContext, decision.entities) , guardWarnings: decision.artifactWarnings, builtBy: decision.artifactBuiltBy })
             } else if (decision.artifact.kind === 'eip712-order') {
-              send({ type: 'reply', content: `🔏 ${decision.artifact.summary}`, receipts, payer: 'your wallet', orderRequest: decision.artifact.order, buildPath: 'planner', trace: trace(), workingContext: carryContext(workingContext, decision.entities) })
+              send({ type: 'reply', content: `🔏 ${decision.artifact.summary}`, receipts, payer: 'your wallet', orderRequest: decision.artifact.order, buildPath: 'planner', trace: trace(), workingContext: carryContext(workingContext, decision.entities) , guardWarnings: decision.artifactWarnings, builtBy: decision.artifactBuiltBy })
             } else if (decision.artifact.kind === 'evm-tx-chain') {
-              send({ type: 'reply', content: `🔏 ${decision.artifact.summary}\n🔗 ${decision.artifact.chain.steps.length} steps in the card below — each appears as the previous confirms.`, receipts, payer: 'your wallet', txChain: decision.artifact.chain, buildPath: 'planner', trace: trace(), workingContext: carryContext(workingContext, decision.entities) })
+              send({ type: 'reply', content: `🔏 ${decision.artifact.summary}\n🔗 ${decision.artifact.chain.steps.length} steps in the card below — each appears as the previous confirms.`, receipts, payer: 'your wallet', txChain: decision.artifact.chain, buildPath: 'planner', trace: trace(), workingContext: carryContext(workingContext, decision.entities) , guardWarnings: decision.artifactWarnings, builtBy: decision.artifactBuiltBy })
             } else {
-              send({ type: 'reply', content: `🔏 ${decision.artifact.summary}`, receipts, payer: 'your wallet', txRequest: decision.artifact.tx, buildPath: 'planner', trace: trace(), workingContext: carryContext(workingContext, decision.entities) })
+              send({ type: 'reply', content: `🔏 ${decision.artifact.summary}`, receipts, payer: 'your wallet', txRequest: decision.artifact.tx, buildPath: 'planner', trace: trace(), workingContext: carryContext(workingContext, decision.entities) , guardWarnings: decision.artifactWarnings, builtBy: decision.artifactBuiltBy })
             }
             recordTurn({ payer: 'your wallet', shortlisted: shortlistedOf(decision), picks: picksOf(decision), intent: intentOf(decision) })
             return finish()
@@ -6010,16 +6021,16 @@ export function streamAutoRouter(
           // buildPath 'planner': the Auto-Router engine picked the tool that
           // returned this signable (lib/build-path.ts).
           if (decision.artifact.kind === 'eip712-vote') {
-            send({ type: 'reply', content: `🗳️ ${decision.artifact.summary}`, receipts, payer: 'the house wallet', voteRequest: decision.artifact.vote, buildPath: 'planner', trace: trace() })
+            send({ type: 'reply', content: `🗳️ ${decision.artifact.summary}`, receipts, payer: 'the house wallet', voteRequest: decision.artifact.vote, buildPath: 'planner', trace: trace() , guardWarnings: decision.artifactWarnings, builtBy: decision.artifactBuiltBy })
           } else if (decision.artifact.kind === 'eip712-order') {
             // Intent-based order (CoW swap / OpenSea): the built order is sent
             // for signature. Guardrails (A3) gate it; the sign UI is A4.
-            send({ type: 'reply', content: `🔏 ${decision.artifact.summary}`, receipts, payer: 'the house wallet', orderRequest: decision.artifact.order, buildPath: 'planner', trace: trace() })
+            send({ type: 'reply', content: `🔏 ${decision.artifact.summary}`, receipts, payer: 'the house wallet', orderRequest: decision.artifact.order, buildPath: 'planner', trace: trace() , guardWarnings: decision.artifactWarnings, builtBy: decision.artifactBuiltBy })
           } else if (decision.artifact.kind === 'evm-tx-chain') {
             // Multi-step build (approve → swap): one self-advancing card.
-            send({ type: 'reply', content: `🔏 ${decision.artifact.summary}\n🔗 ${decision.artifact.chain.steps.length} steps in the card below — each appears as the previous confirms.`, receipts, payer: 'the house wallet', txChain: decision.artifact.chain, buildPath: 'planner', trace: trace() })
+            send({ type: 'reply', content: `🔏 ${decision.artifact.summary}\n🔗 ${decision.artifact.chain.steps.length} steps in the card below — each appears as the previous confirms.`, receipts, payer: 'the house wallet', txChain: decision.artifact.chain, buildPath: 'planner', trace: trace() , guardWarnings: decision.artifactWarnings, builtBy: decision.artifactBuiltBy })
           } else {
-            send({ type: 'reply', content: `🔏 ${decision.artifact.summary}`, receipts, payer: 'the house wallet', txRequest: decision.artifact.tx, buildPath: 'planner', trace: trace() })
+            send({ type: 'reply', content: `🔏 ${decision.artifact.summary}`, receipts, payer: 'the house wallet', txRequest: decision.artifact.tx, buildPath: 'planner', trace: trace() , guardWarnings: decision.artifactWarnings, builtBy: decision.artifactBuiltBy })
           }
           recordTurn({ payer: 'the house wallet', shortlisted: shortlistedOf(decision), picks: picksOf(decision), intent: intentOf(decision) })
           return finish()
@@ -6386,6 +6397,7 @@ function buildPrompt(message: string, contextBlocks: string[], history: Conversa
     ...(ctxBlock ? [``, ctxBlock] : []),
     ...(convo ? [``, `Conversation so far:`, convo] : []),
     ``,
+    ...(toolOutputRule(contextBlocks) ? [toolOutputRule(contextBlocks) as string, ``] : []),
     `DATA:`,
     contextBlocks.join('\n\n'),
     ``,

@@ -77,10 +77,12 @@ export function isDeniedBrandHost(hostOrUrl: string | null | undefined): boolean
  *  the host list (its registrable label) plus wallets/exchanges/brands that
  *  aren't venues but are the classic phishing bylines. */
 export const THIRD_PARTY_BRAND_WORDS: readonly string[] = [
-  ...THIRD_PARTY_BRAND_HOSTS.map((h) => h.split('.')[0]),
-  'cowswap', 'cow swap', 'cow protocol', 'metamask', 'coinbase', 'binance', 'kraken', 'okx', 'bybit', 'gemini',
-  'ledger', 'trezor', 'trust wallet', 'trustwallet', 'safe', 'gnosis', 'stripe', 'paypal', 'venmo', 'cash app',
-  'chainlink', 'ethereum foundation', 'arbitrum', 'optimism', 'base', 'polygon', 'solana', 'circle', 'tether',
+  // The REGISTRABLE label of every denied host (uniswap.org → uniswap,
+  // swap.cow.fi → cow) — never the first label ("app", "swap", "www").
+  ...THIRD_PARTY_BRAND_HOSTS.map((h) => h.split('.').slice(-2)[0]).filter((w) => w.length >= 3),
+  'cowswap', 'cow swap', 'cow protocol', 'metamask', 'coinbase', 'binance', 'kraken', 'okx', 'bybit',
+  'ledger', 'trezor', 'trust wallet', 'trustwallet', 'safe', 'gnosis',
+  'chainlink', 'ethereum foundation', 'arbitrum', 'optimism', 'base', 'polygon', 'solana',
   'uniswap labs', 'lido', 'aave', 'morpho', 'hyperliquid', 'opensea', 'snapshot', 'robinhood', 'lifi', 'li fi',
   'near', 'phantom', 'rabby', 'rainbow', 'walletconnect', 'wallet connect',
 ]
@@ -105,7 +107,15 @@ export function isDeniedBrandName(name: string | null | undefined): boolean {
   const f = ` ${fold(name)} `
   if (!f.trim()) return false
   const hit = (w: string) => f.includes(` ${fold(w)} `)
-  return THIRD_PARTY_BRAND_WORDS.some(hit) || IMPERSONATION_WORDS.some(hit)
+  if (THIRD_PARTY_BRAND_WORDS.some(hit) || IMPERSONATION_WORDS.some(hit)) return true
+  // Second pass on the COMPACTED string ("uni-swap" → "uniswap", "meta mask"
+  // → "metamask"): a distinctive brand word (6+ letters, so "base" can't
+  // catch "database") anywhere inside it is the same impersonation.
+  const compact = f.replace(/ /g, '')
+  return THIRD_PARTY_BRAND_WORDS.some((w) => {
+    const c = fold(w).replace(/ /g, '')
+    return c.length >= 6 && compact.includes(c)
+  })
 }
 
 /** The refusal copy for a denied NAME — used by the mint/send/brand doors. */
