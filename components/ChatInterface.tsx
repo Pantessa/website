@@ -1760,7 +1760,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
                           <div data-tx-card>
                             {external && <ExternalBuildNotice builtBy={external.builtBy} warnings={external.warnings} txs={[builtTx as { to?: string; value?: string; data?: string; chainId?: number }]} />}
                             {warnLines.map((line, i) => (
-                              <p key={i} className="mb-2 text-[12px] leading-snug text-amber-400 break-all" data-recipient-check={/LEAVES your wallet/.test(line) ? 'recipient' : 'warn'}>
+                              <p key={i} className="mb-2 text-[12px] leading-snug text-amber-400 [overflow-wrap:anywhere]" data-recipient-check={/LEAVES your wallet/.test(line) ? 'recipient' : 'warn'}>
                                 {line}
                               </p>
                             ))}

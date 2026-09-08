@@ -62,6 +62,15 @@ export default function PaymentConfirm({
           ) : null}
         </span>
       </div>
+      {/* The payee IN FULL — the short form above carries the whole address
+          only in a title tooltip, which no phone can open (squad gtm 2026-09-08,
+          mobile round 3). Same rule as ExternalBuildNotice: every `to` readable
+          before the signature. */}
+      {soleRecipient ? (
+        <p className="mono text-[12px] leading-snug text-[color:var(--muted)] [overflow-wrap:anywhere]" data-payee-full={soleRecipient}>
+          pays <span className="text-[color:var(--fg)]">{soleRecipient}</span>
+        </p>
+      ) : null}
 
       {(payments.length > 1 || payments.some(aboveListing)) && (
         <ul className="space-y-1 text-[12px]">
@@ -72,6 +81,11 @@ export default function PaymentConfirm({
                 {p.payTo && !soleRecipient ? (
                   <span className="font-mono text-[color:var(--muted-2)]" title={p.payTo} data-payee={p.payTo}>
                     {' '}→ {shortAddr(p.payTo)}
+                  </span>
+                ) : null}
+                {p.payTo && !soleRecipient ? (
+                  <span className="block mono text-[11px] leading-snug text-[color:var(--muted-2)] [overflow-wrap:anywhere] whitespace-normal" data-payee-full={p.payTo}>
+                    {p.payTo}
                   </span>
                 ) : null}
               </span>

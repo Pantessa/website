@@ -3385,6 +3385,31 @@ async function main() {
         'mobile: the toolbar working-set door names the MCP count on phones',
         /<span className="max-sm:hidden">\{activeServers\.map\(\(s\) => cleanServerName\(s\.name\)\)\.join\(' · '\)\}<\/span>\s*<span className="sm:hidden whitespace-nowrap">\{activeServers\.length\} MCP\{activeServers\.length === 1 \? '' : 's'\}<\/span>/.test(chatIface),
       )
+      // Round 3 — the pixel pass over the squad's new cards at 375. The
+      // external-build notice read "Built by Uniswap (Free)— an external tool"
+      // (the SWC entity-space bug: a text node carrying &apos; after an
+      // expression drops its leading space); `break-all` on the amber lines
+      // broke WORDS ("ca p", "ag ents", "att ached") — an address needs a
+      // break opportunity anywhere, the prose beside it does not; and the
+      // x402 payee was a short form whose full address lived in a title
+      // tooltip no phone can open.
+      const extNotice = await readFile(new URL('../components/ExternalBuildNotice.tsx', import.meta.url), 'utf8')
+      const payConfirm = await readFile(new URL('../components/PaymentConfirm.tsx', import.meta.url), 'utf8')
+      check('mobile: ExternalBuildNotice owns the space before its dash (no entity-glued “(Free)—”)', /Built by \{who\}\{' — '\}an external tool, not Pantessa’s native layer/.test(extNotice) && !/&apos;/.test(extNotice))
+      check(
+        'mobile: full-address lines wrap anywhere but never mid-word (external `to` + recipient/warn lines)',
+        /className="mono \[overflow-wrap:anywhere\]" data-external-to=/.test(extNotice) &&
+          /text-amber-400 \[overflow-wrap:anywhere\]" data-recipient-check=/.test(chatIface) &&
+          !/break-all/.test(extNotice) &&
+          !/data-recipient-check[^\n]*break-all|break-all[^\n]*data-recipient-check/.test(chatIface),
+      )
+      check('mobile: PaymentConfirm prints the payee in full (sole recipient + per-row), not only in a title tooltip', /data-payee-full=\{soleRecipient\}[\s\S]{0,200}\{soleRecipient\}/.test(payConfirm) && /data-payee-full=\{p\.payTo\}[\s\S]{0,120}\{p\.payTo\}/.test(payConfirm))
+      // The arbitrary property must survive the build: the served /chat
+      // stylesheet carries the rule (a class the scanner never saw paints nothing).
+      const chatDoc = await (await fetch(`${BASE}/chat`)).text()
+      const cssHrefs = [...chatDoc.matchAll(/<link[^>]+rel="stylesheet"[^>]+href="([^"]+\.css[^"]*)"/g)].map((m) => m[1])
+      const servedCss = (await Promise.all(cssHrefs.map((h) => fetch(h.startsWith('http') ? h : `${BASE}${h}`).then((r) => r.text()).catch(() => '')))).join('\n')
+      check('mobile: the built stylesheet carries overflow-wrap:anywhere for the address lines', cssHrefs.length > 0 && /overflow-wrap:\s*anywhere/.test(servedCss))
     }
 
     // House links: the seeded canonical set (deterministic slugs,
