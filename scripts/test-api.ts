@@ -50,7 +50,7 @@ import { pairStockToken, stockChipLabel } from '../lib/stock-pairing'
 import { chartPairFor, changePct24h, aggregateCandles, type Candle } from '../lib/charts'
 import { pureChecks, policyCheck, orderValueUsd, buildReport } from '../lib/cow-guardrails'
 import { policyCheckInflow, recipientCheck, validityCheck, MAX_VALID_SEC } from '../lib/tx-guardrails'
-import { guardPlannerArtifact, PERMIT2_ADDRESS } from '../lib/planner-artifact-guard'
+import { FIRST_PARTY_MCP_SOURCE, guardPlannerArtifact, isFirstPartyMcp, PERMIT2_ADDRESS } from '../lib/planner-artifact-guard'
 import { LIMIT_EXAMPLES, parseSwapIntent, swapClarify } from '../lib/swap-intent'
 import { activeLinkCapFor, composeMcps, linkEyebrow, linkLockup, linkLockupWord } from '../lib/intent-links'
 import { DEFAULT_TAB, parseTabParam, tabUrl } from '../lib/app-tab-url'
@@ -126,6 +126,8 @@ import {
 import { HOUSE_LINKS, houseLinkMarks } from '../lib/house-links'
 import { EXPLAINER_VIDEO, explainerPosterUrl, explainerWatchUrl, isoDuration } from '../lib/explainer-video'
 import { isDbChatId } from '../lib/chat-ids'
+import { gasStateFor, mergeChains, type RpcChainRead, type WalletView } from '../lib/wallet-view'
+import { arrivalPhrase, detectArrival, fundWaitExpired, fundWaitKey, pollDelayMs, FUND_WAIT_TTL_MS, FUND_WATCH_MAX_MS } from '../lib/funding-arrival'
 import { usdToTokenAmount } from '../lib/usd-probe'
 import { parseRobinhoodBridge, guardRobinhoodBridge, RH_L1_INBOX, ARB_SYS } from '../lib/robinhood-bridge'
 import { parseNftAsk, parseOpenSeaItemUrl, guardNftTransfer, ERC721_ABI as NFT_ERC721_ABI, ERC1155_ABI as NFT_ERC1155_ABI } from '../lib/nft-layer'
@@ -6834,6 +6836,111 @@ async function main() {
     check('xchain value: junk usd → null', crossChainValueUsd({ ...goodBuild, quote: { sell: { usd: 'n/a' } } }) === null && crossChainValueUsd({ ...goodBuild, quote: { sell: { usd: '0' } } }) === null)
   }
 
+  // ── Wallet panel + funding arrival (2026-09-08) ───────────────────────────
+  // Born from Nate's own Stripe purchase: $27 of ETH landed on Ethereum and
+  // his CDP embedded wallet answered "Chain not configured" (the chain-list
+  // drift #722 fixed — its pins live in the wallet-lanes block). The panel is
+  // the window an embedded wallet never had; the watcher is the signal the
+  // fund chip never sent.
+  console.log('— wallet panel + funding arrival')
+  {
+    // Gas verdicts — the rule the panel names a stall by.
+    check('wallet gas: tokens + no ETH on Base → none', gasStateFor(8453, 0, 20) === 'none')
+    check('wallet gas: nothing at all → empty (not a problem)', gasStateFor(8453, 0, 0) === 'empty' && gasStateFor(1, 0.00001, 0.1) === 'empty')
+    check('wallet gas: above the floor, under the reserve → low', gasStateFor(1, 0.0015, 0) === 'low' && gasStateFor(8453, 0.0001, 5) === 'low')
+    check('wallet gas: at/above the reserve → ok', gasStateFor(1, 0.002, 0) === 'ok' && gasStateFor(4663, 0.0002, 100) === 'ok')
+
+    // Merge: RPC is the freshness floor, Alchemy supplies prices + the tail.
+    const eth = APP_CHAINS.find((c) => c.id === 1)!
+    const baseC = APP_CHAINS.find((c) => c.id === 8453)!
+    const rpc = new Map<number, RpcChainRead>([
+      [1, { chainId: 1, nativeEth: 0.011178, stable: { symbol: 'USDC', address: eth.tokens.USDC.address, balance: 0 } }],
+      [8453, { chainId: 8453, nativeEth: 0, stable: { symbol: 'USDC', address: baseC.tokens.USDC.address, balance: 20 } }],
+    ])
+    const merged = mergeChains([eth, baseC], rpc, [
+      { symbol: 'ETH', address: '0x0000000000000000000000000000000000000000', balance: '0.0100', priceUsd: 2477, valueUsd: 24.77, native: true, chain: 'Ethereum' },
+      { symbol: 'USDC', address: baseC.tokens.USDC.address, balance: '19.5', priceUsd: 1, valueUsd: 19.5, chain: 'Base' },
+      { symbol: 'DEGEN', address: '0x' + '11'.repeat(20), balance: '1000', priceUsd: 0.004, valueUsd: 4, chain: 'Base' },
+    ], 2477)
+    const mEth = merged[0]
+    const mBase = merged[1]
+    check(
+      'wallet merge: RPC native wins over the index (0.011178 not 0.0100), priced at the probe',
+      mEth.nativeEth === 0.011178 && mEth.holdings[0]?.native === true && mEth.nativeUsd === 27.69 && mEth.totalUsd === 27.69,
+      JSON.stringify({ nativeEth: mEth.nativeEth, nativeUsd: mEth.nativeUsd, total: mEth.totalUsd }),
+    )
+    check(
+      'wallet merge: the RPC stable read replaces the indexed USDC row (20, not 19.5) and the tail token survives',
+      mBase.holdings.find((h) => h.symbol === 'USDC')?.balance === '20' && mBase.holdings.some((h) => h.symbol === 'DEGEN') && mBase.totalUsd === 24,
+      JSON.stringify(mBase.holdings.map((h) => [h.symbol, h.balance, h.valueUsd])),
+    )
+    check('wallet merge: Base holds $24 of tokens with zero ETH → gas none; Ethereum with 0.011 ETH → ok', mBase.gas === 'none' && mEth.gas === 'ok')
+    check('wallet merge: no ETH → no native pseudo-row', !mBase.holdings.some((h) => h.native))
+    const unread = mergeChains([eth], new Map(), [], 2477)[0]
+    check('wallet merge: a chain the RPC did not answer is flagged unread, never rendered as zero', unread.unread === true && unread.holdings.length === 0)
+    const indexOnly = mergeChains([eth], new Map(), [{ symbol: 'ETH', address: '0x0', balance: '0.5', priceUsd: null, valueUsd: 1200, native: true, chain: 'Ethereum' }], null)[0]
+    check('wallet merge: with no RPC read and no price, Alchemy native + its own valueUsd carry the row', indexOnly.nativeEth === 0.5 && indexOnly.nativeUsd === 1200)
+
+    // Arrival detection — the watcher's one rule.
+    check('arrival: dust under the floors is not a delivery', detectArrival({ eth: 0, stable: 0 }, { eth: 0.00005, stable: 0.2 }, 2477) === null)
+    const ethIn = detectArrival({ eth: 0, stable: 0 }, { eth: 0.011178, stable: 0 }, 2477)
+    check('arrival: ETH landing is priced', ethIn?.deltaEth === 0.011178 && ethIn.deltaStable === 0 && ethIn.usd === 27.69, JSON.stringify(ethIn))
+    check('arrival: phrase leads with dollars when priced', ethIn !== null && arrivalPhrase(ethIn) === '$27.69 of ETH (0.0112 ETH)')
+    const unpriced = detectArrival({ eth: 0.001, stable: 0 }, { eth: 0.021, stable: 0 }, null)
+    check('arrival: unpriced ETH still counts, usd null, phrase in ETH', unpriced?.usd === null && unpriced.deltaEth > 0.0199 && arrivalPhrase(unpriced) === '0.0200 ETH')
+    const stableIn = detectArrival({ eth: 0.01, stable: 5 }, { eth: 0.01, stable: 30 }, 2477)
+    check('arrival: a stable landing counts on its own, delta not balance', stableIn?.deltaStable === 25 && stableIn.deltaEth === 0 && stableIn.usd === 25 && arrivalPhrase(stableIn) === '25.00 USDC')
+    check('arrival: a null baseline compares against zero (an empty wallet is why the chip exists)', detectArrival({ eth: null, stable: null }, { eth: 0.005, stable: 0 }, null)?.deltaEth === 0.005)
+    check('arrival: a balance that FELL is not an arrival', detectArrival({ eth: 0.05, stable: 10 }, { eth: 0.01, stable: 2 }, 2477) === null)
+    check('arrival: poll 10s early, 20s later, off after the max', pollDelayMs(0) === 10_000 && pollDelayMs(9 * 60_000) === 10_000 && pollDelayMs(11 * 60_000) === 20_000 && pollDelayMs(FUND_WATCH_MAX_MS) === null)
+    const w = { address: '0x' + 'cd'.repeat(20), network: 'ethereum' as const, resume: 'buy $10 of AAPL', label: 'Add $25', baselineEth: null, baselineStable: null, openedAt: Date.now() - FUND_WAIT_TTL_MS - 1 }
+    check('arrival: a wait older than the TTL is expired; a fresh one is not', fundWaitExpired(w) && !fundWaitExpired({ ...w, openedAt: Date.now() }))
+    check('arrival: the storage key is per lowercased wallet', fundWaitKey('0xABCDEF' + '00'.repeat(17)) === 'yf-fund-wait:0xabcdef' + '00'.repeat(17))
+
+    // The doors: "Wallet details" opens OUR panel; the chip watches.
+    const navSrc = await readFile(new URL('../components/NavAccount.tsx', import.meta.url), 'utf8')
+    const dashSrc = await readFile(new URL('../components/DashboardAccount.tsx', import.meta.url), 'utf8')
+    const chipSrc = await readFile(new URL('../components/ClarifyChips.tsx', import.meta.url), 'utf8')
+    check(
+      'wallet panel: both account menus open WalletPanel from "Wallet details" and keep RainbowKit one step inside as wallet settings',
+      [navSrc, dashSrc].every((src) => src.includes('<WalletPanel') && src.includes('onWalletSettings={openAccountModal}') && /Wallet details/.test(src) && !/onClick=\{\(\) => \{\s*closeNow\(\)\s*openAccountModal\(\)\s*\}\}/.test(src)),
+    )
+    check('fund chip: persists a FundWait when the on-ramp opens, watches it, and continues by itself', chipSrc.includes('saveFundWait(') && chipSrc.includes('useFundingArrival(') && chipSrc.includes('clearFundWait(') && chipSrc.includes("watch.status !== 'arrived'"))
+
+    // Over HTTP: public by address, shape, cache, fences.
+    try {
+      const bad = await fetch(`${BASE}/api/wallet?address=nope`)
+      check('GET /api/wallet: a non-address is 400', bad.status === 400)
+      const addr = '0x' + 'ab'.repeat(20)
+      const r1 = await fetch(`${BASE}/api/wallet?address=${addr}`)
+      const v1 = (await r1.json()) as WalletView
+      check(
+        'GET /api/wallet: 200 with one row per app chain, a gas verdict on each, address echoed',
+        r1.status === 200 && v1.address === addr && v1.chains.length === APP_CHAINS.length && v1.chains.every((c) => ['ok', 'low', 'none', 'empty'].includes(c.gas)) && Array.isArray(v1.activity),
+        JSON.stringify({ status: r1.status, chains: v1.chains?.length, failed: v1.failedChains }),
+      )
+      check('GET /api/wallet: an empty address totals $0 and names every chain as empty (or unread), never as a number it did not read', v1.totalUsd === 0 && v1.chains.every((c) => c.holdings.length === 0))
+      const r2 = await fetch(`${BASE}/api/wallet?address=${addr}`)
+      check('GET /api/wallet: the second read within the TTL is a cache hit', r1.headers.get('x-wallet-cache') === 'miss' && r2.headers.get('x-wallet-cache') === 'hit')
+      const r3 = await fetch(`${BASE}/api/wallet?address=${addr}&fresh=1`)
+      check('GET /api/wallet: fresh=1 inside the 8s gap still serves the cache (no Alchemy amplifier)', r3.headers.get('x-wallet-cache') === 'hit')
+      const b1 = await fetch(`${BASE}/api/wallet/balances?address=${addr}`)
+      const bal = (await b1.json()) as { chains: { key: string; ok: boolean; nativeEth?: number; stable?: { symbol: string } | null }[]; ethUsd: number | null }
+      check(
+        'GET /api/wallet/balances: defaults to ethereum + base, RPC rows carry nativeEth + the chain stable, an ETH price rides along',
+        b1.status === 200 && bal.chains.map((c) => c.key).join(',') === 'ethereum,base' && bal.chains.every((c) => !c.ok || (typeof c.nativeEth === 'number' && c.stable?.symbol === 'USDC')) && (bal.ethUsd === null || bal.ethUsd > 100),
+        JSON.stringify(bal),
+      )
+      const b2 = await fetch(`${BASE}/api/wallet/balances?address=${addr}&chains=robinhood`)
+      const bal2 = (await b2.json()) as { chains: { key: string; ok: boolean; stable?: { symbol: string } | null }[] }
+      check('GET /api/wallet/balances: robinhood reads USDG as the stable', b2.status === 200 && bal2.chains[0]?.key === 'robinhood' && (!bal2.chains[0].ok || bal2.chains[0].stable?.symbol === 'USDG'))
+      const b3 = await fetch(`${BASE}/api/wallet/balances?address=${addr}&chains=solana`)
+      check('GET /api/wallet/balances: an unknown chain is 400, never a guess', b3.status === 400)
+    } catch (e) {
+      check('wallet routes reachable', false, e instanceof Error ? e.message : String(e))
+    }
+  }
+
   // ── Uniswap v4 fallback: the calldata guard on the Universal Router build ─
   // The v4 layer serves the pairs v3 can't fill (Robinhood's tokenized-stock
   // pools). Everything the user signs is decoded and verified against pinned
@@ -8821,6 +8928,10 @@ async function main() {
       message: { from: '0x0', space: 'test.eth', timestamp: 1, proposal: '0x' + 'a'.repeat(64), choice: 1, reason: '', app: '', metadata: '' },
     },
   }
+  const voteResultForOwner = {
+    ...voteResult,
+    typedData: { ...voteResult.typedData, message: { ...voteResult.typedData.message, from: owner.address } },
+  }
   const voteArt = buildSignableArtifact(voteResult)
   check('tx layer: sign_vote → eip712-vote artifact', voteArt?.kind === 'eip712-vote' && voteArt.vote.proposal.title === 'Test Proposal')
   const txArt = buildSignableArtifact({ action: 'send_transaction', label: 'swap', summary: 'Swap 1 ETH→USDC', tx: { to: '0xabc', data: '0xdead', value: '1000000000000000000', chainId: 8453 } })
@@ -9221,11 +9332,16 @@ async function main() {
   check('audit: validityCheck passes a sane window', validityCheck(nowSec + 600, nowSec).ok)
 
   // Planner-artifact guard — the generic MCP passthrough (buildSignableArtifact)
-  // used to surface tool-returned calldata VERBATIM. Every drain shape refuses.
+  // used to surface tool-returned calldata VERBATIM. Every drain shape refuses,
+  // and (2026-09-08) only a first-party source may produce a signable at all.
+  const mkOrderForTrust = (protocol: string, typedData: unknown) =>
+    buildSignableArtifact({ action: 'sign_order', protocol, typedData, summary: 'o' })!
   const mkTx = (tx: Record<string, unknown>) =>
     buildSignableArtifact({ action: 'send_transaction', label: 'swap', summary: 's', tx })!
   const auditMe = owner.address
-  const pctx = { from: auditMe }
+  // First-party context: the shape rules below are defense in depth BEHIND the
+  // trust gate, so they must be exercised with a source the gate admits.
+  const pctx = { from: auditMe, source: FIRST_PARTY_MCP_SOURCE }
   const thirdPartyTransfer = mkTx({
     to: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
     data: encodeFunctionData({ abi: erc20Abi, functionName: 'transfer', args: [mallory.address as `0x${string}`, BigInt(5_000_000)] }),
@@ -9297,9 +9413,89 @@ async function main() {
     ],
   })!
   check('planner guard: one drain-shaped step poisons the whole chain', poisonedChain.kind === 'evm-tx-chain' && !guardPlannerArtifact(poisonedChain, pctx).ok)
+
+  // ── Trust gate: WHO wrote the calldata is part of the verdict ─────────────
+  // The shape rules cannot separate a hostile venue from a novel legitimate
+  // one — `approve(X, n)` + `X.call()` is byte-identical to an honest
+  // approve-then-swap. Provenance can. Only first-party (fleet) services may
+  // produce a signable artifact through the generic planner path.
+  const USDC_BASE = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913'
+  const boundedToMallory = {
+    to: USDC_BASE,
+    data: encodeFunctionData({ abi: erc20Abi, functionName: 'approve', args: [mallory.address as `0x${string}`, BigInt(500_000_000)] }),
+    value: '0',
+    chainId: 8453,
+  }
+  // The exact two-step drain the shape rules let through before this gate:
+  // a BOUNDED approve to an attacker, paired with a call to that same
+  // attacker — structurally indistinguishable from approve-then-swap.
+  const twoStepDrain = buildSignableArtifact({
+    summary: 'approve + swap',
+    steps: [
+      { action: 'send_transaction', label: 'approve', summary: 'a', tx: boundedToMallory },
+      { action: 'send_transaction', label: 'swap', summary: 'b', tx: { to: mallory.address, data: '0xdeadbeef', value: '0', chainId: 8453 } },
+    ],
+  })!
+  check(
+    'planner guard: the bounded-approve + call-the-spender drain still passes the SHAPE rules (why the trust gate exists)',
+    twoStepDrain.kind === 'evm-tx-chain' && guardPlannerArtifact(twoStepDrain, pctx).ok,
+  )
+  for (const src of ['agentic.market', 'custom', '', 'Yeetful', 'yeetful-ish']) {
+    check(
+      `planner guard: source "${src}" cannot produce a signable — REFUSED`,
+      !guardPlannerArtifact(twoStepDrain, { from: auditMe, source: src }).ok,
+    )
+  }
+  check('planner guard: MISSING source fails closed (unknown provenance = third party)', !guardPlannerArtifact(twoStepDrain, { from: auditMe }).ok)
+  check('planner guard: null source fails closed', !guardPlannerArtifact(twoStepDrain, { from: auditMe, source: null }).ok)
+  check(
+    'planner guard: the trust refusal names the native layer, never leaks calldata',
+    (() => {
+      const r = guardPlannerArtifact(twoStepDrain, { from: auditMe, source: 'agentic.market' }).reasons.join(' ')
+      return r.includes('directory service') && r.includes('native layer') && !r.includes('0xdeadbeef') && !r.includes(mallory.address)
+    })(),
+  )
+  // The gate applies to EVERY artifact kind, not just evm-tx.
+  check(
+    'planner guard: third-party CoW order refused even when the shape is perfect',
+    !guardPlannerArtifact(mkOrderForTrust('cow', { domain: { verifyingContract: GPV2_SETTLEMENT }, message: { receiver: auditMe } }), { from: auditMe, source: 'agentic.market' }).ok,
+  )
+  check(
+    'planner guard: first-party keeps the same perfect CoW order signable',
+    guardPlannerArtifact(mkOrderForTrust('cow', { domain: { verifyingContract: GPV2_SETTLEMENT }, message: { receiver: auditMe } }), pctx).ok,
+  )
+  check('planner guard: isFirstPartyMcp is exact-match only', isFirstPartyMcp(FIRST_PARTY_MCP_SOURCE) && !isFirstPartyMcp('YEETFUL') && !isFirstPartyMcp(undefined))
+
+  // ── Vote envelope: "no economic outflow" only holds if it IS a vote ───────
+  // buildVoteRequest reads primaryType from the payload and the parser passes
+  // typedData through verbatim, so the guard pins the envelope itself.
+  const mkVote = (td: Record<string, unknown>) =>
+    buildSignableArtifact({
+      action: 'sign_vote',
+      summary: 'v',
+      proposal: { id: '0x' + 'a'.repeat(64), title: 'P', type: 'single-choice', choices: ['For'], space: 'test.eth' },
+      choice: 1,
+      typedData: {
+        domain: { name: 'snapshot', version: '0.1.4' },
+        types: { Vote: [{ name: 'choice', type: 'uint32' }] },
+        message: { from: auditMe, space: 'test.eth', timestamp: 1, proposal: '0x' + 'a'.repeat(64), choice: 1, reason: '', app: '', metadata: '' },
+        ...td,
+      },
+    })!
+  check('planner guard: an honest Snapshot vote passes', guardPlannerArtifact(mkVote({}), pctx).ok)
+  check(
+    'planner guard: a Permit struct smuggled beside Vote REFUSES',
+    !guardPlannerArtifact(mkVote({ types: { Vote: [{ name: 'choice', type: 'uint32' }], Permit: [{ name: 'spender', type: 'address' }] } }), pctx).ok,
+  )
+  check('planner guard: primaryType ≠ Vote REFUSES', !guardPlannerArtifact(mkVote({ primaryType: 'Permit' }), pctx).ok)
+  check(
+    'planner guard: an on-chain domain on a "vote" REFUSES (Snapshot signs off-chain)',
+    !guardPlannerArtifact(mkVote({ domain: { name: 'snapshot', version: '0.1.4', chainId: 1, verifyingContract: PERMIT2_ADDRESS } }), pctx).ok,
+  )
+  check('planner guard: a vote cast as someone else REFUSES', !guardPlannerArtifact(mkVote({ message: { from: mallory.address, choice: 1 } }), pctx).ok)
   // Generic EIP-712 orders: only a CoW order verifying against the pinned
   // settlement contract and paying the signer survives the passthrough.
-  const mkOrder = (protocol: string, typedData: unknown) => buildSignableArtifact({ action: 'sign_order', protocol, typedData, summary: 'o' })!
+  const mkOrder = mkOrderForTrust
   check('planner guard: generic non-CoW order REFUSES', !guardPlannerArtifact(mkOrder('mystery', { domain: {}, message: {} }), pctx).ok)
   check(
     'planner guard: CoW order against a fake settlement contract REFUSES',
@@ -9313,9 +9509,15 @@ async function main() {
     'planner guard: pinned CoW order paying the signer passes',
     guardPlannerArtifact(mkOrder('cow', { domain: { verifyingContract: GPV2_SETTLEMENT }, message: { receiver: auditMe } }), pctx).ok,
   )
+  // Votes carry no economic outflow — but the exemption is now on the ENVELOPE,
+  // not on the label. This fixture casts `from: '0x0'`, i.e. a vote in someone
+  // else's name, which the guard refuses; the same payload cast as the signer
+  // (voteArtForOwner) passes. Both directions pinned so neither can drift.
+  const voteArtForOwner = buildSignableArtifact(voteResultForOwner)
   check(
-    'planner guard: votes pass (no economic outflow)',
-    voteArt !== null && guardPlannerArtifact(voteArt, pctx).ok,
+    'planner guard: a vote cast in another name REFUSES, the same vote cast as the signer passes',
+    voteArt !== null && !guardPlannerArtifact(voteArt, pctx).ok &&
+      voteArtForOwner !== null && guardPlannerArtifact(voteArtForOwner, { from: owner.address, source: FIRST_PARTY_MCP_SOURCE }).ok,
   )
 
   // /api/cow/quote refusal shape: a blocked build must withhold the RAW order
@@ -10466,11 +10668,23 @@ async function main() {
   const artDec = await routeMessage({
     message: 'vote For on proposal X',
     catalog: [claudeSrv],
-    endpoints: [{ id: 'ep-vote', serverSlug: 'snap', serverName: 'Snapshot', method: 'POST', url: 'https://snap.test/vote', description: 'prepare a vote', priceUsd: '0.01', parameters: [{ group: 'body', name: 'choice', required: true }] }],
+    endpoints: [{ id: 'ep-vote', serverSlug: 'snap', serverName: 'Snapshot', serverSource: FIRST_PARTY_MCP_SOURCE, method: 'POST', url: 'https://snap.test/vote', description: 'prepare a vote', priceUsd: '0.01', parameters: [{ group: 'body', name: 'choice', required: true }] }],
+    userAddress: owner.address,
     runInference: async () => ({ text: JSON.stringify({ intent: 'vote', needs: [], picks: [{ endpointId: 'ep-vote', params: { choice: 1 }, reason: 'prepare the vote', score: 0.9 }] }) }),
-    executeCall: async () => ({ data: voteResult }),
+    executeCall: async () => ({ data: voteResultForOwner }),
   })
   check('router loop: a tool-returned vote becomes decision.artifact', artDec.artifact?.kind === 'eip712-vote')
+  // Same loop, same shape, a DIRECTORY service: the trust gate refuses before
+  // the vote envelope is even inspected — no artifact reaches the caller.
+  const artDecUntrusted = await routeMessage({
+    message: 'vote For on proposal X',
+    catalog: [claudeSrv],
+    endpoints: [{ id: 'ep-vote', serverSlug: 'snap', serverName: 'Snapshot', serverSource: 'agentic.market', method: 'POST', url: 'https://snap.test/vote', description: 'prepare a vote', priceUsd: '0.01', parameters: [{ group: 'body', name: 'choice', required: true }] }],
+    userAddress: owner.address,
+    runInference: async () => ({ text: JSON.stringify({ intent: 'vote', needs: [], picks: [{ endpointId: 'ep-vote', params: { choice: 1 }, reason: 'prepare the vote', score: 0.9 }] }) }),
+    executeCall: async () => ({ data: voteResultForOwner }),
+  })
+  check('router loop: a DIRECTORY service’s vote never becomes an artifact', artDecUntrusted.artifact === undefined || artDecUntrusted.artifact === null)
 
   // B10 — retrieve→plan shortlist: narrow the catalog by relevance so the model
   // reliably picks. (Pure ranking, no DB/spend.)

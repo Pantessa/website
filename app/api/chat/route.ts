@@ -5366,7 +5366,7 @@ async function runWithBurner(
               // generic drain-shape guard before anything reaches a sign
               // button (third-party transfers, unlimited approvals, operator
               // grants, unknown chains, non-CoW generic orders all refuse).
-              const verdict = guardPlannerArtifact(art, { from: userAddress ?? null })
+              const verdict = guardPlannerArtifact(art, { from: userAddress ?? null, source: ep.serverSource })
               if (!verdict.ok) {
                 notes.push(`Refused a ${ep.serverName} transaction that failed Pantessa's guardrails.`)
                 contextBlocks.push(
