@@ -64,6 +64,8 @@ export interface SmartPick {
   endpointId: string
   serverSlug: string
   serverName: string
+  /** Provenance, carried for the planner-artifact trust gate. */
+  serverSource?: string | null
   endpointUrl: string
   request: SmartRequest
   priceUsd: string
@@ -556,6 +558,7 @@ export async function routeMessage(opts: RouteOptions): Promise<RouterDecision> 
       role: 'smart',
       endpointId: ep.id,
       serverSlug: ep.serverSlug,
+      serverSource: ep.serverSource,
       serverName: ep.serverName,
       endpointUrl: ep.url,
       request: built.request,
@@ -695,7 +698,7 @@ export async function routeMessage(opts: RouteOptions): Promise<RouterDecision> 
           // approvals, operator grants, off-chain-registry chains all refuse).
           const art = buildSignableArtifact(res.data)
           if (art) {
-            const verdict = guardPlannerArtifact(art, { from: opts.userAddress ?? null })
+            const verdict = guardPlannerArtifact(art, { from: opts.userAddress ?? null, source: sp.serverSource })
             if (!verdict.ok) {
               addNote(`Refused a ${sp.serverName} transaction that failed Pantessa's guardrails: ${verdict.reasons.join(' ')}`, 'warn')
               context.push(
