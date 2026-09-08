@@ -2587,7 +2587,7 @@ async function main() {
     // rendered page.
     const homeForTiles = await (await fetch(`${BASE}/`)).text()
     const nightTasks = [...homeForTiles.matchAll(/night__task[^>]*>“([^”]+)” →/g)].map((m) => m[1].replace(/<!-- -->/g, ''))
-    const nightHrefs = [...homeForTiles.matchAll(/href="\/chat\?[^"]*prompt=([^"&]+)"[^>]*class="night__tile"/g)].map((m) => decodeURIComponent(m[1].replace(/&amp;/g, '&')))
+    const nightHrefs = [...homeForTiles.matchAll(/<a[^>]*class="night__tile"[^>]*href="\/chat\?[^"]*prompt=([^"&]+)"/g)].map((m) => decodeURIComponent(m[1].replace(/&amp;/g, '&')))
     check(
       'landing tiles: every NightShift tile displays exactly the ask its href sends',
       nightTasks.length >= 4 && nightHrefs.length === nightTasks.length && nightTasks.every((t, i) => nightHrefs[i].replace(/−/g, '-') === t.replace(/−/g, '-')),
@@ -2607,6 +2607,28 @@ async function main() {
       table: linksFs.readFileSync('components/LinkFunnelTable.tsx', 'utf8'),
       earnings: linksFs.readFileSync('components/LinkEarningsPanel.tsx', 'utf8'),
     }
+    // LINKS C/E (squad gtm 2026-09-08): the Decline verb was splash-only, so
+    // a recipient whose wallet auto-started (or who had already built) had
+    // no way to say no; the studio table listed expired / sign-capped links
+    // like live ones and kept offering "tweet"; the rail's bottom seat kept
+    // "Name your page →" after a claim. Source-level pins — the browser
+    // drives are in links.md.
+    const runtimeSrc = linksFs.readFileSync('components/IntentRuntime.tsx', 'utf8')
+    check(
+      'decline verb: rendered in the started view too (header chip), not only on the splash',
+      (runtimeSrc.match(/recipient && address\?\.toLowerCase\(\) === recipient && !signed && !declined/g) || []).length >= 2 && /data-decline-verb/.test(runtimeSrc),
+    )
+    const tableSrc = linksFs.readFileSync('components/LinkFunnelTable.tsx', 'utf8')
+    check(
+      'studio table: expired / capped rows wear the state pill (linkLifecycle, the /i rule) and hide the tweet CTA',
+      /linkLifecycle\(\{ revoked: false, expiresAt: l\.expiresAt, maxSigns: l\.maxSigns \}, l\.signsCount\)/.test(tableSrc) && /data-link-row-state=\{state\}/.test(tableSrc) && /\{state === 'live' && \(\s*<a/.test(tableSrc),
+    )
+    const railSeatSrc = linksFs.readFileSync('components/LinksRailTab.tsx', 'utf8')
+    const creatorPageSrc = linksFs.readFileSync('lib/creator-page.tsx', 'utf8')
+    check(
+      'rail seat: the handle re-reads on links-changed, and useCreatorPage notifies on claim / brand / colors / remove',
+      /useLinksChanged\(fetchHandle\)/.test(railSeatSrc) && (creatorPageSrc.match(/notifyLinksChanged\(\)/g) || []).length >= 4 && /useLinksChanged\(load\)/.test(creatorPageSrc),
+    )
     check(
       'journey strip: mint / revoke / claim notify lib/links-changed and both the links hook + the journey hook subscribe',
       /useLinksChanged\(reload\)/.test(linksChangedSrc.hookLinks) &&
@@ -3295,6 +3317,30 @@ async function main() {
       !!v0 && !!v1 && v0.ask === 'Buy $12 of TSLA' && v0.open === 1 && v1.open === 1 && v1.signed === 1,
     )
     check('variants: the aggregate funnel still counts every open (junk-variant row included)', !!abRow && abRow.funnel.open === 3)
+    // LINKS G (squad gtm 2026-09-08): the creator previewing their own link
+    // is not an arrival — open/connect/built beacons carrying the creator's
+    // own session are acknowledged and dropped; the funnel stays at 3.
+    const ownOpen = await fetch(`${BASE}/api/intent-links/${abLink.slug}/events`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie: mallorySession },
+      body: JSON.stringify({ kind: 'open' }),
+    })
+    const ownOpenBody = (await ownOpen.json()) as { ok?: boolean; own?: boolean }
+    const abListAfterOwn = (await (await fetch(`${BASE}/api/intent-links`, { headers: { cookie: mallorySession } })).json()) as {
+      links: Array<{ slug: string; funnel: { open: number } }>
+    }
+    check(
+      "creator's own visit: an open beacon carrying the creator's session is acknowledged (ok, own) and never counted",
+      ownOpen.status === 200 && ownOpenBody.ok === true && ownOpenBody.own === true && abListAfterOwn.links.find((l) => l.slug === abLink.slug)?.funnel.open === 3,
+      JSON.stringify(ownOpenBody),
+    )
+    // …and the page tells the creator so (a session peek, never a signature).
+    const ownPage = await (await fetch(`${BASE}/i/${abLink.slug}`, { headers: { cookie: mallorySession } })).text()
+    const strangerPage = await (await fetch(`${BASE}/i/${abLink.slug}`)).text()
+    check(
+      "creator's own visit: /i wears the 'Your link — a preview' cue for the creator only",
+      /data-own-link/.test(ownPage) && /Your link/.test(ownPage) && !/data-own-link/.test(strangerPage),
+    )
     const abPage = await fetch(`${BASE}/i/${abLink.slug}`)
     const abHtml = flat(await abPage.text())
     const phrasings = ['Buy $12 of TSLA', 'Own a slice of Tesla for $12', 'Put $12 into Tesla stock', 'A fourth phrasing that fits']

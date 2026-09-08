@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import prisma from '@/lib/db'
+import { getSessionAddress } from '@/lib/auth'
 import { EVENT_KINDS, INTENT_SLUG_RE, type IntentEventKind } from '@/lib/intent-links'
 import { fireIntentWebhook } from '@/lib/broker-exec'
 import { isInternalRun } from '@/lib/internal-run'
@@ -38,9 +39,21 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ slu
   const kind = body.kind as IntentEventKind
   if (!EVENT_KINDS.includes(kind)) return NextResponse.json({ error: 'Bad kind.' }, { status: 400 })
 
-  const link = await prisma.intentLink.findUnique({ where: { id: slug }, select: { id: true, revoked: true, expiresAt: true } })
+  const link = await prisma.intentLink.findUnique({ where: { id: slug }, select: { id: true, revoked: true, expiresAt: true, creator: true } })
   if (!link || link.revoked) return NextResponse.json({ error: 'Unknown link.' }, { status: 404 })
   if (link.expiresAt && link.expiresAt.getTime() <= Date.now()) return NextResponse.json({ error: 'Link expired.' }, { status: 404 })
+
+  // The creator opening their own link is a preview, not an arrival: their
+  // funnel-only beacons (open / connect / built) are acknowledged and
+  // dropped, so testing a link ten times never reads as "10 opens, 0
+  // signed". A signed/settled event from the creator is real money and is
+  // stored + verified like any other (squad gtm 2026-09-08, LINKS G).
+  // Session peek only — never a signature (rule 6).
+  const decisiveKind = kind === 'signed' || kind === 'settled'
+  if (!decisiveKind && link.creator) {
+    const viewer = await getSessionAddress().catch(() => null)
+    if (viewer && viewer.toLowerCase() === link.creator.toLowerCase()) return NextResponse.json({ ok: true, own: true })
+  }
 
   const wallet = typeof body.wallet === 'string' && /^0x[0-9a-fA-F]{40}$/.test(body.wallet) ? body.wallet.toLowerCase() : null
   const valueUsd =

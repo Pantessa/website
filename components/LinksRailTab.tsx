@@ -8,7 +8,7 @@
 // surface (#553: connect to act, sign in to KEEP), so the tab gates on the
 // SIWE session and offers the sign-in, mirroring the Chats tab's door.
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { Check, Copy, ExternalLink, Plus, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -18,6 +18,7 @@ import { useSession } from '@/lib/session'
 import { useIntentLinks, type LinkRow } from '@/lib/intent-links-ui'
 import { dismissOnboarding, onboardingDismissed, useOnboardingStatus, type OnboardingStatus } from '@/lib/onboarding'
 import MintLinkModal from '@/components/MintLinkModal'
+import { useLinksChanged } from '@/lib/links-changed'
 import CreatorPageModal from '@/components/CreatorPageModal'
 import { LivePill } from '@/components/LivePill'
 import { absoluteUrl } from '@/lib/site-url'
@@ -140,12 +141,16 @@ function SignedInLinks({ activeSlugs }: { activeSlugs: string[] }) {
   const [copied, setCopied] = useState<string | null>(null)
   const [handle, setHandle] = useState<string | null>(null)
 
-  const fetchHandle = () => {
+  const fetchHandle = useCallback(() => {
     void fetch('/api/intent-links/handle', { cache: 'no-store' })
       .then((r) => (r.ok ? r.json() : null))
       .then((d: { handle: string | null } | null) => setHandle(d?.handle ?? null))
       .catch(() => {})
-  }
+  }, [])
+  // A claim / rename / release on the studio's panel (its own hook copy)
+  // used to leave this seat on "Name your page →" until a reload — the
+  // squad drive caught it right after a claim (2026-09-08).
+  useLinksChanged(fetchHandle)
   useEffect(() => {
     setJourneyDismissed(onboardingDismissed())
     fetchHandle()
@@ -276,11 +281,14 @@ function SignedInLinks({ activeSlugs }: { activeSlugs: string[] }) {
             Name your page → one branded page for every link
           </button>
         )}
-        <div className="flex items-center justify-between gap-2">
+        {/* flex-wrap: the seat is ~230px wide and the live pill ~170px — side
+            by side the sentence wrapped one word per line beside the pill;
+            now the pill drops under it when both can't fit. */}
+        <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1">
           <button
             type="button"
             onClick={() => setMainView('links')}
-            className="flex-1 min-w-0 text-left text-[10px] text-[color:var(--muted-2)] hover:text-[color:var(--muted)] transition-colors"
+            className="flex-1 min-w-[9rem] text-left text-[10px] text-[color:var(--muted-2)] hover:text-[color:var(--muted)] transition-colors"
           >
             Funnels, branding{earnings && earnings.totalEarnedUsd > 0 ? ', earnings' : ''} → your links
           </button>

@@ -7,6 +7,7 @@ import LinkRetired from '@/components/LinkRetired'
 import { notifyEligible } from '@/lib/broker-webhook'
 import { MANDATE_KIND_LABELS, type MandateKind } from '@/lib/roster-client'
 import IntentRuntime from '@/components/IntentRuntime'
+import { getSessionAddress } from '@/lib/auth'
 
 // /i/<slug> — an intent link's runtime. The link row carries the ASK (a
 // sentence, sanitized at mint) + the composed MCP set + an optional
@@ -139,6 +140,11 @@ export default async function IntentLinkPage({ params }: Params) {
   // converts. Metadata above stays on the base ask (stable OG card).
   const phrasings = [link.ask, ...link.variants]
   const variant = Math.floor(Math.random() * phrasings.length)
+  // The creator previewing their own link: a session peek (never a
+  // signature) so the page can say so — their visits don't count in the
+  // funnel (events route) and the copy shouldn't sell them their own call.
+  const viewer = link.creator ? await getSessionAddress().catch(() => null) : null
+  const ownLink = !!viewer && !!link.creator && viewer.toLowerCase() === link.creator.toLowerCase()
   return (
     <IntentRuntime
       slug={link.id}
@@ -154,6 +160,7 @@ export default async function IntentLinkPage({ params }: Params) {
       notify={notify}
       roster={roster}
       recipient={link.recipient ?? null}
+      ownLink={ownLink}
     />
   )
 }

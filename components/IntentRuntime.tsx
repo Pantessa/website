@@ -73,6 +73,7 @@ export default function IntentRuntime({
   notify = null,
   roster = null,
   recipient = null,
+  ownLink = false,
 }: {
   slug: string
   ask: string
@@ -104,6 +105,10 @@ export default function IntentRuntime({
   /** The wallet this card is ADDRESSED to (M5), lowercased — lights the
    *  Decline verb for exactly that wallet (doors run). Null = plain link. */
   recipient?: string | null
+  /** The signed-in viewer minted this link — say so, and say that these
+   *  visits don't count in its funnel (server-side skip in the events
+   *  route). Preview, not arrival. */
+  ownLink?: boolean
 }) {
   const { address, isConnected, status: walletStatus } = useAccount()
   const { openConnectModal } = useConnectModal()
@@ -403,6 +408,11 @@ export default function IntentRuntime({
               </>
             )}
           </div>
+          {ownLink && (
+            <p className="mb-6 mono text-[11px] uppercase tracking-widest text-[color:var(--muted-2)]" data-own-link>
+              Your link — a preview; visits from this wallet don&rsquo;t count in its funnel
+            </p>
+          )}
           {/* THE ROSTER (R2): the slot badge — which mandate is speaking.
               DB-stored canonical text only (threat T2). */}
           {roster && (
@@ -632,6 +642,26 @@ export default function IntentRuntime({
                 >
                   Return to {redirectHost} <ArrowRight className="w-3.5 h-3.5" />
                 </a>
+              )}
+              {/* The Decline verb again, past the splash: an auto-started or
+                  already-built addressed card still owes its recipient a
+                  real "no" (the splash button never shows once started). */}
+              {recipient && address?.toLowerCase() === recipient && !signed && !declined && (
+                <button
+                  type="button"
+                  onClick={() => void runDecline()}
+                  disabled={declining}
+                  title='Decline this card — the sender sees "declined", not silence'
+                  className={`${chipClass} hover:!text-[color:var(--fail)] disabled:opacity-50`}
+                  data-decline-verb
+                >
+                  {declining ? 'DECLINING…' : 'DECLINE'}
+                </button>
+              )}
+              {declined && (
+                <span className="mono text-[11px] text-[color:var(--muted)]" data-declined>
+                  DECLINED — the sender was told
+                </span>
               )}
               {/* Share this run — the owner-gated chat share (renders once
                   the visitor's link chat persists). */}

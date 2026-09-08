@@ -12,6 +12,8 @@
 // refusal copy the API returns.
 
 import { useCallback, useEffect, useState } from 'react'
+
+import { notifyLinksChanged, useLinksChanged } from '@/lib/links-changed'
 import type { Brand } from '@/lib/intent-links-ui'
 import { sampleBrandColors } from '@/lib/brand-sample'
 
@@ -50,15 +52,21 @@ export function useCreatorPage(): CreatorPageState {
   const [ogNonce, setOgNonce] = useState(0)
   const [palette, setPalette] = useState<string[]>([])
 
-  useEffect(() => {
+  const load = useCallback(() => {
     void fetch('/api/intent-links/handle', { cache: 'no-store' })
       .then((r) => (r.ok ? r.json() : null))
       .then((d: { handle: string | null; brand?: Brand | null } | null) => {
-        if (d?.handle) setMyHandle(d.handle)
+        setMyHandle(d?.handle ?? null)
         setBrand(d?.brand ?? null)
       })
       .catch(() => {})
   }, [])
+  useEffect(() => {
+    load()
+  }, [load])
+  // The rail's modal and the studio's panel are two copies of this hook —
+  // a claim / brand change on one re-reads the other (lib/links-changed).
+  useLinksChanged(load)
 
   const claim = useCallback(async (handle: string) => {
     const next = handle.trim()
@@ -79,6 +87,7 @@ export function useCreatorPage(): CreatorPageState {
       setMyHandle(data.handle ?? null)
       setHandleMsg(null)
       setOgNonce((n) => n + 1)
+      notifyLinksChanged()
       return true
     } finally {
       setClaiming(false)
@@ -133,6 +142,7 @@ export function useCreatorPage(): CreatorPageState {
       setBrand(b)
       setPalette(swatches)
       setOgNonce((n) => n + 1)
+      notifyLinksChanged()
       return true
     } finally {
       setBranding(false)
@@ -153,6 +163,7 @@ export function useCreatorPage(): CreatorPageState {
     }
     if (data.brand) setBrand(data.brand)
     setOgNonce((n) => n + 1)
+    notifyLinksChanged()
     return true
   }, [])
 
@@ -162,6 +173,7 @@ export function useCreatorPage(): CreatorPageState {
     setPalette([])
     setBrandMsg(null)
     setOgNonce((n) => n + 1)
+    notifyLinksChanged()
   }, [])
 
   const clearBrandMsg = useCallback(() => setBrandMsg(null), [])

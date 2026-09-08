@@ -13,6 +13,7 @@ import { Check, Copy, Link2 } from 'lucide-react'
 import { formatEarnedUsd } from '@/lib/fees'
 import type { LinkRow } from '@/lib/intent-links-ui'
 import { absoluteUrl } from '@/lib/site-url'
+import { linkLifecycle } from '@/lib/intent-links'
 import { notifyLinksChanged } from '@/lib/links-changed'
 
 export function LinkFunnelTable({ links, onChanged }: { links: LinkRow[]; onChanged?: () => void }) {
@@ -48,7 +49,12 @@ export function LinkFunnelTable({ links, onChanged }: { links: LinkRow[]; onChan
           </tr>
         </thead>
         <tbody>
-          {rows.map((l) => (
+          {rows.map((l) => {
+            // An expired or sign-capped link renders the retired page to
+            // visitors — the row said nothing and kept offering "tweet"
+            // (squad gtm 2026-09-08, LINKS E). Same rule as the /i page.
+            const state = linkLifecycle({ revoked: false, expiresAt: l.expiresAt, maxSigns: l.maxSigns }, l.signsCount)
+            return (
             <tr key={l.slug} className="border-t border-[var(--line)]">
               {/* w-full + max-w-0: in an auto-layout table a cell grows to its
                   content, so the ask cell never truncated and a long ask pushed
@@ -73,6 +79,15 @@ export function LinkFunnelTable({ links, onChanged }: { links: LinkRow[]; onChan
                   {l.redirectUrl && (
                     <span title={`Returns to ${l.redirectUrl}`} className="flex-shrink-0">
                       <Link2 className="w-3 h-3 text-[color:var(--muted-2)]" />
+                    </span>
+                  )}
+                  {state !== 'live' && (
+                    <span
+                      className="flex-shrink-0 mono text-[9.5px] uppercase tracking-widest rounded-full border border-amber-400/40 text-amber-400 px-1.5 py-px"
+                      title={state === 'expired' ? 'Past its expiry — visitors see the retired page' : 'Sign cap reached — visitors see the retired page'}
+                      data-link-row-state={state}
+                    >
+                      {state}
                     </span>
                   )}
                 </div>
@@ -118,6 +133,7 @@ export function LinkFunnelTable({ links, onChanged }: { links: LinkRow[]; onChan
                 {l.earnedUsd > 0 ? formatEarnedUsd(l.earnedUsd) : '—'}
               </td>
               <td className="py-2.5 text-right whitespace-nowrap">
+                {state === 'live' && (
                 <a
                   href={`https://twitter.com/intent/tweet?text=${encodeURIComponent(`“${l.ask}” — tap it, connect your wallet, done.`)}&url=${encodeURIComponent(absoluteUrl(`/i/${l.slug}`))}`}
                   target="_blank"
@@ -127,6 +143,7 @@ export function LinkFunnelTable({ links, onChanged }: { links: LinkRow[]; onChan
                 >
                   tweet
                 </a>
+                )}
                 <button
                   type="button"
                   title="Revoke — the link comes down everywhere; the money it already earned stays yours"
@@ -155,7 +172,8 @@ export function LinkFunnelTable({ links, onChanged }: { links: LinkRow[]; onChan
                 </button>
               </td>
             </tr>
-          ))}
+            )
+          })}
         </tbody>
       </table>
     </div>
