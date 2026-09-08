@@ -1514,6 +1514,31 @@ async function main() {
       prose.length === 0 && sampleSrc.includes('Pantessa · Claude'),
       prose.slice(0, 3).join(' | '),
     )
+    // The Q-2 twins (squad 2026-09-08, MOBILE's find on the planner
+    // diagnostics line + QA's sweep): the router's no-engine warn note, the
+    // house-model service's own display name, the two spend-wall replies that
+    // interpolate `inference.name` raw (a frozen catalog row reads
+    // "Yeetful · Claude" — it must pass through cleanServerName), and the
+    // /docs/snapshot prose. Only the data rows and slugs keep the old word.
+    const routerSrc = await readFile(new URL('../lib/router.ts', import.meta.url), 'utf8')
+    const snapshotDocSrc = await readFile(new URL('../app/docs/snapshot/page.tsx', import.meta.url), 'utf8')
+    const twins = [
+      ...routerSrc.matchAll(/Yeetful · [A-Za-z]+/g),
+      ...snapshotDocSrc.matchAll(/Yeetful · [A-Za-z]+/g),
+      ...chatRouteSrc.matchAll(/name: 'Yeetful · [^']+'/g),
+      ...chatRouteSrc.matchAll(/blocked the inference call \(\$\{inference\.name\}/g),
+    ].map((m) => m[0])
+    check(
+      'brand: the router warn note, the house engine name, the spend-wall replies and /docs/snapshot never print the frozen data name',
+      twins.length === 0 && chatRouteSrc.includes("name: 'Pantessa · House (free)'") && /blocked the inference call \(\$\{cleanServerName\(inference\.name\)\}/.test(chatRouteSrc),
+      twins.slice(0, 3).join(' | '),
+    )
+    const snapshotDocHtml = await (await fetch(`${BASE}/docs/snapshot`)).text()
+    check(
+      'brand: /docs/snapshot names the paid MCP as Pantessa · Snapshot, never Yeetful ·',
+      !/Yeetful\s+·/.test(snapshotDocHtml) && snapshotDocHtml.includes('Pantessa · Snapshot'),
+      (snapshotDocHtml.match(/Yeetful\s+·[^<]{0,20}/g) ?? []).slice(0, 2).join(' | '),
+    )
   }
   // The live host-app example (robinhood.pantessa.com, our own interface on
   // our own domain — rule 7) must be reachable from the landing's host

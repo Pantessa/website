@@ -133,6 +133,7 @@ import { buildUniswapSwap, NoV3PoolError } from '@/lib/uniswap-venue'
 import { buildUniswapV4Swap, NoV4PoolError, GatedV4PoolError } from '@/lib/uniswap-v4'
 import { buildLifiSwap, NoLifiRouteError } from '@/lib/lifi-venue'
 import { fundChipFor, ONRAMP_NETWORK_LABEL } from '@/lib/onramp'
+import { cleanServerName } from '@/lib/utils'
 import { fundingSourceSymbols, GAS_TOPUP_ETH, minLegNote, offChainStableSource, valueLegUsd, parseRhFundingFollowUp, planDownsizedRobinhoodBuy, planRobinhoodFundingAdvice, readFundingShortfall, rhFundingPending, robinhoodBuyNeedUsd, ROBINHOOD_CHAIN_ID } from '@/lib/lifi-bridge'
 import { describeInflightDeposit, inflightPendingData } from '@/lib/inflight-funding'
 import { resolveToken, tokenDecimals, humanToAtoms } from '@/lib/cow'
@@ -4880,7 +4881,7 @@ async function planWalletPayments(
   )
   if (infViolation) {
     return NextResponse.json({
-      reply: `🚫 Your spend policy blocked the inference call (${inference.name}: ${infViolation}). Adjust it on your **Dashboard** and try again.`,
+      reply: `🚫 Your spend policy blocked the inference call (${cleanServerName(inference.name)}: ${infViolation}). Adjust it on your **Dashboard** and try again.`,
       blocked: true,
       notes,
     })
@@ -5367,7 +5368,7 @@ async function runWithBurner(
       await recordLedger({ grantId: grant.id, orgId: grant.orgId ?? undefined, host: infHost, serviceName: inference.name, amountUsd: 0, ok: false, note: violation })
       const also = blocked.length ? ` Also blocked: ${blocked.join(', ')}.` : ''
       return NextResponse.json({
-        reply: `🚫 Your spend grant blocked the inference call (${inference.name}: ${violation}).${also} Approve the agent on your **Dashboard** (or raise the caps) and try again.`,
+        reply: `🚫 Your spend grant blocked the inference call (${cleanServerName(inference.name)}: ${violation}).${also} Approve the agent on your **Dashboard** (or raise the caps) and try again.`,
         receipts,
         blocked: true,
       })
@@ -6026,7 +6027,7 @@ const HOUSE_INFERENCE_SLUG = 'yeetful-house'
 const HOUSE_INFERENCE = {
   id: HOUSE_INFERENCE_SLUG,
   slug: HOUSE_INFERENCE_SLUG,
-  name: 'Yeetful · House (free)',
+  name: 'Pantessa · House (free)',
   description: 'House synthesis on the planner key — free preview when no inference agent is selected.',
   category: 'Inference',
   kind: 'inference',
