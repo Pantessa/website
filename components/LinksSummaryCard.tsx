@@ -2,7 +2,8 @@
 
 // Dashboard Overview · the links-first headline card: your link economy at a
 // glance — links live, opens, conversions, dollars moved, and what you've
-// earned (half the 0.20% fee on fee-bearing conversions) — plus the links
+// earned (the creator's half of the link-tier fee on fee-bearing conversions,
+// LINK_FEE_PCT from lib/fees) — plus the links
 // themselves as a paginated copy-paste table (newest first, one tap to put
 // the full /i URL on the clipboard). Reads the same owner API as
 // the links studio, so the numbers can't drift. Fail-soft: any fetch

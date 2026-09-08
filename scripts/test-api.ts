@@ -2604,7 +2604,13 @@ async function main() {
     // rendered page.
     const homeForTiles = await (await fetch(`${BASE}/`)).text()
     const nightTasks = [...homeForTiles.matchAll(/night__task[^>]*>“([^”]+)” →/g)].map((m) => m[1].replace(/<!-- -->/g, ''))
-    const nightHrefs = [...homeForTiles.matchAll(/<a[^>]*class="night__tile"[^>]*href="\/chat\?[^"]*prompt=([^"&]+)"/g)].map((m) => decodeURIComponent(m[1].replace(/&amp;/g, '&')))
+    // Attribute order is the renderer's, not ours (Next has served both
+    // `href … class` and `class … href` for this <Link>): match the tile's
+    // <a> tag as a whole, then read `href` from inside it.
+    const nightHrefs = [...homeForTiles.matchAll(/<a\b[^>]*\bclass="[^"]*\bnight__tile\b[^"]*"[^>]*>/g)]
+      .map((m) => m[0].match(/\bhref="\/chat\?[^"]*prompt=([^"&]+)"/)?.[1] ?? null)
+      .filter((h): h is string => h !== null)
+      .map((h) => decodeURIComponent(h.replace(/&amp;/g, '&')))
     check(
       'landing tiles: every NightShift tile displays exactly the ask its href sends',
       nightTasks.length >= 4 && nightHrefs.length === nightTasks.length && nightTasks.every((t, i) => nightHrefs[i].replace(/−/g, '-') === t.replace(/−/g, '-')),
@@ -2791,12 +2797,50 @@ async function main() {
       'storefront: a taken handle refuses (409) and points at the live page',
       hSteal.status === 409 && hStealBody.url === '/l/harness-store',
     )
-    // Claimed pages are LISTED — /links shows every /l/<handle> storefront,
-    // so a page stays findable after the claim.
-    const listedHtml = flat(await (await fetch(`${BASE}/links`)).text())
+    // Claimed pages are LISTED — /links shows the /l/<handle> storefronts
+    // under "Creator pages" — but the listing is FENCED like the
+    // recently-minted tab (#699): a handle rides only while its creator
+    // holds a live link that is not an internal (harness/drill) mint. This
+    // suite's every mint is stamped internal by the fetch wrapper, so the
+    // page it just claimed must NOT be on the board (until 2026-09-08 it was,
+    // and so was every drill handle on prod — SECURITY r2). The page itself
+    // still renders at /l/<handle> (the pin below).
+    const fencedHtml = flat(await (await fetch(`${BASE}/links`)).text())
     check(
-      'storefront: /links lists the claimed page under Creator pages',
-      listedHtml.includes('Creator pages') && listedHtml.includes('/l/harness-store') && listedHtml.includes('@harness-store'),
+      'storefront: a handle whose creator holds only internal mints is NOT listed under Creator pages',
+      !fencedHtml.includes('/l/harness-store') && !fencedHtml.includes('@harness-store'),
+    )
+    // …and fenced, not broken: one ORGANIC live link lists it; revoking that
+    // link delists it again. Same fixture discipline as the recent-tab pin —
+    // written straight to the table, deleted (never revoked-and-left).
+    if (process.env.DATABASE_URL) {
+      const storeFixtureId = `fixt-store-${Math.random().toString(36).slice(2, 8)}`
+      await prisma.intentLink.create({
+        data: { id: storeFixtureId, ask: `Swap $3 of ETH to USDC — storefront fixture ${storeFixtureId}`, creator: mallory.address.toLowerCase(), isInternal: false },
+      })
+      const listedHtml = flat(await (await fetch(`${BASE}/links`)).text())
+      const listedApi = (await (await fetch(`${BASE}/api/links/board?fresh=1`)).json()) as { pages?: { handle: string }[] }
+      await prisma.intentLink.update({ where: { id: storeFixtureId }, data: { revoked: true } })
+      const delistedHtml = flat(await (await fetch(`${BASE}/links`)).text())
+      await prisma.intentLink.deleteMany({ where: { id: storeFixtureId } })
+      check(
+        'storefront: one organic live link lists the claimed page under Creator pages (/links + /api/links/board)',
+        listedHtml.includes('Creator pages') && listedHtml.includes('/l/harness-store') && listedHtml.includes('@harness-store') &&
+          (listedApi.pages ?? []).some((p) => p.handle === 'harness-store'),
+      )
+      check('storefront: revoking the only organic link delists the page again', !delistedHtml.includes('/l/harness-store'))
+      check('storefront: listing fixture released', (await prisma.intentLink.count({ where: { id: storeFixtureId } })) === 0)
+    } else {
+      check('storefront: organic listing round-trip skipped — no DATABASE_URL for the harness process', true)
+    }
+    // The sitemap reads the SAME fenced set (source pin — sitemap.ts is ISR,
+    // re-rendered hourly, so an HTTP round-trip can't see a claim land; the
+    // shared helper is what keeps a crawler from ever seeing a drill handle).
+    const sitemapSrc = (await import('node:fs')).readFileSync('app/sitemap.ts', 'utf8')
+    const sitemapXmlNow = await (await fetch(`${BASE}/sitemap.xml`)).text()
+    check(
+      'sitemap: creator pages come from publicCreatorHandles (the fenced set), never a raw creator_handles read; the harness handle is never listed',
+      sitemapSrc.includes('publicCreatorHandles()') && !sitemapSrc.includes('creatorHandle.findMany') && !sitemapXmlNow.includes('/l/harness-store'),
     )
     const storeHtml = flat(await (await fetch(`${BASE}/l/harness-store`)).text())
     check(

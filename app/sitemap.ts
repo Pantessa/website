@@ -2,6 +2,7 @@ import type { MetadataRoute } from 'next'
 import prisma from '@/lib/db'
 import { readyPages } from '@/lib/docs'
 import { HOUSE_LINKS } from '@/lib/house-links'
+import { publicCreatorHandles } from '@/lib/links-board'
 
 import { SITE_URL as SITE } from '@/lib/site-url'
 
@@ -48,9 +49,11 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
         where: { id: { in: HOUSE_LINKS.map((h) => h.slug) }, creator: null, revoked: false },
         select: { id: true, createdAt: true, expiresAt: true },
       }),
-      // Every claimed creator page — the same set /links lists under
-      // "Creator pages" (an opt-in public storefront, never a wallet).
-      prisma.creatorHandle.findMany({ select: { handle: true, createdAt: true, brandUpdatedAt: true } }),
+      // Creator pages — the SAME fenced set /links lists under "Creator
+      // pages" (an opt-in public storefront, never a wallet): a handle rides
+      // only while its creator holds a live link that isn't our own harness
+      // or drill mint, so `harness-store` and friends never reach a crawler.
+      publicCreatorHandles(),
       prisma.blogPost.findMany({
         where: { published: true },
         select: { slug: true, updatedAt: true },
