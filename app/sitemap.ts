@@ -29,7 +29,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
         select: { slug: true, updatedAt: true },
       }),
       prisma.mcpServer.findMany({
-        where: { callable: true },
+        where: { callable: true, reviewStatus: 'approved' },
         select: { slug: true, updatedAt: true },
       }),
     ])

@@ -139,7 +139,8 @@ export async function POST(req: Request) {
 
   try {
     const rows = await prisma.mcpServer.findMany({
-      where: { slug: { in: slugs } },
+      // Live rows only — a pending custom row paints no card (lib/mcp-review.ts).
+      where: { slug: { in: slugs }, reviewStatus: 'approved' },
       select: {
         id: true,
         slug: true,

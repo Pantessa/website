@@ -56,6 +56,7 @@ export interface ApprovalRow {
 export async function listApprovals(ownerAddress: string): Promise<ApprovalRow[]> {
   const [servers, approvals] = await Promise.all([
     prisma.mcpServer.findMany({
+      where: { reviewStatus: 'approved' }, // live rows only (lib/mcp-review.ts)
       orderBy: [{ callable: 'desc' }, { category: 'asc' }, { name: 'asc' }],
       select: {
         id: true,
@@ -135,7 +136,8 @@ export async function syncGrantAllowlist(ownerAddress: string, orgId?: string) {
     derived = ['*']
   } else {
     const enabledServers = await prisma.mcpServer.findMany({
-      where: { id: { notIn: disapprovedIds } },
+      // A pending row's host must never enter a derived allowlist.
+      where: { id: { notIn: disapprovedIds }, reviewStatus: 'approved' },
       select: { endpoint: true, endpoints: { select: { url: true } } },
     })
     derived = [

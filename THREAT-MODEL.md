@@ -44,10 +44,12 @@ statement gets qualified.**
 - **The wallet-cycling script.** Free house inference, RPC quota, planner
   tokens. Cheapest attack, most likely first. (Partly fenced —
   `lib/turn-limits.ts`, PR #569.)
-- **The malicious MCP.** A user can add any server to their set. Its tool
-  results reach the planner and, in the worst case, a sign button. Also the
-  prompt-injection vector: **tool output is untrusted input that steers an
-  agent that takes actions.**
+- **The malicious MCP.** A user can REQUEST any server; it reaches other
+  users only after a reviewer wallet approves it (`lib/mcp-review.ts`,
+  2026-09-08 — before that, any signed-in wallet's add was planner-callable
+  for everyone). Its tool results reach the planner and, in the worst case,
+  a sign button. Also the prompt-injection vector: **tool output is
+  untrusted input that steers an agent that takes actions.**
 - **The malicious embed host.** `/embed` ships `frame-ancestors *` by design.
   The host page controls framing, postMessage, and the wallet relay's inputs.
 - **The curious authenticated user.** Someone else's job id, link slug, chat

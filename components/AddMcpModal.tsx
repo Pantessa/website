@@ -15,7 +15,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createPortal } from 'react-dom'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Globe, Loader2, Plus, Star, Wand2, X } from 'lucide-react'
+import { Globe, Loader2, Plus, Star, Wand2, X, ShieldCheck } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useYeetfulStore, type McpServer } from '@/lib/store'
 import { useSession } from '@/lib/session'
@@ -60,6 +60,11 @@ export default function AddMcpModal({ open, onClose }: { open: boolean; onClose:
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [note, setNote] = useState('')
+  // Why you want it / who runs it — reviewers read this, nobody else.
+  const [requestNote, setRequestNote] = useState('')
+  // Set once a non-reviewer's request lands `pending`: the modal flips to the
+  // "submitted for review" state instead of routing to the detail page.
+  const [submitted, setSubmitted] = useState<{ name: string; slug: string } | null>(null)
 
   // Reset per open so a second add starts clean.
   useEffect(() => {
@@ -68,6 +73,8 @@ export default function AddMcpModal({ open, onClose }: { open: boolean; onClose:
     setName('')
     setDescription('')
     setLogoUrl('')
+    setRequestNote('')
+    setSubmitted(null)
     setLogoError(false)
     setTools(null)
     setStarred(new Set())
@@ -159,11 +166,12 @@ export default function AddMcpModal({ open, onClose }: { open: boolean; onClose:
           mcpUrl: url || null,
           logoUrl: logoUrl || null,
           featuredTools: [...starred],
+          requestNote: requestNote || null,
         }),
       })
       const data = await res.json().catch(() => null)
       if (res.status === 401) {
-        setError('Sign in to add your MCP to the shared directory.')
+        setError('Sign in to request an MCP.')
         return
       }
       if (!res.ok || !data) {
@@ -172,6 +180,13 @@ export default function AddMcpModal({ open, onClose }: { open: boolean; onClose:
       }
       const server: McpServer = { ...data, isCustom: true }
       addServer(server)
+      // ADMISSION GATE: a non-reviewer's request lands `pending` — it shows in
+      // THEIR directory as awaiting review and routes nowhere until a trusted
+      // reviewer approves it. Nothing lands in the working set yet.
+      if (data.pending) {
+        setSubmitted({ name: server.name, slug: server.slug })
+        return
+      }
       // Land it in the working set (so it's active when they come back to
       // chat), close the modal, then send them to the newly created MCP's
       // detail page to see the discovered tools it just saved.
@@ -224,8 +239,8 @@ export default function AddMcpModal({ open, onClose }: { open: boolean; onClose:
                 <Plus className="w-4 h-4" strokeWidth={2.5} />
               </span>
               <div className="flex-1 min-w-0">
-                <div className="text-sm font-semibold text-white">Add your own MCP</div>
-                <div className="mono text-[10px] text-[color:var(--muted-2)]">discovered from the server · routes in chat</div>
+                <div className="text-sm font-semibold text-white">Request an MCP</div>
+                <div className="mono text-[10px] text-[color:var(--muted-2)]">discovered from the server · reviewed by a Pantessa partner · then routes in chat</div>
               </div>
               <button
                 onClick={onClose}
@@ -236,6 +251,24 @@ export default function AddMcpModal({ open, onClose }: { open: boolean; onClose:
               </button>
             </div>
 
+            {submitted ? (
+              <div className="px-5 py-6 space-y-3" data-testid="addmcp-submitted">
+                <div className="flex items-center gap-2 text-sm font-semibold text-white">
+                  <ShieldCheck className="w-4 h-4 text-[color:var(--accent)]" />
+                  Submitted for review
+                </div>
+                <p className="text-[12px] leading-relaxed text-[color:var(--muted)]">
+                  <span className="text-white">{submitted.name}</span> is in your directory marked{' '}
+                  <span className="mono text-[10.5px] uppercase">pending review</span>. A Pantessa partner checks what it
+                  does before it can route in chat — until then it never runs and nobody else can see it. You&apos;ll see
+                  the badge flip when it&apos;s approved.
+                </p>
+                <p className="text-[11px] leading-relaxed text-[color:var(--muted-2)]">
+                  Pantessa only routes to reviewed MCPs. Every transaction still builds through Pantessa&apos;s own guarded
+                  layer — a reviewed MCP can read for you; it never writes the calldata you sign.
+                </p>
+              </div>
+            ) : (
             <div className="max-h-[68vh] overflow-y-auto px-5 py-4 space-y-4">
               {/* URL + discover */}
               <div>
@@ -335,6 +368,23 @@ export default function AddMcpModal({ open, onClose }: { open: boolean; onClose:
                 </div>
               )}
 
+              {/* Why — read by the reviewer only */}
+              {(tools !== null || name) && (
+                <div>
+                  <label className="block text-[11px] font-medium text-[color:var(--muted)] mb-1.5">
+                    For the reviewer <span className="text-[color:var(--muted-2)] font-normal">— who runs it, why you want it (optional)</span>
+                  </label>
+                  <textarea
+                    rows={2}
+                    value={requestNote}
+                    maxLength={500}
+                    placeholder="e.g. the official Compound MCP, run by the Compound team — I want lending reads in chat"
+                    onChange={(e) => setRequestNote(e.target.value)}
+                    className="w-full px-3 py-2.5 rounded-xl bg-[var(--surf-1)] border border-[var(--line)] text-white placeholder-[color:var(--muted-2)] text-xs focus:outline-none focus:border-[var(--line-2)] transition-colors resize-none"
+                  />
+                </div>
+              )}
+
               {/* Tool starring — the "ping first" picks */}
               {tools !== null && tools.length > 0 && (
                 <div>
@@ -412,10 +462,20 @@ export default function AddMcpModal({ open, onClose }: { open: boolean; onClose:
 
               {error && <p className="text-[11px] text-red-400">{error}</p>}
             </div>
+            )}
 
             {/* Footer */}
             <div className="flex items-center gap-3 px-5 py-3.5 border-t border-[var(--line)]">
               <div className="flex-1" />
+              {submitted ? (
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold bg-white text-zinc-950 hover:bg-zinc-200 transition-colors"
+                >
+                  Done
+                </button>
+              ) : (
               <button
                 type="button"
                 onClick={submit}
@@ -427,9 +487,10 @@ export default function AddMcpModal({ open, onClose }: { open: boolean; onClose:
                     : 'bg-[var(--surf-2)] text-[color:var(--muted-2)] cursor-not-allowed',
                 )}
               >
-                {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" strokeWidth={2.5} />}
-                {saving ? 'Adding…' : 'Add to my set'}
+                {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ShieldCheck className="w-3.5 h-3.5" strokeWidth={2.5} />}
+                {saving ? 'Submitting…' : 'Request review'}
               </button>
+              )}
             </div>
           </motion.div>
         </motion.div>

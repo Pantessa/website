@@ -169,6 +169,7 @@ import { loadCatalog } from '@/lib/catalog'
 import { routeMessage, selectInferenceProvider, compactForSynthesis, dedupePlannerPicks, type TraceStep, type SmartPick } from '@/lib/router'
 import { buildSignableArtifact } from '@/lib/transaction-layer'
 import { guardPlannerArtifact } from '@/lib/planner-artifact-guard'
+import { resolveActiveServers } from '@/lib/active-servers'
 import { portfolioFromToolResult, type PortfolioDisplay } from '@/lib/portfolio-display'
 import { parseClarify, type ClarifyRequest } from '@/lib/clarify'
 import type { EntityRef } from '@/lib/working-context'
@@ -444,7 +445,19 @@ async function handleChatTurn(req: NextRequest) {
         .catch(() => null)
       if (link && !link.revoked) swapFeeBps = LINK_SWAP_FEE_BPS
     }
-    const activeServers: McpServer[] = Array.isArray(body.activeServers) ? body.activeServers : []
+    // The working set is resolved SERVER-SIDE: the client names slugs, the
+    // directory supplies endpoint/callable/protocol/price, and only live
+    // (approved) rows resolve — lib/active-servers.ts. A set made entirely of
+    // off-directory rows answers plainly instead of calling what the client
+    // typed (SECURITY-AUDIT-2026-09-08 §A/§B).
+    const resolvedSet = await resolveActiveServers(body.activeServers, req.headers)
+    const activeServers: McpServer[] = resolvedSet.servers
+    if (resolvedSet.dropped.length > 0 && activeServers.length === 0) {
+      return NextResponse.json({
+        reply: `The MCP${resolvedSet.dropped.length > 1 ? 's' : ''} in your set (${resolvedSet.dropped.slice(0, 4).join(', ')}) ${resolvedSet.dropped.length > 1 ? 'are' : 'is'} not in the Pantessa directory — or not approved yet. Pantessa only routes to reviewed MCPs. Pick from the directory, or request yours from the ＋ menu and a reviewer will look at it.`,
+        notes: [`Dropped off-directory servers: ${resolvedSet.dropped.join(', ')}`],
+      })
+    }
     // Client-supplied turn id → the manual path records its reasoning to
     // route_trace_lines so the in-chat engine terminal can poll it live.
     const clientTurnId: string | undefined =
@@ -459,6 +472,12 @@ async function handleChatTurn(req: NextRequest) {
     const nativeTrace = clientTurnId
       ? (event: unknown) => recordTraceLine(clientTurnId, nativeSeq++, event, 'wallet')
       : () => {}
+    if (resolvedSet.dropped.length > 0 || resolvedSet.keptUnresolved.length > 0) {
+      nativeTrace({
+        type: 'status',
+        label: `working set resolved server-side — ${activeServers.length} live${resolvedSet.dropped.length ? `, dropped off-directory: ${resolvedSet.dropped.join(', ')}` : ''}${resolvedSet.keptUnresolved.length ? `, kept unresolved (direct traffic): ${resolvedSet.keptUnresolved.join(', ')}` : ''}`,
+      })
+    }
     const walletAddress: string | undefined =
       typeof body.walletAddress === 'string' && isAddress(body.walletAddress)
         ? getAddress(body.walletAddress)

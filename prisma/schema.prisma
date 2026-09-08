@@ -54,6 +54,19 @@ model McpServer {
   // YeetfulLaunchFactory is the source of truth; these mirror it for fast reads
   // (fee routing + the per-service token chart). See repo `x402-launch`.
   tokenAddress   String? @map("token_address")
+
+  // Admission gate (2026-09-08): who submitted a source:'custom' row and where
+  // it sits in review. Every ingested/seeded row is born 'approved'; a
+  // user-requested row is born 'pending' and is invisible + never callable
+  // until a reviewer wallet (MCP_REVIEWER_WALLETS ∪ admins) approves it. See
+  // lib/mcp-review.ts — the ONE rulebook every directory reader goes through.
+  ownerAddress String?   @map("owner_address")
+  reviewStatus String    @default("approved") @map("review_status") // 'pending' | 'approved' | 'rejected'
+  requestNote  String?   @map("request_note")
+  reviewNote   String?   @map("review_note")
+  reviewedBy   String?   @map("reviewed_by")
+  reviewedAt   DateTime? @map("reviewed_at")
+  requestedAt  DateTime? @map("requested_at")
   stakingAddress String? @map("staking_address")
 
   // Presentation
@@ -96,6 +109,9 @@ model McpServer {
   @@index([category])
   @@index([callable])
   @@map("mcp_servers")
+
+  @@index([reviewStatus])
+  @@index([ownerAddress])
 }
 
 /// One callable x402 endpoint of a service (e.g. Claude's POST /v1/messages via

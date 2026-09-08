@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
+import { isLiveServer, isReviewerAddress } from '@/lib/mcp-review'
 import { ArrowLeft, ExternalLink, TrendingUp } from 'lucide-react'
 import prisma from '@/lib/db'
 import BrandIcon from '@/components/BrandIcon'
@@ -50,7 +51,7 @@ async function getServer(slug: string) {
 export async function generateMetadata({ params }: Params): Promise<Metadata> {
   const { slug } = await params
   const server = await getServer(slug)
-  if (!server) return { title: 'Service not found — Pantessa' }
+  if (!server || !isLiveServer(server)) return { title: 'Service not found — Pantessa', robots: { index: false } }
   return {
     title:
       server.gated === false
@@ -113,6 +114,13 @@ export default async function ServiceDetailPage({ params }: Params) {
   const { slug } = await params
   const server = await getServer(slug)
   if (!server) notFound()
+  // A row under review exists only for its requester and reviewers
+  // (lib/mcp-review.ts); to everyone else it 404s like any unknown slug.
+  const underReview = !isLiveServer(server)
+  if (underReview) {
+    const viewer = (await getSessionAddress())?.toLowerCase() ?? null
+    if (!viewer || (viewer !== server.ownerAddress && !isReviewerAddress(viewer))) notFound()
+  }
 
   const paramsOf = (ep: { parameters: unknown }): EndpointParam[] =>
     Array.isArray(ep.parameters) ? (ep.parameters as EndpointParam[]) : []
@@ -136,6 +144,16 @@ export default async function ServiceDetailPage({ params }: Params) {
 
   const header = (
     <header className="svc__head">
+      {underReview && (
+        <div
+          className="mono text-[11px] px-3 py-2 mb-3 rounded-lg border border-[var(--line-2)] text-[color:var(--muted)]"
+          data-testid="review-banner"
+        >
+          {server.reviewStatus === 'rejected' ? 'NOT APPROVED' : 'PENDING REVIEW'} — only you
+          {server.reviewStatus === 'rejected' ? ' can see this page.' : ' can see this page; it routes nowhere until a Pantessa partner approves it.'}
+          {server.reviewNote ? ` Reviewer: “${server.reviewNote}”` : ''}
+        </div>
+      )}
             <div className="svc__tile">
               {/* BrandIcon reads id/slug/name/iconSlug — narrow to the store type's shape. */}
               <BrandIcon

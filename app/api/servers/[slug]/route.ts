@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import prisma from '@/lib/db'
+import { getAuthAddress } from '@/lib/api-key'
+import { isLiveServer, isReviewerAddress } from '@/lib/mcp-review'
 import { getSessionAddress } from '@/lib/auth'
 import { isAdminAddress } from '@/lib/admin'
 
@@ -21,7 +23,17 @@ export async function GET(_req: NextRequest, { params }: Params) {
       include: { endpoints: { orderBy: { position: 'asc' } } },
     })
     if (!server) return NextResponse.json({ error: 'Not found.' }, { status: 404 })
-    return NextResponse.json(server)
+    // A row under review exists only for its requester and reviewers; to
+    // everyone else it doesn't (lib/mcp-review.ts). The requester's wallet
+    // never leaves the server.
+    const { ownerAddress, ...publicRow } = server
+    if (!isLiveServer(server)) {
+      const viewer = (await getAuthAddress(_req))?.toLowerCase() ?? null
+      if (!viewer || (viewer !== ownerAddress && !isReviewerAddress(viewer))) {
+        return NextResponse.json({ error: 'Not found.' }, { status: 404 })
+      }
+    }
+    return NextResponse.json(publicRow)
   } catch (error) {
     console.warn('server detail: DB query failed:', error instanceof Error ? error.message : error)
     return NextResponse.json({ error: 'Unavailable.' }, { status: 503 })

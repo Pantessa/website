@@ -5,6 +5,7 @@ import { loadCatalog } from '@/lib/catalog'
 import { serviceReputation } from '@/lib/route-telemetry'
 import { getAuthAddress } from '@/lib/api-key'
 import { discoverMcpTools, bestIconSrc } from '@/lib/mcp-introspect'
+import { canManageServer, isReviewerAddress, MAX_PENDING_PER_WALLET, pendingCountFor } from '@/lib/mcp-review'
 
 /**
  * Accept only a safe image logo: an https:// URL or an inline data:image/ URI.
@@ -38,12 +39,18 @@ function sanitizeLogoUrl(raw: unknown): string | null {
  * settled count from the spend ledger, B18) — aggregate, no PII, absent for
  * services with no history.
  */
-export async function GET() {
-  const catalog = await loadCatalog()
+export async function GET(req: NextRequest) {
+  // The viewer's own pending/rejected requests ride along (status visible to
+  // the requester only); everyone else sees approved rows. The requester's
+  // wallet never leaves the server — it collapses to a `mine` flag.
+  const viewer = (await getAuthAddress(req))?.toLowerCase() ?? null
+  const catalog = await loadCatalog({ viewer })
   const rep = await serviceReputation(catalog.map((s) => s.name))
   const enriched = catalog.map((s) => {
     const r = rep.get(s.name)
-    return r ? { ...s, reputation: r } : s
+    const { ownerAddress, ...rest } = s as typeof s & { ownerAddress?: string | null }
+    const row = { ...rest, mine: !!viewer && ownerAddress === viewer }
+    return r ? { ...row, reputation: r } : row
   })
   // Keep callable/auto-callable first (as loadCatalog ordered), then rank by
   // reputation within each tier — the "most reliable" surface, no new UI.
@@ -80,14 +87,27 @@ async function uniqueSlug(base: string): Promise<string> {
  * https://cow-mcp.yeetful.com/) and every tool is discovered from the server's
  * own `tools/list` and wired as a routable free (non-gated) endpoint — matching
  * the shape `lib/endpoint-planner.ts` expects, so the row is planner-callable,
- * not a dead listing. SIWE session (or Bearer key) required — this writes to the
- * shared directory. Rows are marked source:'custom' so db:ingest/audit leave
- * them alone and only they can be deleted.
+ * not a dead listing. SIWE session (or Bearer key) required. Rows are marked
+ * source:'custom' so db:ingest/audit leave them alone and only they can be
+ * deleted. ADMISSION GATE (2026-09-08, lib/mcp-review.ts): a non-reviewer's
+ * row is born `pending` — visible only to them, callable by nobody — until a
+ * reviewer approves it. Reviewers' own adds go live immediately.
  */
 export async function POST(req: NextRequest) {
-  const address = await getAuthAddress(req)
+  const address = (await getAuthAddress(req))?.toLowerCase() ?? null
   if (!address) {
-    return NextResponse.json({ error: 'Sign in to add a server to the directory.' }, { status: 401 })
+    return NextResponse.json({ error: 'Sign in to request an MCP.' }, { status: 401 })
+  }
+  // ADMISSION GATE (lib/mcp-review.ts): a reviewer's own add goes live at
+  // once; anyone else's lands `pending` — private to them, never callable —
+  // until a reviewer approves it from /dashboard/mcp-requests.
+  const reviewer = isReviewerAddress(address)
+  const reviewStatus = reviewer ? 'approved' : 'pending'
+  if (!reviewer && (await pendingCountFor(address)) >= MAX_PENDING_PER_WALLET) {
+    return NextResponse.json(
+      { error: `You already have ${MAX_PENDING_PER_WALLET} MCPs awaiting review — wait for a decision before requesting another.` },
+      { status: 429 },
+    )
   }
 
   let body: Record<string, unknown>
@@ -106,8 +126,10 @@ export async function POST(req: NextRequest) {
       : [],
   )
 
-  const name = typeof body.name === 'string' ? body.name.trim() : ''
-  const description = typeof body.description === 'string' ? body.description.trim() : ''
+  const name = typeof body.name === 'string' ? body.name.trim().slice(0, 80) : ''
+  const description = typeof body.description === 'string' ? body.description.trim().slice(0, 600) : ''
+  // Why the requester wants it / who runs it — shown to the reviewer only.
+  const requestNote = typeof body.requestNote === 'string' ? body.requestNote.trim().slice(0, 500) || null : null
   const category = typeof body.category === 'string' ? body.category.trim() : ''
   const color = typeof body.color === 'string' ? body.color : null
   const websiteUrl = typeof body.websiteUrl === 'string' && body.websiteUrl ? body.websiteUrl : null
@@ -167,6 +189,14 @@ export async function POST(req: NextRequest) {
     websiteUrl,
     source: 'custom',
     featured: false,
+    ownerAddress: address,
+    reviewStatus,
+    requestNote,
+    requestedAt: new Date(),
+    // A fresh request or re-request always clears the last decision.
+    reviewNote: null,
+    reviewedBy: null,
+    reviewedAt: null,
   }
 
   // Idempotent re-add: the same MCP base UPDATES the existing custom row
@@ -178,8 +208,15 @@ export async function POST(req: NextRequest) {
           source: 'custom',
           OR: [{ endpoint: base }, { endpoints: { some: { url: { startsWith: `${base}/` } } } }],
         },
+        select: { id: true, source: true, ownerAddress: true, reviewStatus: true },
       })
     : null
+  // Only the wallet that requested the row (or a reviewer) may refresh it —
+  // re-adding used to let ANY signed-in wallet repoint another user's row
+  // (name, logo, tool surface) at their own server.
+  if (existing && !canManageServer(existing, address)) {
+    return NextResponse.json({ error: 'That MCP base is already listed by another wallet.' }, { status: 409 })
+  }
 
   const server = existing
     ? await prisma.mcpServer.update({ where: { id: existing.id }, data })
@@ -209,8 +246,14 @@ export async function POST(req: NextRequest) {
     })
   }
 
+  const { ownerAddress: _owner, ...publicRow } = server
+  void _owner
   return NextResponse.json({
-    ...server,
+    ...publicRow,
+    mine: true,
+    // 'pending' → the requester sees it in THEIR directory as awaiting review;
+    // it routes nowhere until a reviewer approves it.
+    pending: server.reviewStatus === 'pending',
     endpointCount: tools.length,
     plannableCount,
     mcpBase: base,
@@ -226,10 +269,12 @@ export async function POST(req: NextRequest) {
 
 /**
  * Delete a custom server (and its endpoints, via cascade). Only source:'custom'
- * rows are removable — the ingested catalog is protected. SIWE/Bearer required.
+ * rows are removable — the ingested catalog is protected — and only by the
+ * wallet that requested the row or a reviewer (any signed-in wallet could
+ * delete any custom row before 2026-09-08). SIWE/Bearer required.
  */
 export async function DELETE(req: NextRequest) {
-  const address = await getAuthAddress(req)
+  const address = (await getAuthAddress(req))?.toLowerCase() ?? null
   if (!address) {
     return NextResponse.json({ error: 'Sign in required.' }, { status: 401 })
   }
@@ -240,13 +285,16 @@ export async function DELETE(req: NextRequest) {
   }
   const server = await prisma.mcpServer.findFirst({
     where: id ? { id } : { slug: slug! },
-    select: { id: true, source: true },
+    select: { id: true, source: true, ownerAddress: true },
   })
   if (!server) {
     return NextResponse.json({ error: 'Server not found.' }, { status: 404 })
   }
   if (server.source !== 'custom') {
     return NextResponse.json({ error: 'Only custom servers can be deleted.' }, { status: 403 })
+  }
+  if (!canManageServer(server, address)) {
+    return NextResponse.json({ error: 'Only the wallet that requested this MCP (or a reviewer) can remove it.' }, { status: 403 })
   }
   await prisma.mcpServer.delete({ where: { id: server.id } })
   return NextResponse.json({ ok: true })
