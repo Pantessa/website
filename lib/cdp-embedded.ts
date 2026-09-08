@@ -1,7 +1,7 @@
 import { createCDPEmbeddedWalletConnector } from '@coinbase/cdp-wagmi'
 import type { Config as CdpConfig } from '@coinbase/cdp-hooks'
-import { http, type CreateConnectorFn } from 'wagmi'
-import { base, baseSepolia } from 'wagmi/chains'
+import type { CreateConnectorFn } from 'wagmi'
+import { WALLET_CHAINS, walletTransports } from '@/lib/wallet-chains'
 
 /**
  * Coinbase CDP Embedded (non-custodial) Wallet — the "create an account" path.
@@ -32,14 +32,23 @@ export const cdpConfig: CdpConfig = {
   ethereum: { createOnLogin: 'eoa' },
 }
 
+/**
+ * The embedded wallet signs on EVERY app chain, not just Base. The connector's
+ * `switchChain` throws "Chain not configured" for any chain outside this list
+ * (and the provider has no network UI a user could switch by hand), so a
+ * two-chain list here meant every Ethereum / Arbitrum / Optimism / Robinhood
+ * Chain transaction walled for account-holders — including the card on-ramp's
+ * first bridge step, which lands as ETH on Ethereum. Sends on Base go through
+ * CDP's own broadcast API; on the other chains the provider prepares the tx
+ * over OUR transport, has CDP sign it (chain-agnostic EOA signature), and
+ * broadcasts the raw tx itself — so the transport list must cover every
+ * chain too. lib/wallet-chains.ts is the one source wagmi shares.
+ */
 const baseCdpConnector = createCDPEmbeddedWalletConnector({
   cdpConfig,
   providerConfig: {
-    chains: [base, baseSepolia],
-    transports: {
-      [base.id]: http(),
-      [baseSepolia.id]: http(),
-    },
+    chains: [...WALLET_CHAINS],
+    transports: walletTransports(),
     announceProvider: false,
   },
 })

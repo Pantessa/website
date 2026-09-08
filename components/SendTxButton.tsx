@@ -12,6 +12,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { useAccount, usePublicClient, useSendTransaction, useSwitchChain } from 'wagmi'
+import { CDP_CONNECTOR_ID } from '@coinbase/cdp-wagmi'
 import { Loader2, PenLine, CheckCircle2, Circle, ExternalLink, XCircle } from 'lucide-react'
 import type { EvmTxRequest } from '@/lib/transaction-layer'
 import { chainById } from '@/lib/chains'
@@ -101,8 +102,16 @@ export default function SendTxButton({
             ask: `${summary ?? tx.action ?? 'transaction'} (switch to ${chainInfo?.name ?? `chain ${chainId}`})`,
             detail: walletErrorWords(e),
           })
-          setError(`This transaction is built for ${chainInfo?.name ?? `chain ${chainId}`} — switch the wallet to it (the button below asks again), then it signs.`)
-          setSwitchNeeded(true)
+          // An embedded (Pantessa account) wallet has no network UI: telling
+          // its owner to "switch the wallet" sends them looking for a menu
+          // that doesn't exist. The switch there is silent and only fails
+          // when the chain isn't in lib/wallet-chains.ts — i.e. our bug.
+          setError(
+            connector?.id === CDP_CONNECTOR_ID
+              ? `Your Pantessa account can't sign on ${chainInfo?.name ?? `chain ${chainId}`} yet — that's on us, not you. Retry once; if it walls again, this transaction needs a wallet like MetaMask.`
+              : `This transaction is built for ${chainInfo?.name ?? `chain ${chainId}`} — switch the wallet to it (the button below asks again), then it signs.`,
+          )
+          setSwitchNeeded(connector?.id !== CDP_CONNECTOR_ID)
           setStatus('error')
           return
         }
