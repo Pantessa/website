@@ -94,7 +94,8 @@ import { decideProposalGate } from '../lib/roster-propose'
 import { decideManagerMove, stackingRefusal, undecidedProposalFor } from '../lib/roster-manager'
 import { markPeriodKey, parseMarkAsk, reviewFlipDecision, tryoutReportCard, PAPER_LABEL, TRYOUT_BANNED_PHRASES } from '../lib/roster-tryouts'
 import { houseManagerRow, resolveHouseManager, HOUSE_MANAGER_ID } from '../lib/roster-managers'
-import { walletLineup, walletLaneHint, wcConfigured, WC_APP_METADATA } from '../lib/wallet-lineup'
+import { walletLineup, walletLaneHint, wcConfigured, WC_APP_METADATA , CDP_INIT_PATIENCE_MS, emailLaneHint } from '../lib/wallet-lineup'
+import { hasStoredWalletConnection, shouldRerunConnectAsk, connectAskReleased, bootHoldingFor, initialHoldElapsed, CONNECT_ASK_RELEASE_GRACE_MS, CONNECT_ASK_RERUN_WINDOW_MS, WAGMI_STORE_KEY, WAGMI_RECENT_CONNECTOR_KEY } from '../lib/wallet-reconnect'
 import { buildDelivery, mintCallbackSecret, notifyEligible, signWebhook, validateCallbackUrl } from '../lib/broker-webhook'
 import { agentHandleFor } from '../lib/agent-record'
 import {
@@ -187,7 +188,8 @@ import {
 } from '../lib/onramp'
 import { parseEcbUsdRate } from '../lib/ecb-fx'
 import { clarifyOf } from '../lib/clarify'
-import { fundingPathOf } from '../lib/funding-path'
+import { fundingPathOf, NEVER_MIND_RESUME_RE } from '../lib/funding-path'
+import { SLOW_TURN_CAPTION, SLOW_TURN_MS } from '../lib/turn-status'
 import { decideFundingTurn, detectBalanceShortfall, FUNDING_CHAIN_WORD, FUNDING_SCAN_CHAINS, fundingPlanUsd, planFundingChips, planStrandedRescue, promisableCapacityUsd, rankFundingSources, shortRefusalCopy, softenClaimedFailureBlock, type FundingNeed, type FundingSource } from '../lib/funding-plan'
 import { compileDcaBuy, dcaRunChip, parseDcaCreate, parseDcaManage, parseDcaRun, periodKeyFor } from '../lib/dca'
 import { briefingNeedsCount, briefingTile, composeBriefingItems, type BriefingInputs, type BriefingPosition } from '../lib/briefing'
@@ -2862,6 +2864,21 @@ async function main() {
       'intent links: mint with a valid https redirect stores + echoes it',
       redirectMint.status === 200 && redirected.redirectUrl === 'https://example-host.com/thanks',
     )
+    // ONBOARDING (squad gtm 2026-09-08, round 3): the splash names the return
+    // host BEFORE the signature (an embed-generated link promised its host a
+    // way back; the visitor learned it only from the post-receipt button).
+    {
+      const splash = redirected.slug ? await (await fetch(`${BASE}/i/${redirected.slug}`)).text() : ''
+      check(
+        'onboarding: an /i splash whose link carries a return URL says so before the signature — "Return to <host>" on the server-rendered splash (data-return-host), never only on the receipt',
+        /data-return-host="example-host\.com"/.test(splash) && /Return to (<!-- -->)?example-host\.com/.test(splash) && /brings you back/.test(splash),
+      )
+      const plain = await (await fetch(`${BASE}/i/buy-aapl`)).text()
+      check(
+        'onboarding: a link with no return URL makes no return-host promise on its splash',
+        plain.includes('Connecting runs the scan') && !/data-return-host=/.test(plain),
+      )
+    }
 
     // ── Creator storefronts (/l/<handle>) — opt-in public pages ──────────
     // The privacy contract: a wallet is never the key to a public page;
@@ -3055,6 +3072,36 @@ async function main() {
     check('brand: the creator brand re-themes their /i splash (bg carried)', brandedIPage.includes('--bg:#052b65'))
     const houseIPage = flat(await (await fetch(`${BASE}/i/buy-aapl`)).text())
     check('brand: house links stay pure Pantessa (no brand bg on their /i splash)', !houseIPage.includes('--bg:#'))
+    // ONBOARDING round 3 — runs AFTER the brand pins above: it frees mallory's
+    // cap slot by deleting the redirect link they read.
+    {
+      // A held (transfer-shaped) link: the splash carries the hold line, and
+      // the runtime's held state is a CARD with a way to act (source pin —
+      // the card mounts client-side after connect), not a lone header line.
+      await fetch(`${BASE}/api/intent-links/${redirected.slug}`, { method: 'DELETE', headers: { cookie: mallorySession } })
+      const heldMint = await fetch(`${BASE}/api/intent-links`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', cookie: mallorySession },
+        body: JSON.stringify({ ask: 'Send 1 USDC to vitalik.eth on Base', redirectUrl: 'https://example-host.com/thanks' }),
+      })
+      const held = (await heldMint.json()) as { slug?: string }
+      const heldSplash = held.slug ? await (await fetch(`${BASE}/i/${held.slug}`)).text() : ''
+      const srcFs = await import('node:fs')
+      const runtime = srcFs.readFileSync('components/IntentRuntime.tsx', 'utf8').replace(/\/\*[\s\S]*?\*\//g, '').replace(/\{\/\*[\s\S]*?\*\/\}/g, '')
+      check(
+        'onboarding: a held link\'s splash says the ask will wait for the visitor\'s own send AND names the return host; the runtime renders the hold as a card ("Held for you to send" + a button that focuses the composer + a way out) that clears on the visitor\'s own turn — no amber one-liner in the header',
+        heldMint.status === 200 &&
+          /nothing runs until you/.test(heldSplash) &&
+          /data-return-host="example-host\.com"/.test(heldSplash) &&
+          /data-origin-fence="held"/.test(runtime) &&
+          /Held for you to send/.test(runtime) &&
+          /READ IT IN THE COMPOSER/.test(runtime) &&
+          /NOT MINE — OPEN THE APP/.test(runtime) &&
+          /transferShaped && !heldTurnSeen/.test(runtime) &&
+          !/This ask involves a transfer — review it in the composer and press send yourself/.test(runtime),
+      )
+      if (held.slug) await fetch(`${BASE}/api/intent-links/${held.slug}`, { method: 'DELETE', headers: { cookie: mallorySession } })
+    }
     // ── Colors without a third party (the /dashboard/customize studio) ─────
     // Rule 7 refuses someone else's IDENTITY (logo, name, domain), never a
     // color. So the palette is a first-class control: presets + free hex,
@@ -4669,6 +4716,267 @@ async function main() {
       )
     })(),
   )
+
+  // ── The stranger's first five seconds (lib/wallet-reconnect, squad gtm 2026-09-08) ──
+  console.log('— onboarding: first-visit door paints at once; connect-wallet re-run; door lanes time out honestly')
+  check(
+    'onboarding: a visitor with nothing persisted by wagmi never waits on the reconnect probe; a persisted current connection or a recent connector id does; garbage fails CLOSED to "new visitor"',
+    (() => {
+      const mem = (rows: Record<string, string>) => ({ getItem: (k: string) => (k in rows ? rows[k] : null) })
+      const fresh = mem({})
+      const stored = mem({ [WAGMI_STORE_KEY]: JSON.stringify({ state: { connections: { __type: 'Map', value: [['abc', { accounts: ['0x1'], chainId: 8453, connector: { id: 'io.metamask' } }]] }, chainId: 8453, current: 'abc' }, version: 2 }) })
+      const emptied = mem({ [WAGMI_STORE_KEY]: JSON.stringify({ state: { connections: { __type: 'Map', value: [] }, chainId: 8453, current: null }, version: 2 }) })
+      const recent = mem({ [WAGMI_RECENT_CONNECTOR_KEY]: '"io.metamask"' })
+      const recentNull = mem({ [WAGMI_RECENT_CONNECTOR_KEY]: 'null' })
+      const garbage = mem({ [WAGMI_STORE_KEY]: '{not json' })
+      return (
+        hasStoredWalletConnection(fresh) === false &&
+        hasStoredWalletConnection(null) === false &&
+        hasStoredWalletConnection(stored) === true &&
+        hasStoredWalletConnection(emptied) === false &&
+        hasStoredWalletConnection(recent) === true &&
+        hasStoredWalletConnection(recentNull) === false &&
+        hasStoredWalletConnection(garbage) === false
+      )
+    })(),
+  )
+  check(
+    'onboarding: a fresh "connect wallet to continue" reply re-runs its ask when an address lands (the reconnect race); stale, answered-later, in-flight, or non-connect replies never re-run',
+    (() => {
+      const now = Date.parse('2026-09-08T12:00:00Z')
+      const reply = (ageMs: number, meta: unknown = { connectWallet: true, connectAsk: 'Swap $1 worth of ETH to USDC on Base' }) => ({ role: 'assistant', meta, createdAt: new Date(now - ageMs).toISOString() })
+      return (
+        shouldRerunConnectAsk({ last: reply(5_000), hasAddress: true, loading: false, now }) === 'Swap $1 worth of ETH to USDC on Base' &&
+        shouldRerunConnectAsk({ last: reply(CONNECT_ASK_RERUN_WINDOW_MS + 1), hasAddress: true, loading: false, now }) === null &&
+        shouldRerunConnectAsk({ last: reply(5_000), hasAddress: false, loading: false, now }) === null &&
+        shouldRerunConnectAsk({ last: reply(5_000), hasAddress: true, loading: true, now }) === null &&
+        shouldRerunConnectAsk({ last: reply(5_000, { connectWallet: true }), hasAddress: true, loading: false, now }) === null &&
+        shouldRerunConnectAsk({ last: reply(5_000, { receipts: [] }), hasAddress: true, loading: false, now }) === null &&
+        shouldRerunConnectAsk({ last: { role: 'user', createdAt: new Date(now).toISOString() }, hasAddress: true, loading: false, now }) === null &&
+        shouldRerunConnectAsk({ last: null, hasAddress: true, loading: false, now }) === null
+      )
+    })(),
+  )
+  check(
+    'onboarding: the door\'s email-lane line names every state — ready, sending, preparing, and (after CDP_INIT_PATIENCE_MS) an honest "unreachable, connect a wallet" instead of a spinner forever',
+    (() => {
+      const ready = emailLaneHint({ initialized: true, busy: false, timedOut: false })
+      const sending = emailLaneHint({ initialized: true, busy: true, timedOut: false })
+      const preparing = emailLaneHint({ initialized: false, busy: false, timedOut: false })
+      const gaveUp = emailLaneHint({ initialized: false, busy: false, timedOut: true })
+      return (
+        /6-digit code/.test(ready) &&
+        /Sending/.test(sending) &&
+        /Preparing/.test(preparing) &&
+        /Connect a wallet/.test(gaveUp) && !/Preparing/.test(gaveUp) &&
+        CDP_INIT_PATIENCE_MS >= 5000 && CDP_INIT_PATIENCE_MS <= 15000
+      )
+    })(),
+  )
+
+  // ── The stranger's way back + what a guest ask is for (squad gtm 2026-09-08, round 2) ──
+  console.log('— onboarding: connect gate releases; guest asks refund on doors; "Not now" is native; kept threads keep their URL')
+  check(
+    'onboarding: the "Connecting…" gate releases only when nothing is still trying — held while the door or the wallet list is up, a handshake this surface started is in flight, or a STORED connection is still restoring (a fresh visitor\'s ~9s mount probe restores nothing and never holds it); never released once an address is here or when nothing was pending',
+    (() => {
+      const base = { pending: true, hasAddress: false, doorOpen: false, listOpen: false, walletStatus: 'disconnected' as const, storedConnection: false, handshakeInFlight: false }
+      return (
+        connectAskReleased(base) === true &&
+        connectAskReleased({ ...base, doorOpen: true }) === false &&
+        connectAskReleased({ ...base, listOpen: true }) === false &&
+        connectAskReleased({ ...base, handshakeInFlight: true }) === false &&
+        connectAskReleased({ ...base, walletStatus: 'connecting', storedConnection: true }) === false &&
+        connectAskReleased({ ...base, walletStatus: 'reconnecting', storedConnection: true }) === false &&
+        connectAskReleased({ ...base, walletStatus: 'connecting', storedConnection: false }) === true &&
+        connectAskReleased({ ...base, walletStatus: 'reconnecting', storedConnection: false }) === true &&
+        connectAskReleased({ ...base, hasAddress: true }) === false &&
+        connectAskReleased({ ...base, pending: false }) === false &&
+        CONNECT_ASK_RELEASE_GRACE_MS >= 300 && CONNECT_ASK_RELEASE_GRACE_MS <= 2000
+      )
+    })(),
+  )
+  {
+    const srcFs = await import('node:fs')
+    const code = (path: string) => srcFs.readFileSync(path, 'utf8').replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')
+    const chat = code('components/ChatInterface.tsx')
+    const door = code('components/CreateAccountButton.tsx')
+    const store = code('lib/store.ts')
+    const gate = code('components/ChatSignInGate.tsx')
+    const nav = code('components/NavAccount.tsx')
+    const chips = code('components/ClarifyChips.tsx')
+    const runtime = code('components/IntentRuntime.tsx')
+    const workspace = code('components/ChatWorkspace.tsx')
+    check(
+      'onboarding: the chat wires the release — the door reports open/close (onOpenChange), the gate effect consumes connectAskReleased, and a miss says so in words with a way back ("Try connecting again")',
+      /onOpenChange\?\.\(next\)/.test(door) &&
+        /onOpenChange=\{setConnectDoorOpen\}/.test(chat) &&
+        /connectAskReleased\(\{/.test(chat) &&
+        /Nothing connected — nothing happened, nothing was sent\./.test(chat) &&
+        /Try connecting again/.test(chat),
+    )
+    check(
+      'onboarding: a reply that only said "connect your wallet" gives the guest ask back (refundGuestTurn on connectWallet === true), and the refund floors at zero',
+      /if \(guestTrialTurn && data\.connectWallet === true\) refundGuestTurn\(\)/.test(chat) &&
+        /Math\.max\(0, guestTurnsUsed\(\) - 1\)/.test(code('lib/guest-trial.ts')),
+    )
+    check(
+      'onboarding: signing in to KEEP a guest thread moves the address bar to the DB id (a reload lands on the kept thread, not an empty chat)',
+      /window\.location\.pathname === `\/chat\/\$\{chat\.id\}`/.test(store) && /replaceState\(null, '', `\/chat\/\$\{created\.id\}/.test(store),
+    )
+    check(
+      'onboarding: an intent link\'s composed set is the LINK\'s — /i marks it (setLinkServerIds), the bare /chat clears it before seeding, and any hand-picked set un-marks it',
+      /setLinkServerIds\(ids\)/.test(runtime) &&
+        /linkSetActive: true/.test(store) &&
+        /setActiveServerIds: \(ids\) => set\(\{ activeServerIds: ids, linkSetActive: false \}\)/.test(store) &&
+        /linkSetActive: state\.linkSetActive/.test(store) &&
+        /if \(chatId \|\| servers\.length === 0 \|\| !linkSetActive\) return/.test(workspace),
+    )
+    check(
+      'onboarding: the guest banner promises a connect and its button connects (walletConnectOnly door, "Connect wallet" — not "Sign in"); signing out of the app lands on /chat, not the marketing page',
+      /Connect a wallet when you want to sign what it builds\./.test(gate) &&
+        (gate.match(/<span>Connect wallet<\/span>/g) ?? []).length === 1 &&
+        /'Connect wallet'\}<\/span>/.test(gate) &&
+        !/<span>Sign in<\/span>/.test(gate) &&
+        /walletConnectOnly\s+redirectTo=\{hereWithQuery\(\)\}/.test(gate) &&
+        /pathname\?\.startsWith\('\/chat'\) \? '\/chat' : '\/'/.test(nav),
+    )
+    check(
+      'onboarding: after the on-ramp chip the chat says a Stripe tab opened and that it is watching the chain (the handoff moment is named, not implied)',
+      /Stripe opened in a new tab — finish the purchase there, then come back\. Watching \$\{chainName\} for the funds/.test(chips),
+    )
+  }
+  check(
+    'onboarding: the "Not now" resume regex accepts both house phrasings and nothing else',
+    NEVER_MIND_RESUME_RE.test('Never mind — leave my funds where they are.') &&
+      NEVER_MIND_RESUME_RE.test('Never mind — leave my USDC where it is.') &&
+      NEVER_MIND_RESUME_RE.test('never mind - leave my funds where they are') &&
+      !NEVER_MIND_RESUME_RE.test('Never mind, swap $5 of ETH to USDC') &&
+      !NEVER_MIND_RESUME_RE.test('leave my funds where they are'),
+  )
+  {
+    const r = await fetch(`${BASE}/api/chat`, {
+      method: 'POST',
+      headers: CJ,
+      body: JSON.stringify({ message: 'Never mind — leave my funds where they are.', activeServers: [] }),
+    })
+    const j = (await r.json().catch(() => ({}))) as { reply?: string; buildPath?: string; receipts?: unknown[] }
+    check(
+      'onboarding: "Not now" is answered natively — no planner turn, no diagnostics line, no old-brand engine pitch, nothing built',
+      r.status === 200 &&
+        j.buildPath === 'native-decline' &&
+        /nothing was built, nothing was spent/i.test(j.reply ?? '') &&
+        !/Diagnostics|Yeetful · Claude|house model/i.test(j.reply ?? '') &&
+        !(Array.isArray(j.receipts) && j.receipts.length > 0),
+    )
+  }
+  {
+    const srcFs = await import('node:fs')
+    const code = (path: string) => srcFs.readFileSync(path, 'utf8').replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')
+    const chat = code('components/ChatInterface.tsx')
+    const loader = srcFs.readFileSync('components/ChatLoader.tsx', 'utf8')
+    const og = code('app/opengraph-image.tsx')
+    check(
+      'onboarding: a lone loader caption stays on screen — the solo rule outranks the 4-line cycle (doubled class), so the /i splash never reads as a captionless loader',
+      /\.yload__line\.yload__line--solo \{\s*animation: none;\s*opacity: 1;/.test(loader) &&
+        !/(^|[^.])\.yload__line--solo \{/m.test(loader.replace('.yload__line.yload__line--solo {', '')),
+    )
+    check(
+      'onboarding: a long build says what it is doing — after SLOW_TURN_MS the in-turn row names the on-chain reads (server status still wins); the wait is bounded and the caption is honest for every native lane',
+      SLOW_TURN_MS >= 3000 && SLOW_TURN_MS <= 6000 &&
+        /reading balances and live quotes on-chain/.test(SLOW_TURN_CAPTION) &&
+        /status \?\? \(slowTurn \? SLOW_TURN_CAPTION : 'Thinking…'\)/.test(chat) &&
+        /setTimeout\(\(\) => setSlowTurn\(true\), SLOW_TURN_MS\)/.test(chat),
+    )
+    check(
+      'onboarding: the root social card tells the links-first story ("You have an intent. We do the rest." + YOUR WALLET SIGNS), never the pre-07-22 "Mega dapps are here" pitch',
+      /alt = 'Pantessa — You have an intent\. We do the rest\.'/.test(og) &&
+        /You have an intent\./.test(og) && /We do the rest\./.test(og) && /YOUR WALLET SIGNS/.test(og) &&
+        !/Mega dapps/.test(og) && !/EVERY DAPP/.test(og),
+    )
+    const ogr = await fetch(`${BASE}/opengraph-image`)
+    const ogBuf = new Uint8Array(await ogr.arrayBuffer())
+    check(
+      'onboarding: the root social card renders (200 image/png, a real PNG, >20KB) with the new headline in place',
+      ogr.status === 200 && /image\/png/.test(ogr.headers.get('content-type') ?? '') && ogBuf.length > 20_000 && ogBuf[0] === 0x89 && ogBuf[1] === 0x50,
+    )
+  }
+  {
+    const html = await (await fetch(`${BASE}/`)).text()
+    check(
+      'onboarding: the landing install band names the shipped SDK line (v1.0), never the pre-rename v0.9',
+      !/v0\.9/.test(html) && /asm__ver[^<]*<\/span>|v1\.0/.test(html) && /v1\.0/.test(html),
+    )
+  }
+
+  // ── Round 3: the returning visit hydrates clean (React #418 on prod) ──
+  console.log('— onboarding: the boot hold never touches the hydration render; the landing dial rounds its ticks')
+  check(
+    'onboarding: the boot hold is a POST-hydration decision — never held during the hydration render (wagmi reads "connecting" there while the server rendered "disconnected"), held only while wagmi is connecting/reconnecting and the hold has not lapsed, and never once it has',
+    bootHoldingFor({ hydrated: false, walletStatus: 'connecting', holdElapsed: false }) === false &&
+      bootHoldingFor({ hydrated: false, walletStatus: 'reconnecting', holdElapsed: false }) === false &&
+      bootHoldingFor({ hydrated: true, walletStatus: 'connecting', holdElapsed: false }) === true &&
+      bootHoldingFor({ hydrated: true, walletStatus: 'reconnecting', holdElapsed: false }) === true &&
+      bootHoldingFor({ hydrated: true, walletStatus: 'connecting', holdElapsed: true }) === false &&
+      bootHoldingFor({ hydrated: true, walletStatus: 'connected', holdElapsed: false }) === false &&
+      bootHoldingFor({ hydrated: true, walletStatus: 'disconnected', holdElapsed: false }) === false,
+  )
+  check(
+    'onboarding: the hold starts already lapsed for a visitor wagmi has nothing to restore for (no loader frame after hydration), and held for a stored connection; no storage = lapsed',
+    initialHoldElapsed(null) === true &&
+      initialHoldElapsed({ getItem: () => null }) === true &&
+      initialHoldElapsed({ getItem: (k) => (k === WAGMI_STORE_KEY ? JSON.stringify({ state: { current: null, connections: { __type: 'Map', value: [] } } }) : null) }) === true &&
+      initialHoldElapsed({ getItem: (k) => (k === WAGMI_RECENT_CONNECTOR_KEY ? 'io.metamask' : null) }) === false,
+  )
+  {
+    const srcFs = await import('node:fs')
+    const code = (path: string) => srcFs.readFileSync(path, 'utf8').replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')
+    const chat = code('components/ChatInterface.tsx')
+    const link = code('components/IntentRuntime.tsx')
+    check(
+      'onboarding: both wallet surfaces choose their loader through bootHoldingFor + useHydrated (never off wagmi\'s raw status), and seed the hold from initialHoldElapsed at mount — /chat and the /i splash hydrate to the server\'s tree',
+      /const hydrated = useHydrated\(\)/.test(chat) &&
+        /bootHoldingFor\(\{ hydrated, walletStatus, holdElapsed: bootHoldElapsed \}\)/.test(chat) &&
+        /useState\(\(\) => initialHoldElapsed\(/.test(chat) &&
+        !/walletStatus === 'connecting' \|\| walletStatus === 'reconnecting'\) && !bootHoldElapsed/.test(chat) &&
+        /const hydrated = useHydrated\(\)/.test(link) &&
+        /bootHoldingFor\(\{ hydrated, walletStatus, holdElapsed: walletWaitOver \}\)/.test(link) &&
+        /useState\(\(\) => initialHoldElapsed\(/.test(link),
+    )
+    const html = await (await fetch(`${BASE}/`)).text()
+    const ticks = [...html.matchAll(/class="night__tick[^"]*"[^>]*?\sy1="([^"]+)"[^>]*?\sy2="([^"]+)"/g)].flatMap((m) => [m[1], m[2]])
+    check(
+      'onboarding: the landing dial\'s tick coordinates are rounded (≤3 decimals) — Node and the browser disagree on Math.sin/cos in the last bits, and raw floats made every tick a server/client attribute mismatch',
+      ticks.length >= 20 && ticks.every((v) => /^-?\d+(\.\d{1,3})?$/.test(v)),
+    )
+  }
+
+  // ── Round 3: the transfer layer's connect gate joins the re-run belt ──
+  {
+    // A stranger who types a send before connecting used to re-type it after:
+    // the transfer layer's "connect your wallet first" reply carried no
+    // `connectAsk`. First-party it does now; on EMBED / LINK origin the §E5
+    // choke point strips it (the sentence is outbound) and names why — so the
+    // client re-run (now allowed inside the embed too) can only re-fire what
+    // the server let through.
+    const sendAsk = 'send 1 USDC to vitalik.eth on base'
+    const post = async (extra: Record<string, unknown>) =>
+      (await (
+        await fetch(`${BASE}/api/chat`, { method: 'POST', headers: CJ, body: JSON.stringify({ message: sendAsk, activeServers: [], history: [], ...extra }) })
+      ).json()) as { reply?: string; connectWallet?: boolean; connectAsk?: string; connectAskHeld?: string[] }
+    const first = await post({})
+    const inEmbed = await post({ embedOrigin: 'https://host.example' })
+    check(
+      'onboarding: the transfer layer\'s no-wallet reply carries connectAsk first-party (the runtime re-runs the send once the wallet lands) — and on EMBED origin the same reply carries NONE, with the hold reason named (ens-name)',
+      first.connectWallet === true && first.connectAsk === sendAsk && /Connect your wallet first/.test(first.reply ?? '') &&
+        inEmbed.connectWallet === true && inEmbed.connectAsk === undefined && (inEmbed.connectAskHeld ?? []).includes('ens-name'),
+    )
+    const srcFs = await import('node:fs')
+    const chat = srcFs.readFileSync('components/ChatInterface.tsx', 'utf8').replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')
+    check(
+      'onboarding: the connect re-run is no longer fenced off the embed client-side (the server\'s §E5 strip is the fence) — an embed stranger who asked, then connected, gets the build without retyping',
+      /if \(pendingConnectAsk !== null \|\| !currentChat\) return/.test(chat) && !/if \(embedded \|\| pendingConnectAsk !== null/.test(chat),
+    )
+  }
 
   // ── THE STOREFRONT (lib/roster-managers + /api/roster/managers) ──────────
   console.log('— roster storefront (FIRST HIRE)')

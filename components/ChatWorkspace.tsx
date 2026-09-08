@@ -23,7 +23,7 @@ const STATIC_SERVERS: McpServer[] = [...FREE_FLEET_FALLBACK, ...CATALOG]
  * restore its active agents; the bare /chat route is a fresh "new chat" surface.
  */
 export default function ChatWorkspace({ chatId }: { chatId?: string }) {
-  const { servers, setServers, setCurrentChatId, loadChat, setActiveServerIds, activeServerIds, walletSets, saveWalletSet, authedAddress, loadWalletSet } =
+  const { servers, setServers, setCurrentChatId, loadChat, setActiveServerIds, activeServerIds, walletSets, saveWalletSet, authedAddress, loadWalletSet, linkSetActive, clearActiveServers } =
     useYeetfulStore()
   const { address } = useAccount()
   const router = useRouter()
@@ -103,6 +103,15 @@ export default function ChatWorkspace({ chatId }: { chatId?: string }) {
   // empty state. Defers to a ?mcps= deep link (handled above) and never clobbers
   // an existing selection — returning users keep their persisted set. Needs the
   // directory loaded for slug→id.
+  // An intent link's composed set (/i) is the LINK's: on the bare /chat it
+  // is cleared first, so the wallet's cached set or the default fleet leads
+  // the first look instead of "Your 1 MCP" (QA O-5). Runs before the seed
+  // below (same deps, declared earlier) and never on an open chat/deep link.
+  useEffect(() => {
+    if (chatId || servers.length === 0 || !linkSetActive) return
+    if (new URLSearchParams(window.location.search).get('mcps')) return
+    clearActiveServers()
+  }, [chatId, servers.length, linkSetActive, clearActiveServers])
   useEffect(() => {
     if (chatId || appliedMcpParam.current || servers.length === 0) return
     if (activeServerIds.length > 0) return

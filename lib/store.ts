@@ -169,6 +169,14 @@ interface YeetfulStore {
   toggleServer: (id: string) => void
   setActiveServerIds: (ids: string[]) => void
   clearActiveServers: () => void
+  /** The working set came from an intent link's composed set (/i), not from
+   *  the visitor. Persisted with it, so a later bare /chat visit knows the
+   *  set is the LINK's — a house-link arrival used to turn the app's first
+   *  look into a one-MCP rail ("Your 1 MCP · Message Robinhood Chain…",
+   *  QA O-5, squad gtm 2026-09-08). ChatWorkspace clears it and lets the
+   *  wallet's own cache / the default fleet lead. */
+  linkSetActive: boolean
+  setLinkServerIds: (ids: string[]) => void
 
   // The chain picker's selection — null = all supported chains (default).
   // Scopes the splash cards and makes the chain first-class for tx builds.
@@ -351,8 +359,10 @@ export const useYeetfulStore = create<YeetfulStore>()(
             : [...s.activeServerIds, id],
         }))
       },
-      setActiveServerIds: (ids) => set({ activeServerIds: ids }),
-      clearActiveServers: () => set({ activeServerIds: [] }),
+      setActiveServerIds: (ids) => set({ activeServerIds: ids, linkSetActive: false }),
+      clearActiveServers: () => set({ activeServerIds: [], linkSetActive: false }),
+      linkSetActive: false,
+      setLinkServerIds: (ids) => set({ activeServerIds: ids, linkSetActive: true }),
 
       selectedChainId: null,
       setSelectedChainId: (id) => set({ selectedChainId: id }),
@@ -775,6 +785,13 @@ export const useYeetfulStore = create<YeetfulStore>()(
             currentChatId: s.currentChatId === chat.id ? created.id : s.currentChatId,
             adoptedChatIds: { ...s.adoptedChatIds, [chat.id]: created.id },
           }))
+          // The address bar still says /chat/<localId> — a dead id once the
+          // thread is DB-backed, so a reload landed on an empty new chat
+          // instead of the thread the visitor just signed in to KEEP (squad
+          // gtm 2026-09-08, driven live: adopted + listed, URL stale).
+          if (typeof window !== 'undefined' && window.location.pathname === `/chat/${chat.id}`) {
+            window.history.replaceState(null, '', `/chat/${created.id}${window.location.search}`)
+          }
           return created.id
         } catch {
           return null
@@ -857,6 +874,7 @@ export const useYeetfulStore = create<YeetfulStore>()(
       // leak into another account or survive a sign-out.
       partialize: (state) => ({
         activeServerIds: state.activeServerIds,
+        linkSetActive: state.linkSetActive,
         selectedChainId: state.selectedChainId,
         manualSlugs: state.manualSlugs,
         walletSets: state.walletSets,

@@ -33,6 +33,8 @@ import SignInFlowLink from '@/components/SignInFlowLink'
 import { YeetfulMark } from '@/components/Logo'
 import { useSession } from '@/lib/session'
 import { cdpEnabled } from '@/lib/cdp-embedded'
+import { bootHoldingFor, initialHoldElapsed } from '@/lib/wallet-reconnect'
+import { useHydrated } from '@/lib/use-hydrated'
 import { brandBloomTint, brandCtaStyle, brandThemeStyle, type LinkBrand } from '@/lib/brand-theme'
 import { isTransferShaped, linkEyebrow } from '@/lib/intent-links'
 import { useYeetfulStore, McpServer } from '@/lib/store'
@@ -115,7 +117,7 @@ export default function IntentRuntime({
   const { address, isConnected, status: walletStatus } = useAccount()
   const { openConnectModal } = useConnectModal()
   const { status, needsSignIn, signIn, signingIn } = useSession()
-  const { servers, setServers, setActiveServerIds, setCurrentChatId } = useYeetfulStore()
+  const { servers, setServers, setLinkServerIds, setCurrentChatId } = useYeetfulStore()
 
   const [started, setStarted] = useState(false)
   const [built, setBuilt] = useState(false)
@@ -152,10 +154,22 @@ export default function IntentRuntime({
   // never answers (offline WalletConnect/CDP init) left the splash on
   // "checking for a connected wallet" with NO door forever. After a beat the
   // door renders regardless — a connected wallet still auto-starts.
-  const [walletWaitOver, setWalletWaitOver] = useState(false)
+  //
+  // And a visitor who has NEVER connected here has nothing to reconnect:
+  // wagmi still reports 'reconnecting' for ~4s while the WalletConnect lane
+  // inits, and this door was hidden behind "checking for a connected wallet"
+  // for 5.3s on a prod build (squad gtm 2026-09-08, measured). wagmi's own
+  // persisted store says whether a reconnect is even possible — when it
+  // isn't, the door paints at once (lib/wallet-reconnect) — decided at mount
+  // from wagmi's store, and never applied to the HYDRATION render: the server
+  // painted the door, so the client's first render must too (bootHoldingFor).
+  const hydrated = useHydrated()
+  const [walletWaitOver, setWalletWaitOver] = useState(() => initialHoldElapsed(typeof window === 'undefined' ? null : window.localStorage))
   useEffect(() => {
+    if (walletWaitOver) return
     const t = setTimeout(() => setWalletWaitOver(true), 4000)
     return () => clearTimeout(t)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
   const [prompt, setPrompt] = useState<{ text: string; send: boolean; at: number } | null>(null)
   // The post-receipt SIWE round-trip renders the waiting card only for a
@@ -172,7 +186,20 @@ export default function IntentRuntime({
   // Held = the client-side verb belt (isTransferShaped) OR the server's
   // content-origin verdict — either alone is enough to hold the ask.
   const transferShaped = isTransferShaped(ask) || prefillOnly
-  const heldCopy = holdCopy || 'This ask involves a transfer, so nothing runs until you press send.'
+  const heldCopy = holdCopy || 'This ask moves money to someone — Pantessa never auto-sends a transfer from a link, so nothing runs until you press send yourself.'
+  // The held state is a CARD in the run, not a line in the header: a visitor
+  // whose ask was held used to land on a black runtime with one amber
+  // sentence at the top and a prefilled composer at the bottom, and nothing
+  // said what to press (LINKS, squad gtm 2026-09-08). It stays up until a
+  // turn settles — their own send — then the thread is the state.
+  const [heldTurnSeen, setHeldTurnSeen] = useState(false)
+  const focusComposer = () => {
+    const boxes = document.querySelectorAll<HTMLTextAreaElement>('textarea')
+    const box = boxes[boxes.length - 1]
+    if (!box) return
+    box.focus()
+    box.scrollIntoView({ block: 'center' })
+  }
 
   /** Where sign-in should land: this link, exactly as opened. */
   const hereHref = () =>
@@ -213,12 +240,14 @@ export default function IntentRuntime({
       .split(',')
       .map((s) => servers.find((srv) => srv.slug === s.trim())?.id)
       .filter((id): id is string => !!id)
-    if (ids.length) setActiveServerIds(ids)
+    // The LINK's set, marked as such — it runs this page and never becomes
+    // the wallet's working set on /chat (store.linkSetActive).
+    if (ids.length) setLinkServerIds(ids)
     // Definitive settle either way ([[chat-id-load-race]]): a stale slug
     // list must release the ask (the refusal copy then says what to add),
     // never hold the link's whole flow hostage.
     setMcpsReady(true)
-  }, [servers, mcps, setActiveServerIds])
+  }, [servers, mcps, setLinkServerIds])
 
   // Connect IS the consent: the moment a wallet is present, start the
   // runtime. The auto path (wagmi reconnect resolving a beat after load)
@@ -280,6 +309,7 @@ export default function IntentRuntime({
 
   const onTurnEvent = (name: string, data?: Record<string, unknown>) => {
     if (name !== 'turn' || !data) return
+    setHeldTurnSeen(true)
     const valueUsd = typeof data.valueUsd === 'number' ? data.valueUsd : undefined
     // Receipt verification (2026-09-01): the signed beacon carries the tx
     // hash + chain so the server can verify the receipt on-chain before
@@ -343,7 +373,7 @@ export default function IntentRuntime({
     // and a found wallet auto-starts the runtime — both moments read as a
     // stall or a hard cut without a stage direction. The loader IS the
     // stage direction: checking → found → fade → the chat takes over.
-    const walletResolving = (walletStatus === 'connecting' || walletStatus === 'reconnecting') && !walletWaitOver
+    const walletResolving = bootHoldingFor({ hydrated, walletStatus, holdElapsed: walletWaitOver })
     return (
       // The splash wears the creator's brand wholesale (bg + accent + logo,
       // scoped here) — the post-connect chat keeps Pantessa's own legibility.
@@ -489,6 +519,14 @@ export default function IntentRuntime({
             <p className="text-[12px] text-[color:var(--muted-2)] mt-4 max-w-md max-sm:order-2">
               Connecting runs the scan and the build for your wallet — signing stays yours
               {transferShaped ? `. ${heldCopy}` : '.'}
+              {/* An embed-generated link promises its host a way back — say so
+                  HERE, before the signature; the visitor used to learn it only
+                  from the post-receipt button (LINKS, squad gtm 2026-09-08). */}
+              {redirectHost && (
+                <span className="block mt-2" data-return-host={redirectHost}>
+                  After you sign, a <strong className="font-medium text-[color:var(--muted)]">Return to {redirectHost}</strong> button brings you back to where you started.
+                </span>
+              )}
             </p>
           )}
           {hasCreator && (
@@ -656,11 +694,6 @@ export default function IntentRuntime({
               <NavAccount />
             </div>
           </div>
-          {transferShaped && (
-            <p className="mt-2 text-[12px] text-amber-400" data-origin-fence="held">
-              {prefillOnly ? heldCopy : 'This ask involves a transfer — review it in the composer and press send yourself.'}
-            </p>
-          )}
         </div>
         {/* The header's bottom rule doubles as the run's progress line:
             connected → built → signed fills it in thirds. Decorative-only
@@ -673,6 +706,28 @@ export default function IntentRuntime({
       {/* One focused reading column — the runtime is a single ask on a
           stage, not a workspace; a 5xl-wide thread scattered the user bubble
           and the reply to opposite edges of big screens. */}
+      {transferShaped && !heldTurnSeen && (
+        <div className="relative flex-shrink-0 max-w-3xl w-full mx-auto px-4 sm:px-6 pt-4" data-origin-fence="held">
+          <div className="yenter rounded-2xl border border-amber-400/40 bg-[color-mix(in_srgb,var(--surf-1)_88%,transparent)] px-4 py-4 sm:px-5">
+            <p className="mono text-[10px] uppercase tracking-widest text-amber-400 leading-none">Held for you to send</p>
+            <p className="mt-2 text-[15px] leading-snug text-[color:var(--fg)]" style={{ fontFamily: 'var(--font-serif)' }}>
+              This link doesn&apos;t run itself.
+            </p>
+            <p className="mt-1.5 text-[12.5px] leading-relaxed text-[color:var(--muted)]">{heldCopy}</p>
+            <p className="mt-2 text-[12.5px] leading-relaxed text-[color:var(--muted)]">
+              It&apos;s waiting in the composer below, exactly as written — read the address, then send it if it&apos;s what you meant.
+            </p>
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              <button type="button" onClick={focusComposer} className={`${chipClass} border-amber-400/60 bg-amber-400/10 text-[color:var(--fg)] hover:border-amber-400`}>
+                <ArrowRight className="w-4 h-4" /> READ IT IN THE COMPOSER
+              </button>
+              <Link href="/chat" className={chipClass}>
+                <MessageSquare className="w-4 h-4" /> NOT MINE — OPEN THE APP
+              </Link>
+            </div>
+          </div>
+        </div>
+      )}
       <div className="relative flex-1 max-w-3xl w-full mx-auto px-4 sm:px-6 min-h-0">
         <ChatInterface simple injectedPrompt={prompt} onEmbedEvent={onTurnEvent} intentLinkSlug={slug} />
       </div>

@@ -231,7 +231,7 @@ export default function ClarifyChips({
                       ? `Stopped watching ${chainName} after a while — when the purchase lands, press the button above.`
                       : watch.failures >= 3
                         ? `${chainName} isn’t answering right now — still trying. Press the button above once it’s there.`
-                        : `Watching ${chainName} for the funds — this continues on its own when they land${watch.lastReadAt ? ` · checked ${Math.max(1, Math.round((Date.now() - new Date(watch.lastReadAt).getTime()) / 1000))}s ago` : ''}.`}
+                        : `Stripe opened in a new tab — finish the purchase there, then come back. Watching ${chainName} for the funds — this continues on its own when they land${watch.lastReadAt ? ` · checked ${Math.max(1, Math.round((Date.now() - new Date(watch.lastReadAt).getTime()) / 1000))}s ago` : ''}.`}
                   </div>
                 )}
               </div>

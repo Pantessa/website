@@ -103,7 +103,7 @@ export default function EmbedAssemble() {
       <div className="asm__code">
         <div className="asm__codebar mono">
           <span>npm i pantessa</span>
-          <span className="asm__ver">v0.9</span>
+          <span className="asm__ver">v1.0</span>
         </div>
         <pre className="asm__pre mono">
           {LINES.map((l, i) => (
