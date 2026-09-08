@@ -88,6 +88,10 @@ const KIND_LABEL: Record<string, string> = {
   // lib/wallet-refusal.ts: the artifact was built + guarded, then the WALLET
   // said no (the 2026-08-17 MetaMask chainId-1337 class) — had_funds TRUE.
   'wallet-refused': 'wallet refused',
+  // lib/dry-run.ts via SendTxChain: a built + guarded step held back BEFORE
+  // any wallet saw it — a real revert, no gas, or (pre-2026-09-08) an RPC
+  // hiccup misread as one. had_funds TRUE.
+  withheld: 'withheld (dry-run)',
   // lib/roster-observe.ts (doors run): roster surfaces walling — mandate
   // grammar refusals, hire consent failures, manager proposals hitting
   // bench/cap/fired, decline auth failures. build_path = roster-<surface>.

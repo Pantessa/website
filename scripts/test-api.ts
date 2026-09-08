@@ -23,6 +23,9 @@
  */
 import { readFile } from 'node:fs/promises'
 import { generatePrivateKey, privateKeyToAccount, type PrivateKeyAccount } from 'viem/accounts'
+import { createPublicClient, custom, HttpRequestError, RpcRequestError, TimeoutError } from 'viem'
+import { base } from 'viem/chains'
+import { dryRunTx, isAllowanceLag } from '../lib/dry-run'
 import { createSiweMessage } from 'viem/siwe'
 import { grantTypedData } from '../lib/grant-typed-data'
 import { ROBINHOOD_DESK } from '../lib/live-examples'
@@ -10079,6 +10082,58 @@ async function main() {
     refreshBadTier.status === 400 && /unknown fee tier/i.test(refreshBadTierBody.error ?? ''),
     JSON.stringify(refreshBadTierBody),
   )
+  // Dry-run classifier (the 2026-09-08 SPY withhold): an RPC that didn't
+  // answer is NOT revert evidence. viem's first lines for transport failures
+  // never say "timeout"/"rate limit" — the old regex booked every one of them
+  // as "would revert on-chain". Pin the verdict by error CHAIN, through
+  // viem's real wrapping (a custom transport that throws the node's error).
+  const dryThrowing = (mk: () => Error) => {
+    let calls = 0
+    const client = createPublicClient({
+      chain: base,
+      transport: custom(
+        {
+          request: async ({ method }: { method: string }) => {
+            if (method !== 'eth_estimateGas') return '0x1'
+            calls++
+            throw mk()
+          },
+        },
+        { retryCount: 0 },
+      ),
+    })
+    return { client, calls: () => calls }
+  }
+  const DRY_TX = { from: owner.address, to: owner.address, data: '0x', value: '0' }
+  const rpcErr = (code: number, message: string) => new RpcRequestError({ body: {}, url: 'https://rpc.test', error: { code, message } })
+  const dryUnknown = dryThrowing(() => rpcErr(429, 'rate limited'))
+  const vUnknown = await dryRunTx(dryUnknown.client, DRY_TX, { attempts: 3, backoffMs: 1 })
+  check(
+    'dry-run: an unknown-code JSON-RPC error ("RPC Request failed.") is unavailable — retried, never a revert',
+    vUnknown.kind === 'unavailable' && dryUnknown.calls() === 3 && /RpcRequestError\(429\)/.test(vUnknown.detail) && /rate limited/.test(vUnknown.detail),
+    JSON.stringify(vUnknown),
+  )
+  const vTimeout = await dryRunTx(dryThrowing(() => new TimeoutError({ body: {}, url: 'https://rpc.test' })).client, DRY_TX, { attempts: 1 })
+  check('dry-run: a timeout ("took too long to respond") is unavailable — the first-line regex missed it', vTimeout.kind === 'unavailable', JSON.stringify(vTimeout))
+  const vHttp = await dryRunTx(dryThrowing(() => new HttpRequestError({ url: 'https://rpc.test', status: 502, body: {} })).client, DRY_TX, { attempts: 1 })
+  check('dry-run: an HTTP 502 is unavailable', vHttp.kind === 'unavailable', JSON.stringify(vHttp))
+  const vHeader = await dryRunTx(dryThrowing(() => rpcErr(-32000, 'header not found')).client, DRY_TX, { attempts: 1 })
+  check('dry-run: a lagging node\'s "header not found" (-32000) is unavailable, not "Missing or invalid parameters"', vHeader.kind === 'unavailable', JSON.stringify(vHeader))
+  const dryStf = dryThrowing(() => rpcErr(3, 'execution reverted: STF'))
+  const vStf = await dryRunTx(dryStf.client, DRY_TX, { attempts: 3, backoffMs: 1 })
+  check(
+    'dry-run: code-3 STF is a revert on the FIRST answer (chain evidence is never retried), read as allowance lag',
+    vStf.kind === 'revert' && dryStf.calls() === 1 && isAllowanceLag(vStf.reason) && /allowance/.test(vStf.reason) && /\(STF\)/.test(vStf.reason),
+    JSON.stringify(vStf),
+  )
+  const vSlip = await dryRunTx(dryThrowing(() => rpcErr(3, 'execution reverted: Too little received')).client, DRY_TX, { attempts: 1 })
+  check('dry-run: "Too little received" is a revert in slippage words, not allowance lag', vSlip.kind === 'revert' && /slippage/.test(vSlip.reason) && !isAllowanceLag(vSlip.reason), JSON.stringify(vSlip))
+  const vGas = await dryRunTx(dryThrowing(() => rpcErr(-32000, 'insufficient funds for gas * price + value')).client, DRY_TX, { attempts: 1, chainName: 'Robinhood Chain' })
+  check('dry-run: insufficient funds is no-gas, named by chain', vGas.kind === 'no-gas' && /no ETH for gas on Robinhood Chain/.test(vGas.reason), JSON.stringify(vGas))
+  const vOddRevert = await dryRunTx(dryThrowing(() => rpcErr(-32603, 'execution reverted: Transaction too old')).client, DRY_TX, { attempts: 1 })
+  check('dry-run: a node that says "execution reverted" under an odd code is still a revert', vOddRevert.kind === 'revert' && /deadline/.test(vOddRevert.reason), JSON.stringify(vOddRevert))
+  const vClean = await dryRunTx(createPublicClient({ chain: base, transport: custom({ request: async () => '0x5208' }, { retryCount: 0 }) }), DRY_TX, { attempts: 1 })
+  check('dry-run: a clean estimate is clean', vClean.kind === 'clean')
   // Spot guardian gate: claims BEFORE the HL guardian (whose loose coin slot
   // would read "spot" as a coin) and asks to connect — never a planner fall.
   const spotGate = await fetch(`${BASE}/api/chat`, {
@@ -12287,6 +12342,26 @@ async function main() {
       'wallet refusal beacon: an internal-run drill row is written STAMPED (202, internal:true) — hidden from /dashboard/failures by default',
       refusalStamped.status === 202 && refusalStampedBody.ok === true && refusalStampedBody.internal === true && !!refusalStampedBody.id,
     )
+    // `withheld` (lib/dry-run via SendTxChain): a step our own dry-run held
+    // back rides the same beacon under its own kind, with NO rejection gate —
+    // the words are ours. Stamped like every harness row.
+    const withheld = await fetch(`${BASE}/api/ask-failures/wallet`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ kind: 'withheld', wallet: signer.address, artifact: 'tx-chain', ask: 'Swap 12.00 USDG → SPY', detail: 'execution: the rebuilt swap would revert on-chain (the quote deadline passed (Transaction too old))', buildPath: 'uniswap-swap', chainId: 4663 }),
+    })
+    const withheldBody = (await withheld.json()) as { ok?: boolean; kind?: string; internal?: boolean; id?: string }
+    check(
+      'withheld beacon: a dry-run withhold lands as kind `withheld` (202, stamped), never gated as a "rejection"',
+      withheld.status === 202 && withheldBody.ok === true && withheldBody.kind === 'withheld' && withheldBody.internal === true && !!withheldBody.id,
+      JSON.stringify(withheldBody),
+    )
+    const withheldKindBogus = await fetch(`${BASE}/api/ask-failures/wallet`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ kind: 'planner-answer', wallet: signer.address, artifact: 'tx-chain', ask: 'x', detail: 'Provided chainId "1337" must match the active chainId "4663"' }),
+    })
+    check('withheld beacon: any other `kind` value falls back to wallet-refused (the beacon never mints arbitrary kinds)', withheld.status === 202 && ((await withheldKindBogus.json()) as { kind?: string }).kind === 'wallet-refused')
     // These two must reach the rejection/shape gates, so they opt out of the
     // suite-wide internal-run stamp (which would short-circuit them first).
     const refusalRejected = await fetch(`${BASE}/api/ask-failures/wallet`, {

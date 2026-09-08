@@ -15,37 +15,49 @@ import { buildUniswapV4Swap, GatedV4PoolError } from '@/lib/uniswap-v4'
 import { buildLifiSwap, NoLifiRouteError } from '@/lib/lifi-venue'
 import { buildLifiBridgeLeg, type FundingLeg } from '@/lib/lifi-bridge'
 import { ensureTokenList } from '@/lib/token-list'
-import { sanitizeChainId, publicClientFor, DEFAULT_CHAIN_ID } from '@/lib/chains'
+import { sanitizeChainId, publicClientFor, chainById, DEFAULT_CHAIN_ID } from '@/lib/chains'
+import { dryRunTx, isAllowanceLag } from '@/lib/dry-run'
 import { LINK_SWAP_FEE_BPS, SWAP_FEE_BPS } from '@/lib/fees'
 
-/** Dry-run the rebuilt swap before offering it. A tx that reverts at
+/** Dry-run the rebuilt tx before offering it. A tx that reverts at
  *  estimation must NEVER reach the wallet: MetaMask's estimate fails too and
  *  its fee display falls back to the block gas limit — which Arbitrum-family
  *  chains report as the 2^50 sentinel, painting a "$32M network fee" dead-end
- *  (the 2026-07-14 AAPL incident). Returns null when the tx estimates clean
- *  (or when we can't check), else a short human reason. */
-async function estimateReverts(
+ *  (the 2026-07-14 AAPL incident). Returns null when the tx may be offered:
+ *  it estimates clean, or the RPC never answered — that is NOT chain
+ *  evidence (the 2026-09-08 SPY withhold), and the calldata's own slippage
+ *  bound still protects the fill. Otherwise the response the card should
+ *  get: `pending` for a node that hasn't indexed the just-confirmed
+ *  approval, `blocked` for a real revert or an unfunded gas account. Every
+ *  non-clean verdict is logged with the node's own words. */
+async function dryRunGate(
   chainId: number,
   from: string,
   tx: { to: string; data: string; value: string },
-): Promise<string | null> {
+  what: 'swap' | 'bridge',
+  kind: string,
+): Promise<NextResponse | null> {
   const client = publicClientFor(chainId)
   if (!client) return null
-  try {
-    await client.estimateGas({
-      account: from as `0x${string}`,
-      to: tx.to as `0x${string}`,
-      data: tx.data as `0x${string}`,
-      value: BigInt(tx.value || '0'),
-    })
+  const chainName = chainById(chainId)?.name ?? `chain ${chainId}`
+  const verdict = await dryRunTx(client, { from, ...tx }, { chainName })
+  if (verdict.kind === 'clean') return null
+  if (verdict.kind === 'unavailable') {
+    console.warn('[tx/refresh] dry-run unavailable — offering the slippage-bounded tx', JSON.stringify({ kind, chainId, detail: verdict.detail.slice(0, 300) }))
     return null
-  } catch (err) {
-    const msg = err instanceof Error ? err.message.split('\n')[0] : ''
-    // RPC hiccups (timeouts, rate limits) are not revert evidence — fail open
-    // to the slippage bound rather than blocking a good swap on a flaky node.
-    if (/timeout|timed out|rate limit|fetch failed|econnre/i.test(msg)) return null
-    return msg || 'the transaction would revert on-chain'
   }
+  if (verdict.kind === 'revert' && isAllowanceLag(verdict.reason)) {
+    // The builder just read the allowance on-chain; a node that reverts on
+    // it hasn't indexed the approval yet — the card waits and retries.
+    console.warn('[tx/refresh] dry-run allowance lag — retry', JSON.stringify({ kind, chainId, raw: verdict.raw.slice(0, 200) }))
+    return NextResponse.json({ pending: true, note: 'allowance not visible to the chain node yet' })
+  }
+  const reasons =
+    verdict.kind === 'no-gas'
+      ? `${verdict.reason} — send a little ETH there, then reopen this step`
+      : `the rebuilt ${what} would revert on-chain (${verdict.reason.slice(0, 200)})`
+  console.warn('[tx/refresh] withheld', JSON.stringify({ kind, chainId, verdict: verdict.kind, raw: verdict.raw.slice(0, 200) }))
+  return NextResponse.json({ blocked: true, blockKind: 'execution', reasons })
 }
 
 export async function POST(req: NextRequest) {
@@ -104,10 +116,8 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ pending: true, note: 'allowance not visible on-chain yet' })
       }
       const bridgeStep = built.steps[built.bridgeStepIndex]
-      const revert = await estimateReverts(origin, from, bridgeStep.tx)
-      if (revert) {
-        return NextResponse.json({ blocked: true, blockKind: 'execution', reasons: `the rebuilt bridge would revert on-chain (${revert.slice(0, 200)})` })
-      }
+      const gate = await dryRunGate(origin, from, bridgeStep.tx, 'bridge', 'lifi-bridge')
+      if (gate) return gate
       return NextResponse.json({ tx: bridgeStep.tx, summary: built.summary, guardrails: built.guardrails, validUntil: bridgeStep.validUntil ?? null })
     } catch (err) {
       return NextResponse.json({ error: err instanceof Error ? err.message.slice(0, 300) : 'rebuild failed' }, { status: 502 })
@@ -150,10 +160,8 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ pending: true, note: 'allowance not visible on-chain yet' })
       }
       const swapStep = lifi.steps[lifi.swapStepIndex]
-      const lifiRevert = await estimateReverts(chainId, from, swapStep.tx)
-      if (lifiRevert) {
-        return NextResponse.json({ blocked: true, blockKind: 'execution', reasons: `the rebuilt swap would revert on-chain (${lifiRevert.slice(0, 200)})` })
-      }
+      const gate = await dryRunGate(chainId, from, swapStep.tx, 'swap', 'lifi-swap')
+      if (gate) return gate
       return NextResponse.json({ tx: swapStep.tx, summary: lifi.summary, guardrails: lifi.guardrails, validUntil: swapStep.validUntil ?? null })
     }
     if (body.kind === 'uniswap-v4-swap') {
@@ -167,10 +175,8 @@ export async function POST(req: NextRequest) {
       if (v4.steps.length > 1) {
         return NextResponse.json({ pending: true, note: 'allowance not visible on-chain yet' })
       }
-      const v4Revert = await estimateReverts(chainId, from, v4.steps[0].tx)
-      if (v4Revert) {
-        return NextResponse.json({ blocked: true, blockKind: 'execution', reasons: `the rebuilt swap would revert on-chain (${v4Revert.slice(0, 200)})` })
-      }
+      const gate = await dryRunGate(chainId, from, v4.steps[0].tx, 'swap', 'uniswap-v4-swap')
+      if (gate) return gate
       return NextResponse.json({ tx: v4.steps[0].tx, summary: v4.summary, guardrails: v4.guardrails, validUntil: v4.steps[0].validUntil ?? null })
     }
     const uni = await buildUniswapSwap({ sellToken, buyToken, amountHuman, from, chainId, feeBps })
@@ -183,10 +189,8 @@ export async function POST(req: NextRequest) {
       // tell the card to wait and retry rather than offering a doomed swap.
       return NextResponse.json({ pending: true, note: 'allowance not visible on-chain yet' })
     }
-    const uniRevert = await estimateReverts(chainId, from, uni.swapTx)
-    if (uniRevert) {
-      return NextResponse.json({ blocked: true, blockKind: 'execution', reasons: `the rebuilt swap would revert on-chain (${uniRevert.slice(0, 200)})` })
-    }
+    const gate = await dryRunGate(chainId, from, uni.swapTx, 'swap', 'uniswap-swap')
+    if (gate) return gate
     return NextResponse.json({ tx: uni.swapTx, summary: uni.summary, guardrails: uni.guardrails, validUntil: uni.validUntil })
   } catch (err) {
     if (err instanceof GatedV4PoolError) {
