@@ -21,6 +21,7 @@
 // than a receipt read.
 
 import prisma from '@/lib/db'
+import { createPublicClient, fallback, http, type PublicClient } from 'viem'
 import { APP_CHAINS, chainById, chainByKey, publicClientFor } from '@/lib/chains'
 import { compileJobAsk } from '@/lib/jobs'
 import { parseCadence } from '@/lib/dca'
@@ -218,7 +219,7 @@ export async function verifyEventNow(eventId: string): Promise<ReceiptVerdict | 
   }
 
   if (!ev.txHash || !ev.chainId) return settle(ev.wallet ? 'unverified' : 'mismatch') // hashless: fail closed (T-R1); walletless can never verify
-  if (!publicClientFor(ev.chainId)) return settle('unverified')
+  if (!receiptClientFor(ev.chainId)) return settle('unverified')
 
   // Single-use hash across COUNTED events (any slug — recycling is the attack).
   const reuse = await prisma.intentLinkEvent
@@ -240,12 +241,36 @@ export async function verifyEventNow(eventId: string): Promise<ReceiptVerdict | 
   )
 }
 
+/** The client the receipt reads go through. MEASURED 2026-09-08 (squad
+ *  security round 3): publicnode's free tier answers `eth_getTransactionReceipt`
+ *  on Base with "Archive requests require a personal token" for a tx FIVE
+ *  blocks old — every receipt, every age — while the chain's own default RPC
+ *  answers in ~150ms. The registry pins publicnode for Base / Ethereum /
+ *  Arbitrum (lib/chains.ts, server-side reads at 'latest' are fine there), so
+ *  through that client alone the `verified` verdict was unreachable and every
+ *  honest sign stayed `unverified` forever. Receipt reads therefore run on a
+ *  fallback transport — the pin first, the chain's default RPC when the pin
+ *  refuses (viem's fallback moves on any non-user-rejection error). Read-only,
+ *  cached per chain. */
+const receiptClients = new Map<number, PublicClient>()
+export function receiptClientFor(chainId: number): PublicClient | null {
+  const chain = chainById(chainId)
+  if (!chain) return null
+  if (!chain.rpcUrl) return publicClientFor(chainId)
+  let client = receiptClients.get(chainId)
+  if (!client) {
+    client = createPublicClient({ chain: chain.viem, transport: fallback([http(chain.rpcUrl), http()]) })
+    receiptClients.set(chainId, client)
+  }
+  return client
+}
+
 /** The chain reads behind a verdict. SEPARATE try/catches: one odd read
  *  must not blank the other's facts — an OP-stack deposit tx's receipt read
  *  rejects while the tx itself reads fine, and the tx's own `from` is already
  *  decisive for a foreign spoof. */
 async function readReceiptFacts(chainId: number, txHash: string): Promise<Pick<ReceiptFacts, 'tx' | 'receiptStatus'>> {
-  const client = publicClientFor(chainId)
+  const client = receiptClientFor(chainId)
   let tx: ReceiptFacts['tx'] = null
   let receiptStatus: ReceiptFacts['receiptStatus'] = null
   if (!client) return { tx, receiptStatus }
@@ -368,7 +393,7 @@ export async function verifyTurnNow(turnId: string, bodyChainId?: unknown): Prom
     const txHash = extractTxHash(t.txUrl)
     const chainId = chainIdOfTurn(t, bodyChainId)
     if (!txHash || !chainId) return settle('unverified') // hashless / chainless: fail closed (T-R1)
-    if (!publicClientFor(chainId)) return settle('unverified')
+    if (!receiptClientFor(chainId)) return settle('unverified')
 
     // Single-use hash across COUNTED turns (any slug, any wallet — recycling
     // one real tx across beacons is the attack). Per table: the funnel event

@@ -2625,6 +2625,32 @@ async function main() {
       await fetch(`${BASE}/api/intent-links/${s2Slug}`, { method: 'DELETE', headers: { cookie: mallorySession } })
     }
 
+    // ── §LOW: the two "Request an MCP" preview doors (fetch-meta + discover) ──
+    // fetch-meta fetched ANY url for ANY caller (169.254.169.254, localhost,
+    // private CIDRs) and returned the body's meta; discover introspected any
+    // public MCP for anyone. Now both need a session, and fetch-meta wears the
+    // brand scan's SSRF fence + post-redirect re-validation.
+    {
+      const metaAnon = await fetch(`${BASE}/api/fetch-meta`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ url: 'https://example.com' }) })
+      const discAnon = await fetch(`${BASE}/api/servers/discover`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ url: 'https://example.com/mcp' }) })
+      check('mcp preview doors: fetch-meta + discover refuse a signed-out caller (401)', metaAnon.status === 401 && discAnon.status === 401)
+      const metaOf = async (url: string) => fetch(`${BASE}/api/fetch-meta`, { method: 'POST', headers: M, body: JSON.stringify({ url }) })
+      const [imds, loop, plainHttp, cred, ipv6] = await Promise.all([
+        metaOf('http://169.254.169.254/latest/meta-data/'),
+        metaOf('https://localhost:8443/'),
+        metaOf('http://example.com/'),
+        metaOf('https://user:pw@example.com/'),
+        metaOf('https://[::1]/'),
+      ])
+      check(
+        'mcp preview doors: fetch-meta refuses the SSRF shapes by name (cloud metadata IP, localhost, plain http, credentials, IPv6 literal) — 400, nothing fetched',
+        [imds, loop, plainHttp, cred, ipv6].every((r) => r.status === 400),
+        JSON.stringify([imds.status, loop.status, plainHttp.status, cred.status, ipv6.status]),
+      )
+      const metaBad = await fetch(`${BASE}/api/fetch-meta`, { method: 'POST', headers: M, body: JSON.stringify({}) })
+      check('mcp preview doors: fetch-meta without a url → 400', metaBad.status === 400)
+    }
+
     // The fee-split disclosure renders on creator-minted /i pages.
     const iPage = await (await fetch(`${BASE}/i/${slug}`)).text()
     check('intent links: /i discloses the creator fee split', /earns half of Pantessa/.test(iPage))
@@ -3389,19 +3415,24 @@ async function main() {
         body: JSON.stringify({ kind, variant }),
       })
     await abEvent(1)
+    await abEvent(1, 'built')
+    // A fabricated signed beacon (no hash, no wallet) on an EVM-tx link is a
+    // `mismatch` — the per-phrasing funnel must NOT show a conversion for it
+    // (S-2: decisive kinds count only on a counted verdict).
     await abEvent(1, 'signed')
     await abEvent(0)
     const junkEvent = await abEvent(99) // out of range → stored variant-less, aggregate only
     check('variants: events accept an index; junk indexes degrade to variant-less', junkEvent.status === 200)
     const abList = (await (await fetch(`${BASE}/api/intent-links`, { headers: { cookie: mallorySession } })).json()) as {
-      links: Array<{ slug: string; funnel: { open: number }; funnelVariants?: Array<{ variant: number; ask: string; open: number; signed: number }> }>
+      links: Array<{ slug: string; funnel: { open: number }; funnelVariants?: Array<{ variant: number; ask: string; open: number; built: number; signed: number }> }>
     }
     const abRow = abList.links.find((l) => l.slug === abLink.slug)
     const v0 = abRow?.funnelVariants?.find((v) => v.variant === 0)
     const v1 = abRow?.funnelVariants?.find((v) => v.variant === 1)
     check(
-      'variants: the creator funnel segments per phrasing (v1 converts, v0 opened)',
-      !!v0 && !!v1 && v0.ask === 'Buy $12 of TSLA' && v0.open === 1 && v1.open === 1 && v1.signed === 1,
+      'variants: the creator funnel segments per phrasing (v1 built, v0 opened) — and a fabricated signed on v1 counts nothing',
+      !!v0 && !!v1 && v0.ask === 'Buy $12 of TSLA' && v0.open === 1 && v1.open === 1 && v1.built === 1 && v1.signed === 0,
+      JSON.stringify({ v0, v1 }),
     )
     check('variants: the aggregate funnel still counts every open (junk-variant row included)', !!abRow && abRow.funnel.open === 3)
     const abPage = await fetch(`${BASE}/i/${abLink.slug}`)
