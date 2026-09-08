@@ -3067,8 +3067,10 @@ async function main() {
       // JobCard header: the status pill (flex-shrink-0) squeezed the title
       // span to zero width at 375 — the money vanished. flex-1 + two lines.
       check(
-        'mobile: JobCard header title keeps its width and wraps on phones',
-        /<span className="flex flex-1 items-center gap-2 min-w-0">[\s\S]{0,400}min-w-0 max-sm:line-clamp-2 sm:truncate">\{job\.title\}/.test(jobCard),
+        'mobile: JobCard header title takes its own full-width row on phones',
+        /className="w-full flex flex-wrap items-center justify-between gap-2 px-3 py-2 text-left"/.test(jobCard) &&
+          /<span className="flex flex-1 items-center gap-2 min-w-0">[\s\S]{0,400}min-w-0 truncate max-sm:hidden">\{job\.title\}/.test(jobCard) &&
+          /<span className="sm:hidden basis-full pl-6 text-\[12\.5px\] leading-snug line-clamp-2">\{job\.title\}<\/span>/.test(jobCard),
       )
       check('mobile: JobCard cancel is a 40px touch target', /void cancel\(\)\} className="[^"]*\[@media\(hover:none\)\]:min-h-10/.test(jobCard))
       // Overlay chrome: the 28px close (and chart external) buttons are 40px
