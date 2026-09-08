@@ -229,7 +229,7 @@ export default function AddMcpModal({ open, onClose }: { open: boolean; onClose:
             exit={{ opacity: 0, y: 8, scale: 0.98 }}
             transition={{ duration: 0.2, ease: 'easeOut' }}
             role="dialog"
-            aria-label="Add your own MCP"
+            aria-label="Request an MCP"
             onClick={(e) => e.stopPropagation()}
             className="addmcp__panel w-full max-w-[540px] rounded-2xl border border-[var(--line-2)] shadow-[0_24px_64px_rgba(0,0,0,0.35)]"
           >
