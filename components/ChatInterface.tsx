@@ -1,5 +1,7 @@
 'use client'
 
+import { guardWarnLines } from '@/lib/content-origin'
+import ExternalBuildNotice from '@/components/ExternalBuildNotice'
 import { analytics } from '@/lib/analytics'
 import { feeBpsOfArtifact } from '@/lib/fees'
 import { Fragment, useState, useRef, useEffect, useSyncExternalStore } from 'react'
@@ -144,7 +146,7 @@ function MintLinkTurn({ onMint }: { onMint: () => void }) {
   )
 }
 
-function buildMeta(receipts: unknown, payer: unknown, voteRequest: unknown, voteCandidates?: unknown, routeReport?: unknown, routerTrace?: unknown, voteProposal?: unknown, orderRequest?: unknown, guardrails?: unknown, txRequest?: unknown, workingContext?: unknown, txChain?: unknown, clarify?: unknown, connectWallet?: unknown, connectAsk?: string, portfolio?: unknown, buildPath?: unknown, jobId?: unknown, guardianPolicyId?: unknown, jobToken?: unknown, nfts?: unknown, nftMarket?: unknown, dcaArm?: unknown, spotGuardArm?: unknown) {
+function buildMeta(receipts: unknown, payer: unknown, voteRequest: unknown, voteCandidates?: unknown, routeReport?: unknown, routerTrace?: unknown, voteProposal?: unknown, orderRequest?: unknown, guardrails?: unknown, txRequest?: unknown, workingContext?: unknown, txChain?: unknown, clarify?: unknown, connectWallet?: unknown, connectAsk?: string, portfolio?: unknown, buildPath?: unknown, jobId?: unknown, guardianPolicyId?: unknown, jobToken?: unknown, nfts?: unknown, nftMarket?: unknown, dcaArm?: unknown, spotGuardArm?: unknown, guardWarnings?: unknown, builtBy?: unknown) {
   const meta: Record<string, unknown> = {}
   if (Array.isArray(receipts) && receipts.length) {
     meta.receipts = receipts
@@ -201,7 +203,22 @@ function buildMeta(receipts: unknown, payer: unknown, voteRequest: unknown, vote
     meta.connectWallet = true
     if (connectAsk) meta.connectAsk = connectAsk
   }
+  // §E3 passthrough honesty: a planner-sourced signable carries the guard's
+  // warnings + the service that built it — the card renders both.
+  if (Array.isArray(guardWarnings) && guardWarnings.length) meta.guardWarnings = guardWarnings.filter((w) => typeof w === 'string')
+  if (typeof builtBy === 'string' && builtBy) meta.builtBy = builtBy
   return Object.keys(meta).length ? meta : undefined
+}
+
+/** §E3: a signable that came out of a directory service through the planner
+ *  (buildPath 'planner') — the card wears the external-build marker. */
+function externalBuildOf(meta: unknown): { builtBy?: string; warnings?: string[] } | null {
+  const m = meta as { buildPath?: unknown; builtBy?: unknown; guardWarnings?: unknown } | null | undefined
+  if (!m || m.buildPath !== 'planner') return null
+  return {
+    builtBy: typeof m.builtBy === 'string' ? m.builtBy : undefined,
+    warnings: Array.isArray(m.guardWarnings) ? (m.guardWarnings as unknown[]).filter((w): w is string => typeof w === 'string') : undefined,
+  }
 }
 
 /** Sum settled receipts into one chat_paid event (no-op when nothing paid). */
@@ -775,7 +792,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
           addMessage(chatId, {
             role: 'assistant',
             content: out.content,
-            meta: buildMeta(out.receipts, out.payer, out.voteRequest, undefined, out.routeReport, out.routerTrace, out.voteProposal, out.orderRequest, undefined, out.txRequest, out.workingContext, out.txChain, out.clarify, undefined, undefined, out.portfolio, out.buildPath, out.jobId, out.guardianPolicyId, out.jobToken, undefined, undefined, out.dcaArm, out.spotGuardArm),
+            meta: buildMeta(out.receipts, out.payer, out.voteRequest, undefined, out.routeReport, out.routerTrace, out.voteProposal, out.orderRequest, undefined, out.txRequest, out.workingContext, out.txChain, out.clarify, undefined, undefined, out.portfolio, out.buildPath, out.jobId, out.guardianPolicyId, out.jobToken, undefined, undefined, out.dcaArm, out.spotGuardArm, out.guardWarnings, out.builtBy),
           })
           // Same standing-intent rail signal as the manual path.
           if (!embedded && (typeof out.jobId === 'string' || typeof out.guardianPolicyId === 'string')) {
@@ -847,7 +864,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
         addMessage(chatId, {
           role: 'assistant',
           content: data.reply || data.error || 'No response.',
-          meta: buildMeta(data.receipts, data.payer, data.voteRequest, data.voteCandidates, undefined, undefined, data.voteProposal, data.orderRequest, data.guardrails, data.txRequest, data.workingContext, data.txChain, data.clarify, data.connectWallet, userMsg, data.portfolio, data.buildPath, data.jobId, data.guardianPolicyId, data.jobToken, data.nfts, data.nftMarket, data.dcaArm, data.spotGuardArm),
+          meta: buildMeta(data.receipts, data.payer, data.voteRequest, data.voteCandidates, undefined, undefined, data.voteProposal, data.orderRequest, data.guardrails, data.txRequest, data.workingContext, data.txChain, data.clarify, data.connectWallet, userMsg, data.portfolio, data.buildPath, data.jobId, data.guardianPolicyId, data.jobToken, data.nfts, data.nftMarket, data.dcaArm, data.spotGuardArm, data.guardWarnings, data.builtBy),
         })
         // A standing intent was born this turn (job / DCA schedule / guardian
         // policy): the JobCard renders inline, AND the rail flips to Jobs so
@@ -1043,7 +1060,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
     history: { role: string; content: string }[],
     workingContext?: WorkingContext,
   ): Promise<
-    | { kind: 'reply'; content: string; receipts?: unknown; payer?: string; voteRequest?: unknown; voteProposal?: unknown; routeReport?: unknown; routerTrace?: unknown; orderRequest?: unknown; txRequest?: unknown; txChain?: unknown; clarify?: unknown; workingContext?: unknown; portfolio?: unknown; buildPath?: unknown; jobId?: unknown; jobToken?: unknown; guardianPolicyId?: unknown; dcaArm?: unknown; spotGuardArm?: unknown }
+    | { kind: 'reply'; content: string; receipts?: unknown; payer?: string; voteRequest?: unknown; voteProposal?: unknown; routeReport?: unknown; routerTrace?: unknown; orderRequest?: unknown; txRequest?: unknown; txChain?: unknown; clarify?: unknown; workingContext?: unknown; portfolio?: unknown; buildPath?: unknown; jobId?: unknown; jobToken?: unknown; guardianPolicyId?: unknown; dcaArm?: unknown; spotGuardArm?: unknown; guardWarnings?: unknown; builtBy?: unknown }
     | { kind: 'plan'; data: { plan: unknown; payments: PaymentToSign[]; listedOnly: unknown; notes?: unknown; turnId?: unknown; capabilities?: unknown } }
   > => {
     clearRouterTrace()
@@ -1073,7 +1090,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
     const reader = res.body.getReader()
     const decoder = new TextDecoder()
     let buf = ''
-    let reply: { kind: 'reply'; content: string; receipts?: unknown; payer?: string; voteRequest?: unknown; voteProposal?: unknown; routeReport?: unknown; routerTrace?: unknown; orderRequest?: unknown; txRequest?: unknown; txChain?: unknown; clarify?: unknown; workingContext?: unknown; portfolio?: unknown; buildPath?: unknown; jobId?: unknown; jobToken?: unknown; guardianPolicyId?: unknown; dcaArm?: unknown; spotGuardArm?: unknown } | null = null
+    let reply: { kind: 'reply'; content: string; receipts?: unknown; payer?: string; voteRequest?: unknown; voteProposal?: unknown; routeReport?: unknown; routerTrace?: unknown; orderRequest?: unknown; txRequest?: unknown; txChain?: unknown; clarify?: unknown; workingContext?: unknown; portfolio?: unknown; buildPath?: unknown; jobId?: unknown; jobToken?: unknown; guardianPolicyId?: unknown; dcaArm?: unknown; spotGuardArm?: unknown; guardWarnings?: unknown; builtBy?: unknown } | null = null
     for (;;) {
       const { done, value } = await reader.read()
       if (done) break
@@ -1122,6 +1139,8 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
             jobId: event.jobId,
             jobToken: event.jobToken,
             guardianPolicyId: event.guardianPolicyId,
+            guardWarnings: event.guardWarnings,
+            builtBy: event.builtBy,
             dcaArm: event.dcaArm,
             spotGuardArm: event.spotGuardArm,
           }
@@ -1715,7 +1734,24 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
                     {msg.role === 'assistant' &&
                       (() => {
                         const builtTx = txRequestOf(msg.meta)
+                        // §E5: the transfer guard's full-address disclosure
+                        // ("N USDC LEAVES your wallet to 0x…") finally has a
+                        // renderer — the one line that prints the recipient
+                        // IN FULL, right above the button that sends it.
+                        // §E5/§E6: every warn-level guardrail note — the
+                        // transfer guard's full-address "LEAVES your wallet
+                        // to 0x…" line, a self-signed cap pass — printed
+                        // right above the button that sends it.
+                        const warnLines = builtTx ? guardWarnLines((msg.meta as { guardrails?: unknown } | undefined)?.guardrails) : []
+                        const external = builtTx ? externalBuildOf(msg.meta) : null
                         return builtTx ? (
+                          <div data-tx-card>
+                            {external && <ExternalBuildNotice builtBy={external.builtBy} warnings={external.warnings} txs={[builtTx as { to?: string; value?: string; data?: string; chainId?: number }]} />}
+                            {warnLines.map((line, i) => (
+                              <p key={i} className="mb-2 text-[12px] leading-snug text-amber-400 break-all" data-recipient-check={/LEAVES your wallet/.test(line) ? 'recipient' : 'warn'}>
+                                {line}
+                              </p>
+                            ))}
                           <SendTxButton
                             tx={builtTx}
                             onConfirmed={(hash) => {
@@ -1730,14 +1766,19 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
                               if (currentChatId) recordSignedTxs(currentChatId, msg.id, [{ hash, chainId, title: builtTx.action ?? 'transaction' }])
                             }}
                           />
+                          </div>
                         ) : null
                       })()}
                     {msg.role === 'assistant' &&
                       (() => {
                         const chain = txChainOf(msg.meta)
+                        const externalChain = chain ? externalBuildOf(msg.meta) : null
                         return chain ? (
+                          <div data-tx-chain-card>
+                          {externalChain && <ExternalBuildNotice builtBy={externalChain.builtBy} warnings={externalChain.warnings} txs={chain.steps.map((st) => st.tx as { to?: string; value?: string; data?: string; chainId?: number })} />}
                           <SendTxChain
                             chain={chain}
+                            manualSteps={!!externalChain}
                             // The chain's money moves when its FINAL step (the
                             // swap, not the approve) confirms — that's the
                             // signed event for the money-flow metric.
@@ -1757,6 +1798,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
                               if (currentChatId) recordSignedTxs(currentChatId, msg.id, txs)
                             }}
                           />
+                          </div>
                         ) : null
                       })()}
                     {/* One-tap receipt share, the moment a signed turn settles

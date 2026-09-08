@@ -71,6 +71,37 @@ export function assertUnderDeskCap(askUsd: number | null): void {
     )
 }
 
+/** Per-ask notional ceiling on INBOX sends (USD) — a card that lands in a
+ *  stranger's inbox unasked. The recipient still signs, but a "$50,000" card
+ *  is a phishing prop, not a proposal; the desk refuses to deliver one. Human
+ *  addressed sends (the mint door's `recipient`) ride the same ceiling. */
+export const DESK_MAX_INBOX_USD = (() => {
+  const n = Number(process.env.BROKER_MAX_INBOX_USD)
+  return Number.isFinite(n) && n > 0 ? n : DESK_MAX_INTENT_USD
+})()
+
+/** The inbox cap. A null notional (non-dollar ask) passes — the sign-side
+ *  guards remain the truth; a dollar ask over the ceiling is refused by name. */
+export function assertUnderInboxCap(askUsd: number | null): void {
+  if (askUsd != null && askUsd > DESK_MAX_INBOX_USD)
+    throw new Error(
+      `Inbox sends are capped at $${DESK_MAX_INBOX_USD} per ask; this one (~$${askUsd}) is over. ` +
+        'Hand the human a plain link instead (broker_handoff), or split it into smaller asks.',
+    )
+}
+
+/** broker_send's identity gate (SECURITY-AUDIT §C5): an unasked card in a
+ *  stranger's inbox must be attributable. Refuses an unidentified sender BY
+ *  NAME — the send door is not the anonymous mint door. */
+export function assertSenderIdentity(agentKey: string | null | undefined): void {
+  if (!agentKey)
+    throw new Error(
+      'broker_send needs a bound agent identity — pass agent_key (your desk identity string, 6–80 chars). ' +
+        'A card that lands in someone’s inbox unasked must be attributable to a track record; an unidentified ' +
+        'sender can still hand a human a plain link with broker_handoff.',
+    )
+}
+
 /** Sanitize a caller-supplied agent identity string for binding/storage. */
 export function cleanAgentKey(raw: unknown): string | null {
   if (typeof raw !== 'string') return null

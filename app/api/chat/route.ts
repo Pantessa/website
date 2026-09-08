@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse, after } from 'next/server'
+import { fenceToolOutput, toolOutputNonce, toolOutputRule } from '@/lib/tool-output-fence'
+import { contentOriginOf, hardenReportForOrigin, isThirdPartyOrigin, outboundToThirdParty, rawAddressTokenRefusal, type ContentOrigin } from '@/lib/content-origin'
 import { attachFundsSnapshot, classifyTurn, moneyShaped, recordAskFailure } from '@/lib/ask-failure'
 import { recordTurnExpectations } from '@/lib/link-receipt-verify'
 import { erc20Abi, formatEther, formatUnits, getAddress, isAddress, parseEther, parseUnits } from 'viem'
@@ -255,7 +257,7 @@ async function hlAutoFundedJobTurn(
       `📈 **We can make this happen.** The ~$${short.notionalUsd} position needs about $${short.depositUsdc} of collateral on Hyperliquid first${gasLegNote} — so the whole path is lined up as one job: **${job.title}**. ` +
       `Every step is built and guard-checked when it's your turn to sign; nothing moves without your signature, and you can cancel from the card.`,
     jobId: job.id,
-    jobToken: signJobToken(job.id),
+    jobToken: signJobToken(job.id, walletAddress),
     buildPath: 'native-job',
   })
 }
@@ -365,7 +367,7 @@ export async function POST(req: NextRequest) {
   } catch {
     /* fall through — the inner handler 400s on the empty body */
   }
-  const res = await handleChatTurn(new NextRequest(req.nextUrl, { method: 'POST', headers: req.headers, body: raw }))
+  const res = await fenceConnectAsk(await handleChatTurn(new NextRequest(req.nextUrl, { method: 'POST', headers: req.headers, body: raw })), raw)
   try {
     if (!raw || !res.headers.get('content-type')?.includes('application/json')) return res
     const reqBody = JSON.parse(raw) as Record<string, unknown>
@@ -400,6 +402,34 @@ export async function POST(req: NextRequest) {
     /* the log must never break a chat turn */
   }
   return res
+}
+
+/** Content-origin fence on the connect gate (SECURITY-AUDIT §E5, belt for the
+ *  client's connect-ask re-run): a "connect your wallet" reply carries
+ *  `connectAsk` so the runtime can re-send the sentence the moment an address
+ *  lands. When that sentence arrived on a LINK or EMBED origin AND routes value
+ *  to an outside party (a send to 0x…/ENS, a token typed as an address, an NFT
+ *  sale), the re-run would auto-fire a stranger's transfer on connect. Such a
+ *  reply carries no `connectAsk` — the visitor presses send again after
+ *  connecting, one more tap. One choke point for every connect-gate site. */
+async function fenceConnectAsk(res: Response, raw: string): Promise<Response> {
+  try {
+    if (!raw || !res.headers.get('content-type')?.includes('application/json')) return res
+    const reqBody = JSON.parse(raw) as { message?: unknown; intentLinkSlug?: unknown; embedKey?: unknown; embedOrigin?: unknown }
+    if (!isThirdPartyOrigin(contentOriginOf(reqBody))) return res
+    const message = typeof reqBody.message === 'string' ? reqBody.message : ''
+    const verdict = outboundToThirdParty(message)
+    if (!verdict.outbound) return res
+    const data = (await res.clone().json().catch(() => null)) as Record<string, unknown> | null
+    if (!data || typeof data.connectAsk !== 'string') return res
+    const { connectAsk: _dropped, ...rest } = data
+    void _dropped
+    const headers = new Headers(res.headers)
+    headers.delete('content-length')
+    return NextResponse.json({ ...rest, connectAskHeld: verdict.reasons }, { status: res.status, headers })
+  } catch {
+    return res
+  }
 }
 
 async function handleChatTurn(req: NextRequest) {
@@ -511,6 +541,10 @@ async function handleChatTurn(req: NextRequest) {
       typeof body.embedKey === 'string' ? await resolveEmbedKey(body.embedKey) : null
     const embedOrigin =
       typeof body.embedOrigin === 'string' && body.embedOrigin ? body.embedOrigin.slice(0, 200) : undefined
+    // Content-origin fence (SECURITY-AUDIT §C/E5): a turn that rides an
+    // intent link or an embed host carries a stranger's sentence. A few
+    // builds harden on that origin alone (lib/content-origin).
+    const contentOrigin = contentOriginOf({ intentLinkSlug: turnLinkSlug, embedKey: body.embedKey, embedOrigin })
     if (embedOrigin) {
       void recordEmbedSighting({
         embedKeyId: embedBill?.id ?? '',
@@ -738,7 +772,7 @@ async function handleChatTurn(req: NextRequest) {
             type: 'status',
             label: `funding layer: follow-up on the unfunded ${buySym} buy — fresh scan, re-running “buy $${buyUsd} of ${buySym}” on Robinhood Chain (planner bypassed)`,
           })
-          return await prepareSwapTurn(rerun, walletAddress, 'uniswap', workingContext, nativeTrace, ROBINHOOD_CHAIN_ID, swapFeeBps)
+          return await prepareSwapTurn(rerun, walletAddress, 'uniswap', workingContext, nativeTrace, ROBINHOOD_CHAIN_ID, swapFeeBps, contentOrigin)
         }
       }
     }
@@ -875,7 +909,7 @@ async function handleChatTurn(req: NextRequest) {
       // data carries chainId for non-Base builds) — never silently back on Base.
       const pendingChainId = sanitizeChainId(Number(pendingArtifact.data.chainId)) ?? DEFAULT_CHAIN_ID
       nativeTrace({ type: 'status', label: `native swap layer: amending the pending ${pendingArtifact.kind} to ${swapFollowUp.intent.sellAmountHuman} ${(swapFollowUp.intent.sellToken ?? '').toUpperCase()} → ${(swapFollowUp.intent.buyToken ?? '').toUpperCase()} on ${pendingVenue === 'uniswap' ? 'Uniswap' : 'CoW'} (${chainById(pendingChainId)?.name})` })
-      return await prepareSwapTurn(swapFollowUp.intent, walletAddress, pendingVenue, workingContext, nativeTrace, pendingChainId, swapFeeBps)
+      return await prepareSwapTurn(swapFollowUp.intent, walletAddress, pendingVenue, workingContext, nativeTrace, pendingChainId, swapFeeBps, contentOrigin)
     }
 
     // DCA — recurring buys ("buy $10 of AAPL every week"), the due-period
@@ -951,7 +985,7 @@ async function handleChatTurn(req: NextRequest) {
         jobId: job.id,
         // Capability token: the JobCard reads/advances THIS job with it —
         // embed visitors have no SIWE session (lib/job-token.ts).
-        jobToken: signJobToken(job.id),
+        jobToken: signJobToken(job.id, walletAddress),
         buildPath: 'native-job',
       })
     }
@@ -1717,6 +1751,14 @@ async function handleChatTurn(req: NextRequest) {
           nativeTrace({ type: 'note', level: 'info', label: `nft listing not buildable: ${built.problem.slice(0, 160)}` })
           return NextResponse.json({ reply: `🖼️ ${built.problem}` })
         }
+        // §E5: a listing priced by someone else (link / embed origin) far
+        // under floor is a BLOCK, not a warning the visitor scrolls past.
+        const hardened = hardenReportForOrigin(built.guardrails, contentOrigin)
+        if (!built.blocked && !hardened.ok) {
+          const why = hardened.checks.find((c) => c.level === 'block' && !c.ok)?.note ?? 'a safety check failed.'
+          nativeTrace({ type: 'note', level: 'warn', label: `nft listing REFUSED on ${contentOrigin} origin: ${why.slice(0, 200)}` })
+          return NextResponse.json({ reply: `🚫 ${why}`, guardrails: hardened, blocked: true, buildPath: 'native-nft-list', originFence: 'floor-sanity' })
+        }
         if (built.blocked) {
           nativeTrace({ type: 'note', level: 'warn', label: `nft listing REFUSED: ${(built.refusal ?? 'a safety check failed.').slice(0, 200)}` })
           return NextResponse.json({ reply: `🚫 ${built.refusal ?? 'A safety check failed — nothing was built.'}`, guardrails: built.guardrails, blocked: true, buildPath: 'native-nft-list' })
@@ -1928,7 +1970,7 @@ async function handleChatTurn(req: NextRequest) {
           : 'swap ask (pair not fully parsed yet)'
         const chainVia = buildChain.id !== targetChain.id ? 'stock list, inferred' : namedNative ? 'named in the message' : pickerChain ? 'from the chain picker' : 'default'
         nativeTrace({ type: 'status', label: `native swap layer claimed the turn: ${pair} on ${venue === 'uniswap' ? 'Uniswap' : 'CoW'} (${buildChain.name}, ${chainVia}) — planner bypassed` })
-        return await prepareSwapTurn(swapIntent, walletAddress, venue, workingContext, nativeTrace, buildChain.id, swapFeeBps)
+        return await prepareSwapTurn(swapIntent, walletAddress, venue, workingContext, nativeTrace, buildChain.id, swapFeeBps, contentOrigin)
       }
       // crossChain + a usable cross-chain agent → build it NATIVELY (deterministic
       // build_swap + guardrails + Sign button), never via the planner/house
@@ -2649,7 +2691,8 @@ async function aavePolicyGate(
   const grant = await getActiveGrant(walletAddress.toLowerCase())
   const policy = grant ? toPolicy(grant) : null
   const spentToday = grant ? await spentTodayUsd(grant.id) : 0
-  const { check: polCheck, violation } = policyCheck(valueUsd, policy, spentToday, host, 0, { selfSigned: true })
+  const spentTotal = grant ? await spentTotalUsd(grant.id) : 0
+  const { check: polCheck, violation } = policyCheck(valueUsd, policy, spentToday, host, spentTotal, { selfSigned: true })
   const guardrails = buildReport(
     valueUsd,
     [
@@ -3776,7 +3819,15 @@ function isExactRobinhoodStock(symbol: string): boolean {
  * line, so every venue's artifact (CoW order, v3/v4 chain, LiFi chain)
  * quotes the exact number the user is about to sign — one site, not five.
  */
-async function prepareSwapTurn(intent: SwapIntent, walletAddress: string | undefined, venue: 'uniswap' | 'cow' = 'cow', ctx?: WorkingContext, trace: (event: unknown) => void = () => {}, chainId: number = DEFAULT_CHAIN_ID, feeBps?: number) {
+async function prepareSwapTurn(intent: SwapIntent, walletAddress: string | undefined, venue: 'uniswap' | 'cow' = 'cow', ctx?: WorkingContext, trace: (event: unknown) => void = () => {}, chainId: number = DEFAULT_CHAIN_ID, feeBps?: number, origin: ContentOrigin = 'first-party') {
+  // Content-origin fence (SECURITY-AUDIT §C3/E5): a swap whose token slot is
+  // a raw contract address, authored by a link or an embed host, is a
+  // transfer wearing a swap verb — refused by name before any venue runs.
+  const rawRefusal = rawAddressTokenRefusal(intent, origin)
+  if (rawRefusal) {
+    trace({ type: 'note', level: 'warn', label: `swap REFUSED on ${origin} origin: raw contract address in the token slot` })
+    return NextResponse.json({ reply: rawRefusal, blocked: true, buildPath: venue === 'cow' ? 'native-swap-cow' : 'native-swap-uniswap', originFence: 'raw-address-token' })
+  }
   const sized: { note: string | null } = { note: null }
   const res = await prepareSwapTurnCore(intent, walletAddress, venue, ctx, trace, chainId, feeBps, sized)
   if (!sized.note) return res
@@ -4998,6 +5049,9 @@ async function executeWithSignatures(
    *  ("what can I do here?") stay grounded when the answer is synthesized here. */
   capabilities = '',
 ) {
+  // Tool output is DATA, not instructions (lib/tool-output-fence): every
+  // service result in this turn's prompts sits between nonce markers.
+  const toolNonce = toolOutputNonce()
   if (!message.trim()) return NextResponse.json({ error: 'message is required' }, { status: 400 })
 
   const receipts: Receipt[] = []
@@ -5062,7 +5116,7 @@ async function executeWithSignatures(
       // to the synthesized text (latest read wins — freshest data).
       const card = portfolioFromToolResult(data)
       if (card) portfolioCard = card
-      contextBlocks.push(`### ${c.name}\n${compactForSynthesis(data, 3500)}`)
+      contextBlocks.push(fenceToolOutput(c.name, compactForSynthesis(data, 3500), toolNonce))
       if (card) contextBlocks.push('NOTE: this portfolio is ALSO rendered as a rich visual card right below your reply — write ONE short summary sentence (total + notable point); do NOT repeat the holdings/table in text.')
       const txHash = decodeSettlement(res)?.transaction
       pushReceipt({ name: c.name, endpoint: c.host, priceUsd: c.priceUsd, txHash, ok: true })
@@ -5177,6 +5231,9 @@ async function runWithBurner(
    *  proposals" needs their address, not the burner's. */
   userAddress?: string,
 ) {
+  // Tool output is DATA, not instructions (lib/tool-output-fence): every
+  // service result in this turn's prompts sits between nonce markers.
+  const toolNonce = toolOutputNonce()
   let traceSeq = 0
   const trace = turnId ? (event: unknown) => recordTraceLine(turnId, traceSeq++, event, 'burner') : () => {}
   trace({ type: 'status', label: 'routing within your selected agents' })
@@ -5221,7 +5278,7 @@ async function runWithBurner(
     try {
       const { json, txHash, paidUsd } = await paidGet(ds.endpoint!, ds.queryParam ?? 'q', message, boundsFor(ds))
       carriedEntities = extractEntities(json, carriedEntities)
-      contextBlocks.push(`### ${ds.name}\n${compactForSynthesis(json, 3500)}`)
+      contextBlocks.push(fenceToolOutput(ds.name, compactForSynthesis(json, 3500), toolNonce))
       receipts.push({ name: ds.name, endpoint: host, priceUsd: ds.priceUsd ?? '0.01', txHash, ok: true })
       if (grant) {
         const settled = paidUsd ?? price
@@ -5269,7 +5326,7 @@ async function runWithBurner(
         carriedEntities = extractEntities(data, carriedEntities)
         const card = portfolioFromToolResult(data)
         if (card) portfolioCard = card
-        contextBlocks.push(`### ${ds.name}\n${compactForSynthesis(data, 3500)}`)
+        contextBlocks.push(fenceToolOutput(ds.name, compactForSynthesis(data, 3500), toolNonce))
         if (card) contextBlocks.push('NOTE: this portfolio is ALSO rendered as a rich visual card right below your reply — write ONE short summary sentence (total + notable point); do NOT repeat the holdings/table in text.')
       }
       receipts.push({ name: ds.name, endpoint: host, priceUsd: ds.priceUsd ?? '0.01', txHash, ok: true })
@@ -5343,7 +5400,7 @@ async function runWithBurner(
             // next to the synthesized text (latest read wins — freshest).
             const card = portfolioFromToolResult(json)
             if (card) portfolioCard = card
-            contextBlocks.push(`### ${ep.serverName}\n${compactForSynthesis(json, 3500)}`)
+            contextBlocks.push(fenceToolOutput(ep.serverName, compactForSynthesis(json, 3500), toolNonce))
             if (card) contextBlocks.push('NOTE: this portfolio is ALSO rendered as a rich visual card right below your reply — write ONE short summary sentence (total + notable point); do NOT repeat the holdings/table in text.')
             receipts.push({ name: ep.serverName, endpoint: host, priceUsd: ep.priceUsd, txHash: dataTx, ok: true })
             trace({ type: 'receipt', receipt: { name: ep.serverName, endpoint: host, priceUsd: ep.priceUsd, txHash: dataTx, ok: true } })
@@ -5376,23 +5433,27 @@ async function runWithBurner(
               }
               // buildPath 'planner': the signable came out of a tool the
               // ENDPOINT PLANNER picked — not a native builder (lib/build-path.ts).
+              // §E3 passthrough honesty: the guard's warnings + who built it
+              // ride the response and the sign card — never dropped.
+              const honesty = { guardWarnings: verdict.warnings, builtBy: ep.serverName }
               if (art.kind === 'eip712-vote') {
-                return NextResponse.json({ reply: `🗳️ ${art.summary}`, receipts, payer: 'the house wallet', voteRequest: art.vote, buildPath: 'planner', notes })
+                return NextResponse.json({ reply: `🗳️ ${art.summary}`, receipts, payer: 'the house wallet', voteRequest: art.vote, buildPath: 'planner', notes, ...honesty })
               }
               if (art.kind === 'eip712-order') {
-                return NextResponse.json({ reply: `🔏 ${art.summary}`, receipts, payer: 'the house wallet', orderRequest: art.order, buildPath: 'planner', notes })
+                return NextResponse.json({ reply: `🔏 ${art.summary}`, receipts, payer: 'the house wallet', orderRequest: art.order, buildPath: 'planner', notes, ...honesty })
               }
               if (art.kind === 'evm-tx-chain') {
                 return NextResponse.json({
-                  reply: `🔏 ${art.summary}\n🔗 ${art.chain.steps.length} steps in the card below — each appears as the previous confirms.`,
+                  reply: `🔏 ${art.summary}\n🔗 ${art.chain.steps.length} steps in the card below — built by ${ep.serverName}, so each step waits for your tap.`,
                   receipts,
                   payer: 'the house wallet',
                   txChain: art.chain,
                   buildPath: 'planner',
                   notes,
+                  ...honesty,
                 })
               }
-              return NextResponse.json({ reply: `🔏 ${art.summary}`, receipts, payer: 'the house wallet', txRequest: art.tx, buildPath: 'planner', notes })
+              return NextResponse.json({ reply: `🔏 ${art.summary}`, receipts, payer: 'the house wallet', txRequest: art.tx, buildPath: 'planner', notes, ...honesty })
             }
           } catch (err) {
             const note = err instanceof Error ? err.message : 'call failed'
@@ -5875,13 +5936,13 @@ export function streamAutoRouter(
             // buildPath 'planner': the Auto-Router engine picked the tool that
             // returned this signable (lib/build-path.ts).
             if (decision.artifact.kind === 'eip712-vote') {
-              send({ type: 'reply', content: `🗳️ ${decision.artifact.summary}`, receipts, payer: 'your wallet', voteRequest: decision.artifact.vote, buildPath: 'planner', trace: trace(), workingContext: carryContext(workingContext, decision.entities) })
+              send({ type: 'reply', content: `🗳️ ${decision.artifact.summary}`, receipts, payer: 'your wallet', voteRequest: decision.artifact.vote, buildPath: 'planner', trace: trace(), workingContext: carryContext(workingContext, decision.entities) , guardWarnings: decision.artifactWarnings, builtBy: decision.artifactBuiltBy })
             } else if (decision.artifact.kind === 'eip712-order') {
-              send({ type: 'reply', content: `🔏 ${decision.artifact.summary}`, receipts, payer: 'your wallet', orderRequest: decision.artifact.order, buildPath: 'planner', trace: trace(), workingContext: carryContext(workingContext, decision.entities) })
+              send({ type: 'reply', content: `🔏 ${decision.artifact.summary}`, receipts, payer: 'your wallet', orderRequest: decision.artifact.order, buildPath: 'planner', trace: trace(), workingContext: carryContext(workingContext, decision.entities) , guardWarnings: decision.artifactWarnings, builtBy: decision.artifactBuiltBy })
             } else if (decision.artifact.kind === 'evm-tx-chain') {
-              send({ type: 'reply', content: `🔏 ${decision.artifact.summary}\n🔗 ${decision.artifact.chain.steps.length} steps in the card below — each appears as the previous confirms.`, receipts, payer: 'your wallet', txChain: decision.artifact.chain, buildPath: 'planner', trace: trace(), workingContext: carryContext(workingContext, decision.entities) })
+              send({ type: 'reply', content: `🔏 ${decision.artifact.summary}\n🔗 ${decision.artifact.chain.steps.length} steps in the card below — each appears as the previous confirms.`, receipts, payer: 'your wallet', txChain: decision.artifact.chain, buildPath: 'planner', trace: trace(), workingContext: carryContext(workingContext, decision.entities) , guardWarnings: decision.artifactWarnings, builtBy: decision.artifactBuiltBy })
             } else {
-              send({ type: 'reply', content: `🔏 ${decision.artifact.summary}`, receipts, payer: 'your wallet', txRequest: decision.artifact.tx, buildPath: 'planner', trace: trace(), workingContext: carryContext(workingContext, decision.entities) })
+              send({ type: 'reply', content: `🔏 ${decision.artifact.summary}`, receipts, payer: 'your wallet', txRequest: decision.artifact.tx, buildPath: 'planner', trace: trace(), workingContext: carryContext(workingContext, decision.entities) , guardWarnings: decision.artifactWarnings, builtBy: decision.artifactBuiltBy })
             }
             recordTurn({ payer: 'your wallet', shortlisted: shortlistedOf(decision), picks: picksOf(decision), intent: intentOf(decision) })
             return finish()
@@ -5961,16 +6022,16 @@ export function streamAutoRouter(
           // buildPath 'planner': the Auto-Router engine picked the tool that
           // returned this signable (lib/build-path.ts).
           if (decision.artifact.kind === 'eip712-vote') {
-            send({ type: 'reply', content: `🗳️ ${decision.artifact.summary}`, receipts, payer: 'the house wallet', voteRequest: decision.artifact.vote, buildPath: 'planner', trace: trace() })
+            send({ type: 'reply', content: `🗳️ ${decision.artifact.summary}`, receipts, payer: 'the house wallet', voteRequest: decision.artifact.vote, buildPath: 'planner', trace: trace() , guardWarnings: decision.artifactWarnings, builtBy: decision.artifactBuiltBy })
           } else if (decision.artifact.kind === 'eip712-order') {
             // Intent-based order (CoW swap / OpenSea): the built order is sent
             // for signature. Guardrails (A3) gate it; the sign UI is A4.
-            send({ type: 'reply', content: `🔏 ${decision.artifact.summary}`, receipts, payer: 'the house wallet', orderRequest: decision.artifact.order, buildPath: 'planner', trace: trace() })
+            send({ type: 'reply', content: `🔏 ${decision.artifact.summary}`, receipts, payer: 'the house wallet', orderRequest: decision.artifact.order, buildPath: 'planner', trace: trace() , guardWarnings: decision.artifactWarnings, builtBy: decision.artifactBuiltBy })
           } else if (decision.artifact.kind === 'evm-tx-chain') {
             // Multi-step build (approve → swap): one self-advancing card.
-            send({ type: 'reply', content: `🔏 ${decision.artifact.summary}\n🔗 ${decision.artifact.chain.steps.length} steps in the card below — each appears as the previous confirms.`, receipts, payer: 'the house wallet', txChain: decision.artifact.chain, buildPath: 'planner', trace: trace() })
+            send({ type: 'reply', content: `🔏 ${decision.artifact.summary}\n🔗 ${decision.artifact.chain.steps.length} steps in the card below — each appears as the previous confirms.`, receipts, payer: 'the house wallet', txChain: decision.artifact.chain, buildPath: 'planner', trace: trace() , guardWarnings: decision.artifactWarnings, builtBy: decision.artifactBuiltBy })
           } else {
-            send({ type: 'reply', content: `🔏 ${decision.artifact.summary}`, receipts, payer: 'the house wallet', txRequest: decision.artifact.tx, buildPath: 'planner', trace: trace() })
+            send({ type: 'reply', content: `🔏 ${decision.artifact.summary}`, receipts, payer: 'the house wallet', txRequest: decision.artifact.tx, buildPath: 'planner', trace: trace() , guardWarnings: decision.artifactWarnings, builtBy: decision.artifactBuiltBy })
           }
           recordTurn({ payer: 'the house wallet', shortlisted: shortlistedOf(decision), picks: picksOf(decision), intent: intentOf(decision) })
           return finish()
@@ -6337,6 +6398,7 @@ function buildPrompt(message: string, contextBlocks: string[], history: Conversa
     ...(ctxBlock ? [``, ctxBlock] : []),
     ...(convo ? [``, `Conversation so far:`, convo] : []),
     ``,
+    ...(toolOutputRule(contextBlocks) ? [toolOutputRule(contextBlocks) as string, ``] : []),
     `DATA:`,
     contextBlocks.join('\n\n'),
     ``,

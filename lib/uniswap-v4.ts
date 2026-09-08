@@ -46,7 +46,7 @@ import {
   type GuardrailCheck,
   type GuardrailReport,
 } from '@/lib/tx-guardrails'
-import { getActiveGrant, recordLedger, spentTodayUsd, toPolicy } from '@/lib/grant-store'
+import { getActiveGrant, recordLedger, spentTodayUsd, spentTotalUsd, toPolicy } from '@/lib/grant-store'
 import { LINK_SWAP_FEE_BPS, SWAP_FEE_BPS, TREASURY_ADDRESS, swapFeeAtoms } from '@/lib/fees'
 
 // Standard v4 fee → tickSpacing pairs (mirrors v3's tier scan; v4 has no
@@ -848,7 +848,8 @@ export async function buildUniswapV4Swap(params: UniswapV4SwapParams): Promise<U
   const grant = await getActiveGrant(from.toLowerCase())
   const policy = grant ? toPolicy(grant) : null
   const spentToday = grant ? await spentTodayUsd(grant.id) : 0
-  const { check: polCheck, violation } = policyCheck(valueUsd, policy, spentToday, UNISWAP_POLICY_HOST, 0, { selfSigned: true })
+  const spentTotal = grant ? await spentTotalUsd(grant.id) : 0
+  const { check: polCheck, violation } = policyCheck(valueUsd, policy, spentToday, UNISWAP_POLICY_HOST, spentTotal, { selfSigned: true })
   checks.push(polCheck)
   const guardrails = buildReport(valueUsd, checks, violation ? { violation, valueUsd, host: UNISWAP_POLICY_HOST } : null)
   if (violation && grant) {

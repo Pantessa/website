@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import prisma from '@/lib/db'
 import { getAuthAddress } from '@/lib/api-key'
 import { fetchLogoDataUri, hexLuminance, normalizeAccent, normalizeBg, scanBrand, validateBrandUrl } from '@/lib/brand-scan'
-import { deniedBrandReason, isDeniedBrandHost } from '@/lib/brand-denylist'
+import { deniedBrandNameReason, deniedBrandReason, isDeniedBrandHost, isDeniedBrandName } from '@/lib/brand-denylist'
 
 // White-label brand for the creator's /l/<handle> page. One paste, no form:
 // POST {url} scans the creator's own site (theme-color, site name, icons),
@@ -58,6 +58,13 @@ export async function POST(req: NextRequest) {
   // The scan follows redirects — re-check the FINAL host too.
   if (isDeniedBrandHost(scanned.domain)) {
     return NextResponse.json({ error: deniedBrandReason(scanned.domain), denied: true }, { status: 403 })
+  }
+  // The NAME too (SECURITY-AUDIT §C4/E5): a creator's own domain whose
+  // og:site_name says "Uniswap" or "Coinbase Support" is refused BEFORE the
+  // logo it serves next to that name is stored — brandFromRow drops the pair
+  // at render as the braces; this is the belt, and the creator reads why.
+  if (isDeniedBrandName(scanned.signals.siteName)) {
+    return NextResponse.json({ error: deniedBrandNameReason(scanned.signals.siteName ?? '', 'brand name'), denied: true }, { status: 403 })
   }
 
   // First candidate that actually fetches as a real image wins (a declared
