@@ -31,6 +31,7 @@ import {
   type SmartRequest,
 } from '@/lib/endpoint-planner'
 import { buildSignableArtifact, type SignableArtifact } from '@/lib/transaction-layer'
+import { fenceToolOutput, toolOutputNonce, toolOutputRule } from '@/lib/tool-output-fence'
 import { guardPlannerArtifact } from '@/lib/planner-artifact-guard'
 import { portfolioFromToolResult, type PortfolioDisplay } from '@/lib/portfolio-display'
 import { clarifyPromptLine, clarifyOf, type ClarifyRequest } from '@/lib/clarify'
@@ -64,6 +65,8 @@ export interface SmartPick {
   endpointId: string
   serverSlug: string
   serverName: string
+  /** Provenance, carried for the planner-artifact trust gate. */
+  serverSource?: string | null
   endpointUrl: string
   request: SmartRequest
   priceUsd: string
@@ -97,6 +100,10 @@ export interface RouterDecision {
    *  approve — the transaction layer's output. Present only when a routed call
    *  yielded one (LOOP mode). The caller surfaces it for signing. */
   artifact?: SignableArtifact
+  /** §E3 passthrough honesty: the guard's warnings for `artifact` and the
+   *  service that returned it — rendered on the sign card, never dropped. */
+  artifactWarnings?: string[]
+  artifactBuiltBy?: string
   /** A rich DISPLAY payload a tool returned (wallet-MCP portfolio) — rendered
    *  as a card alongside the synthesized text. Unlike `artifact` it never
    *  breaks the loop: it's presentation, not control flow. */
@@ -412,7 +419,7 @@ export function routerPrompt(
   // Loop mode: what earlier steps already fetched, so the model resolves an id
   // first and then makes the data call (and stops once it has enough).
   const observed = observations.length
-    ? `You have ALREADY gathered this in earlier steps:\n${observations.join('\n')}\n\nIf that is enough to answer the user, return {"picks":[]} (done). Otherwise pick the NEXT single call — e.g. use an id/address you just resolved above to fill a parameter. Do NOT repeat a call you already made.`
+    ? `You have ALREADY gathered this in earlier steps:\n${toolOutputRule(observations) ?? ''}\n${observations.join('\n')}\n\nIf that is enough to answer the user, return {"picks":[]} (done). Otherwise pick the NEXT single call — e.g. use an id/address you just resolved above to fill a parameter. Do NOT repeat a call you already made.`
     : ''
 
   const convo = conversationBlock(history)
@@ -527,6 +534,10 @@ export async function routeMessage(opts: RouteOptions): Promise<RouterDecision> 
   const smartPicks: SmartPick[] = []
   const context: string[] = []
   let artifact: SignableArtifact | undefined
+  let artifactWarnings: string[] | undefined
+  let artifactBuiltBy: string | undefined
+  // Tool output is DATA (lib/tool-output-fence): one nonce per turn.
+  const toolNonce = toolOutputNonce()
   let portfolio: PortfolioDisplay | undefined
   let clarifyOut: ClarifyRequest | undefined
   let entities: EntityRef[] = []
@@ -556,6 +567,7 @@ export async function routeMessage(opts: RouteOptions): Promise<RouterDecision> 
       role: 'smart',
       endpointId: ep.id,
       serverSlug: ep.serverSlug,
+      serverSource: ep.serverSource,
       serverName: ep.serverName,
       endpointUrl: ep.url,
       request: built.request,
@@ -682,9 +694,9 @@ export async function routeMessage(opts: RouteOptions): Promise<RouterDecision> 
           // card next to the synthesized text (latest read wins — freshest).
           const card = portfolioFromToolResult(res.data)
           if (card) portfolio = card
-          context.push(`### ${sp.serverName}\n${compactForSynthesis(res.data, 3500)}`)
+          context.push(fenceToolOutput(sp.serverName, compactForSynthesis(res.data, 3500), toolNonce))
           if (card) context.push('NOTE: this portfolio is ALSO rendered as a rich visual card right below your reply — write ONE short summary sentence (total + notable point); do NOT repeat the holdings/table in text.')
-          observations.push(`${sp.serverName} ${shortUrl(sp.endpointUrl)} → ${compactForSynthesis(res.data, 600)}`)
+          observations.push(`${sp.serverName} ${shortUrl(sp.endpointUrl)} → ${fenceToolOutput('', compactForSynthesis(res.data, 600), toolNonce).replace(/^### \n/, '')}`)
           spentThisTurn += price
           progressed = true
           // Transaction layer: a tool that returned a signable action (a vote /
@@ -695,7 +707,7 @@ export async function routeMessage(opts: RouteOptions): Promise<RouterDecision> 
           // approvals, operator grants, off-chain-registry chains all refuse).
           const art = buildSignableArtifact(res.data)
           if (art) {
-            const verdict = guardPlannerArtifact(art, { from: opts.userAddress ?? null })
+            const verdict = guardPlannerArtifact(art, { from: opts.userAddress ?? null, source: sp.serverSource })
             if (!verdict.ok) {
               addNote(`Refused a ${sp.serverName} transaction that failed Pantessa's guardrails: ${verdict.reasons.join(' ')}`, 'warn')
               context.push(
@@ -704,6 +716,8 @@ export async function routeMessage(opts: RouteOptions): Promise<RouterDecision> 
               continue
             }
             artifact = art
+            artifactWarnings = verdict.warnings
+            artifactBuiltBy = sp.serverName
             addNote(`Prepared a signable ${art.kind === 'eip712-vote' ? 'vote' : 'transaction'} for you to approve.`)
             break
           }
@@ -737,6 +751,8 @@ export async function routeMessage(opts: RouteOptions): Promise<RouterDecision> 
     notes,
     context,
     artifact,
+    artifactWarnings,
+    artifactBuiltBy,
     portfolio,
     clarify: clarifyOut,
     entities,

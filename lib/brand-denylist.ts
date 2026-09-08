@@ -64,6 +64,65 @@ export function isDeniedBrandHost(hostOrUrl: string | null | undefined): boolean
   return false
 }
 
+// ── Names, not just hosts (SECURITY-AUDIT 2026-09-08 §C4 / E5) ─────────────
+// The domain check above is bypassed by a creator's OWN site whose
+// `og:site_name` says "Uniswap", by an agent byline "Coinbase Support", or by
+// an inbox sender_label "MetaMask Team". Every free-text mark a stranger can
+// put on a Pantessa surface (brand NAME, link `agent`, inbox `senderLabel`)
+// passes through here too. Matching is word-level on the NFKC-folded,
+// lowercased string, so "Uni-Swap", "ＵＮＩＳＷＡＰ", "coinbase_support" all
+// match; a plain "Nate's swaps" does not.
+
+/** The brand words a stranger's free-text mark may never carry. Derived from
+ *  the host list (its registrable label) plus wallets/exchanges/brands that
+ *  aren't venues but are the classic phishing bylines. */
+export const THIRD_PARTY_BRAND_WORDS: readonly string[] = [
+  // The REGISTRABLE label of every denied host (uniswap.org → uniswap,
+  // swap.cow.fi → cow) — never the first label ("app", "swap", "www").
+  ...THIRD_PARTY_BRAND_HOSTS.map((h) => h.split('.').slice(-2)[0]).filter((w) => w.length >= 3),
+  'cowswap', 'cow swap', 'cow protocol', 'metamask', 'coinbase', 'binance', 'kraken', 'okx', 'bybit',
+  'ledger', 'trezor', 'trust wallet', 'trustwallet', 'safe', 'gnosis',
+  'chainlink', 'ethereum foundation', 'arbitrum', 'optimism', 'base', 'polygon', 'solana',
+  'uniswap labs', 'lido', 'aave', 'morpho', 'hyperliquid', 'opensea', 'snapshot', 'robinhood', 'lifi', 'li fi',
+  'near', 'phantom', 'rabby', 'rainbow', 'walletconnect', 'wallet connect',
+]
+
+/** Authority words that turn any name into a phishing byline on a money
+ *  surface. Refused on their own ("Support", "Official"), whatever brand
+ *  they're next to. */
+export const IMPERSONATION_WORDS: readonly string[] = ['support', 'official', 'helpdesk', 'help desk', 'customer service', 'security team', 'verification', 'admin', 'pantessa', 'yeetful']
+
+const fold = (s: string) =>
+  s
+    .normalize('NFKC')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim()
+
+/** True when a free-text mark (brand name / agent byline / sender label)
+ *  carries a third-party brand word or an authority word. Word-bounded on
+ *  the folded string: "base" matches "Base Wallet" but not "database". */
+export function isDeniedBrandName(name: string | null | undefined): boolean {
+  if (!name) return false
+  const f = ` ${fold(name)} `
+  if (!f.trim()) return false
+  const hit = (w: string) => f.includes(` ${fold(w)} `)
+  if (THIRD_PARTY_BRAND_WORDS.some(hit) || IMPERSONATION_WORDS.some(hit)) return true
+  // Second pass on the COMPACTED string ("uni-swap" → "uniswap", "meta mask"
+  // → "metamask"): a distinctive brand word (6+ letters, so "base" can't
+  // catch "database") anywhere inside it is the same impersonation.
+  const compact = f.replace(/ /g, '')
+  return THIRD_PARTY_BRAND_WORDS.some((w) => {
+    const c = fold(w).replace(/ /g, '')
+    return c.length >= 6 && compact.includes(c)
+  })
+}
+
+/** The refusal copy for a denied NAME — used by the mint/send/brand doors. */
+export function deniedBrandNameReason(name: string, what: string = 'name'): string {
+  return `Pantessa never wears a third-party brand or an authority word on a money surface — "${name.slice(0, 40)}" is refused as a ${what} (rule 7). Use your own name.`
+}
+
 /** The refusal copy for the write site — names the rule, not just the host. */
 export function deniedBrandReason(host: string): string {
   return `Pantessa never wears a third-party financial brand — ${host} is on the do-not-impersonate list. Paste YOUR OWN site's URL; the page keeps the house look until then.`
@@ -87,5 +146,9 @@ export function brandFromRow(
   if (!row) return null
   if (!(row.brandDomain || row.brandLogo || row.brandAccent || row.brandBg)) return null
   if (isDeniedBrandHost(row.brandDomain)) return null
+  // A denied NAME (og:site_name "Uniswap" on a creator's own domain) renders
+  // as house too — name AND logo drop together, since the logo is whatever
+  // that page served next to the name.
+  if (isDeniedBrandName(row.brandName)) return null
   return { domain: row.brandDomain, name: row.brandName, logo: row.brandLogo, accent: row.brandAccent, bg: row.brandBg }
 }

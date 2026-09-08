@@ -211,7 +211,7 @@ export async function mosaicTurnFor(
       (noteLines ? `${noteLines}\n` : '') +
       `Every leg is built and guard-checked when it's offered, signed one by one — stop any time. Prices float between now and each signature: this is a shape, not a promise.`,
     jobId: job.id,
-    jobToken: signJobToken(job.id),
+    jobToken: signJobToken(job.id, wallet),
     buildPath: 'native-mosaic',
   }
 }

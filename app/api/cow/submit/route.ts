@@ -8,7 +8,7 @@ import {
   type CowOrderParameters,
 } from '@/lib/cow'
 import { orderValueUsd, policyCheck, COW_POLICY_HOST } from '@/lib/cow-guardrails'
-import { getActiveGrant, recordLedger, spentTodayUsd, toPolicy } from '@/lib/grant-store'
+import { getActiveGrant, recordLedger, spentTodayUsd, spentTotalUsd, toPolicy } from '@/lib/grant-store'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -74,7 +74,8 @@ export async function POST(req: NextRequest) {
   const grant = await getActiveGrant(from.toLowerCase())
   const policy = grant ? toPolicy(grant) : null
   const spentToday = grant ? await spentTodayUsd(grant.id) : 0
-  const { violation } = policyCheck(valueUsd, policy, spentToday, COW_POLICY_HOST, 0, { selfSigned: true })
+  const spentTotal = grant ? await spentTotalUsd(grant.id) : 0
+  const { violation } = policyCheck(valueUsd, policy, spentToday, COW_POLICY_HOST, spentTotal, { selfSigned: true })
   if (violation && grant) {
     await recordLedger({
       grantId: grant.id,

@@ -49,9 +49,64 @@ statement gets qualified.**
   2026-09-08 — before that, any signed-in wallet's add was planner-callable
   for everyone). Its tool results reach the planner and, in the worst case,
   a sign button. Also the prompt-injection vector: **tool output is
-  untrusted input that steers an agent that takes actions.**
+  untrusted input that steers an agent that takes actions.** Closed
+  2026-09-08: only a first-party source can produce a signable through the
+  planner at all (#720); a 402 challenge is bounded to the listed price, the
+  chain's USDC, the recorded receiver, $2/call and a house daily ceiling
+  (§E1, `lib/x402.ts` + `lib/house-spend.ts`); every tool result in a prompt
+  sits between per-turn nonce markers with one rule — data, not instructions
+  (§E3, `lib/tool-output-fence.ts`); a planner-sourced signable says who
+  built it, prints every `to` in full with the value attached and the
+  guard's warnings, and never auto-fires step 2+ (§E3,
+  `components/ExternalBuildNotice.tsx`).
 - **The malicious embed host.** `/embed` ships `frame-ancestors *` by design.
   The host page controls framing, postMessage, and the wallet relay's inputs.
+  Closed 2026-09-08 (§E5): a host-injected `prompt {send:true}` that routes
+  value to an outside party (a send to 0x…/ENS, a token typed as an address,
+  an NFT sale) downgrades to a prefill; a swap into a raw-address token on
+  embed origin refuses by name; the connect-gate re-run never carries such an
+  ask. What remains: the host chooses the `contextAddress` the guard reads as
+  `from` (balance, self-send, grant lookup) — the signature is still the
+  wallet's, so the host can mislead the build, not sign it.
+- **The malicious link creator.** Anyone signed in mints `/i/<slug>` and
+  hands the URL to a stranger — the page wears Pantessa's chrome and runs
+  the creator's sentence on the visitor's wallet the moment it connects. The
+  sentence is the attack surface: "send 0.5 ETH to 0x…", "swap all my ETH for
+  0x<attacker token>", "sell #2489 for 0.02 ETH", a byline "Coinbase Support",
+  a brand scan of a site whose `og:site_name` says "Uniswap". Closed
+  2026-09-08 (§E5, `lib/content-origin.ts`): `outbound_third_party` is
+  computed SERVER-SIDE at mint (every A/B phrasing) and stored; the /i runtime
+  holds such a link to prefill — a human presses send; raw-address token
+  slots refuse on link origin; a below-floor NFT listing blocks on link
+  origin; the transfer guard's full-address "LEAVES your wallet to 0x…" line
+  is rendered on the card; brand name/logo, byline and page name pass the
+  mark denylist (`isDeniedBrandName`); an addressed link is capped in
+  notional. The fence is deliberately over-inclusive — a false positive
+  costs one tap. What remains: the creator still chooses the ask and the MCP
+  set; a legitimate-looking sentence ("Buy $500 of AAPL") is exactly what the
+  product is for, and the native guards + the wallet's own confirmation are
+  the last line.
+- **The malicious inbox sender.** The wallet inbox (`/inbox/<address>`)
+  takes cards from strangers: a desk agent via `broker_send`, or a human via
+  the mint door's `recipient`. A "$50,000" card "from MetaMask Team" is a
+  phishing prop. Closed 2026-09-08 (§C5/§E5): `broker_send` requires
+  `agent_key` (attributable to a track record; anonymous agents keep
+  `broker_handoff`), sender labels and agent names pass the mark denylist,
+  every addressed send is capped (`DESK_MAX_INBOX_USD`, default = the desk's
+  $500), and an outbound-shaped card prefills in the recipient's runtime.
+  What remains: volume — a keyed agent can still fill an inbox with
+  plausible cards; the recipient's Decline verb and the per-IP desk rate
+  fence are the current answer, a per-recipient unread cap the next one.
+- **The malicious broker agent.** The desk (`/api/broker/mcp`) is open to any
+  agent with a key. It cannot obtain calldata (sentences in, sign links out;
+  the guarded builders rebuild everything) — the risk is the SENTENCE it
+  hands a human and the marks it wears. Same closures as the link creator +
+  inbox sender above, plus M1's identity binding, the per-intent USD cap and
+  the hourly per-IP POST fence (`lib/broker-policy.ts`). What remains: an
+  agent's track record (`/agents/<hash>`) is only as honest as the signed
+  turns behind it — verified receipts (#685) keep the harness out, but a
+  patient agent can earn a real record and then send a bad card; the human
+  signs, the human decides.
 - **The curious authenticated user.** Someone else's job id, link slug, chat
   id, capability token, or org. Classic IDOR, high value here because the
   objects are money-shaped.
@@ -132,9 +187,22 @@ mint, or mutate. That's this section.
   embed `yfe_` / none), and is the object it touches owner-scoped? The
   interesting ones are jobs, intent links, chats, org membership, and
   anything admin-gated by `ADMIN_WALLETS` / `OWNER_WALLETS`.
-- **Capability tokens.** Job `?t=` tokens exist so embeds can poll. Scope,
-  expiry, and guessability need a look; these are bearer credentials in URLs,
-  which means they land in logs and referrers.
+- **Capability tokens.** Job `?t=` tokens exist so embeds can poll. They are
+  bearer credentials in URLs (logs, referrers). Since 2026-09-08 (§E6,
+  `lib/job-token.ts`) a token is `v2.<exp>.<hmac>`: HMAC over the job id +
+  the job's WALLET + the expiry, 7-day TTL (jobs age out at 7 days), verified
+  against the row it names; the v1 id-only shape verifies until
+  `JOB_TOKEN_V1_SUNSET`. A leaked token can still post sign evidence to
+  `/complete` for its one job during its window — the runner's wait
+  predicates and build-time balance checks re-verify, so a lie fails the job
+  closed one step later.
+- **Client-asserted `walletAddress` on `/api/chat`.** Builds run on it alone
+  (the signature is the proof), but four turns changed standing state with
+  no signature at all — guardian arm, DCA / spot manage, a compound job
+  ending in a guardian arm. Closed 2026-09-08 (§E4,
+  `lib/chat-mutation-gate.ts`): those proceed only when the SIWE session
+  owns the asserted wallet; otherwise a sign-in invitation and nothing
+  changes.
 - **IDOR on money-shaped objects.** Job ids are cuids (fine), link slugs are
   short (by design — they're public), chat ids distinguish local vs DB
   (`lib/chat-ids.ts`). Confirm no endpoint trusts a client-supplied id without

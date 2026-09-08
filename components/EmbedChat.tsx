@@ -33,6 +33,7 @@
 //   URL ?address= > in-iframe wagmi connection.
 // ────────────────────────────────────────────────────────────────────────────
 
+import { embedInjectionSend } from '@/lib/content-origin'
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { Maximize2, Minimize2 } from 'lucide-react'
 import { useAccount, useConnect } from 'wagmi'
@@ -247,8 +248,12 @@ export default function EmbedChat({
       if (!d || d.source !== SOURCE || d.v !== V) return
       if (d.type === 'address') setMsgAddress(isHexAddress(d.address) ? d.address : null)
       else if (d.type === 'theme' && (d.theme === 'dark' || d.theme === 'light')) setTheme(d.theme)
+      // Content-origin fence (SECURITY-AUDIT §C2/E5): the host page is a
+      // third party. A `send:true` prompt that routes value to an outside
+      // address (a send, a token typed as 0x…, an NFT sale) is downgraded to
+      // a prefill — the visitor reads it and presses send themselves.
       else if (d.type === 'prompt' && typeof d.text === 'string' && d.text.trim() && d.text.length <= 2000)
-        setInjectedPrompt({ text: d.text, send: d.send === true, at: Date.now() })
+        setInjectedPrompt({ text: d.text, send: embedInjectionSend(d.text, d.send === true), at: Date.now() })
     }
     window.addEventListener('message', onMessage)
     return () => window.removeEventListener('message', onMessage)

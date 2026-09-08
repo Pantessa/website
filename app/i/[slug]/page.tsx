@@ -4,6 +4,7 @@ import prisma from '@/lib/db'
 import { brandFromRow } from '@/lib/brand-denylist'
 import { INTENT_SLUG_RE, linkLifecycle, type LinkLifecycle } from '@/lib/intent-links'
 import LinkRetired from '@/components/LinkRetired'
+import { outboundHoldCopy, outboundToThirdParty } from '@/lib/content-origin'
 import { notifyEligible } from '@/lib/broker-webhook'
 import { MANDATE_KIND_LABELS, type MandateKind } from '@/lib/roster-client'
 import IntentRuntime from '@/components/IntentRuntime'
@@ -145,10 +146,18 @@ export default async function IntentLinkPage({ params }: Params) {
   // funnel (events route) and the copy shouldn't sell them their own call.
   const viewer = link.creator ? await getSessionAddress().catch(() => null) : null
   const ownLink = !!viewer && !!link.creator && viewer.toLowerCase() === link.creator.toLowerCase()
+  // Content-origin fence (SECURITY-AUDIT §E5), decided SERVER-SIDE: the row's
+  // mint-time stamp OR a fresh read of the phrasing actually shown (legacy
+  // rows, A/B variants). A held link PREFILLS — the visitor presses send.
+  const shownVerdict = outboundToThirdParty(phrasings[variant])
+  const prefillOnly = link.outboundThirdParty || shownVerdict.outbound
+  const holdCopy = prefillOnly ? outboundHoldCopy(shownVerdict.outbound ? shownVerdict : { outbound: true, reasons: ['transfer-target'] }) : ''
   return (
     <IntentRuntime
       slug={link.id}
       ask={phrasings[variant]}
+      prefillOnly={prefillOnly}
+      holdCopy={holdCopy}
       variant={variant}
       mcps={link.mcps ?? ''}
       agent={link.agent ?? ''}
