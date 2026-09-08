@@ -211,6 +211,7 @@ import {
 import { EXAMPLE_PROMPTS } from '../lib/examples'
 import { swapFeeAtoms, SWAP_FEE_BPS, LINK_SWAP_FEE_BPS, TREASURY_ADDRESS, HL_BUILDER_FEE_TENTH_BPS, HL_BUILDER_MAX_FEE_RATE } from '../lib/fees'
 import { APP_CHAINS, chainById, chainByKey, chainNamedIn, explorerTokenUrl, primaryStable, sanitizeChainId } from '../lib/chains'
+import { WALLET_CHAINS } from '../lib/wallet-chains'
 import { parseCrossChainSwap, guardCrossChainBuild, expectedOriginChainId, parseCrossChainFollowUp, crossChainPending, crossChainValueUsd } from '../lib/cross-chain-swap'
 import {
   parseAaveSupply,
@@ -7595,16 +7596,13 @@ async function main() {
         (FUNDING_SCAN_CHAINS as readonly number[]).every((id) => chainById(id) !== null),
       JSON.stringify({ origins: FUNDING_ORIGIN_CHAINS, scan: FUNDING_SCAN_CHAINS }),
     )
-    const wagmiSrc = await readFile(new URL('../lib/wagmi.ts', import.meta.url), 'utf8')
-    const wagmiChainsLine = wagmiSrc.match(/chains:\s*\[([^\]]*)\]/)?.[1] ?? ''
+    // The wallet chain list is importable now (lib/wallet-chains.ts — shared
+    // by wagmi AND the CDP embedded wallet, so ONE check covers every lane).
+    const walletLaneIds = new Set<number>(WALLET_CHAINS.map((c) => c.id))
     check(
-      'funding origins: lib/wagmi carries a switchable chain for every funding origin',
-      (FUNDING_ORIGIN_CHAINS as readonly number[]).every((id) => {
-        // registry key → the viem/wagmi identifier the config imports
-        const ident = { 1: 'mainnet', 10: 'optimism', 8453: 'base', 42161: 'arbitrum', 4663: 'robinhoodChain' }[id]
-        return !!ident && new RegExp(`\\b${ident}\\b`).test(wagmiChainsLine)
-      }),
-      JSON.stringify({ origins: FUNDING_ORIGIN_CHAINS, wagmiChainsLine: wagmiChainsLine.trim() }),
+      'funding origins: every wallet lane can switch to every funding origin (lib/wallet-chains.ts)',
+      (FUNDING_ORIGIN_CHAINS as readonly number[]).every((id) => walletLaneIds.has(id)),
+      JSON.stringify({ origins: FUNDING_ORIGIN_CHAINS, walletLanes: [...walletLaneIds] }),
     )
 
     // Non-funding resumes stay plain chips: "Not now", planner clarifies,
@@ -12364,6 +12362,31 @@ async function main() {
     check(
       'sign cards: switch refusal → named chain + "Switch to <chain> & retry" button; HL "Must deposit" → human line with the deposit ask',
       /switchNeeded/.test(sendTxSrc) && /& retry`/.test(sendTxSrc) && /must deposit/i.test(hlBtnSrc) && /deposit 10 usdc to hyperliquid/.test(hlBtnSrc),
+    )
+    // Wallet-lane chain parity (2026-09-08, Nate's Stripe drill): the CDP
+    // embedded wallet ("create an account") carried its OWN two-chain list
+    // while wagmi's grew to six, so `switchChainAsync` threw "Chain not
+    // configured" on every non-Base step — including the on-ramp's first
+    // bridge from Ethereum — and the card told an account-holder to "switch
+    // the wallet" in a wallet with no network UI. ONE list now
+    // (lib/wallet-chains.ts): every registry chain is on it, both connector
+    // configs read it, and neither carries a chain literal of its own.
+    const walletChainIds = new Set<number>(WALLET_CHAINS.map((c) => c.id))
+    const registryMissing = APP_CHAINS.filter((c) => !walletChainIds.has(c.id)).map((c) => c.key)
+    const cdpSrc = fs.readFileSync('lib/cdp-embedded.ts', 'utf8')
+    const wagmiSrc = fs.readFileSync('lib/wagmi.ts', 'utf8')
+    check(
+      `wallet lanes: every registry chain is signable by every wallet lane — wagmi + the CDP embedded wallet share lib/wallet-chains.ts (${walletChainIds.size} chains)`,
+      registryMissing.length === 0 &&
+        /WALLET_CHAINS/.test(cdpSrc) && /walletTransports\(\)/.test(cdpSrc) && !/chains:\s*\[\s*base/.test(cdpSrc) &&
+        /WALLET_CHAINS/.test(wagmiSrc) && /walletTransports\(\)/.test(wagmiSrc) && !/chains:\s*\[\s*base/.test(wagmiSrc),
+      registryMissing.length ? `registry chains no wallet lane can switch to: ${registryMissing.join(', ')}` : '',
+    )
+    // …and when the embedded wallet's switch DOES fail, the copy never says
+    // "switch the wallet": there is nothing for the account-holder to switch.
+    check(
+      'sign cards: an embedded-wallet switch failure owns the fault ("that\'s on us") instead of asking the user to switch a wallet with no network menu',
+      /CDP_CONNECTOR_ID/.test(sendTxSrc) && /that's on us, not you/.test(sendTxSrc) && /setSwitchNeeded\(connector\?\.id !== CDP_CONNECTOR_ID\)/.test(sendTxSrc),
     )
     // The moment of truth on /i (squad r5, Visuals' H1 storyboard): the
     // current step's sign/send button is THE primary CTA (one shared class

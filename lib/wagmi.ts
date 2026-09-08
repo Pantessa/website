@@ -6,8 +6,8 @@ import {
   walletConnectWallet,
   injectedWallet,
 } from '@rainbow-me/rainbowkit/wallets'
-import { createConfig, http } from 'wagmi'
-import { mainnet, base, baseSepolia, arbitrum, optimism } from 'wagmi/chains'
+import { createConfig } from 'wagmi'
+import { WALLET_CHAINS, walletTransports } from '@/lib/wallet-chains'
 import { cdpEmbeddedConnector, cdpEnabled } from '@/lib/cdp-embedded'
 import { hostWalletConnector } from '@/lib/host-wallet'
 import { walletLineup, WC_APP_METADATA, type WalletLaneId } from '@/lib/wallet-lineup'
@@ -90,34 +90,10 @@ export { robinhoodChain }
 
 export const wagmiConfig = createConfig({
   connectors,
-  // Base is the primary chain we transact on (x402 payments). Mainnet is included
-  // solely so RainbowKit can resolve ENS names/avatars — but its default RPC
-  // (eth.merkle.io) rejects browser CORS preflights, which spammed the console
-  // with retried ENS lookups, so pin it to a CORS-friendly public endpoint.
-  // base.sepolia is included for the launchpad (testnet) — launching a token +
-  // staking happen there until mainnet. Arbitrum + Robinhood Chain are here so
-  // tx cards can switch the wallet + watch receipts on them (SendTxButton needs
-  // a configured transport per tx.chainId, and switchChainAsync only knows the
-  // chains in this list — the Switch Networks modal mirrors it).
-  // Optimism is here for the same reason as Arbitrum: it's a funding origin,
-  // so the wallet must be able to switch there to sign the deposit leg. A
-  // chain the funding scanner can SEE but the wallet can't switch to is a
-  // chip that walls at signature time.
-  chains: [base, baseSepolia, mainnet, arbitrum, optimism, robinhoodChain],
-  transports: {
-    [base.id]: http(),
-    [baseSepolia.id]: http(),
-    [mainnet.id]: http('https://ethereum-rpc.publicnode.com'),
-    [arbitrum.id]: http(),
-    // Optimism keeps viem's default (mainnet.optimism.io) like Base and
-    // Arbitrum do. Pinning publicnode here is what broke the first live OP
-    // run: its free tier answers state older than ~128 blocks with "Archive
-    // requests require a personal token", and at 2s blocks that is ~4
-    // MINUTES of history — wagmi's receipt/simulation reads walk past it and
-    // the approve step dies. Measured 2026-09-04: mainnet.optimism.io serves
-    // full archive depth, 25 concurrent reads in 0.8s, CORS `*`.
-    [optimism.id]: http(),
-    [robinhoodChain.id]: http(),
-  },
+  // The chain list + transports live in lib/wallet-chains.ts, shared with the
+  // CDP embedded-wallet connector so the two can never drift (the drift is
+  // exactly what walled account-holders off Ethereum — see that file).
+  chains: WALLET_CHAINS,
+  transports: walletTransports(),
   ssr: true,
 })
