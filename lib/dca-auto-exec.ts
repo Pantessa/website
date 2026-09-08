@@ -164,11 +164,24 @@ function randomSalt(): bigint {
  * layer's chat turn. Runs BEFORE the manage grammar inside runDcaTurn.
  * Returns null when the message isn't an autopilot toggle.
  */
-export async function runDcaAutoToggleTurn(message: string, wallet: string | undefined, trace: Trace): Promise<DcaTurn | null> {
+export async function runDcaAutoToggleTurn(
+  message: string,
+  wallet: string | undefined,
+  trace: Trace,
+  /** Does the SIWE session OWN `wallet`? Arming ends in the wallet's own
+   *  signature (connect-to-act); DISARMING flips a standing plan with no
+   *  signature and needs it (lib/chat-mutation-gate). Defaults CLOSED. */
+  walletProven = false,
+): Promise<DcaTurn | null> {
   const toggle = parseDcaAutoToggle(message)
   if (!toggle) return null
   trace({ type: 'status', label: `dca autopilot layer claimed the turn: ${toggle.op}${toggle.token ? ` ${toggle.token}` : ''} — planner bypassed` })
   if (!wallet) return { reply: '🤖 Connect your wallet first — autopilot belongs to a wallet.' }
+  if (toggle.op === 'disarm' && !walletProven) {
+    const { mutationGate } = await import('@/lib/chat-mutation-gate')
+    trace({ type: 'note', level: 'warn', label: 'dca autopilot: disarm asked but the session does not own the wallet — answering the sign-in gate, nothing changed' })
+    return { ...mutationGate('dca-autopilot'), buildPath: 'native-dca-auto' }
+  }
 
   const schedules = await prisma.dcaSchedule.findMany({
     where: {

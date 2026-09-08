@@ -49,9 +49,88 @@ statement gets qualified.**
   2026-09-08 — before that, any signed-in wallet's add was planner-callable
   for everyone). Its tool results reach the planner and, in the worst case,
   a sign button. Also the prompt-injection vector: **tool output is
-  untrusted input that steers an agent that takes actions.**
+  untrusted input that steers an agent that takes actions.** Closed
+  2026-09-08: only a first-party source can produce a signable through the
+  planner at all (#720); a 402 challenge is bounded to the listed price, the
+  chain's USDC, the recorded receiver, $2/call and a house daily ceiling
+  (§E1, `lib/x402.ts` + `lib/house-spend.ts`); every tool result in a prompt
+  sits between per-turn nonce markers with one rule — data, not instructions
+  (§E3, `lib/tool-output-fence.ts`); a planner-sourced signable says who
+  built it, prints every `to` in full with the value attached and the
+  guard's warnings, and never auto-fires step 2+ (§E3,
+  `components/ExternalBuildNotice.tsx`).
 - **The malicious embed host.** `/embed` ships `frame-ancestors *` by design.
   The host page controls framing, postMessage, and the wallet relay's inputs.
+  Closed 2026-09-08 (§E5): a host-injected `prompt {send:true}` that routes
+  value to an outside party (a send to 0x…/ENS, a token typed as an address,
+  an NFT sale) downgrades to a prefill; a swap into a raw-address token on
+  embed origin refuses by name; the connect-gate re-run never carries such an
+  ask. What remains: the host chooses the `contextAddress` the guard reads as
+  `from` (balance, self-send, grant lookup) — the signature is still the
+  wallet's, so the host can mislead the build, not sign it.
+- **The malicious link creator.** Anyone signed in mints `/i/<slug>` and
+  hands the URL to a stranger — the page wears Pantessa's chrome and runs
+  the creator's sentence on the visitor's wallet the moment it connects. The
+  sentence is the attack surface: "send 0.5 ETH to 0x…", "swap all my ETH for
+  0x<attacker token>", "sell #2489 for 0.02 ETH", a byline "Coinbase Support",
+  a brand scan of a site whose `og:site_name` says "Uniswap". Closed
+  2026-09-08 (§E5, `lib/content-origin.ts`): `outbound_third_party` is
+  computed SERVER-SIDE at mint (every A/B phrasing) and stored; the /i runtime
+  holds such a link to prefill — a human presses send; raw-address token
+  slots refuse on link origin; a below-floor NFT listing blocks on link
+  origin; the transfer guard's full-address "LEAVES your wallet to 0x…" line
+  is rendered on the card; brand name/logo, byline and page name pass the
+  mark denylist (`isDeniedBrandName`); an addressed link is capped in
+  notional. The fence is deliberately over-inclusive — a false positive
+  costs one tap. What remains: the creator still chooses the ask and the MCP
+  set; a legitimate-looking sentence ("Buy $500 of AAPL") is exactly what the
+  product is for, and the native guards + the wallet's own confirmation are
+  the last line.
+- **The self-dealing creator (money on a stranger's word).** A link creator
+  opens their own link from any wallet — or just `curl`s
+  `/api/embed/telemetry` with `firstParty:true`, the deployment's own host as
+  `page`, `outcome:'signed'`, `valueUsd: 4999`, `feeBps: 50` and their slug —
+  and the row minted creator earnings, claimable USDC, a lifetime referral
+  stamp, the public money-moved number, the /i + /l share cards, the links
+  board and the agent record on the browser's word alone (QA's round-2
+  stranger: the #685 verifier stamped the funnel event `mismatch`, the studio
+  still read "$1.00 moved · $0.0025 claimable"). Closed 2026-09-08 (S-2):
+  **money follows the receipt** — the telemetry write site runs the same
+  verifier and stamps `embed_turns.verification`; every reader a stranger can
+  see money on composes `COUNTED_TURN_WHERE` (folded into `REAL_TRAFFIC_*`,
+  spelled out in the creator-scoped reads); the referral stamps only on a
+  counted sign; the sign cap counts only counted signs (a spoofer could
+  otherwise exhaust a link's cap); the creator funnel's decisive kinds read
+  `COUNTED_EVENT_WHERE`. What remains: the `attested` classes (CoW / HL /
+  Snapshot / NFT orders, job legs) count without a receipt read, exactly as
+  #685 documented for events — a creator who mints an order-class link can
+  still self-report on it until those are ledgered at their relays
+  (`/api/cow/submit`, `/api/hl/submit`, the jobs runner know the truth); the
+  $10 claim floor and Nate's manual payout bound the money, not the number.
+  And a legitimate `signed` beacon whose chain is unreadable at beacon time
+  shows $0 until the lazy re-check (studio poll, claims door, /activity)
+  catches up — honest, and the only correct default.
+- **The malicious inbox sender.** The wallet inbox (`/inbox/<address>`)
+  takes cards from strangers: a desk agent via `broker_send`, or a human via
+  the mint door's `recipient`. A "$50,000" card "from MetaMask Team" is a
+  phishing prop. Closed 2026-09-08 (§C5/§E5): `broker_send` requires
+  `agent_key` (attributable to a track record; anonymous agents keep
+  `broker_handoff`), sender labels and agent names pass the mark denylist,
+  every addressed send is capped (`DESK_MAX_INBOX_USD`, default = the desk's
+  $500), and an outbound-shaped card prefills in the recipient's runtime.
+  What remains: volume — a keyed agent can still fill an inbox with
+  plausible cards; the recipient's Decline verb and the per-IP desk rate
+  fence are the current answer, a per-recipient unread cap the next one.
+- **The malicious broker agent.** The desk (`/api/broker/mcp`) is open to any
+  agent with a key. It cannot obtain calldata (sentences in, sign links out;
+  the guarded builders rebuild everything) — the risk is the SENTENCE it
+  hands a human and the marks it wears. Same closures as the link creator +
+  inbox sender above, plus M1's identity binding, the per-intent USD cap and
+  the hourly per-IP POST fence (`lib/broker-policy.ts`). What remains: an
+  agent's track record (`/agents/<hash>`) is only as honest as the signed
+  turns behind it — verified receipts (#685) keep the harness out, but a
+  patient agent can earn a real record and then send a bad card; the human
+  signs, the human decides.
 - **The curious authenticated user.** Someone else's job id, link slug, chat
   id, capability token, or org. Classic IDOR, high value here because the
   objects are money-shaped.
@@ -132,9 +211,22 @@ mint, or mutate. That's this section.
   embed `yfe_` / none), and is the object it touches owner-scoped? The
   interesting ones are jobs, intent links, chats, org membership, and
   anything admin-gated by `ADMIN_WALLETS` / `OWNER_WALLETS`.
-- **Capability tokens.** Job `?t=` tokens exist so embeds can poll. Scope,
-  expiry, and guessability need a look; these are bearer credentials in URLs,
-  which means they land in logs and referrers.
+- **Capability tokens.** Job `?t=` tokens exist so embeds can poll. They are
+  bearer credentials in URLs (logs, referrers). Since 2026-09-08 (§E6,
+  `lib/job-token.ts`) a token is `v2.<exp>.<hmac>`: HMAC over the job id +
+  the job's WALLET + the expiry, 7-day TTL (jobs age out at 7 days), verified
+  against the row it names; the v1 id-only shape verifies until
+  `JOB_TOKEN_V1_SUNSET`. A leaked token can still post sign evidence to
+  `/complete` for its one job during its window — the runner's wait
+  predicates and build-time balance checks re-verify, so a lie fails the job
+  closed one step later.
+- **Client-asserted `walletAddress` on `/api/chat`.** Builds run on it alone
+  (the signature is the proof), but four turns changed standing state with
+  no signature at all — guardian arm, DCA / spot manage, a compound job
+  ending in a guardian arm. Closed 2026-09-08 (§E4,
+  `lib/chat-mutation-gate.ts`): those proceed only when the SIWE session
+  owns the asserted wallet; otherwise a sign-in invitation and nothing
+  changes.
 - **IDOR on money-shaped objects.** Job ids are cuids (fine), link slugs are
   short (by design — they're public), chat ids distinguish local vs DB
   (`lib/chat-ids.ts`). Confirm no endpoint trusts a client-supplied id without
@@ -148,9 +240,13 @@ mint, or mutate. That's this section.
   postMessage origin handling reviewed against a hostile parent frame.
 - **SSRF.** `lib/brand-scan.ts` has a real fence (https-only, public hosts,
   default port, post-redirect re-validation) — re-verify it covers DNS
-  rebinding and redirect chains, then sweep for *other* fetchers taking
-  user-supplied URLs (OpenSea item URLs, MCP endpoints on add, `redirectUrl`
-  on links).
+  rebinding and redirect chains. Swept 2026-09-08: `/api/fetch-meta` fetched
+  ANY url for ANY caller (cloud-metadata IPs, localhost, private CIDRs) and
+  returned the page's meta — now signed-in only, wearing `validateBrandUrl`
+  + a re-validation of where the fetch landed + a bounded read;
+  `/api/servers/discover` (already `assertPublicHttps`) is signed-in only
+  too. Still to re-read: OpenSea item URLs, `redirectUrl` on links (validated
+  at mint, never fetched by us), the broker webhook fence.
 - **The new rate fence** (`lib/turn-limits.ts`). It trusts platform-stamped
   IP headers. Confirm Vercel always overwrites `x-forwarded-for` on the edge;
   if a client can inject it, the IP tier is bypassable (the wallet tier still
@@ -186,6 +282,18 @@ destructive helpers against the prod host, or an `originEnv`-style column
 convention extended past jobs.
 
 Also open:
+- **A pinned RPC that cannot read receipts makes a verifier dead on arrival.**
+  Measured 2026-09-08: publicnode's free tier answers
+  `eth_getTransactionReceipt` on Base / Arbitrum / Optimism with "Archive
+  requests require a personal token" for a tx FIVE blocks old — every
+  receipt, every age (Ethereum's endpoint answers). `lib/chains.ts` pins
+  publicnode for the server, so from 2026-09-01 (#685) to this fix the
+  `verified` verdict was unreachable on three of five chains: every honest
+  link sign stayed `unverified` forever, no desk webhook ever fired on a
+  counted verdict, no inbox card ever dropped on verification. Receipt reads
+  now run on `receiptClientFor` — the pin first, the chain's default RPC when
+  the pin refuses. The standing rule stands: MEASURE an RPC against the
+  exact method you need before pinning it anywhere.
 - Vercel env var scoping (prod vs preview): does a preview deploy hold prod
   secrets? If yes, preview is prod for blast-radius purposes.
 - Cookie scoping: localhost cookies are shared **across ports** — stale

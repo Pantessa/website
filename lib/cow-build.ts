@@ -24,7 +24,7 @@ import {
   COW_POLICY_HOST,
   type GuardrailReport,
 } from '@/lib/cow-guardrails'
-import { getActiveGrant, recordLedger, spentTodayUsd, toPolicy } from '@/lib/grant-store'
+import { getActiveGrant, recordLedger, spentTodayUsd, spentTotalUsd, toPolicy } from '@/lib/grant-store'
 
 export interface GuardrailedOrderParams {
   mode: 'swap' | 'limit'
@@ -90,7 +90,8 @@ export async function buildGuardrailedOrder(params: GuardrailedOrderParams): Pro
   const grant = await getActiveGrant(params.from.toLowerCase())
   const policy = grant ? toPolicy(grant) : null
   const spentToday = grant ? await spentTodayUsd(grant.id) : 0
-  const { check: polCheck, violation } = policyCheck(valueUsd, policy, spentToday, COW_POLICY_HOST, 0, { selfSigned: true })
+  const spentTotal = grant ? await spentTotalUsd(grant.id) : 0
+  const { check: polCheck, violation } = policyCheck(valueUsd, policy, spentToday, COW_POLICY_HOST, spentTotal, { selfSigned: true })
   checks.push(polCheck)
   const guardrails = buildReport(valueUsd, checks, violation ? { violation, valueUsd, host: COW_POLICY_HOST } : null)
 

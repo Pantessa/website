@@ -5,6 +5,7 @@ import prisma from '@/lib/db'
 import { brandFromRow } from '@/lib/brand-denylist'
 import { brandOgPalette, normalizeHex } from '@/lib/brand-theme'
 import { gemMarkSvg } from '@/lib/og-marks'
+import { REAL_TRAFFIC_WHERE } from '@/lib/value-origin'
 
 // Social card for a creator page (/l/<handle>) — the handle is the hero,
 // the link count + dollars moved are the proof line. Wears the creator's
@@ -54,7 +55,8 @@ export default async function Image({ params }: Params) {
       linkCount = links.length
       if (links.length) {
         const moved = await prisma.embedTurn.aggregate({
-          where: { intentLinkSlug: { in: links.map((l) => l.id) }, outcome: 'signed', valueUsd: { gt: 0 } },
+          // The share card is the most public claim of all — same fence as the page.
+          where: { intentLinkSlug: { in: links.map((l) => l.id) }, outcome: 'signed', valueUsd: { gt: 0 }, ...REAL_TRAFFIC_WHERE },
           _sum: { valueUsd: true },
         })
         movedUsd = moved._sum.valueUsd ?? 0

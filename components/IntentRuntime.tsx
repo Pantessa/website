@@ -73,6 +73,8 @@ export default function IntentRuntime({
   notify = null,
   roster = null,
   recipient = null,
+  prefillOnly = false,
+  holdCopy = '',
 }: {
   slug: string
   ask: string
@@ -104,6 +106,11 @@ export default function IntentRuntime({
   /** The wallet this card is ADDRESSED to (M5), lowercased — lights the
    *  Decline verb for exactly that wallet (doors run). Null = plain link. */
   recipient?: string | null
+  /** Content-origin fence (SECURITY-AUDIT §E5), decided by the SERVER from
+   *  the row + the phrasing shown: this ask names an outside party, so it
+   *  PREFILLS and a human presses send. `holdCopy` is the one-line why. */
+  prefillOnly?: boolean
+  holdCopy?: string
 }) {
   const { address, isConnected, status: walletStatus } = useAccount()
   const { openConnectModal } = useConnectModal()
@@ -162,7 +169,10 @@ export default function IntentRuntime({
   // link showing NEAR Intents branding answered "add the NEAR Intents agent
   // to your set"). True immediately when the link composes no set.
   const [mcpsReady, setMcpsReady] = useState(!mcps)
-  const transferShaped = isTransferShaped(ask)
+  // Held = the client-side verb belt (isTransferShaped) OR the server's
+  // content-origin verdict — either alone is enough to hold the ask.
+  const transferShaped = isTransferShaped(ask) || prefillOnly
+  const heldCopy = holdCopy || 'This ask involves a transfer, so nothing runs until you press send.'
 
   /** Where sign-in should land: this link, exactly as opened. */
   const hereHref = () =>
@@ -478,7 +488,7 @@ export default function IntentRuntime({
           {!autoStarting && !walletResolving && (
             <p className="text-[12px] text-[color:var(--muted-2)] mt-4 max-w-md max-sm:order-2">
               Connecting runs the scan and the build for your wallet — signing stays yours
-              {transferShaped ? '. This ask involves a transfer, so nothing runs until you press send.' : '.'}
+              {transferShaped ? `. ${heldCopy}` : '.'}
             </p>
           )}
           {hasCreator && (
@@ -641,8 +651,8 @@ export default function IntentRuntime({
             </div>
           </div>
           {transferShaped && (
-            <p className="mt-2 text-[12px] text-amber-400">
-              This ask involves a transfer — review it in the composer and press send yourself.
+            <p className="mt-2 text-[12px] text-amber-400" data-origin-fence="held">
+              {prefillOnly ? heldCopy : 'This ask involves a transfer — review it in the composer and press send yourself.'}
             </p>
           )}
         </div>

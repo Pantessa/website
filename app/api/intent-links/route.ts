@@ -9,6 +9,11 @@ import { isAdminAddress } from '@/lib/admin'
 import { isMosaicAsk } from '@/lib/mosaic'
 import { resolveRecipient } from '@/lib/inbox'
 import { isInternalRun } from '@/lib/internal-run'
+import { outboundHoldCopy, outboundToThirdParty } from '@/lib/content-origin'
+import { deniedBrandNameReason, isDeniedBrandName } from '@/lib/brand-denylist'
+import { assertUnderInboxCap } from '@/lib/broker-policy'
+import { askUsd } from '@/lib/broker'
+import { COUNTED_EVENT_WHERE, COUNTED_TURN_SQL, COUNTED_TURN_WHERE, reverifyPendingTurns } from '@/lib/link-receipt-verify'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -48,12 +53,24 @@ export async function POST(req: NextRequest) {
   }
 
   const agent = body.agent ? cleanAsk(String(body.agent)).slice(0, 40) : null
+  // Rule 7 on the byline (SECURITY-AUDIT §C4): a link "by Coinbase Support"
+  // is a phishing prop. Admin wallets (house links carry agent 'Pantessa')
+  // are the one exemption.
+  if (agent && !isAdminAddress(creator) && isDeniedBrandName(agent)) {
+    return NextResponse.json({ error: deniedBrandNameReason(agent, 'byline'), denied: true }, { status: 400 })
+  }
   // Creator-chosen MCPs win (validated against the mintable set); otherwise
   // the composer decides from the ask's shape.
   const mcps = (sanitizeMcps(body.mcps) ?? composeMcps(ask)).join(',')
   // A/B alternate phrasings — each a full ask; the runtime shows one per
   // visit and the funnel segments by which one was shown.
   const variants = sanitizeVariants(body.variants, ask)
+
+  // Content-origin fence (§E5): the link's ask — and EVERY phrasing it can
+  // serve — is read for an outside party (0x / ENS / a send / an NFT sale).
+  // Stored on the row; the /i runtime holds such a link to prefill, and the
+  // mint response says so, so the creator isn't surprised by the extra tap.
+  const outbound = [ask, ...variants].map(outboundToThirdParty).find((v) => v.outbound) ?? { outbound: false, reasons: [] as never[] }
 
   // Partner-promo limits — validated at mint, enforced server-side at run.
   const expiry = parseExpiry(body.expiresAt)
@@ -75,6 +92,12 @@ export async function POST(req: NextRequest) {
     if (!r.ok) return NextResponse.json({ error: r.reason }, { status: 400 })
     recipient = r.recipient.wallet
     if (recipient === creator) return NextResponse.json({ error: 'That recipient is you — share the plain link instead.' }, { status: 400 })
+    // The inbox notional cap applies to human sends too (lib/broker-policy).
+    try {
+      assertUnderInboxCap(askUsd(ask))
+    } catch (e) {
+      return NextResponse.json({ error: (e as Error).message }, { status: 400 })
+    }
     const myHandle = await prisma.creatorHandle.findUnique({ where: { creator }, select: { handle: true } }).catch(() => null)
     senderLabel = myHandle ? `@${myHandle.handle}` : `${creator.slice(0, 6)}…${creator.slice(-4)}`
   }
@@ -117,11 +140,15 @@ export async function POST(req: NextRequest) {
           recipient,
           senderLabel,
           kind: isMosaicAsk(ask) ? 'mosaic' : null,
+          outboundThirdParty: outbound.outbound,
           isInternal: internalRun,
         },
       })
       return NextResponse.json({
         slug: link.id,
+        // What the creator should know: this link will PREFILL for its
+        // visitors (they press send) — never auto-run — because of its shape.
+        ...(outbound.outbound ? { prefillOnly: true, prefillReason: outbound.reasons, note: outboundHoldCopy(outbound) } : {}),
         url: `/i/${link.id}`,
         ask: link.ask,
         variants: link.variants,
@@ -177,9 +204,15 @@ export async function GET(req: NextRequest) {
   // Grouped by variant too, so A/B links segment their funnel per phrasing;
   // the aggregate funnel sums across variants (legacy null-variant rows
   // included).
+  // Decisive kinds (signed / settled) only COUNT on a verified/attested/
+  // legacy verdict — the creator's own funnel used to be the one reader of
+  // intent_link_events that skipped COUNTED_EVENT_WHERE (LINKS, round 2).
   const events = await prisma.intentLinkEvent.groupBy({
     by: ['slug', 'kind', 'variant'],
-    where: { slug: { in: links.map((l) => l.id) } },
+    where: {
+      slug: { in: links.map((l) => l.id) },
+      OR: [{ kind: { notIn: ['signed', 'settled'] } }, { AND: [{ kind: { in: ['signed', 'settled'] } }, COUNTED_EVENT_WHERE] }],
+    },
     _count: { _all: true },
     _sum: { valueUsd: true },
   })
@@ -226,9 +259,13 @@ export async function GET(req: NextRequest) {
   // Flag-only on purpose (not the origin patterns): a creator's own localhost
   // test sign has always accrued in their scoped view; only stamped internal
   // runs are excluded. Must stay in lockstep with /api/intent-links/claims.
+  // COUNTED_TURN_WHERE (S-2): money follows the receipt — a signed beacon
+  // whose hash the verifier refuted or could not read mints nothing here,
+  // and the studio poll IS the lazy re-check moment for the pending ones.
+  await Promise.race([reverifyPendingTurns({ intentLinkSlug: { in: links.map((l) => l.id) } }), new Promise((r) => setTimeout(r, 3000))])
   const turns = await prisma.embedTurn.groupBy({
     by: ['intentLinkSlug', 'buildPath', 'feeBps'],
-    where: { intentLinkSlug: { in: links.map((l) => l.id) }, outcome: 'signed', valueUsd: { gt: 0 }, isInternal: false },
+    where: { intentLinkSlug: { in: links.map((l) => l.id) }, outcome: 'signed', valueUsd: { gt: 0 }, isInternal: false, ...COUNTED_TURN_WHERE },
     _sum: { valueUsd: true },
     _count: { _all: true },
   })
@@ -272,6 +309,7 @@ export async function GET(req: NextRequest) {
           outcome: 'signed',
           valueUsd: { gt: 0 },
           isInternal: false,
+          ...COUNTED_TURN_WHERE,
         },
         _sum: { valueUsd: true },
         _count: { _all: true },
@@ -304,7 +342,7 @@ export async function GET(req: NextRequest) {
                coalesce(sum(value_usd), 0)::float AS v, count(*) AS n
         FROM embed_turns
         WHERE intent_link_slug IN (${Prisma.join(slugList)}) AND outcome = 'signed'
-          AND value_usd > 0 AND NOT is_internal AND created_at >= ${weekSince}
+          AND value_usd > 0 AND NOT is_internal AND ${Prisma.raw(COUNTED_TURN_SQL)} AND created_at >= ${weekSince}
         GROUP BY 1, 2, 3`
     : []
   const referredWeekly: WeekRow[] = referred.length
@@ -314,7 +352,7 @@ export async function GET(req: NextRequest) {
         FROM embed_turns
         WHERE wallet_address IN (${Prisma.join(referred.map((r) => r.wallet))})
           AND intent_link_slug IS NULL AND outcome = 'signed'
-          AND value_usd > 0 AND NOT is_internal AND created_at >= ${weekSince}
+          AND value_usd > 0 AND NOT is_internal AND ${Prisma.raw(COUNTED_TURN_SQL)} AND created_at >= ${weekSince}
         GROUP BY 1, 2, 3`
     : []
   const weekMap = new Map<string, { weekStart: string; earnedUsd: number; signedUsd: number; signs: number }>()

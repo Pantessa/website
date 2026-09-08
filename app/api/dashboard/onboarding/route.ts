@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import prisma from '@/lib/db'
+import { COUNTED_TURN_WHERE } from '@/lib/value-origin'
 import { getSessionAddress } from '@/lib/auth'
 
 export const runtime = 'nodejs'
@@ -41,7 +42,7 @@ export async function GET() {
       : null,
     slugs.length
       ? prisma.embedTurn.findFirst({
-          where: { intentLinkSlug: { in: slugs }, outcome: 'signed', valueUsd: { gt: 0 } },
+          where: { intentLinkSlug: { in: slugs }, outcome: 'signed', valueUsd: { gt: 0 }, ...COUNTED_TURN_WHERE },
           select: { id: true },
         })
       : null,

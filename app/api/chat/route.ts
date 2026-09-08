@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse, after } from 'next/server'
+import { fenceToolOutput, toolOutputNonce, toolOutputRule } from '@/lib/tool-output-fence'
+import { contentOriginOf, hardenReportForOrigin, isThirdPartyOrigin, outboundToThirdParty, rawAddressTokenRefusal, type ContentOrigin } from '@/lib/content-origin'
 import { attachFundsSnapshot, classifyTurn, moneyShaped, recordAskFailure } from '@/lib/ask-failure'
 import { recordTurnExpectations } from '@/lib/link-receipt-verify'
 import { erc20Abi, formatEther, formatUnits, getAddress, isAddress, parseEther, parseUnits } from 'viem'
@@ -11,6 +13,10 @@ import {
   derivePayment,
   finalizePaymentHeader,
   fetchWithPaymentHeader,
+  isX402Refusal,
+  paidAmountUsd,
+  preparedAmountUsd,
+  type PaymentBounds,
   type PreparedPayment,
   type SigningRequest,
 } from '@/lib/x402'
@@ -145,6 +151,7 @@ import { resolveProposal } from '@/lib/snapshot-read'
 import { detectGovernanceIntent, runGovernanceTurn } from '@/lib/governance'
 import { sanitizeWorkingContext, contextBlockForPlanner, type WorkingContext, extractEntities, carryContext } from '@/lib/working-context'
 import { getSessionAddress } from '@/lib/auth'
+import { hasGuardianStep, mutationGate, sessionOwnsWallet } from '@/lib/chat-mutation-gate'
 import { bumpAndCheckUnsignedTurn, clientIpFrom, turnLimitReply } from '@/lib/turn-limits'
 import { spendCredits } from '@/lib/billing'
 import { recordEmbedSighting, resolveEmbedKey } from '@/lib/embed-key'
@@ -251,7 +258,7 @@ async function hlAutoFundedJobTurn(
       `📈 **We can make this happen.** The ~$${short.notionalUsd} position needs about $${short.depositUsdc} of collateral on Hyperliquid first${gasLegNote} — so the whole path is lined up as one job: **${job.title}**. ` +
       `Every step is built and guard-checked when it's your turn to sign; nothing moves without your signature, and you can cancel from the card.`,
     jobId: job.id,
-    jobToken: signJobToken(job.id),
+    jobToken: signJobToken(job.id, walletAddress),
     buildPath: 'native-job',
   })
 }
@@ -361,7 +368,7 @@ export async function POST(req: NextRequest) {
   } catch {
     /* fall through — the inner handler 400s on the empty body */
   }
-  const res = await handleChatTurn(new NextRequest(req.nextUrl, { method: 'POST', headers: req.headers, body: raw }))
+  const res = await fenceConnectAsk(await handleChatTurn(new NextRequest(req.nextUrl, { method: 'POST', headers: req.headers, body: raw })), raw)
   try {
     if (!raw || !res.headers.get('content-type')?.includes('application/json')) return res
     const reqBody = JSON.parse(raw) as Record<string, unknown>
@@ -369,7 +376,10 @@ export async function POST(req: NextRequest) {
     // {to, selector, chainId} for /i turns — the binding target a later
     // signed beacon's tx hash is verified against (lib/receipt-verify).
     // Runs for harness probes too (their signed drills verify like anyone).
-    if (typeof reqBody.intentLinkSlug === 'string') {
+    // S-2 (2026-09-08): EVERY wallet-bound build records — a first-party
+    // chat / keyed-embed sign verifies against its own build the same way
+    // (key CHAT_EXPECTATION_SLUG), so money follows the receipt everywhere.
+    if (typeof reqBody.walletAddress === 'string') {
       const artifactData = (await res.clone().json().catch(() => null)) as Record<string, unknown> | null
       after(() => recordTurnExpectations(reqBody, artifactData))
     }
@@ -396,6 +406,34 @@ export async function POST(req: NextRequest) {
     /* the log must never break a chat turn */
   }
   return res
+}
+
+/** Content-origin fence on the connect gate (SECURITY-AUDIT §E5, belt for the
+ *  client's connect-ask re-run): a "connect your wallet" reply carries
+ *  `connectAsk` so the runtime can re-send the sentence the moment an address
+ *  lands. When that sentence arrived on a LINK or EMBED origin AND routes value
+ *  to an outside party (a send to 0x…/ENS, a token typed as an address, an NFT
+ *  sale), the re-run would auto-fire a stranger's transfer on connect. Such a
+ *  reply carries no `connectAsk` — the visitor presses send again after
+ *  connecting, one more tap. One choke point for every connect-gate site. */
+async function fenceConnectAsk(res: Response, raw: string): Promise<Response> {
+  try {
+    if (!raw || !res.headers.get('content-type')?.includes('application/json')) return res
+    const reqBody = JSON.parse(raw) as { message?: unknown; intentLinkSlug?: unknown; embedKey?: unknown; embedOrigin?: unknown }
+    if (!isThirdPartyOrigin(contentOriginOf(reqBody))) return res
+    const message = typeof reqBody.message === 'string' ? reqBody.message : ''
+    const verdict = outboundToThirdParty(message)
+    if (!verdict.outbound) return res
+    const data = (await res.clone().json().catch(() => null)) as Record<string, unknown> | null
+    if (!data || typeof data.connectAsk !== 'string') return res
+    const { connectAsk: _dropped, ...rest } = data
+    void _dropped
+    const headers = new Headers(res.headers)
+    headers.delete('content-length')
+    return NextResponse.json({ ...rest, connectAskHeld: verdict.reasons }, { status: res.status, headers })
+  } catch {
+    return res
+  }
 }
 
 async function handleChatTurn(req: NextRequest) {
@@ -483,6 +521,13 @@ async function handleChatTurn(req: NextRequest) {
       typeof body.walletAddress === 'string' && isAddress(body.walletAddress)
         ? getAddress(body.walletAddress)
         : undefined
+    // Does the SIWE session OWN the asserted wallet? Builds never need it
+    // (the signature is the proof — rule 6), but the standing-state
+    // mutations below (guardian arm, DCA/spot manage, guardian job steps)
+    // change what happens to a wallet with no signature at all, so they
+    // require it — lib/chat-mutation-gate (SECURITY-AUDIT §B2/§E4).
+    const sessionAddress = await getSessionAddress()
+    const walletProven = sessionOwnsWallet(sessionAddress, walletAddress)
     // The chat chain picker's selection — the chain the user made first-class
     // for this session. Untrusted client value; only registry ids survive.
     const selectedChainId = sanitizeChainId(body.selectedChainId)
@@ -500,6 +545,10 @@ async function handleChatTurn(req: NextRequest) {
       typeof body.embedKey === 'string' ? await resolveEmbedKey(body.embedKey) : null
     const embedOrigin =
       typeof body.embedOrigin === 'string' && body.embedOrigin ? body.embedOrigin.slice(0, 200) : undefined
+    // Content-origin fence (SECURITY-AUDIT §C/E5): a turn that rides an
+    // intent link or an embed host carries a stranger's sentence. A few
+    // builds harden on that origin alone (lib/content-origin).
+    const contentOrigin = contentOriginOf({ intentLinkSlug: turnLinkSlug, embedKey: body.embedKey, embedOrigin })
     if (embedOrigin) {
       void recordEmbedSighting({
         embedKeyId: embedBill?.id ?? '',
@@ -516,7 +565,7 @@ async function handleChatTurn(req: NextRequest) {
     // BEFORE any expensive path runs; the wall is a polite reply whose
     // escape hatch is signing in (rule 6 intact — an invitation, never an
     // auto-fired SIWE). Signed sessions and embed-key turns pass untouched.
-    if (!embedBill && !(await getSessionAddress())) {
+    if (!embedBill && !sessionAddress) {
       const limited = await bumpAndCheckUnsignedTurn(clientIpFrom(req.headers), walletAddress)
       if (limited) {
         return NextResponse.json({
@@ -727,7 +776,7 @@ async function handleChatTurn(req: NextRequest) {
             type: 'status',
             label: `funding layer: follow-up on the unfunded ${buySym} buy — fresh scan, re-running “buy $${buyUsd} of ${buySym}” on Robinhood Chain (planner bypassed)`,
           })
-          return await prepareSwapTurn(rerun, walletAddress, 'uniswap', workingContext, nativeTrace, ROBINHOOD_CHAIN_ID, swapFeeBps)
+          return await prepareSwapTurn(rerun, walletAddress, 'uniswap', workingContext, nativeTrace, ROBINHOOD_CHAIN_ID, swapFeeBps, contentOrigin)
         }
       }
     }
@@ -864,7 +913,7 @@ async function handleChatTurn(req: NextRequest) {
       // data carries chainId for non-Base builds) — never silently back on Base.
       const pendingChainId = sanitizeChainId(Number(pendingArtifact.data.chainId)) ?? DEFAULT_CHAIN_ID
       nativeTrace({ type: 'status', label: `native swap layer: amending the pending ${pendingArtifact.kind} to ${swapFollowUp.intent.sellAmountHuman} ${(swapFollowUp.intent.sellToken ?? '').toUpperCase()} → ${(swapFollowUp.intent.buyToken ?? '').toUpperCase()} on ${pendingVenue === 'uniswap' ? 'Uniswap' : 'CoW'} (${chainById(pendingChainId)?.name})` })
-      return await prepareSwapTurn(swapFollowUp.intent, walletAddress, pendingVenue, workingContext, nativeTrace, pendingChainId, swapFeeBps)
+      return await prepareSwapTurn(swapFollowUp.intent, walletAddress, pendingVenue, workingContext, nativeTrace, pendingChainId, swapFeeBps, contentOrigin)
     }
 
     // DCA — recurring buys ("buy $10 of AAPL every week"), the due-period
@@ -873,7 +922,7 @@ async function handleChatTurn(req: NextRequest) {
     // SCHEDULE, never a one-shot swap that quietly drops "every week". Each
     // due period compiles a one-step job (native-swap builder — same venue
     // cascade + guardrails as any swap), confirm-mode only.
-    const dcaTurn = await runDcaTurn(message, walletAddress, selectedChainId, nativeTrace, internalRun)
+    const dcaTurn = await runDcaTurn(message, walletAddress, selectedChainId, nativeTrace, internalRun, walletProven)
     if (dcaTurn) return NextResponse.json(dcaTurn)
 
     // Multi-step JOBS — a compound ask ("bridge …, then deposit …, then long
@@ -903,6 +952,15 @@ async function handleChatTurn(req: NextRequest) {
       if (!walletAddress) {
         return NextResponse.json({ reply: "🧭 That chains multiple money steps — connect your wallet first and I'll compile it into a job you sign step by step." })
       }
+      // A guardian arm inside a job is performed SERVER-SIDE by the runner
+      // (no signature) once the earlier steps settle — so the job may only
+      // be planted by a session that owns the wallet (lib/chat-mutation-gate).
+      // Checked before the auto-funded variant too: it compiles the same
+      // steps under a funding prefix.
+      if (hasGuardianStep(jobAsk) && !walletProven) {
+        nativeTrace({ type: 'note', level: 'warn', label: 'jobs layer: the ask ends in a guardian arm and the session does not own the wallet — answering the sign-in gate, nothing compiled' })
+        return NextResponse.json({ ...mutationGate('guardian-job-step'), buildPath: 'native-job' })
+      }
       // "You have an intent — we do the rest": when the job LEADS with a
       // Hyperliquid open ("long $12 of HYPE…, then protect it…") and the HL
       // account has no collateral behind it, don't compile a job that blocks
@@ -931,7 +989,7 @@ async function handleChatTurn(req: NextRequest) {
         jobId: job.id,
         // Capability token: the JobCard reads/advances THIS job with it —
         // embed visitors have no SIWE session (lib/job-token.ts).
-        jobToken: signJobToken(job.id),
+        jobToken: signJobToken(job.id, walletAddress),
         buildPath: 'native-job',
       })
     }
@@ -1184,11 +1242,12 @@ async function handleChatTurn(req: NextRequest) {
     // BEFORE the HL guardian gate: its grammar refuses perp-worded asks by
     // construction, but the HL parser's loose coin slot would read "spot"
     // as a coin. Arm answers with the one-signature Spend Permission card.
-    const spotTurn = await runSpotGuardTurn(message, walletAddress, nativeTrace)
+    const spotTurn = await runSpotGuardTurn(message, walletAddress, nativeTrace, walletProven)
     if (spotTurn) {
       return NextResponse.json({
         reply: spotTurn.reply,
         ...(spotTurn.spotGuardArm ? { spotGuardArm: spotTurn.spotGuardArm } : {}),
+        ...(spotTurn.signInGate ? { signInGate: spotTurn.signInGate } : {}),
         buildPath: spotTurn.buildPath,
       })
     }
@@ -1213,6 +1272,14 @@ async function handleChatTurn(req: NextRequest) {
       nativeTrace({ type: 'status', label: `guardian layer claimed the turn: ${armAsk.kind} on ${armAsk.coin} (${armAsk.triggerMode} ${armAsk.triggerValue}) — planner bypassed` })
       if (!walletAddress) {
         return NextResponse.json({ reply: '🛡️ Connect your wallet first — the guardian watches YOUR Hyperliquid positions.' })
+      }
+      // Arming is a server-side mutation under the wallet's delegation — the
+      // cron will close the position with the delegated key and no further
+      // signature. Only a session that OWNS the wallet may arm it from chat
+      // (the dashboard twin is SIWE-gated; this surface was not).
+      if (!walletProven) {
+        nativeTrace({ type: 'note', level: 'warn', label: 'guardian layer: arm ask parsed but the session does not own the asserted wallet — answering the sign-in gate, nothing armed' })
+        return NextResponse.json({ ...mutationGate('guardian-arm'), buildPath: 'native-hl-guardian' })
       }
       const armed = await armGuardianPolicy(walletAddress, armAsk, { internal: internalRun })
       if (!armed.ok) {
@@ -1688,6 +1755,14 @@ async function handleChatTurn(req: NextRequest) {
           nativeTrace({ type: 'note', level: 'info', label: `nft listing not buildable: ${built.problem.slice(0, 160)}` })
           return NextResponse.json({ reply: `🖼️ ${built.problem}` })
         }
+        // §E5: a listing priced by someone else (link / embed origin) far
+        // under floor is a BLOCK, not a warning the visitor scrolls past.
+        const hardened = hardenReportForOrigin(built.guardrails, contentOrigin)
+        if (!built.blocked && !hardened.ok) {
+          const why = hardened.checks.find((c) => c.level === 'block' && !c.ok)?.note ?? 'a safety check failed.'
+          nativeTrace({ type: 'note', level: 'warn', label: `nft listing REFUSED on ${contentOrigin} origin: ${why.slice(0, 200)}` })
+          return NextResponse.json({ reply: `🚫 ${why}`, guardrails: hardened, blocked: true, buildPath: 'native-nft-list', originFence: 'floor-sanity' })
+        }
         if (built.blocked) {
           nativeTrace({ type: 'note', level: 'warn', label: `nft listing REFUSED: ${(built.refusal ?? 'a safety check failed.').slice(0, 200)}` })
           return NextResponse.json({ reply: `🚫 ${built.refusal ?? 'A safety check failed — nothing was built.'}`, guardrails: built.guardrails, blocked: true, buildPath: 'native-nft-list' })
@@ -1899,7 +1974,7 @@ async function handleChatTurn(req: NextRequest) {
           : 'swap ask (pair not fully parsed yet)'
         const chainVia = buildChain.id !== targetChain.id ? 'stock list, inferred' : namedNative ? 'named in the message' : pickerChain ? 'from the chain picker' : 'default'
         nativeTrace({ type: 'status', label: `native swap layer claimed the turn: ${pair} on ${venue === 'uniswap' ? 'Uniswap' : 'CoW'} (${buildChain.name}, ${chainVia}) — planner bypassed` })
-        return await prepareSwapTurn(swapIntent, walletAddress, venue, workingContext, nativeTrace, buildChain.id, swapFeeBps)
+        return await prepareSwapTurn(swapIntent, walletAddress, venue, workingContext, nativeTrace, buildChain.id, swapFeeBps, contentOrigin)
       }
       // crossChain + a usable cross-chain agent → build it NATIVELY (deterministic
       // build_swap + guardrails + Sign button), never via the planner/house
@@ -2162,7 +2237,7 @@ async function prepareVoteTurn(
         arguments: { proposal: resolved.id, from: walletAddress, choiceText },
       },
     })
-    const res = await getPaidFetch()(snapshotSvc.endpoint!, {
+    const res = await getPaidFetch(boundsFor(snapshotSvc))(snapshotSvc.endpoint!, {
       method: 'POST',
       headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream' },
       body,
@@ -2195,7 +2270,9 @@ async function prepareVoteTurn(
 /** Call ONE tool on an MCP agent deterministically (tools/call over the free
  *  MCP transport — no planner, no payment). Throws on transport/tool errors. */
 async function callAgentTool(endpoint: string, tool: string, args: Record<string, unknown>): Promise<unknown> {
-  const res = await getPaidFetch()(endpoint, {
+  // A free agent tool never 402s — declare it free so the day one does, the
+  // house refuses to pay rather than signing whatever it asks.
+  const res = await getPaidFetch({ advertisedUsd: 0, label: 'This free MCP' })(endpoint, {
     method: 'POST',
     headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream' },
     body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: tool, arguments: args } }),
@@ -2618,7 +2695,8 @@ async function aavePolicyGate(
   const grant = await getActiveGrant(walletAddress.toLowerCase())
   const policy = grant ? toPolicy(grant) : null
   const spentToday = grant ? await spentTodayUsd(grant.id) : 0
-  const { check: polCheck, violation } = policyCheck(valueUsd, policy, spentToday, host, 0, { selfSigned: true })
+  const spentTotal = grant ? await spentTotalUsd(grant.id) : 0
+  const { check: polCheck, violation } = policyCheck(valueUsd, policy, spentToday, host, spentTotal, { selfSigned: true })
   const guardrails = buildReport(
     valueUsd,
     [
@@ -3745,7 +3823,15 @@ function isExactRobinhoodStock(symbol: string): boolean {
  * line, so every venue's artifact (CoW order, v3/v4 chain, LiFi chain)
  * quotes the exact number the user is about to sign — one site, not five.
  */
-async function prepareSwapTurn(intent: SwapIntent, walletAddress: string | undefined, venue: 'uniswap' | 'cow' = 'cow', ctx?: WorkingContext, trace: (event: unknown) => void = () => {}, chainId: number = DEFAULT_CHAIN_ID, feeBps?: number) {
+async function prepareSwapTurn(intent: SwapIntent, walletAddress: string | undefined, venue: 'uniswap' | 'cow' = 'cow', ctx?: WorkingContext, trace: (event: unknown) => void = () => {}, chainId: number = DEFAULT_CHAIN_ID, feeBps?: number, origin: ContentOrigin = 'first-party') {
+  // Content-origin fence (SECURITY-AUDIT §C3/E5): a swap whose token slot is
+  // a raw contract address, authored by a link or an embed host, is a
+  // transfer wearing a swap verb — refused by name before any venue runs.
+  const rawRefusal = rawAddressTokenRefusal(intent, origin)
+  if (rawRefusal) {
+    trace({ type: 'note', level: 'warn', label: `swap REFUSED on ${origin} origin: raw contract address in the token slot` })
+    return NextResponse.json({ reply: rawRefusal, blocked: true, buildPath: venue === 'cow' ? 'native-swap-cow' : 'native-swap-uniswap', originFence: 'raw-address-token' })
+  }
   const sized: { note: string | null } = { note: null }
   const res = await prepareSwapTurnCore(intent, walletAddress, venue, ctx, trace, chainId, feeBps, sized)
   if (!sized.note) return res
@@ -4773,6 +4859,8 @@ async function planWalletPayments(
       method: 'GET',
       headers: { accept: 'application/json' },
     })
+    const bounded = challenge ? prepareBounded(challenge, walletAddress, boundsFor(ds), notes) : { prepared: null }
+    if ('refused' in bounded) continue
     plan.push({
       id: `data:${ds.slug}`,
       role: 'data',
@@ -4781,7 +4869,7 @@ async function planWalletPayments(
       priceUsd: ds.priceUsd ?? '0.01',
       endpoint: ds.endpoint!,
       url: url.toString(),
-      prepared: challenge ? derivePayment(challenge, walletAddress) : null,
+      prepared: bounded.prepared,
     })
   }
 
@@ -4799,6 +4887,8 @@ async function planWalletPayments(
       headers: reqd.headers,
       body: reqd.body,
     })
+    const bounded = challenge ? prepareBounded(challenge, walletAddress, boundsFor(ds), notes) : { prepared: null }
+    if ('refused' in bounded) continue
     plan.push({
       id: `mcpdata:${ds.slug}`,
       role: 'data',
@@ -4810,7 +4900,7 @@ async function planWalletPayments(
       method: reqd.method,
       body: reqd.body,
       mcp: true,
-      prepared: challenge ? derivePayment(challenge, walletAddress) : null,
+      prepared: bounded.prepared,
     })
   }
 
@@ -4849,6 +4939,8 @@ async function planWalletPayments(
           headers: request.headers,
           body: request.body,
         })
+        const bounded = challenge ? prepareBounded(challenge, walletAddress, boundsForEndpoint(ep, [...dataServers, ...mcpDataServers, ...listedOnly]), notes) : { prepared: null }
+        if ('refused' in bounded) continue
         smartServed.add(ep.serverSlug)
         plan.push({
           id: `smart:${ep.id}`,
@@ -4860,7 +4952,7 @@ async function planWalletPayments(
           url: request.url,
           method: request.method,
           body: request.body,
-          prepared: challenge ? derivePayment(challenge, walletAddress) : null,
+          prepared: bounded.prepared,
         })
       }
     } catch (err) {
@@ -4896,6 +4988,12 @@ async function planWalletPayments(
         headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream' },
         body: infProtocol === 'http' ? inferenceBody('http', infTool, 'probe') : dummyMcpBody(infTool),
       })
+  const infBounded = infChallenge ? prepareBounded(infChallenge, walletAddress, boundsFor(inference), notes) : { prepared: null }
+  if ('refused' in infBounded) {
+    // The engine itself over-asked — there is no answer to write without it,
+    // and the wallet is never asked to sign a challenge outside the bounds.
+    return NextResponse.json({ reply: `🚫 ${infBounded.refused}`, blocked: true, notes })
+  }
   plan.push({
     id: `inference:${inference.slug}`,
     role: 'inference',
@@ -4905,10 +5003,12 @@ async function planWalletPayments(
     endpoint: inference.endpoint!,
     tool: infTool,
     protocol: infProtocol,
-    prepared: infChallenge ? derivePayment(infChallenge, walletAddress) : null,
+    prepared: infBounded.prepared,
   })
 
   // Signing requests the browser needs (one per call that requires payment).
+  // `amountUsd` is what the SIGNATURE authorizes (the bounded challenge
+  // amount) — the confirm card renders it, never the listing alone.
   const payments = plan
     .filter((c) => c.prepared)
     .map((c) => ({
@@ -4916,6 +5016,8 @@ async function planWalletPayments(
       name: c.name,
       host: c.host,
       priceUsd: c.priceUsd,
+      amountUsd: c.prepared!.amountUsd,
+      payTo: c.prepared!.payTo,
       signing: c.prepared!.signing as SigningRequest,
     }))
 
@@ -4951,6 +5053,9 @@ async function executeWithSignatures(
    *  ("what can I do here?") stay grounded when the answer is synthesized here. */
   capabilities = '',
 ) {
+  // Tool output is DATA, not instructions (lib/tool-output-fence): every
+  // service result in this turn's prompts sits between nonce markers.
+  const toolNonce = toolOutputNonce()
   if (!message.trim()) return NextResponse.json({ error: 'message is required' }, { status: 400 })
 
   const receipts: Receipt[] = []
@@ -4982,7 +5087,9 @@ async function executeWithSignatures(
       grantId: grant.id, orgId: grant.orgId ?? undefined,
       host: c.host,
       serviceName: c.name,
-      amountUsd: ok ? Number(c.priceUsd) || 0 : 0,
+      // The amount the user's SIGNATURE authorized (the bounded challenge),
+      // read from the signed value — never the directory listing.
+      amountUsd: ok ? (preparedAmountUsd(c.prepared) ?? Number(c.priceUsd) ?? 0) : 0,
       ok,
       txHash,
       note: note ?? (ok ? 'settled' : 'call failed'),
@@ -5013,7 +5120,7 @@ async function executeWithSignatures(
       // to the synthesized text (latest read wins — freshest data).
       const card = portfolioFromToolResult(data)
       if (card) portfolioCard = card
-      contextBlocks.push(`### ${c.name}\n${compactForSynthesis(data, 3500)}`)
+      contextBlocks.push(fenceToolOutput(c.name, compactForSynthesis(data, 3500), toolNonce))
       if (card) contextBlocks.push('NOTE: this portfolio is ALSO rendered as a rich visual card right below your reply — write ONE short summary sentence (total + notable point); do NOT repeat the holdings/table in text.')
       const txHash = decodeSettlement(res)?.transaction
       pushReceipt({ name: c.name, endpoint: c.host, priceUsd: c.priceUsd, txHash, ok: true })
@@ -5128,6 +5235,9 @@ async function runWithBurner(
    *  proposals" needs their address, not the burner's. */
   userAddress?: string,
 ) {
+  // Tool output is DATA, not instructions (lib/tool-output-fence): every
+  // service result in this turn's prompts sits between nonce markers.
+  const toolNonce = toolOutputNonce()
   let traceSeq = 0
   const trace = turnId ? (event: unknown) => recordTraceLine(turnId, traceSeq++, event, 'burner') : () => {}
   trace({ type: 'status', label: 'routing within your selected agents' })
@@ -5170,17 +5280,19 @@ async function runWithBurner(
     }
 
     try {
-      const { json, txHash } = await paidGet(ds.endpoint!, ds.queryParam ?? 'q', message)
+      const { json, txHash, paidUsd } = await paidGet(ds.endpoint!, ds.queryParam ?? 'q', message, boundsFor(ds))
       carriedEntities = extractEntities(json, carriedEntities)
-      contextBlocks.push(`### ${ds.name}\n${compactForSynthesis(json, 3500)}`)
+      contextBlocks.push(fenceToolOutput(ds.name, compactForSynthesis(json, 3500), toolNonce))
       receipts.push({ name: ds.name, endpoint: host, priceUsd: ds.priceUsd ?? '0.01', txHash, ok: true })
       if (grant) {
-        await recordLedger({ grantId: grant.id, orgId: grant.orgId ?? undefined, host, serviceName: ds.name, amountUsd: price, ok: true, txHash, note: 'settled' })
-        spentToday += price
-        spentTotal += price
+        const settled = paidUsd ?? price
+        await recordLedger({ grantId: grant.id, orgId: grant.orgId ?? undefined, host, serviceName: ds.name, amountUsd: settled, ok: true, txHash, note: 'settled' })
+        spentToday += settled
+        spentTotal += settled
       }
     } catch (err) {
       const note = err instanceof Error ? err.message : 'call failed'
+      if (isX402Refusal(err)) notes.push(note)
       balanceFailures.push({ name: ds.name, note })
       receipts.push({ name: ds.name, endpoint: host, priceUsd: ds.priceUsd ?? '0.01', ok: false, note })
     }
@@ -5203,10 +5315,11 @@ async function runWithBurner(
 
     try {
       const reqd = mcpDataRequest(ds)
-      const res = await getPaidFetch()(reqd.url, { method: reqd.method, headers: reqd.headers, body: reqd.body })
+      const res = await getPaidFetch(boundsFor(ds))(reqd.url, { method: reqd.method, headers: reqd.headers, body: reqd.body })
       if (!res.ok) throw new Error(await failureReason(res))
       const data = parseMcpDataResult(res.headers.get('content-type') ?? '', await res.text())
       const txHash = decodeSettlement(res)?.transaction
+      const paidUsd = paidAmountUsd(res)
       // prepare_vote returns a sign_vote payload — surface it as a button rather
       // than feeding the raw typed data to the model.
       const vote = voteRequestFromToolResult(data)
@@ -5217,17 +5330,19 @@ async function runWithBurner(
         carriedEntities = extractEntities(data, carriedEntities)
         const card = portfolioFromToolResult(data)
         if (card) portfolioCard = card
-        contextBlocks.push(`### ${ds.name}\n${compactForSynthesis(data, 3500)}`)
+        contextBlocks.push(fenceToolOutput(ds.name, compactForSynthesis(data, 3500), toolNonce))
         if (card) contextBlocks.push('NOTE: this portfolio is ALSO rendered as a rich visual card right below your reply — write ONE short summary sentence (total + notable point); do NOT repeat the holdings/table in text.')
       }
       receipts.push({ name: ds.name, endpoint: host, priceUsd: ds.priceUsd ?? '0.01', txHash, ok: true })
       if (grant) {
-        await recordLedger({ grantId: grant.id, orgId: grant.orgId ?? undefined, host, serviceName: ds.name, amountUsd: price, ok: true, txHash, note: 'settled' })
-        spentToday += price
-        spentTotal += price
+        const settled = paidUsd ?? price
+        await recordLedger({ grantId: grant.id, orgId: grant.orgId ?? undefined, host, serviceName: ds.name, amountUsd: settled, ok: true, txHash, note: 'settled' })
+        spentToday += settled
+        spentTotal += settled
       }
     } catch (err) {
       const note = err instanceof Error ? err.message : 'call failed'
+      if (isX402Refusal(err)) notes.push(note)
       balanceFailures.push({ name: ds.name, note })
       receipts.push({ name: ds.name, endpoint: host, priceUsd: ds.priceUsd ?? '0.01', ok: false, note })
     }
@@ -5283,21 +5398,22 @@ async function runWithBurner(
             }
           }
           try {
-            const { json, txHash: dataTx } = await paidCall(request)
+            const { json, txHash: dataTx, paidUsd } = await paidCall(request, boundsForEndpoint(ep, [...dataServers, ...mcpDataServers, ...listedOnly]))
             carriedEntities = extractEntities(json, carriedEntities)
             // Display layer: a portfolio-shaped return renders as a rich card
             // next to the synthesized text (latest read wins — freshest).
             const card = portfolioFromToolResult(json)
             if (card) portfolioCard = card
-            contextBlocks.push(`### ${ep.serverName}\n${compactForSynthesis(json, 3500)}`)
+            contextBlocks.push(fenceToolOutput(ep.serverName, compactForSynthesis(json, 3500), toolNonce))
             if (card) contextBlocks.push('NOTE: this portfolio is ALSO rendered as a rich visual card right below your reply — write ONE short summary sentence (total + notable point); do NOT repeat the holdings/table in text.')
             receipts.push({ name: ep.serverName, endpoint: host, priceUsd: ep.priceUsd, txHash: dataTx, ok: true })
             trace({ type: 'receipt', receipt: { name: ep.serverName, endpoint: host, priceUsd: ep.priceUsd, txHash: dataTx, ok: true } })
             smartServed.add(ep.serverSlug)
             if (grant) {
-              await recordLedger({ grantId: grant.id, orgId: grant.orgId ?? undefined, host, serviceName: ep.serverName, amountUsd: price, ok: true, txHash: dataTx, note: 'settled' })
-              spentToday += price
-              spentTotal += price
+              const settled = paidUsd ?? price
+              await recordLedger({ grantId: grant.id, orgId: grant.orgId ?? undefined, host, serviceName: ep.serverName, amountUsd: settled, ok: true, txHash: dataTx, note: 'settled' })
+              spentToday += settled
+              spentTotal += settled
             }
             // Transaction layer: a planned tool that returned a SIGNABLE action
             // (an ExecutionPlan / send_transaction / order) short-circuits the
@@ -5311,7 +5427,7 @@ async function runWithBurner(
               // generic drain-shape guard before anything reaches a sign
               // button (third-party transfers, unlimited approvals, operator
               // grants, unknown chains, non-CoW generic orders all refuse).
-              const verdict = guardPlannerArtifact(art, { from: userAddress ?? null })
+              const verdict = guardPlannerArtifact(art, { from: userAddress ?? null, source: ep.serverSource })
               if (!verdict.ok) {
                 notes.push(`Refused a ${ep.serverName} transaction that failed Pantessa's guardrails.`)
                 contextBlocks.push(
@@ -5321,23 +5437,27 @@ async function runWithBurner(
               }
               // buildPath 'planner': the signable came out of a tool the
               // ENDPOINT PLANNER picked — not a native builder (lib/build-path.ts).
+              // §E3 passthrough honesty: the guard's warnings + who built it
+              // ride the response and the sign card — never dropped.
+              const honesty = { guardWarnings: verdict.warnings, builtBy: ep.serverName }
               if (art.kind === 'eip712-vote') {
-                return NextResponse.json({ reply: `🗳️ ${art.summary}`, receipts, payer: 'the house wallet', voteRequest: art.vote, buildPath: 'planner', notes })
+                return NextResponse.json({ reply: `🗳️ ${art.summary}`, receipts, payer: 'the house wallet', voteRequest: art.vote, buildPath: 'planner', notes, ...honesty })
               }
               if (art.kind === 'eip712-order') {
-                return NextResponse.json({ reply: `🔏 ${art.summary}`, receipts, payer: 'the house wallet', orderRequest: art.order, buildPath: 'planner', notes })
+                return NextResponse.json({ reply: `🔏 ${art.summary}`, receipts, payer: 'the house wallet', orderRequest: art.order, buildPath: 'planner', notes, ...honesty })
               }
               if (art.kind === 'evm-tx-chain') {
                 return NextResponse.json({
-                  reply: `🔏 ${art.summary}\n🔗 ${art.chain.steps.length} steps in the card below — each appears as the previous confirms.`,
+                  reply: `🔏 ${art.summary}\n🔗 ${art.chain.steps.length} steps in the card below — built by ${ep.serverName}, so each step waits for your tap.`,
                   receipts,
                   payer: 'the house wallet',
                   txChain: art.chain,
                   buildPath: 'planner',
                   notes,
+                  ...honesty,
                 })
               }
-              return NextResponse.json({ reply: `🔏 ${art.summary}`, receipts, payer: 'the house wallet', txRequest: art.tx, buildPath: 'planner', notes })
+              return NextResponse.json({ reply: `🔏 ${art.summary}`, receipts, payer: 'the house wallet', txRequest: art.tx, buildPath: 'planner', notes, ...honesty })
             }
           } catch (err) {
             const note = err instanceof Error ? err.message : 'call failed'
@@ -5391,12 +5511,13 @@ async function runWithBurner(
   const capabilities = capabilitiesBlock([inference, ...dataServers, ...mcpDataServers, ...listedOnly], smart)
   const prompt = buildPrompt(message, contextBlocks, history, workingContext, userAddress ?? owner ?? undefined, capabilities)
   trace({ type: 'status', label: `writing the answer — ${inference.name}` })
-  const { text, txHash } = await callInference(inference, prompt)
+  const { text, txHash, paidUsd: infPaid } = await callInference(inference, prompt)
   receipts.push({ name: inference.name, endpoint: infHost, priceUsd: inference.priceUsd ?? '0.01', txHash, ok: true })
   trace({ type: 'receipt', receipt: { name: inference.name, endpoint: infHost, priceUsd: inference.priceUsd ?? '0.01', txHash, ok: true } })
   if (grant) {
-    await recordLedger({ grantId: grant.id, orgId: grant.orgId ?? undefined, host: infHost, serviceName: inference.name, amountUsd: infPrice, ok: true, txHash, note: 'settled' })
-    spentToday += infPrice
+    const settled = infPaid ?? infPrice
+    await recordLedger({ grantId: grant.id, orgId: grant.orgId ?? undefined, host: infHost, serviceName: inference.name, amountUsd: settled, ok: true, txHash, note: 'settled' })
+    spentToday += settled
   }
 
   let reply = text + infoFooter(listedOnly.filter((s) => !smartServed.has(s.slug)), notes)
@@ -5420,12 +5541,54 @@ async function runWithBurner(
   })
 }
 
-async function paidGet(endpoint: string, queryParam: string, value: string) {
+// ── x402 payment bounds (SECURITY-AUDIT-2026-09-08 §E1) ──────────────────
+// Every paid fetch declares what the directory LISTED for the call; lib/x402
+// refuses any 402 challenge above it (+ tolerance, + the absolute ceiling),
+// pins the asset to USDC and the payee to the recorded receiver, and the
+// house's daily ceiling is reserved before a signature exists. The ledger
+// records the CHALLENGE amount the signature authorized, never the listing.
+
+/** Bounds for a directory row: its listed price (the same `?? '0.01'`
+ *  fallback the receipts/ledger use) + the receiver on record. */
+function boundsFor(s: { name: string; priceUsd?: string | null; receiver?: string | null }, fallbackUsd = '0.01'): PaymentBounds {
+  const listed = Number(s.priceUsd ?? fallbackUsd)
+  return { advertisedUsd: Number.isFinite(listed) && listed > 0 ? listed : 0, receiver: s.receiver ?? null, label: s.name }
+}
+
+/** Bounds for a planner-picked endpoint: the endpoint's own listed price;
+ *  the receiver comes from its server row when that row is in the set. */
+function boundsForEndpoint(ep: { serverName: string; serverSlug: string; priceUsd: string }, servers: McpServer[]): PaymentBounds {
+  const row = servers.find((s) => s.slug === ep.serverSlug)
+  return boundsFor({ name: ep.serverName, priceUsd: ep.priceUsd, receiver: row?.receiver ?? null })
+}
+
+/**
+ * Wallet mode: derive the signing request under the bounds. A refusal is a
+ * NOTE the user reads (the diagnostics footer) and the call is dropped from
+ * the plan — the wallet is never asked to sign it.
+ */
+function prepareBounded(
+  challenge: NonNullable<Awaited<ReturnType<typeof getChallenge>>>,
+  walletAddress: string,
+  bounds: PaymentBounds,
+  notes: string[],
+): { prepared: PreparedPayment } | { refused: string } {
+  try {
+    return { prepared: derivePayment(challenge, walletAddress, bounds) }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'payment challenge could not be bounded'
+    const refused = isX402Refusal(err) ? msg : `${bounds.label ?? 'A service'} raised a payment challenge Pantessa couldn't verify (${truncate(msg, 120)}) — skipped; nothing was signed.`
+    notes.push(refused)
+    return { refused }
+  }
+}
+
+async function paidGet(endpoint: string, queryParam: string, value: string, bounds: PaymentBounds) {
   const url = new URL(endpoint)
   url.searchParams.set(queryParam, value)
-  const res = await getPaidFetch()(url.toString(), { method: 'GET', headers: { accept: 'application/json' } })
+  const res = await getPaidFetch(bounds)(url.toString(), { method: 'GET', headers: { accept: 'application/json' } })
   if (!res.ok) throw new Error(await failureReason(res))
-  return { json: await res.json(), txHash: decodeSettlement(res)?.transaction }
+  return { json: await res.json(), txHash: decodeSettlement(res)?.transaction, paidUsd: paidAmountUsd(res) }
 }
 
 /** Pay + execute a planner-built request (GET with query or POST with body). */
@@ -5435,8 +5598,8 @@ async function paidGet(endpoint: string, queryParam: string, value: string) {
 const DATA_CALL_TIMEOUT_MS = 12_000
 const INFERENCE_TIMEOUT_MS = 30_000
 
-async function paidCall(request: { url: string; method: string; headers: Record<string, string>; body?: string; mcp?: boolean }) {
-  const res = await getPaidFetch()(request.url, {
+async function paidCall(request: { url: string; method: string; headers: Record<string, string>; body?: string; mcp?: boolean }, bounds: PaymentBounds) {
+  const res = await getPaidFetch(bounds)(request.url, {
     method: request.method,
     headers: request.headers,
     signal: AbortSignal.timeout(DATA_CALL_TIMEOUT_MS),
@@ -5446,9 +5609,9 @@ async function paidCall(request: { url: string; method: string; headers: Record<
   // MCP tools/call (our free MCPs): unwrap the JSON-RPC / SSE envelope. These
   // endpoints never 402, so the paid fetch passes through without payment.
   if (request.mcp) {
-    return { json: parseMcpDataResult(res.headers.get('content-type') ?? '', await res.text()), txHash: decodeSettlement(res)?.transaction }
+    return { json: parseMcpDataResult(res.headers.get('content-type') ?? '', await res.text()), txHash: decodeSettlement(res)?.transaction, paidUsd: paidAmountUsd(res) }
   }
-  return { json: await res.json(), txHash: decodeSettlement(res)?.transaction }
+  return { json: await res.json(), txHash: decodeSettlement(res)?.transaction, paidUsd: paidAmountUsd(res) }
 }
 
 // ── Auto-Router (streaming) ─────────────────────────────────────────────────
@@ -5556,7 +5719,7 @@ export function streamAutoRouter(
               const receipt: Receipt = { name: inference.name, endpoint: infHost, priceUsd: String(infPrice), txHash: r.txHash, ok: true }
               govReceipts.push(receipt)
               send({ type: 'receipt', receipt })
-              if (grant) await recordLedger({ grantId: grant.id, orgId: grant.orgId ?? undefined, apiKeyId, host: infHost, serviceName: inference.name, amountUsd: infPrice, ok: true, txHash: r.txHash, note: 'settled (governance summary)' })
+              if (grant) await recordLedger({ grantId: grant.id, orgId: grant.orgId ?? undefined, apiKeyId, host: infHost, serviceName: inference.name, amountUsd: r.paidUsd ?? infPrice, ok: true, txHash: r.txHash, note: 'settled (governance summary)' })
               return r.text?.trim() || null
             } catch {
               send({ type: 'note', level: 'warn', label: 'Summary inference failed — showing the raw data.' })
@@ -5677,9 +5840,10 @@ export function streamAutoRouter(
           send({ type: 'note', level: 'warn', label: `Planner fell back to ${inf.name} (${why}) — routing quality degraded.` })
           const r = await callInference(inf, prompt)
           if (grant && !walletAddress) {
-            await recordLedger({ grantId: grant.id, orgId: grant.orgId ?? undefined, apiKeyId, host: infHost, serviceName: inference.name, amountUsd: infPrice, ok: true, txHash: r.txHash, note: 'settled (routing)' })
-            spentToday += infPrice
-            spentTotal += infPrice
+            const settled = r.paidUsd ?? infPrice
+            await recordLedger({ grantId: grant.id, orgId: grant.orgId ?? undefined, apiKeyId, host: infHost, serviceName: inference.name, amountUsd: settled, ok: true, txHash: r.txHash, note: 'settled (routing)' })
+            spentToday += settled
+            spentTotal += settled
           }
           return r
         }
@@ -5715,15 +5879,16 @@ export function streamAutoRouter(
           send({ type: 'pay', service: pick.serverName, host, priceUsd: pick.priceUsd })
           const payStart = Date.now()
           try {
-            const { json, txHash } = await paidCall(pick.request)
+            const { json, txHash, paidUsd } = await paidCall(pick.request, boundsFor({ name: pick.serverName, priceUsd: pick.priceUsd }))
             const latencyMs = Date.now() - payStart
             const r: Receipt = { name: pick.serverName, endpoint: host, priceUsd: pick.priceUsd, txHash, ok: true }
             receipts.push(r)
             send({ type: 'receipt', receipt: r })
             if (grant) {
-              await recordLedger({ grantId: grant.id, orgId: grant.orgId ?? undefined, apiKeyId, host, serviceName: pick.serverName, amountUsd: price, ok: true, txHash, note: 'settled', latencyMs })
-              spentToday += price
-              spentTotal += price
+              const settled = paidUsd ?? price
+              await recordLedger({ grantId: grant.id, orgId: grant.orgId ?? undefined, apiKeyId, host, serviceName: pick.serverName, amountUsd: settled, ok: true, txHash, note: 'settled', latencyMs })
+              spentToday += settled
+              spentTotal += settled
             }
             // Cache a successful read — but NEVER a signable action (votes/txns
             // are time-sensitive + per-user) and never a non-GET.
@@ -5775,18 +5940,21 @@ export function streamAutoRouter(
             // buildPath 'planner': the Auto-Router engine picked the tool that
             // returned this signable (lib/build-path.ts).
             if (decision.artifact.kind === 'eip712-vote') {
-              send({ type: 'reply', content: `🗳️ ${decision.artifact.summary}`, receipts, payer: 'your wallet', voteRequest: decision.artifact.vote, buildPath: 'planner', trace: trace(), workingContext: carryContext(workingContext, decision.entities) })
+              send({ type: 'reply', content: `🗳️ ${decision.artifact.summary}`, receipts, payer: 'your wallet', voteRequest: decision.artifact.vote, buildPath: 'planner', trace: trace(), workingContext: carryContext(workingContext, decision.entities) , guardWarnings: decision.artifactWarnings, builtBy: decision.artifactBuiltBy })
             } else if (decision.artifact.kind === 'eip712-order') {
-              send({ type: 'reply', content: `🔏 ${decision.artifact.summary}`, receipts, payer: 'your wallet', orderRequest: decision.artifact.order, buildPath: 'planner', trace: trace(), workingContext: carryContext(workingContext, decision.entities) })
+              send({ type: 'reply', content: `🔏 ${decision.artifact.summary}`, receipts, payer: 'your wallet', orderRequest: decision.artifact.order, buildPath: 'planner', trace: trace(), workingContext: carryContext(workingContext, decision.entities) , guardWarnings: decision.artifactWarnings, builtBy: decision.artifactBuiltBy })
             } else if (decision.artifact.kind === 'evm-tx-chain') {
-              send({ type: 'reply', content: `🔏 ${decision.artifact.summary}\n🔗 ${decision.artifact.chain.steps.length} steps in the card below — each appears as the previous confirms.`, receipts, payer: 'your wallet', txChain: decision.artifact.chain, buildPath: 'planner', trace: trace(), workingContext: carryContext(workingContext, decision.entities) })
+              send({ type: 'reply', content: `🔏 ${decision.artifact.summary}\n🔗 ${decision.artifact.chain.steps.length} steps in the card below — each appears as the previous confirms.`, receipts, payer: 'your wallet', txChain: decision.artifact.chain, buildPath: 'planner', trace: trace(), workingContext: carryContext(workingContext, decision.entities) , guardWarnings: decision.artifactWarnings, builtBy: decision.artifactBuiltBy })
             } else {
-              send({ type: 'reply', content: `🔏 ${decision.artifact.summary}`, receipts, payer: 'your wallet', txRequest: decision.artifact.tx, buildPath: 'planner', trace: trace(), workingContext: carryContext(workingContext, decision.entities) })
+              send({ type: 'reply', content: `🔏 ${decision.artifact.summary}`, receipts, payer: 'your wallet', txRequest: decision.artifact.tx, buildPath: 'planner', trace: trace(), workingContext: carryContext(workingContext, decision.entities) , guardWarnings: decision.artifactWarnings, builtBy: decision.artifactBuiltBy })
             }
             recordTurn({ payer: 'your wallet', shortlisted: shortlistedOf(decision), picks: picksOf(decision), intent: intentOf(decision) })
             return finish()
           }
           const wPlan: PlannedCall[] = []
+          // Bound-refusal notes (lib/x402) — merged into the plan's notes so
+          // the user reads WHY a picked service was dropped before signing.
+          const wNotes: string[] = []
           let plannedUsd = 0
           const planGate = async (name: string, h: string, price: number): Promise<string | null> => {
             if (!policy || !grant) return null
@@ -5808,7 +5976,14 @@ export function streamAutoRouter(
               continue
             }
             const challenge = await getChallenge(pick.request.url, { method: pick.request.method, headers: pick.request.headers, body: pick.request.body })
-            wPlan.push({ id: `smart:${pick.endpointId}`, role: 'data', name: pick.serverName, host, priceUsd: pick.priceUsd, endpoint: pick.endpointUrl, url: pick.request.url, method: pick.request.method, body: pick.request.body, mcp: pick.request.mcp, prepared: challenge ? derivePayment(challenge, walletAddress) : null })
+            const bounded = challenge ? prepareBounded(challenge, walletAddress, boundsFor({ name: pick.serverName, priceUsd: pick.priceUsd }), wNotes) : { prepared: null }
+            if ('refused' in bounded) {
+              const r: Receipt = { name: pick.serverName, endpoint: host, priceUsd: pick.priceUsd, ok: false, note: bounded.refused }
+              receipts.push(r)
+              send({ type: 'receipt', receipt: r })
+              continue
+            }
+            wPlan.push({ id: `smart:${pick.endpointId}`, role: 'data', name: pick.serverName, host, priceUsd: pick.priceUsd, endpoint: pick.endpointUrl, url: pick.request.url, method: pick.request.method, body: pick.request.body, mcp: pick.request.mcp, prepared: bounded.prepared })
           }
           const infProtocol = inferenceProtocolOf(inference)
           const infTool = inference.tool ?? (infProtocol === 'http' ? 'openai/gpt-4o-mini' : 'ask_claude')
@@ -5817,14 +5992,16 @@ export function streamAutoRouter(
             headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream' },
             body: infProtocol === 'http' ? inferenceBody('http', infTool, 'probe') : dummyMcpBody(infTool),
           })
-          wPlan.push({ id: `inference:${inference.slug}`, role: 'inference', name: inference.name, host: infHost, priceUsd: inference.priceUsd ?? '0.01', endpoint: inference.endpoint!, tool: infTool, protocol: infProtocol, prepared: infChallenge ? derivePayment(infChallenge, walletAddress) : null })
+          const infBounded = infChallenge ? prepareBounded(infChallenge, walletAddress, boundsFor(inference), wNotes) : { prepared: null }
+          if ('refused' in infBounded) throw new Error(infBounded.refused)
+          wPlan.push({ id: `inference:${inference.slug}`, role: 'inference', name: inference.name, host: infHost, priceUsd: inference.priceUsd ?? '0.01', endpoint: inference.endpoint!, tool: infTool, protocol: infProtocol, prepared: infBounded.prepared })
           const payments = wPlan
             .filter((c) => c.prepared)
-            .map((c) => ({ id: c.id, name: c.name, host: c.host, priceUsd: c.priceUsd, signing: c.prepared!.signing as SigningRequest }))
+            .map((c) => ({ id: c.id, name: c.name, host: c.host, priceUsd: c.priceUsd, amountUsd: c.prepared!.amountUsd, payTo: c.prepared!.payTo, signing: c.prepared!.signing as SigningRequest }))
           // Carry the turnId so the wallet's execute phase persists its
           // settlements under THIS turn → they show in the live feed, grouped
           // with the plan trace.
-          send({ type: 'plan', plan: wPlan, payments, listedOnly: [], notes: decision.notes, turnId })
+          send({ type: 'plan', plan: wPlan, payments, listedOnly: [], notes: [...decision.notes, ...wNotes], turnId })
           recordTurn({ payer: 'your wallet', shortlisted: shortlistedOf(decision), picks: picksOf(decision), intent: intentOf(decision) })
           return finish()
         }
@@ -5849,16 +6026,16 @@ export function streamAutoRouter(
           // buildPath 'planner': the Auto-Router engine picked the tool that
           // returned this signable (lib/build-path.ts).
           if (decision.artifact.kind === 'eip712-vote') {
-            send({ type: 'reply', content: `🗳️ ${decision.artifact.summary}`, receipts, payer: 'the house wallet', voteRequest: decision.artifact.vote, buildPath: 'planner', trace: trace() })
+            send({ type: 'reply', content: `🗳️ ${decision.artifact.summary}`, receipts, payer: 'the house wallet', voteRequest: decision.artifact.vote, buildPath: 'planner', trace: trace() , guardWarnings: decision.artifactWarnings, builtBy: decision.artifactBuiltBy })
           } else if (decision.artifact.kind === 'eip712-order') {
             // Intent-based order (CoW swap / OpenSea): the built order is sent
             // for signature. Guardrails (A3) gate it; the sign UI is A4.
-            send({ type: 'reply', content: `🔏 ${decision.artifact.summary}`, receipts, payer: 'the house wallet', orderRequest: decision.artifact.order, buildPath: 'planner', trace: trace() })
+            send({ type: 'reply', content: `🔏 ${decision.artifact.summary}`, receipts, payer: 'the house wallet', orderRequest: decision.artifact.order, buildPath: 'planner', trace: trace() , guardWarnings: decision.artifactWarnings, builtBy: decision.artifactBuiltBy })
           } else if (decision.artifact.kind === 'evm-tx-chain') {
             // Multi-step build (approve → swap): one self-advancing card.
-            send({ type: 'reply', content: `🔏 ${decision.artifact.summary}\n🔗 ${decision.artifact.chain.steps.length} steps in the card below — each appears as the previous confirms.`, receipts, payer: 'the house wallet', txChain: decision.artifact.chain, buildPath: 'planner', trace: trace() })
+            send({ type: 'reply', content: `🔏 ${decision.artifact.summary}\n🔗 ${decision.artifact.chain.steps.length} steps in the card below — each appears as the previous confirms.`, receipts, payer: 'the house wallet', txChain: decision.artifact.chain, buildPath: 'planner', trace: trace() , guardWarnings: decision.artifactWarnings, builtBy: decision.artifactBuiltBy })
           } else {
-            send({ type: 'reply', content: `🔏 ${decision.artifact.summary}`, receipts, payer: 'the house wallet', txRequest: decision.artifact.tx, buildPath: 'planner', trace: trace() })
+            send({ type: 'reply', content: `🔏 ${decision.artifact.summary}`, receipts, payer: 'the house wallet', txRequest: decision.artifact.tx, buildPath: 'planner', trace: trace() , guardWarnings: decision.artifactWarnings, builtBy: decision.artifactBuiltBy })
           }
           recordTurn({ payer: 'the house wallet', shortlisted: shortlistedOf(decision), picks: picksOf(decision), intent: intentOf(decision) })
           return finish()
@@ -5885,13 +6062,13 @@ export function streamAutoRouter(
         const synthStart = Date.now()
         // Same user-address precedence as the planner's $USER_ADDRESS (line
         // ~1659): the request's wallet, else the Bearer key's owner scope.
-        const { text, txHash } = await callInference(inference, buildPrompt(message, decision.context, history, undefined, walletAddress ?? ownerOverride))
+        const { text, txHash, paidUsd: synthPaid } = await callInference(inference, buildPrompt(message, decision.context, history, undefined, walletAddress ?? ownerOverride))
         const synthLatencyMs = Date.now() - synthStart
         const r: Receipt = { name: inference.name, endpoint: infHost, priceUsd: inference.priceUsd ?? '0.01', txHash, ok: true }
         receipts.push(r)
         send({ type: 'receipt', receipt: r })
         if (grant) {
-          await recordLedger({ grantId: grant.id, orgId: grant.orgId ?? undefined, apiKeyId, host: infHost, serviceName: inference.name, amountUsd: infPrice, ok: true, txHash, note: 'settled', latencyMs: synthLatencyMs })
+          await recordLedger({ grantId: grant.id, orgId: grant.orgId ?? undefined, apiKeyId, host: infHost, serviceName: inference.name, amountUsd: synthPaid ?? infPrice, ok: true, txHash, note: 'settled', latencyMs: synthLatencyMs })
         }
 
         // Value proof (B15): what smart routing saved this turn vs naive routing.
@@ -6043,7 +6220,7 @@ function isHouseInference(s: Pick<McpServer, 'slug'>): boolean {
 }
 
 async function callInference(
-  inference: Pick<McpServer, 'endpoint' | 'tool' | 'protocol'> & { slug?: string },
+  inference: Pick<McpServer, 'endpoint' | 'tool' | 'protocol'> & { slug?: string; name?: string; priceUsd?: string | null; receiver?: string | null },
   prompt: string,
 ) {
   // House synthesizer: direct Anthropic on the planner key — no x402, no USDC.
@@ -6054,7 +6231,7 @@ async function callInference(
   }
   const protocol = inferenceProtocolOf(inference)
   const tool = inference.tool ?? (protocol === 'http' ? 'openai/gpt-4o-mini' : 'ask_claude')
-  const res = await getPaidFetch()(inference.endpoint!, {
+  const res = await getPaidFetch(boundsFor({ name: inference.name ?? 'This engine', priceUsd: inference.priceUsd, receiver: inference.receiver }))(inference.endpoint!, {
     method: 'POST',
     headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream' },
     body: inferenceBody(protocol, tool, capPrompt(protocol, prompt)),
@@ -6062,7 +6239,7 @@ async function callInference(
   })
   if (!res.ok) throw new Error(await failureReason(res))
   const text = parseInferenceText(protocol, res.headers.get('content-type') ?? '', await res.text())
-  return { text, txHash: decodeSettlement(res)?.transaction }
+  return { text, txHash: decodeSettlement(res)?.transaction, paidUsd: paidAmountUsd(res) }
 }
 
 // ── shared MCP parsing ─────────────────────────────────────────────────────────
@@ -6225,6 +6402,7 @@ function buildPrompt(message: string, contextBlocks: string[], history: Conversa
     ...(ctxBlock ? [``, ctxBlock] : []),
     ...(convo ? [``, `Conversation so far:`, convo] : []),
     ``,
+    ...(toolOutputRule(contextBlocks) ? [toolOutputRule(contextBlocks) as string, ``] : []),
     `DATA:`,
     contextBlocks.join('\n\n'),
     ``,
