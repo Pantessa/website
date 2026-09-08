@@ -445,7 +445,9 @@ function RowsBody({ tile, reduced }: { tile: RowsTile; reduced: boolean }) {
         {tile.rows.map((r, i) => (
           <div key={`${r.label}-${i}`} className="flex items-center justify-between gap-2 text-xs">
             <div className="min-w-0">
-              <div className="truncate font-medium text-white">{r.label}</div>
+              {/* Tile rows carry money ("$4.52 ETH on Ethereum · under the gas floor")
+                  — wrap below lg instead of ellipsizing the amount. */}
+              <div className="truncate max-lg:whitespace-normal font-medium text-white">{r.label}</div>
               {r.sub && <div className="text-[10px] text-[color:var(--muted-2)]">{r.sub}</div>}
             </div>
             {r.value && (

@@ -129,14 +129,14 @@ export default function ChatSignInGate() {
             disabled={signingIn}
             type="button"
             title="Sign one message to keep your chats — proves ownership, nothing moves"
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[var(--accent)] text-black text-xs font-semibold hover:opacity-90 transition-opacity disabled:opacity-60"
+            className="flex items-center gap-1.5 px-3 py-1.5 max-lg:min-h-10 max-lg:px-4 rounded-full bg-[var(--accent)] text-black text-xs font-semibold hover:opacity-90 transition-opacity disabled:opacity-60"
           >
             {signingIn ? <Loader2 className="w-3.5 h-3.5 animate-spin" strokeWidth={2.5} /> : <LogIn className="w-3.5 h-3.5" strokeWidth={2.5} />}
             <span>{signingIn ? 'Waiting…' : 'Sign in to keep'}</span>
           </button>
         ) : cdpEnabled ? (
           <CreateAccountButton
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[var(--accent)] text-black text-xs font-semibold hover:opacity-90 transition-opacity"
+            className="flex items-center gap-1.5 px-3 py-1.5 max-lg:min-h-10 max-lg:px-4 rounded-full bg-[var(--accent)] text-black text-xs font-semibold hover:opacity-90 transition-opacity"
             label={
               <>
                 <LogIn className="w-3.5 h-3.5" strokeWidth={2.5} />
@@ -151,7 +151,7 @@ export default function ChatSignInGate() {
             disabled={signingIn}
             type="button"
             title="Connect a wallet and sign in — one step"
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[var(--accent)] text-black text-xs font-semibold hover:opacity-90 transition-opacity disabled:opacity-60"
+            className="flex items-center gap-1.5 px-3 py-1.5 max-lg:min-h-10 max-lg:px-4 rounded-full bg-[var(--accent)] text-black text-xs font-semibold hover:opacity-90 transition-opacity disabled:opacity-60"
           >
             {signingIn ? <Loader2 className="w-3.5 h-3.5 animate-spin" strokeWidth={2.5} /> : <LogIn className="w-3.5 h-3.5" strokeWidth={2.5} />}
             <span>{signingIn ? 'Signing in…' : 'Sign in'}</span>

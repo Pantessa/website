@@ -109,9 +109,9 @@ function CopyTurn({ text, dark }: { text: string; dark?: boolean }) {
         'absolute -top-2.5 -right-2.5 w-7 h-7 rounded-full grid place-items-center border backdrop-blur-md',
         'opacity-0 group-hover/bubble:opacity-100 focus-visible:opacity-100 transition-opacity duration-150',
         // Touch: always visible (the (hover:none) reveal rule), so it must be a
-        // real target — 36px — and it stays on the bubble's own corner rather
-        // than poking into the avatar beside it.
-        '[@media(hover:none)]:w-9 [@media(hover:none)]:h-9 [@media(hover:none)]:-top-3 [@media(hover:none)]:-right-1.5',
+        // real target — 36px — and it rides ABOVE the bubble's top edge (over
+        // the padding, never the text) instead of poking into the avatar.
+        '[@media(hover:none)]:w-9 [@media(hover:none)]:h-9 [@media(hover:none)]:-top-5 [@media(hover:none)]:right-2',
         dark
           ? 'bg-black/70 border-black/30 text-white'
           : 'bg-[var(--surf-2)]/90 border-[var(--line)] text-[color:var(--muted)] hover:text-white',
@@ -138,10 +138,9 @@ function MintLinkTurn({ onMint }: { onMint: () => void }) {
         'opacity-0 group-hover/bubble:opacity-100 focus-visible:opacity-100 transition-opacity duration-150',
         'bg-black/70 border-black/30 text-white',
         // Touch: the hover-era slot (-right-11) lands ON the user avatar once
-        // the button is permanently visible. A right-aligned bubble's top-LEFT
-        // corner is empty space — the mint affordance lives there on phones,
-        // at a 36px target.
-        '[@media(hover:none)]:right-auto [@media(hover:none)]:-left-3 [@media(hover:none)]:-top-3 [@media(hover:none)]:w-9 [@media(hover:none)]:h-9',
+        // the button is permanently visible. On phones it sits beside the copy
+        // button, above the bubble's top edge, at a 36px target.
+        '[@media(hover:none)]:right-12 [@media(hover:none)]:-top-5 [@media(hover:none)]:w-9 [@media(hover:none)]:h-9',
       )}
     >
       <Link2 className="w-3.5 h-3.5" />

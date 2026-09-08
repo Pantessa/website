@@ -1130,6 +1130,8 @@
     color: var(--muted); background: transparent; transition: color .15s, border-color .15s, background .15s;
   }
   .tok__tfbtn:hover:not(.is-active) { color: var(--fg); border-color: var(--line-2); }
+  /* Touch: the timeframe chips are 27px tall with a mouse; 36px on a phone. */
+  @media (hover: none) { .tok__tfbtn { min-height: 36px; padding-inline: 12px; } }
   .tok__tfbtn.is-active { color: var(--ink); background: var(--accent); border-color: var(--accent); }
 
   /* Collapsible contract details — verified badge stays visible, hashes fold away. */

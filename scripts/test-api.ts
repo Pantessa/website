@@ -3047,15 +3047,15 @@ async function main() {
       // avatar (its hover-era slot, -right-11). On phones both are 36px and
       // the mint affordance moves to the bubble's empty top-left corner.
       check(
-        'mobile: bubble copy + mint buttons are 36px on touch, mint on the bubble’s own corner',
-        /aria-label="Copy message"[\s\S]{0,700}\[@media\(hover:none\)\]:w-9 \[@media\(hover:none\)\]:h-9 \[@media\(hover:none\)\]:-top-3 \[@media\(hover:none\)\]:-right-1\.5/.test(chatIface) &&
-          /Create an intent link from this ask"[\s\S]{0,900}\[@media\(hover:none\)\]:right-auto \[@media\(hover:none\)\]:-left-3 \[@media\(hover:none\)\]:-top-3 \[@media\(hover:none\)\]:w-9 \[@media\(hover:none\)\]:h-9/.test(chatIface),
+        'mobile: bubble copy + mint buttons are 36px on touch, riding above the bubble edge (never on the avatar or the text)',
+        /aria-label="Copy message"[\s\S]{0,700}\[@media\(hover:none\)\]:w-9 \[@media\(hover:none\)\]:h-9 \[@media\(hover:none\)\]:-top-5 \[@media\(hover:none\)\]:right-2/.test(chatIface) &&
+          /Create an intent link from this ask"[\s\S]{0,900}\[@media\(hover:none\)\]:right-12 \[@media\(hover:none\)\]:-top-5 \[@media\(hover:none\)\]:w-9 \[@media\(hover:none\)\]:h-9/.test(chatIface),
       )
       // A withheld step's recovery verb was an 11px underline (46×18): a
       // 12px button on its own line, 40px tall on touch.
       check(
         'mobile: SendTxChain “Try again” is a 12px button with a 40px touch height',
-        /rounded-full border border-\[var\(--line-2\)\] px-3 py-1 text-\[12px\][^"]*\[@media\(hover:none\)\]:min-h-10[^"]*"\s*>\s*Try again/.test(txChain) && !/underline underline-offset-2 text-\[color:var\(--fg\)\] hover:opacity-80"\s*>\s*Try again/.test(txChain),
+        /rounded-full border border-\[var\(--line-2\)\] bg-white\/\[0\.05\] px-3 py-1 text-\[12px\][^"]*\[@media\(hover:none\)\]:min-h-10[^"]*"\s*>\s*Try again/.test(txChain) && !/underline underline-offset-2 text-\[color:var\(--fg\)\] hover:opacity-80"\s*>\s*Try again/.test(txChain),
       )
       // The 12×12 explorer glyph is the whole target on a phone: SendTxChain
       // (one site) + SignOrderButton (order + fill) pad the hit area to 40px.
@@ -3079,6 +3079,20 @@ async function main() {
       check('mobile: the sign-in door dismiss is a 40px touch target', /@media \(hover: none\) \{ \.ca__close \{ width: 40px; height: 40px;/.test(designCss))
       // The toolbar working-set door beside chain picker + Share + pill was
       // ~30px wide at 375 and ellipsized to "Sn…" — phones show the count.
+      // Found by the AFTER sweep: the holdings-row chart button was 24×24 on
+      // touch, the chart's timeframe chips 27px, the request-MCP submit 32px,
+      // the guest toolbar's Sign in 28px, Share ate the toolbar at 375, and a
+      // briefing tile row ellipsized "$4.52 ETH on Ethereum · under the gas floor".
+      const chartBtn = await readFile(new URL('../components/TokenChartButton.tsx', import.meta.url), 'utf8')
+      const gate = await readFile(new URL('../components/ChatSignInGate.tsx', import.meta.url), 'utf8')
+      const shareBtn = await readFile(new URL('../components/ShareButton.tsx', import.meta.url), 'utf8')
+      const appMode = await readFile(new URL('../components/AppModeWorkspace.tsx', import.meta.url), 'utf8')
+      check('mobile: the holdings-row chart button is a 40px target on touch', /live chart`\}[\s\S]{0,300}\[@media\(hover:none\)\]:h-10 \[@media\(hover:none\)\]:w-10 \[@media\(hover:none\)\]:-my-2/.test(chartBtn))
+      check('mobile: chart timeframe chips have a 36px touch floor', /@media \(hover: none\) \{ \.tok__tfbtn \{ min-height: 36px/.test(designCss))
+      check('mobile: the request-MCP submit is 40px on touch', /'flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition-colors \[@media\(hover:none\)\]:min-h-10'/.test(addMcp))
+      check('mobile: the sign-in gate CTAs are ≥40px below lg (all three)', (gate.match(/px-3 py-1\.5 max-lg:min-h-10 max-lg:px-4 rounded-full bg-\[var\(--accent\)\]/g) ?? []).length === 3)
+      check('mobile: Share is icon-only below sm with an aria-label and a 40px target', /aria-label=\{isPublic \? 'Shared publicly' : 'Share this chat'\}/.test(shareBtn) && /max-lg:min-h-10 max-lg:px-3 rounded-lg border text-\[11px\]/.test(shareBtn) && /whitespace-nowrap max-sm:hidden">\{isPublic \? 'Shared' : 'Share'\}/.test(shareBtn))
+      check('mobile: briefing tile rows wrap below lg, never ellipsize the amount', /truncate max-lg:whitespace-normal font-medium text-white">\{r\.label\}/.test(appMode))
       check(
         'mobile: the toolbar working-set door names the MCP count on phones',
         /<span className="max-sm:hidden">\{activeServers\.map\(\(s\) => cleanServerName\(s\.name\)\)\.join\(' · '\)\}<\/span>\s*<span className="sm:hidden whitespace-nowrap">\{activeServers\.length\} MCPs<\/span>/.test(chatIface),

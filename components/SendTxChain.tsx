@@ -259,7 +259,7 @@ export default function SendTxChain({
                       // The recovery verb reads as a button, not an 11px
                       // underline lost in the withhold prose: its own line,
                       // 12px, a 40px target on touch.
-                      className="mt-1.5 flex items-center gap-1.5 rounded-full border border-[var(--line-2)] px-3 py-1 text-[12px] font-medium text-[color:var(--fg)] hover:bg-white/[0.04] [@media(hover:none)]:min-h-10 [@media(hover:none)]:px-4"
+                      className="mt-1.5 flex items-center gap-1.5 rounded-full border border-[var(--line-2)] bg-white/[0.05] px-3 py-1 text-[12px] font-medium text-[color:var(--fg)] hover:bg-white/[0.09] [@media(hover:none)]:min-h-10 [@media(hover:none)]:px-4"
                     >
                       Try again
                     </button>
