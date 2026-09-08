@@ -181,6 +181,35 @@ export async function bumpAndCheckOnrampSession(ip: string | null): Promise<bool
   }
 }
 
+/** A Wallet-panel send builds a guarded transfer for whatever `from` the
+ *  caller names — only that wallet can sign it, so nothing is at risk, but
+ *  every call is two RPC reads (balance + decimals) plus a price probe and
+ *  an ENS lookup. Defence in depth against a loop, like the on-ramp fence:
+ *  a person reviewing a send a few times is nowhere near this. Own bucket
+ *  (`s:<hash>`). */
+export const WALLET_SEND_IP_HOURLY_CAP = 60
+
+/** Bump this IP's wallet-send window and report whether it tripped the cap.
+ *  Loopback exempt and fail-open, exactly like the on-ramp fence. */
+export async function bumpAndCheckWalletSend(ip: string | null): Promise<boolean> {
+  if (!ip) return false
+  const key = `s:${hashIp(ip)}`
+  try {
+    const { default: prisma } = await import('@/lib/db')
+    const windowStart = hourStartUTC()
+    const rows = await prisma.$queryRaw<{ count: number }[]>`
+      INSERT INTO unsigned_turn_windows (key, window_start, count)
+      VALUES (${key}, ${windowStart}, 1)
+      ON CONFLICT (key, window_start)
+      DO UPDATE SET count = unsigned_turn_windows.count + 1
+      RETURNING count
+    `
+    return Number(rows[0]?.count ?? 0) > WALLET_SEND_IP_HOURLY_CAP
+  } catch {
+    return false
+  }
+}
+
 /** The polite wall — a reply, never a bare 429. Signing in lifts the guest
  *  caps (a signed session rides its own plan limits), which also feeds the
  *  keep-this-thread loop. */
