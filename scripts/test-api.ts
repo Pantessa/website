@@ -142,7 +142,7 @@ import { parseRobinhoodFunding, parseSameChainSwapSegment, JOB_SEGMENT_PARSERS }
 import { parseMultiSendSegments, parseTransferSegment } from '../lib/transfer-exec'
 import { buildFundsDetail, classifyTurn, FAILURE_PROBE_TOKENS, moneyShaped } from '../lib/ask-failure'
 import { guardSyncDrift } from './guard-sync-check'
-import { canonicalChainWord, normalizeChainWords } from '../lib/chain-lexicon'
+import { canonicalChainWord, normalizeChainWords, normalizeDollarWords } from '../lib/chain-lexicon'
 import {
   clampFundUsd,
   classifyStripeOnrampFailure,
@@ -301,6 +301,7 @@ import { compileJobAsk as compileJobAskFull, robinhoodFundingFromCrossChain, sta
 import { parseStockListAsk } from '../lib/stock-list'
 import { tokenHome } from '../lib/token-home'
 import { fundingOriginWords } from '../lib/funding-origins'
+import { AFFORDABILITY_SHORT_PATH, checkAffordability, gateSignablePayload, requirementsOf, spendsOfOrder, spendsOfTx, type BalanceReader } from '../lib/affordability'
 import { LIVE_JOB_STATUSES, jobStatusWord, statusTone } from '../lib/step-status'
 
 // Harness shim: the pre-pairing checks below narrow on `'problem' in x` only.
@@ -5767,6 +5768,179 @@ async function main() {
     )
     const rhTwenty = await chatJson({ message: 'Swap 20 USDC from Base to USDG on Robinhood Chain' })
     check('rh funding redirect (route): the fundable size is claimed by the jobs layer (asks to connect, no NEAR door)', !rhTwenty.door && /connect your wallet/i.test(String(rhTwenty.reply)), JSON.stringify(rhTwenty).slice(0, 200))
+
+    // ── GTM squad 2026-09-08 (PATHS round 3): THE affordability choke point ──
+    // links.md r2: a $0 wallet opened an /i link ("Convert two dollars of ETH
+    // to USDC on Base", uniswap + near) and got "Sign & send swap". The
+    // phrasing fell past the swap grammar to the planner, whose first-party
+    // tool built a 2 ETH swap; nothing between a tool's build and the card
+    // ever asked the wallet what it holds. lib/affordability.ts is the one
+    // exit gate — every signable, every venue, every origin.
+    console.log('— affordability choke point (PATHS r3)')
+    {
+      const USDC_BASE = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913' as `0x${string}`
+      const WETH_BASE = '0x4200000000000000000000000000000000000006' as `0x${string}`
+      const ROUTER = '0x2626664c2603336E57B271c5C0b26F421741e481' as `0x${string}`
+      const PERMIT2 = '0x000000000022D473030F116dDEE9F6B43aC78BA3' as `0x${string}`
+      const W = strangerWallet as `0x${string}`
+      const FIVE_USDC = BigInt(5_000_000)
+      const approveData = (amt: bigint) => encodeFunctionData({ abi: erc20Abi, functionName: 'approve', args: [ROUTER, amt] })
+      const transferData = encodeFunctionData({ abi: erc20Abi, functionName: 'transfer', args: [ROUTER, FIVE_USDC] })
+      const routerAbi = parseAbi([
+        'function exactInputSingle((address tokenIn,address tokenOut,uint24 fee,address recipient,uint256 amountIn,uint256 amountOutMinimum,uint160 sqrtPriceLimitX96) params) payable returns (uint256)',
+        'function multicall(uint256 deadline, bytes[] data) payable returns (bytes[])',
+      ])
+      const exactIn = encodeFunctionData({ abi: routerAbi, functionName: 'exactInputSingle', args: [{ tokenIn: USDC_BASE, tokenOut: WETH_BASE, fee: 500, recipient: W, amountIn: FIVE_USDC, amountOutMinimum: BigInt(0), sqrtPriceLimitX96: BigInt(0) }] })
+      const multicallData = encodeFunctionData({ abi: routerAbi, functionName: 'multicall', args: [BigInt(Math.floor(Date.now() / 1000) + 600), [exactIn]] })
+      const permit2Data = encodeFunctionData({ abi: parseAbi(['function approve(address token, address spender, uint160 amount, uint48 expiration)']), functionName: 'approve', args: [USDC_BASE, ROUTER, FIVE_USDC, 1] })
+      const tx = (data: string, to: string = USDC_BASE, value = '0') => ({ to, data, value, chainId: 8453 })
+      const usdcLower = USDC_BASE.toLowerCase()
+
+      // Pure decode: what each artifact SPENDS.
+      const sv = spendsOfTx(tx('0x', ROUTER, '1000'))
+      check('affordability: a native value is an ETH spend', sv.length === 1 && sv[0].token === 'ETH' && sv[0].atoms === BigInt(1000) && sv[0].kind === 'value')
+      const sa = spendsOfTx(tx(approveData(FIVE_USDC)))
+      check('affordability: a bounded approve decodes to the token + amount', sa.length === 1 && sa[0].token === usdcLower && sa[0].atoms === FIVE_USDC && sa[0].kind === 'approve')
+      check('affordability: an unlimited approve is not a spend', spendsOfTx(tx(approveData(BigInt('0x' + 'ff'.repeat(32))))).length === 0)
+      const st = spendsOfTx(tx(transferData))
+      check('affordability: an ERC-20 transfer decodes to the token + amount', st.length === 1 && st[0].kind === 'transfer' && st[0].atoms === FIVE_USDC)
+      const sm = spendsOfTx(tx(multicallData, ROUTER))
+      check('affordability: SwapRouter02 multicall → exactInputSingle decodes the token IN + amountIn', sm.length === 1 && sm[0].kind === 'swap-in' && sm[0].token === usdcLower && sm[0].atoms === FIVE_USDC)
+      const smEth = spendsOfTx(tx(multicallData, ROUTER, '777'))
+      check('affordability: an ETH-in router call counts the value once (never the WETH amountIn twice)', smEth.length === 1 && smEth[0].token === 'ETH' && smEth[0].atoms === BigInt(777))
+      const sp = spendsOfTx(tx(permit2Data, PERMIT2))
+      check('affordability: a Permit2 approve decodes the token it approves', sp.length === 1 && sp[0].kind === 'permit2' && sp[0].token === usdcLower && sp[0].atoms === FIVE_USDC)
+      check('affordability: an undecodable tx with no value is no spend (never a false refusal)', spendsOfTx(tx('0xdeadbeef00', ROUTER)).length === 0 && spendsOfTx({ to: ROUTER, data: '0x', value: '0' }).length === 0)
+      // Requirements: a LONE approve is not a spend; approve → next step is.
+      check('affordability: a lone approve (single tx) requires nothing — SECURITY’s bounded-approve card stays untouched', requirementsOf(sa, 1).length === 0)
+      check('affordability: an approve followed by a step requires the approved amount', requirementsOf(sa, 2).length === 1 && requirementsOf(sa, 2)[0].atoms === FIVE_USDC)
+      const reqBoth = requirementsOf([...sa, ...spendsOfTx(tx(multicallData, ROUTER), 1)], 2)
+      check('affordability: approve + swap of the same token collapse to ONE requirement (the larger figure)', reqBoth.length === 1 && reqBoth[0].atoms === FIVE_USDC && reqBoth[0].needsGas)
+      const so = spendsOfOrder({ protocol: 'cow', chainId: 8453, typedData: { message: { sellToken: WETH_BASE, sellAmount: '1000', buyToken: USDC_BASE } } })
+      check('affordability: a CoW order’s sell side is the spend; a Seaport / HL order is not this gate’s', so.length === 1 && so[0].kind === 'order' && so[0].atoms === BigInt(1000) && spendsOfOrder({ protocol: 'opensea', chainId: 8453, typedData: { message: { sellToken: WETH_BASE, sellAmount: '1' } } }).length === 0 && requirementsOf(so)[0].needsGas === false)
+
+      // Verdicts through a fake reader (no RPC): short / gas / ok / unknown.
+      const reader = (native: bigint, erc20: bigint, throwOn?: 'native' | 'erc20'): BalanceReader => ({
+        async native() { if (throwOn === 'native') throw new Error('rpc down'); return native },
+        async erc20() { if (throwOn === 'erc20') throw new Error('rpc down'); return { balance: erc20, decimals: 6, symbol: 'USDC' } },
+      })
+      const transferPayload = { reply: 'x', txRequest: tx(transferData), buildPath: 'planner' }
+      const vShort = await checkAffordability(W, transferPayload, reader(BigInt(0), BigInt(0)))
+      check('affordability: 0 USDC vs a 5 USDC transfer → SHORT, by name', vShort.kind === 'short' && vShort.symbol === 'USDC' && vShort.needs === FIVE_USDC && vShort.held === BigInt(0) && !vShort.gas, JSON.stringify(vShort, (_k, v) => (typeof v === 'bigint' ? v.toString() : v)))
+      const vGas = await checkAffordability(W, transferPayload, reader(BigInt(0), FIVE_USDC * BigInt(10)))
+      check('affordability: the token covers it but ZERO ETH on the chain → short on gas (a tx can’t be sent at all)', vGas.kind === 'short' && vGas.gas && vGas.symbol === 'ETH')
+      const vOk = await checkAffordability(W, transferPayload, reader(BigInt(1), FIVE_USDC))
+      check('affordability: exactly enough token + any gas at all → ok (gas is only enforced at zero, never against a layer’s own sizing)', vOk.kind === 'ok' && vOk.checked === 1)
+      const orderPayload = { reply: 'x', orderRequest: { protocol: 'cow', chainId: 8453, typedData: { message: { sellToken: USDC_BASE, sellAmount: FIVE_USDC.toString() } } } }
+      check('affordability: a funded CoW order with ZERO ETH is ok (orders need no gas)', (await checkAffordability(W, orderPayload, reader(BigInt(0), FIVE_USDC))).kind === 'ok')
+      check('affordability: an unfunded CoW order is short', (await checkAffordability(W, orderPayload, reader(BigInt(0), BigInt(0)))).kind === 'short')
+      check('affordability: a failed balance read is UNKNOWN, never a refusal', (await checkAffordability(W, transferPayload, reader(BigInt(0), BigInt(0), 'erc20'))).kind === 'unknown' && (await checkAffordability(W, { txRequest: tx('0x', ROUTER, '5') }, reader(BigInt(0), BigInt(0), 'native'))).kind === 'unknown')
+      check('affordability: a chain outside the registry is UNKNOWN', (await checkAffordability(W, { txRequest: { ...tx(transferData), chainId: 999 } }, reader(BigInt(0), BigInt(0)))).kind === 'unknown')
+      check('affordability: a payload with no signable is no-spend', (await checkAffordability(W, { reply: 'hi' }, reader(BigInt(0), BigInt(0)))).kind === 'no-spend')
+
+      // The gate itself: what the card receives.
+      const gated = await gateSignablePayload({ reply: '🔏 Swap 5 USDC → ETH', txRequest: tx(transferData), buildPath: 'planner', receipts: [] } as Record<string, unknown>, W, { reader: reader(BigInt(0), BigInt(0)) })
+      const gp = gated.payload as { txRequest?: unknown; buildPath?: unknown; reply?: unknown; affordability?: { short?: { symbol?: string }; withheldBuildPath?: string } }
+      check(
+        'affordability gate: a short signable is REMOVED and the reply names the shortfall + every origin chain',
+        gated.verdict?.kind === 'short' && !gp.txRequest && gp.buildPath === AFFORDABILITY_SHORT_PATH && /Nothing to sign yet: this would spend 5 USDC on Base and the wallet holds 0 USDC there/.test(String(gp.reply)) && String(gp.reply).includes(fundingOriginWords()) && gp.affordability?.short?.symbol === 'USDC' && gp.affordability?.withheldBuildPath === 'planner',
+        JSON.stringify(gated.payload).slice(0, 300),
+      )
+      const gatedSse = await gateSignablePayload({ type: 'reply', content: '🔏 x', txChain: { summary: 's', steps: [{ label: 'approve', tx: tx(approveData(FIVE_USDC)) }, { label: 'swap', tx: tx(multicallData, ROUTER) }] }, buildPath: 'planner' }, W, { reader: reader(BigInt(0), BigInt(0)) })
+      check('affordability gate: the SSE event shape (content + txChain) is gated the same way', gatedSse.verdict?.kind === 'short' && !gatedSse.payload.txChain && /Nothing to sign yet/.test(String(gatedSse.payload.content)))
+      const untouched = await gateSignablePayload({ reply: 'x', txRequest: tx(transferData) }, undefined, { reader: reader(BigInt(0), BigInt(0)) })
+      check('affordability gate: no wallet → untouched (nothing to check against)', untouched.verdict === null && !!untouched.payload.txRequest)
+      const unknownPass = await gateSignablePayload({ reply: 'x', txRequest: tx(transferData), buildPath: 'native-cross-chain' }, W, { reader: reader(BigInt(0), BigInt(0), 'erc20') })
+      check('affordability gate: an unreadable balance passes the artifact through (the layer’s own guard stood behind it)', unknownPass.verdict?.kind === 'unknown' && !!unknownPass.payload.txRequest && unknownPass.payload.buildPath === 'native-cross-chain')
+      const loneApprove = await gateSignablePayload({ reply: 'x', txRequest: tx(approveData(FIVE_USDC)) }, W, { reader: reader(BigInt(0), BigInt(0)) })
+      check('affordability gate: a lone bounded approve is not gated', loneApprove.verdict?.kind === 'no-spend' && !!loneApprove.payload.txRequest)
+
+      // Source pins: the gate is wired at BOTH /api/chat exits and the jobs offer.
+      {
+        const srcFs = await import('node:fs')
+        const routeSrc = srcFs.readFileSync('app/api/chat/route.ts', 'utf8')
+        const runnerSrc = srcFs.readFileSync('lib/jobs-runner.ts', 'utf8')
+        check(
+          'affordability gate: wired at the JSON exit (POST wrapper), the SSE artifact sites (sendSignable ×6) and the jobs runner’s offer',
+          /const gated = await gateSignablePayload\(body, reqBody\.walletAddress/.test(routeSrc) && (routeSrc.match(/await sendSignable\(/g)?.length ?? 0) >= 6 && !/\bsend\(\{ type: 'reply'[^\n]*(?:txRequest|txChain|orderRequest): decision\.artifact/.test(routeSrc) &&
+            /const verdict = await checkAffordability\(fresh\.wallet, built\.artifact\)/.test(runnerSrc),
+        )
+      }
+
+      // Spelled-out dollars reach every grammar as the canonical "$N".
+      check('dollar words: "two dollars" / "a hundred bucks" / "twenty-five dollars\'" / "10 dollars" all become $N', normalizeDollarWords('two dollars of ETH') === '$2 of ETH' && normalizeDollarWords('a hundred bucks of AAPL') === '$100 of AAPL' && normalizeDollarWords("twenty-five dollars' worth of TSLA") === '$25 worth of TSLA' && normalizeDollarWords('long 10 dollars of HYPE') === 'long $10 of HYPE' && normalizeDollarWords('swap 5 USDC for USDG') === 'swap 5 USDC for USDG')
+      const twoDollars = parseSwapIntent('Convert two dollars of ETH to USDC on Base')
+      check('dollar words: the links r2 A/B phrasing is a NATIVE $2 swap (never the planner)', twoDollars.isSwap && !twoDollars.problem && twoDollars.sellAmountUsd === '2' && twoDollars.sellToken === 'ETH' && twoDollars.buyToken === 'USDC')
+      check('dollar words: "long ten dollars of HYPE on hyperliquid" reaches the HL grammar', parseHlIntent('long ten dollars of HYPE on hyperliquid')?.kind === 'open')
+      // SECURITY r2: the Aave supply tail.
+      const behalf = parseAaveSupply('supply 5 USDC to aave for nate.eth')
+      check('aave supply: a supply naming ANOTHER wallet refuses by name (never half-parses and builds for the signer)', !!behalf && 'problem' in behalf && /can't supply on behalf of nate\.eth/.test(behalf.problem) && !!parseAaveSupply('supply 5 USDC to aave for me') && !('problem' in parseAaveSupply('supply 5 USDC to aave for me')!) && !!parseAaveSupply('supply 5 USDC into aave for the best rate'))
+
+      // ── Route-level, THROUGH THE LINK ORIGIN: the /i runtime's exact turn
+      // (intentLinkSlug + the link's composed set) from a $0 wallet, for the
+      // Uniswap venue, the CoW venue and the phrasing that fell to the planner.
+      const linkHeaders = { 'content-type': 'application/json', 'x-yf-no-ask-log': '1' }
+      const mintLink = async (ask: string, mcps: string[]) => (await (await fetch(`${BASE}/api/intent-links`, { method: 'POST', headers: { ...linkHeaders, cookie: mallorySession }, body: JSON.stringify({ ask, mcps }) })).json()) as { slug?: string; mcps?: string }
+      const linkTurn = (message: string, slug: string, mcps: string[]) =>
+        fetch(`${BASE}/api/chat`, { method: 'POST', headers: linkHeaders, body: JSON.stringify({ message, walletAddress: W, intentLinkSlug: slug, activeServers: mcps.map((s) => ({ slug: s })), history: [] }) }).then((r) => r.json() as Promise<Record<string, unknown>>)
+      const minted: string[] = []
+      try {
+        const uniLink = await mintLink('Swap $2 of ETH to USDC on Base', ['uniswap-free'])
+        if (uniLink.slug) minted.push(uniLink.slug)
+        const uniTurn = await linkTurn('Swap $2 of ETH to USDC on Base', uniLink.slug ?? 'missing', ['uniswap-free'])
+        check(
+          'link origin: a $0 wallet on a Uniswap-set link gets NO signable — the shortfall is named (links.md r2)',
+          !!uniLink.slug && (uniLink.mcps ?? '').includes('uniswap-free') && !signable(uniTurn) && uniTurn.buildPath !== 'native-swap-uniswap' && uniTurn.buildPath !== 'planner' && /holds 0|Nothing to sign yet|couldn't read/i.test(String(uniTurn.reply)),
+          JSON.stringify(uniTurn).slice(0, 300),
+        )
+        const cowLink = await mintLink('Swap $2 of ETH to USDC on Base', ['cow-free'])
+        if (cowLink.slug) minted.push(cowLink.slug)
+        const cowTurn = await linkTurn('Swap $2 of ETH to USDC on Base', cowLink.slug ?? 'missing', ['cow-free'])
+        check(
+          'link origin: a $0 wallet on a CoW-set link gets NO order — the shortfall is named',
+          !!cowLink.slug && !signable(cowTurn) && cowTurn.buildPath !== 'native-swap-cow' && cowTurn.buildPath !== 'planner' && /holds 0|Nothing to sign yet|couldn't read/i.test(String(cowTurn.reply)),
+          JSON.stringify(cowTurn).slice(0, 300),
+        )
+        const abLink = await mintLink('Convert two dollars of ETH to USDC on Base', ['uniswap-free', 'near-intents-mcp-yeetful'])
+        if (abLink.slug) minted.push(abLink.slug)
+        const abTurn = await linkTurn('Convert two dollars of ETH to USDC on Base', abLink.slug ?? 'missing', ['uniswap-free', 'near-intents-mcp-yeetful'])
+        check(
+          'link origin: the exact links.md r2 phrasing ("Convert two dollars …", uniswap + near) never reaches the planner and never hands a $0 wallet a signable',
+          !!abLink.slug && !signable(abTurn) && abTurn.buildPath !== 'planner' && /holds 0|Nothing to sign yet|couldn't read/i.test(String(abTurn.reply)),
+          JSON.stringify(abTurn).slice(0, 300),
+        )
+      } finally {
+        for (const slug of minted) await fetch(`${BASE}/api/intent-links/${slug}`, { method: 'DELETE', headers: { cookie: mallorySession } }).catch(() => {})
+      }
+      // The cross-chain layer builds for any address (1Click quotes anything) —
+      // the EXIT gate is what withholds it.
+      const xc = await fetch(`${BASE}/api/chat`, { method: 'POST', headers: linkHeaders, body: JSON.stringify({ message: 'Swap 5 USDC from base to ETH on arbitrum', walletAddress: W, activeServers: [{ slug: 'near-intents-mcp-yeetful' }], history: [] }) }).then((r) => r.json() as Promise<Record<string, unknown>>)
+      check(
+        'affordability gate (route): a $0 wallet’s cross-chain deposit is withheld at the exit — "would spend 5 USDC on Base and the wallet holds 0 USDC"',
+        !signable(xc) && xc.buildPath === AFFORDABILITY_SHORT_PATH && /spend 5 USDC on Base and the wallet holds 0 USDC/.test(String(xc.reply)) && (xc.affordability as { withheldBuildPath?: string })?.withheldBuildPath === 'native-cross-chain',
+        JSON.stringify(xc).slice(0, 300),
+      )
+      // Jobs: the runner's offer is gated — a $0 wallet's first swap step
+      // fails WITH the shortfall named instead of "Sign & send approve".
+      const jobTurn = await fetch(`${BASE}/api/chat`, { method: 'POST', headers: linkHeaders, body: JSON.stringify({ message: 'swap 1 USDC for ETH on base, then send 0.0001 ETH to 0x1848a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a03c59 on base', walletAddress: W, activeServers: [{ slug: 'uniswap-free' }], history: [] }) }).then((r) => r.json() as Promise<{ jobId?: string; jobToken?: string; buildPath?: string }>)
+      if (jobTurn.jobId) {
+        const t = encodeURIComponent(jobTurn.jobToken ?? '')
+        let jobRead: { job?: { status?: string; failReason?: string | null; steps?: { status: string; result?: { error?: string } | null }[] } } = {}
+        for (let i = 0; i < 10; i++) {
+          jobRead = (await (await fetch(`${BASE}/api/jobs/${jobTurn.jobId}?t=${t}`)).json()) as typeof jobRead
+          if (jobRead.job?.steps?.[0]?.status === 'failed' || jobRead.job?.steps?.[0]?.status === 'offered') break
+          await new Promise((r) => setTimeout(r, 500))
+        }
+        check(
+          'affordability gate (jobs): a $0 wallet’s first swap step is never OFFERED — it fails with "would spend 1 USDC on Base and the wallet holds 0 USDC"',
+          jobTurn.buildPath === 'native-job' && jobRead.job?.status === 'failed' && jobRead.job?.steps?.[0]?.status === 'failed' && /spend 1 USDC on Base and the wallet holds 0 USDC/.test(String(jobRead.job?.steps?.[0]?.result?.error ?? jobRead.job?.failReason ?? '')),
+          JSON.stringify(jobRead).slice(0, 300),
+        )
+        await fetch(`${BASE}/api/jobs/${jobTurn.jobId}?t=${t}`, { method: 'DELETE' }).catch(() => {})
+      } else {
+        check('affordability gate (jobs): the compound ask compiled as a job', false, JSON.stringify(jobTurn).slice(0, 200))
+      }
+    }
 
     // ── NFT-buy funding resume (the 2026-07-23 unfunded "buy this NFT") ───
     // The funding offer's chips append this exact follow-up; it must compile

@@ -39,12 +39,34 @@ export interface Outcome {
   note?: string
   /** A clarify that carries resumable chips (the user taps, never retypes). */
   chips?: true
+  /** Where the turn came from (see LadderOptions); 'chat' when omitted. */
+  origin?: 'chat' | 'link'
+}
+
+/**
+ * The turn's ORIGIN. The route reads the same message through the same
+ * ladder whether it arrived from /chat, an /i link (`intentLinkSlug`) or an
+ * embed — the only thing a link origin changes today is the fee tier the
+ * swap layer stamps (LINK_SWAP_FEE_BPS, C2b). audit:asks replays every
+ * actionable ask in BOTH origins and fails on any class drift, so a rung
+ * that starts behaving differently for link turns (SECURITY's E5 raw-address
+ * refusal is the first candidate) must be mirrored here on purpose, never
+ * discovered on a stranger's phone (links.md round 2: a $0 wallet got
+ * "Sign & send swap" on a link because a phrasing fell to the planner).
+ */
+export interface LadderOptions {
+  origin?: 'chat' | 'link'
 }
 
 const NATIVE_CHAINS = new Set(['base', 'ethereum', 'arbitrum', 'optimism', 'robinhood'])
 
 /** Pure replica of the route ladder — same order, all free MCPs active. */
-export function simulateLadder(message: string): Outcome {
+export function simulateLadder(message: string, opts: LadderOptions = {}): Outcome {
+  const out = simulateLadderInner(message)
+  return opts.origin === 'link' ? { ...out, origin: 'link' } : out
+}
+
+function simulateLadderInner(message: string): Outcome {
   const vote = parseVoteIntent(message)
   if (vote.isVote) return { gate: 'vote', kind: 'action' }
 

@@ -291,6 +291,19 @@ const CORPUS: Entry[] = [
   { ask: 'swap 10 USDG → AAPL on Uniswap', source: 'prod 2026-09-02 (card-title arrow retyped)', expect: 'action' },
   { ask: 'Swap 12 USDG → TSLA', source: 'card title retyped', expect: 'action' },
   { ask: 'Send 5 USDC to 0x1111111111111111111111111111111111111111 on Optimism', source: 'squad replay (OP send, #707 gap)', expect: 'action' },
+  // ── GTM squad 2026-09-08 (PATHS round 3): spelled-out dollars + the Aave tail ──
+  // A link's A/B phrasing (links.md r2): "two dollars" fell past every dollar
+  // grammar to the planner, whose tool read it as 2 ETH — for a $0 wallet.
+  { ask: 'Convert two dollars of ETH to USDC on Base', source: 'links r2 A/B phrasing (planner fall → $5k build for a $0 wallet)', expect: 'action' },
+  { ask: "swap five dollars' worth of ETH for USDC", source: 'spelled dollars + possessive', expect: 'action' },
+  { ask: 'buy a hundred bucks of AAPL', source: 'spelled dollars (hundred)', expect: 'action' },
+  { ask: 'buy twenty-five dollars of TSLA on robinhood', source: 'spelled dollars (compound)', expect: 'action' },
+  { ask: 'long ten dollars of HYPE on hyperliquid', source: 'spelled dollars → HL grammar', expect: 'action' },
+  { ask: 'supply two dollars of USDC to aave', source: 'spelled dollars → Aave grammar', expect: 'action' },
+  // SECURITY r2: a supply naming another wallet must refuse by name, never
+  // half-parse and build for the signer.
+  { ask: 'supply 5 USDC to aave for nate.eth', source: 'security r2 (Aave tail)', expect: 'clarify-ok' },
+
 ]
 
 // ── Mutations — what real users do to our example asks ─────────────────────
@@ -357,6 +370,15 @@ for (const entry of CORPUS) {
   if (entry.expect === 'planner' && base.kind === 'clarify') {
     console.log(header)
     flag(`a question dead-ended in a clarify at ${base.gate} — "${base.note}"`)
+  }
+
+  // Link origin must not change the outcome CLASS either: the same sentence
+  // minted as an /i link reaches the same rung (squad PATHS r3 — the ladder's
+  // `origin` flag is where a deliberate divergence gets mirrored).
+  const viaLink = simulateLadder(entry.ask, { origin: 'link' })
+  if (viaLink.gate !== base.gate || viaLink.kind !== base.kind) {
+    console.log(header)
+    flag(`link origin drifted from chat: ${base.gate}/${base.kind} → ${viaLink.gate}/${viaLink.kind}${viaLink.note ? ` — "${viaLink.note}"` : ''}`)
   }
 
   // Mutations must not change the outcome CLASS (gate + kind) of a working ask.

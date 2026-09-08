@@ -59,6 +59,7 @@ import { rebalanceTurnFor } from '@/lib/rebalance-exec'
 import { parseMosaicAsk } from '@/lib/mosaic'
 import { mosaicTurnFor } from '@/lib/mosaic-exec'
 import { isInternalRun } from '@/lib/internal-run'
+import { gateSignablePayload } from '@/lib/affordability'
 import { runSpotGuardTurn } from '@/lib/spot-guard-exec'
 import {
   aaveAgentOf,
@@ -363,10 +364,22 @@ export async function POST(req: NextRequest) {
   } catch {
     /* fall through — the inner handler 400s on the empty body */
   }
-  const res = await handleChatTurn(new NextRequest(req.nextUrl, { method: 'POST', headers: req.headers, body: raw }))
+  let res = await handleChatTurn(new NextRequest(req.nextUrl, { method: 'POST', headers: req.headers, body: raw }))
   try {
     if (!raw || !res.headers.get('content-type')?.includes('application/json')) return res
     const reqBody = JSON.parse(raw) as Record<string, unknown>
+    // THE affordability choke point (lib/affordability.ts, squad PATHS r3):
+    // every signable leaving this route — native, planner passthrough,
+    // cross-chain, any origin (/chat, /i, /embed) — is checked against the
+    // wallet's live balance of what it SPENDS. Provably short → the artifact
+    // is withheld and the reply names the shortfall; unknown → untouched.
+    if (typeof reqBody.walletAddress === 'string' && isAddress(reqBody.walletAddress)) {
+      const body = (await res.clone().json().catch(() => null)) as Record<string, unknown> | null
+      if (body && (body.txRequest || body.txChain || body.orderRequest)) {
+        const gated = await gateSignablePayload(body, reqBody.walletAddress, { log: (line) => console.warn(line) })
+        if (gated.verdict?.kind === 'short') res = NextResponse.json(gated.payload, { status: res.status })
+      }
+    }
     // Receipt verification (2026-09-01): record the built artifact's
     // {to, selector, chainId} for /i turns — the binding target a later
     // signed beacon's tx hash is verified against (lib/receipt-verify).
@@ -5613,6 +5626,14 @@ export function streamAutoRouter(
         }
         controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`))
       }
+      // The SSE twin of the JSON exit gate (lib/affordability.ts): a reply
+      // event carrying a signable is checked against the wallet's balance of
+      // what it spends before it reaches the card.
+      const sendSignable = async (event: Record<string, unknown>) => {
+        const gated = await gateSignablePayload(event, walletAddress, { log: (line) => console.warn(line) })
+        if (gated.verdict?.kind === 'short') send({ type: 'note', level: 'warn', label: `affordability gate withheld the ${String(event.buildPath ?? 'planner')} build — ${String(gated.payload.content).slice(0, 160)}` })
+        send(gated.payload)
+      }
       const startMs = Date.now()
       const finish = () => {
         send({ type: 'done' })
@@ -5890,11 +5911,11 @@ export function streamAutoRouter(
             if (decision.artifact.kind === 'eip712-vote') {
               send({ type: 'reply', content: `🗳️ ${decision.artifact.summary}`, receipts, payer: 'your wallet', voteRequest: decision.artifact.vote, buildPath: 'planner', trace: trace(), workingContext: carryContext(workingContext, decision.entities) })
             } else if (decision.artifact.kind === 'eip712-order') {
-              send({ type: 'reply', content: `🔏 ${decision.artifact.summary}`, receipts, payer: 'your wallet', orderRequest: decision.artifact.order, buildPath: 'planner', trace: trace(), workingContext: carryContext(workingContext, decision.entities) })
+              await sendSignable({ type: 'reply', content: `🔏 ${decision.artifact.summary}`, receipts, payer: 'your wallet', orderRequest: decision.artifact.order, buildPath: 'planner', trace: trace(), workingContext: carryContext(workingContext, decision.entities) })
             } else if (decision.artifact.kind === 'evm-tx-chain') {
-              send({ type: 'reply', content: `🔏 ${decision.artifact.summary}\n🔗 ${decision.artifact.chain.steps.length} steps in the card below — each appears as the previous confirms.`, receipts, payer: 'your wallet', txChain: decision.artifact.chain, buildPath: 'planner', trace: trace(), workingContext: carryContext(workingContext, decision.entities) })
+              await sendSignable({ type: 'reply', content: `🔏 ${decision.artifact.summary}\n🔗 ${decision.artifact.chain.steps.length} steps in the card below — each appears as the previous confirms.`, receipts, payer: 'your wallet', txChain: decision.artifact.chain, buildPath: 'planner', trace: trace(), workingContext: carryContext(workingContext, decision.entities) })
             } else {
-              send({ type: 'reply', content: `🔏 ${decision.artifact.summary}`, receipts, payer: 'your wallet', txRequest: decision.artifact.tx, buildPath: 'planner', trace: trace(), workingContext: carryContext(workingContext, decision.entities) })
+              await sendSignable({ type: 'reply', content: `🔏 ${decision.artifact.summary}`, receipts, payer: 'your wallet', txRequest: decision.artifact.tx, buildPath: 'planner', trace: trace(), workingContext: carryContext(workingContext, decision.entities) })
             }
             recordTurn({ payer: 'your wallet', shortlisted: shortlistedOf(decision), picks: picksOf(decision), intent: intentOf(decision) })
             return finish()
@@ -5966,12 +5987,12 @@ export function streamAutoRouter(
           } else if (decision.artifact.kind === 'eip712-order') {
             // Intent-based order (CoW swap / OpenSea): the built order is sent
             // for signature. Guardrails (A3) gate it; the sign UI is A4.
-            send({ type: 'reply', content: `🔏 ${decision.artifact.summary}`, receipts, payer: 'the house wallet', orderRequest: decision.artifact.order, buildPath: 'planner', trace: trace() })
+            await sendSignable({ type: 'reply', content: `🔏 ${decision.artifact.summary}`, receipts, payer: 'the house wallet', orderRequest: decision.artifact.order, buildPath: 'planner', trace: trace() })
           } else if (decision.artifact.kind === 'evm-tx-chain') {
             // Multi-step build (approve → swap): one self-advancing card.
-            send({ type: 'reply', content: `🔏 ${decision.artifact.summary}\n🔗 ${decision.artifact.chain.steps.length} steps in the card below — each appears as the previous confirms.`, receipts, payer: 'the house wallet', txChain: decision.artifact.chain, buildPath: 'planner', trace: trace() })
+            await sendSignable({ type: 'reply', content: `🔏 ${decision.artifact.summary}\n🔗 ${decision.artifact.chain.steps.length} steps in the card below — each appears as the previous confirms.`, receipts, payer: 'the house wallet', txChain: decision.artifact.chain, buildPath: 'planner', trace: trace() })
           } else {
-            send({ type: 'reply', content: `🔏 ${decision.artifact.summary}`, receipts, payer: 'the house wallet', txRequest: decision.artifact.tx, buildPath: 'planner', trace: trace() })
+            await sendSignable({ type: 'reply', content: `🔏 ${decision.artifact.summary}`, receipts, payer: 'the house wallet', txRequest: decision.artifact.tx, buildPath: 'planner', trace: trace() })
           }
           recordTurn({ payer: 'the house wallet', shortlisted: shortlistedOf(decision), picks: picksOf(decision), intent: intentOf(decision) })
           return finish()

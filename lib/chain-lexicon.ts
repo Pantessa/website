@@ -228,7 +228,38 @@ export function normalizeArrows(text: string): string {
  * so the rewrite can never touch a real symbol elsewhere in the ask.
  */
 const WORTH_SLOT_RE = /(\$\s?\d+(?:\.\d+)?|\d+(?:\.\d+)?\s?(?:dollars?|usd|bucks?))\s+([a-zA-Z]{3,7})\s+(?=(?:of|in)\s+\$?[a-zA-Z0-9]{2,})/gi
-export function normalizeWorth(text: string): string {
+
+/**
+ * "Convert two dollars of ETH to USDC" (a link's A/B phrasing, squad LINKS
+ * round 2): every dollar grammar reads digits, so a spelled-out amount fell
+ * past the swap layer to the planner — whose tool read "two" as 2 ETH and
+ * built a $5k swap for a $0 wallet. Spelled numbers before a money word
+ * become the canonical dollar form ("two dollars" → "$2", "a hundred
+ * bucks" → "$100", "five dollars' worth" → "$5 worth", and "10 dollars" →
+ * "$10" too); nothing else in the sentence is touched. Shared by every grammar through normalizeWorth.
+ */
+const NUMBER_WORDS: Record<string, number> = {
+  a: 1, an: 1, one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10,
+  eleven: 11, twelve: 12, thirteen: 13, fourteen: 14, fifteen: 15, sixteen: 16, seventeen: 17, eighteen: 18, nineteen: 19,
+  twenty: 20, thirty: 30, forty: 40, fifty: 50, sixty: 60, seventy: 70, eighty: 80, ninety: 90, hundred: 100, thousand: 1000,
+}
+const DOLLAR_WORDS_RE = /\b(a|an|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety)(?:[\s-]+(one|two|three|four|five|six|seven|eight|nine))?(?:\s+(hundred|thousand))?\s+(dollars?|bucks?|usd)(?:['’]s?)?(?![a-z])/gi
+/** "10 dollars" / "5 bucks" / "1.50 usd" → "$10" / "$5" / "$1.50": the one
+ *  canonical dollar form every grammar reads (the HL grammar reads ONLY it —
+ *  "long 10 dollars of HYPE" was a planner fall). `usd` never eats USDC/USDG. */
+const DIGIT_DOLLARS_RE = /(?<![\w$.])(\d+(?:\.\d+)?)\s?(?:dollars?|bucks?|usd)(?:['’]s?)?(?![a-z])/gi
+export function normalizeDollarWords(text: string): string {
+  const spelled = text.replace(DOLLAR_WORDS_RE, (_full, lead: string, unit: string | undefined, mult: string | undefined) => {
+    let n = NUMBER_WORDS[lead.toLowerCase()] ?? 0
+    if (unit) n += NUMBER_WORDS[unit.toLowerCase()] ?? 0
+    if (mult) n *= NUMBER_WORDS[mult.toLowerCase()] ?? 1
+    return n > 0 ? `$${n}` : _full
+  })
+  return spelled.replace(DIGIT_DOLLARS_RE, '$$$1')
+}
+
+export function normalizeWorth(rawText: string): string {
+  const text = normalizeDollarWords(rawText)
   return text.replace(WORTH_SLOT_RE, (full, amt: string, word: string) => {
     const w = word.toLowerCase()
     if (w === 'worth') return full

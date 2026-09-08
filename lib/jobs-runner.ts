@@ -8,6 +8,7 @@
 // ─────────────────────────────────────────────────────────────────────────
 
 import { HttpTransport, InfoClient } from '@nktkas/hyperliquid'
+import { affordabilityRefusal, checkAffordability } from '@/lib/affordability'
 import prisma from '@/lib/db'
 import { callMcpTool } from '@/lib/mcp-call'
 import { crossChainValueUsd, expectedOriginChainId, guardCrossChainBuild, type BuiltSwap, type CrossChainSwapParams } from '@/lib/cross-chain-swap'
@@ -192,6 +193,18 @@ export async function advanceJob(job: JobWithSteps): Promise<void> {
       if (claim.count !== 1) return
       try {
         const built = await buildSignArtifact(fresh.wallet, step.builder, step.params as Record<string, unknown>)
+        // THE affordability choke point (lib/affordability.ts): a step is
+        // offered only when the wallet can PROVABLY cover what it spends —
+        // a typed "Fund robinhood chain with $20 from base" on a $0 wallet
+        // compiled fine and offered its approve (squad PATHS r3). A short
+        // verdict fails the step with the shortfall named (the card says
+        // what to send; nothing was offered); an unreadable balance passes
+        // (the builder's own guard stood behind the artifact).
+        const verdict = await checkAffordability(fresh.wallet, built.artifact)
+        if (verdict.kind === 'short') {
+          console.warn(`[jobs] affordability withheld step ${step.seq + 1} of ${fresh.id} (${step.builder}): ${verdict.symbol} on ${verdict.chainName} holds ${verdict.held} needs ${verdict.needs}${verdict.gas ? ' (gas)' : ''}`)
+          throw new Error(affordabilityRefusal(verdict).replace(/^[^\w]+/, ''))
+        }
         await prisma.jobStep.update({
           where: { id: step.id },
           data: {
