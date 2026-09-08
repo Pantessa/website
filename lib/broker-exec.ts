@@ -35,7 +35,7 @@ import { logRosterRefusalDirect } from '@/lib/roster-observe'
 import { moneyShaped } from '@/lib/ask-failure'
 import { MOSAIC_CHAIN_IDS, composeMosaicAsk, sanitizeMosaicSlices, type MosaicChainWord } from '@/lib/mosaic'
 import { recoverMessageAddress } from 'viem'
-import { COUNTED_EVENT_WHERE, reverifyPendingForSlug } from '@/lib/link-receipt-verify'
+import { COUNTED_EVENT_WHERE, COUNTED_TURN_WHERE, reverifyPendingForSlug } from '@/lib/link-receipt-verify'
 
 const SITE = (process.env.NEXT_PUBLIC_SITE_URL ?? 'https://www.pantessa.com').replace(/\/$/, '')
 
@@ -494,7 +494,9 @@ export async function intentStatus(intentId: string): Promise<StatusResult> {
       if (e.kind in funnel) funnel[e.kind as keyof typeof funnel] += e._count._all
     }
     const turns = await prisma.embedTurn.aggregate({
-      where: { intentLinkSlug: row.linkSlug, outcome: 'signed' },
+      // Same rule as the events: only a receipt-counted sign moves the desk's
+      // signed count / signedUsd (S-2).
+      where: { intentLinkSlug: row.linkSlug, outcome: 'signed', ...COUNTED_TURN_WHERE },
       _count: { _all: true },
       _sum: { valueUsd: true },
     })

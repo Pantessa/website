@@ -1,6 +1,6 @@
 import { Prisma } from '@prisma/client'
 import { TEST_WALLETS } from '@/lib/admin'
-import { INTERNAL_ORIGIN_SQL } from '@/lib/value-origin'
+import { COUNTED_TURN_SQL, INTERNAL_ORIGIN_SQL } from '@/lib/value-origin'
 
 /**
  * The GTM arc — the one screen GTM is judged by (HANDOFF-gtm-bulletproof
@@ -77,7 +77,7 @@ export function arcQuery(days: number) {
     WITH turns AS (
       SELECT lower(wallet_address) AS a, outcome, created_at, (embed_key_id <> '') AS is_embed
       FROM embed_turns
-      WHERE wallet_address IS NOT NULL AND ${notInternal}
+      WHERE wallet_address IS NOT NULL AND ${notInternal} AND ${Prisma.raw(COUNTED_TURN_SQL)}
     ),
     user_msgs AS (
       SELECT lower(c.owner_address) AS a, m.created_at, m.role, m.meta

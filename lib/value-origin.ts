@@ -143,8 +143,66 @@ export const INTERNAL_TRAFFIC_WHERE = {
   ],
 }
 
-/** Compose into any embed_turns `where` to keep only REAL traffic. */
-export const REAL_TRAFFIC_WHERE = { NOT: INTERNAL_TRAFFIC_WHERE }
+// ── Receipt-counted rows — money follows the receipt (S-2, 2026-09-08) ──────
+//
+// A `signed` telemetry beacon is a CLAIM made by a browser. Until 2026-09-08
+// it minted creator earnings, claimable USDC, the write-once referral, the
+// public money-moved number, the /i + /l share cards and the agent record on
+// its own word — QA's round-2 stranger posted a spoofed hash, the #685
+// verifier stamped the twin funnel event `mismatch`, and the studio still
+// read "$1.00 moved · $0.0025 claimable". Now the telemetry write site runs
+// the SAME verifier (lib/link-receipt-verify.ts) and stamps
+// `embed_turns.verification`:
+//   verified    the hash is a success receipt, sent by the signing wallet,
+//               single-use, to the artifact THIS server built for that wallet
+//   attested    a class with no EVM receipt to read yet (CoW/HL/vote/NFT
+//               orders, job legs) — the documented next tranche, counts today
+//   dev         a first-party beacon from a localhost / fixture-TLD build —
+//               never reachable on prod (the first-party lane requires the
+//               deployment's own host); public reads drop it by ORIGIN anyway,
+//               creator-scoped reads keep it (the dev-feedback convention)
+//   unverified  chain unreadable / no hash / no artifact on record — counts
+//               NOTHING, lazily re-checked for 7 days
+//   mismatch    a provable spoof — counts NOTHING, terminal
+//   NULL        a non-signed outcome, or a row from before the column (T-R6)
+// ONE rule, three mirrors (Prisma / SQL / row), composed into REAL_TRAFFIC_*
+// so every public read inherits it, and spelled out in the creator-scoped
+// reads that deliberately keep internal traffic.
+
+export const COUNTED_VERIFICATIONS = ['verified', 'attested', 'dev'] as const
+
+/** Prisma `where`: this embed_turns row's money may be COUNTED. */
+export const COUNTED_TURN_WHERE = {
+  OR: [{ verification: null }, { verification: { in: [...COUNTED_VERIFICATIONS] } }],
+}
+
+/** Raw-SQL mirror of {@link COUNTED_TURN_WHERE} (bare column name). */
+export const COUNTED_TURN_SQL = `(verification IS NULL OR verification IN ('verified','attested','dev'))`
+
+/** Row-level mirror. */
+export function isCountedTurn(t: { verification?: string | null }): boolean {
+  return t.verification == null || (COUNTED_VERIFICATIONS as readonly string[]).includes(t.verification)
+}
+
+/** The `dev` stamp's origin test: a localhost / loopback / fixture-TLD build —
+ *  NOT this project's Vercel previews (a stranger can reach a preview URL, so
+ *  preview rows verify like production's). */
+export function isDevOrigin(origin: string | null | undefined): boolean {
+  if (!origin) return false
+  try {
+    const host = new URL(origin).hostname.toLowerCase()
+    return INTERNAL_HOST_RE.test(host) || INTERNAL_TLD_RE.test(host)
+  } catch {
+    return false
+  }
+}
+
+/** Compose into any embed_turns `where` to keep only REAL traffic — not our
+ *  own, and (since S-2) not a refuted or unverifiable receipt. Spread-safe:
+ *  callers compose `OR`/`NOT` of their own (STANDING_TURN_WHERE), so the two
+ *  legs ride inside one `AND`. */
+export const REAL_TRAFFIC_WHERE = { AND: [{ NOT: INTERNAL_TRAFFIC_WHERE }, COUNTED_TURN_WHERE] }
+
 
 /**
  * Raw-SQL predicate for "this embed_turns row is internal traffic" — the SQL
@@ -152,3 +210,8 @@ export const REAL_TRAFFIC_WHERE = { NOT: INTERNAL_TRAFFIC_WHERE }
  * WHERE as `NOT ${…}`; references the bare `is_internal` + `origin` columns.
  */
 export const INTERNAL_ORIGIN_SQL = `(is_internal OR origin ~* '^https?://(localhost|127\\.0\\.0\\.1|\\[::1\\]|0\\.0\\.0\\.0)([:/]|$)' OR origin ~* '^https?://[^/]*\\.(test|localhost|local|example|invalid)(:[0-9]+)?$' OR origin ~* '^https?://(website-git-[^/]*|[^/]*-nate-4683s-projects)\\.vercel\\.app$')`
+
+/** Raw-SQL predicate for "this embed_turns row is REAL traffic" — the SQL
+ *  mirror of {@link REAL_TRAFFIC_WHERE}: not internal AND receipt-counted.
+ *  Interpolate via Prisma.raw inside a WHERE. */
+export const REAL_TRAFFIC_SQL = `(NOT ${INTERNAL_ORIGIN_SQL} AND ${COUNTED_TURN_SQL})`

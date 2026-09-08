@@ -9,6 +9,7 @@ import { brandCtaStyle, brandThemeStyle } from '@/lib/brand-theme'
 import Footer from '@/components/Footer'
 import { YeetfulMark } from '@/components/Logo'
 import { absoluteUrl } from '@/lib/site-url'
+import { REAL_TRAFFIC_WHERE } from '@/lib/value-origin'
 
 // /l/<handle> — a creator's storefront: their active intent links as one
 // public page (the "linktree of money"). Pure read surface over
@@ -44,9 +45,11 @@ async function getStorefront(rawHandle: string) {
             where: { slug: { in: slugs }, kind: 'open' },
             _count: { _all: true },
           }),
+          // A public page is a public claim: real traffic only (no harness /
+          // localhost rows) and, since S-2, receipt-counted signs only.
           prisma.embedTurn.groupBy({
             by: ['intentLinkSlug'],
-            where: { intentLinkSlug: { in: slugs }, outcome: 'signed', valueUsd: { gt: 0 } },
+            where: { intentLinkSlug: { in: slugs }, outcome: 'signed', valueUsd: { gt: 0 }, ...REAL_TRAFFIC_WHERE },
             _sum: { valueUsd: true },
           }),
         ])

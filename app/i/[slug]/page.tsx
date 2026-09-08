@@ -4,6 +4,7 @@ import prisma from '@/lib/db'
 import { brandFromRow } from '@/lib/brand-denylist'
 import { outboundHoldCopy, outboundToThirdParty } from '@/lib/content-origin'
 import { INTENT_SLUG_RE } from '@/lib/intent-links'
+import { COUNTED_TURN_WHERE } from '@/lib/value-origin'
 import { notifyEligible } from '@/lib/broker-webhook'
 import { MANDATE_KIND_LABELS, type MandateKind } from '@/lib/roster-client'
 import IntentRuntime from '@/components/IntentRuntime'
@@ -27,9 +28,11 @@ async function getLink(slug: string) {
     // Expiry: a dead promo behaves exactly like a revoked link.
     if (l.expiresAt && l.expiresAt.getTime() <= Date.now()) return null
     // Sign cap: SERVER-TRUTH signs only (guardrail-priced embed_turns) —
-    // client-reported funnel events can neither burn nor extend the cap.
+    // client-reported funnel events can neither burn nor extend the cap, and
+    // (S-2) neither can a signed beacon whose receipt the verifier refused —
+    // a stranger could otherwise exhaust a link's cap with spoofed hashes.
     if (l.maxSigns !== null) {
-      const signs = await prisma.embedTurn.count({ where: { intentLinkSlug: slug, outcome: 'signed' } })
+      const signs = await prisma.embedTurn.count({ where: { intentLinkSlug: slug, outcome: 'signed', ...COUNTED_TURN_WHERE } })
       if (signs >= l.maxSigns) return null
     }
     return l

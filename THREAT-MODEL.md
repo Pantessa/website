@@ -86,6 +86,30 @@ statement gets qualified.**
   set; a legitimate-looking sentence ("Buy $500 of AAPL") is exactly what the
   product is for, and the native guards + the wallet's own confirmation are
   the last line.
+- **The self-dealing creator (money on a stranger's word).** A link creator
+  opens their own link from any wallet — or just `curl`s
+  `/api/embed/telemetry` with `firstParty:true`, the deployment's own host as
+  `page`, `outcome:'signed'`, `valueUsd: 4999`, `feeBps: 50` and their slug —
+  and the row minted creator earnings, claimable USDC, a lifetime referral
+  stamp, the public money-moved number, the /i + /l share cards, the links
+  board and the agent record on the browser's word alone (QA's round-2
+  stranger: the #685 verifier stamped the funnel event `mismatch`, the studio
+  still read "$1.00 moved · $0.0025 claimable"). Closed 2026-09-08 (S-2):
+  **money follows the receipt** — the telemetry write site runs the same
+  verifier and stamps `embed_turns.verification`; every reader a stranger can
+  see money on composes `COUNTED_TURN_WHERE` (folded into `REAL_TRAFFIC_*`,
+  spelled out in the creator-scoped reads); the referral stamps only on a
+  counted sign; the sign cap counts only counted signs (a spoofer could
+  otherwise exhaust a link's cap); the creator funnel's decisive kinds read
+  `COUNTED_EVENT_WHERE`. What remains: the `attested` classes (CoW / HL /
+  Snapshot / NFT orders, job legs) count without a receipt read, exactly as
+  #685 documented for events — a creator who mints an order-class link can
+  still self-report on it until those are ledgered at their relays
+  (`/api/cow/submit`, `/api/hl/submit`, the jobs runner know the truth); the
+  $10 claim floor and Nate's manual payout bound the money, not the number.
+  And a legitimate `signed` beacon whose chain is unreadable at beacon time
+  shows $0 until the lazy re-check (studio poll, claims door, /activity)
+  catches up — honest, and the only correct default.
 - **The malicious inbox sender.** The wallet inbox (`/inbox/<address>`)
   takes cards from strangers: a desk agent via `broker_send`, or a human via
   the mint door's `recipient`. A "$50,000" card "from MetaMask Team" is a
@@ -216,9 +240,13 @@ mint, or mutate. That's this section.
   postMessage origin handling reviewed against a hostile parent frame.
 - **SSRF.** `lib/brand-scan.ts` has a real fence (https-only, public hosts,
   default port, post-redirect re-validation) — re-verify it covers DNS
-  rebinding and redirect chains, then sweep for *other* fetchers taking
-  user-supplied URLs (OpenSea item URLs, MCP endpoints on add, `redirectUrl`
-  on links).
+  rebinding and redirect chains. Swept 2026-09-08: `/api/fetch-meta` fetched
+  ANY url for ANY caller (cloud-metadata IPs, localhost, private CIDRs) and
+  returned the page's meta — now signed-in only, wearing `validateBrandUrl`
+  + a re-validation of where the fetch landed + a bounded read;
+  `/api/servers/discover` (already `assertPublicHttps`) is signed-in only
+  too. Still to re-read: OpenSea item URLs, `redirectUrl` on links (validated
+  at mint, never fetched by us), the broker webhook fence.
 - **The new rate fence** (`lib/turn-limits.ts`). It trusts platform-stamped
   IP headers. Confirm Vercel always overwrites `x-forwarded-for` on the edge;
   if a client can inject it, the IP tier is bypassable (the wallet tier still
@@ -254,6 +282,18 @@ destructive helpers against the prod host, or an `originEnv`-style column
 convention extended past jobs.
 
 Also open:
+- **A pinned RPC that cannot read receipts makes a verifier dead on arrival.**
+  Measured 2026-09-08: publicnode's free tier answers
+  `eth_getTransactionReceipt` on Base / Arbitrum / Optimism with "Archive
+  requests require a personal token" for a tx FIVE blocks old — every
+  receipt, every age (Ethereum's endpoint answers). `lib/chains.ts` pins
+  publicnode for the server, so from 2026-09-01 (#685) to this fix the
+  `verified` verdict was unreachable on three of five chains: every honest
+  link sign stayed `unverified` forever, no desk webhook ever fired on a
+  counted verdict, no inbox card ever dropped on verification. Receipt reads
+  now run on `receiptClientFor` — the pin first, the chain's default RPC when
+  the pin refuses. The standing rule stands: MEASURE an RPC against the
+  exact method you need before pinning it anywhere.
 - Vercel env var scoping (prod vs preview): does a preview deploy hold prod
   secrets? If yes, preview is prod for blast-radius purposes.
 - Cookie scoping: localhost cookies are shared **across ports** — stale
