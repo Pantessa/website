@@ -311,7 +311,7 @@ export default function JobsRailTab({ onAct }: { onAct?: () => void }) {
       >
         <div className="flex items-center gap-2">
           <CalendarClock className="w-3.5 h-3.5 flex-shrink-0 text-[color:var(--muted)]" aria-hidden />
-          <span className="flex-1 min-w-0 text-xs font-medium truncate">
+          <span className="flex-1 min-w-0 text-xs font-medium line-clamp-2">
             ${s.buyUsd} {s.buyToken} · {cadenceLabel(s.cadence as DcaCadence)}
           </span>
           <ChartHoverButton symbol={s.buyToken} />
@@ -359,7 +359,9 @@ export default function JobsRailTab({ onAct }: { onAct?: () => void }) {
       >
         <div className="flex items-center gap-2">
           {jobDot(j.status)}
-          <span className="flex-1 min-w-0 text-xs truncate" title={j.title}>
+          {/* Job titles carry the money ("Fund Robinhood Chain with $10 from…"):
+              two lines in the rail beats an ellipsis over the amount. */}
+          <span className="flex-1 min-w-0 text-xs line-clamp-2" title={j.title}>
             {j.title}
           </span>
         </div>

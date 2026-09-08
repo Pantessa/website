@@ -26,7 +26,7 @@ function ExampleGallery({ onPick }: { onPick: (prompt: string, slug?: string) =>
             type="button"
             onClick={() => onPick(ex.prompt, ex.slug)}
             title={ex.prompt}
-            className="group flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full border border-[var(--line)] text-[color:var(--muted)] hover:text-white hover:border-[color:var(--accent)]/45 hover:bg-white/5 transition-colors"
+            className="group flex items-center gap-1.5 text-xs px-3 py-1.5 max-lg:min-h-10 max-lg:px-4 rounded-full border border-[var(--line)] text-[color:var(--muted)] hover:text-white hover:border-[color:var(--accent)]/45 hover:bg-white/5 transition-colors"
           >
             <Send className="w-3 h-3 text-[color:var(--muted-2)] group-hover:text-[color:var(--accent)] transition-colors" />
             {ex.label}
@@ -81,7 +81,7 @@ export default function EmptyState({
       <ExampleGallery onPick={onPick} />
       {showLinksHint && (
         <p className="mt-6 text-[11px] text-[color:var(--muted-2)] max-w-sm">
-          Any ask here can become a shareable intent link — hover a sent message for the{' '}
+          Any ask here can become a shareable intent link — every sent message carries the{' '}
           <Link2 className="inline w-3 h-3 align-[-1px]" aria-hidden />
           {' '}mint icon, or open the rail&apos;s Links tab.
         </p>

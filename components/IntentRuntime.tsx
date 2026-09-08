@@ -666,7 +666,10 @@ export default function IntentRuntime({
                 <img src={brand.logo} alt={brand.name ?? brand.domain ?? ''} className="w-5 h-5 rounded flex-shrink-0 object-contain" />
               )}
               <div className="min-w-0">
-                <p className="mono text-[10px] uppercase tracking-widest text-[color:var(--muted-2)] leading-none">
+                <p className="mono text-[10px] uppercase tracking-widest text-[color:var(--muted-2)] leading-none truncate">
+                  {/* One line: at 375 beside the account pill the framing
+                      wrapped to three stacked lines above the ask; the visitor
+                      read the whole lockup on the splash a moment ago. */}
                   {/* The framing has to survive the splash: a visitor spends
                       the whole run under this header, and it read "intent
                       link" on posted calls too. */}
@@ -675,7 +678,10 @@ export default function IntentRuntime({
                     : linkEyebrow({ hasCreator, handle: creatorHandle, agent })}
                 </p>
                 <p
-                  className="mt-1 text-[15px] leading-tight text-[color:var(--fg)] truncate"
+                  // The ask IS the link's identity: beside the account pill at
+                  // 375 a one-line truncate left "Swap 1 USDC for ET…". Two
+                  // lines on phones, one line from sm up.
+                  className="mt-1 text-[15px] leading-tight text-[color:var(--fg)] max-sm:line-clamp-2 sm:truncate"
                   style={{ fontFamily: 'var(--font-serif)' }}
                 >
                   &ldquo;{ask}&rdquo;

@@ -231,7 +231,10 @@ export default function SendTxChain({
                     target="_blank"
                     rel="noopener noreferrer"
                     title="View this step on the block explorer"
-                    className="inline-flex items-center text-[color:var(--muted)] hover:text-[color:var(--fg)]"
+                    aria-label="View this step on the block explorer"
+                    // A 12px glyph is the whole target on a phone: pad the hit
+                    // area out to 40px without moving the glyph.
+                    className="inline-flex items-center text-[color:var(--muted)] hover:text-[color:var(--fg)] [@media(hover:none)]:min-w-10 [@media(hover:none)]:min-h-10 [@media(hover:none)]:justify-center [@media(hover:none)]:-my-3"
                   >
                     <ExternalLink className="w-3 h-3" />
                   </a>
@@ -257,7 +260,10 @@ export default function SendTxChain({
                           refreshing.current = false
                         })
                       }}
-                      className="ml-2 underline underline-offset-2 text-[color:var(--fg)] hover:opacity-80"
+                      // The recovery verb reads as a button, not an 11px
+                      // underline lost in the withhold prose: its own line,
+                      // 12px, a 40px target on touch.
+                      className="mt-1.5 flex items-center gap-1.5 rounded-full border border-[var(--line-2)] bg-white/[0.05] px-3 py-1 text-[12px] font-medium text-[color:var(--fg)] hover:bg-white/[0.09] [@media(hover:none)]:min-h-10 [@media(hover:none)]:px-4"
                     >
                       Try again
                     </button>

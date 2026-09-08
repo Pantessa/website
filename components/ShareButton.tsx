@@ -63,15 +63,18 @@ export default function ShareButton() {
       <button
         onClick={() => setOpen((o) => !o)}
         title={isPublic ? 'Shared publicly' : 'Share this chat'}
+        aria-label={isPublic ? 'Shared publicly' : 'Share this chat'}
         className={cn(
-          'flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-[11px] transition-colors',
+          // Phones: icon-only below sm (the word cost the toolbar's working-set
+          // door its last 45px at 375) and a 40px target below lg.
+          'flex items-center gap-1.5 px-2.5 py-1 max-lg:min-h-10 max-lg:px-3 rounded-lg border text-[11px] transition-colors',
           isPublic
             ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/15'
             : 'bg-[var(--surf-1)] border-[var(--line)] text-[color:var(--muted)] hover:text-white hover:border-[var(--line-2)]'
         )}
       >
         {isPublic ? <Globe className="w-3.5 h-3.5" /> : <Share2 className="w-3.5 h-3.5" />}
-        <span className="whitespace-nowrap">{isPublic ? 'Shared' : 'Share'}</span>
+        <span className="whitespace-nowrap max-sm:hidden">{isPublic ? 'Shared' : 'Share'}</span>
       </button>
 
       {open && (

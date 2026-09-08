@@ -25,7 +25,7 @@ export function ChartHoverButton({ symbol, alwaysVisible = false }: { symbol: st
       }}
       aria-label={`${pair.label} live chart`}
       title={`${pair.label} live chart`}
-      className={`grid h-6 w-6 place-items-center rounded-md text-[color:var(--muted-2)] transition-all hover:bg-white/5 hover:text-white focus-visible:opacity-100${
+      className={`grid h-6 w-6 place-items-center rounded-md text-[color:var(--muted-2)] transition-all hover:bg-white/5 hover:text-white focus-visible:opacity-100 [@media(hover:none)]:h-10 [@media(hover:none)]:w-10 [@media(hover:none)]:-my-2 [@media(hover:none)]:-mr-2${
         alwaysVisible ? '' : ' opacity-0 group-hover:opacity-100'
       }`}
     >

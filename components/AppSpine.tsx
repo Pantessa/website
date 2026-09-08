@@ -365,7 +365,7 @@ export default function AppSpine({ surface = 'chat' }: { surface?: 'chat' | 'das
           className="flex-1 min-h-[48px] flex flex-col items-center justify-center gap-0.5 text-[color:var(--muted)]"
         >
           <Plus className="w-[18px] h-[18px]" />
-          <span className="mono text-[9px] font-medium tracking-wide">NEW</span>
+          <span className="mono text-[10px] font-medium tracking-wide">NEW</span>
         </button>
         {TABS.map(({ tab, label, title, Icon }) => {
           const selected = !onDashboard && railTab === tab && mobileMcpRailOpen
@@ -388,7 +388,7 @@ export default function AppSpine({ surface = 'chat' }: { surface?: 'chat' | 'das
                 <Icon className="w-[18px] h-[18px]" />
                 {tab === 'jobs' && jobsBadge}
               </span>
-              <span className="mono text-[9px] font-medium tracking-wide">{label}</span>
+              <span className="mono text-[10px] font-medium tracking-wide">{label}</span>
             </button>
           )
         })}
@@ -405,7 +405,7 @@ export default function AppSpine({ surface = 'chat' }: { surface?: 'chat' | 'das
             <span aria-hidden className="absolute top-0 left-1/2 -translate-x-1/2 w-6 h-0.5 rounded-full bg-[var(--accent)]" />
           )}
           <Settings className="w-[18px] h-[18px]" />
-          <span className="mono text-[9px] font-medium tracking-wide">SETTINGS</span>
+          <span className="mono text-[10px] font-medium tracking-wide">SETTINGS</span>
         </Link>
       </nav>
     </>

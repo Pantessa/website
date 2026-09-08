@@ -49,6 +49,10 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
+  // Without viewport-fit=cover iOS reports every env(safe-area-inset-*) as 0,
+  // so the spine bar / composer / dashboard paddings that reserve the home
+  // indicator were dead code on the phones they were written for.
+  viewportFit: 'cover',
   themeColor: [
     { media: '(prefers-color-scheme: light)', color: '#fdfdfc' },
     { media: '(prefers-color-scheme: dark)', color: '#09090b' },

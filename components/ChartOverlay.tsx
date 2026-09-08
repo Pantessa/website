@@ -99,14 +99,14 @@ export default function ChartOverlay({ onAsk }: { onAsk?: (prompt: string) => vo
                 rel="noopener noreferrer"
                 aria-label="Open the full chart page"
                 title="Open the full chart page"
-                className="grid h-7 w-7 place-items-center rounded-lg text-[color:var(--muted)] transition-colors hover:bg-[var(--surf-1)] hover:text-white"
+                className="grid h-7 w-7 place-items-center rounded-lg text-[color:var(--muted)] transition-colors hover:bg-[var(--surf-1)] hover:text-white [@media(hover:none)]:h-10 [@media(hover:none)]:w-10"
               >
                 <ExternalLink className="h-3.5 w-3.5" />
               </a>
               <button
                 onClick={close}
                 aria-label="Close"
-                className="grid h-7 w-7 place-items-center rounded-lg text-[color:var(--muted)] transition-colors hover:bg-[var(--surf-1)] hover:text-white"
+                className="grid h-7 w-7 place-items-center rounded-lg text-[color:var(--muted)] transition-colors hover:bg-[var(--surf-1)] hover:text-white [@media(hover:none)]:h-10 [@media(hover:none)]:w-10 [@media(hover:none)]:-mr-1.5"
               >
                 <X className="h-4 w-4" />
               </button>
@@ -119,13 +119,13 @@ export default function ChartOverlay({ onAsk }: { onAsk?: (prompt: string) => vo
               <div className="flex flex-wrap items-center gap-1.5 border-t border-[var(--line)] pt-2.5">
                 <button
                   onClick={() => act(`Buy $50 of ${pair.symbol}`)}
-                  className="rounded-lg border border-[var(--line-2)] px-2.5 py-1.5 text-[11px] font-medium text-[color:var(--accent)] transition-colors hover:bg-white/[0.04]"
+                  className="rounded-lg border border-[var(--line-2)] px-2.5 py-1.5 text-[11px] font-medium text-[color:var(--accent)] transition-colors hover:bg-white/[0.04] [@media(hover:none)]:min-h-10 [@media(hover:none)]:text-[12px]"
                 >
                   Buy {pair.symbol}
                 </button>
                 <button
                   onClick={() => act(`Sell $50 of ${pair.symbol}`)}
-                  className="rounded-lg border border-[var(--line)] px-2.5 py-1.5 text-[11px] text-[color:var(--muted)] transition-colors hover:text-white"
+                  className="rounded-lg border border-[var(--line)] px-2.5 py-1.5 text-[11px] text-[color:var(--muted)] transition-colors hover:text-white [@media(hover:none)]:min-h-10 [@media(hover:none)]:text-[12px]"
                 >
                   Sell {pair.symbol}
                 </button>
@@ -136,7 +136,7 @@ export default function ChartOverlay({ onAsk }: { onAsk?: (prompt: string) => vo
                 {!tokenHome(pair.symbol) && (
                   <button
                     onClick={() => act(`DCA $10 into ${pair.symbol} weekly`)}
-                    className="rounded-lg border border-[var(--line)] px-2.5 py-1.5 text-[11px] text-[color:var(--muted)] transition-colors hover:text-white"
+                    className="rounded-lg border border-[var(--line)] px-2.5 py-1.5 text-[11px] text-[color:var(--muted)] transition-colors hover:text-white [@media(hover:none)]:min-h-10 [@media(hover:none)]:text-[12px]"
                   >
                     DCA weekly
                   </button>
