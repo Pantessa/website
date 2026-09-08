@@ -5682,7 +5682,7 @@ async function main() {
       JSON.stringify(rf1).slice(0, 300),
     )
     const rfEth = robinhoodFundingFromCrossChain('swap 0.01 ETH from base to robinhood')
-    check('rh funding redirect: an ETH-sized ask → dollar chips "using eth", every resume compiles', !!rfEth && 'clarify' in rfEth && rfEth.clarify.options.filter((o) => !/never mind/i.test(o.resume)).every((o) => /using eth$/.test(o.resume) && compiles(o.resume) === 'sign:native-lifi-fund,wait:wait'))
+    check('rh funding redirect: an ETH-sized ask → dollar chips "using eth", every resume compiles, the copy says the canonical bridge is Ethereum-only and what lands', !!rfEth && 'clarify' in rfEth && /only runs from Ethereum/.test(rfEth.reply) && /USDG/.test(rfEth.reply) && rfEth.clarify.options.filter((o) => !/never mind/i.test(o.resume)).every((o) => /using eth$/.test(o.resume) && compiles(o.resume) === 'sign:native-lifi-fund,wait:wait'))
     const rfBuy = robinhoodFundingFromCrossChain('swap 20 USDC from base to AAPL on robinhood')
     check('rh funding redirect: "… to AAPL on robinhood" hands over ONE fund-then-buy chip that compiles fund → wait → buy', !!rfBuy && 'clarify' in rfBuy && compiles(rfBuy.clarify.options[0].resume) === 'sign:native-lifi-fund,wait:wait,sign:native-lifi-swap')
     check('rh funding redirect: the canonical ETH-from-Ethereum bridge stays with the bridge layer (no job, no redirect)', robinhoodFundingFromCrossChain('Bridge 0.01 ETH from Ethereum to Robinhood Chain') === null && compileJobAskFull('Bridge 0.01 ETH from Ethereum to Robinhood Chain') === null)

@@ -149,7 +149,7 @@ export function robinhoodFundingFromCrossChain(segment: string): { ask: string }
     // The plan is dollar-sized (LiFi legs are quoted in USD) — ask for the
     // dollar figure instead of pricing ETH here.
     return {
-      reply: `Robinhood Chain is funded by a LiFi leg from ${origin.word}, sized in dollars — pick how much of your ${origin.word} ETH to move (it lands as USDG, Robinhood Chain's dollar).`,
+      reply: `The canonical Robinhood Chain bridge only runs from Ethereum — from ${origin.word} the money moves by a LiFi leg sized in dollars, landing as USDG (Robinhood Chain's dollar) with a little ETH for gas when the wallet there needs it. Pick how much of your ${origin.word} ETH to move.`,
       clarify: { question: `How much to move from ${origin.word}?`, options: [...chipsFor('using eth', [10, 20, 50]), { label: 'Not now', resume: 'Never mind — leave my funds where they are.' }] },
     }
   }
