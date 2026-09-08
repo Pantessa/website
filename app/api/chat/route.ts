@@ -11,6 +11,10 @@ import {
   derivePayment,
   finalizePaymentHeader,
   fetchWithPaymentHeader,
+  isX402Refusal,
+  paidAmountUsd,
+  preparedAmountUsd,
+  type PaymentBounds,
   type PreparedPayment,
   type SigningRequest,
 } from '@/lib/x402'
@@ -2161,7 +2165,7 @@ async function prepareVoteTurn(
         arguments: { proposal: resolved.id, from: walletAddress, choiceText },
       },
     })
-    const res = await getPaidFetch()(snapshotSvc.endpoint!, {
+    const res = await getPaidFetch(boundsFor(snapshotSvc))(snapshotSvc.endpoint!, {
       method: 'POST',
       headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream' },
       body,
@@ -2194,7 +2198,9 @@ async function prepareVoteTurn(
 /** Call ONE tool on an MCP agent deterministically (tools/call over the free
  *  MCP transport — no planner, no payment). Throws on transport/tool errors. */
 async function callAgentTool(endpoint: string, tool: string, args: Record<string, unknown>): Promise<unknown> {
-  const res = await getPaidFetch()(endpoint, {
+  // A free agent tool never 402s — declare it free so the day one does, the
+  // house refuses to pay rather than signing whatever it asks.
+  const res = await getPaidFetch({ advertisedUsd: 0, label: 'This free MCP' })(endpoint, {
     method: 'POST',
     headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream' },
     body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: tool, arguments: args } }),
@@ -4772,6 +4778,8 @@ async function planWalletPayments(
       method: 'GET',
       headers: { accept: 'application/json' },
     })
+    const bounded = challenge ? prepareBounded(challenge, walletAddress, boundsFor(ds), notes) : { prepared: null }
+    if ('refused' in bounded) continue
     plan.push({
       id: `data:${ds.slug}`,
       role: 'data',
@@ -4780,7 +4788,7 @@ async function planWalletPayments(
       priceUsd: ds.priceUsd ?? '0.01',
       endpoint: ds.endpoint!,
       url: url.toString(),
-      prepared: challenge ? derivePayment(challenge, walletAddress) : null,
+      prepared: bounded.prepared,
     })
   }
 
@@ -4798,6 +4806,8 @@ async function planWalletPayments(
       headers: reqd.headers,
       body: reqd.body,
     })
+    const bounded = challenge ? prepareBounded(challenge, walletAddress, boundsFor(ds), notes) : { prepared: null }
+    if ('refused' in bounded) continue
     plan.push({
       id: `mcpdata:${ds.slug}`,
       role: 'data',
@@ -4809,7 +4819,7 @@ async function planWalletPayments(
       method: reqd.method,
       body: reqd.body,
       mcp: true,
-      prepared: challenge ? derivePayment(challenge, walletAddress) : null,
+      prepared: bounded.prepared,
     })
   }
 
@@ -4848,6 +4858,8 @@ async function planWalletPayments(
           headers: request.headers,
           body: request.body,
         })
+        const bounded = challenge ? prepareBounded(challenge, walletAddress, boundsForEndpoint(ep, [...dataServers, ...mcpDataServers, ...listedOnly]), notes) : { prepared: null }
+        if ('refused' in bounded) continue
         smartServed.add(ep.serverSlug)
         plan.push({
           id: `smart:${ep.id}`,
@@ -4859,7 +4871,7 @@ async function planWalletPayments(
           url: request.url,
           method: request.method,
           body: request.body,
-          prepared: challenge ? derivePayment(challenge, walletAddress) : null,
+          prepared: bounded.prepared,
         })
       }
     } catch (err) {
@@ -4895,6 +4907,12 @@ async function planWalletPayments(
         headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream' },
         body: infProtocol === 'http' ? inferenceBody('http', infTool, 'probe') : dummyMcpBody(infTool),
       })
+  const infBounded = infChallenge ? prepareBounded(infChallenge, walletAddress, boundsFor(inference), notes) : { prepared: null }
+  if ('refused' in infBounded) {
+    // The engine itself over-asked — there is no answer to write without it,
+    // and the wallet is never asked to sign a challenge outside the bounds.
+    return NextResponse.json({ reply: `🚫 ${infBounded.refused}`, blocked: true, notes })
+  }
   plan.push({
     id: `inference:${inference.slug}`,
     role: 'inference',
@@ -4904,10 +4922,12 @@ async function planWalletPayments(
     endpoint: inference.endpoint!,
     tool: infTool,
     protocol: infProtocol,
-    prepared: infChallenge ? derivePayment(infChallenge, walletAddress) : null,
+    prepared: infBounded.prepared,
   })
 
   // Signing requests the browser needs (one per call that requires payment).
+  // `amountUsd` is what the SIGNATURE authorizes (the bounded challenge
+  // amount) — the confirm card renders it, never the listing alone.
   const payments = plan
     .filter((c) => c.prepared)
     .map((c) => ({
@@ -4915,6 +4935,8 @@ async function planWalletPayments(
       name: c.name,
       host: c.host,
       priceUsd: c.priceUsd,
+      amountUsd: c.prepared!.amountUsd,
+      payTo: c.prepared!.payTo,
       signing: c.prepared!.signing as SigningRequest,
     }))
 
@@ -4981,7 +5003,9 @@ async function executeWithSignatures(
       grantId: grant.id, orgId: grant.orgId ?? undefined,
       host: c.host,
       serviceName: c.name,
-      amountUsd: ok ? Number(c.priceUsd) || 0 : 0,
+      // The amount the user's SIGNATURE authorized (the bounded challenge),
+      // read from the signed value — never the directory listing.
+      amountUsd: ok ? (preparedAmountUsd(c.prepared) ?? Number(c.priceUsd) ?? 0) : 0,
       ok,
       txHash,
       note: note ?? (ok ? 'settled' : 'call failed'),
@@ -5169,17 +5193,19 @@ async function runWithBurner(
     }
 
     try {
-      const { json, txHash } = await paidGet(ds.endpoint!, ds.queryParam ?? 'q', message)
+      const { json, txHash, paidUsd } = await paidGet(ds.endpoint!, ds.queryParam ?? 'q', message, boundsFor(ds))
       carriedEntities = extractEntities(json, carriedEntities)
       contextBlocks.push(`### ${ds.name}\n${compactForSynthesis(json, 3500)}`)
       receipts.push({ name: ds.name, endpoint: host, priceUsd: ds.priceUsd ?? '0.01', txHash, ok: true })
       if (grant) {
-        await recordLedger({ grantId: grant.id, orgId: grant.orgId ?? undefined, host, serviceName: ds.name, amountUsd: price, ok: true, txHash, note: 'settled' })
-        spentToday += price
-        spentTotal += price
+        const settled = paidUsd ?? price
+        await recordLedger({ grantId: grant.id, orgId: grant.orgId ?? undefined, host, serviceName: ds.name, amountUsd: settled, ok: true, txHash, note: 'settled' })
+        spentToday += settled
+        spentTotal += settled
       }
     } catch (err) {
       const note = err instanceof Error ? err.message : 'call failed'
+      if (isX402Refusal(err)) notes.push(note)
       balanceFailures.push({ name: ds.name, note })
       receipts.push({ name: ds.name, endpoint: host, priceUsd: ds.priceUsd ?? '0.01', ok: false, note })
     }
@@ -5202,10 +5228,11 @@ async function runWithBurner(
 
     try {
       const reqd = mcpDataRequest(ds)
-      const res = await getPaidFetch()(reqd.url, { method: reqd.method, headers: reqd.headers, body: reqd.body })
+      const res = await getPaidFetch(boundsFor(ds))(reqd.url, { method: reqd.method, headers: reqd.headers, body: reqd.body })
       if (!res.ok) throw new Error(await failureReason(res))
       const data = parseMcpDataResult(res.headers.get('content-type') ?? '', await res.text())
       const txHash = decodeSettlement(res)?.transaction
+      const paidUsd = paidAmountUsd(res)
       // prepare_vote returns a sign_vote payload — surface it as a button rather
       // than feeding the raw typed data to the model.
       const vote = voteRequestFromToolResult(data)
@@ -5221,12 +5248,14 @@ async function runWithBurner(
       }
       receipts.push({ name: ds.name, endpoint: host, priceUsd: ds.priceUsd ?? '0.01', txHash, ok: true })
       if (grant) {
-        await recordLedger({ grantId: grant.id, orgId: grant.orgId ?? undefined, host, serviceName: ds.name, amountUsd: price, ok: true, txHash, note: 'settled' })
-        spentToday += price
-        spentTotal += price
+        const settled = paidUsd ?? price
+        await recordLedger({ grantId: grant.id, orgId: grant.orgId ?? undefined, host, serviceName: ds.name, amountUsd: settled, ok: true, txHash, note: 'settled' })
+        spentToday += settled
+        spentTotal += settled
       }
     } catch (err) {
       const note = err instanceof Error ? err.message : 'call failed'
+      if (isX402Refusal(err)) notes.push(note)
       balanceFailures.push({ name: ds.name, note })
       receipts.push({ name: ds.name, endpoint: host, priceUsd: ds.priceUsd ?? '0.01', ok: false, note })
     }
@@ -5282,7 +5311,7 @@ async function runWithBurner(
             }
           }
           try {
-            const { json, txHash: dataTx } = await paidCall(request)
+            const { json, txHash: dataTx, paidUsd } = await paidCall(request, boundsForEndpoint(ep, [...dataServers, ...mcpDataServers, ...listedOnly]))
             carriedEntities = extractEntities(json, carriedEntities)
             // Display layer: a portfolio-shaped return renders as a rich card
             // next to the synthesized text (latest read wins — freshest).
@@ -5294,9 +5323,10 @@ async function runWithBurner(
             trace({ type: 'receipt', receipt: { name: ep.serverName, endpoint: host, priceUsd: ep.priceUsd, txHash: dataTx, ok: true } })
             smartServed.add(ep.serverSlug)
             if (grant) {
-              await recordLedger({ grantId: grant.id, orgId: grant.orgId ?? undefined, host, serviceName: ep.serverName, amountUsd: price, ok: true, txHash: dataTx, note: 'settled' })
-              spentToday += price
-              spentTotal += price
+              const settled = paidUsd ?? price
+              await recordLedger({ grantId: grant.id, orgId: grant.orgId ?? undefined, host, serviceName: ep.serverName, amountUsd: settled, ok: true, txHash: dataTx, note: 'settled' })
+              spentToday += settled
+              spentTotal += settled
             }
             // Transaction layer: a planned tool that returned a SIGNABLE action
             // (an ExecutionPlan / send_transaction / order) short-circuits the
@@ -5390,12 +5420,13 @@ async function runWithBurner(
   const capabilities = capabilitiesBlock([inference, ...dataServers, ...mcpDataServers, ...listedOnly], smart)
   const prompt = buildPrompt(message, contextBlocks, history, workingContext, userAddress ?? owner ?? undefined, capabilities)
   trace({ type: 'status', label: `writing the answer — ${inference.name}` })
-  const { text, txHash } = await callInference(inference, prompt)
+  const { text, txHash, paidUsd: infPaid } = await callInference(inference, prompt)
   receipts.push({ name: inference.name, endpoint: infHost, priceUsd: inference.priceUsd ?? '0.01', txHash, ok: true })
   trace({ type: 'receipt', receipt: { name: inference.name, endpoint: infHost, priceUsd: inference.priceUsd ?? '0.01', txHash, ok: true } })
   if (grant) {
-    await recordLedger({ grantId: grant.id, orgId: grant.orgId ?? undefined, host: infHost, serviceName: inference.name, amountUsd: infPrice, ok: true, txHash, note: 'settled' })
-    spentToday += infPrice
+    const settled = infPaid ?? infPrice
+    await recordLedger({ grantId: grant.id, orgId: grant.orgId ?? undefined, host: infHost, serviceName: inference.name, amountUsd: settled, ok: true, txHash, note: 'settled' })
+    spentToday += settled
   }
 
   let reply = text + infoFooter(listedOnly.filter((s) => !smartServed.has(s.slug)), notes)
@@ -5419,12 +5450,54 @@ async function runWithBurner(
   })
 }
 
-async function paidGet(endpoint: string, queryParam: string, value: string) {
+// ── x402 payment bounds (SECURITY-AUDIT-2026-09-08 §E1) ──────────────────
+// Every paid fetch declares what the directory LISTED for the call; lib/x402
+// refuses any 402 challenge above it (+ tolerance, + the absolute ceiling),
+// pins the asset to USDC and the payee to the recorded receiver, and the
+// house's daily ceiling is reserved before a signature exists. The ledger
+// records the CHALLENGE amount the signature authorized, never the listing.
+
+/** Bounds for a directory row: its listed price (the same `?? '0.01'`
+ *  fallback the receipts/ledger use) + the receiver on record. */
+function boundsFor(s: { name: string; priceUsd?: string | null; receiver?: string | null }, fallbackUsd = '0.01'): PaymentBounds {
+  const listed = Number(s.priceUsd ?? fallbackUsd)
+  return { advertisedUsd: Number.isFinite(listed) && listed > 0 ? listed : 0, receiver: s.receiver ?? null, label: s.name }
+}
+
+/** Bounds for a planner-picked endpoint: the endpoint's own listed price;
+ *  the receiver comes from its server row when that row is in the set. */
+function boundsForEndpoint(ep: { serverName: string; serverSlug: string; priceUsd: string }, servers: McpServer[]): PaymentBounds {
+  const row = servers.find((s) => s.slug === ep.serverSlug)
+  return boundsFor({ name: ep.serverName, priceUsd: ep.priceUsd, receiver: row?.receiver ?? null })
+}
+
+/**
+ * Wallet mode: derive the signing request under the bounds. A refusal is a
+ * NOTE the user reads (the diagnostics footer) and the call is dropped from
+ * the plan — the wallet is never asked to sign it.
+ */
+function prepareBounded(
+  challenge: NonNullable<Awaited<ReturnType<typeof getChallenge>>>,
+  walletAddress: string,
+  bounds: PaymentBounds,
+  notes: string[],
+): { prepared: PreparedPayment } | { refused: string } {
+  try {
+    return { prepared: derivePayment(challenge, walletAddress, bounds) }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'payment challenge could not be bounded'
+    const refused = isX402Refusal(err) ? msg : `${bounds.label ?? 'A service'} raised a payment challenge Pantessa couldn't verify (${truncate(msg, 120)}) — skipped; nothing was signed.`
+    notes.push(refused)
+    return { refused }
+  }
+}
+
+async function paidGet(endpoint: string, queryParam: string, value: string, bounds: PaymentBounds) {
   const url = new URL(endpoint)
   url.searchParams.set(queryParam, value)
-  const res = await getPaidFetch()(url.toString(), { method: 'GET', headers: { accept: 'application/json' } })
+  const res = await getPaidFetch(bounds)(url.toString(), { method: 'GET', headers: { accept: 'application/json' } })
   if (!res.ok) throw new Error(await failureReason(res))
-  return { json: await res.json(), txHash: decodeSettlement(res)?.transaction }
+  return { json: await res.json(), txHash: decodeSettlement(res)?.transaction, paidUsd: paidAmountUsd(res) }
 }
 
 /** Pay + execute a planner-built request (GET with query or POST with body). */
@@ -5434,8 +5507,8 @@ async function paidGet(endpoint: string, queryParam: string, value: string) {
 const DATA_CALL_TIMEOUT_MS = 12_000
 const INFERENCE_TIMEOUT_MS = 30_000
 
-async function paidCall(request: { url: string; method: string; headers: Record<string, string>; body?: string; mcp?: boolean }) {
-  const res = await getPaidFetch()(request.url, {
+async function paidCall(request: { url: string; method: string; headers: Record<string, string>; body?: string; mcp?: boolean }, bounds: PaymentBounds) {
+  const res = await getPaidFetch(bounds)(request.url, {
     method: request.method,
     headers: request.headers,
     signal: AbortSignal.timeout(DATA_CALL_TIMEOUT_MS),
@@ -5445,9 +5518,9 @@ async function paidCall(request: { url: string; method: string; headers: Record<
   // MCP tools/call (our free MCPs): unwrap the JSON-RPC / SSE envelope. These
   // endpoints never 402, so the paid fetch passes through without payment.
   if (request.mcp) {
-    return { json: parseMcpDataResult(res.headers.get('content-type') ?? '', await res.text()), txHash: decodeSettlement(res)?.transaction }
+    return { json: parseMcpDataResult(res.headers.get('content-type') ?? '', await res.text()), txHash: decodeSettlement(res)?.transaction, paidUsd: paidAmountUsd(res) }
   }
-  return { json: await res.json(), txHash: decodeSettlement(res)?.transaction }
+  return { json: await res.json(), txHash: decodeSettlement(res)?.transaction, paidUsd: paidAmountUsd(res) }
 }
 
 // ── Auto-Router (streaming) ─────────────────────────────────────────────────
@@ -5555,7 +5628,7 @@ export function streamAutoRouter(
               const receipt: Receipt = { name: inference.name, endpoint: infHost, priceUsd: String(infPrice), txHash: r.txHash, ok: true }
               govReceipts.push(receipt)
               send({ type: 'receipt', receipt })
-              if (grant) await recordLedger({ grantId: grant.id, orgId: grant.orgId ?? undefined, apiKeyId, host: infHost, serviceName: inference.name, amountUsd: infPrice, ok: true, txHash: r.txHash, note: 'settled (governance summary)' })
+              if (grant) await recordLedger({ grantId: grant.id, orgId: grant.orgId ?? undefined, apiKeyId, host: infHost, serviceName: inference.name, amountUsd: r.paidUsd ?? infPrice, ok: true, txHash: r.txHash, note: 'settled (governance summary)' })
               return r.text?.trim() || null
             } catch {
               send({ type: 'note', level: 'warn', label: 'Summary inference failed — showing the raw data.' })
@@ -5676,9 +5749,10 @@ export function streamAutoRouter(
           send({ type: 'note', level: 'warn', label: `Planner fell back to ${inf.name} (${why}) — routing quality degraded.` })
           const r = await callInference(inf, prompt)
           if (grant && !walletAddress) {
-            await recordLedger({ grantId: grant.id, orgId: grant.orgId ?? undefined, apiKeyId, host: infHost, serviceName: inference.name, amountUsd: infPrice, ok: true, txHash: r.txHash, note: 'settled (routing)' })
-            spentToday += infPrice
-            spentTotal += infPrice
+            const settled = r.paidUsd ?? infPrice
+            await recordLedger({ grantId: grant.id, orgId: grant.orgId ?? undefined, apiKeyId, host: infHost, serviceName: inference.name, amountUsd: settled, ok: true, txHash: r.txHash, note: 'settled (routing)' })
+            spentToday += settled
+            spentTotal += settled
           }
           return r
         }
@@ -5714,15 +5788,16 @@ export function streamAutoRouter(
           send({ type: 'pay', service: pick.serverName, host, priceUsd: pick.priceUsd })
           const payStart = Date.now()
           try {
-            const { json, txHash } = await paidCall(pick.request)
+            const { json, txHash, paidUsd } = await paidCall(pick.request, boundsFor({ name: pick.serverName, priceUsd: pick.priceUsd }))
             const latencyMs = Date.now() - payStart
             const r: Receipt = { name: pick.serverName, endpoint: host, priceUsd: pick.priceUsd, txHash, ok: true }
             receipts.push(r)
             send({ type: 'receipt', receipt: r })
             if (grant) {
-              await recordLedger({ grantId: grant.id, orgId: grant.orgId ?? undefined, apiKeyId, host, serviceName: pick.serverName, amountUsd: price, ok: true, txHash, note: 'settled', latencyMs })
-              spentToday += price
-              spentTotal += price
+              const settled = paidUsd ?? price
+              await recordLedger({ grantId: grant.id, orgId: grant.orgId ?? undefined, apiKeyId, host, serviceName: pick.serverName, amountUsd: settled, ok: true, txHash, note: 'settled', latencyMs })
+              spentToday += settled
+              spentTotal += settled
             }
             // Cache a successful read — but NEVER a signable action (votes/txns
             // are time-sensitive + per-user) and never a non-GET.
@@ -5786,6 +5861,9 @@ export function streamAutoRouter(
             return finish()
           }
           const wPlan: PlannedCall[] = []
+          // Bound-refusal notes (lib/x402) — merged into the plan's notes so
+          // the user reads WHY a picked service was dropped before signing.
+          const wNotes: string[] = []
           let plannedUsd = 0
           const planGate = async (name: string, h: string, price: number): Promise<string | null> => {
             if (!policy || !grant) return null
@@ -5807,7 +5885,14 @@ export function streamAutoRouter(
               continue
             }
             const challenge = await getChallenge(pick.request.url, { method: pick.request.method, headers: pick.request.headers, body: pick.request.body })
-            wPlan.push({ id: `smart:${pick.endpointId}`, role: 'data', name: pick.serverName, host, priceUsd: pick.priceUsd, endpoint: pick.endpointUrl, url: pick.request.url, method: pick.request.method, body: pick.request.body, mcp: pick.request.mcp, prepared: challenge ? derivePayment(challenge, walletAddress) : null })
+            const bounded = challenge ? prepareBounded(challenge, walletAddress, boundsFor({ name: pick.serverName, priceUsd: pick.priceUsd }), wNotes) : { prepared: null }
+            if ('refused' in bounded) {
+              const r: Receipt = { name: pick.serverName, endpoint: host, priceUsd: pick.priceUsd, ok: false, note: bounded.refused }
+              receipts.push(r)
+              send({ type: 'receipt', receipt: r })
+              continue
+            }
+            wPlan.push({ id: `smart:${pick.endpointId}`, role: 'data', name: pick.serverName, host, priceUsd: pick.priceUsd, endpoint: pick.endpointUrl, url: pick.request.url, method: pick.request.method, body: pick.request.body, mcp: pick.request.mcp, prepared: bounded.prepared })
           }
           const infProtocol = inferenceProtocolOf(inference)
           const infTool = inference.tool ?? (infProtocol === 'http' ? 'openai/gpt-4o-mini' : 'ask_claude')
@@ -5816,14 +5901,16 @@ export function streamAutoRouter(
             headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream' },
             body: infProtocol === 'http' ? inferenceBody('http', infTool, 'probe') : dummyMcpBody(infTool),
           })
-          wPlan.push({ id: `inference:${inference.slug}`, role: 'inference', name: inference.name, host: infHost, priceUsd: inference.priceUsd ?? '0.01', endpoint: inference.endpoint!, tool: infTool, protocol: infProtocol, prepared: infChallenge ? derivePayment(infChallenge, walletAddress) : null })
+          const infBounded = infChallenge ? prepareBounded(infChallenge, walletAddress, boundsFor(inference), wNotes) : { prepared: null }
+          if ('refused' in infBounded) throw new Error(infBounded.refused)
+          wPlan.push({ id: `inference:${inference.slug}`, role: 'inference', name: inference.name, host: infHost, priceUsd: inference.priceUsd ?? '0.01', endpoint: inference.endpoint!, tool: infTool, protocol: infProtocol, prepared: infBounded.prepared })
           const payments = wPlan
             .filter((c) => c.prepared)
-            .map((c) => ({ id: c.id, name: c.name, host: c.host, priceUsd: c.priceUsd, signing: c.prepared!.signing as SigningRequest }))
+            .map((c) => ({ id: c.id, name: c.name, host: c.host, priceUsd: c.priceUsd, amountUsd: c.prepared!.amountUsd, payTo: c.prepared!.payTo, signing: c.prepared!.signing as SigningRequest }))
           // Carry the turnId so the wallet's execute phase persists its
           // settlements under THIS turn → they show in the live feed, grouped
           // with the plan trace.
-          send({ type: 'plan', plan: wPlan, payments, listedOnly: [], notes: decision.notes, turnId })
+          send({ type: 'plan', plan: wPlan, payments, listedOnly: [], notes: [...decision.notes, ...wNotes], turnId })
           recordTurn({ payer: 'your wallet', shortlisted: shortlistedOf(decision), picks: picksOf(decision), intent: intentOf(decision) })
           return finish()
         }
@@ -5884,13 +5971,13 @@ export function streamAutoRouter(
         const synthStart = Date.now()
         // Same user-address precedence as the planner's $USER_ADDRESS (line
         // ~1659): the request's wallet, else the Bearer key's owner scope.
-        const { text, txHash } = await callInference(inference, buildPrompt(message, decision.context, history, undefined, walletAddress ?? ownerOverride))
+        const { text, txHash, paidUsd: synthPaid } = await callInference(inference, buildPrompt(message, decision.context, history, undefined, walletAddress ?? ownerOverride))
         const synthLatencyMs = Date.now() - synthStart
         const r: Receipt = { name: inference.name, endpoint: infHost, priceUsd: inference.priceUsd ?? '0.01', txHash, ok: true }
         receipts.push(r)
         send({ type: 'receipt', receipt: r })
         if (grant) {
-          await recordLedger({ grantId: grant.id, orgId: grant.orgId ?? undefined, apiKeyId, host: infHost, serviceName: inference.name, amountUsd: infPrice, ok: true, txHash, note: 'settled', latencyMs: synthLatencyMs })
+          await recordLedger({ grantId: grant.id, orgId: grant.orgId ?? undefined, apiKeyId, host: infHost, serviceName: inference.name, amountUsd: synthPaid ?? infPrice, ok: true, txHash, note: 'settled', latencyMs: synthLatencyMs })
         }
 
         // Value proof (B15): what smart routing saved this turn vs naive routing.
@@ -6042,7 +6129,7 @@ function isHouseInference(s: Pick<McpServer, 'slug'>): boolean {
 }
 
 async function callInference(
-  inference: Pick<McpServer, 'endpoint' | 'tool' | 'protocol'> & { slug?: string },
+  inference: Pick<McpServer, 'endpoint' | 'tool' | 'protocol'> & { slug?: string; name?: string; priceUsd?: string | null; receiver?: string | null },
   prompt: string,
 ) {
   // House synthesizer: direct Anthropic on the planner key — no x402, no USDC.
@@ -6053,7 +6140,7 @@ async function callInference(
   }
   const protocol = inferenceProtocolOf(inference)
   const tool = inference.tool ?? (protocol === 'http' ? 'openai/gpt-4o-mini' : 'ask_claude')
-  const res = await getPaidFetch()(inference.endpoint!, {
+  const res = await getPaidFetch(boundsFor({ name: inference.name ?? 'This engine', priceUsd: inference.priceUsd, receiver: inference.receiver }))(inference.endpoint!, {
     method: 'POST',
     headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream' },
     body: inferenceBody(protocol, tool, capPrompt(protocol, prompt)),
@@ -6061,7 +6148,7 @@ async function callInference(
   })
   if (!res.ok) throw new Error(await failureReason(res))
   const text = parseInferenceText(protocol, res.headers.get('content-type') ?? '', await res.text())
-  return { text, txHash: decodeSettlement(res)?.transaction }
+  return { text, txHash: decodeSettlement(res)?.transaction, paidUsd: paidAmountUsd(res) }
 }
 
 // ── shared MCP parsing ─────────────────────────────────────────────────────────

@@ -30,6 +30,16 @@ import { createSiweMessage } from 'viem/siwe'
 import { grantTypedData } from '../lib/grant-typed-data'
 import { ROBINHOOD_DESK } from '../lib/live-examples'
 import { grantViolation, type GrantPolicy } from '../lib/spend-grant'
+import {
+  X402_ABSOLUTE_CEILING_USD,
+  X402RefusedError,
+  derivePayment,
+  isX402Refusal,
+  maxAcceptableAtomic,
+  preparedAmountUsd,
+  usdToAtomic,
+} from '../lib/x402'
+import { fitsHouseCeiling, houseCeilingReply, houseDailyCeilingUsd } from '../lib/house-spend'
 import { routerPrompt, parseRouterDecision, selectInferenceProvider, routeMessage, shortlistEndpoints } from '../lib/router'
 import { buildSmartRequest, computeRating, type PlannableEndpoint } from '../lib/endpoint-planner'
 import { buildSignableArtifact, isActionIntent, orderRequestOf, txRequestOf, txChainOf } from '../lib/transaction-layer'
@@ -8481,6 +8491,163 @@ async function main() {
     })
     const mixedBody = (await mixed.json()) as { reply?: string }
     check('working set: a directory slug with a spoofed endpoint resolves to the DIRECTORY row (no drop reply, no evil fetch)', mixed.status === 200 && !/not in the Pantessa directory/.test(mixedBody.reply ?? ''))
+  }
+
+  // ── x402 payment bounds (lib/x402 + lib/house-spend; SECURITY-AUDIT §E1) ──
+  // A 402 challenge is seller-authored content. Before this fence the payer
+  // signed its amount/asset/payTo verbatim — the house burner on every
+  // auto-paid call, the USER's wallet in wallet mode (card said $0.01, bytes
+  // said whatever). Now: listed price + tolerance, absolute ceiling, asset
+  // pinned to USDC, payee pinned to the recorded receiver, house daily
+  // ceiling reserved before the signature exists, ledger = the CHALLENGE
+  // amount. Pinned as what the USER SEES: the receipt note, the diagnostics
+  // footer, the confirm card's amount — not just the pure function.
+  console.log('— x402 payment bounds')
+  {
+    const USDC_BASE_ADDR = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913'
+    const mkChallenge = (over: Partial<{ amount: string; asset: string; network: string; payTo: string; extra: Record<string, string> }> = {}, v: 1 | 2 = 2) => {
+      const entry = { scheme: 'exact', network: over.network ?? 'eip155:8453', asset: over.asset ?? USDC_BASE_ADDR, payTo: over.payTo ?? owner.address, maxTimeoutSeconds: 60, extra: over.extra }
+      return v === 2
+        ? { x402Version: 2, accepts: [{ ...entry, amount: over.amount ?? '10000' }], resource: { url: 'http://mock.test/q' } }
+        : { x402Version: 1, accepts: [{ ...entry, network: 'base', maxAmountRequired: over.amount ?? '10000' }] }
+    }
+    const refusal = (fn: () => unknown): X402RefusedError | null => {
+      try { fn(); return null } catch (e) { return isX402Refusal(e) ? (e as X402RefusedError) : null }
+    }
+    check('x402 bounds: max acceptable = listed + 25% + $0.001, capped at the $2 ceiling', maxAcceptableAtomic(0.01) === BigInt(13500) && maxAcceptableAtomic(5) === usdToAtomic(X402_ABSOLUTE_CEILING_USD) && X402_ABSOLUTE_CEILING_USD === 2)
+    const over = refusal(() => derivePayment(mkChallenge({ amount: '5000000' }), owner.address, { advertisedUsd: 0.01, label: 'Mock Paid Data' }))
+    check('x402 bounds: a $5.00 challenge on a $0.01 listing is REFUSED by name (amount), nothing derived', over?.code === 'amount' && over.askedUsd === 5 && /asked for \$5\.00 per call but is listed at \$0\.01/.test(over.message) && /nothing was signed/i.test(over.message))
+    const ceiling = refusal(() => derivePayment(mkChallenge({ amount: '12000000' }), owner.address, { advertisedUsd: 10, label: 'Pricey' }))
+    check('x402 bounds: a $12 challenge is refused by the absolute ceiling even when listed at $10', ceiling?.code === 'ceiling' && /\$2\.00 per-call ceiling/.test(ceiling.message))
+    const asset = refusal(() => derivePayment(mkChallenge({ asset: '0x4200000000000000000000000000000000000006' }), owner.address, { advertisedUsd: 0.01, label: 'Weth Seller' }))
+    check('x402 bounds: an asset that is not the chain USDC is REFUSED (asset pinned)', asset?.code === 'asset' && /isn't USDC/.test(asset.message))
+    const network = refusal(() => derivePayment(mkChallenge({ network: 'eip155:1' }), owner.address, { advertisedUsd: 0.01, label: 'Mainnet Seller' }))
+    check('x402 bounds: a chain without a pinned USDC is REFUSED (network)', network?.code === 'network')
+    const payee = refusal(() => derivePayment(mkChallenge({ payTo: mallory.address }), owner.address, { advertisedUsd: 0.01, receiver: owner.address.toLowerCase(), label: 'Claimed MCP' }))
+    check('x402 bounds: a payee that differs from the recorded receiver is REFUSED', payee?.code === 'receiver' && payee.message.includes(mallory.address))
+    const free = refusal(() => derivePayment(mkChallenge({ amount: '5000' }), owner.address, { advertisedUsd: 0, label: 'Free MCP' }))
+    check('x402 bounds: a FREE listing that suddenly charges half a cent is REFUSED ("listed as free")', free?.code === 'amount' && /listed as free/.test(free.message))
+    const unbounded = refusal(() => derivePayment(mkChallenge(), owner.address, null as unknown as { advertisedUsd: number }))
+    check('x402 bounds: no bounds at all fails CLOSED (unbounded)', unbounded?.code === 'unbounded')
+    const fair = derivePayment(mkChallenge({ extra: { name: 'Evil Domain', version: '9' } }), owner.address, { advertisedUsd: 0.01, receiver: owner.address.toLowerCase(), label: 'Mock Paid Data' })
+    check(
+      'x402 bounds: a fair challenge derives — amountUsd is the CHALLENGE amount, payee checksummed, domain pinned to USDC (the challenge’s extra cannot steer it)',
+      fair.amountUsd === 0.01 && fair.payTo === owner.address && fair.signing.message.value === '10000' &&
+        fair.signing.domain.verifyingContract === USDC_BASE_ADDR && fair.signing.domain.name === 'USD Coin' && fair.signing.domain.version === '2' &&
+        preparedAmountUsd(fair) === 0.01 && fair.headerName === 'PAYMENT-SIGNATURE',
+    )
+    const withinTol = derivePayment(mkChallenge({ amount: '12500' }), owner.address, { advertisedUsd: 0.01, label: 'Rounding Gateway' })
+    check('x402 bounds: a challenge inside the rounding tolerance (listed $0.01, asked $0.0125) still derives, honestly priced', withinTol.amountUsd === 0.0125)
+    const v1 = derivePayment(mkChallenge({}, 1), owner.address, { advertisedUsd: 0.01, label: 'V1 Gateway' })
+    check('x402 bounds: v1 challenges (maxAmountRequired, X-PAYMENT) go through the same bounds', v1.headerName === 'X-PAYMENT' && v1.amountUsd === 0.01)
+    check('house ceiling: pure fit decision + the refusal names the ceiling', fitsHouseCeiling(9.98, 0.02, 10) && !fitsHouseCeiling(9.99, 0.02, 10) && houseCeilingReply(10).includes('$10.00') && houseDailyCeilingUsd() >= 0)
+
+    // ── Live: a local x402 seller, driven through the chat route. Direct
+    // (loopback) traffic keeps an off-directory row in the working set (the
+    // harness contract in lib/active-servers), so the burner lane's paidGet
+    // reaches the mock. No money moves: the fair challenge's authorization
+    // pays a throwaway harness address and is never broadcast.
+    const pkForBurner = await (async () => {
+      try {
+        const fsX = await import('node:fs')
+        return fsX.readFileSync('.env.local', 'utf8').match(/^PRIVATE_KEY=(.*)$/m)?.[1]?.trim().replace(/^"|"$/g, '') ?? null
+      } catch {
+        return null
+      }
+    })()
+    if (!pkForBurner) {
+      check('x402 bounds live: skipped — no PRIVATE_KEY in .env.local (the burner lane cannot sign)', true)
+    } else {
+      const http = await import('node:http')
+      let askAtomic = '5000000'
+      const seen: { paid: boolean; value?: string; to?: string }[] = []
+      const mock = http.createServer((req, res) => {
+        const payHeader = req.headers['payment-signature'] ?? req.headers['x-payment']
+        if (payHeader) {
+          try {
+            const decoded = JSON.parse(Buffer.from(String(payHeader), 'base64').toString('utf8')) as { payload?: { authorization?: { value?: string; to?: string } } }
+            seen.push({ paid: true, value: decoded.payload?.authorization?.value, to: decoded.payload?.authorization?.to })
+          } catch {
+            seen.push({ paid: true })
+          }
+          res.writeHead(200, {
+            'content-type': 'application/json',
+            'payment-response': Buffer.from(JSON.stringify({ success: true, transaction: '0xmockx402settlement', network: 'eip155:8453' })).toString('base64'),
+          })
+          res.end(JSON.stringify({ answer: 'the mock data says 42', ok: true }))
+          return
+        }
+        seen.push({ paid: false })
+        res.writeHead(402, { 'content-type': 'application/json' })
+        res.end(JSON.stringify({ x402Version: 2, accepts: [{ scheme: 'exact', network: 'eip155:8453', amount: askAtomic, asset: USDC_BASE_ADDR, payTo: owner.address, maxTimeoutSeconds: 60 }], resource: { url: 'http://127.0.0.1/q' } }))
+      })
+      await new Promise<void>((r) => mock.listen(0, '127.0.0.1', () => r()))
+      const mockPort = (mock.address() as { port: number }).port
+      const mockRow = { slug: 'mock-paid-data', name: 'Mock Paid Data', kind: 'data', callable: true, endpoint: `http://127.0.0.1:${mockPort}/q`, protocol: 'http', queryParam: 'q', priceUsd: '0.01', gated: true }
+      const H = { 'content-type': 'application/json', 'x-yf-no-ask-log': '1' }
+      try {
+        // Burner lane, over-priced: the house must refuse BEFORE signing.
+        const overTurn = (await (await fetch(`${BASE}/api/chat`, { method: 'POST', headers: H, body: JSON.stringify({ message: 'what does the mock data say', activeServers: [mockRow], history: [] }) })).json()) as { reply?: string; receipts?: { name: string; ok: boolean; note?: string }[]; payer?: string }
+        const overReceipt = (overTurn.receipts ?? []).find((r) => r.name === 'Mock Paid Data')
+        check(
+          'x402 bounds live (house wallet): a $5.00 challenge on a $0.01 listing → the receipt says so, nothing signed, mock never saw a payment header',
+          overReceipt?.ok === false && /asked for \$5\.00 per call but is listed at \$0\.01/.test(overReceipt.note ?? '') && seen.every((v) => !v.paid) && overTurn.payer === 'the house wallet',
+          JSON.stringify(overTurn.receipts).slice(0, 300),
+        )
+        check('x402 bounds live (house wallet): the refusal is in the reply the user reads (diagnostics footer)', typeof overTurn.reply === 'string' && overTurn.reply.includes('listed at $0.01') && overTurn.reply.includes('nothing was signed'))
+        // Burner lane, fair-priced: the payer signs EXACTLY the challenge amount to the challenge payee.
+        askAtomic = '10000'
+        seen.length = 0
+        const fairTurn = (await (await fetch(`${BASE}/api/chat`, { method: 'POST', headers: H, body: JSON.stringify({ message: 'what does the mock data say', activeServers: [mockRow], history: [] }) })).json()) as { reply?: string; receipts?: { name: string; ok: boolean; txHash?: string; note?: string }[] }
+        const fairReceipt = (fairTurn.receipts ?? []).find((r) => r.name === 'Mock Paid Data')
+        const paidReq = seen.find((v) => v.paid)
+        check(
+          'x402 bounds live (house wallet): a fair $0.01 challenge is paid — signed value 10000 atomic to the challenge payee, settlement receipted',
+          fairReceipt?.ok === true && fairReceipt.txHash === '0xmockx402settlement' && paidReq?.value === '10000' && paidReq.to?.toLowerCase() === owner.address.toLowerCase(),
+          JSON.stringify({ receipt: fairReceipt, paidReq }).slice(0, 300),
+        )
+        // House daily ceiling: fill today's row to the ceiling on the store the
+        // server uses, run the SAME fair turn, expect the ceiling refusal — then
+        // put the row back exactly as it was.
+        const capMicro = BigInt(Math.ceil(houseDailyCeilingUsd() * 1_000_000))
+        const before = await prisma.$queryRaw<{ spent_micro: bigint }[]>`SELECT spent_micro FROM house_spend_days WHERE day = (now() AT TIME ZONE 'utc')::date`
+        const priorMicro = before[0]?.spent_micro ?? null
+        await prisma.$executeRaw`INSERT INTO house_spend_days (day, spent_micro) VALUES ((now() AT TIME ZONE 'utc')::date, ${capMicro}) ON CONFLICT (day) DO UPDATE SET spent_micro = ${capMicro}`
+        try {
+          seen.length = 0
+          const cappedTurn = (await (await fetch(`${BASE}/api/chat`, { method: 'POST', headers: H, body: JSON.stringify({ message: 'what does the mock data say', activeServers: [mockRow], history: [] }) })).json()) as { reply?: string; receipts?: { name: string; ok: boolean; note?: string }[] }
+          const cappedReceipt = (cappedTurn.receipts ?? []).find((r) => r.name === 'Mock Paid Data')
+          check(
+            'house ceiling live: with today’s house spend at the ceiling, a fair $0.01 call is refused by name and the mock sees no payment',
+            cappedReceipt?.ok === false && /daily paid-services ceiling/.test(cappedReceipt.note ?? '') && seen.every((v) => !v.paid) && (cappedTurn.reply ?? '').includes('daily paid-services ceiling'),
+            JSON.stringify(cappedTurn.receipts).slice(0, 300),
+          )
+        } finally {
+          if (priorMicro === null) await prisma.$executeRaw`DELETE FROM house_spend_days WHERE day = (now() AT TIME ZONE 'utc')::date`
+          else await prisma.$executeRaw`UPDATE house_spend_days SET spent_micro = ${priorMicro} WHERE day = (now() AT TIME ZONE 'utc')::date`
+        }
+        // Wallet lane (the USER signs): the plan phase must carry the CHALLENGE
+        // amount + payee on the confirm card, and drop an over-priced call with
+        // a note the user reads — the wallet is never asked to sign it.
+        askAtomic = '10000'
+        const walletFair = (await (await fetch(`${BASE}/api/chat`, { method: 'POST', headers: { ...H, cookie: mallorySession }, body: JSON.stringify({ message: 'what does the mock data say', walletAddress: mallory.address, activeServers: [mockRow], history: [] }) })).json()) as { phase?: string; payments?: { id: string; name: string; priceUsd: string; amountUsd?: number; payTo?: string; signing?: { message?: { value?: string; to?: string } } }[]; notes?: string[]; reply?: string }
+        const wp = (walletFair.payments ?? []).find((p) => p.name === 'Mock Paid Data')
+        check(
+          'x402 bounds live (wallet mode): the confirm card carries the CHALLENGE amount + payee, and the signing request matches them',
+          walletFair.phase === 'awaiting-signatures' && wp?.amountUsd === 0.01 && wp.payTo === owner.address && wp.priceUsd === '0.01' && wp.signing?.message?.value === '10000' && wp.signing.message.to === owner.address,
+          JSON.stringify({ phase: walletFair.phase, wp, reply: walletFair.reply }).slice(0, 300),
+        )
+        askAtomic = '5000000'
+        const walletOver = (await (await fetch(`${BASE}/api/chat`, { method: 'POST', headers: { ...H, cookie: mallorySession }, body: JSON.stringify({ message: 'what does the mock data say', walletAddress: mallory.address, activeServers: [mockRow], history: [] }) })).json()) as { phase?: string; payments?: { name: string }[]; notes?: string[] }
+        check(
+          'x402 bounds live (wallet mode): a $5.00 challenge on a $0.01 listing is dropped from the plan with a note the user reads — no signing request for it',
+          walletOver.phase === 'awaiting-signatures' && !(walletOver.payments ?? []).some((p) => p.name === 'Mock Paid Data') && (walletOver.notes ?? []).some((n) => /asked for \$5\.00 per call but is listed at \$0\.01/.test(n)),
+          JSON.stringify({ phase: walletOver.phase, payments: walletOver.payments, notes: walletOver.notes }).slice(0, 300),
+        )
+      } finally {
+        await new Promise<void>((r) => mock.close(() => r()))
+      }
+    }
   }
 
   // ── Launch token (link an on-chain launch to the directory) ───────────────

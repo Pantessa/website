@@ -83,7 +83,11 @@ interface PaymentToSign {
   id: string
   name: string
   host: string
+  /** Listed price. */
   priceUsd: string
+  /** What the signature authorizes (lib/x402-bounded challenge amount). */
+  amountUsd?: number
+  payTo?: string
   signing: SigningRequest
 }
 
@@ -1144,7 +1148,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
     let i = 0
     for (const p of data.payments) {
       i += 1
-      setStatus(`Sign payment ${i}/${data.payments.length} in your wallet — ${p.name} ($${p.priceUsd})`)
+      setStatus(`Sign payment ${i}/${data.payments.length} in your wallet — ${p.name} ($${typeof p.amountUsd === 'number' ? p.amountUsd.toFixed(p.amountUsd > 0 && p.amountUsd < 0.01 ? 4 : 2) : p.priceUsd})`)
       // The EIP-3009 domain carries the payment chain — MetaMask refuses
       // typed data whose domain.chainId isn't the wallet's ACTIVE chain (the
       // 2026-08-17 HL finding, same class), so align the wallet first.
