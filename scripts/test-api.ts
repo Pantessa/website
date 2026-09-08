@@ -39,7 +39,7 @@ import { pairStockToken, stockChipLabel } from '../lib/stock-pairing'
 import { chartPairFor, changePct24h, aggregateCandles, type Candle } from '../lib/charts'
 import { pureChecks, policyCheck, orderValueUsd, buildReport } from '../lib/cow-guardrails'
 import { policyCheckInflow, recipientCheck, validityCheck, MAX_VALID_SEC } from '../lib/tx-guardrails'
-import { guardPlannerArtifact, PERMIT2_ADDRESS } from '../lib/planner-artifact-guard'
+import { FIRST_PARTY_MCP_SOURCE, guardPlannerArtifact, isFirstPartyMcp, PERMIT2_ADDRESS } from '../lib/planner-artifact-guard'
 import { LIMIT_EXAMPLES, parseSwapIntent, swapClarify } from '../lib/swap-intent'
 import { activeLinkCapFor, composeMcps, linkEyebrow, linkLockup, linkLockupWord } from '../lib/intent-links'
 import { DEFAULT_TAB, parseTabParam, tabUrl } from '../lib/app-tab-url'
@@ -8740,6 +8740,10 @@ async function main() {
       message: { from: '0x0', space: 'test.eth', timestamp: 1, proposal: '0x' + 'a'.repeat(64), choice: 1, reason: '', app: '', metadata: '' },
     },
   }
+  const voteResultForOwner = {
+    ...voteResult,
+    typedData: { ...voteResult.typedData, message: { ...voteResult.typedData.message, from: owner.address } },
+  }
   const voteArt = buildSignableArtifact(voteResult)
   check('tx layer: sign_vote → eip712-vote artifact', voteArt?.kind === 'eip712-vote' && voteArt.vote.proposal.title === 'Test Proposal')
   const txArt = buildSignableArtifact({ action: 'send_transaction', label: 'swap', summary: 'Swap 1 ETH→USDC', tx: { to: '0xabc', data: '0xdead', value: '1000000000000000000', chainId: 8453 } })
@@ -9140,11 +9144,16 @@ async function main() {
   check('audit: validityCheck passes a sane window', validityCheck(nowSec + 600, nowSec).ok)
 
   // Planner-artifact guard — the generic MCP passthrough (buildSignableArtifact)
-  // used to surface tool-returned calldata VERBATIM. Every drain shape refuses.
+  // used to surface tool-returned calldata VERBATIM. Every drain shape refuses,
+  // and (2026-09-08) only a first-party source may produce a signable at all.
+  const mkOrderForTrust = (protocol: string, typedData: unknown) =>
+    buildSignableArtifact({ action: 'sign_order', protocol, typedData, summary: 'o' })!
   const mkTx = (tx: Record<string, unknown>) =>
     buildSignableArtifact({ action: 'send_transaction', label: 'swap', summary: 's', tx })!
   const auditMe = owner.address
-  const pctx = { from: auditMe }
+  // First-party context: the shape rules below are defense in depth BEHIND the
+  // trust gate, so they must be exercised with a source the gate admits.
+  const pctx = { from: auditMe, source: FIRST_PARTY_MCP_SOURCE }
   const thirdPartyTransfer = mkTx({
     to: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
     data: encodeFunctionData({ abi: erc20Abi, functionName: 'transfer', args: [mallory.address as `0x${string}`, BigInt(5_000_000)] }),
@@ -9216,9 +9225,89 @@ async function main() {
     ],
   })!
   check('planner guard: one drain-shaped step poisons the whole chain', poisonedChain.kind === 'evm-tx-chain' && !guardPlannerArtifact(poisonedChain, pctx).ok)
+
+  // ── Trust gate: WHO wrote the calldata is part of the verdict ─────────────
+  // The shape rules cannot separate a hostile venue from a novel legitimate
+  // one — `approve(X, n)` + `X.call()` is byte-identical to an honest
+  // approve-then-swap. Provenance can. Only first-party (fleet) services may
+  // produce a signable artifact through the generic planner path.
+  const USDC_BASE = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913'
+  const boundedToMallory = {
+    to: USDC_BASE,
+    data: encodeFunctionData({ abi: erc20Abi, functionName: 'approve', args: [mallory.address as `0x${string}`, BigInt(500_000_000)] }),
+    value: '0',
+    chainId: 8453,
+  }
+  // The exact two-step drain the shape rules let through before this gate:
+  // a BOUNDED approve to an attacker, paired with a call to that same
+  // attacker — structurally indistinguishable from approve-then-swap.
+  const twoStepDrain = buildSignableArtifact({
+    summary: 'approve + swap',
+    steps: [
+      { action: 'send_transaction', label: 'approve', summary: 'a', tx: boundedToMallory },
+      { action: 'send_transaction', label: 'swap', summary: 'b', tx: { to: mallory.address, data: '0xdeadbeef', value: '0', chainId: 8453 } },
+    ],
+  })!
+  check(
+    'planner guard: the bounded-approve + call-the-spender drain still passes the SHAPE rules (why the trust gate exists)',
+    twoStepDrain.kind === 'evm-tx-chain' && guardPlannerArtifact(twoStepDrain, pctx).ok,
+  )
+  for (const src of ['agentic.market', 'custom', '', 'Yeetful', 'yeetful-ish']) {
+    check(
+      `planner guard: source "${src}" cannot produce a signable — REFUSED`,
+      !guardPlannerArtifact(twoStepDrain, { from: auditMe, source: src }).ok,
+    )
+  }
+  check('planner guard: MISSING source fails closed (unknown provenance = third party)', !guardPlannerArtifact(twoStepDrain, { from: auditMe }).ok)
+  check('planner guard: null source fails closed', !guardPlannerArtifact(twoStepDrain, { from: auditMe, source: null }).ok)
+  check(
+    'planner guard: the trust refusal names the native layer, never leaks calldata',
+    (() => {
+      const r = guardPlannerArtifact(twoStepDrain, { from: auditMe, source: 'agentic.market' }).reasons.join(' ')
+      return r.includes('directory service') && r.includes('native layer') && !r.includes('0xdeadbeef') && !r.includes(mallory.address)
+    })(),
+  )
+  // The gate applies to EVERY artifact kind, not just evm-tx.
+  check(
+    'planner guard: third-party CoW order refused even when the shape is perfect',
+    !guardPlannerArtifact(mkOrderForTrust('cow', { domain: { verifyingContract: GPV2_SETTLEMENT }, message: { receiver: auditMe } }), { from: auditMe, source: 'agentic.market' }).ok,
+  )
+  check(
+    'planner guard: first-party keeps the same perfect CoW order signable',
+    guardPlannerArtifact(mkOrderForTrust('cow', { domain: { verifyingContract: GPV2_SETTLEMENT }, message: { receiver: auditMe } }), pctx).ok,
+  )
+  check('planner guard: isFirstPartyMcp is exact-match only', isFirstPartyMcp(FIRST_PARTY_MCP_SOURCE) && !isFirstPartyMcp('YEETFUL') && !isFirstPartyMcp(undefined))
+
+  // ── Vote envelope: "no economic outflow" only holds if it IS a vote ───────
+  // buildVoteRequest reads primaryType from the payload and the parser passes
+  // typedData through verbatim, so the guard pins the envelope itself.
+  const mkVote = (td: Record<string, unknown>) =>
+    buildSignableArtifact({
+      action: 'sign_vote',
+      summary: 'v',
+      proposal: { id: '0x' + 'a'.repeat(64), title: 'P', type: 'single-choice', choices: ['For'], space: 'test.eth' },
+      choice: 1,
+      typedData: {
+        domain: { name: 'snapshot', version: '0.1.4' },
+        types: { Vote: [{ name: 'choice', type: 'uint32' }] },
+        message: { from: auditMe, space: 'test.eth', timestamp: 1, proposal: '0x' + 'a'.repeat(64), choice: 1, reason: '', app: '', metadata: '' },
+        ...td,
+      },
+    })!
+  check('planner guard: an honest Snapshot vote passes', guardPlannerArtifact(mkVote({}), pctx).ok)
+  check(
+    'planner guard: a Permit struct smuggled beside Vote REFUSES',
+    !guardPlannerArtifact(mkVote({ types: { Vote: [{ name: 'choice', type: 'uint32' }], Permit: [{ name: 'spender', type: 'address' }] } }), pctx).ok,
+  )
+  check('planner guard: primaryType ≠ Vote REFUSES', !guardPlannerArtifact(mkVote({ primaryType: 'Permit' }), pctx).ok)
+  check(
+    'planner guard: an on-chain domain on a "vote" REFUSES (Snapshot signs off-chain)',
+    !guardPlannerArtifact(mkVote({ domain: { name: 'snapshot', version: '0.1.4', chainId: 1, verifyingContract: PERMIT2_ADDRESS } }), pctx).ok,
+  )
+  check('planner guard: a vote cast as someone else REFUSES', !guardPlannerArtifact(mkVote({ message: { from: mallory.address, choice: 1 } }), pctx).ok)
   // Generic EIP-712 orders: only a CoW order verifying against the pinned
   // settlement contract and paying the signer survives the passthrough.
-  const mkOrder = (protocol: string, typedData: unknown) => buildSignableArtifact({ action: 'sign_order', protocol, typedData, summary: 'o' })!
+  const mkOrder = mkOrderForTrust
   check('planner guard: generic non-CoW order REFUSES', !guardPlannerArtifact(mkOrder('mystery', { domain: {}, message: {} }), pctx).ok)
   check(
     'planner guard: CoW order against a fake settlement contract REFUSES',
@@ -9232,9 +9321,15 @@ async function main() {
     'planner guard: pinned CoW order paying the signer passes',
     guardPlannerArtifact(mkOrder('cow', { domain: { verifyingContract: GPV2_SETTLEMENT }, message: { receiver: auditMe } }), pctx).ok,
   )
+  // Votes carry no economic outflow — but the exemption is now on the ENVELOPE,
+  // not on the label. This fixture casts `from: '0x0'`, i.e. a vote in someone
+  // else's name, which the guard refuses; the same payload cast as the signer
+  // (voteArtForOwner) passes. Both directions pinned so neither can drift.
+  const voteArtForOwner = buildSignableArtifact(voteResultForOwner)
   check(
-    'planner guard: votes pass (no economic outflow)',
-    voteArt !== null && guardPlannerArtifact(voteArt, pctx).ok,
+    'planner guard: a vote cast in another name REFUSES, the same vote cast as the signer passes',
+    voteArt !== null && !guardPlannerArtifact(voteArt, pctx).ok &&
+      voteArtForOwner !== null && guardPlannerArtifact(voteArtForOwner, { from: owner.address, source: FIRST_PARTY_MCP_SOURCE }).ok,
   )
 
   // /api/cow/quote refusal shape: a blocked build must withhold the RAW order
@@ -10385,11 +10480,23 @@ async function main() {
   const artDec = await routeMessage({
     message: 'vote For on proposal X',
     catalog: [claudeSrv],
-    endpoints: [{ id: 'ep-vote', serverSlug: 'snap', serverName: 'Snapshot', method: 'POST', url: 'https://snap.test/vote', description: 'prepare a vote', priceUsd: '0.01', parameters: [{ group: 'body', name: 'choice', required: true }] }],
+    endpoints: [{ id: 'ep-vote', serverSlug: 'snap', serverName: 'Snapshot', serverSource: FIRST_PARTY_MCP_SOURCE, method: 'POST', url: 'https://snap.test/vote', description: 'prepare a vote', priceUsd: '0.01', parameters: [{ group: 'body', name: 'choice', required: true }] }],
+    userAddress: owner.address,
     runInference: async () => ({ text: JSON.stringify({ intent: 'vote', needs: [], picks: [{ endpointId: 'ep-vote', params: { choice: 1 }, reason: 'prepare the vote', score: 0.9 }] }) }),
-    executeCall: async () => ({ data: voteResult }),
+    executeCall: async () => ({ data: voteResultForOwner }),
   })
   check('router loop: a tool-returned vote becomes decision.artifact', artDec.artifact?.kind === 'eip712-vote')
+  // Same loop, same shape, a DIRECTORY service: the trust gate refuses before
+  // the vote envelope is even inspected — no artifact reaches the caller.
+  const artDecUntrusted = await routeMessage({
+    message: 'vote For on proposal X',
+    catalog: [claudeSrv],
+    endpoints: [{ id: 'ep-vote', serverSlug: 'snap', serverName: 'Snapshot', serverSource: 'agentic.market', method: 'POST', url: 'https://snap.test/vote', description: 'prepare a vote', priceUsd: '0.01', parameters: [{ group: 'body', name: 'choice', required: true }] }],
+    userAddress: owner.address,
+    runInference: async () => ({ text: JSON.stringify({ intent: 'vote', needs: [], picks: [{ endpointId: 'ep-vote', params: { choice: 1 }, reason: 'prepare the vote', score: 0.9 }] }) }),
+    executeCall: async () => ({ data: voteResultForOwner }),
+  })
+  check('router loop: a DIRECTORY service’s vote never becomes an artifact', artDecUntrusted.artifact === undefined || artDecUntrusted.artifact === null)
 
   // B10 — retrieve→plan shortlist: narrow the catalog by relevance so the model
   // reliably picks. (Pure ranking, no DB/spend.)
