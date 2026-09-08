@@ -2621,7 +2621,16 @@ async function main() {
         JSON.stringify(devLane),
       )
       const spoofCap = await fetch(`${BASE}/i/${s2Slug}`)
-      check('receipt money: a stamped-internal dev sign still counts toward the cap the way it always did (server-truth signs) — the capped page is now 404', spoofCap.status === 404)
+      const spoofCapHtml = await spoofCap.text()
+      // Capped = retired. Pre-#727 the page 404s; with LINKS' retired page it
+      // renders 200 wearing `data-link-state="capped"` and never re-shows the
+      // ask — both are "the link is closed"; a LIVE page (the ask on screen)
+      // is the only failure.
+      check(
+        'receipt money: a stamped-internal dev sign still counts toward the cap the way it always did (server-truth signs) — the capped page is closed (404, or the retired page marked capped)',
+        spoofCap.status === 404 || (spoofCap.status === 200 && spoofCapHtml.includes('data-link-state="capped"') && !spoofCapHtml.includes('data-link-state="live"') && !spoofCapHtml.includes('Connect &amp; build')),
+        JSON.stringify({ status: spoofCap.status, state: spoofCapHtml.match(/data-link-state="(\w+)"/)?.[1] ?? null }),
+      )
 
       // 4. THE POSITIVE BRANCH: a REAL receipt counts. The foreign tx's own
       // sender is the "signer", and the artifact this server "built" for it
