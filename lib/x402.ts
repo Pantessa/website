@@ -153,18 +153,21 @@ export function checkChallengeBounds(
   if (bounds.receiver && bounds.receiver.toLowerCase() !== payTo.toLowerCase()) {
     throw new X402RefusedError("receiver", `${who}'s challenge names a different payee (${payTo}) than the receiver on record — refused; nothing was signed.`);
   }
-  if (amountAtomic > usdToAtomic(X402_ABSOLUTE_CEILING_USD)) {
-    throw new X402RefusedError(
-      "ceiling",
-      `${who} asked for ${fmtUsd(amountUsd)} per call — above Pantessa's ${fmtUsd(X402_ABSOLUTE_CEILING_USD)} per-call ceiling. Refused; nothing was signed.`,
-      amountUsd,
-    );
-  }
-  if (amountAtomic > maxAcceptableAtomic(bounds.advertisedUsd)) {
+  // Listing first: "asked $5.00, listed $0.01" names the discrepancy the
+  // user should know about; the absolute ceiling is the backstop for a
+  // listing that is itself above it.
+  if (amountAtomic > maxAcceptableAtomic(bounds.advertisedUsd) && amountUsd > bounds.advertisedUsd * (1 + X402_PRICE_TOLERANCE) + X402_PRICE_SLACK_USD) {
     const listed = bounds.advertisedUsd > 0 ? `is listed at ${fmtUsd(bounds.advertisedUsd)}` : "is listed as free";
     throw new X402RefusedError(
       "amount",
       `${who} asked for ${fmtUsd(amountUsd)} per call but ${listed} — refused; nothing was signed. Pantessa pays a listed price (plus a small rounding tolerance), never more.`,
+      amountUsd,
+    );
+  }
+  if (amountAtomic > usdToAtomic(X402_ABSOLUTE_CEILING_USD)) {
+    throw new X402RefusedError(
+      "ceiling",
+      `${who} asked for ${fmtUsd(amountUsd)} per call — above Pantessa's ${fmtUsd(X402_ABSOLUTE_CEILING_USD)} per-call ceiling. Refused; nothing was signed.`,
       amountUsd,
     );
   }

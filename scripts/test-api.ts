@@ -40,6 +40,7 @@ import {
   usdToAtomic,
 } from '../lib/x402'
 import { fitsHouseCeiling, houseCeilingReply, houseDailyCeilingUsd } from '../lib/house-spend'
+import { hasGuardianStep, sessionOwnsWallet } from '../lib/chat-mutation-gate'
 import { routerPrompt, parseRouterDecision, selectInferenceProvider, routeMessage, shortlistEndpoints } from '../lib/router'
 import { buildSmartRequest, computeRating, type PlannableEndpoint } from '../lib/endpoint-planner'
 import { buildSignableArtifact, isActionIntent, orderRequestOf, txRequestOf, txChainOf } from '../lib/transaction-layer'
@@ -8609,22 +8610,42 @@ async function main() {
         // House daily ceiling: fill today's row to the ceiling on the store the
         // server uses, run the SAME fair turn, expect the ceiling refusal — then
         // put the row back exactly as it was.
-        const capMicro = BigInt(Math.ceil(houseDailyCeilingUsd() * 1_000_000))
-        const before = await prisma.$queryRaw<{ spent_micro: bigint }[]>`SELECT spent_micro FROM house_spend_days WHERE day = (now() AT TIME ZONE 'utc')::date`
-        const priorMicro = before[0]?.spent_micro ?? null
-        await prisma.$executeRaw`INSERT INTO house_spend_days (day, spent_micro) VALUES ((now() AT TIME ZONE 'utc')::date, ${capMicro}) ON CONFLICT (day) DO UPDATE SET spent_micro = ${capMicro}`
-        try {
-          seen.length = 0
-          const cappedTurn = (await (await fetch(`${BASE}/api/chat`, { method: 'POST', headers: H, body: JSON.stringify({ message: 'what does the mock data say', activeServers: [mockRow], history: [] }) })).json()) as { reply?: string; receipts?: { name: string; ok: boolean; note?: string }[] }
-          const cappedReceipt = (cappedTurn.receipts ?? []).find((r) => r.name === 'Mock Paid Data')
-          check(
-            'house ceiling live: with today’s house spend at the ceiling, a fair $0.01 call is refused by name and the mock sees no payment',
-            cappedReceipt?.ok === false && /daily paid-services ceiling/.test(cappedReceipt.note ?? '') && seen.every((v) => !v.paid) && (cappedTurn.reply ?? '').includes('daily paid-services ceiling'),
-            JSON.stringify(cappedTurn.receipts).slice(0, 300),
-          )
-        } finally {
-          if (priorMicro === null) await prisma.$executeRaw`DELETE FROM house_spend_days WHERE day = (now() AT TIME ZONE 'utc')::date`
-          else await prisma.$executeRaw`UPDATE house_spend_days SET spent_micro = ${priorMicro} WHERE day = (now() AT TIME ZONE 'utc')::date`
+        // The store the SERVER uses: Prisma reads .env, not .env.local, so the
+        // harness process usually holds no DATABASE_URL — read the server's
+        // own line and open a dedicated client on it (never the shared
+        // `prisma` singleton: a failed engine init there poisons every later
+        // DB check in this run).
+        const dbUrl = await (async () => {
+          try {
+            const fsX = await import('node:fs')
+            return process.env.DATABASE_URL ?? fsX.readFileSync('.env.local', 'utf8').match(/^DATABASE_URL=(.*)$/m)?.[1]?.trim().replace(/^"|"$/g, '') ?? null
+          } catch {
+            return null
+          }
+        })()
+        if (!dbUrl) {
+          check('house ceiling live: skipped — no DATABASE_URL in the harness process or .env.local', true)
+        } else {
+          const { PrismaClient } = await import('@prisma/client')
+          const db = new PrismaClient({ datasources: { db: { url: dbUrl } } })
+          const capMicro = BigInt(Math.ceil(houseDailyCeilingUsd() * 1_000_000))
+          const before = await db.$queryRaw<{ spent_micro: bigint }[]>`SELECT spent_micro FROM house_spend_days WHERE day = (now() AT TIME ZONE 'utc')::date`
+          const priorMicro = before[0]?.spent_micro ?? null
+          await db.$executeRaw`INSERT INTO house_spend_days (day, spent_micro) VALUES ((now() AT TIME ZONE 'utc')::date, ${capMicro}) ON CONFLICT (day) DO UPDATE SET spent_micro = ${capMicro}`
+          try {
+            seen.length = 0
+            const cappedTurn = (await (await fetch(`${BASE}/api/chat`, { method: 'POST', headers: H, body: JSON.stringify({ message: 'what does the mock data say', activeServers: [mockRow], history: [] }) })).json()) as { reply?: string; receipts?: { name: string; ok: boolean; note?: string }[] }
+            const cappedReceipt = (cappedTurn.receipts ?? []).find((r) => r.name === 'Mock Paid Data')
+            check(
+              'house ceiling live: with today’s house spend at the ceiling, a fair $0.01 call is refused by name and the mock sees no payment',
+              cappedReceipt?.ok === false && /daily paid-services ceiling/.test(cappedReceipt.note ?? '') && seen.every((v) => !v.paid) && (cappedTurn.reply ?? '').includes('daily paid-services ceiling'),
+              JSON.stringify(cappedTurn.receipts).slice(0, 300),
+            )
+          } finally {
+            if (priorMicro === null) await db.$executeRaw`DELETE FROM house_spend_days WHERE day = (now() AT TIME ZONE 'utc')::date`
+            else await db.$executeRaw`UPDATE house_spend_days SET spent_micro = ${priorMicro} WHERE day = (now() AT TIME ZONE 'utc')::date`
+            await db.$disconnect().catch(() => {})
+          }
         }
         // Wallet lane (the USER signs): the plan phase must carry the CHALLENGE
         // amount + payee on the confirm card, and drop an over-priced call with
@@ -10909,6 +10930,58 @@ async function main() {
       guardianDoor.door?.mcps === 'hyperliquid-free' && classifyTurn(guardianDoor).kind === null,
       JSON.stringify(guardianDoor.door),
     )
+    // ── Session-gated mutations from /api/chat (lib/chat-mutation-gate;
+    // SECURITY-AUDIT §B2/§E4). `walletAddress` is client-asserted. Builds run
+    // on it alone (the signature is the proof) — but arming a guardian,
+    // pausing/canceling a schedule or a protection, or planting a job that
+    // ends in a guardian arm changes standing state with NO signature. Those
+    // proceed only when the SIWE session OWNS the asserted wallet; otherwise
+    // the user reads a sign-in invitation and nothing changes. Pinned as the
+    // USER sees it: the reply text + `signInGate`, and — the positive control
+    // — the SAME ask signed in as the wallet reaches the real rulebook.
+    {
+      const hlRow = { slug: 'hyperliquid-free' } // resolves from the directory (hlAgentOf needs slug or name)
+      const gateJson = async (message: string, wallet: string, cookie?: string) =>
+        (await (
+          await fetch(`${BASE}/api/chat`, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json', 'x-yf-no-ask-log': '1', ...(cookie ? { cookie } : {}) },
+            body: JSON.stringify({ message, walletAddress: wallet, activeServers: [hlRow], history: [] }),
+          })
+        ).json()) as { reply?: string; signInGate?: { kind?: string; signInLifts?: boolean }; jobId?: string; guardianPolicyId?: string; buildPath?: string }
+      const isGate = (r: { reply?: string; signInGate?: { kind?: string; signInLifts?: boolean } }, kind: string) =>
+        typeof r.reply === 'string' && r.reply.includes('signed in as this wallet') && r.reply.includes('Nothing was changed') && r.signInGate?.kind === kind && r.signInGate.signInLifts === true
+
+      const armUnsigned = await gateJson('protect my ETH long with a 5% stop', mallory.address)
+      check('mutation gate: guardian arm from an UNSIGNED turn → sign-in invitation, never reaches the arming rulebook', isGate(armUnsigned, 'guardian-arm') && !/delegation/i.test(armUnsigned.reply ?? '') && !armUnsigned.guardianPolicyId, JSON.stringify(armUnsigned).slice(0, 240))
+      const armMismatch = await gateJson('protect my ETH long with a 5% stop', mallory.address, session)
+      check('mutation gate: guardian arm signed in as ANOTHER wallet → sign-in invitation (session must OWN the asserted wallet)', isGate(armMismatch, 'guardian-arm'), JSON.stringify(armMismatch).slice(0, 240))
+      const armOwned = await gateJson('protect my ETH long with a 5% stop', mallory.address, mallorySession)
+      check('mutation gate: the SAME arm signed in as the wallet passes the gate and reaches the real rulebook (no delegation → its own refusal)', !armOwned.signInGate && /delegation/i.test(armOwned.reply ?? '') && armOwned.buildPath === 'native-hl-guardian', JSON.stringify(armOwned).slice(0, 240))
+
+      const jobAsk = 'deposit 12 usdc to hyperliquid, then long $12 of eth on hyperliquid, then protect my eth long with a 5% stop'
+      const jobUnsigned = await gateJson(jobAsk, mallory.address)
+      check('mutation gate: a compound job ending in a guardian arm, unsigned → sign-in invitation, NO job planted', isGate(jobUnsigned, 'guardian-job-step') && !jobUnsigned.jobId && jobUnsigned.buildPath === 'native-job', JSON.stringify(jobUnsigned).slice(0, 240))
+
+      const dcaPauseUnsigned = await gateJson('pause my ETH dca', mallory.address)
+      check('mutation gate: DCA pause unsigned → sign-in invitation', isGate(dcaPauseUnsigned, 'dca-manage') && dcaPauseUnsigned.buildPath === 'native-dca', JSON.stringify(dcaPauseUnsigned).slice(0, 240))
+      const dcaPauseOwned = await gateJson('pause my ETH dca', mallory.address, mallorySession)
+      check('mutation gate: DCA pause signed in as the wallet reaches the schedule rulebook', !dcaPauseOwned.signInGate && /No ETH recurring buy on this wallet/.test(dcaPauseOwned.reply ?? ''), JSON.stringify(dcaPauseOwned).slice(0, 240))
+      const dcaListUnsigned = await gateJson('list my dcas', mallory.address)
+      check('mutation gate: listing schedules stays a connect-to-act READ (not gated)', !dcaListUnsigned.signInGate && /No recurring buys yet/.test(dcaListUnsigned.reply ?? ''), JSON.stringify(dcaListUnsigned).slice(0, 240))
+      const autoOffUnsigned = await gateJson('turn off my ETH dca autopilot', mallory.address)
+      check('mutation gate: DCA autopilot OFF unsigned → sign-in invitation', isGate(autoOffUnsigned, 'dca-autopilot') && autoOffUnsigned.buildPath === 'native-dca-auto', JSON.stringify(autoOffUnsigned).slice(0, 240))
+      const autoOffOwned = await gateJson('turn off my ETH dca autopilot', mallory.address, mallorySession)
+      check('mutation gate: DCA autopilot OFF signed in as the wallet reaches the autopilot rulebook', !autoOffOwned.signInGate && /No ETH recurring buy on this wallet/.test(autoOffOwned.reply ?? ''), JSON.stringify(autoOffOwned).slice(0, 240))
+
+      const spotCancelUnsigned = await gateJson('cancel my ETH spot protection', mallory.address)
+      check('mutation gate: spot protection cancel unsigned → sign-in invitation', isGate(spotCancelUnsigned, 'spot-manage') && spotCancelUnsigned.buildPath === 'native-spot-guard', JSON.stringify(spotCancelUnsigned).slice(0, 240))
+      const spotCancelOwned = await gateJson('cancel my ETH spot protection', mallory.address, mallorySession)
+      check('mutation gate: spot protection cancel signed in as the wallet reaches the policy rulebook', !spotCancelOwned.signInGate && /No ETH spot protection on this wallet/.test(spotCancelOwned.reply ?? ''), JSON.stringify(spotCancelOwned).slice(0, 240))
+      check('mutation gate: pure — sessionOwnsWallet is case-insensitive and fails closed on either side missing', sessionOwnsWallet(mallory.address.toLowerCase(), mallory.address) && !sessionOwnsWallet(null, mallory.address) && !sessionOwnsWallet(owner.address, mallory.address) && !sessionOwnsWallet(mallory.address, undefined))
+      check('mutation gate: pure — hasGuardianStep reads the compiled job, not the prose', hasGuardianStep(compileJobAskFull(jobAsk) as { steps: { builder: string }[] }) && !hasGuardianStep(compileJobAskFull('swap 1 USDC from base to arbitrum, then send 1 USDC on arbitrum to 0x2055fa9e99565181a8509b81cbd0aa3d73be8d56') as { steps: { builder: string }[] }))
+    }
+
     const ccDoor = await fetch(`${BASE}/api/chat`, {
       method: 'POST', headers: { 'content-type': 'application/json', 'x-yf-no-ask-log': '1' },
       body: JSON.stringify({ message: 'swap 5 USDC from base to polygon', activeServers: [], walletAddress: '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045' }),

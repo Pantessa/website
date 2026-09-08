@@ -148,6 +148,7 @@ import { resolveProposal } from '@/lib/snapshot-read'
 import { detectGovernanceIntent, runGovernanceTurn } from '@/lib/governance'
 import { sanitizeWorkingContext, contextBlockForPlanner, type WorkingContext, extractEntities, carryContext } from '@/lib/working-context'
 import { getSessionAddress } from '@/lib/auth'
+import { hasGuardianStep, mutationGate, sessionOwnsWallet } from '@/lib/chat-mutation-gate'
 import { bumpAndCheckUnsignedTurn, clientIpFrom, turnLimitReply } from '@/lib/turn-limits'
 import { spendCredits } from '@/lib/billing'
 import { recordEmbedSighting, resolveEmbedKey } from '@/lib/embed-key'
@@ -486,6 +487,13 @@ async function handleChatTurn(req: NextRequest) {
       typeof body.walletAddress === 'string' && isAddress(body.walletAddress)
         ? getAddress(body.walletAddress)
         : undefined
+    // Does the SIWE session OWN the asserted wallet? Builds never need it
+    // (the signature is the proof — rule 6), but the standing-state
+    // mutations below (guardian arm, DCA/spot manage, guardian job steps)
+    // change what happens to a wallet with no signature at all, so they
+    // require it — lib/chat-mutation-gate (SECURITY-AUDIT §B2/§E4).
+    const sessionAddress = await getSessionAddress()
+    const walletProven = sessionOwnsWallet(sessionAddress, walletAddress)
     // The chat chain picker's selection — the chain the user made first-class
     // for this session. Untrusted client value; only registry ids survive.
     const selectedChainId = sanitizeChainId(body.selectedChainId)
@@ -519,7 +527,7 @@ async function handleChatTurn(req: NextRequest) {
     // BEFORE any expensive path runs; the wall is a polite reply whose
     // escape hatch is signing in (rule 6 intact — an invitation, never an
     // auto-fired SIWE). Signed sessions and embed-key turns pass untouched.
-    if (!embedBill && !(await getSessionAddress())) {
+    if (!embedBill && !sessionAddress) {
       const limited = await bumpAndCheckUnsignedTurn(clientIpFrom(req.headers), walletAddress)
       if (limited) {
         return NextResponse.json({
@@ -876,7 +884,7 @@ async function handleChatTurn(req: NextRequest) {
     // SCHEDULE, never a one-shot swap that quietly drops "every week". Each
     // due period compiles a one-step job (native-swap builder — same venue
     // cascade + guardrails as any swap), confirm-mode only.
-    const dcaTurn = await runDcaTurn(message, walletAddress, selectedChainId, nativeTrace, internalRun)
+    const dcaTurn = await runDcaTurn(message, walletAddress, selectedChainId, nativeTrace, internalRun, walletProven)
     if (dcaTurn) return NextResponse.json(dcaTurn)
 
     // Multi-step JOBS — a compound ask ("bridge …, then deposit …, then long
@@ -905,6 +913,15 @@ async function handleChatTurn(req: NextRequest) {
     if (jobAsk) {
       if (!walletAddress) {
         return NextResponse.json({ reply: "🧭 That chains multiple money steps — connect your wallet first and I'll compile it into a job you sign step by step." })
+      }
+      // A guardian arm inside a job is performed SERVER-SIDE by the runner
+      // (no signature) once the earlier steps settle — so the job may only
+      // be planted by a session that owns the wallet (lib/chat-mutation-gate).
+      // Checked before the auto-funded variant too: it compiles the same
+      // steps under a funding prefix.
+      if (hasGuardianStep(jobAsk) && !walletProven) {
+        nativeTrace({ type: 'note', level: 'warn', label: 'jobs layer: the ask ends in a guardian arm and the session does not own the wallet — answering the sign-in gate, nothing compiled' })
+        return NextResponse.json({ ...mutationGate('guardian-job-step'), buildPath: 'native-job' })
       }
       // "You have an intent — we do the rest": when the job LEADS with a
       // Hyperliquid open ("long $12 of HYPE…, then protect it…") and the HL
@@ -1187,11 +1204,12 @@ async function handleChatTurn(req: NextRequest) {
     // BEFORE the HL guardian gate: its grammar refuses perp-worded asks by
     // construction, but the HL parser's loose coin slot would read "spot"
     // as a coin. Arm answers with the one-signature Spend Permission card.
-    const spotTurn = await runSpotGuardTurn(message, walletAddress, nativeTrace)
+    const spotTurn = await runSpotGuardTurn(message, walletAddress, nativeTrace, walletProven)
     if (spotTurn) {
       return NextResponse.json({
         reply: spotTurn.reply,
         ...(spotTurn.spotGuardArm ? { spotGuardArm: spotTurn.spotGuardArm } : {}),
+        ...(spotTurn.signInGate ? { signInGate: spotTurn.signInGate } : {}),
         buildPath: spotTurn.buildPath,
       })
     }
@@ -1216,6 +1234,14 @@ async function handleChatTurn(req: NextRequest) {
       nativeTrace({ type: 'status', label: `guardian layer claimed the turn: ${armAsk.kind} on ${armAsk.coin} (${armAsk.triggerMode} ${armAsk.triggerValue}) — planner bypassed` })
       if (!walletAddress) {
         return NextResponse.json({ reply: '🛡️ Connect your wallet first — the guardian watches YOUR Hyperliquid positions.' })
+      }
+      // Arming is a server-side mutation under the wallet's delegation — the
+      // cron will close the position with the delegated key and no further
+      // signature. Only a session that OWNS the wallet may arm it from chat
+      // (the dashboard twin is SIWE-gated; this surface was not).
+      if (!walletProven) {
+        nativeTrace({ type: 'note', level: 'warn', label: 'guardian layer: arm ask parsed but the session does not own the asserted wallet — answering the sign-in gate, nothing armed' })
+        return NextResponse.json({ ...mutationGate('guardian-arm'), buildPath: 'native-hl-guardian' })
       }
       const armed = await armGuardianPolicy(walletAddress, armAsk, { internal: internalRun })
       if (!armed.ok) {
