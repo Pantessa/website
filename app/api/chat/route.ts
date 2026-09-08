@@ -1811,9 +1811,14 @@ async function handleChatTurn(req: NextRequest) {
     if (transferAsk) {
       if (!walletAddress) {
         nativeTrace({ type: 'note', level: 'info', label: 'transfer ask but no wallet connected — asking to connect before building' })
+        // connectAsk: the runtime re-runs the sentence when the address lands
+        // (lib/wallet-reconnect shouldRerunConnectAsk) — a stranger who typed
+        // a send before connecting used to re-type it. First-party only in
+        // effect: fenceConnectAsk strips it on link/embed origin (§E5).
         return NextResponse.json({
           reply: '💸 Connect your wallet first — a send builds against your live balance, and you sign it yourself.',
           connectWallet: true,
+          connectAsk: message,
         })
       }
       nativeTrace({ type: 'select', service: 'Native transfer layer', endpoint: `send ${transferAsk.amountHuman} ${transferAsk.token.toUpperCase()} → ${transferAsk.to} on ${transferAsk.chainName}`, priceUsd: 0, reason: 'native transfer layer — calldata encoded locally, re-decoded by an independent guard, balance and policy checked' })

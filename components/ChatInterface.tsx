@@ -46,7 +46,8 @@ import { GUEST_TRIAL_LIMIT, bumpGuestTurns, guestTurnsUsed, refundGuestTurn } fr
 import EmptyState from '@/components/chat/EmptyState'
 import CreateAccountButton from '@/components/CreateAccountButton'
 import { cdpEnabled } from '@/lib/cdp-embedded'
-import { CONNECT_ASK_RELEASE_GRACE_MS, connectAskReleased, hasStoredWalletConnection, shouldRerunConnectAsk } from '@/lib/wallet-reconnect'
+import { CONNECT_ASK_RELEASE_GRACE_MS, bootHoldingFor, connectAskReleased, hasStoredWalletConnection, initialHoldElapsed, shouldRerunConnectAsk } from '@/lib/wallet-reconnect'
+import { useHydrated } from '@/lib/use-hydrated'
 import { SLOW_TURN_CAPTION, SLOW_TURN_MS } from '@/lib/turn-status'
 import { SplashDashboard } from '@/components/SplashDashboard'
 import ChatLoader from '@/components/ChatLoader'
@@ -396,14 +397,21 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
   // chips sat behind this loader for 4.4s on a prod build (squad gtm
   // 2026-09-08, measured). wagmi's own store decides (lib/wallet-reconnect);
   // a connector that settles connected anyway still takes over.
-  const [bootHoldElapsed, setBootHoldElapsed] = useState(false)
+  //
+  // Decided synchronously at mount (initialHoldElapsed) so a new visitor never
+  // sees a loader frame between hydration and an effect; and the hold itself
+  // only applies to POST-hydration renders (bootHoldingFor + useHydrated):
+  // wagmi reads 'connecting' on the first client render of every load while
+  // the server rendered 'disconnected', and choosing the loader off that
+  // status made the hydration render differ from the server HTML — React
+  // #418 on every returning /chat visit on prod (squad gtm 2026-09-08, QA).
+  const hydrated = useHydrated()
+  const [bootHoldElapsed, setBootHoldElapsed] = useState(() => initialHoldElapsed(typeof window === 'undefined' ? null : window.localStorage))
   useEffect(() => {
-    if (!hasStoredWalletConnection(typeof window === 'undefined' ? null : window.localStorage)) {
-      setBootHoldElapsed(true)
-      return
-    }
+    if (bootHoldElapsed) return
     const t = setTimeout(() => setBootHoldElapsed(true), 4000)
     return () => clearTimeout(t)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
   // A planned wallet-mode turn awaiting the user's OK before the wallet pops —
   // so they see the real $ amount (not the wallet's raw base-units value) first.
@@ -435,8 +443,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
   // Loader is the DEFAULT until the wallet conclusively settles (see the
   // boot-hold state above) — 'connecting'/'reconnecting' means the splash may
   // be about to take over.
-  const walletSettled = walletStatus === 'connected' || walletStatus === 'disconnected'
-  const bootHolding = !walletSettled && !bootHoldElapsed
+  const bootHolding = bootHoldingFor({ hydrated, walletStatus, holdElapsed: bootHoldElapsed })
   const { signTypedDataAsync } = useSignTypedData()
   const { switchChainAsync } = useSwitchChain()
   // Effective wallet context for /api/chat: an embed-provided address wins,
@@ -1113,11 +1120,17 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
   // connect-wallet reply at the end of the thread re-runs its ask once the
   // address is here (lib/wallet-reconnect decides; once per reply).
   useEffect(() => {
-    // First-party surfaces only: inside the embed the host can inject a
-    // `prompt send:true` ask that lands on the same "connect wallet" reply,
-    // and a third-party-authored ask must never re-fire itself on connect
-    // (SECURITY, until E5's server-side origin fence lands).
-    if (embedded || pendingConnectAsk !== null || !currentChat) return
+    // Every surface, the embed included: the SERVER decides what may re-run.
+    // On link/embed origin a connect-wallet reply for an outbound ask (a send
+    // to an address, an ENS name, a token typed as 0x…, an NFT sale) carries
+    // no `connectAsk` at all (§E5 fenceConnectAsk, one choke point), and a
+    // raw-address token refuses by name there — so a host-injected
+    // `prompt send:true` can only re-fire what it could already have sent to
+    // a connected wallet, and every build still needs that wallet's signature.
+    // Before E5 this was fenced `!embedded`; the embed stranger then met
+    // "connect your wallet" → connected → nothing happened → retyped the ask
+    // (measured: click 3 of 3 was a retype, squad gtm 2026-09-08 round 3).
+    if (pendingConnectAsk !== null || !currentChat) return
     const last = currentChat.messages[currentChat.messages.length - 1] ?? null
     if (!last || connectAskConsumed.current.has(last.id)) return
     const ask = shouldRerunConnectAsk({ last, hasAddress: !!effectiveAddress, loading, now: Date.now() })

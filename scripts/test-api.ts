@@ -95,7 +95,7 @@ import { decideManagerMove, stackingRefusal, undecidedProposalFor } from '../lib
 import { markPeriodKey, parseMarkAsk, reviewFlipDecision, tryoutReportCard, PAPER_LABEL, TRYOUT_BANNED_PHRASES } from '../lib/roster-tryouts'
 import { houseManagerRow, resolveHouseManager, HOUSE_MANAGER_ID } from '../lib/roster-managers'
 import { walletLineup, walletLaneHint, wcConfigured, WC_APP_METADATA , CDP_INIT_PATIENCE_MS, emailLaneHint } from '../lib/wallet-lineup'
-import { hasStoredWalletConnection, shouldRerunConnectAsk, connectAskReleased, CONNECT_ASK_RELEASE_GRACE_MS, CONNECT_ASK_RERUN_WINDOW_MS, WAGMI_STORE_KEY, WAGMI_RECENT_CONNECTOR_KEY } from '../lib/wallet-reconnect'
+import { hasStoredWalletConnection, shouldRerunConnectAsk, connectAskReleased, bootHoldingFor, initialHoldElapsed, CONNECT_ASK_RELEASE_GRACE_MS, CONNECT_ASK_RERUN_WINDOW_MS, WAGMI_STORE_KEY, WAGMI_RECENT_CONNECTOR_KEY } from '../lib/wallet-reconnect'
 import { buildDelivery, mintCallbackSecret, notifyEligible, signWebhook, validateCallbackUrl } from '../lib/broker-webhook'
 import { agentHandleFor } from '../lib/agent-record'
 import {
@@ -2594,6 +2594,21 @@ async function main() {
       'intent links: mint with a valid https redirect stores + echoes it',
       redirectMint.status === 200 && redirected.redirectUrl === 'https://example-host.com/thanks',
     )
+    // ONBOARDING (squad gtm 2026-09-08, round 3): the splash names the return
+    // host BEFORE the signature (an embed-generated link promised its host a
+    // way back; the visitor learned it only from the post-receipt button).
+    {
+      const splash = redirected.slug ? await (await fetch(`${BASE}/i/${redirected.slug}`)).text() : ''
+      check(
+        'onboarding: an /i splash whose link carries a return URL says so before the signature — "Return to <host>" on the server-rendered splash (data-return-host), never only on the receipt',
+        /data-return-host="example-host\.com"/.test(splash) && /Return to (<!-- -->)?example-host\.com/.test(splash) && /brings you back/.test(splash),
+      )
+      const plain = await (await fetch(`${BASE}/i/buy-aapl`)).text()
+      check(
+        'onboarding: a link with no return URL makes no return-host promise on its splash',
+        plain.includes('Connecting runs the scan') && !/data-return-host=/.test(plain),
+      )
+    }
 
     // ── Creator storefronts (/l/<handle>) — opt-in public pages ──────────
     // The privacy contract: a wallet is never the key to a public page;
@@ -2787,6 +2802,36 @@ async function main() {
     check('brand: the creator brand re-themes their /i splash (bg carried)', brandedIPage.includes('--bg:#052b65'))
     const houseIPage = flat(await (await fetch(`${BASE}/i/buy-aapl`)).text())
     check('brand: house links stay pure Pantessa (no brand bg on their /i splash)', !houseIPage.includes('--bg:#'))
+    // ONBOARDING round 3 — runs AFTER the brand pins above: it frees mallory's
+    // cap slot by deleting the redirect link they read.
+    {
+      // A held (transfer-shaped) link: the splash carries the hold line, and
+      // the runtime's held state is a CARD with a way to act (source pin —
+      // the card mounts client-side after connect), not a lone header line.
+      await fetch(`${BASE}/api/intent-links/${redirected.slug}`, { method: 'DELETE', headers: { cookie: mallorySession } })
+      const heldMint = await fetch(`${BASE}/api/intent-links`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', cookie: mallorySession },
+        body: JSON.stringify({ ask: 'Send 1 USDC to vitalik.eth on Base', redirectUrl: 'https://example-host.com/thanks' }),
+      })
+      const held = (await heldMint.json()) as { slug?: string }
+      const heldSplash = held.slug ? await (await fetch(`${BASE}/i/${held.slug}`)).text() : ''
+      const srcFs = await import('node:fs')
+      const runtime = srcFs.readFileSync('components/IntentRuntime.tsx', 'utf8').replace(/\/\*[\s\S]*?\*\//g, '').replace(/\{\/\*[\s\S]*?\*\/\}/g, '')
+      check(
+        'onboarding: a held link\'s splash says the ask will wait for the visitor\'s own send AND names the return host; the runtime renders the hold as a card ("Held for you to send" + a button that focuses the composer + a way out) that clears on the visitor\'s own turn — no amber one-liner in the header',
+        heldMint.status === 200 &&
+          /nothing runs until you/.test(heldSplash) &&
+          /data-return-host="example-host\.com"/.test(heldSplash) &&
+          /data-origin-fence="held"/.test(runtime) &&
+          /Held for you to send/.test(runtime) &&
+          /READ IT IN THE COMPOSER/.test(runtime) &&
+          /NOT MINE — OPEN THE APP/.test(runtime) &&
+          /transferShaped && !heldTurnSeen/.test(runtime) &&
+          !/This ask involves a transfer — review it in the composer and press send yourself/.test(runtime),
+      )
+      if (held.slug) await fetch(`${BASE}/api/intent-links/${held.slug}`, { method: 'DELETE', headers: { cookie: mallorySession } })
+    }
     // ── Colors without a third party (the /dashboard/customize studio) ─────
     // Rule 7 refuses someone else's IDENTITY (logo, name, domain), never a
     // color. So the palette is a first-class control: presets + free hex,
@@ -4391,10 +4436,6 @@ async function main() {
         /setTimeout\(\(\) => setSlowTurn\(true\), SLOW_TURN_MS\)/.test(chat),
     )
     check(
-      'onboarding/security: the connect-ask re-run is first-party only — the embed never re-fires a host-injected ask on connect (until E5\'s server-side fence lands)',
-      /if \(embedded \|\| pendingConnectAsk !== null \|\| !currentChat\) return/.test(chat),
-    )
-    check(
       'onboarding: the root social card tells the links-first story ("You have an intent. We do the rest." + YOUR WALLET SIGNS), never the pre-07-22 "Mega dapps are here" pitch',
       /alt = 'Pantessa — You have an intent\. We do the rest\.'/.test(og) &&
         /You have an intent\./.test(og) && /We do the rest\./.test(og) && /YOUR WALLET SIGNS/.test(og) &&
@@ -4412,6 +4453,76 @@ async function main() {
     check(
       'onboarding: the landing install band names the shipped SDK line (v1.0), never the pre-rename v0.9',
       !/v0\.9/.test(html) && /asm__ver[^<]*<\/span>|v1\.0/.test(html) && /v1\.0/.test(html),
+    )
+  }
+
+  // ── Round 3: the returning visit hydrates clean (React #418 on prod) ──
+  console.log('— onboarding: the boot hold never touches the hydration render; the landing dial rounds its ticks')
+  check(
+    'onboarding: the boot hold is a POST-hydration decision — never held during the hydration render (wagmi reads "connecting" there while the server rendered "disconnected"), held only while wagmi is connecting/reconnecting and the hold has not lapsed, and never once it has',
+    bootHoldingFor({ hydrated: false, walletStatus: 'connecting', holdElapsed: false }) === false &&
+      bootHoldingFor({ hydrated: false, walletStatus: 'reconnecting', holdElapsed: false }) === false &&
+      bootHoldingFor({ hydrated: true, walletStatus: 'connecting', holdElapsed: false }) === true &&
+      bootHoldingFor({ hydrated: true, walletStatus: 'reconnecting', holdElapsed: false }) === true &&
+      bootHoldingFor({ hydrated: true, walletStatus: 'connecting', holdElapsed: true }) === false &&
+      bootHoldingFor({ hydrated: true, walletStatus: 'connected', holdElapsed: false }) === false &&
+      bootHoldingFor({ hydrated: true, walletStatus: 'disconnected', holdElapsed: false }) === false,
+  )
+  check(
+    'onboarding: the hold starts already lapsed for a visitor wagmi has nothing to restore for (no loader frame after hydration), and held for a stored connection; no storage = lapsed',
+    initialHoldElapsed(null) === true &&
+      initialHoldElapsed({ getItem: () => null }) === true &&
+      initialHoldElapsed({ getItem: (k) => (k === WAGMI_STORE_KEY ? JSON.stringify({ state: { current: null, connections: { __type: 'Map', value: [] } } }) : null) }) === true &&
+      initialHoldElapsed({ getItem: (k) => (k === WAGMI_RECENT_CONNECTOR_KEY ? 'io.metamask' : null) }) === false,
+  )
+  {
+    const srcFs = await import('node:fs')
+    const code = (path: string) => srcFs.readFileSync(path, 'utf8').replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')
+    const chat = code('components/ChatInterface.tsx')
+    const link = code('components/IntentRuntime.tsx')
+    check(
+      'onboarding: both wallet surfaces choose their loader through bootHoldingFor + useHydrated (never off wagmi\'s raw status), and seed the hold from initialHoldElapsed at mount — /chat and the /i splash hydrate to the server\'s tree',
+      /const hydrated = useHydrated\(\)/.test(chat) &&
+        /bootHoldingFor\(\{ hydrated, walletStatus, holdElapsed: bootHoldElapsed \}\)/.test(chat) &&
+        /useState\(\(\) => initialHoldElapsed\(/.test(chat) &&
+        !/walletStatus === 'connecting' \|\| walletStatus === 'reconnecting'\) && !bootHoldElapsed/.test(chat) &&
+        /const hydrated = useHydrated\(\)/.test(link) &&
+        /bootHoldingFor\(\{ hydrated, walletStatus, holdElapsed: walletWaitOver \}\)/.test(link) &&
+        /useState\(\(\) => initialHoldElapsed\(/.test(link),
+    )
+    const html = await (await fetch(`${BASE}/`)).text()
+    const ticks = [...html.matchAll(/class="night__tick[^"]*"[^>]*?\sy1="([^"]+)"[^>]*?\sy2="([^"]+)"/g)].flatMap((m) => [m[1], m[2]])
+    check(
+      'onboarding: the landing dial\'s tick coordinates are rounded (≤3 decimals) — Node and the browser disagree on Math.sin/cos in the last bits, and raw floats made every tick a server/client attribute mismatch',
+      ticks.length >= 20 && ticks.every((v) => /^-?\d+(\.\d{1,3})?$/.test(v)),
+    )
+  }
+
+  // ── Round 3: the transfer layer's connect gate joins the re-run belt ──
+  {
+    // A stranger who types a send before connecting used to re-type it after:
+    // the transfer layer's "connect your wallet first" reply carried no
+    // `connectAsk`. First-party it does now; on EMBED / LINK origin the §E5
+    // choke point strips it (the sentence is outbound) and names why — so the
+    // client re-run (now allowed inside the embed too) can only re-fire what
+    // the server let through.
+    const sendAsk = 'send 1 USDC to vitalik.eth on base'
+    const post = async (extra: Record<string, unknown>) =>
+      (await (
+        await fetch(`${BASE}/api/chat`, { method: 'POST', headers: CJ, body: JSON.stringify({ message: sendAsk, activeServers: [], history: [], ...extra }) })
+      ).json()) as { reply?: string; connectWallet?: boolean; connectAsk?: string; connectAskHeld?: string[] }
+    const first = await post({})
+    const inEmbed = await post({ embedOrigin: 'https://host.example' })
+    check(
+      'onboarding: the transfer layer\'s no-wallet reply carries connectAsk first-party (the runtime re-runs the send once the wallet lands) — and on EMBED origin the same reply carries NONE, with the hold reason named (ens-name)',
+      first.connectWallet === true && first.connectAsk === sendAsk && /Connect your wallet first/.test(first.reply ?? '') &&
+        inEmbed.connectWallet === true && inEmbed.connectAsk === undefined && (inEmbed.connectAskHeld ?? []).includes('ens-name'),
+    )
+    const srcFs = await import('node:fs')
+    const chat = srcFs.readFileSync('components/ChatInterface.tsx', 'utf8').replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')
+    check(
+      'onboarding: the connect re-run is no longer fenced off the embed client-side (the server\'s §E5 strip is the fence) — an embed stranger who asked, then connected, gets the build without retyping',
+      /if \(pendingConnectAsk !== null \|\| !currentChat\) return/.test(chat) && !/if \(embedded \|\| pendingConnectAsk !== null/.test(chat),
     )
   }
 

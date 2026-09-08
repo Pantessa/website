@@ -115,3 +115,35 @@ export function connectAskReleased(input: {
   if ((walletStatus === 'connecting' || walletStatus === 'reconnecting') && storedConnection) return false
   return true
 }
+
+// ── The boot hold vs hydration ──────────────────────────────────────────
+// wagmi reports 'connecting' on the very FIRST client render of every page
+// load (connector setup runs before any reconnect), while the server rendered
+// 'disconnected'. Both /chat and /i chose their loader off that status, so
+// the client's hydration render painted a loader where the server had painted
+// the empty state / the door → React #418 ("Hydration failed… this tree will
+// be regenerated on the client") on every RETURNING /chat visit on prod (a
+// first visit escaped it only because the empty working set rendered a third
+// branch on both sides). `hydrated` = the useSyncExternalStore server/client
+// flag (lib/use-hydrated): false during the hydration render, so the two
+// trees match; React re-renders with `true` in the same task, before paint.
+export function bootHoldingFor(input: {
+  /** false during React's hydration render, true after (useHydrated). */
+  hydrated: boolean
+  walletStatus: 'connected' | 'connecting' | 'reconnecting' | 'disconnected'
+  /** The hold has lapsed: nothing was stored to wait for, or the 4s cap hit. */
+  holdElapsed: boolean
+}): boolean {
+  const { hydrated, walletStatus, holdElapsed } = input
+  if (!hydrated || holdElapsed) return false
+  return walletStatus === 'connecting' || walletStatus === 'reconnecting'
+}
+
+/** The hold's INITIAL state, decided synchronously at mount from wagmi's own
+ *  store: a visitor with nothing to restore starts with the hold already
+ *  lapsed (no loader frame between hydration and the effect); a stored
+ *  connection starts held (the 4s cap runs in an effect). Server: nothing to
+ *  read — the value never renders there (bootHoldingFor gates on hydrated). */
+export function initialHoldElapsed(storage: StorageLike | null | undefined): boolean {
+  return !hasStoredWalletConnection(storage)
+}
