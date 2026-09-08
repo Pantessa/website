@@ -11473,8 +11473,15 @@ async function main() {
         const { PrismaClient } = await import('@prisma/client')
         const db = new PrismaClient({ datasources: { db: { url: dbUrlE3 } } })
         try {
-          await db.mcpServer.create({
-            data: { slug, name: 'Mock Fleet Tool', description: 'harness first-party mock', category: 'Data', kind: 'data', priceUsd: '0', networks: [], gated: false, callable: true, endpoint: `http://127.0.0.1:${mockPort}/q`, protocol: 'http', queryParam: 'q', source: 'yeetful' },
+          // Listed-only (callable:false) + a machine-readable endpoint row: the
+          // signable passthrough lives in the ENDPOINT-PLANNER lane (route's
+          // `ep` loop / the router loop), never the plain data lane, which
+          // only ever narrates a tool's JSON as fenced data.
+          const created = await db.mcpServer.create({
+            data: { slug, name: 'Mock Fleet Tool', description: 'harness first-party mock — answers what the mock fleet tool says', category: 'Data', kind: 'data', priceUsd: '0', networks: [], gated: false, callable: false, endpoint: `http://127.0.0.1:${mockPort}/q`, protocol: 'http', queryParam: 'q', source: 'yeetful' },
+          })
+          await db.mcpEndpoint.create({
+            data: { serverId: created.id, method: 'GET', url: `http://127.0.0.1:${mockPort}/q`, description: 'What the mock fleet tool says — answers any question about the mock fleet tool', priceUsd: '0', position: 0, parameters: [{ group: 'query', name: 'q', type: 'string', description: 'the question', required: false }] },
           })
           const turn = (await (await fetch(`${BASE}/api/chat`, { method: 'POST', headers: jh, body: JSON.stringify({ message: 'what does the mock fleet tool say', activeServers: [{ slug }], history: [] }) })).json()) as { reply?: string; txRequest?: { to?: string }; buildPath?: string; builtBy?: string; guardWarnings?: string[] }
           check(
@@ -11483,6 +11490,8 @@ async function main() {
             JSON.stringify(turn).slice(0, 300),
           )
         } finally {
+          const row = await db.mcpServer.findUnique({ where: { slug }, select: { id: true } }).catch(() => null)
+          if (row) await db.mcpEndpoint.deleteMany({ where: { serverId: row.id } }).catch(() => {})
           await db.mcpServer.deleteMany({ where: { slug } }).catch(() => {})
           await db.$disconnect().catch(() => {})
           mock.close()
@@ -11991,11 +12000,15 @@ async function main() {
           jobTokenLooksValid(tok) && !jobTokenLooksValid(tok, now + 8 * 24 * 3600 * 1000) && !jobTokenLooksValid('nope') && jobTokenLooksValid(v1, JOB_TOKEN_V1_SUNSET - 1000) && !jobTokenLooksValid(v1, JOB_TOKEN_V1_SUNSET + 1000),
       )
       const tokenRead = await fetch(`${BASE}/api/jobs/job-token-probe?t=${tok}`)
-      const badTokenRead = await fetch(`${BASE}/api/jobs/job-token-probe?t=${'f'.repeat(64)}`)
+      const badTokenRead = await fetch(`${BASE}/api/jobs/job-token-probe?t=nope`)
+      // §E6: a v2 token verifies only against the job ROW's wallet, so a
+      // well-formed token on a MISSING job reads 404 (the id isn't a secret —
+      // cuids, and the owner path says 404 too); a malformed one stays 401.
+      const shapedWrong = await fetch(`${BASE}/api/jobs/job-token-probe?t=${'f'.repeat(64)}`)
       check(
-        'job token: valid token passes the auth gate (404 on missing job); bad token stays 401',
-        tokenRead.status === 404 && badTokenRead.status === 401,
-        `got ${tokenRead.status}/${badTokenRead.status}`,
+        'job token: valid token passes the auth gate (404 on missing job); malformed token stays 401; a well-formed but unverifiable token on a missing job is 404, never 200',
+        tokenRead.status === 404 && badTokenRead.status === 401 && shapedWrong.status === 404,
+        `got ${tokenRead.status}/${badTokenRead.status}/${shapedWrong.status}`,
       )
     } else {
       console.log('  ⚪ job token: SESSION_SECRET not available to the harness — token checks skipped')
