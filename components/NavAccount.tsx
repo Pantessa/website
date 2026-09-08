@@ -12,6 +12,7 @@ import {
   Wallet,
 } from 'lucide-react'
 import Caret from '@/components/Caret'
+import WalletPanel from '@/components/WalletPanel'
 import { cn } from '@/lib/utils'
 import { useSession } from '@/lib/session'
 
@@ -35,6 +36,10 @@ export default function NavAccount() {
   const pathname = usePathname()
   const { address: sessionAddress, connectAndSignIn, signOut, signingIn } = useSession()
   const [open, setOpen] = useState(false)
+  // "Wallet details" opens OUR panel (balances on every chain, gas, recent
+  // transfers, the ways in) — not RainbowKit's copy/disconnect modal, which
+  // is still reachable from inside the panel as "Wallet settings".
+  const [walletOpen, setWalletOpen] = useState(false)
   const wrapRef = useRef<HTMLDivElement>(null)
 
   const authed = !!sessionAddress
@@ -144,7 +149,7 @@ export default function NavAccount() {
                   className="navacct__item"
                   onClick={() => {
                     closeNow()
-                    openAccountModal()
+                    setWalletOpen(true)
                   }}
                 >
                   <Wallet width={15} height={15} strokeWidth={2.25} />
@@ -170,6 +175,7 @@ export default function NavAccount() {
                 </>
               )}
             </div>
+            {connected && <WalletPanel open={walletOpen} onClose={() => setWalletOpen(false)} onWalletSettings={openAccountModal} />}
           </div>
         )
       }}

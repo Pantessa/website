@@ -12,11 +12,15 @@ import { ConnectButton } from '@rainbow-me/rainbowkit'
 import { LogOut, Wallet, ChevronsUpDown } from 'lucide-react'
 import { useSession } from '@/lib/session'
 import { short } from '@/lib/dashboard-ui'
+import WalletPanel from '@/components/WalletPanel'
 
 export default function DashboardAccount({ address }: { address: string }) {
   const router = useRouter()
   const { signOut } = useSession()
   const [open, setOpen] = useState(false)
+  // Our wallet panel (every chain, gas, recent, ways in); RainbowKit's modal
+  // stays one step inside it as "Wallet settings".
+  const [walletOpen, setWalletOpen] = useState(false)
   const wrap = useRef<HTMLDivElement>(null)
   const closeNow = useCallback(() => setOpen(false), [])
 
@@ -47,7 +51,7 @@ export default function DashboardAccount({ address }: { address: string }) {
                   className="dashacct__item"
                   onClick={() => {
                     closeNow()
-                    openAccountModal()
+                    setWalletOpen(true)
                   }}
                 >
                   <Wallet width={15} height={15} strokeWidth={2.25} />
@@ -80,6 +84,7 @@ export default function DashboardAccount({ address }: { address: string }) {
             <span className="dashacct__addr mono">{short(address)}</span>
             <ChevronsUpDown className="dashacct__chev" width={14} height={14} />
           </button>
+          <WalletPanel open={walletOpen} onClose={() => setWalletOpen(false)} onWalletSettings={openAccountModal} />
         </div>
       )}
     </ConnectButton.Custom>

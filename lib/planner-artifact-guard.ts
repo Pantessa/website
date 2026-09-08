@@ -29,11 +29,52 @@
 //   · generic sign_order for any protocol but CoW; CoW orders must verify
 //     against the pinned GPv2 settlement contract and pay the requesting
 //     wallet (receiver = user or the 0x0 self sentinel)
+//
+//  TRUST GATE (2026-09-08) — the rule the shape rules cannot express.
+//  Every rule above reads CALLDATA, and calldata alone cannot separate a
+//  hostile venue from a novel legitimate one: `approve(X, 500 USDC)` +
+//  `X.someCall()` is byte-for-byte the shape of an honest approve-then-swap
+//  and of a two-step drain. The only thing that distinguishes them is WHO
+//  wrote the bytes. So the source is now part of the verdict: only
+//  FIRST-PARTY MCPs (the Pantessa fleet, `source: 'yeetful'`) may hand a
+//  user something to sign through the generic planner path. Directory
+//  services (`agentic.market`, 75 of 91 prod rows) and user-added `custom`
+//  rows can still read anything and answer anything — they just cannot
+//  produce a signature prompt. Nothing legitimate loses: every venue that
+//  builds transactions today (Uniswap, CoW, Aave, Morpho, Lido, NEAR
+//  Intents, OpenSea, Robinhood, Hyperliquid) is first-party AND has a
+//  native layer that bypasses this path entirely with a stronger,
+//  venue-specific guard. The shape rules still run on first-party
+//  artifacts — defense in depth, not either/or.
 // ─────────────────────────────────────────────────────────────────────────
 
 import { GPV2_SETTLEMENT } from '@/lib/cow'
 import { sanitizeChainId } from '@/lib/chains'
 import type { EvmTxRequest, SignableArtifact } from '@/lib/transaction-layer'
+
+/**
+ * The `McpServer.source` value the Pantessa fleet carries (schema default for
+ * everything else is `'agentic.market'`). This is the ONLY source trusted to
+ * produce a signable artifact through the generic planner path.
+ */
+export const FIRST_PARTY_MCP_SOURCE = 'yeetful'
+
+/**
+ * Fail-closed trust read. `undefined`/`null` (an endpoint whose source we
+ * could not establish) is NOT first-party — an unknown provenance is exactly
+ * the case this gate exists for.
+ */
+export function isFirstPartyMcp(source: string | null | undefined): boolean {
+  return source === FIRST_PARTY_MCP_SOURCE
+}
+
+export interface PlannerArtifactContext {
+  /** The wallet that will sign. Null → every recipient rule fails closed. */
+  from: string | null
+  /** `McpServer.source` of the service that returned the artifact. Omitted →
+   *  treated as third-party and refused (fail closed). */
+  source?: string | null
+}
 
 export interface PlannerArtifactVerdict {
   ok: boolean
@@ -156,16 +197,64 @@ function checkTx(tx: EvmTxRequest, from: string | null, reasons: string[], warni
  * tool result, not a native builder). `from` is the wallet that will sign —
  * pass null when unknown and every recipient-sensitive rule fails closed.
  */
-export function guardPlannerArtifact(art: SignableArtifact, ctx: { from: string | null }): PlannerArtifactVerdict {
+export function guardPlannerArtifact(art: SignableArtifact, ctx: PlannerArtifactContext): PlannerArtifactVerdict {
   const reasons: string[] = []
   const warnings: string[] = []
   const from = ctx.from && ADDR_RE.test(ctx.from) ? ctx.from : null
 
+  // Trust gate first — see the TRUST GATE note in the header. A third-party
+  // service's calldata never reaches a sign button, whatever shape it is, so
+  // there is no point decoding it. First-party artifacts fall through to the
+  // shape rules below.
+  if (!isFirstPartyMcp(ctx.source)) {
+    return {
+      ok: false,
+      reasons: [
+        'This came from a directory service, not one of Pantessa\u2019s own venues. Added services can read anything and answer anything, but only Pantessa\u2019s verified venues build transactions you sign \u2014 a swap, a lend, a send or a bridge asked for in plain words goes through the native layer, which re-derives every address and amount itself.',
+      ],
+      warnings: [],
+    }
+  }
+
   switch (art.kind) {
-    case 'eip712-vote':
-      // Governance votes carry no economic outflow; the vote parser already
-      // shapes the payload and Snapshot validates sig + voting power.
+    case 'eip712-vote': {
+      // A "vote" is the one artifact kind with no economic outflow — but
+      // ONLY if it is really a vote. voteRequestFromToolResult passes
+      // `typedData` through verbatim (it checks that domain/types.Vote/
+      // message exist, nothing more) and buildVoteRequest reads
+      // `primaryType` FROM THE PAYLOAD, so a tool could ship
+      // `types: { Vote: [...], Permit: [...] }` with `primaryType: 'Permit'`
+      // and a verifyingContract domain — a real token permit wearing a
+      // governance label. Pin the envelope to Snapshot's own shape: only a
+      // Vote struct, only the Vote primary type, an off-chain domain (no
+      // verifyingContract / chainId — Snapshot signs `{name, version}`), and
+      // a `from` that is the wallet actually signing.
+      const td = art.vote.typedData as unknown as {
+        domain?: Record<string, unknown>
+        types?: Record<string, unknown>
+        primaryType?: string
+        message?: { from?: string }
+      } | null
+      const typeNames = Object.keys(td?.types ?? {})
+      if (typeNames.length !== 1 || typeNames[0] !== 'Vote') {
+        reasons.push(`Vote payload declares ${typeNames.length === 0 ? 'no' : typeNames.join(' + ')} struct${typeNames.length === 1 ? '' : 's'} — a Snapshot vote signs exactly one, named Vote.`)
+      }
+      if (td?.primaryType !== undefined && td.primaryType !== 'Vote') {
+        reasons.push(`Vote payload's primaryType is "${td.primaryType}", not Vote — refusing to sign a non-vote struct behind a governance label.`)
+      }
+      const dom = td?.domain ?? {}
+      if (dom.verifyingContract !== undefined || dom.chainId !== undefined) {
+        reasons.push('Vote payload carries an on-chain EIP-712 domain (verifyingContract/chainId) — Snapshot votes are off-chain and sign a {name, version} domain only.')
+      }
+      if (dom.name !== undefined && dom.name !== 'snapshot') {
+        reasons.push(`Vote payload's domain names "${String(dom.name)}", not snapshot.`)
+      }
+      const voter = td?.message?.from
+      if (!from || !voter || !eqAddr(voter, from)) {
+        reasons.push(`Vote is cast as ${voter ?? '(missing from)'} — not the requesting wallet.`)
+      }
       break
+    }
     case 'eip712-order': {
       // Every intent protocol Pantessa supports is built natively (CoW,
       // Seaport, Hyperliquid) with its own pinned guard. A generic typed-data
