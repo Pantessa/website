@@ -2563,7 +2563,10 @@ async function main() {
     // (the chat rate) for link conversions, 2.5× under what a creator earns.
     check(
       'fee copy: the board states the link tier (lib/fees LINK_FEE_PCT), not the chat rate',
-      boardHtml.includes(`half of Pantessa&#x27;s ${LINK_FEE_PCT} link fee`) || boardHtml.includes(`half of Pantessa's ${LINK_FEE_PCT} link fee`),
+      // (React SSR separates adjacent text nodes with <!-- -->; strip them
+      //  so the pin reads the sentence a browser shows — and catches the JSX
+      //  glue bite, which rendered "0.50%link fee" on the first pass.)
+      boardHtml.replace(/<!-- -->/g, '').includes(`half of Pantessa&#x27;s ${LINK_FEE_PCT} link fee`),
       `expected ${LINK_FEE_PCT}`,
     )
     check('intent links: /links leaderboard renders with the mint CTA', board.status === 200 && /Mint yours/.test(boardHtml) && /dollars moved/i.test(boardHtml))
@@ -14436,9 +14439,14 @@ async function main() {
         items?: { slug: string }[]
       }).items ?? []
       const linkAfterFire = await fetch(`${BASE}/i/${slug3}`)
+      // A revoked /i link now renders the RETIRED page (reason, nothing
+      // signed, onward doors — squad gtm 2026-09-08) rather than a bare 404:
+      // the wall is the retired state + the ask gone, not the status code.
+      const linkAfterFireHtml = await linkAfterFire.text()
       check(
         'roster R2: firing CASCADES — the pending proposal leaves the inbox and its /i link revokes (T5 human path)',
-        s3.ok && !prop3.isError && firedOk && !inboxAfterFire.some((i) => i.slug === slug3) && linkAfterFire.status === 404,
+        s3.ok && !prop3.isError && firedOk && !inboxAfterFire.some((i) => i.slug === slug3) &&
+          linkAfterFire.status === 200 && linkAfterFireHtml.includes('data-link-state="revoked"') && !linkAfterFireHtml.includes('Buy $15 of AAPL'),
         `link=${linkAfterFire.status}`,
       )
       const firedTry = await call('broker_open', { ask: 'Buy $15 of AAPL', agent_key: rosterAgentKey, wallet: employer2.address })
