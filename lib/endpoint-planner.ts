@@ -150,6 +150,11 @@ export interface PlannableEndpoint {
   id: string
   serverSlug: string
   serverName: string
+  /** `McpServer.source` — provenance, carried so the planner-artifact guard
+   *  can tell a first-party venue from a directory service at the moment it
+   *  decides whether calldata may reach a sign button. Absent (an endpoint
+   *  built outside the DB) reads as third-party: fail closed. */
+  serverSource?: string | null
   method: string
   url: string
   description: string | null
@@ -259,6 +264,11 @@ function extraPlannableEndpoints(slugs: string[]): PlannableEndpoint[] {
         id: r.id ?? `extra-${r.serverSlug}-${i}`,
         serverSlug: r.serverSlug,
         serverName: r.serverName ?? r.serverSlug,
+        // EXTRA_MCP_ENDPOINTS is operator-set, but provenance is still
+        // declared, never assumed: a row that wants to build signable
+        // transactions must say `"serverSource":"yeetful"` itself. Omitted
+        // reads as third-party and the guard refuses its calldata.
+        serverSource: r.serverSource ?? null,
         method: r.method,
         url: r.url,
         description: r.description ?? null,
@@ -291,7 +301,7 @@ export async function loadPlannableEndpoints(slugs: string[]): Promise<Plannable
       // again below to drop any with an unresolved :path token.
       OR: [{ NOT: { parameters: { equals: Prisma.DbNull } } }, { method: 'GET' }],
     },
-    include: { server: { select: { slug: true, name: true, category: true, tags: true, exampleQueries: true } } },
+    include: { server: { select: { slug: true, name: true, category: true, tags: true, exampleQueries: true, source: true } } },
     orderBy: { position: 'asc' },
   })
 
@@ -361,6 +371,7 @@ export async function loadPlannableEndpoints(slugs: string[]): Promise<Plannable
       id: r.id,
       serverSlug: r.server.slug,
       serverName: r.server.name,
+      serverSource: r.server.source,
       method: r.method,
       url,
       description,
