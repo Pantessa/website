@@ -114,6 +114,8 @@ import { COUNTED_EVENT_SQL, COUNTED_EVENT_WHERE, decideReceiptVerdict, expectedR
 import { deskExecuteConsentMessage, cleanSenderLabel } from '../lib/broker-exec'
 import { brandFromRow, isDeniedBrandHost, isDeniedBrandName, THIRD_PARTY_BRAND_HOSTS } from '../lib/brand-denylist'
 import { fenceToolOutput, hasFencedToolOutput, toolOutputNonce, toolOutputRule } from '../lib/tool-output-fence'
+import { guardWarnLines } from '../lib/content-origin'
+import { NATIVE_VENUE_HOSTS } from '../lib/venue-hosts'
 import { contentOriginOf, embedInjectionSend, hardenReportForOrigin, outboundHoldCopy, outboundToThirdParty, rawAddressTokenRefusal, recipientLineOf } from '../lib/content-origin'
 import { BRAND_PRESETS, colorFieldError, presetFor } from '../lib/brand-presets'
 import { deskPricing, priceForTool, pricingBlock } from '../lib/broker-pricing'
@@ -321,7 +323,7 @@ const compileJobAsk = (m: string): CompiledJob | { problem: string } | null => {
   const r = compileJobAskFull(m)
   return r && 'clarify' in r ? { problem: `clarify: ${r.clarify.question}` } : r
 }
-import { signJobToken, verifyJobToken } from '../lib/job-token'
+import { JOB_TOKEN_V1_SUNSET, jobTokenLooksValid, signJobToken, verifyJobToken } from '../lib/job-token'
 import {
   guardLidoStakeBuild,
   isLidoGuidedAsk,
@@ -11474,7 +11476,7 @@ async function main() {
           await db.mcpServer.create({
             data: { slug, name: 'Mock Fleet Tool', description: 'harness first-party mock', category: 'Data', kind: 'data', priceUsd: '0', networks: [], gated: false, callable: true, endpoint: `http://127.0.0.1:${mockPort}/q`, protocol: 'http', queryParam: 'q', source: 'yeetful' },
           })
-          const turn = (await (await fetch(`${BASE}/api/chat`, { method: 'POST', headers: jh, body: JSON.stringify({ message: 'what does the mock fleet tool say', walletAddress: mallory.address, activeServers: [{ slug }], history: [] }) })).json()) as { reply?: string; txRequest?: { to?: string }; buildPath?: string; builtBy?: string; guardWarnings?: string[] }
+          const turn = (await (await fetch(`${BASE}/api/chat`, { method: 'POST', headers: jh, body: JSON.stringify({ message: 'what does the mock fleet tool say', activeServers: [{ slug }], history: [] }) })).json()) as { reply?: string; txRequest?: { to?: string }; buildPath?: string; builtBy?: string; guardWarnings?: string[] }
           check(
             'passthrough honesty live: a first-party tool’s bounded approve reaches the card AS a planner build — builtBy names the service and the guard’s allowance warning rides the reply (never dropped)',
             turn.buildPath === 'planner' && turn.txRequest?.to?.toLowerCase() === USDC_BASE.toLowerCase() && turn.builtBy === 'Mock Fleet Tool' && (turn.guardWarnings ?? []).some((w) => /bounded token allowance/.test(w)),
@@ -11486,6 +11488,40 @@ async function main() {
           mock.close()
         }
       }
+    }
+
+
+    // ── Policy truth (§B3 / §E6) ───────────────────────────────────────────
+    console.log('— policy truth (§E6)')
+    {
+      const capPolicy: GrantPolicy = { id: 'g-e6', allow: ['*'], perCallUsd: 50, perDayUsd: 100, expiresAt: new Date(Date.now() + 86400_000), status: 'active', spendPolicyEnabled: true }
+      const over = policyCheck(120, capPolicy, 0, 'uniswap.yeetful.com', 0, { selfSigned: true })
+      const within = policyCheck(10, capPolicy, 0, 'uniswap.yeetful.com', 0, { selfSigned: true })
+      check(
+        'policy truth: a self-signed action over the cap is offered (the signature is the consent) but the check is a VISIBLE warn naming the cap — never a silent green',
+        over.violation === null && over.check.ok && over.check.level === 'warn' && /over your agent per-action cap \(\$50\)/.test(over.check.note) && /you sign it yourself/.test(over.check.note) &&
+          within.check.ok && within.check.level === 'block' && !/over your agent/.test(within.check.note),
+        JSON.stringify(over.check),
+      )
+      const lines = guardWarnLines({ checks: [over.check, { id: 'recipient', level: 'warn', ok: true, note: '1 USDC LEAVES your wallet to 0xabc — transfers are irreversible.' }, { id: 'policy', level: 'warn', ok: true, note: 'No spend policy on this wallet — not gated.' }, { id: 'x', level: 'block', ok: true, note: 'pinned' }] })
+      check(
+        'policy truth: the card prints every warn-level guardrail note (cap pass + the full-address recipient line) and stays quiet on the two not-gated boilerplates',
+        lines.length === 2 && lines.some((l) => /over your agent/.test(l)) && lines.some((l) => /LEAVES your wallet/.test(l)),
+        JSON.stringify(lines),
+      )
+      check(
+        'policy truth: the Morpho gate’s policy host is a native venue host (a curated allowlist no longer refuses native Morpho builds)',
+        (NATIVE_VENUE_HOSTS as readonly string[]).includes('morpho-mcp.yeetful.com'),
+      )
+      const srcSites = ['lib/cow-build.ts', 'app/api/cow/submit/route.ts', 'lib/lifi-bridge.ts', 'lib/lifi-venue.ts', 'lib/uniswap-v4.ts', 'app/api/chat/route.ts']
+      const fsP = await import('node:fs')
+      check(
+        'policy truth: every native policy gate threads the REAL lifetime spend into policyCheck (no site passes the literal 0 any more)',
+        srcSites.every((f) => {
+          const src = fsP.readFileSync(f, 'utf8')
+          return src.includes('spentTotal, { selfSigned: true })') && !/policyCheck\([^\n]*, 0, \{ selfSigned: true \}\)/.test(src)
+        }),
+      )
     }
 
     const ccDoor = await fetch(`${BASE}/api/chat`, {
@@ -11868,7 +11904,7 @@ async function main() {
             },
           },
         })
-        const polled = await fetch(`${BASE}/api/jobs/${settling2.id}?t=${signJobToken(settling2.id)}`)
+        const polled = await fetch(`${BASE}/api/jobs/${settling2.id}?t=${signJobToken(settling2.id, DRILL_WALLET)}`)
         const polledBody = (await polled.json()) as { job?: { status?: string; failReason?: string | null } }
         check(
           'jobs poll: GET /api/jobs/[id] advances a mid-settlement job inline (watcher-driven, cron-independent)',
@@ -11933,10 +11969,26 @@ async function main() {
         .catch(() => undefined))
     if (sessionSecret) {
       process.env.SESSION_SECRET = sessionSecret
-      const tok = signJobToken('job-token-probe')
+      const probeWallet = '0x00000000000000000000000000000000000000aa'
+      const tok = signJobToken('job-token-probe', probeWallet)
       check(
         'job token: HMAC round-trip verifies; wrong id and garbage refuse',
-        verifyJobToken('job-token-probe', tok) && !verifyJobToken('another-id', tok) && !verifyJobToken('job-token-probe', 'f'.repeat(64)) && !verifyJobToken('job-token-probe', 'nope'),
+        verifyJobToken('job-token-probe', tok, probeWallet) && !verifyJobToken('another-id', tok, probeWallet) && !verifyJobToken('job-token-probe', 'f'.repeat(64), probeWallet) && !verifyJobToken('job-token-probe', 'nope', probeWallet),
+      )
+      // §E6: v2 tokens carry an expiry and bind to the job's WALLET; the
+      // pre-rollout v1 shape verifies only until its sunset.
+      const now = Date.now()
+      const v1 = (await import('node:crypto')).createHmac('sha256', process.env.SESSION_SECRET as string).update('job:job-token-probe').digest('hex')
+      check(
+        'job token v2: bound to the wallet (another wallet refuses), expires after the TTL, case-insensitive on the wallet, v1 accepted only before its sunset',
+        /^v2\.\d+\.[0-9a-f]{64}$/.test(tok) &&
+          !verifyJobToken('job-token-probe', tok, '0x00000000000000000000000000000000000000bb') &&
+          verifyJobToken('job-token-probe', tok, probeWallet.toUpperCase().replace('0X', '0x')) &&
+          !verifyJobToken('job-token-probe', tok, probeWallet, now + 8 * 24 * 3600 * 1000) &&
+          verifyJobToken('job-token-probe', signJobToken('job-token-probe', probeWallet, now - 6 * 24 * 3600 * 1000), probeWallet, now) &&
+          verifyJobToken('job-token-probe', v1, probeWallet, JOB_TOKEN_V1_SUNSET - 1000) &&
+          !verifyJobToken('job-token-probe', v1, probeWallet, JOB_TOKEN_V1_SUNSET + 1000) &&
+          jobTokenLooksValid(tok) && !jobTokenLooksValid(tok, now + 8 * 24 * 3600 * 1000) && !jobTokenLooksValid('nope') && jobTokenLooksValid(v1, JOB_TOKEN_V1_SUNSET - 1000) && !jobTokenLooksValid(v1, JOB_TOKEN_V1_SUNSET + 1000),
       )
       const tokenRead = await fetch(`${BASE}/api/jobs/job-token-probe?t=${tok}`)
       const badTokenRead = await fetch(`${BASE}/api/jobs/job-token-probe?t=${'f'.repeat(64)}`)
@@ -11955,7 +12007,7 @@ async function main() {
     const ctxOwner = await fetch(`${BASE}/api/jobs/nonexistent/context`, { headers: C })
     check('job context: unauth → 401; owner + missing job → 404', ctxAnon.status === 401 && ctxOwner.status === 404, `got ${ctxAnon.status}/${ctxOwner.status}`)
     if (sessionSecret) {
-      const ctxTok = await fetch(`${BASE}/api/jobs/job-token-probe/context?t=${signJobToken('job-token-probe')}`)
+      const ctxTok = await fetch(`${BASE}/api/jobs/job-token-probe/context?t=${signJobToken('job-token-probe', '0x00000000000000000000000000000000000000aa')}`)
       check('job context: capability token passes the gate (404 on missing job)', ctxTok.status === 404, `got ${ctxTok.status}`)
     }
     // The pure derivation: no venue builders → no network, but the generic

@@ -22,6 +22,9 @@ export const NATIVE_VENUE_HOSTS = [
   'aave-mcp.yeetful.com',
   'api.hyperliquid.xyz',
   'opensea.io',
+  // §E6: the Morpho lend/borrow gate attributes here (MORPHO_POLICY_HOST) —
+  // it was missing, so a curated allowlist refused native Morpho builds.
+  'morpho-mcp.yeetful.com',
 ] as const
 
 /** House inference — every chat turn is attributed here. Curating agents
@@ -38,6 +41,7 @@ export const VENUE_HOST_LABELS: Record<string, string> = {
   'lifi.yeetful.com': "Pantessa's LiFi settlement venue",
   'api.cow.fi': 'the CoW Swap venue',
   'aave-mcp.yeetful.com': 'the Aave agent',
+  'morpho-mcp.yeetful.com': 'the Morpho agent',
   'api.hyperliquid.xyz': 'the Hyperliquid venue',
   'opensea.io': 'the OpenSea marketplace',
   // Labeled but NOT in NATIVE_VENUE_HOSTS above: a send to an arbitrary

@@ -136,6 +136,19 @@ export function recipientLineOf(guardrails: unknown): string | null {
   return c ? (c.note as string) : null
 }
 
+/** Every WARN-level guardrail note the sign card should print above its
+ *  button (§E5 recipient line, §E6 self-signed cap pass, allowance notes…).
+ *  The two "not gated" boilerplates stay quiet — they say nothing the user
+ *  must read before signing. */
+export function guardWarnLines(guardrails: unknown): string[] {
+  const checks = (guardrails as { checks?: Array<{ id?: unknown; level?: unknown; note?: unknown }> } | null | undefined)?.checks
+  if (!Array.isArray(checks)) return []
+  return checks
+    .filter((c) => c && c.level === 'warn' && typeof c.note === 'string' && c.note.trim())
+    .map((c) => c.note as string)
+    .filter((n) => !/^No spend policy on this wallet|^Spend policy is off/.test(n))
+}
+
 /** The /embed prompt door: a host-injected `prompt {send:true}` whose text
  *  routes value to an outside party is downgraded to a prefill. */
 export function embedInjectionSend(text: string, requestedSend: boolean): boolean {

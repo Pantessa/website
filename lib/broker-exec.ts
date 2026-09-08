@@ -629,7 +629,7 @@ export async function executeIntent(intentId: string, walletSignature: unknown, 
   // offered by the time the agent's first poll lands; the cron advances the
   // rest, including the waits between legs.
   await advanceJob(job).catch(() => {})
-  const token = signJobToken(job.id)
+  const token = signJobToken(job.id, row.wallet)
   await prisma.brokerIntent.update({
     where: { id: row.id },
     data: { state: 'executing', jobId: job.id },

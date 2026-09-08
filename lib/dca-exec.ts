@@ -244,7 +244,7 @@ export async function runDcaTurn(
         ? `📆 ${periodPhrase(cadence)[0].toUpperCase()}${periodPhrase(cadence).slice(1)} buy is already prepared — sign it below.`
         : `📆 **${periodPhrase(cadence)[0].toUpperCase()}${periodPhrase(cadence).slice(1)} buy:** $${s.buyUsd} of ${s.buyToken}. Built fresh just now — live quote, guard-checked — sign it below.`
     trace({ type: 'status', label: `dca layer: period ${periodKey} ${claim.state} (job ${claim.jobId.slice(0, 8)})` })
-    return { reply, jobId: claim.jobId, jobToken: signJobToken(claim.jobId), buildPath: 'native-dca', dcaScheduleId: s.id }
+    return { reply, jobId: claim.jobId, jobToken: signJobToken(claim.jobId, s.wallet), buildPath: 'native-dca', dcaScheduleId: s.id }
   }
 
   // ── Create: "buy $10 of AAPL every week" ────────────────────────────────
@@ -352,7 +352,7 @@ export async function runDcaTurn(
     }
     if (claim.state !== 'bought') {
       turn.jobId = claim.jobId
-      turn.jobToken = signJobToken(claim.jobId)
+      turn.jobToken = signJobToken(claim.jobId, schedule.wallet)
     }
     return turn
   }

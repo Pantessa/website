@@ -257,7 +257,7 @@ async function hlAutoFundedJobTurn(
       `📈 **We can make this happen.** The ~$${short.notionalUsd} position needs about $${short.depositUsdc} of collateral on Hyperliquid first${gasLegNote} — so the whole path is lined up as one job: **${job.title}**. ` +
       `Every step is built and guard-checked when it's your turn to sign; nothing moves without your signature, and you can cancel from the card.`,
     jobId: job.id,
-    jobToken: signJobToken(job.id),
+    jobToken: signJobToken(job.id, walletAddress),
     buildPath: 'native-job',
   })
 }
@@ -985,7 +985,7 @@ async function handleChatTurn(req: NextRequest) {
         jobId: job.id,
         // Capability token: the JobCard reads/advances THIS job with it —
         // embed visitors have no SIWE session (lib/job-token.ts).
-        jobToken: signJobToken(job.id),
+        jobToken: signJobToken(job.id, walletAddress),
         buildPath: 'native-job',
       })
     }
@@ -2691,7 +2691,8 @@ async function aavePolicyGate(
   const grant = await getActiveGrant(walletAddress.toLowerCase())
   const policy = grant ? toPolicy(grant) : null
   const spentToday = grant ? await spentTodayUsd(grant.id) : 0
-  const { check: polCheck, violation } = policyCheck(valueUsd, policy, spentToday, host, 0, { selfSigned: true })
+  const spentTotal = grant ? await spentTotalUsd(grant.id) : 0
+  const { check: polCheck, violation } = policyCheck(valueUsd, policy, spentToday, host, spentTotal, { selfSigned: true })
   const guardrails = buildReport(
     valueUsd,
     [

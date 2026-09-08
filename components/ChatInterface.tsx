@@ -1,6 +1,6 @@
 'use client'
 
-import { recipientLineOf } from '@/lib/content-origin'
+import { guardWarnLines } from '@/lib/content-origin'
 import ExternalBuildNotice from '@/components/ExternalBuildNotice'
 import { analytics } from '@/lib/analytics'
 import { feeBpsOfArtifact } from '@/lib/fees'
@@ -1738,16 +1738,20 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
                         // ("N USDC LEAVES your wallet to 0x…") finally has a
                         // renderer — the one line that prints the recipient
                         // IN FULL, right above the button that sends it.
-                        const recipientLine = builtTx ? recipientLineOf((msg.meta as { guardrails?: unknown } | undefined)?.guardrails) : null
+                        // §E5/§E6: every warn-level guardrail note — the
+                        // transfer guard's full-address "LEAVES your wallet
+                        // to 0x…" line, a self-signed cap pass — printed
+                        // right above the button that sends it.
+                        const warnLines = builtTx ? guardWarnLines((msg.meta as { guardrails?: unknown } | undefined)?.guardrails) : []
                         const external = builtTx ? externalBuildOf(msg.meta) : null
                         return builtTx ? (
                           <div data-tx-card>
                             {external && <ExternalBuildNotice builtBy={external.builtBy} warnings={external.warnings} txs={[builtTx as { to?: string; value?: string; data?: string; chainId?: number }]} />}
-                            {recipientLine && (
-                              <p className="mb-2 text-[12px] leading-snug text-amber-400 break-all" data-recipient-check>
-                                {recipientLine}
+                            {warnLines.map((line, i) => (
+                              <p key={i} className="mb-2 text-[12px] leading-snug text-amber-400 break-all" data-recipient-check={/LEAVES your wallet/.test(line) ? 'recipient' : 'warn'}>
+                                {line}
                               </p>
-                            )}
+                            ))}
                           <SendTxButton
                             tx={builtTx}
                             onConfirmed={(hash) => {
