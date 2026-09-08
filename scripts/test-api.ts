@@ -25,6 +25,7 @@ import { readFile } from 'node:fs/promises'
 import { generatePrivateKey, privateKeyToAccount, type PrivateKeyAccount } from 'viem/accounts'
 import { createSiweMessage } from 'viem/siwe'
 import { grantTypedData } from '../lib/grant-typed-data'
+import { ROBINHOOD_DESK } from '../lib/live-examples'
 import { grantViolation, type GrantPolicy } from '../lib/spend-grant'
 import { routerPrompt, parseRouterDecision, selectInferenceProvider, routeMessage, shortlistEndpoints } from '../lib/router'
 import { buildSmartRequest, computeRating, type PlannableEndpoint } from '../lib/endpoint-planner'
@@ -1488,6 +1489,19 @@ async function main() {
   )
   const footerHomeHtml = await (await fetch(`${BASE}/`)).text()
   check('rebrand: reachable from the footer on every page', footerHomeHtml.includes('href="/rebrand"'))
+  // The live host-app example (robinhood.pantessa.com, our own interface on
+  // our own domain — rule 7) must be reachable from the landing's host
+  // section AND from /docs/embed, server-rendered, with its source a click
+  // away; lib/live-examples.ts is the one record so the URL can't drift.
+  check(
+    'live example: the landing links the deployed desk + its source, no JS required',
+    footerHomeHtml.includes(`href="${ROBINHOOD_DESK.url}"`) && footerHomeHtml.includes(`href="${ROBINHOOD_DESK.source}"`),
+  )
+  const embedDocsHtml = await (await fetch(`${BASE}/docs/embed`)).text()
+  check(
+    'live example: /docs/embed links the deployed desk + its source',
+    embedDocsHtml.includes(`href="${ROBINHOOD_DESK.url}"`) && embedDocsHtml.includes(`href="${ROBINHOOD_DESK.source}"`),
+  )
   check('mosaic: reachable from the footer on every page', footerHomeHtml.includes('href="/mosaic"'))
   const linksPageHtml = await (await fetch(`${BASE}/links`)).text()
   check('mosaic: the /links board cross-links the wall', linksPageHtml.includes('href="/mosaic"'))

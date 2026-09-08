@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import Link from 'next/link'
 import EmbedInstall from '@/components/EmbedInstall'
 import { DOCS_PAGES, docsJsonLd, docsUrl } from '@/lib/docs'
+import { ROBINHOOD_DESK } from '@/lib/live-examples'
 
 const PAGE = DOCS_PAGES.find((p) => p.slug === 'embed')!
 
@@ -175,10 +176,14 @@ mountPantessaChat({
 
         <h2>A complete host app</h2>
         <p>
-          <a href="https://github.com/Pantessa/agent-examples/tree/main/agents/robinhood-desk" target="_blank" rel="noopener noreferrer">
-            agent-examples/agents/robinhood-desk
+          <a href={ROBINHOOD_DESK.url} target="_blank" rel="noopener noreferrer">
+            {ROBINHOOD_DESK.url.replace('https://', '')}
           </a>{' '}
-          is a standalone portfolio desk for tokenized stocks on Robinhood Chain: it reads
+          is live, and its source,{' '}
+          <a href={ROBINHOOD_DESK.source} target="_blank" rel="noopener noreferrer">
+            agent-examples/agents/robinhood-desk
+          </a>
+          , is a standalone portfolio desk for tokenized stocks on Robinhood Chain: it reads
           holdings and prices from the chain itself, every button is a <code>sendPrompt</code>{' '}
           into the embed, the visitor&apos;s wallet signs on the host page through the bridge,
           and the activity log is built from the <code>turn</code>{' '}events above. It ships with a
