@@ -36,11 +36,11 @@ export default function ExternalBuildNotice({ builtBy, warnings, txs }: { builtB
   return (
     <div className="mb-2 rounded-lg border border-amber-500/40 bg-amber-500/5 px-2.5 py-2 text-[12px] leading-snug" data-external-build={who}>
       <p className="text-amber-400 font-medium">
-        Built by {who} — an external tool, not Pantessa&apos;s native layer. Read every address below before you sign.
+        Built by {who}{' — '}an external tool, not Pantessa’s native layer. Read every address below before you sign.
       </p>
       <ul className="mt-1 space-y-1 text-[color:var(--muted)]">
         {txs.map((t, i) => (
-          <li key={i} className="mono break-all" data-external-to={t.to ?? ''}>
+          <li key={i} className="mono [overflow-wrap:anywhere]" data-external-to={t.to ?? ''}>
             {txs.length > 1 ? `Step ${i + 1}: ` : ''}sends to <span className="text-[color:var(--fg)]">{t.to ?? '(no address)'}</span>
             {typeof t.chainId === 'number' ? ` on chain ${t.chainId}` : ''} · {valueLine(t.value)} · {bytesOf(t.data)} bytes of calldata
             {t.data && t.data.length >= 10 ? ` (selector ${t.data.slice(0, 10)})` : ''}

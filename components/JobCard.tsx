@@ -256,7 +256,7 @@ export default function JobCard({
                     )}
                   </div>
                   {resultNote && (
-                    <div className={`text-[11.5px] ${step.status === 'failed' ? 'text-[color:var(--fail)]' : 'text-[color:var(--muted-2)]'}`}>{resultNote.slice(0, 180)}</div>
+                    <div className={`text-[11.5px] ${step.status === 'failed' ? 'text-[color:var(--fail)]' : 'text-[color:var(--muted-2)]'}`}>{(step.result as { withheld?: boolean } | null)?.withheld ? resultNote : resultNote.slice(0, 180)}</div>
                   )}
                   {/* A spend-policy refusal is fixable in place: the failed step
                       persisted the structured block, so offer the exact policy
