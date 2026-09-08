@@ -19,6 +19,7 @@ import { useIntentLinks, type LinkRow } from '@/lib/intent-links-ui'
 import { dismissOnboarding, onboardingDismissed, useOnboardingStatus, type OnboardingStatus } from '@/lib/onboarding'
 import MintLinkModal from '@/components/MintLinkModal'
 import { useLinksChanged } from '@/lib/links-changed'
+import { linkLifecycle } from '@/lib/intent-links'
 import CreatorPageModal from '@/components/CreatorPageModal'
 import { LivePill } from '@/components/LivePill'
 import { absoluteUrl } from '@/lib/site-url'
@@ -220,6 +221,19 @@ function SignedInLinks({ activeSlugs }: { activeSlugs: string[] }) {
           >
             <span className="flex items-center gap-1.5">
               <span className="mono text-[12px] text-[color:var(--accent)] truncate">/i/{l.slug}</span>
+              {/* expired / sign-capped: the same pill as the studio table —
+                  the rail listed dead links like live ones (squad gtm 2026-09-08). */}
+              {(() => {
+                const state = linkLifecycle({ revoked: false, expiresAt: l.expiresAt, maxSigns: l.maxSigns }, l.signsCount)
+                return state !== 'live' ? (
+                  <span
+                    className="flex-shrink-0 mono text-[9px] uppercase tracking-widest rounded-full border border-amber-400/40 text-amber-400 px-1.5 py-px"
+                    data-link-row-state={state}
+                  >
+                    {state}
+                  </span>
+                ) : null
+              })()}
               {copied === l.slug ? (
                 <Check className="w-3 h-3 flex-shrink-0 text-[color:var(--accent)]" />
               ) : (

@@ -2623,6 +2623,10 @@ async function main() {
       'studio table: expired / capped rows wear the state pill (linkLifecycle, the /i rule) and hide the tweet CTA',
       /linkLifecycle\(\{ revoked: false, expiresAt: l\.expiresAt, maxSigns: l\.maxSigns \}, l\.signsCount\)/.test(tableSrc) && /data-link-row-state=\{state\}/.test(tableSrc) && /\{state === 'live' && \(\s*<a/.test(tableSrc),
     )
+    check(
+      'rail list: expired / capped rows wear the same state pill',
+      /linkLifecycle\(\{ revoked: false, expiresAt: l\.expiresAt, maxSigns: l\.maxSigns \}, l\.signsCount\)/.test(linksFs.readFileSync('components/LinksRailTab.tsx', 'utf8')),
+    )
     const railSeatSrc = linksFs.readFileSync('components/LinksRailTab.tsx', 'utf8')
     const creatorPageSrc = linksFs.readFileSync('lib/creator-page.tsx', 'utf8')
     check(
