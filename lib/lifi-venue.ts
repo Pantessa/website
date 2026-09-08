@@ -34,6 +34,7 @@
 
 import { decodeFunctionData, encodeFunctionData, erc20Abi } from 'viem'
 import { chainById, publicClientFor } from '@/lib/chains'
+import { dryRunTx, isAllowanceLag } from '@/lib/dry-run'
 import { resolveToken, tokenDecimals, tokenLabel, humanToAtoms, formatAtoms } from '@/lib/cow'
 import { stableUsd } from '@/lib/uniswap-venue'
 import { quoteV4BestOut } from '@/lib/uniswap-v4'
@@ -532,30 +533,33 @@ export async function buildLifiSwap(params: LifiSwapParams): Promise<LifiBuilt> 
       : 'Swap simulated clean.',
   }
   if (!needsApprove && allGuardReasons.length === 0) {
-    try {
-      await client.estimateGas({
-        account: from,
-        to: quote.transactionRequest.to as `0x${string}`,
-        data: quote.transactionRequest.data as `0x${string}`,
-        value: BigInt(0),
-      })
+    // lib/dry-run classifies by the WHOLE error chain — an RPC that didn't
+    // answer, or a node that hasn't indexed the allowance this builder just
+    // read, is not chain evidence against the swap (the 2026-09-08 lesson).
+    const verdict = await dryRunTx(
+      client,
+      { from, to: quote.transactionRequest.to, data: quote.transactionRequest.data, value: '0' },
+      { chainName: chainById(chainId)?.name },
+    )
+    if (verdict.kind === 'clean') {
       simCheck = { id: 'simulation', level: 'block', ok: true, note: 'Swap simulated clean (estimateGas) against the live chain.' }
-    } catch (err) {
-      const msg = err instanceof Error ? err.message.split('\n')[0] : ''
-      if (/timeout|timed out|rate limit|fetch failed|econnre/i.test(msg)) {
-        simCheck = {
-          id: 'simulation',
-          level: 'warn',
-          ok: true,
-          note: 'Could not simulate (RPC trouble) — the sign-time re-quote gate still dry-runs the swap.',
-        }
-      } else {
-        simCheck = {
-          id: 'simulation',
-          level: 'block',
-          ok: false,
-          note: `The built swap reverts in simulation (${(msg || 'execution reverted').slice(0, 160)}) — refusing to offer it.`,
-        }
+    } else if (verdict.kind === 'unavailable' || (verdict.kind === 'revert' && isAllowanceLag(verdict.reason))) {
+      console.warn('[lifi-venue] simulation unavailable', JSON.stringify({ chainId, detail: (verdict.kind === 'unavailable' ? verdict.detail : verdict.raw).slice(0, 300) }))
+      simCheck = {
+        id: 'simulation',
+        level: 'warn',
+        ok: true,
+        note: 'Could not simulate (RPC trouble) — the sign-time re-quote gate still dry-runs the swap.',
+      }
+    } else {
+      simCheck = {
+        id: 'simulation',
+        level: 'block',
+        ok: false,
+        note:
+          verdict.kind === 'no-gas'
+            ? `${verdict.reason} — refusing to offer a swap it cannot send.`
+            : `The built swap reverts in simulation (${verdict.reason.slice(0, 160)}) — refusing to offer it.`,
       }
     }
   }

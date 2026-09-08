@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import prisma from '@/lib/db'
 import { bumpAndCheckBrokerCall, clientIpFrom } from '@/lib/turn-limits'
-import { WALLET_REFUSAL_KIND, isReportableWalletError } from '@/lib/wallet-refusal'
+import { WALLET_REFUSAL_KIND, WITHHELD_KIND, isReportableWalletError } from '@/lib/wallet-refusal'
 import { isInternalRun } from '@/lib/internal-run'
 
 export const runtime = 'nodejs'
@@ -31,8 +31,12 @@ export async function POST(req: NextRequest) {
   const detail = cap(body.detail, 400)
   const ask = cap(body.ask, 300)
   const wallet = typeof body.wallet === 'string' && /^0x[0-9a-fA-F]{40}$/.test(body.wallet) ? body.wallet.toLowerCase() : null
+  // `withheld`: the step never reached a wallet — our own dry-run (or a real
+  // on-chain revert) held it back (lib/dry-run). Same queue, its own kind, and
+  // no rejection gate: the words are ours, a human never said no.
+  const kind = body.kind === WITHHELD_KIND ? WITHHELD_KIND : WALLET_REFUSAL_KIND
   if (!artifact || !detail || !ask) return NextResponse.json({ ok: false, dropped: 'shape' }, { status: 202 })
-  if (!isReportableWalletError(detail)) return NextResponse.json({ ok: true, skipped: 'rejection' }, { status: 202 })
+  if (kind === WALLET_REFUSAL_KIND && !isReportableWalletError(detail)) return NextResponse.json({ ok: true, skipped: 'rejection' }, { status: 202 })
   if (await bumpAndCheckBrokerCall(clientIpFrom(req.headers))) return NextResponse.json({ ok: false, dropped: 'rate' }, { status: 202 })
 
   const connector = cap(body.connector, 40)
@@ -45,16 +49,19 @@ export async function POST(req: NextRequest) {
         wallet,
         prompt: `[${artifact}] ${ask}`,
         reply: detail,
-        kind: WALLET_REFUSAL_KIND,
+        kind,
         buildPath,
         hadFunds: true,
         fundsUsd: valueUsd,
-        fundsDetail: `wallet refused at signing${connector ? ` · ${connector}` : ''}${chainId ? ` · wallet on chain ${chainId}` : ''} — the artifact was built and guarded; the wallet was the wall.`,
+        fundsDetail:
+          kind === WITHHELD_KIND
+            ? `withheld before signing${chainId ? ` · chain ${chainId}` : ''} — the artifact was built and guarded; the dry-run (or the chain) was the wall.`
+            : `wallet refused at signing${connector ? ` · ${connector}` : ''}${chainId ? ` · wallet on chain ${chainId}` : ''} — the artifact was built and guarded; the wallet was the wall.`,
         isInternal: internalRun,
       },
       select: { id: true },
     })
-    return NextResponse.json({ ok: true, id: row.id, ...(internalRun ? { internal: true } : {}) }, { status: 202 })
+    return NextResponse.json({ ok: true, id: row.id, kind, ...(internalRun ? { internal: true } : {}) }, { status: 202 })
   } catch {
     return NextResponse.json({ ok: false, dropped: 'store' }, { status: 202 })
   }

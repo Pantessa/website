@@ -18,6 +18,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useAccount } from 'wagmi'
 import { CheckCircle2, Circle, Link2, Loader2, ShieldX, ExternalLink } from 'lucide-react'
 import SendTxButton from '@/components/SendTxButton'
+import { reportWalletRefusal, WITHHELD_KIND } from '@/lib/wallet-refusal'
 import type { TxChainRequest, TxChainStep } from '@/lib/transaction-layer'
 import { chainById } from '@/lib/chains'
 
@@ -79,6 +80,17 @@ export default function SendTxChain({
           // revert — pointing at the Dashboard here sent a user hunting for
           // a spend limit that was never involved).
           setPhase('blocked')
+          // A withheld step used to live only in this red text (the 2026-09-08
+          // SPY class) — make it a /dashboard/failures row like a wallet refusal.
+          reportWalletRefusal({
+            kind: WITHHELD_KIND,
+            wallet: address,
+            artifact: 'tx-chain',
+            ask: steps[index]?.title ?? chain.summary ?? 'transaction chain step',
+            detail: `${data.blockKind ?? 'unknown'}: ${data.reasons ?? 'withheld'}`,
+            buildPath: chain.refresh.kind,
+            chainId: steps[index]?.tx.chainId,
+          })
           setNote(
             data.blockKind === 'execution'
               ? `the swap can't execute on-chain: ${data.reasons ?? 'the rebuilt transaction would revert'}. This isn't your spend policy — no limit needs changing`
@@ -228,6 +240,24 @@ export default function SendTxChain({
               {isCurrent && phase === 'blocked' && (
                 <div className="ml-6 text-[11px] text-[color:var(--fail)]">
                   Withheld — {note}. This step was not signed{i > 0 ? '; your earlier confirmed steps stand' : ''}.
+                  {/* A withheld step used to be a dead end (only a reload re-ran the
+                      re-quote). Pools move and nodes catch up — let the user ask again. */}
+                  {chain.refresh?.stepIndex === i && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (refreshing.current) return
+                        refreshing.current = true
+                        lastAttempt.current = Date.now()
+                        void refreshStep(i).finally(() => {
+                          refreshing.current = false
+                        })
+                      }}
+                      className="ml-2 underline underline-offset-2 text-[color:var(--fg)] hover:opacity-80"
+                    >
+                      Try again
+                    </button>
+                  )}
                 </div>
               )}
               {isCurrent && phase === 'sign' && (

@@ -15,10 +15,16 @@
 // ─────────────────────────────────────────────────────────────────────────
 
 export const WALLET_REFUSAL_KIND = 'wallet-refused'
+/** A built + guarded step our OWN dry-run (or a real on-chain revert) held
+ *  back before any wallet saw it — the 2026-09-08 SPY class, which lived only
+ *  in one browser's red text until it rode this beacon. */
+export const WITHHELD_KIND = 'withheld'
 
 export type WalletArtifact = 'hl-order' | 'hl-leverage' | 'hl-agent' | 'cow-order' | 'tx' | 'tx-chain' | 'vote' | 'opensea-listing'
 
 export interface WalletRefusalReport {
+  /** Default `wallet-refused`; `withheld` when the step never reached a wallet. */
+  kind?: typeof WALLET_REFUSAL_KIND | typeof WITHHELD_KIND
   wallet: string | null | undefined
   artifact: WalletArtifact
   /** What the user was signing, in our words (the card's summary line). */
@@ -90,7 +96,8 @@ export function isReportableWalletError(message: string): boolean {
 /** Fire-and-forget beacon; never throws, never blocks the sign flow. */
 export function reportWalletRefusal(report: WalletRefusalReport): void {
   if (typeof window === 'undefined') return
-  if (!isReportableWalletError(report.detail)) return
+  // A withheld step carries OUR words, never a human "no" — no rejection gate.
+  if (report.kind !== WITHHELD_KIND && !isReportableWalletError(report.detail)) return
   void fetch('/api/ask-failures/wallet', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
