@@ -42,6 +42,9 @@ import { latestWorkingContext, type WorkingContext } from '@/lib/working-context
 import { EXAMPLE_PROMPTS, TRY_PROMPTS } from '@/lib/examples'
 import { GUEST_TRIAL_LIMIT, bumpGuestTurns, guestTurnsUsed } from '@/lib/guest-trial'
 import EmptyState from '@/components/chat/EmptyState'
+import CreateAccountButton from '@/components/CreateAccountButton'
+import { cdpEnabled } from '@/lib/cdp-embedded'
+import { hasStoredWalletConnection, shouldRerunConnectAsk } from '@/lib/wallet-reconnect'
 import { SplashDashboard } from '@/components/SplashDashboard'
 import ChatLoader from '@/components/ChatLoader'
 import { splashCapable } from '@/lib/splash/types'
@@ -364,8 +367,19 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
   // loader is the DEFAULT and the guest empty state only appears once the
   // wallet has conclusively settled — capped so a wedged connector can't hold
   // the screen hostage (Nate: "we should never see this info on page start").
+  //
+  // And the hold only makes sense when there IS a wallet to reconnect: for a
+  // visitor wagmi has never persisted a connection for, 'reconnecting' is
+  // the WalletConnect lane initializing (~4s) and the invitation + example
+  // chips sat behind this loader for 4.4s on a prod build (squad gtm
+  // 2026-09-08, measured). wagmi's own store decides (lib/wallet-reconnect);
+  // a connector that settles connected anyway still takes over.
   const [bootHoldElapsed, setBootHoldElapsed] = useState(false)
   useEffect(() => {
+    if (!hasStoredWalletConnection(typeof window === 'undefined' ? null : window.localStorage)) {
+      setBootHoldElapsed(true)
+      return
+    }
     const t = setTimeout(() => setBootHoldElapsed(true), 4000)
     return () => clearTimeout(t)
   }, [])
@@ -1013,13 +1027,33 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
       openConnectModal()
     }
   }
+  const connectAskConsumed = useRef(new Set<string>())
   useEffect(() => {
     if (!pendingConnectAsk || !effectiveAddress) return
     const ask = pendingConnectAsk
     setPendingConnectAsk(null)
+    const last = currentChat?.messages[currentChat.messages.length - 1]
+    if (last) connectAskConsumed.current.add(last.id)
     void handleSend(ask)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pendingConnectAsk, effectiveAddress])
+  // The address can also land WITHOUT the button: a returning visitor's
+  // wallet reconnects ~4s after load, and an example chip tapped before that
+  // ran as a guest — the reply said "connect your wallet" while the banner
+  // said "Wallet connected", the button hid, and the ask was stranded (squad
+  // gtm 2026-09-08, live). Same for the nav's sign-in door. A FRESH
+  // connect-wallet reply at the end of the thread re-runs its ask once the
+  // address is here (lib/wallet-reconnect decides; once per reply).
+  useEffect(() => {
+    if (pendingConnectAsk !== null || !currentChat) return
+    const last = currentChat.messages[currentChat.messages.length - 1] ?? null
+    if (!last || connectAskConsumed.current.has(last.id)) return
+    const ask = shouldRerunConnectAsk({ last, hasAddress: !!effectiveAddress, loading, now: Date.now() })
+    if (!ask) return
+    connectAskConsumed.current.add(last.id)
+    void handleSend(ask)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [effectiveAddress, currentChat?.messages.length, loading, pendingConnectAsk])
 
   // Host-injected prompt (embed `prompt` message): prefill or send. Keyed on
   // `at` so the same text can be injected twice.
@@ -1343,7 +1377,19 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
           bar). A command-bar send slides the transcript view over the panels
           (appTranscriptOpen) — same markup, every artifact intact — with a
           pill to flip back. Never in the embed (v2 seam). */}
-      <div ref={scrollerRef} className="flex-1 overflow-y-auto px-4 py-6">
+      <div
+        ref={scrollerRef}
+        // The guest banner (ChatSignInGate) floats over the bottom of this
+        // scroller, and the stick-to-bottom pin lands the newest card exactly
+        // there: on 2026-09-08 a connected-not-signed visitor's "Sign & send
+        // swap" button sat UNDER "Sign in to keep". Reserve the banner's
+        // height while it's up (first-party only; below lg it rides 48px
+        // higher over the tab bar — same numbers as EmptyState's pad).
+        className={cn(
+          'flex-1 overflow-y-auto px-4 py-6',
+          !embedded && !simple && sessionStatus === 'guest' && 'pb-32 max-lg:pb-48',
+        )}
+      >
         {/* Inner thread wrapper: the stick-to-bottom ResizeObserver watches
             THIS element — content growth (splash scans resolving, replies
             streaming) re-pins the scroll, which the container itself can't
@@ -1844,18 +1890,47 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
                     {msg.role === 'assistant' &&
                       (msg.meta as { connectWallet?: boolean } | undefined)?.connectWallet === true &&
                       !effectiveAddress && (
-                        <button
-                          className="mt-2 inline-flex items-center gap-2 px-4 h-10 rounded-full bg-[color:var(--accent)] text-black text-[13.5px] font-semibold hover:opacity-90 transition-opacity"
-                          disabled={loading || pendingConnectAsk !== null}
-                          onClick={() =>
-                            connectForAsk(
-                              (msg.meta as { connectAsk?: string } | undefined)?.connectAsk ?? '',
+                        (() => {
+                          const connectAsk = (msg.meta as { connectAsk?: string } | undefined)?.connectAsk ?? ''
+                          const cls =
+                            'mt-2 inline-flex items-center gap-2 px-4 h-10 rounded-full bg-[color:var(--accent)] text-black text-[13.5px] font-semibold hover:opacity-90 transition-opacity disabled:opacity-60'
+                          const label = (
+                            <>
+                              <Zap className="w-3.5 h-3.5" />
+                              {pendingConnectAsk !== null ? 'Connecting…' : 'Connect wallet to continue'}
+                            </>
+                          )
+                          // First-party surfaces open the UNIFIED door (wallet /
+                          // Google / email — rule 6): a stranger with no extension
+                          // used to hit RainbowKit's wallet list here and dead-end.
+                          // Connect-only wallet lane; the ask re-runs when the
+                          // address lands (pendingConnectAsk, or the effect above
+                          // for the sign-in lanes that route back to this page).
+                          // The embed keeps the host-bridge / RainbowKit path.
+                          if (cdpEnabled && !embedded) {
+                            return (
+                              <span
+                                className="inline-flex"
+                                onClickCapture={() => {
+                                  if (loading || pendingConnectAsk !== null) return
+                                  setPendingConnectAsk(connectAsk)
+                                }}
+                              >
+                                <CreateAccountButton
+                                  className={cls}
+                                  label={label}
+                                  walletConnectOnly
+                                  redirectTo={typeof window === 'undefined' ? '/chat' : window.location.pathname + window.location.search}
+                                />
+                              </span>
                             )
                           }
-                        >
-                          <Zap className="w-3.5 h-3.5" />
-                          {pendingConnectAsk !== null ? 'Connecting…' : 'Connect wallet to continue'}
-                        </button>
+                          return (
+                            <button className={cls} disabled={loading || pendingConnectAsk !== null} onClick={() => connectForAsk(connectAsk)}>
+                              {label}
+                            </button>
+                          )
+                        })()
                       )}
                   </div>
                 </motion.div>

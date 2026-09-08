@@ -83,7 +83,8 @@ import { decideProposalGate } from '../lib/roster-propose'
 import { decideManagerMove, stackingRefusal, undecidedProposalFor } from '../lib/roster-manager'
 import { markPeriodKey, parseMarkAsk, reviewFlipDecision, tryoutReportCard, PAPER_LABEL, TRYOUT_BANNED_PHRASES } from '../lib/roster-tryouts'
 import { houseManagerRow, resolveHouseManager, HOUSE_MANAGER_ID } from '../lib/roster-managers'
-import { walletLineup, walletLaneHint, wcConfigured, WC_APP_METADATA } from '../lib/wallet-lineup'
+import { walletLineup, walletLaneHint, wcConfigured, WC_APP_METADATA , CDP_INIT_PATIENCE_MS, emailLaneHint } from '../lib/wallet-lineup'
+import { hasStoredWalletConnection, shouldRerunConnectAsk, CONNECT_ASK_RERUN_WINDOW_MS, WAGMI_STORE_KEY, WAGMI_RECENT_CONNECTOR_KEY } from '../lib/wallet-reconnect'
 import { buildDelivery, mintCallbackSecret, notifyEligible, signWebhook, validateCallbackUrl } from '../lib/broker-webhook'
 import { agentHandleFor } from '../lib/agent-record'
 import {
@@ -4197,6 +4198,63 @@ async function main() {
         /QR/.test(walletLaneHint('abc123realprojectid')) &&
         WC_APP_METADATA.appName === 'Pantessa' &&
         WC_APP_METADATA.appUrl === 'https://www.pantessa.com'
+      )
+    })(),
+  )
+
+  // ── The stranger's first five seconds (lib/wallet-reconnect, squad gtm 2026-09-08) ──
+  console.log('— onboarding: first-visit door paints at once; connect-wallet re-run; door lanes time out honestly')
+  check(
+    'onboarding: a visitor with nothing persisted by wagmi never waits on the reconnect probe; a persisted current connection or a recent connector id does; garbage fails CLOSED to "new visitor"',
+    (() => {
+      const mem = (rows: Record<string, string>) => ({ getItem: (k: string) => (k in rows ? rows[k] : null) })
+      const fresh = mem({})
+      const stored = mem({ [WAGMI_STORE_KEY]: JSON.stringify({ state: { connections: { __type: 'Map', value: [['abc', { accounts: ['0x1'], chainId: 8453, connector: { id: 'io.metamask' } }]] }, chainId: 8453, current: 'abc' }, version: 2 }) })
+      const emptied = mem({ [WAGMI_STORE_KEY]: JSON.stringify({ state: { connections: { __type: 'Map', value: [] }, chainId: 8453, current: null }, version: 2 }) })
+      const recent = mem({ [WAGMI_RECENT_CONNECTOR_KEY]: '"io.metamask"' })
+      const recentNull = mem({ [WAGMI_RECENT_CONNECTOR_KEY]: 'null' })
+      const garbage = mem({ [WAGMI_STORE_KEY]: '{not json' })
+      return (
+        hasStoredWalletConnection(fresh) === false &&
+        hasStoredWalletConnection(null) === false &&
+        hasStoredWalletConnection(stored) === true &&
+        hasStoredWalletConnection(emptied) === false &&
+        hasStoredWalletConnection(recent) === true &&
+        hasStoredWalletConnection(recentNull) === false &&
+        hasStoredWalletConnection(garbage) === false
+      )
+    })(),
+  )
+  check(
+    'onboarding: a fresh "connect wallet to continue" reply re-runs its ask when an address lands (the reconnect race); stale, answered-later, in-flight, or non-connect replies never re-run',
+    (() => {
+      const now = Date.parse('2026-09-08T12:00:00Z')
+      const reply = (ageMs: number, meta: unknown = { connectWallet: true, connectAsk: 'Swap $1 worth of ETH to USDC on Base' }) => ({ role: 'assistant', meta, createdAt: new Date(now - ageMs).toISOString() })
+      return (
+        shouldRerunConnectAsk({ last: reply(5_000), hasAddress: true, loading: false, now }) === 'Swap $1 worth of ETH to USDC on Base' &&
+        shouldRerunConnectAsk({ last: reply(CONNECT_ASK_RERUN_WINDOW_MS + 1), hasAddress: true, loading: false, now }) === null &&
+        shouldRerunConnectAsk({ last: reply(5_000), hasAddress: false, loading: false, now }) === null &&
+        shouldRerunConnectAsk({ last: reply(5_000), hasAddress: true, loading: true, now }) === null &&
+        shouldRerunConnectAsk({ last: reply(5_000, { connectWallet: true }), hasAddress: true, loading: false, now }) === null &&
+        shouldRerunConnectAsk({ last: reply(5_000, { receipts: [] }), hasAddress: true, loading: false, now }) === null &&
+        shouldRerunConnectAsk({ last: { role: 'user', createdAt: new Date(now).toISOString() }, hasAddress: true, loading: false, now }) === null &&
+        shouldRerunConnectAsk({ last: null, hasAddress: true, loading: false, now }) === null
+      )
+    })(),
+  )
+  check(
+    'onboarding: the door\'s email-lane line names every state — ready, sending, preparing, and (after CDP_INIT_PATIENCE_MS) an honest "unreachable, connect a wallet" instead of a spinner forever',
+    (() => {
+      const ready = emailLaneHint({ initialized: true, busy: false, timedOut: false })
+      const sending = emailLaneHint({ initialized: true, busy: true, timedOut: false })
+      const preparing = emailLaneHint({ initialized: false, busy: false, timedOut: false })
+      const gaveUp = emailLaneHint({ initialized: false, busy: false, timedOut: true })
+      return (
+        /6-digit code/.test(ready) &&
+        /Sending/.test(sending) &&
+        /Preparing/.test(preparing) &&
+        /Connect a wallet/.test(gaveUp) && !/Preparing/.test(gaveUp) &&
+        CDP_INIT_PATIENCE_MS >= 5000 && CDP_INIT_PATIENCE_MS <= 15000
       )
     })(),
   )

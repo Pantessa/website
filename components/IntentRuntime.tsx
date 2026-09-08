@@ -33,6 +33,7 @@ import SignInFlowLink from '@/components/SignInFlowLink'
 import { YeetfulMark } from '@/components/Logo'
 import { useSession } from '@/lib/session'
 import { cdpEnabled } from '@/lib/cdp-embedded'
+import { hasStoredWalletConnection } from '@/lib/wallet-reconnect'
 import { brandBloomTint, brandCtaStyle, brandThemeStyle, type LinkBrand } from '@/lib/brand-theme'
 import { isTransferShaped, linkEyebrow } from '@/lib/intent-links'
 import { useYeetfulStore, McpServer } from '@/lib/store'
@@ -145,8 +146,19 @@ export default function IntentRuntime({
   // never answers (offline WalletConnect/CDP init) left the splash on
   // "checking for a connected wallet" with NO door forever. After a beat the
   // door renders regardless — a connected wallet still auto-starts.
+  //
+  // And a visitor who has NEVER connected here has nothing to reconnect:
+  // wagmi still reports 'reconnecting' for ~4s while the WalletConnect lane
+  // inits, and this door was hidden behind "checking for a connected wallet"
+  // for 5.3s on a prod build (squad gtm 2026-09-08, measured). wagmi's own
+  // persisted store says whether a reconnect is even possible — when it
+  // isn't, the door paints at once (lib/wallet-reconnect).
   const [walletWaitOver, setWalletWaitOver] = useState(false)
   useEffect(() => {
+    if (!hasStoredWalletConnection(typeof window === 'undefined' ? null : window.localStorage)) {
+      setWalletWaitOver(true)
+      return
+    }
     const t = setTimeout(() => setWalletWaitOver(true), 4000)
     return () => clearTimeout(t)
   }, [])

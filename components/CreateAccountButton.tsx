@@ -13,7 +13,7 @@ import {
   useIsInitialized,
 } from '@coinbase/cdp-hooks'
 import { Loader2, ArrowLeft, ArrowRight, X, Wallet } from 'lucide-react'
-import { walletLaneChips } from '@/lib/wallet-lineup'
+import { CDP_INIT_PATIENCE_MS, emailLaneHint, walletLaneChips } from '@/lib/wallet-lineup'
 import { WALLET_MARKS } from '@/components/wallet-marks'
 import { PantessaMark } from '@/components/Logo'
 import { cn } from '@/lib/utils'
@@ -118,6 +118,17 @@ function CreateAccountModal({
   const inputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => setMounted(true), [])
+
+  // The CDP SDK (Google + email lanes) inits with a cross-origin config
+  // fetch; when a blocker or a filter kills it, the lanes would spin
+  // forever. After CDP_INIT_PATIENCE_MS the door says so and points at the
+  // wallet lane, which works on its own (lib/wallet-lineup emailLaneHint).
+  const [cdpTimedOut, setCdpTimedOut] = useState(false)
+  useEffect(() => {
+    if (isInitialized) return
+    const t = setTimeout(() => setCdpTimedOut(true), CDP_INIT_PATIENCE_MS)
+    return () => clearTimeout(t)
+  }, [isInitialized])
 
   // Close on Escape; lock body scroll while open.
   useEffect(() => {
@@ -272,7 +283,7 @@ function CreateAccountModal({
                   onClick={() => startOAuth(p.id)}
                   disabled={!isInitialized}
                   aria-label={p.label}
-                  title={p.label}
+                  title={cdpTimedOut && !isInitialized ? 'Unavailable right now — the sign-in provider is unreachable. Connect a wallet instead.' : p.label}
                 >
                   {/* Visible label, not glyph-only: with a single provider the
                       icon-row design read as a wide empty button with a "G"
@@ -309,18 +320,14 @@ function CreateAccountModal({
                 aria-label="Continue with email"
                 title="Continue with email"
               >
-                {busy || !isInitialized
+                {busy || (!isInitialized && !cdpTimedOut)
                   ? <Loader2 className="ca__spin" width={17} height={17} />
                   : <ArrowRight width={18} height={18} />}
               </button>
             </div>
             {error && <p className="ca__error" role="alert">{error}</p>}
-            <p id="ca-email-hint" className="ca__fine">
-              {!isInitialized
-                ? 'Preparing the email lane…'
-                : busy
-                  ? 'Sending your code…'
-                  : "We'll email you a 6-digit code — no password, no extension."}
+            <p id="ca-email-hint" className="ca__fine" role={cdpTimedOut && !isInitialized ? 'status' : undefined}>
+              {emailLaneHint({ initialized: isInitialized, busy, timedOut: cdpTimedOut })}
             </p>
 
             <p className="ca__consent">
