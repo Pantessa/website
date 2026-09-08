@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse, after } from 'next/server'
+import { contentOriginOf, hardenReportForOrigin, isThirdPartyOrigin, outboundToThirdParty, rawAddressTokenRefusal, type ContentOrigin } from '@/lib/content-origin'
 import { attachFundsSnapshot, classifyTurn, moneyShaped, recordAskFailure } from '@/lib/ask-failure'
 import { recordTurnExpectations } from '@/lib/link-receipt-verify'
 import { erc20Abi, formatEther, formatUnits, getAddress, isAddress, parseEther, parseUnits } from 'viem'
@@ -365,7 +366,7 @@ export async function POST(req: NextRequest) {
   } catch {
     /* fall through — the inner handler 400s on the empty body */
   }
-  const res = await handleChatTurn(new NextRequest(req.nextUrl, { method: 'POST', headers: req.headers, body: raw }))
+  const res = await fenceConnectAsk(await handleChatTurn(new NextRequest(req.nextUrl, { method: 'POST', headers: req.headers, body: raw })), raw)
   try {
     if (!raw || !res.headers.get('content-type')?.includes('application/json')) return res
     const reqBody = JSON.parse(raw) as Record<string, unknown>
@@ -400,6 +401,34 @@ export async function POST(req: NextRequest) {
     /* the log must never break a chat turn */
   }
   return res
+}
+
+/** Content-origin fence on the connect gate (SECURITY-AUDIT §E5, belt for the
+ *  client's connect-ask re-run): a "connect your wallet" reply carries
+ *  `connectAsk` so the runtime can re-send the sentence the moment an address
+ *  lands. When that sentence arrived on a LINK or EMBED origin AND routes value
+ *  to an outside party (a send to 0x…/ENS, a token typed as an address, an NFT
+ *  sale), the re-run would auto-fire a stranger's transfer on connect. Such a
+ *  reply carries no `connectAsk` — the visitor presses send again after
+ *  connecting, one more tap. One choke point for every connect-gate site. */
+async function fenceConnectAsk(res: Response, raw: string): Promise<Response> {
+  try {
+    if (!raw || !res.headers.get('content-type')?.includes('application/json')) return res
+    const reqBody = JSON.parse(raw) as { message?: unknown; intentLinkSlug?: unknown; embedKey?: unknown; embedOrigin?: unknown }
+    if (!isThirdPartyOrigin(contentOriginOf(reqBody))) return res
+    const message = typeof reqBody.message === 'string' ? reqBody.message : ''
+    const verdict = outboundToThirdParty(message)
+    if (!verdict.outbound) return res
+    const data = (await res.clone().json().catch(() => null)) as Record<string, unknown> | null
+    if (!data || typeof data.connectAsk !== 'string') return res
+    const { connectAsk: _dropped, ...rest } = data
+    void _dropped
+    const headers = new Headers(res.headers)
+    headers.delete('content-length')
+    return NextResponse.json({ ...rest, connectAskHeld: verdict.reasons }, { status: res.status, headers })
+  } catch {
+    return res
+  }
 }
 
 async function handleChatTurn(req: NextRequest) {
@@ -511,6 +540,10 @@ async function handleChatTurn(req: NextRequest) {
       typeof body.embedKey === 'string' ? await resolveEmbedKey(body.embedKey) : null
     const embedOrigin =
       typeof body.embedOrigin === 'string' && body.embedOrigin ? body.embedOrigin.slice(0, 200) : undefined
+    // Content-origin fence (SECURITY-AUDIT §C/E5): a turn that rides an
+    // intent link or an embed host carries a stranger's sentence. A few
+    // builds harden on that origin alone (lib/content-origin).
+    const contentOrigin = contentOriginOf({ intentLinkSlug: turnLinkSlug, embedKey: body.embedKey, embedOrigin })
     if (embedOrigin) {
       void recordEmbedSighting({
         embedKeyId: embedBill?.id ?? '',
@@ -738,7 +771,7 @@ async function handleChatTurn(req: NextRequest) {
             type: 'status',
             label: `funding layer: follow-up on the unfunded ${buySym} buy — fresh scan, re-running “buy $${buyUsd} of ${buySym}” on Robinhood Chain (planner bypassed)`,
           })
-          return await prepareSwapTurn(rerun, walletAddress, 'uniswap', workingContext, nativeTrace, ROBINHOOD_CHAIN_ID, swapFeeBps)
+          return await prepareSwapTurn(rerun, walletAddress, 'uniswap', workingContext, nativeTrace, ROBINHOOD_CHAIN_ID, swapFeeBps, contentOrigin)
         }
       }
     }
@@ -875,7 +908,7 @@ async function handleChatTurn(req: NextRequest) {
       // data carries chainId for non-Base builds) — never silently back on Base.
       const pendingChainId = sanitizeChainId(Number(pendingArtifact.data.chainId)) ?? DEFAULT_CHAIN_ID
       nativeTrace({ type: 'status', label: `native swap layer: amending the pending ${pendingArtifact.kind} to ${swapFollowUp.intent.sellAmountHuman} ${(swapFollowUp.intent.sellToken ?? '').toUpperCase()} → ${(swapFollowUp.intent.buyToken ?? '').toUpperCase()} on ${pendingVenue === 'uniswap' ? 'Uniswap' : 'CoW'} (${chainById(pendingChainId)?.name})` })
-      return await prepareSwapTurn(swapFollowUp.intent, walletAddress, pendingVenue, workingContext, nativeTrace, pendingChainId, swapFeeBps)
+      return await prepareSwapTurn(swapFollowUp.intent, walletAddress, pendingVenue, workingContext, nativeTrace, pendingChainId, swapFeeBps, contentOrigin)
     }
 
     // DCA — recurring buys ("buy $10 of AAPL every week"), the due-period
@@ -1717,6 +1750,14 @@ async function handleChatTurn(req: NextRequest) {
           nativeTrace({ type: 'note', level: 'info', label: `nft listing not buildable: ${built.problem.slice(0, 160)}` })
           return NextResponse.json({ reply: `🖼️ ${built.problem}` })
         }
+        // §E5: a listing priced by someone else (link / embed origin) far
+        // under floor is a BLOCK, not a warning the visitor scrolls past.
+        const hardened = hardenReportForOrigin(built.guardrails, contentOrigin)
+        if (!built.blocked && !hardened.ok) {
+          const why = hardened.checks.find((c) => c.level === 'block' && !c.ok)?.note ?? 'a safety check failed.'
+          nativeTrace({ type: 'note', level: 'warn', label: `nft listing REFUSED on ${contentOrigin} origin: ${why.slice(0, 200)}` })
+          return NextResponse.json({ reply: `🚫 ${why}`, guardrails: hardened, blocked: true, buildPath: 'native-nft-list', originFence: 'floor-sanity' })
+        }
         if (built.blocked) {
           nativeTrace({ type: 'note', level: 'warn', label: `nft listing REFUSED: ${(built.refusal ?? 'a safety check failed.').slice(0, 200)}` })
           return NextResponse.json({ reply: `🚫 ${built.refusal ?? 'A safety check failed — nothing was built.'}`, guardrails: built.guardrails, blocked: true, buildPath: 'native-nft-list' })
@@ -1928,7 +1969,7 @@ async function handleChatTurn(req: NextRequest) {
           : 'swap ask (pair not fully parsed yet)'
         const chainVia = buildChain.id !== targetChain.id ? 'stock list, inferred' : namedNative ? 'named in the message' : pickerChain ? 'from the chain picker' : 'default'
         nativeTrace({ type: 'status', label: `native swap layer claimed the turn: ${pair} on ${venue === 'uniswap' ? 'Uniswap' : 'CoW'} (${buildChain.name}, ${chainVia}) — planner bypassed` })
-        return await prepareSwapTurn(swapIntent, walletAddress, venue, workingContext, nativeTrace, buildChain.id, swapFeeBps)
+        return await prepareSwapTurn(swapIntent, walletAddress, venue, workingContext, nativeTrace, buildChain.id, swapFeeBps, contentOrigin)
       }
       // crossChain + a usable cross-chain agent → build it NATIVELY (deterministic
       // build_swap + guardrails + Sign button), never via the planner/house
@@ -3776,7 +3817,15 @@ function isExactRobinhoodStock(symbol: string): boolean {
  * line, so every venue's artifact (CoW order, v3/v4 chain, LiFi chain)
  * quotes the exact number the user is about to sign — one site, not five.
  */
-async function prepareSwapTurn(intent: SwapIntent, walletAddress: string | undefined, venue: 'uniswap' | 'cow' = 'cow', ctx?: WorkingContext, trace: (event: unknown) => void = () => {}, chainId: number = DEFAULT_CHAIN_ID, feeBps?: number) {
+async function prepareSwapTurn(intent: SwapIntent, walletAddress: string | undefined, venue: 'uniswap' | 'cow' = 'cow', ctx?: WorkingContext, trace: (event: unknown) => void = () => {}, chainId: number = DEFAULT_CHAIN_ID, feeBps?: number, origin: ContentOrigin = 'first-party') {
+  // Content-origin fence (SECURITY-AUDIT §C3/E5): a swap whose token slot is
+  // a raw contract address, authored by a link or an embed host, is a
+  // transfer wearing a swap verb — refused by name before any venue runs.
+  const rawRefusal = rawAddressTokenRefusal(intent, origin)
+  if (rawRefusal) {
+    trace({ type: 'note', level: 'warn', label: `swap REFUSED on ${origin} origin: raw contract address in the token slot` })
+    return NextResponse.json({ reply: rawRefusal, blocked: true, buildPath: venue === 'cow' ? 'native-swap-cow' : 'native-swap-uniswap', originFence: 'raw-address-token' })
+  }
   const sized: { note: string | null } = { note: null }
   const res = await prepareSwapTurnCore(intent, walletAddress, venue, ctx, trace, chainId, feeBps, sized)
   if (!sized.note) return res

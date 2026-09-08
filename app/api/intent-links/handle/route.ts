@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import prisma from '@/lib/db'
 import { getAuthAddress } from '@/lib/api-key'
 import { normalizeHandle } from '@/lib/intent-links'
+import { deniedBrandNameReason, isDeniedBrandName } from '@/lib/brand-denylist'
 
 // The creator's public page name (/l/<handle>) — opt-in by claiming here.
 // One handle per wallet; renames release the old name atomically. The
@@ -38,6 +39,12 @@ export async function POST(req: NextRequest) {
       { error: 'Handles are 3–20 characters of a–z, 0–9, and hyphens (no edge hyphens), and can’t shadow a Pantessa page.' },
       { status: 400 },
     )
+  }
+  // The handle IS a sender label (`@handle` on every inbox card + the /l
+  // storefront eyebrow): a claimed "coinbase-support" is a phishing prop
+  // (SECURITY-AUDIT §C4/E5) — same denylist as bylines and brand names.
+  if (isDeniedBrandName(handle)) {
+    return NextResponse.json({ error: deniedBrandNameReason(handle, 'page name'), denied: true }, { status: 400 })
   }
 
   try {

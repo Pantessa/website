@@ -15,6 +15,9 @@ import prisma from '@/lib/db'
 import { cleanAsk, composeMcps, mintSlug, INTENT_SLUG_RE } from '@/lib/intent-links'
 import { MANDATE_KIND_LABELS } from '@/lib/roster-client'
 import { COUNTED_EVENT_WHERE } from '@/lib/link-receipt-verify'
+import { outboundToThirdParty } from '@/lib/content-origin'
+import { assertUnderInboxCap } from '@/lib/broker-policy'
+import { askUsd } from '@/lib/broker'
 
 const WALLET_RE = /^0x[0-9a-fA-F]{40}$/
 const HANDLE_RE = /^[a-z0-9-]{2,32}$/
@@ -54,6 +57,10 @@ export async function sendIntent(
 ): Promise<SentIntent> {
   const ask = cleanAsk(opts.ask)
   if (!ask || ask.length < 3) throw new Error('The intent must be a plain sentence (amounts included).')
+  // Inbox notional cap (SECURITY-AUDIT §C5): a "$50,000" card in a stranger's
+  // inbox is a phishing prop. Every door that addresses an intent (the desk's
+  // broker_send, the mint door's `recipient`, roster proposals) lands here.
+  assertUnderInboxCap(askUsd(ask))
   const r = await resolveRecipient(opts.recipientRaw)
   if (!r.ok) throw new Error(r.reason)
   const recipient = r.recipient.wallet
@@ -77,6 +84,9 @@ export async function sendIntent(
       // THE ROSTER (R2): a hired agent's proposal binds to its mandate slot
       // (badge on the card, fire-cascade revocation, build re-check).
       rosterSlotId: opts.rosterSlotId ?? null,
+      // Content-origin fence (§E5): an addressed ask naming an outside party
+      // prefills in the recipient's runtime — they press send themselves.
+      outboundThirdParty: outboundToThirdParty(ask).outbound,
       // Our own harness/drill send (lib/internal-run.ts) — never an arrival.
       isInternal: opts.internal === true,
     },

@@ -24,7 +24,9 @@ import {
   type BrokerPlan,
   type BrokerState,
 } from '@/lib/broker'
-import { assertDeskOpen, assertAgentIdentity, assertUnderDeskCap, cleanAgentKey } from '@/lib/broker-policy'
+import { assertDeskOpen, assertAgentIdentity, assertSenderIdentity, assertUnderDeskCap, cleanAgentKey } from '@/lib/broker-policy'
+import { outboundToThirdParty } from '@/lib/content-origin'
+import { deniedBrandNameReason, isDeniedBrandName } from '@/lib/brand-denylist'
 import { validateCallbackUrl, mintCallbackSecret, deliverWebhook, notifyEligible } from '@/lib/broker-webhook'
 import { agentHandleFor } from '@/lib/agent-record'
 import { sendIntent } from '@/lib/inbox'
@@ -69,6 +71,17 @@ export interface DeskCallOpts {
   noLog?: boolean
 }
 
+/** Rule 7 on the desk's free-text marks (SECURITY-AUDIT §C4): an agent
+ *  byline or inbox sender label may never wear a third-party brand or an
+ *  authority word ("Coinbase Support"). The house manager (its key IS the
+ *  identity, lib/roster-managers) is the one caller allowed to say Pantessa. */
+function assertMarksAllowed(marks: { agent?: string | null; senderLabel?: string | null }, agentKey: string | null): void {
+  const houseKey = process.env.HOUSE_MANAGER_KEY
+  if (agentKey && houseKey && agentKey === houseKey) return
+  if (marks.agent && isDeniedBrandName(marks.agent)) throw new Error(deniedBrandNameReason(marks.agent, 'agent name'))
+  if (marks.senderLabel && isDeniedBrandName(marks.senderLabel)) throw new Error(deniedBrandNameReason(marks.senderLabel, 'sender label'))
+}
+
 const CONTRACT =
   'Sentences in, sentences and sign links out. The desk never returns calldata, typed data, or deposit addresses; ' +
   'the guarded deterministic builders rebuild every action from scratch on the sign side, and the human wallet is the only signer.'
@@ -87,6 +100,7 @@ export async function openIntent(opts: {
   let wallet = cleanWallet(opts.wallet)
   const agent = cleanAgentName(opts.agent)
   const agentKey = cleanAgentKey(opts.agentKey)
+  assertMarksAllowed({ agent }, agentKey)
 
   // WAVE-2 discovery (security T-D1/T-D6): slot_token targets a LISTED open
   // mandate slot from /api/roster/feed. The token resolves server-side to
@@ -332,6 +346,9 @@ export async function handoffIntent(intentId: string, call?: DeskCallOpts): Prom
       mcps: composeMcps(row.ask).join(',') || null,
       creator: null,
       agent: row.agent ? `${row.agent} (agent desk)` : 'agent desk',
+      // Content-origin fence (§E5): an agent-authored ask naming an outside
+      // party prefills for the human — they press send.
+      outboundThirdParty: outboundToThirdParty(row.ask).outbound,
       isInternal: call?.internal === true,
     },
   })
@@ -391,6 +408,7 @@ export async function tileIntent(opts: { slices: unknown; chain?: unknown; agent
   const composed = composeMosaicAsk(slices, chainWord)
   if ('problem' in composed) throw new Error(composed.problem)
   const agent = cleanAgentName(opts.agent)
+  assertMarksAllowed({ agent }, null)
 
   // planIntent quotes the sentence through the REAL gate ladder — a tile
   // ask lands on the mosaic gate as an action, and the dapp set rides back.
@@ -406,6 +424,7 @@ export async function tileIntent(opts: { slices: unknown; chain?: unknown; agent
       creator: null,
       agent: agent ? `${agent} (agent desk)` : 'agent desk',
       kind: 'mosaic',
+      outboundThirdParty: outboundToThirdParty(plan.ask).outbound,
       isInternal: call?.internal === true,
     },
   })
@@ -687,7 +706,11 @@ export async function sendToInbox(opts: {
   assertDeskOpen()
   const agent = cleanAgentName(opts.agent)
   const agentKey = cleanAgentKey(opts.agentKey)
+  // §C5: the send door is not the anonymous mint door — an unasked card in a
+  // stranger's inbox must be attributable to a desk identity.
+  assertSenderIdentity(agentKey)
   const senderLabel = cleanSenderLabel(opts.senderLabel) ?? agent ?? undefined
+  assertMarksAllowed({ agent, senderLabel }, agentKey)
 
   const sent = await sendIntent(SITE, {
     ask: typeof opts.ask === 'string' ? opts.ask : '',

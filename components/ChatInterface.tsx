@@ -1,5 +1,6 @@
 'use client'
 
+import { recipientLineOf } from '@/lib/content-origin'
 import { analytics } from '@/lib/analytics'
 import { feeBpsOfArtifact } from '@/lib/fees'
 import { Fragment, useState, useRef, useEffect, useSyncExternalStore } from 'react'
@@ -1715,7 +1716,18 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
                     {msg.role === 'assistant' &&
                       (() => {
                         const builtTx = txRequestOf(msg.meta)
+                        // §E5: the transfer guard's full-address disclosure
+                        // ("N USDC LEAVES your wallet to 0x…") finally has a
+                        // renderer — the one line that prints the recipient
+                        // IN FULL, right above the button that sends it.
+                        const recipientLine = builtTx ? recipientLineOf((msg.meta as { guardrails?: unknown } | undefined)?.guardrails) : null
                         return builtTx ? (
+                          <div data-tx-card>
+                            {recipientLine && (
+                              <p className="mb-2 text-[12px] leading-snug text-amber-400 break-all" data-recipient-check>
+                                {recipientLine}
+                              </p>
+                            )}
                           <SendTxButton
                             tx={builtTx}
                             onConfirmed={(hash) => {
@@ -1730,6 +1742,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
                               if (currentChatId) recordSignedTxs(currentChatId, msg.id, [{ hash, chainId, title: builtTx.action ?? 'transaction' }])
                             }}
                           />
+                          </div>
                         ) : null
                       })()}
                     {msg.role === 'assistant' &&

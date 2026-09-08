@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import { notFound } from 'next/navigation'
 import prisma from '@/lib/db'
 import { brandFromRow } from '@/lib/brand-denylist'
+import { outboundHoldCopy, outboundToThirdParty } from '@/lib/content-origin'
 import { INTENT_SLUG_RE } from '@/lib/intent-links'
 import { notifyEligible } from '@/lib/broker-webhook'
 import { MANDATE_KIND_LABELS, type MandateKind } from '@/lib/roster-client'
@@ -126,10 +127,18 @@ export default async function IntentLinkPage({ params }: Params) {
   // converts. Metadata above stays on the base ask (stable OG card).
   const phrasings = [link.ask, ...link.variants]
   const variant = Math.floor(Math.random() * phrasings.length)
+  // Content-origin fence (SECURITY-AUDIT §E5), decided SERVER-SIDE: the row's
+  // mint-time stamp OR a fresh read of the phrasing actually shown (legacy
+  // rows, A/B variants). A held link PREFILLS — the visitor presses send.
+  const shownVerdict = outboundToThirdParty(phrasings[variant])
+  const prefillOnly = link.outboundThirdParty || shownVerdict.outbound
+  const holdCopy = prefillOnly ? outboundHoldCopy(shownVerdict.outbound ? shownVerdict : { outbound: true, reasons: ['transfer-target'] }) : ''
   return (
     <IntentRuntime
       slug={link.id}
       ask={phrasings[variant]}
+      prefillOnly={prefillOnly}
+      holdCopy={holdCopy}
       variant={variant}
       mcps={link.mcps ?? ''}
       agent={link.agent ?? ''}
