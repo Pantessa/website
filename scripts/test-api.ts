@@ -6669,7 +6669,8 @@ async function main() {
       const dollarSendChips = dollarSend && 'problem' in dollarSend ? (dollarSend.chips ?? []) : []
       check(
         'strangers: "send $5 to nate.eth" = 5 USDC, chain asked with chips whose resumes round-trip the parser as complete sends',
-        !!dollarSend && 'problem' in dollarSend && /5 USDC/.test(dollarSend.problem) && dollarSendChips.length === 3 &&
+        // Four chips since the 2026-09-08 squad: Optimism joined the transfer table (#707 left it out).
+        !!dollarSend && 'problem' in dollarSend && /5 USDC/.test(dollarSend.problem) && dollarSendChips.length === 4 &&
           dollarSendChips.every((c) => { const p = parseTransferSegment(c.resume, { fallbackChainId: null }); return !!p && !('problem' in p) && p.token.toUpperCase() === 'USDC' && p.amountHuman === '5' && p.to === 'nate.eth' }) &&
           simulateLadder('send $5 to nate.eth').gate === 'transfer',
         JSON.stringify(dollarSend),
@@ -6710,7 +6711,7 @@ async function main() {
       const sendOpts = ((sendTurn.clarify as { options?: { resume: string }[] } | undefined)?.options ?? [])
       check(
         'strangers (route): "send $5 to nate.eth" answers chain chips from the transfer layer, attributed, answered — not a wall',
-        sendTurn.buildPath === 'native-transfer' && sendOpts.length === 3 && classifyTurn(sendTurn).kind === null,
+        sendTurn.buildPath === 'native-transfer' && sendOpts.length === 4 && classifyTurn(sendTurn).kind === null,
         JSON.stringify(sendTurn).slice(0, 300),
       )
       // The route: the spot guardian refuses an EOA BY NAME before any
