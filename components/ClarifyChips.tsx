@@ -27,12 +27,15 @@
 // user a second time. The user tells us, we re-scan, the funding layer
 // decides.
 
-import { useState } from 'react'
-import { HelpCircle, ChevronRight, ArrowRight, CreditCard, Loader2 } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { HelpCircle, ChevronRight, ArrowRight, CreditCard, Loader2, Check } from 'lucide-react'
 import { useAccount, useSignMessage } from 'wagmi'
 import type { ClarifyRequest, ClarifyOption } from '@/lib/clarify'
 import { fundingPathOf, type FundingPath } from '@/lib/funding-path'
 import { startOnrampSession } from '@/lib/onramp-client'
+import { arrivalPhrase, clearFundWait, loadFundWait, saveFundWait, type Arrival, type FundWait } from '@/lib/funding-arrival'
+import { useFundingArrival } from '@/lib/use-funding-arrival'
+import { ONRAMP_NETWORK_LABEL } from '@/lib/onramp'
 
 function PathStrip({ path }: { path: FundingPath }) {
   return (
@@ -75,6 +78,62 @@ export default function ClarifyChips({
   const [funding, setFunding] = useState<number | null>(null)
   const [opened, setOpened] = useState<number | null>(null)
   const [error, setError] = useState<string | null>(null)
+  // ── The wait for the money (lib/funding-arrival). Written when the on-ramp
+  // tab opens, persisted so a reload picks it back up, watched by the hook
+  // below; the resume fires ITSELF when the balance rises. Until 2026-09-08
+  // this chip only hoped the user would come back and press "Funded it".
+  const [wait, setWait] = useState<FundWait | null>(null)
+  const firedRef = useRef(false)
+  // The landing, kept by THIS component: the watcher below is switched off
+  // once the resume has fired, and its state resets with it — the alert must
+  // outlive that (the first drive showed the banner for one render).
+  const [landed, setLanded] = useState<Arrival | null>(null)
+  const [fired, setFired] = useState(false)
+
+  // A stored wait for this wallet that matches one of these chips (same
+  // resume) restores the waiting state — the user came back to the tab, or
+  // reloaded, after paying. Keyed on the resumes, not the clarify object,
+  // so a re-render can't re-run it.
+  const resumesKey = clarify.options.map((o) => (o.fund ? `${o.fund.network}:${o.resume}` : '')).join('|')
+  useEffect(() => {
+    if (!address) return
+    const w = loadFundWait(address)
+    if (!w) return
+    const i = clarify.options.findIndex((o) => o.fund && o.resume === w.resume && o.fund.network === w.network)
+    if (i < 0) return
+    setWait((cur) => (cur && cur.openedAt === w.openedAt ? cur : w))
+    setOpened(i)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [address, resumesKey])
+
+  const watch = useFundingArrival(wait, opened !== null && !!wait && !fired)
+  useEffect(() => {
+    if (watch.status === 'arrived' && watch.arrival) setLanded(watch.arrival)
+  }, [watch.status, watch.arrival])
+
+  // Continue the ask the moment the money is here — but only in front of the
+  // user: the tab must be visible and the chat idle. A turn that starts while
+  // they are still on the Stripe tab is a surprise; one that waits for them
+  // is the point.
+  useEffect(() => {
+    if (watch.status !== 'arrived' || !wait || firedRef.current || disabled) return
+    const fire = () => {
+      if (firedRef.current) return
+      firedRef.current = true
+      setFired(true)
+      clearFundWait(wait.address)
+      onPick(wait.resume)
+    }
+    if (typeof document === 'undefined' || document.visibilityState === 'visible') {
+      fire()
+      return
+    }
+    const onVis = () => {
+      if (document.visibilityState === 'visible') fire()
+    }
+    document.addEventListener('visibilitychange', onVis)
+    return () => document.removeEventListener('visibilitychange', onVis)
+  }, [watch.status, wait, disabled, onPick])
 
   async function startFunding(o: ClarifyOption, i: number) {
     if (!o.fund) return
@@ -85,13 +144,35 @@ export default function ClarifyChips({
     setError(null)
     setFunding(i)
     // Called synchronously off the click: startOnrampSession opens the tab as
-    // its first statement, and a popup opened after an await is no longer a
+    // its first statement, and a popup opened after an `await` is no longer a
     // user gesture. It signs the consent, mints the Stripe session and hands
     // the user off; it never throws.
     const res = await startOnrampSession({ address, fund: o.fund, signMessage: signMessageAsync })
     setFunding(null)
-    if (res.ok) setOpened(i)
-    else setError(res.error)
+    if (res.ok) {
+      const w: FundWait = {
+        address: address.toLowerCase(),
+        network: o.fund.network,
+        resume: o.resume,
+        label: o.label,
+        baselineEth: null,
+        baselineStable: null,
+        openedAt: Date.now(),
+      }
+      firedRef.current = false
+      saveFundWait(w)
+      setWait(w)
+      setOpened(i)
+    } else setError(res.error)
+  }
+
+  /** The user says it's there (or wants to try anyway) — same continuation,
+   *  by hand. Clears the wait so the watcher can't fire it a second time. */
+  function continueNow(o: ClarifyOption) {
+    firedRef.current = true
+    setFired(true)
+    clearFundWait(address)
+    onPick(o.resume)
   }
 
   return (
@@ -105,25 +186,52 @@ export default function ClarifyChips({
           if (o.fund) {
             const busy = funding === i
             const waiting = opened === i
+            const arrived = waiting && !!landed
+            const chainName = ONRAMP_NETWORK_LABEL[o.fund.network] ?? o.fund.network
             return (
-              <button
-                key={`${o.label}-${i}`}
-                onClick={() => (waiting ? onPick(o.resume) : void startFunding(o, i))}
-                disabled={disabled || busy}
-                title={waiting ? o.resume : `Add funds, then: ${o.resume}`}
-                className="group flex items-center gap-2 text-left text-[12px] px-3 py-2 max-lg:min-h-10 rounded-lg border border-[var(--line)] text-[color:var(--muted)] hover:text-white hover:border-[var(--line-2)] disabled:opacity-50 transition-colors"
-              >
-                {busy ? (
-                  <Loader2 className="w-3.5 h-3.5 flex-shrink-0 animate-spin text-[color:var(--muted-2)]" />
-                ) : (
-                  <CreditCard className="w-3.5 h-3.5 flex-shrink-0 text-[color:var(--accent)]" />
+              <div key={`${o.label}-${i}`} className="space-y-1">
+                {/* The alert: money landed. The resume fires the moment this
+                    tab is in front — say both, and keep saying it after. */}
+                {arrived && landed && (
+                  <div className="flex items-start gap-2 rounded-lg border border-[color:var(--accent)]/50 bg-[color:var(--accent)]/[0.08] px-3 py-2 text-[12px]">
+                    <Check className="w-3.5 h-3.5 mt-0.5 flex-shrink-0 text-[color:var(--accent)]" strokeWidth={3} />
+                    <span className="text-[color:var(--fg)]">
+                      <span className="font-semibold">{arrivalPhrase(landed, watch.stableSymbol)} landed on {chainName}.</span>{' '}
+                      <span className="text-[color:var(--muted)]">
+                        {fired ? <>Ready to keep going — picked up &ldquo;{o.resume}&rdquo; below.</> : <>Ready to keep going — picking up &ldquo;{o.resume}&rdquo;.</>}
+                      </span>
+                    </span>
+                  </div>
                 )}
-                <span className="min-w-0 flex-1 truncate">
-                  <span className="text-[color:var(--fg)] font-medium">
-                    {waiting ? 'Funded it — pick up where I left off' : o.label}
+                {!(waiting && fired) && (
+                <button
+                  onClick={() => (waiting ? continueNow(o) : void startFunding(o, i))}
+                  disabled={disabled || busy}
+                  title={waiting ? o.resume : `Add funds, then: ${o.resume}`}
+                  className="group flex items-center gap-2 w-full text-left text-[12px] px-3 py-2 max-lg:min-h-10 rounded-lg border border-[var(--line)] text-[color:var(--muted)] hover:text-white hover:border-[var(--line-2)] disabled:opacity-50 transition-colors"
+                >
+                  {busy || (waiting && watch.status === 'watching') ? (
+                    <Loader2 className="w-3.5 h-3.5 flex-shrink-0 animate-spin text-[color:var(--muted-2)]" />
+                  ) : (
+                    <CreditCard className="w-3.5 h-3.5 flex-shrink-0 text-[color:var(--accent)]" />
+                  )}
+                  <span className="min-w-0 flex-1 truncate">
+                    <span className="text-[color:var(--fg)] font-medium">
+                      {arrived ? 'Keep going now' : waiting ? 'Funded it — pick up where I left off' : o.label}
+                    </span>
                   </span>
-                </span>
-              </button>
+                </button>
+                )}
+                {waiting && !arrived && !fired && (
+                  <div className="px-1 text-[11px] text-[color:var(--muted-2)]">
+                    {watch.status === 'timeout'
+                      ? `Stopped watching ${chainName} after a while — when the purchase lands, press the button above.`
+                      : watch.failures >= 3
+                        ? `${chainName} isn’t answering right now — still trying. Press the button above once it’s there.`
+                        : `Watching ${chainName} for the funds — this continues on its own when they land${watch.lastReadAt ? ` · checked ${Math.max(1, Math.round((Date.now() - new Date(watch.lastReadAt).getTime()) / 1000))}s ago` : ''}.`}
+                  </div>
+                )}
+              </div>
             )
           }
           const path = fundingPathOf(o.resume)
