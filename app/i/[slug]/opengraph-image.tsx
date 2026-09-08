@@ -6,6 +6,7 @@ import { brandFromRow } from '@/lib/brand-denylist'
 import { brandOgPalette, hexLuminance, normalizeHex } from '@/lib/brand-theme'
 import { gemMarkSvg } from '@/lib/og-marks'
 import { parseMosaicAsk } from '@/lib/mosaic'
+import { linkLifecycle } from '@/lib/intent-links'
 
 // Social card for an intent link (/i/<slug>) — the ASK is the hero: the
 // sentence in serif quotes, the one-tap promise under it, the guardrail
@@ -81,7 +82,18 @@ export default async function Image({ params }: Params) {
   } catch {
     link = null
   }
-  const live = link && !link.revoked ? link : null
+  // Retired links (revoked / expired / capped — one rule, linkLifecycle)
+  // unfurl the generic card: a dead promo must not keep advertising its ask
+  // in the feed while the click lands on the retired page.
+  let signs = 0
+  if (link?.maxSigns !== null && link?.maxSigns !== undefined) {
+    try {
+      signs = await prisma.embedTurn.count({ where: { intentLinkSlug: slug, outcome: 'signed' } })
+    } catch {
+      signs = 0
+    }
+  }
+  const live = link && linkLifecycle(link, signs) === 'live' ? link : null
   const ask = live?.ask ?? 'One tap from ask to signed'
   // Size ladder with a 64 step: a 27–44 char ask at 72px (the H1 drill's
   // "Swap $20 of USDC to ETH on Base") wrapped with a one-word widow; at 64

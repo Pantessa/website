@@ -28,6 +28,7 @@ import { base } from 'viem/chains'
 import { dryRunTx, isAllowanceLag } from '../lib/dry-run'
 import { createSiweMessage } from 'viem/siwe'
 import { grantTypedData } from '../lib/grant-typed-data'
+import { LINK_FEE_PCT } from '../lib/fees'
 import { ROBINHOOD_DESK } from '../lib/live-examples'
 import { grantViolation, type GrantPolicy } from '../lib/spend-grant'
 import { routerPrompt, parseRouterDecision, selectInferenceProvider, routeMessage, shortlistEndpoints } from '../lib/router'
@@ -1252,6 +1253,24 @@ async function main() {
     // STATIC route (baked at build) — no live delta to observe, so pin the
     // reader contract at the source: both counts must go through is_internal.
     const heroSrc = await readFile(new URL('../components/LinksHero.tsx', import.meta.url), 'utf8')
+    // Public creator-earnings figures must price each turn at its STAMPED
+    // tier (netFeeBpsForTurn) — grouping by path alone priced link dollars
+    // at the chat rate, 2.5× under the creator's own studio.
+    const boardSrc = await readFile(new URL('../lib/links-board.ts', import.meta.url), 'utf8')
+    check(
+      'fee tier: the public feeSummary + homepage creator stat group by feeBps and read netFeeBpsForTurn',
+      /by: \['buildPath', 'feeBps'\]/.test(heroSrc) && /netFeeBpsForTurn\(t\.buildPath, t\.feeBps\)/.test(heroSrc) &&
+        /by: \['buildPath', 'feeBps'\]/.test(boardSrc) && /netFeeBpsForTurn\(r\.buildPath, r\.feeBps\)/.test(boardSrc) &&
+        !/netFeeBpsFor\(/.test(heroSrc) && !/netFeeBpsFor\(/.test(boardSrc),
+    )
+    // The host-button snippet is HTML a third party pastes permanently:
+    // it must carry the canonical origin, never window.location (the SSR
+    // pass rendered a RELATIVE href="/i/<slug>" into the preview).
+    const generatorSrc = await readFile(new URL('../app/links/embed/generator.tsx', import.meta.url), 'utf8')
+    check(
+      'embed generator: snippet + copy use the canonical SITE_URL, never window.location.origin',
+      !/window\.location\.origin/.test(generatorSrc) && /buttonSnippet\(SITE_URL/.test(generatorSrc),
+    )
     check(
       'hero strip: "Links live" + "Opens" read through the honest reader (intent_links.is_internal; opens exclude internal links)',
       /intentLink\.count\(\{ where: \{ revoked: false, isInternal: false \} \}\)/.test(heroSrc) &&
@@ -2491,9 +2510,62 @@ async function main() {
     const strangerRevoke = await fetch(`${BASE}/api/intent-links/${slug}`, { method: 'DELETE' })
     check('intent links: revoking without a session → 401', strangerRevoke.status === 401)
 
+    // The retired page (squad gtm 2026-09-08): a stranger sent a dead money
+    // link used to get Next's bare "404 | This page could not be found."
+    // The page now names the reason (from the row, server-side — never the
+    // ask, which a creator may have retracted on purpose), says nothing ran
+    // and nothing was signed, and hands over the onward paths. Unknown
+    // slugs stay a true 404 (pinned above) on the branded site page.
+    const revokedPage = await fetch(`${BASE}/i/${thirdSlug}`)
+    const revokedHtml = await revokedPage.text()
+    check(
+      'retired link: /i/<revoked> explains itself — reason, nothing-signed line, onward paths, never the ask, never framework 404 copy',
+      revokedPage.status === 200 &&
+        revokedHtml.includes('data-link-state="revoked"') &&
+        revokedHtml.includes('retired by its creator') &&
+        revokedHtml.includes('nothing was signed') &&
+        revokedHtml.includes('Browse live links') &&
+        revokedHtml.includes('href="/chat"') &&
+        !revokedHtml.includes('Swap $5 of ETH to USDC') &&
+        !revokedHtml.includes('This page could not be found'),
+    )
+    check('retired link: the retired page is noindex and titled as not live', /noindex/.test(revokedHtml) && revokedHtml.includes('no longer live'))
+    const siteMiss = await fetch(`${BASE}/definitely-not-a-route-${Date.now()}`)
+    const siteMissHtml = await siteMiss.text()
+    check(
+      'site 404: unknown routes render the branded not-found page (home / app / links doors), never the framework default',
+      siteMiss.status === 404 && siteMissHtml.includes('nothing at this address') && siteMissHtml.includes('href="/chat"') && !siteMissHtml.includes('This page could not be found'),
+    )
+
     // The public leaderboard: server-truth board, mint CTA, no wallets.
     const board = await fetch(`${BASE}/links`)
     const boardHtml = await board.text()
+    // Share cards (squad gtm 2026-09-08): a page-level openGraph block
+    // REPLACES the root's, and the root file-based card does not ride into
+    // it — /links, /links/embed, /sign, /inbox and /mosaic unfurled with no
+    // image at all. Each carries an explicit card now; the links family
+    // card must itself render.
+    const ogOf = (html: string) => html.match(/property="og:image" content="([^"]+)"/)?.[1] ?? null
+    const twOf = (html: string) => html.match(/name="twitter:image" content="([^"]+)"/)?.[1] ?? null
+    const embedHtml = await (await fetch(`${BASE}/links/embed`)).text()
+    const signHtml = await (await fetch(`${BASE}/sign?ask=Buy%20%245%20of%20AAPL`)).text()
+    const inboxHtml = await (await fetch(`${BASE}/inbox/0x000000000000000000000000000000000000dEaD`)).text()
+    const mosaicHtml = await (await fetch(`${BASE}/mosaic`)).text()
+    check(
+      'share cards: /links, /links/embed, /sign, /inbox carry the links card as og:image AND twitter:image',
+      [boardHtml, embedHtml, signHtml, inboxHtml].every((h) => /\/links\/opengraph-image/.test(ogOf(h) ?? '') && !!twOf(h)),
+      JSON.stringify({ board: ogOf(boardHtml), embed: ogOf(embedHtml), sign: ogOf(signHtml), inbox: ogOf(inboxHtml) }),
+    )
+    check('share cards: /mosaic carries the site card on both og:image and twitter:image', /\/opengraph-image/.test(ogOf(mosaicHtml) ?? '') && !!twOf(mosaicHtml), JSON.stringify({ og: ogOf(mosaicHtml), tw: twOf(mosaicHtml) }))
+    const linksCard = await fetch(`${BASE}/links/opengraph-image`)
+    check('share cards: the links family card renders (200 PNG)', linksCard.status === 200 && /image\/png/.test(linksCard.headers.get('content-type') ?? ''))
+    // Fee copy reads the LINK tier from lib/fees — the board said "0.20%"
+    // (the chat rate) for link conversions, 2.5× under what a creator earns.
+    check(
+      'fee copy: the board states the link tier (lib/fees LINK_FEE_PCT), not the chat rate',
+      boardHtml.includes(`half of Pantessa&#x27;s ${LINK_FEE_PCT} link fee`) || boardHtml.includes(`half of Pantessa's ${LINK_FEE_PCT} link fee`),
+      `expected ${LINK_FEE_PCT}`,
+    )
     check('intent links: /links leaderboard renders with the mint CTA', board.status === 200 && /Mint yours/.test(boardHtml) && /dollars moved/i.test(boardHtml))
     // The mint CTA is the composer ITSELF (the mint stage — the share-card
     // replica a stranger types into, pre-sign-in), not a button to a form
@@ -3195,10 +3267,19 @@ async function main() {
     const capPageMid = await fetch(`${BASE}/i/${capLink.slug}`)
     await signTurn()
     const capPageAfter = await fetch(`${BASE}/i/${capLink.slug}`)
+    const capPageAfterHtml = await capPageAfter.text()
+    const capMidHtml = await capPageMid.text()
     check(
-      'limits: the sign cap counts SERVER-TRUTH turns — live below the cap, 404 at it',
-      capPageBefore.status === 200 && capPageMid.status === 200 && capPageAfter.status === 404,
+      'limits: the sign cap counts SERVER-TRUTH turns — live below the cap, retired ("reached its signing cap") at it',
+      capPageBefore.status === 200 && capPageMid.status === 200 && capMidHtml.includes('Buy $9 of AAPL for the promo') &&
+        capPageAfter.status === 200 && capPageAfterHtml.includes('data-link-state="capped"') && !capPageAfterHtml.includes('Buy $9 of AAPL for the promo'),
     )
+    // …and the card stops advertising the ask: a capped/expired promo must
+    // not keep unfurling "Buy $9 of AAPL" in the feed while the click lands
+    // on the retired page. (The revoked case already fell back; expiry and
+    // the cap did not until 2026-09-08.)
+    const cappedCard = await fetch(`${BASE}/i/${capLink.slug}/opengraph-image`)
+    check('retired link: the OG card of a capped link still renders (generic card, 200 PNG)', cappedCard.status === 200 && /image\/png/.test(cappedCard.headers.get('content-type') ?? ''))
     await fetch(`${BASE}/api/intent-links/${capLink.slug}`, { method: 'DELETE', headers: { cookie: mallorySession } })
 
     // Expiry: live until the clock passes, then dead everywhere.
@@ -3216,9 +3297,11 @@ async function main() {
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ kind: 'open' }),
     })
+    const expAfterHtml = await expAfter.text()
     check(
-      'limits: an expired link dies everywhere (page 404, events 404)',
-      expMintRes.status === 200 && expBefore.status === 200 && expAfter.status === 404 && expEvent.status === 404,
+      'limits: an expired link dies everywhere (page retired as "expired", ask gone, events 404)',
+      expMintRes.status === 200 && expBefore.status === 200 && expAfter.status === 200 && expAfterHtml.includes('data-link-state="expired"') &&
+        !expAfterHtml.includes('Buy $9 of AAPL for the promo') && expEvent.status === 404,
     )
     await fetch(`${BASE}/api/intent-links/${expLink.slug}`, { method: 'DELETE', headers: { cookie: mallorySession } })
 

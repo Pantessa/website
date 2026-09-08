@@ -11,6 +11,7 @@ import { LINKS_STUDIO_HREF } from '@/lib/links-href'
 import { useState } from 'react'
 import { Check, Copy, Plus } from 'lucide-react'
 import { composeMcps, MINTABLE_MCPS } from '@/lib/intent-links'
+import { SITE_URL, absoluteUrl } from '@/lib/site-url'
 
 interface Minted {
   slug: string
@@ -71,8 +72,10 @@ export default function ButtonGenerator() {
 
   const copy = (what: 'snippet' | 'url') => {
     if (!minted) return
-    const origin = window.location.origin
-    const text = what === 'snippet' ? buttonSnippet(origin, minted, effectiveLabel, badge) : `${origin}/i/${minted.slug}`
+    // The canonical origin, never window.location — this is HTML a host
+    // pastes onto their own site permanently (a preview deploy or the apex
+    // would bake a non-canonical URL into it).
+    const text = what === 'snippet' ? buttonSnippet(SITE_URL, minted, effectiveLabel, badge) : absoluteUrl(`/i/${minted.slug}`)
     void navigator.clipboard.writeText(text).then(() => {
       setCopied(what)
       setTimeout(() => setCopied(null), 1500)
@@ -214,7 +217,7 @@ export default function ButtonGenerator() {
               </button>
             </div>
             <pre className="rounded-lg border border-[var(--line)] bg-[var(--bg)] p-3 text-[11.5px] mono text-[color:var(--muted)] overflow-x-auto whitespace-pre-wrap break-all">
-              {buttonSnippet(typeof window === 'undefined' ? '' : window.location.origin, minted, effectiveLabel, badge)}
+              {buttonSnippet(SITE_URL, minted, effectiveLabel, badge)}
             </pre>
             <p className="mt-2 text-[12px] text-[color:var(--muted-2)]">
               Track opens, connects, builds, and signs — and what you earned on conversions — on{' '}

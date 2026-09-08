@@ -1,7 +1,7 @@
 import { Prisma } from '@prisma/client'
 import prisma from '@/lib/db'
 import { HOUSE_LINKS } from '@/lib/house-links'
-import { FEE_BEARING_BUILD_PATHS, FEES_LIVE_SINCE, CREATOR_FEE_SPLIT, netFeeBpsFor } from '@/lib/fees'
+import { FEE_BEARING_BUILD_PATHS, FEES_LIVE_SINCE, CREATOR_FEE_SPLIT, netFeeBpsForTurn } from '@/lib/fees'
 import { INTERNAL_ORIGIN_SQL, INTERNAL_TRAFFIC_WHERE } from '@/lib/value-origin'
 
 // The intent-links board data, shared by /links (the full leaderboard) and
@@ -270,18 +270,23 @@ export async function feeSummary(): Promise<FeeSummary | null> {
     // Grouped by path: each venue hands over a different NET rate (NEAR
     // Intents keeps half of its app fee), so one blended multiply would
     // overstate the treasury on every cross-chain dollar.
+    // …and by the STAMPED tier (C2b): a link-origin swap carries 50 bps,
+    // organic chat 20 — grouping by path alone priced every link dollar at
+    // the chat rate, so the public creator figure ran 2.5× under the
+    // creator's own panel (2026-09-08 squad find). netFeeBpsForTurn is the
+    // one reader the owner API already uses.
     const [all, linked] = await Promise.all([
-      prisma.embedTurn.groupBy({ by: ['buildPath'], where: feeWhere, _sum: { valueUsd: true }, _count: { _all: true } }),
+      prisma.embedTurn.groupBy({ by: ['buildPath', 'feeBps'], where: feeWhere, _sum: { valueUsd: true }, _count: { _all: true } }),
       prisma.embedTurn.groupBy({
-        by: ['buildPath'],
+        by: ['buildPath', 'feeBps'],
         where: { ...feeWhere, intentLinkSlug: { not: null } },
         _sum: { valueUsd: true },
       }),
     ])
     const feeBearingUsd = all.reduce((s, r) => s + (r._sum.valueUsd ?? 0), 0)
-    const totalFeeUsd = all.reduce((s, r) => s + (r._sum.valueUsd ?? 0) * (netFeeBpsFor(r.buildPath) / 10_000), 0)
+    const totalFeeUsd = all.reduce((s, r) => s + (r._sum.valueUsd ?? 0) * (netFeeBpsForTurn(r.buildPath, r.feeBps) / 10_000), 0)
     const creatorUsd = linked.reduce(
-      (s, r) => s + (r._sum.valueUsd ?? 0) * (netFeeBpsFor(r.buildPath) / 10_000) * CREATOR_FEE_SPLIT,
+      (s, r) => s + (r._sum.valueUsd ?? 0) * (netFeeBpsForTurn(r.buildPath, r.feeBps) / 10_000) * CREATOR_FEE_SPLIT,
       0,
     )
     return {

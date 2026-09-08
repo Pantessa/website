@@ -1,5 +1,5 @@
 import prisma from '@/lib/db'
-import { FEE_BEARING_BUILD_PATHS, creatorEarningsUsd, formatEarnedUsd, netFeeBpsFor } from '@/lib/fees'
+import { FEE_BEARING_BUILD_PATHS, creatorEarningsUsd, formatEarnedUsd, netFeeBpsForTurn } from '@/lib/fees'
 import { REAL_TRAFFIC_WHERE } from '@/lib/value-origin'
 import LinksHeroView from '@/components/LinksHeroView'
 
@@ -26,8 +26,11 @@ async function linkStats() {
       // REAL_TRAFFIC_WHERE: the homepage is a public claim, so harness and
       // localhost turns must never count toward it (the same rule every other
       // public money read follows).
+      // Grouped by the STAMPED tier too — link-origin swaps carry 50 bps,
+      // and pricing them at the path default showed creators 2.5× less on
+      // the homepage than in their own studio (2026-09-08 squad find).
       prisma.embedTurn.groupBy({
-        by: ['buildPath'],
+        by: ['buildPath', 'feeBps'],
         where: { intentLinkSlug: { not: null }, outcome: 'signed', valueUsd: { gt: 0 }, ...REAL_TRAFFIC_WHERE },
         _sum: { valueUsd: true },
       }),
@@ -39,7 +42,7 @@ async function linkStats() {
       movedUsd += v
       // Per-path net rate — a cross-chain dollar earns half a Uniswap dollar.
       if (t.buildPath && FEE_BEARING_BUILD_PATHS.has(t.buildPath)) {
-        creatorUsd += creatorEarningsUsd(v, netFeeBpsFor(t.buildPath))
+        creatorUsd += creatorEarningsUsd(v, netFeeBpsForTurn(t.buildPath, t.feeBps))
       }
     }
     const usd = (n: number) =>

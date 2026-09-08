@@ -92,6 +92,48 @@ export function composeMcps(ask: string): string[] {
   return [...new Set(slugs)].slice(0, 4)
 }
 
+/** Why a link is or isn't LIVE — the one lifecycle rule every reader shares
+ *  (the /i page, its OG card, the public status probe behind the retired
+ *  page). `signs` is SERVER-TRUTH signed turns (guardrail-priced
+ *  embed_turns) — client-reported funnel events can neither burn nor extend
+ *  a cap. Unknown slugs never reach here: they're a true 404. */
+export type LinkLifecycle = 'live' | 'revoked' | 'expired' | 'capped'
+
+export function linkLifecycle(
+  row: { revoked: boolean; expiresAt: Date | string | null; maxSigns: number | null },
+  signs: number,
+  now: number = Date.now(),
+): LinkLifecycle {
+  if (row.revoked) return 'revoked'
+  if (row.expiresAt && new Date(row.expiresAt).getTime() <= now) return 'expired'
+  if (row.maxSigns !== null && signs >= row.maxSigns) return 'capped'
+  return 'live'
+}
+
+/** What a stranger reads on a retired link — the reason in plain words, and
+ *  the reassurance that matters most on a money link: nothing ran, nothing
+ *  was signed. 'unknown' = the slug never existed (a typo, or a link that
+ *  was never minted). */
+export const LINK_RETIRED_COPY: Record<LinkLifecycle | 'unknown', { title: string; body: string }> = {
+  live: { title: '', body: '' },
+  revoked: {
+    title: 'This link was retired by its creator.',
+    body: 'Its ask no longer runs from here. Nothing was built and nothing was signed by opening it.',
+  },
+  expired: {
+    title: 'This link has expired.',
+    body: 'It was minted with an end date, and the date has passed. Nothing was built and nothing was signed by opening it.',
+  },
+  capped: {
+    title: 'This link reached its signing cap.',
+    body: 'Every one of its signatures was claimed. Nothing was built and nothing was signed by opening it.',
+  },
+  unknown: {
+    title: "There's no link at this address.",
+    body: 'Check the link you were sent — a character may be missing. Nothing was built and nothing was signed by opening it.',
+  },
+}
+
 /** How many A/B alternate phrasings a link may carry beyond the base ask. */
 export const MAX_VARIANTS = 3
 

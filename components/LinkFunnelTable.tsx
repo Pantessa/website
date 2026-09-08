@@ -21,7 +21,7 @@ export function LinkFunnelTable({ links, onChanged }: { links: LinkRow[]; onChan
   const rows = links.filter((l) => !gone.includes(l.slug))
 
   const copy = (slug: string) => {
-    void navigator.clipboard.writeText(`${window.location.origin}/i/${slug}`).then(() => {
+    void navigator.clipboard.writeText(absoluteUrl(`/i/${slug}`)).then(() => {
       setCopied(slug)
       setTimeout(() => setCopied(null), 1500)
     })

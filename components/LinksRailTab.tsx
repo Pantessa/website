@@ -20,6 +20,7 @@ import { dismissOnboarding, onboardingDismissed, useOnboardingStatus, type Onboa
 import MintLinkModal from '@/components/MintLinkModal'
 import CreatorPageModal from '@/components/CreatorPageModal'
 import { LivePill } from '@/components/LivePill'
+import { absoluteUrl } from '@/lib/site-url'
 
 // One CTA look for every journey step — accent-based so both themes hold
 // (the done-state emerald sweep is #597 Lane U territory; don't add to it).
@@ -151,7 +152,7 @@ function SignedInLinks({ activeSlugs }: { activeSlugs: string[] }) {
   }, [])
 
   const copy = (slug: string) => {
-    void navigator.clipboard.writeText(`${window.location.origin}/i/${slug}`).then(() => {
+    void navigator.clipboard.writeText(absoluteUrl(`/i/${slug}`)).then(() => {
       setCopied(slug)
       setTimeout(() => setCopied(null), 1500)
     })

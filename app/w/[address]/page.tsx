@@ -4,6 +4,7 @@ import { isAddress } from 'viem'
 import Footer from '@/components/Footer'
 import { walletSnapshotFor, type WalletSnapshot } from '@/lib/briefing-exec'
 import { chartPairFor } from '@/lib/charts'
+import { SITE_CARD } from '@/lib/og-defaults'
 
 // /w/<address> — "run Pantessa on any wallet." A public, read-only briefing
 // of what Pantessa notices in a wallet (public chain data only): open perp
@@ -31,7 +32,12 @@ export async function generateMetadata({ params }: Params): Promise<Metadata> {
     snap && snap.needs > 0
       ? `${snap.needs} thing${snap.needs === 1 ? '' : 's'} need attention in this wallet — unprotected positions, stuck funds, idle stables. Pantessa builds the fix; only the owner's wallet can sign it.`
       : 'A live read of this wallet — positions, protection, idle funds. Run Pantessa on your own wallet: it notices, you sign.'
-  return { title, description, openGraph: { title, description } }
+  return {
+    title,
+    description,
+    openGraph: { title, description, siteName: 'Pantessa', type: 'website', images: SITE_CARD },
+    twitter: { card: 'summary_large_image', title, description, images: SITE_CARD },
+  }
 }
 
 function chipHref(prompt: string): string {

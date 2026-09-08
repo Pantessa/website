@@ -31,6 +31,7 @@ import { cdpEnabled } from '@/lib/cdp-embedded'
 import CreateAccountButton from '@/components/CreateAccountButton'
 import { absoluteUrl } from '@/lib/site-url'
 import { LINKS_STUDIO_HREF, linksStudioHref } from '@/lib/links-href'
+import { LINK_FEE_PCT } from '@/lib/fees'
 
 /** The vendored brand glyph for a mintable MCP, sized for a card pill.
  *  Marks render in `currentColor`, so they inherit the pill's ink. */
@@ -204,7 +205,7 @@ export function MintLinkForm({
   }
 
   const copyUrl = (m: Minted) => {
-    void navigator.clipboard.writeText(`${window.location.origin}${m.url}`).then(() => {
+    void navigator.clipboard.writeText(absoluteUrl(m.url)).then(() => {
       setCopied(true)
       setTimeout(() => setCopied(false), 1500)
     })
@@ -465,7 +466,7 @@ export function MintLinkForm({
           </a>
         )}
         <span className="text-[12px] text-[color:var(--muted-2)]">
-          Half of Pantessa&apos;s 0.20% fee on every conversion is yours.
+          Half of Pantessa&apos;s {LINK_FEE_PCT} link fee on every conversion is yours.
         </span>
         {error && <span className="text-[13px] text-amber-400 basis-full">{error}</span>}
       </div>

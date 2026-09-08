@@ -136,6 +136,10 @@ export default function IntentRuntime({
   // (a plain swap sign) have no settlement signal — signed stays their 100%.
   const [settled, setSettled] = useState(false)
   const [blocked, setBlocked] = useState(false)
+  // Why the run stopped at the door: the wallet isn't on the list, or the
+  // membership probe itself never answered (fail-closed, but the copy must
+  // not accuse the wallet of something the network did).
+  const [blockReason, setBlockReason] = useState<'not-listed' | 'probe-failed'>('not-listed')
   // A turn settled with nothing to sign (no funds, plain answer, refusal) —
   // the visitor must never dead-end here: surface the onward paths. Cleared
   // the moment any turn actually builds.
@@ -242,8 +246,17 @@ export default function IntentRuntime({
     }
     fetch(`/api/intent-links/${slug}/allowed?wallet=${address}`)
       .then((r) => r.json())
-      .then((d: { allowed?: boolean }) => (d.allowed ? setAllowCleared(true) : setBlocked(true)))
-      .catch(() => setBlocked(true))
+      .then((d: { allowed?: boolean }) => {
+        if (d.allowed) setAllowCleared(true)
+        else {
+          setBlockReason('not-listed')
+          setBlocked(true)
+        }
+      })
+      .catch(() => {
+        setBlockReason('probe-failed')
+        setBlocked(true)
+      })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [started])
 
@@ -519,12 +532,14 @@ export default function IntentRuntime({
           </span>
         </div>
         <h1 className="text-xl font-semibold text-[color:var(--fg)] mb-3">
-          This link is reserved for specific wallets.
+          {blockReason === 'probe-failed'
+            ? 'This link is reserved for specific wallets — and the check didn\u2019t answer.'
+            : 'This link is reserved for specific wallets.'}
         </h1>
         <p className="text-[14px] leading-relaxed text-[color:var(--muted)] mb-6">
-          The wallet you connected isn&apos;t on this link&apos;s list, so nothing was run and
-          nothing was signed. The ask itself isn&apos;t a secret — you can take it to the chat
-          yourself:
+          {blockReason === 'probe-failed'
+            ? 'We couldn\u2019t confirm whether your wallet is on this link\u2019s list (a network hiccup on our side), so nothing was run and nothing was signed. Reload to try the check again, or take the ask to the chat yourself:'
+            : 'The wallet you connected isn\u2019t on this link\u2019s list, so nothing was run and nothing was signed. The ask itself isn\u2019t a secret — you can take it to the chat yourself:'}
         </p>
         <a
           href={`/chat?prompt=${encodeURIComponent(ask)}`}

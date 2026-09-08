@@ -12,6 +12,7 @@ import TrustStrip from '@/components/TrustStrip'
 import StayUpToDate from '@/components/StayUpToDate'
 import MobileCtaBar from '@/components/MobileCtaBar'
 import Footer from '@/components/Footer'
+import { LINK_FEE_PCT } from '@/lib/fees'
 
 /** / — the links-first landing (2026-07-22 repositioning): intent links are
  * the product, chat is the link builder. One claim up top — "You have an
@@ -75,7 +76,7 @@ const JSON_LD = JSON.stringify([
     applicationCategory: 'FinanceApplication',
     operatingSystem: 'Web',
     description:
-      'Short links that carry a plain-English ask — buy a tokenized stock, stake ETH, set a recurring buy, protect a position. Opening one connects the visitor’s own wallet; Pantessa compiles the ask into guarded on-chain transactions (deterministic builders, fail-closed checks, cross-chain funding included), the visitor signs, and every move is receipted. Creators earn half of Pantessa’s 0.20% conversion fee; the chat doubles as the link builder and embeds on any site.',
+      `Short links that carry a plain-English ask — buy a tokenized stock, stake ETH, set a recurring buy, protect a position. Opening one connects the visitor’s own wallet; Pantessa compiles the ask into guarded on-chain transactions (deterministic builders, fail-closed checks, cross-chain funding included), the visitor signs, and every move is receipted. Creators earn half of Pantessa’s ${LINK_FEE_PCT} link conversion fee; the chat doubles as the link builder and embeds on any site.`,
     offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD' },
     provider: { '@type': 'Organization', name: 'Pantessa', url: SITE },
   },

@@ -2,7 +2,8 @@ import type { Metadata } from 'next'
 import { notFound } from 'next/navigation'
 import prisma from '@/lib/db'
 import { brandFromRow } from '@/lib/brand-denylist'
-import { INTENT_SLUG_RE } from '@/lib/intent-links'
+import { INTENT_SLUG_RE, linkLifecycle, type LinkLifecycle } from '@/lib/intent-links'
+import LinkRetired from '@/components/LinkRetired'
 import { notifyEligible } from '@/lib/broker-webhook'
 import { MANDATE_KIND_LABELS, type MandateKind } from '@/lib/roster-client'
 import IntentRuntime from '@/components/IntentRuntime'
@@ -18,20 +19,24 @@ export const dynamic = 'force-dynamic'
 
 type Params = { params: Promise<{ slug: string }> }
 
-async function getLink(slug: string) {
+type LinkRow = NonNullable<Awaited<ReturnType<typeof prisma.intentLink.findUnique>>>
+type LinkLookup = { link: LinkRow; state: 'live' } | { link: null; state: Exclude<LinkLifecycle, 'live'> } | null
+
+/** The row + its lifecycle. null = no such link (a true 404). A retired
+ *  link (revoked / expired / capped — one rule, linkLifecycle, shared with
+ *  the OG card) comes back with its STATE and no row: the page explains
+ *  which way it went instead of a bare framework 404, and never re-shows
+ *  the ask a creator may have retracted on purpose. Sign cap: SERVER-TRUTH
+ *  signs only (guardrail-priced embed_turns) — client-reported funnel
+ *  events can neither burn nor extend the cap. */
+async function getLink(slug: string): Promise<LinkLookup> {
   if (!INTENT_SLUG_RE.test(slug)) return null
   try {
     const l = await prisma.intentLink.findUnique({ where: { id: slug } })
-    if (!l || l.revoked) return null
-    // Expiry: a dead promo behaves exactly like a revoked link.
-    if (l.expiresAt && l.expiresAt.getTime() <= Date.now()) return null
-    // Sign cap: SERVER-TRUTH signs only (guardrail-priced embed_turns) —
-    // client-reported funnel events can neither burn nor extend the cap.
-    if (l.maxSigns !== null) {
-      const signs = await prisma.embedTurn.count({ where: { intentLinkSlug: slug, outcome: 'signed' } })
-      if (signs >= l.maxSigns) return null
-    }
-    return l
+    if (!l) return null
+    const signs = l.maxSigns !== null ? await prisma.embedTurn.count({ where: { intentLinkSlug: slug, outcome: 'signed' } }) : 0
+    const state = linkLifecycle(l, signs)
+    return state === 'live' ? { link: l, state } : { link: null, state }
   } catch {
     return null
   }
@@ -39,8 +44,10 @@ async function getLink(slug: string) {
 
 export async function generateMetadata({ params }: Params): Promise<Metadata> {
   const { slug } = await params
-  const link = await getLink(slug)
-  if (!link) return { title: 'Intent link · Pantessa', robots: { index: false, follow: false } }
+  const found = await getLink(slug)
+  if (!found) return { title: 'Intent link · Pantessa', robots: { index: false, follow: false } }
+  if (!found.link) return { title: 'This link is no longer live · Pantessa', robots: { index: false, follow: false } }
+  const link = found.link
   const title = `${link.ask} · Pantessa`
   const description =
     'One tap from ask to signed. Pantessa compiles this into guarded transactions — deterministic builders, fail-closed checks, receipts — and your wallet is the only thing that can sign.'
@@ -114,8 +121,10 @@ async function getBrand(creator: string | null): Promise<{ brand: ReturnType<typ
 
 export default async function IntentLinkPage({ params }: Params) {
   const { slug } = await params
-  const link = await getLink(slug)
-  if (!link) notFound()
+  const found = await getLink(slug)
+  if (!found) notFound()
+  if (!found.link) return <LinkRetired state={found.state} />
+  const link = found.link
   const { brand, handle: creatorHandle } = await getBrand(link.creator)
   const notify = await getNotify(link)
   const roster = await getRosterBadge(link.rosterSlotId)
