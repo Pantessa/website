@@ -69,3 +69,34 @@ export const WC_APP_METADATA = {
   appUrl: 'https://www.pantessa.com',
   appIcon: 'https://www.pantessa.com/icon.png',
 } as const
+
+/** How long the door waits for the CDP SDK (the Google + email lanes) before
+ *  it stops pretending the lane is coming. CDP's config fetch is a
+ *  cross-origin call to api.cdp.coinbase.com — an ad/privacy blocker, a
+ *  corporate proxy, or a CDP outage kills it silently, and the door then
+ *  showed a spinner captioned "Preparing the email lane…" FOREVER with the
+ *  Google button disabled and nothing saying why (squad gtm 2026-09-08,
+ *  reproduced on every headless drive where that origin is blocked). */
+export const CDP_INIT_PATIENCE_MS = 8000
+
+export type EmailLaneState = {
+  /** CDP hooks report initialized (the lane can send a code). */
+  initialized: boolean
+  /** A code is being sent right now. */
+  busy: boolean
+  /** CDP_INIT_PATIENCE_MS elapsed without initialization. */
+  timedOut: boolean
+}
+
+/** The one line under the email field — every state names what is true. The
+ *  timed-out line points at the lane that DOES work instead of leaving a
+ *  spinner to be read as "this site is broken". */
+export function emailLaneHint(s: EmailLaneState): string {
+  if (s.initialized) {
+    return s.busy ? 'Sending your code…' : "We'll email you a 6-digit code — no password, no extension."
+  }
+  if (s.timedOut) {
+    return 'The email and Google lanes can’t reach their provider right now (a blocker or a network filter, usually). Connect a wallet above — it works on its own.'
+  }
+  return 'Preparing the email lane…'
+}

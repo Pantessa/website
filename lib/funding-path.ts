@@ -122,6 +122,11 @@ function parseSegment(seg: string): PathEdge | null {
   return null
 }
 
+/** The "Not now" chip's resume, as every funding refusal mints it
+ *  (lib/funding-plan + the route's stock-shortfall branch). The route answers
+ *  it natively — a decline is never a planner turn. Both house phrasings. */
+export const NEVER_MIND_RESUME_RE = /^never mind\s*[—–-]\s*leave my (?:funds|usdc) where (?:they are|it is)\.?$/i
+
 /**
  * Derive the drawable route from a chip's resume string. Null when the
  * resume opens with anything other than a funding leg — "Not now" chips,

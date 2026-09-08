@@ -119,7 +119,7 @@ export default function ChatSignInGate() {
               {turnsUsed > 0
                 ? `${turnsLeft} guest ask${turnsLeft === 1 ? '' : 's'} left. `
                 : `${GUEST_TRIAL_LIMIT} free asks to look around. `}
-              Connect when you want to sign what it builds.
+              Connect a wallet when you want to sign what it builds.
             </span>
           )}
         </p>
@@ -140,9 +140,14 @@ export default function ChatSignInGate() {
             label={
               <>
                 <LogIn className="w-3.5 h-3.5" strokeWidth={2.5} />
-                <span>Sign in</span>
+                <span>Connect wallet</span>
               </>
             }
+            // Connect-to-act: the banner's own words promise a connect, so
+            // the door's wallet lane only CONNECTS here (no SIWE on the
+            // way in — it is offered once there is something to keep).
+            // Google/email lanes are unchanged (QA O-6).
+            walletConnectOnly
             redirectTo={hereWithQuery()}
           />
         ) : (
@@ -154,7 +159,7 @@ export default function ChatSignInGate() {
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[var(--accent)] text-black text-xs font-semibold hover:opacity-90 transition-opacity disabled:opacity-60"
           >
             {signingIn ? <Loader2 className="w-3.5 h-3.5 animate-spin" strokeWidth={2.5} /> : <LogIn className="w-3.5 h-3.5" strokeWidth={2.5} />}
-            <span>{signingIn ? 'Signing in…' : 'Sign in'}</span>
+            <span>{signingIn ? 'Signing in…' : 'Connect wallet'}</span>
           </button>
         )}
       </div>

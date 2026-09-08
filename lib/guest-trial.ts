@@ -34,6 +34,18 @@ export function bumpGuestTurns(): void {
   window.dispatchEvent(new Event(EVT))
 }
 
+/** Give one turn back. A reply that only said "connect your wallet" answered
+ *  nothing — two chips tapped before connecting used to spend 40% of the
+ *  allowance on zero answers (QA O-3, squad gtm 2026-09-08). Floors at 0. */
+export function refundGuestTurn(): void {
+  try {
+    window.sessionStorage.setItem(KEY, String(Math.max(0, guestTurnsUsed() - 1)))
+  } catch {
+    /* storage blocked — nothing was counted either */
+  }
+  window.dispatchEvent(new Event(EVT))
+}
+
 /** useSyncExternalStore subscription for the turn count. */
 export function subscribeGuestTrial(cb: () => void): () => void {
   window.addEventListener(EVT, cb)

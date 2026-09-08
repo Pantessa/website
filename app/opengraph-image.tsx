@@ -4,14 +4,16 @@ import { join } from 'node:path'
 import { gemMarkSvg } from '@/lib/og-marks'
 
 // Social card for the site (og:image + twitter:image via app/twitter-image.tsx).
-// The Mega-dapps pivot card, drawn in the fusion hero's language: protocol
+// The links-first card ("You have an intent. We do the rest." — the site
+// title since 2026-07-22; it said "Mega dapps are here" until the squad's
+// GTM sweep 2026-09-08), drawn in the fusion hero's language: protocol
 // rivers converging into one emerald core on #050708, a big serif headline
 // with the emerald→gold gradient italic, and a prominent logo lockup + tag.
 // Deliberately NO body copy — share previews render too small to read it.
 // Fonts are embedded from assets/og-fonts (static TTF instances of the same
 // Google-Fonts families the site loads: Newsreader 500 + Geist 500/600).
 
-export const alt = 'Pantessa — Mega dapps are here. Every dapp, one chat.'
+export const alt = 'Pantessa — You have an intent. We do the rest.'
 export const size = { width: 1200, height: 630 }
 export const contentType = 'image/png'
 
@@ -160,9 +162,9 @@ export default async function Image() {
             <span style={{ color: INK, fontSize: 62, fontWeight: 600, letterSpacing: -2.5 }}>pantessa</span>
           </div>
           <div style={{ display: 'flex', marginTop: 20, fontSize: 25, letterSpacing: 6.5, color: '#8a9186' }}>
-            <span>EVERY DAPP</span>
+            <span>INTENT LINKS</span>
             <span style={{ color: ACCENT, margin: '0 18px' }}>·</span>
-            <span>ONE CHAT</span>
+            <span>YOUR WALLET SIGNS</span>
           </div>
 
           {/* the headline — hero serif, gradient italic on the payoff line */}
@@ -174,12 +176,14 @@ export default async function Image() {
               marginTop: 52,
               fontFamily: 'Newsreader',
               fontWeight: 500,
-              fontSize: 148,
-              lineHeight: 0.98,
-              letterSpacing: -4.4,
+              // 116px: "You have an intent." spans ~1000px at this size —
+              // the 148px of the two-word headline would overflow the card.
+              fontSize: 116,
+              lineHeight: 1.02,
+              letterSpacing: -3.4,
             }}
           >
-            <span style={{ color: INK }}>Mega dapps</span>
+            <span style={{ color: INK }}>You have an intent.</span>
             <span
               style={{
                 fontStyle: 'italic',
@@ -192,7 +196,7 @@ export default async function Image() {
                 paddingRight: 10,
               }}
             >
-              are here.
+              We do the rest.
             </span>
           </div>
         </div>

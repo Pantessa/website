@@ -120,9 +120,15 @@ export default function ChatLoader({
           transform: scale(0.72);
           margin: -18px 0;
         }
-        .yload__line--solo {
+        /* A lone caption stays on screen. Doubled class = higher specificity
+           than the cycling .yload__line rule declared BELOW it — at equal
+           specificity the later rule won and a solo line ran the 4-line
+           cycle, i.e. was visible 2%–25% of 9.6s: the /i splash read as a
+           captionless loader ~77% of the time (squad gtm 2026-09-08). */
+        .yload__line.yload__line--solo {
           animation: none;
           opacity: 1;
+          transform: none;
         }
 
         .yload__stage {
