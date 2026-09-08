@@ -51,10 +51,14 @@ export async function generateMetadata({ params }: Params): Promise<Metadata> {
   const title = `${link.ask} · Pantessa`
   const description =
     'One tap from ask to signed. Pantessa compiles this into guarded transactions — deterministic builders, fail-closed checks, receipts — and your wallet is the only thing that can sign.'
+  // House links (creator-less seeds, the asks the landing sends strangers
+  // to) are first-party product pages and ride the sitemap; a creator's
+  // link is theirs to share and stays out of the index (v1 default kept).
+  const house = link.creator === null
   return {
     title,
     description,
-    robots: { index: false, follow: false },
+    robots: house ? { index: true, follow: true } : { index: false, follow: false },
     openGraph: { title, description, siteName: 'Pantessa', type: 'website' },
     twitter: { card: 'summary_large_image', title, description },
   }

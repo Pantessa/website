@@ -8,6 +8,8 @@
 
 import { useCallback, useEffect, useState } from 'react'
 
+import { useLinksChanged } from '@/lib/links-changed'
+
 // v3: the chat/embed-era checklist (ask/sign/job/embed) was retired with the
 // links-first repositioning — a fresh key so everyone sees the new flow
 // once, even if they dismissed an older one.
@@ -61,6 +63,10 @@ export function useOnboardingStatus() {
   useEffect(() => {
     refresh()
   }, [refresh])
+  // The journey ticks the moment a link is minted / revoked / a claim is
+  // filed on ANY surface (the rail's strip beside the studio's mint stage
+  // used to wait for a reload).
+  useLinksChanged(refresh)
 
   return { status, refresh }
 }

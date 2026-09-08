@@ -14,6 +14,8 @@
 
 import { useCallback, useEffect, useState } from 'react'
 
+import { useLinksChanged } from '@/lib/links-changed'
+
 export interface LinkRow {
   slug: string
   url: string
@@ -95,6 +97,9 @@ export function useIntentLinks() {
   useEffect(() => {
     reload()
   }, [reload])
+  // A mint / revoke / claim on ANY surface re-reads this copy too — the
+  // studio and the rail each hold their own (lib/links-changed).
+  useLinksChanged(reload)
   // Watchable funnel: the creator studio + rail Links tab keep this open
   // while a recruit walks a link — re-read every 30s while the tab is
   // visible (paused hidden), and stamp updatedAt for the live pill.

@@ -23,7 +23,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { Check, ChevronDown, Copy, FlaskConical, Plus, Settings2 } from 'lucide-react'
 import { STARTER_ASKS, useTypedAsk } from '@/components/typed-asks'
-import { MINTABLE_MCPS, composeMcps } from '@/lib/intent-links'
+import { MINTABLE_MCPS, composeMcps, runsOnLabel } from '@/lib/intent-links'
 import { getProtocolMark } from '@/components/protocol-marks'
 import { PantessaMark } from '@/components/Logo'
 import { useSession } from '@/lib/session'
@@ -32,6 +32,7 @@ import CreateAccountButton from '@/components/CreateAccountButton'
 import { absoluteUrl } from '@/lib/site-url'
 import { LINKS_STUDIO_HREF, linksStudioHref } from '@/lib/links-href'
 import { LINK_FEE_PCT } from '@/lib/fees'
+import { notifyLinksChanged } from '@/lib/links-changed'
 
 /** The vendored brand glyph for a mintable MCP, sized for a card pill.
  *  Marks render in `currentColor`, so they inherit the pill's ink. */
@@ -198,6 +199,7 @@ export function MintLinkForm({
       setPickerOpen(false)
       setFinePrintOpen(false)
       setMinted(link)
+      notifyLinksChanged()
       onMinted?.(link)
     } finally {
       setMinting(false)
@@ -355,7 +357,7 @@ export function MintLinkForm({
               return (
                 <span key={slug} className="mintstage__pill">
                   <McpMark slug={m.slug} label={m.label} />
-                  {m.label}
+                  {runsOnLabel(slug, ask)}
                 </span>
               )
             })

@@ -8,6 +8,7 @@
 import { useState } from 'react'
 import { formatEarnedUsd } from '@/lib/fees'
 import type { Earnings } from '@/lib/intent-links-ui'
+import { notifyLinksChanged } from '@/lib/links-changed'
 
 export function LinkEarningsPanel({
   earnings,
@@ -39,6 +40,7 @@ export function LinkEarningsPanel({
               if (d.error) setClaimMsg(d.error)
               else if (typeof d.amountUsd === 'number') setClaimMsg(`Claim filed for $${d.amountUsd.toFixed(2)}${d.note ? ` — ${d.note}` : ''}`)
               else setClaimMsg(r.ok ? 'Claim filed.' : 'The claim didn\u2019t go through — try again in a moment.')
+              notifyLinksChanged()
               onClaimed?.()
             })
             // A network failure used to reject unhandled: no message, a

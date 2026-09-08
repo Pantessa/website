@@ -107,7 +107,10 @@ const TILES: { label: string; t: string; d: string; ask: string; href: string }[
     label: 'JOBS',
     t: 'Fund → wait → act',
     d: 'Multi-step work compiles as one job: bridge, wait for settlement, then swap, stake, send, or buy. Guard-checked step by step.',
-    ask: 'Swap 1 USDC from Base to Arbitrum, then send it to nate.eth',
+    // Displayed = sent: the tile once showed "…then send it to nate.eth"
+    // while the href carried the explicit clause — a reader who retyped the
+    // tile's words got the jobs refusal ("it" isn't a segment).
+    ask: 'Swap 1 USDC from Base to Arbitrum, then send the 1 USDC on Arbitrum to nate.eth',
     href: `/chat?prompt=${encodeURIComponent('Swap 1 USDC from Base to Arbitrum, then send the 1 USDC on Arbitrum to nate.eth')}`,
   },
   {

@@ -13,6 +13,7 @@ import { Check, Copy, Link2 } from 'lucide-react'
 import { formatEarnedUsd } from '@/lib/fees'
 import type { LinkRow } from '@/lib/intent-links-ui'
 import { absoluteUrl } from '@/lib/site-url'
+import { notifyLinksChanged } from '@/lib/links-changed'
 
 export function LinkFunnelTable({ links, onChanged }: { links: LinkRow[]; onChanged?: () => void }) {
   const [copied, setCopied] = useState<string | null>(null)
@@ -142,7 +143,10 @@ export function LinkFunnelTable({ links, onChanged }: { links: LinkRow[]; onChan
                     // for.
                     setGone((g) => [...g, l.slug])
                     void fetch(`/api/intent-links/${l.slug}`, { method: 'DELETE' })
-                      .then(() => onChanged?.())
+                      .then(() => {
+                        notifyLinksChanged()
+                        onChanged?.()
+                      })
                       .catch(() => setGone((g) => g.filter((s) => s !== l.slug)))
                   }}
                   className="text-[11px] mono text-[color:var(--muted-2)] hover:text-red-400 transition-colors"

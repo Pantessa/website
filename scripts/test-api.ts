@@ -42,7 +42,7 @@ import { pureChecks, policyCheck, orderValueUsd, buildReport } from '../lib/cow-
 import { policyCheckInflow, recipientCheck, validityCheck, MAX_VALID_SEC } from '../lib/tx-guardrails'
 import { guardPlannerArtifact, PERMIT2_ADDRESS } from '../lib/planner-artifact-guard'
 import { LIMIT_EXAMPLES, parseSwapIntent, swapClarify } from '../lib/swap-intent'
-import { activeLinkCapFor, composeMcps, linkEyebrow, linkLockup, linkLockupWord } from '../lib/intent-links'
+import { activeLinkCapFor, composeMcps, isCrossChainAsk, linkEyebrow, linkLockup, linkLockupWord, runsOnLabel } from '../lib/intent-links'
 import { DEFAULT_TAB, parseTabParam, tabUrl } from '../lib/app-tab-url'
 import { LINKS_STUDIO_HREF } from '../lib/links-href'
 import { formatEarnedUsd, netFeeBpsFor, creatorEarningsUsd, FEE_BEARING_BUILD_PATHS, CROSS_CHAIN_FEE_BPS, CROSS_CHAIN_NET_FEE_BPS } from '../lib/fees'
@@ -2535,6 +2535,83 @@ async function main() {
     check(
       'site 404: unknown routes render the branded not-found page (home / app / links doors), never the framework default',
       siteMiss.status === 404 && siteMissHtml.includes('nothing at this address') && siteMissHtml.includes('href="/chat"') && !siteMissHtml.includes('This page could not be found'),
+    )
+
+    // Round 2 (squad gtm 2026-09-08). L-1: the sitemap was the x402-era
+    // site — /, /servers, docs, blog — and nothing links-first was indexed.
+    // It now leads with the links surfaces and carries every LIVE house
+    // link + every claimed creator page; a retired house ask never rides
+    // (sitemap.ts re-renders hourly, so the house rows must be in the DB at
+    // build — they are seeded, the same rows the landing sends strangers to).
+    const siteMapXml = await (await fetch(`${BASE}/sitemap.xml`)).text()
+    const siteLocs = [...siteMapXml.matchAll(/<loc>([^<]+)<\/loc>/g)].map((m) => m[1].replace(/^https?:\/\/[^/]+/, '') || '/')
+    check(
+      'sitemap: the links-first surfaces are indexed (/links, /links/embed, /pricing, /agents, /roster, /mosaic, /rebrand)',
+      ['/links', '/links/embed', '/pricing', '/agents', '/roster', '/mosaic', '/rebrand'].every((p) => siteLocs.includes(p)),
+      JSON.stringify(siteLocs.slice(0, 16)),
+    )
+    const houseStates = await Promise.all(
+      HOUSE_LINKS.map(async (h) => {
+        const html = await (await fetch(`${BASE}/i/${h.slug}`)).text()
+        const retired = html.match(/data-link-state="(\w+)"/)?.[1] ?? null
+        return { slug: h.slug, live: retired === null, indexable: /name="robots" content="index/.test(html) || !/noindex/.test(html) }
+      }),
+    )
+    check(
+      'sitemap: every live house /i/<slug> is listed, and the house pages are indexable (creator links stay noindex)',
+      houseStates.filter((h) => h.live).length > 0 &&
+        houseStates.every((h) => (h.live ? siteLocs.includes(`/i/${h.slug}`) && h.indexable : !siteLocs.includes(`/i/${h.slug}`))),
+      JSON.stringify({ houseStates, listed: siteLocs.filter((l) => l.startsWith('/i/')) }),
+    )
+    // The creator's own link (minted above by the harness) is not the site's
+    // to index — its page carries noindex and the sitemap never lists it.
+    const creatorLinkHtml = await (await fetch(`${BASE}/i/${slug}`)).text()
+    check('sitemap: a creator link is noindex and never listed', /noindex/.test(creatorLinkHtml) && !siteLocs.includes(`/i/${slug}`) && !siteLocs.includes(`/i/${thirdSlug}`))
+
+    // L-3: the mint stage's "runs on" pill for NEAR Intents said "(bridging)"
+    // on a same-chain swap. The label reads the ask: bridging on the from→to
+    // shape, the funding companion otherwise.
+    check(
+      'mint stage: the NEAR pill says bridging only on a cross-chain ask',
+      runsOnLabel('near-intents-mcp-yeetful', 'Swap 5 USDC from Base to Arbitrum') === 'NEAR Intents (bridging)' &&
+        isCrossChainAsk('Swap 5 USDC from Base to Arbitrum') &&
+        !isCrossChainAsk('Swap $1 of ETH for USDC on Base') &&
+        /funding/.test(runsOnLabel('near-intents-mcp-yeetful', 'Swap $1 of ETH for USDC on Base')) &&
+        !/bridging/.test(runsOnLabel('near-intents-mcp-yeetful', 'Swap $1 of ETH for USDC on Base')) &&
+        runsOnLabel('uniswap-free', 'Swap $1 of ETH for USDC on Base') !== 'uniswap-free',
+    )
+
+    // PATHS finding: the landing's NightShift JOBS tile displayed "…then send
+    // it to nate.eth" while its href sent the explicit clause — a reader who
+    // retyped the tile got the jobs refusal. Displayed = sent, pinned on the
+    // rendered page.
+    const homeForTiles = await (await fetch(`${BASE}/`)).text()
+    const nightTasks = [...homeForTiles.matchAll(/night__task[^>]*>“([^”]+)” →/g)].map((m) => m[1].replace(/<!-- -->/g, ''))
+    const nightHrefs = [...homeForTiles.matchAll(/href="\/chat\?[^"]*prompt=([^"&]+)"[^>]*class="night__tile"/g)].map((m) => decodeURIComponent(m[1].replace(/&amp;/g, '&')))
+    check(
+      'landing tiles: every NightShift tile displays exactly the ask its href sends',
+      nightTasks.length >= 4 && nightHrefs.length === nightTasks.length && nightTasks.every((t, i) => nightHrefs[i].replace(/−/g, '-') === t.replace(/−/g, '-')),
+      JSON.stringify({ nightTasks, nightHrefs }),
+    )
+
+    // L-4: the rail's journey strip + live list and the studio each hold
+    // their own copy of the links/journey state; a mint on the studio left
+    // the rail's "Mint your first link" strip stale until its next poll.
+    // One signal (lib/links-changed) — every writer notifies, every reader
+    // subscribes. Source-level: the browser drive is in links.md.
+    const linksFs = await import('node:fs')
+    const linksChangedSrc = {
+      hookLinks: linksFs.readFileSync('lib/intent-links-ui.tsx', 'utf8'),
+      hookJourney: linksFs.readFileSync('lib/onboarding.ts', 'utf8'),
+      form: linksFs.readFileSync('components/MintLinkForm.tsx', 'utf8'),
+      table: linksFs.readFileSync('components/LinkFunnelTable.tsx', 'utf8'),
+      earnings: linksFs.readFileSync('components/LinkEarningsPanel.tsx', 'utf8'),
+    }
+    check(
+      'journey strip: mint / revoke / claim notify lib/links-changed and both the links hook + the journey hook subscribe',
+      /useLinksChanged\(reload\)/.test(linksChangedSrc.hookLinks) &&
+        /useLinksChanged\(refresh\)/.test(linksChangedSrc.hookJourney) &&
+        [linksChangedSrc.form, linksChangedSrc.table, linksChangedSrc.earnings].every((src) => /notifyLinksChanged\(\)/.test(src)),
     )
 
     // The public leaderboard: server-truth board, mint CTA, no wallets.
