@@ -190,7 +190,10 @@ const CORPUS: Entry[] = [
   // Chip resume strings (funding / DCA — the chip IS the contract)
   { ask: 'Fund robinhood chain with $12 from base', source: 'lifi funding chip', expect: 'action' },
   { ask: 'Fund robinhood chain with $12 from base, then buy $10 of AAPL', source: 'lifi funding chip', expect: 'action' },
-  { ask: 'Swap 5 USDC from base to USDG on robinhood', source: 'funding-plan leg chip', expect: 'action' },
+  // A Robinhood-destination leg is a LiFi FUNDING move (NEAR can't reach
+  // 4663) and $5 is under the $9 parity floor — the honest answer is the
+  // floor chips, never a leg built to be withheld (#694). $20 compiles.
+  { ask: 'Swap 5 USDC from base to USDG on robinhood', source: 'funding-plan leg chip (under the $9 floor → floor chips)', expect: 'clarify-ok' },
   { ask: 'Swap 5 USDC from base to ETH on arbitrum', source: 'funding-plan gas-leg chip', expect: 'action' },
   {
     ask: 'Swap 7.5 USDC for ETH on Base, then buy the nft https://opensea.io/item/base/0x6cf64997bcfcec770e231aba2ba9ea38ff9511a0/198',
@@ -263,7 +266,28 @@ const CORPUS: Entry[] = [
   { ask: 'buy $12 orth of AAPL', source: 'prod 2026-09-07 (typo of "worth")', expect: 'action' },
   { ask: 'buy $12 worth of APPL using vredit cartd', source: 'prod 2026-08-31 (fiat spend clause)', expect: 'action' },
   { ask: 'buy $12 of AAPL with my credit card', source: 'stranger phrasing of the on-ramp intent', expect: 'action' },
-  { ask: 'Convert $1 USDC from Base to USDG on Robinhood Chain via cross-chain swap', source: 'prod 2026-09-04', expect: 'action' },
+  // Robinhood-destination cross-chain asks are FUNDING moves (NEAR can't reach
+  // 4663): the jobs layer claims them ahead of the NEAR door. $1 is under the
+  // $9 parity floor → chips for the smallest clean move (never a leg built to
+  // be withheld).
+  { ask: 'Convert $1 USDC from Base to USDG on Robinhood Chain via cross-chain swap', source: 'prod 2026-09-04 (under the $9 floor → floor chips)', expect: 'clarify-ok' },
+  { ask: 'Swap 20 USDC from Base to USDG on Robinhood Chain', source: 'prod 2026-09-04 shape, fundable size', expect: 'action' },
+  { ask: 'bridge 20 USDC from arbitrum to robinhood', source: 'bridge phrasing, Robinhood destination', expect: 'action' },
+  { ask: 'move 25 USDC from optimism to robinhood chain', source: 'OP origin → 4663 (#707 origin)', expect: 'action' },
+  { ask: 'swap 0.01 ETH from base to robinhood', source: 'ETH-sized funding ask → dollar chips', expect: 'clarify-ok' },
+  { ask: 'swap 20 USDC from base to AAPL on robinhood', source: 'funded buy phrased as a bridge → fund-then-buy chip', expect: 'clarify-ok' },
+  // Non-EVM coins: the chart overlay's own chips on a SOL/XRP/DOGE chart.
+  // Base's open list carries look-alikes; the door refuses by name with the
+  // Hyperliquid side chips.
+  { ask: 'Buy $50 of SOL', source: 'chart overlay chip (non-EVM home → HL door)', expect: 'clarify-ok' },
+  { ask: 'Sell $50 of SOL', source: 'chart overlay chip (non-EVM home → HL door)', expect: 'clarify-ok' },
+  { ask: 'Buy $50 of XRP', source: 'chart overlay chip (no EVM home at all)', expect: 'clarify-ok' },
+  { ask: 'DCA $10 into SOL weekly', source: 'chart overlay chip (hidden now; typed form refuses by name)', expect: 'clarify-ok' },
+  { ask: 'long $50 of SOL on hyperliquid', source: 'the HL door chip resume', expect: 'action' },
+  // The flagship link's most natural follow-up — a READ we hold.
+  { ask: 'what stocks can I buy on robinhood', source: 'prod 2026-09-08 (planner → brokerage prose / paid x402 call)', expect: 'action' },
+  { ask: 'show a list of all the available stocks i can buy on robinhood', source: 'prod 2026-09-08 verbatim', expect: 'action' },
+  { ask: 'which tokenized stocks do you support', source: 'stranger phrasing', expect: 'action' },
   { ask: 'swap 10 USDG → AAPL on Uniswap', source: 'prod 2026-09-02 (card-title arrow retyped)', expect: 'action' },
   { ask: 'Swap 12 USDG → TSLA', source: 'card title retyped', expect: 'action' },
   { ask: 'Send 5 USDC to 0x1111111111111111111111111111111111111111 on Optimism', source: 'squad replay (OP send, #707 gap)', expect: 'action' },
@@ -343,6 +367,11 @@ for (const entry of CORPUS) {
     // A typo'd chain word landing in the SAME kind via the cross-chain gate
     // (or vice versa) still serves the user — only kind downgrades count.
     if (got.kind === 'action') continue
+    // Robinhood Chain as a cross-chain DESTINATION is a funding move (NEAR
+    // Intents can't deliver to 4663): the jobs layer claims it, and a leg
+    // under the $9 parity floor or sized in ETH answers with chips that
+    // round-trip — by design (#694), not a dead-end.
+    if (m.label === 'chain:Robinhood Chain' && got.gate === 'jobs' && got.kind === 'clarify' && got.chips) continue
     console.log(`${header}\n    ${m.label} → "${m.ask}"`)
     flag(`mutation downgraded ${base.gate}/${base.kind} → ${got.gate}/${got.kind}${got.note ? ` — "${got.note}"` : ''}`)
   }

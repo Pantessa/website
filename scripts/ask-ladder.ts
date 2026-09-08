@@ -29,12 +29,16 @@ import { mentionsNft, parseNftAsk, parseNftListAsk, parseNftMarketAsk } from '..
 import { parseTransferSegment } from '../lib/transfer-exec'
 import { parseSwapIntent, detectCrossChain } from '../lib/swap-intent'
 import { parseCrossChainSwap } from '../lib/cross-chain-swap'
+import { parseStockListAsk } from '../lib/stock-list'
+import { tokenHome } from '../lib/token-home'
 
 export type Kind = 'action' | 'clarify' | 'planner'
 export interface Outcome {
   gate: string
   kind: Kind
   note?: string
+  /** A clarify that carries resumable chips (the user taps, never retypes). */
+  chips?: true
 }
 
 const NATIVE_CHAINS = new Set(['base', 'ethereum', 'arbitrum', 'optimism', 'robinhood'])
@@ -57,6 +61,9 @@ export function simulateLadder(message: string): Outcome {
 
   if (parseDcaRun(message)) return { gate: 'dca', kind: 'action', note: 'run chip' }
   const dc = parseDcaCreate(message)
+  // A non-EVM coin (SOL/XRP/DOGE…) refuses by name in the DCA layer — no
+  // schedule buys a Base look-alike (lib/token-home).
+  if (dc && !('problem' in dc) && tokenHome(dc.buyToken)) return { gate: 'dca', kind: 'clarify', note: `${dc.buyToken} lives on ${tokenHome(dc.buyToken)} — refused by name` }
   if (dc) return 'problem' in dc ? { gate: 'dca', kind: 'clarify', note: dc.problem } : { gate: 'dca', kind: 'action' }
   const dm = parseDcaManage(message)
   if (dm) return { gate: 'dca', kind: 'action', note: dm.op }
@@ -69,7 +76,10 @@ export function simulateLadder(message: string): Outcome {
   const job = compileJobAsk(message)
   if (job) {
     if ('problem' in job) return { gate: 'jobs', kind: 'clarify', note: job.problem }
-    if ('clarify' in job) return { gate: 'jobs', kind: 'clarify', note: String((job as { clarify: unknown }).clarify) }
+    if ('clarify' in job) {
+      const c = (job as { clarify: { question: string; options: { label: string }[] }; reply?: string })
+      return { gate: 'jobs', kind: 'clarify', note: `${c.reply ?? c.clarify.question} [${c.clarify.options.map((o) => o.label).join(' | ')}]`, ...(c.clarify.options.length ? { chips: true as const } : {}) }
+    }
     return { gate: 'jobs', kind: 'action', note: `${(job as { steps: unknown[] }).steps?.length ?? '?'} steps` }
   }
 
@@ -127,6 +137,11 @@ export function simulateLadder(message: string): Outcome {
   const tr = parseTransferSegment(message, { fallbackChainId: null })
   if (tr) return 'problem' in tr ? { gate: 'transfer', kind: 'clarify', note: tr.problem } : { gate: 'transfer', kind: 'action' }
 
+  // "what stocks can I buy on robinhood" — the stock-list READ sits right
+  // before the swap gate in the route (a live list + buy chips; never the
+  // planner's brokerage prose).
+  if (parseStockListAsk(message)) return { gate: 'stock-list', kind: 'action', note: '4663 list + buy chips' }
+
   const sw = parseSwapIntent(message)
   const xcEarly = detectCrossChain(message)
   if (sw.isSwap || xcEarly.crossChain) {
@@ -140,6 +155,10 @@ export function simulateLadder(message: string): Outcome {
     }
     if (!sw.isSwap) return { gate: 'planner', kind: 'planner' }
     if (sw.problem) return { gate: 'swap', kind: 'clarify', note: sw.problem }
+    // Non-EVM homes refuse by name with the Hyperliquid side chips (the
+    // route's nonEvmHomeDoor) — before any pricing touches a Base squat.
+    const home = tokenHome(sw.buyToken) ?? tokenHome(sw.sellToken)
+    if (sw.mode !== 'limit' && home) return { gate: 'swap', kind: 'clarify', note: `${(tokenHome(sw.buyToken) ? sw.buyToken : sw.sellToken)!.toUpperCase()} lives on ${home} — HL door` }
     return { gate: 'swap', kind: 'action', note: `${sw.sellAll ? 'all (sized live)' : (sw.sellAmountHuman ?? '$' + sw.sellAmountUsd)} ${sw.sellToken ?? '(stable)'}→${sw.buyToken ?? '(stable)'}` }
   }
 

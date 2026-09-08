@@ -73,6 +73,11 @@ export default function JobCard({
   const [job, setJob] = useState<JobRow | null>(null)
   const [error, setError] = useState('')
   const [expanded, setExpanded] = useState(true)
+  // Polls that never answered while the card still has no job — after a few
+  // the card says so and offers a reload instead of sitting on "Loading
+  // job…" forever (squad LINKS, 2026-09-08: one chip → job drive sat on the
+  // loading line for two minutes with nothing to tap).
+  const [misses, setMisses] = useState(0)
   const timer = useRef<ReturnType<typeof setInterval> | null>(null)
   const q = token ? `?t=${token}` : ''
 
@@ -88,8 +93,10 @@ export default function JobCard({
       const data = (await res.json()) as { job: JobRow }
       setJob(data.job)
       setError('')
+      setMisses(0)
     } catch {
-      /* transient poll miss — keep the last state */
+      /* transient poll miss — keep the last state, count it while empty */
+      setMisses((n) => n + 1)
     }
   }, [jobId, q])
 
@@ -140,7 +147,18 @@ export default function JobCard({
   }
 
   if (error) return <p className="mt-2 text-[12px] text-[color:var(--muted-2)]">{error}</p>
-  if (!job) return <p className="mt-2 text-[12px] text-[color:var(--muted-2)]">Loading job…</p>
+  if (!job) {
+    return (
+      <p className="mt-2 text-[12px] text-[color:var(--muted-2)]">
+        {misses >= 2 ? 'Still loading the job — the server hasn\u2019t answered yet. ' : 'Loading job…'}
+        {misses >= 2 && (
+          <button type="button" onClick={() => void load()} className="underline underline-offset-2 hover:text-[color:var(--fg)]">
+            Reload
+          </button>
+        )}
+      </p>
+    )
+  }
 
   const doneCount = job.steps.filter((s) => s.status === 'done').length
   const statusLine = jobStatusWord(job.status)

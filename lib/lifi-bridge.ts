@@ -53,18 +53,10 @@ export const ROBINHOOD_CHAIN_ID = 4663
 /** LiFi treats the zero address as the chain's native asset. */
 export const NATIVE_TOKEN = '0x0000000000000000000000000000000000000000' as const
 
-/** Origin chains the funding plan scans and bridges from, in scan order.
- *  Each is a first-class lib/chains member holding USDC with a live-probed
- *  LiFi route onto Robinhood Chain. */
-export const FUNDING_ORIGIN_CHAINS = [8453, 1, 42161, 10] as const
-/** The chain word each chip resume uses — the parse contract with
- *  lib/jobs.ts parseRobinhoodFunding (lower-cased in the resume string). */
-export const FUNDING_ORIGIN_WORD: Record<number, string> = {
-  8453: 'Base',
-  1: 'Ethereum',
-  42161: 'Arbitrum',
-  10: 'Optimism',
-}
+// The origin set + its words live in lib/funding-origins.ts (pure, client-
+// safe) and are re-exported here so every existing importer keeps working.
+export { FUNDING_ORIGIN_CHAINS, FUNDING_ORIGIN_WORD, listWords, fundingOriginWords } from '@/lib/funding-origins'
+import { FUNDING_ORIGIN_CHAINS, FUNDING_ORIGIN_WORD, listWords } from '@/lib/funding-origins'
 /** Bridged-USDC variants the scan ALSO reads, where lib/chains' stables map
  *  knows them. Arbitrum's USDC.e is the one that bites: a wallet holding only
  *  bridged USDC.e read as "no USDC on Arbitrum" (the 2026-07-21 gasless-scan
@@ -81,15 +73,6 @@ export const FUNDING_ALT_USDC: Record<number, { symbol: string; address: `0x${st
   // move it. Route probed live 2026-09-04: across, same canonical diamond,
   // 10 USDC.e -> 9.8388 USDG.
   10: { symbol: 'USDC.e', address: '0x7F5c764cBc14f9669B88837ca1490cCa17c31607', decimals: 6 },
-}
-
-/** "Base, Ethereum, or Arbitrum" — an Oxford-comma list for refusal copy that
- *  must name the real scan set. One word passes through untouched. */
-export function listWords(words: string[], conj: 'or' | 'and' = 'or'): string {
-  const w = words.filter(Boolean)
-  if (w.length <= 1) return w[0] ?? ''
-  if (w.length === 2) return `${w[0]} ${conj} ${w[1]}`
-  return `${w.slice(0, -1).join(', ')}, ${conj} ${w[w.length - 1]}`
 }
 
 /** The registry-verified alt-USDC for an origin, or null. */

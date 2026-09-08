@@ -14,7 +14,7 @@
 //  registry — USDC does not exist there; USDG/USDe are the money tokens).
 // ─────────────────────────────────────────────────────────────────────────
 
-import { defineChain, createPublicClient, http, type Chain, type PublicClient } from 'viem'
+import { defineChain, createPublicClient, fallback, http, type Chain, type PublicClient } from 'viem'
 import { base, mainnet, arbitrum, optimism } from 'viem/chains'
 
 // Robinhood Chain (Arbitrum Orbit L2, mainnet 2026-07-01) — not in viem's
@@ -326,7 +326,15 @@ export function publicClientFor(chainId: number): PublicClient | null {
   if (!chain) return null
   let client = clients.get(chainId)
   if (!client) {
-    client = createPublicClient({ chain: chain.viem, transport: http(chain.rpcUrl) })
+    // The pinned RPC first; viem's own default for the chain as the fallback.
+    // viem's fallback transport moves to the next endpoint on TRANSPORT
+    // failures (429 / 5xx / timeout) and throws straight through on chain
+    // evidence (execution reverted, user rejected) — so a rate-limited
+    // publicnode no longer turns the stranger's first "$1 of ETH" chip into
+    // "I couldn't price ETH on Base" (squad QA P-2, 2026-09-08). Chains
+    // without a pin keep the single default transport.
+    const transport = chain.rpcUrl ? fallback([http(chain.rpcUrl), http()]) : http()
+    client = createPublicClient({ chain: chain.viem, transport })
     clients.set(chainId, client)
   }
   return client

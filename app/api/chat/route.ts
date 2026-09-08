@@ -133,6 +133,9 @@ import { buildUniswapSwap, NoV3PoolError } from '@/lib/uniswap-venue'
 import { buildUniswapV4Swap, NoV4PoolError, GatedV4PoolError } from '@/lib/uniswap-v4'
 import { buildLifiSwap, NoLifiRouteError } from '@/lib/lifi-venue'
 import { fundChipFor, ONRAMP_NETWORK_LABEL } from '@/lib/onramp'
+import { fundingOriginWords } from '@/lib/funding-origins'
+import { FEATURED_STOCKS, parseStockListAsk, robinhoodStocks } from '@/lib/stock-list'
+import { tokenHome } from '@/lib/token-home'
 import { fundingSourceSymbols, GAS_TOPUP_ETH, minLegNote, offChainStableSource, valueLegUsd, parseRhFundingFollowUp, planDownsizedRobinhoodBuy, planRobinhoodFundingAdvice, readFundingShortfall, rhFundingPending, robinhoodBuyNeedUsd, ROBINHOOD_CHAIN_ID } from '@/lib/lifi-bridge'
 import { describeInflightDeposit, inflightPendingData } from '@/lib/inflight-funding'
 import { resolveToken, tokenDecimals, humanToAtoms } from '@/lib/cow'
@@ -889,7 +892,9 @@ async function handleChatTurn(req: NextRequest) {
     if (jobAsk && 'clarify' in jobAsk) {
       nativeTrace({ type: 'status', label: `jobs layer: suspected stock-ticker miss in a compound ask — asking before compiling (${jobAsk.clarify.question.slice(0, 120)})` })
       return NextResponse.json({
-        reply: '🧭 That chains multiple money steps, so I want the ticker right before anything runs — nothing is built yet.',
+        // A segment may carry its own lead line (the Robinhood-funding
+        // redirect's floor / ETH-sizing chips); the ticker line is the default.
+        reply: `🧭 ${jobAsk.reply ?? 'That chains multiple money steps, so I want the ticker right before anything runs — nothing is built yet.'}`,
         clarify: jobAsk.clarify,
         buildPath: 'native-job',
       })
@@ -1458,7 +1463,7 @@ async function handleChatTurn(req: NextRequest) {
       } else if (gallery.failedChains.length === gallery.chains.length) {
         reply = `🖼️ OpenSea didn't answer for ${chainListSentence(gallery.failedChains, 'or')} just now, so I can't say what you hold. Ask again in a moment.`
       } else {
-        reply = `🖼️ No NFTs in your wallet on ${chainListSentence(gallery.chains)}${failed} — nothing to show yet.`
+        reply = `🖼️ No NFTs in your wallet on ${chainListSentence(gallery.chains)}${failed} — nothing to show yet. (That's OpenSea's coverage — NFTs on Optimism or Robinhood Chain aren't read yet, so they wouldn't show here.)`
       }
       nativeTrace({ type: 'status', label: `nft gallery read: ${gallery.found} owned across ${gallery.chains.length} chain(s)${gallery.failedChains.length ? `, ${gallery.failedChains.length} unreadable` : ''}` })
       // The gallery rides EVERY outcome (empty included) — its presence means
@@ -1753,6 +1758,39 @@ async function handleChatTurn(req: NextRequest) {
         nativeTrace({ type: 'note', level: 'warn', label: `transfer build failed: ${(e as Error).message.slice(0, 160)}` })
         return NextResponse.json({ reply: `💸 Couldn't build the transfer: ${(e as Error).message}` })
       }
+    }
+
+    // ── "what stocks can I buy on robinhood" ── a READ we hold the answer
+    // to (lib/stock-list.ts). The planner used to answer with brokerage
+    // prose ("I'm not a financial advisor… US stocks, ETFs") — the wrong
+    // product on the flagship link's most natural follow-up — and once
+    // (prod 2026-09-08) by calling a PAID x402 pricing endpoint. The list
+    // is Robinhood Chain's curated 4663 tokens; the chips are the buys.
+    if (parseStockListAsk(message)) {
+      await ensureTokenList(ROBINHOOD_CHAIN_ID).catch(() => {})
+      const stocks = robinhoodStocks()
+      if (stocks.length === 0) {
+        nativeTrace({ type: 'note', level: 'warn', label: 'stock list: the Robinhood Chain token list did not warm — saying so, no planner' })
+        return NextResponse.json({
+          reply: "📈 Robinhood Chain's stock list didn't load just now — ask again in a moment, or name a ticker (“Buy $10 of AAPL”) and I'll build it directly.",
+          buildPath: 'native-stock-list',
+        })
+      }
+      const bySym = new Map(stocks.map((st) => [st.symbol, st]))
+      const featured = FEATURED_STOCKS.filter((sym) => bySym.has(sym))
+      const rest = stocks.filter((st) => !featured.includes(st.symbol)).map((st) => st.symbol)
+      nativeTrace({ type: 'status', label: `stock list claimed the turn: ${stocks.length} tokenized stocks on Robinhood Chain — chips for ${featured.join(', ') || 'the first few'}` })
+      return NextResponse.json({
+        reply:
+          `📈 **${stocks.length} tokenized stocks trade on Robinhood Chain right now** — each one is an ERC-20 on chain 4663 that tracks the share, bought with USDG. Tap one below to buy $10 of it, or say “Buy $25 of <ticker>” for any of these:\n\n` +
+          `${[...featured, ...rest].join(' · ')}\n\n` +
+          `No USDG yet? The buy still works — I'll show the top-up (card, or USDC/ETH from ${fundingOriginWords()}) before anything is built.`,
+        clarify: {
+          question: 'Buy one now?',
+          options: featured.slice(0, 6).map((sym) => ({ label: `Buy $10 of ${sym}`, resume: `Buy $10 of ${sym}` })),
+        },
+        buildPath: 'native-stock-list',
+      })
     }
 
     const swapIntent = parseSwapIntent(message)
@@ -3700,11 +3738,9 @@ async function buildMorphoOpTurn(
  *  must not dead-end in "I don't know the token". Offer the venue-worded
  *  asks the HL exec layer actually parses — chips lead with the side the
  *  user asked for; resumes round-trip parseHlIntent. */
-function hlPerpDoor(symbol: string | undefined, amount: { usd?: string; human?: string }, wantsSell: boolean) {
-  if (!symbol) return null
-  const pair = chartPairFor(symbol)
-  if (pair?.source !== 'hyperliquid') return null
-  const sym = pair.symbol
+/** The two Hyperliquid side chips for a coin — resumes round-trip
+ *  parseHlIntent (the chip IS the contract). */
+function hlSideChips(sym: string, amount: { usd?: string; human?: string }, wantsSell: boolean) {
   const mk = (side: 'long' | 'short') => ({
     label: `${side === 'long' ? 'Long' : 'Short'} ${amount.usd ? `$${amount.usd}` : (amount.human ?? '$50')} of ${sym}`,
     // The unit form carries no "of" — parseHlIntent's coin-sized alternative
@@ -3715,10 +3751,45 @@ function hlPerpDoor(symbol: string | undefined, amount: { usd?: string; human?: 
         ? `${side} ${amount.human} ${sym} on hyperliquid`
         : `${side} $50 of ${sym} on hyperliquid`,
   })
+  return wantsSell ? [mk('short'), mk('long')] : [mk('long'), mk('short')]
+}
+
+function hlPerpDoor(symbol: string | undefined, amount: { usd?: string; human?: string }, wantsSell: boolean) {
+  if (!symbol) return null
+  const pair = chartPairFor(symbol)
+  if (pair?.source !== 'hyperliquid') return null
+  const sym = pair.symbol
   return {
     reply: `🔄 ${sym} isn't a spot token on Pantessa's chains — it trades as a **perp on Hyperliquid**. Pick a side and I'll build the guarded order (you sign it; funds never leave your wallet).`,
-    clarify: { question: `Trade ${sym} on Hyperliquid?`, options: wantsSell ? [mk('short'), mk('long')] : [mk('long'), mk('short')] },
+    clarify: { question: `Trade ${sym} on Hyperliquid?`, options: hlSideChips(sym, amount, wantsSell) },
     buildPath: 'native-swap-hl-door',
+  }
+}
+
+/**
+ * A coin whose home is a non-EVM chain (lib/token-home): "Buy $50 of SOL" —
+ * the chart overlay's own chip on a SOL chart — used to book USDC → the
+ * "SOL" on Base's permissionless list, a bridged copy at best and a squat
+ * at worst (the AAPL-on-Base class, 2026-07-30), and "Sell $50 of SOL"
+ * priced that squat to size the sell. Refuse BY NAME, say where the coin
+ * lives, and hand over the one honest next step: the Hyperliquid perp (the
+ * HL layer validates the coin against the venue's live listing — nothing
+ * here promises one). No cross-chain chip on purpose: an EVM wallet has no
+ * Solana address, so a NEAR leg "to SOL on Solana" can't be delivered.
+ */
+function nonEvmHomeDoor(symbol: string | undefined, amount: { usd?: string; human?: string }, wantsSell: boolean) {
+  if (!symbol) return null
+  const home = tokenHome(symbol)
+  if (!home) return null
+  const sym = symbol.toUpperCase()
+  return {
+    reply:
+      `🔄 ${sym} lives on **${home}** — it isn't a native token on any of Pantessa's chains, and the "${sym}" on Base's open token list is a bridged copy, so I won't route your money into a look-alike. ` +
+      (wantsSell
+        ? `Pantessa signs from your EVM wallet, so it can't sell ${sym} held on ${home}. If you want ${sym} exposure here, it trades as a **perp on Hyperliquid** — pick a side and I'll build the guarded order.`
+        : `For ${sym} exposure from this wallet, it trades as a **perp on Hyperliquid** — pick a side and I'll build the guarded order (you sign it; funds never leave your wallet).`),
+    clarify: { question: `Trade ${sym} on Hyperliquid instead?`, options: hlSideChips(sym, amount, wantsSell) },
+    buildPath: 'native-swap-home-door',
   }
 }
 
@@ -3910,6 +3981,17 @@ async function prepareSwapTurnCore(intent: SwapIntent, walletAddress: string | u
         // this in, but a rewrite must never leave the buy side empty.
         buyToken: intent.buyToken ?? source.stableSymbol,
       }
+    }
+  }
+  // ── Non-EVM homes ── refuse SOL/XRP/DOGE… by name BEFORE any pricing or
+  // balance read touches the Base look-alike (lib/token-home.ts).
+  if (!intent.problem && intent.mode !== 'limit') {
+    const buyDoor = intent.buyToken ? nonEvmHomeDoor(intent.buyToken, { usd: intent.sellAmountUsd }, false) : null
+    const sellDoor = !buyDoor && intent.sellToken ? nonEvmHomeDoor(intent.sellToken, { usd: intent.sellAmountUsd, human: intent.sellAmountHuman }, true) : null
+    const door = buyDoor ?? sellDoor
+    if (door) {
+      trace({ type: 'status', label: `native swap layer: ${(buyDoor ? intent.buyToken : intent.sellToken)!.toUpperCase()} lives on ${tokenHome(buyDoor ? intent.buyToken : intent.sellToken)} — refusing the ${chain.name} look-alike, opening the Hyperliquid door` })
+      return NextResponse.json(door)
     }
   }
   // Dollar-denominated asks ("swap $1 worth of ETH for USDG", "buy $5 of
@@ -4237,7 +4319,7 @@ async function prepareSwapTurnCore(intent: SwapIntent, walletAddress: string | u
               reply:
                 `🌉 **We can make this happen — just a notch smaller.** ${acquiring ? 'You asked for' : 'The buy needs'} ~$${buyUsd} of ${rhStable.symbol} on ${chain.name} and you're at ~$${holdingUsd.toFixed(2)} there; across the chains I can bridge from I see: ${advice.copy}. ` +
                 `That doesn't quite cover $${buyUsd} — but it does cover **$${downsized.buyUsd}**${includeGas ? ' (gas leg included)' : ''}, built and guard-checked when it's your turn to sign. ` +
-                `Or top up USDC or ETH on Base, Ethereum, or Arbitrum (or ${rhStable.symbol} on ${chain.name}), tell me when it's there, and I'll run the full $${buyUsd}.${inflightSuffix}`,
+                `Or top up USDC or ETH on ${fundingOriginWords()} (or ${rhStable.symbol} on ${chain.name}), tell me when it's there, and I'll run the full $${buyUsd}.${inflightSuffix}`,
               clarify: {
                 question: `Run the size your wallet covers?`,
                 options: [...downsized.chips, { label: 'Not now', resume: 'Never mind — leave my funds where they are.' }],
@@ -4271,7 +4353,7 @@ async function prepareSwapTurnCore(intent: SwapIntent, walletAddress: string | u
             `Across the chains I can bridge from I see: ${advice.copy} — not enough yet for the ~$${needUsd} plan${includeGas ? ' (gas leg included)' : ''}.${floorSuffix} ` +
             (rhFundChip
               ? `You can add it with a card or bank below — it lands as ETH on ${ONRAMP_NETWORK_LABEL[rhFundChip.fund?.network ?? 'ethereum']}, which covers the gas, and I'll swap and bridge it the rest of the way. The preset is a little over the plan so the card fee, the gas and the swap don't leave you short.${inflightSuffix}`
-              : `Here's what unlocks it: top up USDC or ETH on Base, Ethereum, or Arbitrum (or ${rhStable.symbol} on ${chain.name}), tell me when it's there, and I'll pick it up from that point — nothing was built or spent in the meantime.${inflightSuffix}`),
+              : `Here's what unlocks it: top up USDC or ETH on ${fundingOriginWords()} (or ${rhStable.symbol} on ${chain.name}), tell me when it's there, and I'll pick it up from that point — nothing was built or spent in the meantime.${inflightSuffix}`),
           ...(rhFundChip
             ? {
                 clarify: {
@@ -4304,11 +4386,23 @@ async function prepareSwapTurnCore(intent: SwapIntent, walletAddress: string | u
   // ── Universal funding plan (same-chain swaps): a market swap whose sell
   // token the wallet can't cover offers fund-then-swap chips — the swap
   // segment compiles as a job step through the SAME venue cascade
-  // (lib/swap-exec.ts). Limit orders are exempt (CoW's order book settles
-  // whenever the funds arrive — being short is a feature there), Robinhood
-  // Chain keeps its LiFi plan above, and a failed read falls through to the
-  // venue build, whose own simulation fails closed.
-  if (walletAddress && intent.mode !== 'limit' && chainId !== ROBINHOOD_CHAIN_ID && FUNDING_CHAIN_WORD[chainId]) {
+  // (lib/swap-exec.ts). Robinhood Chain keeps its LiFi plan above.
+  //
+  // THE RULE (squad QA P-1, prod-verified 2026-09-08): a KNOWN shortfall
+  // never reaches a venue build. The Uniswap build simulates and fails
+  // closed on its own; the CoW quote does NOT — CoW's API quotes any
+  // amount for any address — so when the funding plan came back null (a
+  // rate-limited scan, an unpriceable token) the market branch used to
+  // fall through and an EMPTY wallet got a signable order: the stranger
+  // signs, the beacon records "signed", nothing ever fills. Now: known
+  // short + no plan = honest refusal; unreadable balance = hold, never
+  // build blind ("an RPC error is not chain state"). Limit orders are the
+  // one exemption — a resting CoW order really does settle whenever the
+  // funds arrive — and the reply says so instead of staying silent.
+  let limitFundingNote: string | null = null
+  if (walletAddress && chainId !== ROBINHOOD_CHAIN_ID && FUNDING_CHAIN_WORD[chainId]) {
+    const isLimit = intent.mode === 'limit'
+    let readFailed: string | null = null
     try {
       const sellSym = intent.sellToken.toUpperCase()
       const isEthSell = sellSym === 'ETH'
@@ -4319,12 +4413,16 @@ async function prepareSwapTurnCore(intent: SwapIntent, walletAddress: string | u
           ? await client.getBalance({ address: walletAddress as `0x${string}` })
           : await client.readContract({ address: sellAddr as `0x${string}`, abi: erc20Abi, functionName: 'balanceOf', args: [walletAddress as `0x${string}`] })
         const held = Number(balanceAtoms) / 10 ** sellDec
+        const heldWord = held.toFixed(6).replace(/\.?0+$/, '') || '0'
         // An ETH sell must also leave gas for the swap itself.
         const needTotal = Number(intent.sellAmountHuman) + (isEthSell ? (DEST_GAS_FLOOR_ETH[chainId] ?? 0.0002) : 0)
         // A whole-holding sell was sized off THIS balance a moment ago (the
         // ETH floor already subtracted) — a float epsilon must never turn it
         // into a phantom shortfall offer.
-        if (!intent.sellAll && held < needTotal) {
+        if (!intent.sellAll && held < needTotal && isLimit) {
+          limitFundingNote = `Your wallet holds ${heldWord} ${sellSym} on ${chain.name} right now — a resting CoW order fills only once the ${intent.sellAmountHuman} ${sellSym} (and the CoW approval) is there, so signing it ahead of the deposit is fine; it just waits.`
+          trace({ type: 'note', level: 'info', label: `native swap layer: limit order on ${heldWord} ${sellSym} held (< ${needTotal}) — CoW settles when funded, saying so` })
+        } else if (!intent.sellAll && held < needTotal) {
           const buySym = intent.buyToken.toUpperCase()
           const offer = await offerFundingPlan({
             user: walletAddress,
@@ -4339,12 +4437,19 @@ async function prepareSwapTurnCore(intent: SwapIntent, walletAddress: string | u
           })
           if (offer && 'insufficient' in offer) {
             return NextResponse.json({
-              reply: `🔄 The swap sells ${intent.sellAmountHuman} ${sellSym} on ${chain.name} and the wallet holds ${held.toFixed(6).replace(/\.?0+$/, '') || '0'}. ${offer.insufficient}`,
+              reply: `🔄 The swap sells ${intent.sellAmountHuman} ${sellSym} on ${chain.name} and the wallet holds ${heldWord}. ${offer.insufficient}`,
             })
           }
           if (offer) return NextResponse.json({ ...offer, reply: `🌉 ${offer.reply}` })
-          // null → scan/price unavailable; the venue build below fails closed
-        } else if (!isEthSell) {
+          // null → the plan couldn't be drawn (scan or price unavailable).
+          // The shortfall itself is KNOWN — refuse by name, never hand a
+          // known-short wallet to a venue that would quote it anyway.
+          trace({ type: 'note', level: 'warn', label: `native swap layer: ${sellSym} short on ${chain.name} (holds ${heldWord}, needs ${needTotal}) and no funding plan could be drawn — honest refusal, no build` })
+          return NextResponse.json({
+            reply: `🔄 The swap sells ${intent.sellAmountHuman} ${sellSym} on ${chain.name} and the wallet holds ${heldWord}${isEthSell ? ' (the swap also needs a little ETH left for gas)' : ''}. I couldn't draw a top-up plan from your other chains just now — send ${sellSym} to this wallet on ${chain.name} (or USDC/ETH on ${fundingOriginWords()}), then ask again. Nothing was built.`,
+            buildPath: 'native-swap-short',
+          })
+        } else if (!isEthSell && !isLimit) {
           // The #1 predicted stranger failure (squad 2026-08-18 premortem):
           // $25 USDC and ZERO ETH on Base → an approve→swap chain whose first
           // tx can't be paid for; the wallet errors and nothing in the chat
@@ -4388,8 +4493,17 @@ async function prepareSwapTurnCore(intent: SwapIntent, walletAddress: string | u
           }
         }
       }
-    } catch {
-      /* balance read unavailable → the venue build below fails closed on its own */
+    } catch (err) {
+      readFailed = err instanceof Error ? err.message.split('\n')[0].slice(0, 120) : 'the RPC did not answer'
+    }
+    if (readFailed && !isLimit) {
+      // Not chain state — but building blind is exactly how an empty wallet
+      // ends up with a signable CoW order. Hold; the user retries in a moment.
+      trace({ type: 'note', level: 'warn', label: `native swap layer: balance read failed on ${chain.name} (${readFailed}) — holding the build rather than quoting blind` })
+      return NextResponse.json({
+        reply: `🔄 I couldn't read your ${intent.sellToken.toUpperCase()} balance on ${chain.name} just now (the RPC didn't answer), so I won't build the swap blind — try again in a moment.`,
+        buildPath: 'native-swap-hold',
+      })
     }
   }
 
@@ -4544,7 +4658,7 @@ async function prepareSwapTurnCore(intent: SwapIntent, walletAddress: string | u
       .map((c) => `⚠️ ${c.note}`)
     trace({ type: 'status', label: `guardrails passed — EIP-712 ${intent.mode === 'limit' ? 'limit ' : ''}order built (${intent.sellAmountHuman} ${intent.sellToken.toUpperCase()} → ${intent.buyToken.toUpperCase()} on ${chain.name}), awaiting signature` })
     return NextResponse.json({
-      reply: `🔏 ${built.summary}${cowNote}${warns.length ? `\n${warns.join('\n')}` : ''}`,
+      reply: `🔏 ${built.summary}${cowNote}${limitFundingNote ? `\n💤 ${limitFundingNote}` : ''}${warns.length ? `\n${warns.join('\n')}` : ''}`,
       orderRequest: built.artifact.order,
       buildPath: 'native-swap-cow',
       guardrails: built.guardrails,

@@ -277,6 +277,13 @@ function stripFiatSpend(text: string): { text: string; viaCard: boolean } {
   const m = text.match(FIAT_CLAUSE_RE)
   if (!m) return { text, viaCard: false }
   const words = m[1].toLowerCase().replace(/^(?:my|a|the|an)\s+/, '').split(/\s+/)
+  // "from my Base account" / "using my Arbitrum wallet" names WHERE the
+  // money is, not a card — "account" is fiat-ish, but a chain word inside
+  // the clause wins: keep the chain as a plain "on <chain>" and never flag
+  // the card preference (squad SECURITY note, 2026-09-08: the strip must
+  // not drop a chain the user named).
+  const named = chainMentions(m[1]).find((c) => words.includes(c.word.toLowerCase()))
+  if (named) return { text: text.replace(m[0], ` on ${named.chain}`), viaCard: false }
   if (!words.some(fiatish)) return { text, viaCard: false }
   return { text: text.replace(m[0], ''), viaCard: true }
 }

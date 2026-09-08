@@ -10,8 +10,8 @@
 //  reverse import would cycle.
 // ─────────────────────────────────────────────────────────────────────────
 
-import { publicClient } from '@/lib/auth'
 import { chainById, primaryStable, publicClientFor } from '@/lib/chains'
+import { classifyDryRunError } from '@/lib/dry-run'
 import { resolveToken, tokenDecimals, tokenLabel } from '@/lib/cow'
 import { FEE_TIERS, QUOTER_V2_ABI } from '@/lib/uniswap-venue'
 import { quoteV4BestOut } from '@/lib/uniswap-v4'
@@ -39,30 +39,43 @@ export async function usdPerToken(chainId: number, token: string): Promise<UsdPr
   const oneToken = BigInt(10) ** BigInt(dec)
   const label = tokenLabel(token, chainId)
 
-  // v3: the swap build's own fee-tier scan, for exactly one token in.
+  // v3: the swap build's own fee-tier scan, for exactly one token in. The
+  // registry client (pinned RPC + fallback) on EVERY chain — Base used to go
+  // through lib/auth's unpinned default, and its 429 bursts were the
+  // stranger's first chip dying with "I couldn't price ETH on Base" (squad
+  // QA P-2, 2026-09-08). A tier that REVERTS has no pool — chain evidence,
+  // no retry; a scan where every tier failed on the transport is retried
+  // once after a short pause before the honest null.
   if (chain.uniswap) {
-    const client = chainId === 8453 ? publicClient : publicClientFor(chainId)
+    const client = publicClientFor(chainId)
     if (client) {
-      const tiers = await Promise.all(
-        FEE_TIERS.map(async (fee): Promise<bigint | null> => {
-          try {
-            const { result } = await client.simulateContract({
-              address: chain.uniswap!.quoterV2,
-              abi: QUOTER_V2_ABI,
-              functionName: 'quoteExactInputSingle',
-              args: [{ tokenIn: addr as `0x${string}`, tokenOut: stable.address, amountIn: oneToken, fee, sqrtPriceLimitX96: BigInt(0) }],
-            })
-            return result[0]
-          } catch {
-            return null
-          }
-        }),
-      )
-      const live = tiers.filter((t): t is bigint => t !== null && t > BigInt(0))
-      if (live.length) {
-        const best = live.reduce((a, b) => (b > a ? b : a))
-        const usd = Number(best) / 10 ** stable.decimals
-        if (Number.isFinite(usd) && usd > 0) return { usd, via: `Uniswap v3 ${label}/${stable.symbol}` }
+      for (let attempt = 0; attempt < 2; attempt++) {
+        let transportFailures = 0
+        const tiers = await Promise.all(
+          FEE_TIERS.map(async (fee): Promise<bigint | null> => {
+            try {
+              const { result } = await client.simulateContract({
+                address: chain.uniswap!.quoterV2,
+                abi: QUOTER_V2_ABI,
+                functionName: 'quoteExactInputSingle',
+                args: [{ tokenIn: addr as `0x${string}`, tokenOut: stable.address, amountIn: oneToken, fee, sqrtPriceLimitX96: BigInt(0) }],
+              })
+              return result[0]
+            } catch (err) {
+              if (classifyDryRunError(err).kind === 'unavailable') transportFailures++
+              return null
+            }
+          }),
+        )
+        const live = tiers.filter((t): t is bigint => t !== null && t > BigInt(0))
+        if (live.length) {
+          const best = live.reduce((a, b) => (b > a ? b : a))
+          const usd = Number(best) / 10 ** stable.decimals
+          if (Number.isFinite(usd) && usd > 0) return { usd, via: `Uniswap v3 ${label}/${stable.symbol}` }
+        }
+        // Every tier answered (no pool / dust) → the chain spoke; stop here.
+        if (transportFailures === 0 || attempt === 1) break
+        await new Promise((r) => setTimeout(r, 400))
       }
     }
   }
