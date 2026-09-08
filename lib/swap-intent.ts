@@ -300,7 +300,12 @@ export function parseSwapIntent(rawMessage: string): SwapIntent {
 }
 
 function parseSwapIntentInner(message: string): SwapIntent {
-  const wantsLimit = /\blimit\b/i.test(message)
+  // "for at least / at most" IS the limit-order phrase — our own
+  // LIMIT_EXAMPLES read that way — so it opens the limit grammar with or
+  // without the word "limit" (squad 2026-09-08: the bare example answered
+  // "I don't know the token “at”", the lexicon contract's one forbidden
+  // shape — re-asking for what the user typed).
+  const wantsLimit = /\blimit\b/i.test(message) || /\bfor\s+at\s+(?:least|most)\b/i.test(message)
 
   if (!wantsLimit && !OTHER_VENUE_RE.test(message)) {
     const pt = message.match(PRICE_TRIGGER_SELL_RE)

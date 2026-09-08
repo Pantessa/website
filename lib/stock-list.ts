@@ -16,6 +16,10 @@ export const ROBINHOOD_CHAIN_ID = 4663
 const QUESTION_RE =
   /^(?:(?:hey|hi|ok|okay|so)[,\s]+)?(?:(?:can|could|would)\s+(?:i|you|we)\s+)?(?:(?:please\s+)?(?:show(?:\s+me)?|list|tell\s+me|give\s+me|see)|what(?:'s|\s+is|\s+are|\s+kind\s+of|\s+sort\s+of)?|which|do\s+you\s+(?:have|support|offer)|are\s+there|is\s+there|how\s+many)\b/i
 const IMPERATIVE_RE = /^(?:(?:i\s+)?(?:want|wanna|would\s+like)\s+to\s+)?(?:buy|trade|invest\s+in|get)\s+(?:some\s+|a\s+few\s+|a\s+)?(?:tokenized\s+|tokenised\s+)?(?:stocks?|equities|shares)\b/i
+// "can i buy stocks here" — the verb followed DIRECTLY by the plural noun.
+// A company name in between ("can i buy apple stock") is an order for the
+// swap layer's name pairing, never the list.
+const CAN_BUY_RE = /^(?:(?:hey|hi|ok|okay|so)[,\s]+)?(?:can|could|would)\s+(?:i|we|you)\s+(?:buy|trade|get|invest\s+in)\s+(?:some\s+|any\s+|a\s+few\s+)?(?:tokenized\s+|tokenised\s+)?(?:stocks?|equities|shares)\b/i
 const STOCK_WORD_RE = /\b(?:stocks?|equities|tokeni[sz]ed\s+(?:stocks?|shares|equities))\b/i
 const CONTEXT_RE = /\b(?:robin\s?hoo?d(?:\s?chain)?|tokeni[sz]ed|on[\s-]?chain|available|buy|trade|tradeable|tradable|support(?:ed)?|offer|list)\b/i
 // A ticker or an amount means it's an ORDER, never a list question
@@ -32,7 +36,7 @@ export function parseStockListAsk(message: string): StockListAsk | null {
   if (!STOCK_WORD_RE.test(m)) return null
   if (ORDER_SHAPE_RE.test(m)) return null
   const question = QUESTION_RE.test(m) && CONTEXT_RE.test(m)
-  const imperative = IMPERATIVE_RE.test(m)
+  const imperative = IMPERATIVE_RE.test(m) || CAN_BUY_RE.test(m)
   return question || imperative ? { kind: 'stock-list' } : null
 }
 

@@ -302,13 +302,17 @@ export function planFundingChips(need: FundingNeed, needUsd: number, sources: Fu
       const spendable = sourceCapUsd(s, carriesGas) - (carriesGas ? gasUsd : 0)
       if (spendable <= 0) continue
       // A leg under the minimum is a leg the solver may refuse — skip the
-      // source rather than emit it (mirrors promisableCapacityUsd).
+      // source rather than emit it (mirrors promisableCapacityUsd), and a
+      // LAST leg sized to the remainder ("then Swap 1 USDC from base…")
+      // moves at least the minimum instead: the extra stays the user's on
+      // the destination, the leg fills.
       if (!carriesGas && spendable < MIN_LEG_USD) continue
-      const segs = carriesGas ? legsFrom(s, Math.min(spendable, needUsd - covered)) : [legResume(s, sourceAmountFor(s, Math.min(s.usd, needUsd - covered)), need)]
+      const want = Math.max(Math.min(spendable, needUsd - covered), Math.min(MIN_LEG_USD, spendable))
+      const segs = carriesGas ? legsFrom(s, want) : [legResume(s, sourceAmountFor(s, want), need)]
       if (!segs) continue
       legs.push(...segs)
       if (carriesGas) gasCarried = gasUsd
-      covered += Math.min(spendable, needUsd - covered)
+      covered += want
       if (covered >= needUsd) break
     }
     if (covered >= needUsd && (gasUsd === 0 || gasCarried > 0)) {

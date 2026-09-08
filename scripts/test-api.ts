@@ -173,7 +173,7 @@ import {
 import { parseEcbUsdRate } from '../lib/ecb-fx'
 import { clarifyOf } from '../lib/clarify'
 import { fundingPathOf } from '../lib/funding-path'
-import { decideFundingTurn, detectBalanceShortfall, FUNDING_CHAIN_WORD, FUNDING_SCAN_CHAINS, fundingPlanUsd, planFundingChips, planStrandedRescue, promisableCapacityUsd, rankFundingSources, shortRefusalCopy, softenClaimedFailureBlock, type FundingNeed, type FundingSource } from '../lib/funding-plan'
+import { decideFundingTurn, detectBalanceShortfall, FUNDING_CHAIN_WORD, FUNDING_SCAN_CHAINS, fundingPlanUsd, MIN_LEG_USD, planFundingChips, planStrandedRescue, promisableCapacityUsd, rankFundingSources, shortRefusalCopy, softenClaimedFailureBlock, type FundingNeed, type FundingSource } from '../lib/funding-plan'
 import { compileDcaBuy, dcaRunChip, parseDcaCreate, parseDcaManage, parseDcaRun, periodKeyFor } from '../lib/dca'
 import { briefingNeedsCount, briefingTile, composeBriefingItems, type BriefingInputs, type BriefingPosition } from '../lib/briefing'
 import { moveAsk, parseRebalanceAsk, planRebalance, type RebalanceInputs } from '../lib/rebalance'
@@ -215,7 +215,7 @@ import {
 } from '../lib/share-receipts'
 import { EXAMPLE_PROMPTS } from '../lib/examples'
 import { swapFeeAtoms, SWAP_FEE_BPS, LINK_SWAP_FEE_BPS, TREASURY_ADDRESS, HL_BUILDER_FEE_TENTH_BPS, HL_BUILDER_MAX_FEE_RATE } from '../lib/fees'
-import { APP_CHAINS, chainById, chainByKey, chainNamedIn, explorerTokenUrl, primaryStable, sanitizeChainId } from '../lib/chains'
+import { APP_CHAINS, chainById, chainByKey, chainNamedIn, explorerTokenUrl, primaryStable, publicClientFor, sanitizeChainId } from '../lib/chains'
 import { WALLET_CHAINS } from '../lib/wallet-chains'
 import { parseCrossChainSwap, guardCrossChainBuild, expectedOriginChainId, parseCrossChainFollowUp, crossChainPending, crossChainValueUsd } from '../lib/cross-chain-swap'
 import {
@@ -297,7 +297,10 @@ import {
 import { createL1ActionHash } from '@nktkas/hyperliquid/signing'
 import { isReportableWalletError, walletErrorWords, WALLET_REFUSAL_KIND } from '../lib/wallet-refusal'
 import { encryptAgentKey, signL1ActionWithDelegation } from '../lib/hl-guardian-store'
-import { compileJobAsk as compileJobAskFull, stampSwapFeeTier, type CompiledJob } from '../lib/jobs'
+import { compileJobAsk as compileJobAskFull, robinhoodFundingFromCrossChain, stampSwapFeeTier, type CompiledJob } from '../lib/jobs'
+import { parseStockListAsk } from '../lib/stock-list'
+import { tokenHome } from '../lib/token-home'
+import { fundingOriginWords } from '../lib/funding-origins'
 import { LIVE_JOB_STATUSES, jobStatusWord, statusTone } from '../lib/step-status'
 
 // Harness shim: the pre-pairing checks below narrow on `'problem' in x` only.
@@ -5638,6 +5641,132 @@ async function main() {
     check('lexicon: ENS names in chain slots are never rewritten', normalizeChainWords('send 1 USDC on arbitrum to polygonn.eth').includes('polygonn.eth'))
     check('lexicon: "a ton of USDC" is not a chain', detectCrossChain('swap a ton of USDC for ETH').chains.length === 0)
     check('lexicon: "based" never fuzzy-matches base', canonicalChainWord('based') === null)
+
+    // ── GTM squad 2026-09-08 (PATHS round 2) ─────────────────────────────
+    // P-3: every "top up on …" sentence derives from the origin set.
+    check('funding origins: fundingOriginWords() names the whole scan set', fundingOriginWords() === 'Base, Ethereum, Arbitrum, or Optimism' && fundingOriginWords('and') === 'Base, Ethereum, Arbitrum, and Optimism')
+    {
+      const srcFs = await import('node:fs')
+      const codeOnly = (src: string) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')
+      const routeSrc = codeOnly(srcFs.readFileSync('app/api/chat/route.ts', 'utf8'))
+      const onrampSrc = codeOnly(srcFs.readFileSync('lib/onramp.ts', 'utf8'))
+      const jobsSrc = codeOnly(srcFs.readFileSync('lib/jobs.ts', 'utf8'))
+      check(
+        'funding origins: no top-up sentence hardcodes "Base, Ethereum, or Arbitrum" (route / onramp / jobs read fundingOriginWords)',
+        !/top up USDC or ETH on Base/.test(routeSrc) && !/on Base, Ethereum, or Arbitrum/.test(onrampSrc) && !/'Base', 'Ethereum', 'Arbitrum'/.test(jobsSrc) &&
+          (routeSrc.match(/fundingOriginWords\(\)/g)?.length ?? 0) >= 3 && /fundingOriginWords\(\)/.test(onrampSrc) && /fundingOriginWords\(\)/.test(jobsSrc),
+      )
+      // P-2: the dollar-sizing probe + the CoW chain reads no longer touch
+      // lib/auth's unpinned Base client.
+      const probeSrc = codeOnly(srcFs.readFileSync('lib/usd-probe.ts', 'utf8'))
+      const cowSrc = codeOnly(srcFs.readFileSync('lib/cow-guardrails.ts', 'utf8'))
+      check('price probe: usd-probe + cow-guardrails read through the registry client only (no lib/auth import)', !/@\/lib\/auth/.test(probeSrc) && !/@\/lib\/auth/.test(cowSrc) && /publicClientFor\(chainId\)/.test(probeSrc) && /publicClientFor\(quote\.chainId\)/.test(cowSrc))
+    }
+    check(
+      'price probe: pinned registry clients carry a fallback transport (pinned RPC → viem default), unpinned chains a single one',
+      publicClientFor(8453)?.transport.type === 'fallback' && publicClientFor(1)?.transport.type === 'fallback' && publicClientFor(42161)?.transport.type === 'fallback' && publicClientFor(10)?.transport.type === 'http',
+      [8453, 1, 42161, 10].map((id) => `${id}:${publicClientFor(id)?.transport.type}`).join(' '),
+    )
+
+    // Robinhood-destination cross-chain asks are FUNDING moves (NEAR can't
+    // reach 4663): the jobs registry claims them, every chip round-trips.
+    const compiles = (m: string) => { const r = compileJobAskFull(m); return !!r && !('problem' in r) && !('clarify' in r) ? r.steps.map((st) => `${st.kind}:${st.builder}`).join(',') : null }
+    const rf20 = robinhoodFundingFromCrossChain('Swap 20 USDC from Base to USDG on Robinhood Chain')
+    check('rh funding redirect: "Swap 20 USDC from Base to USDG on Robinhood Chain" → the LiFi funding sentence, compiled as fund → wait', !!rf20 && 'ask' in rf20 && rf20.ask === 'Fund robinhood chain with $20 from base' && compiles('Swap 20 USDC from Base to USDG on Robinhood Chain') === 'sign:native-lifi-fund,wait:wait')
+    check('rh funding redirect: an Optimism origin compiles the same way (#707)', compiles('move 25 USDC from optimism to robinhood chain') === 'sign:native-lifi-fund,wait:wait')
+    const rf1 = robinhoodFundingFromCrossChain('Convert $1 USDC from Base to USDG on Robinhood Chain via cross-chain swap')
+    check(
+      'rh funding redirect: $1 (under the $9 floor) → the floor chips, every resume compiles, the lead line says why (prod 2026-09-04)',
+      !!rf1 && 'clarify' in rf1 && /smallest clean move .* \$9/.test(rf1.reply) && rf1.clarify.options.some((o) => o.label === '$9 from Base') &&
+        rf1.clarify.options.filter((o) => !/never mind/i.test(o.resume)).every((o) => compiles(o.resume) === 'sign:native-lifi-fund,wait:wait'),
+      JSON.stringify(rf1).slice(0, 300),
+    )
+    const rfEth = robinhoodFundingFromCrossChain('swap 0.01 ETH from base to robinhood')
+    check('rh funding redirect: an ETH-sized ask → dollar chips "using eth", every resume compiles', !!rfEth && 'clarify' in rfEth && rfEth.clarify.options.filter((o) => !/never mind/i.test(o.resume)).every((o) => /using eth$/.test(o.resume) && compiles(o.resume) === 'sign:native-lifi-fund,wait:wait'))
+    const rfBuy = robinhoodFundingFromCrossChain('swap 20 USDC from base to AAPL on robinhood')
+    check('rh funding redirect: "… to AAPL on robinhood" hands over ONE fund-then-buy chip that compiles fund → wait → buy', !!rfBuy && 'clarify' in rfBuy && compiles(rfBuy.clarify.options[0].resume) === 'sign:native-lifi-fund,wait:wait,sign:native-lifi-swap')
+    check('rh funding redirect: the canonical ETH-from-Ethereum bridge stays with the bridge layer (no job, no redirect)', robinhoodFundingFromCrossChain('Bridge 0.01 ETH from Ethereum to Robinhood Chain') === null && compileJobAskFull('Bridge 0.01 ETH from Ethereum to Robinhood Chain') === null)
+    const rfPoly = robinhoodFundingFromCrossChain('bridge 20 USDC from polygon to robinhood')
+    check('rh funding redirect: an origin the plan can\'t leave refuses by name with the real origin list', !!rfPoly && 'problem' in rfPoly && rfPoly.problem.includes(fundingOriginWords()))
+    check('rh funding redirect: non-Robinhood destinations are untouched', robinhoodFundingFromCrossChain('Swap 5 USDC from base to ETH on arbitrum') === null)
+
+    // Non-EVM homes (lib/token-home): the chart overlay's own chips.
+    check('token home: SOL/XRP/DOGE live elsewhere; ETH/BTC/AAPL/USDC do not', tokenHome('SOL') === 'Solana' && tokenHome('xrp') === 'the XRP Ledger' && tokenHome('DOGE') === 'Dogecoin' && tokenHome('ETH') === null && tokenHome('BTC') === null && tokenHome('AAPL') === null && tokenHome('USDC') === null && tokenHome(undefined) === null)
+
+    // "what stocks can I buy on robinhood" — a READ, never an order.
+    for (const q of ['what stocks can I buy on robinhood', 'show a list of all the available stocks i can buy on robinhood', 'which tokenized stocks do you support', 'I want to buy some stocks', 'can i buy stocks here', 'what stocks are on Robinhood Chain?']) {
+      check(`stock list: "${q}" is the list question`, parseStockListAsk(q)?.kind === 'stock-list')
+    }
+    for (const q of ['buy $10 of AAPL stock', 'buy 5 shares of TSLA', 'sell all my AAPL stock', 'what is a stock?', 'can i buy apple stock', 'swap 1 USDC for ETH']) {
+      check(`stock list: "${q}" is NOT the list question (order / other)`, parseStockListAsk(q) === null)
+    }
+
+    // SECURITY note: a chain named inside a fiat-ish clause survives.
+    const fromBaseAcct = parseSwapIntent('buy $10 of AAPL from my Base account')
+    check('swap intent: "from my Base account" keeps the chain and never flags a card', fromBaseAcct.isSwap && fromBaseAcct.buyToken === 'AAPL' && fromBaseAcct.sellAmountUsd === '10' && !fromBaseAcct.viaCard && !fromBaseAcct.sellToken)
+    check('swap intent: "with my credit card" still flags the card', parseSwapIntent('buy $10 of AAPL with my credit card').viaCard === true)
+
+    // LINKS finding: a combined funding plan never emits a leg under $2.
+    {
+      const need: FundingNeed = { chainId: 1, token: 'ETH', amountHuman: 0.004, followupResume: 'stake all my ETH on Lido', actionLabel: 'the stake', flexMinAmountHuman: 0 }
+      const src = (chainId: number, chainWord: string, usd: number): FundingSource => ({ chainId, chainWord, token: 'USDC', balance: usd, usd })
+      check('funding plan: MIN_LEG_USD is the smallest plan', MIN_LEG_USD === 2)
+      check('funding plan: a $1.50 source adds nothing to a combined capacity', promisableCapacityUsd([src(42161, 'arbitrum', 10), src(8453, 'base', 1.5)], false) === 10)
+      const shortPlan = planFundingChips(need, 11, [src(42161, 'arbitrum', 10), src(8453, 'base', 1.5)], 0)
+      check('funding plan: $10 + $1.50 vs an $11 need is SHORT (no combine chip with a sub-$2 leg)', shortPlan.kind === 'short')
+      const combo = planFundingChips(need, 11, [src(42161, 'arbitrum', 10), src(8453, 'base', 3)], 0)
+      const legAmts = combo.kind === 'offer' ? [...combo.chips[0].resume.matchAll(/Swap (\d+(?:\.\d+)?) USDC/g)].map((m) => Number(m[1])) : []
+      check('funding plan: the remainder leg moves at least $2, never "Swap 1 USDC"', combo.kind === 'offer' && legAmts.length === 2 && legAmts.every((a) => a >= MIN_LEG_USD), combo.kind === 'offer' ? combo.chips[0].resume : combo.kind)
+    }
+
+    // ── Route-level: what the stranger SEES ──────────────────────────────
+    const strangerWallet = privateKeyToAccount(generatePrivateKey()).address
+    const chatJson = (body: Record<string, unknown>) => fetch(`${BASE}/api/chat`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ activeServers: [], history: [], ...body }) }).then((r) => r.json())
+    const signable = (j: Record<string, unknown>) => !!(j.orderRequest || j.txRequest || j.txChain || j.jobId)
+    // P-1 (prod-verified): the CoW venue (the default with no Uniswap MCP
+    // active) never hands an EMPTY wallet a signable market order.
+    const cowEmpty = await chatJson({ message: 'Swap $1 of ETH to USDC', walletAddress: strangerWallet })
+    check(
+      'P-1: empty wallet + CoW market swap → no signable artifact, the hold/shortfall is named',
+      !signable(cowEmpty) && cowEmpty.buildPath !== 'native-swap-cow' && typeof cowEmpty.reply === 'string' && /holds 0|couldn't read|didn't answer|Top up|top up/i.test(cowEmpty.reply),
+      JSON.stringify(cowEmpty).slice(0, 300),
+    )
+    check('swap intent: the bare LIMIT_EXAMPLES parse as limit orders without the word "limit" ("for at least" IS the phrase)', LIMIT_EXAMPLES.every((ex) => { const p = parseSwapIntent(ex); return p.isSwap && p.mode === 'limit' && !p.problem }))
+    const cowLimitEmpty = await chatJson({ message: `limit order: ${LIMIT_EXAMPLES[0]}`, walletAddress: strangerWallet })
+    check(
+      'P-1: a resting limit order on an empty wallet is the one exemption — and SAYS it fills only once funded',
+      !cowLimitEmpty.orderRequest || /fills only once/.test(String(cowLimitEmpty.reply)),
+      JSON.stringify(cowLimitEmpty).slice(0, 300),
+    )
+    // The stock-list READ: list + Buy chips, every chip a swap the layer builds.
+    const stockList = await chatJson({ message: 'what stocks can I buy on robinhood' })
+    check(
+      'stock list: the question answers with the live 4663 list + Buy chips (never brokerage prose)',
+      stockList.buildPath === 'native-stock-list' && /tokenized stocks trade on Robinhood Chain/.test(String(stockList.reply)) && Array.isArray(stockList.clarify?.options) && stockList.clarify.options.length >= 3 &&
+        stockList.clarify.options.every((o: { label: string; resume: string }) => { const p = parseSwapIntent(o.resume); return p.isSwap && !p.problem && p.sellAmountUsd === '10' && o.label === `Buy $10 of ${p.buyToken}` }),
+      JSON.stringify(stockList).slice(0, 300),
+    )
+    // Non-EVM homes: the chart overlay's own chip on a SOL chart.
+    const solBuy = await chatJson({ message: 'Buy $50 of SOL', walletAddress: strangerWallet })
+    check(
+      'home door: "Buy $50 of SOL" refuses the Base look-alike BY NAME and opens the Hyperliquid door (chips round-trip parseHlIntent)',
+      solBuy.buildPath === 'native-swap-home-door' && /lives on \*\*Solana\*\*/.test(String(solBuy.reply)) && !signable(solBuy) && solBuy.clarify?.options?.length === 2 &&
+        solBuy.clarify.options.every((o: { resume: string }) => parseHlIntent(o.resume)?.kind === 'open'),
+      JSON.stringify(solBuy).slice(0, 300),
+    )
+    const solSell = await chatJson({ message: 'Sell $50 of SOL', walletAddress: strangerWallet })
+    check('home door: "Sell $50 of SOL" says the EVM wallet can\'t sell SOL held on Solana', solSell.buildPath === 'native-swap-home-door' && /can't sell SOL held on Solana/.test(String(solSell.reply)) && !signable(solSell))
+    const solDca = await chatJson({ message: 'DCA $10 into SOL weekly', walletAddress: strangerWallet })
+    check('home door: "DCA $10 into SOL weekly" refuses the schedule by name (nothing armed)', solDca.buildPath === 'native-dca' && /lives on \*\*Solana\*\*/.test(String(solDca.reply)) && /No schedule was created/.test(String(solDca.reply)) && !signable(solDca) && !/armed/i.test(String(solDca.reply)), JSON.stringify(solDca).slice(0, 300))
+    // The 09-04 prod shape through the route: the jobs layer, not the NEAR door.
+    const rhDollar = await chatJson({ message: 'Convert $1 USDC from Base to USDG on Robinhood Chain via cross-chain swap' })
+    check(
+      'rh funding redirect (route): the prod 09-04 ask answers the floor chips from the jobs layer — never the add-NEAR door',
+      rhDollar.buildPath === 'native-job' && /smallest clean move/.test(String(rhDollar.reply)) && rhDollar.clarify?.options?.some((o: { label: string }) => o.label === '$9 from Base') && !rhDollar.door,
+      JSON.stringify(rhDollar).slice(0, 300),
+    )
+    const rhTwenty = await chatJson({ message: 'Swap 20 USDC from Base to USDG on Robinhood Chain' })
+    check('rh funding redirect (route): the fundable size is claimed by the jobs layer (asks to connect, no NEAR door)', !rhTwenty.door && /connect your wallet/i.test(String(rhTwenty.reply)), JSON.stringify(rhTwenty).slice(0, 200))
 
     // ── NFT-buy funding resume (the 2026-07-23 unfunded "buy this NFT") ───
     // The funding offer's chips append this exact follow-up; it must compile
