@@ -215,7 +215,10 @@ export default function ClarifyChips({
                   ) : (
                     <CreditCard className="w-3.5 h-3.5 flex-shrink-0 text-[color:var(--accent)]" />
                   )}
-                  <span className="min-w-0 flex-1 truncate">
+                  {/* The label IS the money ("Add $25 with card or bank → buy
+                      $10 of AAPL"): at 375 a one-line truncate cut it to
+                      "buy $10 o…". Wrap below lg like the other chips. */}
+                  <span className="min-w-0 flex-1 truncate max-lg:whitespace-normal">
                     <span className="text-[color:var(--fg)] font-medium">
                       {arrived ? 'Keep going now' : waiting ? 'Funded it — pick up where I left off' : o.label}
                     </span>

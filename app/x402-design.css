@@ -2324,6 +2324,8 @@
     transition: background .15s, color .15s;
   }
   .ca__close:hover { background: var(--surf-2); color: var(--fg); }
+  /* Touch: the dismiss is a 40px target (30px is the mouse size). */
+  @media (hover: none) { .ca__close { width: 40px; height: 40px; top: 8px; right: 8px; } }
 
   /* Header — the stone, the name, the promise. */
   .ca__crest { display: grid; place-items: center; margin-bottom: 15px; }

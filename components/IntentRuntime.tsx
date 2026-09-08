@@ -605,7 +605,10 @@ export default function IntentRuntime({
                     : linkEyebrow({ hasCreator, handle: creatorHandle, agent })}
                 </p>
                 <p
-                  className="mt-1 text-[15px] leading-tight text-[color:var(--fg)] truncate"
+                  // The ask IS the link's identity: beside the account pill at
+                  // 375 a one-line truncate left "Swap 1 USDC for ET…". Two
+                  // lines on phones, one line from sm up.
+                  className="mt-1 text-[15px] leading-tight text-[color:var(--fg)] max-sm:line-clamp-2 sm:truncate"
                   style={{ fontFamily: 'var(--font-serif)' }}
                 >
                   &ldquo;{ask}&rdquo;

@@ -3009,7 +3009,7 @@ async function main() {
       const lPage = await readFile(new URL('../app/l/[handle]/page.tsx', import.meta.url), 'utf8')
       const chips = await readFile(new URL('../components/ClarifyChips.tsx', import.meta.url), 'utf8')
       check('mobile: /l storefront asks wrap (line-clamp-2), never truncate', /line-clamp-2 min-w-0 flex-1[^"]*"[\s\S]{0,200}&ldquo;\{l\.ask\}/.test(lPage) && !/truncate flex-1 group-hover:text-\[color:var\(--accent\)\]/.test(lPage))
-      check('mobile: clarify + funding chip titles wrap below lg', (chips.match(/min-w-0 flex-1 truncate max-lg:whitespace-normal/g) ?? []).length === 2)
+      check('mobile: clarify + funding + on-ramp chip titles wrap below lg', (chips.match(/min-w-0 flex-1 truncate max-lg:whitespace-normal/g) ?? []).length === 3)
       // Touch targets: the toolbar working-set door (was 17px tall), the
       // journey dismiss (16×16), the example chips (28px), the embed's
       // Fullscreen (24×24) and the undefined .btn--sm all get a ≥36px floor.
@@ -3027,6 +3027,62 @@ async function main() {
       const funnel = await readFile(new URL('../components/LinkFunnelTable.tsx', import.meta.url), 'utf8')
       check('mobile: jobs rail titles wrap (line-clamp-2), never truncate', /flex-1 min-w-0 text-xs line-clamp-2" title=\{j\.title\}/.test(jobsTab) && !/flex-1 min-w-0 text-xs truncate" title=\{j\.title\}/.test(jobsTab))
       check('mobile: links rail + funnel table asks wrap, never truncate', /block text-\[11px\] line-clamp-2 mt-0\.5">\{l\.ask\}/.test(linksTab) && /line-clamp-2 min-w-0" title=\{l\.ask\}/.test(funnel))
+    }
+
+    // ── Mobile polish, round 2: the cards a stranger SIGNS on ─────────────
+    // Driven at 375×812 on a prod build (SendTxChain single/multi/withheld/
+    // done, JobCard, on-ramp chip, the overlays, the door). Each pin reads
+    // the source a phone would render.
+    {
+      const chatIface = await readFile(new URL('../components/ChatInterface.tsx', import.meta.url), 'utf8')
+      const txChain = await readFile(new URL('../components/SendTxChain.tsx', import.meta.url), 'utf8')
+      const orderBtn = await readFile(new URL('../components/SignOrderButton.tsx', import.meta.url), 'utf8')
+      const runtime = await readFile(new URL('../components/IntentRuntime.tsx', import.meta.url), 'utf8')
+      const jobCard = await readFile(new URL('../components/JobCard.tsx', import.meta.url), 'utf8')
+      const chartOverlay = await readFile(new URL('../components/ChartOverlay.tsx', import.meta.url), 'utf8')
+      const jobOverlay = await readFile(new URL('../components/JobDetailOverlay.tsx', import.meta.url), 'utf8')
+      const addMcp = await readFile(new URL('../components/AddMcpModal.tsx', import.meta.url), 'utf8')
+      // The (hover: none) reveal made the per-bubble copy + mint buttons
+      // permanent on touch — at 28px, with the mint one parked ON the user
+      // avatar (its hover-era slot, -right-11). On phones both are 36px and
+      // the mint affordance moves to the bubble's empty top-left corner.
+      check(
+        'mobile: bubble copy + mint buttons are 36px on touch, mint on the bubble’s own corner',
+        /aria-label="Copy message"[\s\S]{0,700}\[@media\(hover:none\)\]:w-9 \[@media\(hover:none\)\]:h-9 \[@media\(hover:none\)\]:-top-3 \[@media\(hover:none\)\]:-right-1\.5/.test(chatIface) &&
+          /Create an intent link from this ask"[\s\S]{0,900}\[@media\(hover:none\)\]:right-auto \[@media\(hover:none\)\]:-left-3 \[@media\(hover:none\)\]:-top-3 \[@media\(hover:none\)\]:w-9 \[@media\(hover:none\)\]:h-9/.test(chatIface),
+      )
+      // A withheld step's recovery verb was an 11px underline (46×18): a
+      // 12px button on its own line, 40px tall on touch.
+      check(
+        'mobile: SendTxChain “Try again” is a 12px button with a 40px touch height',
+        /rounded-full border border-\[var\(--line-2\)\] px-3 py-1 text-\[12px\][^"]*\[@media\(hover:none\)\]:min-h-10[^"]*"\s*>\s*Try again/.test(txChain) && !/underline underline-offset-2 text-\[color:var\(--fg\)\] hover:opacity-80"\s*>\s*Try again/.test(txChain),
+      )
+      // The 12×12 explorer glyph is the whole target on a phone: SendTxChain
+      // (one site) + SignOrderButton (order + fill) pad the hit area to 40px.
+      const explorerPad = (src: string) => (src.match(/\[@media\(hover:none\)\]:min-w-10 \[@media\(hover:none\)\]:min-h-10 \[@media\(hover:none\)\]:justify-center \[@media\(hover:none\)\]:-my-3"\s*>\s*<ExternalLink className="w-3 h-3"/g) ?? []).length
+      check('mobile: explorer-link glyphs carry a 40px touch hit area (tx chain + CoW order)', explorerPad(txChain) === 1 && explorerPad(orderBtn) === 2)
+      // The /i header ask is the link's identity — beside the account pill a
+      // one-line truncate read "Swap 1 USDC for ET…". Two lines on phones.
+      check('mobile: the /i runtime header ask wraps to two lines on phones', /max-sm:line-clamp-2 sm:truncate"[\s\S]{0,120}&ldquo;\{ask\}&rdquo;/.test(runtime))
+      // JobCard header: the status pill (flex-shrink-0) squeezed the title
+      // span to zero width at 375 — the money vanished. flex-1 + two lines.
+      check(
+        'mobile: JobCard header title keeps its width and wraps on phones',
+        /<span className="flex flex-1 items-center gap-2 min-w-0">[\s\S]{0,400}min-w-0 max-sm:line-clamp-2 sm:truncate">\{job\.title\}/.test(jobCard),
+      )
+      check('mobile: JobCard cancel is a 40px touch target', /void cancel\(\)\} className="[^"]*\[@media\(hover:none\)\]:min-h-10/.test(jobCard))
+      // Overlay chrome: the 28px close (and chart external) buttons are 40px
+      // on touch; the chart's act chips are 12px and 40px tall.
+      const touch10 = /\[@media\(hover:none\)\]:h-10 \[@media\(hover:none\)\]:w-10/
+      check('mobile: overlay close buttons (chart / job detail / request-MCP) are 40px on touch', touch10.test(chartOverlay) && touch10.test(jobOverlay) && touch10.test(addMcp))
+      check('mobile: chart overlay act chips are ≥40px and 12px on touch', (chartOverlay.match(/\[@media\(hover:none\)\]:min-h-10 \[@media\(hover:none\)\]:text-\[12px\]/g) ?? []).length === 3)
+      check('mobile: the sign-in door dismiss is a 40px touch target', /@media \(hover: none\) \{ \.ca__close \{ width: 40px; height: 40px;/.test(designCss))
+      // The toolbar working-set door beside chain picker + Share + pill was
+      // ~30px wide at 375 and ellipsized to "Sn…" — phones show the count.
+      check(
+        'mobile: the toolbar working-set door names the MCP count on phones',
+        /<span className="max-sm:hidden">\{activeServers\.map\(\(s\) => cleanServerName\(s\.name\)\)\.join\(' · '\)\}<\/span>\s*<span className="sm:hidden whitespace-nowrap">\{activeServers\.length\} MCPs<\/span>/.test(chatIface),
+      )
     }
 
     // House links: the seeded canonical set (deterministic slugs,

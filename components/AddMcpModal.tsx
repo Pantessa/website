@@ -245,7 +245,7 @@ export default function AddMcpModal({ open, onClose }: { open: boolean; onClose:
               <button
                 onClick={onClose}
                 aria-label="Close"
-                className="w-7 h-7 grid place-items-center rounded-lg text-[color:var(--muted)] hover:text-white hover:bg-white/5 transition-colors"
+                className="w-7 h-7 grid place-items-center rounded-lg text-[color:var(--muted)] hover:text-white hover:bg-white/5 transition-colors [@media(hover:none)]:h-10 [@media(hover:none)]:w-10 [@media(hover:none)]:-mr-1.5"
               >
                 <X className="w-4 h-4" />
               </button>

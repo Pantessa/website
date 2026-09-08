@@ -153,12 +153,15 @@ export default function JobCard({
         onClick={() => setExpanded((e) => !e)}
         className="w-full flex items-center justify-between gap-2 px-3 py-2 text-left"
       >
-        <span className="flex items-center gap-2 min-w-0">
+        {/* flex-1: without it the status pill (flex-shrink-0) squeezed this
+            span to its meta line at 375 and the title — "Buy $10 of AAPL…",
+            the money — rendered at zero width. Two lines on phones. */}
+        <span className="flex flex-1 items-center gap-2 min-w-0">
           <ShieldCheck className="w-4 h-4 flex-shrink-0 text-[color:var(--muted)]" aria-hidden />
           <span className="mono text-[11px] uppercase tracking-wider text-[color:var(--muted-2)] flex-shrink-0">
             Job · {doneCount}/{job.steps.length}
           </span>
-          <span className="text-[12.5px] truncate">{job.title}</span>
+          <span className="text-[12.5px] min-w-0 max-sm:line-clamp-2 sm:truncate">{job.title}</span>
         </span>
         <span className="flex items-center gap-2 flex-shrink-0">
           <span
@@ -311,7 +314,7 @@ export default function JobCard({
               </span>
             )}
             {ACTIVE.has(job.status) && (
-              <button onClick={() => void cancel()} className="text-[11px] mono text-[color:var(--muted-2)] hover:text-[color:var(--fail)] transition-colors">
+              <button onClick={() => void cancel()} className="text-[11px] mono text-[color:var(--muted-2)] hover:text-[color:var(--fail)] transition-colors [@media(hover:none)]:min-h-10 [@media(hover:none)]:px-3 [@media(hover:none)]:-mr-3 [@media(hover:none)]:text-[12px]">
                 cancel
               </button>
             )}

@@ -108,6 +108,10 @@ function CopyTurn({ text, dark }: { text: string; dark?: boolean }) {
       className={cn(
         'absolute -top-2.5 -right-2.5 w-7 h-7 rounded-full grid place-items-center border backdrop-blur-md',
         'opacity-0 group-hover/bubble:opacity-100 focus-visible:opacity-100 transition-opacity duration-150',
+        // Touch: always visible (the (hover:none) reveal rule), so it must be a
+        // real target — 36px — and it stays on the bubble's own corner rather
+        // than poking into the avatar beside it.
+        '[@media(hover:none)]:w-9 [@media(hover:none)]:h-9 [@media(hover:none)]:-top-3 [@media(hover:none)]:-right-1.5',
         dark
           ? 'bg-black/70 border-black/30 text-white'
           : 'bg-[var(--surf-2)]/90 border-[var(--line)] text-[color:var(--muted)] hover:text-white',
@@ -133,6 +137,11 @@ function MintLinkTurn({ onMint }: { onMint: () => void }) {
         'absolute -top-2.5 -right-11 w-7 h-7 rounded-full grid place-items-center border backdrop-blur-md',
         'opacity-0 group-hover/bubble:opacity-100 focus-visible:opacity-100 transition-opacity duration-150',
         'bg-black/70 border-black/30 text-white',
+        // Touch: the hover-era slot (-right-11) lands ON the user avatar once
+        // the button is permanently visible. A right-aligned bubble's top-LEFT
+        // corner is empty space — the mint affordance lives there on phones,
+        // at a 36px target.
+        '[@media(hover:none)]:right-auto [@media(hover:none)]:-left-3 [@media(hover:none)]:-top-3 [@media(hover:none)]:w-9 [@media(hover:none)]:h-9',
       )}
     >
       <Link2 className="w-3.5 h-3.5" />
@@ -1279,7 +1288,11 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
                 title="Your working set — click to edit"
                 className="text-[11px] text-[color:var(--muted-2)] truncate pl-1 text-left hover:text-white transition-colors max-lg:min-h-10 max-lg:max-w-full"
               >
-                {activeServers.map((s) => cleanServerName(s.name)).join(' · ')}
+                {/* At 375 the chain picker + Share + account pill leave this
+                    door ~30px: the joined names ellipsized to "Sn…". On phones
+                    it names the COUNT (the spine's MCPS tab lists them). */}
+                <span className="max-sm:hidden">{activeServers.map((s) => cleanServerName(s.name)).join(' · ')}</span>
+                <span className="sm:hidden whitespace-nowrap">{activeServers.length} MCPs</span>
               </button>
             )
           )}
