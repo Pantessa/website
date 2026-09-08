@@ -119,12 +119,16 @@ export function policyCheck(
   }
   const violation = grantViolation(policy, host, valueUsd, spentTodayUsd, spentTotalUsd)
   if (selfSigned && (violation === 'OVER_PER_CALL' || violation === 'BUDGET_EXCEEDED')) {
+    // §E6 policy truth: the exemption is real (the owner's signature is the
+    // consent) but it must be SEEN — a warn-level check the card renders,
+    // naming the cap it passed, never a silent green.
+    const which = violation === 'OVER_PER_CALL' ? `per-action cap ($${policy.perCallUsd})` : `daily budget ($${policy.perDayUsd})`
     return {
       check: {
         id: 'policy',
-        level: 'block',
+        level: 'warn',
         ok: true,
-        note: `Over your agent spend cap, but you sign this yourself ($${valueUsd.toFixed(2)}) — your signature is the consent.`,
+        note: `⚠️ This $${valueUsd.toFixed(2)} action is over your agent ${which}. It is offered anyway because you sign it yourself — your signature is the consent — but the cap did not hold it back.`,
       },
       violation: null,
     }

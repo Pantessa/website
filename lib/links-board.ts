@@ -2,7 +2,7 @@ import { Prisma } from '@prisma/client'
 import prisma from '@/lib/db'
 import { HOUSE_LINKS } from '@/lib/house-links'
 import { FEE_BEARING_BUILD_PATHS, FEES_LIVE_SINCE, CREATOR_FEE_SPLIT, netFeeBpsFor } from '@/lib/fees'
-import { INTERNAL_ORIGIN_SQL, INTERNAL_TRAFFIC_WHERE } from '@/lib/value-origin'
+import { COUNTED_TURN_WHERE, INTERNAL_TRAFFIC_WHERE, REAL_TRAFFIC_SQL } from '@/lib/value-origin'
 
 // The intent-links board data, shared by /links (the full leaderboard) and
 // /activity (the link-economy section). Server-only: every figure comes from
@@ -15,7 +15,11 @@ import { INTERNAL_ORIGIN_SQL, INTERNAL_TRAFFIC_WHERE } from '@/lib/value-origin'
 // builds write real signed turns too — the public board must never rank
 // either (lib/value-origin.ts isInternalOrigin + mirrors). Creator-facing
 // surfaces (dashboard list, claims) keep seeing them.
-const NOT_HARNESS: Prisma.EmbedTurnWhereInput = { NOT: { OR: [{ sessionId: { startsWith: 'harness-' } }, INTERNAL_TRAFFIC_WHERE] } }
+// …and (S-2, 2026-09-08) receipt-counted only: a `signed` beacon the
+// verifier refuted or could not read never ranks a link on the public board.
+const NOT_HARNESS: Prisma.EmbedTurnWhereInput = {
+  AND: [{ NOT: { OR: [{ sessionId: { startsWith: 'harness-' } }, INTERNAL_TRAFFIC_WHERE] } }, COUNTED_TURN_WHERE],
+}
 
 export interface LinkBoardRow {
   slug: string
@@ -214,7 +218,7 @@ export async function linkDailySeries(days = 30): Promise<LinkDayPoint[]> {
         FROM embed_turns
         WHERE intent_link_slug IS NOT NULL AND outcome = 'signed' AND value_usd > 0
           AND session_id NOT LIKE 'harness-%'
-          AND NOT ${Prisma.raw(INTERNAL_ORIGIN_SQL)}
+          AND ${Prisma.raw(REAL_TRAFFIC_SQL)}
           AND created_at >= ${since}
         GROUP BY 1 ORDER BY 1`,
     ])

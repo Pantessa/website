@@ -33,8 +33,12 @@ type Phase = 'sign' | 'refreshing' | 'blocked' | 'done'
 export default function SendTxChain({
   chain,
   onCompleted,
+  manualSteps = false,
 }: {
   chain: TxChainRequest
+  /** §E3: a chain built by an external tool (buildPath 'planner') never
+   *  auto-fires step 2+ — every popup follows the user's own tap. */
+  manualSteps?: boolean
   /** Fires once, when the FINAL step confirms — the whole chain is done and
    * the money has actually moved (telemetry hooks here, not on approves).
    * `txs` carries EVERY confirmed step's hash + chain + title, in order, so
@@ -276,7 +280,7 @@ export default function SendTxChain({
                     key={i}
                     tx={step.tx}
                     summary={step.title}
-                    autoFire={i > 0}
+                    autoFire={i > 0 && !manualSteps}
                     onConfirmed={(hash) => void advance(i, hash)}
                     refusalArtifact="tx-chain"
                     refusalBuildPath={chain.refresh?.kind}
